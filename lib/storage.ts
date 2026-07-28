@@ -1,6 +1,7 @@
 import { File, Directory, Paths } from 'expo-file-system';
 import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
 import { supabase } from './supabase';
+import { transientDirectory } from './transientFiles';
 
 // Compress a captured image before upload. Resolved May 2026 (PM):
 // client-only compression to bound storage cost and keep the upload
@@ -96,6 +97,24 @@ export function buildMedicationPhotoPath(
 // (deleteEventAttachmentLocal).
 const ATTACHMENT_DIR = 'attachments';
 
+// Reduce a caller-supplied name to a plain basename that cannot escape its
+// directory.
+//
+// The path BUILDERS in this codebase already guard `/`, `\` and `..`
+// (buildVetDocumentPath and friends) — but every CONSUMER here took the name on
+// trust, and a name of ".." resolves `new File(dir, '..')` to the DIRECTORY, which
+// the `if (dest.exists) dest.delete()` lines below would then delete wholesale.
+// Reaching it required writing a crafted `storage_path` to one's own row, so this is
+// a latent gap rather than a live break — but a sanitiser at the three write points
+// is cheaper than proving no future caller ever passes something odd (B-478 VF-6,
+// found by rls-privacy-reviewer).
+function safeFileName(fileName: string): string {
+  const base = fileName.split(/[/\\]/).pop() ?? '';
+  // '.' and '..' are directory references, not names; '' is what an all-separator
+  // input reduces to. A uuid keeps the file addressable when we fall back.
+  return base === '' || base === '.' || base === '..' ? `file-${Date.now()}` : base;
+}
+
 // Copy a freshly-captured photo off the OS cache directory into persistent,
 // app-owned storage. Returns the new document-directory URI on success, or the
 // original `sourceUri` unchanged if the copy fails — persistence is best-effort
@@ -116,7 +135,7 @@ export function persistCapture(sourceUri: string, fileName: string): string {
     // idempotent so the second-and-later captures don't throw on the existing
     // directory; intermediates is belt-and-suspenders (document/ always exists).
     dir.create({ intermediates: true, idempotent: true });
-    const dest = new File(dir, fileName);
+    const dest = new File(dir, safeFileName(fileName));
     // copy() throws if the destination already exists — clear a stale file from
     // a prior failed attempt at the same uuid (vanishingly rare, but cheap).
     if (dest.exists) dest.delete();
@@ -128,6 +147,86 @@ export function persistCapture(sourceUri: string, fileName: string): string {
   }
 }
 
+
+// Bring a REMOTE object onto this device durably — §8 AC 12's other half.
+//
+// persistCapture above copies a file the device just produced; this one fetches a
+// file the device has only ever seen through a signed URL, and then hands it to
+// persistCapture so exactly one function writes into the attachments directory.
+// That matters beyond tidiness: sign-out's file wipe (clearLocalData) walks the
+// local_uri columns of the tables that live in that directory, so anything cached
+// here is already covered by it rather than needing a second wipe path.
+//
+// Two rules, both learned upstream:
+//   • the download lands in the OS CACHE first, and only a completed, non-empty
+//     file is promoted. A torn download promoted straight into the document
+//     directory would be a permanently broken "cached" record that nothing
+//     re-fetches, which is worse than not caching at all.
+//   • it NEVER throws and never rethrows. Caching is a side effect of viewing a
+//     document; a failure here must cost the owner nothing, so it returns null and
+//     the caller keeps rendering from the signed URL it already has.
+export async function persistRemoteObject(url: string, fileName: string): Promise<string | null> {
+  let tmp: File | null = null;
+  try {
+    // Into the transient directory, not the bare cache root: the `finally` below
+    // deletes this on every normal path, but a process death between download and
+    // promote leaves a full copy of a clinical record that no row names and the
+    // sign-out wipe cannot see. clearTransientFiles is the backstop for exactly
+    // that window.
+    const tmpDir = transientDirectory();
+    tmpDir.create({ intermediates: true, idempotent: true });
+    tmp = new File(tmpDir, safeFileName(`remote-${fileName}`));
+    if (tmp.exists) tmp.delete();
+    // idempotent: the API rejects with DestinationAlreadyExists otherwise, and the
+    // delete above can lose a race with a concurrent open of the same page.
+    const downloaded = await File.downloadFileAsync(url, tmp, { idempotent: true });
+    // A 0-byte result is the RN-fetch failure mode this codebase has already been
+    // bitten by (see uploadPhoto). Treat it as no download at all.
+    if (!downloaded.exists || !downloaded.size) return null;
+    const durable = persistCapture(downloaded.uri, fileName);
+    // persistCapture returns its SOURCE unchanged when the copy fails. A cache
+    // path is by definition not durable, so that outcome is "not cached".
+    if (durable === downloaded.uri) return null;
+    return durable;
+  } catch (e) {
+    console.warn('[storage] persistRemoteObject failed:', e);
+    return null;
+  } finally {
+    // The cache copy has served its purpose either way; the OS would reclaim it
+    // eventually, but leaving a second copy of a clinical record on disk for no
+    // reason is not a thing to shrug at.
+    try {
+      if (tmp?.exists) tmp.delete();
+    } catch {
+      // Already gone / not deletable — nothing to clean up.
+    }
+  }
+}
+
+// Give a file a human name for the share sheet.
+//
+// `Sharing.shareAsync` shares the file AT ITS PATH, so the recipient sees whatever
+// the basename is — and this app's storage keys are UUIDs, so a vet who is handed a
+// lab result receives "a3f9c1e2-….jpg" and files it under nothing. Copying to a
+// cache file with a real name is the same trick shareReportPdf already plays for
+// the vet report, extracted here on its second caller.
+//
+// Best-effort by the same rule as persistCapture: on any failure it returns the
+// original URI, so a copy problem can slow the vet down but can never block the
+// share itself.
+export function stageForShare(localUri: string, fileName: string): string {
+  try {
+    const dir = transientDirectory();
+    dir.create({ intermediates: true, idempotent: true });
+    const dest = new File(dir, safeFileName(fileName));
+    if (dest.exists) dest.delete();
+    new File(localUri).copy(dest);
+    return dest.uri;
+  } catch (e) {
+    console.warn('[storage] stageForShare failed, sharing the raw file:', e);
+    return localUri;
+  }
+}
 
 // Upload a local file URI (file:// or content://) to Supabase Storage.
 //
@@ -146,7 +245,16 @@ export async function uploadPhoto(
 
   const { error } = await supabase.storage
     .from(bucket)
-    .upload(storagePath, bytes, { contentType: mimeType, upsert: true });
+    // `cacheControl: '0'` — Storage's default is `max-age=3600`, and every object
+    // this function uploads is private health data served over a short-lived signed
+    // URL. With an hour of freshness, RN's `<Image>` (NSURLCache / OkHttp) keeps the
+    // bytes in an HTTP cache that no wipe path in this app can reach, so a lab
+    // result viewed before sign-out could outlive the account on a shared device.
+    // The vet-files spec states this rule outright (§6.2: signed URLs are
+    // `private, no-store`) and nothing implemented it (B-478 VF-6, found by
+    // rls-privacy-reviewer). Applied to every bucket, not just vet documents — the
+    // same argument covers event and medication photos.
+    .upload(storagePath, bytes, { contentType: mimeType, upsert: true, cacheControl: '0' });
 
   if (error) throw error;
 }

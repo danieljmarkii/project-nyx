@@ -151,19 +151,27 @@ describe('B-421 — one diet-trial day counter, not four', () => {
     expect(src).toMatch(/function regimenDaysElapsed/);
   });
 
-  it('the trial-facts loader keys coverage on the SAME clock as the denominator', () => {
-    // The denominator is a LOCAL-day count. The old numerator used
-    // `toDateString()` on a UTC-parsed timestamp — halves of a ratio on two
-    // different clocks, which is how Home rendered "6 of 5 days logged" beside
-    // the profile card's own number for the same pet.
+  it('the trial-facts loader DELEGATES coverage rather than keying its own day', () => {
+    // This assertion is the one the previous version of itself asked for. It read:
+    // "B-417 PR 5 pinned the metric in `lib/dietTrial.computeTrialFacts`, but the
+    // WIRING that would route this loader through it is deferred to B-474 … When
+    // B-474 lands, this assertion becomes a delegation check (`computeTrialFacts(`)
+    // instead." B-533 landed it, so it does.
     //
-    // B-417 PR 5 pinned the metric in `lib/dietTrial.computeTrialFacts`, but the
-    // WIRING that would route this loader through it is deferred to B-474 after
-    // three failed adversarial passes — so this file still keys its own coverage
-    // day, and still has to key it LOCALLY. When B-474 lands, this assertion
-    // becomes a delegation check (`computeTrialFacts(`) instead.
+    // The stakes are unchanged and are why the guard survives in a new form: the
+    // denominator is a LOCAL-day count, and the old numerator used `toDateString()`
+    // on a UTC-parsed timestamp — halves of a ratio on two different clocks, which
+    // is how Home rendered "6 of 5 days logged" beside the profile card's own
+    // number for the same pet. A second implementation is what made that possible,
+    // so the guard now asserts there is only one.
     const src = readCode('lib/dietTrialFacts.ts');
-    expect(src).toMatch(/toLocalDayKey\(new Date\(r\.occurred_at\)\)/);
+    expect(src).toMatch(/computeTrialFacts\(/);
+    // No second coverage metric: the day bucketing, the treat exclusion and the
+    // §10 S3 head clip all live in the shared module now. Passing the module's
+    // OWN numbers through is the point; computing a rival pair here is what this
+    // forbids.
+    expect(src).not.toMatch(/function readCoverage/);
+    expect(src).not.toMatch(/toLocalDayKey\(new Date\(r\.occurred_at\)\)/);
     expect(src).not.toMatch(/toDateString\(\)/);
     expect(src).not.toMatch(DAY_DIVISION);
   });

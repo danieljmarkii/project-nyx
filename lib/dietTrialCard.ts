@@ -36,10 +36,66 @@
 // It does not classify a feeding, and it does not know what "off-diet" means.
 // That is `lib/dietTrial.ts` (PR 5, `adversarial-reviewer` mandatory), which
 // pins the §5.1 metric and sets the coverage floor. Every such judgement arrives
-// here as an INPUT: `exposures`, `belowCoverageFloor`. When the classifier has
+// here as an INPUT: `exposures`, `belowCoverageFloor`, `trialDietRefusal`,
+// `intakeRating`, `exposures.mayStateRecordClean`. When the classifier has
 // not run, `exposures` is null and the adherence sentence simply does not
 // render — silence, never an all-clear (the same asymmetry as B-351 D10).
+//
+// ── B-533 PR A: THE WIRING AND THE CLAIM GATE ────────────────────────────────
+// PR 5 computed five disclosure channels and one reached a surface. This half
+// connects the ones that make the EXISTING states honest: `exposures` and
+// `belowCoverageFloor` (previously hard-nulled, so states 3/4 were unreachable),
+// `exposures.mayStateRecordClean` (the composite gate the vet report has always
+// asked and the card never did), `allowedSetUnavailable`, and the §10 S3
+// untracked head.
+//
+// ── B-533 PR B (THIS ONE): THE TWO OWNER-FACING REGISTERS ────────────────────
+//
+// PR A deliberately shipped without them: five adversarial rounds put essentially
+// every one of their 39 findings in these two surfaces while the wiring held from
+// round 1. They arrive here re-expressed on the composition layer B-559 built in
+// between — which is the whole reason this is a re-cut rather than a rebase. The
+// live refusal state is now a REGISTER with a row in the table below, so the four
+// disclosure questions it used to answer inline (does it owe the floor? the
+// can't-match caveat? the past bowl? the household scope?) are answered where
+// every other register answers them, and `everyState` walks it.
+//
+//   R1  `trial_refusal` — the trial diet itself is going unfinished. This is the
+//       patient `detectIntakeDecline` structurally cannot see: that detector needs
+//       a baseline to decline FROM, so a diet refused from day 1 is uniformly low
+//       rather than declining, and the chronic case decays INTO the clean case.
+//       `trialDietRefusal` was built for it in PR 5 and nothing consumed it — the
+//       pre-ship review's worst client-side finding.
+//
+//   R1b `pushTeachLine` — the refusal lane fires on RATED feedings only, so an
+//       owner who never learns the intake tap has a trial whose viability the app
+//       is blind to. The card teaches the tap before anything is wrong.
+//
+// STILL BLOCKING, and named here because a reader of this file is who needs to
+// know: **Dr. Chen has not ratified the stand-down semantics** (when may a fired
+// safety register be stood down? — `liveRefusal` below) **or the feline "needs a
+// call today" register**. Both are marked at their site.
+//
+// The rule every register shares, and the one this file enforces in a single
+// place —
+// `TRIAL_CARD_DISCLOSURES`, applied by `recordRegion` and asserted by a property
+// test over every state (B-559; it was `pushExposureFloor` for the floor half
+// alone, and that helper now only writes its sentence):
+//
+//   WITHHOLD THE READING when the record cannot support it.
+//   NEVER WITHHOLD THE FLOOR — the off-diet count is owed in every state.
+//
 import { getDietTrialProgress } from './analytics';
+import {
+  // The fire predicate's own floors, reused BY THE STAND-DOWN so the two
+  // directions cannot drift apart — see `liveRefusal`.
+  REFUSAL_MIN_RATED,
+  REFUSAL_SHARE,
+  trialViabilityHeadline,
+  trialViabilityNote,
+  type TrialDietRefusal,
+  type TrialIntakeRating,
+} from './dietTrial';
 import { milestoneNote, trialDecisionChoices, type TrialOutcome } from './dietTrialCompletion';
 import { localDayIndexOf } from './utils';
 import type { TrialIndication } from './dietTrialSetup';
@@ -108,6 +164,35 @@ export interface TrialExposureFacts {
   offDiet: number;
   /** The most recent exposure, for state 3's record-and-continue note. */
   mostRecent?: { label: string; when: string } | null;
+  /**
+   * `lib/dietTrial.mayStateRecordClean(facts, opts)` — may this card say the
+   * affirmative "all N matched the trial diet or a permitted food"?
+   *
+   * REQUIRED, NOT OPTIONAL, and that is the point of the field. The pre-ship
+   * review found the shipped defect at exactly this boundary: `computeTrialFacts`
+   * withholds the claim for several separate computed reasons (a refused diet, a
+   * free-choice bowl, an oral-route exposure, an unclassifiable feeding, an
+   * off-list arrangement, an unreadable permit set) and the card knew about none
+   * of them, so it rendered the unqualified sentence anyway — including the
+   * free-fed variant a green test was locking in place (round 5 ①). A
+   * defaulted-true flag would have re-created that hole for the next caller that
+   * forgot it; making it required means the compiler asks at every construction
+   * site.
+   *
+   * IT IS THE COMPOSITE GATE, NOT `mayClaimAllMatched`. The adversarial pass
+   * proved the weaker one insufficient on three executed fixtures: day 3 of 56
+   * ("all 3 matched" under `not_yet`), the sub-floor card (which contradicted its
+   * own lead sentence one line down), and a completed trial with 84 of 112
+   * prescribed feedings logged unfinished ("all 112 matched" — the recency window
+   * hid it). `mayStateRecordClean` folds in the range refusal, the
+   * interpretability floor and the unreadable permit set, which is the same
+   * question `generate-report` has been asking all along.
+   *
+   * It gates the CLAIM only, never the COUNT. §5.2 rules the exposure count a
+   * floor and the floor direction is disclose-more — withholding the number is
+   * how the last two attempts at this wiring deleted real findings.
+   */
+  mayStateRecordClean: boolean;
 }
 
 export interface TrialCardInput {
@@ -120,6 +205,66 @@ export interface TrialCardInput {
   exposures?: TrialExposureFacts | null;
   /** §5.2 — a live intake-decline flag REPLACES the adherence line entirely. */
   intakeDeclineHeadline?: string | null;
+  /**
+   * The WHOLE-RANGE refusal (`lib/dietTrial.TrialFacts.rangeRefusal`) — a
+   * history, where `trialDietRefusal` is a now-fact.
+   *
+   * THE TERMINAL CARDS READ THIS ONE, mirroring `generate-report/render.ts`'s
+   * `rangeRefusal ?? trialDietRefusal`. Without it a completed trial whose diet
+   * went unfinished for six weeks and was eaten for the last two rendered
+   * "Meals logged on 56 of 56 days" over "112 feedings in total" — a maximally
+   * clean-LOOKING terminal card. The affirmative claim was correctly withheld
+   * (the gate has read the range fact since B-533 round 1), but withholding a
+   * claim is not the same as disclosing the finding, and the report was
+   * rendering the refusal on the same record. Same record, two surfaces, two
+   * answers, which is the whole thing the shared module exists to stop.
+   *
+   * The LIVE card deliberately does not use it: that register is present-tense
+   * ("needs a call today"), and a six-week-old refusal is not news today.
+   */
+  rangeRefusal?: TrialDietRefusal | null;
+  /**
+   * `lib/dietTrial.TrialFacts.trialDietRefusal` — the RECENCY-bounded refusal, and
+   * the primary trigger for the R1 register (§6.5's second, non-clinical path).
+   *
+   * A now-fact by construction: bounded to the last `REFUSAL_WINDOW_DAYS`, because
+   * what it drives is a present-tense sentence about the pet today.
+   */
+  trialDietRefusal?: TrialDietRefusal | null;
+  /** `TrialFacts.recentFinishedFeedings` — the NUMERATOR of the stand-down. Never
+   *  read alone; its denominator is `recentRatedFeedings`. See `liveRefusal`. */
+  recentFinishedFeedings?: number;
+  /** `TrialFacts.recentRatedFeedings` — the denominator. The pair is what makes
+   *  the stand-down symmetric with the fire instead of a bare `=== 0` test. */
+  recentRatedFeedings?: number;
+  /** `TrialFacts.rangeRefusalSpansEpisodes` — the range fact carries no episode
+   *  guard, so a live present-tense register may not speak from a single bout. */
+  rangeRefusalSpansEpisodes?: boolean;
+  /** R1b — `TrialFacts.intakeRating`. Null when there is nothing in range to have
+   *  rated, which is not the same fact as "nothing is rated". */
+  intakeRating?: TrialIntakeRating | null;
+  /** §5.6 — a free-choice bowl OVERLAPPED the window but is not in force now.
+   *  A bowl emits no meal events by construction, so the days it was down can
+   *  never have a meal-by-meal record. Without this the owner who RECORDED the
+   *  removal lands on the sub-floor card's deficiency lead with nothing naming
+   *  the cause — and B-474's un-nulling is what made that state reachable. */
+  freeFedOverlap?: boolean;
+  /**
+   * `lib/dietTrial.TrialFacts.allowedSetUnavailable` — the trial has nothing
+   * usable to define the diet with, so "off-diet" stops being a measurement.
+   *
+   * IT IS ITS OWN INPUT AND NOT A CASE OF `mayStateRecordClean`: that gate lives
+   * on the `offDiet <= 0` branch, which an unusable permit set can never reach
+   * (every feeding falls to rung 3, so `offDiet` equals the total). Wiring it
+   * only into the gate left it unreachable in the one state it was added for, and
+   * the card went on telling a fully compliant owner "0 matched, 40 did not".
+   */
+  allowedSetUnavailable?: boolean;
+  /** §10 S3 — days between the trial's start and the first logged feeding. The
+   *  coverage denominator excludes them (days the owner could not have logged are
+   *  not a gap in their record), so the card has to SAY so rather than quietly
+   *  render a flattering ratio; the report already does. */
+  untrackedDaysBeforeFirstLog?: number;
   /** §5.6 — an overlapping free-choice arrangement replaces the coverage RATIO. */
   freeFed?: { loggedFeedings: number } | null;
   /** §5.6 — other non-archived pets in the household. Gates the CLAIM only. */
@@ -152,7 +297,8 @@ export type TrialCardState =
   | 'completed'       // 7a
   | 'abandoned'       // 7b
   | 'intake_decline'  // 8  — replacement
-  | 'free_fed';       // 9  — replacement
+  | 'free_fed'        // 9  — replacement
+  | 'trial_refusal';  // 10 — replacement (R1, mock round 5)
 
 /** Line roles, so a test can assert a literal string AT its role rather than by
  *  index, and so the view never has to infer emphasis from position.
@@ -161,9 +307,21 @@ export type TrialCardState =
  *   qualifier — the inline blind-spot line; §5.2 forbids making it a legend
  *   caveat    — §5.6's multi-pet scope gate on the claim above it
  *   note      — record-and-continue / outcome / overrun prose (§6.7)
- *   forward   — the "keep going" line; the card's actual job (§4.2) */
+ *   forward   — the "keep going" line; the card's actual job (§4.2)
+ *   flag      — a SAFETY register: the two states where something about the
+ *               animal outranks the trial (intake decline, trial-diet refusal).
+ *               Drawn as the tinted block the design lock draws, rather than as
+ *               body text: both states are structural REPLACEMENTS of the record
+ *               lines, and a replacement that renders in the same weight as what
+ *               it replaced is invisible as a replacement. Round 5 drew the
+ *               refusal state tinted and the shipped decline state was rendering
+ *               as plain text, so the two sibling safety registers looked nothing
+ *               alike and the more urgent one looked quieter.
+ *   teach     — R1b's intake-rating line. Quiet, never a safety register: it
+ *               fires when nothing is wrong, and nothing in it may imply
+ *               otherwise. */
 export type TrialCardLineRole =
-  | 'lead' | 'fact' | 'qualifier' | 'caveat' | 'note' | 'forward';
+  | 'lead' | 'fact' | 'qualifier' | 'caveat' | 'note' | 'forward' | 'flag' | 'teach';
 
 export interface TrialCardLine {
   role: TrialCardLineRole;
@@ -181,7 +339,13 @@ export type TrialCardActionId =
   | 'trial_complete'       // PR 6 — "This trial is done" → the outcome sheet
   | 'trial_stopped_early'  // PR 6 — "Stopped early" → the reason sheet
   | 'open_report'          // shipped (/report)
-  | 'view_exposures';      // PR 5's list screen
+  | 'view_exposures'       // PR 5's list screen
+  // R1 — the refusal state's way out, opening the same sheet the header's
+  // "Change" opens. It is a deliberate SECOND door to that room and the only one
+  // on the card: §4.2's no-second-door rule is about logging (the FAB), and on the
+  // one state whose whole message is "this diet may need to change" the way out
+  // may not be a 13px link in the corner.
+  | 'trial_manage';
 
 /** `primary` draws a filled button, `secondary` a ghost one, `link` the quiet
  *  inline "Label ›".
@@ -315,40 +479,618 @@ function coverageLine(coverage: TrialCoverageFacts): string {
 function exposureLine(ex: TrialExposureFacts): string {
   const total = ex.totalFeedings;
   const noun = total === 1 ? 'feeding' : 'feedings';
+  // NOTHING TO WITHHOLD ABOUT AN EMPTY RECORD. With no feedings logged, the
+  // withholding variant below rendered "0 feedings in total. Culprit isn't saying
+  // how many matched the trial diet on this record." — the app declining to
+  // answer a question nobody asked, which reads as hiding something about a
+  // record that is simply empty. The count alone is the honest line here: it
+  // makes no claim in either direction, which is the same reason the
+  // pre-classifier path renders it bare.
+  if (total <= 0) return 'Nothing logged against the trial yet.';
   if (ex.offDiet <= 0) {
-    return `${total} ${noun} in total — all ${total} matched the trial diet or a permitted food.`;
+    // THE COUNT STAYS, THE CLAIM GOES (round 5 ①) — AND THE WITHHOLDING IS NAMED.
+    //
+    // "N feedings in total." alone was the reassurance-on-absence B-494 ruled on,
+    // one surface over. An owner reads "56 of 56 days, 112 feedings" as "we're
+    // nailing it": the state that exists BECAUSE the app is uncertain rendered as
+    // the most reassuring card in the set — cleaner than state 3, which at least
+    // says "4 did not". She has never seen the affirmative variant, so she cannot
+    // notice its absence. And the same string means "too early to say" in week 1
+    // and "something I won't name" on day 40, so six weeks teach her the reading
+    // that is wrong on the day it matters.
+    //
+    // The register already exists in this file — `refusal_withheld` says out
+    // loud what it is not showing, and the free-fed lead explains itself. One
+    // withholding reason had a voice and five had silence.
+    return ex.mayStateRecordClean
+      ? `${total} ${noun} in total — all ${total} matched the trial diet or a permitted food.`
+      // NO "see below for why": the reason may be an oral-route exposure or an
+      // unclassifiable feeding, neither of which renders a line — a pointer to an
+      // explanation that is not there is the same defect one level down.
+      : `${total} ${noun} in total. Culprit isn’t saying how many matched the trial ` +
+        'diet on this record.';
   }
   return `${total} ${noun} in total — ${total - ex.offDiet} matched, ${ex.offDiet} did not.`;
 }
 
-/** §5.2: "the exposure count is a floor, never a total." Said ON the claim. */
+/** Below this many wholly-unmatched feedings, "nothing matched" is not yet a
+ *  pattern — a trial can genuinely open with a couple of off-list meals. It only
+ *  decides whether a CAVEAT renders, never whether a count does. */
+export const UNMATCHED_CAVEAT_MIN_FEEDINGS = 3;
+
+/**
+ * R1b — the intake-rating teach line's two floors, and both are guards rather
+ * than tuning.
+ *
+ * `SHARE` is a HALF: below it, most of the meal record is silent on whether the
+ * food was eaten, which is the state worth teaching about. Above it the owner is
+ * already rating and the line would be noise on a card that has to survive eight
+ * weeks of daily reading (Principle 4's spirit — the card is not a lecture).
+ *
+ * `MIN_FEEDINGS` is what stops the line firing on the first unrated breakfast: a
+ * 0-of-1 record is not a habit, and teaching off it hands a correction to an owner
+ * on day 1 of 56 for the crime of having logged one meal. Four is the smallest
+ * sample where "most" is a fair word.
+ *
+ * Deliberately NOT clinical values — nothing keys on them but whether a warm
+ * sentence renders, so they need no Dr. Chen ratification the way the coverage
+ * floor and the refusal floors do.
+ */
+export const INTAKE_RATING_TEACH_SHARE = 0.5;
+export const INTAKE_RATING_TEACH_MIN_FEEDINGS = 4;
+
+/**
+ * §5.2: "the exposure count is a floor, never a total." Said ON the claim.
+ */
 function floorSuffix(offDiet: number): string {
   return offDiet === 1
     ? ' That 1 is what’s been logged, not a total.'
     : ` The ${offDiet} are what’s been logged, not a total.`;
 }
 
+// ── THE COMPOSITION LAYER (B-559) ────────────────────────────────────────────
+//
+// §4.2 specified "one card, one layout — the eleven states are WHICH STRINGS
+// occupy the fact and note lines, a switch not eleven components." The STATES
+// were already a switch. The DISCLOSURES were not: nine push helpers composed
+// independently of the state machine, and every branch was trusted to remember
+// each rule that applied to it.
+//
+// Nine adversarial rounds produced the same defect shape every time — "the
+// branch I didn't visit inherited the opposite rule." Round 9's is the sharpest:
+// `rangeRefusal` reached three of eleven active states, because `pushRecordFacts`
+// was its only consumer while `day_one`, `below_floor`, `free_fed` and
+// `milestone` carry bodies of their own. That is a REGISTER-PLACEMENT failure,
+// not a disclosure one — so this layer answers both halves before a single
+// string is chosen:
+//
+//   (a) WHICH REGISTER owns the record region    → `registerFor`
+//   (b) WHICH DISCLOSURES it may make            → `TRIAL_CARD_DISCLOSURES`
+//
+// and then composes. No branch pushes a disclosure of its own; the table is the
+// whole answer. A new state cannot inherit a rule by accident — it has to name
+// its register, the register has to have a row, and `everyState` has to walk it.
+//
+// `pushExposureFloor` plus its cross-state property test (#498) was the first
+// half of this — one rule, one place, asserted over every state. This is the
+// other half, the withhold-the-reading side, plus the placement question the
+// floor rule never had to ask.
+
+/**
+ * THE SIX WITHHOLDING REASONS — the inputs that argue against reading this
+ * record plainly, enumerated in ONE list.
+ *
+ * Both surfaces in this file consume the same set, and every round-8/9 defect
+ * was one surface gaining a reason the other had not: the strip kept stating a
+ * ratio the card had learned to qualify, then dropped one the card still states.
+ *
+ * The CARD routes four of them into `registerFor` (they change who speaks) and
+ * treats the other two as disclosures (they qualify what is said). The STRIP has
+ * one line and nowhere to put a qualifier, so it states its ratio only when this
+ * list is EMPTY — which is the whole of its "deliberately stricter than the
+ * card" rule, and is now that sentence rather than a hand-maintained conjunction.
+ *
+ * WHAT THAT DOES AND DOES NOT BUY, stated precisely, because the first draft of
+ * this comment claimed the second half and `adversarial-reviewer` disproved it:
+ *
+ *   IT BUYS one list with two consumers. A reason cannot mean one thing to the
+ *   card and another to the strip, which is real and is what rounds 8/9 kept
+ *   getting wrong.
+ *
+ *   IT DOES NOT BUY protection against the list being WRONG. Deleting a push
+ *   from this function silently widens what Home will state, and no property
+ *   test written against `withholdingReasons` can notice — an oracle sharing an
+ *   implementation with its subject is a change-detector. What actually defends
+ *   the list is `names every withholding reason the record carries`, plus #498's
+ *   hand-written per-reason strip tests. Keep both.
+ */
+export type TrialCardWithholding =
+  | 'intake_decline'
+  | 'trial_diet_refusal'
+  | 'range_refusal'
+  | 'free_fed'
+  | 'allowed_set_unavailable'
+  | 'untracked_head'
+  | 'below_floor';
+
+export function withholdingReasons(input: TrialCardInput): TrialCardWithholding[] {
+  const reasons: TrialCardWithholding[] = [];
+  if (input.intakeDeclineHeadline) reasons.push('intake_decline');
+  // R1's now-fact. Listed SEPARATELY from `range_refusal` and keyed on the raw
+  // input rather than on `liveRefusal`, deliberately: keying it on the composed
+  // predicate would let the stand-down conditions — whose semantics are the open
+  // Dr. Chen question — widen what Home states. A reason may be added to this
+  // list, never subtracted by a downstream guard.
+  if (input.trialDietRefusal) reasons.push('trial_diet_refusal');
+  if (input.rangeRefusal) reasons.push('range_refusal');
+  if (input.freeFed) reasons.push('free_fed');
+  if (input.allowedSetUnavailable) reasons.push('allowed_set_unavailable');
+  // `!== 0`, NOT `> 0`. The strip's predicate has always been "the head is
+  // exactly zero" and its complement is not `> 0` — a negative or `NaN` head is
+  // NOT a plain record, and rewriting the comparison the obvious way narrowed
+  // the withholding in the REASSURING direction: Home stated a coverage ratio
+  // the pre-refactor strip suppressed. Unreachable through the shipped loader
+  // (`lib/dietTrial.ts` derives the head from a first-log day filtered
+  // `>= scopedStart`, and `lib/dietTrialFacts.ts` defaults it to 0), which is
+  // exactly why no test defended it and why a contract-respecting fixture
+  // generator could not see it. Found by `adversarial-reviewer` feeding
+  // out-of-contract values to a field only ever generated in contract.
+  if ((input.untrackedDaysBeforeFirstLog ?? 0) !== 0) reasons.push('untracked_head');
+  if (input.belowCoverageFloor) reasons.push('below_floor');
+  return reasons;
+}
+
+/**
+ * R1 — MAY THE LIVE REFUSAL REGISTER SPEAK, AND FROM WHICH FACT?
+ *
+ * The now-fact speaks for itself. `trialDietRefusal` is recency-bounded and
+ * carries `REFUSAL_MIN_SPAN_MS`, so it is already both current and multi-episode.
+ *
+ * The range fact is the fallback, and it exists because SILENCE MUST NOT CANCEL AN
+ * ALARM. An owner who documents 42 refusals and then stops tapping intake empties
+ * the recency window, and the live register would vanish over a cat that is still
+ * refusing — the "chronic case decays into the clean case" defect reached through
+ * the rating door. R1a says absence of ratings must never ALARM; it does not
+ * license absence of ratings CANCELLING an alarm that already fired on logged
+ * evidence.
+ *
+ * ── THE STAND-DOWN IS SYMMETRIC WITH THE FIRE, AND THAT IS THE WHOLE RULE ────
+ *
+ * `adversarial-reviewer` broke the first cut of this function on its SHAPE, not
+ * on its inputs. Firing carries four guards; standing down carried none — a bare
+ * "is there one finished bowl?". On a lane whose stated safe error direction is
+ * toward firing, the OFF predicate was the loosest test in the module, and three
+ * executed findings fell out of that single asymmetry:
+ *
+ *   1. A cat with 60 of 60 bowls refused across 30 days, then ONE `most`-rated
+ *      bowl on day 44, rendered a clean card — "Meals logged on 44 of 44 days…
+ *      2 weeks to go."
+ *   2. Logging a refusal AND a good meal disclosed LESS than logging nothing at
+ *      all (F=0,R=0 fired; F=1,R=1 did not).
+ *   3. The register flickered across a record with NO new data in it — present
+ *      days 30–43, silent 44–48, present again 49–56: absent nearest the last
+ *      refusal and present a week later on strictly older evidence.
+ *
+ * So the stand-down now asks the SAME question the fire asks, in the opposite
+ * direction, against the SAME ratified constants: at least `REFUSAL_MIN_RATED`
+ * recent ratings, and a finished share clearing `1 - REFUSAL_SHARE`. Reusing the
+ * fire’s own floors is deliberate, and is what makes this repair available with
+ * no new clinical ruling — the finding was that the SHAPE was indefensible, and a
+ * mirror of an already-ratified floor invents nothing.
+ *
+ * Read both halves together and the rule is one sentence: **it takes the same
+ * weight of evidence to say this pet is eating as it took to say it was not.**
+ *
+ * ── THE EPISODE GUARD, UNCHANGED ───────────────────────────────────────────
+ * The range fact drops `REFUSAL_MIN_SPAN_MS` (right for a HISTORY, wrong for a
+ * present-tense register), so one midnight-straddling bout would otherwise fire
+ * "needs a call today" for the next 36 days over a cat that ate throughout.
+ *
+ * ⚠️ STILL OPEN, STILL DR. CHEN’S — B-572. That span guard is only a >=12h test,
+ * which any two-calendar-day cluster clears: three refusals in week one followed
+ * by 41 unrated days still speaks in the present tense on 41-day-old evidence.
+ * Making the range fact EXPIRE needs a recency threshold, and a threshold is a
+ * clinical number rather than an engineering one — as is the now-fact’s own floor
+ * firing on a day-2 some/all/some dog. Both are OVER-fire, the survivable
+ * direction, which is why they are filed rather than guessed at here.
+ */
+function liveRefusal(input: TrialCardInput): TrialDietRefusal | null {
+  if (input.trialDietRefusal) return input.trialDietRefusal;
+  if (input.rangeRefusal && input.rangeRefusalSpansEpisodes === true && !isEatingNow(input)) {
+    return input.rangeRefusal;
+  }
+  return null;
+}
+
+/**
+ * Does the RECENT record carry evidence the diet is being eaten, to the same
+ * standard `computeTrialFacts` demands before it will say the opposite?
+ *
+ * `false` ON AN EMPTY WINDOW BY CONSTRUCTION, and that is the load-bearing half:
+ * no recent ratings means no new evidence, never evidence of recovery. A
+ * defaulted-true reading here re-creates the defect this replaced.
+ */
+function isEatingNow(input: TrialCardInput): boolean {
+  const rated = input.recentRatedFeedings ?? 0;
+  const finished = input.recentFinishedFeedings ?? 0;
+  if (rated < REFUSAL_MIN_RATED) return false;
+  return finished / rated >= 1 - REFUSAL_SHARE;
+}
+
+/**
+ * (a) — WHO OWNS THE RECORD REGION.
+ *
+ * A register is a VOICE, not a state: several states share one, and one state
+ * (`completed` / `abandoned`) reaches three depending on what the record holds.
+ * The state decides which strings occupy the fact and note lines; the register
+ * decides what may be said about the record at all.
+ */
+export type TrialCardRegister =
+  /** No record substrate — state 0, the unparseable-start-date card, and any
+   *  card with neither coverage nor exposures to speak about. */
+  | 'none'
+  /** §5.2's safety replacement: the animal outranks the trial. State 8, and both
+   *  terminal cards while the flag is live. */
+  | 'decline'
+  /** TERMINAL ONLY — a diet the record shows went uneaten. The counts stay; the
+   *  READING is deleted. Reached from the stored reason or from `rangeRefusal`. */
+  | 'refusal_withheld'
+  /** LIVE ONLY (R1) — §6.5's second, non-clinical path: the trial diet itself is
+   *  going unfinished RIGHT NOW. `refusal_withheld` is this register's history;
+   *  the two are deliberately different voices over the same shape of fact,
+   *  because a terminal card reports and a live one escalates. */
+  | 'trial_refusal'
+  /** §5.6 — a bowl in force NOW, so the coverage ratio has no denominator. */
+  | 'free_fed'
+  /** State 4's combined "of what's on the record so far" paragraph. */
+  | 'so_far'
+  /** States 1 and 5: no record reading BY DESIGN, and the off-diet floor still
+   *  owed. The two declared deviations, and the only rows where the floor renders
+   *  without its can't-match caveat. */
+  | 'floor_only'
+  /** Before the classifier ran (`exposures` null): coverage, and silence about
+   *  what matched. Silence, never an all-clear — the B-351 D10 asymmetry. */
+  | 'coverage_only'
+  /** The ordinary two-fact statement (§5.1) — states 2 / 3 / 6 and the ordinary
+   *  terminal card. */
+  | 'record';
+
+function registerFor(
+  state: TrialCardState,
+  input: TrialCardInput,
+  trial: TrialCardTrial,
+): TrialCardRegister {
+  switch (state) {
+    case 'no_trial':
+      return 'none';
+    case 'intake_decline':
+      return 'decline';
+    case 'trial_refusal':
+      return 'trial_refusal';
+    case 'free_fed':
+      return 'free_fed';
+    case 'below_floor':
+      return 'so_far';
+    case 'day_one':
+    case 'milestone':
+      return 'floor_only';
+    case 'clean':
+    case 'exposures':
+    case 'overrun':
+      return recordRegisterFor(input);
+    case 'completed':
+    case 'abandoned':
+      // THE LIVE CARD DELIBERATELY DOES NOT READ `rangeRefusal`, AND THAT IS A
+      // RULING RATHER THAN AN OMISSION — round 9 routed the active card through
+      // this register and two independent reviews broke it on the same ground.
+      //
+      //   THE FLOORS WERE DERIVED FOR A CLAIM GATE, NOT FOR A VOICE.
+      //   `rangeRefusal` is 3 rated / 2 not-finished days / 50% share with NO
+      //   span guard, and `some` scores as not-finished — floors whose own
+      //   justification in `lib/dietTrial.ts` reads "what firing does is
+      //   withhold an affirmative claim, and silence is cheap." Verified against
+      //   the real predicate: a dog rated some / all / some fires it on DAY 2 of
+      //   56. Handing that predicate a paragraph gives a wedge owner a clinical
+      //   assertion about a dog that ate, and the likely response is that she
+      //   stops rating intake honestly — the one signal the trial needs from her.
+      //
+      //   AND THE SENTENCE HAS NO ANTECEDENT ON A LIVE CARD. It closes "…is the
+      //   refusal", which lands under the owner's own "wouldn't eat it" here and
+      //   under nothing there, because the register that states the finding is
+      //   #499's.
+      //
+      // A terminal card is a HISTORY, which is why the same fact carries a voice
+      // here and not there, and it mirrors `generate-report/render.ts`'s own
+      // `rangeRefusal ?? trialDietRefusal` precedence. Note that hoisting the
+      // check above the state switch is the fix this layer makes trivial and
+      // must still not take: it would give the day-2 misfire four more states.
+      // The live-card residual is B-566, against #499's register.
+      //
+      // AND IT DOES NOT READ THE NOW-FACT EITHER, which R1 makes worth naming
+      // because R1 is what put `trialDietRefusal` on this input in the first
+      // place. The two facts are not nested: a trial eaten for six weeks and
+      // refused for the last two clears the RANGE share and fires the recency
+      // one, so a terminal card can carry a now-fact with no range fact — and it
+      // routes to `record`. What is guaranteed there is that the AFFIRMATIVE
+      // CLAIM is withheld (`mayClaimAllMatched` reads the now-fact, so the
+      // adapter's `mayStateRecordClean` is already false). What is NOT guaranteed
+      // is that the finding is DISCLOSED, and this file's own `rangeRefusal`
+      // docstring says why that distinction matters. Routing it here would change
+      // what an owner reads on a finished trial, and it is the same "when may a
+      // register speak" question Dr. Chen owes a ruling on — so it is filed as
+      // B-570 rather than taken inside a wiring PR.
+      if (input.intakeDeclineHeadline) return 'decline';
+      if (state === 'abandoned' && wasRefused(trial)) return 'refusal_withheld';
+      if (input.rangeRefusal) return 'refusal_withheld';
+      return recordRegisterFor(input);
+    default:
+      // A NEW STATE MUST NAME ITS REGISTER, AND THE COMPILER IS WHAT ASKS.
+      // Without this the switch falls out, `registerFor` returns `undefined`,
+      // and `TRIAL_CARD_DISCLOSURES[undefined]` takes the card down at
+      // `policy.floor` — a runtime crash where the whole point of this layer is
+      // to make it a build-time question. `noImplicitReturns` is NOT set in
+      // `tsconfig.json` and `strict` does not imply it, so the fallthrough is
+      // silent without the `never` binding below: verified by adding a twelfth
+      // state and watching `tsc --noEmit` stay green until this existed.
+      return assertNever(state);
+  }
+}
+
+/** The compile-time half of the exhaustiveness guarantee. `everyState walks every
+ *  register` is the test-time half — this one asks whether a new state named a
+ *  register, that one asks whether anybody walks it. Neither implies the other. */
+function assertNever(value: never): never {
+  throw new Error(`Unhandled diet-trial card case: ${String(value)}`);
+}
+
+/** The record register degrades with the SUBSTRATE and never with a claim: no
+ *  classifier → coverage alone; nothing on the record → no region at all. */
+function recordRegisterFor(input: TrialCardInput): TrialCardRegister {
+  if (input.exposures) return 'record';
+  return input.coverage ? 'coverage_only' : 'none';
+}
+
+/** (b) — WHAT A REGISTER MAY DISCLOSE. */
+export interface TrialCardDisclosurePolicy {
+  /**
+   * The separate off-diet sentence, and its lead-in.
+   *
+   * `null` where the register states the count INLINE (the two-fact form and the
+   * so-far paragraph) or has no record substrate. §5.2 rules the count a FLOOR
+   * and a floor only moves in the disclose-more direction, so every register
+   * that WITHHOLDS a reading carries one: rounds 1–4 found the same defect in
+   * four branches, each of which had withheld the count along with the reading.
+   */
+  floor: 'separately' | 'plain' | null;
+  /** The can't-match caveat — and, by the same predicate, whether the floor
+   *  suffix ("not a total") is suppressed. `false` only on `floor_only`, whose
+   *  two states took the count as a declared deviation and must not inherit a
+   *  directive with it. */
+  unmatched: boolean;
+  /** §5.6's past-bowl qualifier. `false` on `refusal_withheld` even though its
+   *  sentence states coverage — a shipped hole, filed as B-560 and left visible
+   *  in this cell rather than fixed under a refactor. */
+  pastBowl: boolean;
+  /** §10 S3's untracked head. */
+  untrackedHead: boolean;
+  /** §5.6's multi-pet scope gate. `active_only` preserves a shipped asymmetry
+   *  rather than hiding it: the live decline card gates its floor line with the
+   *  household caveat and the two TERMINAL decline branches never have. Written
+   *  as a value in the table so it reads as a decision someone can overturn,
+   *  which is the only thing that was wrong with it. */
+  scope: 'always' | 'active_only' | 'never';
+}
+
+/**
+ * THE TABLE. One row per register, and the row is the whole answer — this is the
+ * artefact B-559 exists to produce. Reading a column top to bottom is the review
+ * that nine rounds had to do by walking branches.
+ *
+ * ── HOW TO READ A CELL ──────────────────────────────────────────────────────
+ * Every value here reproduces what the pre-refactor branches did, verified cell
+ * by cell against `7a9108d` by a 307,200-case exhaustive differential. But a
+ * value that was DECIDED and a value that fell out of where a helper call
+ * happened to sit are not the same thing, and a table where they look alike does
+ * not deliver "reading a column IS the review" (`adversarial-reviewer`'s
+ * strongest objection to the first cut). So each non-obvious cell is marked:
+ *
+ *   RULED      — a decision someone made, with the reasoning at the cell.
+ *   FILED      — a known hole with a backlog row; preserved because a refactor
+ *                may not change behaviour, not because it is right.
+ *   INHERITED  — fell out of control flow in `7a9108d` and has never been
+ *                reviewed on its merits. Preserved for purity. Fair game.
+ *
+ * `true` also means ELIGIBLE, never GUARANTEED: each disclosure still gates on
+ * its own predicate (`pushPastBowlCaveat` additionally needs `freeFedOverlap &&
+ * !freeFed`, and so on). The table says who MAY speak, not who does.
+ */
+export const TRIAL_CARD_DISCLOSURES: Record<TrialCardRegister, TrialCardDisclosurePolicy> = {
+  // Nothing to disclose about: no trial, or no coverage AND no exposures. Every
+  // cell here is unfalsifiable rather than decided — each disclosure's predicate
+  // needs a record this register is defined by not having.
+  none: {
+    floor: null, unmatched: false, pastBowl: false, untrackedHead: false, scope: 'never',
+  },
+  decline: {
+    // scope — INHERITED. The live decline card gates its floor line with the
+    // household caveat and the two TERMINAL decline branches never have, because
+    // `pushScopeCaveat` sat in `activeCard`'s branch and not in the other two.
+    // Never argued either way; preserved so this stays a refactor.
+    floor: 'separately', unmatched: true, pastBowl: false, untrackedHead: false,
+    scope: 'active_only',
+  },
+  trial_refusal: {
+    // floor — RULED. `separately`, exactly as `decline`: a flag block precedes
+    // it, so the count needs its own lead-in or it reads as part of the safety
+    // sentence. And it renders AT ALL because §5.2's floor only moves in the
+    // disclose-more direction — the first cut of this register emitted the two
+    // flag lines and nothing else, which silently deleted twelve real off-diet
+    // exposures from an owner who had entered the refusal state.
+    //
+    // unmatched — RULED. The can't-match caveat is about the COMPARATOR, not
+    // about the register: an unusable food list is equally unusable on a card
+    // about a cat that isn't eating. Withholding it here would put the floor's
+    // "not a total" suffix on a wholly-unmatched count with nothing saying the
+    // comparator may be missing — at-least-N and maybe-fewer, the adjacent
+    // contradiction rounds 4 and 9 both found.
+    //
+    // pastBowl, untrackedHead — RULED, and for the same reason `free_fed` has
+    // them false: both qualify a COVERAGE RATIO, and this register renders none.
+    // §10 S3's rule is "wherever coverage renders", and the head has no ratio to
+    // be excluded from here. (Note this is where `refusal_withheld` differs and
+    // is FILED as a hole rather than ruled: that register DOES state coverage, in
+    // prose — B-560.)
+    //
+    // scope — RULED `always`, not `active_only`. The two are behaviourally
+    // identical for this register, which is reachable only from a live card; the
+    // distinction `active_only` draws would imply a terminal branch exists.
+    // `always` says what is true: wherever this register speaks, an off-diet
+    // count in a multi-pet household is a claim, and §5.6 gates it.
+    floor: 'separately', unmatched: true, pastBowl: false, untrackedHead: false,
+    scope: 'always',
+  },
+  refusal_withheld: {
+    // pastBowl — FILED (B-560). untrackedHead, scope — INHERITED, and they are
+    // B-560 one and two columns over: this register's body states coverage in
+    // prose ("the record is meals offered on 18 of 19 days"), and §10 S3's rule
+    // is "wherever coverage renders". `so_far` states coverage in prose too and
+    // gets `untrackedHead: true`. Three cells, one hole; B-560's row names only
+    // the first. Fixing any of them changes what an owner reads, so none belongs
+    // in a refactor.
+    floor: 'plain', unmatched: true, pastBowl: false, untrackedHead: false, scope: 'never',
+  },
+  free_fed: {
+    // pastBowl, untrackedHead — RULED. A bowl in force NOW is this card's lead,
+    // so the past-bowl qualifier has nothing to add (its own predicate excludes
+    // it for the same reason); and the untracked head qualifies a coverage ratio
+    // this register replaces outright.
+    floor: null, unmatched: true, pastBowl: false, untrackedHead: false, scope: 'always',
+  },
+  so_far: {
+    floor: null, unmatched: true, pastBowl: true, untrackedHead: true, scope: 'always',
+  },
+  floor_only: {
+    // unmatched — RULED. Day 1 and the milestone take the count as a declared
+    // deviation and must not inherit the can't-match caveat with it: it is a
+    // directive, not a floor, and it lands before an owner has finished
+    // populating the permitted list.
+    floor: 'plain', unmatched: false, pastBowl: false, untrackedHead: false, scope: 'never',
+  },
+  coverage_only: {
+    // scope — INHERITED, and this is the cell that most needed the marker: in
+    // `7a9108d` it was not a decision at all, it fell out of `pushScopeCaveat`
+    // sitting inside `pushRecordFacts`'s `if (ex)` block. `record` gates the
+    // identical coverage claim. untrackedHead — inherited too, but the other
+    // way: the old code DID render it here, from the second `if (coverage)`.
+    //
+    // NOTE this register is currently unreachable from the shipped loader —
+    // `lib/dietTrialFacts.ts` nulls `coverage` and `exposures` together, so
+    // `exposures === null` implies `coverage === null` implies `none`. It is the
+    // pre-classifier contract, kept because the resolver is a pure function with
+    // its own contract and `exposures` is optional on the input type. Read
+    // "everyState walks every register" with that in mind: this row is walked by
+    // fixture, not by the app.
+    floor: null, unmatched: false, pastBowl: false, untrackedHead: true, scope: 'never',
+  },
+  record: {
+    floor: null, unmatched: true, pastBowl: true, untrackedHead: true, scope: 'always',
+  },
+};
+
+export interface TrialCardPlan {
+  state: TrialCardState;
+  register: TrialCardRegister;
+  disclosures: TrialCardDisclosurePolicy;
+  withheld: TrialCardWithholding[];
+}
+
+/** The composition layer's answer without rendering a string — so a test can
+ *  assert the two halves directly, and so `everyState` can be CHECKED for
+ *  register coverage rather than trusted to be exhaustive. */
+export function planTrialCard(input: TrialCardInput): TrialCardPlan {
+  const ctx = trialContext(input);
+  const state = ctx ? stateFor(input, ctx) : degenerateStateFor(input.trial);
+  const register = ctx ? registerFor(state, input, ctx.trial) : 'none';
+  return {
+    state,
+    register,
+    disclosures: TRIAL_CARD_DISCLOSURES[register],
+    withheld: withholdingReasons(input),
+  };
+}
+
 // ── The resolver ─────────────────────────────────────────────────────────────
+
+interface TrialContext {
+  trial: TrialCardTrial;
+  startIndex: number;
+  progress: NonNullable<ReturnType<typeof getDietTrialProgress>>;
+  overrunDays: number;
+}
+
+function trialContext(input: TrialCardInput): TrialContext | null {
+  const { trial } = input;
+  if (!trial) return null;
+  const startIndex = localDayIndexOf(trial.startedAt);
+  const progress = getDietTrialProgress(
+    { startedAt: trial.startedAt, targetDurationDays: trial.targetDurationDays },
+    input.nowMs,
+  );
+  if (!progress || startIndex === null) return null;
+  return {
+    trial,
+    startIndex,
+    progress,
+    overrunDays: progress.dayCounter - progress.targetDays,
+  };
+}
+
+/** The §4.2 switch, extracted so the plan and the rendered card cannot drift.
+ *  ORDER IS LOAD-BEARING: the decline replacement outranks everything (the
+ *  animal outranks the trial), and the milestone outranks the record states so
+ *  day == target is never `clean`. */
+function stateFor(input: TrialCardInput, ctx: TrialContext): TrialCardState {
+  const { trial, progress, overrunDays } = ctx;
+  if (trial.status === 'completed') return 'completed';
+  if (trial.status === 'abandoned') return 'abandoned';
+  if (input.intakeDeclineHeadline) return 'intake_decline';
+  // Immediately after the clinical lane it defers to, and ABOVE the milestone —
+  // for the same structural reason the decline sits where it does: while this is
+  // live the resolver must be INCAPABLE of returning an adherence line, and a
+  // trial that has reached day 56 while the diet goes uneaten is not a
+  // celebration. The milestone's decision stays reachable as an action below.
+  if (liveRefusal(input)) return 'trial_refusal';
+  if (progress.targetDays > 0 && overrunDays === 0) return 'milestone';
+  if (overrunDays > 0) return 'overrun';
+  if (input.freeFed) return 'free_fed';
+  if (input.belowCoverageFloor) return 'below_floor';
+  if (progress.dayCounter === 1) return 'day_one';
+  if ((input.exposures?.offDiet ?? 0) > 0) return 'exposures';
+  return 'clean';
+}
+
+/** An unparseable start date has no honest day line, so the card renders its
+ *  identity and nothing that would be a guess — the state still says which card
+ *  it is. */
+function degenerateStateFor(trial: TrialCardTrial | null): TrialCardState {
+  if (!trial) return 'no_trial';
+  return trial.status === 'abandoned' ? 'abandoned'
+    : trial.status === 'completed' ? 'completed'
+      : 'day_one';
+}
 
 export function resolveTrialCard(input: TrialCardInput): TrialCardModel {
   const { trial, petName } = input;
 
   if (!trial) return noTrialCard(petName, input.petObjectPronoun ?? 'them');
 
-  const startIndex = localDayIndexOf(trial.startedAt);
-  const progress = getDietTrialProgress(
-    { startedAt: trial.startedAt, targetDurationDays: trial.targetDurationDays },
-    input.nowMs,
-  );
+  const ctx = trialContext(input);
 
-  // An unparseable start date is the one case with no honest day line. Render the
-  // card's identity and nothing that would be a guess — in particular no fact
-  // lines, because every one of them is denominated in days elapsed.
-  if (!progress || startIndex === null) {
+  // No fact lines here, because every one of them is denominated in days
+  // elapsed — the register is `none` and the region is empty by construction.
+  if (!ctx) {
     return {
-      state: trial.status === 'abandoned' ? 'abandoned'
-        : trial.status === 'completed' ? 'completed'
-          : 'day_one',
+      state: degenerateStateFor(trial),
       kicker: trial.status === 'abandoned' ? 'Diet trial · stopped early'
         : trial.status === 'completed' ? 'Diet trial · finished'
           : 'Diet trial',
@@ -364,10 +1106,194 @@ export function resolveTrialCard(input: TrialCardInput): TrialCardModel {
     };
   }
 
-  if (trial.status === 'completed') return completedCard(input, trial, startIndex);
-  if (trial.status === 'abandoned') return abandonedCard(input, trial, startIndex);
+  const state = stateFor(input, ctx);
+  const register = registerFor(state, input, ctx.trial);
 
-  return activeCard(input, trial, startIndex, progress);
+  if (state === 'completed') return completedCard(input, ctx, register);
+  if (state === 'abandoned') return abandonedCard(input, ctx, register);
+
+  return activeCard(input, ctx, state, register);
+}
+
+// ── Compose: the register's body, then the disclosures the table allows ──────
+
+interface RegionContext {
+  /** A terminal card is a HISTORY; the live card is a now-fact. Read by the
+   *  `active_only` scope rule and by the refusal register's day phrase. */
+  terminal: boolean;
+  /** "19 days" — what the withheld sentence reads with. */
+  dayCount: string;
+  /** 7b's "usually means a different diet" note answers a reason the OWNER gave,
+   *  so it renders only where they NAMED the refusal — never on the route that
+   *  reaches this register from the record. */
+  namedRefusal: boolean;
+  daysRemaining: number;
+}
+
+function recordRegion(
+  register: TrialCardRegister,
+  input: TrialCardInput,
+  rc: RegionContext,
+): TrialCardLine[] {
+  const policy = TRIAL_CARD_DISCLOSURES[register];
+  // ONE PREDICATE, EVERY CONSUMER. This one answer decides three things: whether
+  // the can't-match caveat renders, whether the floor SENTENCE carries its "not
+  // a total" suffix, and whether the record QUALIFIER does. Keying any of them
+  // on a proxy for the others is what put two opposite arrows on one card,
+  // twice — "at least 5" welded to "maybe fewer" (rounds 4 and 9).
+  const caveat = policy.unmatched && unmatchedCaveatApplies(input);
+
+  const lines: TrialCardLine[] = [];
+  pushRegisterBody(lines, register, input, rc, caveat);
+  if (policy.floor) pushFloorSentence(lines, input, policy.floor, caveat);
+  if (caveat) pushUnmatchedCaveat(lines, input);
+  if (policy.pastBowl) pushPastBowlCaveat(lines, input);
+  if (policy.untrackedHead) pushUntrackedHead(lines, input);
+  if (policy.scope === 'always' || (policy.scope === 'active_only' && !rc.terminal)) {
+    pushScopeCaveat(lines, input);
+  }
+  return lines;
+}
+
+function pushRegisterBody(
+  lines: TrialCardLine[],
+  register: TrialCardRegister,
+  input: TrialCardInput,
+  rc: RegionContext,
+  caveat: boolean,
+): void {
+  switch (register) {
+    case 'none':
+    // `floor_only` declares no record READING by design: its region is the floor
+    // and nothing else, which is why it shares this case rather than a body.
+    case 'floor_only':
+      return;
+
+    case 'decline':
+      pushDeclineLines(lines, input);
+      return;
+
+    // R1 — the live half of the same fact `refusal_withheld` reports terminally.
+    // Two `flag` lines and nothing else: the register's whole body is the safety
+    // statement, and every count on this card arrives from the table's row below
+    // it (the floor sentence) rather than from here. That split is the point —
+    // the first cut of this register wrote its own count handling and promptly
+    // withheld it.
+    //
+    // ORDERED BELOW `pushDeclineLines` EVERYWHERE BOTH CAN FIRE, and that is a
+    // rule rather than a preference: `detectIntakeDecline` owns the clinical lane
+    // and this one is explicitly non-clinical (§6.5 — "without softening the
+    // first"). `stateFor` enforces it; two stacked safety headlines would also
+    // make neither the headline.
+    case 'trial_refusal': {
+      const refusal = liveRefusal(input);
+      if (!refusal) return;
+      lines.push({ role: 'flag', text: trialViabilityHeadline(refusal) });
+      lines.push({
+        role: 'flag',
+        text: trialViabilityNote(input.petName, input.species ?? 'other'),
+      });
+      return;
+    }
+
+    case 'refusal_withheld':
+      if (rc.namedRefusal) {
+        lines.push({
+          role: 'note',
+          text:
+            'That’s a useful thing for your vet to know — it usually means a different ' +
+            'diet, not a different plan.',
+        });
+      }
+      lines.push({ role: 'fact', text: refusalWithheldLine(input, rc.dayCount) });
+      return;
+
+    case 'free_fed': {
+      const freeFed = input.freeFed;
+      if (!freeFed) return;
+      lines.push({
+        role: 'lead',
+        text:
+          `${input.petName} grazes from a bowl that’s topped up, so there’s no day-by-day ` +
+          'count of what was eaten.',
+      });
+      // THE COUNT STAYS, THE CLAIM GOES (round 5 ①). "all N were the trial diet"
+      // is the exact sentence `mayStateRecordClean` refuses under
+      // `intakeNotDirectlyObserved`, and this branch asserted it anyway — over
+      // the one state where BOTH intake lanes are structurally blind (a topped-up
+      // bowl produces no rated feedings, and `detectIntakeDecline` excludes
+      // free-fed foods by invariant #6). Unobservable is not clean. The OFF-DIET
+      // half is kept and always renderable: it is a floor in the disclosing
+      // direction, and §5.2's floor rule only ever moves that way.
+      const n = freeFed.loggedFeedings;
+      const ex = input.exposures;
+      const noun = n === 1 ? 'bowl top-up or wet meal' : 'bowl top-ups and wet meals';
+      lines.push({
+        role: 'fact',
+        text:
+          ex && ex.offDiet > 0
+            ? `${n} ${noun} logged so far; ${ex.offDiet} were not the trial diet.`
+            : `${n} ${noun} logged so far.`,
+      });
+      lines.push({ role: 'qualifier', text: BLIND_SPOT_QUALIFIER });
+      return;
+    }
+
+    case 'so_far': {
+      // Jordan's binding constraint: the owner below the floor is BY DEFINITION
+      // the one logging least, which is the one closest to quitting, so handing
+      // them the emptiest, most disapproving card in the app is exactly
+      // backwards. The card gets MORE here, not less — and every sentence is
+      // about the RECORD, never the person (§6.9).
+      lines.push({
+        role: 'lead',
+        text: 'There isn’t enough logged yet for your vet to read much into this.',
+      });
+      const remaining = remainingPhrase(rc.daysRemaining);
+      lines.push({
+        role: 'forward',
+        text: remaining
+          ? `Every meal from here counts, and there are ${remaining} left to build it.`
+          : 'Every meal from here counts.',
+      });
+      lines.push({ role: 'fact', text: soFarLine(input) });
+      lines.push({ role: 'qualifier', text: BLIND_SPOT_QUALIFIER });
+      return;
+    }
+
+    case 'coverage_only':
+      // No classifier yet (PR 5). The coverage fact still carries its blind-spot
+      // qualifier — it is a claim about the record and §5.2 makes the qualifier
+      // permanent ON the claim — but NOTHING is said about what was or was not
+      // matched. Silence, not an all-clear.
+      if (input.coverage) {
+        lines.push({ role: 'fact', text: coverageLine(input.coverage) });
+        lines.push({ role: 'qualifier', text: BLIND_SPOT_QUALIFIER });
+      }
+      return;
+
+    case 'record': {
+      // The two record facts in §5.1 order — coverage first (days), exposures
+      // second (feedings), never welded.
+      const ex = input.exposures;
+      if (!ex) return;
+      if (input.coverage) lines.push({ role: 'fact', text: coverageLine(input.coverage) });
+      lines.push({ role: 'fact', text: exposureLine(ex) });
+      lines.push({
+        role: 'qualifier',
+        text: BLIND_SPOT_QUALIFIER + (ex.offDiet > 0 && !caveat ? floorSuffix(ex.offDiet) : ''),
+      });
+      return;
+    }
+
+    default:
+      // Same guarantee as `registerFor`'s. A silent fallthrough here renders an
+      // EMPTY record region — the card keeps its header and loses every fact —
+      // which is the quietest possible failure on the surface that must never be
+      // quiet. (The `Record<TrialCardRegister, …>` table type catches an unwired
+      // register first; this catches one that has a row and no body.)
+      assertNever(register);
+  }
 }
 
 // ── State 0 ──────────────────────────────────────────────────────────────────
@@ -404,13 +1330,12 @@ function noTrialCard(petName: string, objectPronoun: string): TrialCardModel {
 
 function activeCard(
   input: TrialCardInput,
-  trial: TrialCardTrial,
-  startIndex: number,
-  progress: NonNullable<ReturnType<typeof getDietTrialProgress>>,
+  ctx: TrialContext,
+  state: TrialCardState,
+  register: TrialCardRegister,
 ): TrialCardModel {
-  const { petName } = input;
+  const { trial, startIndex, progress, overrunDays } = ctx;
   const endIndex = trialEndDayIndex(startIndex, trial.targetDurationDays);
-  const overrunDays = progress.dayCounter - progress.targetDays;
 
   const base = {
     kicker: 'Diet trial',
@@ -421,20 +1346,29 @@ function activeCard(
     standingMeta: input.standingMeta ?? null,
   };
 
-  // ── Replacement (8) — intake decline. Checked FIRST, and it is structural:
-  // while the flag is live this function is INCAPABLE of returning an adherence
-  // line, because it returns here. §5.2 proof #1 is a cat that refuses the
-  // hydrolyzed diet every day whose owner dutifully logs the offered bowl —
-  // 100% coverage, 0 exposures, a maximally clean trial rendered over a starving
-  // animal seven times past the feline 48h hepatic-lipidosis window.
-  if (input.intakeDeclineHeadline) {
-    // The 48h hepatic-lipidosis window is FELINE, so the cat line names
-    // "today". The dog line is firm without borrowing a feline urgency.
-    const lines: TrialCardLine[] = [];
-    pushDeclineLines(lines, input);
+  const rc: RegionContext = {
+    terminal: false,
+    dayCount: 'these days',
+    namedRefusal: false,
+    daysRemaining: progress.daysRemaining,
+  };
+
+  // ── Replacement (8) — intake decline. Resolved FIRST in `stateFor`, and it is
+  // structural: the `decline` register renders no adherence line, on any state
+  // that reaches it. §5.2 proof #1 is a cat that refuses the hydrolyzed diet
+  // every day whose owner dutifully logs the offered bowl — 100% coverage, 0
+  // exposures, a maximally clean trial rendered over a starving animal seven
+  // times past the feline 48h hepatic-lipidosis window.
+  //
+  // THE FLOOR SURVIVES THE SICKEST CARD TOO — the table says so, in the one row
+  // that governs this state and both terminal decline branches at once. It used
+  // to withhold the reading AND the count on the one patient a vet is most
+  // likely to be reading about, because the rule lived at three call sites.
+  if (state === 'intake_decline') {
+    const lines = recordRegion(register, input, rc);
     return {
       ...base,
-      state: 'intake_decline',
+      state,
       dayLine: dayLineFor(progress, overrunDays),
       dayLineRole: 'meta',
       windowLine: windowLineFor(endIndex, overrunDays),
@@ -468,6 +1402,50 @@ function activeCard(
     };
   }
 
+  // ── Replacement (10) — the trial diet itself is going unfinished (R1, mock
+  // round 5). Resolved immediately after the clinical decline it defers to, and
+  // for the same structural reason: while it is live this function is INCAPABLE
+  // of returning an adherence line, because the register renders none.
+  //
+  // FIRES ON LOGGED EVIDENCE ONLY (R1a) — the floors live in `lib/dietTrial.ts`
+  // (>=3 rated feedings, >=2 refused days, >=50% share) and mean an owner who is
+  // not rating intake can never be told her cat isn't eating. Absence never
+  // alarms; that is G2's two-sidedness, and it is why `pushTeachLine` exists.
+  if (state === 'trial_refusal') {
+    return {
+      ...base,
+      state,
+      dayLine: dayLineFor(progress, overrunDays),
+      dayLineRole: 'meta',
+      windowLine: windowLineFor(endIndex, overrunDays),
+      lines: recordRegion(register, input, rc),
+      // Same argument as the decline branch above: at or past the window a bar
+      // pinned at 100% is completion vocabulary drawn in pixels, and drawing it
+      // over a diet that isn't being eaten is the worst place in the app for it.
+      // Mid-trial it still carries real day progress, so it stays.
+      progressFraction: overrunDays >= 0 ? null : progress.fraction,
+      // THE WAY OUT IS THE AFFORDANCE. Unlike the decline state — where the
+      // answer is a phone call and the trial is beside the point — the action
+      // this state implies is changing or ending the trial, which is a decision
+      // the owner takes with their vet and then records here.
+      actions: [
+        { id: 'trial_manage', label: 'Change or end the trial', emphasis: 'secondary' },
+        // The drill-in survives alongside the count, for the same reason the
+        // count does — a flag the owner cannot interrogate is an unfalsifiable
+        // accusation (§6.3).
+        ...((input.exposures?.offDiet ?? 0) > 0
+          ? ([{ id: 'view_exposures', label: 'Outside the trial diet', emphasis: 'link' }] as const)
+          : []),
+        // The milestone stays reachable at the window for the same reason it does
+        // on the decline card: a trial with no ending reads to the vet as one
+        // still going.
+        ...(overrunDays >= 0
+          ? ([{ id: 'milestone', label: 'Tell Culprit what’s next', emphasis: 'link' }] as const)
+          : []),
+      ],
+    };
+  }
+
   // ── State 5 — the milestone (PR 6, §4.3). Day counter has REACHED the target
   // exactly. Persistent STATE, not a push, so Principle 4 is untouched — and it
   // never expires: the owner who ignores it lands in state 6, which carries the
@@ -489,11 +1467,17 @@ function activeCard(
   //
   // Deliberately NO fact lines. The record statement is not what this moment is
   // for, and putting coverage next to a stop button invites reading the coverage
-  // as the trial's result.
-  if (progress.targetDays > 0 && overrunDays === 0) {
+  // as the trial's result. §4.3's "deliberately NO fact lines" is an argument
+  // about COVERAGE; the off-diet floor is a different rule and points the other
+  // way — this is the moment the owner decides whether the trial is done, and
+  // withholding twelve logged exposures here is the worst place in the flow to
+  // withhold them. That is the `floor_only` row: no reading, the floor still
+  // owed, and no can't-match directive riding along with it. DEVIATION FROM THE
+  // ROUND-4 DESIGN LOCK, flagged for the Designer rather than taken silently.
+  if (state === 'milestone') {
     return {
       ...base,
-      state: 'milestone',
+      state,
       dayLine: `Day ${progress.dayCounter} of ${progress.targetDays} — the window you set is done.`,
       dayLineRole: 'headline',
       windowLine: null,
@@ -505,7 +1489,10 @@ function activeCard(
       // completion vocabulary drawn in pixels, which is the one thing §4.3 forbids
       // this state from saying. The design lock draws the milestone with no bar.
       progressFraction: null,
-      lines: [{ role: 'note', text: milestoneNote(trial.indication) }],
+      lines: [
+        { role: 'note', text: milestoneNote(trial.indication) },
+        ...recordRegion(register, input, rc),
+      ],
       actions: trialDecisionChoices(trial.indication).map((c) => ({
         id: DECISION_ACTION_ID[c.id],
         label: c.label,
@@ -515,25 +1502,27 @@ function activeCard(
   }
 
   const lines: TrialCardLine[] = [];
-  const state: TrialCardState =
-    overrunDays > 0 ? 'overrun'
-      : input.freeFed ? 'free_fed'
-        : input.belowCoverageFloor ? 'below_floor'
-          : progress.dayCounter === 1 ? 'day_one'
-            : (input.exposures?.offDiet ?? 0) > 0 ? 'exposures'
-              : 'clean';
 
   // ── State 1 — day 1. No claim in EITHER direction, because there is nothing
   // yet to describe. Note what is absent: no "0 off-diet foods", which R1
-  // forbids and which day 1 would otherwise render most confidently.
+  // forbids and which day 1 would otherwise render most confidently. A logged
+  // off-diet feeding is not a claim, it is the record, and §5.2 owes it
+  // everywhere — hence `floor_only` rather than a silent register.
   if (state === 'day_one') {
-    if ((input.coverage?.daysLogged ?? 0) === 0) {
+    // KEYED ON THE SAME POPULATION AS THE COUNT BELOW IT. Coverage excludes
+    // treats and the exposure count includes them, so an owner who logged two
+    // treats and no meal on day 1 got "Nothing logged yet today." rendered
+    // directly above "2 logged feedings were outside the trial diet" — a flat
+    // self-contradiction on the card whose whole job is being true about the
+    // record. Something WAS logged; only a meal wasn't.
+    if ((input.coverage?.daysLogged ?? 0) === 0 && (input.exposures?.totalFeedings ?? 0) === 0) {
       lines.push({ role: 'fact', text: 'Nothing logged yet today.' });
     }
     lines.push({
       role: 'forward',
       text: 'From here, every meal and treat you log builds the record your vet reads.',
     });
+    lines.push(...recordRegion(register, input, rc));
     return {
       ...base,
       state,
@@ -551,26 +1540,15 @@ function activeCard(
   // Without this the most tightly controlled feline trial in the app scores
   // near-zero coverage and Culprit spends eight weeks telling a compliant owner
   // she is failing.
-  if (state === 'free_fed' && input.freeFed) {
-    lines.push({
-      role: 'lead',
-      text:
-        `${petName} grazes from a bowl that’s topped up, so there’s no day-by-day ` +
-        'count of what was eaten.',
-    });
-    const n = input.freeFed.loggedFeedings;
-    const ex = input.exposures;
-    lines.push({
-      role: 'fact',
-      text:
-        ex && ex.offDiet <= 0
-          ? `${n} bowl top-ups and wet meals logged; all ${n} were the trial diet.`
-          : ex
-            ? `${n} bowl top-ups and wet meals logged; ${n - ex.offDiet} were the trial diet, ${ex.offDiet} were not.`
-            : `${n} bowl top-ups and wet meals logged.`,
-    });
-    lines.push({ role: 'qualifier', text: BLIND_SPOT_QUALIFIER });
-    pushScopeCaveat(lines, input);
+  if (state === 'free_fed') {
+    lines.push(...recordRegion(register, input, rc));
+    // Round 5: the forward line is restored, so Sam's card is not a count and a
+    // caveat for six weeks. The card's job is keeping her IN the trial (§4.2),
+    // and the free-fed state was the one active state with nothing forward on it.
+    const freeFedRemaining = remainingPhrase(progress.daysRemaining);
+    if (freeFedRemaining) {
+      lines.push({ role: 'forward', text: `${freeFedRemaining} to go.` });
+    }
     return {
       ...base,
       state,
@@ -582,40 +1560,36 @@ function activeCard(
     };
   }
 
-  // ── State 4 — below the coverage floor. Jordan's binding constraint: the owner
-  // below the floor is BY DEFINITION the one logging least, which is the one
-  // closest to quitting, so handing them the emptiest, most disapproving card in
-  // the app is exactly backwards. The card gets MORE here, not less — and every
-  // sentence is about the RECORD, never the person (§6.9).
+  // ── State 4 — below the coverage floor. The `so_far` register owns the whole
+  // body here (lead, forward, the combined paragraph, the qualifier) because the
+  // sub-floor card leads with the record's LIMITS and then discloses what is on
+  // it — the one state whose forward line sits inside the record region rather
+  // than after it. Its disclosures are the record register's, in full: the bowl
+  // and the untracked head are exactly the causes this card's deficiency lead
+  // most needs named beneath it.
   if (state === 'below_floor') {
-    lines.push({
-      role: 'lead',
-      text: 'There isn’t enough logged yet for your vet to read much into this.',
-    });
-    const remaining = remainingPhrase(progress.daysRemaining);
-    lines.push({
-      role: 'forward',
-      text: remaining
-        ? `Every meal from here counts, and there are ${remaining} left to build it.`
-        : 'Every meal from here counts.',
-    });
-    lines.push({ role: 'fact', text: soFarLine(input) });
-    lines.push({ role: 'qualifier', text: BLIND_SPOT_QUALIFIER });
-    pushScopeCaveat(lines, input);
     return {
       ...base,
       state,
       dayLine: dayLineFor(progress, overrunDays),
       dayLineRole: 'meta',
       windowLine: windowLineFor(endIndex, overrunDays),
-      lines,
+      lines: recordRegion(register, input, rc),
       actions: [],
     };
   }
 
   // ── States 2, 3 and 6 share one body: coverage, then exposures, then the
   // inline qualifier. They differ in the day/window header and the note.
-  pushRecordFacts(lines, input);
+  lines.push(...recordRegion(register, input, rc));
+
+  // R1b's teach line, on every state in this body EXCEPT `exposures` — and the
+  // exception is the rule, not an omission. The exposures card already carries a
+  // note the owner is meant to act on (record-and-continue, the sentence that
+  // decides whether they finish six weeks); a teaching aside underneath it
+  // competes for the same slot and dilutes the one message that state exists for.
+  // Every other state in this body has that slot free.
+  if (state !== 'exposures') pushTeachLine(lines, input);
 
   if (state === 'overrun') {
     // §4.2 state 6: "Day 61 — 5 days past", NEVER "Day 61 of 56" (a PR 7
@@ -645,7 +1619,12 @@ function activeCard(
     // finishes six weeks, so it records the exposure, does not scold, and does
     // not tell them the trial is ruined — because it isn't, and a restart is
     // what actually loses the diagnosis.
-    const recent = input.exposures?.mostRecent;
+    // NEVER NAME A "SLIP" THE COMPARATOR CANNOT SUPPORT. With an unusable food
+    // list every feeding falls to rung 3, so `mostRecent` is simply the latest
+    // feeding — which on the ordinary two-device sync case is the PRESCRIBED
+    // DIET. The card named it as the most recent thing outside the trial diet
+    // and then said "Keep going with the trial diet" in the same sentence.
+    const recent = input.allowedSetUnavailable ? null : input.exposures?.mostRecent;
     lines.push({
       role: 'note',
       text: recent
@@ -673,17 +1652,265 @@ function activeCard(
 
 /** The §5.2 replacement, shared by the active and BOTH terminal cards: the
  *  decline fact leads, the note names the priority, and no record line renders
- *  while it is live. */
+ *  while it is live.
+ *
+ *  BOTH LINES CARRY THE `flag` ROLE as of round 5. They were `lead` + `note`,
+ *  which the view drew in ordinary body weight — so the one composition §5.2
+ *  makes structural was the least visible thing on the card, and the new refusal
+ *  register (drawn tinted in the design lock) would have looked more urgent than
+ *  the clinical lane that outranks it. */
 function pushDeclineLines(lines: TrialCardLine[], input: TrialCardInput): void {
   if (!input.intakeDeclineHeadline) return;
-  lines.push({ role: 'lead', text: input.intakeDeclineHeadline });
+  lines.push({ role: 'flag', text: input.intakeDeclineHeadline });
   lines.push({
-    role: 'note',
+    role: 'flag',
     text:
       (input.species === 'cat'
         ? 'A cat that stops eating needs a call today, whatever the trial is doing.'
         : `A pet that goes off their food needs a call, whatever the trial is doing.`) +
-      ' Culprit isn’t showing the trial numbers while this is going on.',
+      // "isn't showing the trial numbers" was true only while this branch
+      // rendered none. Adding the off-diet floor to it — correct, and this PR's
+      // own change — made it a flat false statement rendered directly above a
+      // trial number. `trialViabilityNote` had this exact sentence corrected
+      // twice for the same reason; the sibling never got the edit.
+      ' Culprit isn’t reading these days as a clean run while this is going on.',
+  });
+}
+
+/**
+ * ── THE ONE PLACE THE FLOOR RULE IS ENFORCED ─────────────────────────────────
+ *
+ * Four rounds of adversarial review found the same defect in four different
+ * branches, and round 4 named why: every fix picked ONE of {withhold the
+ * reading, withhold the count, disclose} and applied it to ONE register, so the
+ * branch it did not visit inherited the opposite defect. The two rules are
+ * independent and both hold everywhere:
+ *
+ *   WITHHOLD THE READING — no coverage ratio, no "clean run", no "all N matched"
+ *   when the record cannot support it.
+ *
+ *   NEVER WITHHOLD THE FLOOR — how many logged feedings were off the list is a
+ *   count the owner and the vet are entitled to in every state. §5.2 rules it a
+ *   floor, and a floor only moves in the disclose-more direction.
+ *
+ * WHO CALLS IT is no longer a branch's decision: `TRIAL_CARD_DISCLOSURES` names
+ * the registers that carry a floor sentence, `recordRegion` is the only caller,
+ * and a property test walks every state asserting that `offDiet > 0` implies the
+ * number renders. This function now only writes the sentence.
+ *
+ * `lead` is what it attaches to: the decline card says "Separately" because a
+ * flag block precedes it; a terminal card is already mid-record.
+ *
+ * THE FLOOR SUFFIX IS SUPPRESSED WHEN THE CAN'T-MATCH CAVEAT RENDERS, and the
+ * caller passes that one answer in rather than re-deriving it. "not a total"
+ * asserts the true number is >= N; the caveat says the comparator may be
+ * missing, i.e. it could be lower. Keying the suffix on the FLAG and the caveat
+ * on the COUNT broke the invariant in both directions at once: five
+ * wholly-unmatched feedings (below the 10-feeding reconciliation floor, so the
+ * flag is off) rendered "The 5 are what's been logged, not a total." immediately
+ * above "Culprit can't match these against the food list" — at-least-5 and
+ * maybe-fewer, adjacent.
+ */
+function pushFloorSentence(
+  lines: TrialCardLine[],
+  input: TrialCardInput,
+  lead: 'separately' | 'plain',
+  caveat: boolean,
+): void {
+  const ex = input.exposures;
+  if (!ex || ex.offDiet <= 0) return;
+  const noun = ex.offDiet === 1 ? 'feeding' : 'feedings';
+  const stem =
+    lead === 'separately'
+      ? `Separately, ${ex.offDiet} logged ${noun} were outside the trial diet.`
+      : `${ex.offDiet} logged ${noun} were outside the trial diet.`;
+  lines.push({
+    role: 'fact',
+    text: stem + (caveat ? '' : floorSuffix(ex.offDiet)),
+  });
+}
+
+/** Names what a past bowl accounts for, and claims nothing about the rest — an
+ *  earlier draft closed with "aren't a gap in what you logged", which offered
+ *  three bowl days as the explanation for thirty missing ones. */
+function pushPastBowlCaveat(lines: TrialCardLine[], input: TrialCardInput): void {
+  if (!input.freeFedOverlap || input.freeFed) return;
+  lines.push({
+    role: 'qualifier',
+    text:
+      `For part of this trial ${input.petName} had a bowl that was topped up, and those ` +
+      'days can’t have a meal-by-meal count.',
+  });
+}
+
+/** The RECORD half of the can't-match question. `recordRegion` answers it once,
+ *  ANDs it with the register's policy, and hands that single answer to all three
+ *  consumers — the caveat itself, the floor sentence's suffix, and the record
+ *  qualifier's suffix — so no consumer can key on a proxy for another. See the
+ *  call site for the two records where the proxy disagreed. */
+function unmatchedCaveatApplies(input: TrialCardInput): boolean {
+  const ex = input.exposures;
+  if (!ex || ex.totalFeedings <= 0) return false;
+  // ONLY WHEN NOTHING MATCHED. "None of these matched" rendered one line under
+  // "60 feedings in total — 40 matched, 20 did not", because the caveat keyed on
+  // the flag and never on the count it was qualifying. A permitted topper is
+  // enough to produce that pair.
+  if (ex.offDiet !== ex.totalFeedings) return false;
+  // AND WHENEVER NOTHING MATCHED, not only above the reconciliation floor. Below
+  // it the card was strictly MORE accusatory — the floor suffix asserting the
+  // true number is higher, with no caveat at all — which inverted the very
+  // discontinuity the floor was meant to smooth.
+  if (!input.allowedSetUnavailable && ex.offDiet < UNMATCHED_CAVEAT_MIN_FEEDINGS) return false;
+  return true;
+}
+
+function pushUnmatchedCaveat(lines: TrialCardLine[], input: TrialCardInput): void {
+  const ex = input.exposures;
+  if (!unmatchedCaveatApplies(input) || !ex) return;
+  lines.push({
+    role: 'qualifier',
+    // TWO-SIDED, and that is the correction. The first draft named only the
+    // exculpatory reading ("the list is out of date, so this count is too high"),
+    // which handed a pre-written excuse to the single most non-adherent record
+    // the app can produce — an owner feeding the old kibble twice a day trips the
+    // same flag with a perfectly correct list. Naming one reading and not the
+    // other IS guessing which is true. It also no longer says "worth a look
+    // before your vet reads it": there is no route from this card to the food
+    // list, and pointing at one that does not exist is worse than staying quiet.
+    // THE SECOND DISJUNCT IS ABOUT ADHERENCE, NOT INTAKE. "the trial diet hasn't
+    // been going in" is an INTAKE claim, and this is an adherence classifier with
+    // no intake input — on the fixture that found it, every one of those feedings
+    // was rated `all`, so the app held direct logged evidence the food WAS eaten
+    // and said the opposite. What the classifier can actually say is that the
+    // food being fed is not the food on the list.
+    //
+    // AND IT NO LONGER INSTRUCTS. Two problems with "Worth checking the list
+    // before your vet reads this", both found by `pm-feature-review`:
+    //
+    //   • THERE IS NO ROUTE. The only affordance on this card is the header's
+    //     "Change", which on a running trial opens the ordered blocked screen —
+    //     so an owner who followed the instruction was offered the destruction of
+    //     her eight-week trial. The docstring above already said not to point at
+    //     a route that does not exist; the string did it anyway.
+    //   • "what's being fed isn't the trial diet" SCORES THE PERSON (§6.9), and
+    //     "before your vet reads this" casts the vet as an audience she should
+    //     tidy up in front of.
+    //
+    // The model is `pushPastBowlCaveat`: name the CAUSE the app is responsible
+    // for, not a shortfall the owner is. This states what Culprit cannot do and
+    // stops — the honest half of a disjunction whose other half it cannot
+    // distinguish anyway.
+    text:
+      'Culprit can’t match these against the food list for this trial — the list may ' +
+      'still be syncing, or it may not have everything on it yet.',
+  });
+}
+
+/**
+ * §10 S3 — the untracked head, disclosed rather than silently clipped.
+ *
+ * THE CLIP IS RIGHT AND THE SILENCE WAS NOT. Denominating coverage from
+ * `started_at` scores an owner for days before the app was on their phone, so the
+ * range starts at the first log — but saying "Meals logged on 2 of 2 days" over
+ * "Day 30 of 56" and then claiming the record is clean is a *more* reassuring
+ * card than the un-clipped one it replaced. `generate-report` has always rendered
+ * this ("The first 28 days…"); the card computed it and dropped it on the floor.
+ *
+ * It is a statement about the RECORD's shape, not a failing: the copy names what
+ * is missing and does not ask the owner to account for it.
+ *
+ * IT SAYS "NO MEALS", NOT "NOTHING". The head is anchored on NON-TREAT feedings
+ * (the same event set as the coverage numerator), so an owner who logged a dental
+ * chew every day for the first four weeks and meals thereafter got "The first 28
+ * days of the trial have nothing logged against them" rendered directly beneath a
+ * feeding count that included all 28 of those treats. False, contradicted one
+ * line up, and — because the false thing it asserted was that the owner logged
+ * nothing — the one framing §6.9 forbids. It also says "the days count", because
+ * the head is excluded from the DAYS ratio and not from the feeding total.
+ */
+function pushUntrackedHead(lines: TrialCardLine[], input: TrialCardInput): void {
+  const days = input.untrackedDaysBeforeFirstLog ?? 0;
+  if (days <= 0) return;
+  lines.push({
+    role: 'qualifier',
+    text:
+      days === 1
+        // CAUSE FIRST, THEN THE FACT. "The first 12 days have no meals logged
+        // against them" is the clause that lands, and it is the accusatory half;
+        // the part that makes the line honest rather than scoring — that those
+        // days are excluded, not counted against her — was bookkeeping she had to
+        // finish the sentence to reach. Inverting costs nothing.
+        //
+        // It also no longer says "the days count above": on the sub-floor card
+        // the coverage is a clause inside one paragraph, not a discrete line, so
+        // the referent was wrong there.
+        ? 'The first day of the trial isn’t counted here — no meals were logged against it yet.'
+        : `The first ${days} days of the trial aren’t counted here — no meals were logged ` +
+          'against them yet.',
+  });
+}
+
+/**
+ * R1b — the line that teaches the intake tap, and the reason the register above
+ * is reachable at all.
+ *
+ * IT FIRES WHEN NOTHING IS WRONG, which is the entire design: the refusal lane can
+ * only see RATED feedings (R1a — an owner who isn't rating must never be told her
+ * cat isn't eating), so an owner who never learns the tap exists has a trial whose
+ * viability the app is structurally blind to. Teaching at that moment costs one
+ * warm sentence; teaching after the fact costs the finding.
+ *
+ * Every word is about the RECORD, never the person (§6.9) and never the animal — a
+ * line that made an owner on a perfectly fine day wonder what was wrong with her
+ * cat would fail this state's one requirement.
+ *
+ * ── WHY IT IS NOT A ROW IN `TRIAL_CARD_DISCLOSURES` ─────────────────────────────
+ * The table answers "what may this register say ABOUT THE RECORD", and every cell
+ * in it withholds or discloses a record statement. The teach line makes no claim
+ * about the record's contents at all — it is a forward affordance, in the same
+ * family as the `forward` lines and the actions, neither of which the table has
+ * ever governed. It is also placed by STATE (see the call site: everywhere in the
+ * shared body except `exposures`), and the table is keyed by REGISTER — `clean`
+ * and `exposures` share the `record` row, so a cell could not express the rule
+ * even if the rule belonged there. Widening the table to hold it would cost the
+ * crispness that makes reading a column a review.
+ */
+function pushTeachLine(lines: TrialCardLine[], input: TrialCardInput): void {
+  const rating = input.intakeRating;
+  if (!rating) return;
+  // ASK THE NARROW QUESTION WHEN THERE IS A NARROW POPULATION TO ASK IT OF.
+  //
+  // The refusal lane reads `primary_diet` feedings only, so that is the population
+  // whose rated share decides whether the lane can see anything. Asking only the
+  // wide question breaks in one step: an owner logging two unrated bowls of the
+  // prescribed diet and three rated permitted toppers a day has a 60% rated share
+  // overall and 0% where it counts — so the teach line goes silent on exactly the
+  // record whose viability is unknowable, which is the opposite of its job.
+  //
+  // The wide population is the FALLBACK, for when identity has missed and there
+  // are no primary-diet feedings to measure (an un-hydrated allowed set, a
+  // re-photographed bag). Silence there would be just as wrong, and the copy is
+  // honest under either reading because it speaks about the meal record.
+  const narrow = rating.primaryFeedings >= INTAKE_RATING_TEACH_MIN_FEEDINGS;
+  const [rated, feedings] = narrow
+    ? [rating.primaryRated, rating.primaryFeedings]
+    : [rating.rated, rating.feedings];
+  if (feedings < INTAKE_RATING_TEACH_MIN_FEEDINGS) return;
+  if (rated / feedings >= INTAKE_RATING_TEACH_SHARE) return;
+  // THE SENTENCE HAS TO NAME THE POPULATION IT FIRED ON. One string denominated on
+  // the whole meal record, triggered by the narrow one, is false in exactly the
+  // case the narrow trigger exists for: the owner logging unrated bowls of the
+  // prescribed diet beside rated toppers has 96% of her logged meals rated, and
+  // "most of Mochi's logged meals don't yet say how much was eaten" reads back at
+  // her as a wrong statement about her own logging (§6.9).
+  lines.push({
+    role: 'teach',
+    text: narrow
+      ? `One tap makes these readable. Most of ${input.petName}’s logged meals of the ` +
+        'trial diet don’t yet say how much was eaten, and on a diet trial that’s the ' +
+        'part your vet reads.'
+      : `One tap makes these readable. Most of ${input.petName}’s logged meals don’t ` +
+        'yet say how much was eaten, and on a diet trial that’s the part your vet reads.',
   });
 }
 
@@ -704,33 +1931,21 @@ function windowLineFor(endIndex: number, overrunDays: number): string {
     : `Ends ${formatTrialDate(endIndex)}`;
 }
 
-/** The two record facts plus their inline qualifier, in §5.1 order. Coverage
- *  first (days), exposures second (feedings), never welded. */
-function pushRecordFacts(lines: TrialCardLine[], input: TrialCardInput): void {
-  if (input.coverage) lines.push({ role: 'fact', text: coverageLine(input.coverage) });
-
-  const ex = input.exposures;
-  if (ex) {
-    lines.push({ role: 'fact', text: exposureLine(ex) });
-    lines.push({
-      role: 'qualifier',
-      text: BLIND_SPOT_QUALIFIER + (ex.offDiet > 0 ? floorSuffix(ex.offDiet) : ''),
-    });
-    pushScopeCaveat(lines, input);
-    return;
-  }
-
-  // No classifier yet (PR 5). The coverage fact still carries its blind-spot
-  // qualifier — it is a claim about the record and §5.2 makes the qualifier
-  // permanent ON the claim — but NOTHING is said about what was or was not
-  // matched. Silence, not an all-clear.
-  if (input.coverage) lines.push({ role: 'qualifier', text: BLIND_SPOT_QUALIFIER });
-}
-
 /** State 4's single combined sentence — deliberately one paragraph, because the
  *  sub-floor card leads with the record's limits and then discloses what IS on
  *  it, rather than opening with a ratio that reads as a score. */
 function soFarLine(input: TrialCardInput): string {
+  // NOTHING LOGGED IS NOT A RECORD OF ZEROES. `parts.length === 0` was the only
+  // route to the designed empty state below, and B-474's un-nulling closed it:
+  // `coverage` and `exposures` now arrive as zeroed OBJECTS rather than nulls, so
+  // an owner twelve days in with nothing logged read
+  // "Of what's on the record so far: meals on 0 of 12 days, 0 feedings in total."
+  // — a Principle-5 empty state, written and shipped, on the one state that most
+  // needs it, unreachable. The emptiness test is the CONTENT, not the shape.
+  const nothingLogged =
+    (input.coverage?.daysLogged ?? 0) === 0 && (input.exposures?.totalFeedings ?? 0) === 0;
+  if (nothingLogged) return 'Nothing is on the record for this trial yet.';
+
   const parts: string[] = [];
   if (input.coverage) {
     parts.push(`meals on ${input.coverage.daysLogged} of ${input.coverage.daysElapsed} days`);
@@ -739,11 +1954,14 @@ function soFarLine(input: TrialCardInput): string {
   if (ex) {
     const noun = ex.totalFeedings === 1 ? 'feeding' : 'feedings';
     parts.push(`${ex.totalFeedings} ${noun} in total`);
-    parts.push(
-      ex.offDiet <= 0
-        ? `all ${ex.totalFeedings} matched the trial diet or a permitted food`
-        : `${ex.totalFeedings - ex.offDiet} matched and ${ex.offDiet} did not`,
-    );
+    // Same gate as `exposureLine`. This sentence carried its own copy of the
+    // affirmative claim, which is exactly how a rule enforced in one place gets
+    // shipped broken in another.
+    if (ex.offDiet > 0) {
+      parts.push(`${ex.totalFeedings - ex.offDiet} matched and ${ex.offDiet} did not`);
+    } else if (ex.mayStateRecordClean) {
+      parts.push(`all ${ex.totalFeedings} matched the trial diet or a permitted food`);
+    }
   }
   if (parts.length === 0) return 'Nothing is on the record for this trial yet.';
   const joined = parts.length === 1
@@ -797,23 +2015,33 @@ function outcomeSentence(petName: string, outcome: TrialOutcome): string {
 
 function completedCard(
   input: TrialCardInput,
-  trial: TrialCardTrial,
-  startIndex: number,
+  ctx: TrialContext,
+  register: TrialCardRegister,
 ): TrialCardModel {
-  const lines: TrialCardLine[] = [];
-  // §5.2's composition is TERMINAL-STATE-AWARE, in both of its forms. The
-  // round-1b lesson was that a rule drawn as a live-flag replacement never
-  // reached the terminal states; the first cut of THIS file repeated that
-  // mistake in mirror image — it made refusal terminal-aware but let a live
+  const { trial, startIndex } = ctx;
+  // §5.2's composition is TERMINAL-STATE-AWARE, in all three of its forms, and
+  // `registerFor` is now the one place that says so rather than three branches
+  // each remembering. The round-1b lesson was that a rule drawn as a live-flag
+  // replacement never reached the terminal states; the first cut of THIS file
+  // repeated it in mirror image — it made refusal terminal-aware but let a live
   // intake-decline flag through, so a completed trial rendered "182 feedings —
-  // 176 matched" over a cat that has stopped eating NOW. Found by the wrap's
-  // adversarial pass. The decline outranks the record on every state, because
-  // the animal outranks the trial.
-  if (input.intakeDeclineHeadline) {
-    pushDeclineLines(lines, input);
-  } else {
-    pushRecordFacts(lines, input);
-  }
+  // 176 matched" over a cat that has stopped eating NOW. The decline outranks
+  // the record on every state, because the animal outranks the trial.
+  //
+  // R1 ADDS THE THIRD FORM, and it is the same lesson a third time: a trial the
+  // record shows was largely left unfinished cannot render an adherence line just
+  // because the owner tapped "This trial is done". State 7b has enforced exactly
+  // that since round 1b — but only off `stopped_reason`, so it reached the trial
+  // the owner CALLED a refusal and not the one the record shows was one.
+  const lines = recordRegion(register, input, {
+    terminal: true,
+    dayCount: terminalDayCount(trial, startIndex),
+    // 7a never names a refusal: the owner tapped "This trial is done", so there
+    // is no reason of theirs for the "different diet, not a different plan" note
+    // to answer.
+    namedRefusal: false,
+    daysRemaining: 0,
+  });
   // §4.3 IS A PROPERTY OF THE FLOW, AND THIS IS THE SCREEN AN OWNER LIVES WITH
   // AFTER ENDING IT. The fix commit carried the continuation sentence onto the
   // outcome SHEET and stopped there, so a GI owner read it once while deciding and
@@ -905,22 +2133,74 @@ function wasRefused(trial: TrialCardTrial): boolean {
   return trial.stoppedForRefusal ?? trial.stoppedReason === 'refused';
 }
 
+/** "56 days", else the pronoun-ish fallback the withheld sentence reads with. */
+function terminalDayCount(trial: TrialCardTrial, startIndex: number): string {
+  return terminalRange(trial, startIndex)?.split('· ')[1] ?? 'these days';
+}
+
+/**
+ * The terminal replacement for the adherence line: what the record HOLDS, with
+ * the clean statement structurally absent. The `refusal_withheld` register's
+ * whole body.
+ *
+ * It was once reachable only from `stopped_reason === 'refused'` — the trial the
+ * owner NAMED a refusal — which left the harder case uncovered: the owner who ran
+ * the eight weeks out and tapped "This trial is done" over a record showing the
+ * diet was left unfinished throughout. That card rendered the clean two-fact
+ * statement, which is the round-1b defect exactly, one state over.
+ *
+ * NOTE WHAT IT STILL SAYS. It is not silence: the coverage and feeding counts are
+ * both here, because the owner kept that record and the vet needs it. What is
+ * deleted is the reading — "how clean these days were" — which a diet that went
+ * uneaten cannot support in either direction. The off-diet floor comes from the
+ * register's row rather than from this function: it once rendered coverage and
+ * the feeding total but never the off-diet count, so an owner who rated three of
+ * 124 meals lost twelve genuine exposures from the card.
+ */
+function refusalWithheldLine(input: TrialCardInput, dayCount: string): string {
+  return (
+    `Culprit isn’t showing how clean ${dayCount === 'these days' ? 'these days' : `these ${dayCount}`} were. ` +
+    'A diet that wasn’t eaten can’t be read as one that was followed' +
+    (input.coverage
+      ? ` — the record is meals offered on ${input.coverage.daysLogged} of ${input.coverage.daysElapsed} days` +
+        (input.exposures ? `, ${input.exposures.totalFeedings} feedings in total` : '') +
+        ', and what your vet needs from it is the refusal.'
+      : ', and what your vet needs from it is the refusal.')
+  );
+}
+
 function abandonedCard(
   input: TrialCardInput,
-  trial: TrialCardTrial,
-  startIndex: number,
+  ctx: TrialContext,
+  register: TrialCardRegister,
 ): TrialCardModel {
+  const { trial, startIndex } = ctx;
   const lines: TrialCardLine[] = [];
   const range = terminalRange(trial, startIndex);
-  const dayCount = range?.split('· ')[1] ?? 'these days';
 
-  // Same terminal-state composition as completedCard — a live decline replaces
-  // every record line, whatever else this card would have said.
-  if (input.intakeDeclineHeadline) {
-    if (trial.stoppedReason) {
-      lines.push({ role: 'lead', text: stoppedBecauseLine(input.petName, trial) });
-    }
-    pushDeclineLines(lines, input);
+  if (trial.stoppedReason) {
+    lines.push({ role: 'lead', text: stoppedBecauseLine(input.petName, trial) });
+  }
+
+  // TERMINAL-STATE-AWARE, and this is a RULE rather than a copy choice (the
+  // Jordan review, round 1b). §5.2's composition rule was drawn as a LIVE-FLAG
+  // replacement only, so it never reached the terminal states — and round 1 duly
+  // rendered "All 54 matched the trial diet or a permitted food" three lines
+  // above "wouldn't eat it". A trial whose stopped_reason is refusal is
+  // STRUCTURALLY incapable of rendering an adherence line, and so is one the
+  // RECORD shows went uneaten (`rangeRefusal`, R1) — `registerFor` routes both to
+  // the same register, and only the first of them carries the note, because that
+  // sentence answers a reason the OWNER gave.
+  lines.push(...recordRegion(register, input, {
+    terminal: true,
+    dayCount: range?.split('· ')[1] ?? 'these days',
+    namedRefusal: wasRefused(trial),
+    daysRemaining: 0,
+  }));
+
+  // A live decline replaces every record line AND the way out: this card is
+  // about a pet that has stopped eating, so it offers no "start a new trial".
+  if (register === 'decline') {
     return {
       state: 'abandoned',
       kicker: 'Diet trial · stopped early',
@@ -934,39 +2214,6 @@ function abandonedCard(
       standingNote: input.standingNote ?? null,
       standingMeta: input.standingMeta ?? null,
     };
-  }
-
-  if (trial.stoppedReason) {
-    lines.push({ role: 'lead', text: stoppedBecauseLine(input.petName, trial) });
-  }
-
-  if (wasRefused(trial)) {
-    // TERMINAL-STATE-AWARE, and this is a RULE change rather than a copy change
-    // (the Jordan review, round 1b). §5.2's composition rule was drawn as a
-    // LIVE-FLAG replacement only, so it never reached the terminal states —
-    // and round 1 duly rendered "All 54 matched the trial diet or a permitted
-    // food" three lines above "wouldn't eat it". A trial whose stopped_reason is
-    // refusal is STRUCTURALLY incapable of rendering an adherence line: a diet
-    // that wasn't eaten cannot be read as one that was followed.
-    lines.push({
-      role: 'note',
-      text:
-        'That’s a useful thing for your vet to know — it usually means a different ' +
-        'diet, not a different plan.',
-    });
-    lines.push({
-      role: 'fact',
-      text:
-        `Culprit isn’t showing how clean ${dayCount === 'these days' ? 'these days' : `these ${dayCount}`} were. ` +
-        'A diet that wasn’t eaten can’t be read as one that was followed' +
-        (input.coverage
-          ? ` — the record is meals offered on ${input.coverage.daysLogged} of ${input.coverage.daysElapsed} days` +
-            (input.exposures ? `, ${input.exposures.totalFeedings} feedings in total` : '') +
-            ', and what your vet needs from it is the refusal.'
-          : ', and what your vet needs from it is the refusal.'),
-    });
-  } else {
-    pushRecordFacts(lines, input);
   }
 
   pushContinuation(lines, trial);
@@ -1022,6 +2269,12 @@ export function resolveTrialStrip(input: TrialCardInput): TrialStripModel | null
   // nothing else: SignalZone sits above it and owns the safety card, and a
   // coverage line under a pet that has stopped eating is the composition §5.2
   // forbids on the card for the same reason.
+  //
+  // R1 puts the refusal fact on the same footing. The strip has no room for the
+  // register itself — that lives on the Pet tab's card — but it must not do the
+  // one thing it could do wrong here, which is render a tidy coverage line as if
+  // the trial were proceeding normally. Silence on Home, the register one tap
+  // away; never a reassuring summary of a trial the record says isn't running.
   if (input.intakeDeclineHeadline) {
     return { header, line: null, progressFraction: progress.fraction };
   }
@@ -1034,10 +2287,40 @@ export function resolveTrialStrip(input: TrialCardInput): TrialStripModel | null
       ? `window ended ${formatTrialDate(endIndex)}`
       : `ends ${formatTrialDate(endIndex)}`,
   );
-  if (input.coverage) {
+  // THE STRIP IS STRICTER THAN THE CARD, DELIBERATELY — AND ITS RULE IS NOW ONE
+  // SENTENCE: Home states the ratio only when the record carries NONE of the six
+  // withholding reasons.
+  //
+  // Home has one line and nowhere to put the can't-match caveat, the untracked
+  // head, or the "offered, not eaten" reframing that make a ratio honest on the
+  // card, so a reason the card can absorb is a reason the strip cannot. Every
+  // round-8/9 strip defect was this conjunction being patched one reason at a
+  // time — for the decline flag, then the head, then the refusal — with the NEXT
+  // reason still rendering. `withholdingReasons` is the list, in one place, that
+  // both surfaces read; a seventh reason cannot be added to one and forgotten on
+  // the other.
+  //
+  // An earlier cut of this comment said "the strip states coverage only when the
+  // card would state it plainly", which stopped being true the moment round 9's
+  // active-card routing was reverted. A comment asserting a guarantee the code
+  // does not provide is this file's most-repeated defect, so the rule above is
+  // stated as what it is rather than as a relation to the card.
+  const coverageIsPlain = withholdingReasons(input).length === 0;
+  if (input.coverage && coverageIsPlain) {
     parts.push(
       `meals logged on ${input.coverage.daysLogged} of ${input.coverage.daysElapsed} days`,
     );
+  }
+  // THE FLOOR IS OWED HERE TOO — this file's header says "in every state", and
+  // the strip rendered the one number that always looks good while omitting the
+  // one that reports a finding, on the surface the wedge owner sees daily.
+  //
+  // NOT under `allowedSetUnavailable`: there the count is an artefact of a
+  // comparator the app has just declared unusable, and the strip can carry
+  // neither the floor suffix nor the caveat that make it honest on the card.
+  const stripOffDiet = input.allowedSetUnavailable ? 0 : input.exposures?.offDiet ?? 0;
+  if (stripOffDiet > 0) {
+    parts.push(`${stripOffDiet} outside the trial diet`);
   }
 
   return {

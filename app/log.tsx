@@ -13,6 +13,7 @@ import { FoodPicker } from '../components/log/FoodPicker';
 import { MedicationPicker } from '../components/log/MedicationPicker';
 import { ComboDoseConfirmSheet } from '../components/log/ComboDoseConfirmSheet';
 import { TimeConfidenceField, TimeMode, FoundMode } from '../components/log/TimeConfidenceField';
+import { resolveTimeModeChange, resolveFoundModeChange, DEFAULT_WINDOW_SPAN_MS } from '../lib/eventTimeEdit';
 import { EventIcon } from '../components/event/EventIcon';
 import { EVENT_TYPES, EventTypeKey, SYMPTOM_TYPES } from '../constants/eventTypes';
 import { usePetStore } from '../store/petStore';
@@ -115,6 +116,9 @@ export default function LogModal() {
   const [selectedFoodId, setSelectedFoodId] = useState<string | null>(null);
   const [selectedFoodBrand, setSelectedFoodBrand] = useState<string | null>(null);
   const [selectedFoodProduct, setSelectedFoodProduct] = useState<string | null>(null);
+  // B-568 — the picked food's physical form, carried alongside brand/product so the
+  // optimistic row can name its variant before the next timeline read hydrates it.
+  const [selectedFoodFormat, setSelectedFoodFormat] = useState<string | null>(null);
 
   // B-325 — the retroactive combo-confirm sheet. Set (with the just-written dose's event
   // id + the food/pet it rode in) when a retroactive combo dose lands UNCONFIRMED because
@@ -302,12 +306,14 @@ export default function LogModal() {
     setSelectedFoodId(food.id);
     setSelectedFoodBrand(food.brand);
     setSelectedFoodProduct(food.product_name);
+    setSelectedFoodFormat(food.format);
     const usingExif = occurredAtSource === 'exif';
     const effectiveOccurredAt = usingExif ? occurredAt : new Date();
     const result = await handleConfirm({
       foodId: food.id,
       foodBrand: food.brand,
       foodProduct: food.product_name,
+      foodFormat: food.format,
       foodType: food.food_type ?? null,
       // Meals are inherently witnessed — you see yourself put the bowl down.
       // The B-010 found path does not apply (you don't "discover" a meal).
@@ -349,6 +355,7 @@ export default function LogModal() {
           foodType,
           foodBrand: food.brand,
           foodProductName: food.product_name,
+          foodFormat: food.format,
           intakeRating: null,
         },
         { delayMs: 450 },
@@ -678,6 +685,7 @@ export default function LogModal() {
     foodId: string;
     foodBrand: string;
     foodProduct: string;
+    foodFormat?: string | null;
     foodType?: string | null;
     timeFields?: TimeFields;
   }): Promise<{ eventId: string; occurredAt: string; petId: string } | null> {
@@ -689,6 +697,7 @@ export default function LogModal() {
     const foodId = override?.foodId ?? selectedFoodId;
     const foodBrand = override?.foodBrand ?? selectedFoodBrand;
     const foodProduct = override?.foodProduct ?? selectedFoodProduct;
+    const foodFormat = override?.foodFormat ?? selectedFoodFormat;
     if (selectedType === 'meal' && !foodId) return null;
     // Meals pass their own witnessed time fields; the simple step derives from
     // the confidence affordance.
@@ -756,6 +765,7 @@ export default function LogModal() {
       food_item_id: foodId,
       food_brand: foodBrand,
       food_product_name: foodProduct,
+      food_format: foodFormat,
       food_type: override?.foodType ?? null,
       quantity: foodId ? 'unknown' : null,
     });
@@ -887,25 +897,29 @@ export default function LogModal() {
     setOccurredAt(date);
   }
 
+  // Shared with app/edit-event.tsx via lib/eventTimeEdit — same control, same
+  // transitions, and the same no-op-re-tap bug lived in both copies (B-448).
+  // Here it cost less than on the edit screen (no stored classification to
+  // destroy) but it was still real: re-tapping the already-selected "Found it"
+  // mid-entry reset the sub-mode to 'before' and the latest edge to now,
+  // discarding a "between" window the owner had just dialled in.
   function handleTimeModeChange(m: TimeMode) {
-    if (m === 'found') {
-      setFoundMode('before');
-      // A photo of discovered evidence is EXIF-stamped at discovery — the
-      // window's latest edge — so seed from it; otherwise default to now.
-      setFoundLatest(occurredAtSource === 'exif' ? occurredAt : new Date());
-    }
+    const t = resolveTimeModeChange(timeMode, m, occurredAtSource === 'exif');
+    if (t.noOp) return;
+    if (t.seedFoundMode) setFoundMode(t.seedFoundMode);
+    // A photo of discovered evidence is EXIF-stamped at discovery — the
+    // window's latest edge — so seed from it; otherwise default to now.
+    if (t.seedLatestFrom) setFoundLatest(t.seedLatestFrom === 'point' ? occurredAt : new Date());
     setTimeMode(m);
   }
 
   function handleFoundModeChange(m: FoundMode) {
+    const t = resolveFoundModeChange(foundMode, m, earliest != null);
+    if (t.noOp) return;
     // Seed the estimate from when they found it, as a starting point to adjust.
-    if (m === 'around' && foundMode !== 'around') {
-      setEstimatedAt(foundLatest);
-    }
+    if (t.seedEstimatedFromLatest) setEstimatedAt(foundLatest);
     // Seed a sane lower bound the first time the owner opens a window.
-    if (m === 'between' && !earliest) {
-      setEarliest(new Date(foundLatest.getTime() - 2 * 60 * 60 * 1000));
-    }
+    if (t.seedEarliest) setEarliest(new Date(foundLatest.getTime() - DEFAULT_WINDOW_SPAN_MS));
     setFoundMode(m);
   }
 

@@ -242,6 +242,41 @@ export function deriveOccurredAt(input: {
   return point;
 }
 
+// B-448 — what an EDIT should write to the three B-010 columns.
+//
+// An edit form always holds a confidence value, because its controls have to be
+// seeded with something (app/edit-event.tsx seeds the Saw-it/Found-it toggle at
+// 'saw'). That seed is not the owner's claim. Writing it anyway is how a row's
+// time silently gets re-described by an edit that was only ever about a note or
+// a photo — and the direction it moves is toward false precision: an
+// unclassified row (NULL — "NOT a claim either way", migration 012) becomes
+// 'witnessed', which the vet report prints as `seen` instead of `unspecified`. A
+// bare exact-looking time in a column of tagged rows reads as the most
+// trustworthy row on the page, so the one event nobody actually saw ends up
+// looking like the best-evidenced one.
+//
+// Returns undefined when the owner asserted nothing — updateEvent takes that as
+// "leave all three columns exactly as stored". Pure so the rule is testable
+// away from the screen; it is the same discipline the dose adherence / how_given
+// writes follow (write the field the owner changed, never the ones they didn't).
+export function confidenceUpdateForEdit(input: {
+  /** True only if the owner touched a control that CLAIMS something about the time. */
+  ownerAsserted: boolean;
+  /** The form's current claim — meaningful only when ownerAsserted. */
+  form: { confidence: OccurredConfidence; earliest: Date | null; latest: Date | null };
+}): { value: OccurredConfidence; earliest: string | null; latest: string | null } | undefined {
+  if (!input.ownerAsserted) return undefined;
+  const { confidence, earliest, latest } = input.form;
+  // Bounds belong to a window and nothing else — carrying them onto a point
+  // would violate migration 012's chk_occurred_window_fields on sync.
+  const windowed = confidence === 'window';
+  return {
+    value: confidence,
+    earliest: windowed && earliest ? earliest.toISOString() : null,
+    latest: windowed && latest ? latest.toISOString() : null,
+  };
+}
+
 // How a stored event's time renders once we honor its confidence (B-010).
 //   primary — full natural phrase for a primary surface (detail, vet report)
 //   compact — drops prefix words for dense rows (history)

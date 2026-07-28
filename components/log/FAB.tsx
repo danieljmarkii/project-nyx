@@ -116,6 +116,7 @@ export function FAB() {
         food_item_id: food.id,
         food_brand: food.brand,
         food_product_name: food.product_name,
+        food_format: food.format,
         food_type: foodType,
       });
       closeMenu();
@@ -134,6 +135,7 @@ export function FAB() {
         foodType,
         foodBrand: food.brand,
         foodProductName: food.product_name,
+        foodFormat: food.format,
         intakeRating: null,
       });
       // B-351 slice 4 — resolve the trial heads-up and patch it onto the card that

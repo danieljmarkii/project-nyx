@@ -286,7 +286,7 @@ Deno.test('mapDietTrialRows: builds "Brand Product" label from food join', () =>
     diet_trial_foods: [{
       food_item_id: 'f1', food_label: 'Royal Canin Hydrolyzed', role: 'primary_diet',
       allowed_from: '2026-05-01', allowed_until: null,
-      food_items: { primary_protein: 'duck', proteins: ['duck', 'chicken'], ingredients_notes: 'Duck, chicken fat', ai_extraction_confidence: null, brand: 'Royal Canin', product_name: 'Hydrolyzed' },
+      food_items: { primary_protein: 'duck', proteins: ['duck', 'chicken'], ingredients_notes: 'Duck, chicken fat', ai_extraction_confidence: null, brand: 'Royal Canin', product_name: 'Hydrolyzed', format: 'wet_canned' },
     }],
   }])
   assert.equal(rows[0].foodLabel, 'Royal Canin Hydrolyzed')
@@ -323,11 +323,14 @@ Deno.test('mapFeedingArrangementRows: label + protein from join, method + shared
   const rows = mapFeedingArrangementRows([{
     id: 'a1', food_item_id: 'f1', method: 'free_choice', active_from: '2026-04-01',
     active_until: null, is_shared: false,
-    food_items: { primary_protein: 'duck', proteins: ['duck'], ingredients_notes: null, ai_extraction_confidence: null, brand: 'RC', product_name: 'Weight' },
+    food_items: { primary_protein: 'duck', proteins: ['duck'], ingredients_notes: null, ai_extraction_confidence: null, brand: 'RC', product_name: 'Weight', format: 'dry_kibble' },
   }])
   assert.equal(rows[0].method, 'free_choice')
   assert.equal(rows[0].isShared, false)
-  assert.equal(rows[0].foodLabel, 'RC Weight')
+  // B-568 — the standing arrangement names its FORM. A bowl of the dry and a bowl of
+  // the wet of one product are different standing exposures; before this they were
+  // one indistinguishable "RC Weight" line on the report.
+  assert.equal(rows[0].foodLabel, 'RC Weight (Dry)')
   assert.equal(rows[0].activeUntil, null)
 })
 

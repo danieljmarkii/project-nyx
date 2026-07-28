@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
-import { ScrollView, StyleSheet } from 'react-native';
+import { Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity } from 'react-native';
+import DateTimePicker from '@react-native-community/datetimepicker';
+import { Check } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
 import { ChipGroup, type ChipGroupOption } from '../ui/ChipGroup';
 import { PrimaryButton } from '../ui/PrimaryButton';
@@ -7,6 +9,7 @@ import { TextField } from '../ui/TextField';
 import { SheetShell } from './SheetShell';
 import { VET_DOCUMENT_KINDS, type VetDocumentKind } from '../../lib/vetDocuments';
 import { VET_DOCUMENT_KIND_LABELS } from '../../lib/vetDocumentLibrary';
+import { dayKeyToLocalDate, toLocalDayKey } from '../../lib/utils';
 
 // The two D11 recovery surfaces, reached from a library row rather than from
 // capture. Both are sheets rather than screens on purpose: the mock calls the Name
@@ -98,6 +101,197 @@ export function DocumentKindSheet({ visible, current, onCancel, onSelect }: Kind
   );
 }
 
+interface NotesProps {
+  visible: boolean;
+  initialNotes: string;
+  onCancel: () => void;
+  onSave: (notes: string) => void;
+  saving?: boolean;
+}
+
+// The Notes row's editor (VF-4, mock E-img-r2 "Add a note").
+//
+// Multiline and deliberately unstructured: this is where an owner writes "the one
+// Dr. Chen wanted before the recheck" or "second page is the referral". No prompts,
+// no template, no character counter — a note nobody is required to write does not
+// get a word budget.
+//
+// Clearing the field is a supported action, not a mistake: an emptied note goes
+// back to NULL and the row returns to its "Add a note" placeholder (see
+// setVetDocumentNotes).
+export function DocumentNotesSheet({
+  visible, initialNotes, onCancel, onSave, saving,
+}: NotesProps) {
+  const [value, setValue] = useState(initialNotes);
+
+  useEffect(() => {
+    if (visible) setValue(initialNotes);
+  }, [visible, initialNotes]);
+
+  return (
+    <SheetShell
+      visible={visible}
+      onClose={onCancel}
+      // "Add" is an invitation; on a note that already exists it would read as a
+      // second note being started.
+      title={initialNotes ? 'Note' : 'Add a note'}
+      subtitle="Anything you’ll want with this document later — what it’s for, what the vet said."
+    >
+      {/* A raw TextInput rather than TextField: that primitive is deliberately
+          single-line ("the shared single-line text input"), and widening a shared
+          component from inside one feature's PR is how primitives drift. If a
+          second multiline caller appears, promote it then. */}
+      <TextInput
+        style={styles.notesInput}
+        value={value}
+        onChangeText={setValue}
+        placeholder="Bloodwork Dr. Chen asked for before the recheck"
+        placeholderTextColor={theme.colorTextDisabled}
+        accessibilityLabel="Document notes"
+        autoFocus
+        multiline
+        maxLength={600}
+        // No returnKeyType/onSubmitEditing: return inserts a newline in a
+        // multiline field, so Save is the only commit.
+      />
+      <PrimaryButton label="Save" onPress={() => onSave(value)} loading={saving} />
+    </SheetShell>
+  );
+}
+
+interface DateProps {
+  visible: boolean;
+  /** Current document_date as 'YYYY-MM-DD', or null when the row carries none. */
+  initialDate: string | null;
+  onCancel: () => void;
+  onSave: (date: string) => void;
+}
+
+// The Doc date row's editor.
+//
+// `document_date` is the date ON the paper (§5.1) — a calendar day with no time and
+// no zone — so this reads and writes 'YYYY-MM-DD' through local Date components at
+// both ends. A UTC round-trip (`toISOString().slice(0,10)`) would file a document
+// under the wrong day for every owner west of Greenwich, which is the same trap
+// formatVetDocumentDate hand-parses to avoid on the read side.
+//
+// Capped at today. A document dated in the future is almost always a mis-scrolled
+// year, and the cost of that slip is asymmetric: the document sorts above
+// everything else in the library permanently, and the owner has no reason to
+// suspect the date is why. The genuine forward-looking date on a certificate is its
+// *expiry*, which is not this column.
+export function DocumentDateSheet({ visible, initialDate, onCancel, onSave }: DateProps) {
+  const [value, setValue] = useState<Date>(() => dayKeyToLocalDate(initialDate ?? '') ?? new Date());
+
+  useEffect(() => {
+    if (visible) setValue(dayKeyToLocalDate(initialDate ?? '') ?? new Date());
+  }, [visible, initialDate]);
+
+  return (
+    <SheetShell
+      visible={visible}
+      onClose={onCancel}
+      title="Date on this document"
+      subtitle="Not when you saved it — the date printed on the paper."
+    >
+      <DateTimePicker
+        value={value}
+        mode="date"
+        display={Platform.OS === 'ios' ? 'inline' : 'default'}
+        maximumDate={new Date()}
+        onChange={(_e, date) => {
+          if (!date) return;
+          setValue(date);
+          // Android's dialog IS the commit — it dismisses itself on pick, so a
+          // Save button below it would be a second confirmation of a decision the
+          // owner has already made and can no longer see.
+          if (Platform.OS === 'android') onSave(toLocalDayKey(date));
+        }}
+      />
+      {Platform.OS === 'ios' && (
+        <PrimaryButton label="Save" onPress={() => onSave(toLocalDayKey(value))} />
+      )}
+    </SheetShell>
+  );
+}
+
+export interface VisitChoice {
+  id: string;
+  label: string;
+}
+
+interface VisitProps {
+  visible: boolean;
+  visits: VisitChoice[];
+  /** Currently linked visit, or null. */
+  current: string | null;
+  petName: string;
+  onCancel: () => void;
+  onSelect: (visitId: string | null) => void;
+}
+
+// The visit-link picker (D7, mock E-pdf-r2).
+//
+// This sheet is only ever REACHED when the pet has at least one logged visit — the
+// row that opens it doesn't render otherwise (round-2 ruling: visits have no browse
+// surface yet, so an empty picker reads as broken software). It therefore has no
+// empty state, and that absence is intentional rather than an oversight.
+//
+// **Nothing here creates a visit.** There is no "log a new visit" affordance on
+// this sheet, and there must never be one: D7 forbids the upload direction entirely
+// because the vet report's scope cascade keys its first rung off
+// `vet_visits.visited_at`. A document may point at a visit that already happened;
+// it may never assert that one did.
+//
+// A ScrollView of plain rows rather than a ChipGroup: visit labels are long
+// ("Jul 14 — Lakeview Animal Clinic"), the set grows without bound, and the house
+// lens rule sends exactly that shape to a sheet of rows.
+export function DocumentVisitSheet({
+  visible, visits, current, petName, onCancel, onSelect,
+}: VisitProps) {
+  return (
+    <SheetShell
+      visible={visible}
+      onClose={onCancel}
+      title="Link a vet visit"
+      subtitle={`Files this document with one of ${petName}’s logged visits. It doesn’t change the visit.`}
+    >
+      <ScrollView bounces={false} style={styles.visitScroll}>
+        {visits.map((visit) => (
+          <TouchableOpacity
+            key={visit.id}
+            style={styles.visitRow}
+            onPress={() => onSelect(visit.id)}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityState={{ selected: visit.id === current }}
+          >
+            <Text
+              style={[styles.visitLabel, visit.id === current && styles.visitLabelOn]}
+              numberOfLines={2}
+            >
+              {visit.label}
+            </Text>
+            {visit.id === current && <Check size={17} color={theme.colorAccentInk} strokeWidth={2.5} />}
+          </TouchableOpacity>
+        ))}
+
+        {current != null && (
+          <TouchableOpacity
+            style={styles.visitRow}
+            onPress={() => onSelect(null)}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel="Remove the visit link"
+          >
+            <Text style={styles.visitClear}>Remove the link</Text>
+          </TouchableOpacity>
+        )}
+      </ScrollView>
+    </SheetShell>
+  );
+}
+
 const styles = StyleSheet.create({
   field: {
     marginTop: theme.space2,
@@ -106,5 +300,49 @@ const styles = StyleSheet.create({
   kindScroll: {
     flexGrow: 0,
     marginTop: theme.space2,
+  },
+  notesInput: {
+    height: 108,
+    marginTop: theme.space2,
+    marginBottom: theme.space2,
+    paddingHorizontal: theme.space2,
+    paddingTop: theme.space1,
+    paddingBottom: theme.space1,
+    borderWidth: 1,
+    borderColor: theme.colorBorder,
+    borderRadius: theme.radiusSmall,
+    backgroundColor: theme.colorSurface,
+    fontSize: theme.textMD,
+    lineHeight: theme.lineHeightBody,
+    color: theme.colorTextPrimary,
+    textAlignVertical: 'top',
+  },
+  visitScroll: {
+    flexGrow: 0,
+    marginTop: theme.space1,
+  },
+  visitRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.space1,
+    paddingVertical: 13,
+    minHeight: 44,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colorBorder,
+  },
+  visitLabel: {
+    flex: 1,
+    fontSize: theme.textMD,
+    lineHeight: theme.lineHeightBody,
+    color: theme.colorTextPrimary,
+  },
+  visitLabelOn: {
+    fontWeight: theme.weightSemibold,
+    color: theme.colorAccentInk,
+  },
+  visitClear: {
+    flex: 1,
+    fontSize: theme.textMD,
+    color: theme.colorTextTertiary,
   },
 });

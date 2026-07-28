@@ -13,12 +13,13 @@
 //
 // FLIPPED 2026-07-27 (VF-3). Capture exists: the add sheet, the instant save with
 // defaults, the saved moment, multi-page grouping and D13's copy-to-another-pet all
-// work, so the card's add button now leads somewhere real. ONE HOLE REMAINS AND IT IS
-// DELIBERATE — the document DETAIL screen is VF-4, so tapping a library row still
-// does nothing (see `pendingScreen` in app/vet-files.tsx). That is narrower than the
-// gap this flag existed to hide (an owner can add, see, name and type a document; the
-// only unbuilt path is viewing one full-screen), but it IS a gap, and it is named in
-// VF-3's QA script rather than left for the PM to find.
+// work, so the card's add button now leads somewhere real.
+//
+// NO HOLES REMAIN as of VF-4 (2026-07-27): the document detail screen shipped, so a
+// library row opens, views, edits, shares and soft-deletes. This note previously said
+// tapping a row "still does nothing" and pointed at a `pendingScreen` helper that no
+// longer exists — corrected in VF-6, which is the pass that is supposed to catch a
+// header asserting the opposite of what shipped.
 //
 // This is a build-time constant on purpose, not an `app_config` flag: a flag would
 // need its own migration (schema-isolation rule) and a runtime fetch to answer a

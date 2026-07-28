@@ -105,7 +105,7 @@ export function DayEventsSheet({
                 <ScrollView style={styles.rows} showsVerticalScrollIndicator={false}>
                   {items.map((it, i) => (
                     <View key={i} style={styles.row} accessible accessibilityLabel={
-                      `${it.title}${it.detail ? `, ${it.detail}` : ''}, ${it.time}`
+                      `${it.title}${it.formatTag ? `, ${it.formatTag.toLowerCase()}` : ''}${it.detail ? `, ${it.detail}` : ''}, ${it.time}`
                     }>
                       <View style={styles.rowIcon}>
                         <EventIcon
@@ -119,6 +119,11 @@ export function DayEventsSheet({
                           {it.title}
                           {it.detail ? <Text style={styles.rowDetail}> · {it.detail}</Text> : null}
                         </Text>
+                        {/* B-568 — the wet/dry variant, as a sibling of the truncating
+                            title so it survives a long prescription product name. */}
+                        {it.formatTag ? (
+                          <Text style={styles.rowFormatTag} numberOfLines={1}>{it.formatTag}</Text>
+                        ) : null}
                       </View>
                       <Text style={styles.rowTime}>{it.time}</Text>
                     </View>
@@ -231,10 +236,25 @@ const styles = StyleSheet.create({
   },
   rowText: {
     flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.space1,
   },
   rowTitle: {
     fontSize: theme.textSM,
     color: theme.colorTextPrimary,
+    // flexShrink (not flex:1) so the title yields to the variant tag beside it and
+    // the pair stays hugged left rather than spanning to the timestamp.
+    flexShrink: 1,
+  },
+  // Matches the EventRow / TodayZone tag register so the three timeline surfaces
+  // name a food identically. flexShrink:0 — the title truncates, never the variant.
+  rowFormatTag: {
+    fontSize: theme.textXS,
+    color: theme.colorTextTertiary,
+    letterSpacing: theme.trackingWide,
+    fontWeight: theme.weightMedium,
+    flexShrink: 0,
   },
   rowDetail: {
     color: theme.colorTextSecondary,

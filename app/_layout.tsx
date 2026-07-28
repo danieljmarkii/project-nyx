@@ -191,6 +191,7 @@ export default function RootLayout() {
         <Stack.Screen name="archived-pets" options={{ presentation: 'modal' }} />
         <Stack.Screen name="edit-event" options={{ presentation: 'modal' }} />
         <Stack.Screen name="event/[id]" />
+        <Stack.Screen name="vet-document/[id]" />
         <Stack.Screen name="ask" />
         <Stack.Screen name="report" />
         <Stack.Screen name="rundown" />

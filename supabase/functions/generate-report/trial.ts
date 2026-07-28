@@ -48,8 +48,10 @@ import {
   interpretabilityStatement,
   isWithinChallengeWindow,
   mayClaimAllMatched,
+  mayStateRecordClean,
   trialFoodKey,
   CHALLENGE_WINDOW_DAYS,
+  UNHYDRATED_SET_FLOOR,
   REFUSAL_MIN_DAYS,
   REFUSAL_MIN_RATED,
   REFUSAL_SHARE,
@@ -70,18 +72,6 @@ import { localDayIndexOf } from '../../../lib/utils.ts'
 
 const MS_PER_DAY = 86_400_000
 
-/**
- * #7's floor: how many classifiable in-range feedings make "the primary diet permitted
- * none of them" evidence of a cold cache rather than of a genuinely all-off-diet trial.
- *
- * Deliberately low and deliberately NOT clinical. It is an arithmetic statement about
- * the plausibility of a JOIN, not about a pet: an owner who logged ten feedings inside
- * a trial fed the prescribed diet at least once. Below it the honest answer is that we
- * cannot tell, and the block withholds the claim either way — so the number only decides
- * whether the report SAYS "no allowed-food list is recorded" or stays quiet, never
- * whether an exposure is counted.
- */
-const UNHYDRATED_SET_FLOOR = 10
 
 // ── Narrow input shapes (structurally satisfied by report.ts's rows) ─────────
 
@@ -738,34 +728,20 @@ export function buildTrialBlock(args: BuildTrialBlockArgs): TrialBlock | null {
         roleOrder(a.role) - roleOrder(b.role) || b.feedings - a.feedings || a.label.localeCompare(b.label),
     )
 
-  // #2's computation. Reuses PR 5's exported floors and its `feedingWasFinished`
-  // predicate so the two windows cannot disagree about what "not eaten" means; the
-  // 12h episode guard is deliberately dropped here, because over a whole trial the
-  // midnight-straddle artefact it protects against is not the failure mode — a
-  // multi-week refusal is.
-  let rangeRated = 0
-  let rangeNotFinished = 0
-  const rangeRefusedDays = new Set<number>()
-  for (const e of args.meals) {
-    if (!e.meal) continue
-    const dn = dayIndexOf(ctx, e.occurredAt)
-    if (!inRange(dn)) continue
-    const cls = classifyFeeding(ctx, toTrialFeeding(e))
-    if (cls.role !== 'primary_diet') continue
-    const finished = feedingWasFinished(e.meal.intakeRating)
-    if (finished === null) continue
-    rangeRated += 1
-    if (!finished) {
-      rangeNotFinished += 1
-      rangeRefusedDays.add(dn)
-    }
-  }
-  const rangeRefusal: TrialDietRefusal | null =
-    rangeRated >= REFUSAL_MIN_RATED &&
-    rangeRefusedDays.size >= REFUSAL_MIN_DAYS &&
-    rangeNotFinished / rangeRated >= REFUSAL_SHARE
-      ? { refusedFeedings: rangeNotFinished, ratedFeedings: rangeRated, days: rangeRefusedDays.size }
-      : null
+  // #2's computation, RE-BASED ONTO THE SHARED MODULE (B-533).
+  //
+  // This was a local loop here — same floors, same `feedingWasFinished`, same
+  // dropped 12h guard, same clipped range — and it was the ONLY place the
+  // whole-range refusal existed. That is precisely why the card could ship an
+  // "all 112 matched" claim over a record this file would have withheld: the
+  // report had the right question and the client had no way to ask it.
+  //
+  // `computeTrialFacts` now returns `rangeRefusal` over the same range this loop
+  // walked (`facts.range.startDayIndex … endDayIndex`, i.e. `inRange`), so the
+  // loop is deleted rather than duplicated. Behaviour here is unchanged; what
+  // changes is that there is one implementation for both surfaces to be wrong or
+  // right together.
+  const rangeRefusal: TrialDietRefusal | null = facts.rangeRefusal
 
   const dayCounter = Math.max(1, endDayIndex - ctx.startDayIndex + 1)
   const target = trial.targetDurationDays > 0 ? trial.targetDurationDays : 0
@@ -808,8 +784,25 @@ export function buildTrialBlock(args: BuildTrialBlockArgs): TrialBlock | null {
     interpretabilityStatement: interpretabilityStatement(facts),
     belowCoverageFloor: facts.belowCoverageFloor,
     mayClaimAllMatched: mayClaimAllMatched(facts),
+    // RE-BASED ONTO THE SHARED GATE (B-533). The three clauses that used to live
+    // here — the interpretability floor, the range refusal, and the unreadable
+    // permit set — are now inside `mayStateRecordClean` / `mayClaimAllMatched` in
+    // `lib/dietTrial.ts`, so the card asks the identical question. This comment's
+    // predecessor claimed "`lib/dietTrialFacts.ts` gates the card on exactly
+    // this"; it did not, and an executed counterexample proved it. `stoppedReason`
+    // is the one input the module cannot see, so it is still passed in.
+    //
+    // `allowedSetUnavailable` is kept in the `&&` belt-and-braces. The comment
+    // here previously claimed this file's derivation was "narrower than the
+    // module's" — it was the exact inverse, a strict SUPERSET, because the module
+    // checked only `!hasPrimary` while this file also caught the half-hydrated set
+    // (a primary row that matches nothing across ten-plus feedings). That gap is
+    // what let the card render "0 matched, 110 did not" on a compliant owner. Both
+    // disjuncts now live in `computeTrialFacts`; this local one is retained
+    // because it counts PERMITTED feedings per allowed ROW, which is a finer
+    // reconciliation than the module's role-level count and costs nothing to keep.
     mayStateRecordClean:
-      mayClaimAllMatched(facts) &&
+      mayStateRecordClean(facts, { stoppedForRefusal: trial.stoppedReason === 'refused' }) &&
       !allowedSetUnavailable &&
       // INTERPRETABILITY, NOT JUST THE FLOOR. `belowCoverageFloor` is
       // `interpretability === 'does_not_support'` and nothing else, so `not_yet` —
@@ -826,10 +819,9 @@ export function buildTrialBlock(args: BuildTrialBlockArgs): TrialBlock | null {
       // page read "day 46 of 56" beside "All matched" while four real exposures
       // (table chicken ×2, a rival kibble) appeared NOWHERE on the document. The
       // recheck is exactly when this report gets sent.
-      (facts.interpretability === 'supports' || facts.interpretability === 'partially_supports') &&
-      trial.stoppedReason !== 'refused' &&
-      // #2 — the report is a HISTORY, and PR 5's refusal fact is a now-fact.
-      rangeRefusal === null,
+      // The interpretability floor, `stoppedReason !== 'refused'` and
+      // `rangeRefusal === null` all moved into `mayStateRecordClean` above.
+      true,
     oralRoute: facts.oralRoute,
     arrangementExposures: facts.arrangementExposures.map((a) => ({ label: a.label })),
     contamination: facts.contamination,
