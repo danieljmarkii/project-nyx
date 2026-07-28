@@ -71,7 +71,7 @@ function activeInput(over: Partial<TrialCardInput> = {}): TrialCardInput {
     petName: 'Biscuit',
     species: 'dog',
     coverage: { daysLogged: 22, daysElapsed: 23 },
-    exposures: { totalFeedings: 68, offDiet: 0 },
+    exposures: { mayClaimAllMatched: true, totalFeedings: 68, offDiet: 0 },
     ...over,
   };
 }
@@ -89,7 +89,7 @@ describe('the two rules (they govern every state)', () => {
     })],
     ['2 clean', activeInput()],
     ['3 exposures', activeInput({
-      exposures: {
+      exposures: { mayClaimAllMatched: true,
         totalFeedings: 68,
         offDiet: 3,
         mostRecent: { label: 'Zuke’s Mini Naturals (chicken)', when: 'Yesterday, 6:40 pm' },
@@ -98,7 +98,7 @@ describe('the two rules (they govern every state)', () => {
     ['4 below floor', activeInput({
       belowCoverageFloor: true,
       coverage: { daysLogged: 6, daysElapsed: 23 },
-      exposures: { totalFeedings: 9, offDiet: 0 },
+      exposures: { mayClaimAllMatched: true, totalFeedings: 9, offDiet: 0 },
     })],
     ['5 milestone', activeInput({ nowMs: localNoon(2026, 8, 27) })],
     ['6 overrun', activeInput({ nowMs: localNoon(2026, 9, 1) })],
@@ -108,7 +108,7 @@ describe('the two rules (they govern every state)', () => {
         targetDurationDays: 56, foodLabel: FOOD, outcome: 'improved',
       },
       coverage: { daysLogged: 54, daysElapsed: 56 },
-      exposures: { totalFeedings: 182, offDiet: 6 },
+      exposures: { mayClaimAllMatched: true, totalFeedings: 182, offDiet: 6 },
     })],
     ['7b abandoned (refusal)', activeInput({
       trial: {
@@ -117,7 +117,7 @@ describe('the two rules (they govern every state)', () => {
         stoppedReason: 'Biscuit wouldn’t eat it', stoppedForRefusal: true,
       },
       coverage: { daysLogged: 18, daysElapsed: 19 },
-      exposures: { totalFeedings: 54, offDiet: 0 },
+      exposures: { mayClaimAllMatched: true, totalFeedings: 54, offDiet: 0 },
     })],
     ['8 intake decline', activeInput({
       species: 'cat',
@@ -126,6 +126,14 @@ describe('the two rules (they govern every state)', () => {
     })],
     ['9 free-fed', activeInput({ freeFed: { loggedFeedings: 22 } })],
     ['10 multi-pet caveat', activeInput({ otherPetNames: ['Mochi'] })],
+    ['11 trial-diet refusal', activeInput({
+      species: 'cat',
+      petName: 'Mochi',
+      trialDietRefusal: { refusedFeedings: 19, ratedFeedings: 22, days: 11 },
+    })],
+    ['12 intake unrated (teach)', activeInput({
+      intakeRating: { rated: 1, feedings: 12 },
+    })],
   ];
 
   // R1 — the negative claim is deleted from the product. Four independent proofs
@@ -288,7 +296,7 @@ describe('state 2 — mid-trial, clean', () => {
 
 describe('state 3 — the day after a slip', () => {
   const model = resolveTrialCard(activeInput({
-    exposures: {
+    exposures: { mayClaimAllMatched: true,
       totalFeedings: 68,
       offDiet: 3,
       mostRecent: { label: 'Zuke’s Mini Naturals (chicken)', when: 'Yesterday, 6:40 pm' },
@@ -322,7 +330,7 @@ describe('state 3 — the day after a slip', () => {
 
   it('a single exposure reads "That 1 is", not "The 1 are"', () => {
     const one = resolveTrialCard(activeInput({
-      exposures: { totalFeedings: 68, offDiet: 1 },
+      exposures: { mayClaimAllMatched: true, totalFeedings: 68, offDiet: 1 },
     }));
     expect(textOf(one, 'qualifier')[0]).toContain('That 1 is what’s been logged, not a total.');
   });
@@ -332,7 +340,7 @@ describe('state 4 — below the coverage floor', () => {
   const model = resolveTrialCard(activeInput({
     belowCoverageFloor: true,
     coverage: { daysLogged: 6, daysElapsed: 23 },
-    exposures: { totalFeedings: 9, offDiet: 0 },
+    exposures: { mayClaimAllMatched: true, totalFeedings: 9, offDiet: 0 },
   }));
 
   // Jordan's binding constraint: the owner below the floor is by definition the
@@ -368,7 +376,7 @@ describe('state 4 — below the coverage floor', () => {
   it('is driven by an input flag, never a threshold computed here', () => {
     const withoutFlag = resolveTrialCard(activeInput({
       coverage: { daysLogged: 6, daysElapsed: 23 },
-      exposures: { totalFeedings: 9, offDiet: 0 },
+      exposures: { mayClaimAllMatched: true, totalFeedings: 9, offDiet: 0 },
     }));
     expect(withoutFlag.state).toBe('clean');
   });
@@ -605,7 +613,7 @@ describe('state 7a — completed', () => {
       targetDurationDays: 56, foodLabel: FOOD, outcome: 'improved',
     },
     coverage: { daysLogged: 54, daysElapsed: 56 },
-    exposures: { totalFeedings: 182, offDiet: 6 },
+    exposures: { mayClaimAllMatched: true, totalFeedings: 182, offDiet: 6 },
   }));
 
   it('keeps rendering after completion, as a dated range', () => {
@@ -637,6 +645,33 @@ describe('state 7a — completed', () => {
       { id: 'open_report', label: 'Open vet report', emphasis: 'link' },
     ]);
   });
+
+  // R4 (PM, 2026-07-27) — the qualitative approach is PAUSED; the data leads.
+  // The outcome question stays but is explicitly optional and skippable, so the
+  // card must render NOTHING rather than a placeholder when it went unanswered.
+  // Pinned here because "it already works" is exactly how a conditional gets
+  // deleted by a later edit: an `outcome` of null must produce no verdict line
+  // and no gap where one would be.
+  it('renders no verdict line at all when the owner skipped the question', () => {
+    const m = resolveTrialCard(activeInput({
+      trial: {
+        status: 'completed', startedAt: '2026-07-03', endedAt: '2026-08-27',
+        targetDurationDays: 56, foodLabel: FOOD, outcome: null,
+      },
+      coverage: { daysLogged: 54, daysElapsed: 56 },
+      exposures: { mayClaimAllMatched: true, totalFeedings: 182, offDiet: 6 },
+    }));
+    expect(m.state).toBe('completed');
+    const joined = allStrings(m).join(' ');
+    expect(joined).not.toMatch(/You said/);
+    expect(joined).not.toMatch(/not (?:answered|recorded)|no answer|unanswered|—\s*$/i);
+    // The rest of the card is unchanged: the record still renders, and so does
+    // the continuation sentence §4.3 owes a GI owner.
+    expect(textOf(m, 'fact')).toContain('Meals logged on 54 of 56 days.');
+    expect(textOf(m, 'note')).toContain('Your vet decides when the diet changes.');
+    // …and the report is still one tap away, which is the point of state 7a.
+    expect(m.actions.map((a) => a.id)).toEqual(['open_report']);
+  });
 });
 
 describe('state 7b — abandoned', () => {
@@ -647,7 +682,7 @@ describe('state 7b — abandoned', () => {
       stoppedReason: 'Biscuit wouldn’t eat it', stoppedForRefusal: true,
     },
     coverage: { daysLogged: 18, daysElapsed: 19 },
-    exposures: { totalFeedings: 54, offDiet: 0 },
+    exposures: { mayClaimAllMatched: true, totalFeedings: 54, offDiet: 0 },
   }));
 
   it('is never framed as failure', () => {
@@ -692,7 +727,7 @@ describe('state 7b — abandoned', () => {
         targetDurationDays: 56, foodLabel: FOOD, stoppedReason: 'it cost too much',
       },
       coverage: { daysLogged: 18, daysElapsed: 19 },
-      exposures: { totalFeedings: 54, offDiet: 0 },
+      exposures: { mayClaimAllMatched: true, totalFeedings: 54, offDiet: 0 },
     }));
     expect(textOf(cost, 'fact')).toEqual([
       'Meals logged on 18 of 19 days.',
@@ -707,7 +742,7 @@ describe('replacement 8 — intake decline', () => {
     petName: 'Mochi',
     intakeDeclineHeadline: 'Mochi has left most of her food for 3 days.',
     coverage: { daysLogged: 9, daysElapsed: 9 },
-    exposures: { totalFeedings: 18, offDiet: 0 },
+    exposures: { mayClaimAllMatched: true, totalFeedings: 18, offDiet: 0 },
   }));
 
   // §5.2 proof #1: a cat refusing the hydrolyzed diet every day whose owner
@@ -719,12 +754,19 @@ describe('replacement 8 — intake decline', () => {
     expect(allStrings(model).join(' ')).not.toMatch(/matched|feedings in total|Meals logged on/);
   });
 
-  it('puts the cat before the trial', () => {
-    expect(textOf(model, 'lead')).toEqual(['Mochi has left most of her food for 3 days.']);
-    expect(textOf(model, 'note')).toEqual([
+  // Round 5 moved both lines onto the `flag` role. The rule they encode was
+  // already structural in the resolver; what was missing is that the VIEW drew
+  // them in ordinary body weight, so the one composition §5.2 makes structural
+  // was the quietest thing on the card.
+  it('puts the cat before the trial, in the safety register', () => {
+    expect(textOf(model, 'flag')).toEqual([
+      'Mochi has left most of her food for 3 days.',
       'A cat that stops eating needs a call today, whatever the trial is doing. ' +
       'Culprit isn’t showing the trial numbers while this is going on.',
     ]);
+    // …and NOT as body text, which is what the tinted block replaces.
+    expect(textOf(model, 'lead')).toEqual([]);
+    expect(textOf(model, 'note')).toEqual([]);
   });
 
   it('still renders the day counter, which is not a claim about the pet', () => {
@@ -747,14 +789,14 @@ describe('the intake-decline replacement is TERMINAL-STATE-AWARE', () => {
         targetDurationDays: 56, foodLabel: FOOD, outcome: 'improved',
       },
       coverage: { daysLogged: 54, daysElapsed: 56 },
-      exposures: { totalFeedings: 182, offDiet: 6 },
+      exposures: { mayClaimAllMatched: true, totalFeedings: 182, offDiet: 6 },
       intakeDeclineHeadline: 'Mochi has left most of her food for 3 days.',
     }));
     expect(textOf(m, 'fact')).toEqual([]);
     expect(allStrings(m).join(' ')).not.toMatch(/matched|feedings in total|Meals logged on/);
-    expect(textOf(m, 'lead')).toEqual(['Mochi has left most of her food for 3 days.']);
+    expect(textOf(m, 'flag')).toContain('Mochi has left most of her food for 3 days.');
     // The owner's outcome still renders — it is attribution, not adherence.
-    expect(textOf(m, 'note').join(' ')).toContain('needs a call today');
+    expect(textOf(m, 'flag').join(' ')).toContain('needs a call today');
   });
 
   it('an abandoned trial with a live flag renders no record line', () => {
@@ -766,7 +808,7 @@ describe('the intake-decline replacement is TERMINAL-STATE-AWARE', () => {
         targetDurationDays: 56, foodLabel: FOOD, stoppedReason: 'other',
       },
       coverage: { daysLogged: 18, daysElapsed: 19 },
-      exposures: { totalFeedings: 54, offDiet: 0 },
+      exposures: { mayClaimAllMatched: true, totalFeedings: 54, offDiet: 0 },
       intakeDeclineHeadline: 'Mochi has left most of her food for 3 days.',
     }));
     expect(textOf(m, 'fact')).toEqual([]);
@@ -812,7 +854,7 @@ describe('the stopped_reason TOKEN contract (PR 3’s endActiveTrial)', () => {
         // NOTE: stoppedForRefusal deliberately NOT set.
       },
       coverage: { daysLogged: 18, daysElapsed: 19 },
-      exposures: { totalFeedings: 54, offDiet: 0 },
+      exposures: { mayClaimAllMatched: true, totalFeedings: 54, offDiet: 0 },
     }));
     expect(allStrings(m).join(' ')).not.toMatch(/matched the trial diet or a permitted food/i);
     expect(textOf(m, 'fact').join(' ')).toContain('Culprit isn’t showing how clean');
@@ -820,10 +862,14 @@ describe('the stopped_reason TOKEN contract (PR 3’s endActiveTrial)', () => {
 });
 
 describe('replacement 9 — free-fed', () => {
+  // A FREE-FED TRIAL CAN NEVER CLAIM ALL-MATCHED — `mayClaimAllMatched` returns
+  // false on `intakeNotDirectlyObserved` alone, so the loader can only ever
+  // supply `false` here. The fixture says so explicitly rather than relying on
+  // the resolver's state check, because that is the contract the wiring keeps.
   const model = resolveTrialCard(activeInput({
     petName: 'Mochi',
     freeFed: { loggedFeedings: 22 },
-    exposures: { totalFeedings: 22, offDiet: 0 },
+    exposures: { mayClaimAllMatched: false, totalFeedings: 22, offDiet: 0 },
   }));
 
   // Without this the most tightly controlled feline trial in the app scores
@@ -838,11 +884,311 @@ describe('replacement 9 — free-fed', () => {
     expect(allStrings(model).join(' ')).not.toMatch(/Meals logged on \d+ of \d+ days/);
   });
 
-  it('still reports what WAS logged', () => {
-    expect(textOf(model, 'fact')).toEqual([
-      '22 bowl top-ups and wet meals logged; all 22 were the trial diet.',
-    ]);
+  // ── THE FLIPPED LOCK (round 5 ①; this test used to assert the forbidden
+  // string verbatim). "all 22 were the trial diet" is EXACTLY the sentence
+  // `mayClaimAllMatched` refuses under `intakeNotDirectlyObserved`, and it was
+  // green — a test locking a rule violation in place, which is the worst kind of
+  // green there is. Both intake lanes are structurally blind in this state: a
+  // topped-up bowl produces no rated feedings, and `detectIntakeDecline` excludes
+  // free-fed foods by invariant #6. Unobservable is not clean.
+  it('reports the COUNT and makes no claim about what matched', () => {
+    expect(textOf(model, 'fact')).toEqual(['22 bowl top-ups and wet meals logged so far.']);
     expect(textOf(model, 'qualifier')).toEqual([BLIND_SPOT_QUALIFIER]);
+    expect(allStrings(model).join(' ')).not.toMatch(/all \d+ (were|matched)/i);
+  });
+
+  it('names an off-list bowl even though it cannot affirm a clean one', () => {
+    const m = resolveTrialCard(activeInput({
+      petName: 'Mochi',
+      freeFed: { loggedFeedings: 22 },
+      exposures: { mayClaimAllMatched: false, totalFeedings: 22, offDiet: 4 },
+    }));
+    // The floor direction is DISCLOSE MORE. Withholding the claim must never
+    // withhold the exposure.
+    expect(textOf(m, 'fact')).toEqual([
+      '22 bowl top-ups and wet meals logged so far; 4 were not the trial diet.',
+    ]);
+  });
+
+  it('says "1 bowl top-up or wet meal", not "1 bowl top-ups"', () => {
+    const m = resolveTrialCard(activeInput({
+      petName: 'Mochi',
+      freeFed: { loggedFeedings: 1 },
+      exposures: { mayClaimAllMatched: false, totalFeedings: 1, offDiet: 0 },
+    }));
+    expect(textOf(m, 'fact')).toEqual(['1 bowl top-up or wet meal logged so far.']);
+  });
+
+  // Round 5: Sam's card was a count and a caveat for six weeks. The card's job
+  // is keeping her IN the trial (§4.2), and this was the one active state with
+  // nothing forward on it.
+  it('carries a forward line', () => {
+    expect(textOf(model, 'forward')).toEqual(['5 weeks to go.']);
+  });
+});
+
+// ── B-533 / R1 — the trial-diet refusal register ─────────────────────────────
+//
+// The patient `detectIntakeDecline` structurally cannot see: a diet refused from
+// day 1 is uniformly low rather than declining, so the relative detector returns
+// `{ status: 'none' }` and the chronic case DECAYS INTO the clean case. PR 5
+// computed `trialDietRefusal` for exactly this and nothing consumed it.
+describe('replacement 11 — the trial diet is going unfinished (R1)', () => {
+  const refusal = { refusedFeedings: 19, ratedFeedings: 22, days: 11 };
+  const model = resolveTrialCard(activeInput({
+    species: 'cat',
+    petName: 'Mochi',
+    trialDietRefusal: refusal,
+  }));
+
+  it('REPLACES the adherence line rather than rendering beside it', () => {
+    expect(model.state).toBe('trial_refusal');
+    expect(textOf(model, 'fact')).toEqual([]);
+    expect(allStrings(model).join(' ')).not.toMatch(/matched|feedings in total|Meals logged on/);
+  });
+
+  it('states the record with its own denominator, in the safety register', () => {
+    const flags = textOf(model, 'flag');
+    expect(flags[0]).toContain('19 feedings of the 22 trial-diet feedings you’ve rated');
+    expect(flags[0]).toContain('across 11 days');
+    expect(flags[1]).toContain('worth a call soon');
+    expect(flags[1]).toContain('isn’t showing the trial numbers');
+  });
+
+  // Intake is not preference. Decline is frequently a DISEASE signal and the
+  // trial is not a reason to reclassify it as taste.
+  it('never softens toward preference', () => {
+    expect(allStrings(model).join(' ')).not.toMatch(/pick|fussy|prefer|doesn’t like|taste/i);
+  });
+
+  // §6.5: the second path may not soften the first. The clinical lane owns the
+  // headline whenever both are live.
+  it('defers to the clinical intake-decline lane when both fire', () => {
+    const m = resolveTrialCard(activeInput({
+      species: 'cat',
+      petName: 'Mochi',
+      trialDietRefusal: refusal,
+      intakeDeclineHeadline: 'Mochi has left most of her food for 3 days.',
+    }));
+    expect(m.state).toBe('intake_decline');
+    expect(textOf(m, 'flag')[0]).toBe('Mochi has left most of her food for 3 days.');
+    // Never two safety headlines stacked — that makes neither of them the headline.
+    expect(textOf(m, 'flag').join(' ')).not.toContain('trial-diet feedings you’ve rated');
+  });
+
+  it('softens the register for a dog without borrowing the feline clock', () => {
+    const m = resolveTrialCard(activeInput({
+      species: 'dog',
+      petName: 'Rex',
+      trialDietRefusal: refusal,
+    }));
+    expect(textOf(m, 'flag')[1]).not.toContain('soon');
+    expect(textOf(m, 'flag')[1]).toContain('your vet');
+  });
+
+  // The one state whose message is "this diet may need to change" cannot leave
+  // the way out as a 13px link in the header.
+  it('offers the way out as a card action', () => {
+    expect(model.actions).toEqual([
+      { id: 'trial_manage', label: 'Change or end the trial', emphasis: 'secondary' },
+    ]);
+  });
+
+  // §4.3 — the decision never expires. A refusing trial that reaches its window
+  // still has to be closable, or §7 renders a stopped intervention as ongoing.
+  it('keeps the milestone reachable once the window is up', () => {
+    const m = resolveTrialCard(activeInput({
+      nowMs: localNoon(2026, 9, 1),
+      species: 'cat',
+      petName: 'Mochi',
+      trialDietRefusal: refusal,
+    }));
+    expect(m.state).toBe('trial_refusal');
+    expect(m.actions.map((a) => a.id)).toEqual(['trial_manage', 'milestone']);
+    // A bar pinned at 100% over a diet that isn't being eaten is completion
+    // vocabulary drawn in pixels.
+    expect(m.progressFraction).toBeNull();
+  });
+
+  // TERMINAL-STATE-AWARE, the same rule round 1b established for `stopped_reason`
+  // — reached from the RECORD this time, so it covers the owner who ran the
+  // window out and tapped "This trial is done" over a diet that went uneaten.
+  it('withholds the clean statement on a COMPLETED trial too', () => {
+    const m = resolveTrialCard(activeInput({
+      species: 'cat',
+      petName: 'Mochi',
+      trial: {
+        status: 'completed', startedAt: '2026-07-03', endedAt: '2026-08-27',
+        targetDurationDays: 56, foodLabel: FOOD,
+      },
+      coverage: { daysLogged: 54, daysElapsed: 56 },
+      exposures: { mayClaimAllMatched: false, totalFeedings: 182, offDiet: 0 },
+      trialDietRefusal: refusal,
+    }));
+    expect(allStrings(m).join(' ')).not.toMatch(/matched the trial diet or a permitted food/i);
+    expect(textOf(m, 'fact').join(' ')).toContain('Culprit isn’t showing how clean');
+    // …and it still says what the record DOES hold. Not silence.
+    expect(textOf(m, 'fact').join(' ')).toContain('meals offered on 54 of 56 days');
+  });
+
+  // An owner who stopped early for cost, over a diet the log shows was going
+  // uneaten, gets the same withholding — but not the note that answers a reason
+  // they did not give.
+  it('withholds on an abandoned trial whose stated reason was not refusal', () => {
+    const m = resolveTrialCard(activeInput({
+      trial: {
+        status: 'abandoned', startedAt: '2026-07-03', endedAt: '2026-07-21',
+        targetDurationDays: 56, foodLabel: FOOD, stoppedReason: 'cost',
+      },
+      coverage: { daysLogged: 18, daysElapsed: 19 },
+      exposures: { mayClaimAllMatched: false, totalFeedings: 54, offDiet: 0 },
+      trialDietRefusal: refusal,
+    }));
+    expect(textOf(m, 'lead')).toEqual(['Stopped because of the cost.']);
+    expect(allStrings(m).join(' ')).not.toMatch(/matched the trial diet or a permitted food/i);
+    expect(allStrings(m).join(' ')).not.toContain('a different diet, not a different plan');
+  });
+
+  // Home carries no room for the register, but it may not render a tidy coverage
+  // line as though the trial were proceeding normally.
+  it('empties the Home strip line while it is live', () => {
+    const strip = resolveTrialStrip(activeInput({
+      species: 'cat', petName: 'Mochi', trialDietRefusal: refusal,
+    }));
+    expect(strip?.header).toBe('Diet trial · day 23 of 56');
+    expect(strip?.line).toBeNull();
+  });
+});
+
+// ── B-533 / R1b — the intake-rating teach line ───────────────────────────────
+//
+// The refusal register above only fires on RATED feedings (R1a: an owner who is
+// not rating must never be told her cat isn't eating), so this line is what makes
+// it reachable at all.
+describe('the intake-rating teach line (R1b)', () => {
+  const unrated = { rated: 1, feedings: 12 };
+
+  it('teaches the tap when most of the meal record is unrated', () => {
+    const m = resolveTrialCard(activeInput({ intakeRating: unrated }));
+    expect(textOf(m, 'teach')).toEqual([
+      'One tap makes these readable. Most of Biscuit’s logged meals don’t yet say ' +
+      'how much was eaten, and on a diet trial that’s the part your vet reads.',
+    ]);
+  });
+
+  // IT FIRES WHEN NOTHING IS WRONG, so nothing in it may imply otherwise — and
+  // it is about the RECORD, never the person (§6.9) and never the animal.
+  it('implies nothing is wrong with the pet and blames nobody', () => {
+    const m = resolveTrialCard(activeInput({ intakeRating: unrated }));
+    const text = textOf(m, 'teach').join(' ');
+    expect(text).not.toMatch(/\byou (?:haven’t|have not|didn’t|failed|should)\b/i);
+    expect(text).not.toMatch(/eating|refus|unwell|worry|wrong|missing/i);
+    // Quiet, never the safety register.
+    expect(textOf(m, 'flag')).toEqual([]);
+  });
+
+  it('stays silent once the owner is rating', () => {
+    const m = resolveTrialCard(activeInput({ intakeRating: { rated: 9, feedings: 12 } }));
+    expect(textOf(m, 'teach')).toEqual([]);
+  });
+
+  // A 0-of-1 record is not a habit. Teaching off it hands a correction to an
+  // owner on day 1 of 56 for having logged one meal.
+  it('stays silent on a sample too small to call "most"', () => {
+    const m = resolveTrialCard(activeInput({ intakeRating: { rated: 0, feedings: 3 } }));
+    expect(textOf(m, 'teach')).toEqual([]);
+  });
+
+  it('stays silent when there is nothing in range to have rated', () => {
+    const m = resolveTrialCard(activeInput({ intakeRating: null }));
+    expect(textOf(m, 'teach')).toEqual([]);
+  });
+
+  // The exposures card already carries a note the owner is meant to ACT on.
+  it('yields the slot on the exposures card', () => {
+    const m = resolveTrialCard(activeInput({
+      intakeRating: unrated,
+      exposures: {
+        mayClaimAllMatched: true,
+        totalFeedings: 68,
+        offDiet: 3,
+        mostRecent: { label: 'Zuke’s Mini Naturals (chicken)', when: 'Yesterday' },
+      },
+    }));
+    expect(m.state).toBe('exposures');
+    expect(textOf(m, 'teach')).toEqual([]);
+    expect(textOf(m, 'note').join(' ')).toContain('Keep going with the trial diet');
+  });
+
+  // Jordan's constraint: the owner below the floor gets MORE card, not less, and
+  // is the owner the rating tap helps most.
+  it('renders on the sub-floor card', () => {
+    const m = resolveTrialCard(activeInput({
+      belowCoverageFloor: true,
+      coverage: { daysLogged: 6, daysElapsed: 23 },
+      exposures: { mayClaimAllMatched: true, totalFeedings: 9, offDiet: 0 },
+      intakeRating: unrated,
+    }));
+    expect(m.state).toBe('below_floor');
+    expect(textOf(m, 'teach')).toHaveLength(1);
+  });
+
+  // The register it teaches toward outranks it: an owner already being told the
+  // diet is going uneaten does not also need the tap explained.
+  it('gives way to the refusal register', () => {
+    const m = resolveTrialCard(activeInput({
+      intakeRating: unrated,
+      trialDietRefusal: { refusedFeedings: 19, ratedFeedings: 22, days: 11 },
+    }));
+    expect(m.state).toBe('trial_refusal');
+    expect(textOf(m, 'teach')).toEqual([]);
+  });
+});
+
+// ── B-533 — the gate on the one affirmative sentence this file says ──────────
+describe('mayClaimAllMatched gates the CLAIM, never the COUNT', () => {
+  // Every break the pre-ship review found at this boundary was the same break:
+  // the module withholds for five computed reasons and the card knew none of them.
+  it('says the count and stops when the claim is not sayable', () => {
+    const m = resolveTrialCard(activeInput({
+      exposures: { mayClaimAllMatched: false, totalFeedings: 68, offDiet: 0 },
+    }));
+    expect(textOf(m, 'fact')).toEqual([
+      'Meals logged on 22 of 23 days.',
+      '68 feedings in total.',
+    ]);
+    expect(allStrings(m).join(' ')).not.toMatch(/all \d+ matched/i);
+  });
+
+  it('still says it when the module allows it', () => {
+    const m = resolveTrialCard(activeInput());
+    expect(textOf(m, 'fact')).toContain(
+      '68 feedings in total — all 68 matched the trial diet or a permitted food.',
+    );
+  });
+
+  // §5.2 rules the exposure count a FLOOR, and the floor direction is DISCLOSE
+  // MORE. Withholding the number is how the last two attempts at this wiring
+  // deleted real findings.
+  it('never withholds the off-diet count', () => {
+    const m = resolveTrialCard(activeInput({
+      exposures: { mayClaimAllMatched: false, totalFeedings: 68, offDiet: 3 },
+    }));
+    expect(textOf(m, 'fact')).toContain('68 feedings in total — 65 matched, 3 did not.');
+  });
+
+  // The sub-floor card carried its OWN copy of the affirmative claim, which is
+  // exactly how a rule enforced in one place ships broken in another.
+  it('gates the sub-floor card’s combined sentence too', () => {
+    const m = resolveTrialCard(activeInput({
+      belowCoverageFloor: true,
+      coverage: { daysLogged: 6, daysElapsed: 23 },
+      exposures: { mayClaimAllMatched: false, totalFeedings: 9, offDiet: 0 },
+    }));
+    expect(textOf(m, 'fact')).toEqual([
+      'Of what’s on the record so far: meals on 6 of 23 days, and 9 feedings in total.',
+    ]);
+    expect(allStrings(m).join(' ')).not.toMatch(/all \d+ matched/i);
   });
 });
 

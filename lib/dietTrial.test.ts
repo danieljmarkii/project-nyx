@@ -26,6 +26,7 @@ import {
   sanctionedProteinsOn,
   trialContamination,
   trialViabilityHeadline,
+  trialViabilityNote,
   type AllowedFood,
   type TrialFeeding,
   type TrialSpec,
@@ -760,13 +761,138 @@ describe('adversarial regressions — the module half', () => {
     expect(facts.coverage).toMatchObject({ daysLogged: 14, daysElapsed: 14 });
   });
 
-  it('the viability line names the record and the vet, never a preference', () => {
-    const line = trialViabilityHeadline({ refusedFeedings: 28, ratedFeedings: 28, days: 14 }, 'Mochi');
+  it('the viability line names the record, with its own denominator', () => {
+    const line = trialViabilityHeadline({ refusedFeedings: 28, ratedFeedings: 40, days: 14 });
     expect(line).toMatch(/were left unfinished/);
     // Never asserts a refusal over a `some`/`picked` record.
     expect(line).not.toMatch(/logged as refused/);
-    expect(line).toMatch(/your vet/);
     expect(line).not.toMatch(/pick|fussy|prefer|doesn’t like|taste/i);
+    // R1a — the evidence base is ON the claim. "28 feedings were left unfinished"
+    // reads identically whether the owner rated 40 feedings or 400.
+    expect(line).toContain('28 feedings of the 40 trial-diet feedings you’ve rated');
+    // `days` is DISTINCT DAYS, not a span, so the phrasing may not imply a window.
+    expect(line).toContain('across 14 days');
+    expect(line).not.toMatch(/over the last/);
+  });
+
+  it('the viability note escalates on the record, and never on intake it cannot see', () => {
+    const cat = trialViabilityNote('Mochi', 'cat');
+    const dog = trialViabilityNote('Rex', 'dog');
+    expect(cat).toMatch(/your vet|a call/);
+    // The FELINE clock is named; the dog register does not borrow it.
+    expect(cat).toContain('soon');
+    expect(dog).not.toContain('soon');
+    // THE OVER-CLAIM THE MOCK CARRIED. The record here is the TRIAL DIET going
+    // unfinished — a cat that refuses the hydrolysate and clears a bowl of
+    // chicken every night produces exactly this fact, so "a cat eating this
+    // little" asserts something no logged row supports.
+    for (const line of [cat, dog]) {
+      expect(line).not.toMatch(/eating this little|barely eating|hardly eating/i);
+      expect(line).not.toMatch(/pick|fussy|prefer|taste/i);
+      // Says that it went quiet — a surface that withholds without saying so
+      // reads as a record with nothing in it.
+      expect(line).toContain('isn’t showing the trial numbers');
+    }
+  });
+
+  // ── R1b — the channel that makes the lane above REACHABLE ─────────────────
+  //
+  // The refusal lane fires on RATED feedings only, deliberately (R1a: absence of
+  // data never alarms). The cost is that an owner who never learns the intake tap
+  // exists has a trial whose viability this module is structurally blind to.
+  describe('intakeRating — the rated share of the meal record', () => {
+    const mealAt = (day: string, hour: number, rating: string | null) =>
+      feeding({
+        eventId: `${day}-${hour}`,
+        occurredAt: at(day, hour),
+        foodItemId: DRY_DUCK.foodItemId,
+        foodKey: DRY_DUCK.foodKey,
+        intakeRating: rating,
+      });
+
+    it('counts rated over ratable non-treat feedings in range', () => {
+      const facts = computeTrialFacts({
+        trial: TRIAL,
+        allowedFoods: ALLOWED,
+        feedings: [
+          mealAt('2026-07-05', 8, 'all'),
+          mealAt('2026-07-05', 18, null),
+          mealAt('2026-07-06', 8, null),
+          mealAt('2026-07-06', 18, null),
+        ],
+        nowMs: new Date(2026, 6, 6, 22).getTime(),
+      });
+      expect(facts.intakeRating).toEqual({ rated: 1, feedings: 4 });
+    });
+
+    // A treat nobody rated is not a gap in the record this teaches about — and
+    // the exclusion matches the coverage numerator's, so the two counts cannot
+    // disagree about which rows are "the meal record".
+    it('excludes treats from both halves', () => {
+      const facts = computeTrialFacts({
+        trial: TRIAL,
+        allowedFoods: ALLOWED,
+        feedings: [
+          mealAt('2026-07-05', 8, 'all'),
+          feeding({
+            eventId: 'treat',
+            occurredAt: at('2026-07-05', 15),
+            foodItemId: RABBIT_JERKY.foodItemId,
+            foodKey: RABBIT_JERKY.foodKey,
+            foodType: 'treat',
+            proteins: ['rabbit', 'chicken'],
+          }),
+        ],
+        nowMs: new Date(2026, 6, 5, 22).getTime(),
+      });
+      expect(facts.intakeRating).toEqual({ rated: 1, feedings: 1 });
+    });
+
+    // MEASURED OVER NON-TREAT FEEDINGS, NOT `primary_diet` ONES. When food
+    // identity misses — a re-photographed bag (B-530), or an allowed set that has
+    // not hydrated — there are zero `primary_diet` feedings, and a narrower
+    // denominator would silence the teach line on exactly the record that most
+    // needs it.
+    it('still measures when nothing matches the allowed set', () => {
+      const facts = computeTrialFacts({
+        trial: TRIAL,
+        allowedFoods: [],
+        feedings: [
+          feeding({ eventId: 'a', occurredAt: at('2026-07-05', 8) }),
+          feeding({ eventId: 'b', occurredAt: at('2026-07-05', 18) }),
+        ],
+        nowMs: new Date(2026, 6, 5, 22).getTime(),
+      });
+      expect(facts.trialDietRefusal).toBeNull();
+      expect(facts.intakeRating).toEqual({ rated: 0, feedings: 2 });
+    });
+
+    // "Nothing in range to have rated" and "nothing rated" are different facts.
+    // A zeroed object would divide by zero on the surface and teach the tap on
+    // day 1 of an empty trial.
+    it('is NULL rather than zeroed when there is nothing in range', () => {
+      const facts = computeTrialFacts({
+        trial: TRIAL,
+        allowedFoods: ALLOWED,
+        feedings: [],
+        nowMs,
+      });
+      expect(facts.intakeRating).toBeNull();
+    });
+
+    // Counted from the CLIPPED head (§10 S3), so days the owner could not have
+    // logged cannot drag the rated share down and fire a teach line about a
+    // record that did not exist yet.
+    it('ignores the untracked head the coverage denominator also skips', () => {
+      const facts = computeTrialFacts({
+        trial: TRIAL,
+        allowedFoods: ALLOWED,
+        feedings: [mealAt('2026-07-10', 8, 'all'), mealAt('2026-07-10', 18, 'all')],
+        nowMs: new Date(2026, 6, 10, 22).getTime(),
+      });
+      expect(facts.untrackedDaysBeforeFirstLog).toBe(9);
+      expect(facts.intakeRating).toEqual({ rated: 2, feedings: 2 });
+    });
   });
 
   it('does not fire on one bad dinner', () => {

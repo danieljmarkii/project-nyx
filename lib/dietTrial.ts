@@ -793,6 +793,33 @@ export interface TrialDietRefusal {
   days: number;
 }
 
+/**
+ * How much of the meal record carries an intake rating (R1b).
+ *
+ * THIS IS WHAT MAKES `trialDietRefusal` REACHABLE, and that is the only reason it
+ * is computed. The refusal lane above fires on RATED feedings only — deliberately,
+ * because an owner who never rates intake must never be told her cat isn't eating
+ * (R1a: absence of data never alarms). The cost of that rule is that a diligent
+ * owner who taps "logged" and moves on is invisible to the one lane that would
+ * catch a refused prescription diet, and nothing in the app ever tells her the tap
+ * exists. So the record's own rated share is disclosed, and a surface can teach
+ * the tap BEFORE anything is wrong.
+ *
+ * MEASURED OVER NON-TREAT FEEDINGS, not over `primary_diet` ones. The refusal
+ * lane's own denominator is the narrower set, but a surface cannot teach off it:
+ * when the allowed set has not hydrated — or a re-photographed bag has broken
+ * food identity (B-530) — there are zero `primary_diet` feedings and the share is
+ * 0/0, so the teach line would go silent on exactly the record that needs it most.
+ * The wider denominator is also what the copy may honestly claim: this is a fact
+ * about the MEAL RECORD, and it says nothing about the trial diet or the animal.
+ */
+export interface TrialIntakeRating {
+  /** In-window non-treat feedings carrying any `intake_rating`. */
+  rated: number;
+  /** In-window non-treat feedings, rated or not. */
+  feedings: number;
+}
+
 export interface TrialFacts {
   range: TrialRange | null;
   coverage: TrialCoverage | null;
@@ -803,6 +830,9 @@ export interface TrialFacts {
   /** Null unless the floors below are cleared. Presence-only, like everything
    *  else here: its absence is not evidence the pet is eating. */
   trialDietRefusal: TrialDietRefusal | null;
+  /** R1b — the rated share of the meal record. Null when there is nothing in
+   *  range to have rated, which is not the same as "nothing is rated". */
+  intakeRating: TrialIntakeRating | null;
   /** §10 S3 — days between `started_at` and the first logged feeding. Reported
    *  as UNTRACKED, never counted as failure, and excluded from the range. */
   untrackedDaysBeforeFirstLog: number;
@@ -973,6 +1003,7 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
     contamination: trialContamination(ctx),
     arrangementExposures: arrangementHits,
     trialDietRefusal: null,
+    intakeRating: null,
     untrackedDaysBeforeFirstLog: 0,
     interpretability: 'not_yet',
     belowCoverageFloor: false,
@@ -1049,6 +1080,10 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
   // prescribed food is being eaten.
   let refusedFeedings = 0;
   let ratedFeedings = 0;
+  // R1b's counters, over the WIDER non-treat population — see `TrialIntakeRating`
+  // for why they are not the refusal lane's own denominator.
+  let ratedMealFeedings = 0;
+  let ratableFeedings = 0;
   const refusedDays = new Set<number>();
   const refusalStamps: number[] = [];
   // The viability fact is about the pet NOW, not about the whole trial.
@@ -1070,6 +1105,17 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
     // refusal is carried by `trialDietRefusal` instead, which is a fact about the
     // ANIMAL rather than a hole in the RECORD.
     if (feeding.foodType !== 'treat' && day >= startDayIndex) coveredDays.add(day);
+
+    // R1b's denominator, on the SAME rows the coverage numerator walks and with
+    // the same treat exclusion — a treat nobody rated is not a gap in the record
+    // this teaches about. Counted from `startDayIndex` (the clipped head) rather
+    // than `exposureStart`, so days the owner could not have logged cannot drag
+    // the rated share down and fire a teach line about a record that did not
+    // exist yet.
+    if (feeding.foodType !== 'treat' && day >= startDayIndex) {
+      ratableFeedings += 1;
+      if (feedingWasFinished(feeding.intakeRating) !== null) ratedMealFeedings += 1;
+    }
 
     const classification = classifyFeeding(ctx, feeding);
     if (classification.verdict === 'unclassifiable') {
@@ -1161,6 +1207,13 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
     },
     oralRoute,
     trialDietRefusal,
+    // Null, not `{ rated: 0, feedings: 0 }` — "nothing in range to have rated" and
+    // "nothing rated" are different facts, and only the second one is worth
+    // teaching about. A surface that saw a zeroed object would divide by zero and
+    // teach the tap on day 1 of an empty trial.
+    intakeRating: ratableFeedings > 0
+      ? { rated: ratedMealFeedings, feedings: ratableFeedings }
+      : null,
     untrackedDaysBeforeFirstLog,
     interpretability,
     belowCoverageFloor: interpretability === 'does_not_support',
@@ -1443,22 +1496,61 @@ export function mayClaimAllMatched(facts: TrialFacts): boolean {
  *     action it names is the vet — a different hydrolysate is the standard
  *     answer, and that is a decision only the vet can make.
  */
-export function trialViabilityHeadline(
-  refusal: TrialDietRefusal,
-  petName: string,
-): string {
+export function trialViabilityHeadline(refusal: TrialDietRefusal): string {
   // "LEFT UNFINISHED", NOT "REFUSED". The predicate widened to not-finished
   // (`refused` / `picked` / `some`) so it could see the cat that picks — but the
   // copy kept saying "logged as refused", which asserts something the record does
   // not contain about three meals the owner rated "ate some". §6.5's rule for
   // this string is that it reports the RECORD; the string has to widen with the
   // predicate or it stops doing that.
+  //
+  // AND IT CARRIES ITS OWN DENOMINATOR (B-533). R1a is that this register fires
+  // on LOGGED EVIDENCE ONLY, and a headline that states a numerator alone hides
+  // the evidence base it rests on: "19 meals were left unfinished" reads the same
+  // whether the owner rated 22 feedings or 500. The denominator is what lets an
+  // owner check the claim against her own memory — and it is the same disclosure
+  // discipline §5.1 applies to every other count on the card, where a number
+  // without its denominator is the defect, not the shorthand.
   const n = refusal.refusedFeedings;
-  const meals = n === 1 ? '1 meal' : `${n} meals`;
-  const days = refusal.days === 1 ? 'a day' : `${refusal.days} days`;
+  const meals = n === 1 ? '1 feeding' : `${n} feedings`;
+  // `days` is DISTINCT DAYS carrying an unfinished feeding, not a span — so the
+  // phrasing has to be "across N days", never "over the last N days", which would
+  // assert a window the number is not measuring.
+  const when = refusal.days === 1 ? 'on a single day' : `across ${refusal.days} days`;
   return (
-    `${meals} of the trial diet across ${days} were left unfinished. ` +
-    `Worth telling your vet — a diet ${petName} won’t eat can’t answer the question ` +
-    'the trial was started for.'
+    `${meals} of the ${refusal.ratedFeedings} trial-diet feedings you’ve rated were ` +
+    `left unfinished, ${when}.`
+  );
+}
+
+/**
+ * The body under `trialViabilityHeadline` — species-aware, and the register is
+ * the whole point of splitting it out.
+ *
+ * THE FELINE LINE IS NOT DECORATION. A cat off its food is on the clock (the 48h
+ * hepatic-lipidosis window), so the cat register says "soon" and the dog register
+ * does not borrow that urgency for a species it does not apply to.
+ *
+ * WHAT IT MAY NOT SAY, and the trap the design-locked mock walked into: "a cat
+ * eating this little". The record here is about the TRIAL DIET going unfinished —
+ * a cat that refuses the hydrolysate and clears a bowl of chicken every night
+ * produces exactly this fact, and telling that owner her cat is barely eating is
+ * an over-claim in the alarming direction. Escalation is sanctioned by
+ * `clinical-guardrails`; inventing a fact to escalate on is not. So the sentence
+ * escalates on what IS on the record — the prescribed food going untouched.
+ *
+ * The closing sentence is load-bearing rather than polite: the card has just
+ * withheld the adherence line, and a surface that goes quiet without saying it
+ * went quiet reads as a record with nothing in it.
+ */
+export function trialViabilityNote(petName: string, species: TrialSpecies): string {
+  const call =
+    species === 'cat'
+      ? 'with a cat, food going untouched is worth a call soon'
+      : 'worth raising with your vet';
+  return (
+    `A diet ${petName} won’t eat can’t answer the question the trial was started ` +
+    `for — and ${call}, whatever the trial is doing. Culprit isn’t showing the ` +
+    'trial numbers while this is going on.'
   );
 }

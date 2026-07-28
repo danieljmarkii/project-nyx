@@ -5,12 +5,21 @@
 // what an owner can answer standing in a clinic car park holding a bag of food.
 // `AddMedicationModal` is the right LOCATION precedent (D5 — the Pet tab card is
 // where an owner already tells Culprit standing facts) and the WRONG shape one: it
-// is 566 lines collecting eight fields. Two fields render here. Everything else
-// sits behind one disclosure, and every one of those is optional.
+// is 566 lines collecting eight fields. Three fields render here — the third
+// added by R3, and it is PREFILLED rather than asked, so the default path still
+// answers two questions. Everything else sits behind one disclosure, and every
+// one of those is optional.
+//
+// R3 (PM, 2026-07-27): the start date is on the primary screen because its
+// SEMANTIC is the thing most easily got wrong — "day 1 is the first day the
+// animal has had ONLY the trial-approved foods" — and a definition behind a
+// disclosure is a definition most owners never read. It costs a glance, not a
+// decision.
 //
 // The acceptance criterion is a wall-clock number, not a taste judgement: the
 // default path — trial food + indication, "More options" never opened — completes
-// in under 15 seconds on a physical device, timed.
+// in under 15 seconds on a physical device, timed. Read cost is inside that
+// budget; a required third answer would not be.
 //
 // FOUR SCREENS, one component:
 //   'blocked' — a trial is already running (D). One active trial per pet is a
@@ -434,7 +443,48 @@ export function StartTrialModal({
                 </Text>
               ) : null}
 
-              {/* ── One disclosure. Four fields, none required. ─────────────── */}
+              {/* ── First day on the trial diet only (R3, mock round 5) ───────
+                  PROMOTED FROM "More options", and the promotion is a clinical
+                  fix rather than a layout preference. Day 1 is the first day of
+                  EXCLUSIVE feeding, after the ≥1-week transition — a definition
+                  the owner cannot apply if the field it governs is behind a
+                  disclosure they never open. The car-park owner starts the
+                  countdown on the day the vet handed over the bag, so the whole
+                  transition week lands inside the window and ~14 vet-INSTRUCTED
+                  feedings of the old food enter the record as the owner's slips.
+                  Back-dating is the affordance that keeps them out.
+
+                  Still not a third DECISION: it is prefilled Today, so the
+                  default path stays "read it and carry on" and Jordan's
+                  under-15-seconds constraint holds. */}
+              <Text style={styles.label}>{START_DATE_LABEL}</Text>
+              <TouchableOpacity
+                style={styles.fieldBtn}
+                onPress={() => setShowDatePicker((v) => !v)}
+                activeOpacity={0.7}
+                accessibilityRole="button"
+                accessibilityLabel={`${START_DATE_LABEL}: ${startedAt.toLocaleDateString([], { year: 'numeric', month: 'long', day: 'numeric' })}`}
+              >
+                <Text style={styles.fieldBtnText}>
+                  {startedAt.toLocaleDateString([], { year: 'numeric', month: 'long', day: 'numeric' })}
+                </Text>
+                <Text style={styles.changeLabel}>{showDatePicker ? 'Done' : 'Change'}</Text>
+              </TouchableOpacity>
+              {showDatePicker && (
+                <DateTimePicker
+                  value={startedAt}
+                  mode="date"
+                  display="spinner"
+                  maximumDate={new Date()}
+                  onChange={(_e: unknown, date?: Date) => {
+                    if (Platform.OS === 'android') setShowDatePicker(false);
+                    if (date) setStartedAt(date);
+                  }}
+                />
+              )}
+              <Text style={styles.help}>{startDateHelper(petName)}</Text>
+
+              {/* ── One disclosure. Three fields, none required. ────────────── */}
               <TouchableOpacity
                 style={styles.disclosure}
                 onPress={() => setMoreOpen((v) => !v)}
@@ -492,34 +542,9 @@ export function StartTrialModal({
                     <Text style={styles.help}>Ends {formatTrialEndDate(endDayKey)}.</Text>
                   ) : null}
 
-                  {/* The default VALUE is today; the SEMANTIC is the first day of
-                      EXCLUSIVE feeding, after the ≥1-week transition. Back-dating
-                      is the affordance that keeps transition-week feedings out of
-                      the exposure count. */}
-                  <Text style={styles.label}>{START_DATE_LABEL}</Text>
-                  <TouchableOpacity
-                    style={styles.fieldBtn}
-                    onPress={() => setShowDatePicker((v) => !v)}
-                    activeOpacity={0.7}
-                  >
-                    <Text style={styles.fieldBtnText}>
-                      {startedAt.toLocaleDateString([], { year: 'numeric', month: 'long', day: 'numeric' })}
-                    </Text>
-                    <Text style={styles.changeLabel}>{showDatePicker ? 'Done' : 'Change'}</Text>
-                  </TouchableOpacity>
-                  {showDatePicker && (
-                    <DateTimePicker
-                      value={startedAt}
-                      mode="date"
-                      display="spinner"
-                      maximumDate={new Date()}
-                      onChange={(_e: unknown, date?: Date) => {
-                        if (Platform.OS === 'android') setShowDatePicker(false);
-                        if (date) setStartedAt(date);
-                      }}
-                    />
-                  )}
-                  <Text style={styles.help}>{startDateHelper(petName)}</Text>
+                  {/* The start date used to live here; R3 moved it to the
+                      primary screen (mock round 5, screen B's own caption). It is
+                      NOT duplicated — one field, one state, one place. */}
 
                   <Text style={styles.label}>Vet (optional)</Text>
                   <TextInput

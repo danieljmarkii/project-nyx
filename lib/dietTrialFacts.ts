@@ -5,55 +5,62 @@
 // READ lives here. That is what makes the eleven states testable without a
 // database, which §12's QA finding says has never been true of this feature.
 //
-// ── WHAT THIS DOES NOT SUPPLY, AND WHY ───────────────────────────────────────
+// ── THE WIRING, AT LAST (B-533 / B-474) ──────────────────────────────────────
 //
-// `exposures` IS STILL NULL, and PR 5 shipping `lib/dietTrial.ts` did not change
-// that — deliberately, after three adversarial passes. See the note below.
-// Off-diet classification is `classifyFeeding`'s job — four rungs over the
-// explicit allowed set, the derived protein arm, the unrecognised fallback and
-// the oral route — and it needs `diet_trial_foods` rows that only PR 3's start
-// modal can write. Guessing here would be the worst possible failure: with an
-// EMPTY allowed set every feeding classifies off-diet, so a fabricated exposure
-// count would flag a perfectly compliant owner on every meal.
+// This file used to hard-null `exposures` and `belowCoverageFloor`, and the note
+// that stood here explained why: PR 5 computed FIVE disclosure channels
+// (`unclassifiable`, `oralRoute`, `arrangementExposures`, `trialDietRefusal`, the
+// untracked head) and this file could only pass ONE number to the card, so every
+// attempt at the wiring took the shape "withhold the claim" — and each one found
+// a new way to DELETE A REAL FINDING. The last round measured it: one meal whose
+// food row had been deleted (`ON DELETE SET NULL`) withheld twelve genuine
+// off-diet exposures and flipped a 35%-coverage trial from state 4 to `clean`.
 //
-// Silence is the correct behaviour, not a placeholder: the resolver renders the
-// coverage fact and says NOTHING about what matched. It never fills the gap with
-// a negative claim (R1 / G2) and never fills it with a reassuring one.
+// That note was right that withholding is the wrong instrument, and right that
+// the missing piece was a DESIGNED SURFACE to be honest on. Round 5 of
+// `docs/nyx-diet-trial-mockups.html` is that surface, and the fix it drew is not
+// a better withholding rule — it is a different verb. The card now says the
+// COUNT and withholds only the CLAIM (`mayClaimAllMatched`), which is the one
+// sentence that can be false; nothing is deleted to make a sentence safe.
 //
-// `belowCoverageFloor` is FALSE for the same reason. §5.2 left the floor's number
-// undefined on purpose — three defensible definitions of coverage read
-// 100% / 84% / 19% over the same 70 days of live data — and PR 5 pinned the
-// metric and then set the threshold (P-3). State 4 is built, tested and reachable
-// the moment that flag is supplied.
+// So the silence is over. States 3 and 4 are reachable, record-and-continue
+// renders, the coverage denominator matches the report's (§10 S3), and
+// `trialDietRefusal` — computed since PR 5, consumed by nothing, the pre-ship
+// review's worst client-side finding — reaches the card as the R1 viability
+// register.
 //
-// ── WHY PR 5 DID NOT SUPPLY EITHER (B-474) ───────────────────────────────────
+// ── ONE PREDICATE, LITERALLY ─────────────────────────────────────────────────
 //
-// PR 5 built the classifier and then wired it into this file. Three
-// `adversarial-reviewer` passes failed that wiring — never the predicate, which
-// held every time. The pattern was identical in each round: `computeTrialFacts`
-// returns five disclosure channels (`unclassifiable`, `oralRoute`,
-// `arrangementExposures`, `trialDietRefusal`, the untracked head) and this file
-// could only ever pass ONE number to the card, so every fix took the shape
-// "withhold the claim" — and each one found a new way to DELETE A REAL FINDING.
-// The last round measured it: one meal whose food row had been deleted
-// (`ON DELETE SET NULL`, bulk-triggerable) withheld twelve genuine off-diet
-// exposures and flipped a 35%-coverage trial from state 4 to `clean`.
+// Every judgement below comes from `computeTrialFacts` in `lib/dietTrial.ts` —
+// the same file `generate-report` and `ask` import, not a copy. This file's job
+// is now exactly what its header always claimed: every READ lives here, every
+// JUDGEMENT lives there. It reads five tables into the module's plain-data input
+// shape and reads the answers back out. There is no arithmetic here that decides
+// anything.
 //
-// Withholding is the wrong instrument. §5.2 rules the exposure count a FLOOR, and
-// the floor direction is DISCLOSE MORE, not say less. Disclosing properly means
-// new card states — an unclassifiable count, an untracked-head line, an
-// oral-route line, a viability register distinct from the clinical one — and NONE
-// of them exist in `docs/nyx-diet-trial-mockups.html`, which is design-locked at
-// round 4. Inventing them inside a build PR is how the last two rounds went
-// wrong.
-//
-// So the wiring is B-474: its own PR, with a mock round, the Designer, and
-// Dr. Chen on the register question. The predicate is shipped, tested and
-// waiting; this file keeps PR 4's honest silence until there is a designed
-// surface to be honest ON.
-import { getDietTrialProgress, getIntakeDecline, type IntakeDeclineFlag } from './analytics';
+// The one thing that was arithmetic — the bespoke `readCoverage` — is gone with
+// it. It was a second, subtly different definition of the §5.1 metric living one
+// import away from the real one: no §10 S3 head clip, so an owner handed the diet
+// at the clinic and logging from the day they got home was scored "1 of 15 days"
+// for days the app was not yet on their phone. That is the parity item (B-537),
+// and deleting the duplicate is the fix rather than porting the clip into it.
+import { getIntakeDecline, type IntakeDeclineFlag } from './analytics';
 import { getDb } from './db';
+import {
+  computeTrialFacts,
+  mayClaimAllMatched,
+  trialFoodKey,
+  type AllowedFood,
+  type TrialArrangement,
+  type TrialDose,
+  type TrialFacts,
+  type TrialFeeding,
+  type TrialFoodRole,
+  type TrialSpec,
+} from './dietTrial';
 import { getActiveArrangementsForPet } from './feedingArrangements';
+import { relativeDayLabel } from './food';
+import { proteinsFromCacheText } from './protein';
 import { loadTrialProteinContext, trialDietNote } from './trialContaminant';
 import { localDayIndexOf, petPronouns, toLocalDayKey } from './utils';
 import type { TrialCardInput, TrialCardTrial } from './dietTrialCard';
@@ -187,38 +194,116 @@ export async function loadDietTrialFacts(args: {
         : null,
   };
 
-  const progress = getDietTrialProgress(
-    { startedAt: row.started_at, targetDurationDays: row.target_duration_days },
-    nowMs,
-  );
-
   // AN ENDED TRIAL'S WINDOW CLOSED WHEN IT ENDED, and both halves of the coverage
-  // ratio have to close with it. `getDietTrialProgress` measures to TODAY, so on a
-  // trial abandoned at day 19 a fortnight ago it returns 33 — and a "meals logged
-  // on 18 of 33 days" line would score an owner for not logging meals during a
-  // trial that was over. The numerator is clipped by the same key, so a meal fed
-  // after the trial ended cannot count toward how it was run either.
+  // ratio close with it. That used to be enforced here, against a `daysElapsed`
+  // this file computed; it is now `TrialSpec.endedAt`, which the predicate applies
+  // to BOTH halves plus the exposure window — so a meal fed after the trial ended
+  // cannot count toward how it was run, and an owner is not scored for days a
+  // finished trial wasn't running.
   const endKey = trial.status === 'active' ? null : row.ended_at;
-  const daysElapsed = endKey
-    ? spanDays(row.started_at, endKey)
-    : progress?.dayCounter ?? 1;
 
-  const [coverage, decline, freeFed, standingNote] = await Promise.all([
-    readCoverage(pet.id, row.started_at, daysElapsed, endKey),
-    readIntakeDecline(pet, nowMs),
-    readFreeFed(pet.id, row.started_at, endKey),
-    readStandingNote(pet.id, pet.name),
-  ]);
+  // The trial the PREDICATE sees. `species` drives rung 4's route rules; `endedAt`
+  // closes the window on a terminal trial so a meal fed afterwards cannot count
+  // toward how the trial was run.
+  const spec: TrialSpec = {
+    id: row.id,
+    startedAt: row.started_at,
+    endedAt: endKey,
+    targetDurationDays: row.target_duration_days,
+    species: pet.species,
+  };
+
+  const [allowedFoods, feedings, doses, arrangements, decline, standingNote] =
+    await Promise.all([
+      readAllowedFoods(row.id),
+      readFeedings(pet.id, row.started_at, endKey),
+      readDoses(pet.id, row.started_at, endKey),
+      readArrangements(pet.id, row.started_at),
+      readIntakeDecline(pet, nowMs),
+      readStandingNote(pet.id, pet.name),
+    ]);
+
+  // THE ONE CALL. Everything above is a read; nothing above decided anything.
+  //
+  // AN UNREADABLE ALLOWED SET SKIPS IT ENTIRELY (`allowedFoods === null`) rather
+  // than passing an empty array in. The two are opposite facts: an empty set is
+  // a trial with nothing permitted, so EVERY feeding classifies off-diet and a
+  // perfectly compliant owner is flagged on every meal. `readAllowedFoods` is the
+  // one read here that returns null instead of a default for that reason.
+  //
+  // Skipping is not the same as failing the whole load. The intake-decline read
+  // is a SAFETY lane and it survives — the record lines go quiet, the clinical
+  // flag does not. That is the direction §5.2 requires: the animal outranks the
+  // trial, including when the trial's own data is unreadable.
+  let facts: TrialFacts | null = null;
+  if (allowedFoods !== null) {
+    try {
+      facts = computeTrialFacts({
+        trial: spec,
+        allowedFoods,
+        feedings,
+        doses,
+        arrangements,
+        nowMs,
+        // No `timeZone`: the device's own zone IS the owner's midnight, which is
+        // the production path (B-421). The Edge Functions pass
+        // `user_profiles.timezone` so they reach the same answer as the phone
+        // rather than a UTC one.
+      });
+    } catch (e) {
+      // A predicate failure degrades to PR 4's honest silence rather than to a
+      // guess. The coverage line disappears, and nothing is claimed in either
+      // direction — which is the only safe failure mode for this surface.
+      console.error('[DietTrial] compute failed:', e);
+    }
+  }
 
   return {
     ...base,
     trial,
-    coverage,
-    // See the header: PR 5 owns both of these.
-    exposures: null,
-    belowCoverageFloor: false,
+    // §10 S3 PARITY WITH THE REPORT (B-537). The denominator is the module's
+    // CLIPPED range — `max(trial start, first log)` — not days-since-`started_at`,
+    // which is what this file used to compute for itself. The case is the normal
+    // vet-directed setup rather than an edge: the owner is handed the diet at the
+    // clinic, back-dates the trial to the day the vet started it, and begins
+    // logging when they get home. The old denominator scored them for the days
+    // before the app existed on their phone, and the report — reading the same
+    // record through the module — printed a different, kinder number on the same
+    // trial. Two surfaces, one record, two answers.
+    coverage: facts?.coverage
+      ? { daysLogged: facts.coverage.daysLogged, daysElapsed: facts.coverage.daysElapsed }
+      : null,
+    exposures: facts
+      ? {
+          totalFeedings: facts.exposures.totalFeedings,
+          // A FLOOR, never a total — and it is passed through untouched. The
+          // temptation this file failed three times is to suppress it when
+          // something else is uncertain; §5.2 rules that the wrong direction.
+          offDiet: facts.exposures.offDiet,
+          mostRecent: facts.exposures.mostRecent
+            ? {
+                label: facts.exposures.mostRecent.label ?? 'Something off the list',
+                when: relativeDayLabel(facts.exposures.mostRecent.occurredAt, nowMs),
+              }
+            : null,
+          mayClaimAllMatched: mayClaimAllMatched(facts),
+        }
+      : null,
+    belowCoverageFloor: facts?.belowCoverageFloor ?? false,
     intakeDeclineHeadline: decline,
-    freeFed,
+    // R1 — the register PR 5 built and nothing consumed. Presence-only: null is
+    // not evidence the pet is eating.
+    trialDietRefusal: facts?.trialDietRefusal ?? null,
+    // R1b — what makes the register above reachable.
+    intakeRating: facts?.intakeRating ?? null,
+    // §5.6 free-fed. BOTH halves now come off the module: the trigger is its
+    // `intakeNotDirectlyObserved` (the same flag `mayClaimAllMatched` keys on, so
+    // the state and the withheld claim can never disagree), and the count is its
+    // own feeding total rather than a second query returning a slightly different
+    // number in the same sentence as `offDiet`.
+    freeFed: facts?.intakeNotDirectlyObserved
+      ? { loggedFeedings: facts.exposures.totalFeedings }
+      : null,
     standingNote,
   };
 }
@@ -232,81 +317,254 @@ function shiftDayKey(dayKey: string, deltaDays: number): string {
   return new Date((index + deltaDays) * 86_400_000).toISOString().slice(0, 10);
 }
 
-/** Inclusive local-day span between two day keys, ≥1. Day 1 IS the start day, the
- *  same inclusive convention `getDietTrialProgress` and `trialEndDayIndex` use. */
-function spanDays(startedAt: string, endKey: string): number {
-  const start = localDayIndexOf(startedAt);
-  const end = localDayIndexOf(endKey);
-  if (start === null || end === null) return 1;
-  return Math.max(1, end - start + 1);
+/** The trial's own local day key, whether the column arrived as a DATE or an ISO
+ *  instant (the local mirror stores TEXT and both shapes exist in the wild). */
+function startKeyOf(startedAt: string): string {
+  return /^\d{4}-\d{2}-\d{2}$/.test(startedAt)
+    ? startedAt
+    : toLocalDayKey(new Date(startedAt));
 }
 
-/** §5.1 coverage — distinct LOCAL days in-window carrying at least one logged
- *  NON-TREAT feeding, over days elapsed.
+/**
+ * The lower bound every windowed read below uses.
  *
- *  Two things this fixes against the shipped `profile.tsx:193-205`:
+ * ONE LOCAL DAY OF PADDING, and the padding is the point: `occurred_at` is a UTC
+ * instant and membership is decided on the owner's LOCAL day, so a bound placed
+ * at the trial's own UTC midnight drops the first hours of day 1 at a positive
+ * offset (12 in Auckland, 5.5 in Kolkata). This exact defect shipped twice —
+ * in the old coverage read and in the outcome read — under a comment that
+ * PROMISED the padding while the code sent `${startKey}T00:00:00Z`. It is one
+ * function now so there is one place for it to be wrong.
  *
- *  • It excludes treats. The old numerator counted any `meal` EVENT, and
- *    `event_type='meal'` fires for meals and treats alike — on live data 82% of
- *    feedings are treats and 15.7% of covered days are treat-only, so a "days
- *    with food logged" count was clearable entirely by treat data.
- *  • It keys on the LOCAL day, the same clock as the denominator (B-421). The
- *    old one used `toDateString()` on a UTC-parsed timestamp against a local-day
- *    counter — halves of a ratio on two different clocks.
+ * Over-fetching a day is free: the predicate buckets by local day and drops
+ * anything outside its own range.
+ */
+function windowFromISO(startedAt: string): string {
+  return new Date(`${shiftDayKey(startKeyOf(startedAt), -1)}T00:00:00Z`).toISOString();
+}
+
+/** The predicate's upper bound, padded the same way and for the same reason.
+ *  Null while the trial runs — there is nothing above "now" to exclude. */
+function windowUntilISO(endKey: string | null): string | null {
+  return endKey === null
+    ? null
+    : new Date(`${shiftDayKey(endKey, 2)}T00:00:00Z`).toISOString();
+}
+
+/**
+ * The allowed set for THIS trial — the permit path rung 1 resolves against.
  *
- *  It is still COVERAGE, not adherence: it says how completely the record was
- *  kept, and nothing whatever about what was in the bowl. PR 5 owns the final
- *  pin of this metric (§5.1) and is expected to move it into `lib/dietTrial.ts`
- *  alongside the exposure predicate. */
-async function readCoverage(
-  petId: string,
-  startedAt: string,
-  daysElapsed: number,
-  /** Local day key the window closes on, inclusive. Null while the trial runs. */
-  endKey: string | null,
-): Promise<{ daysLogged: number; daysElapsed: number } | null> {
+ * KEYED ON THE TRIAL ID, not on "the pet's active trial". `loadTrialProteinContext`
+ * reads the latter and is deliberately not reused here: this card renders ENDED
+ * trials too (states 7a/7b, inside the grace window), and reading the active
+ * trial's allowed set against an ended trial's feedings would classify a finished
+ * trial's compliant meals against a set that never applied to them.
+ *
+ * `deleted_at IS NULL` only — `allowed_until` is NOT filtered, which is the whole
+ * point of dated membership: the predicate resolves membership ON THE FEEDING'S
+ * DATE, so a food removed on day 30 must still be visible to permit the
+ * twenty-nine days it was allowed for. Filtering it in SQL would retroactively
+ * re-score that history as off-diet.
+ */
+const ALLOWED_SET_SQL = `
+  SELECT tf.food_item_id, tf.role, tf.food_label, tf.allowed_from, tf.allowed_until,
+         f.brand, f.product_name, f.primary_protein, f.proteins
+    FROM diet_trial_foods tf
+    LEFT JOIN food_items_cache f ON f.id = tf.food_item_id
+   WHERE tf.diet_trial_id = ? AND tf.deleted_at IS NULL
+   ORDER BY tf.allowed_from, tf.id
+`;
+
+interface AllowedRow {
+  food_item_id: string;
+  role: string;
+  food_label: string;
+  allowed_from: string;
+  allowed_until: string | null;
+  brand: string | null;
+  product_name: string | null;
+  primary_protein: string | null;
+  proteins: string | null;
+}
+
+/**
+ * An unrecognised role falls to `permitted_other`, NOT to `primary_diet`.
+ *
+ * This mirrors `generate-report/trial.ts.normaliseRole` deliberately, and the
+ * direction matters: `primary_diet` rows DEFINE the sanctioned protein set, so
+ * letting an unknown value land there lets a garbled row widen the comparator —
+ * the one direction §5.5 D-A forbids. `permitted_other` still permits the food
+ * (so a compliant owner is not flagged) without granting it diet-defining power.
+ *
+ * NOTE FOR A LATER PASS: `lib/trialContaminant.ts.narrowRole` makes the OPPOSITE
+ * choice on the same column, with its own rationale. Two client surfaces reading
+ * one row into two different roles is a real divergence — filed rather than fixed
+ * here, because changing it moves the shipped log-time contaminant flag and that
+ * belongs in its own PR with its own adversarial pass.
+ */
+const ROLES: readonly TrialFoodRole[] = [
+  'primary_diet',
+  'permitted_treat',
+  'permitted_other',
+  'supplement',
+];
+
+function narrowRole(raw: string): TrialFoodRole {
+  return (ROLES as readonly string[]).includes(raw) ? (raw as TrialFoodRole) : 'permitted_other';
+}
+
+/** Null means UNREADABLE, which is not the same fact as an empty allowed set —
+ *  see the call site. Every other read here fails soft to a default; this one
+ *  cannot, because its default would accuse the owner. */
+async function readAllowedFoods(trialId: string): Promise<AllowedFood[] | null> {
   try {
-    const db = getDb();
-    const startKey = /^\d{4}-\d{2}-\d{2}$/.test(startedAt)
-      ? startedAt
-      : toLocalDayKey(new Date(startedAt));
-    // Read from one local day BEFORE the trial's first day so a timezone offset
-    // can never clip the boundary day out of the window; the local-day-key
-    // filter below is what actually decides membership.
-    //
-    // AND IT NOW ACTUALLY DOES THAT. The comment promised a day's padding and the
-    // code sent `${startKey}T00:00:00Z` — UTC midnight, which at a POSITIVE offset
-    // is LATER than local midnight of that date, so the first hours of day 1 were
-    // dropped (12 in Auckland, 5.5 in Kolkata) and coverage under-counted its own
-    // first day. Same defect the outcome read had; found there by
-    // `adversarial-reviewer`, which noted it as a shared pattern worth fixing
-    // rather than shipping a third time.
-    const fromISO = new Date(`${shiftDayKey(startKey, -1)}T00:00:00Z`).toISOString();
-
-    const rows = await db.getAllAsync<{ occurred_at: string; food_type: string | null }>(
-      `SELECT e.occurred_at, f.food_type
-         FROM meals m
-         JOIN events e ON e.id = m.event_id
-         LEFT JOIN food_items_cache f ON f.id = m.food_item_id
-        WHERE e.pet_id = ? AND e.deleted_at IS NULL AND e.occurred_at >= ?`,
-      [petId, fromISO],
-    );
-
-    const days = new Set(
-      rows
-        // A null/unknown food_type is NOT assumed to be a treat — it is a feeding
-        // whose classification nobody has supplied, and dropping it would
-        // under-report a record the owner actually kept.
-        .filter((r) => r.food_type !== 'treat')
-        .map((r) => toLocalDayKey(new Date(r.occurred_at)))
-        .filter((k) => k >= startKey && (endKey === null || k <= endKey)),
-    );
-
-    return { daysLogged: days.size, daysElapsed };
+    const rows = await getDb().getAllAsync<AllowedRow>(ALLOWED_SET_SQL, [trialId]);
+    return rows.map((r) => ({
+      foodItemId: r.food_item_id,
+      // Null — not a blank key — when the food row has not hydrated, so membership
+      // falls back to the id rather than colliding on the bare separator.
+      foodKey:
+        r.brand !== null || r.product_name !== null
+          ? trialFoodKey(r.brand, r.product_name)
+          : null,
+      label: r.food_label,
+      role: narrowRole(r.role),
+      allowedFrom: r.allowed_from,
+      allowedUntil: r.allowed_until,
+      primaryProtein: r.primary_protein,
+      proteins: proteinsFromCacheText(r.proteins),
+    }));
   } catch (e) {
-    console.error('[DietTrial] coverage read failed:', e);
+    // AN EMPTY ALLOWED SET IS NOT A NEUTRAL FALLBACK — with nothing permitted,
+    // every feeding classifies off-diet and a perfectly compliant owner is
+    // flagged on every meal. Null says "unknown", and the caller then computes
+    // nothing at all rather than computing an accusation.
+    console.error('[DietTrial] allowed-set read failed:', e);
     return null;
   }
+}
+
+/** Every logged feeding in the padded window, in the predicate's shape. Treats
+ *  included: they are excluded from the COVERAGE numerator by the module, and
+ *  included in the EXPOSURE denominator, which is exactly why the two counts may
+ *  never share a sentence (§5.1). */
+async function readFeedings(
+  petId: string,
+  startedAt: string,
+  endKey: string | null,
+): Promise<TrialFeeding[]> {
+  const until = windowUntilISO(endKey);
+  const rows = await getDb().getAllAsync<{
+    event_id: string;
+    occurred_at: string;
+    food_item_id: string | null;
+    brand: string | null;
+    product_name: string | null;
+    food_type: string | null;
+    proteins: string | null;
+    intake_rating: string | null;
+  }>(
+    `SELECT m.event_id, e.occurred_at, m.food_item_id, m.intake_rating,
+            f.brand, f.product_name, f.food_type, f.proteins
+       FROM meals m
+       JOIN events e ON e.id = m.event_id
+       LEFT JOIN food_items_cache f ON f.id = m.food_item_id
+      WHERE e.pet_id = ? AND e.deleted_at IS NULL
+        AND e.occurred_at >= ?${until ? ' AND e.occurred_at <= ?' : ''}`,
+    until ? [petId, windowFromISO(startedAt), until] : [petId, windowFromISO(startedAt)],
+  );
+  return rows.map((r) => ({
+    eventId: r.event_id,
+    occurredAt: r.occurred_at,
+    foodItemId: r.food_item_id,
+    foodKey:
+      r.brand !== null || r.product_name !== null ? trialFoodKey(r.brand, r.product_name) : null,
+    label: `${r.brand ?? ''} ${r.product_name ?? ''}`.trim() || null,
+    foodType: r.food_type,
+    proteins: proteinsFromCacheText(r.proteins),
+    intakeRating: r.intake_rating,
+  }));
+}
+
+/**
+ * Rung 4's inputs (C3 — the oral route), including the VEHICLE the dose was
+ * hidden in (B-156's `paired_event_id`).
+ *
+ * The vehicle join is not optional detail. Without it a daily pill given inside
+ * the PRESCRIBED DIET counts as an exposure on every day of the trial — C2's
+ * alarm-fatigue failure applied to the one food the owner cannot stop feeding.
+ *
+ * It also feeds `mayClaimAllMatched`: an oral-route exposure is one of the five
+ * computed reasons the affirmative claim is not sayable. Omitting doses here
+ * would not merely lose a count — it would let the card say "all N matched" over
+ * a chewable the module had already ruled an exposure.
+ */
+async function readDoses(
+  petId: string,
+  startedAt: string,
+  endKey: string | null,
+): Promise<TrialDose[]> {
+  const until = windowUntilISO(endKey);
+  const rows = await getDb().getAllAsync<{
+    event_id: string;
+    occurred_at: string;
+    adherence: string | null;
+    paired_event_id: string | null;
+    generic_name: string | null;
+    brand_name: string | null;
+    form: string | null;
+    vehicle_food_item_id: string | null;
+    vehicle_brand: string | null;
+    vehicle_product_name: string | null;
+  }>(
+    `SELECT ma.event_id, e.occurred_at, ma.adherence, ma.paired_event_id,
+            mi.generic_name, mi.brand_name, mi.form,
+            vm.food_item_id AS vehicle_food_item_id,
+            vf.brand AS vehicle_brand, vf.product_name AS vehicle_product_name
+       FROM medication_administrations ma
+       JOIN events e ON e.id = ma.event_id
+       LEFT JOIN medication_items_cache mi ON mi.id = ma.medication_item_id
+       LEFT JOIN meals vm ON vm.event_id = ma.paired_event_id
+       LEFT JOIN food_items_cache vf ON vf.id = vm.food_item_id
+      WHERE ma.pet_id = ? AND e.deleted_at IS NULL
+        AND e.occurred_at >= ?${until ? ' AND e.occurred_at <= ?' : ''}`,
+    until ? [petId, windowFromISO(startedAt), until] : [petId, windowFromISO(startedAt)],
+  );
+  return rows.map((r) => ({
+    eventId: r.event_id,
+    occurredAt: r.occurred_at,
+    drugLabel: r.brand_name ?? r.generic_name ?? null,
+    form: r.form,
+    pairedEventId: r.paired_event_id,
+    adherence: r.adherence,
+    vehicleFoodItemId: r.vehicle_food_item_id,
+    vehicleFoodKey:
+      r.vehicle_brand !== null || r.vehicle_product_name !== null
+        ? trialFoodKey(r.vehicle_brand, r.vehicle_product_name)
+        : null,
+  }));
+}
+
+/** §5.6's free-choice arrangements, in the predicate's shape.
+ *
+ *  A NULL `active_from` FALLS BACK TO THE TRIAL'S START rather than dropping the
+ *  row. `arrangementExposures` skips an arrangement whose start it cannot parse,
+ *  and dropping one removes a reason the affirmative claim is withheld — the one
+ *  direction this wiring may not move. An arrangement with no recorded start is
+ *  active now and has no recorded end, so treating it as in force for the whole
+ *  window is both the conservative and the likely-true reading. */
+async function readArrangements(petId: string, startedAt: string): Promise<TrialArrangement[]> {
+  const rows = await getActiveArrangementsForPet(petId);
+  return rows.map((a) => ({
+    foodItemId: a.food_item_id,
+    foodKey:
+      a.brand !== null || a.product_name !== null
+        ? trialFoodKey(a.brand, a.product_name)
+        : null,
+    label: `${a.brand ?? ''} ${a.product_name ?? ''}`.trim() || null,
+    startedAt: a.active_from ?? startKeyOf(startedAt),
+    endedAt: null,
+  }));
 }
 
 /** §5.2's structural composition: the same clinically-floored `detectIntakeDecline`
@@ -339,43 +597,6 @@ export function declineHeadline(flag: IntakeDeclineFlag, petName: string): strin
   return days <= 1
     ? `${petName} has eaten less than usual today.`
     : `${petName} has left most of their food for ${days} days.`;
-}
-
-/** §5.6 free-fed. A `free_choice` arrangement emits no meal events, so the
- *  coverage RATIO has no denominator and is replaced by the not-directly-observed
- *  marker — otherwise the most tightly controlled feline trial in the app scores
- *  near-zero coverage and Culprit spends eight weeks telling a compliant owner
- *  she is failing. */
-async function readFreeFed(
-  petId: string,
-  startedAt: string,
-  endKey: string | null,
-): Promise<{ loggedFeedings: number } | null> {
-  try {
-    const arrangements = await getActiveArrangementsForPet(petId);
-    if (arrangements.length === 0) return null;
-    const db = getDb();
-    const startKey = /^\d{4}-\d{2}-\d{2}$/.test(startedAt)
-      ? startedAt
-      : toLocalDayKey(new Date(startedAt));
-    const rows = await db.getAllAsync<{ occurred_at: string }>(
-      `SELECT e.occurred_at
-         FROM meals m
-         JOIN events e ON e.id = m.event_id
-        WHERE e.pet_id = ? AND e.deleted_at IS NULL AND e.occurred_at >= ?`,
-      [petId, new Date(`${startKey}T00:00:00Z`).toISOString()],
-    );
-    // FEEDINGS in-window, not days — this replaces the coverage RATIO, so the
-    // number it renders has to be a count with no denominator to mislead about.
-    const inWindow = rows.filter((r) => {
-      const k = toLocalDayKey(new Date(r.occurred_at));
-      return k >= startKey && (endKey === null || k <= endKey);
-    }).length;
-    return { loggedFeedings: inWindow };
-  } catch (e) {
-    console.error('[DietTrial] free-fed read failed:', e);
-    return null;
-  }
 }
 
 /** C2's standing fact, re-sited from B-351 slice 4. A null context renders
