@@ -1451,8 +1451,6 @@ Deno.test('appendix B — caption reconciles treats + human food; unknown-protei
     }),
   )
   const flat = html.replace(/\s+/g, ' ')
-  // B-531/R2 — on a report with NO trial the section names what it lists (treats and
-  // table food) rather than asserting an "off-diet" verdict there is no diet to be off.
   // B-531/R2 — on a report with NO trial the caption names what the table lists (the
   // treat/human-food heuristic) rather than asserting an "off-diet exposure" count, which
   // is a verdict against a comparison that was never made: there is no diet to be off.

@@ -965,8 +965,13 @@ export interface TrialFacts {
    */
   rangeRefusalSpansEpisodes: boolean;
   /**
-   * `primary_diet` feedings inside the RECENCY window that were actually
-   * FINISHED — direct evidence the diet is being eaten now.
+   * Feedings inside the RECENCY window that were actually FINISHED — direct
+   * evidence the diet is being eaten now.
+   *
+   * MEASURED OVER WHICHEVER POPULATION SPOKE (B-530): `primary_diet` feedings
+   * normally, the whole non-treat meal record when food identity missed. It is one
+   * half of a ratio with `recentRatedFeedings`, and both halves always come from
+   * the same population as the fact they stand down — see `TrialRefusalPopulation`.
    *
    * FINISHED, NOT MERELY RATED, and the distinction is the whole point. An
    * earlier cut counted every rating, so two MORE logged refusals inside the
@@ -995,8 +1000,8 @@ export interface TrialFacts {
    */
   recentFinishedFeedings: number;
   /**
-   * `primary_diet` feedings inside the RECENCY window carrying ANY rating — the
-   * denominator `recentFinishedFeedings` is measured against.
+   * Feedings inside the RECENCY window carrying ANY rating — the denominator
+   * `recentFinishedFeedings` is measured against, over the same population (B-530).
    *
    * ── WHY THE PAIR, AND WHY THIS IS NOT A NEW THRESHOLD ──────────────────────
    * `adversarial-reviewer` broke the first cut on its SHAPE rather than on its
@@ -1939,9 +1944,9 @@ export function mayStateRecordClean(
  *     not a reason to reclassify it as taste.
  *   • It does not replace `detectIntakeDecline`, which owns the clinical lane and
  *     whose flag is checked first by every surface that renders both.
- *   • It reports the RECORD ("logged as refused"), not a diagnosis, and the
- *     action it names is the vet — a different hydrolysate is the standard
- *     answer, and that is a decision only the vet can make.
+ *   • It reports the RECORD ("left unfinished" — see the widening below), not a
+ *     diagnosis, and the action it names is the vet — a different hydrolysate is
+ *     the standard answer, and that is a decision only the vet can make.
  */
 export function trialViabilityHeadline(refusal: TrialDietRefusal): string {
   // "LEFT UNFINISHED", NOT "REFUSED". The predicate widened to not-finished

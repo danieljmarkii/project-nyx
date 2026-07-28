@@ -92,12 +92,12 @@ function activeInput(over: Partial<TrialCardInput> = {}): TrialCardInput {
 // all before B-559 — which is why round 9's defect (the fact reaching three of
 // eleven active states, with four more never seeing it) was invisible to a list
 // whose name promises otherwise.
-const REFUSING_RANGE = { days: 19, ratedFeedings: 38, refusedFeedings: 38 , population: 'trial_diet' as const };
+const REFUSING_RANGE = { days: 19, ratedFeedings: 38, refusedFeedings: 38, population: 'trial_diet' as const };
 
 /** R1's now-fact, at the canonical patient: a cat eleven days into refusing its
  *  hydrolysate. Distinct numbers from `REFUSING_RANGE` so a test asserting on the
  *  rendered string cannot pass off the wrong fact. */
-const REFUSING_NOW = { days: 11, ratedFeedings: 22, refusedFeedings: 19 , population: 'trial_diet' as const };
+const REFUSING_NOW = { days: 11, ratedFeedings: 22, refusedFeedings: 19, population: 'trial_diet' as const };
 
 const everyState: Array<[string, TrialCardInput]> = [
   ['0 no trial', { ...activeInput(), trial: null }],
@@ -1727,7 +1727,7 @@ describe('B-533 PR A — round 8 regressions', () => {
     const qualified: Array<[string, Partial<TrialCardInput>]> = [
       ['a refusing cat', {
         exposures: { mayStateRecordClean: false, totalFeedings: 68, offDiet: 0 },
-        rangeRefusal: { days: 19, ratedFeedings: 38, refusedFeedings: 38 , population: 'trial_diet' as const },
+        rangeRefusal: { days: 19, ratedFeedings: 38, refusedFeedings: 38, population: 'trial_diet' as const },
       }],
       ['a live decline flag', {
         species: 'cat',
@@ -1767,7 +1767,7 @@ describe('B-533 PR A — round 8 regressions', () => {
       species: 'cat',
       petName: 'Mochi',
       exposures: { mayStateRecordClean: false, totalFeedings: 68, offDiet: 9 },
-      rangeRefusal: { days: 19, ratedFeedings: 38, refusedFeedings: 38 , population: 'trial_diet' as const },
+      rangeRefusal: { days: 19, ratedFeedings: 38, refusedFeedings: 38, population: 'trial_diet' as const },
     });
 
     it('makes no clinical assertion off a claim-gate predicate', () => {
@@ -2354,7 +2354,7 @@ describe('state 10 — the trial-diet refusal register', () => {
   // needs a statement.
   it('states the total-refusal case as a statement, not as arithmetic', () => {
     expect(textOf(resolveTrialCard(refusing({
-      trialDietRefusal: { days: 19, ratedFeedings: 38, refusedFeedings: 38 , population: 'trial_diet' as const },
+      trialDietRefusal: { days: 19, ratedFeedings: 38, refusedFeedings: 38, population: 'trial_diet' as const },
     })), 'flag')[0]).toBe(
       'Every one of the 38 trial-diet feedings you’ve rated was left unfinished, ' +
       'across 19 days.',

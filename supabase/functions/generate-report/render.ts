@@ -1661,13 +1661,20 @@ function dietTrialSection(snap: ReportSnapshot): string {
  * "day N of M where N > M" got its own acceptance criterion here.
  */
 /**
- * The in-window weight change, as a sentence, for composition with the refusal line.
+ * The trial-scoped weight change, as a sentence.
  *
  * PERCENT OF BODY WEIGHT, not only the absolute — which is the point. `-0.3 kg` renders
  * identically for a 32 kg Labrador and a 4.4 kg cat, where it is ~7% of body mass; on a
  * refusing animal that is the most action-forcing number on the page and it was sitting
- * greyed in the fourth tile labelled "descriptive" (B-475's finding, cleared HERE for the
- * refusal case only, because that is the case where nothing else composes it).
+ * greyed in the fourth tile labelled "descriptive" (B-475's finding).
+ *
+ * IT IS NO LONGER THE REFUSAL LINE'S PASSENGER (B-530). It was originally cleared "for the
+ * refusal case only, because that is the case where nothing else composes it", and pushed
+ * from inside that branch — so every food-identity miss that silenced the refusal lane
+ * silenced this too, and the two failures compounded into the quietest possible page over
+ * the sickest patient. There are now two callers, and between them they render it exactly
+ * once: the B-494 safety-band row composes it with the refusal above the fold, and
+ * `dietTrialSection` states it on every other trial branch.
  *
  * Descriptive, never a verdict, and never rounded finer than an owner's home scale can
  * support: the reading's provenance is stated on the tile it comes from, and a percentage

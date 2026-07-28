@@ -754,7 +754,7 @@ describe('adversarial regressions — the module half', () => {
       ),
       nowMs: new Date(2026, 6, 14, 22).getTime(),
     });
-    expect(facts.trialDietRefusal).toEqual({ refusedFeedings: 28, ratedFeedings: 28, days: 14 , population: 'trial_diet' as const });
+    expect(facts.trialDietRefusal).toEqual({ refusedFeedings: 28, ratedFeedings: 28, days: 14, population: 'trial_diet' as const });
     // …and the affirmative sentence becomes unsayable, which is the whole job.
     expect(mayClaimAllMatched(facts)).toBe(false);
     // Coverage is UNCHANGED — the owner kept a perfect record and is not scored
@@ -763,7 +763,7 @@ describe('adversarial regressions — the module half', () => {
   });
 
   it('the viability line names the record, with its own denominator', () => {
-    const line = trialViabilityHeadline({ refusedFeedings: 28, ratedFeedings: 40, days: 14 , population: 'trial_diet' as const });
+    const line = trialViabilityHeadline({ refusedFeedings: 28, ratedFeedings: 40, days: 14, population: 'trial_diet' as const });
     expect(line).toMatch(/were left unfinished/);
     // Never asserts a refusal over a `some`/`picked` record.
     expect(line).not.toMatch(/logged as refused/);
@@ -1240,7 +1240,7 @@ describe('B-533 adversarial regressions — the module half', () => {
     // The now-fact is correctly quiet — the last fortnight WAS eaten.
     expect(facts.trialDietRefusal).toBeNull();
     // The range fact is not, and it is what gates the claim.
-    expect(facts.rangeRefusal).toEqual({ refusedFeedings: 84, ratedFeedings: 112, days: 42 , population: 'trial_diet' as const });
+    expect(facts.rangeRefusal).toEqual({ refusedFeedings: 84, ratedFeedings: 112, days: 42, population: 'trial_diet' as const });
     expect(mayClaimAllMatched(facts)).toBe(false);
     expect(mayStateRecordClean(facts)).toBe(false);
   });
