@@ -59,6 +59,11 @@ function rowToEvent(row: TimelineRow): NyxEvent {
     food_brand: row.food_brand,
     food_product_name: row.food_product_name,
     food_type: row.food_type,
+    // B-556. This mapper is explicit, and food_format is OPTIONAL on NyxEvent — so
+    // omitting it here compiles clean and silently drops the variant, leaving History
+    // rendering the collision it is meant to fix. Any new TimelineRow field needs a
+    // line here; the type will not tell you.
+    food_format: row.food_format,
     quantity: row.quantity,
     intake_rating: row.intake_rating as NyxEvent['intake_rating'],
     weight_kg: row.weight_kg,

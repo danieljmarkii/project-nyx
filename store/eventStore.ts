@@ -22,6 +22,10 @@ export interface NyxEvent {
   food_brand?: string | null;
   food_product_name?: string | null;
   food_type?: string | null;
+  // Physical form (B-556) — the fact that separates two library rows sharing a brand
+  // AND a product name (a prescription line stocked wet and dry). Carried on the
+  // optimistic row so a just-logged meal names its variant without a re-query.
+  food_format?: string | null;
   quantity?: string | null;
   // WSAVA 5-point owner-reported intake (B-014). NULL = unrated.
   intake_rating?: 'refused' | 'picked' | 'some' | 'most' | 'all' | null;

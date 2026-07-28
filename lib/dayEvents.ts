@@ -13,6 +13,7 @@
 import type { TimelineRow } from './db';
 import { EVENT_TYPES, EventTypeKey, SYMPTOM_TYPES } from '../constants/eventTypes';
 import { formatDrugLabel } from './medications';
+import { foodFormatTag } from './food';
 import { describeOccurredAt } from './utils';
 import { pluralize } from './dashboardCards';
 
@@ -49,6 +50,10 @@ export interface DayEventDisplay {
   category: EventTintCategory;
   /** Primary line — the food/drug name where there is one, else the type label. */
   title: string;
+  /** B-556 — the meal's physical-form tag (DRY / WET / …), already uppercased, or null
+   *  when there is nothing honest to add. Kept SEPARATE from `title` on purpose: the
+   *  title truncates and the tag must not, so the renderer places it as a sibling. */
+  formatTag: string | null;
   /** Muted qualifier (intake / adherence / vehicle), or null when nothing was recorded. */
   detail: string | null;
   /** Local clock time, honouring B-010 confidence (approximate/window rows read honestly). */
@@ -84,11 +89,17 @@ export function describeDayEvent(row: TimelineRow): DayEventDisplay {
 
   let title: string;
   let detail: string | null = null;
+  let formatTag: string | null = null;
 
   if (type === 'meal') {
     const food = foodLabelOf(row);
     // A treat-typed meal reads "Treat" (mirrors EventRow) when there's no food name.
-    title = food ?? (row.food_type === 'treat' ? 'Treat' : 'Meal');
+    const mealLabel = row.food_type === 'treat' ? 'Treat' : 'Meal';
+    title = food ?? mealLabel;
+    // B-556 — the wet/dry variant, so the drill-in can tell apart two rows of one
+    // prescription line stocked in both. Suppressed against the same label EventRow
+    // suppresses against, so the three timeline surfaces agree on when it is shown.
+    formatTag = foodFormatTag(row.food_format, mealLabel);
     detail = row.intake_rating ? INTAKE_PHRASE[row.intake_rating] ?? null : null;
   } else if (type === 'medication') {
     title = formatDrugLabel(row.drug_generic_name, row.drug_brand_name) ?? 'Medication';
@@ -101,6 +112,7 @@ export function describeDayEvent(row: TimelineRow): DayEventDisplay {
     eventType: type,
     category,
     title,
+    formatTag,
     detail,
     time,
     timeMs: Number.isFinite(timeMs) ? timeMs : 0,

@@ -18,6 +18,7 @@ function row(over: Partial<TimelineRow>): TimelineRow {
     food_brand: null,
     food_product_name: null,
     food_type: null,
+    food_format: null,
     intake_rating: null,
     drug_generic_name: null,
     drug_brand_name: null,
@@ -27,6 +28,39 @@ function row(over: Partial<TimelineRow>): TimelineRow {
 }
 
 describe('describeDayEvent (B-284 N5b drill-in labels)', () => {
+  // B-556 — the drill-in must be able to tell apart two rows of one product stocked in
+  // both forms. Before this, "Royal Canin · Selected Protein PR" wet and dry rendered
+  // as the same string on the same day.
+  it('carries the wet/dry variant as a separate tag, not inside the truncating title', () => {
+    const dry = describeDayEvent(row({
+      event_type: 'meal', food_brand: 'Royal Canin',
+      food_product_name: 'Selected Protein PR', food_type: 'meal', food_format: 'dry_kibble',
+    }));
+    const wet = describeDayEvent(row({
+      event_type: 'meal', food_brand: 'Royal Canin',
+      food_product_name: 'Selected Protein PR', food_type: 'meal', food_format: 'wet_canned',
+    }));
+    // Same title — that IS the collision; the tag is what separates them.
+    expect(dry.title).toBe('Royal Canin · Selected Protein PR');
+    expect(wet.title).toBe(dry.title);
+    expect(dry.formatTag).toBe('DRY');
+    expect(wet.formatTag).toBe('WET');
+    // Kept OUT of the title on purpose: the title truncates and the tag must not.
+    expect(dry.title).not.toContain('DRY');
+  });
+
+  it('adds no tag when the form is unspecified or would echo the row label', () => {
+    expect(describeDayEvent(row({
+      event_type: 'meal', food_product_name: 'Salmon', food_type: 'meal', food_format: 'other',
+    })).formatTag).toBeNull();
+    // A treat-format treat already reads "Treat" — no "TREAT" tag beside it.
+    expect(describeDayEvent(row({
+      event_type: 'meal', food_type: 'treat', food_format: 'treat',
+    })).formatTag).toBeNull();
+    // A non-meal row never carries one.
+    expect(describeDayEvent(row({ event_type: 'vomit' })).formatTag).toBeNull();
+  });
+
   it('a meal with a food + intake → food name title + intake qualifier, not a symptom', () => {
     const d = describeDayEvent(
       row({ event_type: 'meal', food_brand: 'Acme', food_product_name: 'Salmon', food_type: 'meal', intake_rating: 'all' }),

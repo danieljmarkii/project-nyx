@@ -16,6 +16,7 @@ import { getDb, updateEvent, updateMealFood, updateMealIntake, getMealForEvent, 
 import { syncPendingEvents, syncPendingMeals, syncPendingWeightChecks, syncPendingMedicationAdministrations } from '../lib/sync';
 import { uploadPhoto, compressForUpload, persistCapture } from '../lib/storage';
 import { supabase } from '../lib/supabase';
+import { foodFormatTag } from '../lib/food';
 import { useEventStore } from '../store/eventStore';
 import { uuid, formatExifAttribution, formatTime, deriveOccurredAt, confidenceUpdateForEdit } from '../lib/utils';
 import { getWeightKgForEvent, updateWeightCheck, parseWeightLbsToKg, kgToLbs, MAX_WEIGHT_LBS } from '../lib/weight';
@@ -112,6 +113,10 @@ export default function EditEventModal() {
   const [currentFoodId, setCurrentFoodId] = useState<string | null>(null);
   const [currentFoodBrand, setCurrentFoodBrand] = useState<string | null>(null);
   const [currentFoodProduct, setCurrentFoodProduct] = useState<string | null>(null);
+  // B-556 — the selected food's form. This screen is where getting it wrong costs most:
+  // it shows what the meal is currently set to, right beside a "Change" affordance, and
+  // brand + product alone cannot say whether that is the wet or the dry of one product.
+  const [currentFoodFormat, setCurrentFoodFormat] = useState<string | null>(null);
   const [showFoodPicker, setShowFoodPicker] = useState(false);
   const [foods, setFoods] = useState<CachedFood[]>([]);
 
@@ -164,6 +169,7 @@ export default function EditEventModal() {
           setCurrentFoodId(meal.food_item_id);
           setCurrentFoodBrand(meal.food_brand);
           setCurrentFoodProduct(meal.food_product_name);
+          setCurrentFoodFormat(meal.food_format);
           const r = meal.intake_rating;
           setIntakeRating(
             r === 'refused' || r === 'picked' || r === 'some'
@@ -508,6 +514,7 @@ export default function EditEventModal() {
         food_item_id: currentFoodId,
         food_brand: currentFoodBrand,
         food_product_name: currentFoodProduct,
+        food_format: currentFoodFormat,
         intake_rating: intakeRating,
         ...(isMedication && dose ? { adherence, how_given: howGiven } : {}),
         ...(isWeight && weightKg != null ? { weight_kg: weightKg } : {}),
@@ -645,8 +652,13 @@ export default function EditEventModal() {
                   {currentFoodProduct ? (
                     <>
                       <Text style={styles.foodProduct}>{currentFoodProduct}</Text>
-                      {currentFoodBrand ? (
-                        <Text style={styles.foodBrand}>{currentFoodBrand}</Text>
+                      {/* BRAND · FORMAT — the same meta shape the picker tiles below
+                          use, so the current selection is named the way the options are. */}
+                      {currentFoodBrand || currentFoodFormat ? (
+                        <Text style={styles.foodBrand}>
+                          {[currentFoodBrand, foodFormatTag(currentFoodFormat)]
+                            .filter(Boolean).join(' · ')}
+                        </Text>
                       ) : null}
                     </>
                   ) : (
@@ -671,6 +683,7 @@ export default function EditEventModal() {
                           setCurrentFoodId(item.id);
                           setCurrentFoodBrand(item.brand);
                           setCurrentFoodProduct(item.product_name);
+                          setCurrentFoodFormat(item.format);
                           setShowFoodPicker(false);
                         }}
                         activeOpacity={0.7}

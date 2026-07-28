@@ -116,6 +116,9 @@ export default function LogModal() {
   const [selectedFoodId, setSelectedFoodId] = useState<string | null>(null);
   const [selectedFoodBrand, setSelectedFoodBrand] = useState<string | null>(null);
   const [selectedFoodProduct, setSelectedFoodProduct] = useState<string | null>(null);
+  // B-556 — the picked food's physical form, carried alongside brand/product so the
+  // optimistic row can name its variant before the next timeline read hydrates it.
+  const [selectedFoodFormat, setSelectedFoodFormat] = useState<string | null>(null);
 
   // B-325 — the retroactive combo-confirm sheet. Set (with the just-written dose's event
   // id + the food/pet it rode in) when a retroactive combo dose lands UNCONFIRMED because
@@ -303,12 +306,14 @@ export default function LogModal() {
     setSelectedFoodId(food.id);
     setSelectedFoodBrand(food.brand);
     setSelectedFoodProduct(food.product_name);
+    setSelectedFoodFormat(food.format);
     const usingExif = occurredAtSource === 'exif';
     const effectiveOccurredAt = usingExif ? occurredAt : new Date();
     const result = await handleConfirm({
       foodId: food.id,
       foodBrand: food.brand,
       foodProduct: food.product_name,
+      foodFormat: food.format,
       foodType: food.food_type ?? null,
       // Meals are inherently witnessed — you see yourself put the bowl down.
       // The B-010 found path does not apply (you don't "discover" a meal).
@@ -350,6 +355,7 @@ export default function LogModal() {
           foodType,
           foodBrand: food.brand,
           foodProductName: food.product_name,
+          foodFormat: food.format,
           intakeRating: null,
         },
         { delayMs: 450 },
@@ -679,6 +685,7 @@ export default function LogModal() {
     foodId: string;
     foodBrand: string;
     foodProduct: string;
+    foodFormat?: string | null;
     foodType?: string | null;
     timeFields?: TimeFields;
   }): Promise<{ eventId: string; occurredAt: string; petId: string } | null> {
@@ -690,6 +697,7 @@ export default function LogModal() {
     const foodId = override?.foodId ?? selectedFoodId;
     const foodBrand = override?.foodBrand ?? selectedFoodBrand;
     const foodProduct = override?.foodProduct ?? selectedFoodProduct;
+    const foodFormat = override?.foodFormat ?? selectedFoodFormat;
     if (selectedType === 'meal' && !foodId) return null;
     // Meals pass their own witnessed time fields; the simple step derives from
     // the confidence affordance.
@@ -757,6 +765,7 @@ export default function LogModal() {
       food_item_id: foodId,
       food_brand: foodBrand,
       food_product_name: foodProduct,
+      food_format: foodFormat,
       food_type: override?.foodType ?? null,
       quantity: foodId ? 'unknown' : null,
     });

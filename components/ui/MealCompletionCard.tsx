@@ -14,6 +14,7 @@ import { syncPendingEvents, syncPendingMeals } from '../../lib/sync';
 import { formatTime } from '../../lib/utils';
 import { IntakeChipRow, IntakeRating } from '../log/IntakeChipRow';
 import { mealFlagCopy } from '../../lib/trialContaminant';
+import { foodFormatTag } from '../../lib/food';
 
 // Tab bar height from app/(tabs)/_layout.tsx — the card must clear it so it
 // isn't occluded when the user lands back on a tabs screen after a log.
@@ -211,7 +212,14 @@ export function MealCompletionCard() {
   const occurredDate = new Date(payload.occurredAt);
   // One-glance reminder of what was just logged. Brand + product, trimmed so a
   // missing brand/product doesn't leave a stray space.
-  const foodName = [payload.foodBrand, payload.foodProductName]
+  // B-556 — the variant rides INSIDE the name here (unlike the timeline rows). This
+  // line has no truncating-name-plus-badge layout to protect, and the card is a
+  // sentence ("Logged · …"), so a parenthetical reads better than a caps tag.
+  const formatTag = foodFormatTag(payload.foodFormat);
+  const foodName = [
+    [payload.foodBrand, payload.foodProductName].filter(Boolean).join(' ').trim(),
+    formatTag ? `(${formatTag.charAt(0)}${formatTag.slice(1).toLowerCase()})` : '',
+  ]
     .filter(Boolean)
     .join(' ')
     .trim();

@@ -972,6 +972,46 @@ Deno.test('resolveScope is a pure re-derivable function (no hidden Date.now / de
   assert.deepEqual(a, b)
 })
 
+// ── B-556: the meal appendix names a food's FORM ─────────────────────────────
+// Brand + product do not identify a food. A prescription line stocked in both wet and
+// dry shares both fields, so before this the appendix rendered two genuinely different
+// foods as one indistinguishable row — and under a diet trial the two forms are
+// separately adherent, which is exactly what §7 exists to answer.
+
+Deno.test('B-556 — wet and dry of ONE product are two named rows, not one collapsed row', () => {
+  idSeq = 0
+  const snap = assembleReport(
+    baseInput({
+      events: [
+        // Same brand AND same product name; only the form differs. Distinct foodItemIds,
+        // because these are two real library rows (the live case: Royal Canin Selected
+        // Protein PR, stocked wet and dry, both fed across the same days).
+        mealEvent('2026-06-01', { label: 'dry-id', format: 'dry_kibble', rating: 'all' }),
+        mealEvent('2026-06-02', { label: 'wet-id', format: 'wet_canned', rating: 'all' }),
+      ],
+    }),
+  )
+  const labels: (string | null)[] = snap.diet.mealItems.map((m) => m.foodLabel)
+  assert.equal(snap.diet.mealItems.length, 2, 'two forms stay two rows')
+  // Each row names its form, so a vet scanning the appendix can tell them apart.
+  assert.ok(labels.some((l) => l?.includes('(Dry)')), `expected a (Dry) row, got ${JSON.stringify(labels)}`)
+  assert.ok(labels.some((l) => l?.includes('(Wet)')), `expected a (Wet) row, got ${JSON.stringify(labels)}`)
+  assert.equal(new Set(labels).size, 2, 'the two labels are distinguishable')
+})
+
+Deno.test('B-556 — an unspecified form adds nothing rather than an empty parenthetical', () => {
+  idSeq = 0
+  const snap = assembleReport(
+    // 'other' is the unspecified form: deliberately absent from FORMAT_LABEL, so it
+    // must add nothing at all rather than an empty "()" — the same degradation a
+    // future unmapped enum value gets.
+    baseInput({ events: [mealEvent('2026-06-01', { label: 'Plain Food', format: 'other', rating: 'all' })] }),
+  )
+  const label = snap.diet.mealItems[0].foodLabel
+  assert.equal(label, 'Plain Food')
+  assert.ok(!label?.includes('('), 'no empty parenthetical on an unspecified form')
+})
+
 // ── A1: a pre-window medication overlapping the window enters the concurrent-change note ──
 // The highest-consequence misread (spec §4/B-117): a standing steroid begun before the report
 // range but active throughout must be a confounder, or the diet silently takes its credit.
@@ -1126,13 +1166,16 @@ Deno.test('#7/#8 mealItems — rated meals grouped by food (label · protein · 
   const items = snap.diet.mealItems
   assert.equal(items.length, 2, 'two distinct meal foods, grouped (not one row per feeding)')
   // Largest first (chicken ×3 on the stack baseline, then turkey ×1).
-  assert.equal(items[0].foodLabel, 'Instinct Chicken')
+  // B-556 — the appendix names the FORM alongside brand + product. The fixture food is
+  // wet_canned, so the row reads "(Wet)": brand + product alone do not identify a food,
+  // and a vet reading the appendix must be able to tell the wet from the dry of one line.
+  assert.equal(items[0].foodLabel, 'Instinct Chicken (Wet)')
   assert.equal(items[0].count, 3)
   assert.equal(items[0].primaryProtein, 'chicken')
   assert.equal(items[0].firstDate, '2026-05-14', 'date span start')
   assert.equal(items[0].lastDate, '2026-06-10', 'date span end')
   assert.equal(items[0].intakeMode, 'some', 'strict-plurality intake (2 some vs 1 all)')
-  assert.equal(items[1].foodLabel, 'Instinct Turkey')
+  assert.equal(items[1].foodLabel, 'Instinct Turkey (Wet)') // B-556 — same rule on every appendix row
   assert.equal(items[1].count, 1)
   // The grouped total reconciles with mealCompletion (same ratedMeals set).
   const grouped = items.reduce((s, i) => s + i.count, 0)

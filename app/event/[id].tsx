@@ -28,6 +28,7 @@ import {
 } from '../../lib/db';
 import { uploadPhoto, getSignedUrl, compressForUpload, persistCapture, MAX_EDGE_PX } from '../../lib/storage';
 import { resolveEventPhotoDisplay, addPhotoHeroCopy } from '../../lib/eventPhoto';
+import { foodFormatTag } from '../../lib/food';
 import { supabase } from '../../lib/supabase';
 import { syncPendingEvents, syncPendingMeals, syncPendingMedicationAdministrations } from '../../lib/sync';
 import { triggerVomitAnalysis, triggerStoolAnalysis } from '../../lib/analysis';
@@ -144,7 +145,9 @@ export default function EventDetailScreen() {
   const [remoteUrlFull, setRemoteUrlFull] = useState<string | null>(null);
   const [transformFailed, setTransformFailed] = useState(false);
   const [occurredAtSource, setOccurredAtSource] = useState<'manual' | 'exif' | 'now'>('manual');
-  const [foodLabel, setFoodLabel] = useState<{ brand: string | null; product: string | null } | null>(null);
+  const [foodLabel, setFoodLabel] = useState<
+    { brand: string | null; product: string | null; format: string | null } | null
+  >(null);
   // B-325 — the food's usage class (meal | treat | other). Gates the retroactive
   // "add a med given with this" entry to real vehicles (meal/treat), mirroring the
   // completion card's own showIntake gate; 'other'/unclassified foods never show it.
@@ -211,7 +214,11 @@ export default function EventDetailScreen() {
       if (EVENT_TYPES[row.event_type as EventTypeKey]?.hasFood) {
         const meal = await getMealForEvent(id);
         if (meal) {
-          setFoodLabel({ brand: meal.food_brand, product: meal.food_product_name });
+          setFoodLabel({
+            brand: meal.food_brand,
+            product: meal.food_product_name,
+            format: meal.food_format,
+          });
           setFoodType(meal.food_type);
           const rating = meal.intake_rating;
           setIntakeRating(
@@ -664,7 +671,15 @@ export default function EventDetailScreen() {
             <View style={styles.section}>
               <Text style={styles.sectionLabel}>FOOD</Text>
               {foodLabel.product ? <Text style={styles.foodProduct}>{foodLabel.product}</Text> : null}
-              {foodLabel.brand ? <Text style={styles.foodBrand}>{foodLabel.brand}</Text> : null}
+              {/* B-556 — BRAND · FORMAT, the same meta shape the Foods tab and the
+                  picker tile use, so the detail screen names a food the way the library
+                  does. Without the format this section could not distinguish two rows
+                  of one prescription line stocked in both wet and dry. */}
+              {foodLabel.brand || foodLabel.format ? (
+                <Text style={styles.foodBrand}>
+                  {[foodLabel.brand, foodFormatTag(foodLabel.format)].filter(Boolean).join(' · ')}
+                </Text>
+              ) : null}
             </View>
           ) : null}
 
