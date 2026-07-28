@@ -1148,7 +1148,6 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
   let ratedFeedings = 0;
   // R1b's counters, over the WIDER non-treat population — see `TrialIntakeRating`
   // for why they are not the refusal lane's own denominator.
-  const rangeRefusalStamps: number[] = [];
   // Needed by `allowedSetUnavailable`'s second disjunct: a `primary_diet` row
   // that matches NOTHING is the same fact as no row at all, and commoner.
   let primaryFeedings = 0;
@@ -1208,7 +1207,6 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
         }
       }
 
-      if (finished === false) rangeRefusalStamps.push(Date.parse(feeding.occurredAt));
       // The NOW-fact, bounded to the recency window.
       if (day >= refusalWindowStart && finished !== null) {
         ratedFeedings += 1;
@@ -1270,10 +1268,6 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
       ? { refusedFeedings, ratedFeedings, days: refusedDays.size }
       : null;
 
-  const rangeSpanMs =
-    rangeRefusalStamps.length > 1
-      ? Math.max(...rangeRefusalStamps) - Math.min(...rangeRefusalStamps)
-      : 0;
   // Same floors, no span guard — see `TrialFacts.rangeRefusal`.
   const rangeRefusal: TrialDietRefusal | null =
     rangeRated >= REFUSAL_MIN_RATED &&

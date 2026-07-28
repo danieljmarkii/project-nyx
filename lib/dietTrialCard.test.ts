@@ -126,6 +126,25 @@ describe('the two rules (they govern every state)', () => {
     })],
     ['9 free-fed', activeInput({ freeFed: { loggedFeedings: 22 } })],
     ['10 multi-pet caveat', activeInput({ otherPetNames: ['Mochi'] })],
+    // The two TERMINAL decline branches. Every other decline entry here is an
+    // ACTIVE trial, which is exactly why the property test could not see them
+    // withholding the floor.
+    ['7a completed + decline', activeInput({
+      species: 'cat', petName: 'Mochi',
+      trial: {
+        status: 'completed', startedAt: '2026-07-03', endedAt: '2026-08-27',
+        targetDurationDays: 56, foodLabel: FOOD,
+      },
+      intakeDeclineHeadline: 'Mochi has left most of her food for 3 days.',
+    })],
+    ['7b abandoned + decline', activeInput({
+      species: 'cat', petName: 'Mochi',
+      trial: {
+        status: 'abandoned', startedAt: '2026-07-03', endedAt: '2026-07-21',
+        targetDurationDays: 56, foodLabel: FOOD, stoppedReason: 'cost',
+      },
+      intakeDeclineHeadline: 'Mochi has left most of her food for 3 days.',
+    })],
   ];
 
   // R1 — the negative claim is deleted from the product. Four independent proofs
@@ -217,11 +236,15 @@ describe('the two rules (they govern every state)', () => {
   // that were broken (`milestone`, `intake_decline`) and could only check
   // branches that already passed. Naming the exemptions forces each one to be a
   // decision with a reason.
+  // ONE ENTRY, AND THE OTHER TWO WERE RETIRED RATHER THAN RE-ARGUED. Both read
+  // as reasonable while `exposures` was hard-nulled — there was no count to lose,
+  // so the exemption was vacuous. B-474's un-nulling made the silence real:
+  // `day one` dropped off-diet feedings logged on day 1, and `milestone` withheld
+  // twelve logged exposures at the exact moment the owner decides whether the
+  // trial is done. §4.3's "no fact lines" is an argument about COVERAGE beside a
+  // stop button; §5.2's floor is a different rule pointing the other way.
   const NO_RECORD_SUBSTRATE: Record<string, string> = {
     '0 no trial': 'no trial to have a record of',
-    '1 day one': 'nothing yet to describe — §4.2 forbids a claim in either direction',
-    '5 milestone': 'design-locked with NO fact lines: coverage beside a stop button ' +
-      'reads as the trial’s result (§4.3)',
   };
 
   it.each(everyState)('§5.2 — %s never withholds the off-diet count', (name, base) => {
@@ -863,8 +886,15 @@ describe('the intake-decline replacement is TERMINAL-STATE-AWARE', () => {
       exposures: { mayStateRecordClean: true, totalFeedings: 182, offDiet: 6 },
       intakeDeclineHeadline: 'Mochi has left most of her food for 3 days.',
     }));
-    expect(textOf(m, 'fact')).toEqual([]);
+    // The READING is gone — no coverage, no statement about what matched.
     expect(allStrings(m).join(' ')).not.toMatch(/matched|feedings in total|Meals logged on/);
+    // …but the FLOOR is not. Both terminal decline branches used to withhold the
+    // off-diet count that the ACTIVE card discloses on the identical record —
+    // round 4's rule in the two branches `everyState` cannot walk, since every
+    // decline fixture in that list is an active trial.
+    expect(textOf(m, 'fact').join(' ')).toContain(
+      'Separately, 6 logged feedings were outside the trial diet.',
+    );
     expect(textOf(m, 'flag')).toContain('Mochi has left most of her food for 3 days.');
     // The owner's outcome still renders — it is attribution, not adherence.
     expect(textOf(m, 'flag').join(' ')).toContain('needs a call today');
@@ -1397,3 +1427,67 @@ describe('B-533 adversarial regressions — round 2', () => {
 });
 
 // ── Round 3: the terminal blindness and the punished-honesty case ───────────
+
+// ── The DoD pass on the SPLIT: what a subtractive edit left half-removed ─────
+describe('B-533 PR A — the reduction’s own regressions', () => {
+  // MERGE-BLOCKING when found. The split kept the §10 S3 coverage clip and
+  // deleted the loader line that disclosed it, so the ordinary clinic hand-off —
+  // trial back-dated to the visit, logging starts at home — rendered "Meals
+  // logged on 2 of 2 days" under "Day 30 of 56" with nothing saying why, while
+  // `generate-report` printed "The first 28 days…" off the same record. Strictly
+  // more reassuring than the card it replaced.
+  it('the clip and its disclosure ship together', () => {
+    const m = resolveTrialCard(activeInput({
+      coverage: { daysLogged: 2, daysElapsed: 2 },
+      exposures: { mayStateRecordClean: false, totalFeedings: 4, offDiet: 0 },
+      untrackedDaysBeforeFirstLog: 28,
+    }));
+    expect(textOf(m, 'fact')).toContain('Meals logged on 2 of 2 days.');
+    expect(textOf(m, 'qualifier').join(' ')).toContain(
+      'The first 28 days of the trial have no meals logged against them',
+    );
+  });
+
+  // State 4 became reachable in this PR (B-474's un-nulling) while its bowl
+  // disclosure went to the sibling. Recording a bowl's removal is not something
+  // this app may punish.
+  it('names the bowl on the sub-floor card it just made reachable', () => {
+    const m = resolveTrialCard(activeInput({
+      petName: 'Mochi',
+      belowCoverageFloor: true,
+      freeFedOverlap: true,
+      freeFed: null,
+      coverage: { daysLogged: 17, daysElapsed: 38 },
+      exposures: { mayStateRecordClean: false, totalFeedings: 34, offDiet: 0 },
+    }));
+    expect(m.state).toBe('below_floor');
+    expect(textOf(m, 'qualifier').join(' ')).toContain(
+      'For part of this trial Mochi had a bowl that was topped up',
+    );
+  });
+
+  // The two exemptions B-474 turned from vacuous into real suppressions.
+  it('discloses an off-diet feeding logged on day 1', () => {
+    const m = resolveTrialCard(activeInput({
+      nowMs: localNoon(2026, 7, 3),
+      coverage: { daysLogged: 1, daysElapsed: 1 },
+      exposures: { mayStateRecordClean: false, totalFeedings: 3, offDiet: 2 },
+    }));
+    expect(m.state).toBe('day_one');
+    expect(textOf(m, 'fact').join(' ')).toContain('2 logged feedings were outside the trial diet');
+    // …and still no claim in either direction (R1).
+    expect(allStrings(m).join(' ')).not.toMatch(/all \d+ matched|no off-diet/i);
+  });
+
+  it('discloses the floor at the milestone, where the owner decides', () => {
+    const m = resolveTrialCard(activeInput({
+      nowMs: localNoon(2026, 8, 27),
+      exposures: { mayStateRecordClean: false, totalFeedings: 124, offDiet: 12 },
+    }));
+    expect(m.state).toBe('milestone');
+    expect(textOf(m, 'fact').join(' ')).toContain('12 logged feedings were outside the trial diet');
+    // §4.3's actual bar: no COVERAGE beside the stop button, and no completion
+    // vocabulary. Both still hold.
+    expect(allStrings(m).join(' ')).not.toMatch(/Meals logged on|complete|finished/i);
+  });
+});

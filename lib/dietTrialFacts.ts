@@ -328,6 +328,15 @@ export async function loadDietTrialFacts(args: {
         }
       : null,
     belowCoverageFloor: facts?.belowCoverageFloor ?? false,
+    // §10 S3 — THE CLIP AND ITS DISCLOSURE SHIP TOGETHER OR NEITHER SHIPS. The
+    // split dropped this line while keeping the clipped denominator, which made
+    // the card STRICTLY MORE REASSURING than the one it replaced: the ordinary
+    // clinic hand-off (trial back-dated to the visit, logging starts at home)
+    // rendered "Meals logged on 2 of 2 days" under "Day 30 of 56" with nothing
+    // saying why, while `generate-report` printed "The first 28 days…" off the
+    // same record. One record, two answers — the divergence this PR exists to
+    // remove.
+    untrackedDaysBeforeFirstLog: facts?.untrackedDaysBeforeFirstLog ?? 0,
     // Its own input, not a case of the claim gate — see the field's docstring for
     // why wiring it only into `mayStateRecordClean` left it unreachable.
     allowedSetUnavailable: facts?.allowedSetUnavailable ?? false,
@@ -346,6 +355,12 @@ export async function loadDietTrialFacts(args: {
     // widening the arrangement read to overlap without splitting the predicate
     // latched this state for 38 days after a bowl was removed on day 3, calling
     // 82 logged meals "bowl top-ups" and deleting the coverage ratio.
+    // A bowl that overlapped the window but is gone now. B-474's un-nulling makes
+    // the sub-floor state reachable for the first time, so the owner who RECORDED
+    // a bowl's removal now lands on "There isn't enough logged yet…" — over days
+    // the app itself cannot observe. The disclosure ships with the state that
+    // needs it, not with the register.
+    freeFedOverlap: facts?.intakeNotDirectlyObserved ?? false,
     freeFed: facts?.intakeNotDirectlyObservedNow
       ? { loggedFeedings: facts.exposures.totalFeedings }
       : null,

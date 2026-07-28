@@ -193,6 +193,12 @@ export interface TrialCardInput {
    * ("needs a call today"), and a six-week-old refusal is not news today.
    */
   rangeRefusal?: TrialDietRefusal | null;
+  /** §5.6 — a free-choice bowl OVERLAPPED the window but is not in force now.
+   *  A bowl emits no meal events by construction, so the days it was down can
+   *  never have a meal-by-meal record. Without this the owner who RECORDED the
+   *  removal lands on the sub-floor card's deficiency lead with nothing naming
+   *  the cause — and B-474's un-nulling is what made that state reachable. */
+  freeFedOverlap?: boolean;
   /**
    * `lib/dietTrial.TrialFacts.allowedSetUnavailable` — the trial has nothing
    * usable to define the diet with, so "off-diet" stops being a measurement.
@@ -434,32 +440,10 @@ function exposureLine(ex: TrialExposureFacts): string {
   return `${total} ${noun} in total — ${total - ex.offDiet} matched, ${ex.offDiet} did not.`;
 }
 
-/**
- * R1b — the intake-rating teach line's floors, and both of them are two-sided
- * guards rather than tuning.
- *
- * `SHARE` is a HALF: below it, most of the meal record is silent on whether the
- * food was eaten, which is the state worth teaching about. Above it the owner is
- * already rating and the line would be noise on a card that has to survive eight
- * weeks of daily reading (Principle 4's spirit — the card is not a lecture).
- *
- * `MIN_FEEDINGS` is what stops the line firing on the first unrated breakfast: a
- * 0-of-1 record is not a habit, and teaching off it hands a correction to an
- * owner on day 1 of 56 for the crime of having logged one meal. Four is the
- * smallest sample where "most" is a fair word.
- *
- * Deliberately NOT clinical values — nothing keys on them but whether a warm
- * sentence renders, so they need no Dr. Chen ratification the way the coverage
- * floor and the refusal floors do.
- */
 /** Below this many wholly-unmatched feedings, "nothing matched" is not yet a
- *  pattern — a trial can genuinely open with a couple of off-list meals. It is
- *  deliberately far lower than `UNHYDRATED_SET_FLOOR`, because this only decides
- *  whether a CAVEAT renders, never whether a count does. */
+ *  pattern — a trial can genuinely open with a couple of off-list meals. It only
+ *  decides whether a CAVEAT renders, never whether a count does. */
 export const UNMATCHED_CAVEAT_MIN_FEEDINGS = 3;
-
-export const INTAKE_RATING_TEACH_SHARE = 0.5;
-export const INTAKE_RATING_TEACH_MIN_FEEDINGS = 4;
 
 /**
  * §5.2: "the exposure count is a floor, never a total." Said ON the claim.
@@ -654,7 +638,19 @@ function activeCard(
       // completion vocabulary drawn in pixels, which is the one thing §4.3 forbids
       // this state from saying. The design lock draws the milestone with no bar.
       progressFraction: null,
-      lines: [{ role: 'note', text: milestoneNote(trial.indication) }],
+      lines: (() => {
+        const ml: TrialCardLine[] = [{ role: 'note', text: milestoneNote(trial.indication) }];
+        // §4.3's "deliberately NO fact lines" is an argument about COVERAGE:
+        // a ratio beside a stop button invites reading it as the trial's result.
+        // The off-diet floor is a different rule and points the other way — this
+        // is the moment the owner decides whether the trial is done, and
+        // withholding twelve logged exposures here is the worst place in the flow
+        // to withhold them. DEVIATION FROM THE ROUND-4 DESIGN LOCK, flagged for
+        // the Designer rather than taken silently; the safety direction is clear
+        // enough to ship and cheap to revert.
+        pushExposureFloor(ml, input, { lead: 'plain' });
+        return ml;
+      })(),
       actions: trialDecisionChoices(trial.indication).map((c) => ({
         id: DECISION_ACTION_ID[c.id],
         label: c.label,
@@ -683,6 +679,12 @@ function activeCard(
       role: 'forward',
       text: 'From here, every meal and treat you log builds the record your vet reads.',
     });
+    // R1 forbids a CLAIM in either direction on day 1 — no "0 off-diet foods",
+    // and none renders. A logged off-diet feeding is not a claim, it is the
+    // record, and §5.2 owes it everywhere. Before B-474 this exemption was
+    // vacuous because `exposures` was hard-nulled; un-nulling it made the silence
+    // real, and two off-diet feedings logged on day 1 vanished.
+    pushExposureFloor(lines, input, { lead: 'plain' });
     return {
       ...base,
       state,
@@ -769,6 +771,10 @@ function activeCard(
     lines.push({ role: 'fact', text: soFarLine(input) });
     lines.push({ role: 'qualifier', text: BLIND_SPOT_QUALIFIER });
     pushUnmatchedCaveat(lines, input);
+    // Wherever coverage renders, a past bowl makes its denominator unfair — and
+    // this is the state that leads with a deficiency claim, so it is the one that
+    // most needs the cause named beneath it.
+    pushPastBowlCaveat(lines, input);
     // DISCLOSED, NOT SUPPRESSED. Round 3 fixed the "recording the bowl's removal
     // routes you into a scolding" defect by deleting the whole sub-floor state —
     // the identical instrument its own commit message called forbidden two
@@ -927,6 +933,19 @@ function pushExposureFloor(
   pushUnmatchedCaveat(lines, input);
 }
 
+/** Names what a past bowl accounts for, and claims nothing about the rest — an
+ *  earlier draft closed with "aren't a gap in what you logged", which offered
+ *  three bowl days as the explanation for thirty missing ones. */
+function pushPastBowlCaveat(lines: TrialCardLine[], input: TrialCardInput): void {
+  if (!input.freeFedOverlap || input.freeFed) return;
+  lines.push({
+    role: 'qualifier',
+    text:
+      `For part of this trial ${input.petName} had a bowl that was topped up, and those ` +
+      'days can’t have a meal-by-meal count.',
+  });
+}
+
 function pushUnmatchedCaveat(lines: TrialCardLine[], input: TrialCardInput): void {
   const ex = input.exposures;
   if (!ex || ex.totalFeedings <= 0) return;
@@ -1036,6 +1055,7 @@ function pushRecordFacts(lines: TrialCardLine[], input: TrialCardInput): void {
         (ex.offDiet > 0 && !input.allowedSetUnavailable ? floorSuffix(ex.offDiet) : ''),
     });
     pushUnmatchedCaveat(lines, input);
+    pushPastBowlCaveat(lines, input);
     pushUntrackedHead(lines, input);
     pushScopeCaveat(lines, input);
     return;
@@ -1144,6 +1164,12 @@ function completedCard(
   // the owner CALLED a refusal and not the one the record shows was one.
   if (input.intakeDeclineHeadline) {
     pushDeclineLines(lines, input);
+    // ROUND-4's RULE, IN THE TWO BRANCHES `everyState` CANNOT SEE. Every decline
+    // fixture in that list is an ACTIVE trial, so the property test never walked
+    // the terminal decline branches — and they withheld the off-diet floor the
+    // active card discloses on the identical record, on a card about a pet that
+    // has stopped eating.
+    pushExposureFloor(lines, input, { lead: 'separately' });
   } else if (input.rangeRefusal) {
     // `rangeRefusal ?? trialDietRefusal` — the same precedence
     // `generate-report/render.ts` uses. A finished trial is a HISTORY, so the
@@ -1304,6 +1330,8 @@ function abandonedCard(
       lines.push({ role: 'lead', text: stoppedBecauseLine(input.petName, trial) });
     }
     pushDeclineLines(lines, input);
+    // The floor, in the second branch the property test could not see.
+    pushExposureFloor(lines, input, { lead: 'separately' });
     return {
       state: 'abandoned',
       kicker: 'Diet trial · stopped early',

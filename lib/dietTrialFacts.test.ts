@@ -327,3 +327,51 @@ describe('dosesQuery', () => {
     db.close();
   });
 });
+
+// ── The `TrialCardInput` shape — the gap that let a merge-blocker through ────
+//
+// This file previously exercised only the SQL strings, and `dietTrialCard.test.ts`
+// only exercises the resolver with hand-built inputs. Nothing tested the MAPPING
+// between them — so when a subtractive edit dropped `untrackedDaysBeforeFirstLog`
+// from the loader's return while keeping the §10 S3 clip it discloses, CI stayed
+// green and the card shipped a strictly more reassuring ratio than the one it
+// replaced. These assert the contract itself: every disclosure the module
+// computes reaches the surface that renders it.
+describe('the loader maps every computed disclosure onto the card input', () => {
+  // Read off the module's own shape rather than a hand-copied list, so a NEW
+  // disclosure channel cannot be added to `TrialFacts` and silently not wired.
+  const MUST_REACH_THE_CARD = [
+    'coverage',
+    'exposures',
+    'belowCoverageFloor',
+    'allowedSetUnavailable',
+    'untrackedDaysBeforeFirstLog',
+    'rangeRefusal',
+    'freeFed',
+    'freeFedOverlap',
+  ] as const;
+
+  function loaderReturnBlock(): string {
+    const src = require('node:fs').readFileSync(
+      require('node:path').join(__dirname, 'dietTrialFacts.ts'),
+      'utf8',
+    ) as string;
+    return src.slice(src.lastIndexOf('  return {\n    ...base,'));
+  }
+
+  it('names every field the card needs, so a dropped one is a failing test', () => {
+    const ret = loaderReturnBlock();
+    for (const field of MUST_REACH_THE_CARD) {
+      expect(ret.includes(`\n    ${field}:`)).toBe(true);
+    }
+  });
+
+  // The specific pairing that broke: the clip changes the DENOMINATOR, and the
+  // head is the only thing that explains it. They may not ship apart.
+  it('ships the coverage clip and its disclosure together', () => {
+    const ret = loaderReturnBlock();
+    const clipped = /coverage: facts\?\.coverage/.test(ret);
+    const disclosed = /untrackedDaysBeforeFirstLog:/.test(ret);
+    expect(clipped).toBe(disclosed);
+  });
+});
