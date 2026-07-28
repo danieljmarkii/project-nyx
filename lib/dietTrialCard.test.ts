@@ -94,6 +94,11 @@ function activeInput(over: Partial<TrialCardInput> = {}): TrialCardInput {
 // whose name promises otherwise.
 const REFUSING_RANGE = { days: 19, ratedFeedings: 38, refusedFeedings: 38 };
 
+/** R1's now-fact, at the canonical patient: a cat eleven days into refusing its
+ *  hydrolysate. Distinct numbers from `REFUSING_RANGE` so a test asserting on the
+ *  rendered string cannot pass off the wrong fact. */
+const REFUSING_NOW = { days: 11, ratedFeedings: 22, refusedFeedings: 19 };
+
 const everyState: Array<[string, TrialCardInput]> = [
   ['0 no trial', { ...activeInput(), trial: null }],
   ['1 day one', activeInput({
@@ -194,6 +199,23 @@ const everyState: Array<[string, TrialCardInput]> = [
     rangeRefusal: REFUSING_RANGE,
   })],
   ['2 clean, before the classifier', activeInput({ exposures: null })],
+
+  // ── R1's live register, by BOTH routes it can be reached ──────────────────
+  //
+  // Two entries and not one, because they are two different predicates wearing
+  // one register: the now-fact speaks for itself, and the range fact only speaks
+  // through `liveRefusal`'s two stand-down guards. A single fixture would walk
+  // the register while leaving the guarded route — the one whose semantics are
+  // the open Dr. Chen question — checked by nothing that runs over every state.
+  ['10 trial-diet refusal (the now-fact)', activeInput({
+    species: 'cat', petName: 'Mochi', trialDietRefusal: REFUSING_NOW,
+  })],
+  ['10 trial-diet refusal (from the range, ratings gone quiet)', activeInput({
+    species: 'cat', petName: 'Mochi',
+    rangeRefusal: REFUSING_RANGE,
+    recentFinishedFeedings: 0,
+    rangeRefusalSpansEpisodes: true,
+  })],
 ];
 
 describe('the two rules (they govern every state)', () => {
@@ -1944,7 +1966,7 @@ describe('the composition layer (B-559)', () => {
   // half — somebody must WALK it. Gap named by `adversarial-reviewer`.
   const ALL_STATES: TrialCardState[] = [
     'no_trial', 'day_one', 'clean', 'exposures', 'below_floor', 'milestone',
-    'overrun', 'completed', 'abandoned', 'intake_decline', 'free_fed',
+    'overrun', 'completed', 'abandoned', 'intake_decline', 'free_fed', 'trial_refusal',
   ];
 
   it('everyState walks every state', () => {
@@ -1991,6 +2013,10 @@ describe('the composition layer (B-559)', () => {
       },
       record: {
         floor: null, unmatched: true, pastBowl: true, untrackedHead: true, scope: 'always',
+      },
+      trial_refusal: {
+        floor: 'separately', unmatched: true, pastBowl: false, untrackedHead: false,
+        scope: 'always',
       },
     });
   });
@@ -2207,7 +2233,13 @@ describe('the composition layer (B-559)', () => {
   //
   // Home has one line and nowhere to put the caveat, the head, or the "offered,
   // not eaten" reframing that make a ratio honest on the card, so it states the
-  // ratio only when the record carries none of the six withholding reasons.
+  // ratio only when the record carries none of the seven withholding reasons.
+  //
+  // R1 ADDED THE SEVENTH, and it is the reason this shape was built: the strip
+  // has no room for the refusal register itself — that lives on the Pet tab's
+  // card — but it must not do the one thing it can do wrong here, which is render
+  // a tidy coverage line as if the trial were proceeding normally. Silence on
+  // Home, the register one tap away.
   //
   // ASSERTED AGAINST A SEPARATELY-WRITTEN PREDICATE, NOT AGAINST
   // `withholdingReasons`. The first cut of this test compared the strip's output
@@ -2221,6 +2253,7 @@ describe('the composition layer (B-559)', () => {
   // change-detector, not a test.
   const REASONS_RESTATED = (input: TrialCardInput): boolean => (
     !input.intakeDeclineHeadline
+    && !input.trialDietRefusal
     && !input.rangeRefusal
     && !input.freeFed
     && !input.allowedSetUnavailable
@@ -2242,15 +2275,26 @@ describe('the composition layer (B-559)', () => {
     expect(withholdingReasons(activeInput())).toEqual([]);
     expect(withholdingReasons(activeInput({
       intakeDeclineHeadline: 'Mochi has left most of her food for 3 days.',
+      trialDietRefusal: REFUSING_NOW,
       rangeRefusal: REFUSING_RANGE,
       freeFed: { loggedFeedings: 4 },
       allowedSetUnavailable: true,
       untrackedDaysBeforeFirstLog: 12,
       belowCoverageFloor: true,
     }))).toEqual([
-      'intake_decline', 'range_refusal', 'free_fed',
+      'intake_decline', 'trial_diet_refusal', 'range_refusal', 'free_fed',
       'allowed_set_unavailable', 'untracked_head', 'below_floor',
     ]);
+    // R1's now-fact is its OWN reason, keyed on the raw input rather than on
+    // `liveRefusal`. A record carrying only the now-fact must silence the strip
+    // even though `rangeRefusal` is absent — and, in the other direction, a range
+    // fact that `liveRefusal` declines to speak from (the pet is eating again)
+    // must STILL silence it, because the record it summarises is not a plain one.
+    expect(withholdingReasons(activeInput({ trialDietRefusal: REFUSING_NOW })))
+      .toEqual(['trial_diet_refusal']);
+    expect(withholdingReasons(activeInput({
+      rangeRefusal: REFUSING_RANGE, recentFinishedFeedings: 6, rangeRefusalSpansEpisodes: true,
+    }))).toEqual(['range_refusal']);
     // THE HEAD IS "NOT ZERO", NOT "POSITIVE". A negative or NaN head is not a
     // plain record either, and rewriting the strip's original `=== 0` as `> 0`
     // narrowed the withholding in the REASSURING direction — Home stating a
@@ -2263,5 +2307,439 @@ describe('the composition layer (B-559)', () => {
       expect(resolveTrialStrip(activeInput({ untrackedDaysBeforeFirstLog: head }))?.line ?? '')
         .not.toMatch(/meals logged on/);
     }
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// STATE 10 — THE TRIAL DIET ITSELF IS GOING UNFINISHED (R1, mock round 5)
+//
+// The property tests above prove the register is PLACED correctly — it has a
+// row, `everyState` walks it, and each disclosure renders exactly where the row
+// says. None of them can see what it SAYS, or when it may speak. Those are the
+// two things five adversarial rounds kept breaking, and the second one is the
+// open Dr. Chen question, so both are pinned here with literal strings.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('state 10 — the trial-diet refusal register', () => {
+  const refusing = (over: Partial<TrialCardInput> = {}) => activeInput({
+    species: 'cat', petName: 'Mochi', trialDietRefusal: REFUSING_NOW, ...over,
+  });
+
+  it('is the state, ahead of everything except the clinical lane', () => {
+    expect(resolveTrialCard(refusing()).state).toBe('trial_refusal');
+  });
+
+  // THE HEADLINE CARRIES ITS OWN DENOMINATOR. R1a is that this register fires on
+  // LOGGED EVIDENCE only, and a headline stating a numerator alone hides the
+  // evidence base it rests on: "19 feedings were left unfinished" reads the same
+  // whether the owner rated 22 feedings or 500. The denominator is what lets an
+  // owner check the claim against her own memory.
+  it('states the record with both numbers, and reports rather than accuses', () => {
+    expect(textOf(resolveTrialCard(refusing()), 'flag')[0]).toBe(
+      '19 feedings of the 22 trial-diet feedings you’ve rated were left unfinished, ' +
+      'across 11 days.',
+    );
+  });
+
+  // "LEFT UNFINISHED", NOT "REFUSED". The predicate widened to not-finished
+  // (`refused` / `picked` / `some`) so it could see the cat that picks; copy that
+  // kept saying "refused" would assert something the record does not contain
+  // about three meals the owner rated "ate some".
+  it('never says refused — the predicate is not-finished', () => {
+    expect(allStrings(resolveTrialCard(refusing())).join(' ')).not.toMatch(/refused/i);
+  });
+
+  // The worst case must not read as the clumsiest sentence: when every rated
+  // feeding was left unfinished — the canonical refusing patient — "38 feedings
+  // of the 38 trial-diet feedings you've rated" is arithmetic where the reader
+  // needs a statement.
+  it('states the total-refusal case as a statement, not as arithmetic', () => {
+    expect(textOf(resolveTrialCard(refusing({
+      trialDietRefusal: { days: 19, ratedFeedings: 38, refusedFeedings: 38 },
+    })), 'flag')[0]).toBe(
+      'Every one of the 38 trial-diet feedings you’ve rated was left unfinished, ' +
+      'across 19 days.',
+    );
+  });
+
+  // ⚠️ THE FELINE REGISTER IS UNRATIFIED — Dr. Chen owes a ruling. It says
+  // "today", raised from "soon" (which is what the design-locked mock draws),
+  // because this lane is the only watcher on the 48h hepatic-lipidosis window for
+  // a diet refused from day 1, and the canonical fixture is many times past it.
+  // For a safety lane the safe error direction is toward the sooner word.
+  it('names the feline clock, and the dog register does not borrow it', () => {
+    expect(textOf(resolveTrialCard(refusing()), 'flag')[1]).toBe(
+      'A diet Mochi isn’t eating can’t answer the question the trial was started for ' +
+      '— and a cat that isn’t eating what’s put down needs a call today, whatever the ' +
+      'trial is doing. Culprit isn’t reading these days as a clean run while this is ' +
+      'going on.',
+    );
+    expect(textOf(resolveTrialCard(refusing({ species: 'dog', petName: 'Biscuit' })), 'flag')[1])
+      .toContain('it’s worth a call to your vet');
+  });
+
+  // NOR MAY IT SAY "won't eat". That is a VOLITIONAL frame — it locates the cause
+  // in the animal's choice, one short step from "picky" on the lane whose first
+  // rule is that it never softens toward preference. "Isn't eating" reports the
+  // same record and asserts nothing about why. (The cross-state preference guard
+  // above cannot see this; "won't eat" contains none of its words.)
+  it('never locates the cause in the animal’s choice', () => {
+    for (const s of allStrings(resolveTrialCard(refusing()))) {
+      expect(s).not.toMatch(/won’t eat|will not eat|refuses to eat/i);
+    }
+  });
+
+  // IT MAY NOT SAY "a cat eating this little" — the trap the design-locked mock
+  // walked into. The record here is about the TRIAL DIET going unfinished; a cat
+  // that refuses the hydrolysate and clears a bowl of chicken every night
+  // produces exactly this fact. Escalation is sanctioned; inventing a fact to
+  // escalate on is not.
+  it('escalates on the record it has, never on an intake claim it doesn’t', () => {
+    expect(allStrings(resolveTrialCard(refusing())).join(' '))
+      .not.toMatch(/eating this little|barely eating|hardly eating|not eating enough/i);
+  });
+
+  // THE STRUCTURAL REPLACEMENT, over the maximally clean-LOOKING record: the
+  // default fixture is 22 of 23 days covered, 68 feedings, `mayStateRecordClean`
+  // true. That is §5.2 proof #1 — the owner dutifully puts the bowl down and logs
+  // it, so coverage saturates while the animal starves.
+  it('replaces the adherence line over a record that looks immaculate', () => {
+    const joined = allStrings(resolveTrialCard(refusing())).join(' ');
+    expect(joined).not.toContain('Meals logged on 22 of 23 days.');
+    expect(joined).not.toMatch(/all \d+ matched|matched the trial diet or a permitted food/i);
+  });
+
+  // …and the DECLINE still outranks it. Two stacked safety headlines would make
+  // neither the headline, and §6.5 gives the clinical lane priority explicitly.
+  it('defers to the clinical intake-decline lane when both are live', () => {
+    const model = resolveTrialCard(refusing({
+      intakeDeclineHeadline: 'Mochi has left most of her food for 3 days.',
+    }));
+    expect(model.state).toBe('intake_decline');
+    expect(textOf(model, 'flag')[0]).toBe('Mochi has left most of her food for 3 days.');
+  });
+
+  // The off-diet floor survives the register (the row says `separately`), and so
+  // does the drill-in — a flag the owner cannot interrogate is an unfalsifiable
+  // accusation (§6.3).
+  it('keeps the off-diet count and its way in', () => {
+    const model = resolveTrialCard(refusing({
+      exposures: { mayStateRecordClean: false, totalFeedings: 68, offDiet: 4 },
+    }));
+    expect(textOf(model, 'fact')).toContain(
+      'Separately, 4 logged feedings were outside the trial diet. The 4 are what’s ' +
+      'been logged, not a total.',
+    );
+    expect(model.actions.map((a) => a.id)).toEqual(['trial_manage', 'view_exposures']);
+  });
+
+  // THE WAY OUT IS THE AFFORDANCE, and unlike the decline card it is not a link:
+  // the action this state implies is changing or ending the trial. §4.2's
+  // no-second-door rule is about LOGGING (the FAB), and on the one state whose
+  // whole message is "this diet may need to change" the way out may not be a 13px
+  // link in the corner.
+  it('offers the way out at full weight, with no bar past the window', () => {
+    const model = resolveTrialCard(refusing({ exposures: null }));
+    expect(model.actions).toEqual([
+      { id: 'trial_manage', label: 'Change or end the trial', emphasis: 'secondary' },
+    ]);
+    expect(model.progressFraction).not.toBeNull();
+
+    // At or past the window the bar is pinned at 100%, and a saturated bar is
+    // completion vocabulary drawn in pixels — over a diet that isn't being eaten,
+    // the worst place in the app for it. The milestone stays reachable, because a
+    // trial with no ending reads to the vet as one still going.
+    const atWindow = resolveTrialCard(refusing({ nowMs: localNoon(2026, 8, 27) }));
+    expect(atWindow.state).toBe('trial_refusal');
+    expect(atWindow.progressFraction).toBeNull();
+    expect(atWindow.actions.map((a) => a.id)).toContain('milestone');
+  });
+
+  // ── THE STAND-DOWN — the unratified half (Dr. Chen, blocking) ─────────────
+  //
+  // "When may a fired safety register be stood down?" is the hardest question the
+  // five rounds surfaced. What is pinned below is the current answer and is
+  // DEFENSIBLE RATHER THAN RATIFIED; each case is a defect that was executed.
+  describe('the stand-down — symmetric with the fire (B-571)', () => {
+    const fromRange = (over: Partial<TrialCardInput> = {}) => activeInput({
+      species: 'cat',
+      petName: 'Mochi',
+      rangeRefusal: REFUSING_RANGE,
+      recentFinishedFeedings: 0,
+      recentRatedFeedings: 0,
+      rangeRefusalSpansEpisodes: true,
+      ...over,
+    });
+
+    // THE RULE, STATED ONCE: it takes the same weight of evidence to say this pet
+    // is eating as it took to say it was not. Firing needs `REFUSAL_MIN_RATED`
+    // ratings and a `REFUSAL_SHARE` refused share; standing down needs the same
+    // sample and the complementary share. No new constant — the first cut's
+    // defect was the SHAPE (four guards on, none off), not the choice of input.
+
+    // ROUND 4's DEFECT: an owner documents 42 refusals, stops tapping intake, the
+    // recency window empties, and the live register VANISHES over a cat that is
+    // still refusing — the chronic case decaying into the clean case, reached
+    // through the rating door instead of the baseline one.
+    it('silence does not cancel it', () => {
+      expect(resolveTrialCard(fromRange()).state).toBe('trial_refusal');
+    });
+
+    // ROUND 5's DEFECT: the predicate counted RATINGS rather than FINISHED
+    // feedings, so two more logged refusals cancelled a register that had fired
+    // on refusals — more evidence buying less disclosure.
+    it('more logged refusals do not cancel it', () => {
+      expect(resolveTrialCard(fromRange({ recentRatedFeedings: 4, recentFinishedFeedings: 0 }))
+        .state).toBe('trial_refusal');
+    });
+
+    // ── `adversarial-reviewer` finding 1 — THE HEADLINE DEFECT ──────────────
+    //
+    // 60 of 60 bowls refused across 30 days; the owner keeps logging but rates
+    // exactly one feeding in the last fortnight, `most`. The old predicate was a
+    // bare `recentFinishedFeedings === 0`, so that ONE bowl stood the register
+    // down and the card rendered "Meals logged on 44 of 44 days… 2 weeks to go."
+    // over a cat that had refused everything for a month.
+    it('one eaten bowl cannot cancel sixty documented refusals', () => {
+      const model = resolveTrialCard(fromRange({
+        recentRatedFeedings: 1, recentFinishedFeedings: 1,
+      }));
+      expect(model.state).toBe('trial_refusal');
+      expect(allStrings(model).join(' ')).not.toContain('Meals logged on 22 of 23 days.');
+    });
+
+    // ── finding 2 — LOGGING EVIDENCE MUST NEVER BUY LESS DISCLOSURE ─────────
+    //
+    // The reviewer's sweep: F=0,R=0 fired, F=1,R=1 did not. An owner who
+    // documented BOTH a refusal and a good meal got a quieter card than one who
+    // rated nothing at all. Asserted as the property rather than the two points:
+    // for a fixed count of finished feedings, adding refusals may only ever move
+    // the register toward ON.
+    it('is monotone — adding refusals never removes the register', () => {
+      const sweep = (finished: number) => [0, 1, 2, 3, 4].map((refused) => (
+        resolveTrialCard(fromRange({
+          recentRatedFeedings: finished + refused, recentFinishedFeedings: finished,
+        })).state === 'trial_refusal' ? 'ON' : 'off'
+      ));
+      // Read as a row per finished-count, refusals increasing left to right. The
+      // property is that no row ever goes ON → off: once the evidence is enough
+      // to speak, more refusals cannot take the voice away. Pinned as literals so
+      // a regression names the exact cell, and so the rows are visibly non-vacuous
+      // (`finished: 3` genuinely crosses at four refusals rather than never).
+      expect({
+        0: sweep(0).join(' '),
+        1: sweep(1).join(' '),
+        3: sweep(3).join(' '),
+      }).toEqual({
+        0: 'ON ON ON ON ON',
+        1: 'ON ON ON ON ON',
+        3: 'off off off off ON',
+      });
+    });
+
+    // …and the specific inversion, pinned as a literal pair.
+    it('documenting a refusal and a good meal is never quieter than logging nothing', () => {
+      const loggedNothing = resolveTrialCard(fromRange()).state;
+      const loggedBoth = resolveTrialCard(fromRange({
+        recentRatedFeedings: 2, recentFinishedFeedings: 1,
+      })).state;
+      expect(loggedNothing).toBe('trial_refusal');
+      expect(loggedBoth).toBe('trial_refusal');
+    });
+
+    // …and the one thing that DOES stand it down is evidence the diet is being
+    // eaten, to the same standard the fire demanded. Three ratings, all finished.
+    it('a sample that clears the fire’s own floors, eaten, does', () => {
+      expect(resolveTrialCard(fromRange({
+        recentRatedFeedings: 3, recentFinishedFeedings: 3,
+      })).state).toBe('clean');
+    });
+
+    // …but the SAME three ratings mostly refused do not. This is the pair that
+    // makes it a share rather than a presence test.
+    it('the same sample, mostly refused, does not', () => {
+      expect(resolveTrialCard(fromRange({
+        recentRatedFeedings: 3, recentFinishedFeedings: 1,
+      })).state).toBe('trial_refusal');
+    });
+
+    // The sample floor, at its boundary: two finished bowls out of two is a
+    // perfect share and still too small a sample to overturn the history.
+    it('holds the sample floor at its boundary', () => {
+      expect(resolveTrialCard(fromRange({
+        recentRatedFeedings: 2, recentFinishedFeedings: 2,
+      })).state).toBe('trial_refusal');
+      expect(resolveTrialCard(fromRange({
+        recentRatedFeedings: 3, recentFinishedFeedings: 2,
+      })).state).toBe('clean');
+    });
+
+    // The range fact drops the episode guard, which is right for a HISTORY and
+    // wrong the moment a present-tense register reads it: one four-hour bout
+    // straddling midnight fired "needs a call today" for the next 36 days.
+    it('a single bout never fires the live register', () => {
+      expect(resolveTrialCard(fromRange({ rangeRefusalSpansEpisodes: false })).state)
+        .toBe('clean');
+    });
+
+    // The NOW-fact is not subject to any of it. It is already recency-bounded and
+    // already span-guarded in `lib/dietTrial.ts`, so a stand-down input may not
+    // silence a register speaking from evidence that is current by construction.
+    it('never applies to the now-fact', () => {
+      expect(resolveTrialCard(refusing({
+        recentRatedFeedings: 9, recentFinishedFeedings: 9, rangeRefusalSpansEpisodes: false,
+      })).state).toBe('trial_refusal');
+    });
+
+    // R1a, from the other side: the register fires on LOGGED EVIDENCE ONLY. An
+    // owner who is not rating intake carries neither fact, so she can never be
+    // told her cat isn't eating. Absence never alarms — G2's two-sidedness — and
+    // it is the whole reason the teach line below exists.
+    it('an owner who never rates intake is never told her cat isn’t eating', () => {
+      expect(resolveTrialCard(activeInput({ species: 'cat', petName: 'Mochi' })).state)
+        .toBe('clean');
+    });
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// R1b — THE INTAKE-RATING TEACH LINE
+//
+// It fires when NOTHING is wrong, which is the entire design: the register above
+// can only see rated feedings, so an owner who never learns the tap has a trial
+// whose viability the app is structurally blind to. Every word is about the
+// RECORD — never the person (§6.9), never the animal.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('the intake-rating teach line (R1b)', () => {
+  const teaching = (over: Partial<TrialCardInput> = {}) => activeInput({
+    petName: 'Mochi',
+    intakeRating: { rated: 3, feedings: 20, primaryRated: 0, primaryFeedings: 0 },
+    ...over,
+  });
+
+  it('teaches the tap on a record that is mostly unrated', () => {
+    expect(textOf(resolveTrialCard(teaching()), 'teach')).toEqual([
+      'One tap makes these readable. Most of Mochi’s logged meals don’t yet say how ' +
+      'much was eaten, and on a diet trial that’s the part your vet reads.',
+    ]);
+  });
+
+  it('goes quiet once the owner is rating', () => {
+    expect(textOf(resolveTrialCard(teaching({
+      intakeRating: { rated: 11, feedings: 20, primaryRated: 0, primaryFeedings: 0 },
+    })), 'teach')).toEqual([]);
+  });
+
+  // The MIN_FEEDINGS floor. A 0-of-1 record is not a habit, and teaching off it
+  // hands a correction to an owner on day 1 of 56 for the crime of having logged
+  // one meal.
+  it('does not correct an owner who has logged three meals', () => {
+    expect(textOf(resolveTrialCard(teaching({
+      intakeRating: { rated: 0, feedings: 3, primaryRated: 0, primaryFeedings: 0 },
+    })), 'teach')).toEqual([]);
+  });
+
+  // NULL IS NOT 0/0. "Nothing in range to have rated" and "nothing rated" are
+  // different facts; only the second is worth teaching about.
+  it('says nothing when there is nothing in range to have rated', () => {
+    expect(textOf(resolveTrialCard(teaching({ intakeRating: null })), 'teach')).toEqual([]);
+  });
+
+  // THE NARROW POPULATION WINS WHERE THERE IS ONE, and this is the counterexample
+  // that forced it: an owner logging two unrated bowls of the prescribed diet
+  // beside three rated permitted toppers a day has a 60% rated share overall and
+  // 0% where it counts. Asking only the wide question goes silent on exactly the
+  // record whose viability is unknowable.
+  it('asks the narrow question when the refusal lane has a population to read', () => {
+    expect(textOf(resolveTrialCard(teaching({
+      intakeRating: { rated: 30, feedings: 50, primaryRated: 0, primaryFeedings: 20 },
+    })), 'teach')).toEqual([
+      'One tap makes these readable. Most of Mochi’s logged meals of the trial diet ' +
+      'don’t yet say how much was eaten, and on a diet trial that’s the part your vet ' +
+      'reads.',
+    ]);
+  });
+
+  // …and the sentence NAMES the population it fired on. One string denominated on
+  // the whole meal record, triggered by the narrow one, is false in exactly the
+  // case the narrow trigger exists for — that owner has 96% of her logged meals
+  // rated, and the wide sentence reads back at her as a wrong statement about her
+  // own logging (§6.9).
+  it('never claims the wide record is unrated when the narrow one fired it', () => {
+    const joined = allStrings(resolveTrialCard(teaching({
+      intakeRating: { rated: 48, feedings: 50, primaryRated: 0, primaryFeedings: 20 },
+    }))).join(' ');
+    expect(joined).toContain('logged meals of the trial diet');
+    expect(joined).not.toContain('Mochi’s logged meals don’t yet say');
+  });
+
+  // NOT ON STATE 3. The exposures card already carries a note the owner is meant
+  // to act on — record-and-continue, the sentence that decides whether they
+  // finish six weeks — and a teaching aside underneath it competes for the same
+  // slot. Every other state in that body has the slot free.
+  it('yields the slot to record-and-continue on the exposures card', () => {
+    expect(textOf(resolveTrialCard(teaching({
+      exposures: { mayStateRecordClean: true, totalFeedings: 68, offDiet: 3 },
+    })), 'teach')).toEqual([]);
+    expect(textOf(resolveTrialCard(teaching({ nowMs: localNoon(2026, 9, 1) })), 'teach'))
+      .toHaveLength(1);
+  });
+
+  // NOTHING IN IT MAY IMPLY ANYTHING IS WRONG WITH THE PET. It is not a safety
+  // register and must never read as one — the state it renders on is a card where
+  // nothing is wrong, which is the whole point of teaching there.
+  it('is never a safety register', () => {
+    const model = resolveTrialCard(teaching());
+    expect(textOf(model, 'flag')).toEqual([]);
+    for (const s of textOf(model, 'teach')) {
+      expect(s).not.toMatch(/\b(vet|call|worth|concern|unfinished|isn’t eating)\b.*\bnow\b/i);
+      expect(s).not.toMatch(/wrong|worry|urgent/i);
+    }
+  });
+});
+
+// ── The residual R1 leaves on the terminal cards (B-570) ────────────────────
+//
+// `trialDietRefusal` and `rangeRefusal` are not nested: a trial eaten for six
+// weeks and refused for the last two clears the RANGE share and fires the recency
+// one, so a FINISHED trial can carry a now-fact with no range fact. `registerFor`
+// routes that to `record`, not to `refusal_withheld`.
+//
+// PINNED AS A BOUND, NOT AS A BLESSING. What holds is that the affirmative claim
+// is withheld — the module gate reads the now-fact, so the adapter never hands
+// the card `mayStateRecordClean: true` on such a record. What does NOT hold is
+// that the finding is disclosed, and withholding a claim is not the same as
+// disclosing a finding (this file's own `rangeRefusal` docstring). Changing it
+// changes what an owner reads on a finished trial and belongs with the Dr. Chen
+// stand-down ruling, so it is B-570.
+describe('the terminal residual R1 leaves (B-570)', () => {
+  const finishedButRefusing = (mayStateRecordClean: boolean) => activeInput({
+    species: 'cat',
+    petName: 'Mochi',
+    trial: {
+      status: 'completed', startedAt: '2026-07-03', endedAt: '2026-08-27',
+      targetDurationDays: 56, foodLabel: FOOD,
+    },
+    trialDietRefusal: REFUSING_NOW,
+    coverage: { daysLogged: 54, daysElapsed: 56 },
+    exposures: { mayStateRecordClean, totalFeedings: 182, offDiet: 0 },
+  });
+
+  it('withholds the clean claim, because the module gate reads the now-fact', () => {
+    expect(allStrings(resolveTrialCard(finishedButRefusing(false))).join(' '))
+      .not.toMatch(/all \d+ matched|matched the trial diet or a permitted food/i);
+  });
+
+  // The gap itself, stated so it cannot be mistaken for covered ground: the
+  // register does not change, so the refusal is not NAMED on the terminal card.
+  it('does not yet name the refusal there — the open half', () => {
+    expect(planTrialCard(finishedButRefusing(false)).register).toBe('record');
+    expect(allStrings(resolveTrialCard(finishedButRefusing(false))).join(' '))
+      .not.toContain('left unfinished');
+  });
+
+  // …and Home still goes quiet over it, which is the half that IS closed: the
+  // now-fact is its own withholding reason, keyed on the raw input.
+  it('but Home is already silent about it', () => {
+    expect(withholdingReasons(finishedButRefusing(false))).toContain('trial_diet_refusal');
   });
 });

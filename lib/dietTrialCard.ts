@@ -49,14 +49,35 @@
 // asked and the card never did), `allowedSetUnavailable`, and the §10 S3
 // untracked head.
 //
-// THE TWO NEW OWNER-FACING REGISTERS — the R1 refusal state and the R1b
-// intake-rating teach line — are deliberately NOT here. Five adversarial rounds
-// put essentially every one of their 39 findings in those two surfaces while the
-// wiring below held from round 1, so they ship separately after a Dr. Chen pass
-// on the stand-down semantics and a mock round for the disclosure lines those
-// rounds forced into existence.
+// ── B-533 PR B (THIS ONE): THE TWO OWNER-FACING REGISTERS ────────────────────
 //
-// The rule they share, and the one this file enforces in a single place —
+// PR A deliberately shipped without them: five adversarial rounds put essentially
+// every one of their 39 findings in these two surfaces while the wiring held from
+// round 1. They arrive here re-expressed on the composition layer B-559 built in
+// between — which is the whole reason this is a re-cut rather than a rebase. The
+// live refusal state is now a REGISTER with a row in the table below, so the four
+// disclosure questions it used to answer inline (does it owe the floor? the
+// can't-match caveat? the past bowl? the household scope?) are answered where
+// every other register answers them, and `everyState` walks it.
+//
+//   R1  `trial_refusal` — the trial diet itself is going unfinished. This is the
+//       patient `detectIntakeDecline` structurally cannot see: that detector needs
+//       a baseline to decline FROM, so a diet refused from day 1 is uniformly low
+//       rather than declining, and the chronic case decays INTO the clean case.
+//       `trialDietRefusal` was built for it in PR 5 and nothing consumed it — the
+//       pre-ship review's worst client-side finding.
+//
+//   R1b `pushTeachLine` — the refusal lane fires on RATED feedings only, so an
+//       owner who never learns the intake tap has a trial whose viability the app
+//       is blind to. The card teaches the tap before anything is wrong.
+//
+// STILL BLOCKING, and named here because a reader of this file is who needs to
+// know: **Dr. Chen has not ratified the stand-down semantics** (when may a fired
+// safety register be stood down? — `liveRefusal` below) **or the feline "needs a
+// call today" register**. Both are marked at their site.
+//
+// The rule every register shares, and the one this file enforces in a single
+// place —
 // `TRIAL_CARD_DISCLOSURES`, applied by `recordRegion` and asserted by a property
 // test over every state (B-559; it was `pushExposureFloor` for the floor half
 // alone, and that helper now only writes its sentence):
@@ -66,7 +87,14 @@
 //
 import { getDietTrialProgress } from './analytics';
 import {
+  // The fire predicate's own floors, reused BY THE STAND-DOWN so the two
+  // directions cannot drift apart — see `liveRefusal`.
+  REFUSAL_MIN_RATED,
+  REFUSAL_SHARE,
+  trialViabilityHeadline,
+  trialViabilityNote,
   type TrialDietRefusal,
+  type TrialIntakeRating,
 } from './dietTrial';
 import { milestoneNote, trialDecisionChoices, type TrialOutcome } from './dietTrialCompletion';
 import { localDayIndexOf } from './utils';
@@ -195,6 +223,26 @@ export interface TrialCardInput {
    * ("needs a call today"), and a six-week-old refusal is not news today.
    */
   rangeRefusal?: TrialDietRefusal | null;
+  /**
+   * `lib/dietTrial.TrialFacts.trialDietRefusal` — the RECENCY-bounded refusal, and
+   * the primary trigger for the R1 register (§6.5's second, non-clinical path).
+   *
+   * A now-fact by construction: bounded to the last `REFUSAL_WINDOW_DAYS`, because
+   * what it drives is a present-tense sentence about the pet today.
+   */
+  trialDietRefusal?: TrialDietRefusal | null;
+  /** `TrialFacts.recentFinishedFeedings` — the NUMERATOR of the stand-down. Never
+   *  read alone; its denominator is `recentRatedFeedings`. See `liveRefusal`. */
+  recentFinishedFeedings?: number;
+  /** `TrialFacts.recentRatedFeedings` — the denominator. The pair is what makes
+   *  the stand-down symmetric with the fire instead of a bare `=== 0` test. */
+  recentRatedFeedings?: number;
+  /** `TrialFacts.rangeRefusalSpansEpisodes` — the range fact carries no episode
+   *  guard, so a live present-tense register may not speak from a single bout. */
+  rangeRefusalSpansEpisodes?: boolean;
+  /** R1b — `TrialFacts.intakeRating`. Null when there is nothing in range to have
+   *  rated, which is not the same fact as "nothing is rated". */
+  intakeRating?: TrialIntakeRating | null;
   /** §5.6 — a free-choice bowl OVERLAPPED the window but is not in force now.
    *  A bowl emits no meal events by construction, so the days it was down can
    *  never have a meal-by-meal record. Without this the owner who RECORDED the
@@ -249,7 +297,8 @@ export type TrialCardState =
   | 'completed'       // 7a
   | 'abandoned'       // 7b
   | 'intake_decline'  // 8  — replacement
-  | 'free_fed';       // 9  — replacement
+  | 'free_fed'        // 9  — replacement
+  | 'trial_refusal';  // 10 — replacement (R1, mock round 5)
 
 /** Line roles, so a test can assert a literal string AT its role rather than by
  *  index, and so the view never has to infer emphasis from position.
@@ -470,6 +519,27 @@ function exposureLine(ex: TrialExposureFacts): string {
 export const UNMATCHED_CAVEAT_MIN_FEEDINGS = 3;
 
 /**
+ * R1b — the intake-rating teach line's two floors, and both are guards rather
+ * than tuning.
+ *
+ * `SHARE` is a HALF: below it, most of the meal record is silent on whether the
+ * food was eaten, which is the state worth teaching about. Above it the owner is
+ * already rating and the line would be noise on a card that has to survive eight
+ * weeks of daily reading (Principle 4's spirit — the card is not a lecture).
+ *
+ * `MIN_FEEDINGS` is what stops the line firing on the first unrated breakfast: a
+ * 0-of-1 record is not a habit, and teaching off it hands a correction to an owner
+ * on day 1 of 56 for the crime of having logged one meal. Four is the smallest
+ * sample where "most" is a fair word.
+ *
+ * Deliberately NOT clinical values — nothing keys on them but whether a warm
+ * sentence renders, so they need no Dr. Chen ratification the way the coverage
+ * floor and the refusal floors do.
+ */
+export const INTAKE_RATING_TEACH_SHARE = 0.5;
+export const INTAKE_RATING_TEACH_MIN_FEEDINGS = 4;
+
+/**
  * §5.2: "the exposure count is a floor, never a total." Said ON the claim.
  */
 function floorSuffix(offDiet: number): string {
@@ -536,6 +606,7 @@ function floorSuffix(offDiet: number): string {
  */
 export type TrialCardWithholding =
   | 'intake_decline'
+  | 'trial_diet_refusal'
   | 'range_refusal'
   | 'free_fed'
   | 'allowed_set_unavailable'
@@ -545,6 +616,12 @@ export type TrialCardWithholding =
 export function withholdingReasons(input: TrialCardInput): TrialCardWithholding[] {
   const reasons: TrialCardWithholding[] = [];
   if (input.intakeDeclineHeadline) reasons.push('intake_decline');
+  // R1's now-fact. Listed SEPARATELY from `range_refusal` and keyed on the raw
+  // input rather than on `liveRefusal`, deliberately: keying it on the composed
+  // predicate would let the stand-down conditions — whose semantics are the open
+  // Dr. Chen question — widen what Home states. A reason may be added to this
+  // list, never subtracted by a downstream guard.
+  if (input.trialDietRefusal) reasons.push('trial_diet_refusal');
   if (input.rangeRefusal) reasons.push('range_refusal');
   if (input.freeFed) reasons.push('free_fed');
   if (input.allowedSetUnavailable) reasons.push('allowed_set_unavailable');
@@ -561,6 +638,83 @@ export function withholdingReasons(input: TrialCardInput): TrialCardWithholding[
   if ((input.untrackedDaysBeforeFirstLog ?? 0) !== 0) reasons.push('untracked_head');
   if (input.belowCoverageFloor) reasons.push('below_floor');
   return reasons;
+}
+
+/**
+ * R1 — MAY THE LIVE REFUSAL REGISTER SPEAK, AND FROM WHICH FACT?
+ *
+ * The now-fact speaks for itself. `trialDietRefusal` is recency-bounded and
+ * carries `REFUSAL_MIN_SPAN_MS`, so it is already both current and multi-episode.
+ *
+ * The range fact is the fallback, and it exists because SILENCE MUST NOT CANCEL AN
+ * ALARM. An owner who documents 42 refusals and then stops tapping intake empties
+ * the recency window, and the live register would vanish over a cat that is still
+ * refusing — the "chronic case decays into the clean case" defect reached through
+ * the rating door. R1a says absence of ratings must never ALARM; it does not
+ * license absence of ratings CANCELLING an alarm that already fired on logged
+ * evidence.
+ *
+ * ── THE STAND-DOWN IS SYMMETRIC WITH THE FIRE, AND THAT IS THE WHOLE RULE ────
+ *
+ * `adversarial-reviewer` broke the first cut of this function on its SHAPE, not
+ * on its inputs. Firing carries four guards; standing down carried none — a bare
+ * "is there one finished bowl?". On a lane whose stated safe error direction is
+ * toward firing, the OFF predicate was the loosest test in the module, and three
+ * executed findings fell out of that single asymmetry:
+ *
+ *   1. A cat with 60 of 60 bowls refused across 30 days, then ONE `most`-rated
+ *      bowl on day 44, rendered a clean card — "Meals logged on 44 of 44 days…
+ *      2 weeks to go."
+ *   2. Logging a refusal AND a good meal disclosed LESS than logging nothing at
+ *      all (F=0,R=0 fired; F=1,R=1 did not).
+ *   3. The register flickered across a record with NO new data in it — present
+ *      days 30–43, silent 44–48, present again 49–56: absent nearest the last
+ *      refusal and present a week later on strictly older evidence.
+ *
+ * So the stand-down now asks the SAME question the fire asks, in the opposite
+ * direction, against the SAME ratified constants: at least `REFUSAL_MIN_RATED`
+ * recent ratings, and a finished share clearing `1 - REFUSAL_SHARE`. Reusing the
+ * fire’s own floors is deliberate, and is what makes this repair available with
+ * no new clinical ruling — the finding was that the SHAPE was indefensible, and a
+ * mirror of an already-ratified floor invents nothing.
+ *
+ * Read both halves together and the rule is one sentence: **it takes the same
+ * weight of evidence to say this pet is eating as it took to say it was not.**
+ *
+ * ── THE EPISODE GUARD, UNCHANGED ───────────────────────────────────────────
+ * The range fact drops `REFUSAL_MIN_SPAN_MS` (right for a HISTORY, wrong for a
+ * present-tense register), so one midnight-straddling bout would otherwise fire
+ * "needs a call today" for the next 36 days over a cat that ate throughout.
+ *
+ * ⚠️ STILL OPEN, STILL DR. CHEN’S — B-572. That span guard is only a >=12h test,
+ * which any two-calendar-day cluster clears: three refusals in week one followed
+ * by 41 unrated days still speaks in the present tense on 41-day-old evidence.
+ * Making the range fact EXPIRE needs a recency threshold, and a threshold is a
+ * clinical number rather than an engineering one — as is the now-fact’s own floor
+ * firing on a day-2 some/all/some dog. Both are OVER-fire, the survivable
+ * direction, which is why they are filed rather than guessed at here.
+ */
+function liveRefusal(input: TrialCardInput): TrialDietRefusal | null {
+  if (input.trialDietRefusal) return input.trialDietRefusal;
+  if (input.rangeRefusal && input.rangeRefusalSpansEpisodes === true && !isEatingNow(input)) {
+    return input.rangeRefusal;
+  }
+  return null;
+}
+
+/**
+ * Does the RECENT record carry evidence the diet is being eaten, to the same
+ * standard `computeTrialFacts` demands before it will say the opposite?
+ *
+ * `false` ON AN EMPTY WINDOW BY CONSTRUCTION, and that is the load-bearing half:
+ * no recent ratings means no new evidence, never evidence of recovery. A
+ * defaulted-true reading here re-creates the defect this replaced.
+ */
+function isEatingNow(input: TrialCardInput): boolean {
+  const rated = input.recentRatedFeedings ?? 0;
+  const finished = input.recentFinishedFeedings ?? 0;
+  if (rated < REFUSAL_MIN_RATED) return false;
+  return finished / rated >= 1 - REFUSAL_SHARE;
 }
 
 /**
@@ -581,6 +735,11 @@ export type TrialCardRegister =
   /** TERMINAL ONLY — a diet the record shows went uneaten. The counts stay; the
    *  READING is deleted. Reached from the stored reason or from `rangeRefusal`. */
   | 'refusal_withheld'
+  /** LIVE ONLY (R1) — §6.5's second, non-clinical path: the trial diet itself is
+   *  going unfinished RIGHT NOW. `refusal_withheld` is this register's history;
+   *  the two are deliberately different voices over the same shape of fact,
+   *  because a terminal card reports and a live one escalates. */
+  | 'trial_refusal'
   /** §5.6 — a bowl in force NOW, so the coverage ratio has no denominator. */
   | 'free_fed'
   /** State 4's combined "of what's on the record so far" paragraph. */
@@ -606,6 +765,8 @@ function registerFor(
       return 'none';
     case 'intake_decline':
       return 'decline';
+    case 'trial_refusal':
+      return 'trial_refusal';
     case 'free_fed':
       return 'free_fed';
     case 'below_floor':
@@ -644,6 +805,20 @@ function registerFor(
       // check above the state switch is the fix this layer makes trivial and
       // must still not take: it would give the day-2 misfire four more states.
       // The live-card residual is B-566, against #499's register.
+      //
+      // AND IT DOES NOT READ THE NOW-FACT EITHER, which R1 makes worth naming
+      // because R1 is what put `trialDietRefusal` on this input in the first
+      // place. The two facts are not nested: a trial eaten for six weeks and
+      // refused for the last two clears the RANGE share and fires the recency
+      // one, so a terminal card can carry a now-fact with no range fact — and it
+      // routes to `record`. What is guaranteed there is that the AFFIRMATIVE
+      // CLAIM is withheld (`mayClaimAllMatched` reads the now-fact, so the
+      // adapter's `mayStateRecordClean` is already false). What is NOT guaranteed
+      // is that the finding is DISCLOSED, and this file's own `rangeRefusal`
+      // docstring says why that distinction matters. Routing it here would change
+      // what an owner reads on a finished trial, and it is the same "when may a
+      // register speak" question Dr. Chen owes a ruling on — so it is filed as
+      // B-570 rather than taken inside a wiring PR.
       if (input.intakeDeclineHeadline) return 'decline';
       if (state === 'abandoned' && wasRefused(trial)) return 'refusal_withheld';
       if (input.rangeRefusal) return 'refusal_withheld';
@@ -743,6 +918,36 @@ export const TRIAL_CARD_DISCLOSURES: Record<TrialCardRegister, TrialCardDisclosu
     // Never argued either way; preserved so this stays a refactor.
     floor: 'separately', unmatched: true, pastBowl: false, untrackedHead: false,
     scope: 'active_only',
+  },
+  trial_refusal: {
+    // floor — RULED. `separately`, exactly as `decline`: a flag block precedes
+    // it, so the count needs its own lead-in or it reads as part of the safety
+    // sentence. And it renders AT ALL because §5.2's floor only moves in the
+    // disclose-more direction — the first cut of this register emitted the two
+    // flag lines and nothing else, which silently deleted twelve real off-diet
+    // exposures from an owner who had entered the refusal state.
+    //
+    // unmatched — RULED. The can't-match caveat is about the COMPARATOR, not
+    // about the register: an unusable food list is equally unusable on a card
+    // about a cat that isn't eating. Withholding it here would put the floor's
+    // "not a total" suffix on a wholly-unmatched count with nothing saying the
+    // comparator may be missing — at-least-N and maybe-fewer, the adjacent
+    // contradiction rounds 4 and 9 both found.
+    //
+    // pastBowl, untrackedHead — RULED, and for the same reason `free_fed` has
+    // them false: both qualify a COVERAGE RATIO, and this register renders none.
+    // §10 S3's rule is "wherever coverage renders", and the head has no ratio to
+    // be excluded from here. (Note this is where `refusal_withheld` differs and
+    // is FILED as a hole rather than ruled: that register DOES state coverage, in
+    // prose — B-560.)
+    //
+    // scope — RULED `always`, not `active_only`. The two are behaviourally
+    // identical for this register, which is reachable only from a live card; the
+    // distinction `active_only` draws would imply a terminal branch exists.
+    // `always` says what is true: wherever this register speaks, an off-diet
+    // count in a multi-pet household is a claim, and §5.6 gates it.
+    floor: 'separately', unmatched: true, pastBowl: false, untrackedHead: false,
+    scope: 'always',
   },
   refusal_withheld: {
     // pastBowl — FILED (B-560). untrackedHead, scope — INHERITED, and they are
@@ -849,6 +1054,12 @@ function stateFor(input: TrialCardInput, ctx: TrialContext): TrialCardState {
   if (trial.status === 'completed') return 'completed';
   if (trial.status === 'abandoned') return 'abandoned';
   if (input.intakeDeclineHeadline) return 'intake_decline';
+  // Immediately after the clinical lane it defers to, and ABOVE the milestone —
+  // for the same structural reason the decline sits where it does: while this is
+  // live the resolver must be INCAPABLE of returning an adherence line, and a
+  // trial that has reached day 56 while the diet goes uneaten is not a
+  // celebration. The milestone's decision stays reachable as an action below.
+  if (liveRefusal(input)) return 'trial_refusal';
   if (progress.targetDays > 0 && overrunDays === 0) return 'milestone';
   if (overrunDays > 0) return 'overrun';
   if (input.freeFed) return 'free_fed';
@@ -961,6 +1172,29 @@ function pushRegisterBody(
     case 'decline':
       pushDeclineLines(lines, input);
       return;
+
+    // R1 — the live half of the same fact `refusal_withheld` reports terminally.
+    // Two `flag` lines and nothing else: the register's whole body is the safety
+    // statement, and every count on this card arrives from the table's row below
+    // it (the floor sentence) rather than from here. That split is the point —
+    // the first cut of this register wrote its own count handling and promptly
+    // withheld it.
+    //
+    // ORDERED BELOW `pushDeclineLines` EVERYWHERE BOTH CAN FIRE, and that is a
+    // rule rather than a preference: `detectIntakeDecline` owns the clinical lane
+    // and this one is explicitly non-clinical (§6.5 — "without softening the
+    // first"). `stateFor` enforces it; two stacked safety headlines would also
+    // make neither the headline.
+    case 'trial_refusal': {
+      const refusal = liveRefusal(input);
+      if (!refusal) return;
+      lines.push({ role: 'flag', text: trialViabilityHeadline(refusal) });
+      lines.push({
+        role: 'flag',
+        text: trialViabilityNote(input.petName, input.species ?? 'other'),
+      });
+      return;
+    }
 
     case 'refusal_withheld':
       if (rc.namedRefusal) {
@@ -1168,6 +1402,50 @@ function activeCard(
     };
   }
 
+  // ── Replacement (10) — the trial diet itself is going unfinished (R1, mock
+  // round 5). Resolved immediately after the clinical decline it defers to, and
+  // for the same structural reason: while it is live this function is INCAPABLE
+  // of returning an adherence line, because the register renders none.
+  //
+  // FIRES ON LOGGED EVIDENCE ONLY (R1a) — the floors live in `lib/dietTrial.ts`
+  // (>=3 rated feedings, >=2 refused days, >=50% share) and mean an owner who is
+  // not rating intake can never be told her cat isn't eating. Absence never
+  // alarms; that is G2's two-sidedness, and it is why `pushTeachLine` exists.
+  if (state === 'trial_refusal') {
+    return {
+      ...base,
+      state,
+      dayLine: dayLineFor(progress, overrunDays),
+      dayLineRole: 'meta',
+      windowLine: windowLineFor(endIndex, overrunDays),
+      lines: recordRegion(register, input, rc),
+      // Same argument as the decline branch above: at or past the window a bar
+      // pinned at 100% is completion vocabulary drawn in pixels, and drawing it
+      // over a diet that isn't being eaten is the worst place in the app for it.
+      // Mid-trial it still carries real day progress, so it stays.
+      progressFraction: overrunDays >= 0 ? null : progress.fraction,
+      // THE WAY OUT IS THE AFFORDANCE. Unlike the decline state — where the
+      // answer is a phone call and the trial is beside the point — the action
+      // this state implies is changing or ending the trial, which is a decision
+      // the owner takes with their vet and then records here.
+      actions: [
+        { id: 'trial_manage', label: 'Change or end the trial', emphasis: 'secondary' },
+        // The drill-in survives alongside the count, for the same reason the
+        // count does — a flag the owner cannot interrogate is an unfalsifiable
+        // accusation (§6.3).
+        ...((input.exposures?.offDiet ?? 0) > 0
+          ? ([{ id: 'view_exposures', label: 'Outside the trial diet', emphasis: 'link' }] as const)
+          : []),
+        // The milestone stays reachable at the window for the same reason it does
+        // on the decline card: a trial with no ending reads to the vet as one
+        // still going.
+        ...(overrunDays >= 0
+          ? ([{ id: 'milestone', label: 'Tell Culprit what’s next', emphasis: 'link' }] as const)
+          : []),
+      ],
+    };
+  }
+
   // ── State 5 — the milestone (PR 6, §4.3). Day counter has REACHED the target
   // exactly. Persistent STATE, not a push, so Principle 4 is untouched — and it
   // never expires: the owner who ignores it lands in state 6, which carries the
@@ -1311,6 +1589,7 @@ function activeCard(
   // decides whether they finish six weeks); a teaching aside underneath it
   // competes for the same slot and dilutes the one message that state exists for.
   // Every other state in this body has that slot free.
+  if (state !== 'exposures') pushTeachLine(lines, input);
 
   if (state === 'overrun') {
     // §4.2 state 6: "Day 61 — 5 days past", NEVER "Day 61 of 56" (a PR 7
@@ -1568,6 +1847,70 @@ function pushUntrackedHead(lines: TrialCardLine[], input: TrialCardInput): void 
         ? 'The first day of the trial isn’t counted here — no meals were logged against it yet.'
         : `The first ${days} days of the trial aren’t counted here — no meals were logged ` +
           'against them yet.',
+  });
+}
+
+/**
+ * R1b — the line that teaches the intake tap, and the reason the register above
+ * is reachable at all.
+ *
+ * IT FIRES WHEN NOTHING IS WRONG, which is the entire design: the refusal lane can
+ * only see RATED feedings (R1a — an owner who isn't rating must never be told her
+ * cat isn't eating), so an owner who never learns the tap exists has a trial whose
+ * viability the app is structurally blind to. Teaching at that moment costs one
+ * warm sentence; teaching after the fact costs the finding.
+ *
+ * Every word is about the RECORD, never the person (§6.9) and never the animal — a
+ * line that made an owner on a perfectly fine day wonder what was wrong with her
+ * cat would fail this state's one requirement.
+ *
+ * ── WHY IT IS NOT A ROW IN `TRIAL_CARD_DISCLOSURES` ─────────────────────────────
+ * The table answers "what may this register say ABOUT THE RECORD", and every cell
+ * in it withholds or discloses a record statement. The teach line makes no claim
+ * about the record's contents at all — it is a forward affordance, in the same
+ * family as the `forward` lines and the actions, neither of which the table has
+ * ever governed. It is also placed by STATE (see the call site: everywhere in the
+ * shared body except `exposures`), and the table is keyed by REGISTER — `clean`
+ * and `exposures` share the `record` row, so a cell could not express the rule
+ * even if the rule belonged there. Widening the table to hold it would cost the
+ * crispness that makes reading a column a review.
+ */
+function pushTeachLine(lines: TrialCardLine[], input: TrialCardInput): void {
+  const rating = input.intakeRating;
+  if (!rating) return;
+  // ASK THE NARROW QUESTION WHEN THERE IS A NARROW POPULATION TO ASK IT OF.
+  //
+  // The refusal lane reads `primary_diet` feedings only, so that is the population
+  // whose rated share decides whether the lane can see anything. Asking only the
+  // wide question breaks in one step: an owner logging two unrated bowls of the
+  // prescribed diet and three rated permitted toppers a day has a 60% rated share
+  // overall and 0% where it counts — so the teach line goes silent on exactly the
+  // record whose viability is unknowable, which is the opposite of its job.
+  //
+  // The wide population is the FALLBACK, for when identity has missed and there
+  // are no primary-diet feedings to measure (an un-hydrated allowed set, a
+  // re-photographed bag). Silence there would be just as wrong, and the copy is
+  // honest under either reading because it speaks about the meal record.
+  const narrow = rating.primaryFeedings >= INTAKE_RATING_TEACH_MIN_FEEDINGS;
+  const [rated, feedings] = narrow
+    ? [rating.primaryRated, rating.primaryFeedings]
+    : [rating.rated, rating.feedings];
+  if (feedings < INTAKE_RATING_TEACH_MIN_FEEDINGS) return;
+  if (rated / feedings >= INTAKE_RATING_TEACH_SHARE) return;
+  // THE SENTENCE HAS TO NAME THE POPULATION IT FIRED ON. One string denominated on
+  // the whole meal record, triggered by the narrow one, is false in exactly the
+  // case the narrow trigger exists for: the owner logging unrated bowls of the
+  // prescribed diet beside rated toppers has 96% of her logged meals rated, and
+  // "most of Mochi's logged meals don't yet say how much was eaten" reads back at
+  // her as a wrong statement about her own logging (§6.9).
+  lines.push({
+    role: 'teach',
+    text: narrow
+      ? `One tap makes these readable. Most of ${input.petName}’s logged meals of the ` +
+        'trial diet don’t yet say how much was eaten, and on a diet trial that’s the ' +
+        'part your vet reads.'
+      : `One tap makes these readable. Most of ${input.petName}’s logged meals don’t ` +
+        'yet say how much was eaten, and on a diet trial that’s the part your vet reads.',
   });
 }
 
