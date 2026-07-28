@@ -1191,7 +1191,12 @@ function pushRegisterBody(
       lines.push({ role: 'flag', text: trialViabilityHeadline(refusal) });
       lines.push({
         role: 'flag',
-        text: trialViabilityNote(input.petName, input.species ?? 'other'),
+        // THE POPULATION TRAVELS WITH THE FACT (B-530). When food identity misses,
+        // the counts are over the meal record rather than over the trial diet, and
+        // the note must not name a diet the app could not identify — the headline
+        // above already widened its noun for the same reason. Passing the field
+        // rather than re-deriving it is what keeps the two sentences agreeing.
+        text: trialViabilityNote(input.petName, input.species ?? 'other', refusal.population),
       });
       return;
     }
