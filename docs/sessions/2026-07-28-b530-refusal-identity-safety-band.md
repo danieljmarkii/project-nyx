@@ -107,6 +107,13 @@ these two are now **B-579** (the identity-shaped blind spots) and **B-580** (the
 refusal-floor mismatches). A third row filed after that merge — the band mirroring
 only the span half of the card's stand-down — took the next free ID, **B-581**.
 
+The renumber happened twice, which is worth recording as a cost rather than a
+footnote: a sibling session renumbered B-576/B-577 on the shared branch while this
+session was still filing against them, so the second pass at `/wrap` had to re-point
+every cross-reference again — the docblock in `lib/dietTrial.ts`, the `KNOWN LIMIT`
+describe block, the `ADV①` test, the `Filed as` note in `report.ts`, B-530's own
+closing note, and B-581's two mentions of its sibling row.
+
 Every in-repo reference moved with them: the `TrialRefusalPopulation` docblock and the
 duration-criterion note in `lib/dietTrial.ts`, the `KNOWN LIMIT` describe block in
 `lib/dietTrial.test.ts`, and the two references above. The rows carry the **full chain**

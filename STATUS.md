@@ -263,7 +263,7 @@ Nearest live PM gates, none of which block code already in flight:
 
 **Build 35 TestFlight QA (2026-07-26) — three PM-side items**
 - [ ] **Provision `SUPABASE_ACCESS_TOKEN`** (B-485) — mint at dashboard → Account → Access Tokens, add as a **Codespace secret** scoped to `project-nyx`, then `bash scripts/deploy-edge.sh <name> --deploy`. Its first real run is its verification: the guard path is tested, the upload path has never executed. Revoke the old `nyx-cli-deploy` PAT while you're there, and add the new one to the Secrets Register.
-- [ ] **Deploy `generate-report`** — still **v13 (Jul 18)**, so #448's protein render is not live and the vet report's Appendix B "Proteins in the diet" block cannot appear no matter which app build is installed. `ask` is one version behind too (#449's timezone fix; flag-gated, not urgent). `generate-signal` needs **no** deploy — #448's change to it is additive re-exports only `generate-report` consumes.
+- [ ] **Deploy `generate-report`** — still **v13 (Jul 18)**, so #448's protein render is not live and the vet report's Appendix B "Proteins in the diet" block cannot appear no matter which app build is installed. **Gate narrowed 2026-07-28 (#503): B-494 + B-531 are closed and B-530 is Partial, so the remaining Bucket-A owings are B-529 + B-532, then a fresh `vet-report-cold-read`.** `ask` is one version behind too (#449's timezone fix; flag-gated, not urgent). `generate-signal` needs **no** deploy — #448's change to it is additive re-exports only `generate-report` consumes.
 
 
 **B-351 slice 4 (#447) — one blocker, one copy call, one QA limitation**
