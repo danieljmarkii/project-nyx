@@ -85,3 +85,125 @@ The lesson worth carrying: **a source-text test is not a test of behaviour**, an
 ## Process note
 
 One self-inflicted cost worth recording: mid-round-4 a `git checkout` inside a compound probe command discarded that round's edits to `lib/dietTrialCard.ts`. Caught immediately, redone, and the mutation check re-run safely — but it cost a cycle. Never put a working-tree-discarding command in a compound line.
+
+---
+
+## Rounds 6–9, added after the wrap
+
+The PM asked for an eighth and ninth round on the hypothesis that severity was
+declining and might converge to nothing. It did not. **Round 9 produced the
+worst finding of any round, and it was a defect introduced by round 9's own
+fix.**
+
+Counts across the whole PR: **8 → 5 → 7 → 9 → 10 → 4 → 6 → 9 → ~10**, the last
+from two lenses run in parallel (`adversarial-reviewer` + `pm-feature-review`).
+
+### Round 8
+
+Four findings, every one a fix applied to one register or one surface and not
+its sibling. The Home strip stated a coverage ratio the card withheld (a cat
+refusing 88 of 88 rated feedings for 44 days read *"meals logged on 44 of 44
+days"* on Home); an unhydrated permit set named the **prescribed diet** as the
+most recent slip while saying "Keep going with the trial diet"; the decline
+register's *"Culprit isn't showing the trial numbers"* rendered directly above
+a trial number — falsified by this PR's own change, and the sibling
+`trialViabilityNote` had that exact sentence corrected twice already.
+
+And a null range was read as a zero record: `computeTrialFacts` returns an
+all-zero `base` where it cannot establish a range, so five logged feedings
+reached the card as *"0 feedings in total."* — the app's own failure to compute,
+dressed as a finding about the pet. `generate-report/trial.ts:599` already
+returned null there, so it was a card/report divergence too.
+
+`ARRANGEMENTS_IN_WINDOW_SQL` also got the executable test the previous pass had
+explicitly declined to sign off — nine real-engine cases over every null
+combination of `active_from`/`active_until`. All nine held first run, so the
+algebra was right; it just wasn't proven.
+
+### Round 9 — the fix that had to be reverted
+
+Round 8's Home-strip fix came with a test asserting *"the strip drops what the
+card drops."* The assertion failed, and what it proved was that **the card did
+not drop it**: the active card under a whole-range refusal led with *"Meals
+logged on 22 of 23 days."* over a cat refusing 38 of 38 rated feedings. Round 4's
+rule in the one branch nobody had visited. So the strip fix had **inverted** the
+divergence rather than closing it.
+
+The fix — route `pushRecordFacts` through `pushRefusalWithheld` — was then broken
+by both lenses, on the same ground, and they were right:
+
+> `rangeRefusal` is 3 rated / 2 not-finished days / 50% share with **no span
+> guard**, and `some` counts as not-finished. Its own justification in
+> `lib/dietTrial.ts` reads *"what firing does is withhold an affirmative claim,
+> and silence is cheap."*
+
+Verified against the real predicate: **a dog rated `some` / `all` / `some` fires
+it on day 2 of 56.** The consequence of firing had been changed and the threshold
+never re-derived — so a wedge owner whose dog ate would have been handed *"a diet
+that wasn't eaten can't be read as one that was followed"*, and the likely
+response is that she stops rating intake honestly, which is the one signal the
+trial needs from her. The closing *"…is the refusal"* also has no antecedent on a
+live card; on the terminal cards it sits under the owner's own *"wouldn't eat
+it"*, which is exactly why it reads there and not here.
+
+Hoisting the check above the state switch — the other candidate, since
+`below_floor`, `free_fed`, `milestone` and `day_one` never see it either — makes
+both faults worse by giving the misfire four more states. **Reverted**, with the
+ruling recorded at the call site and pinned by tests so it cannot be re-taken by
+accident. Residual filed as **B-566** against #499.
+
+Four more, fixed:
+
+- **Home rendered the most non-adherent record as a flawless strip** — round 8's
+  own `stripOffDiet` suppression. A dog fed the old kibble twice a day for 23
+  days with a *correct* permit list trips `allowedSetUnavailable` via its second
+  disjunct, so the off-diet clause was dropped and Home read *"meals logged on 23
+  of 23 days"* and nothing else. It failed the invariant its own fix is named
+  after.
+- **The floor suffix and the can't-match caveat, in both directions.** Five
+  wholly-unmatched feedings rendered *"The 5 are what's been logged, not a
+  total."* directly above *"Culprit can't match these against the food list"* —
+  at-least-five and maybe-fewer, adjacent, under a comment asserting the pair was
+  impossible. One predicate now answers for both, at both of the suffix's two
+  render sites. The partial-match half needs new copy → **B-567**.
+- **The untracked head said "nothing" again** — and it was locked green by a test
+  named `it('the untracked head says "no meals", not "nothing"')` whose assertion
+  pinned `"nothing"`. Round 8's rewrite changed the string *and* updated the
+  assertion to match, while the function's all-caps docstring still claimed the
+  round-2 fix.
+- **Two empty-record states.** B-474's un-nulling turned `coverage`/`exposures`
+  into zeroed objects, which closed the only route to `soFarLine`'s designed
+  Principle-5 empty state — written, shipped, unreachable. And `exposureLine`
+  rendered *"0 feedings in total. Culprit isn't saying how many matched…"*: the
+  app declining to answer a question nobody asked about a record that is empty.
+
+### The test lesson, third time
+
+Swapping two params in `readArrangements` silently drops every free-choice bowl
+on a running trial, so the affirmative claim comes back — and it passed all 247
+tests. **The first test written for it did not close the gap either**: the
+behavioural harness stubs `getDb`, so the params never execute and the mutation
+still passed. Only mutation-checking caught that. The bind array is now
+`arrangementParams`, tested against the real engine.
+
+Three times in this PR a test that looked like coverage was not one. The rule
+that keeps holding: **green is not evidence; a failed mutation is.**
+
+### Convergence — the honest read
+
+The count did not converge, but the *cause* did. The adversarial lens named it:
+six withholding predicates (`intakeDeclineHeadline`, `rangeRefusal`, `freeFed`,
+`allowedSetUnavailable`, `untrackedDaysBeforeFirstLog`, `belowCoverageFloor`) ×
+eleven states × two surfaces, enforced by branch-local helper calls that each new
+branch is trusted to remember. `pushExposureFloor` solved that for the
+*disclose-the-floor* half in round 4 — one enforcement point plus a property
+test. The *withhold-the-reading* half still has none. That is **B-559**, and this
+round is its strongest evidence: its prediction is that round 10 finds this class
+again until B-559 lands.
+
+The product lens's parallel finding is worth carrying too: across nine rounds the
+card has accreted six disclosure lines, four of which exist in no mock, and the
+composition has tilted from *"keep this owner in the trial for eight weeks"* —
+§4.2's stated job — toward *"be unfalsifiable in front of a vet."* The `forward`
+line is the card's actual job and is the first thing crowded out. Filed as
+**B-563**.
