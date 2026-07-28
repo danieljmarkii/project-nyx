@@ -519,6 +519,20 @@ function floorSuffix(offDiet: number): string {
  * one line and nowhere to put a qualifier, so it states its ratio only when this
  * list is EMPTY — which is the whole of its "deliberately stricter than the
  * card" rule, and is now that sentence rather than a hand-maintained conjunction.
+ *
+ * WHAT THAT DOES AND DOES NOT BUY, stated precisely, because the first draft of
+ * this comment claimed the second half and `adversarial-reviewer` disproved it:
+ *
+ *   IT BUYS one list with two consumers. A reason cannot mean one thing to the
+ *   card and another to the strip, which is real and is what rounds 8/9 kept
+ *   getting wrong.
+ *
+ *   IT DOES NOT BUY protection against the list being WRONG. Deleting a push
+ *   from this function silently widens what Home will state, and no property
+ *   test written against `withholdingReasons` can notice — an oracle sharing an
+ *   implementation with its subject is a change-detector. What actually defends
+ *   the list is `names every withholding reason the record carries`, plus #498's
+ *   hand-written per-reason strip tests. Keep both.
  */
 export type TrialCardWithholding =
   | 'intake_decline'
@@ -534,7 +548,17 @@ export function withholdingReasons(input: TrialCardInput): TrialCardWithholding[
   if (input.rangeRefusal) reasons.push('range_refusal');
   if (input.freeFed) reasons.push('free_fed');
   if (input.allowedSetUnavailable) reasons.push('allowed_set_unavailable');
-  if ((input.untrackedDaysBeforeFirstLog ?? 0) > 0) reasons.push('untracked_head');
+  // `!== 0`, NOT `> 0`. The strip's predicate has always been "the head is
+  // exactly zero" and its complement is not `> 0` — a negative or `NaN` head is
+  // NOT a plain record, and rewriting the comparison the obvious way narrowed
+  // the withholding in the REASSURING direction: Home stated a coverage ratio
+  // the pre-refactor strip suppressed. Unreachable through the shipped loader
+  // (`lib/dietTrial.ts` derives the head from a first-log day filtered
+  // `>= scopedStart`, and `lib/dietTrialFacts.ts` defaults it to 0), which is
+  // exactly why no test defended it and why a contract-respecting fixture
+  // generator could not see it. Found by `adversarial-reviewer` feeding
+  // out-of-contract values to a field only ever generated in contract.
+  if ((input.untrackedDaysBeforeFirstLog ?? 0) !== 0) reasons.push('untracked_head');
   if (input.belowCoverageFloor) reasons.push('below_floor');
   return reasons;
 }
@@ -686,31 +710,81 @@ export interface TrialCardDisclosurePolicy {
  * THE TABLE. One row per register, and the row is the whole answer — this is the
  * artefact B-559 exists to produce. Reading a column top to bottom is the review
  * that nine rounds had to do by walking branches.
+ *
+ * ── HOW TO READ A CELL ──────────────────────────────────────────────────────
+ * Every value here reproduces what the pre-refactor branches did, verified cell
+ * by cell against `7a9108d` by a 307,200-case exhaustive differential. But a
+ * value that was DECIDED and a value that fell out of where a helper call
+ * happened to sit are not the same thing, and a table where they look alike does
+ * not deliver "reading a column IS the review" (`adversarial-reviewer`'s
+ * strongest objection to the first cut). So each non-obvious cell is marked:
+ *
+ *   RULED      — a decision someone made, with the reasoning at the cell.
+ *   FILED      — a known hole with a backlog row; preserved because a refactor
+ *                may not change behaviour, not because it is right.
+ *   INHERITED  — fell out of control flow in `7a9108d` and has never been
+ *                reviewed on its merits. Preserved for purity. Fair game.
+ *
+ * `true` also means ELIGIBLE, never GUARANTEED: each disclosure still gates on
+ * its own predicate (`pushPastBowlCaveat` additionally needs `freeFedOverlap &&
+ * !freeFed`, and so on). The table says who MAY speak, not who does.
  */
 export const TRIAL_CARD_DISCLOSURES: Record<TrialCardRegister, TrialCardDisclosurePolicy> = {
+  // Nothing to disclose about: no trial, or no coverage AND no exposures. Every
+  // cell here is unfalsifiable rather than decided — each disclosure's predicate
+  // needs a record this register is defined by not having.
   none: {
     floor: null, unmatched: false, pastBowl: false, untrackedHead: false, scope: 'never',
   },
   decline: {
+    // scope — INHERITED. The live decline card gates its floor line with the
+    // household caveat and the two TERMINAL decline branches never have, because
+    // `pushScopeCaveat` sat in `activeCard`'s branch and not in the other two.
+    // Never argued either way; preserved so this stays a refactor.
     floor: 'separately', unmatched: true, pastBowl: false, untrackedHead: false,
     scope: 'active_only',
   },
   refusal_withheld: {
+    // pastBowl — FILED (B-560). untrackedHead, scope — INHERITED, and they are
+    // B-560 one and two columns over: this register's body states coverage in
+    // prose ("the record is meals offered on 18 of 19 days"), and §10 S3's rule
+    // is "wherever coverage renders". `so_far` states coverage in prose too and
+    // gets `untrackedHead: true`. Three cells, one hole; B-560's row names only
+    // the first. Fixing any of them changes what an owner reads, so none belongs
+    // in a refactor.
     floor: 'plain', unmatched: true, pastBowl: false, untrackedHead: false, scope: 'never',
   },
   free_fed: {
-    // A bowl in force NOW is the lead of this card, so the past-bowl qualifier
-    // has nothing to add (its own predicate excludes it for the same reason);
-    // and the untracked head qualifies a coverage ratio this register replaces.
+    // pastBowl, untrackedHead — RULED. A bowl in force NOW is this card's lead,
+    // so the past-bowl qualifier has nothing to add (its own predicate excludes
+    // it for the same reason); and the untracked head qualifies a coverage ratio
+    // this register replaces outright.
     floor: null, unmatched: true, pastBowl: false, untrackedHead: false, scope: 'always',
   },
   so_far: {
     floor: null, unmatched: true, pastBowl: true, untrackedHead: true, scope: 'always',
   },
   floor_only: {
+    // unmatched — RULED. Day 1 and the milestone take the count as a declared
+    // deviation and must not inherit the can't-match caveat with it: it is a
+    // directive, not a floor, and it lands before an owner has finished
+    // populating the permitted list.
     floor: 'plain', unmatched: false, pastBowl: false, untrackedHead: false, scope: 'never',
   },
   coverage_only: {
+    // scope — INHERITED, and this is the cell that most needed the marker: in
+    // `7a9108d` it was not a decision at all, it fell out of `pushScopeCaveat`
+    // sitting inside `pushRecordFacts`'s `if (ex)` block. `record` gates the
+    // identical coverage claim. untrackedHead — inherited too, but the other
+    // way: the old code DID render it here, from the second `if (coverage)`.
+    //
+    // NOTE this register is currently unreachable from the shipped loader —
+    // `lib/dietTrialFacts.ts` nulls `coverage` and `exposures` together, so
+    // `exposures === null` implies `coverage === null` implies `none`. It is the
+    // pre-classifier contract, kept because the resolver is a pure function with
+    // its own contract and `exposures` is optional on the input type. Read
+    // "everyState walks every register" with that in mind: this row is walked by
+    // fixture, not by the app.
     floor: null, unmatched: false, pastBowl: false, untrackedHead: true, scope: 'never',
   },
   record: {

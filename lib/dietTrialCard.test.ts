@@ -33,6 +33,7 @@ import {
   type TrialCardTrial,
   type TrialCardLineRole,
   type TrialCardRegister,
+  type TrialCardState,
 } from './dietTrialCard';
 import { getDietTrialProgress } from './analytics';
 
@@ -1936,6 +1937,21 @@ describe('the composition layer (B-559)', () => {
     expect(ALL_REGISTERS.filter((r) => !walked.has(r))).toEqual([]);
   });
 
+  // AND EVERY STATE, WHICH IS NOT THE SAME TEST. Eleven states map onto eight
+  // registers, many-to-one, so a twelfth state routed to `record` leaves the
+  // register check green and is walked by nothing. `assertNever` closes the
+  // compile-time half — a new state must NAME a register; this closes the other
+  // half — somebody must WALK it. Gap named by `adversarial-reviewer`.
+  const ALL_STATES: TrialCardState[] = [
+    'no_trial', 'day_one', 'clean', 'exposures', 'below_floor', 'milestone',
+    'overrun', 'completed', 'abandoned', 'intake_decline', 'free_fed',
+  ];
+
+  it('everyState walks every state', () => {
+    const walked = new Set(everyState.map(([, input]) => planTrialCard(input).state));
+    expect(ALL_STATES.filter((s) => !walked.has(s))).toEqual([]);
+  });
+
   // `planTrialCard` and `resolveTrialCard` are two entry points onto one set of
   // pure functions (`trialContext` → `stateFor` → `registerFor`), which is the
   // only reason the plan is a trustworthy oracle for the rendered card. They
@@ -2018,7 +2034,18 @@ describe('the composition layer (B-559)', () => {
   // line renders exactly where the register's row allows it. This is what makes
   // the table load-bearing rather than documentation: a branch that reaches for
   // a disclosure its row does not carry — or drops one it does — fails here, on
-  // every state at once.
+  // every state at once. `adversarial-reviewer` confirmed that directly: a body
+  // calling `pushUntrackedHead` itself fails 1 case, deleting the sequencer's
+  // `policy.untrackedHead` gate fails 14, and `policy.pastBowl` fails 10.
+  //
+  // WHAT THEY CANNOT DO, said here rather than discovered later: they cannot
+  // falsify a table VALUE. The assertion compares the render to the very cell
+  // under review, so flipping a cell moves both sides and stays green. The guard
+  // against that is `is the table the resolver actually reads` below — a literal
+  // pin — plus, for the cells where a wrong value would be a clinical defect
+  // rather than a cosmetic one, a hardcoded behavioural test that names no cell.
+  // Six cells stood on the pin alone in the first cut; the two that matter most
+  // now have their own tests.
   const FORCED = { mayStateRecordClean: false, totalFeedings: 124, offDiet: 12 };
 
   it.each(everyState)('the floor sentence renders exactly where the row says — %s',
@@ -2090,6 +2117,50 @@ describe('the composition layer (B-559)', () => {
       expect(model.lines.some((l) => l.role === 'caveat')).toBe(allowed && hasFact);
     });
 
+  // ── The two cells a wrong value would make a clinical defect ──────────────
+  //
+  // Named no cell, so they survive the table being edited. `floor_only.unmatched`
+  // first: flipping it to `true` puts the can't-match caveat back on day 1 and
+  // the milestone, which is the defect `caveat: false` was added to prevent —
+  // and the #498 test that looks like it guards this asserts on copy that no
+  // longer exists ("Worth checking the list"), so it is vacuous today.
+  it('day 1 and the milestone take the off-diet count and no caveat with it', () => {
+    for (const [label, nowMs] of [['day 1', localNoon(2026, 7, 3)], ['milestone', localNoon(2026, 8, 27)]] as const) {
+      const m = resolveTrialCard(activeInput({
+        nowMs,
+        allowedSetUnavailable: true,
+        coverage: { daysLogged: 0, daysElapsed: 1 },
+        exposures: { mayStateRecordClean: false, totalFeedings: 4, offDiet: 4 },
+      }));
+      const joined = allStrings(m).join(' ');
+      expect(`${label}: ${joined}`).toContain('4 logged feedings were outside the trial diet');
+      expect(`${label}: ${joined}`).not.toContain('can’t match these against the food list');
+    }
+  });
+
+  // …and `decline.scope`, whose value decides whether the sickest card in the
+  // app gates its off-diet count with the household caveat. The asymmetry it
+  // encodes is inherited rather than argued, so pin the behaviour on both sides
+  // — that is what makes it safe to change later on purpose.
+  it('the live decline card gates its count for a household; the terminal ones do not', () => {
+    const decline = {
+      species: 'cat' as const,
+      petName: 'Mochi',
+      otherPetNames: ['Rex'],
+      intakeDeclineHeadline: 'Mochi has left most of her food for 3 days.',
+      exposures: { mayStateRecordClean: false, totalFeedings: 60, offDiet: 12 },
+    };
+    expect(textOf(resolveTrialCard(activeInput(decline)), 'caveat').join(' '))
+      .toContain('shares a home with Rex');
+    expect(textOf(resolveTrialCard(activeInput({
+      ...decline,
+      trial: {
+        status: 'completed', startedAt: '2026-07-03', endedAt: '2026-08-27',
+        targetDurationDays: 56, foodLabel: FOOD,
+      },
+    })), 'caveat')).toEqual([]);
+  });
+
   // ── ORDER IS PART OF THE COMPOSITION, AND NOTHING WAS PINNING IT ──────────
   //
   // Found by the B-559 purity harness, not by this file: swapping two disclosure
@@ -2126,18 +2197,65 @@ describe('the composition layer (B-559)', () => {
     ))).toEqual(['blind-spot', 'cant-match', 'past-bowl', 'untracked-head']);
   });
 
-  // ── The strip's rule, now one sentence ────────────────────────────────────
+  // ── The strip's rule ──────────────────────────────────────────────────────
   //
   // Home has one line and nowhere to put the caveat, the head, or the "offered,
-  // not eaten" reframing that make a ratio honest on the card. Every round-8/9
-  // strip defect was the conjunction being patched one reason at a time with the
-  // NEXT reason still rendering, so the rule is asserted against the LIST rather
-  // than against a re-typed copy of the predicate.
+  // not eaten" reframing that make a ratio honest on the card, so it states the
+  // ratio only when the record carries none of the six withholding reasons.
+  //
+  // ASSERTED AGAINST A SEPARATELY-WRITTEN PREDICATE, NOT AGAINST
+  // `withholdingReasons`. The first cut of this test compared the strip's output
+  // to `withholdingReasons(input).length === 0` — which is what the strip itself
+  // computes, so it could only catch the strip ceasing to consult the list, and
+  // NOT the list being wrong. `adversarial-reviewer` proved it: deleting the
+  // `below_floor` push from `withholdingReasons` left this test GREEN (only
+  // #498's hand-written per-reason tests caught it), and dropping a reason is
+  // precisely the failure mode rounds 8/9 produced. The duplication below is the
+  // point — an oracle that shares an implementation with its subject is a
+  // change-detector, not a test.
+  const REASONS_RESTATED = (input: TrialCardInput): boolean => (
+    !input.intakeDeclineHeadline
+    && !input.rangeRefusal
+    && !input.freeFed
+    && !input.allowedSetUnavailable
+    && !input.belowCoverageFloor
+    && (input.untrackedDaysBeforeFirstLog ?? 0) === 0
+  );
+
   it.each(everyState)('Home states the ratio only with an empty withholding list — %s',
     (_name, input) => {
       const strip = resolveTrialStrip(input);
       if (!strip) return;
       expect(/meals logged on \d+ of \d+ days/.test(strip.line ?? ''))
-        .toBe(withholdingReasons(input).length === 0 && Boolean(input.coverage));
+        .toBe(REASONS_RESTATED(input) && Boolean(input.coverage));
     });
+
+  // …and the list is asserted directly, so a reason cannot be dropped from it
+  // silently even on an input no fixture above happens to carry.
+  it('names every withholding reason the record carries', () => {
+    expect(withholdingReasons(activeInput())).toEqual([]);
+    expect(withholdingReasons(activeInput({
+      intakeDeclineHeadline: 'Mochi has left most of her food for 3 days.',
+      rangeRefusal: REFUSING_RANGE,
+      freeFed: { loggedFeedings: 4 },
+      allowedSetUnavailable: true,
+      untrackedDaysBeforeFirstLog: 12,
+      belowCoverageFloor: true,
+    }))).toEqual([
+      'intake_decline', 'range_refusal', 'free_fed',
+      'allowed_set_unavailable', 'untracked_head', 'below_floor',
+    ]);
+    // THE HEAD IS "NOT ZERO", NOT "POSITIVE". A negative or NaN head is not a
+    // plain record either, and rewriting the strip's original `=== 0` as `> 0`
+    // narrowed the withholding in the REASSURING direction — Home stating a
+    // ratio the pre-refactor strip suppressed. Unreachable through the loader,
+    // undefended by any test, and found only by feeding an out-of-contract value
+    // to a field every fixture generates in contract.
+    for (const head of [-1, -7, Number.NaN]) {
+      expect(withholdingReasons(activeInput({ untrackedDaysBeforeFirstLog: head })))
+        .toEqual(['untracked_head']);
+      expect(resolveTrialStrip(activeInput({ untrackedDaysBeforeFirstLog: head }))?.line ?? '')
+        .not.toMatch(/meals logged on/);
+    }
+  });
 });

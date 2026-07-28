@@ -73,7 +73,7 @@ mutation-checked order test.
 
 ## New invariants, all mutation-checked
 
-Broken, observed failing, restored — thirteen mutations in total:
+Broken, observed failing, restored — nineteen mutations in total:
 
 - **`everyState` walks every register**, and is asserted to. It gained four
   fixtures, including the first `rangeRefusal` fixtures it has ever had. Their
@@ -95,6 +95,56 @@ Broken, observed failing, restored — thirteen mutations in total:
   `undefined`, and `TRIAL_CARD_DISCLOSURES[undefined]` would have taken the card
   down at `policy.floor`. The `code-reviewer` asserted this guarantee already
   held; it did not, and the probe that showed it is in the commit comment.
+
+## What the adversarial review found
+
+`adversarial-reviewer` returned **PASS on the merge-blocking axis** — no reachable
+behavioural regression across its own **307,200-case exhaustive cross-product**
+plus 300,000 randomized inputs, and the B-566 ruling survived the exact hoist
+this layer makes trivial (it tried it; three tests fail immediately). Three
+findings, all fixed:
+
+**1. A real purity break, and my generator could not have seen it.**
+`withholdingReasons` tested the untracked head with `> 0` where the pre-refactor
+strip tested `=== 0` — complements only on non-negative integers. On a negative
+or `NaN` head, Home stated a coverage ratio the old strip suppressed: the
+reassuring direction, on the Principle-3 surface, which is the exact class rounds
+8/9 kept producing. Unreachable through the shipped loader and undefended by any
+test. Now `!== 0`, with a test.
+
+The generalisable half is the reviewer's diagnosis of *why* my 20,000-record
+sweep missed it: the blind spot was not a missing field combination — those were
+covered — but **out-of-contract values of fields I only ever generated in
+contract**. Every predicate this refactor rewrote is a comparison, and rewriting
+`=== 0` as `> 0` is precisely the class a contract-respecting generator cannot
+reach. The harness was re-run at 50,000 records including negatives, `NaN`,
+non-integer durations and `offDiet > totalFeedings`; it now catches the bug at
+record #72, and holds on the fix.
+
+**2. The new property tests could not falsify the table's *values*.** Each
+asserts the render against the very cell under review, so flipping a cell moves
+both sides and stays green — six cells stood on the literal `toEqual` pin alone.
+Worse, the strip test was tautological: it compared the strip's output to
+`withholdingReasons(...)`, which is what the strip itself computes, so **deleting
+`below_floor` from the list left it green**. That is the round-8/9 failure mode
+exactly. Fixed by asserting against a separately-written predicate, adding a
+direct assertion on the list, and giving the two cells whose wrong value would be
+a *clinical* defect (`floor_only.unmatched`, `decline.scope`) hardcoded
+behavioural tests that name no cell. All six mutations now bite.
+
+**3. Three preserved asymmetries I had not named**, one of which
+(`coverage_only.scope`) was a control-flow accident in the old code and now read
+as a deliberate value sitting next to two cells that carry their rationale. The
+table's cells are now marked **RULED / FILED / INHERITED**, so "reading a column
+is the review" is actually true; `refusal_withheld` turns out to be B-560 across
+*three* columns, not one, and its row says so.
+
+The reviewer also noted `coverage_only` is unreachable from the shipped loader
+(`lib/dietTrialFacts.ts` nulls coverage and exposures together), so the
+exhaustiveness test reports full coverage partly on a register the app cannot
+currently produce. Documented at the row rather than removed — the resolver is a
+pure function with its own contract, and `exposures` is optional on the input
+type.
 
 ## Two process notes worth carrying
 
