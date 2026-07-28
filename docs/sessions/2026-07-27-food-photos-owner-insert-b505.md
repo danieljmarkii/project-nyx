@@ -140,4 +140,27 @@ predating #392 is still installed, food *capture* on it will 42501 on upload. Th
 graceful, not a crash: the throw is caught, `setExtractionFailed(true)` fires, and the flow routes
 to manual entry. Re-running that build against a fresh capture is the only way to rule it out.
 
+## The ID collision at wrap (2026-07-28)
+
+The PR sat open across a day, `main` moved 8 commits, and `docs/backlog.md` conflicted. The cause
+is the race B-435 exists for: ID allocation is *read the max, add one* against a working copy, so
+two sessions open at once mint the same ID. Sibling sessions had filed **B-524 … B-575** on `main`,
+and both rows filed here had taken B-524/B-525.
+
+Resolved by the first-lands-keeps rule: `main`'s rows keep the IDs (they are unrelated items from
+the B-448 trace — the EXIF `Saw it` default and `occurred_at_source` drift), and this branch's two
+rows moved to **B-576** and **B-577**, each with an inline provenance note so a `grep` from an
+older record still lands somewhere true.
+
+The care was in the cross-references, and it is the part worth recording. After the merge `B-524`
+appeared in **seven** places in the backlog and only **one** meant my row. Updating by blind
+replace would have silently rewritten B-448's routing note, B-527's pairing note, and the
+B-534/B-535 renumber notes to point at the wrong item. So the fix was by attribution: three spots
+changed (B-505's row, the `STATUS.md` B-358/036 line, this record), everything else left alone.
+The PR body needed the same correction — it still sent readers to B-524/B-525.
+
+Re-ran the duplicate check *after* the merge, which is the only time it is meaningful: sibling rows
+and mine append at different offsets, so git merges them cleanly and a collision is invisible until
+the merged file exists. Clean, and CI green on the merged head.
+
 Shipped via #495.
