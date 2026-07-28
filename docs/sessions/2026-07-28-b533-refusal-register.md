@@ -172,6 +172,32 @@ failure mode this track keeps naming. They do not add a blocker; they sharpen th
 one that already existed, and hand Dr. Chen executed records instead of a
 hypothetical.
 
+## The finding the review did not make (B-575)
+
+Raised by the PM reading the reviewer's own counterexample, and it is the most
+useful thing to come out of the session.
+
+`feedingWasFinished` is false for `refused` **or** `picked` **or** `some`. So
+"60 not-finished bowls across 30 days" describes two different animals: a cat
+eating ~30% of every bowl for a month — alive, plausible, and exactly the wedge
+patient — and a cat that ate nothing, which died in week one. The PM's version:
+*if she refused all 44 days the cat is dead*, so debating that card's copy is
+moot.
+
+**The register renders the identical sentence for both.** It measures a share of
+rated feedings and has no concept of elapsed time. But the feline copy invokes a
+clock — *"needs a call today"* is the 48–72h hepatic-lipidosis window — and the
+lane cannot measure the variable its own copy is about. Three refused bowls since
+Tuesday and a three-week picking pattern get the same words; the first is an
+emergency and the second is a chronic finding.
+
+**And a process finding worth keeping.** The adversarial fixtures were
+arithmetically valid and never checked for biological plausibility, and this
+session relayed them without asking whether such an animal exists. A fixture that
+satisfies a predicate is not evidence that a patient does. The falsification pass
+is still worth running — it found a real defect in the stand-down's shape — but
+its records need a clinical read before they are quoted as patients.
+
 ## Verification
 
 `tsc --noEmit` clean · **3284** jest across 148 suites · **1001** deno · CI green
