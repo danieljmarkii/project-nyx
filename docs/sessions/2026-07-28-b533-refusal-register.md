@@ -2,8 +2,7 @@
 
 **Date:** 2026-07-28
 
-Re-cut of **#499** — the register half of B-533 — onto post-B-559 `main`. Shipped
-via **#502** (draft, held).
+Re-cut of **#499** — the register half of B-533 — onto post-B-559 `main`. Shipped via **#502** (draft, held); **#499 should be closed**.
 
 ## Why a re-cut and not a rebase
 
