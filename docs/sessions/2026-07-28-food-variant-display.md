@@ -2,7 +2,12 @@
 
 **Date:** 2026-07-28
 
-Shipped via **#500** (draft).
+Shipped via **#500**.
+
+Filed as B-556 and **renumbered to B-568** at wrap: a concurrent session (B-533 diet-trial
+card viability) claimed B-556–B-567 while this branch was in flight, and first-lands-keeps
+gives them the block. Their `docs/sessions/` file was restored untouched — one file per
+session, never edit another's.
 
 ## The report
 
@@ -93,8 +98,11 @@ group when the food id is absent.
 ## Verification
 
 - `tsc --noEmit` clean
-- `jest` — 147 suites / **2859 passed** (+9)
+- `jest` — 148 suites / **3006 passed** (+9 from this work; the rest arrived with the `main` merge)
 - `deno test` over `supabase/functions/` — **1001 passed** (+2)
+- **CI green on both required checks** (`App (typecheck + jest)`, `Edge Functions (deno test)`)
+
+All three were re-run *after* merging `main`, not only before it.
 
 Deno is not installed in the cloud session by default; it was installed locally for this
 run, which was worth it — its type-check caught two `generate-report` fixtures missing
