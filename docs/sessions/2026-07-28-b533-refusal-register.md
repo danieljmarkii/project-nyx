@@ -149,16 +149,32 @@ render); G2; intake-is-not-preference; `withholdingReasons` keyed on raw input, 
 a stood-down register still silences Home. The reviewer could not construct a
 false teach-line sentence.
 
-**Nothing was patched in response.** Every fix is a threshold or a piece of copy —
-what minimum sample, what share, what recency window, whether a safety register may
-carry a teaching aside — and inventing those inside a build PR is the failure mode
-this track keeps naming. The findings do not add a blocker; they sharpen the one
-that already existed, and they hand Dr. Chen executed records instead of a
+**Root cause A was then FIXED in-session (B-571 closed).** The reviewer's own
+framing is what made it available: the problem was the stand-down's *shape*, not
+its inputs. Firing carried four guards and standing down carried none — a bare
+"is there one finished bowl?". The repair is symmetry against the **already-ratified**
+constants: `REFUSAL_MIN_RATED` recent ratings and a finished share clearing
+`1 - REFUSAL_SHARE`. No clinical number was invented, which is precisely why it
+did not need Dr. Chen. It needed one new fact — `recentRatedFeedings` — because a
+numerator cannot express a share. **The rule, in one sentence: it takes the same
+weight of evidence to say this pet is eating as it took to say it was not.**
+
+A residual is kept deliberately and documented at the field: a pet that recovers,
+whose owner then stops rating, sees the register *return* once the good ratings
+age out. That is over-firing on a safety lane — the survivable direction — and it
+is R1a read strictly.
+
+**The rest was not patched.** B-572 (the range fact's recency, the day-2 floor),
+B-573 (free-fed) and B-574 (the teach line) are thresholds or copy —
+what recency window, whether a safety register may carry a teaching aside, whether
+`free_fed` must outrank the register. Inventing those inside a build PR is the
+failure mode this track keeps naming. They do not add a blocker; they sharpen the
+one that already existed, and hand Dr. Chen executed records instead of a
 hypothetical.
 
 ## Verification
 
-`tsc --noEmit` clean · **3275** jest across 148 suites · **1001** deno · CI green
+`tsc --noEmit` clean · **3284** jest across 148 suites · **1001** deno · CI green
 on both required checks. No schema change.
 
 One self-inflicted error worth recording: the wrap commit ran `git add -A` while

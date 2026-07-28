@@ -367,6 +367,7 @@ export async function loadDietTrialFacts(args: {
     // `ask` cannot be allowed to answer "is this diet being eaten" differently.
     trialDietRefusal: facts?.trialDietRefusal ?? null,
     recentFinishedFeedings: facts?.recentFinishedFeedings ?? 0,
+    recentRatedFeedings: facts?.recentRatedFeedings ?? 0,
     rangeRefusalSpansEpisodes: facts?.rangeRefusalSpansEpisodes ?? false,
     // R1b — the rated share, which is what makes the register above reachable.
     intakeRating: facts?.intakeRating ?? null,

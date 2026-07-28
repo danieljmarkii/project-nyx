@@ -913,13 +913,47 @@ export interface TrialFacts {
    * is what lets a surface tell those two apart: no recent ratings means no new
    * evidence, not evidence of recovery.
    *
-   * ── THE STAND-DOWN SEMANTICS ARE UNRATIFIED (Dr. Chen, blocking) ───────────
-   * "Stand the register down only on recent FINISHED feedings, and only when the
-   * range fact spans more than one episode" is defensible and was reached by
-   * elimination rather than by clinical judgement. It is the open question on
-   * this lane; see the PR description.
+   * IT IS A NUMERATOR AND MUST NEVER BE READ ALONE. Its denominator is
+   * `recentRatedFeedings`, and the two exist as a pair because reading this one
+   * by itself is exactly the defect `adversarial-reviewer` executed on the first
+   * cut: a bare `=== 0` test meant ONE finished bowl stood down a register that
+   * had fired on sixty logged refusals. See `recentRatedFeedings`.
    */
   recentFinishedFeedings: number;
+  /**
+   * `primary_diet` feedings inside the RECENCY window carrying ANY rating — the
+   * denominator `recentFinishedFeedings` is measured against.
+   *
+   * ── WHY THE PAIR, AND WHY THIS IS NOT A NEW THRESHOLD ──────────────────────
+   * `adversarial-reviewer` broke the first cut on its SHAPE rather than on its
+   * inputs: firing carries four guards (`REFUSAL_MIN_RATED`, `REFUSAL_MIN_DAYS`,
+   * `REFUSAL_SHARE`, `REFUSAL_MIN_SPAN_MS`) while standing down carried none — a
+   * bare "is there one finished bowl?". On a lane whose safe error direction is
+   * toward firing, the OFF predicate was the loosest test in the module. Executed:
+   * a cat with 60 of 60 bowls refused across 30 days, then a single `most` bowl,
+   * rendered a clean card reading "Meals logged on 44 of 44 days… 2 weeks to go."
+   *
+   * Two further defects fell out of the same shape — logging a refusal AND a good
+   * meal disclosed LESS than logging nothing at all, and the register flickered
+   * on/off across a record with NO new data in it.
+   *
+   * The repair is SYMMETRY, not a new number: standing down now asks the same
+   * question firing asks, in the opposite direction, against the SAME ratified
+   * constants — `REFUSAL_MIN_RATED` recent ratings, and a finished share clearing
+   * `1 - REFUSAL_SHARE`. Nothing clinical was invented here, which is the point:
+   * the reviewer's finding was that the shape was indefensible, and a mirror of an
+   * already-ratified floor is the one repair that needs no new ruling.
+   *
+   * WHAT THIS DELIBERATELY DOES NOT FIX, so nobody reads silence as coverage: a
+   * pet that genuinely recovers, and whose owner then stops rating, sees the
+   * register RETURN once the good ratings age out of this window — the history
+   * still says the diet went uneaten and nothing current contradicts it. That is
+   * over-firing on a safety lane, which is the survivable direction, and it is
+   * `R1a` read strictly: absence of ratings is not evidence of recovery. Making
+   * the range fact itself expire needs a recency threshold, which IS a clinical
+   * number — B-572, and Dr. Chen's.
+   */
+  recentRatedFeedings: number;
   /** R1b — the rated share of the meal record. Null when there is nothing in
    *  range to have rated, which is not the same as "nothing is rated". */
   intakeRating: TrialIntakeRating | null;
@@ -1156,6 +1190,7 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
     rangeRefusal: null,
     rangeRefusalSpansEpisodes: false,
     recentFinishedFeedings: 0,
+    recentRatedFeedings: 0,
     // Null, not a zeroed object — "nothing in range to have rated" and "nothing
     // rated" are different facts, and only the second is worth teaching about. A
     // surface handed a zeroed object would divide by zero and teach the tap on
@@ -1430,6 +1465,9 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
     rangeRefusal,
     rangeRefusalSpansEpisodes: rangeSpanMs >= REFUSAL_MIN_SPAN_MS,
     recentFinishedFeedings,
+    // The same window and the same rows as `recentFinishedFeedings` — they are a
+    // ratio, so a denominator drawn from anywhere else would be a silent lie.
+    recentRatedFeedings: ratedFeedings,
     // Null, not `{ rated: 0, feedings: 0 }` — see the field on `TrialFacts`.
     intakeRating: ratableFeedings > 0
       ? { rated: ratedMealFeedings, feedings: ratableFeedings, primaryRated, primaryFeedings }

@@ -2459,15 +2459,22 @@ describe('state 10 — the trial-diet refusal register', () => {
   // "When may a fired safety register be stood down?" is the hardest question the
   // five rounds surfaced. What is pinned below is the current answer and is
   // DEFENSIBLE RATHER THAN RATIFIED; each case is a defect that was executed.
-  describe('the stand-down (⚠️ semantics unratified — Dr. Chen)', () => {
+  describe('the stand-down — symmetric with the fire (B-571)', () => {
     const fromRange = (over: Partial<TrialCardInput> = {}) => activeInput({
       species: 'cat',
       petName: 'Mochi',
       rangeRefusal: REFUSING_RANGE,
       recentFinishedFeedings: 0,
+      recentRatedFeedings: 0,
       rangeRefusalSpansEpisodes: true,
       ...over,
     });
+
+    // THE RULE, STATED ONCE: it takes the same weight of evidence to say this pet
+    // is eating as it took to say it was not. Firing needs `REFUSAL_MIN_RATED`
+    // ratings and a `REFUSAL_SHARE` refused share; standing down needs the same
+    // sample and the complementary share. No new constant — the first cut's
+    // defect was the SHAPE (four guards on, none off), not the choice of input.
 
     // ROUND 4's DEFECT: an owner documents 42 refusals, stops tapping intake, the
     // recency window empties, and the live register VANISHES over a cat that is
@@ -2481,15 +2488,89 @@ describe('state 10 — the trial-diet refusal register', () => {
     // feedings, so two more logged refusals cancelled a register that had fired
     // on refusals — more evidence buying less disclosure.
     it('more logged refusals do not cancel it', () => {
-      expect(resolveTrialCard(fromRange({ recentFinishedFeedings: 0 })).state)
-        .toBe('trial_refusal');
+      expect(resolveTrialCard(fromRange({ recentRatedFeedings: 4, recentFinishedFeedings: 0 }))
+        .state).toBe('trial_refusal');
     });
 
-    // …and the one thing that DOES stand it down is direct evidence the diet is
-    // being eaten now. This is the whole asymmetry: absence of ratings is not
-    // evidence of recovery, but a finished bowl is.
-    it('recent finished feedings do', () => {
-      expect(resolveTrialCard(fromRange({ recentFinishedFeedings: 3 })).state).toBe('clean');
+    // ── `adversarial-reviewer` finding 1 — THE HEADLINE DEFECT ──────────────
+    //
+    // 60 of 60 bowls refused across 30 days; the owner keeps logging but rates
+    // exactly one feeding in the last fortnight, `most`. The old predicate was a
+    // bare `recentFinishedFeedings === 0`, so that ONE bowl stood the register
+    // down and the card rendered "Meals logged on 44 of 44 days… 2 weeks to go."
+    // over a cat that had refused everything for a month.
+    it('one eaten bowl cannot cancel sixty documented refusals', () => {
+      const model = resolveTrialCard(fromRange({
+        recentRatedFeedings: 1, recentFinishedFeedings: 1,
+      }));
+      expect(model.state).toBe('trial_refusal');
+      expect(allStrings(model).join(' ')).not.toContain('Meals logged on 22 of 23 days.');
+    });
+
+    // ── finding 2 — LOGGING EVIDENCE MUST NEVER BUY LESS DISCLOSURE ─────────
+    //
+    // The reviewer's sweep: F=0,R=0 fired, F=1,R=1 did not. An owner who
+    // documented BOTH a refusal and a good meal got a quieter card than one who
+    // rated nothing at all. Asserted as the property rather than the two points:
+    // for a fixed count of finished feedings, adding refusals may only ever move
+    // the register toward ON.
+    it('is monotone — adding refusals never removes the register', () => {
+      const sweep = (finished: number) => [0, 1, 2, 3, 4].map((refused) => (
+        resolveTrialCard(fromRange({
+          recentRatedFeedings: finished + refused, recentFinishedFeedings: finished,
+        })).state === 'trial_refusal' ? 'ON' : 'off'
+      ));
+      // Read as a row per finished-count, refusals increasing left to right. The
+      // property is that no row ever goes ON → off: once the evidence is enough
+      // to speak, more refusals cannot take the voice away. Pinned as literals so
+      // a regression names the exact cell, and so the rows are visibly non-vacuous
+      // (`finished: 3` genuinely crosses at four refusals rather than never).
+      expect({
+        0: sweep(0).join(' '),
+        1: sweep(1).join(' '),
+        3: sweep(3).join(' '),
+      }).toEqual({
+        0: 'ON ON ON ON ON',
+        1: 'ON ON ON ON ON',
+        3: 'off off off off ON',
+      });
+    });
+
+    // …and the specific inversion, pinned as a literal pair.
+    it('documenting a refusal and a good meal is never quieter than logging nothing', () => {
+      const loggedNothing = resolveTrialCard(fromRange()).state;
+      const loggedBoth = resolveTrialCard(fromRange({
+        recentRatedFeedings: 2, recentFinishedFeedings: 1,
+      })).state;
+      expect(loggedNothing).toBe('trial_refusal');
+      expect(loggedBoth).toBe('trial_refusal');
+    });
+
+    // …and the one thing that DOES stand it down is evidence the diet is being
+    // eaten, to the same standard the fire demanded. Three ratings, all finished.
+    it('a sample that clears the fire’s own floors, eaten, does', () => {
+      expect(resolveTrialCard(fromRange({
+        recentRatedFeedings: 3, recentFinishedFeedings: 3,
+      })).state).toBe('clean');
+    });
+
+    // …but the SAME three ratings mostly refused do not. This is the pair that
+    // makes it a share rather than a presence test.
+    it('the same sample, mostly refused, does not', () => {
+      expect(resolveTrialCard(fromRange({
+        recentRatedFeedings: 3, recentFinishedFeedings: 1,
+      })).state).toBe('trial_refusal');
+    });
+
+    // The sample floor, at its boundary: two finished bowls out of two is a
+    // perfect share and still too small a sample to overturn the history.
+    it('holds the sample floor at its boundary', () => {
+      expect(resolveTrialCard(fromRange({
+        recentRatedFeedings: 2, recentFinishedFeedings: 2,
+      })).state).toBe('trial_refusal');
+      expect(resolveTrialCard(fromRange({
+        recentRatedFeedings: 3, recentFinishedFeedings: 2,
+      })).state).toBe('clean');
     });
 
     // The range fact drops the episode guard, which is right for a HISTORY and
@@ -2505,7 +2586,7 @@ describe('state 10 — the trial-diet refusal register', () => {
     // silence a register speaking from evidence that is current by construction.
     it('never applies to the now-fact', () => {
       expect(resolveTrialCard(refusing({
-        recentFinishedFeedings: 9, rangeRefusalSpansEpisodes: false,
+        recentRatedFeedings: 9, recentFinishedFeedings: 9, rangeRefusalSpansEpisodes: false,
       })).state).toBe('trial_refusal');
     });
 

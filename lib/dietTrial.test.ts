@@ -1551,6 +1551,21 @@ describe('B-533 PR B — the facts behind the live refusal register', () => {
 
     // The recency window is what makes this a NOW-fact. A diet eaten in week one
     // and refused since is not evidence the pet is eating today.
+    // THE DENOMINATOR SHIPS WITH THE NUMERATOR (B-571). `recentFinishedFeedings`
+    // alone cannot express a share, and a share is what the stand-down needs to
+    // be symmetric with the fire — a bare `=== 0` test on the numerator is what
+    // let one eaten bowl cancel sixty documented refusals.
+    it('carries its own denominator, over the same window and rows', () => {
+      const facts = trialWithRatings(14, 2, (i) => (i % 4 === 0 ? 'all' : 'refused'));
+      expect(facts.recentRatedFeedings).toBe(28);
+      expect(facts.recentFinishedFeedings).toBe(7);
+      // Unrated feedings enter NEITHER side — they are not evidence in either
+      // direction, which is R1a and its mirror in one line.
+      const half = trialWithRatings(14, 2, (i) => (i % 2 === 0 ? 'refused' : null));
+      expect(half.recentRatedFeedings).toBe(14);
+      expect(half.recentFinishedFeedings).toBe(0);
+    });
+
     it('is bounded to the recency window, not the range', () => {
       const facts = computeTrialFacts({
         trial: { ...TRIAL, species: 'cat' },

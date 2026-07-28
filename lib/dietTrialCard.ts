@@ -87,6 +87,10 @@
 //
 import { getDietTrialProgress } from './analytics';
 import {
+  // The fire predicate's own floors, reused BY THE STAND-DOWN so the two
+  // directions cannot drift apart — see `liveRefusal`.
+  REFUSAL_MIN_RATED,
+  REFUSAL_SHARE,
   trialViabilityHeadline,
   trialViabilityNote,
   type TrialDietRefusal,
@@ -227,9 +231,12 @@ export interface TrialCardInput {
    * what it drives is a present-tense sentence about the pet today.
    */
   trialDietRefusal?: TrialDietRefusal | null;
-  /** `TrialFacts.recentFinishedFeedings` — the ONLY thing permitted to stand the
-   *  register down once it has fired off the range fact. See `liveRefusal`. */
+  /** `TrialFacts.recentFinishedFeedings` — the NUMERATOR of the stand-down. Never
+   *  read alone; its denominator is `recentRatedFeedings`. See `liveRefusal`. */
   recentFinishedFeedings?: number;
+  /** `TrialFacts.recentRatedFeedings` — the denominator. The pair is what makes
+   *  the stand-down symmetric with the fire instead of a bare `=== 0` test. */
+  recentRatedFeedings?: number;
   /** `TrialFacts.rangeRefusalSpansEpisodes` — the range fact carries no episode
    *  guard, so a live present-tense register may not speak from a single bout. */
   rangeRefusalSpansEpisodes?: boolean;
@@ -636,11 +643,6 @@ export function withholdingReasons(input: TrialCardInput): TrialCardWithholding[
 /**
  * R1 — MAY THE LIVE REFUSAL REGISTER SPEAK, AND FROM WHICH FACT?
  *
- * ⚠️ THE STAND-DOWN SEMANTICS HERE ARE UNRATIFIED. Dr. Chen owes a ruling on the
- * hardest question the five review rounds surfaced: *when may a fired safety
- * register be stood down?* What is written below is defensible and was reached by
- * elimination rather than by clinical judgement — it is the blocker on this lane.
- *
  * The now-fact speaks for itself. `trialDietRefusal` is recency-bounded and
  * carries `REFUSAL_MIN_SPAN_MS`, so it is already both current and multi-episode.
  *
@@ -652,28 +654,67 @@ export function withholdingReasons(input: TrialCardInput): TrialCardWithholding[
  * license absence of ratings CANCELLING an alarm that already fired on logged
  * evidence.
  *
- * Its two guards are each a defect that was executed:
+ * ── THE STAND-DOWN IS SYMMETRIC WITH THE FIRE, AND THAT IS THE WHOLE RULE ────
  *
- *   • FINISHED feedings stand it down, never merely RATED ones. Counting ratings
- *     meant two more logged refusals inside the window cancelled a register that
- *     had fired on refusals — more evidence bought less disclosure, and the
- *     register was present at 0 recent ratings, absent at 1–2, present again at
- *     3+. A dead zone occupied by exactly the refusing cat.
+ * `adversarial-reviewer` broke the first cut of this function on its SHAPE, not
+ * on its inputs. Firing carries four guards; standing down carried none — a bare
+ * "is there one finished bowl?". On a lane whose stated safe error direction is
+ * toward firing, the OFF predicate was the loosest test in the module, and three
+ * executed findings fell out of that single asymmetry:
  *
- *   • The range fact drops the episode guard (right for a HISTORY, wrong for a
- *     present-tense register), so one midnight-straddling bout fired "needs a call
- *     today" for the next 36 days over a cat that ate throughout.
+ *   1. A cat with 60 of 60 bowls refused across 30 days, then ONE `most`-rated
+ *      bowl on day 44, rendered a clean card — "Meals logged on 44 of 44 days…
+ *      2 weeks to go."
+ *   2. Logging a refusal AND a good meal disclosed LESS than logging nothing at
+ *      all (F=0,R=0 fired; F=1,R=1 did not).
+ *   3. The register flickered across a record with NO new data in it — present
+ *      days 30–43, silent 44–48, present again 49–56: absent nearest the last
+ *      refusal and present a week later on strictly older evidence.
+ *
+ * So the stand-down now asks the SAME question the fire asks, in the opposite
+ * direction, against the SAME ratified constants: at least `REFUSAL_MIN_RATED`
+ * recent ratings, and a finished share clearing `1 - REFUSAL_SHARE`. Reusing the
+ * fire’s own floors is deliberate, and is what makes this repair available with
+ * no new clinical ruling — the finding was that the SHAPE was indefensible, and a
+ * mirror of an already-ratified floor invents nothing.
+ *
+ * Read both halves together and the rule is one sentence: **it takes the same
+ * weight of evidence to say this pet is eating as it took to say it was not.**
+ *
+ * ── THE EPISODE GUARD, UNCHANGED ───────────────────────────────────────────
+ * The range fact drops `REFUSAL_MIN_SPAN_MS` (right for a HISTORY, wrong for a
+ * present-tense register), so one midnight-straddling bout would otherwise fire
+ * "needs a call today" for the next 36 days over a cat that ate throughout.
+ *
+ * ⚠️ STILL OPEN, STILL DR. CHEN’S — B-572. That span guard is only a >=12h test,
+ * which any two-calendar-day cluster clears: three refusals in week one followed
+ * by 41 unrated days still speaks in the present tense on 41-day-old evidence.
+ * Making the range fact EXPIRE needs a recency threshold, and a threshold is a
+ * clinical number rather than an engineering one — as is the now-fact’s own floor
+ * firing on a day-2 some/all/some dog. Both are OVER-fire, the survivable
+ * direction, which is why they are filed rather than guessed at here.
  */
 function liveRefusal(input: TrialCardInput): TrialDietRefusal | null {
   if (input.trialDietRefusal) return input.trialDietRefusal;
-  if (
-    input.rangeRefusal &&
-    (input.recentFinishedFeedings ?? 0) === 0 &&
-    input.rangeRefusalSpansEpisodes === true
-  ) {
+  if (input.rangeRefusal && input.rangeRefusalSpansEpisodes === true && !isEatingNow(input)) {
     return input.rangeRefusal;
   }
   return null;
+}
+
+/**
+ * Does the RECENT record carry evidence the diet is being eaten, to the same
+ * standard `computeTrialFacts` demands before it will say the opposite?
+ *
+ * `false` ON AN EMPTY WINDOW BY CONSTRUCTION, and that is the load-bearing half:
+ * no recent ratings means no new evidence, never evidence of recovery. A
+ * defaulted-true reading here re-creates the defect this replaced.
+ */
+function isEatingNow(input: TrialCardInput): boolean {
+  const rated = input.recentRatedFeedings ?? 0;
+  const finished = input.recentFinishedFeedings ?? 0;
+  if (rated < REFUSAL_MIN_RATED) return false;
+  return finished / rated >= 1 - REFUSAL_SHARE;
 }
 
 /**
