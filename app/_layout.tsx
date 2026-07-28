@@ -3,6 +3,7 @@ import { Stack, router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useFonts } from 'expo-font';
 import * as SplashScreen from 'expo-splash-screen';
+import * as Linking from 'expo-linking';
 import { fontMap } from '../lib/fonts';
 import { supabase } from '../lib/supabase';
 import { useAuthStore } from '../store/authStore';
@@ -10,6 +11,7 @@ import { usePetStore } from '../store/petStore';
 import { initDb } from '../lib/db';
 import { wipeLocalSession } from '../lib/session';
 import { coldStartDecision } from '../lib/authRouting';
+import { isAuthDeepLink } from '../lib/authDeepLink';
 import { purgeRetiredStorage } from '../lib/retiredStorage';
 import { useSync } from '../hooks/useSync';
 import { useSyncTimezone } from '../hooks/useSyncTimezone';
@@ -85,7 +87,16 @@ export default function RootLayout() {
         // from there. A live session skips straight past auth; the usePet hook (in
         // the tabs layout) then fetches the pet and redirects to onboarding if none.
         setSession(null);
-        router.replace('/(auth)');
+        // …EXCEPT on a cold start FROM an auth link (B-432's email confirmation;
+        // B-280's recovery link next). Those links have no session BY DEFINITION —
+        // establishing one is their entire job — so the bounce above would replace
+        // the route expo-router just opened from the link, milliseconds after
+        // opening it, and drop the owner on the Landing with no idea why their
+        // confirmation did nothing. `getLinkingURL()` is synchronous, so this
+        // reads the launch URL without racing the decision it guards.
+        if (!isAuthDeepLink(Linking.getLinkingURL())) {
+          router.replace('/(auth)');
+        }
       } else {
         // retain — a transient refresh failure. Keep the owner in the app (their
         // local data is intact, offline-first) instead of bouncing to login, and

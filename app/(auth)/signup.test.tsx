@@ -117,7 +117,18 @@ describe('SignupScreen — session present (email confirmation off)', () => {
     fireEvent.press(utils.getByTestId('signup-submit'));
 
     await waitFor(() => expect(mockReplace).toHaveBeenCalledWith('/onboarding/disclaimer'));
-    expect(mockSignUp).toHaveBeenCalledWith({ email: 'jordan@email.com', password: 'password123' });
+    expect(mockSignUp).toHaveBeenCalledWith({
+      email: 'jordan@email.com',
+      password: 'password123',
+      options: {
+        // B-432: without this Supabase falls back to the project Site URL and the
+        // confirmation link drops the owner on a web page.
+        emailRedirectTo: 'nyx:///confirm',
+        // Parked on the auth user because with confirmation ON there is no session
+        // to write user_profiles with — the confirm screen writes it once there is.
+        data: { first_name: 'Jordan', last_name: 'Rivera' },
+      },
+    });
     expect(mockUpdateOwnerName).toHaveBeenCalledWith('u1', 'Jordan', 'Rivera');
   });
 
@@ -192,10 +203,38 @@ describe('SignupScreen — no session (email confirmation on)', () => {
     fireEvent.press(utils.getByTestId('signup-submit'));
     await waitFor(() => expect(utils.getByText('Check your inbox')).toBeTruthy());
 
-    // "you can do this anytime" read as optional; there is also no auth deep-link
-    // handler, so the return trip is manual and the copy must say so.
+    // "you can do this anytime" read as optional. B-401's replacement promised only
+    // the manual return trip the app could then deliver; B-432 built the deep link,
+    // so the copy now promises the better thing — and keeps the PKCE caveat, since
+    // the verifier only exists on the phone that signed up.
     expect(utils.queryByText(/you can do this anytime/)).toBeNull();
-    expect(utils.getByText(/come back here and\s+sign in/)).toBeTruthy();
+    expect(utils.queryByText(/come back here and\s+sign in/)).toBeNull();
+    expect(utils.getByText(/Open it on this phone/)).toBeTruthy();
+  });
+
+  it('resends with the same deep link as the original send (B-432)', async () => {
+    // The resend is the control a stuck owner is most likely to press, so a link
+    // that skipped emailRedirectTo would reintroduce the exact bug this fixes, on
+    // the exact path where it hurts most.
+    mockSignUp.mockResolvedValue({
+      data: { session: null, user: { id: 'u1', identities: [{}] } },
+      error: null,
+    });
+    (supabase.auth.resend as jest.Mock).mockResolvedValue({ error: null });
+    const utils = render(<SignupScreen />);
+    fillValidForm(utils, 'jordan@email.com');
+    fireEvent.press(utils.getByTestId('signup-submit'));
+    await waitFor(() => expect(utils.getByText('Check your inbox')).toBeTruthy());
+
+    fireEvent.press(utils.getByTestId('verify-resend'));
+
+    await waitFor(() =>
+      expect(supabase.auth.resend).toHaveBeenCalledWith({
+        type: 'signup',
+        email: 'jordan@email.com',
+        options: { emailRedirectTo: 'nyx:///confirm' },
+      }),
+    );
   });
 
   it('maps a rate-limited resend to a wait, not a security lecture', async () => {
