@@ -1949,3 +1949,135 @@ Deno.test('B-531/R2 — a no-trial report drops off-diet vocabulary for what it 
   assert.ok(!/No off-diet exposures logged in this window/.test(text))
   assert.ok(/No treats or table food are recorded in this window/.test(text))
 })
+
+// ── Adversarial round 2 — the four breaks the first cut shipped ──────────────
+//
+// `adversarial-reviewer` returned FAIL on the first cut of this PR. Each test below
+// is one of its executed counterexamples, pinned so the repair cannot silently rot.
+
+Deno.test('ADV① — the re-photographed bag in its REALISTIC order reaches the band', () => {
+  // The break: the fallback was gated on `allowedSetUnavailable`, whose second disjunct
+  // needs zero matched feedings across the WHOLE range — so the seven days the cat ate
+  // before the bag was re-shot permanently disabled it, and the report rendered "7
+  // matched, 42 did not" with an EMPTY safety band over ~7% body-weight loss. That is
+  // verbatim the artifact the B-494 ruling was written about, reached through the repair
+  // meant to prevent it. The population choice is now made per window.
+  const input = wellLoggedTrialInput({ events: [] })
+  input.pet.name = 'Miso'
+  input.pet.species = 'cat'
+  input.pet.weightKg = 4.4
+  input.dietTrials[0].status = 'abandoned'
+  input.dietTrials[0].endedAt = '2026-06-28'
+  input.dietTrials[0].completedAt = null
+  // Days 1–7: the original library row, and she eats.
+  for (const d of days('2026-06-01', '2026-06-07')) {
+    input.events.push(meal({ date: d, brand: 'Royal Canin', product: 'Hydrolyzed HP', foodItemId: 'f-hp', proteins: ['soy'], intakeRating: 'all' }))
+  }
+  // Days 8–28: the bag is re-photographed, and she refuses every bowl.
+  for (const d of days('2026-06-08', '2026-06-28')) {
+    for (const time of ['08:00:00', '18:00:00']) {
+      input.events.push(meal({ date: d, time, brand: 'Royal Canin', product: 'Hydrolyzed HP Feline', foodItemId: 'f-hp-2', proteins: ['soy'], intakeRating: 'refused' }))
+    }
+  }
+  input.weightChecks = [
+    { eventId: 'w1', weightKg: 4.4, occurredAt: at('2026-06-01', '15:00:00') },
+    { eventId: 'w2', weightKg: 4.1, occurredAt: at('2026-06-28', '15:00:00') },
+  ]
+  const snap = assembleReport(input)
+  assert.equal(snap.trial?.allowedSetUnavailable, false, 'seven feedings DID match — the old gate stayed shut here')
+  assert.ok(snap.trial?.trialDietRefusal, 'the recency window has no rated trial-diet feeding, so it falls back')
+  assert.equal(snap.trial?.trialDietRefusal?.population, 'meal_record')
+  assert.ok(snap.safetyFlags.some((f) => f.kind === 'trial_diet_refusal'), 'the band is not empty on this patient')
+  const text = plain(renderReport(snap))
+  const aboveTrialBlock = text.slice(0, text.indexOf('Diet trial'))
+  assert.ok(/Diet not eaten/.test(aboveTrialBlock))
+  assert.ok(/about 7% of body weight/.test(aboveTrialBlock), 'composed with the weight')
+  // And the refused bowls are no longer scored as an owner adherence failure.
+  assert.ok(!/7 matched, 42 did not/.test(text))
+})
+
+Deno.test('ADV④ — a single midnight-straddling bout does NOT fire the band', () => {
+  // The break: `rangeRefusal` drops the 12h episode guard deliberately (right for a
+  // HISTORY), but B-494 promoted it to an above-the-fold escalation without re-deriving
+  // that. Three refusals in one 3.5-hour bout across local midnight fired "Diet not
+  // eaten … across 2 days" plus the feline lipidosis window, on a record the owner's own
+  // card is silent about — and the report could not add the guard, because
+  // `rangeRefusalSpansEpisodes` was not on `TrialBlock` at all.
+  const input = wellLoggedTrialInput({ events: [] })
+  for (const d of days('2026-06-01', '2026-06-20')) {
+    input.events.push(meal({ date: d, brand: 'Royal Canin', product: 'Hydrolyzed HP', foodItemId: 'f-hp', proteins: ['soy'] }))
+  }
+  // ONE bout across LOCAL midnight in the report's zone (America/New_York, UTC−4 in June):
+  // 22:00 and 23:30 local on Jun 21, then 00:30 local on Jun 22 — two distinct local days,
+  // 2.5 hours of evidence. The fixture helper takes UTC, so these are 02:00/03:30/04:30Z.
+  for (const time of ['02:00:00', '03:30:00', '04:30:00']) {
+    input.events.push(meal({ date: '2026-06-22', time, brand: 'Royal Canin', product: 'Hydrolyzed HP', foodItemId: 'f-hp', proteins: ['soy'], intakeRating: 'refused' }))
+  }
+  const snap = assembleReport(input)
+  assert.ok(snap.trial?.rangeRefusal, 'the range fact itself still exists — it is a history')
+  assert.equal(snap.trial?.rangeRefusalSpansEpisodes, false, 'but it is one bout, not two episodes')
+  assert.equal(
+    snap.safetyFlags.filter((f) => f.kind === 'trial_diet_refusal').length,
+    0,
+    'so the ESCALATION does not fire, matching the card',
+  )
+  const text = plain(renderReport(snap))
+  assert.ok(!/Diet not eaten/.test(text))
+})
+
+Deno.test('ADV⑤ — a stopped-reason-only flag carries a date anchor', () => {
+  // The break: `fmtRange(...)` sat inside `if (f.refusal)`, so the owner-declared path
+  // rendered a present-tense feline lipidosis window with no time anchor at all — over an
+  // event up to the anchor grace stale. The dates were already on the payload.
+  const input = wellLoggedTrialInput({ events: [] })
+  input.pet.species = 'cat'
+  input.dietTrials[0].status = 'abandoned'
+  input.dietTrials[0].endedAt = '2026-06-20'
+  input.dietTrials[0].completedAt = null
+  input.dietTrials[0].stoppedReason = 'refused'
+  for (const d of days('2026-06-01', '2026-06-20')) {
+    input.events.push(meal({ date: d, brand: 'Royal Canin', product: 'Hydrolyzed HP', foodItemId: 'f-hp', proteins: ['soy'] }))
+  }
+  const snap = assembleReport(input)
+  const flag = snap.safetyFlags.find((f) => f.kind === 'trial_diet_refusal')
+  assert.ok(flag)
+  assert.equal(flag?.kind === 'trial_diet_refusal' ? flag.refusal : undefined, null, 'no counts invented')
+  const text = plain(renderReport(snap))
+  assert.ok(/Trial window: Jun 1 – Jun 20, 2026/.test(text), 'the flag can be placed in time')
+  assert.ok(/no intake ratings logged against it/.test(text), 'and says what it is NOT measuring')
+})
+
+Deno.test('ADV⑥ — the wide row does not re-assert the attribution it just disclaimed', () => {
+  // The break: the row said "the food is not named — the finding is about the meal
+  // record" and then, two clauses later, "Refusal of a PRESCRIBED DIET is a clinical
+  // finding". `trialViabilityNote` had been rewritten for exactly this on the card; the
+  // report's closing sentence had not.
+  const snap = assembleReport(rePhotographedBagInput('refused'))
+  const text = plain(renderReport(snap))
+  assert.ok(/Food going uneaten is a clinical finding in its own right/.test(text))
+  assert.ok(!/Refusal of a prescribed diet is a clinical finding/.test(text))
+  // The narrow population keeps the sharper noun.
+  const narrow = wellLoggedTrialInput({ events: [] })
+  narrow.pet.species = 'cat'
+  for (const d of days('2026-06-01', '2026-06-21')) {
+    for (const time of ['08:00:00', '18:00:00']) {
+      narrow.events.push(meal({ date: d, time, brand: 'Royal Canin', product: 'Hydrolyzed HP', foodItemId: 'f-hp', proteins: ['soy'], intakeRating: 'refused' }))
+    }
+  }
+  const narrowText = plain(renderReport(assembleReport(narrow)))
+  assert.ok(/Refusal of a prescribed diet is a clinical finding/.test(narrowText))
+})
+
+Deno.test('ADV⑫ — page 1 does not disagree with its own cross-reference', () => {
+  // The break: the page-1 row branched on `snap.trial` while appendix C branches on
+  // whether the permit set hydrated, so a dark-permit-set report headed the row
+  // "Off-diet" and pointed at an appendix titled "Treats & table food during the trial"
+  // which states the feedings were never checked.
+  const input = wellLoggedTrialInput()
+  input.dietTrials[0].allowedFoods = []
+  input.events.push(meal({ date: '2026-06-10', brand: 'Acme', product: 'Chew', foodItemId: 'f-chew', foodType: 'treat', proteins: ['chicken'] }))
+  const text = plain(renderReport(assembleReport(input)))
+  assert.ok(/Treats & table foodPrimarily|Treats & table food/.test(text))
+  assert.ok(/Appendix C — Treats & table food during the trial/.test(text))
+  assert.ok(!/Off-dietTreats|Off-diet1 treat|Off-diet 1 treat/.test(text), 'the row is not headed with a verdict the appendix denies')
+})

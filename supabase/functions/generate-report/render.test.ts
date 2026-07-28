@@ -107,6 +107,7 @@ export function trialBlockFixture(
     contamination: [],
     trialDietRefusal: null,
     rangeRefusal: null,
+    rangeRefusalSpansEpisodes: false,
     stoppedReason: null,
     outcome: null,
     outcomeNotes: null,

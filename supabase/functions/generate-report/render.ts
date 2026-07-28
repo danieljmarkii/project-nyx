@@ -1059,11 +1059,20 @@ function safetyFlagRow(f: SafetyFlag, snap: ReportSnapshot): string {
         bits.push(
           `<b>${num(r.refusedFeedings)} of ${num(r.ratedFeedings)} ${noun}${
             r.ratedFeedings === 1 ? '' : 's'
-          }${of} left unfinished</b> across ${num(r.days)} day${r.days === 1 ? '' : 's'} (${h(
-            fmtRange(f.rangeStartDate, f.rangeEndDate),
-          )}).`,
+          }${of} left unfinished</b> across ${num(r.days)} day${r.days === 1 ? '' : 's'}.`,
         )
+      } else {
+        // THE OWNER-DECLARED PATH GETS ITS OWN DATE, and it needs one more than the counted
+        // path does. The date range used to live inside the counted branch, so a
+        // stopped-reason-only flag rendered with NO time anchor at all — presenting a
+        // present-tense feline lipidosis window over an event up to `TRIAL_ANCHOR_GRACE_DAYS`
+        // stale, on a page whose own Feeding line could read "14 of 14 rated meals fully
+        // eaten". The dates were already on the payload; only the branch was wrong.
+        bits.push('The trial ran to this window with no intake ratings logged against it.')
       }
+      // ONE DATE ANCHOR, ON EVERY PATH. A safety flag a vet cannot place in time spends band
+      // credibility in the one zone that cannot afford it.
+      bits.push(`Trial window: ${h(fmtRange(f.rangeStartDate, f.rangeEndDate))}.`)
       if (wide) {
         // THE ATTRIBUTION GAP IS DISCLOSED, NOT PAPERED OVER (B-530). Under this population the
         // app could not resolve which logged food was the prescribed diet, so naming the diet
@@ -1088,7 +1097,15 @@ function safetyFlagRow(f: SafetyFlag, snap: ReportSnapshot): string {
         // NEVER "the pet is picky" and never a preference frame: decline is frequently a DISEASE
         // signal, and a prescription diet is not a food the animal chose. Presence-only — this
         // says nothing about a record where intake was never rated.
-        `<b>Refusal of a prescribed diet is a clinical finding in its own right</b>, not a preference.${feline} Shown because it is present in the log; it is not a measure of how much was eaten overall. Intake ratings in appendix&nbsp;E.`,
+        //
+        // AND THE CLOSING NOUN FOLLOWS THE POPULATION TOO. The wide branch two lines up
+        // disclaims the attribution, and this sentence then re-asserted it — "the food is not
+        // named" followed by "refusal of a prescribed diet", two clauses apart on a vet's
+        // artifact. `trialViabilityNote` was rewritten for exactly this on the card; the
+        // report's closing sentence had not been.
+        `<b>${
+          wide ? 'Food going uneaten' : 'Refusal of a prescribed diet'
+        } is a clinical finding in its own right</b>, not a preference.${feline} Shown because it is present in the log; it is not a measure of how much was eaten overall. Intake ratings in appendix&nbsp;E.`,
       )
       return flagRow('Diet not eaten', bits.join(' '))
     }
@@ -2842,7 +2859,13 @@ function dietMeds(snap: ReportSnapshot): string {
 
   // Feeding: meal completion (meals-only) + free-fed verbatim string (B-040).
   const isFreeFed = d.freeFed.length > 0
-  const hasIntakeFlag = snap.safetyFlags.some((f) => f.kind === 'intake_decline')
+  // BOTH INTAKE-FAMILY FLAGS, not only the relative detector (B-494). This guard exists so a
+  // grazing cat with NO intake concern is described rather than scored — but the new refusal
+  // lane fires on precisely the animal the scored figure is right for, and it was not in the
+  // test, so a flagged refusal still got the describe-don't-score framing.
+  const hasIntakeFlag = snap.safetyFlags.some(
+    (f) => f.kind === 'intake_decline' || f.kind === 'trial_diet_refusal',
+  )
   const freeFedLabels = d.freeFed.map((f) => (f.foodLabel ? h(f.foodLabel) : 'free-fed food')).join(', ')
   const feedBits: string[] = []
   if (isFreeFed && !hasIntakeFlag) {
@@ -2951,7 +2974,12 @@ function dietMeds(snap: ReportSnapshot): string {
         : 'No treats or table food are recorded in this window.',
     )
   }
-  left.push(kv(snap.trial ? 'Off-diet' : 'Treats &amp; table food', offBits.join(' ')))
+  // THE LABEL FOLLOWS THE SAME TEST THE APPENDIX DOES. Branching on `snap.trial` alone
+  // left a dark-permit-set report heading this row "Off-diet" while it pointed at an
+  // appendix B-531 had just renamed "Treats & table food during the trial" — page 1
+  // disagreeing with its own cross-reference, in the direction this PR set out to fix.
+  const offDietDerived = !!snap.trial && !snap.trial.allowedSetUnavailable
+  left.push(kv(offDietDerived ? 'Off-diet' : 'Treats &amp; table food', offBits.join(' ')))
 
   // Medications (B-117) + supplements as concurrent interventions.
   // §7 calls the medication overlap "re-siting, not addition", and it is re-sited —

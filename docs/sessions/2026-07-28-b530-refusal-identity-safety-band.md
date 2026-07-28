@@ -35,6 +35,20 @@ Two properties hold by construction, and both are asserted:
 
 One thing fixed in passing: the report said *"logged as refused"* over a not-finished predicate (`refused`/`picked`/`some`), reporting a rating the record does not contain about every `some` bowl. The card's headline had been corrected for exactly this in #502; the report had the same defect and nobody had looked.
 
+## The adversarial pass failed the first cut, on the scenario the PR is named for
+
+`adversarial-reviewer` returned **FAIL** with four executed breaks. The most important one is worth recording in full, because the shape of the mistake is more instructive than the fix.
+
+The fallback was gated on `allowedSetUnavailable`, whose second disjunct requires `narrow.feedings === 0` **over the whole range**. So a *single historical match* permanently disabled it — and the realistic ordering of a re-photographed bag has matches before the re-shoot and none after. The reviewer ran it: a cat that ate `z/d` for seven days, then had her bag re-shot and refused 42 of 42 bowls against the new row over three weeks, returned **both refusal facts null and an empty safety band**, with the 42 refused bowls rendering as owner-blamed exposures. That is verbatim the artifact the B-494 ruling was written about, reached *through the repair meant to prevent it*. The PR's own test built the version where nothing ever matched — which is the tidier scenario, not the likely one.
+
+The defect was a **scope mismatch, not a missing threshold**: `narrow.feedings` is counted over the range while the fact that *speaks* is bounded to the last 14 days, so a match three weeks ago vetoed a fallback for a window it contributes nothing to. The repair chooses the population **per window**, on emptiness of the narrow population in that window — no threshold, and it cannot mistake a dirty trial for a broken join the way a share test would.
+
+The other three: the report escalated on `rangeRefusal` with **no episode guard** (a single 3.5-hour bout across local midnight fired the band on a record the card is deliberately silent about — and the report *couldn't* add the guard, because `rangeRefusalSpansEpisodes` was not on `TrialBlock`); the stopped-reason-only flag rendered with **no date anchor** while its payload already held the dates; and the wide-population row **disclaimed the attribution and then re-asserted it** two clauses later. All four fixed and pinned as regressions.
+
+Two more findings were filed rather than patched, as **B-577**: the `REFUSAL_*` floors were ratified as a *claim gate* whose own justification reads "silence is cheap", and B-494 makes them drive an above-the-fold clinical escalation. Neither number was re-derived for that job — the lane fires on 3 rated feedings drawn from an arbitrarily large unrated population, and `UNHYDRATED_SET_FLOOR = 10` keeps a once-a-day refusing cat silent for nine days, well past the window the flag's own copy cites.
+
+The reviewer's sharpest general point stands on its own: **a PR that discloses only the survivable direction of its own trade has not disclosed the trade.** The `TrialRefusalPopulation` docstring named the over-fire and not the under-fire; it now names both, worst-first.
+
 ## Dr. Chen's falsification attempts, executed
 
 Not asserted — run against the real predicate, and one of them broke.
@@ -48,14 +62,16 @@ Not asserted — run against the real predicate, and one of them broke.
 
 Filed as **B-576**, pinned as `KNOWN LIMIT` tests that are *expected to flip* when B-529 lands. Both are under-fire, and neither is a regression — the shipped behaviour in both is silence, so the fallback is still strictly more disclosure than before.
 
-1. **The partial miss.** A real trial is often a wet *and* a dry of the same diet (§4.1), so re-photographing only the dry leaves `narrow.feedings > 0`, `allowedSetUnavailable` false, and the narrow population speaking — seeing only the wet. A cat eating the wet and refusing the dry reads as eating. Widening the unavailable test to catch it ("any `primary_diet` row matched zero feedings") would fire on every legitimate trial whose owner feeds one of the two.
+1. **The *concurrent* partial miss.** The per-window rule fixed the sequential case. It cannot fix this one: a trial is often a wet *and* a dry of the same diet (§4.1), so re-photographing only the dry keeps the narrow population non-empty in every window, and a cat eating the wet while refusing the dry reads as eating. Emptiness cannot see that, and a share test would fire on every legitimate mixed record.
 2. **Dilution.** The wide population is a *share* over every non-treat feeding, so an owner who substitutes when the prescription is refused pushes it back under `REFUSAL_SHARE`. That is the canonical diet-trial failure mode. The repair is a **duration** criterion rather than a share — which is a clinical number, and already Dr. Chen's open call in **B-575**. Inventing it inside a wiring PR is exactly the move this repo has a rule against.
 
 Pinning them as tests rather than leaving them as prose is deliberate: the failure mode of a documented limit is that a later reader assumes coverage.
 
 ## Verification
 
-`tsc --noEmit` clean · **3,302 jest** · **1,012 deno** · `adversarial-reviewer` + `code-reviewer` run on the diff.
+`tsc --noEmit` clean · **3,300 jest** · **1,017 deno** · `code-reviewer` (hygiene findings only; it traced the counter refactor line-by-line and confirmed it behaviour-preserving) · `adversarial-reviewer` **twice** — round 1 FAILED the first cut, round 2 re-attacked the repairs, because the DoD line is not satisfiable on the strength of one's own fixes.
+
+`code-reviewer` also caught something worth remembering: a concurrently-running review agent wrote scratch probes into the working tree between this session's `git status` check and its `git add -A`, so 100 lines of `console.log` with zero assertions landed on the branch and **passed CI trivially**. A test that asserts nothing reads as coverage. Stage explicitly, or run review agents against a clean tree.
 
 ## What this does NOT do
 

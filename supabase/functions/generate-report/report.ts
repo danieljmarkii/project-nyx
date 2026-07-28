@@ -2673,8 +2673,20 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
   // quiet would empty the recency window and take the flag with it. `rangeRefusal` is the same
   // predicate over the whole range; the now-fact is the fallback for the (rarer) case where the
   // range share is diluted by an eaten stretch but the recent record is not.
+  //
+  // THE EPISODE GUARD IS REQUIRED ON THE RANGE FACT, and only here — not in the trial
+  // block, which is a history and correctly ignores it. `rangeRefusal` drops
+  // `REFUSAL_MIN_SPAN_MS` by design, so "two distinct local days" is satisfied by a single
+  // bout straddling midnight. That is harmless in a narrated block and wrong in an
+  // above-the-fold escalation: `dietTrialCard.ts` already refuses to let a present-tense
+  // register speak from an unspanned range fact, and a band that fires where the owner's
+  // own card is silent gives one record two answers with the VET's copy taking the louder
+  // one. The now-fact carries the span guard internally, so it needs no test here.
   if (trialBlock) {
-    const refusal = trialBlock.rangeRefusal ?? trialBlock.trialDietRefusal
+    const spannedRange = trialBlock.rangeRefusal && trialBlock.rangeRefusalSpansEpisodes
+      ? trialBlock.rangeRefusal
+      : null
+    const refusal = spannedRange ?? trialBlock.trialDietRefusal
     const stoppedForRefusal = trialBlock.stoppedReason === 'refused'
     if (refusal || stoppedForRefusal) {
       safetyFlags.push({
