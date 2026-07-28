@@ -1040,7 +1040,8 @@ describe('mayStateRecordClean gates the CLAIM, never the COUNT', () => {
     }));
     expect(textOf(m, 'fact')).toEqual([
       'Meals logged on 22 of 23 days.',
-      '68 feedings in total.',
+      '68 feedings in total. Culprit isn’t saying how many matched the trial diet on ' +
+      'this record.',
     ]);
     expect(allStrings(m).join(' ')).not.toMatch(/all \d+ matched/i);
   });
@@ -1236,8 +1237,8 @@ describe('B-533 adversarial regressions — the card half', () => {
       untrackedDaysBeforeFirstLog: 28,
     }));
     expect(textOf(m, 'qualifier')).toContain(
-      'The first 28 days of the trial have no meals logged against them, so they’re ' +
-      'left out of the days count above.',
+      'The first 28 days of the trial aren’t counted here — nothing was logged against ' +
+      'them yet.',
     );
     // The clip is not presented as the owner's failing — no "you", no "missing".
     const head = textOf(m, 'qualifier').join(' ');
@@ -1257,7 +1258,7 @@ describe('B-533 adversarial regressions — the card half', () => {
       untrackedDaysBeforeFirstLog: 1,
     }));
     expect(textOf(m, 'qualifier').join(' ')).toContain(
-      'The first day of the trial has no meals logged against it',
+      'The first day of the trial isn’t counted here',
     );
   });
 
@@ -1304,15 +1305,16 @@ describe('B-533 adversarial regressions — round 2', () => {
     // old kibble twice a day trips this flag with a perfectly correct list.
     it('names BOTH readings and excuses neither', () => {
       const q = textOf(cold(), 'qualifier').join(' ');
-      expect(q).toContain('either that list needs updating, or what’s being fed isn’t the trial diet');
+      // NAMES THE CAUSE THE APP OWNS, and instructs nothing. Earlier drafts said
+      // "what's being fed isn't the trial diet" (§6.9 — scores the person) and
+      // "Worth checking the list before your vet reads this" — an instruction with
+      // no route, since the only affordance on this card opens a sheet offering to
+      // END the trial, and a vet-as-audience framing besides.
+      expect(q).toContain('Culprit can’t match these against the food list');
       expect(q).not.toContain('this count is too high');
-      // THE SECOND DISJUNCT IS ADHERENCE, NOT INTAKE. "hasn't been going in" is an
-      // intake claim from a classifier with no intake input — on the fixture that
-      // found it, every feeding was rated `all`, so the app held direct evidence
-      // the food WAS eaten and said the opposite.
       expect(q).not.toContain('hasn’t been going in');
-      // It routes to the thing the owner can fix, not to a clinical appointment.
-      expect(q).toContain('checking the list');
+      expect(q).not.toContain('what’s being fed');
+      expect(q).not.toMatch(/Worth checking|before your vet reads/);
     });
 
     // "not a total" says the true number is ≥ N; the caveat says it may be lower.
@@ -1339,8 +1341,8 @@ describe('B-533 adversarial regressions — round 2', () => {
       expect(textOf(nine, 'fact')).toContain('9 feedings in total — 0 matched, 9 did not.');
       expect(textOf(ten, 'fact')).toContain('10 feedings in total — 0 matched, 10 did not.');
       expect(nine.state).toBe(ten.state);
-      expect(textOf(nine, 'qualifier').join(' ')).toContain('None of these matched');
-      expect(textOf(ten, 'qualifier').join(' ')).toContain('None of these matched');
+      expect(textOf(nine, 'qualifier').join(' ')).toContain('can’t match these against the food list');
+      expect(textOf(ten, 'qualifier').join(' ')).toContain('can’t match these against the food list');
     });
 
     // …but a trial that genuinely opens with a couple of off-list meals is not
@@ -1350,7 +1352,7 @@ describe('B-533 adversarial regressions — round 2', () => {
         allowedSetUnavailable: false,
         exposures: { mayStateRecordClean: false, totalFeedings: 2, offDiet: 2 },
       }));
-      expect(textOf(m, 'qualifier').join(' ')).not.toContain('None of these matched');
+      expect(textOf(m, 'qualifier').join(' ')).not.toContain('can’t match these against the food list');
     });
 
     // And it never contradicts the count above it — a permitted topper is enough
@@ -1360,7 +1362,7 @@ describe('B-533 adversarial regressions — round 2', () => {
         exposures: { mayStateRecordClean: false, totalFeedings: 60, offDiet: 20 },
       });
       expect(textOf(m, 'fact').join(' ')).toContain('40 matched, 20 did not');
-      expect(textOf(m, 'qualifier').join(' ')).not.toContain('None of these matched');
+      expect(textOf(m, 'qualifier').join(' ')).not.toContain('can’t match these against the food list');
     });
 
     // It never claims no list exists — the commoner trigger is a list that IS
@@ -1379,13 +1381,13 @@ describe('B-533 adversarial regressions — round 2', () => {
         exposures: { mayStateRecordClean: false, totalFeedings: 40, offDiet: 40 },
       });
       expect(textOf(m, 'fact').join(' ')).toContain('40 feedings in total');
-      expect(textOf(m, 'qualifier').join(' ')).toContain('None of these matched');
+      expect(textOf(m, 'qualifier').join(' ')).toContain('can’t match these against the food list');
     });
 
     it('discloses on the free-fed card', () => {
       const m = cold({ freeFed: { loggedFeedings: 40 } });
       expect(m.state).toBe('free_fed');
-      expect(textOf(m, 'qualifier').join(' ')).toContain('None of these matched');
+      expect(textOf(m, 'qualifier').join(' ')).toContain('can’t match these against the food list');
     });
   });
 
@@ -1398,11 +1400,13 @@ describe('B-533 adversarial regressions — round 2', () => {
       exposures: { mayStateRecordClean: false, totalFeedings: 52, offDiet: 0 },
       untrackedDaysBeforeFirstLog: 28,
     }));
+    // CAUSE FIRST. "The first 28 days have no meals logged against them" put the
+    // accusatory clause first and the exonerating one last; and "the days count
+    // above" was a wrong referent on the sub-floor card, where coverage is a
+    // clause inside one paragraph rather than a discrete line.
     const head = textOf(m, 'qualifier').join(' ');
-    expect(head).toContain('have no meals logged against them');
-    expect(head).not.toContain('nothing logged');
-    // It qualifies the DAYS ratio, not the feeding total the treats are inside.
-    expect(head).toContain('left out of the days count above');
+    expect(head).toContain('aren’t counted here — nothing was logged against them yet');
+    expect(head).not.toContain('the days count above');
   });
 
   // ROUND-2 #4 — the widened arrangement read latched `free_fed`: a bowl removed
@@ -1444,7 +1448,7 @@ describe('B-533 PR A — the reduction’s own regressions', () => {
     }));
     expect(textOf(m, 'fact')).toContain('Meals logged on 2 of 2 days.');
     expect(textOf(m, 'qualifier').join(' ')).toContain(
-      'The first 28 days of the trial have no meals logged against them',
+      'The first 28 days of the trial aren’t counted here',
     );
   });
 
@@ -1554,5 +1558,77 @@ describe('B-533 PR A — the fixes’ own regressions', () => {
       expect(joined).toContain('4 logged feedings were outside the trial diet');
       expect(joined).not.toContain('Worth checking the list');
     }
+  });
+});
+
+// ── Round 8: what the PRODUCT lens found that seven adversarial passes did not ─
+//
+// Seven rounds of one reviewer converged on "nothing that reviewer can see".
+// `pm-feature-review` attacks a different class — whether a real owner in a car
+// park understands the card — and found four things on its first run.
+describe('B-533 PR A — the product lens (round 8)', () => {
+  // The state that exists BECAUSE the app is uncertain rendered as the most
+  // reassuring card in the set: cleaner than state 3, which at least says "4 did
+  // not". The owner has never seen the affirmative variant, so she cannot notice
+  // its absence — B-494's ruling one surface over.
+  it('names the withholding instead of rendering a bare count', () => {
+    const m = resolveTrialCard(activeInput({
+      exposures: { mayStateRecordClean: false, totalFeedings: 112, offDiet: 0 },
+    }));
+    const fact = textOf(m, 'fact').join(' ');
+    expect(fact).toContain('112 feedings in total.');
+    expect(fact).toContain('Culprit isn’t saying how many matched the trial diet');
+    // …and it must not point at an explanation that may not render: the reason
+    // can be an oral-route exposure or an unclassifiable feeding, neither of
+    // which emits a line.
+    expect(fact).not.toMatch(/see below|below for why/i);
+  });
+
+  it('still makes the affirmative claim when the module allows it', () => {
+    const m = resolveTrialCard(activeInput());
+    expect(textOf(m, 'fact').join(' ')).toContain('all 68 matched the trial diet');
+    expect(allStrings(m).join(' ')).not.toContain('isn’t saying how many matched');
+  });
+
+  // This file's header says the off-diet count is owed "in every state". The
+  // strip rendered the one number that always looks good and omitted the one
+  // that reports a finding — on the surface the wedge owner actually sees daily.
+  it('the Home strip carries the off-diet floor', () => {
+    const strip = resolveTrialStrip(activeInput({
+      exposures: { mayStateRecordClean: false, totalFeedings: 68, offDiet: 4 },
+    }));
+    expect(strip?.line).toContain('4 outside the trial diet');
+  });
+
+  it('the Home strip says nothing about exposures when there are none', () => {
+    const strip = resolveTrialStrip(activeInput());
+    expect(strip?.line ?? '').not.toMatch(/outside the trial diet/);
+  });
+
+  // §6.9 — Culprit never scores the person, and never instructs toward a route
+  // that does not exist. The only affordance on this card opens a sheet whose
+  // options include ending the eight-week trial.
+  it('the unmatched caveat names the cause and instructs nothing', () => {
+    const m = resolveTrialCard(activeInput({
+      allowedSetUnavailable: true,
+      exposures: { mayStateRecordClean: false, totalFeedings: 40, offDiet: 40 },
+    }));
+    const q = textOf(m, 'qualifier').join(' ');
+    expect(q).toContain('Culprit can’t match these against the food list');
+    expect(q).not.toMatch(/what’s being fed|Worth checking|before your vet reads/);
+  });
+
+  // Cause before fact: the accusatory clause landed first and the exonerating
+  // one last, and "the days count above" was a wrong referent on state 4.
+  it('the untracked head leads with the reason, not the shortfall', () => {
+    const m = resolveTrialCard(activeInput({
+      coverage: { daysLogged: 2, daysElapsed: 2 },
+      exposures: { mayStateRecordClean: false, totalFeedings: 4, offDiet: 0 },
+      untrackedDaysBeforeFirstLog: 12,
+    }));
+    const head = textOf(m, 'qualifier').join(' ');
+    expect(head).toContain('The first 12 days of the trial aren’t counted here');
+    expect(head).not.toContain('the days count above');
+    expect(head).not.toMatch(/\byou\b|missed|failed/i);
   });
 });

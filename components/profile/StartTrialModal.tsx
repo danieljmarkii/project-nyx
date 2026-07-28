@@ -42,7 +42,7 @@ import { PrimaryButton } from '../ui/PrimaryButton';
 import { WhorlSpinner } from '../brand/WhorlSpinner';
 import { FoodPicker } from '../log/FoodPicker';
 import { PickerFood } from '../../lib/db';
-import { toLocalDayKey } from '../../lib/utils';
+import { localDayIndexOf, toLocalDayKey } from '../../lib/utils';
 import {
   ALLOWED_SET_HELPER, INDICATION_OPTIONS, START_DATE_LABEL, TRIAL_DIET_HELPER,
   TRIAL_RECORD_DISCLOSURE, canStartTrial, defaultDurationDays, durationHelperLine,
@@ -110,7 +110,8 @@ export function StartTrialModal({
   // discards it and the running trial is untouched.
   const [pendingEnd, setPendingEnd] = useState<{ trialId: string; reason: string } | null>(null);
 
-  const [startedSummary, setStartedSummary] = useState<{ food: string; endDate: string | null } | null>(null);
+  const [startedSummary, setStartedSummary] =
+    useState<{ food: string; endDate: string | null; dayCounter: number } | null>(null);
 
   const reset = useCallback(() => {
     setPrimaryFoods([]);
@@ -228,6 +229,13 @@ export function StartTrialModal({
       setStartedSummary({
         food: foodLabel(primaryFoods[0]),
         endDate: endDayKey ? formatTrialEndDate(endDayKey) : null,
+        // Day 1 IS the start day (the inclusive convention every trial surface
+        // uses), so a trial started today is day 1 and a back-dated one is not.
+        dayCounter: Math.max(
+          1,
+          (localDayIndexOf(toLocalDayKey(new Date())) ?? 0) -
+            (localDayIndexOf(startDayKey) ?? 0) + 1,
+        ),
       });
       setStep('done');
       onStarted();
@@ -359,11 +367,19 @@ export function StartTrialModal({
             <View style={styles.headerSpacer} />
           </View>
           <ScrollView contentContainerStyle={styles.form}>
-            <Text style={styles.sheetTitle}>{petName} is on day 1</Text>
+            {/* R3 MADE BACK-DATING THE ENCOURAGED PATH, and this sheet was still
+                written for the only path that existed before it. The clinic
+                hand-off — set day 1 to the day the vet started them — ended on
+                "Mochi is on day 1" with the card behind it already reading
+                "Day 11 of 56": the sheet and the card disagreeing inside one tap,
+                on the flow R3 exists to make normal. */}
+            <Text style={styles.sheetTitle}>
+              {petName} is on day {startedSummary?.dayCounter ?? 1}
+            </Text>
             <Text style={styles.sheetSub}>
               {startedSummary.food}
               {startedSummary.endDate ? `, through ${startedSummary.endDate}` : ''}. Two things
-              worth knowing before day 1.
+              worth knowing{(startedSummary?.dayCounter ?? 1) > 1 ? '' : ' before day 1'}.
             </Text>
             <Divider style={styles.blockDivider} />
             {/* Both lines are LOCKED in §4.1. Setup, not a log moment — Principle 1

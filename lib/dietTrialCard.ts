@@ -429,13 +429,27 @@ function exposureLine(ex: TrialExposureFacts): string {
   const total = ex.totalFeedings;
   const noun = total === 1 ? 'feeding' : 'feedings';
   if (ex.offDiet <= 0) {
-    // THE COUNT STAYS, THE CLAIM GOES (round 5 ①). When the app has computed a
-    // reason "all N matched" is not sayable, it says the number and stops —
-    // rather than either asserting the clean sentence anyway or withholding the
-    // record, both of which this wiring got wrong before.
+    // THE COUNT STAYS, THE CLAIM GOES (round 5 ①) — AND THE WITHHOLDING IS NAMED.
+    //
+    // "N feedings in total." alone was the reassurance-on-absence B-494 ruled on,
+    // one surface over. An owner reads "56 of 56 days, 112 feedings" as "we're
+    // nailing it": the state that exists BECAUSE the app is uncertain rendered as
+    // the most reassuring card in the set — cleaner than state 3, which at least
+    // says "4 did not". She has never seen the affirmative variant, so she cannot
+    // notice its absence. And the same string means "too early to say" in week 1
+    // and "something I won't name" on day 40, so six weeks teach her the reading
+    // that is wrong on the day it matters.
+    //
+    // The register already exists in this file — `pushRefusalWithheld` says out
+    // loud what it is not showing, and the free-fed lead explains itself. One
+    // withholding reason had a voice and five had silence.
     return ex.mayStateRecordClean
       ? `${total} ${noun} in total — all ${total} matched the trial diet or a permitted food.`
-      : `${total} ${noun} in total.`;
+      // NO "see below for why": the reason may be an oral-route exposure or an
+      // unclassifiable feeding, neither of which renders a line — a pointer to an
+      // explanation that is not there is the same defect one level down.
+      : `${total} ${noun} in total. Culprit isn’t saying how many matched the trial ` +
+        'diet on this record.';
   }
   return `${total} ${noun} in total — ${total - ex.offDiet} matched, ${ex.offDiet} did not.`;
 }
@@ -987,12 +1001,25 @@ function pushUnmatchedCaveat(lines: TrialCardLine[], input: TrialCardInput): voi
     // and said the opposite. What the classifier can actually say is that the
     // food being fed is not the food on the list.
     //
-    // The route is the food list, which is the disjunct the owner can fix; the
-    // vet cannot repair a stale `food_item_id`.
+    // AND IT NO LONGER INSTRUCTS. Two problems with "Worth checking the list
+    // before your vet reads this", both found by `pm-feature-review`:
+    //
+    //   • THERE IS NO ROUTE. The only affordance on this card is the header's
+    //     "Change", which on a running trial opens the ordered blocked screen —
+    //     so an owner who followed the instruction was offered the destruction of
+    //     her eight-week trial. The docstring above already said not to point at
+    //     a route that does not exist; the string did it anyway.
+    //   • "what's being fed isn't the trial diet" SCORES THE PERSON (§6.9), and
+    //     "before your vet reads this" casts the vet as an audience she should
+    //     tidy up in front of.
+    //
+    // The model is `pushPastBowlCaveat`: name the CAUSE the app is responsible
+    // for, not a shortfall the owner is. This states what Culprit cannot do and
+    // stops — the honest half of a disjunction whose other half it cannot
+    // distinguish anyway.
     text:
-      'None of these matched the food list recorded for this trial — either that list ' +
-      'needs updating, or what’s being fed isn’t the trial diet. Worth checking the ' +
-      'list before your vet reads this.',
+      'Culprit can’t match these against the food list for this trial — the list may ' +
+      'still be syncing, or it may not have everything on it yet.',
   });
 }
 
@@ -1025,10 +1052,18 @@ function pushUntrackedHead(lines: TrialCardLine[], input: TrialCardInput): void 
     role: 'qualifier',
     text:
       days === 1
-        ? 'The first day of the trial has no meals logged against it, so it’s left out of the ' +
-          'days count above.'
-        : `The first ${days} days of the trial have no meals logged against them, so they’re ` +
-          'left out of the days count above.',
+        // CAUSE FIRST, THEN THE FACT. "The first 12 days have no meals logged
+        // against them" is the clause that lands, and it is the accusatory half;
+        // the part that makes the line honest rather than scoring — that those
+        // days are excluded, not counted against her — was bookkeeping she had to
+        // finish the sentence to reach. Inverting costs nothing.
+        //
+        // It also no longer says "the days count above": on the sub-floor card
+        // the coverage is a clause inside one paragraph, not a discrete line, so
+        // the referent was wrong there.
+        ? 'The first day of the trial isn’t counted here — nothing was logged against it yet.'
+        : `The first ${days} days of the trial aren’t counted here — nothing was logged ` +
+          'against them yet.',
   });
 }
 
@@ -1473,6 +1508,15 @@ export function resolveTrialStrip(input: TrialCardInput): TrialStripModel | null
     parts.push(
       `meals logged on ${input.coverage.daysLogged} of ${input.coverage.daysElapsed} days`,
     );
+  }
+  // THE FLOOR IS OWED HERE TOO — this file's header says "in every state", and
+  // the strip was rendering the one number that always looks good while omitting
+  // the one that reports a finding. It is also the surface the wedge owner
+  // actually sees daily; the Pet tab is not. Same asymmetry the strip already
+  // avoids under a safety flag, applied to the count.
+  const stripOffDiet = input.exposures?.offDiet ?? 0;
+  if (stripOffDiet > 0) {
+    parts.push(`${stripOffDiet} outside the trial diet`);
   }
 
   return {
