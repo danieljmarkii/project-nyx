@@ -23,7 +23,12 @@ jest.mock('./feedingArrangements', () => ({
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { DatabaseSync } = require('node:sqlite');
-import { ALLOWED_SET_SQL, dosesQuery, feedingsQuery } from './dietTrialFacts';
+import {
+  ALLOWED_SET_SQL,
+  ARRANGEMENTS_IN_WINDOW_SQL,
+  dosesQuery,
+  feedingsQuery,
+} from './dietTrialFacts';
 
 /** The columns these three queries actually touch, mirroring `lib/localSchema.ts`,
  *  `lib/medications.ts` and the `lib/db.ts` ALTERs (`food_type`, `intake_rating`)
@@ -54,6 +59,11 @@ function freshDb() {
     CREATE TABLE medication_items_cache (
       id TEXT PRIMARY KEY, generic_name TEXT, brand_name TEXT, form TEXT
     );
+    CREATE TABLE feeding_arrangements (
+      id TEXT PRIMARY KEY, pet_id TEXT NOT NULL, food_item_id TEXT NOT NULL,
+      method TEXT NOT NULL DEFAULT 'free_choice',
+      active_from TEXT, active_until TEXT, deleted_at TEXT
+    );
   `);
   return db;
 }
@@ -80,6 +90,24 @@ function addMeal(db: Db, eventId: string, foodItemId: string | null, rating: str
 function addFood(db: Db, id: string, brand: string, product: string, foodType: string | null = 'meal') {
   db.prepare('INSERT INTO food_items_cache (id, brand, product_name, food_type, proteins) VALUES (?,?,?,?,?)')
     .run(id, brand, product, foodType, '["duck"]');
+}
+
+function addArrangement(
+  db: Db,
+  id: string,
+  foodItemId: string,
+  activeFrom: string | null,
+  activeUntil: string | null,
+  over: { method?: string; deletedAt?: string | null; pet?: string } = {},
+) {
+  db.prepare(
+    `INSERT INTO feeding_arrangements
+       (id, pet_id, food_item_id, method, active_from, active_until, deleted_at)
+     VALUES (?,?,?,?,?,?,?)`,
+  ).run(
+    id, over.pet ?? PET, foodItemId, over.method ?? 'free_choice',
+    activeFrom, activeUntil, over.deletedAt ?? null,
+  );
 }
 
 // ── The allowed set ─────────────────────────────────────────────────────────
@@ -343,7 +371,17 @@ describe('dosesQuery', () => {
 // source-text test cannot see a value. These run the real `loadDietTrialFacts`
 // against a stub db and assert what actually reaches the card.
 describe('loadDietTrialFacts → TrialCardInput (behavioural)', () => {
-  const TRIAL_ROW = {
+  const TRIAL_ROW: {
+    id: string;
+    started_at: string;
+    target_duration_days: number;
+    status: string;
+    ended_at: string | null;
+    stopped_reason: string | null;
+    outcome: string | null;
+    indication: string;
+    food_label: string;
+  } = {
     id: 't1',
     started_at: '2026-07-03',
     target_duration_days: 56,
@@ -357,9 +395,12 @@ describe('loadDietTrialFacts → TrialCardInput (behavioural)', () => {
 
   /** Drives the loader off in-memory rows: the trial, its allowed set, and one
    *  meal logged 28 days after the trial's start date — the clinic hand-off. */
-  function stubDb(meals: Array<{ id: string; at: string; food: string | null }>) {
+  function stubDb(
+    meals: Array<{ id: string; at: string; food: string | null }>,
+    trialOver: Partial<typeof TRIAL_ROW> = {},
+  ) {
     return {
-      getFirstAsync: jest.fn().mockResolvedValue(TRIAL_ROW),
+      getFirstAsync: jest.fn().mockResolvedValue({ ...TRIAL_ROW, ...trialOver }),
       getAllAsync: jest.fn().mockImplementation((sql: string) => {
         if (sql.includes('diet_trial_foods')) {
           return Promise.resolve([{
@@ -384,9 +425,13 @@ describe('loadDietTrialFacts → TrialCardInput (behavioural)', () => {
     };
   }
 
-  async function load(meals: Parameters<typeof stubDb>[0], nowMs: number) {
+  async function load(
+    meals: Parameters<typeof stubDb>[0],
+    nowMs: number,
+    trialOver: Partial<typeof TRIAL_ROW> = {},
+  ) {
     jest.resetModules();
-    const db = stubDb(meals);
+    const db = stubDb(meals, trialOver);
     jest.doMock('./db', () => ({ getDb: () => db }));
     jest.doMock('./analytics', () => ({
       getIntakeDecline: jest.fn().mockResolvedValue({ status: 'none', flags: [] }),
@@ -439,5 +484,167 @@ describe('loadDietTrialFacts → TrialCardInput (behavioural)', () => {
     expect(input.freeFedOverlap).toBe(false);
     expect(input.allowedSetUnavailable).toBe(false);
     expect(input.exposures).not.toBeNull();
+  });
+
+  // A NULL RANGE IS NOT A ZERO RECORD.
+  //
+  // `computeTrialFacts` returns its all-zero `base` on the paths where it could
+  // not establish a range at all — here, an `ended_at` that precedes
+  // `started_at`. The loader read the record fields straight off that object, so
+  // five logged feedings reached the card as `totalFeedings: 0` and it rendered
+  // "0 feedings in total." — the app's own failure to compute, dressed as a
+  // finding about the pet, in the reassuring direction.
+  //
+  // The start modal cannot produce this row; a sync or a hand-edited date can.
+  describe('a range the module could not read', () => {
+    const degenerate = { ended_at: '2026-06-01', status: 'completed' };
+    const FIVE = [0, 1, 2, 3, 4].map((d) => ({
+      id: `e${d}`, at: new Date(2026, 6, 4 + d, 8).toISOString(), food: 'f1',
+    }));
+
+    it('reports silence rather than a zero record', async () => {
+      const input = await load(FIVE, new Date(2026, 6, 20, 20).getTime(), degenerate);
+      // The pre-classifier shape: no claim in either direction.
+      expect(input.exposures).toBeNull();
+      expect(input.coverage).toBeNull();
+      expect(input.belowCoverageFloor).toBe(false);
+      expect(input.untrackedDaysBeforeFirstLog).toBe(0);
+    });
+
+    // …but the trial itself still renders, and so does everything computed off
+    // the CONTEXT rather than the range. A range the app cannot read is not a
+    // reason to go quiet about the animal.
+    it('still carries the trial and the lanes that do not depend on a range', async () => {
+      const input = await load(FIVE, new Date(2026, 6, 20, 20).getTime(), degenerate);
+      expect(input.trial).not.toBeNull();
+      expect(input.allowedSetUnavailable).toBe(false);
+      expect(input).toHaveProperty('intakeDeclineHeadline');
+    });
+
+    // The same five meals over a WELL-FORMED range: proof the guard keys on the
+    // range and not on the meals, and that it is not silently swallowing a
+    // readable record.
+    it('reports them as facts when the range is readable', async () => {
+      const input = await load(FIVE, new Date(2026, 6, 20, 20).getTime());
+      expect(input.exposures?.totalFeedings).toBe(5);
+      expect(input.coverage).not.toBeNull();
+    });
+  });
+});
+
+
+// ── §5.6's free-choice bowls ────────────────────────────────────────────────
+//
+// The fourth predicate query, and the only one that reached `main` with no
+// executable test: the last review pass read the overlap algebra, could not
+// fault it, and declined to sign it off on exactly that ground. Every case below
+// is a null combination over `active_from` / `active_until`, because those are
+// what the algebra turns on and what a stub `getAllAsync` returning `[]` can
+// never exercise.
+//
+// The direction that matters: this query feeding a bowl to the predicate is what
+// WITHHOLDS the affirmative claim (`intakeNotDirectlyObserved`). A row it drops
+// silently removes a reason the card is not allowed to say the record is clean —
+// so a false negative here is the reassuring failure, and these tests exist to
+// make it loud.
+describe('ARRANGEMENTS_IN_WINDOW_SQL', () => {
+  // The loader passes [petId, startKey, endKey, endKey] — `endKey` is null while
+  // the trial is running and the end day once it is over.
+  function run(db: Db, startKey: string, endKey: string | null) {
+    return db
+      .prepare(ARRANGEMENTS_IN_WINDOW_SQL)
+      .all(PET, startKey, endKey, endKey) as Array<Record<string, unknown>>;
+  }
+
+  function seeded() {
+    const db = freshDb() as unknown as Db;
+    addFood(db, 'f-bowl', 'Purina', 'Kibble');
+    return db;
+  }
+
+  it('keeps a bowl with NEITHER bound — no start, no end', () => {
+    const db = seeded();
+    addArrangement(db, 'a1', 'f-bowl', null, null);
+    // Running trial…
+    expect(run(db, '2026-07-03', null)).toHaveLength(1);
+    // …and a finished one. An unbounded bowl overlaps every window.
+    expect(run(db, '2026-07-03', '2026-08-27')).toHaveLength(1);
+    db.close();
+  });
+
+  it('keeps a bowl that started before the trial and never ended', () => {
+    const db = seeded();
+    addArrangement(db, 'a1', 'f-bowl', '2026-01-01', null);
+    expect(run(db, '2026-07-03', null)).toHaveLength(1);
+    expect(run(db, '2026-07-03', '2026-08-27')).toHaveLength(1);
+    db.close();
+  });
+
+  // The B-474 sub-floor case: the owner RECORDED the bowl's removal on day 3.
+  // It overlapped, so it must still come back — the coverage denominator for
+  // those days is unfair whether or not the bowl is there now.
+  it('keeps a bowl removed DURING the trial', () => {
+    const db = seeded();
+    addArrangement(db, 'a1', 'f-bowl', '2026-06-01', '2026-07-06');
+    expect(run(db, '2026-07-03', null)).toHaveLength(1);
+    db.close();
+  });
+
+  it('drops a bowl that ended BEFORE the trial began', () => {
+    const db = seeded();
+    addArrangement(db, 'a1', 'f-bowl', '2026-05-01', '2026-07-02');
+    expect(run(db, '2026-07-03', null)).toEqual([]);
+    db.close();
+  });
+
+  // The boundary itself: `active_until >= startKey`, so a bowl removed ON day 1
+  // was in force for part of day 1 and counts.
+  it('keeps a bowl that ended ON the trial’s first day', () => {
+    const db = seeded();
+    addArrangement(db, 'a1', 'f-bowl', '2026-05-01', '2026-07-03');
+    expect(run(db, '2026-07-03', null)).toHaveLength(1);
+    db.close();
+  });
+
+  // The upper bound applies only once the trial has ended — `? IS NULL OR …`.
+  // A bowl introduced after a FINISHED trial closed says nothing about it.
+  it('drops a bowl that started after a finished trial ended', () => {
+    const db = seeded();
+    addArrangement(db, 'a1', 'f-bowl', '2026-09-01', null);
+    expect(run(db, '2026-07-03', '2026-08-27')).toEqual([]);
+    // …but the same row is in scope for a trial that is still running, because
+    // there is no upper bound to compare it against.
+    expect(run(db, '2026-07-03', null)).toHaveLength(1);
+    db.close();
+  });
+
+  it('keeps a bowl that started ON the day a finished trial ended', () => {
+    const db = seeded();
+    addArrangement(db, 'a1', 'f-bowl', '2026-08-27', null);
+    expect(run(db, '2026-07-03', '2026-08-27')).toHaveLength(1);
+    db.close();
+  });
+
+  it('excludes a scheduled-feeding arrangement, another pet, and a soft delete', () => {
+    const db = seeded();
+    addArrangement(db, 'a1', 'f-bowl', null, null, { method: 'scheduled' });
+    addArrangement(db, 'a2', 'f-bowl', null, null, { pet: OTHER_PET });
+    addArrangement(db, 'a3', 'f-bowl', null, null, { deletedAt: '2026-07-04' });
+    expect(run(db, '2026-07-03', null)).toEqual([]);
+    db.close();
+  });
+
+  // The LEFT JOIN is load-bearing: a bowl whose food row has not synced must
+  // still come back. `readArrangements` maps a null brand/product to a null key
+  // and the predicate treats it as unmatched — dropping the row instead would
+  // remove a reason the claim is withheld.
+  it('keeps a bowl whose food row has not hydrated', () => {
+    const db = freshDb() as unknown as Db;
+    addArrangement(db, 'a1', 'f-missing', null, null);
+    const rows = run(db, '2026-07-03', null);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].brand).toBeNull();
+    expect(rows[0].product_name).toBeNull();
+    db.close();
   });
 });

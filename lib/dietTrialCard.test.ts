@@ -856,7 +856,7 @@ describe('replacement 8 — intake decline', () => {
     expect(textOf(model, 'flag')).toEqual([
       'Mochi has left most of her food for 3 days.',
       'A cat that stops eating needs a call today, whatever the trial is doing. ' +
-      'Culprit isn’t showing the trial numbers while this is going on.',
+      'Culprit isn’t reading these days as a clean run while this is going on.',
     ]);
     // …and NOT as body text, which is what the tinted block replaces.
     expect(textOf(model, 'lead')).toEqual([]);
@@ -1630,5 +1630,123 @@ describe('B-533 PR A — the product lens (round 8)', () => {
     expect(head).toContain('The first 12 days of the trial aren’t counted here');
     expect(head).not.toContain('the days count above');
     expect(head).not.toMatch(/\byou\b|missed|failed/i);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Round 8's own findings, pinned. All three are the same shape: a fix made in
+// one register was not carried to the surface or sibling that renders the same
+// record, so the app said two different things about one cat in one second.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('B-533 PR A — round 8 regressions', () => {
+  // ①/② The strip's coverage clause had been patched twice — for the decline
+  // flag, then for the untracked head — and each patch left the NEXT withholding
+  // reason rendering. It is now one general predicate, so these four inputs
+  // stand for the class rather than for themselves.
+  describe('Home never states coverage the card states only with a caveat', () => {
+    const qualified: Array<[string, Partial<TrialCardInput>]> = [
+      ['a refusing cat', {
+        exposures: { mayStateRecordClean: false, totalFeedings: 68, offDiet: 0 },
+        rangeRefusal: { days: 19, ratedFeedings: 38, refusedFeedings: 38 },
+      }],
+      ['a live decline flag', {
+        species: 'cat',
+        intakeDeclineHeadline: 'Mochi has left most of her food for 3 days.',
+      }],
+      ['a free-fed bowl', { freeFed: { loggedFeedings: 41 } }],
+      ['an unobserved head', { untrackedDaysBeforeFirstLog: 12 }],
+    ];
+    // Home has one line and no room for the caveat, the head, or the "meals
+    // OFFERED, not eaten" reframing that make the ratio honest on the card. So
+    // it states the ratio only where the card states it bare. Before this, the
+    // reassuring half of the pair — the ratio, never the finding — was the half
+    // that survived onto the Principle-3 intelligence surface.
+    it.each(qualified)('drops the ratio under %s', (_label, over) => {
+      expect(resolveTrialStrip(activeInput(over))?.line ?? '')
+        .not.toMatch(/meals logged on \d+ of \d+ days/);
+    });
+
+    it('still states it when the card states it plainly', () => {
+      expect(resolveTrialStrip(activeInput())?.line)
+        .toContain('meals logged on 22 of 23 days');
+    });
+  });
+
+  // Round 9, found by the test directly above: making the STRIP drop the ratio
+  // exposed that the ACTIVE card still led with it. `rangeRefusal` was consumed
+  // on both terminal cards and in the claim gate — so "all 68 matched" was
+  // correctly withheld — while the line above it read "Meals logged on 22 of 23
+  // days" over a cat that refused 38 of 38 rated feedings. The strip fix had
+  // inverted the divergence rather than closing it.
+  describe('the ACTIVE card under a whole-range refusal', () => {
+    const refusing = activeInput({
+      species: 'cat',
+      petName: 'Mochi',
+      exposures: { mayStateRecordClean: false, totalFeedings: 68, offDiet: 9 },
+      rangeRefusal: { days: 19, ratedFeedings: 38, refusedFeedings: 38 },
+    });
+
+    it('never leads with a bare coverage ratio', () => {
+      const facts = textOf(resolveTrialCard(refusing), 'fact');
+      expect(facts[0]).not.toMatch(/^Meals logged on/);
+      expect(facts[0]).toContain('A diet that wasn’t eaten can’t be read as one that was followed');
+      // The ratio survives, reframed: OFFERED, not logged — the same treatment
+      // the two terminal branches have given it since round 1b.
+      expect(facts[0]).toContain('meals offered on 22 of 23 days');
+    });
+
+    it('still owes the off-diet floor', () => {
+      expect(textOf(resolveTrialCard(refusing), 'fact').join(' '))
+        .toContain('9 logged feedings were outside the trial diet.');
+    });
+  });
+
+  // ③ `allowedSetUnavailable` is the ordinary two-device sync case: the permit
+  // set has not hydrated, so EVERY feeding scores off-diet. The record-and-
+  // continue note named the prescribed diet itself as the most recent slip and
+  // said "Keep going with the trial diet" in the same breath.
+  describe('an unhydrated permit set names no culprit', () => {
+    const unhydrated = activeInput({
+      allowedSetUnavailable: true,
+      exposures: {
+        mayStateRecordClean: false,
+        totalFeedings: 40,
+        offDiet: 40,
+        mostRecent: { label: FOOD, when: 'yesterday' },
+      },
+    });
+
+    // Asserted on the LINES, not on `allStrings` — the card's own `foodLabel`
+    // names the trial diet legitimately, as the label of the trial. What it may
+    // not do is name that same food in a sentence about what went wrong.
+    it('never names a food as the slip', () => {
+      const m = resolveTrialCard(unhydrated);
+      expect(m.foodLabel).toBe(FOOD);
+      expect(m.lines.map((l) => l.text).join(' ')).not.toContain('Kangaroo');
+      expect(m.lines.map((l) => l.text).join(' ')).not.toMatch(/most recent|last one was/i);
+    });
+
+    // The count is an artefact of a comparator the app has just called unusable,
+    // and the strip can carry neither the floor suffix nor the caveat that make
+    // it honest on the card. So it carries nothing.
+    it('the Home strip drops the off-diet clause it cannot qualify', () => {
+      expect(resolveTrialStrip(unhydrated)?.line ?? '')
+        .not.toMatch(/outside the trial diet/);
+    });
+  });
+
+  // ④ PR A's own change — adding the off-diet floor to the decline branches —
+  // falsified the sentence sitting directly above it. `trialViabilityNote` had
+  // this exact sentence corrected twice; the sibling never got the edit.
+  it('the decline register does not deny the number printed under it', () => {
+    const m = resolveTrialCard(activeInput({
+      species: 'cat',
+      petName: 'Mochi',
+      intakeDeclineHeadline: 'Mochi has left most of her food for 3 days.',
+      exposures: { mayStateRecordClean: false, totalFeedings: 60, offDiet: 12 },
+    }));
+    expect(textOf(m, 'fact').join(' '))
+      .toContain('Separately, 12 logged feedings were outside the trial diet.');
+    expect(textOf(m, 'flag').join(' ')).not.toContain('isn’t showing the trial numbers');
   });
 });

@@ -289,6 +289,24 @@ export async function loadDietTrialFacts(args: {
     }
   }
 
+  // A NULL RANGE IS NOT A ZERO RECORD. `computeTrialFacts` returns its `base`
+  // — `range: null`, `coverage: null`, `exposures` all-zero — on the two paths
+  // where it could not establish a range at all: an unparseable `started_at`,
+  // and an `ended_at` that precedes it (a degenerate row the start modal cannot
+  // produce but a sync or a manual edit can). Reading the record fields off that
+  // object turns "the app could not compute this" into "the app computed this
+  // and the answer is nothing": five logged feedings rendered as
+  // "0 feedings in total." Silence is the honest degradation and the module
+  // already has a shape for it — the pre-classifier `null`, which renders no
+  // claim in either direction.
+  //
+  // The CONTEXT-derived fields below are deliberately NOT gated on this:
+  // `allowedSetUnavailable` is computed off the allowed set rather than the
+  // range precisely so it survives here, and the decline/standing-note lane sits
+  // outside the compute gate entirely. A range the app cannot read is not a
+  // reason to go quiet about the animal.
+  const readable = facts && facts.range ? facts : null;
+
   return {
     ...base,
     trial,
@@ -301,20 +319,20 @@ export async function loadDietTrialFacts(args: {
     // before the app existed on their phone, and the report — reading the same
     // record through the module — printed a different, kinder number on the same
     // trial. Two surfaces, one record, two answers.
-    coverage: facts?.coverage
-      ? { daysLogged: facts.coverage.daysLogged, daysElapsed: facts.coverage.daysElapsed }
+    coverage: readable?.coverage
+      ? { daysLogged: readable.coverage.daysLogged, daysElapsed: readable.coverage.daysElapsed }
       : null,
-    exposures: facts
+    exposures: readable
       ? {
-          totalFeedings: facts.exposures.totalFeedings,
+          totalFeedings: readable.exposures.totalFeedings,
           // A FLOOR, never a total — and it is passed through untouched. The
           // temptation this file failed three times is to suppress it when
           // something else is uncertain; §5.2 rules that the wrong direction.
-          offDiet: facts.exposures.offDiet,
-          mostRecent: facts.exposures.mostRecent
+          offDiet: readable.exposures.offDiet,
+          mostRecent: readable.exposures.mostRecent
             ? {
-                label: facts.exposures.mostRecent.label ?? 'Something off the list',
-                when: relativeDayLabel(facts.exposures.mostRecent.occurredAt, nowMs),
+                label: readable.exposures.mostRecent.label ?? 'Something off the list',
+                when: relativeDayLabel(readable.exposures.mostRecent.occurredAt, nowMs),
               }
             : null,
           // THE COMPOSITE GATE, not the weaker `mayClaimAllMatched` — see the
@@ -322,12 +340,12 @@ export async function loadDietTrialFacts(args: {
           // token exactly as the card derives it, so a trial the owner ended
           // because the pet would not eat it can never have its days read as
           // clean ones.
-          mayStateRecordClean: mayStateRecordClean(facts, {
+          mayStateRecordClean: mayStateRecordClean(readable, {
             stoppedForRefusal: row.stopped_reason === 'refused',
           }),
         }
       : null,
-    belowCoverageFloor: facts?.belowCoverageFloor ?? false,
+    belowCoverageFloor: readable?.belowCoverageFloor ?? false,
     // §10 S3 — THE CLIP AND ITS DISCLOSURE SHIP TOGETHER OR NEITHER SHIPS. The
     // split dropped this line while keeping the clipped denominator, which made
     // the card STRICTLY MORE REASSURING than the one it replaced: the ordinary
@@ -336,7 +354,7 @@ export async function loadDietTrialFacts(args: {
     // saying why, while `generate-report` printed "The first 28 days…" off the
     // same record. One record, two answers — the divergence this PR exists to
     // remove.
-    untrackedDaysBeforeFirstLog: facts?.untrackedDaysBeforeFirstLog ?? 0,
+    untrackedDaysBeforeFirstLog: readable?.untrackedDaysBeforeFirstLog ?? 0,
     // Its own input, not a case of the claim gate — see the field's docstring for
     // why wiring it only into `mayStateRecordClean` left it unreachable.
     allowedSetUnavailable: facts?.allowedSetUnavailable ?? false,
@@ -360,9 +378,9 @@ export async function loadDietTrialFacts(args: {
     // a bowl's removal now lands on "There isn't enough logged yet…" — over days
     // the app itself cannot observe. The disclosure ships with the state that
     // needs it, not with the register.
-    freeFedOverlap: facts?.intakeNotDirectlyObserved ?? false,
-    freeFed: facts?.intakeNotDirectlyObservedNow
-      ? { loggedFeedings: facts.exposures.totalFeedings }
+    freeFedOverlap: readable?.intakeNotDirectlyObserved ?? false,
+    freeFed: readable?.intakeNotDirectlyObservedNow
+      ? { loggedFeedings: readable.exposures.totalFeedings }
       : null,
     standingNote,
   };
@@ -672,7 +690,11 @@ async function readDoses(
  * recorded start" — the latter is kept rather than dropped, because dropping an
  * arrangement removes a reason the claim is withheld.
  */
-const ARRANGEMENTS_IN_WINDOW_SQL = `
+/** Exported for the real-engine suite. The overlap algebra here is four
+ *  null-combination cases over two columns, and the last review pass read it,
+ *  could not fault it, and explicitly declined to sign it off because it was the
+ *  one predicate query with no executable test. Reading SQL is not running it. */
+export const ARRANGEMENTS_IN_WINDOW_SQL = `
   SELECT fa.food_item_id, fa.active_from, fa.active_until, f.brand, f.product_name
     FROM feeding_arrangements fa
     LEFT JOIN food_items_cache f ON f.id = fa.food_item_id

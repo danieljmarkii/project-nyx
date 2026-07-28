@@ -857,7 +857,12 @@ function activeCard(
     // finishes six weeks, so it records the exposure, does not scold, and does
     // not tell them the trial is ruined — because it isn't, and a restart is
     // what actually loses the diagnosis.
-    const recent = input.exposures?.mostRecent;
+    // NEVER NAME A "SLIP" THE COMPARATOR CANNOT SUPPORT. With an unusable food
+    // list every feeding falls to rung 3, so `mostRecent` is simply the latest
+    // feeding — which on the ordinary two-device sync case is the PRESCRIBED
+    // DIET. The card named it as the most recent thing outside the trial diet
+    // and then said "Keep going with the trial diet" in the same sentence.
+    const recent = input.allowedSetUnavailable ? null : input.exposures?.mostRecent;
     lines.push({
       role: 'note',
       text: recent
@@ -901,7 +906,12 @@ function pushDeclineLines(lines: TrialCardLine[], input: TrialCardInput): void {
       (input.species === 'cat'
         ? 'A cat that stops eating needs a call today, whatever the trial is doing.'
         : `A pet that goes off their food needs a call, whatever the trial is doing.`) +
-      ' Culprit isn’t showing the trial numbers while this is going on.',
+      // "isn't showing the trial numbers" was true only while this branch
+      // rendered none. Adding the off-diet floor to it — correct, and this PR's
+      // own change — made it a flat false statement rendered directly above a
+      // trial number. `trialViabilityNote` had this exact sentence corrected
+      // twice for the same reason; the sibling never got the edit.
+      ' Culprit isn’t reading these days as a clean run while this is going on.',
   });
 }
 
@@ -1087,6 +1097,31 @@ function windowLineFor(endIndex: number, overrunDays: number): string {
 /** The two record facts plus their inline qualifier, in §5.1 order. Coverage
  *  first (days), exposures second (feedings), never welded. */
 function pushRecordFacts(lines: TrialCardLine[], input: TrialCardInput): void {
+  // ROUND 4'S RULE IN THE LAST BRANCH THAT NEVER GOT IT — the ACTIVE card.
+  //
+  // `rangeRefusal` was consumed on both terminal cards (round 1b) and in the
+  // shared claim gate, so "all 68 matched" was correctly withheld here. What was
+  // not withheld is the line ABOVE it: a cat refusing 38 of 38 rated feedings
+  // across 19 days rendered `state: 'clean'` whose lead was "Meals logged on 22
+  // of 23 days." — the ratio an owner reads as a near-perfect trial, over a diet
+  // the record shows was going uneaten.
+  //
+  // Found by round 8's own Home-strip regression test: the strip fix made Home
+  // DROP a ratio the card kept, inverting the card/Home divergence this PR
+  // exists to remove. The active card is the one that was wrong.
+  //
+  // No new register and no new copy — `pushRefusalWithheld` is the same helper
+  // the two terminal branches already call on the same fact. The owner-facing
+  // R1 refusal block (off the recency-windowed `trialDietRefusal`) is still #499's.
+  if (input.rangeRefusal) {
+    pushRefusalWithheld(lines, input, 'these days');
+    lines.push({ role: 'qualifier', text: BLIND_SPOT_QUALIFIER });
+    pushPastBowlCaveat(lines, input);
+    pushUntrackedHead(lines, input);
+    pushScopeCaveat(lines, input);
+    return;
+  }
+
   if (input.coverage) lines.push({ role: 'fact', text: coverageLine(input.coverage) });
 
   const ex = input.exposures;
@@ -1504,17 +1539,38 @@ export function resolveTrialStrip(input: TrialCardInput): TrialStripModel | null
   // record for the whole trial, in the reassuring direction, on the Principle-3
   // intelligence surface. The strip already drops this clause entirely under a
   // safety flag; it drops it here for the same reason.
-  if (input.coverage && (input.untrackedDaysBeforeFirstLog ?? 0) === 0) {
+  // THE STRIP FOLLOWS THE CARD'S COMPOSITION, ONE CONDITION AT A TIME NO LONGER.
+  //
+  // This clause has been patched three times — once for the decline flag, once
+  // for the untracked head — and each time the NEXT reason the card withholds
+  // coverage was left rendering here. A cat refusing 88 of 88 rated feedings for
+  // 44 days still read "meals logged on 44 of 44 days" on Home, with
+  // `rangeRefusal` sitting unread on the same input and the comment above this
+  // function asserting the guarantee. Under free-fed the card said "there's no
+  // day-by-day count of what was eaten" and Home said "20 of 23 days" in the
+  // same second.
+  //
+  // So the condition is now the general one: the strip states coverage only when
+  // the card would state it plainly. One predicate, and a new withholding reason
+  // reaches both surfaces or neither.
+  const coverageIsPlain =
+    !input.intakeDeclineHeadline &&
+    !input.rangeRefusal &&
+    !input.freeFed &&
+    (input.untrackedDaysBeforeFirstLog ?? 0) === 0;
+  if (input.coverage && coverageIsPlain) {
     parts.push(
       `meals logged on ${input.coverage.daysLogged} of ${input.coverage.daysElapsed} days`,
     );
   }
   // THE FLOOR IS OWED HERE TOO — this file's header says "in every state", and
-  // the strip was rendering the one number that always looks good while omitting
-  // the one that reports a finding. It is also the surface the wedge owner
-  // actually sees daily; the Pet tab is not. Same asymmetry the strip already
-  // avoids under a safety flag, applied to the count.
-  const stripOffDiet = input.exposures?.offDiet ?? 0;
+  // the strip rendered the one number that always looks good while omitting the
+  // one that reports a finding, on the surface the wedge owner sees daily.
+  //
+  // NOT under `allowedSetUnavailable`: there the count is an artefact of a
+  // comparator the app has just declared unusable, and the strip can carry
+  // neither the floor suffix nor the caveat that make it honest on the card.
+  const stripOffDiet = input.allowedSetUnavailable ? 0 : input.exposures?.offDiet ?? 0;
   if (stripOffDiet > 0) {
     parts.push(`${stripOffDiet} outside the trial diet`);
   }
