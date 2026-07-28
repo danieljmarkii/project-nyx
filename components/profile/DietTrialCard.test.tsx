@@ -37,7 +37,7 @@ function input(over: Partial<TrialCardInput> = {}): TrialCardInput {
     petName: 'Biscuit',
     species: 'dog',
     coverage: { daysLogged: 22, daysElapsed: 23 },
-    exposures: { mayClaimAllMatched: true, totalFeedings: 68, offDiet: 0 },
+    exposures: { mayStateRecordClean: true, totalFeedings: 68, offDiet: 0 },
     ...over,
   };
 }
@@ -70,7 +70,7 @@ describe('the progress bar encodes DAY progress and nothing else', () => {
     const tree = render(<DietTrialCard model={resolveTrialCard(input({
       nowMs: localNoon(2026, 7, 4),
       coverage: { daysLogged: 2, daysElapsed: 2 },
-      exposures: { mayClaimAllMatched: true, totalFeedings: 4, offDiet: 0 },
+      exposures: { mayStateRecordClean: true, totalFeedings: 4, offDiet: 0 },
     }))} />);
     expect(fillWidth(tree)).toBeCloseTo((2 / 56) * 100, 6);
     expect(fillWidth(tree)).toBeLessThan(5);
@@ -81,11 +81,11 @@ describe('the progress bar encodes DAY progress and nothing else', () => {
   it('is unchanged when coverage and exposures change', () => {
     const perfect = render(<DietTrialCard model={resolveTrialCard(input({
       coverage: { daysLogged: 23, daysElapsed: 23 },
-      exposures: { mayClaimAllMatched: true, totalFeedings: 68, offDiet: 0 },
+      exposures: { mayStateRecordClean: true, totalFeedings: 68, offDiet: 0 },
     }))} />);
     const poor = render(<DietTrialCard model={resolveTrialCard(input({
       coverage: { daysLogged: 3, daysElapsed: 23 },
-      exposures: { mayClaimAllMatched: true, totalFeedings: 9, offDiet: 7 },
+      exposures: { mayStateRecordClean: true, totalFeedings: 9, offDiet: 7 },
     }))} />);
     expect(fillWidth(perfect)).toBeCloseTo(fillWidth(poor), 10);
   });
@@ -146,7 +146,7 @@ describe('what the card renders', () => {
 
   it('renders no percentage anywhere on screen', () => {
     const tree = render(<DietTrialCard model={resolveTrialCard(input({
-      exposures: { mayClaimAllMatched: true, totalFeedings: 68, offDiet: 3 },
+      exposures: { mayStateRecordClean: true, totalFeedings: 68, offDiet: 3 },
     }))} />);
     expect(tree.queryByText(/%/)).toBeNull();
     expect(tree.queryByText(/compliance/i)).toBeNull();
@@ -293,7 +293,7 @@ describe('the safety register renders as one block, not as body text', () => {
   it('draws the teach line quietly, never in the safety colour', () => {
     const tree = render(
       <DietTrialCard
-        model={resolveTrialCard(input({ intakeRating: { rated: 1, feedings: 12 } }))}
+        model={resolveTrialCard(input({ intakeRating: { rated: 1, feedings: 12, primaryRated: 1, primaryFeedings: 12 } }))}
       />,
     );
     expect(tree.queryByTestId('trial-flag')).toBeNull();

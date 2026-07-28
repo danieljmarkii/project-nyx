@@ -818,6 +818,23 @@ export interface TrialIntakeRating {
   rated: number;
   /** In-window non-treat feedings, rated or not. */
   feedings: number;
+  /**
+   * The same two counts over `primary_diet` feedings only — the population the
+   * refusal lane ACTUALLY reads.
+   *
+   * BOTH ARE NEEDED, and the counterexample that proves it: an owner who logs two
+   * unrated bowls of the prescribed diet and three rated permitted toppers a day
+   * has a 60% rated share overall and a 0% rated share where it counts. The wide
+   * denominator alone suppresses the teach line on precisely the record whose
+   * viability is unknowable — the opposite of its job. The narrow denominator
+   * alone goes to 0/0 whenever food identity misses (an un-hydrated allowed set,
+   * a re-photographed bag), which silences it just as wrongly.
+   *
+   * So a surface asks the narrow question when there is a narrow population to
+   * ask it of, and falls back to the wide one when there is not.
+   */
+  primaryRated: number;
+  primaryFeedings: number;
 }
 
 export interface TrialFacts {
@@ -828,8 +845,52 @@ export interface TrialFacts {
   contamination: ContaminationFact[];
   arrangementExposures: ArrangementExposure[];
   /** Null unless the floors below are cleared. Presence-only, like everything
-   *  else here: its absence is not evidence the pet is eating. */
+   *  else here: its absence is not evidence the pet is eating.
+   *
+   *  A NOW-FACT: bounded to the last `REFUSAL_WINDOW_DAYS` of the range, because
+   *  what it drives is a live register about the pet today. For the question
+   *  "was this diet eaten over the trial", see `rangeRefusal`. */
   trialDietRefusal: TrialDietRefusal | null;
+  /**
+   * The same fact over the WHOLE range — a history, not a now-fact.
+   *
+   * WHY BOTH EXIST, and why conflating them shipped a defect twice. A trial where
+   * the diet went unfinished for six weeks and was then eaten for the last two
+   * has `trialDietRefusal === null` (the recency window sees only the good
+   * fortnight) while the record plainly shows a diet that was not eaten. Any
+   * surface that asks "may I state this record was clean" must ask the RANGE
+   * question; only a surface asking "what is happening to this animal now" may
+   * ask the recency one.
+   *
+   * `generate-report` computed exactly this locally, for exactly this reason, and
+   * the card consumed only the now-fact — so a completed trial with 84 of 112
+   * prescribed feedings logged unfinished rendered "all 112 matched the trial
+   * diet or a permitted food" on the card while the report withheld it. One
+   * record, two surfaces, opposite answers, with the card taking the reassuring
+   * one. It lives here now, once, and the report reads it from here.
+   *
+   * THE 12h EPISODE GUARD IS DELIBERATELY DROPPED. It protects the now-fact
+   * against a midnight-straddling single episode; over a whole trial that is not
+   * the failure mode — a multi-week refusal is.
+   */
+  rangeRefusal: TrialDietRefusal | null;
+  /**
+   * True when the allowed set holds no `primary_diet` row — so the trial has
+   * nothing to define the diet WITH, and every rung-1 lookup necessarily misses.
+   *
+   * IT IS NOT A QUIET STATE, it is the loudest possible wrong answer. With an
+   * empty or half-hydrated set every feeding falls through to rung 3, so 40
+   * feedings of the PRESCRIBED diet classify "0 matched, 40 did not" and a
+   * perfectly compliant owner is accused of total non-adherence — on the card and
+   * on the vet's artifact alike. It is reachable in normal operation:
+   * `diet_trials` can hydrate before `diet_trial_foods` does, and `lib/sync.ts`
+   * swallows a failed hydration step.
+   *
+   * A `primary_diet` row is required, not merely a row: rung 2's comparator is
+   * built from those alone, so a trial whose only rows are permitted extras has
+   * nothing to compare against either.
+   */
+  allowedSetUnavailable: boolean;
   /** R1b — the rated share of the meal record. Null when there is nothing in
    *  range to have rated, which is not the same as "nothing is rated". */
   intakeRating: TrialIntakeRating | null;
@@ -1003,6 +1064,12 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
     contamination: trialContamination(ctx),
     arrangementExposures: arrangementHits,
     trialDietRefusal: null,
+    rangeRefusal: null,
+    // Computed on the CONTEXT, so it is correct even on the early-return paths
+    // below (an unparseable start date, a range that closed before it opened).
+    // Those are exactly the degraded states where a surface must not assume the
+    // allowed set was fine.
+    allowedSetUnavailable: !ctx.allowedFoods.some((f) => f.role === 'primary_diet'),
     intakeRating: null,
     untrackedDaysBeforeFirstLog: 0,
     interpretability: 'not_yet',
@@ -1084,6 +1151,13 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
   // for why they are not the refusal lane's own denominator.
   let ratedMealFeedings = 0;
   let ratableFeedings = 0;
+  let primaryRated = 0;
+  let primaryFeedings = 0;
+  // The RANGE counters — the same fact with no recency window and no episode
+  // guard. See `TrialFacts.rangeRefusal` for why both windows exist.
+  let rangeRated = 0;
+  let rangeNotFinished = 0;
+  const rangeRefusedDays = new Set<number>();
   const refusedDays = new Set<number>();
   const refusalStamps: number[] = [];
   // The viability fact is about the pet NOW, not about the whole trial.
@@ -1130,9 +1204,25 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
     // SUPPRESSED the fact. Not-finished (`refused` / `picked` / `some`) is the
     // same bar `lib/analytics` already uses for "did this pet finish a meal", so
     // the two surfaces cannot disagree about whether a diet is being eaten.
-    if (classification.role === 'primary_diet' && day >= refusalWindowStart) {
+    if (classification.role === 'primary_diet' && day >= startDayIndex) {
       const finished = feedingWasFinished(feeding.intakeRating);
+      // R1b's NARROW population — the one the refusal lane actually reads.
+      primaryFeedings += 1;
+      if (finished !== null) primaryRated += 1;
+
+      // The RANGE fact: every rated primary-diet feeding in the clipped range,
+      // matching the window `generate-report`'s own `inRange` uses so the two
+      // surfaces cannot answer differently.
       if (finished !== null) {
+        rangeRated += 1;
+        if (!finished) {
+          rangeNotFinished += 1;
+          rangeRefusedDays.add(day);
+        }
+      }
+
+      // The NOW-fact, bounded to the recency window.
+      if (day >= refusalWindowStart && finished !== null) {
         ratedFeedings += 1;
         if (!finished) {
           refusedFeedings += 1;
@@ -1192,6 +1282,14 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
       ? { refusedFeedings, ratedFeedings, days: refusedDays.size }
       : null;
 
+  // Same floors, no span guard — see `TrialFacts.rangeRefusal`.
+  const rangeRefusal: TrialDietRefusal | null =
+    rangeRated >= REFUSAL_MIN_RATED &&
+    rangeRefusedDays.size >= REFUSAL_MIN_DAYS &&
+    rangeNotFinished / rangeRated >= REFUSAL_SHARE
+      ? { refusedFeedings: rangeNotFinished, ratedFeedings: rangeRated, days: rangeRefusedDays.size }
+      : null;
+
   return {
     ...base,
     range,
@@ -1207,12 +1305,18 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
     },
     oralRoute,
     trialDietRefusal,
+    rangeRefusal,
     // Null, not `{ rated: 0, feedings: 0 }` — "nothing in range to have rated" and
     // "nothing rated" are different facts, and only the second one is worth
     // teaching about. A surface that saw a zeroed object would divide by zero and
     // teach the tap on day 1 of an empty trial.
     intakeRating: ratableFeedings > 0
-      ? { rated: ratedMealFeedings, feedings: ratableFeedings }
+      ? {
+          rated: ratedMealFeedings,
+          feedings: ratableFeedings,
+          primaryRated,
+          primaryFeedings,
+        }
       : null,
     untrackedDaysBeforeFirstLog,
     interpretability,
@@ -1468,6 +1572,14 @@ export function interpretabilityStatement(facts: TrialFacts): string | null {
  */
 export function mayClaimAllMatched(facts: TrialFacts): boolean {
   if (facts.trialDietRefusal) return false;
+  // THE RANGE FACT, NOT ONLY THE NOW-FACT. A trial whose diet went unfinished for
+  // six weeks and was then eaten for the last two clears the recency window and
+  // fails this. Adding it here rather than at each call site is the whole point of
+  // the function: `generate-report` had this clause and the card did not.
+  if (facts.rangeRefusal) return false;
+  // An empty permit set makes rung 1 miss by construction, so "matched" is not a
+  // measurement — it is an artefact of a cold cache.
+  if (facts.allowedSetUnavailable) return false;
   if (facts.arrangementExposures.length > 0) return false;
   if (facts.oralRoute.length > 0) return false;
   if (facts.exposures.unclassifiable > 0) return false;
@@ -1480,6 +1592,41 @@ export function mayClaimAllMatched(facts: TrialFacts): boolean {
   // in it can observe eating. Unobservable is not clean.
   if (facts.intakeNotDirectlyObserved) return false;
   return true;
+}
+
+/**
+ * MAY A SURFACE STATE THAT THIS RECORD WAS CLEAN?
+ *
+ * `mayClaimAllMatched` asks whether the app has computed a reason the sentence is
+ * FALSE. This asks the further question every owner-facing and vet-facing surface
+ * actually needs: is the record good enough for the sentence to MEAN anything?
+ *
+ * The two extra clauses are both cases where the sentence is technically true and
+ * substantively misleading, and both were found by executing them:
+ *
+ *   • `interpretability` — `belowCoverageFloor` is `does_not_support` and nothing
+ *     else, so `not_yet` sailed through every gate. Day 3 of 56 with three clean
+ *     feedings rendered "all 3 matched the trial diet or a permitted food"; the
+ *     sub-floor card rendered "There isn't enough logged yet for your vet to read
+ *     much into this" and then, one line down, "all 10 matched" — contradicting
+ *     itself in adjacent sentences.
+ *   • `stoppedForRefusal` — a trial the owner ENDED because the pet would not eat
+ *     it cannot have its days read as clean ones, whatever the counts say.
+ *
+ * LIVED IN `generate-report/trial.ts` UNTIL NOW, as `mayStateRecordClean`, with a
+ * comment claiming "`lib/dietTrialFacts.ts` gates the card on exactly this". It
+ * did not — the card asked only the weaker question, so the same record produced a
+ * withheld claim on the vet's page and an affirmative one on the owner's card.
+ * That is the drift a shared module exists to prevent, so the gate moves here and
+ * both surfaces call it.
+ */
+export function mayStateRecordClean(
+  facts: TrialFacts,
+  opts?: { stoppedForRefusal?: boolean },
+): boolean {
+  if (!mayClaimAllMatched(facts)) return false;
+  if (opts?.stoppedForRefusal) return false;
+  return facts.interpretability === 'supports' || facts.interpretability === 'partially_supports';
 }
 
 /**
@@ -1517,6 +1664,16 @@ export function trialViabilityHeadline(refusal: TrialDietRefusal): string {
   // phrasing has to be "across N days", never "over the last N days", which would
   // assert a window the number is not measuring.
   const when = refusal.days === 1 ? 'on a single day' : `across ${refusal.days} days`;
+  // THE WORST CASE MUST NOT READ AS THE CLUMSIEST SENTENCE. When every rated
+  // feeding was left unfinished — the canonical refusing patient, and the most
+  // serious shape this fact takes — "28 feedings of the 28 trial-diet feedings
+  // you've rated" is arithmetic where the reader needs a statement.
+  if (n === refusal.ratedFeedings) {
+    return refusal.ratedFeedings === 1
+      ? 'The one trial-diet feeding you’ve rated was left unfinished.'
+      : `Every one of the ${refusal.ratedFeedings} trial-diet feedings you’ve rated was ` +
+        `left unfinished, ${when}.`;
+  }
   return (
     `${meals} of the ${refusal.ratedFeedings} trial-diet feedings you’ve rated were ` +
     `left unfinished, ${when}.`
@@ -1527,9 +1684,15 @@ export function trialViabilityHeadline(refusal: TrialDietRefusal): string {
  * The body under `trialViabilityHeadline` — species-aware, and the register is
  * the whole point of splitting it out.
  *
- * THE FELINE LINE IS NOT DECORATION. A cat off its food is on the clock (the 48h
- * hepatic-lipidosis window), so the cat register says "soon" and the dog register
- * does not borrow that urgency for a species it does not apply to.
+ * THE FELINE LINE IS NOT DECORATION, AND IT SAYS "TODAY". A cat off its food is
+ * on the 48h hepatic-lipidosis clock — and THIS lane is the only watcher on it
+ * for the patient that matters most, because `detectIntakeDecline` is
+ * structurally blind to a diet refused from day 1. An earlier draft said "soon"
+ * while the sibling clinical lane said "today" over the same animal; the
+ * canonical fixture (a cat 12 days into refusing its hydrolysate) is many times
+ * past that window, so "soon" was the quieter word on the more urgent case. For a
+ * safety lane the safe error direction is toward firing, and toward the sooner
+ * word. The dog register does not borrow the feline clock.
  *
  * WHAT IT MAY NOT SAY, and the trap the design-locked mock walked into: "a cat
  * eating this little". The record here is about the TRIAL DIET going unfinished —
@@ -1539,6 +1702,12 @@ export function trialViabilityHeadline(refusal: TrialDietRefusal): string {
  * `clinical-guardrails`; inventing a fact to escalate on is not. So the sentence
  * escalates on what IS on the record — the prescribed food going untouched.
  *
+ * NOR MAY IT SAY "won't eat". That was the opening clause of the first draft, and
+ * it is a VOLITIONAL frame — it locates the cause in the animal's choice, which is
+ * one short step from "picky" on the lane whose first rule is that it never
+ * softens toward preference. "Isn't eating" reports the same record and asserts
+ * nothing about why.
+ *
  * The closing sentence is load-bearing rather than polite: the card has just
  * withheld the adherence line, and a surface that goes quiet without saying it
  * went quiet reads as a record with nothing in it.
@@ -1546,11 +1715,11 @@ export function trialViabilityHeadline(refusal: TrialDietRefusal): string {
 export function trialViabilityNote(petName: string, species: TrialSpecies): string {
   const call =
     species === 'cat'
-      ? 'with a cat, food going untouched is worth a call soon'
-      : 'worth raising with your vet';
+      ? `a cat that isn’t eating what’s put down needs a call today`
+      : `it’s worth a call to your vet`;
   return (
-    `A diet ${petName} won’t eat can’t answer the question the trial was started ` +
-    `for — and ${call}, whatever the trial is doing. Culprit isn’t showing the ` +
-    'trial numbers while this is going on.'
+    `A diet ${petName} isn’t eating can’t answer the question the trial was ` +
+    `started for — and ${call}, whatever the trial is doing. Culprit isn’t ` +
+    'showing the trial numbers while this is going on.'
   );
 }

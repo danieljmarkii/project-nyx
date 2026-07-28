@@ -48,7 +48,7 @@ import { getIntakeDecline, type IntakeDeclineFlag } from './analytics';
 import { getDb } from './db';
 import {
   computeTrialFacts,
-  mayClaimAllMatched,
+  mayStateRecordClean,
   trialFoodKey,
   type AllowedFood,
   type TrialArrangement,
@@ -58,7 +58,6 @@ import {
   type TrialFoodRole,
   type TrialSpec,
 } from './dietTrial';
-import { getActiveArrangementsForPet } from './feedingArrangements';
 import { relativeDayLabel } from './food';
 import { proteinsFromCacheText } from './protein';
 import { loadTrialProteinContext, trialDietNote } from './trialContaminant';
@@ -141,8 +140,19 @@ const TRIAL_FOR_CARD_SQL = `
 const ENDED_TRIAL_GRACE_DAYS = 14;
 
 /** Reads the pet's active trial and everything the card needs to describe it.
- *  Every read is best-effort: a failure degrades one line of the card, never the
- *  whole screen, and never into a claim. */
+ *
+ *  FAILURE GRANULARITY, precisely — the old "every read is best-effort, a failure
+ *  degrades one line" is no longer the whole truth and saying so invites a future
+ *  reader to assume per-field degradation that does not exist. There are two
+ *  classes now:
+ *
+ *  • The two INDEPENDENT reads (`readIntakeDecline`, `readStandingNote`) still
+ *    degrade one line each. The first is a safety lane and deliberately survives
+ *    everything below it.
+ *  • The four PREDICATE INPUTS degrade TOGETHER, to silence, because they are one
+ *    input to one computation — see the call site for why none of them may fail
+ *    soft to an empty array. A failure in any one drops the record lines and
+ *    nothing else. */
 export async function loadDietTrialFacts(args: {
   pet: DietTrialFactsPet;
   otherPetNames?: string[];
@@ -218,25 +228,44 @@ export async function loadDietTrialFacts(args: {
       readAllowedFoods(row.id),
       readFeedings(pet.id, row.started_at, endKey),
       readDoses(pet.id, row.started_at, endKey),
-      readArrangements(pet.id, row.started_at),
+      readArrangements(pet.id, row.started_at, endKey),
       readIntakeDecline(pet, nowMs),
       readStandingNote(pet.id, pet.name),
     ]);
 
   // THE ONE CALL. Everything above is a read; nothing above decided anything.
   //
-  // AN UNREADABLE ALLOWED SET SKIPS IT ENTIRELY (`allowedFoods === null`) rather
-  // than passing an empty array in. The two are opposite facts: an empty set is
-  // a trial with nothing permitted, so EVERY feeding classifies off-diet and a
-  // perfectly compliant owner is flagged on every meal. `readAllowedFoods` is the
-  // one read here that returns null instead of a default for that reason.
+  // ── WHY ALL FOUR PREDICATE INPUTS RETURN NULL ON FAILURE ───────────────────
   //
-  // Skipping is not the same as failing the whole load. The intake-decline read
-  // is a SAFETY lane and it survives — the record lines go quiet, the clinical
-  // flag does not. That is the direction §5.2 requires: the animal outranks the
-  // trial, including when the trial's own data is unreadable.
+  // None of them may fail soft to an empty array, and the reason is the same
+  // every time: an empty array is not "we could not read this", it is a
+  // CONFIDENT AND WRONG FACT, and in each case it is wrong in the direction that
+  // makes the app say more than it knows.
+  //
+  //   • `allowedFoods: []`  — a trial with nothing permitted. Every feeding
+  //     classifies off-diet, and a perfectly compliant owner is flagged on every
+  //     meal for the length of the trial.
+  //   • `feedings: []`      — a trial with nothing logged. `mayClaimAllMatched`
+  //     goes TRUE over an empty record and the card renders "0 feedings in
+  //     total — all 0 matched the trial diet", which is a fabricated all-clear:
+  //     precisely the reassurance-on-absence `clinical-guardrails` forbids.
+  //   • `doses: []`         — drops an oral-route (C3) exposure, which is one of
+  //     the five computed reasons the affirmative claim is withheld. Losing a
+  //     withholding reason turns silence into a claim.
+  //   • `arrangements: []`  — drops the free-choice bowl, which both flips the
+  //     card's state and removes another withholding reason.
+  //
+  // So an unreadable input skips the computation ENTIRELY: no coverage line, no
+  // exposure line, no claim in either direction. That is PR 4's honest silence,
+  // reached deliberately rather than by accident.
+  //
+  // AND SKIPPING IS NOT THE SAME AS FAILING THE WHOLE LOAD. The intake-decline
+  // read is a SAFETY lane and it is deliberately outside this gate — the record
+  // lines go quiet, the clinical flag does not. That is the direction §5.2
+  // requires: the animal outranks the trial, including when the trial's own data
+  // is the part that cannot be read.
   let facts: TrialFacts | null = null;
-  if (allowedFoods !== null) {
+  if (allowedFoods !== null && feedings !== null && doses !== null && arrangements !== null) {
     try {
       facts = computeTrialFacts({
         trial: spec,
@@ -251,9 +280,7 @@ export async function loadDietTrialFacts(args: {
         // rather than a UTC one.
       });
     } catch (e) {
-      // A predicate failure degrades to PR 4's honest silence rather than to a
-      // guess. The coverage line disappears, and nothing is claimed in either
-      // direction — which is the only safe failure mode for this surface.
+      // A predicate failure degrades the same way, for the same reason.
       console.error('[DietTrial] compute failed:', e);
     }
   }
@@ -286,7 +313,14 @@ export async function loadDietTrialFacts(args: {
                 when: relativeDayLabel(facts.exposures.mostRecent.occurredAt, nowMs),
               }
             : null,
-          mayClaimAllMatched: mayClaimAllMatched(facts),
+          // THE COMPOSITE GATE, not the weaker `mayClaimAllMatched` — see the
+          // field's docstring. `stoppedForRefusal` is derived from the stored
+          // token exactly as the card derives it, so a trial the owner ended
+          // because the pet would not eat it can never have its days read as
+          // clean ones.
+          mayStateRecordClean: mayStateRecordClean(facts, {
+            stoppedForRefusal: row.stopped_reason === 'refused',
+          }),
         }
       : null,
     belowCoverageFloor: facts?.belowCoverageFloor ?? false,
@@ -296,6 +330,8 @@ export async function loadDietTrialFacts(args: {
     trialDietRefusal: facts?.trialDietRefusal ?? null,
     // R1b — what makes the register above reachable.
     intakeRating: facts?.intakeRating ?? null,
+    // §10 S3 — disclosed, not dropped. The clip is right; the silence was not.
+    untrackedDaysBeforeFirstLog: facts?.untrackedDaysBeforeFirstLog ?? 0,
     // §5.6 free-fed. BOTH halves now come off the module: the trigger is its
     // `intakeNotDirectlyObserved` (the same flag `mayClaimAllMatched` keys on, so
     // the state and the withheld claim can never disagree), and the count is its
@@ -366,7 +402,7 @@ function windowUntilISO(endKey: string | null): string | null {
  * twenty-nine days it was allowed for. Filtering it in SQL would retroactively
  * re-score that history as off-diet.
  */
-const ALLOWED_SET_SQL = `
+export const ALLOWED_SET_SQL = `
   SELECT tf.food_item_id, tf.role, tf.food_label, tf.allowed_from, tf.allowed_until,
          f.brand, f.product_name, f.primary_protein, f.proteins
     FROM diet_trial_foods tf
@@ -444,6 +480,36 @@ async function readAllowedFoods(trialId: string): Promise<AllowedFood[] | null> 
   }
 }
 
+/** EXPORTED so `dietTrialFacts.test.ts` can run the production string against a
+ *  real `node:sqlite`. The jest harness mocks `getAllAsync`, so SQL reached by no
+ *  other route is otherwise unexercised until a device run — and the load-bearing
+ *  parts of these queries ARE the SQL (the soft-delete filter, the vehicle join,
+ *  the window bounds). Same reasoning, and the same shape, as
+ *  `LIBRARY_FOODS_QUERY` in `lib/foodQueries.ts`. */
+export function feedingsQuery(bounded: boolean): string {
+  return `SELECT m.event_id, e.occurred_at, m.food_item_id, m.intake_rating,
+              f.brand, f.product_name, f.food_type, f.proteins
+         FROM meals m
+         JOIN events e ON e.id = m.event_id
+         LEFT JOIN food_items_cache f ON f.id = m.food_item_id
+        WHERE e.pet_id = ? AND e.deleted_at IS NULL
+          AND e.occurred_at >= ?${bounded ? ' AND e.occurred_at <= ?' : ''}`;
+}
+
+export function dosesQuery(bounded: boolean): string {
+  return `SELECT ma.event_id, e.occurred_at, ma.adherence, ma.paired_event_id,
+              mi.generic_name, mi.brand_name, mi.form,
+              vm.food_item_id AS vehicle_food_item_id,
+              vf.brand AS vehicle_brand, vf.product_name AS vehicle_product_name
+         FROM medication_administrations ma
+         JOIN events e ON e.id = ma.event_id
+         LEFT JOIN medication_items_cache mi ON mi.id = ma.medication_item_id
+         LEFT JOIN meals vm ON vm.event_id = ma.paired_event_id
+         LEFT JOIN food_items_cache vf ON vf.id = vm.food_item_id
+        WHERE e.pet_id = ? AND ma.pet_id = ? AND e.deleted_at IS NULL
+          AND e.occurred_at >= ?${bounded ? ' AND e.occurred_at <= ?' : ''}`;
+}
+
 /** Every logged feeding in the padded window, in the predicate's shape. Treats
  *  included: they are excluded from the COVERAGE numerator by the module, and
  *  included in the EXPOSURE denominator, which is exactly why the two counts may
@@ -452,38 +518,40 @@ async function readFeedings(
   petId: string,
   startedAt: string,
   endKey: string | null,
-): Promise<TrialFeeding[]> {
+): Promise<TrialFeeding[] | null> {
   const until = windowUntilISO(endKey);
-  const rows = await getDb().getAllAsync<{
-    event_id: string;
-    occurred_at: string;
-    food_item_id: string | null;
-    brand: string | null;
-    product_name: string | null;
-    food_type: string | null;
-    proteins: string | null;
-    intake_rating: string | null;
-  }>(
-    `SELECT m.event_id, e.occurred_at, m.food_item_id, m.intake_rating,
-            f.brand, f.product_name, f.food_type, f.proteins
-       FROM meals m
-       JOIN events e ON e.id = m.event_id
-       LEFT JOIN food_items_cache f ON f.id = m.food_item_id
-      WHERE e.pet_id = ? AND e.deleted_at IS NULL
-        AND e.occurred_at >= ?${until ? ' AND e.occurred_at <= ?' : ''}`,
-    until ? [petId, windowFromISO(startedAt), until] : [petId, windowFromISO(startedAt)],
-  );
-  return rows.map((r) => ({
-    eventId: r.event_id,
-    occurredAt: r.occurred_at,
-    foodItemId: r.food_item_id,
-    foodKey:
-      r.brand !== null || r.product_name !== null ? trialFoodKey(r.brand, r.product_name) : null,
-    label: `${r.brand ?? ''} ${r.product_name ?? ''}`.trim() || null,
-    foodType: r.food_type,
-    proteins: proteinsFromCacheText(r.proteins),
-    intakeRating: r.intake_rating,
-  }));
+  try {
+    const rows = await getDb().getAllAsync<{
+      event_id: string;
+      occurred_at: string;
+      food_item_id: string | null;
+      brand: string | null;
+      product_name: string | null;
+      food_type: string | null;
+      proteins: string | null;
+      intake_rating: string | null;
+    }>(
+      feedingsQuery(until !== null),
+      until ? [petId, windowFromISO(startedAt), until] : [petId, windowFromISO(startedAt)],
+    );
+    return rows.map((r) => ({
+      eventId: r.event_id,
+      occurredAt: r.occurred_at,
+      foodItemId: r.food_item_id,
+      foodKey:
+        r.brand !== null || r.product_name !== null ? trialFoodKey(r.brand, r.product_name) : null,
+      label: `${r.brand ?? ''} ${r.product_name ?? ''}`.trim() || null,
+      foodType: r.food_type,
+      proteins: proteinsFromCacheText(r.proteins),
+      intakeRating: r.intake_rating,
+    }));
+  } catch (e) {
+    // Null, never `[]`. An empty feeding list is a trial with nothing logged, and
+    // the card renders that as "0 feedings in total — all 0 matched the trial
+    // diet": a fabricated all-clear over a record nobody could read.
+    console.error('[DietTrial] feedings read failed:', e);
+    return null;
+  }
 }
 
 /**
@@ -498,52 +566,94 @@ async function readFeedings(
  * computed reasons the affirmative claim is not sayable. Omitting doses here
  * would not merely lose a count — it would let the card say "all N matched" over
  * a chewable the module had already ruled an exposure.
+ *
+ * THE PET FILTER IS ON `e.pet_id`, WITH `ma.pet_id` KEPT ALONGSIDE IT. The two
+ * are equal by invariant (migration 023's same-pet trigger), so this is not a
+ * semantic change — it is which index the planner can use. Filtering on
+ * `ma.pet_id` alone forced a full scan of `medication_administrations` across
+ * every pet in the account, because the local mirror carries no
+ * `(pet_id, occurred_at)` index on that table (the server's
+ * `idx_medication_administrations_pet_med` was never mirrored). `e.pet_id` +
+ * `e.occurred_at` is covered exactly by `idx_events_pet_time`, which is the
+ * index `readFeedings` above already relies on. Redundant-looking predicates
+ * that pin a query to an index are worth their line; a chronic-med household
+ * accumulates doses for years and this read runs on every hydration tick.
  */
 async function readDoses(
   petId: string,
   startedAt: string,
   endKey: string | null,
-): Promise<TrialDose[]> {
+): Promise<TrialDose[] | null> {
   const until = windowUntilISO(endKey);
-  const rows = await getDb().getAllAsync<{
-    event_id: string;
-    occurred_at: string;
-    adherence: string | null;
-    paired_event_id: string | null;
-    generic_name: string | null;
-    brand_name: string | null;
-    form: string | null;
-    vehicle_food_item_id: string | null;
-    vehicle_brand: string | null;
-    vehicle_product_name: string | null;
-  }>(
-    `SELECT ma.event_id, e.occurred_at, ma.adherence, ma.paired_event_id,
-            mi.generic_name, mi.brand_name, mi.form,
-            vm.food_item_id AS vehicle_food_item_id,
-            vf.brand AS vehicle_brand, vf.product_name AS vehicle_product_name
-       FROM medication_administrations ma
-       JOIN events e ON e.id = ma.event_id
-       LEFT JOIN medication_items_cache mi ON mi.id = ma.medication_item_id
-       LEFT JOIN meals vm ON vm.event_id = ma.paired_event_id
-       LEFT JOIN food_items_cache vf ON vf.id = vm.food_item_id
-      WHERE ma.pet_id = ? AND e.deleted_at IS NULL
-        AND e.occurred_at >= ?${until ? ' AND e.occurred_at <= ?' : ''}`,
-    until ? [petId, windowFromISO(startedAt), until] : [petId, windowFromISO(startedAt)],
-  );
-  return rows.map((r) => ({
-    eventId: r.event_id,
-    occurredAt: r.occurred_at,
-    drugLabel: r.brand_name ?? r.generic_name ?? null,
-    form: r.form,
-    pairedEventId: r.paired_event_id,
-    adherence: r.adherence,
-    vehicleFoodItemId: r.vehicle_food_item_id,
-    vehicleFoodKey:
-      r.vehicle_brand !== null || r.vehicle_product_name !== null
-        ? trialFoodKey(r.vehicle_brand, r.vehicle_product_name)
-        : null,
-  }));
+  try {
+    const rows = await getDb().getAllAsync<{
+      event_id: string;
+      occurred_at: string;
+      adherence: string | null;
+      paired_event_id: string | null;
+      generic_name: string | null;
+      brand_name: string | null;
+      form: string | null;
+      vehicle_food_item_id: string | null;
+      vehicle_brand: string | null;
+      vehicle_product_name: string | null;
+    }>(
+      dosesQuery(until !== null),
+      until
+        ? [petId, petId, windowFromISO(startedAt), until]
+        : [petId, petId, windowFromISO(startedAt)],
+    );
+    return rows.map((r) => ({
+      eventId: r.event_id,
+      occurredAt: r.occurred_at,
+      drugLabel: r.brand_name ?? r.generic_name ?? null,
+      form: r.form,
+      pairedEventId: r.paired_event_id,
+      adherence: r.adherence,
+      vehicleFoodItemId: r.vehicle_food_item_id,
+      vehicleFoodKey:
+        r.vehicle_brand !== null || r.vehicle_product_name !== null
+          ? trialFoodKey(r.vehicle_brand, r.vehicle_product_name)
+          : null,
+    }));
+  } catch (e) {
+    // Null, never `[]`. An empty dose list silently drops a C3 oral-route
+    // exposure, which is one of the five reasons the affirmative claim is
+    // withheld — losing a withholding reason turns silence into a claim.
+    console.error('[DietTrial] doses read failed:', e);
+    return null;
+  }
 }
+
+/**
+ * §5.6's free-choice arrangements that OVERLAPPED THE TRIAL — not the ones active
+ * right now.
+ *
+ * `getActiveArrangementsForPet` filters `active_until IS NULL`, so a bowl in force
+ * for weeks 1–3 of the trial and then taken away is invisible to it. That was the
+ * shipped behaviour (`readFreeFed` had the same scope) and it was survivable while
+ * this only picked the card's state — but `intakeNotDirectlyObserved` now also
+ * gates the affirmative claim, so a removed bowl silently RETURNS the claim over a
+ * period nothing could observe. `generate-report/trial.ts` filters on overlap for
+ * exactly this reason; the card asking "now" while the report asks "the range" is
+ * the same class of divergence as the refusal windows.
+ *
+ * Overlap is the standard half-open test against the trial window, with a null
+ * `active_until` meaning "still in force" and a null `active_from` meaning "no
+ * recorded start" — the latter is kept rather than dropped, because dropping an
+ * arrangement removes a reason the claim is withheld.
+ */
+const ARRANGEMENTS_IN_WINDOW_SQL = `
+  SELECT fa.food_item_id, fa.active_from, fa.active_until, f.brand, f.product_name
+    FROM feeding_arrangements fa
+    LEFT JOIN food_items_cache f ON f.id = fa.food_item_id
+   WHERE fa.pet_id = ?
+     AND fa.method = 'free_choice'
+     AND fa.deleted_at IS NULL
+     AND (fa.active_until IS NULL OR fa.active_until >= ?)
+     AND (? IS NULL OR fa.active_from IS NULL OR fa.active_from <= ?)
+   ORDER BY fa.active_from DESC, fa.id
+`;
 
 /** §5.6's free-choice arrangements, in the predicate's shape.
  *
@@ -553,18 +663,35 @@ async function readDoses(
  *  direction this wiring may not move. An arrangement with no recorded start is
  *  active now and has no recorded end, so treating it as in force for the whole
  *  window is both the conservative and the likely-true reading. */
-async function readArrangements(petId: string, startedAt: string): Promise<TrialArrangement[]> {
-  const rows = await getActiveArrangementsForPet(petId);
-  return rows.map((a) => ({
-    foodItemId: a.food_item_id,
-    foodKey:
-      a.brand !== null || a.product_name !== null
-        ? trialFoodKey(a.brand, a.product_name)
-        : null,
-    label: `${a.brand ?? ''} ${a.product_name ?? ''}`.trim() || null,
-    startedAt: a.active_from ?? startKeyOf(startedAt),
-    endedAt: null,
-  }));
+async function readArrangements(
+  petId: string,
+  startedAt: string,
+  endKey: string | null,
+): Promise<TrialArrangement[] | null> {
+  try {
+    const rows = await getDb().getAllAsync<{
+      food_item_id: string;
+      active_from: string | null;
+      active_until: string | null;
+      brand: string | null;
+      product_name: string | null;
+    }>(ARRANGEMENTS_IN_WINDOW_SQL, [petId, startKeyOf(startedAt), endKey, endKey]);
+    return rows.map((a) => ({
+      foodItemId: a.food_item_id,
+      foodKey:
+        a.brand !== null || a.product_name !== null
+          ? trialFoodKey(a.brand, a.product_name)
+          : null,
+      label: `${a.brand ?? ''} ${a.product_name ?? ''}`.trim() || null,
+      startedAt: a.active_from ?? startKeyOf(startedAt),
+      endedAt: a.active_until,
+    }));
+  } catch (e) {
+    // Null, never `[]`. An empty arrangement list drops the free-choice bowl,
+    // which both flips the card's state and removes a withholding reason.
+    console.error('[DietTrial] arrangements read failed:', e);
+    return null;
+  }
 }
 
 /** §5.2's structural composition: the same clinically-floored `detectIntakeDecline`
