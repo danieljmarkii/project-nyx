@@ -61,6 +61,10 @@ export interface MealPayload {
   // of what was logged. Optional/nullable: unnamed foods fall back to "Logged".
   foodBrand?: string | null;
   foodProductName?: string | null;
+  // B-568 — food_items.format of the just-logged food. Brand + product do NOT identify
+  // a food: a prescription line stocked wet and dry shares both, so the confirmation
+  // could not name which one it had just recorded. Optional/nullable like the pair above.
+  foodFormat?: string | null;
   // In-flight intake rating. Starts null; updated optimistically via
   // patchIntakeRating when the owner taps a chip.
   intakeRating: IntakeRating | null;

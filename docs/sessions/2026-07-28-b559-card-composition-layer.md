@@ -183,7 +183,7 @@ file you are editing is not yours alone.
   uncertainty). Not made cheaper: it needs a second caveat sentence, i.e. new
   owner-facing copy, which a build PR may not invent. The layer does localise it
   to `unmatchedCaveatApplies` plus one body branch.
-- **`lib/dietTrial.ts:1713`** — its docstring points at `pushRefusalWithheld`,
+- **`lib/dietTrial.ts:1713`** (filed as **B-569**) — its docstring points at `pushRefusalWithheld`,
   which this refactor renamed to `refusalWithheldLine`. A one-line comment fix,
   found by `code-reviewer`, **not taken**: the session's hard constraints put
   that file off-limits (it is the one shared off-diet predicate, imported by the

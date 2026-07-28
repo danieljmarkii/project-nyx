@@ -23,6 +23,7 @@ export function useEvents() {
       const events = await db.getAllAsync<any>(
         `SELECT e.*, m.food_item_id, m.quantity,
                 f.brand AS food_brand, f.product_name AS food_product_name, f.food_type,
+                f.format AS food_format,
                 ma.medication_item_id, ma.adherence, ma.how_given,
                 mi.generic_name AS drug_generic_name, mi.brand_name AS drug_brand_name
          FROM events e

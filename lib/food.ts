@@ -32,30 +32,12 @@ export function groupFoodsByType(foods: PickerFood[]): GroupedFoods {
   return { meals, treats, other };
 }
 
-// ── Food-format display labels (B-106) ─────────────────────────────────────────
-// The single source for the human-readable label of a `food_items.format` enum
-// value. Lives here — not on a presentational component — because three surfaces
-// render it (the picker tile, the Foods-tab row, the archived row) and a map one
-// component owns while two others import it is exactly how the B-103 drift class
-// starts: `jerky` reached the enum and the pickers but not this map, so a jerky
-// tile rendered its brand alone. One tested module, one map.
-//
-// An unmapped value renders no chip (callers use `?? ''`): 'other' is
-// deliberately absent — an unspecified format has nothing honest to say — and a
-// future enum addition degrades to a missing chip rather than a raw
-// SCREAMING_SNAKE token on screen.
-export const FORMAT_LABEL: Record<string, string> = {
-  dry_kibble: 'Dry',
-  wet_canned: 'Wet',
-  raw: 'Raw',
-  freeze_dried: 'Freeze-dried',
-  jerky: 'Jerky', // B-103: B-024 added jerky to the enum + pickers but missed this map (renders "… · JERKY")
-  fresh_cooked: 'Fresh',
-  human_food: 'Human food', // renders as "… · HUMAN FOOD" (B-102)
-  topper: 'Topper',
-  treat: 'Treat',
-  // 'other' intentionally maps to '' — no chip when the format is unspecified.
-};
+// ── Food-format display labels (B-106 / B-568) ────────────────────────────────
+// The map and the event-surface tag live in lib/foodFormat.ts — a dependency-free
+// module so the Deno Edge Functions can import the SAME copy (generate-report names
+// foods too). Re-exported here because the three library surfaces already import
+// FORMAT_LABEL from this module; splitting the file must not move their import.
+export { FORMAT_LABEL, foodFormatTag, foodFormatWord } from './foodFormat';
 
 // ── Picker scope chips (B-347 / B-020) ─────────────────────────────────────────
 // The pinned scope-chip row filters the picker's library by a FACT the food
