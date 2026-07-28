@@ -177,6 +177,24 @@ export interface TrialCardInput {
   /** R1b — the rated share of the meal record, which is what makes the refusal
    *  register above reachable at all. */
   intakeRating?: TrialIntakeRating | null;
+  /**
+   * `lib/dietTrial.TrialFacts.allowedSetUnavailable` — the trial has nothing
+   * usable to define the diet with, so "off-diet" is not a measurement.
+   *
+   * IT IS ITS OWN INPUT AND NOT A CASE OF `mayStateRecordClean`, because the
+   * first cut wired it only into that gate and the gate is UNREACHABLE in this
+   * state: with an empty permit set every feeding falls to rung 3, so `offDiet`
+   * equals the total, the `offDiet <= 0` branch never runs, and the card told a
+   * fully compliant owner "0 matched, 40 did not" — with a drill-in listing her
+   * own prescription — while the report withheld the same reading.
+   *
+   * THE DISTINCTION FROM §5.2's FLOOR RULE, which otherwise forbids withholding a
+   * count: an off-diet tally here is not an under-estimate of a real finding, it
+   * is an ARTEFACT of a missing comparator. The deleted-food-row case (twelve
+   * genuine exposures beside one unclassifiable feeding) is a floor and stays;
+   * "40 did not match" against an empty allowed list measures nothing at all.
+   */
+  allowedSetUnavailable?: boolean;
   /** §10 S3 — days between the trial's start and the first logged feeding. The
    *  coverage denominator excludes them (days the owner could not have logged are
    *  not a gap in their record), so the card has to SAY so rather than quietly
@@ -635,7 +653,7 @@ function activeCard(
         // The drill-in survives alongside the count, for the same reason the
         // count does — a flag the owner cannot interrogate is an unfalsifiable
         // accusation (§6.3).
-        ...((input.exposures?.offDiet ?? 0) > 0
+        ...(!input.allowedSetUnavailable && (input.exposures?.offDiet ?? 0) > 0
           ? ([{ id: 'view_exposures', label: 'Outside the trial diet', emphasis: 'link' }] as const)
           : []),
         ...(overrunDays >= 0
@@ -697,7 +715,14 @@ function activeCard(
       : input.freeFed ? 'free_fed'
         : input.belowCoverageFloor ? 'below_floor'
           : progress.dayCounter === 1 ? 'day_one'
-            : (input.exposures?.offDiet ?? 0) > 0 ? 'exposures'
+            // `allowedSetUnavailable` FORCES `clean`, and "clean" here names the
+            // LAYOUT rather than a verdict — it is the state with no exposure
+            // note and no drill-in. Without this the same empty-permit-set record
+            // that makes `offDiet` equal the total would route to state 3 and
+            // hand the owner a record-and-continue note plus an "Outside the
+            // trial diet" list of her own prescription.
+            : !input.allowedSetUnavailable && (input.exposures?.offDiet ?? 0) > 0
+              ? 'exposures'
               : 'clean';
 
   // ── State 1 — day 1. No claim in EITHER direction, because there is nothing
@@ -736,7 +761,7 @@ function activeCard(
         'count of what was eaten.',
     });
     const n = input.freeFed.loggedFeedings;
-    const ex = input.exposures;
+    const ex = input.allowedSetUnavailable ? null : input.exposures;
     // THE COUNT STAYS, THE CLAIM GOES (round 5 ①). "all N were the trial diet" is
     // the exact sentence `mayStateRecordClean` refuses under
     // `intakeNotDirectlyObserved`, and this branch was asserting it anyway — over
@@ -932,6 +957,8 @@ function pushRefusalLines(lines: TrialCardLine[], input: TrialCardInput): void {
  * were off the list — with its floor qualifier attached.
  */
 function pushRefusalExposures(lines: TrialCardLine[], input: TrialCardInput): void {
+  // With no usable allowed list the tally is an artefact, not a floor.
+  if (input.allowedSetUnavailable) return;
   const ex = input.exposures;
   if (!ex || ex.offDiet <= 0) return;
   const noun = ex.offDiet === 1 ? 'feeding' : 'feedings';
@@ -952,8 +979,17 @@ function pushRefusalExposures(lines: TrialCardLine[], input: TrialCardInput): vo
  * card than the un-clipped one it replaced. `generate-report` has always rendered
  * this ("The first 28 days…"); the card computed it and dropped it on the floor.
  *
- * It is a statement about the RECORD's shape, not a failing: the copy names the
- * days as untracked and does not ask the owner to account for them.
+ * It is a statement about the RECORD's shape, not a failing: the copy names what
+ * is missing and does not ask the owner to account for it.
+ *
+ * IT SAYS "NO MEALS", NOT "NOTHING". The head is anchored on NON-TREAT feedings
+ * (the same event set as the coverage numerator), so an owner who logged a dental
+ * chew every day for the first four weeks and meals thereafter got "The first 28
+ * days of the trial have nothing logged against them" rendered directly beneath a
+ * feeding count that included all 28 of those treats. False, contradicted one
+ * line up, and — because the false thing it asserted was that the owner logged
+ * nothing — the one framing §6.9 forbids. It also says "the days count", because
+ * the head is excluded from the DAYS ratio and not from the feeding total.
  */
 function pushUntrackedHead(lines: TrialCardLine[], input: TrialCardInput): void {
   const days = input.untrackedDaysBeforeFirstLog ?? 0;
@@ -962,9 +998,10 @@ function pushUntrackedHead(lines: TrialCardLine[], input: TrialCardInput): void 
     role: 'qualifier',
     text:
       days === 1
-        ? 'The first day of the trial has nothing logged against it, so it isn’t counted above.'
-        : `The first ${days} days of the trial have nothing logged against them, so they aren’t ` +
-          'counted above.',
+        ? 'The first day of the trial has no meals logged against it, so it’s left out of the ' +
+          'days count above.'
+        : `The first ${days} days of the trial have no meals logged against them, so they’re ` +
+          'left out of the days count above.',
   });
 }
 
@@ -999,17 +1036,26 @@ function pushTeachLine(lines: TrialCardLine[], input: TrialCardInput): void {
   // are no primary-diet feedings to measure (an un-hydrated allowed set, a
   // re-photographed bag). Silence there would be just as wrong, and the copy is
   // honest under either reading because it speaks about the meal record.
-  const [rated, feedings] =
-    rating.primaryFeedings >= INTAKE_RATING_TEACH_MIN_FEEDINGS
-      ? [rating.primaryRated, rating.primaryFeedings]
-      : [rating.rated, rating.feedings];
+  const narrow = rating.primaryFeedings >= INTAKE_RATING_TEACH_MIN_FEEDINGS;
+  const [rated, feedings] = narrow
+    ? [rating.primaryRated, rating.primaryFeedings]
+    : [rating.rated, rating.feedings];
   if (feedings < INTAKE_RATING_TEACH_MIN_FEEDINGS) return;
   if (rated / feedings >= INTAKE_RATING_TEACH_SHARE) return;
+  // THE SENTENCE HAS TO NAME THE POPULATION IT FIRED ON. One string denominated
+  // on the whole meal record, triggered by the narrow one, is false in exactly
+  // the case the narrow trigger exists for: the owner logging unrated bowls of
+  // the prescribed diet beside rated toppers has 96% of her logged meals rated,
+  // and "most of Mochi's logged meals don't yet say how much was eaten" reads
+  // back at her as a wrong statement about her own logging (§6.9).
   lines.push({
     role: 'teach',
-    text:
-      `One tap makes these readable. Most of ${input.petName}’s logged meals don’t ` +
-      'yet say how much was eaten, and on a diet trial that’s the part your vet reads.',
+    text: narrow
+      ? `One tap makes these readable. Most of ${input.petName}’s logged meals of the ` +
+        'trial diet don’t yet say how much was eaten, and on a diet trial that’s the ' +
+        'part your vet reads.'
+      : `One tap makes these readable. Most of ${input.petName}’s logged meals don’t ` +
+        'yet say how much was eaten, and on a diet trial that’s the part your vet reads.',
   });
 }
 
@@ -1034,6 +1080,25 @@ function windowLineFor(endIndex: number, overrunDays: number): string {
  *  first (days), exposures second (feedings), never welded. */
 function pushRecordFacts(lines: TrialCardLine[], input: TrialCardInput): void {
   if (input.coverage) lines.push({ role: 'fact', text: coverageLine(input.coverage) });
+
+  // NO USABLE ALLOWED LIST → NO EXPOSURE READING, in either direction. Coverage
+  // still renders above: how completely the record was kept is independent of
+  // what the trial permits, and it is the one fact still worth stating.
+  //
+  // The sentence mirrors what `generate-report` renders on the same record, so an
+  // owner who has just been told the list is missing does not then read a
+  // contradicting adherence figure on the vet's page.
+  if (input.allowedSetUnavailable) {
+    lines.push({
+      role: 'fact',
+      text:
+        'No allowed-food list is recorded for this trial yet, so nothing here has been ' +
+        'checked against it.',
+    });
+    lines.push({ role: 'qualifier', text: BLIND_SPOT_QUALIFIER });
+    pushUntrackedHead(lines, input);
+    return;
+  }
 
   const ex = input.exposures;
   if (ex) {
@@ -1065,7 +1130,9 @@ function soFarLine(input: TrialCardInput): string {
   if (input.coverage) {
     parts.push(`meals on ${input.coverage.daysLogged} of ${input.coverage.daysElapsed} days`);
   }
-  const ex = input.exposures;
+  // Same rule as `pushRecordFacts`: with no usable allowed list there is no
+  // exposure reading to fold into this sentence, in either direction.
+  const ex = input.allowedSetUnavailable ? null : input.exposures;
   if (ex) {
     const noun = ex.totalFeedings === 1 ? 'feeding' : 'feedings';
     parts.push(`${ex.totalFeedings} ${noun} in total`);

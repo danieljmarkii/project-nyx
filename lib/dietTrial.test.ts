@@ -799,9 +799,10 @@ describe('adversarial regressions — the module half', () => {
     for (const line of [cat, dog]) {
       expect(line).not.toMatch(/eating this little|barely eating|hardly eating/i);
       expect(line).not.toMatch(/pick|fussy|prefer|taste/i);
-      // Says that it went quiet — a surface that withholds without saying so
-      // reads as a record with nothing in it.
-      expect(line).toContain('isn’t showing the trial numbers');
+      // Says WHAT it withheld, not just that it went quiet. "the trial numbers"
+      // was an absolute claim rendered one line above a trial number, once this
+      // state stopped deleting the off-diet count.
+      expect(line).toContain('isn’t showing how closely the diet was followed');
     }
   });
 
@@ -1519,5 +1520,132 @@ describe('B-533 adversarial regressions — the module half', () => {
     expect(facts.intakeRating?.primaryRated).toBe(0);
     expect(facts.intakeRating?.primaryFeedings).toBe(40);
     expect(facts.trialDietRefusal).toBeNull();
+  });
+});
+
+// ── Round 2 of the adversarial pass — the module half ───────────────────────
+describe('B-533 adversarial regressions — round 2, the module half', () => {
+  const mealAt = (day: string, hour: number, rating: string | null, tag = '') =>
+    feeding({
+      eventId: `${day}-${hour}-${tag}`,
+      occurredAt: at(day, hour),
+      foodItemId: DRY_DUCK.foodItemId,
+      foodKey: DRY_DUCK.foodKey,
+      intakeRating: rating,
+    });
+
+  function dayKey(offset: number): string {
+    const d = new Date(2026, 6, 1 + offset);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  }
+
+  // THE HALF-HYDRATED SET, which is commoner than the empty one and was not
+  // covered: a `primary_diet` row IS present but matches nothing — a stale
+  // `food_item_id` whose food never hydrated, a re-photographed bag, an
+  // `allowed_from` dated after the window. 110 feedings of the prescribed diet
+  // rendered "0 matched, 110 did not" on a fully compliant owner.
+  it('a primary_diet row that matches NOTHING is also an unusable allowed set', () => {
+    const stale = food({
+      foodItemId: 'stale-id-nobody-logs-against',
+      foodKey: null,
+      label: 'Royal Canin Duck Dry',
+      role: 'primary_diet',
+    });
+    const feedings = Array.from({ length: 20 }, (_, k) =>
+      mealAt(dayKey(Math.floor(k / 2)), k % 2 === 0 ? 8 : 18, 'all', String(k)));
+    const facts = computeTrialFacts({
+      trial: TRIAL,
+      allowedFoods: [stale],
+      feedings,
+      nowMs: new Date(2026, 6, 1 + 9, 22).getTime(),
+    });
+    expect(facts.exposures.offDiet).toBe(20);
+    expect(facts.allowedSetUnavailable).toBe(true);
+    expect(mayStateRecordClean(facts)).toBe(false);
+  });
+
+  // Dated membership reaches the same place from a different cause.
+  it('a primary_diet row allowed only AFTER the window is an unusable set', () => {
+    const late = { ...DRY_DUCK, allowedFrom: '2026-09-01' };
+    const feedings = Array.from({ length: 20 }, (_, k) =>
+      mealAt(dayKey(Math.floor(k / 2)), k % 2 === 0 ? 8 : 18, 'all', String(k)));
+    const facts = computeTrialFacts({
+      trial: TRIAL,
+      allowedFoods: [late],
+      feedings,
+      nowMs: new Date(2026, 6, 1 + 9, 22).getTime(),
+    });
+    expect(facts.allowedSetUnavailable).toBe(true);
+  });
+
+  // THE FLOOR IS WHAT KEEPS IT HONEST. Below it "the diet matched nothing" is not
+  // yet evidence of a cold cache — an owner three feedings into a trial may
+  // simply not have fed the diet yet — so the fact stays false and the counts
+  // stand on their own.
+  it('does not cry cold-cache below the reconciliation floor', () => {
+    const facts = computeTrialFacts({
+      trial: TRIAL,
+      allowedFoods: ALLOWED,
+      // A real, NAMED food that simply is not on the list — not an
+      // identity-less feeding, which classifies `unclassifiable` rather than
+      // off-diet and would not exercise the floor at all.
+      feedings: [
+        feeding({ eventId: 'a', occurredAt: at('2026-07-05', 8), foodItemId: 'rival', foodKey: 'brandrival kibble' }),
+        feeding({ eventId: 'b', occurredAt: at('2026-07-05', 18), foodItemId: 'rival', foodKey: 'brandrival kibble' }),
+        feeding({ eventId: 'c', occurredAt: at('2026-07-06', 8), foodItemId: 'rival', foodKey: 'brandrival kibble' }),
+      ],
+      nowMs: new Date(2026, 6, 6, 22).getTime(),
+    });
+    expect(facts.exposures.offDiet).toBe(3);
+    expect(facts.allowedSetUnavailable).toBe(false);
+  });
+
+  // A well-hydrated trial must not be caught by any of this.
+  it('leaves a hydrated allowed set alone', () => {
+    const feedings = Array.from({ length: 20 }, (_, k) =>
+      mealAt(dayKey(Math.floor(k / 2)), k % 2 === 0 ? 8 : 18, 'all', String(k)));
+    const facts = computeTrialFacts({
+      trial: TRIAL,
+      allowedFoods: ALLOWED,
+      feedings,
+      nowMs: new Date(2026, 6, 1 + 9, 22).getTime(),
+    });
+    expect(facts.allowedSetUnavailable).toBe(false);
+    expect(mayStateRecordClean(facts)).toBe(true);
+  });
+
+  // THE TWO ARRANGEMENT QUESTIONS. The claim is about the whole window; the copy
+  // is present-tense. Splitting them is what stops a bowl removed on day 3
+  // latching the free-fed state for the rest of the trial.
+  it('separates "a bowl overlapped the window" from "a bowl is down now"', () => {
+    const feedings = Array.from({ length: 20 }, (_, k) =>
+      mealAt(dayKey(Math.floor(k / 2)), k % 2 === 0 ? 8 : 18, 'all', String(k)));
+    const removed = computeTrialFacts({
+      trial: TRIAL,
+      allowedFoods: ALLOWED,
+      feedings,
+      arrangements: [{
+        foodItemId: 'bowl', foodKey: 'brandbowl', label: 'Kibble',
+        startedAt: dayKey(0), endedAt: dayKey(2),
+      }],
+      nowMs: new Date(2026, 6, 1 + 9, 22).getTime(),
+    });
+    // The claim stays withheld — nothing could observe intake on days 0–2, ever.
+    expect(removed.intakeNotDirectlyObserved).toBe(true);
+    expect(mayClaimAllMatched(removed)).toBe(false);
+    // …but the present-tense copy must not fire.
+    expect(removed.intakeNotDirectlyObservedNow).toBe(false);
+
+    const stillDown = computeTrialFacts({
+      trial: TRIAL,
+      allowedFoods: ALLOWED,
+      feedings,
+      arrangements: [{
+        foodItemId: 'bowl', foodKey: 'brandbowl', label: 'Kibble',
+        startedAt: dayKey(0), endedAt: null,
+      }],
+      nowMs: new Date(2026, 6, 1 + 9, 22).getTime(),
+    });
+    expect(stillDown.intakeNotDirectlyObservedNow).toBe(true);
   });
 });

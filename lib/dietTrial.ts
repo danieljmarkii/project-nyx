@@ -875,8 +875,19 @@ export interface TrialFacts {
    */
   rangeRefusal: TrialDietRefusal | null;
   /**
-   * True when the allowed set holds no `primary_diet` row — so the trial has
-   * nothing to define the diet WITH, and every rung-1 lookup necessarily misses.
+   * True when the trial has nothing usable to define the diet WITH, so every
+   * rung-1 lookup necessarily misses and "off-diet" stops being a measurement.
+   *
+   * TWO DISJUNCTS, AND THE SECOND ONE IS THE ONE THAT WAS MISSING. No
+   * `primary_diet` row at all is the obvious case. The harder and commoner one is
+   * a row that IS there and matches NOTHING — a stale `food_item_id` whose food
+   * never hydrated, a `allowed_from` dated after the window, a re-photographed bag
+   * (B-530). The first cut of this fact checked only the first disjunct, so a
+   * half-hydrated set sailed through and 110 feedings of the prescribed diet
+   * rendered "0 matched, 110 did not" on a fully compliant owner.
+   *
+   * `generate-report` has always had both, and the reconciliation floor with it;
+   * this is that guard, moved here so the card asks it too.
    *
    * IT IS NOT A QUIET STATE, it is the loudest possible wrong answer. With an
    * empty or half-hydrated set every feeding falls through to rung 3, so 40
@@ -891,6 +902,21 @@ export interface TrialFacts {
    * nothing to compare against either.
    */
   allowedSetUnavailable: boolean;
+  /**
+   * True when a free-choice arrangement is in force AT THE END OF THE RANGE, as
+   * opposed to `intakeNotDirectlyObserved`, which is true if one overlapped the
+   * range at any point.
+   *
+   * THE TWO ANSWER DIFFERENT QUESTIONS AND A SURFACE NEEDS BOTH. The CLAIM is
+   * about the whole window, so a bowl that was down for three days and then
+   * removed must withhold it — nothing could observe intake during those days,
+   * ever. The COPY is present-tense ("grazes from a bowl that's topped up"), so
+   * it must key on now: an earlier cut widened the arrangement read to overlap
+   * without widening this predicate, and a bowl removed on day 3 latched the
+   * free-fed state for the remaining 38 days — describing an owner's 82 logged
+   * meals as bowl top-ups and deleting her coverage ratio.
+   */
+  intakeNotDirectlyObservedNow: boolean;
   /** R1b — the rated share of the meal record. Null when there is nothing in
    *  range to have rated, which is not the same as "nothing is rated". */
   intakeRating: TrialIntakeRating | null;
@@ -986,6 +1012,23 @@ export function feedingWasFinished(intakeRating: string | null | undefined): boo
  *  silence is cheap. Three rated samples across two distinct days stops one bad
  *  dinner reading as refusal; the half-share stops a fussy week reading as one.
  *  The §5.2 worked example (two refused bowls a day) clears all three on day 2. */
+/**
+ * How many classifiable in-range feedings make "the primary diet permitted none
+ * of them" evidence of a cold cache rather than of a genuinely all-off-diet
+ * trial.
+ *
+ * Deliberately low and deliberately NOT clinical. It is an arithmetic statement
+ * about the plausibility of a JOIN, not about a pet: an owner who logged ten
+ * feedings inside a trial fed the prescribed diet at least once. Below it the
+ * honest answer is that we cannot tell, and every surface withholds the reading
+ * either way — so the number only decides whether a surface SAYS the allowed list
+ * is missing or stays quiet, never whether an exposure is counted.
+ *
+ * Lived in `generate-report/trial.ts` until B-533, where it was half of a guard
+ * the client did not have.
+ */
+export const UNHYDRATED_SET_FLOOR = 10;
+
 export const REFUSAL_MIN_RATED = 3;
 export const REFUSAL_MIN_DAYS = 2;
 export const REFUSAL_SHARE = 0.5;
@@ -1075,6 +1118,10 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
     interpretability: 'not_yet',
     belowCoverageFloor: false,
     intakeNotDirectlyObserved: (input.arrangements ?? []).length > 0,
+    // On the early-return paths there is no range to be "at the end of", so the
+    // present-tense flag falls back to the same answer. Those paths render no
+    // free-fed copy anyway (there is no day line to hang it on).
+    intakeNotDirectlyObservedNow: (input.arrangements ?? []).length > 0,
   };
   if (ctx.startDayIndex === null) return base;
 
@@ -1321,6 +1368,20 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
     untrackedDaysBeforeFirstLog,
     interpretability,
     belowCoverageFloor: interpretability === 'does_not_support',
+    // THE SECOND DISJUNCT (see the field's docstring): a `primary_diet` row that
+    // matches nothing is the same fact as no row at all, and commoner. The floor
+    // is what keeps it from firing on a young trial that simply has not been fed
+    // the diet yet — an owner who logged ten feedings inside a trial fed the
+    // prescribed diet at least once, so zero primary-diet matches across ten-plus
+    // feedings is evidence of a cold cache rather than of adherence.
+    allowedSetUnavailable:
+      base.allowedSetUnavailable ||
+      (primaryFeedings === 0 && totalFeedings >= UNHYDRATED_SET_FLOOR),
+    // In force AT THE END of the range — the present-tense question.
+    intakeNotDirectlyObservedNow: (input.arrangements ?? []).some((a) => {
+      const end = a.endedAt ? localDayIndexOf(a.endedAt, input.timeZone) : null;
+      return end === null || end >= endDayIndex;
+    }),
   };
 }
 
@@ -1711,6 +1772,14 @@ export function trialViabilityHeadline(refusal: TrialDietRefusal): string {
  * The closing sentence is load-bearing rather than polite: the card has just
  * withheld the adherence line, and a surface that goes quiet without saying it
  * went quiet reads as a record with nothing in it.
+ *
+ * AND IT SAYS WHAT IT ACTUALLY WITHHELD. The first draft closed with "Culprit
+ * isn't showing the trial numbers while this is going on" — an absolute claim,
+ * rendered one line above a trial number, because the same fix that stopped this
+ * state deleting the off-diet count made that sentence false. It is the identical
+ * defect this PR fixed at the sub-floor card ("there isn't enough logged" over
+ * "all 10 matched"), so it gets the identical treatment: name the thing withheld
+ * — how closely the diet was followed — rather than gesturing at "the numbers".
  */
 export function trialViabilityNote(petName: string, species: TrialSpecies): string {
   const call =
@@ -1720,6 +1789,6 @@ export function trialViabilityNote(petName: string, species: TrialSpecies): stri
   return (
     `A diet ${petName} isn’t eating can’t answer the question the trial was ` +
     `started for — and ${call}, whatever the trial is doing. Culprit isn’t ` +
-    'showing the trial numbers while this is going on.'
+    'showing how closely the diet was followed while this is going on.'
   );
 }

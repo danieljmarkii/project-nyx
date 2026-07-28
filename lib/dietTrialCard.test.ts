@@ -982,7 +982,7 @@ describe('replacement 11 — the trial diet is going unfinished (R1)', () => {
     expect(flags[0]).toContain('19 feedings of the 22 trial-diet feedings you’ve rated');
     expect(flags[0]).toContain('across 11 days');
     expect(flags[1]).toContain('needs a call today');
-    expect(flags[1]).toContain('isn’t showing the trial numbers');
+    expect(flags[1]).toContain('isn’t showing how closely the diet was followed');
   });
 
   // The canonical refusing patient — every rated feeding unfinished — is the most
@@ -1133,9 +1133,12 @@ describe('the intake-rating teach line (R1b)', () => {
 
   it('teaches the tap when most of the meal record is unrated', () => {
     const m = resolveTrialCard(activeInput({ intakeRating: unrated }));
+    // The NARROW population is what fired (12 primary-diet feedings, 1 rated), so
+    // the sentence names it. A single string denominated on the whole meal record
+    // is false in exactly the case the narrow trigger exists for.
     expect(textOf(m, 'teach')).toEqual([
-      'One tap makes these readable. Most of Biscuit’s logged meals don’t yet say ' +
-      'how much was eaten, and on a diet trial that’s the part your vet reads.',
+      'One tap makes these readable. Most of Biscuit’s logged meals of the trial diet ' +
+      'don’t yet say how much was eaten, and on a diet trial that’s the part your vet reads.',
     ]);
   });
 
@@ -1414,8 +1417,8 @@ describe('B-533 adversarial regressions — the card half', () => {
       untrackedDaysBeforeFirstLog: 28,
     }));
     expect(textOf(m, 'qualifier')).toContain(
-      'The first 28 days of the trial have nothing logged against them, so they aren’t ' +
-      'counted above.',
+      'The first 28 days of the trial have no meals logged against them, so they’re ' +
+      'left out of the days count above.',
     );
     // The clip is not presented as the owner's failing — no "you", no "missing".
     const head = textOf(m, 'qualifier').join(' ');
@@ -1424,7 +1427,7 @@ describe('B-533 adversarial regressions — the card half', () => {
 
   it('says nothing about a head when there isn’t one', () => {
     const m = resolveTrialCard(activeInput({ untrackedDaysBeforeFirstLog: 0 }));
-    expect(allStrings(m).join(' ')).not.toMatch(/nothing logged against/);
+    expect(allStrings(m).join(' ')).not.toMatch(/logged against/);
   });
 
   it('renders the head on the sub-floor card too', () => {
@@ -1435,7 +1438,7 @@ describe('B-533 adversarial regressions — the card half', () => {
       untrackedDaysBeforeFirstLog: 1,
     }));
     expect(textOf(m, 'qualifier').join(' ')).toContain(
-      'The first day of the trial has nothing logged against it',
+      'The first day of the trial has no meals logged against it',
     );
   });
 
@@ -1465,5 +1468,150 @@ describe('B-533 adversarial regressions — the card half', () => {
       }));
       expect(textOf(m, 'teach')).toHaveLength(1);
     });
+  });
+});
+
+// ── Round 2 of the adversarial pass: what the FIRST round's fixes broke ──────
+//
+// Every case below was executed against commit 7a5c46e and rendered a wrong
+// answer. They are the cost of fixing round 1 in a hurry, and they are pinned
+// here because four of the five are new copy rather than new logic — the class
+// that drifts silently.
+describe('B-533 adversarial regressions — round 2', () => {
+  // ROUND-2 #1, the worst. `allowedSetUnavailable` was wired ONLY into the claim
+  // gate, and that gate lives on the `offDiet <= 0` branch — which an empty
+  // permit set can never reach, because every feeding falls to rung 3 and
+  // `offDiet` equals the total. The card told a fully compliant owner "0 matched,
+  // 40 did not" and offered to list her own prescription, while the report
+  // withheld the same reading.
+  describe('an unusable allowed list withholds the exposure reading entirely', () => {
+    const cold = (over: Partial<TrialCardInput> = {}) =>
+      resolveTrialCard(activeInput({
+        allowedSetUnavailable: true,
+        exposures: { mayStateRecordClean: false, totalFeedings: 40, offDiet: 40 },
+        ...over,
+      }));
+
+    it('never renders the accusation', () => {
+      const m = cold();
+      expect(allStrings(m).join(' ')).not.toMatch(/0 matched|40 did not|did not\./);
+      expect(textOf(m, 'fact')).toContain(
+        'No allowed-food list is recorded for this trial yet, so nothing here has been ' +
+        'checked against it.',
+      );
+    });
+
+    // Coverage is independent of what the trial permits, and it is the one fact
+    // still worth stating.
+    it('still states how completely the record was kept', () => {
+      expect(textOf(cold(), 'fact')).toContain('Meals logged on 22 of 23 days.');
+    });
+
+    it('does not route to the exposures state or offer the drill-in', () => {
+      const m = cold();
+      expect(m.state).toBe('clean');
+      expect(m.actions.map((a) => a.id)).not.toContain('view_exposures');
+      expect(allStrings(m).join(' ')).not.toContain('Keep going with the trial diet');
+    });
+
+    it('withholds it on the sub-floor card too', () => {
+      const m = cold({
+        belowCoverageFloor: true,
+        coverage: { daysLogged: 3, daysElapsed: 14 },
+        exposures: { mayStateRecordClean: false, totalFeedings: 6, offDiet: 6 },
+      });
+      expect(allStrings(m).join(' ')).not.toMatch(/0 matched|6 did not/);
+    });
+
+    it('withholds it beside the refusal register too', () => {
+      const m = cold({
+        species: 'cat',
+        petName: 'Mochi',
+        trialDietRefusal: { refusedFeedings: 19, ratedFeedings: 22, days: 11 },
+      });
+      expect(m.state).toBe('trial_refusal');
+      expect(allStrings(m).join(' ')).not.toMatch(/outside the trial diet/i);
+      expect(m.actions.map((a) => a.id)).toEqual(['trial_manage']);
+    });
+
+    // …and a usable list is untouched: this must not become a blanket silencer.
+    it('leaves a hydrated trial alone', () => {
+      const m = resolveTrialCard(activeInput({
+        exposures: { mayStateRecordClean: true, totalFeedings: 40, offDiet: 0 },
+      }));
+      expect(textOf(m, 'fact')).toContain(
+        '40 feedings in total — all 40 matched the trial diet or a permitted food.',
+      );
+    });
+  });
+
+  // ROUND-2 #2 — the refusal card contradicted its own flag block: an absolute
+  // "isn't showing the trial numbers" rendered one line above a trial number,
+  // created by round 1's own fix for keeping the off-diet count.
+  it('the refusal note names what it withheld, and does not contradict the count', () => {
+    const m = resolveTrialCard(activeInput({
+      species: 'cat',
+      petName: 'Mochi',
+      trialDietRefusal: { refusedFeedings: 19, ratedFeedings: 22, days: 11 },
+      exposures: { mayStateRecordClean: false, totalFeedings: 40, offDiet: 4 },
+    }));
+    const joined = allStrings(m).join(' ');
+    expect(joined).toContain('isn’t showing how closely the diet was followed');
+    expect(joined).not.toContain('isn’t showing the trial numbers');
+    // The number it does show is still there.
+    expect(textOf(m, 'fact').join(' ')).toContain('4 logged feedings were outside');
+  });
+
+  // ROUND-2 #3 — the head is anchored on NON-TREAT feedings, so "nothing logged"
+  // was false for an owner who logged a dental chew every day of it, and was
+  // contradicted by the feeding count one line above.
+  it('the untracked head says "no meals", not "nothing"', () => {
+    const m = resolveTrialCard(activeInput({
+      coverage: { daysLogged: 2, daysElapsed: 2 },
+      exposures: { mayStateRecordClean: false, totalFeedings: 52, offDiet: 0 },
+      untrackedDaysBeforeFirstLog: 28,
+    }));
+    const head = textOf(m, 'qualifier').join(' ');
+    expect(head).toContain('have no meals logged against them');
+    expect(head).not.toContain('nothing logged');
+    // It qualifies the DAYS ratio, not the feeding total the treats are inside.
+    expect(head).toContain('left out of the days count above');
+  });
+
+  // ROUND-2 #4 — the widened arrangement read latched `free_fed`: a bowl removed
+  // on day 3 described 82 logged meals as bowl top-ups, in the present tense, and
+  // deleted the coverage ratio, 38 days after the bowl went.
+  it('the free-fed state keys on a bowl in force NOW, not one that ever overlapped', () => {
+    // The loader supplies `freeFed` from `intakeNotDirectlyObservedNow`, so a
+    // removed bowl arrives as null here — while the CLAIM stays withheld through
+    // `mayStateRecordClean`, which keys on the overlap.
+    const m = resolveTrialCard(activeInput({
+      freeFed: null,
+      coverage: { daysLogged: 41, daysElapsed: 41 },
+      exposures: { mayStateRecordClean: false, totalFeedings: 82, offDiet: 0 },
+    }));
+    expect(m.state).not.toBe('free_fed');
+    expect(allStrings(m).join(' ')).not.toMatch(/grazes from a bowl|bowl top-ups/);
+    expect(textOf(m, 'fact')).toContain('Meals logged on 41 of 41 days.');
+    // …and the claim is still withheld over the days nothing could observe.
+    expect(allStrings(m).join(' ')).not.toMatch(/all \d+ matched/);
+  });
+
+  // ROUND-2 #5 — the teach sentence was denominated on the wide record while the
+  // trigger was narrow, so it fired saying "most of Mochi's logged meals don't
+  // say" over a record where 96% of them did.
+  it('the teach sentence names the population it fired on', () => {
+    const narrow = resolveTrialCard(activeInput({
+      petName: 'Mochi',
+      intakeRating: { rated: 100, feedings: 104, primaryRated: 0, primaryFeedings: 4 },
+    }));
+    expect(textOf(narrow, 'teach')[0]).toContain('logged meals of the trial diet');
+
+    const wide = resolveTrialCard(activeInput({
+      petName: 'Mochi',
+      intakeRating: { rated: 1, feedings: 12, primaryRated: 0, primaryFeedings: 0 },
+    }));
+    expect(textOf(wide, 'teach')[0]).toContain('logged meals don’t yet say');
+    expect(textOf(wide, 'teach')[0]).not.toContain('of the trial diet');
   });
 });

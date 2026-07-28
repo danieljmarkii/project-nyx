@@ -51,6 +51,7 @@ import {
   mayStateRecordClean,
   trialFoodKey,
   CHALLENGE_WINDOW_DAYS,
+  UNHYDRATED_SET_FLOOR,
   REFUSAL_MIN_DAYS,
   REFUSAL_MIN_RATED,
   REFUSAL_SHARE,
@@ -71,18 +72,6 @@ import { localDayIndexOf } from '../../../lib/utils.ts'
 
 const MS_PER_DAY = 86_400_000
 
-/**
- * #7's floor: how many classifiable in-range feedings make "the primary diet permitted
- * none of them" evidence of a cold cache rather than of a genuinely all-off-diet trial.
- *
- * Deliberately low and deliberately NOT clinical. It is an arithmetic statement about
- * the plausibility of a JOIN, not about a pet: an owner who logged ten feedings inside
- * a trial fed the prescribed diet at least once. Below it the honest answer is that we
- * cannot tell, and the block withholds the claim either way — so the number only decides
- * whether the report SAYS "no allowed-food list is recorded" or stays quiet, never
- * whether an exposure is counted.
- */
-const UNHYDRATED_SET_FLOOR = 10
 
 // ── Narrow input shapes (structurally satisfied by report.ts's rows) ─────────
 
@@ -803,10 +792,15 @@ export function buildTrialBlock(args: BuildTrialBlockArgs): TrialBlock | null {
     // this"; it did not, and an executed counterexample proved it. `stoppedReason`
     // is the one input the module cannot see, so it is still passed in.
     //
-    // `allowedSetUnavailable` is kept in the `&&` deliberately: this file derives
-    // it from the report's own `hasPrimary` check over the window's allowed rows,
-    // which is a narrower question than the module's, and the report is the
-    // surface where getting it wrong is most expensive.
+    // `allowedSetUnavailable` is kept in the `&&` belt-and-braces. The comment
+    // here previously claimed this file's derivation was "narrower than the
+    // module's" — it was the exact inverse, a strict SUPERSET, because the module
+    // checked only `!hasPrimary` while this file also caught the half-hydrated set
+    // (a primary row that matches nothing across ten-plus feedings). That gap is
+    // what let the card render "0 matched, 110 did not" on a compliant owner. Both
+    // disjuncts now live in `computeTrialFacts`; this local one is retained
+    // because it counts PERMITTED feedings per allowed ROW, which is a finer
+    // reconciliation than the module's role-level count and costs nothing to keep.
     mayStateRecordClean:
       mayStateRecordClean(facts, { stoppedForRefusal: trial.stoppedReason === 'refused' }) &&
       !allowedSetUnavailable &&

@@ -324,6 +324,9 @@ export async function loadDietTrialFacts(args: {
         }
       : null,
     belowCoverageFloor: facts?.belowCoverageFloor ?? false,
+    // Its own input, not a case of the claim gate — see the field's docstring for
+    // why wiring it only into `mayStateRecordClean` left it unreachable.
+    allowedSetUnavailable: facts?.allowedSetUnavailable ?? false,
     intakeDeclineHeadline: decline,
     // R1 — the register PR 5 built and nothing consumed. Presence-only: null is
     // not evidence the pet is eating.
@@ -337,7 +340,14 @@ export async function loadDietTrialFacts(args: {
     // the state and the withheld claim can never disagree), and the count is its
     // own feeding total rather than a second query returning a slightly different
     // number in the same sentence as `offDiet`.
-    freeFed: facts?.intakeNotDirectlyObserved
+    // THE PRESENT-TENSE FLAG, not the overlap one. The copy this drives says
+    // "grazes from a bowl that's topped up" — present tense — so it keys on a bowl
+    // in force NOW. `intakeNotDirectlyObserved` (overlapped the window at any
+    // point) is the right question for the CLAIM and the wrong one for the COPY:
+    // widening the arrangement read to overlap without splitting the predicate
+    // latched this state for 38 days after a bowl was removed on day 3, calling
+    // 82 logged meals "bowl top-ups" and deleting the coverage ratio.
+    freeFed: facts?.intakeNotDirectlyObservedNow
       ? { loggedFeedings: facts.exposures.totalFeedings }
       : null,
     standingNote,
@@ -519,8 +529,12 @@ async function readFeedings(
   startedAt: string,
   endKey: string | null,
 ): Promise<TrialFeeding[] | null> {
-  const until = windowUntilISO(endKey);
   try {
+    // INSIDE the try: `windowUntilISO` parses a date, and an unparseable
+    // `ended_at` throws `RangeError: Invalid time value`. Outside, that rejected
+    // the whole loader instead of degrading — the one unparseable value in this
+    // file that was not narrowed to keep the card rendering.
+    const until = windowUntilISO(endKey);
     const rows = await getDb().getAllAsync<{
       event_id: string;
       occurred_at: string;
@@ -584,8 +598,9 @@ async function readDoses(
   startedAt: string,
   endKey: string | null,
 ): Promise<TrialDose[] | null> {
-  const until = windowUntilISO(endKey);
   try {
+    // Inside the try, for the reason given in `readFeedings`.
+    const until = windowUntilISO(endKey);
     const rows = await getDb().getAllAsync<{
       event_id: string;
       occurred_at: string;
