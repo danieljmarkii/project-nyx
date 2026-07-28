@@ -16,7 +16,7 @@ The free-fed forbidden claim is deleted **and the green test locking that exact 
 
 ## What is held in #499
 
-The **R1 refusal register** (`trial_refusal`, consuming `trialDietRefusal` — built in PR 5, consumed by nothing, the pre-ship review's worst client-side finding) and the **R1b teach line**, plus their facts: `recentFinishedFeedings`, `rangeRefusalSpansEpisodes`, `intakeRating`, `freeFedOverlap`.
+The **R1 refusal register** (`trial_refusal`, consuming `trialDietRefusal` — built in PR 5, consumed by nothing, the pre-ship review's worst client-side finding) and the **R1b teach line**, plus their facts: `recentFinishedFeedings`, `rangeRefusalSpansEpisodes`, `intakeRating`. (`freeFedOverlap` came *back* to #498 at the DoD gate — the sub-floor state it explains is reachable there.)
 
 Blocking, both named on the PR: **Dr. Chen on the stand-down semantics** — when may a fired safety register be stood down? — and **a mock round** for four disclosure lines that now exist in code and in no mock (`pushUnmatchedCaveat`, `pushPastBowlCaveat`, `pushUntrackedHead`, the refusal card's floor line). Those were forced into existence by review rounds, which is precisely the "inventing them inside a build PR" failure the old loader header warned against.
 
@@ -46,13 +46,29 @@ The findings were not spread evenly. Every round's regression sweep shows the wi
 
 Round 4 diagnosed why the same defect kept reappearing: each fix applied one of *{withhold the reading, withhold the count, disclose}* to one register, and the branch it did not visit inherited the opposite defect. `pushExposureFloor` (one helper every reading-withholding branch calls) plus a **cross-state property test** is the answer to that, and both ship in #498. The test is **mutation-checked** — break the helper and it fails — because its predecessor could not.
 
-That is only half the answer. **B-559** files the rest: the resolver is 1,702 lines, 12 states, 21 input flags, and §4.2's "a switch, not eleven components" no longer describes it — the states are still a switch, but the *disclosures* compose independently of them and are not. Do it before #499 grows the surface again.
+That is only half the answer. **B-559** files the rest: the resolver is ~1,450 lines, 11 states and ~15 input flags after the split (it was 1,702 / 12 / 21 before it), and §4.2's "a switch, not eleven components" no longer describes it — the states are still a switch, but the *disclosures* compose independently of them and are not. Do it before #499 grows the surface again.
 
 ## Residuals
 
 - **B-556** — `lib/trialContaminant.ts` narrows an unrecognised `diet_trial_foods.role` to `primary_diet` where this file and the report use `permitted_other`. Fixing it moves the *shipped* log-time contaminant flag, so it needs its own PR and adversarial pass.
 - `view_exposures` has no handler on the shipped surface (PR 5's list screen does not exist), so that drill-in renders nothing on device today.
 - **B-557 / B-558** closed — both were filed as deferrals during the build and promoted to fix-now by the review, because each moved a claim in the reassuring direction rather than merely omitting a disclosure.
+
+## The DoD gate caught the split
+
+Running `adversarial-reviewer` against the **reduced** branch — not the work, the *reduction* — returned **FAIL with a merge-blocker**, and it was the right instinct: a subtractive edit fails by leaving something half-removed.
+
+The split kept the §10 S3 coverage clip and deleted the loader line that discloses it. The ordinary clinic hand-off — trial back-dated to the visit, logging starts at home — rendered **"Meals logged on 2 of 2 days" under "Day 30 of 56"** with nothing saying why, while `generate-report` printed *"The first 28 days…"* off the same record. Strictly more reassuring than the card it replaced, and a card/report divergence on one record: the exact thing this PR exists to remove. `pushUntrackedHead` was dead in production and **no test noticed** — the resolver suite injects the field directly and the loader suite only exercised SQL strings.
+
+So the gap is closed as well as the defect: `lib/dietTrialFacts.test.ts` now asserts the **loader→card contract** — every disclosure the module computes reaches the field that renders it, and the clip and its disclosure ship together or neither does. Mutation-checked; delete the line again and both fail.
+
+Three more of the same shape, all fixed:
+
+- B-474's un-nulling made the **sub-floor state reachable in this PR** while its bowl disclosure went to the sibling, so an owner who *recorded* a bowl's removal landed on "There isn't enough logged yet…" with nothing naming the cause.
+- Both **terminal decline branches** withheld the off-diet floor the active card discloses on the identical record — round 4's rule surviving in the two branches `everyState` could not walk, because every decline fixture in that list is an active trial. Both branches are now in the list.
+- Two **property-test exemptions had gone stale in a way only B-474 could cause**: `day one` and `milestone` were vacuous while `exposures` was hard-nulled. Un-nulling made the silence real — an off-diet feeding logged on day 1 vanished, and twelve logged exposures were withheld at the moment the owner decides whether the trial is done. Both retired.
+
+**One deviation flagged rather than taken silently:** adding the floor to the milestone departs from the round-4 design lock. §4.3's "deliberately no fact lines" argues about *coverage* beside a stop button; §5.2's floor is a different rule pointing the other way. Cheap to revert if the Designer disagrees.
 
 ## Process note
 
