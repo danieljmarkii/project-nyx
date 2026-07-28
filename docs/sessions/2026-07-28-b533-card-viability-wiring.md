@@ -70,6 +70,18 @@ Three more of the same shape, all fixed:
 
 **One deviation flagged rather than taken silently:** adding the floor to the milestone departs from the round-4 design lock. §4.3's "deliberately no fact lines" argues about *coverage* beside a stop button; §5.2's floor is a different rule pointing the other way. Cheap to revert if the Designer disagrees.
 
+### …and the gate's own fixes needed a second pass
+
+Re-running it on the fixes returned **FAIL again**, with two of three gate items *introduced by the repairs*:
+
+- **The Home strip** rendered the newly-clipped ratio with nowhere to carry the head — "meals logged on 2 of 2 days" reading as a near-perfect record for a whole trial, in the reassuring direction, on the Principle-3 intelligence surface. It falsified the very invariant the first fix is named after. The strip now drops a ratio it cannot qualify, exactly as it already does under a safety flag.
+- **`day_one`** rendered *"Nothing logged yet today."* directly above *"2 logged feedings were outside the trial diet"* — coverage excludes treats, the exposure count includes them, so the two lines keyed on different populations. Not clinically dangerous (the direction is disclosure) but a flat false statement on the card whose job is being true about the record.
+- **The contract tests I added did not test behaviour.** They asserted the field's *name* appeared in the return literal; hardcoding it to `0` passed them green while the disclosure never rendered — and my comment claimed a guarantee they did not provide. Replaced with tests that run the real `loadDietTrialFacts` against a stub db, and mutation-checked with the exact mutation that defeated the originals.
+
+Also fixed: the two states that took the floor as a *declared* deviation silently inherited a directive ("Worth checking the list before your vet reads this") along with it. **B-560** and **B-561** filed rather than fixed.
+
+The lesson worth carrying: **a source-text test is not a test of behaviour**, and writing one while claiming otherwise is worse than writing none — it converts an untested contract into an apparently-tested one.
+
 ## Process note
 
 One self-inflicted cost worth recording: mid-round-4 a `git checkout` inside a compound probe command discarded that round's edits to `lib/dietTrialCard.ts`. Caught immediately, redone, and the mutation check re-run safely — but it cost a cycle. Never put a working-tree-discarding command in a compound line.

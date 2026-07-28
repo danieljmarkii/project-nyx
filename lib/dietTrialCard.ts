@@ -648,7 +648,7 @@ function activeCard(
         // to withhold them. DEVIATION FROM THE ROUND-4 DESIGN LOCK, flagged for
         // the Designer rather than taken silently; the safety direction is clear
         // enough to ship and cheap to revert.
-        pushExposureFloor(ml, input, { lead: 'plain' });
+        pushExposureFloor(ml, input, { lead: 'plain', caveat: false });
         return ml;
       })(),
       actions: trialDecisionChoices(trial.indication).map((c) => ({
@@ -672,7 +672,13 @@ function activeCard(
   // yet to describe. Note what is absent: no "0 off-diet foods", which R1
   // forbids and which day 1 would otherwise render most confidently.
   if (state === 'day_one') {
-    if ((input.coverage?.daysLogged ?? 0) === 0) {
+    // KEYED ON THE SAME POPULATION AS THE COUNT BELOW IT. Coverage excludes
+    // treats and the exposure count includes them, so an owner who logged two
+    // treats and no meal on day 1 got "Nothing logged yet today." rendered
+    // directly above "2 logged feedings were outside the trial diet" — a flat
+    // self-contradiction on the card whose whole job is being true about the
+    // record. Something WAS logged; only a meal wasn't.
+    if ((input.coverage?.daysLogged ?? 0) === 0 && (input.exposures?.totalFeedings ?? 0) === 0) {
       lines.push({ role: 'fact', text: 'Nothing logged yet today.' });
     }
     lines.push({
@@ -684,7 +690,7 @@ function activeCard(
     // record, and §5.2 owes it everywhere. Before B-474 this exemption was
     // vacuous because `exposures` was hard-nulled; un-nulling it made the silence
     // real, and two off-diet feedings logged on day 1 vanished.
-    pushExposureFloor(lines, input, { lead: 'plain' });
+    pushExposureFloor(lines, input, { lead: 'plain', caveat: false });
     return {
       ...base,
       state,
@@ -912,7 +918,12 @@ function pushDeclineLines(lines: TrialCardLine[], input: TrialCardInput): void {
 function pushExposureFloor(
   lines: TrialCardLine[],
   input: TrialCardInput,
-  opts: { lead: 'separately' | 'plain' },
+  // `caveat: false` renders the COUNT without the unmatched qualifier. The two
+  // states that declare no record reading (day 1, the milestone) took the floor
+  // as a deliberate, declared deviation — and silently inherited "Worth checking
+  // the list before your vet reads this" with it, which is a directive, not a
+  // floor, and lands before an owner has finished populating the permitted list.
+  opts: { lead: 'separately' | 'plain'; caveat?: boolean },
 ): void {
   const ex = input.exposures;
   if (!ex || ex.offDiet <= 0) return;
@@ -930,7 +941,7 @@ function pushExposureFloor(
     role: 'fact',
     text: stem + (input.allowedSetUnavailable ? '' : floorSuffix(ex.offDiet)),
   });
-  pushUnmatchedCaveat(lines, input);
+  if (opts.caveat !== false) pushUnmatchedCaveat(lines, input);
 }
 
 /** Names what a past bowl accounts for, and claims nothing about the rest — an
@@ -1451,7 +1462,14 @@ export function resolveTrialStrip(input: TrialCardInput): TrialStripModel | null
       ? `window ended ${formatTrialDate(endIndex)}`
       : `ends ${formatTrialDate(endIndex)}`,
   );
-  if (input.coverage) {
+  // A RATIO THIS SURFACE CANNOT QUALIFY IS WORSE THAN NO RATIO. The clip is
+  // right, but the strip is one line with nowhere to carry the untracked head
+  // the card and the report both disclose — so a back-dated trial whose logging
+  // started late read "meals logged on 2 of 2 days" on Home, a near-perfect
+  // record for the whole trial, in the reassuring direction, on the Principle-3
+  // intelligence surface. The strip already drops this clause entirely under a
+  // safety flag; it drops it here for the same reason.
+  if (input.coverage && (input.untrackedDaysBeforeFirstLog ?? 0) === 0) {
     parts.push(
       `meals logged on ${input.coverage.daysLogged} of ${input.coverage.daysElapsed} days`,
     );

@@ -328,50 +328,116 @@ describe('dosesQuery', () => {
   });
 });
 
-// ── The `TrialCardInput` shape — the gap that let a merge-blocker through ────
-//
-// This file previously exercised only the SQL strings, and `dietTrialCard.test.ts`
-// only exercises the resolver with hand-built inputs. Nothing tested the MAPPING
-// between them — so when a subtractive edit dropped `untrackedDaysBeforeFirstLog`
-// from the loader's return while keeping the §10 S3 clip it discloses, CI stayed
-// green and the card shipped a strictly more reassuring ratio than the one it
-// replaced. These assert the contract itself: every disclosure the module
-// computes reaches the surface that renders it.
-describe('the loader maps every computed disclosure onto the card input', () => {
-  // Read off the module's own shape rather than a hand-copied list, so a NEW
-  // disclosure channel cannot be added to `TrialFacts` and silently not wired.
-  const MUST_REACH_THE_CARD = [
-    'coverage',
-    'exposures',
-    'belowCoverageFloor',
-    'allowedSetUnavailable',
-    'untrackedDaysBeforeFirstLog',
-    'rangeRefusal',
-    'freeFed',
-    'freeFedOverlap',
-  ] as const;
 
-  function loaderReturnBlock(): string {
-    const src = require('node:fs').readFileSync(
-      require('node:path').join(__dirname, 'dietTrialFacts.ts'),
-      'utf8',
-    ) as string;
-    return src.slice(src.lastIndexOf('  return {\n    ...base,'));
+// ── The loader→card CONTRACT, tested behaviourally ──────────────────────────
+//
+// The gap that let a merge-blocker through: this file tested only SQL strings,
+// and `dietTrialCard.test.ts` tests only the resolver with hand-built inputs.
+// Nothing tested the MAPPING — so a subtractive edit dropped
+// `untrackedDaysBeforeFirstLog` from the loader's return while keeping the
+// §10 S3 clip it discloses, and CI stayed green.
+//
+// The FIRST attempt at closing that gap asserted the field's NAME appeared in the
+// return literal, and the adversarial pass broke it in one step: hardcode the
+// field to `0` and the tests pass green while the disclosure never renders. A
+// source-text test cannot see a value. These run the real `loadDietTrialFacts`
+// against a stub db and assert what actually reaches the card.
+describe('loadDietTrialFacts → TrialCardInput (behavioural)', () => {
+  const TRIAL_ROW = {
+    id: 't1',
+    started_at: '2026-07-03',
+    target_duration_days: 56,
+    status: 'active',
+    ended_at: null,
+    stopped_reason: null,
+    outcome: null,
+    indication: 'skin',
+    food_label: 'Royal Canin Duck',
+  };
+
+  /** Drives the loader off in-memory rows: the trial, its allowed set, and one
+   *  meal logged 28 days after the trial's start date — the clinic hand-off. */
+  function stubDb(meals: Array<{ id: string; at: string; food: string | null }>) {
+    return {
+      getFirstAsync: jest.fn().mockResolvedValue(TRIAL_ROW),
+      getAllAsync: jest.fn().mockImplementation((sql: string) => {
+        if (sql.includes('diet_trial_foods')) {
+          return Promise.resolve([{
+            food_item_id: 'f1', role: 'primary_diet', food_label: 'Royal Canin Duck',
+            allowed_from: '2026-07-03', allowed_until: null,
+            brand: 'Royal Canin', product_name: 'Duck',
+            primary_protein: 'duck', proteins: '["duck"]',
+          }]);
+        }
+        if (sql.includes('FROM meals m')) {
+          return Promise.resolve(meals.map((m) => ({
+            event_id: m.id, occurred_at: m.at, food_item_id: m.food,
+            brand: m.food ? 'Royal Canin' : null,
+            product_name: m.food ? 'Duck' : null,
+            food_type: 'meal', proteins: '["duck"]', intake_rating: 'all',
+          })));
+        }
+        if (sql.includes('medication_administrations')) return Promise.resolve([]);
+        if (sql.includes('feeding_arrangements')) return Promise.resolve([]);
+        return Promise.resolve([]);
+      }),
+    };
   }
 
-  it('names every field the card needs, so a dropped one is a failing test', () => {
-    const ret = loaderReturnBlock();
-    for (const field of MUST_REACH_THE_CARD) {
-      expect(ret.includes(`\n    ${field}:`)).toBe(true);
-    }
+  async function load(meals: Parameters<typeof stubDb>[0], nowMs: number) {
+    jest.resetModules();
+    const db = stubDb(meals);
+    jest.doMock('./db', () => ({ getDb: () => db }));
+    jest.doMock('./analytics', () => ({
+      getIntakeDecline: jest.fn().mockResolvedValue({ status: 'none', flags: [] }),
+    }));
+    jest.doMock('./trialContaminant', () => ({
+      loadTrialProteinContext: jest.fn().mockResolvedValue(null),
+      trialDietNote: jest.fn(),
+    }));
+    const mod = require('./dietTrialFacts') as typeof import('./dietTrialFacts');
+    return mod.loadDietTrialFacts({
+      pet: { id: 'pet-1', name: 'Biscuit', species: 'dog' },
+      nowMs,
+    });
+  }
+
+  // THE MERGE-BLOCKER, as a behavioural assertion. Trial back-dated to the
+  // clinic visit; the owner starts logging 28 days later.
+  it('carries the untracked head that explains its own clipped denominator', async () => {
+    const input = await load(
+      [
+        { id: 'e1', at: new Date(2026, 6, 31, 8).toISOString(), food: 'f1' },
+        { id: 'e2', at: new Date(2026, 7, 1, 8).toISOString(), food: 'f1' },
+      ],
+      new Date(2026, 7, 1, 20).getTime(),
+    );
+    // The clip is applied…
+    expect(input.coverage).toEqual({ daysLogged: 2, daysElapsed: 2 });
+    // …so the disclosure that explains it must be here too, with a real value.
+    expect(input.untrackedDaysBeforeFirstLog).toBe(28);
   });
 
-  // The specific pairing that broke: the clip changes the DENOMINATOR, and the
-  // head is the only thing that explains it. They may not ship apart.
-  it('ships the coverage clip and its disclosure together', () => {
-    const ret = loaderReturnBlock();
-    const clipped = /coverage: facts\?\.coverage/.test(ret);
-    const disclosed = /untrackedDaysBeforeFirstLog:/.test(ret);
-    expect(clipped).toBe(disclosed);
+  // A trial logged from day 1 has no head, and must not invent one.
+  it('reports no head when logging started with the trial', async () => {
+    const input = await load(
+      [
+        { id: 'e1', at: new Date(2026, 6, 3, 8).toISOString(), food: 'f1' },
+        { id: 'e2', at: new Date(2026, 6, 4, 8).toISOString(), food: 'f1' },
+      ],
+      new Date(2026, 6, 4, 20).getTime(),
+    );
+    expect(input.untrackedDaysBeforeFirstLog).toBe(0);
+  });
+
+  // The other field the split dropped and the source-text test could not see.
+  it('carries the free-fed overlap flag as a value', async () => {
+    const input = await load(
+      [{ id: 'e1', at: new Date(2026, 6, 3, 8).toISOString(), food: 'f1' }],
+      new Date(2026, 6, 4, 20).getTime(),
+    );
+    expect(input.freeFedOverlap).toBe(false);
+    expect(input.allowedSetUnavailable).toBe(false);
+    expect(input.exposures).not.toBeNull();
   });
 });

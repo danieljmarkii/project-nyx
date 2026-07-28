@@ -1491,3 +1491,68 @@ describe('B-533 PR A — the reduction’s own regressions', () => {
     expect(allStrings(m).join(' ')).not.toMatch(/Meals logged on|complete|finished/i);
   });
 });
+
+// ── What the DoD fixes themselves introduced ────────────────────────────────
+describe('B-533 PR A — the fixes’ own regressions', () => {
+  // GATE 1. The clip is right, but the strip is one line with nowhere to carry
+  // the head — so a back-dated trial read "meals logged on 2 of 2 days" on Home,
+  // a near-perfect record for the whole trial, in the reassuring direction, on
+  // the Principle-3 intelligence surface, while the card and the report both
+  // disclosed. It falsified the very invariant the gate-1 fix is named after.
+  it('the Home strip drops a ratio it cannot qualify', () => {
+    const clipped = activeInput({
+      coverage: { daysLogged: 2, daysElapsed: 2 },
+      exposures: { mayStateRecordClean: false, totalFeedings: 4, offDiet: 0 },
+      untrackedDaysBeforeFirstLog: 28,
+    });
+    const strip = resolveTrialStrip(clipped);
+    expect(strip?.header).toBe('Diet trial · day 23 of 56');
+    expect(strip?.line ?? '').not.toMatch(/meals logged on/);
+    // …and an unclipped trial still gets it: this is not a blanket deletion.
+    const plain = resolveTrialStrip(activeInput({ untrackedDaysBeforeFirstLog: 0 }));
+    expect(plain?.line ?? '').toMatch(/meals logged on 22 of 23 days/);
+  });
+
+  // GATE 2. Coverage excludes treats; the exposure count includes them. An owner
+  // who logged two treats and no meal on day 1 got "Nothing logged yet today."
+  // directly above "2 logged feedings were outside the trial diet".
+  it('does not say nothing was logged above a count of what was', () => {
+    const m = resolveTrialCard(activeInput({
+      nowMs: localNoon(2026, 7, 3),
+      coverage: { daysLogged: 0, daysElapsed: 1 },
+      exposures: { mayStateRecordClean: false, totalFeedings: 2, offDiet: 2 },
+    }));
+    expect(m.state).toBe('day_one');
+    const joined = allStrings(m).join(' ');
+    expect(joined).toContain('2 logged feedings were outside the trial diet');
+    expect(joined).not.toContain('Nothing logged yet today.');
+  });
+
+  // …and a genuinely empty day 1 still says so.
+  it('still says nothing was logged when nothing was', () => {
+    const m = resolveTrialCard(activeInput({
+      nowMs: localNoon(2026, 7, 3),
+      coverage: { daysLogged: 0, daysElapsed: 1 },
+      exposures: { mayStateRecordClean: true, totalFeedings: 0, offDiet: 0 },
+    }));
+    expect(textOf(m, 'fact')).toContain('Nothing logged yet today.');
+  });
+
+  // GATE 5. The two states that took the floor as a DECLARED deviation silently
+  // inherited a directive with it — "Worth checking the list before your vet
+  // reads this" — which is not a floor, and lands before an owner has finished
+  // populating the permitted list.
+  it('day 1 and the milestone take the count without the directive', () => {
+    for (const nowMs of [localNoon(2026, 7, 3), localNoon(2026, 8, 27)]) {
+      const m = resolveTrialCard(activeInput({
+        nowMs,
+        allowedSetUnavailable: true,
+        coverage: { daysLogged: 0, daysElapsed: 1 },
+        exposures: { mayStateRecordClean: false, totalFeedings: 4, offDiet: 4 },
+      }));
+      const joined = allStrings(m).join(' ');
+      expect(joined).toContain('4 logged feedings were outside the trial diet');
+      expect(joined).not.toContain('Worth checking the list');
+    }
+  });
+});
