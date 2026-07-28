@@ -40,14 +40,18 @@ The strip's rule collapses to one sentence: **Home states the coverage ratio onl
 when the record carries none of the six withholding reasons.** That conjunction
 had been patched one reason at a time — the decline flag, then the untracked
 head, then the refusal — with the *next* reason still rendering each time. It now
-reads the same `withholdingReasons` list the card does, so a seventh reason
-cannot be added to one surface and forgotten on the other.
+reads the same `withholdingReasons` list the card does, so a reason cannot mean
+one thing to the card and another to the strip. (It does **not** protect against
+the list being *wrong* — I claimed that at first and the adversarial review
+disproved it; see below.)
 
-Two shipped asymmetries were **preserved and made visible as cells** rather than
-left emergent from call order: `decline.scope: 'active_only'` (the live decline
-card gates its floor line with the household caveat; the two terminal decline
-branches never have) and `refusal_withheld.pastBowl: false` — which *is* B-560,
-left in place rather than quietly fixed under a refactor.
+Shipped asymmetries were **preserved and made visible as cells** rather than left
+emergent from call order — `decline.scope: 'active_only'`, and
+`refusal_withheld.pastBowl: false`, which *is* B-560. Every non-obvious cell is
+marked **RULED / FILED / INHERITED**, so a decision someone made and an accident
+of where a helper call sat do not look alike. That distinction came out of the
+review, and it is what makes "reading a column is the review" true rather than
+aspirational.
 
 ## Proving it is pure
 
