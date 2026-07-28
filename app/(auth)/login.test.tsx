@@ -137,7 +137,13 @@ describe('LoginScreen — unconfirmed email', () => {
     await waitFor(() => expect(alertSpy).toHaveBeenCalled());
     await alertCall(alertSpy).buttons[1].onPress?.();
 
-    expect(mockResend).toHaveBeenCalledWith({ type: 'signup', email: 'jordan@email.com' });
+    expect(mockResend).toHaveBeenCalledWith({
+      type: 'signup',
+      email: 'jordan@email.com',
+      // B-432: the resend an owner reaches after already being bounced once is the
+      // last place that should hand back a link dead-ending on a web page.
+      options: { emailRedirectTo: 'nyx:///confirm' },
+    });
     alertSpy.mockRestore();
   });
 
