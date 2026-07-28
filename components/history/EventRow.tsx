@@ -11,6 +11,7 @@ import {
   vehicleLabel, isComboDoseInDoubt, DOSE_IN_DOUBT_TAG,
   pairedVehicleLinkLabel, pairedDoseLinkLabel, formatDrugLabel,
 } from '../../lib/medications';
+import { foodFormatTag } from '../../lib/food';
 import { describeOccurredAt } from '../../lib/utils';
 import { kgToLbs } from '../../lib/weight';
 
@@ -77,6 +78,14 @@ export function EventRow({ event, isExpanded, onToggle, onOpen, onEdit, onDelete
   const foodLabel = event.food_brand && event.food_product_name
     ? `${event.food_brand} · ${event.food_product_name}`
     : event.food_product_name ?? event.food_brand ?? null;
+
+  // B-568 — the wet/dry variant. Deliberately NOT appended to foodLabel: that string
+  // is flex:1 + numberOfLines={1}, so a suffix is the first thing clipped, and the
+  // names long enough to clip are exactly the ones (a full prescription product line)
+  // where the variant is the only thing telling two rows apart. As a sibling element
+  // it holds its width and the NAME truncates around it. Suppressed when it would
+  // merely echo rowLabel, so a treat-format treat doesn't read "Treat … TREAT".
+  const formatTag = foodFormatTag(event.food_format, rowLabel);
 
   // Medication dose (B-117 PR 8): the drug name (generic, brand appended when it
   // adds info) + the read-only adherence chip — the dose twin of foodLabel + the
@@ -152,6 +161,12 @@ export function EventRow({ event, isExpanded, onToggle, onOpen, onEdit, onDelete
         {foodLabel ? (
           <View style={styles.foodLine}>
             <Text style={styles.foodName} numberOfLines={1}>{foodLabel}</Text>
+            {/* B-568 — the variant tag, between the truncating name and the intake
+                badge. Quiet tertiary caps: it names a FACT about the food, so it must
+                not compete with the intake badge, which carries the safety read. */}
+            {formatTag ? (
+              <Text style={styles.formatTag} numberOfLines={1}>{formatTag}</Text>
+            ) : null}
             {/* Read-only intake badge — IntakeChipRow returns null when value
                 is null, so unrated meals stay visually quiet. */}
             <IntakeChipRow value={(event.intake_rating ?? null) as IntakeRating | null} />
@@ -296,6 +311,17 @@ const styles = StyleSheet.create({
   vehicleNote: {
     fontSize: theme.textXS,
     color: theme.colorTextTertiary,
+  },
+  // The B-568 variant tag. Tracked uppercase tertiary — the same register the Foods
+  // tab / picker already use for the format meta, so a food is named the same way
+  // wherever it appears. flexShrink:0 is load-bearing: it makes the tag hold its
+  // width so the flex:1 food name absorbs the truncation instead of the variant.
+  formatTag: {
+    fontSize: theme.textXS,
+    color: theme.colorTextTertiary,
+    letterSpacing: theme.trackingWide,
+    fontWeight: theme.fontWeightMedium,
+    flexShrink: 0,
   },
   // The weight reading line (B-186 PR 4). Same register as foodName/drugLabel — a
   // quiet secondary value under the type label. No flex:1 (unlike foodName): there's

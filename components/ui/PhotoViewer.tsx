@@ -41,9 +41,16 @@ import { resolveMaxZoomScale } from '../../lib/photoZoom';
 
 interface Props {
   visible: boolean;
-  // Resolved image URIs. `null` entries render a "Photo unavailable" slot
-  // (e.g. a signed URL that failed to resolve), matching the carousel.
+  // Resolved image URIs. `null` entries render an unavailable slot (e.g. a signed
+  // URL that failed to resolve), matching the carousel.
   uris: (string | null)[];
+  // Copy for those `null` slots. Defaults to the photo wording every existing
+  // caller wants; Vet Files overrides it because the artifact is a clinical
+  // document, not a photo, and because AC 12 requires the honest-failure sentence
+  // to name the CAUSE ("needs a connection") rather than the symptom. This was the
+  // one surface in that feature still saying "unavailable" — reachable by swiping
+  // to an un-cached page 2 (B-478 VF-6, found by pm-feature-review).
+  unavailableLabel?: string;
   // Which photo to open on first show; clamped to range.
   initialIndex?: number;
   onClose: () => void;
@@ -52,6 +59,14 @@ interface Props {
   // can omit both.
   onReplace?: () => void;
   onRemove?: () => void;
+  // Fired when the owner swipes to a different photo (B-478 VF-4, where the
+  // caller's hero, its page dots and its Share action all have to follow the
+  // page actually on screen).
+  //
+  // ⚠ A caller that feeds this back into `initialIndex` will fight its own user:
+  // the open effect below re-runs on an initialIndex change and scrolls back. Hold
+  // the opening index separately from the live one — see app/vet-document/[id].tsx.
+  onPageChange?: (index: number) => void;
 }
 
 interface Box {
@@ -59,7 +74,10 @@ interface Box {
   h: number;
 }
 
-export function PhotoViewer({ visible, uris, initialIndex = 0, onClose, onReplace, onRemove }: Props) {
+export function PhotoViewer({
+  visible, uris, initialIndex = 0, onClose, onReplace, onRemove, onPageChange,
+  unavailableLabel = 'Photo unavailable',
+}: Props) {
   const scrollRef = useRef<ScrollView>(null);
   const [page, setPage] = useState(initialIndex);
   // The measured media area. null until the first layout pass — the gallery
@@ -91,14 +109,17 @@ export function PhotoViewer({ visible, uris, initialIndex = 0, onClose, onReplac
   function handleScroll(e: NativeSyntheticEvent<NativeScrollEvent>) {
     if (!box) return;
     const next = Math.round(e.nativeEvent.contentOffset.x / box.w);
-    if (next !== page) setPage(next);
+    if (next !== page) {
+      setPage(next);
+      onPageChange?.(next);
+    }
   }
 
   function renderSlide(uri: string | null, key: string, b: Box) {
     if (!uri) {
       return (
         <View key={key} style={[styles.unavailable, { width: b.w, height: b.h }]}>
-          <Text style={styles.unavailableText}>Photo unavailable</Text>
+          <Text style={styles.unavailableText}>{unavailableLabel}</Text>
         </View>
       );
     }

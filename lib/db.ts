@@ -14,6 +14,7 @@ import { ACTIVE_REGIMEN_FOR_DRUG_QUERY, LIBRARY_MEDICATIONS_QUERY, recentMedicat
 import { DIET_TRIAL_SCHEMA_SQL } from './dietTrialMirror';
 import { BASE_SCHEMA_SQL } from './localSchema';
 import { uuid } from './utils';
+import { clearTransientFiles } from './transientFiles';
 
 let db: SQLite.SQLiteDatabase | null = null;
 
@@ -395,6 +396,13 @@ export async function clearLocalData(): Promise<void> {
     console.warn('[wipe] attachment file cleanup skipped:', e);
   }
 
+  // The row-driven pass above cannot see a file that no row names, and two writers
+  // produce exactly that: stageForShare's named copy ("Pixel-lab-result-2026-07-14.pdf",
+  // handed to the share sheet) and persistRemoteObject's download temp. Both live in
+  // one transient directory so this call can clear them wholesale. Before it existed
+  // they survived sign-out AND account deletion (B-478 VF-6, rls-privacy-reviewer).
+  clearTransientFiles();
+
   // Clear the synced tables. FK-safe order (children first) so the deletes
   // never trip a foreign-key constraint regardless of cascade settings.
   for (const table of LOCAL_WIPE_TABLES) {
@@ -463,6 +471,12 @@ export interface TimelineRow {
   food_brand: string | null;
   food_product_name: string | null;
   food_type: string | null;
+  // The food's physical form (B-568) — 'wet_canned' | 'dry_kibble' | … Carried on
+  // every meal row because brand + product alone do NOT identify a food: one
+  // prescription line stocked in both wet and dry shares a brand AND a product name,
+  // so without this the two render identically on every event surface. NOT NULL on
+  // food_items_cache, so it is null here only for a non-meal row or an unresolved join.
+  food_format: string | null;
   intake_rating: string | null;
   // Weight reading in kg (B-186 PR 4) — populated only for event_type='weight_check'
   // rows via the weight_checks LEFT JOIN, NULL otherwise. The value IS the event;
@@ -548,6 +562,7 @@ export async function getTimeline(
             e.source, e.deleted_at, e.created_at, e.updated_at,
             m.food_item_id, m.quantity, m.intake_rating,
             f.brand AS food_brand, f.product_name AS food_product_name, f.food_type,
+            f.format AS food_format,
             wc.weight_kg AS weight_kg,
             ma.medication_item_id, ma.adherence, ma.how_given,
             ma.paired_event_id,
@@ -584,6 +599,7 @@ export async function getEventById(eventId: string): Promise<TimelineRow | null>
             e.source, e.deleted_at, e.created_at, e.updated_at,
             m.food_item_id, m.quantity, m.intake_rating,
             f.brand AS food_brand, f.product_name AS food_product_name, f.food_type,
+            f.format AS food_format,
             wc.weight_kg AS weight_kg,
             ma.medication_item_id, ma.adherence, ma.how_given,
             ma.paired_event_id,
@@ -618,6 +634,16 @@ export async function softDeleteEvent(eventId: string): Promise<void> {
   );
 }
 
+// B-010 confidence + its window bounds, written as one unit. They are a single
+// claim about how well the time is known, and the schema's CHECK constraint ties
+// them together (bounds are legal only on 'window'), so they can only be set
+// together — never one without the others.
+export interface EventConfidenceUpdate {
+  value: 'witnessed' | 'estimated' | 'window';
+  earliest: string | null;
+  latest: string | null;
+}
+
 export async function updateEvent(
   eventId: string,
   fields: {
@@ -625,30 +651,40 @@ export async function updateEvent(
     severity: number | null;
     notes: string | null;
     occurred_at_source?: 'manual' | 'exif' | 'now';
-    // B-010 — re-classifying confidence on edit. Window bounds are only
-    // non-null for confidence 'window'; the caller derives occurred_at from
-    // them (latest edge) so existing readers keep working.
-    occurred_at_confidence?: 'witnessed' | 'estimated' | 'window' | null;
-    occurred_at_earliest?: string | null;
-    occurred_at_latest?: string | null;
+    // B-010 — re-classifying confidence on edit. OMIT this key to leave the
+    // three confidence columns exactly as stored (B-448).
+    //
+    // It is optional-by-omission rather than a nullable column value because an
+    // edit that isn't ABOUT the time must not restate the time's confidence.
+    // The previous signature took the three columns flat and always wrote them,
+    // `?? null` — so a caller that cared only about notes silently rewrote the
+    // row's confidence, in both directions: it wiped a stored 'estimated' to
+    // NULL if it passed nothing, and (app/edit-event.tsx) promoted a stored
+    // NULL to 'witnessed' if it passed its form default. Migration 012 is
+    // explicit that NULL is "NOT a claim either way", and the vet report
+    // renders it 'unspecified' precisely so it is not read as more certain than
+    // it is — so inventing 'witnessed' for it moved a row in the falsely
+    // reassuring direction, one edit at a time.
+    confidence?: EventConfidenceUpdate;
   },
+  // Injected for tests (the cacheFlush.test.ts pattern); production passes nothing.
+  database: Pick<SQLite.SQLiteDatabase, 'runAsync'> = getDb(),
 ): Promise<void> {
-  const db = getDb();
   const now = new Date().toISOString();
-  await db.runAsync(
-    `UPDATE events SET occurred_at = ?, severity = ?, notes = ?, occurred_at_source = ?,
-            occurred_at_confidence = ?, occurred_at_earliest = ?, occurred_at_latest = ?,
-            updated_at = ?, synced = 0
-     WHERE id = ?`,
-    [
-      fields.occurred_at, fields.severity ?? null, fields.notes,
-      fields.occurred_at_source ?? 'manual',
-      fields.occurred_at_confidence ?? null,
-      fields.occurred_at_earliest ?? null,
-      fields.occurred_at_latest ?? null,
-      now, eventId,
-    ],
-  );
+  const sets = [
+    'occurred_at = ?', 'severity = ?', 'notes = ?', 'occurred_at_source = ?',
+  ];
+  const params: (string | number | null)[] = [
+    fields.occurred_at, fields.severity ?? null, fields.notes,
+    fields.occurred_at_source ?? 'manual',
+  ];
+  if (fields.confidence) {
+    sets.push('occurred_at_confidence = ?', 'occurred_at_earliest = ?', 'occurred_at_latest = ?');
+    params.push(fields.confidence.value, fields.confidence.earliest, fields.confidence.latest);
+  }
+  sets.push('updated_at = ?', 'synced = 0');
+  params.push(now, eventId);
+  await database.runAsync(`UPDATE events SET ${sets.join(', ')} WHERE id = ?`, params);
 }
 
 export async function getEventSource(eventId: string): Promise<'manual' | 'exif' | 'now'> {
@@ -924,6 +960,7 @@ export async function getMealForEvent(eventId: string): Promise<{
   food_brand: string | null;
   food_product_name: string | null;
   food_type: string | null;
+  food_format: string | null;
   intake_rating: string | null;
 } | null> {
   const db = getDb();
@@ -932,10 +969,12 @@ export async function getMealForEvent(eventId: string): Promise<{
     food_brand: string | null;
     food_product_name: string | null;
     food_type: string | null;
+    food_format: string | null;
     intake_rating: string | null;
   }>(
     `SELECT m.food_item_id, m.intake_rating,
-            f.brand AS food_brand, f.product_name AS food_product_name, f.food_type
+            f.brand AS food_brand, f.product_name AS food_product_name, f.food_type,
+            f.format AS food_format
      FROM meals m
      LEFT JOIN food_items_cache f ON f.id = m.food_item_id
      WHERE m.event_id = ?`,

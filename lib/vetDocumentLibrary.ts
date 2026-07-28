@@ -16,6 +16,7 @@
 // affordance forever).
 
 import { getDb } from './db';
+import { localDayIndex, localDayIndexOf } from './utils';
 import {
   VET_DOCUMENT_KINDS,
   VET_DOCUMENT_DEFAULT_KIND,
@@ -229,6 +230,35 @@ export const VET_FILES_STRIP_LIMIT = 3;
 // URL to disk.
 export const VET_DOCUMENT_SIGNED_URL_TTL_SEC = 60 * 15;
 
+// Re-sign this long before a URL actually expires, so a signature can't die between
+// the check and the render (or mid-scroll on a slow list).
+const SIGNED_URL_REFRESH_MARGIN_MS = 60 * 1000;
+
+// Should this path be (re-)signed?
+//
+// The screens cache signed URLs in a ref for the life of a mount and skip any path
+// already in it. That was written as "re-signed on every focus" — but nothing ever
+// evicted the ref, so a screen left mounted and blurred past the TTL came back with
+// dead tokens and rested every tile on its glyph until remount. It fails CLOSED, so
+// this is availability rather than exposure; the reason it matters is that the short
+// TTL's entire mitigation, as written in the comment above, is that focus re-signs.
+//
+// Pure and exported so the expiry rule is unit-testable, rather than living twice as
+// an inline predicate in two screens (B-478 VF-6, found by rls-privacy-reviewer).
+export function isSignatureStale(
+  urls: Map<string, string>,
+  mintedAt: Map<string, number>,
+  path: string,
+  now: number = Date.now(),
+): boolean {
+  if (!urls.has(path)) return true;
+  const at = mintedAt.get(path);
+  // A URL we hold but cannot date is treated as stale — the safe direction is a
+  // redundant re-sign, never a render against a token we can't vouch for.
+  if (at == null) return true;
+  return now - at >= VET_DOCUMENT_SIGNED_URL_TTL_SEC * 1000 - SIGNED_URL_REFRESH_MARGIN_MS;
+}
+
 export function buildVetFilesCardModel(
   petName: string,
   rows: VetLibraryRow[],
@@ -271,17 +301,37 @@ export async function readVetLibrary(petId: string, now: Date = new Date()): Pro
   return rows.map((r) => buildVetLibraryRow(r, now));
 }
 
-// Title and kind are per-ROW columns but per-DOCUMENT facts, so both writes address
-// the whole group. Renaming only the cover would leave page 2 of a discharge sheet
-// carrying a different title than page 1 — invisible in the library (which renders
-// the cover) and confusing the moment the detail view swipes.
+export async function readRecentlyDeletedVetDocuments(
+  petId: string,
+  now: Date = new Date(),
+): Promise<DeletedVetDocumentRow[]> {
+  const db = getDb();
+  const rows = await db.getAllAsync<VetDocumentGroupRow & { deleted_at: string | null }>(
+    RECENTLY_DELETED_VET_DOCUMENTS_QUERY,
+    [petId, restoreWindowStart(now)],
+  );
+  return rows.map((r) => buildDeletedVetDocumentRow(r, now));
+}
+
+// Every editable field is a per-ROW column but a per-DOCUMENT fact, so every write
+// addresses the whole group. Renaming only the cover would leave page 2 of a
+// discharge sheet carrying a different title than page 1 — invisible in the library
+// (which renders the cover) and confusing the moment the detail view swipes.
 //
 // Every touched row goes back to synced = 0 with a fresh updated_at, which is what
 // carries the edit to the owner's other devices under last-write-wins. An UPDATE
 // that forgot either would look correct on this phone forever and never leave it.
+//
+// ⚠ THE COLUMN LIST IS CLOSED, AND `storage_path` IS DELIBERATELY NOT IN IT.
+// Migration 045 makes storage_path immutable server-side: relocating a document is
+// a new row plus a new object, never an UPDATE. A local UPDATE would therefore
+// succeed on this phone and be rejected forever on push, wedging the row at
+// synced = 0. `pet_id` is absent for the same class of reason — D13 files a COPY.
+type EditableVetDocumentColumn = 'title' | 'kind' | 'notes' | 'document_date' | 'vet_visit_id';
+
 async function updateVetDocumentGroup(
   groupId: string,
-  column: 'title' | 'kind',
+  column: EditableVetDocumentColumn,
   value: string | null,
 ): Promise<void> {
   const db = getDb();
@@ -302,4 +352,152 @@ export async function renameVetDocument(groupId: string, title: string): Promise
 
 export async function setVetDocumentKind(groupId: string, kind: VetDocumentKind): Promise<void> {
   await updateVetDocumentGroup(groupId, 'kind', kind);
+}
+
+// Same clear-to-NULL rule as the title: an emptied notes field is "no note", not a
+// stored blank, so the row goes back to rendering its "Add a note" placeholder.
+export async function setVetDocumentNotes(groupId: string, notes: string): Promise<void> {
+  const trimmed = notes.trim();
+  await updateVetDocumentGroup(groupId, 'notes', trimmed.length > 0 ? trimmed : null);
+}
+
+// `date` is a calendar day 'YYYY-MM-DD' — the date ON the paper (§5.1), which is
+// not the capture instant and carries no time and no zone.
+export async function setVetDocumentDate(groupId: string, date: string): Promise<void> {
+  await updateVetDocumentGroup(groupId, 'document_date', date);
+}
+
+// D7 — THE REPORT-WINDOW PROTECTION RULE, AND THE ONE FUNCTION THAT IMPLEMENTS IT.
+//
+// Linking writes exactly one column on the DOCUMENT and touches `vet_visits` in no
+// way at all: no INSERT, no UPDATE, no re-dating. That is not an implementation
+// detail — the vet report's scope cascade keys rung 1 off `vet_visits.visited_at`,
+// so a link that minted or moved a visit would silently move the window of every
+// report the owner generates afterwards. A document may point at a visit; it may
+// never create one, and it may never change when one happened.
+//
+// The invariant is regression-tested against a real database (see
+// vetDocumentDetail.test.ts), not asserted here — a comment cannot fail a build.
+//
+// `visitId = null` unlinks, which is why the parameter is nullable rather than the
+// caller writing a second function that could drift from this one.
+export async function linkVetDocumentVisit(
+  groupId: string,
+  visitId: string | null,
+): Promise<void> {
+  await updateVetDocumentGroup(groupId, 'vet_visit_id', visitId);
+}
+
+// ── Soft delete and the 30-day recovery window (§8 AC 5) ─────────────────────
+
+// How long a deleted document stays recoverable. Named here because THREE things
+// have to agree on it and two of them are owner-facing promises: the ⋯ menu's
+// "Kept for 30 days", the Recently deleted list's countdown, and the query below.
+//
+// The eventual purge of the storage OBJECT is deliberately NOT implemented here —
+// it joins the B-249 orphan/retention decision (§11) rather than forking a second
+// retention rule. Until then a document past the window stops being offered for
+// restore, which is the half this surface can honestly own.
+export const VET_DOCUMENT_RECOVERY_DAYS = 30;
+
+// Soft delete, house rule — and here it is also the only delete that EXISTS: the
+// `vet_documents` grants are SELECT/INSERT/UPDATE, so a hard DELETE affects zero
+// rows server-side (verified live in VF-1). Setting deleted_at is not a softer
+// alternative to removing the row; it is the mechanism.
+//
+// synced = 0 + a fresh updated_at is what carries the delete to the owner's other
+// devices at all. An insert-only contract could never propagate one.
+export async function softDeleteVetDocument(groupId: string): Promise<void> {
+  const db = getDb();
+  const now = new Date().toISOString();
+  await db.runAsync(
+    `UPDATE vet_documents
+     SET deleted_at = ?, updated_at = ?, synced = 0
+     WHERE document_group_id = ? AND deleted_at IS NULL`,
+    [now, now, groupId],
+  );
+}
+
+// Undo. Guarded on `deleted_at IS NOT NULL` so a double-tap on Restore cannot
+// re-stamp updated_at on a live document and pointlessly re-queue its whole group.
+export async function restoreVetDocument(groupId: string): Promise<void> {
+  const db = getDb();
+  const now = new Date().toISOString();
+  await db.runAsync(
+    `UPDATE vet_documents
+     SET deleted_at = NULL, updated_at = ?, synced = 0
+     WHERE document_group_id = ? AND deleted_at IS NOT NULL`,
+    [now, groupId],
+  );
+}
+
+// The Recently deleted read: the mirror of LIBRARY_VET_DOCUMENTS_QUERY, keeping
+// what that one hides. `MIN(page_index)` does the identical cover-row job (see that
+// query's note) — a restored 4-page thread must come back looking like itself.
+//
+// The window is bounded IN SQL against a bound parameter rather than filtered in
+// JS: a document past 30 days must stop being offered the moment it ages out, and
+// a list that renders it and then fails to restore it is the cruellest possible
+// version of this surface.
+export const RECENTLY_DELETED_VET_DOCUMENTS_QUERY =
+  `SELECT document_group_id AS group_id,
+          COUNT(*)          AS page_count,
+          MIN(page_index)   AS cover_page_index,
+          id, kind, title, document_date, vet_visit_id,
+          local_uri, storage_path, mime_type, created_at,
+          MAX(deleted_at)   AS deleted_at
+   FROM vet_documents
+   WHERE pet_id = ? AND deleted_at IS NOT NULL AND deleted_at >= ?
+   GROUP BY document_group_id
+   ORDER BY MAX(deleted_at) DESC`;
+
+export interface DeletedVetDocumentRow extends VetLibraryRow {
+  /** "Deleted Jul 26 · 28 days left" — the window, stated where the undo is. */
+  deletedLabel: string;
+}
+
+// Days left, counted in CALENDAR days rather than in elapsed hours.
+//
+// That choice is the whole design of this number. A document deleted an hour ago
+// reads "30 days left", which is exactly what the ⋯ menu just promised — an
+// elapsed-hours floor would say 29 and read as an off-by-one to anyone who saw both
+// strings. It is also how people already read a "30 days" window: in days on a
+// calendar, not in hours since an instant.
+//
+// Returns 0 on the final day and past it. The label says "Last day to restore"
+// rather than the meaningless "0 days left" — the row is still restorable when it
+// renders, because the query decides that, and a countdown that reads zero next to
+// a working Restore button is a bug the owner has to interpret.
+export function daysLeftToRestore(deletedAtIso: string, now: Date = new Date()): number {
+  const deletedDay = localDayIndexOf(deletedAtIso ?? '');
+  if (deletedDay == null) return 0;
+  const elapsed = localDayIndex(now.getTime()) - deletedDay;
+  return Math.max(0, VET_DOCUMENT_RECOVERY_DAYS - elapsed);
+}
+
+export function restoreCountdownLabel(deletedAtIso: string, now: Date = new Date()): string {
+  const left = daysLeftToRestore(deletedAtIso, now);
+  if (left === 0) return 'Last day to restore';
+  return left === 1 ? '1 day left' : `${left} days left`;
+}
+
+export function buildDeletedVetDocumentRow(
+  row: VetDocumentGroupRow & { deleted_at: string | null },
+  now: Date = new Date(),
+): DeletedVetDocumentRow {
+  const base = buildVetLibraryRow(row, now);
+  const deletedAt = row.deleted_at ?? '';
+  const when = formatVetDocumentDate(deletedAt, now);
+  return {
+    ...base,
+    deletedLabel: [
+      when ? `Deleted ${when}` : 'Deleted',
+      restoreCountdownLabel(deletedAt, now),
+    ].join(' · '),
+  };
+}
+
+// The ISO cutoff a row must have been deleted at-or-after to still be restorable.
+export function restoreWindowStart(now: Date = new Date()): string {
+  return new Date(now.getTime() - VET_DOCUMENT_RECOVERY_DAYS * 86_400_000).toISOString();
 }

@@ -44,7 +44,7 @@ owned by the caller, so it satisfies the subquery too. Both paths are safe.
 | Objects in bucket | 157 |
 | `food_items` rows | 64 (**0** with a null owner) |
 | `auth.users` | 6 — but **all 64 food rows belong to one account** |
-| Objects whose prefix matches no food row | **25** → filed as B-525 |
+| Objects whose prefix matches no food row | **25** → filed as B-577 |
 
 Blast radius was therefore the PM's own device, not six accounts.
 
@@ -81,7 +81,7 @@ Then functionally tested the predicate on 8 cases rather than trusting the shape
 The last two rows are the ones worth having run: the malformed case confirms the header's
 `id::text` reasoning, and the slash-less key fails closed rather than slipping through.
 
-## One finding deliberately not bundled → B-524
+## One finding deliberately not bundled → B-576
 
 `nyx-food-photos` has **no UPDATE policy**, while `lib/storage.ts:149` `uploadPhoto` uploads with
 `upsert: true` — which storage-api runs as `INSERT … ON CONFLICT DO UPDATE`, and Postgres wants an
@@ -98,13 +98,13 @@ I did **not** fold the fix into this apply. It is pre-existing and orthogonal �
 equally broken before and after 036, so there was no correctness argument for bundling — and 036
 is a merged, `rls-privacy-reviewer`-PASSed artifact. Widening a live RLS change past its reviewed
 scope mid-deploy is what the mandatory-RLS-review rule exists to prevent. It gets its own
-migration and its own review pass. B-524 also suggests fixing the *class*: three independent
+migration and its own review pass. B-576 also suggests fixing the *class*: three independent
 sessions have now rediscovered this by hand, so a test asserting every `uploadPhoto` bucket
 carries INSERT/SELECT/UPDATE is worth more than a fourth manual catch.
 
 ## Also filed
 
-**B-525** — the 25 orphaned objects. Unreadable and (post-036) unwritable, so no exposure, but
+**B-577** — the 25 orphaned objects. Unreadable and (post-036) unwritable, so no exposure, but
 `delete-account` sources the `foodPhotos` purge from `food_items.photo_paths` (`plan.ts:86`,
 `:316`), so an object whose owning row is already gone is unreachable by the cascade. Those 25
 health-adjacent label photos would outlive the account that created them — a data-retention gap
@@ -122,13 +122,13 @@ true. Mirror image of B-369 (an orphan *row* with no photos).
   cannot exercise a Storage RLS policy. Engineer signs off.
 - **Secrets** — none used; register unchanged.
 - **Anti-patterns** — none introduced. Schema isolation honoured: this PR is the migration apply
-  plus its own record-keeping, and the B-524 fix was deliberately kept out.
+  plus its own record-keeping, and the B-576 fix was deliberately kept out.
 - **Personas** — Engineer ✓ (applied verbatim; declined to widen a reviewed migration mid-deploy).
   Data ✓ (pre/post state measured, not assumed; 0 planted objects). Trust & Safety ✓ (planted-object
-  audit clean; filed B-525 as a retention gap rather than closing it silently). Designer N/A.
+  audit clean; filed B-577 as a retention gap rather than closing it silently). Designer N/A.
   Dr. Chen N/A.
 - **`rls-privacy-reviewer`** — not re-run: 036 already carries a PASS from #392 and was applied
-  **unmodified**. B-524 and B-525 each require one when built, and both rows say so.
+  **unmodified**. B-576 and B-577 each require one when built, and both rows say so.
 - **Future-self** — no new pattern. The durable output is the correction rule now in B-358:
   a deploy-gated migration stays OPEN in its row until the apply is verified live.
 

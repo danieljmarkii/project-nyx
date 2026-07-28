@@ -22,7 +22,12 @@ import { theme } from '../../constants/theme';
 import { Card } from '../ui/Card';
 import { PrimaryButton } from '../ui/PrimaryButton';
 import { TrialContaminantNote } from '../food/TrialContaminantNote';
-import type { TrialCardActionId, TrialCardModel } from '../../lib/dietTrialCard';
+import type {
+  TrialCardActionId,
+  TrialCardLine,
+  TrialCardLineRole,
+  TrialCardModel,
+} from '../../lib/dietTrialCard';
 
 interface Props {
   model: TrialCardModel;
@@ -115,20 +120,58 @@ export function DietTrialCard({ model, actions, onManage, busyAction, style }: P
         </View>
       )}
 
-      {model.lines.map((line, i) => (
-        <Text
-          key={`${line.role}-${i}`}
-          testID={`trial-line-${line.role}`}
-          style={[
-            styles.line,
-            line.role === 'lead' && styles.lead,
-            line.role === 'forward' && styles.forward,
-            (line.role === 'qualifier' || line.role === 'caveat') && styles.qualifier,
-          ]}
-        >
-          {line.text}
-        </Text>
-      ))}
+      {groupLines(model.lines).map((group, gi) => {
+        // ── The two BLOCK roles ────────────────────────────────────────────
+        // Everything else is body text in reading order. These two are drawn as
+        // containers because they are not commentary on the lines around them —
+        // they are what the card is saying instead of them.
+        if (group.role === 'flag') {
+          return (
+            <View key={`flag-${gi}`} testID="trial-flag" style={styles.flagBlock}>
+              {group.lines.map((line, i) => (
+                <Text
+                  key={i}
+                  testID="trial-line-flag"
+                  // The first flag line is the headline and the rest is its body,
+                  // which is how both safety registers are drawn in the design
+                  // lock. Emphasis by POSITION inside the block rather than by a
+                  // second role: the resolver already guarantees the order (fact
+                  // first, then what to do about it) and a second role would be
+                  // one more thing a future state could set wrong.
+                  style={[styles.line, i === 0 ? styles.flagHeadline : styles.flagBody]}
+                >
+                  {line.text}
+                </Text>
+              ))}
+            </View>
+          );
+        }
+        if (group.role === 'teach') {
+          return (
+            <View key={`teach-${gi}`} testID="trial-teach" style={styles.teachBlock}>
+              {group.lines.map((line, i) => (
+                <Text key={i} testID="trial-line-teach" style={styles.teachText}>
+                  {line.text}
+                </Text>
+              ))}
+            </View>
+          );
+        }
+        return group.lines.map((line, i) => (
+          <Text
+            key={`${line.role}-${gi}-${i}`}
+            testID={`trial-line-${line.role}`}
+            style={[
+              styles.line,
+              line.role === 'lead' && styles.lead,
+              line.role === 'forward' && styles.forward,
+              (line.role === 'qualifier' || line.role === 'caveat') && styles.qualifier,
+            ]}
+          >
+            {line.text}
+          </Text>
+        ));
+      })}
 
       {/* B-351's target-protein disclosure — the assumption the contaminant check
           rests on, rendered where the owner can see it is wrong. Quiet metadata,
@@ -189,6 +232,27 @@ export function DietTrialCard({ model, actions, onManage, busyAction, style }: P
       })}
     </Card>
   );
+}
+
+/** Consecutive lines sharing a role, in reading order.
+ *
+ *  Grouping rather than per-line rendering exists for one reason: the `flag`
+ *  register is a BLOCK — a headline and its body inside one tinted container —
+ *  and drawing each line in its own container would make one safety statement
+ *  look like two. Runs are contiguous by construction (the resolver pushes a
+ *  register's lines together), and the grouping preserves order regardless, so a
+ *  future state that interleaves them degrades to two blocks rather than to a
+ *  wrong order. */
+function groupLines(
+  lines: readonly TrialCardLine[],
+): { role: TrialCardLineRole; lines: TrialCardLine[] }[] {
+  const out: { role: TrialCardLineRole; lines: TrialCardLine[] }[] = [];
+  for (const line of lines) {
+    const tail = out[out.length - 1];
+    if (tail && tail.role === line.role) tail.lines.push(line);
+    else out.push({ role: line.role, lines: [line] });
+  }
+  return out;
 }
 
 const styles = StyleSheet.create({
@@ -279,6 +343,53 @@ const styles = StyleSheet.create({
   qualifier: {
     fontSize: theme.textXS,
     lineHeight: theme.textXS * 1.5,
+  },
+  // ── The safety register (intake decline, trial-diet refusal) ───────────────
+  // The app's existing firm-but-calm tinted safety container — the same tokens
+  // `CrossPetSafetyBanner` and the AI "worth a call" reads use. Culprit has no
+  // danger/klaxon state and this is deliberately not where one gets invented (the
+  // call the PM made on B-340).
+  //
+  // NO ICON AND NO COLOUR-ONLY MEANING: the headline carries the fact in words,
+  // so the block survives greyscale and a screen reader reaches the same content
+  // in the same order. What the tint adds is that the REPLACEMENT reads as a
+  // replacement — §5.2 makes the composition structural, and a structural
+  // replacement rendered in body weight is invisible as one.
+  flagBlock: {
+    backgroundColor: theme.colorEventSymptomLight,
+    borderWidth: 1,
+    borderColor: theme.colorEventSymptomBorder,
+    borderRadius: theme.radiusMedium,
+    paddingHorizontal: theme.space2,
+    paddingVertical: theme.space2,
+    marginTop: theme.space2,
+  },
+  flagHeadline: {
+    fontSize: theme.textMD,
+    lineHeight: theme.textMD * 1.4,
+    fontWeight: theme.weightMedium,
+    color: theme.colorTextPrimary,
+    marginTop: 0,
+  },
+  flagBody: {
+    color: theme.colorTextPrimary,
+  },
+  // ── The teach register (R1b) ──────────────────────────────────────────────
+  // Quiet on purpose, and the distinction from `flagBlock` is the whole design:
+  // this line fires when NOTHING is wrong, so it may not borrow the safety
+  // colour. It gets a neutral surface and a hairline — visible enough to read as
+  // a distinct suggestion, quiet enough that eight weeks of it is not a scolding.
+  teachBlock: {
+    backgroundColor: theme.colorSurfaceSubtle,
+    borderRadius: theme.radiusMedium,
+    paddingHorizontal: theme.space2,
+    paddingVertical: theme.space2,
+    marginTop: theme.space2,
+  },
+  teachText: {
+    fontSize: theme.textSM,
+    lineHeight: theme.textSM * 1.45,
+    color: theme.colorTextSecondary,
   },
   meta: {
     fontSize: theme.textXS,

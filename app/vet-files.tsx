@@ -12,6 +12,7 @@ import { VetFilesEmptyState } from '../components/vetfiles/VetFilesEmptyState';
 import { NameDocumentSheet, DocumentKindSheet } from '../components/vetfiles/VetDocumentMetaSheets';
 import { AddDocumentSheet } from '../components/vetfiles/AddDocumentSheet';
 import { DocumentSavedMoment, type AlsoAddTarget } from '../components/vetfiles/DocumentSavedMoment';
+import { RecentlyDeletedSheet } from '../components/vetfiles/RecentlyDeletedSheet';
 import { usePetStore } from '../store/petStore';
 import { getSignedUrls } from '../lib/storage';
 import { syncPendingVetDocuments } from '../lib/sync';
@@ -23,12 +24,16 @@ import {
 } from '../lib/vetDocuments';
 import {
   readVetLibrary,
+  readRecentlyDeletedVetDocuments,
   renameVetDocument,
+  restoreVetDocument,
   setVetDocumentKind,
   buildKindFilterOptions,
   reconcileKindFilter,
   filterByKind,
   VET_DOCUMENT_SIGNED_URL_TTL_SEC,
+  isSignatureStale,
+  type DeletedVetDocumentRow,
   type VetLibraryRow,
 } from '../lib/vetDocumentLibrary';
 import {
@@ -58,8 +63,10 @@ import {
 // that "Done" simply leaves. A pushed capture route would put a navigation
 // transition between the owner and a document that is already on disk.
 //
-// The one forward link still unbuilt is the document detail (VF-4), wired through
-// the named `pendingScreen` no-op below so the call site stays greppable.
+// Every forward link is built as of VF-4: a row opens /vet-document/{groupId}, which
+// views, edits, shares and soft-deletes. (This note previously described a
+// `pendingScreen` no-op standing in for the unbuilt detail screen; that helper is
+// gone — corrected in VF-6.)
 export default function VetFilesScreen() {
   const activePet = usePetStore((s) => s.activePet);
   const pets = usePetStore((s) => s.pets);
@@ -71,11 +78,21 @@ export default function VetFilesScreen() {
   const [kindFilter, setKindFilter] = useState<string | null>(null);
 
   // path → signed URL. Held for the life of this mount only and never persisted
-  // (§6.2). Re-signed on every focus, which is also what keeps the 15-minute TTL
-  // from stranding a long-open screen on dead tokens.
+  // (§6.2).
+  //
+  // Re-signed on focus, but ONLY once a URL is near the end of the 15-minute TTL.
+  // This note used to claim a plain re-sign on every focus, and that was not what
+  // the code did: `resolveThumbnails` skips every path already in `signedRef` and
+  // nothing ever evicted it, so a screen left mounted and blurred for 20 minutes
+  // came back with dead tokens and rested every tile on its glyph until remount.
+  // It failed CLOSED (no privacy consequence) but the comment was load-bearing —
+  // the short TTL's whole mitigation is that focus re-signs (VF-6, found by
+  // rls-privacy-reviewer).
   const [thumbUrls, setThumbUrls] = useState<Map<string, string>>(new Map());
   const [thumbsLoading, setThumbsLoading] = useState(false);
   const signedRef = useRef<Map<string, string>>(new Map());
+  // path → epoch ms the URL was minted, so the eviction above can be age-based.
+  const signedAtRef = useRef<Map<string, number>>(new Map());
 
   // The Name sheet addresses a GROUP, and it is opened from two places — a library
   // row and the saved moment — so it holds the three fields both can supply rather
@@ -83,6 +100,17 @@ export default function VetFilesScreen() {
   const [naming, setNaming] = useState<{ groupId: string; title: string; untitled: boolean } | null>(null);
   const [typing, setTyping] = useState<VetLibraryRow | null>(null);
   const [saving, setSaving] = useState(false);
+
+  // ── Recently deleted (VF-4, §8 AC 5) ────────────────────────────────────────
+  //
+  // The detail screen's ⋯ menu promises "Kept for 30 days — undo from the library",
+  // and this is the library half of that promise. Read alongside the library rather
+  // than lazily on tap, because its COUNT decides whether the entry point renders
+  // at all: the steady state is empty, and a permanent trash-can row on a screen
+  // whose whole job is one calm list is a surface nobody asked to see.
+  const [deleted, setDeleted] = useState<DeletedVetDocumentRow[]>([]);
+  const [deletedOpen, setDeletedOpen] = useState(false);
+  const [restoring, setRestoring] = useState<string | null>(null);
 
   // ── Capture (VF-3) ──────────────────────────────────────────────────────────
   const [addOpen, setAddOpen] = useState(false);
@@ -114,7 +142,7 @@ export default function VetFilesScreen() {
   const resolveThumbnails = useCallback(async (libraryRows: VetLibraryRow[]) => {
     const missing = Array.from(
       new Set(libraryRows.filter((r) => !r.localUri).map((r) => r.storagePath)),
-    ).filter((p) => !signedRef.current.has(p));
+    ).filter((p) => isSignatureStale(signedRef.current, signedAtRef.current, p));
     if (missing.length === 0) return;
     setThumbsLoading(true);
     try {
@@ -126,8 +154,11 @@ export default function VetFilesScreen() {
       // Merge onto the latest ref (re-read after the await) so a concurrent
       // resolve's writes aren't clobbered.
       const next = new Map(signedRef.current);
-      resolved.forEach((url, path) => next.set(path, url));
+      const nextAt = new Map(signedAtRef.current);
+      const mintedAt = Date.now();
+      resolved.forEach((url, path) => { next.set(path, url); nextAt.set(path, mintedAt); });
       signedRef.current = next;
+      signedAtRef.current = nextAt;
       setThumbUrls(next);
     } finally {
       setThumbsLoading(false);
@@ -135,10 +166,11 @@ export default function VetFilesScreen() {
   }, []);
 
   const load = useCallback(async () => {
-    if (!petId) { setRows([]); setLoading(false); return; }
+    if (!petId) { setRows([]); setDeleted([]); setLoading(false); return; }
     try {
       const library = await readVetLibrary(petId);
       setRows(library);
+      setDeleted(await readRecentlyDeletedVetDocuments(petId));
       // Drop a filter whose kind no longer exists (the owner deleted the last one),
       // so a stale selection can never present an empty list.
       setKindFilter((prev) => reconcileKindFilter(prev, buildKindFilterOptions(library)));
@@ -150,21 +182,31 @@ export default function VetFilesScreen() {
       // so a read failure here is a device problem, not a network one.
       console.warn('[vet-files] library read failed:', e);
       setRows([]);
+      setDeleted([]);
     } finally {
       setLoading(false);
     }
   }, [petId, resolveThumbnails]);
 
-  useFocusEffect(useCallback(() => { load(); }, [load]));
+  async function handleRestore(groupId: string) {
+    if (restoring) return;
+    setRestoring(groupId);
+    try {
+      await restoreVetDocument(groupId);
+      // Restoring the last one empties the sheet; close it rather than leaving the
+      // owner looking at an empty list they now have to dismiss themselves.
+      if (deleted.length <= 1) setDeletedOpen(false);
+      await load();
+      syncPendingVetDocuments().catch((e) => console.warn('[vet-files] document push failed:', e));
+    } catch (e) {
+      console.warn('[vet-files] restore failed:', e);
+      Alert.alert('That didn’t restore', 'Something went wrong putting the document back. Give it another try.');
+    } finally {
+      setRestoring(null);
+    }
+  }
 
-  // TODO(VF-4): route to the document detail (viewer, metadata edit, share, soft
-  // delete). Kept as one named no-op so the call site is greppable when that PR
-  // lands, and so an unbuilt route can't silently swallow a tap in a QA build.
-  // Until then a named row's chevron leads nowhere — called out in VF-3's QA script
-  // rather than hidden, since the profile entry point unlocks with this PR.
-  const pendingScreen = useCallback((what: 'detail') => {
-    console.warn(`[vet-files] ${what} lands in VF-4`);
-  }, []);
+  useFocusEffect(useCallback(() => { load(); }, [load]));
 
   // ── Pickers ─────────────────────────────────────────────────────────────────
   // Returns [] for every "nothing happened" outcome — cancelled, denied — so the
@@ -389,19 +431,35 @@ export default function VetFilesScreen() {
       await load();
     } catch (e) {
       console.warn('[vet-files] rename failed:', e);
+      // The sheet stays OPEN on failure (setNaming(null) is inside the try), so
+      // the owner's typed title is still there to re-submit — but without this
+      // alert the only signal was the spinner stopping, which reads as "it
+      // saved". D11 rests entirely on this affordance: capture asks nothing, so
+      // the library row's one-tap Name IS the recovery, and a recovery that can
+      // fail silently is worse than no recovery (VF-6).
+      Alert.alert('That didn’t save', 'Something went wrong saving that name. Give it another try.');
     } finally {
       setSaving(false);
     }
   }
 
   async function handleKind(kind: VetDocumentKind) {
-    if (!typing) return;
+    // `saving` doubles as the re-entrancy guard: ChipGroup carries no disabled
+    // state (and adding one to a shared primitive is wider than this pass), so a
+    // second tap while the first write is in flight would otherwise queue a
+    // second write and a second `load()`. Making the chips visibly busy is a
+    // ChipGroup change — filed rather than bolted on here.
+    if (!typing || saving) return;
+    setSaving(true);
     try {
       await setVetDocumentKind(typing.groupId, kind);
       setTyping(null);
       await load();
     } catch (e) {
       console.warn('[vet-files] set type failed:', e);
+      Alert.alert('That didn’t save', 'Something went wrong saving that type. Give it another try.');
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -537,13 +595,36 @@ export default function VetFilesScreen() {
                 row={row}
                 thumbUri={thumbUriFor(row)}
                 thumbLoading={thumbsLoading}
-                onPress={() => pendingScreen('detail')}
+                // VF-4: the detail route is keyed on the DOCUMENT GROUP, not the
+                // cover row's id — a 3-page thread is one document, and its pages
+                // are what the detail screen swipes through.
+                onPress={() => router.push(`/vet-document/${row.groupId}`)}
                 onName={() => setNaming({ groupId: row.groupId, title: row.title, untitled: row.untitled })}
                 onAddType={() => setTyping(row)}
               />
             ))}
           </View>
         </ScrollView>
+      )}
+
+      {/* Renders only when there IS something recoverable — see the state
+          declaration. Deliberately OUTSIDE the empty/populated branch: deleting
+          your only document lands you on the empty state, and that is precisely
+          the moment the ⋯ menu's "undo from the library" has to still be true.
+          Quiet and at the bottom either way — a safety net, not a destination. */}
+      {!loading && deleted.length > 0 && (
+        <TouchableOpacity
+          style={styles.deletedLink}
+          onPress={() => setDeletedOpen(true)}
+          activeOpacity={0.7}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          accessibilityRole="button"
+          accessibilityLabel={`Recently deleted, ${deleted.length} ${deleted.length === 1 ? 'document' : 'documents'}`}
+        >
+          <Text style={styles.deletedLinkText}>
+            Recently deleted ({deleted.length})
+          </Text>
+        </TouchableOpacity>
       )}
       </>
       )}
@@ -569,6 +650,14 @@ export default function VetFilesScreen() {
         current={typing?.kind ?? 'other'}
         onCancel={() => setTyping(null)}
         onSelect={handleKind}
+      />
+
+      <RecentlyDeletedSheet
+        visible={deletedOpen}
+        rows={deleted}
+        restoringGroupId={restoring}
+        onClose={() => setDeletedOpen(false)}
+        onRestore={handleRestore}
       />
     </SafeAreaView>
   );
@@ -609,6 +698,16 @@ const styles = StyleSheet.create({
   },
   list: {
     gap: theme.space1,
+  },
+  deletedLink: {
+    alignSelf: 'center',
+    paddingVertical: theme.space1,
+    paddingHorizontal: theme.space2,
+    paddingBottom: theme.space2,
+  },
+  deletedLinkText: {
+    fontSize: theme.textSM,
+    color: theme.colorTextTertiary,
   },
   addBtn: {
     width: 30,

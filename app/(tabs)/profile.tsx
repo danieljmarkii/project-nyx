@@ -879,6 +879,13 @@ export default function ProfileScreen() {
               // slot for a fortnight (`ENDED_TRIAL_GRACE_DAYS`): the report is
               // most valuable in exactly the days after the trial ends.
               open_report: () => router.push('/report'),
+              // B-533 / R1 — the refusal state's way out. Same sheet the header's
+              // "Change" opens (one active trial per pet is a DB constraint, so
+              // this lands on the ordered "end the running one first" flow, never
+              // a second concurrent trial). It is a card ACTION rather than only
+              // the header link because on the one state whose message is "this
+              // diet may need to change", the way out cannot be chrome.
+              trial_manage: () => setStartTrialVisible(true),
             }}
             onManage={() => setStartTrialVisible(true)}
           />

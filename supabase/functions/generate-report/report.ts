@@ -87,6 +87,10 @@ import {
 // failure B-417 §5.3 documents — three contradictory off-diet predicates, one of
 // them already shipped in this file. One implementation, imported.
 import { offTrialProteins, resolveTargetProtein } from '../../../lib/trialProtein.ts'
+// B-568 — the SAME format-label map the app renders from (lib/foodFormat.ts is
+// dependency-free precisely so both runtimes share one copy; a second map here is the
+// B-103 drift class, where a new enum value reaches one surface and not the other).
+import { foodFormatWord } from '../../../lib/foodFormat.ts'
 // The diet-trial answer (B-417 PR 7). `trial.ts` is the seam onto `lib/dietTrial.ts`
 // — the one shared predicate — and imports NOTHING from this file, so the two are a
 // tree rather than a cycle.
@@ -1612,9 +1616,27 @@ function kgToLbsNum(kg: number): number {
   return Math.round(kg * LBS_PER_KG * 10) / 10
 }
 
-/** "Brand Product" for a food, or null when neither is set — one home for the label rule. */
-function mealFoodLabel(meal: { brand: string | null; productName: string | null }): string | null {
-  return meal.brand || meal.productName ? `${meal.brand ?? ''} ${meal.productName ?? ''}`.trim() : null
+/**
+ * "Brand Product (Form)" for a food, or null when nothing is set — one home for the label rule.
+ *
+ * B-568 — the form is part of the NAME here, not decoration. Brand + product do not
+ * identify a food: one prescription line stocked in both wet and dry shares both fields,
+ * so without the form two genuinely different foods render as one string throughout the
+ * report — the meal appendix, the off-diet exposure list, and the free-fed grouping. Under
+ * a diet trial the two formats are separately adherent, which is precisely the question
+ * §7 exists to answer, so collapsing them is a clinical loss, not a cosmetic one.
+ *
+ * Note this also sharpens the fallback grouping key at the free-fed rollup, where the key is
+ * `foodItemId ?? mealFoodLabel(m)`: two formats of one product no longer collide into a
+ * single group when the id is absent. An unspecified/unmapped form adds nothing (null tag).
+ */
+function mealFoodLabel(
+  meal: { brand: string | null; productName: string | null; format?: FoodFormat | null },
+): string | null {
+  const name = `${meal.brand ?? ''} ${meal.productName ?? ''}`.trim()
+  const form = foodFormatWord(meal.format ?? null)
+  if (!name) return form ? form : null
+  return form ? `${name} (${form})` : name
 }
 
 /**
