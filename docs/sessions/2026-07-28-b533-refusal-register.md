@@ -105,11 +105,64 @@ exactly the record whose viability is unknowable.
    refusal card's own off-diet floor line. Round 5 draws the register but none of
    these — they were forced into existence by the review rounds.
 
+## Adversarial review — FAIL, and the hold was right
+
+Run at wrap (`adversarial-reviewer`), every counterexample **executed** through
+`computeTrialFacts` → an adapter mirror → `resolveTrialCard`. Eight findings, two
+root causes. The committed suites pass 617/617 throughout — none of this was
+reachable by the tests I wrote, which is the point of running it.
+
+**Root cause A — the stand-down is floorless while the fire is guarded (B-571).**
+Firing needs ≥3 rated + ≥2 days + ≥50% share + ≥12h span. Standing down needs
+*one* rated-finished feeding. On a lane whose safe error direction is toward
+firing, the OFF predicate is the loosest thing in the module. Executed: a cat
+with **60 of 60 bowls refused over 30 days**, then a single `most` on day 44,
+renders `clean` — *"Meals logged on 44 of 44 days… 2 weeks to go."* Two knock-ons:
+logging a refusal *and* a good meal discloses **less** than logging nothing
+(F=0,R=0 → ON; F=1,R=1 → off), and the register flickers with **zero new data** —
+ON days 30–43, silent 44–48, ON again 49–56, i.e. absent nearest the last refusal
+and present a week later on strictly older evidence.
+
+**Root cause B — claim-gate floors are driving a voice (B-572).** `registerFor`'s
+own docstring rejects `rangeRefusal` for the live card because *"a dog rated
+some/all/some fires it on DAY 2 of 56"* — and R1 hands the paragraph to
+`trialDietRefusal`, which carries the identical floors. Executed on day 2:
+*"2 feedings of the 3 trial-diet feedings you've rated were left unfinished…
+it's worth a call to your vet."* The file made the argument and then did the
+thing. Separately, `rangeRefusalSpansEpisodes` is only a ≥12h test, which any
+two-day cluster clears — three refusals in week 1 then 41 unrated days renders
+present-tense *"needs a call today"* on **41-day-old evidence**.
+
+**Two more, each its own row.** A free-fed bowl of the prescribed diet reaches
+the register and the card asserts the cat isn't eating *"what's put down"* with
+no free-fed disclosure at all (**B-573**) — the same unobservability
+`mayClaimAllMatched` cites to refuse the *affirmative* claim, used here to support
+a *negative* one. And the register suppresses `pushTeachLine`, so a latched owner
+at a 6.8% rated share cannot be told how to clear it (**B-574**).
+
+**What held, with the attempt that failed to break it:** monotone in the refusal
+direction (swept F×R — for fixed F, more refusals never removes the register, so
+the round-5 defect is genuinely repaired); day 1 cannot alarm (`REFUSAL_MIN_DAYS`);
+R1a at the fact layer (no path fires on unrated feedings); the §5.2 floor is owed
+and paid (12 exposures → the count, the "not a total" suffix and the drill-in all
+render); G2; intake-is-not-preference; `withholdingReasons` keyed on raw input, so
+a stood-down register still silences Home. The reviewer could not construct a
+false teach-line sentence.
+
+**Nothing was patched in response.** Every fix is a threshold or a piece of copy —
+what minimum sample, what share, what recency window, whether a safety register may
+carry a teaching aside — and inventing those inside a build PR is the failure mode
+this track keeps naming. The findings do not add a blocker; they sharpen the one
+that already existed, and they hand Dr. Chen executed records instead of a
+hypothetical.
+
 ## Verification
 
-`tsc --noEmit` clean · **3275** jest across 148 suites · **1001** deno.
-No schema change. No adversarial-reviewer or code-reviewer subagent was run this
-session (subagents were out of scope for the session); the five rounds recorded
-on #499 covered this copy, and the composition layer's own property tests now
-walk the register on every cross-state rule — but that is not a substitute for a
-fresh pass, and the DoD line says so.
+`tsc --noEmit` clean · **3275** jest across 148 suites · **1001** deno · CI green
+on both required checks. No schema change.
+
+One self-inflicted error worth recording: the wrap commit ran `git add -A` while
+the review agent was still writing scratch files into the working tree, so
+`lib/zzAdversarialScratch.test.ts` was committed and pushed. Caught by the
+reviewer, removed in a follow-up commit. A wide `git add` is not safe while a
+subagent has the repo.
