@@ -4,9 +4,13 @@
 
 Shipped via **#513**. Closes **B-422**; files **B-592**, **B-593**, **B-594**.
 
-The headline is not the feature. It is that `adversarial-reviewer` ran three times, **failed the first two**, and each of those rounds found real breaks *introduced by the previous round's fix*. Ten executed counterexamples across the two failing rounds. The design changed twice, and the rule that came out of it is the thing worth keeping:
+The headline is not the feature. It is that `adversarial-reviewer` ran three times and **failed all three**, each round finding real breaks *introduced by the previous round's fix*. Sixteen executed counterexamples. The design changed three times, and the rules that came out of it are the thing worth keeping:
 
 > **The effective end bounds BELIEF and ONE DENOMINATOR. It never bounds EVIDENCE.**
+>
+> **A field is an EVIDENCE bound if losing a row changes what the report SAYS. `range*` may only ever appear next to the word "coverage".**
+>
+> **`target_duration_days` is the only authority on how long a trial ran.** Not a log line.
 
 ## The problem
 
@@ -75,8 +79,25 @@ That leaves a real residual — an un-ended trial anchors the report window fore
 
 The property tests are the round-2 lesson made permanent: both of that round's arithmetic breaks were shapes no example test happened to name, and an example list would not have found them.
 
+## Round 3 — five more consumers, and the tail clip's anchor
+
+`lib/dietTrial.ts`'s own invariants held: 6,000 fuzzed cases found no escape, and all ten prior counterexamples were genuinely fixed rather than moved. Six new regressions, and the reviewer named the shape better than round 2 had: **round 2 converted three call sites inside `buildTrialBlock` and left five others reading `range*` as an evidence bound.**
+
+- **A more recent weigh-in deleted the weight-loss fact from the B-494 safety band.** `weightDuringTrial` gated containment on the tail-clipped coverage range, so the same cat with the same 4.6 → 4.1 kg loss and the same 352/352 refusals rendered *"Weight fell … about 11% of body weight"* if weighed in April and **nothing** if weighed in June. Refusal composed with weight delta is exactly what the round-3 cold read called page 1's blocking finding.
+- **The band dated 176 days of refusals inside a 98-day window**, and reported the most recent refusal 79 days early — on the feline hepatic-lipidosis lane, in the one zone the report teaches vets to scan.
+- **Appendix C's caption excluded rows in its own table** ("Jan 1 – Apr 22" over a row dated Apr 27) — the cross-check the appendix exists for.
+- **The dagger footnote understated its own base rate 2.5×** (10% where the operative rate was 25%), which is the same defect its docstring records a cold read catching once already.
+- **The card's C2 standing note and both B9 disclosures vanished** on a trial the card still displayed, because I had gated `loadTrialProteinContext`. My reasoning — "every consumer is a present-tense claim about the pet" — was true of the log-time flag and false of the other three. Those are standing facts about a trial still on screen, and B9 exists precisely so the most-unknown state does not get the least disclosure. Gate reverted; the narrow question filed as **B-595**.
+
+And the one that was a design flaw rather than a miswiring: **the tail clip's `max(targetEnd, lastMealDay)` anchor let ONE datum stand for "the trial ran this long."** It broke in both directions — a 5-of-28-days record followed by ordinary post-trial logging read 60/84 `partially_supports` with `belowCoverageFloor` off and *"all 60 matched"*; and a single meal of the pet's regular food 60 days after a perfect 28-day trial pushed 28/28 `supports` to 28/84 `does_not_support`. Round 1 had already killed the all-*feeding* anchor because a treat did this; switching to meals only narrowed which single datum could.
+
+The anchor is now **the target end, full stop**. "The trial ran this long" has exactly one authority and it is not a log line — it is `target_duration_days`, which §4.3's milestone moves with one tap, which moves it for every reader at once, and which a stray meal cannot trigger. An owner who genuinely runs long without tapping has their *coverage* measured over the window their vet prescribed — the number that motivated the clip in the first place. Everything past the target is still evidence; it is only not coverage.
+
+Round 3 also caught a comment I had written backwards: `trial.ts` claimed `resolveScope` rung 2 *is* gated when it is not. Corrected — the must-rank-identically pairing is the round-1 bug, and a comment describing it backwards is an invitation to "restore" the gate.
+
 ## Residuals
 
 - **B-593** — ratify the 56-day grace with Dr. Chen. The accepted cost, stated for the ruling: an *abandoned* trial keeps its widget one-tap row and its three detector suppressions for **eight weeks** past target. Bounded where it used to be unbounded, but eight weeks is the number to push back on.
 - **B-592** — the overrun card reads "Meals logged on 56 of 56 days" under a day counter that keeps climbing. Both numbers are right and the pair is unexplained. `TrialRange.closedByOverrun` is computed and exported for it and nothing consumes it yet — undrawn copy on a design-locked card needs a mock round, not invention inside a build PR.
 - **B-594** — the report-window anchor, above.
+- **B-595** — should the log-time contaminant flag fire on a trial past its effective end? A Designer call about friction at the moment of the event; the fix belongs on `foodContaminantFlag`'s call sites, not on the shared context.

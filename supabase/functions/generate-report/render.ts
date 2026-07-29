@@ -1718,8 +1718,8 @@ function weightDuringTrial(snap: ReportSnapshot): string | null {
   if (
     !tr.earliestDate ||
     !tr.latestDate ||
-    tr.earliestDate < t.rangeStartDate ||
-    tr.latestDate > t.rangeEndDate
+    tr.earliestDate < t.evidenceStartDate ||
+    tr.latestDate > t.evidenceEndDate
   ) {
     return null
   }
@@ -3949,7 +3949,11 @@ function offDietAppendix(snap: ReportSnapshot): string {
               conf.length === 1 ? '' : 's'
             }${breakdownBit}`
     } &middot; ${h(
-    fmtRange(trialDerived ? snap.trial!.rangeStartDate : snap.scope.startDate, trialDerived ? snap.trial!.rangeEndDate : snap.scope.endDate),
+    // EVIDENCE — this captions the exposure TABLE, whose rows come from the
+    // evidence window. Off the coverage range the caption excluded rows in its
+    // own table ("Jan 1 – Apr 22" over a row dated Apr 27), which is exactly the
+    // cross-check a vet uses the appendix for.
+    fmtRange(trialDerived ? snap.trial!.evidenceStartDate : snap.scope.startDate, trialDerived ? snap.trial!.evidenceEndDate : snap.scope.endDate),
   )}${trialDerived ? ' &middot; a floor, not a total' : ''}</caption>
     <thead><tr><th>Item</th><th style="width:92px">Category</th>${
       trialDerived ? '<th style="width:150px">Why it&rsquo;s here</th>' : ''

@@ -967,6 +967,64 @@ Deno.test('no allowed set ⇒ SILENCE about adherence, never "0 matched, 32 did 
   assert.ok(/Meals logged on 32 of 32 days/.test(text))
 })
 
+// ── B-422 round 3 — `range` is COVERAGE; evidence bounds read `exposureRange` ──
+//
+// Round 2 converted the itemisation loop and left five other consumers reading
+// `range*` as an evidence bound. Round 3 executed all five. The rule, pinned:
+// a field is an EVIDENCE bound if losing a row changes what the report SAYS.
+
+Deno.test('B-422 — the safety band dates the refusals it counted, not the coverage window', () => {
+  // Executed round 3: the band said "352 of 352 ... across 176 days. Dates
+  // covered: Jan 1 - Apr 8" — 176 days inside a 98-day window — and reported the
+  // most recent refusal 79 days early, on the feline hepatic-lipidosis lane, in
+  // the one zone the report teaches a vet to scan.
+  const input = wellLoggedTrialInput({ events: [] })
+  input.dietTrials[0].targetDurationDays = 28
+  for (const d of days('2026-06-01', '2026-07-02')) {
+    input.events.push(meal({ date: d, brand: 'Royal Canin', product: 'Hydrolyzed HP', foodItemId: 'f-hp', proteins: ['soy'], intakeRating: 'refused' }))
+  }
+  const snap = assembleReport(input)
+  const flag = snap.safetyFlags.find((f) => f.kind === 'trial_diet_refusal')
+  assert.ok(flag, 'the refusal band fires')
+  // The dates must contain every day the count was taken over.
+  assert.ok(flag!.rangeEndDate >= '2026-07-02', `band end ${flag!.rangeEndDate} predates the last refusal`)
+  assert.equal(flag!.rangeStartDate, snap.trial!.evidenceStartDate)
+  assert.equal(flag!.rangeEndDate, snap.trial!.evidenceEndDate)
+})
+
+Deno.test('B-422 — the evidence span contains the coverage range at both ends', () => {
+  // The structural invariant behind all five: coverage is clipped INSIDE evidence,
+  // never outside it. A consumer reading the wrong one can then only ever be
+  // narrower, which is what made every round-3 break a deletion.
+  const input = wellLoggedTrialInput({ events: [] })
+  input.dietTrials[0].targetDurationDays = 14
+  for (const d of days('2026-06-01', '2026-07-02')) {
+    input.events.push(meal({ date: d, brand: 'Royal Canin', product: 'Hydrolyzed HP', foodItemId: 'f-hp', proteins: ['soy'] }))
+  }
+  const t = assembleReport(input).trial!
+  assert.ok(t.evidenceStartDate <= t.rangeStartDate, 'evidence opens no later than coverage')
+  assert.ok(t.evidenceEndDate >= t.rangeEndDate, 'evidence closes no earlier than coverage')
+})
+
+Deno.test('B-422 — post-target logging is not counted as trial coverage', () => {
+  // Round 3, the reassuring direction: a 14-day trial logged on only its first 3
+  // days, then daily for weeks. The old `max(targetEnd, lastMealDay)` anchor read
+  // one meal as proof the trial ran that long, so the record claim came back.
+  const input = wellLoggedTrialInput({ events: [] })
+  input.dietTrials[0].targetDurationDays = 14
+  input.dietTrials[0].startedAt = '2026-06-01'
+  for (const d of days('2026-06-01', '2026-06-03')) {
+    input.events.push(meal({ date: d, brand: 'Royal Canin', product: 'Hydrolyzed HP', foodItemId: 'f-hp', proteins: ['soy'] }))
+  }
+  for (const d of days('2026-06-20', '2026-07-02')) {
+    input.events.push(meal({ date: d, brand: 'Royal Canin', product: 'Hydrolyzed HP', foodItemId: 'f-hp', proteins: ['soy'] }))
+  }
+  const t = assembleReport(input).trial!
+  assert.equal(t.coverage!.daysElapsed, 14, 'the denominator is the prescribed window')
+  assert.equal(t.coverage!.daysLogged, 3)
+  assert.equal(t.interpretability, 'does_not_support')
+})
+
 // ── B-422 — the report's trial SELECTION deliberately stays on `status` ──────
 //
 // A first cut ranked these on `isTrialRunning`, so an un-ended trial aged out at

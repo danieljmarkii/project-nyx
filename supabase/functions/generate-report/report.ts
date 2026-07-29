@@ -2735,8 +2735,13 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
         stoppedForRefusal,
         species: trialBlock.species,
         trialDietLabels: trialBlock.trialDietLabels,
-        rangeStartDate: trialBlock.rangeStartDate,
-        rangeEndDate: trialBlock.rangeEndDate,
+        // EVIDENCE — `refusal.days` is counted over the evidence window, so the
+        // dates that render beside it must be too. Off the coverage range the
+        // B-494 safety band dated 176 days of refusals inside a 98-day window and
+        // reported the most recent refusal 79 days early, on the feline
+        // hepatic-lipidosis lane, in the one zone the report teaches vets to scan.
+        rangeStartDate: trialBlock.evidenceStartDate,
+        rangeEndDate: trialBlock.evidenceEndDate,
       })
     }
   }

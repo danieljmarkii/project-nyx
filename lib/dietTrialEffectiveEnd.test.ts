@@ -421,19 +421,48 @@ describe('the overrun tail clip', () => {
     expect(f.exposures.totalFeedings).toBe(57);
   });
 
-  it('extends the window when the RECORD shows the trial outlived its target', () => {
-    // An owner still logging MEALS on day 70 was still running it on day 70.
-    const f = facts('2026-09-08', '2027-03-01'); // day 70
-    expect(f.coverage).toEqual({ daysLogged: 70, daysElapsed: 70, fraction: 1 });
+  it('does NOT extend when logging continues past the target', () => {
+    // ROUND 3 KILLED THE EVIDENCE ANCHOR. `max(targetEnd, lastMealDay)` read ONE
+    // datum as proof the trial ran two months longer, and it broke three ways:
+    // a 5-of-28-days record plus two months of ordinary logging read 60 of 84,
+    // `partially_supports`, floor OFF and "all 60 matched"; a single meal of the
+    // pet's REGULAR food 60 days later (the modal post-trial event) pushed a
+    // perfect 28/28 to 28/84 `does_not_support`; and C5's density line told a vet
+    // logging collapsed to 0/42 in the back half.
+    //
+    // "The trial ran this long" has one authority and it is not a log line — it
+    // is `target_duration_days`, which §4.3's milestone moves with one tap.
+    const f = facts('2026-09-08', '2027-03-01'); // logged to day 70
+    expect(f.coverage).toEqual({ daysLogged: 56, daysElapsed: 56, fraction: 1 });
+    // …and every one of those post-target days is still EVIDENCE.
+    expect(f.exposures.totalFeedings).toBe(70);
   });
 
-  it('never extends past the effective end, however long the logging runs', () => {
-    // An owner who keeps logging for a year must not accrue a year of
-    // denominator — that is the unbounded growth B-422 was filed for. Day 112 =
-    // 2026-10-20 = the effective end.
-    const f = facts('2026-12-31', '2027-03-01');
-    expect(f.range?.endDayIndex).toBe(dayIndex(EFFECTIVE_END));
-    expect(f.coverage?.daysElapsed).toBe(112);
+  it('is not dragged out by one stray meal of the pet’s regular food', () => {
+    // The mirror harm, and the modal post-trial event.
+    const stray = feeding({ eventId: 'stray', occurredAt: at('2026-10-24') }); // day 116
+    const f = facts(LAST_TARGET_DAY, '2027-03-01', [stray]);
+    expect(f.coverage).toEqual({ daysLogged: 56, daysElapsed: 56, fraction: 1 });
+    expect(f.interpretability).toBe('supports');
+    expect(f.belowCoverageFloor).toBe(false);
+  });
+
+  it('cannot be rescued from below the floor by post-target logging', () => {
+    // The reassuring direction, executed: 5 of a 28-day trial's days logged, then
+    // two months of daily logging. The record claim must stay suppressed.
+    const short = { ...TRIAL, targetDurationDays: 28 };
+    const feedings: TrialFeeding[] = [];
+    for (let d = 0; d < 5; d += 1) {
+      feedings.push(feeding({ eventId: `in-${d}`, occurredAt: at(new Date((dayIndex('2026-07-01') + d) * 86_400_000).toISOString().slice(0, 10)) }));
+    }
+    for (let d = 30; d < 90; d += 1) {
+      feedings.push(feeding({ eventId: `after-${d}`, occurredAt: at(new Date((dayIndex('2026-07-01') + d) * 86_400_000).toISOString().slice(0, 10)) }));
+    }
+    const f = computeTrialFacts({ trial: short, allowedFoods: [DUCK], feedings, nowMs: Date.parse(at('2026-11-01')) });
+    expect(f.coverage).toEqual({ daysLogged: 5, daysElapsed: 28, fraction: 5 / 28 });
+    expect(f.belowCoverageFloor).toBe(true);
+    expect(f.interpretability).toBe('does_not_support');
+    expect(mayStateRecordClean(f, { stoppedForRefusal: false })).toBe(false);
   });
 
   it('does not let a stopped record shrink the window below the prescribed target', () => {

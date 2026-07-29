@@ -1693,19 +1693,38 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
   // a percentage: a vet who prescribed eight weeks and reads a denominator of
   // eighty-four concludes the owner ran a longer, sloppier trial than they did.
   //
-  // The window closes at the TARGET end unless the record shows the trial
-  // outlived it — an owner still logging MEALS on day 70 was still running it on
-  // day 70 — and never past the effective end, which is the whole point (an
-  // owner who keeps logging for a year must not accrue a year of denominator).
+  // THE WINDOW CLOSES AT THE TARGET END. Full stop — no evidence extension.
   //
-  // THE ANCHOR IS NON-TREAT FEEDINGS, matching the head clip and the coverage
-  // NUMERATOR. The first cut anchored on every feeding, to prove the clip could
-  // not drop an exposure — an argument that no longer applies (the clip does not
-  // bound evidence any more) and that cost more than it bought: the adversarial
-  // pass showed ONE permitted duck treat logged on day 84 re-creating the exact
-  // "56 of 84" harm above, and near the floor flipping `belowCoverageFloor` on.
-  // The head clip's own docstring rejects the all-feeding anchor for the mirror
-  // of that reason; the two clips now agree.
+  // Round 2 shipped `max(targetEnd, lastMealDay)` on the reasoning that "an owner
+  // still logging on day 70 was still running it on day 70". Round 3 falsified
+  // that anchor three ways, and all three are the same defect: ONE datum is not
+  // evidence a trial ran two months longer.
+  //
+  //   • a 28-day trial with only 5 of its 28 prescribed days logged, followed by
+  //     two months of ordinary daily logging, read "60 of 84 days",
+  //     `partially_supports`, `belowCoverageFloor` FALSE and `mayStateRecordClean`
+  //     TRUE — and printed "all 60 matched". Post-trial days had become trial
+  //     coverage, so the numerator clamp added in round 2 was simply defeated
+  //     through the denominator instead. §5.2's record claim, un-suppressed on
+  //     exactly the under-capturing owner the floor exists to catch;
+  //   • one ordinary meal of the pet's REGULAR food 60 days after a perfect
+  //     28-day trial (the modal post-trial event) pushed 28/28 `supports` to
+  //     28/84 `does_not_support` — the mirror harm, and the same defect. Round 1
+  //     had already killed the all-FEEDING anchor because a single treat did
+  //     this; switching to meals only narrowed which single datum could;
+  //   • C5's logging-density disclosure inherited it, telling a vet that logging
+  //     collapsed to 0/42 in the back half of a trial the owner logged every
+  //     prescribed day of.
+  //
+  // "The trial ran this long" has exactly one authority, and it is not a log
+  // line: it is `target_duration_days`, which §4.3's milestone lets an owner move
+  // with one tap ("Keep going — 4 more weeks"). That is the sanctioned way to
+  // extend the window, it moves it for every reader at once, and it cannot be
+  // triggered by a stray meal. An owner who genuinely runs long without tapping
+  // has their COVERAGE measured over the window their vet prescribed — which is
+  // the number that motivated this clip in the first place, since a vet who
+  // prescribed eight weeks should not read a denominator of twelve. Everything
+  // they logged past the target is still EVIDENCE; it is only not coverage.
   //
   // Only for a trial nobody ended: a declared end is the owner's own window, and
   // days between their last log and the end they named are genuine gaps rather
@@ -1715,13 +1734,10 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
   // collapsed the range below its own start and returned NO TRIAL BLOCK AT ALL,
   // taking an in-scope off-diet exposure with it.
   const targetEnd = trialTargetEndDayIndex(ctx.trial, input.timeZone);
-  const effectiveEnd = trialEffectiveEndDayIndex(ctx.trial, input.timeZone);
   const overrunUnended = !ctx.trial.endedAt && targetEnd !== null && evidenceEnd > targetEnd;
   let endDayIndex = evidenceEnd;
-  if (overrunUnended && targetEnd !== null && effectiveEnd !== null && targetEnd >= scopedStart) {
-    const lastMealDay = loggedDays.length > 0 ? Math.max(...loggedDays) : targetEnd;
-    const tail = Math.min(Math.max(targetEnd, lastMealDay), effectiveEnd);
-    endDayIndex = Math.min(evidenceEnd, Math.max(scopedStart, tail));
+  if (overrunUnended && targetEnd !== null && targetEnd >= scopedStart) {
+    endDayIndex = Math.min(evidenceEnd, Math.max(scopedStart, targetEnd));
   }
 
   // THE HEAD CLIP RESOLVES *INSIDE* THE COVERAGE WINDOW, and the ordering is

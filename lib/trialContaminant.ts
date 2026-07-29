@@ -95,7 +95,6 @@ import {
   buildTrialContext,
   classifyFeeding,
   contaminationNote,
-  isTrialRunning,
   proteinPhrase,
   sanctionedProteinsOn,
   trialContamination,
@@ -604,20 +603,28 @@ export async function loadTrialProteinContext(
     return null;
   }
 
-  // B-422 — a trial past its effective end stops flagging contaminants.
+  // ── B-422 DELIBERATELY DOES NOT GATE THIS, and a first cut did ─────────────
   //
-  // Every consumer of this context is a PRESENT-TENSE claim about the pet: the
-  // log-time "this has chicken in it" flag, the add-a-food heads-up, the standing
-  // note on the trial card. Fired against a trial that ended in March, each of
-  // them tells the owner their pet is on a diet it is not on — and the log-time
-  // flag does it at the moment of the event, which is the one moment Principle 1
-  // says the app must not add friction to.
+  // The reasoning for gating it was that every consumer is a PRESENT-TENSE claim
+  // about the pet. That is true of the log-time "this has chicken in it" flag and
+  // false of the two that matter most here, which round 3 executed: from day 113
+  // the owner's card silently lost C2's standing note ("The trial food also lists
+  // chicken — a food that also lists chicken can keep the trial from giving a
+  // clean answer") AND both B9 disclosures ("Culprit can't tell what this trial
+  // is built on"), while the card kept rendering the trial and `generate-report`
+  // kept printing `facts.contamination` off the same record.
   //
-  // Nulled at THIS boundary rather than inside `trialContextOf`, so the whole
-  // graph below (the completeness gate, the target line, the heads-up ledger)
-  // sees one answer. Cached like the genuine no-trial case — the TTL is what
-  // makes the transition visible within five minutes without a re-render storm.
-  if (!trial || !isTrialRunning({ startedAt: trial.started_at, endedAt: trial.ended_at, targetDurationDays: trial.target_duration_days }, Date.now())) {
+  // Those are standing facts about a TRIAL THE CARD STILL DISPLAYS, not claims
+  // about the pet today — and B9 exists precisely so the most-unknown state does
+  // not get the least disclosure. Deleting a disclosure from a surface that still
+  // shows the thing being disclosed about is the same reassurance-direction error
+  // the rest of B-422 exists to undo.
+  //
+  // The narrower question — should the LOG-TIME flag fire on a trial past its
+  // effective end? — is real, and it is a Designer call about friction at the
+  // moment of the event rather than a correctness one. Filed as B-595 rather than
+  // answered by suppressing four other things on the way past.
+  if (!trial) {
     contextCache.set(petId, { atMs: Date.now(), ctx: null });
     return null;
   }

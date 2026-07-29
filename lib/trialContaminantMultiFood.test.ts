@@ -182,15 +182,17 @@ it('still returns null when there is no active trial at all', async () => {
   expect(await loadTrialProteinContext('pet-1')).toBeNull();
 });
 
-// ── B-422 — a trial past its effective end stops flagging contaminants ────────
+// ── B-422 deliberately does NOT gate this (round 3) ─────────────────────────
 //
-// Every consumer of this context makes a PRESENT-TENSE claim about the pet: the
-// log-time "this has chicken in it" flag, the add-a-food heads-up, the standing
-// note on the trial card. Fired off a trial that ended in March, each one tells
-// the owner their pet is on a diet it is not on — and the log-time flag does it
-// at the moment of the event, the one moment Principle 1 says the app must not
-// add friction to.
-describe('the effective-end gate', () => {
+// A first cut nulled the context for a trial past its effective end, reasoning
+// that every consumer is a present-tense claim about the pet. True of the
+// log-time flag; false of C2's standing note and B9's two disclosures, which the
+// CARD renders about a trial it is still displaying. An adversarial pass measured
+// it: from day 113 the owner silently lost "The trial food also lists chicken"
+// and "Culprit can't tell what this trial is built on", while `generate-report`
+// kept printing the same contamination fact off the same record. B9 exists
+// precisely so the most-unknown state does not get the least disclosure.
+describe('the context survives an overrun trial', () => {
   const NOW = Date.parse('2026-07-24T12:00:00.000Z');
   let clock: jest.SpyInstance;
 
@@ -199,32 +201,21 @@ describe('the effective-end gate', () => {
   });
   afterEach(() => clock.mockRestore());
 
-  it('resolves a trial that is running', async () => {
-    // Day 1 on 2026-07-01, 56-day target → target ends 08-25, well ahead.
+  it('resolves a running trial', async () => {
     state.trial = { id: 't-1', started_at: '2026-07-01', ended_at: null, target_duration_days: 56 };
     expect((await loadTrialProteinContext('pet-1'))?.trialId).toBe('t-1');
   });
 
-  it('still resolves one that is merely in overrun, inside its grace', async () => {
-    // 14-day target from 2026-07-01 → target ended 07-14, grace runs to 08-11.
-    state.trial = { id: 't-1', started_at: '2026-07-01', ended_at: null, target_duration_days: 14 };
+  it('resolves one whose effective end is long past — the card still shows it', async () => {
+    // 28-day target from 2026-01-01: target ended 2026-01-28, effective end
+    // 2026-03-24. Today is 2026-07-24 — four months past, and the standing fact
+    // about what the trial diet contains is exactly as true as it ever was.
+    state.trial = { id: 't-1', started_at: '2026-01-01', ended_at: null, target_duration_days: 28 };
     expect((await loadTrialProteinContext('pet-1'))?.trialId).toBe('t-1');
   });
 
-  it('returns null once the grace has expired', async () => {
-    // 28-day target from 2026-01-01 → grace expired 2026-02-25.
-    state.trial = { id: 't-1', started_at: '2026-01-01', ended_at: null, target_duration_days: 28 };
+  it('still returns null when there is genuinely no active trial', async () => {
+    state.trial = null;
     expect(await loadTrialProteinContext('pet-1')).toBeNull();
-  });
-
-  it('caches the stale answer, so the gate is not re-run on every log tap', async () => {
-    state.trial = { id: 't-1', started_at: '2026-01-01', ended_at: null, target_duration_days: 28 };
-    expect(await loadTrialProteinContext('pet-1')).toBeNull();
-    // A stale trial is a settled fact for the TTL, unlike the transient read
-    // failure above — which is why that one is deliberately NOT cached.
-    state.trial = { id: 't-2', started_at: '2026-07-01', ended_at: null, target_duration_days: 56 };
-    expect(await loadTrialProteinContext('pet-1')).toBeNull();
-    clearTrialContextCache();
-    expect((await loadTrialProteinContext('pet-1'))?.trialId).toBe('t-2');
   });
 });

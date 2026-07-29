@@ -322,6 +322,26 @@ export interface TrialBlock {
   rangeEndDate: string
   /** The range starts later than the trial did (a report scope or a first log clipped it). */
   rangeClipped: boolean
+  /**
+   * THE EVIDENCE SPAN — every row every count on this block was computed over.
+   *
+   * `range*` above is the COVERAGE window and is clipped at both ends (head by
+   * §10 S3, tail by B-422's overrun rule). Round 2 converted the itemisation loop
+   * to the evidence window and left five other consumers reading `range*` as if
+   * it were one; round 3 executed all five. So the rule, stated where it can be
+   * checked: **a field is an EVIDENCE bound if losing a row changes what the
+   * report says, and every such field reads these two. `range*` may only ever
+   * appear next to the word "coverage."**
+   *
+   * What round 3 found reading the wrong one: the safety band's own dates (176
+   * days of refusals dated inside a 98-day window, last refusal reported 79 days
+   * early), `weightDuringTrial`'s containment gate (a MORE RECENT weigh-in
+   * deleted the weight-loss sentence from the B-494 band), Appendix C's caption
+   * (excluded rows in its own table), and the dagger footnote's base rate
+   * (understated 2.5×).
+   */
+  evidenceStartDate: string
+  evidenceEndDate: string
   /** §10 S3 — days between `started_at` and the first log, reported as UNTRACKED
    *  rather than counted as failure. */
   untrackedDaysBeforeFirstLog: number
@@ -536,12 +556,13 @@ export function selectReportTrial<T extends TrialSource>(
     // possible evidence the trial has NOT stopped — the record contradicts the
     // inference, and evidence outranks inference.
     //
-    // So the rule for the report is: GATE THE ANCHOR, NEVER GATE THE DISCLOSURE.
-    // `resolveScope` rung 2 is gated (a stale trial must not define a two-year
-    // report window — falling to the 90-day fallback loses nothing), and this
-    // stays on `status`. Whether an un-ended trial should eventually stop being
-    // the report's SUBJECT is a real question, but it is a Dr. Chen + cold-read
-    // question that belongs with B-538's grace windows → B-594.
+    // So this stays on `status` — AND SO DOES `resolveScope` RUNG 2, which is the
+    // correction round 3 caught this comment getting backwards. The two must rank
+    // IDENTICALLY (round 1 produced the divergence from a real input), so gating
+    // only one of them is how the pair silently splits again. Neither is gated.
+    // Whether an un-ended trial should eventually stop being the report's SUBJECT
+    // — and how to do that without taking its safety band with it — is a Dr. Chen
+    // + cold-read question that belongs with B-538's grace windows → B-594.
     const running = t.status === 'active'
     // OVERLAP IS NOT ENOUGH FOR AN ENDED TRIAL. A 90-day fallback window catches
     // the tail of a trial that finished ten weeks ago, and framing the whole report
@@ -807,8 +828,11 @@ export function buildTrialBlock(args: BuildTrialBlockArgs): TrialBlock | null {
       allowedUntil: f.allowedUntil,
       feedings: permittedCounts.get(allowedRowKey(f)) ?? 0,
       addedAfterStart: openedAfter(f.allowedFrom, trial.startedAt, tz),
+      // EVIDENCE, not coverage: "this permit was withdrawn before the window
+      // ended" is a statement about the record the vet is reading.
       endedBeforeWindowEnd:
-        f.allowedUntil !== null && (dayIndexOfValue(f.allowedUntil, timeZone) ?? Infinity) < endDayIndex,
+        f.allowedUntil !== null &&
+        (dayIndexOfValue(f.allowedUntil, timeZone) ?? Infinity) < evidence.endDayIndex,
       proteins: [...(f.proteins ?? [])],
       panelRead: (f.proteins ?? []).length > 0,
     }))
@@ -857,6 +881,8 @@ export function buildTrialBlock(args: BuildTrialBlockArgs): TrialBlock | null {
     daysPastTarget: target > 0 ? Math.max(0, dayCounter - target) : 0,
     rangeStartDate: dayKeyFromIndex(startDayIndex),
     rangeEndDate: dayKeyFromIndex(endDayIndex),
+    evidenceStartDate: dayKeyFromIndex(evidence.startDayIndex),
+    evidenceEndDate: dayKeyFromIndex(evidence.endDayIndex),
     rangeClipped: facts.range.clipped,
     untrackedDaysBeforeFirstLog: facts.untrackedDaysBeforeFirstLog,
     coverage: facts.coverage
@@ -943,13 +969,26 @@ export function buildTrialBlock(args: BuildTrialBlockArgs): TrialBlock | null {
       args.scope.endDayNum,
       timeZone,
     ),
+    // COVERAGE, deliberately — this is labelled "the logged overlap range" and it
+    // is the one density statement about the trial's own window. Round 3 found it
+    // reporting 0/42 for the back half of a trial the owner logged every
+    // prescribed day of, but the cause was the tail clip's old `lastMealDay`
+    // anchor stretching the range to a stray meal, not the choice of window; with
+    // the anchor now at the target end the halves are 14/14 and 14/14. Moving it
+    // to the evidence window instead would silently retire the "narrower than the
+    // report window" clause that sits on top of it.
     loggingDensity: loggingDensity(args.mealLoggedDayIndices, startDayIndex, endDayIndex),
     challengeWindowDays: CHALLENGE_WINDOW_DAYS[species],
     challengeMarkerBaseRatePct: (() => {
-      const total = endDayIndex - (ctx.startDayIndex as number) + 1
+      // EVIDENCE — the daggered ROWS come from the evidence window, so the base
+      // rate that admits "the marker does not discriminate" must share their
+      // denominator. Off the coverage clip it read 10% where the operative rate
+      // was 25%: the one footnote whose entire purpose is to disclose its own
+      // weakness, understating it 2.5x.
+      const total = evidence.endDayIndex - (ctx.startDayIndex as number) + 1
       if (total <= 0) return 0
       let qualifying = 0
-      for (let dn = ctx.startDayIndex as number; dn <= endDayIndex; dn++) {
+      for (let dn = ctx.startDayIndex as number; dn <= evidence.endDayIndex; dn++) {
         if (symptomDays.some((sd) => isWithinChallengeWindow(dn, sd, species))) qualifying += 1
       }
       return Math.round((qualifying / total) * 100)
