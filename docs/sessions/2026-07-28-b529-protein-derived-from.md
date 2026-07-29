@@ -2,7 +2,7 @@
 
 **Date:** 2026-07-28
 
-Opens the report train that gates the `generate-report` redeploy. Shipped via #503.
+Opens the report train that gates the `generate-report` redeploy. Shipped via **#507**.
 
 ## What the defect actually was
 
@@ -124,3 +124,72 @@ artifact.
 - No new owner-facing report copy was invented here. The one new *client*
   sentence rides the existing B9 disclosure channel; if the pending mock round
   for the four undesigned disclosure lines wants it reworded, it is one string.
+
+
+## The adversarial pass failed the first cut, and was right
+
+`adversarial-reviewer` returned **FAIL**. R7(a), R7(b) and all four consult sites
+held everything it threw: a fuzzed convergence property over **12,800** two-affix
+keys (0 failures), symmetry/self-kin over **419** keys (0 failures), an
+enumeration of every kin equivalence class (`chicken fat`, `chicken liver`,
+`ocean whitefish`, `white fish` all correctly stay apart), and a **mutation
+test** proving the `dropKinOfPrimary` / `partitionKinOfPrimary` split is
+load-bearing rather than incidental.
+
+**R7(c) did not hold.** Four findings, all repaired in `81c1bab`, each now pinned
+by a test written from the reviewer's own executed counterexample:
+
+**① BLOCKING — the silence rule was reassuring the vet.** I gated the **rung-1
+permitted** antigen list on a global flag and justified it with a comment saying
+*"every feeding is still recorded by rung 3"*. That is **false for a permitted
+feeding**: a rung-1 hit stops at rung 1, so its antigen list is its only channel.
+Executed: a 40-day duck trial with two vet-approved chicken dental chews a day
+went from `chicken ×80` to an **empty tally**, while `mayStateRecordClean` stayed
+true and the report printed *"All 120 matched the trial diet or a permitted
+food"* in bold. The only difference from a clean record was a missing
+`primary_protein` on a **different** trial food. That is the
+six-dental-chews-a-day false negative `classifyFeeding`'s own docstring names,
+reintroduced one empty column away — **lost detection, not lost attribution**,
+and in the reassurance direction `clinical-guardrails` forbids.
+
+The repair scopes the rung-1 silence to *this feeding's own permitting food*,
+which is all the original defect ever required: an undesignated `primary_diet`
+food must not tally its **own** protein. A different, fully-characterized food
+keeps its record. Rung 2 keeps the global gate, where rung 3 genuinely is the
+fallback.
+
+**② BLOCKING — the pause had no disclosure on the vet report.** R7(c) says the
+arm "goes quiet and says why", and I discharged the "says why" on the owner's
+card and nowhere on the vet's page — the surface the ruling exists to protect.
+An unexplained short tally on a page that teaches the reader to scan for antigens
+reads as a negative result: B-494's rule verbatim. Now carried onto the snapshot,
+rendered as its own **"Antigen check paused"** row naming the food, with
+`mayClaimAllMatched` returning false while it is set so the affirmative claim can
+never compose with a dark arm.
+
+**③ HIGH — now-fact vs per-day fact.** The disclosure resolved at `today` while
+the silence resolves per feeding-day, so a trial food swapped out mid-trial left
+days of missing attribution with **no sentence at all** (executed: day-5
+silenced, day-25 attributed, note empty). Both surfaces are now range-anchored.
+
+**④ HIGH — the pause deleted a real finding.** The note returned *before*
+`contaminationNote`, so a valid contamination about food A vanished from the card
+because food B was missing a field. Reordered: a finding outranks an explanation
+of a gap.
+
+**⑥ + residuals.** `hydrolysate`/`hydrolyzate` were missing from
+`UNUSABLE_BASES`; and the module header overstated the dental-chew guarantee,
+which is *"kinship never crosses foods"*, not *"an intact term is always a
+finding somewhere"*. Both corrected.
+
+### The lesson worth keeping
+
+Both blocking findings came from the same mistake, and it was not in the
+relation — it was in **assuming the fallback existed**. I wrote "rung 3 still
+records it" into a comment and then relied on the comment instead of checking
+which rung the feeding actually reaches. The kin relation itself, which is the
+part that looked risky, survived a 12,800-case fuzz untouched.
+
+Final state: **3387 jest · 1007 deno · clean `tsc`**. A second adversarial pass
+against the repair was commissioned rather than accepting a fix validated only by
+its author.
