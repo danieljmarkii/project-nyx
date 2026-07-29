@@ -715,10 +715,16 @@ export interface ContaminationFact {
    *  (B-529/R7 — see `derivedFromPrimary`). */
   extraProteins: string[];
   /** B-529/R7 — label terms absorbed as the primary's own source: the `chicken`
-   *  on a `hydrolyzed chicken` diet's panel. NOT a contamination, and never
-   *  counted as one, but NOT deleted either: a surface that got quieter owes the
-   *  reader the reason (`clinical-guardrails` — no path to a quieter page
-   *  without a sentence). Rendered as a record disclosure, never as a finding. */
+   *  on a `hydrolyzed chicken` diet's panel. NOT a contamination and never
+   *  counted as one, but carried rather than discarded so the suppression stays
+   *  inspectable.
+   *
+   *  No surface renders this as its own sentence today, and it does not need to:
+   *  every surface that suppresses on kinship also prints the food's full
+   *  protein set verbatim (the report's appendix B, the food detail screen), so
+   *  both terms are already on the page — only the claim that their
+   *  co-occurrence is a contamination is gone. A future surface that suppresses
+   *  WITHOUT showing the set owes the reader a sentence built from this field. */
   derivedFromPrimary: string[];
 }
 

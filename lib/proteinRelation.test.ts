@@ -1,5 +1,4 @@
 import {
-  isHydrolyzedProtein,
   proteinSourceBase,
   proteinsAreKin,
   partitionKinOfPrimary,
@@ -181,15 +180,5 @@ describe('dropKinOfPrimary — and why it is not partitionKinOfPrimary', () => {
       const out = dropKinOfPrimary(keys, primary);
       expect(keys.filter((k) => out.includes(k))).toEqual(out);
     }
-  });
-});
-
-describe('isHydrolyzedProtein', () => {
-  it('recognises both spellings and both affix positions', () => {
-    expect(isHydrolyzedProtein('hydrolyzed chicken')).toBe(true);
-    expect(isHydrolyzedProtein('hydrolysed chicken')).toBe(true);
-    expect(isHydrolyzedProtein('chicken hydrolysate')).toBe(true);
-    expect(isHydrolyzedProtein('chicken')).toBe(false);
-    expect(isHydrolyzedProtein(null)).toBe(false);
   });
 });

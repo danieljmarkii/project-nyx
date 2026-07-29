@@ -614,10 +614,16 @@ export function pickerProteinWrite(
   main: string | null,
   alsoContains: readonly string[],
 ): ProteinPairWrite {
-  return {
-    primaryProtein: pickerPrimaryProtein(main),
-    proteins: pickerProteinsToSet(main, alsoContains),
-  };
+  // ONE implementation, not a composition of two. `reconcileProteinPair` already
+  // does exactly what the picker needs — canonicalize the main, hoist it, dedupe
+  // the tail behind it — including the null-main case, where it returns a null
+  // primary and the tail unchanged, which is §6's demote rule. Composing
+  // `pickerPrimaryProtein` + `pickerProteinsToSet` here instead duplicated that
+  // hoist/dedupe loop, and a second copy of a keying loop is how the two halves
+  // of a pair drift in the first place. The equivalence is not assumed: the
+  // write-path test asserts this function still agrees with both legacy helpers
+  // across the full cross-product of picker states.
+  return reconcileProteinPair(main, alsoContains);
 }
 
 export function pickerProteinsToSet(

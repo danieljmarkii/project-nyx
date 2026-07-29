@@ -104,19 +104,6 @@ const TRAILING_PROTEIN_WORD = /\s+protein$/;
 const UNUSABLE_BASES = new Set(['', 'protein', 'proteins', 'hydrolyzed', 'hydrolysed']);
 
 /**
- * Does this key name a hydrolysed form?
- *
- * Reported for callers that want to explain a suppression in copy ("listed as
- * both the hydrolysed and the intact term"); kinship itself does not require the
- * two sides to differ on this flag — see `proteinsAreKin`.
- */
-export function isHydrolyzedProtein(raw: string | null | undefined): boolean {
-  const key = canonicalizeProtein(raw);
-  if (key == null) return false;
-  return HYDROLYSIS_PREFIX.test(key) || HYDROLYSIS_SUFFIX.test(key);
-}
-
-/**
  * The SOURCE a protein key names, with processing terms and a trailing generic
  * "protein" removed — or null when the key names no usable source.
  *
@@ -177,8 +164,11 @@ export interface KinPartition {
   /** Genuine additional sources — the ones that remain a finding. */
   extra: string[];
   /** Keys absorbed as the primary's own source under a different processing
-   *  term. NOT dropped: a caller must DISCLOSE these, never delete them (see
-   *  `partitionKinOfPrimary`). */
+   *  term. Returned rather than silently discarded so a caller can always see
+   *  WHAT was absorbed and decide whether its surface owes the reader a sentence
+   *  — see the note on `partitionKinOfPrimary` for how that obligation is
+   *  currently discharged, which is by the protein set already being rendered
+   *  verbatim, not by a dedicated line. */
   derivedFromPrimary: string[];
 }
 
@@ -191,9 +181,22 @@ export interface KinPartition {
  * contamination finding is the reassurance direction, and `clinical-guardrails`
  * does not permit a surface to get quieter without saying so. So this returns a
  * partition, not a filter: `extra` is what may still be presented as a finding,
- * and `derivedFromPrimary` is what the caller owes the reader as a disclosure —
- * "the label lists both the hydrolysed and the intact term for its own source"
- * is a fact about the RECORD, not an all-clear about the pet.
+ * and `derivedFromPrimary` is the absorbed remainder, kept visible to callers so
+ * the suppression is inspectable rather than invisible.
+ *
+ * HOW THAT OBLIGATION IS DISCHARGED TODAY — stated plainly, because an earlier
+ * draft of this comment implied a dedicated disclosure line that does not exist.
+ * No surface renders `derivedFromPrimary` as its own sentence. It does not need
+ * to: every surface that suppresses a finding on the strength of kinship ALSO
+ * renders the food's full protein set verbatim (the vet report's appendix B, the
+ * food detail screen's Tier-1 disclosure), so both terms are already on the page
+ * and the reader can see exactly what was absorbed. What changed is only that
+ * their co-occurrence is no longer CALLED a contamination.
+ *
+ * That equivalence is a property of the current callers, not a guarantee of this
+ * module. A future surface that suppresses via kinship WITHOUT showing the set
+ * would be getting quieter without saying so, and owes the reader a sentence
+ * built from this field.
  *
  * A null / unusable primary returns everything as `extra` and absorbs nothing.
  * That is the honest degenerate case: with no designated primary there is no
