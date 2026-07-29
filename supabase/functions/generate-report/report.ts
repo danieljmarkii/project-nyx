@@ -94,7 +94,7 @@ import { foodFormatWord } from '../../../lib/foodFormat.ts'
 // The diet-trial answer (B-417 PR 7). `trial.ts` is the seam onto `lib/dietTrial.ts`
 // — the one shared predicate — and imports NOTHING from this file, so the two are a
 // tree rather than a cycle.
-import { buildTrialBlock, selectReportTrial, trialEndValue, type TrialBlock } from './trial.ts'
+import { buildTrialBlock, selectReportTrial, trialEndValue, trialLastDayNum, type TrialBlock } from './trial.ts'
 // B-494's flag carries the refusal fact verbatim rather than flattening it, so the
 // band and the trial block on the same page cannot state different numbers.
 import type { TrialDietRefusal, TrialSpecies } from '../../../lib/dietTrial.ts'
@@ -642,14 +642,22 @@ export function resolveScope(input: ReportInput): ReportScope {
   for (const t of input.dietTrials) {
     const tNum = dayNumber(t.startedAt)
     if (tNum === null) continue
-    if (t.status !== 'active') {
-      const endNum = dayNumber(t.endedAt ?? t.completedAt ?? '')
-      // No end date on a non-active trial means we cannot place it in time (B-455
-      // is exactly this column going unread) — leave the window to rung 3 rather
-      // than anchor on a trial that may have finished a year ago.
+    // B-422 — RANK ON RUNNING, NOT ON `status`, and use the same last-day value
+    // `selectReportTrial` uses. The two must agree: this picks the WINDOW and that
+    // picks the BLOCK, and an earlier adversarial pass produced a real divergence
+    // by letting them rank differently. A trial nobody ended has no declared end,
+    // so `status = 'active'` alone would anchor every report on it forever — the
+    // 90-day fallback would become unreachable for any owner who ever started a
+    // trial and never tapped Complete, which is most of them.
+    const endNum = trialLastDayNum(t, input.timezone)
+    const running = t.status === 'active' && (endNum === null || todayNum <= endNum)
+    if (!running) {
+      // No end date at all means we cannot place it in time (B-455 is exactly this
+      // column going unread) — leave the window to rung 3 rather than anchor on a
+      // trial that may have finished a year ago.
       if (endNum === null || todayNum - endNum > TRIAL_ANCHOR_GRACE_DAYS) continue
     }
-    const cand = { startedAt: t.startedAt, rank: t.status === 'active' ? 1 : 0, startNum: tNum, id: t.id }
+    const cand = { startedAt: t.startedAt, rank: running ? 1 : 0, startNum: tNum, id: t.id }
     if (
       best === null ||
       cand.rank > best.rank ||
@@ -1897,7 +1905,12 @@ export interface DetectionExtract {
   stapleProtein: string | null
 }
 
-function buildDetectionInput(
+/** EXPORTED for the suite only, alongside `resolveScope` and `dedupeEvents`.
+ *  `pet.dietTrialActive` decides three whole-detector suppressions and a
+ *  priority-band promotion, and its only other observable is the ABSENCE of a
+ *  finding — which is exactly why B-422 sat here unnoticed. A test that has to
+ *  construct a correlation to observe a missing one is a test nobody writes. */
+export function buildDetectionInput(
   input: ReportInput,
   scope: ReportScope,
   windowEvents: Array<ReportEventInput & { dupCount: number }>,
@@ -1992,7 +2005,14 @@ function buildDetectionInput(
     pet: {
       name: input.pet.name,
       species: input.pet.species,
-      dietTrialActive: input.dietTrials.some((t) => t.status === 'active'),
+      // B-422 — the same gate `generate-signal/index.ts` applies to the same flag,
+      // because this feeds the SAME engine: it fully mutes detectors ⑧/⑨/⑩ and
+      // promotes correlation to band 1. A trial nobody ended would otherwise
+      // silence three dietary-pattern detectors on the vet report permanently.
+      dietTrialActive: input.dietTrials.some((t) => {
+        const endNum = trialLastDayNum(t, tz)
+        return t.status === 'active' && (endNum === null || scope.endDayNum <= endNum)
+      }),
     },
     symptomEvents,
     mealEvents,

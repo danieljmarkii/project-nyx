@@ -460,6 +460,14 @@ export function secondTrialIntro(petName: string, trial: ActiveTrialSummary, now
 // its own losing offline row plus the winner hydrated from the server. The row the
 // server actually accepted wins, because the server is authoritative under the
 // house's last-write-wins-with-no-merge rule.
+//
+// `status = 'active'` HERE IS CORRECT AND MUST NOT GAIN THE B-422 EFFECTIVE-END
+// GATE. This read backs the start modal's end-and-continue pre-flight, and what
+// it is really asking is "will migration 040's one-active-trial UNIQUE index
+// reject my insert?" — a question about the DATABASE, which knows nothing about
+// graces. A stale trial still blocks a new one, so the modal must still be able
+// to offer to end it; hiding it would leave the owner unable to start a trial
+// with no explanation. Same rule at `profile.tsx`'s `sheetTrial`.
 const ACTIVE_TRIAL_FOR_PET_SQL = `
   SELECT t.id, t.started_at, t.target_duration_days,
          COALESCE(

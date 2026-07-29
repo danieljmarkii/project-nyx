@@ -53,6 +53,7 @@ import { getDb } from './db';
 import {
   computeTrialFacts,
   mayStateRecordClean,
+  trialEffectiveEndDayIndex,
   trialFoodKey,
   type AllowedFood,
   type TrialArrangement,
@@ -214,15 +215,31 @@ export async function loadDietTrialFacts(args: {
   // to BOTH halves plus the exposure window — so a meal fed after the trial ended
   // cannot count toward how it was run, and an owner is not scored for days a
   // finished trial wasn't running.
-  const endKey = trial.status === 'active' ? null : row.ended_at;
+  //
+  // B-422 — AND AN UN-ENDED TRIAL'S WINDOW CLOSES AT ITS EFFECTIVE END. The
+  // predicate applies that bound itself (`buildTrialContext`), so `endKey` here
+  // is only about how far the four SQL READS below should reach. It is derived
+  // from the module rather than recomputed: a read window wider than the
+  // predicate's is merely wasteful, but a NARROWER one silently deletes findings,
+  // and the two drifting apart is the whole class of bug `lib/dietTrial.ts`
+  // exists to prevent.
+  //
+  // It matters most for `readArrangements`, which is an OVERLAP query rather than
+  // a windowed scan: with no upper bound, a free-choice bowl set up months after
+  // an abandoned trial finished would still set `intakeNotDirectlyObserved` and
+  // withhold the claim over a window it never touched.
+  const readUntilKey = windowEndKey(row, trial.status, nowMs);
 
-  // The trial the PREDICATE sees. `species` drives rung 4's route rules; `endedAt`
-  // closes the window on a terminal trial so a meal fed afterwards cannot count
-  // toward how the trial was run.
+  // The trial the PREDICATE sees. `species` drives rung 4's route rules;
+  // `targetDurationDays` is what lets it derive the B-422 effective end for
+  // itself; `endedAt` stays the DECLARED end and nothing else — stuffing the
+  // effective end in here would both re-implement the module's own bound at a
+  // call site and make `range.closedByOverrun` (which keys on `!endedAt`)
+  // unable to tell an owner-ended trial from an overrun one.
   const spec: TrialSpec = {
     id: row.id,
     startedAt: row.started_at,
-    endedAt: endKey,
+    endedAt: trial.status === 'active' ? null : row.ended_at,
     targetDurationDays: row.target_duration_days,
     species: pet.species,
   };
@@ -230,9 +247,9 @@ export async function loadDietTrialFacts(args: {
   const [allowedFoods, feedings, doses, arrangements, decline, standingNote] =
     await Promise.all([
       readAllowedFoods(row.id),
-      readFeedings(pet.id, row.started_at, endKey),
-      readDoses(pet.id, row.started_at, endKey),
-      readArrangements(pet.id, row.started_at, endKey),
+      readFeedings(pet.id, row.started_at, readUntilKey),
+      readDoses(pet.id, row.started_at, readUntilKey),
+      readArrangements(pet.id, row.started_at, readUntilKey),
       readIntakeDecline(pet, nowMs),
       readStandingNote(pet.id, pet.name),
     ]);
@@ -396,13 +413,47 @@ export async function loadDietTrialFacts(args: {
   };
 }
 
-/** Day key shifted by N local days, via the UTC-anchored index. The inverse of
- *  `localDayIndexOf` must be a UTC read — see `dietTrialOutcomeFacts.dayKeyFromIndex`
- *  for what happens when it isn't. */
+/** The inverse of `localDayIndexOf`, which must be a UTC read — see
+ *  `dietTrialOutcomeFacts.dayKeyFromIndex` for what happens when it isn't. */
+function dayKeyFromIndex(index: number): string {
+  return new Date(index * 86_400_000).toISOString().slice(0, 10);
+}
+
+/** Day key shifted by N local days, via the UTC-anchored index. */
 function shiftDayKey(dayKey: string, deltaDays: number): string {
   const index = localDayIndexOf(dayKey);
   if (index === null) return dayKey;
-  return new Date((index + deltaDays) * 86_400_000).toISOString().slice(0, 10);
+  return dayKeyFromIndex(index + deltaDays);
+}
+
+/**
+ * How far the four predicate reads should reach — B-422.
+ *
+ * A terminal trial is bounded by its declared end, exactly as before. An ACTIVE
+ * one is bounded by the module's effective end, and only once the calendar has
+ * actually passed it: a trial still inside its grace has no upper bound, which
+ * is the shipped behaviour and the right one (there is nothing above "now" to
+ * exclude).
+ *
+ * The day index comes from `trialEffectiveEndDayIndex` rather than from
+ * arithmetic here. Re-deriving `start + target - 1 + grace` at a call site is how
+ * a second window definition gets born, and this file's whole contract is that
+ * every JUDGEMENT lives in the module.
+ */
+function windowEndKey(
+  row: TrialRow,
+  status: TrialCardTrial['status'],
+  nowMs: number,
+): string | null {
+  if (status !== 'active') return row.ended_at;
+  const effectiveEnd = trialEffectiveEndDayIndex({
+    startedAt: row.started_at,
+    targetDurationDays: row.target_duration_days,
+  });
+  if (effectiveEnd === null) return null;
+  const today = localDayIndexOf(new Date(nowMs).toISOString());
+  if (today === null || today <= effectiveEnd) return null;
+  return dayKeyFromIndex(effectiveEnd);
 }
 
 /** The trial's own local day key, whether the column arrived as a DATE or an ISO

@@ -95,6 +95,7 @@ import {
   buildTrialContext,
   classifyFeeding,
   contaminationNote,
+  isTrialRunning,
   proteinPhrase,
   sanctionedProteinsOn,
   trialContamination,
@@ -521,7 +522,7 @@ function parseConfidence(text: string | null): unknown {
  *  winner, and the row the SERVER accepted is the one every surface must agree
  *  on. Identical ordering to `ACTIVE_DIET_TRIAL_QUERY` and the card's own read. */
 const ACTIVE_TRIAL_SQL = `
-  SELECT id, started_at, ended_at
+  SELECT id, started_at, ended_at, target_duration_days
     FROM diet_trials
    WHERE pet_id = ? AND status = 'active'
    ORDER BY synced DESC, started_at DESC, id
@@ -546,7 +547,12 @@ const ALLOWED_SET_SQL = `
    ORDER BY tf.allowed_from, tf.id
 `;
 
-interface TrialRow { id: string; started_at: string; ended_at: string | null }
+interface TrialRow {
+  id: string;
+  started_at: string;
+  ended_at: string | null;
+  target_duration_days: number;
+}
 
 interface AllowedRow {
   food_item_id: string;
@@ -598,7 +604,20 @@ export async function loadTrialProteinContext(
     return null;
   }
 
-  if (!trial) {
+  // B-422 — a trial past its effective end stops flagging contaminants.
+  //
+  // Every consumer of this context is a PRESENT-TENSE claim about the pet: the
+  // log-time "this has chicken in it" flag, the add-a-food heads-up, the standing
+  // note on the trial card. Fired against a trial that ended in March, each of
+  // them tells the owner their pet is on a diet it is not on — and the log-time
+  // flag does it at the moment of the event, which is the one moment Principle 1
+  // says the app must not add friction to.
+  //
+  // Nulled at THIS boundary rather than inside `trialContextOf`, so the whole
+  // graph below (the completeness gate, the target line, the heads-up ledger)
+  // sees one answer. Cached like the genuine no-trial case — the TTL is what
+  // makes the transition visible within five minutes without a re-render storm.
+  if (!trial || !isTrialRunning({ startedAt: trial.started_at, endedAt: trial.ended_at, targetDurationDays: trial.target_duration_days }, Date.now())) {
     contextCache.set(petId, { atMs: Date.now(), ctx: null });
     return null;
   }

@@ -49,6 +49,7 @@ import {
   isWithinChallengeWindow,
   mayClaimAllMatched,
   mayStateRecordClean,
+  trialEffectiveEndDayIndex,
   trialFoodKey,
   CHALLENGE_WINDOW_DAYS,
   UNHYDRATED_SET_FLOOR,
@@ -464,6 +465,34 @@ export interface TrialBlock {
  * wins over an ended one (a pet has at most one active trial — migration 040's
  * UNIQUE partial index); among equals, the most recent start.
  */
+/**
+ * The trial's LAST DAY — declared or effective (B-422).
+ *
+ * `trialEndValue` answers "when did the owner say it ended", which is null for
+ * every trial nobody ended — and since nothing auto-completes a trial, that is
+ * the STEADY STATE rather than an edge. Read literally it means a trial started
+ * eighteen months ago and never closed is still "running" today, so it wins the
+ * `active` rank forever, anchors every report on itself, and never ages out of
+ * the ended-trial grace because it never enters it.
+ *
+ * So the last day is the EARLIER of the declared end and the B-422 effective
+ * end. Deriving one value here, rather than adding a second staleness branch to
+ * each caller, is what keeps the grace machinery singular: an overrun trial is
+ * simply a trial that ended on its effective end, and `endedGraceDays` /
+ * `TRIAL_ANCHOR_GRACE_DAYS` then govern its afterlife exactly as they govern a
+ * completed one.
+ */
+export function trialLastDayNum(t: TrialSource, timeZone: string | null): number | null {
+  const ends = [
+    dayIndexOfValue(trialEndValue(t), timeZone),
+    trialEffectiveEndDayIndex(
+      { startedAt: t.startedAt, targetDurationDays: t.targetDurationDays },
+      timeZone ?? undefined,
+    ),
+  ].filter((v): v is number => v !== null)
+  return ends.length > 0 ? Math.min(...ends) : null
+}
+
 export function selectReportTrial<T extends TrialSource>(
   trials: readonly T[],
   window: { startDayNum: number; endDayNum: number },
@@ -478,21 +507,26 @@ export function selectReportTrial<T extends TrialSource>(
   for (const t of trials) {
     const startDn = dayIndexOfValue(t.startedAt, timeZone)
     if (startDn === null) continue
-    const endDn = dayIndexOfValue(trialEndValue(t), timeZone)
+    const endDn = trialLastDayNum(t, timeZone)
     // An open-ended trial runs through the window end; one that ended before the
     // window opened never overlaps.
     const spanEnd = endDn ?? window.endDayNum
     if (startDn > window.endDayNum || spanEnd < window.startDayNum) continue
+    // RUNNING, NOT `status = 'active'` (B-422). Every report scope ends today
+    // (`resolveScope` builds all three rungs as `… → todayNum`), so `endDayNum` is
+    // the report's today and "the trial's last day has not passed" is the same
+    // question `isTrialRunning` asks on the client.
+    const running = t.status === 'active' && (endDn === null || window.endDayNum <= endDn)
     // OVERLAP IS NOT ENOUGH FOR AN ENDED TRIAL. A 90-day fallback window catches
     // the tail of a trial that finished ten weeks ago, and framing the whole report
     // as that trial's result would be a worse answer than framing it as symptom
     // monitoring: the trial describes three of the report's thirteen weeks. The
     // report belongs to a trial that is running, or one that has only just stopped.
-    if (t.status !== 'active' && (endDn === null || window.endDayNum - endDn > endedGraceDays)) continue
+    if (!running && (endDn === null || window.endDayNum - endDn > endedGraceDays)) continue
     // Ties break on `id`, matching `resolveScope` rung 2 — the query has no ORDER BY,
     // so two ended trials with the same start otherwise resolve by array order and the
     // report flips on a re-order (the B-188 shape, and the pair must not disagree).
-    const key: [number, number, string] = [t.status === 'active' ? 1 : 0, startDn, t.id]
+    const key: [number, number, string] = [running ? 1 : 0, startDn, t.id]
     if (
       key[0] > bestKey[0] ||
       (key[0] === bestKey[0] && key[1] > bestKey[1]) ||

@@ -20,7 +20,12 @@
 // the wedge surface survives airplane mode; the Supabase read this used to mock
 // is gone, so there is no `./supabase` stub here at all.
 
-interface TrialRow { id: string; started_at: string; ended_at: string | null }
+interface TrialRow {
+  id: string;
+  started_at: string;
+  ended_at: string | null;
+  target_duration_days: number;
+}
 interface AllowedRow {
   food_item_id: string;
   role: string;
@@ -94,7 +99,11 @@ const WET: AllowedRow = {
 
 beforeEach(() => {
   clearTrialContextCache();
-  state.trial = { id: 't-1', started_at: '2020-01-01', ended_at: null };
+  // `target_duration_days: 0` = indefinite, which has no window to overrun — so
+  // the B-422 staleness gate is inert for the protein-resolution cases below and
+  // this suite keeps testing exactly what it was written to test. Its own
+  // describe block at the bottom supplies a real target.
+  state.trial = { id: 't-1', started_at: '2020-01-01', ended_at: null, target_duration_days: 0 };
   state.allowed = [DRY];
   state.throws = false;
 });
@@ -171,4 +180,51 @@ it('treats a failed local read as unknown, and does not cache it', async () => {
 it('still returns null when there is no active trial at all', async () => {
   state.trial = null;
   expect(await loadTrialProteinContext('pet-1')).toBeNull();
+});
+
+// ── B-422 — a trial past its effective end stops flagging contaminants ────────
+//
+// Every consumer of this context makes a PRESENT-TENSE claim about the pet: the
+// log-time "this has chicken in it" flag, the add-a-food heads-up, the standing
+// note on the trial card. Fired off a trial that ended in March, each one tells
+// the owner their pet is on a diet it is not on — and the log-time flag does it
+// at the moment of the event, the one moment Principle 1 says the app must not
+// add friction to.
+describe('the effective-end gate', () => {
+  const NOW = Date.parse('2026-07-24T12:00:00.000Z');
+  let clock: jest.SpyInstance;
+
+  beforeEach(() => {
+    clock = jest.spyOn(Date, 'now').mockReturnValue(NOW);
+  });
+  afterEach(() => clock.mockRestore());
+
+  it('resolves a trial that is running', async () => {
+    // Day 1 on 2026-07-01, 56-day target → target ends 08-25, well ahead.
+    state.trial = { id: 't-1', started_at: '2026-07-01', ended_at: null, target_duration_days: 56 };
+    expect((await loadTrialProteinContext('pet-1'))?.trialId).toBe('t-1');
+  });
+
+  it('still resolves one that is merely in overrun, inside its grace', async () => {
+    // 14-day target from 2026-07-01 → target ended 07-14, grace runs to 08-11.
+    state.trial = { id: 't-1', started_at: '2026-07-01', ended_at: null, target_duration_days: 14 };
+    expect((await loadTrialProteinContext('pet-1'))?.trialId).toBe('t-1');
+  });
+
+  it('returns null once the grace has expired', async () => {
+    // 28-day target from 2026-01-01 → grace expired 2026-02-25.
+    state.trial = { id: 't-1', started_at: '2026-01-01', ended_at: null, target_duration_days: 28 };
+    expect(await loadTrialProteinContext('pet-1')).toBeNull();
+  });
+
+  it('caches the stale answer, so the gate is not re-run on every log tap', async () => {
+    state.trial = { id: 't-1', started_at: '2026-01-01', ended_at: null, target_duration_days: 28 };
+    expect(await loadTrialProteinContext('pet-1')).toBeNull();
+    // A stale trial is a settled fact for the TTL, unlike the transient read
+    // failure above — which is why that one is deliberately NOT cached.
+    state.trial = { id: 't-2', started_at: '2026-07-01', ended_at: null, target_duration_days: 56 };
+    expect(await loadTrialProteinContext('pet-1')).toBeNull();
+    clearTrialContextCache();
+    expect((await loadTrialProteinContext('pet-1'))?.trialId).toBe('t-2');
+  });
 });

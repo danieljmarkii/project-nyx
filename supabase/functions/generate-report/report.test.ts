@@ -15,6 +15,7 @@
 import { strict as assert } from 'node:assert'
 import {
   assembleReport,
+  buildDetectionInput,
   dedupeEvents,
   resolveScope,
   FALLBACK_DAYS,
@@ -613,6 +614,60 @@ Deno.test('scope cascade — since-visit beats trial beats fallback', () => {
     baseInput({ vetVisits: [{ visitedAt: '2026-08-01', clinicName: null, vetName: null, reason: null }] }),
   )
   assert.equal(futureVisit.scope.basis, 'fallback_90d')
+})
+
+// ── B-422 — a trial nobody ended stops anchoring the window ──────────────────
+
+Deno.test('scope cascade — a stale-active trial falls through to the 90-day fallback', () => {
+  // Rung 2 keyed on `status === 'active'`, and nothing auto-completes a trial:
+  // §4.3's milestone needs an owner tap. So an owner who started a trial in 2024
+  // and never closed it had EVERY subsequent report anchored on it — a window
+  // stretching back years, with every denominator on the page scaled to it, and
+  // the 90-day fallback structurally unreachable for the rest of their account's
+  // life. "Today" here is 2026-07-02.
+  const stale = assembleReport(
+    baseInput({
+      dietTrials: [{ id: 't1', foodItemId: 'f', startedAt: '2024-05-01', targetDurationDays: 42, status: 'active', completedAt: null, vetName: null }],
+    }),
+  )
+  assert.equal(stale.scope.basis, 'fallback_90d')
+  assert.equal(stale.scope.trialStartDate, null)
+
+  // Inside the grace it is still the anchor — the owner who means to keep going
+  // and has not tapped the extension yet is exactly who this must not drop.
+  // Target ends 2026-06-11, effective end 2026-07-09.
+  const overrun = assembleReport(
+    baseInput({
+      dietTrials: [{ id: 't1', foodItemId: 'f', startedAt: '2026-05-01', targetDurationDays: 42, status: 'active', completedAt: null, vetName: null }],
+    }),
+  )
+  assert.equal(overrun.scope.basis, 'diet_trial')
+  assert.equal(overrun.scope.startDate, '2026-05-01')
+
+  // And the WINDOW and the BLOCK still agree about which trial that is — the two
+  // rank through the same last-day value on purpose, because an earlier
+  // adversarial pass produced a real divergence by letting them differ.
+  assert.equal(overrun.trial?.id, 't1')
+  assert.equal(stale.trial, null)
+})
+
+Deno.test('B-422 — a stale-active trial no longer suppresses the diet-structure detectors', () => {
+  // `dietTrialActive` fully mutes detectors ⑧ staple-washout, ⑨ meal-type-collapse
+  // and ⑩ diet-churn, and promotes correlation to band 1. Off a trial that ended
+  // in 2024 those are wrong in the same direction — a permanently MISSING
+  // sentence rather than a wrong one, which is why it went unnoticed.
+  const detInput = (startedAt: string, target: number) =>
+    buildDetectionInput(
+      baseInput({
+        dietTrials: [{ id: 't1', foodItemId: 'f', startedAt, targetDurationDays: target, status: 'active', completedAt: null, vetName: null }],
+      }),
+      resolveScope(baseInput()),
+      [],
+      new Set(),
+    )
+  assert.equal(detInput('2024-05-01', 42).pet.dietTrialActive, false)
+  assert.equal(detInput('2026-05-01', 42).pet.dietTrialActive, true) // inside the grace
+  assert.equal(detInput('2024-05-01', 0).pet.dietTrialActive, true) // no target, no overrun
 })
 
 Deno.test('§6 cherry-pick guard — a custom window discloses out-of-window symptom incidents', () => {
