@@ -1704,3 +1704,89 @@ Deno.test('R6 — a below-floor record says "Not stated", not a dash', () => {
   assert.ok(!/^—$/m.test(text))
   assert.ok(/Not stated|Not countable|feedings/.test(text))
 })
+
+// ── B-529 / ruling R7 — the hydrolysed diet does not contaminate its own trial ─
+//
+// THE ARTIFACT THIS COMES FROM. The B-417 pre-ship cold read was handed a real
+// hydrolysed-diet report and reached the WRONG CLINICAL CONCLUSION off page 1 —
+// re-run the trial, where the record said proceed to rechallenge — because the
+// trial food's label yields BOTH `hydrolyzed soy protein` (front of pack →
+// primary_protein) and `soy` (the panel term), and a bare set difference read
+// that as the prescription diet contaminating the trial it is the basis of.
+//
+// The fixture is the SAME product the suite already uses, carrying the protein
+// pair a real extraction produces from the ingredients text it already has
+// ("Hydrolysed soy protein, rice, animal fats"). Note the trial ROW's own
+// primaryProtein/proteins must move with the allowed-set row: page 1's breach
+// set is built from the trial row, so overriding only `allowedFoods` leaves the
+// assertion vacuous — which is how the first cut of these tests passed without
+// exercising the defect at all.
+const HYDROLYSED_PAIR = {
+  primaryProtein: 'hydrolyzed soy protein',
+  proteins: ['hydrolyzed soy protein', 'soy'],
+}
+
+function hydrolysedTrialInput(over: Partial<ReportInput> = {}): ReportInput {
+  const input = wellLoggedTrialInput(over)
+  input.dietTrials[0] = {
+    ...input.dietTrials[0],
+    ...HYDROLYSED_PAIR,
+    allowedFoods: [{ ...TRIAL_FOOD, ...HYDROLYSED_PAIR }],
+  }
+  return input
+}
+
+Deno.test('B-529 — a hydrolysed trial food is not reported as contaminating itself', () => {
+  const snap = assembleReport(hydrolysedTrialInput())
+  // Page 1's shape-① breach set: the two keys name one source, at two stages of
+  // processing. Was ['soy'] before the relation existed.
+  assert.deepEqual(snap.diet.trial?.proteinSet.offTrial, [])
+  assert.equal(snap.trial?.contamination.length, 0)
+
+  const text = plain(renderReport(snap))
+  assert.ok(!/trial food.s own label also lists/i.test(text))
+  // …and the protein is not promoted into page 1's "in the diet" sentence.
+  assert.ok(!/Soy in \w+.s diet during the trial/i.test(text))
+  // The set itself is still rendered verbatim, so nothing is hidden from the
+  // reader — the report simply stops calling the co-occurrence a contamination.
+  assert.ok(/Hydrolyzed soy protein/i.test(text))
+})
+
+Deno.test('B-529 — the false self-contamination no longer suppresses §7.2', () => {
+  // `render.ts` suppresses the affirmative interpretability statement whenever ANY
+  // caveat applies, so a false contamination silently cost a well-logged trial the
+  // one sentence it had earned. Both halves of the defect, from one root.
+  const text = plain(renderReport(assembleReport(hydrolysedTrialInput())))
+  assert.ok(/supports interpreting it/.test(text))
+  assert.ok(!/cannot establish that the elimination was clean/.test(text))
+})
+
+Deno.test('B-529 — intact protein from ANOTHER food still breaks the same trial', () => {
+  // THE SAFE DIRECTION, and the reason kinship is never applied across foods:
+  // intact protein is exactly what a hydrolysed elimination trial excludes, so a
+  // relation that quietened this would convert a broken trial into a clean one —
+  // a worse artifact than the one it replaced. The absorption is scoped to a
+  // food's OWN designated primary and cannot travel to a different food.
+  const input = hydrolysedTrialInput()
+  for (const d of ['2026-06-10', '2026-06-17', '2026-06-24']) {
+    input.events.push(
+      meal({
+        date: d,
+        brand: 'Generic',
+        product: 'Soy Dental Chew',
+        foodItemId: 'f-soy-chew',
+        foodType: 'treat',
+        proteins: ['soy'],
+        time: '19:00:00',
+      }),
+    )
+  }
+  const snap = assembleReport(input)
+  // Off the allowed list, carrying the INTACT term → rung 2 names the protein.
+  const soy = snap.trial?.antigenTally.find((a) => a.protein === 'soy')
+  assert.ok(soy, 'intact soy from an off-list food must still tally as an antigen')
+  assert.equal(soy!.feedings, 3)
+  assert.ok(snap.trial!.exposures.offDiet >= 3)
+  // While the trial food itself stays clean on page 1.
+  assert.deepEqual(snap.diet.trial?.proteinSet.offTrial, [])
+})

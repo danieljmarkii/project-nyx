@@ -47,6 +47,7 @@ import {
   feedingWasFinished,
   interpretabilityStatement,
   isWithinChallengeWindow,
+  contaminationFindings,
   mayClaimAllMatched,
   mayStateRecordClean,
   trialFoodKey,
@@ -383,6 +384,24 @@ export interface TrialBlock {
 
   oralRoute: OralRouteExposure[]
   arrangementExposures: Array<{ label: string | null }>
+  /**
+   * FINDINGS ONLY (B-529/R7). `trialContamination` now also returns facts whose
+   * only content is `derivedFromPrimary` — a hydrolysed diet naming its own
+   * source twice (`hydrolyzed chicken` on the front of pack, `chicken` on the
+   * panel). Those are NOT contaminations, and the filter is applied HERE, at the
+   * snapshot boundary, rather than in the render.
+   *
+   * Doing it at the boundary is deliberate: five render sites consume this array
+   * and four of them branch on `.length`, so letting a kin-only fact through
+   * would print an empty "Label contamination" block AND — via `render.ts:1536`
+   * — keep generating the caveat that suppresses the earned interpretability
+   * statement, which is precisely half of the defect R7 exists to remove. One
+   * filter at the source cannot be forgotten by the sixth consumer.
+   *
+   * Nothing is hidden from the reader as a result: appendix B renders each
+   * food's protein set verbatim, so both terms are still on the page — the
+   * report simply stops calling their co-occurrence a contamination.
+   */
   contamination: ContaminationFact[]
   trialDietRefusal: TrialDietRefusal | null
   /**
@@ -824,7 +843,7 @@ export function buildTrialBlock(args: BuildTrialBlockArgs): TrialBlock | null {
       true,
     oralRoute: facts.oralRoute,
     arrangementExposures: facts.arrangementExposures.map((a) => ({ label: a.label })),
-    contamination: facts.contamination,
+    contamination: contaminationFindings(facts.contamination),
     trialDietRefusal: facts.trialDietRefusal,
     rangeRefusal,
     stoppedReason: trial.stoppedReason ?? null,

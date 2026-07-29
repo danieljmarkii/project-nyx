@@ -29,7 +29,7 @@ import { AlwaysAvailableCard } from '../../components/food/AlwaysAvailableCard';
 import { supabase } from '../../lib/supabase';
 import { uploadPhoto, compressForUpload } from '../../lib/storage';
 import { getDb } from '../../lib/db';
-import { seedPickerProteins, pickerProteinsToSet, pickerPrimaryProtein, proteinsToCacheText } from '../../lib/protein';
+import { seedPickerProteins, pickerProteinWrite, proteinsToCacheText } from '../../lib/protein';
 import { foodIntakeKey } from '../../lib/food';
 import { archiveFood, restoreFood, type ArchiveResult } from '../../lib/foodArchive';
 import { useSnackbarStore } from '../../store/snackbarStore';
@@ -259,11 +259,14 @@ export default function FoodDetailScreen() {
     // primary_protein written as its derived head (migration 039's contract).
     // Both columns are written together or not at all — a partial write is what
     // opened the primary/proteins desync window this PR closes.
-    const proteinSet = pickerProteinsToSet(mainToSave, tailToSave);
+    // R7(b), B-529: one value carrying both columns, so no path below can
+    // write the head without the set (or the reverse).
+    const proteinWrite = pickerProteinWrite(mainToSave, tailToSave);
+    const proteinSet = proteinWrite.proteins;
     const proteinChanged =
       proteinTouched.current &&
       (proteinSet.join(' ') !== (row.proteins ?? []).join(' ') ||
-        (pickerPrimaryProtein(mainToSave)) !== base.primary_protein);
+        proteinWrite.primaryProtein !== base.primary_protein);
 
     const changed =
       brand.trim() !== base.brand ||
@@ -298,8 +301,8 @@ export default function FoodDetailScreen() {
       // same never-clobber rule the capture screen applies. Saving an edit to the
       // brand must not re-key a stored protein the owner never authored.
       if (proteinTouched.current) {
-        update.primary_protein = pickerPrimaryProtein(mainToSave);
-        update.proteins = proteinSet;
+        update.primary_protein = proteinWrite.primaryProtein;
+        update.proteins = proteinWrite.proteins;
       }
       const { error } = await supabase
         .from('food_items')
@@ -338,7 +341,7 @@ export default function FoodDetailScreen() {
         if (proteinTouched.current) {
           await db.runAsync(
             `UPDATE food_items_cache SET primary_protein = ?, proteins = ? WHERE id = ?`,
-            [pickerPrimaryProtein(mainToSave), proteinsToCacheText(proteinSet), row.id],
+            [proteinWrite.primaryProtein, proteinsToCacheText(proteinSet), row.id],
           );
         }
       } catch (err) {

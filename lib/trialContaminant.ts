@@ -98,6 +98,7 @@ import {
   proteinPhrase,
   sanctionedProteinsOn,
   trialContamination,
+  uncharacterizedTrialDietFoods,
   type AllowedFood,
   type TrialContext,
   type TrialFoodRole,
@@ -393,6 +394,39 @@ export function trialDietNote(
       body:
         'The trial food has no main protein set, so other foods can’t be checked ' +
         'against it. Setting one on the food would turn the checks back on.',
+    };
+  }
+  // B-529/R7(c) — THE PARTIAL CASE, which the all-dark test above cannot see.
+  // One designated trial food and one undesignated one leaves the sanctioned set
+  // NON-empty, so every branch above stays quiet — while the undesignated food is
+  // dropped from that set and its own proteins fall outside it. On `main` that
+  // tallied the prescribed diet's own protein as an antigen "the trial diet does
+  // not contain", once per feeding. `classifyFeeding` now goes quiet in this
+  // state; this is the sentence that stops it being quieter WITHOUT SAYING SO,
+  // which is the whole of B9's lesson: the most unknown state must not get the
+  // least disclosure. Same channel and same register as the sentence above,
+  // scoped to the food that is actually missing its designation.
+  // Same day-resolution idiom as `sanctionedProteinsForTrial` — the local-day
+  // index, clamped to the trial's own start so a not-yet-started trial resolves
+  // membership on day 1 rather than on a day before the set opens (B-421: never
+  // a millisecond division, which is a UTC epoch-day and disagrees with the
+  // owner's calendar at either end).
+  const trialCtx = trialContextOf(ctx);
+  const todayIndex = localDayIndex(Date.now());
+  const unnamed = uncharacterizedTrialDietFoods(
+    trialCtx,
+    Math.max(todayIndex, trialCtx.startDayIndex ?? todayIndex),
+  );
+  if (unnamed.length > 0) {
+    const which = unnamed.length === 1 && unnamed[0].label
+      ? `${unnamed[0].label} has`
+      : 'One of the trial foods has';
+    return {
+      title: 'Protein checks are paused for this trial',
+      body:
+        `${which} no main protein set, so Culprit can’t tell which proteins belong to ` +
+        'the trial diet and which don’t. Setting one on that food would turn the ' +
+        'checks back on.',
     };
   }
   // D-A's standing fact, computed by the shared module over `primary_diet` rows

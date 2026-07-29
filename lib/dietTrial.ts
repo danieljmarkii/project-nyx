@@ -53,6 +53,7 @@
 //
 // Same inputs, two questions, two answers. Merging them re-opens B-351 shape ①.
 import { canonicalizeProtein } from './protein.ts';
+import { dropKinOfPrimary, partitionKinOfPrimary } from './proteinRelation.ts';
 import { localDayIndexOf } from './utils.ts';
 
 // ── Inputs ───────────────────────────────────────────────────────────────────
@@ -303,12 +304,58 @@ export function sanctionedProteinsOn(ctx: TrialContext, dayIndex: number): Set<s
     // never captured — otherwise a manually-entered trial food with a main
     // protein and no ingredient panel sanctions nothing at all.
     out.add(primary);
-    for (const raw of food.proteins) {
-      const key = canonicalizeProtein(raw);
-      if (key) out.add(key);
-    }
+    // B-529/R7. A KIN TERM OF THIS FOOD'S OWN PRIMARY DOES NOT ENTER THE
+    // SANCTIONED SET. A hydrolysed diet's label routinely yields both keys —
+    // `hydrolyzed chicken` on the front, a panel term that canonicalizes to
+    // `chicken` — and unioning both put INTACT CHICKEN into the set that
+    // sanctions every other food in the library. A plain chicken chew fed
+    // through such a trial then lost its attribution: it still landed off-diet
+    // via rung 3, but `antigens` came back empty and the vet report's tally
+    // never named chicken, which is the single protein a reader of an
+    // elimination trial is looking for. Intact protein is exactly what a
+    // hydrolysed trial excludes, so the intact term must keep its power to
+    // flag OTHER foods.
+    //
+    // The food's own feedings do not become self-accusing as a result: rung 1
+    // absorbs the same kinship against the food that permitted them (see
+    // `classifyFeeding`). The two absorptions are a matched pair — changing one
+    // without the other either re-opens this false negative or re-opens the
+    // false self-contamination it was paired with.
+    const { extra } = partitionKinOfPrimary(canonicalProteins(food.proteins), primary);
+    for (const key of extra) out.add(key);
   }
   return out;
+}
+
+/**
+ * The `primary_diet` foods in force on this day that we cannot fold into the
+ * sanctioned set — i.e. those carrying no usable designated primary.
+ *
+ * R7(c)'s TRIGGER. `sanctionedProteinsOn` skips such a food entirely (it has no
+ * comparator, and unioning its bare array would let a contaminant sanction
+ * itself). The cost of skipping it, which B-529 found on `main`, is that the
+ * food's OWN proteins are then outside the sanctioned set — so every feeding of
+ * the prescribed diet tallies its own protein as "an antigen the trial diet does
+ * not contain", once per feeding, for the length of the trial. The reproduction:
+ * a duck trial with a designated kibble and an undesignated wet food of the same
+ * line reported `duck liver` ×N as an antigen, with `trialContamination`
+ * returning nothing to explain it.
+ *
+ * NARROW BY CONSTRUCTION, and the narrowness is the ruling's own purpose clause
+ * ("never confidently counts the prescribed diet's own protein"). It fires on a
+ * MISSING DESIGNATION, not on an unread ingredient panel. A `primary_diet` food
+ * with a designated primary and an empty array is a different and much more
+ * common state — nothing of it is dropped from the sanctioned set, so it cannot
+ * produce this miscount — and the over-claim it does carry ("we may not have
+ * read everything this diet contains") is already governed by D10's completeness
+ * gate and rendered as the report's incompleteness qualifier. Widening the
+ * silence to cover it would darken the antigen tally on nearly every real trial
+ * and buy nothing this defect is about.
+ */
+export function uncharacterizedTrialDietFoods(ctx: TrialContext, dayIndex: number): AllowedFood[] {
+  return allowedFoodsOn(ctx, dayIndex).filter(
+    (f) => f.role === 'primary_diet' && canonicalizeProtein(f.primaryProtein) == null,
+  );
 }
 
 /** Canonical, de-duplicated, order-preserving protein keys of a food. */
@@ -479,7 +526,17 @@ export function classifyFeeding(
   //
   // Dark, not permissive: rung 3 still RECORDS the feeding. §5.3's own words —
   // "a dark rung 2 costs attribution, not detection".
-  const canAttribute = sanctioned.size > 0;
+  //
+  // R7(c) — THE SILENCE RULE, the second reason the arm goes dark. An in-force
+  // `primary_diet` food with no designated primary is dropped from the
+  // sanctioned set, which makes that set a PARTIAL view of the prescribed diet —
+  // and a partial view cannot support the claim the antigen tally makes, which
+  // is a claim about what the trial diet does NOT contain. On `main` this
+  // rendered the prescribed diet's own protein as an antigen once per feeding.
+  // Going quiet costs attribution on those trials; every feeding is still
+  // recorded by rung 3, and `uncharacterizedTrialDietFoods` is what lets the
+  // surface say why it went quiet instead of just saying less.
+  const canAttribute = sanctioned.size > 0 && uncharacterizedTrialDietFoods(ctx, day).length === 0;
 
   // Rung 1 — the ONLY permit path.
   const hit = matchAllowed(allowedFoodsOn(ctx, day), feeding.foodItemId, feeding.foodKey);
@@ -494,7 +551,29 @@ export function classifyFeeding(
       // by construction rather than by a special case: the trial diet's own
       // contamination is a trial-level standing fact (`trialContamination`),
       // never a per-feeding verdict fired 100+ times across 56 days.
-      antigens: canAttribute ? unsanctionedProteins(feeding.proteins, sanctioned) : [],
+      //
+      // B-529/R7: "by construction" now needs the kinship, because
+      // `sanctionedProteinsOn` deliberately withholds a kin term of the food's
+      // own primary from the sanctioned set (so it can still flag OTHER foods).
+      // Absorbing the same kinship HERE, against the food that actually
+      // permitted this feeding, is what keeps that from rebounding onto the
+      // prescribed diet as a self-accusation once per feeding. Scope matters:
+      // the comparator is `hit.food.primaryProtein` — this food's own
+      // designation — never the trial target in general, so a vet-approved
+      // rabbit jerky that also lists chicken keeps its D-A/D-B antigen record
+      // exactly as before.
+      //
+      // `dropKinOfPrimary`, NOT `partitionKinOfPrimary` — the permitting food's
+      // OWN primary must survive here. On a duck trial the rabbit jerky's
+      // `rabbit` is itself a genuine antigen, and the partition helper drops the
+      // primary because there it is the comparator. Using it here deleted that
+      // exposure from the vet report; the existing D-B test caught it.
+      antigens: canAttribute
+        ? dropKinOfPrimary(
+            unsanctionedProteins(feeding.proteins, sanctioned),
+            hit.food.primaryProtein,
+          )
+        : [],
       role: hit.food.role,
       matchedBy: hit.matchedBy,
       permittedBy: hit.food,
@@ -631,8 +710,16 @@ export function classifyDose(ctx: TrialContext, dose: TrialDose): OralRouteExpos
 
 export interface ContaminationFact {
   food: AllowedFood;
-  /** Proteins in this food beyond its OWN designated primary. */
+  /** Proteins in this food beyond its OWN designated primary, EXCLUDING terms
+   *  that name the primary's own source at a different stage of processing
+   *  (B-529/R7 — see `derivedFromPrimary`). */
   extraProteins: string[];
+  /** B-529/R7 — label terms absorbed as the primary's own source: the `chicken`
+   *  on a `hydrolyzed chicken` diet's panel. NOT a contamination, and never
+   *  counted as one, but NOT deleted either: a surface that got quieter owes the
+   *  reader the reason (`clinical-guardrails` — no path to a quieter page
+   *  without a sentence). Rendered as a record disclosure, never as a finding. */
+  derivedFromPrimary: string[];
 }
 
 /**
@@ -658,10 +745,37 @@ export function trialContamination(ctx: TrialContext): ContaminationFact[] {
   for (const food of ctx.allowedFoods) {
     const intended = canonicalizeProtein(food.primaryProtein);
     if (!intended) continue;
-    const extras = canonicalProteins(food.proteins).filter((k) => k !== intended);
-    if (extras.length > 0) out.push({ food, extraProteins: extras });
+    // B-529/R7. A hydrolysed prescription diet lists its own source twice — the
+    // front of pack designates `hydrolyzed chicken`, the panel yields `chicken`
+    // — and a bare set difference read that as the trial food contaminating its
+    // own trial. The B-417 cold read acted on it and reached the wrong clinical
+    // conclusion (re-run, where the record said proceed to rechallenge), and the
+    // caveat it generated additionally suppressed the earned interpretability
+    // statement. The kin term is partitioned out of the FINDING and returned as
+    // a DISCLOSURE instead; it is never silently dropped.
+    //
+    // The comparator is this food's own designation, so the suppression cannot
+    // travel: an intact-chicken treat fed through the same trial is compared
+    // against the sanctioned set, not against this food, and still flags.
+    const { extra, derivedFromPrimary } = partitionKinOfPrimary(
+      canonicalProteins(food.proteins),
+      intended,
+    );
+    if (extra.length > 0 || derivedFromPrimary.length > 0) {
+      out.push({ food, extraProteins: extra, derivedFromPrimary });
+    }
   }
   return out;
+}
+
+/** The contamination facts that are FINDINGS — the subset carrying a genuine
+ *  extra protein. A fact with only `derivedFromPrimary` is a record disclosure
+ *  and must never reach an alarm surface, so every alarm-side consumer filters
+ *  through this rather than testing `.length` on the array. */
+export function contaminationFindings(
+  facts: readonly ContaminationFact[],
+): ContaminationFact[] {
+  return facts.filter((f) => f.extraProteins.length > 0);
 }
 
 // ── §5.6 — free-fed arrangements ─────────────────────────────────────────────
@@ -1660,11 +1774,15 @@ export function contaminationNote(
    *  allowed list rather than the pet, which reads correctly either way. */
   petName?: string | null,
 ): { title: string; body: string } | null {
-  if (facts.length === 0) return null;
+  // B-529/R7: FINDINGS only. A fact carrying nothing but `derivedFromPrimary`
+  // (a hydrolysed diet naming its own source twice) is a record disclosure, and
+  // routing it here would restate the false accusation this ruling removed.
+  const findings = contaminationFindings(facts);
+  if (findings.length === 0) return null;
   const proteins = new Set<string>();
-  for (const f of facts) for (const p of f.extraProteins) proteins.add(p);
+  for (const f of findings) for (const p of f.extraProteins) proteins.add(p);
   const list = proteinPhrase([...proteins]);
-  const onlyPrimary = facts.every((f) => f.food.role === 'primary_diet');
+  const onlyPrimary = findings.every((f) => f.food.role === 'primary_diet');
   const whose = petName ? `${petName}’s allowed list` : 'the allowed list';
   return {
     title: onlyPrimary ? `The trial food also lists ${list}` : `A food on the list also has ${list}`,

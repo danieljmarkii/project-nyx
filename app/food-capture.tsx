@@ -35,7 +35,7 @@ import { supabase } from '../lib/supabase';
 import { insertMeal } from '../lib/meals';
 import { uploadPhoto, compressForUpload } from '../lib/storage';
 import { uuid, exifDateToISO, trustedPastExifIso, formatExifAttribution } from '../lib/utils';
-import { seedPickerProteins, pickerProteinsToSet, pickerPrimaryProtein, proteinsToCacheText } from '../lib/protein';
+import { seedPickerProteins, pickerProteinsToSet, pickerProteinWrite, proteinsToCacheText } from '../lib/protein';
 import { foodIntakeKey } from '../lib/food';
 import { ProteinDisclosure, proteinSummaryLine } from '../components/food/ProteinDisclosure';
 import { TrialContaminantSheet } from '../components/food/TrialContaminantSheet';
@@ -582,11 +582,14 @@ export default function FoodCaptureScreen() {
       setPrimaryProtein(pendingProteins.main);
       setAlsoContains(pendingProteins.alsoContains);
     }
-    const proteinSet = pickerProteinsToSet(mainToSave, tailToSave);
+    // R7(b) — both columns as ONE value, so the local mirror and the remote
+    // upsert below cannot write one without the other (B-529).
+    const proteinWrite = pickerProteinWrite(mainToSave, tailToSave);
+    const proteinSet = proteinWrite.proteins;
     if (proteinTouched.current) {
       await db.runAsync(
         `UPDATE food_items_cache SET primary_protein = ?, proteins = ? WHERE id = ?`,
-        [pickerPrimaryProtein(mainToSave), proteinsToCacheText(proteinSet), foodId],
+        [proteinWrite.primaryProtein, proteinsToCacheText(proteinSet), foodId],
       );
     }
 
@@ -614,8 +617,8 @@ export default function FoodCaptureScreen() {
     // update, so an AI-extracted protein set survives the owner saving the
     // confirm screen without editing it (B-332 AC, extended to the set).
     if (proteinTouched.current) {
-      foodUpsert.primary_protein = pickerPrimaryProtein(mainToSave);
-      foodUpsert.proteins = proteinSet;
+      foodUpsert.primary_protein = proteinWrite.primaryProtein;
+      foodUpsert.proteins = proteinWrite.proteins;
     }
     supabase.from('food_items').upsert(foodUpsert, { onConflict: 'id' }).then(({ error }) => {
       if (error) console.warn('[food-capture] upsert failed:', error.message);
