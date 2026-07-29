@@ -420,6 +420,7 @@ describe('vetDocumentShareFilename', () => {
     isPdf: true,
     title: 'Senior panel',
     untitled: false,
+    sourceFilename: null,
   };
 
   it('uses the owner’s title when there is one', () => {
@@ -452,6 +453,72 @@ describe('vetDocumentShareFilename', () => {
   it('degrades to an anonymous name when the pet cannot be resolved', () => {
     expect(vetDocumentShareFilename('', named)).toBe('pet-Senior-panel-2026-07-14.pdf');
     expect(vetDocumentShareFilename('   ', named)).toBe('pet-Senior-panel-2026-07-14.pdf');
+  });
+
+  // ── B-583: the source filename is the middle rung ──────────────────────────
+  //
+  // The regression this closes: `untitled + kind 'other'` is not an edge case, it
+  // is what EVERY document is until the owner does two optional things — so the
+  // vet routinely received "Pixel-other-2026-07-14.pdf" for a file the app could
+  // already name. PM-ratified 2026-07-29.
+
+  const untitled = { ...named, untitled: true, title: 'Document — Jul 14' };
+
+  it('uses the source filename’s stem for an untitled document', () => {
+    expect(vetDocumentShareFilename('Pixel', { ...untitled, sourceFilename: 'CBC.pdf' }))
+      .toBe('Pixel-CBC-2026-07-14.pdf');
+  });
+
+  it('never lets `other` reach the vet’s copy', () => {
+    // slug()'s own fallback cannot catch this — 'other' slugs to a non-empty
+    // 'other', so the fallback never fires and the word ships.
+    expect(vetDocumentShareFilename('Pixel', { ...untitled, kind: 'other' as const }))
+      .toBe('Pixel-document-2026-07-14.pdf');
+  });
+
+  it('still falls through to a real kind when there is no filename', () => {
+    expect(vetDocumentShareFilename('Pixel', untitled)).toBe('Pixel-lab-result-2026-07-14.pdf');
+  });
+
+  // A PIMS export very often already carries both, and
+  // "Pixel-Pixel-CBC-2026-07-14-2026-07-14.pdf" reads as a bug in the app that
+  // produced it.
+  it('does not repeat the pet or the date the stem already carries', () => {
+    expect(vetDocumentShareFilename('Pixel', {
+      ...untitled, sourceFilename: 'Pixel-CBC-2026-07-14.pdf',
+    })).toBe('Pixel-CBC-2026-07-14.pdf');
+    // Case-insensitively — a clinic exports PIXEL- as readily as Pixel-.
+    expect(vetDocumentShareFilename('Pixel', {
+      ...untitled, sourceFilename: 'PIXEL_CBC.pdf',
+    })).toBe('PIXEL-CBC-2026-07-14.pdf');
+  });
+
+  it('still dates a stem that carries no date', () => {
+    expect(vetDocumentShareFilename('Pixel', { ...untitled, sourceFilename: 'bloodwork.pdf' }))
+      .toBe('Pixel-bloodwork-2026-07-14.pdf');
+  });
+
+  it('drops only the extension, and uses the row’s own type for the new one', () => {
+    // "labs.PDF" must not become "labs-PDF.pdf"; and an image row ends .jpg even
+    // when the picked name said otherwise.
+    expect(vetDocumentShareFilename('Pixel', { ...untitled, sourceFilename: 'labs.PDF' }))
+      .toBe('Pixel-labs-2026-07-14.pdf');
+    expect(vetDocumentShareFilename('Pixel', {
+      ...untitled, sourceFilename: 'scan.pdf', isPdf: false,
+    })).toBe('Pixel-scan-2026-07-14.jpg');
+  });
+
+  it('lets an owner’s title outrank the filename', () => {
+    expect(vetDocumentShareFilename('Pixel', { ...named, sourceFilename: 'CBC.pdf' }))
+      .toBe('Pixel-Senior-panel-2026-07-14.pdf');
+  });
+
+  it('cannot be walked out of its directory by a hostile stem', () => {
+    const out = vetDocumentShareFilename('Pixel', {
+      ...untitled, sourceFilename: '../../etc/passwd.pdf',
+    });
+    expect(out).not.toMatch(/[/\\]/);
+    expect(out).not.toMatch(/\.\./);
   });
 });
 
@@ -548,6 +615,7 @@ describe('vetDocumentShareFilename — every component is sanitised', () => {
     isPdf: true,
     title: 'Senior panel',
     untitled: false,
+    sourceFilename: null,
   };
 
   it('slugs a separator out of the document date', () => {

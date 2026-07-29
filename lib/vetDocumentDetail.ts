@@ -227,9 +227,44 @@ export async function readVetVisitOptions(
 // "IMG_4471.jpg" is a worse artifact than the same bytes called
 // "Pixel-lab-result-2026-07-14.jpg". Sanitised because a pet named "Mr. O'Malley /2"
 // must never produce a path-breaking filename.
+//
+// ── B-583: WHAT NAMES THE DOCUMENT, IN ORDER ────────────────────────────────
+//
+//   owner's title  →  the source filename's stem  →  the kind  →  "document"
+//
+// The middle rung is new (PM-ratified 2026-07-29) and it is what closes B-546 end
+// to end. Before it, this function fell straight from title to kind — and BOTH of
+// those default at capture, so `untitled + kind = 'other'` is not an edge case, it
+// is what every document is until the owner does two optional things. The result
+// was that an owner could read "CBC-Pixel-2026-07-14.pdf" on the detail screen to
+// check they had the right PDF, tap Send, and hand the vet
+// "Pixel-other-2026-07-14.pdf". B-546's whole thesis is that the app had the name
+// and dropped it on the floor; this was the last place it still did, at the one
+// action §4.3 calls "the single most important affordance after viewing".
+//
+// `other` no longer reaches the name at all. Every other surface in this feature
+// treats it as an ABSENCE — the library row renders it as a dashed invitation, never
+// as a chip reading "Other" (see buildVetLibraryRow) — so letting it become an
+// assertion inside a clinical filename was the one place it changed meaning.
+//
+// Two "don't say it twice" rules, because the stem is a string someone else wrote
+// and it routinely already contains what we were about to append:
+//
+//   • the PET PREFIX is dropped when the name already starts with it. A PIMS export
+//     is very often "Pixel-CBC-2026-07-14.pdf" — prefixing again gives
+//     "Pixel-Pixel-CBC-…", which reads as a bug in the app that produced it.
+//   • the DATE SUFFIX is dropped when the name already contains that date. Same
+//     reason, same shape. When the stem carries no date ("bloodwork.pdf") the date
+//     is still appended, because a vet filing the artifact wants it.
+//
+// Both rules apply to a typed TITLE too, not just to a stem — an owner who types
+// "Pixel bloodwork" gets the same courtesy, and one rule is easier to hold than two.
 export function vetDocumentShareFilename(
   petName: string,
-  detail: Pick<VetDocumentDetail, 'kind' | 'documentDate' | 'isPdf' | 'title' | 'untitled'>,
+  detail: Pick<
+    VetDocumentDetail,
+    'kind' | 'documentDate' | 'isPdf' | 'title' | 'untitled' | 'sourceFilename'
+  >,
   pageIndex = 0,
   pageCount = 1,
 ): string {
@@ -237,9 +272,23 @@ export function vetDocumentShareFilename(
     value.trim().replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-+|-+$/g, '') || fallback;
 
   const name = slug(petName || '', 'pet');
-  // An owner-typed title names the document better than its taxonomy ever will; the
-  // kind is the fallback for the untitled steady state (D11), not the default.
-  const what = detail.untitled ? slug(detail.kind, 'document') : slug(detail.title, 'document');
+
+  // The stem, i.e. the filename without its extension: the extension is decided
+  // below by `isPdf` (the row's stored mime, which is the truth about the bytes),
+  // and carrying the picked one through would let "labs.PDF" become "labs-PDF.pdf".
+  // Only consulted for an untitled document — a title the owner typed always wins.
+  const stem = detail.untitled
+    ? slug((detail.sourceFilename ?? '').replace(/\.[^.]{1,8}$/, ''), '')
+    : '';
+
+  const what = !detail.untitled
+    ? slug(detail.title, 'document')
+    : stem
+      // `other` is an absence, not a taxonomy value — see the header. Note that
+      // slug()'s own fallback cannot do this job: 'other' slugs to a non-empty
+      // 'other', so the fallback never fires and the word reaches the vet.
+      || (detail.kind === VET_DOCUMENT_DEFAULT_KIND ? 'document' : slug(detail.kind, 'document'));
+
   // Slugged like every other component. `documentDate` is written only by the date
   // picker and by hydration from a Postgres DATE, so it cannot currently hold a
   // separator — but it was the one of four parts this function skipped, which made
@@ -247,13 +296,21 @@ export function vetDocumentShareFilename(
   // "2026-07-14/../../x" would have walked the staged copy out of its directory
   // (VF-6, found by rls-privacy-reviewer). Sanitising all four is cheaper than
   // maintaining the argument for why one is safe.
-  const when = detail.documentDate ? `-${slug(detail.documentDate, 'dated')}` : '';
+  const dated = detail.documentDate ? slug(detail.documentDate, 'dated') : '';
+  const when = dated && !what.includes(dated) ? `-${dated}` : '';
+
+  // Case-insensitive: a clinic exports "PIXEL-CBC.pdf" as readily as "Pixel-CBC.pdf",
+  // and the duplicate reads the same either way.
+  const lowerWhat = what.toLowerCase();
+  const lowerName = name.toLowerCase();
+  const prefix = lowerWhat === lowerName || lowerWhat.startsWith(`${lowerName}-`) ? '' : `${name}-`;
+
   // Multi-page documents share one page at a time (aggregate export is parked, §11),
   // so the page has to be in the name or the vet gets three files called the same
   // thing and no way to order them.
   const page = pageCount > 1 ? `-p${pageIndex + 1}` : '';
   const ext = detail.isPdf ? 'pdf' : 'jpg';
-  return `${name}-${what}${when}${page}.${ext}`;
+  return `${prefix}${what}${when}${page}.${ext}`;
 }
 
 // ── AC 12 — the offline read ─────────────────────────────────────────────────
