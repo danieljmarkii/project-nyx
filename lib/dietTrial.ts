@@ -352,10 +352,42 @@ export function sanctionedProteinsOn(ctx: TrialContext, dayIndex: number): Set<s
  * silence to cover it would darken the antigen tally on nearly every real trial
  * and buy nothing this defect is about.
  */
+export function isUncharacterizedTrialDiet(food: AllowedFood): boolean {
+  return food.role === 'primary_diet' && canonicalizeProtein(food.primaryProtein) == null;
+}
+
 export function uncharacterizedTrialDietFoods(ctx: TrialContext, dayIndex: number): AllowedFood[] {
-  return allowedFoodsOn(ctx, dayIndex).filter(
-    (f) => f.role === 'primary_diet' && canonicalizeProtein(f.primaryProtein) == null,
-  );
+  return allowedFoodsOn(ctx, dayIndex).filter(isUncharacterizedTrialDiet);
+}
+
+/**
+ * The same question over a RANGE rather than one day — every `primary_diet` food
+ * lacking a designation whose membership overlaps `[fromDay, toDay]`.
+ *
+ * WHY A RANGE VERSION EXISTS. The disclosure that explains a paused antigen arm
+ * must cover every day the arm was actually dark, and membership is DATED: a
+ * trial food swapped out on day 10 leaves ten days of missing attribution that a
+ * `today`-anchored check cannot see, because that row is no longer in force. The
+ * adversarial pass executed exactly that — day-5 feedings silenced, day-25
+ * feedings attributed, and the card showing no pause sentence at all. A
+ * disclosure that disappears while the hole it explains remains is worse than no
+ * disclosure, because the page then reads as though nothing was ever wrong.
+ */
+export function uncharacterizedTrialDietFoodsInRange(
+  ctx: TrialContext,
+  fromDay: number,
+  toDay: number,
+): AllowedFood[] {
+  return ctx.allowedFoods.filter((f) => {
+    if (!isUncharacterizedTrialDiet(f)) return false;
+    const from = localDayIndexOf(f.allowedFrom, ctx.timeZone);
+    if (from === null || from > toDay) return false;
+    if (f.allowedUntil) {
+      const until = localDayIndexOf(f.allowedUntil, ctx.timeZone);
+      if (until !== null && until < fromDay) return false;
+    }
+    return true;
+  });
 }
 
 /** Canonical, de-duplicated, order-preserving protein keys of a food. */
@@ -527,16 +559,29 @@ export function classifyFeeding(
   // Dark, not permissive: rung 3 still RECORDS the feeding. §5.3's own words —
   // "a dark rung 2 costs attribution, not detection".
   //
-  // R7(c) — THE SILENCE RULE, the second reason the arm goes dark. An in-force
-  // `primary_diet` food with no designated primary is dropped from the
-  // sanctioned set, which makes that set a PARTIAL view of the prescribed diet —
-  // and a partial view cannot support the claim the antigen tally makes, which
-  // is a claim about what the trial diet does NOT contain. On `main` this
-  // rendered the prescribed diet's own protein as an antigen once per feeding.
-  // Going quiet costs attribution on those trials; every feeding is still
-  // recorded by rung 3, and `uncharacterizedTrialDietFoods` is what lets the
-  // surface say why it went quiet instead of just saying less.
-  const canAttribute = sanctioned.size > 0 && uncharacterizedTrialDietFoods(ctx, day).length === 0;
+  // R7(c) — THE SILENCE RULE, the second reason the arm goes dark, and it applies
+  // to RUNG 2 ONLY. An in-force `primary_diet` food with no designated primary is
+  // dropped from the sanctioned set, which makes that set a PARTIAL view of the
+  // prescribed diet — and a partial view cannot support a confident claim about
+  // what the trial diet does NOT contain. A rung-2 feeding is off the allowed
+  // list either way, so going quiet here costs the protein NAME while rung 3
+  // still records the feeding: attribution, not detection, exactly as §5.3 frames
+  // the trade.
+  //
+  // ⚠️ IT MUST NOT REACH RUNG 1, and the first cut of this ruling did — justified
+  // by a comment claiming "every feeding is still recorded by rung 3", which is
+  // FALSE for a permitted feeding. A rung-1 hit STOPS at rung 1; its antigen list
+  // is the only channel it has. The adversarial pass executed the cost: a 40-day
+  // duck trial with two vet-approved chicken dental chews a day went from
+  // `chicken ×80` to an EMPTY tally, while `mayStateRecordClean` stayed true and
+  // the report printed "All 120 matched the trial diet or a permitted food" in
+  // bold — the six-dental-chews-a-day false negative this module's own docstring
+  // names, reintroduced one empty column away. Silence on rung 1 is not lost
+  // attribution, it is lost DETECTION, and it is the reassurance direction
+  // `clinical-guardrails` forbids.
+  const canAttribute = sanctioned.size > 0;
+  const canAttributeUnrecognised =
+    canAttribute && uncharacterizedTrialDietFoods(ctx, day).length === 0;
 
   // Rung 1 — the ONLY permit path.
   const hit = matchAllowed(allowedFoodsOn(ctx, day), feeding.foodItemId, feeding.foodKey);
@@ -568,12 +613,23 @@ export function classifyFeeding(
       // `rabbit` is itself a genuine antigen, and the partition helper drops the
       // primary because there it is the comparator. Using it here deleted that
       // exposure from the vet report; the existing D-B test caught it.
-      antigens: canAttribute
-        ? dropKinOfPrimary(
-            unsanctionedProteins(feeding.proteins, sanctioned),
-            hit.food.primaryProtein,
-          )
-        : [],
+      //
+      // R7(c) AT RUNG 1 IS PER-FOOD, NOT GLOBAL. The defect the silence rule
+      // exists for is narrow: a `primary_diet` food with no designation is
+      // skipped by `sanctionedProteinsOn`, so ITS OWN proteins fall outside the
+      // sanctioned set and every feeding of the prescribed diet tallies them as
+      // "an antigen the trial diet does not contain" (`duck liver ×56` off a duck
+      // trial's own wet food). Silencing exactly that feeding fixes it. Silencing
+      // EVERY permitted feeding because some other row is missing a field is what
+      // deleted the 80 chicken chews — a different food, fully characterized,
+      // whose exposure the record knew about.
+      antigens:
+        canAttribute && !isUncharacterizedTrialDiet(hit.food)
+          ? dropKinOfPrimary(
+              unsanctionedProteins(feeding.proteins, sanctioned),
+              hit.food.primaryProtein,
+            )
+          : [],
       role: hit.food.role,
       matchedBy: hit.matchedBy,
       permittedBy: hit.food,
@@ -591,7 +647,9 @@ export function classifyFeeding(
 
   // Rung 2 — the derived protein arm. It may only ADD a verdict; an empty or
   // unread array is SILENCE and falls through to rung 3, never to an all-clear.
-  const antigens = canAttribute ? unsanctionedProteins(feeding.proteins, sanctioned) : [];
+  const antigens = canAttributeUnrecognised
+    ? unsanctionedProteins(feeding.proteins, sanctioned)
+    : [];
   if (antigens.length > 0) {
     return {
       verdict: 'off_diet_protein',
@@ -1106,6 +1164,26 @@ export interface TrialFacts {
    */
   allowedSetUnavailable: boolean;
   /**
+   * B-529/R7(c) — the `primary_diet` foods in force ANYWHERE in this range that
+   * carry no designated main protein, so the antigen arm was dark for at least
+   * part of it.
+   *
+   * WHY IT IS A FACT AND NOT JUST A PREDICATE. The silence rule makes rung 2 stop
+   * naming proteins. A surface that simply prints fewer antigens is getting
+   * quieter without saying so — the B9 failure ("the most unknown state must not
+   * get the least disclosure"), and on the vet report specifically the B-494 rule
+   * that a page teaching the reader to scan a zone may not leave that zone
+   * silent. The adversarial pass found the first cut discharged this on the
+   * owner's card and NOWHERE on the vet's page, which is the surface the ruling
+   * exists to protect. Carried here so `generate-report` and the card read the
+   * same fact.
+   *
+   * RANGE-anchored, not now-anchored: membership is dated, so a trial food
+   * swapped out on day 10 leaves ten days of missing attribution that a `today`
+   * check cannot see.
+   */
+  antigenAttributionPaused: AllowedFood[];
+  /**
    * True when a free-choice arrangement is in force AT THE END OF THE RANGE, as
    * opposed to `intakeNotDirectlyObserved`, which is true if one overlapped the
    * range at any point.
@@ -1321,6 +1399,7 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
     // Those are exactly the degraded states where a surface must not assume the
     // allowed set was fine.
     allowedSetUnavailable: !ctx.allowedFoods.some((f) => f.role === 'primary_diet'),
+    antigenAttributionPaused: [],
     untrackedDaysBeforeFirstLog: 0,
     interpretability: 'not_yet',
     belowCoverageFloor: false,
@@ -1604,6 +1683,11 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
     allowedSetUnavailable:
       base.allowedSetUnavailable ||
       (primaryFeedings === 0 && totalFeedings >= UNHYDRATED_SET_FLOOR),
+    antigenAttributionPaused: uncharacterizedTrialDietFoodsInRange(
+      ctx,
+      startDayIndex,
+      endDayIndex,
+    ),
     // In force AT THE END of the range — the present-tense question.
     intakeNotDirectlyObservedNow: (input.arrangements ?? []).some((a) => {
       const end = a.endedAt ? localDayIndexOf(a.endedAt, input.timeZone) : null;
@@ -1872,6 +1956,14 @@ export function mayClaimAllMatched(facts: TrialFacts): boolean {
   // An empty permit set makes rung 1 miss by construction, so "matched" is not a
   // measurement — it is an artefact of a cold cache.
   if (facts.allowedSetUnavailable) return false;
+  // B-529/R7(c). "All N matched the trial diet or a permitted food" must not
+  // compose with a DARK ANTIGEN ARM. The adversarial pass executed the
+  // composition: a trial with one undesignated `primary_diet` row rendered that
+  // sentence in bold over an empty antigen tally, so the reader was told the
+  // record was clean by a page that had stopped looking. The affirmative claim
+  // is exactly what §5.2's G2 gate exists to withhold when the record cannot
+  // support it.
+  if (facts.antigenAttributionPaused.length > 0) return false;
   if (facts.arrangementExposures.length > 0) return false;
   if (facts.oralRoute.length > 0) return false;
   if (facts.exposures.unclassifiable > 0) return false;

@@ -76,6 +76,9 @@ export function trialBlockFixture(
     targetDurationDays: 56,
     vetName: null,
     indication: null,
+    // B-529/R7(c): empty is the ordinary case — every trial food designated, so
+    // the antigen arm ran. A fixture exercising the paused disclosure overrides it.
+    antigenAttributionPaused: [],
     species: 'dog',
     trialDietLabels: [],
     dayCounter: 45,

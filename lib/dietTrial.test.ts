@@ -1857,3 +1857,72 @@ describe('B-529 R7(c) — the silence rule', () => {
     expect(chew.antigens).toEqual(['chicken']);
   });
 });
+
+// ── B-529 — the adversarial pass's blocking counterexample (finding ①) ────────
+//
+// The first cut of R7(c) gated the RUNG-1 permitted antigen list on a GLOBAL
+// "is any trial food undesignated" flag, justified by a comment claiming every
+// feeding is still recorded by rung 3. That is false for a permitted feeding: a
+// rung-1 hit stops at rung 1, so its antigen list is the only channel it has.
+// The executed cost was the six-dental-chews-a-day false negative this module's
+// own docstring names — reintroduced one empty column away.
+describe('B-529 ① — a permitted food keeps its antigen record when ANOTHER row is undesignated', () => {
+  const DUCK = food({
+    foodItemId: 'f-duck', foodKey: 'rcduck kibble', label: 'RC Duck kibble',
+    role: 'primary_diet', primaryProtein: 'duck', proteins: ['duck'],
+  });
+  const UNDESIGNATED_WET = food({
+    foodItemId: 'f-wet', foodKey: 'rcduck wet', label: 'RC Duck wet',
+    role: 'primary_diet', primaryProtein: null, proteins: ['duck', 'duck liver'],
+  });
+  const CHICKEN_CHEW = food({
+    foodItemId: 'f-chew', foodKey: 'bdental chew', label: 'Dental Chew',
+    role: 'permitted_treat', primaryProtein: 'chicken', proteins: ['chicken'],
+  });
+  const ctxWith = () => buildTrialContext(TRIAL, [DUCK, UNDESIGNATED_WET, CHICKEN_CHEW]);
+
+  it('the vet-approved chicken chew still tallies chicken', () => {
+    // Was [] — 80 real exposures deleted from the vet report because a DIFFERENT
+    // food was missing a field.
+    const c = classifyFeeding(
+      ctxWith(),
+      feeding({
+        eventId: 'chew', foodItemId: CHICKEN_CHEW.foodItemId, foodKey: CHICKEN_CHEW.foodKey,
+        foodType: 'treat', proteins: ['chicken'],
+      }),
+    );
+    expect(c.verdict).toBe('permitted');
+    expect(c.antigens).toEqual(['chicken']);
+  });
+
+  it('and the exposures still reach the tally, so no surface can read it as clean', () => {
+    const facts = computeTrialFacts({
+      trial: TRIAL,
+      allowedFoods: [DUCK, UNDESIGNATED_WET, CHICKEN_CHEW],
+      feedings: Array.from({ length: 8 }, (_, i) =>
+        feeding({
+          eventId: `c-${i}`, occurredAt: at('2026-07-10', 6 + i),
+          foodItemId: CHICKEN_CHEW.foodItemId, foodKey: CHICKEN_CHEW.foodKey,
+          foodType: 'treat', proteins: ['chicken'],
+        }),
+      ),
+      nowMs: new Date(at('2026-07-11')).getTime(),
+    });
+    const chicken = facts.exposures.antigenTally.find((a) => a.protein === 'chicken');
+    expect(chicken?.feedings).toBe(8);
+    expect(chicken?.fromPermitted).toBe(8);
+  });
+
+  it('while the undesignated trial food still does NOT tally its own protein', () => {
+    // The defect R7(c) actually exists for — silenced per-food, not globally.
+    const c = classifyFeeding(
+      ctxWith(),
+      feeding({
+        eventId: 'wet', foodItemId: UNDESIGNATED_WET.foodItemId,
+        foodKey: UNDESIGNATED_WET.foodKey, proteins: ['duck', 'duck liver'],
+      }),
+    );
+    expect(c.verdict).toBe('permitted');
+    expect(c.antigens).toEqual([]);
+  });
+});

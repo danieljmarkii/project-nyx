@@ -182,3 +182,22 @@ describe('dropKinOfPrimary — and why it is not partitionKinOfPrimary', () => {
     }
   });
 });
+
+describe('a processing term with no source can absorb nothing', () => {
+  // Adversarial residual: UNUSABLE_BASES listed the `hydrolyzed` spellings but
+  // not the `hydrolysate` ones, so a bare `hydrolysate` kept a usable base and
+  // was kin to `hydrolysate protein`. Impact was ~nil (both sides must be
+  // source-less), but it contradicted the stated invariant.
+  it.each(['hydrolyzed', 'hydrolysed', 'hydrolysate', 'hydrolyzate', 'protein'])(
+    '%s has no usable source base',
+    (key) => {
+      expect(proteinSourceBase(key)).toBeNull();
+    },
+  );
+
+  it('is kin to nothing, including another source-less term', () => {
+    expect(proteinsAreKin('hydrolysate', 'hydrolysate protein')).toBe(false);
+    expect(proteinsAreKin('hydrolyzed', 'hydrolysate')).toBe(false);
+    expect(proteinsAreKin('hydrolysate', 'chicken')).toBe(false);
+  });
+});

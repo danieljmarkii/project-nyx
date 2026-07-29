@@ -650,3 +650,27 @@ describe('B-529 R7(c) — the partial-designation disclosure', () => {
     expect(note?.title).toMatch(/also lists duck liver/i);
   });
 });
+
+describe('B-529 ④ — the pause note does not delete a real contamination', () => {
+  // Adversarial finding: the first cut returned the pause note BEFORE
+  // contaminationNote, so an already-computed, still-valid finding about food A
+  // was deleted from the owner's card because food B was missing a field.
+  it('a genuine contamination still surfaces while another row is undesignated', () => {
+    const c = ctx({ primaryCount: 2, primaryResolved: 2 }, {
+      label: 'Duck Kibble',
+      primaryProtein: 'duck',
+      proteins: ['duck', 'chicken'],
+    });
+    c.allowedFoods = [
+      ...c.allowedFoods,
+      {
+        foodItemId: 'f-wet', foodKey: 'duck wet', label: 'Duck Wet',
+        role: 'primary_diet', allowedFrom: '2020-01-01', allowedUntil: null,
+        primaryProtein: null, proteins: ['duck'],
+      },
+    ];
+    const note = trialDietNote(c);
+    expect(note?.title).toMatch(/also lists chicken/i);
+    expect(note?.title).not.toMatch(/paused/i);
+  });
+});

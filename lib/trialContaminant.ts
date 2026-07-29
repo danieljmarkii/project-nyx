@@ -98,7 +98,7 @@ import {
   proteinPhrase,
   sanctionedProteinsOn,
   trialContamination,
-  uncharacterizedTrialDietFoods,
+  uncharacterizedTrialDietFoodsInRange,
   type AllowedFood,
   type TrialContext,
   type TrialFoodRole,
@@ -397,24 +397,35 @@ export function trialDietNote(
     };
   }
   // B-529/R7(c) — THE PARTIAL CASE, which the all-dark test above cannot see.
+  // D-A's standing fact, computed by the shared module over `primary_diet` rows
+  // AND permitted extras. Never a per-feeding verdict (C2).
+  const note = contaminationNote(trialContamination(trialContextOf(ctx)), petName);
+  if (note) return note;
+  // B-529/R7(c) — THE PARTIAL CASE, which the all-dark test above cannot see.
   // One designated trial food and one undesignated one leaves the sanctioned set
   // NON-empty, so every branch above stays quiet — while the undesignated food is
-  // dropped from that set and its own proteins fall outside it. On `main` that
-  // tallied the prescribed diet's own protein as an antigen "the trial diet does
-  // not contain", once per feeding. `classifyFeeding` now goes quiet in this
-  // state; this is the sentence that stops it being quieter WITHOUT SAYING SO,
-  // which is the whole of B9's lesson: the most unknown state must not get the
-  // least disclosure. Same channel and same register as the sentence above,
-  // scoped to the food that is actually missing its designation.
-  // Same day-resolution idiom as `sanctionedProteinsForTrial` — the local-day
-  // index, clamped to the trial's own start so a not-yet-started trial resolves
-  // membership on day 1 rather than on a day before the set opens (B-421: never
-  // a millisecond division, which is a UTC epoch-day and disagrees with the
-  // owner's calendar at either end).
+  // dropped from that set and its own proteins fall outside it. `classifyFeeding`
+  // now goes quiet in that state; this is the sentence that stops it being
+  // quieter WITHOUT SAYING SO, which is the whole of B9's lesson: the most
+  // unknown state must not get the least disclosure.
+  //
+  // AFTER `contaminationNote`, DELIBERATELY. The first cut returned here BEFORE
+  // it, and the adversarial pass executed the cost: an already-computed, still
+  // valid contamination finding about food A ("The trial food also lists
+  // chicken") was deleted from the owner's card because food B was missing a
+  // field. A real finding outranks an explanation of a gap — the gap is still
+  // disclosed on the vet report, which is the surface that carries the tally
+  // this pause affects.
+  //
+  // RANGE-anchored, not `today`-anchored: membership is dated, so a trial food
+  // swapped out mid-trial leaves days of missing attribution that a now-check
+  // cannot see, and a disclosure that disappears while its hole remains reads as
+  // though nothing was ever wrong.
   const trialCtx = trialContextOf(ctx);
   const todayIndex = localDayIndex(Date.now());
-  const unnamed = uncharacterizedTrialDietFoods(
+  const unnamed = uncharacterizedTrialDietFoodsInRange(
     trialCtx,
+    trialCtx.startDayIndex ?? todayIndex,
     Math.max(todayIndex, trialCtx.startDayIndex ?? todayIndex),
   );
   if (unnamed.length > 0) {
@@ -429,10 +440,6 @@ export function trialDietNote(
         'checks back on.',
     };
   }
-  // D-A's standing fact, computed by the shared module over `primary_diet` rows
-  // AND permitted extras. Never a per-feeding verdict (C2).
-  const note = contaminationNote(trialContamination(trialContextOf(ctx)), petName);
-  if (note) return note;
   if (!ctx.trialFoodCompleteness.complete) {
     return {
       title: 'The trial food’s ingredients haven’t been read',

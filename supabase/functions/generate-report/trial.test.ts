@@ -1790,3 +1790,74 @@ Deno.test('B-529 — intact protein from ANOTHER food still breaks the same tria
   // While the trial food itself stays clean on page 1.
   assert.deepEqual(snap.diet.trial?.proteinSet.offTrial, [])
 })
+
+// ── B-529 ①/② — the adversarial pass's blocking pair, end to end ─────────────
+//
+// The first cut of R7(c) silenced the RUNG-1 permitted antigen list on a global
+// flag and disclosed the silence only on the owner's card. Executed against it,
+// a duck trial with two vet-approved chicken chews a day rendered an EMPTY
+// antigen tally under a bold "All N matched the trial diet or a permitted food",
+// with nothing on the page saying the check had been switched off. That is
+// reassurance on absence, on the artifact a vet acts on.
+function pausedArmTrialInput(): ReportInput {
+  const input = wellLoggedTrialInput()
+  input.dietTrials[0] = {
+    ...input.dietTrials[0],
+    primaryProtein: 'duck',
+    proteins: ['duck'],
+    allowedFoods: [
+      { ...TRIAL_FOOD, foodItemId: 'f-duck', foodLabel: 'RC Duck kibble', primaryProtein: 'duck', proteins: ['duck'] },
+      // The row missing its designation — the whole trigger.
+      { ...TRIAL_FOOD, foodItemId: 'f-wet', foodLabel: 'RC Duck wet', primaryProtein: null, proteins: ['duck'] },
+      { ...PERMITTED_TREAT, foodItemId: 'f-chew', foodLabel: 'Dental Chew', brand: 'Generic', productName: 'Dental Chew', primaryProtein: 'chicken', proteins: ['chicken'], ingredientsNotes: 'Chicken, glycerin, gelatin, water' },
+    ],
+  }
+  input.events = input.events.map((e) =>
+    e.meal ? { ...e, meal: { ...e.meal, foodItemId: 'f-duck', proteins: ['duck'] } } : e,
+  )
+  for (const d of ['2026-06-05', '2026-06-12', '2026-06-19', '2026-06-26']) {
+    input.events.push(
+      meal({ date: d, brand: 'Generic', product: 'Dental Chew', foodItemId: 'f-chew', foodType: 'treat', proteins: ['chicken'], time: '20:00:00' }),
+    )
+  }
+  return input
+}
+
+Deno.test('B-529 ① — a vet-approved chicken chew keeps its antigen row when another trial row is undesignated', () => {
+  const snap = assembleReport(pausedArmTrialInput())
+  const chicken = snap.trial?.antigenTally.find((a) => a.protein === 'chicken')
+  assert.ok(chicken, 'the chew exposures must survive the silence rule')
+  assert.equal(chicken!.feedings, 4)
+  assert.equal(chicken!.fromPermitted, 4)
+  const text = plain(renderReport(snap))
+  assert.ok(/Chicken/.test(text))
+})
+
+Deno.test('B-529 ② — the report says WHY the antigen check is short, and withholds the clean claim', () => {
+  const snap = assembleReport(pausedArmTrialInput())
+  assert.deepEqual(snap.trial?.antigenAttributionPaused, ['RC Duck wet'])
+  // The affirmative sentence must not compose with a dark arm.
+  assert.equal(snap.trial?.mayClaimAllMatched, false)
+
+  const text = plain(renderReport(snap))
+  assert.ok(/Antigen check paused/.test(text))
+  assert.ok(/RC Duck wet/.test(text))
+  assert.ok(/no main protein on file/.test(text))
+  // The gap is named as a gap in the RECORD, never as a finding about the pet.
+  assert.ok(/not a finding about the animal/.test(text))
+  assert.ok(!/All \d+ matched/.test(text))
+})
+
+Deno.test('B-529 ③ — the disclosure is RANGE-anchored, so a swapped-out food still explains its gap', () => {
+  // Membership is dated: an undesignated trial food withdrawn mid-trial leaves a
+  // hole in attribution that a `today`-anchored check cannot see, because the row
+  // is no longer in force. Executed on the first cut: day-5 feedings silenced,
+  // day-25 attributed, and no pause sentence anywhere.
+  const input = pausedArmTrialInput()
+  input.dietTrials[0].allowedFoods = input.dietTrials[0].allowedFoods!.map((f) =>
+    f.foodItemId === 'f-wet' ? { ...f, allowedUntil: '2026-06-10' } : f,
+  )
+  const snap = assembleReport(input)
+  assert.deepEqual(snap.trial?.antigenAttributionPaused, ['RC Duck wet'])
+  assert.ok(/Antigen check paused/.test(plain(renderReport(snap))))
+})

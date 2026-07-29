@@ -56,7 +56,16 @@
 //     `hydrolyzed chicken` primary, is one source named twice. Not a finding.
 //   • `chicken` in a DENTAL CHEW fed during a hydrolyzed-chicken trial is intact
 //     protein, and intact protein is precisely what the trial excludes. It breaks
-//     the trial. It stays a finding, and this module is never asked about it.
+//     the trial, and it stays a finding — the chew is compared against the
+//     SANCTIONED SET, which the trial diet's kin term never entered.
+//
+// One honest edge on that second bullet, since an earlier draft of this comment
+// overstated it: a food is compared against its OWN primary in the contamination
+// check, so a chew DESIGNATED `hydrolyzed chicken` whose panel also lists intact
+// `chicken` has that pair absorbed too. That is the ruling applied consistently
+// (the same label naming the same source twice), not an exception — but it means
+// the guarantee is "kinship never crosses foods", not "an intact term is always
+// a finding somewhere".
 //
 // So `proteinsAreKin` is a symmetric predicate about two keys, but every CALLER
 // binds one side to a food's own `primary_protein`. A future caller that compares
@@ -101,7 +110,10 @@ const TRAILING_PROTEIN_WORD = /\s+protein$/;
 // term and nothing else ("hydrolyzed protein"), which cannot be kin to anything
 // — there is no source to match on. Returning null here is what stops such a key
 // absorbing a real protein.
-const UNUSABLE_BASES = new Set(['', 'protein', 'proteins', 'hydrolyzed', 'hydrolysed']);
+const UNUSABLE_BASES = new Set([
+  '', 'protein', 'proteins',
+  'hydrolyzed', 'hydrolysed', 'hydrolysate', 'hydrolyzate',
+]);
 
 /**
  * The SOURCE a protein key names, with processing terms and a trailing generic

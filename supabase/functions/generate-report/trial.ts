@@ -403,6 +403,21 @@ export interface TrialBlock {
    * report simply stops calling their co-occurrence a contamination.
    */
   contamination: ContaminationFact[]
+  /**
+   * B-529/R7(c) — labels of the `primary_diet` foods that carry no designated
+   * main protein anywhere in this range, so the antigen tally was DARK for part
+   * of it.
+   *
+   * Rendered, not merely carried. R7(c) says the arm "goes quiet and says why",
+   * and the first cut said why on the owner's card and nowhere on this page —
+   * the surface the ruling exists to protect. An unexplained short tally on a
+   * report that teaches the reader to scan for antigens is read as a negative
+   * result, which is the B-494 rule ("a page that teaches the reader to scan a
+   * zone may not leave that zone silent") and the reassurance-on-absence
+   * `clinical-guardrails` forbids. Empty on every trial whose foods are all
+   * designated, which is the ordinary case.
+   */
+  antigenAttributionPaused: string[]
   trialDietRefusal: TrialDietRefusal | null
   /**
    * THE SAME FACT, OVER THE WHOLE RANGE — because a report is a history and PR 5's
@@ -844,6 +859,7 @@ export function buildTrialBlock(args: BuildTrialBlockArgs): TrialBlock | null {
     oralRoute: facts.oralRoute,
     arrangementExposures: facts.arrangementExposures.map((a) => ({ label: a.label })),
     contamination: contaminationFindings(facts.contamination),
+    antigenAttributionPaused: facts.antigenAttributionPaused.map((f) => f.label),
     trialDietRefusal: facts.trialDietRefusal,
     rangeRefusal,
     stoppedReason: trial.stoppedReason ?? null,

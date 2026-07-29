@@ -1343,6 +1343,28 @@ function dietTrialSection(snap: ReportSnapshot): string {
     )
   }
 
+  // ── B-529/R7(c) — say why the antigen tally is short ────────────────────────
+  // Placed immediately after the antigen row it qualifies, because that is where
+  // a reader forms the impression this sentence has to correct. Without it the
+  // page shows a short (or absent) antigen list on a trial whose protein arm was
+  // switched off, and a reader who has just been taught to scan that zone reads
+  // the shortfall as a negative result — reassurance on absence, on the artifact
+  // a vet acts on. The affirmative "all matched" claim is withheld in the same
+  // state (`mayClaimAllMatched`), so the two never compose.
+  if (t.antigenAttributionPaused.length > 0) {
+    const which = t.antigenAttributionPaused.map((l) => `<b>${h(l)}</b>`).join(', ')
+    rows.push(
+      kv(
+        'Antigen check paused',
+        `${which} ${
+          t.antigenAttributionPaused.length === 1 ? 'is recorded' : 'are recorded'
+        } as part of the trial diet but ${
+          t.antigenAttributionPaused.length === 1 ? 'has' : 'have'
+        } no main protein on file, so proteins fed during the trial could not be checked against the trial diet for part of this window. Feedings are still counted; the protein names are not. This is a gap in the record, not a finding about the animal.`,
+      ),
+    )
+  }
+
   // ── §5.5's standing fact (D-A) — computed once, never per feeding ───────────
   if (t.contamination.length > 0) {
     // NAME THE FOOD. The cold read could not act on this row: it said a food on the
