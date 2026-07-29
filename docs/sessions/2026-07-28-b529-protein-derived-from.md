@@ -57,14 +57,22 @@ module header states this as a standing prohibition on future callers.
 `offTrialProteinsInTrialFood` used only for the trial's own view in
 `generate-report`.
 
-**R7(c), the silence rule.** `uncharacterizedTrialDietFoods` — if any in-force
-`primary_diet` food has no usable designated primary, the antigen arm goes quiet
-rather than counting the prescribed diet's own protein. Quiet costs
-**attribution, never detection**: rung 3 still records every feeding. `trialDietNote`
-gained the sentence that says why, in the same channel and register as B9's
-existing "Culprit can't tell what this trial is built on" — the partial case
-(one designated food, one not) is invisible to B9's all-dark test, and going
-quieter without saying so is the exact failure B9 exists to prevent.
+**R7(c), the silence rule** — *as finally shipped, after the adversarial pass
+broke the first cut; see the section at the end.* It has two halves, and keeping
+them apart is the whole of the finding:
+
+- **Rung 2** (an off-list food) goes quiet globally when any in-force
+  `primary_diet` food lacks a designation. Here quiet genuinely costs
+  **attribution, not detection**, because rung 3 still records the feeding.
+- **Rung 1** (a permitted food) silences **only its own feeding**, and only when
+  that feeding's own permitting food is the undesignated `primary_diet` row. A
+  rung-1 hit stops at rung 1, so a global gate there costs **detection**, which
+  is what the first cut got wrong.
+
+`trialDietNote` gained the sentence that says why on the card, and the report
+gained an **"Antigen check paused"** row plus a gate on `mayClaimAllMatched` —
+the first cut disclosed on the card only, which is the wrong surface for a
+ruling about the vet's page.
 
 Deliberately **narrow**: it fires on a *missing designation*, not on an unread
 ingredient panel. A designated food with an empty array is a far more common
@@ -104,7 +112,7 @@ artifact.
 
 ## Verification
 
-- **3373 jest** (152 suites) + **1004 deno** + `tsc --noEmit` clean.
+- **3387 jest** (152 suites) + **1007 deno** + `tsc --noEmit` clean (final, post-repair).
 - **11 new client regression tests** (`lib/dietTrial.test.ts`) and **3 end-to-end
   report tests** (`generate-report/trial.test.ts`), each pinned to a literal
   rendered sentence.
@@ -121,9 +129,13 @@ artifact.
 - The redeploy gate is **B-529 (this) + B-530 + B-531 + B-532 + B-494**, then a
   fresh `vet-report-cold-read` on re-rendered artifacts. This PR closes one of
   five; `generate-report` stays on **v13 (Jul 18)**.
-- No new owner-facing report copy was invented here. The one new *client*
-  sentence rides the existing B9 disclosure channel; if the pending mock round
-  for the four undesigned disclosure lines wants it reworded, it is one string.
+- **Two new strings, both forced by the adversarial pass rather than designed:**
+  the card's "Protein checks are paused for this trial" and the report's
+  "Antigen check paused" row. Both state a gap in the *record* and never a
+  finding about the animal, but neither has been through a design round — they
+  belong in the pending mock round for the four already-undesigned disclosure
+  lines. (The original intent was to invent no new copy at all; ② made that
+  impossible, because silence on the report was the defect.)
 
 
 ## The adversarial pass failed the first cut, and was right
