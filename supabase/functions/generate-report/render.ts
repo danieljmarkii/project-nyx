@@ -1351,16 +1351,25 @@ function dietTrialSection(snap: ReportSnapshot): string {
   // the shortfall as a negative result — reassurance on absence, on the artifact
   // a vet acts on. The affirmative "all matched" claim is withheld in the same
   // state (`mayClaimAllMatched`), so the two never compose.
-  if (t.antigenAttributionPaused.length > 0) {
-    const which = t.antigenAttributionPaused.map((l) => `<b>${h(l)}</b>`).join(', ')
+  if (t.antigenArmDark) {
+    // TWO VARIANTS, because the arm darkens two ways and only one of them has a
+    // food to name. A `primary_diet` MEMBERSHIP GAP leaves nothing on the list at
+    // all, so the named sentence would have had no subject — and gating this row
+    // on the label list meant the gap rendered no row while appendix C still said
+    // "not checked against it (see above)", promising a cross-reference to a row
+    // that could not exist.
+    const named = t.antigenAttributionPaused.length > 0
+    const one = t.antigenAttributionPaused.length === 1
     rows.push(
       kv(
         'Antigen check paused',
-        `${which} ${
-          t.antigenAttributionPaused.length === 1 ? 'is recorded' : 'are recorded'
-        } as part of the trial diet but ${
-          t.antigenAttributionPaused.length === 1 ? 'has' : 'have'
-        } no main protein on file, so proteins fed during the trial could not be checked against the trial diet for part of this window. Feedings are still counted; the protein names are not. This is a gap in the record, not a finding about the animal.`,
+        named
+          ? `${t.antigenAttributionPaused.map((l) => `<b>${h(l)}</b>`).join(', ')} ${
+              one ? 'is recorded' : 'are recorded'
+            } as part of the trial diet but ${
+              one ? 'has' : 'have'
+            } no protein on file that names a source, so proteins fed during the trial could not be checked against the trial diet for part of this window. Feedings are still counted; the protein names are not. This is a gap in the record, not a finding about the animal.`
+          : 'For part of this window no trial diet was recorded on the allowed list, so proteins fed then could not be checked against it. Feedings are still counted; the protein names are not. This is a gap in the record, not a finding about the animal.',
       ),
     )
   }
@@ -1600,13 +1609,15 @@ function dietTrialSection(snap: ReportSnapshot): string {
   // it pushed "Not one rated feeding of the trial diet was eaten (38 of 38)" into
   // second place, which is precisely the sentence round 4 fought to have lead.
   // A gap in the record ranks below what the record positively shows.
-  if (t.antigenAttributionPaused.length > 0) {
+  if (t.antigenArmDark) {
     caveats.push(
-      `${
-        t.antigenAttributionPaused.length === 1 ? 'A food' : 'Foods'
-      } recorded as part of the trial diet ${
-        t.antigenAttributionPaused.length === 1 ? 'has' : 'have'
-      } no main protein on file, so proteins fed during the trial could not be checked against it for part of this window — the elimination cannot be confirmed clean from this record.`,
+      t.antigenAttributionPaused.length > 0
+        ? `${
+            t.antigenAttributionPaused.length === 1 ? 'A food' : 'Foods'
+          } recorded as part of the trial diet ${
+            t.antigenAttributionPaused.length === 1 ? 'has' : 'have'
+          } no protein on file that names a source, so proteins fed during the trial could not be checked against it for part of this window — the elimination cannot be confirmed clean from this record.`
+        : 'For part of this window no trial diet was recorded on the allowed list, so proteins fed then could not be checked against it — the elimination cannot be confirmed clean from this record.',
     )
   }
   const suppressStatement = caveats.length > 0 && t.interpretability === 'supports'
@@ -3585,6 +3596,13 @@ function groupConfounders(conf: ConfounderExposure[]): ConfounderRow[] {
     // AND, not ANY: a row may claim "nothing in its label is outside the trial
     // diet" only if every feeding under it was actually compared.
     if (c.attributionChecked === false) g.attributionChecked = false
+    // AND-fold `panelWasRead` for the same reason, and because it is the
+    // co-conjunct of the all-clear branch: it was first-member-wins, so two
+    // feedings of one food — one panel captured, one not — rendered "its label
+    // carries nothing the trial diet does not" or "ingredients not read" purely
+    // on which was logged first. Same data, different sentence, decided by log
+    // order. A row may claim a label was read only if every member's was.
+    if (c.panelWasRead !== true) g.panelWasRead = false
     if (g.firstDay === null || (day && day < g.firstDay)) g.firstDay = day
     if (g.lastDay === null || (day && day > g.lastDay)) g.lastDay = day
   }
@@ -3846,7 +3864,7 @@ function offDietAppendix(snap: ReportSnapshot): string {
         ? 'No exposure is listed here'
         : `${num(conf.length)} off-diet exposure${conf.length === 1 ? '' : 's'}${breakdownBit}`
     } &middot; ${h(
-    fmtRange(trialDerived ? snap.trial!.rangeStartDate : snap.scope.startDate, trialDerived ? snap.trial!.rangeEndDate : snap.scope.endDate),
+    fmtRange(trialDerived ? snap.trial!.exposureRangeStartDate : snap.scope.startDate, trialDerived ? snap.trial!.rangeEndDate : snap.scope.endDate),
   )}${trialDerived ? ' &middot; a floor, not a total' : ''}</caption>
     <thead><tr><th>Item</th><th style="width:92px">Category</th>${
       trialDerived ? '<th style="width:150px">Why it&rsquo;s here</th>' : ''

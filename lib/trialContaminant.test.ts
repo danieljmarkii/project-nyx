@@ -623,7 +623,11 @@ describe('B-529 R7(c) — the partial-designation disclosure', () => {
     expect(note).not.toBeNull();
     expect(note!.title).toBe('Protein checks are paused for this trial');
     expect(note!.body).toContain('Zignature Duck Wet');
-    expect(note!.body).toMatch(/no main protein set/);
+    // The predicate means "names no protein SOURCE", not "the field is empty" —
+    // a bare `hydrolyzed` reaches this branch with a main protein visibly set, so
+    // copy saying "no main protein set" would contradict the food screen (B9's
+    // own self-contradiction rule).
+    expect(note!.body).toMatch(/no protein Culprit recognises as a source/);
   });
 
   it('reads as a record fact and never reassures', () => {

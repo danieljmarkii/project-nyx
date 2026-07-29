@@ -1253,6 +1253,11 @@ export interface TrialFacts {
    * check cannot see.
    */
   antigenAttributionPaused: AllowedFood[];
+  /** B-529 — the antigen arm was dark for at least one classified feeding in
+   *  range, whether or not an allowed-row can be NAMED as the cause (a
+   *  `primary_diet` membership gap darkens it with nothing to name). This is the
+   *  gate; `antigenAttributionPaused` is only the label. */
+  antigenArmDark: boolean;
   /**
    * True when a free-choice arrangement is in force AT THE END OF THE RANGE, as
    * opposed to `intakeNotDirectlyObserved`, which is true if one overlapped the
@@ -1470,6 +1475,7 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
     // allowed set was fine.
     allowedSetUnavailable: !ctx.allowedFoods.some((f) => f.role === 'primary_diet'),
     antigenAttributionPaused: [],
+    antigenArmDark: false,
     untrackedDaysBeforeFirstLog: 0,
     interpretability: 'not_yet',
     belowCoverageFloor: false,
@@ -1624,18 +1630,31 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
       unclassifiable += 1;
       continue;
     }
-    // THE ARM WAS OPERATING ON A PARTIAL VIEW — which is broader than "this
-    // feeding was silenced", and deliberately so. An uncharacterized
-    // `primary_diet` food is dropped from the sanctioned set, and that cuts two
-    // ways: it SILENCES some feedings (rung 2, and the food's own rung-1 hits)
-    // and it can FALSELY FLAG others (a permitted treat whose protein is in the
-    // undesignated trial food but not in the sanctioned set tallies as an
-    // antigen it should not). Deriving the disclosure from silence alone would
-    // leave the false-positive half undisclosed. Keyed on days that actually
-    // carry a classified feeding, which is what stops it firing over a row that
-    // sat on the list for one day with nothing fed near it.
-    const d = dayIndexOf(ctx, feeding.occurredAt);
-    if (d !== null && uncharacterizedTrialDietFoods(ctx, d).length > 0) darkDays.add(d);
+    // DERIVED FROM THE FLAG, NOT FROM A PROXY FOR IT. The previous cut keyed on
+    // "was an uncharacterized food in force that day", which is neither
+    // sufficient nor necessary, and the fourth adversarial pass executed both
+    // halves of the error:
+    //   • NOT SUFFICIENT — `classifyFeeding` also goes dark when the sanctioned
+    //     set is EMPTY, which happens on a `primary_diet` MEMBERSHIP GAP (no
+    //     trial-diet row in force at all). Migration 040's ratified rule makes
+    //     that reachable: "removing a food is an UPDATE, re-adding it later is a
+    //     NEW ROW with a later allowed_from". Measured: four real chicken-chew
+    //     exposures deleted from the tally with `antigenAttributionPaused`
+    //     empty, no paused row, no caveat, and the affirmative clean sentence
+    //     still in bold — the exact failure the first repair existed to prevent,
+    //     re-entered through the other door.
+    //   • NOT NECESSARY — a ghost row in force for one day on a fully-logged,
+    //     zero-off-diet trial fired the disclosure although nothing was silenced.
+    // The flag is set by the same branch that silences, so it cannot disagree
+    // with it. Documented residual: a day whose feedings are ALL rung-1 hits on
+    // other designated foods, while an uncharacterized primary sits in force,
+    // computes those antigens against a partial sanctioned set and may OVER-flag
+    // without disclosing. That is the over-claim direction (it names an antigen
+    // the trial diet may actually contain), never reassurance.
+    if (!classification.attributionChecked) {
+      const d = dayIndexOf(ctx, feeding.occurredAt);
+      if (d !== null) darkDays.add(d);
+    }
     if (!classification.countsAsFeeding) continue;
 
     // THE PREDICATE IS "NOT FINISHED", NOT "REFUSED". `refused` alone misses the
@@ -1800,6 +1819,13 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
     antigenAttributionPaused: dedupeAllowedFoods(
       [...darkDays].flatMap((d) => uncharacterizedTrialDietFoods(ctx, d)),
     ),
+    // THE BOOLEAN, NOT THE LIST, IS WHAT GATES A CLAIM. On a membership gap the
+    // arm is dark and there is NO allowed-row to name, so the list is empty
+    // while the record is exactly as unchecked — gating on `.length` let that
+    // state keep the affirmative sentence. Every surface that withholds or
+    // discloses reads this; the list only decides whether the disclosure can
+    // name a food or has to say "no trial diet was on the list".
+    antigenArmDark: darkDays.size > 0,
     // In force AT THE END of the range — the present-tense question.
     intakeNotDirectlyObservedNow: (input.arrangements ?? []).some((a) => {
       const end = a.endedAt ? localDayIndexOf(a.endedAt, input.timeZone) : null;
@@ -2075,7 +2101,7 @@ export function mayClaimAllMatched(facts: TrialFacts): boolean {
   // record was clean by a page that had stopped looking. The affirmative claim
   // is exactly what §5.2's G2 gate exists to withhold when the record cannot
   // support it.
-  if (facts.antigenAttributionPaused.length > 0) return false;
+  if (facts.antigenArmDark) return false;
   if (facts.arrangementExposures.length > 0) return false;
   if (facts.oralRoute.length > 0) return false;
   if (facts.exposures.unclassifiable > 0) return false;

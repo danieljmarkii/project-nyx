@@ -435,9 +435,9 @@ export function trialDietNote(
     return {
       title: 'Protein checks are paused for this trial',
       body:
-        `${which} no main protein set, so Culprit can’t tell which proteins belong to ` +
-        'the trial diet and which don’t. Setting one on that food would turn the ' +
-        'checks back on.',
+        `${which} no protein Culprit recognises as a source, so it can’t tell which ` +
+        'proteins belong to the trial diet and which don’t. Setting a main protein ' +
+        'on that food would turn the checks back on.',
     };
   }
   if (!ctx.trialFoodCompleteness.complete) {

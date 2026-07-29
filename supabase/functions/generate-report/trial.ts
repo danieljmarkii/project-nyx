@@ -324,6 +324,10 @@ export interface TrialBlock {
    *  explicitly because a window-scoped numerator over a trial-scoped denominator
    *  is what made a well-logged 8-week trial read "27 / 56". */
   rangeStartDate: string
+  /** The head EXPOSURES are counted from (the scope head, unclipped) — what
+   *  appendix C's caption must state, since that is the range its rows come
+   *  from. `rangeStartDate` is the clipped coverage head. */
+  exposureRangeStartDate: string
   rangeEndDate: string
   /** The range starts later than the trial did (a report scope or a first log clipped it). */
   rangeClipped: boolean
@@ -423,6 +427,10 @@ export interface TrialBlock {
    * designated, which is the ordinary case.
    */
   antigenAttributionPaused: string[]
+  /** B-529 — the arm was dark for at least one feeding, whether or not a food can
+   *  be named. A `primary_diet` membership gap darkens it with nothing to name,
+   *  and gating on the list's length let that state keep the clean sentence. */
+  antigenArmDark: boolean
   trialDietRefusal: TrialDietRefusal | null
   /**
    * THE SAME FACT, OVER THE WHOLE RANGE — because a report is a history and PR 5's
@@ -815,6 +823,14 @@ export function buildTrialBlock(args: BuildTrialBlockArgs): TrialBlock | null {
     // abandoned, stale-active is the steady state, not the edge case.
     daysPastTarget: target > 0 ? Math.max(0, dayCounter - target) : 0,
     rangeStartDate: dayKeyFromIndex(startDayIndex),
+    // B-529: appendix C lists EXPOSURES, which are counted from the scope head,
+    // while `rangeStartDate` is that head CLIPPED to the first logged day and is
+    // right for coverage. Captioning the exposure table with the coverage range
+    // printed a row dated Jun 3 under a header reading "Jun 8 – Jul 2" — the same
+    // impossible-row class round 4 recorded as blocking, arriving from the other
+    // side after the range unification fixed the count mismatch. Two different
+    // questions, two dates.
+    exposureRangeStartDate: dayKeyFromIndex(exposureStartDayIndex),
     rangeEndDate: dayKeyFromIndex(endDayIndex),
     rangeClipped: facts.range.clipped,
     untrackedDaysBeforeFirstLog: facts.untrackedDaysBeforeFirstLog,
@@ -879,6 +895,7 @@ export function buildTrialBlock(args: BuildTrialBlockArgs): TrialBlock | null {
     arrangementExposures: facts.arrangementExposures.map((a) => ({ label: a.label })),
     contamination: contaminationFindings(facts.contamination),
     antigenAttributionPaused: facts.antigenAttributionPaused.map((f) => f.label),
+    antigenArmDark: facts.antigenArmDark,
     trialDietRefusal: facts.trialDietRefusal,
     rangeRefusal,
     stoppedReason: trial.stoppedReason ?? null,

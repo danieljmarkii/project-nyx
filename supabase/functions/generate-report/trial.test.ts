@@ -1820,6 +1820,15 @@ function pausedArmTrialInput(): ReportInput {
       meal({ date: d, brand: 'Generic', product: 'Dental Chew', foodItemId: 'f-chew', foodType: 'treat', proteins: ['chicken'], time: '20:00:00' }),
     )
   }
+  // THE UNDESIGNATED FOOD IS ACTUALLY FED. Without this nothing is ever silenced
+  // — every feeding is a rung-1 hit on a designated food — and no disclosure is
+  // owed, which is the noise case the fourth pass measured. A fixture that
+  // asserted a disclosure here was asserting the over-fire, not the behaviour.
+  for (const d of ['2026-06-07', '2026-06-14', '2026-06-21']) {
+    input.events.push(
+      meal({ date: d, brand: 'Royal Canin', product: 'Duck wet', foodItemId: 'f-wet', proteins: ['duck', 'duck liver'], time: '12:00:00' }),
+    )
+  }
   return input
 }
 
@@ -1842,7 +1851,7 @@ Deno.test('B-529 ② — the report says WHY the antigen check is short, and wit
   const text = plain(renderReport(snap))
   assert.ok(/Antigen check paused/.test(text))
   assert.ok(/RC Duck wet/.test(text))
-  assert.ok(/no main protein on file/.test(text))
+  assert.ok(/no protein on file that names a source/.test(text))
   // The gap is named as a gap in the RECORD, never as a finding about the pet.
   assert.ok(/not a finding about the animal/.test(text))
   assert.ok(!/All \d+ matched/.test(text))
@@ -1857,6 +1866,8 @@ Deno.test('B-529 ③ — the disclosure is RANGE-anchored, so a swapped-out food
   input.dietTrials[0].allowedFoods = input.dietTrials[0].allowedFoods!.map((f) =>
     f.foodItemId === 'f-wet' ? { ...f, allowedUntil: '2026-06-10' } : f,
   )
+  // Fed on day 7, inside its membership; withdrawn on day 10. A `today`-anchored
+  // check cannot see that row at all by the time the report is generated.
   const snap = assembleReport(input)
   assert.deepEqual(snap.trial?.antigenAttributionPaused, ['RC Duck wet'])
   assert.ok(/Antigen check paused/.test(plain(renderReport(snap))))
@@ -1876,7 +1887,7 @@ Deno.test('B-529 §7.2 — a dark antigen arm caveats the bottom line, like a kn
   const snap = assembleReport(pausedArmTrialInput())
   const text = plain(renderReport(snap))
   assert.ok(!/supports interpreting it/.test(text))
-  assert.ok(/no main protein on file/.test(text))
+  assert.ok(/no protein on file that names a source/.test(text))
   assert.ok(/cannot be confirmed clean from this record/.test(text))
 })
 
@@ -2032,4 +2043,74 @@ Deno.test('B-529 — page 1 and appendix C count the same exposures', () => {
   const offDiet = snap.trial?.exposures.offDiet ?? 0
   const rows = snap.trial?.exposures.items.length ?? 0
   assert.equal(offDiet, rows, 'the count page 1 states must equal the rows appendix C can show')
+})
+
+// ── B-529 — the FOURTH adversarial pass's blocking case ──────────────────────
+Deno.test('B-529 — a primary_diet MEMBERSHIP GAP darkens the arm, and the page says so', () => {
+  // The arm goes dark TWO ways: an uncharacterized trial food, and an EMPTY
+  // sanctioned set — which is what a membership gap produces. The previous cut
+  // derived the disclosure from a proxy for the first, so the gap silenced real
+  // exposures with no paused row, no caveat, and the affirmative clean sentence
+  // still in bold. Migration 040's own rule makes the gap reachable: "removing a
+  // food is an UPDATE, re-adding it later is a NEW ROW with a later allowed_from".
+  const input = wellLoggedTrialInput()
+  input.dietTrials[0] = {
+    ...input.dietTrials[0],
+    primaryProtein: 'duck',
+    proteins: ['duck'],
+    allowedFoods: [
+      { ...TRIAL_FOOD, foodItemId: 'f-duck', foodLabel: 'RC Duck', allowedFrom: '2026-06-01', allowedUntil: '2026-06-10', primaryProtein: 'duck', proteins: ['duck'] },
+      // Re-added after a four-day gap — a NEW ROW, per migration 040.
+      { ...TRIAL_FOOD, foodItemId: 'f-duck2', foodLabel: 'RC Duck', allowedFrom: '2026-06-15', primaryProtein: 'duck', proteins: ['duck'] },
+    ],
+  }
+  input.events = input.events.map((e) =>
+    e.meal ? { ...e, meal: { ...e.meal, foodItemId: 'f-duck', proteins: ['duck'] } } : e,
+  )
+  // A permitted-looking chicken chew fed straight through the gap.
+  for (const d of ['2026-06-11', '2026-06-12', '2026-06-13', '2026-06-14']) {
+    input.events.push(
+      meal({ date: d, brand: 'Generic', product: 'Chicken Chew', foodItemId: 'f-cc', foodType: 'treat', proteins: ['chicken'], time: '19:00:00' }),
+    )
+  }
+  const snap = assembleReport(input)
+
+  // The arm WAS dark, and the gate reads the flag rather than the (empty) label list.
+  assert.equal(snap.trial?.antigenArmDark, true)
+  assert.equal(snap.trial?.mayClaimAllMatched, false)
+
+  const text = plain(renderReport(snap))
+  // The unlabelled variant: there is no allowed row to name during a gap.
+  assert.ok(/Antigen check paused/.test(text))
+  assert.ok(/no trial diet was recorded on the allowed list/.test(text))
+  assert.ok(!/supports interpreting it/.test(text))
+  // And appendix C's "(see above)" now has an "above" to point at.
+  if (/not checked against it/.test(text)) {
+    assert.ok(/Antigen check paused/.test(text))
+  }
+})
+
+Deno.test('B-529 — appendix C is captioned with the range its own rows come from', () => {
+  // The range unification fixed "page 1 says 1, appendix shows 0" and introduced
+  // the mirror defect: a row dated Jun 3 under a caption reading "Jun 8 – Jul 2".
+  // Coverage is clipped to the first logged day; exposures are not. Two questions,
+  // two dates.
+  const input = wellLoggedTrialInput()
+  input.dietTrials[0] = {
+    ...input.dietTrials[0],
+    startedAt: '2026-06-01',
+    primaryProtein: 'duck',
+    proteins: ['duck'],
+    allowedFoods: [{ ...TRIAL_FOOD, foodItemId: 'f-duck', foodLabel: 'RC Duck', primaryProtein: 'duck', proteins: ['duck'] }],
+  }
+  input.events = input.events
+    .filter((e) => e.occurredAt >= '2026-06-08')
+    .map((e) => (e.meal ? { ...e, meal: { ...e.meal, foodItemId: 'f-duck', proteins: ['duck'] } } : e))
+  input.events.push(
+    meal({ date: '2026-06-03', brand: 'Generic', product: 'Beef Treat', foodItemId: 'f-bt', foodType: 'treat', proteins: ['beef'], time: '18:00:00' }),
+  )
+  const snap = assembleReport(input)
+  // The exposure caption covers the row; the coverage head stays clipped.
+  assert.equal(snap.trial?.exposureRangeStartDate, '2026-06-01')
+  assert.equal(snap.trial?.rangeStartDate, '2026-06-08')
 })
