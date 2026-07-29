@@ -2,7 +2,7 @@
 
 **Date:** 2026-07-29
 
-Shipped via **#505**. One migration PR, three backlog rows, applied to production the same session. Security advisors **9 → 2**; both survivors are deliberate.
+Shipped via **#511**. One migration PR, three backlog rows, applied to production the same session. Security advisors **9 → 2**; both survivors are deliberate.
 
 ---
 
