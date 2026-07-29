@@ -2,7 +2,7 @@
 
 **Date:** 2026-07-29
 
-Shipped via **#511**. One migration PR, three backlog rows, applied to production the same session. Security advisors **9 → 2**; both survivors are deliberate.
+Shipped via **#511** (CI green — `App (typecheck + jest)` and `Edge Functions (deno test)` both pass on `58339fc`). One migration PR, three backlog rows, applied to production the same session. Security advisors **9 → 2**; both survivors are deliberate.
 
 ---
 
