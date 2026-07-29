@@ -357,3 +357,54 @@ put work in your scope that was never in it.
 `generate-report` stays on **v13** — deliberately. B-529 closing leaves **B-532**
 as the last Bucket-A row before the fresh `vet-report-cold-read`, with B-579 an
 independent, still-open safety-band gap.
+
+
+## Pass 5 — PASS on the merge question, four follow-ups filed
+
+The fifth pass was scoped narrowly: *is anything left that should block merging?*
+Verdict **PASS**, and the class it was asked to hunt came back empty —
+
+> No real antigen or off-diet **exposure** disappears from the report or the card.
+
+Every path that loses a protein **name** still renders the `Antigen check paused`
+row, the §7.2 caveat, the withheld clean claim, and appendix C's *"not checked
+against it"* reason, with `offDiet` and appendix-C row counts preserved. Verified
+by running each fixture against the branch **and** against `e617eca` in a scratch
+worktree, so the before/after is measured rather than argued.
+
+It also confirmed the merge resolution was honest: every `Deno.test`/`it`/
+`describe` title present on **either** parent survives in both merged test files,
+zero removed lines relative to the main parent — which is the thing I was most
+worried about after the boundaries cut inside a test and a fixture.
+
+**One finding was fixed before merge, and it is the one that matters most.** The
+residual comment in `lib/dietTrial.ts` asserted the gap runs *"never
+reassurance"*. Pass 5 falsified that sentence: when an uncharacterized
+`primary_diet` row is in force but **never fed**, nothing is silenced, so
+`antigenArmDark` stays false — and a genuine *"the trial food also lists Beef"*
+finding disappears with **no paused row and no caveat in its place**, while "all
+32 matched" and "supports interpreting it" both stand. That is the quiet
+direction, not the loud one.
+
+A comment claiming a safety property the code does not have is worse than the
+residual it describes, and it is precisely how this file's defects have kept
+surviving review. Corrected in full, with the mechanism, the measured before/after
+and the fix named. The behaviour itself is **B-592** — filed rather than fixed
+because net detection still improves over pre-B-529 (which put `beef` into the
+sanctioned set library-wide, silently sanctioning a beef treat), and the Beef term
+is still rendered verbatim on the Allowed-list row.
+
+Filed, not fixed: **B-592** (above) · **B-593** (`withholdingReasons` / the Home
+strip never got the dark-arm reason — the same forgotten-sibling pattern that
+produced passes 2 and 4) · **B-594** (the card has no membership-gap disclosure
+the report has) · **B-595** (a dangling *"see 'Also during the trial'"* pointer —
+pre-existing, reproduced independently of B-529, widened by it).
+
+### Five passes, in one line
+
+Passes 1–4 all FAILED and every defect was in the wiring, never in the relation.
+Pass 5 passed the merge question and still found a false safety claim in a
+comment. The relation absorbed, across all five: a 12,800-case convergence fuzz, a
+419-key symmetry sweep, a 35-token cross-product, a kin-equivalence enumeration, a
+mutation test, and a 2-role × 32-primary × 14-array differential — without a
+single failure.

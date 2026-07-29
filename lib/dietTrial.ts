@@ -1809,11 +1809,30 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
     //   • NOT NECESSARY — a ghost row in force for one day on a fully-logged,
     //     zero-off-diet trial fired the disclosure although nothing was silenced.
     // The flag is set by the same branch that silences, so it cannot disagree
-    // with it. Documented residual: a day whose feedings are ALL rung-1 hits on
-    // other designated foods, while an uncharacterized primary sits in force,
-    // computes those antigens against a partial sanctioned set and may OVER-flag
-    // without disclosing. That is the over-claim direction (it names an antigen
-    // the trial diet may actually contain), never reassurance.
+    // with it.
+    //
+    // ⚠️ DOCUMENTED RESIDUAL — B-592, AND IT IS NOT ONLY AN OVER-CLAIM. An
+    // earlier version of this comment said the residual runs "never
+    // reassurance", and the fifth adversarial pass falsified that sentence,
+    // which is worse than the residual itself: a comment asserting a safety
+    // property the code does not have is how this file's defects have repeatedly
+    // survived review.
+    //
+    // What actually happens when an uncharacterized `primary_diet` row is in
+    // force but is NEVER FED (so no feeding is silenced, so `darkDays` stays
+    // empty): `isUncharacterizedTrialDiet` makes `trialContamination` skip that
+    // row, so a genuine "the trial diet also lists Beef" finding DISAPPEARS —
+    // and because the arm is not dark, no paused row and no §7.2 caveat replace
+    // it, while "all N matched" and "supports interpreting it" both stand. That
+    // is the quiet direction, not the loud one.
+    //
+    // Two things keep it a follow-up rather than a blocker, and both are
+    // measured: the Beef term is still rendered verbatim on the Allowed-list
+    // row, and pre-B-529 was worse in the other direction (it put `beef` into
+    // the sanctioned set library-wide, so a beef treat fed through that trial
+    // was silently sanctioned). Net detection improves. The fix is to partition
+    // rather than skip in `trialContamination`, or to derive `antigenArmDark`
+    // from a suppressed-finding overlap as well as from a silenced feeding.
     if (!classification.attributionChecked) {
       const d = dayIndexOf(ctx, feeding.occurredAt);
       if (d !== null) darkDays.add(d);

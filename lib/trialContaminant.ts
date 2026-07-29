@@ -396,7 +396,6 @@ export function trialDietNote(
         'against it. Setting one on the food would turn the checks back on.',
     };
   }
-  // B-529/R7(c) — THE PARTIAL CASE, which the all-dark test above cannot see.
   // D-A's standing fact, computed by the shared module over `primary_diet` rows
   // AND permitted extras. Never a per-feeding verdict (C2).
   const note = contaminationNote(trialContamination(trialContextOf(ctx)), petName);
