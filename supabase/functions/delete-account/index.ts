@@ -31,7 +31,15 @@
 // (unit-tested in plan.test.ts); this file is the I/O shell.
 
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import { buildDeletionPlan, chunk, STORAGE_REMOVE_CHUNK, type OwnedStoragePaths } from './plan.ts'
+import {
+  buildDeletionPlan,
+  buildSweepScopes,
+  chunk,
+  STORAGE_REMOVE_CHUNK,
+  type BucketPurge,
+  type OwnedStoragePaths,
+  type SweepScope,
+} from './plan.ts'
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
@@ -228,6 +236,149 @@ async function collectOwnedPaths(adminClient: SupabaseClient, userId: string): P
   }
 }
 
+// ── B-578 — the prefix sweep (I/O half; the scoping half is plan.ts) ──────────
+//
+// Enumerate the objects actually living under the prefixes this account owns, so the
+// purge stops depending on a surviving row NAMING each object. plan.ts carries the
+// full why (residue, the cross-bucket `move()` escape, and what this still cannot
+// reach); this is the walk.
+//
+// Three properties make it safe to bolt onto the highest-blast-radius function in the
+// repo, and all three are deliberate:
+//
+//   • It NEVER throws. Every failure — a missing bucket, a listing error, a blown
+//     budget — is logged and degrades to fewer swept keys. The result is merged, not
+//     substituted (plan.ts mergeSweptPaths), so a totally failed sweep leaves deletion
+//     behaving exactly as it did before this existed. Account deletion is an Apple
+//     5.1.1(v) obligation; making it MORE thorough must not make it less reliable.
+//   • It is BOUNDED. Listing is recursive, and recursion ahead of the terminal auth
+//     delete is how a heavy account would discover its deletion times out forever.
+//     SWEEP_LIST_BUDGET caps total list calls and SWEEP_MAX_DEPTH caps descent; hitting
+//     either logs a truncation warning rather than aborting.
+//   • It enumerates only prefixes the function already PROVED (owned pet ids, owned
+//     food ids, the verified-JWT uid). An empty prefix would list the bucket root, so
+//     buildSweepScopes drops empty prefix sets rather than emitting them.
+//
+// Depth 4 is comfortably past the deepest real convention (medication photos and the
+// two attachment buckets are 3 segments), which is the point: a rename that pushes an
+// object deeper INSIDE an owned prefix is one of the escapes being closed, so the walk
+// must not stop at the shape it expects to find.
+//
+// The budget is sized against the dominant cost, which is the NUMBER OF FOLDERS, not
+// the number of objects: the attachment buckets key on `{petId}/{eventId}/…`, so one
+// list call is spent per event that has an attachment. 1200 calls at 8-wide
+// concurrency is a few seconds even at a pessimistic per-call latency, and comfortably
+// inside the function's wall clock. Truncation past that is the deliberate trade: it
+// costs CLEANUP of objects no row names, and costs nothing from the column-sourced
+// purge, so the account still deletes. Erring the other way — an unbounded walk ahead
+// of the terminal auth delete — would risk an account that cannot be deleted at all.
+const SWEEP_LIST_PAGE = 100
+const SWEEP_MAX_DEPTH = 4
+const SWEEP_LIST_BUDGET = 1200
+const SWEEP_PREFIX_CONCURRENCY = 8
+
+interface SweepBudget {
+  calls: number
+  truncated: boolean
+  failures: string[]
+}
+
+// One page-walked listing of a single folder. Returns the immediate children, split
+// into objects and sub-folders — supabase-js marks a folder row with a null `id`,
+// which is the only signal distinguishing the two.
+async function listFolder(
+  adminClient: SupabaseClient,
+  bucket: string,
+  folder: string,
+  budget: SweepBudget,
+): Promise<{ files: string[]; folders: string[] }> {
+  const files: string[] = []
+  const folders: string[] = []
+  for (let offset = 0; ; offset += SWEEP_LIST_PAGE) {
+    if (budget.calls >= SWEEP_LIST_BUDGET) {
+      budget.truncated = true
+      break
+    }
+    budget.calls++
+    const { data, error } = await adminClient.storage
+      .from(bucket)
+      .list(folder, { limit: SWEEP_LIST_PAGE, offset, sortBy: { column: 'name', order: 'asc' } })
+    if (error) {
+      // Best-effort: a bucket that does not exist yet (nyx-vet-documents before its
+      // dashboard creation) errors here and is simply not swept.
+      budget.failures.push(`${bucket}/${folder}: ${error.message}`)
+      break
+    }
+    const page = data ?? []
+    for (const entry of page) {
+      const name = entry?.name
+      if (typeof name !== 'string' || name.length === 0) continue
+      // A '/' inside a single listing entry's name is not something Storage produces;
+      // treat it as untrusted and skip rather than concatenating it into a key that
+      // could escape the folder we are enumerating. (mergeSweptPaths re-checks the
+      // whole key against the declared prefixes regardless — this is the near guard.)
+      if (name.includes('/') || name === '.' || name === '..') continue
+      if (entry.id === null || entry.id === undefined) folders.push(`${folder}/${name}`)
+      else files.push(`${folder}/${name}`)
+    }
+    if (page.length < SWEEP_LIST_PAGE) break
+  }
+  return { files, folders }
+}
+
+// Depth-first walk of one owned prefix, collecting every object beneath it.
+async function walkPrefix(
+  adminClient: SupabaseClient,
+  bucket: string,
+  prefix: string,
+  budget: SweepBudget,
+): Promise<string[]> {
+  const found: string[] = []
+  let frontier = [prefix]
+  for (let depth = 1; depth <= SWEEP_MAX_DEPTH && frontier.length > 0; depth++) {
+    const next: string[] = []
+    for (const folder of frontier) {
+      const { files, folders } = await listFolder(adminClient, bucket, folder, budget)
+      found.push(...files)
+      next.push(...folders)
+    }
+    if (depth === SWEEP_MAX_DEPTH && next.length > 0) budget.truncated = true
+    frontier = next
+  }
+  return found
+}
+
+// Sweep every scope. Prefixes are walked in bounded-concurrency batches: an account
+// with many foods would otherwise serialise hundreds of round-trips ahead of the
+// terminal delete.
+async function sweepOwnedPrefixes(
+  adminClient: SupabaseClient,
+  scopes: ReadonlyArray<SweepScope>,
+): Promise<{ purges: BucketPurge[]; budget: SweepBudget }> {
+  const budget: SweepBudget = { calls: 0, truncated: false, failures: [] }
+  const purges: BucketPurge[] = []
+  for (const scope of scopes) {
+    const paths: string[] = []
+    for (const batch of chunk(scope.prefixes, SWEEP_PREFIX_CONCURRENCY)) {
+      const results = await Promise.all(
+        batch.map(async (prefix) => {
+          try {
+            return await walkPrefix(adminClient, scope.bucket, prefix, budget)
+          } catch (e) {
+            budget.failures.push(
+              `${scope.bucket}/${prefix}: ${e instanceof Error ? e.message : String(e)}`,
+            )
+            return []
+          }
+        }),
+      )
+      for (const r of results) paths.push(...r)
+    }
+    if (paths.length > 0) purges.push({ bucket: scope.bucket, paths })
+  }
+  return { purges, budget }
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: CORS_HEADERS })
@@ -277,8 +428,34 @@ Deno.serve(async (req: Request) => {
     // 1. Collect owned Storage paths BEFORE any delete (FR-3).
     const ownedPaths = await collectOwnedPaths(adminClient, userId)
 
+    // 1b. Sweep the owned prefixes for objects NO surviving row names (B-578) —
+    //     residue, and the cross-bucket `move()` / within-prefix rename escapes. Runs
+    //     after the row reads (it needs the owned ids they produced) and, like them,
+    //     strictly before any delete. Never throws: a failed sweep contributes zero
+    //     keys and deletion proceeds exactly as it did before this existed.
+    const sweepScopes = buildSweepScopes(ownedPaths)
+    const sweep = await sweepOwnedPrefixes(adminClient, sweepScopes)
+    if (sweep.budget.failures.length > 0) {
+      console.warn(
+        `delete-account: ${sweep.budget.failures.length} sweep listing failure(s) for user ${userId}:`,
+        sweep.budget.failures.join('; '),
+      )
+    }
+    if (sweep.budget.truncated) {
+      // Loud on purpose. A truncated sweep means some objects under a prefix this
+      // account owned were never enumerated, and the auth delete below is about to
+      // remove the rows that could have named them — so anything missed becomes an
+      // orphan only the global reaper (B-121) can reach. The column-sourced purge is
+      // unaffected, so this is under-cleanup, not under-deletion of named objects.
+      console.warn(
+        `delete-account: prefix sweep TRUNCATED for user ${userId} (calls=${sweep.budget.calls}, budget=${SWEEP_LIST_BUDGET}, maxDepth=${SWEEP_MAX_DEPTH})`,
+      )
+    }
+
     // 2. Build the ordered plan: purges first, auth delete last and once (FR-6).
-    const plan = buildDeletionPlan(ownedPaths)
+    //    Swept keys are MERGED into the column-sourced purge, never substituted for
+    //    it, and are re-validated against the declared scopes inside plan.ts.
+    const plan = buildDeletionPlan(ownedPaths, sweep.purges)
 
     // 3. Execute. Storage purges are best-effort (FR-5): aggregate failures and
     //    never abort on a missing/failed object or a not-yet-created bucket. The
