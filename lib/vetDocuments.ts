@@ -196,7 +196,7 @@ export interface LocalVetDocument {
   source: string;
   // B-546 — the filename the document arrived with, or null. Provenance (D10),
   // sitting beside `source` and `file_size_bytes` rather than in `title`: see
-  // migration 047's header for why filename-as-title would cost the row its Name
+  // migration 048's header for why filename-as-title would cost the row its Name
   // affordance forever.
   source_filename: string | null;
   // Local-only: the on-device file path. NEVER pushed and NEVER overwritten by

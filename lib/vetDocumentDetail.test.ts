@@ -455,7 +455,7 @@ describe('vetDocumentShareFilename', () => {
     expect(vetDocumentShareFilename('   ', named)).toBe('pet-Senior-panel-2026-07-14.pdf');
   });
 
-  // ── B-583: the source filename is the middle rung ──────────────────────────
+  // ── B-587: the source filename is the middle rung ──────────────────────────
   //
   // The regression this closes: `untitled + kind 'other'` is not an edge case, it
   // is what EVERY document is until the owner does two optional things — so the

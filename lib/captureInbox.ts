@@ -293,7 +293,7 @@ export async function ingestCaptureRecords(
       });
       for (const a of stale) {
         await db.runAsync(
-          'UPDATE feeding_arrangements SET updated_at = ?, synced = 0 WHERE id = ?',
+          'UPDATE feeding_arrangements SET updated_at = ?, synced = 0, sync_attempts = 0, sync_error = NULL WHERE id = ?',
           [record.occurredAt, a.id],
         );
       }

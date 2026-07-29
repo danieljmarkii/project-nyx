@@ -175,7 +175,7 @@ export function pickedFilesFromDocumentAssets(assets: DocumentAssetLike[]): Pick
 //     a PDF from a photo is a lie, not a curiosity.
 //   • the result is capped to VET_DOCUMENT_FILENAME_MAX. It renders on one line
 //     beside a 44pt row; anything past this is invisible on every device and is
-//     bytes on a clinical row for nothing. Trimmed WELL under migration 047's
+//     bytes on a clinical row for nothing. Trimmed WELL under migration 048's
 //     255-char CHECK so the client can never mint a row the server refuses.
 //   • empty in, null out. "" is not a filename, and NULL is what every reader
 //     already branches on.
@@ -333,7 +333,7 @@ export function buildVetDocumentRows(input: BuildVetDocumentRowsInput): LocalVet
       // page (two PDFs are two records, see the grouping note in app/vet-files.tsx),
       // and for the camera/Photos paths this is null on every page anyway. Stored
       // ALONGSIDE the NULL title above, never instead of it: the row must stay
-      // untitled or it loses its one-tap Name pill (migration 047's header).
+      // untitled or it loses its one-tap Name pill (migration 048's header).
       source_filename: sourceFilename(page.fileName),
       // B-104 — copy off the OS cache directory (reclaimed under storage pressure)
       // into app-owned storage, and store THAT. This is also the free half of

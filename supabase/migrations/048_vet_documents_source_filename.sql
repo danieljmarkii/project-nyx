@@ -1,6 +1,16 @@
 -- ============================================================
--- Migration 047: vet_documents.source_filename — the picked file's own name
+-- Migration 048: vet_documents.source_filename — the picked file's own name
 -- (B-546, Vet Files VF-6 follow-up)
+--
+-- ⚠ NUMBERING NOTE. This was authored and APPLIED as 047, and renumbered to 048
+-- at wrap: a sibling session landed 047_pre_release_config_hardening.sql on `main`
+-- first, so by the repo's first-lands-keeps rule that file keeps 047 and this one
+-- moves. Nothing about the applied database changed — the two are independent and
+-- both are live (this one recorded FIRST, at 20260729000718; the hardening one at
+-- 20260729004827). Note also that Supabase's migration history records this as
+-- `vet_documents_source_filename` with NO numeric prefix, because it was applied
+-- via the MCP `apply_migration` with a bare snake_case name; the number lives in
+-- the filename only, which is what makes a renumber safe here.
 -- Spec: docs/nyx-vet-files-requirements.md §0 D10 (provenance over polish),
 --       D11 (capture asks nothing), §4.1 (the untitled steady state).
 -- ============================================================

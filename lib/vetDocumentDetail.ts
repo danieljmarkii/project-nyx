@@ -228,7 +228,7 @@ export async function readVetVisitOptions(
 // "Pixel-lab-result-2026-07-14.jpg". Sanitised because a pet named "Mr. O'Malley /2"
 // must never produce a path-breaking filename.
 //
-// ── B-583: WHAT NAMES THE DOCUMENT, IN ORDER ────────────────────────────────
+// ── B-587: WHAT NAMES THE DOCUMENT, IN ORDER ────────────────────────────────
 //
 //   owner's title  →  the source filename's stem  →  the kind  →  "document"
 //

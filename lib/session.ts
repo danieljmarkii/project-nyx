@@ -1,5 +1,5 @@
-import { notifySignedOut } from './sync';
-import { clearLocalData } from './db';
+import { notifySignedOut, flushPendingForSignOut } from './sync';
+import { clearLocalData, getSyncStatus } from './db';
 import { clearWidgetData } from './appGroup';
 import { clearWidgetTimeline } from './widgetBridge';
 import { clearRecoveryRequest } from './recoveryMarker';
@@ -7,6 +7,83 @@ import { usePetStore, clearPersistedActivePetId } from '../store/petStore';
 import { useOnboardingDraftStore } from '../store/onboardingDraftStore';
 import { clearTrialContextCache, clearTrialHeadsUpLedger } from './trialContaminant';
 import { clearCachedAppConfig } from './appConfig';
+
+/**
+ * B-430 — the pre-sign-out drain. Push everything that can still be pushed, then
+ * report what is STILL unsent, so the caller can ask the owner before the wipe
+ * destroys it.
+ *
+ * The gap: `wipeLocalSession()` below clears local SQLite unconditionally,
+ * INCLUDING rows still at `synced = 0`. So a sign-out has always silently
+ * destroyed offline captures — the meals logged in a basement flat, the symptom
+ * photographed in a car park at 6am. It was latent until B-280's D6b ruling made
+ * it involuntarily reachable, but a deliberate sign-out has cost the same data all
+ * along, and on a household sharing one credential across two phones a sign-out is
+ * a routine act rather than a rare one.
+ *
+ * FLUSH-BEFORE-WIPE, NOT QUARANTINE-ACROSS-THE-WIPE. The alternative — holding
+ * unsynced rows back from the wipe and prompting later — collides head-on with
+ * FR-9, which is the reason the wipe exists: a shared or borrowed device must not
+ * leak the prior account's health record to whoever signs in next. A retained
+ * cache of that account's meals, symptom events and photos IS that leak, however
+ * it is labelled, and it would need its own account-scoped storage and its own
+ * "whose rows are these?" answer at the next sign-in. Flushing keeps the wipe
+ * absolute and puts the residue where it belongs: an honest sentence to the owner
+ * about what could not be saved.
+ *
+ * Deliberately does NOT sign out, wipe, or prompt. The mechanism is here; the
+ * decision is the UI's.
+ *
+ * Best-effort throughout: a flush that fails (offline, mid-air) must never block
+ * the owner from signing out, so every failure degrades to "report what we know"
+ * rather than throwing.
+ */
+export async function flushForSignOut(): Promise<{
+  pendingCount: number;
+  quarantinedCount: number;
+}> {
+  await flushPendingForSignOut().catch((e) =>
+    console.warn('[session] pre-sign-out flush failed:', e));
+  try {
+    const status = await getSyncStatus();
+    return {
+      pendingCount: status.pendingCount,
+      quarantinedCount: status.quarantinedCount,
+    };
+  } catch (e) {
+    // A status read that fails tells us nothing, and "nothing" must not read as
+    // "all clear" — that would silently skip the warning on exactly the broken
+    // device most likely to be holding unsent rows. Report one unsent item so the
+    // owner is asked rather than assumed-at.
+    console.warn('[session] pre-sign-out status read failed:', e);
+    return { pendingCount: 1, quarantinedCount: 0 };
+  }
+}
+
+/**
+ * The sentence shown before a sign-out that would destroy unsent work, or null
+ * when there is nothing to warn about (the overwhelmingly common case — the
+ * owner is online, the flush drained the queue, and sign-out proceeds silently).
+ *
+ * Voice: names the number, names the consequence in plain words, blames nobody.
+ * It does NOT say "sync failed" or "error" — from the owner's side nothing failed,
+ * they simply logged something while their phone could not reach the network. It
+ * does not tell them to connect to the internet either: the flush just tried that.
+ */
+export function unsentSignOutWarning(counts: {
+  pendingCount: number;
+  quarantinedCount: number;
+}): { title: string; message: string } | null {
+  const total = counts.pendingCount + counts.quarantinedCount;
+  if (total <= 0) return null;
+  const entries = total === 1 ? '1 entry' : `${total} entries`;
+  return {
+    title: 'Some entries are still on this phone',
+    message:
+      `${entries} haven't reached your records yet. Signing out clears this ` +
+      'phone, so they would be lost. You can stay signed in and try again later.',
+  };
+}
 
 // The local teardown that must run on sign-out AND on post-deletion sign-out
 // (B-054 FR-9): abort in-flight hydration, wipe the synced SQLite copy + the
