@@ -742,6 +742,22 @@ async function fetchContext(
   const reads: AskCachedReadRow[] = ((readsRes.data ?? []) as ReadRowDb[]).map(mapReadRow)
 
   // ── trial / timezone / engine findings ──
+  //
+  // DELIBERATELY NOT GATED ON THE B-422 EFFECTIVE END, and the reason is G5.
+  //
+  // B-422 withdraws BEHAVIOUR from a trial nobody ended — the widget's write
+  // path, the Signal engine's suppressions, the coverage denominator, the report
+  // anchor. Ask does none of those: it has no write path, suppresses nothing, and
+  // computes no denominator. What `dietTrialStatus` reports is the trial's STATE,
+  // and the state genuinely is "active, day 412 of 56" — which is exactly what
+  // the Pet-tab card is showing at the same moment (§4.3's milestone never
+  // expires, so an overrun trial keeps its card and its day counter forever).
+  // Gating here would make Ask answer "no trial" about a trial the owner can see
+  // on screen, which is the G5 parity break the tool's own docstring forbids,
+  // traded for no harm avoided.
+  //
+  // `since_trial_start` widens with the trial for the same reason: an owner
+  // asking about "since the trial started" is asking about the span they can see.
   const trialRow = first((trialRes.data ?? []) as { started_at: string; target_duration_days: number | null; status: string }[])
   const trial = trialRow
     ? { startedAt: trialRow.started_at, targetDurationDays: trialRow.target_duration_days ?? 0, status: trialRow.status, deletedAt: null }

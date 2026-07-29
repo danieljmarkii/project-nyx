@@ -561,7 +561,7 @@ function parseConfidence(text: string | null): unknown {
  *  winner, and the row the SERVER accepted is the one every surface must agree
  *  on. Identical ordering to `ACTIVE_DIET_TRIAL_QUERY` and the card's own read. */
 const ACTIVE_TRIAL_SQL = `
-  SELECT id, started_at, ended_at
+  SELECT id, started_at, ended_at, target_duration_days
     FROM diet_trials
    WHERE pet_id = ? AND status = 'active'
    ORDER BY synced DESC, started_at DESC, id
@@ -586,7 +586,12 @@ const ALLOWED_SET_SQL = `
    ORDER BY tf.allowed_from, tf.id
 `;
 
-interface TrialRow { id: string; started_at: string; ended_at: string | null }
+interface TrialRow {
+  id: string;
+  started_at: string;
+  ended_at: string | null;
+  target_duration_days: number;
+}
 
 interface AllowedRow {
   food_item_id: string;
@@ -638,6 +643,27 @@ export async function loadTrialProteinContext(
     return null;
   }
 
+  // ── B-422 DELIBERATELY DOES NOT GATE THIS, and a first cut did ─────────────
+  //
+  // The reasoning for gating it was that every consumer is a PRESENT-TENSE claim
+  // about the pet. That is true of the log-time "this has chicken in it" flag and
+  // false of the two that matter most here, which round 3 executed: from day 113
+  // the owner's card silently lost C2's standing note ("The trial food also lists
+  // chicken — a food that also lists chicken can keep the trial from giving a
+  // clean answer") AND both B9 disclosures ("Culprit can't tell what this trial
+  // is built on"), while the card kept rendering the trial and `generate-report`
+  // kept printing `facts.contamination` off the same record.
+  //
+  // Those are standing facts about a TRIAL THE CARD STILL DISPLAYS, not claims
+  // about the pet today — and B9 exists precisely so the most-unknown state does
+  // not get the least disclosure. Deleting a disclosure from a surface that still
+  // shows the thing being disclosed about is the same reassurance-direction error
+  // the rest of B-422 exists to undo.
+  //
+  // The narrower question — should the LOG-TIME flag fire on a trial past its
+  // effective end? — is real, and it is a Designer call about friction at the
+  // moment of the event rather than a correctness one. Filed as B-595 rather than
+  // answered by suppressing four other things on the way past.
   if (!trial) {
     contextCache.set(petId, { atMs: Date.now(), ctx: null });
     return null;

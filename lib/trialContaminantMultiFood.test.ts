@@ -20,7 +20,12 @@
 // the wedge surface survives airplane mode; the Supabase read this used to mock
 // is gone, so there is no `./supabase` stub here at all.
 
-interface TrialRow { id: string; started_at: string; ended_at: string | null }
+interface TrialRow {
+  id: string;
+  started_at: string;
+  ended_at: string | null;
+  target_duration_days: number;
+}
 interface AllowedRow {
   food_item_id: string;
   role: string;
@@ -94,7 +99,11 @@ const WET: AllowedRow = {
 
 beforeEach(() => {
   clearTrialContextCache();
-  state.trial = { id: 't-1', started_at: '2020-01-01', ended_at: null };
+  // `target_duration_days: 0` = indefinite, which has no window to overrun — so
+  // the B-422 staleness gate is inert for the protein-resolution cases below and
+  // this suite keeps testing exactly what it was written to test. Its own
+  // describe block at the bottom supplies a real target.
+  state.trial = { id: 't-1', started_at: '2020-01-01', ended_at: null, target_duration_days: 0 };
   state.allowed = [DRY];
   state.throws = false;
 });
@@ -171,4 +180,42 @@ it('treats a failed local read as unknown, and does not cache it', async () => {
 it('still returns null when there is no active trial at all', async () => {
   state.trial = null;
   expect(await loadTrialProteinContext('pet-1')).toBeNull();
+});
+
+// ── B-422 deliberately does NOT gate this (round 3) ─────────────────────────
+//
+// A first cut nulled the context for a trial past its effective end, reasoning
+// that every consumer is a present-tense claim about the pet. True of the
+// log-time flag; false of C2's standing note and B9's two disclosures, which the
+// CARD renders about a trial it is still displaying. An adversarial pass measured
+// it: from day 113 the owner silently lost "The trial food also lists chicken"
+// and "Culprit can't tell what this trial is built on", while `generate-report`
+// kept printing the same contamination fact off the same record. B9 exists
+// precisely so the most-unknown state does not get the least disclosure.
+describe('the context survives an overrun trial', () => {
+  const NOW = Date.parse('2026-07-24T12:00:00.000Z');
+  let clock: jest.SpyInstance;
+
+  beforeEach(() => {
+    clock = jest.spyOn(Date, 'now').mockReturnValue(NOW);
+  });
+  afterEach(() => clock.mockRestore());
+
+  it('resolves a running trial', async () => {
+    state.trial = { id: 't-1', started_at: '2026-07-01', ended_at: null, target_duration_days: 56 };
+    expect((await loadTrialProteinContext('pet-1'))?.trialId).toBe('t-1');
+  });
+
+  it('resolves one whose effective end is long past — the card still shows it', async () => {
+    // 28-day target from 2026-01-01: target ended 2026-01-28, effective end
+    // 2026-03-24. Today is 2026-07-24 — four months past, and the standing fact
+    // about what the trial diet contains is exactly as true as it ever was.
+    state.trial = { id: 't-1', started_at: '2026-01-01', ended_at: null, target_duration_days: 28 };
+    expect((await loadTrialProteinContext('pet-1'))?.trialId).toBe('t-1');
+  });
+
+  it('still returns null when there is genuinely no active trial', async () => {
+    state.trial = null;
+    expect(await loadTrialProteinContext('pet-1')).toBeNull();
+  });
 });

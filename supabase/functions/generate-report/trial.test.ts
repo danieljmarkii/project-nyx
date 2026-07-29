@@ -967,6 +967,134 @@ Deno.test('no allowed set ⇒ SILENCE about adherence, never "0 matched, 32 did 
   assert.ok(/Meals logged on 32 of 32 days/.test(text))
 })
 
+// ── B-422 round 3 — `range` is COVERAGE; evidence bounds read `exposureRange` ──
+//
+// Round 2 converted the itemisation loop and left five other consumers reading
+// `range*` as an evidence bound. Round 3 executed all five. The rule, pinned:
+// a field is an EVIDENCE bound if losing a row changes what the report SAYS.
+
+Deno.test('B-422 — the safety band dates the refusals it counted, not the coverage window', () => {
+  // Executed round 3: the band said "352 of 352 ... across 176 days. Dates
+  // covered: Jan 1 - Apr 8" — 176 days inside a 98-day window — and reported the
+  // most recent refusal 79 days early, on the feline hepatic-lipidosis lane, in
+  // the one zone the report teaches a vet to scan.
+  const input = wellLoggedTrialInput({ events: [] })
+  input.dietTrials[0].targetDurationDays = 28
+  for (const d of days('2026-06-01', '2026-07-02')) {
+    input.events.push(meal({ date: d, brand: 'Royal Canin', product: 'Hydrolyzed HP', foodItemId: 'f-hp', proteins: ['soy'], intakeRating: 'refused' }))
+  }
+  const snap = assembleReport(input)
+  const flag = snap.safetyFlags.find((f) => f.kind === 'trial_diet_refusal')
+  assert.ok(flag, 'the refusal band fires')
+  // The dates must contain every day the count was taken over.
+  assert.ok(flag!.evidenceStartDate <= '2026-06-01', 'band start covers the first refusal')
+  assert.ok(flag!.evidenceEndDate >= '2026-07-02', `band end ${flag!.evidenceEndDate} predates the last refusal`)
+  assert.equal(flag!.evidenceStartDate, snap.trial!.evidenceStartDate)
+  assert.equal(flag!.evidenceEndDate, snap.trial!.evidenceEndDate)
+})
+
+Deno.test('B-422 — the evidence span contains the coverage range at both ends', () => {
+  // The structural invariant behind all five: coverage is clipped INSIDE evidence,
+  // never outside it. A consumer reading the wrong one can then only ever be
+  // narrower, which is what made every round-3 break a deletion.
+  const input = wellLoggedTrialInput({ events: [] })
+  input.dietTrials[0].targetDurationDays = 14
+  for (const d of days('2026-06-01', '2026-07-02')) {
+    input.events.push(meal({ date: d, brand: 'Royal Canin', product: 'Hydrolyzed HP', foodItemId: 'f-hp', proteins: ['soy'] }))
+  }
+  const t = assembleReport(input).trial!
+  assert.ok(t.evidenceStartDate <= t.rangeStartDate, 'evidence opens no later than coverage')
+  assert.ok(t.evidenceEndDate >= t.rangeEndDate, 'evidence closes no earlier than coverage')
+})
+
+Deno.test('B-422 — post-target logging is not counted as trial coverage', () => {
+  // Round 3, the reassuring direction: a 14-day trial logged on only its first 3
+  // days, then daily for weeks. The old `max(targetEnd, lastMealDay)` anchor read
+  // one meal as proof the trial ran that long, so the record claim came back.
+  const input = wellLoggedTrialInput({ events: [] })
+  input.dietTrials[0].targetDurationDays = 14
+  input.dietTrials[0].startedAt = '2026-06-01'
+  for (const d of days('2026-06-01', '2026-06-03')) {
+    input.events.push(meal({ date: d, brand: 'Royal Canin', product: 'Hydrolyzed HP', foodItemId: 'f-hp', proteins: ['soy'] }))
+  }
+  for (const d of days('2026-06-20', '2026-07-02')) {
+    input.events.push(meal({ date: d, brand: 'Royal Canin', product: 'Hydrolyzed HP', foodItemId: 'f-hp', proteins: ['soy'] }))
+  }
+  const t = assembleReport(input).trial!
+  assert.equal(t.coverage!.daysElapsed, 14, 'the denominator is the prescribed window')
+  assert.equal(t.coverage!.daysLogged, 3)
+  assert.equal(t.interpretability, 'does_not_support')
+})
+
+Deno.test('B-422 round 4 — a logging blackout after a complete window is DISCLOSED, not hidden', () => {
+  // The round-4 counterexample: 56-day trial, every prescribed day logged and
+  // finished, nobody tapped Complete, then 145 days of silence. Two things must
+  // BOTH hold, and the tension between them is the design:
+  //
+  //   • coverage stays 56/56 — denominating over the calendar (main's 56/201,
+  //     "too sparse to read as a clean elimination") punishes a perfectly-run
+  //     trial for never being closed, which is the original B-422 harm;
+  //   • the blackout is VISIBLE — the C5 density line, which spans the EVIDENCE
+  //     window, shows logging collapsing to zero, so the vet reading "supports
+  //     interpreting it" sees in the same block that nothing has been logged
+  //     since the window closed.
+  //
+  // "Complete over the window" and "silent since the window" are two facts; the
+  // report states both rather than letting either erase the other.
+  const input = wellLoggedTrialInput({ events: [], now: '2026-11-15T12:00:00Z' })
+  for (const d of days('2026-06-01', '2026-07-26')) {
+    input.events.push(meal({ date: d, brand: 'Royal Canin', product: 'Hydrolyzed HP', foodItemId: 'f-hp', proteins: ['soy'], intakeRating: 'all' }))
+  }
+  const snap = assembleReport(input)
+  const t = snap.trial!
+  assert.equal(t.coverage!.daysLogged, 56)
+  assert.equal(t.coverage!.daysElapsed, 56)
+  assert.equal(t.interpretability, 'supports')
+  // The density halves span the evidence window (Jun 1 – Nov 15), so the back
+  // half is (near-)zero — the blackout, on the page, next to the verdict.
+  const d = t.loggingDensity!.meals
+  assert.ok(d.firstHalf.days + d.lastHalf.days > 150, 'density spans the evidence window, not the clipped one')
+  assert.equal(d.lastHalf.daysLogged, 0, 'the blackout is visible in the back half')
+  // And the day counter carries the overrun in the same block.
+  assert.ok(t.dayCounter > 160)
+  assert.ok(t.daysPastTarget > 100)
+})
+
+// ── B-422 — the report's trial SELECTION deliberately stays on `status` ──────
+//
+// A first cut ranked these on `isTrialRunning`, so an un-ended trial aged out at
+// its effective end. The adversarial pass showed what that gates: the trial block
+// carries `trial_diet_refusal`, so dropping the block drops the SAFETY FLAG — on
+// the canonical case, a cat refusing every one of ~336 logged bowls of the
+// prescribed diet and still refusing today. Her owner's card fired; the vet's
+// report went silent. B-494's ruling forbids exactly that. Gate the ANCHOR, never
+// gate the DISCLOSURE.
+
+Deno.test('B-422 — a stale-active trial still describes the report, so its refusal flag survives', () => {
+  const scope = { startDayNum: 20620, endDayNum: 20657 }
+  // Effective end long past (28d target from 2025-01-01), never ended. It stays
+  // the report's subject: an owner still logging refusals daily is the strongest
+  // evidence the trial has NOT stopped, and the record outranks the inference.
+  const stale = { id: 'stale', startedAt: '2025-01-01', targetDurationDays: 28, status: 'active', completedAt: null, endedAt: null, vetName: null }
+  assert.equal(selectReportTrial([stale], scope, TZ)?.id, 'stale')
+  // An ACTIVE trial still outranks an ended one, whatever their dates — the pair
+  // must rank identically to `resolveScope`, which is the one round-1 finding that
+  // survived every revision of this PR.
+  const ended = { id: 'ended', startedAt: '2026-06-20', targetDurationDays: 28, status: 'completed', completedAt: '2026-07-17', endedAt: '2026-07-17', vetName: null }
+  assert.equal(selectReportTrial([stale, ended], scope, TZ)?.id, 'stale')
+})
+
+Deno.test("B-422 — the report's trial block survives ACVIM's 12-week GI course", () => {
+  // P-1's dog·gut default is 28 days; ACVIM 2026 says continue >=12 weeks (day 84)
+  // before transitioning away. The block must be present throughout, so the
+  // report's own FIRST question — "is this diet trial working?" — is answerable
+  // mid-intervention, on the exact population the wedge exists for.
+  const gi = { id: 'gi', startedAt: '2026-05-01', targetDurationDays: 28, status: 'active', completedAt: null, endedAt: null, vetName: null }
+  const windowEndingOn = (dayNum: number) => ({ startDayNum: dayNum - 89, endDayNum: dayNum })
+  assert.equal(selectReportTrial([gi], windowEndingOn(20657), TZ)?.id, 'gi', 'day 84 — mid-course')
+  assert.equal(selectReportTrial([gi], windowEndingOn(20671), TZ)?.id, 'gi', 'day 98')
+})
+
 Deno.test('selectReportTrial prefers the ACTIVE trial over an ended one', () => {
   const scope = { startDayNum: 20600, endDayNum: 20637 }
   const trials = [
@@ -1668,10 +1796,28 @@ Deno.test('R6 — the scope clause names the RANGE, never "the trial’s N days"
   for (const d of days('2026-06-04', '2026-07-02')) {
     input.events.push(meal({ date: d, brand: 'Royal Canin', product: 'Hydrolyzed HP', foodItemId: 'f-hp', proteins: ['soy'] }))
   }
+  // Density now spans the EVIDENCE range (round 4), which here IS the report
+  // window (trial-anchored scope, Jun 1 – Jul 2) — so the "narrower than the
+  // window" clause correctly does NOT render: there is nothing to reconcile when
+  // the spans coincide, and a clause naming an identical range would be noise.
   const text = plain(renderReport(assembleReport(input)))
-  assert.ok(/These days are the logged overlap range/.test(text))
+  assert.ok(!/These days are the logged overlap range/.test(text), 'no clause when the spans coincide')
   assert.ok(!/covers the trial’s \d+ days/.test(text), 'never restates the trial length here')
   assert.ok(!/extends before it/.test(text), 'never asserts a side against the trial')
+
+  // And when the window IS wider — a vet visit before the trial anchors rung 1 —
+  // the clause fires and names the EVIDENCE span, the same days the halves above
+  // it were counted over.
+  const wider = wellLoggedTrialInput({
+    events: [],
+    vetVisits: [{ visitedAt: '2026-05-20', clinicName: 'X', vetName: 'Dr Y', reason: 'derm' }],
+  })
+  for (const d of days('2026-06-04', '2026-07-02')) {
+    wider.events.push(meal({ date: d, brand: 'Royal Canin', product: 'Hydrolyzed HP', foodItemId: 'f-hp', proteins: ['soy'] }))
+  }
+  const widerText = plain(renderReport(assembleReport(wider)))
+  assert.ok(/These days are the logged overlap range \(Jun 1 – Jul 2, 2026\)/.test(widerText))
+  assert.ok(!/covers the trial’s \d+ days/.test(widerText))
 })
 
 Deno.test('R6 — the dagger discloses its own fire rate, not the symptom-day rate', () => {
@@ -2181,7 +2327,13 @@ Deno.test('B-529 — appendix C is captioned with the range its own rows come fr
   )
   const snap = assembleReport(input)
   // The exposure caption covers the row; the coverage head stays clipped.
-  assert.equal(snap.trial?.exposureRangeStartDate, '2026-06-01')
+  //
+  // B-529 introduced `exposureRangeStartDate` for this, clipping the HEAD only.
+  // B-422 (#513) then shipped `evidenceStartDate`/`evidenceEndDate`, which clip
+  // BOTH ends for the same reason — so the narrower field was dropped at the
+  // merge and this assertion moved onto the general one. The invariant being
+  // pinned is unchanged: a caption may never exclude a row inside its own table.
+  assert.equal(snap.trial?.evidenceStartDate, '2026-06-01')
   assert.equal(snap.trial?.rangeStartDate, '2026-06-08')
 })
 

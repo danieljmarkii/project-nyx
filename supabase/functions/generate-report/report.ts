@@ -98,7 +98,7 @@ import { foodFormatWord } from '../../../lib/foodFormat.ts'
 // The diet-trial answer (B-417 PR 7). `trial.ts` is the seam onto `lib/dietTrial.ts`
 // — the one shared predicate — and imports NOTHING from this file, so the two are a
 // tree rather than a cycle.
-import { buildTrialBlock, selectReportTrial, trialEndValue, type TrialBlock } from './trial.ts'
+import { buildTrialBlock, selectReportTrial, trialEndValue, trialLastDayNum, type TrialBlock } from './trial.ts'
 // B-494's flag carries the refusal fact verbatim rather than flattening it, so the
 // band and the trial block on the same page cannot state different numbers.
 import type { TrialDietRefusal, TrialSpecies } from '../../../lib/dietTrial.ts'
@@ -646,6 +646,26 @@ export function resolveScope(input: ReportInput): ReportScope {
   for (const t of input.dietTrials) {
     const tNum = dayNumber(t.startedAt)
     if (tNum === null) continue
+    // B-422 DELIBERATELY DOES NOT REACH THIS TEST EITHER, and the reason is the
+    // one round-1 finding that has survived every revision: this picks the WINDOW
+    // and `selectReportTrial` picks the BLOCK, and THE TWO MUST RANK IDENTICALLY.
+    // An adversarial pass produced the divergence from a real input once already
+    // — an abandoned trial anchoring the window while an active one described the
+    // block, so the abandoned trial's feedings were scored against the active
+    // trial's allowed list.
+    //
+    // `selectReportTrial` had to keep ranking on `status` (dropping an un-ended
+    // trial drops the `trial_diet_refusal` SAFETY FLAG with it — see the long note
+    // there), so this must too. Gating only this one is how the pair silently
+    // diverges again.
+    //
+    // The consequence is a real and separate problem: a trial nobody ended still
+    // anchors every future report on its own start, so an owner who ran a trial in
+    // 2024 and never tapped Complete gets a two-year window with every denominator
+    // on the page scaled to it. That is NOT one of the three harms B-422 was filed
+    // for, it needs `selectReportTrial` moved in the same PR, and it wants a
+    // `vet-report-cold-read` on the re-rendered artifact — so it is filed rather
+    // than smuggled in here → B-594, alongside B-538's grace windows.
     if (t.status !== 'active') {
       const endNum = dayNumber(t.endedAt ?? t.completedAt ?? '')
       // No end date on a non-active trial means we cannot place it in time (B-455
@@ -963,8 +983,14 @@ export type SafetyFlag =
       /** Every `primary_diet` label in force — the food to name. Never rendered under a
        *  `meal_record` population, where the app has admitted it cannot identify the diet. */
       trialDietLabels: string[]
-      rangeStartDate: string
-      rangeEndDate: string
+      /** The EVIDENCE span the refusal counts were taken over — named for what the
+       *  value IS (round 4's finding ③): round 3 fixed the VALUE here (evidence,
+       *  not the clipped coverage range) but kept the `range*` name, leaving one
+       *  snapshot where `trial.rangeEndDate` and this field disagreed by 145 days
+       *  under the same name. The branch's own rule is that `range*` may only ever
+       *  appear next to the word "coverage" — so the name follows the value. */
+      evidenceStartDate: string
+      evidenceEndDate: string
     }
   | {
       kind: 'chronicity'
@@ -1904,7 +1930,12 @@ export interface DetectionExtract {
   stapleProtein: string | null
 }
 
-function buildDetectionInput(
+/** EXPORTED for the suite only, alongside `resolveScope` and `dedupeEvents`.
+ *  `pet.dietTrialActive` decides three whole-detector suppressions and a
+ *  priority-band promotion, and its only other observable is the ABSENCE of a
+ *  finding — which is exactly why B-422 sat here unnoticed. A test that has to
+ *  construct a correlation to observe a missing one is a test nobody writes. */
+export function buildDetectionInput(
   input: ReportInput,
   scope: ReportScope,
   windowEvents: Array<ReportEventInput & { dupCount: number }>,
@@ -1999,7 +2030,14 @@ function buildDetectionInput(
     pet: {
       name: input.pet.name,
       species: input.pet.species,
-      dietTrialActive: input.dietTrials.some((t) => t.status === 'active'),
+      // B-422 — the same gate `generate-signal/index.ts` applies to the same flag,
+      // because this feeds the SAME engine: it fully mutes detectors ⑧/⑨/⑩ and
+      // promotes correlation to band 1. A trial nobody ended would otherwise
+      // silence three dietary-pattern detectors on the vet report permanently.
+      dietTrialActive: input.dietTrials.some((t) => {
+        const endNum = trialLastDayNum(t, tz)
+        return t.status === 'active' && (endNum === null || scope.endDayNum <= endNum)
+      }),
     },
     symptomEvents,
     mealEvents,
@@ -2722,8 +2760,13 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
         stoppedForRefusal,
         species: trialBlock.species,
         trialDietLabels: trialBlock.trialDietLabels,
-        rangeStartDate: trialBlock.rangeStartDate,
-        rangeEndDate: trialBlock.rangeEndDate,
+        // EVIDENCE — `refusal.days` is counted over the evidence window, so the
+        // dates that render beside it must be too. Off the coverage range the
+        // B-494 safety band dated 176 days of refusals inside a 98-day window and
+        // reported the most recent refusal 79 days early, on the feline
+        // hepatic-lipidosis lane, in the one zone the report teaches vets to scan.
+        evidenceStartDate: trialBlock.evidenceStartDate,
+        evidenceEndDate: trialBlock.evidenceEndDate,
       })
     }
   }

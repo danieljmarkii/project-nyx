@@ -1079,7 +1079,7 @@ function safetyFlagRow(f: SafetyFlag, snap: ReportSnapshot): string {
       // something the value does not support — executed on a trial started Apr 1 whose
       // logs begin Jun 15, where the band read "Trial window: Jun 15 – Jul 2" in the same
       // paragraph as "day 93 of 120".
-      bits.push(`Dates covered: ${h(fmtRange(f.rangeStartDate, f.rangeEndDate))}.`)
+      bits.push(`Dates covered: ${h(fmtRange(f.evidenceStartDate, f.evidenceEndDate))}.`)
       if (wide) {
         // THE ATTRIBUTION GAP IS DISCLOSED, NOT PAPERED OVER (B-530). Under this population the
         // app could not resolve which logged food was the prescribed diet, so naming the diet
@@ -1579,8 +1579,13 @@ function dietTrialSection(snap: ReportSnapshot): string {
     const rangeDays = m.firstHalf.days + m.lastHalf.days
     const scope =
       window > rangeDays
+        // EVIDENCE — the halves above are computed over the evidence span (round
+        // 4: density over the clipped coverage window hid a 145-day logging
+        // blackout on a stale trial, the exact decay C5 exists to disclose), and
+        // the evidence span IS §5.1's documented overlap range, so the label and
+        // the dates now agree.
         ? ` These days are the logged overlap range (${h(
-            fmtRange(snap.trial!.rangeStartDate, snap.trial!.rangeEndDate),
+            fmtRange(snap.trial!.evidenceStartDate, snap.trial!.evidenceEndDate),
           )}); the charts below span the report&rsquo;s ${num(window)}-day window, which is wider.`
         : ''
     rows.push(
@@ -1776,8 +1781,8 @@ function weightDuringTrial(snap: ReportSnapshot): string | null {
   if (
     !tr.earliestDate ||
     !tr.latestDate ||
-    tr.earliestDate < t.rangeStartDate ||
-    tr.latestDate > t.rangeEndDate
+    tr.earliestDate < t.evidenceStartDate ||
+    tr.latestDate > t.evidenceEndDate
   ) {
     return null
   }
@@ -4038,7 +4043,11 @@ function offDietAppendix(snap: ReportSnapshot): string {
               conf.length === 1 ? '' : 's'
             }${breakdownBit}`
     } &middot; ${h(
-    fmtRange(trialDerived ? snap.trial!.exposureRangeStartDate : snap.scope.startDate, trialDerived ? snap.trial!.rangeEndDate : snap.scope.endDate),
+    // EVIDENCE — this captions the exposure TABLE, whose rows come from the
+    // evidence window. Off the coverage range the caption excluded rows in its
+    // own table ("Jan 1 – Apr 22" over a row dated Apr 27), which is exactly the
+    // cross-check a vet uses the appendix for.
+    fmtRange(trialDerived ? snap.trial!.evidenceStartDate : snap.scope.startDate, trialDerived ? snap.trial!.evidenceEndDate : snap.scope.endDate),
   )}${trialDerived ? ' &middot; a floor, not a total' : ''}</caption>
     <thead><tr><th>Item</th><th style="width:92px">Category</th>${
       trialDerived ? '<th style="width:150px">Why it&rsquo;s here</th>' : ''

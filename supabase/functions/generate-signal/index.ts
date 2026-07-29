@@ -46,6 +46,10 @@ import {
   type IncidentAnalysisInput,
   type DetectionInput,
 } from './detection.ts'
+// B-422's effective end, from the ONE module that owns it. Imported across the
+// function boundary exactly as `./protein.ts` already re-exports `lib/protein.ts`
+// — a second copy of `start + target + grace` living here is the failure mode.
+import { isTrialRunning } from '../../../lib/dietTrial.ts'
 import {
   templateForFinding,
   validatePhrasing,
@@ -684,7 +688,15 @@ const handler = async (req: Request): Promise<Response> => {
         .eq('event_type', 'meal')
         .is('deleted_at', null)
         .gte('occurred_at', lookbackIso),
-      supabase.from('diet_trials').select('id').eq('pet_id', petId).eq('status', 'active').limit(1),
+      // `started_at` + `target_duration_days` are selected so the B-422 effective
+      // end can be derived here; `select('id')` was enough only while `active`
+      // was believed to mean "running today".
+      supabase
+        .from('diet_trials')
+        .select('id, started_at, target_duration_days')
+        .eq('pet_id', petId)
+        .eq('status', 'active')
+        .limit(1),
       // Active free-fed standing facts (B-040 R1, PR 4). No lookback filter: a
       // free_choice bowl set months ago and still down is a current standing exposure.
       // The active-window overlap is resolved inside detection, not the query.
@@ -767,10 +779,34 @@ const handler = async (req: Request): Promise<Response> => {
     const freeFedFoodIds = new Set<string>(
       arrangementRows.filter((r) => r.active_until === null && r.food_item_id).map((r) => r.food_item_id as string),
     )
-    const dietTrialActive = ((trialRes.data ?? []) as unknown[]).length > 0
     // B-079 (⑥): the owner's IANA timezone. A non-string / empty value ⇒ undefined ⇒ ⑥ silent.
     const profile = profileRes.data as { timezone: string | null } | null
     const timezone = profile?.timezone || undefined
+    // B-422 — `dietTrialActive` MEANS "on a diet trial today", and `status =
+    // 'active'` stopped meaning that the moment nothing auto-completed a trial.
+    //
+    // What this flag buys is entirely suppression and promotion: it fully mutes
+    // detectors ⑧ staple-washout, ⑨ meal-type-collapse and ⑩ diet-churn (each
+    // correctly — during a trial the constant staple IS the elimination diet, and
+    // telling the owner to vary it sabotages the trial), and it promotes
+    // `food_symptom_correlation` to band 1. Read off a trial that finished in
+    // March, all four of those are wrong in the same direction: the engine stays
+    // quiet about a real dietary pattern, and leads with a weak correlation,
+    // forever. A stale flag here does not produce a wrong sentence — it produces
+    // a permanently missing one, which is why it went unnoticed.
+    //
+    // The zone is the owner's, matching every other day boundary in this function
+    // (§5.1 / B-421); absent ⇒ the shared helper's own UTC fallback, which is the
+    // same posture `dietTrialStatus` takes — a day counter off by one beats no
+    // answer.
+    const trialRow = ((trialRes.data ?? []) as { started_at: string; target_duration_days: number }[])[0]
+    const dietTrialActive =
+      trialRow !== undefined &&
+      isTrialRunning(
+        { startedAt: trialRow.started_at, targetDurationDays: trialRow.target_duration_days },
+        nowMs,
+        timezone,
+      )
     // B-117 PR 9 (§8): medication confounder windows — regimen spans + administered dose points.
     // Empty (no meds logged) ⇒ detectCorrelations behaves exactly as before.
     const medicationWindows = mapMedicationWindows(

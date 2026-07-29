@@ -15,6 +15,7 @@
 import { strict as assert } from 'node:assert'
 import {
   assembleReport,
+  buildDetectionInput,
   dedupeEvents,
   resolveScope,
   FALLBACK_DAYS,
@@ -613,6 +614,47 @@ Deno.test('scope cascade — since-visit beats trial beats fallback', () => {
     baseInput({ vetVisits: [{ visitedAt: '2026-08-01', clinicName: null, vetName: null, reason: null }] }),
   )
   assert.equal(futureVisit.scope.basis, 'fallback_90d')
+})
+
+// ── B-422 — what the report does and does not gate ──────────────────────────
+
+Deno.test('scope cascade — a stale-active trial still anchors the window (B-594)', () => {
+  // DELIBERATELY UNCHANGED by B-422, and the test exists to say so. Gating rung 2
+  // alone would make it rank differently from `selectReportTrial` — which had to
+  // stay on `status`, because dropping an un-ended trial's block drops the
+  // `trial_diet_refusal` safety flag with it — and a window anchored on one trial
+  // while the block describes another is the round-1 divergence bug.
+  //
+  // The residual is real: a trial nobody ended anchors every future report on its
+  // own start. Fixing it means moving BOTH functions together, with a cold read on
+  // the re-rendered artifact → B-594, alongside B-538's grace windows.
+  const stale = assembleReport(
+    baseInput({
+      dietTrials: [{ id: 't1', foodItemId: 'f', startedAt: '2024-05-01', targetDurationDays: 42, status: 'active', completedAt: null, vetName: null }],
+    }),
+  )
+  assert.equal(stale.scope.basis, 'diet_trial')
+  // And the pair agrees about WHICH trial, which is the property that must hold.
+  assert.equal(stale.trial?.id, 't1')
+})
+
+Deno.test('B-422 — a stale-active trial no longer suppresses the diet-structure detectors', () => {
+  // `dietTrialActive` fully mutes detectors ⑧ staple-washout, ⑨ meal-type-collapse
+  // and ⑩ diet-churn, and promotes correlation to band 1. Off a trial that ended
+  // in 2024 those are wrong in the same direction — a permanently MISSING
+  // sentence rather than a wrong one, which is why it went unnoticed.
+  const detInput = (startedAt: string, target: number) =>
+    buildDetectionInput(
+      baseInput({
+        dietTrials: [{ id: 't1', foodItemId: 'f', startedAt, targetDurationDays: target, status: 'active', completedAt: null, vetName: null }],
+      }),
+      resolveScope(baseInput()),
+      [],
+      new Set(),
+    )
+  assert.equal(detInput('2024-05-01', 42).pet.dietTrialActive, false)
+  assert.equal(detInput('2026-05-01', 42).pet.dietTrialActive, true) // inside the grace
+  assert.equal(detInput('2024-05-01', 0).pet.dietTrialActive, true) // no target, no overrun
 })
 
 Deno.test('§6 cherry-pick guard — a custom window discloses out-of-window symptom incidents', () => {

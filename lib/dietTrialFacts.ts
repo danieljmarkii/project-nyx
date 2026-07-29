@@ -214,15 +214,28 @@ export async function loadDietTrialFacts(args: {
   // to BOTH halves plus the exposure window — so a meal fed after the trial ended
   // cannot count toward how it was run, and an owner is not scored for days a
   // finished trial wasn't running.
+  //
+  // B-422 DELIBERATELY DOES NOT NARROW THIS. The effective end bounds belief and
+  // one denominator; it never bounds evidence, so these reads must still reach
+  // today on a running-or-overrun trial. The first cut bounded them at the
+  // effective end and the adversarial pass priced it immediately: a cat refusing
+  // 38 of 38 rated bowls past a stale trial's effective end had those refusals
+  // never READ, `trialDietRefusal` went null, and the card rendered the clean
+  // two-fact presentation over an anorexic cat. An unread refusal is worse than a
+  // mis-scoped one — the module can decide what a finding means, but only if it
+  // is handed the finding.
   const endKey = trial.status === 'active' ? null : row.ended_at;
 
-  // The trial the PREDICATE sees. `species` drives rung 4's route rules; `endedAt`
-  // closes the window on a terminal trial so a meal fed afterwards cannot count
-  // toward how the trial was run.
+  // The trial the PREDICATE sees. `species` drives rung 4's route rules;
+  // `targetDurationDays` is what lets it derive the B-422 effective end for
+  // itself; `endedAt` stays the DECLARED end and nothing else — stuffing the
+  // effective end in here would both re-implement the module's own bound at a
+  // call site and make `range.closedByOverrun` (which keys on `!endedAt`)
+  // unable to tell an owner-ended trial from an overrun one.
   const spec: TrialSpec = {
     id: row.id,
     startedAt: row.started_at,
-    endedAt: endKey,
+    endedAt: trial.status === 'active' ? null : row.ended_at,
     targetDurationDays: row.target_duration_days,
     species: pet.species,
   };
@@ -396,14 +409,19 @@ export async function loadDietTrialFacts(args: {
   };
 }
 
-/** Day key shifted by N local days, via the UTC-anchored index. The inverse of
- *  `localDayIndexOf` must be a UTC read — see `dietTrialOutcomeFacts.dayKeyFromIndex`
- *  for what happens when it isn't. */
+/** The inverse of `localDayIndexOf`, which must be a UTC read — see
+ *  `dietTrialOutcomeFacts.dayKeyFromIndex` for what happens when it isn't. */
+function dayKeyFromIndex(index: number): string {
+  return new Date(index * 86_400_000).toISOString().slice(0, 10);
+}
+
+/** Day key shifted by N local days, via the UTC-anchored index. */
 function shiftDayKey(dayKey: string, deltaDays: number): string {
   const index = localDayIndexOf(dayKey);
   if (index === null) return dayKey;
-  return new Date((index + deltaDays) * 86_400_000).toISOString().slice(0, 10);
+  return dayKeyFromIndex(index + deltaDays);
 }
+
 
 /** The trial's own local day key, whether the column arrived as a DATE or an ISO
  *  instant (the local mirror stores TEXT and both shapes exist in the wild). */
