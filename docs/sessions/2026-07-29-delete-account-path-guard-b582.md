@@ -57,11 +57,27 @@ Two residuals accepted and documented rather than papered over (both routed to B
 
 Also fixed: `AbortSignal.timeout` on each list call. Deno's `fetch` has no default timeout, so a never-settling call would have hung the sweep — and the terminal auth delete — regardless of the deadline, which bounds *scheduling* and cannot cancel a request already in flight. That was the last unbounded path on a 5.1.1(v) route.
 
+## Round 3 — PASS on the function, and the finding that outranks the whole PR
+
+`delete-account` passed. The writer enumeration went further than a live count can: **every commit that ever touched all five mint sites** was replayed, and each has emitted exactly one shape for its entire history — so not even an unsynced device can be holding a legacy path the new guards would drop. 11/11 real shapes still purge across 7/7 buckets.
+
+Then the sink sweep answered the question I had now got wrong twice. The **column** count was finally right. The **consumer** count was not.
+
+`event_attachments.storage_path` — attacker-authored, since the `starts_with` CHECK admits `{myPetId}/../{victimPetId}/…` — also reaches a service-role **`download()`** in `_shared/incident-analysis.ts:416,424` (`analyze-vomit`, `analyze-stool`, `ask` A8) and `generate-report:648`. And there it is **not inert**:
+
+> `remove()` sends keys in the request **body**, so Storage matches `name` as a literal — which is why every traversal string I fired at `delete-account` deleted nothing. `download()` concatenates the key into the **URL**, and WHATWG parsing **resolves `..`**.
+
+Demonstrated against the real `StorageClient`: the outgoing request names the victim's object, with the attacker's own pet id absent from the URL entirely. The victim's health photo is then analysed onto the attacker's event — or, through `generate-report`, embedded as a base64 data URI in the attacker's own vet report.
+
+`generate-report:643` states the wrong safety argument in writing: *"safe here because `path` came from an RLS-scoped enumeration of the VERIFIED owner's pet."* The **row** is owned; the **value** is attacker-authored. That is the same distinction this whole PR exists to make, one layer over — and `025`'s header had already flagged the residual as *"a latent confused-deputy against a service-role reader,"* which is exactly what this turned out to be.
+
+Filed as **B-583** (`Now`), deliberately **not** fixed here: different functions, and the fix carries a migration. It gates the `generate-report` redeploy, because that function is the one that turns the traversal into bytes in a shareable artifact.
+
 ## The generalisable lessons
 
 Three, all about the shape of the fix rather than the bug:
 
-1. **Extracting a shared predicate does not close a class — enumerating the call sites does.** The extraction was right and still shipped the same bug twice more: round 1 covered two of three guards, round 2 covered three of six columns. Both times the abstraction was mistaken for the audit. Count the call sites *first*.
+1. **Extracting a shared predicate does not close a class — enumerating the call sites does.** The extraction was right and still shipped the same bug three more times: round 1 covered two of three guards, round 2 covered three of six columns, round 3 found the columns right and the *consumers* wrong. Each round I fixed the instances I could see and called the class closed. The abstraction is not the audit. Enumerate producers *and* consumers before claiming a class is done.
 2. **A confident comment is load-bearing, and a wrong one is a defect.** *"No per-id path convention, so do NOT extend this filter"* was the actual cause of the round-3 finding — it survived two adversarial reviews because it read as a decision someone had already made. When a comment tells you not to look somewhere, verify the claim before trusting it, and treat correcting it as part of the fix.
 3. **A budget must be denominated in the units of the risk.** The sweep was bounded by call count while the hazard was wall-clock time ahead of an irreversible step; a plausible account shape turned 1200 calls into four minutes. Bounding the wrong quantity reads as safety in review and isn't.
 
@@ -69,4 +85,5 @@ Three, all about the shape of the fix rather than the bug:
 
 - Tests: **86** in `plan.test.ts`, **1045** across `supabase/functions`, `deno check` + `tsc --noEmit` clean. CI green.
 - **Not deployed.** Code-only until bundle + `deploy_edge_function`; deploying an unmerged draft would put it live ahead of the gate.
-- Three `rls-privacy-reviewer` rounds: FAIL (5 findings) → FAIL (1 finding, same class, 3 more columns) → round 3 pending on the fix above.
+- Three `rls-privacy-reviewer` rounds: FAIL (5 findings) → FAIL (1 finding, same class, 3 more columns) → **PASS**, with B-583 filed against a different function.
+- **B-583 is the most important thing this session produced**, and it is not in this PR: a demonstrated cross-tenant health-photo read via service-role `download()`. It gates the `generate-report` redeploy.
