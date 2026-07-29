@@ -1,0 +1,269 @@
+-- ============================================================
+-- B-577 — nyx-food-photos: add the owner-scoped UPDATE policy
+-- The third and last instance of one seam. 042 (B-431, nyx-pet-photos) and
+-- 043 (B-248, nyx-vet-attachments) each found the identical missing UPDATE
+-- against the same `upsert: true` helper and closed it inline; this bucket is
+-- the one that never got the pass.
+-- Pattern: migrations 025, 042, 043. Owner subquery: migration 036.
+-- ============================================================
+--
+-- ------------------------------------------------------------
+-- THE BUG — `upsert: true` needs an UPDATE policy, and there is none.
+-- ------------------------------------------------------------
+-- Read back from pg_policies before writing this migration, the live set for
+-- this bucket is exactly two policies:
+--
+--   nyx-food-photos: owner insert  INSERT  TO authenticated  (036)
+--   nyx-food-photos: owner select  SELECT  TO authenticated  (033)
+--
+-- `lib/storage.ts:257` uploads with `upsert: true`, which storage-api executes
+-- as `INSERT … ON CONFLICT DO UPDATE`. Postgres requires an UPDATE policy on
+-- the conflict leg, so a first upload succeeds and every OVERWRITE of an
+-- existing key 42501s. Two shipped paths reuse a stable key and depend on that
+-- leg:
+--   * app/food/[id].tsx:433 — the canonical slot replace. Its own comment at
+--     :424-426 says the name is reused deliberately "so the bucket doesn't
+--     accumulate dupes when the user replaces a shot", i.e. the overwrite is
+--     the designed behaviour, not an accident.
+--   * app/food-capture.tsx:417 — the capture/extract flow, whose retry
+--     (:809 re-invokes runUploadAndExtract, and the 23505 handling at :398-411
+--     confirms the same foodId is reused) re-uploads the same
+--     `{foodId}/{slot}.jpg` after a transport/extract failure.
+-- Net: an owner replacing a food's front photo silently fails. The error is
+-- caught and surfaced as "Could not add photo" ([id].tsx:456) with no hint that
+-- the FIRST photo would have worked and only the REPLACEMENT cannot.
+--
+-- Pre-existing and orthogonal to 036 (B-505): the leg was equally broken before
+-- and after that apply — 033 granted no UPDATE either. 036 was applied verbatim
+-- rather than widened mid-deploy, because it is a merged
+-- `rls-privacy-reviewer`-PASSed artifact and a live RLS change earns its own
+-- review pass. This is that pass.
+--
+-- Adding an owner-scoped UPDATE where none existed is strictly ENABLING: it
+-- cannot regress a grant that was never there. And the WITH CHECK half is
+-- load-bearing rather than ceremony — storage-api implements `move()` as an
+-- UPDATE of `objects.name`, so a USING-only grant would let an owner re-home
+-- one of their own objects into another owner's `{foodId}/` prefix. WITH CHECK
+-- forbids the destination as well as the source, so the policy is hardening as
+-- well as enabling.
+--
+-- ------------------------------------------------------------
+-- Why the SELECT policy is not enough on its own.
+-- ------------------------------------------------------------
+-- 042's finding 3 documents the neighbouring trap — a bucket with no SELECT
+-- policy breaks upserts too, because Postgres applies SELECT policies to a
+-- RETURNING clause and storage-api's upsert path reads the existing row and
+-- returns the written one. This bucket HAS had an owner SELECT since 033, so
+-- that half was never missing here; the read is exactly what makes the conflict
+-- detectable, and then the write has no policy to authorise it. The two are
+-- separate grants and both are required.
+--
+-- ------------------------------------------------------------
+-- DELETE — deliberately NOT added.
+-- ------------------------------------------------------------
+-- Following 042/043's rule (granting an unused verb is not hardening) rather
+-- than 025's four-verb set, because the evidence says the same thing it said
+-- there. Grepped: `.remove([…])` is called exactly once in the whole app
+-- (app/event/[id].tsx:440, against nyx-event-attachments) and no path deletes a
+-- food photo. The slot replace OVERWRITES the key rather than removing it, and
+-- B-005 replaced the food hard-delete with archive, so nothing client-side
+-- wants DELETE. `delete-account` purges with the SERVICE ROLE (plan.ts /
+-- index.ts), which bypasses RLS and is unaffected by the absence of a policy.
+-- If a "remove this photo" affordance is ever built, it needs this and its
+-- absence will fail loudly at development time rather than silently:
+--
+--   CREATE POLICY "nyx-food-photos: owner delete"
+--     ON storage.objects FOR DELETE TO authenticated
+--     USING (
+--       bucket_id = 'nyx-food-photos'
+--       AND (storage.foldername(name))[1] IN (
+--         SELECT id::text FROM public.food_items WHERE created_by_user_id = auth.uid()
+--       )
+--     );
+--
+-- One consequence of granting UPDATE at all, named rather than discovered later
+-- (`rls-privacy-reviewer`, B-577 — and note this is a residual THIS migration
+-- CREATES, not one it inherits). `move()` is an UPDATE of `objects.name`, and
+-- before this migration there was no UPDATE policy on this bucket, so nothing
+-- could rename a nyx-food-photos object at all. Now an owner can, in two shapes:
+--
+--   (a) WITHIN their own `{foodId}/` prefix. `food_items.photo_paths` still
+--       names the OLD key, so the renamed object outlives account deletion,
+--       which sources its purge from that column (plan.ts:86, :316).
+--   (b) OUT of this bucket entirely. Permissive policies OR together and
+--       Postgres evaluates USING and WITH CHECK independently, so a move whose
+--       SOURCE satisfies this policy and whose DESTINATION satisfies another
+--       bucket's owner UPDATE (e.g. 042's `{petId}/` prefix) passes both halves.
+--       The object then sits in a bucket whose purge reads a DIFFERENT column,
+--       so no row names it and no purge query finds it.
+--
+-- Both are the data subject acting on their OWN data, so the severity is
+-- erasure COMPLETENESS, not confidentiality — no cross-tenant read or write is
+-- reachable either way (that boundary was attacked directly and held). Shape
+-- (a) is what 043 recorded for vet attachments; shape (b) is not covered by
+-- that framing at all, and it became reachable for this bucket only once every
+-- bucket had an owner UPDATE — which this migration completes.
+--
+-- Granting DELETE would not fix either: the row names the old key regardless.
+-- The real fix is a purge that scans by PREFIX rather than by recorded path,
+-- which is B-578 — and B-578 must therefore be scoped CROSS-BUCKET, not just
+-- over `nyx-food-photos` prefixes, or shape (b) escapes it too. Filed there
+-- rather than fixed here because it is an Edge Function change, not a policy.
+--
+-- ------------------------------------------------------------
+-- Ordering — why the B-358 trap does not bite.
+-- ------------------------------------------------------------
+-- 036 could not owner-scope this bucket's INSERT until the client was reordered,
+-- because food photos were uploaded to `{foodId}/…` BEFORE the owner-locked
+-- `food_items` row existed, so the ownership subquery would have 42501'd EVERY
+-- upload. That precondition is already satisfied and was re-verified in code
+-- rather than taken from the row — an UPDATE can only fire against an object
+-- that already exists, so the row is necessarily older still:
+--   * app/food-capture.tsx `runUploadAndExtract` inserts the row at :386 and
+--     uploads at :417, with the B-358 rationale comments at :349-353/:379-385.
+--   * app/food/[id].tsx:433 writes `{row.id}/…` against a row it is already
+--     rendering, and its very next statement updates that same row.
+--   * lib/sync.ts never touches this bucket (the offline queue uploads only
+--     event attachments, vet attachments and vet documents), so there is no
+--     deferred-flush path that could race the row.
+-- No client change is needed and no client reorder precedes this migration.
+--
+-- ------------------------------------------------------------
+-- Predicate.
+-- ------------------------------------------------------------
+-- Path convention (lib/storage.ts callers): `{foodItemId}/{slot}.jpg`, so the
+-- first path segment is a `food_items.id`. Mirrors 036's INSERT exactly, so the
+-- two grants cannot drift into disagreeing about what "owned" means.
+--
+-- Compared as text (`id::text`) so a malformed first segment simply fails to
+-- match instead of raising a uuid cast error inside a policy (a `::uuid`
+-- formulation would turn a hostile key into a 500); exact set membership via
+-- `IN`, never a prefix match, so one id can never be a string prefix of another.
+-- `public.` qualifies the table where 033/036 wrote it bare — same resolution
+-- (a policy expression is resolved to an OID at creation time, so runtime
+-- search_path cannot move it), matching the newer 042/043 house style.
+--
+-- The subquery filters `created_by_user_id = auth.uid()` itself, so this policy
+-- does not depend on `food_items`' own RLS staying correct.
+--
+-- Every predicate below was evaluated against the LIVE database with a real
+-- food_items.id before this migration was written. The legitimate key passes;
+-- every hostile key fails closed:
+--
+--   {foodId}/0-front.jpg     → true    ← the only legitimate shape
+--   0-front.jpg    (no '/')  → NULL    (empty folder array → [1] is NULL)
+--   {foodId}       (bare id) → NULL
+--   /{foodId}/0-front.jpg    → false   (first segment is '')
+--   ../{foodId}/0-front.jpg  → false   (first segment is '..')
+--   "{foodId} /0-front.jpg"  → false   (trailing-space near-miss)
+--   {FOODID}/0-front.jpg     → false   (no case folding)
+--   {foodId}X/0-front.jpg    → false   (id as a string PREFIX — the `IN` set
+--                                       membership is what makes this a miss)
+--   {unknown-uuid}/…         → false
+--   not-a-uuid/…             → false   (no cast error — the `id::text` claim)
+--
+-- NULL is not TRUE, so both USING and WITH CHECK reject the no-slash cases:
+-- fails closed.
+--
+-- PREREQUISITE — the nyx-food-photos bucket already exists (dashboard-created).
+-- This migration ONLY adds an RLS policy; it never CREATEs the bucket (the
+-- SQL-created-bucket owner=null landmine documented in 008/021/CLAUDE.md).
+-- Verified `public = false` — the load-bearing condition for any of this to
+-- mean anything, since a public bucket's read route bypasses RLS entirely.
+--
+-- Migration Safety Pre-flight:
+--   Destructive: n — adds ONE Storage RLS policy where none existed for that
+--     verb. Drops, renames or alters NO column, creates no table, and touches
+--     NO row data. Existing objects are neither moved nor deleted.
+--   Rollback:
+--     DROP POLICY IF EXISTS "nyx-food-photos: owner update" ON storage.objects;
+--     This restores the status quo exactly (INSERT + SELECT only) and re-opens
+--     B-577 — food photo replacement silently fails again. It cannot re-open a
+--     cross-tenant read, since this migration grants no read.
+--   Backfill: N/A — no data change, and no rows need to conform.
+--   Tables affected: storage.objects (one RLS policy). There is no CHECK
+--     constraint in this migration — unlike 042/043 — but the honest reason is
+--     narrower than "the confused deputy is closed for food", which is what an
+--     earlier draft of this header claimed and which the `rls-privacy-reviewer`
+--     pass disproved by EXECUTING the guard. What is true: `collectStoragePaths`
+--     re-scopes the food list through `scopeFoodPaths` (plan.ts:199, applied at
+--     :317), which drops a plain cross-tenant `{victimFoodId}/…` — verified. What
+--     is NOT true: that this closes the class. `scopeFoodPaths` is a
+--     FIRST-SEGMENT test, so `{ownFoodId}/../{victimFoodId}/0-front.jpg` is KEPT
+--     and reaches the service-role `remove()`. That is the exact shape the VF-1
+--     reviewer already proved insufficient for vet documents, and plan.ts:242-247
+--     says so IN THAT FILE — while leaving its food twin as the first-segment
+--     test it warns against. The path deletes nothing today only because
+--     storage-api treats `objects.name` as an opaque literal and resolves no
+--     `..`, which is precisely the third-party assumption plan.ts:236-240
+--     explicitly declines to rely on.
+--     It is NOT fixed here for two reasons: it is an Edge Function change, not a
+--     policy (the same split 042 and 043 both made), and this migration neither
+--     creates nor widens it — the purge is service-role and bypasses every policy
+--     in this file. Every legitimate food key is exactly two segments
+--     (`{foodId}/{n}-{slot}.jpg`), so the fix is the same whole-shape guard
+--     `scopeVetDocumentPaths` already uses. Filed as B-582, alongside B-578.
+--     Row-count checks the PM can run BEFORE applying — all measured live at
+--     authoring time (2026-07-28), none of them gating:
+--       select count(*) from storage.objects where bucket_id = 'nyx-food-photos';   -- 160
+--       select count(*) from food_items;                                            -- 65
+--       select count(*) from food_items where created_by_user_id is null;           -- 0
+--       select count(distinct created_by_user_id) from food_items;                  -- 1
+--     No count can block this apply (the policy adds a grant and conforms
+--     nothing), so these are blast-radius context, not a precondition: one
+--     owning account, so the change reaches the PM's own device only.
+--
+--     The 25 objects whose prefix matches no food_items row (B-578): an earlier
+--     draft said they "stay unreadable and unwritable". That is FALSE and the
+--     `rls-privacy-reviewer` pass is why it no longer says it — prefix ownership
+--     in this bucket is MINT-ON-DEMAND. `food_items.id` is client-supplied
+--     (`app/food-capture.tsx:128` generates the uuid, `:387` inserts it) and the
+--     `food_items_insert` policy checks only `created_by_user_id = auth.uid()`,
+--     so anyone who KNOWS an orphan's uuid can insert a row claiming that id and
+--     thereby own the prefix — gaining read (033), create (036) and, with this
+--     migration, overwrite and rename over the existing object.
+--     What actually holds, and it is worth stating precisely rather than
+--     comfortably: `food_items.id` is the PRIMARY KEY, so while a victim's row
+--     exists the squatting INSERT 23505s. NO LIVE OBJECT IS REACHABLE THIS WAY.
+--     The exposure is confined to objects whose owning row is already gone, and
+--     re-minting requires knowing a 122-bit uuid that no surviving row exposes.
+--     So the orphans are protected by a SECRET, not by a policy. That is a
+--     defensible posture at 25 objects on a single-account project, but it is a
+--     different claim from "unwritable", and B-578 should be scoped against the
+--     true one. This migration does not change the reachability either way —
+--     033's SELECT already granted the read that matters.
+-- ============================================================
+
+-- Idempotent so this migration is safe to re-run. The drop names only the policy
+-- this file creates: the 033 SELECT and 036 INSERT are load-bearing and are
+-- deliberately left untouched.
+DROP POLICY IF EXISTS "nyx-food-photos: owner update" ON storage.objects;
+
+-- UPDATE: covers the upsert-overwrite of `{foodId}/{slot}.jpg` when an owner
+-- replaces a food photo. USING gates which objects may change; WITH CHECK blocks
+-- re-homing an object (storage-api's `move()`) under a food the user does not
+-- own. Both halves carry the same predicate as 036's INSERT.
+CREATE POLICY "nyx-food-photos: owner update"
+  ON storage.objects
+  FOR UPDATE
+  TO authenticated
+  USING (
+    bucket_id = 'nyx-food-photos'
+    AND (storage.foldername(name))[1] IN (
+      SELECT id::text FROM public.food_items WHERE created_by_user_id = auth.uid()
+    )
+  )
+  WITH CHECK (
+    bucket_id = 'nyx-food-photos'
+    AND (storage.foldername(name))[1] IN (
+      SELECT id::text FROM public.food_items WHERE created_by_user_id = auth.uid()
+    )
+  );
+
+-- ============================================================
+-- ROLLBACK (for reference — do not run inline).
+--
+--   DROP POLICY IF EXISTS "nyx-food-photos: owner update" ON storage.objects;
+--
+-- Idempotent, and safe to re-run. Re-opens B-577 (photo replacement fails).
+-- ============================================================

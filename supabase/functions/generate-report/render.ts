@@ -1036,6 +1036,86 @@ function safetyFlagRow(f: SafetyFlag, snap: ReportSnapshot): string {
         )}`,
       )
     }
+    case 'trial_diet_refusal': {
+      // B-494. The feline clock is the reason this flag exists at all: the canonical case is a
+      // cat many multiples past the 48–72h hepatic-lipidosis window whose record produced no
+      // flag of any kind, because the only intake detector on the page is a RELATIVE one.
+      const feline =
+        f.species === 'cat'
+          ? ' In cats, ≥48–72&nbsp;h of markedly reduced intake is a hepatic-lipidosis risk window.'
+          : ''
+      const wide = f.refusal?.population === 'meal_record'
+      const bits: string[] = []
+      if (f.refusal) {
+        // THE DENOMINATOR IS NOT OPTIONAL. "38 feedings refused" reads the same whether the
+        // owner rated 38 or 380, and the vet's first question is how much of the record this is.
+        const r = f.refusal
+        const noun = wide ? 'rated meal' : 'rated feeding'
+        const of = wide
+          ? ''
+          : f.trialDietLabels.length > 0
+            ? ` of ${h(f.trialDietLabels.join(' / '))}`
+            : ' of the trial diet'
+        bits.push(
+          `<b>${num(r.refusedFeedings)} of ${num(r.ratedFeedings)} ${noun}${
+            r.ratedFeedings === 1 ? '' : 's'
+          }${of} left unfinished</b> across ${num(r.days)} day${r.days === 1 ? '' : 's'}.`,
+        )
+      }
+      // ⚠️ NO SENTENCE HERE ABOUT WHAT THE RECORD DOES NOT CONTAIN. A repair pass added
+      // "The trial ran to this window with no intake ratings logged against it" to this
+      // branch and `adversarial-reviewer` executed it: `refusal` is null whenever the
+      // FLOORS are unmet, not only when ratings are absent, so a trial with 20 rated
+      // feedings (5 refused — a 25% share, under `REFUSAL_SHARE`) whose owner marked it
+      // `stopped_reason='refused'` printed that line on the safety band beside its own
+      // page-1 "15 of 20 rated meals fully eaten". A flatly false claim, self-contradicted
+      // one section away, in the zone that can least afford it. The flag payload cannot
+      // tell the two causes apart, so the honest move is to say nothing: the
+      // owner-declared sentence below already states what this flag rests on.
+      //
+      // ONE DATE ANCHOR, ON EVERY PATH, and it is labelled for what the value IS. The
+      // range is the documented OVERLAP (`max(scope start, trial start, first log) …
+      // min(today, ended_at, scope end)`), so calling it the "trial window" asserted
+      // something the value does not support — executed on a trial started Apr 1 whose
+      // logs begin Jun 15, where the band read "Trial window: Jun 15 – Jul 2" in the same
+      // paragraph as "day 93 of 120".
+      bits.push(`Dates covered: ${h(fmtRange(f.rangeStartDate, f.rangeEndDate))}.`)
+      if (wide) {
+        // THE ATTRIBUTION GAP IS DISCLOSED, NOT PAPERED OVER (B-530). Under this population the
+        // app could not resolve which logged food was the prescribed diet, so naming the diet
+        // here would assert exactly what it just failed to establish. The clinical fact — this
+        // animal is not finishing what is put down — is unaffected by that failure, which is the
+        // whole reason the lane falls back rather than going silent.
+        bits.push(
+          'These meals could not be matched to the foods on the trial&rsquo;s allowed list, so the food is not named &mdash; the finding is about the meal record.',
+        )
+      }
+      if (f.stoppedForRefusal) {
+        bits.push('The owner ended this trial because the pet would not eat the diet.')
+      }
+      // COMPOSE WITH THE WEIGHT, ON THE FLAG ITSELF. The cold read's finding was not that any
+      // one fact was missing — refusal, weight delta, typical intake and the free-fed bowl were
+      // all on the page — but that they were distributed across four sections and never put
+      // together, so the 60-second scan never assembled the picture. The weight sentence is
+      // trial-scoped and already guarded (`weightDuringTrial`); it leads here when it exists.
+      const weight = weightDuringTrial(snap)
+      if (weight) bits.push(weight)
+      bits.push(
+        // NEVER "the pet is picky" and never a preference frame: decline is frequently a DISEASE
+        // signal, and a prescription diet is not a food the animal chose. Presence-only — this
+        // says nothing about a record where intake was never rated.
+        //
+        // AND THE CLOSING NOUN FOLLOWS THE POPULATION TOO. The wide branch two lines up
+        // disclaims the attribution, and this sentence then re-asserted it — "the food is not
+        // named" followed by "refusal of a prescribed diet", two clauses apart on a vet's
+        // artifact. `trialViabilityNote` was rewritten for exactly this on the card; the
+        // report's closing sentence had not been.
+        `<b>${
+          wide ? 'Food going uneaten' : 'Refusal of a prescribed diet'
+        } is a clinical finding in its own right</b>, not a preference.${feline} Shown because it is present in the log; it is not a measure of how much was eaten overall. Intake ratings in appendix&nbsp;E.`,
+      )
+      return flagRow('Diet not eaten', bits.join(' '))
+    }
     case 'intake_decline': {
       const feline =
         f.species === 'cat'
@@ -1265,7 +1345,24 @@ function dietTrialSection(snap: ReportSnapshot): string {
       } of the trial predate any logging and are reported as untracked, not as missed.`,
     )
   }
-  recordBits.push(...exposureSentences(t, weightDuringTrial(snap)))
+  recordBits.push(...exposureSentences(t))
+  // ── B-530: THE WEIGHT FACT IS NO LONGER A PASSENGER ON THE REFUSAL BRANCH ───
+  //
+  // It used to be pushed from INSIDE `exposureSentences`' refusal branch, so the
+  // trial-scoped weight sentence — the single most decisive companion fact on the
+  // canonical artifact — rendered if and only if the refusal fact fired. Every
+  // identity miss that silenced the refusal lane therefore silenced the weight
+  // line too, and the two failures compounded into the quietest possible page over
+  // the sickest patient. A weight change measured over the trial is worth stating
+  // on ANY trial branch, so it is stated on its own terms here.
+  //
+  // NOT TWICE, THOUGH. When B-494's flag fired, the same sentence already leads the
+  // safety band above the fold, composed with the refusal it belongs to — repeating
+  // it verbatim two inches down spends the reader's attention to say nothing new.
+  const trialWeight = weightDuringTrial(snap)
+  if (trialWeight && !snap.safetyFlags.some((f) => f.kind === 'trial_diet_refusal')) {
+    recordBits.push(trialWeight)
+  }
   // The blind-spot qualifier is INLINE and permanent on the claim itself, never a
   // page-level legend (§5.2). It names flavoured NON-chewables specifically because
   // C3 ruled the chewable lane INTO v1 — rung 4 detects those, and the pre-C3
@@ -1646,13 +1743,20 @@ function dietTrialSection(snap: ReportSnapshot): string {
  * "day N of M where N > M" got its own acceptance criterion here.
  */
 /**
- * The in-window weight change, as a sentence, for composition with the refusal line.
+ * The trial-scoped weight change, as a sentence.
  *
  * PERCENT OF BODY WEIGHT, not only the absolute — which is the point. `-0.3 kg` renders
  * identically for a 32 kg Labrador and a 4.4 kg cat, where it is ~7% of body mass; on a
  * refusing animal that is the most action-forcing number on the page and it was sitting
- * greyed in the fourth tile labelled "descriptive" (B-475's finding, cleared HERE for the
- * refusal case only, because that is the case where nothing else composes it).
+ * greyed in the fourth tile labelled "descriptive" (B-475's finding).
+ *
+ * IT IS NO LONGER THE REFUSAL LINE'S PASSENGER (B-530). It was originally cleared "for the
+ * refusal case only, because that is the case where nothing else composes it", and pushed
+ * from inside that branch — so every food-identity miss that silenced the refusal lane
+ * silenced this too, and the two failures compounded into the quietest possible page over
+ * the sickest patient. There are now two callers, and between them they render it exactly
+ * once: the B-494 safety-band row composes it with the refusal above the fold, and
+ * `dietTrialSection` states it on every other trial branch.
  *
  * Descriptive, never a verdict, and never rounded finer than an owner's home scale can
  * support: the reading's provenance is stated on the tile it comes from, and a percentage
@@ -1721,10 +1825,41 @@ function trialDayPhrase(t: ReportSnapshot['trial'], targetDays: number): string 
  *     was refused) — a diet that was not eaten cannot be read as one that was
  *     followed, and this is a RULE, not a copy preference.
  */
-function exposureSentences(t: NonNullable<ReportSnapshot['trial']>, weight: string | null): string[] {
-  // 1. Nothing was checked against anything.
+function exposureSentences(t: NonNullable<ReportSnapshot['trial']>): string[] {
+  // THE REFUSAL SENTENCE IS COMPUTED FIRST AND BELONGS TO BOTH BRANCHES BELOW (B-530).
+  //
+  // It used to live inside branch 2 only, and branch 1 returned EARLY — so the state
+  // where food identity fails silenced it there too. That is the compounding failure
+  // B-530 is about: the very record that cannot resolve its own diet is the one whose
+  // trial block then said only "no allowed-food list is recorded", with the fact that
+  // the animal was not eating appearing nowhere in the block at all.
+  //
+  // `rangeRefusal` is the whole-range fact; `trialDietRefusal` is PR 5's now-fact. The
+  // report wants the former — see the field's own note. The latter is still read,
+  // because when both are set the recent one is the sharper clinical statement.
+  const refused = t.rangeRefusal ?? t.trialDietRefusal
+  const refusalBits: string[] = []
+  if (refused) {
+    // THE NOUN FOLLOWS THE POPULATION (B-530), exactly as it does on the card. Over
+    // `meal_record` the app could not identify the trial diet, so "feedings of the trial
+    // diet" would assert the identity the fallback exists because it could not establish —
+    // and on a vet's artifact that is a fabricated attribution, not a rounding of the copy.
+    const wide = refused.population === 'meal_record'
+    refusalBits.push(
+      `<b>${num(refused.refusedFeedings)} of ${num(refused.ratedFeedings)} rated ${
+        wide ? 'meals' : 'feedings of the trial diet'
+      } were left unfinished</b>, across ${num(refused.days)} day${refused.days === 1 ? '' : 's'}.${
+        wide
+          ? ' These feedings could not be matched to the trial&rsquo;s allowed list, so the food is not named here.'
+          : ''
+      }`,
+    )
+  }
+
+  // 1. Nothing was checked against anything — but the animal's own record still speaks.
   if (t.allowedSetUnavailable) {
     return [
+      ...refusalBits,
       `<b>No allowed-food list is recorded for this trial</b>, so no feeding on this report has been checked against it. The feedings themselves are in appendix&nbsp;C.`,
     ]
   }
@@ -1735,33 +1870,11 @@ function exposureSentences(t: NonNullable<ReportSnapshot['trial']>, weight: stri
   //    routes a refusal to the intake-decline HEALTH lane and forbids rendering it
   //    as a compliance outcome. The exposures themselves are not suppressed; they
   //    are still itemised in appendix C, where they are a record rather than a score.
-  // `rangeRefusal` is the whole-range fact; `trialDietRefusal` is PR 5's now-fact.
-  // The report wants the former — see the field's own note. The latter is still read,
-  // because when both are set the recent one is the sharper clinical statement.
-  const refused = t.rangeRefusal ?? t.trialDietRefusal
   if (refused || t.stoppedReason === 'refused') {
-    const bits: string[] = []
-    if (refused) {
-      bits.push(
-        `<b>${num(refused.refusedFeedings)} of ${num(
-          refused.ratedFeedings,
-        )} rated feedings of the trial diet were logged as refused</b>, across ${num(refused.days)} day${
-          refused.days === 1 ? '' : 's'
-        }.`,
-      )
-    }
-    // COMPOSE, on page 1. The cold read's remaining blocker on the refused artifact: the
-    // page held 34-of-38 refused (trial block), 4.4 → 4.1 kg (a greyed fourth tile),
-    // "Typical intake: Refused" (appendix E) and a free-fed bowl (feeding line) — every
-    // fact needed, distributed across four sections and NEVER PUT TOGETHER. Composition
-    // is the whole job at minute zero, and a legend entry on the last page was carrying
-    // a page-1 clinical fact.
-    //
-    // Deliberately NOT a safety flag and NOT a threshold: this is a restatement of two
-    // adjacent facts already on the page, in the register the report uses everywhere
-    // else. The escalation lane — which needs its own adversarial pass and Dr. Chen — is
-    // B-474, and this does not pre-empt or substitute for it.
-    if (weight) bits.push(weight)
+    const bits: string[] = [...refusalBits]
+    // THE WEIGHT COMPANION MOVED OUT OF THIS BRANCH (B-530). It is now pushed by the
+    // caller on every branch — coupling the single most decisive companion fact to
+    // whether the refusal lane happened to fire meant an identity miss silenced both.
     bits.push(
       // NO POINTER TO APPENDIX C HERE. It is the OFF-DIET table, so a trial-diet
       // feeding can never appear in it by construction — the cross-reference could not
@@ -2273,21 +2386,28 @@ function coverageTile(ag: AtAGlance): string {
 }
 
 /**
- * R2-2 off-diet load tile — leads with the total treat COUNT (the exposure magnitude a vet weighs),
- * not the distinct-item count. On the first artifact the tile led with "2 distinct", which
+ * R2-2 treats & table-food tile — leads with the total treat COUNT (the exposure magnitude a vet
+ * weighs), not the distinct-item count. On the first artifact the tile led with "2 distinct", which
  * undersold a 343-feeding load until the sub-label was read (cold-read NIT).
+ *
+ * MONITORING TILE SET ONLY (`monitoringTiles` is the no-trial branch), and R2 is why the label no
+ * longer says "off-diet load": on a report with no trial there is no diet to be off, so the phrase
+ * imports a verdict from a comparison that was never made. The tile names what it counts. Under a
+ * trial the corresponding tile is `trialTiles`' exposure tile, which is a different measurement
+ * against a real allowed list.
  */
 function offDietTile(snap: ReportSnapshot): string {
   const treats = snap.diet.treats
   const hf = snap.diet.humanFood
   if (treats.count > 0) {
-    const hfBit = hf.count > 0 ? ` &middot; human food ${num(hf.days)} d` : ''
-    return tile(`${treats.count}`, `<small>&nbsp;treats</small>`, `Off-diet load<br/>${num(treats.distinctItems)} distinct${hfBit}`)
+    const hfBit = hf.count > 0 ? ` &middot; table food ${num(hf.days)} d` : ''
+    return tile(`${treats.count}`, `<small>&nbsp;treats</small>`, `Treats &amp; table food<br/>${num(treats.distinctItems)} distinct${hfBit}`)
   }
   if (hf.count > 0) {
-    return tile(`${hf.count}`, `<small>&nbsp;feedings</small>`, `Human food<br/>on ${num(hf.days)} day${hf.days === 1 ? '' : 's'}`)
+    return tile(`${hf.count}`, `<small>&nbsp;feedings</small>`, `Table food<br/>on ${num(hf.days)} day${hf.days === 1 ? '' : 's'}`)
   }
-  return tile('—', '', `Off-diet load<br/>none logged in this window`)
+  // Record-scoped (R2): a statement about what is in the log, not a claim that nothing was fed.
+  return tile('—', '', `Treats &amp; table food<br/>none recorded in this window`)
 }
 
 function symptomTrend(snap: ReportSnapshot): string {
@@ -2804,7 +2924,13 @@ function dietMeds(snap: ReportSnapshot): string {
 
   // Feeding: meal completion (meals-only) + free-fed verbatim string (B-040).
   const isFreeFed = d.freeFed.length > 0
-  const hasIntakeFlag = snap.safetyFlags.some((f) => f.kind === 'intake_decline')
+  // BOTH INTAKE-FAMILY FLAGS, not only the relative detector (B-494). This guard exists so a
+  // grazing cat with NO intake concern is described rather than scored — but the new refusal
+  // lane fires on precisely the animal the scored figure is right for, and it was not in the
+  // test, so a flagged refusal still got the describe-don't-score framing.
+  const hasIntakeFlag = snap.safetyFlags.some(
+    (f) => f.kind === 'intake_decline' || f.kind === 'trial_diet_refusal',
+  )
   const freeFedLabels = d.freeFed.map((f) => (f.foodLabel ? h(f.foodLabel) : 'free-fed food')).join(', ')
   const feedBits: string[] = []
   if (isFreeFed && !hasIntakeFlag) {
@@ -2890,12 +3016,35 @@ function dietMeds(snap: ReportSnapshot): string {
       )
     }
   }
-  // The no-trial branch is retained VERBATIM (§7). On a monitoring report "none
-  // logged" is a statement about a window with no elimination to invalidate; under
-  // a trial it would be the negative claim G2 deletes, and the branch above always
-  // pushes a line so it can never be reached there.
-  if (offBits.length === 0) offBits.push('None logged in this window.')
-  left.push(kv('Off-diet', offBits.join(' ')))
+  // ── B-531: THE EMPTY LINE, AND THE HEADING IT SITS UNDER ───────────────────
+  //
+  // The predecessor of this branch pushed 'None logged in this window.' with a
+  // comment asserting it could never be reached under a trial, "because the branch
+  // above always pushes a line". The branch above pushes a line when the trial has
+  // a USABLE allowed list — and the sub-state where it does not (`allowedSetUnavailable`:
+  // a cold cache, a half-hydrated set, a re-photographed bag) is exactly where both
+  // of the count lines above are also suppressed. So on a real trial report with a
+  // dark permit set, all three branches fell through to the one sentence G2 deletes
+  // from the product at every coverage, on every surface. Executed by the pre-ship
+  // adversarial chair; the comment was the defect, not the guard.
+  //
+  // R2 (PM, 2026-07-27): G2's jurisdiction is TRIAL reports — and a no-trial report
+  // should not be using "off-diet" vocabulary at all, because there is no diet to be
+  // off. So the heading names what the section actually lists, and its empty line is
+  // record-scoped under that heading rather than a claim about exposure.
+  if (offBits.length === 0) {
+    offBits.push(
+      snap.trial
+        ? 'No allowed-food list is recorded for this trial, so no feeding in this window has been checked against one. The feedings themselves are in appendix&nbsp;C.'
+        : 'No treats or table food are recorded in this window.',
+    )
+  }
+  // THE LABEL FOLLOWS THE SAME TEST THE APPENDIX DOES. Branching on `snap.trial` alone
+  // left a dark-permit-set report heading this row "Off-diet" while it pointed at an
+  // appendix B-531 had just renamed "Treats & table food during the trial" — page 1
+  // disagreeing with its own cross-reference, in the direction this PR set out to fix.
+  const offDietDerived = !!snap.trial && !snap.trial.allowedSetUnavailable
+  left.push(kv(offDietDerived ? 'Off-diet' : 'Treats &amp; table food', offBits.join(' ')))
 
   // Medications (B-117) + supplements as concurrent interventions.
   // §7 calls the medication overlap "re-siting, not addition", and it is re-sited —
@@ -3840,15 +3989,29 @@ function offDietAppendix(snap: ReportSnapshot): string {
   // deletes from the product at every coverage, on every surface. The positive form is
   // about the RECORD, and it is gated — `mayClaimAllMatched` withholds it whenever the
   // module has computed a reason it is false.
+  // B-531 — THE THIRD BRANCH IS A TRIAL REPORT TOO. `trialDerived` is false whenever
+  // the allowed list is dark, but the trial is still on the page and G2 still binds:
+  // "No off-diet exposures logged in this window" over a trial whose permit set never
+  // hydrated is the banned negative claim, asserted about a check that never ran. Only
+  // the genuinely trial-less report may speak about this window's treats at all — and
+  // per R2 it does so under a heading that names them, not as an exposure verdict.
   const emptyRow = trialDerived
     ? snap.trial!.mayStateRecordClean
       ? `Every one of the ${num(
           snap.trial!.exposures.totalFeedings,
         )} feedings logged in this window matched the trial diet or a permitted food. This describes the record and is a floor, not a total.`
       : 'No feeding in this window is listed here. See the diet-trial block on page 1 before reading that as a clean elimination.'
-    : 'No off-diet exposures logged in this window.'
+    : hasTrial
+      ? 'Nothing is listed here. This report has no allowed-food list for the trial, so no feeding has been checked against one &mdash; see the diet-trial block on page 1.'
+      : 'No treats or table food are recorded in this window.'
   return `
-  <p class="appx-title serif">Appendix C — ${trialDerived ? 'Off-diet exposures during the trial' : 'Off-diet exposures (confounders)'}</p>
+  <p class="appx-title serif">Appendix C — ${
+    trialDerived
+      ? 'Off-diet exposures during the trial'
+      : hasTrial
+        ? 'Treats &amp; table food during the trial'
+        : 'Treats &amp; table food'
+  }</p>
   <p class="appx-sub">${subtitle} Repeated items are grouped (with a feeding count and date span); human food is listed feeding-by-feeding. Protein shows the full set read from the label, most prominent first; &ldquo;list not read&rdquo; marks a food whose ingredient panel was never captured, so its set may be incomplete.</p>
   ${tallyBit}
   <table>
@@ -3860,9 +4023,20 @@ function offDietAppendix(snap: ReportSnapshot): string {
       // AVAILABLE. Every other exposure figure in the document carries "a floor, not a
       // total"; the reassuring one had lost it. Under a trial the count is never
       // rendered bare, and a zero does not get to be a number at all.
+      //
+      // B-531 — "under a trial" means `hasTrial`, not `trialDerived`. A dark permit set
+      // does not stop the report being a trial report, and "0 off-diet exposures" is the
+      // more reassuring reading precisely BECAUSE nothing was checked. The noun also
+      // follows the table: outside `trialDerived` these rows are the treat/human-food
+      // heuristic, and calling them exposures is the caption-describes-the-wrong-set
+      // defect §7 sent PR 7 to fix.
       trialDerived && conf.length === 0
         ? 'No exposure is listed here'
-        : `${num(conf.length)} off-diet exposure${conf.length === 1 ? '' : 's'}${breakdownBit}`
+        : hasTrial && conf.length === 0
+          ? 'No feeding is listed here'
+          : `${num(conf.length)} ${trialDerived ? 'off-diet exposure' : 'treat or table-food feeding'}${
+              conf.length === 1 ? '' : 's'
+            }${breakdownBit}`
     } &middot; ${h(
     fmtRange(trialDerived ? snap.trial!.exposureRangeStartDate : snap.scope.startDate, trialDerived ? snap.trial!.rangeEndDate : snap.scope.endDate),
   )}${trialDerived ? ' &middot; a floor, not a total' : ''}</caption>
@@ -4064,7 +4238,10 @@ function medicationAppendix(snap: ReportSnapshot): string {
 function appendixF(snap: ReportSnapshot): string {
   const hasSafety = snap.safetyFlags.length > 0
   const safetyDt = hasSafety
-    ? `<dt>Safety flags</dt><dd>Shown only when present, above the fold. They escalate on the presence of a concern (chronicity, reduced intake, possible blood/foreign, worsening) and are owner-reported, not a diagnosis. Absence of a flag is never shown as an &ldquo;all clear.&rdquo;</dd>`
+    ? // "a prescribed diet going uneaten" is named explicitly (B-494). The list here is what
+      // teaches the reader what the zone covers, so a lane missing from it is a lane whose
+      // silence the reader will misread as a negative result on exactly the patient it watches.
+      `<dt>Safety flags</dt><dd>Shown only when present, above the fold. They escalate on the presence of a concern (chronicity, reduced intake, a prescribed diet going uneaten, possible blood/foreign, worsening) and are owner-reported, not a diagnosis. Absence of a flag is never shown as an &ldquo;all clear.&rdquo;</dd>`
     : // NOT "none were present in this window". The cold read lifted exactly that clause
       // off a report for an 8-year-old cat with 34 of 38 feedings refused and ~7% of body
       // weight lost in 18 days: one sentence that makes the all-clear claim and then

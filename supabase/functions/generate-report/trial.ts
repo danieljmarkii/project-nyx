@@ -453,6 +453,21 @@ export interface TrialBlock {
    * there is one definition of "not being eaten" and two windows over it, each named.
    */
   rangeRefusal: TrialDietRefusal | null
+  /**
+   * Does `rangeRefusal` span more than one EPISODE (`REFUSAL_MIN_SPAN_MS`)?
+   *
+   * ABSENT FROM THIS INTERFACE UNTIL B-494 NEEDED IT, and its absence was a defect the
+   * moment `rangeRefusal` stopped merely narrating the trial block. The range fact drops
+   * the span guard deliberately — right for a HISTORY, where a multi-week refusal is the
+   * failure mode — but B-494 promoted the same fact to an above-the-fold ESCALATION, and
+   * `dietTrialCard.ts` refuses to let a present-tense register speak without it. Executed:
+   * three refusals in one 3.5-hour bout straddling local midnight fired the vet report's
+   * safety band ("Diet not eaten … across 2 days", plus the feline lipidosis window) over a
+   * record the owner's own card is silent on. One record, two surfaces, opposite answers,
+   * with the VET's artifact taking the louder one — and the report could not add the guard
+   * because the fact it needed was not on this type.
+   */
+  rangeRefusalSpansEpisodes: boolean
   /** PR 3's token. `refused` is load-bearing: §4.3 routes it to the intake-decline
    *  HEALTH lane and forbids rendering it as a compliance outcome. */
   stoppedReason: string | null
@@ -898,6 +913,7 @@ export function buildTrialBlock(args: BuildTrialBlockArgs): TrialBlock | null {
     antigenArmDark: facts.antigenArmDark,
     trialDietRefusal: facts.trialDietRefusal,
     rangeRefusal,
+    rangeRefusalSpansEpisodes: facts.rangeRefusalSpansEpisodes,
     stoppedReason: trial.stoppedReason ?? null,
     outcome: trial.outcome ?? null,
     outcomeNotes: trial.outcomeNotes ?? null,

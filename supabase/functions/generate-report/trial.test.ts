@@ -1024,7 +1024,14 @@ Deno.test('the exposure tile renders a real em dash, not an HTML entity', () => 
   input.dietTrials[0].allowedFoods = []
   const html = renderReport(assembleReport(input))
   assert.ok(!html.includes('&amp;mdash;'))
-  assert.ok(plain(html).includes('— Off-diet exposures'))
+  // B-531 — the trial is still on the page with a dark permit set, so the appendix names
+  // what it actually lists; the tile's own "Off-diet exposures / no allowed list recorded"
+  // label is unchanged, because THAT one is the honest disclosure of the missing check.
+  // Asserted against the tile's own markup rather than against a nearby em dash borrowed
+  // from the appendix title, which is what the previous assertion was actually reading.
+  assert.ok(html.includes('<div class="v num">—</div>'), 'the tile value is a real em dash')
+  assert.ok(plain(html).includes('Off-diet exposuresno allowed list recorded for this trial'))
+  assert.ok(plain(html).includes('Appendix C — Treats & table food during the trial'))
 })
 
 Deno.test('§12 — the protein-over-time caption matches the set it bins', () => {
@@ -1137,8 +1144,14 @@ Deno.test('a refused trial COMPOSES the refusal with the weight change, as % of 
   // appendix-E ratings and a free-fed bowl — every fact needed, across four sections,
   // never put together, with a legend entry on the last page carrying a page-1 clinical
   // fact. -0.3 kg renders identically for a 32 kg dog and a 4.4 kg cat; on the cat it is
-  // ~7% of body mass. This is a restatement of adjacent facts, not a new escalation lane
-  // (that is B-474).
+  // ~7% of body mass.
+  //
+  // B-494 CHANGES WHERE THE COMPOSITION LANDS, AND THIS TEST WITH IT. The original
+  // comment closed "this is a restatement of adjacent facts, not a new escalation lane
+  // (that is B-474)", and asserted NO safety band above the trial block. The pre-ship
+  // ruling reversed that deliberately: the report teaches the reader to scan the flag
+  // zone, so leaving the zone silent on the canonical feline-anorexia record reads as a
+  // negative result rather than as silence. The composition now leads the band.
   // STOPPED at day 19 — the artifact's own story, and the shape the recency bound
   // wants: `endDayIndex` is the trial's end, so the 14-day refusal window closes
   // there rather than at real-now a fortnight later.
@@ -1161,8 +1174,16 @@ Deno.test('a refused trial COMPOSES the refusal with the weight change, as % of 
   assert.ok(/about 7% of body weight/.test(text))
   assert.ok(!/6\.8% of body weight/.test(text))
   assert.ok(/Refusal of food is a clinical finding in its own right/.test(text))
-  // Still not an escalation: no safety flag is fabricated here.
-  assert.ok(!/flags for review/i.test(text.slice(0, text.indexOf('Diet trial'))))
+  // B-494 — the safety band leads the page and carries the composition, ABOVE the trial
+  // block. `text.indexOf('Diet trial')` is the same slice the old assertion used; the
+  // expectation is inverted, not relaxed.
+  const aboveTrialBlock = text.slice(0, text.indexOf('Diet trial'))
+  assert.ok(/flags for review/i.test(aboveTrialBlock), 'the flag zone is not silent on a refusing cat')
+  assert.ok(/Diet not eaten/.test(aboveTrialBlock), 'and the refusal lane is what fired')
+  assert.ok(/about 7% of body weight/.test(aboveTrialBlock), 'composed with the weight, above the fold')
+  // NOT TWICE. The same sentence two inches below the band spends attention to say
+  // nothing new, so the trial block yields it once the band has carried it.
+  assert.equal(text.match(/about 7% of body weight/g)?.length, 1)
 })
 
 Deno.test('the trial-scoped logging claim states its scope, so it cannot contradict the chart caveats', () => {
@@ -1288,7 +1309,8 @@ Deno.test('#2 — a refusal that ended before the recency bound still suppresses
   assert.ok(snap.trial?.rangeRefusal, 'the report\u2019s history-fact is not')
   assert.equal(snap.trial?.mayStateRecordClean, false)
   const text = plain(renderReport(snap))
-  assert.ok(/logged as refused/.test(text))
+  // B-530 — see the sibling assertion below on the copy widening from "logged as refused".
+  assert.ok(/were left unfinished/.test(text))
   assert.ok(/A diet that was not eaten cannot be read as one that was followed/.test(text))
   assert.ok(!/matched, \d+ did not/.test(text), 'an adherence figure of ANY shape is suppressed')
 })
@@ -1447,7 +1469,11 @@ Deno.test('#10a — the weight sentence is dropped when its span is not inside t
     { eventId: 'w2', weightKg: 4.1, occurredAt: at('2026-06-19', '15:00:00') },
   ]
   const text = plain(renderReport(assembleReport(input)))
-  assert.ok(/logged as refused/.test(text), 'the refusal still leads')
+  // B-530 — "left unfinished", not "logged as refused". The predicate widened to
+  // not-finished (`refused` / `picked` / `some`) in PR 5 and this string did not, so the
+  // report asserted a rating the record does not contain about every `some` bowl. The
+  // card's own headline was corrected for exactly this; the report had the same defect.
+  assert.ok(/were left unfinished/.test(text), 'the refusal still leads')
   assert.ok(!/of body weight/.test(text), 'but a pre-trial loss is not offered as trial evidence')
 })
 
@@ -1732,6 +1758,50 @@ function hydrolysedTrialInput(over: Partial<ReportInput> = {}): ReportInput {
     ...input.dietTrials[0],
     ...HYDROLYSED_PAIR,
     allowedFoods: [{ ...TRIAL_FOOD, ...HYDROLYSED_PAIR }],
+  }
+  return input
+}
+
+// ── B-530 / B-494 — the refusal lane, and the flag zone it now reaches ────────
+//
+// Two findings that turn out to be one mechanism, so they are fixtured together.
+//
+// B-530, executed by the pre-ship adversarial chair: a 21-day all-refused cat behind
+// a RE-PHOTOGRAPHED BAG. Re-shooting the bag mints a new `food_items` row with a
+// slightly different product name, the picker starts projecting it, and the trial's
+// allowed set still points at the old id — so rung 1 misses on every subsequent
+// feeding. Both refusal gates key on `role === 'primary_diet'`, which only exists
+// when rung 1 matched, so the population does not degrade, it EMPTIES: the refusal
+// fact went null and the 42 refused bowls of the PRESCRIBED diet re-rendered as
+// owner-blamed off-diet exposures. An app action we actively encourage silenced the
+// one lane built for the sickest patient in it.
+//
+// B-494, from the cold read of the same clinical picture: `snapshot.safetyFlags` was
+// EMPTY on a cat refusing every bowl with ~7% body-weight loss, because
+// `detectIntakeDecline` is a RELATIVE detector and a diet refused from day 1 never
+// falls. The report teaches the reader to scan the flag zone, so silence there reads
+// as a negative result.
+
+/**
+ * The counterexample as a fixture: the trial's allowed set names `f-hp` /
+ * "Hydrolyzed HP" while every logged feeding names `f-hp-2` / "Hydrolyzed HP Feline".
+ * A `primary_diet` row exists and matches nothing — the half-hydrated shape, not the
+ * empty one.
+ */
+function rePhotographedBagInput(intakeRating: 'refused' | 'all' | null = 'refused'): ReportInput {
+  const input = wellLoggedTrialInput({ events: [] })
+  input.pet.name = 'Miso'
+  input.pet.species = 'cat'
+  input.pet.weightKg = 4.4
+  input.dietTrials[0].status = 'abandoned'
+  input.dietTrials[0].endedAt = '2026-06-21'
+  input.dietTrials[0].completedAt = null
+  for (const d of days('2026-06-01', '2026-06-21')) {
+    for (const time of ['08:00:00', '18:00:00']) {
+      input.events.push(
+        meal({ date: d, time, brand: 'Royal Canin', product: 'Hydrolyzed HP Feline', foodItemId: 'f-hp-2', proteins: ['soy'], intakeRating }),
+      )
+    }
   }
   return input
 }
@@ -2113,4 +2183,331 @@ Deno.test('B-529 — appendix C is captioned with the range its own rows come fr
   // The exposure caption covers the row; the coverage head stays clipped.
   assert.equal(snap.trial?.exposureRangeStartDate, '2026-06-01')
   assert.equal(snap.trial?.rangeStartDate, '2026-06-08')
+})
+
+Deno.test('B-530 — a re-photographed bag no longer silences the refusal lane', () => {
+  const snap = assembleReport(rePhotographedBagInput('refused'))
+  assert.equal(snap.trial?.allowedSetUnavailable, true, 'the primary row matches nothing across 42 feedings')
+  // THE FACT SURVIVES, over the wider population, and says so.
+  assert.ok(snap.trial?.rangeRefusal, 'the refusal fact is not null')
+  assert.equal(snap.trial?.rangeRefusal?.population, 'meal_record')
+  assert.equal(snap.trial?.rangeRefusal?.refusedFeedings, 42)
+  assert.equal(snap.trial?.rangeRefusal?.ratedFeedings, 42)
+  assert.equal(snap.trial?.rangeRefusal?.days, 21)
+  // And the affirmative claim stays withheld, exactly as it was before.
+  assert.equal(snap.trial?.mayClaimAllMatched, false)
+  assert.equal(snap.trial?.mayStateRecordClean, false)
+})
+
+Deno.test('B-530 — the wide population never names a diet the app could not identify', () => {
+  const text = plain(renderReport(assembleReport(rePhotographedBagInput('refused'))))
+  assert.ok(/42 of 42 rated meals were left unfinished/.test(text))
+  // The escalation is identical; the ATTRIBUTION is not available, and the report says so
+  // rather than borrowing the narrow sentence. Asserting the absence matters as much as
+  // the presence: a fabricated attribution on a vet's artifact is not a copy nit.
+  assert.ok(!/rated feedings of the trial diet/.test(text), 'no identity is asserted')
+  assert.ok(/could not be matched to the trial|not be matched to the foods on the trial/i.test(text))
+  // And the refused bowls are not re-rendered as an owner-blamed adherence failure.
+  assert.ok(!/matched, \d+ did not/.test(text))
+  assert.ok(!/0 matched/.test(text))
+})
+
+Deno.test('B-530 — when identity DOES resolve, the narrow population still speaks', () => {
+  // The fallback must be reachable only from the degraded state. A trial whose bag was
+  // never re-photographed keeps the named finding, which is the more useful one.
+  const input = wellLoggedTrialInput({ events: [] })
+  input.pet.species = 'cat'
+  for (const d of days('2026-06-01', '2026-06-21')) {
+    for (const time of ['08:00:00', '18:00:00']) {
+      input.events.push(
+        meal({ date: d, time, brand: 'Royal Canin', product: 'Hydrolyzed HP', foodItemId: 'f-hp', proteins: ['soy'], intakeRating: 'refused' }),
+      )
+    }
+  }
+  const snap = assembleReport(input)
+  assert.equal(snap.trial?.allowedSetUnavailable, false)
+  assert.equal(snap.trial?.rangeRefusal?.population, 'trial_diet')
+  const text = plain(renderReport(snap))
+  assert.ok(/rated feedings of the trial diet were left unfinished/.test(text))
+  assert.ok(!/could not be matched/i.test(text))
+})
+
+Deno.test('B-530/R1a — an owner who never rates intake is never told her cat is not eating', () => {
+  // The fallback widens the POPULATION, never the evidence bar. Absence of ratings must
+  // not alarm in either population, and this is the fixture that would break first if the
+  // wide counters ever started counting unrated bowls.
+  const snap = assembleReport(rePhotographedBagInput(null))
+  assert.equal(snap.trial?.rangeRefusal, null)
+  assert.equal(snap.trial?.trialDietRefusal, null)
+  assert.equal(snap.safetyFlags.filter((f) => f.kind === 'trial_diet_refusal').length, 0)
+  const text = plain(renderReport(snap))
+  assert.ok(!/left unfinished/.test(text))
+})
+
+Deno.test('B-530/R1a — a pet that EATS through a broken identity raises nothing', () => {
+  const snap = assembleReport(rePhotographedBagInput('all'))
+  assert.equal(snap.trial?.rangeRefusal, null)
+  assert.equal(snap.safetyFlags.filter((f) => f.kind === 'trial_diet_refusal').length, 0)
+})
+
+Deno.test('B-494 — the refusing cat reaches the safety band', () => {
+  const input = rePhotographedBagInput('refused')
+  input.weightChecks = [
+    { eventId: 'w1', weightKg: 4.4, occurredAt: at('2026-06-01', '15:00:00') },
+    { eventId: 'w2', weightKg: 4.1, occurredAt: at('2026-06-21', '15:00:00') },
+  ]
+  const snap = assembleReport(input)
+  const flag = snap.safetyFlags.find((f) => f.kind === 'trial_diet_refusal')
+  assert.ok(flag, 'the flag zone is not silent on the canonical feline-anorexia record')
+  const text = plain(renderReport(snap))
+  const aboveTrialBlock = text.slice(0, text.indexOf('Diet trial'))
+  assert.ok(/flags for review/i.test(aboveTrialBlock))
+  assert.ok(/Diet not eaten/.test(aboveTrialBlock))
+  // The feline clock is the reason this lane exists — `detectIntakeDecline` is blind here.
+  assert.ok(/hepatic-lipidosis risk window/.test(aboveTrialBlock))
+  assert.ok(/about 7% of body weight/.test(aboveTrialBlock), 'composed with the weight, above the fold')
+  // NEVER a preference frame. Decline is frequently a disease signal, and a prescription
+  // diet is not a food the animal chose.
+  assert.ok(/not a preference/.test(text))
+  assert.ok(!/\bpicky|fussy|doesn.t like|to taste\b/i.test(aboveTrialBlock))
+  // Presence-only: the legend teaches the zone covers this lane, and still refuses the
+  // all-clear reading of an empty zone.
+  assert.ok(/a prescribed diet going uneaten/.test(text))
+  assert.ok(/never shown as an .all clear/i.test(text))
+})
+
+Deno.test('B-494 — the owner-declared refusal fires the lane with no ratings at all', () => {
+  // The commonest shape after an owner gives up: she stops rating intake and answers
+  // "wouldn't eat it" at completion. That IS logged evidence — her own answer — so it is
+  // not the R1a case, and the report already treats it as decisive one section down.
+  const input = rePhotographedBagInput(null)
+  input.dietTrials[0].stoppedReason = 'refused'
+  const snap = assembleReport(input)
+  const flag = snap.safetyFlags.find((f) => f.kind === 'trial_diet_refusal')
+  assert.ok(flag)
+  assert.equal(flag?.kind === 'trial_diet_refusal' ? flag.refusal : undefined, null, 'no counts are invented')
+  const text = plain(renderReport(snap))
+  assert.ok(/The owner ended this trial because the pet would not eat the diet/.test(text))
+})
+
+Deno.test('B-494 — the refusal lane does not suppress, and is not suppressed by, intake decline', () => {
+  // Two findings over two populations, and the ruling turned on the zone never going
+  // quiet. A pet whose relative decline ALSO fires keeps both rows.
+  const input = rePhotographedBagInput('refused')
+  const snap = assembleReport(input)
+  const kinds = snap.safetyFlags.map((f) => f.kind)
+  assert.ok(kinds.includes('trial_diet_refusal'))
+  // Ordering: the refusal sits with the intake family, above chronicity/worsening.
+  const refusalAt = kinds.indexOf('trial_diet_refusal')
+  const chronicAt = kinds.indexOf('chronicity')
+  if (chronicAt >= 0) assert.ok(refusalAt < chronicAt, 'the intake family leads')
+})
+
+Deno.test('B-530 — the trial-scoped weight fact no longer rides the refusal branch', () => {
+  // It used to be pushed from INSIDE `exposureSentences`' refusal branch, so every
+  // identity miss that silenced the refusal lane silenced the weight line too and the two
+  // failures compounded into the quietest page over the sickest patient. A weight change
+  // measured over the trial is worth stating on any branch.
+  const input = wellLoggedTrialInput()
+  input.weightChecks = [
+    { eventId: 'w1', weightKg: 31.0, occurredAt: at('2026-06-02', '15:00:00') },
+    { eventId: 'w2', weightKg: 29.5, occurredAt: at('2026-07-01', '15:00:00') },
+  ]
+  const snap = assembleReport(input)
+  assert.equal(snap.trial?.rangeRefusal, null, 'no refusal on this record')
+  assert.equal(snap.safetyFlags.filter((f) => f.kind === 'trial_diet_refusal').length, 0)
+  const text = plain(renderReport(snap))
+  assert.ok(/Weight fell 31.0 → 29.5 kg/.test(text), 'the weight fact renders without a refusal')
+  assert.ok(/of body weight/.test(text))
+})
+
+// ── B-531 — the G2 leak on `allowedSetUnavailable`, and R2's rename ───────────
+
+Deno.test('B-531 — a trial with a dark permit set never renders the banned negative claim', () => {
+  // With a trial in-window and no usable allowed list, all three count branches suppress
+  // themselves and the page fell through to "None logged in this window." / "No off-diet
+  // exposures logged in this window." / "0 off-diet exposures" — the negative claim §5.2
+  // deletes from the product at every coverage, on every surface, asserted about a check
+  // that never ran. The code's own unreachability comment omitted this sub-state.
+  const input = wellLoggedTrialInput()
+  input.dietTrials[0].allowedFoods = []
+  const snap = assembleReport(input)
+  assert.equal(snap.trial?.allowedSetUnavailable, true)
+  assert.equal(snap.diet.treats.count, 0, 'and nothing to push a line for')
+  assert.equal(snap.diet.humanFood.count, 0)
+  const text = plain(renderReport(snap))
+  // Scoped to the Off-diet row: "None logged in this window." is also the honest
+  // Medication line on a report with no drugs, and that one is a different claim.
+  assert.ok(!/Off-dietNone logged in this window/.test(text))
+  assert.ok(!/No off-diet exposures logged/.test(text))
+  assert.ok(!/\b0 off-diet exposures?\b/.test(text))
+  // What it says instead: the check did not run, and where the record is.
+  assert.ok(/No allowed-food list is recorded for this trial, so no feeding in this window has been checked against one/.test(text))
+  assert.ok(/This report has no allowed-food list for the trial/.test(text))
+})
+
+Deno.test('B-531/R2 — a no-trial report drops off-diet vocabulary for what it lists', () => {
+  // R2: G2's jurisdiction is trial reports — and a monitoring report should not use
+  // "off-diet" at all, because there is no diet to be off. The section names what it
+  // lists, and its empty line is record-scoped under that heading.
+  const input = baseInput({
+    events: [...days('2026-06-01', '2026-06-20').map((d) => meal({ date: d, brand: 'Acme', product: 'Kibble', foodItemId: 'f-k', proteins: ['chicken'] })), symptom('2026-06-10')],
+  })
+  const text = plain(renderReport(assembleReport(input)))
+  assert.ok(/Treats & table food/.test(text))
+  assert.ok(!/Off-diet load/.test(text))
+  assert.ok(!/No off-diet exposures logged in this window/.test(text))
+  assert.ok(/No treats or table food are recorded in this window/.test(text))
+})
+
+// ── Adversarial round 2 — the four breaks the first cut shipped ──────────────
+//
+// `adversarial-reviewer` returned FAIL on the first cut of this PR. Each test below
+// is one of its executed counterexamples, pinned so the repair cannot silently rot.
+
+Deno.test('ADV① KNOWN LIMIT — a PARTIAL identity miss still silences the band (B-579)', () => {
+  // ⚠️ THIS TEST PINS A GAP, NOT A FIX, and it is the most important thing in this file
+  // to read before widening the fallback. `adversarial-reviewer` round 1 found this
+  // record: the seven days the cat ate before the bag was re-shot keep
+  // `allowedSetUnavailable` FALSE, so the fallback never engages and the band is empty
+  // over ~7% body-weight loss. Round 2 then broke the obvious repair (choosing the
+  // population per window, on `narrow.recentRated > 0`) three separate ways — it moved
+  // the veto into the 14-day window where a newly-refusing cat actually lives, it turned
+  // the selector into a RATING-PRESENCE test that routed the feline lipidosis escalation
+  // onto a rival food for an owner who logs the prescription unrated, and it let the two
+  // refusal facts come from different populations, which the report then rendered ~9x
+  // quieter than the owner's own card.
+  //
+  // The two directions are not reconcilable without knowing which food was the trial
+  // diet: 2 matched feedings beside 24 unmatched refused ones WANTS the fallback, and 64
+  // matched unrated ones beside 3 unmatched refused ones does not. That is B-529.
+  // Tracked as B-579; this test is expected to FLIP when it lands.
+  const input = wellLoggedTrialInput({ events: [] })
+  input.pet.name = 'Miso'
+  input.pet.species = 'cat'
+  input.pet.weightKg = 4.4
+  input.dietTrials[0].status = 'abandoned'
+  input.dietTrials[0].endedAt = '2026-06-28'
+  input.dietTrials[0].completedAt = null
+  // Days 1–7: the original library row, and she eats.
+  for (const d of days('2026-06-01', '2026-06-07')) {
+    input.events.push(meal({ date: d, brand: 'Royal Canin', product: 'Hydrolyzed HP', foodItemId: 'f-hp', proteins: ['soy'], intakeRating: 'all' }))
+  }
+  // Days 8–28: the bag is re-photographed, and she refuses every bowl.
+  for (const d of days('2026-06-08', '2026-06-28')) {
+    for (const time of ['08:00:00', '18:00:00']) {
+      input.events.push(meal({ date: d, time, brand: 'Royal Canin', product: 'Hydrolyzed HP Feline', foodItemId: 'f-hp-2', proteins: ['soy'], intakeRating: 'refused' }))
+    }
+  }
+  input.weightChecks = [
+    { eventId: 'w1', weightKg: 4.4, occurredAt: at('2026-06-01', '15:00:00') },
+    { eventId: 'w2', weightKg: 4.1, occurredAt: at('2026-06-28', '15:00:00') },
+  ]
+  const snap = assembleReport(input)
+  assert.equal(snap.trial?.allowedSetUnavailable, false, 'seven feedings DID match, so the gate stays shut')
+  assert.equal(snap.trial?.trialDietRefusal, null, 'KNOWN LIMIT — flip me when B-529 lands')
+  assert.equal(snap.trial?.rangeRefusal, null, 'KNOWN LIMIT — flip me when B-529 lands')
+  assert.equal(
+    snap.safetyFlags.filter((f) => f.kind === 'trial_diet_refusal').length,
+    0,
+    'KNOWN LIMIT — the band is empty on this patient, which is what B-529 has to fix',
+  )
+  // What DOES still reach the page, and why this is a gap rather than a regression: the
+  // weight fact renders on its own now (it used to ride the refusal branch and vanish
+  // with it), so the most action-forcing number is at least present.
+  const text = plain(renderReport(snap))
+  assert.ok(/about 7% of body weight/.test(text))
+})
+
+Deno.test('ADV④ — a single midnight-straddling bout does NOT fire the band', () => {
+  // The break: `rangeRefusal` drops the 12h episode guard deliberately (right for a
+  // HISTORY), but B-494 promoted it to an above-the-fold escalation without re-deriving
+  // that. Three refusals in one 3.5-hour bout across local midnight fired "Diet not
+  // eaten … across 2 days" plus the feline lipidosis window, on a record the owner's own
+  // card is silent about — and the report could not add the guard, because
+  // `rangeRefusalSpansEpisodes` was not on `TrialBlock` at all.
+  const input = wellLoggedTrialInput({ events: [] })
+  for (const d of days('2026-06-01', '2026-06-20')) {
+    input.events.push(meal({ date: d, brand: 'Royal Canin', product: 'Hydrolyzed HP', foodItemId: 'f-hp', proteins: ['soy'] }))
+  }
+  // ONE bout across LOCAL midnight in the report's zone (America/New_York, UTC−4 in June):
+  // 22:00 and 23:30 local on Jun 21, then 00:30 local on Jun 22 — two distinct local days,
+  // 2.5 hours of evidence. The fixture helper takes UTC, so these are 02:00/03:30/04:30Z.
+  for (const time of ['02:00:00', '03:30:00', '04:30:00']) {
+    input.events.push(meal({ date: '2026-06-22', time, brand: 'Royal Canin', product: 'Hydrolyzed HP', foodItemId: 'f-hp', proteins: ['soy'], intakeRating: 'refused' }))
+  }
+  const snap = assembleReport(input)
+  assert.ok(snap.trial?.rangeRefusal, 'the range fact itself still exists — it is a history')
+  assert.equal(snap.trial?.rangeRefusalSpansEpisodes, false, 'but it is one bout, not two episodes')
+  assert.equal(
+    snap.safetyFlags.filter((f) => f.kind === 'trial_diet_refusal').length,
+    0,
+    'so the ESCALATION does not fire, matching the card',
+  )
+  const text = plain(renderReport(snap))
+  assert.ok(!/Diet not eaten/.test(text))
+})
+
+Deno.test('ADV⑤ — a stopped-reason-only flag carries a date anchor', () => {
+  // The break: `fmtRange(...)` sat inside `if (f.refusal)`, so the owner-declared path
+  // rendered a present-tense feline lipidosis window with no time anchor at all — over an
+  // event up to the anchor grace stale. The dates were already on the payload.
+  const input = wellLoggedTrialInput({ events: [] })
+  input.pet.species = 'cat'
+  input.dietTrials[0].status = 'abandoned'
+  input.dietTrials[0].endedAt = '2026-06-20'
+  input.dietTrials[0].completedAt = null
+  input.dietTrials[0].stoppedReason = 'refused'
+  for (const d of days('2026-06-01', '2026-06-20')) {
+    input.events.push(meal({ date: d, brand: 'Royal Canin', product: 'Hydrolyzed HP', foodItemId: 'f-hp', proteins: ['soy'] }))
+  }
+  const snap = assembleReport(input)
+  const flag = snap.safetyFlags.find((f) => f.kind === 'trial_diet_refusal')
+  assert.ok(flag)
+  assert.equal(flag?.kind === 'trial_diet_refusal' ? flag.refusal : undefined, null, 'no counts invented')
+  const text = plain(renderReport(snap))
+  // Labelled for what the value IS — the overlap range, not the trial window. Round 2
+  // executed a trial started Apr 1 with logs from Jun 15 where "Trial window: Jun 15 –
+  // Jul 2" sat in the same paragraph as "day 93 of 120".
+  assert.ok(/Dates covered: Jun 1 – Jun 20, 2026/.test(text), 'the flag can be placed in time')
+  // AND IT CLAIMS NOTHING ABOUT WHY THE COUNTS ARE ABSENT. A repair pass added "no intake
+  // ratings logged against it" here; `refusal` is null whenever the FLOORS are unmet, not
+  // only when ratings are missing, so that sentence rendered on records with twenty of
+  // them beside page 1's "15 of 20 rated meals fully eaten".
+  assert.ok(!/no intake ratings logged against it/.test(text))
+})
+
+Deno.test('ADV⑥ — the wide row does not re-assert the attribution it just disclaimed', () => {
+  // The break: the row said "the food is not named — the finding is about the meal
+  // record" and then, two clauses later, "Refusal of a PRESCRIBED DIET is a clinical
+  // finding". `trialViabilityNote` had been rewritten for exactly this on the card; the
+  // report's closing sentence had not.
+  const snap = assembleReport(rePhotographedBagInput('refused'))
+  const text = plain(renderReport(snap))
+  assert.ok(/Food going uneaten is a clinical finding in its own right/.test(text))
+  assert.ok(!/Refusal of a prescribed diet is a clinical finding/.test(text))
+  // The narrow population keeps the sharper noun.
+  const narrow = wellLoggedTrialInput({ events: [] })
+  narrow.pet.species = 'cat'
+  for (const d of days('2026-06-01', '2026-06-21')) {
+    for (const time of ['08:00:00', '18:00:00']) {
+      narrow.events.push(meal({ date: d, time, brand: 'Royal Canin', product: 'Hydrolyzed HP', foodItemId: 'f-hp', proteins: ['soy'], intakeRating: 'refused' }))
+    }
+  }
+  const narrowText = plain(renderReport(assembleReport(narrow)))
+  assert.ok(/Refusal of a prescribed diet is a clinical finding/.test(narrowText))
+})
+
+Deno.test('ADV⑫ — page 1 does not disagree with its own cross-reference', () => {
+  // The break: the page-1 row branched on `snap.trial` while appendix C branches on
+  // whether the permit set hydrated, so a dark-permit-set report headed the row
+  // "Off-diet" and pointed at an appendix titled "Treats & table food during the trial"
+  // which states the feedings were never checked.
+  const input = wellLoggedTrialInput()
+  input.dietTrials[0].allowedFoods = []
+  input.events.push(meal({ date: '2026-06-10', brand: 'Acme', product: 'Chew', foodItemId: 'f-chew', foodType: 'treat', proteins: ['chicken'] }))
+  const text = plain(renderReport(assembleReport(input)))
+  assert.ok(/Treats & table foodPrimarily|Treats & table food/.test(text))
+  assert.ok(/Appendix C — Treats & table food during the trial/.test(text))
+  assert.ok(!/Off-dietTreats|Off-diet1 treat|Off-diet 1 treat/.test(text), 'the row is not headed with a verdict the appendix denies')
 })
