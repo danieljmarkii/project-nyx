@@ -41,15 +41,32 @@ The other four:
 - **`mergeSweptPaths` overwrote on a duplicate bucket**, silently dropping paths from an erasure plan. Unreachable from today's caller — but that is a property of the caller, and this is an exported, independently-tested function whose docstring promised additivity.
 - **The depth claim was overstated.** Any fixed depth is evadable by nesting one deeper, and an uncapped walk is the timeout risk. Reworded to the honest boundary: the sweep reaches objects that *moved*, and does not beat an owner actively hiding one. That is B-121's.
 
-## The generalisable lesson
+## Round 2 — all five fixes verified, and the same failure one level up
 
-Two, both about the shape of the fix rather than the bug:
+The re-review confirmed every fix by execution (medication port complete with a full writer enumeration; the `..`/`\` rule not over-broad against any of the four builders; `walkBucket` returning an identical object set to a reference walk with `maxParallel` 8 even at one pet; deadline overrun bounded to a single call's latency; `appendUnique` additive over 5000 randomized trials).
 
-1. **Extracting a shared predicate does not close a class — enumerating the call sites does.** The extraction was the right move and still shipped a third instance of the exact bug it was written to prevent, because "the twin" was assumed to be singular. Count the call sites first; the abstraction is the *fix*, not the *audit*.
-2. **A budget must be denominated in the units of the risk.** The sweep was bounded by call count while the actual hazard was wall-clock time ahead of an irreversible step, and a plausible account shape turned 1200 calls into four minutes. Bounding the wrong quantity reads as safety in review and isn't.
+Then it found the round-1 finding **again, in three more columns**. Not three guards — **six call sites**. `pets.photo_path`, `event_attachments.storage_path` and `vet_visit_attachments.storage_path` each have an owner-writable path column whose only constraint is a `starts_with` CHECK — the exact test VF-1 disproved — and no guard at all. `{myPetId}/../{victimPetId}/photo.jpg` reached `remove()` verbatim through all three.
+
+**The root cause was a sentence, not a missing guard.** The guards' own comments asserted those columns had *"no per-id path convention, so do NOT extend this filter to them."* That is false — the conventions are explicit and hand-rolled — but it read as a considered decision, so two review rounds and I all took it at face value. A confident false comment is worse than no comment: it doesn't just fail to help, it actively redirects the next person away from the bug.
+
+Fixed by making the rule **positional rather than per-column**: every path list is guarded at its own segment count, and `vetReportPaths` is the single exception *with a written reason* (Step 9 has no convention to check against yet). Gated live first, as with every other port: 51/51 event attachments are 3 segments and self-prefixed.
+
+The reviewer also noted the suite could never have caught it — the fixtures were `'ev/a1.jpg'` and `'vet/v1.jpg'`, which resemble nothing the app mints. They now carry real shapes, which is why three unrelated tests had to gain an `ownedPetIds` set: with realistic fixtures, the guard actually engages.
+
+Two residuals accepted and documented rather than papered over (both routed to B-121): an object nested past the walk's depth cap, and a hand-uploaded name containing `..`/`\` that the walk finds and then deliberately refuses.
+
+Also fixed: `AbortSignal.timeout` on each list call. Deno's `fetch` has no default timeout, so a never-settling call would have hung the sweep — and the terminal auth delete — regardless of the deadline, which bounds *scheduling* and cannot cancel a request already in flight. That was the last unbounded path on a 5.1.1(v) route.
+
+## The generalisable lessons
+
+Three, all about the shape of the fix rather than the bug:
+
+1. **Extracting a shared predicate does not close a class — enumerating the call sites does.** The extraction was right and still shipped the same bug twice more: round 1 covered two of three guards, round 2 covered three of six columns. Both times the abstraction was mistaken for the audit. Count the call sites *first*.
+2. **A confident comment is load-bearing, and a wrong one is a defect.** *"No per-id path convention, so do NOT extend this filter"* was the actual cause of the round-3 finding — it survived two adversarial reviews because it read as a decision someone had already made. When a comment tells you not to look somewhere, verify the claim before trusting it, and treat correcting it as part of the fix.
+3. **A budget must be denominated in the units of the risk.** The sweep was bounded by call count while the hazard was wall-clock time ahead of an irreversible step; a plausible account shape turned 1200 calls into four minutes. Bounding the wrong quantity reads as safety in review and isn't.
 
 ## State
 
-- Tests: 80 in `plan.test.ts`, **1039** across `supabase/functions`, `deno check` + `tsc --noEmit` clean.
+- Tests: **86** in `plan.test.ts`, **1045** across `supabase/functions`, `deno check` + `tsc --noEmit` clean. CI green.
 - **Not deployed.** Code-only until bundle + `deploy_edge_function`; deploying an unmerged draft would put it live ahead of the gate.
-- Re-review of the fixes was requested and is the outstanding gate on marking #510 ready.
+- Three `rls-privacy-reviewer` rounds: FAIL (5 findings) → FAIL (1 finding, same class, 3 more columns) → round 3 pending on the fix above.

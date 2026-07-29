@@ -66,8 +66,17 @@ const CORS_HEADERS = {
 // medication paths to the deleting user's own `{uid}/` prefix (B-128), and
 // `ownedFoodItemIds` re-scopes the food paths to the set of food ids this user created
 // (B-354 FR-7, food paths being `{foodItemId}/…`) — so a crafted cross-tenant path never
-// reaches the service-role purge. The pet/event/vet-attachment/vet-report paths need no
-// such guard: they come from pet-scoped rows.
+// reaches the service-role purge.
+//
+// ⚠ This used to end "the pet/event/vet-attachment/vet-report paths need no such guard:
+// they come from pet-scoped rows." That was wrong, and it is the sentence that kept
+// three columns unguarded through two review rounds. Pet-scoped does not mean
+// path-constrained: `pets_owner` and both attachment policies are `FOR ALL USING(...)`,
+// so the row write is permitted and the ONLY constraint on the path string is a
+// `starts_with` CHECK — which VF-1 already disproved, since
+// `{myPetId}/../{victimPetId}/…` satisfies it. So `ownedPetIds` is a THIRD scope key,
+// and every path list except `vetReportPaths` is now re-scoped at its own segment count
+// (see collectStoragePaths for the shapes and the one written exception).
 //
 // `vet_documents` (B-478) is pet-scoped too, and is nonetheless re-scoped via a third
 // key, `ownedPetIds`. Not because the ROW source is untrusted, but because
@@ -304,6 +313,9 @@ const SWEEP_MAX_DEPTH = 4
 const SWEEP_LIST_BUDGET = 1200
 const SWEEP_LIST_CONCURRENCY = 8
 const SWEEP_DEADLINE_MS = 20_000
+// Per-call ceiling. The deadline above bounds when a call may START; this bounds how
+// long one may RUN, which is the difference between a bounded sweep and a hung one.
+const SWEEP_CALL_TIMEOUT_MS = 5_000
 
 interface SweepBudget {
   calls: number
@@ -335,9 +347,21 @@ async function listFolder(
       break
     }
     budget.calls++
+    // The third argument is passed straight through to the underlying fetch, and the
+    // AbortSignal is load-bearing: Deno's fetch has NO default timeout, so a call that
+    // never settles would hang the sweep — and with it the terminal auth delete —
+    // regardless of the deadline, which bounds SCHEDULING and cannot cancel a request
+    // already in flight. That was the last unbounded path on a 5.1.1(v) route
+    // (rls-privacy-reviewer round 2, executed: a never-settling list() was still
+    // hanging 1.5s past a 50ms deadline). An aborted call surfaces as an error and is
+    // handled exactly like any other listing failure — best-effort, sweep continues.
     const { data, error } = await adminClient.storage
       .from(bucket)
-      .list(folder, { limit: SWEEP_LIST_PAGE, offset, sortBy: { column: 'name', order: 'asc' } })
+      .list(
+        folder,
+        { limit: SWEEP_LIST_PAGE, offset, sortBy: { column: 'name', order: 'asc' } },
+        { signal: AbortSignal.timeout(SWEEP_CALL_TIMEOUT_MS) },
+      )
     if (error) {
       // Best-effort: a bucket that does not exist yet (nyx-vet-documents before its
       // dashboard creation) errors here and is simply not swept.

@@ -3,9 +3,9 @@
 // The PURE, unit-tested core of B-039 PR 1 (in-app account deletion). It holds
 // the two decisions that must be provably correct and that the
 // rls-privacy-reviewer will attack: (1) WHICH Storage objects get purged — path
-// collection, the three cross-tenant scoping guards (medication uid-prefix, food
-// owned-id set, vet-document owned-pet set) and the B-578 sweep's prefix scopes — and
-// (2) the ORDER of
+// collection, the cross-tenant scope guard applied to every path list but one (keyed on
+// the uid, the owned-food set or the owned-pet set, each at its own segment count) and
+// the B-578 sweep's prefix scopes — and (2) the ORDER of
 // destructive operations (FR-6: the auth user is deleted LAST, so a partial or
 // failed run is idempotent and re-runnable). No I/O lives here — the index.ts
 // shell fetches the user's OWNED rows, enumerates the owned prefixes, and executes
@@ -176,9 +176,9 @@ export function cleanPaths(raw: ReadonlyArray<string | null | undefined>): strin
 // in the bucket have the same shape. Exact set membership also subsumes what the
 // trailing '/' used to do by hand — `user-1` cannot match `user-12/…`.
 //
-// Scoped to medication paths ONLY: the pet/event/vet buckets come from pet-scoped
-// rows and use no per-user-prefix convention, so do NOT extend this filter to them —
-// it would drop their legitimate, un-prefixed keys. (Returns the nullable shape so it
+// The UID is the scope key here and only here — the pet-scoped columns key on a pet id
+// instead, and at their own segment counts (see collectStoragePaths). What generalises
+// is the predicate, never the key or the shape. (Returns the nullable shape so it
 // composes directly into cleanPaths, which does the dedupe/blank drop.)
 export function scopeMedicationPaths(
   paths: ReadonlyArray<string | null | undefined>,
@@ -283,8 +283,11 @@ function scopeToOwnedKeyShape(
 // `photo_paths` values and all 160 objects in the bucket have exactly one separator, and
 // every one names its own row's id. So this drops traversal keys and nothing real.
 //
-// Scoped to food paths ONLY: the pet/event/vet-attachment buckets come from pet-scoped
-// rows with no per-id path convention, so do NOT extend this filter to them.
+// The owned-FOOD-id set is the scope key here and only here. This comment used to add
+// that the pet/event/vet-attachment buckets have "no per-id path convention, so do NOT
+// extend this filter to them" — which was false, and was the sentence that kept those
+// three columns unguarded through two review rounds. They have explicit conventions and
+// are now guarded at their own segment counts in collectStoragePaths.
 export function scopeFoodPaths(
   paths: ReadonlyArray<string | null | undefined>,
   ownedFoodItemIds: ReadonlyArray<string>,
@@ -325,12 +328,14 @@ export function scopeFoodPaths(
 // `buildVetDocumentPath` emits exactly `{pet_id}/{document_id}.{ext}` — one
 // separator, two segments, no more.
 //
-// Scoped to vet-document paths ONLY: the two-segment shape is NOT liftable to the
-// pet/event/vet-attachment lists. `nyx-vet-attachments` keys are
-// `{pet_id}/{visit_id}/{attachment_id}.jpg` — THREE segments — so this exact predicate
-// would silently drop every legitimate key there and turn account deletion into a
-// no-op for that bucket. The shape is per-bucket; only the ownership half generalises,
-// which is why `segmentCount` is an argument.
+// The two-segment SHAPE is specific to this column and is not liftable as-is:
+// `nyx-vet-attachments` keys are `{pet_id}/{visit_id}/{attachment_id}.jpg` — THREE
+// segments — so this exact predicate would drop every legitimate key there and turn
+// that bucket's purge into a no-op. Note what that does and does not mean, because an
+// earlier reading of this paragraph is what left three columns unguarded: the SHAPE is
+// per-column, the GUARD is universal. Every path list gets one, at its own segment
+// count (collectStoragePaths); `segmentCount` is an argument precisely so that lifting
+// the guard never means lifting the shape.
 export function scopeVetDocumentPaths(
   paths: ReadonlyArray<string | null | undefined>,
   ownedPetIds: ReadonlyArray<string>,
@@ -341,22 +346,55 @@ export function scopeVetDocumentPaths(
 // Map each owned path-list to its bucket, dropping any bucket with nothing to
 // remove. The output can ONLY ever contain the seven STORAGE_BUCKETS above, and
 // PRESERVED_BUCKETS is now empty — every bucket a user's objects can live in is
-// purgeable. Three lists are re-scoped BEFORE cleaning, each against the key its own
-// Storage policy uses — medication to the owner's `{uid}/` prefix, food to the
-// owned-food-id SET, vet documents to the owned-pet-id SET — so a crafted
-// cross-tenant path never reaches the service-role purge.
+// purgeable.
+//
+// EVERY path list except `vetReportPaths` is now re-scoped BEFORE cleaning, each
+// against the key its own Storage policy uses and at its own segment count. That
+// uniformity is the B-582 round-3 correction: this comment used to say only three
+// lists needed scoping, and the guards' own docstrings claimed the pet-scoped columns
+// had "no per-id path convention" and should NOT be guarded. That was simply false —
+// `{petId}/profile.jpg`, `{petId}/{eventId}/{attId}.jpg` and
+// `{petId}/{visitId}/{attId}.jpg` are explicit, hand-rolled conventions, all keyed on
+// an owned pet id we already hold. The reviewer executed the consequence:
+// `{myPetId}/../{victimPetId}/photo.jpg` reached the service-role `remove()` verbatim
+// through all three, because each column's ONLY constraint is a `starts_with` CHECK —
+// the exact test VF-1 disproved, and the reason scopeVetDocumentPaths exists. Three
+// tables had the CHECK and the guard; three had the CHECK alone.
+//
+// So the rule is now positional, not per-column: a path list reaching this function
+// either carries a scope guard or carries a written reason it cannot. `vetReportPaths`
+// is the single exception — Step 9 has not shipped, the table holds zero rows, and no
+// path convention exists yet to derive a segment count from. Guarding it would mean
+// guessing the shape, and a wrong guess here silently turns a purge into a no-op.
 export function collectStoragePaths(input: OwnedStoragePaths): BucketPurge[] {
   const candidates: BucketPurge[] = [
-    { bucket: STORAGE_BUCKETS.petPhotos, paths: cleanPaths(input.petPhotoPaths) },
-    { bucket: STORAGE_BUCKETS.eventAttachments, paths: cleanPaths(input.eventAttachmentPaths) },
-    { bucket: STORAGE_BUCKETS.vetAttachments, paths: cleanPaths(input.vetAttachmentPaths) },
-    // vetDocuments is pet-scoped like the three above, but its paths are ALSO
-    // re-scoped to the owned-pet-id SET first — closing the `..` prefix residual 043
-    // recorded rather than depending on opaque-key behaviour we do not test (B-478).
+    // `{petId}/profile.jpg` — app/(tabs)/profile.tsx. Two segments.
+    {
+      bucket: STORAGE_BUCKETS.petPhotos,
+      paths: cleanPaths(scopeToOwnedKeyShape(input.petPhotoPaths, input.ownedPetIds, 2)),
+    },
+    // `{petId}/{eventId}/{attachmentId}.jpg` — app/log.tsx, app/event/[id].tsx,
+    // app/edit-event.tsx. THREE segments, which is why the shape is a parameter.
+    {
+      bucket: STORAGE_BUCKETS.eventAttachments,
+      paths: cleanPaths(scopeToOwnedKeyShape(input.eventAttachmentPaths, input.ownedPetIds, 3)),
+    },
+    // `{petId}/{visitId}/{attachmentId}.jpg` — app/vet-visit.tsx. Three segments.
+    {
+      bucket: STORAGE_BUCKETS.vetAttachments,
+      paths: cleanPaths(scopeToOwnedKeyShape(input.vetAttachmentPaths, input.ownedPetIds, 3)),
+    },
+    // `{petId}/{documentId}.{ext}` — lib/vetDocuments.ts buildVetDocumentPath. Two
+    // segments. The first of the pet-scoped columns to get a guard (B-478 VF-1),
+    // closing the `..` prefix residual 043 recorded rather than depending on
+    // opaque-key behaviour we do not test.
     {
       bucket: STORAGE_BUCKETS.vetDocuments,
       paths: cleanPaths(scopeVetDocumentPaths(input.vetDocumentPaths, input.ownedPetIds)),
     },
+    // vetReports is the ONE unguarded list, for the reason given above: no convention
+    // exists yet to check against. It is also the one bucket the B-578 sweep skips, for
+    // the same reason — when Step 9 defines the shape, BOTH gaps close together.
     { bucket: STORAGE_BUCKETS.vetReports, paths: cleanPaths(input.vetReportPaths) },
     // medicationPhotos is sourced from a globally-writable catalog, so its paths are
     // prefix-scoped to the deleting user's own `{uid}/` before cleaning (B-128).
@@ -397,14 +435,22 @@ export function collectStoragePaths(input: OwnedStoragePaths): BucketPurge[] {
 //
 // ⚠ Be precise about (2): the sweep closes RELOCATION, not DELIBERATE EVASION, and an
 // earlier draft of this comment overstated it. Every bucket's INSERT policy checks only
-// `foldername[1]`, so an owner may legitimately write `{ownPetId}/a/b/c/d/e.jpg` — and
-// the walk stops at SWEEP_MAX_DEPTH, which the rls-privacy-reviewer executed and
-// confirmed misses it. Raising the cap does not fix that; any fixed depth is evadable
-// by nesting one level deeper, and an uncapped walk is the timeout risk that must not
-// sit ahead of the terminal auth delete. So the honest boundary: this reaches objects
-// that MOVED, including across buckets, and does not claim to beat an owner who is
-// actively hiding one. Adversarial hiding is the object-side reaper's problem (B-121),
-// because that one starts from the objects and needs no prefix to guess.
+// `foldername[1]`, so an owner may legitimately write a key this walk will not reach.
+// Two ways, both executed by the rls-privacy-reviewer:
+//
+//   • DEPTH — `{ownPetId}/a/b/c/d/e.jpg` sits past SWEEP_MAX_DEPTH. Raising the cap
+//     does not fix it; any fixed depth is evadable by nesting one level deeper, and an
+//     uncapped walk is the timeout risk that must not sit ahead of the auth delete.
+//   • NAME — a hand-uploaded `{ownPetId}/scan..pdf` or `{ownPetId}/x\y.jpg` is found by
+//     the walk and then REFUSED by the `..`/`\` rule, which is a deliberate trade: no
+//     builder in this app can mint such a name (all four are traversal-free by
+//     construction), so refusing them costs nothing real and keeps a service-role
+//     delete from ever acting on a key containing an encoded separator.
+//
+// So the honest boundary: this reaches objects that MOVED, including across buckets,
+// and does not claim to beat an owner who is actively hiding one. Adversarial hiding is
+// the object-side reaper's problem (B-121) — that one starts from the objects and needs
+// no prefix to guess, so neither residual survives it.
 //
 // The answer to both is to stop asking the rows and ask STORAGE: enumerate the
 // objects living under the prefixes this account owns. Note what that also buys —
