@@ -2380,8 +2380,17 @@ Deno.test('ADV① KNOWN LIMIT — a PARTIAL identity miss still silences the ban
   //
   // The two directions are not reconcilable without knowing which food was the trial
   // diet: 2 matched feedings beside 24 unmatched refused ones WANTS the fallback, and 64
-  // matched unrated ones beside 3 unmatched refused ones does not. That is B-529.
-  // Tracked as B-579; this test is expected to FLIP when it lands.
+  // matched unrated ones beside 3 unmatched refused ones does not.
+  //
+  // ⚠️ OWNER CORRECTED 2026-07-29 (B-529's own PR, #507). This comment said "That is
+  // B-529", and it is not: R7 scoped B-529 to PROTEIN identity — the hydrolyzed↔intact
+  // derived-from relation, the primary↔set write invariant, the antigen silence rule —
+  // and it shipped with none of it touching FOOD identity. What this gap needs is
+  // knowing which `food_items` row was the trial diet when the bag was re-shot, which is
+  // a different problem in a different column. The two were adjacent in the pre-ship
+  // review's §0 verdict ("food-identity resolution feeding the predicate") and got
+  // conflated there. **Sole owner is B-579**; this test flips when THAT lands, and B-529
+  // closing does not move it.
   const input = wellLoggedTrialInput({ events: [] })
   input.pet.name = 'Miso'
   input.pet.species = 'cat'

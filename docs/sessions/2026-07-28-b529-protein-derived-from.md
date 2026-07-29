@@ -259,7 +259,7 @@ surface quieter, enumerate every affirmative claim that surface can make and gat
 all of them in the same commit.** Gating the one you happened to be looking at
 leaves the page saying the same wrong thing in a different sentence.
 
-Final state after four passes: **3387 jest · 1016 deno · clean `tsc`**.
+Final state: **3539 jest (158 suites) · 1032 deno · clean `tsc`**, on the tree merged with `main`.
 
 
 ## Four passes, four FAILs — and what that actually says
@@ -323,3 +323,37 @@ Two ways forward, and this is a PM decision:
 
 Recommendation: **(a)**, on the evidence that the R7(c) findings stopped being
 about protein identity two rounds ago.
+
+
+## The misattribution this wrap caught
+
+Worth its own section, because it would have shipped as a false pointer.
+
+`main` carries a test — `ADV① KNOWN LIMIT — a PARTIAL identity miss still silences
+the band` (#503) — whose comment reads *"That is B-529. Tracked as B-579; this
+test is expected to FLIP when it lands."* `STATUS.md` and the B-530 row said the
+same thing: the partial-miss safety-band gap was **B-529's**.
+
+**It is not, and closing B-529 does not move it.** R7 scoped B-529 to **protein**
+identity — the hydrolyzed↔intact relation, the primary↔set write invariant, the
+antigen silence rule — and it shipped touching no **food** identity at all. The
+partial miss is about knowing which `food_items` row was the trial diet after the
+owner re-shot the bag: a different problem, in a different column. The two sat
+adjacent in the pre-ship review's §0 verdict (*"food-identity resolution feeding
+the predicate"*) and got conflated there.
+
+Corrected in three places in this PR — the test comment, the B-530 row, and the
+STATUS gate paragraph — so **B-579 is the sole owner** and the redeploy gate reads
+truthfully. Had this gone unchecked, B-529 would have closed as `Done` while a
+test on `main` waited on it forever, and the gate would have looked one row
+shorter than it is.
+
+The generalisable bit: when a sibling session routes a residual to your row,
+**check it against your ruling before you close** — a row you did not open can
+put work in your scope that was never in it.
+
+## Merge
+
+`generate-report` stays on **v13** — deliberately. B-529 closing leaves **B-532**
+as the last Bucket-A row before the fresh `vet-report-cold-read`, with B-579 an
+independent, still-open safety-band gap.
