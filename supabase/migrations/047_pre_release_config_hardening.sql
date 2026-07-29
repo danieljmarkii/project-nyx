@@ -25,6 +25,28 @@
 -- the grant is load-bearing). #9 is an Auth dashboard toggle with no SQL surface
 -- and stays a PM action item.
 --
+-- MEASURED AFTER THE APPLY — 9 findings -> 2, and they are exactly #8 and #9.
+-- The two functions this migration newly made SECURITY DEFINER added NO new
+-- findings, which was the specific risk of Part 3 (a DEFINER flip without the
+-- accompanying revoke trades one class of finding for a strictly worse one).
+-- Live state read back after the apply:
+--   nyx-pet-photos              -> 10485760 / {image/jpeg,image/png,image/heic}
+--   enforce_dose_paired_event_same_pet -> definer=t, search_path='', acl={postgres,service_role}
+--   enforce_diet_trial_food_same_pet   -> definer=t, search_path='', acl={postgres,service_role}
+--   enforce_vet_document_pet_scope     -> definer=t, search_path='', acl={postgres,service_role}
+--   handle_new_user             -> definer=t, search_path='', acl={postgres,service_role}
+--   set_updated_at              -> definer=f, search_path='' (client EXECUTE kept — INVOKER)
+--   record_ai_usage             -> definer=t, search_path='', acl={postgres,authenticated,service_role}
+--   pg_net                      -> schema=extensions, owner=supabase_admin, v0.20.0,
+--                                  0 objects in public, net.http_post resolvable,
+--                                  net.worker_restart() = true
+-- And re-verified functionally on the applied database (writes rolled back):
+--   signup -> user_profiles minted; legit dose / trial-food / vet-doc writes all
+--   SUCCEED; all three cross-pet writes BLOCKED (23514); all four guard functions
+--   DENIED (42501) on a direct RPC as `authenticated`; record_ai_usage returns
+--   (1,1) with a pg_temp shadow planted and writes the REAL table (shadow rows 0,
+--   public.ai_usage delta 1); set_updated_at still re-stamps.
+--
 -- ------------------------------------------------------------
 -- THE ONE MECHANISM THIS WHOLE FILE RESTS ON
 -- ------------------------------------------------------------
@@ -60,7 +82,12 @@
 --   set_updated_at — search_path pinned:
 --     UPDATE public.pets                              -> updated_at re-stamped
 --
--- Triggers keep firing; the REST/RPC surface closes. That is the entire trade.
+-- Triggers keep firing; the REST/RPC surface closes to `anon` and
+-- `authenticated`. `service_role` keeps its default EXECUTE throughout — that is
+-- the intended posture (it is the trusted server identity, and it already
+-- bypasses RLS), but "the RPC surface closes" without that qualifier would be
+-- an overstatement, so: it closes to the two roles a client can actually hold.
+-- That is the entire trade.
 --
 -- ------------------------------------------------------------
 -- Migration Safety Pre-flight
@@ -119,11 +146,26 @@
 -- Storage matches `allowed_mime_types` against the content-type the CLIENT
 -- DECLARES. It does not sniff the bytes. So this does NOT guarantee the object
 -- is an image. What it does guarantee is the property that matters on a public
--- bucket: the object can never be SERVED as active content from our origin.
--- `text/html` and `application/javascript` are the hosting-abuse and
--- same-origin-XSS vectors, and both are now unreachable. `image/svg+xml` is
--- deliberately EXCLUDED for the same reason — SVG is script-bearing, so it is
--- active content wearing an image content-type.
+-- bucket: the object can never be SERVED as active content. `text/html` and
+-- `application/javascript` are the hosting-abuse and XSS vectors, and both are
+-- now unreachable. `image/svg+xml` is deliberately EXCLUDED for the same reason
+-- — SVG is script-bearing, so it is active content wearing an image
+-- content-type.
+--
+-- The serving origin is `<project-ref>.supabase.co`, NOT `getculprit.app` — an
+-- earlier draft of this header said "our origin", which overstates it. The
+-- conclusion is unchanged (we do not want our Supabase project hosting arbitrary
+-- active content either, and a shared *.supabase.co origin is if anything a
+-- worse place to host it), but the precise blast radius is the project domain.
+--
+-- WHAT IT DOES **NOT** BUY, named so nobody mistakes this row for closed:
+-- neither column bounds TOTAL per-account storage. The 042 policy pins only path
+-- SEGMENT 1, so an owner may still write an unbounded NUMBER of objects of
+-- arbitrary name and depth under their own `{petId}/` prefix — this migration
+-- bounds each one's size and declared type, not how many there are. That
+-- residual is the genuinely unbounded half and it survives this migration; filed
+-- as a follow-up rather than papered over here, because closing it is a policy
+-- shape change (a whole-key predicate, the B-582 class), not bucket config.
 --
 -- WHY THREE TYPES AND NOT ONE. The only writer is
 -- `app/(tabs)/profile.tsx:433`, which calls `uploadPhoto(PET_PHOTO_BUCKET, …)`
@@ -141,20 +183,43 @@
 -- property above is identical across the three. Matches the set 044 chose for
 -- `nyx-vet-documents`, minus `application/pdf` (a profile photo is not a PDF).
 --
--- SIZE. `compressForUpload` caps the longest edge at `MAX_EDGE_PX = 1600` and
--- re-encodes at quality 0.75, which lands typical photos at 150–400 KB and a
--- pathological 1600x1600 near ~1 MB. 5 MB is ~5x the worst realistic case: it
--- cannot reject a legitimate photo, and it turns "unbounded per-account hosting"
--- into a bounded rounding error. Deliberately well under 044's 15 MB, which is
--- sized for multi-page PDF scans.
+-- SIZE — and why the number is deliberately generous rather than tight.
+-- `compressForUpload` caps the longest edge at `MAX_EDGE_PX = 1600` and
+-- re-encodes at quality 0.75, which lands typical photos at 150–400 KB. An
+-- earlier draft set 5 MiB and claimed it "cannot reject a legitimate photo".
+-- That word was too strong and `rls-privacy-reviewer` called it: a 1600x1600
+-- q0.75 re-encode of a HIGH-ENTROPY source — dense fur or grass texture, or a
+-- screenshot — is not bounded by the typical case and can run to several MB.
+--
+-- So the cap is 10 MiB, and the reasoning is worth stating because it inverts
+-- the usual house rule. Per-object size is NOT the binding constraint on abuse
+-- (object COUNT is — see above), so tightening from 10 MiB to 5 MiB buys close
+-- to nothing. Meanwhile a false rejection is expensive and specifically
+-- misleading here: a 413 surfaces through `app/(tabs)/profile.tsx:445` as
+-- "Couldn't save the photo — check your connection and try again", which is
+-- indistinguishable from the pre-existing 42501 open question on this exact
+-- bucket (CLAUDE.md), so it would be misdiagnosed as that bug. Cheap security,
+-- expensive false positive ⇒ take the generous bound.
+--
+-- UNTESTED BY CONSTRUCTION — the one honest caveat on this part. This bucket
+-- holds ZERO objects (verified live), and CLAUDE.md still carries the standing
+-- "uploads fail with 42501" open question for it. So no pet photo has ever
+-- successfully reached this bucket, which means the FIRST successful upload in
+-- the product's life will also be the first time this allowlist and this limit
+-- are ever exercised. If the first on-device pet-photo upload fails after this
+-- lands, check for HTTP 415 (`invalid_mime_type`) and 413 (payload too large)
+-- BEFORE re-opening the 42501 question — the owner-facing copy cannot tell the
+-- three apart. Making that distinguishable is a client change, so it stays out
+-- of this schema PR and is filed.
 --
 -- This is an UPDATE of two config columns on an EXISTING bucket row. It does NOT
 -- create the bucket — the SQL-created-bucket `owner = null` landmine documented
 -- in 008/021/CLAUDE.md applies to INSERT, not to UPDATE, and this bucket was
 -- dashboard-created in 2026-05. Verified live that the UPDATE is permitted to
--- our role and reads back correctly.
+-- our role and reads back correctly, and that `nyx-pet-photos` is the ONLY
+-- `public = true` bucket in the project (both config columns NULL before this).
 UPDATE storage.buckets
-   SET file_size_limit    = 5242880,  -- 5 MiB
+   SET file_size_limit    = 10485760,  -- 10 MiB
        allowed_mime_types = ARRAY['image/jpeg', 'image/png', 'image/heic']
  WHERE id = 'nyx-pet-photos';
 
@@ -205,12 +270,22 @@ REVOKE ALL ON FUNCTION public.handle_new_user() FROM authenticated;
 -- only — harmless but unneeded surface)". The assessment came back the other
 -- way, and this is the record of it.
 --
--- THE GRANT IS LOAD-BEARING — DO NOT REVOKE IT. All four AI Edge Functions call
--- this RPC through the CALLER'S client, not the service-role client:
---   supabase/functions/ask/index.ts:129                    -> client (JWT)
---   supabase/functions/generate-signal/index.ts:641        -> supabase (JWT)
+-- THE GRANT IS LOAD-BEARING — DO NOT REVOKE IT. SIX Edge Functions call this RPC
+-- through the CALLER'S client, not the service-role client:
+--   supabase/functions/ask/index.ts:129                            -> client (JWT)
+--   supabase/functions/generate-signal/index.ts:641                -> supabase (JWT)
 --   supabase/functions/extract-food-from-photo/index.ts:637        -> userClient
 --   supabase/functions/extract-medication-from-photo/index.ts:480  -> userClient
+--   supabase/functions/analyze-vomit  ─┐ both via the shared incident framework,
+--   supabase/functions/analyze-stool  ─┘ _shared/incident-analysis.ts:297,
+--                                        invoked :672 with userClient (:578-580)
+-- An earlier draft of this header said "all four", enumerating only the first
+-- four; `rls-privacy-reviewer` found the two `analyze-*` callers behind the
+-- shared framework. The direction is safe — two more callers only strengthen
+-- "keep the grant" — but an enumeration presented as exhaustive and isn't is
+-- exactly the kind of claim a future session would build on, so it is corrected
+-- rather than quietly widened.
+--
 -- `extract-*` build BOTH a user client and an admin client and deliberately hand
 -- recordUsage the USER one, because the function derives `auth.uid()` internally
 -- (B-252) — that is the whole design. So `authenticated` EXECUTE is the only
@@ -244,6 +319,19 @@ REVOKE ALL ON FUNCTION public.handle_new_user() FROM authenticated;
 -- the RPC. (`authenticated` has CREATE on schema `public` = false, verified, so
 -- the non-temp shadowing route is already closed.) The fix is free and
 -- behaviour-preserving, so it ships rather than being filed.
+--
+-- WHICH HALF OF THE FIX ACTUALLY CLOSES IT — corrected after
+-- `rls-privacy-reviewer` built the third variant and measured it. It is NOT the
+-- `search_path` pin. A body with `search_path = ''` but an UNQUALIFIED
+-- `ai_usage` reference STILL resolves to `pg_temp` (same 42P10 against a planted
+-- shadow), and with no shadow present it fails outright with `relation
+-- "ai_usage" does not exist`. pg_temp is searched first for TABLE names
+-- regardless of what search_path says.
+-- **The SCHEMA QUALIFICATION is what closes the shadowing; the pin only removes
+-- the dependence on a mutable setting.** Both ship here because they belong
+-- together, but a future session hardening some other SECURITY DEFINER function
+-- must not read this part as "pin it and you are done" — pinning to `''` while
+-- leaving tables unqualified is no safer and will usually be broken.
 --
 -- CREATE OR REPLACE, not ALTER: pinning to `''` requires qualifying the two
 -- unqualified `ai_usage` references in the body, so the body must be restated.
@@ -321,30 +409,82 @@ GRANT EXECUTE ON FUNCTION public.record_ai_usage(TEXT, UUID) TO authenticated;
 --     -> 0A000: extension "pg_net" does not support SET SCHEMA
 -- pg_net is marked non-relocatable, so recreate is the ONLY mechanism.
 --
--- WHY THAT IS LOSSLESS HERE. `DROP EXTENSION` takes the `net` schema and its two
--- tables with it. Both are EMPTY and nothing in this project uses pg_net:
---   net.http_request_queue           -> 0 rows
---   net._http_response               -> 0 rows
+-- WHAT DROP + CREATE COSTS. `DROP EXTENSION` takes the `net` schema and its two
+-- tables with it. Nothing in this project uses pg_net:
+--   net.http_request_queue              -> 0 rows
+--   net._http_response                  -> 0 rows
 --   webhook triggers using http_request -> 0
---   `supabase_functions` schema      -> does not exist
+--   `supabase_functions` schema         -> does not exist
 --   repo-wide grep for pg_net / net.http / http_post / http_get -> no hits
+--   pg_cron installed / `cron` schema   -> NEITHER EXISTS
+-- That last line is there because `rls-privacy-reviewer` named the one
+-- dependency class the other checks structurally cannot see: a cron job stores
+-- its command as TEXT, so it creates no `pg_depend` edge and `DROP EXTENSION`
+-- would succeed while silently breaking it. Checked directly — pg_cron is not
+-- installed on this project and the `cron` schema does not exist, so the class
+-- is empty rather than merely unexamined.
 -- Re-run the two row counts immediately before applying (see the Pre-flight).
 -- If either is non-zero, something started using pg_net after this was written
 -- and this part must be reconsidered rather than applied.
 --
+-- TWO THINGS THE RECREATE CHANGES THAT `SET SCHEMA` WOULD NOT HAVE, both found
+-- by the review and neither visible in the probe that only checked namespaces:
+--
+--   (1) SCHEMA GRANTS — restored below, explicitly. Supabase's bootstrap grants
+--       `USAGE ON SCHEMA net` to postgres, anon, authenticated, service_role
+--       (and supabase_functions_admin); a fresh `CREATE EXTENSION` grants none
+--       of them. Left alone, the recreate would silently drop those grants —
+--       harmless today (nothing calls pg_net) but a booby-trap for the first
+--       future caller, who would get a permission error with no clue why.
+--
+--   (2) EXTENSION AND SCHEMA OWNERSHIP — predicted to move, MEASURED NOT TO.
+--       This paragraph is kept in its corrected form rather than deleted,
+--       because the prediction was wrong in the SAFE direction and the reasoning
+--       that produced it is still the reasoning a future session would apply.
+--       PREDICTED: `pg_net` and schema `net` are owned by `supabase_admin`;
+--       whoever runs the migration becomes the new owner, and
+--       `ALTER EXTENSION … OWNER TO` does not exist (probed: 42601), so it could
+--       not be handed back — making the rollback not a true inverse.
+--       MEASURED AFTER THE REAL APPLY: ownership did NOT move. Both the
+--       extension and schema `net` are still owned by `supabase_admin`, and the
+--       schema ACL came back byte-identical to the pre-apply capture, grantor
+--       included (`=U/supabase_admin`, not `/postgres`) — so the install ran
+--       with `supabase_admin`'s authority, not the migration role's. The
+--       `GRANT USAGE` below was therefore belt-and-braces rather than a repair.
+--       It is kept because it is idempotent, it makes the intended end state
+--       explicit rather than dependent on platform behaviour we do not control,
+--       and it is the statement that WOULD be needed if that behaviour changed.
+--       Net: this migration has no irreversible step after all.
+--
+-- A third caveat the evidence did not cover at authoring time: pg_net runs a
+-- BACKGROUND WORKER, and no pre-apply probe could prove the worker reattaches
+-- after a recreate (Supabase's own troubleshooting for a "requests queue but
+-- never fire" state is `select net.worker_restart();`). RESOLVED after the apply:
+-- `select net.worker_restart();` returns `true` on the live database, so the
+-- worker is attached and healthy. An earlier draft called this part "lossless";
+-- it is lossless as to data, ownership, ACL and worker liveness — but only the
+-- first of those was actually measured when that word was first written, which
+-- is why it has been replaced with the specific claims above.
+--
 -- Probed live, end to end, in a rolled-back transaction:
---   DROP EXTENSION pg_net                     -> OK (net schema removed)
+--   DROP EXTENSION pg_net                          -> OK (net schema removed)
 --   CREATE EXTENSION pg_net WITH SCHEMA extensions -> OK
---   registered schema                         -> extensions
---   objects in public                         -> 0
---   object schemas                            -> net  (recreated by the install
---                                                script; `net.http_post` still
---                                                resolves, so any future caller
---                                                writes the same SQL it would
---                                                have written before)
---   version                                   -> 0.20.0 (unchanged)
+--   registered schema                              -> extensions
+--   objects in public                              -> 0
+--   object schemas                                 -> net  (recreated by the
+--                                                install script; `net.http_post`
+--                                                still resolves, so any future
+--                                                caller writes the same SQL it
+--                                                would have written before)
+--   version                                        -> 0.20.0 (unchanged)
 DROP EXTENSION IF EXISTS pg_net;
 CREATE EXTENSION IF NOT EXISTS pg_net WITH SCHEMA extensions;
+
+-- Restore the schema ACL the recreate drops — see (1) above. Captured from the
+-- live `pg_namespace.nspacl` before this migration was written, minus
+-- `supabase_admin`'s own owner grants (it re-acquires those only if it is the
+-- creating role, which it is not; see (2)).
+GRANT USAGE ON SCHEMA net TO postgres, anon, authenticated, service_role;
 
 
 -- ============================================================
@@ -377,10 +517,46 @@ CREATE EXTENSION IF NOT EXISTS pg_net WITH SCHEMA extensions;
 -- schema-qualify their lookups, so DEFINER introduces no resolution hazard —
 -- that precondition is exactly why 041's header pinned it in the first place.
 --
--- NO BEHAVIOUR CHANGE IS EXPECTED, and none was observed. Under INVOKER a
--- cross-ACCOUNT reference raised because the row was invisible; under DEFINER it
--- raises because the `pet_id` does not match. Same outcome, different reason —
--- and the second reason is one that survives a predicate rewrite.
+-- THERE **IS** A BEHAVIOUR CHANGE, AND IT MATTERS. An earlier draft of this
+-- header said "NO BEHAVIOUR CHANGE IS EXPECTED, and none was observed".
+-- `rls-privacy-reviewer` falsified that by replaying the schema on a real PG16
+-- cluster and running the case the draft had not considered. Recorded here in
+-- full, because a future session would otherwise trust the wrong sentence.
+--
+-- For the ordinary cases the draft did consider, it was right: a cross-PET
+-- write within one account, and a cross-ACCOUNT write where `pet_id` is the
+-- attacker's own pet, are rejected BY THIS TRIGGER before and after the flip.
+--
+-- The case it missed is a write lying WHOLLY inside the victim's account —
+-- `pet_id` = victim's pet AND `paired_event_id` = an event of that same victim
+-- pet. Under INVOKER, RLS hid the victim's event from the lookup, so
+-- `NOT EXISTS` fired and THE TRIGGER rejected it. Under DEFINER the lookup now
+-- sees the event, `e.pet_id = NEW.pet_id` matches, and the trigger PASSES. The
+-- write is still rejected — but by ROW-LEVEL SECURITY, one layer further out
+-- ("new row violates row-level security policy"), not by this guard.
+--
+-- So the boundary holds, and the reviewer's verdict is PASS. What changed is
+-- WHICH layer holds it, and that creates a dependency this file is the first to
+-- rely on: `medication_administrations_owner` (020:275-278) is `FOR ALL USING
+-- (…)` with NO explicit `WITH CHECK`, so Postgres reuses `USING` as the check —
+-- verified live (`with_check IS NULL`). `diet_trial_foods_owner` (040:273)
+-- carries an explicit `WITH CHECK`. For this one case the trigger is no longer a
+-- backstop BEHIND RLS; it is in front of it, and transparent.
+--
+-- ⚠ THE STANDING HAZARD THAT CREATES: if a later PR splits
+-- `medication_administrations_owner` into per-verb policies — exactly what
+-- 041's own header contemplates for `diet_trial_foods` ("Splitting the policy
+-- into SELECT/INSERT/UPDATE … is PR 2's call") — or writes `WITH CHECK (true)`,
+-- this case fails OPEN with nothing behind it. Under INVOKER it would not have.
+-- Any PR touching either table's policy must re-check this case explicitly.
+--
+-- One further observable, disclosed rather than dismissed: the rejection message
+-- now DISTINGUISHES "that event belongs to that pet" (RLS error) from "it does
+-- not, or does not exist" (this trigger's 23514). That is a cross-account
+-- membership oracle. It is gated behind knowing two unguessable v4 UUIDs that
+-- are themselves the protected identifiers, so it is not a practical exposure —
+-- but it is a real information leak that did not exist before, and calling it
+-- "no behaviour change" is how it would have gone unrecorded.
 --
 -- REVOKING EXECUTE IS NOT OPTIONAL HERE, IT IS PART OF THE FIX. Flipping these
 -- to SECURITY DEFINER without revoking would ADD two new advisor findings
@@ -441,8 +617,11 @@ COMMENT ON FUNCTION public.enforce_vet_document_pet_scope() IS
 -- Part 2d — pg_net:
 --   DROP EXTENSION IF EXISTS pg_net;
 --   CREATE EXTENSION IF NOT EXISTS pg_net WITH SCHEMA public;
---   Lossless in the same way and for the same reason as the forward direction —
---   but re-check the two net.* row counts first, exactly as on the way in.
+--   GRANT USAGE ON SCHEMA net TO postgres, anon, authenticated, service_role;
+--   This IS a true inverse — see Part 2d (2): the forward apply was measured to
+--   preserve extension/schema ownership and the schema ACL, so the reverse has
+--   nothing extra to restore. Re-check the two net.* row counts first, exactly
+--   as on the way in, and re-check `select net.worker_restart();` after.
 --
 -- Part 3 — B-520:
 --   ALTER FUNCTION public.enforce_dose_paired_event_same_pet() SECURITY INVOKER;
