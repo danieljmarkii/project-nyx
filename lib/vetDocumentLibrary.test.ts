@@ -53,6 +53,7 @@ interface Doc {
   deleted_at?: string | null;
   created_at?: string;
   local_uri?: string;
+  source_filename?: string | null;
 }
 
 function runLibraryQuery(docs: Doc[], petId = 'pet-1'): VetDocumentGroupRow[] {
@@ -60,9 +61,9 @@ function runLibraryQuery(docs: Doc[], petId = 'pet-1'): VetDocumentGroupRow[] {
   db.exec(BASE_SCHEMA_SQL);
   const insert = db.prepare(
     `INSERT INTO vet_documents
-       (id, pet_id, document_group_id, kind, title, document_date, source,
+       (id, pet_id, document_group_id, kind, title, document_date, source, source_filename,
         local_uri, storage_path, mime_type, page_index, deleted_at, created_at, updated_at, synced)
-     VALUES (?, ?, ?, ?, ?, ?, 'photo_library', ?, ?, ?, ?, ?, ?, ?, 1)`,
+     VALUES (?, ?, ?, ?, ?, ?, 'photo_library', ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
   );
   for (const d of docs) {
     insert.run(
@@ -72,6 +73,7 @@ function runLibraryQuery(docs: Doc[], petId = 'pet-1'): VetDocumentGroupRow[] {
       d.kind ?? 'other',
       d.title ?? null,
       d.document_date ?? null,
+      d.source_filename ?? null,
       d.local_uri ?? '',
       `${d.pet_id ?? petId}/${d.id}.jpg`,
       d.mime ?? 'image/jpeg',
@@ -111,6 +113,18 @@ describe('LIBRARY_VET_DOCUMENTS_QUERY', () => {
     expect(rows[0].title).toBe('the cover');
     expect(rows[0].kind).toBe('lab_result');
     expect(rows[0].storage_path).toBe('pet-1/p1.jpg');
+  });
+
+  // B-546 added source_filename to this projection, i.e. one more bare column
+  // riding the same MIN(page_index) rule. Asserted separately because a new bare
+  // column is exactly where that rule gets forgotten — and the failure would show
+  // page 3's filename under page 1's thumbnail, which reads as correct.
+  it('projects the cover page\u2019s filename too', () => {
+    const rows = runLibraryQuery([
+      { id: 'p2', group: 'g1', page_index: 1, source_filename: 'page-two.pdf' },
+      { id: 'p1', group: 'g1', page_index: 0, source_filename: 'the-cover.pdf' },
+    ]);
+    expect(rows[0].source_filename).toBe('the-cover.pdf');
   });
 
   it('orders by document_date descending, falling back to the capture date', () => {
@@ -164,6 +178,7 @@ function cover(overrides: Partial<VetDocumentGroupRow> = {}): VetDocumentGroupRo
     title: null,
     document_date: '2026-07-26',
     vet_visit_id: null,
+    source_filename: null,
     local_uri: '',
     storage_path: 'pet-1/d1.jpg',
     mime_type: 'image/jpeg',
@@ -245,6 +260,38 @@ describe('buildVetLibraryRow — the untitled steady state (D11)', () => {
   it('falls back to the capture date when the document carries none', () => {
     const row = buildVetLibraryRow(cover({ document_date: null }), NOW);
     expect(row.title).toBe('Document — Jul 26');
+  });
+
+  // ── B-546: the filename as a secondary line, not as the title ──────────────
+  //
+  // Why this rule is worth testing rather than eyeballing: the failure it prevents
+  // is invisible on the screen that has it. Two lab PDFs pulled from one clinic
+  // portal on one day get no thumbnail (D5) and no name (D11), so before this they
+  // rendered as two rows identical down to the pixel — and the app had held the
+  // disambiguator all along.
+  it('renders the filename beside an untitled row, leaving it untitled', () => {
+    const row = buildVetLibraryRow(cover({ source_filename: 'Pixel-CBC-2026-07-14.pdf' }), NOW);
+    expect(row.fileLabel).toBe('Pixel-CBC-2026-07-14.pdf');
+    // The half that keeps the one-tap Name pill alive. If this ever flips, someone
+    // has implemented option (a) — filename-as-title — which the PM ruled against.
+    expect(row.untitled).toBe(true);
+    expect(row.title).toBe('Document — Jul 26');
+  });
+
+  it('drops the filename once the owner has named the document', () => {
+    // The name has done the disambiguating; "Scan_0001.pdf" under it is noise on a
+    // surface whose whole job is one calm list. The stored value is not lost — the
+    // detail screen still shows it (see vetDocumentDetail).
+    const row = buildVetLibraryRow(
+      cover({ title: 'Senior panel', source_filename: 'Scan_0001.pdf' }),
+      NOW,
+    );
+    expect(row.fileLabel).toBeNull();
+  });
+
+  it('has no filename line when nothing was recorded (camera / Photos / pre-047 rows)', () => {
+    expect(buildVetLibraryRow(cover(), NOW).fileLabel).toBeNull();
+    expect(buildVetLibraryRow(cover({ source_filename: '   ' }), NOW).fileLabel).toBeNull();
   });
 
   it('keeps a local file path so a device-captured document reads offline', () => {

@@ -195,6 +195,13 @@ export const BASE_SCHEMA_SQL = `
       document_date     TEXT,
       notes             TEXT,
       source            TEXT NOT NULL,
+      -- B-546 — the filename the document arrived with (Files/PDF picks only).
+      -- Provenance, never identity: it renders as a secondary line beside an
+      -- untitled row, so the title column stays NULL and the Name pill survives.
+      -- Mirrors migration 047. Existing installs get it via the ALTER in
+      -- lib/db.ts — CREATE TABLE IF NOT EXISTS will not add a column to a device
+      -- that already ran the VF-1 DDL.
+      source_filename   TEXT,
       local_uri         TEXT NOT NULL DEFAULT '',
       storage_path      TEXT NOT NULL,
       mime_type         TEXT NOT NULL,
@@ -336,6 +343,13 @@ export const COLUMN_UPGRADES: readonly ColumnUpgrade[] = [
   { table: 'events', column: 'logged_via', type: "TEXT NOT NULL DEFAULT 'app'" },
   { table: 'meals', column: 'logged_via', type: "TEXT NOT NULL DEFAULT 'app'" },
   { table: 'medication_administrations', column: 'logged_via', type: "TEXT NOT NULL DEFAULT 'app'" },
+  // B-546 / migration 048 — the filename a vet document arrived with (Files/PDF
+  // picks only). `vet_documents` shipped in VF-1 without it, so a device that
+  // already ran that build has the table and CREATE TABLE IF NOT EXISTS cannot add
+  // the column — only this can. Nullable, no default: a camera or Photos capture
+  // legitimately has no filename worth keeping, and no pre-048 row has one to
+  // recover, so NULL is the honest value for both.
+  { table: 'vet_documents', column: 'source_filename', type: 'TEXT' },
   // B-398 — the quarantine pair, on every queue table. Generated from SYNC_QUEUES
   // rather than typed out twelve times, so the set that gets the columns and the
   // set the badge counts are provably the same set.
