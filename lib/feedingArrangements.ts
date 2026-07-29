@@ -228,7 +228,7 @@ export async function confirmArrangementFresh(petId: string, foodItemId: string)
   const now = new Date().toISOString();
   const result = await db.runAsync(
     `UPDATE feeding_arrangements
-       SET updated_at = ?, synced = 0
+       SET updated_at = ?, synced = 0, sync_attempts = 0, sync_error = NULL
      WHERE pet_id = ? AND food_item_id = ?
        AND method = 'free_choice'
        AND active_until IS NULL
@@ -264,7 +264,7 @@ export async function endFreeChoice(petId: string, foodItemId: string): Promise<
   const now = new Date().toISOString();
   await db.runAsync(
     `UPDATE feeding_arrangements
-       SET active_until = ?, updated_at = ?, synced = 0
+       SET active_until = ?, updated_at = ?, synced = 0, sync_attempts = 0, sync_error = NULL
      WHERE pet_id = ? AND food_item_id = ?
        AND method = 'free_choice'
        AND active_until IS NULL

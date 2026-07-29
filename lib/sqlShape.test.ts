@@ -47,9 +47,17 @@ const SQL_SOURCE_FILES = [
 ];
 
 // Floors, not equalities: adding a statement must not fail the build, but a
-// parser that silently stops recognising call sites must. These were the counts
-// when this guard was written (2026-07-26).
-const STATEMENT_FLOOR = 60;
+// parser that silently stops recognising call sites must.
+//
+// 60 when this guard was written (2026-07-26). Lowered to 45 on 2026-07-28 by
+// B-398, and the reason is a real reduction rather than a parser regression:
+// initDb's seventeen inline `ALTER TABLE … ADD COLUMN` call sites became data
+// (lib/localSchema.ts COLUMN_UPGRADES, applied by one loop), and seven batch
+// writers that each hand-rolled their own upsert now share pushRows. Verified by
+// reading the delta, not by chasing the number down until it passed — the
+// statements this suite exists to check (the INSERT column/slot/DO-UPDATE lists)
+// are untouched, which is why INSERT_FLOOR did not move.
+const STATEMENT_FLOOR = 45;
 const INSERT_FLOOR = 20;
 
 // ── Source scanning ───────────────────────────────────────────────────────────

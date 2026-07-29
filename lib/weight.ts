@@ -228,7 +228,7 @@ export async function updateWeightCheck(
   if (!row) return null;
 
   await db.runAsync(
-    `UPDATE weight_checks SET weight_kg = ?, updated_at = ?, synced = 0 WHERE event_id = ?`,
+    `UPDATE weight_checks SET weight_kg = ?, updated_at = ?, synced = 0, sync_attempts = 0, sync_error = NULL WHERE event_id = ?`,
     [weightKg, now, eventId],
   );
 

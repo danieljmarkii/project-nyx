@@ -33,6 +33,8 @@ jest.mock('./appGroup', () => ({
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { DatabaseSync } = require('node:sqlite');
+
+import { BASE_SCHEMA_SQL, applyColumnUpgrades } from './localSchema';
 import {
   classifyInboxPayload,
   ingestCaptureRecords,
@@ -65,42 +67,27 @@ function asyncAdapter(db: RawDb): InboxDb {
   };
 }
 
-// Minimal mirrors of the columns the ingest writes/reads (lib/db.ts initDb).
+// The REAL local DDL, not an approximation. This block used to hand-mirror "the
+// columns the ingest writes/reads", which is exactly the drift B-424 removed from
+// the wipe guard: B-398 added `sync_attempts`/`sync_error` to the production
+// schema and this copy silently diverged until the ingest's own UPDATE failed on
+// it. Building from BASE_SCHEMA_SQL means a column added to the real schema is
+// present here for free — and a column the ingest needs that the schema lacks now
+// fails loudly instead of passing against a fixture.
+//
+// One deliberate deviation: feeding_arrangements rows are seeded as already-synced
+// in these tests (the D6 re-attest asserts the ingest flips a SYNCED row back to
+// 0), so the seed sets `synced` explicitly rather than relying on the DDL default.
 function freshDb(): RawDb {
   const db = new DatabaseSync(':memory:');
-  db.exec(`
-    CREATE TABLE events (
-      id TEXT PRIMARY KEY, pet_id TEXT NOT NULL, event_type TEXT NOT NULL,
-      occurred_at TEXT NOT NULL, severity INTEGER, notes TEXT,
-      source TEXT NOT NULL DEFAULT 'manual',
-      occurred_at_source TEXT NOT NULL DEFAULT 'manual',
-      occurred_at_confidence TEXT, occurred_at_earliest TEXT, occurred_at_latest TEXT,
-      logged_via TEXT NOT NULL DEFAULT 'app',
-      deleted_at TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
-      synced INTEGER NOT NULL DEFAULT 0
-    );
-    CREATE TABLE meals (
-      id TEXT PRIMARY KEY,
-      event_id TEXT NOT NULL UNIQUE REFERENCES events(id),
-      pet_id TEXT NOT NULL, food_item_id TEXT,
-      quantity TEXT NOT NULL DEFAULT 'unknown',
-      is_full_portion INTEGER, notes TEXT, intake_rating TEXT,
-      logged_via TEXT NOT NULL DEFAULT 'app',
-      created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
-      synced INTEGER NOT NULL DEFAULT 0
-    );
-    CREATE TABLE food_items_cache (
-      id TEXT PRIMARY KEY, brand TEXT, product_name TEXT, last_used_at TEXT
-    );
-    CREATE TABLE feeding_arrangements (
-      id TEXT PRIMARY KEY, pet_id TEXT NOT NULL, food_item_id TEXT NOT NULL,
-      method TEXT NOT NULL DEFAULT 'free_choice',
-      active_from TEXT, active_until TEXT, is_shared INTEGER NOT NULL DEFAULT 0,
-      notes TEXT, deleted_at TEXT,
-      created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
-      synced INTEGER NOT NULL DEFAULT 1
-    );
-  `);
+  db.exec(BASE_SCHEMA_SQL);
+  // The runtime schema is the DDL constants PLUS initDb's column upgrades — a
+  // column added by ALTER (intake_rating, logged_via, occurred_at_source, the
+  // B-398 quarantine pair) exists on every real device and in none of the
+  // constants. Applying both is what makes this the genuine article. Synchronous
+  // node:sqlite exec wrapped to the async signature; the promise resolves before
+  // any test body runs because nothing here awaits I/O.
+  void applyColumnUpgrades(async (sql) => db.exec(sql));
   return db;
 }
 
@@ -235,7 +222,7 @@ describe('ingestCaptureRecords (inbox → SQLite + sync queue)', () => {
     raw = freshDb();
     db = asyncAdapter(raw);
     raw
-      .prepare(`INSERT INTO food_items_cache (id, brand, product_name) VALUES (?, 'Hill''s', 'z/d')`)
+      .prepare(`INSERT INTO food_items_cache (id, brand, product_name, format) VALUES (?, 'Hill''s', 'z/d', 'wet')`)
       .run(FOOD);
   });
 
@@ -515,7 +502,7 @@ describe('ingestCaptureInbox (wrapper: ordering + file lifecycle)', () => {
   beforeEach(() => {
     raw = freshDb();
     raw
-      .prepare(`INSERT INTO food_items_cache (id, brand, product_name) VALUES (?, 'Hill''s', 'z/d')`)
+      .prepare(`INSERT INTO food_items_cache (id, brand, product_name, format) VALUES (?, 'Hill''s', 'z/d', 'wet')`)
       .run(FOOD);
     (getDb as jest.Mock).mockReturnValue(asyncAdapter(raw));
   });

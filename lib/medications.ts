@@ -61,7 +61,12 @@ export const MEDICATION_SCHEMA_SQL = `
     notes                TEXT,
     created_at           TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at           TEXT NOT NULL DEFAULT (datetime('now')),
-    synced               INTEGER NOT NULL DEFAULT 0
+    synced               INTEGER NOT NULL DEFAULT 0,
+    -- B-398 quarantine pair (see lib/syncQueue.ts). sync_attempts counts SERVER
+    -- REFUSALS only, never a network failure; a non-NULL sync_error drops the row
+    -- out of the push queue while leaving it on the device, honestly synced = 0.
+    sync_attempts        INTEGER NOT NULL DEFAULT 0,
+    sync_error           TEXT
   );
 
   CREATE INDEX IF NOT EXISTS idx_medications_unsynced
@@ -104,7 +109,10 @@ export const MEDICATION_SCHEMA_SQL = `
     notes               TEXT,
     created_at          TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at          TEXT NOT NULL DEFAULT (datetime('now')),
-    synced              INTEGER NOT NULL DEFAULT 0
+    synced              INTEGER NOT NULL DEFAULT 0,
+    -- B-398 quarantine pair — see medications above.
+    sync_attempts       INTEGER NOT NULL DEFAULT 0,
+    sync_error          TEXT
   );
 
   CREATE INDEX IF NOT EXISTS idx_medication_administrations_unsynced
