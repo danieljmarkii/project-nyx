@@ -10,9 +10,12 @@
 // definition rather than a fourth:
 //
 //   (1) the arithmetic itself, including every degraded input;
-//   (2) that `computeTrialFacts` — the module the client, `generate-report` and
-//       `ask` all import — applies it to BOTH halves of the coverage ratio and
-//       to the exposure window;
+//   (2) that `computeTrialFacts` applies it to the COVERAGE DENOMINATOR and to
+//       nothing else — the evidence window (feedings, doses, arrangements, both
+//       refusal populations) is never narrowed by it. Five of the six breaks an
+//       `adversarial-reviewer` pass found in the first cut were the same mistake:
+//       the effective end had been applied to evidence as well as to belief, so
+//       the fix DELETED logged findings to make a denominator behave;
 //   (3) that the widget's pure boundary drops a stale trial before it can reach
 //       the one-tap rows.
 import {
@@ -20,6 +23,8 @@ import {
   buildTrialContext,
   computeTrialFacts,
   isTrialRunning,
+  mayClaimAllMatched,
+  mayStateRecordClean,
   trialEffectiveEndDayIndex,
   trialTargetEndDayIndex,
   type AllowedFood,
@@ -36,9 +41,9 @@ const TRIAL: TrialSpec = {
   species: 'dog',
 };
 
-/** Day 56 of 56 is 25 August 2026; the grace runs 28 days past it. */
+/** Day 56 of 56 is 25 August 2026; the grace runs 56 days past it. */
 const LAST_TARGET_DAY = '2026-08-25';
-const EFFECTIVE_END = '2026-09-22';
+const EFFECTIVE_END = '2026-10-20';
 
 const DUCK: AllowedFood = {
   foodItemId: 'dry-duck',
@@ -123,14 +128,22 @@ describe('trialEffectiveEndDayIndex', () => {
 describe('isTrialRunning', () => {
   it('runs through the last day of grace and stops the day after', () => {
     expect(isTrialRunning(TRIAL, Date.parse(at(EFFECTIVE_END)))).toBe(true);
-    expect(isTrialRunning(TRIAL, Date.parse(at('2026-09-23')))).toBe(false);
+    expect(isTrialRunning(TRIAL, Date.parse(at('2026-10-21')))).toBe(false);
   });
 
-  it('still runs deep into overrun, before the grace expires', () => {
-    // The population a staleness rule may not punish: §4.3 offers a NAMED one-tap
-    // extension of +28d (skin) / +14d (GI), so an owner who means to keep going
-    // and has not tapped yet must not be cut off inside that span.
-    expect(isTrialRunning(TRIAL, Date.parse(at('2026-09-01')))).toBe(true);
+  it('covers ACVIM’s ≥12-week GI course on the 28-day dog·gut default', () => {
+    // THE COUNTEREXAMPLE THAT SET THE CONSTANT. P-1's dog·gut default is 28d;
+    // ACVIM 2026 says continue ≥12 weeks (84 days) before transitioning away. A
+    // grace sized off §4.3's named extensions (+28d skin / +14d GI) sizes it off
+    // the SKIN case and expires on day 56 of that 84-day course — and the
+    // observable was not a soft degradation but the vet report's trial block
+    // VANISHING mid-intervention (see the selectReportTrial suite).
+    const gi = { startedAt: '2026-07-01', targetDurationDays: 28 };
+    expect(isTrialRunning(gi, Date.parse(at('2026-09-22')))).toBe(true); // day 84
+    // Every other P-1 cell clears its own clinical ceiling too.
+    const catGut = { startedAt: '2026-07-01', targetDurationDays: 42 };
+    expect(isTrialRunning(catGut, Date.parse(at('2026-09-22')))).toBe(true);
+    expect(isTrialRunning(TRIAL, Date.parse(at('2026-09-22')))).toBe(true); // skin, 8–12wk
   });
 
   it('is false for a terminal trial regardless of its dates', () => {
@@ -163,53 +176,30 @@ describe('isTrialRunning', () => {
     // The widget's ACTIVE_DIET_TRIAL_QUERY and generate-signal's probe both put
     // `status` in the WHERE and never select it back.
     expect(isTrialRunning({ startedAt: '2026-07-01', targetDurationDays: 56 }, Date.parse(at('2026-07-20')))).toBe(true);
-    expect(isTrialRunning({ startedAt: '2026-07-01', targetDurationDays: 56 }, Date.parse(at('2026-09-23')))).toBe(false);
+    expect(isTrialRunning({ startedAt: '2026-07-01', targetDurationDays: 56 }, Date.parse(at('2026-10-21')))).toBe(false);
   });
 });
 
-// ── (2) The measurement window ───────────────────────────────────────────────
+// ── (2) The window: belief, evidence, and the one denominator ────────────────
+//
+// THE DISTINCTION THIS SECTION EXISTS TO PIN. The effective end bounds BELIEF
+// (`isTrialRunning`) and ONE DENOMINATOR (coverage). It must never bound
+// EVIDENCE. The first cut of B-422 put it on `buildTrialContext.endDayIndex`,
+// which is what `isInTrialWindow` reads, so the app stopped SEEING the record on
+// a trial nobody ended — and an `adversarial-reviewer` pass turned that into
+// four separate reassurance-direction failures in one sitting.
 
-describe('the effective end closes the measurement window', () => {
-  it('freezes the coverage denominator instead of letting the calendar grow it', () => {
-    // THE HARM, stated as a number. Before this, `daysElapsed` was
-    // days-since-start, so a trial nobody ended kept accruing unlogged days
-    // forever: a well-run 56-day trial read 56/56 in August and 56/238 the
-    // following March — below COVERAGE_FLOOR, permanently `does_not_support`,
-    // and §5.2 rules the exposure count a FLOOR, so the record claim is
-    // suppressed for good on a trial that was actually run properly.
-    const feedings: TrialFeeding[] = [];
-    for (let d = 0; d < 56; d += 1) {
-      const day = new Date(Date.UTC(2026, 6, 1 + d)).toISOString().slice(0, 10);
-      feedings.push(feeding({ eventId: `m-${d}`, occurredAt: at(day) }));
-    }
-    const args = { trial: TRIAL, allowedFoods: [DUCK], feedings };
-
-    const atEnd = computeTrialFacts({ ...args, nowMs: Date.parse(at(LAST_TARGET_DAY)) });
-    expect(atEnd.coverage).toEqual({ daysLogged: 56, daysElapsed: 56, fraction: 1 });
-
-    const muchLater = computeTrialFacts({ ...args, nowMs: Date.parse(at('2027-03-01')) });
-    expect(muchLater.coverage).toEqual({ daysLogged: 56, daysElapsed: 56, fraction: 1 });
-    expect(muchLater.interpretability).toBe('supports');
-    expect(muchLater.belowCoverageFloor).toBe(false);
+describe('the effective end never narrows the evidence window', () => {
+  it('leaves buildTrialContext bounded by the DECLARED end alone', () => {
+    expect(buildTrialContext(TRIAL, [DUCK]).endDayIndex).toBeNull();
+    expect(buildTrialContext({ ...TRIAL, endedAt: '2026-07-19' }, [DUCK]).endDayIndex).toBe(
+      dayIndex('2026-07-19'),
+    );
   });
 
-  it('is bounded by TODAY, not by the effective end, while the trial still runs', () => {
-    // The grace must not FORWARD-date the denominator either: a trial on day 10
-    // of 56 has ten days elapsed, not eighty-four.
-    const facts = computeTrialFacts({
-      trial: TRIAL,
-      allowedFoods: [DUCK],
-      feedings: [feeding({ eventId: 'm1', occurredAt: at('2026-07-01') })],
-      nowMs: Date.parse(at('2026-07-10')),
-    });
-    expect(facts.coverage?.daysElapsed).toBe(10);
-    expect(facts.range?.closedByOverrun).toBe(false);
-  });
-
-  it('excludes a feeding logged after the effective end from the exposure window', () => {
-    // The other half of §5.1's "one overlap range": a chicken treat fed in
-    // November, long after an abandoned trial stopped, is not an off-diet
-    // exposure DURING that trial — and must not reach the vet report as one.
+  it('still counts an off-diet feeding logged past the effective end', () => {
+    // §5.2 rules the exposure count a FLOOR: it may only ever move toward
+    // disclosing MORE. The first cut excluded this feeding and called it correct.
     const facts = computeTrialFacts({
       trial: TRIAL,
       allowedFoods: [DUCK],
@@ -227,77 +217,162 @@ describe('the effective end closes the measurement window', () => {
       ],
       nowMs: Date.parse(at('2026-11-02')),
     });
-    expect(facts.exposures.totalFeedings).toBe(1);
-    expect(facts.exposures.offDiet).toBe(0);
-    expect(facts.exposures.items).toEqual([]);
+    expect(facts.exposures.totalFeedings).toBe(2);
+    expect(facts.exposures.offDiet).toBe(1);
+    expect(facts.exposures.mostRecent?.label).toBe('Generic Chicken Strips');
   });
 
-  it('reports closedByOverrun only for a trial nobody ended', () => {
-    const args = { trial: TRIAL, allowedFoods: [DUCK], feedings: [feeding({ eventId: 'm1' })] };
-    // Past the grace, un-ended.
-    expect(
-      computeTrialFacts({ ...args, nowMs: Date.parse(at('2026-11-01')) }).range?.closedByOverrun,
-    ).toBe(true);
-    // Same date, but the owner declared an end — that is a different fact and the
-    // card would owe the owner a different sentence.
-    expect(
-      computeTrialFacts({
-        ...args,
-        trial: { ...TRIAL, endedAt: '2026-08-10' },
-        nowMs: Date.parse(at('2026-11-01')),
-      }).range?.closedByOverrun,
-    ).toBe(false);
-  });
-
-  it('caps a declared end that lands AFTER the effective end', () => {
-    // An owner who taps "This trial is done" in March authored a fact about the
-    // paperwork, not about the diet. Taking `ended_at` at face value there
-    // re-admits the unbounded denominator, deferred to the moment of the tap.
-    const facts = computeTrialFacts({
-      trial: { ...TRIAL, endedAt: '2027-03-01' },
-      allowedFoods: [DUCK],
-      feedings: [feeding({ eventId: 'm1', occurredAt: at('2026-07-01') })],
-      nowMs: Date.parse(at('2027-03-02')),
-    });
-    expect(facts.range?.endDayIndex).toBe(dayIndex(EFFECTIVE_END));
-    // A DECLARED end is the owner's own window, so the tail clip stays out of it:
-    // the days between their last log and the end they named are genuine gaps.
-    expect(facts.range?.closedByOverrun).toBe(false);
-  });
-
-  it('leaves a targetless trial unbounded, exactly as before', () => {
-    const facts = computeTrialFacts({
-      trial: { ...TRIAL, targetDurationDays: 0 },
-      allowedFoods: [DUCK],
-      feedings: [feeding({ eventId: 'm1', occurredAt: at('2026-07-01') })],
-      nowMs: Date.parse(at('2026-12-01')),
-    });
-    expect(facts.range?.endDayIndex).toBe(dayIndex('2026-12-01'));
-    expect(facts.range?.closedByOverrun).toBe(false);
-  });
-
-  it('does not move the window at all before the target end', () => {
-    // Regression guard on the whole rule: nothing about an ordinary running
-    // trial changes. Day 10 of 56, last logged on day 3 — days 4-10 are a real
-    // gap and must stay in the denominator.
-    const ctx = buildTrialContext(TRIAL, [DUCK]);
-    expect(ctx.endDayIndex).toBe(dayIndex(EFFECTIVE_END));
+  it('still counts an oral-route (C3) dose logged after the last meal', () => {
+    // THE COUNTEREXAMPLE. A beef-flavoured chewable on trial-day 66, with the
+    // last meal on day 61. The first cut bounded the DOSE loop on the coverage
+    // clip — whose anchor is feedings — so the dose vanished, and because
+    // `oralRoute` is one of the five withholding clauses, losing it flipped
+    // `mayClaimAllMatched` FALSE → TRUE. Deleting a finding turned silence into
+    // an affirmative claim.
     const facts = computeTrialFacts({
       trial: TRIAL,
       allowedFoods: [DUCK],
-      feedings: [feeding({ eventId: 'm1', occurredAt: at('2026-07-03') })],
-      nowMs: Date.parse(at('2026-07-10')),
+      feedings: [feeding({ eventId: 'm1', occurredAt: at('2026-08-30') })], // day 61
+      doses: [
+        {
+          eventId: 'd1',
+          occurredAt: at('2026-09-04'), // day 66 — after the last meal
+          drugLabel: 'Heartgard',
+          form: 'chewable',
+          pairedEventId: null,
+          adherence: 'given',
+        },
+      ],
+      nowMs: Date.parse(at('2026-09-09')),
     });
-    expect(facts.range?.endDayIndex).toBe(dayIndex('2026-07-10'));
-    expect(facts.coverage).toEqual({ daysLogged: 1, daysElapsed: 8, fraction: 0.125 });
-    expect(facts.range?.closedByOverrun).toBe(false);
+    expect(facts.oralRoute).toHaveLength(1);
+    expect(mayClaimAllMatched(facts)).toBe(false);
+    expect(mayStateRecordClean(facts, { stoppedForRefusal: false })).toBe(false);
+  });
+
+  it('still sees a refusing cat past the effective end, and withholds the claim', () => {
+    // THE WORST OF THE SIX, and the one that made this a redesign rather than a
+    // patch. A cat eats every bowl for 61 days, then from trial-day 181 refuses
+    // 38 of 38 rated bowls across 19 days — every one logged. The first cut
+    // excluded all of them: `trialDietRefusal` went null, coverage read 61/61 =
+    // 100% `supports`, and `mayStateRecordClean` flipped FALSE → TRUE. The card,
+    // which B-422 deliberately keeps rendering forever, then showed the clean
+    // two-fact presentation over an anorexic cat 100× past the feline 48h
+    // hepatic-lipidosis window. That is reassurance-on-absence, produced by the
+    // fix, on the exact surface B-494 exists to protect.
+    const feedings: TrialFeeding[] = [];
+    for (let d = 0; d < 61; d += 1) {
+      feedings.push(
+        feeding({
+          eventId: `ate-${d}`,
+          occurredAt: at(new Date((dayIndex('2026-07-01') + d) * 86_400_000).toISOString().slice(0, 10)),
+          intakeRating: 'all',
+        }),
+      );
+    }
+    for (let d = 0; d < 19; d += 1) {
+      const day = new Date((dayIndex('2026-07-01') + 180 + d) * 86_400_000).toISOString().slice(0, 10);
+      feedings.push(feeding({ eventId: `ref-${d}a`, occurredAt: at(day, 8), intakeRating: 'refused' }));
+      feedings.push(feeding({ eventId: `ref-${d}b`, occurredAt: at(day, 18), intakeRating: 'refused' }));
+    }
+    const facts = computeTrialFacts({
+      trial: TRIAL,
+      allowedFoods: [DUCK],
+      feedings,
+      nowMs: Date.parse(at(new Date((dayIndex('2026-07-01') + 199) * 86_400_000).toISOString().slice(0, 10))),
+    });
+    // The NOW-fact is the one that matters clinically and the one the first cut
+    // erased: recency-bounded to the last 14 days of the EVIDENCE end, so it sees
+    // 26 refusals across 13 days at a 100% share. (`rangeRefusal` is null here and
+    // correctly so — over the whole range she ate 61 bowls and refused 38, which
+    // is below the ratified 50% share. The history says "mixed"; the present says
+    // "not eating". That is exactly why both populations exist.)
+    expect(facts.trialDietRefusal).not.toBeNull();
+    expect(facts.trialDietRefusal?.refusedFeedings).toBe(26);
+    expect(facts.trialDietRefusal?.ratedFeedings).toBe(26);
+    expect(facts.recentFinishedFeedings).toBe(0);
+    expect(mayStateRecordClean(facts, { stoppedForRefusal: false })).toBe(false);
+  });
+
+  it('anchors the present-tense refusal window on TODAY, not on the clipped end', () => {
+    // A cat refused every bowl on trial-days 71–84, then recovered and has eaten
+    // all 232 bowls since. Anchoring the "now" fact on the coverage clip made the
+    // card state the present-tense viability register — "needs a call today" —
+    // from data 116 days stale, with the `recentFinished` stand-down evidence
+    // structurally excluded. A false alarm the owner cannot clear.
+    const feedings: TrialFeeding[] = [];
+    for (let d = 70; d < 84; d += 1) {
+      const day = new Date((dayIndex('2026-07-01') + d) * 86_400_000).toISOString().slice(0, 10);
+      feedings.push(feeding({ eventId: `r-${d}a`, occurredAt: at(day, 8), intakeRating: 'refused' }));
+      feedings.push(feeding({ eventId: `r-${d}b`, occurredAt: at(day, 18), intakeRating: 'refused' }));
+    }
+    for (let d = 84; d < 200; d += 1) {
+      const day = new Date((dayIndex('2026-07-01') + d) * 86_400_000).toISOString().slice(0, 10);
+      feedings.push(feeding({ eventId: `o-${d}a`, occurredAt: at(day, 8), intakeRating: 'all' }));
+      feedings.push(feeding({ eventId: `o-${d}b`, occurredAt: at(day, 18), intakeRating: 'all' }));
+    }
+    const facts = computeTrialFacts({
+      trial: TRIAL,
+      allowedFoods: [DUCK],
+      feedings,
+      nowMs: Date.parse(at(new Date((dayIndex('2026-07-01') + 199) * 86_400_000).toISOString().slice(0, 10))),
+    });
+    expect(facts.trialDietRefusal).toBeNull();
+    expect(facts.recentFinishedFeedings).toBeGreaterThan(0);
+  });
+
+  it('keeps a standing free-choice bowl visible past the effective end', () => {
+    // The arrangement read is an OVERLAP query, so narrowing its window is the
+    // same class of deletion: losing the bowl both flips the card's state and
+    // removes a reason the affirmative claim is withheld.
+    const facts = computeTrialFacts({
+      trial: TRIAL,
+      allowedFoods: [DUCK],
+      feedings: [feeding({ eventId: 'm1' })],
+      arrangements: [
+        { foodItemId: 'kibble', foodKey: 'genericchicken kibble', label: 'Generic Chicken Kibble', startedAt: '2026-07-05', endedAt: null },
+      ],
+      nowMs: Date.parse(at('2027-03-01')),
+    });
+    expect(facts.intakeNotDirectlyObserved).toBe(true);
+    expect(facts.intakeNotDirectlyObservedNow).toBe(true);
+    expect(facts.arrangementExposures).toHaveLength(1);
+    expect(mayClaimAllMatched(facts)).toBe(false);
+  });
+
+  it('renders a scoped report on an overrun trial instead of dropping the block', () => {
+    // A since-visit scope (rung 1) starting AFTER the trial's target end. The
+    // first cut clipped the range end below its own start, hit the early return,
+    // and `buildTrialBlock` dropped the ENTIRE trial section — taking an
+    // in-scope, in-window off-diet exposure with it.
+    const facts = computeTrialFacts({
+      trial: TRIAL,
+      allowedFoods: [DUCK],
+      feedings: [
+        feeding({
+          eventId: 'chicken',
+          occurredAt: at('2026-09-30'), // trial-day 92, inside the scope
+          foodItemId: 'chicken-treat',
+          foodKey: 'genericchicken strips',
+          label: 'Generic Chicken Strips',
+          foodType: 'treat',
+          proteins: ['chicken'],
+        }),
+      ],
+      scopeStart: '2026-09-29', // trial-day 91 — a vet visit
+      scopeEnd: '2026-10-04',
+      nowMs: Date.parse(at('2026-10-04')),
+    });
+    expect(facts.range).not.toBeNull();
+    expect(facts.exposures.offDiet).toBe(1);
+    expect(facts.range?.closedByOverrun).toBe(true);
   });
 });
 
 // ── The tail clip — the grace never reaches a denominator ────────────────────
 
 describe('the overrun tail clip', () => {
-  function facts(lastLogDay: string, nowDay: string) {
+  function facts(lastLogDay: string, nowDay: string, extra: TrialFeeding[] = []) {
     const feedings: TrialFeeding[] = [];
     const last = dayIndex(lastLogDay);
     for (let d = dayIndex('2026-07-01'); d <= last; d += 1) {
@@ -308,19 +383,18 @@ describe('the overrun tail clip', () => {
     return computeTrialFacts({
       trial: TRIAL,
       allowedFoods: [DUCK],
-      feedings,
+      feedings: [...feedings, ...extra],
       nowMs: Date.parse(at(nowDay)),
     });
   }
 
   it('denominates a perfectly-run, never-closed trial over its OWN 56 days', () => {
-    // THE CASE THAT DROVE THE DESIGN. Before the tail clip this rendered "56 of
-    // 84 days" — 67%, `partially_supports` instead of `supports` — on a trial
-    // that was run exactly as prescribed. On the vet report the harm is sharper
-    // than a percentage: a vet who prescribed eight weeks and reads a denominator
-    // of eighty-four concludes the owner ran a longer, sloppier trial than they
-    // did. The grace is a tolerance for the owner's SILENCE; it is not a claim
-    // that the diet continued, so it may not be counted as days they failed to log.
+    // THE CASE THAT DROVE THE CLIP. Without it this rendered "56 of 84 days" —
+    // 67%, `partially_supports` instead of `supports` — on a trial run exactly as
+    // prescribed. On the vet report the harm is sharper than a percentage: a vet
+    // who prescribed eight weeks and reads a longer denominator concludes the
+    // owner ran a longer, sloppier trial than they did. The grace is a tolerance
+    // for the owner's SILENCE; it is not a claim that the diet continued.
     const f = facts(LAST_TARGET_DAY, '2027-03-01');
     expect(f.coverage).toEqual({ daysLogged: 56, daysElapsed: 56, fraction: 1 });
     expect(f.interpretability).toBe('supports');
@@ -328,56 +402,84 @@ describe('the overrun tail clip', () => {
     expect(f.range?.closedByOverrun).toBe(true);
   });
 
+  it('is not moved by a single logged TREAT past the target', () => {
+    // The anchor is non-treat feedings, matching the head clip and the coverage
+    // numerator. Anchoring on every feeding — which the first cut did, to prove
+    // the clip could not drop an exposure — let ONE permitted duck treat on day
+    // 84 re-create the exact "56 of 84" harm above, and near the floor flip
+    // `belowCoverageFloor` on. That proof is no longer needed: the clip does not
+    // bound evidence at all now.
+    const treat = feeding({
+      eventId: 'treat-84',
+      occurredAt: at('2026-09-22'),
+      foodType: 'treat',
+    });
+    const f = facts(LAST_TARGET_DAY, '2027-03-01', [treat]);
+    expect(f.coverage).toEqual({ daysLogged: 56, daysElapsed: 56, fraction: 1 });
+    expect(f.interpretability).toBe('supports');
+    // …and the treat is still COUNTED, because evidence is never narrowed.
+    expect(f.exposures.totalFeedings).toBe(57);
+  });
+
   it('extends the window when the RECORD shows the trial outlived its target', () => {
-    // An owner still logging on day 70 was still running it on day 70. Those days
-    // are evidence, not inference, so they stay in — clipped at the last one.
+    // An owner still logging MEALS on day 70 was still running it on day 70.
     const f = facts('2026-09-08', '2027-03-01'); // day 70
     expect(f.coverage).toEqual({ daysLogged: 70, daysElapsed: 70, fraction: 1 });
   });
 
   it('never extends past the effective end, however long the logging runs', () => {
-    // Logging into November on a trial nobody ended: the record stops being
-    // evidence about THIS trial at the effective end. Day 84 = 22 Sep.
-    const f = facts('2026-11-01', '2026-11-02');
+    // An owner who keeps logging for a year must not accrue a year of
+    // denominator — that is the unbounded growth B-422 was filed for. Day 112 =
+    // 2026-10-20 = the effective end.
+    const f = facts('2026-12-31', '2027-03-01');
     expect(f.range?.endDayIndex).toBe(dayIndex(EFFECTIVE_END));
-    expect(f.coverage?.daysElapsed).toBe(84);
+    expect(f.coverage?.daysElapsed).toBe(112);
   });
 
   it('does not let a stopped record shrink the window below the prescribed target', () => {
-    // The inverse guard. Logging stopped on day 30 of 56 and today is day 60:
-    // the four days past the target drop (they are past the prescription), but
-    // days 31–56 are a GENUINE gap and must stay in the denominator.
-    const f = facts('2026-07-30', '2026-08-29'); // day 30 logged, day 60 today
+    // The inverse guard. Logging stopped on day 30 of 56 and today is day 60: the
+    // four days past the target drop (they are past the prescription), but days
+    // 31–56 are a GENUINE gap and stay in the denominator.
+    const f = facts('2026-07-30', '2026-08-29');
     expect(f.coverage).toEqual({ daysLogged: 30, daysElapsed: 56, fraction: 30 / 56 });
-    expect(f.belowCoverageFloor).toBe(false); // 53.6% — above COVERAGE_FLOOR, just
   });
 
-  it('cannot delete an off-diet exposure, because it anchors on EVERY feeding', () => {
-    // §5.2 rules the exposure count a FLOOR, and a clip that could drop a logged
-    // exposure would move it in the one direction it may never move. The tail
-    // anchor deliberately includes treats — the opposite of the head clip — which
-    // makes it provably unable to fall before any logged feeding.
+  it('leaves a DECLARED end alone — that window is the owner’s own assertion', () => {
+    // The clip is inference, and inference must not overwrite a fact the owner
+    // authored. Days between their last log and the end they named are genuine
+    // gaps, so `closedByOverrun` is false and nothing is clipped.
+    const f = computeTrialFacts({
+      trial: { ...TRIAL, endedAt: '2026-09-30' },
+      allowedFoods: [DUCK],
+      feedings: [feeding({ eventId: 'm1', occurredAt: at('2026-07-01') })],
+      nowMs: Date.parse(at('2026-11-01')),
+    });
+    expect(f.range?.endDayIndex).toBe(dayIndex('2026-09-30'));
+    expect(f.range?.closedByOverrun).toBe(false);
+  });
+
+  it('leaves a targetless trial unbounded, exactly as before', () => {
+    const f = computeTrialFacts({
+      trial: { ...TRIAL, targetDurationDays: 0 },
+      allowedFoods: [DUCK],
+      feedings: [feeding({ eventId: 'm1', occurredAt: at('2026-07-01') })],
+      nowMs: Date.parse(at('2026-12-01')),
+    });
+    expect(f.range?.endDayIndex).toBe(dayIndex('2026-12-01'));
+    expect(f.range?.closedByOverrun).toBe(false);
+  });
+
+  it('does not move the window at all before the target end', () => {
+    // Regression guard: nothing about an ordinary running trial changes. Day 10
+    // of 56, last logged on day 3 — days 4-10 are a real gap and stay in.
     const f = computeTrialFacts({
       trial: TRIAL,
       allowedFoods: [DUCK],
-      feedings: [
-        feeding({ eventId: 'meal-1', occurredAt: at('2026-07-01') }),
-        // A chicken treat on day 70 — past the target, inside the grace. The last
-        // MEAL was on day 1, so a non-treat anchor would have clipped this away.
-        feeding({
-          eventId: 'treat-70',
-          occurredAt: at('2026-09-08'),
-          foodItemId: 'chicken-treat',
-          foodKey: 'genericchicken strips',
-          label: 'Generic Chicken Strips',
-          foodType: 'treat',
-          proteins: ['chicken'],
-        }),
-      ],
-      nowMs: Date.parse(at('2027-03-01')),
+      feedings: [feeding({ eventId: 'm1', occurredAt: at('2026-07-03') })],
+      nowMs: Date.parse(at('2026-07-10')),
     });
-    expect(f.exposures.totalFeedings).toBe(2);
-    expect(f.exposures.offDiet).toBe(1);
-    expect(f.exposures.mostRecent?.label).toBe('Generic Chicken Strips');
+    expect(f.range?.endDayIndex).toBe(dayIndex('2026-07-10'));
+    expect(f.coverage).toEqual({ daysLogged: 1, daysElapsed: 8, fraction: 0.125 });
+    expect(f.range?.closedByOverrun).toBe(false);
   });
 });

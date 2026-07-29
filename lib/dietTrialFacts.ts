@@ -53,7 +53,6 @@ import { getDb } from './db';
 import {
   computeTrialFacts,
   mayStateRecordClean,
-  trialEffectiveEndDayIndex,
   trialFoodKey,
   type AllowedFood,
   type TrialArrangement,
@@ -216,19 +215,16 @@ export async function loadDietTrialFacts(args: {
   // cannot count toward how it was run, and an owner is not scored for days a
   // finished trial wasn't running.
   //
-  // B-422 — AND AN UN-ENDED TRIAL'S WINDOW CLOSES AT ITS EFFECTIVE END. The
-  // predicate applies that bound itself (`buildTrialContext`), so `endKey` here
-  // is only about how far the four SQL READS below should reach. It is derived
-  // from the module rather than recomputed: a read window wider than the
-  // predicate's is merely wasteful, but a NARROWER one silently deletes findings,
-  // and the two drifting apart is the whole class of bug `lib/dietTrial.ts`
-  // exists to prevent.
-  //
-  // It matters most for `readArrangements`, which is an OVERLAP query rather than
-  // a windowed scan: with no upper bound, a free-choice bowl set up months after
-  // an abandoned trial finished would still set `intakeNotDirectlyObserved` and
-  // withhold the claim over a window it never touched.
-  const readUntilKey = windowEndKey(row, trial.status, nowMs);
+  // B-422 DELIBERATELY DOES NOT NARROW THIS. The effective end bounds belief and
+  // one denominator; it never bounds evidence, so these reads must still reach
+  // today on a running-or-overrun trial. The first cut bounded them at the
+  // effective end and the adversarial pass priced it immediately: a cat refusing
+  // 38 of 38 rated bowls past a stale trial's effective end had those refusals
+  // never READ, `trialDietRefusal` went null, and the card rendered the clean
+  // two-fact presentation over an anorexic cat. An unread refusal is worse than a
+  // mis-scoped one — the module can decide what a finding means, but only if it
+  // is handed the finding.
+  const endKey = trial.status === 'active' ? null : row.ended_at;
 
   // The trial the PREDICATE sees. `species` drives rung 4's route rules;
   // `targetDurationDays` is what lets it derive the B-422 effective end for
@@ -247,9 +243,9 @@ export async function loadDietTrialFacts(args: {
   const [allowedFoods, feedings, doses, arrangements, decline, standingNote] =
     await Promise.all([
       readAllowedFoods(row.id),
-      readFeedings(pet.id, row.started_at, readUntilKey),
-      readDoses(pet.id, row.started_at, readUntilKey),
-      readArrangements(pet.id, row.started_at, readUntilKey),
+      readFeedings(pet.id, row.started_at, endKey),
+      readDoses(pet.id, row.started_at, endKey),
+      readArrangements(pet.id, row.started_at, endKey),
       readIntakeDecline(pet, nowMs),
       readStandingNote(pet.id, pet.name),
     ]);
@@ -426,35 +422,6 @@ function shiftDayKey(dayKey: string, deltaDays: number): string {
   return dayKeyFromIndex(index + deltaDays);
 }
 
-/**
- * How far the four predicate reads should reach — B-422.
- *
- * A terminal trial is bounded by its declared end, exactly as before. An ACTIVE
- * one is bounded by the module's effective end, and only once the calendar has
- * actually passed it: a trial still inside its grace has no upper bound, which
- * is the shipped behaviour and the right one (there is nothing above "now" to
- * exclude).
- *
- * The day index comes from `trialEffectiveEndDayIndex` rather than from
- * arithmetic here. Re-deriving `start + target - 1 + grace` at a call site is how
- * a second window definition gets born, and this file's whole contract is that
- * every JUDGEMENT lives in the module.
- */
-function windowEndKey(
-  row: TrialRow,
-  status: TrialCardTrial['status'],
-  nowMs: number,
-): string | null {
-  if (status !== 'active') return row.ended_at;
-  const effectiveEnd = trialEffectiveEndDayIndex({
-    startedAt: row.started_at,
-    targetDurationDays: row.target_duration_days,
-  });
-  if (effectiveEnd === null) return null;
-  const today = localDayIndexOf(new Date(nowMs).toISOString());
-  if (today === null || today <= effectiveEnd) return null;
-  return dayKeyFromIndex(effectiveEnd);
-}
 
 /** The trial's own local day key, whether the column arrived as a DATE or an ISO
  *  instant (the local mirror stores TEXT and both shapes exist in the wild). */

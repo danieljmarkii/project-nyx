@@ -196,6 +196,13 @@ export function buildWidgetSnapshot(
   // a bare JSC context with no imports and no clock of its own — see the widget
   // layout convention in CLAUDE.md).
   //
+  // SO THE WIDGET AND THE CARD DELIBERATELY DIVERGE HERE, and the divergence is
+  // the point rather than collateral: the Pet-tab card keeps an overrun trial
+  // forever because it carries the milestone — it is the one surface that can ACT
+  // on the overrun. The widget cannot. "Day 412 of 56" on a lock screen, with no
+  // way to resolve it, is noise on a glanceable surface, so it retires with the
+  // rows. (R6 punted the widget to a full design revamp — B-542; revisit there.)
+  //
   // `isTrialRunning` gets no `status` — `ACTIVE_DIET_TRIAL_QUERY` filters it in
   // SQL and does not select it back. It gets no `timeZone` either: the publisher
   // runs on the device, whose own zone IS the owner's midnight (B-421).

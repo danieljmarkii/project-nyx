@@ -988,22 +988,42 @@ Deno.test('selectReportTrial — a stale-active trial loses to a real ended one'
 
 Deno.test('selectReportTrial — a stale-active trial ages out of the grace like an ended one', () => {
   const scope = { startDayNum: 20620, endDayNum: 20657 }
-  // Target ends 2026-06-25, effective end 2026-07-23 — one day past the window,
-  // so it is still RUNNING and still the report's subject.
-  const running = { id: 't', startedAt: '2026-04-30', targetDurationDays: 57, status: 'active', completedAt: null, endedAt: null, vetName: null }
+  // Effective end 2026-07-23 — the window's own last day, so it is still RUNNING
+  // and still the report's subject.
+  const running = { id: 't', startedAt: '2026-04-02', targetDurationDays: 57, status: 'active', completedAt: null, endedAt: null, vetName: null }
   assert.equal(selectReportTrial([running], scope, TZ)?.id, 't')
 
   // Effective end 2026-07-09 — fourteen days before the window end, exactly on
   // the default grace boundary: still the subject.
-  const justAged = { id: 't', startedAt: '2026-04-16', targetDurationDays: 57, status: 'active', completedAt: null, endedAt: null, vetName: null }
+  const justAged = { id: 't', startedAt: '2026-03-19', targetDurationDays: 57, status: 'active', completedAt: null, endedAt: null, vetName: null }
   assert.equal(selectReportTrial([justAged], scope, TZ)?.id, 't')
 
   // One day further out and the ended-trial grace drops it, exactly as it would
   // drop a trial the owner had completed on the same day. That is the property
   // that keeps this ONE grace rather than two: an overrun trial IS a trial that
   // ended on its effective end.
-  const aged = { id: 't', startedAt: '2026-04-15', targetDurationDays: 57, status: 'active', completedAt: null, endedAt: null, vetName: null }
+  const aged = { id: 't', startedAt: '2026-03-18', targetDurationDays: 57, status: 'active', completedAt: null, endedAt: null, vetName: null }
   assert.equal(selectReportTrial([aged], scope, TZ), null)
+})
+
+Deno.test("B-422 — the report's trial block survives ACVIM's 12-week GI course", () => {
+  // THE CLINICAL COUNTEREXAMPLE THAT SET `TRIAL_OVERRUN_GRACE_DAYS`. P-1's
+  // dog·gut default is 28 days; ACVIM 2026 says continue >=12 weeks (day 84)
+  // before transitioning away. At a 28-day grace the effective end fell on day
+  // 56, and fourteen days later `selectReportTrial` dropped the trial — so the
+  // report's own FIRST question, "is this diet trial working?", went unanswered
+  // in the middle of the intervention, on the exact population the wedge exists
+  // for. At 56 the effective end IS day 84, and the anchor grace carries it past.
+  //
+  // Trial starts 2026-05-01. Day 84 = 2026-07-23 = the effective end.
+  const gi = { id: 'gi', startedAt: '2026-05-01', targetDurationDays: 28, status: 'active', completedAt: null, endedAt: null, vetName: null }
+  const windowEndingOn = (dayNum: number) => ({ startDayNum: dayNum - 89, endDayNum: dayNum })
+  // 20657 = 2026-07-23 (day 84, the last day of the ACVIM course).
+  assert.equal(selectReportTrial([gi], windowEndingOn(20657), TZ)?.id, 'gi', 'day 84 — mid-course')
+  assert.equal(selectReportTrial([gi], windowEndingOn(20643), TZ)?.id, 'gi', 'day 70')
+  // Past the course, the ended-trial grace still carries it for its usual 14 days
+  // (B-538 lengthens that to 90; this holds either way).
+  assert.equal(selectReportTrial([gi], windowEndingOn(20671), TZ)?.id, 'gi', 'day 98')
 })
 
 Deno.test('selectReportTrial — a targetless trial still runs indefinitely', () => {

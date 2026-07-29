@@ -76,16 +76,17 @@ Deno.test('computeResetsAt (signal) — UTC day / month boundaries', () => {
 Deno.test('B-422 — isTrialRunning is the gate generate-signal reads, and it resolves under Deno', async () => {
   const { isTrialRunning, TRIAL_OVERRUN_GRACE_DAYS } = await import('../../../lib/dietTrial.ts')
   // Day 1 on 2026-01-01 with a 28-day target: target ends 2026-01-28, grace ends
-  // 2026-02-25. The handler passes no `status` — the query filters it in SQL.
+  // 2026-03-25. The handler passes no `status` — the query filters it in SQL.
   const trial = { startedAt: '2026-01-01', targetDurationDays: 28 }
-  assertStrictEquals(TRIAL_OVERRUN_GRACE_DAYS, 28)
+  assertStrictEquals(TRIAL_OVERRUN_GRACE_DAYS, 56)
   assertStrictEquals(isTrialRunning(trial, Date.parse('2026-01-15T12:00:00Z')), true)
-  assertStrictEquals(isTrialRunning(trial, Date.parse('2026-02-25T12:00:00Z')), true)
-  assertStrictEquals(isTrialRunning(trial, Date.parse('2026-02-26T12:00:00Z')), false)
+  // Day 84 — ACVIM's >=12-week GI ceiling, which the grace is sized to cover.
+  assertStrictEquals(isTrialRunning(trial, Date.parse('2026-03-25T12:00:00Z')), true)
+  assertStrictEquals(isTrialRunning(trial, Date.parse('2026-03-26T12:00:00Z')), false)
   assertStrictEquals(isTrialRunning(trial, Date.parse('2026-07-24T12:00:00Z')), false)
   // The owner's zone, as the handler passes it — a DATE-only start is a calendar
   // day, so the widget, the report and the engine cannot disagree about staleness.
-  assertStrictEquals(isTrialRunning(trial, Date.parse('2026-02-26T12:00:00Z'), 'Pacific/Auckland'), false)
+  assertStrictEquals(isTrialRunning(trial, Date.parse('2026-03-26T12:00:00Z'), 'Pacific/Auckland'), false)
   // No target ⇒ no window to overrun ⇒ the flag stays on, as it did before.
   assertStrictEquals(
     isTrialRunning({ startedAt: '2026-01-01', targetDurationDays: 0 }, Date.parse('2027-01-01T12:00:00Z')),

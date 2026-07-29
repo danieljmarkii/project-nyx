@@ -188,8 +188,33 @@ export interface TrialArrangement {
 //
 // ── WHAT THIS DOES *NOT* DO ─────────────────────────────────────────────────
 //
-// The effective end closes the trial's MEASUREMENT AND BEHAVIOUR window. It does
-// not end the trial and it must never remove the card. §4.3 is explicit that the
+// IT BOUNDS BELIEF AND ONE DENOMINATOR. IT NEVER BOUNDS EVIDENCE — and this is
+// the line the first cut of B-422 got wrong, so it is stated before anything
+// else. That version applied the effective end to `buildTrialContext.endDayIndex`
+// (which `isInTrialWindow` reads) and to the card's SQL reads, so the app stopped
+// SEEING the record on a trial nobody ended. An `adversarial-reviewer` pass
+// turned that single decision into four reassurance-direction failures:
+//
+//   • a cat refusing 38 of 38 rated bowls past the effective end had those
+//     refusals never read — `trialDietRefusal` went null, coverage read 100%,
+//     and `mayStateRecordClean` flipped FALSE → TRUE, so the card rendered the
+//     clean two-fact presentation over an anorexic cat;
+//   • a flavoured chewable logged after the last meal was dropped from the dose
+//     loop, and because `oralRoute` is one of the five withholding clauses,
+//     losing it turned silence into an affirmative "all N matched" claim;
+//   • a since-visit report scope starting past the target end collapsed the
+//     range below its own start, so `buildTrialBlock` returned null and the
+//     whole trial section vanished — with an in-scope off-diet exposure in it;
+//   • the present-tense refusal register spoke from data four months stale,
+//     because its recency window was anchored on the clipped end.
+//
+// Every one of those DELETED A LOGGED FINDING to make a denominator behave, and
+// §5.2 rules the exposure count a floor that may only ever move toward
+// disclosing more. So: the effective end reaches `isTrialRunning` (belief) and
+// `computeTrialFacts`'s coverage tail clip (one denominator), and nothing else.
+//
+// It also does not end the trial, and it must never remove the card. §4.3 is
+// explicit that the
 // milestone "never expires and re-surfaces until acted on" — the Pet-tab card is
 // the ONLY way an owner can tell Culprit the trial is done, so a card that
 // forgot an overrun trial would strand the record in the exact state this
@@ -210,28 +235,37 @@ export interface TrialArrangement {
 /**
  * How long past its own target an un-ended trial is still treated as running.
  *
- * TWENTY-EIGHT DAYS, and the number is derived rather than picked:
+ * FIFTY-SIX DAYS, and the number is derived from the CLINIC rather than from the
+ * UI. The first cut used 28 — sized off §4.3's named one-tap extensions (+28d
+ * skin / +14d GI) on the reasoning that the grace must outlast the extension the
+ * owner meant to tap — and the adversarial pass showed that argument sizes the
+ * grace off the SKIN case and then applies it to a GI trial whose real shortfall
+ * is twice as long:
  *
- *  • §4.3's milestone offers a NAMED one-tap extension — +28d for skin, +14d for
- *    GI. A grace shorter than the longest of those would cut off exactly the
- *    owner who means to keep going and has not tapped yet, which is the one
- *    population a staleness rule may not punish.
- *  • 28d is also the shortest whole trial in the P-1 duration table (dog·gut), so
- *    the tolerated overrun never exceeds one complete additional trial.
+ *   dog·gut default = 28d (P-1) · ACVIM 2026: continue ≥12 weeks before
+ *   transitioning away = 84 days = target + 56.
  *
- * The failure it deliberately accepts: an owner on the 28d GI default whose vet
- * asked for ACVIM's ≥12 weeks, who ignores the milestone for four straight
- * weeks, loses trial BEHAVIOUR at day 56 of an 84-day course. That degrades
- * gracefully rather than cliff-edging — the trial is then treated as having
- * ended at its effective end, so `selectReportTrial`'s ended-trial grace still
- * anchors the report on it, and the card still shows the overrun state and the
- * milestone. The sanctioned way to move the window is the extension tap, which
- * moves `target_duration_days` and therefore moves this for every reader at once.
+ * At 28 the app stopped believing that trial on day 56 of a course a vet had
+ * asked to run to day 84 — and the observable was not a soft degradation: the
+ * vet report's trial block VANISHED at day 71 (effective end + the 14-day
+ * `TRIAL_ANCHOR_GRACE_DAYS`), so the report's own first question, "is this diet
+ * trial working?", went unanswered in the middle of the intervention.
+ *
+ * 56 covers every cell in the P-1 table against its own clinical ceiling:
+ * dog·gut 28→84, cat·gut 42→98, dog·skin and cat·skin 56→112 (against an 8–12
+ * week band that tops out at 84). The accepted cost is the other direction, and
+ * it is bounded where it used to be unbounded: an ABANDONED trial keeps its
+ * widget one-tap row and its detector suppressions for up to eight weeks past
+ * its target instead of forever.
+ *
+ * The sanctioned way to move the window is still the extension tap, which moves
+ * `target_duration_days` and therefore moves this for every reader at once.
  *
  * PROVISIONAL, in the sense §0.4 uses: a clinical tolerance, flagged for Dr.
- * Chen. It is a lookup constant — no schema, no migration, no stored value.
+ * Chen (B-593). It is a lookup constant — no schema, no migration, no stored
+ * value.
  */
-export const TRIAL_OVERRUN_GRACE_DAYS = 28;
+export const TRIAL_OVERRUN_GRACE_DAYS = 56;
 
 /**
  * The last local day on which an un-ended trial is still treated as running.
@@ -346,29 +380,29 @@ export function buildTrialContext(
   opts?: { timeZone?: string },
 ): TrialContext {
   const timeZone = opts?.timeZone;
-  // THE EARLIER OF THE TWO ENDS, and the effective end caps a declared one too.
-  //
-  // An owner who taps "This trial is done" on day 300 of a 56-day trial has
-  // authored a real fact about the paperwork, not about the diet — taking
-  // `ended_at` at face value there re-admits the unbounded denominator B-422
-  // exists to close, just deferred to the moment of the tap. Capping both is also
-  // what makes an active-past-its-end trial and an ended one behave IDENTICALLY,
-  // which is the property that stops this becoming a second window definition
-  // sitting beside `selectReportTrial`'s ended-trial grace.
-  //
-  // A declared end EARLIER than the effective end always wins: stopping early is
-  // the owner telling us the diet stopped, and that is exactly what this bound is
-  // trying to approximate in their silence.
-  const bounds = [
-    trial.endedAt ? localDayIndexOf(trial.endedAt, timeZone) : null,
-    trialEffectiveEndDayIndex(trial, timeZone),
-  ].filter((v): v is number => v !== null);
   return {
     trial,
     allowedFoods,
     species: trial.species ?? 'other',
     startDayIndex: localDayIndexOf(trial.startedAt, timeZone),
-    endDayIndex: bounds.length > 0 ? Math.min(...bounds) : null,
+    // THE DECLARED END ONLY — the B-422 effective end deliberately does NOT
+    // appear here, and the first cut of B-422 put it here and was wrong.
+    //
+    // This bound feeds `isInTrialWindow`, which gates `classifyFeeding`,
+    // `classifyDose`, `allowedFoodsOn` and `arrangementExposures` — i.e. it
+    // decides what the app is allowed to SEE. Capping it at the effective end
+    // made the app stop reading the record on a trial nobody ended, and the
+    // adversarial pass priced that immediately: a cat refusing 38 of 38 rated
+    // bowls across 19 days, past a stale trial's effective end, had
+    // `trialDietRefusal` go null and `mayStateRecordClean` flip FALSE → TRUE.
+    // The card then rendered the clean two-fact presentation over an anorexic
+    // cat — reassurance-on-absence, produced by the fix.
+    //
+    // The effective end bounds BELIEF (`isTrialRunning`, read by the widget, the
+    // Signal engine, the report's trial selection and the contaminant context)
+    // and it bounds ONE DENOMINATOR (`computeTrialFacts`'s coverage end). It
+    // never bounds evidence.
+    endDayIndex: trial.endedAt ? localDayIndexOf(trial.endedAt, timeZone) : null,
     timeZone,
   };
 }
@@ -1592,49 +1626,16 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
   const upperBounds = [todayIndex, ctx.endDayIndex, scopeEndIndex].filter(
     (v): v is number => v !== null,
   );
-  const provisionalEnd = Math.min(...upperBounds);
-  if (provisionalEnd < scopedStart) return base;
-
-  // ── B-422 — THE TAIL CLIP: the grace may never reach a denominator ──────────
+  // ── THE EVIDENCE END ────────────────────────────────────────────────────────
   //
-  // `ctx.endDayIndex` now carries the effective end (target + 28d), which is how
-  // long we keep BELIEVING an un-ended trial is running. Using that same value as
-  // the coverage denominator charges the owner for our own inference: a trial run
-  // perfectly for its prescribed 56 days and then simply never closed rendered
-  // "logged on 56 of 84 days" — 67%, `partially_supports` instead of `supports`,
-  // on a trial that was run properly. Worse on the artifact that matters: a vet
-  // who prescribed eight weeks and reads a denominator of eighty-four concludes
-  // the owner ran a longer, sloppier trial than they did. The grace is a
-  // tolerance for the owner's silence, not a claim about the diet.
-  //
-  // So the window closes at the TARGET end, unless the record shows the trial
-  // outlived it. `lastFeedingDay` is that evidence: an owner still logging on day
-  // 70 was still running it on day 70, and those days are real.
-  //
-  // THE ANCHOR IS EVERY FEEDING, TREATS INCLUDED — the opposite of the head
-  // clip's non-treat anchor, and both directions are the safe one. The head clip
-  // SHRINKS the denominator, so a treat must not be allowed to erase untracked
-  // days; the tail clip GROWS it back toward today, so including treats can only
-  // make coverage stricter. It also makes the clip provably unable to delete an
-  // exposure: every logged feeding in range falls on or before `lastFeedingDay`,
-  // therefore on or before the clip, so unlike the head clip this one CAN bound
-  // the feeding loop without dropping a §5.2 floor item.
-  //
-  // Only for a trial nobody ended, and only past the target: a declared end is
-  // the owner's own window, and days between their last log and their declared
-  // end are genuine gaps, not inference.
-  const targetEnd = trialTargetEndDayIndex(ctx.trial, input.timeZone);
-  const overrunUnended =
-    !ctx.trial.endedAt && targetEnd !== null && provisionalEnd > targetEnd;
-  let endDayIndex = provisionalEnd;
-  if (overrunUnended && targetEnd !== null) {
-    const feedingDays = input.feedings
-      .map((f) => dayIndexOf(ctx, f.occurredAt))
-      .filter((d): d is number => d !== null && d >= scopedStart && d <= provisionalEnd);
-    const lastFeedingDay = feedingDays.length > 0 ? Math.max(...feedingDays) : targetEnd;
-    endDayIndex = Math.min(provisionalEnd, Math.max(targetEnd, lastFeedingDay));
-  }
-  if (endDayIndex < scopedStart) return base;
+  // What the app is allowed to SEE: today, the declared end, the report scope.
+  // The B-422 effective end is deliberately absent — see `buildTrialContext`.
+  // Every count below (feedings, doses, arrangements, both refusal populations)
+  // is bounded by THIS, so no logged finding is ever deleted to make a
+  // denominator behave. §5.2 rules the exposure count a floor, and a floor may
+  // only ever move toward disclosing more.
+  const evidenceEnd = Math.min(...upperBounds);
+  if (evidenceEnd < scopedStart) return base;
 
   // §10 S3 — COVERAGE REPORTS FROM `max(trial start, first log)`, and the
   // pre-adoption span is NAMED AS UNTRACKED rather than counted as failure.
@@ -1658,10 +1659,51 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
   const loggedDays = input.feedings
     .filter((f) => f.foodType !== 'treat')
     .map((f) => dayIndexOf(ctx, f.occurredAt))
-    .filter((d): d is number => d !== null && d >= scopedStart && d <= endDayIndex);
+    .filter((d): d is number => d !== null && d >= scopedStart && d <= evidenceEnd);
   const firstLoggedDay = loggedDays.length > 0 ? Math.min(...loggedDays) : null;
   const startDayIndex = firstLoggedDay ?? scopedStart;
   const untrackedDaysBeforeFirstLog = startDayIndex - scopedStart;
+
+  // ── B-422 — THE TAIL CLIP: the grace may never reach a denominator ──────────
+  //
+  // The COVERAGE denominator alone stops at the trial's own prescribed window.
+  // Denominating over the effective end instead charges the owner for our
+  // inference: a trial run perfectly for its prescribed 56 days and then simply
+  // never closed rendered "logged on 56 of 84 days" — 67%, `partially_supports`
+  // instead of `supports`. On the artifact that matters the harm is sharper than
+  // a percentage: a vet who prescribed eight weeks and reads a denominator of
+  // eighty-four concludes the owner ran a longer, sloppier trial than they did.
+  //
+  // The window closes at the TARGET end unless the record shows the trial
+  // outlived it — an owner still logging MEALS on day 70 was still running it on
+  // day 70 — and never past the effective end, which is the whole point (an
+  // owner who keeps logging for a year must not accrue a year of denominator).
+  //
+  // THE ANCHOR IS NON-TREAT FEEDINGS, matching the head clip and the coverage
+  // NUMERATOR. The first cut anchored on every feeding, to prove the clip could
+  // not drop an exposure — an argument that no longer applies (the clip does not
+  // bound evidence any more) and that cost more than it bought: the adversarial
+  // pass showed ONE permitted duck treat logged on day 84 re-creating the exact
+  // "56 of 84" harm above, and near the floor flipping `belowCoverageFloor` on.
+  // The head clip's own docstring rejects the all-feeding anchor for the mirror
+  // of that reason; the two clips now agree.
+  //
+  // Only for a trial nobody ended: a declared end is the owner's own window, and
+  // days between their last log and the end they named are genuine gaps rather
+  // than inference. And only when the target end is inside the range at all —
+  // when a report scope starts AFTER the target end (a since-visit window on an
+  // old trial) the scope is already the binding constraint, and clipping there
+  // collapsed the range below its own start and returned NO TRIAL BLOCK AT ALL,
+  // taking an in-scope off-diet exposure with it.
+  const targetEnd = trialTargetEndDayIndex(ctx.trial, input.timeZone);
+  const effectiveEnd = trialEffectiveEndDayIndex(ctx.trial, input.timeZone);
+  const overrunUnended = !ctx.trial.endedAt && targetEnd !== null && evidenceEnd > targetEnd;
+  let endDayIndex = evidenceEnd;
+  if (overrunUnended && targetEnd !== null && effectiveEnd !== null && targetEnd >= scopedStart) {
+    const lastMealDay = loggedDays.length > 0 ? Math.max(...loggedDays) : targetEnd;
+    const tail = Math.min(Math.max(targetEnd, lastMealDay), effectiveEnd);
+    endDayIndex = Math.min(evidenceEnd, Math.max(scopedStart, tail));
+  }
 
   // THE CLIP MOVES THE COVERAGE DENOMINATOR ONLY — it must not move the exposure
   // window. §5.1's whole point is that the two metrics have their OWN
@@ -1669,16 +1711,17 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
   // feedings over feedings. Letting the clip bound the feeding loop as well would
   // silently DROP a treat fed on day 2 of a trial whose first meal was logged on
   // day 3 — a real logged exposure, deleted from a count §5.2 rules a floor,
-  // which is the one direction a floor may never move.
+  // which is the one direction a floor may never move. That was already true of
+  // the head clip; B-422's tail clip inherits it, which is why every loop below
+  // bounds on `evidenceEnd` and only `range`/`coverage` use `endDayIndex`.
   const range: TrialRange = {
     startDayIndex,
     endDayIndex,
     daysElapsed: endDayIndex - startDayIndex + 1,
     clipped: startDayIndex > ctx.startDayIndex,
-    // B-422 — the range is the trial's own window and the calendar has moved past
-    // it, on a trial nobody ended. `overrunUnended` is computed off
-    // `provisionalEnd`, which is `min(today, …)`, so this is exactly "un-ended,
-    // has a target, past it".
+    // B-422 — un-ended, has a target, and the calendar has moved past it. True
+    // even when the clip itself did nothing (a scope starting past the target),
+    // because it describes the TRIAL's state, which is what a surface discloses.
     closedByOverrun: overrunUnended,
   };
   const exposureStart = scopedStart;
@@ -1697,11 +1740,18 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
   const narrow = emptyRefusalCounters();
   const wide = emptyRefusalCounters();
   // The viability fact is about the pet NOW, not about the whole trial.
-  const refusalWindowStart = Math.max(startDayIndex, endDayIndex - REFUSAL_WINDOW_DAYS + 1);
+  // ANCHORED ON THE EVIDENCE END, NOT THE COVERAGE END (B-422). This comment's
+  // claim — the fact is about the pet NOW — is only true if "now" is the last day
+  // the app can see. Anchoring it on the clipped coverage end instead let the
+  // present-tense viability register ("this diet isn't being eaten", "needs a call
+  // today") speak from data four months stale, on a cat that had recovered and
+  // eaten every bowl since — and structurally excluded the `recentFinished`
+  // evidence that is the register's own way to stand down.
+  const refusalWindowStart = Math.max(startDayIndex, evidenceEnd - REFUSAL_WINDOW_DAYS + 1);
 
   for (const feeding of input.feedings) {
     const day = dayIndexOf(ctx, feeding.occurredAt);
-    if (day === null || day < exposureStart || day > endDayIndex) continue;
+    if (day === null || day < exposureStart || day > evidenceEnd) continue;
 
     // Coverage numerator — NON-TREAT feedings only (§5.1). On live data 82% of
     // feedings are treats, so a "days with food logged" count is clearable
@@ -1782,7 +1832,7 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
   const oralRoute: OralRouteExposure[] = [];
   for (const dose of input.doses ?? []) {
     const day = dayIndexOf(ctx, dose.occurredAt);
-    if (day === null || day < exposureStart || day > endDayIndex) continue;
+    if (day === null || day < exposureStart || day > evidenceEnd) continue;
     const hit = classifyDose(ctx, dose);
     if (hit) oralRoute.push(hit);
   }
@@ -1912,10 +1962,13 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
     // feedings is evidence of a cold cache rather than of adherence.
     // Resolved above, because B-530's population choice reads it.
     allowedSetUnavailable,
-    // In force AT THE END of the range — the present-tense question.
+    // In force AT THE END of the range — the present-tense question, so it too
+    // asks about the EVIDENCE end rather than the clipped coverage end (B-422):
+    // a bowl removed after the target end is a fact the app can see, and a
+    // present-tense flag must not be answered from a date in the past.
     intakeNotDirectlyObservedNow: (input.arrangements ?? []).some((a) => {
       const end = a.endedAt ? localDayIndexOf(a.endedAt, input.timeZone) : null;
-      return end === null || end >= endDayIndex;
+      return end === null || end >= evidenceEnd;
     }),
   };
 }
