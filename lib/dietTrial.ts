@@ -298,6 +298,14 @@ export function sanctionedProteinsOn(ctx: TrialContext, dayIndex: number): Set<s
     // sanctioned set can then come back EMPTY, which disables the protein arm and
     // fires `trialDietNote`'s B9 disclosure — silence plus a sentence, never a
     // confident wrong answer (D10).
+    // ONE PREDICATE, not three. The third adversarial pass found the split: this
+    // asked `canonicalizeProtein != null` while `isUncharacterizedTrialDiet` had
+    // moved to `proteinSourceBase != null`, so a bare-process primary was
+    // "uncharacterized" for the disclosure and "characterized" here. The page
+    // then printed "no main protein on file" and "the trial diet also lists
+    // Chicken and Soy" ONE ROW APART — R7's own defect #1, computed from the
+    // comparator the row above disclaims.
+    if (isUncharacterizedTrialDiet(food)) continue;
     const primary = canonicalizeProtein(food.primaryProtein);
     if (!primary) continue;
     // The designated primary is part of the diet even on a row whose array was
@@ -352,6 +360,19 @@ export function sanctionedProteinsOn(ctx: TrialContext, dayIndex: number): Set<s
  * silence to cover it would darken the antigen tally on nearly every real trial
  * and buy nothing this defect is about.
  */
+/** Distinct allowed-set rows, first occurrence wins — the labels a disclosure
+ *  names, deduped across the days it was collected from. */
+function dedupeAllowedFoods(foods: readonly AllowedFood[]): AllowedFood[] {
+  const seen = new Set<string>();
+  const out: AllowedFood[] = [];
+  for (const f of foods) {
+    if (seen.has(f.foodItemId)) continue;
+    seen.add(f.foodItemId);
+    out.push(f);
+  }
+  return out;
+}
+
 export function isUncharacterizedTrialDiet(food: AllowedFood): boolean {
   if (food.role !== 'primary_diet') return false;
   // A PROCESS WORD IS NOT A DESIGNATION. `canonicalizeProtein('hydrolyzed')` is
@@ -531,6 +552,20 @@ export interface FeedingClassification {
   matchedBy: 'food_id' | 'food_key' | null;
   /** The allowed-set row that permitted it, for copy. */
   permittedBy: AllowedFood | null;
+  /**
+   * Was the antigen arm actually CONSULTED for this feeding? (B-529/R7(c).)
+   *
+   * False means the arm was dark — `antigens: []` here is "we did not check",
+   * NOT "we checked and found nothing". The distinction is invisible in the
+   * array itself, and the third adversarial pass executed what that costs: the
+   * vet report's appendix C renders a per-row reason, and its rung-3 branch says
+   * "its label carries nothing the trial diet does not" whenever the panel was
+   * read — an affirmative all-clear that the silence rule made reachable for
+   * feedings nothing had examined. A correct `Chicken ×5 / "Protein not in the
+   * trial diet"` became `[] / "carries nothing the trial diet does not"` on
+   * byte-identical input. Any surface rendering a REASON must gate on this.
+   */
+  attributionChecked: boolean;
 }
 
 /**
@@ -649,6 +684,9 @@ export function classifyFeeding(
       role: hit.food.role,
       matchedBy: hit.matchedBy,
       permittedBy: hit.food,
+      // Rung 1 consults the arm unless THIS feeding's own permitting food is the
+      // uncharacterized one (the per-food scoping from the first repair).
+      attributionChecked: canAttribute && !isUncharacterizedTrialDiet(hit.food),
     };
   }
 
@@ -676,21 +714,30 @@ export function classifyFeeding(
       role: null,
       matchedBy: null,
       permittedBy: null,
+      attributionChecked: canAttributeUnrecognised,
     };
   }
 
   // Rung 3 — the modal case on a real library.
-  return blank('off_diet_unrecognised', 'unrecognised', { offDiet: true });
+  return blank('off_diet_unrecognised', 'unrecognised', {
+    offDiet: true,
+    attributionChecked: canAttributeUnrecognised,
+  });
 }
 
 function blank(
   verdict: FeedingVerdict,
   rung: ClassificationRung,
-  over: { offDiet?: boolean; countsAsFeeding?: boolean } = {},
+  over: { offDiet?: boolean; countsAsFeeding?: boolean; attributionChecked?: boolean } = {},
 ): FeedingClassification {
   return {
     verdict,
     rung,
+    // Default TRUE for the rungs that never consult the arm (out-of-window, no
+    // identity): there is no dark-arm claim to qualify. Rung 3 passes it
+    // explicitly, because that is the rung whose copy makes an affirmative
+    // statement about what the label carries.
+    attributionChecked: over.attributionChecked ?? true,
     offDiet: over.offDiet ?? false,
     countsAsFeeding: over.countsAsFeeding ?? true,
     antigens: [],
@@ -823,6 +870,10 @@ export interface ContaminationFact {
 export function trialContamination(ctx: TrialContext): ContaminationFact[] {
   const out: ContaminationFact[] = [];
   for (const food of ctx.allowedFoods) {
+    // Same one predicate as `sanctionedProteinsOn` (see the note there): a food
+    // whose primary names no SOURCE has no usable comparator, so "everything in
+    // it is extra" is an artefact, not a finding.
+    if (isUncharacterizedTrialDiet(food)) continue;
     const intended = canonicalizeProtein(food.primaryProtein);
     if (!intended) continue;
     // B-529/R7. A hydrolysed prescription diet lists its own source twice — the
@@ -896,6 +947,9 @@ export function arrangementExposures(
 
 export interface TrialRange {
   startDayIndex: number;
+  /** The day exposures are counted from — the scope head, NOT the first-logged
+   *  clip. See the note where it is set. */
+  exposureStartDayIndex: number;
   endDayIndex: number;
   daysElapsed: number;
   /** True when the range starts later than the trial did — i.e. a report scope
@@ -1478,6 +1532,12 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
   // which is the one direction a floor may never move.
   const range: TrialRange = {
     startDayIndex,
+    // The head exposures are COUNTED from — deliberately not moved by the
+    // first-log clip. Exported because every consumer that re-walks the feedings
+    // (the report's appendix-C adapter) must use the same bound the aggregates
+    // were computed with, or page 1 and the appendix disagree about how many
+    // exposures exist.
+    exposureStartDayIndex: scopedStart,
     endDayIndex,
     daysElapsed: endDayIndex - startDayIndex + 1,
     clipped: startDayIndex > ctx.startDayIndex,
@@ -1485,6 +1545,14 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
   const exposureStart = scopedStart;
 
   const coveredDays = new Set<number>();
+  // B-529/R7(c): the days where the arm was actually DARK for a feeding we
+  // classified. The disclosure is derived from this rather than from membership
+  // overlap — the third adversarial pass found that overlap alone made a
+  // 32-of-32-days-logged, zero-off-diet trial lose its clean read for its whole
+  // life because one allowed row sat on the list for ONE day with no main
+  // protein and no feeding anywhere near it. A disclosure has to describe a gap
+  // that exists in the record, not one that could have existed.
+  const darkDays = new Set<number>();
   const items: TrialExposureItem[] = [];
   const antigens = new Map<string, AntigenTallyEntry>();
   let totalFeedings = 0;
@@ -1556,6 +1624,18 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
       unclassifiable += 1;
       continue;
     }
+    // THE ARM WAS OPERATING ON A PARTIAL VIEW — which is broader than "this
+    // feeding was silenced", and deliberately so. An uncharacterized
+    // `primary_diet` food is dropped from the sanctioned set, and that cuts two
+    // ways: it SILENCES some feedings (rung 2, and the food's own rung-1 hits)
+    // and it can FALSELY FLAG others (a permitted treat whose protein is in the
+    // undesignated trial food but not in the sanctioned set tallies as an
+    // antigen it should not). Deriving the disclosure from silence alone would
+    // leave the false-positive half undisclosed. Keyed on days that actually
+    // carry a classified feeding, which is what stops it firing over a row that
+    // sat on the list for one day with nothing fed near it.
+    const d = dayIndexOf(ctx, feeding.occurredAt);
+    if (d !== null && uncharacterizedTrialDietFoods(ctx, d).length > 0) darkDays.add(d);
     if (!classification.countsAsFeeding) continue;
 
     // THE PREDICATE IS "NOT FINISHED", NOT "REFUSED". `refused` alone misses the
@@ -1711,10 +1791,14 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
     // which is the exact composition the previous repair existed to prevent,
     // re-entered through the window boundary instead of the global flag.
     // The two ranges must be the same range.
-    antigenAttributionPaused: uncharacterizedTrialDietFoodsInRange(
-      ctx,
-      exposureStart,
-      endDayIndex,
+    // Derived from the days the arm was ACTUALLY dark for a classified feeding,
+    // deduped by allowed-row. Two properties this buys that a range/overlap test
+    // does not: it cannot fire on a trial where nothing was ever silenced (the
+    // noise the third pass measured), and it cannot MISS a silenced feeding,
+    // because it is computed from the same loop that silenced it — which is what
+    // the previous two range mismatches both got wrong.
+    antigenAttributionPaused: dedupeAllowedFoods(
+      [...darkDays].flatMap((d) => uncharacterizedTrialDietFoods(ctx, d)),
     ),
     // In force AT THE END of the range — the present-tense question.
     intakeNotDirectlyObservedNow: (input.arrangements ?? []).some((a) => {

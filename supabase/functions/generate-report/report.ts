@@ -1376,6 +1376,9 @@ export interface ConfounderExposure {
   /** The food's ingredient panel WAS captured, so a rung-3 verdict means "read, and
    *  nothing in it is outside the trial diet" rather than "we never looked". */
   panelWasRead?: boolean
+  /** B-529/R7(c) — the antigen arm was consulted for this feeding. Absent on a
+   *  heuristic (non-trial) report, where there is no arm to be dark. */
+  attributionChecked?: boolean
   /** This same food became permitted on a LATER date, so the row is here because the
    *  feeding predates permission — the reason that outranks the rung. */
   permittedLaterFrom?: string | null
@@ -2784,6 +2787,7 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
       antigens: x?.classification.antigens ?? [],
       symptomInChallengeWindow: x?.symptomInChallengeWindow ?? false,
       panelWasRead: x?.panelWasRead ?? false,
+      attributionChecked: x?.attributionChecked ?? true,
       permittedLaterFrom: x?.permittedLaterFrom ?? null,
     }
   })

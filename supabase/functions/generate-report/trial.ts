@@ -285,6 +285,11 @@ export interface TrialExposure {
    * it, and it hides the duplicate the vet most needs to spot.
    */
   panelWasRead: boolean
+  /** B-529/R7(c) — was the antigen arm actually consulted for this feeding? The
+   *  "Why it's here" column asserts an all-clear on rung 3 when a panel was read,
+   *  and that inference is only valid if something looked. False means "not
+   *  checked", which is a different sentence. */
+  attributionChecked: boolean
   /**
    * The date this same food *did* become permitted, when it is later than this
    * feeding — so the Why column can name the reason that actually placed the row here.
@@ -644,9 +649,22 @@ export function buildTrialBlock(args: BuildTrialBlockArgs): TrialBlock | null {
   // are permitted extras has nothing to define the diet with.
   const hasPrimary = allowedFoods.some((f) => f.role === 'primary_diet')
 
-  const { startDayIndex, endDayIndex } = facts.range
+  // B-529: `exposureStartDayIndex`, NOT `startDayIndex`. `computeTrialFacts`
+  // counts exposures from the SCOPE head; `range.startDayIndex` is the head
+  // CLIPPED to the first logged day. This adapter used the clipped one, so page 1
+  // could say "26 feedings — 25 matched, 1 did not. Dates in appendix C" over an
+  // appendix C with zero rows — the same page-vs-appendix contradiction round 4
+  // recorded as blocking when a vet cross-checking got 4 against 3. Found by the
+  // third adversarial pass as the THIRD range in a repair whose commit message
+  // claimed there was now one.
+  // Both bounds are kept in scope on purpose: `startDayIndex` is the CLIPPED head
+  // and is right for what the report SAYS its range is (`rangeStartDate`,
+  // `loggingDensity`); `exposureStartDayIndex` is the scope head the exposure
+  // aggregates were counted from, and is the only correct bound for re-walking
+  // the feedings below.
+  const { startDayIndex, exposureStartDayIndex, endDayIndex } = facts.range
   const inRange = (dn: number | null): dn is number =>
-    dn !== null && dn >= startDayIndex && dn <= endDayIndex
+    dn !== null && dn >= exposureStartDayIndex && dn <= endDayIndex
 
   // A SECOND PASS OVER THE SAME PREDICATE, not a second predicate. `computeTrialFacts`
   // returns the aggregates; the render also needs per-row provenance (which allowed
@@ -684,6 +702,7 @@ export function buildTrialBlock(args: BuildTrialBlockArgs): TrialBlock | null {
       // "read, and nothing in it is outside the trial diet", which is a different
       // sentence and a much more interesting one.
       panelWasRead: (e.meal.proteins ?? []).length > 0,
+      attributionChecked: classification.attributionChecked,
       // THE OPERATIVE REASON, WHICH IS NEITHER RUNG. This same food IS on the allowed
       // list — just not on this day. §7's dated-membership rule is what makes that
       // possible ("feedings are scored against the list in force on the day"), and

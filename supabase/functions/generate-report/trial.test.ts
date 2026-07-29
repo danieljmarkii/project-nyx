@@ -1938,3 +1938,98 @@ Deno.test('B-529 — a bare process word is not a designation (CE-9)', () => {
   assert.ok(/Antigen check paused/.test(text))
   assert.ok(!/supports interpreting it/.test(text))
 })
+
+// ── B-529 — the THIRD adversarial pass's findings ────────────────────────────
+
+Deno.test('B-529 — appendix C never asserts an all-clear on a feeding nothing checked', () => {
+  // Executed pre/post on byte-identical input by the third pass: a correct
+  // `Chicken ×5 / "Protein not in the trial diet"` became
+  // `[] / "its label carries nothing the trial diet does not"`. Three routes
+  // reach rung 3, not two, and the third one ("we did not check") had no copy.
+  const input = wellLoggedTrialInput()
+  input.dietTrials[0] = {
+    ...input.dietTrials[0],
+    primaryProtein: 'hydrolyzed',
+    proteins: ['hydrolyzed'],
+    allowedFoods: [
+      { ...TRIAL_FOOD, foodItemId: 'f-hp', foodLabel: 'Process Diet', primaryProtein: 'hydrolyzed', proteins: ['hydrolyzed'] },
+    ],
+  }
+  for (const d of ['2026-06-03', '2026-06-10', '2026-06-17']) {
+    input.events.push(
+      meal({ date: d, brand: 'Generic', product: 'Chicken Chew', foodItemId: 'f-cc', foodType: 'treat', proteins: ['chicken'], time: '18:00:00' }),
+    )
+  }
+  const text = plain(renderReport(assembleReport(input)))
+  assert.ok(!/carries nothing the trial diet does not/.test(text))
+  assert.ok(/not checked against it/.test(text))
+})
+
+Deno.test('B-529 — the paused disclosure and the sanctioned set use ONE predicate', () => {
+  // The third pass found the split: isUncharacterizedTrialDiet had moved to
+  // proteinSourceBase while sanctionedProteinsOn and trialContamination still
+  // used canonicalizeProtein. The page then printed "no main protein on file"
+  // and "the trial diet also lists Chicken and Soy" ONE ROW APART — R7's own
+  // defect #1, computed from the comparator the row above disclaims.
+  const input = wellLoggedTrialInput()
+  input.dietTrials[0] = {
+    ...input.dietTrials[0],
+    primaryProtein: 'hydrolyzed',
+    proteins: ['hydrolyzed', 'chicken', 'soy'],
+    allowedFoods: [
+      { ...TRIAL_FOOD, foodItemId: 'f-hp', foodLabel: 'RC Hydrolyzed HP', primaryProtein: 'hydrolyzed', proteins: ['hydrolyzed', 'chicken', 'soy'] },
+    ],
+  }
+  const snap = assembleReport(input)
+  assert.equal(snap.trial?.contamination.length, 0, 'a food we cannot characterize cannot also be accused')
+  const text = plain(renderReport(snap))
+  assert.ok(!/Label contamination/.test(text))
+})
+
+Deno.test('B-529 — a clean trial does NOT lose its read to a row nothing was fed near', () => {
+  // The noise the third pass measured: membership overlap alone made a
+  // fully-logged, zero-off-diet trial withhold its clean read for its whole life
+  // because one allowed row sat on the list for a day with no feeding near it.
+  const input = wellLoggedTrialInput()
+  input.dietTrials[0] = {
+    ...input.dietTrials[0],
+    primaryProtein: 'duck',
+    proteins: ['duck'],
+    allowedFoods: [
+      { ...TRIAL_FOOD, foodItemId: 'f-duck', foodLabel: 'RC Duck', primaryProtein: 'duck', proteins: ['duck'] },
+      // In force for one day, before any logging, never fed.
+      { ...TRIAL_FOOD, foodItemId: 'f-ghost', foodLabel: 'Ghost Row', allowedFrom: '2026-06-01', allowedUntil: '2026-06-01', primaryProtein: null, proteins: [] },
+    ],
+  }
+  input.events = input.events
+    .filter((e) => e.occurredAt >= '2026-06-05')
+    .map((e) => (e.meal ? { ...e, meal: { ...e.meal, foodItemId: 'f-duck', proteins: ['duck'] } } : e))
+  const snap = assembleReport(input)
+  assert.deepEqual(snap.trial?.antigenAttributionPaused, [])
+  assert.ok(!/Antigen check paused/.test(plain(renderReport(snap))))
+})
+
+Deno.test('B-529 — page 1 and appendix C count the same exposures', () => {
+  // Third range: the adapter walked from the CLIPPED head while the aggregates
+  // counted from the scope head, so page 1 could say "1 did not — dates in
+  // appendix C" over an empty appendix C.
+  const input = wellLoggedTrialInput()
+  input.dietTrials[0] = {
+    ...input.dietTrials[0],
+    startedAt: '2026-06-01',
+    primaryProtein: 'duck',
+    proteins: ['duck'],
+    allowedFoods: [{ ...TRIAL_FOOD, foodItemId: 'f-duck', foodLabel: 'RC Duck', primaryProtein: 'duck', proteins: ['duck'] }],
+  }
+  // Logging starts late; one off-diet treat sits in the untracked head.
+  input.events = input.events
+    .filter((e) => e.occurredAt >= '2026-06-08')
+    .map((e) => (e.meal ? { ...e, meal: { ...e.meal, foodItemId: 'f-duck', proteins: ['duck'] } } : e))
+  input.events.push(
+    meal({ date: '2026-06-03', brand: 'Generic', product: 'Beef Treat', foodItemId: 'f-bt', foodType: 'treat', proteins: ['beef'], time: '18:00:00' }),
+  )
+  const snap = assembleReport(input)
+  const offDiet = snap.trial?.exposures.offDiet ?? 0
+  const rows = snap.trial?.exposures.items.length ?? 0
+  assert.equal(offDiet, rows, 'the count page 1 states must equal the rows appendix C can show')
+})
