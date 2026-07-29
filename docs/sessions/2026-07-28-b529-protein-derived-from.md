@@ -259,5 +259,67 @@ surface quieter, enumerate every affirmative claim that surface can make and gat
 all of them in the same commit.** Gating the one you happened to be looking at
 leaves the page saying the same wrong thing in a different sentence.
 
-Final state: **3387 jest · 1010 deno · clean `tsc`**. A third pass against this
-repair is running.
+Final state after four passes: **3387 jest · 1016 deno · clean `tsc`**.
+
+
+## Four passes, four FAILs — and what that actually says
+
+| Pass | Verdict | What it found |
+|---|---|---|
+| 1 | FAIL | R7(c) silenced the **rung-1 permitted** antigen list on a global flag → 80 approved chicken chews deleted while the report said "All 120 matched". No disclosure on the vet report at all. Now-fact vs per-day fact. Pause note deleted a real contamination. |
+| 2 | FAIL | §7.2 still composed with a dark arm (I'd gated `mayClaimAllMatched` and stopped). Disclosure and silence anchored on **different ranges**. |
+| 3 | FAIL | **My pass-2 fix caused a regression**: appendix C asserted "its label carries nothing the trial diet does not" over feedings nothing checked. I'd split a predicate and left its two siblings behind. "One range" was false end-to-end — there was a third. |
+| 4 | FAIL | The disclosure read a **proxy** for darkness rather than the flag pass 3 added, so a `primary_diet` **membership gap** deleted four real exposures with the clean sentence in bold. The range fix inverted into a caption contradiction. `panelWasRead` was first-member-wins. |
+
+**The relation itself never broke.** Across four passes `proteinsAreKin` and
+`proteinSourceBase` absorbed a 12,800-case convergence fuzz, a 419-key symmetry
+sweep, a 20×20 kinship sweep, a full kin-equivalence-class enumeration, a
+mutation test on the `dropKin`/`partitionKin` split, and a 2-role × 32-primary ×
+14-array differential against pre-B-529 `main` — **zero failures, and zero
+real-protein trials lost sanctioning, contamination or antigen naming.**
+
+Every single defect was in the **wiring**: which rung a feeding reaches, which
+surface got the disclosure, which range each half used, which predicate answers
+"characterized", which fold a grouped row uses, whether a gate reads a flag or a
+proxy for it.
+
+### The recurring failure mode, stated once
+
+> I kept fixing a composition in **one** place and leaving an equivalent
+> composition live in **another** — four times running.
+
+`mayClaimAllMatched` gated, §7.2 not. The silence range moved, the disclosure
+range not. The disclosure flag added, the gate still reading a proxy for it.
+`attributionChecked` AND-folded, its co-conjunct `panelWasRead` not.
+
+The generalisable rule, and the reason this belongs in the session record rather
+than only in a commit message: **when a change makes a surface quieter,
+enumerate every affirmative claim that surface can make, and every input that
+feeds them, and gate all of them in the same commit.** Gating the one in front of
+you leaves the page saying the same wrong thing in a different sentence.
+
+### The scope question this raises — PM call
+
+R7(a) (the relation) and R7(b) (the write invariant) are **clean and closed**;
+four adversarial passes could not break them. **R7(c) — the silence rule — is
+what has consumed all four passes**, and its findings have drifted steadily out
+of B-529 and into the report's own rendering layer: three inconsistent ranges,
+first-member-wins grouping folds, affirmative rung-3 copy with no
+"we-didn't-check" branch, a caption that states a different range from its rows.
+Those are **B-532's territory** ("render honesty"), and R7(c) keeps colliding
+with them because it is the first feature to make the report deliberately
+quieter.
+
+Two ways forward, and this is a PM decision:
+
+- **(a) Split.** Land R7(a)+(b) now — they are the ruling's substance and are
+  verified. Move R7(c) into its own PR sequenced **with** B-532, where the
+  rendering inconsistencies it keeps surfacing can be fixed as a set rather than
+  one adversarial pass at a time.
+- **(b) Keep going.** Continue adversarial rounds on this branch until a pass
+  comes back clean. Defensible — every round has found something real — but each
+  has also cost a full cycle, and rounds 3 and 4 were largely repairing my own
+  previous repair.
+
+Recommendation: **(a)**, on the evidence that the R7(c) findings stopped being
+about protein identity two rounds ago.
