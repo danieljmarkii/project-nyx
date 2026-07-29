@@ -12,7 +12,8 @@ import { theme } from '../constants/theme';
 import { Header } from '../components/ui/Header';
 import { SectionLabel } from '../components/ui/SectionLabel';
 import { EVENT_TYPES, EventTypeKey } from '../constants/eventTypes';
-import { getDb, updateEvent, updateMealFood, updateMealIntake, getMealForEvent, getDoseForEvent, updateDoseAdherence, updateDoseHowGiven, getEventAttachment, getEventSource, getEventTimeFields } from '../lib/db';
+import { getDb, updateEvent, updateMealFood, updateMealIntake, getMealForEvent, getDoseForEvent, updateDoseAdherence, updateDoseHowGiven, getEventAttachment, getEventAttachments, getEventSource, getEventTimeFields } from '../lib/db';
+import { detachOtherEventAttachments } from '../lib/attachments';
 import { syncPendingEvents, syncPendingMeals, syncPendingWeightChecks, syncPendingMedicationAdministrations } from '../lib/sync';
 import { uploadPhoto, compressForUpload, persistCapture } from '../lib/storage';
 import { supabase } from '../lib/supabase';
@@ -476,6 +477,10 @@ export default function EditEventModal() {
           // store THAT as local_uri so it survives. Upload still reads the
           // original capture; both point at identical bytes.
           const localUri = persistCapture(newAttachmentUri, `${attId}.jpg`);
+          // B-105 — capture the rows this photo supersedes before inserting it.
+          // "Add" here is really a replace: the event carries one photo, and the
+          // old row/file/Storage object used to be left behind entirely.
+          const priors = await getEventAttachments(id);
           await db.runAsync(
             `INSERT OR REPLACE INTO event_attachments
                (id, event_id, pet_id, local_uri, storage_path, mime_type, synced, created_at)
@@ -501,6 +506,11 @@ export default function EditEventModal() {
               await db.runAsync('UPDATE event_attachments SET synced = 1 WHERE id = ?', [attId]);
             })
             .catch(console.error);
+          // Detach the rows this photo replaced — after the replacement is
+          // stored and its upload is in flight, so a failed insert can never
+          // leave the event photoless and the owner's save doesn't wait on a
+          // Storage round-trip. Never throws.
+          await detachOtherEventAttachments(priors, attId);
         }
       }
 
