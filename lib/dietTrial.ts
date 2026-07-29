@@ -53,7 +53,7 @@
 //
 // Same inputs, two questions, two answers. Merging them re-opens B-351 shape ①.
 import { canonicalizeProtein } from './protein.ts';
-import { dropKinOfPrimary, partitionKinOfPrimary } from './proteinRelation.ts';
+import { dropKinOfPrimary, partitionKinOfPrimary, proteinSourceBase } from './proteinRelation.ts';
 import { localDayIndexOf } from './utils.ts';
 
 // ── Inputs ───────────────────────────────────────────────────────────────────
@@ -353,7 +353,23 @@ export function sanctionedProteinsOn(ctx: TrialContext, dayIndex: number): Set<s
  * and buy nothing this defect is about.
  */
 export function isUncharacterizedTrialDiet(food: AllowedFood): boolean {
-  return food.role === 'primary_diet' && canonicalizeProtein(food.primaryProtein) == null;
+  if (food.role !== 'primary_diet') return false;
+  // A PROCESS WORD IS NOT A DESIGNATION. `canonicalizeProtein('hydrolyzed')` is
+  // `'hydrolyzed'` — non-null, so a bare-process primary passed the old test and
+  // the food was treated as characterized. The second adversarial pass executed
+  // what that costs on the very diet class this ruling is about: a `primary_diet`
+  // row designated `hydrolyzed` with panel `['hydrolyzed','chicken','soy']`
+  // sanctioned CHICKEN for the whole library, so an intact-chicken chew on a
+  // hydrolysed trial classified with `antigens: []` and no disclosure anywhere —
+  // verbatim the false negative `sanctionedProteinsOn`'s R7 comment says the kin
+  // rule exists to prevent. (`render.test.ts` already uses `'hydrolyzed'` as a
+  // fixture primary, so the shape is one the codebase models.)
+  //
+  // The honest test is therefore whether the value names a SOURCE, not whether it
+  // canonicalizes: a primary with no usable source base characterizes nothing.
+  // Pre-existing rather than a regression, and the safe direction — the arm goes
+  // dark and SAYS SO, where before it answered confidently and wrongly.
+  return proteinSourceBase(food.primaryProtein) == null;
 }
 
 export function uncharacterizedTrialDietFoods(ctx: TrialContext, dayIndex: number): AllowedFood[] {
@@ -1683,9 +1699,21 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
     allowedSetUnavailable:
       base.allowedSetUnavailable ||
       (primaryFeedings === 0 && totalFeedings >= UNHYDRATED_SET_FLOOR),
+    // `exposureStart`, NOT `startDayIndex`. The second adversarial pass found the
+    // mismatch: the feeding loop classifies from `exposureStart` (the scope head,
+    // deliberately NOT moved by the first-log clip — see the comment there), so
+    // the SILENCE applies over that range, while anchoring the DISCLOSURE on the
+    // clipped `startDayIndex` left the untracked head silenced and unexplained.
+    // Executed: a back-dated trial (the spec's own "normal vet-directed setup")
+    // with the undesignated food on the list days 1–5 and a chicken treat logged
+    // day 3 rendered no antigen and no pause row; in the treat-typed variant the
+    // page went fully clean — `mayStateRecordClean` true over deleted exposures,
+    // which is the exact composition the previous repair existed to prevent,
+    // re-entered through the window boundary instead of the global flag.
+    // The two ranges must be the same range.
     antigenAttributionPaused: uncharacterizedTrialDietFoodsInRange(
       ctx,
-      startDayIndex,
+      exposureStart,
       endDayIndex,
     ),
     // In force AT THE END of the range — the present-tense question.

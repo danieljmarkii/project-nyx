@@ -1861,3 +1861,80 @@ Deno.test('B-529 ③ — the disclosure is RANGE-anchored, so a swapped-out food
   assert.deepEqual(snap.trial?.antigenAttributionPaused, ['RC Duck wet'])
   assert.ok(/Antigen check paused/.test(plain(renderReport(snap))))
 })
+
+// ── B-529 — the SECOND adversarial pass's two breaks ─────────────────────────
+//
+// The first repair wired `mayClaimAllMatched` and anchored the disclosure on the
+// clipped range head. Both were incomplete, and both were executed against.
+
+Deno.test('B-529 §7.2 — a dark antigen arm caveats the bottom line, like a known contamination does', () => {
+  // The inversion: the record with a KNOWN contamination said "cannot establish
+  // that the elimination was clean", while the record with an UNKNOWN one —
+  // strictly less known — still said "supports interpreting it". The more
+  // ignorant state was getting the more affirmative sentence, on the one line a
+  // vet reads for the bottom line.
+  const snap = assembleReport(pausedArmTrialInput())
+  const text = plain(renderReport(snap))
+  assert.ok(!/supports interpreting it/.test(text))
+  assert.ok(/no main protein on file/.test(text))
+  assert.ok(/cannot be confirmed clean from this record/.test(text))
+})
+
+Deno.test('B-529 — the disclosure covers the SAME range the silence does', () => {
+  // The silence runs from `exposureStart` (the scope head), the disclosure ran
+  // from `startDayIndex` (the first-logged clip). A back-dated trial — the spec's
+  // own "normal vet-directed setup" — with the undesignated food on the list only
+  // during the untracked head therefore silenced antigens there and explained
+  // nothing. Executed: no antigen row AND no pause row on the same page.
+  const input = wellLoggedTrialInput()
+  input.dietTrials[0] = {
+    ...input.dietTrials[0],
+    startedAt: '2026-05-20',
+    primaryProtein: 'duck',
+    proteins: ['duck'],
+    allowedFoods: [
+      { ...TRIAL_FOOD, foodItemId: 'f-duck', foodLabel: 'RC Duck kibble', allowedFrom: '2026-05-20', primaryProtein: 'duck', proteins: ['duck'] },
+      // On the list only inside the untracked head, then withdrawn.
+      { ...TRIAL_FOOD, foodItemId: 'f-wet', foodLabel: 'Head-only Wet', allowedFrom: '2026-05-20', allowedUntil: '2026-05-25', primaryProtein: null, proteins: ['duck'] },
+    ],
+  }
+  input.events = input.events.map((e) =>
+    e.meal ? { ...e, meal: { ...e.meal, foodItemId: 'f-duck', proteins: ['duck'] } } : e,
+  )
+  input.events.push(
+    meal({ date: '2026-05-22', brand: 'Generic', product: 'Chicken Treat', foodItemId: 'f-ct', foodType: 'treat', proteins: ['chicken'], time: '18:00:00' }),
+  )
+  const snap = assembleReport(input)
+  // Whatever the arm does in the head, the page must not be silent about it.
+  const named = (snap.trial?.antigenTally ?? []).some((a) => a.protein === 'chicken')
+  const disclosed = (snap.trial?.antigenAttributionPaused ?? []).length > 0
+  assert.ok(named || disclosed, 'an antigen is either named or its absence is explained — never neither')
+  const text = plain(renderReport(snap))
+  assert.ok(/Chicken/.test(text) || /Antigen check paused/.test(text))
+})
+
+Deno.test('B-529 — a bare process word is not a designation (CE-9)', () => {
+  // `canonicalizeProtein('hydrolyzed') === 'hydrolyzed'`, so a bare-process
+  // primary used to pass as characterized — and then SANCTIONED CHICKEN for the
+  // whole library off its own panel, so an intact-chicken chew on a hydrolysed
+  // trial classified clean with no disclosure. Pre-existing, but it defeated
+  // R7(c) on the exact diet class the ruling is about.
+  const input = wellLoggedTrialInput()
+  input.dietTrials[0] = {
+    ...input.dietTrials[0],
+    primaryProtein: 'hydrolyzed',
+    proteins: ['hydrolyzed', 'chicken', 'soy'],
+    allowedFoods: [
+      { ...TRIAL_FOOD, foodItemId: 'f-hp', foodLabel: 'Process Diet', primaryProtein: 'hydrolyzed', proteins: ['hydrolyzed', 'chicken', 'soy'] },
+    ],
+  }
+  input.events.push(
+    meal({ date: '2026-06-15', brand: 'Generic', product: 'Chicken Chew', foodItemId: 'f-cc', foodType: 'treat', proteins: ['chicken'], time: '18:00:00' }),
+  )
+  const snap = assembleReport(input)
+  assert.deepEqual(snap.trial?.antigenAttributionPaused, ['Process Diet'])
+  assert.equal(snap.trial?.mayClaimAllMatched, false)
+  const text = plain(renderReport(snap))
+  assert.ok(/Antigen check paused/.test(text))
+  assert.ok(!/supports interpreting it/.test(text))
+})

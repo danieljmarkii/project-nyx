@@ -1524,6 +1524,27 @@ function dietTrialSection(snap: ReportSnapshot): string {
   // (coverage is its input and it says so); the caveats are the report's.
   const statement = t.interpretabilityStatement
   const caveats: string[] = []
+  // B-529/R7(c). A DARK ANTIGEN ARM IS A CAVEAT ON THE BOTTOM LINE, and the first
+  // repair wired only `mayClaimAllMatched`. The second adversarial pass executed
+  // what that leaves: an identical record with a KNOWN contamination reads "cannot
+  // establish that the elimination was clean", while the record with an UNKNOWN one
+  // — strictly less known — still read "supports interpreting it". The more
+  // ignorant state got the more affirmative sentence, on the one line the render's
+  // own comment calls what a vet reads for the bottom line. That is B9's inversion
+  // ("the most unknown state must not get the least disclosure") landing on §7.2.
+  //
+  // Placed FIRST because it qualifies the protein evidence every other clause
+  // assumes is complete, and because a caveat here also suppresses the affirmative
+  // variant via `suppressStatement` below — which is the actual repair.
+  if (t.antigenAttributionPaused.length > 0) {
+    caveats.push(
+      `${
+        t.antigenAttributionPaused.length === 1 ? 'A food' : 'Foods'
+      } recorded as part of the trial diet ${
+        t.antigenAttributionPaused.length === 1 ? 'has' : 'have'
+      } no main protein on file, so proteins fed during the trial could not be checked against it for part of this window — the elimination cannot be confirmed clean from this record.`,
+    )
+  }
   if (t.belowCoverageFloor) {
     caveats.push(
       'A record this sparse cannot distinguish a clean elimination from an untracked one, in either direction.',
