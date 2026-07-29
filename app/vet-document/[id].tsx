@@ -314,9 +314,17 @@ export default function VetDocumentDetailScreen() {
       // so the copy is what decides whether the vet receives "Pixel-Senior-panel-
       // 2026-07-14.pdf" or "a3f9c1e2-….pdf". Best-effort: a failed copy shares the
       // raw file rather than blocking the moment this screen exists for.
+      // `documentPet?.name ?? ''`, NOT `petName`. The two fallbacks are different
+      // kinds of thing and only one of them belongs in a filename: "your pet" is
+      // PROSE, correct in the dialog title below, and it slugs to "your-pet-lab-
+      // result-2026-07-14.pdf" — a file the vet keeps, named after a sentence.
+      // Passing '' lets slug() use its own 'pet' fallback, which is what it is for.
+      // The header above already degrades this way (plain "Vet Files" rather than
+      // "your pet’s Vet Files"); the filename had been left behind.
+      // (pm-feature-review on B-550.)
       const shareUri = stageForShare(
         sendUri,
-        vetDocumentShareFilename(petName, detail, page, detail.pages.length),
+        vetDocumentShareFilename(documentPet?.name ?? '', detail, page, detail.pages.length),
       );
       await Sharing.shareAsync(shareUri, {
         mimeType: detail.isPdf ? 'application/pdf' : 'image/jpeg',

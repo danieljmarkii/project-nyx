@@ -443,6 +443,16 @@ describe('vetDocumentShareFilename', () => {
     expect(name).toBe('Mr-O-Malley-2-Senior-panel-2026-07-14.pdf');
     expect(name).not.toMatch(/[/\\]/);
   });
+
+  // The caller passes '' when it cannot resolve the pet (archived pet, cold deep
+  // link) rather than its own "your pet" PROSE fallback — which would slug to
+  // "your-pet-lab-result-….pdf", a file the vet keeps, named after a sentence.
+  // Asserted here so the anonymous path is a defined behaviour rather than an
+  // accident of whatever the screen happens to hold (pm-feature-review on B-550).
+  it('degrades to an anonymous name when the pet cannot be resolved', () => {
+    expect(vetDocumentShareFilename('', named)).toBe('pet-Senior-panel-2026-07-14.pdf');
+    expect(vetDocumentShareFilename('   ', named)).toBe('pet-Senior-panel-2026-07-14.pdf');
+  });
 });
 
 // ── 4. AC 12 — the offline read ──────────────────────────────────────────────

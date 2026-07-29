@@ -201,11 +201,21 @@ const styles = StyleSheet.create({
     fontSize: theme.textXS,
     color: theme.colorTextTertiary,
   },
-  // Quieter than the meta line above it — this is provenance, not a title, and it
-  // must never out-shout the name the owner has not typed yet.
+  // Subordinate to the title, but READABLE — tertiary (#737373, ~4.7:1 on this
+  // surface), not disabled (#A3A3A3, ~2.5:1).
+  //
+  // This shipped as `colorTextDisabled` for half an hour and `pm-feature-review`
+  // was right to call it the one thing to fix before a device pass: the disabled
+  // token is the palette's "you cannot use this" colour, and this is the one string
+  // on the row whose entire job is letting an owner tell two lab results apart,
+  // one-handed, in clinic light. Quiet is a hierarchy instruction; 2.5:1 is a
+  // legibility failure, and they are not the same thing. Tertiary matches the meta
+  // line directly above and still sits plainly below the accent Name pill, so
+  // nothing about the intended hierarchy changes. Same token the detail screen
+  // already used for the identical string — the two surfaces now agree.
   file: {
     fontSize: theme.textXS,
-    color: theme.colorTextDisabled,
+    color: theme.colorTextTertiary,
     marginTop: 3,
   },
   namePill: {
