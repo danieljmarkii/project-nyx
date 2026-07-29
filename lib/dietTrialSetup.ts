@@ -22,7 +22,7 @@
 // bar of signal is the literal target user of this screen.
 //
 // It also honours the contract lib/dietTrialMirror.ts states for exactly this PR:
-// every local mutation sets `synced = 0, sync_error = NULL` in the same statement,
+// every local mutation sets `synced = 0, sync_attempts = 0, sync_error = NULL` in the same statement,
 // so an owner-visible fix (ending the other trial) re-arms a quarantined push
 // rather than leaving a permanently-parked row.
 import { getDb } from './db';
@@ -533,7 +533,7 @@ export async function endActiveTrial(params: {
   const outcome = completed ? params.outcome ?? null : null;
   const outcomeNotes = completed ? params.outcomeNotes?.trim() || null : null;
 
-  // `synced = 0, sync_error = NULL` in the same statement — the mirror's stated
+  // `synced = 0, sync_attempts = 0, sync_error = NULL` in the same statement — the mirror's stated
   // contract for every local mutation. Clearing the error is what makes ending a
   // trial a FRESH ATTEMPT for a row that was previously quarantined on a 23505
   // rather than a permanently-parked one.
@@ -541,7 +541,7 @@ export async function endActiveTrial(params: {
     `UPDATE diet_trials
         SET status = ?, ended_at = ?, completed_at = ?, stopped_reason = ?,
             outcome = ?, outcome_notes = ?,
-            updated_at = ?, synced = 0, sync_error = NULL
+            updated_at = ?, synced = 0, sync_attempts = 0, sync_error = NULL
       WHERE id = ?`,
     [
       completed ? 'completed' : 'abandoned',
@@ -589,7 +589,7 @@ export async function extendTrial(params: {
   const db = getDb();
   await db.runAsync(
     `UPDATE diet_trials
-        SET target_duration_days = ?, updated_at = ?, synced = 0, sync_error = NULL
+        SET target_duration_days = ?, updated_at = ?, synced = 0, sync_attempts = 0, sync_error = NULL
       WHERE id = ?`,
     [target, new Date().toISOString(), params.trialId],
   );

@@ -2,6 +2,7 @@ import * as SQLite from 'expo-sqlite';
 import { File } from 'expo-file-system';
 import { LOCAL_WIPE_TABLES } from './hydration';
 import { LIBRARY_FOODS_QUERY, ARCHIVED_FOODS_QUERY } from './foodQueries';
+import { EVENT_ATTACHMENT_QUERY, EVENT_ATTACHMENTS_QUERY } from './eventAttachmentQueries';
 import {
   MEDICATION_SCHEMA_SQL,
   doubleDoseWindowHours,
@@ -12,7 +13,14 @@ import {
 } from './medications';
 import { ACTIVE_REGIMEN_FOR_DRUG_QUERY, LIBRARY_MEDICATIONS_QUERY, recentMedicationsQuery, PAIRED_DOSE_REVERSE_JOIN } from './medicationQueries';
 import { DIET_TRIAL_SCHEMA_SQL } from './dietTrialMirror';
-import { BASE_SCHEMA_SQL } from './localSchema';
+import {
+  BASE_SCHEMA_SQL,
+  LOCAL_URI_TABLES_SQL,
+  KNOWN_LOCAL_URI_TABLES,
+  localUriUnionSql,
+  applyColumnUpgrades,
+} from './localSchema';
+import { pendingStatusSql, quarantineCountSql } from './syncQueue';
 import { uuid } from './utils';
 import { clearTransientFiles } from './transientFiles';
 
@@ -137,89 +145,19 @@ export async function initDb(): Promise<void> {
   // CREATE TABLE IF NOT EXISTS will not add one to a device that already ran this.
   await database.execAsync(DIET_TRIAL_SCHEMA_SQL);
 
-  // Add photo_path to food_items_cache if upgrading from earlier schema
-  try {
-    await database.execAsync(`ALTER TABLE food_items_cache ADD COLUMN photo_path TEXT`);
-  } catch {
-    // Column already exists — safe to ignore
-  }
+  // The column-upgrade path (B-398 made it data — lib/localSchema.ts
+  // COLUMN_UPGRADES). `CREATE TABLE IF NOT EXISTS` above gives a FRESH install
+  // every column; a device upgrading from an earlier build already has the table,
+  // so only an ALTER can add one there. This used to be seventeen near-identical
+  // try/catch blocks inline, which had two costs: a column added without its ALTER
+  // worked on the simulator and was missing on the owner's phone, and the real
+  // runtime schema (constants + these ALTERs) existed nowhere a test could build
+  // it — so fixtures hand-mirrored it and drifted. Now both come from one list.
+  //
+  // Runs AFTER all three CREATE blocks, so the medication/diet-trial tables its
+  // entries target already exist.
+  await applyColumnUpgrades((sql) => database.execAsync(sql));
 
-  // food_type — usage classification (meal | treat | other) distinct from
-  // physical `format`. B-011. Nullable; legacy rows stay NULL until the user
-  // classifies them on the food detail screen. Mirrors migration 010.
-  try {
-    await database.execAsync(`ALTER TABLE food_items_cache ADD COLUMN food_type TEXT`);
-  } catch {
-    // Column already exists — safe to ignore
-  }
-
-  // archived_at — B-005 food-library archive flag. Mirrors food_items.archived_at
-  // (migration 035). Nullable; legacy rows stay NULL (= active/feedable). Filtered
-  // at picker/library reads only, never on history/analytics/report joins.
-  try {
-    await database.execAsync(`ALTER TABLE food_items_cache ADD COLUMN archived_at TEXT`);
-  } catch {
-    // Column already exists — safe to ignore
-  }
-
-  // proteins — B-351 multi-protein set. Mirrors food_items.proteins (migration
-  // 039) as a JSON-array string of canonical protein keys. Nullable; legacy rows
-  // stay NULL (= not yet hydrated) until the next refreshFoodCache writes them.
-  try {
-    await database.execAsync(`ALTER TABLE food_items_cache ADD COLUMN proteins TEXT`);
-  } catch {
-    // Column already exists — safe to ignore
-  }
-
-  // ingredients_notes + ai_extraction_confidence — B-351 slice 4 (D10 / B-413).
-  // The two arms of the protein-set completeness gate, mirrored so a surface can
-  // tell a read panel from an unread one WITHOUT a network round-trip (the Foods
-  // library list and the post-log heads-up both run offline). Legacy rows stay
-  // NULL until the next refreshFoodCache, which the gate reads as "not captured" —
-  // the safe direction, since NULL can only ever suppress a completeness claim.
-  try {
-    await database.execAsync(`ALTER TABLE food_items_cache ADD COLUMN ingredients_notes TEXT`);
-  } catch {
-    // Column already exists — safe to ignore
-  }
-  try {
-    await database.execAsync(`ALTER TABLE food_items_cache ADD COLUMN ai_extraction_confidence TEXT`);
-  } catch {
-    // Column already exists — safe to ignore
-  }
-
-  // occurred_at_source records the provenance of an event's timestamp:
-  // 'manual' (user chose), 'exif' (from photo metadata), 'now' (auto-set when
-  // we couldn't read EXIF). Surfaced in the UI as a subtle attribution. Mirrors
-  // migration 007 on the server.
-  try {
-    await database.execAsync(
-      `ALTER TABLE events ADD COLUMN occurred_at_source TEXT NOT NULL DEFAULT 'manual'`,
-    );
-  } catch {
-    // Column already exists — safe to ignore
-  }
-
-  // intake_rating — WSAVA 5-point owner-reported intake (refused | picked |
-  // some | most | all). Nullable; NULL = unrated. B-014. Mirrors migration 011
-  // on the server.
-  try {
-    await database.execAsync(`ALTER TABLE meals ADD COLUMN intake_rating TEXT`);
-  } catch {
-    // Column already exists — safe to ignore
-  }
-
-  // updated_at — B-055 / B-054 Phase 2. Gives meals a real last-write-wins
-  // timestamp so cross-device meal edits reconcile like events instead of the
-  // Phase-1 synced-flag proxy. SQLite can't ADD COLUMN with a non-constant
-  // default (datetime('now')), so add it nullable then backfill from created_at
-  // (the honest last-change time for a pre-migration row) — no NULLs to
-  // special-case in the reconcile. Mirrors migration 016 on the server.
-  try {
-    await database.execAsync(`ALTER TABLE meals ADD COLUMN updated_at TEXT`);
-  } catch {
-    // Column already exists — safe to ignore
-  }
   // Backfill in its own try so it still runs if the ADD COLUMN above already
   // happened on a prior launch (a single try/catch would let a transient failure
   // between ADD and UPDATE leave pre-migration rows NULL forever — SQLite gives
@@ -228,83 +166,6 @@ export async function initDb(): Promise<void> {
     await database.execAsync(`UPDATE meals SET updated_at = created_at WHERE updated_at IS NULL`);
   } catch {
     // No updated_at column yet (ADD failed for a real reason) — nothing to backfill.
-  }
-
-  // occurred_at_confidence + window bounds — B-010 event timestamp uncertainty.
-  // 'witnessed' (saw it; exact), 'estimated' (found it, rough single time),
-  // 'window' (found it, only a range); NULL = unclassified (legacy / pre-UI).
-  // occurred_at stays the canonical/derived point so existing reads keep
-  // working; earliest/latest bound a 'window'. Nullable with no default — the
-  // app sets an explicit value on every new log. The server enforces the
-  // field/ordering CHECKs (migration 012); the local mirror just holds the
-  // columns. Mirrors migration 012 on the server.
-  try {
-    await database.execAsync(`ALTER TABLE events ADD COLUMN occurred_at_confidence TEXT`);
-  } catch {
-    // Column already exists — safe to ignore
-  }
-  try {
-    await database.execAsync(`ALTER TABLE events ADD COLUMN occurred_at_earliest TEXT`);
-  } catch {
-    // Column already exists — safe to ignore
-  }
-  try {
-    await database.execAsync(`ALTER TABLE events ADD COLUMN occurred_at_latest TEXT`);
-  } catch {
-    // Column already exists — safe to ignore
-  }
-
-  // how_given — B-156 Slice B (PR A2). The vehicle a dose was given in
-  // (direct | in_food | in_treat | in_pill_pocket | other). medication_administrations
-  // shipped in B-117 PR 2 (#194) without it, so a device upgrading from that build
-  // has the table already and CREATE TABLE IF NOT EXISTS won't add the column — this
-  // ALTER does. Nullable TEXT, no default: an absent vehicle is a clean NULL, exactly
-  // like adherence. Mirrors migration 022 (the dose_route_vehicle enum) on the server.
-  try {
-    await database.execAsync(`ALTER TABLE medication_administrations ADD COLUMN how_given TEXT`);
-  } catch {
-    // Column already exists — safe to ignore
-  }
-
-  // paired_event_id — B-156 Slice C (PR B2). The co-logged meal/treat event a dose
-  // was given inside (the combo link). Same upgrade reasoning as how_given above: a
-  // device that created medication_administrations on an earlier build (B-117 PR 2,
-  // or the A2 how_given build) already has the table, so CREATE TABLE IF NOT EXISTS
-  // won't add the column — this ALTER does. Plain TEXT (a UUID), nullable, no default:
-  // a standalone dose reads a clean NULL. Mirrors migration 023 on the server (the FK
-  // + same-pet trigger are server-side; the local mirror just holds the value).
-  try {
-    await database.execAsync(`ALTER TABLE medication_administrations ADD COLUMN paired_event_id TEXT`);
-  } catch {
-    // Column already exists — safe to ignore
-  }
-
-  // logged_via — capture-surface provenance (B-289 / migration 038; local mirror
-  // rides B-290/W3 per the migration header). TEXT with the same NOT NULL
-  // DEFAULT 'app' as the server enum: every pre-W3 local row was written by the
-  // app, so the default is a true backfill, and app write paths that omit the
-  // column keep landing 'app' — exactly correct. The inbox ingest
-  // (lib/captureInbox.ts) is the first writer of a non-'app' value. All three
-  // mirrored tables get it; events/meals CREATEs above predate the column and
-  // medication_administrations lives in MEDICATION_SCHEMA_SQL, so the ALTER
-  // upgrade path covers every existing install (the try/catch no-ops when a
-  // future CREATE includes it).
-  try {
-    await database.execAsync(`ALTER TABLE events ADD COLUMN logged_via TEXT NOT NULL DEFAULT 'app'`);
-  } catch {
-    // Column already exists — safe to ignore
-  }
-  try {
-    await database.execAsync(`ALTER TABLE meals ADD COLUMN logged_via TEXT NOT NULL DEFAULT 'app'`);
-  } catch {
-    // Column already exists — safe to ignore
-  }
-  try {
-    await database.execAsync(
-      `ALTER TABLE medication_administrations ADD COLUMN logged_via TEXT NOT NULL DEFAULT 'app'`,
-    );
-  } catch {
-    // Column already exists — safe to ignore
   }
 
   // B-156 PR B4 — local index on the combo link, mirroring Supabase migration 023's
@@ -359,28 +220,40 @@ export async function clearLocalData(): Promise<void> {
 
   // Delete the captured local image files referenced by attachment rows.
   try {
-    // ⚠ THIS UNION IS A HARDCODED LIST AND IT FAILS OPEN — a table missing from it
-    // has its ROWS wiped by LOCAL_WIPE_TABLES while its captured FILES stay on disk,
-    // and once the row is gone nothing will ever find them again. That is the exact
-    // shape B-424 eliminated for the row half (hydration.test.ts derives the wipe set
-    // from a real sqlite_master, so a new table breaks the build); the FILE half has
-    // no equivalent guard yet — filed as B-519.
+    // B-519 — THE FILE-BEARING TABLE SET IS DERIVED, NOT REMEMBERED.
     //
-    // vet_documents was added here in the same PR that created it (B-478 VF-1), found
-    // by that PR's rls-privacy-reviewer. It shares persistCapture's
-    // `Paths.document/attachments/` directory with the two attachment tables, and its
-    // rows are lab results, vaccination certificates and clinic correspondence — the
-    // thing LOCAL_WIPE_TABLES exists to keep off a shared device. Wiping the row and
-    // leaving the image would have made that promise true only on paper. Not yet
-    // reachable (local_uri is '' until VF-3 writes one), which is precisely why it is
-    // cheap to close now.
-    const files = await database.getAllAsync<{ local_uri: string | null }>(
-      `SELECT local_uri FROM event_attachments
-       UNION ALL
-       SELECT local_uri FROM vet_visit_attachments
-       UNION ALL
-       SELECT local_uri FROM vet_documents`,
-    );
+    // This UNION used to be a hardcoded list of three tables, and it failed open in
+    // the nastiest way in the codebase: a new mirror table missing from it would
+    // have its ROWS wiped by LOCAL_WIPE_TABLES while its captured FILES stayed on
+    // disk — and once the row naming a file is gone, nothing can ever find that
+    // file again. Not a leak that a later sweep cleans up; an un-deletable photo of
+    // the previous account's pet, on a device now in someone else's hands, with no
+    // index left that even knows it is there.
+    //
+    // B-424 closed exactly this shape for the ROW half by deriving the expected set
+    // from a real `sqlite_master`. This is the same fix for the FILE half: ask the
+    // database which tables carry a `local_uri` column. A table added tomorrow is
+    // covered the moment it is created.
+    //
+    // The fallback is not a second hardcoded list sneaking back in — it is a
+    // last resort for a device where the introspection query fails, and
+    // syncQueue.test.ts pins it against the derivation so it cannot silently
+    // diverge (a new file-bearing table breaks the build there).
+    let fileTables: string[] = [];
+    try {
+      const derived = await database.getAllAsync<{ table_name: string }>(LOCAL_URI_TABLES_SQL);
+      fileTables = derived.map((t) => t.table_name);
+    } catch (e) {
+      console.warn('[wipe] local_uri table derivation failed, using known set:', e);
+    }
+    if (fileTables.length === 0) {
+      console.warn('[wipe] no local_uri tables derived — falling back to the known set');
+      fileTables = [...KNOWN_LOCAL_URI_TABLES];
+    }
+    const unionSql = localUriUnionSql(fileTables);
+    const files = unionSql
+      ? await database.getAllAsync<{ local_uri: string | null }>(unionSql)
+      : [];
     for (const f of files) {
       if (!f.local_uri) continue; // hydrated rows carry '' — no local file to remove
       try {
@@ -629,7 +502,7 @@ export async function softDeleteEvent(eventId: string): Promise<void> {
   const db = getDb();
   const now = new Date().toISOString();
   await db.runAsync(
-    'UPDATE events SET deleted_at = ?, updated_at = ?, synced = 0 WHERE id = ?',
+    'UPDATE events SET deleted_at = ?, updated_at = ?, synced = 0, sync_attempts = 0, sync_error = NULL WHERE id = ?',
     [now, now, eventId],
   );
 }
@@ -682,7 +555,11 @@ export async function updateEvent(
     sets.push('occurred_at_confidence = ?', 'occurred_at_earliest = ?', 'occurred_at_latest = ?');
     params.push(fields.confidence.value, fields.confidence.earliest, fields.confidence.latest);
   }
-  sets.push('updated_at = ?', 'synced = 0');
+  // B-398 — an edit is a NEW unsent change, so it clears any quarantine and gets a
+  // fresh retry budget. This is what makes an owner-visible fix (correcting a
+  // malformed time, re-saving an entry) actually re-queue a parked row instead of
+  // leaving it permanently stuck with no way out from inside the app.
+  sets.push('updated_at = ?', 'synced = 0', 'sync_attempts = 0', 'sync_error = NULL');
   params.push(now, eventId);
   await database.runAsync(`UPDATE events SET ${sets.join(', ')} WHERE id = ?`, params);
 }
@@ -732,7 +609,7 @@ export async function updateMealFood(eventId: string, foodItemId: string): Promi
   // silently affects zero rows when no meal exists for the event, which would let
   // the caller (app/edit-event.tsx) claim success while persisting nothing.
   const res = await db.runAsync(
-    'UPDATE meals SET food_item_id = ?, updated_at = ?, synced = 0 WHERE event_id = ?',
+    'UPDATE meals SET food_item_id = ?, updated_at = ?, synced = 0, sync_attempts = 0, sync_error = NULL WHERE event_id = ?',
     [foodItemId, new Date().toISOString(), eventId],
   );
   if (res.changes === 0) {
@@ -756,7 +633,7 @@ export async function updateMealIntake(
   // clinically load-bearing field, so a cross-device correction must win by
   // real LWW, not the synced-flag proxy.
   const res = await db.runAsync(
-    'UPDATE meals SET intake_rating = ?, updated_at = ?, synced = 0 WHERE event_id = ?',
+    'UPDATE meals SET intake_rating = ?, updated_at = ?, synced = 0, sync_attempts = 0, sync_error = NULL WHERE event_id = ?',
     [rating, new Date().toISOString(), eventId],
   );
   if (res.changes === 0) {
@@ -764,22 +641,24 @@ export async function updateMealIntake(
   }
 }
 
-export async function getEventAttachment(eventId: string): Promise<{
+export interface EventAttachmentRow {
   id: string;
   local_uri: string;
   storage_path: string;
   mime_type: string;
-} | null> {
+}
+
+// Both reads order newest-first within a sort_order rank — see
+// lib/eventAttachmentQueries.ts for why that ordering is the read half of the
+// B-105 fix rather than a cosmetic detail.
+export async function getEventAttachment(eventId: string): Promise<EventAttachmentRow | null> {
   const db = getDb();
-  return db.getFirstAsync<{
-    id: string;
-    local_uri: string;
-    storage_path: string;
-    mime_type: string;
-  }>(
-    'SELECT id, local_uri, storage_path, mime_type FROM event_attachments WHERE event_id = ? ORDER BY sort_order ASC LIMIT 1',
-    [eventId],
-  );
+  return db.getFirstAsync<EventAttachmentRow>(EVENT_ATTACHMENT_QUERY, [eventId]);
+}
+
+export async function getEventAttachments(eventId: string): Promise<EventAttachmentRow[]> {
+  const db = getDb();
+  return db.getAllAsync<EventAttachmentRow>(EVENT_ATTACHMENTS_QUERY, [eventId]);
 }
 
 export async function deleteEventAttachmentLocal(attachmentId: string): Promise<void> {
@@ -946,13 +825,41 @@ export async function getFoodIntakeStats(petId: string): Promise<FoodIntakeStat[
   );
 }
 
-export async function getSyncStatus(): Promise<{ pendingCount: number; oldestPendingAt: string | null }> {
+/**
+ * What the sync badge reads — WIDENED PAST `events` BY B-398.
+ *
+ * This used to count unsynced `events` and nothing else, which made the badge a
+ * liar in the exact situations it exists for. A wedged `meals` queue (the diet
+ * owner's whole point), a stuck `medication_administrations` queue, a vet
+ * document that never uploaded: all reported zero pending, and SyncBanner —
+ * which keys on `oldestPendingAt` — stayed silent while three weeks of the
+ * household's record sat on one phone. Now every queue in SYNC_QUEUES is counted,
+ * and that set is derived from the schema by the guard test, so a new local queue
+ * cannot be added without being counted.
+ *
+ * `quarantinedCount` is deliberately SEPARATE rather than folded into
+ * pendingCount. The two need different copy and different owner action: pending
+ * means "waiting for a connection" (the banner's existing line is true), while
+ * quarantined means "this will not move until you touch it" — telling that owner
+ * to connect to the internet would be a lie of the same family we are removing.
+ * Never zero-by-construction: quarantine leaves the row on the device precisely
+ * so it can be counted here and surfaced, rather than silently dropped.
+ */
+export async function getSyncStatus(): Promise<{
+  pendingCount: number;
+  oldestPendingAt: string | null;
+  quarantinedCount: number;
+}> {
   const db = getDb();
-  const row = await db.getFirstAsync<{ count: number; oldest: string | null }>(
-    `SELECT COUNT(*) as count, MIN(updated_at) as oldest
-     FROM events WHERE synced = 0 AND deleted_at IS NULL`,
+  const pending = await db.getFirstAsync<{ count: number; oldest: string | null }>(
+    pendingStatusSql(),
   );
-  return { pendingCount: row?.count ?? 0, oldestPendingAt: row?.oldest ?? null };
+  const quarantined = await db.getFirstAsync<{ count: number }>(quarantineCountSql());
+  return {
+    pendingCount: pending?.count ?? 0,
+    oldestPendingAt: pending?.oldest ?? null,
+    quarantinedCount: quarantined?.count ?? 0,
+  };
 }
 
 export async function getMealForEvent(eventId: string): Promise<{
@@ -1072,7 +979,7 @@ export async function updateDoseAdherence(
 ): Promise<void> {
   const db = getDb();
   const res = await db.runAsync(
-    'UPDATE medication_administrations SET adherence = ?, updated_at = ?, synced = 0 WHERE event_id = ?',
+    'UPDATE medication_administrations SET adherence = ?, updated_at = ?, synced = 0, sync_attempts = 0, sync_error = NULL WHERE event_id = ?',
     [adherence, new Date().toISOString(), eventId],
   );
   if (res.changes === 0) {
@@ -1092,7 +999,7 @@ export async function updateDoseHowGiven(
 ): Promise<void> {
   const db = getDb();
   const res = await db.runAsync(
-    'UPDATE medication_administrations SET how_given = ?, updated_at = ?, synced = 0 WHERE event_id = ?',
+    'UPDATE medication_administrations SET how_given = ?, updated_at = ?, synced = 0, sync_attempts = 0, sync_error = NULL WHERE event_id = ?',
     [howGiven, new Date().toISOString(), eventId],
   );
   if (res.changes === 0) {

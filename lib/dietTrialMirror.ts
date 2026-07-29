@@ -84,6 +84,9 @@ export const DIET_TRIAL_SCHEMA_SQL = `
     created_at            TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at            TEXT NOT NULL DEFAULT (datetime('now')),
     synced                INTEGER NOT NULL DEFAULT 0,
+    -- B-398 generalised the quarantine pair to every queue; sync_attempts is the
+    -- half this table did not have. See lib/syncQueue.ts.
+    sync_attempts         INTEGER NOT NULL DEFAULT 0,
     sync_error            TEXT
   );
 
@@ -109,6 +112,7 @@ export const DIET_TRIAL_SCHEMA_SQL = `
     created_at     TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at     TEXT NOT NULL DEFAULT (datetime('now')),
     synced         INTEGER NOT NULL DEFAULT 0,
+    sync_attempts  INTEGER NOT NULL DEFAULT 0,
     sync_error     TEXT,
     UNIQUE (diet_trial_id, food_item_id, role, allowed_from)
   );
@@ -331,51 +335,23 @@ export function dietTrialFoodRowToRemote(row: LocalDietTrialFood): RemoteDietTri
   };
 }
 
-// ── Terminal errors (§3.3) ───────────────────────────────────────────────────
+// ── Terminal errors (§3.3) — MOVED to lib/syncQueue.ts by B-398 ──────────────
 //
-// Every syncPending* writer in this repo assumes ONE failure mode: transient.
-// Log, leave synced = 0, retry next cycle (Pattern 1). Migration 040 introduced
-// the first failure this codebase can hit that is PERMANENT:
+// This is where the terminal/transient classifier was born: migration 040's
+// UNIQUE active-trial index gave the codebase its first PERMANENT push failure,
+// and diet_trials was the only table that could hit it.
 //
-//   • 23505 unique_violation — the UNIQUE active-trial index. Two devices start a
-//     trial offline; the first to reach the server wins, and the second device's
-//     row can NEVER be accepted, no matter how many times it is sent. Also the
-//     same-day re-add against UNIQUE (diet_trial_id, food_item_id, role,
-//     allowed_from).
-//   • 23514 check_violation — migration 041's same-pet trigger raises with this
-//     ERRCODE. A row naming another pet's trial is wrong, not early.
-//   • 23502 not_null_violation / 22P02 invalid_text_representation — a malformed
-//     row (missing required column, a string that is not a member of one of the
-//     four new ENUMs). A client bug; the thousandth attempt fails like the first.
+// B-398 established that it was never trial-specific. Every batch writer had the
+// same wedge — one row the server can never accept blocks the whole table's queue
+// forever — so the classifier, the `sync_attempts` retry budget and the queue
+// registry now live in lib/syncQueue.ts and govern all twelve queues. Read that
+// file for the full argument (including the safety-critical rule that a codeless
+// network failure must never spend an attempt).
 //
-// DELIBERATELY NOT TERMINAL, because each of these genuinely does resolve on a
-// later cycle and treating it as terminal would park a good row forever:
-//   • 23503 foreign_key_violation — the parent (pet, food, trial) simply has not
-//     landed yet. This is the documented, expected mid-cycle state that Pattern 1
-//     and Pattern 6 exist to ride out.
-//   • 42501 insufficient_privilege / RLS — reachable from a session or pet-
-//     hydration race, and per-row isolation already stops one such row blocking
-//     any other. Retrying costs one request per cycle; parking a legitimate row
-//     costs the owner their trial.
-//   • Anything without a code — network, timeout, an offline device.
-//
-// What "terminal" buys is NOT correctness of the other rows (per-row isolation
-// in lib/sync.ts does that): it is not hammering the server forever with a
-// request that provably cannot succeed, and leaving a durable, greppable reason
-// on the row for the surface that will eventually show the owner the conflict.
-export const TERMINAL_SYNC_ERROR_CODES = ['23505', '23514', '23502', '22P02'] as const;
-
-export function isTerminalSyncError(error: { code?: string | null } | null | undefined): boolean {
-  if (!error?.code) return false;
-  return (TERMINAL_SYNC_ERROR_CODES as readonly string[]).includes(error.code);
-}
-
-// The text parked in `sync_error`. Code first so the column is greppable by
-// failure class, message second so the reason survives without a server round
-// trip. Truncated — a Postgres detail/hint chain can be long, and this is a
-// diagnostic, not a record.
-export function formatSyncError(error: { code?: string | null; message?: string | null }): string {
-  const code = error.code ?? 'unknown';
-  const message = (error.message ?? '').slice(0, 300);
-  return message ? `${code}: ${message}` : code;
-}
+// Re-exported here rather than moved-and-forgotten: the §3.3 contract is part of
+// this module's stated interface, and every existing importer keeps working.
+export {
+  TERMINAL_SYNC_ERROR_CODES,
+  isTerminalSyncError,
+  formatSyncError,
+} from './syncQueue';

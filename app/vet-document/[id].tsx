@@ -314,9 +314,17 @@ export default function VetDocumentDetailScreen() {
       // so the copy is what decides whether the vet receives "Pixel-Senior-panel-
       // 2026-07-14.pdf" or "a3f9c1e2-….pdf". Best-effort: a failed copy shares the
       // raw file rather than blocking the moment this screen exists for.
+      // `documentPet?.name ?? ''`, NOT `petName`. The two fallbacks are different
+      // kinds of thing and only one of them belongs in a filename: "your pet" is
+      // PROSE, correct in the dialog title below, and it slugs to "your-pet-lab-
+      // result-2026-07-14.pdf" — a file the vet keeps, named after a sentence.
+      // Passing '' lets slug() use its own 'pet' fallback, which is what it is for.
+      // The header above already degrades this way (plain "Vet Files" rather than
+      // "your pet’s Vet Files"); the filename had been left behind.
+      // (pm-feature-review on B-550.)
       const shareUri = stageForShare(
         sendUri,
-        vetDocumentShareFilename(petName, detail, page, detail.pages.length),
+        vetDocumentShareFilename(documentPet?.name ?? '', detail, page, detail.pages.length),
       );
       await Sharing.shareAsync(shareUri, {
         mimeType: detail.isPdf ? 'application/pdf' : 'image/jpeg',
@@ -346,7 +354,26 @@ export default function VetDocumentDetailScreen() {
   // exact mis-attribution this lookup exists to prevent, so the miss falls straight
   // through to the anonymous fallback: an unnamed file is recoverable, a confidently
   // wrong name is not. (VF-6, found by rls-privacy-reviewer.)
-  const petName = pets.find((p) => p.id === detail?.petId)?.name ?? 'your pet';
+  const documentPet = pets.find((p) => p.id === detail?.petId) ?? null;
+  const petName = documentPet?.name ?? 'your pet';
+
+  // B-550 — this screen used to name the pet NOWHERE. The header read "Vet Files",
+  // the body read "Document — Jul 14", and the only place Pixel appeared was inside
+  // the filename of a file that had already left the app. So Sam could hand an ER
+  // vet a phone showing a two-cat household's document with nothing on screen
+  // saying whose it is — on the one surface where getting that wrong means a vet
+  // reads the wrong patient's bloodwork.
+  //
+  // The header is the right home for it: §4.1 already makes the pet's name the
+  // library header's job ("the only filing cue a multi-pet household gets"), and
+  // this bar sits OUTSIDE the ScrollView, so it is still on screen when the phone
+  // is turned around over a scrolled document.
+  //
+  // Falls back to the bare title rather than "your pet’s Vet Files" when the pet
+  // cannot be resolved (an archived pet, a cold deep link) — same rule as the
+  // filename above it: silence beats a confident guess, and the awkward possessive
+  // would read as a bug besides.
+  const headerTitle = documentPet ? `${documentPet.name}’s Vet Files` : 'Vet Files';
 
   const linkedVisit = detail?.vetVisitId
     ? visits.find((v) => v.id === detail.vetVisitId) ?? null
@@ -408,7 +435,7 @@ export default function VetDocumentDetailScreen() {
         // canGoBack-guarded: this route is reachable by direct link, and a cold
         // deep-link has nothing to pop.
         onLeadingPress={() => (router.canGoBack() ? router.back() : router.replace('/vet-files'))}
-        title="Vet Files"
+        title={headerTitle}
         right={
           detail ? (
             <TouchableOpacity
@@ -455,9 +482,22 @@ export default function VetDocumentDetailScreen() {
               onOpen={openViewer}
             />
 
-            <Text style={[styles.title, detail.untitled && styles.titleUntitled]}>
-              {detail.title}
-            </Text>
+            <View style={styles.titleBlock}>
+              <Text style={[styles.title, detail.untitled && styles.titleUntitled]}>
+                {detail.title}
+              </Text>
+              {/* B-546 — the name the file arrived with. Shown here whatever the
+                  title is (the library row drops it once a name exists; this screen
+                  does not — see VetDocumentDetail.sourceFilename), and shown as
+                  provenance rather than as a heading: it is the answer to "is this
+                  the right PDF" in the seconds before Send. Middle-truncated so the
+                  extension and the distinguishing stem both survive. */}
+              {detail.sourceFilename ? (
+                <Text style={styles.file} numberOfLines={1} ellipsizeMode="middle">
+                  {detail.sourceFilename}
+                </Text>
+              ) : null}
+            </View>
 
             <DocumentMetaCard rows={metaRows} />
           </ScrollView>
@@ -518,7 +558,12 @@ export default function VetDocumentDetailScreen() {
           <DocumentPdfViewer
             visible={pdfViewer}
             uri={coverUri}
-            title={detail.title}
+            // B-550 continued. The header fix above is invisible from inside this
+            // Modal, and this IS the handover surface for the PDF case — a lab
+            // result full-screen is the thing actually turned around to face a vet.
+            // So the pet rides in the bar's title too, same resolve-or-stay-silent
+            // rule as the header.
+            title={documentPet ? `${documentPet.name} · ${detail.title}` : detail.title}
             onClose={() => setPdfViewer(false)}
           />
 
@@ -591,11 +636,20 @@ const styles = StyleSheet.create({
     paddingBottom: theme.space3,
     gap: 14,
   },
+  titleBlock: {
+    gap: 3,
+  },
   title: {
     fontSize: theme.textLG,
     fontWeight: theme.weightSemibold,
     color: theme.colorTextPrimary,
     letterSpacing: theme.trackingTight,
+  },
+  // Provenance sits below the title and quieter than it — the filename is what the
+  // document was CALLED, never what it IS.
+  file: {
+    fontSize: theme.textXS,
+    color: theme.colorTextTertiary,
   },
   // The untitled steady state (D11) reads quieter here for the same reason it does
   // in the library row: the document is real, it just hasn't been named.

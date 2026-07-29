@@ -28,16 +28,31 @@ interface Props {
 //
 // Both are the sanctioned alternative to asking at capture, so neither is optional
 // decoration — remove them and the zero-decision save has no counterpart.
+//
+// B-546 adds a THIRD, and it is the one that carries the PDF case. The two above
+// are recoveries the owner has to perform; a filename is one the app already has.
+// A PDF gets no thumbnail by design (D5), so two lab results pulled from one clinic
+// portal on one day were previously identical rows down to the pixel — same glyph,
+// same "Document — Jul 14", same dashed chip, same date. The `fileLabel` line is
+// what tells them apart before anything is tapped, and it renders BESIDE the
+// default title rather than as it, so the Name pill survives (the PM's ruling on
+// B-546: option (b), not (a)).
 export function VetDocumentRow({
   row, thumbUri, thumbLoading, onPress, onName, onAddType,
 }: Props) {
   // Spoken as one sentence: an untitled row's title already carries its date, so
   // the meta line would repeat it. Pages and type are what a screen reader adds.
+  //
+  // The filename comes LAST and only when present. It is the longest and least
+  // pronounceable part of the row, and it is a tiebreaker rather than a headline —
+  // a screen-reader user scanning a list wants the type and the page count first
+  // and reaches the filename only if the rest didn't settle it.
   const spoken = [
     row.title,
     row.kindLabel,
     row.pageLabel,
     row.untitled ? null : row.dateLabel,
+    row.fileLabel,
   ].filter(Boolean).join(', ');
 
   return (
@@ -82,6 +97,21 @@ export function VetDocumentRow({
           <Text style={styles.date}>{row.dateLabel}</Text>
           {row.pageLabel ? <Text style={styles.pages}>{row.pageLabel}</Text> : null}
         </View>
+        {/* B-546 — its own line rather than another item in the meta row above.
+            The meta row wraps (flexWrap), so a 40-character filename in it would
+            push the date and the page count onto a second line and change the
+            row's height per-document; on its own line the row's anatomy is the
+            same whether a filename exists or not.
+
+            Truncated in the MIDDLE, which is the whole point for this string:
+            head-truncation would eat the extension and tail-truncation would eat
+            the part that differs — "CBC-Pixel-2026-07…" and
+            "Chem-Pixel-2026-07…" are two rows this line exists to separate. */}
+        {row.fileLabel ? (
+          <Text style={styles.file} numberOfLines={1} ellipsizeMode="middle">
+            {row.fileLabel}
+          </Text>
+        ) : null}
       </View>
 
       {row.untitled ? (
@@ -170,6 +200,23 @@ const styles = StyleSheet.create({
   pages: {
     fontSize: theme.textXS,
     color: theme.colorTextTertiary,
+  },
+  // Subordinate to the title, but READABLE — tertiary (#737373, ~4.7:1 on this
+  // surface), not disabled (#A3A3A3, ~2.5:1).
+  //
+  // This shipped as `colorTextDisabled` for half an hour and `pm-feature-review`
+  // was right to call it the one thing to fix before a device pass: the disabled
+  // token is the palette's "you cannot use this" colour, and this is the one string
+  // on the row whose entire job is letting an owner tell two lab results apart,
+  // one-handed, in clinic light. Quiet is a hierarchy instruction; 2.5:1 is a
+  // legibility failure, and they are not the same thing. Tertiary matches the meta
+  // line directly above and still sits plainly below the accent Name pill, so
+  // nothing about the intended hierarchy changes. Same token the detail screen
+  // already used for the identical string — the two surfaces now agree.
+  file: {
+    fontSize: theme.textXS,
+    color: theme.colorTextTertiary,
+    marginTop: 3,
   },
   namePill: {
     backgroundColor: theme.colorAccentLight,

@@ -307,6 +307,7 @@ function pageRow(over: Partial<VetDocumentPageRow> = {}): VetDocumentPageRow {
     document_date: '2026-07-20',
     notes: null,
     vet_visit_id: null,
+    source_filename: null,
     local_uri: '',
     storage_path: 'pet-1/p1.jpg',
     mime_type: 'image/jpeg',
@@ -336,6 +337,39 @@ describe('buildVetDocumentDetail', () => {
     const d = buildVetDocumentDetail([pageRow({ title: '   ', notes: '  \n ' })], now);
     expect(d?.untitled).toBe(true);
     expect(d?.notes).toBeNull();
+  });
+
+  // B-546. Deliberately DIFFERENT from the library row, which drops the filename
+  // once a title exists: the list can afford that (the name has disambiguated it),
+  // this screen cannot. It is where the owner confirms they are handing a vet the
+  // right file, and "which PDF is this, actually" is a question a typed name does
+  // not answer.
+  it('exposes the source filename whatever the title is', () => {
+    const untitled = buildVetDocumentDetail([pageRow({ source_filename: 'cbc.pdf' })], now);
+    expect(untitled?.sourceFilename).toBe('cbc.pdf');
+
+    const named = buildVetDocumentDetail(
+      [pageRow({ title: 'Senior panel', source_filename: 'cbc.pdf' })],
+      now,
+    );
+    expect(named?.sourceFilename).toBe('cbc.pdf');
+    expect(named?.untitled).toBe(false);
+  });
+
+  it('reports no filename when none was recorded', () => {
+    expect(buildVetDocumentDetail([pageRow()], now)?.sourceFilename).toBeNull();
+    expect(buildVetDocumentDetail([pageRow({ source_filename: '  ' })], now)?.sourceFilename)
+      .toBeNull();
+  });
+
+  // Every per-document fact comes from the COVER, and this is one more of them —
+  // a half-hydrated group must not render page 2's filename under page 1.
+  it('takes the filename from the cover page', () => {
+    const d = buildVetDocumentDetail([
+      pageRow({ id: 'p1', page_index: 0, source_filename: 'cover.pdf' }),
+      pageRow({ id: 'p2', page_index: 1, source_filename: 'page-two.pdf' }),
+    ], now);
+    expect(d?.sourceFilename).toBe('cover.pdf');
   });
 
   it('carries the owner’s title, kind, notes and visit link', () => {
@@ -386,6 +420,7 @@ describe('vetDocumentShareFilename', () => {
     isPdf: true,
     title: 'Senior panel',
     untitled: false,
+    sourceFilename: null,
   };
 
   it('uses the owner’s title when there is one', () => {
@@ -408,6 +443,82 @@ describe('vetDocumentShareFilename', () => {
     const name = vetDocumentShareFilename("Mr. O'Malley /2", named);
     expect(name).toBe('Mr-O-Malley-2-Senior-panel-2026-07-14.pdf');
     expect(name).not.toMatch(/[/\\]/);
+  });
+
+  // The caller passes '' when it cannot resolve the pet (archived pet, cold deep
+  // link) rather than its own "your pet" PROSE fallback — which would slug to
+  // "your-pet-lab-result-….pdf", a file the vet keeps, named after a sentence.
+  // Asserted here so the anonymous path is a defined behaviour rather than an
+  // accident of whatever the screen happens to hold (pm-feature-review on B-550).
+  it('degrades to an anonymous name when the pet cannot be resolved', () => {
+    expect(vetDocumentShareFilename('', named)).toBe('pet-Senior-panel-2026-07-14.pdf');
+    expect(vetDocumentShareFilename('   ', named)).toBe('pet-Senior-panel-2026-07-14.pdf');
+  });
+
+  // ── B-587: the source filename is the middle rung ──────────────────────────
+  //
+  // The regression this closes: `untitled + kind 'other'` is not an edge case, it
+  // is what EVERY document is until the owner does two optional things — so the
+  // vet routinely received "Pixel-other-2026-07-14.pdf" for a file the app could
+  // already name. PM-ratified 2026-07-29.
+
+  const untitled = { ...named, untitled: true, title: 'Document — Jul 14' };
+
+  it('uses the source filename’s stem for an untitled document', () => {
+    expect(vetDocumentShareFilename('Pixel', { ...untitled, sourceFilename: 'CBC.pdf' }))
+      .toBe('Pixel-CBC-2026-07-14.pdf');
+  });
+
+  it('never lets `other` reach the vet’s copy', () => {
+    // slug()'s own fallback cannot catch this — 'other' slugs to a non-empty
+    // 'other', so the fallback never fires and the word ships.
+    expect(vetDocumentShareFilename('Pixel', { ...untitled, kind: 'other' as const }))
+      .toBe('Pixel-document-2026-07-14.pdf');
+  });
+
+  it('still falls through to a real kind when there is no filename', () => {
+    expect(vetDocumentShareFilename('Pixel', untitled)).toBe('Pixel-lab-result-2026-07-14.pdf');
+  });
+
+  // A PIMS export very often already carries both, and
+  // "Pixel-Pixel-CBC-2026-07-14-2026-07-14.pdf" reads as a bug in the app that
+  // produced it.
+  it('does not repeat the pet or the date the stem already carries', () => {
+    expect(vetDocumentShareFilename('Pixel', {
+      ...untitled, sourceFilename: 'Pixel-CBC-2026-07-14.pdf',
+    })).toBe('Pixel-CBC-2026-07-14.pdf');
+    // Case-insensitively — a clinic exports PIXEL- as readily as Pixel-.
+    expect(vetDocumentShareFilename('Pixel', {
+      ...untitled, sourceFilename: 'PIXEL_CBC.pdf',
+    })).toBe('PIXEL-CBC-2026-07-14.pdf');
+  });
+
+  it('still dates a stem that carries no date', () => {
+    expect(vetDocumentShareFilename('Pixel', { ...untitled, sourceFilename: 'bloodwork.pdf' }))
+      .toBe('Pixel-bloodwork-2026-07-14.pdf');
+  });
+
+  it('drops only the extension, and uses the row’s own type for the new one', () => {
+    // "labs.PDF" must not become "labs-PDF.pdf"; and an image row ends .jpg even
+    // when the picked name said otherwise.
+    expect(vetDocumentShareFilename('Pixel', { ...untitled, sourceFilename: 'labs.PDF' }))
+      .toBe('Pixel-labs-2026-07-14.pdf');
+    expect(vetDocumentShareFilename('Pixel', {
+      ...untitled, sourceFilename: 'scan.pdf', isPdf: false,
+    })).toBe('Pixel-scan-2026-07-14.jpg');
+  });
+
+  it('lets an owner’s title outrank the filename', () => {
+    expect(vetDocumentShareFilename('Pixel', { ...named, sourceFilename: 'CBC.pdf' }))
+      .toBe('Pixel-Senior-panel-2026-07-14.pdf');
+  });
+
+  it('cannot be walked out of its directory by a hostile stem', () => {
+    const out = vetDocumentShareFilename('Pixel', {
+      ...untitled, sourceFilename: '../../etc/passwd.pdf',
+    });
+    expect(out).not.toMatch(/[/\\]/);
+    expect(out).not.toMatch(/\.\./);
   });
 });
 
@@ -504,6 +615,7 @@ describe('vetDocumentShareFilename — every component is sanitised', () => {
     isPdf: true,
     title: 'Senior panel',
     untitled: false,
+    sourceFilename: null,
   };
 
   it('slugs a separator out of the document date', () => {

@@ -63,7 +63,7 @@ export const LIBRARY_VET_DOCUMENTS_QUERY =
   `SELECT document_group_id AS group_id,
           COUNT(*)          AS page_count,
           MIN(page_index)   AS cover_page_index,
-          id, kind, title, document_date, vet_visit_id,
+          id, kind, title, document_date, vet_visit_id, source_filename,
           local_uri, storage_path, mime_type, created_at
    FROM vet_documents
    WHERE pet_id = ? AND deleted_at IS NULL
@@ -80,6 +80,7 @@ export interface VetDocumentGroupRow {
   title: string | null;
   document_date: string | null;
   vet_visit_id: string | null;
+  source_filename: string | null;
   local_uri: string;
   storage_path: string;
   mime_type: string;
@@ -98,6 +99,18 @@ export interface VetLibraryRow {
   title: string;
   /** Drives the quieter title weight AND the one-tap Name pill (D11). */
   untitled: boolean;
+  /**
+   * B-546 — the filename this document arrived with, rendered as a secondary
+   * meta line, or null when there is nothing to show.
+   *
+   * Null on a NAMED row even when a filename is stored, and that is the rule
+   * rather than an omission: the whole problem this solves is that two untitled
+   * PDF rows are indistinguishable. Once the owner has typed a name, the name IS
+   * the identity, and "Scan_20260714_0001.pdf" underneath it is noise on a
+   * surface whose job is one calm list. The stored value is not lost — the
+   * detail screen shows it either way (see VetDocumentDetail.sourceFilename).
+   */
+  fileLabel: string | null;
   dateLabel: string;
   pageCount: number;
   /** "3 pages", or null for a single-page document. */
@@ -158,6 +171,9 @@ export function buildVetLibraryRow(row: VetDocumentGroupRow, now: Date = new Dat
     kindLabel: kind === VET_DOCUMENT_DEFAULT_KIND ? null : VET_DOCUMENT_KIND_LABELS[kind],
     title: owned ?? defaultVetDocumentTitle(dateLabel),
     untitled: owned == null,
+    // See the field's note: shown only while the row is untitled, which is the
+    // state it exists to disambiguate.
+    fileLabel: owned == null ? (row.source_filename?.trim() || null) : null,
     dateLabel,
     pageCount,
     pageLabel: pageCount > 1 ? `${pageCount} pages` : null,
@@ -337,7 +353,7 @@ async function updateVetDocumentGroup(
   const db = getDb();
   await db.runAsync(
     `UPDATE vet_documents
-     SET ${column} = ?, updated_at = ?, synced = 0
+     SET ${column} = ?, updated_at = ?, synced = 0, sync_attempts = 0, sync_error = NULL
      WHERE document_group_id = ? AND deleted_at IS NULL`,
     [value, new Date().toISOString(), groupId],
   );
@@ -412,7 +428,7 @@ export async function softDeleteVetDocument(groupId: string): Promise<void> {
   const now = new Date().toISOString();
   await db.runAsync(
     `UPDATE vet_documents
-     SET deleted_at = ?, updated_at = ?, synced = 0
+     SET deleted_at = ?, updated_at = ?, synced = 0, sync_attempts = 0, sync_error = NULL
      WHERE document_group_id = ? AND deleted_at IS NULL`,
     [now, now, groupId],
   );
@@ -425,7 +441,7 @@ export async function restoreVetDocument(groupId: string): Promise<void> {
   const now = new Date().toISOString();
   await db.runAsync(
     `UPDATE vet_documents
-     SET deleted_at = NULL, updated_at = ?, synced = 0
+     SET deleted_at = NULL, updated_at = ?, synced = 0, sync_attempts = 0, sync_error = NULL
      WHERE document_group_id = ? AND deleted_at IS NOT NULL`,
     [now, groupId],
   );
@@ -443,7 +459,7 @@ export const RECENTLY_DELETED_VET_DOCUMENTS_QUERY =
   `SELECT document_group_id AS group_id,
           COUNT(*)          AS page_count,
           MIN(page_index)   AS cover_page_index,
-          id, kind, title, document_date, vet_visit_id,
+          id, kind, title, document_date, vet_visit_id, source_filename,
           local_uri, storage_path, mime_type, created_at,
           MAX(deleted_at)   AS deleted_at
    FROM vet_documents

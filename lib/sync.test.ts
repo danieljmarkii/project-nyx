@@ -54,6 +54,7 @@ jest.mock('./medications', () => ({
   administrationRowToRemote: jest.fn(),
 }));
 
+import { MAX_SYNC_ATTEMPTS } from './syncQueue';
 import {
   markSynced,
   prepareAttachmentUpload,
@@ -61,6 +62,7 @@ import {
   refreshMedicationCache,
   syncPendingDietTrials,
   syncPendingDietTrialFoods,
+  syncPendingEvents,
   syncPendingFeedingArrangements,
   syncPendingMeals,
 } from './sync';
@@ -91,7 +93,9 @@ describe('markSynced (B-125)', () => {
 
     expect(mockRunAsync).toHaveBeenCalledTimes(1);
     const [sql, params] = mockRunAsync.mock.calls[0] as [string, unknown[]];
-    expect(sql).toBe('UPDATE meals SET synced = 1 WHERE id IN (?,?,?)');
+    expect(sql.replace(/\s+/g, ' ')).toBe(
+      'UPDATE meals SET synced = 1, sync_attempts = 0, sync_error = NULL WHERE id IN (?,?,?)',
+    );
     expect(params).toEqual(ids);
     // The property that matters: no id fragment reaches the SQL at all.
     expect(sql).not.toMatch(/9f3b|DROP/);
@@ -123,8 +127,19 @@ describe('markSynced (B-125)', () => {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const { DatabaseSync } = require('node:sqlite');
     const db = new DatabaseSync(':memory:');
-    db.exec('CREATE TABLE meals (id TEXT PRIMARY KEY, synced INTEGER NOT NULL DEFAULT 0)');
-    for (const id of ['m1', 'm2', 'm3']) {
+    db.exec(`CREATE TABLE meals (
+      id TEXT PRIMARY KEY,
+      synced INTEGER NOT NULL DEFAULT 0,
+      sync_attempts INTEGER NOT NULL DEFAULT 0,
+      sync_error TEXT
+    )`);
+    // m1 carries a spent budget and a parked reason (B-398): a row that lands
+    // must come back to a CLEAN slate, or a later single failure on an edited row
+    // would quarantine it on the strength of history it already outlived.
+    db.prepare(
+      "INSERT INTO meals (id, synced, sync_attempts, sync_error) VALUES ('m1', 0, 24, '23503: parent missing')",
+    ).run();
+    for (const id of ['m2', 'm3']) {
       db.prepare('INSERT INTO meals (id, synced) VALUES (?, 0)').run(id);
     }
 
@@ -134,13 +149,13 @@ describe('markSynced (B-125)', () => {
     const [sql, params] = mockRunAsync.mock.calls[0] as [string, string[]];
     db.prepare(sql).run(...params);
 
-    const rows = db.prepare('SELECT id, synced FROM meals ORDER BY id').all() as {
-      id: string; synced: number;
-    }[];
+    const rows = db
+      .prepare('SELECT id, synced, sync_attempts, sync_error FROM meals ORDER BY id')
+      .all() as { id: string; synced: number; sync_attempts: number; sync_error: string | null }[];
     expect(rows).toEqual([
-      { id: 'm1', synced: 1 },
-      { id: 'm2', synced: 0 },
-      { id: 'm3', synced: 1 },
+      { id: 'm1', synced: 1, sync_attempts: 0, sync_error: null },
+      { id: 'm2', synced: 0, sync_attempts: 0, sync_error: null },
+      { id: 'm3', synced: 1, sync_attempts: 0, sync_error: null },
     ]);
     db.close();
   });
@@ -631,7 +646,7 @@ describe('syncPendingDietTrials / syncPendingDietTrialFoods (B-417 PR 2)', () =>
 
   it('HOLDS the starting trial when the ending one did not land', async () => {
     // The failure the ordering itself creates if the passes are not gated:
-    // pushDietTrialRows does NOT throw on a transient error (a flap, a 503, a
+    // pushRows does NOT throw on a transient error (a flap, a 503, a
     // PGRST301 — none carry a terminal code), so an unconditional second pass
     // would send the new trial into a server where the old one is still active and
     // earn it a permanent 23505.
@@ -652,11 +667,21 @@ describe('syncPendingDietTrials / syncPendingDietTrialFoods (B-417 PR 2)', () =>
     expect(upsertSpy).toHaveBeenCalledTimes(1);
   });
 
-  it('marks nothing at all when the whole batch is silently blocked', async () => {
+  it('marks nothing synced when the whole batch is silently blocked — and spends an attempt', async () => {
+    // Success-with-zero-rows: PostgREST returns { error: null } when a policy
+    // filters the statement. The row is NOT on the server, so flagging it synced
+    // would lose it silently (the 009 trap). B-398 adds the second half: the row
+    // also spends one attempt, so a write that can never land stops being re-sent
+    // for the life of the install instead of only "staying honestly queued".
     queueReturns([TRIAL]);
     selectSpy.mockResolvedValue({ data: [], error: null });
     await syncPendingDietTrials();
-    expect(mockRunAsync).not.toHaveBeenCalled();
+
+    expect(mockRunAsync.mock.calls.some(([sql]) => String(sql).includes('synced = 1'))).toBe(false);
+    const bump = mockRunAsync.mock.calls.find(([sql]) =>
+      String(sql).includes('sync_attempts = sync_attempts + 1'));
+    expect(bump).toBeDefined();
+    expect(bump![1]).toEqual([MAX_SYNC_ATTEMPTS, expect.stringContaining('42501'), 't1']);
   });
 
   it('quarantines a 23505 row instead of retrying it forever — and never flags it synced', async () => {
@@ -698,18 +723,48 @@ describe('syncPendingDietTrials / syncPendingDietTrialFoods (B-417 PR 2)', () =>
     );
   });
 
-  it('does NOT isolate or quarantine on a non-terminal failure — one retry next cycle', async () => {
-    // 23503 means the parent simply has not landed yet: the expected mid-cycle
-    // state. Re-sending N single-row requests would be strictly worse, and
-    // parking the row would strand a perfectly good trial.
+  it('isolates on a non-terminal ROW rejection too, but never quarantines on the first', async () => {
+    // CONTRACT CHANGE (B-398). This used to assert "no isolation on 23503" on the
+    // grounds that an FK parent resolves next cycle anyway. That reasoning missed
+    // the mixed batch, which is the common one: if t1's parent has landed and t2's
+    // has not, the single upsert fails wholesale and t1 is blocked behind t2 —
+    // every cycle, indefinitely, since the queue re-selects the same rows. So a
+    // row-level rejection now isolates, and the cost is bounded: the rows that land
+    // leave the queue, so the fan-out shrinks rather than repeating at scale.
+    //
+    // What must NOT change is that 23503 stays NON-terminal: it costs one attempt,
+    // not a quarantine. Parking a trial on the first FK miss would strand a
+    // perfectly good row for a reason that resolves on its own.
     queueReturns([TRIAL, { ...TRIAL, id: 't2' }]);
     selectSpy.mockResolvedValue({ data: null, error: { code: '23503', message: 'fk' } });
 
     await syncPendingDietTrials();
 
-    expect(selectSpy).toHaveBeenCalledTimes(1); // the batch only — no isolation pass
-    expect(mockRunAsync).not.toHaveBeenCalled(); // nothing marked, nothing parked
-    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('diet_trials'), 'fk');
+    expect(selectSpy).toHaveBeenCalledTimes(3); // the batch, then t1 and t2 alone
+    // Both rows spent one attempt; NEITHER was parked outright.
+    const bumps = mockRunAsync.mock.calls.filter(([sql]) =>
+      String(sql).includes('sync_attempts = sync_attempts + 1'));
+    expect(bumps.map(([, p]) => (p as unknown[])[2])).toEqual(['t1', 't2']);
+    expect(
+      mockRunAsync.mock.calls.some(
+        ([sql]) => String(sql).includes('SET sync_error = ?') && !String(sql).includes('CASE'),
+      ),
+    ).toBe(false);
+    expect(mockRunAsync.mock.calls.some(([sql]) => String(sql).includes('synced = 1'))).toBe(false);
+  });
+
+  it('does NOT isolate on a request-level failure — an expired JWT is not one row\'s fault', async () => {
+    // PGRST301 is not a SQLSTATE: the request never reached row evaluation, so
+    // every row failed for one reason that belongs to none of them. Isolating would
+    // fire N single-row requests guaranteed to fail identically, and spending each
+    // row an attempt would punish the innocent for the session's problem.
+    queueReturns([TRIAL, { ...TRIAL, id: 't2' }]);
+    selectSpy.mockResolvedValue({ data: null, error: { code: 'PGRST301', message: 'JWT expired' } });
+
+    await syncPendingDietTrials();
+
+    expect(selectSpy).toHaveBeenCalledTimes(1); // the batch only
+    expect(mockRunAsync).not.toHaveBeenCalled(); // nothing marked, nothing spent
   });
 
   it('skips entirely with no session (Pattern 4) — never writes on a dead JWT', async () => {
@@ -750,5 +805,176 @@ describe('syncPendingDietTrials / syncPendingDietTrialFoods (B-417 PR 2)', () =>
       expect.stringContaining('UPDATE diet_trial_foods SET sync_error'),
       ['23505: dup membership', 'df1'],
     );
+  });
+});
+
+// ── B-398 — the poison-pill wedge, on a batch writer that is not diet trials ──
+//
+// pushRows is now shared by every writer, so these assertions are about the
+// PRIMITIVE rather than about events specifically; syncPendingEvents is simply the
+// thinnest caller (no pre-sync, no parent gate) and therefore the clearest lens.
+//
+// The bug being closed: the old shape was `if (error) { log; return; }`, so ONE
+// row the server refuses failed the whole upsert and marked nothing synced. The
+// queue read is `LIMIT 100`, so the poison row stays permanently in the window and
+// every row behind it is blocked for the life of the install — silently, because
+// getSyncStatus counted only unsynced `events` and the banner keys off that.
+describe('pushRows — poison-pill isolation and the retry budget (B-398)', () => {
+  let upsertSpy: jest.Mock;
+  let selectSpy: jest.Mock;
+  let warnSpy: jest.SpyInstance;
+
+  const evt = (id: string) => ({
+    id, pet_id: 'p1', event_type: 'vomit', occurred_at: '2026-07-01T08:00:00.000Z',
+    severity: null, notes: null, source: 'manual', occurred_at_source: 'manual',
+    occurred_at_confidence: null, occurred_at_earliest: null, occurred_at_latest: null,
+    deleted_at: null, created_at: '2026-07-01T08:00:00.000Z',
+    updated_at: '2026-07-01T08:00:00.000Z', logged_via: 'app',
+  });
+
+  const marks = () => mockRunAsync.mock.calls.filter(([sql]) => String(sql).includes('synced = 1'));
+  const bumps = () =>
+    mockRunAsync.mock.calls.filter(([sql]) =>
+      String(sql).includes('sync_attempts = sync_attempts + 1'));
+  const parks = () =>
+    mockRunAsync.mock.calls.filter(
+      ([sql]) => String(sql).includes('SET sync_error = ?') && !String(sql).includes('CASE'));
+
+  beforeEach(() => {
+    mockGetSession.mockReset();
+    mockGetSession.mockResolvedValue({ data: { session: { user: { id: 'user-A' } } } });
+    mockFrom.mockReset();
+    mockRunAsync.mockReset();
+    mockGetAllAsync.mockReset();
+    selectSpy = jest.fn().mockResolvedValue({ data: [], error: null });
+    upsertSpy = jest.fn().mockReturnValue({ select: selectSpy });
+    mockFrom.mockReturnValue({ upsert: upsertSpy });
+    warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    jest.spyOn(console, 'error').mockImplementation(() => {});
+  });
+  afterEach(() => jest.restoreAllMocks());
+
+  it('reads the queue with the quarantine filter — a parked row is skipped, not retried', async () => {
+    mockGetAllAsync.mockResolvedValue([]);
+    await syncPendingEvents();
+    expect(String(mockGetAllAsync.mock.calls[0][0])).toContain('sync_error IS NULL');
+  });
+
+  it('THE WEDGE: one refused row no longer blocks the other 99', async () => {
+    mockGetAllAsync.mockResolvedValue([evt('e1'), evt('e2'), evt('e3')]);
+    selectSpy
+      // The batch: the server refuses it because of e2.
+      .mockResolvedValueOnce({ data: null, error: { code: '22P02', message: 'bad enum' } })
+      // Isolation: e1 lands, e2 is refused again, e3 lands.
+      .mockResolvedValueOnce({ data: [{ id: 'e1' }], error: null })
+      .mockResolvedValueOnce({ data: null, error: { code: '22P02', message: 'bad enum' } })
+      .mockResolvedValueOnce({ data: [{ id: 'e3' }], error: null });
+
+    await syncPendingEvents();
+
+    // Before B-398 this expectation was [] — nothing at all was marked, forever.
+    expect(marks().flatMap(([, p]) => p as string[]).sort()).toEqual(['e1', 'e3']);
+    // And the poison row is parked with its reason rather than re-sent every cycle.
+    expect(parks()).toHaveLength(1);
+    expect(parks()[0][1]).toEqual(['22P02: bad enum', 'e2']);
+  });
+
+  it('never flags a refused row synced — quarantine records, it does not lie', async () => {
+    mockGetAllAsync.mockResolvedValue([evt('e1')]);
+    selectSpy.mockResolvedValue({ data: null, error: { code: '23505', message: 'dup' } });
+
+    await syncPendingEvents();
+
+    expect(marks()).toHaveLength(0);
+    expect(parks()[0][1]).toEqual(['23505: dup', 'e1']);
+    // A terminal failure spends no budget — there is nothing to wait for.
+    expect(bumps()).toHaveLength(0);
+  });
+
+  it('SPENDS NOTHING on an offline device — the fortnight-in-a-basement case', async () => {
+    // The single most destructive way to get this wrong: if a codeless network
+    // failure counted toward the budget, an owner offline for two weeks would come
+    // back to find every queued meal quarantined by a server that never saw one.
+    mockGetAllAsync.mockResolvedValue([evt('e1'), evt('e2')]);
+    selectSpy.mockResolvedValue({ data: null, error: { message: 'Network request failed' } });
+
+    await syncPendingEvents();
+
+    expect(upsertSpy).toHaveBeenCalledTimes(1); // no isolation into a dead network
+    expect(mockRunAsync).not.toHaveBeenCalled(); // nothing marked, nothing spent
+  });
+
+  it('charges exactly one attempt per row per cycle on a row-level rejection', async () => {
+    mockGetAllAsync.mockResolvedValue([evt('e1'), evt('e2')]);
+    selectSpy.mockResolvedValue({ data: null, error: { code: '23503', message: 'fk' } });
+
+    await syncPendingEvents();
+
+    expect(bumps().map(([, p]) => (p as unknown[])[2])).toEqual(['e1', 'e2']);
+    expect(parks()).toHaveLength(0); // one FK miss is not a give-up
+  });
+
+  it('treats a silently-filtered write as unsent AND spends an attempt', async () => {
+    // { error: null } with fewer rows back than sent. Marking these synced is the
+    // 009 trap; leaving them queued forever with no counter was the B-398 half.
+    mockGetAllAsync.mockResolvedValue([evt('e1'), evt('e2')]);
+    selectSpy.mockResolvedValue({ data: [{ id: 'e1' }], error: null });
+
+    await syncPendingEvents();
+
+    expect(marks()[0][1]).toEqual(['e1']);
+    expect(bumps().map(([, p]) => (p as unknown[])[2])).toEqual(['e2']);
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('RLS-blocked'));
+  });
+
+  it('marks the whole batch when it lands, and resets the quarantine state', async () => {
+    mockGetAllAsync.mockResolvedValue([evt('e1'), evt('e2')]);
+    selectSpy.mockResolvedValue({ data: [{ id: 'e1' }, { id: 'e2' }], error: null });
+
+    await syncPendingEvents();
+
+    expect(upsertSpy).toHaveBeenCalledTimes(1); // no isolation on the happy path
+    const [sql, params] = marks()[0] as [string, string[]];
+    expect(params.sort()).toEqual(['e1', 'e2']);
+    expect(sql).toContain('sync_attempts = 0');
+    expect(sql).toContain('sync_error = NULL');
+  });
+
+  it('quarantines at the cap and NOT before, against a real SQLite', async () => {
+    // The boundary is expressed as one CASE inside the UPDATE (SQLite reads the
+    // pre-update value on both sides), so an off-by-one here is either a row parked
+    // a cycle early or one that never parks at all. Executed rather than asserted
+    // on the string, using the real statement the production code emitted.
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { DatabaseSync } = require('node:sqlite');
+    const db = new DatabaseSync(':memory:');
+    db.exec(`CREATE TABLE events (
+      id TEXT PRIMARY KEY, synced INTEGER NOT NULL DEFAULT 0,
+      sync_attempts INTEGER NOT NULL DEFAULT 0, sync_error TEXT)`);
+    db.prepare("INSERT INTO events (id, sync_attempts) VALUES ('e1', 0)").run();
+
+    mockGetAllAsync.mockResolvedValue([evt('e1')]);
+    selectSpy.mockResolvedValue({ data: null, error: { code: '23503', message: 'fk' } });
+
+    const readError = () =>
+      (db.prepare("SELECT sync_error FROM events WHERE id = 'e1'").get() as {
+        sync_error: string | null;
+      }).sync_error;
+
+    for (let cycle = 1; cycle <= MAX_SYNC_ATTEMPTS; cycle++) {
+      mockRunAsync.mockClear();
+      await syncPendingEvents();
+      const [sql, params] = bumps()[0] as [string, unknown[]];
+      db.prepare(sql).run(...(params as (string | number | null)[]));
+      if (cycle < MAX_SYNC_ATTEMPTS) {
+        expect({ cycle, parked: readError() }).toEqual({ cycle, parked: null });
+      }
+    }
+    expect(readError()).toContain('23503');
+    expect(readError()).toContain(String(MAX_SYNC_ATTEMPTS));
+    // Still honestly unsynced — giving up is not a claim that the row landed.
+    expect((db.prepare("SELECT synced FROM events WHERE id = 'e1'").get() as { synced: number }).synced)
+      .toBe(0);
+    db.close();
   });
 });

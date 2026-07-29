@@ -15,18 +15,19 @@ import {
   getDb,
   getEventById,
   getEventAttachment,
+  getEventAttachments,
   getEventSource,
   getMealForEvent,
   getDoseForEvent,
   getDoubleDoseFlag,
   softDeleteEvent,
-  deleteEventAttachmentLocal,
   updateMealIntake,
   updateDoseAdherence,
   updateDoseHowGiven,
   TimelineRow,
 } from '../../lib/db';
 import { uploadPhoto, getSignedUrl, compressForUpload, persistCapture, MAX_EDGE_PX } from '../../lib/storage';
+import { detachEventAttachment, detachOtherEventAttachments } from '../../lib/attachments';
 import { resolveEventPhotoDisplay, addPhotoHeroCopy } from '../../lib/eventPhoto';
 import { foodFormatTag } from '../../lib/food';
 import { supabase } from '../../lib/supabase';
@@ -434,11 +435,10 @@ export default function EventDetailScreen() {
             setTransformFailed(false);
             setPhotoViewerVisible(false);
             try {
-              await deleteEventAttachmentLocal(att.id);
-              // Best-effort remote cleanup; ignore errors (next sync of this
-              // device's local state will be authoritative)
-              supabase.storage.from('nyx-event-attachments').remove([att.storage_path]).catch(() => {});
-              supabase.from('event_attachments').delete().eq('id', att.id).then(() => {}, () => {});
+              // Local row + file, then best-effort Storage + remote row. Shared
+              // with the replace path so "detach a photo" has one implementation
+              // (B-105) — the replace used to skip this cleanup entirely.
+              await detachEventAttachment(att);
             } catch (e) {
               console.error('[event-detail] remove photo failed:', e);
               setAttachment(att);
@@ -481,6 +481,11 @@ export default function EventDetailScreen() {
       // read the original capture; both point at identical bytes.
       const localUri = persistCapture(captureUri, `${attId}.jpg`);
       const db = getDb();
+      // B-105 — read the rows this capture is about to supersede BEFORE writing
+      // the new one. This screen is single-photo, so anything already here is
+      // being replaced; the list (rather than just the loaded `attachment`) also
+      // sweeps up duplicates left by the old behaviour.
+      const priors = await getEventAttachments(event.id);
       await db.runAsync(
         `INSERT OR REPLACE INTO event_attachments
            (id, event_id, pet_id, local_uri, storage_path, mime_type, synced, created_at)
@@ -512,6 +517,13 @@ export default function EventDetailScreen() {
           if (isStoolEvent(event.event_type)) triggerStoolAnalysis(event.id).catch(() => {});
         })
         .catch(console.error);
+      // Detach the rows this capture replaced — after the replacement is stored
+      // AND its upload is in flight. Order matters twice over: removing first
+      // would turn a failed insert into an event with no photo at all, and
+      // detaching before the upload starts would put a Storage round-trip in
+      // front of the owner's new photo. Never throws; the deterministic read
+      // already prefers the new row, so nothing on screen waits on this.
+      await detachOtherEventAttachments(priors, attId);
     } catch (e) {
       console.error('[event-detail] photo save failed:', e);
       Alert.alert('Could not attach photo', 'Try again.');

@@ -42,6 +42,8 @@ import {
   addSheetTitle,
   ADD_SOURCE_ROWS,
   VET_DOCUMENT_MAX_BYTES,
+  VET_DOCUMENT_FILENAME_MAX,
+  sourceFilename,
   type PickedVetFile,
 } from './vetDocumentCapture';
 import { getDb } from './db';
@@ -133,6 +135,63 @@ describe('pickedFilesFromImageAssets', () => {
   });
 });
 
+// ── sourceFilename (B-546) ───────────────────────────────────────────────────
+//
+// This is the one value on the row that is persisted WITHOUT the owner typing it,
+// so nobody reviews it before it lands. Every case below is something a real
+// document provider actually hands back.
+
+describe('sourceFilename', () => {
+  it('keeps a real filename, extension and all', () => {
+    // The extension is half of what makes the line read as a FILE rather than as
+    // a title someone forgot to finish.
+    expect(sourceFilename('Pixel-CBC-2026-07-14.pdf')).toBe('Pixel-CBC-2026-07-14.pdf');
+  });
+
+  it('cuts a provider-supplied path down to the basename', () => {
+    // Android's SAF and some cloud providers return a display name with a path in
+    // it. "Downloads/labs/CBC.pdf" is not the file's name.
+    expect(sourceFilename('Downloads/labs/CBC.pdf')).toBe('CBC.pdf');
+    expect(sourceFilename('C:\\Users\\sam\\CBC.pdf')).toBe('CBC.pdf');
+  });
+
+  it('strips control characters and collapses whitespace', () => {
+    expect(sourceFilename('lab\nresult .pdf')).toBe('lab result .pdf');
+    expect(sourceFilename('  spaced   out.pdf  ')).toBe('spaced out.pdf');
+  });
+
+  it('strips bidi overrides, which can make an extension render backwards', () => {
+    // U+202E on a screen whose job is telling a PDF from a photo is a lie, not a
+    // curiosity: "labs\u202Efdp.txt" renders as "labstxt.pdf".
+    const spoofed = sourceFilename('labs\u202Efdp.txt');
+    expect(spoofed).not.toMatch(/[\u202a-\u202e]/);
+    expect(spoofed).toBe('labs fdp.txt');
+  });
+
+  it('caps the length well under the server CHECK', () => {
+    const long = `${'a'.repeat(400)}.pdf`;
+    const out = sourceFilename(long) as string;
+    expect(out).toHaveLength(VET_DOCUMENT_FILENAME_MAX);
+    // Migration 047 CHECKs 1..255; the client must never be able to mint a row the
+    // server refuses, which would wedge that row at synced = 0 forever.
+    expect(out.length).toBeLessThanOrEqual(255);
+  });
+
+  it('returns null for anything that is not a name', () => {
+    expect(sourceFilename(null)).toBeNull();
+    expect(sourceFilename(undefined)).toBeNull();
+    expect(sourceFilename('   ')).toBeNull();
+    expect(sourceFilename('some/dir/')).toBeNull();
+  });
+
+  it('is convergent — sanitising a sanitised name changes nothing', () => {
+    for (const raw of ['Downloads/labs/CBC.pdf', '  a   b.pdf ', `${'x'.repeat(400)}.pdf`]) {
+      const once = sourceFilename(raw);
+      expect(sourceFilename(once)).toBe(once);
+    }
+  });
+});
+
 describe('pickedFilesFromDocumentAssets', () => {
   it('maps size and name-inferred mime, and never claims an exif date', () => {
     const [only] = pickedFilesFromDocumentAssets([
@@ -143,7 +202,27 @@ describe('pickedFilesFromDocumentAssets', () => {
       pickedMimeType: 'application/pdf',
       exifIso: null,
       fileSizeBytes: 812_000,
+      // B-546 — the name is CARRIED now, not read for its extension and dropped.
+      fileName: 'labs.pdf',
     });
+  });
+
+  it('carries a null name rather than inventing one', () => {
+    const [only] = pickedFilesFromDocumentAssets([
+      { uri: 'file:///cache/x.pdf', mimeType: 'application/pdf' },
+    ]);
+    expect(only.fileName).toBeNull();
+  });
+
+  // The image pickers deliberately do NOT set fileName: an `IMG_4821.HEIC` would
+  // put a meta line on every photo row to say nothing. If this ever starts
+  // failing, someone has widened B-546 past the Files path without saying so.
+  it('image picks carry no filename', () => {
+    const [only] = pickedFilesFromImageAssets(
+      [{ uri: 'file:///a.jpg', fileName: 'IMG_4821.HEIC' }],
+      NOW,
+    );
+    expect(only.fileName).toBeUndefined();
   });
 });
 
@@ -307,6 +386,40 @@ describe('buildVetDocumentRows', () => {
     expect(build([page()], { source: 'files' })[0].source).toBe('files');
   });
 
+  // B-546 — the PM ruled option (b): store the filename AND leave the row
+  // untitled. Both halves are asserted together on purpose, because storing it as
+  // the title is the tempting shortcut and it would cost the row its Name pill
+  // forever (title IS NULL is the only test that can tell a defaulted row from a
+  // named one).
+  it('records a picked filename WITHOUT claiming the row is named', () => {
+    const [row] = build(
+      [page({ pickedMimeType: 'application/pdf', fileName: 'Pixel-CBC-2026-07-14.pdf' })],
+      { source: 'files' },
+    );
+    expect(row.source_filename).toBe('Pixel-CBC-2026-07-14.pdf');
+    expect(row.title).toBeNull();
+  });
+
+  it('sanitises the filename on the way in', () => {
+    const [row] = build([page({ fileName: 'Downloads/labs/ CBC.pdf ' })], { source: 'files' });
+    expect(row.source_filename).toBe('CBC.pdf');
+  });
+
+  it('leaves source_filename null when the pick carried no name (camera / Photos)', () => {
+    expect(build([page()])[0].source_filename).toBeNull();
+  });
+
+  // A Files multi-pick is several documents, each its own row — so each keeps its
+  // OWN name. Fusing them onto the cover's name is exactly the bug B-546 fixes,
+  // one level up.
+  it('gives each page its own filename rather than the cover\u2019s', () => {
+    const rows = build([
+      page({ pickedMimeType: 'application/pdf', fileName: 'cbc.pdf' }),
+      page({ pickedMimeType: 'application/pdf', fileName: 'chem.pdf' }),
+    ], { source: 'files' });
+    expect(rows.map((r) => r.source_filename)).toEqual(['cbc.pdf', 'chem.pdf']);
+  });
+
   // Past screenPickedFiles this is a bug, not owner input — so it must be loud.
   it('throws rather than guessing on an unsupported type', () => {
     expect(() => build([page({ pickedMimeType: 'text/csv' })])).toThrow(/unsupported document type/);
@@ -387,6 +500,17 @@ describe('duplicateVetDocumentRowsForPet', () => {
     expect(copy.title).toBe('Rabies certificate');
     expect(copy.kind).toBe('vaccination');
     expect(copy.document_date).toBe('2026-01-08');
+  });
+
+  // B-546 — the copy is the same FILE, filed twice. A certificate added to both
+  // cats arrived under one name and should read the same on both rows; unlike the
+  // visit link, nothing about it belongs to one pet.
+  it('carries the source filename to the copy', () => {
+    const named: LocalVetDocument[] = [{ ...source[0], source_filename: 'rabies-2026.pdf' }];
+    const [copy] = duplicateVetDocumentRowsForPet(named, {
+      petId: 'pet-2', now: NOW, newId: idFactory('copy'), persistFile: (s, n) => n,
+    });
+    expect(copy.source_filename).toBe('rabies-2026.pdf');
   });
 });
 
@@ -509,6 +633,24 @@ describe('insertVetDocumentRows', () => {
     expect(stored[0].local_uri).toBe('file:///documents/attachments/doc-1.jpg');
     // Unsynced, so the push queue picks it up — and the object upload with it.
     expect(stored.every((r) => r.synced === 0)).toBe(true);
+    db.handle.close();
+  });
+
+  // B-546 — the column has to survive the INSERT, not just the builder. This runs
+  // against BASE_SCHEMA_SQL, so a column added to the row type and forgotten in the
+  // statement's column list fails here rather than on a device.
+  it('persists the source filename through the real INSERT', async () => {
+    const db = memoryDb();
+    (getDb as jest.Mock).mockReturnValue(db);
+    const rows = build([page({ pickedMimeType: 'application/pdf', fileName: 'cbc.pdf' })], {
+      source: 'files',
+    });
+
+    await insertVetDocumentRows(rows);
+
+    const [stored] = await db.getAllAsync<LocalVetDocument>('SELECT * FROM vet_documents');
+    expect(stored.source_filename).toBe('cbc.pdf');
+    expect(stored.title).toBeNull();
     db.handle.close();
   });
 

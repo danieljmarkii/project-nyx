@@ -3,7 +3,12 @@ import { create } from 'zustand';
 interface SyncState {
   pendingCount: number;
   oldestPendingAt: string | null;
-  setPendingStatus: (count: number, oldestAt: string | null) => void;
+  // B-398 — rows the push queue has GIVEN UP on: still on this device, still
+  // honestly synced = 0, but they will not move without an owner edit. Held apart
+  // from pendingCount because the two need different copy — "waiting for a
+  // connection" is true of one and a lie about the other.
+  quarantinedCount: number;
+  setPendingStatus: (count: number, oldestAt: string | null, quarantined?: number) => void;
 
   // B-054 §6 — block-only-when-empty cold start. True while the FIRST sync after
   // a session is established is hydrating an empty local store (new device /
@@ -33,7 +38,9 @@ interface SyncState {
 export const useSyncStore = create<SyncState>((set) => ({
   pendingCount: 0,
   oldestPendingAt: null,
-  setPendingStatus: (count, oldestAt) => set({ pendingCount: count, oldestPendingAt: oldestAt }),
+  quarantinedCount: 0,
+  setPendingStatus: (count, oldestAt, quarantined = 0) =>
+    set({ pendingCount: count, oldestPendingAt: oldestAt, quarantinedCount: quarantined }),
 
   coldStartHydrating: false,
   setColdStartHydrating: (coldStartHydrating) => set({ coldStartHydrating }),
