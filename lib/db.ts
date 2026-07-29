@@ -2,6 +2,7 @@ import * as SQLite from 'expo-sqlite';
 import { File } from 'expo-file-system';
 import { LOCAL_WIPE_TABLES } from './hydration';
 import { LIBRARY_FOODS_QUERY, ARCHIVED_FOODS_QUERY } from './foodQueries';
+import { EVENT_ATTACHMENT_QUERY, EVENT_ATTACHMENTS_QUERY } from './eventAttachmentQueries';
 import {
   MEDICATION_SCHEMA_SQL,
   doubleDoseWindowHours,
@@ -640,22 +641,24 @@ export async function updateMealIntake(
   }
 }
 
-export async function getEventAttachment(eventId: string): Promise<{
+export interface EventAttachmentRow {
   id: string;
   local_uri: string;
   storage_path: string;
   mime_type: string;
-} | null> {
+}
+
+// Both reads order newest-first within a sort_order rank — see
+// lib/eventAttachmentQueries.ts for why that ordering is the read half of the
+// B-105 fix rather than a cosmetic detail.
+export async function getEventAttachment(eventId: string): Promise<EventAttachmentRow | null> {
   const db = getDb();
-  return db.getFirstAsync<{
-    id: string;
-    local_uri: string;
-    storage_path: string;
-    mime_type: string;
-  }>(
-    'SELECT id, local_uri, storage_path, mime_type FROM event_attachments WHERE event_id = ? ORDER BY sort_order ASC LIMIT 1',
-    [eventId],
-  );
+  return db.getFirstAsync<EventAttachmentRow>(EVENT_ATTACHMENT_QUERY, [eventId]);
+}
+
+export async function getEventAttachments(eventId: string): Promise<EventAttachmentRow[]> {
+  const db = getDb();
+  return db.getAllAsync<EventAttachmentRow>(EVENT_ATTACHMENTS_QUERY, [eventId]);
 }
 
 export async function deleteEventAttachmentLocal(attachmentId: string): Promise<void> {
