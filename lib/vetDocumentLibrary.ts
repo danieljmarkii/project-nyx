@@ -337,7 +337,7 @@ async function updateVetDocumentGroup(
   const db = getDb();
   await db.runAsync(
     `UPDATE vet_documents
-     SET ${column} = ?, updated_at = ?, synced = 0
+     SET ${column} = ?, updated_at = ?, synced = 0, sync_attempts = 0, sync_error = NULL
      WHERE document_group_id = ? AND deleted_at IS NULL`,
     [value, new Date().toISOString(), groupId],
   );
@@ -412,7 +412,7 @@ export async function softDeleteVetDocument(groupId: string): Promise<void> {
   const now = new Date().toISOString();
   await db.runAsync(
     `UPDATE vet_documents
-     SET deleted_at = ?, updated_at = ?, synced = 0
+     SET deleted_at = ?, updated_at = ?, synced = 0, sync_attempts = 0, sync_error = NULL
      WHERE document_group_id = ? AND deleted_at IS NULL`,
     [now, now, groupId],
   );
@@ -425,7 +425,7 @@ export async function restoreVetDocument(groupId: string): Promise<void> {
   const now = new Date().toISOString();
   await db.runAsync(
     `UPDATE vet_documents
-     SET deleted_at = NULL, updated_at = ?, synced = 0
+     SET deleted_at = NULL, updated_at = ?, synced = 0, sync_attempts = 0, sync_error = NULL
      WHERE document_group_id = ? AND deleted_at IS NOT NULL`,
     [now, groupId],
   );
