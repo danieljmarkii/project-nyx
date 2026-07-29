@@ -24,8 +24,10 @@ import {
   mayClaimAllMatched,
   mayStateRecordClean,
   oralRouteCopy,
+  contaminationFindings,
   sanctionedProteinsOn,
   trialContamination,
+  uncharacterizedTrialDietFoods,
   trialViabilityHeadline,
   trialViabilityNote,
   type AllowedFood,
@@ -1731,6 +1733,197 @@ describe('B-533 PR B — the facts behind the live refusal register', () => {
         rated: 4, feedings: 4, primaryRated: 4, primaryFeedings: 4,
       });
     });
+  });
+});
+
+// ── B-529 / ruling R7 — the hydrolyzed↔intact derived-from relation ──────────
+//
+// Every case below was REPRODUCED on `main` before the fix, and the three of
+// them come from one root: a hydrolysed diet's label yields both
+// `hydrolyzed chicken` (front of pack → primary_protein) and `chicken` (panel).
+// Note two of them are FALSE ALARM and one is FALSE SILENCE — a relation that
+// closed only one direction would have traded one wrong answer for another.
+describe('B-529 R7 — a hydrolysed trial diet does not contaminate its own trial', () => {
+  const HP = food({
+    foodItemId: 'f-hp',
+    foodKey: 'purinaha hydrolyzed',
+    label: 'Purina HA Hydrolyzed',
+    role: 'primary_diet',
+    primaryProtein: 'hydrolyzed chicken',
+    proteins: ['hydrolyzed chicken', 'chicken'],
+  });
+  const hpCtx = () => buildTrialContext(TRIAL, [HP]);
+
+  // Was: [['chicken']] — the report told the vet the prescription diet's own
+  // label carried a protein the trial excludes. The B-417 cold read acted on it
+  // and reached the wrong clinical conclusion (re-run vs proceed to rechallenge).
+  it('the standing contamination fact no longer fires on the trial diet itself', () => {
+    const facts = trialContamination(hpCtx());
+    expect(facts.map((f) => f.extraProteins)).toEqual([[]]);
+    expect(contaminationNote(facts, 'Rex')).toBeNull();
+  });
+
+  // Suppressed, not deleted: a surface that got quieter owes the reader a reason.
+  it('discloses the absorbed term rather than dropping it', () => {
+    expect(trialContamination(hpCtx())[0].derivedFromPrimary).toEqual(['chicken']);
+    expect(contaminationFindings(trialContamination(hpCtx()))).toEqual([]);
+  });
+
+  // Was: {hydrolyzed chicken, chicken} — intact chicken entered the set that
+  // sanctions every OTHER food, so the chew below lost its attribution.
+  it('the intact term does not enter the sanctioned set', () => {
+    expect([...sanctionedProteinsOn(hpCtx(), localDayIndexOf('2026-07-10') as number)])
+      .toEqual(['hydrolyzed chicken']);
+  });
+
+  // THE SAFE DIRECTION, and the reason kinship is never applied across foods:
+  // intact protein is exactly what a hydrolysed elimination trial excludes.
+  // Was: off_diet_unrecognised with antigens [] — detected but unattributed.
+  it('a plain chicken chew is still off-diet AND still names chicken', () => {
+    const chew = classifyFeeding(
+      hpCtx(),
+      feeding({ eventId: 'chew', foodItemId: 'f-chew', foodKey: 'bchicken chew', foodType: 'treat', proteins: ['chicken'] }),
+    );
+    expect(chew.verdict).toBe('off_diet_protein');
+    expect(chew.antigens).toEqual(['chicken']);
+  });
+
+  // C2 holding by construction: the diet's own feedings stay clean, so the
+  // absorption above does not rebound as a per-feeding self-accusation.
+  it('the trial diet’s own feedings carry no antigen', () => {
+    const meal = classifyFeeding(
+      hpCtx(),
+      feeding({ eventId: 'm', foodItemId: HP.foodItemId, foodKey: HP.foodKey, proteins: [...HP.proteins] }),
+    );
+    expect(meal.verdict).toBe('permitted');
+    expect(meal.antigens).toEqual([]);
+  });
+});
+
+describe('B-529 R7(c) — the silence rule', () => {
+  // Was: the prescribed wet food's OWN `duck liver` tallied as "an antigen the
+  // trial diet does not contain", once per feeding, with trialContamination
+  // returning nothing to explain it. The wet row is dropped from the sanctioned
+  // set for lack of a designation, so its own proteins fall outside that set.
+  const KIBBLE = food({
+    foodItemId: 'f-kib', foodKey: 'rcduck kibble', label: 'RC Duck kibble',
+    role: 'primary_diet', primaryProtein: 'duck', proteins: ['duck'],
+  });
+  const WET = food({
+    foodItemId: 'f-wet', foodKey: 'rcduck wet', label: 'RC Duck wet',
+    role: 'primary_diet', primaryProtein: null, proteins: ['duck', 'duck liver'],
+  });
+  const partial = () => buildTrialContext(TRIAL, [KIBBLE, WET]);
+
+  it('names the food that cannot be characterized', () => {
+    const unnamed = uncharacterizedTrialDietFoods(partial(), localDayIndexOf('2026-07-10') as number);
+    expect(unnamed.map((f) => f.foodItemId)).toEqual(['f-wet']);
+  });
+
+  it('goes quiet rather than tallying the prescribed diet’s own protein', () => {
+    const c = classifyFeeding(
+      partial(),
+      feeding({ eventId: 'm', foodItemId: WET.foodItemId, foodKey: WET.foodKey, proteins: [...WET.proteins] }),
+    );
+    expect(c.verdict).toBe('permitted');
+    expect(c.antigens).toEqual([]);
+  });
+
+  // Quiet costs ATTRIBUTION, never DETECTION — rung 3 still records everything.
+  it('still records an off-diet feeding while the arm is dark', () => {
+    const chew = classifyFeeding(
+      partial(),
+      feeding({ eventId: 'x', foodItemId: 'f-chew', foodKey: 'bchicken chew', foodType: 'treat', proteins: ['chicken'] }),
+    );
+    expect(chew.verdict).toBe('off_diet_unrecognised');
+    expect(chew.offDiet).toBe(true);
+  });
+
+  // The narrowing this rule is deliberately scoped to: a designated primary with
+  // an unread panel is a different and far more common state, and darkening the
+  // tally for it would silence nearly every real trial for no gain here.
+  it('does NOT fire for a designated food whose panel was never read', () => {
+    const unread = food({
+      foodItemId: 'f-manual', foodKey: 'brand manual', role: 'primary_diet',
+      primaryProtein: 'duck', proteins: [],
+    });
+    const c = buildTrialContext(TRIAL, [unread]);
+    expect(uncharacterizedTrialDietFoods(c, localDayIndexOf('2026-07-10') as number)).toEqual([]);
+    const chew = classifyFeeding(
+      c,
+      feeding({ eventId: 'x', foodItemId: 'f-chew', foodKey: 'bchicken chew', foodType: 'treat', proteins: ['chicken'] }),
+    );
+    expect(chew.verdict).toBe('off_diet_protein');
+    expect(chew.antigens).toEqual(['chicken']);
+  });
+});
+
+// ── B-529 — the adversarial pass's blocking counterexample (finding ①) ────────
+//
+// The first cut of R7(c) gated the RUNG-1 permitted antigen list on a GLOBAL
+// "is any trial food undesignated" flag, justified by a comment claiming every
+// feeding is still recorded by rung 3. That is false for a permitted feeding: a
+// rung-1 hit stops at rung 1, so its antigen list is the only channel it has.
+// The executed cost was the six-dental-chews-a-day false negative this module's
+// own docstring names — reintroduced one empty column away.
+describe('B-529 ① — a permitted food keeps its antigen record when ANOTHER row is undesignated', () => {
+  const DUCK = food({
+    foodItemId: 'f-duck', foodKey: 'rcduck kibble', label: 'RC Duck kibble',
+    role: 'primary_diet', primaryProtein: 'duck', proteins: ['duck'],
+  });
+  const UNDESIGNATED_WET = food({
+    foodItemId: 'f-wet', foodKey: 'rcduck wet', label: 'RC Duck wet',
+    role: 'primary_diet', primaryProtein: null, proteins: ['duck', 'duck liver'],
+  });
+  const CHICKEN_CHEW = food({
+    foodItemId: 'f-chew', foodKey: 'bdental chew', label: 'Dental Chew',
+    role: 'permitted_treat', primaryProtein: 'chicken', proteins: ['chicken'],
+  });
+  const ctxWith = () => buildTrialContext(TRIAL, [DUCK, UNDESIGNATED_WET, CHICKEN_CHEW]);
+
+  it('the vet-approved chicken chew still tallies chicken', () => {
+    // Was [] — 80 real exposures deleted from the vet report because a DIFFERENT
+    // food was missing a field.
+    const c = classifyFeeding(
+      ctxWith(),
+      feeding({
+        eventId: 'chew', foodItemId: CHICKEN_CHEW.foodItemId, foodKey: CHICKEN_CHEW.foodKey,
+        foodType: 'treat', proteins: ['chicken'],
+      }),
+    );
+    expect(c.verdict).toBe('permitted');
+    expect(c.antigens).toEqual(['chicken']);
+  });
+
+  it('and the exposures still reach the tally, so no surface can read it as clean', () => {
+    const facts = computeTrialFacts({
+      trial: TRIAL,
+      allowedFoods: [DUCK, UNDESIGNATED_WET, CHICKEN_CHEW],
+      feedings: Array.from({ length: 8 }, (_, i) =>
+        feeding({
+          eventId: `c-${i}`, occurredAt: at('2026-07-10', 6 + i),
+          foodItemId: CHICKEN_CHEW.foodItemId, foodKey: CHICKEN_CHEW.foodKey,
+          foodType: 'treat', proteins: ['chicken'],
+        }),
+      ),
+      nowMs: new Date(at('2026-07-11')).getTime(),
+    });
+    const chicken = facts.exposures.antigenTally.find((a) => a.protein === 'chicken');
+    expect(chicken?.feedings).toBe(8);
+    expect(chicken?.fromPermitted).toBe(8);
+  });
+
+  it('while the undesignated trial food still does NOT tally its own protein', () => {
+    // The defect R7(c) actually exists for — silenced per-food, not globally.
+    const c = classifyFeeding(
+      ctxWith(),
+      feeding({
+        eventId: 'wet', foodItemId: UNDESIGNATED_WET.foodItemId,
+        foodKey: UNDESIGNATED_WET.foodKey, proteins: ['duck', 'duck liver'],
+      }),
+    );
+    expect(c.verdict).toBe('permitted');
+    expect(c.antigens).toEqual([]);
   });
 });
 

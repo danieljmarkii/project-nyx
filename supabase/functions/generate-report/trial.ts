@@ -47,6 +47,7 @@ import {
   feedingWasFinished,
   interpretabilityStatement,
   isWithinChallengeWindow,
+  contaminationFindings,
   mayClaimAllMatched,
   mayStateRecordClean,
   trialEffectiveEndDayIndex,
@@ -285,6 +286,11 @@ export interface TrialExposure {
    * it, and it hides the duplicate the vet most needs to spot.
    */
   panelWasRead: boolean
+  /** B-529/R7(c) — was the antigen arm actually consulted for this feeding? The
+   *  "Why it's here" column asserts an all-clear on rung 3 when a panel was read,
+   *  and that inference is only valid if something looked. False means "not
+   *  checked", which is a different sentence. */
+  attributionChecked: boolean
   /**
    * The date this same food *did* become permitted, when it is later than this
    * feeding — so the Why column can name the reason that actually placed the row here.
@@ -404,7 +410,44 @@ export interface TrialBlock {
 
   oralRoute: OralRouteExposure[]
   arrangementExposures: Array<{ label: string | null }>
+  /**
+   * FINDINGS ONLY (B-529/R7). `trialContamination` now also returns facts whose
+   * only content is `derivedFromPrimary` — a hydrolysed diet naming its own
+   * source twice (`hydrolyzed chicken` on the front of pack, `chicken` on the
+   * panel). Those are NOT contaminations, and the filter is applied HERE, at the
+   * snapshot boundary, rather than in the render.
+   *
+   * Doing it at the boundary is deliberate: five render sites consume this array
+   * and four of them branch on `.length`, so letting a kin-only fact through
+   * would print an empty "Label contamination" block AND — via `render.ts:1536`
+   * — keep generating the caveat that suppresses the earned interpretability
+   * statement, which is precisely half of the defect R7 exists to remove. One
+   * filter at the source cannot be forgotten by the sixth consumer.
+   *
+   * Nothing is hidden from the reader as a result: appendix B renders each
+   * food's protein set verbatim, so both terms are still on the page — the
+   * report simply stops calling their co-occurrence a contamination.
+   */
   contamination: ContaminationFact[]
+  /**
+   * B-529/R7(c) — labels of the `primary_diet` foods that carry no designated
+   * main protein anywhere in this range, so the antigen tally was DARK for part
+   * of it.
+   *
+   * Rendered, not merely carried. R7(c) says the arm "goes quiet and says why",
+   * and the first cut said why on the owner's card and nowhere on this page —
+   * the surface the ruling exists to protect. An unexplained short tally on a
+   * report that teaches the reader to scan for antigens is read as a negative
+   * result, which is the B-494 rule ("a page that teaches the reader to scan a
+   * zone may not leave that zone silent") and the reassurance-on-absence
+   * `clinical-guardrails` forbids. Empty on every trial whose foods are all
+   * designated, which is the ordinary case.
+   */
+  antigenAttributionPaused: string[]
+  /** B-529 — the arm was dark for at least one feeding, whether or not a food can
+   *  be named. A `primary_diet` membership gap darkens it with nothing to name,
+   *  and gating on the list's length let that state keep the clean sentence. */
+  antigenArmDark: boolean
   trialDietRefusal: TrialDietRefusal | null
   /**
    * THE SAME FACT, OVER THE WHOLE RANGE — because a report is a history and PR 5's
@@ -706,6 +749,12 @@ export function buildTrialBlock(args: BuildTrialBlockArgs): TrialBlock | null {
   // are permitted extras has nothing to define the diet with.
   const hasPrimary = allowedFoods.some((f) => f.role === 'primary_diet')
 
+  // B-529 NOTE: this file previously used a B-529-introduced
+  // `range.exposureStartDayIndex` here, which clipped the HEAD only. B-422's
+  // `facts.exposureRange` supersedes it by clipping both ends — the tail clip
+  // matters for exactly the same reason (a feeding past the effective end was
+  // counted in `offDiet` and missing from `items`), so the more general bound
+  // wins and B-529's narrower one is dropped rather than kept beside it.
   const { startDayIndex, endDayIndex } = facts.range
   // ITEMISATION WALKS THE EVIDENCE WINDOW, NOT THE COVERAGE RANGE (B-422).
   //
@@ -760,6 +809,7 @@ export function buildTrialBlock(args: BuildTrialBlockArgs): TrialBlock | null {
       // "read, and nothing in it is outside the trial diet", which is a different
       // sentence and a much more interesting one.
       panelWasRead: (e.meal.proteins ?? []).length > 0,
+      attributionChecked: classification.attributionChecked,
       // THE OPERATIVE REASON, WHICH IS NEITHER RUNG. This same food IS on the allowed
       // list — just not on this day. §7's dated-membership rule is what makes that
       // possible ("feedings are scored against the list in force on the day"), and
@@ -944,7 +994,9 @@ export function buildTrialBlock(args: BuildTrialBlockArgs): TrialBlock | null {
       true,
     oralRoute: facts.oralRoute,
     arrangementExposures: facts.arrangementExposures.map((a) => ({ label: a.label })),
-    contamination: facts.contamination,
+    contamination: contaminationFindings(facts.contamination),
+    antigenAttributionPaused: facts.antigenAttributionPaused.map((f) => f.label),
+    antigenArmDark: facts.antigenArmDark,
     trialDietRefusal: facts.trialDietRefusal,
     rangeRefusal,
     rangeRefusalSpansEpisodes: facts.rangeRefusalSpansEpisodes,

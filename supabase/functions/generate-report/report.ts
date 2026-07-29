@@ -86,7 +86,11 @@ import {
 // Re-deriving "which proteins here aren't the trial protein?" locally is the exact
 // failure B-417 §5.3 documents — three contradictory off-diet predicates, one of
 // them already shipped in this file. One implementation, imported.
-import { offTrialProteins, resolveTargetProtein } from '../../../lib/trialProtein.ts'
+import {
+  offTrialProteins,
+  offTrialProteinsInTrialFood,
+  resolveTargetProtein,
+} from '../../../lib/trialProtein.ts'
 // B-568 — the SAME format-label map the app renders from (lib/foodFormat.ts is
 // dependency-free precisely so both runtimes share one copy; a second map here is the
 // B-103 drift class, where a new enum value reaches one surface and not the other).
@@ -1439,6 +1443,9 @@ export interface ConfounderExposure {
   /** The food's ingredient panel WAS captured, so a rung-3 verdict means "read, and
    *  nothing in it is outside the trial diet" rather than "we never looked". */
   panelWasRead?: boolean
+  /** B-529/R7(c) — the antigen arm was consulted for this feeding. Absent on a
+   *  heuristic (non-trial) report, where there is no arm to be dark. */
+  attributionChecked?: boolean
   /** This same food became permitted on a LATER date, so the row is here because the
    *  feeding predates permission — the reason that outranks the rung. */
   permittedLaterFrom?: string | null
@@ -2444,12 +2451,24 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
    * `mayClaimCompleteProteinSet` is the same gate the client's Tier-1 disclosure runs —
    * the whole reason it lives in lib/protein.ts.
    */
-  function proteinView(food: ReportFoodProteinInput & { primaryProtein?: string | null }): ProteinSetView {
+  function proteinView(
+    food: ReportFoodProteinInput & { primaryProtein?: string | null },
+    /** B-529/R7 — set ONLY for the food that IS the trial diet. Its own label
+     *  naming its own source twice (`hydrolyzed chicken` on the front, `chicken`
+     *  on the panel) is not a contamination, and rendering it as one put a false
+     *  self-contamination in bold on page 1 — which the B-417 cold read acted on,
+     *  reaching the wrong clinical conclusion. Every OTHER food keeps the
+     *  unabsorbed comparison, because intact protein from anywhere else is
+     *  exactly what a hydrolysed trial excludes. */
+    opts?: { isTrialDiet?: boolean },
+  ): ProteinSetView {
     const proteins = readProteinSet(food.proteins ?? null, food.primaryProtein ?? null)
     return {
       proteins,
       complete: mayClaimCompleteProteinSet(proteins, food.ingredientsNotes ?? null, food.extractionConfidence),
-      offTrial: offTrialProteins(proteins, trialTargetProtein),
+      offTrial: opts?.isTrialDiet
+        ? offTrialProteinsInTrialFood(proteins, trialTargetProtein)
+        : offTrialProteins(proteins, trialTargetProtein),
     }
   }
 
@@ -2624,7 +2643,7 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
         startedAt: reportTrialInput!.startedAt,
         targetDurationDays: reportTrialInput!.targetDurationDays,
         vetName: reportTrialInput!.vetName,
-        proteinSet: proteinView(reportTrialInput!),
+        proteinSet: proteinView(reportTrialInput!, { isTrialDiet: true }),
       }
     : null
 
@@ -2898,6 +2917,7 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
       antigens: x?.classification.antigens ?? [],
       symptomInChallengeWindow: x?.symptomInChallengeWindow ?? false,
       panelWasRead: x?.panelWasRead ?? false,
+      attributionChecked: x?.attributionChecked ?? true,
       permittedLaterFrom: x?.permittedLaterFrom ?? null,
     }
   })

@@ -23,6 +23,7 @@
 // "bundler"` (expo's base tsconfig) and Metro both accept it, so one spelling
 // satisfies every consumer. Same reason the Edge Functions spell `lib/protein.ts`.
 import { canonicalizeProtein } from './protein.ts';
+import { dropKinOfPrimary } from './proteinRelation.ts';
 
 /**
  * The proteins in `foodProteins` that the trial diet does not include.
@@ -72,6 +73,43 @@ export function offTrialProteins(
  */
 export function resolveTargetProtein(primaryProtein: string | null | undefined): string | null {
   return canonicalizeProtein(primaryProtein);
+}
+
+/**
+ * `offTrialProteins` for the ONE food that IS the trial diet (B-529/R7).
+ *
+ * WHY THIS IS A SECOND FUNCTION AND NOT A FLAG. The two calls ask genuinely
+ * different clinical questions, and the answer to one is unsafe as the answer to
+ * the other:
+ *
+ *   • ANOTHER food carrying `chicken` while the trial runs on `hydrolyzed
+ *     chicken` is intact protein, which is exactly what a hydrolysed elimination
+ *     trial excludes. It breaks the trial. `offTrialProteins` — unchanged.
+ *   • THE TRIAL FOOD'S OWN LABEL carrying both terms is one source named twice:
+ *     the front of pack says "Hydrolyzed Chicken", the panel yields `chicken`.
+ *     On `main` the shared function reported that as the trial diet contaminating
+ *     its own trial, in bold on page 1, and the B-417 cold read acted on it and
+ *     reached the wrong clinical conclusion.
+ *
+ * A boolean parameter on the shared function would have put those two answers one
+ * typo apart on a clinical artifact, and the default would silently be the wrong
+ * one for whichever caller forgot it. Separate names, no default.
+ *
+ * Returns the genuine off-target proteins only; the absorbed kin terms are
+ * available from `partitionKinOfPrimary` for the caller that owes the reader a
+ * disclosure (the trial block's own provenance line).
+ */
+export function offTrialProteinsInTrialFood(
+  foodProteins: readonly string[],
+  targetProtein: string | null,
+): string[] {
+  if (!targetProtein) return [];
+  // `dropKinOfPrimary`: `offTrialProteins` has already removed the target key
+  // itself, so the only thing left to absorb is a kin term. Using the partition
+  // helper here would work today purely because that removal already happened —
+  // relying on a double-removal is how the two helpers get confused, and the
+  // antigen path already paid for that once.
+  return dropKinOfPrimary(offTrialProteins(foodProteins, targetProtein), targetProtein);
 }
 
 /** "chicken" · "chicken and salmon" · "chicken, salmon and beef". */

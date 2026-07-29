@@ -98,6 +98,7 @@ import {
   proteinPhrase,
   sanctionedProteinsOn,
   trialContamination,
+  uncharacterizedTrialDietFoodsInRange,
   type AllowedFood,
   type TrialContext,
   type TrialFoodRole,
@@ -399,6 +400,45 @@ export function trialDietNote(
   // AND permitted extras. Never a per-feeding verdict (C2).
   const note = contaminationNote(trialContamination(trialContextOf(ctx)), petName);
   if (note) return note;
+  // B-529/R7(c) — THE PARTIAL CASE, which the all-dark test above cannot see.
+  // One designated trial food and one undesignated one leaves the sanctioned set
+  // NON-empty, so every branch above stays quiet — while the undesignated food is
+  // dropped from that set and its own proteins fall outside it. `classifyFeeding`
+  // now goes quiet in that state; this is the sentence that stops it being
+  // quieter WITHOUT SAYING SO, which is the whole of B9's lesson: the most
+  // unknown state must not get the least disclosure.
+  //
+  // AFTER `contaminationNote`, DELIBERATELY. The first cut returned here BEFORE
+  // it, and the adversarial pass executed the cost: an already-computed, still
+  // valid contamination finding about food A ("The trial food also lists
+  // chicken") was deleted from the owner's card because food B was missing a
+  // field. A real finding outranks an explanation of a gap — the gap is still
+  // disclosed on the vet report, which is the surface that carries the tally
+  // this pause affects.
+  //
+  // RANGE-anchored, not `today`-anchored: membership is dated, so a trial food
+  // swapped out mid-trial leaves days of missing attribution that a now-check
+  // cannot see, and a disclosure that disappears while its hole remains reads as
+  // though nothing was ever wrong.
+  const trialCtx = trialContextOf(ctx);
+  const todayIndex = localDayIndex(Date.now());
+  const unnamed = uncharacterizedTrialDietFoodsInRange(
+    trialCtx,
+    trialCtx.startDayIndex ?? todayIndex,
+    Math.max(todayIndex, trialCtx.startDayIndex ?? todayIndex),
+  );
+  if (unnamed.length > 0) {
+    const which = unnamed.length === 1 && unnamed[0].label
+      ? `${unnamed[0].label} has`
+      : 'One of the trial foods has';
+    return {
+      title: 'Protein checks are paused for this trial',
+      body:
+        `${which} no protein Culprit recognises as a source, so it can’t tell which ` +
+        'proteins belong to the trial diet and which don’t. Setting a main protein ' +
+        'on that food would turn the checks back on.',
+    };
+  }
   if (!ctx.trialFoodCompleteness.complete) {
     return {
       title: 'The trial food’s ingredients haven’t been read',

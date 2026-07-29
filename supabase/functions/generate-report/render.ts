@@ -1440,6 +1440,37 @@ function dietTrialSection(snap: ReportSnapshot): string {
     )
   }
 
+  // ── B-529/R7(c) — say why the antigen tally is short ────────────────────────
+  // Placed immediately after the antigen row it qualifies, because that is where
+  // a reader forms the impression this sentence has to correct. Without it the
+  // page shows a short (or absent) antigen list on a trial whose protein arm was
+  // switched off, and a reader who has just been taught to scan that zone reads
+  // the shortfall as a negative result — reassurance on absence, on the artifact
+  // a vet acts on. The affirmative "all matched" claim is withheld in the same
+  // state (`mayClaimAllMatched`), so the two never compose.
+  if (t.antigenArmDark) {
+    // TWO VARIANTS, because the arm darkens two ways and only one of them has a
+    // food to name. A `primary_diet` MEMBERSHIP GAP leaves nothing on the list at
+    // all, so the named sentence would have had no subject — and gating this row
+    // on the label list meant the gap rendered no row while appendix C still said
+    // "not checked against it (see above)", promising a cross-reference to a row
+    // that could not exist.
+    const named = t.antigenAttributionPaused.length > 0
+    const one = t.antigenAttributionPaused.length === 1
+    rows.push(
+      kv(
+        'Antigen check paused',
+        named
+          ? `${t.antigenAttributionPaused.map((l) => `<b>${h(l)}</b>`).join(', ')} ${
+              one ? 'is recorded' : 'are recorded'
+            } as part of the trial diet but ${
+              one ? 'has' : 'have'
+            } no protein on file that names a source, so proteins fed during the trial could not be checked against the trial diet for part of this window. Feedings are still counted; the protein names are not. This is a gap in the record, not a finding about the animal.`
+          : 'For part of this window no trial diet was recorded on the allowed list, so proteins fed then could not be checked against it. Feedings are still counted; the protein names are not. This is a gap in the record, not a finding about the animal.',
+      ),
+    )
+  }
+
   // ── §5.5's standing fact (D-A) — computed once, never per feeding ───────────
   if (t.contamination.length > 0) {
     // NAME THE FOOD. The cold read could not act on this row: it said a food on the
@@ -1664,6 +1695,33 @@ function dietTrialSection(snap: ReportSnapshot): string {
   // rendered in the Record row above, so the statement adds nothing and costs a wrong
   // conclusion. The non-affirmative variants (partially / does-not-support) are kept:
   // they agree with the caveats rather than contradicting them.
+  // B-529/R7(c). A DARK ANTIGEN ARM IS A CAVEAT ON THE BOTTOM LINE, and the first
+  // repair wired only `mayClaimAllMatched`. The second adversarial pass executed
+  // what that leaves: an identical record with a KNOWN contamination reads "cannot
+  // establish that the elimination was clean", while the record with an UNKNOWN one
+  // — strictly less known — still read "supports interpreting it". The more
+  // ignorant state got the more affirmative sentence, on the one line the render's
+  // own comment calls what a vet reads for the bottom line. That is B9's inversion
+  // ("the most unknown state must not get the least disclosure") landing on §7.2.
+  //
+  // Placed LAST, deliberately. An earlier cut put it first "because a caveat here
+  // suppresses the affirmative variant" — but `suppressStatement` is
+  // POSITION-INDEPENDENT (it tests `caveats.length > 0`), so leading with it
+  // bought nothing mechanically and cost the lead: on the canonical B-494 record
+  // it pushed "Not one rated feeding of the trial diet was eaten (38 of 38)" into
+  // second place, which is precisely the sentence round 4 fought to have lead.
+  // A gap in the record ranks below what the record positively shows.
+  if (t.antigenArmDark) {
+    caveats.push(
+      t.antigenAttributionPaused.length > 0
+        ? `${
+            t.antigenAttributionPaused.length === 1 ? 'A food' : 'Foods'
+          } recorded as part of the trial diet ${
+            t.antigenAttributionPaused.length === 1 ? 'has' : 'have'
+          } no protein on file that names a source, so proteins fed during the trial could not be checked against it for part of this window — the elimination cannot be confirmed clean from this record.`
+        : 'For part of this window no trial diet was recorded on the allowed list, so proteins fed then could not be checked against it — the elimination cannot be confirmed clean from this record.',
+    )
+  }
   const suppressStatement = caveats.length > 0 && t.interpretability === 'supports'
   const shown = suppressStatement ? null : statement
   const callout =
@@ -3611,6 +3669,13 @@ interface ConfounderRow {
   /** The food's ingredient panel WAS captured. Rung 3 then means "read, and nothing
    *  in it is outside the trial diet" — not "we never looked" (#6). */
   panelWasRead: boolean
+  /** B-529/R7(c) — the antigen arm was consulted for EVERY member of this row.
+   *  False disqualifies the affirmative rung-3 reason: `panelWasRead` says a
+   *  label existed, this says something actually compared it. Folded with AND
+   *  rather than joining the group key, so one unchecked member cannot inherit
+   *  the all-clear from its neighbours — the same rule the `rung` comment states
+   *  and the opposite of `symptomInChallengeWindow`'s ANY. */
+  attributionChecked: boolean
   /** This same food became permitted LATER — so the row is here because it predates
    *  permission, which outranks whichever rung also fired. */
   permittedLaterFrom: string | null
@@ -3646,6 +3711,7 @@ function groupConfounders(conf: ConfounderExposure[]): ConfounderRow[] {
         rung: c.rung ?? null,
         symptomInChallengeWindow: c.symptomInChallengeWindow ?? false,
         panelWasRead: c.panelWasRead ?? false,
+        attributionChecked: c.attributionChecked ?? true,
         permittedLaterFrom: c.permittedLaterFrom ?? null,
       })
       continue
@@ -3670,6 +3736,7 @@ function groupConfounders(conf: ConfounderExposure[]): ConfounderRow[] {
         lastDay: day,
         rung: c.rung ?? null,
         panelWasRead: c.panelWasRead ?? false,
+        attributionChecked: true,
         permittedLaterFrom: c.permittedLaterFrom ?? null,
         // ANY member is enough to mark the row: the marker means "at least one of
         // these feedings was followed by a symptom in the window", and a grouped row
@@ -3680,6 +3747,16 @@ function groupConfounders(conf: ConfounderExposure[]): ConfounderRow[] {
     }
     g.count++
     if (c.symptomInChallengeWindow) g.symptomInChallengeWindow = true
+    // AND, not ANY: a row may claim "nothing in its label is outside the trial
+    // diet" only if every feeding under it was actually compared.
+    if (c.attributionChecked === false) g.attributionChecked = false
+    // AND-fold `panelWasRead` for the same reason, and because it is the
+    // co-conjunct of the all-clear branch: it was first-member-wins, so two
+    // feedings of one food — one panel captured, one not — rendered "its label
+    // carries nothing the trial diet does not" or "ingredients not read" purely
+    // on which was logged first. Same data, different sentence, decided by log
+    // order. A row may claim a label was read only if every member's was.
+    if (c.panelWasRead !== true) g.panelWasRead = false
     if (g.firstDay === null || (day && day < g.firstDay)) g.firstDay = day
     if (g.lastDay === null || (day && day > g.lastDay)) g.lastDay = day
   }
@@ -3719,9 +3796,21 @@ function confounderRowHtml(r: ConfounderRow, markOffTrial: boolean, trialDerived
           ? `Fed before it was permitted (allowed from ${h(fmtDay(r.permittedLaterFrom))})`
           : r.rung === 'derived_protein'
             ? 'Protein not in the trial diet'
-            : r.panelWasRead
-              ? 'Not on the trial&rsquo;s list; its label carries nothing the trial diet does not'
-              : 'Not on the trial&rsquo;s list; ingredients not read'
+            : // B-529/R7(c). THREE ROUTES REACH RUNG 3, NOT TWO. This branch read
+              // "read, and nothing in it is outside the trial diet" whenever a
+              // panel existed — an affirmative all-clear. The silence rule added a
+              // third route ("we did not check"), and the third adversarial pass
+              // executed the cost on byte-identical input: a correct
+              // `Chicken ×5 / "Protein not in the trial diet"` became
+              // `[] / "carries nothing the trial diet does not"`, i.e. the column
+              // whose whole job is naming which check placed the row here started
+              // asserting a check that never ran. Worse, both strings appeared in
+              // ONE report for the same chew on different dates.
+              !r.attributionChecked
+              ? 'Not on the trial&rsquo;s list; not checked against it (see above)'
+              : r.panelWasRead
+                ? 'Not on the trial&rsquo;s list; its label carries nothing the trial diet does not'
+                : 'Not on the trial&rsquo;s list; ingredients not read'
       }</td>`
     : ''
   // The Protein column carries the whole captured set, not the primary alone (§9) — the

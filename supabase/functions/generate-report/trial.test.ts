@@ -1877,6 +1877,37 @@ Deno.test('R6 — a below-floor record says "Not stated", not a dash', () => {
   assert.ok(/Not stated|Not countable|feedings/.test(text))
 })
 
+// ── B-529 / ruling R7 — the hydrolysed diet does not contaminate its own trial ─
+//
+// THE ARTIFACT THIS COMES FROM. The B-417 pre-ship cold read was handed a real
+// hydrolysed-diet report and reached the WRONG CLINICAL CONCLUSION off page 1 —
+// re-run the trial, where the record said proceed to rechallenge — because the
+// trial food's label yields BOTH `hydrolyzed soy protein` (front of pack →
+// primary_protein) and `soy` (the panel term), and a bare set difference read
+// that as the prescription diet contaminating the trial it is the basis of.
+//
+// The fixture is the SAME product the suite already uses, carrying the protein
+// pair a real extraction produces from the ingredients text it already has
+// ("Hydrolysed soy protein, rice, animal fats"). Note the trial ROW's own
+// primaryProtein/proteins must move with the allowed-set row: page 1's breach
+// set is built from the trial row, so overriding only `allowedFoods` leaves the
+// assertion vacuous — which is how the first cut of these tests passed without
+// exercising the defect at all.
+const HYDROLYSED_PAIR = {
+  primaryProtein: 'hydrolyzed soy protein',
+  proteins: ['hydrolyzed soy protein', 'soy'],
+}
+
+function hydrolysedTrialInput(over: Partial<ReportInput> = {}): ReportInput {
+  const input = wellLoggedTrialInput(over)
+  input.dietTrials[0] = {
+    ...input.dietTrials[0],
+    ...HYDROLYSED_PAIR,
+    allowedFoods: [{ ...TRIAL_FOOD, ...HYDROLYSED_PAIR }],
+  }
+  return input
+}
+
 // ── B-530 / B-494 — the refusal lane, and the flag zone it now reaches ────────
 //
 // Two findings that turn out to be one mechanism, so they are fixtured together.
@@ -1920,6 +1951,391 @@ function rePhotographedBagInput(intakeRating: 'refused' | 'all' | null = 'refuse
   }
   return input
 }
+
+Deno.test('B-529 — a hydrolysed trial food is not reported as contaminating itself', () => {
+  const snap = assembleReport(hydrolysedTrialInput())
+  // Page 1's shape-① breach set: the two keys name one source, at two stages of
+  // processing. Was ['soy'] before the relation existed.
+  assert.deepEqual(snap.diet.trial?.proteinSet.offTrial, [])
+  assert.equal(snap.trial?.contamination.length, 0)
+
+  const text = plain(renderReport(snap))
+  assert.ok(!/trial food.s own label also lists/i.test(text))
+  // …and the protein is not promoted into page 1's "in the diet" sentence.
+  assert.ok(!/Soy in \w+.s diet during the trial/i.test(text))
+  // The set itself is still rendered verbatim, so nothing is hidden from the
+  // reader — the report simply stops calling the co-occurrence a contamination.
+  assert.ok(/Hydrolyzed soy protein/i.test(text))
+})
+
+Deno.test('B-529 — the false self-contamination no longer suppresses §7.2', () => {
+  // `render.ts` suppresses the affirmative interpretability statement whenever ANY
+  // caveat applies, so a false contamination silently cost a well-logged trial the
+  // one sentence it had earned. Both halves of the defect, from one root.
+  const text = plain(renderReport(assembleReport(hydrolysedTrialInput())))
+  assert.ok(/supports interpreting it/.test(text))
+  assert.ok(!/cannot establish that the elimination was clean/.test(text))
+})
+
+Deno.test('B-529 — intact protein from ANOTHER food still breaks the same trial', () => {
+  // THE SAFE DIRECTION, and the reason kinship is never applied across foods:
+  // intact protein is exactly what a hydrolysed elimination trial excludes, so a
+  // relation that quietened this would convert a broken trial into a clean one —
+  // a worse artifact than the one it replaced. The absorption is scoped to a
+  // food's OWN designated primary and cannot travel to a different food.
+  const input = hydrolysedTrialInput()
+  for (const d of ['2026-06-10', '2026-06-17', '2026-06-24']) {
+    input.events.push(
+      meal({
+        date: d,
+        brand: 'Generic',
+        product: 'Soy Dental Chew',
+        foodItemId: 'f-soy-chew',
+        foodType: 'treat',
+        proteins: ['soy'],
+        time: '19:00:00',
+      }),
+    )
+  }
+  const snap = assembleReport(input)
+  // Off the allowed list, carrying the INTACT term → rung 2 names the protein.
+  const soy = snap.trial?.antigenTally.find((a) => a.protein === 'soy')
+  assert.ok(soy, 'intact soy from an off-list food must still tally as an antigen')
+  assert.equal(soy!.feedings, 3)
+  assert.ok(snap.trial!.exposures.offDiet >= 3)
+  // While the trial food itself stays clean on page 1.
+  assert.deepEqual(snap.diet.trial?.proteinSet.offTrial, [])
+})
+
+// ── B-529 ①/② — the adversarial pass's blocking pair, end to end ─────────────
+//
+// The first cut of R7(c) silenced the RUNG-1 permitted antigen list on a global
+// flag and disclosed the silence only on the owner's card. Executed against it,
+// a duck trial with two vet-approved chicken chews a day rendered an EMPTY
+// antigen tally under a bold "All N matched the trial diet or a permitted food",
+// with nothing on the page saying the check had been switched off. That is
+// reassurance on absence, on the artifact a vet acts on.
+function pausedArmTrialInput(): ReportInput {
+  const input = wellLoggedTrialInput()
+  input.dietTrials[0] = {
+    ...input.dietTrials[0],
+    primaryProtein: 'duck',
+    proteins: ['duck'],
+    allowedFoods: [
+      { ...TRIAL_FOOD, foodItemId: 'f-duck', foodLabel: 'RC Duck kibble', primaryProtein: 'duck', proteins: ['duck'] },
+      // The row missing its designation — the whole trigger.
+      { ...TRIAL_FOOD, foodItemId: 'f-wet', foodLabel: 'RC Duck wet', primaryProtein: null, proteins: ['duck'] },
+      { ...PERMITTED_TREAT, foodItemId: 'f-chew', foodLabel: 'Dental Chew', brand: 'Generic', productName: 'Dental Chew', primaryProtein: 'chicken', proteins: ['chicken'], ingredientsNotes: 'Chicken, glycerin, gelatin, water' },
+    ],
+  }
+  input.events = input.events.map((e) =>
+    e.meal ? { ...e, meal: { ...e.meal, foodItemId: 'f-duck', proteins: ['duck'] } } : e,
+  )
+  for (const d of ['2026-06-05', '2026-06-12', '2026-06-19', '2026-06-26']) {
+    input.events.push(
+      meal({ date: d, brand: 'Generic', product: 'Dental Chew', foodItemId: 'f-chew', foodType: 'treat', proteins: ['chicken'], time: '20:00:00' }),
+    )
+  }
+  // THE UNDESIGNATED FOOD IS ACTUALLY FED. Without this nothing is ever silenced
+  // — every feeding is a rung-1 hit on a designated food — and no disclosure is
+  // owed, which is the noise case the fourth pass measured. A fixture that
+  // asserted a disclosure here was asserting the over-fire, not the behaviour.
+  for (const d of ['2026-06-07', '2026-06-14', '2026-06-21']) {
+    input.events.push(
+      meal({ date: d, brand: 'Royal Canin', product: 'Duck wet', foodItemId: 'f-wet', proteins: ['duck', 'duck liver'], time: '12:00:00' }),
+    )
+  }
+  return input
+}
+
+Deno.test('B-529 ① — a vet-approved chicken chew keeps its antigen row when another trial row is undesignated', () => {
+  const snap = assembleReport(pausedArmTrialInput())
+  const chicken = snap.trial?.antigenTally.find((a) => a.protein === 'chicken')
+  assert.ok(chicken, 'the chew exposures must survive the silence rule')
+  assert.equal(chicken!.feedings, 4)
+  assert.equal(chicken!.fromPermitted, 4)
+  const text = plain(renderReport(snap))
+  assert.ok(/Chicken/.test(text))
+})
+
+Deno.test('B-529 ② — the report says WHY the antigen check is short, and withholds the clean claim', () => {
+  const snap = assembleReport(pausedArmTrialInput())
+  assert.deepEqual(snap.trial?.antigenAttributionPaused, ['RC Duck wet'])
+  // The affirmative sentence must not compose with a dark arm.
+  assert.equal(snap.trial?.mayClaimAllMatched, false)
+
+  const text = plain(renderReport(snap))
+  assert.ok(/Antigen check paused/.test(text))
+  assert.ok(/RC Duck wet/.test(text))
+  assert.ok(/no protein on file that names a source/.test(text))
+  // The gap is named as a gap in the RECORD, never as a finding about the pet.
+  assert.ok(/not a finding about the animal/.test(text))
+  assert.ok(!/All \d+ matched/.test(text))
+})
+
+Deno.test('B-529 ③ — the disclosure is RANGE-anchored, so a swapped-out food still explains its gap', () => {
+  // Membership is dated: an undesignated trial food withdrawn mid-trial leaves a
+  // hole in attribution that a `today`-anchored check cannot see, because the row
+  // is no longer in force. Executed on the first cut: day-5 feedings silenced,
+  // day-25 attributed, and no pause sentence anywhere.
+  const input = pausedArmTrialInput()
+  input.dietTrials[0].allowedFoods = input.dietTrials[0].allowedFoods!.map((f) =>
+    f.foodItemId === 'f-wet' ? { ...f, allowedUntil: '2026-06-10' } : f,
+  )
+  // Fed on day 7, inside its membership; withdrawn on day 10. A `today`-anchored
+  // check cannot see that row at all by the time the report is generated.
+  const snap = assembleReport(input)
+  assert.deepEqual(snap.trial?.antigenAttributionPaused, ['RC Duck wet'])
+  assert.ok(/Antigen check paused/.test(plain(renderReport(snap))))
+})
+
+// ── B-529 — the SECOND adversarial pass's two breaks ─────────────────────────
+//
+// The first repair wired `mayClaimAllMatched` and anchored the disclosure on the
+// clipped range head. Both were incomplete, and both were executed against.
+
+Deno.test('B-529 §7.2 — a dark antigen arm caveats the bottom line, like a known contamination does', () => {
+  // The inversion: the record with a KNOWN contamination said "cannot establish
+  // that the elimination was clean", while the record with an UNKNOWN one —
+  // strictly less known — still said "supports interpreting it". The more
+  // ignorant state was getting the more affirmative sentence, on the one line a
+  // vet reads for the bottom line.
+  const snap = assembleReport(pausedArmTrialInput())
+  const text = plain(renderReport(snap))
+  assert.ok(!/supports interpreting it/.test(text))
+  assert.ok(/no protein on file that names a source/.test(text))
+  assert.ok(/cannot be confirmed clean from this record/.test(text))
+})
+
+Deno.test('B-529 — the disclosure covers the SAME range the silence does', () => {
+  // The silence runs from `exposureStart` (the scope head), the disclosure ran
+  // from `startDayIndex` (the first-logged clip). A back-dated trial — the spec's
+  // own "normal vet-directed setup" — with the undesignated food on the list only
+  // during the untracked head therefore silenced antigens there and explained
+  // nothing. Executed: no antigen row AND no pause row on the same page.
+  const input = wellLoggedTrialInput()
+  input.dietTrials[0] = {
+    ...input.dietTrials[0],
+    startedAt: '2026-05-20',
+    primaryProtein: 'duck',
+    proteins: ['duck'],
+    allowedFoods: [
+      { ...TRIAL_FOOD, foodItemId: 'f-duck', foodLabel: 'RC Duck kibble', allowedFrom: '2026-05-20', primaryProtein: 'duck', proteins: ['duck'] },
+      // On the list only inside the untracked head, then withdrawn.
+      { ...TRIAL_FOOD, foodItemId: 'f-wet', foodLabel: 'Head-only Wet', allowedFrom: '2026-05-20', allowedUntil: '2026-05-25', primaryProtein: null, proteins: ['duck'] },
+    ],
+  }
+  input.events = input.events.map((e) =>
+    e.meal ? { ...e, meal: { ...e.meal, foodItemId: 'f-duck', proteins: ['duck'] } } : e,
+  )
+  input.events.push(
+    meal({ date: '2026-05-22', brand: 'Generic', product: 'Chicken Treat', foodItemId: 'f-ct', foodType: 'treat', proteins: ['chicken'], time: '18:00:00' }),
+  )
+  const snap = assembleReport(input)
+  // Whatever the arm does in the head, the page must not be silent about it.
+  const named = (snap.trial?.antigenTally ?? []).some((a) => a.protein === 'chicken')
+  const disclosed = (snap.trial?.antigenAttributionPaused ?? []).length > 0
+  assert.ok(named || disclosed, 'an antigen is either named or its absence is explained — never neither')
+  const text = plain(renderReport(snap))
+  assert.ok(/Chicken/.test(text) || /Antigen check paused/.test(text))
+})
+
+Deno.test('B-529 — a bare process word is not a designation (CE-9)', () => {
+  // `canonicalizeProtein('hydrolyzed') === 'hydrolyzed'`, so a bare-process
+  // primary used to pass as characterized — and then SANCTIONED CHICKEN for the
+  // whole library off its own panel, so an intact-chicken chew on a hydrolysed
+  // trial classified clean with no disclosure. Pre-existing, but it defeated
+  // R7(c) on the exact diet class the ruling is about.
+  const input = wellLoggedTrialInput()
+  input.dietTrials[0] = {
+    ...input.dietTrials[0],
+    primaryProtein: 'hydrolyzed',
+    proteins: ['hydrolyzed', 'chicken', 'soy'],
+    allowedFoods: [
+      { ...TRIAL_FOOD, foodItemId: 'f-hp', foodLabel: 'Process Diet', primaryProtein: 'hydrolyzed', proteins: ['hydrolyzed', 'chicken', 'soy'] },
+    ],
+  }
+  input.events.push(
+    meal({ date: '2026-06-15', brand: 'Generic', product: 'Chicken Chew', foodItemId: 'f-cc', foodType: 'treat', proteins: ['chicken'], time: '18:00:00' }),
+  )
+  const snap = assembleReport(input)
+  assert.deepEqual(snap.trial?.antigenAttributionPaused, ['Process Diet'])
+  assert.equal(snap.trial?.mayClaimAllMatched, false)
+  const text = plain(renderReport(snap))
+  assert.ok(/Antigen check paused/.test(text))
+  assert.ok(!/supports interpreting it/.test(text))
+})
+
+// ── B-529 — the THIRD adversarial pass's findings ────────────────────────────
+
+Deno.test('B-529 — appendix C never asserts an all-clear on a feeding nothing checked', () => {
+  // Executed pre/post on byte-identical input by the third pass: a correct
+  // `Chicken ×5 / "Protein not in the trial diet"` became
+  // `[] / "its label carries nothing the trial diet does not"`. Three routes
+  // reach rung 3, not two, and the third one ("we did not check") had no copy.
+  const input = wellLoggedTrialInput()
+  input.dietTrials[0] = {
+    ...input.dietTrials[0],
+    primaryProtein: 'hydrolyzed',
+    proteins: ['hydrolyzed'],
+    allowedFoods: [
+      { ...TRIAL_FOOD, foodItemId: 'f-hp', foodLabel: 'Process Diet', primaryProtein: 'hydrolyzed', proteins: ['hydrolyzed'] },
+    ],
+  }
+  for (const d of ['2026-06-03', '2026-06-10', '2026-06-17']) {
+    input.events.push(
+      meal({ date: d, brand: 'Generic', product: 'Chicken Chew', foodItemId: 'f-cc', foodType: 'treat', proteins: ['chicken'], time: '18:00:00' }),
+    )
+  }
+  const text = plain(renderReport(assembleReport(input)))
+  assert.ok(!/carries nothing the trial diet does not/.test(text))
+  assert.ok(/not checked against it/.test(text))
+})
+
+Deno.test('B-529 — the paused disclosure and the sanctioned set use ONE predicate', () => {
+  // The third pass found the split: isUncharacterizedTrialDiet had moved to
+  // proteinSourceBase while sanctionedProteinsOn and trialContamination still
+  // used canonicalizeProtein. The page then printed "no main protein on file"
+  // and "the trial diet also lists Chicken and Soy" ONE ROW APART — R7's own
+  // defect #1, computed from the comparator the row above disclaims.
+  const input = wellLoggedTrialInput()
+  input.dietTrials[0] = {
+    ...input.dietTrials[0],
+    primaryProtein: 'hydrolyzed',
+    proteins: ['hydrolyzed', 'chicken', 'soy'],
+    allowedFoods: [
+      { ...TRIAL_FOOD, foodItemId: 'f-hp', foodLabel: 'RC Hydrolyzed HP', primaryProtein: 'hydrolyzed', proteins: ['hydrolyzed', 'chicken', 'soy'] },
+    ],
+  }
+  const snap = assembleReport(input)
+  assert.equal(snap.trial?.contamination.length, 0, 'a food we cannot characterize cannot also be accused')
+  const text = plain(renderReport(snap))
+  assert.ok(!/Label contamination/.test(text))
+})
+
+Deno.test('B-529 — a clean trial does NOT lose its read to a row nothing was fed near', () => {
+  // The noise the third pass measured: membership overlap alone made a
+  // fully-logged, zero-off-diet trial withhold its clean read for its whole life
+  // because one allowed row sat on the list for a day with no feeding near it.
+  const input = wellLoggedTrialInput()
+  input.dietTrials[0] = {
+    ...input.dietTrials[0],
+    primaryProtein: 'duck',
+    proteins: ['duck'],
+    allowedFoods: [
+      { ...TRIAL_FOOD, foodItemId: 'f-duck', foodLabel: 'RC Duck', primaryProtein: 'duck', proteins: ['duck'] },
+      // In force for one day, before any logging, never fed.
+      { ...TRIAL_FOOD, foodItemId: 'f-ghost', foodLabel: 'Ghost Row', allowedFrom: '2026-06-01', allowedUntil: '2026-06-01', primaryProtein: null, proteins: [] },
+    ],
+  }
+  input.events = input.events
+    .filter((e) => e.occurredAt >= '2026-06-05')
+    .map((e) => (e.meal ? { ...e, meal: { ...e.meal, foodItemId: 'f-duck', proteins: ['duck'] } } : e))
+  const snap = assembleReport(input)
+  assert.deepEqual(snap.trial?.antigenAttributionPaused, [])
+  assert.ok(!/Antigen check paused/.test(plain(renderReport(snap))))
+})
+
+Deno.test('B-529 — page 1 and appendix C count the same exposures', () => {
+  // Third range: the adapter walked from the CLIPPED head while the aggregates
+  // counted from the scope head, so page 1 could say "1 did not — dates in
+  // appendix C" over an empty appendix C.
+  const input = wellLoggedTrialInput()
+  input.dietTrials[0] = {
+    ...input.dietTrials[0],
+    startedAt: '2026-06-01',
+    primaryProtein: 'duck',
+    proteins: ['duck'],
+    allowedFoods: [{ ...TRIAL_FOOD, foodItemId: 'f-duck', foodLabel: 'RC Duck', primaryProtein: 'duck', proteins: ['duck'] }],
+  }
+  // Logging starts late; one off-diet treat sits in the untracked head.
+  input.events = input.events
+    .filter((e) => e.occurredAt >= '2026-06-08')
+    .map((e) => (e.meal ? { ...e, meal: { ...e.meal, foodItemId: 'f-duck', proteins: ['duck'] } } : e))
+  input.events.push(
+    meal({ date: '2026-06-03', brand: 'Generic', product: 'Beef Treat', foodItemId: 'f-bt', foodType: 'treat', proteins: ['beef'], time: '18:00:00' }),
+  )
+  const snap = assembleReport(input)
+  const offDiet = snap.trial?.exposures.offDiet ?? 0
+  const rows = snap.trial?.exposures.items.length ?? 0
+  assert.equal(offDiet, rows, 'the count page 1 states must equal the rows appendix C can show')
+})
+
+// ── B-529 — the FOURTH adversarial pass's blocking case ──────────────────────
+Deno.test('B-529 — a primary_diet MEMBERSHIP GAP darkens the arm, and the page says so', () => {
+  // The arm goes dark TWO ways: an uncharacterized trial food, and an EMPTY
+  // sanctioned set — which is what a membership gap produces. The previous cut
+  // derived the disclosure from a proxy for the first, so the gap silenced real
+  // exposures with no paused row, no caveat, and the affirmative clean sentence
+  // still in bold. Migration 040's own rule makes the gap reachable: "removing a
+  // food is an UPDATE, re-adding it later is a NEW ROW with a later allowed_from".
+  const input = wellLoggedTrialInput()
+  input.dietTrials[0] = {
+    ...input.dietTrials[0],
+    primaryProtein: 'duck',
+    proteins: ['duck'],
+    allowedFoods: [
+      { ...TRIAL_FOOD, foodItemId: 'f-duck', foodLabel: 'RC Duck', allowedFrom: '2026-06-01', allowedUntil: '2026-06-10', primaryProtein: 'duck', proteins: ['duck'] },
+      // Re-added after a four-day gap — a NEW ROW, per migration 040.
+      { ...TRIAL_FOOD, foodItemId: 'f-duck2', foodLabel: 'RC Duck', allowedFrom: '2026-06-15', primaryProtein: 'duck', proteins: ['duck'] },
+    ],
+  }
+  input.events = input.events.map((e) =>
+    e.meal ? { ...e, meal: { ...e.meal, foodItemId: 'f-duck', proteins: ['duck'] } } : e,
+  )
+  // A permitted-looking chicken chew fed straight through the gap.
+  for (const d of ['2026-06-11', '2026-06-12', '2026-06-13', '2026-06-14']) {
+    input.events.push(
+      meal({ date: d, brand: 'Generic', product: 'Chicken Chew', foodItemId: 'f-cc', foodType: 'treat', proteins: ['chicken'], time: '19:00:00' }),
+    )
+  }
+  const snap = assembleReport(input)
+
+  // The arm WAS dark, and the gate reads the flag rather than the (empty) label list.
+  assert.equal(snap.trial?.antigenArmDark, true)
+  assert.equal(snap.trial?.mayClaimAllMatched, false)
+
+  const text = plain(renderReport(snap))
+  // The unlabelled variant: there is no allowed row to name during a gap.
+  assert.ok(/Antigen check paused/.test(text))
+  assert.ok(/no trial diet was recorded on the allowed list/.test(text))
+  assert.ok(!/supports interpreting it/.test(text))
+  // And appendix C's "(see above)" now has an "above" to point at.
+  if (/not checked against it/.test(text)) {
+    assert.ok(/Antigen check paused/.test(text))
+  }
+})
+
+Deno.test('B-529 — appendix C is captioned with the range its own rows come from', () => {
+  // The range unification fixed "page 1 says 1, appendix shows 0" and introduced
+  // the mirror defect: a row dated Jun 3 under a caption reading "Jun 8 – Jul 2".
+  // Coverage is clipped to the first logged day; exposures are not. Two questions,
+  // two dates.
+  const input = wellLoggedTrialInput()
+  input.dietTrials[0] = {
+    ...input.dietTrials[0],
+    startedAt: '2026-06-01',
+    primaryProtein: 'duck',
+    proteins: ['duck'],
+    allowedFoods: [{ ...TRIAL_FOOD, foodItemId: 'f-duck', foodLabel: 'RC Duck', primaryProtein: 'duck', proteins: ['duck'] }],
+  }
+  input.events = input.events
+    .filter((e) => e.occurredAt >= '2026-06-08')
+    .map((e) => (e.meal ? { ...e, meal: { ...e.meal, foodItemId: 'f-duck', proteins: ['duck'] } } : e))
+  input.events.push(
+    meal({ date: '2026-06-03', brand: 'Generic', product: 'Beef Treat', foodItemId: 'f-bt', foodType: 'treat', proteins: ['beef'], time: '18:00:00' }),
+  )
+  const snap = assembleReport(input)
+  // The exposure caption covers the row; the coverage head stays clipped.
+  //
+  // B-529 introduced `exposureRangeStartDate` for this, clipping the HEAD only.
+  // B-422 (#513) then shipped `evidenceStartDate`/`evidenceEndDate`, which clip
+  // BOTH ends for the same reason — so the narrower field was dropped at the
+  // merge and this assertion moved onto the general one. The invariant being
+  // pinned is unchanged: a caption may never exclude a row inside its own table.
+  assert.equal(snap.trial?.evidenceStartDate, '2026-06-01')
+  assert.equal(snap.trial?.rangeStartDate, '2026-06-08')
+})
 
 Deno.test('B-530 — a re-photographed bag no longer silences the refusal lane', () => {
   const snap = assembleReport(rePhotographedBagInput('refused'))
@@ -2116,8 +2532,17 @@ Deno.test('ADV① KNOWN LIMIT — a PARTIAL identity miss still silences the ban
   //
   // The two directions are not reconcilable without knowing which food was the trial
   // diet: 2 matched feedings beside 24 unmatched refused ones WANTS the fallback, and 64
-  // matched unrated ones beside 3 unmatched refused ones does not. That is B-529.
-  // Tracked as B-579; this test is expected to FLIP when it lands.
+  // matched unrated ones beside 3 unmatched refused ones does not.
+  //
+  // ⚠️ OWNER CORRECTED 2026-07-29 (B-529's own PR, #507). This comment said "That is
+  // B-529", and it is not: R7 scoped B-529 to PROTEIN identity — the hydrolyzed↔intact
+  // derived-from relation, the primary↔set write invariant, the antigen silence rule —
+  // and it shipped with none of it touching FOOD identity. What this gap needs is
+  // knowing which `food_items` row was the trial diet when the bag was re-shot, which is
+  // a different problem in a different column. The two were adjacent in the pre-ship
+  // review's §0 verdict ("food-identity resolution feeding the predicate") and got
+  // conflated there. **Sole owner is B-579**; this test flips when THAT lands, and B-529
+  // closing does not move it.
   const input = wellLoggedTrialInput({ events: [] })
   input.pet.name = 'Miso'
   input.pet.species = 'cat'
