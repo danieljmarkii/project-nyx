@@ -194,6 +194,11 @@ export interface LocalVetDocument {
   document_date: string | null;
   notes: string | null;
   source: string;
+  // B-546 — the filename the document arrived with, or null. Provenance (D10),
+  // sitting beside `source` and `file_size_bytes` rather than in `title`: see
+  // migration 047's header for why filename-as-title would cost the row its Name
+  // affordance forever.
+  source_filename: string | null;
   // Local-only: the on-device file path. NEVER pushed and NEVER overwritten by
   // hydration (see hydrateVetDocuments) — it is this device's copy of the bytes,
   // and the server has no opinion about it.
@@ -222,6 +227,7 @@ export interface RemoteVetDocumentUpsert {
   document_date: string | null;
   notes: string | null;
   source: string;
+  source_filename: string | null;
   storage_path: string;
   mime_type: string;
   file_size_bytes: number | null;
@@ -242,6 +248,7 @@ export function vetDocumentRowToRemote(row: LocalVetDocument): RemoteVetDocument
     document_date: row.document_date ?? null,
     notes: row.notes ?? null,
     source: row.source,
+    source_filename: row.source_filename ?? null,
     storage_path: row.storage_path,
     mime_type: row.mime_type,
     file_size_bytes: row.file_size_bytes ?? null,

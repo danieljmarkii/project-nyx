@@ -1228,7 +1228,8 @@ interface RemoteVetVisitAttachment {
 interface RemoteVetDocument {
   id: string; pet_id: string; vet_visit_id: string | null; document_group_id: string;
   kind: string; title: string | null; document_date: string | null; notes: string | null;
-  source: string; storage_path: string; mime_type: string; file_size_bytes: number | null;
+  source: string; source_filename: string | null; // B-546 (migration 047)
+  storage_path: string; mime_type: string; file_size_bytes: number | null;
   page_index: number | null; deleted_at: string | null; created_at: string; updated_at: string;
 }
 interface RemoteFeedingArrangement {
@@ -1536,7 +1537,8 @@ async function hydrateVetDocuments(db: Db, stale: () => boolean): Promise<void> 
   const rows = await fetchAllRows<RemoteVetDocument>(
     'vet_documents',
     'id, pet_id, vet_visit_id, document_group_id, kind, title, document_date, notes, source, ' +
-      'storage_path, mime_type, file_size_bytes, page_index, deleted_at, created_at, updated_at',
+      'source_filename, storage_path, mime_type, file_size_bytes, page_index, deleted_at, ' +
+      'created_at, updated_at',
     floor ? { column: 'updated_at', value: floor } : null,
   );
   if (!rows || rows.length === 0) return;
@@ -1567,19 +1569,26 @@ async function hydrateVetDocuments(db: Db, stale: () => boolean): Promise<void> 
     await db.runAsync(
       `INSERT INTO vet_documents
         (id, pet_id, vet_visit_id, document_group_id, kind, title, document_date, notes,
-         source, local_uri, storage_path, mime_type, file_size_bytes, page_index,
-         deleted_at, created_at, updated_at, synced)
-       VALUES (?,?,?,?,?,?,?,?,?,'',?,?,?,?,?,?,?,1)
+         source, source_filename, local_uri, storage_path, mime_type, file_size_bytes,
+         page_index, deleted_at, created_at, updated_at, synced)
+       VALUES (?,?,?,?,?,?,?,?,?,?,'',?,?,?,?,?,?,?,1)
        ON CONFLICT(id) DO UPDATE SET
          pet_id=excluded.pet_id, vet_visit_id=excluded.vet_visit_id,
          document_group_id=excluded.document_group_id, kind=excluded.kind,
          title=excluded.title, document_date=excluded.document_date, notes=excluded.notes,
-         source=excluded.source, mime_type=excluded.mime_type,
+         source=excluded.source, source_filename=excluded.source_filename,
+         mime_type=excluded.mime_type,
          file_size_bytes=excluded.file_size_bytes, page_index=excluded.page_index,
          deleted_at=excluded.deleted_at, updated_at=excluded.updated_at, synced=1
        WHERE vet_documents.synced = 1`,
+      // B-546 — source_filename rides in BOTH branches, unlike local_uri and
+      // storage_path. It is a server-owned fact (it round-trips through the push
+      // payload), so a device that captured a document pre-047 and a device that
+      // only ever hydrated it must converge on the same value rather than one of
+      // them keeping a stale NULL.
       [d.id, d.pet_id, d.vet_visit_id ?? null, d.document_group_id, d.kind, d.title ?? null,
-       d.document_date ?? null, d.notes ?? null, d.source, d.storage_path, d.mime_type,
+       d.document_date ?? null, d.notes ?? null, d.source, d.source_filename ?? null,
+       d.storage_path, d.mime_type,
        d.file_size_bytes ?? null, d.page_index ?? 0, d.deleted_at ?? null, d.created_at, d.updated_at],
     );
   }

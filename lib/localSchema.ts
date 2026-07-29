@@ -177,6 +177,13 @@ export const BASE_SCHEMA_SQL = `
       document_date     TEXT,
       notes             TEXT,
       source            TEXT NOT NULL,
+      -- B-546 — the filename the document arrived with (Files/PDF picks only).
+      -- Provenance, never identity: it renders as a secondary line beside an
+      -- untitled row, so the title column stays NULL and the Name pill survives.
+      -- Mirrors migration 047. Existing installs get it via the ALTER in
+      -- lib/db.ts — CREATE TABLE IF NOT EXISTS will not add a column to a device
+      -- that already ran the VF-1 DDL.
+      source_filename   TEXT,
       local_uri         TEXT NOT NULL DEFAULT '',
       storage_path      TEXT NOT NULL,
       mime_type         TEXT NOT NULL,

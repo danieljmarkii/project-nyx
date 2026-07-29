@@ -307,6 +307,18 @@ export async function initDb(): Promise<void> {
     // Column already exists — safe to ignore
   }
 
+  // source_filename — B-546 (migration 047). The name a document arrived with, for
+  // the Files/PDF pick path. `vet_documents` shipped in VF-1 without it, so a device
+  // that already ran that build has the table and CREATE TABLE IF NOT EXISTS won't
+  // add the column — this ALTER does. Nullable TEXT, no default: a camera or Photos
+  // capture legitimately has no filename worth keeping, and every pre-047 row has
+  // none to recover (nothing recorded it), so NULL is the honest value for both.
+  try {
+    await database.execAsync(`ALTER TABLE vet_documents ADD COLUMN source_filename TEXT`);
+  } catch {
+    // Column already exists — safe to ignore
+  }
+
   // B-156 PR B4 — local index on the combo link, mirroring Supabase migration 023's
   // partial index. The reverse-lookup join (PAIRED_DOSE_REVERSE_JOIN) groups
   // medication_administrations BY paired_event_id on every getTimeline / getEventById,

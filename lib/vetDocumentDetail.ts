@@ -42,7 +42,8 @@ import {
 // or deleted on another device and hydrated in while this screen was open).
 export const DETAIL_VET_DOCUMENT_QUERY =
   `SELECT id, pet_id, document_group_id, kind, title, document_date, notes,
-          vet_visit_id, local_uri, storage_path, mime_type, page_index, created_at
+          vet_visit_id, source_filename,
+          local_uri, storage_path, mime_type, page_index, created_at
    FROM vet_documents
    WHERE document_group_id = ? AND deleted_at IS NULL
    ORDER BY page_index, created_at`;
@@ -57,6 +58,7 @@ export interface VetDocumentPageRow {
   document_date: string | null;
   notes: string | null;
   vet_visit_id: string | null;
+  source_filename: string | null;
   local_uri: string;
   storage_path: string;
   mime_type: string;
@@ -88,6 +90,16 @@ export interface VetDocumentDetail {
   dateLabel: string;
   notes: string | null;
   vetVisitId: string | null;
+  /**
+   * B-546 — the filename the document arrived with, or null.
+   *
+   * Unlike the library row's `fileLabel`, this is exposed WHATEVER the title is.
+   * The list can afford to drop it once a name exists (the name has done the
+   * disambiguating there); this screen is where the owner confirms they are about
+   * to hand a vet the right file, and "which PDF is this, actually" is a question
+   * a typed name can't answer.
+   */
+  sourceFilename: string | null;
   /** The cover's type. A group is homogeneous by construction (§4.4 grouping). */
   isPdf: boolean;
   pages: VetDocumentPage[];
@@ -133,6 +145,7 @@ export function buildVetDocumentDetail(
     dateLabel,
     notes,
     vetVisitId: cover.vet_visit_id,
+    sourceFilename: cover.source_filename?.trim() ? cover.source_filename.trim() : null,
     isPdf: cover.mime_type === 'application/pdf',
     pages: rows.map((r) => ({
       id: r.id,

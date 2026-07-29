@@ -307,6 +307,7 @@ function pageRow(over: Partial<VetDocumentPageRow> = {}): VetDocumentPageRow {
     document_date: '2026-07-20',
     notes: null,
     vet_visit_id: null,
+    source_filename: null,
     local_uri: '',
     storage_path: 'pet-1/p1.jpg',
     mime_type: 'image/jpeg',
@@ -336,6 +337,39 @@ describe('buildVetDocumentDetail', () => {
     const d = buildVetDocumentDetail([pageRow({ title: '   ', notes: '  \n ' })], now);
     expect(d?.untitled).toBe(true);
     expect(d?.notes).toBeNull();
+  });
+
+  // B-546. Deliberately DIFFERENT from the library row, which drops the filename
+  // once a title exists: the list can afford that (the name has disambiguated it),
+  // this screen cannot. It is where the owner confirms they are handing a vet the
+  // right file, and "which PDF is this, actually" is a question a typed name does
+  // not answer.
+  it('exposes the source filename whatever the title is', () => {
+    const untitled = buildVetDocumentDetail([pageRow({ source_filename: 'cbc.pdf' })], now);
+    expect(untitled?.sourceFilename).toBe('cbc.pdf');
+
+    const named = buildVetDocumentDetail(
+      [pageRow({ title: 'Senior panel', source_filename: 'cbc.pdf' })],
+      now,
+    );
+    expect(named?.sourceFilename).toBe('cbc.pdf');
+    expect(named?.untitled).toBe(false);
+  });
+
+  it('reports no filename when none was recorded', () => {
+    expect(buildVetDocumentDetail([pageRow()], now)?.sourceFilename).toBeNull();
+    expect(buildVetDocumentDetail([pageRow({ source_filename: '  ' })], now)?.sourceFilename)
+      .toBeNull();
+  });
+
+  // Every per-document fact comes from the COVER, and this is one more of them —
+  // a half-hydrated group must not render page 2's filename under page 1.
+  it('takes the filename from the cover page', () => {
+    const d = buildVetDocumentDetail([
+      pageRow({ id: 'p1', page_index: 0, source_filename: 'cover.pdf' }),
+      pageRow({ id: 'p2', page_index: 1, source_filename: 'page-two.pdf' }),
+    ], now);
+    expect(d?.sourceFilename).toBe('cover.pdf');
   });
 
   it('carries the owner’s title, kind, notes and visit link', () => {

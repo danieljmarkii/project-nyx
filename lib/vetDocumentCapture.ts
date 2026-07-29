@@ -51,6 +51,15 @@ export interface PickedVetFile {
   exifIso?: string | null;
   /** Byte size as reported by the picker; null when unknown. */
   fileSizeBytes?: number | null;
+  /**
+   * B-546 — the name the file arrived with, for the Files/PDF path ONLY.
+   *
+   * Set by pickedFilesFromDocumentAssets and deliberately NOT by
+   * pickedFilesFromImageAssets: a camera-roll asset is called `IMG_4821.HEIC`,
+   * which would put a meta line on every image row to say nothing. A file the
+   * owner or their clinic named is a different kind of fact.
+   */
+  fileName?: string | null;
 }
 
 // ── Picker → PickedVetFile ───────────────────────────────────────────────────
@@ -137,7 +146,56 @@ export function pickedFilesFromDocumentAssets(assets: DocumentAssetLike[]): Pick
     // today and the owner can correct it on the detail screen (VF-4).
     exifIso: null,
     fileSizeBytes: asset.size ?? null,
+    // B-546. This function used to read `asset.name` purely to infer a mime type
+    // (the line above) and then discard it — which is how two lab PDFs from one
+    // clinic visit ended up as two rows reading "Document — Jul 14", with no
+    // thumbnail to tell them apart (PDFs get none by design, D5) and nothing
+    // asked at capture to name them (D11). The name was in our hands the whole
+    // time; keeping it costs nothing and no taps.
+    fileName: asset.name ?? null,
   }));
+}
+
+// What may be STORED as source_filename, out of whatever a document provider
+// hands over.
+//
+// Bounded and sanitised at the write path rather than trusted, because unlike
+// `title` and `notes` this string is persisted WITHOUT the owner typing it — so
+// nobody sees it before it lands on a clinical row. Four rules, each closing
+// something a real provider does:
+//
+//   • directory separators are cut to the basename. Android's Storage Access
+//     Framework and some cloud providers return a display name containing a
+//     path, and "Downloads/labs/CBC.pdf" is both wrong (it is not the file's
+//     name) and a shape no other value on this row can take.
+//   • control characters and newlines are dropped, and runs of whitespace
+//     collapse to one space. A name with a \n in it would silently break a
+//     single-line row's layout, and a name carrying U+202E would reverse the
+//     rendering of the extension — which on a screen whose whole job is telling
+//     a PDF from a photo is a lie, not a curiosity.
+//   • the result is capped to VET_DOCUMENT_FILENAME_MAX. It renders on one line
+//     beside a 44pt row; anything past this is invisible on every device and is
+//     bytes on a clinical row for nothing. Trimmed WELL under migration 047's
+//     255-char CHECK so the client can never mint a row the server refuses.
+//   • empty in, null out. "" is not a filename, and NULL is what every reader
+//     already branches on.
+//
+// The extension is deliberately NOT stripped: ".pdf" is half of what makes the
+// line legible as a file rather than as a title.
+export const VET_DOCUMENT_FILENAME_MAX = 120;
+
+export function sourceFilename(raw: string | null | undefined): string | null {
+  if (typeof raw !== 'string') return null;
+  const basename = raw.split(/[\\/]/).pop() ?? '';
+  const cleaned = basename
+    // eslint-disable-next-line no-control-regex
+    .replace(/[\u0000-\u001f\u007f\u200b-\u200f\u202a-\u202e\u2066-\u2069]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!cleaned) return null;
+  return cleaned.length > VET_DOCUMENT_FILENAME_MAX
+    ? cleaned.slice(0, VET_DOCUMENT_FILENAME_MAX).trimEnd()
+    : cleaned;
 }
 
 // ── Screening ────────────────────────────────────────────────────────────────
@@ -271,6 +329,12 @@ export function buildVetDocumentRows(input: BuildVetDocumentRowsInput): LocalVet
       document_date: documentDate,
       notes: null,
       source,
+      // B-546. Per PAGE, not per group — for the Files path each document IS one
+      // page (two PDFs are two records, see the grouping note in app/vet-files.tsx),
+      // and for the camera/Photos paths this is null on every page anyway. Stored
+      // ALONGSIDE the NULL title above, never instead of it: the row must stay
+      // untitled or it loses its one-tap Name pill (migration 047's header).
+      source_filename: sourceFilename(page.fileName),
       // B-104 — copy off the OS cache directory (reclaimed under storage pressure)
       // into app-owned storage, and store THAT. This is also the free half of
       // AC 12: a document captured on this phone renders with no network, forever.
@@ -298,6 +362,11 @@ export function buildVetDocumentRows(input: BuildVetDocumentRowsInput): LocalVet
 // pets breaks the pet-prefixed key CHECK, the per-pet Storage policies, and the
 // delete-account cascade — and locally it would break the same way, since deleting
 // one pet's copy removes the file the other one renders from.
+//
+// `source_filename` IS carried (via the spread), and that is the right direction:
+// the copy is the same file, filed twice — a vaccination certificate added to both
+// cats arrived under one name and should read the same on both rows. It describes
+// the artifact, not the filing.
 //
 // `vet_visit_id` is dropped, not carried: a visit belongs to one pet, and the
 // server's enforce_vet_document_pet_scope() trigger rejects a document whose
@@ -461,14 +530,14 @@ export async function insertVetDocumentRows(rows: LocalVetDocument[]): Promise<v
       await db.runAsync(
         `INSERT INTO vet_documents
            (id, pet_id, vet_visit_id, document_group_id, kind, title, document_date,
-            notes, source, local_uri, storage_path, mime_type, file_size_bytes,
-            page_index, deleted_at, created_at, updated_at, synced)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+            notes, source, source_filename, local_uri, storage_path, mime_type,
+            file_size_bytes, page_index, deleted_at, created_at, updated_at, synced)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
         [
           row.id, row.pet_id, row.vet_visit_id, row.document_group_id, row.kind,
-          row.title, row.document_date, row.notes, row.source, row.local_uri,
-          row.storage_path, row.mime_type, row.file_size_bytes, row.page_index,
-          row.deleted_at, row.created_at, row.updated_at,
+          row.title, row.document_date, row.notes, row.source, row.source_filename,
+          row.local_uri, row.storage_path, row.mime_type, row.file_size_bytes,
+          row.page_index, row.deleted_at, row.created_at, row.updated_at,
         ],
       );
     }
