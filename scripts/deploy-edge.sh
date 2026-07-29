@@ -128,7 +128,17 @@ if [ "$RUN_TESTS" = 1 ] && ls "$FUNC_DIR"/*.test.ts >/dev/null 2>&1; then
   log "Verifying: deno test ${TEST_DIRS[*]}"
   test_log="$(mktemp)"
   trap '[ -n "${test_log:-}" ] && rm -f "$test_log"' EXIT
-  if timeout 180 "$DENO" test "${TEST_DIRS[@]}" >"$test_log" 2>&1; then
+  # `--allow-read=supabase/functions` is LOAD-BEARING, not cruft, and its absence
+  # here was a real gap: `deno test` grants no filesystem permission by default,
+  # and `detectionSoftDelete.test.ts` (B-071) READS `generate-signal/index.ts` to
+  # assert every query feeding the detection engine still carries its
+  # `.is('deleted_at', null)` filter. Without the grant that guard fails
+  # `NotCapable` — and the failure matches the `| N failed |` pattern below, so
+  # this script hard-failed EVERY `generate-signal` deploy verification on a
+  # permissions error dressed up as a test failure. `.github/workflows/ci.yml`
+  # has carried the flag since B-390; this is the same grant, read-only and
+  # scoped to the same directory.
+  if timeout 180 "$DENO" test --allow-read=supabase/functions "${TEST_DIRS[@]}" >"$test_log" 2>&1; then
     # `|| true` keeps the count-extraction from tripping set -e/pipefail if a
     # suite somehow prints no "N passed" line.
     ok "tests passed ($(grep -oE '[0-9]+ passed' "$test_log" | tail -1 || true))"

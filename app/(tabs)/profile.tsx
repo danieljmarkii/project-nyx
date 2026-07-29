@@ -627,6 +627,13 @@ export default function ProfileScreen() {
   // resolver never reads it) so the completion flow does not re-query a row this
   // screen already loaded — and so the sheet cannot end a different trial than the
   // one the card is showing.
+  //
+  // `status === 'active'` HERE IS CORRECT AND MUST NOT BECOME `isTrialRunning`
+  // (B-422). The effective end withdraws BEHAVIOUR from a trial nobody ended; it
+  // does not end the trial, and this sheet is the only way an owner can. Gating
+  // it would take the completion action away from precisely the overrun trials
+  // the staleness rule exists to get closed — §4.3's milestone "never expires and
+  // re-surfaces until acted on". Same rule at `dietTrialSetup.getActiveTrialForPet`.
   const sheetTrial =
     trialInput?.trial?.id && trialInput.trial.status === 'active'
       ? {

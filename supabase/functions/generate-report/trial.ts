@@ -49,6 +49,7 @@ import {
   isWithinChallengeWindow,
   mayClaimAllMatched,
   mayStateRecordClean,
+  trialEffectiveEndDayIndex,
   trialFoodKey,
   CHALLENGE_WINDOW_DAYS,
   UNHYDRATED_SET_FLOOR,
@@ -321,6 +322,26 @@ export interface TrialBlock {
   rangeEndDate: string
   /** The range starts later than the trial did (a report scope or a first log clipped it). */
   rangeClipped: boolean
+  /**
+   * THE EVIDENCE SPAN — every row every count on this block was computed over.
+   *
+   * `range*` above is the COVERAGE window and is clipped at both ends (head by
+   * §10 S3, tail by B-422's overrun rule). Round 2 converted the itemisation loop
+   * to the evidence window and left five other consumers reading `range*` as if
+   * it were one; round 3 executed all five. So the rule, stated where it can be
+   * checked: **a field is an EVIDENCE bound if losing a row changes what the
+   * report says, and every such field reads these two. `range*` may only ever
+   * appear next to the word "coverage."**
+   *
+   * What round 3 found reading the wrong one: the safety band's own dates (176
+   * days of refusals dated inside a 98-day window, last refusal reported 79 days
+   * early), `weightDuringTrial`'s containment gate (a MORE RECENT weigh-in
+   * deleted the weight-loss sentence from the B-494 band), Appendix C's caption
+   * (excluded rows in its own table), and the dagger footnote's base rate
+   * (understated 2.5×).
+   */
+  evidenceStartDate: string
+  evidenceEndDate: string
   /** §10 S3 — days between `started_at` and the first log, reported as UNTRACKED
    *  rather than counted as failure. */
   untrackedDaysBeforeFirstLog: number
@@ -464,6 +485,34 @@ export interface TrialBlock {
  * wins over an ended one (a pet has at most one active trial — migration 040's
  * UNIQUE partial index); among equals, the most recent start.
  */
+/**
+ * The trial's LAST DAY — declared or effective (B-422).
+ *
+ * `trialEndValue` answers "when did the owner say it ended", which is null for
+ * every trial nobody ended — and since nothing auto-completes a trial, that is
+ * the STEADY STATE rather than an edge. Read literally it means a trial started
+ * eighteen months ago and never closed is still "running" today, so it wins the
+ * `active` rank forever, anchors every report on itself, and never ages out of
+ * the ended-trial grace because it never enters it.
+ *
+ * So the last day is the EARLIER of the declared end and the B-422 effective
+ * end. Deriving one value here, rather than adding a second staleness branch to
+ * each caller, is what keeps the grace machinery singular: an overrun trial is
+ * simply a trial that ended on its effective end, and `endedGraceDays` /
+ * `TRIAL_ANCHOR_GRACE_DAYS` then govern its afterlife exactly as they govern a
+ * completed one.
+ */
+export function trialLastDayNum(t: TrialSource, timeZone: string | null): number | null {
+  const ends = [
+    dayIndexOfValue(trialEndValue(t), timeZone),
+    trialEffectiveEndDayIndex(
+      { startedAt: t.startedAt, targetDurationDays: t.targetDurationDays },
+      timeZone ?? undefined,
+    ),
+  ].filter((v): v is number => v !== null)
+  return ends.length > 0 ? Math.min(...ends) : null
+}
+
 export function selectReportTrial<T extends TrialSource>(
   trials: readonly T[],
   window: { startDayNum: number; endDayNum: number },
@@ -483,16 +532,48 @@ export function selectReportTrial<T extends TrialSource>(
     // window opened never overlaps.
     const spanEnd = endDn ?? window.endDayNum
     if (startDn > window.endDayNum || spanEnd < window.startDayNum) continue
+    // ── B-422 DELIBERATELY DOES NOT REACH THIS TEST ────────────────────────────
+    //
+    // A first cut ranked on `isTrialRunning` here, so an un-ended trial aged out
+    // at its effective end + `endedGraceDays` exactly as a completed one does.
+    // The symmetry is tidy and it is the wrong answer, because of WHAT this
+    // function gates: the trial block carries `trial_diet_refusal`, and dropping
+    // the block drops the SAFETY FLAG with it.
+    //
+    // The adversarial pass rendered the consequence on the canonical case — an
+    // 8-year-old cat who has refused every one of ~336 logged bowls of the
+    // prescribed diet since day 1 and is refusing today. Her trial had aged out,
+    // so `snap.safetyFlags` went from `['trial_diet_refusal']` to `[]`, and the
+    // legend flipped from "absence of a flag is never shown as an all-clear" to
+    // "nothing is printed here when no flag fired". Her OWNER's card still fired
+    // the refusal headline off the same record. One record, two answers, and the
+    // vet is the one who loses the finding.
+    //
+    // That is precisely what the PM's B-494 ruling forbids: a report that teaches
+    // the reader to scan a zone may not leave that zone silent on a patient the
+    // record already knows is in trouble. It also inverts the ruling's own
+    // reasoning, since an owner still logging refusals daily is the strongest
+    // possible evidence the trial has NOT stopped — the record contradicts the
+    // inference, and evidence outranks inference.
+    //
+    // So this stays on `status` — AND SO DOES `resolveScope` RUNG 2, which is the
+    // correction round 3 caught this comment getting backwards. The two must rank
+    // IDENTICALLY (round 1 produced the divergence from a real input), so gating
+    // only one of them is how the pair silently splits again. Neither is gated.
+    // Whether an un-ended trial should eventually stop being the report's SUBJECT
+    // — and how to do that without taking its safety band with it — is a Dr. Chen
+    // + cold-read question that belongs with B-538's grace windows → B-594.
+    const running = t.status === 'active'
     // OVERLAP IS NOT ENOUGH FOR AN ENDED TRIAL. A 90-day fallback window catches
     // the tail of a trial that finished ten weeks ago, and framing the whole report
     // as that trial's result would be a worse answer than framing it as symptom
     // monitoring: the trial describes three of the report's thirteen weeks. The
     // report belongs to a trial that is running, or one that has only just stopped.
-    if (t.status !== 'active' && (endDn === null || window.endDayNum - endDn > endedGraceDays)) continue
+    if (!running && (endDn === null || window.endDayNum - endDn > endedGraceDays)) continue
     // Ties break on `id`, matching `resolveScope` rung 2 — the query has no ORDER BY,
     // so two ended trials with the same start otherwise resolve by array order and the
     // report flips on a re-order (the B-188 shape, and the pair must not disagree).
-    const key: [number, number, string] = [t.status === 'active' ? 1 : 0, startDn, t.id]
+    const key: [number, number, string] = [running ? 1 : 0, startDn, t.id]
     if (
       key[0] > bestKey[0] ||
       (key[0] === bestKey[0] && key[1] > bestKey[1]) ||
@@ -626,8 +707,22 @@ export function buildTrialBlock(args: BuildTrialBlockArgs): TrialBlock | null {
   const hasPrimary = allowedFoods.some((f) => f.role === 'primary_diet')
 
   const { startDayIndex, endDayIndex } = facts.range
+  // ITEMISATION WALKS THE EVIDENCE WINDOW, NOT THE COVERAGE RANGE (B-422).
+  //
+  // `facts.range` is clipped at both ends — head by §10 S3, tail by B-422's
+  // overrun rule — and both clips belong to the COVERAGE denominator. Using it
+  // here re-applied them as an evidence bound, and the adversarial pass rendered
+  // the result: a table-chicken feeding logged five days past the effective end
+  // on a trial the app still called active was COUNTED in `offDiet` (which comes
+  // from the module) and MISSING from `exposures.items` (which comes from this
+  // loop) — so page 1 read "1 / 124 — dates in appendix C" while Appendix C read
+  // "Every one of the 124 feedings logged in this window matched the trial diet
+  // or a permitted food." Emptying the itemisation had unlocked an affirmative
+  // all-clear the report has never otherwise printed, and `confounderFeedings`,
+  // the protein tally and the protein-over-time chart inherited it from here.
+  const evidence = facts.exposureRange ?? { startDayIndex, endDayIndex }
   const inRange = (dn: number | null): dn is number =>
-    dn !== null && dn >= startDayIndex && dn <= endDayIndex
+    dn !== null && dn >= evidence.startDayIndex && dn <= evidence.endDayIndex
 
   // A SECOND PASS OVER THE SAME PREDICATE, not a second predicate. `computeTrialFacts`
   // returns the aggregates; the render also needs per-row provenance (which allowed
@@ -733,8 +828,11 @@ export function buildTrialBlock(args: BuildTrialBlockArgs): TrialBlock | null {
       allowedUntil: f.allowedUntil,
       feedings: permittedCounts.get(allowedRowKey(f)) ?? 0,
       addedAfterStart: openedAfter(f.allowedFrom, trial.startedAt, tz),
+      // EVIDENCE, not coverage: "this permit was withdrawn before the window
+      // ended" is a statement about the record the vet is reading.
       endedBeforeWindowEnd:
-        f.allowedUntil !== null && (dayIndexOfValue(f.allowedUntil, timeZone) ?? Infinity) < endDayIndex,
+        f.allowedUntil !== null &&
+        (dayIndexOfValue(f.allowedUntil, timeZone) ?? Infinity) < evidence.endDayIndex,
       proteins: [...(f.proteins ?? [])],
       panelRead: (f.proteins ?? []).length > 0,
     }))
@@ -758,7 +856,12 @@ export function buildTrialBlock(args: BuildTrialBlockArgs): TrialBlock | null {
   // right together.
   const rangeRefusal: TrialDietRefusal | null = facts.rangeRefusal
 
-  const dayCounter = Math.max(1, endDayIndex - ctx.startDayIndex + 1)
+  // OFF THE EVIDENCE END, so the report's day counter matches the card's
+  // `getDietTrialProgress` (G5). Taking it off the clipped coverage end made the
+  // report say "day 112 — 56 days past" where the card said "Day 123 of 56": the
+  // report understated the trial's staleness by exactly the overrun it was
+  // reporting, which is the one number on that block a vet reads for recency.
+  const dayCounter = Math.max(1, evidence.endDayIndex - ctx.startDayIndex + 1)
   const target = trial.targetDurationDays > 0 ? trial.targetDurationDays : 0
 
   return {
@@ -778,6 +881,8 @@ export function buildTrialBlock(args: BuildTrialBlockArgs): TrialBlock | null {
     daysPastTarget: target > 0 ? Math.max(0, dayCounter - target) : 0,
     rangeStartDate: dayKeyFromIndex(startDayIndex),
     rangeEndDate: dayKeyFromIndex(endDayIndex),
+    evidenceStartDate: dayKeyFromIndex(evidence.startDayIndex),
+    evidenceEndDate: dayKeyFromIndex(evidence.endDayIndex),
     rangeClipped: facts.range.clipped,
     untrackedDaysBeforeFirstLog: facts.untrackedDaysBeforeFirstLog,
     coverage: facts.coverage
@@ -855,18 +960,47 @@ export function buildTrialBlock(args: BuildTrialBlockArgs): TrialBlock | null {
       // log. Round 5: a trial that began May 18 with logging from May 21 rendered
       // "Apoquel · overlapping May 21–Jul 2 · 43 d" for a 46-day overlap, understating
       // the exact confound the §7.2 callout below it rests on.
-      { startDayIndex: ctx.startDayIndex as number, endDayIndex },
+      // …and B-422's tail clip is wrong here for exactly the same reason: it is a
+      // COVERAGE bound, and a drug course does not stop because a trial overran
+      // its target. Off the clipped end an Apoquel course running the whole
+      // logged span rendered "Jun 1 – Sep 20 · 112 d" for a 123-day overlap.
+      { startDayIndex: ctx.startDayIndex as number, endDayIndex: evidence.endDayIndex },
       trial.indication ?? null,
       args.scope.endDayNum,
       timeZone,
     ),
-    loggingDensity: loggingDensity(args.mealLoggedDayIndices, startDayIndex, endDayIndex),
+    // EVIDENCE — round 4 falsified round 3's argument for keeping this on the
+    // coverage window. Round 3 was right that the 0/42 artefact was the old
+    // `lastMealDay` anchor, but the window CHOICE had its own cost, and it is the
+    // disclosure this line exists to make: C5 puts logging density beside the
+    // symptom trend so a symptom drop that tracks a logging drop is
+    // uninterpretable-and-said-so. The symptom charts span the report window; a
+    // density computed over the clipped trial window cannot qualify them. Executed
+    // both ways on the refusing cat (logs Jan–Jun, target ends Feb 25): coverage
+    // window rendered "28 of 28, 28 of 28" — perfect density — while main showed
+    // "100 of 100, 81 of 101"; and on the blackout cat (56/56 logged, then
+    // 145 days of silence on a nominally-running trial) the coverage window hid
+    // the blackout entirely. The evidence span is ALSO §5.1's documented overlap
+    // range (`max(scope start, trial start) … min(today, ended_at, scope end)`),
+    // so the render's "logged overlap range" label is more accurate here, not
+    // less. The DENOMINATOR two fields up stays clipped; this is the line that
+    // says why a clipped denominator is still honest — the silence is shown.
+    loggingDensity: loggingDensity(
+      args.mealLoggedDayIndices,
+      evidence.startDayIndex,
+      evidence.endDayIndex,
+    ),
     challengeWindowDays: CHALLENGE_WINDOW_DAYS[species],
     challengeMarkerBaseRatePct: (() => {
-      const total = endDayIndex - (ctx.startDayIndex as number) + 1
+      // EVIDENCE — the daggered ROWS come from the evidence window, so the base
+      // rate that admits "the marker does not discriminate" must share their
+      // denominator. Off the coverage clip it read 10% where the operative rate
+      // was 25%: the one footnote whose entire purpose is to disclose its own
+      // weakness, understating it 2.5x.
+      const total = evidence.endDayIndex - (ctx.startDayIndex as number) + 1
       if (total <= 0) return 0
       let qualifying = 0
-      for (let dn = ctx.startDayIndex as number; dn <= endDayIndex; dn++) {
+      for (let dn = ctx.startDayIndex as number; dn <= evidence.endDayIndex; dn++) {
         if (symptomDays.some((sd) => isWithinChallengeWindow(dn, sd, species))) qualifying += 1
       }
       return Math.round((qualifying / total) * 100)
