@@ -969,15 +969,27 @@ export function buildTrialBlock(args: BuildTrialBlockArgs): TrialBlock | null {
       args.scope.endDayNum,
       timeZone,
     ),
-    // COVERAGE, deliberately — this is labelled "the logged overlap range" and it
-    // is the one density statement about the trial's own window. Round 3 found it
-    // reporting 0/42 for the back half of a trial the owner logged every
-    // prescribed day of, but the cause was the tail clip's old `lastMealDay`
-    // anchor stretching the range to a stray meal, not the choice of window; with
-    // the anchor now at the target end the halves are 14/14 and 14/14. Moving it
-    // to the evidence window instead would silently retire the "narrower than the
-    // report window" clause that sits on top of it.
-    loggingDensity: loggingDensity(args.mealLoggedDayIndices, startDayIndex, endDayIndex),
+    // EVIDENCE — round 4 falsified round 3's argument for keeping this on the
+    // coverage window. Round 3 was right that the 0/42 artefact was the old
+    // `lastMealDay` anchor, but the window CHOICE had its own cost, and it is the
+    // disclosure this line exists to make: C5 puts logging density beside the
+    // symptom trend so a symptom drop that tracks a logging drop is
+    // uninterpretable-and-said-so. The symptom charts span the report window; a
+    // density computed over the clipped trial window cannot qualify them. Executed
+    // both ways on the refusing cat (logs Jan–Jun, target ends Feb 25): coverage
+    // window rendered "28 of 28, 28 of 28" — perfect density — while main showed
+    // "100 of 100, 81 of 101"; and on the blackout cat (56/56 logged, then
+    // 145 days of silence on a nominally-running trial) the coverage window hid
+    // the blackout entirely. The evidence span is ALSO §5.1's documented overlap
+    // range (`max(scope start, trial start) … min(today, ended_at, scope end)`),
+    // so the render's "logged overlap range" label is more accurate here, not
+    // less. The DENOMINATOR two fields up stays clipped; this is the line that
+    // says why a clipped denominator is still honest — the silence is shown.
+    loggingDensity: loggingDensity(
+      args.mealLoggedDayIndices,
+      evidence.startDayIndex,
+      evidence.endDayIndex,
+    ),
     challengeWindowDays: CHALLENGE_WINDOW_DAYS[species],
     challengeMarkerBaseRatePct: (() => {
       // EVIDENCE — the daggered ROWS come from the evidence window, so the base

@@ -2,9 +2,9 @@
 
 **Date:** 2026-07-29
 
-Shipped via **#513**. Closes **B-422**; files **B-592**, **B-593**, **B-594**.
+Shipped via **#513**. Closes **B-422**; files **B-592**, **B-593**, **B-594**, **B-595**.
 
-The headline is not the feature. It is that `adversarial-reviewer` ran three times and **failed all three**, each round finding real breaks *introduced by the previous round's fix*. Sixteen executed counterexamples. The design changed three times, and the rules that came out of it are the thing worth keeping:
+The headline is not the feature. It is that `adversarial-reviewer` ran four times and **failed all four**, each round finding real breaks *introduced by the previous round's fix*. Nineteen executed counterexamples (plus three multi-hundred-case sweeps in round 4 that came back clean). The design changed four times, and the rules that came out of it are the thing worth keeping:
 
 > **The effective end bounds BELIEF and ONE DENOMINATOR. It never bounds EVIDENCE.**
 >
@@ -95,9 +95,22 @@ The anchor is now **the target end, full stop**. "The trial ran this long" has e
 
 Round 3 also caught a comment I had written backwards: `trial.ts` claimed `resolveScope` rung 2 *is* gated when it is not. Corrected — the must-rank-identically pairing is the round-1 bug, and a comment describing it backwards is an invitation to "restore" the gate.
 
+## Round 4 — the fix's own cost, one layer up in the claim gate
+
+Round 4 ran against the round-3 state after five platform-outage restarts (529s — every crash was server-side, and the resumed transcript preserved its probes). The prior work **held everywhere it was attacked**: 960 declared-end cases byte-identical to `origin/main`, a 924-case invariant grid with zero violations, 750 paired cases in which no exposure, refusal, oral-route hit or item was ever lost versus main, and B-494's flag firing on both surfaces. Three findings, all report-side:
+
+- **① HIGH — the coverage clip converted a months-long logging blackout into a complete record.** A 56-day trial logged on every prescribed day, never closed, then silent 145 days: main read *"56 of 201 … too sparse to read as a clean elimination"*; the branch read *"56 of 56 … all 56 matched … supports interpreting it"* with `mayStateRecordClean` flipping to true. The reviewer's framing: the clip changes what the report *says*, so the coverage denominator had become an evidence bound through the claim gate. The resolution is deliberately **not** a revert — main's sentence was the false one (there are no gaps in the window, and 56/201-forever is the filed harm) — it is **disclosure**: the C5 logging-density line now spans the **evidence** window, so the blackout renders as a zero back half beside the verdict, with §7.2 already scoped "of the trial window" and `daysPastTarget` in the same block. Complete-over-the-window and silent-since-the-window are two facts; the report states both. The card's counterpart sentence is **B-592, upgraded by this finding from cosmetic to load-bearing.**
+- **② MEDIUM-LOW — C5's density was computed over the clipped window**, hiding logging decay on exactly the overrun population B-422 creates (the refusing cat rendered "28 of 28, 28 of 28" where main showed "100 of 100, 81 of 101"). Same fix as ①; the density span is also §5.1's documented overlap range, so the render's "logged overlap range" label became more accurate, not less. The R6 scope-clause test was updated to pin both directions: no clause when the spans coincide, the clause with evidence dates when the window is wider.
+- **③ LOW (latent trap) — `SafetyFlag.rangeStartDate/rangeEndDate` carried EVIDENCE dates under a `range*` name** — round 3 fixed the value at that site and kept the name, violating the branch's own naming rule at the exact site it had just fixed. Renamed `evidenceStartDate/evidenceEndDate` through the type, the population, the render and the tests.
+
+Round 4 also priced the grace's margin: **target 28 + 56 lands exactly on ACVIM's ≥12-week floor for the dog·gut cell — zero margin** — recorded on B-593 for Dr. Chen's ruling. Honest gaps the reviewer named: the fresh-seed fuzz ran UTC-only (zone coverage rests on the shipped suites), no state-by-state enumeration of the card's eleven presentations, no end-to-end `generate-signal`/`ask` execution, no on-device pass.
+
+**The merge was taken on the PM's explicit call after round 4's fixes**, with the round-4 fix itself unreviewed by a fifth round — the pattern of four consecutive rounds each breaking the previous fix argues for one, and the PM chose to stop. Mitigations: neither Edge Function is redeployed by this PR (`generate-report` under the B-494/R1 hold, `generate-signal` under B-182's), so the report-side surface where every round-4 finding lives ships to no one until those holds lift — and the redeploy gate includes a fresh `vet-report-cold-read`, which is the natural place the composed blackout disclosure gets a human-shaped read.
+
 ## Residuals
 
 - **B-593** — ratify the 56-day grace with Dr. Chen. The accepted cost, stated for the ruling: an *abandoned* trial keeps its widget one-tap row and its three detector suppressions for **eight weeks** past target. Bounded where it used to be unbounded, but eight weeks is the number to push back on.
 - **B-592** — the overrun card reads "Meals logged on 56 of 56 days" under a day counter that keeps climbing. Both numbers are right and the pair is unexplained. `TrialRange.closedByOverrun` is computed and exported for it and nothing consumes it yet — undrawn copy on a design-locked card needs a mock round, not invention inside a build PR.
 - **B-594** — the report-window anchor, above.
 - **B-595** — should the log-time contaminant flag fire on a trial past its effective end? A Designer call about friction at the moment of the event; the fix belongs on `foodContaminantFlag`'s call sites, not on the shared context.
+- **Round 5 not run** — the PM's call; recorded above with the mitigations.

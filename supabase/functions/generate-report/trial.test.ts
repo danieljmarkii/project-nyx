@@ -987,9 +987,10 @@ Deno.test('B-422 — the safety band dates the refusals it counted, not the cove
   const flag = snap.safetyFlags.find((f) => f.kind === 'trial_diet_refusal')
   assert.ok(flag, 'the refusal band fires')
   // The dates must contain every day the count was taken over.
-  assert.ok(flag!.rangeEndDate >= '2026-07-02', `band end ${flag!.rangeEndDate} predates the last refusal`)
-  assert.equal(flag!.rangeStartDate, snap.trial!.evidenceStartDate)
-  assert.equal(flag!.rangeEndDate, snap.trial!.evidenceEndDate)
+  assert.ok(flag!.evidenceStartDate <= '2026-06-01', 'band start covers the first refusal')
+  assert.ok(flag!.evidenceEndDate >= '2026-07-02', `band end ${flag!.evidenceEndDate} predates the last refusal`)
+  assert.equal(flag!.evidenceStartDate, snap.trial!.evidenceStartDate)
+  assert.equal(flag!.evidenceEndDate, snap.trial!.evidenceEndDate)
 })
 
 Deno.test('B-422 — the evidence span contains the coverage range at both ends', () => {
@@ -1023,6 +1024,40 @@ Deno.test('B-422 — post-target logging is not counted as trial coverage', () =
   assert.equal(t.coverage!.daysElapsed, 14, 'the denominator is the prescribed window')
   assert.equal(t.coverage!.daysLogged, 3)
   assert.equal(t.interpretability, 'does_not_support')
+})
+
+Deno.test('B-422 round 4 — a logging blackout after a complete window is DISCLOSED, not hidden', () => {
+  // The round-4 counterexample: 56-day trial, every prescribed day logged and
+  // finished, nobody tapped Complete, then 145 days of silence. Two things must
+  // BOTH hold, and the tension between them is the design:
+  //
+  //   • coverage stays 56/56 — denominating over the calendar (main's 56/201,
+  //     "too sparse to read as a clean elimination") punishes a perfectly-run
+  //     trial for never being closed, which is the original B-422 harm;
+  //   • the blackout is VISIBLE — the C5 density line, which spans the EVIDENCE
+  //     window, shows logging collapsing to zero, so the vet reading "supports
+  //     interpreting it" sees in the same block that nothing has been logged
+  //     since the window closed.
+  //
+  // "Complete over the window" and "silent since the window" are two facts; the
+  // report states both rather than letting either erase the other.
+  const input = wellLoggedTrialInput({ events: [], now: '2026-11-15T12:00:00Z' })
+  for (const d of days('2026-06-01', '2026-07-26')) {
+    input.events.push(meal({ date: d, brand: 'Royal Canin', product: 'Hydrolyzed HP', foodItemId: 'f-hp', proteins: ['soy'], intakeRating: 'all' }))
+  }
+  const snap = assembleReport(input)
+  const t = snap.trial!
+  assert.equal(t.coverage!.daysLogged, 56)
+  assert.equal(t.coverage!.daysElapsed, 56)
+  assert.equal(t.interpretability, 'supports')
+  // The density halves span the evidence window (Jun 1 – Nov 15), so the back
+  // half is (near-)zero — the blackout, on the page, next to the verdict.
+  const d = t.loggingDensity!.meals
+  assert.ok(d.firstHalf.days + d.lastHalf.days > 150, 'density spans the evidence window, not the clipped one')
+  assert.equal(d.lastHalf.daysLogged, 0, 'the blackout is visible in the back half')
+  // And the day counter carries the overrun in the same block.
+  assert.ok(t.dayCounter > 160)
+  assert.ok(t.daysPastTarget > 100)
 })
 
 // ── B-422 — the report's trial SELECTION deliberately stays on `status` ──────
@@ -1761,10 +1796,28 @@ Deno.test('R6 — the scope clause names the RANGE, never "the trial’s N days"
   for (const d of days('2026-06-04', '2026-07-02')) {
     input.events.push(meal({ date: d, brand: 'Royal Canin', product: 'Hydrolyzed HP', foodItemId: 'f-hp', proteins: ['soy'] }))
   }
+  // Density now spans the EVIDENCE range (round 4), which here IS the report
+  // window (trial-anchored scope, Jun 1 – Jul 2) — so the "narrower than the
+  // window" clause correctly does NOT render: there is nothing to reconcile when
+  // the spans coincide, and a clause naming an identical range would be noise.
   const text = plain(renderReport(assembleReport(input)))
-  assert.ok(/These days are the logged overlap range/.test(text))
+  assert.ok(!/These days are the logged overlap range/.test(text), 'no clause when the spans coincide')
   assert.ok(!/covers the trial’s \d+ days/.test(text), 'never restates the trial length here')
   assert.ok(!/extends before it/.test(text), 'never asserts a side against the trial')
+
+  // And when the window IS wider — a vet visit before the trial anchors rung 1 —
+  // the clause fires and names the EVIDENCE span, the same days the halves above
+  // it were counted over.
+  const wider = wellLoggedTrialInput({
+    events: [],
+    vetVisits: [{ visitedAt: '2026-05-20', clinicName: 'X', vetName: 'Dr Y', reason: 'derm' }],
+  })
+  for (const d of days('2026-06-04', '2026-07-02')) {
+    wider.events.push(meal({ date: d, brand: 'Royal Canin', product: 'Hydrolyzed HP', foodItemId: 'f-hp', proteins: ['soy'] }))
+  }
+  const widerText = plain(renderReport(assembleReport(wider)))
+  assert.ok(/These days are the logged overlap range \(Jun 1 – Jul 2, 2026\)/.test(widerText))
+  assert.ok(!/covers the trial’s \d+ days/.test(widerText))
 })
 
 Deno.test('R6 — the dagger discloses its own fire rate, not the symptom-day rate', () => {

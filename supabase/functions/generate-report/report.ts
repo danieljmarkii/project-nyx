@@ -979,8 +979,14 @@ export type SafetyFlag =
       /** Every `primary_diet` label in force — the food to name. Never rendered under a
        *  `meal_record` population, where the app has admitted it cannot identify the diet. */
       trialDietLabels: string[]
-      rangeStartDate: string
-      rangeEndDate: string
+      /** The EVIDENCE span the refusal counts were taken over — named for what the
+       *  value IS (round 4's finding ③): round 3 fixed the VALUE here (evidence,
+       *  not the clipped coverage range) but kept the `range*` name, leaving one
+       *  snapshot where `trial.rangeEndDate` and this field disagreed by 145 days
+       *  under the same name. The branch's own rule is that `range*` may only ever
+       *  appear next to the word "coverage" — so the name follows the value. */
+      evidenceStartDate: string
+      evidenceEndDate: string
     }
   | {
       kind: 'chronicity'
@@ -2740,8 +2746,8 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
         // B-494 safety band dated 176 days of refusals inside a 98-day window and
         // reported the most recent refusal 79 days early, on the feline
         // hepatic-lipidosis lane, in the one zone the report teaches vets to scan.
-        rangeStartDate: trialBlock.evidenceStartDate,
-        rangeEndDate: trialBlock.evidenceEndDate,
+        evidenceStartDate: trialBlock.evidenceStartDate,
+        evidenceEndDate: trialBlock.evidenceEndDate,
       })
     }
   }

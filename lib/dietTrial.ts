@@ -1726,6 +1726,26 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
   // prescribed eight weeks should not read a denominator of twelve. Everything
   // they logged past the target is still EVIDENCE; it is only not coverage.
   //
+  // ── THE CLAIM-GATE CONSEQUENCE, ANSWERED (round 4) ─────────────────────────
+  //
+  // Round 4 executed the cost of this clip: a trial logged on all 56 prescribed
+  // days and then silent for 145 read 56/201 `does_not_support` on main and
+  // 56/56 `supports` here, with `mayStateRecordClean` flipping to true — so the
+  // clip changes what the report SAYS, which smells like the evidence-bound rule
+  // violated through `interpretability`. The answer is that BOTH extremes are
+  // statements, and main's was the false one: "too sparse to read as a clean
+  // elimination" over a window with zero gaps asserts gaps that do not exist,
+  // and it is the exact filed harm (a floor the calendar alone pushes a perfect
+  // record under, forever). The claim over the trial's own window is true; what
+  // must never be hidden is the SILENCE AFTER it. That disclosure deliberately
+  // does not live in this denominator — it lives beside the verdict: the C5
+  // logging-density line spans the EVIDENCE window (so a blackout renders as a
+  // zero back half), §7.2's sentence scopes itself "of the trial window", and
+  // the day counter carries `daysPastTarget` in the same block. Complete-over-
+  // the-window and silent-since-the-window are two facts; the report states
+  // both rather than letting either erase the other. The card's counterpart
+  // sentence is B-592, upgraded by this finding from cosmetic to load-bearing.
+  //
   // Only for a trial nobody ended: a declared end is the owner's own window, and
   // days between their last log and the end they named are genuine gaps rather
   // than inference. And only when the target end is inside the range at all —
