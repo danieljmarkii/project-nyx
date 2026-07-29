@@ -1154,7 +1154,27 @@ export interface TrialIntakeRating {
 }
 
 export interface TrialFacts {
+  /** The COVERAGE range — head-clipped (§10 S3) and, on an overrun trial,
+   *  tail-clipped (B-422). This is the denominator's window and nothing else's.
+   *  A consumer that needs to know which rows the counts were computed over wants
+   *  `exposureRange`. */
   range: TrialRange | null;
+  /**
+   * THE EVIDENCE WINDOW — every row every count below was computed over.
+   *
+   * Exposed because the alternative was measured and it is a trap. `range` is
+   * clipped at both ends for reasons that belong to the COVERAGE metric, and
+   * `generate-report` re-used it as an evidence bound in four places — so a
+   * logged off-diet exposure past the effective end was COUNTED in `offDiet` and
+   * DELETED from Appendix C, the protein tally and the chart. Emptying the
+   * itemisation then unlocked the affirmative "Every one of the N feedings
+   * matched" empty-state, which the report had never printed before. §5.2 rules
+   * the exposure count a floor; a consumer that re-derives the window is how the
+   * floor moves the wrong way without the module ever being wrong.
+   *
+   * Null on the same paths `range` is null.
+   */
+  exposureRange: { startDayIndex: number; endDayIndex: number } | null;
   coverage: TrialCoverage | null;
   exposures: TrialExposureSummary;
   oralRoute: OralRouteExposure[];
@@ -1583,6 +1603,7 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
   const arrangementHits = arrangementExposures(ctx, input.arrangements ?? []);
   const base: TrialFacts = {
     range: null,
+    exposureRange: null,
     coverage: null,
     exposures: empty,
     oralRoute: [],
@@ -1661,8 +1682,6 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
     .map((f) => dayIndexOf(ctx, f.occurredAt))
     .filter((d): d is number => d !== null && d >= scopedStart && d <= evidenceEnd);
   const firstLoggedDay = loggedDays.length > 0 ? Math.min(...loggedDays) : null;
-  const startDayIndex = firstLoggedDay ?? scopedStart;
-  const untrackedDaysBeforeFirstLog = startDayIndex - scopedStart;
 
   // ── B-422 — THE TAIL CLIP: the grace may never reach a denominator ──────────
   //
@@ -1705,6 +1724,18 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
     endDayIndex = Math.min(evidenceEnd, Math.max(scopedStart, tail));
   }
 
+  // THE HEAD CLIP RESOLVES *INSIDE* THE COVERAGE WINDOW, and the ordering is
+  // load-bearing. `firstLoggedDay` is drawn from the evidence window, which can
+  // now extend past the coverage end — so an owner who drifted off the app and
+  // re-engaged after the effective end had a head clip LATER than the tail clip
+  // and the range inverted: `daysElapsed: -88`, rendered as "Meals logged on 30
+  // of -88 days". A range whose end precedes its start is not a degraded answer,
+  // it is a nonsense one, so the clip only moves the head for a log that is
+  // actually inside the window being described.
+  const headCandidates = loggedDays.filter((d) => d <= endDayIndex);
+  const startDayIndex = headCandidates.length > 0 ? Math.min(...headCandidates) : scopedStart;
+  const untrackedDaysBeforeFirstLog = startDayIndex - scopedStart;
+
   // THE CLIP MOVES THE COVERAGE DENOMINATOR ONLY — it must not move the exposure
   // window. §5.1's whole point is that the two metrics have their OWN
   // denominators: coverage is days-with-meals over days-elapsed, exposure is
@@ -1714,6 +1745,8 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
   // which is the one direction a floor may never move. That was already true of
   // the head clip; B-422's tail clip inherits it, which is why every loop below
   // bounds on `evidenceEnd` and only `range`/`coverage` use `endDayIndex`.
+  const exposureStart = scopedStart;
+  const exposureRange = { startDayIndex: exposureStart, endDayIndex: evidenceEnd };
   const range: TrialRange = {
     startDayIndex,
     endDayIndex,
@@ -1724,7 +1757,6 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
     // because it describes the TRIAL's state, which is what a surface discloses.
     closedByOverrun: overrunUnended,
   };
-  const exposureStart = scopedStart;
 
   const coveredDays = new Set<number>();
   const items: TrialExposureItem[] = [];
@@ -1764,7 +1796,16 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
     // punish the most diligent owner in the app for the pet's illness. The
     // refusal is carried by `trialDietRefusal` instead, which is a fact about the
     // ANIMAL rather than a hole in the RECORD.
-    if (feeding.foodType !== 'treat' && day >= startDayIndex) coveredDays.add(day);
+    // BOUNDED BY THE COVERAGE END, NOT THE EVIDENCE END. The numerator and the
+    // denominator must be the same window or the ratio is not a ratio: with the
+    // numerator running to `evidenceEnd` and `daysElapsed` stopping at the tail
+    // clip, an owner who kept logging after the trial was over scored MORE days
+    // than had elapsed — 100 of 112, `supports`, on a record that read 19 of 56
+    // and `does_not_support` the moment they tapped Complete on the same data.
+    // Post-trial logging was un-suppressing §5.2's record claim.
+    if (feeding.foodType !== 'treat' && day >= startDayIndex && day <= endDayIndex) {
+      coveredDays.add(day);
+    }
 
     // R1b's denominator, on the SAME rows the coverage numerator walks and with
     // the same treat exclusion — a treat nobody rated is not a gap in the record
@@ -1918,6 +1959,7 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
   return {
     ...base,
     range,
+    exposureRange,
     coverage,
     exposures: {
       totalFeedings,

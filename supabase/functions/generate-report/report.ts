@@ -642,22 +642,34 @@ export function resolveScope(input: ReportInput): ReportScope {
   for (const t of input.dietTrials) {
     const tNum = dayNumber(t.startedAt)
     if (tNum === null) continue
-    // B-422 — RANK ON RUNNING, NOT ON `status`, and use the same last-day value
-    // `selectReportTrial` uses. The two must agree: this picks the WINDOW and that
-    // picks the BLOCK, and an earlier adversarial pass produced a real divergence
-    // by letting them rank differently. A trial nobody ended has no declared end,
-    // so `status = 'active'` alone would anchor every report on it forever — the
-    // 90-day fallback would become unreachable for any owner who ever started a
-    // trial and never tapped Complete, which is most of them.
-    const endNum = trialLastDayNum(t, input.timezone)
-    const running = t.status === 'active' && (endNum === null || todayNum <= endNum)
-    if (!running) {
-      // No end date at all means we cannot place it in time (B-455 is exactly this
-      // column going unread) — leave the window to rung 3 rather than anchor on a
-      // trial that may have finished a year ago.
+    // B-422 DELIBERATELY DOES NOT REACH THIS TEST EITHER, and the reason is the
+    // one round-1 finding that has survived every revision: this picks the WINDOW
+    // and `selectReportTrial` picks the BLOCK, and THE TWO MUST RANK IDENTICALLY.
+    // An adversarial pass produced the divergence from a real input once already
+    // — an abandoned trial anchoring the window while an active one described the
+    // block, so the abandoned trial's feedings were scored against the active
+    // trial's allowed list.
+    //
+    // `selectReportTrial` had to keep ranking on `status` (dropping an un-ended
+    // trial drops the `trial_diet_refusal` SAFETY FLAG with it — see the long note
+    // there), so this must too. Gating only this one is how the pair silently
+    // diverges again.
+    //
+    // The consequence is a real and separate problem: a trial nobody ended still
+    // anchors every future report on its own start, so an owner who ran a trial in
+    // 2024 and never tapped Complete gets a two-year window with every denominator
+    // on the page scaled to it. That is NOT one of the three harms B-422 was filed
+    // for, it needs `selectReportTrial` moved in the same PR, and it wants a
+    // `vet-report-cold-read` on the re-rendered artifact — so it is filed rather
+    // than smuggled in here → B-594, alongside B-538's grace windows.
+    if (t.status !== 'active') {
+      const endNum = dayNumber(t.endedAt ?? t.completedAt ?? '')
+      // No end date on a non-active trial means we cannot place it in time (B-455
+      // is exactly this column going unread) — leave the window to rung 3 rather
+      // than anchor on a trial that may have finished a year ago.
       if (endNum === null || todayNum - endNum > TRIAL_ANCHOR_GRACE_DAYS) continue
     }
-    const cand = { startedAt: t.startedAt, rank: running ? 1 : 0, startNum: tNum, id: t.id }
+    const cand = { startedAt: t.startedAt, rank: t.status === 'active' ? 1 : 0, startNum: tNum, id: t.id }
     if (
       best === null ||
       cand.rank > best.rank ||

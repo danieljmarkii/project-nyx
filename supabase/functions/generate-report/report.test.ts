@@ -616,39 +616,26 @@ Deno.test('scope cascade — since-visit beats trial beats fallback', () => {
   assert.equal(futureVisit.scope.basis, 'fallback_90d')
 })
 
-// ── B-422 — a trial nobody ended stops anchoring the window ──────────────────
+// ── B-422 — what the report does and does not gate ──────────────────────────
 
-Deno.test('scope cascade — a stale-active trial falls through to the 90-day fallback', () => {
-  // Rung 2 keyed on `status === 'active'`, and nothing auto-completes a trial:
-  // §4.3's milestone needs an owner tap. So an owner who started a trial in 2024
-  // and never closed it had EVERY subsequent report anchored on it — a window
-  // stretching back years, with every denominator on the page scaled to it, and
-  // the 90-day fallback structurally unreachable for the rest of their account's
-  // life. "Today" here is 2026-07-02.
+Deno.test('scope cascade — a stale-active trial still anchors the window (B-594)', () => {
+  // DELIBERATELY UNCHANGED by B-422, and the test exists to say so. Gating rung 2
+  // alone would make it rank differently from `selectReportTrial` — which had to
+  // stay on `status`, because dropping an un-ended trial's block drops the
+  // `trial_diet_refusal` safety flag with it — and a window anchored on one trial
+  // while the block describes another is the round-1 divergence bug.
+  //
+  // The residual is real: a trial nobody ended anchors every future report on its
+  // own start. Fixing it means moving BOTH functions together, with a cold read on
+  // the re-rendered artifact → B-594, alongside B-538's grace windows.
   const stale = assembleReport(
     baseInput({
       dietTrials: [{ id: 't1', foodItemId: 'f', startedAt: '2024-05-01', targetDurationDays: 42, status: 'active', completedAt: null, vetName: null }],
     }),
   )
-  assert.equal(stale.scope.basis, 'fallback_90d')
-  assert.equal(stale.scope.trialStartDate, null)
-
-  // Inside the grace it is still the anchor — the owner who means to keep going
-  // and has not tapped the extension yet is exactly who this must not drop.
-  // Target ends 2026-06-11, effective end 2026-07-09.
-  const overrun = assembleReport(
-    baseInput({
-      dietTrials: [{ id: 't1', foodItemId: 'f', startedAt: '2026-05-01', targetDurationDays: 42, status: 'active', completedAt: null, vetName: null }],
-    }),
-  )
-  assert.equal(overrun.scope.basis, 'diet_trial')
-  assert.equal(overrun.scope.startDate, '2026-05-01')
-
-  // And the WINDOW and the BLOCK still agree about which trial that is — the two
-  // rank through the same last-day value on purpose, because an earlier
-  // adversarial pass produced a real divergence by letting them differ.
-  assert.equal(overrun.trial?.id, 't1')
-  assert.equal(stale.trial, null)
+  assert.equal(stale.scope.basis, 'diet_trial')
+  // And the pair agrees about WHICH trial, which is the property that must hold.
+  assert.equal(stale.trial?.id, 't1')
 })
 
 Deno.test('B-422 — a stale-active trial no longer suppresses the diet-structure detectors', () => {

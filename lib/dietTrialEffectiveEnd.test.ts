@@ -483,3 +483,160 @@ describe('the overrun tail clip', () => {
     expect(f.range?.closedByOverrun).toBe(false);
   });
 });
+
+// ── Invariants over generated inputs (adversarial round 2) ──────────────────
+//
+// Round 2 broke the range arithmetic twice, and both breaks were shapes no
+// example test happened to name: an owner who kept logging after the trial was
+// over (numerator bounded by the evidence end, denominator by the clip), and one
+// whose first log landed past the effective end (head clip later than tail clip
+// → `daysElapsed: -88`). Example lists do not find those. These do.
+
+describe('range invariants', () => {
+  const DAY = 86_400_000;
+  const START = dayIndex('2026-07-01');
+
+  /** A deterministic pseudo-random walk — seeded, so a failure reproduces. */
+  function lcg(seed: number): () => number {
+    let s = seed >>> 0;
+    return () => ((s = (s * 1664525 + 1013904223) >>> 0) / 4294967296);
+  }
+
+  it('never renders daysLogged > daysElapsed, a fraction > 1, or an inverted range', () => {
+    const rand = lcg(20260729);
+    for (let trial = 0; trial < 400; trial += 1) {
+      const target = Math.floor(rand() * 90); // includes 0 — the targetless trial
+      const horizon = Math.floor(rand() * 400);
+      const declaredEnd = rand() < 0.3 ? Math.floor(rand() * horizon) : null;
+      const feedings: TrialFeeding[] = [];
+      const n = Math.floor(rand() * 40);
+      for (let i = 0; i < n; i += 1) {
+        const offset = Math.floor(rand() * (horizon + 1));
+        feedings.push(
+          feeding({
+            eventId: `f-${trial}-${i}`,
+            occurredAt: at(new Date((START + offset) * DAY).toISOString().slice(0, 10)),
+            foodType: rand() < 0.5 ? 'treat' : 'meal',
+          }),
+        );
+      }
+      const facts = computeTrialFacts({
+        trial: {
+          ...TRIAL,
+          targetDurationDays: target,
+          endedAt:
+            declaredEnd === null
+              ? null
+              : new Date((START + declaredEnd) * DAY).toISOString().slice(0, 10),
+        },
+        allowedFoods: [DUCK],
+        feedings,
+        nowMs: Date.parse(at(new Date((START + horizon) * DAY).toISOString().slice(0, 10))),
+      });
+      if (!facts.range || !facts.coverage) continue;
+      const where = `trial=${trial} target=${target} horizon=${horizon} declaredEnd=${declaredEnd}`;
+      expect(`${where} inverted=${facts.range.endDayIndex < facts.range.startDayIndex}`).toContain('inverted=false');
+      expect(`${where} elapsed=${facts.range.daysElapsed}`).toContain(`elapsed=${facts.range.daysElapsed}`);
+      expect(facts.range.daysElapsed).toBeGreaterThan(0);
+      expect(facts.coverage.daysLogged).toBeLessThanOrEqual(facts.coverage.daysElapsed);
+      expect(facts.coverage.fraction).toBeLessThanOrEqual(1);
+      expect(facts.coverage.fraction).toBeGreaterThanOrEqual(0);
+    }
+  });
+
+  it('never drops a logged off-diet feeding from the itemisation', () => {
+    // The invariant the module claims and `generate-report` broke: every feeding
+    // the exposure COUNT includes is inside `exposureRange`, so a consumer that
+    // walks that range reproduces the same set. A count without its items is what
+    // unlocked the affirmative "every one matched" empty state on the report.
+    const rand = lcg(511);
+    for (let trial = 0; trial < 200; trial += 1) {
+      const target = 1 + Math.floor(rand() * 80);
+      const horizon = Math.floor(rand() * 400);
+      const offsets: number[] = [];
+      const feedings: TrialFeeding[] = [];
+      for (let i = 0, n = Math.floor(rand() * 25); i < n; i += 1) {
+        const offset = Math.floor(rand() * (horizon + 1));
+        offsets.push(offset);
+        feedings.push(
+          feeding({
+            eventId: `x-${trial}-${i}`,
+            occurredAt: at(new Date((START + offset) * DAY).toISOString().slice(0, 10)),
+            foodItemId: 'chicken',
+            foodKey: 'genericchicken strips',
+            label: 'Generic Chicken Strips',
+            foodType: 'treat',
+            proteins: ['chicken'],
+          }),
+        );
+      }
+      const facts = computeTrialFacts({
+        trial: { ...TRIAL, targetDurationDays: target },
+        allowedFoods: [DUCK],
+        feedings,
+        nowMs: Date.parse(at(new Date((START + horizon) * DAY).toISOString().slice(0, 10))),
+      });
+      if (!facts.exposureRange) continue;
+      const { startDayIndex, endDayIndex } = facts.exposureRange;
+      const walkable = offsets.filter(
+        (o) => START + o >= startDayIndex && START + o <= endDayIndex,
+      ).length;
+      expect(walkable).toBe(facts.exposures.offDiet);
+      expect(facts.exposures.items).toHaveLength(facts.exposures.offDiet);
+    }
+  });
+});
+
+describe('the coverage numerator and denominator share one window', () => {
+  it('is not rescued to `supports` by logging that continues after the trial', () => {
+    // A record that reads 19 of 56 (`does_not_support`, sub-floor) the moment the
+    // owner taps Complete must not read 100 of 112 (`supports`) purely because
+    // they didn't. The numerator was bounded by the evidence end and the
+    // denominator by the tail clip, so post-trial logging un-suppressed §5.2's
+    // record claim on exactly the under-capturing owner the floor exists for.
+    const feedings: TrialFeeding[] = [];
+    for (let d = 0; d < 300; d += 3) {
+      feedings.push(
+        feeding({
+          eventId: `m-${d}`,
+          occurredAt: at(new Date((dayIndex('2026-07-01') + d) * 86_400_000).toISOString().slice(0, 10)),
+        }),
+      );
+    }
+    const args = { allowedFoods: [DUCK], feedings, nowMs: Date.parse(at('2027-04-27')) };
+    const unended = computeTrialFacts({ trial: TRIAL, ...args });
+    const ended = computeTrialFacts({ trial: { ...TRIAL, endedAt: LAST_TARGET_DAY }, ...args });
+    expect(unended.coverage!.fraction).toBeLessThanOrEqual(ended.coverage!.fraction + 0.01);
+    expect(unended.belowCoverageFloor).toBe(true);
+    expect(unended.interpretability).not.toBe('supports');
+  });
+
+  it('does not invert when the first log lands past the effective end', () => {
+    // The owner who drifted off the app and re-engaged. The head clip is drawn
+    // from the evidence window and the tail clip from the coverage one, so an
+    // unguarded head could land AFTER the tail: `daysElapsed: -88`, rendered as
+    // "Meals logged on 30 of -88 days".
+    const feedings: TrialFeeding[] = [];
+    for (let d = 200; d < 230; d += 1) {
+      feedings.push(
+        feeding({
+          eventId: `late-${d}`,
+          occurredAt: at(new Date((dayIndex('2026-07-01') + d) * 86_400_000).toISOString().slice(0, 10)),
+        }),
+      );
+    }
+    const facts = computeTrialFacts({
+      trial: TRIAL,
+      allowedFoods: [DUCK],
+      feedings,
+      nowMs: Date.parse(at(new Date((dayIndex('2026-07-01') + 235) * 86_400_000).toISOString().slice(0, 10))),
+    });
+    expect(facts.range!.daysElapsed).toBeGreaterThan(0);
+    expect(facts.range!.endDayIndex).toBeGreaterThanOrEqual(facts.range!.startDayIndex);
+    // Nothing was logged inside the trial's own window, and the record says so
+    // rather than claiming a ratio over days it never covered.
+    expect(facts.coverage!.daysLogged).toBe(0);
+    // …and every one of those 30 late feedings is still EVIDENCE.
+    expect(facts.exposures.totalFeedings).toBe(30);
+  });
+});

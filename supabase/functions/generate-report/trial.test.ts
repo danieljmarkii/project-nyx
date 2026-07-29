@@ -967,71 +967,39 @@ Deno.test('no allowed set ⇒ SILENCE about adherence, never "0 matched, 32 did 
   assert.ok(/Meals logged on 32 of 32 days/.test(text))
 })
 
-// ── B-422 — a trial nobody ended stops being "the active one" ────────────────
+// ── B-422 — the report's trial SELECTION deliberately stays on `status` ──────
 //
-// `status = 'active'` is the steady state, not the exception: nothing
-// auto-completes a trial and §4.3's milestone needs an owner tap. Read literally
-// it means a trial started eighteen months ago outranks every real one forever,
-// anchors every report on itself, and never ages out of the ended-trial grace
-// because it never enters it — so the 90-day fallback becomes unreachable for
-// any owner who ever started a trial and never tapped Complete.
+// A first cut ranked these on `isTrialRunning`, so an un-ended trial aged out at
+// its effective end. The adversarial pass showed what that gates: the trial block
+// carries `trial_diet_refusal`, so dropping the block drops the SAFETY FLAG — on
+// the canonical case, a cat refusing every one of ~336 logged bowls of the
+// prescribed diet and still refusing today. Her owner's card fired; the vet's
+// report went silent. B-494's ruling forbids exactly that. Gate the ANCHOR, never
+// gate the DISCLOSURE.
 
-Deno.test('selectReportTrial — a stale-active trial loses to a real ended one', () => {
-  // Scope: 2026-06-15 … 2026-07-22 (day numbers 20620 … 20657).
+Deno.test('B-422 — a stale-active trial still describes the report, so its refusal flag survives', () => {
   const scope = { startDayNum: 20620, endDayNum: 20657 }
+  // Effective end long past (28d target from 2025-01-01), never ended. It stays
+  // the report's subject: an owner still logging refusals daily is the strongest
+  // evidence the trial has NOT stopped, and the record outranks the inference.
   const stale = { id: 'stale', startedAt: '2025-01-01', targetDurationDays: 28, status: 'active', completedAt: null, endedAt: null, vetName: null }
+  assert.equal(selectReportTrial([stale], scope, TZ)?.id, 'stale')
+  // An ACTIVE trial still outranks an ended one, whatever their dates — the pair
+  // must rank identically to `resolveScope`, which is the one round-1 finding that
+  // survived every revision of this PR.
   const ended = { id: 'ended', startedAt: '2026-06-20', targetDurationDays: 28, status: 'completed', completedAt: '2026-07-17', endedAt: '2026-07-17', vetName: null }
-  // The stale trial's effective end (2025-01-28 + 28d) is long before the window
-  // opens, so it does not even overlap — and the report describes the real one.
-  assert.equal(selectReportTrial([stale, ended], scope, TZ)?.id, 'ended')
-})
-
-Deno.test('selectReportTrial — a stale-active trial ages out of the grace like an ended one', () => {
-  const scope = { startDayNum: 20620, endDayNum: 20657 }
-  // Effective end 2026-07-23 — the window's own last day, so it is still RUNNING
-  // and still the report's subject.
-  const running = { id: 't', startedAt: '2026-04-02', targetDurationDays: 57, status: 'active', completedAt: null, endedAt: null, vetName: null }
-  assert.equal(selectReportTrial([running], scope, TZ)?.id, 't')
-
-  // Effective end 2026-07-09 — fourteen days before the window end, exactly on
-  // the default grace boundary: still the subject.
-  const justAged = { id: 't', startedAt: '2026-03-19', targetDurationDays: 57, status: 'active', completedAt: null, endedAt: null, vetName: null }
-  assert.equal(selectReportTrial([justAged], scope, TZ)?.id, 't')
-
-  // One day further out and the ended-trial grace drops it, exactly as it would
-  // drop a trial the owner had completed on the same day. That is the property
-  // that keeps this ONE grace rather than two: an overrun trial IS a trial that
-  // ended on its effective end.
-  const aged = { id: 't', startedAt: '2026-03-18', targetDurationDays: 57, status: 'active', completedAt: null, endedAt: null, vetName: null }
-  assert.equal(selectReportTrial([aged], scope, TZ), null)
+  assert.equal(selectReportTrial([stale, ended], scope, TZ)?.id, 'stale')
 })
 
 Deno.test("B-422 — the report's trial block survives ACVIM's 12-week GI course", () => {
-  // THE CLINICAL COUNTEREXAMPLE THAT SET `TRIAL_OVERRUN_GRACE_DAYS`. P-1's
-  // dog·gut default is 28 days; ACVIM 2026 says continue >=12 weeks (day 84)
-  // before transitioning away. At a 28-day grace the effective end fell on day
-  // 56, and fourteen days later `selectReportTrial` dropped the trial — so the
-  // report's own FIRST question, "is this diet trial working?", went unanswered
-  // in the middle of the intervention, on the exact population the wedge exists
-  // for. At 56 the effective end IS day 84, and the anchor grace carries it past.
-  //
-  // Trial starts 2026-05-01. Day 84 = 2026-07-23 = the effective end.
+  // P-1's dog·gut default is 28 days; ACVIM 2026 says continue >=12 weeks (day 84)
+  // before transitioning away. The block must be present throughout, so the
+  // report's own FIRST question — "is this diet trial working?" — is answerable
+  // mid-intervention, on the exact population the wedge exists for.
   const gi = { id: 'gi', startedAt: '2026-05-01', targetDurationDays: 28, status: 'active', completedAt: null, endedAt: null, vetName: null }
   const windowEndingOn = (dayNum: number) => ({ startDayNum: dayNum - 89, endDayNum: dayNum })
-  // 20657 = 2026-07-23 (day 84, the last day of the ACVIM course).
   assert.equal(selectReportTrial([gi], windowEndingOn(20657), TZ)?.id, 'gi', 'day 84 — mid-course')
-  assert.equal(selectReportTrial([gi], windowEndingOn(20643), TZ)?.id, 'gi', 'day 70')
-  // Past the course, the ended-trial grace still carries it for its usual 14 days
-  // (B-538 lengthens that to 90; this holds either way).
   assert.equal(selectReportTrial([gi], windowEndingOn(20671), TZ)?.id, 'gi', 'day 98')
-})
-
-Deno.test('selectReportTrial — a targetless trial still runs indefinitely', () => {
-  // No target means no window to overrun. The column is INTEGER NOT NULL with no
-  // CHECK (migration 001), so 0 reaches here through sync.
-  const scope = { startDayNum: 20620, endDayNum: 20657 }
-  const t = { id: 't', startedAt: '2025-01-01', targetDurationDays: 0, status: 'active', completedAt: null, endedAt: null, vetName: null }
-  assert.equal(selectReportTrial([t], scope, TZ)?.id, 't')
 })
 
 Deno.test('selectReportTrial prefers the ACTIVE trial over an ended one', () => {
