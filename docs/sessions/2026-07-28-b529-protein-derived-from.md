@@ -205,3 +205,59 @@ part that looked risky, survived a 12,800-case fuzz untouched.
 Final state: **3387 jest · 1007 deno · clean `tsc`**. A second adversarial pass
 against the repair was commissioned rather than accepting a fix validated only by
 its author.
+
+
+## The second pass failed too — and the pattern is the point
+
+A second `adversarial-reviewer` was commissioned against the repair, because the
+DoD does not accept a fix validated only by its author. It returned **FAIL**:
+**two of six repair claims broke**, plus one pre-existing hole on the exact diet
+class the ruling is about.
+
+**§7.2 still composed with a dark antigen arm.** I had wired `mayClaimAllMatched`
+and stopped. The interpretability caveat list was never touched, so an identical
+record with a **known** contamination read *"cannot establish that the
+elimination was clean"* while the record with an **unknown** one — strictly less
+known — still read *"supports interpreting it"*. The more ignorant state got the
+more affirmative sentence, on the one line the render's own comment calls what a
+vet reads for the bottom line.
+
+**The disclosure and the silence covered different ranges.** The feeding loop
+classifies from `exposureStart`; the disclosure was anchored on the clipped
+`startDayIndex`. On a back-dated trial — the spec's own "normal vet-directed
+setup" — with the undesignated food listed only inside the untracked head, the
+page showed no antigen row *and* no pause row; in a treat-typed variant
+`mayStateRecordClean` went true over deleted exposures. The very composition the
+first repair existed to prevent, re-entered through the window boundary instead
+of the global flag.
+
+**CE-9, pre-existing.** `canonicalizeProtein('hydrolyzed')` is `'hydrolyzed'` —
+non-null — so a bare **process word** passed as a designation, and that food's
+panel then sanctioned `chicken` for the whole library. An intact-chicken chew on
+a hydrolysed trial classified `antigens: []` with no pause and no disclosure. The
+predicate now asks whether the value names a **source** (`proteinSourceBase`),
+not whether it canonicalizes.
+
+### What three passes actually taught
+
+Every one of the five defects I introduced or missed has the same shape, and it
+is not the shape I was watching:
+
+> **The relation was never the risk. The plumbing around it was.**
+
+`proteinsAreKin` and `proteinSourceBase` survived a 12,800-case convergence fuzz,
+a 419-key symmetry sweep, a full enumeration of kin equivalence classes and a
+mutation test, without a single failure. Every real defect was in the *wiring* —
+which rung a feeding reaches, which surface got the disclosure, which range each
+half was anchored on, which predicate answers "characterized". Twice I fixed a
+composition in one place and left an equivalent composition live in another
+(`mayClaimAllMatched` gated, §7.2 not; the silence range moved, the disclosure
+range not).
+
+The generalisable rule, worth carrying past this PR: **when a change makes a
+surface quieter, enumerate every affirmative claim that surface can make and gate
+all of them in the same commit.** Gating the one you happened to be looking at
+leaves the page saying the same wrong thing in a different sentence.
+
+Final state: **3387 jest · 1010 deno · clean `tsc`**. A third pass against this
+repair is running.
