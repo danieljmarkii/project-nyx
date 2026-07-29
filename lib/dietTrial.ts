@@ -2161,7 +2161,7 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
     // The flag is set by the same branch that silences, so it cannot disagree
     // with it.
     //
-    // ⚠️ DOCUMENTED RESIDUAL — B-592, AND IT IS NOT ONLY AN OVER-CLAIM. An
+    // ⚠️ DOCUMENTED RESIDUAL — B-596, AND IT IS NOT ONLY AN OVER-CLAIM. An
     // earlier version of this comment said the residual runs "never
     // reassurance", and the fifth adversarial pass falsified that sentence,
     // which is worse than the residual itself: a comment asserting a safety

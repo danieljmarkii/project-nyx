@@ -389,16 +389,24 @@ direction, not the loud one.
 A comment claiming a safety property the code does not have is worse than the
 residual it describes, and it is precisely how this file's defects have kept
 surviving review. Corrected in full, with the mechanism, the measured before/after
-and the fix named. The behaviour itself is **B-592** — filed rather than fixed
+and the fix named. The behaviour itself is **B-596** — filed rather than fixed
 because net detection still improves over pre-B-529 (which put `beef` into the
 sanctioned set library-wide, silently sanctioning a beef treat), and the Beef term
 is still rendered verbatim on the Allowed-list row.
 
-Filed, not fixed: **B-592** (above) · **B-593** (`withholdingReasons` / the Home
+Filed, not fixed: **B-596** (above) · **B-597** (`withholdingReasons` / the Home
 strip never got the dark-arm reason — the same forgotten-sibling pattern that
-produced passes 2 and 4) · **B-594** (the card has no membership-gap disclosure
-the report has) · **B-595** (a dangling *"see 'Also during the trial'"* pointer —
+produced passes 2 and 4) · **B-598** (the card has no membership-gap disclosure
+the report has) · **B-599** (a dangling *"see 'Also during the trial'"* pointer —
 pre-existing, reproduced independently of B-529, widened by it).
+
+_These four were filed as B-592–B-595 and **renumbered to B-596–B-599** at the
+final merge: B-422's session (#513) had taken that exact block on `main` first, so
+first-lands-keeps applies and mine moved. The commit that filed them (`25609c7`)
+still names the old IDs — immutable, and the backlog rows carry provenance notes
+so a grep from either number lands somewhere true. This is the B-435 race, hitting
+for the fourth recorded time; it is why the duplicate check has to run **after**
+every merge from `main`, which is exactly what caught it here._
 
 ### Five passes, in one line
 
