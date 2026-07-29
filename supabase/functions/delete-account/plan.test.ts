@@ -107,9 +107,15 @@ Deno.test('scopeMedicationPaths — a blank owner uid fails CLOSED (drops everyt
 })
 
 Deno.test('scopeMedicationPaths — drops nulls/blanks alongside cross-uid paths', () => {
+  // Fixtures carry the real `{uid}/{medItemId}/{slot}.jpg` shape. They used to be
+  // 2-segment stand-ins, which passed the old prefix-only test and would now be
+  // dropped — the fixture, not the guard, was the thing that was wrong (B-582 round 2).
   assertEquals(
-    scopeMedicationPaths(['owner/a.jpg', null, undefined, '', 'victim/b.jpg'], 'owner'),
-    ['owner/a.jpg'],
+    scopeMedicationPaths(
+      ['owner/med-1/a.jpg', null, undefined, '', 'victim/med-2/b.jpg'],
+      'owner',
+    ),
+    ['owner/med-1/a.jpg'],
   )
 })
 
@@ -304,6 +310,54 @@ Deno.test('scopeVetDocumentPaths — passes nulls through for cleanPaths to drop
   assertEquals(scopeVetDocumentPaths([null, undefined, 'pet-1/d.pdf'], ['pet-1']), ['pet-1/d.pdf'])
 })
 
+Deno.test('scopeMedicationPaths — B-582 round 2: the THIRD twin drops every traversal variant', () => {
+  // The un-ported guard the rls-privacy-reviewer found after the first cut of B-582
+  // shipped the whole-shape test to two of the three. All five of these were KEPT by the
+  // old `startsWith(uid + '/')` and reached the service-role remove() — on the bucket
+  // that holds prescription labels (owner + pet + clinic names), sourced from the
+  // globally-writable catalog B-128 was written about.
+  assertEquals(scopeMedicationPaths([
+    'user-1/../victim-uid/med-9/0-label.jpg',
+    'user-1/../../victim-uid/med-9/0-label.jpg',
+    'user-1//../victim-uid/0-label.jpg',
+    'user-1/./../victim-uid/x/0-label.jpg',
+    'user-1/a/../../victim-uid/0-label.jpg',
+  ], 'user-1'), [])
+
+  // …and keeps exactly what buildMedicationPhotoPath mints: {uid}/{medItemId}/{slot}.jpg.
+  // Verified live before tightening, the same gate the food port passed: the stored
+  // photo_paths value has two separators and its first segment is its own
+  // created_by_user_id.
+  assertEquals(
+    scopeMedicationPaths(['user-1/med-9/0-label.jpg'], 'user-1'),
+    ['user-1/med-9/0-label.jpg'],
+  )
+})
+
+Deno.test('scopeMedicationPaths — B-582 round 2: the shape is THREE segments, not two', () => {
+  // The per-bucket-shape hazard, in the direction that would cause silent
+  // under-deletion: medication keys carry the med id, so borrowing the food/vet
+  // two-segment rule here would drop every real key and turn this bucket's purge into
+  // a no-op. Pin both directions.
+  assertEquals(scopeMedicationPaths(['user-1/0-label.jpg'], 'user-1'), [])
+  assertEquals(scopeMedicationPaths(['user-1/med-9/x/0-label.jpg'], 'user-1'), [])
+})
+
+Deno.test('scope guards — B-582 round 2: encoded separators do not survive any guard', () => {
+  // The two survivors of the first cut's structural rules. Both are exactly N non-empty
+  // segments whose first segment is genuinely owned — a segment-count test cannot see a
+  // separator that has been ENCODED. They delete nothing today because remove() sends
+  // keys in the request BODY and storage-api matches `name` exactly, which is precisely
+  // the opacity dependency these guards exist to stop relying on. This repo's own
+  // extract-food-from-photo validator already rejects `..` and `\` as substrings.
+  assertEquals(scopeFoodPaths(['food-1/..%2Ffood-victim%2F0-front.jpg'], ['food-1']), [])
+  assertEquals(scopeFoodPaths(['food-1/..\\food-victim\\0-front.jpg'], ['food-1']), [])
+  assertEquals(scopeVetDocumentPaths(['pet-1/..%2Fpet-victim%2Fx.pdf'], ['pet-1']), [])
+  assertEquals(scopeMedicationPaths(['user-1/..%2Fvictim%2Fmed/0-label.jpg'], 'user-1'), [])
+  // No legitimate key contains either token, so this costs nothing.
+  assertEquals(scopeFoodPaths(['food-1/0-front.jpg'], ['food-1']), ['food-1/0-front.jpg'])
+})
+
 Deno.test('scope guards — B-582: the two twins answer the SAME corpus identically', () => {
   // The structural pin, not another case. B-582 was not "the food guard is weak" — it
   // was "one twin got fixed and the other kept the shape its own comment warned
@@ -324,6 +378,18 @@ Deno.test('scope guards — B-582: the two twins answer the SAME corpus identica
   assertEquals(scopeFoodPaths(corpus, ['own']), scopeVetDocumentPaths(corpus, ['own']))
   // …and that the shared answer is the RIGHT one, so agreeing on nothing can't pass.
   assertEquals(scopeFoodPaths(corpus, ['own']), ['own/legit.ext'])
+
+  // The third twin gets the same treatment at ITS shape. The first version of this test
+  // compared only two guards — and the one it left out was the one still running the old
+  // predicate, which is how B-582 round 2 happened. Segment COUNT is the per-bucket half
+  // and legitimately differs (`own/sub/dir.ext` is a valid 3-segment medication key);
+  // the TRAVERSAL verdicts are the shared half and must agree, so those are what is
+  // compared here.
+  const traversals = corpus.filter((p) => p !== 'own/legit.ext' && p !== 'own/sub/dir.ext')
+  assertEquals(scopeMedicationPaths(traversals, 'own'), [])
+  assertEquals(scopeFoodPaths(traversals, ['own']), [])
+  assertEquals(scopeVetDocumentPaths(traversals, ['own']), [])
+  assertEquals(scopeMedicationPaths(['own/med-9/legit.ext'], 'own'), ['own/med-9/legit.ext'])
 })
 
 // ── collectStoragePaths ───────────────────────────────────────────────────────
@@ -757,6 +823,33 @@ Deno.test('mergeSweptPaths — traversal and empty segments never survive the me
     paths: ['pet-mine/../pet-victim/x.jpg', 'pet-mine//x.jpg', 'pet-mine/./x.jpg', 'pet-mine', ''],
   }], scopes)
   assertEquals(merged, [])
+})
+
+Deno.test('mergeSweptPaths — B-582 round 2: a duplicate bucket APPENDS, never overwrites', () => {
+  // The reviewer's exact repro. The first cut did `byBucket.set(bucket, [...paths])`, so
+  // a second entry for the same bucket silently discarded the first entry's paths — a
+  // function that documents itself as additive quietly dropping objects from an erasure
+  // plan. Unreachable from today's only caller (the seven bucket values are distinct and
+  // collectStoragePaths emits each once), but "additive" has to be a property of the
+  // function, not of its current call site.
+  const merged = mergeSweptPaths([
+    { bucket: STORAGE_BUCKETS.petPhotos, paths: ['A/1.jpg', 'A/2.jpg'] },
+    { bucket: STORAGE_BUCKETS.petPhotos, paths: ['B/1.jpg'] },
+  ], [], [])
+  assertEquals(merged, [{
+    bucket: STORAGE_BUCKETS.petPhotos,
+    paths: ['A/1.jpg', 'A/2.jpg', 'B/1.jpg'],
+  }])
+})
+
+Deno.test('mergeSweptPaths — encoded separators never survive the merge either', () => {
+  // The swept path's mirror of the guard fix: a listing that somehow produced an
+  // encoded-traversal name cannot ride into a service-role remove().
+  const scopes = buildSweepScopes(owned({ ownedPetIds: ['pet-mine'] }))
+  assertEquals(mergeSweptPaths([], [{
+    bucket: STORAGE_BUCKETS.petPhotos,
+    paths: ['pet-mine/..%2Fpet-victim%2Fx.jpg', 'pet-mine/..\\pet-victim\\x.jpg'],
+  }], scopes), [])
 })
 
 Deno.test('mergeSweptPaths — a bucket with no declared scope contributes nothing', () => {

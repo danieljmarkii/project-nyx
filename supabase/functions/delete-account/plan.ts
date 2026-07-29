@@ -152,13 +152,29 @@ export function cleanPaths(raw: ReadonlyArray<string | null | undefined>): strin
 // account deletion into a cross-tenant DELETE of the victim's label photo.
 //
 // Defuse the primitive at the consumer: keep only the medication paths under the
-// deleting user's OWN `{uid}/` prefix — exactly what `buildMedicationPhotoPath`
-// (lib/storage.ts) produces for every legitimate client write, and what RLS 021
-// enforces for every legitimate upload. The trailing '/' is load-bearing: it stops a
-// uid that is a string-prefix of another (`user-1` must not match `user-12/…`) from
-// passing. A blank `ownerUserId` fails CLOSED (drops everything) rather than letting
-// the prefix collapse to '/' and match every path — index.ts always supplies the
+// deleting user's OWN uid — exactly what `buildMedicationPhotoPath` (lib/storage.ts)
+// produces for every legitimate client write, and what RLS 021 enforces for every
+// legitimate upload. A blank `ownerUserId` fails CLOSED (drops everything) rather than
+// letting the prefix collapse and match every path — index.ts always supplies the
 // verified-JWT uid, so this is defense-in-depth.
+//
+// ⚠ B-582 round 2 — this was the THIRD twin, and the first cut of B-582 ported the
+// whole-shape guard to two of the three. It was a bare `startsWith(uid + '/')`, which
+// the reviewer executed: `{ownUid}/../{victimUid}/{med}/0-label.jpg` and four sibling
+// variants were all KEPT and reached the service-role `remove()`. That is the worst of
+// the three buckets to leave behind — `medication_items` is the globally-writable
+// catalog B-128 was written about, and a prescription label carries owner, pet and
+// clinic names. A fix whose stated point is "the next correction lands on every twin by
+// construction rather than by someone remembering there is a twin" does not get to
+// leave one of them un-ported; that was the original defect wearing a different hat.
+//
+// So it delegates too, at THREE segments: `buildMedicationPhotoPath` emits exactly
+// `{uid}/{medicationItemId}/{slot}.jpg` and already rejects `/`, `\` and `..` per
+// segment at the mint site. Verified against production before tightening, the same
+// gate the food port passed: the single stored `photo_paths` value has exactly two
+// separators and its first segment is its own `created_by_user_id`, and both objects
+// in the bucket have the same shape. Exact set membership also subsumes what the
+// trailing '/' used to do by hand — `user-1` cannot match `user-12/…`.
 //
 // Scoped to medication paths ONLY: the pet/event/vet buckets come from pet-scoped
 // rows and use no per-user-prefix convention, so do NOT extend this filter to them —
@@ -168,19 +184,20 @@ export function scopeMedicationPaths(
   paths: ReadonlyArray<string | null | undefined>,
   ownerUserId: string,
 ): Array<string | null | undefined> {
-  if (!ownerUserId || ownerUserId.trim().length === 0) return []
-  const prefix = `${ownerUserId}/`
-  return paths.filter((p): p is string => typeof p === 'string' && p.startsWith(prefix))
+  return scopeToOwnedKeyShape(paths, [ownerUserId], 3)
 }
 
-// The shape+ownership predicate BOTH catalog-style guards below are built from.
+// The shape+ownership predicate ALL THREE scoping guards are built from — medication
+// (above), food and vet documents (below).
 //
-// It exists because the two guards drifting apart is exactly what B-582 was: VF-1
+// It exists because the guards drifting apart is exactly what B-582 was: VF-1
 // discovered that a first-segment test admits `{ownId}/../{victimId}/x` (the `..` is
 // the SECOND segment), fixed it for vet documents, and left the food twin as the
 // first-segment test its own comment warned against. One shared predicate means the
-// next correction lands on both by construction rather than by someone remembering
-// there is a twin.
+// next correction lands on every guard by construction rather than by someone
+// remembering there is a twin — which the first cut of B-582 promptly proved by
+// porting to two of the three and leaving `scopeMedicationPaths` on the old test.
+// Three call sites, one predicate, one place to fix.
 //
 // The rule: a key is kept only if it has EXACTLY `segmentCount` non-empty segments and
 // its first segment is an id the caller provably owns.
@@ -194,6 +211,17 @@ export function scopeMedicationPaths(
 //     count test, and neither is something any builder in this app can mint. `..` in
 //     the trailing position is the same bet on opacity as `..` in the middle, just one
 //     slot over, so it is refused for the same reason rather than a different one.
+//   • No `..` or `\` ANYWHERE in the key, as substrings. The segment rules above are
+//     structural and a segment-count test cannot see a separator the key has ENCODED:
+//     `{ownId}/..%2F{victimId}%2F0-front.jpg` and `{ownId}/..\{victimId}\0-front.jpg`
+//     are two genuine, non-empty segments whose first is genuinely owned, so the
+//     structural rules keep them (executed by the B-582 rls-privacy-reviewer). They
+//     delete nothing today — `remove()` sends the keys in the request BODY, so nothing
+//     percent-decodes them, and storage-api matches `name` exactly — but "nothing
+//     decodes it" is the same opacity dependency this predicate exists to stop relying
+//     on. This repo's own sibling validator already draws the line here
+//     (`extract-food-from-photo` validateFoodPhotoPaths rejects `..` and `\` as
+//     substrings); matching it costs nothing, since no legitimate key contains either.
 //   • Exact SET membership on the first segment, never `startsWith`, so one id can
 //     never be a string prefix of another. UUIDs make that collision impossible in
 //     practice; exact-match is the honest encoding of the Storage policies' own
@@ -217,9 +245,10 @@ function scopeToOwnedKeyShape(
   if (owned.size === 0) return []
   return paths.filter((p): p is string => {
     if (typeof p !== 'string') return false
+    if (p.includes('..') || p.includes('\\')) return false
     const segments = p.split('/')
     if (segments.length !== segmentCount) return false
-    if (segments.some((s) => s.length === 0 || s === '.' || s === '..')) return false
+    if (segments.some((s) => s.length === 0 || s === '.')) return false
     return owned.has(segments[0])
   })
 }
@@ -357,14 +386,25 @@ export function collectStoragePaths(input: OwnedStoragePaths): BucketPurge[] {
 //      never landed, an object left behind by the pre-B-005 hard-delete cascade.
 //      Measured live 2026-07-29: 44 objects across the three populated buckets are
 //      named by no row at all (27 food, 16 event-attachment, 1 medication).
-//   2. Deliberate escape, which is the case B-578 actually turns on. Permissive
-//      Storage policies OR together and Postgres evaluates USING and WITH CHECK
-//      independently, so an owner can `move()` an object whose SOURCE satisfies one
-//      bucket's owner-UPDATE into a DESTINATION satisfying another's — food photo →
-//      `nyx-pet-photos` under their own `{petId}/` prefix. The object lands in a
-//      bucket whose purge reads a different column, so NO row names it and a
-//      food-prefix-scoped sweep would not find it either. A within-prefix rename is
-//      the same trick and is the residual migration 043 recorded for vet attachments.
+//   2. Relocation, which is the case B-578 names. Permissive Storage policies OR
+//      together and Postgres evaluates USING and WITH CHECK independently, so an owner
+//      can `move()` an object whose SOURCE satisfies one bucket's owner-UPDATE into a
+//      DESTINATION satisfying another's — food photo → `nyx-pet-photos` under their own
+//      `{petId}/` prefix. The object lands in a bucket whose purge reads a different
+//      column, so NO row names it and a food-prefix-scoped sweep would not find it
+//      either. A within-prefix rename is the same trick and is the residual migration
+//      043 recorded for vet attachments.
+//
+// ⚠ Be precise about (2): the sweep closes RELOCATION, not DELIBERATE EVASION, and an
+// earlier draft of this comment overstated it. Every bucket's INSERT policy checks only
+// `foldername[1]`, so an owner may legitimately write `{ownPetId}/a/b/c/d/e.jpg` — and
+// the walk stops at SWEEP_MAX_DEPTH, which the rls-privacy-reviewer executed and
+// confirmed misses it. Raising the cap does not fix that; any fixed depth is evadable
+// by nesting one level deeper, and an uncapped walk is the timeout risk that must not
+// sit ahead of the terminal auth delete. So the honest boundary: this reaches objects
+// that MOVED, including across buckets, and does not claim to beat an owner who is
+// actively hiding one. Adversarial hiding is the object-side reaper's problem (B-121),
+// because that one starts from the objects and needs no prefix to guess.
 //
 // The answer to both is to stop asking the rows and ask STORAGE: enumerate the
 // objects living under the prefixes this account owns. Note what that also buys —
@@ -452,6 +492,34 @@ export function buildSweepScopes(input: OwnedStoragePaths): SweepScope[] {
 // for THAT bucket (`{prefix}/…`, prefix-with-separator so one id cannot string-prefix
 // another) and every one of its segments is non-empty and is not `.` or `..`. A
 // listing response is third-party input; the sweep is a service-role delete.
+// APPEND, never `set`. Overwriting silently discards the first entry's paths if a
+// caller ever hands over the same bucket twice — unreachable today (the seven
+// STORAGE_BUCKETS values are distinct and collectStoragePaths emits each once), but that
+// is a property of the CALLER, and mergeSweptPaths is exported, independently tested,
+// and documents itself as additive. A docstring promising "it never drops one" has to be
+// true of the function, not of today's only call site (B-582 round 2,
+// rls-privacy-reviewer). Order-preserving and duplicate-free on the way in.
+function appendUnique(
+  byBucket: Map<string, string[]>,
+  order: string[],
+  bucket: string,
+  keys: ReadonlyArray<string>,
+): void {
+  if (keys.length === 0) return
+  let existing = byBucket.get(bucket)
+  if (!existing) {
+    existing = []
+    byBucket.set(bucket, existing)
+    order.push(bucket)
+  }
+  const seen = new Set(existing)
+  for (const key of keys) {
+    if (seen.has(key)) continue
+    seen.add(key)
+    existing.push(key)
+  }
+}
+
 export function mergeSweptPaths(
   purges: ReadonlyArray<BucketPurge>,
   swept: ReadonlyArray<BucketPurge>,
@@ -460,31 +528,20 @@ export function mergeSweptPaths(
   const byBucket = new Map<string, string[]>()
   const order: string[] = []
   for (const p of purges) {
-    byBucket.set(p.bucket, [...p.paths])
-    order.push(p.bucket)
+    appendUnique(byBucket, order, p.bucket, p.paths)
   }
   for (const s of swept) {
-    const allowed = scopes.find((sc) => sc.bucket === s.bucket)?.prefixes ?? []
-    if (allowed.length === 0) continue
+    const allowed = new Set(scopes.find((sc) => sc.bucket === s.bucket)?.prefixes ?? [])
+    if (allowed.size === 0) continue
     const kept = s.paths.filter((key) => {
       if (typeof key !== 'string' || key.length === 0) return false
+      if (key.includes('..') || key.includes('\\')) return false
       const segments = key.split('/')
       if (segments.length < 2) return false
-      if (segments.some((seg) => seg.length === 0 || seg === '.' || seg === '..')) return false
-      return allowed.includes(segments[0])
+      if (segments.some((seg) => seg.length === 0 || seg === '.')) return false
+      return allowed.has(segments[0])
     })
-    if (kept.length === 0) continue
-    if (!byBucket.has(s.bucket)) {
-      byBucket.set(s.bucket, [])
-      order.push(s.bucket)
-    }
-    const existing = byBucket.get(s.bucket)!
-    const seen = new Set(existing)
-    for (const key of kept) {
-      if (seen.has(key)) continue
-      seen.add(key)
-      existing.push(key)
-    }
+    appendUnique(byBucket, order, s.bucket, kept)
   }
   return order
     .map((bucket) => ({ bucket, paths: byBucket.get(bucket) ?? [] }))

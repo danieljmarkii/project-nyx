@@ -264,24 +264,59 @@ async function collectOwnedPaths(adminClient: SupabaseClient, userId: string): P
 // object deeper INSIDE an owned prefix is one of the escapes being closed, so the walk
 // must not stop at the shape it expects to find.
 //
-// The budget is sized against the dominant cost, which is the NUMBER OF FOLDERS, not
-// the number of objects: the attachment buckets key on `{petId}/{eventId}/…`, so one
-// list call is spent per event that has an attachment. 1200 calls at 8-wide
-// concurrency is a few seconds even at a pessimistic per-call latency, and comfortably
-// inside the function's wall clock. Truncation past that is the deliberate trade: it
-// costs CLEANUP of objects no row names, and costs nothing from the column-sourced
-// purge, so the account still deletes. Erring the other way — an unbounded walk ahead
-// of the terminal auth delete — would risk an account that cannot be deleted at all.
+// The dominant cost is the NUMBER OF FOLDERS, not the number of objects: the attachment
+// buckets key on `{petId}/{eventId}/…`, so one list call is spent per event that has an
+// attachment.
+//
+// ⚠ A CALL budget alone does not bound the thing that actually matters, which is TIME,
+// and the first cut of this got that wrong. Concurrency was applied only across
+// PREFIXES while each prefix's folders were walked serially — so the 8-wide claim held
+// only for an account with 8+ pets, and the single-pet account (the common case, and
+// the diet-trial wedge user) ran the entire budget as ONE serial chain: the
+// rls-privacy-reviewer measured 1200 sequential round-trips, 60s at 50ms per call and
+// 240s at 200ms, sitting ahead of the terminal auth delete with no deadline. An account
+// that cannot be deleted because a CLEANUP feature times out is an Apple 5.1.1(v)
+// regression, which is a strictly worse failure than the orphans this is cleaning up.
+//
+// So there are now three bounds, and the deadline is the load-bearing one because it is
+// the only one denominated in the units of the risk: SWEEP_DEADLINE_MS (wall clock, and
+// generous headroom under any plausible function limit), SWEEP_LIST_BUDGET (calls), and
+// SWEEP_MAX_DEPTH (descent). Hitting any bound truncates and logs; it costs CLEANUP of
+// objects no row names and costs the column-sourced purge nothing, so the account still
+// deletes.
+//
+// The structural half of the fix is walkBucket holding ONE frontier across all of a
+// bucket's prefixes and listing each level in 8-wide batches, so parallelism comes from
+// the folders at the current depth rather than from how many prefixes the account
+// happens to own. Measured against the reviewer's own scenarios (instrumented run,
+// counting sequential round-trips — the thing latency multiplies):
+//
+//   pets × folders   before (serial)      after (rounds)     @100ms/call
+//   1 × 50           51                   8                  5.1s → 0.8s
+//   1 × 500          501                  69                 50.1s → 6.9s
+//   2 × 1000         1200 (budget)        149                120.0s → 14.9s
+//   8 × 300          1200 (budget)        147                120.0s → 14.7s
+//
+// The single-pet account — the common case, and the diet-trial wedge user — was the one
+// the per-prefix version served worst, which is exactly backwards.
 const SWEEP_LIST_PAGE = 100
 const SWEEP_MAX_DEPTH = 4
 const SWEEP_LIST_BUDGET = 1200
-const SWEEP_PREFIX_CONCURRENCY = 8
+const SWEEP_LIST_CONCURRENCY = 8
+const SWEEP_DEADLINE_MS = 20_000
 
 interface SweepBudget {
   calls: number
   truncated: boolean
   failures: string[]
+  // Wall-clock stop, captured once when the sweep starts. Compared against Date.now()
+  // before every list call, so a slow Storage backend truncates the sweep instead of
+  // eating the budget the auth delete needs.
+  deadlineAt: number
 }
+
+const sweepExhausted = (budget: SweepBudget): boolean =>
+  budget.calls >= SWEEP_LIST_BUDGET || Date.now() >= budget.deadlineAt
 
 // One page-walked listing of a single folder. Returns the immediate children, split
 // into objects and sub-folders — supabase-js marks a folder row with a null `id`,
@@ -295,7 +330,7 @@ async function listFolder(
   const files: string[] = []
   const folders: string[] = []
   for (let offset = 0; ; offset += SWEEP_LIST_PAGE) {
-    if (budget.calls >= SWEEP_LIST_BUDGET) {
+    if (sweepExhausted(budget)) {
       budget.truncated = true
       break
     }
@@ -306,7 +341,14 @@ async function listFolder(
     if (error) {
       // Best-effort: a bucket that does not exist yet (nyx-vet-documents before its
       // dashboard creation) errors here and is simply not swept.
-      budget.failures.push(`${bucket}/${folder}: ${error.message}`)
+      //
+      // The BUCKET is named, the folder is not. A folder here is a pet id or a food id,
+      // and this is a new log surface on the deletion path — identifiers rather than
+      // health data, but the account being logged about is the one asking to be
+      // forgotten, so it does not get pet-level granularity it does not need (B-016 /
+      // B-047 redaction posture). A sweep failure is a bucket-level fact in practice:
+      // missing bucket, bad credentials, backend error.
+      budget.failures.push(`${bucket}: ${error.message}`)
       break
     }
     const page = data ?? []
@@ -326,55 +368,75 @@ async function listFolder(
   return { files, folders }
 }
 
-// Depth-first walk of one owned prefix, collecting every object beneath it.
-async function walkPrefix(
+// Breadth-first walk of ALL of a bucket's owned prefixes at once, level by level.
+//
+// One frontier across every prefix, not one walk per prefix: the whole level is listed
+// in bounded-concurrency batches, so an account's parallelism comes from the number of
+// FOLDERS at the current depth rather than from the number of prefixes it happens to
+// own. That is what fixes the single-pet serial chain — one pet with 500
+// attachment-bearing events now lists those 500 folders 8-wide, where the per-prefix
+// version walked them one at a time.
+async function walkBucket(
   adminClient: SupabaseClient,
   bucket: string,
-  prefix: string,
+  prefixes: ReadonlyArray<string>,
   budget: SweepBudget,
 ): Promise<string[]> {
   const found: string[] = []
-  let frontier = [prefix]
+  let frontier: string[] = [...prefixes]
   for (let depth = 1; depth <= SWEEP_MAX_DEPTH && frontier.length > 0; depth++) {
     const next: string[] = []
-    for (const folder of frontier) {
-      const { files, folders } = await listFolder(adminClient, bucket, folder, budget)
-      found.push(...files)
-      next.push(...folders)
+    for (const batch of chunk(frontier, SWEEP_LIST_CONCURRENCY)) {
+      if (sweepExhausted(budget)) {
+        budget.truncated = true
+        return found
+      }
+      const results = await Promise.all(
+        batch.map(async (folder) => {
+          try {
+            return await listFolder(adminClient, bucket, folder, budget)
+          } catch (e) {
+            // Belt to listFolder's own error handling: a client that THROWS rather
+            // than returning an error must not take the sweep — or the deletion —
+            // down with it.
+            budget.failures.push(`${bucket}: ${e instanceof Error ? e.message : String(e)}`)
+            return { files: [], folders: [] }
+          }
+        }),
+      )
+      for (const r of results) {
+        found.push(...r.files)
+        next.push(...r.folders)
+      }
     }
+    // Folders still unexplored at the depth cap. Recorded honestly rather than
+    // treated as "nothing there" — see the residual note in plan.ts.
     if (depth === SWEEP_MAX_DEPTH && next.length > 0) budget.truncated = true
     frontier = next
   }
   return found
 }
 
-// Sweep every scope. Prefixes are walked in bounded-concurrency batches: an account
-// with many foods would otherwise serialise hundreds of round-trips ahead of the
-// terminal delete.
+// Sweep every scope, sharing one budget across all of them so the wall-clock and call
+// bounds cover the sweep as a whole rather than per bucket.
 async function sweepOwnedPrefixes(
   adminClient: SupabaseClient,
   scopes: ReadonlyArray<SweepScope>,
 ): Promise<{ purges: BucketPurge[]; budget: SweepBudget }> {
-  const budget: SweepBudget = { calls: 0, truncated: false, failures: [] }
+  const budget: SweepBudget = {
+    calls: 0,
+    truncated: false,
+    failures: [],
+    deadlineAt: Date.now() + SWEEP_DEADLINE_MS,
+  }
   const purges: BucketPurge[] = []
   for (const scope of scopes) {
-    const paths: string[] = []
-    for (const batch of chunk(scope.prefixes, SWEEP_PREFIX_CONCURRENCY)) {
-      const results = await Promise.all(
-        batch.map(async (prefix) => {
-          try {
-            return await walkPrefix(adminClient, scope.bucket, prefix, budget)
-          } catch (e) {
-            budget.failures.push(
-              `${scope.bucket}/${prefix}: ${e instanceof Error ? e.message : String(e)}`,
-            )
-            return []
-          }
-        }),
-      )
-      for (const r of results) paths.push(...r)
+    try {
+      const paths = await walkBucket(adminClient, scope.bucket, scope.prefixes, budget)
+      if (paths.length > 0) purges.push({ bucket: scope.bucket, paths })
+    } catch (e) {
+      budget.failures.push(`${scope.bucket}: ${e instanceof Error ? e.message : String(e)}`)
     }
-    if (paths.length > 0) purges.push({ bucket: scope.bucket, paths })
   }
   return { purges, budget }
 }
@@ -448,7 +510,7 @@ Deno.serve(async (req: Request) => {
       // orphan only the global reaper (B-121) can reach. The column-sourced purge is
       // unaffected, so this is under-cleanup, not under-deletion of named objects.
       console.warn(
-        `delete-account: prefix sweep TRUNCATED for user ${userId} (calls=${sweep.budget.calls}, budget=${SWEEP_LIST_BUDGET}, maxDepth=${SWEEP_MAX_DEPTH})`,
+        `delete-account: prefix sweep TRUNCATED for user ${userId} (calls=${sweep.budget.calls}/${SWEEP_LIST_BUDGET}, deadline=${SWEEP_DEADLINE_MS}ms, maxDepth=${SWEEP_MAX_DEPTH})`,
       )
     }
 
