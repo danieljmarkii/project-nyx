@@ -98,7 +98,14 @@ import { foodFormatWord } from '../../../lib/foodFormat.ts'
 // The diet-trial answer (B-417 PR 7). `trial.ts` is the seam onto `lib/dietTrial.ts`
 // — the one shared predicate — and imports NOTHING from this file, so the two are a
 // tree rather than a cycle.
-import { buildTrialBlock, selectReportTrial, trialEndValue, trialLastDayNum, type TrialBlock } from './trial.ts'
+import {
+  buildTrialBlock,
+  halfPartition,
+  selectReportTrial,
+  trialEndValue,
+  trialLastDayNum,
+  type TrialBlock,
+} from './trial.ts'
 // B-494's flag carries the refusal fact verbatim rather than flattening it, so the
 // band and the trial block on the same page cannot state different numbers.
 import { feedingWasFinished } from '../../../lib/dietTrial.ts'
@@ -925,6 +932,24 @@ export interface ScopeInfo extends ReportScope {
    */
   outOfWindowSymptomCount: number
   outOfWindowMostRecent: string | null
+  /**
+   * The cherry-pick count, SPLIT (B-600, cold read round 11).
+   *
+   * A one-ended crop is adequately served by a scalar — everything excluded is on the
+   * side the reader can infer. A BOTH-ENDS crop is not, and the hand-picked window is
+   * the only basis that produces one: a completed 56-day trial reported through a
+   * window closing eleven days early rendered "5 symptom events fall outside (most
+   * recent May 28)" over a page whose visible trend ends on a zero week. The most
+   * recent excluded event was eight days past the window edge and three days before
+   * the trial ended, and nothing said which side any of them fell.
+   *
+   * The report advertises this guard by name — "shown so nothing is cropped to a good
+   * week" — and B-494's rule binds an advertised guard: a zone the report teaches the
+   * reader to scan may not be left under-specified, because an advertised guard reads
+   * as a complete one. The rows are in hand at the counting loop; the split is free.
+   */
+  outOfWindowBefore: number
+  outOfWindowAfter: number
 }
 
 export type ClinicalQuestionType = 'diet_trial_working' | 'symptom_monitoring'
@@ -1099,6 +1124,23 @@ export interface SymptomAggregate {
     firstEndDate: string
     lastStartDate: string
     lastEndDate: string
+    /**
+     * Events on the excluded middle day of an ODD window (B-600, cold read round 13).
+     *
+     * The exclusion is right — handing the spare day to one side reintroduces the bias
+     * the equal halves exist to remove — but it is only right while the page does not
+     * let the comparison contradict the total. Rendered: a 31-day window whose ONE
+     * symptom event fell on the median day printed "first 15 d 0 → last 15 d 0" three
+     * centimetres under "1 / 31 d". The delta had swallowed 100% of the evidence, and
+     * a 60-second scan reads two zeroes as no episodes.
+     *
+     * So the day is DISCLOSED beside the comparison rather than given to a half or
+     * hidden — C5's disclose-don't-adjudicate, applied to a denominator instead of a
+     * rate. Zero on an even window, where there is no middle day.
+     */
+    middleCount: number
+    /** The excluded day, when the window is odd; null when it is even. */
+    middleDate: string | null
   } | null
 }
 
@@ -2371,9 +2413,15 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
   const loggedDaysByBucket = new Array(numBuckets).fill(0)
   for (const dn of loggedDayNums) loggedDaysByBucket[bucketIndexOfDay(dn)]++
 
-  const halfDays = windowDays >= TREND_HALF_MIN_WINDOW_DAYS ? Math.floor(windowDays / 2) : 0
-  const firstHalfEndDayNum = startDayNum + halfDays - 1
-  const lastHalfStartDayNum = endDayNum - halfDays + 1
+  // ONE RULE, TWO SPANS (B-600). The arithmetic lives in `trial.ts.halfPartition`
+  // because a second copy of it existed here and in `loggingDensity`, and the two
+  // disagreed about the odd middle day — invisible while their spans differed, a
+  // self-contradiction on the same page the moment a truncated window made them
+  // coincide. The MINIMUM is still this caller's own.
+  const partition = halfPartition(startDayNum, endDayNum)
+  const halfDays = windowDays >= TREND_HALF_MIN_WINDOW_DAYS ? partition.halfDays : 0
+  const firstHalfEndDayNum = partition.firstEndDayIndex
+  const lastHalfStartDayNum = partition.lastStartDayIndex
   const inFirstHalf = (dn: number): boolean => halfDays > 0 && dn <= firstHalfEndDayNum
   const inLastHalf = (dn: number): boolean => halfDays > 0 && dn >= lastHalfStartDayNum
 
@@ -2388,6 +2436,7 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     let lastOnset: string | null = null
     let firstHalfCount = 0
     let lastHalfCount = 0
+    let middleCount = 0
     for (const e of incidents) {
       const dn = eventDayNumber(e.occurredAt, tz)
       if (dn !== null) {
@@ -2395,6 +2444,8 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
         weeklyBuckets[bucketIndexOfDay(dn)]++
         if (inFirstHalf(dn)) firstHalfCount++
         else if (inLastHalf(dn)) lastHalfCount++
+        // THE EXCLUDED MIDDLE DAY IS COUNTED, NOT DISCARDED (B-600, cold read r13).
+        else if (halfDays > 0) middleCount++
       }
       if (firstOnset === null || e.occurredAt < firstOnset) firstOnset = e.occurredAt
       if (lastOnset === null || e.occurredAt > lastOnset) lastOnset = e.occurredAt
@@ -2420,6 +2471,8 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
               firstEndDate: dayKeyFromNumber(firstHalfEndDayNum),
               lastStartDate: dayKeyFromNumber(lastHalfStartDayNum),
               lastEndDate: dayKeyFromNumber(endDayNum),
+              middleCount,
+              middleDate: windowDays % 2 === 1 ? dayKeyFromNumber(firstHalfEndDayNum + 1) : null,
             }
           : null,
     })
@@ -3345,13 +3398,21 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
   // ── Cherry-pick guard (§6) — custom window only ──────────────────────────────
   let outOfWindowSymptomCount = 0
   let outOfWindowMostRecent: string | null = null
+  let outOfWindowBefore = 0
+  let outOfWindowAfter = 0
   if (scope.isCustomOverride) {
     for (const e of dedupedAll) {
       if (!REPORT_SYMPTOM_SET.has(e.type)) continue
       // An undateable event is not evidence of an out-of-window incident — skip it.
-      if (eventDayNumber(e.occurredAt, tz) === null) continue
+      const dn = eventDayNumber(e.occurredAt, tz)
+      if (dn === null) continue
       if (inWindow(e.occurredAt)) continue
       outOfWindowSymptomCount++
+      // WHICH SIDE, not just how many. See the field's note: on a both-ends crop the
+      // scalar cannot distinguish "five events before the window I picked" from "five
+      // after it", and the second is the one that matters on a completed trial.
+      if (dn < scope.startDayNum) outOfWindowBefore++
+      else outOfWindowAfter++
       if (outOfWindowMostRecent === null || e.occurredAt > outOfWindowMostRecent) outOfWindowMostRecent = e.occurredAt
     }
   }
@@ -3445,7 +3506,7 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
   return {
     generatedAt: input.now,
     timezone: tz,
-    scope: { ...scope, outOfWindowSymptomCount, outOfWindowMostRecent },
+    scope: { ...scope, outOfWindowSymptomCount, outOfWindowMostRecent, outOfWindowBefore, outOfWindowAfter },
     signalment,
     clinicalQuestion,
     safetyFlags,

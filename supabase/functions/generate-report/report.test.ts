@@ -2197,6 +2197,9 @@ Deno.test('B-532 — trendHalves are EQUAL over an even window', () => {
     firstEndDate: '2026-05-18',
     lastStartDate: '2026-05-19',
     lastEndDate: '2026-07-02',
+    // An even window has no middle day to exclude, so nothing to disclose (B-600).
+    middleCount: 0,
+    middleDate: null,
   })
 })
 
@@ -2221,6 +2224,13 @@ Deno.test('B-532 — an ODD window puts the middle day in neither half, and lose
   assert.equal(v.trendHalves!.lastCount, 1)
   assert.equal(v.count, 3, 'the middle day is not deleted from the record — only from the comparison')
   assert.equal(v.weeklyBuckets.reduce((a, b) => a + b, 0), 3, 'and it is still on the chart')
+  // …AND IT IS DISCLOSED BESIDE THE COMPARISON (B-600, cold read round 13). "Not
+  // deleted from the record" was true and not sufficient: the render printed only the
+  // two halves, so on a 31-day window whose ONE event fell on the median day the page
+  // read "first 15 d 0 → last 15 d 0" three centimetres under "1 / 31 d". Two zeroes
+  // scan as no episodes, and that one day was 100% of the evidence.
+  assert.equal(v.trendHalves!.middleCount, 1)
+  assert.equal(v.trendHalves!.middleDate, '2026-06-26')
 })
 
 Deno.test('B-532 — the 9-day window no longer compares 7 days against 2', () => {

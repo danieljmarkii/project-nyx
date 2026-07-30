@@ -29,6 +29,19 @@
 //                              second is the B-599 shape, where the affirmative
 //                              clean sentence is withheld and the row the page
 //                              used to point at does not exist.
+//
+// B-600 added a fourth, and it is the one shape the first three structurally cannot
+// produce: all three are scoped so the report window and the trial roughly COINCIDE,
+// which is exactly the configuration in which a window-truncation bug is invisible.
+//
+//   trial-report-truncated.html — Juno, day 73 of an 84-day trial, reported through
+//                              a 31-day `since_visit` window opened by the six-week
+//                              recheck. Every trial-scoped fact on the page is
+//                              computed over the OVERLAP, and the §7.2 sentence
+//                              certified the whole trial off it.
+//
+// This is not an edge case: it is the SECOND report, the one an owner sends at or
+// after a recheck, and it is truncated by construction.
 import { assembleReport, type ReportEventInput, type ReportInput } from '../supabase/functions/generate-report/report.ts'
 import { renderReport } from '../supabase/functions/generate-report/render.ts'
 
@@ -479,11 +492,233 @@ function completedCase(): ReportInput {
   }
 }
 
+// ── Case 4: the trial seen through a since-visit window (B-600) ──────────────
+//
+// A 12-week GI elimination trial at day 73, reported after the six-week recheck.
+// `resolveScope` rung 1 anchors on the most recent visit strictly before today, so
+// the window is 2 Jun – 2 Jul — 31 days over a 73-day trial. Every trial-scoped
+// figure in the block is computed over that overlap, and nothing in the block's own
+// arithmetic knows it is looking at a fifth of the trial.
+//
+// The logging shape is the ordinary one, not a contrived one: the owner logged
+// diligently to the recheck, went quiet for three weeks, and picked it back up. That
+// gap sits INSIDE the window, so §10 S3's head clip — written for the days before the
+// app was on the owner's phone at the START of a trial — swallows it, and coverage
+// resolves to 11 of 11 days. A record of eleven days then read "supports interpreting
+// it" about an 84-day elimination trial.
+
+const HYDRO = {
+  foodItemId: 'f-an',
+  foodLabel: 'Purina HA Hydrolyzed',
+  role: 'primary_diet',
+  allowedFrom: '2026-04-21',
+  allowedUntil: null,
+  primaryProtein: 'soy',
+  brand: 'Purina',
+  productName: 'HA Hydrolyzed',
+  proteins: ['soy'],
+  ingredientsNotes: 'Hydrolysed soy protein isolate, corn starch, vegetable oil',
+}
+
+function truncatedCase(): ReportInput {
+  const events: ReportEventInput[] = []
+  // Two logged meals a day from day 1 to the recheck — six weeks of a well-kept record,
+  // ALL OF IT OUTSIDE THE WINDOW THIS REPORT RENDERS.
+  for (const d of days('2026-04-21', '2026-06-01')) {
+    events.push(meal({ date: d, brand: 'Purina', product: 'HA Hydrolyzed', foodItemId: 'f-an', proteins: HYDRO.proteins, ingredientsNotes: HYDRO.ingredientsNotes, intakeRating: 'all', format: 'kibble' }))
+    events.push(meal({ date: d, time: '18:20:00', brand: 'Purina', product: 'HA Hydrolyzed', foodItemId: 'f-an', proteins: HYDRO.proteins, ingredientsNotes: HYDRO.ingredientsNotes, intakeRating: 'all', format: 'kibble' }))
+  }
+  // Three weeks with nothing logged — 2 Jun to 21 Jun. The owner was away and the
+  // dog was with family. Inside the window, and the head clip reports it as days
+  // that "predate any logging".
+  //
+  // Then the record resumes and runs clean to today.
+  for (const d of days('2026-06-22', '2026-07-02')) {
+    events.push(meal({ date: d, brand: 'Purina', product: 'HA Hydrolyzed', foodItemId: 'f-an', proteins: HYDRO.proteins, ingredientsNotes: HYDRO.ingredientsNotes, intakeRating: 'all', format: 'kibble' }))
+    events.push(meal({ date: d, time: '18:20:00', brand: 'Purina', product: 'HA Hydrolyzed', foodItemId: 'f-an', proteins: HYDRO.proteins, ingredientsNotes: HYDRO.ingredientsNotes, intakeRating: d === '2026-06-30' ? 'most' : 'all', format: 'kibble' }))
+  }
+  // One slip inside the window, so the exposure lane is exercised rather than empty.
+  events.push(meal({ date: '2026-06-28', time: '16:10:00', brand: 'Home', product: 'Chicken jerky', foodItemId: 'f-jerky', foodType: 'treat', format: 'treat', proteins: ['chicken'], notes: 'neighbour gave her one on the walk' }))
+  // TWO FEEDINGS THAT NAME NO FOOD — the modal record-keeping gap, and the only shape
+  // that renders the "N logged feedings … named no food" disclosure. Cold read round 15
+  // asked for it by name: that sentence had been re-scoped with the rest of the count
+  // family and no artifact rendered it, so the change could be read in code and not on
+  // the page. A feeding with no identity is excluded from BOTH sides of the exposure
+  // ratio, so its own count is the only thing standing for it.
+  events.push(meal({ date: '2026-06-24', time: '12:40:00', brand: '', product: '', foodItemId: '', notes: 'logged in a hurry' }))
+  events.push(meal({ date: '2026-06-27', time: '13:05:00', brand: '', product: '', foodItemId: '' }))
+
+  // GI signs: frequent before the trial settled, sparse in the visible window.
+  for (const d of ['2026-04-22', '2026-04-24', '2026-04-27', '2026-05-01', '2026-05-06', '2026-05-13', '2026-05-24']) {
+    events.push(sym('vomit', d))
+  }
+  for (const d of ['2026-04-23', '2026-04-29', '2026-05-09']) events.push(sym('diarrhea', d))
+  events.push(sym('vomit', '2026-06-29', '05:20:00', 'the morning after the jerky'))
+
+  return {
+    now: NOW,
+    timezone: TZ,
+    pet: {
+      id: 'pet-juno',
+      name: 'Juno',
+      species: 'dog',
+      breed: 'Border Collie',
+      sex: 'female',
+      dateOfBirth: '2019-11-30',
+      neuterStatus: 'neutered',
+      weightKg: 18.2,
+    },
+    ownerName: 'Marta Ilves',
+    events,
+    aiAnalyses: [],
+    weightChecks: [
+      { eventId: 'jw1', weightKg: 18.6, occurredAt: '2026-04-21T15:00:00Z' },
+      { eventId: 'jw2', weightKg: 18.3, occurredAt: '2026-06-02T15:00:00Z' },
+      { eventId: 'jw3', weightKg: 18.2, occurredAt: '2026-07-01T15:00:00Z' },
+    ],
+    doses: [],
+    medications: [],
+    medicationItems: [],
+    dietTrials: [
+      {
+        id: 'trial-juno',
+        foodItemId: 'f-an',
+        startedAt: '2026-04-21',
+        // Twelve weeks — ACVIM's GI ceiling, and the reason the trial outruns any
+        // one report window in the first place.
+        targetDurationDays: 84,
+        status: 'active',
+        completedAt: null,
+        endedAt: null,
+        indication: 'gi',
+        vetName: 'Dr. A. Chen',
+        foodLabel: 'Purina HA Hydrolyzed',
+        primaryProtein: 'soy',
+        proteins: HYDRO.proteins,
+        ingredientsNotes: HYDRO.ingredientsNotes,
+        extractionConfidence: { proteins: 0.94 },
+        allowedFoods: [HYDRO],
+      },
+    ],
+    // TWO VISITS. The later one is what makes this case what it is: `resolveScope`
+    // rung 1 takes the most recent visit strictly before today, so the six-week
+    // recheck — not the trial start — opens the window.
+    vetVisits: [
+      { visitedAt: '2026-04-21', clinicName: 'Riverside Veterinary', vetName: 'Dr. A. Chen', reason: 'chronic vomiting — start elimination diet' },
+      { visitedAt: '2026-06-02', clinicName: 'Riverside Veterinary', vetName: 'Dr. A. Chen', reason: 'six-week recheck' },
+    ],
+    feedingArrangements: [],
+    conditions: [{ conditionName: 'Chronic intermittent vomiting', status: 'active', diagnosedAt: '2026-02-17' }],
+  }
+}
+
+// ── Case 5: a hand-picked window that closed weeks ago (B-600, round 10) ─────
+//
+// The CHERRY-PICK basis — `app/report.tsx` ships a Custom range with two date pickers
+// — and the only one whose window can end before today. Two things render here and
+// nowhere else, both of which a cold read has to see rather than take on trust:
+//
+//   • `trialDaysOutsideRange.after > 0`, so the day counter is short of the trial's
+//     elapsed length and carries its `as of <date>` label. Cold-read round 10 named
+//     this branch as rendered by ZERO of the four fixtures — "a unit test is not the
+//     artifact" — while the arithmetic behind it is exactly what adversarial pass 2
+//     broke.
+//   • the trial is truncated at BOTH ends, so the slice sentence takes its
+//     "before and after it" branch.
+//
+// The scenario is ordinary: the vet asks for "just the month I saw her in", and the
+// owner picks those dates.
+
+const NOVEL = {
+  foodItemId: 'f-kang',
+  foodLabel: 'Vet Essentials Kangaroo & Oat',
+  role: 'primary_diet',
+  allowedFrom: '2026-04-06',
+  allowedUntil: null,
+  primaryProtein: 'kangaroo',
+  brand: 'Vet Essentials',
+  productName: 'Kangaroo & Oat',
+  proteins: ['kangaroo'],
+  ingredientsNotes: 'Kangaroo, oats, sunflower oil, minerals',
+}
+
+function pastWindowCase(): ReportInput {
+  const events: ReportEventInput[] = []
+  // A well-kept 56-day novel-protein trial, logged twice daily start to finish.
+  for (const d of days('2026-04-06', '2026-05-31')) {
+    events.push(meal({ date: d, brand: 'Vet Essentials', product: 'Kangaroo & Oat', foodItemId: 'f-kang', proteins: NOVEL.proteins, ingredientsNotes: NOVEL.ingredientsNotes, intakeRating: 'all', format: 'kibble' }))
+    events.push(meal({ date: d, time: '18:30:00', brand: 'Vet Essentials', product: 'Kangaroo & Oat', foodItemId: 'f-kang', proteins: NOVEL.proteins, ingredientsNotes: NOVEL.ingredientsNotes, intakeRating: d === '2026-05-04' ? 'most' : 'all', format: 'kibble' }))
+  }
+  // One slip inside the picked window, one outside it — so the artifact shows what a
+  // hand-picked window omits as well as what it includes.
+  events.push(meal({ date: '2026-05-02', time: '20:10:00', brand: 'Home', product: 'Beef mince', foodItemId: 'f-beef', foodType: 'other', format: 'human_food', proteins: ['beef'], notes: 'scraps at the barbecue' }))
+  events.push(meal({ date: '2026-05-26', time: '19:00:00', brand: 'Home', product: 'Beef mince', foodItemId: 'f-beef', foodType: 'other', format: 'human_food', proteins: ['beef'] }))
+
+  for (const d of ['2026-04-07', '2026-04-09', '2026-04-13', '2026-04-18', '2026-04-24', '2026-05-03', '2026-05-15']) {
+    events.push(sym('diarrhea', d))
+  }
+  events.push(sym('vomit', '2026-05-03', '22:40:00', 'the night after the barbecue'))
+  events.push(sym('diarrhea', '2026-05-28'))
+
+  return {
+    now: NOW,
+    timezone: TZ,
+    pet: {
+      id: 'pet-tama',
+      name: 'Tama',
+      species: 'dog',
+      breed: 'Staffordshire Bull Terrier',
+      sex: 'female',
+      dateOfBirth: '2022-02-11',
+      neuterStatus: 'neutered',
+      weightKg: 15.4,
+    },
+    ownerName: 'Dev Anand',
+    events,
+    aiAnalyses: [],
+    weightChecks: [
+      { eventId: 'tw1', weightKg: 15.1, occurredAt: '2026-04-06T15:00:00Z' },
+      { eventId: 'tw2', weightKg: 15.4, occurredAt: '2026-05-30T15:00:00Z' },
+    ],
+    doses: [],
+    medications: [],
+    medicationItems: [],
+    dietTrials: [
+      {
+        id: 'trial-tama',
+        foodItemId: 'f-kang',
+        startedAt: '2026-04-06',
+        targetDurationDays: 56,
+        status: 'completed',
+        completedAt: '2026-05-31',
+        endedAt: '2026-05-31',
+        indication: 'gi',
+        stoppedReason: 'completed',
+        vetName: 'Dr. A. Chen',
+        foodLabel: 'Vet Essentials Kangaroo & Oat',
+        primaryProtein: 'kangaroo',
+        proteins: NOVEL.proteins,
+        ingredientsNotes: NOVEL.ingredientsNotes,
+        extractionConfidence: { proteins: 0.9 },
+        allowedFoods: [NOVEL],
+      },
+    ],
+    vetVisits: [{ visitedAt: '2026-04-06', clinicName: 'Riverside Veterinary', vetName: 'Dr. A. Chen', reason: 'chronic diarrhoea — start novel-protein trial' }],
+    feedingArrangements: [],
+    conditions: [{ conditionName: 'Chronic diarrhoea', status: 'active', diagnosedAt: '2026-01-22' }],
+    // THE OWNER PICKED THE DATES. Trial Apr 6 – May 31 (56 days); this window opens 14
+    // days in and closes 11 days before the trial did.
+    requestedWindow: { startDate: '2026-04-20', endDate: '2026-05-20' },
+  }
+}
+
 const outDir = Deno.args[0] ?? '.'
 for (const [name, input] of [
   ['trial-report-clean.html', cleanCase()],
   ['trial-report-refused.html', refusedCase()],
   ['trial-report-completed.html', completedCase()],
+  ['trial-report-truncated.html', truncatedCase()],
+  ['trial-report-past-window.html', pastWindowCase()],
 ] as const) {
   const html = renderReport(assembleReport(input))
   await Deno.writeTextFile(`${outDir}/${name}`, html)

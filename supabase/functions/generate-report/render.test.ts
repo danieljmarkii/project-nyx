@@ -90,6 +90,12 @@ export function trialBlockFixture(
     rangeEndDate: '2026-07-02',
     rangeClipped: false,
     untrackedDaysBeforeFirstLog: 0,
+    // The default is the UNTRUNCATED trial — range and trial coincide, which is
+    // every first report and every client surface. A fixture exercising B-600
+    // passes this explicitly.
+    trialDaysOutsideRange: { before: 0, after: 0 },
+    // `trialDaysElapsed` is derived at the tail of this literal so it tracks
+    // `dayCounter`, rather than sitting here as a constant a fixture can contradict.
     coverage: null,
     exposures: {
       totalFeedings: 0,
@@ -123,6 +129,13 @@ export function trialBlockFixture(
     challengeWindowDays: 14,
     challengeMarkerBaseRatePct: 0,
     ...over,
+    // Untruncated ⇒ the trial's elapsed length IS the day counter. Derived here so a
+    // fixture only has to set `dayCounter`, and so no fixture can silently carry a
+    // `trialDaysElapsed` that contradicts it.
+    trialDaysElapsed:
+      over.trialDaysElapsed ??
+      (over.dayCounter ?? 45) +
+        (over.trialDaysOutsideRange?.after ?? 0),
   }
 }
 
@@ -153,6 +166,8 @@ function baseSnapshot(overrides: Partial<ReportSnapshot> = {}): ReportSnapshot {
       isCustomOverride: false,
       outOfWindowSymptomCount: 0,
       outOfWindowMostRecent: null,
+      outOfWindowBefore: 0,
+      outOfWindowAfter: 0,
     },
     signalment: {
       name: 'Nyx',
@@ -1393,6 +1408,24 @@ Deno.test('at-a-glance weight tile never shows an out-of-window (stale) reading'
   )
   // The Weight block discloses the stale reading with its "(before this window)" caveat…
   assert.ok(/before this window/.test(html), 'weight block carries the caveat')
+  // …and the SIDE is derived, not assumed (B-600, cold read round 11). This test
+  // asserted the literal string, so it locked the bug in: the caveat was hardcoded on
+  // the reasoning that a reading outside the window must predate it, which fails for a
+  // hand-picked window that closes in the past. On a completed trial the patient's only
+  // weight — taken after the window, at the end of the diet — read as a pre-trial
+  // baseline, which is a different clinical question.
+  const after = renderReport(
+    base({
+      scope: { ...base().scope, isCustomOverride: true, endDate: '2026-06-01', endDayNum: 20605 },
+      weight: {
+        isEmpty: false,
+        latest: { kg: 4.2, lbs: 9.3, date: '2026-06-20' },
+        trend: null,
+      },
+    }),
+  )
+  assert.ok(/after this window/.test(after), 'a reading past the window end says so')
+  assert.ok(!/before this window/.test(after))
   // …but the bare tile must NOT carry the stale number (it cannot carry the caveat).
   assert.ok(!/4\.2<\/span><small>&nbsp;kg<\/small><\/div><div class="tl">Latest weigh-in/.test(html.replace(/\s+/g, '')), 'tile does not show the stale kg')
   assert.ok(/no reading in this window/.test(html), 'tile falls to the honest empty state')
@@ -1513,6 +1546,8 @@ function monitoringSnap(over: Partial<ReportSnapshot> = {}): ReportSnapshot {
           firstEndDate: '2026-05-17',
           lastStartDate: '2026-05-19',
           lastEndDate: '2026-07-02',
+          middleCount: 0,
+          middleDate: null,
         },
       }),
     ],
@@ -2679,6 +2714,8 @@ Deno.test('B-532 — the trend delta compares EQUAL-length halves', () => {
             firstEndDate: '2026-06-09',
             lastStartDate: '2026-06-10',
             lastEndDate: '2026-07-02',
+            middleCount: 0,
+            middleDate: null,
           },
         }),
       ],
@@ -2922,6 +2959,9 @@ Deno.test('B-532 ADV① — page 1 and the symptom panel never disagree about di
     firstEndDate: '2026-05-18',
     lastStartDate: '2026-05-19',
     lastEndDate: '2026-06-05',
+    // 36 is even, so there is no middle day to exclude.
+    middleCount: 0,
+    middleDate: null,
   }
   const html = renderReport(
     base({
@@ -2963,7 +3003,7 @@ Deno.test('B-532 ADV② — the tile’s sparse caveat counts over the window it
           windowDays: 36,
           loggedDays: 9,
           weeklyBuckets: [1, 0, 0, 2, 2, 2],
-          trendHalves: { days: 18, firstCount: 1, lastCount: 6, firstStartDate: '2026-05-01', firstEndDate: '2026-05-18', lastStartDate: '2026-05-19', lastEndDate: '2026-06-05' },
+          trendHalves: { days: 18, firstCount: 1, lastCount: 6, firstStartDate: '2026-05-01', firstEndDate: '2026-05-18', lastStartDate: '2026-05-19', lastEndDate: '2026-06-05', middleCount: 0, middleDate: null },
         }),
       ],
       atAGlance: {
@@ -3001,7 +3041,7 @@ Deno.test('B-532 ADV③ — the artefactual-improvement caveat is not lost at th
           windowDays: 90,
           loggedDays: 57,
           weeklyBuckets: [2, 2, 1, 1, 0, 1, 0, 1, 0, 0, 0, 0, 0],
-          trendHalves: { days: 45, firstCount: 6, lastCount: 2, firstStartDate: '2026-04-04', firstEndDate: '2026-05-18', lastStartDate: '2026-05-19', lastEndDate: '2026-07-02' },
+          trendHalves: { days: 45, firstCount: 6, lastCount: 2, firstStartDate: '2026-04-04', firstEndDate: '2026-05-18', lastStartDate: '2026-05-19', lastEndDate: '2026-07-02', middleCount: 0, middleDate: null },
         }),
       ],
       atAGlance: { ...base().atAGlance, windowDays: 90, loggedDays: 57, firstHalfLoggedDays: 42, secondHalfLoggedDays: 15 },

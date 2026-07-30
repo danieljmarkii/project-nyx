@@ -349,8 +349,25 @@ export interface TrialBlock {
   evidenceStartDate: string
   evidenceEndDate: string
   /** §10 S3 — days between `started_at` and the first log, reported as UNTRACKED
-   *  rather than counted as failure. */
+   *  rather than counted as failure. Only ever non-zero when the range opens on
+   *  the trial's own first day (B-600): a scope that opens the range mid-trial has
+   *  no basis for the claim and does not get the allowance. */
   untrackedDaysBeforeFirstLog: number
+  /**
+   * B-600 — ELAPSED TRIAL DAYS THIS REPORT'S SCOPE LEAVES OUT, either side.
+   *
+   * The block's day counter counts the TRIAL; everything else in it is computed
+   * over the OVERLAP. On the first report of a trial those coincide and this is
+   * `{0, 0}`. On the second — the one an owner sends at or after a recheck, where
+   * `since_visit` opens the window at the visit — they do not, and every sentence
+   * in the block that names "the trial" is claiming ground the record in front of
+   * it does not cover.
+   */
+  trialDaysOutsideRange: { before: number; after: number }
+  /** The trial's OWN elapsed length. `dayCounter` is bounded at the evidence end and
+   *  is not this; the two differ by `trialDaysOutsideRange.after`. Anything rendering
+   *  "a trial that has run N" reads THIS. */
+  trialDaysElapsed: number
 
   coverage: { daysLogged: number; daysElapsed: number } | null
   exposures: {
@@ -962,6 +979,8 @@ export function buildTrialBlock(args: BuildTrialBlockArgs): TrialBlock | null {
     evidenceEndDate: dayKeyFromIndex(evidence.endDayIndex),
     rangeClipped: facts.range.clipped,
     untrackedDaysBeforeFirstLog: facts.untrackedDaysBeforeFirstLog,
+    trialDaysOutsideRange: facts.trialDaysOutsideRange,
+    trialDaysElapsed: facts.trialDaysElapsed,
     coverage: facts.coverage
       ? { daysLogged: facts.coverage.daysLogged, daysElapsed: facts.coverage.daysElapsed }
       : null,
@@ -1083,10 +1102,22 @@ export function buildTrialBlock(args: BuildTrialBlockArgs): TrialBlock | null {
       // denominator. Off the coverage clip it read 10% where the operative rate
       // was 25%: the one footnote whose entire purpose is to disclose its own
       // weakness, understating it 2.5x.
-      const total = evidence.endDayIndex - (ctx.startDayIndex as number) + 1
+      //
+      // ⚠️ AND BOTH ENDS OF THAT WINDOW, NOT ONE (B-600). This ran from
+      // `ctx.startDayIndex` — the TRIAL's first day — while `symptomDays` is built
+      // from `windowEvents` and can only ever hold in-window days. Where the scope
+      // opens at the trial start the two indices are identical, which is why all
+      // three earlier artifacts agreed and nothing caught it. On a since-visit
+      // window they are not: a 31-day view of a 73-day trial printed **19%**
+      // (14/73) where the operative rate over the days the rows came from is
+      // **45%** (14/31) — the same 2.5× understatement, in the same footnote, one
+      // index along. A numerator and a denominator drawn over different spans is
+      // not a rate, and here it makes a near-unavoidable marker read as selective
+      // on the page where an owner's note already pairs a dagger with a jerky.
+      const total = evidence.endDayIndex - evidence.startDayIndex + 1
       if (total <= 0) return 0
       let qualifying = 0
-      for (let dn = ctx.startDayIndex as number; dn <= evidence.endDayIndex; dn++) {
+      for (let dn = evidence.startDayIndex; dn <= evidence.endDayIndex; dn++) {
         if (symptomDays.some((sd) => isWithinChallengeWindow(dn, sd, species))) qualifying += 1
       }
       return Math.round((qualifying / total) * 100)
@@ -1305,6 +1336,39 @@ export function looksAntibacterial(drugName: string): boolean {
   return ANTIBACTERIAL_STEMS.some((s) => n.includes(s))
 }
 
+/**
+ * THE ONE HALF-PARTITION RULE (B-600). Day-exact and symmetric: both halves are
+ * `floor(days / 2)` long, and on an odd span the middle day is in NEITHER — handing
+ * the spare day to one side is a bias in miniature, which is the argument B-532 made
+ * for the symptom delta and which applies identically here.
+ *
+ * It lives in one place because two of them existed and disagreed. `loggingDensity`
+ * split at `start + floor(days/2)` and gave the middle day to the LAST half;
+ * `report.ts`'s trend partition dropped it. Over different spans that is invisible;
+ * over the SAME span it is a contradiction printed twenty lines apart — a truncated
+ * report rendered "11 of 16 in the second" in the trial block and "11 of 15 d logged"
+ * in the trend footnote, both about Jun 18 – Jul 2. Neither number is dangerous; a
+ * clinical page that disagrees with itself about a figure a reader can check loses
+ * the credibility of every figure they cannot.
+ *
+ * The excluded middle day is dropped from these two DENOMINATORS and from nothing
+ * else — it stays in `coverage`, in the bars, in appendix A and in appendix E.
+ *
+ * The MINIMUM SPAN is each caller's own (14 days here, `TREND_HALF_MIN_WINDOW_DAYS`
+ * for the trend): the rule shared is the arithmetic, not the threshold.
+ */
+export function halfPartition(
+  startDayIndex: number,
+  endDayIndex: number,
+): { halfDays: number; firstEndDayIndex: number; lastStartDayIndex: number } {
+  const halfDays = Math.floor((endDayIndex - startDayIndex + 1) / 2)
+  return {
+    halfDays,
+    firstEndDayIndex: startDayIndex + halfDays - 1,
+    lastStartDayIndex: endDayIndex - halfDays + 1,
+  }
+}
+
 /** C5's disclosure. Split at the range midpoint, the same first-half/last-half
  *  shape the symptom delta uses, so the two are read against each other. */
 /**
@@ -1332,9 +1396,7 @@ function loggingDensity(
   // and a spurious density note on a two-week trial would discredit a record that is
   // fine. Silence, not a weak claim.
   if (days < 14) return null
-  const firstDays = Math.floor(days / 2)
-  const lastDays = days - firstDays
-  const mid = startDayIndex + firstDays
+  const { halfDays, firstEndDayIndex, lastStartDayIndex } = halfPartition(startDayIndex, endDayIndex)
   const split = (indices: readonly number[]) => {
     let first = 0
     let last = 0
@@ -1342,12 +1404,12 @@ function loggingDensity(
     for (const dn of indices) {
       if (dn < startDayIndex || dn > endDayIndex || seen.has(dn)) continue
       seen.add(dn)
-      if (dn < mid) first += 1
-      else last += 1
+      if (dn <= firstEndDayIndex) first += 1
+      else if (dn >= lastStartDayIndex) last += 1
     }
     return {
-      firstHalf: { daysLogged: first, days: firstDays },
-      lastHalf: { daysLogged: last, days: lastDays },
+      firstHalf: { daysLogged: first, days: halfDays },
+      lastHalf: { daysLogged: last, days: halfDays },
     }
   }
   return { meals: split(mealDayIndices) }
