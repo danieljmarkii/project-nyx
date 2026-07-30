@@ -397,7 +397,9 @@ function completedCase(): ReportInput {
       breed: 'West Highland White Terrier',
       sex: 'female',
       dateOfBirth: '2021-09-02',
-      neuterStatus: 'spayed',
+      // `ReportPetInput.neuterStatus` is `'neutered' | 'intact' | null` — the schema does not
+      // carry the sex-specific word, and the render says "neutered" for both.
+      neuterStatus: 'neutered',
       weightKg: 8.6,
     },
     ownerName: 'Priya Raman',
