@@ -1593,7 +1593,13 @@ export interface TrialFacts {
   /** B-529 — the antigen arm was dark for at least one classified feeding in
    *  range, whether or not an allowed-row can be NAMED as the cause (a
    *  `primary_diet` membership gap darkens it with nothing to name). This is the
-   *  gate; `antigenAttributionPaused` is only the label. */
+   *  gate; `antigenAttributionPaused` is only the label.
+   *
+   *  B-596 WIDENED IT FROM "a feeding was silenced" TO "the check did not happen".
+   *  An uncharacterized `primary_diet` row that is in force but never fed silences
+   *  no feeding, and still costs a finding: `trialContamination` skips it, so its
+   *  own label is never read. Both holes now darken the arm, because a reader
+   *  cannot tell them apart and neither one is a negative result. */
   antigenArmDark: boolean;
   /**
    * True when a free-choice arrangement is in force AT THE END OF THE RANGE, as
@@ -2161,28 +2167,13 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
     // The flag is set by the same branch that silences, so it cannot disagree
     // with it.
     //
-    // ⚠️ DOCUMENTED RESIDUAL — B-596, AND IT IS NOT ONLY AN OVER-CLAIM. An
-    // earlier version of this comment said the residual runs "never
-    // reassurance", and the fifth adversarial pass falsified that sentence,
-    // which is worse than the residual itself: a comment asserting a safety
-    // property the code does not have is how this file's defects have repeatedly
-    // survived review.
-    //
-    // What actually happens when an uncharacterized `primary_diet` row is in
-    // force but is NEVER FED (so no feeding is silenced, so `darkDays` stays
-    // empty): `isUncharacterizedTrialDiet` makes `trialContamination` skip that
-    // row, so a genuine "the trial diet also lists Beef" finding DISAPPEARS —
-    // and because the arm is not dark, no paused row and no §7.2 caveat replace
-    // it, while "all N matched" and "supports interpreting it" both stand. That
-    // is the quiet direction, not the loud one.
-    //
-    // Two things keep it a follow-up rather than a blocker, and both are
-    // measured: the Beef term is still rendered verbatim on the Allowed-list
-    // row, and pre-B-529 was worse in the other direction (it put `beef` into
-    // the sanctioned set library-wide, so a beef treat fed through that trial
-    // was silently sanctioned). Net detection improves. The fix is to partition
-    // rather than skip in `trialContamination`, or to derive `antigenArmDark`
-    // from a suppressed-finding overlap as well as from a silenced feeding.
+    // B-596 IS FIXED BELOW, NOT HERE — see `contaminationSuppressed`. What this
+    // branch cannot see is the row that is in force and NEVER FED: no feeding is
+    // silenced, so `darkDays` stays empty, so the arm was not dark by this test —
+    // while `trialContamination` skipped that same row and a genuine "the trial
+    // diet also lists Beef" finding disappeared with no paused row and no §7.2
+    // caveat in its place. The silenced FEEDING and the suppressed FINDING are two
+    // different holes, and this flag only ever knew about the first.
     if (!classification.attributionChecked) {
       const d = dayIndexOf(ctx, feeding.occurredAt);
       if (d !== null) darkDays.add(d);
@@ -2240,6 +2231,31 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
 
   const allowedSetUnavailable =
     base.allowedSetUnavailable || (narrow.feedings === 0 && totalFeedings >= UNHYDRATED_SET_FLOOR);
+
+  // ── B-596 — A SUPPRESSED FINDING DARKENS THE ARM, NOT ONLY A SILENCED FEEDING ──
+  //
+  // `trialContamination` SKIPS an uncharacterized `primary_diet` row (correctly: with no
+  // source base there is no comparator, so "everything on this label is extra" would be an
+  // artefact, not a finding). But skipping is not free. The fifth adversarial pass on
+  // B-529 executed the case where the row is in force and never fed: nothing is silenced,
+  // `darkDays` is empty, `antigenArmDark` is false — and a genuine *"the trial food also
+  // lists Beef"* finding vanishes with NO paused row and NO §7.2 caveat in its place,
+  // while "all N matched" and "supports interpreting it" both stand. The quiet direction.
+  //
+  // `primary_protein = 'hydrolyzed protein'` is the literal product name of the most-
+  // prescribed canine hydrolysate, so this is the ordinary shape of the diet class the
+  // whole feature is about, not an exotic one.
+  //
+  // The disclosure is keyed to the SUPPRESSION, so it cannot over-fire on a row that had
+  // nothing to suppress: a row whose panel was never captured carries no protein term, so
+  // there was no finding to lose and no reason to darken the arm. (A row that WAS fed is
+  // already covered by `darkDays`; this only ever adds the never-fed case, plus the case
+  // where the row's own days hold no classified feeding at all.)
+  const contaminationSuppressed = uncharacterizedTrialDietFoodsInRange(
+    ctx,
+    exposureStart,
+    evidenceEnd,
+  ).filter((f) => canonicalProteins(f.proteins).length > 0);
 
   // ── B-530: WHICH POPULATION SPEAKS ─────────────────────────────────────────
   //
@@ -2370,16 +2386,17 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
     // adversarial pass showed a proxy both MISSES the `primary_diet` membership
     // gap (no row in force → empty sanctioned set → dark, with nothing to name)
     // and FIRES on a ghost row where nothing was silenced.
-    antigenAttributionPaused: dedupeAllowedFoods(
-      [...darkDays].flatMap((d) => uncharacterizedTrialDietFoods(ctx, d)),
-    ),
+    antigenAttributionPaused: dedupeAllowedFoods([
+      ...[...darkDays].flatMap((d) => uncharacterizedTrialDietFoods(ctx, d)),
+      ...contaminationSuppressed,
+    ]),
     // THE BOOLEAN, NOT THE LIST, IS WHAT GATES A CLAIM. On a membership gap the
     // arm is dark and there is NO allowed-row to name, so the list is empty
     // while the record is exactly as unchecked — gating on `.length` let that
     // state keep the affirmative sentence. Every surface that withholds or
     // discloses reads this; the list only decides whether the disclosure can
     // name a food or has to say "no trial diet was on the list".
-    antigenArmDark: darkDays.size > 0,
+    antigenArmDark: darkDays.size > 0 || contaminationSuppressed.length > 0,
     // In force AT THE END of the range — the present-tense question, so it too
     // asks about the EVIDENCE end rather than the clipped coverage end (B-422):
     // a bowl removed after the target end is a fact the app can see, and a

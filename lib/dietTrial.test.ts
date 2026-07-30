@@ -1839,6 +1839,77 @@ describe('B-529 R7(c) — the silence rule', () => {
     expect(chew.offDiet).toBe(true);
   });
 
+  // ── B-596 — the SUPPRESSED FINDING, not only the silenced feeding ──────────
+  //
+  // `trialContamination` skips an uncharacterized `primary_diet` row (right: with no
+  // source base there is no comparator). When that row is also never FED, nothing is
+  // silenced, so the old `darkDays`-only flag stayed false — and a genuine "the trial
+  // food also lists Beef" finding vanished with NO paused row and NO §7.2 caveat in
+  // its place, while "all N matched" and "supports interpreting it" both stood. The
+  // quiet direction, on the diet class the whole feature is about: `hydrolyzed
+  // protein` is the literal product name of the most-prescribed canine hydrolysate.
+  it('darkens the arm for an uncharacterized trial-diet row that was never fed', () => {
+    const KIB = food({
+      foodItemId: 'f-kib2', foodKey: 'rcduck kibble', label: 'RC Duck kibble',
+      role: 'primary_diet', primaryProtein: 'duck', proteins: ['duck'],
+    });
+    const NEVER_FED = food({
+      foodItemId: 'f-hp', foodKey: 'hp loaf', label: 'Hydrolyzed Protein HP Loaf',
+      role: 'primary_diet', primaryProtein: 'hydrolyzed protein', proteins: ['soy', 'beef'],
+    });
+    const facts = computeTrialFacts({
+      trial: TRIAL,
+      allowedFoods: [KIB, NEVER_FED],
+      feedings: Array.from({ length: 32 }, (_, i) =>
+        feeding({
+          eventId: `k-${i}`,
+          occurredAt: at('2026-07-10', 6 + (i % 12)),
+          foodItemId: KIB.foodItemId,
+          foodKey: KIB.foodKey,
+          proteins: ['duck'],
+        }),
+      ),
+      nowMs: new Date(2026, 6, 20, 12).getTime(),
+    });
+    // Nothing was silenced — every feeding classified against a live comparator.
+    expect(facts.exposures.offDiet).toBe(0);
+    // …and the arm is dark anyway, because the check on `NEVER_FED`'s own label
+    // never ran. The disclosure can name the food, which is the whole point.
+    expect(facts.antigenArmDark).toBe(true);
+    expect(facts.antigenAttributionPaused.map((f) => f.foodItemId)).toEqual(['f-hp']);
+    // And the affirmative claim is withheld, which is what the disclosure is for.
+    expect(mayClaimAllMatched(facts)).toBe(false);
+  });
+
+  // The counter-case, and it is what keeps this from firing on every trial: a row with
+  // NO captured protein set suppressed no finding, because there was no term to find.
+  it('does NOT darken the arm for an uncharacterized row with nothing on its label', () => {
+    const KIB = food({
+      foodItemId: 'f-kib3', foodKey: 'rcduck kibble', label: 'RC Duck kibble',
+      role: 'primary_diet', primaryProtein: 'duck', proteins: ['duck'],
+    });
+    const BLANK = food({
+      foodItemId: 'f-blank', foodKey: 'blank', label: 'Unread bag',
+      role: 'primary_diet', primaryProtein: 'hydrolyzed protein', proteins: [],
+    });
+    const facts = computeTrialFacts({
+      trial: TRIAL,
+      allowedFoods: [KIB, BLANK],
+      feedings: Array.from({ length: 12 }, (_, i) =>
+        feeding({
+          eventId: `b-${i}`,
+          occurredAt: at('2026-07-10', 6 + i),
+          foodItemId: KIB.foodItemId,
+          foodKey: KIB.foodKey,
+          proteins: ['duck'],
+        }),
+      ),
+      nowMs: new Date(2026, 6, 20, 12).getTime(),
+    });
+    expect(facts.antigenArmDark).toBe(false);
+    expect(facts.antigenAttributionPaused).toEqual([]);
+  });
+
   // The narrowing this rule is deliberately scoped to: a designated primary with
   // an unread panel is a different and far more common state, and darkening the
   // tally for it would silence nearly every real trial for no gain here.

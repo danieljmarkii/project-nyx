@@ -101,6 +101,7 @@ import { foodFormatWord } from '../../../lib/foodFormat.ts'
 import { buildTrialBlock, selectReportTrial, trialEndValue, trialLastDayNum, type TrialBlock } from './trial.ts'
 // B-494's flag carries the refusal fact verbatim rather than flattening it, so the
 // band and the trial block on the same page cannot state different numbers.
+import { feedingWasFinished } from '../../../lib/dietTrial.ts'
 import type { TrialDietRefusal, TrialSpecies } from '../../../lib/dietTrial.ts'
 export type {
   TrialBlock,
@@ -170,6 +171,17 @@ export const INTAKE_LOG_CAP = 40
 
 /** ms per hour — the "hours since last full meal" unit (B-213). */
 const MS_PER_HOUR = 3_600_000
+
+/**
+ * B-532 — the shortest window that gets a first-vs-last-half delta at all.
+ *
+ * 8 is not a new judgement: it is exactly where the old bucket-derived delta started
+ * rendering (`weeklyBuckets.length >= 2` ⟺ `windowDays >= 8`), preserved so this change
+ * fixes the arithmetic without silently adding or removing a delta from any report. Below
+ * it the two halves are three days each, which is noise, and the chart plus the per-day
+ * counts already carry everything a reader can honestly take from a week.
+ */
+const TREND_HALF_MIN_WINDOW_DAYS = 8
 
 /**
  * The symptom types the report's frequency section covers. Superset of the engine's
@@ -1031,6 +1043,39 @@ export interface SymptomAggregate {
   weeklyBuckets: number[]
   /** The local start date of each bucket (the date anchors under the chart). */
   bucketStartDates: string[]
+  /**
+   * The first-vs-last-half comparison, over EQUAL-LENGTH halves (B-532).
+   *
+   * THE RENDER USED TO DERIVE THIS FROM THE WEEKLY BUCKETS, and weekly buckets do not
+   * halve a window: with `mid = floor(nBuckets/2)` the first half was `mid × 7` days and
+   * the last half was everything else, so the LAST window was systematically the LONGER
+   * one — by up to 6 days on a normal report, and by 7-vs-1 on a nine-day one. Two raw
+   * counts over unequal exposures are not a comparison, and the error has a direction: a
+   * longer late window inflates the late count, which understates a real fall. The cold
+   * read caught it hiding a 44% improvement in episode RATE behind a flat-looking pair
+   * of numbers — and on a diet trial, "no improvement" is the reading that ends the diet.
+   *
+   * So the split is day-exact and symmetric: `days` from each END of the window. When
+   * `windowDays` is odd the middle day is in NEITHER half — deliberately, because the
+   * alternative is to give the spare day to one side and reintroduce the same bias in
+   * miniature. That day is not deleted from anything: it is in `count`, in the chart, and
+   * in appendix A. It is excluded only from this comparison, and the render prints the
+   * two date spans so the partition is legible rather than assumed.
+   *
+   * Null when the window is too short to halve meaningfully (< 8 days) — the same floor
+   * the bucket-derived delta had, so no report gains or loses a delta from this change.
+   */
+  trendHalves: {
+    /** The length of EACH half, identical by construction. */
+    days: number
+    firstCount: number
+    lastCount: number
+    /** Local day keys bounding each half — rendered, so the reader can see the partition. */
+    firstStartDate: string
+    firstEndDate: string
+    lastStartDate: string
+    lastEndDate: string
+  } | null
 }
 
 export type VomitContentCategory = 'food' | 'bile' | 'hairball' | 'foam_liquid' | 'grass' | 'unsure'
@@ -1265,6 +1310,22 @@ export interface DietSummary {
     firstDate: string | null
     lastDate: string | null
     intakeMode: IntakeRating | null
+    /**
+     * EVERY rating this food was given, with its count — not the mode (B-532).
+     *
+     * `intakeMode` is a strict plurality, so it can stand for as little as 51% of the
+     * feedings and it SILENTLY DELETES the rest: the cold read hit a cat whose 38
+     * feedings of a prescribed diet rendered one word, "Refused", while four "ate some"
+     * meals — the only intake this animal took in nineteen days — had no cell on the
+     * page. The report points three separate readers at this appendix "for the intake
+     * ratings", so a column that can hide 49% of them is a circular dead end, not a
+     * summary.
+     *
+     * Ordered along the intake scale (all → most → some → picked → refused), which is
+     * how a clinician reads it, never by count — a count sort puts the modal rating
+     * first and re-creates the impression the mode column gave.
+     */
+    intakeBreakdown: Array<{ rating: IntakeRating; count: number }>
     proteinSet: ProteinSetView
   }>
   treats: { count: number; distinctItems: number }
@@ -1290,6 +1351,17 @@ export interface MedicationAdherence {
   adherenceState: 'tracked' | 'not_tracked'
   elapsedDaysInWindow: number
   daysWithDose: number
+  /**
+   * The local days an ADMINISTERED dose (given | partial) was logged, ascending (B-532).
+   *
+   * Appendix D had a dose COUNT and no dose DATES, which on a derm trial is the difference
+   * between an answerable question and an unanswerable one: two doses of an antipruritic in
+   * the first week and two in the last week produce the same "4" against a symptom curve
+   * they explain completely differently. The count told a vet how much; nothing on the page
+   * told them when. Same population as `daysWithDose` — an unconfirmed dose is not an
+   * administered one and does not put a date here (adversarial finding 4).
+   */
+  doseDays: string[]
   expectedDoses: number | null
   givenDoses: number
   partialDoses: number
@@ -1487,13 +1559,36 @@ export interface Provenance {
   /** Appendix A — every in-window symptom incident, occurred-vs-logged, with per-event phenotype. */
   symptomLog: SymptomLogEntry[]
   /**
-   * B-213 — recent rated meals for the intake appendix, most-recent-first. EMPTY unless an
-   * intake-decline flag fired (so calm reports carry no meal dump). Capped; older rated meals
+   * B-213 — rated meals for the intake appendix, most-recent-first. Capped; older rated meals
    * beyond the cap are counted in intakeLogHiddenOlder, never silently dropped.
+   *
+   * NO LONGER GATED ON THE INTAKE-DECLINE FLAG (B-532). It used to be, with the rationale
+   * "no meal dump when there's no intake concern" — and that rationale is right about a
+   * calm record and wrong about the one the cold read failed on. Three separate strings
+   * send the reader here for the ratings (the `trial_diet_refusal` safety row, the trial
+   * block's refusal sentence, and the legend's own "read the logged ratings in appendix E"),
+   * and NONE of them is gated on `intake_decline` — `detectIntakeDecline` is a RELATIVE
+   * detector, so a diet refused from day 1 is uniformly low and never fires it. The result
+   * was a circular dead end on a chronically vomiting cat: page 1 pointed at an appendix
+   * that held one word.
+   *
+   * `intakeLogScope` says which population is listed, so the appendix can caption itself
+   * honestly instead of always claiming to be "the meals behind the reduced-intake flag".
    */
   intakeLog: IntakeLogEntry[]
   /** Count of in-window rated meals older than the intakeLog cap (disclosed, never a silent truncation). */
   intakeLogHiddenOlder: number
+  /**
+   * WHICH meals `intakeLog` holds — never inferred from its contents:
+   *   • `intake_flag`   — every rated meal (most recent first), because the page-1 decline
+   *                       figures need their meal-by-meal home and the last-full-meal anchor
+   *                       has to be visible even when it predates the cap.
+   *   • `unfinished`    — the rated meals that were NOT fully eaten. No flag fired, so there
+   *                       is no page-1 figure to trace; what the report points at is the
+   *                       ratings themselves, and a list of "ate it all" rows buries them.
+   *   • `null`          — nothing rated below "all", so there is nothing to itemise.
+   */
+  intakeLogScope: 'intake_flag' | 'unfinished' | null
   /** Appendix B — off-diet exposures (treats + human food). */
   confounders: ConfounderExposure[]
   /**
@@ -1558,10 +1653,13 @@ export interface AtAGlance {
    */
   loggedDaysSinceLastEpisode: number | null
   /**
-   * Logged days (any event) in the FIRST vs SECOND half of the window (split at the same bucket
-   * midpoint the trend delta uses). The unlogged-early-window caveat (R2-6): a "2 → 20" acceleration
-   * over an unlogged early window is an artifact, so the render caveats the trajectory when the
-   * first half is sparsely logged.
+   * Logged days (any event) in the FIRST vs SECOND half of the window, over the SAME day-exact
+   * partition as `SymptomAggregate.trendHalves` (B-532 — previously a bucket midpoint, which the
+   * delta also used but which halved nothing). The unlogged-early-window caveat (R2-6): a
+   * "2 → 20" acceleration over an unlogged early window is an artifact, so the render caveats
+   * the trajectory when the first half is sparsely logged; its mirror (a FALL over an unlogged
+   * late window — an artefactual improvement) is the more dangerous direction and is caveated
+   * too. On an odd-length window the middle day is in neither count, matching the delta.
    */
   firstHalfLoggedDays: number
   secondHalfLoggedDays: number
@@ -1633,6 +1731,9 @@ export interface UnlinkedMedicationGroup {
   totalDoses: number
   firstDate: string // local day key of the earliest dose in window
   lastDate: string // local day key of the latest dose in window
+  /** The local days an ADMINISTERED dose was logged, ascending — mirrors
+   *  `MedicationAdherence.doseDays` so Appendix D's date column has one meaning (B-532). */
+  doseDays: string[]
 }
 
 export interface ReportSnapshot {
@@ -1735,6 +1836,35 @@ function strictPluralityIntake(ratings: IntakeRating[]): IntakeRating | null {
     }
   }
   return tie ? null : mode
+}
+
+/**
+ * The intake scale, most-eaten first. Kept here rather than imported from detection's
+ * `INTAKE_SCORE` because this is a RENDER ORDER, not a score: the report never scores
+ * intake, and a shared constant would invite one to be derived from the other.
+ */
+const INTAKE_SCALE: readonly IntakeRating[] = ['all', 'most', 'some', 'picked', 'refused']
+
+/**
+ * Every rating in a group, counted, along the intake scale (B-532). Ratings with zero
+ * feedings are omitted — a "0 refused" cell is a negative claim, and this report does not
+ * make those.
+ */
+function intakeBreakdownOf(ratings: IntakeRating[]): Array<{ rating: IntakeRating; count: number }> {
+  const counts = new Map<IntakeRating, number>()
+  for (const r of ratings) counts.set(r, (counts.get(r) ?? 0) + 1)
+  const out: Array<{ rating: IntakeRating; count: number }> = []
+  for (const r of INTAKE_SCALE) {
+    const c = counts.get(r)
+    if (c) out.push({ rating: r, count: c })
+  }
+  // A rating outside the known scale (a future enum value) is rendered rather than dropped:
+  // a value this file has not been taught about must never become a silent blank on a
+  // clinical page. Appended after the scale, in first-seen order.
+  for (const [r, c] of counts) {
+    if (!INTAKE_SCALE.includes(r)) out.push({ rating: r, count: c })
+  }
+  return out
 }
 
 function computeAge(dob: string | null, nowMs: number): { years: number | null; months: number | null } {
@@ -2206,6 +2336,17 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     dayKeyFromNumber(startDayNum + i * WEEK_DAYS),
   )
 
+  // ── The ONE window partition (B-532) ─────────────────────────────────────────
+  // Day-exact, symmetric, and computed once: the per-symptom delta, the delta's own
+  // sparse-logging caveats and `atAGlance.firstHalfLoggedDays`/`secondHalfLoggedDays`
+  // all read it, so the caveat can never qualify a partition other than the one it is
+  // printed under. `halfDays === 0` (a window under 8 days) means no comparison.
+  const halfDays = windowDays >= TREND_HALF_MIN_WINDOW_DAYS ? Math.floor(windowDays / 2) : 0
+  const firstHalfEndDayNum = startDayNum + halfDays - 1
+  const lastHalfStartDayNum = endDayNum - halfDays + 1
+  const inFirstHalf = (dn: number): boolean => halfDays > 0 && dn <= firstHalfEndDayNum
+  const inLastHalf = (dn: number): boolean => halfDays > 0 && dn >= lastHalfStartDayNum
+
   // ── Per-symptom aggregates (§3.5, §5.1) ──────────────────────────────────────
   const symptoms: SymptomAggregate[] = []
   for (const type of REPORT_SYMPTOM_TYPES) {
@@ -2215,11 +2356,15 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     const weeklyBuckets = new Array(numBuckets).fill(0)
     let firstOnset: string | null = null
     let lastOnset: string | null = null
+    let firstHalfCount = 0
+    let lastHalfCount = 0
     for (const e of incidents) {
       const dn = eventDayNumber(e.occurredAt, tz)
       if (dn !== null) {
         dayNums.add(dn)
         weeklyBuckets[bucketIndexOfDay(dn)]++
+        if (inFirstHalf(dn)) firstHalfCount++
+        else if (inLastHalf(dn)) lastHalfCount++
       }
       if (firstOnset === null || e.occurredAt < firstOnset) firstOnset = e.occurredAt
       if (lastOnset === null || e.occurredAt > lastOnset) lastOnset = e.occurredAt
@@ -2234,6 +2379,18 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
       lastOnset,
       weeklyBuckets,
       bucketStartDates,
+      trendHalves:
+        halfDays > 0
+          ? {
+              days: halfDays,
+              firstCount: firstHalfCount,
+              lastCount: lastHalfCount,
+              firstStartDate: dayKeyFromNumber(startDayNum),
+              firstEndDate: dayKeyFromNumber(firstHalfEndDayNum),
+              lastStartDate: dayKeyFromNumber(lastHalfStartDayNum),
+              lastEndDate: dayKeyFromNumber(endDayNum),
+            }
+          : null,
     })
   }
   symptoms.sort((a, b) => b.count - a.count || a.type.localeCompare(b.type))
@@ -2522,7 +2679,16 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     // Group by food identity: the library item id when present, else the brand/product label.
     // A meal with NEITHER collapses into ONE "unlabeled" bucket (a fixed key, not the unique
     // event id) so N unlabeled meals never fragment into N singleton "—" rows (code-reviewer).
-    const key = m.foodItemId ?? mealFoodLabel(m) ?? '__unlabeled__'
+    //
+    // THE LABEL FALLBACK CARRIES THE SET (B-532; the same rule appendix B's `pushFood` already
+    // uses, and the B-529 residual named it). Two library rows under one label with DIFFERENT
+    // captured sets is a live condition (B-009/B-018 duplicates, a re-photographed bag), and
+    // a label-only key made the FIRST member's set stand for both — so an implied-complete
+    // set could be printed over feedings that came from a row nobody read. An item id is a
+    // real identity and never needs this; only the label fallback does.
+    const set = proteinView(m)
+    const label = mealFoodLabel(m)
+    const key = m.foodItemId ?? (label !== null ? `${label}##${set.proteins.join(',')}|${set.complete ? 'c' : 'i'}` : '__unlabeled__')
     const dayKey = localDayKey(e.occurredAt, tz)
     const g = mealGroups.get(key)
     if (g) {
@@ -2556,6 +2722,7 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
       firstDate: g.firstDate,
       lastDate: g.lastDate,
       intakeMode: strictPluralityIntake(g.intakes),
+      intakeBreakdown: intakeBreakdownOf(g.intakes),
       proteinSet: g.proteinSet,
     }))
     .sort((a, b) => b.count - a.count || (a.foodLabel ?? '').localeCompare(b.foodLabel ?? ''))
@@ -3002,16 +3169,36 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
   // "declined N of last M" and the last-full-meal date line up with appendix rows. Empty on
   // calm reports (no meal dump when there's no intake concern). Most-recent-first + capped.
   const hasIntakeFlag = safetyFlags.some((f) => f.kind === 'intake_decline')
+  const ratedMealsInWindow = windowMeals
+    .filter((e) => e.meal!.foodType === 'meal' && e.meal!.intakeRating != null)
+    .sort((a, b) => b.occurredAt.localeCompare(a.occurredAt) || (a.id < b.id ? 1 : a.id > b.id ? -1 : 0))
+  // B-532 — the second population: the meals that were LEFT UNFINISHED.
+  //
+  // ON THE APP'S ONE PREDICATE, imported rather than re-derived. `feedingWasFinished` is
+  // `most`/`all`, the same bar `lib/analytics.FINISHED_SCORE`, §4.3's refusal lane and this
+  // file's own `intakeLogRow` emphasis already use — and a second definition here ("!== 'all'")
+  // would have put one "ate most" meal into an otherwise calm report while the row it rendered
+  // was not even bolded. Every rating still reaches the reader: the grouped table above this
+  // one now carries the FULL breakdown, so `most` is counted there; what this list adds is the
+  // per-meal dates for the ratings that are a possible health signal.
+  const unfinishedRated = ratedMealsInWindow.filter((e) => feedingWasFinished(e.meal!.intakeRating) === false)
+  const intakeLogScope: 'intake_flag' | 'unfinished' | null = hasIntakeFlag
+    ? 'intake_flag'
+    : unfinishedRated.length > 0
+      ? 'unfinished'
+      : null
   let intakeLog: IntakeLogEntry[] = []
   let intakeLogHiddenOlder = 0
-  if (hasIntakeFlag) {
-    const ratedForLog = windowMeals
-      .filter((e) => e.meal!.foodType === 'meal' && e.meal!.intakeRating != null)
-      .sort((a, b) => b.occurredAt.localeCompare(a.occurredAt) || (a.id < b.id ? 1 : a.id > b.id ? -1 : 0))
+  if (intakeLogScope !== null) {
+    const ratedForLog = intakeLogScope === 'intake_flag' ? ratedMealsInWindow : unfinishedRated
     // The page-1 anchor = the most recent fully-eaten meal (ratedForLog is most-recent-first,
     // so the first `all` is exactly the meal detection.ts anchored `lastFullMealIso` on — one
     // rule, no divergence). May be null (no full meal in the window → flag says so honestly).
-    const anchorMeal = ratedForLog.find((e) => e.meal!.intakeRating === 'all') ?? null
+    // Only the flag population carries it: the unfinished population has no `all` row by
+    // construction, and pinning one into it would put a fully-eaten meal in a list captioned
+    // as the meals that were not.
+    const anchorMeal =
+      intakeLogScope === 'intake_flag' ? ratedForLog.find((e) => e.meal!.intakeRating === 'all') ?? null : null
     const head = ratedForLog.slice(0, INTAKE_LOG_CAP)
     // TRACEABILITY (adversarial finding): the "how long off food" number must point at a VISIBLE
     // row. If the anchor predates the most-recent cap (a chronically-inappetent pet with >cap
@@ -3039,6 +3226,7 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     symptomLog,
     intakeLog,
     intakeLogHiddenOlder,
+    intakeLogScope,
     confounders,
     proteinExposureTally,
     proteinUnknownCount,
@@ -3188,16 +3376,15 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     for (const dn of loggedDayNums) if (dn > lastEpisodeDayNum && dn <= endDayNum) c++
     loggedDaysSinceLastEpisode = c
   }
-  // Window-half logged-day split — the same midpoint the trend delta / trajectory tile use, so the
-  // "unlogged early window" caveat lines up with the acceleration it qualifies (R2-6).
-  const midBuckets = Math.floor(numBuckets / 2)
-  const firstHalfDays = Math.min(windowDays, midBuckets * WEEK_DAYS)
-  const firstHalfEndDayNum = startDayNum + firstHalfDays - 1
+  // Window-half logged-day split — THE SAME partition `trendHalves` uses (B-532), so the
+  // "unlogged early/later window" caveat can never qualify a different split from the delta
+  // it is printed under (R2-6). On an odd window the middle day is in neither count, exactly
+  // as it is in neither half of the delta.
   let firstHalfLoggedDays = 0
   let secondHalfLoggedDays = 0
   for (const dn of loggedDayNums) {
-    if (dn <= firstHalfEndDayNum) firstHalfLoggedDays++
-    else secondHalfLoggedDays++
+    if (inFirstHalf(dn)) firstHalfLoggedDays++
+    else if (inLastHalf(dn)) secondHalfLoggedDays++
   }
 
   const atAGlance: AtAGlance = {
@@ -3317,6 +3504,9 @@ function buildMedicationAdherence(
   let refused = 0
   let unconfirmed = 0
   const doseDayNums = new Set<number>()
+  // The same days as `doseDayNums`, as local day KEYS — Appendix D renders dates, and a day
+  // number is only meaningful next to the scope that produced it (B-532).
+  const doseDayKeys = new Set<string>()
   for (const d of regimenDoses) {
     switch (d.adherence) {
       case 'given':
@@ -3342,6 +3532,8 @@ function buildMedicationAdherence(
     if (d.adherence === 'given' || d.adherence === 'partial') {
       const dn = eventDayNumber(d.occurredAt, tz)
       if (dn !== null) doseDayNums.add(dn)
+      const dk = localDayKey(d.occurredAt, tz)
+      if (dk !== null) doseDayKeys.add(dk)
     }
   }
 
@@ -3370,6 +3562,7 @@ function buildMedicationAdherence(
     adherenceState,
     elapsedDaysInWindow,
     daysWithDose: doseDayNums.size,
+    doseDays: [...doseDayKeys].sort(),
     expectedDoses,
     givenDoses: given,
     partialDoses: partial,
@@ -3426,6 +3619,7 @@ function buildUnlinkedMedications(
     let lastDn = -Infinity
     let firstKey = ''
     let lastKey = ''
+    const doseDayKeys = new Set<string>()
     for (const d of doses) {
       switch (d.adherence) {
         case 'given':
@@ -3446,6 +3640,7 @@ function buildUnlinkedMedications(
           break
       }
       const dk = localDayKey(d.occurredAt, tz) ?? d.occurredAt.slice(0, 10)
+      if (d.adherence === 'given' || d.adherence === 'partial') doseDayKeys.add(dk)
       const dn = eventDayNumber(d.occurredAt, tz)
       if (dn !== null) {
         if (dn < firstDn) {
@@ -3472,6 +3667,7 @@ function buildUnlinkedMedications(
       totalDoses: doses.length,
       firstDate: firstKey || lastKey,
       lastDate: lastKey || firstKey,
+      doseDays: [...doseDayKeys].sort(),
     })
   }
   // Deterministic: most-recently dosed first, then by name (stable render + snapshot tests).

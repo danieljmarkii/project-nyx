@@ -17,6 +17,18 @@
 //                              well logged, three slips, an overlapping Apoquel.
 //   trial-report-refused.html — Mira, a cat who would not eat the diet, stopped at
 //                              day 19, with a free-fed bowl still down.
+//
+// B-532 added a third, because two of that pass's findings had no artifact that
+// reproduced them — a completed trial and an on-list free-fed bowl are both states
+// the first two cases never enter:
+//
+//   trial-report-completed.html — Rosie, a skin trial the owner marked COMPLETE at
+//                              day 49 of 56, whose trial diet also sits in a
+//                              free-choice bowl. The first exercises the
+//                              "Ran its course" claim against the target; the
+//                              second is the B-599 shape, where the affirmative
+//                              clean sentence is withheld and the row the page
+//                              used to point at does not exist.
 import { assembleReport, type ReportEventInput, type ReportInput } from '../supabase/functions/generate-report/report.ts'
 import { renderReport } from '../supabase/functions/generate-report/render.ts'
 
@@ -336,10 +348,140 @@ function refusedCase(): ReportInput {
   }
 }
 
+// ── Case 3: the trial the owner marked complete, seven days early ────────────
+//
+// Two shapes no other fixture reaches, both B-532:
+//   • `stopped_reason = 'completed'` with `dayCounter < targetDurationDays` — the
+//     state where "Ran its course." rendered in bold two inches under a day phrase
+//     that had already said the trial ran 49 of 56 days.
+//   • a free-choice bowl holding the TRIAL DIET ITSELF. `intakeNotDirectlyObserved`
+//     withholds the clean-elimination sentence, but `arrangementExposures` is empty
+//     because nothing is off-list — so the page pointed at an "Also during the trial"
+//     row that was never emitted (B-599). This is the tightly-controlled feline-style
+//     setup the free-fed state exists for, on a dog.
+
+const VENISON = {
+  foodItemId: 'f-ven',
+  foodLabel: 'Purina HA Venison',
+  role: 'primary_diet',
+  allowedFrom: '2026-05-08',
+  allowedUntil: null,
+  primaryProtein: 'venison',
+  brand: 'Purina',
+  productName: 'HA Venison',
+  proteins: ['venison'],
+  ingredientsNotes: 'Venison, potato, coconut oil, minerals',
+}
+
+function completedCase(): ReportInput {
+  const events: ReportEventInput[] = []
+  // Two logged meals a day of the trial diet through the trial, then nothing after it
+  // ended — the ordinary shape once the owner stops.
+  for (const d of days('2026-05-08', '2026-06-25')) {
+    events.push(meal({ date: d, brand: 'Purina', product: 'HA Venison', foodItemId: 'f-ven', proteins: VENISON.proteins, ingredientsNotes: VENISON.ingredientsNotes, intakeRating: 'all', format: 'kibble' }))
+    events.push(meal({ date: d, time: '18:15:00', brand: 'Purina', product: 'HA Venison', foodItemId: 'f-ven', proteins: VENISON.proteins, ingredientsNotes: VENISON.ingredientsNotes, intakeRating: d === '2026-06-02' || d === '2026-06-03' ? 'some' : 'all', format: 'kibble' }))
+  }
+  // Itching, falling across the trial — the trend the delta is read off.
+  for (const d of ['2026-05-09', '2026-05-10', '2026-05-12', '2026-05-14', '2026-05-16', '2026-05-19', '2026-05-22', '2026-05-26', '2026-05-30']) {
+    events.push(sym('itch', d))
+  }
+  for (const d of ['2026-06-05', '2026-06-14', '2026-06-22']) events.push(sym('itch', d))
+
+  return {
+    now: NOW,
+    timezone: TZ,
+    pet: {
+      id: 'pet-rosie',
+      name: 'Rosie',
+      species: 'dog',
+      breed: 'West Highland White Terrier',
+      sex: 'female',
+      dateOfBirth: '2021-09-02',
+      neuterStatus: 'spayed',
+      weightKg: 8.6,
+    },
+    ownerName: 'Priya Raman',
+    events,
+    aiAnalyses: [],
+    weightChecks: [
+      { eventId: 'rw1', weightKg: 8.8, occurredAt: '2026-05-08T15:00:00Z' },
+      { eventId: 'rw2', weightKg: 8.7, occurredAt: '2026-06-01T15:00:00Z' },
+      { eventId: 'rw3', weightKg: 8.6, occurredAt: '2026-06-24T15:00:00Z' },
+    ],
+    doses: [
+      { eventId: 'rd1', occurredAt: '2026-05-09T09:00:00Z', medicationId: 'reg-pred', medicationItemId: 'mi-pred', adherence: 'given', doseAmount: '5 mg', pairedEventId: null },
+      { eventId: 'rd2', occurredAt: '2026-05-10T09:00:00Z', medicationId: 'reg-pred', medicationItemId: 'mi-pred', adherence: 'given', doseAmount: '5 mg', pairedEventId: null },
+      { eventId: 'rd3', occurredAt: '2026-05-11T09:00:00Z', medicationId: 'reg-pred', medicationItemId: 'mi-pred', adherence: 'given', doseAmount: '5 mg', pairedEventId: null },
+      { eventId: 'rd4', occurredAt: '2026-05-13T09:00:00Z', medicationId: 'reg-pred', medicationItemId: 'mi-pred', adherence: 'given', doseAmount: '5 mg', pairedEventId: null },
+    ],
+    medications: [
+      {
+        id: 'reg-pred',
+        medicationItemId: 'mi-pred',
+        drugName: 'Prednisolone',
+        doseAmount: '5 mg',
+        route: 'oral',
+        dosesPerDay: 1,
+        scheduleNotes: 'tapering',
+        indication: 'pruritus',
+        prescribedBy: 'Dr. A. Chen',
+        startedAt: '2026-05-08',
+        targetDurationDays: null,
+        status: 'ended',
+        endedAt: '2026-05-14',
+        isPrescription: true,
+        strength: '5 mg',
+      },
+    ],
+    medicationItems: [
+      { id: 'mi-pred', genericName: 'prednisolone', brandName: null, strength: '5 mg', route: 'oral', isPrescription: true, form: 'tablet' },
+    ],
+    dietTrials: [
+      {
+        id: 'trial-rosie',
+        foodItemId: 'f-ven',
+        startedAt: '2026-05-08',
+        targetDurationDays: 56,
+        status: 'completed',
+        completedAt: '2026-06-25',
+        endedAt: '2026-06-25',
+        indication: 'skin',
+        stoppedReason: 'completed',
+        vetName: 'Dr. A. Chen',
+        foodLabel: 'Purina HA Venison',
+        primaryProtein: 'venison',
+        proteins: VENISON.proteins,
+        ingredientsNotes: VENISON.ingredientsNotes,
+        extractionConfidence: { proteins: 0.91 },
+        allowedFoods: [VENISON],
+      },
+    ],
+    vetVisits: [{ visitedAt: '2026-05-08', clinicName: 'Riverside Veterinary', vetName: 'Dr. A. Chen', reason: 'atopic dermatitis — rule out food' }],
+    // THE BOWL HOLDS THE TRIAL DIET. Nothing off-list, so `arrangementExposures` is
+    // empty — and the clean-elimination claim is still withheld, because a topped-up
+    // bowl produces no rated feedings and neither intake lane can see it.
+    feedingArrangements: [
+      {
+        id: 'arr-rosie',
+        foodItemId: 'f-ven',
+        method: 'free_choice',
+        activeFrom: null,
+        activeUntil: null,
+        isShared: false,
+        primaryProtein: 'venison',
+        proteins: ['venison'],
+        foodLabel: 'Purina HA Venison',
+      },
+    ],
+    conditions: [{ conditionName: 'Atopic dermatitis', status: 'active', diagnosedAt: '2025-11-14' }],
+  }
+}
+
 const outDir = Deno.args[0] ?? '.'
 for (const [name, input] of [
   ['trial-report-clean.html', cleanCase()],
   ['trial-report-refused.html', refusedCase()],
+  ['trial-report-completed.html', completedCase()],
 ] as const) {
   const html = renderReport(assembleReport(input))
   await Deno.writeTextFile(`${outDir}/${name}`, html)
