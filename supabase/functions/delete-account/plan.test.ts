@@ -12,6 +12,7 @@ import {
   cleanPaths,
   scopeMedicationPaths,
   scopeFoodPaths,
+  scopeVetDocumentPaths,
   collectStoragePaths,
   buildDeletionPlan,
   chunk,
@@ -32,10 +33,12 @@ const emptyOwned: OwnedStoragePaths = {
   petPhotoPaths: [],
   eventAttachmentPaths: [],
   vetAttachmentPaths: [],
+  vetDocumentPaths: [],
   vetReportPaths: [],
   medicationPhotoPaths: [],
   foodPhotoPaths: [],
   ownedFoodItemIds: [],
+  ownedPetIds: [],
   ownerUserId: 'user-1',
 }
 
@@ -156,6 +159,93 @@ Deno.test('scopeFoodPaths — drops nulls/blanks alongside cross-tenant paths', 
   )
 })
 
+// ── scopeVetDocumentPaths (B-478 VF-1) ───────────────────────────────────────
+// The vet-document twin of scopeFoodPaths, keyed on the owned PET id set. Exists
+// to close the `..` prefix residual migration 043 recorded on the sibling bucket,
+// so the cases below are written as the attacks rather than as coverage.
+
+Deno.test('scopeVetDocumentPaths — keeps a legitimate {petId}/{docId}.ext key', () => {
+  assertEquals(
+    scopeVetDocumentPaths(['pet-1/doc-9.pdf', 'pet-2/doc-3.jpg'], ['pet-1', 'pet-2']),
+    ['pet-1/doc-9.pdf', 'pet-2/doc-3.jpg'],
+  )
+})
+
+Deno.test('scopeVetDocumentPaths — drops a path naming a pet the user does not own', () => {
+  // The crafted-row attack: an owned vet_documents row whose storage_path names
+  // another owner's pet prefix. The table CHECK makes this unwritable through the
+  // API today; this is the belt to that braces, because the purge runs as the
+  // service role and would remove the literal string.
+  assertEquals(
+    scopeVetDocumentPaths(['pet-mine/d1.pdf', 'pet-victim/d2.pdf'], ['pet-mine']),
+    ['pet-mine/d1.pdf'],
+  )
+})
+
+Deno.test('scopeVetDocumentPaths — drops EVERY `..` traversal variant the CHECK admits', () => {
+  // THE case this function exists for, and the case an earlier revision got wrong.
+  // `{ownPetId}/../{victimPetId}/x.pdf` satisfies the table's starts_with CHECK and
+  // the Storage INSERT policy (its first FOLDER segment is a pet the caller owns),
+  // and cleanPaths never normalises a path — so without this guard it reaches the
+  // service-role remove() verbatim.
+  //
+  // A first-segment-only filter (the scopeFoodPaths shape) KEEPS all of these: the
+  // first segment genuinely is `pet-mine`, and the `..` is the SECOND segment. The
+  // rls-privacy-reviewer executed that and it is why this checks the whole shape —
+  // exactly two segments, per buildVetDocumentPath's `{pet_id}/{document_id}.{ext}`.
+  assertEquals(scopeVetDocumentPaths([
+    'pet-mine/../pet-victim/x.pdf',
+    'pet-mine/../../pet-victim/x.pdf',
+    'pet-mine//pet-victim/x.pdf',
+    'pet-mine/sub/dir/x.pdf',
+  ], ['pet-mine']), [])
+
+  // And the variants that do not even start with an owned segment.
+  assertEquals(
+    scopeVetDocumentPaths(['../pet-victim/x.pdf', 'pet-victim/../pet-mine/x.pdf'], ['pet-mine']),
+    [],
+  )
+
+  // The legitimate key still survives — a guard that drops everything is not a guard.
+  assertEquals(scopeVetDocumentPaths(['pet-mine/doc-1.pdf'], ['pet-mine']), ['pet-mine/doc-1.pdf'])
+})
+
+Deno.test('scopeVetDocumentPaths — a pet id that is a string PREFIX of another is not a match', () => {
+  // Exact set membership, never startsWith: `pet-1` must not permit `pet-12/…`.
+  assertEquals(scopeVetDocumentPaths(['pet-12/d.pdf'], ['pet-1']), [])
+})
+
+Deno.test('scopeVetDocumentPaths — a slashless key is dropped (no folder segment)', () => {
+  // storage.foldername on a key with no '/' returns an empty array, so [1] is NULL and
+  // the policy drops it. A bare key named for a pet id is not a real document.
+  assertEquals(scopeVetDocumentPaths(['pet-1', 'pet-1.pdf'], ['pet-1']), [])
+})
+
+Deno.test('scopeVetDocumentPaths — the two-segment rule is NOT lifted to the 3-segment buckets', () => {
+  // Guards the generalisation hazard the fix introduces. nyx-vet-attachments keys are
+  // `{pet_id}/{visit_id}/{attachment_id}.jpg`, so applying THIS predicate there would
+  // drop every legitimate key and silently turn account deletion into a no-op for
+  // that bucket. Pin that vet-ATTACHMENT paths still flow through untouched.
+  const purges = collectStoragePaths(owned({
+    vetAttachmentPaths: ['pet-1/visit-2/att-3.jpg'],
+    vetDocumentPaths: ['pet-1/doc-4.pdf'],
+    ownedPetIds: ['pet-1'],
+  }))
+  const byBucket = Object.fromEntries(purges.map((p) => [p.bucket, p.paths]))
+  assertEquals(byBucket[STORAGE_BUCKETS.vetAttachments], ['pet-1/visit-2/att-3.jpg'])
+  assertEquals(byBucket[STORAGE_BUCKETS.vetDocuments], ['pet-1/doc-4.pdf'])
+})
+
+Deno.test('scopeVetDocumentPaths — an empty owned-pet set fails CLOSED', () => {
+  // A user with no pets has no documents; dropping everything is the safe direction.
+  assertEquals(scopeVetDocumentPaths(['pet-1/d.pdf'], []), [])
+  assertEquals(scopeVetDocumentPaths(['pet-1/d.pdf'], ['', '   ']), [])
+})
+
+Deno.test('scopeVetDocumentPaths — passes nulls through for cleanPaths to drop', () => {
+  assertEquals(scopeVetDocumentPaths([null, undefined, 'pet-1/d.pdf'], ['pet-1']), ['pet-1/d.pdf'])
+})
+
 // ── collectStoragePaths ───────────────────────────────────────────────────────
 
 Deno.test('collectStoragePaths — maps each owned list to its correct bucket', () => {
@@ -163,6 +253,9 @@ Deno.test('collectStoragePaths — maps each owned list to its correct bucket', 
     petPhotoPaths: ['pets/p1.jpg'],
     eventAttachmentPaths: ['ev/a1.jpg', 'ev/a2.jpg'],
     vetAttachmentPaths: ['vet/v1.jpg'],
+    // {pet_id}/{document_id}.{ext} — the B-478 convention (buildVetDocumentPath).
+    vetDocumentPaths: ['pet-1/doc-7.pdf'],
+    ownedPetIds: ['pet-1'],
     vetReportPaths: ['rep/r1.pdf'],
     // {user_id}/{medication_item_id}/{slot}.jpg — the per-user-prefix convention
     // from migration 021 (buildMedicationPhotoPath).
@@ -175,9 +268,43 @@ Deno.test('collectStoragePaths — maps each owned list to its correct bucket', 
   assertEquals(byBucket[STORAGE_BUCKETS.petPhotos], ['pets/p1.jpg'])
   assertEquals(byBucket[STORAGE_BUCKETS.eventAttachments], ['ev/a1.jpg', 'ev/a2.jpg'])
   assertEquals(byBucket[STORAGE_BUCKETS.vetAttachments], ['vet/v1.jpg'])
+  assertEquals(byBucket[STORAGE_BUCKETS.vetDocuments], ['pet-1/doc-7.pdf'])
   assertEquals(byBucket[STORAGE_BUCKETS.vetReports], ['rep/r1.pdf'])
   assertEquals(byBucket[STORAGE_BUCKETS.medicationPhotos], ['user-1/med-9/label.jpg'])
   assertEquals(byBucket[STORAGE_BUCKETS.foodPhotos], ['food-1/0-front.jpg'])
+})
+
+Deno.test('collectStoragePaths — B-478 VF-1: an owned vet document lands in the nyx-vet-documents purge', () => {
+  // AC 8's precondition: the bucket is in the purge plan from the migration's own PR,
+  // before any capture surface exists to put an object in it.
+  const purges = collectStoragePaths(owned({
+    vetDocumentPaths: ['pet-1/doc-7.pdf'],
+    ownedPetIds: ['pet-1'],
+  }))
+  assertEquals(purges.length, 1)
+  assertEquals(purges[0].bucket, STORAGE_BUCKETS.vetDocuments)
+  assertEquals(purges[0].bucket, 'nyx-vet-documents')
+  assertEquals(purges[0].paths, ['pet-1/doc-7.pdf'])
+})
+
+Deno.test('collectStoragePaths — B-478 VF-1: a vet-document path for an unowned pet never reaches a purge', () => {
+  const purges = collectStoragePaths(owned({
+    vetDocumentPaths: ['pet-mine/d1.pdf', 'pet-victim/d2.pdf'],
+    ownedPetIds: ['pet-mine'],
+  }))
+  const docs = purges.find((p) => p.bucket === STORAGE_BUCKETS.vetDocuments)
+  assert(docs, "expected a vet-documents purge for the owner's own path")
+  assertEquals(docs.paths, ['pet-mine/d1.pdf'])
+})
+
+Deno.test('collectStoragePaths — B-478 VF-1: vet-document paths with no owned pet ids yield NO purge', () => {
+  // Fails closed. Also the shape of the zero-pets early return in index.ts, which
+  // supplies both an empty path list and an empty owned-pet set.
+  assertEquals(
+    collectStoragePaths(owned({ vetDocumentPaths: ['pet-1/d.pdf'], ownedPetIds: [] }))
+      .some((p) => p.bucket === STORAGE_BUCKETS.vetDocuments),
+    false,
+  )
 })
 
 Deno.test('collectStoragePaths — omits buckets that have no objects', () => {
@@ -303,18 +430,37 @@ Deno.test('PRESERVED_BUCKETS — B-127: nyx-medication-photos is PURGED, never p
   assert((Object.values(STORAGE_BUCKETS) as string[]).includes('nyx-medication-photos'))
 })
 
-Deno.test('collectStoragePaths — output buckets are always a subset of the six purgeable buckets', () => {
+Deno.test('collectStoragePaths — output buckets are always a subset of the purgeable buckets', () => {
   const allowed = new Set<string>(Object.values(STORAGE_BUCKETS))
   const purges = collectStoragePaths(owned({
     petPhotoPaths: ['pets/p1.jpg'],
     eventAttachmentPaths: ['ev/a1.jpg'],
     vetAttachmentPaths: ['vet/v1.jpg'],
+    vetDocumentPaths: ['pet-1/doc-7.pdf'],
+    ownedPetIds: ['pet-1'],
     vetReportPaths: ['rep/r1.pdf'],
     medicationPhotoPaths: ['user-1/med-9/label.jpg'],
     foodPhotoPaths: ['food-1/0-front.jpg'],
     ownedFoodItemIds: ['food-1'],
   }))
   for (const p of purges) assert(allowed.has(p.bucket), `unexpected bucket ${p.bucket}`)
+})
+
+Deno.test('STORAGE_BUCKETS — every bucket the app writes to is in the purge set (B-478 VF-1)', () => {
+  // A whole-list pin rather than another per-bucket assertion. The failure this
+  // catches is the one deletion coverage actually suffers from: a new bucket ships
+  // with a feature, nobody adds it here, and account deletion silently leaves a
+  // corpus behind — which looks exactly like success. Adding a bucket must break
+  // this test and force the purge decision to be made explicitly.
+  assertEquals(new Set<string>(Object.values(STORAGE_BUCKETS)), new Set([
+    'nyx-pet-photos',
+    'nyx-event-attachments',
+    'nyx-vet-attachments',
+    'nyx-vet-documents',
+    'nyx-vet-reports',
+    'nyx-medication-photos',
+    'nyx-food-photos',
+  ]))
 })
 
 // ── buildDeletionPlan (FR-6 ordering invariant) ───────────────────────────────

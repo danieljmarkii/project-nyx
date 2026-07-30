@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { router, useFocusEffect } from 'expo-router';
 import {
   Alert, Image, ScrollView, StyleSheet,
@@ -13,7 +13,14 @@ import { PrimaryButton } from '../../components/ui/PrimaryButton';
 import { Badge } from '../../components/ui/Badge';
 import { Divider } from '../../components/ui/Divider';
 import { supabase } from '../../lib/supabase';
-import { uploadPhoto, compressForUpload, getPublicUrl } from '../../lib/storage';
+import { uploadPhoto, compressForUpload, getPublicUrl, getSignedUrls } from '../../lib/storage';
+import { VetFilesCard } from '../../components/vetfiles/VetFilesCard';
+import { VET_FILES_ENTRY_ENABLED } from '../../lib/vetFilesEntry';
+import { VET_DOCUMENTS_BUCKET } from '../../lib/vetDocuments';
+import {
+  readVetLibrary, buildVetFilesCardModel, VET_DOCUMENT_SIGNED_URL_TTL_SEC,
+  VET_FILES_STRIP_LIMIT, type VetLibraryRow,
+} from '../../lib/vetDocumentLibrary';
 import { archiveBlockedCopy } from '../../lib/utils';
 import { formatAge } from '../../lib/age';
 import { usePetStore } from '../../store/petStore';
@@ -26,8 +33,15 @@ import { AddMedicationModal, Regimen } from '../../components/profile/AddMedicat
 import { StartTrialModal } from '../../components/profile/StartTrialModal';
 import { ArchivePetSheet } from '../../components/profile/ArchivePetSheet';
 import { DietTrialCard } from '../../components/profile/DietTrialCard';
+import {
+  TrialCompletionSheet, type TrialCompletionEntry,
+} from '../../components/profile/TrialCompletionSheet';
 import { useDietTrial } from '../../hooks/useDietTrial';
 import { resolveTrialCard } from '../../lib/dietTrialCard';
+import { extensionDays, nextTargetDays } from '../../lib/dietTrialCompletion';
+import { extendTrial } from '../../lib/dietTrialSetup';
+import { getDietTrialProgress } from '../../lib/analytics';
+import { petPronouns } from '../../lib/utils';
 import { Pet } from '../../store/petStore';
 import {
   MEDICATION_ROUTE_OPTIONS, computeRegimenCompliance, regimenComplianceLine,
@@ -144,8 +158,113 @@ export default function ProfileScreen() {
   // lie told by a failed network read.
   const { input: trialInput, isLoading: trialLoading, reload: reloadTrial } = useDietTrial();
   const [startTrialVisible, setStartTrialVisible] = useState(false);
+  // B-535 — the start-modal → food-capture round trip. "Snap a new food" closes
+  // the modal and routes out; the modal stays mounted so the half-filled form
+  // survives, but nothing ever re-opened it — food-capture's save ends in
+  // `router.dismissAll()`, so the owner landed back on this tab with no modal
+  // and every reason to think the trial saved (or the work was lost). The
+  // picker's own docstring calls the capture route the COMMON path here, since
+  // the trial food is usually a bag the owner was handed ten minutes ago. This
+  // flag re-opens the modal when the tab regains focus, whichever way the
+  // capture flow ended — saved (dismissAll) or backed out (pop) — because the
+  // half-filled form is theirs to finish or cancel either way.
+  const resumeTrialModalOnFocus = useRef(false);
+  useFocusEffect(
+    useCallback(() => {
+      if (resumeTrialModalOnFocus.current) {
+        resumeTrialModalOnFocus.current = false;
+        setStartTrialVisible(true);
+      }
+    }, []),
+  );
+  // B-417 PR 6 — which completion screen is open, if any. `null` is closed.
+  const [completionEntry, setCompletionEntry] = useState<TrialCompletionEntry | null>(null);
+  // The extension is a one-tap write with no confirm (see `handleExtendTrial`),
+  // which makes a pending state non-optional rather than polish: without one the
+  // owner taps the biggest button on the card, nothing visibly happens until the
+  // write and reload land, and a slow write earns a second tap — two extensions
+  // from one decision.
+  const [extendingTrial, setExtendingTrial] = useState(false);
+
+  /**
+   * `Keep going` — B-417 PR 6 (§4.3). One implementation, called by BOTH the
+   * milestone card's inline button and the overrun sheet's row, because the two
+   * must never disagree about which day the extension counts from.
+   *
+   * ONE TAP, NO CONFIRM, DELIBERATELY. The named default is the whole point of
+   * the affordance — Jordan's review said what stops her tapping "done" on day 56
+   * is that keep-going "already has the four weeks filled in" — and putting a
+   * dialog in front of the option that keeps a diet going would make the safe path
+   * the slower one. The change is legible without a dialog: the card immediately
+   * re-reads "Day 56 of 84" with a new end date, and the owner can extend again.
+   */
+  const handleExtendTrial = useCallback(async () => {
+    const trial = trialInput?.trial;
+    if (!trial?.id || extendingTrial) return;
+    const progress = getDietTrialProgress(
+      { startedAt: trial.startedAt, targetDurationDays: trial.targetDurationDays },
+      Date.now(),
+    );
+    if (!progress) return;
+    setCompletionEntry(null);
+    setExtendingTrial(true);
+    try {
+      await extendTrial({
+        trialId: trial.id,
+        targetDurationDays: nextTargetDays({
+          currentTargetDays: trial.targetDurationDays,
+          dayCounter: progress.dayCounter,
+          extraDays: extensionDays(trial.indication),
+        }),
+      });
+      reloadTrial();
+    } catch (e) {
+      console.error('[DietTrial] extend failed:', e);
+      Alert.alert(
+        'That didn’t save',
+        'The trial is still running on its current window. Have another go in a moment.',
+      );
+    } finally {
+      setExtendingTrial(false);
+    }
+  }, [trialInput, reloadTrial, extendingTrial]);
 
   const [photoUploading, setPhotoUploading] = useState(false);
+
+  // Vet Files card (B-478 VF-2, mock A1-r2 / A1z). Local-first like the library
+  // itself — the read is SQLite, so the card is correct offline and costs no
+  // round-trip. Only the three strip thumbnails touch the network, and only for
+  // documents this device has no local copy of.
+  const [vetDocuments, setVetDocuments] = useState<VetLibraryRow[]>([]);
+  const [vetThumbs, setVetThumbs] = useState<Map<string, string>>(new Map());
+  const [vetThumbsLoading, setVetThumbsLoading] = useState(false);
+
+  const loadVetFiles = useCallback(async () => {
+    if (!VET_FILES_ENTRY_ENABLED || !activePet) return;
+    try {
+      const rows = await readVetLibrary(activePet.id);
+      setVetDocuments(rows);
+      // Sign only the strip's own paths, and only those without a local file.
+      const stripPaths = rows
+        .slice(0, VET_FILES_STRIP_LIMIT)
+        .filter((r) => !r.localUri)
+        .map((r) => r.storagePath);
+      if (stripPaths.length === 0) { setVetThumbs(new Map()); return; }
+      setVetThumbsLoading(true);
+      try {
+        setVetThumbs(
+          await getSignedUrls(VET_DOCUMENTS_BUCKET, stripPaths, VET_DOCUMENT_SIGNED_URL_TTL_SEC),
+        );
+      } finally {
+        setVetThumbsLoading(false);
+      }
+    } catch (e) {
+      // The card degrades to its zero state rather than blanking the tab — a
+      // failed read here must never cost the owner the profile.
+      console.warn('[Profile] load vet files failed:', e);
+      setVetDocuments([]);
+    }
+  }, [activePet?.id]);
 
   const loadConditions = useCallback(async () => {
     if (!activePet) return;
@@ -287,7 +406,10 @@ export default function ProfileScreen() {
       // to this tab after logging a meal, and the coverage line is denominated in
       // days that only move forward.
       reloadTrial();
-    }, [loadMedications, reloadTrial]),
+      // And the Vet Files card, so returning from the library reflects a document
+      // just added or renamed there.
+      loadVetFiles();
+    }, [loadMedications, reloadTrial, loadVetFiles]),
   );
 
   async function handlePickPhoto() {
@@ -338,7 +460,10 @@ export default function ProfileScreen() {
       updatePet({ photo_path: storagePath });
     } catch (e) {
       console.error('[Profile] photo upload failed:', e);
-      Alert.alert('Upload failed', 'Could not save photo. Make sure the nyx-pet-photos storage bucket exists and has upload policies.');
+      // The cause (missing bucket, RLS, dropped connection) belongs in the log
+      // above, never in the alert — naming storage internals to an owner on one
+      // of their first actions in the app is unactionable (B-399).
+      Alert.alert("Couldn't save the photo", 'Check your connection and try again.');
     } finally {
       setPhotoUploading(false);
     }
@@ -516,6 +641,37 @@ export default function ProfileScreen() {
   // the opposite direction from the ruling: slice 4 shipped the note the ruling
   // said it would cut, and it is correct content — C2's standing fact).
   const trialCard = trialInput ? resolveTrialCard(trialInput) : null;
+
+  // What PR 6's sheets write against. The id rides on the card's INPUT (the
+  // resolver never reads it) so the completion flow does not re-query a row this
+  // screen already loaded — and so the sheet cannot end a different trial than the
+  // one the card is showing.
+  //
+  // `status === 'active'` HERE IS CORRECT AND MUST NOT BECOME `isTrialRunning`
+  // (B-422). The effective end withdraws BEHAVIOUR from a trial nobody ended; it
+  // does not end the trial, and this sheet is the only way an owner can. Gating
+  // it would take the completion action away from precisely the overrun trials
+  // the staleness rule exists to get closed — §4.3's milestone "never expires and
+  // re-surfaces until acted on". Same rule at `dietTrialSetup.getActiveTrialForPet`.
+  const sheetTrial =
+    trialInput?.trial?.id && trialInput.trial.status === 'active'
+      ? {
+          id: trialInput.trial.id,
+          petId: activePet.id,
+          startedAt: trialInput.trial.startedAt,
+          targetDurationDays: trialInput.trial.targetDurationDays,
+          indication: trialInput.trial.indication,
+        }
+      : null;
+  const sheetDayCounter = trialInput?.trial
+    ? getDietTrialProgress(
+        {
+          startedAt: trialInput.trial.startedAt,
+          targetDurationDays: trialInput.trial.targetDurationDays,
+        },
+        trialInput.nowMs,
+      )?.dayCounter ?? 1
+    : 1;
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
@@ -734,7 +890,30 @@ export default function ProfileScreen() {
           <DietTrialCard
             model={trialCard}
             style={styles.sectionGap}
-            actions={{ start_trial: () => setStartTrialVisible(true) }}
+            busyAction={extendingTrial ? 'trial_extend' : null}
+            actions={{
+              start_trial: () => setStartTrialVisible(true),
+              // B-417 PR 6. The milestone's three buttons and the overrun card's
+              // single one land on the same decision; `Keep going` is a write
+              // rather than a screen, so it has no sheet.
+              trial_extend: handleExtendTrial,
+              trial_complete: () => setCompletionEntry('complete'),
+              trial_stopped_early: () => setCompletionEntry('stopped_early'),
+              milestone: () => setCompletionEntry('decision'),
+              // State 7a's action, reachable for the first time now that a trial
+              // can be completed — and the reason the completed card keeps its
+              // slot for a month (`ENDED_TRIAL_GRACE_DAYS`, 30 — R5): the report
+              // is most valuable in exactly the weeks between the trial ending
+              // and the recheck it was run for.
+              open_report: () => router.push('/report'),
+              // B-533 / R1 — the refusal state's way out. Same sheet the header's
+              // "Change" opens (one active trial per pet is a DB constraint, so
+              // this lands on the ordered "end the running one first" flow, never
+              // a second concurrent trial). It is a card ACTION rather than only
+              // the header link because on the one state whose message is "this
+              // diet may need to change", the way out cannot be chrome.
+              trial_manage: () => setStartTrialVisible(true),
+            }}
             onManage={() => setStartTrialVisible(true)}
           />
         )}
@@ -752,6 +931,21 @@ export default function ProfileScreen() {
             style={styles.reportButton}
           />
         </Card>
+
+        {/* ── Vet Files (B-478 VF-2, mock A1-r2 / A1z) ──
+            A sibling of the Vet report card, deliberately adjacent: they are the
+            two vet-facing surfaces, and the card's own blurb carries the D14 line
+            saying a saved document does NOT ride along with the report. Gated
+            until VF-3 lands capture — see lib/vetFilesEntry.ts. */}
+        {VET_FILES_ENTRY_ENABLED && (
+          <VetFilesCard
+            model={buildVetFilesCardModel(activePet.name, vetDocuments)}
+            thumbUris={vetThumbs}
+            thumbsLoading={vetThumbsLoading}
+            onPress={() => router.push('/vet-files')}
+            style={styles.sectionGap}
+          />
+        )}
 
         {/* Account actions (owner name / Sign out / Delete account) moved to the
             "You" screen (B-283, §4.3) — the Pet tab stays entirely pet-scoped. */}
@@ -818,7 +1012,10 @@ export default function ProfileScreen() {
           routes out to `/food-capture` (the trial food is usually a bag the owner
           was handed ten minutes ago, so it is rarely in the library yet), and the
           half-filled form has to still be there when they come back. The form is
-          reset on Cancel and after a successful start — never by a dismissal. */}
+          reset on Cancel and after a successful start — never by a dismissal.
+          B-535 closed the other half of that promise: preserving the form is
+          worthless if nothing re-opens it, so `onAddFood` arms a focus-resume
+          (above) and the modal comes back when the capture flow returns here. */}
       <StartTrialModal
         visible={startTrialVisible}
         petId={activePet.id}
@@ -826,8 +1023,29 @@ export default function ProfileScreen() {
         species={activePet.species}
         onClose={() => setStartTrialVisible(false)}
         onStarted={reloadTrial}
-        onAddFood={() => { setStartTrialVisible(false); router.push('/food-capture'); }}
+        onAddFood={() => {
+          resumeTrialModalOnFocus.current = true;
+          setStartTrialVisible(false);
+          router.push('/food-capture');
+        }}
         onLogFirstMeal={() => { setStartTrialVisible(false); router.push('/log?type=meal'); }}
+      />
+
+      {/* B-417 PR 6 — the completion milestone's sheets (§4.3). Not mounted while
+          closed: unlike StartTrialModal it has no half-filled form to preserve
+          across a dismissal, and every answer on it is deliberately discarded on
+          Cancel rather than pre-filled from a previous attempt. */}
+      <TrialCompletionSheet
+        entry={completionEntry}
+        trial={sheetTrial}
+        petName={activePet.name}
+        species={activePet.species}
+        pronouns={petPronouns(activePet.sex ?? 'unknown')}
+        dayCounter={sheetDayCounter}
+        intakeDeclineHeadline={trialInput?.intakeDeclineHeadline ?? null}
+        onClose={() => setCompletionEntry(null)}
+        onExtend={handleExtendTrial}
+        onChanged={reloadTrial}
       />
     </SafeAreaView>
   );

@@ -67,7 +67,7 @@ export function useSync() {
         bumpHydrationTick();
       }
       const status = await getSyncStatus();
-      setPendingStatus(status.pendingCount, status.oldestPendingAt);
+      setPendingStatus(status.pendingCount, status.oldestPendingAt, status.quarantinedCount);
     }
 
     // Swallow rejections at the call sites so a failed cycle can't surface as an

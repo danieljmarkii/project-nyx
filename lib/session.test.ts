@@ -3,8 +3,16 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 // The native-heavy halves are mocked; the AsyncStorage-backed halves (the recovery
 // marker, the recovery gate, the active-pet key) run for real, because they are
 // exactly what this test is about.
-jest.mock('./sync', () => ({ notifySignedOut: jest.fn() }));
-jest.mock('./db', () => ({ clearLocalData: jest.fn().mockResolvedValue(undefined) }));
+jest.mock('./sync', () => ({
+  notifySignedOut: jest.fn(),
+  flushPendingForSignOut: jest.fn().mockResolvedValue(undefined),
+}));
+jest.mock('./db', () => ({
+  clearLocalData: jest.fn().mockResolvedValue(undefined),
+  getSyncStatus: jest.fn().mockResolvedValue({
+    pendingCount: 0, oldestPendingAt: null, quarantinedCount: 0,
+  }),
+}));
 jest.mock('./appGroup', () => ({ clearWidgetData: jest.fn() }));
 jest.mock('./widgetBridge', () => ({ clearWidgetTimeline: jest.fn() }));
 // session.ts pulls lib/trialContaminant for the B-351 slice-4 teardown, and that
@@ -14,9 +22,9 @@ jest.mock('./widgetBridge', () => ({ clearWidgetTimeline: jest.fn() }));
 // note above describes.
 jest.mock('./supabase', () => ({ supabase: {} }));
 
-import { wipeLocalSession } from './session';
-import { notifySignedOut } from './sync';
-import { clearLocalData } from './db';
+import { wipeLocalSession, flushForSignOut, unsentSignOutWarning } from './session';
+import { notifySignedOut, flushPendingForSignOut } from './sync';
+import { clearLocalData, getSyncStatus } from './db';
 import { clearWidgetData } from './appGroup';
 import { clearWidgetTimeline } from './widgetBridge';
 import { readRecoveryRequest, recordRecoveryRequest } from './recoveryMarker';
@@ -31,6 +39,10 @@ beforeEach(async () => {
   await AsyncStorage.clear();
   jest.clearAllMocks();
   (clearLocalData as jest.Mock).mockResolvedValue(undefined);
+  (flushPendingForSignOut as jest.Mock).mockResolvedValue(undefined);
+  (getSyncStatus as jest.Mock).mockResolvedValue({
+    pendingCount: 0, oldestPendingAt: null, quarantinedCount: 0,
+  });
   useAuthStore.setState({ recoveryInProgress: false });
 });
 
@@ -93,5 +105,91 @@ describe('wipeLocalSession — the shipped SIGNED_OUT teardown', () => {
     await wipeLocalSession();
     expect(useAuthStore.getState().recoveryInProgress).toBe(true);
     expect(await AsyncStorage.getItem(GATE_KEY)).toBe('1');
+  });
+});
+
+// ── B-430 — sign-out no longer silently destroys offline captures ────────────
+//
+// wipeLocalSession clears local SQLite unconditionally, INCLUDING rows still at
+// synced = 0. So signing out has always destroyed every offline capture that had
+// not reached the server: the meals logged in a basement flat, the symptom
+// photographed in a car park at 6am. On a household sharing one credential across
+// two phones, sign-out is routine rather than rare.
+//
+// The fix is flush-before-wipe, NOT quarantine-across-the-wipe. Holding unsynced
+// rows back from the wipe would collide head-on with FR-9, which is the reason the
+// wipe exists — a shared or borrowed device must not leak the prior account's
+// health record — and a retained cache of that account's meals and symptom photos
+// IS that leak, whatever it is labelled. So: send what can be sent, then tell the
+// owner the truth about the rest and let them decide.
+describe('flushForSignOut (B-430)', () => {
+  it('PUSHES BEFORE REPORTING — the order is the entire feature', async () => {
+    const order: string[] = [];
+    (flushPendingForSignOut as jest.Mock).mockImplementation(async () => { order.push('flush'); });
+    (getSyncStatus as jest.Mock).mockImplementation(async () => {
+      order.push('status');
+      return { pendingCount: 0, oldestPendingAt: null, quarantinedCount: 0 };
+    });
+
+    await flushForSignOut();
+
+    // Reading the count first would report rows the flush was about to save, and
+    // warn the owner about data that is not actually at risk — which trains them to
+    // dismiss the warning that matters.
+    expect(order).toEqual(['flush', 'status']);
+  });
+
+  it('reports what is STILL unsent after the attempt', async () => {
+    (getSyncStatus as jest.Mock).mockResolvedValue({
+      pendingCount: 3, oldestPendingAt: '2026-07-01T08:00:00.000Z', quarantinedCount: 2,
+    });
+    expect(await flushForSignOut()).toEqual({ pendingCount: 3, quarantinedCount: 2 });
+  });
+
+  it('never blocks sign-out when the flush itself fails', async () => {
+    // Offline, mid-air, a dead JWT. The owner asked to sign out; a failure to save
+    // must produce a warning, never a trapped session.
+    (flushPendingForSignOut as jest.Mock).mockRejectedValue(new Error('offline'));
+    (getSyncStatus as jest.Mock).mockResolvedValue({
+      pendingCount: 4, oldestPendingAt: null, quarantinedCount: 0,
+    });
+    await expect(flushForSignOut()).resolves.toEqual({ pendingCount: 4, quarantinedCount: 0 });
+  });
+
+  it('FAILS TOWARD WARNING when it cannot tell — silence would read as all-clear', async () => {
+    // A status read that throws tells us nothing, and "nothing" must not become
+    // "all clear": that would skip the warning on precisely the broken device most
+    // likely to be holding unsent rows.
+    (getSyncStatus as jest.Mock).mockRejectedValue(new Error('sqlite gone'));
+    const counts = await flushForSignOut();
+    expect(counts.pendingCount + counts.quarantinedCount).toBeGreaterThan(0);
+    expect(unsentSignOutWarning(counts)).not.toBeNull();
+  });
+});
+
+describe('unsentSignOutWarning — the copy', () => {
+  it('says nothing when the flush drained the queue (the common case)', () => {
+    // Sign-out must stay a one-tap action for the owner who is simply online.
+    expect(unsentSignOutWarning({ pendingCount: 0, quarantinedCount: 0 })).toBeNull();
+  });
+
+  it('counts quarantined rows too — they are just as lost to the wipe', () => {
+    const w = unsentSignOutWarning({ pendingCount: 0, quarantinedCount: 1 });
+    expect(w?.message).toContain('1 entry');
+  });
+
+  it('names the number, and totals both kinds', () => {
+    const w = unsentSignOutWarning({ pendingCount: 2, quarantinedCount: 3 });
+    expect(w?.message).toContain('5 entries');
+  });
+
+  it('offers the way out and blames nobody (nyx-voice)', () => {
+    const w = unsentSignOutWarning({ pendingCount: 2, quarantinedCount: 0 })!;
+    // No exclamation marks, no "error"/"failed" — from the owner's side nothing
+    // failed; they logged something while the phone could not reach the network.
+    expect(`${w.title} ${w.message}`).not.toMatch(/!|failed|error/i);
+    // And it must not tell them to check their connection: the flush just tried.
+    expect(w.message.toLowerCase()).not.toContain('internet');
+    expect(w.message).toContain('stay signed in');
   });
 });

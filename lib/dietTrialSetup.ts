@@ -22,13 +22,34 @@
 // bar of signal is the literal target user of this screen.
 //
 // It also honours the contract lib/dietTrialMirror.ts states for exactly this PR:
-// every local mutation sets `synced = 0, sync_error = NULL` in the same statement,
+// every local mutation sets `synced = 0, sync_attempts = 0, sync_error = NULL` in the same statement,
 // so an owner-visible fix (ending the other trial) re-arms a quarantined push
 // rather than leaving a permanently-parked row.
 import { getDb } from './db';
+import { trialStopReasons, type TrialOutcome } from './dietTrialCompletion';
 import { syncPendingDietTrials, syncPendingDietTrialFoods } from './sync';
+import { useSyncStore } from '../store/syncStore';
 import { uuid, toLocalDayKey, dayKeyToLocalDate } from './utils';
 import { getDietTrialProgress } from './analytics';
+
+/** Every trial write below ends with this — B-534's Home-strip half.
+ *
+ *  The Pet-tab card and the Home strip are two independent `useDietTrial`
+ *  instances, and only the Pet tab's gets the host's `reload()` after a write —
+ *  so ending, extending or starting a trial left Home rendering the OLD trial
+ *  until the next sync cycle happened to bump the tick. The hook already
+ *  re-reads on `hydrationTick` (it is how another device's meals reach the
+ *  card), so the fix is to make a LOCAL trial write count as a hydration too.
+ *  It lives here, in the write path, rather than at the call sites: the next
+ *  surface to call one of these functions will not know the Home strip exists. */
+function notifyTrialChanged(): void {
+  try {
+    useSyncStore.getState().bumpHydrationTick();
+  } catch (e) {
+    // The write itself succeeded; a refresh-signal failure must not fail it.
+    console.warn('[dietTrialSetup] hydration tick failed:', e);
+  }
+}
 
 // ── Indication (§4.1) ───────────────────────────────────────────────────────
 //
@@ -399,13 +420,22 @@ export interface StopReasonOption {
  * `refused` is a load-bearing value, not a label: §4.3 requires a refusal reason to
  * route to the intake-decline HEALTH lane and never to render as a compliance
  * outcome. PR 6 and PR 7 both key off it, so the token is fixed here.
+ *
+ * THE REASON SET IS NOW OWNED BY `dietTrialCompletion.trialStopReasons` (PR 6),
+ * and this delegates to it rather than keeping its own three. Two lists would be
+ * two vocabularies in one TEXT column that a clinician reads verbatim — an owner
+ * who ended a trial from this sheet and one who ended it from the milestone would
+ * be describing the same event in different words on the same report. PR 3 shipped
+ * the narrow three because §4.3's six had not been built yet; the tokens it wrote
+ * (`vet_advised` / `refused` / `other`) are all still in the set, so nothing
+ * already stored is orphaned.
  */
-export function stopReasonOptions(petName: string, complete: boolean): StopReasonOption[] {
-  const early: StopReasonOption[] = [
-    { value: 'vet_advised', label: 'The vet said to change diets' },
-    { value: 'refused', label: `${petName} wouldn’t eat it` },
-    { value: 'other', label: 'Something else' },
-  ];
+export function stopReasonOptions(
+  petName: string,
+  complete: boolean,
+  pronouns?: { object: string; possessive: string },
+): StopReasonOption[] {
+  const early = trialStopReasons(petName, pronouns);
   if (!complete) return early;
   return [{ value: 'completed', label: 'It ran its course' }, ...early];
 }
@@ -450,6 +480,14 @@ export function secondTrialIntro(petName: string, trial: ActiveTrialSummary, now
 // its own losing offline row plus the winner hydrated from the server. The row the
 // server actually accepted wins, because the server is authoritative under the
 // house's last-write-wins-with-no-merge rule.
+//
+// `status = 'active'` HERE IS CORRECT AND MUST NOT GAIN THE B-422 EFFECTIVE-END
+// GATE. This read backs the start modal's end-and-continue pre-flight, and what
+// it is really asking is "will migration 040's one-active-trial UNIQUE index
+// reject my insert?" — a question about the DATABASE, which knows nothing about
+// graces. A stale trial still blocks a new one, so the modal must still be able
+// to offer to end it; hiding it would leave the owner unable to start a trial
+// with no explanation. Same rule at `profile.tsx`'s `sheetTrial`.
 const ACTIVE_TRIAL_FOR_PET_SQL = `
   SELECT t.id, t.started_at, t.target_duration_days,
          COALESCE(
@@ -482,6 +520,13 @@ export async function getActiveTrialForPet(petId: string): Promise<ActiveTrialSu
   };
 }
 
+// B-534's report-race half lives in `lib/pdf.ts` (`flushBeforeReport`), NOT
+// here, and the location is a finding rather than a preference: a first cut put
+// a trial-scoped pending count in this file, and the adversarial pass showed the
+// scoping itself was the defect — twelve unsynced refused BOWLS (the trial row
+// long synced) produced an empty safety band on a refusing cat, undisclosed.
+// The report reads every queue, so its gate counts every queue.
+
 /**
  * End the running trial so a new one can start (mock screen D's primary action).
  *
@@ -502,29 +547,92 @@ export async function endActiveTrial(params: {
   trialId: string;
   /** A value from `stopReasonOptions` — 'completed' or a stopped-early reason. */
   reason: string;
+  /** The owner's read (PR 6, §4.3). Only ever written on a COMPLETED trial — see
+   *  the guard below, which is a clinical rule and not a tidiness one. */
+  outcome?: TrialOutcome | null;
+  outcomeNotes?: string | null;
 }): Promise<void> {
   const db = getDb();
   const today = toLocalDayKey(new Date());
   const now = new Date().toISOString();
   const completed = params.reason === 'completed';
 
-  // `synced = 0, sync_error = NULL` in the same statement — the mirror's stated
+  // THE OUTCOME IS STRUCTURALLY UNREACHABLE ON AN ABANDONED TRIAL, and that is
+  // §4.3's refusal rule made unbypassable rather than remembered. "A refusal
+  // stopped_reason routes to the intake-decline health lane and is NEVER rendered
+  // as a compliance outcome" — so the write path simply has no branch that can
+  // attach an owner verdict to a trial that ended early, whatever a caller passes.
+  // The stopped-early flow collects no verdict at all (it asks what got in the
+  // way, not how it went), so today this guard is belt-and-braces; it exists
+  // because the next surface to call this function will not have read §4.3.
+  const outcome = completed ? params.outcome ?? null : null;
+  const outcomeNotes = completed ? params.outcomeNotes?.trim() || null : null;
+
+  // `synced = 0, sync_attempts = 0, sync_error = NULL` in the same statement — the mirror's stated
   // contract for every local mutation. Clearing the error is what makes ending a
   // trial a FRESH ATTEMPT for a row that was previously quarantined on a 23505
   // rather than a permanently-parked one.
   await db.runAsync(
     `UPDATE diet_trials
         SET status = ?, ended_at = ?, completed_at = ?, stopped_reason = ?,
-            updated_at = ?, synced = 0, sync_error = NULL
+            outcome = ?, outcome_notes = ?,
+            updated_at = ?, synced = 0, sync_attempts = 0, sync_error = NULL
       WHERE id = ?`,
     [
       completed ? 'completed' : 'abandoned',
       today,
       completed ? today : null,
       completed ? null : params.reason,
+      outcome,
+      outcomeNotes,
       now,
       params.trialId,
     ],
+  );
+
+  notifyTrialChanged();
+
+  // Fire-and-forget, same contract as `startDietTrial`: offline the row stays
+  // queued at synced = 0 and the next cycle picks it up. An ending trial is in
+  // `syncPendingDietTrials`'s FIRST pass, so it cannot be re-ordered behind a
+  // starting one.
+  syncPendingDietTrials().catch((err) =>
+    console.warn('[dietTrialSetup] end-trial sync failed (queued):', err),
+  );
+}
+
+/**
+ * `Keep going` — the milestone's extension (PR 6, §4.3).
+ *
+ * WHY THIS IS A WRITE AND NOT A NEW TRIAL. Extending keeps ONE continuous window:
+ * a second row would split one clinical episode into two, neither of which is the
+ * span the vet asked about, and §7's report would then render the back half of an
+ * 84-day elimination as a 28-day trial. It is the same reasoning that made P-2
+ * refuse a `paused` state.
+ *
+ * The caller computes the new target through `nextTargetDays`, which is where the
+ * "cannot set a target at or below the current day" criterion is enforced and
+ * tested. This function refuses a non-positive value and otherwise writes what it
+ * is given — the arithmetic has one home, not two.
+ */
+export async function extendTrial(params: {
+  trialId: string;
+  targetDurationDays: number;
+}): Promise<void> {
+  const target = Math.floor(params.targetDurationDays);
+  if (!Number.isFinite(target) || target < 1) {
+    throw new Error(`extendTrial: refusing a target of ${params.targetDurationDays}`);
+  }
+  const db = getDb();
+  await db.runAsync(
+    `UPDATE diet_trials
+        SET target_duration_days = ?, updated_at = ?, synced = 0, sync_attempts = 0, sync_error = NULL
+      WHERE id = ?`,
+    [target, new Date().toISOString(), params.trialId],
+  );
+  notifyTrialChanged();
+  syncPendingDietTrials().catch((err) =>
+    console.warn('[dietTrialSetup] extend-trial sync failed (queued):', err),
   );
 }
 
@@ -584,6 +692,8 @@ export async function startDietTrial(input: StartTrialInput): Promise<string> {
       );
     }
   });
+
+  notifyTrialChanged();
 
   // Parent before children on the wire too — a child whose parent has not landed
   // FK-fails with a 23503, which PR 2 classifies NON-terminal, so it would simply

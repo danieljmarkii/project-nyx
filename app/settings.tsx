@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Alert, Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Linking, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { theme } from '../constants/theme';
@@ -11,6 +11,7 @@ import { OwnerNameRow } from '../components/profile/OwnerNameRow';
 import { DeleteAccountSheet } from '../components/profile/DeleteAccountSheet';
 import { supabase } from '../lib/supabase';
 import { buildSupportMailto, formatAppVersion } from '../lib/support';
+import { showNoMailFallback } from '../lib/supportFallback';
 import { APP_VERSION, APP_BUILD, PLATFORM } from '../lib/appInfo';
 import {
   SUPPORT_EMAIL,
@@ -19,6 +20,7 @@ import {
   DISCLAIMER_URL,
   LEGAL_LINKS_ENABLED,
 } from '../constants/links';
+import { flushForSignOut, unsentSignOutWarning } from '../lib/session';
 import { usePetStore } from '../store/petStore';
 import { useAuthStore } from '../store/authStore';
 
@@ -44,17 +46,15 @@ export default function SettingsScreen() {
   const email = useAuthStore((s) => s.user?.email);
   const pets = usePetStore((s) => s.pets);
   const [deleteVisible, setDeleteVisible] = useState(false);
+  // B-430 — the pre-sign-out flush is a network round trip; disable the row while
+  // it runs so a second tap can't start a parallel drain.
+  const [signingOut, setSigningOut] = useState(false);
 
   function handleBack() {
     // Pushed from the Home tab, so back pops to it. Guarded for the deep-link /
     // no-history case (mirrors the auth screens) so back is never a dead no-op.
     if (router.canGoBack()) router.back();
     else router.replace('/(tabs)');
-  }
-
-  function noMailFallback() {
-    // §4.5 — never fail silently: show the address so the owner can still reach us.
-    Alert.alert('No mail app found', `You can reach us at ${SUPPORT_EMAIL}.`, [{ text: 'OK' }]);
   }
 
   async function handleContactSupport() {
@@ -66,13 +66,13 @@ export default function SettingsScreen() {
     try {
       const canOpen = await Linking.canOpenURL(url);
       if (!canOpen) {
-        noMailFallback();
+        showNoMailFallback(SUPPORT_EMAIL);
         return;
       }
       await Linking.openURL(url);
     } catch (e) {
       console.warn('[Settings] open support mailto failed:', e);
-      noMailFallback();
+      showNoMailFallback(SUPPORT_EMAIL);
     }
   }
 
@@ -87,6 +87,30 @@ export default function SettingsScreen() {
     }
   }
 
+  // signOut can THROW (network reject), not only return { error } — so try/catch,
+  // mirroring DeleteAccountSheet, or a rejection inside an async Alert handler is
+  // unhandled and the owner gets no feedback. SIGNED_OUT (app/_layout.tsx) runs the
+  // FR-9 local wipe + routes away.
+  async function doSignOut() {
+    try {
+      const { error } = await supabase.auth.signOut();
+      if (error) {
+        console.warn('[Settings] sign out failed:', error.message);
+        Alert.alert("Couldn't sign out", 'Check your connection and try again.');
+      }
+    } catch (e) {
+      console.warn('[Settings] sign out threw:', e);
+      Alert.alert("Couldn't sign out", 'Check your connection and try again.');
+    }
+  }
+
+  // B-430 — sign-out is the one routine action that can destroy data. The wipe that
+  // follows SIGNED_OUT clears local SQLite including rows still at synced = 0, so
+  // anything captured offline and not yet pushed is gone. Two steps close that:
+  // FLUSH first (send what can be sent — the owner is usually online and this
+  // resolves silently), then, only if something is genuinely still unsent, SAY SO
+  // and let them decide. The confirm names the count; it never resolves this
+  // silently in either direction.
   function handleSignOut() {
     Alert.alert('Sign out', 'You can sign back in anytime.', [
       { text: 'Cancel', style: 'cancel' },
@@ -94,20 +118,25 @@ export default function SettingsScreen() {
         text: 'Sign out',
         style: 'destructive',
         onPress: async () => {
-          // signOut can THROW (network reject), not only return { error } — so
-          // try/catch, mirroring DeleteAccountSheet, or a rejection inside this
-          // async Alert handler is unhandled and the owner gets no feedback.
-          // SIGNED_OUT (app/_layout.tsx) runs the FR-9 local wipe + routes away.
+          setSigningOut(true);
+          let warning: ReturnType<typeof unsentSignOutWarning> = null;
           try {
-            const { error } = await supabase.auth.signOut();
-            if (error) {
-              console.warn('[Settings] sign out failed:', error.message);
-              Alert.alert("Couldn't sign out", 'Check your connection and try again.');
-            }
+            warning = unsentSignOutWarning(await flushForSignOut());
           } catch (e) {
-            console.warn('[Settings] sign out threw:', e);
-            Alert.alert("Couldn't sign out", 'Check your connection and try again.');
+            // flushForSignOut is best-effort by construction, but a throw here must
+            // never trap the owner in the app — fall through and sign out.
+            console.warn('[Settings] pre-sign-out drain failed:', e);
+          } finally {
+            setSigningOut(false);
           }
+          if (!warning) {
+            await doSignOut();
+            return;
+          }
+          Alert.alert(warning.title, warning.message, [
+            { text: 'Stay signed in', style: 'cancel' },
+            { text: 'Sign out anyway', style: 'destructive', onPress: doSignOut },
+          ]);
         },
       },
     ]);
@@ -231,7 +260,12 @@ export default function SettingsScreen() {
 
         {/* ── Account actions (moved off the Pet tab, §4.3) ── */}
         <Card noPadding>
-          <SettingsRow first label="Sign out" onPress={handleSignOut} />
+          <SettingsRow
+            first
+            label={signingOut ? 'Saving your latest entries…' : 'Sign out'}
+            onPress={signingOut ? undefined : handleSignOut}
+            disabled={signingOut}
+          />
           {/* Delete account (B-039): destructive, routed to the type-to-confirm
               sheet — never demoted to Sign out's light alert. */}
           <SettingsRow
@@ -243,16 +277,7 @@ export default function SettingsScreen() {
           />
         </Card>
 
-        {/* Long-press opens the temporary auth-diagnostics viewer (not a user
-            feature — a hidden entry for the session-persistence investigation). */}
-        <Pressable
-          onLongPress={() => router.push('/settings/diagnostics')}
-          delayLongPress={800}
-          hitSlop={12}
-          accessibilityRole="text"
-        >
-          <Text style={styles.version}>Culprit v{formatAppVersion(APP_VERSION, APP_BUILD)}</Text>
-        </Pressable>
+        <Text style={styles.version}>Culprit v{formatAppVersion(APP_VERSION, APP_BUILD)}</Text>
 
         <View style={styles.bottomPad} />
       </ScrollView>

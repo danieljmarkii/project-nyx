@@ -32,6 +32,13 @@ export function groupFoodsByType(foods: PickerFood[]): GroupedFoods {
   return { meals, treats, other };
 }
 
+// ── Food-format display labels (B-106 / B-568) ────────────────────────────────
+// The map and the event-surface tag live in lib/foodFormat.ts — a dependency-free
+// module so the Deno Edge Functions can import the SAME copy (generate-report names
+// foods too). Re-exported here because the three library surfaces already import
+// FORMAT_LABEL from this module; splitting the file must not move their import.
+export { FORMAT_LABEL, foodFormatTag, foodFormatWord } from './foodFormat';
+
 // ── Picker scope chips (B-347 / B-020) ─────────────────────────────────────────
 // The pinned scope-chip row filters the picker's library by a FACT the food
 // already carries — its usage classification (food_type) or physical form

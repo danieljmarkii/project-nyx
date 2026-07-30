@@ -25,6 +25,7 @@ import { AuthBrandMark } from '../../components/onboarding/AuthBrandMark';
 import { Divider } from '../../components/ui/Divider';
 import { emailError, passwordError, requiredNameError } from '../../lib/authValidation';
 import { authErrorCopy } from '../../lib/authErrors';
+import { confirmRedirectUrl } from '../../lib/emailConfirm';
 
 // Account creation — the first screen that captures OWNER identity (B-251 PR 6,
 // spec §3.1 / §1a, mockup 04–05). Reached from the Landing's "Create account".
@@ -74,7 +75,25 @@ export default function SignupScreen() {
 
     const cleanEmail = email.trim();
     setLoading(true);
-    const { data, error } = await supabase.auth.signUp({ email: cleanEmail, password });
+    const { data, error } = await supabase.auth.signUp({
+      email: cleanEmail,
+      password,
+      options: {
+        // B-432/B-483: without this Supabase falls back to the project Site URL, so
+        // tapping "Confirm email" drops the owner on a web page (a localhost one in
+        // build 35) and leaves them to find their own way back. This points the
+        // link at app/(auth)/confirm.tsx instead. The exact string must also be on
+        // the Supabase redirect allowlist — it is refused otherwise, and every link
+        // dead-ends.
+        emailRedirectTo: confirmRedirectUrl(),
+        // Park the owner's name on the auth user so the confirm screen can write it
+        // to user_profiles once a session exists. With confirmation ON the write
+        // below never runs (no session ⇒ RLS rejects it) and the app may be killed
+        // before the link is tapped, so metadata is the only place the name
+        // survives the gap — see lib/emailConfirm.ownerNameFromMetadata.
+        data: { first_name: firstName.trim(), last_name: lastName.trim() },
+      },
+    });
     setLoading(false);
 
     if (error) {
@@ -131,7 +150,14 @@ export default function SignupScreen() {
   async function handleResend() {
     if (!verifyEmail || resending) return;
     setResending(true);
-    const { error } = await supabase.auth.resend({ type: 'signup', email: verifyEmail });
+    // Same redirect as the original signUp — a resent link that skipped it would
+    // land the owner back on the Site URL web page, i.e. the exact bug this fixes,
+    // reachable by the one control the stuck owner is most likely to press.
+    const { error } = await supabase.auth.resend({
+      type: 'signup',
+      email: verifyEmail,
+      options: { emailRedirectTo: confirmRedirectUrl() },
+    });
     setResending(false);
     if (error) {
       // The likeliest failure here by far is the per-user send interval (the
@@ -195,16 +221,16 @@ export default function SignupScreen() {
             <Mail size={44} color={theme.colorAccent} strokeWidth={1.5} />
           </View>
           <Text style={styles.title}>Check your inbox</Text>
-          {/* B-401: this line used to end "you can do this anytime", which framed
-              confirmation as optional. With email confirmation ON it is the only
-              way into the account, so the copy now names the real sequence —
-              confirm, come back, sign in. There is no auth deep-link handler
-              (signUp sends no emailRedirectTo and nothing converts the link into
-              a session), so the return trip really is manual; promising anything
-              smoother would be a lie the owner discovers at the worst moment. */}
+          {/* B-401 wrote this line to promise only the manual return trip the app
+              could actually deliver ("come back here and sign in"), because nothing
+              converted a confirmation link into a session. B-432 built that half,
+              so the honest promise is now the better one: the link opens the app
+              and signs them in. The caveat is real and stays in the copy —
+              `emailRedirectTo` is a PKCE link, so the verifier only exists on the
+              phone that signed up, and opening it on a laptop lands nowhere useful. */}
           <Text style={styles.verifySub}>
-            We sent a link to {verifyEmail}. Tap it to confirm your address, then come back here and
-            sign in.
+            We sent a link to {verifyEmail}. Open it on this phone and we'll bring you straight
+            back in.
           </Text>
           <View style={styles.grow} />
 

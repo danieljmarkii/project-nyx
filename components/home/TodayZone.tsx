@@ -7,6 +7,7 @@ import { SectionLabel } from '../ui/SectionLabel';
 import { EVENT_TYPES, EventTypeKey, SYMPTOM_TYPES } from '../../constants/eventTypes';
 import { EventIcon } from '../event/EventIcon';
 import { formatDrugLabel } from '../../lib/medications';
+import { foodFormatTag } from '../../lib/food';
 import { NyxEvent } from '../../store/eventStore';
 import { useEvents } from '../../hooks/useEvents';
 import { usePetStore } from '../../store/petStore';
@@ -113,6 +114,12 @@ function EventStripRow({ event, showBorder }: { event: NyxEvent; showBorder: boo
     ? formatDrugLabel(event.drug_generic_name, event.drug_brand_name)
     : null;
 
+  // B-568 — the wet/dry variant. Today is the tightest of the three timeline surfaces:
+  // it shows the product name ALONE (no brand), so two formats of one prescription line
+  // were not merely hard to tell apart here, they rendered as the same string. Same
+  // sibling-element treatment as EventRow — the name truncates, the tag holds.
+  const formatTag = isMeal ? foodFormatTag(event.food_format, rowLabel) : null;
+
   // Tint the glyph to its category so meal vs. symptom vs. med reads at a glance —
   // the mid-tone sits cleanly on the light category-tinted circle (mint/rose/slate)
   // and is more legible there than a flat gray. Neutral (fg-2) otherwise. Medication
@@ -139,9 +146,14 @@ function EventStripRow({ event, showBorder }: { event: NyxEvent; showBorder: boo
       <View style={styles.eventMeta}>
         <Text style={styles.eventLabel}>{rowLabel}</Text>
         {isMeal && event.food_product_name ? (
-          <Text style={styles.eventSub} numberOfLines={1}>
-            {event.food_product_name}
-          </Text>
+          <View style={styles.eventSubLine}>
+            <Text style={styles.eventSub} numberOfLines={1}>
+              {event.food_product_name}
+            </Text>
+            {formatTag ? (
+              <Text style={styles.formatTag} numberOfLines={1}>{formatTag}</Text>
+            ) : null}
+          </View>
         ) : drugLabel ? (
           <Text style={styles.eventSub} numberOfLines={1}>
             {drugLabel}
@@ -226,9 +238,27 @@ const styles = StyleSheet.create({
     fontWeight: theme.weightMedium,
     color: theme.colorTextPrimary,
   },
+  // Row that pairs the food name with its B-568 variant tag. The name is flexShrink
+  // (not flex:1) so the pair stays hugged together under the type label rather than
+  // pushing the tag out to the strip edge, where it would read as a second column.
+  eventSubLine: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.space1,
+  },
   eventSub: {
     fontSize: theme.textSM,
     color: theme.colorTextSecondary,
+    flexShrink: 1,
+  },
+  // Matches EventRow's tag register (tracked uppercase tertiary) so a food is named
+  // identically on Today and in History. flexShrink:0 — the name truncates, not the tag.
+  formatTag: {
+    fontSize: theme.textXS,
+    color: theme.colorTextTertiary,
+    letterSpacing: theme.trackingWide,
+    fontWeight: theme.fontWeightMedium,
+    flexShrink: 0,
   },
   eventTime: {
     fontSize: theme.textSM,

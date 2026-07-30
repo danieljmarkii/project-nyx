@@ -10,7 +10,7 @@ The PM asked the product team to convene over `docs/culprit-competitive-landscap
 
 2. **Full persona convening.** Each lens gave its read; the review's §12 conflict (differentiator-first vs table-stakes-first) was surfaced per protocol and *sharpened*, not resolved: B-417 is mid-stream (so the fork is really about the next concurrent track), and Ask's standing "next main project" ruling (2026-07-18) predates the landscape entirely — a third position neither review camp named.
 
-3. **The PM chose ambition → the team produced `docs/culprit-category-play-2026-07.md`** (proposed, unratified): own the elimination-diet category end-to-end. Gate 0 (security/auth hygiene) + five swings — **1** finish the trial + true multi-protein engine (the only app that can actually run an elimination trial) · **2** household + confirmations as *contamination control and retention*, not table stakes · **3** the anti-portal: a one-shot, no-account vet response leg on the shared report (counter to CompanAIn buying the reader) · **4** real-vet R1/R2 → a published-validation program (B-477) · **5** claim the category publicly (ASO land-grab gated on B-478 volume data, independence positioning, pricing-shape reconciliation vs D-M5). Explicit not-list: hardware, Android-now, portal, chatbot, social, emerging-signals, paywalling anything in the trial loop.
+3. **The PM chose ambition → the team produced `docs/culprit-category-play-2026-07.md`** (proposed, unratified): own the elimination-diet category end-to-end. Gate 0 (security/auth hygiene) + five swings — **1** finish the trial + true multi-protein engine (the only app that can actually run an elimination trial) · **2** household + confirmations as *contamination control and retention*, not table stakes · **3** the anti-portal: a one-shot, no-account vet response leg on the shared report (counter to CompanAIn buying the reader) · **4** real-vet R1/R2 → a published-validation program (B-614) · **5** claim the category publicly (ASO land-grab gated on B-615 volume data, independence positioning, pricing-shape reconciliation vs D-M5). Explicit not-list: hardware, Android-now, portal, chatbot, social, emerging-signals, paywalling anything in the trial loop.
 
 ## Decisions made
 
@@ -19,7 +19,7 @@ None ratified — the plan is a proposal by design. Its §6 checklist (D1–D9) 
 ## Repo changes
 
 - `docs/culprit-category-play-2026-07.md` — new (the proposal).
-- `docs/backlog.md` — added **B-477** (published-validation program, Later) and **B-478** (ASO keyword-volume validation, Next). Protocol-sanctioned additions; no scope invented beyond them.
+- `docs/backlog.md` — added **B-614** (published-validation program, Later) and **B-615** (ASO keyword-volume validation, Next). Protocol-sanctioned additions; no scope invented beyond them.
 - `STATUS.md` — one pointer added at the top of Open PM Action Items to the §6 decision checklist.
 - Session record: this file. Shipped via the session's draft PR (branch `claude/competitive-landscape-review-hatjh1`).
 

@@ -14,6 +14,7 @@ import { syncPendingEvents, syncPendingMeals } from '../../lib/sync';
 import { formatTime } from '../../lib/utils';
 import { IntakeChipRow, IntakeRating } from '../log/IntakeChipRow';
 import { mealFlagCopy } from '../../lib/trialContaminant';
+import { foodFormatTag } from '../../lib/food';
 
 // Tab bar height from app/(tabs)/_layout.tsx — the card must clear it so it
 // isn't occluded when the user lands back on a tabs screen after a log.
@@ -129,17 +130,17 @@ export function MealCompletionCard() {
       // Touching the picker means the user explicitly chose a time → flip
       // provenance from 'now' to 'manual' so the vet report and correlation
       // engine can distinguish witnessed-now from owner-backfilled later.
-      // Re-assert occurred_at_confidence: 'witnessed' — meals are always
-      // witnessed (you see yourself put the bowl down; the B-010 found path
-      // never applies), and updateEvent writes confidence on every UPDATE, so
-      // omitting it would silently wipe the row's confidence to NULL. This is a
-      // time edit, not a confidence reclassification; window bounds stay null.
+      // Re-assert 'witnessed' — meals are always witnessed (you see yourself put
+      // the bowl down; the B-010 found path never applies), and this card only
+      // ever edits a meal insertMeal just wrote as witnessed. Restating it is a
+      // no-op that keeps the row's claim explicit; omitting the key would now
+      // leave it untouched rather than wipe it (B-448), so either is safe here.
       await updateEvent(payload.eventId, {
         occurred_at: iso,
         severity: null,
         notes: null,
         occurred_at_source: 'manual',
-        occurred_at_confidence: 'witnessed',
+        confidence: { value: 'witnessed', earliest: null, latest: null },
       });
       patchInToday(payload.eventId, { occurred_at: iso });
       patchOccurredAt(iso);
@@ -211,7 +212,14 @@ export function MealCompletionCard() {
   const occurredDate = new Date(payload.occurredAt);
   // One-glance reminder of what was just logged. Brand + product, trimmed so a
   // missing brand/product doesn't leave a stray space.
-  const foodName = [payload.foodBrand, payload.foodProductName]
+  // B-568 — the variant rides INSIDE the name here (unlike the timeline rows). This
+  // line has no truncating-name-plus-badge layout to protect, and the card is a
+  // sentence ("Logged · …"), so a parenthetical reads better than a caps tag.
+  const formatTag = foodFormatTag(payload.foodFormat);
+  const foodName = [
+    [payload.foodBrand, payload.foodProductName].filter(Boolean).join(' ').trim(),
+    formatTag ? `(${formatTag.charAt(0)}${formatTag.slice(1).toLowerCase()})` : '',
+  ]
     .filter(Boolean)
     .join(' ')
     .trim();

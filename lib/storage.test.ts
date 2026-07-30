@@ -66,7 +66,130 @@ jest.mock('expo-image-manipulator', () => ({
   SaveFormat: { JPEG: 'jpeg' },
 }));
 
-import { persistCapture, getSignedUrl, getSignedUrls, buildMedicationPhotoPath } from './storage';
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const mockManipulateAsync = require('expo-image-manipulator').manipulateAsync as jest.Mock;
+
+import {
+  persistCapture, getSignedUrl, getSignedUrls, buildMedicationPhotoPath,
+  compressForUpload, MAX_EDGE_PX,
+} from './storage';
+
+// B-352 / B-206 — compressForUpload's contract is "longest edge ≤ MAX_EDGE_PX".
+// expo-image-manipulator's `resize` preserves aspect from whichever single edge
+// you pin, so pinning the WRONG edge silently leaves the long one uncapped: a 3:4
+// portrait pinned at width:1600 lands at 1600×2133. These tests assert which edge
+// is chosen and how many passes run — the re-encode itself is expo's job.
+describe('compressForUpload (B-352 / B-206 — longest-edge cap)', () => {
+  const SRC = 'file:///cache/capture.jpg';
+  const SAVE_OPTS = { compress: 0.75, format: 'jpeg' };
+
+  beforeEach(() => mockManipulateAsync.mockReset());
+
+  /** Emulate expo's aspect-preserving resize so the mock reports honest dims. */
+  function resized(uri: string, srcW: number, srcH: number, resize: { width?: number; height?: number }) {
+    const scale = resize.width ? resize.width / srcW : (resize.height as number) / srcH;
+    return { uri, width: Math.round(srcW * scale), height: Math.round(srcH * scale) };
+  }
+
+  describe('with source dimensions from the picker asset (B-352)', () => {
+    it('pins HEIGHT for a portrait photo so the LONG edge lands on the cap', async () => {
+      mockManipulateAsync.mockResolvedValue({ uri: 'file:///out.jpg', width: 1200, height: 1600 });
+
+      const out = await compressForUpload(SRC, 3024, 4032);
+
+      expect(out).toBe('file:///out.jpg');
+      expect(mockManipulateAsync).toHaveBeenCalledTimes(1);
+      expect(mockManipulateAsync).toHaveBeenCalledWith(
+        SRC, [{ resize: { height: MAX_EDGE_PX } }], SAVE_OPTS,
+      );
+      // The regression this test exists for: pinning width here produced a
+      // 1600×2133 upload — 33% over the contract on the edge that matters.
+      expect(mockManipulateAsync.mock.calls[0][1][0].resize).not.toHaveProperty('width');
+    });
+
+    it('pins WIDTH for a landscape photo', async () => {
+      mockManipulateAsync.mockResolvedValue({ uri: 'file:///out.jpg', width: 1600, height: 1200 });
+
+      const out = await compressForUpload(SRC, 4032, 3024);
+
+      expect(out).toBe('file:///out.jpg');
+      expect(mockManipulateAsync).toHaveBeenCalledTimes(1);
+      expect(mockManipulateAsync).toHaveBeenCalledWith(
+        SRC, [{ resize: { width: MAX_EDGE_PX } }], SAVE_OPTS,
+      );
+    });
+
+    it('pins WIDTH for a square photo (either edge satisfies the cap)', async () => {
+      mockManipulateAsync.mockResolvedValue({ uri: 'file:///out.jpg', width: 1600, height: 1600 });
+
+      await compressForUpload(SRC, 2048, 2048);
+
+      expect(mockManipulateAsync).toHaveBeenCalledWith(
+        SRC, [{ resize: { width: MAX_EDGE_PX } }], SAVE_OPTS,
+      );
+    });
+
+    it('takes the measure path when only ONE dimension is known', async () => {
+      // A half-supplied pair cannot decide orientation, so it must measure rather
+      // than guess landscape — the `sourceWidth && sourceHeight` guard.
+      mockManipulateAsync.mockResolvedValue({ uri: 'file:///pass1.jpg', width: 1600, height: 900 });
+
+      const out = await compressForUpload(SRC, 4032, undefined);
+
+      expect(out).toBe('file:///pass1.jpg');
+      expect(mockManipulateAsync).toHaveBeenCalledWith(
+        SRC, [{ resize: { width: MAX_EDGE_PX } }], SAVE_OPTS,
+      );
+    });
+  });
+
+  describe('without source dimensions — the re-upload path (B-206)', () => {
+    it('resizes ONCE for a landscape source (no second encode on the common path)', async () => {
+      mockManipulateAsync.mockImplementation(async (_uri: string, actions: { resize: object }[]) =>
+        resized('file:///pass1.jpg', 4032, 3024, actions[0].resize),
+      );
+
+      const out = await compressForUpload(SRC);
+
+      expect(out).toBe('file:///pass1.jpg');
+      expect(mockManipulateAsync).toHaveBeenCalledTimes(1);
+    });
+
+    it('redoes the resize on HEIGHT when the width pass leaves height over the cap', async () => {
+      // 3:4 source. Pass 1 pins width → 1600×2133, over the cap — so pass 2 runs,
+      // and reads from the ORIGINAL uri: re-resizing pass 1's output would stack a
+      // second lossy JPEG encode on top of the first.
+      mockManipulateAsync
+        .mockResolvedValueOnce(resized('file:///pass1.jpg', 3024, 4032, { width: MAX_EDGE_PX }))
+        .mockResolvedValueOnce(resized('file:///pass2.jpg', 3024, 4032, { height: MAX_EDGE_PX }));
+
+      const out = await compressForUpload(SRC);
+
+      expect(out).toBe('file:///pass2.jpg');
+      expect(mockManipulateAsync).toHaveBeenCalledTimes(2);
+      expect(mockManipulateAsync).toHaveBeenNthCalledWith(
+        1, SRC, [{ resize: { width: MAX_EDGE_PX } }], SAVE_OPTS,
+      );
+      expect(mockManipulateAsync).toHaveBeenNthCalledWith(
+        2, SRC, [{ resize: { height: MAX_EDGE_PX } }], SAVE_OPTS,
+      );
+      // And the emitted image actually honours the contract.
+      const final = resized('file:///pass2.jpg', 3024, 4032, { height: MAX_EDGE_PX });
+      expect(Math.max(final.width, final.height)).toBeLessThanOrEqual(MAX_EDGE_PX);
+    });
+
+    it('does NOT run a second pass when the width pass is exactly at the cap', async () => {
+      // Square source → 1600×1600. `<=` not `<`: an off-by-one here would double
+      // the work on every square re-upload for no pixel difference.
+      mockManipulateAsync.mockResolvedValueOnce({ uri: 'file:///pass1.jpg', width: 1600, height: 1600 });
+
+      const out = await compressForUpload(SRC);
+
+      expect(out).toBe('file:///pass1.jpg');
+      expect(mockManipulateAsync).toHaveBeenCalledTimes(1);
+    });
+  });
+});
 
 describe('getSignedUrl (B-207 — transform passthrough for screen-sized photos)', () => {
   let warnSpy: jest.SpyInstance;

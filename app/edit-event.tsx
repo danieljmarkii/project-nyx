@@ -12,12 +12,14 @@ import { theme } from '../constants/theme';
 import { Header } from '../components/ui/Header';
 import { SectionLabel } from '../components/ui/SectionLabel';
 import { EVENT_TYPES, EventTypeKey } from '../constants/eventTypes';
-import { getDb, updateEvent, updateMealFood, updateMealIntake, getMealForEvent, getDoseForEvent, updateDoseAdherence, updateDoseHowGiven, getEventAttachment, getEventSource, getEventTimeFields } from '../lib/db';
+import { getDb, updateEvent, updateMealFood, updateMealIntake, getMealForEvent, getDoseForEvent, updateDoseAdherence, updateDoseHowGiven, getEventAttachment, getEventAttachments, getEventSource, getEventTimeFields } from '../lib/db';
+import { detachOtherEventAttachments } from '../lib/attachments';
 import { syncPendingEvents, syncPendingMeals, syncPendingWeightChecks, syncPendingMedicationAdministrations } from '../lib/sync';
 import { uploadPhoto, compressForUpload, persistCapture } from '../lib/storage';
 import { supabase } from '../lib/supabase';
+import { foodFormatTag } from '../lib/food';
 import { useEventStore } from '../store/eventStore';
-import { uuid, formatExifAttribution, formatTime, deriveOccurredAt } from '../lib/utils';
+import { uuid, formatExifAttribution, formatTime, deriveOccurredAt, confidenceUpdateForEdit } from '../lib/utils';
 import { getWeightKgForEvent, updateWeightCheck, parseWeightLbsToKg, kgToLbs, MAX_WEIGHT_LBS } from '../lib/weight';
 import { usePetStore } from '../store/petStore';
 import { IntakeChipRow, IntakeRating } from '../components/log/IntakeChipRow';
@@ -25,6 +27,7 @@ import { AdherenceChipRow, DoseAdherence } from '../components/log/AdherenceChip
 import { VehicleChipRow } from '../components/log/VehicleChipRow';
 import { asDoseVehicle, type DoseVehicle } from '../lib/medications';
 import { TimeConfidenceField, TimeMode, FoundMode } from '../components/log/TimeConfidenceField';
+import { resolveTimeModeChange, resolveFoundModeChange, DEFAULT_WINDOW_SPAN_MS } from '../lib/eventTimeEdit';
 import { PhotoViewer } from '../components/ui';
 
 interface CachedFood {
@@ -82,15 +85,39 @@ export default function EditEventModal() {
   const [estimatedAt, setEstimatedAt] = useState<Date>(() =>
     occurredAtParam ? new Date(occurredAtParam) : new Date(),
   );
+  // B-448 — did the owner actually touch a CONFIDENCE-bearing affordance in this
+  // edit? Only then does the save restate the row's confidence.
+  //
+  // Everything above is form state seeded with defaults, and `timeMode` starts at
+  // 'saw'. Without this flag every save asserted that default: opening a legacy
+  // row (occurred_at_confidence NULL — 149 live rows in production at the time of
+  // writing) to fix a note wrote 'witnessed', turning the vet report's honest
+  // 'unspecified' into 'seen' on a time nobody ever claimed to have witnessed. It
+  // also lost real information whenever the async reconstruct below hadn't
+  // resolved before a fast save — a stored 'estimated'/'window' row would be
+  // flattened to 'witnessed'. Both directions move toward false precision.
+  //
+  // The point-in-time picker deliberately does NOT set this: correcting WHEN
+  // something happened is not a claim about how well the time is known. Same rule
+  // the adherence/how_given writes below already follow — write the field the
+  // owner changed, never the ones they didn't.
+  const confidenceTouched = useRef(false);
 
   // Photo attachment
   const [existingAttachmentUri, setExistingAttachmentUri] = useState<string | null>(null);
   const [newAttachmentUri, setNewAttachmentUri] = useState<string | null>(null);
+  // Source pixel dimensions from the picker asset, kept only so the pre-upload
+  // resize can cap the photo's true longest edge (B-352).
+  const [newAttachmentDims, setNewAttachmentDims] = useState<{ width: number; height: number } | null>(null);
 
   // Meal food state
   const [currentFoodId, setCurrentFoodId] = useState<string | null>(null);
   const [currentFoodBrand, setCurrentFoodBrand] = useState<string | null>(null);
   const [currentFoodProduct, setCurrentFoodProduct] = useState<string | null>(null);
+  // B-568 — the selected food's form. This screen is where getting it wrong costs most:
+  // it shows what the meal is currently set to, right beside a "Change" affordance, and
+  // brand + product alone cannot say whether that is the wet or the dry of one product.
+  const [currentFoodFormat, setCurrentFoodFormat] = useState<string | null>(null);
   const [showFoodPicker, setShowFoodPicker] = useState(false);
   const [foods, setFoods] = useState<CachedFood[]>([]);
 
@@ -143,6 +170,7 @@ export default function EditEventModal() {
           setCurrentFoodId(meal.food_item_id);
           setCurrentFoodBrand(meal.food_brand);
           setCurrentFoodProduct(meal.food_product_name);
+          setCurrentFoodFormat(meal.food_format);
           const r = meal.intake_rating;
           setIntakeRating(
             r === 'refused' || r === 'picked' || r === 'some'
@@ -264,7 +292,9 @@ export default function EditEventModal() {
       ? await ImagePicker.launchCameraAsync(opts)
       : await ImagePicker.launchImageLibraryAsync(opts);
     if (!result.canceled && result.assets[0]) {
-      setNewAttachmentUri(result.assets[0].uri);
+      const asset = result.assets[0];
+      setNewAttachmentUri(asset.uri);
+      setNewAttachmentDims({ width: asset.width, height: asset.height });
     }
   }
 
@@ -277,27 +307,49 @@ export default function EditEventModal() {
     setOccurredAt(date);
   }
 
+  // Every handler below drives a confidence-bearing control, so each one marks
+  // the confidence as owner-asserted (B-448). The Saw-it/Found-it toggle and the
+  // around/before/between sub-mode are claims in themselves; the window's edges
+  // are the claim's content, and moving one on a row stored as NULL is the owner
+  // saying "it happened in here" — which the save must record.
+  //
+  // The two mode handlers route through lib/eventTimeEdit so the no-op rule —
+  // re-tapping the segment that is already selected asserts nothing and seeds
+  // nothing — is pinned by a test rather than by this screen and log.tsx
+  // remembering to agree. Read that module's header: a no-op re-tap used to
+  // destroy a stored estimate and re-date occurred_at to the edit time.
   function handleTimeModeChange(m: TimeMode) {
-    if (m === 'found') {
-      setFoundMode('before');
-      setFoundLatest(occurredAtSource === 'exif' ? occurredAt : new Date());
-    }
+    const t = resolveTimeModeChange(timeMode, m, occurredAtSource === 'exif');
+    if (t.noOp) return;
+    if (t.asserted) confidenceTouched.current = true;
+    if (t.seedFoundMode) setFoundMode(t.seedFoundMode);
+    if (t.seedLatestFrom) setFoundLatest(t.seedLatestFrom === 'point' ? occurredAt : new Date());
     setTimeMode(m);
   }
 
   function handleFoundModeChange(m: FoundMode) {
-    if (m === 'around' && foundMode !== 'around') {
-      setEstimatedAt(foundLatest);
-    }
-    if (m === 'between' && !earliest) {
-      setEarliest(new Date(foundLatest.getTime() - 2 * 60 * 60 * 1000));
-    }
+    const t = resolveFoundModeChange(foundMode, m, earliest != null);
+    if (t.noOp) return;
+    if (t.asserted) confidenceTouched.current = true;
+    if (t.seedEstimatedFromLatest) setEstimatedAt(foundLatest);
+    if (t.seedEarliest) setEarliest(new Date(foundLatest.getTime() - DEFAULT_WINDOW_SPAN_MS));
     setFoundMode(m);
+  }
+
+  function handleEstimatedChange(d: Date) {
+    confidenceTouched.current = true;
+    setEstimatedAt(d);
+  }
+
+  function handleEarliestChange(d: Date | null) {
+    confidenceTouched.current = true;
+    setEarliest(d);
   }
 
   // Clamp earliest <= latest so a windowed event never violates the
   // chk_occurred_window_order DB constraint (B-010 migration 012).
   function handleLatestChange(d: Date) {
+    confidenceTouched.current = true;
     setFoundLatest(d);
     if (earliest && earliest.getTime() > d.getTime()) setEarliest(d);
   }
@@ -339,23 +391,40 @@ export default function EditEventModal() {
 
     setSaving(true);
     try {
-      // Meals are always witnessed (you see yourself put the bowl down); the
-      // confidence control isn't shown for them, so force witnessed here.
+      // Meals/weight/doses don't show the confidence control — the event type
+      // itself carries the claim (you see yourself put the bowl down, read the
+      // scale, give the pill), so there is no affordance to touch and nothing
+      // for this edit to restate. Their branch's 'witnessed' is inert: with no
+      // control there is nothing to mark confidenceTouched, so the save below
+      // never reaches this value. What the row already holds is what it keeps —
+      // including a legacy NULL, which stays the PM's backfill to make (012),
+      // not something an unrelated edit does one row at a time.
       const tf = showConfidenceControl
         ? buildTimeFields()
         : { confidence: 'witnessed' as const, occurredAt, earliest: null as Date | null, latest: null as Date | null, source: occurredAtSource };
       const occurredAtIso = tf.occurredAt.toISOString();
-      const earliestIso = tf.earliest ? tf.earliest.toISOString() : null;
-      const latestIso = tf.latest ? tf.latest.toISOString() : null;
+
+      // B-448 — restate the confidence ONLY when the owner touched a
+      // confidence-bearing control this session. Otherwise the row keeps exactly
+      // what it had, read back here rather than from the mount-time state so a
+      // save that beats the async reconstruct can't flatten it either.
+      const stored = await getEventTimeFields(id);
+      const confidence = confidenceUpdateForEdit({
+        ownerAsserted: confidenceTouched.current,
+        form: { confidence: tf.confidence, earliest: tf.earliest, latest: tf.latest },
+      });
+      // What the row will hold once this save lands — the patch below must mirror
+      // it, or Today renders a confidence the DB doesn't have.
+      const savedConfidence = confidence
+        ? { value: confidence.value, earliest: confidence.earliest, latest: confidence.latest }
+        : { value: stored.confidence, earliest: stored.earliest, latest: stored.latest };
 
       await updateEvent(id, {
         occurred_at: occurredAtIso,
         severity: null,
         notes: notes.trim() || null,
         occurred_at_source: tf.source,
-        occurred_at_confidence: tf.confidence,
-        occurred_at_earliest: earliestIso,
-        occurred_at_latest: latestIso,
+        ...(confidence ? { confidence } : {}),
       });
 
       if (config.hasFood && currentFoodId) {
@@ -408,6 +477,10 @@ export default function EditEventModal() {
           // store THAT as local_uri so it survives. Upload still reads the
           // original capture; both point at identical bytes.
           const localUri = persistCapture(newAttachmentUri, `${attId}.jpg`);
+          // B-105 — capture the rows this photo supersedes before inserting it.
+          // "Add" here is really a replace: the event carries one photo, and the
+          // old row/file/Storage object used to be left behind entirely.
+          const priors = await getEventAttachments(id);
           await db.runAsync(
             `INSERT OR REPLACE INTO event_attachments
                (id, event_id, pet_id, local_uri, storage_path, mime_type, synced, created_at)
@@ -418,7 +491,7 @@ export default function EditEventModal() {
           // Compress + EXIF/GPS-strip before upload — parity with log.tsx / event/[id].tsx.
           // The local_uri persisted above keeps the original for the durable hero; only the
           // uploaded object is re-encoded, so a camera-roll photo's GPS metadata never reaches storage.
-          compressForUpload(newAttachmentUri)
+          compressForUpload(newAttachmentUri, newAttachmentDims?.width, newAttachmentDims?.height)
             .then((uploadUri) => uploadPhoto('nyx-event-attachments', storagePath, uploadUri))
             .then(async () => {
               const { error } = await supabase.from('event_attachments').upsert(
@@ -433,19 +506,25 @@ export default function EditEventModal() {
               await db.runAsync('UPDATE event_attachments SET synced = 1 WHERE id = ?', [attId]);
             })
             .catch(console.error);
+          // Detach the rows this photo replaced — after the replacement is
+          // stored and its upload is in flight, so a failed insert can never
+          // leave the event photoless and the owner's save doesn't wait on a
+          // Storage round-trip. Never throws.
+          await detachOtherEventAttachments(priors, attId);
         }
       }
 
       patchInToday(id, {
         occurred_at: occurredAtIso,
-        occurred_at_confidence: tf.confidence,
-        occurred_at_earliest: earliestIso,
-        occurred_at_latest: latestIso,
+        occurred_at_confidence: savedConfidence.value,
+        occurred_at_earliest: savedConfidence.earliest,
+        occurred_at_latest: savedConfidence.latest,
         severity: null,
         notes: notes.trim() || null,
         food_item_id: currentFoodId,
         food_brand: currentFoodBrand,
         food_product_name: currentFoodProduct,
+        food_format: currentFoodFormat,
         intake_rating: intakeRating,
         ...(isMedication && dose ? { adherence, how_given: howGiven } : {}),
         ...(isWeight && weightKg != null ? { weight_kg: weightKg } : {}),
@@ -511,10 +590,10 @@ export default function EditEventModal() {
               foundMode={foundMode}
               onFoundModeChange={handleFoundModeChange}
               estimatedAt={estimatedAt}
-              onEstimatedChange={setEstimatedAt}
+              onEstimatedChange={handleEstimatedChange}
               earliest={earliest}
               latest={foundLatest}
-              onEarliestChange={setEarliest}
+              onEarliestChange={handleEarliestChange}
               onLatestChange={handleLatestChange}
             />
           ) : (
@@ -583,8 +662,13 @@ export default function EditEventModal() {
                   {currentFoodProduct ? (
                     <>
                       <Text style={styles.foodProduct}>{currentFoodProduct}</Text>
-                      {currentFoodBrand ? (
-                        <Text style={styles.foodBrand}>{currentFoodBrand}</Text>
+                      {/* BRAND · FORMAT — the same meta shape the picker tiles below
+                          use, so the current selection is named the way the options are. */}
+                      {currentFoodBrand || currentFoodFormat ? (
+                        <Text style={styles.foodBrand}>
+                          {[currentFoodBrand, foodFormatTag(currentFoodFormat)]
+                            .filter(Boolean).join(' · ')}
+                        </Text>
                       ) : null}
                     </>
                   ) : (
@@ -609,6 +693,7 @@ export default function EditEventModal() {
                           setCurrentFoodId(item.id);
                           setCurrentFoodBrand(item.brand);
                           setCurrentFoodProduct(item.product_name);
+                          setCurrentFoodFormat(item.format);
                           setShowFoodPicker(false);
                         }}
                         activeOpacity={0.7}

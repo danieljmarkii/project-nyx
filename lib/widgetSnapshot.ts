@@ -27,6 +27,7 @@
 
 import { File } from 'expo-file-system';
 import { getDb } from './db';
+import { isTrialRunning } from './dietTrial';
 import { ACTIVE_DIET_TRIAL_QUERY } from './dietTrialMirror';
 import { getSnapshotDirectory } from './appGroup';
 // toLocalDayKey (not feedingArrangements' localDateString twin): utils is
@@ -178,9 +179,40 @@ export function buildWidgetSnapshot(
     }
   }
 
+  // ── B-422 — A STALE-ACTIVE TRIAL IS DROPPED HERE, AND THIS IS THE WRITE PATH ──
+  //
+  // Nothing auto-completes a trial, so `status = 'active'` outlives the diet by
+  // default. `buildMealChoices` turns a trial into one-tap rows that NAME the
+  // trial diet for every unlogged slot — including a bare row for a pet with no
+  // learned slots at all — so a trial nobody ended keeps offering "Royal Canin
+  // Hydrolyzed" on the lock screen months after the pet went back to its normal
+  // food. A habitual tap then WRITES a meal event naming a food the pet has not
+  // eaten since spring, into the record a vet reads. That is corruption of the
+  // log, not a stale caption.
+  //
+  // Nulled ONCE, above both consumers, rather than gated inside each: the day
+  // counter and the one-tap rows must never disagree about whether the pet is on
+  // a trial, and the widget's own render has no way to re-check (it evaluates in
+  // a bare JSC context with no imports and no clock of its own — see the widget
+  // layout convention in CLAUDE.md).
+  //
+  // SO THE WIDGET AND THE CARD DELIBERATELY DIVERGE HERE, and the divergence is
+  // the point rather than collateral: the Pet-tab card keeps an overrun trial
+  // forever because it carries the milestone — it is the one surface that can ACT
+  // on the overrun. The widget cannot. "Day 412 of 56" on a lock screen, with no
+  // way to resolve it, is noise on a glanceable surface, so it retires with the
+  // rows. (R6 punted the widget to a full design revamp — B-542; revisit there.)
+  //
+  // `isTrialRunning` gets no `status` — `ACTIVE_DIET_TRIAL_QUERY` filters it in
+  // SQL and does not select it back. It gets no `timeZone` either: the publisher
+  // runs on the device, whose own zone IS the owner's midnight (B-421).
+  const trial = input.trial !== null && isTrialRunning(input.trial, now.getTime())
+    ? input.trial
+    : null;
+
   const slots = learnMealSlots(input.meals, now);
   const slotRows = buildSlotRows(slots, todayMeals);
-  const { trialDay, trialTargetDays } = resolveTrialContext(input.trial, now.getTime());
+  const { trialDay, trialTargetDays } = resolveTrialContext(trial, now.getTime());
 
   return {
     schemaVersion: WIDGET_SNAPSHOT_SCHEMA_VERSION,
@@ -193,7 +225,7 @@ export function buildWidgetSnapshot(
     bowlConfirmedAt: input.bowlConfirmedAt,
     today: { mealCount, treatCount, lastMealAt, lastTreatAt },
     slots: slotRows,
-    mealChoices: buildMealChoices(slots, slotRows, input.trial),
+    mealChoices: buildMealChoices(slots, slotRows, trial),
     treatChoices: buildTreatChoices(input.meals, now),
     trialDay,
     trialTargetDays,
@@ -283,6 +315,9 @@ async function readSnapshotInputs(petId: string, now: Date) {
     food_item_id: string | null;
     food_label: string | null;
   }>(ACTIVE_DIET_TRIAL_QUERY, [petId]);
+  // Passed through as read. The B-422 staleness gate is applied in
+  // `buildWidgetSnapshot`, not here, so that it sits on the PURE boundary every
+  // consumer of the trial goes through and can be exercised without a database.
   const trial: ActiveTrialInfo | null = trialRow
     ? {
         startedAt: trialRow.started_at,

@@ -533,6 +533,99 @@ export function pickerPrimaryProtein(main: string | null): string | null {
   return canonicalizeProtein(main);
 }
 
+// ── R7(b) — the primary↔set invariant (B-529) ─────────────────────────────────
+//
+// THE INVARIANT, stated once so it stops being an emergent property of three
+// call sites that each happen to do the right thing:
+//
+//     primary_protein IS NULL  OR  canonicalize(primary_protein) === proteins[0]
+//
+// The null case is the one sanctioned exception and it is deliberate: clearing
+// the main protein demotes it into the tail (§6), so `proteins[0]` is then a
+// protein the owner explicitly un-designated and writing it back as the primary
+// would silently undo the clear (see `pickerPrimaryProtein`).
+//
+// WHY IT NEEDED STATING. Nothing validated the pair, and the B-417 pre-ship
+// review found the cost on the clinical artifact: a row whose primary does not
+// head its own set makes `resolveTargetProtein` and the set disagree about what
+// the trial is built on, and the report then compares the trial food against a
+// SECONDARY — i.e. calls the trial's own target protein the contaminant. The
+// same inversion `readProteinSet` and the B-416 backfill's guard 1 each had to
+// fix locally, arriving a third time.
+
+/** Does this stored pair satisfy the invariant above? Exported so a write path,
+ *  a test, or a future audit can all ask the same question. */
+export function proteinPairIsConsistent(
+  primaryProtein: string | null | undefined,
+  proteins: readonly string[],
+): boolean {
+  const primary = canonicalizeProtein(primaryProtein);
+  if (primary == null) return true;
+  return proteins.length > 0 && proteins[0] === primary;
+}
+
+export interface ProteinPairWrite {
+  primaryProtein: string | null;
+  proteins: string[];
+}
+
+/**
+ * Produce a consistent (`primary_protein`, `proteins`) pair as ONE value.
+ *
+ * Returning both together is the point — it is the same shape the B-416 backfill
+ * adopted as its guard 1 ("rewrite both columns atomically, in one statement"),
+ * for the same reason: a caller holding two separate values can write one and
+ * not the other, and the resulting row inverts the trial's contaminant check
+ * with nothing on any surface saying so.
+ *
+ * CLASS A ONLY. This canonicalizes and hoists; it never applies
+ * `normalizeExtractedProtein`'s species judgements, so calling it on a read or
+ * on an unrelated edit cannot retroactively re-key a stored value (D3a).
+ */
+export function reconcileProteinPair(
+  primaryProtein: string | null | undefined,
+  proteins: readonly string[],
+): ProteinPairWrite {
+  const primary = canonicalizeProtein(primaryProtein);
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const candidate of [primary, ...proteins]) {
+    if (typeof candidate !== 'string') continue;
+    const key = canonicalizeProtein(candidate);
+    if (key == null || seen.has(key)) continue;
+    seen.add(key);
+    out.push(key);
+    if (out.length >= MAX_CAPTURED_PROTEINS) break;
+  }
+  return { primaryProtein: primary, proteins: out };
+}
+
+/**
+ * The whole write for one picker state: both columns, produced together.
+ *
+ * The two screens that host the picker (`app/food-capture.tsx`,
+ * `app/food/[id].tsx`) previously called `pickerPrimaryProtein` and
+ * `pickerProteinsToSet` as a pair, at four call sites between them, each
+ * assembling the row by hand. That was correct and unenforced — exactly the
+ * shape R7(b) was filed against. This is the single value both screens now
+ * write, so the pair cannot drift by omission.
+ */
+export function pickerProteinWrite(
+  main: string | null,
+  alsoContains: readonly string[],
+): ProteinPairWrite {
+  // ONE implementation, not a composition of two. `reconcileProteinPair` already
+  // does exactly what the picker needs — canonicalize the main, hoist it, dedupe
+  // the tail behind it — including the null-main case, where it returns a null
+  // primary and the tail unchanged, which is §6's demote rule. Composing
+  // `pickerPrimaryProtein` + `pickerProteinsToSet` here instead duplicated that
+  // hoist/dedupe loop, and a second copy of a keying loop is how the two halves
+  // of a pair drift in the first place. The equivalence is not assumed: the
+  // write-path test asserts this function still agrees with both legacy helpers
+  // across the full cross-product of picker states.
+  return reconcileProteinPair(main, alsoContains);
+}
+
 export function pickerProteinsToSet(
   main: string | null,
   alsoContains: readonly string[],

@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Culprit — Landing hero after the ping (logo mockups)</title>
+<style>
+  /* Fonts approximate the real stack: Geist → -apple-system/Inter; Newsreader → Georgia.
+     Phone-internal tokens are lifted verbatim from constants/theme.ts and are fixed —
+     the hero is the subject under review, so it doesn't re-theme. Page chrome does. */
+  :root {
+    --accent: #00C2A8;
+    --night: #13112E;
+    --night-elevated: #251F57;
+    --moonlight: #F2EEE4;
+    --text-on-night: #ECEAF6;
+    --text-on-night-muted: #A6A2CE;
+    --text-on-night-faint: #706BA6;
+    --aurora-violet: #221C56;
+    --aurora-indigo: #191449;
+
+    /* page chrome — theme-aware */
+    --page-bg: #F0EFEA;
+    --page-text: #0A0A0A;
+    --page-text-2: #525252;
+    --page-text-3: #737373;
+    --card-bg: #FFFFFF;
+    --card-border: #EAEAEA;
+    --rec-bg: #E7F6F3;
+    --rec-border: #9BD8CC;
+    --warn-bg: #FDF8EC;
+    --warn-border: #F3D9A4;
+    --code-bg: #ECEAE3;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --page-bg: #17161F;
+      --page-text: #ECEAF6;
+      --page-text-2: #B7B3D6;
+      --page-text-3: #8F8BB5;
+      --card-bg: #201F2B;
+      --card-border: #34324A;
+      --rec-bg: #1C2B29;
+      --rec-border: #2E5B52;
+      --warn-bg: #2B2536;
+      --warn-border: #6B5A33;
+      --code-bg: #262433;
+    }
+  }
+  :root[data-theme="dark"] {
+    --page-bg: #17161F; --page-text: #ECEAF6; --page-text-2: #B7B3D6; --page-text-3: #8F8BB5;
+    --card-bg: #201F2B; --card-border: #34324A; --rec-bg: #1C2B29; --rec-border: #2E5B52;
+    --warn-bg: #2B2536; --warn-border: #6B5A33; --code-bg: #262433;
+  }
+  :root[data-theme="light"] {
+    --page-bg: #F0EFEA; --page-text: #0A0A0A; --page-text-2: #525252; --page-text-3: #737373;
+    --card-bg: #FFFFFF; --card-border: #EAEAEA; --rec-bg: #E7F6F3; --rec-border: #9BD8CC;
+    --warn-bg: #FDF8EC; --warn-border: #F3D9A4; --code-bg: #ECEAE3;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif;
+    background: var(--page-bg);
+    color: var(--page-text);
+    line-height: 1.55;
+    padding: 40px 24px 80px;
+  }
+  .wrap { max-width: 1240px; margin: 0 auto; }
+  h1 { font-family: Georgia, "Times New Roman", serif; font-weight: 500; font-size: 1.9rem; letter-spacing: -0.01em; margin-bottom: 6px; }
+  .lede { color: var(--page-text-2); max-width: 78ch; margin-bottom: 8px; }
+  .meta { color: var(--page-text-3); font-size: .85rem; margin-bottom: 28px; }
+  h2 { font-size: 1.15rem; font-weight: 600; margin: 40px 0 12px; }
+  code { background: var(--code-bg); border-radius: 4px; padding: 1px 5px; font-size: .86em; }
+
+  .context {
+    background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 14px;
+    padding: 18px 22px; margin-bottom: 36px; max-width: 92ch;
+  }
+  .context p { color: var(--page-text-2); font-size: .93rem; }
+  .context p + p { margin-top: 8px; }
+  .context b { color: var(--page-text); }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 28px;
+    align-items: start;
+  }
+  .option {
+    background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 18px;
+    overflow: hidden;
+  }
+  .option.rec { border-color: var(--rec-border); box-shadow: 0 0 0 1px var(--rec-border); }
+  .stage { background: #0D0B22; display: flex; justify-content: center; padding: 26px 0 22px; overflow-x: auto; }
+  .phone {
+    width: 300px; height: 585px; border-radius: 34px; overflow: hidden;
+    background: var(--night); position: relative; flex: none;
+    border: 1px solid rgba(196,190,255,0.18);
+  }
+  .phone svg.ground { position: absolute; inset: 0; }
+  .cap { padding: 16px 20px 20px; border-top: 1px solid var(--card-border); }
+  .cap .tag {
+    display: inline-block; font-size: .72rem; font-weight: 600; letter-spacing: .06em;
+    text-transform: uppercase; border-radius: 999px; padding: 2px 10px; margin-bottom: 8px;
+  }
+  .tag.a { background: var(--code-bg); color: var(--page-text-2); }
+  .tag.rec-t { background: var(--rec-bg); color: #0E7C6B; border: 1px solid var(--rec-border); }
+  @media (prefers-color-scheme: dark) { .tag.rec-t { color: #7FD9C9; } }
+  .tag.warn-t { background: var(--warn-bg); color: #8A6D1F; border: 1px solid var(--warn-border); }
+  @media (prefers-color-scheme: dark) { .tag.warn-t { color: #E4C87A; } }
+  .cap b.title { display: block; font-size: .98rem; margin-bottom: 4px; }
+  .cap p { font-size: .87rem; color: var(--page-text-2); }
+  .cap p + p { margin-top: 7px; }
+  .cap .verdict { font-size: .85rem; margin-top: 10px; color: var(--page-text); }
+
+  /* ——— in-phone layout (mirrors app/(auth)/index.tsx) ——— */
+  .hero-stack {
+    position: absolute; inset: 0; display: flex; flex-direction: column;
+    align-items: center; padding: 0 22px;
+  }
+  .hero-centre { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; }
+  .wordmark { font-family: Georgia, "Times New Roman", serif; color: var(--moonlight); font-size: 27px; letter-spacing: -0.01em; }
+  .sub { color: var(--text-on-night-muted); font-size: 12.5px; text-align: center; line-height: 1.5; padding: 0 10px; }
+  .learn { color: var(--accent); font-size: 12.5px; font-weight: 600; margin-top: 8px; }
+  .ctas { width: 100%; padding-bottom: 22px; display: flex; flex-direction: column; gap: 10px; }
+  .btn-accent {
+    background: var(--accent); color: #06231E; text-align: center; font-weight: 600;
+    font-size: 13.5px; border-radius: 12px; padding: 12px 0;
+  }
+  .btn-ghost { color: var(--text-on-night); text-align: center; font-weight: 600; font-size: 13px; padding: 8px 0; }
+
+  /* Whorl drift — only in Option D, only when motion is allowed. Periods echo the
+     proven WhorlSpinner mechanism (one continuous linear rotation per layer, one
+     restart per period — the shape that does NOT stutter on device). */
+  @media (prefers-reduced-motion: no-preference) {
+    .drift-1 { animation: spin 70s linear infinite; transform-origin: 195px 300px; }
+    .drift-2 { animation: spin-r 100s linear infinite; transform-origin: 195px 300px; }
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @keyframes spin-r { to { transform: rotate(-360deg); } }
+
+  .callout {
+    border-radius: 14px; padding: 18px 22px; margin-top: 14px; max-width: 92ch;
+    font-size: .93rem;
+  }
+  .callout.rec { background: var(--rec-bg); border: 1px solid var(--rec-border); }
+  .callout.warn { background: var(--warn-bg); border: 1px solid var(--warn-border); }
+  .callout b { display: block; margin-bottom: 6px; }
+  .callout p { color: var(--page-text-2); }
+  .callout p + p { margin-top: 8px; }
+  ul.notes { margin: 10px 0 0 18px; color: var(--page-text-2); font-size: .93rem; }
+  ul.notes li + li { margin-top: 6px; }
+  table { border-collapse: collapse; margin-top: 12px; font-size: .88rem; }
+  th, td { text-align: left; padding: 8px 14px 8px 0; border-bottom: 1px solid var(--card-border); vertical-align: top; }
+  th { color: var(--page-text-3); font-weight: 600; font-size: .8rem; text-transform: uppercase; letter-spacing: .05em; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>Landing hero, after the ping</h1>
+  <p class="lede">Four treatments for the unauthenticated brand moment once the ring-train Signal ping comes off the Landing. The whorl ground echoes what getculprit.app already ships — the site is the proof the motif reads as craft standing perfectly still.</p>
+  <p class="meta">Sr. Product Designer · 2026-07-26 · Subject: <code>app/(auth)/index.tsx</code> (the Landing hero). The login form's mark (<code>AuthBrandMark</code>) is already static and is untouched by every option here.</p>
+
+  <div class="context">
+    <p><b>Why we're here.</b> The three-ring radar ping (B-322, re-choreographed twice) still isn't right on device, and the effort spent is real. But there's a second reason to remove it that matters more than the stutter: <b>the pulse is semantically empty on this screen.</b> The pulse contract (spec §3) defines <code>live</code> as "a fresh finding the owner hasn't seen." A logged-out Landing has no findings — the Landing hero hard-codes <code>live</code> as decoration. Removing it isn't a retreat from a motion we couldn't build; it's removing a motion that was never saying anything.</p>
+    <p><b>The motion question, answered honestly.</b> One motion mechanism is already proven on this hardware: WhorlSpinner's slow continuous rotations (native-driver, one loop restart per 9–25<i>s</i> period) shipped in N3 and play clean. The fragile shape is the ping — three staggered loops re-arming from the JS thread every 2.6s, so any stall lands mid-fade where the eye catches it. So "can we get motion right?" — yes, but only the slow-drift kind, and only if we want it (Option D). The radar ping is the shape to abandon.</p>
+  </div>
+
+  <div class="grid">
+
+    <!-- ============ OPTION A ============ -->
+    <div class="option">
+      <div class="stage">
+        <div class="phone">
+          <svg class="ground" viewBox="0 0 300 585" width="300" height="585">
+            <defs>
+              <radialGradient id="av-a" cx="0.5" cy="0.5" r="0.5">
+                <stop offset="0" stop-color="var(--aurora-violet)" stop-opacity="1"/>
+                <stop offset="0.62" stop-color="var(--aurora-violet)" stop-opacity="0"/>
+              </radialGradient>
+              <radialGradient id="ai-a" cx="0.5" cy="0.5" r="0.5">
+                <stop offset="0" stop-color="var(--aurora-indigo)" stop-opacity="1"/>
+                <stop offset="0.66" stop-color="var(--aurora-indigo)" stop-opacity="0"/>
+              </radialGradient>
+              <mask id="carve-a">
+                <rect x="0" y="0" width="100" height="100" fill="#fff"/>
+                <circle cx="61" cy="43" r="29" fill="#000"/>
+              </mask>
+            </defs>
+            <rect width="300" height="585" fill="var(--night)"/>
+            <ellipse cx="150" cy="140" rx="216" ry="234" fill="url(#av-a)"/>
+            <ellipse cx="150" cy="579" rx="234" ry="281" fill="url(#ai-a)"/>
+            <!-- starfield: the shipped 12-dot field, fractions verbatim from NightHeroGround -->
+            <g fill="rgba(255,255,255,0.45)">
+              <circle cx="66" cy="88" r="0.85" opacity="1"/><circle cx="225" cy="123" r="0.8" opacity="0.95"/>
+              <circle cx="36" cy="176" r="0.6" opacity="0.7"/><circle cx="135" cy="64" r="0.55" opacity="0.62"/>
+              <circle cx="258" cy="216" r="0.7" opacity="0.82"/><circle cx="180" cy="304" r="0.5" opacity="0.6"/>
+              <circle cx="93" cy="351" r="0.6" opacity="0.74"/><circle cx="249" cy="386" r="0.5" opacity="0.63"/>
+              <circle cx="48" cy="433" r="0.7" opacity="0.86"/><circle cx="159" cy="486" r="0.5" opacity="0.62"/>
+              <circle cx="210" cy="515" r="0.6" opacity="0.68"/><circle cx="114" cy="257" r="0.5" opacity="0.6"/>
+            </g>
+            <!-- carved moon, hero scale (~44% width = 132px), static Signal dot -->
+            <g transform="translate(84,148) scale(1.32)">
+              <circle cx="45" cy="50" r="33" fill="var(--moonlight)" mask="url(#carve-a)"/>
+              <circle cx="66" cy="53" r="9" fill="var(--accent)"/>
+            </g>
+          </svg>
+          <div class="hero-stack">
+            <div class="hero-centre">
+              <div style="height:190px"></div>
+              <div class="wordmark">Culprit</div>
+              <div class="sub">Track symptoms, find triggers. Walk into your next vet visit with answers, not guesses.</div>
+              <div class="learn">See how it works ›</div>
+            </div>
+            <div class="ctas">
+              <div class="btn-accent">Create account</div>
+              <div class="btn-ghost">Log in</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="cap">
+        <span class="tag a">Option A — zero-risk baseline</span>
+        <b class="title">The quiet moon</b>
+        <p>The shipped hero with the ping simply off — carved moon, crisp static Signal dot, aurora and starfield untouched. This is exactly what reduced-motion users see today, so it is already designed, already tested, already on-brand.</p>
+        <p class="verdict"><b>Cost:</b> one prop. <b>Risk:</b> none. <b>But:</b> the hero loses the one element that connected it to the website's richer night, and the screen can read a touch bare at full device scale.</p>
+      </div>
+    </div>
+
+    <!-- ============ OPTION B ============ -->
+    <div class="option rec">
+      <div class="stage">
+        <div class="phone">
+          <svg class="ground" viewBox="0 0 300 585" width="300" height="585">
+            <defs>
+              <radialGradient id="av-b" cx="0.5" cy="0.5" r="0.5">
+                <stop offset="0" stop-color="var(--aurora-violet)" stop-opacity="1"/>
+                <stop offset="0.62" stop-color="var(--aurora-violet)" stop-opacity="0"/>
+              </radialGradient>
+              <radialGradient id="ai-b" cx="0.5" cy="0.5" r="0.5">
+                <stop offset="0" stop-color="var(--aurora-indigo)" stop-opacity="1"/>
+                <stop offset="0.66" stop-color="var(--aurora-indigo)" stop-opacity="0"/>
+              </radialGradient>
+              <mask id="carve-b">
+                <rect x="0" y="0" width="100" height="100" fill="#fff"/>
+                <circle cx="61" cy="43" r="29" fill="#000"/>
+              </mask>
+            </defs>
+            <rect width="300" height="585" fill="var(--night)"/>
+            <ellipse cx="150" cy="140" rx="216" ry="234" fill="url(#av-b)"/>
+            <ellipse cx="150" cy="579" rx="234" ry="281" fill="url(#ai-b)"/>
+            <!-- The whorl ground — the site's watermark brought home. Concentric crescent
+                 ridges (the Whorl motif geometry, scaled up), drawn in night-elevated
+                 indigo at watermark opacity. NO teal in the texture: teal stays the
+                 mark's dot alone (§1.3 — the one interactive accent; the 2026-07-12
+                 QA that killed the teal haze binds here too). -->
+            <g fill="none" stroke="var(--night-elevated)" stroke-linecap="round" transform="translate(195,300) scale(2.6) translate(-100,-100)">
+              <path d="M138 44 A70 70 0 1 0 138 156" stroke-width="2.6" opacity="0.75"/>
+              <path d="M132 60 A54 54 0 1 0 132 140" stroke-width="2.2" opacity="0.6"/>
+              <path d="M126 76 A38 38 0 1 0 126 124" stroke-width="2" opacity="0.48"/>
+              <path d="M120 92 A22 22 0 1 0 120 108" stroke-width="1.8" opacity="0.38"/>
+            </g>
+            <g fill="rgba(255,255,255,0.45)">
+              <circle cx="66" cy="88" r="0.85" opacity="1"/><circle cx="225" cy="123" r="0.8" opacity="0.95"/>
+              <circle cx="36" cy="176" r="0.6" opacity="0.7"/><circle cx="135" cy="64" r="0.55" opacity="0.62"/>
+              <circle cx="258" cy="216" r="0.7" opacity="0.82"/><circle cx="180" cy="304" r="0.5" opacity="0.6"/>
+              <circle cx="93" cy="351" r="0.6" opacity="0.74"/><circle cx="249" cy="386" r="0.5" opacity="0.63"/>
+              <circle cx="48" cy="433" r="0.7" opacity="0.86"/><circle cx="159" cy="486" r="0.5" opacity="0.62"/>
+              <circle cx="210" cy="515" r="0.6" opacity="0.68"/><circle cx="114" cy="257" r="0.5" opacity="0.6"/>
+            </g>
+            <g transform="translate(84,148) scale(1.32)">
+              <circle cx="45" cy="50" r="33" fill="var(--moonlight)" mask="url(#carve-b)"/>
+              <circle cx="66" cy="53" r="9" fill="var(--accent)"/>
+            </g>
+          </svg>
+          <div class="hero-stack">
+            <div class="hero-centre">
+              <div style="height:190px"></div>
+              <div class="wordmark">Culprit</div>
+              <div class="sub">Track symptoms, find triggers. Walk into your next vet visit with answers, not guesses.</div>
+              <div class="learn">See how it works ›</div>
+            </div>
+            <div class="ctas">
+              <div class="btn-accent">Create account</div>
+              <div class="btn-ghost">Log in</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="cap">
+        <span class="tag rec-t">Option B — designer recommendation</span>
+        <b class="title">The whorl ground</b>
+        <p>The site's watermark brought home: hero-scale whorl ridges behind the moon, drawn in night-elevated indigo at low opacity — texture, not state. The moon keeps its place as the mark (it <i>is</i> the app icon; the first launch should show the icon's mark), and the whorl does what the brand system documented it for: the secondary "whodunit" texture. Someone who lands here from getculprit.app sees the same night.</p>
+        <p class="verdict"><b>Static by conviction, not concession:</b> in-app, a turning whorl means "working on the pet's behalf" (it's the loading mark). Nothing is happening on the Landing — so the whorl stands still here, exactly as it does on the site. Teal stays confined to the Signal dot.</p>
+      </div>
+    </div>
+
+    <!-- ============ OPTION C ============ -->
+    <div class="option">
+      <div class="stage">
+        <div class="phone">
+          <svg class="ground" viewBox="0 0 300 585" width="300" height="585">
+            <defs>
+              <radialGradient id="av-c" cx="0.5" cy="0.5" r="0.5">
+                <stop offset="0" stop-color="var(--aurora-violet)" stop-opacity="1"/>
+                <stop offset="0.62" stop-color="var(--aurora-violet)" stop-opacity="0"/>
+              </radialGradient>
+              <radialGradient id="ai-c" cx="0.5" cy="0.5" r="0.5">
+                <stop offset="0" stop-color="var(--aurora-indigo)" stop-opacity="1"/>
+                <stop offset="0.66" stop-color="var(--aurora-indigo)" stop-opacity="0"/>
+              </radialGradient>
+            </defs>
+            <rect width="300" height="585" fill="var(--night)"/>
+            <ellipse cx="150" cy="140" rx="216" ry="234" fill="url(#av-c)"/>
+            <ellipse cx="150" cy="579" rx="234" ry="281" fill="url(#ai-c)"/>
+            <g fill="rgba(255,255,255,0.45)">
+              <circle cx="66" cy="88" r="0.85" opacity="1"/><circle cx="225" cy="123" r="0.8" opacity="0.95"/>
+              <circle cx="36" cy="176" r="0.6" opacity="0.7"/><circle cx="135" cy="64" r="0.55" opacity="0.62"/>
+              <circle cx="258" cy="216" r="0.7" opacity="0.82"/><circle cx="180" cy="304" r="0.5" opacity="0.6"/>
+              <circle cx="93" cy="351" r="0.6" opacity="0.74"/><circle cx="249" cy="386" r="0.5" opacity="0.63"/>
+              <circle cx="48" cy="433" r="0.7" opacity="0.86"/><circle cx="159" cy="486" r="0.5" opacity="0.62"/>
+              <circle cx="210" cy="515" r="0.6" opacity="0.68"/><circle cx="114" cy="257" r="0.5" opacity="0.6"/>
+            </g>
+            <!-- The Whorl AS the mark — motif geometry verbatim at hero scale.
+                 Ridges alternate moonlight/teal like WhorlSpinner's night ground;
+                 the Signal dot sits in the opening. -->
+            <g transform="translate(150,220) scale(0.78) translate(-100,-100)">
+              <g fill="none" stroke-linecap="round">
+                <path d="M138 44 A70 70 0 1 0 138 156" stroke="var(--moonlight)" stroke-width="5.5" opacity="0.95"/>
+                <path d="M132 60 A54 54 0 1 0 132 140" stroke="var(--accent)" stroke-width="4.6" opacity="0.7"/>
+                <path d="M126 76 A38 38 0 1 0 126 124" stroke="var(--moonlight)" stroke-width="4.2" opacity="0.62"/>
+                <path d="M120 92 A22 22 0 1 0 120 108" stroke="var(--accent)" stroke-width="3.8" opacity="0.5"/>
+              </g>
+              <circle cx="108" cy="100" r="6.5" fill="var(--accent)"/>
+            </g>
+          </svg>
+          <div class="hero-stack">
+            <div class="hero-centre">
+              <div style="height:190px"></div>
+              <div class="wordmark">Culprit</div>
+              <div class="sub">Track symptoms, find triggers. Walk into your next vet visit with answers, not guesses.</div>
+              <div class="learn">See how it works ›</div>
+            </div>
+            <div class="ctas">
+              <div class="btn-accent">Create account</div>
+              <div class="btn-ghost">Log in</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="cap">
+        <span class="tag warn-t">Option C — the literal read, argued against</span>
+        <b class="title">The whorl as the mark</b>
+        <p>"A whorl style logo" taken literally: the motif itself replaces the moon as the hero graphic. Included honestly so the choice is visible — and here is the case against it: the app icon on the owner's home screen is the <b>carved moon</b>. The first screen after tapping that icon should show the icon's mark, not its supporting texture. The brand system also deliberately keeps the whorl <i>out</i> of the identity slot ("kept out of the app icon") so the primary mark stays clean.</p>
+        <p class="verdict"><b>Also:</b> at hero scale the ridges put a lot of teal on screen as decoration — the exact thing the 2026-07-12 QA pass removed.</p>
+      </div>
+    </div>
+
+    <!-- ============ OPTION D ============ -->
+    <div class="option">
+      <div class="stage">
+        <div class="phone">
+          <svg class="ground" viewBox="0 0 300 585" width="300" height="585">
+            <defs>
+              <radialGradient id="av-d" cx="0.5" cy="0.5" r="0.5">
+                <stop offset="0" stop-color="var(--aurora-violet)" stop-opacity="1"/>
+                <stop offset="0.62" stop-color="var(--aurora-violet)" stop-opacity="0"/>
+              </radialGradient>
+              <radialGradient id="ai-d" cx="0.5" cy="0.5" r="0.5">
+                <stop offset="0" stop-color="var(--aurora-indigo)" stop-opacity="1"/>
+                <stop offset="0.66" stop-color="var(--aurora-indigo)" stop-opacity="0"/>
+              </radialGradient>
+              <mask id="carve-d">
+                <rect x="0" y="0" width="100" height="100" fill="#fff"/>
+                <circle cx="61" cy="43" r="29" fill="#000"/>
+              </mask>
+            </defs>
+            <rect width="300" height="585" fill="var(--night)"/>
+            <ellipse cx="150" cy="140" rx="216" ry="234" fill="url(#av-d)"/>
+            <ellipse cx="150" cy="579" rx="234" ry="281" fill="url(#ai-d)"/>
+            <!-- Option B's whorl ground, drifting: two layers counter-rotating at
+                 70s / 100s — the WhorlSpinner mechanism (continuous linear rotation,
+                 one restart per period), NOT the ping's staggered re-arming loops. -->
+            <g class="drift-1" fill="none" stroke="var(--night-elevated)" stroke-linecap="round">
+              <g transform="translate(195,300) scale(2.6) translate(-100,-100)">
+                <path d="M138 44 A70 70 0 1 0 138 156" stroke-width="2.6" opacity="0.75"/>
+                <path d="M126 76 A38 38 0 1 0 126 124" stroke-width="2" opacity="0.48"/>
+              </g>
+            </g>
+            <g class="drift-2" fill="none" stroke="var(--night-elevated)" stroke-linecap="round">
+              <g transform="translate(195,300) scale(2.6) translate(-100,-100)">
+                <path d="M132 60 A54 54 0 1 0 132 140" stroke-width="2.2" opacity="0.6"/>
+                <path d="M120 92 A22 22 0 1 0 120 108" stroke-width="1.8" opacity="0.38"/>
+              </g>
+            </g>
+            <g fill="rgba(255,255,255,0.45)">
+              <circle cx="66" cy="88" r="0.85" opacity="1"/><circle cx="225" cy="123" r="0.8" opacity="0.95"/>
+              <circle cx="36" cy="176" r="0.6" opacity="0.7"/><circle cx="135" cy="64" r="0.55" opacity="0.62"/>
+              <circle cx="258" cy="216" r="0.7" opacity="0.82"/><circle cx="180" cy="304" r="0.5" opacity="0.6"/>
+              <circle cx="93" cy="351" r="0.6" opacity="0.74"/><circle cx="249" cy="386" r="0.5" opacity="0.63"/>
+              <circle cx="48" cy="433" r="0.7" opacity="0.86"/><circle cx="159" cy="486" r="0.5" opacity="0.62"/>
+              <circle cx="210" cy="515" r="0.6" opacity="0.68"/><circle cx="114" cy="257" r="0.5" opacity="0.6"/>
+            </g>
+            <g transform="translate(84,148) scale(1.32)">
+              <circle cx="45" cy="50" r="33" fill="var(--moonlight)" mask="url(#carve-d)"/>
+              <circle cx="66" cy="53" r="9" fill="var(--accent)"/>
+            </g>
+          </svg>
+          <div class="hero-stack">
+            <div class="hero-centre">
+              <div style="height:190px"></div>
+              <div class="wordmark">Culprit</div>
+              <div class="sub">Track symptoms, find triggers. Walk into your next vet visit with answers, not guesses.</div>
+              <div class="learn">See how it works ›</div>
+            </div>
+            <div class="ctas">
+              <div class="btn-accent">Create account</div>
+              <div class="btn-ghost">Log in</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="cap">
+        <span class="tag a">Option D — the motion option, if we want one</span>
+        <b class="title">The whorl drift</b>
+        <p>Option B with the ridges counter-rotating at 70s/100s (this page animates it — watch the arcs). This is the <b>proven</b> mechanism: WhorlSpinner's continuous native-driver rotation, whose loop restarts land once per period instead of three times per 2.6s. It will not stutter the way the ping does. Reduced-motion renders Option B exactly.</p>
+        <p class="verdict"><b>The reservation is register, not feasibility:</b> in-app, a moving whorl is the loading gesture — it says "working." The Landing isn't working on anything. If B feels too still on the PM's device, D is one animation layer away on the same composition — which makes B the safe first ship.</p>
+      </div>
+    </div>
+
+  </div>
+
+  <h2>Designer verdict</h2>
+  <div class="callout rec">
+    <b>Ship Option B. Static is the semantically honest choice here, and the website is the existence proof it's beautiful.</b>
+    <p>The ping failed twice on device, but the deeper problem is that it never meant anything on this screen — the pulse contract ties it to an unseen finding, and a logged-out screen has none. The whorl ground gives the hero the richness the ping was trying to add, in the motif the brand system already reserved for exactly this job, with continuity from the marketing site into first launch. If the still frame underwhelms on-device, Option D is a one-layer addition to the identical composition — so choosing B now forecloses nothing.</p>
+  </div>
+
+  <h2>What each option costs</h2>
+  <table>
+    <tr><th>Option</th><th>Code</th><th>Motion budget (§1.5)</th><th>Teal rule (§1.3)</th></tr>
+    <tr><td><b>A</b> — quiet moon</td><td>Stop passing <code>live</code> on the Landing. One line.</td><td>Zero loops</td><td>Clean (dot only)</td></tr>
+    <tr><td><b>B</b> — whorl ground</td><td>A static SVG layer in <code>NightHeroGround</code> (indigo ridges) + Option A's one line.</td><td>Zero loops</td><td>Clean — ridges are indigo, never teal</td></tr>
+    <tr><td><b>C</b> — whorl as mark</td><td>New hero composition; displaces <code>CulpritMark</code> from the brand moment.</td><td>Zero loops</td><td><b>Violates in spirit</b> — decorative teal at hero scale</td></tr>
+    <tr><td><b>D</b> — whorl drift</td><td>Option B + two rotating layers (WhorlSpinner's exact mechanism).</td><td>One ambient loop (the composition counts as one)</td><td>Clean</td></tr>
+  </table>
+
+  <h2>Flags for the PM</h2>
+  <ul class="notes">
+    <li><b>The Home header pulse is a separate call.</b> The same ring train runs on <code>HomeHeader</code>'s 16px mark, where <code>live</code> <i>does</i> mean something (a fresh unseen finding). If the rings are dead everywhere, the header's live cue can drop to the dot-breathe alone — a single continuous loop with no mid-fade restarts, so it sidesteps the exact failure mode. Not built here; needs your call before we touch it.</li>
+    <li><b>Spec impact if B ships:</b> a Tier-2 edit to <code>culprit-in-app-brand-requirements.md</code> §4 (hero composition gains the whorl ground; the pulse leaves the Landing) — flagged, not written, per the doc protocol.</li>
+    <li><b>Exact watermark opacity/scale is an on-device tuning AC</b>, same as the night moment's — the numbers in this mock are the starting point, locked at QA on your phone.</li>
+  </ul>
+
+</div>
+</body>
+</html>

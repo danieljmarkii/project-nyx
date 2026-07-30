@@ -3,15 +3,16 @@ import { Stack, router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useFonts } from 'expo-font';
 import * as SplashScreen from 'expo-splash-screen';
+import * as Linking from 'expo-linking';
 import { fontMap } from '../lib/fonts';
 import { supabase } from '../lib/supabase';
 import { useAuthStore } from '../store/authStore';
 import { usePetStore } from '../store/petStore';
 import { initDb } from '../lib/db';
 import { wipeLocalSession } from '../lib/session';
-import { logAuth } from '../lib/authDebug';
 import { coldStartDecision } from '../lib/authRouting';
-import { APP_BUILD, PLATFORM } from '../lib/appInfo';
+import { isAuthDeepLink } from '../lib/authDeepLink';
+import { purgeRetiredStorage } from '../lib/retiredStorage';
 import { useSync } from '../hooks/useSync';
 import { useSyncTimezone } from '../hooks/useSyncTimezone';
 import { useWidgetSnapshots } from '../hooks/useWidgetSnapshots';
@@ -62,10 +63,9 @@ export default function RootLayout() {
   }, [appActive]);
 
   useEffect(() => {
-    // Diagnostic breadcrumb marking the start of this launch, so the on-device
-    // log is grouped per process lifetime (build + platform for cross-device
-    // correlation). See lib/authDebug.ts — temporary auth-persistence probe.
-    logAuth('launch', { build: APP_BUILD, platform: PLATFORM });
+    // B-301: drop the retired auth-probe log left on devices that ran builds
+    // 33/34. Fire-and-forget — never gates startup.
+    purgeRetiredStorage();
 
     initDb().catch(console.error);
 
@@ -78,35 +78,47 @@ export default function RootLayout() {
       // bug: a returning owner with a perfectly good refresh token still sitting in
       // encrypted storage got kicked to the login wall over a network blip.
       const decision = coldStartDecision(session, error);
-      logAuth('coldstart.getSession', {
-        hasSession: !!session,
-        hadError: !!error,
-        decision,
-        expiresInSec:
-          session?.expires_at != null
-            ? session.expires_at - Math.floor(Date.now() / 1000)
-            : null,
-      });
       if (decision === 'proceed') {
+        // Writing the store is the routing here: the Landing (app/(auth)/index) is
+        // the cold-start initial route — `(auth)/index` beats `(tabs)/index` for
+        // "/" in expo-router's group sort — and its session guard replaces to the
+        // tabs the moment this write lands. For months nothing performed that
+        // route at all, which was the TestFlight login-every-launch bug: the
+        // session restored + refreshed fine, and the owner was still looking at
+        // the login wall.
         setSession(session);
       } else if (decision === 'to-auth') {
         // Genuinely no stored session (fresh install / cold start after a real
         // sign-out). The Signal-led Landing (app/(auth)/index) is the unauthenticated
         // entry point (B-251 PR 5) — a returning-but-logged-out owner taps "Log in"
-        // from there. A live session skips straight past auth; the usePet hook (in
-        // the tabs layout) then fetches the pet and redirects to onboarding if none.
+        // from there. A live session instead redirects off the Landing via its
+        // session guard; the usePet hook (in the tabs layout) then fetches the pet
+        // and redirects to onboarding if none.
         setSession(null);
-        router.replace('/(auth)');
+        // …EXCEPT on a cold start FROM an auth link (B-432's email confirmation;
+        // B-280's recovery link next). Those links have no session BY DEFINITION —
+        // establishing one is their entire job — so the bounce above would replace
+        // the route expo-router just opened from the link, milliseconds after
+        // opening it, and drop the owner on the Landing with no idea why their
+        // confirmation did nothing. `getLinkingURL()` is synchronous, so this
+        // reads the launch URL without racing the decision it guards.
+        if (!isAuthDeepLink(Linking.getLinkingURL())) {
+          router.replace('/(auth)');
+        }
       } else {
-        // retain — a transient refresh failure. Keep the owner in the app (their
-        // local data is intact, offline-first) instead of bouncing to login, and
-        // crucially do NOT null the store: a good session may already have arrived
-        // (or is about to) via INITIAL_SESSION or the autoRefresh ticker auth-js
-        // starts on init, and setSession(null) here would clobber it and needlessly
-        // tear down sync (useSync keys on `session`). Leave the store as-is and force
-        // an immediate refresh retry so recovery isn't gated on the next ~30s tick;
-        // a real logout would instead arrive as SIGNED_OUT and route from the
-        // listener below.
+        // retain — a transient refresh failure. Do NOT null the store: a good
+        // session may already have arrived (or is about to) via INITIAL_SESSION or
+        // the autoRefresh ticker auth-js starts on init, and setSession(null) here
+        // would clobber it and needlessly tear down sync (useSync keys on
+        // `session`). Leave the store as-is and force an immediate refresh retry so
+        // recovery isn't gated on the next ~30s tick; when it succeeds,
+        // TOKEN_REFRESHED writes the store and the Landing's session guard routes
+        // in. A real logout would instead arrive as SIGNED_OUT and route from the
+        // listener below. Known limit (B-609): on a genuinely OFFLINE cold start
+        // the retry can't succeed, so the owner waits on the Landing with the auth
+        // CTAs rather than reaching Home on local data — reaching Home there needs
+        // local-first pet hydration (usePet bails without a user), not a routing
+        // change here.
         supabase.auth.startAutoRefresh().catch(() => {});
       }
       // Release the initial-load gate only after the session decision above, so a
@@ -116,17 +128,6 @@ export default function RootLayout() {
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      // Diagnostic breadcrumb: every auth transition (INITIAL_SESSION, SIGNED_IN,
-      // TOKEN_REFRESHED, SIGNED_OUT). A SIGNED_OUT that is NOT the user's own tap
-      // is the fingerprint of the bug — the app deciding the session is gone.
-      logAuth('authchange', {
-        event,
-        hasSession: !!session,
-        expiresInSec:
-          session?.expires_at != null
-            ? session.expires_at - Math.floor(Date.now() / 1000)
-            : null,
-      });
       // FR-9 (B-054 Trust & Safety gate): a real sign-out is signalled ONLY by
       // SIGNED_OUT — auth-js emits it from _removeSession on every genuine removal
       // (explicit signOut, or a NON-retryable refresh failure), and never for a
@@ -202,13 +203,13 @@ export default function RootLayout() {
         <Stack.Screen name="archived-pets" options={{ presentation: 'modal' }} />
         <Stack.Screen name="edit-event" options={{ presentation: 'modal' }} />
         <Stack.Screen name="event/[id]" />
+        <Stack.Screen name="vet-document/[id]" />
         <Stack.Screen name="ask" />
         <Stack.Screen name="report" />
         <Stack.Screen name="rundown" />
         <Stack.Screen name="settings" />
         <Stack.Screen name="settings/notifications" />
         <Stack.Screen name="settings/feedback" />
-        <Stack.Screen name="settings/diagnostics" />
       </Stack>
       <MealCompletionCard />
       <MedicationCompletionCard />

@@ -59,6 +59,11 @@ function rowToEvent(row: TimelineRow): NyxEvent {
     food_brand: row.food_brand,
     food_product_name: row.food_product_name,
     food_type: row.food_type,
+    // B-568. This mapper is explicit, and food_format is OPTIONAL on NyxEvent — so
+    // omitting it here compiles clean and silently drops the variant, leaving History
+    // rendering the collision it is meant to fix. Any new TimelineRow field needs a
+    // line here; the type will not tell you.
+    food_format: row.food_format,
     quantity: row.quantity,
     intake_rating: row.intake_rating as NyxEvent['intake_rating'],
     weight_kg: row.weight_kg,
@@ -514,7 +519,9 @@ const styles = StyleSheet.create({
     gap: theme.space2,
   },
   title: {
-    fontSize: 24,
+    // Shared with the Foods tab's page title (B-107) — one token so the two tab
+    // headers can't drift apart the way a pair of hard-coded 24s eventually does.
+    fontSize: theme.textPageTitle,
     fontWeight: theme.fontWeightMedium,
     color: theme.colorNeutralDark,
   },

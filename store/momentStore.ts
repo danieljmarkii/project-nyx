@@ -61,6 +61,10 @@ export interface MealPayload {
   // of what was logged. Optional/nullable: unnamed foods fall back to "Logged".
   foodBrand?: string | null;
   foodProductName?: string | null;
+  // B-568 — food_items.format of the just-logged food. Brand + product do NOT identify
+  // a food: a prescription line stocked wet and dry shares both, so the confirmation
+  // could not name which one it had just recorded. Optional/nullable like the pair above.
+  foodFormat?: string | null;
   // In-flight intake rating. Starts null; updated optimistically via
   // patchIntakeRating when the owner taps a chip.
   intakeRating: IntakeRating | null;
@@ -80,8 +84,11 @@ export interface MedicationPayload {
   eventId: string;
   // ISO UTC of the logged dose's occurred_at.
   occurredAt: string;
-  // Drug name (generic_name) for the "Gave {drug}" line — a one-glance reminder
-  // of what was logged.
+  // The OWNER-FACING drug name for the card's "Logged · {drug}" line — a one-glance
+  // reminder of what was logged. Resolved at the call site through drugDisplayName
+  // (B-171: brand when present, generic otherwise), so this field carries a
+  // display-ready string, exactly like pairedFoodName below — the card renders it and
+  // never re-derives a name.
   drugName: string;
   // In-flight adherence. Unlike intake (which starts null), a one-tap dose log
   // starts 'given' — the owner's affirmative tap = "I gave this dose." Updated

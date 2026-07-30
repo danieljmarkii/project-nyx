@@ -560,3 +560,121 @@ describe('an empty brand+product key is not an identity', () => {
     expect(foodContaminantFlag(c, 'some-other-food', ['chicken'], blank)).not.toBeNull();
   });
 });
+
+// ── B-529 / R7 — the client half of the relation + the silence rule ──────────
+describe('B-529 — a hydrolysed trial diet does not flag itself on the card', () => {
+  const hydrolysed = () =>
+    ctx({ trialFoodLabel: 'Purina HA' }, {
+      label: 'Purina HA',
+      primaryProtein: 'hydrolyzed chicken',
+      proteins: ['hydrolyzed chicken', 'chicken'],
+    });
+
+  it('emits no contamination note about the trial food naming its own source twice', () => {
+    // Was: "The trial food also lists chicken" — a false accusation against the
+    // prescription diet, on the surface the owner reads every day.
+    const note = trialDietNote(hydrolysed());
+    expect(note).toBeNull();
+  });
+
+  it('still names an intact-protein contaminant on the same trial', () => {
+    // The absorption is scoped to a food's OWN primary and cannot travel: a
+    // permitted extra carrying intact chicken is exactly as trial-invalidating
+    // as before.
+    const withChew = ctx({ trialFoodLabel: 'Purina HA' }, {
+      label: 'Purina HA',
+      primaryProtein: 'hydrolyzed chicken',
+      proteins: ['hydrolyzed chicken', 'chicken'],
+    });
+    withChew.allowedFoods = [
+      ...withChew.allowedFoods,
+      {
+        foodItemId: 'f-chew', foodKey: 'bdental chew', label: 'Dental Chew',
+        role: 'permitted_treat', allowedFrom: '2020-01-01', allowedUntil: null,
+        primaryProtein: 'beef', proteins: ['beef', 'chicken'],
+      },
+    ];
+    const note = trialDietNote(withChew);
+    expect(note?.title).toMatch(/also has chicken/i);
+  });
+});
+
+describe('B-529 R7(c) — the partial-designation disclosure', () => {
+  // B9's existing branch only fires when the sanctioned set is EMPTY, which the
+  // partial case is not: one designated food leaves it non-empty while the
+  // undesignated one is dropped from it. The antigen arm goes quiet in that
+  // state, so something has to say so — going quieter without saying why is the
+  // exact failure B9 exists to prevent.
+  const partial = () => {
+    const c = ctx({ primaryCount: 2, primaryResolved: 2 });
+    c.allowedFoods = [
+      ...c.allowedFoods,
+      {
+        foodItemId: 'f-wet', foodKey: 'zignature wet', label: 'Zignature Duck Wet',
+        role: 'primary_diet', allowedFrom: '2020-01-01', allowedUntil: null,
+        primaryProtein: null, proteins: ['duck', 'duck liver'],
+      },
+    ];
+    return c;
+  };
+
+  it('says the checks are paused, and names the food that needs a main protein', () => {
+    const note = trialDietNote(partial());
+    expect(note).not.toBeNull();
+    expect(note!.title).toBe('Protein checks are paused for this trial');
+    expect(note!.body).toContain('Zignature Duck Wet');
+    // The predicate means "names no protein SOURCE", not "the field is empty" —
+    // a bare `hydrolyzed` reaches this branch with a main protein visibly set, so
+    // copy saying "no main protein set" would contradict the food screen (B9's
+    // own self-contradiction rule).
+    expect(note!.body).toMatch(/no protein Culprit recognises as a source/);
+  });
+
+  it('reads as a record fact and never reassures', () => {
+    const note = trialDietNote(partial())!;
+    const text = `${note.title} ${note.body}`;
+    expect(text).not.toMatch(/!/);
+    expect(text).not.toMatch(/\b(fine|safe|clean|no problem|all good|nothing to worry)\b/i);
+  });
+
+  it('stands down once every trial food carries a designation', () => {
+    // The pause disclosure is gone. What surfaces instead is the ORDINARY
+    // standing contamination fact — `duck liver` is a genuine extra against a
+    // `duck` primary, because the relation deliberately does NOT fold tissue
+    // terms on read (see proteinRelation's under-claim note; the write path's
+    // normalizeExtractedProtein is what folds them at capture). Asserting the
+    // stand-down as "null" would have been wrong, and pinning the real
+    // successor is what makes this test worth having.
+    const c = partial();
+    c.allowedFoods = c.allowedFoods.map((f) =>
+      f.primaryProtein == null ? { ...f, primaryProtein: 'duck' } : f,
+    );
+    const note = trialDietNote(c);
+    expect(note?.title).not.toMatch(/Protein checks are paused/);
+    expect(note?.title).toMatch(/also lists duck liver/i);
+  });
+});
+
+describe('B-529 ④ — the pause note does not delete a real contamination', () => {
+  // Adversarial finding: the first cut returned the pause note BEFORE
+  // contaminationNote, so an already-computed, still-valid finding about food A
+  // was deleted from the owner's card because food B was missing a field.
+  it('a genuine contamination still surfaces while another row is undesignated', () => {
+    const c = ctx({ primaryCount: 2, primaryResolved: 2 }, {
+      label: 'Duck Kibble',
+      primaryProtein: 'duck',
+      proteins: ['duck', 'chicken'],
+    });
+    c.allowedFoods = [
+      ...c.allowedFoods,
+      {
+        foodItemId: 'f-wet', foodKey: 'duck wet', label: 'Duck Wet',
+        role: 'primary_diet', allowedFrom: '2020-01-01', allowedUntil: null,
+        primaryProtein: null, proteins: ['duck'],
+      },
+    ];
+    const note = trialDietNote(c);
+    expect(note?.title).toMatch(/also lists chicken/i);
+    expect(note?.title).not.toMatch(/paused/i);
+  });
+});

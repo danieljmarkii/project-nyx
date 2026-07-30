@@ -8,6 +8,10 @@ import {
   MAX_CAPTURED_PROTEINS,
   seedPickerProteins,
   pickerProteinsToSet,
+  pickerPrimaryProtein,
+  pickerProteinWrite,
+  proteinPairIsConsistent,
+  reconcileProteinPair,
   proteinSetCompleteness,
   proteinReadConfidence,
   MIN_PROTEIN_READ_CONFIDENCE,
@@ -441,5 +445,106 @@ describe('proteinSetCompleteness (D10)', () => {
     expect(proteinReadConfidence(null)).toBe(0);
     expect(proteinReadConfidence('0.9')).toBe(0);
     expect(proteinReadConfidence({ proteins: Infinity })).toBe(0);
+  });
+});
+
+// ── R7(b) — the primary↔set invariant (B-529) ─────────────────────────────────
+//
+// The invariant is stated once in the module. These tests enumerate EVERY write
+// path that produces the pair and assert each one satisfies it, which is the
+// part that was missing: each path was individually correct and nothing checked
+// that they agreed. A new write path that skips the shared helper fails here.
+describe('proteinPairIsConsistent', () => {
+  it('accepts a null primary — the one sanctioned exception', () => {
+    // Clearing the main demotes it into the tail (§6), so proteins[0] is a
+    // protein the owner un-designated. Writing it back would undo the clear.
+    expect(proteinPairIsConsistent(null, ['duck', 'chicken'])).toBe(true);
+    expect(proteinPairIsConsistent('null', ['duck'])).toBe(true); // junk → null
+  });
+
+  it('accepts a primary that heads its own set, under canonicalization', () => {
+    expect(proteinPairIsConsistent('duck', ['duck', 'chicken'])).toBe(true);
+    expect(proteinPairIsConsistent('  Duck  ', ['duck'])).toBe(true);
+  });
+
+  it('rejects the inversion that makes the report accuse the trial target', () => {
+    // primary not at the head → resolveTargetProtein and the set disagree, and
+    // the contaminant check compares against a SECONDARY.
+    expect(proteinPairIsConsistent('duck', ['chicken', 'duck'])).toBe(false);
+    expect(proteinPairIsConsistent('duck', [])).toBe(false);
+    expect(proteinPairIsConsistent('duck', ['chicken'])).toBe(false);
+  });
+});
+
+describe('reconcileProteinPair', () => {
+  it('hoists the primary and dedupes, returning both columns together', () => {
+    expect(reconcileProteinPair('duck', ['chicken', 'duck'])).toEqual({
+      primaryProtein: 'duck',
+      proteins: ['duck', 'chicken'],
+    });
+  });
+
+  it('is idempotent, and its output always satisfies the invariant', () => {
+    const cases: Array<[string | null, string[]]> = [
+      ['duck', ['chicken', 'duck']],
+      [null, ['chicken']],
+      ['Ocean Whitefish', ['whitefish']],
+      ['hydrolyzed chicken', ['chicken', 'hydrolyzed chicken']],
+      ['null', ['duck']],
+      ['duck', []],
+      ['meal', ['duck']],
+    ];
+    for (const [primary, proteins] of cases) {
+      const once = reconcileProteinPair(primary, proteins);
+      const twice = reconcileProteinPair(once.primaryProtein, once.proteins);
+      expect(twice).toEqual(once);
+      expect(proteinPairIsConsistent(once.primaryProtein, once.proteins)).toBe(true);
+    }
+  });
+
+  it('does NOT apply write-path species judgements (Class A only)', () => {
+    // Re-keying `ocean whitefish` here would retroactively re-merge a stored
+    // value on a species judgement — D3a forbids it, and it is precisely the
+    // bug that made a whitefish trial report itself contaminated with whitefish.
+    expect(reconcileProteinPair('Ocean Whitefish', []).primaryProtein).toBe('ocean whitefish');
+    // And a hydrolysed primary is never folded into its intact animal.
+    expect(reconcileProteinPair('Hydrolyzed Chicken', ['chicken']))
+      .toEqual({ primaryProtein: 'hydrolyzed chicken', proteins: ['hydrolyzed chicken', 'chicken'] });
+  });
+});
+
+describe('every write path satisfies the primary↔set invariant', () => {
+  // Path 1 — the two-line picker (app/food-capture.tsx, app/food/[id].tsx), via
+  // the single helper both screens now write.
+  it('pickerProteinWrite, over the full cross-product of picker states', () => {
+    const mains: Array<string | null> = [null, 'duck', 'Duck', 'ocean whitefish', 'null', 'meal'];
+    const tails: string[][] = [[], ['chicken'], ['duck', 'chicken'], ['chicken', 'chicken'], ['meal']];
+    for (const main of mains) {
+      for (const tail of tails) {
+        const w = pickerProteinWrite(main, tail);
+        expect(proteinPairIsConsistent(w.primaryProtein, w.proteins)).toBe(true);
+        // And it agrees with the two helpers it composes, so the screens'
+        // previous hand-assembled pair is preserved exactly.
+        expect(w.primaryProtein).toBe(pickerPrimaryProtein(main));
+        expect(w.proteins).toEqual(pickerProteinsToSet(main, tail));
+      }
+    }
+  });
+
+  // Path 2 — AI extraction (supabase/functions/extract-food-from-photo), which
+  // writes `primary_protein: proteins[0] ?? null` off one derivation.
+  it('deriveProteinSet + proteins[0], the extraction pair', () => {
+    const cases: Array<[unknown, unknown]> = [
+      [['chicken', 'duck'], 'duck'],
+      [[], 'Hydrolyzed Soy Protein'],
+      [['Deboned Chicken', 'Chicken Liver'], 'Chicken'],
+      [null, null],
+      [['meal'], 'meal'],
+      [['duck'], null],
+    ];
+    for (const [proteins, primary] of cases) {
+      const set = deriveProteinSet(proteins, primary);
+      expect(proteinPairIsConsistent(set[0] ?? null, set)).toBe(true);
+    }
   });
 });

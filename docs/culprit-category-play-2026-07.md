@@ -1,6 +1,8 @@
 # Culprit — The Category Play (swing-for-the-fences roadmap)
 **Date:** 2026-07-26 · **Status:** Session deliverable / **proposed** — nothing here is ratified until the PM clears §6. Companion to `docs/culprit-competitive-landscape-2026-07.md` (the evidence); this document is the swing the PM asked for.
 
+> **Reading this after 2026-07-26?** The repo kept executing while this proposal sat in review — by 2026-07-30, ~47 further commits had landed (B-417 PRs 6–7 built with post-review holds, the Vet Files track, vet-report cold-read rounds 4–5, and more). The per-swing status notes below are accurate **as of 2026-07-26 end-of-day**; for live state read `STATUS.md` + `ls docs/sessions/ | sort -r | head`. The thesis, the swings, and the §6 decisions are unaffected by the drift — most of it is the plan being executed.
+
 > **What this is.** The 2026-07-25 competitive review verified four facts: the elimination-diet category is empty (zero of 207 harvested US App Store listings use the job's own words), the clinical job is real (an 8–12 week vet-directed protocol whose named failure mode is owner compliance), the full loop — frictionless capture + food identity + statistical correlation + clinical artifact — is unbuilt by anyone, and our correlation engine is the only verified statistical engine on the shelf. The safe read of that review is a sequenced fix list. This is the other read: **own the category end-to-end before someone else notices it exists.**
 
 ---
@@ -33,10 +35,10 @@ You don't swing with an anon-writable bucket. All items are tracked and most are
 CompanAIn is buying the reader of the artifact via clinic enrolment. We should **not** race them to a portal — the review's own §8 finding says pet-side interoperability doesn't exist and the owner-controlled, no-vendor-approval PDF is the only route that scales. The counter-move is smaller and meaner: **every shared report becomes a doorway.** The token link a vet opens (Step 9 PR 6's public path, already planned) gains a **one-shot, no-account response leg** — a 30-second structured acknowledgment ("reviewed" / "what I'd want tracked before the next visit") plus optional free text, landing back in the owner's record as a vet-visit note. No enrolment, no login, no relationship for the vet to manage — which is exactly why a busy GP might actually do it. Direction needs ratification as a new Open Question (§6 D4) before any design; `rls-privacy-reviewer` and real-vet input are hard gates (this is an unauthenticated *write* path into a health record — see §7 T&S).
 
 ### Swing 4 — Proof nobody else can print *(validation)*
-IAMS publishes 90% accuracy on 14k expert-labelled images; we publish nothing and **no real veterinarian has ever read our report**. In order: **R1** — the PM emails the real Nyx report to their own GP (open since 2026-07-02; an email; the cheapest strategic unlock in this entire plan) → **R2** — the booked visit with the report in hand → then **B-477**, a published-validation program: real-vet panel reads of real reports, a written method paper on the case-crossover design (publishable in its own right), accuracy/utility numbers we can print. "Vet-validated" becomes literally true before any store copy claims it — the one claim the review says rivals cannot fake.
+IAMS publishes 90% accuracy on 14k expert-labelled images; we publish nothing and **no real veterinarian has ever read our report**. In order: **R1** — the PM emails the real Nyx report to their own GP (open since 2026-07-02; an email; the cheapest strategic unlock in this entire plan) → **R2** — the booked visit with the report in hand → then **B-614**, a published-validation program: real-vet panel reads of real reports, a written method paper on the case-crossover design (publishable in its own right), accuracy/utility numbers we can print. "Vet-validated" becomes literally true before any store copy claims it — the one claim the review says rivals cannot fake.
 
 ### Swing 5 — Claim the category in public *(positioning + submission)*
-The store listing leads with the wedge, not "AI": the ownable zero-competition keywords (gated on **B-478** — verify search volume via Apple Search Ads before betting the listing), independence stated plainly (*"the only one that can tell you the culprit is the food you're being sold"*), the engine named by its design (case-crossover, not "AI-powered"), the two-sided uncalibrated-AI framing with the Lovet 25%-regret stat. Pricing gets a deliberate decision, not a default: the diet trial is a *bounded 8–12 week job* and the products aimed at it price accordingly (ThePawcess $39 one-time) — a genuine tension with D-M5's monthly-forward ruling that must be reconciled, not ignored (§6 D5). Swing 5 fires **last**: claims only after Swing 4's proof exists.
+The store listing leads with the wedge, not "AI": the ownable zero-competition keywords (gated on **B-615** — verify search volume via Apple Search Ads before betting the listing), independence stated plainly (*"the only one that can tell you the culprit is the food you're being sold"*), the engine named by its design (case-crossover, not "AI-powered"), the two-sided uncalibrated-AI framing with the Lovet 25%-regret stat. Pricing gets a deliberate decision, not a default: the diet trial is a *bounded 8–12 week job* and the products aimed at it price accordingly (ThePawcess $39 one-time) — a genuine tension with D-M5's monthly-forward ruling that must be reconciled, not ignored (§6 D5). Swing 5 fires **last**: claims only after Swing 4's proof exists.
 
 ---
 
@@ -66,7 +68,7 @@ This repo routinely runs six-plus parallel sessions; the swings are built to fan
 | Swing 1 | trial surfaces, `detection.ts`, `report.ts`, extraction | Now (mid-stream) |
 | Swing 2 | new RLS/schema, local notifications | The moment D2/D3 land |
 | Swing 3 | PR 6's public token path, then the response leg | Design discovery after D4; build after PR 6 |
-| Swing 4 | PM-led (R1/R2), then B-477 | R1 is **today-shaped** |
+| Swing 4 | PM-led (R1/R2), then B-614 | R1 is **today-shaped** |
 | Swing 5 | store assets, pricing, docs | Last, after Swing 4 |
 
 **Known collisions, named up front:** `report.ts` is shared between Swing 1 (B-417 PR 7) and Swing 3 (PR 6 rebuild of `view-report`) — serialize those two PRs. `generate-signal` deploys serialize as always. STATUS.md at wrap is mitigated by the `docs/sessions/` convention. Swing 2's schema PRs are isolated per the standing rule.
@@ -111,12 +113,12 @@ One sitting clears D1–D7 + D9; D8 is an email.
 - **Designer:** *Channel trust is one bucket.* If D2 ratifies confirmations, the per-account budget, fail-safe silence, and self-pruning are **design constraints, not settings**. Dissent recorded, again. Separately: the trial-completion moment (B-284 N6) is Swing 1's emotional payoff — sequence it with PR 6/7, not after.
 - **Jordan / Sam:** *Capture cost must stay under payoff.* The 15-second start-a-trial device measurement (B-417 PR 3 residual) is still open; every Swing 2 prompt must survive "while my dog is being weird." The Bearable review is the tombstone we're avoiding.
 - **QA:** *The drift table was earned.* No claim enters any doc until a binary or a deploy read-back verifies it — the review itself drifted within 24 hours of publication; freeze it (D7) and keep the standing "claims we cannot make" list current.
-- **Product Owner:** *The backlog stays honest.* This plan invents no scope silently: B-477 (validation program) and B-478 (keyword-volume check) are added with this session; the vet loop is an Open Question candidate (D4), not a backlog row; everything else already has an ID.
+- **Product Owner:** *The backlog stays honest.* This plan invents no scope silently: B-614 (validation program) and B-615 (keyword-volume check) are added with this session; the vet loop is an Open Question candidate (D4), not a backlog row; everything else already has an ID.
 
 ---
 
 ## 8. Changes recorded with this session
 
-- **Added:** backlog rows **B-477** (published-validation program, `Later`, blocked on R1/R2) and **B-478** (ASO keyword search-volume validation, `Next`, blocks the Swing-5 listing).
+- **Added:** backlog rows **B-614** (published-validation program, `Later`, blocked on R1/R2) and **B-615** (ASO keyword search-volume validation, `Next`, blocks the Swing-5 listing).
 - **Awaiting PM ratification (flagged, not written):** the review's §11 Tier-2 edits (D7); the two Open Question additions (D4 vet loop, D5 pricing); this document's adoption (D1).
 - STATUS.md gains one PM-action pointer to §6. Session record: `docs/sessions/2026-07-26-swing-for-the-fences-category-play.md`.

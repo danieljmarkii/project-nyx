@@ -54,8 +54,102 @@ function pageOne(html: string): string {
   return parts.length > 1 ? parts[1] : html
 }
 
+/**
+ * A default `ReportSnapshot['trial']` for a fixture that set `diet.trial` but does
+ * not care about the trial BLOCK (B-417 PR 7).
+ *
+ * `diet.trial` (the protein-set view) and `snapshot.trial` (the facts) are two views
+ * of one selected trial, and the render treats a `diet.trial` with no `snapshot.trial`
+ * as a contradiction. Rather than edit twenty pre-PR-7 fixtures that only ever cared
+ * about the protein half, `base()` synthesises this one — deliberately in the state
+ * that renders the LEAST: no allowed set, so no exposure claim is made at all. A
+ * fixture that wants the trial facts passes `trial:` explicitly.
+ */
+export function trialBlockFixture(
+  over: Partial<NonNullable<ReportSnapshot['trial']>> = {},
+): NonNullable<ReportSnapshot['trial']> {
+  return {
+    id: 't1',
+    status: 'active',
+    startedAt: '2026-05-08',
+    endedAt: null,
+    targetDurationDays: 56,
+    vetName: null,
+    indication: null,
+    // B-529/R7(c): empty is the ordinary case — every trial food designated, so
+    // the antigen arm ran. A fixture exercising the paused disclosure overrides it.
+    antigenAttributionPaused: [],
+    antigenArmDark: false,
+    species: 'dog',
+    trialDietLabels: [],
+    dayCounter: 45,
+    daysPastTarget: 0,
+    rangeStartDate: '2026-05-08',
+    evidenceStartDate: '2026-05-08',
+    evidenceEndDate: '2026-07-02',
+    rangeEndDate: '2026-07-02',
+    rangeClipped: false,
+    untrackedDaysBeforeFirstLog: 0,
+    // The default is the UNTRUNCATED trial — range and trial coincide, which is
+    // every first report and every client surface. A fixture exercising B-600
+    // passes this explicitly.
+    trialDaysOutsideRange: { before: 0, after: 0 },
+    // `trialDaysElapsed` is derived at the tail of this literal so it tracks
+    // `dayCounter`, rather than sitting here as a constant a fixture can contradict.
+    coverage: null,
+    exposures: {
+      totalFeedings: 0,
+      offDiet: 0,
+      byRung: { derived_protein: 0, unrecognised: 0 },
+      fedBeforePermitted: 0,
+      unclassifiable: 0,
+      items: [],
+    },
+    antigenTally: [],
+    permittedFoods: [],
+    allowedSetChangedAfterStart: false,
+    allowedSetUnavailable: true,
+    interpretability: 'not_yet',
+    interpretabilityStatement: null,
+    belowCoverageFloor: false,
+    mayClaimAllMatched: true,
+    mayStateRecordClean: false,
+    oralRoute: [],
+    arrangementExposures: [],
+    intakeNotDirectlyObserved: false,
+    contamination: [],
+    trialDietRefusal: null,
+    rangeRefusal: null,
+    rangeRefusalSpansEpisodes: false,
+    stoppedReason: null,
+    outcome: null,
+    outcomeNotes: null,
+    medicationOverlap: [],
+    loggingDensity: null,
+    challengeWindowDays: 14,
+    challengeMarkerBaseRatePct: 0,
+    ...over,
+    // Untruncated ⇒ the trial's elapsed length IS the day counter. Derived here so a
+    // fixture only has to set `dayCounter`, and so no fixture can silently carry a
+    // `trialDaysElapsed` that contradicts it.
+    trialDaysElapsed:
+      over.trialDaysElapsed ??
+      (over.dayCounter ?? 45) +
+        (over.trialDaysOutsideRange?.after ?? 0),
+  }
+}
+
 // ── A complete, neutral base snapshot; each test overrides only what it exercises ──
 function base(overrides: Partial<ReportSnapshot> = {}): ReportSnapshot {
+  const snap = baseSnapshot(overrides)
+  // Keep the two views of the trial in lockstep unless a test says otherwise.
+  if (overrides.trial === undefined) {
+    snap.trial = snap.diet.trial ? trialBlockFixture({ startedAt: snap.diet.trial.startedAt }) : null
+  }
+  return snap
+}
+
+function baseSnapshot(overrides: Partial<ReportSnapshot> = {}): ReportSnapshot {
   return {
     generatedAt: '2026-07-02T12:00:00Z',
     timezone: 'America/New_York',
@@ -72,6 +166,8 @@ function base(overrides: Partial<ReportSnapshot> = {}): ReportSnapshot {
       isCustomOverride: false,
       outOfWindowSymptomCount: 0,
       outOfWindowMostRecent: null,
+      outOfWindowBefore: 0,
+      outOfWindowAfter: 0,
     },
     signalment: {
       name: 'Nyx',
@@ -92,6 +188,7 @@ function base(overrides: Partial<ReportSnapshot> = {}): ReportSnapshot {
     atAGlance: {
       primarySymptom: null,
       totalSymptomIncidents: 0,
+      anySymptomDays: 0,
       windowDays: 91,
       loggedDays: 0,
       trialDaysLogged: null,
@@ -105,9 +202,10 @@ function base(overrides: Partial<ReportSnapshot> = {}): ReportSnapshot {
     symptoms: [],
     vomitPhenotype: null,
     stool: null,
+    trial: null,
     diet: {
       trialTargetProtein: null,
-      activeTrial: null,
+      trial: null,
       freeFed: [],
       intakeNotDirectlyObserved: false,
       mealCompletion: null,
@@ -138,6 +236,7 @@ function base(overrides: Partial<ReportSnapshot> = {}): ReportSnapshot {
       symptomLog: [],
       intakeLog: [],
       intakeLogHiddenOlder: 0,
+      intakeLogScope: null,
       confounders: [],
       proteinExposureTally: {}, proteinUnknownCount: 0,
       conditions: [],
@@ -159,6 +258,15 @@ function aggregate(over: Partial<SymptomAggregate> & { type: SymptomAggregate['t
     lastOnset: over.lastOnset ?? '2026-06-01T14:00:00Z',
     weeklyBuckets: over.weeklyBuckets ?? [1],
     bucketStartDates: over.bucketStartDates ?? ['2026-04-03'],
+    // Default: every bucket observed. A fixture exercising the unobserved-week rendering
+    // (B-532) states its own zeros — the honest default is "the owner was logging", because
+    // an accidental 0 here would silently turn every fixture's chart into a no-data chart.
+    loggedDaysByBucket:
+      over.loggedDaysByBucket ?? (over.weeklyBuckets ?? [1]).map(() => 7),
+    // B-532 — the delta no longer derives itself from `weeklyBuckets`, so a fixture that
+    // wants one states it. Default null (no delta), which is the honest default for a
+    // hand-built aggregate: the halves are a window partition, not a property of the bars.
+    trendHalves: over.trendHalves ?? null,
   }
 }
 
@@ -180,6 +288,7 @@ function med(over: Partial<MedicationAdherence>): MedicationAdherence {
     adherenceState: 'tracked',
     elapsedDaysInWindow: 45,
     daysWithDose: 41,
+    doseDays: [],
     expectedDoses: 90,
     givenDoses: 82,
     partialDoses: 0,
@@ -388,13 +497,15 @@ Deno.test('B-213 — the flag shows the decline SLOPE so the gap is not misread 
       provenance: {
         ownerReported: true, totalSymptomIncidents: 0, estimatedOrWindowCount: 0, deletedExcluded: true,
         symptomLog: [],
+        intakeLogScope: 'intake_flag',
         intakeLog: [
           { eventId: 'm3', occurredAt: '2026-07-02T18:00:00Z', foodLabel: 'Tiki Cat Tuna', intakeRating: 'refused', isLastFullMeal: false, pinned: false },
           { eventId: 'm2', occurredAt: '2026-07-01T08:00:00Z', foodLabel: 'Tiki Cat Tuna', intakeRating: 'picked', isLastFullMeal: false, pinned: false },
           { eventId: 'm1b', occurredAt: '2026-06-30T18:00:00Z', foodLabel: 'Tiki Cat Tuna', intakeRating: 'some', isLastFullMeal: false, pinned: false },
           { eventId: 'm1', occurredAt: '2026-06-30T08:00:00Z', foodLabel: 'Tiki Cat Tuna', intakeRating: 'all', isLastFullMeal: true, pinned: false },
         ],
-        intakeLogHiddenOlder: 0, confounders: [], proteinExposureTally: {}, proteinUnknownCount: 0, conditions: [],
+        intakeLogHiddenOlder: 0,
+        confounders: [], proteinExposureTally: {}, proteinUnknownCount: 0, conditions: [],
       },
     }),
   ).replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ')
@@ -443,6 +554,7 @@ Deno.test('B-213 — recent-meals appendix line-items rated meals, tags the last
         estimatedOrWindowCount: 0,
         deletedExcluded: true,
         symptomLog: [],
+        intakeLogScope: 'intake_flag',
         intakeLog: [
           { eventId: 'm3', occurredAt: '2026-07-02T18:00:00Z', foodLabel: 'Tiki Cat Tuna', intakeRating: 'refused', isLastFullMeal: false, pinned: false },
           { eventId: 'm2', occurredAt: '2026-07-01T08:00:00Z', foodLabel: 'Tiki Cat Tuna', intakeRating: 'some', isLastFullMeal: false, pinned: false },
@@ -478,8 +590,8 @@ Deno.test('#7/#8 meals-only Appendix E — grouped meal foods render WITHOUT an 
         freeFed: [{ foodLabel: 'RC Weight', primaryProtein: 'chicken', proteinSet: pset(['chicken']), activeFrom: null, activeUntil: null , isShared: false }],
         mealCompletion: { ratedMeals: 28, finishedMeals: 3, rate: 0.107, intakeMode: 'some' },
         mealItems: [
-          { foodLabel: 'Instinct Chicken', primaryProtein: 'chicken', proteinSet: pset(['chicken']), count: 18, firstDate: '2026-05-14', lastDate: '2026-07-03', intakeMode: 'some' },
-          { foodLabel: 'Fancy Feast Salmon', primaryProtein: 'salmon', proteinSet: pset(['salmon']), count: 10, firstDate: '2026-05-20', lastDate: '2026-07-01', intakeMode: 'most' },
+          { foodLabel: 'Instinct Chicken', primaryProtein: 'chicken', proteinSet: pset(['chicken']), count: 18, firstDate: '2026-05-14', lastDate: '2026-07-03', intakeMode: 'some', intakeBreakdown: [{ rating: 'some', count: 18 }] },
+          { foodLabel: 'Fancy Feast Salmon', primaryProtein: 'salmon', proteinSet: pset(['salmon']), count: 10, firstDate: '2026-05-20', lastDate: '2026-07-01', intakeMode: 'most', intakeBreakdown: [{ rating: 'most', count: 10 }] },
         ],
       },
     }),
@@ -499,13 +611,13 @@ Deno.test('#7/#8 — meals appendix E renders the grouped meal foods even with N
     base({
       diet: {
         trialTargetProtein: null,
-        activeTrial: null,
+        trial: null,
         freeFed: [{ foodLabel: 'Royal Canin Weight', primaryProtein: 'chicken', proteinSet: pset(['chicken']), activeFrom: '2026-05-01', activeUntil: null , isShared: false }],
         intakeNotDirectlyObserved: true,
         mealCompletion: { ratedMeals: 28, finishedMeals: 3, rate: 0.1, intakeMode: 'some' },
         mealItems: [
-          { foodLabel: 'Instinct Original Real Chicken', primaryProtein: 'chicken', proteinSet: pset(['chicken']), count: 18, firstDate: '2026-05-14', lastDate: '2026-07-03', intakeMode: 'some' },
-          { foodLabel: 'Instinct Limited Ingredient Turkey', primaryProtein: 'turkey', proteinSet: pset(['turkey']), count: 10, firstDate: '2026-05-20', lastDate: '2026-07-01', intakeMode: 'some' },
+          { foodLabel: 'Instinct Original Real Chicken', primaryProtein: 'chicken', proteinSet: pset(['chicken']), count: 18, firstDate: '2026-05-14', lastDate: '2026-07-03', intakeMode: 'some', intakeBreakdown: [{ rating: 'some', count: 18 }] },
+          { foodLabel: 'Instinct Limited Ingredient Turkey', primaryProtein: 'turkey', proteinSet: pset(['turkey']), count: 10, firstDate: '2026-05-20', lastDate: '2026-07-01', intakeMode: 'some', intakeBreakdown: [{ rating: 'some', count: 10 }] },
         ],
         treats: { count: 0, distinctItems: 0 },
         humanFood: { count: 0, days: 0, items: [] },
@@ -616,7 +728,7 @@ Deno.test('free-fed arrangement → verbatim "Intake not directly observed"', ()
     base({
       diet: {
         trialTargetProtein: null,
-        activeTrial: null,
+        trial: null,
         freeFed: [{ foodLabel: 'Royal Canin Weight', primaryProtein: 'chicken', proteinSet: pset(['chicken']), activeFrom: '2026-05-01', activeUntil: null , isShared: false }],
         intakeNotDirectlyObserved: true,
         mealCompletion: null,
@@ -645,6 +757,7 @@ Deno.test('severity never reaches the report — no column, no x/5, no "Severity
         ],
         intakeLog: [],
         intakeLogHiddenOlder: 0,
+        intakeLogScope: null,
         confounders: [],
         proteinExposureTally: {}, proteinUnknownCount: 0,
         conditions: [],
@@ -680,6 +793,7 @@ Deno.test('B-010 — windowed event renders a time RANGE, estimated an ~time, ne
         ],
         intakeLog: [],
         intakeLogHiddenOlder: 0,
+        intakeLogScope: null,
         confounders: [],
         proteinExposureTally: {}, proteinUnknownCount: 0,
         conditions: [],
@@ -717,7 +831,7 @@ Deno.test('weight trend → sparkline + descriptive framing, never a loss flag',
           direction: 'down',
         },
       },
-      atAGlance: { primarySymptom: null, totalSymptomIncidents: 0, windowDays: 20, loggedDays: 16, trialDaysLogged: null, weightState: 'trend', sinceOnsetDays: null, daysSinceLastEpisode: null, loggedDaysSinceLastEpisode: null, firstHalfLoggedDays: 8, secondHalfLoggedDays: 8 },
+      atAGlance: { primarySymptom: null, totalSymptomIncidents: 0, anySymptomDays: 0, windowDays: 20, loggedDays: 16, trialDaysLogged: null, weightState: 'trend', sinceOnsetDays: null, daysSinceLastEpisode: null, loggedDaysSinceLastEpisode: null, firstHalfLoggedDays: 8, secondHalfLoggedDays: 8 },
     }),
   )
   assert.ok(html.includes('polyline'), 'sparkline drawn')
@@ -886,12 +1000,11 @@ Deno.test('diet/meds render an active trial, the human-food confounder line, and
       clinicalQuestion: { question: 'diet_trial_working', primarySymptom: 'vomit' },
       diet: {
         trialTargetProtein: null,
-        activeTrial: {
+        trial: {
           foodLabel: 'RC Hydrolyzed HP',
           primaryProtein: 'hydrolyzed',
           startedAt: '2026-05-08',
           targetDurationDays: 56,
-          daysElapsed: 45,
           vetName: 'Dr. Chen',
           proteinSet: pset(['hydrolyzed']),
         },
@@ -1061,12 +1174,11 @@ Deno.test('A2 — an active trial + a free-fed bowl: the bowl shows in Appendix 
     base({
       diet: {
         trialTargetProtein: null,
-        activeTrial: {
+        trial: {
           foodLabel: 'RC Hydrolyzed HP',
           primaryProtein: 'hydrolyzed',
           startedAt: '2026-05-08',
           targetDurationDays: 56,
-          daysElapsed: 45,
           vetName: null,
           proteinSet: pset(['hydrolyzed']),
         },
@@ -1099,7 +1211,7 @@ Deno.test('A4 — a no-trial report frames human food as a general confounder, n
     base({
       diet: {
         trialTargetProtein: null,
-        activeTrial: null,
+        trial: null,
         freeFed: [],
         intakeNotDirectlyObserved: false,
         mealCompletion: null,
@@ -1123,7 +1235,7 @@ Deno.test('A6 — repeated human-food items render distinct, not verbatim-repeat
       clinicalQuestion: { question: 'diet_trial_working', primarySymptom: 'vomit' },
       diet: {
         trialTargetProtein: null,
-        activeTrial: { foodLabel: 'HP', primaryProtein: 'hydrolyzed', proteinSet: pset(['hydrolyzed']), startedAt: '2026-05-08', targetDurationDays: 56, daysElapsed: 45, vetName: null },
+        trial: { foodLabel: 'HP', primaryProtein: 'hydrolyzed', proteinSet: pset(['hydrolyzed']), startedAt: '2026-05-08', targetDurationDays: 56, vetName: null },
         freeFed: [],
         intakeNotDirectlyObserved: false,
         mealCompletion: null,
@@ -1183,6 +1295,7 @@ Deno.test('Appendix B labels a format=treat exposure "Treat" (label parity with 
         symptomLog: [],
         intakeLog: [],
         intakeLogHiddenOlder: 0,
+        intakeLogScope: null,
         confounders: [
           { eventId: 'e1', occurredAt: '2026-06-01T16:00:00Z', dayKey: '2026-06-01', foodLabel: 'Jerky', primaryProtein: 'chicken', proteinSet: pset(['chicken']), format: 'treat', foodType: 'other', note: null },
         ],
@@ -1295,6 +1408,24 @@ Deno.test('at-a-glance weight tile never shows an out-of-window (stale) reading'
   )
   // The Weight block discloses the stale reading with its "(before this window)" caveat…
   assert.ok(/before this window/.test(html), 'weight block carries the caveat')
+  // …and the SIDE is derived, not assumed (B-600, cold read round 11). This test
+  // asserted the literal string, so it locked the bug in: the caveat was hardcoded on
+  // the reasoning that a reading outside the window must predate it, which fails for a
+  // hand-picked window that closes in the past. On a completed trial the patient's only
+  // weight — taken after the window, at the end of the diet — read as a pre-trial
+  // baseline, which is a different clinical question.
+  const after = renderReport(
+    base({
+      scope: { ...base().scope, isCustomOverride: true, endDate: '2026-06-01', endDayNum: 20605 },
+      weight: {
+        isEmpty: false,
+        latest: { kg: 4.2, lbs: 9.3, date: '2026-06-20' },
+        trend: null,
+      },
+    }),
+  )
+  assert.ok(/after this window/.test(after), 'a reading past the window end says so')
+  assert.ok(!/before this window/.test(after))
   // …but the bare tile must NOT carry the stale number (it cannot carry the caveat).
   assert.ok(!/4\.2<\/span><small>&nbsp;kg<\/small><\/div><div class="tl">Latest weigh-in/.test(html.replace(/\s+/g, '')), 'tile does not show the stale kg')
   assert.ok(/no reading in this window/.test(html), 'tile falls to the honest empty state')
@@ -1332,6 +1463,8 @@ Deno.test('appendix lettering — conditional recent-meals is E; the how-to-read
     base({
       provenance: {
         ...base().provenance,
+        // A non-empty log with a null scope is a state the pipeline cannot produce (B-532).
+        intakeLogScope: 'intake_flag',
         intakeLog: [
           { eventId: 'm1', occurredAt: '2026-06-30T12:00:00Z', foodLabel: 'Wet food', intakeRating: 'refused', isLastFullMeal: false, pinned: false },
         ],
@@ -1352,6 +1485,8 @@ Deno.test('legend intake entry never promises a suppressed appendix (dangling cr
     base({
       provenance: {
         ...base().provenance,
+        // A non-empty log with a null scope is a state the pipeline cannot produce (B-532).
+        intakeLogScope: 'intake_flag',
         intakeLog: [
           { eventId: 'm1', occurredAt: '2026-06-30T12:00:00Z', foodLabel: 'Wet food', intakeRating: 'refused', isLastFullMeal: false, pinned: false },
         ],
@@ -1378,7 +1513,11 @@ Deno.test('appendix B — caption reconciles treats + human food; unknown-protei
     }),
   )
   const flat = html.replace(/\s+/g, ' ')
-  assert.ok(/3<\/span> off-diet exposures \(/.test(flat), 'caption carries a breakdown parenthetical')
+  // B-531/R2 — on a report with NO trial the caption names what the table lists (the
+  // treat/human-food heuristic) rather than asserting an "off-diet exposure" count, which
+  // is a verdict against a comparison that was never made: there is no diet to be off.
+  assert.ok(/3<\/span> treat or table-food feedings \(/.test(flat), 'caption carries a breakdown parenthetical')
+  assert.ok(!/off-diet exposures? \(/i.test(flat), 'the caption does not claim off-diet exposures with no trial')
   assert.ok(/2<\/span> treats/.test(flat) && /1<\/span> human-food feeding/.test(flat), 'treats + human food reconcile to the total')
   assert.ok(/with no recorded protein\)/.test(flat), 'unknown-protein feedings are disclosed in the tally')
   assert.ok(flat.includes('diet, exposures &amp; meds'), 'footer ampersand escaped exactly once')
@@ -1397,11 +1536,25 @@ function monitoringSnap(over: Partial<ReportSnapshot> = {}): ReportSnapshot {
         windowDays: 91,
         weeklyBuckets: [0, 1, 1, 2, 2, 4, 5, 7],
         bucketStartDates: ['2026-04-03', '2026-04-10', '2026-04-17', '2026-04-24', '2026-05-01', '2026-05-08', '2026-05-15', '2026-05-22'],
+        // A 91-day window always HAS halves, so a fixture without them was an impossible
+        // state — and it is the page-1 trajectory tile that reads them (B-532).
+        trendHalves: {
+          days: 45,
+          firstCount: 6,
+          lastCount: 15,
+          firstStartDate: '2026-04-03',
+          firstEndDate: '2026-05-17',
+          lastStartDate: '2026-05-19',
+          lastEndDate: '2026-07-02',
+          middleCount: 0,
+          middleDate: null,
+        },
       }),
     ],
     atAGlance: {
       primarySymptom: { type: 'vomit', count: 22 },
       totalSymptomIncidents: 22,
+      anySymptomDays: 0,
       windowDays: 91,
       loggedDays: 40,
       trialDaysLogged: null,
@@ -1414,7 +1567,7 @@ function monitoringSnap(over: Partial<ReportSnapshot> = {}): ReportSnapshot {
     },
     diet: {
       trialTargetProtein: null,
-      activeTrial: null,
+      trial: null,
       freeFed: [],
       intakeNotDirectlyObserved: false,
       mealCompletion: null,
@@ -1426,12 +1579,15 @@ function monitoringSnap(over: Partial<ReportSnapshot> = {}): ReportSnapshot {
   })
 }
 
-Deno.test('R2-2 — no-trial At-a-glance: since-onset + trajectory + off-diet tiles; the old score tiles are gone', () => {
+Deno.test('R2-2 — no-trial At-a-glance: since-onset + trajectory + treats tiles; the old score tiles are gone', () => {
   const html = renderReport(monitoringSnap())
   assert.ok(/since onset/i.test(html), 'episodes-since-onset tile')
   assert.ok(/46&nbsp;d/.test(html), 'onset-scoped denominator (not the 91-day window)')
   assert.ok(/first &rarr; last half/i.test(html), 'trajectory tile')
-  assert.ok(/Off-diet load/.test(html) && html.includes('>340</span>') && /treats/.test(html) && /distinct/.test(html) && /human food/.test(html), 'off-diet load tile leads with the treat load')
+  // B-531/R2 — the label names what the tile counts. It led "Off-diet load" on a report
+  // with no trial, importing a verdict from a comparison that was never made.
+  assert.ok(/Treats &amp; table food/.test(html) && html.includes('>340</span>') && /treats/.test(html) && /distinct/.test(html) && /table food/.test(html), 'the treats tile leads with the treat load')
+  assert.ok(!/Off-diet load/.test(html), 'no off-diet verdict on a no-trial report')
   // The misleading pre-round-2 tiles do not appear on the no-trial shape.
   assert.ok(!/Meals fully eaten \(rated meals only\)/.test(html), 'no "meals fully eaten" score on the no-trial shape')
 })
@@ -1455,14 +1611,23 @@ Deno.test('R2-2 — a diet-trial report keeps the trial-oriented tiles', () => {
     symptoms: [aggregate({ type: 'vomit', count: 5 })],
     diet: {
       ...base().diet,
-      activeTrial: { foodLabel: 'Hydrolyzed', primaryProtein: 'hydrolyzed', proteinSet: pset(['hydrolyzed']), startedAt: '2026-05-01', targetDurationDays: 56, daysElapsed: 40, vetName: null },
+      trial: { foodLabel: 'Hydrolyzed', primaryProtein: 'hydrolyzed', proteinSet: pset(['hydrolyzed']), startedAt: '2026-05-01', targetDurationDays: 56, vetName: null },
       mealCompletion: { ratedMeals: 50, finishedMeals: 48, rate: 0.96, intakeMode: 'all' },
       mealItems: [],
     },
     atAGlance: { ...base().atAGlance, trialDaysLogged: 38, primarySymptom: { type: 'vomit', count: 5 }, totalSymptomIncidents: 5 },
+    // B-417 PR 7: the tile now reads its BOTH numbers off the trial block's one
+    // overlap range, rather than a window-scoped numerator over a trial-scoped
+    // denominator. `atAGlance.trialDaysLogged` is the same number by construction.
+    trial: trialBlockFixture({ startedAt: '2026-05-01', coverage: { daysLogged: 38, daysElapsed: 45 } }),
   })
   const html = renderReport(snap)
-  assert.ok(/Trial-diet days logged/.test(html), 'trial-days tile on a trial report (unchanged)')
+  assert.ok(/Days a meal was logged/.test(html), 'coverage tile on a trial report')
+  assert.ok(/not intake, not a clean-elimination count/.test(html), 'coverage is about the RECORD, not what was eaten')
+  assert.ok(/38/.test(html) && /45/.test(html), 'both sides of the coverage ratio render')
+  // R2-2's point survives PR 7: a trial report still gets the trial tile set, not
+  // the symptom-trajectory one.
+  assert.ok(!/Episodes since onset/.test(html), 'not the monitoring tile set')
 })
 
 Deno.test('R2-3 — a free-fed grazer with NO decline flag gets a descriptive feeding line, not "0 of N fully eaten"', () => {
@@ -1480,7 +1645,18 @@ Deno.test('R2-3 — a free-fed grazer with NO decline flag gets a descriptive fe
   assert.ok(/Primarily free-fed/.test(html), 'descriptive free-fed line')
   assert.ok(/Intake not directly observed/.test(html), 'verbatim B-040 string preserved')
   assert.ok(/typically/.test(html), 'descriptive intake-mode texture (not a score)')
-  assert.ok(!/rated meals fully eaten/.test(html), 'no scary "0 of 25 fully eaten" score for the grazer')
+  assert.ok(!/rated meals fully eaten/.test(html), 'not the scored completion FIGURE the else-branch renders')
+  // B-532 — TWO COLD READS COLLIDE HERE, and both are honoured. R2-3 kept the descriptive
+  // adverb off this branch's scored figure (a grazing cat's discrete meals routinely go
+  // unfinished, and "0 of 25 meals fully eaten" reads as anorexia). Round 7 found the cost of
+  // the adverb alone: it was the only page-1 intake statement with no numbers behind it, and
+  // it showed up only on the report that read well. The count is now stated INSIDE the
+  // descriptive sentence, where "Primarily free-fed … Intake not directly observed" leads it.
+  assert.ok(/0 of 25 fully eaten/.test(text(html)), 'the denominator is on page 1, not only in appendix E')
+  assert.ok(
+    /Primarily free-fed[\s\S]{0,80}Intake not directly observed/.test(text(html)),
+    'and the framing that protects the grazer still leads it',
+  )
 })
 
 Deno.test('R2-3 — a free-fed pet WITH a decline flag keeps the scored figure (flag leads; the number matters)', () => {
@@ -1505,7 +1681,7 @@ Deno.test('R2-3 — a free-fed pet WITH a decline flag keeps the scored figure (
       mealItems: [],
     },
     safetyFlags: [flag],
-    provenance: { ...base().provenance, intakeLog: [{ eventId: 'm1', occurredAt: '2026-06-28T18:00:00Z', foodLabel: 'RC', intakeRating: 'all', isLastFullMeal: true, pinned: false }] },
+    provenance: { ...base().provenance, intakeLogScope: 'intake_flag', intakeLog: [{ eventId: 'm1', occurredAt: '2026-06-28T18:00:00Z', foodLabel: 'RC', intakeRating: 'all', isLastFullMeal: true, pinned: false }] },
   })
   const html = renderReport(snap)
   assert.ok(/rated meals fully eaten/.test(html), 'the scored figure stays when a decline flag is present')
@@ -1657,6 +1833,7 @@ Deno.test('PR7 render — with a meals appendix present, photos take the NEXT le
     base({
       provenance: {
         ...base().provenance,
+        intakeLogScope: 'intake_flag',
         intakeLog: [{ eventId: 'm1', occurredAt: '2026-06-30T12:00:00Z', foodLabel: 'Wet food', intakeRating: 'refused', isLastFullMeal: false, pinned: false }],
       },
       incidentPhotos: [photo({ eventId: 'v1', occurredAt: '2026-06-20T14:00:00Z', dataUri: PNG_1PX })],
@@ -1757,6 +1934,7 @@ function unlinkedMed(o: Partial<UnlinkedMedicationGroup> = {}): UnlinkedMedicati
     totalDoses: o.totalDoses ?? 3,
     firstDate: o.firstDate ?? '2026-06-28',
     lastDate: o.lastDate ?? '2026-07-01',
+    doseDays: o.doseDays ?? ['2026-06-28', '2026-06-30', '2026-07-01'],
   }
 }
 
@@ -1791,7 +1969,6 @@ const DUCK_TRIAL = {
   primaryProtein: 'duck',
   startedAt: '2026-05-08',
   targetDurationDays: 56,
-  daysElapsed: 45,
   vetName: 'Dr. Chen',
 }
 
@@ -1803,7 +1980,7 @@ Deno.test('B-351 §9 — the trial diet\'s OWN off-trial protein leads page 1, n
     base({
       diet: {
         trialTargetProtein: 'duck',
-        activeTrial: { ...DUCK_TRIAL, proteinSet: pset(['duck', 'chicken'], { complete: true, offTrial: ['chicken'] }) },
+        trial: { ...DUCK_TRIAL, proteinSet: pset(['duck', 'chicken'], { complete: true, offTrial: ['chicken'] }) },
         freeFed: [],
         intakeNotDirectlyObserved: false,
         mealCompletion: null,
@@ -1827,7 +2004,7 @@ Deno.test('B-351 §9 — a CLEAN trial diet gets no page-1 line at all (there is
     base({
       diet: {
         trialTargetProtein: 'duck',
-        activeTrial: { ...DUCK_TRIAL, proteinSet: pset(['duck'], { complete: true }) },
+        trial: { ...DUCK_TRIAL, proteinSet: pset(['duck'], { complete: true }) },
         freeFed: [],
         intakeNotDirectlyObserved: false,
         mealCompletion: null,
@@ -1848,12 +2025,12 @@ Deno.test('B-351 D10 — an unread ingredient list NEVER renders "nothing else o
     base({
       diet: {
         trialTargetProtein: null,
-        activeTrial: null,
+        trial: null,
         freeFed: [],
         intakeNotDirectlyObserved: false,
         mealCompletion: null,
         mealItems: [
-          { foodLabel: 'Marketing Duck', primaryProtein: 'duck', proteinSet: pset(['duck']), count: 12, firstDate: '2026-06-01', lastDate: '2026-06-20', intakeMode: 'all' },
+          { foodLabel: 'Marketing Duck', primaryProtein: 'duck', proteinSet: pset(['duck']), count: 12, firstDate: '2026-06-01', lastDate: '2026-06-20', intakeMode: 'all', intakeBreakdown: [{ rating: 'all', count: 12 }] },
         ],
         treats: { count: 0, distinctItems: 0 },
         humanFood: { count: 0, days: 0, items: [] },
@@ -1875,12 +2052,12 @@ Deno.test('B-351 D10 — a genuinely READ single-protein panel DOES earn the com
     base({
       diet: {
         trialTargetProtein: null,
-        activeTrial: null,
+        trial: null,
         freeFed: [],
         intakeNotDirectlyObserved: false,
         mealCompletion: null,
         mealItems: [
-          { foodLabel: 'Real Duck', primaryProtein: 'duck', proteinSet: pset(['duck'], { complete: true }), count: 12, firstDate: '2026-06-01', lastDate: '2026-06-20', intakeMode: 'all' },
+          { foodLabel: 'Real Duck', primaryProtein: 'duck', proteinSet: pset(['duck'], { complete: true }), count: 12, firstDate: '2026-06-01', lastDate: '2026-06-20', intakeMode: 'all', intakeBreakdown: [{ rating: 'all', count: 12 }] },
         ],
         treats: { count: 0, distinctItems: 0 },
         humanFood: { count: 0, days: 0, items: [] },
@@ -1896,12 +2073,12 @@ Deno.test('B-351 §9 condition 2 — the primary renders first and in bold, seco
     base({
       diet: {
         trialTargetProtein: null,
-        activeTrial: null,
+        trial: null,
         freeFed: [],
         intakeNotDirectlyObserved: false,
         mealCompletion: null,
         mealItems: [
-          { foodLabel: 'Duck Dinner', primaryProtein: 'duck', proteinSet: pset(['duck', 'chicken', 'salmon'], { complete: true }), count: 4, firstDate: '2026-06-01', lastDate: '2026-06-04', intakeMode: 'all' },
+          { foodLabel: 'Duck Dinner', primaryProtein: 'duck', proteinSet: pset(['duck', 'chicken', 'salmon'], { complete: true }), count: 4, firstDate: '2026-06-01', lastDate: '2026-06-04', intakeMode: 'all', intakeBreakdown: [{ rating: 'all', count: 4 }] },
         ],
         treats: { count: 0, distinctItems: 0 },
         humanFood: { count: 0, days: 0, items: [] },
@@ -1916,12 +2093,12 @@ Deno.test('B-351 — an empty set says the reading is missing, never that the fo
     base({
       diet: {
         trialTargetProtein: null,
-        activeTrial: null,
+        trial: null,
         freeFed: [],
         intakeNotDirectlyObserved: false,
         mealCompletion: null,
         mealItems: [
-          { foodLabel: 'Unknown Food', primaryProtein: null, proteinSet: pset([]), count: 3, firstDate: '2026-06-01', lastDate: '2026-06-03', intakeMode: 'all' },
+          { foodLabel: 'Unknown Food', primaryProtein: null, proteinSet: pset([]), count: 3, firstDate: '2026-06-01', lastDate: '2026-06-03', intakeMode: 'all', intakeBreakdown: [{ rating: 'all', count: 3 }] },
         ],
         treats: { count: 0, distinctItems: 0 },
         humanFood: { count: 0, days: 0, items: [] },
@@ -1940,7 +2117,7 @@ Deno.test('B-351 — the off-trial `*` is defined on the sheet where it appears,
     base({
       diet: {
         trialTargetProtein: 'duck',
-        activeTrial: { ...DUCK_TRIAL, proteinSet: pset(['duck', 'chicken'], { complete: true, offTrial: ['chicken'] }) },
+        trial: { ...DUCK_TRIAL, proteinSet: pset(['duck', 'chicken'], { complete: true, offTrial: ['chicken'] }) },
         freeFed: [],
         intakeNotDirectlyObserved: false,
         mealCompletion: null,
@@ -2014,7 +2191,7 @@ Deno.test('B-351 §9 — appendix C\'s protein column carries the whole set, mar
     base({
       diet: {
         trialTargetProtein: 'duck',
-        activeTrial: { ...DUCK_TRIAL, proteinSet: pset(['duck'], { complete: true }) },
+        trial: { ...DUCK_TRIAL, proteinSet: pset(['duck'], { complete: true }) },
         freeFed: [],
         intakeNotDirectlyObserved: false,
         mealCompletion: null,
@@ -2048,7 +2225,7 @@ Deno.test('B-351 — a food whose OWN PRIMARY is off-trial marks cleanly, withou
     base({
       diet: {
         trialTargetProtein: 'duck',
-        activeTrial: { ...DUCK_TRIAL, proteinSet: pset(['duck'], { complete: true }) },
+        trial: { ...DUCK_TRIAL, proteinSet: pset(['duck'], { complete: true }) },
         freeFed: [
           {
             foodLabel: 'Housemate kibble',
@@ -2079,7 +2256,7 @@ Deno.test('B-351 — a continuously-available off-trial protein reaches PAGE 1, 
     base({
       diet: {
         trialTargetProtein: 'duck',
-        activeTrial: { ...DUCK_TRIAL, proteinSet: pset(['duck'], { complete: true }) },
+        trial: { ...DUCK_TRIAL, proteinSet: pset(['duck'], { complete: true }) },
         freeFed: [
           {
             foodLabel: 'Housemate kibble',
@@ -2114,7 +2291,7 @@ Deno.test('B-351 D10 — page 1 distinguishes an UNREAD trial panel from a clean
     base({
       diet: {
         trialTargetProtein: 'duck',
-        activeTrial: { ...DUCK_TRIAL, proteinSet: pset(['duck']) },
+        trial: { ...DUCK_TRIAL, proteinSet: pset(['duck']) },
         freeFed: [],
         intakeNotDirectlyObserved: false,
         mealCompletion: null,
@@ -2130,7 +2307,7 @@ Deno.test('B-351 D10 — page 1 distinguishes an UNREAD trial panel from a clean
     base({
       diet: {
         trialTargetProtein: 'duck',
-        activeTrial: { ...DUCK_TRIAL, proteinSet: pset(['duck'], { complete: true }) },
+        trial: { ...DUCK_TRIAL, proteinSet: pset(['duck'], { complete: true }) },
         freeFed: [],
         intakeNotDirectlyObserved: false,
         mealCompletion: null,
@@ -2151,13 +2328,13 @@ Deno.test('B-351 — duplicate library rows under one label do not inherit each 
     base({
       diet: {
         trialTargetProtein: null,
-        activeTrial: null,
+        trial: null,
         freeFed: [],
         intakeNotDirectlyObserved: false,
         mealCompletion: null,
         mealItems: [
-          { foodLabel: 'Acme Duck Formula', primaryProtein: 'duck', proteinSet: pset(['duck', 'chicken'], { complete: true }), count: 2, firstDate: '2026-06-01', lastDate: '2026-06-02', intakeMode: 'all' },
-          { foodLabel: 'Acme Duck Formula', primaryProtein: 'duck', proteinSet: pset(['duck']), count: 1, firstDate: '2026-06-03', lastDate: '2026-06-03', intakeMode: 'all' },
+          { foodLabel: 'Acme Duck Formula', primaryProtein: 'duck', proteinSet: pset(['duck', 'chicken'], { complete: true }), count: 2, firstDate: '2026-06-01', lastDate: '2026-06-02', intakeMode: 'all', intakeBreakdown: [{ rating: 'all', count: 2 }] },
+          { foodLabel: 'Acme Duck Formula', primaryProtein: 'duck', proteinSet: pset(['duck']), count: 1, firstDate: '2026-06-03', lastDate: '2026-06-03', intakeMode: 'all', intakeBreakdown: [{ rating: 'all', count: 1 }] },
         ],
         treats: { count: 0, distinctItems: 0 },
         humanFood: { count: 0, days: 0, items: [] },
@@ -2175,12 +2352,12 @@ Deno.test('B-351 — owner-entered food labels and protein keys are HTML-escaped
     base({
       diet: {
         trialTargetProtein: null,
-        activeTrial: null,
+        trial: null,
         freeFed: [],
         intakeNotDirectlyObserved: false,
         mealCompletion: null,
         mealItems: [
-          { foodLabel: evil, primaryProtein: evil, proteinSet: pset([evil, 'chicken']), count: 1, firstDate: '2026-06-01', lastDate: '2026-06-01', intakeMode: 'all' },
+          { foodLabel: evil, primaryProtein: evil, proteinSet: pset([evil, 'chicken']), count: 1, firstDate: '2026-06-01', lastDate: '2026-06-01', intakeMode: 'all', intakeBreakdown: [{ rating: 'all', count: 1 }] },
         ],
         treats: { count: 0, distinctItems: 0 },
         humanFood: { count: 0, days: 0, items: [] },
@@ -2206,7 +2383,7 @@ function breachedTrialSnap() {
     clinicalQuestion: { question: 'diet_trial_working', primarySymptom: 'diarrhea' },
     diet: {
       trialTargetProtein: 'duck',
-      activeTrial: { ...DUCK_TRIAL, proteinSet: pset(['duck', 'chicken'], { complete: true, offTrial: ['chicken'] }) },
+      trial: { ...DUCK_TRIAL, proteinSet: pset(['duck', 'chicken'], { complete: true, offTrial: ['chicken'] }) },
       freeFed: [
         {
           foodLabel: 'Housemate kibble',
@@ -2266,7 +2443,7 @@ Deno.test('B-351 — a CLEAN trial keeps the headline unqualified', () => {
       clinicalQuestion: { question: 'diet_trial_working', primarySymptom: 'diarrhea' },
       diet: {
         trialTargetProtein: 'duck',
-        activeTrial: { ...DUCK_TRIAL, proteinSet: pset(['duck'], { complete: true }) },
+        trial: { ...DUCK_TRIAL, proteinSet: pset(['duck'], { complete: true }) },
         freeFed: [],
         intakeNotDirectlyObserved: false,
         mealCompletion: null,
@@ -2311,7 +2488,7 @@ Deno.test('B-351 — the trial-diet parenthetical stops asserting composition wh
           clinicalQuestion: { question: 'diet_trial_working', primarySymptom: 'diarrhea' },
           diet: {
             trialTargetProtein: 'duck',
-            activeTrial: { ...DUCK_TRIAL, proteinSet: pset(['duck'], { complete: true }) },
+            trial: { ...DUCK_TRIAL, proteinSet: pset(['duck'], { complete: true }) },
             freeFed: [],
             intakeNotDirectlyObserved: false,
             mealCompletion: null,
@@ -2346,7 +2523,7 @@ Deno.test('B-351 — a trial food with NO designated main protein says the check
       clinicalQuestion: { question: 'diet_trial_working', primarySymptom: 'diarrhea' },
       diet: {
         trialTargetProtein: null,
-        activeTrial: { ...DUCK_TRIAL, primaryProtein: null, proteinSet: pset(['duck', 'chicken'], { complete: true }) },
+        trial: { ...DUCK_TRIAL, primaryProtein: null, proteinSet: pset(['duck', 'chicken'], { complete: true }) },
         freeFed: [],
         intakeNotDirectlyObserved: false,
         mealCompletion: null,
@@ -2373,7 +2550,7 @@ Deno.test('B-351 — a SINGLE-protein trial food with no main protein stays sile
       clinicalQuestion: { question: 'diet_trial_working', primarySymptom: 'diarrhea' },
       diet: {
         trialTargetProtein: null,
-        activeTrial: { ...DUCK_TRIAL, primaryProtein: null, proteinSet: pset(['duck'], { complete: true }) },
+        trial: { ...DUCK_TRIAL, primaryProtein: null, proteinSet: pset(['duck'], { complete: true }) },
         freeFed: [],
         intakeNotDirectlyObserved: false,
         mealCompletion: null,
@@ -2384,4 +2561,596 @@ Deno.test('B-351 — a SINGLE-protein trial food with no main protein stays sile
     }),
   )
   assert.ok(!/cannot be checked against the trial/.test(html))
+})
+
+// ── B-532 — the render-honesty pass (the cold-read blockers) ──────────────────────
+//
+// `plain()` decodes the entities `text()` deliberately leaves alone, so these assertions
+// read like the sentence a vet sees rather than like tag soup.
+function plain(html: string): string {
+  return text(html)
+    .replace(/&times;/g, '\u00d7')
+    .replace(/&rarr;/g, '\u2192')
+    .replace(/&ndash;/g, '\u2013')
+    .replace(/&mdash;/g, '\u2014')
+    .replace(/&middot;/g, '\u00b7')
+    .replace(/&ldquo;|&rdquo;/g, '"')
+    .replace(/&rsquo;/g, "'")
+    .replace(/&nbsp;/g, ' ')
+}
+
+//
+// Every test below was written from a defect REPRODUCED against `main` on the two real-
+// pipeline artifacts before it was fixed, so each one fails on the pre-B-532 render.
+
+Deno.test('B-532 — "completed" never claims a full course over a short one', () => {
+  const short = renderReport(
+    base({
+      clinicalQuestion: { question: 'diet_trial_working', primarySymptom: 'itch' },
+      trial: trialBlockFixture({
+        status: 'completed',
+        endedAt: '2026-06-25',
+        stoppedReason: 'completed',
+        dayCounter: 49,
+        targetDurationDays: 56,
+      }),
+    }),
+  )
+  const shortText = plain(short)
+  assert.ok(
+    /Marked complete at day 49 — 7 days short of the 56-day window\./.test(shortText),
+    'the shortfall is named, in the same units the day phrase uses',
+  )
+  assert.ok(!/Ran its course/.test(shortText), 'and the full-course claim is not made')
+
+  // The affirmative form survives — it is TRUE here, and deleting it would be its own
+  // dishonesty (a completed 56-of-56 trial reading as though something went wrong).
+  const full = plain(
+    renderReport(
+      base({
+        clinicalQuestion: { question: 'diet_trial_working', primarySymptom: 'itch' },
+        trial: trialBlockFixture({
+          status: 'completed',
+          endedAt: '2026-07-02',
+          stoppedReason: 'completed',
+          dayCounter: 56,
+          targetDurationDays: 56,
+        }),
+      }),
+    ),
+  )
+  assert.ok(/Ran its course — the full window was completed\./.test(full))
+  assert.ok(!/short of the/.test(full))
+})
+
+Deno.test('B-532 — Appendix E states EVERY intake rating, never the mode alone', () => {
+  // The canonical artifact: 38 feedings of a prescribed diet, 34 refused and 4 partly
+  // eaten. The mode column printed the single word "Refused" and the four meals that
+  // were the only intake this cat took in nineteen days had no cell on the page.
+  const html = renderReport(
+    base({
+      diet: {
+        trialTargetProtein: null,
+        trial: null,
+        freeFed: [],
+        intakeNotDirectlyObserved: false,
+        mealCompletion: { ratedMeals: 38, finishedMeals: 0, rate: 0, intakeMode: 'refused' },
+        mealItems: [
+          {
+            foodLabel: "Hill's z/d",
+            primaryProtein: 'chicken',
+            proteinSet: pset(['chicken']),
+            count: 38,
+            firstDate: '2026-06-01',
+            lastDate: '2026-06-19',
+            intakeMode: 'refused',
+            intakeBreakdown: [
+              { rating: 'some', count: 4 },
+              { rating: 'refused', count: 34 },
+            ],
+          },
+        ],
+        treats: { count: 0, distinctItems: 0 },
+        humanFood: { count: 0, days: 0, items: [] },
+      },
+    }),
+  )
+  const t = plain(html)
+  assert.ok(/Ate some ×4/.test(t), 'the non-modal rating is rendered with its count')
+  assert.ok(/Refused ×34/.test(t), 'and so is the modal one — as a count, not a word')
+  assert.ok(!/Typical intake/.test(html), 'the column no longer claims to be a "typical"')
+})
+
+Deno.test('B-532 — the unfinished meals are itemised with NO reduced-intake flag', () => {
+  // `detectIntakeDecline` is a RELATIVE detector, so a diet refused from day 1 never fires
+  // it — and the itemisation used to be gated on exactly that flag while three strings on
+  // page 1 pointed the reader at it for the ratings. A circular dead end.
+  const html = renderReport(
+    base({
+      provenance: {
+        ...base().provenance,
+        intakeLogScope: 'unfinished',
+        intakeLog: [
+          { eventId: 'm2', occurredAt: '2026-06-19T18:00:00Z', foodLabel: "Hill's z/d", intakeRating: 'refused', isLastFullMeal: false, pinned: false },
+          { eventId: 'm1', occurredAt: '2026-06-03T18:00:00Z', foodLabel: "Hill's z/d", intakeRating: 'some', isLastFullMeal: false, pinned: false },
+        ],
+      },
+    }),
+  )
+  const t = plain(html)
+  assert.ok(/Meals not finished/.test(t), 'the list renders and is captioned for its own population')
+  assert.ok(/2 unfinished meals shown/.test(t), 'and counted as unfinished meals, not "rated meals"')
+  assert.ok(
+    !/no fully-eaten meal was recorded in this window/.test(t),
+    'NEVER the anchor absence claim — the fully-eaten meals are precisely what this list filters out',
+  )
+  assert.ok(
+    /did not fire here; that is not a reading of whether intake was adequate/.test(t),
+    'and the absence is stated as detector silence, never as an all-clear',
+  )
+  assert.ok(
+    !/No reduced-intake flag fired/.test(t),
+    'never the bare phrase — page 1 can carry a diet-not-eaten flag while this detector is silent',
+  )
+})
+
+Deno.test('B-532 — the trend delta compares EQUAL-length halves', () => {
+  const html = renderReport(
+    base({
+      symptoms: [
+        aggregate({
+          type: 'itch',
+          count: 16,
+          symptomDays: 16,
+          windowDays: 46,
+          loggedDays: 43,
+          weeklyBuckets: [4, 4, 3, 2, 2, 1, 0],
+          bucketStartDates: ['2026-05-18'],
+          trendHalves: {
+            days: 23,
+            firstCount: 11,
+            lastCount: 5,
+            firstStartDate: '2026-05-18',
+            firstEndDate: '2026-06-09',
+            lastStartDate: '2026-06-10',
+            lastEndDate: '2026-07-02',
+            middleCount: 0,
+            middleDate: null,
+          },
+        }),
+      ],
+    }),
+  )
+  const t = plain(html)
+  assert.ok(/first 23 d 11 → last 23 d 5/.test(t.replace(/ \d+ logged/g, '')), 'both halves are the same length')
+  // Round 7: the delta carries its own observed-day count, so an unobserved stretch cannot be
+  // absorbed into the headline number by a threshold that (correctly) does not fire.
+  assert.ok(/first 23 d 0 logged/.test(t), 'and each half states how much of it was observed')
+  assert.ok(
+    /trend halves: May 18 – Jun 9, 2026 \(0 of 23 d logged\) vs Jun 10 – Jul 2, 2026 \(0 of 23 d logged\)/.test(t),
+    'the partition is dated (so it is not confused with the bars or the window) AND its exposure is stated',
+  )
+})
+
+Deno.test('B-532 — a snapshot with no halves renders no delta at all (never a fabricated one)', () => {
+  const html = renderReport(base({ symptoms: [aggregate({ type: 'itch', count: 3, weeklyBuckets: [2, 1] })] }))
+  assert.ok(!/class="delta"/.test(html), 'no halves ⇒ no comparison invented from the bars')
+  assert.ok(!/trend halves:/.test(plain(html)), 'and no partition is named for a comparison that is not there')
+})
+
+Deno.test('B-532 — Appendix D carries dose DATES and the unlogged-medication caveat', () => {
+  const html = renderReport(
+    base({
+      medications: [med({ doseDays: ['2026-06-05', '2026-07-02'], givenDoses: 2, daysWithDose: 2, expectedDoses: null, unconfirmedDoses: 0 })],
+    }),
+  )
+  const t = plain(html)
+  assert.ok(/Dose dates/.test(t), 'the column exists')
+  assert.ok(/Jun 5, Jul 2/.test(t), 'and lists the days, so "2 doses over 28 d" cannot read as continuous cover')
+  assert.ok(
+    /A medication prescribed elsewhere and never logged does not appear here/.test(t),
+    'the absence of a drug from this table is not evidence it was not given',
+  )
+  assert.ok(/antipruritics/.test(t), 'named for the derm trial, where the confound is decisive')
+})
+
+Deno.test('B-532 — the unlogged-medication caveat also rides the EMPTY medication table', () => {
+  // The empty state is where the silence is loudest: "No prescription medications overlap
+  // this window" reads as a fact about the animal unless the page says whose log it is.
+  const t = plain(renderReport(base()))
+  assert.ok(/No prescription medication is recorded in this window/.test(t))
+  assert.ok(/This lists only what the owner entered in Culprit/.test(t))
+})
+
+Deno.test('B-599 — page 1 never points at an "Also during the trial" row that will not render', () => {
+  // A free-fed bowl OF THE TRIAL DIET: `intakeNotDirectlyObserved` withholds the clean
+  // claim, but `arrangementExposures` is empty (nothing off-list), so the referenced row
+  // is never emitted and the phrase occurred exactly once in the whole document.
+  const html = renderReport(
+    base({
+      clinicalQuestion: { question: 'diet_trial_working', primarySymptom: 'itch' },
+      trial: trialBlockFixture({
+        allowedSetUnavailable: false,
+        mayClaimAllMatched: false,
+        mayStateRecordClean: false,
+        intakeNotDirectlyObserved: true,
+        interpretability: 'supports',
+        interpretabilityStatement: 'This record covers the trial well enough to support interpreting it.',
+        exposures: { totalFeedings: 32, offDiet: 0, byRung: { derived_protein: 0, unrecognised: 0 }, fedBeforePermitted: 0, unclassifiable: 0, items: [] },
+      }),
+    }),
+  )
+  const t = plain(html)
+  assert.ok(!/Also during the trial/.test(t), 'the row does not render on this record…')
+  assert.ok(!/see "Also during the trial" below/.test(t), '…so nothing points at it')
+  assert.ok(
+    /Food was continuously available in a bowl during the trial/.test(t),
+    'the reason is named where the pointer used to be',
+  )
+  assert.ok(/No clean-elimination statement is made for this record/.test(t))
+})
+
+Deno.test('B-599 — the pointer SURVIVES where the row really does render', () => {
+  const html = renderReport(
+    base({
+      clinicalQuestion: { question: 'diet_trial_working', primarySymptom: 'itch' },
+      trial: trialBlockFixture({
+        allowedSetUnavailable: false,
+        mayClaimAllMatched: false,
+        mayStateRecordClean: false,
+        exposures: { totalFeedings: 32, offDiet: 0, byRung: { derived_protein: 0, unrecognised: 0 }, fedBeforePermitted: 0, unclassifiable: 2, items: [] },
+      }),
+    }),
+  )
+  const t = plain(html)
+  assert.ok(/see "Also during the trial" below/.test(t), 'the cross-reference is kept…')
+  assert.ok(/Also during the trial/.test(t.replace(/see "Also during the trial" below/, '')), '…and it resolves')
+})
+
+Deno.test('B-532 — a chronicity span that starts at the window edge is stated as a floor', () => {
+  const censored = plain(
+    renderReport(
+      base({
+        safetyFlags: [
+          {
+            kind: 'chronicity',
+            symptomType: 'itch',
+            episodeCount: 16,
+            spanDays: 35,
+            activeWeeks: 5,
+            symptomDays: 16,
+            daysSinceLastEpisode: 7,
+            firstOnsetIso: '2026-04-06T14:00:00Z', // 3 days into a window opening Apr 3
+            tier: 'standard',
+            windowDays: 91,
+          },
+        ],
+      }),
+    ),
+  )
+  assert.ok(/first logged Apr 6/.test(censored), 'the date is stated as a LOG event, not as an onset')
+  assert.ok(!/first noted/.test(censored), 'and never as "first noted", which is a claim about the animal')
+  assert.ok(/35 days is a floor/.test(censored), 'the span is a floor when the window truncates it')
+
+  const observed = plain(
+    renderReport(
+      base({
+        safetyFlags: [
+          {
+            kind: 'chronicity',
+            symptomType: 'itch',
+            episodeCount: 16,
+            spanDays: 35,
+            activeWeeks: 5,
+            symptomDays: 16,
+            daysSinceLastEpisode: 7,
+            firstOnsetIso: '2026-05-20T14:00:00Z', // seven weeks into the window — genuinely observed
+            tier: 'standard',
+            windowDays: 91,
+          },
+        ],
+      }),
+    ),
+  )
+  assert.ok(!/is a floor/.test(observed), 'and NOT a floor when the record actually saw the start')
+})
+
+Deno.test('B-532 — with no photographed incident, the phenotype bar is gone and the caveat is not', () => {
+  const html = renderReport(
+    base({
+      vomitPhenotype: {
+        totalIncidents: 5,
+        withAnalysis: 0,
+        states: { completed: 0, uncertain: 0, failed: 0, pending: 0 },
+        assessedCount: 0,
+        contentsMix: { food: 0, bile: 0, hairball: 0, foam_liquid: 0, grass: 0, unsure: 0 },
+        consistencyDistribution: {},
+        bloodPresent: [],
+        foreignPresent: [],
+        reviewedCount: 0,
+      },
+    }),
+  )
+  const t = plain(html)
+  assert.ok(!/no legible read yet/.test(t), 'no chart furniture standing in for data that does not exist')
+  assert.ok(/No incident in this window has a photo/.test(t), 'the state is stated in words')
+  assert.ok(/5 without a photo/.test(t), 'the denominator disclosure survives')
+  assert.ok(/This is not a clearance/.test(t), 'and so does the blood/foreign limitation — the load-bearing half')
+})
+
+Deno.test('B-532 — the weight sparkline states the range it is drawn over', () => {
+  const html = renderReport(
+    base({
+      weight: {
+        isEmpty: false,
+        latest: { kg: 31.8, lbs: 70.1, date: '2026-06-29' },
+        trend: {
+          readingCount: 3,
+          seriesLbs: [71.4, 70.8, 70.1],
+          seriesKg: [32.4, 32.1, 31.8],
+          latestLbs: 70.1,
+          latestKg: 31.8,
+          earliestDate: '2026-05-18',
+          latestDate: '2026-06-29',
+          deltaLbs: -1.3,
+          deltaKg: -0.6,
+          direction: 'down',
+        },
+      },
+    }),
+  )
+  assert.ok(
+    /chart spans 31.8–32.4 kg/.test(plain(html)),
+    'a 0.6 kg fall and a 6 kg fall draw the identical cliff, so the vertical is named',
+  )
+})
+
+Deno.test('B-532 — the legend describes the page-1 intake line only when that line exists', () => {
+  // The un-gating made `intakeLog.length > 0` stop implying "a reduced-intake flag fired",
+  // and the legend was still keyed on it — so it would have described a page-1 line the
+  // report does not carry. The same dangling-reference defect as B-599, one layer out.
+  const unfinished = plain(
+    renderReport(
+      base({
+        provenance: {
+          ...base().provenance,
+          intakeLogScope: 'unfinished',
+          intakeLog: [
+            { eventId: 'm1', occurredAt: '2026-06-19T18:00:00Z', foodLabel: 'z/d', intakeRating: 'refused', isLastFullMeal: false, pinned: false },
+          ],
+        },
+      }),
+    ),
+  )
+  assert.ok(!/When intake drops, page 1 shows/.test(unfinished), 'no flag fired ⇒ no claim that the line is there')
+  assert.ok(/appears only when a reduced-intake flag fired/.test(unfinished))
+  assert.ok(/not that intake was normal/.test(unfinished), 'and the silence is never an all-clear')
+  assert.ok(!/When intake drops, page 1 shows/.test(unfinished))
+
+  const flagged = plain(
+    renderReport(
+      base({
+        provenance: {
+          ...base().provenance,
+          intakeLogScope: 'intake_flag',
+          intakeLog: [
+            { eventId: 'm1', occurredAt: '2026-06-19T18:00:00Z', foodLabel: 'z/d', intakeRating: 'all', isLastFullMeal: true, pinned: false },
+          ],
+        },
+      }),
+    ),
+  )
+  assert.ok(/When intake drops, page 1 shows/.test(flagged), 'and it IS described when the flag population is listed')
+})
+
+Deno.test('B-532 ADV① — page 1 and the symptom panel never disagree about direction', () => {
+  // THE COUNTEREXAMPLE THE ADVERSARIAL PASS EXECUTED, pinned. B-532's first cut migrated the
+  // symptom panel to `trendHalves` and left `monitoringTiles`' trajectory tile on the old
+  // `mid * 7` bucket split, so on a fully-logged 36-day `since_visit` window — the DEFAULT basis
+  // for the monitoring wedge this tile exists for — page 1 printed "3 → 3" while the panel two
+  // inches below printed "first 18 d 1 → last 18 d 5". A swept comparison put the two partitions
+  // in disagreement on 337 of 393 window lengths, with page 1 the more reassuring number on 169.
+  // The bias had not been removed; it had been relocated to the more prominent surface.
+  const halves = {
+    days: 18,
+    firstCount: 1,
+    lastCount: 5,
+    firstStartDate: '2026-05-01',
+    firstEndDate: '2026-05-18',
+    lastStartDate: '2026-05-19',
+    lastEndDate: '2026-06-05',
+    // 36 is even, so there is no middle day to exclude.
+    middleCount: 0,
+    middleDate: null,
+  }
+  const html = renderReport(
+    base({
+      symptoms: [aggregate({ type: 'vomit', count: 6, symptomDays: 6, windowDays: 36, loggedDays: 36, weeklyBuckets: [1, 0, 0, 2, 2, 1], trendHalves: halves })],
+      atAGlance: {
+        ...base().atAGlance,
+        primarySymptom: { type: 'vomit', count: 6 },
+        totalSymptomIncidents: 6,
+        windowDays: 36,
+        loggedDays: 36,
+        sinceOnsetDays: 36,
+        daysSinceLastEpisode: 1,
+        loggedDaysSinceLastEpisode: 1,
+        firstHalfLoggedDays: 18,
+        secondHalfLoggedDays: 18,
+      },
+    }),
+  )
+  const t = plain(html)
+  // The tile and the panel are the same comparison, so they carry the same two numbers.
+  assert.ok(/1 → 5/.test(t), 'the page-1 tile shows the rise')
+  assert.ok(/first 18 d 1 → last 18 d 5/.test(t), 'and so does the panel')
+  assert.ok(!/3 → 3/.test(t), 'never the old bucket split, which read this record as flat')
+  assert.ok(!/first 21 d|last 15 d/.test(t), 'and never its unequal day labels')
+})
+
+Deno.test('B-532 ADV② — the tile’s sparse caveat counts over the window it names', () => {
+  // Executed: the tile compared a NEW-partition numerator (`firstHalfLoggedDays`) against an
+  // OLD-partition floor (`ceil(mid*7/3)`), which BOTH lost a caveat at 90 days and printed a
+  // false "6 of 21 d" at 36 — a fabricated logging-coverage figure on page 1 of a clinical
+  // artifact. One derivation, so numerator and denominator cannot come from different windows.
+  const html = renderReport(
+    base({
+      symptoms: [
+        aggregate({
+          type: 'vomit',
+          count: 7,
+          symptomDays: 7,
+          windowDays: 36,
+          loggedDays: 9,
+          weeklyBuckets: [1, 0, 0, 2, 2, 2],
+          trendHalves: { days: 18, firstCount: 1, lastCount: 6, firstStartDate: '2026-05-01', firstEndDate: '2026-05-18', lastStartDate: '2026-05-19', lastEndDate: '2026-06-05', middleCount: 0, middleDate: null },
+        }),
+      ],
+      atAGlance: {
+        ...base().atAGlance,
+        primarySymptom: { type: 'vomit', count: 7 },
+        totalSymptomIncidents: 7,
+        windowDays: 36,
+        loggedDays: 9,
+        sinceOnsetDays: 36,
+        daysSinceLastEpisode: 1,
+        loggedDaysSinceLastEpisode: 1,
+        firstHalfLoggedDays: 6,
+        secondHalfLoggedDays: 3,
+      },
+    }),
+  )
+  const t = plain(html)
+  assert.ok(/early window sparsely logged \(6 of 18 d\)/.test(t), 'the denominator is the half it counted over')
+  assert.ok(!/6 of 21 d/.test(t), 'never a figure counted over one window and labelled with another')
+})
+
+Deno.test('B-532 ADV③ — the artefactual-improvement caveat is not lost at the floor boundary', () => {
+  // Executed against `main`: a 90-day record with 15 of 45 late logged days and a 3× apparent
+  // improvement caveated before the change (old floor `ceil(48/3) = 16`) and stopped caveating
+  // after it (`15 < ceil(45/3) = 15` is false). A guard whose entire purpose is the reassuring
+  // direction may not get quieter as a side effect of fixing the arithmetic beside it, so the
+  // floor is stated as "a third or less of the half was logged".
+  const html = renderReport(
+    base({
+      symptoms: [
+        aggregate({
+          type: 'vomit',
+          count: 8,
+          symptomDays: 8,
+          windowDays: 90,
+          loggedDays: 57,
+          weeklyBuckets: [2, 2, 1, 1, 0, 1, 0, 1, 0, 0, 0, 0, 0],
+          trendHalves: { days: 45, firstCount: 6, lastCount: 2, firstStartDate: '2026-04-04', firstEndDate: '2026-05-18', lastStartDate: '2026-05-19', lastEndDate: '2026-07-02', middleCount: 0, middleDate: null },
+        }),
+      ],
+      atAGlance: { ...base().atAGlance, windowDays: 90, loggedDays: 57, firstHalfLoggedDays: 42, secondHalfLoggedDays: 15 },
+    }),
+  )
+  assert.ok(
+    /later window sparsely logged \(15 of 45 d\)/.test(plain(html)),
+    'exactly a third logged is sparse — the boundary belongs inside the caveat, not outside it',
+  )
+})
+
+Deno.test('B-532 COLD⑦ — an unobserved week is never drawn as a zero week', () => {
+  // COLD-READ BLOCKING, and the most dangerous of the set: logging stopped a week before the
+  // window closed, so the final bucket held zero logged days — and it rendered as the same
+  // flat "0" nub a genuinely quiet week gets, at the visual terminus of a descending curve.
+  // It reads as "resolved". No delta-caveat fires (7 unlogged of 28 clears that threshold
+  // comfortably) and on a completed trial there is no safety flag pulling the other way.
+  const html = renderReport(
+    base({
+      symptoms: [
+        aggregate({
+          type: 'itch',
+          count: 12,
+          symptomDays: 12,
+          windowDays: 56,
+          loggedDays: 49,
+          weeklyBuckets: [4, 2, 2, 1, 1, 1, 1, 0],
+          bucketStartDates: ['2026-05-08', '2026-05-15', '2026-05-22', '2026-05-29', '2026-06-05', '2026-06-12', '2026-06-19', '2026-06-26'],
+          loggedDaysByBucket: [7, 7, 7, 7, 7, 7, 7, 0],
+        }),
+      ],
+    }),
+  )
+  assert.ok(/class="nolog"/.test(html), 'the unobserved week gets its own hollow marker')
+  assert.equal((html.match(/class="nolog"/g) ?? []).length, 1, 'exactly the one week nobody logged')
+  assert.ok(!/class="nub"/.test(html), 'and no measured-zero nub, because no week here was a measured zero')
+  assert.ok(
+    /nothing logged that week \(not a week without episodes\)/.test(plain(html)),
+    'the marker is defined on the same sheet it appears on',
+  )
+  assert.ok(/not logged/.test(html), 'and the alt text draws the same distinction the bars do')
+})
+
+Deno.test('B-532 COLD⑦ — a genuinely quiet, well-logged week keeps its measured zero', () => {
+  const html = renderReport(
+    base({
+      symptoms: [
+        aggregate({ type: 'itch', count: 3, windowDays: 21, loggedDays: 21, weeklyBuckets: [2, 0, 1], bucketStartDates: ['2026-06-12', '2026-06-19', '2026-06-26'], loggedDaysByBucket: [7, 7, 7] }),
+      ],
+    }),
+  )
+  assert.ok(/class="nub"/.test(html), 'a week the owner logged with no episodes is still a zero')
+  assert.ok(!/class="nolog"/.test(html), 'and never the no-data marker')
+  assert.ok(!/nothing logged that week/.test(plain(html)), 'nor its legend')
+})
+
+Deno.test('B-532 COLD⑦ — the active problem list reaches page 1', () => {
+  // COLD-READ BLOCKING. "Atopic dermatitis (active)" sat in an Appendix B table row while
+  // page 1 presented a completed trial with a falling itch curve — the competing explanation
+  // for the whole trend, three pages from the numbers it reframes.
+  const html = renderReport(
+    base({
+      provenance: {
+        ...base().provenance,
+        conditions: [
+          { name: 'Atopic dermatitis', status: 'active', diagnosedAt: '2025-11-14' },
+          { name: 'Old cruciate repair', status: 'resolved', diagnosedAt: '2024-02-01' },
+        ],
+      },
+    }),
+  )
+  const p1 = plain(pageOne(html))
+  assert.ok(/Recorded conditions:/.test(p1), 'named on page 1')
+  assert.ok(/Atopic dermatitis/.test(p1), 'the active one')
+  assert.ok(/since Nov 14, 2025/.test(p1), 'with the date that shows it predates this window')
+  assert.ok(!/Old cruciate repair/.test(p1), 'resolved history does not crowd the signalment')
+  assert.ok(
+    /owner-recorded history, not a finding in this window/.test(p1),
+    'and it is never rendered as something this report computed',
+  )
+})
+
+Deno.test('B-532 COLD⑦ — the off-diet tile never reads as a fact about the document', () => {
+  // "Not stated · see the diet-trial block below" scans as "nothing to report" in a row where
+  // every other tile is a number — on the report where a clean-looking page is the hazard.
+  const html = renderReport(
+    base({
+      clinicalQuestion: { question: 'diet_trial_working', primarySymptom: 'itch' },
+      // `diet.trial` is what selects the trial tile row; `snapshot.trial` carries the facts.
+      diet: { ...base().diet, trial: { ...DUCK_TRIAL, proteinSet: pset(['duck'], { complete: true }) } },
+      trial: trialBlockFixture({
+        allowedSetUnavailable: false,
+        mayClaimAllMatched: false,
+        mayStateRecordClean: false,
+        intakeNotDirectlyObserved: true,
+        exposures: { totalFeedings: 98, offDiet: 0, byRung: { derived_protein: 0, unrecognised: 0 }, fedBeforePermitted: 0, unclassifiable: 0, items: [] },
+      }),
+    }),
+  )
+  const t = plain(html)
+  assert.ok(!/Not stated/.test(t), 'never a statement about the document')
+  assert.ok(/Not countable/.test(t), 'a statement about the world')
+  assert.ok(/intake not directly observed/i.test(t), 'and it names why')
+})
+
+Deno.test('B-532 COLD⑦ — "None recorded" in the diet history says whose log it is', () => {
+  const t = plain(renderReport(base()))
+  assert.ok(
+    /nothing of this kind was logged in this window, which is not evidence none was fed/.test(t),
+    'the absence caveat rides the diet-history rows an elimination trial rests on',
+  )
 })

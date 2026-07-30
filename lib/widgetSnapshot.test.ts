@@ -190,6 +190,77 @@ describe('buildWidgetSnapshot', () => {
     expect(snap.trialTargetDays).toBe(28);
   });
 
+  // ── B-422 — the staleness gate on the WRITE path ──────────────────────────
+  //
+  // Nothing auto-completes a trial and §4.3's milestone needs an owner tap, so a
+  // trial nobody closed stays `status = 'active'` indefinitely. That is not a
+  // stale caption here: `buildMealChoices` turns the trial into one-tap rows that
+  // NAME the trial diet, so a habitual tap writes a `meal` event naming a food
+  // the pet has not eaten in months, into the record the vet reads.
+  describe('a trial past its effective end (B-422)', () => {
+    const staleTrial = {
+      // Day 1 of 28 on 2026-01-01 → target ends 2026-01-28, grace ends 2026-02-25.
+      // "Today" in this suite is 2026-07-24, months past both.
+      startedAt: '2026-01-01',
+      targetDurationDays: 28,
+      foodItemId: 'food-1',
+      foodLabel: "Hill's z/d",
+    };
+
+    /** A pet with NO learned slots — the `slots.length === 0` branch, which is
+     *  the one that offers a bare trial-diet row with nothing else to anchor it. */
+    it('offers no trial-diet one-tap row, so a habitual tap cannot fabricate a meal', () => {
+      const snap = buildWidgetSnapshot(PET, { ...base, trial: staleTrial });
+      expect(snap.mealChoices).toEqual([]);
+    });
+
+    it('drops the trial-diet row from a learned slot too', () => {
+      const meals: SnapshotMealRow[] = [];
+      for (let d = 18; d <= 23; d++) {
+        meals.push(
+          mealRow(`2026-07-${d}T07:00:00.000Z`, 'meal', {
+            food_item_id: 'usual-1',
+            brand: 'Purina',
+            product_name: 'ONE',
+          }),
+        );
+      }
+      const snap = buildWidgetSnapshot(PET, { ...base, meals, trial: staleTrial });
+      // The slot survives and falls back to the pet's ACTUAL usual food — the
+      // widget keeps working, it just stops naming a diet that is over.
+      expect(snap.mealChoices).toEqual([
+        { foodItemId: 'usual-1', label: expect.stringContaining('Purina ONE') },
+      ]);
+    });
+
+    it('retires the day counter with it, so the two can never disagree', () => {
+      const snap = buildWidgetSnapshot(PET, { ...base, trial: staleTrial });
+      expect(snap.trialDay).toBeNull();
+      expect(snap.trialTargetDays).toBeNull();
+    });
+
+    it('keeps a trial that is merely in overrun, inside its grace', () => {
+      // §4.3 offers a NAMED one-tap extension (+28d skin / +14d GI); the owner who
+      // means to keep going and has not tapped yet must not lose the wedge
+      // feature's one-tap logging. Day 1 on 2026-07-01, 14-day target → target
+      // ends 07-14, grace runs to 08-11; today is 07-24.
+      const snap = buildWidgetSnapshot(PET, {
+        ...base,
+        trial: { ...staleTrial, startedAt: '2026-07-01', targetDurationDays: 14 },
+      });
+      expect(snap.mealChoices).toEqual([{ foodItemId: 'food-1', label: "Hill's z/d" }]);
+      expect(snap.trialDay).toBe(24);
+    });
+
+    it('keeps a targetless trial, which has no window to overrun', () => {
+      const snap = buildWidgetSnapshot(PET, {
+        ...base,
+        trial: { ...staleTrial, targetDurationDays: 0 },
+      });
+      expect(snap.mealChoices).toEqual([{ foodItemId: 'food-1', label: "Hill's z/d" }]);
+    });
+  });
+
   it('has no field that could carry Signal/AI copy or monetization state (D9 by construction)', () => {
     // The contract is the guardrail: a widget cannot render what the snapshot
     // cannot express. A new key here must survive the D9/§8 review.

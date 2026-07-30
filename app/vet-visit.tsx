@@ -31,6 +31,10 @@ export default function VetVisitModal() {
   // Photo state
   const [photoUri, setPhotoUri] = useState<string | null>(null);
   const [photoTakenAt, setPhotoTakenAt] = useState<string | null>(null);
+  // Source pixel dimensions from the picker asset, kept only so the pre-upload
+  // resize can cap the photo's true longest edge (B-352) — a photographed
+  // discharge sheet is portrait far more often than not.
+  const [photoDims, setPhotoDims] = useState<{ width: number; height: number } | null>(null);
 
   // Details state — visitedAt is a date only (no time)
   const [visitedAt, setVisitedAt] = useState(() => new Date());
@@ -85,6 +89,7 @@ export default function VetVisitModal() {
 
     const asset = result.assets[0];
     setPhotoUri(asset.uri);
+    setPhotoDims({ width: asset.width, height: asset.height });
 
     const exifRaw = (asset.exif as Record<string, unknown> | undefined);
     const dateRaw = exifRaw?.DateTimeOriginal ?? exifRaw?.DateTime;
@@ -147,7 +152,7 @@ export default function VetVisitModal() {
       // read at pick time (handlePickPhoto reads asset.exif), so re-encoding here
       // only affects the stored file — a camera-roll document photo's GPS metadata
       // never reaches storage. 1600px/q75 keeps a photographed document legible.
-      compressForUpload(photoUri)
+      compressForUpload(photoUri, photoDims?.width, photoDims?.height)
         .then((uploadUri) => uploadPhoto('nyx-vet-attachments', storagePath, uploadUri))
         .then(async () => {
           // Only mark synced if the row actually landed — supabase-js returns

@@ -24,8 +24,7 @@ const FORBIDDEN = [
   './sync',
   './supabase',
   './signal',
-  './secureStore', // drags authDebug — use ./secureStoreTiers instead
-  './authDebug',
+  './secureStore', // drags the app-side adapter + react-native — use ./secureStoreTiers
   './meals',
   './analytics',
   '@react-native-async-storage/async-storage',

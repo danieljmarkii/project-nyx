@@ -20,13 +20,16 @@ import { Header } from '../../components/ui/Header';
 import { SectionLabel } from '../../components/ui/SectionLabel';
 import { FilterChip } from '../../components/ui/FilterChip';
 import { ChipGroup } from '../../components/ui/ChipGroup';
-import { ProteinSetPicker } from '../../components/food/ProteinSetPicker';
+import {
+  ProteinSetPicker,
+  type ProteinSetPickerHandle,
+} from '../../components/food/ProteinSetPicker';
 import { PhotoCarousel } from '../../components/food/PhotoCarousel';
 import { AlwaysAvailableCard } from '../../components/food/AlwaysAvailableCard';
 import { supabase } from '../../lib/supabase';
 import { uploadPhoto, compressForUpload } from '../../lib/storage';
 import { getDb } from '../../lib/db';
-import { seedPickerProteins, pickerProteinsToSet, pickerPrimaryProtein, proteinsToCacheText } from '../../lib/protein';
+import { seedPickerProteins, pickerProteinWrite, proteinsToCacheText } from '../../lib/protein';
 import { foodIntakeKey } from '../../lib/food';
 import { archiveFood, restoreFood, type ArchiveResult } from '../../lib/foodArchive';
 import { useSnackbarStore } from '../../store/snackbarStore';
@@ -114,6 +117,7 @@ export default function FoodDetailScreen() {
   // food_items.proteins, with primaryProtein as its (raw, unrewritten) head.
   const [primaryProtein, setPrimaryProtein] = useState<string | null>(null);
   const [alsoContains, setAlsoContains] = useState<string[]>([]);
+  const proteinPickerRef = useRef<ProteinSetPickerHandle>(null);
   // Flipped only by an owner tap/keystroke in the picker. Gates BOTH the reseed
   // (an in-progress edit is never stomped by a realtime AI completion) and the
   // write (an untouched picker never re-keys a stored value the owner didn't
@@ -145,7 +149,10 @@ export default function FoodDetailScreen() {
         .maybeSingle();
       if (cancelled) return;
       if (error || !data) {
-        setLoadError(error?.message ?? 'Food not found');
+        // Two different owner-facing truths here: a failed read is retryable, a
+        // missing row is not. Neither is served by the raw Postgres string.
+        if (error) console.warn('[food-detail] load failed:', error.message);
+        setLoadError(error ? "Couldn't load this food. Check your connection and try again." : 'Food not found');
         return;
       }
       applyRow(data as FoodRow);
@@ -235,15 +242,31 @@ export default function FoodDetailScreen() {
     const trimmedIngredients = ingredients.trim() || null;
 
     const base = baseline.current;
+    // The protein "Other" field commits on blur — and this form lives in a
+    // ScrollView with keyboardShouldPersistTaps="handled", where tapping Save
+    // does NOT blur it. So ask the picker to resolve any open draft before
+    // reading the values, or a typed protein saves un-normalized AND the main it
+    // replaced is silently dropped instead of demoted.
+    const pendingProteins = proteinPickerRef.current?.commitPending() ?? null;
+    const mainToSave = pendingProteins ? pendingProteins.main : primaryProtein;
+    const tailToSave = pendingProteins ? pendingProteins.alsoContains : alsoContains;
+    if (pendingProteins) {
+      proteinTouched.current = true;
+      setPrimaryProtein(pendingProteins.main);
+      setAlsoContains(pendingProteins.alsoContains);
+    }
     // B-351: the picker's two lines flatten to one ordered set, with
     // primary_protein written as its derived head (migration 039's contract).
     // Both columns are written together or not at all — a partial write is what
     // opened the primary/proteins desync window this PR closes.
-    const proteinSet = pickerProteinsToSet(primaryProtein, alsoContains);
+    // R7(b), B-529: one value carrying both columns, so no path below can
+    // write the head without the set (or the reverse).
+    const proteinWrite = pickerProteinWrite(mainToSave, tailToSave);
+    const proteinSet = proteinWrite.proteins;
     const proteinChanged =
       proteinTouched.current &&
       (proteinSet.join(' ') !== (row.proteins ?? []).join(' ') ||
-        (pickerPrimaryProtein(primaryProtein)) !== base.primary_protein);
+        proteinWrite.primaryProtein !== base.primary_protein);
 
     const changed =
       brand.trim() !== base.brand ||
@@ -260,71 +283,77 @@ export default function FoodDetailScreen() {
     }
 
     setSaving(true);
-    // If the user overrode AI-extracted values, flip source to 'user' so
-    // future analytics can tell ground truth from model output. Manual rows
-    // stay 'user' either way; 'curated' is never auto-downgraded.
-    const nextSource = row.source === 'ai_extracted' ? 'user' : row.source;
-    const update: Record<string, unknown> = {
-      brand: brand.trim(),
-      product_name: productName.trim(),
-      format,
-      food_type: foodType,
-      ingredients_notes: trimmedIngredients,
-      upc_barcode: trimmedBarcode,
-      source: nextSource,
-    };
-    // Omit the protein columns entirely when the picker was never touched — the
-    // same never-clobber rule the capture screen applies. Saving an edit to the
-    // brand must not re-key a stored protein the owner never authored.
-    if (proteinTouched.current) {
-      update.primary_protein = pickerPrimaryProtein(primaryProtein);
-      update.proteins = proteinSet;
-    }
-    const { error } = await supabase
-      .from('food_items')
-      .update(update)
-      .eq('id', row.id);
-    setSaving(false);
-
-    if (error) {
-      Alert.alert('Could not save', error.message);
-      return;
-    }
-
-    // Keep the local picker cache in sync so the tile reflects the edit
-    // without waiting for a fresh sync.
     try {
-      const db = getDb();
-      await db.runAsync(
-        // ingredients_notes rides along so the cached row matches the server row
-        // this save just wrote — the cache now backs the Tier-1 disclosure, and a
-        // stale panel there would be read by a gate that cares about it.
-        // NOTE it does NOT flip the row to "read": D10 is a CONJUNCTION, and this
-        // screen has no honest value to write for the other arm
-        // (ai_extraction_confidence attests an EXTRACTION, and none ran here). An
-        // owner-typed panel therefore still reads as not-captured — the
-        // deliberate under-claim documented on proteinSetCompleteness, and B-437
-        // is the provenance-column fix. Do not "close" this by inventing a
-        // confidence value; that trades a harmless qualifier for a false
-        // completeness claim on the vet report.
-        `UPDATE food_items_cache
-           SET brand = ?, product_name = ?, format = ?, food_type = ?, ingredients_notes = ?
-         WHERE id = ?`,
-        [brand.trim(), productName.trim(), format, foodType, trimmedIngredients, row.id],
-      );
-      // Mirrors the server write above: protein columns move together, and only
-      // when the owner touched the picker.
+      // If the user overrode AI-extracted values, flip source to 'user' so
+      // future analytics can tell ground truth from model output. Manual rows
+      // stay 'user' either way; 'curated' is never auto-downgraded.
+      const nextSource = row.source === 'ai_extracted' ? 'user' : row.source;
+      const update: Record<string, unknown> = {
+        brand: brand.trim(),
+        product_name: productName.trim(),
+        format,
+        food_type: foodType,
+        ingredients_notes: trimmedIngredients,
+        upc_barcode: trimmedBarcode,
+        source: nextSource,
+      };
+      // Omit the protein columns entirely when the picker was never touched — the
+      // same never-clobber rule the capture screen applies. Saving an edit to the
+      // brand must not re-key a stored protein the owner never authored.
       if (proteinTouched.current) {
-        await db.runAsync(
-          `UPDATE food_items_cache SET primary_protein = ?, proteins = ? WHERE id = ?`,
-          [pickerPrimaryProtein(primaryProtein), proteinsToCacheText(proteinSet), row.id],
-        );
+        update.primary_protein = proteinWrite.primaryProtein;
+        update.proteins = proteinWrite.proteins;
       }
-    } catch (err) {
-      console.warn('[food-detail] cache update failed:', err);
-    }
+      const { error } = await supabase
+        .from('food_items')
+        .update(update)
+        .eq('id', row.id);
 
-    router.back();
+      if (error) {
+        console.error('[food-detail] save failed:', error);
+        Alert.alert('Could not save', 'Something went wrong. Try again in a moment.');
+        return;
+      }
+
+      // Keep the local picker cache in sync so the tile reflects the edit
+      // without waiting for a fresh sync.
+      try {
+        const db = getDb();
+        await db.runAsync(
+          // ingredients_notes rides along so the cached row matches the server row
+          // this save just wrote — the cache now backs the Tier-1 disclosure, and a
+          // stale panel there would be read by a gate that cares about it.
+          // NOTE it does NOT flip the row to "read": D10 is a CONJUNCTION, and this
+          // screen has no honest value to write for the other arm
+          // (ai_extraction_confidence attests an EXTRACTION, and none ran here). An
+          // owner-typed panel therefore still reads as not-captured — the
+          // deliberate under-claim documented on proteinSetCompleteness, and B-437
+          // is the provenance-column fix. Do not "close" this by inventing a
+          // confidence value; that trades a harmless qualifier for a false
+          // completeness claim on the vet report.
+          `UPDATE food_items_cache
+             SET brand = ?, product_name = ?, format = ?, food_type = ?, ingredients_notes = ?
+           WHERE id = ?`,
+          [brand.trim(), productName.trim(), format, foodType, trimmedIngredients, row.id],
+        );
+        // Mirrors the server write above: protein columns move together, and only
+        // when the owner touched the picker.
+        if (proteinTouched.current) {
+          await db.runAsync(
+            `UPDATE food_items_cache SET primary_protein = ?, proteins = ? WHERE id = ?`,
+            [proteinWrite.primaryProtein, proteinsToCacheText(proteinSet), row.id],
+          );
+        }
+      } catch (err) {
+        console.warn('[food-detail] cache update failed:', err);
+      }
+
+      router.back();
+    } finally {
+      // Never strand the Save button disabled — even if supabase-js throws rather
+      // than resolving { error } (B-134; the medication twin already does this).
+      setSaving(false);
+    }
   }
 
   // ── Add photo ─────────────────────────────────────────────────────────────
@@ -426,8 +455,8 @@ export default function FoodDetailScreen() {
       if (error) throw error;
       setRow({ ...row, photo_paths: nextPaths });
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      Alert.alert('Could not add photo', msg);
+      console.error('[food-detail] add photo failed:', err);
+      Alert.alert('Could not add photo', 'Try again in a moment.');
     } finally {
       setAddingPhoto(false);
     }
@@ -456,7 +485,8 @@ export default function FoodDetailScreen() {
     });
     setRetrying(false);
     if (error) {
-      Alert.alert('Extraction failed to start', error.message);
+      console.warn('[food-detail] extraction retry failed:', error.message);
+      Alert.alert("Couldn't start reading the label", 'Try again in a moment.');
     }
   }
 
@@ -488,8 +518,8 @@ export default function FoodDetailScreen() {
       armUndo(result, foodName);
       router.back();
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      Alert.alert('Could not remove food', msg);
+      console.error('[food-detail] remove food failed:', err);
+      Alert.alert('Could not remove food', 'Something went wrong. Try again in a moment.');
       setRemoving(false);
     }
   }
@@ -640,6 +670,7 @@ export default function FoodDetailScreen() {
             />
 
             <ProteinSetPicker
+              ref={proteinPickerRef}
               main={primaryProtein}
               alsoContains={alsoContains}
               onChange={(next) => {

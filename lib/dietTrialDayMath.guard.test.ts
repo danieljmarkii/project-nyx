@@ -92,15 +92,35 @@ describe('B-421 — one diet-trial day counter, not four', () => {
     expect(src).not.toMatch(/compliance/i);
   });
 
-  // Scope honesty: the "one implementation" claim is CLIENT-side. `generate-report`
-  // keeps its own counter, deliberately anchored on the report's scope end rather
-  // than today, and floored at 0 rather than 1 — so a future-dated start prints
-  // "day 0 of 14" where the card says "Day 1 of 14". Changing the vet report's
-  // headline is not this PR's call; B-442 owns reconciling it. This test exists so
-  // the divergence is a recorded fact rather than a thing someone rediscovers.
-  it('records the vet report as a KNOWN separate counter (B-442), not an oversight', () => {
+  // B-442 (the day-counter row) is CLOSED by B-417 PR 7, and this test is now the
+  // guard rather than the record of the divergence.
+  //
+  // `generate-report` used to keep its own counter: `Math.max(0, endDayNum - start
+  // + 1)`, floored at 0 rather than 1 and anchored on the scope end rather than
+  // today, so a future-dated `started_at` printed "day 0 of 14" on the vet report
+  // where the card and Ask both said "Day 1". PR 7 deleted it. The report's day
+  // number now comes from `computeTrialFacts`, which indexes local days through the
+  // same `localDayIndexOf` the client does — so the two agree by construction rather
+  // than by inspection, and a trial that has not started yet renders no block at all
+  // instead of "day 0".
+  it('the vet report no longer computes a diet-trial day span of its own (B-442)', () => {
     const report = read('supabase/functions/generate-report/report.ts');
-    expect(report).toMatch(/daysElapsed:\s*Math\.max\(0,\s*endDayNum/);
+    expect(report).not.toMatch(/daysElapsed:\s*Math\.max\(0,\s*endDayNum/);
+    // `DietSummary.trial` is the protein-set view and must stay free of day math:
+    // the field is what carried the second implementation. Match the FIELD, not the
+    // word — the two surviving hits are comments explaining the deletion, and a
+    // guard that forbids naming the thing it guards is a guard nobody can document.
+    expect(report).not.toMatch(/^\s*daysElapsed:/m);
+  });
+
+  it('the vet report reads its day math through the shared predicate', () => {
+    const trial = read('supabase/functions/generate-report/trial.ts');
+    expect(trial).toMatch(/from '\.\.\/\.\.\/\.\.\/lib\/dietTrial\.ts'/);
+    expect(trial).toMatch(/dayIndexOf\(/);
+    // The one deliberate multiplication is the inverse — a day INDEX back into an
+    // instant to name a calendar date. It never divides.
+    expect(trial).not.toMatch(DAY_DIVISION);
+    expect(trial).not.toMatch(MANUAL_MIDNIGHT);
   });
 
   it('the widget resolver computes no day span of its own', () => {
@@ -131,19 +151,27 @@ describe('B-421 — one diet-trial day counter, not four', () => {
     expect(src).toMatch(/function regimenDaysElapsed/);
   });
 
-  it('the trial-facts loader keys coverage on the SAME clock as the denominator', () => {
-    // The denominator is a LOCAL-day count. The old numerator used
-    // `toDateString()` on a UTC-parsed timestamp — halves of a ratio on two
-    // different clocks, which is how Home rendered "6 of 5 days logged" beside
-    // the profile card's own number for the same pet.
+  it('the trial-facts loader DELEGATES coverage rather than keying its own day', () => {
+    // This assertion is the one the previous version of itself asked for. It read:
+    // "B-417 PR 5 pinned the metric in `lib/dietTrial.computeTrialFacts`, but the
+    // WIRING that would route this loader through it is deferred to B-474 … When
+    // B-474 lands, this assertion becomes a delegation check (`computeTrialFacts(`)
+    // instead." B-533 landed it, so it does.
     //
-    // B-417 PR 5 pinned the metric in `lib/dietTrial.computeTrialFacts`, but the
-    // WIRING that would route this loader through it is deferred to B-474 after
-    // three failed adversarial passes — so this file still keys its own coverage
-    // day, and still has to key it LOCALLY. When B-474 lands, this assertion
-    // becomes a delegation check (`computeTrialFacts(`) instead.
+    // The stakes are unchanged and are why the guard survives in a new form: the
+    // denominator is a LOCAL-day count, and the old numerator used `toDateString()`
+    // on a UTC-parsed timestamp — halves of a ratio on two different clocks, which
+    // is how Home rendered "6 of 5 days logged" beside the profile card's own
+    // number for the same pet. A second implementation is what made that possible,
+    // so the guard now asserts there is only one.
     const src = readCode('lib/dietTrialFacts.ts');
-    expect(src).toMatch(/toLocalDayKey\(new Date\(r\.occurred_at\)\)/);
+    expect(src).toMatch(/computeTrialFacts\(/);
+    // No second coverage metric: the day bucketing, the treat exclusion and the
+    // §10 S3 head clip all live in the shared module now. Passing the module's
+    // OWN numbers through is the point; computing a rival pair here is what this
+    // forbids.
+    expect(src).not.toMatch(/function readCoverage/);
+    expect(src).not.toMatch(/toLocalDayKey\(new Date\(r\.occurred_at\)\)/);
     expect(src).not.toMatch(/toDateString\(\)/);
     expect(src).not.toMatch(DAY_DIVISION);
   });

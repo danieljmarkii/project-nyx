@@ -15,6 +15,7 @@
 import { strict as assert } from 'node:assert'
 import {
   assembleReport,
+  buildDetectionInput,
   dedupeEvents,
   resolveScope,
   FALLBACK_DAYS,
@@ -615,6 +616,47 @@ Deno.test('scope cascade — since-visit beats trial beats fallback', () => {
   assert.equal(futureVisit.scope.basis, 'fallback_90d')
 })
 
+// ── B-422 — what the report does and does not gate ──────────────────────────
+
+Deno.test('scope cascade — a stale-active trial still anchors the window (B-594)', () => {
+  // DELIBERATELY UNCHANGED by B-422, and the test exists to say so. Gating rung 2
+  // alone would make it rank differently from `selectReportTrial` — which had to
+  // stay on `status`, because dropping an un-ended trial's block drops the
+  // `trial_diet_refusal` safety flag with it — and a window anchored on one trial
+  // while the block describes another is the round-1 divergence bug.
+  //
+  // The residual is real: a trial nobody ended anchors every future report on its
+  // own start. Fixing it means moving BOTH functions together, with a cold read on
+  // the re-rendered artifact → B-594, alongside B-538's grace windows.
+  const stale = assembleReport(
+    baseInput({
+      dietTrials: [{ id: 't1', foodItemId: 'f', startedAt: '2024-05-01', targetDurationDays: 42, status: 'active', completedAt: null, vetName: null }],
+    }),
+  )
+  assert.equal(stale.scope.basis, 'diet_trial')
+  // And the pair agrees about WHICH trial, which is the property that must hold.
+  assert.equal(stale.trial?.id, 't1')
+})
+
+Deno.test('B-422 — a stale-active trial no longer suppresses the diet-structure detectors', () => {
+  // `dietTrialActive` fully mutes detectors ⑧ staple-washout, ⑨ meal-type-collapse
+  // and ⑩ diet-churn, and promotes correlation to band 1. Off a trial that ended
+  // in 2024 those are wrong in the same direction — a permanently MISSING
+  // sentence rather than a wrong one, which is why it went unnoticed.
+  const detInput = (startedAt: string, target: number) =>
+    buildDetectionInput(
+      baseInput({
+        dietTrials: [{ id: 't1', foodItemId: 'f', startedAt, targetDurationDays: target, status: 'active', completedAt: null, vetName: null }],
+      }),
+      resolveScope(baseInput()),
+      [],
+      new Set(),
+    )
+  assert.equal(detInput('2024-05-01', 42).pet.dietTrialActive, false)
+  assert.equal(detInput('2026-05-01', 42).pet.dietTrialActive, true) // inside the grace
+  assert.equal(detInput('2024-05-01', 0).pet.dietTrialActive, true) // no target, no overrun
+})
+
 Deno.test('§6 cherry-pick guard — a custom window discloses out-of-window symptom incidents', () => {
   const events: ReportEventInput[] = [
     makeEvent({ type: 'vomit', occurredAt: at('2026-06-10') }), // inside
@@ -972,6 +1014,46 @@ Deno.test('resolveScope is a pure re-derivable function (no hidden Date.now / de
   assert.deepEqual(a, b)
 })
 
+// ── B-568: the meal appendix names a food's FORM ─────────────────────────────
+// Brand + product do not identify a food. A prescription line stocked in both wet and
+// dry shares both fields, so before this the appendix rendered two genuinely different
+// foods as one indistinguishable row — and under a diet trial the two forms are
+// separately adherent, which is exactly what §7 exists to answer.
+
+Deno.test('B-568 — wet and dry of ONE product are two named rows, not one collapsed row', () => {
+  idSeq = 0
+  const snap = assembleReport(
+    baseInput({
+      events: [
+        // Same brand AND same product name; only the form differs. Distinct foodItemIds,
+        // because these are two real library rows (the live case: Royal Canin Selected
+        // Protein PR, stocked wet and dry, both fed across the same days).
+        mealEvent('2026-06-01', { label: 'dry-id', format: 'dry_kibble', rating: 'all' }),
+        mealEvent('2026-06-02', { label: 'wet-id', format: 'wet_canned', rating: 'all' }),
+      ],
+    }),
+  )
+  const labels: (string | null)[] = snap.diet.mealItems.map((m) => m.foodLabel)
+  assert.equal(snap.diet.mealItems.length, 2, 'two forms stay two rows')
+  // Each row names its form, so a vet scanning the appendix can tell them apart.
+  assert.ok(labels.some((l) => l?.includes('(Dry)')), `expected a (Dry) row, got ${JSON.stringify(labels)}`)
+  assert.ok(labels.some((l) => l?.includes('(Wet)')), `expected a (Wet) row, got ${JSON.stringify(labels)}`)
+  assert.equal(new Set(labels).size, 2, 'the two labels are distinguishable')
+})
+
+Deno.test('B-568 — an unspecified form adds nothing rather than an empty parenthetical', () => {
+  idSeq = 0
+  const snap = assembleReport(
+    // 'other' is the unspecified form: deliberately absent from FORMAT_LABEL, so it
+    // must add nothing at all rather than an empty "()" — the same degradation a
+    // future unmapped enum value gets.
+    baseInput({ events: [mealEvent('2026-06-01', { label: 'Plain Food', format: 'other', rating: 'all' })] }),
+  )
+  const label = snap.diet.mealItems[0].foodLabel
+  assert.equal(label, 'Plain Food')
+  assert.ok(!label?.includes('('), 'no empty parenthetical on an unspecified form')
+})
+
 // ── A1: a pre-window medication overlapping the window enters the concurrent-change note ──
 // The highest-consequence misread (spec §4/B-117): a standing steroid begun before the report
 // range but active throughout must be a confounder, or the diet silently takes its credit.
@@ -1126,13 +1208,16 @@ Deno.test('#7/#8 mealItems — rated meals grouped by food (label · protein · 
   const items = snap.diet.mealItems
   assert.equal(items.length, 2, 'two distinct meal foods, grouped (not one row per feeding)')
   // Largest first (chicken ×3 on the stack baseline, then turkey ×1).
-  assert.equal(items[0].foodLabel, 'Instinct Chicken')
+  // B-568 — the appendix names the FORM alongside brand + product. The fixture food is
+  // wet_canned, so the row reads "(Wet)": brand + product alone do not identify a food,
+  // and a vet reading the appendix must be able to tell the wet from the dry of one line.
+  assert.equal(items[0].foodLabel, 'Instinct Chicken (Wet)')
   assert.equal(items[0].count, 3)
   assert.equal(items[0].primaryProtein, 'chicken')
   assert.equal(items[0].firstDate, '2026-05-14', 'date span start')
   assert.equal(items[0].lastDate, '2026-06-10', 'date span end')
   assert.equal(items[0].intakeMode, 'some', 'strict-plurality intake (2 some vs 1 all)')
-  assert.equal(items[1].foodLabel, 'Instinct Turkey')
+  assert.equal(items[1].foodLabel, 'Instinct Turkey (Wet)') // B-568 — same rule on every appendix row
   assert.equal(items[1].count, 1)
   // The grouped total reconciles with mealCompletion (same ratedMeals set).
   const grouped = items.reduce((s, i) => s + i.count, 0)
@@ -1823,9 +1908,9 @@ Deno.test('B-351 §8 shape ① — the trial food carrying an off-trial protein 
     }),
   )
   assert.equal(snap.diet.trialTargetProtein, 'duck')
-  assert.deepEqual(snap.diet.activeTrial!.proteinSet.proteins, ['duck', 'chicken'])
+  assert.deepEqual(snap.diet.trial!.proteinSet.proteins, ['duck', 'chicken'])
   assert.deepEqual(
-    snap.diet.activeTrial!.proteinSet.offTrial,
+    snap.diet.trial!.proteinSet.offTrial,
     ['chicken'],
     'the duck trial diet lists chicken — the finding this whole spec exists for',
   )
@@ -1862,7 +1947,7 @@ Deno.test('B-351 §8 shape ② — an off-diet food fed during the trial carries
     }),
   )
   assert.deepEqual(snap.provenance.confounders[0].proteinSet.offTrial, ['chicken', 'salmon'])
-  assert.deepEqual(snap.diet.activeTrial!.proteinSet.offTrial, [], 'the trial diet itself is clean here')
+  assert.deepEqual(snap.diet.trial!.proteinSet.offTrial, [], 'the trial diet itself is clean here')
 })
 
 Deno.test('B-351 — no active trial means NO off-trial marking anywhere (silence, never an all-clear)', () => {
@@ -1903,7 +1988,7 @@ Deno.test('B-351 — a trial food whose main protein was CLEARED disables the ch
     }),
   )
   assert.equal(snap.diet.trialTargetProtein, null, 'no designated target — the check is disabled')
-  assert.deepEqual(snap.diet.activeTrial!.proteinSet.offTrial, [])
+  assert.deepEqual(snap.diet.trial!.proteinSet.offTrial, [])
   assert.deepEqual(snap.provenance.confounders[0].proteinSet.offTrial, [], 'the real trial protein is NOT blamed')
 })
 
@@ -1993,13 +2078,13 @@ Deno.test('B-351 — a Class-B-mappable protein does NOT report itself as its ow
       }),
     )
     assert.deepEqual(
-      snap.diet.activeTrial!.proteinSet.offTrial,
+      snap.diet.trial!.proteinSet.offTrial,
       [],
       `"${stored}" must not be off-trial against itself`,
     )
     // And the set must key IDENTICALLY to the target, so the two can be compared at all.
     assert.deepEqual(
-      snap.diet.activeTrial!.proteinSet.proteins,
+      snap.diet.trial!.proteinSet.proteins,
       [snap.diet.trialTargetProtein],
       `"${stored}" keys the same on both sides of the off-trial comparison`,
     )
@@ -2077,7 +2162,7 @@ Deno.test('B-351 — PROPERTY: a trial food is never off-trial against itself, o
             ],
           }),
         )
-        const view = snap.diet.activeTrial!.proteinSet
+        const view = snap.diet.trial!.proteinSet
         assert.equal(snap.diet.trialTargetProtein, target, `target keys from the stored primary (${primary})`)
         assert.ok(view.proteins.includes(target), `the target is IN its own set (${primary} / ${JSON.stringify(arr)})`)
         assert.ok(
@@ -2089,4 +2174,240 @@ Deno.test('B-351 — PROPERTY: a trial food is never off-trial against itself, o
     }
   }
   assert.ok(checked > 300, `the cross-product actually ran (${checked} cases)`)
+})
+
+// ── B-532 — the data layer behind the render-honesty pass ────────────────────────
+
+Deno.test('B-532 — trendHalves are EQUAL over an even window', () => {
+  idSeq = 0
+  const events = [
+    makeEvent({ type: 'vomit', occurredAt: at('2026-04-10') }), // first half
+    makeEvent({ type: 'vomit', occurredAt: at('2026-05-18') }), // first half (its last day)
+    makeEvent({ type: 'vomit', occurredAt: at('2026-05-19') }), // last half (its first day)
+    makeEvent({ type: 'vomit', occurredAt: at('2026-06-30') }), // last half
+  ]
+  const snap = assembleReport(baseInput({ events }))
+  const v = snap.symptoms.find((s) => s.type === 'vomit')!
+  assert.equal(v.windowDays, 90)
+  assert.deepEqual(v.trendHalves, {
+    days: 45,
+    firstCount: 2,
+    lastCount: 2,
+    firstStartDate: '2026-04-04',
+    firstEndDate: '2026-05-18',
+    lastStartDate: '2026-05-19',
+    lastEndDate: '2026-07-02',
+    // An even window has no middle day to exclude, so nothing to disclose (B-600).
+    middleCount: 0,
+    middleDate: null,
+  })
+})
+
+Deno.test('B-532 — an ODD window puts the middle day in neither half, and loses it from nothing else', () => {
+  idSeq = 0
+  // 13 days (Jun 20 – Jul 2): six each side, with Jun 26 — the exact middle — in neither.
+  // Handing the spare day to one side is how the unequal-window bias got in, in miniature.
+  const events = [
+    makeEvent({ type: 'vomit', occurredAt: at('2026-06-21') }),
+    makeEvent({ type: 'vomit', occurredAt: at('2026-06-26') }), // THE MIDDLE DAY
+    makeEvent({ type: 'vomit', occurredAt: at('2026-07-01') }),
+  ]
+  const snap = assembleReport(
+    baseInput({ events, vetVisits: [{ visitedAt: '2026-06-20', clinicName: null, vetName: null, reason: null }] }),
+  )
+  const v = snap.symptoms.find((s) => s.type === 'vomit')!
+  assert.equal(v.windowDays, 13)
+  assert.equal(v.trendHalves!.days, 6)
+  assert.equal(v.trendHalves!.firstEndDate, '2026-06-25')
+  assert.equal(v.trendHalves!.lastStartDate, '2026-06-27')
+  assert.equal(v.trendHalves!.firstCount, 1)
+  assert.equal(v.trendHalves!.lastCount, 1)
+  assert.equal(v.count, 3, 'the middle day is not deleted from the record — only from the comparison')
+  assert.equal(v.weeklyBuckets.reduce((a, b) => a + b, 0), 3, 'and it is still on the chart')
+  // …AND IT IS DISCLOSED BESIDE THE COMPARISON (B-600, cold read round 13). "Not
+  // deleted from the record" was true and not sufficient: the render printed only the
+  // two halves, so on a 31-day window whose ONE event fell on the median day the page
+  // read "first 15 d 0 → last 15 d 0" three centimetres under "1 / 31 d". Two zeroes
+  // scan as no episodes, and that one day was 100% of the evidence.
+  assert.equal(v.trendHalves!.middleCount, 1)
+  assert.equal(v.trendHalves!.middleDate, '2026-06-26')
+})
+
+Deno.test('B-532 — the 9-day window no longer compares 7 days against 2', () => {
+  idSeq = 0
+  // The worst case of the old bucket split, and it rendered: `mid = floor(2/2) = 1`, so the
+  // first half was a full week and the last half was whatever remained.
+  const snap = assembleReport(
+    baseInput({
+      events: [makeEvent({ type: 'vomit', occurredAt: at('2026-06-25') })],
+      vetVisits: [{ visitedAt: '2026-06-24', clinicName: null, vetName: null, reason: null }],
+    }),
+  )
+  const v = snap.symptoms.find((s) => s.type === 'vomit')!
+  assert.equal(v.windowDays, 9)
+  assert.equal(v.trendHalves!.days, 4, 'four against four, not seven against two')
+})
+
+Deno.test('B-532 — a window too short to halve gets NO delta rather than a lopsided one', () => {
+  idSeq = 0
+  const snap = assembleReport(
+    baseInput({
+      events: [makeEvent({ type: 'vomit', occurredAt: at('2026-06-30') })],
+      vetVisits: [{ visitedAt: '2026-06-28', clinicName: null, vetName: null, reason: null }],
+    }),
+  )
+  assert.equal(snap.atAGlance.windowDays, 5)
+  assert.equal(snap.symptoms.find((s) => s.type === 'vomit')!.trendHalves, null)
+})
+
+Deno.test('B-532 — the half logged-day counts use the SAME partition as the delta', () => {
+  idSeq = 0
+  const events = [
+    makeEvent({ type: 'vomit', occurredAt: at('2026-06-21') }),
+    makeEvent({ type: 'vomit', occurredAt: at('2026-06-26') }), // middle day of a 13-day window
+    makeEvent({ type: 'vomit', occurredAt: at('2026-07-01') }),
+  ]
+  const snap = assembleReport(
+    baseInput({ events, vetVisits: [{ visitedAt: '2026-06-20', clinicName: null, vetName: null, reason: null }] }),
+  )
+  assert.equal(snap.atAGlance.firstHalfLoggedDays, 1)
+  assert.equal(snap.atAGlance.secondHalfLoggedDays, 1)
+  assert.equal(snap.atAGlance.loggedDays, 3, 'the middle logged day still counts in the window total')
+})
+
+Deno.test('B-532 — the intake log itemises unfinished meals with no intake flag at all', () => {
+  idSeq = 0
+  // The canonical B-494 shape reduced to its essentials: a diet unfinished from day one,
+  // so `detectIntakeDecline` (a RELATIVE detector) never fires and the old gate left the
+  // appendix empty while page 1 pointed at it.
+  const events = [
+    ratedMealEvent('2026-06-10', '08:00:00', 'refused'),
+    ratedMealEvent('2026-06-11', '08:00:00', 'some'),
+    ratedMealEvent('2026-06-12', '08:00:00', 'refused'),
+    ratedMealEvent('2026-06-13', '08:00:00', 'all'),
+  ]
+  const snap = assembleReport(baseInput({ events }))
+  assert.ok(!snap.safetyFlags.some((f) => f.kind === 'intake_decline'), 'no relative decline fires')
+  assert.equal(snap.provenance.intakeLogScope, 'unfinished')
+  assert.equal(snap.provenance.intakeLog.length, 3, 'the three unfinished meals, and only those')
+  assert.ok(
+    snap.provenance.intakeLog.every((e) => e.intakeRating !== 'all'),
+    'a fully-eaten meal never enters a list captioned as the meals that were not finished',
+  )
+  assert.ok(!snap.provenance.intakeLog.some((e) => e.isLastFullMeal), 'and no anchor is tagged in this population')
+})
+
+Deno.test('B-532 — "ate most" is a FINISHED meal, so a calm record still itemises nothing', () => {
+  idSeq = 0
+  // One definition of finished, imported from `lib/dietTrial.feedingWasFinished` — the same
+  // bar §4.3's refusal lane and the appendix's own row emphasis use. A second one here
+  // ("!== all") would have put a single "ate most" meal into an otherwise calm report.
+  const snap = assembleReport(
+    baseInput({
+      events: [ratedMealEvent('2026-06-10', '08:00:00', 'all'), ratedMealEvent('2026-06-11', '08:00:00', 'most')],
+    }),
+  )
+  assert.equal(snap.provenance.intakeLogScope, null)
+  assert.equal(snap.provenance.intakeLog.length, 0)
+  // …and it is NOT lost: the grouped breakdown still counts it.
+  const item = snap.diet.mealItems.find((i) => i.count === 2)!
+  assert.deepEqual(item.intakeBreakdown, [
+    { rating: 'all', count: 1 },
+    { rating: 'most', count: 1 },
+  ])
+})
+
+Deno.test('B-532 — the intake breakdown counts every rating, along the intake scale', () => {
+  idSeq = 0
+  const events = [
+    ratedMealEvent('2026-06-10', '08:00:00', 'refused'),
+    ratedMealEvent('2026-06-10', '18:00:00', 'refused'),
+    ratedMealEvent('2026-06-11', '08:00:00', 'some'),
+    ratedMealEvent('2026-06-12', '08:00:00', 'all'),
+  ]
+  const snap = assembleReport(baseInput({ events }))
+  const item = snap.diet.mealItems[0]
+  assert.deepEqual(
+    item.intakeBreakdown,
+    [
+      { rating: 'all', count: 1 },
+      { rating: 'some', count: 1 },
+      { rating: 'refused', count: 2 },
+    ],
+    'scale order (most eaten first), never count order — a count sort re-creates the mode impression',
+  )
+  assert.equal(item.count, 4, 'and the counts still sum to the group')
+})
+
+Deno.test('B-532 — Appendix D carries the days an administered dose was logged', () => {
+  idSeq = 0
+  const snap = assembleReport(
+    baseInput({
+      medications: [
+        {
+          id: 'reg-apo',
+          medicationItemId: 'mi-apo',
+          drugName: 'Apoquel',
+          doseAmount: '16 mg',
+          route: 'oral',
+          dosesPerDay: 1,
+          scheduleNotes: null,
+          indication: 'pruritus',
+          prescribedBy: null,
+          startedAt: '2026-06-01',
+          targetDurationDays: null,
+          status: 'active',
+          endedAt: null,
+          isPrescription: true,
+          strength: '16 mg',
+        },
+      ],
+      medicationItems: [
+        { id: 'mi-apo', genericName: 'oclacitinib', brandName: 'Apoquel', strength: '16 mg', route: 'oral', isPrescription: true, form: 'tablet' },
+      ],
+      doses: [
+        { eventId: 'd1', occurredAt: at('2026-06-05', '09:00:00'), medicationId: 'reg-apo', medicationItemId: 'mi-apo', adherence: 'given', doseAmount: '16 mg', pairedEventId: null },
+        { eventId: 'd2', occurredAt: at('2026-06-05', '21:00:00'), medicationId: 'reg-apo', medicationItemId: 'mi-apo', adherence: 'given', doseAmount: '16 mg', pairedEventId: null },
+        { eventId: 'd3', occurredAt: at('2026-06-20', '09:00:00'), medicationId: 'reg-apo', medicationItemId: 'mi-apo', adherence: 'partial', doseAmount: '8 mg', pairedEventId: null },
+        // Unconfirmed is not administered — it must not put a date on the page (adversarial finding 4).
+        { eventId: 'd4', occurredAt: at('2026-06-25', '09:00:00'), medicationId: 'reg-apo', medicationItemId: 'mi-apo', adherence: null, doseAmount: null, pairedEventId: null },
+      ],
+    }),
+  )
+  const m = snap.medications.find((x) => x.drugName === 'Apoquel')!
+  assert.deepEqual(m.doseDays, ['2026-06-05', '2026-06-20'], 'distinct days, ascending, administered only')
+  assert.equal(m.daysWithDose, m.doseDays.length, 'the date list and the day count are the same population')
+})
+
+Deno.test('B-532 — two library rows under one label with DIFFERENT sets do not fold', () => {
+  idSeq = 0
+  // B-009/B-018 duplicates, or a re-photographed bag: a label-only group key made the FIRST
+  // member's set stand for both, so an implied-complete set could be printed over feedings
+  // that came from a row nobody read. Appendix B's `pushFood` already keyed on the set.
+  const mk = (date: string, proteins: string[], notes: string | null): ReportEventInput =>
+    makeEvent({
+      type: 'meal',
+      occurredAt: at(date, '08:00:00'),
+      meal: {
+        foodItemId: null,
+        intakeRating: 'all',
+        quantity: null,
+        foodType: 'meal',
+        format: null,
+        primaryProtein: proteins[0] ?? null,
+        proteins,
+        ingredientsNotes: notes,
+        brand: 'Acme',
+        productName: 'Duck Formula',
+      },
+    })
+  const snap = assembleReport(
+    baseInput({
+      events: [mk('2026-06-10', ['duck', 'chicken'], 'Duck, rice, chicken fat'), mk('2026-06-11', ['duck'], null)],
+    }),
+  )
+  const rows = snap.diet.mealItems.filter((i) => i.foodLabel === 'Acme Duck Formula')
+  assert.equal(rows.length, 2, 'one row per captured set — never the first member speaking for both')
+  assert.ok(rows.some((r) => r.proteinSet.proteins.includes('chicken')))
+  assert.ok(rows.some((r) => !r.proteinSet.proteins.includes('chicken')))
 })

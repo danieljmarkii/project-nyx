@@ -21,7 +21,10 @@ import { theme } from '../constants/theme';
 import { SectionLabel } from '../components/ui/SectionLabel';
 import { FilterChip } from '../components/ui/FilterChip';
 import { ChipGroup } from '../components/ui/ChipGroup';
-import { ProteinSetPicker } from '../components/food/ProteinSetPicker';
+import {
+  ProteinSetPicker,
+  type ProteinSetPickerHandle,
+} from '../components/food/ProteinSetPicker';
 import { NightMoment } from '../components/brand/NightMoment';
 import { WhorlSpinner } from '../components/brand/WhorlSpinner';
 import { usePetStore } from '../store/petStore';
@@ -32,7 +35,7 @@ import { supabase } from '../lib/supabase';
 import { insertMeal } from '../lib/meals';
 import { uploadPhoto, compressForUpload } from '../lib/storage';
 import { uuid, exifDateToISO, trustedPastExifIso, formatExifAttribution } from '../lib/utils';
-import { seedPickerProteins, pickerProteinsToSet, pickerPrimaryProtein, proteinsToCacheText } from '../lib/protein';
+import { seedPickerProteins, pickerProteinsToSet, pickerProteinWrite, proteinsToCacheText } from '../lib/protein';
 import { foodIntakeKey } from '../lib/food';
 import { ProteinDisclosure, proteinSummaryLine } from '../components/food/ProteinDisclosure';
 import { TrialContaminantSheet } from '../components/food/TrialContaminantSheet';
@@ -183,6 +186,7 @@ export default function FoodCaptureScreen() {
   // upsert below).
   const [primaryProtein, setPrimaryProtein] = useState<string | null>(null);
   const [alsoContains, setAlsoContains] = useState<string[]>([]);
+  const proteinPickerRef = useRef<ProteinSetPickerHandle>(null);
   const proteinTouched = useRef(false);
 
   // Meal-time override on the confirm screen. Initialised lazily on entry to
@@ -567,11 +571,25 @@ export default function FoodCaptureScreen() {
     // omission deliberate rather than threading a conditional into the INSERT's
     // VALUES. primary_protein is written as proteins[0], the derived convenience
     // migration 039 defines it as — so the pair cannot drift.
-    const proteinSet = pickerProteinsToSet(primaryProtein, alsoContains);
+    // The protein "Other" field commits on blur, and this form's ScrollView uses
+    // keyboardShouldPersistTaps="handled" — so tapping the confirm button never
+    // blurs it. Resolve any open draft first (same reason as app/food/[id].tsx).
+    const pendingProteins = proteinPickerRef.current?.commitPending() ?? null;
+    const mainToSave = pendingProteins ? pendingProteins.main : primaryProtein;
+    const tailToSave = pendingProteins ? pendingProteins.alsoContains : alsoContains;
+    if (pendingProteins) {
+      proteinTouched.current = true;
+      setPrimaryProtein(pendingProteins.main);
+      setAlsoContains(pendingProteins.alsoContains);
+    }
+    // R7(b) — both columns as ONE value, so the local mirror and the remote
+    // upsert below cannot write one without the other (B-529).
+    const proteinWrite = pickerProteinWrite(mainToSave, tailToSave);
+    const proteinSet = proteinWrite.proteins;
     if (proteinTouched.current) {
       await db.runAsync(
         `UPDATE food_items_cache SET primary_protein = ?, proteins = ? WHERE id = ?`,
-        [pickerPrimaryProtein(primaryProtein), proteinsToCacheText(proteinSet), foodId],
+        [proteinWrite.primaryProtein, proteinsToCacheText(proteinSet), foodId],
       );
     }
 
@@ -599,8 +617,8 @@ export default function FoodCaptureScreen() {
     // update, so an AI-extracted protein set survives the owner saving the
     // confirm screen without editing it (B-332 AC, extended to the set).
     if (proteinTouched.current) {
-      foodUpsert.primary_protein = pickerPrimaryProtein(primaryProtein);
-      foodUpsert.proteins = proteinSet;
+      foodUpsert.primary_protein = proteinWrite.primaryProtein;
+      foodUpsert.proteins = proteinWrite.proteins;
     }
     supabase.from('food_items').upsert(foodUpsert, { onConflict: 'id' }).then(({ error }) => {
       if (error) console.warn('[food-capture] upsert failed:', error.message);
@@ -1017,6 +1035,7 @@ export default function FoodCaptureScreen() {
               style={styles.formatRow}
             />
             <ProteinSetPicker
+              ref={proteinPickerRef}
               main={primaryProtein}
               alsoContains={alsoContains}
               onChange={(next) => {

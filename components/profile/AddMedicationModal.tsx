@@ -29,6 +29,7 @@ import {
   type RegimenFormValues,
 } from '../../lib/medications';
 import { MedicationNameChips } from '../medication/MedicationNameChips';
+import { ChipGroup } from '../ui/ChipGroup';
 import { usePetStore } from '../../store/petStore';
 
 // The regimen row the card lists and this modal edits. A subset of `medications` —
@@ -60,27 +61,32 @@ function coerceRegimen(row: Regimen): Regimen {
   };
 }
 
-// Frequency presets → doses_per_day. "As needed" (PRN) is null: no compliance
-// target (§5.4). doses_per_day is NUMERIC so finer schedules exist, but these
-// presets cover the common cases and keep setup a few taps; null is a distinct,
-// selectable option (only this one has value=null, so equality renders selection
-// unambiguously).
-const FREQUENCY_OPTIONS: { label: string; value: number | null }[] = [
-  { label: 'Once a day', value: 1 },
-  { label: 'Twice a day', value: 2 },
-  { label: '3× a day', value: 3 },
-  { label: '4× a day', value: 4 },
-  { label: 'As needed', value: null },
+// Frequency presets → doses_per_day. "As needed" (PRN) carries no compliance
+// target (§5.4), which is doses_per_day = null. doses_per_day is NUMERIC so finer
+// schedules exist, but these presets cover the common cases and keep setup a few taps.
+//
+// `value` is the chip's identity (ChipGroup keys on a string) and is deliberately
+// SEPARATE from `dosesPerDay` — the stored column. They can't be the same field
+// because "As needed" stores null, and null is also ChipGroup's "nothing selected".
+// Keeping them apart is what lets PRN be a real, selectable option rather than an
+// absence: the chip 'prn' is selected, and the column it writes is null.
+const FREQUENCY_OPTIONS: { value: string; label: string; dosesPerDay: number | null }[] = [
+  { value: '1',   label: 'Once a day',  dosesPerDay: 1 },
+  { value: '2',   label: 'Twice a day', dosesPerDay: 2 },
+  { value: '3',   label: '3× a day',    dosesPerDay: 3 },
+  { value: '4',   label: '4× a day',    dosesPerDay: 4 },
+  { value: 'prn', label: 'As needed',   dosesPerDay: null },
 ];
 
 // B-158 — course length as an explicit Ongoing (default) vs Set an end choice, so a
 // chronic/seasonal med (allergy season, lifelong thyroid) needs no fake duration
 // number. 'ongoing' → target_duration_days stays null (the card renders "Started …",
-// never "Day X of Y"); 'fixed' reveals the days input. Mirrors the small closed-set
-// chip pattern the Frequency/Route rows already use in this modal.
-const DURATION_MODE_OPTIONS: { label: string; value: 'ongoing' | 'fixed' }[] = [
-  { label: 'Ongoing', value: 'ongoing' },
-  { label: 'Set an end', value: 'fixed' },
+// never "Day X of Y"); 'fixed' reveals the days input. Stays a visible chip group
+// rather than a menu because picking 'fixed' expands dependent inline UI (the days
+// field) — the filter-UX rule for an option that reveals more.
+const DURATION_MODE_OPTIONS: { value: 'ongoing' | 'fixed'; label: string }[] = [
+  { value: 'ongoing', label: 'Ongoing' },
+  { value: 'fixed', label: 'Set an end' },
 ];
 
 interface Props {
@@ -254,6 +260,13 @@ export function AddMedicationModal({
 
   const canSave = canSaveRegimen({ drugName });
 
+  // doses_per_day → the chip that represents it. A regimen saved with an off-preset
+  // frequency (the column is NUMERIC — an imported 6× a day, a half dose) resolves to
+  // null, i.e. no chip highlighted, which is honest: none of these five describes it.
+  // It stays saved as-is unless the owner taps a preset, exactly as before.
+  const selectedFrequency =
+    FREQUENCY_OPTIONS.find((o) => o.dosesPerDay === dosesPerDay)?.value ?? null;
+
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
       <SafeAreaView style={styles.container}>
@@ -278,19 +291,20 @@ export function AddMedicationModal({
             {!isEditing && library.length > 0 && (
               <>
                 <Text style={styles.label}>Your medications</Text>
-                <View style={styles.chipWrap}>
-                  {library.map((m) => (
-                    <TouchableOpacity
-                      key={m.id}
-                      style={[styles.chip, medicationItemId === m.id && styles.chipActive]}
-                      onPress={() => pickLibraryDrug(m)}
-                    >
-                      <Text style={[styles.chipText, medicationItemId === m.id && styles.chipTextActive]}>
-                        {m.generic_name}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
+                {/* allowDeselect off: re-tapping the linked drug re-picks it (idempotent)
+                    rather than dropping the medication_item_id while its name stays in
+                    the field — unlinking is what editing the name is for, and only that
+                    path keeps the id and the text in step. */}
+                <ChipGroup
+                  options={library.map((m) => ({ value: m.id, label: m.generic_name }))}
+                  value={medicationItemId}
+                  onChange={(next) => {
+                    const med = library.find((m) => m.id === next);
+                    if (med) pickLibraryDrug(med);
+                  }}
+                  allowDeselect={false}
+                  accessibilityLabel="Your medications"
+                />
               </>
             )}
 
@@ -324,36 +338,30 @@ export function AddMedicationModal({
             />
 
             <Text style={styles.label}>Frequency</Text>
-            <View style={styles.chipWrap}>
-              {FREQUENCY_OPTIONS.map((opt) => {
-                const active = opt.value === dosesPerDay;
-                return (
-                  <TouchableOpacity
-                    key={opt.label}
-                    style={[styles.chip, active && styles.chipActive]}
-                    onPress={() => setDosesPerDay(opt.value)}
-                  >
-                    <Text style={[styles.chipText, active && styles.chipTextActive]}>{opt.label}</Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
+            {/* allowDeselect off: every regimen has a frequency, and "no frequency" is
+                already spelled "As needed" — a second tap must not clear it to an
+                unlabelled null the owner can't see or re-enter. */}
+            <ChipGroup
+              options={FREQUENCY_OPTIONS}
+              value={selectedFrequency}
+              onChange={(next) => {
+                const opt = FREQUENCY_OPTIONS.find((o) => o.value === next);
+                if (opt) setDosesPerDay(opt.dosesPerDay);
+              }}
+              allowDeselect={false}
+              accessibilityLabel="Frequency"
+            />
 
             <Text style={styles.label}>Route (optional)</Text>
-            <View style={styles.chipWrap}>
-              {MEDICATION_ROUTE_OPTIONS.map((opt) => {
-                const active = route === opt.value;
-                return (
-                  <TouchableOpacity
-                    key={opt.value}
-                    style={[styles.chip, active && styles.chipActive]}
-                    onPress={() => setRoute(active ? null : opt.value)}
-                  >
-                    <Text style={[styles.chipText, active && styles.chipTextActive]}>{opt.label}</Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
+            {/* Optional field — a second tap clears it (ChipGroup's default), so an
+                owner who guessed can take it back rather than being stuck with a route
+                the label never stated. */}
+            <ChipGroup
+              options={MEDICATION_ROUTE_OPTIONS}
+              value={route}
+              onChange={setRoute}
+              accessibilityLabel="Route"
+            />
 
             <Text style={styles.label}>Started</Text>
             <TouchableOpacity
@@ -380,20 +388,17 @@ export function AddMedicationModal({
             )}
 
             <Text style={styles.label}>Course length</Text>
-            <View style={styles.chipWrap}>
-              {DURATION_MODE_OPTIONS.map((opt) => {
-                const active = opt.value === durationMode;
-                return (
-                  <TouchableOpacity
-                    key={opt.value}
-                    style={[styles.chip, active && styles.chipActive]}
-                    onPress={() => setDurationMode(opt.value)}
-                  >
-                    <Text style={[styles.chipText, active && styles.chipTextActive]}>{opt.label}</Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
+            {/* allowDeselect off: one of the two is always true of a course. */}
+            <ChipGroup
+              options={DURATION_MODE_OPTIONS}
+              value={durationMode}
+              onChange={(next) => {
+                const opt = DURATION_MODE_OPTIONS.find((o) => o.value === next);
+                if (opt) setDurationMode(opt.value);
+              }}
+              allowDeselect={false}
+              accessibilityLabel="Course length"
+            />
             {/* Only a fixed course needs a number — an ongoing med stays null (no fake
                 duration), and the card reads "Started …" rather than "Day X of Y". */}
             {durationMode === 'fixed' && (
@@ -505,31 +510,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: theme.colorTextPrimary,
     backgroundColor: theme.colorNeutralLight,
-  },
-  chipWrap: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: theme.space1,
-  },
-  chip: {
-    paddingVertical: 9,
-    paddingHorizontal: theme.space2,
-    borderRadius: theme.radiusSmall,
-    borderWidth: 1,
-    borderColor: theme.colorBorder,
-    backgroundColor: theme.colorNeutralLight,
-  },
-  chipActive: {
-    backgroundColor: theme.colorNeutralDark,
-    borderColor: theme.colorNeutralDark,
-  },
-  chipText: {
-    fontSize: 14,
-    fontWeight: theme.fontWeightMedium,
-    color: theme.colorTextSecondary,
-  },
-  chipTextActive: {
-    color: '#fff',
   },
   fieldBtn: {
     flexDirection: 'row',

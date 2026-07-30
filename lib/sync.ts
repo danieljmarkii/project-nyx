@@ -19,17 +19,29 @@ import {
 import {
   dietTrialRowToRemote,
   dietTrialFoodRowToRemote,
-  isTerminalSyncError,
-  formatSyncError,
   DIET_TRIAL_PUSH_QUEUE_SQL,
   DIET_TRIAL_FOOD_PUSH_QUEUE_SQL,
   DIET_TRIAL_FOOD_COLLISION_SQL,
   type LocalDietTrial,
   type LocalDietTrialFood,
-  type RemoteDietTrialUpsert,
-  type RemoteDietTrialFoodUpsert,
 } from './dietTrialMirror';
+import {
+  classifySyncFailure,
+  formatSyncError,
+  exhaustedAttemptsError,
+  MAX_SYNC_ATTEMPTS,
+  RLS_FILTERED_ERROR,
+  NOT_QUARANTINED_SQL,
+} from './syncQueue';
 import { proteinsToCacheText, proteinsFromCacheText } from './protein';
+import {
+  VET_DOCUMENTS_BUCKET,
+  prepareVetDocumentUpload,
+  needsObjectUpload,
+  isStorableVetDocumentMime,
+  vetDocumentRowToRemote,
+  type LocalVetDocument,
+} from './vetDocuments';
 
 type Db = ReturnType<typeof getDb>;
 
@@ -76,6 +88,222 @@ async function loadLocalRowMeta(
   return map;
 }
 
+// Every table with a push queue. A union rather than a bare `string` on purpose:
+// the table name is an SQL IDENTIFIER, which cannot be bound to a `?`
+// placeholder, so it is interpolated — and the union is what keeps that
+// interpolation provably a compile-time literal rather than anything a caller
+// could route data into.
+//
+// B-398 widened this from the seven batch tables to all twelve: the attachment
+// and document loops now go through the same markSynced / recordPushFailure
+// helpers, so they get the retry budget and the quarantine reason too. The set is
+// pinned against the real schema by syncQueue.test.ts (every table with a
+// `synced` column must appear in SYNC_QUEUES), so it cannot drift.
+type QueueTable =
+  | 'meals'
+  | 'weight_checks'
+  | 'events'
+  | 'event_attachments'
+  | 'vet_visits'
+  | 'vet_visit_attachments'
+  | 'vet_documents'
+  | 'feeding_arrangements'
+  | 'medications'
+  | 'medication_administrations'
+  | 'diet_trials'
+  | 'diet_trial_foods';
+
+// SQLite's compiled variable limit is 999 on older builds; 400 keeps a chunk well
+// clear of it and matches loadLocalRowMeta's chunking above. Every writer below
+// caps its queue read at 100, so today this loops exactly once — the chunking is
+// here so a future writer that raises its LIMIT can't quietly hit the ceiling.
+const MARK_SYNCED_CHUNK = 400;
+
+// Flip `synced = 1` for the rows that were just pushed (B-125).
+//
+// Every writer used to build this UPDATE by string-interpolating its own id list
+// (`WHERE id IN ('a','b',…)`). There was no live injection surface — the ids are
+// device-minted UUIDs, which cannot carry a quote — but "the data happens not to
+// be hostile" is a property of today's id generator, not of the query, and the
+// same shape copied into a writer over any other key would be a real hole. Bound
+// `?` placeholders make the query correct by construction instead of by luck, and
+// lifting it here means the next writer inherits that for free rather than
+// copying the seventh instance of the interpolated form.
+// B-398: the sweep also RESETS THE QUARANTINE STATE. A row that just landed has
+// no history worth keeping — leaving a stale `sync_attempts` behind would mean a
+// row that failed 24 times, succeeded, was edited and failed once more would be
+// quarantined on that single failure. The budget is per unsent change, not per
+// row for the life of the install.
+export async function markSynced(db: Db, table: QueueTable, ids: string[]): Promise<void> {
+  for (let i = 0; i < ids.length; i += MARK_SYNCED_CHUNK) {
+    const chunk = ids.slice(i, i + MARK_SYNCED_CHUNK);
+    const placeholders = chunk.map(() => '?').join(',');
+    await db.runAsync(
+      `UPDATE ${table} SET synced = 1, sync_attempts = 0, sync_error = NULL
+        WHERE id IN (${placeholders})`,
+      chunk,
+    );
+  }
+}
+
+// Record ONE row's failed push (B-398). The whole retry-budget policy is here, in
+// one place, so no writer can implement its own half-version of it.
+//
+// Three outcomes, and which one applies is decided by lib/syncQueue.ts's
+// classifier rather than by the caller:
+//
+//   • transient (no error code — network, timeout, offline): DO NOTHING. Not a
+//     counter bump, not a log-and-forget. This is the case that must stay free,
+//     because an owner offline for a fortnight would otherwise return to find
+//     their entire queue quarantined by a server that never saw a single row.
+//   • terminal (23505 / 23514 / 23502 / 22P02): quarantine IMMEDIATELY. There is
+//     nothing to wait for — the thousandth attempt fails like the first.
+//   • rejected (any other server-produced code, plus the returned-no-rows case):
+//     spend one attempt, and quarantine once the budget is gone.
+//
+// `synced` is never touched: a quarantined row is honestly still unsynced. The
+// row stays on the device and stays counted (as quarantined) by getSyncStatus, so
+// the outcome of giving up is that the owner is TOLD — never that a log quietly
+// disappears.
+async function recordPushFailure(
+  db: Db,
+  table: QueueTable,
+  id: string,
+  error: { code?: string | null; message?: string | null },
+): Promise<void> {
+  const failure = classifySyncFailure(error);
+  if (failure === 'transient') return;
+
+  if (failure === 'terminal') {
+    console.warn(`[sync] ${table} row ${id} rejected permanently: ${formatSyncError(error)}`);
+    await db.runAsync(`UPDATE ${table} SET sync_error = ? WHERE id = ?`, [
+      formatSyncError(error),
+      id,
+    ]);
+    return;
+  }
+
+  // In SQLite an UPDATE's SET expressions read the row's PRE-update values, so
+  // both `sync_attempts + 1`s below refer to the same (old) number — the CASE
+  // fires on exactly the attempt that exhausts the budget, in one statement, with
+  // no read-modify-write race against a concurrent cycle.
+  await db.runAsync(
+    `UPDATE ${table}
+        SET sync_attempts = sync_attempts + 1,
+            sync_error = CASE WHEN sync_attempts + 1 >= ? THEN ? ELSE sync_error END
+      WHERE id = ?`,
+    [MAX_SYNC_ATTEMPTS, exhaustedAttemptsError(error), id],
+  );
+}
+
+// The payload shape every row mapper produces. Deliberately `object` and not
+// `Record<string, unknown>`: the declared mappers return INTERFACES
+// (RemoteMedicationUpsert, RemoteDietTrialUpsert, …), and an interface has no
+// index signature, so a Record would reject every one of them. It also cannot be
+// a free type parameter — supabase-js's excess-property guard chokes on an
+// unresolved generic payload, which is why pushDietTrialRows carried a hand-
+// maintained union before B-398.
+//
+// The `id` is not required here on purpose: pushRows takes ids from `rows`
+// (constrained to `{ id: string }`), never from the mapped payload, so the id it
+// compares against what PostgREST returns comes from the local row either way.
+type RemoteUpsertRow = object;
+
+// Push a batch of queued rows and flip `synced` for the ones that ACTUALLY
+// LANDED — the single push primitive every writer in this file now shares
+// (B-398). It replaces seven copies of:
+//
+//     if (error) { console.error(...); return; }   // ← marks NOTHING synced
+//     await markSynced(db, table, allIds);         // ← assumes ALL landed
+//
+// which was wrong in both directions at once, and fixes three things:
+//
+// 1. `.select('id')` AND A SET COMPARISON, not "no error ⟹ all rows landed".
+//    An RLS-blocked write returns SUCCESS WITH ZERO ROWS, not an error — the 009
+//    trap, re-documented at 020:246-249, where a food row resurrected from the
+//    local cache because a silently-blocked delete read as success. Only ids
+//    PostgREST hands back are marked synced; anything else stays queued, which is
+//    the honest state, and accrues an attempt so it cannot be re-sent forever.
+//
+// 2. PER-ROW ISOLATION ON ANY SERVER REFUSAL. The batch is ONE upsert, so one row
+//    the server refuses fails the whole call — and every other row in that queue
+//    is blocked behind it. The poison row is permanently among the oldest, so the
+//    LIMIT-100 window keeps re-selecting it: the queue is wedged for the life of
+//    the install. This is the harm B-398 exists to end, and it is the larger of
+//    the two (a single lost row is a lost row; a wedged queue is every row after
+//    it). Isolation is what un-wedges it: the innocent rows land, the guilty row
+//    is left holding its own failure.
+//
+//    THE ISOLATION PASS RUNS ONLY WHEN THE SERVER ACTUALLY ANSWERED. A network
+//    failure returns immediately and retries next cycle exactly as before —
+//    re-sending N single-row requests into a dead network would be strictly worse
+//    than one. And the fan-out does not repeat at scale: the rows that land are
+//    marked synced, so the next cycle's batch contains only what is genuinely
+//    stuck, which is normally one row.
+//
+// 3. A GIVE-UP, via recordPushFailure. See there for the policy.
+async function pushRows<L extends { id: string }>(
+  db: Db,
+  table: QueueTable,
+  rows: L[],
+  toRemote: (row: L) => RemoteUpsertRow,
+  // Returns the ids that ACTUALLY LANDED server-side. Callers that order two
+  // pushes against each other (syncPendingDietTrials) need this, not just "did it
+  // throw" — "ordered" is only true if the second push can be held back when the
+  // first did not land.
+): Promise<Set<string>> {
+  const { data, error } = await supabase
+    .from(table)
+    .upsert(rows.map(toRemote), { onConflict: 'id' })
+    .select('id');
+
+  if (error) {
+    if (classifySyncFailure(error) === 'transient') {
+      console.warn(`[sync] ${table} push failed (retrying next cycle):`, error.message);
+      return new Set();
+    }
+
+    console.warn(
+      `[sync] ${table} batch refused (${error.code}) — isolating ${rows.length} row(s) ` +
+      'so one bad row cannot hold the rest of the queue',
+    );
+    const landed = new Set<string>();
+    for (const row of rows) {
+      const { data: one, error: rowError } = await supabase
+        .from(table)
+        .upsert([toRemote(row)], { onConflict: 'id' })
+        .select('id');
+      if (rowError) {
+        await recordPushFailure(db, table, row.id, rowError);
+        continue;
+      }
+      if (!((one ?? []) as { id: string }[]).some((r) => r.id === row.id)) {
+        console.warn(`[sync] ${table} row ${row.id} returned no id (RLS-blocked?) — left queued`);
+        await recordPushFailure(db, table, row.id, RLS_FILTERED_ERROR);
+        continue;
+      }
+      landed.add(row.id);
+    }
+    if (landed.size > 0) await markSynced(db, table, [...landed]);
+    return landed;
+  }
+
+  const landed = new Set(((data ?? []) as { id: string }[]).map((r) => r.id));
+  const blocked = rows.filter((r) => !landed.has(r.id));
+  if (blocked.length > 0) {
+    // Success-with-0-rows: the write was silently filtered, so these are NOT
+    // synced. Left queued rather than flagged — see (1) above.
+    console.warn(
+      `[sync] ${table}: ${blocked.length} row(s) returned no id (RLS-blocked?) — left queued`,
+    );
+    for (const row of blocked) {
+      await recordPushFailure(db, table, row.id, RLS_FILTERED_ERROR);
+    }
+  }
+  if (landed.size > 0) await markSynced(db, table, [...landed]);
+  return landed;
+}
+
 // Pull rows of a table from Supabase, paginating past the server's default
 // 1,000-row cap. Without this, an account with a long history would hydrate an
 // arbitrary, nondeterministic slice — partially restoring a new phone and
@@ -117,6 +345,64 @@ async function fetchAllRows<T>(
   return out;
 }
 
+// Pattern 6 for foods, in the shape presyncMedicationItems has for drugs: ensure
+// every referenced food_items row exists server-side before a meals /
+// feeding_arrangements / diet_trials / diet_trial_foods upsert references it, or
+// the FK rejects the row and the queue retries forever. A meal can be logged — or
+// a trial started — offline against a food captured offline, so the FK target may
+// live only in the local cache. ignoreDuplicates so it never clobbers a richer
+// server row (photo_paths / ai_extraction_*). Best-effort: a failure is logged,
+// not thrown — the dependent upsert still tries and, if the food truly isn't
+// there, fails its own FK check (23503, explicitly NON-terminal) and stays queued
+// for the next cycle (Pattern 1).
+//
+// B-451: the four callers each used to inline this block. That drift risk was not
+// hypothetical — B-351 had to add `proteins` carriage to every copy separately,
+// and a copy that missed it would silently flatten an offline-captured food's
+// protein set to the server's '{}' default. One definition now, so the next
+// column added to food_items can only be added once.
+async function presyncFoodItems(
+  db: Db,
+  userId: string,
+  foodIds: string[],
+  // Names the calling writer in the warn line — the only thing that differed
+  // between the folded copies, and the bit that makes a log actionable.
+  label: string,
+): Promise<void> {
+  if (foodIds.length === 0) return;
+  const placeholders = foodIds.map(() => '?').join(',');
+  const localFoods = await db.getAllAsync<{
+    id: string; brand: string; product_name: string; format: string;
+    food_type: string | null; primary_protein: string | null; proteins: string | null;
+    is_novel_protein: number; is_grain_free: number; is_prescription: number;
+  }>(
+    `SELECT id, brand, product_name, format, food_type, primary_protein, proteins,
+            is_novel_protein, is_grain_free, is_prescription
+     FROM food_items_cache WHERE id IN (${placeholders})`,
+    foodIds,
+  );
+  if (localFoods.length === 0) return;
+  const { error } = await supabase.from('food_items').upsert(
+    localFoods.map((f) => ({
+      id: f.id, brand: f.brand, product_name: f.product_name, format: f.format,
+      food_type: f.food_type, primary_protein: f.primary_protein,
+      // B-351: carry the protein set up too, or a food captured offline would
+      // land server-side with the '{}' default and silently drop the set until
+      // some later write repaired it. NULL cache (unhydrated legacy) decodes to
+      // [] — matching the server column's own default.
+      proteins: proteinsFromCacheText(f.proteins),
+      is_novel_protein: Boolean(f.is_novel_protein),
+      is_grain_free: Boolean(f.is_grain_free),
+      is_prescription: Boolean(f.is_prescription),
+      created_by_user_id: userId,
+    })),
+    { onConflict: 'id', ignoreDuplicates: true },
+  );
+  if (error) {
+    console.warn(`[sync] food_items pre-sync (${label}) failed:`, error.message);
+  }
+}
+
 export async function syncPendingMeals(): Promise<void> {
   // Ensure the JWT is fresh before writing. getSession() triggers a refresh
   // if the access token has expired, and returns null if the session is gone.
@@ -147,7 +433,7 @@ export async function syncPendingMeals(): Promise<void> {
   }>(
     `SELECT m.* FROM meals m
        JOIN events e ON e.id = m.event_id
-      WHERE m.synced = 0 AND e.synced = 1
+      WHERE m.synced = 0 AND m.${NOT_QUARANTINED_SQL} AND e.synced = 1
       LIMIT 100`,
   );
 
@@ -157,83 +443,27 @@ export async function syncPendingMeals(): Promise<void> {
   // The local best-effort insert at food-creation time may have failed — this
   // guarantees the FK constraint won't reject the meal upsert.
   const foodIds = [...new Set(unsyncedMeals.map((m) => m.food_item_id).filter(Boolean))] as string[];
-  if (foodIds.length > 0) {
-    const userId = session.user.id;
+  await presyncFoodItems(db, session.user.id, foodIds, 'meals');
 
-    const placeholders = foodIds.map(() => '?').join(',');
-    const localFoods = await db.getAllAsync<{
-      id: string; brand: string; product_name: string; format: string;
-      food_type: string | null;
-      primary_protein: string | null; proteins: string | null;
-      is_novel_protein: number;
-      is_grain_free: number; is_prescription: number;
-    }>(
-      `SELECT id, brand, product_name, format, food_type, primary_protein, proteins,
-              is_novel_protein, is_grain_free, is_prescription
-       FROM food_items_cache WHERE id IN (${placeholders})`,
-      foodIds
-    );
-    if (localFoods.length > 0) {
-      const { error: foodError } = await supabase.from('food_items').upsert(
-        localFoods.map((f) => ({
-          id: f.id,
-          brand: f.brand,
-          product_name: f.product_name,
-          format: f.format,
-          food_type: f.food_type,
-          primary_protein: f.primary_protein,
-          // B-351: carry the protein set up too, or a food captured offline
-          // would land server-side with the '{}' default and silently drop the
-          // set until some later write repaired it. NULL cache (unhydrated
-          // legacy) decodes to [] — matching the server column's own default.
-          proteins: proteinsFromCacheText(f.proteins),
-          is_novel_protein: Boolean(f.is_novel_protein),
-          is_grain_free: Boolean(f.is_grain_free),
-          is_prescription: Boolean(f.is_prescription),
-          created_by_user_id: userId,
-        })),
-        { onConflict: 'id', ignoreDuplicates: true }
-      );
-      if (foodError) {
-        console.warn('[sync] food_items pre-sync failed:', foodError.message);
-      }
-    }
-  }
-
-  const { error } = await supabase.from('meals').upsert(
-    unsyncedMeals.map((m) => ({
-      id: m.id,
-      event_id: m.event_id,
-      pet_id: m.pet_id,
-      food_item_id: m.food_item_id,
-      quantity: m.quantity,
-      is_full_portion: m.is_full_portion === null ? null : Boolean(m.is_full_portion),
-      notes: m.notes,
-      created_at: m.created_at,
-      // B-055 — send the client updated_at. The set_updated_at trigger rewrites
-      // it to server-NOW on the conflict-update branch (server-time LWW, FR-5),
-      // so this value is authoritative only for a brand-new INSERT; either way
-      // the row lands with a usable updated_at for the next device to compare.
-      updated_at: m.updated_at,
-      intake_rating: m.intake_rating,
-      // B-289 — capture-surface provenance; 'app' for every pre-W3 row via the
-      // local default, the record's own value for inbox-ingested rows.
-      logged_via: m.logged_via ?? 'app',
-    })),
-    { onConflict: 'id' }
-  );
-
-  if (error) {
-    console.error('[sync] meals upsert failed:', error.message,
-      '| code:', error.code,
-      '| details:', error.details,
-      '| hint:', error.hint,
-    );
-    return;
-  }
-
-  const ids = unsyncedMeals.map((m) => `'${m.id}'`).join(',');
-  await db.execAsync(`UPDATE meals SET synced = 1 WHERE id IN (${ids})`);
+  await pushRows(db, 'meals', unsyncedMeals, (m) => ({
+    id: m.id,
+    event_id: m.event_id,
+    pet_id: m.pet_id,
+    food_item_id: m.food_item_id,
+    quantity: m.quantity,
+    is_full_portion: m.is_full_portion === null ? null : Boolean(m.is_full_portion),
+    notes: m.notes,
+    created_at: m.created_at,
+    // B-055 — send the client updated_at. The set_updated_at trigger rewrites
+    // it to server-NOW on the conflict-update branch (server-time LWW, FR-5),
+    // so this value is authoritative only for a brand-new INSERT; either way
+    // the row lands with a usable updated_at for the next device to compare.
+    updated_at: m.updated_at,
+    intake_rating: m.intake_rating,
+    // B-289 — capture-surface provenance; 'app' for every pre-W3 row via the
+    // local default, the record's own value for inbox-ingested rows.
+    logged_via: m.logged_via ?? 'app',
+  }));
 }
 
 // Flush unsynced weight-check children to Supabase (B-186). Mirrors syncPendingMeals
@@ -262,40 +492,25 @@ export async function syncPendingWeightChecks(): Promise<void> {
   }>(
     `SELECT w.* FROM weight_checks w
        JOIN events e ON e.id = w.event_id
-      WHERE w.synced = 0 AND e.synced = 1
+      WHERE w.synced = 0 AND w.${NOT_QUARANTINED_SQL} AND e.synced = 1
       LIMIT 100`,
   );
 
   if (unsynced.length === 0) return;
 
-  const { error } = await supabase.from('weight_checks').upsert(
-    unsynced.map((w) => ({
-      id: w.id,
-      event_id: w.event_id,
-      pet_id: w.pet_id,
-      weight_kg: w.weight_kg,
-      notes: w.notes,
-      created_at: w.created_at,
-      // B-055 — send the client updated_at. The set_updated_at trigger rewrites
-      // it to server-NOW on the conflict-update branch (server-time LWW), so this
-      // value is authoritative only for a brand-new INSERT; either way the row
-      // lands with a usable updated_at for the next device to compare.
-      updated_at: w.updated_at,
-    })),
-    { onConflict: 'id' },
-  );
-
-  if (error) {
-    console.error('[sync] weight_checks upsert failed:', error.message,
-      '| code:', error.code,
-      '| details:', error.details,
-      '| hint:', error.hint,
-    );
-    return;
-  }
-
-  const ids = unsynced.map((w) => `'${w.id}'`).join(',');
-  await db.execAsync(`UPDATE weight_checks SET synced = 1 WHERE id IN (${ids})`);
+  await pushRows(db, 'weight_checks', unsynced, (w) => ({
+    id: w.id,
+    event_id: w.event_id,
+    pet_id: w.pet_id,
+    weight_kg: w.weight_kg,
+    notes: w.notes,
+    created_at: w.created_at,
+    // B-055 — send the client updated_at. The set_updated_at trigger rewrites
+    // it to server-NOW on the conflict-update branch (server-time LWW), so this
+    // value is authoritative only for a brand-new INSERT; either way the row
+    // lands with a usable updated_at for the next device to compare.
+    updated_at: w.updated_at,
+  }));
 }
 
 // Flush unsynced local events to Supabase.
@@ -324,40 +539,29 @@ export async function syncPendingEvents(): Promise<void> {
     created_at: string;
     updated_at: string;
     logged_via: string;
-  }>('SELECT * FROM events WHERE synced = 0 LIMIT 100');
+  }>(`SELECT * FROM events WHERE synced = 0 AND ${NOT_QUARANTINED_SQL} LIMIT 100`);
 
   if (unsyncedEvents.length === 0) return;
 
-  const { error } = await supabase.from('events').upsert(
-    unsyncedEvents.map((e) => ({
-      id: e.id,
-      pet_id: e.pet_id,
-      event_type: e.event_type,
-      occurred_at: e.occurred_at,
-      severity: e.severity,
-      notes: e.notes,
-      source: e.source,
-      occurred_at_source: e.occurred_at_source ?? 'manual',
-      // B-010 — NULL when unset (legacy rows / pre-confidence inserts).
-      occurred_at_confidence: e.occurred_at_confidence ?? null,
-      occurred_at_earliest: e.occurred_at_earliest ?? null,
-      occurred_at_latest: e.occurred_at_latest ?? null,
-      deleted_at: e.deleted_at,
-      created_at: e.created_at,
-      updated_at: e.updated_at,
-      // B-289 — capture-surface provenance (see the meals payload note).
-      logged_via: e.logged_via ?? 'app',
-    })),
-    { onConflict: 'id' }
-  );
-
-  if (error) {
-    console.error('[sync] events upsert failed:', error.message);
-    return;
-  }
-
-  const ids = unsyncedEvents.map((e) => `'${e.id}'`).join(',');
-  await db.execAsync(`UPDATE events SET synced = 1 WHERE id IN (${ids})`);
+  await pushRows(db, 'events', unsyncedEvents, (e) => ({
+    id: e.id,
+    pet_id: e.pet_id,
+    event_type: e.event_type,
+    occurred_at: e.occurred_at,
+    severity: e.severity,
+    notes: e.notes,
+    source: e.source,
+    occurred_at_source: e.occurred_at_source ?? 'manual',
+    // B-010 — NULL when unset (legacy rows / pre-confidence inserts).
+    occurred_at_confidence: e.occurred_at_confidence ?? null,
+    occurred_at_earliest: e.occurred_at_earliest ?? null,
+    occurred_at_latest: e.occurred_at_latest ?? null,
+    deleted_at: e.deleted_at,
+    created_at: e.created_at,
+    updated_at: e.updated_at,
+    // B-289 — capture-surface provenance (see the meals payload note).
+    logged_via: e.logged_via ?? 'app',
+  }));
 }
 
 export async function syncPendingVetVisits(): Promise<void> {
@@ -368,24 +572,15 @@ export async function syncPendingVetVisits(): Promise<void> {
     clinic_name: string | null; vet_name: string | null;
     reason: string | null; notes: string | null;
     next_visit_at: string | null; created_at: string; updated_at: string;
-  }>('SELECT * FROM vet_visits WHERE synced = 0 LIMIT 50');
+  }>(`SELECT * FROM vet_visits WHERE synced = 0 AND ${NOT_QUARANTINED_SQL} LIMIT 50`);
 
   if (unsyncedVisits.length > 0) {
-    const { error } = await supabase.from('vet_visits').upsert(
-      unsyncedVisits.map((v) => ({
-        id: v.id, pet_id: v.pet_id, visited_at: v.visited_at,
-        clinic_name: v.clinic_name, vet_name: v.vet_name,
-        reason: v.reason, notes: v.notes, next_visit_at: v.next_visit_at,
-        created_at: v.created_at, updated_at: v.updated_at,
-      })),
-      { onConflict: 'id' }
-    );
-    if (!error) {
-      const ids = unsyncedVisits.map((v) => `'${v.id}'`).join(',');
-      await db.execAsync(`UPDATE vet_visits SET synced = 1 WHERE id IN (${ids})`);
-    } else {
-      console.error('[sync] vet_visits upsert failed:', error.message);
-    }
+    await pushRows(db, 'vet_visits', unsyncedVisits, (v) => ({
+      id: v.id, pet_id: v.pet_id, visited_at: v.visited_at,
+      clinic_name: v.clinic_name, vet_name: v.vet_name,
+      reason: v.reason, notes: v.notes, next_visit_at: v.next_visit_at,
+      created_at: v.created_at, updated_at: v.updated_at,
+    }));
   }
 
   // Sync vet visit attachments
@@ -393,7 +588,7 @@ export async function syncPendingVetVisits(): Promise<void> {
     id: string; vet_visit_id: string; pet_id: string;
     local_uri: string; storage_path: string;
     mime_type: string; taken_at: string | null;
-  }>('SELECT * FROM vet_visit_attachments WHERE synced = 0 LIMIT 20');
+  }>(`SELECT * FROM vet_visit_attachments WHERE synced = 0 AND ${NOT_QUARANTINED_SQL} LIMIT 20`);
 
   for (const att of unsyncedAtts) {
     try {
@@ -412,11 +607,147 @@ export async function syncPendingVetVisits(): Promise<void> {
       // Only mark synced when the row actually landed — supabase-js returns
       // errors rather than throwing, so an ignored error here would flag the row
       // synced while it's absent server-side (same trap fixed for event
-      // attachments). Leave synced=0 on failure so the queue retries.
-      if (error) { console.warn('[sync] vet_visit_attachment upsert failed:', error.message); continue; }
-      await db.runAsync('UPDATE vet_visit_attachments SET synced = 1 WHERE id = ?', [att.id]);
+      // attachments). Leave synced=0 on failure so the queue retries — and
+      // (B-398) record the failure, so a row the server keeps refusing eventually
+      // quarantines instead of occupying one of the 20 slots forever.
+      if (error) {
+        console.warn('[sync] vet_visit_attachment upsert failed:', error.message);
+        await recordPushFailure(db, 'vet_visit_attachments', att.id, error);
+        continue;
+      }
+      await markSynced(db, 'vet_visit_attachments', [att.id]);
     } catch (e) {
       console.warn('[sync] vet_visit_attachment upload failed:', e);
+    }
+  }
+}
+
+// B-478 VF-1 — push the Vet Files library up.
+//
+// Shaped like syncPendingVetVisits' attachment loop (object first, row second,
+// mark synced only when BOTH landed) but reconciled as LWW rather than
+// insert-only, because vet_documents carries updated_at and deleted_at: a rename
+// or a soft delete has to be able to travel between devices.
+//
+// TWO ROW SHAPES ARRIVE HERE AND THEY NEED DIFFERENT WORK:
+//   • a document captured on THIS device — local_uri is a durable file:// path
+//     from persistCapture, and the object has never reached Storage;
+//   • a HYDRATED document the owner has since renamed or soft-deleted here —
+//     local_uri is '' (the event_attachments sentinel), the object is already
+//     server-side, and only the row needs pushing.
+// Both are legitimately synced = 0. needsObjectUpload is what tells them apart;
+// treating them alike would either skip a real upload or try to read bytes from ''.
+//
+// Ordering within one row is load-bearing: the OBJECT goes first. If the row
+// landed first and the upload then failed, the server would hold a document row
+// pointing at a key that does not exist — and VF-2's signed-URL read would render
+// a broken document with no way to tell it apart from a real one. Object-then-row
+// fails the other way: an orphaned object with no row, which is invisible to the
+// owner and swept by B-121. Re-uploading the same key on a retry is idempotent
+// (upsert:true, and migration 044 grants the owner-scoped UPDATE that makes the
+// overwrite legal — the latent bug 043 had to retrofit).
+export async function syncPendingVetDocuments(): Promise<void> {
+  const db = getDb();
+
+  const unsynced = await db.getAllAsync<LocalVetDocument>(
+    `SELECT * FROM vet_documents WHERE synced = 0 AND ${NOT_QUARANTINED_SQL}
+      ORDER BY created_at LIMIT 20`,
+  );
+
+  for (const doc of unsynced) {
+    try {
+      if (needsObjectUpload(doc.local_uri)) {
+        // Validate rather than cast. `vet_documents.mime_type` accepts four values
+        // server-side (the CHECK mirrors the bucket's allowed_mime_types), but only
+        // two of them can describe an object this app actually wrote — every image
+        // goes through compressForUpload and lands as JPEG. A blind
+        // `as VetDocumentStoredMimeType` on a row carrying image/png or image/heic
+        // would throw inside prepareVetDocumentUpload on EVERY cycle forever, and
+        // because this queue is `ORDER BY created_at LIMIT 20` such a row is among
+        // the OLDEST — so it permanently occupies one of the 20 slots. Twenty of them
+        // wedge the push queue entirely, and a document that never syncs lives only
+        // on this device. Skip it loudly instead: the row is left alone (still
+        // synced = 0, still recoverable once its mime is corrected) but it cannot
+        // starve the rows behind it. Unreachable through the sanctioned write path,
+        // which calls resolveVetDocumentMime — this is the defensive half.
+        //
+        // B-398 upgraded this from `continue` to a QUARANTINE. The comment above
+        // describes the wedge exactly, and a bare `continue` never actually
+        // escaped it: the row stayed synced = 0, stayed among the oldest, and
+        // re-occupied its slot on every single cycle for the life of the install.
+        // Recording the reason takes it out of the queue, leaves the document on
+        // the device, and makes it COUNTED — the owner is told rather than
+        // silently holding a vet record that will never reach their account.
+        if (!isStorableVetDocumentMime(doc.mime_type)) {
+          console.warn(
+            `[sync] vet_document ${doc.id} has un-uploadable mime_type ${doc.mime_type}; quarantining (expected image/jpeg or application/pdf)`,
+          );
+          await db.runAsync('UPDATE vet_documents SET sync_error = ? WHERE id = ?', [
+            `unsupported-mime: ${doc.mime_type} (expected image/jpeg or application/pdf)`,
+            doc.id,
+          ]);
+          continue;
+        }
+        // Throws rather than falling back to the original on a failed re-encode
+        // (§6.2: no original-fallback on any image path). The catch below leaves
+        // the row synced = 0, so the retry costs a cycle — the document is on the
+        // device throughout and the alternative is uploading GPS coordinates.
+        const prep = await prepareVetDocumentUpload(doc.local_uri, doc.mime_type);
+        await uploadPhoto(VET_DOCUMENTS_BUCKET, doc.storage_path, prep.uri, prep.mimeType);
+      }
+
+      const { data, error } = await supabase
+        .from('vet_documents')
+        .upsert(vetDocumentRowToRemote(doc), { onConflict: 'id' })
+        // `.select('id')` so a SUCCESS-WITH-ZERO-ROWS write is distinguishable from
+        // a real write. PostgREST returns `{ error: null }` when a policy silently
+        // filters the statement, and without the returned id this loop would flag a
+        // row synced that never landed — the house pattern (pushRows) already treats
+        // an id-less row as "left queued".
+        .select('id');
+      // Only mark synced when the row actually landed — supabase-js returns
+      // errors rather than throwing, so an ignored error here would flag the row
+      // synced while it is absent server-side (the trap already fixed for event
+      // and vet-visit attachments). Leave synced = 0 so the queue retries.
+      if (error) {
+        console.warn('[sync] vet_document upsert failed:', error.message);
+        await recordPushFailure(db, 'vet_documents', doc.id, error);
+        continue;
+      }
+      if (!((data ?? []) as { id: string }[]).some((r) => r.id === doc.id)) {
+        console.warn(`[sync] vet_document ${doc.id} returned no id (RLS-blocked?) — left queued`);
+        await recordPushFailure(db, 'vet_documents', doc.id, RLS_FILTERED_ERROR);
+        continue;
+      }
+      // ⚠ CONDITIONAL ON `updated_at`, and that guard is load-bearing.
+      //
+      // `doc` was read at the top of this loop, and the upload above can take tens
+      // of seconds (a 15 MB PDF on cellular). An owner who soft-deletes or renames
+      // the document inside that window writes `deleted_at`/`title` + a fresh
+      // `updated_at` + `synced = 0` to the local row — and an unconditional
+      // `SET synced = 1 WHERE id = ?` would then flag that NEWER row as pushed while
+      // what actually reached the server is the STALE snapshot. The delete is then
+      // lost permanently: nothing re-pushes it (the row reads synced), and hydration
+      // will not correct it (the local `updated_at` is newer, so last-write-wins
+      // keeps the local state), and softDeleteVetDocument is guarded on
+      // `deleted_at IS NULL` so it cannot even be re-issued. A deletion that reports
+      // success and does not delete is the one failure mode this path must not have.
+      //
+      // Matching on the `updated_at` we actually pushed makes the mark a no-op in
+      // exactly that case, so the row stays queued and the next cycle pushes the
+      // real state. (B-478 VF-6, found by rls-privacy-reviewer, executed.)
+      //
+      // Deliberately NOT markSynced(): that helper matches on id alone, which
+      // would defeat the guard above. The quarantine reset it performs is
+      // reproduced inline instead — a row that just landed carries no attempt
+      // history worth keeping (B-398).
+      await db.runAsync(
+        `UPDATE vet_documents SET synced = 1, sync_attempts = 0, sync_error = NULL
+          WHERE id = ? AND updated_at = ?`,
+        [doc.id, doc.updated_at],
+      );
+    } catch (e) {
+      console.warn('[sync] vet_document upload failed:', e);
     }
   }
 }
@@ -452,7 +783,7 @@ export async function syncPendingAttachments(): Promise<void> {
     id: string; event_id: string; pet_id: string;
     local_uri: string; storage_path: string;
     mime_type: string; taken_at: string | null;
-  }>('SELECT * FROM event_attachments WHERE synced = 0 LIMIT 20');
+  }>(`SELECT * FROM event_attachments WHERE synced = 0 AND ${NOT_QUARANTINED_SQL} LIMIT 20`);
 
   for (const att of pending) {
     try {
@@ -467,8 +798,12 @@ export async function syncPendingAttachments(): Promise<void> {
       // upsert (e.g. the event_attachments table not existing in Supabase) left
       // rows flagged "synced" but absent server-side, invisible until something
       // read them back. supabase-js returns errors, it does not throw.
-      if (error) { console.warn('[sync] event_attachment upsert failed:', error.message); continue; }
-      await db.runAsync('UPDATE event_attachments SET synced = 1 WHERE id = ?', [att.id]);
+      if (error) {
+        console.warn('[sync] event_attachment upsert failed:', error.message);
+        await recordPushFailure(db, 'event_attachments', att.id, error);
+        continue;
+      }
+      await markSynced(db, 'event_attachments', [att.id]);
     } catch (e) {
       console.warn('[sync] event_attachment upload failed:', e);
     }
@@ -510,8 +845,12 @@ export async function ensureEventAttachmentsSynced(eventId: string): Promise<voi
       id: att.id, event_id: att.event_id, pet_id: att.pet_id,
       storage_path: att.storage_path, mime_type: prep.mimeType, taken_at: att.taken_at,
     }, { onConflict: 'id' });
-    if (error) { console.warn('[sync] ensureEventAttachmentsSynced upsert failed:', error.message); continue; }
-    await db.runAsync('UPDATE event_attachments SET synced = 1 WHERE id = ?', [att.id]);
+    if (error) {
+      console.warn('[sync] ensureEventAttachmentsSynced upsert failed:', error.message);
+      await recordPushFailure(db, 'event_attachments', att.id, error);
+      continue;
+    }
+    await markSynced(db, 'event_attachments', [att.id]);
   }
 }
 
@@ -680,65 +1019,22 @@ export async function syncPendingFeedingArrangements(): Promise<void> {
     id: string; pet_id: string; food_item_id: string; method: string;
     active_from: string | null; active_until: string | null; is_shared: number;
     notes: string | null; deleted_at: string | null; created_at: string; updated_at: string;
-  }>('SELECT * FROM feeding_arrangements WHERE synced = 0 LIMIT 100');
+  }>(`SELECT * FROM feeding_arrangements WHERE synced = 0 AND ${NOT_QUARANTINED_SQL} LIMIT 100`);
 
   if (unsynced.length === 0) return;
 
   // Pattern 6 — ensure every referenced food exists server-side before the
   // arrangement upsert, or the FK constraint rejects it and the queue retries
-  // forever. Same shape as the meals pre-sync.
+  // forever.
   const foodIds = [...new Set(unsynced.map((a) => a.food_item_id))];
-  if (foodIds.length > 0) {
-    const placeholders = foodIds.map(() => '?').join(',');
-    const localFoods = await db.getAllAsync<{
-      id: string; brand: string; product_name: string; format: string;
-      food_type: string | null; primary_protein: string | null;
-      proteins: string | null;
-      is_novel_protein: number; is_grain_free: number; is_prescription: number;
-    }>(
-      `SELECT id, brand, product_name, format, food_type, primary_protein, proteins,
-              is_novel_protein, is_grain_free, is_prescription
-       FROM food_items_cache WHERE id IN (${placeholders})`,
-      foodIds,
-    );
-    if (localFoods.length > 0) {
-      const { error: foodError } = await supabase.from('food_items').upsert(
-        localFoods.map((f) => ({
-          id: f.id, brand: f.brand, product_name: f.product_name, format: f.format,
-          food_type: f.food_type, primary_protein: f.primary_protein,
-          // B-351: same carriage as the meals pre-sync — never let an offline-
-          // captured food's protein set flatten to the server default.
-          proteins: proteinsFromCacheText(f.proteins),
-          is_novel_protein: Boolean(f.is_novel_protein),
-          is_grain_free: Boolean(f.is_grain_free),
-          is_prescription: Boolean(f.is_prescription),
-          created_by_user_id: session.user.id,
-        })),
-        { onConflict: 'id', ignoreDuplicates: true },
-      );
-      if (foodError) {
-        console.warn('[sync] food_items pre-sync (arrangements) failed:', foodError.message);
-      }
-    }
-  }
+  await presyncFoodItems(db, session.user.id, foodIds, 'arrangements');
 
-  const { error } = await supabase.from('feeding_arrangements').upsert(
-    unsynced.map((a) => ({
-      id: a.id, pet_id: a.pet_id, food_item_id: a.food_item_id, method: a.method,
-      active_from: a.active_from, active_until: a.active_until,
-      is_shared: Boolean(a.is_shared), notes: a.notes,
-      deleted_at: a.deleted_at, created_at: a.created_at, updated_at: a.updated_at,
-    })),
-    { onConflict: 'id' },
-  );
-
-  if (error) {
-    console.error('[sync] feeding_arrangements upsert failed:', error.message);
-    return;
-  }
-
-  const ids = unsynced.map((a) => `'${a.id}'`).join(',');
-  await db.execAsync(`UPDATE feeding_arrangements SET synced = 1 WHERE id IN (${ids})`);
+  await pushRows(db, 'feeding_arrangements', unsynced, (a) => ({
+    id: a.id, pet_id: a.pet_id, food_item_id: a.food_item_id, method: a.method,
+    active_from: a.active_from, active_until: a.active_until,
+    is_shared: Boolean(a.is_shared), notes: a.notes,
+    deleted_at: a.deleted_at, created_at: a.created_at, updated_at: a.updated_at,
+  }));
 }
 
 // Pattern 6 — ensure every referenced medication_items row exists server-side
@@ -781,24 +1077,14 @@ export async function syncPendingMedications(): Promise<void> {
   const db = getDb();
 
   const unsynced = await db.getAllAsync<LocalMedication>(
-    'SELECT * FROM medications WHERE synced = 0 LIMIT 100',
+    `SELECT * FROM medications WHERE synced = 0 AND ${NOT_QUARANTINED_SQL} LIMIT 100`,
   );
   if (unsynced.length === 0) return;
 
   const itemIds = [...new Set(unsynced.map((m) => m.medication_item_id).filter(Boolean))] as string[];
   await presyncMedicationItems(db, session.user.id, itemIds);
 
-  const { error } = await supabase.from('medications').upsert(
-    unsynced.map(medicationRowToRemote),
-    { onConflict: 'id' },
-  );
-  if (error) {
-    console.error('[sync] medications upsert failed:', error.message);
-    return;
-  }
-
-  const ids = unsynced.map((m) => `'${m.id}'`).join(',');
-  await db.execAsync(`UPDATE medications SET synced = 1 WHERE id IN (${ids})`);
+  await pushRows(db, 'medications', unsynced, medicationRowToRemote);
 }
 
 // Flush unsynced medication dose-event children (B-117). Mirrors syncPendingMeals
@@ -820,181 +1106,29 @@ export async function syncPendingMedicationAdministrations(): Promise<void> {
   const db = getDb();
 
   const unsynced = await db.getAllAsync<LocalMedicationAdministration>(
-    'SELECT * FROM medication_administrations WHERE synced = 0 LIMIT 100',
+    `SELECT * FROM medication_administrations WHERE synced = 0 AND ${NOT_QUARANTINED_SQL} LIMIT 100`,
   );
   if (unsynced.length === 0) return;
 
   const itemIds = [...new Set(unsynced.map((a) => a.medication_item_id).filter(Boolean))] as string[];
   await presyncMedicationItems(db, session.user.id, itemIds);
 
-  const { error } = await supabase.from('medication_administrations').upsert(
-    unsynced.map(administrationRowToRemote),
-    { onConflict: 'id' },
-  );
-  if (error) {
-    console.error('[sync] medication_administrations upsert failed:', error.message);
-    return;
-  }
-
-  const ids = unsynced.map((a) => `'${a.id}'`).join(',');
-  await db.execAsync(`UPDATE medication_administrations SET synced = 1 WHERE id IN (${ids})`);
+  await pushRows(db, 'medication_administrations', unsynced, administrationRowToRemote);
 }
 
 // ── Diet-trial mirror push (B-417 PR 2) ──────────────────────────────────────
-
-// Pattern 6 for foods, in the shape presyncMedicationItems has for drugs: ensure
-// every referenced food_items row exists server-side before a diet_trials /
-// diet_trial_foods upsert references it. A trial can be started offline against a
-// food captured offline, so the FK target may live only in the local cache.
-// ignoreDuplicates so it never clobbers a richer server row (photo_paths /
-// ai_extraction_*). Best-effort: a failure is logged, not thrown — the dependent
-// upsert still tries and, if the food truly isn't there, fails its own FK check
-// (23503, explicitly NON-terminal) and stays queued for the next cycle.
 //
-// (syncPendingMeals and syncPendingFeedingArrangements each inline this same
-// block. Left alone deliberately — folding all three onto one helper is a
-// worthwhile tidy but it is a refactor of two shipped, load-bearing writers, and
-// this PR is not the place to carry that risk. Logged as B-451.)
-async function presyncFoodItems(db: Db, userId: string, foodIds: string[]): Promise<void> {
-  if (foodIds.length === 0) return;
-  const placeholders = foodIds.map(() => '?').join(',');
-  const localFoods = await db.getAllAsync<{
-    id: string; brand: string; product_name: string; format: string;
-    food_type: string | null; primary_protein: string | null; proteins: string | null;
-    is_novel_protein: number; is_grain_free: number; is_prescription: number;
-  }>(
-    `SELECT id, brand, product_name, format, food_type, primary_protein, proteins,
-            is_novel_protein, is_grain_free, is_prescription
-     FROM food_items_cache WHERE id IN (${placeholders})`,
-    foodIds,
-  );
-  if (localFoods.length === 0) return;
-  const { error } = await supabase.from('food_items').upsert(
-    localFoods.map((f) => ({
-      id: f.id, brand: f.brand, product_name: f.product_name, format: f.format,
-      food_type: f.food_type, primary_protein: f.primary_protein,
-      // B-351: never let an offline-captured food's protein set flatten to the
-      // server default (the same carriage the meals pre-sync does).
-      proteins: proteinsFromCacheText(f.proteins),
-      is_novel_protein: Boolean(f.is_novel_protein),
-      is_grain_free: Boolean(f.is_grain_free),
-      is_prescription: Boolean(f.is_prescription),
-      created_by_user_id: userId,
-    })),
-    { onConflict: 'id', ignoreDuplicates: true },
-  );
-  if (error) {
-    console.warn('[sync] food_items pre-sync (diet trial) failed:', error.message);
-  }
-}
-
-// Push a batch of mirror rows, then flip `synced` for the rows that ACTUALLY
-// LANDED — and isolate the batch if it was rejected for a permanent reason.
-//
-// This departs from the other syncPending* writers in two ways, both required by
-// migration 040 and neither of them optional:
-//
-// 1. `.select('id')` AND A SET COMPARISON, not "no error ⟹ all rows landed".
-//    An RLS-blocked write returns SUCCESS WITH ZERO ROWS, not an error — the 009
-//    trap, re-documented at 020:246-249, where a food row resurrected from the
-//    local cache because a silently-blocked delete read as success. Only ids
-//    PostgREST hands back are marked synced; anything else stays queued, which is
-//    the honest state.
-//
-// 2. A TERMINAL branch with PER-ROW ISOLATION. The UNIQUE active-trial index
-//    means a push can now fail permanently (see isTerminalSyncError). Two things
-//    would go wrong without this. The batch is one upsert, so ONE doomed row
-//    fails the whole call and every OTHER trial row is blocked behind it forever
-//    — isolation is what fixes that, and it is the larger of the two harms. And
-//    the doomed row itself would be re-sent every cycle for the life of the
-//    install; quarantining it (sync_error, `synced` left honestly at 0) stops
-//    that and leaves the reason on the row for the surface that will show the
-//    owner their conflict.
-//
-// The isolation pass runs ONLY on a terminal batch error. A network failure or a
-// not-yet-landed FK parent returns immediately and retries next cycle exactly as
-// before — re-sending N single-row requests into a dead network would be strictly
-// worse than one.
-async function pushDietTrialRows<L extends { id: string }>(
-  db: Db,
-  table: 'diet_trials' | 'diet_trial_foods',
-  rows: L[],
-  // A concrete union rather than a free type parameter: supabase-js's
-  // excess-property guard cannot check an unresolved generic payload.
-  toRemote: (row: L) => RemoteDietTrialUpsert | RemoteDietTrialFoodUpsert,
-  // Returns the ids that ACTUALLY LANDED server-side. The caller needs this, not
-  // just "did it throw": syncPendingDietTrials orders an ending trial before a
-  // starting one, and "ordered" is only true if the second push can be held back
-  // when the first did not land (see there).
-): Promise<Set<string>> {
-  const { data, error } = await supabase
-    .from(table)
-    .upsert(rows.map(toRemote), { onConflict: 'id' })
-    .select('id');
-
-  if (!error) {
-    const landed = new Set(((data ?? []) as { id: string }[]).map((r) => r.id));
-    const blocked = rows.filter((r) => !landed.has(r.id));
-    if (blocked.length > 0) {
-      // Success-with-0-rows: the write was silently filtered (RLS), so these are
-      // NOT synced. Left queued rather than flagged — see (1) above.
-      console.warn(
-        `[sync] ${table}: ${blocked.length} row(s) returned no id (RLS-blocked?) — left queued`,
-      );
-    }
-    if (landed.size > 0) {
-      const ids = [...landed];
-      await db.runAsync(
-        `UPDATE ${table} SET synced = 1, sync_error = NULL
-          WHERE id IN (${ids.map(() => '?').join(',')})`,
-        ids,
-      );
-    }
-    return landed;
-  }
-
-  if (!isTerminalSyncError(error)) {
-    console.error(`[sync] ${table} upsert failed:`, error.message);
-    return new Set();
-  }
-
-  console.warn(
-    `[sync] ${table} batch rejected permanently (${error.code}) — isolating ${rows.length} row(s)`,
-  );
-  const isolated = new Set<string>();
-  for (const row of rows) {
-    const { data: one, error: rowError } = await supabase
-      .from(table)
-      .upsert([toRemote(row)], { onConflict: 'id' })
-      .select('id');
-    if (rowError) {
-      if (isTerminalSyncError(rowError)) {
-        console.error(
-          `[sync] ${table} row ${row.id} rejected permanently (${rowError.code}): ${rowError.message}`,
-        );
-        await db.runAsync(`UPDATE ${table} SET sync_error = ? WHERE id = ?`, [
-          formatSyncError(rowError),
-          row.id,
-        ]);
-      } else {
-        console.warn(`[sync] ${table} row ${row.id} upsert failed:`, rowError.message);
-      }
-      continue;
-    }
-    if (!one || (one as { id: string }[]).length === 0) {
-      console.warn(`[sync] ${table} row ${row.id} returned no id (RLS-blocked?) — left queued`);
-      continue;
-    }
-    await db.runAsync(`UPDATE ${table} SET synced = 1, sync_error = NULL WHERE id = ?`, [row.id]);
-    isolated.add(row.id);
-  }
-  return isolated;
-}
+// The diet-trial writers were the FIRST to need `.select('id')` + a set
+// comparison + per-row isolation + a quarantine, because migration 040's UNIQUE
+// active-trial index gave this codebase its first permanently-unacceptable row.
+// B-398 established that none of that was trial-specific — every batch writer had
+// the same wedge — so pushDietTrialRows was generalised into `pushRows` above and
+// these two writers now use it unchanged. See pushRows for the argument.
 
 // Flush unsynced diet trials (B-417). Refresh the JWT (Pattern 4), pre-sync the
 // referenced food so the FK can't reject the row (Pattern 6), upsert last-write-
 // wins (Pattern 5), and only flip synced=1 for rows that actually landed
-// (Pattern 1, sharpened — see pushDietTrialRows). RLS gates the write to the
+// (Pattern 1, sharpened — see pushRows). RLS gates the write to the
 // owning account. A trial ends via `status`/`ended_at`, never a DELETE.
 export async function syncPendingDietTrials(): Promise<void> {
   const { data: { session } } = await supabase.auth.getSession();
@@ -1005,7 +1139,7 @@ export async function syncPendingDietTrials(): Promise<void> {
   if (unsynced.length === 0) return;
 
   const foodIds = [...new Set(unsynced.map((t) => t.food_item_id).filter(Boolean))] as string[];
-  await presyncFoodItems(db, session.user.id, foodIds);
+  await presyncFoodItems(db, session.user.id, foodIds, 'diet trial');
 
   // TWO PASSES, ENDING TRIALS FIRST — the wire half of PR 3's "complete-then-start
   // must be ORDERED" (§3.3). Migration 040 made the active-trial index UNIQUE, so
@@ -1021,7 +1155,7 @@ export async function syncPendingDietTrials(): Promise<void> {
   // is unchanged.
   //
   // AND THE SECOND PASS IS GATED ON THE FIRST — two ordered calls are not enough.
-  // pushDietTrialRows does not throw on a transient failure (a flap, a 503, a
+  // pushRows does not throw on a transient failure (a flap, a 503, a
   // PGRST301: none carry a terminal code), so an unconditional second pass would
   // send the STARTING row into a server where the old trial is still `active`,
   // earn a 23505, and quarantine the new trial permanently — the precise outcome
@@ -1033,7 +1167,7 @@ export async function syncPendingDietTrials(): Promise<void> {
   const starting = unsynced.filter((t) => t.status === 'active');
 
   if (ending.length > 0) {
-    const landed = await pushDietTrialRows(db, 'diet_trials', ending, dietTrialRowToRemote);
+    const landed = await pushRows(db, 'diet_trials', ending, dietTrialRowToRemote);
     const stuck = ending.filter((t) => !landed.has(t.id));
     if (stuck.length > 0) {
       console.warn(
@@ -1044,7 +1178,7 @@ export async function syncPendingDietTrials(): Promise<void> {
     }
   }
   if (starting.length > 0) {
-    await pushDietTrialRows(db, 'diet_trials', starting, dietTrialRowToRemote);
+    await pushRows(db, 'diet_trials', starting, dietTrialRowToRemote);
   }
 }
 
@@ -1062,9 +1196,9 @@ export async function syncPendingDietTrialFoods(): Promise<void> {
   if (unsynced.length === 0) return;
 
   const foodIds = [...new Set(unsynced.map((f) => f.food_item_id))];
-  await presyncFoodItems(db, session.user.id, foodIds);
+  await presyncFoodItems(db, session.user.id, foodIds, 'diet trial foods');
 
-  await pushDietTrialRows(db, 'diet_trial_foods', unsynced, dietTrialFoodRowToRemote);
+  await pushRows(db, 'diet_trial_foods', unsynced, dietTrialFoodRowToRemote);
 }
 
 // ============================================================
@@ -1132,6 +1266,13 @@ interface RemoteVetVisit {
 interface RemoteVetVisitAttachment {
   id: string; vet_visit_id: string; pet_id: string; storage_path: string;
   mime_type: string | null; taken_at: string | null; sort_order: number | null; created_at: string;
+}
+interface RemoteVetDocument {
+  id: string; pet_id: string; vet_visit_id: string | null; document_group_id: string;
+  kind: string; title: string | null; document_date: string | null; notes: string | null;
+  source: string; source_filename: string | null; // B-546 (migration 048)
+  storage_path: string; mime_type: string; file_size_bytes: number | null;
+  page_index: number | null; deleted_at: string | null; created_at: string; updated_at: string;
 }
 interface RemoteFeedingArrangement {
   id: string; pet_id: string; food_item_id: string; method: string | null;
@@ -1421,6 +1562,81 @@ async function hydrateVetVisitAttachments(db: Db, stale: () => boolean): Promise
   const wm = advanceWatermark(rows.map((r) => r.created_at), since);
   if (stale()) return;
   if (wm) await setWatermark('vet_visit_attachments', wm);
+}
+
+async function hydrateVetDocuments(db: Db, stale: () => boolean): Promise<void> {
+  // B-478 VF-1. An LWW table (updated_at + deleted_at), reconciled exactly like
+  // vet_visits — NOT insert-if-absent like the two attachment tables. That
+  // distinction is the whole reason the schema carries updated_at: under
+  // insert-if-absent a hydrate never overwrites an existing local row, so a rename
+  // or a soft delete made on another device could never reach this one, and the two
+  // phones would disagree about what is in the library with no way to tell which is
+  // right.
+  //
+  // FR-3: incremental on updated_at, with the commit-skew overlap.
+  const since = await getWatermark('vet_documents');
+  const floor = watermarkQueryFloor(since);
+  const rows = await fetchAllRows<RemoteVetDocument>(
+    'vet_documents',
+    'id, pet_id, vet_visit_id, document_group_id, kind, title, document_date, notes, source, ' +
+      'source_filename, storage_path, mime_type, file_size_bytes, page_index, deleted_at, ' +
+      'created_at, updated_at',
+    floor ? { column: 'updated_at', value: floor } : null,
+  );
+  if (!rows || rows.length === 0) return;
+
+  const localById = await loadLocalRowMeta(db, 'vet_documents', rows.map((r) => r.id), 'updated_at');
+  const { toWrite } = reconcileBatch(rows, localById, 'lww');
+  if (stale()) return; // FR-9: signed out during the fetch — don't write to a wiped store.
+  for (const d of toWrite) {
+    // ⚠ local_uri is ABSENT from both the SELECT and the DO UPDATE SET, and that is
+    // the load-bearing asymmetry of this whole function. It is device state — this
+    // phone's copy of the bytes — and the server has no column for it and no opinion
+    // about it. Including it in the SET would blank a locally-captured document's
+    // on-device file path the moment its own push came back around, turning a
+    // document that renders offline into one that needs a signed URL and a network
+    // (breaking AC 12, Sam's ER case, on the device that took the photo). The INSERT
+    // branch supplies '' because a row arriving from the server genuinely has no
+    // local file yet — the same empty sentinel event_attachments uses.
+    //
+    // storage_path is likewise omitted from the SET: it is immutable for a given id
+    // (migration 044 makes it UNIQUE and derives it from that id), so re-writing it
+    // could only ever corrupt the row. created_at is omitted for the same reason,
+    // appearing in the column list for the INSERT branch only — that asymmetry is
+    // deliberate, not B-057 drift (it mirrors hydrateMeals / hydrateWeightChecks).
+    //
+    // The `WHERE vet_documents.synced = 1` backstop guarantees a hydrate write can
+    // never clobber a row holding an unpushed local edit, even if the pure
+    // reconcile filter above were ever bypassed.
+    await db.runAsync(
+      `INSERT INTO vet_documents
+        (id, pet_id, vet_visit_id, document_group_id, kind, title, document_date, notes,
+         source, source_filename, local_uri, storage_path, mime_type, file_size_bytes,
+         page_index, deleted_at, created_at, updated_at, synced)
+       VALUES (?,?,?,?,?,?,?,?,?,?,'',?,?,?,?,?,?,?,1)
+       ON CONFLICT(id) DO UPDATE SET
+         pet_id=excluded.pet_id, vet_visit_id=excluded.vet_visit_id,
+         document_group_id=excluded.document_group_id, kind=excluded.kind,
+         title=excluded.title, document_date=excluded.document_date, notes=excluded.notes,
+         source=excluded.source, source_filename=excluded.source_filename,
+         mime_type=excluded.mime_type,
+         file_size_bytes=excluded.file_size_bytes, page_index=excluded.page_index,
+         deleted_at=excluded.deleted_at, updated_at=excluded.updated_at, synced=1
+       WHERE vet_documents.synced = 1`,
+      // B-546 — source_filename rides in BOTH branches, unlike local_uri and
+      // storage_path. It is a server-owned fact (it round-trips through the push
+      // payload), so a device that captured a document pre-047 and a device that
+      // only ever hydrated it must converge on the same value rather than one of
+      // them keeping a stale NULL.
+      [d.id, d.pet_id, d.vet_visit_id ?? null, d.document_group_id, d.kind, d.title ?? null,
+       d.document_date ?? null, d.notes ?? null, d.source, d.source_filename ?? null,
+       d.storage_path, d.mime_type,
+       d.file_size_bytes ?? null, d.page_index ?? 0, d.deleted_at ?? null, d.created_at, d.updated_at],
+    );
+  }
+  const wm = advanceWatermark(rows.map((r) => r.updated_at), since);
+  if (stale()) return;
+  if (wm) await setWatermark('vet_documents', wm);
 }
 
 async function hydrateFeedingArrangements(db: Db, stale: () => boolean): Promise<void> {
@@ -1782,6 +1998,13 @@ export async function hydrateFromCloud(): Promise<void> {
   if (stale()) return;
   await runHydrationStep('vet_visit_attachments', () => hydrateVetVisitAttachments(db, stale));
   if (stale()) return;
+  // B-478: vet_documents declares no local FK (its vet_visit_id link is optional
+  // and may name a visit this device has not pulled yet), so nothing would throw on
+  // a different order — but it runs AFTER vet_visits so the common case has its
+  // linked visit already present, keeping the vet family contiguous and the
+  // parents-before-children reading of this list true.
+  await runHydrationStep('vet_documents', () => hydrateVetDocuments(db, stale));
+  if (stale()) return;
   await runHydrationStep('feeding_arrangements', () => hydrateFeedingArrangements(db, stale));
   if (stale()) return;
   // B-117: medications has no local FK; medication_administrations.event_id →
@@ -1806,33 +2029,92 @@ export async function hydrateFromCloud(): Promise<void> {
 // interleave writes. A caller that arrives while one is running no-ops (the
 // running cycle covers it).
 let syncCycleInFlight = false;
+// The PUSH half of a cycle, extracted so sign-out can drain the queue without
+// also pulling (B-430). FK order matters: events before medication_administrations
+// (the dose child FK→events), regimens before administrations, and
+// medication_items pre-synced inside each medication writer (Pattern 6) → items →
+// events → regimens → administrations overall.
+//
+// Not exported on its own account — callers want syncNow() or
+// flushPendingForSignOut(). Pulling on the way out of the app would be pure waste:
+// the wipe deletes whatever it hydrates, moments later.
+async function pushAllQueues(): Promise<void> {
+  await syncPendingEvents();
+  await syncPendingMeals();
+  // B-186: weight_checks FK→events; pushed after events (parents land first).
+  await syncPendingWeightChecks();
+  await syncPendingAttachments();
+  await syncPendingVetVisits();
+  // B-478: no server-side FK to vet_visits is required for a document to land
+  // (vet_visit_id is nullable), but pushing visits first means a document
+  // captured in the same session as its linked visit finds its target already
+  // committed — otherwise the same-pet trigger's lookup finds no visit and the
+  // row is rejected until the next cycle.
+  await syncPendingVetDocuments();
+  await syncPendingFeedingArrangements();
+  await syncPendingMedications();
+  await syncPendingMedicationAdministrations();
+  // B-417: trials before their allowed set — diet_trial_foods.diet_trial_id
+  // FKs to diet_trials server-side, so the parent must land first or the child
+  // FK-fails (23503, non-terminal) and waits a cycle. Both pre-sync their own
+  // food_items (Pattern 6).
+  await syncPendingDietTrials();
+  await syncPendingDietTrialFoods();
+}
+
 export async function syncNow(): Promise<void> {
   if (syncCycleInFlight) return;
   syncCycleInFlight = true;
   try {
-    // Push up. FK order matters: events before medication_administrations (the
-    // dose child FK→events), regimens before administrations, and medication_items
-    // pre-synced inside each medication writer (Pattern 6) → items → events →
-    // regimens → administrations overall.
-    await syncPendingEvents();
-    await syncPendingMeals();
-    // B-186: weight_checks FK→events; pushed after events (parents land first).
-    await syncPendingWeightChecks();
-    await syncPendingAttachments();
-    await syncPendingVetVisits();
-    await syncPendingFeedingArrangements();
-    await syncPendingMedications();
-    await syncPendingMedicationAdministrations();
-    // B-417: trials before their allowed set — diet_trial_foods.diet_trial_id
-    // FKs to diet_trials server-side, so the parent must land first or the child
-    // FK-fails (23503, non-terminal) and waits a cycle. Both pre-sync their own
-    // food_items (Pattern 6).
-    await syncPendingDietTrials();
-    await syncPendingDietTrialFoods();
+    await pushAllQueues();
     // Pull down.
     await hydrateFromCloud();
     await refreshFoodCache();
     await refreshMedicationCache();
+  } finally {
+    syncCycleInFlight = false;
+  }
+}
+
+// B-430 — drain the push queues before a DELIBERATE sign-out, so the wipe that
+// follows destroys nothing that could have been saved.
+//
+// The gap this closes: `wipeLocalSession()` clears local SQLite unconditionally,
+// including rows still at synced = 0. So signing out has always silently
+// destroyed every offline capture that had not yet reached the server — the meals
+// logged in a basement flat, the symptom event photographed in the car park. On a
+// household sharing one credential across two phones, sign-out is a routine act,
+// not a rare one.
+//
+// WHY FLUSH RATHER THAN QUARANTINE-ACROSS-THE-WIPE: retaining unsynced rows past
+// sign-out would put this in direct conflict with FR-9, the Trust & Safety gate
+// the wipe exists for — the whole point is that a shared or borrowed device does
+// not leak the prior account's health record to whoever signs in next, and a
+// retained "quarantine" of meal logs, symptom events and photos is exactly that
+// leak wearing a durability label. Flushing keeps the wipe absolute and moves the
+// problem to where it belongs: send what can be sent, then tell the owner the
+// truth about what could not.
+//
+// Returns what is STILL unsent after the attempt, so the caller can ask before
+// destroying it. Deliberately does NOT sign out, wipe, or prompt — the decision
+// belongs to the UI, the mechanism belongs here.
+//
+// This covers the deliberate path only. An INVOLUNTARY sign-out (a revoked or
+// expired session — B-280's D6b eviction) cannot push: the JWT is already gone,
+// every writer's getSession() guard returns early, and there is no owner present
+// to ask. That case still loses the queue, and no client-side mechanism can fix
+// it without breaking FR-9.
+//
+// Shares syncNow's in-flight guard, so a flush that collides with a background
+// cycle is a no-op. The caller then reads a queue the in-flight cycle is about to
+// drain and may warn about rows that were never really at risk — a false warning,
+// which is the direction to fail in. The alternative (running two concurrent
+// pushes over the same queue) trades a redundant prompt for double-sent rows.
+export async function flushPendingForSignOut(): Promise<void> {
+  if (syncCycleInFlight) return;
+  syncCycleInFlight = true;
+  try {
+    await pushAllQueues();
   } finally {
     syncCycleInFlight = false;
   }

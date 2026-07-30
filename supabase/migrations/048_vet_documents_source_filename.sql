@@ -1,0 +1,111 @@
+-- ============================================================
+-- Migration 048: vet_documents.source_filename — the picked file's own name
+-- (B-546, Vet Files VF-6 follow-up)
+--
+-- ⚠ NUMBERING NOTE. This was authored and APPLIED as 047, and renumbered to 048
+-- at wrap: a sibling session landed 047_pre_release_config_hardening.sql on `main`
+-- first, so by the repo's first-lands-keeps rule that file keeps 047 and this one
+-- moves. Nothing about the applied database changed — the two are independent and
+-- both are live (this one recorded FIRST, at 20260729000718; the hardening one at
+-- 20260729004827). Note also that Supabase's migration history records this as
+-- `vet_documents_source_filename` with NO numeric prefix, because it was applied
+-- via the MCP `apply_migration` with a bare snake_case name; the number lives in
+-- the filename only, which is what makes a renumber safe here.
+-- Spec: docs/nyx-vet-files-requirements.md §0 D10 (provenance over polish),
+--       D11 (capture asks nothing), §4.1 (the untitled steady state).
+-- ============================================================
+--
+-- WHAT THIS IS. One nullable TEXT column recording the filename a document
+-- ARRIVED with, for the Files/PDF capture path. Nothing else changes.
+--
+-- WHY IT EXISTS. `pm-feature-review` (VF-6) named the feature's sharpest
+-- legibility gap: a PDF gets no thumbnail by design (D5, no PDF thumbnailing),
+-- and capture asks nothing by design (D11), so two lab PDFs pulled from one
+-- clinic portal on the same day render as two IDENTICAL library rows — same
+-- glyph, same "Document — Jul 14" title, same dashed Add-type chip, same date.
+-- That is the ER record class, which makes it the worst one to leave
+-- unidentifiable. And the app already HAD the disambiguator and threw it away:
+-- `pickedFilesFromDocumentAssets` read `asset.name` to infer a mime type and
+-- then dropped it on the floor.
+--
+-- WHY IT IS NOT `title` (the PM ruling, option (b) of the B-546 row). Storing
+-- the filename as the title would work once and cost twice: `title IS NULL` is
+-- the ONLY thing that distinguishes "nobody has named this" from "the owner
+-- typed that", and the whole D11 recovery — the one-tap Name pill on the
+-- library row — keys off exactly that test (see 044's COMMENT ON COLUMN
+-- vet_documents.title). A filename-as-title row would look named, lose its Name
+-- affordance forever, and hand the owner "Scan_20260714_0001.pdf" as the
+-- document's identity. So the filename is a SECOND, quieter fact: rendered
+-- beside the row rather than as it, and the row stays untitled.
+--
+-- WHY IT IS SERVER-SIDE AND NOT A LOCAL-ONLY COLUMN. Two reasons, and the first
+-- is the D10 one: provenance is a fact about the DOCUMENT, not about the device
+-- that happened to file it — it sits with `source` and `file_size_bytes`, both
+-- of which already round-trip. The second is that a local-only column would make
+-- the cue vanish on the owner's second device, i.e. exactly the hydrated library
+-- where two undifferentiated PDF rows are hardest to tell apart (that device
+-- has no thumbnail cache either until each document is opened once, AC 12).
+--
+-- WHY THE FILES PATH ONLY. The client writes this for `source = 'files'` and
+-- leaves it NULL for camera and photo-library picks. A camera-roll asset's
+-- filename is `IMG_4821.HEIC` — machine noise that would push a real meta line
+-- onto every image row to say nothing. A file the owner (or their clinic) named
+-- is different in kind. Nothing here ENFORCES that split: it is a client
+-- convention, deliberately not a CHECK, because a future ingestion path (email
+-- forwarding, share-sheet import — both parked in §11) will arrive with real
+-- filenames and no `source = 'files'`.
+--
+-- NOT INDEXED, deliberately. There is no search in v1 (D12 → B-479) and this
+-- column is display-only; an index would be dead weight on every write. If B-479
+-- ever lands, it wants a search plan over title + notes + this, not an index
+-- bolted on here.
+--
+-- PRIVACY NOTE (T&S). A filename is owner-supplied free text on an existing
+-- owner-scoped row — the same class as `notes`, under the same default-deny RLS
+-- and the same delete-account cascade, with no new grant, no new bucket, and no
+-- new reader (§5.3 still holds: no Edge Function reads this table). It can carry
+-- the owner's or the pet's name; so can `notes`, and so does `title`. The one
+-- new fact is that this text is written WITHOUT the owner typing it, so the
+-- client caps and sanitises it at the write path (`sourceFilename`, in
+-- lib/vetDocumentCapture.ts) rather than storing an arbitrary provider string.
+--
+-- ------------------------------------------------------------
+-- Migration Safety Pre-flight
+-- ------------------------------------------------------------
+--   Destructive y/n:  n. Purely additive — ONE nullable column plus its CHECK
+--                     and its COMMENT. Drops, renames or alters no existing
+--                     column, constraint, policy, index or row. Existing rows
+--                     get NULL, which is the correct value for every one of them
+--                     (they were captured before this column existed, so nothing
+--                     knows their filename — a backfill is not merely unneeded,
+--                     it is impossible).
+--   Affected tables:  public.vet_documents. Row-count check the PM can run
+--                     BEFORE applying (informational — an ADD COLUMN of a
+--                     nullable column takes no table rewrite in PG 11+, so this
+--                     is O(1) regardless of the count):
+--                       select count(*) from public.vet_documents;
+--                     And to confirm the column is not already there:
+--                       select 1 from information_schema.columns
+--                        where table_name = 'vet_documents'
+--                          and column_name = 'source_filename';   -> expect 0 rows
+--   Backfill:         N/A — see above. NULL is the honest value.
+--   Rollback plan:    reversible, one statement:
+--                       ALTER TABLE public.vet_documents DROP COLUMN source_filename;
+--                     Loses only the recorded filenames (a display cue); every
+--                     document, object and title survives untouched.
+-- ============================================================
+
+ALTER TABLE public.vet_documents
+  ADD COLUMN IF NOT EXISTS source_filename TEXT;
+
+-- Bounded, so a pathological provider string can never become an unbounded blob
+-- on a clinical row. 255 is the ceiling every filesystem this app can receive a
+-- file from enforces anyway; the client trims far shorter (it has one line to
+-- render in). Written as a NOT VALID-free plain CHECK because the table holds
+-- only NULLs for this column at apply time, so validation is free.
+ALTER TABLE public.vet_documents
+  ADD CONSTRAINT vet_documents_source_filename_len
+  CHECK (source_filename IS NULL OR length(source_filename) BETWEEN 1 AND 255);
+
+COMMENT ON COLUMN public.vet_documents.source_filename IS
+  'B-546 / D10: the filename the document ARRIVED with (Files/PDF picks; NULL for camera and photo-library picks, whose asset names are machine noise). Provenance, NOT identity — it is rendered as a secondary line beside an untitled row, never AS the title, because title IS NULL is what keeps the one-tap Name affordance able to tell a defaulted row from a named one (see the comment on vet_documents.title). Display-only: no server-side reader, no index, no search in v1 (D12 → B-479).';

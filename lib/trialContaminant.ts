@@ -98,6 +98,7 @@ import {
   proteinPhrase,
   sanctionedProteinsOn,
   trialContamination,
+  uncharacterizedTrialDietFoodsInRange,
   type AllowedFood,
   type TrialContext,
   type TrialFoodRole,
@@ -399,6 +400,45 @@ export function trialDietNote(
   // AND permitted extras. Never a per-feeding verdict (C2).
   const note = contaminationNote(trialContamination(trialContextOf(ctx)), petName);
   if (note) return note;
+  // B-529/R7(c) — THE PARTIAL CASE, which the all-dark test above cannot see.
+  // One designated trial food and one undesignated one leaves the sanctioned set
+  // NON-empty, so every branch above stays quiet — while the undesignated food is
+  // dropped from that set and its own proteins fall outside it. `classifyFeeding`
+  // now goes quiet in that state; this is the sentence that stops it being
+  // quieter WITHOUT SAYING SO, which is the whole of B9's lesson: the most
+  // unknown state must not get the least disclosure.
+  //
+  // AFTER `contaminationNote`, DELIBERATELY. The first cut returned here BEFORE
+  // it, and the adversarial pass executed the cost: an already-computed, still
+  // valid contamination finding about food A ("The trial food also lists
+  // chicken") was deleted from the owner's card because food B was missing a
+  // field. A real finding outranks an explanation of a gap — the gap is still
+  // disclosed on the vet report, which is the surface that carries the tally
+  // this pause affects.
+  //
+  // RANGE-anchored, not `today`-anchored: membership is dated, so a trial food
+  // swapped out mid-trial leaves days of missing attribution that a now-check
+  // cannot see, and a disclosure that disappears while its hole remains reads as
+  // though nothing was ever wrong.
+  const trialCtx = trialContextOf(ctx);
+  const todayIndex = localDayIndex(Date.now());
+  const unnamed = uncharacterizedTrialDietFoodsInRange(
+    trialCtx,
+    trialCtx.startDayIndex ?? todayIndex,
+    Math.max(todayIndex, trialCtx.startDayIndex ?? todayIndex),
+  );
+  if (unnamed.length > 0) {
+    const which = unnamed.length === 1 && unnamed[0].label
+      ? `${unnamed[0].label} has`
+      : 'One of the trial foods has';
+    return {
+      title: 'Protein checks are paused for this trial',
+      body:
+        `${which} no protein Culprit recognises as a source, so it can’t tell which ` +
+        'proteins belong to the trial diet and which don’t. Setting a main protein ' +
+        'on that food would turn the checks back on.',
+    };
+  }
   if (!ctx.trialFoodCompleteness.complete) {
     return {
       title: 'The trial food’s ingredients haven’t been read',
@@ -521,7 +561,7 @@ function parseConfidence(text: string | null): unknown {
  *  winner, and the row the SERVER accepted is the one every surface must agree
  *  on. Identical ordering to `ACTIVE_DIET_TRIAL_QUERY` and the card's own read. */
 const ACTIVE_TRIAL_SQL = `
-  SELECT id, started_at, ended_at
+  SELECT id, started_at, ended_at, target_duration_days
     FROM diet_trials
    WHERE pet_id = ? AND status = 'active'
    ORDER BY synced DESC, started_at DESC, id
@@ -546,7 +586,12 @@ const ALLOWED_SET_SQL = `
    ORDER BY tf.allowed_from, tf.id
 `;
 
-interface TrialRow { id: string; started_at: string; ended_at: string | null }
+interface TrialRow {
+  id: string;
+  started_at: string;
+  ended_at: string | null;
+  target_duration_days: number;
+}
 
 interface AllowedRow {
   food_item_id: string;
@@ -598,6 +643,27 @@ export async function loadTrialProteinContext(
     return null;
   }
 
+  // ── B-422 DELIBERATELY DOES NOT GATE THIS, and a first cut did ─────────────
+  //
+  // The reasoning for gating it was that every consumer is a PRESENT-TENSE claim
+  // about the pet. That is true of the log-time "this has chicken in it" flag and
+  // false of the two that matter most here, which round 3 executed: from day 113
+  // the owner's card silently lost C2's standing note ("The trial food also lists
+  // chicken — a food that also lists chicken can keep the trial from giving a
+  // clean answer") AND both B9 disclosures ("Culprit can't tell what this trial
+  // is built on"), while the card kept rendering the trial and `generate-report`
+  // kept printing `facts.contamination` off the same record.
+  //
+  // Those are standing facts about a TRIAL THE CARD STILL DISPLAYS, not claims
+  // about the pet today — and B9 exists precisely so the most-unknown state does
+  // not get the least disclosure. Deleting a disclosure from a surface that still
+  // shows the thing being disclosed about is the same reassurance-direction error
+  // the rest of B-422 exists to undo.
+  //
+  // The narrower question — should the LOG-TIME flag fire on a trial past its
+  // effective end? — is real, and it is a Designer call about friction at the
+  // moment of the event rather than a correctness one. Filed as B-595 rather than
+  // answered by suppressing four other things on the way past.
   if (!trial) {
     contextCache.set(petId, { atMs: Date.now(), ctx: null });
     return null;

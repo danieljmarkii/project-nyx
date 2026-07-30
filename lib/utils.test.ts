@@ -1,6 +1,7 @@
 import {
   archiveBlockedCopy,
   archiveConfirmBody,
+  confidenceUpdateForEdit,
   dayKeyToLocalDate,
   deriveOccurredAt,
   describeOccurredAt,
@@ -303,5 +304,71 @@ describe('utcDayBounds (B-308 single-day filter)', () => {
   it('returns null for a malformed key', () => {
     expect(utcDayBounds('garbage')).toBeNull();
     expect(utcDayBounds('')).toBeNull();
+  });
+});
+
+describe('confidenceUpdateForEdit (B-448 — an edit only writes a claim the owner made)', () => {
+  const SAW_IT = { confidence: 'witnessed' as const, earliest: null, latest: null };
+
+  it('writes nothing when the owner never touched a confidence control', () => {
+    // The regression. The form ALWAYS holds a value — app/edit-event.tsx seeds the
+    // Saw-it/Found-it toggle at 'saw' — so before this rule existed, editing a note
+    // on an unclassified (NULL) row wrote 'witnessed'. The vet report then printed
+    // `seen` on a time nobody ever claimed to have witnessed, and the row read as
+    // the most certain one on the page.
+    expect(confidenceUpdateForEdit({ ownerAsserted: false, form: SAW_IT })).toBeUndefined();
+  });
+
+  it('writes nothing even when the form happens to hold a non-default claim', () => {
+    // Same rule from the other side: an untouched form reconstructed from a stored
+    // 'window' must not RE-write it either. Restating a value you weren't told to
+    // change is how a concurrent edit gets clobbered.
+    expect(
+      confidenceUpdateForEdit({
+        ownerAsserted: false,
+        form: { confidence: 'window', earliest: at('2026-07-01T02:00:00.000Z'), latest: at('2026-07-01T04:00:00.000Z') },
+      }),
+    ).toBeUndefined();
+  });
+
+  it('writes the claim once the owner asserts it', () => {
+    expect(confidenceUpdateForEdit({ ownerAsserted: true, form: SAW_IT })).toEqual({
+      value: 'witnessed',
+      earliest: null,
+      latest: null,
+    });
+  });
+
+  it('carries both bounds on an asserted window', () => {
+    expect(
+      confidenceUpdateForEdit({
+        ownerAsserted: true,
+        form: { confidence: 'window', earliest: at('2026-07-01T02:00:00.000Z'), latest: at('2026-07-01T04:00:00.000Z') },
+      }),
+    ).toEqual({
+      value: 'window',
+      earliest: '2026-07-01T02:00:00.000Z',
+      latest: '2026-07-01T04:00:00.000Z',
+    });
+  });
+
+  it('carries a one-sided window (found it, sometime before now)', () => {
+    expect(
+      confidenceUpdateForEdit({
+        ownerAsserted: true,
+        form: { confidence: 'window', earliest: null, latest: at('2026-07-01T04:00:00.000Z') },
+      }),
+    ).toEqual({ value: 'window', earliest: null, latest: '2026-07-01T04:00:00.000Z' });
+  });
+
+  it('drops bounds left over from a window when the claim is a point', () => {
+    // chk_occurred_window_fields (migration 012) rejects bounds on a non-window
+    // row, so a stale edge here would fail the sync push, not just look untidy.
+    expect(
+      confidenceUpdateForEdit({
+        ownerAsserted: true,
+        form: { confidence: 'estimated', earliest: at('2026-07-01T02:00:00.000Z'), latest: at('2026-07-01T04:00:00.000Z') },
+      }),
+    ).toEqual({ value: 'estimated', earliest: null, latest: null });
   });
 });

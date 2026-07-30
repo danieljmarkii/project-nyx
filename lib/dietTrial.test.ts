@@ -22,10 +22,14 @@ import {
   interpretabilityStatement,
   isWithinChallengeWindow,
   mayClaimAllMatched,
+  mayStateRecordClean,
   oralRouteCopy,
+  contaminationFindings,
   sanctionedProteinsOn,
   trialContamination,
+  uncharacterizedTrialDietFoods,
   trialViabilityHeadline,
+  trialViabilityNote,
   type AllowedFood,
   type TrialFeeding,
   type TrialSpec,
@@ -606,6 +610,141 @@ describe('§5.2 — the floor gates the interpretability statement only', () => 
   });
 });
 
+// ── B-600 — a report scope that opens the range MID-TRIAL ────────────────────
+//
+// The second report of a trial, and the one the monitoring wedge exists to
+// produce: an owner sends a summary at or after a recheck, so `since_visit` opens
+// the window at the visit and truncates a long trial by construction. Everything
+// in the trial block is then computed over the overlap while the day counter
+// beside it counts the whole trial.
+//
+// The artifact that filed this: a 73-day trial logged twice daily to the recheck,
+// three silent weeks, then eleven clean days, viewed through a 31-day window. It
+// printed "This record covers 11 of 11 days of the trial window and supports
+// interpreting it" three inches under "day 73 of 84".
+
+describe('B-600 — a truncated view of a trial is not the trial', () => {
+  // Trial runs 1 Jul – 11 Sep (73 days at `nowMs`); the report opens 2 Aug.
+  const TRUNCATED = { ...TRIAL, startedAt: '2026-07-01', targetDurationDays: 84 };
+  const truncNow = new Date(2026, 8, 11, 18).getTime();
+
+  function mealsOn(dayKeys: string[]): TrialFeeding[] {
+    return dayKeys.map((d, i) =>
+      feeding({ eventId: `t${i}`, occurredAt: at(d), foodItemId: DRY_DUCK.foodItemId, foodKey: DRY_DUCK.foodKey }),
+    );
+  }
+  /** Every local day key from `from` to `to`, inclusive. */
+  function span(from: string, to: string): string[] {
+    const out: string[] = [];
+    const [fy, fm, fd] = from.split('-').map(Number);
+    const [ty, tm, td] = to.split('-').map(Number);
+    const end = new Date(ty, tm - 1, td).getTime();
+    for (let t = new Date(fy, fm - 1, fd).getTime(); t <= end; t += 86_400_000) {
+      const dt = new Date(t);
+      out.push(
+        `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`,
+      );
+    }
+    return out;
+  }
+
+  // The report path is handed WINDOW-SCOPED meals (`buildTrialBlock`'s own
+  // contract), so the module never sees the six weeks logged before the visit.
+  // That is why the head clip is gated on the RANGE's head rather than on
+  // "was anything logged earlier" — the latter is unanswerable here.
+  const facts = computeTrialFacts({
+    trial: TRUNCATED,
+    allowedFoods: ALLOWED,
+    feedings: mealsOn(span('2026-09-01', '2026-09-11')),
+    nowMs: truncNow,
+    scopeStart: '2026-08-12',
+    scopeEnd: '2026-09-11',
+  });
+
+  it('does not forgive the window head as "days that predate any logging"', () => {
+    // THE DEFECT, EXECUTED. §10 S3's allowance is for days before the app was on
+    // the owner's phone at the START of a trial. Applied to a scope-truncated head
+    // it swallowed twenty ordinary mid-trial days, and 11-of-31 became 11 of 11 —
+    // a denominator moving toward the record looking complete on a claim the
+    // record cannot support.
+    expect(facts.untrackedDaysBeforeFirstLog).toBe(0);
+    expect(facts.coverage).toMatchObject({ daysLogged: 11, daysElapsed: 31 });
+    expect(facts.interpretability).toBe('does_not_support');
+  });
+
+  it('counts the elapsed trial days the scope leaves out', () => {
+    // 1 Jul – 11 Aug, the six weeks before the window opened.
+    expect(facts.trialDaysOutsideRange).toEqual({ before: 42, after: 0 });
+    // AND STATES THE TRIAL'S OWN LENGTH, so no consumer has to derive it from a
+    // clipped one. `TrialBlock.dayCounter` is bounded at the evidence end and is not
+    // this — the render derived the slice from it and printed three wrong numbers.
+    // The identity: shown + before + after === elapsed.
+    expect(facts.trialDaysElapsed).toBe(73);
+    const outside = facts.trialDaysOutsideRange.before + facts.trialDaysOutsideRange.after;
+    expect(facts.trialDaysElapsed - outside).toBe(facts.coverage!.daysElapsed);
+  });
+
+  it('§7.2 names the window, and the affirmative can never reach past it', () => {
+    const s = interpretabilityStatement(facts)!;
+    expect(s).toMatch(/of this report’s window/);
+    expect(s).not.toMatch(/of the trial window/);
+    // The verdict is about the window it was measured over — never about "this
+    // trial", which is the noun the 84-day header owns.
+    expect(s).not.toMatch(/interpreting this trial/);
+
+    // And on the affirmative rung, which is the sentence a busy reader lifts.
+    const wellLogged = computeTrialFacts({
+      trial: TRUNCATED,
+      allowedFoods: ALLOWED,
+      feedings: mealsOn(span('2026-08-12', '2026-09-11')),
+      nowMs: truncNow,
+      scopeStart: '2026-08-12',
+      scopeEnd: '2026-09-11',
+    });
+    expect(wellLogged.interpretability).toBe('supports');
+    const affirm = interpretabilityStatement(wellLogged)!;
+    expect(affirm).toMatch(/supports interpreting that window — not the trial as a whole/);
+    expect(affirm).not.toMatch(/supports interpreting it/);
+  });
+
+  it('changes nothing when the range spans the whole elapsed trial', () => {
+    // Every client surface and every first report. The head clip still fires, the
+    // noun is still "the trial window", and the affirmative is still affirmative —
+    // the fix is scoped to the case where the two spans genuinely differ.
+    const untruncated = computeTrialFacts({
+      trial: TRUNCATED,
+      allowedFoods: ALLOWED,
+      feedings: mealsOn(span('2026-07-15', '2026-09-11')),
+      nowMs: truncNow,
+    });
+    expect(untruncated.trialDaysOutsideRange).toEqual({ before: 0, after: 0 });
+    expect(untruncated.untrackedDaysBeforeFirstLog).toBe(14);
+    expect(interpretabilityStatement(untruncated)).toMatch(
+      /of the trial window and supports interpreting it/,
+    );
+  });
+
+  it('a scope that ENDS early is truncation too', () => {
+    // The custom (hand-picked) window is the only basis that can close before the
+    // trial's elapsed end, and it is the cherry-pick case, so it must not be the
+    // one that escapes the disclosure.
+    const early = computeTrialFacts({
+      trial: TRUNCATED,
+      allowedFoods: ALLOWED,
+      feedings: mealsOn(span('2026-07-01', '2026-08-01')),
+      nowMs: truncNow,
+      scopeStart: '2026-07-01',
+      scopeEnd: '2026-08-01',
+    });
+    expect(early.trialDaysOutsideRange).toEqual({ before: 0, after: 41 });
+    // The trial has still run 73 days; only the report is short. This is the value the
+    // render's "a trial that has run N" reads — deriving it from a window-bounded
+    // counter is what made that sentence say 30.
+    expect(early.trialDaysElapsed).toBe(73);
+    expect(interpretabilityStatement(early)).toMatch(/of this report’s window/);
+  });
+});
+
 // ── §5.2 proof #1 — the all-refused trial ────────────────────────────────────
 
 describe('§5.2 — a 14-day all-refused trial renders no clean-trial statement', () => {
@@ -752,7 +891,7 @@ describe('adversarial regressions — the module half', () => {
       ),
       nowMs: new Date(2026, 6, 14, 22).getTime(),
     });
-    expect(facts.trialDietRefusal).toEqual({ refusedFeedings: 28, ratedFeedings: 28, days: 14 });
+    expect(facts.trialDietRefusal).toEqual({ refusedFeedings: 28, ratedFeedings: 28, days: 14, population: 'trial_diet' as const });
     // …and the affirmative sentence becomes unsayable, which is the whole job.
     expect(mayClaimAllMatched(facts)).toBe(false);
     // Coverage is UNCHANGED — the owner kept a perfect record and is not scored
@@ -760,13 +899,48 @@ describe('adversarial regressions — the module half', () => {
     expect(facts.coverage).toMatchObject({ daysLogged: 14, daysElapsed: 14 });
   });
 
-  it('the viability line names the record and the vet, never a preference', () => {
-    const line = trialViabilityHeadline({ refusedFeedings: 28, ratedFeedings: 28, days: 14 }, 'Mochi');
+  it('the viability line names the record, with its own denominator', () => {
+    const line = trialViabilityHeadline({ refusedFeedings: 28, ratedFeedings: 40, days: 14, population: 'trial_diet' as const });
     expect(line).toMatch(/were left unfinished/);
     // Never asserts a refusal over a `some`/`picked` record.
     expect(line).not.toMatch(/logged as refused/);
-    expect(line).toMatch(/your vet/);
     expect(line).not.toMatch(/pick|fussy|prefer|doesn’t like|taste/i);
+    // R1a — the evidence base is ON the claim. "28 feedings were left unfinished"
+    // reads identically whether the owner rated 40 feedings or 400.
+    expect(line).toContain('28 feedings of the 40 trial-diet feedings you’ve rated');
+    // `days` is DISTINCT DAYS, not a span, so the phrasing may not imply a window.
+    expect(line).toContain('across 14 days');
+    expect(line).not.toMatch(/over the last/);
+  });
+
+  it('the viability note escalates on the record, and never on intake it cannot see', () => {
+    const cat = trialViabilityNote('Mochi', 'cat');
+    const dog = trialViabilityNote('Rex', 'dog');
+    expect(cat).toMatch(/your vet|a call/);
+    // THE FELINE CLOCK IS NAMED, AND IT SAYS "TODAY". This lane is the only
+    // watcher on the 48h hepatic-lipidosis window for a diet refused from day 1 —
+    // `detectIntakeDecline` is structurally blind to that patient — so the sooner
+    // word is the safe error direction, and it matches what the sibling clinical
+    // lane says over the same animal. An earlier draft said "soon", which was the
+    // quieter word on the more urgent case.
+    expect(cat).toContain('today');
+    expect(dog).not.toContain('today');
+    expect(dog).not.toMatch(/\bsoon\b/);
+    // No volitional frame anywhere: "won't eat" locates the cause in the animal's
+    // choice, one step from the preference framing this lane's first rule forbids.
+    for (const line of [cat, dog]) expect(line).not.toMatch(/won’t eat|refuses to/i);
+    // THE OVER-CLAIM THE MOCK CARRIED. The record here is the TRIAL DIET going
+    // unfinished — a cat that refuses the hydrolysate and clears a bowl of
+    // chicken every night produces exactly this fact, so "a cat eating this
+    // little" asserts something no logged row supports.
+    for (const line of [cat, dog]) {
+      expect(line).not.toMatch(/eating this little|barely eating|hardly eating/i);
+      expect(line).not.toMatch(/pick|fussy|prefer|taste/i);
+      // Says WHAT it withheld, not just that it went quiet. "the trial numbers"
+      // was an absolute claim rendered one line above a trial number, once this
+      // state stopped deleting the off-diet count.
+      expect(line).toContain('isn’t reading these days as a clean run');
+    }
   });
 
   it('does not fire on one bad dinner', () => {
@@ -1158,5 +1332,1176 @@ describe('§12 — no surface renders a negative claim about the world', () => {
   it('contains no percentage, grade or streak string (§6.9)', () => {
     expect(source).not.toMatch(/'[^']*%[^']*'/);
     expect(source).not.toMatch(/'[^']*\b(?:streak|badge|grade|perfect week)\b/i);
+  });
+});
+
+// ── The adversarial pass's executed counterexamples, pinned (B-533) ──────────
+//
+// Every case below rendered a WRONG ANSWER on this PR's first cut and was found
+// by executing it, not by reasoning about it. They live here rather than in the
+// card suite because the fix in each case was to teach the shared module the
+// question, so this is where a regression would first show.
+describe('B-533 adversarial regressions — the module half', () => {
+  const mealAt = (day: string, hour: number, rating: string | null, tag = '') =>
+    feeding({
+      eventId: `${day}-${hour}-${tag}`,
+      occurredAt: at(day, hour),
+      foodItemId: DRY_DUCK.foodItemId,
+      foodKey: DRY_DUCK.foodKey,
+      intakeRating: rating,
+    });
+
+  function dayKey(offset: number): string {
+    const d = new Date(2026, 6, 1 + offset);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  }
+
+  // BREAK 1 — the terminal card said "all 112 matched" over a record showing the
+  // diet went uneaten. The now-fact's 14-day recency window saw only the good
+  // fortnight at the end; `generate-report` computed a whole-range fact for
+  // exactly this and the client had no way to ask the same question.
+  it('a diet unfinished for six weeks then eaten for two is NOT a clean record', () => {
+    const feedings = [];
+    for (let k = 0; k < 42; k += 1) {
+      feedings.push(mealAt(dayKey(k), 8, 'refused', 'a'), mealAt(dayKey(k), 18, 'refused', 'b'));
+    }
+    for (let k = 42; k < 56; k += 1) {
+      feedings.push(mealAt(dayKey(k), 8, 'all', 'a'), mealAt(dayKey(k), 18, 'all', 'b'));
+    }
+    const facts = computeTrialFacts({
+      trial: { ...TRIAL, endedAt: dayKey(55) },
+      allowedFoods: ALLOWED,
+      feedings,
+      nowMs: new Date(2026, 6, 1 + 55, 22).getTime(),
+    });
+    // The now-fact is correctly quiet — the last fortnight WAS eaten.
+    expect(facts.trialDietRefusal).toBeNull();
+    // The range fact is not, and it is what gates the claim.
+    expect(facts.rangeRefusal).toEqual({ refusedFeedings: 84, ratedFeedings: 112, days: 42, population: 'trial_diet' as const });
+    expect(mayClaimAllMatched(facts)).toBe(false);
+    expect(mayStateRecordClean(facts)).toBe(false);
+  });
+
+  // BREAK 2 — rating fatigue reached the same hole on the LIVE card: 84 rated
+  // refusals, then the owner stops rating. The now-fact goes quiet; the range
+  // fact does not.
+  it('survives rating fatigue — the range fact does not decay with the now-fact', () => {
+    const feedings = [];
+    for (let k = 0; k < 42; k += 1) {
+      feedings.push(mealAt(dayKey(k), 8, 'refused', 'a'), mealAt(dayKey(k), 18, 'refused', 'b'));
+    }
+    for (let k = 42; k < 56; k += 1) {
+      feedings.push(mealAt(dayKey(k), 8, null, 'a'), mealAt(dayKey(k), 18, null, 'b'));
+    }
+    const facts = computeTrialFacts({
+      trial: TRIAL,
+      allowedFoods: ALLOWED,
+      feedings,
+      nowMs: new Date(2026, 6, 1 + 55, 22).getTime(),
+    });
+    expect(facts.trialDietRefusal).toBeNull();
+    expect(facts.rangeRefusal).not.toBeNull();
+    expect(mayStateRecordClean(facts)).toBe(false);
+  });
+
+  // BREAK 3 — the affirmative claim rendered under `not_yet` (day 3 of 56) and
+  // under `does_not_support` (the sub-floor card, which contradicted its own lead
+  // sentence one line down). `mayClaimAllMatched` alone never asked.
+  it('withholds the clean statement under not_yet and does_not_support', () => {
+    const young = computeTrialFacts({
+      trial: TRIAL,
+      allowedFoods: ALLOWED,
+      feedings: [
+        mealAt('2026-07-01', 8, 'all'),
+        mealAt('2026-07-02', 8, 'all'),
+        mealAt('2026-07-03', 8, 'all'),
+      ],
+      nowMs: new Date(2026, 6, 3, 22).getTime(),
+    });
+    expect(young.interpretability).toBe('not_yet');
+    // Nothing is FALSE about the record, so the weak gate is happy…
+    expect(mayClaimAllMatched(young)).toBe(true);
+    // …and the composite gate is the one that knows it means nothing yet.
+    expect(mayStateRecordClean(young)).toBe(false);
+
+    const sparse = computeTrialFacts({
+      trial: TRIAL,
+      allowedFoods: ALLOWED,
+      feedings: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map((k) => mealAt(dayKey(k), 8, 'all')),
+      nowMs: new Date(2026, 6, 1 + 29, 22).getTime(),
+    });
+    expect(sparse.interpretability).toBe('does_not_support');
+    expect(mayStateRecordClean(sparse)).toBe(false);
+  });
+
+  // BREAK 3b — a trial the owner ENDED because the pet would not eat it cannot
+  // have its days read as clean ones, whatever the counts say.
+  it('withholds the clean statement on a trial stopped for refusal', () => {
+    const facts = computeTrialFacts({
+      trial: TRIAL,
+      allowedFoods: ALLOWED,
+      feedings: Array.from({ length: 20 }, (_, k) => mealAt(dayKey(k), 8, 'all')),
+      nowMs: new Date(2026, 6, 1 + 19, 22).getTime(),
+    });
+    expect(mayStateRecordClean(facts)).toBe(true);
+    expect(mayStateRecordClean(facts, { stoppedForRefusal: true })).toBe(false);
+  });
+
+  // BREAK 5 — the worst one. An un-hydrated `diet_trial_foods` (reachable in
+  // normal operation: `lib/sync.ts` swallows a failed hydration step) made every
+  // feeding of the PRESCRIBED diet fall to rung 3, so a fully compliant owner was
+  // told "0 matched, 40 did not" — with a drill-in listing her own prescription.
+  it('an allowed set with no primary_diet row is UNAVAILABLE, not all-off-diet', () => {
+    const feedings = Array.from({ length: 40 }, (_, k) =>
+      mealAt(dayKey(Math.floor(k / 2)), k % 2 === 0 ? 8 : 18, 'all', String(k)));
+    const cold = computeTrialFacts({
+      trial: TRIAL,
+      allowedFoods: [],
+      feedings,
+      nowMs: new Date(2026, 6, 1 + 19, 22).getTime(),
+    });
+    expect(cold.allowedSetUnavailable).toBe(true);
+    // The counts are still what they are — the module does not lie in either
+    // direction — but no surface may read them as adherence.
+    expect(cold.exposures.offDiet).toBe(40);
+    expect(mayClaimAllMatched(cold)).toBe(false);
+    expect(mayStateRecordClean(cold)).toBe(false);
+
+    // A trial whose only rows are permitted extras is the same state: rung 2's
+    // comparator is built from `primary_diet` alone.
+    const extrasOnly = computeTrialFacts({
+      trial: TRIAL,
+      allowedFoods: [RABBIT_JERKY],
+      feedings,
+      nowMs: new Date(2026, 6, 1 + 19, 22).getTime(),
+    });
+    expect(extrasOnly.allowedSetUnavailable).toBe(true);
+
+    // …and a properly hydrated set is NOT flagged.
+    const warm = computeTrialFacts({
+      trial: TRIAL,
+      allowedFoods: ALLOWED,
+      feedings,
+      nowMs: new Date(2026, 6, 1 + 19, 22).getTime(),
+    });
+    expect(warm.allowedSetUnavailable).toBe(false);
+    expect(mayStateRecordClean(warm)).toBe(true);
+  });
+
+});
+
+// ── Round 2 of the adversarial pass — the module half ───────────────────────
+describe('B-533 adversarial regressions — round 2, the module half', () => {
+  const mealAt = (day: string, hour: number, rating: string | null, tag = '') =>
+    feeding({
+      eventId: `${day}-${hour}-${tag}`,
+      occurredAt: at(day, hour),
+      foodItemId: DRY_DUCK.foodItemId,
+      foodKey: DRY_DUCK.foodKey,
+      intakeRating: rating,
+    });
+
+  function dayKey(offset: number): string {
+    const d = new Date(2026, 6, 1 + offset);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  }
+
+  // THE HALF-HYDRATED SET, which is commoner than the empty one and was not
+  // covered: a `primary_diet` row IS present but matches nothing — a stale
+  // `food_item_id` whose food never hydrated, a re-photographed bag, an
+  // `allowed_from` dated after the window. 110 feedings of the prescribed diet
+  // rendered "0 matched, 110 did not" on a fully compliant owner.
+  it('a primary_diet row that matches NOTHING is also an unusable allowed set', () => {
+    const stale = food({
+      foodItemId: 'stale-id-nobody-logs-against',
+      foodKey: null,
+      label: 'Royal Canin Duck Dry',
+      role: 'primary_diet',
+    });
+    const feedings = Array.from({ length: 20 }, (_, k) =>
+      mealAt(dayKey(Math.floor(k / 2)), k % 2 === 0 ? 8 : 18, 'all', String(k)));
+    const facts = computeTrialFacts({
+      trial: TRIAL,
+      allowedFoods: [stale],
+      feedings,
+      nowMs: new Date(2026, 6, 1 + 9, 22).getTime(),
+    });
+    expect(facts.exposures.offDiet).toBe(20);
+    expect(facts.allowedSetUnavailable).toBe(true);
+    expect(mayStateRecordClean(facts)).toBe(false);
+  });
+
+  // Dated membership reaches the same place from a different cause.
+  it('a primary_diet row allowed only AFTER the window is an unusable set', () => {
+    const late = { ...DRY_DUCK, allowedFrom: '2026-09-01' };
+    const feedings = Array.from({ length: 20 }, (_, k) =>
+      mealAt(dayKey(Math.floor(k / 2)), k % 2 === 0 ? 8 : 18, 'all', String(k)));
+    const facts = computeTrialFacts({
+      trial: TRIAL,
+      allowedFoods: [late],
+      feedings,
+      nowMs: new Date(2026, 6, 1 + 9, 22).getTime(),
+    });
+    expect(facts.allowedSetUnavailable).toBe(true);
+  });
+
+  // THE FLOOR IS WHAT KEEPS IT HONEST. Below it "the diet matched nothing" is not
+  // yet evidence of a cold cache — an owner three feedings into a trial may
+  // simply not have fed the diet yet — so the fact stays false and the counts
+  // stand on their own.
+  it('does not cry cold-cache below the reconciliation floor', () => {
+    const facts = computeTrialFacts({
+      trial: TRIAL,
+      allowedFoods: ALLOWED,
+      // A real, NAMED food that simply is not on the list — not an
+      // identity-less feeding, which classifies `unclassifiable` rather than
+      // off-diet and would not exercise the floor at all.
+      feedings: [
+        feeding({ eventId: 'a', occurredAt: at('2026-07-05', 8), foodItemId: 'rival', foodKey: 'brandrival kibble' }),
+        feeding({ eventId: 'b', occurredAt: at('2026-07-05', 18), foodItemId: 'rival', foodKey: 'brandrival kibble' }),
+        feeding({ eventId: 'c', occurredAt: at('2026-07-06', 8), foodItemId: 'rival', foodKey: 'brandrival kibble' }),
+      ],
+      nowMs: new Date(2026, 6, 6, 22).getTime(),
+    });
+    expect(facts.exposures.offDiet).toBe(3);
+    expect(facts.allowedSetUnavailable).toBe(false);
+  });
+
+  // A well-hydrated trial must not be caught by any of this.
+  it('leaves a hydrated allowed set alone', () => {
+    const feedings = Array.from({ length: 20 }, (_, k) =>
+      mealAt(dayKey(Math.floor(k / 2)), k % 2 === 0 ? 8 : 18, 'all', String(k)));
+    const facts = computeTrialFacts({
+      trial: TRIAL,
+      allowedFoods: ALLOWED,
+      feedings,
+      nowMs: new Date(2026, 6, 1 + 9, 22).getTime(),
+    });
+    expect(facts.allowedSetUnavailable).toBe(false);
+    expect(mayStateRecordClean(facts)).toBe(true);
+  });
+
+  // THE TWO ARRANGEMENT QUESTIONS. The claim is about the whole window; the copy
+  // is present-tense. Splitting them is what stops a bowl removed on day 3
+  // latching the free-fed state for the rest of the trial.
+  it('separates "a bowl overlapped the window" from "a bowl is down now"', () => {
+    const feedings = Array.from({ length: 20 }, (_, k) =>
+      mealAt(dayKey(Math.floor(k / 2)), k % 2 === 0 ? 8 : 18, 'all', String(k)));
+    const removed = computeTrialFacts({
+      trial: TRIAL,
+      allowedFoods: ALLOWED,
+      feedings,
+      arrangements: [{
+        foodItemId: 'bowl', foodKey: 'brandbowl', label: 'Kibble',
+        startedAt: dayKey(0), endedAt: dayKey(2),
+      }],
+      nowMs: new Date(2026, 6, 1 + 9, 22).getTime(),
+    });
+    // The claim stays withheld — nothing could observe intake on days 0–2, ever.
+    expect(removed.intakeNotDirectlyObserved).toBe(true);
+    expect(mayClaimAllMatched(removed)).toBe(false);
+    // …but the present-tense copy must not fire.
+    expect(removed.intakeNotDirectlyObservedNow).toBe(false);
+
+    const stillDown = computeTrialFacts({
+      trial: TRIAL,
+      allowedFoods: ALLOWED,
+      feedings,
+      arrangements: [{
+        foodItemId: 'bowl', foodKey: 'brandbowl', label: 'Kibble',
+        startedAt: dayKey(0), endedAt: null,
+      }],
+      nowMs: new Date(2026, 6, 1 + 9, 22).getTime(),
+    });
+    expect(stillDown.intakeNotDirectlyObservedNow).toBe(true);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// B-533 PR B — THE THREE FACTS THE LIVE R1 REGISTER READS
+//
+// `trialDietRefusal` and `rangeRefusal` already have suites above. These are the
+// three that were added so a LIVE, present-tense register could speak from them
+// safely, and each one is a defect that was executed rather than a nicety:
+//
+//   `recentFinishedFeedings`     — silence must not cancel an alarm, and more
+//                                  logged refusals must not cancel one either.
+//   `rangeRefusalSpansEpisodes`  — the range fact drops the episode guard, which
+//                                  is right for a history and wrong for "today".
+//   `intakeRating`               — the refusal lane sees only RATED feedings, so
+//                                  something has to teach the tap (R1b).
+// ─────────────────────────────────────────────────────────────────────────────
+describe('B-533 PR B — the facts behind the live refusal register', () => {
+  /** N days × `perDay` primary-diet feedings, each carrying `ratingFor(i)`. */
+  function trialWithRatings(
+    days: number,
+    perDay: number,
+    ratingFor: (index: number) => string | null,
+    over: { foodType?: 'meal' | 'treat'; foodItemId?: string; foodKey?: string | null } = {},
+  ) {
+    return computeTrialFacts({
+      trial: { ...TRIAL, species: 'cat' },
+      allowedFoods: ALLOWED,
+      feedings: Array.from({ length: days * perDay }, (_, i) =>
+        feeding({
+          eventId: `p${i}`,
+          occurredAt: at(
+            `2026-07-${String(Math.floor(i / perDay) + 1).padStart(2, '0')}`,
+            8 + (i % perDay) * 10,
+          ),
+          foodItemId: over.foodItemId ?? DRY_DUCK.foodItemId,
+          foodKey: over.foodKey === undefined ? DRY_DUCK.foodKey : over.foodKey,
+          foodType: over.foodType ?? 'meal',
+          intakeRating: ratingFor(i) ?? undefined,
+        }),
+      ),
+      nowMs: new Date(2026, 6, days, 22).getTime(),
+    });
+  }
+
+  describe('recentFinishedFeedings — FINISHED, never merely rated', () => {
+    // THE DEFECT THIS PINS: counting ratings meant two more logged refusals
+    // inside the recency window stood the register down. More evidence of
+    // refusal bought less disclosure — the register present at 0 recent
+    // ratings, absent at 1–2, present again at 3+, with a dead zone occupied by
+    // exactly the refusing cat.
+    it('a fortnight of refusals leaves it at zero, however many are rated', () => {
+      const facts = trialWithRatings(14, 2, () => 'refused');
+      expect(facts.trialDietRefusal).not.toBeNull();
+      expect(facts.recentFinishedFeedings).toBe(0);
+    });
+
+    it.each(['picked', 'some'])('a %s bowl is not a finished one', (rating) => {
+      expect(trialWithRatings(14, 2, () => rating).recentFinishedFeedings).toBe(0);
+    });
+
+    it.each(['all', 'most'])('a %s bowl is', (rating) => {
+      expect(trialWithRatings(14, 2, () => rating).recentFinishedFeedings).toBe(28);
+    });
+
+    // Unrated is NOT finished. R1a's rule is that absence of ratings never
+    // alarms; the mirror rule is that absence of ratings is not evidence of
+    // recovery either, so it may not stand a fired register down.
+    it('an unrated bowl is neither — absence is not evidence of eating', () => {
+      expect(trialWithRatings(14, 2, () => null).recentFinishedFeedings).toBe(0);
+    });
+
+    // The recency window is what makes this a NOW-fact. A diet eaten in week one
+    // and refused since is not evidence the pet is eating today.
+    // THE DENOMINATOR SHIPS WITH THE NUMERATOR (B-571). `recentFinishedFeedings`
+    // alone cannot express a share, and a share is what the stand-down needs to
+    // be symmetric with the fire — a bare `=== 0` test on the numerator is what
+    // let one eaten bowl cancel sixty documented refusals.
+    it('carries its own denominator, over the same window and rows', () => {
+      const facts = trialWithRatings(14, 2, (i) => (i % 4 === 0 ? 'all' : 'refused'));
+      expect(facts.recentRatedFeedings).toBe(28);
+      expect(facts.recentFinishedFeedings).toBe(7);
+      // Unrated feedings enter NEITHER side — they are not evidence in either
+      // direction, which is R1a and its mirror in one line.
+      const half = trialWithRatings(14, 2, (i) => (i % 2 === 0 ? 'refused' : null));
+      expect(half.recentRatedFeedings).toBe(14);
+      expect(half.recentFinishedFeedings).toBe(0);
+    });
+
+    it('is bounded to the recency window, not the range', () => {
+      const facts = computeTrialFacts({
+        trial: { ...TRIAL, species: 'cat' },
+        allowedFoods: ALLOWED,
+        // 40 days: the first 20 finished, the last 20 refused.
+        feedings: Array.from({ length: 40 }, (_, i) =>
+          feeding({
+            eventId: `w${i}`,
+            occurredAt: at(
+              i < 20
+                ? `2026-07-${String(i + 1).padStart(2, '0')}`
+                : `2026-08-${String(i - 19).padStart(2, '0')}`,
+            ),
+            foodItemId: DRY_DUCK.foodItemId,
+            foodKey: DRY_DUCK.foodKey,
+            intakeRating: i < 20 ? 'all' : 'refused',
+          }),
+        ),
+        nowMs: new Date(2026, 7, 20, 22).getTime(),
+      });
+      expect(facts.recentFinishedFeedings).toBe(0);
+      expect(facts.rangeRefusal).not.toBeNull();
+    });
+  });
+
+  describe('rangeRefusalSpansEpisodes — one bout is not a history', () => {
+    // THE DEFECT THIS PINS: `rangeRefusal` deliberately drops
+    // `REFUSAL_MIN_SPAN_MS` because a multi-week refusal, not a midnight
+    // straddle, is a history's failure mode. The moment a LIVE present-tense
+    // register read that fact, one four-hour bout fired "needs a call today" for
+    // the next 36 days over a cat that ate throughout.
+    it('three refusals in one evening straddling midnight do not span episodes', () => {
+      const facts = computeTrialFacts({
+        trial: { ...TRIAL, species: 'cat' },
+        allowedFoods: ALLOWED,
+        feedings: [
+          feeding({ eventId: 'b1', occurredAt: at('2026-07-10', 20), foodItemId: DRY_DUCK.foodItemId, foodKey: DRY_DUCK.foodKey, intakeRating: 'refused' }),
+          feeding({ eventId: 'b2', occurredAt: at('2026-07-10', 22), foodItemId: DRY_DUCK.foodItemId, foodKey: DRY_DUCK.foodKey, intakeRating: 'refused' }),
+          feeding({ eventId: 'b3', occurredAt: at('2026-07-11', 0), foodItemId: DRY_DUCK.foodItemId, foodKey: DRY_DUCK.foodKey, intakeRating: 'refused' }),
+        ],
+        nowMs: new Date(2026, 6, 11, 12).getTime(),
+      });
+      // The range fact still fires — that is correct for a history, and is
+      // exactly why the live register needs a second question to ask.
+      expect(facts.rangeRefusal).not.toBeNull();
+      expect(facts.rangeRefusalSpansEpisodes).toBe(false);
+    });
+
+    it('a fortnight of refused bowls does', () => {
+      expect(trialWithRatings(14, 2, () => 'refused').rangeRefusalSpansEpisodes).toBe(true);
+    });
+
+    // Measured on the RANGE's own stamps, not the recency window's. A refusal
+    // that has aged out of the now-fact still has to be able to answer "was this
+    // one bout or many?", because the stand-down path reads the range fact.
+    it('measures the range’s refusals, not the recent ones', () => {
+      const facts = computeTrialFacts({
+        trial: { ...TRIAL, species: 'cat' },
+        allowedFoods: ALLOWED,
+        feedings: Array.from({ length: 8 }, (_, i) =>
+          feeding({
+            eventId: `o${i}`,
+            occurredAt: at(`2026-07-${String(i + 1).padStart(2, '0')}`),
+            foodItemId: DRY_DUCK.foodItemId,
+            foodKey: DRY_DUCK.foodKey,
+            intakeRating: 'refused',
+          }),
+        ),
+        // Read five weeks later: every refusal is outside the recency window.
+        nowMs: new Date(2026, 7, 10, 12).getTime(),
+      });
+      expect(facts.trialDietRefusal).toBeNull();
+      expect(facts.rangeRefusalSpansEpisodes).toBe(true);
+    });
+  });
+
+  describe('intakeRating (R1b) — the rated share of the meal record', () => {
+    it('is null when there is nothing in range to have rated', () => {
+      const facts = computeTrialFacts({
+        trial: { ...TRIAL, species: 'cat' },
+        allowedFoods: ALLOWED,
+        feedings: [],
+        nowMs: new Date(2026, 6, 10, 12).getTime(),
+      });
+      // NULL, NOT A ZEROED OBJECT. "Nothing in range to have rated" and "nothing
+      // rated" are different facts, and a surface handed `{rated: 0, feedings: 0}`
+      // divides by zero and teaches the tap on day 1 of an empty trial.
+      expect(facts.intakeRating).toBeNull();
+    });
+
+    it('counts the rated share over both populations', () => {
+      // 20 primary-diet feedings, every fourth one rated.
+      const facts = trialWithRatings(10, 2, (i) => (i % 4 === 0 ? 'all' : null));
+      expect(facts.intakeRating).toEqual({
+        rated: 5, feedings: 20, primaryRated: 5, primaryFeedings: 20,
+      });
+    });
+
+    // The WIDE denominator is the coverage numerator's population, so it excludes
+    // treats for the same reason: a treat nobody rated is not the gap in the
+    // record this teaches about, and on live data 82% of feedings are treats — a
+    // treat-inclusive denominator would fire the teach line on nearly every card.
+    it('excludes treats from the wide population', () => {
+      const facts = trialWithRatings(10, 2, () => null, {
+        foodType: 'treat', foodItemId: RABBIT_JERKY.foodItemId, foodKey: RABBIT_JERKY.foodKey,
+      });
+      expect(facts.intakeRating).toBeNull();
+    });
+
+    // THE COUNTEREXAMPLE THAT PROVES BOTH POPULATIONS ARE NEEDED: an owner who
+    // logs unrated bowls of the prescribed diet beside rated permitted toppers
+    // has a healthy-looking wide share and a zero narrow one — and the narrow one
+    // is the population the refusal lane actually reads.
+    it('separates the narrow population, which the refusal lane reads', () => {
+      const facts = computeTrialFacts({
+        trial: { ...TRIAL, species: 'cat' },
+        allowedFoods: ALLOWED,
+        feedings: [
+          // Two unrated bowls of the trial diet a day…
+          ...Array.from({ length: 20 }, (_, i) => feeding({
+            eventId: `d${i}`,
+            occurredAt: at(`2026-07-${String(Math.floor(i / 2) + 1).padStart(2, '0')}`, 8 + (i % 2) * 10),
+            foodItemId: DRY_DUCK.foodItemId,
+            foodKey: DRY_DUCK.foodKey,
+          })),
+          // …beside three RATED permitted toppers, logged as meals.
+          ...Array.from({ length: 30 }, (_, i) => feeding({
+            eventId: `j${i}`,
+            occurredAt: at(`2026-07-${String(Math.floor(i / 3) + 1).padStart(2, '0')}`, 13 + (i % 3)),
+            foodItemId: RABBIT_JERKY.foodItemId,
+            foodKey: RABBIT_JERKY.foodKey,
+            intakeRating: 'all',
+          })),
+        ],
+        nowMs: new Date(2026, 6, 10, 22).getTime(),
+      });
+      expect(facts.intakeRating?.primaryRated).toBe(0);
+      expect(facts.intakeRating?.primaryFeedings).toBe(20);
+      // 30 of 50 rated overall — comfortably above the teach floor, on a record
+      // whose viability is completely unknowable.
+      expect(facts.intakeRating?.rated).toBe(30);
+      expect(facts.intakeRating?.feedings).toBe(50);
+    });
+
+    // §10 S3's clipped head. Days the owner could not have logged are not a gap
+    // in their record, so they may not drag the rated share down and fire a
+    // teach line about a record that did not exist yet.
+    it('is denominated from the first log, not from the trial start', () => {
+      const facts = computeTrialFacts({
+        trial: { ...TRIAL, species: 'cat' },
+        allowedFoods: ALLOWED,
+        feedings: Array.from({ length: 4 }, (_, i) => feeding({
+          eventId: `h${i}`,
+          occurredAt: at(`2026-07-${String(i + 12).padStart(2, '0')}`),
+          foodItemId: DRY_DUCK.foodItemId,
+          foodKey: DRY_DUCK.foodKey,
+          intakeRating: 'all',
+        })),
+        nowMs: new Date(2026, 6, 16, 22).getTime(),
+      });
+      expect(facts.untrackedDaysBeforeFirstLog).toBeGreaterThan(0);
+      expect(facts.intakeRating).toEqual({
+        rated: 4, feedings: 4, primaryRated: 4, primaryFeedings: 4,
+      });
+    });
+  });
+});
+
+// ── B-529 / ruling R7 — the hydrolyzed↔intact derived-from relation ──────────
+//
+// Every case below was REPRODUCED on `main` before the fix, and the three of
+// them come from one root: a hydrolysed diet's label yields both
+// `hydrolyzed chicken` (front of pack → primary_protein) and `chicken` (panel).
+// Note two of them are FALSE ALARM and one is FALSE SILENCE — a relation that
+// closed only one direction would have traded one wrong answer for another.
+describe('B-529 R7 — a hydrolysed trial diet does not contaminate its own trial', () => {
+  const HP = food({
+    foodItemId: 'f-hp',
+    foodKey: 'purinaha hydrolyzed',
+    label: 'Purina HA Hydrolyzed',
+    role: 'primary_diet',
+    primaryProtein: 'hydrolyzed chicken',
+    proteins: ['hydrolyzed chicken', 'chicken'],
+  });
+  const hpCtx = () => buildTrialContext(TRIAL, [HP]);
+
+  // Was: [['chicken']] — the report told the vet the prescription diet's own
+  // label carried a protein the trial excludes. The B-417 cold read acted on it
+  // and reached the wrong clinical conclusion (re-run vs proceed to rechallenge).
+  it('the standing contamination fact no longer fires on the trial diet itself', () => {
+    const facts = trialContamination(hpCtx());
+    expect(facts.map((f) => f.extraProteins)).toEqual([[]]);
+    expect(contaminationNote(facts, 'Rex')).toBeNull();
+  });
+
+  // Suppressed, not deleted: a surface that got quieter owes the reader a reason.
+  it('discloses the absorbed term rather than dropping it', () => {
+    expect(trialContamination(hpCtx())[0].derivedFromPrimary).toEqual(['chicken']);
+    expect(contaminationFindings(trialContamination(hpCtx()))).toEqual([]);
+  });
+
+  // Was: {hydrolyzed chicken, chicken} — intact chicken entered the set that
+  // sanctions every OTHER food, so the chew below lost its attribution.
+  it('the intact term does not enter the sanctioned set', () => {
+    expect([...sanctionedProteinsOn(hpCtx(), localDayIndexOf('2026-07-10') as number)])
+      .toEqual(['hydrolyzed chicken']);
+  });
+
+  // THE SAFE DIRECTION, and the reason kinship is never applied across foods:
+  // intact protein is exactly what a hydrolysed elimination trial excludes.
+  // Was: off_diet_unrecognised with antigens [] — detected but unattributed.
+  it('a plain chicken chew is still off-diet AND still names chicken', () => {
+    const chew = classifyFeeding(
+      hpCtx(),
+      feeding({ eventId: 'chew', foodItemId: 'f-chew', foodKey: 'bchicken chew', foodType: 'treat', proteins: ['chicken'] }),
+    );
+    expect(chew.verdict).toBe('off_diet_protein');
+    expect(chew.antigens).toEqual(['chicken']);
+  });
+
+  // C2 holding by construction: the diet's own feedings stay clean, so the
+  // absorption above does not rebound as a per-feeding self-accusation.
+  it('the trial diet’s own feedings carry no antigen', () => {
+    const meal = classifyFeeding(
+      hpCtx(),
+      feeding({ eventId: 'm', foodItemId: HP.foodItemId, foodKey: HP.foodKey, proteins: [...HP.proteins] }),
+    );
+    expect(meal.verdict).toBe('permitted');
+    expect(meal.antigens).toEqual([]);
+  });
+});
+
+describe('B-529 R7(c) — the silence rule', () => {
+  // Was: the prescribed wet food's OWN `duck liver` tallied as "an antigen the
+  // trial diet does not contain", once per feeding, with trialContamination
+  // returning nothing to explain it. The wet row is dropped from the sanctioned
+  // set for lack of a designation, so its own proteins fall outside that set.
+  const KIBBLE = food({
+    foodItemId: 'f-kib', foodKey: 'rcduck kibble', label: 'RC Duck kibble',
+    role: 'primary_diet', primaryProtein: 'duck', proteins: ['duck'],
+  });
+  const WET = food({
+    foodItemId: 'f-wet', foodKey: 'rcduck wet', label: 'RC Duck wet',
+    role: 'primary_diet', primaryProtein: null, proteins: ['duck', 'duck liver'],
+  });
+  const partial = () => buildTrialContext(TRIAL, [KIBBLE, WET]);
+
+  it('names the food that cannot be characterized', () => {
+    const unnamed = uncharacterizedTrialDietFoods(partial(), localDayIndexOf('2026-07-10') as number);
+    expect(unnamed.map((f) => f.foodItemId)).toEqual(['f-wet']);
+  });
+
+  it('goes quiet rather than tallying the prescribed diet’s own protein', () => {
+    const c = classifyFeeding(
+      partial(),
+      feeding({ eventId: 'm', foodItemId: WET.foodItemId, foodKey: WET.foodKey, proteins: [...WET.proteins] }),
+    );
+    expect(c.verdict).toBe('permitted');
+    expect(c.antigens).toEqual([]);
+  });
+
+  // Quiet costs ATTRIBUTION, never DETECTION — rung 3 still records everything.
+  it('still records an off-diet feeding while the arm is dark', () => {
+    const chew = classifyFeeding(
+      partial(),
+      feeding({ eventId: 'x', foodItemId: 'f-chew', foodKey: 'bchicken chew', foodType: 'treat', proteins: ['chicken'] }),
+    );
+    expect(chew.verdict).toBe('off_diet_unrecognised');
+    expect(chew.offDiet).toBe(true);
+  });
+
+  // ── B-596 — the SUPPRESSED FINDING, not only the silenced feeding ──────────
+  //
+  // `trialContamination` skips an uncharacterized `primary_diet` row (right: with no
+  // source base there is no comparator). When that row is also never FED, nothing is
+  // silenced, so the old `darkDays`-only flag stayed false — and a genuine "the trial
+  // food also lists Beef" finding vanished with NO paused row and NO §7.2 caveat in
+  // its place, while "all N matched" and "supports interpreting it" both stood. The
+  // quiet direction, on the diet class the whole feature is about: `hydrolyzed
+  // protein` is the literal product name of the most-prescribed canine hydrolysate.
+  it('darkens the arm for an uncharacterized trial-diet row that was never fed', () => {
+    const KIB = food({
+      foodItemId: 'f-kib2', foodKey: 'rcduck kibble', label: 'RC Duck kibble',
+      role: 'primary_diet', primaryProtein: 'duck', proteins: ['duck'],
+    });
+    const NEVER_FED = food({
+      foodItemId: 'f-hp', foodKey: 'hp loaf', label: 'Hydrolyzed Protein HP Loaf',
+      role: 'primary_diet', primaryProtein: 'hydrolyzed protein', proteins: ['soy', 'beef'],
+    });
+    const facts = computeTrialFacts({
+      trial: TRIAL,
+      allowedFoods: [KIB, NEVER_FED],
+      feedings: Array.from({ length: 32 }, (_, i) =>
+        feeding({
+          eventId: `k-${i}`,
+          occurredAt: at('2026-07-10', 6 + (i % 12)),
+          foodItemId: KIB.foodItemId,
+          foodKey: KIB.foodKey,
+          proteins: ['duck'],
+        }),
+      ),
+      nowMs: new Date(2026, 6, 20, 12).getTime(),
+    });
+    // Nothing was silenced — every feeding classified against a live comparator.
+    expect(facts.exposures.offDiet).toBe(0);
+    // …and the arm is dark anyway, because the check on `NEVER_FED`'s own label
+    // never ran. The disclosure can name the food, which is the whole point.
+    expect(facts.antigenArmDark).toBe(true);
+    expect(facts.antigenAttributionPaused.map((f) => f.foodItemId)).toEqual(['f-hp']);
+    // And the affirmative claim is withheld, which is what the disclosure is for.
+    expect(mayClaimAllMatched(facts)).toBe(false);
+  });
+
+  // The over-fire the adversarial pass EXECUTED against the first cut, pinned. A skipped
+  // row costs a finding only when it carries a protein the trial does not already
+  // sanction; a never-fed `duck` row on a duck trial suppresses nothing, and darkening
+  // the arm for it withholds the clean-elimination claim on a record where all 40
+  // feedings were correctly attributed.
+  it('does NOT darken the arm for an uncharacterized row whose proteins are already sanctioned', () => {
+    const DRY = food({
+      foodItemId: 'f-dry', foodKey: 'rcduck dry', label: 'RC Duck Dry',
+      role: 'primary_diet', primaryProtein: 'duck', proteins: ['duck'],
+    });
+    const NEVER_FED_DUCK = food({
+      foodItemId: 'f-wet2', foodKey: 'rcduck wet', label: 'RC Duck Wet',
+      role: 'primary_diet', primaryProtein: null, proteins: ['duck'],
+    });
+    const facts = computeTrialFacts({
+      trial: TRIAL,
+      allowedFoods: [DRY, NEVER_FED_DUCK],
+      feedings: Array.from({ length: 40 }, (_, i) =>
+        feeding({
+          eventId: `d-${i}`,
+          occurredAt: at('2026-07-10', 6 + (i % 12)),
+          foodItemId: DRY.foodItemId,
+          foodKey: DRY.foodKey,
+          proteins: ['duck'],
+        }),
+      ),
+      nowMs: new Date(2026, 6, 20, 12).getTime(),
+    });
+    expect(facts.exposures.offDiet).toBe(0);
+    expect(facts.antigenArmDark).toBe(false);
+    expect(facts.antigenAttributionPaused).toEqual([]);
+    expect(mayClaimAllMatched(facts)).toBe(true);
+  });
+
+  // The counter-case, and it is what keeps this from firing on every trial: a row with
+  // NO captured protein set suppressed no finding, because there was no term to find.
+  it('does NOT darken the arm for an uncharacterized row with nothing on its label', () => {
+    const KIB = food({
+      foodItemId: 'f-kib3', foodKey: 'rcduck kibble', label: 'RC Duck kibble',
+      role: 'primary_diet', primaryProtein: 'duck', proteins: ['duck'],
+    });
+    const BLANK = food({
+      foodItemId: 'f-blank', foodKey: 'blank', label: 'Unread bag',
+      role: 'primary_diet', primaryProtein: 'hydrolyzed protein', proteins: [],
+    });
+    const facts = computeTrialFacts({
+      trial: TRIAL,
+      allowedFoods: [KIB, BLANK],
+      feedings: Array.from({ length: 12 }, (_, i) =>
+        feeding({
+          eventId: `b-${i}`,
+          occurredAt: at('2026-07-10', 6 + i),
+          foodItemId: KIB.foodItemId,
+          foodKey: KIB.foodKey,
+          proteins: ['duck'],
+        }),
+      ),
+      nowMs: new Date(2026, 6, 20, 12).getTime(),
+    });
+    expect(facts.antigenArmDark).toBe(false);
+    expect(facts.antigenAttributionPaused).toEqual([]);
+  });
+
+  // The narrowing this rule is deliberately scoped to: a designated primary with
+  // an unread panel is a different and far more common state, and darkening the
+  // tally for it would silence nearly every real trial for no gain here.
+  it('does NOT fire for a designated food whose panel was never read', () => {
+    const unread = food({
+      foodItemId: 'f-manual', foodKey: 'brand manual', role: 'primary_diet',
+      primaryProtein: 'duck', proteins: [],
+    });
+    const c = buildTrialContext(TRIAL, [unread]);
+    expect(uncharacterizedTrialDietFoods(c, localDayIndexOf('2026-07-10') as number)).toEqual([]);
+    const chew = classifyFeeding(
+      c,
+      feeding({ eventId: 'x', foodItemId: 'f-chew', foodKey: 'bchicken chew', foodType: 'treat', proteins: ['chicken'] }),
+    );
+    expect(chew.verdict).toBe('off_diet_protein');
+    expect(chew.antigens).toEqual(['chicken']);
+  });
+});
+
+// ── B-529 — the adversarial pass's blocking counterexample (finding ①) ────────
+//
+// The first cut of R7(c) gated the RUNG-1 permitted antigen list on a GLOBAL
+// "is any trial food undesignated" flag, justified by a comment claiming every
+// feeding is still recorded by rung 3. That is false for a permitted feeding: a
+// rung-1 hit stops at rung 1, so its antigen list is the only channel it has.
+// The executed cost was the six-dental-chews-a-day false negative this module's
+// own docstring names — reintroduced one empty column away.
+describe('B-529 ① — a permitted food keeps its antigen record when ANOTHER row is undesignated', () => {
+  const DUCK = food({
+    foodItemId: 'f-duck', foodKey: 'rcduck kibble', label: 'RC Duck kibble',
+    role: 'primary_diet', primaryProtein: 'duck', proteins: ['duck'],
+  });
+  const UNDESIGNATED_WET = food({
+    foodItemId: 'f-wet', foodKey: 'rcduck wet', label: 'RC Duck wet',
+    role: 'primary_diet', primaryProtein: null, proteins: ['duck', 'duck liver'],
+  });
+  const CHICKEN_CHEW = food({
+    foodItemId: 'f-chew', foodKey: 'bdental chew', label: 'Dental Chew',
+    role: 'permitted_treat', primaryProtein: 'chicken', proteins: ['chicken'],
+  });
+  const ctxWith = () => buildTrialContext(TRIAL, [DUCK, UNDESIGNATED_WET, CHICKEN_CHEW]);
+
+  it('the vet-approved chicken chew still tallies chicken', () => {
+    // Was [] — 80 real exposures deleted from the vet report because a DIFFERENT
+    // food was missing a field.
+    const c = classifyFeeding(
+      ctxWith(),
+      feeding({
+        eventId: 'chew', foodItemId: CHICKEN_CHEW.foodItemId, foodKey: CHICKEN_CHEW.foodKey,
+        foodType: 'treat', proteins: ['chicken'],
+      }),
+    );
+    expect(c.verdict).toBe('permitted');
+    expect(c.antigens).toEqual(['chicken']);
+  });
+
+  it('and the exposures still reach the tally, so no surface can read it as clean', () => {
+    const facts = computeTrialFacts({
+      trial: TRIAL,
+      allowedFoods: [DUCK, UNDESIGNATED_WET, CHICKEN_CHEW],
+      feedings: Array.from({ length: 8 }, (_, i) =>
+        feeding({
+          eventId: `c-${i}`, occurredAt: at('2026-07-10', 6 + i),
+          foodItemId: CHICKEN_CHEW.foodItemId, foodKey: CHICKEN_CHEW.foodKey,
+          foodType: 'treat', proteins: ['chicken'],
+        }),
+      ),
+      nowMs: new Date(at('2026-07-11')).getTime(),
+    });
+    const chicken = facts.exposures.antigenTally.find((a) => a.protein === 'chicken');
+    expect(chicken?.feedings).toBe(8);
+    expect(chicken?.fromPermitted).toBe(8);
+  });
+
+  it('while the undesignated trial food still does NOT tally its own protein', () => {
+    // The defect R7(c) actually exists for — silenced per-food, not globally.
+    const c = classifyFeeding(
+      ctxWith(),
+      feeding({
+        eventId: 'wet', foodItemId: UNDESIGNATED_WET.foodItemId,
+        foodKey: UNDESIGNATED_WET.foodKey, proteins: ['duck', 'duck liver'],
+      }),
+    );
+    expect(c.verdict).toBe('permitted');
+    expect(c.antigens).toEqual([]);
+  });
+});
+
+// ── B-530 — the refusal lane survives a food-identity miss ───────────────────
+//
+// The pre-ship adversarial chair executed the counterexample: a 21-day all-refused
+// cat behind a RE-PHOTOGRAPHED BAG. Re-shooting the bag mints a new `food_items` row
+// with a slightly different product name; the trial's allowed set still points at the
+// old one, so rung 1 misses on every feeding. Both refusal gates keyed on
+// `role === 'primary_diet'`, which only exists when rung 1 matched — so the population
+// did not degrade, it EMPTIED, and the fact went null over an animal that had not
+// eaten for three weeks. An app action the product actively encourages silenced the
+// one lane built for the sickest patient in it.
+describe('B-530 — the refusal population falls back when identity misses', () => {
+  /** Every feeding names a food the allowed set does not carry (the new bag). */
+  function refusedBehindABrokenBag(rating: string | null, count = 42) {
+    return computeTrialFacts({
+      trial: { ...TRIAL, species: 'cat' },
+      allowedFoods: [DRY_DUCK],
+      feedings: Array.from({ length: count }, (_, i) =>
+        feeding({
+          eventId: `m${i}`,
+          // Two a day across `count / 2` days, so the day and span floors clear.
+          occurredAt: at(`2026-07-${String(1 + Math.floor(i / 2)).padStart(2, '0')}`, i % 2 === 0 ? 8 : 20),
+          foodItemId: 'dry-duck-rephotographed',
+          foodKey: 'royal caninduck dry kibble',
+          intakeRating: rating,
+        }),
+      ),
+      nowMs: new Date(2026, 6, 22, 12).getTime(),
+    });
+  }
+
+  it('fires over the MEAL RECORD when the allowed set cannot identify the diet', () => {
+    const facts = refusedBehindABrokenBag('refused');
+    expect(facts.allowedSetUnavailable).toBe(true);
+    expect(facts.rangeRefusal).not.toBeNull();
+    expect(facts.rangeRefusal).toMatchObject({
+      refusedFeedings: 42,
+      ratedFeedings: 42,
+      population: 'meal_record',
+    });
+    // And the affirmative claim was already withheld — the fallback adds disclosure,
+    // it never turns a claim on.
+    expect(mayClaimAllMatched(facts)).toBe(false);
+  });
+
+  it('keeps the NARROW population — and the named finding — when identity resolves', () => {
+    const facts = computeTrialFacts({
+      trial: { ...TRIAL, species: 'cat' },
+      allowedFoods: [DRY_DUCK],
+      feedings: Array.from({ length: 42 }, (_, i) =>
+        feeding({
+          eventId: `m${i}`,
+          occurredAt: at(`2026-07-${String(1 + Math.floor(i / 2)).padStart(2, '0')}`, i % 2 === 0 ? 8 : 20),
+          foodItemId: DRY_DUCK.foodItemId,
+          foodKey: DRY_DUCK.foodKey,
+          intakeRating: 'refused',
+        }),
+      ),
+      nowMs: new Date(2026, 6, 22, 12).getTime(),
+    });
+    expect(facts.allowedSetUnavailable).toBe(false);
+    expect(facts.rangeRefusal?.population).toBe('trial_diet');
+  });
+
+  // R1a, in both populations. The fallback widens WHICH ROWS are counted; it never
+  // lowers the bar to logged evidence, so an owner who does not rate intake still
+  // cannot be told her cat is not eating.
+  it('never fires on an unrated record, however broken the identity', () => {
+    const facts = refusedBehindABrokenBag(null);
+    expect(facts.rangeRefusal).toBeNull();
+    expect(facts.trialDietRefusal).toBeNull();
+    // The teach line still measures the same wide record, so the surface that would
+    // ask for the tap is not silenced by the same miss.
+    expect(facts.intakeRating).toMatchObject({ rated: 0, feedings: 42, primaryFeedings: 0 });
+  });
+
+  it('never fires on a record the pet ATE, however broken the identity', () => {
+    expect(refusedBehindABrokenBag('all').rangeRefusal).toBeNull();
+  });
+
+  // The wide population is the MEAL record — the same set the coverage numerator and
+  // R1b walk. A refused chicken chew says nothing about whether meals are being eaten,
+  // and letting treats in would let a fussy-about-treats record fire the safety lane.
+  it('excludes treats from the wide population', () => {
+    const facts = computeTrialFacts({
+      trial: { ...TRIAL, species: 'cat' },
+      allowedFoods: [DRY_DUCK],
+      feedings: Array.from({ length: 42 }, (_, i) =>
+        feeding({
+          eventId: `t${i}`,
+          occurredAt: at(`2026-07-${String(1 + Math.floor(i / 2)).padStart(2, '0')}`, i % 2 === 0 ? 8 : 20),
+          foodItemId: 'some-treat',
+          foodKey: 'acmechicken chew',
+          foodType: 'treat',
+          intakeRating: 'refused',
+        }),
+      ),
+      nowMs: new Date(2026, 6, 22, 12).getTime(),
+    });
+    expect(facts.rangeRefusal).toBeNull();
+  });
+
+  // The stand-down pair must be measured over the SAME rows as the fact it stands
+  // down. A numerator and denominator drawn from different populations is a silent lie
+  // in the reassuring direction — and the reassuring direction is the one that matters.
+  it('measures the stand-down pair over the population that spoke', () => {
+    const facts = refusedBehindABrokenBag('refused');
+    expect(facts.recentRatedFeedings).toBeGreaterThan(0);
+    expect(facts.recentFinishedFeedings).toBe(0);
+  });
+});
+
+describe('B-530 — the copy never names a diet the app could not identify', () => {
+  it('widens the headline noun to the meal record', () => {
+    const line = trialViabilityHeadline({
+      refusedFeedings: 42,
+      ratedFeedings: 42,
+      days: 21,
+      population: 'meal_record',
+    });
+    expect(line).toMatch(/42 meals you’ve rated/);
+    expect(line).not.toMatch(/trial-diet/);
+    // Still never softens toward preference.
+    expect(line).not.toMatch(/pick|fussy|prefer|doesn’t like|taste/i);
+  });
+
+  it('discloses the attribution gap in the note, and still escalates', () => {
+    const note = trialViabilityNote('Miso', 'cat', 'meal_record');
+    expect(note).toMatch(/can’t match these meals to the foods on this trial’s list/);
+    expect(note).toMatch(/needs a call today/);
+    expect(note).not.toMatch(/A diet Miso isn’t eating/);
+    // The narrow form is unchanged, and is still the default.
+    expect(trialViabilityNote('Miso', 'cat')).toMatch(/A diet Miso isn’t eating/);
+  });
+});
+
+// ── B-579 — the two residuals this fallback does NOT close ───────────────────
+//
+// Pinned as tests rather than left as prose, because the failure mode of a
+// documented limit is that a later reader assumes coverage. Both are UNDER-fire and
+// neither is a regression (the shipped behaviour in both is silence), and both have
+// one root cause — food identity — which is B-529's PR. When that lands, these two
+// assertions are expected to FLIP, and the flip is the signal that they were fixed.
+describe('B-579 — known limits of the wide population (expected to flip with B-529)', () => {
+  const CAT = { ...TRIAL, species: 'cat' as const };
+
+  it('KNOWN LIMIT — a PARTIAL identity miss keeps the narrow population, which cannot see it', () => {
+    // Wet + dry of the same diet (§4.1). Only the dry bag was re-photographed. The cat
+    // eats the wet and refuses the dry — and the narrow population, which is all that
+    // survives, sees only the wet and reads as eating.
+    const facts = computeTrialFacts({
+      trial: CAT,
+      allowedFoods: [DRY_DUCK, WET_DUCK],
+      feedings: [
+        ...Array.from({ length: 21 }, (_, i) =>
+          feeding({
+            eventId: `dry${i}`,
+            occurredAt: at(`2026-07-${String(1 + i).padStart(2, '0')}`, 8),
+            foodItemId: 'dry-duck-rephotographed',
+            foodKey: 'royal caninduck dry kibble',
+            intakeRating: 'refused',
+          }),
+        ),
+        ...Array.from({ length: 21 }, (_, i) =>
+          feeding({
+            eventId: `wet${i}`,
+            occurredAt: at(`2026-07-${String(1 + i).padStart(2, '0')}`, 20),
+            foodItemId: WET_DUCK.foodItemId,
+            foodKey: WET_DUCK.foodKey,
+            intakeRating: 'all',
+          }),
+        ),
+      ],
+      nowMs: new Date(2026, 6, 22, 12).getTime(),
+    });
+    expect(facts.allowedSetUnavailable).toBe(false);
+    expect(facts.rangeRefusal).toBeNull();
+  });
+
+  it('KNOWN LIMIT — substitution DILUTES the wide share below the floor', () => {
+    // The canonical diet-trial failure mode: the prescription is refused and the owner
+    // tops the cat up with chicken. 21 refused + 42 eaten over the same 21 days is a
+    // 33% not-finished share, under `REFUSAL_SHARE`. The identical record with intact
+    // identity fires 21 of 21 (asserted below), which is what makes this a limit of the
+    // wide population rather than of the floors.
+    const substituted = Array.from({ length: 42 }, (_, i) =>
+      feeding({
+        eventId: `sub${i}`,
+        occurredAt: at(`2026-07-${String(1 + Math.floor(i / 2)).padStart(2, '0')}`, i % 2 ? 20 : 14),
+        foodItemId: 'rotisserie',
+        foodKey: 'homerotisserie chicken',
+        proteins: ['chicken'],
+        intakeRating: 'all',
+      }),
+    );
+    const refusedDry = (foodItemId: string, foodKey: string) =>
+      Array.from({ length: 21 }, (_, i) =>
+        feeding({
+          eventId: `${foodItemId}${i}`,
+          occurredAt: at(`2026-07-${String(1 + i).padStart(2, '0')}`, 8),
+          foodItemId,
+          foodKey,
+          intakeRating: 'refused',
+        }),
+      );
+    const nowMs = new Date(2026, 6, 22, 12).getTime();
+
+    const broken = computeTrialFacts({
+      trial: CAT,
+      allowedFoods: [DRY_DUCK],
+      feedings: [...refusedDry('dry-duck-rephotographed', 'royal caninduck dry kibble'), ...substituted],
+      nowMs,
+    });
+    expect(broken.allowedSetUnavailable).toBe(true);
+    expect(broken.rangeRefusal).toBeNull();
+    // The exposures are still counted and still loud — what is lost is the intake fact.
+    expect(broken.exposures.offDiet).toBeGreaterThan(0);
+
+    const intact = computeTrialFacts({
+      trial: CAT,
+      allowedFoods: [DRY_DUCK],
+      feedings: [...refusedDry(DRY_DUCK.foodItemId, DRY_DUCK.foodKey as string), ...substituted],
+      nowMs,
+    });
+    expect(intact.rangeRefusal).toMatchObject({ refusedFeedings: 21, ratedFeedings: 21, population: 'trial_diet' });
+  });
+});
+
+// ── B-530 round 2 — why the fallback gate stayed narrow ─────────────────────
+//
+// `adversarial-reviewer` ran twice. Round 1 broke the `allowedSetUnavailable` gate for
+// being too narrow; round 2 broke the obvious repair — choosing the population per
+// window on `narrow.recentRated > 0` — three separate ways. These tests pin the two
+// halves of the trade so the next attempt starts from the executed evidence rather than
+// from the same idea.
+describe('B-530 — the gate is deliberately narrow, and both directions are pinned', () => {
+  const CAT = { ...TRIAL, species: 'cat' as const };
+
+  /** Round 1's counterexample: the cat ate for a week, then the bag was
+   *  re-photographed and she refused everything against the new row. */
+  function ateThenRefusedBehindANewBag() {
+    return computeTrialFacts({
+      trial: CAT,
+      allowedFoods: [DRY_DUCK],
+      feedings: [
+        ...Array.from({ length: 7 }, (_, i) =>
+          feeding({
+            eventId: `ok${i}`,
+            occurredAt: at(`2026-07-${String(1 + i).padStart(2, '0')}`, 8),
+            foodItemId: DRY_DUCK.foodItemId,
+            foodKey: DRY_DUCK.foodKey,
+            intakeRating: 'all',
+          }),
+        ),
+        ...Array.from({ length: 42 }, (_, i) =>
+          feeding({
+            eventId: `no${i}`,
+            occurredAt: at(`2026-07-${String(8 + Math.floor(i / 2)).padStart(2, '0')}`, i % 2 ? 20 : 8),
+            foodItemId: 'dry-duck-rephotographed',
+            foodKey: 'royal caninduck dry kibble',
+            intakeRating: 'refused',
+          }),
+        ),
+      ],
+      nowMs: new Date(2026, 6, 29, 12).getTime(),
+    });
+  }
+
+  it('KNOWN LIMIT — a partial miss keeps the gate shut (round 1, → B-579/B-529)', () => {
+    // The under-fire half. Seven matched feedings keep `allowedSetUnavailable` false, so
+    // a cat refusing 42 consecutive bowls raises nothing. Expected to FLIP with B-529.
+    const facts = ateThenRefusedBehindANewBag();
+    expect(facts.allowedSetUnavailable).toBe(false);
+    expect(facts.trialDietRefusal).toBeNull();
+    expect(facts.rangeRefusal).toBeNull();
+  });
+
+  it('the repair that would fix it must not fire on an unrated-but-eaten diet (round 2)', () => {
+    // The over-fire half, and the reason the per-window repair was reverted. This owner
+    // logs the prescription twice a day and does not rate it — the modal record — and
+    // rates only the three notable events, a rival kibble refused. Selecting on "no rated
+    // trial-diet feeding in the window" routed the feline lipidosis escalation onto the
+    // rival food for a cat eating 64 bowls of its prescription.
+    const facts = computeTrialFacts({
+      trial: CAT,
+      allowedFoods: [DRY_DUCK],
+      feedings: [
+        ...Array.from({ length: 64 }, (_, i) =>
+          feeding({
+            eventId: `unrated${i}`,
+            occurredAt: at(`2026-07-${String(1 + Math.floor(i / 2)).padStart(2, '0')}`, i % 2 ? 20 : 8),
+            foodItemId: DRY_DUCK.foodItemId,
+            foodKey: DRY_DUCK.foodKey,
+          }),
+        ),
+        ...['24', '27', '30'].map((d, i) =>
+          feeding({
+            eventId: `rival${i}`,
+            occurredAt: at(`2026-07-${d}`, 14),
+            foodItemId: 'rival',
+            foodKey: 'acmerival kibble',
+            intakeRating: 'refused',
+          }),
+        ),
+      ],
+      nowMs: new Date(2026, 6, 31, 12).getTime(),
+    });
+    expect(facts.allowedSetUnavailable).toBe(false);
+    expect(facts.trialDietRefusal).toBeNull();
+    expect(facts.rangeRefusal).toBeNull();
+  });
+
+  it('never returns two refusal facts from different populations', () => {
+    // Round 2's worst finding: the card reads the now-fact first and the report reads the
+    // range fact first, so two facts measured over different rows put a smaller, staler
+    // number on the vet's safety band than on the owner's card. One population for both
+    // is what makes that unrepresentable.
+    const facts = ateThenRefusedBehindANewBag();
+    if (facts.trialDietRefusal && facts.rangeRefusal) {
+      expect(facts.trialDietRefusal.population).toBe(facts.rangeRefusal.population);
+    }
+    const broken = computeTrialFacts({
+      trial: CAT,
+      allowedFoods: [DRY_DUCK],
+      feedings: Array.from({ length: 42 }, (_, i) =>
+        feeding({
+          eventId: `m${i}`,
+          occurredAt: at(`2026-07-${String(1 + Math.floor(i / 2)).padStart(2, '0')}`, i % 2 ? 20 : 8),
+          foodItemId: 'dry-duck-rephotographed',
+          foodKey: 'royal caninduck dry kibble',
+          intakeRating: 'refused',
+        }),
+      ),
+      nowMs: new Date(2026, 6, 22, 12).getTime(),
+    });
+    expect(broken.trialDietRefusal?.population).toBe('meal_record');
+    expect(broken.rangeRefusal?.population).toBe('meal_record');
   });
 });

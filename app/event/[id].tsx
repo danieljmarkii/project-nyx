@@ -15,19 +15,21 @@ import {
   getDb,
   getEventById,
   getEventAttachment,
+  getEventAttachments,
   getEventSource,
   getMealForEvent,
   getDoseForEvent,
   getDoubleDoseFlag,
   softDeleteEvent,
-  deleteEventAttachmentLocal,
   updateMealIntake,
   updateDoseAdherence,
   updateDoseHowGiven,
   TimelineRow,
 } from '../../lib/db';
 import { uploadPhoto, getSignedUrl, compressForUpload, persistCapture, MAX_EDGE_PX } from '../../lib/storage';
-import { resolveEventPhotoDisplay } from '../../lib/eventPhoto';
+import { detachEventAttachment, detachOtherEventAttachments } from '../../lib/attachments';
+import { resolveEventPhotoDisplay, addPhotoHeroCopy } from '../../lib/eventPhoto';
+import { foodFormatTag } from '../../lib/food';
 import { supabase } from '../../lib/supabase';
 import { syncPendingEvents, syncPendingMeals, syncPendingMedicationAdministrations } from '../../lib/sync';
 import { triggerVomitAnalysis, triggerStoolAnalysis } from '../../lib/analysis';
@@ -144,7 +146,9 @@ export default function EventDetailScreen() {
   const [remoteUrlFull, setRemoteUrlFull] = useState<string | null>(null);
   const [transformFailed, setTransformFailed] = useState(false);
   const [occurredAtSource, setOccurredAtSource] = useState<'manual' | 'exif' | 'now'>('manual');
-  const [foodLabel, setFoodLabel] = useState<{ brand: string | null; product: string | null } | null>(null);
+  const [foodLabel, setFoodLabel] = useState<
+    { brand: string | null; product: string | null; format: string | null } | null
+  >(null);
   // B-325 — the food's usage class (meal | treat | other). Gates the retroactive
   // "add a med given with this" entry to real vehicles (meal/treat), mirroring the
   // completion card's own showIntake gate; 'other'/unclassified foods never show it.
@@ -211,7 +215,11 @@ export default function EventDetailScreen() {
       if (EVENT_TYPES[row.event_type as EventTypeKey]?.hasFood) {
         const meal = await getMealForEvent(id);
         if (meal) {
-          setFoodLabel({ brand: meal.food_brand, product: meal.food_product_name });
+          setFoodLabel({
+            brand: meal.food_brand,
+            product: meal.food_product_name,
+            format: meal.food_format,
+          });
           setFoodType(meal.food_type);
           const rating = meal.intake_rating;
           setIntakeRating(
@@ -427,11 +435,10 @@ export default function EventDetailScreen() {
             setTransformFailed(false);
             setPhotoViewerVisible(false);
             try {
-              await deleteEventAttachmentLocal(att.id);
-              // Best-effort remote cleanup; ignore errors (next sync of this
-              // device's local state will be authoritative)
-              supabase.storage.from('nyx-event-attachments').remove([att.storage_path]).catch(() => {});
-              supabase.from('event_attachments').delete().eq('id', att.id).then(() => {}, () => {});
+              // Local row + file, then best-effort Storage + remote row. Shared
+              // with the replace path so "detach a photo" has one implementation
+              // (B-105) — the replace used to skip this cleanup entirely.
+              await detachEventAttachment(att);
             } catch (e) {
               console.error('[event-detail] remove photo failed:', e);
               setAttachment(att);
@@ -461,7 +468,8 @@ export default function EventDetailScreen() {
       : await ImagePicker.launchImageLibraryAsync(opts);
     if (result.canceled || !result.assets[0]) return;
 
-    const captureUri = result.assets[0].uri;
+    const asset = result.assets[0];
+    const captureUri = asset.uri;
     const attId = uuid();
     const storagePath = `${event.pet_id}/${event.id}/${attId}.jpg`;
     const now = new Date().toISOString();
@@ -473,6 +481,11 @@ export default function EventDetailScreen() {
       // read the original capture; both point at identical bytes.
       const localUri = persistCapture(captureUri, `${attId}.jpg`);
       const db = getDb();
+      // B-105 — read the rows this capture is about to supersede BEFORE writing
+      // the new one. This screen is single-photo, so anything already here is
+      // being replaced; the list (rather than just the loaded `attachment`) also
+      // sweeps up duplicates left by the old behaviour.
+      const priors = await getEventAttachments(event.id);
       await db.runAsync(
         `INSERT OR REPLACE INTO event_attachments
            (id, event_id, pet_id, local_uri, storage_path, mime_type, synced, created_at)
@@ -482,8 +495,9 @@ export default function EventDetailScreen() {
       setAttachment({ id: attId, local_uri: localUri, storage_path: storagePath });
       // Compress before upload (≤1600px, q75) so the file stays under Claude's
       // 5 MB cap — also the recovery path for a historic event whose original
-      // full-size photo is too large to analyze.
-      const uploadUri = await compressForUpload(captureUri);
+      // full-size photo is too large to analyze. The picker's dimensions are
+      // passed so the cap lands on the photo's true longest edge (B-352).
+      const uploadUri = await compressForUpload(captureUri, asset.width, asset.height);
       // Fire-and-forget upload; sync retries on reconnect if it fails
       uploadPhoto('nyx-event-attachments', storagePath, uploadUri)
         .then(async () => {
@@ -503,6 +517,13 @@ export default function EventDetailScreen() {
           if (isStoolEvent(event.event_type)) triggerStoolAnalysis(event.id).catch(() => {});
         })
         .catch(console.error);
+      // Detach the rows this capture replaced — after the replacement is stored
+      // AND its upload is in flight. Order matters twice over: removing first
+      // would turn a failed insert into an event with no photo at all, and
+      // detaching before the upload starts would put a Storage round-trip in
+      // front of the owner's new photo. Never throws; the deterministic read
+      // already prefers the new row, so nothing on screen waits on this.
+      await detachOtherEventAttachments(priors, attId);
     } catch (e) {
       console.error('[event-detail] photo save failed:', e);
       Alert.alert('Could not attach photo', 'Try again.');
@@ -553,6 +574,8 @@ export default function EventDetailScreen() {
   // Which photo the hero + viewer render, and whether to show the add-photo empty
   // state. Pure + unit-tested in lib/eventPhoto.ts (transform→raw fallback; never
   // flashes an add-photo target over an existing photo mid-fallback). B-207.
+  // B-371 — the empty hero's copy. Pure + unit-tested in lib/eventPhoto.ts.
+  const addPhotoCopy = addPhotoHeroCopy(event.event_type);
   const { photoUri, showEmptyHero } = resolveEventPhotoDisplay({
     localUri,
     remoteUrl,
@@ -610,7 +633,12 @@ export default function EventDetailScreen() {
                 {/* B-062 — Lucide Camera (was a 📷 emoji) for a consistent vector
                     glyph set across the photo-affordance empty states. */}
                 <Camera size={32} color={theme.colorTextTertiary} strokeWidth={1.5} />
-                <Text style={styles.heroEmptyText}>Add photo</Text>
+                <Text style={styles.heroEmptyText}>{addPhotoCopy.action}</Text>
+                {/* B-371 — on an event whose photo feeds a read, teach what the
+                    photo is for. Null (bare action label) on every other type. */}
+                {addPhotoCopy.hint ? (
+                  <Text style={styles.heroEmptyHint}>{addPhotoCopy.hint}</Text>
+                ) : null}
               </>
             )}
           </TouchableOpacity>
@@ -655,7 +683,15 @@ export default function EventDetailScreen() {
             <View style={styles.section}>
               <Text style={styles.sectionLabel}>FOOD</Text>
               {foodLabel.product ? <Text style={styles.foodProduct}>{foodLabel.product}</Text> : null}
-              {foodLabel.brand ? <Text style={styles.foodBrand}>{foodLabel.brand}</Text> : null}
+              {/* B-568 — BRAND · FORMAT, the same meta shape the Foods tab and the
+                  picker tile use, so the detail screen names a food the way the library
+                  does. Without the format this section could not distinguish two rows
+                  of one prescription line stocked in both wet and dry. */}
+              {foodLabel.brand || foodLabel.format ? (
+                <Text style={styles.foodBrand}>
+                  {[foodLabel.brand, foodFormatTag(foodLabel.format)].filter(Boolean).join(' · ')}
+                </Text>
+              ) : null}
             </View>
           ) : null}
 
@@ -857,6 +893,13 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: theme.colorTextSecondary,
     fontWeight: theme.fontWeightMedium,
+  },
+  heroEmptyHint: {
+    fontSize: theme.textSM,
+    lineHeight: theme.lineHeightSM,
+    color: theme.colorTextTertiary,
+    textAlign: 'center',
+    paddingHorizontal: theme.space4,
   },
   body: {
     paddingHorizontal: theme.space3,

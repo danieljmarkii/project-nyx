@@ -29,8 +29,9 @@ interface Props {
  * the edge with no scrollbar, arrow, or peek, so owners picked from only the
  * handful they could see — a discoverability AND correctness problem on closed
  * single-select sets like medication Form (10) / Route (8) and food Format (10)
- * (B-146). The app already wraps this exact list in AddMedicationModal; this
- * makes capture + the detail screens consistent with it.
+ * (B-146). The regimen modal's own hand-rolled wrap was the last holdout and now
+ * routes through here too (B-167), so capture, the detail screens and the regimen
+ * form share one chip implementation.
  *
  * Rendered as an accessible radio group so a screen reader announces each option
  * and its selected state — the row of bare TouchableOpacities it replaces
