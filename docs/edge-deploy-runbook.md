@@ -210,27 +210,75 @@ for all DDL so it's recorded in migration history.
 
 ---
 
-## Drift snapshot (verified this session, 2026-06-20)
+## Deploy drift — run the check, do not read a snapshot
 
-Diff of live state (MCP) vs. `supabase/{migrations,functions}/` on disk:
+**`scripts/deploy-status.js` answers "what is live vs. what is on `main`."** It is
+the replacement for the hand-typed drift snapshot that used to sit here — that
+snapshot was written 2026-06-20 and by 2026-07-28 claimed 5 functions (there are 8)
+at versions that had moved on. A snapshot anyone has to retype is a snapshot that
+rots; this reads git and the live project and computes.
 
-- **Edge Functions — in sync.** All 5 on-disk functions are deployed + `ACTIVE`
-  (`generate-signal` v19, `extract-food-from-photo` v9, `extract-medication-from-photo`
-  v1, `analyze-vomit` v4, `delete-account` v3).
-- **Migrations — history table is sparse, and that's expected.**
-  `list_migrations` returns only **5** rows, but **22** migration files exist on
-  disk. This is **not** 17 unapplied migrations — STATUS.md documents every one as
-  applied + verified live. It's the legacy of the **dashboard-SQL-Editor-paste**
-  workflow: pasting SQL into the dashboard applies the DDL but does **not** write a
-  row to `supabase_migrations.schema_migrations`. Only migrations applied via a
-  *tracked* path (recently, MCP `apply_migration` — e.g. `medication_logging`,
-  `021_medication_photos_rls`) are recorded.
+```bash
+scripts/deploy-status.js --live live.json            # agent dumps MCP output to live.json
+scripts/deploy-status.js --live live.json --resolve  # decide the CANDIDATEs
+scripts/deploy-status.js --json                      # machine-readable
+```
 
-  **Takeaway:** `apply_migration` is strictly better than dashboard-paste because
-  it both **applies and records** — so going forward the history table becomes
-  honest on its own. The historical gap is cosmetic (the schema is live). Whether
-  to backfill the 17 older rows is a deferred PM call (logged as a backlog item),
-  **not** done here — this PR ships no schema/data change.
+`--live` takes `{ functions: [...], migrations: [...] }` exactly as
+`list_edge_functions` / `list_migrations` return them. If a function entry also
+carries `files[].content` (from `get_edge_function`), that function is compared
+**exactly**. With `SUPABASE_ACCESS_TOKEN` set, it fetches all of this itself.
+
+### Read the states literally
+
+| State | Means |
+|---|---|
+| `CURRENT` / `DRIFTED` | **Proof** — the deployed source was hashed against a fresh bundle. |
+| `CANDIDATE` | Commits touch the bundle's inputs, no deployed hash available. **A lead, not a verdict.** |
+| `LIKELY_CURRENT` | No deployed hash, and no commit has touched the inputs. |
+| `UNKNOWN` | Shallow clone, no hash — silence, *not* a clean bill of health. |
+| `NOT_DEPLOYED` | On disk, absent from the project. |
+
+**Never redeploy to resolve a `CANDIDATE`.** Resolve it by hashing (`--resolve`,
+or a token). Measured 2026-07-28 on `extract-food-from-photo`: five commits touched
+its inputs and exactly **one** changed the built artifact — the other four were
+tree-shaken out. Commit counts describe activity; only a hash describes the artifact.
+
+`--resolve` rebuilds the bundle from the tree as it stood at the deploy timestamp
+and compares. It is an **inference, not proof**: this project routinely deploys
+from a PR branch *before* merge (that is how `extract-food-from-photo` v15 came to
+predate its own merge commit), which makes `--resolve` report CHANGED on a function
+that is fine. Treat a `--resolve` verdict as strong evidence, and a token hash as truth.
+
+### Byte-fidelity: the no-token transport cannot preserve it
+
+`deploy-edge.sh` bundles with `--charset=ascii`, so non-ASCII inside a string
+literal ships as the six characters `\u2014`. The MCP deploy hop takes the bundle
+as a **JSON string**, and JSON decodes `\u2014` to a real em-dash before it is
+stored. So a function deployed without a token is byte-different from its local
+bundle while being the **identical program** (`"\u2014"` and `"—"` are the same JS
+string — verified on `extract-food-from-photo` v16: 9 occurrences, `SYSTEM_PROMPT`
+evaluating to the same 1175-character string on both sides).
+
+`deploy-status.js` normalizes `\uXXXX` on both sides before hashing for exactly
+this reason; otherwise every MCP-deployed function would read `DRIFTED` forever.
+**`scripts/deploy-edge.sh <fn> --deploy` (token) uploads the file itself and is
+byte-exact** — one more reason it is the preferred path.
+
+### Migrations are checked in BOTH directions
+
+The check reports on-disk-but-not-applied (this is how migration 036 sat marked
+`Done` for nine days without being live — B-505) **and** applied-but-no-repo-file.
+The reverse direction is not symmetry for its own sake: as of 2026-07-28 production
+carries two such rows (`complete_003_vet_visit_attachments`,
+`per_account_food_med_library_med_owner_index`), which no forward-only check would
+ever surface. It also flags two files deriving one version (the `018_` collision,
+B-506).
+
+Historical note, still true: dashboard-SQL-Editor pastes apply DDL **without**
+writing a history row, which is why the table was sparse. `apply_migration` both
+applies and records, so history becomes honest going forward; the B-162 backfill
+(2026-07-26) recorded 18 older files.
 
 ---
 
