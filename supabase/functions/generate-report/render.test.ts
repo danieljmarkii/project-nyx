@@ -166,6 +166,8 @@ function baseSnapshot(overrides: Partial<ReportSnapshot> = {}): ReportSnapshot {
       isCustomOverride: false,
       outOfWindowSymptomCount: 0,
       outOfWindowMostRecent: null,
+      outOfWindowBefore: 0,
+      outOfWindowAfter: 0,
     },
     signalment: {
       name: 'Nyx',
@@ -1406,6 +1408,24 @@ Deno.test('at-a-glance weight tile never shows an out-of-window (stale) reading'
   )
   // The Weight block discloses the stale reading with its "(before this window)" caveat…
   assert.ok(/before this window/.test(html), 'weight block carries the caveat')
+  // …and the SIDE is derived, not assumed (B-600, cold read round 11). This test
+  // asserted the literal string, so it locked the bug in: the caveat was hardcoded on
+  // the reasoning that a reading outside the window must predate it, which fails for a
+  // hand-picked window that closes in the past. On a completed trial the patient's only
+  // weight — taken after the window, at the end of the diet — read as a pre-trial
+  // baseline, which is a different clinical question.
+  const after = renderReport(
+    base({
+      scope: { ...base().scope, isCustomOverride: true, endDate: '2026-06-01', endDayNum: 20605 },
+      weight: {
+        isEmpty: false,
+        latest: { kg: 4.2, lbs: 9.3, date: '2026-06-20' },
+        trend: null,
+      },
+    }),
+  )
+  assert.ok(/after this window/.test(after), 'a reading past the window end says so')
+  assert.ok(!/before this window/.test(after))
   // …but the bare tile must NOT carry the stale number (it cannot carry the caveat).
   assert.ok(!/4\.2<\/span><small>&nbsp;kg<\/small><\/div><div class="tl">Latest weigh-in/.test(html.replace(/\s+/g, '')), 'tile does not show the stale kg')
   assert.ok(/no reading in this window/.test(html), 'tile falls to the honest empty state')

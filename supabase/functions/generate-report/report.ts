@@ -932,6 +932,24 @@ export interface ScopeInfo extends ReportScope {
    */
   outOfWindowSymptomCount: number
   outOfWindowMostRecent: string | null
+  /**
+   * The cherry-pick count, SPLIT (B-600, cold read round 11).
+   *
+   * A one-ended crop is adequately served by a scalar — everything excluded is on the
+   * side the reader can infer. A BOTH-ENDS crop is not, and the hand-picked window is
+   * the only basis that produces one: a completed 56-day trial reported through a
+   * window closing eleven days early rendered "5 symptom events fall outside (most
+   * recent May 28)" over a page whose visible trend ends on a zero week. The most
+   * recent excluded event was eight days past the window edge and three days before
+   * the trial ended, and nothing said which side any of them fell.
+   *
+   * The report advertises this guard by name — "shown so nothing is cropped to a good
+   * week" — and B-494's rule binds an advertised guard: a zone the report teaches the
+   * reader to scan may not be left under-specified, because an advertised guard reads
+   * as a complete one. The rows are in hand at the counting loop; the split is free.
+   */
+  outOfWindowBefore: number
+  outOfWindowAfter: number
 }
 
 export type ClinicalQuestionType = 'diet_trial_working' | 'symptom_monitoring'
@@ -3358,13 +3376,21 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
   // ── Cherry-pick guard (§6) — custom window only ──────────────────────────────
   let outOfWindowSymptomCount = 0
   let outOfWindowMostRecent: string | null = null
+  let outOfWindowBefore = 0
+  let outOfWindowAfter = 0
   if (scope.isCustomOverride) {
     for (const e of dedupedAll) {
       if (!REPORT_SYMPTOM_SET.has(e.type)) continue
       // An undateable event is not evidence of an out-of-window incident — skip it.
-      if (eventDayNumber(e.occurredAt, tz) === null) continue
+      const dn = eventDayNumber(e.occurredAt, tz)
+      if (dn === null) continue
       if (inWindow(e.occurredAt)) continue
       outOfWindowSymptomCount++
+      // WHICH SIDE, not just how many. See the field's note: on a both-ends crop the
+      // scalar cannot distinguish "five events before the window I picked" from "five
+      // after it", and the second is the one that matters on a completed trial.
+      if (dn < scope.startDayNum) outOfWindowBefore++
+      else outOfWindowAfter++
       if (outOfWindowMostRecent === null || e.occurredAt > outOfWindowMostRecent) outOfWindowMostRecent = e.occurredAt
     }
   }
@@ -3458,7 +3484,7 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
   return {
     generatedAt: input.now,
     timezone: tz,
-    scope: { ...scope, outOfWindowSymptomCount, outOfWindowMostRecent },
+    scope: { ...scope, outOfWindowSymptomCount, outOfWindowMostRecent, outOfWindowBefore, outOfWindowAfter },
     signalment,
     clinicalQuestion,
     safetyFlags,

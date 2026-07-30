@@ -2290,6 +2290,53 @@ Deno.test('B-600 — the affirmative in appendix C names the range it was counte
   assert.ok(/All matched the trial diet or a permitted food.*Apr 21 – Jun 12, 2026/s.test(text))
 })
 
+Deno.test('B-600 — a both-ends crop says which side its excluded events fell', () => {
+  // `vet-report-cold-read` round 11, blocking. The cherry-pick guard is advertised by
+  // name — "shown so nothing is cropped to a good week" — and B-494's rule binds an
+  // advertised guard: a zone the report teaches the reader to scan may not be left
+  // under-specified, because an advertised guard reads as a complete one.
+  //
+  // A one-ended crop is served by a scalar; everything excluded is on the side the
+  // reader can infer. A hand-picked window can crop BOTH ends, and there the same
+  // sentence hides the difference between events the reader already discounts and
+  // events sitting in the days after the window — which, on a completed trial reported
+  // through a window closing early, is the part the trial is read on. The artifact:
+  // a visible trend ending on a zero week, with the record's most recent symptom eight
+  // days past the window edge and three days before the trial ended.
+  const input = wellLoggedTrialInput({ events: [] })
+  input.dietTrials[0].startedAt = '2026-04-06'
+  input.dietTrials[0].allowedFoods = [{ ...TRIAL_FOOD, allowedFrom: '2026-04-06' }]
+  for (const d of days('2026-04-06', '2026-05-31')) {
+    input.events.push(meal({ date: d, brand: 'Royal Canin', product: 'Hydrolyzed HP', foodItemId: 'f-hp', proteins: ['soy'] }))
+  }
+  // Two before the window, three after it — including one three days before the trial ended.
+  for (const d of ['2026-04-08', '2026-04-14']) input.events.push(symptom(d))
+  for (const d of ['2026-05-24', '2026-05-28', '2026-05-30']) input.events.push(symptom(d))
+  input.requestedWindow = { startDate: '2026-04-20', endDate: '2026-05-20' }
+  const snap = assembleReport(input)
+  assert.equal(snap.scope.outOfWindowSymptomCount, 5)
+  assert.equal(snap.scope.outOfWindowBefore, 2)
+  assert.equal(snap.scope.outOfWindowAfter, 3)
+
+  const text = plain(renderReport(snap))
+  assert.ok(/5 symptom events fall outside this window — 2 before it and 3 after it/.test(text))
+
+  // A ONE-ENDED crop stays a scalar. The split would be noise where the reader can
+  // already infer the side, and every sentence that fires on every report is one the
+  // reader learns to skip.
+  const oneSided = wellLoggedTrialInput({ events: [] })
+  oneSided.dietTrials[0].startedAt = '2026-04-06'
+  oneSided.dietTrials[0].allowedFoods = [{ ...TRIAL_FOOD, allowedFrom: '2026-04-06' }]
+  for (const d of days('2026-04-06', '2026-07-02')) {
+    oneSided.events.push(meal({ date: d, brand: 'Royal Canin', product: 'Hydrolyzed HP', foodItemId: 'f-hp', proteins: ['soy'] }))
+  }
+  for (const d of ['2026-04-08', '2026-04-14']) oneSided.events.push(symptom(d))
+  oneSided.requestedWindow = { startDate: '2026-04-20', endDate: '2026-07-02' }
+  const oneText = plain(renderReport(assembleReport(oneSided)))
+  assert.ok(/2 symptom events fall outside this window \(most recent/.test(oneText))
+  assert.ok(!/before it and/.test(oneText))
+})
+
 Deno.test('B-600 — halfPartition is symmetric, in-span, and drops only an odd middle', () => {
   for (let days = 1; days <= 400; days++) {
     const start = 20_000

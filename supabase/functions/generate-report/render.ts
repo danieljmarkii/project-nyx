@@ -1001,10 +1001,26 @@ function cherryPickDisclosure(snap: ReportSnapshot): string {
   const sc = snap.scope
   if (!sc.isCustomOverride || sc.outOfWindowSymptomCount <= 0) return ''
   const recent = sc.outOfWindowMostRecent ? ` (most recent ${h(fmtLocalDay(sc.outOfWindowMostRecent, snap.timezone))})` : ''
+  // WHICH SIDE, WHEN THE CROP HAS TWO (B-600, cold read round 11). A one-ended crop is
+  // adequately served by a scalar — everything excluded is on the side the reader can
+  // infer. A hand-picked window can crop both ends, and there the same sentence hides
+  // the difference between five events the reader already knows predate the window and
+  // five sitting in the days AFTER it: on a completed trial reported through a window
+  // closing eleven days early, the excluded tail is the part the trial is read on, and
+  // the page's visible trend ended on a zero week.
+  //
+  // This guard is advertised by name ("shown so nothing is cropped to a good week"), so
+  // B-494's rule binds it — an advertised guard reads as a complete one.
+  const split =
+    sc.outOfWindowBefore > 0 && sc.outOfWindowAfter > 0
+      ? ` &mdash; ${num(sc.outOfWindowBefore)} before it and <b>${num(
+          sc.outOfWindowAfter,
+        )} after it</b>`
+      : ''
   return `
   <div class="cherry"><b>Custom range.</b> ${num(sc.outOfWindowSymptomCount)} symptom event${
     sc.outOfWindowSymptomCount === 1 ? '' : 's'
-  } fall outside this window${recent} — shown so nothing is cropped to a good week.</div>`
+  } fall outside this window${split}${recent} — shown so nothing is cropped to a good week.</div>`
 }
 
 /**
@@ -2516,11 +2532,23 @@ function weightBlock(snap: ReportSnapshot): string {
     // A latest reading exists overall (guaranteed non-null by the guard above), but none
     // inside the window.
     const latest = w.latest!
+    // "BEFORE" IS AN ASSUMPTION, NOT A FACT (B-600, cold read round 11 — blocking).
+    // The string was hardcoded on the reasoning that a reading outside the window must
+    // predate it, which holds for every window ending today and fails for the one basis
+    // that can close in the past. On a completed trial reported through a hand-picked
+    // window, the patient's ONLY weight — taken ten days after the window closed, at the
+    // end of the diet — rendered as "(before this window)" and read as a pre-trial
+    // baseline. Going in versus where she landed is a different clinical question, and
+    // nothing else on the page corrected it.
+    const latestSide =
+      latest.date > snap.scope.endDate
+        ? 'after this window'
+        : 'before this window'
     return `
   <div class="weight">
     <div class="wt-read"><span class="v num">${h(latest.kg.toFixed(1))}&nbsp;kg</span> <span class="l">&middot; latest weigh-in ${h(
       fmtDay(latest.date),
-    )} (before this window)</span><br/>
+    )} (${latestSide})</span><br/>
     <span class="l">No weigh-ins fell inside this window. Descriptive — not a diagnosis; body condition not assessed.</span></div>
   </div>`
   }
@@ -3073,8 +3101,14 @@ function changeTiming(c: ConcurrentChange): string {
     // Started in-window.
     return end ? `started ${start}, stopped ${end}` : `started ${start}`
   }
-  // Started before the window (or unrecorded start).
-  if (end) return start ? `from before this window until ${end}` : `until ${end}`
+  // Started before the window (or unrecorded start). SAME ASSUMPTION AS THE WEIGHT
+  // STRIP'S (B-600 round 11), and the same fix in waiting: `ongoing` here means the
+  // course had no in-window start, which on a past-closing window does not prove it
+  // began before the window either. `start` is rendered when known, so the ambiguity is
+  // confined to the unrecorded-start branch — named rather than left as a silent
+  // assumption, and left for the pass that has an artifact exercising it (no fixture
+  // pairs a hand-picked past window with a medication course).
+  if (end) return start ? `from ${start}, before this window, until ${end}` : `until ${end}`
   return start ? `ongoing since ${start}` : 'ongoing, start not recorded'
 }
 
@@ -4604,7 +4638,9 @@ function offDietAppendix(snap: ReportSnapshot): string {
   // could not see a rival kibble at all. These three branches each describe exactly
   // what `confounderFeedings` did.
   const subtitle = trialDerived
-    ? 'Feedings in the trial window that Culprit could not match to the trial diet or to a food on the allowed list. Each row names which check placed it here.'
+    ? `Feedings in ${
+        antigenScope === 'during the trial' ? 'the trial window' : antigenScope
+      } that Culprit could not match to the trial diet or to a food on the allowed list. Each row names which check placed it here.`
     : hasTrial
       ? 'Everything fed outside the main diet in this window. <b>No allowed-food list is recorded for this trial</b>, so these feedings were not checked against it — they are treats and human food, not a contamination finding.'
       : 'Everything fed outside the main diet — the exposures most worth weighing against the symptom pattern.'
@@ -4647,7 +4683,7 @@ function offDietAppendix(snap: ReportSnapshot): string {
   return `
   <p class="appx-title serif">Appendix C — ${
     trialDerived
-      ? 'Off-diet exposures during the trial'
+      ? `Off-diet exposures ${antigenScope}`
       : hasTrial
         ? 'Treats &amp; table food during the trial'
         : 'Treats &amp; table food'
