@@ -1497,6 +1497,21 @@ function dietTrialSection(snap: ReportSnapshot): string {
   const outside = t.trialDaysOutsideRange
   const outsideDays = outside.before + outside.after
   const truncated = outsideDays > 0
+  // ── AN EXISTENTIAL SURVIVES A SUBSET; A COUNT DOES NOT ─────────────────────
+  //
+  // The rule four review rounds converged on, written where it can be applied.
+  // "The record shows chicken in Cooper's diet during the trial" stays true however
+  // little of the trial the report sees — if it was fed in the window it was fed
+  // during the trial, and the claim only ever escalates. "Chicken ×1 · proteins fed
+  // during the trial" does not: the count is over the evidence range, and stating it
+  // in trial scope is an understatement in the reassuring direction.
+  //
+  // So: EXISTENTIAL claims about the trial keep "during the trial"; every COUNT
+  // named as a trial figure takes this phrase. Four separate sentences were found
+  // one round at a time before the rule was named.
+  const antigenScope = truncated
+    ? `in the ${num(t.trialDaysElapsed - outsideDays)} trial days this report covers`
+    : 'during the trial'
   if (truncated) {
     const shownDays = t.trialDaysElapsed - outsideDays
     const where =
@@ -1627,9 +1642,7 @@ function dietTrialSection(snap: ReportSnapshot): string {
         return `${h(capProtein(a.protein))} &times;${num(a.feedings)}${from}`
       })
       .join(', ')
-    const antigenScope = truncated
-      ? `in the ${num(t.trialDaysElapsed - outsideDays)} trial days this report covers`
-      : 'during the trial'
+
     rows.push(
       kv(
         'Antigen exposure',
@@ -1723,7 +1736,11 @@ function dietTrialSection(snap: ReportSnapshot): string {
     // composition), so both are DISCLOSED rather than papered over. Naming the exclusion
     // is what stops the tally reading as complete.
     blind.push(
-      `<b>${num(t.oralRoute.length)} dose${t.oralRoute.length === 1 ? '' : 's'} by mouth</b> during the trial carried a flavour into ${pet} (${drugs
+      // A COUNT, so it takes the scoped phrase (see the rule at `antigenScope`). This
+      // sentence exists to disclose an antigen channel the tally CANNOT hold, so
+      // halving it and labelling it "during the trial" halves the one disclosure that
+      // has no other home.
+      `<b>${num(t.oralRoute.length)} dose${t.oralRoute.length === 1 ? '' : 's'} by mouth</b> ${antigenScope} carried a flavour into ${pet} (${drugs
         .map((d) => h(d))
         .join(', ')}) &mdash; a chewable, or a dose given inside food. <b>The flavouring&rsquo;s protein is not recorded anywhere</b>, so these exposures are not in the antigen tally above and that tally does not describe them. Dosing should continue exactly as prescribed.`,
     )
@@ -2086,8 +2103,10 @@ function weightDuringTrial(snap: ReportSnapshot): string | null {
  *  SAID, and `num()` wraps the digits in markup so no template can see them. Eight,
  *  eleven and eighteen (and anything starting with them) take "an". */
 function articleFor(n: number): string {
-  const d = String(n)
-  return d[0] === '8' || d.startsWith('11') || d.startsWith('18') ? 'an' : 'a'
+  // Eleven and eighteen take "an" only as THEMSELVES — 112 is "a hundred and twelve",
+  // so a `startsWith` test rendered "an 112-day window", and 112 is one tap away (84 +
+  // §4.3's "Keep going — 4 more weeks"). Any number spoken starting with "eight" does.
+  return String(n)[0] === '8' || n === 11 || n === 18 ? 'an' : 'a'
 }
 
 function trialDayPhrase(t: ReportSnapshot['trial'], targetDays: number): string {
@@ -2110,19 +2129,39 @@ function trialDayPhrase(t: ReportSnapshot['trial'], targetDays: number): string 
   // what was actually needed.
   const asOf =
     t.trialDaysOutsideRange.after > 0 ? ` as of ${h(fmtDay(t.evidenceEndDate))}` : ''
+  // ── AND THE OVERRUN IS A FACT ABOUT NOW, WHICH THE AS-OF POSITION CANNOT CARRY ──
+  //
+  // `daysPastTarget` is derived from `dayCounter`, so on a window that closed in the
+  // past it is 0 whenever the trial had not yet passed its target BY THEN. Executed:
+  // an active 56-day trial on day 93 rendered "day 93 — 37 days past the 56-day
+  // window" through a window running to today, and "day 50 of 56 as of May 20" through
+  // one ending May 20 — the same trial, and narrowing the window DELETED the report's
+  // only staleness disclosure and replaced it with an on-track framing (six days to
+  // go) on a trial 37 days over. A floor may only ever move toward disclosing more,
+  // and that moved it the other way.
+  //
+  // Re-basing `daysPastTarget` itself onto `trialDaysElapsed` is the wrong repair: it
+  // would print "day 50 — 37 days past the 56-day window" and 50 < 56 on its face. The
+  // position is as-of and correct; the overrun is a fact about today. So they are
+  // stated as two things, each with its own time.
+  const overrunNow = t.targetDurationDays > 0 ? t.trialDaysElapsed - t.targetDurationDays : 0
+  const nowPast =
+    asOf && overrunNow > 0 && t.daysPastTarget === 0
+      ? ` (now ${num(overrunNow)} day${overrunNow === 1 ? '' : 's'} past that window)`
+      : ''
   if (t.status !== 'active') {
     // A finished trial is a SPAN, not a position. "Day 19 of 28" on a trial stopped
     // at day 19 reads as one still nine days from its target.
     return `${num(t.dayCounter)} day${
       t.dayCounter === 1 ? '' : 's'
-    }${asOf}, of ${articleFor(targetDays)} ${num(targetDays)}-day window`
+    }${asOf}${nowPast}, of ${articleFor(targetDays)} ${num(targetDays)}-day window`
   }
   if (t.daysPastTarget > 0) {
-    return `day ${num(t.dayCounter)}${asOf} &mdash; ${num(t.daysPastTarget)} day${
+    return `day ${num(t.dayCounter)}${asOf}${nowPast} &mdash; ${num(t.daysPastTarget)} day${
       t.daysPastTarget === 1 ? '' : 's'
     } past the ${num(targetDays)}-day window`
   }
-  return `day ${num(t.dayCounter)} of ${num(targetDays)}${asOf}`
+  return `day ${num(t.dayCounter)} of ${num(targetDays)}${asOf}${nowPast}`
 }
 
 /**
@@ -2231,19 +2270,22 @@ function exposureSentences(t: NonNullable<ReportSnapshot['trial']>): string[] {
   // This is the failure the B-529 wrap named and the B-532 session hit again: fixing
   // a composition in one place and leaving an equivalent one live in another. Both
   // phrasings now derive from one pair of values.
-  const feedingsAreLogged = `feedings are ${
-    t.trialDaysOutsideRange.before + t.trialDaysOutsideRange.after > 0
-      ? `counted over ${h(fmtRange(t.evidenceStartDate, t.evidenceEndDate))}`
-      : 'logged over the trial'
-  }.`
-  const feedingScope =
-    t.trialDaysOutsideRange.before + t.trialDaysOutsideRange.after > 0
-      // "COUNTED OVER", NOT "LOGGED". Round 10: "23 feedings logged Jun 2 – Jul 2"
-      // reads as the span the feedings OCCURRED over, and here they occurred Jun 22 –
-      // Jul 2 — so the misread is toward the record being more evenly spread than it
-      // is. The phrase names a scope, and has to sound like one.
-      ? `feedings counted over ${h(fmtRange(t.evidenceStartDate, t.evidenceEndDate))}`
-      : 'feedings in total'
+  const feedingRange = h(fmtRange(t.evidenceStartDate, t.evidenceEndDate))
+  const feedingsAreLogged = `feedings are counted over ${feedingRange}.`
+  // "COUNTED OVER", NOT "LOGGED": round 10 found "23 feedings logged Jun 2 – Jul 2"
+  // reads as the span the feedings OCCURRED over, which was narrower — a misread
+  // toward the record being more evenly spread than it is. The phrase names a scope
+  // and has to sound like one.
+  //
+  // AND UNCONDITIONALLY, NOT BEHIND `trialDaysOutsideRange`. That gate measures how
+  // much of the TRIAL the scope cuts, and this sentence is read in the frame of the
+  // WINDOW — which the gate says nothing about. Executed: a trial ending Jun 12 inside
+  // a window running to Jul 2 scores {0,0} and printed the bolded, undated "53
+  // feedings in total — all 53 matched the trial diet or a permitted food" over a page
+  // whose own appendix E listed 40 chicken feedings fed Jun 13 – Jul 2. "In total" was
+  // TRUE of the trial and false in the frame it was read in. An affirmative that always
+  // states its own dates cannot be carried past them and needs no predicate.
+  const feedingScope = `feedings counted over ${feedingRange}`
   if (offDiet > 0) {
     const parts: string[] = []
     if (byRung.derived_protein > 0) {
@@ -4554,7 +4596,10 @@ function offDietAppendix(snap: ReportSnapshot): string {
     const permitted = snap.trial!.permittedFoods.filter((f) => f.feedings > 0 && f.role !== 'primary_diet')
     if (permitted.length > 0) {
       tallyParts.push(
-        `<b>Permitted extras fed during the trial:</b> ${permitted
+        // A COUNT, and the one this file's own comment calls "what turns an allowed
+        // list from a rule into evidence" — it sat one line under the already-scoped
+        // antigen sentence, disagreeing with it about the same feedings.
+        `<b>Permitted extras fed ${antigenScope}:</b> ${permitted
           .map((f) => `${h(f.label)} &times;${num(f.feedings)}`)
           .join(', ')} — on the allowed list, and counted here because the exposure is the animal&rsquo;s even when the compliance is not in question.`,
       )
@@ -4638,8 +4683,8 @@ function offDietAppendix(snap: ReportSnapshot): string {
   // could not see a rival kibble at all. These three branches each describe exactly
   // what `confounderFeedings` did.
   const subtitle = trialDerived
-    ? `Feedings in ${
-        antigenScope === 'during the trial' ? 'the trial window' : antigenScope
+    ? `Feedings ${
+        antigenScope === 'during the trial' ? 'in the trial window' : antigenScope
       } that Culprit could not match to the trial diet or to a food on the allowed list. Each row names which check placed it here.`
     : hasTrial
       ? 'Everything fed outside the main diet in this window. <b>No allowed-food list is recorded for this trial</b>, so these feedings were not checked against it — they are treats and human food, not a contamination finding.'

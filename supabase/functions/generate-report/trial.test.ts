@@ -326,7 +326,12 @@ Deno.test('§12 — page 1, the tile and Appendix C report the SAME off-diet cou
   assert.ok(/2 off-diet exposures/.test(text), 'the Appendix C caption counts the same set')
   assert.ok(/Feedings not matched to the trial diet/.test(text), 'the At-a-glance tile')
   assert.ok(!/42 off-diet/.test(text), 'nowhere reports the pre-re-base number')
-  assert.ok(/74 feedings in total — 72 matched, 2 did not/.test(text), 'and page 1 states the same two')
+  // The count names the range it was counted over rather than claiming a trial total
+  // (B-600): "in total" was true of the trial and read in the frame of the window.
+  assert.ok(
+    /74 feedings counted over Jun 1 – Jul 2, 2026 — 72 matched, 2 did not/.test(text),
+    'and page 1 states the same two, over a named range',
+  )
 })
 
 // ── §12 — every caption matches the computation beneath it ───────────────────
@@ -2337,6 +2342,70 @@ Deno.test('B-600 — a both-ends crop says which side its excluded events fell',
   assert.ok(!/before it and/.test(oneText))
 })
 
+Deno.test('B-600 — narrowing a window may not delete the overrun disclosure', () => {
+  // `adversarial-reviewer` pass 4 ⑤. `daysPastTarget` is derived from `dayCounter`, so
+  // on a window that closed in the past it is 0 whenever the trial had not yet passed
+  // its target BY THEN. Executed: an active 56-day trial on day 93 rendered "day 93 —
+  // 37 days past the 56-day window" through a window running to today, and "day 50 of
+  // 56 as of May 20" through one ending May 20. The same trial — and narrowing the
+  // window deleted the report's only staleness disclosure and replaced it with an
+  // on-track framing on a trial 37 days over. A floor may only ever move toward
+  // disclosing more.
+  //
+  // Re-basing `daysPastTarget` itself is the wrong repair: "day 50 — 37 days past the
+  // 56-day window" is 50 < 56 on its face. The position is as-of and correct; the
+  // overrun is a fact about today, so they are two statements with their own times.
+  function at(windowEnd: string | null) {
+    const input = wellLoggedTrialInput({ events: [] })
+    input.dietTrials[0].startedAt = '2026-04-01'
+    input.dietTrials[0].targetDurationDays = 56
+    input.dietTrials[0].allowedFoods = [{ ...TRIAL_FOOD, allowedFrom: '2026-04-01' }]
+    for (const d of days('2026-04-01', '2026-07-02')) {
+      input.events.push(meal({ date: d, brand: 'Royal Canin', product: 'Hydrolyzed HP', foodItemId: 'f-hp', proteins: ['soy'] }))
+    }
+    if (windowEnd) input.requestedWindow = { startDate: '2026-04-01', endDate: windowEnd }
+    return assembleReport(input)
+  }
+  const toToday = at(null)
+  assert.equal(toToday.trial!.daysPastTarget, 37)
+  assert.ok(/day 93 — 37 days past the 56-day window/.test(plain(renderReport(toToday))))
+
+  const narrowed = at('2026-05-20')
+  assert.equal(narrowed.trial!.dayCounter, 50, 'the position is as of the window end')
+  assert.equal(narrowed.trial!.daysPastTarget, 0, 'and it was not past target then')
+  assert.equal(narrowed.trial!.trialDaysElapsed, 93, 'but the trial is 37 days over today')
+  const text = plain(renderReport(narrowed))
+  // The position keeps its own time; the overrun keeps its own.
+  assert.ok(/day 50 of 56 as of May 20 \(now 37 days past that window\)/.test(text))
+})
+
+Deno.test('B-600 — every trial-scoped COUNT takes the scoped phrase; existentials keep theirs', () => {
+  // `adversarial-reviewer` pass 4 ③/④, and the rule that stops this recurring: an
+  // EXISTENTIAL claim survives a subset ("the record shows chicken in Cooper's diet
+  // during the trial" is true however little of the trial the report sees, and only
+  // ever escalates); a COUNT does not. Four sentences were found one round at a time
+  // before the distinction was named.
+  const input = truncatedTrialInput()
+  // A vet-approved chew carrying a second protein, fed daily across the whole trial —
+  // "what turns an allowed list from a rule into evidence".
+  input.dietTrials[0].allowedFoods = [
+    TRIAL_FOOD,
+    { ...PERMITTED_TREAT, allowedFrom: '2026-04-21', proteins: ['soy', 'chicken'], ingredientsNotes: 'Soy, chicken by-product meal' },
+  ]
+  for (const d of [...days('2026-04-21', '2026-06-01'), ...days('2026-06-22', '2026-07-02')]) {
+    input.events.push(meal({ date: d, time: '17:00:00', brand: 'Royal Canin', product: 'Hydrolyzed Treats', foodItemId: 'f-chew', foodType: 'treat', proteins: ['soy', 'chicken'], ingredientsNotes: 'Soy, chicken by-product meal' }))
+  }
+  const text = plain(renderReport(assembleReport(input)))
+  // Every COUNT names the trial days the report covers…
+  assert.ok(!/Permitted extras fed during the trial/.test(text))
+  assert.ok(/Permitted extras fed in the 31 trial days this report covers/.test(text))
+  assert.ok(!/Proteins fed during the trial/.test(text))
+  assert.ok(/Antigen exposures in the 31 trial days this report covers/.test(text))
+  assert.ok(!/Off-diet exposures during the trial/.test(text))
+  // …and the doubled preposition the heading fix introduced is gone (cold read r12).
+  assert.ok(!/ in in /.test(text))
+})
+
 Deno.test('B-600 — halfPartition is symmetric, in-span, and drops only an odd middle', () => {
   for (let days = 1; days <= 400; days++) {
     const start = 20_000
@@ -2363,7 +2432,12 @@ Deno.test('B-600 — the disclosure is silent when the window spans the whole tr
   assert.ok(!/of a trial that has run/.test(text))
   assert.ok(!/outside this report’s window/.test(text))
   assert.ok(/of the trial window and supports interpreting it/.test(text))
-  assert.ok(/feedings in total/.test(text))
+  // The feeding count names its range on EVERY report, truncated or not — "in total"
+  // is gone entirely. `trialDaysOutsideRange` is the wrong predicate for a sentence
+  // read in the frame of the window (adversarial pass 4 ①), and a claim that always
+  // carries its own dates cannot be carried past them.
+  assert.ok(!/feedings in total/.test(text))
+  assert.ok(/feedings counted over Jun 1 – Jul 2, 2026/.test(text))
 })
 
 Deno.test('B-600 — a truncated report that IS well logged vouches for the window only', () => {
