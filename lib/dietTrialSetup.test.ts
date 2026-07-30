@@ -43,7 +43,7 @@ jest.mock('./utils', () => {
 });
 
 import {
-  buildTrialRows, canStartTrial, countPendingTrialSync, defaultDurationDays, describeActiveTrial,
+  buildTrialRows, canStartTrial, defaultDurationDays, describeActiveTrial,
   durationHelperLine, endActiveTrial, foodLabel, formatTrialEndDate,
   extendTrial, getActiveTrialForPet, permittedRoleForFood, secondTrialIntro, startDietTrial,
   stopReasonOptions, trialEndDayKey, trialSetupLines, TRIAL_RECORD_DISCLOSURE,
@@ -447,34 +447,9 @@ describe('every trial write bumps the hydration tick (B-534)', () => {
   });
 });
 
-describe('countPendingTrialSync (B-534)', () => {
-  it('sums unsynced parents AND allowed-set rows, scoped to the pet', async () => {
-    mockGetFirstAsync.mockResolvedValueOnce({ pending: 3 });
-    await expect(countPendingTrialSync('pet-1')).resolves.toBe(3);
-    const [sql, params] = mockGetFirstAsync.mock.calls[0] as [string, unknown[]];
-    expect(sql).toContain('FROM diet_trials');
-    // The allowed set matters too: a trial row that landed without its
-    // `diet_trial_foods` children gives the server a partial primary_diet set,
-    // and the report would classify the missing trial food's meals off-diet.
-    expect(sql).toContain('FROM diet_trial_foods');
-    expect(sql).toContain('synced = 0');
-    expect(params).toEqual(['pet-1', 'pet-1']);
-  });
-
-  it('deliberately counts quarantined rows — the server lacks them either way', async () => {
-    // The push queue filters `sync_error IS NULL`; this count must NOT, or a
-    // quarantined end-of-trial clears the owner's warning while the server still
-    // renders the trial as running forever.
-    mockGetFirstAsync.mockResolvedValueOnce({ pending: 1 });
-    await countPendingTrialSync('pet-1');
-    const [sql] = mockGetFirstAsync.mock.calls[0] as [string];
-    expect(sql).not.toContain('sync_error');
-  });
-
-  it('reads a missing row as 0, never NaN', async () => {
-    await expect(countPendingTrialSync('pet-1')).resolves.toBe(0);
-  });
-});
+// B-534's report gate is `flushBeforeReport` in lib/pdf.ts, tested there — a
+// trial-scoped count briefly lived here and was removed by the adversarial pass
+// (the scoping was the defect; see the note in dietTrialSetup.ts).
 
 // ── Screen D — the ordered second-trial gate ────────────────────────────────
 

@@ -353,8 +353,10 @@ export const OUTCOME_QUESTION = 'Does that match what you’ve seen?';
  *  above a Save button reads as a validation error waiting to happen, and an
  *  owner who has nothing to add second-guesses the record instead of saving it.
  *  "The counts go on the report either way" is literally true — the report
- *  renders the trial block from the record and omits the owner line when
- *  unanswered (`render.ts` renders it only `if (t.outcome)`). */
+ *  renders the trial block from the record and omits the owner's VERDICT line
+ *  when unanswered, while a typed note still reaches the vet on its own row
+ *  (`render.ts`'s owner's-read/owner's-note pair; the adversarial pass caught
+ *  the first cut dropping a skipped-radio owner's note from the artifact). */
 export const OUTCOME_QUESTION_NOTE =
   'Culprit reports what happened; your vet decides what it means. Your read goes ' +
   'on the report next to these counts. Answering is optional — the counts go on ' +

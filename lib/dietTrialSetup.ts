@@ -520,33 +520,12 @@ export async function getActiveTrialForPet(petId: string): Promise<ActiveTrialSu
   };
 }
 
-/** Trial rows (parent or allowed-set) this device holds that the server does not
- *  — B-534's report-race half.
- *
- *  `generate-report` reads live Supabase, while every trial write here is
- *  local-first with a fire-and-forget push. So "end trial → tap Open vet report"
- *  is a race the owner loses on any weak signal: the Edge Function renders the
- *  server's still-`active` row and an ended trial reads to the vet as ongoing —
- *  the B-455 harm arriving via timing. The report screen calls this BEFORE
- *  generating; a non-zero answer means "flush first, and if rows still hold out,
- *  tell the owner the report may be behind".
- *
- *  DELIBERATELY COUNTS QUARANTINED ROWS TOO (`synced = 0` regardless of
- *  `sync_error`). A quarantined row is one no flush will move, but it is still
- *  local truth the server lacks — for "is the report's source current?" the
- *  honest answer is no either way. The flush the caller runs simply no-ops on
- *  them (the push queue filters `sync_error IS NULL`), and the residue keeps the
- *  owner's warning up rather than clearing it by wishful accounting. */
-export async function countPendingTrialSync(petId: string): Promise<number> {
-  const db = getDb();
-  const row = await db.getFirstAsync<{ pending: number }>(
-    `SELECT
-       (SELECT COUNT(*) FROM diet_trials WHERE pet_id = ? AND synced = 0) +
-       (SELECT COUNT(*) FROM diet_trial_foods WHERE pet_id = ? AND synced = 0) AS pending`,
-    [petId, petId],
-  );
-  return Number(row?.pending ?? 0);
-}
+// B-534's report-race half lives in `lib/pdf.ts` (`flushBeforeReport`), NOT
+// here, and the location is a finding rather than a preference: a first cut put
+// a trial-scoped pending count in this file, and the adversarial pass showed the
+// scoping itself was the defect — twelve unsynced refused BOWLS (the trial row
+// long synced) produced an empty safety band on a refusing cat, undisclosed.
+// The report reads every queue, so its gate counts every queue.
 
 /**
  * End the running trial so a new one can start (mock screen D's primary action).

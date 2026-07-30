@@ -450,6 +450,36 @@ Deno.test('§12 — a report generated the day after completion still renders th
   }
 })
 
+Deno.test('R4 (B-536) — a typed note reaches the vet even when the outcome radio was skipped', () => {
+  // R4 made the outcome question explicitly optional, and the adversarial pass
+  // executed the consequence the first cut shipped: an owner who skipped the
+  // radio but typed into "Anything you want your vet to know" had the sentence
+  // saved and then silently absent from the artifact — the only render site was
+  // gated on `t.outcome`. The verdict line is omitted (that IS R4's ruling);
+  // the owner's own words to the clinician are not.
+  const input = wellLoggedTrialInput()
+  input.dietTrials[0].status = 'completed'
+  input.dietTrials[0].completedAt = '2026-07-01'
+  input.dietTrials[0].endedAt = '2026-07-01'
+  input.dietTrials[0].outcome = null
+  input.dietTrials[0].outcomeNotes = 'She still scratches at night and vomited twice last week.'
+  const text = plain(renderReport(assembleReport(input)))
+  assert.ok(/The owner added: “She still scratches at night and vomited twice last week\.”/.test(text))
+  assert.ok(/Owner-reported, not a finding/.test(text), 'attribution survives the verdict-less form')
+  assert.ok(!/The owner reported/.test(text), 'no verdict sentence is fabricated from a skipped radio')
+
+  // And with neither verdict nor note, the row stays absent entirely — R4's
+  // "omits the owner line when unanswered", unchanged.
+  const bare = wellLoggedTrialInput()
+  bare.dietTrials[0].status = 'completed'
+  bare.dietTrials[0].completedAt = '2026-07-01'
+  bare.dietTrials[0].endedAt = '2026-07-01'
+  bare.dietTrials[0].outcome = null
+  bare.dietTrials[0].outcomeNotes = null
+  const bareText = plain(renderReport(assembleReport(bare)))
+  assert.ok(!/Owner&rsquo;s read|Owner’s read|Owner’s note|The owner added/.test(bareText))
+})
+
 Deno.test('B-455 — an ABANDONED trial does not render as an intervention still under way', () => {
   // `completed_at` is NULL on an abandoned trial and `ended_at` was never selected,
   // so `report.ts` read the null end as "open-ended → active through the window end"
