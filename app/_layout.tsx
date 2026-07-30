@@ -79,13 +79,21 @@ export default function RootLayout() {
       // encrypted storage got kicked to the login wall over a network blip.
       const decision = coldStartDecision(session, error);
       if (decision === 'proceed') {
+        // Writing the store is the routing here: the Landing (app/(auth)/index) is
+        // the cold-start initial route — `(auth)/index` beats `(tabs)/index` for
+        // "/" in expo-router's group sort — and its session guard replaces to the
+        // tabs the moment this write lands. For months nothing performed that
+        // route at all, which was the TestFlight login-every-launch bug: the
+        // session restored + refreshed fine, and the owner was still looking at
+        // the login wall.
         setSession(session);
       } else if (decision === 'to-auth') {
         // Genuinely no stored session (fresh install / cold start after a real
         // sign-out). The Signal-led Landing (app/(auth)/index) is the unauthenticated
         // entry point (B-251 PR 5) — a returning-but-logged-out owner taps "Log in"
-        // from there. A live session skips straight past auth; the usePet hook (in
-        // the tabs layout) then fetches the pet and redirects to onboarding if none.
+        // from there. A live session instead redirects off the Landing via its
+        // session guard; the usePet hook (in the tabs layout) then fetches the pet
+        // and redirects to onboarding if none.
         setSession(null);
         // …EXCEPT on a cold start FROM an auth link (B-432's email confirmation;
         // B-280's recovery link next). Those links have no session BY DEFINITION —
@@ -98,15 +106,19 @@ export default function RootLayout() {
           router.replace('/(auth)');
         }
       } else {
-        // retain — a transient refresh failure. Keep the owner in the app (their
-        // local data is intact, offline-first) instead of bouncing to login, and
-        // crucially do NOT null the store: a good session may already have arrived
-        // (or is about to) via INITIAL_SESSION or the autoRefresh ticker auth-js
-        // starts on init, and setSession(null) here would clobber it and needlessly
-        // tear down sync (useSync keys on `session`). Leave the store as-is and force
-        // an immediate refresh retry so recovery isn't gated on the next ~30s tick;
-        // a real logout would instead arrive as SIGNED_OUT and route from the
-        // listener below.
+        // retain — a transient refresh failure. Do NOT null the store: a good
+        // session may already have arrived (or is about to) via INITIAL_SESSION or
+        // the autoRefresh ticker auth-js starts on init, and setSession(null) here
+        // would clobber it and needlessly tear down sync (useSync keys on
+        // `session`). Leave the store as-is and force an immediate refresh retry so
+        // recovery isn't gated on the next ~30s tick; when it succeeds,
+        // TOKEN_REFRESHED writes the store and the Landing's session guard routes
+        // in. A real logout would instead arrive as SIGNED_OUT and route from the
+        // listener below. Known limit (B-609): on a genuinely OFFLINE cold start
+        // the retry can't succeed, so the owner waits on the Landing with the auth
+        // CTAs rather than reaching Home on local data — reaching Home there needs
+        // local-first pet hydration (usePet bails without a user), not a routing
+        // change here.
         supabase.auth.startAutoRefresh().catch(() => {});
       }
       // Release the initial-load gate only after the session decision above, so a

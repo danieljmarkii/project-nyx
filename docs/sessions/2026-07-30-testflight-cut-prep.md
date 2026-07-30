@@ -1,6 +1,6 @@
 # TestFlight cut prep — repo repair, #497 re-cut, and the definitive gate list
 
-**Date:** 2026-07-30
+**Date:** 2026-07-30 · **Outcome:** shipped via #514
 
 PM asked: with diet trial (B-417) and Vet Files (B-478) both shipped, what is the
 absolute minimum remaining work to cut the next TestFlight build? This session's
@@ -59,6 +59,8 @@ that could be done immediately.
 Both briefed sessions ran and merged while this PR sat: **#515** (Bucket B — B-534/B-535/B-536/B-538, Bucket B's code now DONE) and **#516** (B-532 + B-596/B-599; fresh cold read CLINIC-READY ×3 — but #515 filed **B-600** into Bucket A the same day, so the redeploy hold does NOT lift; the gate is now B-600 + a re-read that covers it). #516 also repaired the two committed conflict blocks independently, with the identical resolution — so this PR's repair half became redundant and merged cleanly.
 
 `origin/main` was merged into this branch and resolved newest-truth-wins: main's ⛔ paragraph, "Do NOT cut" item, B-532 row and backlog tail (B-600–B-608) kept; this PR's "#502 merged" items, B-533 update tail, and the Edge-deploys block kept (its `generate-report` bullet updated to the B-600 gate). What this PR still uniquely carries: the `app.json` 1.2.0 OTA fence, the CLAUDE.md token-row flip, the B-485/B-478(G4)/B-533 backlog records, the G4 STATUS closure, and the fix for the stale "generate-signal needs no deploy" claim.
+
+Then, mid-wrap, **#517 closed B-600** (cold read CLINIC-READY on all FIVE artifacts, twice consecutively) and **#518** landed the restored-session login fix — a second `main` merge picked both up, and the Edge-deploys block now records the `generate-report` gate as **CLEAR**: Bucket A is empty and both deploys wait only on the PM running them from the Codespace.
 
 ## Not done here, deliberately
 
