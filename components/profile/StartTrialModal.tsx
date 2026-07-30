@@ -63,8 +63,13 @@ interface Props {
   /** A trial now exists — the card reloads. */
   onStarted: () => void;
   /** The owner wants to capture a food that isn't in the library yet. The host
-   *  dismisses this sheet and routes to `/food-capture`; the form's state survives,
-   *  so re-opening resumes where they left off with the new food available. */
+   *  dismisses this sheet, routes to `/food-capture`, AND re-opens it when the
+   *  tab regains focus (B-535) — the form's state survives because this
+   *  component stays mounted, so the re-open resumes where they left off with
+   *  the new food available in the picker. Preserving the form without the
+   *  re-open was the pre-ship review's BROKEN-class finding: food-capture ends
+   *  in `router.dismissAll()`, so the owner landed back on the tab modal-less
+   *  and concluded the trial saved. */
   onAddFood: () => void;
   /** Screen C's quiet action. */
   onLogFirstMeal: () => void;
@@ -285,9 +290,11 @@ export function StartTrialModal({
             onPickFood={toggleFood}
             // The trial food is usually a bag the owner was handed ten minutes
             // ago, so "not in the library yet" is the COMMON case here, not the
-            // edge one. The host dismisses this sheet and routes to the capture
-            // flow; the form's values survive because this component stays
-            // mounted, so re-opening resumes with the new food in the list.
+            // edge one. The host dismisses this sheet, routes to the capture
+            // flow, and re-opens it on return (B-535); the form's values survive
+            // because this component stays mounted, and the re-open lands on the
+            // form step (the visible-effect re-runs), with the new food in the
+            // picker one tap away.
             onAddNew={onAddFood}
           />
         </SafeAreaView>

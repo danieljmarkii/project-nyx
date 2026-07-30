@@ -7,14 +7,23 @@
 // (shareReportPdf) is integration, verified on-device; the modules are mocked here
 // only so importing pdf.ts doesn't drag native code into jest.
 
-import { reportPdfFilename, generateVetReport, shareReportPdf, type VetReport } from './pdf';
+import {
+  flushBeforeReport, reportFreshnessLine, reportPdfFilename, generateVetReport,
+  shareReportPdf, type VetReport,
+} from './pdf';
 import { supabase } from './supabase';
+import { getSyncStatus } from './db';
+import { syncNow } from './sync';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 
 jest.mock('./supabase', () => ({
   supabase: { functions: { invoke: jest.fn() } },
 }));
+// The freshness gate's two dependencies — mocked at the module edge so the gate's
+// control flow (the part the adversarial pass broke) is what the tests exercise.
+jest.mock('./db', () => ({ getSyncStatus: jest.fn() }));
+jest.mock('./sync', () => ({ syncNow: jest.fn() }));
 jest.mock('expo-print', () => ({ printToFileAsync: jest.fn() }));
 jest.mock('expo-sharing', () => ({ isAvailableAsync: jest.fn(), shareAsync: jest.fn() }));
 
@@ -145,5 +154,97 @@ describe('shareReportPdf', () => {
     const ok = await shareReportPdf(report);
     expect(ok).toBe(true);
     expect(mockedShare).toHaveBeenCalledWith('file:///cache/print-tmp.pdf', expect.anything());
+  });
+});
+
+// ── B-534 — the freshness gate ──────────────────────────────────────────────
+//
+// The adversarial pass executed seven dependency-failure shapes against the
+// first cut and three of them silently cleared the disclosure while the code
+// held positive evidence of unsent rows. These tests pin every shape.
+
+describe('flushBeforeReport (B-534)', () => {
+  const mockedStatus = getSyncStatus as jest.Mock;
+  const mockedSyncNow = syncNow as jest.Mock;
+  const status = (pendingCount: number, quarantinedCount = 0) => ({
+    pendingCount, oldestPendingAt: null, quarantinedCount,
+  });
+
+  beforeEach(() => {
+    mockedStatus.mockReset();
+    mockedSyncNow.mockReset().mockResolvedValue(undefined);
+  });
+
+  it('nothing pending → no flush, clean counts', async () => {
+    mockedStatus.mockResolvedValueOnce(status(0));
+    await expect(flushBeforeReport()).resolves.toEqual({ pending: 0, quarantined: 0 });
+    expect(mockedSyncNow).not.toHaveBeenCalled();
+  });
+
+  it('pending rows that the flush lands → clean counts', async () => {
+    mockedStatus.mockResolvedValueOnce(status(3)).mockResolvedValueOnce(status(0));
+    await expect(flushBeforeReport()).resolves.toEqual({ pending: 0, quarantined: 0 });
+    expect(mockedSyncNow).toHaveBeenCalledTimes(1);
+  });
+
+  it('pending rows the flush cannot move (offline no-op) → counts stand', async () => {
+    mockedStatus.mockResolvedValueOnce(status(3)).mockResolvedValueOnce(status(3));
+    await expect(flushBeforeReport()).resolves.toEqual({ pending: 3, quarantined: 0 });
+  });
+
+  it('FAIL-SAFE: syncNow throwing must not clear a positive count', async () => {
+    // The adversarial break: `stillPending` was only ever raised by the
+    // re-count, so a throw here reported "current" with unsent rows in hand.
+    mockedStatus.mockResolvedValueOnce(status(2));
+    mockedSyncNow.mockRejectedValueOnce(new Error('boom'));
+    await expect(flushBeforeReport()).resolves.toEqual({ pending: 2, quarantined: 0 });
+  });
+
+  it('FAIL-SAFE: the re-count throwing must not clear a positive count', async () => {
+    mockedStatus.mockResolvedValueOnce(status(2)).mockRejectedValueOnce(new Error('boom'));
+    await expect(flushBeforeReport()).resolves.toEqual({ pending: 2, quarantined: 0 });
+  });
+
+  it('the first count failing is silence, not a standing false alarm', async () => {
+    // With no evidence either way, warning on every report whenever a local
+    // read hiccups would be the B-398 wrong-advice-forever failure inverted.
+    mockedStatus.mockRejectedValueOnce(new Error('boom'));
+    await expect(flushBeforeReport()).resolves.toEqual({ pending: 0, quarantined: 0 });
+    expect(mockedSyncNow).not.toHaveBeenCalled();
+  });
+
+  it('quarantined-only rows skip the flush (nothing a connection can move) but surface', async () => {
+    mockedStatus.mockResolvedValueOnce(status(0, 2));
+    await expect(flushBeforeReport()).resolves.toEqual({ pending: 0, quarantined: 2 });
+    expect(mockedSyncNow).not.toHaveBeenCalled();
+  });
+});
+
+describe('reportFreshnessLine (B-534, the B-398 two-state rule)', () => {
+  it('is silent when the record is current', () => {
+    expect(reportFreshnessLine({ pending: 0, quarantined: 0 })).toBeNull();
+  });
+
+  it('pending → the connection remedy', () => {
+    const line = reportFreshnessLine({ pending: 3, quarantined: 0 })!;
+    expect(line).toContain('hasn’t synced yet');
+    expect(line).toContain('this report may not include it');
+    expect(line).toContain('Connect to the internet');
+  });
+
+  it('quarantined LEADS, and never gets the connection advice', () => {
+    // "waiting for a connection" is true of a pending row and a lie about a
+    // quarantined one (store/syncStore.ts) — the adversarial pass caught the
+    // first cut telling a quarantined owner to connect, forever.
+    const line = reportFreshnessLine({ pending: 5, quarantined: 2 })!;
+    expect(line).toContain('couldn’t be saved to your records');
+    expect(line).toContain('History');
+    expect(line).not.toContain('Connect to the internet');
+  });
+
+  it('speaks singular for one quarantined entry', () => {
+    const line = reportFreshnessLine({ pending: 0, quarantined: 1 })!;
+    expect(line).toContain('1 entry');
+    expect(line).toContain('may not include it');
   });
 });

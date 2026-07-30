@@ -1615,6 +1615,22 @@ function dietTrialSection(snap: ReportSnapshot): string {
         `The owner reported ${pet} was <b>${h(outcomeLabel(t.outcome))}</b> at the end of the trial.${notes} Owner-reported, not a finding.`,
       ),
     )
+  } else if (t.outcomeNotes) {
+    // A NOTE WITHOUT A VERDICT STILL REACHES THE VET. R4 made the outcome
+    // question explicitly optional, and the adversarial pass executed what that
+    // made likely: an owner skips the radio, types "she still scratches at
+    // night" into the field labelled "Anything you want your vet to know", and
+    // the sentence — saved by `endActiveTrial` regardless of outcome — was
+    // silently absent from the artifact, because this row's only render site
+    // was gated on `t.outcome`. R4's "the report omits the owner line when
+    // unanswered" governs the VERDICT, not the owner's own words addressed to
+    // the clinician. Same attribution rule as above, no verdict implied.
+    rows.push(
+      kv(
+        'Owner&rsquo;s note',
+        `The owner added: &ldquo;${h(t.outcomeNotes)}&rdquo; Owner-reported, not a finding.`,
+      ),
+    )
   }
 
   // ── Element 2: the interpretability statement (§7.2) ────────────────────────

@@ -139,12 +139,22 @@ export const MIN_TRIAL_SCOPE_DAYS = 28
  * How long after a trial ENDS it still anchors the window (§7 AC: "a report
  * generated the day after completion still renders the trial section").
  *
- * Short on purpose. The report that matters is the one sent in the days after the
- * milestone; a trial that finished two months ago is history, and letting it keep
- * the anchor would hold the window open across a stretch the trial no longer
- * describes.
+ * NINETY DAYS — R5 (PM, 2026-07-27; B-538). The first cut was 14, argued as
+ * "the report that matters is the one sent in the days after the milestone" —
+ * and the recheck-slip case showed that sizes the grace off the wrong clock.
+ * Vet appointments book three-plus weeks out, so at day 15 the most valuable
+ * report the feature produces — the full trial report, for the recheck the
+ * trial was run FOR — silently degraded to symptom monitoring before the owner
+ * could be in the room to hand it over. 90 matches `FALLBACK_DAYS`: any recheck
+ * within three months still produces the full trial report.
+ *
+ * DELIBERATELY NOT the card's number. `ENDED_TRIAL_GRACE_DAYS`
+ * (`lib/dietTrialFacts.ts`) is 30 — report availability is the clinical need,
+ * the card is a UI presence, and the report screen stays reachable after the
+ * card retires. `selectReportTrial`'s default must still match THIS constant,
+ * or the window anchors on a trial the block refuses to render.
  */
-export const TRIAL_ANCHOR_GRACE_DAYS = 14
+export const TRIAL_ANCHOR_GRACE_DAYS = 90
 
 /**
  * §5.11 de-dup window. Two events of the SAME type whose derived occurred_at points

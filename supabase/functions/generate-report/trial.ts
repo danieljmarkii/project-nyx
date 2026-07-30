@@ -561,9 +561,9 @@ export function selectReportTrial<T extends TrialSource>(
   window: { startDayNum: number; endDayNum: number },
   timeZone: string | null,
   /** How long after a trial ENDS it still describes the report. Must match
-   *  `report.TRIAL_ANCHOR_GRACE_DAYS`, or the window can be anchored on a trial the
-   *  block then refuses to render (or the reverse). */
-  endedGraceDays = 14,
+   *  `report.TRIAL_ANCHOR_GRACE_DAYS` (90 — R5, B-538), or the window can be
+   *  anchored on a trial the block then refuses to render (or the reverse). */
+  endedGraceDays = 90,
 ): T | null {
   let best: T | null = null
   let bestKey: [number, number, string] = [-1, -Infinity, '']
@@ -607,11 +607,13 @@ export function selectReportTrial<T extends TrialSource>(
     // — and how to do that without taking its safety band with it — is a Dr. Chen
     // + cold-read question that belongs with B-538's grace windows → B-594.
     const running = t.status === 'active'
-    // OVERLAP IS NOT ENOUGH FOR AN ENDED TRIAL. A 90-day fallback window catches
-    // the tail of a trial that finished ten weeks ago, and framing the whole report
-    // as that trial's result would be a worse answer than framing it as symptom
-    // monitoring: the trial describes three of the report's thirteen weeks. The
-    // report belongs to a trial that is running, or one that has only just stopped.
+    // OVERLAP IS NOT ENOUGH FOR AN ENDED TRIAL. The report belongs to a trial
+    // that is running, or one that stopped inside the grace. R5 (B-538) sized
+    // that grace to the RECHECK, not the milestone: appointments book three-plus
+    // weeks out, and a trial that "finished ten weeks ago" is precisely the one
+    // the owner is now sitting in the consult room to discuss — so the full
+    // trial report must still generate for any recheck within three months.
+    // Beyond it, the trial is history and symptom monitoring is the honest frame.
     if (!running && (endDn === null || window.endDayNum - endDn > endedGraceDays)) continue
     // Ties break on `id`, matching `resolveScope` rung 2 — the query has no ORDER BY,
     // so two ended trials with the same start otherwise resolve by array order and the
