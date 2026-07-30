@@ -12,6 +12,8 @@ import { ChipGroup } from '../components/ui/ChipGroup';
 import { usePetStore } from '../store/petStore';
 import { toLocalDayKey, dayKeyToLocalDate } from '../lib/utils';
 import { generateVetReport, shareReportPdf, type VetReport, type VetReportParams } from '../lib/pdf';
+import { countPendingTrialSync } from '../lib/dietTrialSetup';
+import { syncPendingDietTrials, syncPendingDietTrialFoods } from '../lib/sync';
 
 // Vet report — owner-facing MVP (Step 9, Phase 2 PR 5) + range control (PR 5d / B-222).
 //
@@ -80,6 +82,11 @@ export default function ReportScreen() {
   const [report, setReport] = useState<VetReport | null>(null);
   const [errorMsg, setErrorMsg] = useState('');
   const [sharing, setSharing] = useState(false);
+  // B-534 — trial rows this phone holds that the server doesn't, AFTER the
+  // pre-generate flush below already tried to land them. Non-zero means the
+  // rendered report was built from a record that is missing a local trial
+  // change, and the owner is told so next to the send action.
+  const [trialSyncPending, setTrialSyncPending] = useState(false);
 
   const [rangeMode, setRangeMode] = useState<RangeMode>('default');
   // Custom window defaults to the same 90-day span as the fallback, so "Custom…"
@@ -119,8 +126,33 @@ export default function ReportScreen() {
       }
       setStatus('loading');
       try {
+        // B-534 — gate generation on the trial's own push. Every trial write is
+        // local-first with a fire-and-forget flush, while generate-report reads
+        // live Supabase; so "end trial → open report" raced, and on weak signal
+        // the artifact rendered the server's still-`active` row — an ended trial
+        // reading to the vet as ongoing. Awaiting the flush here closes the race
+        // whenever the network works at all (and generation is a multi-second
+        // wait already, so one push round-trip first is invisible). If rows
+        // still hold out — offline, or a quarantined row no flush can move —
+        // generation proceeds and the owner gets the honest line by the send
+        // button instead of a silently stale artifact. Best-effort throughout:
+        // a failed LOCAL read must never block the report.
+        let stillPending = false;
+        try {
+          if ((await countPendingTrialSync(requestParams.petId)) > 0) {
+            // Parent before children, same ordering every other flush path uses
+            // — a child whose parent has not landed FK-fails and simply retries.
+            await syncPendingDietTrials();
+            await syncPendingDietTrialFoods();
+            stillPending = (await countPendingTrialSync(requestParams.petId)) > 0;
+          }
+        } catch (gateErr) {
+          console.warn('[Report] trial-sync gate failed (generating anyway):', gateErr);
+        }
+        if (token?.cancelled) return;
         const r = await generateVetReport(requestParams);
         if (token?.cancelled) return;
+        setTrialSyncPending(stillPending);
         setReport(r);
         setStatus('ready');
       } catch (e) {
@@ -323,6 +355,18 @@ export default function ReportScreen() {
             )}
           </View>
           <View style={[styles.bar, { paddingBottom: insets.bottom + theme.space2 }]}>
+            {trialSyncPending && activePet && (
+              // B-534 — the residual case the awaited flush could not close
+              // (offline, or a quarantined row). Rendered beside the send action
+              // because sending a stale artifact is the harm; the send itself
+              // stays available — at the clinic on bad reception, a report
+              // that is honest about being a step behind beats no report.
+              <Text style={styles.barStale}>
+                A change to {activePet.name}’s diet trial hasn’t synced from this
+                phone yet — this report may not include it. Connect to the
+                internet and reopen the report.
+              </Text>
+            )}
             {report.photoCount > 0 && (
               // Owner visibility (spec §8): before sending, the owner sees how many of their own
               // incident photos this report hands to the vet. The interactive "tap to exclude any"
@@ -497,5 +541,15 @@ const styles = StyleSheet.create({
     fontSize: theme.textXS,
     color: theme.colorTextSecondary,
     textAlign: 'center',
+  },
+  // B-534's staleness line. One step up from barPhotos (size + primary colour)
+  // because it qualifies the artifact's currency, not its contents — but still
+  // calm prose, never an error banner: the report is real, just possibly behind.
+  barStale: {
+    fontFamily: theme.fontBody,
+    fontSize: theme.textSM,
+    color: theme.colorTextPrimary,
+    textAlign: 'center',
+    lineHeight: 19,
   },
 });

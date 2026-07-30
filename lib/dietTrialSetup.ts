@@ -28,8 +28,28 @@
 import { getDb } from './db';
 import { trialStopReasons, type TrialOutcome } from './dietTrialCompletion';
 import { syncPendingDietTrials, syncPendingDietTrialFoods } from './sync';
+import { useSyncStore } from '../store/syncStore';
 import { uuid, toLocalDayKey, dayKeyToLocalDate } from './utils';
 import { getDietTrialProgress } from './analytics';
+
+/** Every trial write below ends with this — B-534's Home-strip half.
+ *
+ *  The Pet-tab card and the Home strip are two independent `useDietTrial`
+ *  instances, and only the Pet tab's gets the host's `reload()` after a write —
+ *  so ending, extending or starting a trial left Home rendering the OLD trial
+ *  until the next sync cycle happened to bump the tick. The hook already
+ *  re-reads on `hydrationTick` (it is how another device's meals reach the
+ *  card), so the fix is to make a LOCAL trial write count as a hydration too.
+ *  It lives here, in the write path, rather than at the call sites: the next
+ *  surface to call one of these functions will not know the Home strip exists. */
+function notifyTrialChanged(): void {
+  try {
+    useSyncStore.getState().bumpHydrationTick();
+  } catch (e) {
+    // The write itself succeeded; a refresh-signal failure must not fail it.
+    console.warn('[dietTrialSetup] hydration tick failed:', e);
+  }
+}
 
 // ── Indication (§4.1) ───────────────────────────────────────────────────────
 //
@@ -500,6 +520,34 @@ export async function getActiveTrialForPet(petId: string): Promise<ActiveTrialSu
   };
 }
 
+/** Trial rows (parent or allowed-set) this device holds that the server does not
+ *  — B-534's report-race half.
+ *
+ *  `generate-report` reads live Supabase, while every trial write here is
+ *  local-first with a fire-and-forget push. So "end trial → tap Open vet report"
+ *  is a race the owner loses on any weak signal: the Edge Function renders the
+ *  server's still-`active` row and an ended trial reads to the vet as ongoing —
+ *  the B-455 harm arriving via timing. The report screen calls this BEFORE
+ *  generating; a non-zero answer means "flush first, and if rows still hold out,
+ *  tell the owner the report may be behind".
+ *
+ *  DELIBERATELY COUNTS QUARANTINED ROWS TOO (`synced = 0` regardless of
+ *  `sync_error`). A quarantined row is one no flush will move, but it is still
+ *  local truth the server lacks — for "is the report's source current?" the
+ *  honest answer is no either way. The flush the caller runs simply no-ops on
+ *  them (the push queue filters `sync_error IS NULL`), and the residue keeps the
+ *  owner's warning up rather than clearing it by wishful accounting. */
+export async function countPendingTrialSync(petId: string): Promise<number> {
+  const db = getDb();
+  const row = await db.getFirstAsync<{ pending: number }>(
+    `SELECT
+       (SELECT COUNT(*) FROM diet_trials WHERE pet_id = ? AND synced = 0) +
+       (SELECT COUNT(*) FROM diet_trial_foods WHERE pet_id = ? AND synced = 0) AS pending`,
+    [petId, petId],
+  );
+  return Number(row?.pending ?? 0);
+}
+
 /**
  * End the running trial so a new one can start (mock screen D's primary action).
  *
@@ -563,6 +611,8 @@ export async function endActiveTrial(params: {
     ],
   );
 
+  notifyTrialChanged();
+
   // Fire-and-forget, same contract as `startDietTrial`: offline the row stays
   // queued at synced = 0 and the next cycle picks it up. An ending trial is in
   // `syncPendingDietTrials`'s FIRST pass, so it cannot be re-ordered behind a
@@ -601,6 +651,7 @@ export async function extendTrial(params: {
       WHERE id = ?`,
     [target, new Date().toISOString(), params.trialId],
   );
+  notifyTrialChanged();
   syncPendingDietTrials().catch((err) =>
     console.warn('[dietTrialSetup] extend-trial sync failed (queued):', err),
   );
@@ -662,6 +713,8 @@ export async function startDietTrial(input: StartTrialInput): Promise<string> {
       );
     }
   });
+
+  notifyTrialChanged();
 
   // Parent before children on the wire too — a child whose parent has not landed
   // FK-fails with a 23503, which PR 2 classifies NON-terminal, so it would simply

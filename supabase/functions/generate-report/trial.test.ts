@@ -10,7 +10,10 @@
 // The oracle in each case is a LITERAL expected string or count — §12's QA finding
 // was that not one of v0.9's criteria named a harness or an oracle.
 import { strict as assert } from 'node:assert'
-import { assembleReport, resolveScope, type ReportInput, type ReportEventInput } from './report.ts'
+import {
+  assembleReport, resolveScope, FALLBACK_DAYS, TRIAL_ANCHOR_GRACE_DAYS,
+  type ReportInput, type ReportEventInput,
+} from './report.ts'
 import { renderReport } from './render.ts'
 import { buildTrialBlock, looksAntibacterial, selectReportTrial } from './trial.ts'
 
@@ -782,14 +785,39 @@ Deno.test('B-423 — a trial started today does not collapse the report to a one
   assert.equal(snap.trial?.rangeStartDate, '2026-07-02')
 })
 
-Deno.test('a trial that ended two months ago no longer anchors the window', () => {
+Deno.test('R5 (B-538) — a trial that ended two months ago STILL anchors the window (the recheck-slip case)', () => {
+  // This test used to assert the opposite, under a 14-day grace. R5 overturned
+  // it: appointments book three-plus weeks out, and the trial ended 67 days ago
+  // is exactly the one the owner is sitting in the recheck to discuss. Within
+  // 90 days of the end, the full trial report must still generate.
   const input = baseInput({
     dietTrials: [
       { id: 't', foodItemId: null, startedAt: '2026-03-01', targetDurationDays: 56, status: 'completed', completedAt: '2026-04-26', endedAt: '2026-04-26', vetName: null, foodLabel: 'HP' },
     ],
   })
+  assert.equal(resolveScope(input).basis, 'diet_trial')
+  assert.equal(selectReportTrial(input.dietTrials, resolveScope(input), TZ)?.id, 't', 'and it describes the report — the pair still agrees')
+})
+
+Deno.test('R5 (B-538) — past the 90-day grace an ended trial is history again', () => {
+  // Ended 2026-03-20, NOW is 2026-07-02 → 104 days. Beyond the recheck horizon
+  // the honest frame is symptom monitoring, and the pair drops it TOGETHER —
+  // anchoring on a trial the block refuses to render is the round-1 divergence.
+  const input = baseInput({
+    dietTrials: [
+      { id: 't', foodItemId: null, startedAt: '2026-01-24', targetDurationDays: 56, status: 'completed', completedAt: '2026-03-20', endedAt: '2026-03-20', vetName: null, foodLabel: 'HP' },
+    ],
+  })
   assert.equal(resolveScope(input).basis, 'fallback_90d')
   assert.equal(selectReportTrial(input.dietTrials, resolveScope(input), TZ), null, 'and it does not describe the report')
+})
+
+Deno.test('R5 (B-538) — the report grace is 90, sized to the fallback window', () => {
+  // A drift here is a product decision (R5, PM 2026-07-27), not a tidy-up. The
+  // card's counterpart (`ENDED_TRIAL_GRACE_DAYS`, lib/dietTrialFacts.ts) is 30
+  // and DELIBERATELY different — its own test pins that side of the asymmetry.
+  assert.equal(TRIAL_ANCHOR_GRACE_DAYS, 90)
+  assert.equal(TRIAL_ANCHOR_GRACE_DAYS, FALLBACK_DAYS)
 })
 
 // ── C5 — the symptom trend against logging density ───────────────────────────

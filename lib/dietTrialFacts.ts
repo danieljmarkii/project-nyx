@@ -127,12 +127,17 @@ const TRIAL_FOR_CARD_SQL = `
  * How long an ENDED trial keeps its slot on the Pet tab — the product rule PR 4
  * deferred to PR 6 (it could not write an ended trial, so it could not answer).
  *
- * FOURTEEN DAYS, and the number is borrowed rather than invented: it is
- * `selectReportTrial`'s `endedGraceDays` in `generate-report/trial.ts`, so the
- * card and the report agree about whether a trial is recent enough to still be
- * the subject. A card that forgot the trial while the report still led with it —
- * or the reverse — would have the owner and their vet reading two different
- * answers to "are we still doing this?".
+ * THIRTY DAYS — R5 (PM, 2026-07-27; B-538). The first cut borrowed the report's
+ * 14 so the two surfaces would agree about whether a trial was still the
+ * subject, and the recheck-slip case broke that parity on purpose:
+ * appointments book three-plus weeks out, so at day 15 the card flipped to
+ * "No trial running" in exactly the fortnight the owner was waiting to hand
+ * the result over. The asymmetry is now deliberate — the REPORT's grace
+ * (`TRIAL_ANCHOR_GRACE_DAYS`, `generate-report/report.ts`) went to 90 because
+ * report availability is the clinical need, while this card is a UI presence:
+ * once it retires, "Open vet report" is still one card down on the same tab and
+ * the report still renders the trial for the full 90, so retiring the card
+ * takes no capability away.
  *
  * Zero days was the tempting default and it is the wrong one: the completed card
  * (7a) exists precisely to carry "Open vet report" at the moment the report is
@@ -140,8 +145,11 @@ const TRIAL_FOR_CARD_SQL = `
  * the same tap that created the thing worth reporting. An active trial always
  * outranks an ended one in the ORDER BY, so starting a new trial replaces the
  * ghost immediately.
+ *
+ * Exported for the test that pins the R5 pair — a drift here is a product
+ * decision, not a tidy-up.
  */
-const ENDED_TRIAL_GRACE_DAYS = 14;
+export const ENDED_TRIAL_GRACE_DAYS = 30;
 
 /** Reads the pet's active trial and everything the card needs to describe it.
  *

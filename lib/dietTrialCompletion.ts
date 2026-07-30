@@ -344,10 +344,21 @@ export const OUTCOME_OPTIONS: { value: TrialOutcome; label: string }[] = [
 export const OUTCOME_QUESTION = 'Does that match what you’ve seen?';
 
 /** §6.1 in one owner-facing sentence — the thing v0.9 never wrote down. It says
- *  who decides, and it says where the owner's answer goes and in whose name. */
+ *  who decides, and it says where the owner's answer goes and in whose name.
+ *
+ *  THE LAST SENTENCE IS R4 (PM, 2026-07-27; B-536): the question is explicitly
+ *  optional and skipping it is legitimate, not an oversight. Save has never been
+ *  gated on an answer — R4 flips that from filed bug (B-508) to design, and the
+ *  copy is what makes the design legible: without it, an un-answered radio row
+ *  above a Save button reads as a validation error waiting to happen, and an
+ *  owner who has nothing to add second-guesses the record instead of saving it.
+ *  "The counts go on the report either way" is literally true — the report
+ *  renders the trial block from the record and omits the owner line when
+ *  unanswered (`render.ts` renders it only `if (t.outcome)`). */
 export const OUTCOME_QUESTION_NOTE =
   'Culprit reports what happened; your vet decides what it means. Your read goes ' +
-  'on the report next to these counts.';
+  'on the report next to these counts. Answering is optional — the counts go on ' +
+  'the report either way.';
 
 /** The same question with NO REFERENT TO THE COUNTS, for the state where a live
  *  intake-decline flag has replaced them.
@@ -355,12 +366,15 @@ export const OUTCOME_QUESTION_NOTE =
  *  Both default strings point at content the decline branch deliberately removes:
  *  "Does *that* match" — match what? — and "next to *these* counts", of which
  *  there are none on screen. The suppression is right and the two sentences that
- *  survived it were pointing at nothing. Caught by `pm-feature-review`. */
+ *  survived it were pointing at nothing. Caught by `pm-feature-review`.
+ *  The R4 optional sentence survives the suppression with its referent swapped:
+ *  "the record" rather than "the counts", because the counts are not on screen. */
 export const OUTCOME_QUESTION_NO_COUNTS = 'How has it seemed to you?';
 
 export const OUTCOME_QUESTION_NOTE_NO_COUNTS =
   'Culprit reports what happened; your vet decides what it means. Your read goes ' +
-  'on the report in your name.';
+  'on the report in your name. Answering is optional — the record goes on the ' +
+  'report either way.';
 
 export const OUTCOME_NOTES_PLACEHOLDER = 'Anything you want your vet to know (optional)';
 
@@ -491,6 +505,26 @@ export function densityLine(facts: TrialOutcomeFacts, petName: string): string {
   // improving between screens. Caught by `adversarial-reviewer`.
   if (!facts.beforeTracked) {
     return `Days you logged any food during the trial: ${during.daysLogged} of ${during.days}. ${tail}`;
+  }
+
+  // THE GUARD ABOVE KEYS ON ANY-EVENT DAYS; THE NUMBER COUNTS MEAL DAYS — and
+  // the gap between the two is B-536, found executed by the pre-ship
+  // adversarial pass. An owner who tracked symptoms for weeks before the trial
+  // but logged no food (the common install-for-symptoms story) has
+  // `beforeTracked === true`, so the branch above never fires and this line
+  // rendered "0 of 56 before, 52 of 56 during" — the same fabricated zero the
+  // branch's own comment condemns, arriving through the series mismatch. It
+  // reads as "logging went from nothing to daily", which lends the symptom
+  // comparison above a credibility check it never actually passed — in the
+  // flattering direction, on the screen that ends the intervention (and R4
+  // makes this screen the verdict-bearing one: the data leads, so the data
+  // must be right). A comparative sentence needs a before-series to compare;
+  // when the meal series has no before-half, say that instead of a zero.
+  if (before.daysLogged === 0) {
+    return (
+      `Days you logged any food during the trial: ${during.daysLogged} of ${during.days}. ` +
+      `There’s no food logging from before the trial to compare that with. ${tail}`
+    );
   }
 
   return (

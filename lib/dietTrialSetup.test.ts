@@ -43,12 +43,13 @@ jest.mock('./utils', () => {
 });
 
 import {
-  buildTrialRows, canStartTrial, defaultDurationDays, describeActiveTrial,
+  buildTrialRows, canStartTrial, countPendingTrialSync, defaultDurationDays, describeActiveTrial,
   durationHelperLine, endActiveTrial, foodLabel, formatTrialEndDate,
   extendTrial, getActiveTrialForPet, permittedRoleForFood, secondTrialIntro, startDietTrial,
   stopReasonOptions, trialEndDayKey, trialSetupLines, TRIAL_RECORD_DISCLOSURE,
   type StartTrialInput,
 } from './dietTrialSetup';
+import { useSyncStore } from '../store/syncStore';
 import { toLocalDayKey } from './utils';
 
 const flush = () => new Promise((r) => setTimeout(r, 0));
@@ -409,6 +410,69 @@ describe('getActiveTrialForPet', () => {
 
   it('returns null when the pet has no active trial', async () => {
     expect(await getActiveTrialForPet('pet-1')).toBeNull();
+  });
+});
+
+// ── B-534 — the two freshness contracts ─────────────────────────────────────
+
+describe('every trial write bumps the hydration tick (B-534)', () => {
+  // The Pet-tab card and the Home strip are two independent `useDietTrial`
+  // instances; only the writing screen gets a host `reload()`. The tick is how
+  // the OTHER surface learns the trial changed, so it is part of the write's
+  // contract — a future write path that skips it re-opens the stale-strip bug.
+  const tick = () => useSyncStore.getState().hydrationTick;
+
+  it('startDietTrial notifies', async () => {
+    const before = tick();
+    await startDietTrial(input());
+    expect(tick()).toBe(before + 1);
+  });
+
+  it('endActiveTrial notifies', async () => {
+    const before = tick();
+    await endActiveTrial({ trialId: 't-1', reason: 'completed' });
+    expect(tick()).toBe(before + 1);
+  });
+
+  it('extendTrial notifies', async () => {
+    const before = tick();
+    await extendTrial({ trialId: 't-1', targetDurationDays: 84 });
+    expect(tick()).toBe(before + 1);
+  });
+
+  it('a refused extension does NOT notify — nothing changed', async () => {
+    const before = tick();
+    await expect(extendTrial({ trialId: 't-1', targetDurationDays: 0 })).rejects.toThrow();
+    expect(tick()).toBe(before);
+  });
+});
+
+describe('countPendingTrialSync (B-534)', () => {
+  it('sums unsynced parents AND allowed-set rows, scoped to the pet', async () => {
+    mockGetFirstAsync.mockResolvedValueOnce({ pending: 3 });
+    await expect(countPendingTrialSync('pet-1')).resolves.toBe(3);
+    const [sql, params] = mockGetFirstAsync.mock.calls[0] as [string, unknown[]];
+    expect(sql).toContain('FROM diet_trials');
+    // The allowed set matters too: a trial row that landed without its
+    // `diet_trial_foods` children gives the server a partial primary_diet set,
+    // and the report would classify the missing trial food's meals off-diet.
+    expect(sql).toContain('FROM diet_trial_foods');
+    expect(sql).toContain('synced = 0');
+    expect(params).toEqual(['pet-1', 'pet-1']);
+  });
+
+  it('deliberately counts quarantined rows — the server lacks them either way', async () => {
+    // The push queue filters `sync_error IS NULL`; this count must NOT, or a
+    // quarantined end-of-trial clears the owner's warning while the server still
+    // renders the trial as running forever.
+    mockGetFirstAsync.mockResolvedValueOnce({ pending: 1 });
+    await countPendingTrialSync('pet-1');
+    const [sql] = mockGetFirstAsync.mock.calls[0] as [string];
+    expect(sql).not.toContain('sync_error');
+  });
+
+  it('reads a missing row as 0, never NaN', async () => {
+    await expect(countPendingTrialSync('pet-1')).resolves.toBe(0);
   });
 });
 

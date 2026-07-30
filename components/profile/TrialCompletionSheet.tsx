@@ -309,6 +309,11 @@ export function TrialCompletionSheet({
                       multiline
                     />
 
+                    {/* UN-GATED ON THE ANSWER, BY DESIGN — R4 (PM, 2026-07-27).
+                        The data leads and the owner question is optional, so a
+                        null outcome saves cleanly and the report simply omits
+                        the owner line. The question note above is what makes
+                        the skip legible; do not add a disabled={!outcome}. */}
                     <PrimaryButton
                       label={sheet.saveLabel}
                       onPress={() => endTrial({ reason: 'completed', outcome, notes })}
@@ -327,7 +332,8 @@ export function TrialCompletionSheet({
                     <Text style={styles.sheetTitle}>How did it go?</Text>
                     <Text style={styles.sheetSub}>
                       Culprit couldn’t pull the counts for this stretch just now. Your read
-                      still goes on the report in your name.
+                      still goes on the report in your name. Answering is optional — the
+                      record goes on the report either way.
                     </Text>
                     {outcomeOptions}
                     <TextInput
