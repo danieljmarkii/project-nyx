@@ -248,9 +248,10 @@ export interface TrialArrangement {
  *
  * At 28 the app stopped believing that trial on day 56 of a course a vet had
  * asked to run to day 84 — and the observable was not a soft degradation: the
- * vet report's trial block VANISHED at day 71 (effective end + the 14-day
- * `TRIAL_ANCHOR_GRACE_DAYS`), so the report's own first question, "is this diet
- * trial working?", went unanswered in the middle of the intervention.
+ * vet report's trial block VANISHED at day 71 (effective end + the
+ * `TRIAL_ANCHOR_GRACE_DAYS` of the time, then 14; 90 since R5/B-538), so the
+ * report's own first question, "is this diet trial working?", went unanswered
+ * in the middle of the intervention.
  *
  * 56 covers every cell in the P-1 table against its own clinical ceiling:
  * dog·gut 28→84, cat·gut 42→98, dog·skin and cat·skin 56→112 (against an 8–12

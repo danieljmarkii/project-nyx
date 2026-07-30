@@ -211,13 +211,41 @@ listed as a "competing antigen" against its own trial; and "not one rated feedin
 became "**finished**", which is what the predicate actually says and what appendix E's `Ate some ×4`
 was contradicting.
 
-Filed rather than fixed: **B-600** (the refusal RUN, not just the denominator — the reviewer's
-"number that would change my afternoon"), **B-601** (no artifact exercises the est/range/duplicate
-timestamp paths, so that box currently reads as verified and is not), **B-602** (the exposure tile
-answers compliance where the question is antigen load), **B-603** (the correlation-threshold line
-has no denominator), **B-604** (chart markers are start-only, so a mid-trial allowed-list change is
-undrawn while "Reading the trend" still counts two changes), **B-605** (*"Previous diet — Not
+Filed rather than fixed: **B-603** (the refusal RUN, not just the denominator — the reviewer's
+"number that would change my afternoon"), **B-604** (no artifact exercises the est/range/duplicate
+timestamp paths, so that box currently reads as verified and is not), **B-605** (the exposure tile
+answers compliance where the question is antigen load), **B-606** (the correlation-threshold line
+has no denominator), **B-607** (chart markers are start-only, so a mid-trial allowed-list change is
+undrawn while "Reading the trend" still counts two changes), **B-608** (*"Previous diet — Not
 recorded"* makes the rechallenge undesignable from a completed-trial report).
+
+_These six were filed as **B-600–B-605** and **renumbered to B-603–B-608** at wrap: #515 landed
+B-600/B-601/B-602 on `main` first, so first-lands-keeps applies and mine moved. The commits that
+filed them still name the old IDs — immutable — and each row carries a provenance note so a grep
+from either number lands somewhere true. This is the B-435 race, hitting for the fifth recorded
+time, and it is why the duplicate check has to run **after** merging `main`, not before._
+
+## The hold does NOT lift, and that is a finding of this wrap
+
+The exit gate as briefed was CLINIC-READY on both artifacts, and it was met. It is not sufficient,
+because the bucket moved underneath it.
+
+While this session ran, **#515 filed B-600 into Bucket A** — an adversarial finding on its own
+work, explicitly labelled *"B-532's render-honesty territory"* and blocking the same redeploy
+train. A 73-day trial viewed through a 31-day `since_visit` window prints *"This record covers 11
+of 11 days of the trial window and supports interpreting it"* three inches under a header reading
+*"73 days, of a 73-day window"* — a truncated view certifying the whole trial's interpretability.
+It is the same class as everything in this pass and it is exactly the sentence §7.2 exists to
+withhold.
+
+**#516's cold read could not have caught it.** None of the three fixtures produces that window
+shape — all three are scoped so the window and the trial roughly coincide, which is precisely the
+configuration in which the bug is invisible. So the CLINIC-READY verdict is true about the
+artifacts it read and does not cover B-600.
+
+The honest state of the gate is therefore: **B-532's lane is closed; the redeploy waits on B-600
+plus a re-read that covers it.** Merging #516 does not unblock the deploy, and saying it did would
+be the same shape of error the pass spent the day removing.
 
 ## Verification
 

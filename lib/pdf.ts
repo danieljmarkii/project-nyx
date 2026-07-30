@@ -1,7 +1,9 @@
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import { File, Paths } from 'expo-file-system';
+import { getSyncStatus } from './db';
 import { supabase } from './supabase';
+import { syncNow } from './sync';
 
 // Vet report client (Step 9, Phase 2 PR 5 — the owner-facing MVP).
 //
@@ -31,6 +33,97 @@ export interface VetReport {
   // bytes themselves are already embedded in `html` (EXIF-stripped, downscaled server-side), so
   // they flow into both the in-app WebView and the on-device PDF with no extra client wiring.
   photoCount: number;
+}
+
+// ── B-534 — the report's freshness gate ─────────────────────────────────────
+//
+// Every local write is local-first with a fire-and-forget push, while
+// `generate-report` reads live Supabase — so "log something → open the report"
+// races the queue, and the artifact renders whatever the server had when the
+// call landed. The canonical case is the one the pre-ship review executed: end
+// a trial, tap "Open vet report" on the completed card, and on weak signal the
+// vet reads the trial as ongoing (the B-455 harm via timing).
+//
+// TWO RULES SHAPE THIS GATE, both learned adversarially on the first cut:
+//
+//  • THE GATE COVERS EVERY QUEUE, NOT JUST TRIALS. The first cut counted and
+//    flushed `diet_trials`/`diet_trial_foods` only, and the reviewer's
+//    counterexample was immediate: twelve unsynced refused bowls (the trial row
+//    itself long synced) produced an empty safety band on a refusing cat, with
+//    the staleness zone advertising currency. The report reads events, meals,
+//    weights, doses, visits and trials alike, so the honest question is "has
+//    this phone sent everything?", which `getSyncStatus` already answers across
+//    every queue — and the flush is `syncNow()`, the one documented cycle with
+//    the FK ordering and the in-flight guard, not a bespoke two-table push
+//    running concurrently against it.
+//
+//  • THE DISCLOSURE FAILS SAFE, NEVER CLOSED. The first cut raised its flag
+//    only from the RE-count after the flush, so any throw between "we counted
+//    pending rows" and "we re-counted zero" silently cleared it — the repair
+//    attempt gating the disclosure, which is B-494's rule inverted. Now: a
+//    positive first count STANDS unless a successful re-count clears it. The
+//    one silent path left is the first count itself failing — with no evidence
+//    either way, a standing false alarm on every report would be the B-398
+//    "wrong advice forever" failure in new clothes.
+export interface ReportFreshness {
+  /** Rows waiting for a connection (quarantined excluded — they get their own copy). */
+  pending: number;
+  /** Rows the push queue has given up on; no amount of connectivity moves them. */
+  quarantined: number;
+}
+
+export async function flushBeforeReport(): Promise<ReportFreshness> {
+  let counts: ReportFreshness;
+  try {
+    const s = await getSyncStatus();
+    counts = { pending: s.pendingCount, quarantined: s.quarantinedCount };
+  } catch (e) {
+    console.warn('[Report] freshness check failed:', e);
+    return { pending: 0, quarantined: 0 };
+  }
+  if (counts.pending === 0) return counts;
+  try {
+    // `syncNow` self-serializes: if a cycle is already in flight this returns
+    // immediately and the re-count below may still see pending rows — an
+    // over-warn in the safe direction, and the line's own remedy ("reopen the
+    // report") is exactly what resolves it.
+    await syncNow();
+    const s = await getSyncStatus();
+    return { pending: s.pendingCount, quarantined: s.quarantinedCount };
+  } catch (e) {
+    console.warn('[Report] pre-report flush failed (counts stand):', e);
+    return counts;
+  }
+}
+
+/**
+ * The owner-facing line for a report built while this phone still holds unsent
+ * rows — or null when there is nothing to say.
+ *
+ * B-398's two-state rule, applied to the report bar: QUARANTINE LEADS, because
+ * "connect to the internet" is true of a pending row and a lie about a
+ * quarantined one (`store/syncStore.ts`'s own words), and the owner who can fix
+ * a quarantined row needs the action that actually works. Register and remedy
+ * mirror `SyncBanner` — the same fact told to the same owner on another surface
+ * must not use different words.
+ */
+export function reportFreshnessLine(f: ReportFreshness): string | null {
+  if (f.quarantined > 0) {
+    const entries = f.quarantined === 1 ? '1 entry' : `${f.quarantined} entries`;
+    const them = f.quarantined === 1 ? 'it' : 'them';
+    return (
+      `${entries} on this phone couldn’t be saved to your records, so this report ` +
+      `may not include ${them}. Open ${f.quarantined === 1 ? 'it' : 'one'} from ` +
+      'History and save it again to retry.'
+    );
+  }
+  if (f.pending > 0) {
+    return (
+      'Some of what you’ve logged on this phone hasn’t synced yet, so this report ' +
+      'may not include it. Connect to the internet and reopen the report.'
+    );
+  }
+  return null;
 }
 
 export async function generateVetReport(params: VetReportParams): Promise<VetReport> {

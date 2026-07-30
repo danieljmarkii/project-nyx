@@ -11,7 +11,10 @@ import { WhorlSpinner } from '../components/brand/WhorlSpinner';
 import { ChipGroup } from '../components/ui/ChipGroup';
 import { usePetStore } from '../store/petStore';
 import { toLocalDayKey, dayKeyToLocalDate } from '../lib/utils';
-import { generateVetReport, shareReportPdf, type VetReport, type VetReportParams } from '../lib/pdf';
+import {
+  flushBeforeReport, generateVetReport, reportFreshnessLine, shareReportPdf,
+  type VetReport, type VetReportParams,
+} from '../lib/pdf';
 
 // Vet report — owner-facing MVP (Step 9, Phase 2 PR 5) + range control (PR 5d / B-222).
 //
@@ -80,6 +83,10 @@ export default function ReportScreen() {
   const [report, setReport] = useState<VetReport | null>(null);
   const [errorMsg, setErrorMsg] = useState('');
   const [sharing, setSharing] = useState(false);
+  // B-534 — the freshness line for a report built while this phone still held
+  // unsent rows, AFTER the pre-generate flush already tried to land them. Null
+  // when the record was current; otherwise rendered next to the send action.
+  const [staleLine, setStaleLine] = useState<string | null>(null);
 
   const [rangeMode, setRangeMode] = useState<RangeMode>('default');
   // Custom window defaults to the same 90-day span as the fallback, so "Custom…"
@@ -119,8 +126,20 @@ export default function ReportScreen() {
       }
       setStatus('loading');
       try {
+        // B-534 — flush this phone's queues before generating, so the Edge
+        // Function reads a server that has what the owner just did (the
+        // canonical race: end a trial, tap "Open vet report", and on weak
+        // signal the vet reads the trial as ongoing). One awaited cycle in
+        // front of a multi-second render is invisible; whatever still holds
+        // out is disclosed by the send button rather than blocking the report.
+        // The gate's design rules — every queue, fail-safe disclosure, the
+        // B-398 two-state copy — live with `flushBeforeReport` in lib/pdf.ts,
+        // where they are unit-tested.
+        const freshness = await flushBeforeReport();
+        if (token?.cancelled) return;
         const r = await generateVetReport(requestParams);
         if (token?.cancelled) return;
+        setStaleLine(reportFreshnessLine(freshness));
         setReport(r);
         setStatus('ready');
       } catch (e) {
@@ -323,6 +342,14 @@ export default function ReportScreen() {
             )}
           </View>
           <View style={[styles.bar, { paddingBottom: insets.bottom + theme.space2 }]}>
+            {staleLine && (
+              // B-534 — the residual the awaited flush could not close (offline,
+              // or a quarantined row). Rendered beside the send action because
+              // sending a stale artifact is the harm; the send itself stays
+              // available — at the clinic on bad reception, a report that is
+              // honest about being a step behind beats no report.
+              <Text style={styles.barStale}>{staleLine}</Text>
+            )}
             {report.photoCount > 0 && (
               // Owner visibility (spec §8): before sending, the owner sees how many of their own
               // incident photos this report hands to the vet. The interactive "tap to exclude any"
@@ -497,5 +524,15 @@ const styles = StyleSheet.create({
     fontSize: theme.textXS,
     color: theme.colorTextSecondary,
     textAlign: 'center',
+  },
+  // B-534's staleness line. One step up from barPhotos (size + primary colour)
+  // because it qualifies the artifact's currency, not its contents — but still
+  // calm prose, never an error banner: the report is real, just possibly behind.
+  barStale: {
+    fontFamily: theme.fontBody,
+    fontSize: theme.textSM,
+    color: theme.colorTextPrimary,
+    textAlign: 'center',
+    lineHeight: 19,
   },
 });

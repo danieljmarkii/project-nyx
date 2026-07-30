@@ -26,10 +26,22 @@ const { DatabaseSync } = require('node:sqlite');
 import {
   ALLOWED_SET_SQL,
   ARRANGEMENTS_IN_WINDOW_SQL,
+  ENDED_TRIAL_GRACE_DAYS,
   arrangementParams,
   dosesQuery,
   feedingsQuery,
 } from './dietTrialFacts';
+
+describe('ENDED_TRIAL_GRACE_DAYS (R5, B-538)', () => {
+  it('is 30 — deliberately NOT the report anchor grace (90)', () => {
+    // The asymmetry is the ruling, not an accident: report availability is the
+    // clinical need (any recheck within three months still gets the full trial
+    // report), while the card is a UI presence whose slot an ended trial holds
+    // for a month. A drift here is a product decision — see the constant's
+    // docstring and `generate-report/trial.test.ts`'s pin of the other side.
+    expect(ENDED_TRIAL_GRACE_DAYS).toBe(30);
+  });
+});
 
 /** The columns these three queries actually touch, mirroring `lib/localSchema.ts`,
  *  `lib/medications.ts` and the `lib/db.ts` ALTERs (`food_type`, `intake_rating`)

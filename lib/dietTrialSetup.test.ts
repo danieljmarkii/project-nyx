@@ -49,6 +49,7 @@ import {
   stopReasonOptions, trialEndDayKey, trialSetupLines, TRIAL_RECORD_DISCLOSURE,
   type StartTrialInput,
 } from './dietTrialSetup';
+import { useSyncStore } from '../store/syncStore';
 import { toLocalDayKey } from './utils';
 
 const flush = () => new Promise((r) => setTimeout(r, 0));
@@ -411,6 +412,44 @@ describe('getActiveTrialForPet', () => {
     expect(await getActiveTrialForPet('pet-1')).toBeNull();
   });
 });
+
+// ── B-534 — the two freshness contracts ─────────────────────────────────────
+
+describe('every trial write bumps the hydration tick (B-534)', () => {
+  // The Pet-tab card and the Home strip are two independent `useDietTrial`
+  // instances; only the writing screen gets a host `reload()`. The tick is how
+  // the OTHER surface learns the trial changed, so it is part of the write's
+  // contract — a future write path that skips it re-opens the stale-strip bug.
+  const tick = () => useSyncStore.getState().hydrationTick;
+
+  it('startDietTrial notifies', async () => {
+    const before = tick();
+    await startDietTrial(input());
+    expect(tick()).toBe(before + 1);
+  });
+
+  it('endActiveTrial notifies', async () => {
+    const before = tick();
+    await endActiveTrial({ trialId: 't-1', reason: 'completed' });
+    expect(tick()).toBe(before + 1);
+  });
+
+  it('extendTrial notifies', async () => {
+    const before = tick();
+    await extendTrial({ trialId: 't-1', targetDurationDays: 84 });
+    expect(tick()).toBe(before + 1);
+  });
+
+  it('a refused extension does NOT notify — nothing changed', async () => {
+    const before = tick();
+    await expect(extendTrial({ trialId: 't-1', targetDurationDays: 0 })).rejects.toThrow();
+    expect(tick()).toBe(before);
+  });
+});
+
+// B-534's report gate is `flushBeforeReport` in lib/pdf.ts, tested there — a
+// trial-scoped count briefly lived here and was removed by the adversarial pass
+// (the scoping was the defect; see the note in dietTrialSetup.ts).
 
 // ── Screen D — the ordered second-trial gate ────────────────────────────────
 

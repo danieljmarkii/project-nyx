@@ -244,6 +244,16 @@ describe('the outcome sheet — the data leads, the question follows', () => {
     ]);
   });
 
+  it('says the question is optional and skipping loses nothing (R4, B-536)', () => {
+    // R4 flipped the un-gated Save from filed bug (B-508) to design; this copy is
+    // what makes the design legible. The claim must also be TRUE: the report
+    // renders the trial block from the record and omits the owner line when
+    // unanswered (`render.ts` guards on `t.outcome`), so "either way" holds.
+    expect(sheet.questionNote).toMatch(/Answering is optional — the counts go on the report either way\.$/);
+    // …and legitimising the skip may not shade into discouraging the answer.
+    expect(sheet.questionNote).toMatch(/Your read goes on the report/);
+  });
+
   it('states the record, not the world, when nothing was logged either side', () => {
     const empty = buildOutcomeSheet({
       facts: facts({ symptoms: [] }),
@@ -304,8 +314,12 @@ describe('the outcome sheet — the data leads, the question follows', () => {
       intakeDeclineHeadline: 'Mochi has left most of her food for 3 days.',
     });
     expect(declining.question).toBe('How has it seemed to you?');
-    expect(declining.questionNote).toMatch(/on the report in your name\.$/);
+    expect(declining.questionNote).toMatch(/on the report in your name\./);
     expect(declining.questionNote).not.toMatch(/these counts/);
+    // R4's optional sentence survives the suppression with its referent swapped:
+    // "the record", because the counts it would otherwise point at are not on
+    // screen in this state.
+    expect(declining.questionNote).toMatch(/Answering is optional — the record goes on the report either way\.$/);
     // …and the title stops promising a span it is no longer reporting on.
     expect(declining.title).toBe('Before you close this trial');
   });
@@ -377,6 +391,72 @@ describe('the C5 logging-density line', () => {
   it('says what it counts, so it is not mistaken for how the pet was', () => {
     expect(densityLine(facts(), 'Biscuit')).toContain(
       'That’s how much got logged, not how Biscuit was',
+    );
+  });
+
+  it('B-536 — a tracked-but-food-less before-stretch never renders as "0 of N before"', () => {
+    // The pre-ship adversarial counterexample, executed: symptoms logged on 30 of
+    // the 56 before-days (so `beforeTracked` is true and the untracked branch
+    // never fires), but not one meal. The guard keyed on ANY-event days while the
+    // number counted MEAL days, so the sheet rendered "Days you logged any food:
+    // 0 of 56 before, 52 of 56 during" — a fabricated zero that reads as "logging
+    // went from nothing to daily", lending the symptom comparison a credibility
+    // check it never passed, in the flattering direction, on the screen that ends
+    // the intervention.
+    const foodless = facts({
+      beforeTracked: true,
+      beforeLoggedDays: 30,
+      meals: { before: { daysLogged: 0, days: 56 }, during: { daysLogged: 52, days: 56 } },
+    });
+    const line = densityLine(foodless, 'Biscuit');
+    expect(line).not.toMatch(/0 of \d+ before/);
+    expect(line).toContain('Days you logged any food during the trial: 52 of 56.');
+    // The missing before-half is EXPLAINED, not silently dropped — the untracked
+    // branch gets its explanation from the comparison line above it, but here the
+    // comparison line renders normally (symptoms WERE tracked), so this line must
+    // carry its own.
+    expect(line).toContain('There’s no food logging from before the trial to compare that with.');
+    // …and the explanation is a claim about the LOG, never a verdict about the
+    // record's quality or the owner (the same no-verdict rule as the main line).
+    expect(line).not.toMatch(/\bso\b.*\b(?:isn’t|is not|cannot|can’t)\b/i);
+  });
+
+  it('B-536 — the sheet built over that record carries the same guard end to end', () => {
+    // Same record through `buildOutcomeSheet`, scanning every rendered string —
+    // the instrument the untracked case's test uses, because a guard that holds
+    // in `densityLine` and leaks through another field is the exact shape the
+    // original bug had.
+    const built = buildOutcomeSheet({
+      facts: facts({
+        beforeTracked: true,
+        beforeLoggedDays: 30,
+        meals: { before: { daysLogged: 0, days: 56 }, during: { daysLogged: 52, days: 56 } },
+      }),
+      petName: 'Biscuit',
+    });
+    const everyString = [
+      built.title, built.comparisonLine, ...built.factLines,
+      built.densityLine, built.question, built.questionNote,
+    ].join(' ');
+    expect(everyString).not.toMatch(/0 of \d+ (?:days )?before/);
+    // The symptom comparison itself still renders both halves — symptoms WERE
+    // observed before, and deleting a real finding to make one line safe is the
+    // failure mode this feature has already paid for three times.
+    expect(built.factLines).toEqual([
+      'Itch/Scratch: 14 before · 3 during.',
+      'Skin reaction: 4 before · 1 during.',
+    ]);
+  });
+
+  it('B-536 — one meal-day before is a thin comparison, not a suppressed one', () => {
+    // The guard is exactly "the meal series has no before-half", never a floor:
+    // §5.2 deliberately leaves coverage floors elsewhere, and a real 1-of-56 is a
+    // true thin number the owner may see.
+    const thin = facts({
+      meals: { before: { daysLogged: 1, days: 56 }, during: { daysLogged: 52, days: 56 } },
+    });
+    expect(densityLine(thin, 'Biscuit')).toContain(
+      'Days you logged any food: 1 of 56 before, 52 of 56 during.',
     );
   });
 });

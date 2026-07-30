@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { router, useFocusEffect } from 'expo-router';
 import {
   Alert, Image, ScrollView, StyleSheet,
@@ -158,6 +158,25 @@ export default function ProfileScreen() {
   // lie told by a failed network read.
   const { input: trialInput, isLoading: trialLoading, reload: reloadTrial } = useDietTrial();
   const [startTrialVisible, setStartTrialVisible] = useState(false);
+  // B-535 — the start-modal → food-capture round trip. "Snap a new food" closes
+  // the modal and routes out; the modal stays mounted so the half-filled form
+  // survives, but nothing ever re-opened it — food-capture's save ends in
+  // `router.dismissAll()`, so the owner landed back on this tab with no modal
+  // and every reason to think the trial saved (or the work was lost). The
+  // picker's own docstring calls the capture route the COMMON path here, since
+  // the trial food is usually a bag the owner was handed ten minutes ago. This
+  // flag re-opens the modal when the tab regains focus, whichever way the
+  // capture flow ended — saved (dismissAll) or backed out (pop) — because the
+  // half-filled form is theirs to finish or cancel either way.
+  const resumeTrialModalOnFocus = useRef(false);
+  useFocusEffect(
+    useCallback(() => {
+      if (resumeTrialModalOnFocus.current) {
+        resumeTrialModalOnFocus.current = false;
+        setStartTrialVisible(true);
+      }
+    }, []),
+  );
   // B-417 PR 6 — which completion screen is open, if any. `null` is closed.
   const [completionEntry, setCompletionEntry] = useState<TrialCompletionEntry | null>(null);
   // The extension is a one-tap write with no confirm (see `handleExtendTrial`),
@@ -883,8 +902,9 @@ export default function ProfileScreen() {
               milestone: () => setCompletionEntry('decision'),
               // State 7a's action, reachable for the first time now that a trial
               // can be completed — and the reason the completed card keeps its
-              // slot for a fortnight (`ENDED_TRIAL_GRACE_DAYS`): the report is
-              // most valuable in exactly the days after the trial ends.
+              // slot for a month (`ENDED_TRIAL_GRACE_DAYS`, 30 — R5): the report
+              // is most valuable in exactly the weeks between the trial ending
+              // and the recheck it was run for.
               open_report: () => router.push('/report'),
               // B-533 / R1 — the refusal state's way out. Same sheet the header's
               // "Change" opens (one active trial per pet is a DB constraint, so
@@ -992,7 +1012,10 @@ export default function ProfileScreen() {
           routes out to `/food-capture` (the trial food is usually a bag the owner
           was handed ten minutes ago, so it is rarely in the library yet), and the
           half-filled form has to still be there when they come back. The form is
-          reset on Cancel and after a successful start — never by a dismissal. */}
+          reset on Cancel and after a successful start — never by a dismissal.
+          B-535 closed the other half of that promise: preserving the form is
+          worthless if nothing re-opens it, so `onAddFood` arms a focus-resume
+          (above) and the modal comes back when the capture flow returns here. */}
       <StartTrialModal
         visible={startTrialVisible}
         petId={activePet.id}
@@ -1000,7 +1023,11 @@ export default function ProfileScreen() {
         species={activePet.species}
         onClose={() => setStartTrialVisible(false)}
         onStarted={reloadTrial}
-        onAddFood={() => { setStartTrialVisible(false); router.push('/food-capture'); }}
+        onAddFood={() => {
+          resumeTrialModalOnFocus.current = true;
+          setStartTrialVisible(false);
+          router.push('/food-capture');
+        }}
         onLogFirstMeal={() => { setStartTrialVisible(false); router.push('/log?type=meal'); }}
       />
 
