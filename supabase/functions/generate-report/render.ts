@@ -3025,11 +3025,29 @@ function symptomPanel(s: SymptomAggregate, snap: ReportSnapshot): string {
     // report where improvement is the whole story. A threshold cannot carry this; the
     // denominator has to travel with the count.
     const obs = (n: number): string => (n < days ? ` <span class="conf">${num(n)} logged</span>` : '')
+    // ── THE EXCLUDED MIDDLE DAY, WHEN IT CARRIES EVIDENCE (B-600, cold read r13) ──
+    //
+    // On an odd window the middle day is in neither half, which is right: handing the
+    // spare day to one side reintroduces the bias equal halves exist to remove. It is
+    // only right while the comparison cannot contradict the total. Rendered: a 31-day
+    // window whose ONE symptom event fell on the median day printed "first 15 d 0 →
+    // last 15 d 0" three centimetres under "1 / 31 d" — the delta had swallowed 100%
+    // of the evidence, and two zeroes read as no episodes.
+    //
+    // The day is neither given to a half nor hidden: it is named beside the
+    // comparison, which is C5's disclose-don't-adjudicate applied to a denominator.
+    // Silent when it carries nothing, so it never fires on the majority of reports.
+    const mid =
+      halves.middleCount > 0 && halves.middleDate
+        ? `<div class="delta-caveat">${num(halves.middleCount)} on ${h(
+            fmtDay(halves.middleDate),
+          )} &mdash; the middle day of an odd window, counted in the total above and in neither half</div>`
+        : ''
     deltaHtml = `<div class="delta">first ${num(days)}&nbsp;d${obs(
       snap.atAGlance.firstHalfLoggedDays,
     )} <b class="num">${firstCount}</b> &rarr; last ${num(days)}&nbsp;d${obs(
       snap.atAGlance.secondHalfLoggedDays,
-    )} <b class="num">${lastCount}</b></div>${caveat}`
+    )} <b class="num">${lastCount}</b></div>${mid}${caveat}`
   }
   // NAME THIS ELEMENT'S OWN PARTITION, AND ITS EXPOSURE. The cold read counted four different
   // day-groupings on one page (the window, the weekly bars, these halves, and the trial's own
@@ -3769,7 +3787,13 @@ function medicationLine(m: MedicationAdherence): string {
   const extras: string[] = []
   if (m.partialDoses) extras.push(`${m.partialDoses} partial`)
   if (m.unconfirmedDoses) extras.push(`${m.unconfirmedDoses} unconfirmed`)
-  extras.push(m.refusedDoses ? `${m.refusedDoses} refused` : 'none refused')
+  // "NONE RECORDED AS REFUSED", NOT "NONE REFUSED" (cold read round 13). Appendix D
+  // already says the honest form; page 1 did not. On a regimen where three of seven
+  // doses were never logged at all, "none refused" is a claim over the four that were,
+  // rendered as though it covered the seven — the exact absence-as-fact this report is
+  // otherwise scrupulous about (an unlogged drug reads "adherence not tracked", never
+  // "given"). Same rule, one surface behind.
+  extras.push(m.refusedDoses ? `${m.refusedDoses} refused` : 'none recorded as refused')
   if (m.missedDoses) extras.push(`${m.missedDoses} missed`)
   return `${regimen}. Adherence: ${num(administered)}${expected} dose${administered === 1 ? '' : 's'} on ${num(
     m.daysWithDose,
@@ -4296,17 +4320,24 @@ function appendixBCD(snap: ReportSnapshot): string {
   // The `*` marker is defined ONCE for the sheet, between its two users (appendix B's
   // protein rows and appendix C's protein column), and only when a marker was actually
   // rendered — a legend for a symbol that never appears is noise on a 60-second scan.
-  const marked =
-    snap.diet.trial != null &&
-    (snap.diet.trial.proteinSet.offTrial.length > 0 ||
+  // …AND BESIDE THE TABLE THAT USED IT (cold read round 13). The condition was one
+  // union over BOTH appendices while the legend rendered in one place — under B — so a
+  // report whose only marked rows are in C printed the legend beneath a protein list
+  // containing no asterisk. A dangling legend on a clinical page sends the reader
+  // hunting for a marker that is not there.
+  const hasTrial = snap.diet.trial != null
+  const markedB =
+    hasTrial &&
+    (snap.diet.trial!.proteinSet.offTrial.length > 0 ||
       snap.diet.freeFed.some((f) => f.proteinSet.offTrial.length > 0) ||
-      snap.diet.mealItems.some((m) => m.proteinSet.offTrial.length > 0) ||
-      snap.provenance.confounders.some((c) => c.proteinSet.offTrial.length > 0))
+      snap.diet.mealItems.some((m) => m.proteinSet.offTrial.length > 0))
+  const markedC = hasTrial && snap.provenance.confounders.some((c) => c.proteinSet.offTrial.length > 0)
   return `
 <section class="page">
   ${dietHistoryAppendix(snap)}
-  ${marked ? offTrialFootnote(snap.diet.trialTargetProtein) : ''}
+  ${markedB ? offTrialFootnote(snap.diet.trialTargetProtein) : ''}
   ${offDietAppendix(snap)}
+  ${!markedB && markedC ? offTrialFootnote(snap.diet.trialTargetProtein) : ''}
   ${medicationAppendix(snap)}
   ${footer(snap, 'Appendices B–D — diet, exposures & meds')}
 </section>`
@@ -4573,7 +4604,12 @@ function offDietAppendix(snap: ReportSnapshot): string {
       // SAME SCOPE FIX AS PAGE 1's ROW (B-600 round 10). The cold read named this
       // sibling explicitly, and leaving it would have put the un-scoped phrasing in
       // the appendix a reader is sent to in order to CHECK the page-1 figure.
-      `<b>Antigen exposures ${antigenScope}:</b> ${antigens}${unknownBit} — proteins fed ${antigenScope} that the trial diet does not contain, counted on approved and unapproved feedings alike. A food containing several counts once for each.`,
+      // THE LABEL SCOPES IT; THE GLOSS DOES NOT REPEAT IT (cold read round 13). Rendered,
+      // the eight-word qualifier appeared twice in this one sentence and outweighed the
+      // finding it qualifies — "Antigen exposures in the 31 trial days this report
+      // covers: Beef ×1 — proteins fed in the 31 trial days this report covers that…",
+      // pushing the number to the middle. The scoping is right; the density was not.
+      `<b>Antigen exposures ${antigenScope}:</b> ${antigens}${unknownBit} — proteins fed in that range that the trial diet does not contain, counted on approved and unapproved feedings alike. A food containing several counts once for each.`,
     )
   } else if (tally) {
     tallyParts.push(
@@ -4884,7 +4920,11 @@ function dietHistoryAppendix(snap: ReportSnapshot): string {
     : 'None recorded.'
   const weightBit = snap.weight.isEmpty
     ? 'No home weigh-ins recorded. Body-condition score and caloric adequacy not assessed in this record.'
-    : `Weight trend on page&nbsp;1. Body-condition score and caloric adequacy not assessed in this record.`
+    : `${
+        snap.weight.trend
+          ? 'Weight trend on page&nbsp;1'
+          : 'No weigh-in falls inside this window, so page&nbsp;1 shows no weight trend'
+      }. Body-condition score and caloric adequacy not assessed in this record.`
   return `
   <p class="appx-title serif" style="margin-top:22px">Appendix B — Diet history</p>
   <p class="appx-sub">A picture of what ${h(snap.signalment.name)} is fed, in the spirit of the WSAVA Short Diet History Form. Fields the app does not yet capture are marked &ldquo;not recorded&rdquo; rather than guessed.</p>

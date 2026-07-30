@@ -1124,6 +1124,23 @@ export interface SymptomAggregate {
     firstEndDate: string
     lastStartDate: string
     lastEndDate: string
+    /**
+     * Events on the excluded middle day of an ODD window (B-600, cold read round 13).
+     *
+     * The exclusion is right — handing the spare day to one side reintroduces the bias
+     * the equal halves exist to remove — but it is only right while the page does not
+     * let the comparison contradict the total. Rendered: a 31-day window whose ONE
+     * symptom event fell on the median day printed "first 15 d 0 → last 15 d 0" three
+     * centimetres under "1 / 31 d". The delta had swallowed 100% of the evidence, and
+     * a 60-second scan reads two zeroes as no episodes.
+     *
+     * So the day is DISCLOSED beside the comparison rather than given to a half or
+     * hidden — C5's disclose-don't-adjudicate, applied to a denominator instead of a
+     * rate. Zero on an even window, where there is no middle day.
+     */
+    middleCount: number
+    /** The excluded day, when the window is odd; null when it is even. */
+    middleDate: string | null
   } | null
 }
 
@@ -2419,6 +2436,7 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     let lastOnset: string | null = null
     let firstHalfCount = 0
     let lastHalfCount = 0
+    let middleCount = 0
     for (const e of incidents) {
       const dn = eventDayNumber(e.occurredAt, tz)
       if (dn !== null) {
@@ -2426,6 +2444,8 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
         weeklyBuckets[bucketIndexOfDay(dn)]++
         if (inFirstHalf(dn)) firstHalfCount++
         else if (inLastHalf(dn)) lastHalfCount++
+        // THE EXCLUDED MIDDLE DAY IS COUNTED, NOT DISCARDED (B-600, cold read r13).
+        else if (halfDays > 0) middleCount++
       }
       if (firstOnset === null || e.occurredAt < firstOnset) firstOnset = e.occurredAt
       if (lastOnset === null || e.occurredAt > lastOnset) lastOnset = e.occurredAt
@@ -2451,6 +2471,8 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
               firstEndDate: dayKeyFromNumber(firstHalfEndDayNum),
               lastStartDate: dayKeyFromNumber(lastHalfStartDayNum),
               lastEndDate: dayKeyFromNumber(endDayNum),
+              middleCount,
+              middleDate: windowDays % 2 === 1 ? dayKeyFromNumber(firstHalfEndDayNum + 1) : null,
             }
           : null,
     })

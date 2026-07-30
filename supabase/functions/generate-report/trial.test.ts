@@ -2406,6 +2406,43 @@ Deno.test('B-600 — every trial-scoped COUNT takes the scoped phrase; existenti
   assert.ok(!/ in in /.test(text))
 })
 
+Deno.test('B-600 — the delta may not swallow the evidence on the excluded middle day', () => {
+  // `vet-report-cold-read` round 13's top finding, and it asked for exactly this
+  // artifact: "generate one odd-window artifact with an event on the median day and see
+  // what page 1 says. If the halves swallow it, it is blocking." Rendered, it did.
+  //
+  // 31-day window, halves Jun 2–16 and Jun 18–Jul 2, median Jun 17. With the record's
+  // ONLY symptom event on that day the page printed "first 15 d 0 → last 15 d 0" three
+  // centimetres under "1 / 31 d". Two zeroes scan as no episodes, and on this record
+  // that one day is 100% of the evidence.
+  //
+  // The exclusion itself is right (B-532: a spare day handed to one side reintroduces
+  // the bias equal halves remove). What was missing is that the page let the comparison
+  // contradict the total.
+  const input = truncatedTrialInput()
+  input.events = input.events.filter((e) => e.type !== 'vomit')
+  input.events.push(symptom('2026-06-17', 'vomit'))
+  const snap = assembleReport(input)
+  const v = snap.symptoms.find((s) => s.type === 'vomit')!
+  assert.equal(v.count, 1)
+  assert.equal(v.trendHalves!.firstCount, 0)
+  assert.equal(v.trendHalves!.lastCount, 0, 'the comparison genuinely holds neither')
+  assert.equal(v.trendHalves!.middleCount, 1)
+  assert.equal(v.trendHalves!.middleDate, '2026-06-17')
+
+  const text = plain(renderReport(snap))
+  assert.ok(/first 15 d 0 logged 0 → last 15 d 11 logged 0/.test(text), 'the halves are unchanged')
+  assert.ok(
+    /1 on Jun 17 — the middle day of an odd window, counted in the total above and in neither half/.test(text),
+    'and the day is named beside them',
+  )
+
+  // SILENT WHEN IT CARRIES NOTHING. A clause on every odd-window report is one the
+  // reader learns to skip, and most windows have no event on the median day.
+  const quiet = plain(renderReport(assembleReport(truncatedTrialInput())))
+  assert.ok(!/the middle day of an odd window/.test(quiet))
+})
+
 Deno.test('B-600 — halfPartition is symmetric, in-span, and drops only an odd middle', () => {
   for (let days = 1; days <= 400; days++) {
     const start = 20_000
@@ -3358,3 +3395,4 @@ Deno.test('ADV⑫ — page 1 does not disagree with its own cross-reference', ()
   assert.ok(/Appendix C — Treats & table food during the trial/.test(text))
   assert.ok(!/Off-dietTreats|Off-diet1 treat|Off-diet 1 treat/.test(text), 'the row is not headed with a verdict the appendix denies')
 })
+

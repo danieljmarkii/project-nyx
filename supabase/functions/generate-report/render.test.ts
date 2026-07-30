@@ -1546,6 +1546,8 @@ function monitoringSnap(over: Partial<ReportSnapshot> = {}): ReportSnapshot {
           firstEndDate: '2026-05-17',
           lastStartDate: '2026-05-19',
           lastEndDate: '2026-07-02',
+          middleCount: 0,
+          middleDate: null,
         },
       }),
     ],
@@ -2712,6 +2714,8 @@ Deno.test('B-532 — the trend delta compares EQUAL-length halves', () => {
             firstEndDate: '2026-06-09',
             lastStartDate: '2026-06-10',
             lastEndDate: '2026-07-02',
+            middleCount: 0,
+            middleDate: null,
           },
         }),
       ],
@@ -2955,6 +2959,9 @@ Deno.test('B-532 ADV① — page 1 and the symptom panel never disagree about di
     firstEndDate: '2026-05-18',
     lastStartDate: '2026-05-19',
     lastEndDate: '2026-06-05',
+    // 36 is even, so there is no middle day to exclude.
+    middleCount: 0,
+    middleDate: null,
   }
   const html = renderReport(
     base({
@@ -2996,7 +3003,7 @@ Deno.test('B-532 ADV② — the tile’s sparse caveat counts over the window it
           windowDays: 36,
           loggedDays: 9,
           weeklyBuckets: [1, 0, 0, 2, 2, 2],
-          trendHalves: { days: 18, firstCount: 1, lastCount: 6, firstStartDate: '2026-05-01', firstEndDate: '2026-05-18', lastStartDate: '2026-05-19', lastEndDate: '2026-06-05' },
+          trendHalves: { days: 18, firstCount: 1, lastCount: 6, firstStartDate: '2026-05-01', firstEndDate: '2026-05-18', lastStartDate: '2026-05-19', lastEndDate: '2026-06-05', middleCount: 0, middleDate: null },
         }),
       ],
       atAGlance: {
@@ -3034,7 +3041,7 @@ Deno.test('B-532 ADV③ — the artefactual-improvement caveat is not lost at th
           windowDays: 90,
           loggedDays: 57,
           weeklyBuckets: [2, 2, 1, 1, 0, 1, 0, 1, 0, 0, 0, 0, 0],
-          trendHalves: { days: 45, firstCount: 6, lastCount: 2, firstStartDate: '2026-04-04', firstEndDate: '2026-05-18', lastStartDate: '2026-05-19', lastEndDate: '2026-07-02' },
+          trendHalves: { days: 45, firstCount: 6, lastCount: 2, firstStartDate: '2026-04-04', firstEndDate: '2026-05-18', lastStartDate: '2026-05-19', lastEndDate: '2026-07-02', middleCount: 0, middleDate: null },
         }),
       ],
       atAGlance: { ...base().atAGlance, windowDays: 90, loggedDays: 57, firstHalfLoggedDays: 42, secondHalfLoggedDays: 15 },
