@@ -675,6 +675,13 @@ describe('B-600 — a truncated view of a trial is not the trial', () => {
   it('counts the elapsed trial days the scope leaves out', () => {
     // 1 Jul – 11 Aug, the six weeks before the window opened.
     expect(facts.trialDaysOutsideRange).toEqual({ before: 42, after: 0 });
+    // AND STATES THE TRIAL'S OWN LENGTH, so no consumer has to derive it from a
+    // clipped one. `TrialBlock.dayCounter` is bounded at the evidence end and is not
+    // this — the render derived the slice from it and printed three wrong numbers.
+    // The identity: shown + before + after === elapsed.
+    expect(facts.trialDaysElapsed).toBe(73);
+    const outside = facts.trialDaysOutsideRange.before + facts.trialDaysOutsideRange.after;
+    expect(facts.trialDaysElapsed - outside).toBe(facts.coverage!.daysElapsed);
   });
 
   it('§7.2 names the window, and the affirmative can never reach past it', () => {
@@ -730,6 +737,10 @@ describe('B-600 — a truncated view of a trial is not the trial', () => {
       scopeEnd: '2026-08-01',
     });
     expect(early.trialDaysOutsideRange).toEqual({ before: 0, after: 41 });
+    // The trial has still run 73 days; only the report is short. This is the value the
+    // render's "a trial that has run N" reads — deriving it from a window-bounded
+    // counter is what made that sentence say 30.
+    expect(early.trialDaysElapsed).toBe(73);
     expect(interpretabilityStatement(early)).toMatch(/of this report’s window/);
   });
 });

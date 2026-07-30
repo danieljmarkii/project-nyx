@@ -1353,8 +1353,35 @@ function headline(snap: ReportSnapshot): string {
     const lead = tb && tb.status !== 'active'
       ? `${tb.status === 'completed' ? 'Completed' : 'Stopped early'}: <b>${food}</b> as a diet trial${vet}`
       : `Tracking <b>${food}</b> as a diet trial${vet}`
+    // ── TWO SPANS IN ONE SENTENCE, AND THE COUNT HAD NO WINDOW (B-600) ─────────
+    //
+    // `trialDayPhrase` counts the TRIAL ("day 73 of 84"); `primPhrase` counts the
+    // WINDOW ("vomiting (1 logged)"). Bolded, first line of the page, no denominator
+    // on the count and no dates on either — so the cold read carried the 1 across the
+    // 73 and left with "one vomit in seventy-three days on the diet, it's working,
+    // finish it and rechallenge." The record supports "once in the eleven logged days
+    // of a thirty-one day window", and the two readings end in opposite plans.
+    //
+    // The trial block's slice disclosure could not save it: that sentence lives four
+    // paragraphs down and its own scoping word was "below", which excludes this line
+    // by construction. A disclaimer that exempts the sentence needing it is not a
+    // disclaimer. So the window rides the headline, at the count, where the collision
+    // happens.
+    //
+    // It names only `outside` and `trialDaysElapsed` — both authoritative — and asserts
+    // nothing about how many days it DOES show. The symptom count beside it is over the
+    // report window while the trial block's figures are over the overlap, and those two
+    // spans are not always equal; a single number here would have to be one or the
+    // other and would be read as both.
+    const outsideHere = tb ? tb.trialDaysOutsideRange.before + tb.trialDaysOutsideRange.after : 0
+    const windowBit =
+      outsideHere > 0 && tb
+        ? ` <b>This report covers ${h(fmtRange(snap.scope.startDate, snap.scope.endDate))} &mdash; ${num(
+            outsideHere,
+          )} of the trial&rsquo;s ${num(tb.trialDaysElapsed)} days fall outside it</b>, so the count above is over that window, not over the trial.`
+        : ''
     return `
-  <div class="headline">${lead} &mdash; ${trialDayPhrase(tb, t.targetDurationDays)}. Primary sign logged: <b>${primPhrase}</b>.${breachBit}</div>`
+  <div class="headline">${lead} &mdash; ${trialDayPhrase(tb, t.targetDurationDays)}. Primary sign logged: <b>${primPhrase}</b>.${windowBit}${breachBit}</div>`
   }
   const hasChronic = snap.safetyFlags.some((f) => f.kind === 'chronicity')
   const chronicBit = hasChronic ? ' Ongoing pattern — see the safety flags above.' : ''
@@ -1435,10 +1462,20 @@ function dietTrialSection(snap: ReportSnapshot): string {
   // sentence LEAD that callout on the sickest patient; a truncated report of a
   // refusing pet must not push "not one rated feeding was finished" into second
   // place to make room for a scoping note.
+  //
+  // ⚠️ THE ARITHMETIC READS `trialDaysElapsed`, NEVER `dayCounter`. The first cut of
+  // this sentence derived both numbers from `dayCounter`, which is already bounded at
+  // the EVIDENCE end — so on a hand-picked window ending in the past it subtracted the
+  // `after` days a second time and rendered *"This report shows 1 day of a trial that
+  // has run 30 — 43 trial days fall after it"* one clause above *"Meals logged on 30 of
+  // 30 days"*. Three wrong numbers, contradicting each other and the next sentence, on
+  // the cherry-pick basis this disclosure exists for; the raw slice was −13 and only
+  // `Math.max(1, …)` made it printable. `shown + before + after === trialDaysElapsed`
+  // is an identity, and it is asserted as one.
   const outside = t.trialDaysOutsideRange
   const outsideDays = outside.before + outside.after
   if (outsideDays > 0) {
-    const rangeDays = Math.max(1, t.dayCounter - outsideDays)
+    const shownDays = t.trialDaysElapsed - outsideDays
     const where =
       outside.before > 0 && outside.after > 0
         ? 'before and after it'
@@ -1446,11 +1483,16 @@ function dietTrialSection(snap: ReportSnapshot): string {
           ? 'before it'
           : 'after it'
     recordBits.push(
-      `<b>This report shows ${num(rangeDays)} day${rangeDays === 1 ? '' : 's'} of a trial that has run ${num(
-        t.dayCounter,
-      )}</b> &mdash; ${num(outsideDays)} trial day${
-        outsideDays === 1 ? '' : 's'
-      } fall ${where}, outside this report&rsquo;s window. Every figure below is counted over the window, not over the trial.`,
+      // NOT "every figure below is counted over the window" — that over-claims, and the
+      // B-422 tail clip falsifies it in the very next sentence: on an overrun trial the
+      // coverage denominator closes at the target end, inside the window. What is true
+      // without exception is the negative, so the negative is what it says. Each figure
+      // below carries its own dates.
+      `<b>This report shows ${num(shownDays)} day${shownDays === 1 ? '' : 's'} of a trial that has run ${num(
+        t.trialDaysElapsed,
+      )}</b> &mdash; ${num(outsideDays)} trial day${outsideDays === 1 ? '' : 's'} ${
+        outsideDays === 1 ? 'falls' : 'fall'
+      } ${where}, outside this report&rsquo;s window. Nothing below describes the trial as a whole; the day counter above is the only figure here that counts it.`,
     )
   }
   if (t.coverage) {
@@ -1728,7 +1770,11 @@ function dietTrialSection(snap: ReportSnapshot): string {
     // was three silent weeks in the middle of the trial. Same string, same defect,
     // one layer from where round 6 fixed it.
     const window = snap.atAGlance.windowDays
-    const rangeDays = m.firstHalf.days + m.lastHalf.days
+    // THE SPAN, NOT THE SUM OF THE HALVES. Since B-600 the halves are symmetric and
+    // an odd span's middle day is in neither, so summing them under-counts by one and
+    // the clause fired claiming the window was "wider" than a range identical to it.
+    const rangeDays =
+      daysBetweenDayKeys(snap.trial!.evidenceStartDate, snap.trial!.evidenceEndDate) + 1
     const scope =
       window > rangeDays
         // EVIDENCE — the halves above are computed over the evidence span (round
@@ -1805,7 +1851,23 @@ function dietTrialSection(snap: ReportSnapshot): string {
   // distinction §7.2 exists to draw. `interpretabilityStatement` stays PR 5's
   // (coverage is its input and it says so); the caveats are the report's.
   const statement = t.interpretabilityStatement
+  // ── THE REFUSAL SENTENCE LEADS THIS CALLOUT, ON EVERY RUNG (B-600) ──────────
+  //
+  // It is held out of `caveats` rather than pushed into it, because round 4's ruling
+  // is about ORDER and the old mechanism enforced it only by accident: the statement
+  // was suppressed on `supports`, and the canonical refusing cat happened to score
+  // `supports`. B-600 moves a truncated record DOWN a rung, so the same cat on a
+  // since-visit window kept its statement — and the adversarial pass rendered the
+  // result: *"This record covers 29 of 44 days of this report's window — enough to
+  // read alongside the rest of the history"* leading the callout, with *"Not one rated
+  // feeding of the trial diet was finished (58 of 58)"* pushed into second place.
+  // A record-quality sentence outranking a starving cat, on the one line the render's
+  // own comment calls what a vet reads for the bottom line.
+  //
+  // Ordering it explicitly makes it independent of which rung fires, and of whatever
+  // moves the rungs next. It still counts toward suppressing the affirmative.
   const caveats: string[] = []
+  let refusalCaveat: string | null = null
   if (t.belowCoverageFloor) {
     caveats.push(
       'A record this sparse cannot distinguish a clean elimination from an untracked one, in either direction.',
@@ -1832,9 +1894,8 @@ function dietTrialSection(snap: ReportSnapshot): string {
           refusalFact!.ratedFeedings,
         )})`
       : 'The trial diet was largely not eaten'
-    caveats.push(
-      `${eaten}, so this record documents a refusal rather than an elimination &mdash; the coverage figure describes how completely it was tracked, not whether the diet was fed exclusively.`,
-    )
+    refusalCaveat =
+      `${eaten}, so this record documents a refusal rather than an elimination &mdash; the coverage figure describes how completely it was tracked, not whether the diet was fed exclusively.`
   }
   if (t.arrangementExposures.length > 0) {
     caveats.push(
@@ -1900,14 +1961,17 @@ function dietTrialSection(snap: ReportSnapshot): string {
         : 'For part of this window no trial diet was recorded on the allowed list, so proteins fed then could not be checked against it — the elimination cannot be confirmed clean from this record.',
     )
   }
-  const suppressStatement = caveats.length > 0 && t.interpretability === 'supports'
+  const suppressStatement =
+    (caveats.length > 0 || refusalCaveat !== null) && t.interpretability === 'supports'
   const shown = suppressStatement ? null : statement
+  // Refusal first, then the record-quality statement, then the remaining caveats.
+  const body = [refusalCaveat, shown ? h(shown) : null, ...caveats].filter(
+    (p): p is string => p !== null,
+  )
   const callout =
-    shown || caveats.length > 0
+    body.length > 0
       ? `
-    <div class="callout"><span class="k">Interpreting this record</span> ${
-      shown ? `${h(shown)} ` : ''
-    }${caveats.join(' ')}</div>`
+    <div class="callout"><span class="k">Interpreting this record</span> ${body.join(' ')}</div>`
       : ''
 
   return `

@@ -1635,6 +1635,18 @@ export interface TrialFacts {
    * failure this field exists to make unsayable.
    */
   trialDaysOutsideRange: { before: number; after: number };
+  /**
+   * How many days the trial has ACTUALLY run: its start to `min(today, its end)`.
+   *
+   * ⚠️ THIS, NEVER `TrialBlock.dayCounter`, IS THE TRIAL'S LENGTH. `dayCounter` is
+   * bounded at the evidence end, so on a report whose scope closes before the trial
+   * did they differ by exactly `trialDaysOutsideRange.after` — and the surface that
+   * mistook one for the other printed "a trial that has run 30" about a 73-day trial,
+   * with a slice count of 1 over a 30-day window. `trialDaysElapsed`,
+   * `trialDaysOutsideRange.before/after` and the shown span are one identity:
+   * `shown + before + after === trialDaysElapsed`.
+   */
+  trialDaysElapsed: number;
   /** §5.2's floor. Gates §7.2's statement — NOT the counts, NOT the card's
    *  facts, and no alarm in either direction. */
   belowCoverageFloor: boolean;
@@ -1923,6 +1935,7 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
     // interpretability statement at all (`not_yet`), so the zero is never read as
     // "the range covers the whole trial".
     trialDaysOutsideRange: { before: 0, after: 0 },
+    trialDaysElapsed: 0,
     belowCoverageFloor: false,
     intakeNotDirectlyObserved: (input.arrangements ?? []).length > 0,
     // On the early-return paths there is no range to be "at the end of", so the
@@ -2111,6 +2124,21 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
     before: Math.max(0, scopedStart - ctx.startDayIndex),
     after: Math.max(0, trialElapsedEnd - evidenceEnd),
   };
+  // HOW LONG THE TRIAL HAS ACTUALLY RUN, stated once, here, where the indices are.
+  //
+  // Every surface wants this and no surface could get it. `TrialBlock.dayCounter`
+  // looks like it — it is what renders "day 73 of 84" — but it is bounded at the
+  // EVIDENCE end, so it equals the elapsed length only while nothing is clipped off
+  // the tail. The first consumer to treat it as the trial's length subtracted `after`
+  // from it a second time and printed *"This report shows 1 day of a trial that has
+  // run 30 — 43 trial days fall after it"* directly above *"Meals logged on 30 of 30
+  // days"*: three wrong numbers, self-contradictory, on the hand-picked window the
+  // owner chooses. `Math.max(1, …)` was hiding a raw −13.
+  //
+  // That is rounds 2/3/4's mistake again — a consumer re-using a clipped bound as if
+  // it were the unclipped one — so the answer is the same one: derive it where the
+  // clip is, not at the seam that cannot see it.
+  const trialDaysElapsed = Math.max(0, trialElapsedEnd - ctx.startDayIndex + 1);
 
   // THE CLIP MOVES THE COVERAGE DENOMINATOR ONLY — it must not move the exposure
   // window. §5.1's whole point is that the two metrics have their OWN
@@ -2451,6 +2479,7 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
     untrackedDaysBeforeFirstLog,
     interpretability,
     trialDaysOutsideRange,
+    trialDaysElapsed,
     belowCoverageFloor: interpretability === 'does_not_support',
     // THE SECOND DISJUNCT (see the field's docstring): a `primary_diet` row that
     // matches nothing is the same fact as no row at all, and commoner. The floor

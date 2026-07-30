@@ -15,7 +15,7 @@ import {
   type ReportInput, type ReportEventInput,
 } from './report.ts'
 import { renderReport } from './render.ts'
-import { buildTrialBlock, looksAntibacterial, selectReportTrial } from './trial.ts'
+import { buildTrialBlock, halfPartition, looksAntibacterial, selectReportTrial } from './trial.ts'
 
 /** The rendered page as a VET READS IT: tags stripped, entities decoded.
  *
@@ -143,6 +143,15 @@ const PERMITTED_TREAT = {
   productName: 'Hydrolyzed Treats',
   proteins: ['soy'],
   ingredientsNotes: 'Hydrolysed soy protein',
+}
+
+/** Whole days from one `YYYY-MM-DD` to another; negative if the second is earlier. */
+function daysBetween(fromKey: string, toKey: string): number {
+  return Math.round((Date.parse(`${toKey}T00:00:00Z`) - Date.parse(`${fromKey}T00:00:00Z`)) / 86_400_000)
+}
+
+function dayKeyPlus(key: string, days: number): string {
+  return new Date(Date.parse(`${key}T00:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10)
 }
 
 function baseInput(over: Partial<ReportInput> = {}): ReportInput {
@@ -1865,6 +1874,13 @@ function truncatedTrialInput(): ReportInput {
   const events = [...days('2026-04-21', '2026-06-01'), ...days('2026-06-22', '2026-07-02')].map((d) =>
     meal({ date: d, brand: 'Royal Canin', product: 'Hydrolyzed HP', foodItemId: 'f-hp', proteins: ['soy'] }),
   )
+  // GI signs: several before the recheck (outside the window entirely) and one inside
+  // it. The pre-window ones are the trial's own history and are exactly what the
+  // headline invited a reader to believe they had seen.
+  for (const d of ['2026-04-22', '2026-04-27', '2026-05-06', '2026-05-13', '2026-05-24']) {
+    events.push(symptom(d, 'vomit'))
+  }
+  events.push(symptom('2026-06-29', 'vomit'))
   return baseInput({
     events,
     dietTrials: [
@@ -1926,6 +1942,203 @@ Deno.test('B-600 — eleven days may not certify eighty-four', () => {
   // the MIDDLE of a trial the owner logged twice a day for its first six.
   assert.ok(!/in the trial’s first half/.test(text))
   assert.ok(/in the first half of Jun 2 – Jul 2, 2026/.test(text))
+})
+
+Deno.test('B-600 — the HEADLINE carries the window, because the count in it does', () => {
+  // `vet-report-cold-read`, round 8, and the worst finding across four artifacts.
+  // The headline pairs two spans in one bolded sentence — `trialDayPhrase` counts the
+  // TRIAL ("day 73 of 84"), `primPhrase` counts the WINDOW ("vomiting (1 logged)") —
+  // with no denominator on the count and no dates on either. The reviewer read it as
+  // one vomit in seventy-three days on the elimination diet, called the trial a
+  // success, and would have rechallenged. The record supports "once in the eleven
+  // logged days of a thirty-one day window".
+  //
+  // The trial block's own slice disclosure could not save it: it sits four paragraphs
+  // down and its scoping word was "below", which excludes this line by construction.
+  const text = plain(renderReport(assembleReport(truncatedTrialInput())))
+  const headline = text.slice(0, text.indexOf('At a glance'))
+  assert.ok(/day 73 of 84/.test(headline))
+  assert.ok(
+    /This report covers Jun 2 – Jul 2, 2026 — 42 of the trial’s 73 days fall outside it/.test(headline),
+  )
+  assert.ok(/the count above is over that window, not over the trial/.test(headline))
+  // And the block's disclaimer no longer claims a scope it does not have.
+  assert.ok(!/Every figure below/.test(text))
+
+  // Silent when there is nothing to scope — the headline of an untruncated report is
+  // unchanged, and a note that fires on every report is noise on all of them.
+  const plainText = plain(renderReport(assembleReport(wellLoggedTrialInput())))
+  // Specific, because the LEGEND carries a generic "…events that fall outside it"
+  // sentence on every report.
+  assert.ok(!/of the trial’s \d+ days fall outside it/.test(plainText))
+  assert.ok(!/This report shows \d+ days of a trial that has run/.test(plainText))
+})
+
+Deno.test('B-600 — the dagger base rate shares a span with its own numerator', () => {
+  // The footnote whose entire purpose is to admit the marker does not discriminate.
+  // Its loop ran from `ctx.startDayIndex` — the TRIAL's first day — while
+  // `symptomDayIndices` is built from `windowEvents` and can only hold in-window days.
+  // Where the scope opens at the trial start the two are identical, which is why all
+  // three earlier artifacts agreed and nothing caught it; on a since-visit window it
+  // printed 19% (14/73) where the operative rate over the rows the dagger marks is
+  // 45% (14/31). A numerator and denominator over different spans is not a rate, and
+  // this one understates its own noise by 2.4× on the page where an owner's note
+  // already pairs a daggered treat with a symptom.
+  const input = truncatedTrialInput()
+  // One off-list treat plus a symptom inside every challenge window, so the marker is
+  // near-unavoidable — which is exactly the state the footnote exists to disclose.
+  input.events.push(
+    meal({ date: '2026-06-28', time: '16:10:00', brand: 'Home', product: 'Chicken jerky', foodItemId: 'f-jerky', foodType: 'treat', proteins: ['chicken'] }),
+  )
+  for (const d of ['2026-06-05', '2026-06-12', '2026-06-19', '2026-06-26', '2026-06-29']) {
+    input.events.push(symptom(d))
+  }
+  const snap = assembleReport(input)
+  const t = snap.trial!
+  // The evidence span is the window here (31 d), NOT the trial's 73.
+  assert.equal(t.dayCounter, 73)
+  assert.equal(daysBetween(t.evidenceStartDate, t.evidenceEndDate) + 1, 31)
+
+  // Recompute the rate by hand over the evidence span and require the report to match.
+  const symptomDays = ['2026-06-05', '2026-06-12', '2026-06-19', '2026-06-26', '2026-06-29']
+  let qualifying = 0
+  for (let i = 0; i < 31; i++) {
+    const day = dayKeyPlus(t.evidenceStartDate, i)
+    if (symptomDays.some((sd) => daysBetween(day, sd) > 0 && daysBetween(day, sd) <= 14)) qualifying++
+  }
+  assert.equal(t.challengeMarkerBaseRatePct, Math.round((qualifying / 31) * 100))
+  // And it is emphatically not the trial-span figure, which is always the smaller one
+  // and always in the reassuring direction for this footnote.
+  assert.ok(t.challengeMarkerBaseRatePct > Math.round((qualifying / 73) * 100))
+})
+
+Deno.test('B-600 — one half-partition: the block and the trend footnote cannot disagree', () => {
+  // Two partitions of the same span, printed twenty lines apart, disagreeing:
+  // "11 of 16 in the second" in the trial block against "11 of 15 d logged" in the
+  // trend footnote, both about Jun 18 – Jul 2. `loggingDensity` gave the odd middle
+  // day to the last half; `report.ts`'s trend partition dropped it. Neither number is
+  // dangerous — but a clinical page that disagrees with itself about a figure the
+  // reader can check costs the credibility of every figure they cannot.
+  const snap = assembleReport(truncatedTrialInput())
+  const d = snap.trial!.loggingDensity!
+  const vomit = snap.symptoms.find((s) => s.type === 'vomit')!
+  // Same span here (the trial's evidence range IS the window), so the two must agree
+  // day for day, not merely approximately.
+  assert.equal(d.meals.firstHalf.days, d.meals.lastHalf.days, 'halves are symmetric')
+  assert.equal(d.meals.firstHalf.days, vomit.trendHalves!.days)
+  assert.equal(d.meals.lastHalf.days, vomit.trendHalves!.days)
+  // …and over the identical calendar days, not merely the same length.
+  assert.equal(vomit.trendHalves!.firstStartDate, snap.trial!.evidenceStartDate)
+  assert.equal(vomit.trendHalves!.lastEndDate, snap.trial!.evidenceEndDate)
+  assert.equal(d.meals.firstHalf.daysLogged, snap.atAGlance.firstHalfLoggedDays)
+  assert.equal(d.meals.lastHalf.daysLogged, snap.atAGlance.secondHalfLoggedDays)
+
+  const text = plain(renderReport(snap))
+  assert.ok(/Days a meal was logged: 0 of 15 in the first half of Jun 2 – Jul 2, 2026, 11 of 15 in the second/.test(text))
+  assert.ok(/trend halves: Jun 2 – Jun 16, 2026 \(0 of 15 d logged\) vs Jun 18 – Jul 2, 2026 \(11 of 15 d logged\)/.test(text))
+
+  // The excluded middle day is dropped from those two DENOMINATORS and nothing else.
+  assert.equal(snap.atAGlance.loggedDays, 11)
+  assert.deepEqual(snap.trial?.coverage, { daysLogged: 11, daysElapsed: 31 })
+})
+
+Deno.test('B-600 — a hand-picked window ending in the past: the identity holds', () => {
+  // `adversarial-reviewer`, executed against the first cut and it BROKE it. `dayCounter`
+  // is bounded at the EVIDENCE end, so it is not the trial's elapsed length whenever the
+  // scope closes early — and the slice sentence, derived from it, subtracted the `after`
+  // days a second time. It rendered "This report shows 1 day of a trial that has run 30
+  // — 43 trial days fall after it" one clause above "Meals logged on 30 of 30 days".
+  // Raw slice −13, printable only because of a `Math.max(1, …)`.
+  //
+  // This is the CHERRY-PICK basis — `app/report.tsx` ships a Custom range with two date
+  // pickers — so the disclosure was at its most wrong exactly where it matters most.
+  const input = wellLoggedTrialInput({ events: [] })
+  input.dietTrials[0].startedAt = '2026-04-21'
+  input.dietTrials[0].targetDurationDays = 84
+  for (const d of days('2026-04-21', '2026-07-02')) {
+    input.events.push(meal({ date: d, brand: 'Royal Canin', product: 'Hydrolyzed HP', foodItemId: 'f-hp', proteins: ['soy'] }))
+  }
+  input.requestedWindow = { startDate: '2026-04-21', endDate: '2026-05-20' }
+  const snap = assembleReport(input)
+  const t = snap.trial!
+  assert.equal(snap.scope.basis, 'custom')
+  assert.equal(t.trialDaysElapsed, 73, 'the trial has run 73 days, whatever the window shows')
+  assert.deepEqual(t.trialDaysOutsideRange, { before: 0, after: 43 })
+  // THE IDENTITY, asserted as one: shown + before + after === elapsed.
+  const outside = t.trialDaysOutsideRange.before + t.trialDaysOutsideRange.after
+  assert.equal(t.trialDaysElapsed - outside, 30)
+
+  const text = plain(renderReport(snap))
+  assert.ok(/This report shows 30 days of a trial that has run 73/.test(text))
+  assert.ok(/43 trial days fall after it, outside this report’s window/.test(text))
+  // The numbers must agree with the coverage sentence one clause later, which is what
+  // gave the defect away.
+  assert.ok(/Meals logged on 30 of 30 days/.test(text))
+  assert.ok(!/a trial that has run 30/.test(text))
+  assert.ok(!/This report shows 1 day/.test(text))
+})
+
+Deno.test('B-600 — the refusal sentence leads the callout on every rung', () => {
+  // `adversarial-reviewer`, executed. Round 4's ordering was enforced only by accident:
+  // the statement was suppressed on `supports`, and the canonical refusing cat happened
+  // to score `supports`. B-600 moves a truncated record DOWN a rung, so the same cat on
+  // a since-visit window kept its statement and it LED — "…enough to read alongside the
+  // rest of the history" above "Not one rated feeding of the trial diet was finished
+  // (58 of 58)". A record-quality sentence outranking a starving cat.
+  const input = baseInput({
+    pet: { id: 'pet-2', name: 'Mira', species: 'cat', breed: 'DSH', sex: 'female', dateOfBirth: '2018-07-01', weightKg: 4.1 },
+    vetVisits: [{ visitedAt: '2026-05-20', clinicName: 'Riverside', vetName: 'Dr. Chen', reason: 'recheck' }],
+    dietTrials: [
+      {
+        id: 'trial-2',
+        foodItemId: 'f-hp',
+        startedAt: '2026-05-14',
+        targetDurationDays: 56,
+        status: 'active',
+        completedAt: null,
+        endedAt: null,
+        indication: 'gi',
+        vetName: 'Dr. Chen',
+        foodLabel: 'Royal Canin Hydrolyzed HP',
+        primaryProtein: 'soy',
+        proteins: ['soy'],
+        allowedFoods: [TRIAL_FOOD],
+      },
+    ],
+  })
+  for (const d of days('2026-06-04', '2026-07-02')) {
+    for (const time of ['07:30:00', '18:00:00']) {
+      input.events.push(
+        meal({ date: d, time, brand: 'Royal Canin', product: 'Hydrolyzed HP', foodItemId: 'f-hp', proteins: ['soy'], intakeRating: 'refused' }),
+      )
+    }
+  }
+  const snap = assembleReport(input)
+  assert.ok(snap.trial!.trialDaysOutsideRange.before > 0, 'the visit post-dates the trial start')
+  assert.notEqual(snap.trial!.interpretability, 'supports', 'and the record is no longer on the affirmative rung')
+
+  const text = plain(renderReport(snap))
+  const callout = text.slice(text.indexOf('Interpreting this record'))
+  const refusal = callout.indexOf('rated feeding')
+  const quality = callout.indexOf('This record covers')
+  assert.ok(refusal > -1, 'the refusal sentence renders')
+  assert.ok(quality === -1 || refusal < quality, 'and nothing about the record outranks it')
+})
+
+Deno.test('B-600 — halfPartition is symmetric, in-span, and drops only an odd middle', () => {
+  for (let days = 1; days <= 400; days++) {
+    const start = 20_000
+    const end = start + days - 1
+    const { halfDays, firstEndDayIndex, lastStartDayIndex } = halfPartition(start, end)
+    assert.equal(halfDays, Math.floor(days / 2))
+    assert.equal(firstEndDayIndex - start + 1, halfDays, `first half length @${days}`)
+    assert.equal(end - lastStartDayIndex + 1, halfDays, `last half length @${days}`)
+    // Never overlapping, always inside the span, and the gap is 1 day iff odd.
+    assert.equal(lastStartDayIndex - firstEndDayIndex - 1, days % 2, `gap @${days}`)
+    if (halfDays > 0) {
+      assert.ok(firstEndDayIndex >= start && lastStartDayIndex <= end, `in span @${days}`)
+    }
+  }
 })
 
 Deno.test('B-600 — the disclosure is silent when the window spans the whole trial', () => {

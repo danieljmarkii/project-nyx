@@ -94,6 +94,7 @@ export function trialBlockFixture(
     // every first report and every client surface. A fixture exercising B-600
     // passes this explicitly.
     trialDaysOutsideRange: { before: 0, after: 0 },
+    trialDaysElapsed: 32,
     coverage: null,
     exposures: {
       totalFeedings: 0,

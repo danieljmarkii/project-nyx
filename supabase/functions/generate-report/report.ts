@@ -98,7 +98,14 @@ import { foodFormatWord } from '../../../lib/foodFormat.ts'
 // The diet-trial answer (B-417 PR 7). `trial.ts` is the seam onto `lib/dietTrial.ts`
 // — the one shared predicate — and imports NOTHING from this file, so the two are a
 // tree rather than a cycle.
-import { buildTrialBlock, selectReportTrial, trialEndValue, trialLastDayNum, type TrialBlock } from './trial.ts'
+import {
+  buildTrialBlock,
+  halfPartition,
+  selectReportTrial,
+  trialEndValue,
+  trialLastDayNum,
+  type TrialBlock,
+} from './trial.ts'
 // B-494's flag carries the refusal fact verbatim rather than flattening it, so the
 // band and the trial block on the same page cannot state different numbers.
 import { feedingWasFinished } from '../../../lib/dietTrial.ts'
@@ -2371,9 +2378,15 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
   const loggedDaysByBucket = new Array(numBuckets).fill(0)
   for (const dn of loggedDayNums) loggedDaysByBucket[bucketIndexOfDay(dn)]++
 
-  const halfDays = windowDays >= TREND_HALF_MIN_WINDOW_DAYS ? Math.floor(windowDays / 2) : 0
-  const firstHalfEndDayNum = startDayNum + halfDays - 1
-  const lastHalfStartDayNum = endDayNum - halfDays + 1
+  // ONE RULE, TWO SPANS (B-600). The arithmetic lives in `trial.ts.halfPartition`
+  // because a second copy of it existed here and in `loggingDensity`, and the two
+  // disagreed about the odd middle day — invisible while their spans differed, a
+  // self-contradiction on the same page the moment a truncated window made them
+  // coincide. The MINIMUM is still this caller's own.
+  const partition = halfPartition(startDayNum, endDayNum)
+  const halfDays = windowDays >= TREND_HALF_MIN_WINDOW_DAYS ? partition.halfDays : 0
+  const firstHalfEndDayNum = partition.firstEndDayIndex
+  const lastHalfStartDayNum = partition.lastStartDayIndex
   const inFirstHalf = (dn: number): boolean => halfDays > 0 && dn <= firstHalfEndDayNum
   const inLastHalf = (dn: number): boolean => halfDays > 0 && dn >= lastHalfStartDayNum
 
