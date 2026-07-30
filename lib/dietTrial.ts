@@ -1621,6 +1621,20 @@ export interface TrialFacts {
    *  as UNTRACKED, never counted as failure, and excluded from the range. */
   untrackedDaysBeforeFirstLog: number;
   interpretability: Interpretability;
+  /**
+   * B-600 — ELAPSED TRIAL DAYS THE RANGE DOES NOT LOOK AT, either side.
+   *
+   * Both zero whenever the range spans the whole elapsed trial, which is every
+   * client surface (the card passes no scope) and the first report of any trial.
+   * Non-zero is the SECOND report — the one sent at or after a recheck — where
+   * `since_visit` truncates a long trial by construction.
+   *
+   * A consumer that states anything about "the trial" reads this. `interpretability`
+   * is computed over the range, so on a truncated view it answers a question about
+   * the WINDOW; presenting that answer as a verdict on the trial is the §7.2
+   * failure this field exists to make unsayable.
+   */
+  trialDaysOutsideRange: { before: number; after: number };
   /** §5.2's floor. Gates §7.2's statement — NOT the counts, NOT the card's
    *  facts, and no alarm in either direction. */
   belowCoverageFloor: boolean;
@@ -1905,6 +1919,10 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
     antigenArmDark: false,
     untrackedDaysBeforeFirstLog: 0,
     interpretability: 'not_yet',
+    // No range resolved, so nothing is "outside" one. These paths render no
+    // interpretability statement at all (`not_yet`), so the zero is never read as
+    // "the range covers the whole trial".
+    trialDaysOutsideRange: { before: 0, after: 0 },
     belowCoverageFloor: false,
     intakeNotDirectlyObserved: (input.arrangements ?? []).length > 0,
     // On the early-return paths there is no range to be "at the end of", so the
@@ -1956,6 +1974,31 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
   // untracked days from the DENOMINATOR, which is strictly worse than the
   // treat-clearable numerator §5.1 already forbids: 7 of 8 days, `supports`,
   // rendered two lines under "Day 16 of 56".
+  //
+  // ── AND IT APPLIES AT THE TRIAL'S HEAD ONLY (B-600) ────────────────────────
+  //
+  // The comment above claims the clip "can never hide a genuine gap in the middle
+  // or at the end of a trial — only the head". That is true of a range whose head
+  // IS the trial's first day, and false the moment a REPORT SCOPE opens the range
+  // mid-trial. `since_visit` does exactly that on every report after the first: a
+  // recheck six weeks into a twelve-week trial moves the range head to the visit,
+  // and every "day before the first log" is then an ordinary mid-trial day.
+  //
+  // Executed: a 73-day trial logged twice daily to the recheck, three silent weeks,
+  // then eleven clean days. Through the 31-day since-visit window the clip
+  // swallowed the blackout as "the first 20 days of the trial predate any logging"
+  // — false twice over (they are not the trial's first days, and logging plainly
+  // existed before them) — and 11-of-31 became **11 of 11**, `does_not_support`
+  // became `supports`, and §7.2 certified an 84-day elimination trial off eleven
+  // days. The clip moves the denominator toward the record looking complete, so
+  // this is the one direction it must never move on a claim it cannot support.
+  //
+  // The gate is the trial's own head, not the presence of earlier logs, because
+  // the report path CANNOT SEE THEM: `buildTrialBlock` is handed window-scoped
+  // meals, so "was anything logged before the scope" is unanswerable here. An
+  // allowance for days the owner could not have logged may only be granted where
+  // the range starts on the day the owner's obligation did.
+  const rangeOpensAtTrialStart = scopedStart === ctx.startDayIndex
   const loggedDays = input.feedings
     .filter((f) => f.foodType !== 'treat')
     .map((f) => dayIndexOf(ctx, f.occurredAt))
@@ -2047,9 +2090,27 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
   // of -88 days". A range whose end precedes its start is not a degraded answer,
   // it is a nonsense one, so the clip only moves the head for a log that is
   // actually inside the window being described.
-  const headCandidates = loggedDays.filter((d) => d <= endDayIndex);
+  const headCandidates = rangeOpensAtTrialStart ? loggedDays.filter((d) => d <= endDayIndex) : [];
   const startDayIndex = headCandidates.length > 0 ? Math.min(...headCandidates) : scopedStart;
   const untrackedDaysBeforeFirstLog = startDayIndex - scopedStart;
+
+  // ── B-600 — HOW MUCH OF THE TRIAL THIS RANGE IS NOT ────────────────────────
+  //
+  // Elapsed trial days the report scope excludes. Not the B-422 tail clip (that is
+  // the trial's own prescribed window closing, and `closedByOverrun` discloses it)
+  // and not the head clip above (those days are inside the range) — only days the
+  // trial has actually run that this report does not look at.
+  //
+  // It exists because every figure in the block is computed over the overlap while
+  // the day counter beside them counts the whole trial, and nothing in the block's
+  // arithmetic knew the two were different. A surface that states an
+  // interpretability verdict reads this first: a view of a trial is not the trial,
+  // and eleven days may not certify eighty-four.
+  const trialElapsedEnd = Math.min(todayIndex, ctx.endDayIndex ?? todayIndex);
+  const trialDaysOutsideRange = {
+    before: Math.max(0, scopedStart - ctx.startDayIndex),
+    after: Math.max(0, trialElapsedEnd - evidenceEnd),
+  };
 
   // THE CLIP MOVES THE COVERAGE DENOMINATOR ONLY — it must not move the exposure
   // window. §5.1's whole point is that the two metrics have their OWN
@@ -2389,6 +2450,7 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
       : null,
     untrackedDaysBeforeFirstLog,
     interpretability,
+    trialDaysOutsideRange,
     belowCoverageFloor: interpretability === 'does_not_support',
     // THE SECOND DISJUNCT (see the field's docstring): a `primary_diet` row that
     // matches nothing is the same fact as no row at all, and commoner. The floor
@@ -2623,22 +2685,48 @@ export function contaminationNote(
  * which is why every variant below has "this record"/"this log" as its subject
  * and none of them contains a percentage, a grade or a verdict on the trial.
  */
+/**
+ * §7.2's one sentence.
+ *
+ * ⚠️ IT IS ABOUT THE RANGE, AND THE RANGE IS NOT ALWAYS THE TRIAL (B-600). Every
+ * earlier revision of this string said "of the trial window" and, on `supports`,
+ * "and supports interpreting **it**" — where "it" is the trial. That is true only
+ * while the range spans the whole elapsed trial. On a report scoped to the last vet
+ * visit it is false by construction, and the executed artifact is the argument: a
+ * 31-day view of an 84-day trial printed *"This record covers 11 of 11 days of the
+ * trial window and supports interpreting it"* three inches under a headline reading
+ * *"day 73 of 84"*. A vet reads one sentence for the bottom line, and that one
+ * certified seventy-three days off eleven.
+ *
+ * So under truncation the noun is the WINDOW, and the affirmative may vouch for the
+ * window only — never for the trial. Same rule the medication overlap and C5's
+ * density line were both re-based onto: name the range, not the trial.
+ */
 export function interpretabilityStatement(facts: TrialFacts): string | null {
   if (!facts.coverage || !facts.range) return null;
   const { daysLogged, daysElapsed } = facts.coverage;
   const days = `${daysLogged} of ${daysElapsed} days`;
+  const outside = facts.trialDaysOutsideRange.before + facts.trialDaysOutsideRange.after;
+  const truncated = outside > 0;
+  const of = truncated ? 'of this report’s window' : 'of the trial window';
   switch (facts.interpretability) {
     case 'supports':
-      return `This record covers ${days} of the trial window and supports interpreting it.`;
+      return truncated
+        // NOT "AND SUPPORTS INTERPRETING IT". The report states the shortfall in
+        // days beside this (it holds the trial's day counter and this fact); the
+        // module's job is to make sure the affirmative can never reach past the
+        // window it was measured over.
+        ? `This record covers ${days} ${of} and supports interpreting that window — not the trial as a whole.`
+        : `This record covers ${days} ${of} and supports interpreting it.`;
     case 'partially_supports':
       return (
-        `This record covers ${days} of the trial window — enough to read alongside the ` +
+        `This record covers ${days} ${of} — enough to read alongside the ` +
         'rest of the history, not enough to stand on its own.'
       );
     case 'does_not_support':
       return (
-        `This record covers ${days} of the trial window, which does not support ` +
-        'interpreting this trial either way — the gaps are larger than the record.'
+        `This record covers ${days} ${of}, which does not support ` +
+        `interpreting ${truncated ? 'that window' : 'this trial'} either way — the gaps are larger than the record.`
       );
     case 'not_yet':
     default:

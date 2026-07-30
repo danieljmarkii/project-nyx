@@ -90,6 +90,10 @@ export function trialBlockFixture(
     rangeEndDate: '2026-07-02',
     rangeClipped: false,
     untrackedDaysBeforeFirstLog: 0,
+    // The default is the UNTRUNCATED trial — range and trial coincide, which is
+    // every first report and every client surface. A fixture exercising B-600
+    // passes this explicitly.
+    trialDaysOutsideRange: { before: 0, after: 0 },
     coverage: null,
     exposures: {
       totalFeedings: 0,

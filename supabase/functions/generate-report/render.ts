@@ -1419,6 +1419,40 @@ function dietTrialSection(snap: ReportSnapshot): string {
   // common case — a treat-only day is excluded from the day ratio and included in
   // the feeding count, and 15.7% of live covered days are treat-only.
   const recordBits: string[] = []
+  // ── B-600 — SAY WHAT SLICE OF THE TRIAL THIS IS, BEFORE ANY OF ITS NUMBERS ──
+  //
+  // The identity row one line up counts the TRIAL ("day 73 of 84"); every figure
+  // from here down is counted over the OVERLAP. On the first report of a trial
+  // those are the same span and this says nothing. On the second — the one an
+  // owner sends at or after a recheck, where `since_visit` opens the window at the
+  // visit — they are not, and a reader who does not know that misreads every
+  // count in the block by the same factor.
+  //
+  // IT LEADS THE RECORD ROW RATHER THAN JOINING §7.2's CAVEATS at the foot of the
+  // block, for two reasons. It is not a caveat about the record's quality, it is a
+  // statement about what this document is, so it has to arrive before the numbers
+  // it re-scopes rather than after them. And round 4 fought to have the refusal
+  // sentence LEAD that callout on the sickest patient; a truncated report of a
+  // refusing pet must not push "not one rated feeding was finished" into second
+  // place to make room for a scoping note.
+  const outside = t.trialDaysOutsideRange
+  const outsideDays = outside.before + outside.after
+  if (outsideDays > 0) {
+    const rangeDays = Math.max(1, t.dayCounter - outsideDays)
+    const where =
+      outside.before > 0 && outside.after > 0
+        ? 'before and after it'
+        : outside.before > 0
+          ? 'before it'
+          : 'after it'
+    recordBits.push(
+      `<b>This report shows ${num(rangeDays)} day${rangeDays === 1 ? '' : 's'} of a trial that has run ${num(
+        t.dayCounter,
+      )}</b> &mdash; ${num(outsideDays)} trial day${
+        outsideDays === 1 ? '' : 's'
+      } fall ${where}, outside this report&rsquo;s window. Every figure below is counted over the window, not over the trial.`,
+    )
+  }
   if (t.coverage) {
     // The range is RENDERED, not assumed. A window-scoped numerator over a
     // trial-scoped denominator is what made a well-logged 8-week trial with a
@@ -1684,6 +1718,15 @@ function dietTrialSection(snap: ReportSnapshot): string {
     // So the clause describes the range explicitly, by its dates, and asserts nothing
     // about which end or about the trial's own length. The trial's elapsed day count is
     // already on the page, in the headline, where it cannot disagree with itself.
+    //
+    // ⚠️ AND THE HALVES ARE THE RANGE'S, NOT THE TRIAL'S (B-600). Round 6 wrote the
+    // rule above and left this sentence saying "in the trial's first half" — over
+    // halves split at the RANGE midpoint. On a since-visit window that is not a
+    // near-miss, it is a libel of the record: a dog whose meals were logged twice a
+    // day for the first six weeks of a twelve-week trial read *"Days a meal was
+    // logged: 0 of 15 in the trial's first half"*, because the range's first half
+    // was three silent weeks in the middle of the trial. Same string, same defect,
+    // one layer from where round 6 fixed it.
     const window = snap.atAGlance.windowDays
     const rangeDays = m.firstHalf.days + m.lastHalf.days
     const scope =
@@ -1693,18 +1736,21 @@ function dietTrialSection(snap: ReportSnapshot): string {
         // blackout on a stale trial, the exact decay C5 exists to disclose), and
         // the evidence span IS §5.1's documented overlap range, so the label and
         // the dates now agree.
-        ? ` These days are the logged overlap range (${h(
-            fmtRange(snap.trial!.evidenceStartDate, snap.trial!.evidenceEndDate),
-          )}); the charts below span the report&rsquo;s ${num(window)}-day window, which is wider.`
+        // The dates are already named in the sentence itself (B-600), so this adds
+        // only the fact the reader cannot see: the charts below are drawn over a
+        // WIDER span than these halves, and the two must not be read as one scale.
+        ? ` Those dates are the logged overlap range; the charts below span the report&rsquo;s ${num(
+            window,
+          )}-day window, which is wider.`
         : ''
     rows.push(
       kv(
         'Symptoms vs logging',
         `Days a meal was logged: ${num(m.firstHalf.daysLogged)} of ${num(
           m.firstHalf.days,
-        )} in the trial&rsquo;s first half, ${num(m.lastHalf.daysLogged)} of ${num(
-          m.lastHalf.days,
-        )} in the second.${scope} <span class="qual">Meal logging is prompted and habitual, so this tracks whether the owner kept logging at all &mdash; read the symptom counts below with it in view. Culprit does not judge whether a change in one explains a change in the other.</span>`,
+        )} in the first half of ${h(
+          fmtRange(snap.trial!.evidenceStartDate, snap.trial!.evidenceEndDate),
+        )}, ${num(m.lastHalf.daysLogged)} of ${num(m.lastHalf.days)} in the second.${scope} <span class="qual">Meal logging is prompted and habitual, so this tracks whether the owner kept logging at all &mdash; read the symptom counts below with it in view. Culprit does not judge whether a change in one explains a change in the other.</span>`,
       ),
     )
   }
@@ -2028,6 +2074,15 @@ function exposureSentences(t: NonNullable<ReportSnapshot['trial']>): string[] {
   // 3. The §5.2 LOCKED split sentence, with the rung breakdown that makes each flag
   //    interrogable (§6.3) rather than an unfalsifiable accusation.
   const { totalFeedings, offDiet, byRung } = t.exposures
+  // “IN TOTAL” IS A CLAIM ABOUT THE TRIAL, and this count is over the range
+  // (B-600). On a report scoped to a recheck the two differ by most of the trial:
+  // twenty-three feedings read as the whole record of a twelve-week elimination
+  // when they are eleven days of it. The count itself is right either way — only
+  // the noun that says what it is a total OF has to move.
+  const feedingScope =
+    t.trialDaysOutsideRange.before + t.trialDaysOutsideRange.after > 0
+      ? 'feedings in this report&rsquo;s window'
+      : 'feedings in total'
   if (offDiet > 0) {
     const parts: string[] = []
     if (byRung.derived_protein > 0) {
@@ -2057,7 +2112,7 @@ function exposureSentences(t: NonNullable<ReportSnapshot['trial']>): string[] {
           } also fed before that food was permitted.`
         : ''
     return [
-      `<b>${num(totalFeedings)} feedings in total &mdash; ${num(totalFeedings - offDiet)} matched, ${num(
+      `<b>${num(totalFeedings)} ${feedingScope} &mdash; ${num(totalFeedings - offDiet)} matched, ${num(
         offDiet,
       )} did not.</b> Of those ${num(offDiet)}: ${parts.join('; ')}.${alsoEarly} Dates in appendix&nbsp;C. <b>This is a floor, not a total.</b>`,
     ]
@@ -2066,7 +2121,7 @@ function exposureSentences(t: NonNullable<ReportSnapshot['trial']>): string[] {
   // 4. Zero exposures, and the question is whether that may be SAID.
   if (t.mayStateRecordClean) {
     return [
-      `<b>${num(totalFeedings)} feedings in total &mdash; all ${num(
+      `<b>${num(totalFeedings)} ${feedingScope} &mdash; all ${num(
         totalFeedings,
       )} matched the trial diet or a permitted food.</b> This describes the record, and is a floor rather than a total.`,
     ]

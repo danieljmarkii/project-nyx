@@ -610,6 +610,130 @@ describe('§5.2 — the floor gates the interpretability statement only', () => 
   });
 });
 
+// ── B-600 — a report scope that opens the range MID-TRIAL ────────────────────
+//
+// The second report of a trial, and the one the monitoring wedge exists to
+// produce: an owner sends a summary at or after a recheck, so `since_visit` opens
+// the window at the visit and truncates a long trial by construction. Everything
+// in the trial block is then computed over the overlap while the day counter
+// beside it counts the whole trial.
+//
+// The artifact that filed this: a 73-day trial logged twice daily to the recheck,
+// three silent weeks, then eleven clean days, viewed through a 31-day window. It
+// printed "This record covers 11 of 11 days of the trial window and supports
+// interpreting it" three inches under "day 73 of 84".
+
+describe('B-600 — a truncated view of a trial is not the trial', () => {
+  // Trial runs 1 Jul – 11 Sep (73 days at `nowMs`); the report opens 2 Aug.
+  const TRUNCATED = { ...TRIAL, startedAt: '2026-07-01', targetDurationDays: 84 };
+  const truncNow = new Date(2026, 8, 11, 18).getTime();
+
+  function mealsOn(dayKeys: string[]): TrialFeeding[] {
+    return dayKeys.map((d, i) =>
+      feeding({ eventId: `t${i}`, occurredAt: at(d), foodItemId: DRY_DUCK.foodItemId, foodKey: DRY_DUCK.foodKey }),
+    );
+  }
+  /** Every local day key from `from` to `to`, inclusive. */
+  function span(from: string, to: string): string[] {
+    const out: string[] = [];
+    const [fy, fm, fd] = from.split('-').map(Number);
+    const [ty, tm, td] = to.split('-').map(Number);
+    const end = new Date(ty, tm - 1, td).getTime();
+    for (let t = new Date(fy, fm - 1, fd).getTime(); t <= end; t += 86_400_000) {
+      const dt = new Date(t);
+      out.push(
+        `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`,
+      );
+    }
+    return out;
+  }
+
+  // The report path is handed WINDOW-SCOPED meals (`buildTrialBlock`'s own
+  // contract), so the module never sees the six weeks logged before the visit.
+  // That is why the head clip is gated on the RANGE's head rather than on
+  // "was anything logged earlier" — the latter is unanswerable here.
+  const facts = computeTrialFacts({
+    trial: TRUNCATED,
+    allowedFoods: ALLOWED,
+    feedings: mealsOn(span('2026-09-01', '2026-09-11')),
+    nowMs: truncNow,
+    scopeStart: '2026-08-12',
+    scopeEnd: '2026-09-11',
+  });
+
+  it('does not forgive the window head as "days that predate any logging"', () => {
+    // THE DEFECT, EXECUTED. §10 S3's allowance is for days before the app was on
+    // the owner's phone at the START of a trial. Applied to a scope-truncated head
+    // it swallowed twenty ordinary mid-trial days, and 11-of-31 became 11 of 11 —
+    // a denominator moving toward the record looking complete on a claim the
+    // record cannot support.
+    expect(facts.untrackedDaysBeforeFirstLog).toBe(0);
+    expect(facts.coverage).toMatchObject({ daysLogged: 11, daysElapsed: 31 });
+    expect(facts.interpretability).toBe('does_not_support');
+  });
+
+  it('counts the elapsed trial days the scope leaves out', () => {
+    // 1 Jul – 11 Aug, the six weeks before the window opened.
+    expect(facts.trialDaysOutsideRange).toEqual({ before: 42, after: 0 });
+  });
+
+  it('§7.2 names the window, and the affirmative can never reach past it', () => {
+    const s = interpretabilityStatement(facts)!;
+    expect(s).toMatch(/of this report’s window/);
+    expect(s).not.toMatch(/of the trial window/);
+    // The verdict is about the window it was measured over — never about "this
+    // trial", which is the noun the 84-day header owns.
+    expect(s).not.toMatch(/interpreting this trial/);
+
+    // And on the affirmative rung, which is the sentence a busy reader lifts.
+    const wellLogged = computeTrialFacts({
+      trial: TRUNCATED,
+      allowedFoods: ALLOWED,
+      feedings: mealsOn(span('2026-08-12', '2026-09-11')),
+      nowMs: truncNow,
+      scopeStart: '2026-08-12',
+      scopeEnd: '2026-09-11',
+    });
+    expect(wellLogged.interpretability).toBe('supports');
+    const affirm = interpretabilityStatement(wellLogged)!;
+    expect(affirm).toMatch(/supports interpreting that window — not the trial as a whole/);
+    expect(affirm).not.toMatch(/supports interpreting it/);
+  });
+
+  it('changes nothing when the range spans the whole elapsed trial', () => {
+    // Every client surface and every first report. The head clip still fires, the
+    // noun is still "the trial window", and the affirmative is still affirmative —
+    // the fix is scoped to the case where the two spans genuinely differ.
+    const untruncated = computeTrialFacts({
+      trial: TRUNCATED,
+      allowedFoods: ALLOWED,
+      feedings: mealsOn(span('2026-07-15', '2026-09-11')),
+      nowMs: truncNow,
+    });
+    expect(untruncated.trialDaysOutsideRange).toEqual({ before: 0, after: 0 });
+    expect(untruncated.untrackedDaysBeforeFirstLog).toBe(14);
+    expect(interpretabilityStatement(untruncated)).toMatch(
+      /of the trial window and supports interpreting it/,
+    );
+  });
+
+  it('a scope that ENDS early is truncation too', () => {
+    // The custom (hand-picked) window is the only basis that can close before the
+    // trial's elapsed end, and it is the cherry-pick case, so it must not be the
+    // one that escapes the disclosure.
+    const early = computeTrialFacts({
+      trial: TRUNCATED,
+      allowedFoods: ALLOWED,
+      feedings: mealsOn(span('2026-07-01', '2026-08-01')),
+      nowMs: truncNow,
+      scopeStart: '2026-07-01',
+      scopeEnd: '2026-08-01',
+    });
+    expect(early.trialDaysOutsideRange).toEqual({ before: 0, after: 41 });
+    expect(interpretabilityStatement(early)).toMatch(/of this report’s window/);
+  });
+});
+
 // ── §5.2 proof #1 — the all-refused trial ────────────────────────────────────
 
 describe('§5.2 — a 14-day all-refused trial renders no clean-trial statement', () => {

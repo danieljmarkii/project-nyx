@@ -349,8 +349,21 @@ export interface TrialBlock {
   evidenceStartDate: string
   evidenceEndDate: string
   /** §10 S3 — days between `started_at` and the first log, reported as UNTRACKED
-   *  rather than counted as failure. */
+   *  rather than counted as failure. Only ever non-zero when the range opens on
+   *  the trial's own first day (B-600): a scope that opens the range mid-trial has
+   *  no basis for the claim and does not get the allowance. */
   untrackedDaysBeforeFirstLog: number
+  /**
+   * B-600 — ELAPSED TRIAL DAYS THIS REPORT'S SCOPE LEAVES OUT, either side.
+   *
+   * The block's day counter counts the TRIAL; everything else in it is computed
+   * over the OVERLAP. On the first report of a trial those coincide and this is
+   * `{0, 0}`. On the second — the one an owner sends at or after a recheck, where
+   * `since_visit` opens the window at the visit — they do not, and every sentence
+   * in the block that names "the trial" is claiming ground the record in front of
+   * it does not cover.
+   */
+  trialDaysOutsideRange: { before: number; after: number }
 
   coverage: { daysLogged: number; daysElapsed: number } | null
   exposures: {
@@ -962,6 +975,7 @@ export function buildTrialBlock(args: BuildTrialBlockArgs): TrialBlock | null {
     evidenceEndDate: dayKeyFromIndex(evidence.endDayIndex),
     rangeClipped: facts.range.clipped,
     untrackedDaysBeforeFirstLog: facts.untrackedDaysBeforeFirstLog,
+    trialDaysOutsideRange: facts.trialDaysOutsideRange,
     coverage: facts.coverage
       ? { daysLogged: facts.coverage.daysLogged, daysElapsed: facts.coverage.daysElapsed }
       : null,

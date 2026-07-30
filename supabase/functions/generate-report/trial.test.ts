@@ -875,7 +875,12 @@ Deno.test('C5 — a falling symptom count over falling logging is disclosed, not
   assert.equal(d.meals.lastHalf.daysLogged, 0)
   const text = plain(renderReport(snap))
   // BOTH series render, each labelled for what it counts.
-  assert.ok(/Days a meal was logged: 16 of 16 in the trial.s first half, 0 of 16 in the second/.test(text))
+  assert.ok(/Days a meal was logged: 16 of 16 in the first half of .+?, 0 of 16 in the second/.test(text))
+  // B-600 — AND THE HALVES ARE THE RANGE'S. This clause said "the trial's first half"
+  // over halves split at the RANGE midpoint, which on a since-visit window is a
+  // different span entirely (a dog logged twice daily for six weeks read "0 of 15 in
+  // the trial's first half"). The dates it names now are the ones it counted over.
+  assert.ok(!/in the trial\u2019s first half/.test(text))
   // AND NEITHER VERDICT. This test previously asserted "Logging fell over the trial" —
   // i.e. it encoded the defect cold-read round 4 rejected. On this very fixture that
   // sentence would tell a vet the symptom fall cannot be trusted, when meals were logged
@@ -1397,7 +1402,7 @@ Deno.test('the trial-scoped logging claim states its scope, so it cannot contrad
   // where the fact is available: the two ranges are right there. So it names the side.
   // This fixture's trial STOPPED inside the window, so the extension is after it.
   assert.ok(
-    /These days are the logged overlap range \(Jun 1 . Jun 20, 2026\); the charts below span the report\u2019s 32-day window, which is wider/.test(
+    /in the first half of Jun 1 . Jun 20, 2026, .+ Those dates are the logged overlap range; the charts below span the report\u2019s 32-day window, which is wider/.test(
       text,
     ),
   )
@@ -1840,6 +1845,122 @@ Deno.test('R4 — an unread allowed-food label says so and never reads as an all
   assert.ok(!/carries nothing/i.test(text))
 })
 
+// ── B-600 — the trial seen through a since-visit window ──────────────────────
+//
+// The SECOND report of a trial, and the modal one for the monitoring wedge: the
+// owner sends a summary at or after a recheck, so `resolveScope` rung 1 anchors on
+// the recheck and truncates a long trial by construction. Every figure in the
+// block is then computed over the overlap while the day counter beside them counts
+// the trial — and until this pass nothing in the block knew the two differed.
+//
+// None of the three checked-in artifacts could produce this shape: all three are
+// scoped so the window and the trial roughly coincide, which is exactly the
+// configuration in which the bug is invisible. The fourth (`Juno`, in
+// `scripts/render-trial-report-sample.deno.ts`) exists for it.
+
+/** A 73-day GI trial with a six-week recheck: window 2 Jun – 2 Jul over a trial
+ *  that started 21 Apr. The owner logged to the recheck, went quiet for three
+ *  weeks, then resumed for the last eleven days. */
+function truncatedTrialInput(): ReportInput {
+  const events = [...days('2026-04-21', '2026-06-01'), ...days('2026-06-22', '2026-07-02')].map((d) =>
+    meal({ date: d, brand: 'Royal Canin', product: 'Hydrolyzed HP', foodItemId: 'f-hp', proteins: ['soy'] }),
+  )
+  return baseInput({
+    events,
+    dietTrials: [
+      {
+        id: 'trial-1',
+        foodItemId: 'f-hp',
+        startedAt: '2026-04-21',
+        targetDurationDays: 84,
+        status: 'active',
+        completedAt: null,
+        endedAt: null,
+        indication: 'gi',
+        vetName: 'Dr. Chen',
+        foodLabel: 'Royal Canin Hydrolyzed HP',
+        primaryProtein: 'soy',
+        proteins: ['soy'],
+        allowedFoods: [TRIAL_FOOD],
+      },
+    ],
+    vetVisits: [
+      { visitedAt: '2026-04-21', clinicName: 'Riverside', vetName: 'Dr. Chen', reason: 'start elimination diet' },
+      { visitedAt: '2026-06-02', clinicName: 'Riverside', vetName: 'Dr. Chen', reason: 'six-week recheck' },
+    ],
+  })
+}
+
+Deno.test('B-600 — eleven days may not certify eighty-four', () => {
+  const snap = assembleReport(truncatedTrialInput())
+  assert.equal(snap.scope.basis, 'since_visit')
+  assert.equal(snap.scope.startDate, '2026-06-02')
+  assert.equal(snap.trial?.dayCounter, 73, 'the day counter counts the TRIAL')
+  assert.deepEqual(snap.trial?.trialDaysOutsideRange, { before: 42, after: 0 })
+
+  // THE DEFECT, AT THE LAYER THAT PRODUCED IT. §10 S3's untracked-head allowance
+  // was written for the days before the app was on the owner's phone at the START
+  // of a trial. Through a since-visit window it swallowed a three-week mid-trial
+  // blackout as "the first 20 days of the trial predate any logging" — false twice
+  // over — and 11 of 31 became 11 of 11, `does_not_support` became `supports`.
+  assert.equal(snap.trial?.untrackedDaysBeforeFirstLog, 0)
+  assert.deepEqual(snap.trial?.coverage, { daysLogged: 11, daysElapsed: 31 })
+
+  const text = plain(renderReport(snap))
+  assert.ok(!/predate any logging/.test(text))
+  // The one sentence a vet reads for the bottom line no longer vouches for a trial
+  // it has seen a fifth of.
+  assert.ok(!/supports interpreting it/.test(text))
+  assert.ok(/covers 11 of 31 days of this report’s window/.test(text))
+
+  // And the block says what slice it is, before any of the numbers it re-scopes.
+  assert.ok(/This report shows 31 days of a trial that has run 73/.test(text))
+  assert.ok(/42 trial days fall before it, outside this report’s window/.test(text))
+  // "N feedings in total" is a claim about the trial; this count is over the range.
+  // (Below the coverage floor the sentence is the two-sided "logged over this
+  // stretch" form, which was already range-scoped — the noun is asserted on the
+  // affirmative branch, in the third test below, where it actually renders.)
+  assert.ok(!/feedings in total/.test(text))
+  // C5's halves are the RANGE's — round 6 wrote that rule and left this string
+  // saying "the trial's first half" over a span that here is three silent weeks in
+  // the MIDDLE of a trial the owner logged twice a day for its first six.
+  assert.ok(!/in the trial’s first half/.test(text))
+  assert.ok(/in the first half of Jun 2 – Jul 2, 2026/.test(text))
+})
+
+Deno.test('B-600 — the disclosure is silent when the window spans the whole trial', () => {
+  // Every first report of a trial, and the shape all three earlier artifacts have.
+  // A scoping note that fires when there is nothing to scope is noise, and it would
+  // also displace the refusal sentence round 4 fought to have lead the callout.
+  const snap = assembleReport(wellLoggedTrialInput())
+  assert.deepEqual(snap.trial?.trialDaysOutsideRange, { before: 0, after: 0 })
+  const text = plain(renderReport(snap))
+  assert.ok(!/of a trial that has run/.test(text))
+  assert.ok(!/outside this report’s window/.test(text))
+  assert.ok(/of the trial window and supports interpreting it/.test(text))
+  assert.ok(/feedings in total/.test(text))
+})
+
+Deno.test('B-600 — a truncated report that IS well logged vouches for the window only', () => {
+  // The other rung, and the dangerous one: the affirmative is the clause a busy
+  // reader lifts. Same window, but the owner logged all 31 days of it — coverage
+  // `supports`, and the verdict still may not reach the 42 days it never saw.
+  const input = truncatedTrialInput()
+  input.events = days('2026-06-02', '2026-07-02').map((d) =>
+    meal({ date: d, brand: 'Royal Canin', product: 'Hydrolyzed HP', foodItemId: 'f-hp', proteins: ['soy'] }),
+  )
+  const snap = assembleReport(input)
+  assert.equal(snap.trial?.interpretability, 'supports')
+  const text = plain(renderReport(snap))
+  assert.ok(/supports interpreting that window — not the trial as a whole/.test(text))
+  assert.ok(!/supports interpreting it/.test(text))
+  assert.ok(/This report shows 31 days of a trial that has run 73/.test(text))
+  // And the feeding denominator names the window rather than claiming a total for
+  // a trial it counted a third of.
+  assert.ok(/feedings in this report’s window/.test(text))
+  assert.ok(!/feedings in total/.test(text))
+})
+
 // ── Cold-read round 6 ────────────────────────────────────────────────────────
 //
 // Round 6 triaged its blockers into TRIAL-BLOCK and REPORT-WIDE at request, and
@@ -1861,7 +1982,7 @@ Deno.test('R6 — the scope clause names the RANGE, never "the trial’s N days"
   // window" clause correctly does NOT render: there is nothing to reconcile when
   // the spans coincide, and a clause naming an identical range would be noise.
   const text = plain(renderReport(assembleReport(input)))
-  assert.ok(!/These days are the logged overlap range/.test(text), 'no clause when the spans coincide')
+  assert.ok(!/Those dates are the logged overlap range/.test(text), 'no clause when the spans coincide')
   assert.ok(!/covers the trial’s \d+ days/.test(text), 'never restates the trial length here')
   assert.ok(!/extends before it/.test(text), 'never asserts a side against the trial')
 
@@ -1876,7 +1997,11 @@ Deno.test('R6 — the scope clause names the RANGE, never "the trial’s N days"
     wider.events.push(meal({ date: d, brand: 'Royal Canin', product: 'Hydrolyzed HP', foodItemId: 'f-hp', proteins: ['soy'] }))
   }
   const widerText = plain(renderReport(assembleReport(wider)))
-  assert.ok(/These days are the logged overlap range \(Jun 1 – Jul 2, 2026\)/.test(widerText))
+  // The dates moved INTO the halves sentence (B-600) — same span, named where the
+  // numbers it bounds are, so the clause is left with only the fact the reader
+  // cannot see: the charts below are drawn wider than these halves.
+  assert.ok(/in the first half of Jun 1 – Jul 2, 2026/.test(widerText))
+  assert.ok(/Those dates are the logged overlap range; the charts below span/.test(widerText))
   assert.ok(!/covers the trial’s \d+ days/.test(widerText))
 })
 
