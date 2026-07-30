@@ -1,6 +1,6 @@
 # B-532 — the vet-report render-honesty pass (the last Bucket-A row)
 
-**Date:** 2026-07-30 · **Branch:** `claude/b532-render-honesty-5rwzrz` · **Outcome:** shipped via #TBD
+**Date:** 2026-07-30 · **Branch:** `claude/b532-render-honesty-5rwzrz` · **Outcome:** shipped via #TBD · exit gate **met** (three artifacts, all CLINIC-READY)
 
 ## What this was
 
@@ -150,10 +150,79 @@ paragraph (the one naming B-579; the stale duplicate still said B-529 and is dro
 `docs/backlog.md` keeps both row blocks, B-592–B-595 and B-596–B-599. This is the exact failure
 mode CLAUDE.md v1.27 was written about, and it survived on `main` for a day.
 
+## The two mandatory reviews, and what they cost
+
+Both ran on the committed branch. Both failed it, and both were right.
+
+**`adversarial-reviewer` — FAIL, three breaks.** The headline is the one worth recording:
+**the delta fix had been applied to one of the two surfaces that print this comparison.**
+`monitoringTiles`' page-1 trajectory tile kept the old `mid * 7` bucket split while the symptom
+panel got the corrected one — so on a fully-logged 36-day `since_visit` window (the DEFAULT basis
+for the monitoring wedge that tile exists for) page 1 printed *"3 → 3"* while the panel two inches
+below printed *"first 18 d 1 → last 18 d 5"*. Swept: the two partitions disagreed on **337 of 393**
+window lengths, page 1 the more reassuring number on 169. The bias had not been removed, it had
+been **relocated to the more prominent surface** — and the comment I had written claiming "ONE
+partition" was false for the surface a reader hits first.
+
+That is the B-529 wrap's lesson, verbatim, one session later: *fixing a composition in one place
+and leaving an equivalent one live in another.* Both call sites now read one `trendSparseCaveat`
+helper. The same site was also comparing a new-partition numerator against an old-partition floor,
+which lost a caveat at 90 days and printed a **false "6 of 21 d"** at 36. And the sparse floor
+moved to `logged * 3 <= days`, closing a boundary band where the artefactual-improvement guard
+fired on `main` and stopped firing under the equal halves.
+
+It also falsified **B-596's own guard comment** — which claimed to be keyed to the suppression and
+was keyed to "a panel exists", so a never-fed `duck` row on a duck trial withheld the clean claim
+over 40 correctly-attributed feedings. Exactly the defect class B-596 was filed about, committed by
+the fix for it.
+
+**`vet-report-cold-read` round 7 — Cooper CLINIC-READY, Mira CLINIC-READY, Rosie NOT READY.** Rosie
+is the case added this session, and it is the first *completed, clean-looking* trial ever rendered,
+which is why it found what the other two structurally could not. Three blocking:
+
+- **A week nobody logged drew the same flat "0" nub as a genuinely quiet week**, at the visual
+  terminus of a descending curve. It reads as *resolved*, no delta-caveat fires (7 unlogged of 28
+  clears that threshold comfortably), and on a completed trial there is no safety flag pulling the
+  other way. Unobserved weeks now render as a hollow dashed marker with a dash, a legend on the
+  same sheet, and matching alt text. `SymptomAggregate.loggedDaysByBucket` is the new input.
+- **"Atopic dermatitis (active)"** — the competing explanation for the entire falling curve — lived
+  in an Appendix B table row while page 1 showed a completed trial with a resolving trend. The
+  active problem list now sits with the signalment, with the year, marked as owner-recorded history.
+- **"Off-diet exposures: Not stated"** scans as nothing-to-report in a row where every other tile is
+  a number. Every branch now names the world, not the document.
+
+Plus the page-1 intake statement with no denominator (and it appeared *only* on the report that read
+well), the diet-history "None recorded" rows an elimination trial rests on, and Appendix E's "no
+reduced-intake flag fired" contradicting a page-1 diet-not-eaten flag.
+
+**One finding was a genuine conflict between two cold reads.** R2-3 won the grazing cat a
+descriptive intake line *without* a scored "0 of 25 fully eaten" (it reads as anorexia on a cat that
+grazes). Round 7 found the cost of the adverb alone: it was the only page-1 intake statement with no
+numbers behind it, and it appeared only on the reassuring report. Resolved by keeping **both** — the
+count is stated inside the descriptive sentence that "Primarily free-fed … Intake not directly
+observed" leads — rather than trading one finding for the other. The tension is written into the
+code and the test rather than silently settled.
+
+**Round 7 confirming read: all three CLINIC-READY, zero blocking.** Three of its non-blocking
+findings were implicated by this pass's own changes and were fixed: the delta now carries its own
+observed-day count (Rosie's *"last 28 d → 3"* was absorbing seven unobserved days three centimetres
+above a chart that had just refused to draw that week); the free-fed **trial diet** is no longer
+listed as a "competing antigen" against its own trial; and "not one rated feeding was **eaten**"
+became "**finished**", which is what the predicate actually says and what appendix E's `Ate some ×4`
+was contradicting.
+
+Filed rather than fixed: **B-600** (the refusal RUN, not just the denominator — the reviewer's
+"number that would change my afternoon"), **B-601** (no artifact exercises the est/range/duplicate
+timestamp paths, so that box currently reads as verified and is not), **B-602** (the exposure tile
+answers compliance where the question is antigen load), **B-603** (the correlation-threshold line
+has no denominator), **B-604** (chart markers are start-only, so a mid-trial allowed-list change is
+undrawn while "Reading the trend" still counts two changes), **B-605** (*"Previous diet — Not
+recorded"* makes the rechallenge undesignable from a completed-trial report).
+
 ## Verification
 
-- 1,064 Deno cases (`deno test --allow-read=supabase/functions supabase/functions/`), 3,579 jest,
-  clean `tsc`.
+- 1,072 Deno cases (`deno test --allow-read=supabase/functions supabase/functions/`), 3,580 jest,
+  clean `tsc`. Every executed counterexample from both reviews is pinned as a test.
 - Three real-pipeline artifacts re-rendered through `assembleReport → renderReport`
   (`scripts/render-trial-report-sample.deno.ts`). A **third** case was added — Rosie, a skin trial
   marked complete at day 49 of 56 with a free-choice bowl of the trial diet — because blockers 2 and

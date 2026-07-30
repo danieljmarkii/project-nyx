@@ -2685,7 +2685,10 @@ Deno.test('B-532 — the trend delta compares EQUAL-length halves', () => {
     }),
   )
   const t = plain(html)
-  assert.ok(/first 23 d 11 → last 23 d 5/.test(t), 'both halves are the same length')
+  assert.ok(/first 23 d 11 → last 23 d 5/.test(t.replace(/ \d+ logged/g, '')), 'both halves are the same length')
+  // Round 7: the delta carries its own observed-day count, so an unobserved stretch cannot be
+  // absorbed into the headline number by a threshold that (correctly) does not fire.
+  assert.ok(/first 23 d 0 logged/.test(t), 'and each half states how much of it was observed')
   assert.ok(
     /trend halves: May 18 – Jun 9, 2026 \(0 of 23 d logged\) vs Jun 10 – Jul 2, 2026 \(0 of 23 d logged\)/.test(t),
     'the partition is dated (so it is not confused with the bars or the window) AND its exposure is stated',

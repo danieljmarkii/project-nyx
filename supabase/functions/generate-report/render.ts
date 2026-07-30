@@ -1758,8 +1758,15 @@ function dietTrialSection(snap: ReportSnapshot): string {
     // today. When every rated feeding was refused, the sentence says so.
     const total =
       refusalFact && refusalFact.ratedFeedings > 0 && refusalFact.refusedFeedings >= refusalFact.ratedFeedings
+    // "NOT ONE WAS EATEN" IS A STRONGER CLAIM THAN THE RECORD MAKES (B-532, cold-read round 7).
+    // The predicate is `feedingWasFinished`, so this population is "not finished" — and on the
+    // canonical artifact appendix E lists `Ate some ×4` against a page-1 sentence saying not one
+    // was eaten. In plain English those contradict, and a skeptical reader checks the appendix.
+    // The error runs in the alarming direction so it costs no patient anything; it costs the
+    // page credibility at the exact point it is being verified, and "took some on four days"
+    // does modestly change the lipidosis urgency.
     const eaten = total
-      ? `Not one rated feeding of the trial diet was eaten (${num(refusalFact!.refusedFeedings)} of ${num(
+      ? `Not one rated feeding of the trial diet was finished (${num(refusalFact!.refusedFeedings)} of ${num(
           refusalFact!.ratedFeedings,
         )})`
       : 'The trial diet was largely not eaten'
@@ -2707,9 +2714,20 @@ function symptomPanel(s: SymptomAggregate, snap: ReportSnapshot): string {
               snap.atAGlance.secondHalfLoggedDays,
             )} of ${num(days)}&nbsp;d) &mdash; a fall here may be less logging, not fewer episodes</div>`
           : ''
-    deltaHtml = `<div class="delta">first ${num(days)}&nbsp;d <b class="num">${firstCount}</b> &rarr; last ${num(
-      days,
-    )}&nbsp;d <b class="num">${lastCount}</b></div>${caveat}`
+    // THE EXPOSURE RIDES THE DELTA ITSELF (B-532, cold-read round 7). The per-half logged-day
+    // counts were in the subnote under the chart, and round 7 found the gap that leaves: on the
+    // completed-trial artifact "last 28 d 3" counted seven days nobody observed, three
+    // centimetres above a chart that had just refused to draw a bar for that same week. The
+    // sparse caveat does not fire at 21-of-28 and should not — that is not a sparse record —
+    // but the headline number still absorbed an unobserved week into an improvement, on the one
+    // report where improvement is the whole story. A threshold cannot carry this; the
+    // denominator has to travel with the count.
+    const obs = (n: number): string => (n < days ? ` <span class="conf">${num(n)} logged</span>` : '')
+    deltaHtml = `<div class="delta">first ${num(days)}&nbsp;d${obs(
+      snap.atAGlance.firstHalfLoggedDays,
+    )} <b class="num">${firstCount}</b> &rarr; last ${num(days)}&nbsp;d${obs(
+      snap.atAGlance.secondHalfLoggedDays,
+    )} <b class="num">${lastCount}</b></div>${caveat}`
   }
   // NAME THIS ELEMENT'S OWN PARTITION, AND ITS EXPOSURE. The cold read counted four different
   // day-groupings on one page (the window, the weekly bars, these halves, and the trial's own
@@ -4192,9 +4210,21 @@ function offDietAppendix(snap: ReportSnapshot): string {
   // Free-fed carries its whole set now, not just the primary: an ad-lib bowl is the
   // biggest breach of an elimination trial, and its hidden secondary is the worst
   // version of that (B-351 slice 5).
+  // THE TRIAL DIET IS NOT A COMPETING ANTIGEN (B-532, cold-read round 7). The set was the
+  // free-fed bowls' whole protein list, and the tightly-controlled setup the free-fed state
+  // exists for is a bowl holding the TRIAL DIET — so the artifact printed *"Free-fed alongside
+  // the trial: Venison … a competing antigen no per-feeding count can capture"* on a venison
+  // trial. Wrong on its face, reads as a template leak, and it costs trust in the sections
+  // around it. The sentence is about proteins the trial does NOT sanction; the bowl's own
+  // unobserved-intake problem is stated where it belongs, on the trial block and the tile.
+  const trialSanctioned = new Set(
+    (snap.trial?.permittedFoods ?? [])
+      .filter((f) => f.role === 'primary_diet' && f.panelRead)
+      .flatMap((f) => f.proteins),
+  )
   const freeFedProteins = [
     ...new Set(snap.diet.freeFed.flatMap((f) => f.proteinSet.proteins)),
-  ]
+  ].filter((p) => !trialSanctioned.has(p))
   const tallyParts: string[] = []
   // D-B, under a trial: the antigen tally counts the protein on PERMITTED feedings
   // too, and says how many came from an approved food. Rung 1's `stop` is what makes
