@@ -1803,7 +1803,9 @@ Deno.test('R4 — a TOTAL refusal is not hedged as "largely not eaten"', () => {
     )
   }
   const text = plain(renderReport(assembleReport(input)))
-  assert.ok(/Not one rated feeding of the trial diet was eaten/.test(text))
+  // B-532 round 7: 'finished', not 'eaten' — the predicate is `feedingWasFinished`, and
+  // appendix E lists the partly-taken feedings this sentence used to contradict.
+  assert.ok(/Not one rated feeding of the trial diet was finished/.test(text))
   assert.ok(!/largely not eaten/.test(text))
 })
 

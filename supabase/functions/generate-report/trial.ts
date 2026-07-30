@@ -409,7 +409,28 @@ export interface TrialBlock {
   mayStateRecordClean: boolean
 
   oralRoute: OralRouteExposure[]
-  arrangementExposures: Array<{ label: string | null }>
+  /**
+   * `startRecorded` is FALSE when the bowl's `active_from` was never captured (B-233: the
+   * column holds the day the owner first LOGGED the food, not the day the bowl went down,
+   * and it is routinely null). The trial block asserts such a bowl was available
+   * "continuously" alongside the trial — which is the right default, and is an INFERENCE.
+   * Cold-read secondary (B-532): saying "continuously" without saying the dates are not
+   * recorded reads as an observed fact, and "Reading the trend" says "start not recorded"
+   * about the same bowl four sections down, so the document disagreed with itself.
+   */
+  arrangementExposures: Array<{ label: string | null; startRecorded: boolean }>
+  /**
+   * ANY free-choice bowl overlapping the trial — including one holding the trial diet
+   * itself, which `arrangementExposures` is empty for by construction (it lists only
+   * OFF-LIST bowls).
+   *
+   * Exposed because `mayClaimAllMatched` withholds the clean sentence on it (B-529's
+   * "unobservable is not clean") and the render had no way to say why: with an on-list
+   * bowl the page printed *"see 'Also during the trial' below"* while that row was
+   * never emitted, so page 1 pointed at a section that does not exist — the class the
+   * round-5 cold read treated as blocking (B-599).
+   */
+  intakeNotDirectlyObserved: boolean
   /**
    * FINDINGS ONLY (B-529/R7). `trialContamination` now also returns facts whose
    * only content is `derivedFromPrimary` — a hydrolysed diet naming its own
@@ -719,6 +740,10 @@ export function buildTrialBlock(args: BuildTrialBlockArgs): TrialBlock | null {
       startedAt: a.activeFrom ?? trial.startedAt,
       endedAt: a.activeUntil,
     }))
+  // Captured BEFORE the substitution above erases the distinction (B-532).
+  const arrangementStartRecorded = new Map<string, boolean>(
+    args.arrangements.filter((a) => a.method === 'free_choice').map((a) => [a.foodItemId, a.activeFrom != null]),
+  )
 
   const facts = computeTrialFacts({
     trial: {
@@ -995,7 +1020,14 @@ export function buildTrialBlock(args: BuildTrialBlockArgs): TrialBlock | null {
       // `rangeRefusal === null` all moved into `mayStateRecordClean` above.
       true,
     oralRoute: facts.oralRoute,
-    arrangementExposures: facts.arrangementExposures.map((a) => ({ label: a.label })),
+    arrangementExposures: facts.arrangementExposures.map((a) => ({
+      label: a.label,
+      // Read off the ORIGINAL input, not the mapped arrangement: the mapping above
+      // substitutes the trial's own start day for a null `activeFrom`, so by the time it
+      // reaches `facts` the difference between "recorded" and "assumed" is gone.
+      startRecorded: arrangementStartRecorded.get(a.arrangement.foodItemId) ?? false,
+    })),
+    intakeNotDirectlyObserved: facts.intakeNotDirectlyObserved,
     contamination: contaminationFindings(facts.contamination),
     antigenAttributionPaused: facts.antigenAttributionPaused.map((f) => f.label),
     antigenArmDark: facts.antigenArmDark,

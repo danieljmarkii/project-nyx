@@ -324,6 +324,7 @@ const GRAY_RAMP = ['#585c64', '#74777f', '#8f929a', '#a9acb2', '#c2c4c9', '#d8d9
  */
 function symptomChart(sym: SymptomAggregate, markers: ConcurrentChange[], windowEndDate: string): string {
   const buckets = sym.weeklyBuckets
+  const loggedByBucket = sym.loggedDaysByBucket
   const n = Math.max(1, buckets.length)
   const L = 40
   const R = 628
@@ -368,23 +369,54 @@ function symptomChart(sym: SymptomAggregate, markers: ConcurrentChange[], window
   parts.push(weekAxisLabels(sym.bucketStartDates, L, slot, n, BASE))
 
   // Bars + count labels.
+  //
+  // A ZERO BAR AND AN UNOBSERVED WEEK ARE NOT THE SAME FACT (B-532, cold-read blocking). Both
+  // used to draw the identical flat nub with a `0` printed on it, so "the owner logged this week
+  // and nothing happened" and "nobody logged anything" were one glyph. The cold read hit the
+  // second reading where it costs most: on a trial the owner stopped logging a week early, the
+  // final `0` nub is the visual terminus of a descending curve and reads as *resolved* — with no
+  // delta-caveat firing, because seven unlogged days out of twenty-eight clear that threshold
+  // comfortably. Absence of a log is never evidence a symptom did not occur, and the chart is
+  // what a 60-second scan actually takes.
+  //
+  // So an unobserved week gets no bar and no number: a hollow marker and a dash, which cannot be
+  // read as a measured zero. It stays a distinct SHAPE rather than a colour, because §5.8 says
+  // this page has to survive a black-and-white print.
+  const unobserved: number[] = []
   for (let i = 0; i < n; i++) {
     const c = buckets[i]
     const cx = centerX(i)
     const x = cx - barW / 2
+    const observed = (loggedByBucket[i] ?? 0) > 0
     if (c > 0) {
       const y = yFor(c)
       const height = BASE - y
       parts.push(`<rect class="bar" x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${height.toFixed(1)}" rx="4"/>`)
       parts.push(`<text class="cap num" x="${cx.toFixed(1)}" y="${(y - 6).toFixed(1)}" text-anchor="middle">${c}</text>`)
-    } else {
+    } else if (observed) {
       parts.push(`<rect class="nub" x="${x.toFixed(1)}" y="${BASE - 3}" width="${barW.toFixed(1)}" height="3" rx="1.5"/>`)
       parts.push(`<text class="z num" x="${cx.toFixed(1)}" y="${BASE - 7}" text-anchor="middle">0</text>`)
+    } else {
+      unobserved.push(i)
+      parts.push(
+        `<rect class="nolog" x="${x.toFixed(1)}" y="${(BASE - 9).toFixed(1)}" width="${barW.toFixed(1)}" height="9" rx="2"/>`,
+      )
+      parts.push(`<text class="z num" x="${cx.toFixed(1)}" y="${BASE - 13}" text-anchor="middle">&ndash;</text>`)
     }
   }
+  // The marker is only legible where the sheet defines it, and only emitted when one was drawn.
+  if (unobserved.length > 0) {
+    parts.push(
+      `<text class="ann" x="${R}" y="${BASE + 26}" text-anchor="end">&ndash; nothing logged that week (not a week without episodes)</text>`,
+    )
+  }
 
-  const aria = `${symptomLabel(sym.type)} episodes per week: ${buckets.join(', ')}. Window ends ${h(fmtDay(windowEndDate))}.`
-  return `<svg viewBox="0 0 648 150" role="img" aria-label="${h(aria)}">${parts.join('')}</svg>`
+  // The alt text has to draw the same distinction the bars now do.
+  const ariaBuckets = buckets
+    .map((c, i) => ((loggedByBucket[i] ?? 0) > 0 ? String(c) : 'not logged'))
+    .join(', ')
+  const aria = `${symptomLabel(sym.type)} episodes per week: ${ariaBuckets}. Window ends ${h(fmtDay(windowEndDate))}.`
+  return `<svg viewBox="0 0 648 158" role="img" aria-label="${h(aria)}">${parts.join('')}</svg>`
 }
 
 /**
@@ -843,6 +875,28 @@ function letterhead(snap: ReportSnapshot): string {
   <div class="orient">Clinical summary: this page. Appendices A&ndash;${lastAppendix} (+ a legend): the reference record behind every figure.</div>`
 }
 
+/**
+ * How close to the window's opening day the first logged episode has to be before the
+ * chronicity span is stated as a FLOOR rather than as an onset (B-532).
+ *
+ * A week, and the number is not doing clinical work: it is a statement about the report's
+ * own edge. A sign whose first log lands inside the first week of a window that opens at a
+ * vet visit is a sign the window is very likely truncating — the owner started logging
+ * because of that visit — while one that appears in week four has a start date the record
+ * genuinely observed. Erring long only ever ADDS the disclosure, which is the safe
+ * direction: the cost of an unnecessary "this is a floor" is a clause, and the cost of a
+ * missing one is a vet reading a four-month problem as a five-week one.
+ */
+const CHRONICITY_LEFT_CENSOR_DAYS = 7
+
+/** Whole days from `fromKey` to `toKey` (both `YYYY-MM-DD`); negative if `toKey` is earlier. */
+function daysBetweenDayKeys(fromKey: string, toKey: string): number {
+  const a = Date.parse(`${fromKey}T00:00:00Z`)
+  const b = Date.parse(`${toKey}T00:00:00Z`)
+  if (Number.isNaN(a) || Number.isNaN(b)) return Number.POSITIVE_INFINITY
+  return Math.round((b - a) / 86_400_000)
+}
+
 /** The generated-at day, localized (for the letterhead stamp). */
 function localDayKeyOf(iso: string, tz: string | null): string {
   const ms = Date.parse(iso)
@@ -902,6 +956,29 @@ function signalmentBlock(snap: ReportSnapshot): string {
     ? ` &middot; latest weight ${num(s.latestWeight.kg.toFixed(1))}&nbsp;kg (${h(fmtDay(s.latestWeight.date))})`
     : ' &middot; no weigh-in recorded'
 
+  // THE ACTIVE PROBLEM LIST BELONGS WITH THE SIGNALMENT (B-532, cold-read blocking).
+  //
+  // It lived in an Appendix B table row three pages back, and the cold read showed what that
+  // costs on the one report shape nobody had rendered before: a completed, well-logged, clean-
+  // looking venison trial with a falling itch curve, whose patient is a diagnosed atopic
+  // Westie. "Atopic dermatitis (active)" reframes every number on page 1 — it is the competing
+  // explanation for the falling curve — and page 1 never said it. Two careful readers took
+  // opposite plans off that page, which is exactly the test the report has to pass.
+  //
+  // A pre-existing diagnosis is not a finding this report computed and is not rendered as one:
+  // it is the patient's recorded history, stated where a clinician reads species, age and
+  // weight, because that is the block that frames everything after it.
+  const active = snap.provenance.conditions.filter((c) => c.status === 'active')
+  const condBit =
+    active.length > 0
+      ? `<div class="cond"><b>Recorded conditions:</b> ${active
+          // THE YEAR IS THE POINT. A condition diagnosed months or years before this window
+          // is the reason the row belongs on page 1 at all, and a bare "Nov 14" reads as
+          // in-window on a report that opens in May.
+          .map((c) => `${h(c.name)}${c.diagnosedAt ? ` <span class="rnote">(since ${h(fmtDayYear(c.diagnosedAt))})</span>` : ''}`)
+          .join(' &middot; ')} <span class="rnote">owner-recorded history, not a finding in this window</span></div>`
+      : ''
+
   const scope = snap.scope
   return `
   <div class="ident">
@@ -909,6 +986,7 @@ function signalmentBlock(snap: ReportSnapshot): string {
       <div class="name">${h(s.name)}</div>
       <div class="sig">${sig}</div>
       <div class="wt">${ownerBit}${weightBit}</div>
+      ${condBit}
     </div>
     <div class="rangebox">
       <div class="win num">${h(fmtRange(scope.startDate, scope.endDate))}</div>
@@ -1165,15 +1243,33 @@ function safetyFlagRow(f: SafetyFlag, snap: ReportSnapshot): string {
       // weekly chart it read as a contradiction on the first real artifact ("across 5
       // weeks" vs 8 non-zero bars). Span + days + recency carry the clinical picture and
       // every number traces to appendix A.
+      // "FIRST NOTED" IS A CLAIM ABOUT THE ANIMAL; THIS NUMBER IS A FACT ABOUT THE WINDOW
+      // (B-532, cold-read secondary). The onset is whatever the earliest in-window episode
+      // is, so on a report scoped to "since last vet visit" it lands within days of the
+      // window opening almost by construction — and the cold read read "first noted ~May 21"
+      // off a dog whose pruritus is a MONTHS-old active condition on this same report's own
+      // conditions row. A vet who takes that at face value gets a five-week problem where
+      // the record holds a four-month one, and chronicity is precisely the axis they are
+      // reading this flag for.
+      //
+      // The span is therefore stated as a FLOOR when the first episode sits near the window
+      // edge — the same vocabulary the exposure counts use, for the same reason. Not
+      // suppressed and not softened: the flag still fires, still leads, and still says the
+      // pattern is sustained. It simply stops asserting a start date it cannot know.
+      const onsetDay = fmtLocalDay(f.firstOnsetIso, tz)
+      const leftCensored = daysBetweenDayKeys(snap.scope.startDate, localDayKeyOf(f.firstOnsetIso, tz)) <= CHRONICITY_LEFT_CENSOR_DAYS
+      const censorBit = leftCensored
+        ? ` This window opens ${h(fmtDay(snap.scope.startDate))}, so ${num(f.spanDays)} days is a floor &mdash; the record cannot show how long the sign predates it.`
+        : ''
       return flagRow(
         'Chronicity',
         `<b>${h(symptomLabel(f.symptomType))} has been ongoing ${num(f.spanDays)} day${
           f.spanDays === 1 ? '' : 's'
-        }</b> (first noted ~${h(fmtLocalDay(f.firstOnsetIso, tz))}): ${num(f.episodeCount)} episode${
+        }</b> (first logged ${h(onsetDay)}): ${num(f.episodeCount)} episode${
           f.episodeCount === 1 ? '' : 's'
         } on ${num(f.symptomDays)} day${f.symptomDays === 1 ? '' : 's'}; most recent ${num(
           f.daysSinceLastEpisode,
-        )} day${f.daysSinceLastEpisode === 1 ? '' : 's'} ago. A sustained pattern over many samples, not a single incident.`,
+        )} day${f.daysSinceLastEpisode === 1 ? '' : 's'} ago. A sustained pattern over many samples, not a single incident.${censorBit}`,
       )
     }
     case 'symptom_worsening': {
@@ -1313,7 +1409,7 @@ function dietTrialSection(snap: ReportSnapshot): string {
   )
   if (t.indication) identity.push(`Indication: ${h(indicationLabel(t.indication))}.`)
   if (t.vetName) identity.push(`Directed by ${h(t.vetName)}.`)
-  if (t.stoppedReason) identity.push(`<b>${h(stoppedReasonLine(snap.signalment.name, t.stoppedReason))}</b>`)
+  if (t.stoppedReason) identity.push(`<b>${h(stoppedReasonLine(snap.signalment.name, t.stoppedReason, t))}</b>`)
   rows.push(kv('Trial', identity.join(' ')))
 
   // ── §5.1's two facts, over ONE explicit range, never in one sentence ────────
@@ -1524,8 +1620,21 @@ function dietTrialSection(snap: ReportSnapshot): string {
     // §5.6. A free-choice bowl of something off the list is a CONTINUOUS exposure
     // that emits no meal events at all, so it is invisible to every count above.
     const bowls = t.arrangementExposures.map((a) => h(a.label ?? 'a free-fed food')).join(', ')
+    // SAY THAT "CONTINUOUSLY" IS THE APP'S ASSUMPTION WHEN IT IS (B-532, cold-read
+    // secondary). `active_from` is null on the ordinary free-fed row — it records the day
+    // the owner first LOGGED the food, not the day the bowl went down — and the trial
+    // block then asserted an unbroken presence across the window as though it had been
+    // observed, while "Reading the trend" described the same bowl as "start not recorded"
+    // four sections below. Same document, two confidences, and the assertive one was the
+    // one a scanner takes. The conservative default is kept (a bowl of unknown vintage is
+    // treated as present throughout, which is what protects the elimination claim); what
+    // changes is that the page says so.
+    const anyUndated = t.arrangementExposures.some((a) => !a.startRecorded)
+    const datesBit = anyUndated
+      ? ` The dates this bowl was down are not recorded, so it is reported as present throughout &mdash; that is the report's assumption, not an observation.`
+      : ''
     blind.push(
-      `<b>A free-fed bowl</b> of ${bowls} was available alongside the trial &mdash; continuously, and not on the allowed list. Intake not directly observed.`,
+      `<b>A free-fed bowl</b> of ${bowls} was available alongside the trial &mdash; continuously, and not on the allowed list. Intake not directly observed.${datesBit}`,
     )
   }
   if (t.exposures.unclassifiable > 0) {
@@ -1665,8 +1774,15 @@ function dietTrialSection(snap: ReportSnapshot): string {
     // today. When every rated feeding was refused, the sentence says so.
     const total =
       refusalFact && refusalFact.ratedFeedings > 0 && refusalFact.refusedFeedings >= refusalFact.ratedFeedings
+    // "NOT ONE WAS EATEN" IS A STRONGER CLAIM THAN THE RECORD MAKES (B-532, cold-read round 7).
+    // The predicate is `feedingWasFinished`, so this population is "not finished" — and on the
+    // canonical artifact appendix E lists `Ate some ×4` against a page-1 sentence saying not one
+    // was eaten. In plain English those contradict, and a skeptical reader checks the appendix.
+    // The error runs in the alarming direction so it costs no patient anything; it costs the
+    // page credibility at the exact point it is being verified, and "took some on four days"
+    // does modestly change the lipidosis urgency.
     const eaten = total
-      ? `Not one rated feeding of the trial diet was eaten (${num(refusalFact!.refusedFeedings)} of ${num(
+      ? `Not one rated feeding of the trial diet was finished (${num(refusalFact!.refusedFeedings)} of ${num(
           refusalFact!.ratedFeedings,
         )})`
       : 'The trial diet was largely not eaten'
@@ -1967,9 +2083,49 @@ function exposureSentences(t: NonNullable<ReportSnapshot['trial']>): string[] {
   // The module computed a reason the affirmative sentence is false. The card stays
   // quiet here; the REPORT names the blocker, because a vet reading a missing line
   // needs to know it was withheld rather than assume it was clean.
-  return [
-    `${num(totalFeedings)} feedings are logged in this window. No clean-elimination statement is made for them &mdash; see &ldquo;Also during the trial&rdquo; below for what the feeding count cannot cover.`,
-  ]
+  //
+  // AND IT NAMES THE BLOCKER RATHER THAN POINTING AT A ROW THAT MAY NOT EXIST (B-599).
+  // This sentence used to end "see 'Also during the trial' below" unconditionally, and
+  // that row renders only for an OFF-LIST bowl, an oral-route dose or an unnamed
+  // feeding. Two of the reasons the claim is withheld emit no row at all — a free-fed
+  // bowl holding the TRIAL DIET (`intakeNotDirectlyObserved` withholds; there is no
+  // off-list exposure to list) and a below-`MIN_INTERPRETABLE_DAYS` record — so the
+  // phrase occurred exactly once in the document, pointing at nothing. Round 5 treated
+  // a page-1 pointer to a missing section as blocking, and it is the right call: a
+  // reader who cannot find the referenced row concludes they misread the withholding,
+  // not that the report is wrong.
+  return [`${num(totalFeedings)} feedings are logged in this window. ${withheldClaimReason(t)}`]
+}
+
+/**
+ * WHY no clean-elimination statement is made — one sentence, always resolvable.
+ *
+ * Ordered by what the reader can act on, and every branch either names the fact itself
+ * or points at a row this same page is guaranteed to render:
+ *   1. the "Also during the trial" row exists → point at it (its contents ARE the reason);
+ *   2. an unobserved bowl of an on-list food → say so; nothing else on the page will;
+ *   3. a dark antigen arm → the "Antigen check paused" row above is guaranteed by the
+ *      same flag, so the pointer cannot dangle;
+ *   4. anything else (today: a record below the interpretable-days floor) → state the
+ *      shape of the gap without inventing a cause.
+ */
+function withheldClaimReason(t: NonNullable<ReportSnapshot['trial']>): string {
+  const alsoRowRenders =
+    t.oralRoute.length > 0 || t.arrangementExposures.length > 0 || t.exposures.unclassifiable > 0
+  if (alsoRowRenders) {
+    return 'No clean-elimination statement is made for them &mdash; see &ldquo;Also during the trial&rdquo; below for what the feeding count cannot cover.'
+  }
+  if (t.intakeNotDirectlyObserved) {
+    // The tightly-controlled feline trial the free-fed state exists for: the bowl holds
+    // the trial diet, so nothing is off-list — and BOTH intake lanes are structurally
+    // blind, because a topped-up bowl produces no rated feedings at all. Unobservable is
+    // not clean, and this is the only line on the page that says why.
+    return 'Food was continuously available in a bowl during the trial, so what was eaten from it is not directly observed and the feeding count cannot describe it. <b>No clean-elimination statement is made for this record.</b>'
+  }
+  if (t.antigenArmDark) {
+    return 'No clean-elimination statement is made for them &mdash; see &ldquo;Antigen check paused&rdquo; above.'
+  }
+  return 'No clean-elimination statement is made for them: the record does not yet cover enough of the trial to read one either way.'
 }
 
 /** §7's first element. Descriptive throughout; the ONE additive judgement is the
@@ -2064,7 +2220,11 @@ function roleLabel(role: string): string {
  *  Each line is written for a clinician deciding what to prescribe next, which is
  *  the entire justification for capturing the reason — "stopped at day 19, would
  *  not eat it" and "stopped, cost" lead to different prescriptions. */
-function stoppedReasonLine(petName: string, reason: string): string {
+function stoppedReasonLine(
+  petName: string,
+  reason: string,
+  t: NonNullable<ReportSnapshot['trial']>,
+): string {
   switch (reason) {
     case 'refused':
       return `Stopped because ${petName} would not eat it.`
@@ -2086,8 +2246,29 @@ function stoppedReasonLine(petName: string, reason: string): string {
     // continuation window. Stated as the owner's reason, never as a finding.
     case 'symptoms_resolved':
       return 'Stopped because the owner reported the symptoms had resolved.'
-    case 'completed':
-      return 'Ran its course.'
+    case 'completed': {
+      // "RAN ITS COURSE" IS A CLAIM ABOUT LENGTH, AND NOTHING CHECKED IT (B-532).
+      // `completed` is a stored token meaning the owner tapped the completion
+      // milestone — §4.3's milestone needs that tap and nothing auto-completes a
+      // trial — so it says WHEN the owner ended it, never that the target was
+      // reached. The cold read caught this sentence in bold over 49 of 56 days,
+      // two inches under a `trialDayPhrase` that had already printed "49 days, of a
+      // 56-day window": one line said short, the emphasised one said finished, and
+      // the emphasised one is what a 60-second scan takes.
+      //
+      // A short trial is not a footnote on either indication. On skin, 56 days IS
+      // the >90% band and stopping at 49 lands under it; on GI, ACVIM says continue
+      // ≥12 weeks, so "ran its course" over a truncated trial reads as permission to
+      // stop a diet the guideline says to keep. Stated as arithmetic about the
+      // record, never as a judgement of the owner (§6.9).
+      const short = t.targetDurationDays - t.dayCounter
+      if (short > 0) {
+        return `Marked complete at day ${t.dayCounter} — ${short} day${
+          short === 1 ? '' : 's'
+        } short of the ${t.targetDurationDays}-day window.`
+      }
+      return 'Ran its course — the full window was completed.'
+    }
     case 'other':
       return 'Stopped early.'
     default:
@@ -2144,13 +2325,26 @@ function weightBlock(snap: ReportSnapshot): string {
     t.earliestDate && t.latestDate && t.readingCount >= 2
       ? `${h(fmtDay(t.earliestDate))} &ndash; ${h(fmtDay(t.latestDate))}`
       : h(fmtDay(t.latestDate ?? t.earliestDate))
+  // THE SPARKLINE IS MAGNITUDE-BLIND, SO THE SCALE IS STATED (B-532, cold-read secondary).
+  // `weightSpark` normalises to the series' own min/max, which is right for showing SHAPE and
+  // wrong for everything else: a 0.2 kg wobble on a Labrador and a 0.6 kg fall on a cat draw
+  // the identical cliff, and the cliff is what a 60-second scan takes from the tile. The
+  // numbers were adjacent but the drawn RANGE was not, so nothing told the reader how much
+  // vertical the line was spending. Named as a scale, never as a finding — the clinical
+  // reading of that fall is `weightDuringTrial`'s percent-of-body-weight sentence.
+  const lo = Math.min(...t.seriesKg)
+  const hi = Math.max(...t.seriesKg)
+  const scaleBit =
+    t.readingCount >= 2 && hi > lo
+      ? ` <span class="l">&middot; chart spans ${num(lo.toFixed(1))}&ndash;${num(hi.toFixed(1))}&nbsp;kg</span>`
+      : ''
   return `
   <div class="weight">
     ${weightSpark(t.seriesKg)}
     <div class="wt-read">
       <span class="v num">${trajectory}</span> <span class="l">&middot; ${num(t.readingCount)} owner weigh-in${
         t.readingCount === 1 ? '' : 's'
-      }, ${dateSpan}</span><br/>
+      }, ${dateSpan}</span>${scaleBit}<br/>
       <span class="l">A home-scale weight trend, read as a trajectory rather than a single point. Descriptive — not a diagnosis, and body condition was not assessed.</span>
     </div>
   </div>`
@@ -2284,9 +2478,19 @@ function trialExposureTile(t: NonNullable<ReportSnapshot['trial']>): string {
   // with a competing antigen continuously available, and appendix C got the same fact
   // right in words. So the tile says the WORD, not a dash: a reader who takes nothing
   // else from this cell must not take "none" from it.
-  return t.arrangementExposures.length > 0
-    ? tile('Not countable', '', `Off-diet exposures<br/>off-list food was continuously available &mdash; see below`)
-    : tile('Not stated', '', `Off-diet exposures<br/>see the diet-trial block below`)
+  // AND "NOT STATED" IS A FACT ABOUT THE DOCUMENT, NOT ABOUT THE ANIMAL (B-532, cold-read
+  // blocking). Round 6 fixed the dash on the off-list-bowl branch and left the fallback saying
+  // "Not stated · see the diet-trial block below" — which, in a four-tile row where every other
+  // tile is a number, scans as *nothing to report*. The cold read lifted exactly that off the
+  // completed-trial artifact, on the report where a clean-looking page is the whole hazard.
+  // Every branch now names the WORLD: what could not be established, and why.
+  if (t.arrangementExposures.length > 0) {
+    return tile('Not countable', '', `Off-diet exposures<br/>off-list food was continuously available &mdash; see below`)
+  }
+  if (t.intakeNotDirectlyObserved) {
+    return tile('Not countable', '', `Off-diet exposures<br/>food was free-fed &mdash; intake not directly observed`)
+  }
+  return tile('Not established', '', `Off-diet exposures<br/>no clean-elimination statement is made &mdash; see below`)
 }
 
 /**
@@ -2322,17 +2526,26 @@ function monitoringTiles(snap: ReportSnapshot): string[] {
   // Tile 2 — trajectory (first half → last half). When the early window is sparsely logged the
   // apparent acceleration is partly an artifact of WHEN logging started, so co-locate that caveat
   // (R2-6) rather than let "2 → 20" read as a clean worsening it can't support.
-  if (ps && ps.weeklyBuckets.length >= 2) {
-    const nB = ps.weeklyBuckets.length
-    const mid = Math.floor(nB / 2)
-    const firstCount = ps.weeklyBuckets.slice(0, mid).reduce((a, b) => a + b, 0)
-    const lastCount = ps.weeklyBuckets.slice(mid).reduce((a, b) => a + b, 0)
-    const firstDays = Math.min(ps.windowDays, mid * 7)
-    const lastDays = ps.windowDays - firstDays
-    const earlySparse = lastCount > firstCount && ag.firstHalfLoggedDays < Math.max(1, Math.ceil(firstDays / 3))
-    const sub = earlySparse
-      ? `early window sparsely logged (${num(ag.firstHalfLoggedDays)} of ${num(firstDays)} d)`
-      : `first ${num(firstDays)}&nbsp;d &rarr; last ${num(lastDays)}&nbsp;d`
+  //
+  // THIS TILE AND THE SYMPTOM PANEL READ THE SAME `trendHalves` (B-532). They did not, and the
+  // adversarial pass executed what that cost: the first cut migrated the panel and left this tile
+  // on the old `mid * 7` bucket split, so on a fully-logged 36-day `since_visit` window — the
+  // DEFAULT basis for the monitoring wedge this tile exists for — page 1 printed "3 → 3" while
+  // the panel two inches below printed "first 18 d 1 → last 18 d 5". Same symptom, same window,
+  // one page, and the prominent number was the reassuring one. A swept comparison put the two
+  // partitions in disagreement on 337 of 393 window lengths. The bias had not been removed, it
+  // had been relocated — so the fix is one shared derivation, not two corrected copies.
+  const halves = ps?.trendHalves ?? null
+  if (ps && halves) {
+    const { days, firstCount, lastCount } = halves
+    // The same predicate the panel uses, from the same helper — including its denominator, which
+    // is where the second break was: this site compared a NEW-partition numerator against an
+    // OLD-partition floor, which both lost a caveat at 90 days and printed a false "6 of 21 d".
+    const sparse = trendSparseCaveat(halves, ag)
+    const sub =
+      sparse?.side === 'early'
+        ? `early window sparsely logged (${num(ag.firstHalfLoggedDays)} of ${num(days)} d)`
+        : `first ${num(days)}&nbsp;d &rarr; last ${num(days)}&nbsp;d`
     tiles.push(
       tileHtml(`${firstCount} <span class="arw">&rarr;</span> ${lastCount}`, `Episodes, first &rarr; last half<br/>${sub}`),
     )
@@ -2456,40 +2669,101 @@ function symptomTrend(snap: ReportSnapshot): string {
   </div>`
 }
 
+/**
+ * IS THIS DELTA AN ARTEFACT OF WHEN THE OWNER WAS LOGGING? — one derivation, two call sites.
+ *
+ * Both the page-1 trajectory tile (`monitoringTiles`) and the symptom panel print this
+ * comparison, and B-532's first cut migrated only the panel: the tile kept the old bucket split
+ * AND compared a new-partition numerator against an old-partition floor. The result was a page
+ * that disagreed with itself about direction, with the reassuring number in the prominent slot.
+ * Keeping the predicate here is what stops the next change from correcting one copy again.
+ *
+ * Direction matters. A RISE over an unlogged EARLY window is an artefactual worsening (R2-6). A
+ * FALL over an unlogged LATE window is an artefactual *improvement*, which is the direction that
+ * ends a diet trial early and sends a sick animal home — the cold read produced exactly that: a
+ * cat's vomiting read "first 14 d 4 → last 18 d 1" over a late window holding 5 logged days,
+ * because the owner stopped logging the day the trial stopped.
+ *
+ * THE FLOOR IS `logged * 3 <= days`, i.e. "a third or less of the half was logged" — stated as
+ * integer arithmetic rather than as `< ceil(days/3)`, because the ceiling form lost the caveat at
+ * a boundary. Executed: a 90-day record with 15 of 45 late logged days and a 3× apparent
+ * improvement caveated on `main` (old floor `ceil(48/3) = 16`) and stopped caveating under the
+ * new equal halves (`15 < ceil(45/3) = 15` is false). A guard whose whole purpose is the
+ * reassuring direction may not get quieter as a side effect of fixing the arithmetic beside it.
+ */
+function trendSparseCaveat(
+  halves: NonNullable<SymptomAggregate['trendHalves']>,
+  ag: AtAGlance,
+): { side: 'early' | 'late' } | null {
+  const sparse = (loggedDays: number): boolean => loggedDays * 3 <= halves.days
+  if (halves.lastCount > halves.firstCount && sparse(ag.firstHalfLoggedDays)) return { side: 'early' }
+  if (halves.lastCount < halves.firstCount && sparse(ag.secondHalfLoggedDays)) return { side: 'late' }
+  return null
+}
+
 function symptomPanel(s: SymptomAggregate, snap: ReportSnapshot): string {
-  // First-half vs last-half split for the delta (from the weekly buckets).
-  const nB = s.weeklyBuckets.length
+  // The first-vs-last delta, over EQUAL-LENGTH halves computed in report.ts (B-532).
+  //
+  // It used to be derived here, from the weekly buckets, and weekly buckets do not halve a
+  // window: `mid = floor(nBuckets/2)` gave a first half of `mid × 7` days and a last half of
+  // everything else, so the LATE window was systematically the longer one — by up to 6 days
+  // normally, and 7-vs-1 on a nine-day report. Two raw counts over unequal exposures are not
+  // a comparison, and the bias has a direction: a longer late window inflates the late count
+  // and understates a real fall. The cold read found it flattening a 44% improvement in
+  // episode rate, and on a diet trial "no improvement" is the reading that ends the diet.
+  //
+  // The halves and `atAGlance.firstHalfLoggedDays` / `secondHalfLoggedDays` now come from ONE
+  // partition, so the sparse-logging caveat can never qualify a split other than the one it
+  // is printed under.
+  const halves = s.trendHalves
   let deltaHtml = ''
-  if (nB >= 2) {
-    const mid = Math.floor(nB / 2)
-    const firstCount = s.weeklyBuckets.slice(0, mid).reduce((a, b) => a + b, 0)
-    const lastCount = s.weeklyBuckets.slice(mid).reduce((a, b) => a + b, 0)
-    const firstDays = Math.min(s.windowDays, mid * 7)
-    const lastDays = s.windowDays - firstDays
-    // Co-locate the unlogged-early-window caveat (R2-6): a first→last acceleration is partly an
-    // artifact of when logging began. Shown only on a RISE (the misleading direction) when the
-    // first half was sparsely logged — so the delta can't be read as a clean worsening it can't bear.
-    const earlySparse = lastCount > firstCount && snap.atAGlance.firstHalfLoggedDays < Math.max(1, Math.ceil(firstDays / 3))
-    // THE MIRROR CASE, and it is the more dangerous one. R2-6 caveated a RISE over an
-    // unlogged early window — an artefactual worsening. A FALL over an unlogged LATE
-    // window is an artefactual *improvement*, which is the direction that ends a trial
-    // early and sends a sick animal home. The cold read produced it: a cat's vomiting
-    // read "first 14 d 4 → last 18 d 1" where the last 18 days held 5 logged days,
-    // because the owner stopped logging the day the trial stopped.
-    const lateSparse = lastCount < firstCount && snap.atAGlance.secondHalfLoggedDays < Math.max(1, Math.ceil(lastDays / 3))
-    const caveat = earlySparse
-      ? `<div class="delta-caveat">early window sparsely logged (${num(snap.atAGlance.firstHalfLoggedDays)} of ${num(
-          firstDays,
-        )}&nbsp;d)</div>`
-      : lateSparse
-        ? `<div class="delta-caveat">later window sparsely logged (${num(
-            snap.atAGlance.secondHalfLoggedDays,
-          )} of ${num(lastDays)}&nbsp;d) &mdash; a fall here may be less logging, not fewer episodes</div>`
-        : ''
-    deltaHtml = `<div class="delta">first ${num(firstDays)}&nbsp;d <b class="num">${firstCount}</b> &rarr; last ${num(
-      lastDays,
-    )}&nbsp;d <b class="num">${lastCount}</b></div>${caveat}`
+  if (halves) {
+    const { days, firstCount, lastCount } = halves
+    const sparse = trendSparseCaveat(halves, snap.atAGlance)
+    const caveat =
+      sparse?.side === 'early'
+        ? `<div class="delta-caveat">early window sparsely logged (${num(snap.atAGlance.firstHalfLoggedDays)} of ${num(
+            days,
+          )}&nbsp;d)</div>`
+        : sparse?.side === 'late'
+          ? `<div class="delta-caveat">later window sparsely logged (${num(
+              snap.atAGlance.secondHalfLoggedDays,
+            )} of ${num(days)}&nbsp;d) &mdash; a fall here may be less logging, not fewer episodes</div>`
+          : ''
+    // THE EXPOSURE RIDES THE DELTA ITSELF (B-532, cold-read round 7). The per-half logged-day
+    // counts were in the subnote under the chart, and round 7 found the gap that leaves: on the
+    // completed-trial artifact "last 28 d 3" counted seven days nobody observed, three
+    // centimetres above a chart that had just refused to draw a bar for that same week. The
+    // sparse caveat does not fire at 21-of-28 and should not — that is not a sparse record —
+    // but the headline number still absorbed an unobserved week into an improvement, on the one
+    // report where improvement is the whole story. A threshold cannot carry this; the
+    // denominator has to travel with the count.
+    const obs = (n: number): string => (n < days ? ` <span class="conf">${num(n)} logged</span>` : '')
+    deltaHtml = `<div class="delta">first ${num(days)}&nbsp;d${obs(
+      snap.atAGlance.firstHalfLoggedDays,
+    )} <b class="num">${firstCount}</b> &rarr; last ${num(days)}&nbsp;d${obs(
+      snap.atAGlance.secondHalfLoggedDays,
+    )} <b class="num">${lastCount}</b></div>${caveat}`
   }
+  // NAME THIS ELEMENT'S OWN PARTITION, AND ITS EXPOSURE. The cold read counted four different
+  // day-groupings on one page (the window, the weekly bars, these halves, and the trial's own
+  // halves) with only the bars dated — so a reader comparing "first 21 d 11" against the chart
+  // had no way to know which days it covered. The dates are stated where the numbers are.
+  //
+  // THE LOGGED-DAY COUNTS RIDE WITH THEM, and that is the part doing clinical work. Equal
+  // calendar days are not equal EXPOSURE: 11 episodes over 23 well-logged days against 5 over
+  // 23 days the owner logged half as often is not an improvement, and the `days/3` sparse
+  // caveat is a coarse threshold that stays silent across most of that range. C5's remedy
+  // applies here exactly as it does to the trial's symptom trend — DISCLOSE the density beside
+  // the count rather than adjudicate it, so a reader can see whether the two halves are
+  // comparable instead of trusting that a threshold would have told them.
+  const halvesBit = halves
+    ? ` · trend halves: ${h(fmtRange(halves.firstStartDate, halves.firstEndDate))} (${num(
+        snap.atAGlance.firstHalfLoggedDays,
+      )} of ${num(halves.days)} d logged) vs ${h(fmtRange(halves.lastStartDate, halves.lastEndDate))} (${num(
+        snap.atAGlance.secondHalfLoggedDays,
+      )} of ${num(halves.days)} d logged)`
+    : ''
   const markers = snap.concurrentChanges
   return `
     <div class="trend">
@@ -2505,7 +2779,7 @@ function symptomPanel(s: SymptomAggregate, snap: ReportSnapshot): string {
       ${symptomChart(s, markers, snap.scope.endDate)}
       <div class="subnote">${num(s.symptomDays)} of ${num(s.windowDays)} days had an episode · ${num(
     s.loggedDays,
-  )} of ${num(s.windowDays)} days logged.</div>
+  )} of ${num(s.windowDays)} days logged${halvesBit}.</div>
     </div>`
 }
 
@@ -2685,15 +2959,29 @@ function vomitCharacteristics(snap: ReportSnapshot): string {
       </div>`
   }
 
+  // NO PHOTO ANYWHERE ⇒ NO CHART FURNITURE (B-532, cold-read secondary). With zero
+  // photographed incidents the section still drew a full-width grey bar reading "no legible
+  // read yet" under a heading promising "Automated photo analysis" — a chart-shaped element
+  // standing in for data that does not exist, and the phrase "yet" implying a read is coming
+  // for incidents that were never photographed. It costs a quarter of a page and gives a
+  // scanner something to mistake for a finding.
+  //
+  // The blood/foreign limitation block is NOT dropped with it. That block is the one carrying
+  // "this is not a clearance", and on the artifact where nothing was read it is the only thing
+  // stopping the section's silence from reading as a negative result (the B-494 rule).
+  const noPhotoAtAll = p.withAnalysis === 0
+  const body = noPhotoAtAll
+    ? `<div class="mixkey">No incident in this window has a photo, so there is no automated read of colour, contents or consistency. ${denom}</div>`
+    : `<div>
+        <div class="barmix">${mixHtml}</div>
+        <div class="mixkey">${keyHtml}<br/>${denom}</div>
+      </div>`
   return `
   <div class="sec">
     <h2>Vomit characteristics <span class="aitag">Automated photo analysis &middot; owner-reviewable</span></h2>
     <p class="note lead">Colour, contents, and consistency are read automatically from the photo the owner took of each incident, then aggregated below. Each read is shown for the owner to confirm; none carries a diagnosis or a verdict on a single incident.</p>
     <div class="pheno">
-      <div>
-        <div class="barmix">${mixHtml}</div>
-        <div class="mixkey">${keyHtml}<br/>${denom}</div>
-      </div>
+      ${body}
       ${sideHtml}
     </div>
   </div>`
@@ -2962,7 +3250,32 @@ function dietMeds(snap: ReportSnapshot): string {
     // string stays. If a decline flag WERE present, the else-branch keeps the scored figure and the
     // flag leads the safety band.
     const mc = d.mealCompletion
-    const typically = mc && mc.intakeMode ? `, typically &ldquo;${h(intakeLabel(mc.intakeMode).toLowerCase())}&rdquo;` : ''
+    // THE ADVERB KEEPS ITS DENOMINATOR (B-532, cold-read finding) — and this is a genuine
+    // collision between two cold reads, resolved by keeping BOTH rather than trading one
+    // finding for the other.
+    //
+    // R2-3 won this branch its descriptive framing: "0 of 25 meals fully eaten" reads as
+    // anorexia — feline lipidosis territory — for a cat that grazes across the day and whose
+    // discrete meals routinely go unfinished, on a record where the intake engine fired no
+    // flag at all. That reasoning still holds and the mode word stays.
+    //
+    // But round 7 found the cost of the adverb ALONE: it was the one page-1 intake statement
+    // in the whole document set with no numbers behind it, and it appears only on the report
+    // that reads well — the refusing cat got "0 of 38", the well-logged dog "86 of 87", and
+    // the clean-looking completed trial got `typically "ate it all"` with the real figure
+    // (96 of 98) a page later in appendix E. Vagueness that runs only in the reassuring
+    // direction is the exact shape this pass exists to remove.
+    //
+    // Both, then. The count is stated, and what protects the grazer from it is the sentence
+    // it sits inside — "Primarily free-fed … Intake not directly observed" leads, and these
+    // meals are explicitly "also". Composition is the guard, as it is on the B-494 band; a
+    // number a clinician can check beats an adverb they cannot.
+    //
+    // A NULL MODE STAYS NULL. `strictPluralityIntake` returns null on a tie precisely so the
+    // report never picks a side, and defaulting it to "ate it all" here would invent the
+    // reassuring reading — the same defect one line up, committed by the fix for it.
+    const modeBit = mc && mc.intakeMode ? `, typically &ldquo;${h(intakeLabel(mc.intakeMode).toLowerCase())}&rdquo;` : ''
+    const typically = mc ? `${modeBit} &mdash; ${num(mc.finishedMeals)} of ${num(mc.ratedMeals)} fully eaten` : ''
     // #8 — NAME the foods fed as meals (e.g. a wet diet) on page 1, not just a bare "N discrete
     // meals": the first real artifact left Nyx's wet food unnamed and cited a non-existent appendix.
     const mealNames = distinctLabels(d.mealItems.map((i) => ({ label: i.foodLabel })), 2)
@@ -3487,7 +3800,24 @@ function mealItemsTable(snap: ReportSnapshot, items: DietSummary['mealItems']): 
           ? `${h(fmtDay(i.firstDate))} &ndash; ${h(fmtDay(i.lastDate))}`
           : h(fmtDay(i.firstDate ?? i.lastDate))
       const feedings = i.count > 1 ? `&times;${num(i.count)}` : num(1)
-      const typical = i.intakeMode ? h(intakeLabel(i.intakeMode)) : '&mdash;'
+      // EVERY RATING, NOT THE MODE (B-532). `intakeMode` is a strict plurality, so a
+      // single word here stood for as little as 51% of the feedings and DELETED the
+      // rest — on the canonical refusal artifact it printed "Refused" over 38 feedings
+      // and silently dropped the four "ate some" meals that were the only intake the
+      // cat took in nineteen days. Three strings on this report send the reader here
+      // for the ratings; the cell they land on has to hold all of them.
+      //
+      // Below-baseline ratings carry weight, matching `intakeLogRow` one table down, so
+      // the concerning share reads at a glance without becoming a score or a verdict.
+      const typical =
+        i.intakeBreakdown.length > 0
+          ? i.intakeBreakdown
+              .map((b) => {
+                const cell = `${h(intakeLabel(b.rating))} &times;${num(b.count)}`
+                return b.rating === 'all' || b.rating === 'most' ? cell : `<b>${cell}</b>`
+              })
+              .join(' &middot; ')
+          : '&mdash;'
       // The FULL captured set, not the primary (cold-read blocker, B-351 slice 5). This is the
       // table a vet checks to answer "what did she actually eat" — it itemises the bulk of the
       // intake — so rendering a bare `duck` here for a food whose label also lists chicken was
@@ -3504,7 +3834,7 @@ function mealItemsTable(snap: ReportSnapshot, items: DietSummary['mealItems']): 
     <caption>${num(total)} logged meal${total === 1 ? '' : 's'} across ${num(items.length)} food${
     items.length === 1 ? '' : 's'
   } &middot; ${h(fmtRange(snap.scope.startDate, snap.scope.endDate))}</caption>
-    <thead><tr><th>Food</th><th style="width:104px">Protein</th><th class="c" style="width:64px">Meals</th><th style="width:118px">Dates</th><th style="width:120px">Typical intake</th></tr></thead>
+    <thead><tr><th>Food</th><th style="width:104px">Protein</th><th class="c" style="width:64px">Meals</th><th style="width:118px">Dates</th><th style="width:150px">Intake recorded</th></tr></thead>
     <tbody>${rows}</tbody>
   </table>`
 }
@@ -3516,6 +3846,10 @@ function mealItemsTable(snap: ReportSnapshot, items: DietSummary['mealItems']): 
  */
 function intakeDetailTable(snap: ReportSnapshot, log: IntakeLogEntry[]): string {
   const hidden = snap.provenance.intakeLogHiddenOlder
+  // B-532 — the two populations, named. `unfinished` means no reduced-intake flag fired,
+  // so there is no page-1 figure for these rows to trace to: they are here because the
+  // report keeps pointing at "the intake ratings", and a mode cell is not those.
+  const unfinishedOnly = snap.provenance.intakeLogScope === 'unfinished'
   const rows = log
     .map((e) => {
       const brk = e.pinned
@@ -3527,26 +3861,49 @@ function intakeDetailTable(snap: ReportSnapshot, log: IntakeLogEntry[]): string 
     })
     .join('')
   const hasFull = log.some((e) => e.isLastFullMeal)
+  const noun = unfinishedOnly ? 'unfinished meal' : 'rated meal'
+  // `unfinished` is the app's one predicate (`feedingWasFinished`: `most`/`all` are eaten), so
+  // the rows listed here are exactly the rows this table bolds. Never a second definition.
   const hiddenBit =
     hidden > 0
-      ? ` ${num(hidden)} earlier rated meal${hidden === 1 ? '' : 's'} in this window ${
+      ? ` ${num(hidden)} earlier ${noun}${hidden === 1 ? '' : 's'} in this window ${
           hidden === 1 ? 'is' : 'are'
         } not shown (the most recent are listed${hasFull && log.some((e) => e.pinned) ? ', plus the last full meal' : ''}).`
       : ''
   // Only claim a tagged anchor row when one exists — a window with no fully-eaten meal has none.
-  const anchorSentence = hasFull
-    ? 'the &ldquo;last fully-eaten meal&rdquo; on page&nbsp;1 is the row tagged &ldquo;last full meal&rdquo; here; the time since it is how long the pet has gone without a full meal, which sets the urgency of a reduced-intake flag (especially the feline 48&ndash;72&nbsp;h window)'
-    : 'no fully-eaten meal was recorded in this window, so page&nbsp;1 shows no &ldquo;last full meal&rdquo; and none is tagged here'
+  //
+  // THE `unfinished` POPULATION MAKES NEITHER CLAIM (B-532). It has no anchor row by
+  // construction, and the no-anchor sentence — "no fully-eaten meal was recorded in this
+  // window" — would be flatly FALSE here, because the fully-eaten meals are precisely what
+  // this table filters out. Printing an absence claim over a record that contradicts it is
+  // the failure class this pass exists to remove, so the branch is explicit rather than
+  // falling through to the anchor wording.
+  const readingBit = unfinishedOnly
+    ? // NAME THE DETECTOR, NOT "A FLAG" (B-532, cold-read round 7). The first cut said "No
+      // reduced-intake flag fired on this record" — on a document whose page 1 LEADS with a
+      // diet-not-eaten flag over 38 of 38 refusals. Technically true (they are different
+      // detectors) and read as a contradiction: a vet skimming takes it as *the intake
+      // detector looked and found nothing*, and resolving it means learning the app's
+      // vocabulary from a legend three pages on, which the 60-second bar forbids.
+      '<b>Reading this:</b> these are the meals rated below &ldquo;ate it all&rdquo;. Fully-eaten meals are counted in the table above and are not repeated here. The <i>relative</i> reduced-intake detector &mdash; which compares recent meals against this pet&rsquo;s own baseline &mdash; did not fire here; that is not a reading of whether intake was adequate, and any safety flag on page&nbsp;1 stands on its own.'
+    : `<b>Reading this:</b> ${
+        hasFull
+          ? 'the &ldquo;last fully-eaten meal&rdquo; on page&nbsp;1 is the row tagged &ldquo;last full meal&rdquo; here; the time since it is how long the pet has gone without a full meal, which sets the urgency of a reduced-intake flag (especially the feline 48&ndash;72&nbsp;h window)'
+          : 'no fully-eaten meal was recorded in this window, so page&nbsp;1 shows no &ldquo;last full meal&rdquo; and none is tagged here'
+      }. Absence of a full meal is not evidence the pet ate nothing — only that no fully-eaten meal was recorded.`
+  const lead = unfinishedOnly
+    ? '<b>Meals not finished</b> — every rated meal in this window the owner did not record as fully eaten, most recent first.'
+    : '<b>Recent rated meals</b> — the meals behind the reduced-intake flag on page&nbsp;1, most recent first.'
   return `
-  <p class="note lead" style="margin-top:16px"><b>Recent rated meals</b> — the meals behind the reduced-intake flag on page&nbsp;1, most recent first.${hiddenBit}</p>
+  <p class="note lead" style="margin-top:16px">${lead}${hiddenBit}</p>
   <table>
-    <caption>${num(log.length)} rated meal${log.length === 1 ? '' : 's'} shown &middot; ${h(
+    <caption>${num(log.length)} ${noun}${log.length === 1 ? '' : 's'} shown &middot; ${h(
     fmtRange(snap.scope.startDate, snap.scope.endDate),
   )}</caption>
     <thead><tr><th style="width:64px">Date</th><th style="width:58px">Time</th><th>Food</th><th style="width:150px">Intake</th></tr></thead>
     <tbody>${rows}</tbody>
   </table>
-  <p class="note" style="margin-top:9px"><b>Reading this:</b> ${anchorSentence}. Absence of a full meal is not evidence the pet ate nothing — only that no fully-eaten meal was recorded.</p>`
+  <p class="note" style="margin-top:9px">${readingBit}</p>`
 }
 
 function intakeLogRow(e: IntakeLogEntry, tz: string | null): string {
@@ -3869,9 +4226,21 @@ function offDietAppendix(snap: ReportSnapshot): string {
   // Free-fed carries its whole set now, not just the primary: an ad-lib bowl is the
   // biggest breach of an elimination trial, and its hidden secondary is the worst
   // version of that (B-351 slice 5).
+  // THE TRIAL DIET IS NOT A COMPETING ANTIGEN (B-532, cold-read round 7). The set was the
+  // free-fed bowls' whole protein list, and the tightly-controlled setup the free-fed state
+  // exists for is a bowl holding the TRIAL DIET — so the artifact printed *"Free-fed alongside
+  // the trial: Venison … a competing antigen no per-feeding count can capture"* on a venison
+  // trial. Wrong on its face, reads as a template leak, and it costs trust in the sections
+  // around it. The sentence is about proteins the trial does NOT sanction; the bowl's own
+  // unobserved-intake problem is stated where it belongs, on the trial block and the tile.
+  const trialSanctioned = new Set(
+    (snap.trial?.permittedFoods ?? [])
+      .filter((f) => f.role === 'primary_diet' && f.panelRead)
+      .flatMap((f) => f.proteins),
+  )
   const freeFedProteins = [
     ...new Set(snap.diet.freeFed.flatMap((f) => f.proteinSet.proteins)),
-  ]
+  ].filter((p) => !trialSanctioned.has(p))
   const tallyParts: string[] = []
   // D-B, under a trial: the antigen tally counts the protein on PERMITTED feedings
   // too, and says how many came from an approved food. Rung 1's `stop` is what makes
@@ -4080,12 +4449,21 @@ function dietHistoryAppendix(snap: ReportSnapshot): string {
   // concurrent-change logic, so without this guard a supplement stopped years ago would
   // render here as a live entry while page 1 correctly omits it (code-review find).
   const supps = snap.medications.filter((m) => m.isSupplement && m.overlapsWindow)
+  // "NONE RECORDED" IS ABOUT THE LOG, AND ON A TRIAL REPORT IT IS LOAD-BEARING (B-532,
+  // cold-read finding). Appendix D goes to real trouble to say a medication's absence is not
+  // evidence it was not given; these three rows carried no such caveat at the point of claim —
+  // on the one report where the entire validity of the elimination rests on them. Worse, this
+  // appendix's own sub-head says fields the app does not capture are marked "not recorded", so
+  // the bare phrase could not be told apart from "treats aren't captured" (they are — the
+  // well-logged artifact renders "65 this window"). The caveat is attached where the claim is,
+  // not left to the page-1 blind-spot line four sheets away.
+  const NOT_LOGGED = 'None recorded &mdash; nothing of this kind was logged in this window, which is not evidence none was fed.'
   const suppBit = supps.length
     ? supps.map((m) => `${h(m.drugName)} (started ${h(fmtDay(m.startedAt))})`).join('; ')
-    : 'None recorded.'
+    : NOT_LOGGED
   const treatBit = d.treats.count
     ? `${num(d.treats.count)} this window (${num(d.treats.distinctItems)} distinct). Dates in appendix&nbsp;C.`
-    : 'None recorded.'
+    : NOT_LOGGED
   // Meals (#7/#8) — the foods the owner logs AS MEALS (e.g. a wet diet). Previously discarded
   // before render, so a substantial part of the diet was invisible. Name the distinct foods here
   // and itemise them in appendix E; a free-fed-only pet with no logged meals reads "None recorded."
@@ -4097,7 +4475,7 @@ function dietHistoryAppendix(snap: ReportSnapshot): string {
     : 'None logged as discrete meals in this window.'
   const humanBit = d.humanFood.count
     ? `${num(d.humanFood.days)} day${d.humanFood.days === 1 ? '' : 's'} (${distinctLabels(d.humanFood.items, 6)}).`
-    : 'None recorded.'
+    : NOT_LOGGED
   // A concurrent free_choice bowl MUST appear in the diet history even when a trial is active —
   // an ad-lib competing-protein staple is the single thing most likely to break an elimination
   // trial, and the WSAVA diet history is exactly the section a vet reads to spot it. The old
@@ -4221,7 +4599,9 @@ function medicationAppendix(snap: ReportSnapshot): string {
             }${m.refusedDoses ? ` ${num(m.refusedDoses)} refused.` : ' None recorded as refused.'}`
       return `<tr><td>${h(m.drugName)}${m.strength ? ` ${h(m.strength)}` : ''}</td><td>${regimen}${
         m.indication ? ` — for ${h(m.indication)}` : ''
-      } &middot; ${regimenDates(m)}</td><td class="c num">${logged}</td><td>${adherence}</td></tr>`
+      } &middot; ${regimenDates(m)}</td><td class="c num">${logged}</td><td class="num">${doseDatesCell(
+        m.doseDays,
+      )}</td><td>${adherence}</td></tr>`
     })
     .join('')
   // Ad-hoc / OTC doses with no regimen (§3.8) — logged but never configured as a course. Reported
@@ -4241,23 +4621,56 @@ function medicationAppendix(snap: ReportSnapshot): string {
       }`
       return `<tr><td>${h(u.drugName)}${u.strength ? ` ${h(u.strength)}` : ''}</td><td>${regimen}</td><td class="c num">${num(
         u.administeredDoses,
-      )}</td><td>${adherence}</td></tr>`
+      )}</td><td class="num">${doseDatesCell(u.doseDays)}</td><td>${adherence}</td></tr>`
     })
     .join('')
   const rows = regimenRows + unlinkedRows
   const hasAny = meds.length > 0 || unlinked.length > 0
   // R2-6 — the preamble referenced a page-1 adherence line that does not exist on a no-meds report;
   // make it conditional so an empty Appendix D never points at a section that isn't there.
+  //
+  // AND THE ABSENCE IS NAMED, ON BOTH BRANCHES (B-532). "No prescription medications overlap
+  // this window" is a statement about the LOG, and the cold read read it as a statement about
+  // the animal — on a derm trial, where a course of an antipruritic the owner never entered in
+  // Culprit is both the commonest confound and completely invisible to this page. The closing
+  // legend does carry "Nothing is counted that the owner did not log", but that is three pages
+  // away from the table that reads as a negative result, and the B-494 rule is that a report
+  // teaching a reader to scan a zone may not let that zone's silence stand as a finding.
+  const unloggedCaveat =
+    ' <b>This lists only what the owner entered in Culprit.</b> A medication prescribed elsewhere and never logged does not appear here, and its absence is not evidence it was not given — worth confirming against the clinic record, particularly for anti-inflammatories and antipruritics, which suppress the signs a diet trial is measuring.'
   const sub = !hasAny
-    ? 'No prescription medications overlap this window. Over-the-counter supplements, if any, are listed in the diet history (appendix&nbsp;B).'
-    : 'Doses are owner-logged. The page-1 adherence line is computed from these entries; with no doses logged a drug reads &ldquo;adherence not tracked,&rdquo; never &ldquo;given.&rdquo; Doses logged without a configured regimen (including over-the-counter medications) appear as ad-hoc entries below; supplements taken as food are listed in the diet history (appendix&nbsp;B).'
+    ? `No prescription medication is recorded in this window. Over-the-counter supplements, if any, are listed in the diet history (appendix&nbsp;B).${unloggedCaveat}`
+    : `Doses are owner-logged. The page-1 adherence line is computed from these entries; with no doses logged a drug reads &ldquo;adherence not tracked,&rdquo; never &ldquo;given.&rdquo; Doses logged without a configured regimen (including over-the-counter medications) appear as ad-hoc entries below; supplements taken as food are listed in the diet history (appendix&nbsp;B).${unloggedCaveat}`
   return `
   <p class="appx-title serif" style="margin-top:22px">Appendix D — Medication log</p>
   <p class="appx-sub">${sub}</p>
   <table>
-    <thead><tr><th>Medication</th><th style="width:150px">Regimen</th><th class="c" style="width:100px">Doses logged</th><th>Adherence</th></tr></thead>
-    <tbody>${rows || `<tr><td colspan="4">No prescription medications overlap this window.</td></tr>`}</tbody>
+    <thead><tr><th>Medication</th><th style="width:150px">Regimen</th><th class="c" style="width:74px">Doses logged</th><th style="width:132px">Dose dates</th><th>Adherence</th></tr></thead>
+    <tbody>${rows || `<tr><td colspan="5">No prescription medication is recorded in this window.</td></tr>`}</tbody>
   </table>`
+}
+
+/**
+ * The DATES an administered dose was logged — Appendix D's answer to "when?" (B-532).
+ *
+ * The table carried a dose COUNT and no dates at all, and on a derm trial that is the
+ * difference between an answerable question and an unanswerable one: two doses of an
+ * antipruritic in week 1 and two in week 6 produce the same "4" against symptom curves they
+ * explain completely differently. The cold read asked for this column by name.
+ *
+ * Up to six distinct days are listed outright, because that is the shape a clinician can
+ * actually line up against the chart. Past that the list stops being readable, so it degrades
+ * to the span plus the day count — and says how many days it is covering, so the range is
+ * never mistaken for continuous dosing. Never a bare "—" next to a non-zero count: an
+ * administered dose always has a day.
+ */
+const DOSE_DATE_LIST_MAX = 6
+function doseDatesCell(doseDays: readonly string[]): string {
+  if (doseDays.length === 0) return '&mdash;'
+  if (doseDays.length <= DOSE_DATE_LIST_MAX) return h(doseDays.map((d) => fmtDay(d)).join(', '))
+  return `${h(fmtRange(doseDays[0], doseDays[doseDays.length - 1]))}<br/><span class="rnote">${num(
+    doseDays.length,
+  )} days with a dose</span>`
 }
 
 function appendixF(snap: ReportSnapshot): string {
@@ -4295,9 +4708,16 @@ function appendixF(snap: ReportSnapshot): string {
     <dt>Blood &amp; foreign material</dt><dd>Reported <b>only when seen</b> in an incident — never as a &ldquo;0 of N&rdquo; count, because absence in a photo cannot exclude bleeding (digested blood photographs poorly) and these are AI reads. A flagged incident leads the flags for review at the top.</dd>
     <dt>Weight</dt><dd>Owner home-scale weigh-ins, shown as a trend rather than a single point. Descriptive context, never a diagnosis or an alarm; body condition is not assessed here.</dd>
     <dt>Intake</dt><dd>Where the owner logs meals, a declined or barely-touched meal is recorded as a possible health signal — never &ldquo;picky.&rdquo;${
-      snap.provenance.intakeLog.length > 0
+      // ON THE SCOPE, NOT ON THE LIST'S LENGTH (B-532). The itemisation is no longer gated
+      // on the reduced-intake flag, so a non-empty `intakeLog` no longer implies the page-1
+      // "time since the last fully-eaten meal" line exists — and describing that line on a
+      // report that does not carry it is the same dangling-reference defect B-599 is about,
+      // re-entered through the legend.
+      snap.provenance.intakeLogScope === 'intake_flag'
         ? ' When intake drops, page&nbsp;1 shows the time since the last <b>fully-eaten</b> meal (how long the pet has gone without a full meal), and the meals behind it are in appendix&nbsp;E (meals &amp; intake).'
-        : snap.diet.mealItems.length > 0
+        : snap.provenance.intakeLogScope === 'unfinished'
+          ? ' Appendix&nbsp;E carries the intake recorded against every food, and lists each meal the owner did not record as fully eaten. A page-1 &ldquo;time since the last <b>fully-eaten</b> meal&rdquo; line appears only when a reduced-intake flag fired; its absence means no flag fired, not that intake was normal.'
+          : snap.diet.mealItems.length > 0
           ? // The same defect as the safety-flag entry, on the one axis where it is
             // worst: "none was raised in this window" told a cold reader the app had
             // examined intake and found nothing, on a cat refusing nearly every bowl.
@@ -4410,6 +4830,9 @@ const STYLE = `
   .ident .name{font-size:22px;font-weight:700;letter-spacing:.005em;line-height:1.05;}
   .ident .sig{font-size:12.5px;color:#25272d;margin-top:3px;}
   .ident .wt{font-size:12px;color:var(--muted);margin-top:2px;}
+  /* The active problem list, beside the signalment (B-532). Same weight as the rest of the
+     identity block — it is history a clinician reads before the numbers, not an alert. */
+  .ident .cond{font-size:12px;color:var(--muted);margin-top:3px;}
   .rangebox{flex:0 0 auto;text-align:right;border:1px solid var(--hair);border-radius:8px;padding:8px 12px;min-width:190px;background:#fcfcfd;}
   .rangebox .win{font-size:14px;font-weight:700;letter-spacing:.005em;}
   .rangebox .days{font-size:11.5px;color:var(--muted);margin-top:1px;}
@@ -4473,6 +4896,10 @@ const STYLE = `
   svg .axis{stroke:var(--ink);stroke-width:1.25;}
   svg .bar{fill:var(--bar);}
   svg .nub{fill:var(--nub);}
+  /* An unobserved week (B-532): HOLLOW, so it reads as "no data" and can never be mistaken for
+     the solid nub that means a measured zero. Shape + fill, never colour — §5.8 requires this
+     page to survive a black-and-white print, which is how most vets will read it. */
+  svg .nolog{fill:none;stroke:var(--nub);stroke-width:1;stroke-dasharray:2 2;}
   svg .mark{stroke:var(--ink);stroke-width:1;stroke-dasharray:3 3;}
   svg text.yl{font-size:10px;fill:var(--faint);}
   svg text.xl{font-size:10.5px;fill:var(--muted);}
