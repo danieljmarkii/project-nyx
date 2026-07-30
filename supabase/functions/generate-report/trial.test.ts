@@ -2078,6 +2078,84 @@ Deno.test('B-600 — a hand-picked window ending in the past: the identity holds
   assert.ok(!/This report shows 1 day/.test(text))
 })
 
+Deno.test('B-600 — the day counter says AS OF when the window closed in the past', () => {
+  // `adversarial-reviewer` pass 2, executed. The fix for pass 1 stopped the slice
+  // sentence deriving from `dayCounter` — and then added a clause NOMINATING it:
+  // "the day counter above is the only figure here that counts it". `dayCounter` is
+  // evidence-bounded, so on a hand-picked window it printed "day 30 of 84" four times
+  // beside "a trial that has run 73" once, and the new sentence certified the 30.
+  // 1,680 of 2,500 swept truncated configs; worst gap 45 days. Endorsing a stale
+  // number by reference having just removed it by arithmetic.
+  //
+  // 30 is not wrong — it is the trial day AS OF the window end, which is the right
+  // position for a report describing a past window. It was unlabelled.
+  const input = wellLoggedTrialInput({ events: [] })
+  input.dietTrials[0].startedAt = '2026-04-21'
+  input.dietTrials[0].targetDurationDays = 84
+  for (const d of days('2026-04-21', '2026-07-02')) {
+    input.events.push(meal({ date: d, brand: 'Royal Canin', product: 'Hydrolyzed HP', foodItemId: 'f-hp', proteins: ['soy'] }))
+  }
+  input.requestedWindow = { startDate: '2026-04-21', endDate: '2026-05-20' }
+  const snap = assembleReport(input)
+  assert.equal(snap.trial!.dayCounter, 30)
+  assert.equal(snap.trial!.trialDaysElapsed, 73)
+
+  const text = plain(renderReport(snap))
+  // Every rendering of the counter carries the as-of date, so none of them can be
+  // read as the trial's length.
+  for (const m of text.matchAll(/day 30 of 84(.{0,20})/g)) {
+    assert.ok(/ as of May 20/.test(m[1]), `unlabelled counter: "day 30 of 84${m[1]}"`)
+  }
+  assert.ok(/day 30 of 84 as of May 20/.test(text))
+  assert.ok(/a trial that has run 73/.test(text))
+  // And the sentence no longer nominates it.
+  assert.ok(!/the only figure here that counts it/.test(text))
+
+  // Silent when the window runs to today, which is every `since_visit` report — the
+  // shape B-600 is actually about. `dayCounter === trialDaysElapsed` there.
+  const since = assembleReport(truncatedTrialInput())
+  assert.equal(since.trial!.trialDaysOutsideRange.after, 0)
+  assert.equal(since.trial!.dayCounter, since.trial!.trialDaysElapsed)
+  assert.ok(!/ as of /.test(plain(renderReport(since)).slice(0, 4000)))
+})
+
+Deno.test('B-600 — the feeding count names the range it was counted over', () => {
+  // `adversarial-reviewer` pass 2, executed. "N feedings in this report's window" is
+  // false whenever the trial ended before the window closed — and that is the shape
+  // `selectReportTrial` exists for (the report sent the day after completing a trial).
+  // A trial that ended Jun 12 inside a window running to Jul 2 rendered "42 feedings
+  // in this report's window — all 42 matched the trial diet or a permitted food"
+  // while §4 of the same page listed 82 meals across two foods, 40 of them chicken
+  // fed after the trial closed. An affirmative all-clear the document falsifies.
+  const input = wellLoggedTrialInput({
+    events: [],
+    vetVisits: [{ visitedAt: '2026-05-23', clinicName: 'Riverside', vetName: 'Dr. Chen', reason: 'recheck' }],
+  })
+  input.dietTrials[0].startedAt = '2026-05-03'
+  input.dietTrials[0].status = 'completed'
+  input.dietTrials[0].completedAt = '2026-06-12'
+  input.dietTrials[0].endedAt = '2026-06-12'
+  for (const d of days('2026-05-03', '2026-06-12')) {
+    input.events.push(meal({ date: d, brand: 'Royal Canin', product: 'Hydrolyzed HP', foodItemId: 'f-hp', proteins: ['soy'] }))
+  }
+  // Back on ordinary chicken kibble the day the trial ended — twice a day, in window,
+  // and deliberately NOT part of the trial's evidence range.
+  for (const d of days('2026-06-13', '2026-07-02')) {
+    for (const time of ['07:30:00', '18:00:00']) {
+      input.events.push(meal({ date: d, time, brand: 'Purina', product: 'Pro Plan Chicken', foodItemId: 'f-pp', proteins: ['chicken'] }))
+    }
+  }
+  const snap = assembleReport(input)
+  assert.ok(snap.trial!.trialDaysOutsideRange.before > 0)
+  assert.equal(snap.trial!.evidenceEndDate, '2026-06-12', 'the evidence stops with the trial')
+
+  const text = plain(renderReport(snap))
+  assert.ok(!/feedings in this report’s window/.test(text))
+  assert.ok(!/feedings in total/.test(text))
+  // The dates, so the affirmative cannot be carried past them.
+  assert.ok(/feedings logged May 23 – Jun 12, 2026/.test(text))
+})
+
 Deno.test('B-600 — the refusal sentence leads the callout on every rung', () => {
   // `adversarial-reviewer`, executed. Round 4's ordering was enforced only by accident:
   // the statement was suppressed on `supports`, and the canonical refusing cat happened
@@ -2170,7 +2248,9 @@ Deno.test('B-600 — a truncated report that IS well logged vouches for the wind
   assert.ok(/This report shows 31 days of a trial that has run 73/.test(text))
   // And the feeding denominator names the window rather than claiming a total for
   // a trial it counted a third of.
-  assert.ok(/feedings in this report’s window/.test(text))
+  // The scope is the EVIDENCE range by name, not "this report's window" — which is
+  // false whenever the trial ended before the window closed.
+  assert.ok(/feedings logged Jun 2 – Jul 2, 2026/.test(text))
   assert.ok(!/feedings in total/.test(text))
 })
 

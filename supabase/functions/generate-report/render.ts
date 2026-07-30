@@ -1492,7 +1492,7 @@ function dietTrialSection(snap: ReportSnapshot): string {
         t.trialDaysElapsed,
       )}</b> &mdash; ${num(outsideDays)} trial day${outsideDays === 1 ? '' : 's'} ${
         outsideDays === 1 ? 'falls' : 'fall'
-      } ${where}, outside this report&rsquo;s window. Nothing below describes the trial as a whole; the day counter above is the only figure here that counts it.`,
+      } ${where}, outside this report&rsquo;s window. Nothing on this page describes the trial as a whole.`,
     )
   }
   if (t.coverage) {
@@ -2048,17 +2048,35 @@ function weightDuringTrial(snap: ReportSnapshot): string | null {
 
 function trialDayPhrase(t: ReportSnapshot['trial'], targetDays: number): string {
   if (!t) return `${num(targetDays)}-day window`
+  // ── IT IS A POSITION AS OF THE WINDOW'S END, AND SAYS SO WHEN THAT IS THE PAST ──
+  //
+  // `dayCounter` is bounded at the EVIDENCE end, so on a report whose scope closes
+  // before today it is the trial day as of the window end, short of the trial's
+  // elapsed length by exactly `trialDaysOutsideRange.after`. That is the right number
+  // for a report describing a past window — but unlabelled it collided with the slice
+  // sentence four lines down: "day 30 of 84" beside "a trial that has run 73", with
+  // nothing on the page reconciling them, on 1,680 of 2,500 swept truncated configs
+  // (worst gap 45 days). `daysPastTarget` rides the same counter and inherits the same
+  // as-of semantics, which is why the suffix is appended to every branch rather than
+  // to the position branch alone.
+  //
+  // The first cut of this fix instead added a sentence NOMINATING this counter as
+  // "the only figure here that counts the trial" — endorsing the stale number by
+  // reference having just removed it by arithmetic. The pointer is gone; the label is
+  // what was actually needed.
+  const asOf =
+    t.trialDaysOutsideRange.after > 0 ? ` as of ${h(fmtDay(t.evidenceEndDate))}` : ''
   if (t.status !== 'active') {
     // A finished trial is a SPAN, not a position. "Day 19 of 28" on a trial stopped
     // at day 19 reads as one still nine days from its target.
-    return `${num(t.dayCounter)} day${t.dayCounter === 1 ? '' : 's'}, of a ${num(targetDays)}-day window`
+    return `${num(t.dayCounter)} day${t.dayCounter === 1 ? '' : 's'}${asOf}, of a ${num(targetDays)}-day window`
   }
   if (t.daysPastTarget > 0) {
-    return `day ${num(t.dayCounter)} &mdash; ${num(t.daysPastTarget)} day${
+    return `day ${num(t.dayCounter)}${asOf} &mdash; ${num(t.daysPastTarget)} day${
       t.daysPastTarget === 1 ? '' : 's'
     } past the ${num(targetDays)}-day window`
   }
-  return `day ${num(t.dayCounter)} of ${num(targetDays)}`
+  return `day ${num(t.dayCounter)} of ${num(targetDays)}${asOf}`
 }
 
 /**
@@ -2143,9 +2161,21 @@ function exposureSentences(t: NonNullable<ReportSnapshot['trial']>): string[] {
   // twenty-three feedings read as the whole record of a twelve-week elimination
   // when they are eleven days of it. The count itself is right either way — only
   // the noun that says what it is a total OF has to move.
+  // …AND THE RANGE IT NAMES IS THE EVIDENCE RANGE, NOT THE REPORT WINDOW. The count is
+  // over `exposureRange`, which equals the window only when the trial neither started
+  // after it opened nor ended before it closed — and the second of those is the shape
+  // `selectReportTrial` exists for (the report an owner sends the day after completing
+  // a trial). Executed: a trial that ended Jun 12 inside a window running to Jul 2
+  // rendered "42 feedings in this report's window — all 42 matched" while §4 of the
+  // same page listed 82 meals across two foods, 40 of them chicken after the trial
+  // closed. An affirmative all-clear whose stated scope the document itself falsifies.
+  // Naming the dates costs a repetition and cannot be read wrong.
+  //
+  // Untruncated, "in total" is TRUE and stays: `trialDaysOutsideRange === {0,0}` means
+  // the evidence range spans the whole elapsed trial, so the total is the trial's.
   const feedingScope =
     t.trialDaysOutsideRange.before + t.trialDaysOutsideRange.after > 0
-      ? 'feedings in this report&rsquo;s window'
+      ? `feedings logged ${h(fmtRange(t.evidenceStartDate, t.evidenceEndDate))}`
       : 'feedings in total'
   if (offDiet > 0) {
     const parts: string[] = []
