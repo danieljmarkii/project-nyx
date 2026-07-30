@@ -10,7 +10,10 @@
 // The oracle in each case is a LITERAL expected string or count — §12's QA finding
 // was that not one of v0.9's criteria named a harness or an oracle.
 import { strict as assert } from 'node:assert'
-import { assembleReport, resolveScope, type ReportInput, type ReportEventInput } from './report.ts'
+import {
+  assembleReport, resolveScope, FALLBACK_DAYS, TRIAL_ANCHOR_GRACE_DAYS,
+  type ReportInput, type ReportEventInput,
+} from './report.ts'
 import { renderReport } from './render.ts'
 import { buildTrialBlock, looksAntibacterial, selectReportTrial } from './trial.ts'
 
@@ -447,6 +450,36 @@ Deno.test('§12 — a report generated the day after completion still renders th
   }
 })
 
+Deno.test('R4 (B-536) — a typed note reaches the vet even when the outcome radio was skipped', () => {
+  // R4 made the outcome question explicitly optional, and the adversarial pass
+  // executed the consequence the first cut shipped: an owner who skipped the
+  // radio but typed into "Anything you want your vet to know" had the sentence
+  // saved and then silently absent from the artifact — the only render site was
+  // gated on `t.outcome`. The verdict line is omitted (that IS R4's ruling);
+  // the owner's own words to the clinician are not.
+  const input = wellLoggedTrialInput()
+  input.dietTrials[0].status = 'completed'
+  input.dietTrials[0].completedAt = '2026-07-01'
+  input.dietTrials[0].endedAt = '2026-07-01'
+  input.dietTrials[0].outcome = null
+  input.dietTrials[0].outcomeNotes = 'She still scratches at night and vomited twice last week.'
+  const text = plain(renderReport(assembleReport(input)))
+  assert.ok(/The owner added: “She still scratches at night and vomited twice last week\.”/.test(text))
+  assert.ok(/Owner-reported, not a finding/.test(text), 'attribution survives the verdict-less form')
+  assert.ok(!/The owner reported/.test(text), 'no verdict sentence is fabricated from a skipped radio')
+
+  // And with neither verdict nor note, the row stays absent entirely — R4's
+  // "omits the owner line when unanswered", unchanged.
+  const bare = wellLoggedTrialInput()
+  bare.dietTrials[0].status = 'completed'
+  bare.dietTrials[0].completedAt = '2026-07-01'
+  bare.dietTrials[0].endedAt = '2026-07-01'
+  bare.dietTrials[0].outcome = null
+  bare.dietTrials[0].outcomeNotes = null
+  const bareText = plain(renderReport(assembleReport(bare)))
+  assert.ok(!/Owner&rsquo;s read|Owner’s read|Owner’s note|The owner added/.test(bareText))
+})
+
 Deno.test('B-455 — an ABANDONED trial does not render as an intervention still under way', () => {
   // `completed_at` is NULL on an abandoned trial and `ended_at` was never selected,
   // so `report.ts` read the null end as "open-ended → active through the window end"
@@ -782,14 +815,39 @@ Deno.test('B-423 — a trial started today does not collapse the report to a one
   assert.equal(snap.trial?.rangeStartDate, '2026-07-02')
 })
 
-Deno.test('a trial that ended two months ago no longer anchors the window', () => {
+Deno.test('R5 (B-538) — a trial that ended two months ago STILL anchors the window (the recheck-slip case)', () => {
+  // This test used to assert the opposite, under a 14-day grace. R5 overturned
+  // it: appointments book three-plus weeks out, and the trial ended 67 days ago
+  // is exactly the one the owner is sitting in the recheck to discuss. Within
+  // 90 days of the end, the full trial report must still generate.
   const input = baseInput({
     dietTrials: [
       { id: 't', foodItemId: null, startedAt: '2026-03-01', targetDurationDays: 56, status: 'completed', completedAt: '2026-04-26', endedAt: '2026-04-26', vetName: null, foodLabel: 'HP' },
     ],
   })
+  assert.equal(resolveScope(input).basis, 'diet_trial')
+  assert.equal(selectReportTrial(input.dietTrials, resolveScope(input), TZ)?.id, 't', 'and it describes the report — the pair still agrees')
+})
+
+Deno.test('R5 (B-538) — past the 90-day grace an ended trial is history again', () => {
+  // Ended 2026-03-20, NOW is 2026-07-02 → 104 days. Beyond the recheck horizon
+  // the honest frame is symptom monitoring, and the pair drops it TOGETHER —
+  // anchoring on a trial the block refuses to render is the round-1 divergence.
+  const input = baseInput({
+    dietTrials: [
+      { id: 't', foodItemId: null, startedAt: '2026-01-24', targetDurationDays: 56, status: 'completed', completedAt: '2026-03-20', endedAt: '2026-03-20', vetName: null, foodLabel: 'HP' },
+    ],
+  })
   assert.equal(resolveScope(input).basis, 'fallback_90d')
   assert.equal(selectReportTrial(input.dietTrials, resolveScope(input), TZ), null, 'and it does not describe the report')
+})
+
+Deno.test('R5 (B-538) — the report grace is 90, sized to the fallback window', () => {
+  // A drift here is a product decision (R5, PM 2026-07-27), not a tidy-up. The
+  // card's counterpart (`ENDED_TRIAL_GRACE_DAYS`, lib/dietTrialFacts.ts) is 30
+  // and DELIBERATELY different — its own test pins that side of the asymmetry.
+  assert.equal(TRIAL_ANCHOR_GRACE_DAYS, 90)
+  assert.equal(TRIAL_ANCHOR_GRACE_DAYS, FALLBACK_DAYS)
 })
 
 // ── C5 — the symptom trend against logging density ───────────────────────────
@@ -1745,7 +1803,9 @@ Deno.test('R4 — a TOTAL refusal is not hedged as "largely not eaten"', () => {
     )
   }
   const text = plain(renderReport(assembleReport(input)))
-  assert.ok(/Not one rated feeding of the trial diet was eaten/.test(text))
+  // B-532 round 7: 'finished', not 'eaten' — the predicate is `feedingWasFinished`, and
+  // appendix E lists the partly-taken feedings this sentence used to contradict.
+  assert.ok(/Not one rated feeding of the trial diet was finished/.test(text))
   assert.ok(!/largely not eaten/.test(text))
 })
 

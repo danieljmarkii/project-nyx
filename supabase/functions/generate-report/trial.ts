@@ -409,7 +409,28 @@ export interface TrialBlock {
   mayStateRecordClean: boolean
 
   oralRoute: OralRouteExposure[]
-  arrangementExposures: Array<{ label: string | null }>
+  /**
+   * `startRecorded` is FALSE when the bowl's `active_from` was never captured (B-233: the
+   * column holds the day the owner first LOGGED the food, not the day the bowl went down,
+   * and it is routinely null). The trial block asserts such a bowl was available
+   * "continuously" alongside the trial — which is the right default, and is an INFERENCE.
+   * Cold-read secondary (B-532): saying "continuously" without saying the dates are not
+   * recorded reads as an observed fact, and "Reading the trend" says "start not recorded"
+   * about the same bowl four sections down, so the document disagreed with itself.
+   */
+  arrangementExposures: Array<{ label: string | null; startRecorded: boolean }>
+  /**
+   * ANY free-choice bowl overlapping the trial — including one holding the trial diet
+   * itself, which `arrangementExposures` is empty for by construction (it lists only
+   * OFF-LIST bowls).
+   *
+   * Exposed because `mayClaimAllMatched` withholds the clean sentence on it (B-529's
+   * "unobservable is not clean") and the render had no way to say why: with an on-list
+   * bowl the page printed *"see 'Also during the trial' below"* while that row was
+   * never emitted, so page 1 pointed at a section that does not exist — the class the
+   * round-5 cold read treated as blocking (B-599).
+   */
+  intakeNotDirectlyObserved: boolean
   /**
    * FINDINGS ONLY (B-529/R7). `trialContamination` now also returns facts whose
    * only content is `derivedFromPrimary` — a hydrolysed diet naming its own
@@ -561,9 +582,9 @@ export function selectReportTrial<T extends TrialSource>(
   window: { startDayNum: number; endDayNum: number },
   timeZone: string | null,
   /** How long after a trial ENDS it still describes the report. Must match
-   *  `report.TRIAL_ANCHOR_GRACE_DAYS`, or the window can be anchored on a trial the
-   *  block then refuses to render (or the reverse). */
-  endedGraceDays = 14,
+   *  `report.TRIAL_ANCHOR_GRACE_DAYS` (90 — R5, B-538), or the window can be
+   *  anchored on a trial the block then refuses to render (or the reverse). */
+  endedGraceDays = 90,
 ): T | null {
   let best: T | null = null
   let bestKey: [number, number, string] = [-1, -Infinity, '']
@@ -607,11 +628,13 @@ export function selectReportTrial<T extends TrialSource>(
     // — and how to do that without taking its safety band with it — is a Dr. Chen
     // + cold-read question that belongs with B-538's grace windows → B-594.
     const running = t.status === 'active'
-    // OVERLAP IS NOT ENOUGH FOR AN ENDED TRIAL. A 90-day fallback window catches
-    // the tail of a trial that finished ten weeks ago, and framing the whole report
-    // as that trial's result would be a worse answer than framing it as symptom
-    // monitoring: the trial describes three of the report's thirteen weeks. The
-    // report belongs to a trial that is running, or one that has only just stopped.
+    // OVERLAP IS NOT ENOUGH FOR AN ENDED TRIAL. The report belongs to a trial
+    // that is running, or one that stopped inside the grace. R5 (B-538) sized
+    // that grace to the RECHECK, not the milestone: appointments book three-plus
+    // weeks out, and a trial that "finished ten weeks ago" is precisely the one
+    // the owner is now sitting in the consult room to discuss — so the full
+    // trial report must still generate for any recheck within three months.
+    // Beyond it, the trial is history and symptom monitoring is the honest frame.
     if (!running && (endDn === null || window.endDayNum - endDn > endedGraceDays)) continue
     // Ties break on `id`, matching `resolveScope` rung 2 — the query has no ORDER BY,
     // so two ended trials with the same start otherwise resolve by array order and the
@@ -717,6 +740,10 @@ export function buildTrialBlock(args: BuildTrialBlockArgs): TrialBlock | null {
       startedAt: a.activeFrom ?? trial.startedAt,
       endedAt: a.activeUntil,
     }))
+  // Captured BEFORE the substitution above erases the distinction (B-532).
+  const arrangementStartRecorded = new Map<string, boolean>(
+    args.arrangements.filter((a) => a.method === 'free_choice').map((a) => [a.foodItemId, a.activeFrom != null]),
+  )
 
   const facts = computeTrialFacts({
     trial: {
@@ -993,7 +1020,14 @@ export function buildTrialBlock(args: BuildTrialBlockArgs): TrialBlock | null {
       // `rangeRefusal === null` all moved into `mayStateRecordClean` above.
       true,
     oralRoute: facts.oralRoute,
-    arrangementExposures: facts.arrangementExposures.map((a) => ({ label: a.label })),
+    arrangementExposures: facts.arrangementExposures.map((a) => ({
+      label: a.label,
+      // Read off the ORIGINAL input, not the mapped arrangement: the mapping above
+      // substitutes the trial's own start day for a null `activeFrom`, so by the time it
+      // reaches `facts` the difference between "recorded" and "assumed" is gone.
+      startRecorded: arrangementStartRecorded.get(a.arrangement.foodItemId) ?? false,
+    })),
+    intakeNotDirectlyObserved: facts.intakeNotDirectlyObserved,
     contamination: contaminationFindings(facts.contamination),
     antigenAttributionPaused: facts.antigenAttributionPaused.map((f) => f.label),
     antigenArmDark: facts.antigenArmDark,
