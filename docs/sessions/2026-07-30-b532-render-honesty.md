@@ -1,6 +1,6 @@
 # B-532 — the vet-report render-honesty pass (the last Bucket-A row)
 
-**Date:** 2026-07-30 · **Branch:** `claude/b532-render-honesty-5rwzrz` · **Outcome:** shipped via #TBD · exit gate **met** (three artifacts, all CLINIC-READY)
+**Date:** 2026-07-30 · **Branch:** `claude/b532-render-honesty-5rwzrz` · **Outcome:** shipped via #516 · exit gate **met** (three artifacts, all CLINIC-READY)
 
 ## What this was
 
