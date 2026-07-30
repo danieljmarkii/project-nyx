@@ -142,8 +142,9 @@ neither of which any other artifact can reach. The unclassifiable feeding was ad
 (`bash scripts/deploy-edge.sh generate-report --deploy` from the Codespace) and remains the
 PM's to run.
 
-Filed rather than fixed: **B-609** (out-of-window events name count, side and date but not
-type — and the guard does not fire at all on a preset scope that truncates a trial, while the
+Filed rather than fixed: **B-613** (filed as B-609 and renumbered at wrap — #518 landed a
+B-609 on `main` first, so first-lands-keeps applied; out-of-window events name count, side
+and date but not type — and the guard does not fire at all on a preset scope that truncates a trial, while the
 legend on that page advertises it; the reviewer weighed blocking and chose file, on the test
 *"does the artifact lead a vet to a wrong conclusion, not an incomplete one"*), **B-610** (the
 `daysPastTarget > 0` overrun is stated as-of and never corrected), **B-611** (the antigen zone
