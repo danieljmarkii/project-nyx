@@ -539,6 +539,14 @@ function truncatedCase(): ReportInput {
   }
   // One slip inside the window, so the exposure lane is exercised rather than empty.
   events.push(meal({ date: '2026-06-28', time: '16:10:00', brand: 'Home', product: 'Chicken jerky', foodItemId: 'f-jerky', foodType: 'treat', format: 'treat', proteins: ['chicken'], notes: 'neighbour gave her one on the walk' }))
+  // TWO FEEDINGS THAT NAME NO FOOD — the modal record-keeping gap, and the only shape
+  // that renders the "N logged feedings … named no food" disclosure. Cold read round 15
+  // asked for it by name: that sentence had been re-scoped with the rest of the count
+  // family and no artifact rendered it, so the change could be read in code and not on
+  // the page. A feeding with no identity is excluded from BOTH sides of the exposure
+  // ratio, so its own count is the only thing standing for it.
+  events.push(meal({ date: '2026-06-24', time: '12:40:00', brand: '', product: '', foodItemId: '', notes: 'logged in a hurry' }))
+  events.push(meal({ date: '2026-06-27', time: '13:05:00', brand: '', product: '', foodItemId: '' }))
 
   // GI signs: frequent before the trial settled, sparse in the visible window.
   for (const d of ['2026-04-22', '2026-04-24', '2026-04-27', '2026-05-01', '2026-05-06', '2026-05-13', '2026-05-24']) {

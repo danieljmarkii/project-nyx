@@ -2395,7 +2395,19 @@ Deno.test('B-600 — every trial-scoped COUNT takes the scoped phrase; existenti
   for (const d of [...days('2026-04-21', '2026-06-01'), ...days('2026-06-22', '2026-07-02')]) {
     input.events.push(meal({ date: d, time: '17:00:00', brand: 'Royal Canin', product: 'Hydrolyzed Treats', foodItemId: 'f-chew', foodType: 'treat', proteins: ['soy', 'chicken'], ingredientsNotes: 'Soy, chicken by-product meal' }))
   }
+  // A feeding that names no food — excluded from both sides of the exposure ratio, so
+  // its own count is the only thing standing for it (cold read round 15 asked for this
+  // rendered rather than read in code).
+  input.events.push(meal({ date: '2026-06-24', time: '12:40:00', brand: '', product: '', foodItemId: '' }))
   const text = plain(renderReport(assembleReport(input)))
+  // THE ROW LABEL CARRIES THE SCOPE, and its sentences do not repeat it — a row headed
+  // "Also during the trial" over values saying "in the 31 trial days this report
+  // covers" is the label/value contradiction round 11 flagged while it was still
+  // unexercised, and the in-sentence phrase also split the noun from its verb
+  // ("2 logged feedings in the 31 trial days this report covers named no food").
+  assert.ok(/Also in the 31 trial days this report covers/.test(text))
+  assert.ok(/1 logged feeding named no food, so it is counted on neither side above/.test(text))
+  assert.ok(!/Also during the trial/.test(text))
   // Every COUNT names the trial days the report covers…
   assert.ok(!/Permitted extras fed during the trial/.test(text))
   assert.ok(/Permitted extras fed in the 31 trial days this report covers/.test(text))

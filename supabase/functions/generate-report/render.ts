@@ -1539,6 +1539,9 @@ function dietTrialSection(snap: ReportSnapshot): string {
   // named as a trial figure takes this phrase. Four separate sentences were found
   // one round at a time before the rule was named.
   const antigenScope = trialCountScope(t)
+  // "Also during the trial" / "Also in the N trial days this report covers" — the label
+  // for the row whose sentences disclose what the exposure counts CANNOT hold.
+  const blindScope = antigenScope
   if (truncated) {
     const shownDays = t.trialDaysElapsed - outsideDays
     const where =
@@ -1767,7 +1770,7 @@ function dietTrialSection(snap: ReportSnapshot): string {
       // sentence exists to disclose an antigen channel the tally CANNOT hold, so
       // halving it and labelling it "during the trial" halves the one disclosure that
       // has no other home.
-      `<b>${num(t.oralRoute.length)} dose${t.oralRoute.length === 1 ? '' : 's'} by mouth</b> ${antigenScope} carried a flavour into ${pet} (${drugs
+      `<b>${num(t.oralRoute.length)} dose${t.oralRoute.length === 1 ? '' : 's'} by mouth</b> carried a flavour into ${pet} (${drugs
         .map((d) => h(d))
         .join(', ')}) &mdash; a chewable, or a dose given inside food. <b>The flavouring&rsquo;s protein is not recorded anywhere</b>, so these exposures are not in the antigen tally above and that tally does not describe them. Dosing should continue exactly as prescribed.`,
     )
@@ -1797,12 +1800,19 @@ function dietTrialSection(snap: ReportSnapshot): string {
     blind.push(
       `${num(t.exposures.unclassifiable)} logged feeding${
         t.exposures.unclassifiable === 1 ? '' : 's'
-      } ${antigenScope} named no food, so ${
+      } named no food, so ${
         t.exposures.unclassifiable === 1 ? 'it is' : 'they are'
       } counted on neither side above.`,
     )
   }
-  if (blind.length > 0) rows.push(kv('Also during the trial', blind.join(' ')))
+  // THE LABEL CARRIES THE SCOPE FOR EVERY SENTENCE UNDER IT (cold read rounds 11 + 15).
+  // Round 11 flagged the label/value contradiction while it was still unexercised — a
+  // row headed "Also during the trial" whose values say "in the 31 trial days this
+  // report covers". Round 15's fixture exercised it, and the in-sentence phrase also
+  // split the noun from its verb ("2 logged feedings in the 31 trial days this report
+  // covers named no food"). Scoping the label once fixes both, and the pointer at
+  // `withheldClaimReason` names the same string.
+  if (blind.length > 0) rows.push(kv(`Also ${blindScope}`, blind.join(' ')))
 
   // ── C5: the symptom trend against logging density ───────────────────────────
   const density = t.loggingDensity
@@ -2409,7 +2419,9 @@ function withheldClaimReason(t: NonNullable<ReportSnapshot['trial']>): string {
   const alsoRowRenders =
     t.oralRoute.length > 0 || t.arrangementExposures.length > 0 || t.exposures.unclassifiable > 0
   if (alsoRowRenders) {
-    return 'No clean-elimination statement is made for them &mdash; see &ldquo;Also during the trial&rdquo; below for what the feeding count cannot cover.'
+    return `No clean-elimination statement is made for them &mdash; see &ldquo;Also ${trialCountScope(
+      t,
+    )}&rdquo; below for what the feeding count cannot cover.`
   }
   if (t.intakeNotDirectlyObserved) {
     // The tightly-controlled feline trial the free-fed state exists for: the bowl holds
