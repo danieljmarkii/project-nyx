@@ -1044,6 +1044,20 @@ export interface SymptomAggregate {
   /** The local start date of each bucket (the date anchors under the chart). */
   bucketStartDates: string[]
   /**
+   * Days with ANY logged event in each bucket — the chart's own denominator (B-532).
+   *
+   * A zero bar answered two completely different questions with one glyph: "the owner logged
+   * this week and there were no episodes" and "nobody logged anything". The cold read caught
+   * the second reading at the worst possible place — the terminus of a descending curve on a
+   * trial the owner had stopped logging a week early — where a flat `0` nub is the visual
+   * conclusion of the trend and reads as *resolved*. Absence of a log is not evidence a
+   * symptom did not occur, and the chart is the element a 60-second scan actually takes.
+   *
+   * Window-scoped and symptom-agnostic (any event counts, not just this type), which is the
+   * right denominator for "was this week observed at all".
+   */
+  loggedDaysByBucket: number[]
+  /**
    * The first-vs-last-half comparison, over EQUAL-LENGTH halves (B-532).
    *
    * THE RENDER USED TO DERIVE THIS FROM THE WEEKLY BUCKETS, and weekly buckets do not
@@ -2341,6 +2355,12 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
   // sparse-logging caveats and `atAGlance.firstHalfLoggedDays`/`secondHalfLoggedDays`
   // all read it, so the caveat can never qualify a partition other than the one it is
   // printed under. `halfDays === 0` (a window under 8 days) means no comparison.
+  // Logged days per weekly bucket — shared by every symptom's chart (B-532). Counted once
+  // over `loggedDayNums`, so it cannot disagree with `atAGlance.loggedDays` or with the
+  // per-half counts below.
+  const loggedDaysByBucket = new Array(numBuckets).fill(0)
+  for (const dn of loggedDayNums) loggedDaysByBucket[bucketIndexOfDay(dn)]++
+
   const halfDays = windowDays >= TREND_HALF_MIN_WINDOW_DAYS ? Math.floor(windowDays / 2) : 0
   const firstHalfEndDayNum = startDayNum + halfDays - 1
   const lastHalfStartDayNum = endDayNum - halfDays + 1
@@ -2379,6 +2399,7 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
       lastOnset,
       weeklyBuckets,
       bucketStartDates,
+      loggedDaysByBucket,
       trendHalves:
         halfDays > 0
           ? {

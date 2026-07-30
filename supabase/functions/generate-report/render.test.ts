@@ -243,6 +243,11 @@ function aggregate(over: Partial<SymptomAggregate> & { type: SymptomAggregate['t
     lastOnset: over.lastOnset ?? '2026-06-01T14:00:00Z',
     weeklyBuckets: over.weeklyBuckets ?? [1],
     bucketStartDates: over.bucketStartDates ?? ['2026-04-03'],
+    // Default: every bucket observed. A fixture exercising the unobserved-week rendering
+    // (B-532) states its own zeros — the honest default is "the owner was logging", because
+    // an accidental 0 here would silently turn every fixture's chart into a no-data chart.
+    loggedDaysByBucket:
+      over.loggedDaysByBucket ?? (over.weeklyBuckets ?? [1]).map(() => 7),
     // B-532 — the delta no longer derives itself from `weeklyBuckets`, so a fixture that
     // wants one states it. Default null (no delta), which is the honest default for a
     // hand-built aggregate: the halves are a window partition, not a property of the bars.
@@ -1498,6 +1503,17 @@ function monitoringSnap(over: Partial<ReportSnapshot> = {}): ReportSnapshot {
         windowDays: 91,
         weeklyBuckets: [0, 1, 1, 2, 2, 4, 5, 7],
         bucketStartDates: ['2026-04-03', '2026-04-10', '2026-04-17', '2026-04-24', '2026-05-01', '2026-05-08', '2026-05-15', '2026-05-22'],
+        // A 91-day window always HAS halves, so a fixture without them was an impossible
+        // state — and it is the page-1 trajectory tile that reads them (B-532).
+        trendHalves: {
+          days: 45,
+          firstCount: 6,
+          lastCount: 15,
+          firstStartDate: '2026-04-03',
+          firstEndDate: '2026-05-17',
+          lastStartDate: '2026-05-19',
+          lastEndDate: '2026-07-02',
+        },
       }),
     ],
     atAGlance: {
@@ -1594,7 +1610,18 @@ Deno.test('R2-3 — a free-fed grazer with NO decline flag gets a descriptive fe
   assert.ok(/Primarily free-fed/.test(html), 'descriptive free-fed line')
   assert.ok(/Intake not directly observed/.test(html), 'verbatim B-040 string preserved')
   assert.ok(/typically/.test(html), 'descriptive intake-mode texture (not a score)')
-  assert.ok(!/rated meals fully eaten/.test(html), 'no scary "0 of 25 fully eaten" score for the grazer')
+  assert.ok(!/rated meals fully eaten/.test(html), 'not the scored completion FIGURE the else-branch renders')
+  // B-532 — TWO COLD READS COLLIDE HERE, and both are honoured. R2-3 kept the descriptive
+  // adverb off this branch's scored figure (a grazing cat's discrete meals routinely go
+  // unfinished, and "0 of 25 meals fully eaten" reads as anorexia). Round 7 found the cost of
+  // the adverb alone: it was the only page-1 intake statement with no numbers behind it, and
+  // it showed up only on the report that read well. The count is now stated INSIDE the
+  // descriptive sentence, where "Primarily free-fed … Intake not directly observed" leads it.
+  assert.ok(/0 of 25 fully eaten/.test(text(html)), 'the denominator is on page 1, not only in appendix E')
+  assert.ok(
+    /Primarily free-fed[\s\S]{0,80}Intake not directly observed/.test(text(html)),
+    'and the framing that protects the grazer still leads it',
+  )
 })
 
 Deno.test('R2-3 — a free-fed pet WITH a decline flag keeps the scored figure (flag leads; the number matters)', () => {
@@ -2623,8 +2650,12 @@ Deno.test('B-532 — the unfinished meals are itemised with NO reduced-intake fl
     'NEVER the anchor absence claim — the fully-eaten meals are precisely what this list filters out',
   )
   assert.ok(
-    /that means no detector fired, not that intake was normal/.test(t),
-    'and the absence of a flag is stated as detector silence, never as an all-clear',
+    /did not fire here; that is not a reading of whether intake was adequate/.test(t),
+    'and the absence is stated as detector silence, never as an all-clear',
+  )
+  assert.ok(
+    !/No reduced-intake flag fired/.test(t),
+    'never the bare phrase — page 1 can carry a diet-not-eaten flag while this detector is silent',
   )
 })
 
@@ -2854,6 +2885,7 @@ Deno.test('B-532 — the legend describes the page-1 intake line only when that 
   assert.ok(!/When intake drops, page 1 shows/.test(unfinished), 'no flag fired ⇒ no claim that the line is there')
   assert.ok(/appears only when a reduced-intake flag fired/.test(unfinished))
   assert.ok(/not that intake was normal/.test(unfinished), 'and the silence is never an all-clear')
+  assert.ok(!/When intake drops, page 1 shows/.test(unfinished))
 
   const flagged = plain(
     renderReport(
@@ -2869,4 +2901,213 @@ Deno.test('B-532 — the legend describes the page-1 intake line only when that 
     ),
   )
   assert.ok(/When intake drops, page 1 shows/.test(flagged), 'and it IS described when the flag population is listed')
+})
+
+Deno.test('B-532 ADV① — page 1 and the symptom panel never disagree about direction', () => {
+  // THE COUNTEREXAMPLE THE ADVERSARIAL PASS EXECUTED, pinned. B-532's first cut migrated the
+  // symptom panel to `trendHalves` and left `monitoringTiles`' trajectory tile on the old
+  // `mid * 7` bucket split, so on a fully-logged 36-day `since_visit` window — the DEFAULT basis
+  // for the monitoring wedge this tile exists for — page 1 printed "3 → 3" while the panel two
+  // inches below printed "first 18 d 1 → last 18 d 5". A swept comparison put the two partitions
+  // in disagreement on 337 of 393 window lengths, with page 1 the more reassuring number on 169.
+  // The bias had not been removed; it had been relocated to the more prominent surface.
+  const halves = {
+    days: 18,
+    firstCount: 1,
+    lastCount: 5,
+    firstStartDate: '2026-05-01',
+    firstEndDate: '2026-05-18',
+    lastStartDate: '2026-05-19',
+    lastEndDate: '2026-06-05',
+  }
+  const html = renderReport(
+    base({
+      symptoms: [aggregate({ type: 'vomit', count: 6, symptomDays: 6, windowDays: 36, loggedDays: 36, weeklyBuckets: [1, 0, 0, 2, 2, 1], trendHalves: halves })],
+      atAGlance: {
+        ...base().atAGlance,
+        primarySymptom: { type: 'vomit', count: 6 },
+        totalSymptomIncidents: 6,
+        windowDays: 36,
+        loggedDays: 36,
+        sinceOnsetDays: 36,
+        daysSinceLastEpisode: 1,
+        loggedDaysSinceLastEpisode: 1,
+        firstHalfLoggedDays: 18,
+        secondHalfLoggedDays: 18,
+      },
+    }),
+  )
+  const t = plain(html)
+  // The tile and the panel are the same comparison, so they carry the same two numbers.
+  assert.ok(/1 → 5/.test(t), 'the page-1 tile shows the rise')
+  assert.ok(/first 18 d 1 → last 18 d 5/.test(t), 'and so does the panel')
+  assert.ok(!/3 → 3/.test(t), 'never the old bucket split, which read this record as flat')
+  assert.ok(!/first 21 d|last 15 d/.test(t), 'and never its unequal day labels')
+})
+
+Deno.test('B-532 ADV② — the tile’s sparse caveat counts over the window it names', () => {
+  // Executed: the tile compared a NEW-partition numerator (`firstHalfLoggedDays`) against an
+  // OLD-partition floor (`ceil(mid*7/3)`), which BOTH lost a caveat at 90 days and printed a
+  // false "6 of 21 d" at 36 — a fabricated logging-coverage figure on page 1 of a clinical
+  // artifact. One derivation, so numerator and denominator cannot come from different windows.
+  const html = renderReport(
+    base({
+      symptoms: [
+        aggregate({
+          type: 'vomit',
+          count: 7,
+          symptomDays: 7,
+          windowDays: 36,
+          loggedDays: 9,
+          weeklyBuckets: [1, 0, 0, 2, 2, 2],
+          trendHalves: { days: 18, firstCount: 1, lastCount: 6, firstStartDate: '2026-05-01', firstEndDate: '2026-05-18', lastStartDate: '2026-05-19', lastEndDate: '2026-06-05' },
+        }),
+      ],
+      atAGlance: {
+        ...base().atAGlance,
+        primarySymptom: { type: 'vomit', count: 7 },
+        totalSymptomIncidents: 7,
+        windowDays: 36,
+        loggedDays: 9,
+        sinceOnsetDays: 36,
+        daysSinceLastEpisode: 1,
+        loggedDaysSinceLastEpisode: 1,
+        firstHalfLoggedDays: 6,
+        secondHalfLoggedDays: 3,
+      },
+    }),
+  )
+  const t = plain(html)
+  assert.ok(/early window sparsely logged \(6 of 18 d\)/.test(t), 'the denominator is the half it counted over')
+  assert.ok(!/6 of 21 d/.test(t), 'never a figure counted over one window and labelled with another')
+})
+
+Deno.test('B-532 ADV③ — the artefactual-improvement caveat is not lost at the floor boundary', () => {
+  // Executed against `main`: a 90-day record with 15 of 45 late logged days and a 3× apparent
+  // improvement caveated before the change (old floor `ceil(48/3) = 16`) and stopped caveating
+  // after it (`15 < ceil(45/3) = 15` is false). A guard whose entire purpose is the reassuring
+  // direction may not get quieter as a side effect of fixing the arithmetic beside it, so the
+  // floor is stated as "a third or less of the half was logged".
+  const html = renderReport(
+    base({
+      symptoms: [
+        aggregate({
+          type: 'vomit',
+          count: 8,
+          symptomDays: 8,
+          windowDays: 90,
+          loggedDays: 57,
+          weeklyBuckets: [2, 2, 1, 1, 0, 1, 0, 1, 0, 0, 0, 0, 0],
+          trendHalves: { days: 45, firstCount: 6, lastCount: 2, firstStartDate: '2026-04-04', firstEndDate: '2026-05-18', lastStartDate: '2026-05-19', lastEndDate: '2026-07-02' },
+        }),
+      ],
+      atAGlance: { ...base().atAGlance, windowDays: 90, loggedDays: 57, firstHalfLoggedDays: 42, secondHalfLoggedDays: 15 },
+    }),
+  )
+  assert.ok(
+    /later window sparsely logged \(15 of 45 d\)/.test(plain(html)),
+    'exactly a third logged is sparse — the boundary belongs inside the caveat, not outside it',
+  )
+})
+
+Deno.test('B-532 COLD⑦ — an unobserved week is never drawn as a zero week', () => {
+  // COLD-READ BLOCKING, and the most dangerous of the set: logging stopped a week before the
+  // window closed, so the final bucket held zero logged days — and it rendered as the same
+  // flat "0" nub a genuinely quiet week gets, at the visual terminus of a descending curve.
+  // It reads as "resolved". No delta-caveat fires (7 unlogged of 28 clears that threshold
+  // comfortably) and on a completed trial there is no safety flag pulling the other way.
+  const html = renderReport(
+    base({
+      symptoms: [
+        aggregate({
+          type: 'itch',
+          count: 12,
+          symptomDays: 12,
+          windowDays: 56,
+          loggedDays: 49,
+          weeklyBuckets: [4, 2, 2, 1, 1, 1, 1, 0],
+          bucketStartDates: ['2026-05-08', '2026-05-15', '2026-05-22', '2026-05-29', '2026-06-05', '2026-06-12', '2026-06-19', '2026-06-26'],
+          loggedDaysByBucket: [7, 7, 7, 7, 7, 7, 7, 0],
+        }),
+      ],
+    }),
+  )
+  assert.ok(/class="nolog"/.test(html), 'the unobserved week gets its own hollow marker')
+  assert.equal((html.match(/class="nolog"/g) ?? []).length, 1, 'exactly the one week nobody logged')
+  assert.ok(!/class="nub"/.test(html), 'and no measured-zero nub, because no week here was a measured zero')
+  assert.ok(
+    /nothing logged that week \(not a week without episodes\)/.test(plain(html)),
+    'the marker is defined on the same sheet it appears on',
+  )
+  assert.ok(/not logged/.test(html), 'and the alt text draws the same distinction the bars do')
+})
+
+Deno.test('B-532 COLD⑦ — a genuinely quiet, well-logged week keeps its measured zero', () => {
+  const html = renderReport(
+    base({
+      symptoms: [
+        aggregate({ type: 'itch', count: 3, windowDays: 21, loggedDays: 21, weeklyBuckets: [2, 0, 1], bucketStartDates: ['2026-06-12', '2026-06-19', '2026-06-26'], loggedDaysByBucket: [7, 7, 7] }),
+      ],
+    }),
+  )
+  assert.ok(/class="nub"/.test(html), 'a week the owner logged with no episodes is still a zero')
+  assert.ok(!/class="nolog"/.test(html), 'and never the no-data marker')
+  assert.ok(!/nothing logged that week/.test(plain(html)), 'nor its legend')
+})
+
+Deno.test('B-532 COLD⑦ — the active problem list reaches page 1', () => {
+  // COLD-READ BLOCKING. "Atopic dermatitis (active)" sat in an Appendix B table row while
+  // page 1 presented a completed trial with a falling itch curve — the competing explanation
+  // for the whole trend, three pages from the numbers it reframes.
+  const html = renderReport(
+    base({
+      provenance: {
+        ...base().provenance,
+        conditions: [
+          { name: 'Atopic dermatitis', status: 'active', diagnosedAt: '2025-11-14' },
+          { name: 'Old cruciate repair', status: 'resolved', diagnosedAt: '2024-02-01' },
+        ],
+      },
+    }),
+  )
+  const p1 = plain(pageOne(html))
+  assert.ok(/Recorded conditions:/.test(p1), 'named on page 1')
+  assert.ok(/Atopic dermatitis/.test(p1), 'the active one')
+  assert.ok(/since Nov 14, 2025/.test(p1), 'with the date that shows it predates this window')
+  assert.ok(!/Old cruciate repair/.test(p1), 'resolved history does not crowd the signalment')
+  assert.ok(
+    /owner-recorded history, not a finding in this window/.test(p1),
+    'and it is never rendered as something this report computed',
+  )
+})
+
+Deno.test('B-532 COLD⑦ — the off-diet tile never reads as a fact about the document', () => {
+  // "Not stated · see the diet-trial block below" scans as "nothing to report" in a row where
+  // every other tile is a number — on the report where a clean-looking page is the hazard.
+  const html = renderReport(
+    base({
+      clinicalQuestion: { question: 'diet_trial_working', primarySymptom: 'itch' },
+      // `diet.trial` is what selects the trial tile row; `snapshot.trial` carries the facts.
+      diet: { ...base().diet, trial: { ...DUCK_TRIAL, proteinSet: pset(['duck'], { complete: true }) } },
+      trial: trialBlockFixture({
+        allowedSetUnavailable: false,
+        mayClaimAllMatched: false,
+        mayStateRecordClean: false,
+        intakeNotDirectlyObserved: true,
+        exposures: { totalFeedings: 98, offDiet: 0, byRung: { derived_protein: 0, unrecognised: 0 }, fedBeforePermitted: 0, unclassifiable: 0, items: [] },
+      }),
+    }),
+  )
+  const t = plain(html)
+  assert.ok(!/Not stated/.test(t), 'never a statement about the document')
+  assert.ok(/Not countable/.test(t), 'a statement about the world')
+  assert.ok(/intake not directly observed/i.test(t), 'and it names why')
+})
+
+Deno.test('B-532 COLD⑦ — "None recorded" in the diet history says whose log it is', () => {
+  const t = plain(renderReport(base()))
+  assert.ok(
+    /nothing of this kind was logged in this window, which is not evidence none was fed/.test(t),
+    'the absence caveat rides the diet-history rows an elimination trial rests on',
+  )
 })

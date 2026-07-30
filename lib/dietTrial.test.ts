@@ -1881,6 +1881,40 @@ describe('B-529 R7(c) — the silence rule', () => {
     expect(mayClaimAllMatched(facts)).toBe(false);
   });
 
+  // The over-fire the adversarial pass EXECUTED against the first cut, pinned. A skipped
+  // row costs a finding only when it carries a protein the trial does not already
+  // sanction; a never-fed `duck` row on a duck trial suppresses nothing, and darkening
+  // the arm for it withholds the clean-elimination claim on a record where all 40
+  // feedings were correctly attributed.
+  it('does NOT darken the arm for an uncharacterized row whose proteins are already sanctioned', () => {
+    const DRY = food({
+      foodItemId: 'f-dry', foodKey: 'rcduck dry', label: 'RC Duck Dry',
+      role: 'primary_diet', primaryProtein: 'duck', proteins: ['duck'],
+    });
+    const NEVER_FED_DUCK = food({
+      foodItemId: 'f-wet2', foodKey: 'rcduck wet', label: 'RC Duck Wet',
+      role: 'primary_diet', primaryProtein: null, proteins: ['duck'],
+    });
+    const facts = computeTrialFacts({
+      trial: TRIAL,
+      allowedFoods: [DRY, NEVER_FED_DUCK],
+      feedings: Array.from({ length: 40 }, (_, i) =>
+        feeding({
+          eventId: `d-${i}`,
+          occurredAt: at('2026-07-10', 6 + (i % 12)),
+          foodItemId: DRY.foodItemId,
+          foodKey: DRY.foodKey,
+          proteins: ['duck'],
+        }),
+      ),
+      nowMs: new Date(2026, 6, 20, 12).getTime(),
+    });
+    expect(facts.exposures.offDiet).toBe(0);
+    expect(facts.antigenArmDark).toBe(false);
+    expect(facts.antigenAttributionPaused).toEqual([]);
+    expect(mayClaimAllMatched(facts)).toBe(true);
+  });
+
   // The counter-case, and it is what keeps this from firing on every trial: a row with
   // NO captured protein set suppressed no finding, because there was no term to find.
   it('does NOT darken the arm for an uncharacterized row with nothing on its label', () => {

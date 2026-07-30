@@ -2246,16 +2246,33 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
   // prescribed canine hydrolysate, so this is the ordinary shape of the diet class the
   // whole feature is about, not an exotic one.
   //
-  // The disclosure is keyed to the SUPPRESSION, so it cannot over-fire on a row that had
-  // nothing to suppress: a row whose panel was never captured carries no protein term, so
-  // there was no finding to lose and no reason to darken the arm. (A row that WAS fed is
-  // already covered by `darkDays`; this only ever adds the never-fed case, plus the case
-  // where the row's own days hold no classified feeding at all.)
+  // THE GUARD ASKS WHETHER A FINDING WAS LOST, NOT WHETHER A PANEL EXISTS. The first cut
+  // filtered on `canonicalProteins(f.proteins).length > 0` under a comment claiming it was
+  // "keyed to the SUPPRESSION, so it cannot over-fire on a row that had nothing to
+  // suppress" — and the adversarial pass falsified that sentence by executing it: a duck
+  // trial with 40 correctly-attributed feedings, plus a never-fed `primary_diet` row whose
+  // panel is exactly `['duck']`, darkened the arm and withheld the clean-elimination claim
+  // although zero findings existed to lose. Conservative in direction, but a comment
+  // asserting a property the code does not have is how this file's defects keep surviving
+  // review, which is the whole reason B-596 was filed in the first place.
+  //
+  // A skipped row costs a finding only when it carries a protein the trial does not ALREADY
+  // sanction: if every term on it is in the sanctioned set, the contamination check would
+  // have had nothing to report. Resolved on the row's own membership days, because the
+  // sanctioned set is dated — and when the set is empty (no characterized primary at all)
+  // nothing is sanctioned, so every such row darkens, which is the safe direction.
   const contaminationSuppressed = uncharacterizedTrialDietFoodsInRange(
     ctx,
     exposureStart,
     evidenceEnd,
-  ).filter((f) => canonicalProteins(f.proteins).length > 0);
+  ).filter((f) => {
+    const terms = canonicalProteins(f.proteins);
+    if (terms.length === 0) return false; // nothing captured ⇒ nothing to find
+    const from = localDayIndexOf(f.allowedFrom, ctx.timeZone);
+    const day = Math.max(from ?? exposureStart, exposureStart);
+    const sanctioned = sanctionedProteinsOn(ctx, day);
+    return terms.some((t) => !sanctioned.has(t));
+  });
 
   // ── B-530: WHICH POPULATION SPEAKS ─────────────────────────────────────────
   //
