@@ -555,6 +555,35 @@ function capProtein(p: string): string {
 const PROTEIN_PROVENANCE_NOTE =
   'Proteins are an automated read of the owner&rsquo;s photo of each product&rsquo;s ingredient panel, owner-correctable &mdash; label-derived, not lab-verified, and worth confirming against the bag before acting on it.'
 
+/**
+ * "during the trial" — or, when the report sees only part of it, what it actually saw.
+ *
+ * THE RULE THIS ENFORCES, in the form five review rounds beat it into:
+ *
+ *   • a POSITIVE EXISTENTIAL survives a subset. "The record shows chicken in Cooper's
+ *     diet during the trial" is true however little of the trial the report covers, and
+ *     it only ever escalates. These keep "during the trial".
+ *   • a COUNT does not. "Chicken ×1 · proteins fed during the trial" is over the
+ *     evidence range, and trial scope understates it in the reassuring direction.
+ *   • a NEGATIVE EXISTENTIAL does not either — and that clause was MISSING from the
+ *     first two statements of this rule, which is how it shipped a live defect.
+ *     "No medication or supplement is recorded as overlapping the trial window" printed
+ *     over a trial a prednisolone course demonstrably overlapped, because the course sat
+ *     in the trial days the window excluded. The report was byte-identical to one with
+ *     no medication at all, and the drug caveat that would have suppressed §7.2's
+ *     affirmative never fired. Reassurance-on-absence, on the confound §7 calls
+ *     decisive: "a steroid course and a successful elimination produce the identical
+ *     improving curve."
+ *
+ * So: an absence is only ever asserted over the span that was actually examined.
+ */
+function trialCountScope(t: NonNullable<ReportSnapshot['trial']>): string {
+  const outside = t.trialDaysOutsideRange.before + t.trialDaysOutsideRange.after
+  return outside > 0
+    ? `in the ${num(t.trialDaysElapsed - outside)} trial days this report covers`
+    : 'during the trial'
+}
+
 /** The off-trial marker. Present-only and explicitly non-causal; defined once per sheet. */
 function offTrialFootnote(targetProtein: string | null): string {
   return targetProtein
@@ -1509,9 +1538,7 @@ function dietTrialSection(snap: ReportSnapshot): string {
   // So: EXISTENTIAL claims about the trial keep "during the trial"; every COUNT
   // named as a trial figure takes this phrase. Four separate sentences were found
   // one round at a time before the rule was named.
-  const antigenScope = truncated
-    ? `in the ${num(t.trialDaysElapsed - outsideDays)} trial days this report covers`
-    : 'during the trial'
+  const antigenScope = trialCountScope(t)
   if (truncated) {
     const shownDays = t.trialDaysElapsed - outsideDays
     const where =
@@ -1770,7 +1797,9 @@ function dietTrialSection(snap: ReportSnapshot): string {
     blind.push(
       `${num(t.exposures.unclassifiable)} logged feeding${
         t.exposures.unclassifiable === 1 ? '' : 's'
-      } named no food, so ${t.exposures.unclassifiable === 1 ? 'it is' : 'they are'} counted on neither side above.`,
+      } ${antigenScope} named no food, so ${
+        t.exposures.unclassifiable === 1 ? 'it is' : 'they are'
+      } counted on neither side above.`,
     )
   }
   if (blind.length > 0) rows.push(kv('Also during the trial', blind.join(' ')))
@@ -2145,8 +2174,17 @@ function trialDayPhrase(t: ReportSnapshot['trial'], targetDays: number): string 
   // position is as-of and correct; the overrun is a fact about today. So they are
   // stated as two things, each with its own time.
   const overrunNow = t.targetDurationDays > 0 ? t.trialDaysElapsed - t.targetDurationDays : 0
+  //
+  // ⚠️ ACTIVE ONLY. "Now" is a present-tense position, and a finished trial has none —
+  // this branch's own opening comment says a finished trial is a SPAN, not a position.
+  // Executed on 9 of 351 fuzzed configs: a completed trial that overran, reported
+  // through a window closing before it hit target, rendered "46 days as of Mar 10 (now
+  // 12 days past that window), of a 56-day window. Jan 24 – Apr 1 · completed. … Ran
+  // its course — the full window was completed." Three mutually contradictory claims in
+  // one row. The overrun disclosure exists for the stale-ACTIVE trial (B-422's steady
+  // state); an ended trial's afterlife is already governed by its end date.
   const nowPast =
-    asOf && overrunNow > 0 && t.daysPastTarget === 0
+    t.status === 'active' && asOf && overrunNow > 0 && t.daysPastTarget === 0
       ? ` (now ${num(overrunNow)} day${overrunNow === 1 ? '' : 's'} past that window)`
       : ''
   if (t.status !== 'active') {
@@ -2393,7 +2431,17 @@ function medicationOverlapLine(t: NonNullable<ReportSnapshot['trial']>): string 
     // NOT "no medications were given" — the report knows only what was logged, and
     // an absence claim here would be the same reassurance-on-absence G2 deletes one
     // line up. This states the record.
-    return 'No medication or supplement is recorded as overlapping the trial window.'
+    // AN ABSENCE IS ONLY EVER ASSERTED OVER WHAT WAS EXAMINED (adversarial pass 5, and
+    // a hole in the rule as first written — see `trialCountScope`). `medicationOverlap`
+    // is bounded at the evidence end, so on a report whose window closed before the
+    // trial did this sentence claimed the whole trial over a fraction of it: executed
+    // with a prednisolone course in the excluded tail, the document was byte-identical
+    // to one with no medication, and §7.2 kept its affirmative because the drug caveat
+    // never fired.
+    const scope = trialCountScope(t)
+    return `No medication or supplement is recorded as overlapping ${
+      scope === 'during the trial' ? 'the trial window' : scope.replace(/^in /, '')
+    }.`
   }
   const rows = t.medicationOverlap.map((m) => {
     // SAY WHEN THE DRUG STARTED, NOT ONLY WHEN THE OVERLAP DID. `fromDate` is
@@ -4572,13 +4620,7 @@ function offDietAppendix(snap: ReportSnapshot): string {
   ].filter((p) => !trialSanctioned.has(p))
   // The trial-scope phrase, shared with page 1's row (B-600 round 10): on a truncated
   // report "during the trial" is a whole-trial claim over a fraction of it.
-  const apxOutside = snap.trial
-    ? snap.trial.trialDaysOutsideRange.before + snap.trial.trialDaysOutsideRange.after
-    : 0
-  const antigenScope =
-    snap.trial && apxOutside > 0
-      ? `in the ${num(snap.trial.trialDaysElapsed - apxOutside)} trial days this report covers`
-      : 'during the trial'
+  const antigenScope = snap.trial ? trialCountScope(snap.trial) : 'during the trial'
   const tallyParts: string[] = []
   // D-B, under a trial: the antigen tally counts the protein on PERMITTED feedings
   // too, and says how many came from an approved food. Rung 1's `stop` is what makes
@@ -4766,7 +4808,7 @@ function offDietAppendix(snap: ReportSnapshot): string {
     trialDerived
       ? `Off-diet exposures ${antigenScope}`
       : hasTrial
-        ? 'Treats &amp; table food during the trial'
+        ? `Treats &amp; table food ${antigenScope}`
         : 'Treats &amp; table food'
   }</p>
   <p class="appx-sub">${subtitle} Repeated items are grouped (with a feeding count and date span); human food is listed feeding-by-feeding. Protein shows the full set read from the label, most prominent first; &ldquo;list not read&rdquo; marks a food whose ingredient panel was never captured, so its set may be incomplete.</p>

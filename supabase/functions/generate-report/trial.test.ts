@@ -2443,6 +2443,93 @@ Deno.test('B-600 — the delta may not swallow the evidence on the excluded midd
   assert.ok(!/the middle day of an odd window/.test(quiet))
 })
 
+Deno.test('B-600 — a NEGATIVE existential does not survive a subset either', () => {
+  // `adversarial-reviewer` pass 5, and a hole in the rule as I first wrote it: I had
+  // "an existential survives a subset; a count does not" and the missing clause is that
+  // a NEGATIVE existential does not survive one either.
+  //
+  // Executed: a completed 56-day trial (Apr 6 – May 31) with a prednisolone course in
+  // its final week, reported through a hand-picked window closing May 20.
+  // `medicationOverlap` is bounded at the evidence end, so the course fell out — and
+  // the document was BYTE-IDENTICAL to the same report with no medication at all. The
+  // word "Prednisolone" appeared nowhere, and because the drug caveat never entered
+  // `caveats`, §7.2 kept its affirmative. Reassurance-on-absence, on the confound §7
+  // calls decisive: "a steroid course and a successful elimination produce the
+  // identical improving curve."
+  const input = wellLoggedTrialInput({ events: [] })
+  input.dietTrials[0].startedAt = '2026-04-06'
+  input.dietTrials[0].status = 'completed'
+  input.dietTrials[0].completedAt = '2026-05-31'
+  input.dietTrials[0].endedAt = '2026-05-31'
+  input.dietTrials[0].allowedFoods = [{ ...TRIAL_FOOD, allowedFrom: '2026-04-06' }]
+  for (const d of days('2026-04-06', '2026-05-31')) {
+    input.events.push(meal({ date: d, brand: 'Royal Canin', product: 'Hydrolyzed HP', foodItemId: 'f-hp', proteins: ['soy'] }))
+  }
+  input.medications = [
+    {
+      id: 'reg-pred',
+      medicationItemId: 'mi-pred',
+      drugName: 'Prednisolone',
+      doseAmount: '5 mg',
+      route: 'oral',
+      dosesPerDay: 1,
+      scheduleNotes: null,
+      indication: 'pruritus',
+      prescribedBy: 'Dr. Chen',
+      startedAt: '2026-05-24',
+      targetDurationDays: null,
+      status: 'ended',
+      endedAt: '2026-05-31',
+      isPrescription: true,
+      strength: '5 mg',
+    },
+  ]
+  input.medicationItems = [
+    { id: 'mi-pred', genericName: 'prednisolone', brandName: null, strength: '5 mg', route: 'oral', isPrescription: true, form: 'tablet' },
+  ]
+  input.requestedWindow = { startDate: '2026-04-20', endDate: '2026-05-20' }
+  const snap = assembleReport(input)
+  assert.equal(snap.trial!.medicationOverlap.length, 0, 'the course is outside the examined span')
+
+  const text = plain(renderReport(snap))
+  // The absence is asserted over what was EXAMINED, never over the trial.
+  assert.ok(!/overlapping the trial window/.test(text))
+  assert.ok(/No medication or supplement is recorded as overlapping the 31 trial days this report covers/.test(text))
+
+  // Untruncated, the trial IS the examined span and the original sentence is right.
+  const whole = plain(renderReport(assembleReport(wellLoggedTrialInput())))
+  assert.ok(/No medication or supplement is recorded as overlapping the trial window/.test(whole))
+})
+
+Deno.test('B-600 — "now past that window" is an active-trial claim', () => {
+  // `adversarial-reviewer` pass 5, 9 of 351 fuzzed configs. "Now" is a present-tense
+  // position and a finished trial has none — `trialDayPhrase`'s own comment says a
+  // finished trial is a SPAN, not a position. Rendered: "46 days as of Mar 10 (now 12
+  // days past that window), of a 56-day window. Jan 24 – Apr 1 · completed. … Ran its
+  // course — the full window was completed." Three mutually contradictory claims in one
+  // row, on a page whose credibility rests on not disagreeing with itself.
+  const input = wellLoggedTrialInput({ events: [] })
+  input.dietTrials[0].startedAt = '2026-04-06'
+  input.dietTrials[0].targetDurationDays = 28
+  input.dietTrials[0].status = 'completed'
+  input.dietTrials[0].completedAt = '2026-05-31'
+  input.dietTrials[0].endedAt = '2026-05-31'
+  input.dietTrials[0].stoppedReason = 'completed'
+  input.dietTrials[0].allowedFoods = [{ ...TRIAL_FOOD, allowedFrom: '2026-04-06' }]
+  for (const d of days('2026-04-06', '2026-05-31')) {
+    input.events.push(meal({ date: d, brand: 'Royal Canin', product: 'Hydrolyzed HP', foodItemId: 'f-hp', proteins: ['soy'] }))
+  }
+  input.requestedWindow = { startDate: '2026-04-20', endDate: '2026-05-06' }
+  const snap = assembleReport(input)
+  assert.equal(snap.trial!.status, 'completed')
+  assert.ok(snap.trial!.trialDaysOutsideRange.after > 0, 'the window closed before the trial did')
+  assert.ok(snap.trial!.trialDaysElapsed > 28, 'and the trial ran past its target')
+
+  const text = plain(renderReport(snap))
+  assert.ok(!/now \d+ days? past that window/.test(text))
+  assert.ok(/Ran its course — the full window was completed/.test(text))
+})
+
 Deno.test('B-600 — halfPartition is symmetric, in-span, and drops only an odd middle', () => {
   for (let days = 1; days <= 400; days++) {
     const start = 20_000
