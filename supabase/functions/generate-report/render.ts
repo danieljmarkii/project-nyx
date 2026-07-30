@@ -1888,7 +1888,14 @@ function dietTrialSection(snap: ReportSnapshot): string {
           m.firstHalf.days,
         )} in the first half of ${h(
           fmtRange(snap.trial!.evidenceStartDate, snap.trial!.evidenceEndDate),
-        )}, ${num(m.lastHalf.daysLogged)} of ${num(m.lastHalf.days)} in the second.${scope} <span class="qual">Meal logging is prompted and habitual, so this tracks whether the owner kept logging at all &mdash; read the symptom counts below with it in view. Culprit does not judge whether a change in one explains a change in the other.</span>`,
+        )}, ${num(m.lastHalf.daysLogged)} of ${num(m.lastHalf.days)} in the second.${
+          // The same disclosure the symptom delta carries (B-614). Without it these two
+          // halves silently fail to sum to the coverage figure one clause earlier, over
+          // the same named range — 15 of 15 + 15 of 15 against "31 of 31 days".
+          m.middleDaysLogged > 0 && m.middleDate
+            ? ` A meal was logged on ${h(fmtDay(m.middleDate))}, the middle day of an odd range, which is in neither half.`
+            : ''
+        }${scope} <span class="qual">Meal logging is prompted and habitual, so this tracks whether the owner kept logging at all &mdash; read the symptom counts below with it in view. Culprit does not judge whether a change in one explains a change in the other.</span>`,
       ),
     )
   }
@@ -4820,7 +4827,15 @@ function offDietAppendix(snap: ReportSnapshot): string {
     trialDerived
       ? `Off-diet exposures ${antigenScope}`
       : hasTrial
-        ? `Treats &amp; table food ${antigenScope}`
+        // WINDOW-SCOPED, NOT TRIAL-SCOPED (B-614). This branch's rows are
+        // `provenance.confounders` — the window-scoped treat/human-food heuristic — as
+        // its own caption and subtitle both say. B-600's sweep gave it the trial phrase,
+        // which turned a vague over-claim into a numerically specific and therefore
+        // CHECKABLE one, and the page falsifies it two lines down: "Treats & table food
+        // in the 43 trial days this report covers" above "5 feedings · May 1 – Jul 2"
+        // with three rows dated after the trial ended. §7's own AC — every caption is
+        // checked against the code beneath it.
+        ? 'Treats &amp; table food in this window'
         : 'Treats &amp; table food'
   }</p>
   <p class="appx-sub">${subtitle} Repeated items are grouped (with a feeding count and date span); human food is listed feeding-by-feeding. Protein shows the full set read from the label, most prominent first; &ldquo;list not read&rdquo; marks a food whose ingredient panel was never captured, so its set may be incomplete.</p>

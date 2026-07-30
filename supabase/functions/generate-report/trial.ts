@@ -254,7 +254,22 @@ export interface TrialLoggingDensity {
    * already carry their own days-logged denominators. A second series that is either
    * circular or empty adds nothing a vet can use.
    */
-  meals: { firstHalf: { daysLogged: number; days: number }; lastHalf: { daysLogged: number; days: number } }
+  meals: {
+    firstHalf: { daysLogged: number; days: number }
+    lastHalf: { daysLogged: number; days: number }
+    /**
+     * Days with a meal on the EXCLUDED MIDDLE DAY of an odd span (B-614).
+     *
+     * The halves are symmetric so this line cannot disagree with the symptom delta over
+     * a coincident span (B-600) — and on an odd span that drops a day, which made it
+     * disagree with the COVERAGE figure printed one clause earlier instead. Both
+     * agreements are required, so the day is disclosed here exactly as it is on the
+     * delta rather than reassigned to a half.
+     */
+    middleDaysLogged: number
+    /** The excluded day, when the span is odd; null when it is even. */
+    middleDate: string | null
+  }
 }
 
 /** One off-diet feeding, resolved by `classifyFeeding` (§5.3). */
@@ -1400,16 +1415,36 @@ function loggingDensity(
   const split = (indices: readonly number[]) => {
     let first = 0
     let last = 0
+    // ── THE EXCLUDED MIDDLE DAY IS COUNTED HERE TOO (B-614) ─────────────────────
+    //
+    // B-600 unified this partition with the symptom delta's so the two could not
+    // disagree over a coincident span — and then wired the middle-day disclosure to
+    // the DELTA ONLY. On an odd span with a logged middle day that made this line
+    // disagree with the coverage figure printed one clause earlier, over the same
+    // named range: "Meals logged on 31 of 31 days (Jun 2 – Jul 2)" above "15 of 15 …
+    // 15 of 15", which sums to 30. On `main` before B-600 it read "15 of 15 … 16 of
+    // 16" — the day was visible and the halves summed. A 16% same-span disagreement
+    // rate across 9,120 fuzzed configs, and the sparse case is worse: one logged day,
+    // on the middle day, rendered "0 of 15 … 0 of 15" beside "1 of 16 days".
+    //
+    // Direction is safe (the density reads sparser, never denser), so it is not
+    // reassurance — the harm is the one `halfPartition`'s own docstring names as its
+    // whole rationale: a clinical page that disagrees with itself about a figure a
+    // reader can check loses the credibility of every figure they cannot.
+    let middle = 0
     const seen = new Set<number>()
     for (const dn of indices) {
       if (dn < startDayIndex || dn > endDayIndex || seen.has(dn)) continue
       seen.add(dn)
       if (dn <= firstEndDayIndex) first += 1
       else if (dn >= lastStartDayIndex) last += 1
+      else middle += 1
     }
     return {
       firstHalf: { daysLogged: first, days: halfDays },
       lastHalf: { daysLogged: last, days: halfDays },
+      middleDaysLogged: middle,
+      middleDate: (endDayIndex - startDayIndex + 1) % 2 === 1 ? dayKeyFromIndex(firstEndDayIndex + 1) : null,
     }
   }
   return { meals: split(mealDayIndices) }

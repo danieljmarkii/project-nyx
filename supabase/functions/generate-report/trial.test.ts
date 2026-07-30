@@ -1236,7 +1236,14 @@ Deno.test('the exposure tile renders a real em dash, not an HTML entity', () => 
   // from the appendix title, which is what the previous assertion was actually reading.
   assert.ok(html.includes('<div class="v num">—</div>'), 'the tile value is a real em dash')
   assert.ok(plain(html).includes('Off-diet exposuresno allowed list recorded for this trial'))
-  assert.ok(plain(html).includes('Appendix C — Treats & table food during the trial'))
+  // B-614 — WINDOW-SCOPED, and it always should have been. This branch's rows are
+  // `provenance.confounders`, the window-scoped treat/human-food heuristic, as its own
+  // caption and subtitle both say; "during the trial" was a vague over-claim that
+  // B-600's sweep made numerically specific ("in the 43 trial days this report covers")
+  // and therefore checkable — over a table whose next line said "5 feedings · May 1 –
+  // Jul 2" with three rows dated after the trial ended.
+  assert.ok(plain(html).includes('Appendix C — Treats & table food in this window'))
+  assert.ok(!plain(html).includes('Treats & table food during the trial'))
 })
 
 Deno.test('§12 — the protein-over-time caption matches the set it bins', () => {
@@ -2542,6 +2549,64 @@ Deno.test('B-600 — "now past that window" is an active-trial claim', () => {
   assert.ok(/Ran its course — the full window was completed/.test(text))
 })
 
+Deno.test('B-614 — the density line discloses its middle day too, so the halves sum', () => {
+  // `adversarial-reviewer` pass 6, and a REGRESSION B-600 introduced against `main`.
+  // B-600 unified this partition with the symptom delta's so the two could not disagree
+  // over a coincident span — and wired the middle-day disclosure to the DELTA ONLY. On
+  // an odd span with a logged middle day the density line then disagreed with the
+  // COVERAGE figure printed one clause earlier, over the same named range.
+  //
+  // Executed, 31-day window, a meal logged every day:
+  //   main before B-600 : "15 of 15 … 16 of 16"   (sums to 31, matches coverage)
+  //   B-600             : "15 of 15 … 15 of 15"   (sums to 30, against "31 of 31 days")
+  // 16% same-span disagreement across 9,120 fuzzed configs. Direction is safe — the
+  // density reads sparser, never denser — so it is not reassurance; the harm is the one
+  // `halfPartition`'s own docstring names as its rationale.
+  const input = wellLoggedTrialInput({ events: [] })
+  for (const d of days('2026-06-01', '2026-07-02')) {
+    input.events.push(meal({ date: d, brand: 'Royal Canin', product: 'Hydrolyzed HP', foodItemId: 'f-hp', proteins: ['soy'] }))
+  }
+  input.vetVisits = [{ visitedAt: '2026-06-02', clinicName: 'X', vetName: 'Y', reason: 'r' }]
+  const snap = assembleReport(input)
+  const d = snap.trial!.loggingDensity!.meals
+  assert.equal(d.firstHalf.days, 15)
+  assert.equal(d.lastHalf.days, 15)
+  assert.equal(d.middleDaysLogged, 1, 'the middle day carries a meal')
+  assert.equal(d.middleDate, '2026-06-17')
+  // THE PROPERTY THAT WAS BROKEN: the halves plus the middle account for every logged
+  // day in the range, so the line cannot contradict the coverage figure beside it.
+  assert.equal(
+    d.firstHalf.daysLogged + d.lastHalf.daysLogged + d.middleDaysLogged,
+    snap.trial!.coverage!.daysLogged,
+  )
+
+  const text = plain(renderReport(snap))
+  assert.ok(/15 of 15 in the first half of Jun 2 – Jul 2, 2026, 15 of 15 in the second/.test(text))
+  assert.ok(/A meal was logged on Jun 17, the middle day of an odd range, which is in neither half/.test(text))
+
+  // THE SPARSE CASE, which is the one that matters clinically: C5's line exists to let a
+  // vet separate a real remission from a tiring owner, and it read "0 → 0" over a record
+  // with a logged day. The previous regression test could not see any of this — its
+  // middle day fell inside a blackout, so it was unlogged, and its own comment
+  // ("dropped from those two DENOMINATORS and nothing else") was asserted, never
+  // exercised.
+  const sparse = wellLoggedTrialInput({ events: [] })
+  sparse.events.push(meal({ date: '2026-06-17', brand: 'Royal Canin', product: 'Hydrolyzed HP', foodItemId: 'f-hp', proteins: ['soy'] }))
+  sparse.vetVisits = [{ visitedAt: '2026-06-02', clinicName: 'X', vetName: 'Y', reason: 'r' }]
+  const sparseText = plain(renderReport(assembleReport(sparse)))
+  assert.ok(/0 of 15 in the first half of .{0,24}, 0 of 15 in the second/.test(sparseText))
+  assert.ok(/A meal was logged on Jun 17/.test(sparseText))
+
+  // SILENT ON AN EVEN SPAN, where there is no middle day at all.
+  const even = wellLoggedTrialInput({ events: [] })
+  for (const dd of days('2026-06-01', '2026-07-02')) {
+    even.events.push(meal({ date: dd, brand: 'Royal Canin', product: 'Hydrolyzed HP', foodItemId: 'f-hp', proteins: ['soy'] }))
+  }
+  const evenSnap = assembleReport(even)
+  assert.equal(evenSnap.trial!.loggingDensity!.meals.middleDate, null)
+  assert.ok(!/the middle day of an odd range/.test(plain(renderReport(evenSnap))))
+})
+
 Deno.test('B-600 — halfPartition is symmetric, in-span, and drops only an odd middle', () => {
   for (let days = 1; days <= 400; days++) {
     const start = 20_000
@@ -3491,7 +3556,13 @@ Deno.test('ADV⑫ — page 1 does not disagree with its own cross-reference', ()
   input.events.push(meal({ date: '2026-06-10', brand: 'Acme', product: 'Chew', foodItemId: 'f-chew', foodType: 'treat', proteins: ['chicken'] }))
   const text = plain(renderReport(assembleReport(input)))
   assert.ok(/Treats & table foodPrimarily|Treats & table food/.test(text))
-  assert.ok(/Appendix C — Treats & table food during the trial/.test(text))
+  // B-614 — WINDOW-SCOPED, and it always should have been. This branch's rows are
+  // `provenance.confounders`, the window-scoped treat/human-food heuristic, as its own
+  // caption and subtitle both say; "during the trial" was a vague over-claim that
+  // B-600's sweep made numerically specific ("in the 43 trial days this report covers")
+  // and therefore checkable — over a table whose next line said "5 feedings · May 1 –
+  // Jul 2" with three rows dated after the trial ended.
+  assert.ok(/Appendix C — Treats & table food in this window/.test(text))
   assert.ok(!/Off-dietTreats|Off-diet1 treat|Off-diet 1 treat/.test(text), 'the row is not headed with a verdict the appendix denies')
 })
 
