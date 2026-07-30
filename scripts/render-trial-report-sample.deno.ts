@@ -604,12 +604,113 @@ function truncatedCase(): ReportInput {
   }
 }
 
+// ── Case 5: a hand-picked window that closed weeks ago (B-600, round 10) ─────
+//
+// The CHERRY-PICK basis — `app/report.tsx` ships a Custom range with two date pickers
+// — and the only one whose window can end before today. Two things render here and
+// nowhere else, both of which a cold read has to see rather than take on trust:
+//
+//   • `trialDaysOutsideRange.after > 0`, so the day counter is short of the trial's
+//     elapsed length and carries its `as of <date>` label. Cold-read round 10 named
+//     this branch as rendered by ZERO of the four fixtures — "a unit test is not the
+//     artifact" — while the arithmetic behind it is exactly what adversarial pass 2
+//     broke.
+//   • the trial is truncated at BOTH ends, so the slice sentence takes its
+//     "before and after it" branch.
+//
+// The scenario is ordinary: the vet asks for "just the month I saw her in", and the
+// owner picks those dates.
+
+const NOVEL = {
+  foodItemId: 'f-kang',
+  foodLabel: 'Vet Essentials Kangaroo & Oat',
+  role: 'primary_diet',
+  allowedFrom: '2026-04-06',
+  allowedUntil: null,
+  primaryProtein: 'kangaroo',
+  brand: 'Vet Essentials',
+  productName: 'Kangaroo & Oat',
+  proteins: ['kangaroo'],
+  ingredientsNotes: 'Kangaroo, oats, sunflower oil, minerals',
+}
+
+function pastWindowCase(): ReportInput {
+  const events: ReportEventInput[] = []
+  // A well-kept 56-day novel-protein trial, logged twice daily start to finish.
+  for (const d of days('2026-04-06', '2026-05-31')) {
+    events.push(meal({ date: d, brand: 'Vet Essentials', product: 'Kangaroo & Oat', foodItemId: 'f-kang', proteins: NOVEL.proteins, ingredientsNotes: NOVEL.ingredientsNotes, intakeRating: 'all', format: 'kibble' }))
+    events.push(meal({ date: d, time: '18:30:00', brand: 'Vet Essentials', product: 'Kangaroo & Oat', foodItemId: 'f-kang', proteins: NOVEL.proteins, ingredientsNotes: NOVEL.ingredientsNotes, intakeRating: d === '2026-05-04' ? 'most' : 'all', format: 'kibble' }))
+  }
+  // One slip inside the picked window, one outside it — so the artifact shows what a
+  // hand-picked window omits as well as what it includes.
+  events.push(meal({ date: '2026-05-02', time: '20:10:00', brand: 'Home', product: 'Beef mince', foodItemId: 'f-beef', foodType: 'other', format: 'human_food', proteins: ['beef'], notes: 'scraps at the barbecue' }))
+  events.push(meal({ date: '2026-05-26', time: '19:00:00', brand: 'Home', product: 'Beef mince', foodItemId: 'f-beef', foodType: 'other', format: 'human_food', proteins: ['beef'] }))
+
+  for (const d of ['2026-04-07', '2026-04-09', '2026-04-13', '2026-04-18', '2026-04-24', '2026-05-03', '2026-05-15']) {
+    events.push(sym('diarrhea', d))
+  }
+  events.push(sym('vomit', '2026-05-03', '22:40:00', 'the night after the barbecue'))
+  events.push(sym('diarrhea', '2026-05-28'))
+
+  return {
+    now: NOW,
+    timezone: TZ,
+    pet: {
+      id: 'pet-tama',
+      name: 'Tama',
+      species: 'dog',
+      breed: 'Staffordshire Bull Terrier',
+      sex: 'female',
+      dateOfBirth: '2022-02-11',
+      neuterStatus: 'neutered',
+      weightKg: 15.4,
+    },
+    ownerName: 'Dev Anand',
+    events,
+    aiAnalyses: [],
+    weightChecks: [
+      { eventId: 'tw1', weightKg: 15.1, occurredAt: '2026-04-06T15:00:00Z' },
+      { eventId: 'tw2', weightKg: 15.4, occurredAt: '2026-05-30T15:00:00Z' },
+    ],
+    doses: [],
+    medications: [],
+    medicationItems: [],
+    dietTrials: [
+      {
+        id: 'trial-tama',
+        foodItemId: 'f-kang',
+        startedAt: '2026-04-06',
+        targetDurationDays: 56,
+        status: 'completed',
+        completedAt: '2026-05-31',
+        endedAt: '2026-05-31',
+        indication: 'gi',
+        stoppedReason: 'completed',
+        vetName: 'Dr. A. Chen',
+        foodLabel: 'Vet Essentials Kangaroo & Oat',
+        primaryProtein: 'kangaroo',
+        proteins: NOVEL.proteins,
+        ingredientsNotes: NOVEL.ingredientsNotes,
+        extractionConfidence: { proteins: 0.9 },
+        allowedFoods: [NOVEL],
+      },
+    ],
+    vetVisits: [{ visitedAt: '2026-04-06', clinicName: 'Riverside Veterinary', vetName: 'Dr. A. Chen', reason: 'chronic diarrhoea — start novel-protein trial' }],
+    feedingArrangements: [],
+    conditions: [{ conditionName: 'Chronic diarrhoea', status: 'active', diagnosedAt: '2026-01-22' }],
+    // THE OWNER PICKED THE DATES. Trial Apr 6 – May 31 (56 days); this window opens 14
+    // days in and closes 11 days before the trial did.
+    requestedWindow: { startDate: '2026-04-20', endDate: '2026-05-20' },
+  }
+}
+
 const outDir = Deno.args[0] ?? '.'
 for (const [name, input] of [
   ['trial-report-clean.html', cleanCase()],
   ['trial-report-refused.html', refusedCase()],
   ['trial-report-completed.html', completedCase()],
   ['trial-report-truncated.html', truncatedCase()],
+  ['trial-report-past-window.html', pastWindowCase()],
 ] as const) {
   const html = renderReport(assembleReport(input))
   await Deno.writeTextFile(`${outDir}/${name}`, html)

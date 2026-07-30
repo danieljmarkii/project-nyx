@@ -2153,7 +2153,7 @@ Deno.test('B-600 — the feeding count names the range it was counted over', () 
   assert.ok(!/feedings in this report’s window/.test(text))
   assert.ok(!/feedings in total/.test(text))
   // The dates, so the affirmative cannot be carried past them.
-  assert.ok(/feedings logged May 23 – Jun 12, 2026/.test(text))
+  assert.ok(/feedings (?:counted over|are counted over) May 23 – Jun 12, 2026/.test(text))
 })
 
 Deno.test('B-600 — the refusal sentence leads the callout on every rung', () => {
@@ -2203,6 +2203,93 @@ Deno.test('B-600 — the refusal sentence leads the callout on every rung', () =
   assert.ok(quality === -1 || refusal < quality, 'and nothing about the record outranks it')
 })
 
+Deno.test('B-600 — a completed trial is measured against its own length, not the view', () => {
+  // `adversarial-reviewer` pass 3, its highest-severity finding, and the same stale
+  // counter one more layer out. B-532's "Marked complete at day N — M days short"
+  // compared `dayCounter` (evidence-bounded) against the target, so a report windowed
+  // to the past accused an owner of stopping early on a trial they had completed:
+  // rendered "Marked complete at day 30 — 54 days short of the 84-day window" in bold,
+  // three inches from its own identity row saying "Apr 21 – Jun 12 · completed" and
+  // from B-600's slice sentence saying "has run 53". B-532 added that sentence because
+  // a 60-second scan takes the emphasised line — and it was the emphasised line that
+  // was wrong. §6.9 forbids scoring the owner even when the arithmetic is right.
+  const input = wellLoggedTrialInput({ events: [] })
+  input.dietTrials[0].startedAt = '2026-04-06'
+  input.dietTrials[0].targetDurationDays = 56
+  input.dietTrials[0].status = 'completed'
+  input.dietTrials[0].completedAt = '2026-05-31'
+  input.dietTrials[0].endedAt = '2026-05-31'
+  input.dietTrials[0].stoppedReason = 'completed'
+  input.dietTrials[0].allowedFoods = [{ ...TRIAL_FOOD, allowedFrom: '2026-04-06' }]
+  for (const d of days('2026-04-06', '2026-05-31')) {
+    input.events.push(meal({ date: d, brand: 'Royal Canin', product: 'Hydrolyzed HP', foodItemId: 'f-hp', proteins: ['soy'] }))
+  }
+  // The window closes eleven days before the trial did — the owner picked "just May".
+  input.requestedWindow = { startDate: '2026-04-20', endDate: '2026-05-20' }
+  const snap = assembleReport(input)
+  assert.equal(snap.trial!.trialDaysElapsed, 56, 'the trial ran its full 56 days')
+  assert.equal(snap.trial!.dayCounter, 45, 'the counter stops at the window')
+
+  const text = plain(renderReport(snap))
+  // It ran exactly to target, so the affirmative is the TRUE sentence here.
+  assert.ok(/Ran its course — the full window was completed/.test(text))
+  assert.ok(!/short of the/.test(text), 'and no shortfall is invented from the clipped counter')
+
+  // The shortfall form still fires where it is true — same window, a trial genuinely cut short.
+  const cut = wellLoggedTrialInput({ events: [] })
+  cut.dietTrials[0].startedAt = '2026-04-06'
+  cut.dietTrials[0].targetDurationDays = 84
+  cut.dietTrials[0].status = 'completed'
+  cut.dietTrials[0].completedAt = '2026-05-31'
+  cut.dietTrials[0].endedAt = '2026-05-31'
+  cut.dietTrials[0].stoppedReason = 'completed'
+  cut.dietTrials[0].allowedFoods = [{ ...TRIAL_FOOD, allowedFrom: '2026-04-06' }]
+  for (const d of days('2026-04-06', '2026-05-31')) {
+    cut.events.push(meal({ date: d, brand: 'Royal Canin', product: 'Hydrolyzed HP', foodItemId: 'f-hp', proteins: ['soy'] }))
+  }
+  cut.requestedWindow = { startDate: '2026-04-20', endDate: '2026-05-20' }
+  const cutText = plain(renderReport(assembleReport(cut)))
+  assert.ok(/Marked complete at day 56 — 28 days short of the 84-day window/.test(cutText))
+})
+
+Deno.test('B-600 — the affirmative in appendix C names the range it was counted over', () => {
+  // `adversarial-reviewer` pass 3, finding ②: the exact sentence pass 2 ruled false on
+  // page 1, still rendering in the appendix a vet cross-checks page 1 AGAINST. "In this
+  // window" is the document's reserved idiom for the REPORT window, and this count is
+  // over the trial's evidence range.
+  //
+  // It is deliberately NOT gated on `trialDaysOutsideRange` — pass 3's finding ③ is
+  // that the gate measures how much of the TRIAL the scope cuts, not how much of the
+  // SCOPE the trial fails to fill, and this sentence is false on the second, which the
+  // gate reads as {0,0}. This fixture is exactly that state.
+  const input = wellLoggedTrialInput({
+    events: [],
+    vetVisits: [{ visitedAt: '2026-04-15', clinicName: 'Riverside', vetName: 'Dr. Chen', reason: 'recheck' }],
+  })
+  input.dietTrials[0].startedAt = '2026-04-21'
+  input.dietTrials[0].status = 'completed'
+  input.dietTrials[0].completedAt = '2026-06-12'
+  input.dietTrials[0].endedAt = '2026-06-12'
+  input.dietTrials[0].allowedFoods = [{ ...TRIAL_FOOD, allowedFrom: '2026-04-21' }]
+  for (const d of days('2026-04-21', '2026-06-12')) {
+    input.events.push(meal({ date: d, brand: 'Royal Canin', product: 'Hydrolyzed HP', foodItemId: 'f-hp', proteins: ['soy'] }))
+  }
+  // Back on chicken the day the trial ended — in the report window, outside the trial.
+  for (const d of days('2026-06-13', '2026-07-02')) {
+    input.events.push(meal({ date: d, brand: 'Purina', product: 'Pro Plan Chicken', foodItemId: 'f-pp', proteins: ['chicken'] }))
+  }
+  const snap = assembleReport(input)
+  // The gate that does NOT protect this sentence.
+  assert.deepEqual(snap.trial!.trialDaysOutsideRange, { before: 0, after: 0 })
+  assert.equal(snap.trial!.evidenceEndDate, '2026-06-12')
+
+  const text = plain(renderReport(snap))
+  assert.ok(!/feedings logged in this window matched/.test(text))
+  assert.ok(/feedings logged Apr 21 – Jun 12, 2026 matched the trial diet or a permitted food/.test(text))
+  // And the page-1 tile carrying the same count at three times the type size.
+  assert.ok(/All matched the trial diet or a permitted food.*Apr 21 – Jun 12, 2026/s.test(text))
+})
+
 Deno.test('B-600 — halfPartition is symmetric, in-span, and drops only an odd middle', () => {
   for (let days = 1; days <= 400; days++) {
     const start = 20_000
@@ -2250,7 +2337,7 @@ Deno.test('B-600 — a truncated report that IS well logged vouches for the wind
   // a trial it counted a third of.
   // The scope is the EVIDENCE range by name, not "this report's window" — which is
   // false whenever the trial ended before the window closed.
-  assert.ok(/feedings logged Jun 2 – Jul 2, 2026/.test(text))
+  assert.ok(/feedings counted over Jun 2 – Jul 2, 2026/.test(text))
   assert.ok(!/feedings in total/.test(text))
 })
 

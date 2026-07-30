@@ -94,7 +94,8 @@ export function trialBlockFixture(
     // every first report and every client surface. A fixture exercising B-600
     // passes this explicitly.
     trialDaysOutsideRange: { before: 0, after: 0 },
-    trialDaysElapsed: 32,
+    // `trialDaysElapsed` is derived at the tail of this literal so it tracks
+    // `dayCounter`, rather than sitting here as a constant a fixture can contradict.
     coverage: null,
     exposures: {
       totalFeedings: 0,
@@ -128,6 +129,13 @@ export function trialBlockFixture(
     challengeWindowDays: 14,
     challengeMarkerBaseRatePct: 0,
     ...over,
+    // Untruncated ⇒ the trial's elapsed length IS the day counter. Derived here so a
+    // fixture only has to set `dayCounter`, and so no fixture can silently carry a
+    // `trialDaysElapsed` that contradicts it.
+    trialDaysElapsed:
+      over.trialDaysElapsed ??
+      (over.dayCounter ?? 45) +
+        (over.trialDaysOutsideRange?.after ?? 0),
   }
 }
 
