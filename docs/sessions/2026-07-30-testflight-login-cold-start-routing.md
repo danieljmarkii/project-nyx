@@ -1,7 +1,7 @@
 # TestFlight login-every-launch — root cause + fix (cold-start routing)
 
 **Date:** 2026-07-30
-**Outcome:** shipped via #TBD (branch `claude/testflight-login-prompts-gsnptn`)
+**Outcome:** shipped via #518 (branch `claude/testflight-login-prompts-gsnptn`)
 
 ## The complaint
 
