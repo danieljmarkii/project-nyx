@@ -242,6 +242,9 @@ Nearest live PM gates, none of which block code already in flight:
 
 ## Open PM Action Items
 
+**The Category Play (2026-07-26) — swing-for-the-fences roadmap, PROPOSED, awaiting ratification**
+- [ ] Read **`docs/culprit-category-play-2026-07.md`** and clear its §6 decision checklist (D1–D9): ratify the plan · rule B-288 (confirmations vs Principle 4) · ratify B-292 OQ2 + the `Now` re-prioritization · the vet-response-loop Open Question · pricing shape vs D-M5 · re-sequence Ask · the competitive review's §11 Tier-2 edits · **send the R1 email (open since 2026-07-02 — the cheapest strategic unlock in the plan)** · the B-416 Class-B sub-decision. One sitting clears D1–D7+D9; D8 is an email.
+
 **Event photos (B-105, #512) — one live cleanup, needs your call because it deletes health photos**
 - [ ] **Decide whether to delete the 3 pre-existing duplicate `event_attachments` rows in prod.** B-105 is fixed going forward, and the read fix means devices already show the right photo — but the client cannot reach rows already in Postgres, and `generate-report` renders *every* attachment per incident, so these 3 `vomit` incidents currently print **two photo cards each** on the vet report. All 3 belong to one pet; each is an original plus a replacement logged 1–3 days later. Row-count check before applying: `select count(*) from event_attachments a where exists (select 1 from event_attachments b where b.event_id = a.event_id and b.created_at > a.created_at);` → expect **3** (the older row of each pair). Destructive, irreversible for the Storage objects, and "which photo is the real one" is a judgement about a clinical record — so it is not taken automatically. Deferring is fine; the doubling is cosmetic on the report, not wrong.
 
