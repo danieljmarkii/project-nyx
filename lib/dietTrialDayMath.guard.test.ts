@@ -138,17 +138,33 @@ describe('B-421 — one diet-trial day counter, not four', () => {
     expect(src).not.toMatch(/const loadDietTrial/);
     expect(src).toMatch(/resolveTrialCard\(/);
 
-    // The one day-division left in this file belongs to regimenDaysElapsed — a
-    // different feature's counter, deliberately left alone and annotated (B-441).
-    const divisions = readCode('app/(tabs)/profile.tsx')
-      .match(new RegExp(DAY_DIVISION.source, 'g')) ?? [];
-    expect(divisions).toHaveLength(1);
+    // B-441 CLOSED. This screen's LAST day-arithmetic — the medication regimen
+    // counter — moved to `lib/medications.regimenDaysElapsed` and now routes through
+    // the same `localDayIndexOf` primitive, so the exemption these two assertions
+    // used to carve out is gone and the screen holds NO day math at all.
+    //
+    // The assertions flipped from "exactly one is allowed" to "none are", which is
+    // the only form that stays honest: a count-based allowance passes just as
+    // happily when someone deletes the permitted one and adds a different one.
+    expect(readCode('app/(tabs)/profile.tsx')).not.toMatch(DAY_DIVISION);
+    expect(src).not.toMatch(MANUAL_MIDNIGHT);
+    expect(src).not.toMatch(/function regimenDaysElapsed/);
+    expect(src).toMatch(/regimenDaysElapsed\(/); // delegates to the shared helper
 
-    // The only hand-rolled midnight left in this file is regimenDaysElapsed — a
-    // different feature's counter, deliberately left alone and annotated (B-441).
-    const occurrences = src.match(new RegExp(MANUAL_MIDNIGHT.source, 'g')) ?? [];
-    expect(occurrences).toHaveLength(2); // both inside regimenDaysElapsed
-    expect(src).toMatch(/function regimenDaysElapsed/);
+    // The same UTC-parse also lived in this screen's "Started <date>" fallback:
+    // `new Date(<a date-only DATE>)` renders the PREVIOUS day behind UTC.
+    expect(src).not.toMatch(/new Date\(reg\.started_at\)/);
+    expect(readCode('app/(tabs)/profile.tsx')).toMatch(/dayKeyToLocalDate\(startedAt\)/);
+  });
+
+  it('the medication regimen counter indexes calendar days, never a ms span', () => {
+    // B-441. The counter's own module: it may not reintroduce either failure mode,
+    // and the header comment naming them is stripped by readCode so the prose does
+    // not fail its own guard.
+    const meds = readCode('lib/medications.ts');
+    expect(meds).not.toMatch(DAY_DIVISION);
+    expect(meds).not.toMatch(MANUAL_MIDNIGHT);
+    expect(meds).toMatch(/localDayIndexOf\(/);
   });
 
   it('the trial-facts loader DELEGATES coverage rather than keying its own day', () => {
