@@ -1,0 +1,358 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Culprit — Food library trial-awareness mockups</title>
+<!--
+  Food library trial-awareness — mock round 1.  B-616 (+ B-458 combined build) · picker call for B-439.
+  Spec grounding: docs/nyx-diet-trial-requirements.md (§3.2 dated membership, §5.2 G2, §5.4 identity,
+  §6.4 pre-decision-may-verdict, §6.9 no scores/badges-on-coverage) · docs/nyx-per-account-food-library-
+  requirements.md (B-005 archive) · session record docs/sessions/2026-07-31-food-library-trial-awareness.md.
+  PM rulings 2026-07-31: (1) promoted to Now, combined with B-458, gated on B-556; (2) picker cue
+  UNRULED — screens F/G/H below exist to make that call; (3) mid-trial add is IN (dated membership).
+
+  App-surface tokens are lifted verbatim from constants/theme.ts and are FIXED — the screens are the
+  subject under review, so they don't re-theme. Page chrome does.
+
+  Three rules govern every screen here, stated once:
+    R1 — positive marking only. The list is named on foods that are ON it; no food is ever marked
+         off-diet in the library (closed-world would paint the whole pantry red), and a mark's
+         ABSENCE is never a verdict either way (G2, two-sided).
+    R2 — one predicate. Membership renders from matchAllowed (lib/dietTrial.ts) — id first, then the
+         case-folded brand+product key. No surface re-derives it.
+    R3 — §6.4: a pre-decision surface may verdict; a record surface may not. The library browses, so
+         it may speak; the picker logs, so anything it says must not gate, warn, or judge.
+-->
+<style>
+  :root {
+    /* app tokens — constants/theme.ts, fixed */
+    --accent: #00C2A8;
+    --accent-light: #E0FBF7;
+    --accent-ink: #0B7B6C;
+    --text-primary-a: #0A0A0A;
+    --text-secondary-a: #525252;
+    --text-tertiary-a: #737373;
+    --text-disabled-a: #A3A3A3;
+    --surface-a: #FFFFFF;
+    --surface-subtle-a: #F5F5F5;
+    --neutral-light-a: #FAFAFA;
+    --border-a: #EAEAEA;
+
+    /* page chrome — theme-aware */
+    --page-bg: #F0EFEA;
+    --page-text: #0A0A0A;
+    --page-text-2: #525252;
+    --page-text-3: #737373;
+    --card-bg: #FFFFFF;
+    --card-border: #EAEAEA;
+    --note-bg: #E7F6F3;
+    --note-border: #9BD8CC;
+    --open-bg: #FDF8EC;
+    --open-border: #F3D9A4;
+    --code-bg: #ECEAE3;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --page-bg: #16151C; --page-text: #ECEAF2; --page-text-2: #B9B6C4; --page-text-3: #8B8798;
+      --card-bg: #1F1E27; --card-border: #33313E; --note-bg: #12312C; --note-border: #1F5A50;
+      --open-bg: #33290F; --open-border: #6B5620; --code-bg: #26242E;
+    }
+  }
+  :root[data-theme="dark"] {
+    --page-bg: #16151C; --page-text: #ECEAF2; --page-text-2: #B9B6C4; --page-text-3: #8B8798;
+    --card-bg: #1F1E27; --card-border: #33313E; --note-bg: #12312C; --note-border: #1F5A50;
+    --open-bg: #33290F; --open-border: #6B5620; --code-bg: #26242E;
+  }
+  :root[data-theme="light"] {
+    --page-bg: #F0EFEA; --page-text: #0A0A0A; --page-text-2: #525252; --page-text-3: #737373;
+    --card-bg: #FFFFFF; --card-border: #EAEAEA; --note-bg: #E7F6F3; --note-border: #9BD8CC;
+    --open-bg: #FDF8EC; --open-border: #F3D9A4; --code-bg: #ECEAE3;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--page-bg); color: var(--page-text);
+    font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif;
+    line-height: 1.5; -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1060px; margin: 0 auto; padding: 40px 24px 96px; }
+  header.doc h1 { font-size: 26px; margin: 0 0 6px; letter-spacing: -0.02em; text-wrap: balance; }
+  header.doc .sub { color: var(--page-text-2); font-size: 14.5px; max-width: 68ch; }
+  .rules { border: 1px solid var(--card-border); background: var(--card-bg); border-radius: 12px; padding: 16px 18px; margin: 22px 0 8px; font-size: 13.5px; color: var(--page-text-2); }
+  .rules b { color: var(--page-text); }
+  .eyebrow { font-size: 11px; letter-spacing: 0.09em; text-transform: uppercase; color: var(--page-text-3); font-weight: 600; }
+  code { background: var(--code-bg); border-radius: 4px; padding: 1px 5px; font-size: 0.9em; font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+
+  section.screen { margin-top: 56px; display: grid; grid-template-columns: minmax(0,400px) minmax(0,1fr); gap: 32px; align-items: start; }
+  @media (max-width: 820px) { section.screen { grid-template-columns: 1fr; } }
+  .annot h2 { font-size: 18px; margin: 4px 0 8px; letter-spacing: -0.01em; }
+  .annot p { font-size: 14px; color: var(--page-text-2); max-width: 62ch; }
+  .annot ul { font-size: 13.5px; color: var(--page-text-2); padding-left: 18px; }
+  .annot li { margin: 6px 0; }
+  .note, .open { border-radius: 10px; padding: 12px 14px; font-size: 13px; margin-top: 12px; }
+  .note { background: var(--note-bg); border: 1px solid var(--note-border); }
+  .open { background: var(--open-bg); border: 1px solid var(--open-border); }
+  .note b, .open b { display: block; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 4px; }
+
+  /* ---------- phone frame + app surface (fixed day tokens) ---------- */
+  .phone {
+    width: 100%; max-width: 390px; background: var(--surface-a); border-radius: 40px;
+    border: 1px solid var(--card-border); box-shadow: 0 18px 44px rgba(10,10,10,0.10);
+    overflow: hidden; color: var(--text-primary-a);
+    font-family: -apple-system, BlinkMacSystemFont, "Inter", sans-serif;
+  }
+  .statusbar { height: 34px; display: flex; align-items: flex-end; justify-content: space-between; padding: 0 24px 2px; font-size: 12px; font-weight: 600; color: var(--text-primary-a); }
+  .appbody { padding: 8px 18px 24px; }
+  .screen-title { font-size: 24px; font-weight: 700; letter-spacing: -0.02em; margin: 8px 0 2px; }
+  .screen-sub { font-size: 13px; color: var(--text-tertiary-a); margin-bottom: 12px; }
+
+  .trialstrip {
+    display: flex; align-items: center; gap: 10px; background: var(--accent-light);
+    border: 1px solid #BFEFE6; border-radius: 14px; padding: 11px 13px; margin: 4px 0 16px;
+  }
+  .trialstrip .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); flex: none; }
+  .trialstrip .t1 { font-size: 13.5px; font-weight: 600; color: var(--accent-ink); }
+  .trialstrip .t2 { font-size: 12px; color: var(--accent-ink); opacity: 0.85; }
+  .trialstrip .chev { margin-left: auto; color: var(--accent-ink); font-size: 16px; }
+
+  .zone-label { font-size: 11px; letter-spacing: 0.09em; text-transform: uppercase; color: var(--text-tertiary-a); font-weight: 600; margin: 16px 0 8px; }
+  .tilegrid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .tile {
+    border: 1px solid var(--border-a); background: var(--surface-a); border-radius: 14px;
+    padding: 12px 12px 10px; min-height: 88px; display: flex; flex-direction: column; gap: 2px; position: relative;
+  }
+  .tile .brand { font-size: 13px; font-weight: 700; }
+  .tile .prod { font-size: 12.5px; color: var(--text-secondary-a);
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .tile .type { font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-disabled-a); margin-top: auto; padding-top: 6px; font-weight: 600; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 4px; align-self: flex-start;
+    font-size: 10px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase;
+    color: var(--accent-ink); background: var(--accent-light); border-radius: 999px;
+    padding: 2px 7px; margin-bottom: 2px;
+  }
+  .chip::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: var(--accent); }
+  .glyph { position: absolute; top: 10px; right: 10px; width: 14px; height: 14px; border-radius: 50%; background: var(--accent-light); color: var(--accent-ink); font-size: 9px; font-weight: 800; display: flex; align-items: center; justify-content: center; }
+
+  .row { display: flex; align-items: center; gap: 12px; padding: 13px 2px; border-bottom: 1px solid var(--border-a); }
+  .row:last-child { border-bottom: none; }
+  .row .rmain { min-width: 0; }
+  .row .rt { font-size: 14.5px; font-weight: 600; }
+  .row .rs { font-size: 12.5px; color: var(--text-tertiary-a); }
+  .row .rmeta { margin-left: auto; text-align: right; font-size: 12px; color: var(--text-tertiary-a); flex: none; font-variant-numeric: tabular-nums; }
+
+  .btn { display: block; width: 100%; text-align: center; border-radius: 14px; padding: 14px; font-size: 15px; font-weight: 600; border: none; }
+  .btn.primary { background: var(--text-primary-a); color: #fff; }
+  .btn.ghost { background: var(--surface-subtle-a); color: var(--text-primary-a); margin-top: 8px; }
+
+  .sheet { background: var(--surface-a); border-top-left-radius: 22px; border-top-right-radius: 22px; padding: 14px 18px 22px; border-top: 1px solid var(--border-a); }
+  .sheet .grab { width: 36px; height: 4px; border-radius: 2px; background: var(--border-a); margin: 0 auto 14px; }
+  .dim { background: #0A0A0A14; padding-top: 110px; }
+  .kv { display: flex; justify-content: space-between; gap: 12px; font-size: 13.5px; padding: 9px 0; border-bottom: 1px solid var(--border-a); }
+  .kv:last-of-type { border-bottom: none; }
+  .kv .k { color: var(--text-tertiary-a); }
+  .variant-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 24px; margin-top: 20px; }
+  .variant h3 { font-size: 14px; margin: 0 0 8px; }
+  footer { margin-top: 64px; font-size: 12.5px; color: var(--page-text-3); border-top: 1px solid var(--card-border); padding-top: 16px; }
+</style>
+
+<div class="wrap">
+<header class="doc">
+  <div class="eyebrow">Culprit · mock round 1 · not design-locked</div>
+  <h1>Food library trial-awareness</h1>
+  <p class="sub">B-616 + B-458 combined build (PM-promoted to Now, 2026-07-31; gated on B-556). Screens A–E draw the ruled scope: allowed-set marking in the library, the "What Biscuit can eat" screen, and the mid-trial add flow. Screens F–H exist to make the one <em>unruled</em> call: whether any trial cue appears in the log-time picker.</p>
+  <div class="rules">
+    <b>R1 — positive marking only.</b> The list is named on foods that are on it; nothing in the library is ever marked off-diet, and a mark's absence is never a verdict (G2, two-sided). ·
+    <b>R2 — one predicate.</b> Membership renders from <code>matchAllowed</code>, never a re-derivation. ·
+    <b>R3 — §6.4.</b> A pre-decision surface may verdict; a record surface may not.
+  </div>
+</header>
+
+<!-- ============ A · Foods tab ============ -->
+<section class="screen">
+  <div class="phone">
+    <div class="statusbar"><span>9:41</span><span>◧ ◔ ▮</span></div>
+    <div class="appbody">
+      <div class="screen-title">Foods</div>
+      <div class="screen-sub">Biscuit's library</div>
+      <div class="trialstrip">
+        <span class="dot"></span>
+        <span>
+          <span class="t1">Diet trial — day 12 of 28</span><br>
+          <span class="t2">3 foods on the trial list</span>
+        </span>
+        <span class="chev">›</span>
+      </div>
+      <div class="zone-label">Library</div>
+      <div class="tilegrid">
+        <div class="tile"><span class="chip">Trial diet</span><span class="brand">Royal Canin</span><span class="prod">Hydrolyzed Protein HP, dry</span><span class="type">Meal</span></div>
+        <div class="tile"><span class="chip">Also allowed</span><span class="brand">Royal Canin</span><span class="prod">Hydrolyzed Protein treats</span><span class="type">Treat</span></div>
+        <div class="tile"><span class="chip">Also allowed</span><span class="brand">Home-prepared</span><span class="prod">Plain sweet potato</span><span class="type">Snack</span></div>
+        <div class="tile"><span class="brand">Kirkland</span><span class="prod">Chicken &amp; Rice, dry</span><span class="type">Meal</span></div>
+        <div class="tile"><span class="brand">Milk-Bone</span><span class="prod">Original biscuits</span><span class="type">Treat</span></div>
+        <div class="tile"><span class="brand">Zuke's</span><span class="prod">Mini Naturals, peanut butter</span><span class="type">Treat</span></div>
+      </div>
+    </div>
+  </div>
+  <div class="annot">
+    <div class="eyebrow">Screen A</div>
+    <h2>Foods tab during an active trial</h2>
+    <p>Two additions, nothing removed. A <b>trial strip</b> under the header answers "which foods?" one tap away (it opens Screen B), and the allowed set carries a quiet chip on its own tiles — <em>Trial diet</em> for the <code>primary_diet</code> row, <em>Also allowed</em> for permitted roles. Kirkland, Milk-Bone and Zuke's are off-diet by the closed-world predicate and say nothing at all (R1).</p>
+    <ul>
+      <li>The chip is a fact about the trial's list, never praise or a warning — same register as C6.</li>
+      <li>The day counter is the card's existing fact; no coverage bars, scores or streaks here (§6.9).</li>
+      <li>Archived foods keep B-005 behavior — the chip never resurrects an archived tile.</li>
+    </ul>
+    <div class="open"><b>Open — pet scope</b>The library is per-account, trials per-pet. The strip and chips render for the pet whose context the tab is in; a multi-pet account with two trials needs the strip to name the pet. Build question for the combined PR, not a blocker on the design.</div>
+  </div>
+</section>
+
+<!-- ============ B · Allowed-set screen ============ -->
+<section class="screen">
+  <div class="phone">
+    <div class="statusbar"><span>9:41</span><span>◧ ◔ ▮</span></div>
+    <div class="appbody">
+      <div class="screen-title">What Biscuit can eat</div>
+      <div class="screen-sub">Diet trial · day 12 of 28</div>
+      <div class="zone-label">Trial diet</div>
+      <div class="row">
+        <div class="rmain"><div class="rt">Royal Canin — Hydrolyzed Protein HP</div><div class="rs">Dry meal · on the list since Jul 19</div></div>
+      </div>
+      <div class="zone-label">Also allowed</div>
+      <div class="row">
+        <div class="rmain"><div class="rt">Royal Canin — HP treats</div><div class="rs">Treat · on the list since Jul 19</div></div>
+      </div>
+      <div class="row">
+        <div class="rmain"><div class="rt">Home-prepared — plain sweet potato</div><div class="rs">Snack · added Jul 31, day 12</div></div>
+      </div>
+      <div style="margin-top:18px">
+        <button class="btn primary">Add a food to the list</button>
+      </div>
+      <p style="font-size:12px;color:var(--text-tertiary-a);margin:12px 2px 0;">While the trial runs, Culprit records which feedings matched the trial diet and which didn't, with dates. That's the part your vet needs.</p>
+    </div>
+  </div>
+  <div class="annot">
+    <div class="eyebrow">Screen B</div>
+    <h2>"What Biscuit can eat" — the B-458 allowed-set screen</h2>
+    <p>Reached from the trial strip (A), the trial card, and food detail. Grouped by role, with <b>dated membership rendered as a fact</b> — sweet potato shows the day it entered the list, which is what makes the mid-trial add honest on the vet report.</p>
+    <ul>
+      <li>The C6 disclosure line (verbatim, LOCKED copy) anchors the screen — this is the surface where the itemisation is named.</li>
+      <li>"Add a food to the list" is the ruled-in mid-trial add (Screen C). Removal is a later slice — dated <code>allowed_until</code> exists in schema, but round 1 draws add only.</li>
+      <li>Empty "Also allowed" section renders a designed empty state, not a gap (Principle 5): <em>"Just the trial diet for now. If your vet okays an extra, add it here."</em></li>
+    </ul>
+  </div>
+</section>
+
+<!-- ============ C · Mid-trial add confirm ============ -->
+<section class="screen">
+  <div class="phone">
+    <div class="statusbar"><span>9:41</span><span>◧ ◔ ▮</span></div>
+    <div class="dim">
+      <div class="sheet">
+        <div class="grab"></div>
+        <div class="screen-title" style="font-size:19px">Add to Biscuit's trial list?</div>
+        <div class="kv"><span class="k">Food</span><span>Home-prepared — plain sweet potato</span></div>
+        <div class="kv"><span class="k">Joins the list</span><span>Today, Jul 31 · day 12</span></div>
+        <div class="kv"><span class="k">Earlier feedings</span><span>Keep the reading they already have</span></div>
+        <div style="margin-top:16px">
+          <button class="btn primary">Add to the list</button>
+          <button class="btn ghost">Not now</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="annot">
+    <div class="eyebrow">Screen C</div>
+    <h2>Mid-trial add — the confirm sheet</h2>
+    <p>Ruling 3's whole mechanism is §3.2's dated membership, exactly as shipped: a new <code>diet_trial_foods</code> row with <code>allowed_from</code> = today. The sheet states the two consequences and asks nothing else — role is derived from the food's type (<code>permittedRoleForFood</code>), never asked (Principle 1).</p>
+    <ul>
+      <li><b>"Earlier feedings keep the reading they already have"</b> is the load-bearing line: an add never rewrites history, so a sweet-potato feeding from day 5 stays an off-diet exposure on the report. Without this line the add reads as an amnesty.</li>
+      <li>Entry points: Screen B's button, and Screen D's action on food detail. Both land here.</li>
+      <li>No red path exists — declining just closes the sheet.</li>
+    </ul>
+    <div class="note"><b>Dr. Chen</b>The sheet is deliberately quiet about <em>whether adding is wise</em> — that's the vet's call, and copy that second-guesses it ("are you sure this fits the trial?") would judge the owner. The dated record is the safety mechanism.</div>
+  </div>
+</section>
+
+<!-- ============ D · Food detail ============ -->
+<section class="screen">
+  <div class="phone">
+    <div class="statusbar"><span>9:41</span><span>◧ ◔ ▮</span></div>
+    <div class="appbody">
+      <div class="screen-title">Plain sweet potato</div>
+      <div class="screen-sub">Home-prepared · snack</div>
+      <div class="kv"><span class="k">Trial</span><span style="color:var(--accent-ink);font-weight:600">On Biscuit's trial list · since Jul 31</span></div>
+      <div class="kv"><span class="k">Logged</span><span>6 times, last on Jul 29</span></div>
+      <div class="kv"><span class="k">Protein</span><span>—</span></div>
+      <div style="margin-top:18px;border-top:1px solid var(--border-a);padding-top:14px">
+        <div class="eyebrow" style="margin-bottom:8px">If not on the list</div>
+        <button class="btn ghost" style="margin:0">Add to Biscuit's trial list</button>
+      </div>
+    </div>
+  </div>
+  <div class="annot">
+    <div class="eyebrow">Screen D</div>
+    <h2>Food detail — the membership fact + the second add entry</h2>
+    <p>A single <b>Trial</b> row states membership as a dated fact. For a food <em>not</em> on the list, the row is simply absent (R1 — absence is not a verdict) and the add action appears instead, landing on Screen C's sheet.</p>
+    <ul>
+      <li>The B-351 contaminant note is unchanged and independent — it still fires only on a protein conflict. This row and that note never combine into a per-food verdict (C2).</li>
+      <li>Membership resolves via <code>matchAllowed</code> (R2), so a re-photographed bag that minted a new row still reads as on-list through the brand+product key.</li>
+    </ul>
+  </div>
+</section>
+
+<!-- ============ E–H · Picker variants ============ -->
+<section style="margin-top:64px">
+  <div class="eyebrow">Screens F–H · the unruled call</div>
+  <h2 style="font-size:20px;margin:6px 0 8px">Should the log-time picker say anything at all?</h2>
+  <p style="font-size:14px;color:var(--page-text-2);max-width:72ch">§6.4 permits the library to verdict because browsing is pre-decision; the picker is the moment of logging. Dr. Chen's constraint binds all three variants: nothing may gate the log or make an owner hesitate to record a transgression — an unlogged exposure is worse than the exposure. Pick one.</p>
+  <div class="variant-grid">
+    <div class="variant">
+      <h3>F — No cue (ship as-is)</h3>
+      <div class="phone" style="max-width:300px">
+        <div class="appbody">
+          <div class="zone-label">Biscuit's rotation</div>
+          <div class="tilegrid">
+            <div class="tile"><span class="brand">Royal Canin</span><span class="prod">Hydrolyzed Protein HP</span><span class="type">Meal</span></div>
+            <div class="tile"><span class="brand">Milk-Bone</span><span class="prod">Original biscuits</span><span class="type">Treat</span></div>
+          </div>
+        </div>
+      </div>
+      <p style="font-size:13px;color:var(--page-text-2)">The picker stays a pure record surface; the off-diet flag remains post-commit on the completion card. Safest against log suppression; does nothing for prevention.</p>
+    </div>
+    <div class="variant">
+      <h3>G — Quiet glyph on allowed tiles (B-439's parked shape)</h3>
+      <div class="phone" style="max-width:300px">
+        <div class="appbody">
+          <div class="zone-label">Biscuit's rotation</div>
+          <div class="tilegrid">
+            <div class="tile"><span class="glyph">✓</span><span class="brand">Royal Canin</span><span class="prod">Hydrolyzed Protein HP</span><span class="type">Meal</span></div>
+            <div class="tile"><span class="brand">Milk-Bone</span><span class="prod">Original biscuits</span><span class="type">Treat</span></div>
+          </div>
+        </div>
+      </div>
+      <p style="font-size:13px;color:var(--page-text-2)">A positive cue, not a warning — allowed tiles carry a 14px glyph, others are untouched. Risk: at pick time, a missing glyph is read as "don't", which edges toward a log-time verdict by implication.</p>
+    </div>
+    <div class="variant">
+      <h3>H — Pinned "On the trial list" section</h3>
+      <div class="phone" style="max-width:300px">
+        <div class="appbody">
+          <div class="zone-label">On the trial list</div>
+          <div class="tilegrid">
+            <div class="tile"><span class="brand">Royal Canin</span><span class="prod">Hydrolyzed Protein HP</span><span class="type">Meal</span></div>
+            <div class="tile"><span class="brand">Home-prepared</span><span class="prod">Plain sweet potato</span><span class="type">Snack</span></div>
+          </div>
+          <div class="zone-label">Biscuit's rotation</div>
+          <div class="tilegrid">
+            <div class="tile"><span class="brand">Milk-Bone</span><span class="prod">Original biscuits</span><span class="type">Treat</span></div>
+          </div>
+        </div>
+      </div>
+      <p style="font-size:13px;color:var(--page-text-2)">Ordering, not marking — the allowed set becomes the top shelf during a trial, everything else stays reachable below, unmarked. Composes with B-357/B-396 (the rotation shelf's trial-blindness); costs the rotation shelf its top slot for the trial's duration.</p>
+    </div>
+  </div>
+  <div class="open" style="max-width:72ch"><b>PM call — deferred by ruling 2</b>F is the team's floor (already true today). G and H are the candidates; H is the only one that helps without marking anything. Whichever wins, the completion-card flag stays — the picker never replaces the post-commit read.</div>
+</section>
+
+<footer>
+  Culprit · food library trial-awareness · mock round 1 · 2026-07-31 · rides PR #520 · pairs with docs/sessions/2026-07-31-food-library-trial-awareness.md and the B-616 backlog row. App tokens fixed from constants/theme.ts; page chrome theme-aware.
+</footer>
+</div>

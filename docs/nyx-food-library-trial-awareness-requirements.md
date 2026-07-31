@@ -1,0 +1,112 @@
+# Culprit — Food Library Trial-Awareness Requirements (B-616 + B-458 combined build)
+
+**Version:** 1.0 — BUILD-READY | **Last Updated:** 2026-07-31 | 🌱 Living
+
+**Origin:** PM dogfood feedback 2026-07-30 ("the Food library has almost no awareness of the foods eligible during the diet trial") → same-day persona session → mock round 1 (`docs/culprit-food-library-trial-mockups.html`) → PM review + rulings 2026-07-31. Session record: `docs/sessions/2026-07-31-food-library-trial-awareness.md`. Backlog: **B-616** (this track) + **B-458** (the two list screens, absorbed as the combined build's core) + **B-475** (consumed by §4.6).
+
+**Every product decision is ruled. The build is gated on one engineering item: B-556** (the `narrowRole` disagreement — `lib/trialContaminant.ts` maps an unknown role to `primary_diet` where `lib/dietTrialFacts.ts` and `generate-report/trial.ts` map it to `permitted_other`; flagged as blocking before another surface reads the allowed set). PR 0 closes it.
+
+---
+
+## §0 Decision record
+
+| # | Decision | Ruling | Authority |
+|---|---|---|---|
+| D1 | Sequencing | **Promoted to Now; combined build with B-458**, gated on B-556 | PM, 2026-07-31 |
+| D2 | Marking polarity | **Positive only.** The library names the list on foods that are ON it; no food is ever marked off-diet (closed-world would mark ~the whole pantry), and a mark's absence is never a verdict either way (G2, two-sided) | Team, from spec §5.2/§2.1; PM-reviewed in mock |
+| D3 | Membership predicate | **One predicate: `matchAllowed` (`lib/dietTrial.ts`)** — `food_item_id` first, then the case-folded brand+product key. No surface re-derives membership (the `report.ts:2246` third-definition lesson; the §5.4 re-photographed-bag hazard) | Standing rule, restated |
+| D4 | Log-time picker | **Variant H ratified: a pinned "On the trial list" section at the top of the FoodPicker while a trial is active.** Ordering, not marking — no glyphs, no warnings, no tile chrome; everything else stays reachable below, unmarked. The completion-card post-commit flag is unchanged and is never replaced by the picker. **B-439's per-tile trial-marker option (variant G) is closed** | PM, 2026-07-31 (mock round 1: "H is the clearest"); team concurred — H is the only variant that helps without marking anything, so the §6.4/Dr.-Chen log-suppression constraint holds by construction |
+| D5 | Mid-trial add | **In.** An owner can add a food to the allowed set mid-trial. Mechanism is §3.2's dated membership exactly as shipped: new `diet_trial_foods` row, `allowed_from` = today, role derived via `permittedRoleForFood` (never asked — Principle 1). **Feedings before today keep the reading they already have** — an add never rewrites history, and the confirm sheet says so | PM, 2026-07-31 |
+| D6 | Foods-tab entry | A **trial strip** under the Foods header while a trial is active (day counter + "N foods on the trial list"), opening the allowed-set screen | Mock round 1, PM-reviewed |
+| D7 | Pet scope | The library is per-account; trials are per-pet. **All trial chrome (strip, chips, picker section, detail row) renders for the active pet context only**, and the strip names the pet when the account has >1 pet. Build-time detail: the Foods tab and picker already operate in a pet context (`getRecentFoods(petId…)`, stats); the trial reads join on that same `pet_id` | Team; PM-reviewed in mock (flagged as the open build question; resolved: pet-context-scoped) |
+| D8 | Mid-trial removal | **Out of v1.** Schema supports dated removal (`allowed_until`); no UI writes it in this track. Backlog residual on the B-616 row | Team; round 1 draws add only |
+
+## §1 The rules that govern every surface here
+
+- **R1 — positive marking only** (D2). Copy is always about the *list* ("Trial diet", "Also allowed", "On Biscuit's trial list · since Jul 31"), never about the owner or the pet's behavior, never praise/blame (the C6 register), never a warning.
+- **R2 — one predicate** (D3). Every membership render calls `matchAllowed` with the same dated `membershipOn` gating the classifier uses. A surface that can't hydrate the allowed set renders *nothing* — never a guess, never an "unknown" badge.
+- **R3 — §6.4.** A pre-decision surface may verdict; a record surface may not. The library/detail/allowed-set screens browse → they may speak. The picker logs → it may only *order* (D4); nothing gates, warns, or judges at log time. Dr. Chen's constraint, restated because it decided D4: an owner must never hesitate to log a transgression — an unlogged exposure is worse than the exposure.
+- **Standing guardrails unchanged by this track:** G2 (no negative claim at any coverage, two-sided), §6.9 (no coverage scores/streaks/badges — the chips here mark *identity*, not performance), C2 (trial-diet self-contamination stays a trial-level standing fact; the B-351 contaminant note is independent and untouched), B-005 (archive filters library/picker reads only; a chip never resurrects an archived tile), §6.7 record-and-continue.
+
+## §2 Surfaces
+
+### §2.1 Foods tab (mock screen A)
+- **FR-1** While the pet's trial is active (`isTrialRunning`, never raw `status`), render the trial strip under the header: `Diet trial — day N of M` / `K foods on the trial list`, tap → §2.2. Multi-pet accounts prefix the pet's name (D7).
+- **FR-2** Tiles whose food is on the allowed set today carry a chip: `Trial diet` (`primary_diet`) or `Also allowed` (any permitted role). All other tiles are untouched (R1).
+- **FR-3** No coverage, adherence, or count-of-matches appears anywhere on this tab (§6.9).
+- **FR-4** Trial ends (by `isTrialRunning` going false): strip and chips disappear on next render — no stale trial chrome, no farewell state.
+
+### §2.2 Allowed-set screen — "What {pet} can eat" (mock screen B; the B-458 first half)
+- **FR-5** Reached from: the trial strip (FR-1), the trial card's existing action surface, and food detail. Lands by passing a handler to `DietTrialCard` per B-458's note — no card change.
+- **FR-6** Rows grouped `Trial diet` / `Also allowed`, each row a dated membership fact (`on the list since <date>`; a mid-trial add reads `added <date>, day N`).
+- **FR-7** The C6 LOCKED disclosure line renders on this screen, verbatim: *"While the trial runs, Culprit records which feedings matched the trial diet and which didn't, with dates. That's the part your vet needs."*
+- **FR-8** Primary action: `Add a food to the list` → §2.3.
+- **FR-9** Empty "Also allowed" group renders a designed empty state (Principle 5): *"Just the trial diet for now. If your vet okays an extra, add it here."*
+
+### §2.3 Mid-trial add (mock screen C)
+- **FR-10** Entry: FR-8, and food detail's action (FR-14). Food selection reuses `FoodPicker` in selection mode (the start-modal machinery).
+- **FR-11** Confirm sheet states exactly three facts — the food, `Joins the list: Today, <date> · day N`, `Earlier feedings: Keep the reading they already have` — and two actions, `Add to the list` / `Not now`. No role question, no wisdom-check copy (D5; Dr. Chen note in the mock: the dated record is the safety mechanism, second-guessing the vet's call would judge the owner).
+- **FR-12** Write path: one new function in `lib/dietTrialSetup.ts` (`addTrialFood`), single insert + mirror + sync flush, reusing `buildTrialRows`'s row shape with `allowed_from` = today. Soft-path only; no UPDATE of existing rows.
+
+### §2.4 Food detail (mock screen D)
+- **FR-13** A `Trial` kv row renders the dated membership fact for a food on the list. For a food not on the list the row is **absent** (R1) — never "Not on the list".
+- **FR-14** A food not on the list shows `Add to {pet}'s trial list` → §2.3's sheet.
+- **FR-15** The B-351 contaminant note is untouched and may co-render with FR-14 (a protein-conflicting food can still be added — the vet may have sanctioned it; the note and the add never merge into a verdict, C2).
+
+### §2.5 FoodPicker — variant H (mock screen H; D4)
+- **FR-16** While the pet's trial is active, a pinned `On the trial list` section renders at the top of the picker (above the rotation shelf), containing the allowed set's tiles. Tiles are visually identical to every other tile — the section label is the only signal.
+- **FR-17** The rotation shelf and library zones render unchanged below; nothing is removed, de-emphasized, or marked. (B-357's shelf-annotation direction is superseded by H for the trial case; B-396 unaffected.)
+- **FR-18** Selection-mode uses of the picker (start modal, §2.3) do **not** render the pinned section — it would be circular while editing the list itself.
+- **FR-19** The post-commit completion-card flag is unchanged (R3).
+
+### §2.6 "Outside the trial diet" — the B-458 second half
+The exposures list screen ships in this combined build against **`explainVerdict`** (B-475 — build it against that module, never new copy), reachable from the trial card's declared `view_exposures` action. Its content contract is already ruled (G2 phrasing, floor-never-total, per-feeding reasons via the rung that fired); this spec adds nothing to it beyond sequencing (PR 4).
+
+## §3 Data & predicate
+
+- **No schema change.** `diet_trial_foods` (migration 040) already carries roles + dated membership; the mirror and sync queue already handle the table. Zero migrations in this track.
+- **Reads:** one hook (`useTrialAllowedSet(petId)` or equivalent) resolving the active trial + its dated set from the local mirror, exposing `matchAllowed`-keyed lookups for FR-2/FR-13/FR-16. Client-local; no new server surface, no RLS change (existing policies cover; `rls-privacy-reviewer` not required, `code-reviewer` is).
+- **Writes:** FR-12 only.
+- **Gate:** **PR 0 = B-556.** Align `narrowRole` across the three readers before this track's first read ships.
+
+## §4 Copy pack (verbatim; `nyx-voice` reviewed)
+
+| Surface | String |
+|---|---|
+| Trial strip | `Diet trial — day {n} of {m}` / `{k} foods on the trial list` |
+| Chips | `Trial diet` · `Also allowed` |
+| Detail row | `On {pet}'s trial list · since {date}` |
+| Add sheet title | `Add to {pet}'s trial list?` |
+| Add sheet rows | `Joins the list — Today, {date} · day {n}` · `Earlier feedings — Keep the reading they already have` |
+| Add sheet actions | `Add to the list` · `Not now` |
+| Empty extras | `Just the trial diet for now. If your vet okays an extra, add it here.` |
+| Picker section | `On the trial list` |
+| C6 line (LOCKED, §2.2 only) | `While the trial runs, Culprit records which feedings matched the trial diet and which didn't, with dates. That's the part your vet needs.` |
+
+No exclamation marks; no "safe"/"unsafe"; no "picky"; nothing about the owner.
+
+## §5 QA edge matrix
+
+1. **Archived allowed food** — tile hidden per B-005; §2.2 still lists it (a list membership is a trial fact, not a library read) with the food's name resolving (the personas.md line 244 rule).
+2. **`allowed_until` set (future data)** — membership is date-gated; a removed food loses chip/row/section from that date. (No UI writes it in v1 — D8 — but reads must honor it.)
+3. **Trial end** — FR-4; picker section gone; detail row gone; §2.2 unreachable via strip (card lifecycle unchanged).
+4. **Multi-pet** — pet A's trial renders no chrome in pet B's context (D7).
+5. **Unhydrated set** (fresh install, sync pending) — render nothing, never a guess (R2).
+6. **Re-photographed bag** (new `food_item_id`, same brand+product) — still reads on-list via the key arm of `matchAllowed` (D3).
+7. **Add during day 1 vs day 40** — `day N` in the sheet always matches the card's counter (one day-math source, `lib/analytics.ts:838`'s helper).
+
+## §6 PR plan
+
+| PR | Scope | Gates |
+|---|---|---|
+| 0 | **B-556** — one `narrowRole`, three consumers, regression test | `code-reviewer` |
+| 1 | Lib layer: allowed-set read hook + `addTrialFood` write + tests | `code-reviewer`; tests mandatory (store/lib rule) |
+| 2 | §2.2 + §2.3 (allowed-set screen + add flow) — the B-458 first half | `pm-feature-review` (Jordan), `nyx-voice` |
+| 3 | §2.1 + §2.4 (Foods tab strip/chips + detail row/action) | `pm-feature-review`, `nyx-voice` |
+| 4 | §2.5 picker section (H) + §2.6 exposures screen against `explainVerdict` (closes B-458 + B-475) | `pm-feature-review`; `clinical-guardrails` on the exposures copy |
+
+PRs 2–4 are UI over PR 1's lib layer; 2/3 are parallel-safe (disjoint files) once 1 lands. No `adversarial-reviewer` line: this track computes nothing — it renders the shipped predicate's answers. If any PR grows its own membership logic, that exemption dies with it.
+
+## §7 Out of scope
+
+Mid-trial removal UI (D8) · any off-diet marking anywhere (D2, permanent) · B-357's shelf annotation (superseded by H for the trial case; the row stays for the no-trial recency question) · B-439's glyph (closed by D4) · med-picker analog (B-355's seam — separate call) · any coverage/adherence rendering (§6.9, permanent).
