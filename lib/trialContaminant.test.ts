@@ -79,6 +79,7 @@ function ctx(
     trialFoodLabel: 'Zignature Duck',
     primaryCount: 1,
     primaryResolved: 1,
+    hasUnreadableRole: false,
     trialFoodCompleteness: { complete: true, provenance: 'panel_read' },
     ...over,
   };
@@ -495,6 +496,49 @@ describe('an unknown trial diet discloses that the check is off', () => {
 
     const designatedNone = trialDietNote(UNKNOWN_DIET());
     expect(designatedNone?.body).toContain('no main protein set');
+  });
+
+  it('B-556 — an allowed set that is PRESENT but has no readable trial diet does not claim there is no food', () => {
+    // The state B-556 makes reachable: `narrowTrialFoodRole` sends a role this
+    // build cannot read to `permitted_other`, so a trial can hold rows while
+    // `primaryCount` is 0. The old copy asserted "no food attached yet" — an
+    // absence the record contradicts, on the surface that also renders the
+    // trial's own food label two lines up.
+    const unreadableRole = trialDietNote(
+      ctx({ primaryCount: 0, primaryResolved: 0, hasUnreadableRole: true }, { role: 'permitted_other' }),
+    );
+    expect(unreadableRole?.title).toContain('can’t check other foods');
+    expect(unreadableRole?.body).not.toContain('no food attached');
+    expect(unreadableRole?.body).toContain('doesn’t recognise what role');
+    // And it must not promise a fix it cannot deliver: the row synced fine.
+    expect(unreadableRole?.body).not.toContain('syncs');
+
+    // The genuinely-empty set keeps the sentence that is true of it.
+    const noFood = trialDietNote(ctx({ allowedFoods: [], primaryCount: 0, primaryResolved: 0 }));
+    expect(noFood?.body).toContain('no food attached');
+  });
+
+  it('B-556 — "no readable diet" and "no diet designated" are not the same sentence', () => {
+    // The adversarial probe's S2: an allowed set holding ONLY a permitted treat
+    // reaches the same branch, and the first cut of this change gave it the
+    // unreadable-role sentence — which reads as confusion among several foods
+    // when the truth is that the owner never designated one. Same reason
+    // `primaryResolved` exists one state over.
+    const extrasOnly = trialDietNote(
+      ctx(
+        { primaryCount: 0, primaryResolved: 0, hasUnreadableRole: false },
+        { role: 'permitted_treat' },
+      ),
+    );
+    expect(extrasOnly?.body).toContain('None of this trial’s foods is marked as the diet itself');
+    expect(extrasOnly?.body).not.toContain('doesn’t recognise what role');
+    expect(extrasOnly?.body).not.toContain('no food attached');
+
+    // A supplement-only set is the same fact and gets the same sentence.
+    const supplementOnly = trialDietNote(
+      ctx({ primaryCount: 0, primaryResolved: 0, hasUnreadableRole: false }, { role: 'supplement' }),
+    );
+    expect(supplementOnly?.body).toBe(extrasOnly?.body);
   });
 });
 

@@ -50,6 +50,7 @@ import {
   contaminationFindings,
   mayClaimAllMatched,
   mayStateRecordClean,
+  narrowTrialFoodRole,
   trialEffectiveEndDayIndex,
   trialFoodKey,
   CHALLENGE_WINDOW_DAYS,
@@ -1157,27 +1158,12 @@ function mapAllowedFoods(rows: readonly TrialFoodSource[]): AllowedFood[] {
     // back to the id rather than colliding on the bare separator (`isUsableFoodKey`).
     foodKey: r.brand !== null || r.productName !== null ? trialFoodKey(r.brand, r.productName) : null,
     label: r.foodLabel,
-    role: normaliseRole(r.role),
+    role: narrowTrialFoodRole(r.role),
     allowedFrom: r.allowedFrom,
     allowedUntil: r.allowedUntil,
     primaryProtein: r.primaryProtein,
     proteins: r.proteins ?? [],
   }))
-}
-
-/** An unrecognised role must NOT become `primary_diet`: that would let an unknown
- *  value widen the sanctioned protein set, which is the one direction §5.5 D-A
- *  forbids. It falls to `permitted_other` — permitted, but never diet-defining. */
-function normaliseRole(role: string): TrialFoodRole {
-  switch (role) {
-    case 'primary_diet':
-    case 'permitted_treat':
-    case 'permitted_other':
-    case 'supplement':
-      return role
-    default:
-      return 'permitted_other'
-  }
 }
 
 function toTrialFeeding(e: TrialMealSource): TrialFeeding {

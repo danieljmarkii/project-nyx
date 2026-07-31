@@ -26,6 +26,7 @@
 // so an owner-visible fix (ending the other trial) re-arms a quarantined push
 // rather than leaving a permanently-parked row.
 import { getDb } from './db';
+import type { TrialFoodRole } from './dietTrial';
 import { trialStopReasons, type TrialOutcome } from './dietTrialCompletion';
 import { syncPendingDietTrials, syncPendingDietTrialFoods } from './sync';
 import { useSyncStore } from '../store/syncStore';
@@ -111,7 +112,11 @@ export function defaultDurationDays(
 // capturable in v1: it is not inferable from anything the library holds, and
 // asking for it would add a per-food decision to a screen whose whole acceptance
 // criterion is fifteen seconds.
-export type TrialFoodRole = 'primary_diet' | 'permitted_treat' | 'permitted_other' | 'supplement';
+// B-556: ALIASED, not re-declared. This was a second structural copy of the
+// union — identical today, and structurally compatible, so nothing broke; but a
+// member added to the schema enum would have landed in one copy and not the
+// other, which is the same shape of drift B-556 fixed on the READ side.
+export type { TrialFoodRole } from './dietTrial';
 
 // Role of a permitted extra, INFERRED from a fact the library already carries
 // rather than asked for. `food_type = 'treat'` → permitted_treat, everything else
