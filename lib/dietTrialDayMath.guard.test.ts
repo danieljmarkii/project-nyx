@@ -138,17 +138,21 @@ describe('B-421 — one diet-trial day counter, not four', () => {
     expect(src).not.toMatch(/const loadDietTrial/);
     expect(src).toMatch(/resolveTrialCard\(/);
 
-    // The one day-division left in this file belongs to regimenDaysElapsed — a
-    // different feature's counter, deliberately left alone and annotated (B-441).
-    const divisions = readCode('app/(tabs)/profile.tsx')
-      .match(new RegExp(DAY_DIVISION.source, 'g')) ?? [];
-    expect(divisions).toHaveLength(1);
+    // B-441 closed the one carve-out this assertion used to hold open. The regimen
+    // counter was the last day math on this screen — a different feature's counter,
+    // left behind by B-421 on scope grounds and carrying the identical defect. It
+    // now lives in `lib/medications` and routes through the same primitive, so the
+    // screen holds NO day arithmetic at all and the count is exact, not a budget.
+    const code = readCode('app/(tabs)/profile.tsx');
+    expect(code).not.toMatch(DAY_DIVISION);
+    expect(code).not.toMatch(MANUAL_MIDNIGHT);
+    expect(src).not.toMatch(/function regimenDaysElapsed/);
+    expect(code).toMatch(/regimenDaysElapsed\(/); // delegates instead
 
-    // The only hand-rolled midnight left in this file is regimenDaysElapsed — a
-    // different feature's counter, deliberately left alone and annotated (B-441).
-    const occurrences = src.match(new RegExp(MANUAL_MIDNIGHT.source, 'g')) ?? [];
-    expect(occurrences).toHaveLength(2); // both inside regimenDaysElapsed
-    expect(src).toMatch(/function regimenDaysElapsed/);
+    // The counter's DISPLAY twin: `started_at` is a DATE, and naming it with
+    // `new Date(key)` reads UTC midnight, so it printed the previous day for anyone
+    // behind UTC. Parsing a stored day key belongs to `dayKeyToLocalDate`.
+    expect(code).not.toMatch(/new Date\(\s*reg\.started_at\s*\)/);
   });
 
   it('the trial-facts loader DELEGATES coverage rather than keying its own day', () => {

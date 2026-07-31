@@ -41,18 +41,21 @@ import { resolveTrialCard } from '../../lib/dietTrialCard';
 import { extensionDays, nextTargetDays } from '../../lib/dietTrialCompletion';
 import { extendTrial } from '../../lib/dietTrialSetup';
 import { getDietTrialProgress } from '../../lib/analytics';
-import { petPronouns } from '../../lib/utils';
+import { dayKeyToLocalDate, petPronouns } from '../../lib/utils';
 import { Pet } from '../../store/petStore';
 import {
   MEDICATION_ROUTE_OPTIONS, computeRegimenCompliance, regimenComplianceLine,
-  regimenFlagLine, attributeDosesToRegimens,
+  regimenFlagLine, attributeDosesToRegimens, regimenDaysElapsed,
   type AdherenceTally, type RegimenCompliance, type AttributableDose,
 } from '../../lib/medications';
 
 const PET_PHOTO_BUCKET = 'nyx-pet-photos';
 
 interface RegimenDisplay extends Regimen {
-  daysElapsed: number;
+  // null = the start day is unreadable, so the elapsed count is unknown (B-441).
+  daysElapsed: number | null;
+  // "Day 5 of 14" / "Started Jun 10", or null when neither can be named honestly.
+  dayLine: string | null;
   tally: AdherenceTally;
   compliance: RegimenCompliance;
   complianceLine: string;
@@ -70,9 +73,22 @@ function buildRegimenDisplay(reg: Regimen, tally: AdherenceTally): RegimenDispla
   const compliance = computeRegimenCompliance({
     dosesPerDay: reg.doses_per_day, daysElapsed, tally,
   });
+  // "Day X of Y" only while the course is within its planned window; once it has run
+  // past target_duration (still active — the owner hasn't ended it) the "of Y" is
+  // nonsense ("Day 30 of 7"), so fall back to the ongoing "Started …" format. An
+  // unknown elapsed count (B-441) takes the same fallback, and if the start day is
+  // unreadable too the line is null — the row omits it rather than naming a day it
+  // cannot compute.
+  const dayLine =
+    daysElapsed != null &&
+    reg.target_duration_days != null &&
+    daysElapsed <= reg.target_duration_days
+      ? `Day ${daysElapsed} of ${reg.target_duration_days}`
+      : formatRegimenStart(reg.started_at);
   return {
     ...reg,
     daysElapsed,
+    dayLine,
     tally,
     compliance,
     complianceLine: regimenComplianceLine(compliance),
@@ -96,20 +112,20 @@ function routeLabel(route: string | null): string | null {
   return MEDICATION_ROUTE_OPTIONS.find((o) => o.value === route)?.label ?? null;
 }
 
-// Whole days the regimen has run, ≥1. NOTE (B-421): this carries the local-midnight
-// arithmetic the diet-trial card used to duplicate, including its flaw — a date-only
-// `started_at` is parsed as UTC midnight before being floored to LOCAL midnight, so
-// for anyone behind UTC the start lands on the previous local day and the count reads
-// one too high. The trial counter now routes through `lib/utils.localDayIndexOf`,
-// which indexes a DATE verbatim; this one was left alone because it is a different
-// feature's counter and feeds clinical-guardrails compliance copy that has no tests
-// here. Route it through the same primitive when regimens are next touched — B-441.
-function regimenDaysElapsed(startedAt: string): number {
-  const start = new Date(startedAt);
-  start.setHours(0, 0, 0, 0);
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  return Math.max(1, Math.floor((today.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1);
+// B-441: the regimen day counter used to live here and carried the local-midnight
+// arithmetic B-421 removed from the trial counter. It now lives in `lib/medications`
+// and routes through the same `lib/utils` day-boundary primitive every other counter
+// uses, so this screen holds no day math of its own — see the B-421 guard test.
+
+// "Started Jul 31" for a regimen outside its planned window. `started_at` is a
+// Postgres DATE, so it is parsed with `dayKeyToLocalDate` rather than `new Date()`:
+// the latter reads it as UTC midnight and would NAME the previous day for anyone
+// behind UTC — the display twin of the counter bug above (B-441). Returns null for an
+// unreadable date so the row omits the line rather than printing "Started Invalid Date".
+function formatRegimenStart(startedAt: string): string | null {
+  const d = dayKeyToLocalDate(startedAt);
+  if (!d) return null;
+  return `Started ${d.toLocaleDateString([], { year: 'numeric', month: 'short', day: 'numeric' })}`;
 }
 
 // Age display lives in lib/age.formatAge now (B-251 PR 9) so the honesty rule has
@@ -825,15 +841,7 @@ export default function ProfileScreen() {
                   <Divider style={styles.conditionDivider} />
                   <Text style={styles.medName}>{reg.drug_name}</Text>
                   {meta ? <Text style={styles.medMeta}>{meta}</Text> : null}
-                  <Text style={styles.medDays}>
-                    {/* "Day X of Y" only while the course is within its planned
-                        window; once it's run past target_duration (still active —
-                        owner hasn't ended it) the "of Y" is nonsense ("Day 30 of
-                        7"), so fall back to the ongoing "Started …" format. */}
-                    {reg.target_duration_days != null && reg.daysElapsed <= reg.target_duration_days
-                      ? `Day ${reg.daysElapsed} of ${reg.target_duration_days}`
-                      : `Started ${new Date(reg.started_at).toLocaleDateString([], { year: 'numeric', month: 'short', day: 'numeric' })}`}
-                  </Text>
+                  {reg.dayLine ? <Text style={styles.medDays}>{reg.dayLine}</Text> : null}
                   {reg.compliance.percent != null && (
                     <View style={styles.progressTrack}>
                       <View style={[styles.progressBar, { width: `${reg.compliance.percent}%` }]} />

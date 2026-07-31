@@ -24,6 +24,7 @@ import { theme } from '../../constants/theme';
 import { WhorlSpinner } from '../brand/WhorlSpinner';
 import { supabase } from '../../lib/supabase';
 import { getLibraryMedications, PickerMedication } from '../../lib/db';
+import { dayKeyToLocalDate, toLocalDayKey } from '../../lib/utils';
 import {
   MEDICATION_ROUTE_OPTIONS, buildRegimenPayload, canSaveRegimen,
   type RegimenFormValues,
@@ -140,7 +141,14 @@ export function AddMedicationModal({
       setScheduleNotes(existingRegimen.schedule_notes ?? '');
       setIndication(existingRegimen.indication ?? '');
       setPrescribedBy(existingRegimen.prescribed_by ?? '');
-      setStartedAt(existingRegimen.started_at ? new Date(existingRegimen.started_at) : new Date());
+      // `started_at` is a DATE, so it is read back through `dayKeyToLocalDate` — a bare
+      // `new Date(key)` parses UTC midnight, which for anyone BEHIND UTC seeds the
+      // picker (and the label above it) with the PREVIOUS day, and re-saving would then
+      // walk the stored start date backwards one day per edit (B-441).
+      setStartedAt(
+        (existingRegimen.started_at ? dayKeyToLocalDate(existingRegimen.started_at) : null)
+          ?? new Date(),
+      );
       setTargetDuration(
         existingRegimen.target_duration_days != null
           ? String(existingRegimen.target_duration_days)
@@ -205,7 +213,11 @@ export function AddMedicationModal({
       scheduleNotes,
       indication,
       prescribedBy,
-      startedAt: startedAt.toISOString().split('T')[0],
+      // The DATE the owner picked, keyed from its LOCAL components (B-441). It used to
+      // be `toISOString().split('T')[0]`, which is the UTC day: for anyone AHEAD of UTC
+      // local midnight is still yesterday in UTC, so picking "today" in Sydney stored
+      // YESTERDAY and every day counter built on it read one too high forever after.
+      startedAt: toLocalDayKey(startedAt),
       // 'ongoing' always saves null; 'fixed' saves the entered days (still null if the
       // field's left blank/zero, so a "Set an end" with no number never fakes a course).
       targetDurationDays:
