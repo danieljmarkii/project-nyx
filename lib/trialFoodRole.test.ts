@@ -128,15 +128,59 @@ describe('B-556 drift guard — one narrower, not four', () => {
   const root = join(__dirname, '..');
   const read = (rel: string) => readFileSync(join(root, rel), 'utf8');
 
+  /**
+   * Every function in `src` that RETURNS a `TrialFoodRole`, by name.
+   *
+   * KEYED ON THE RETURN-TYPE ANNOTATION, NOT ON THE `function` KEYWORD, and the
+   * first cut of this guard was keyed on the keyword. `code-reviewer` broke it
+   * the honest way — it appended an arrow-function narrower reproducing the
+   * pre-fix bug verbatim (unknown role → `primary_diet`, the exact
+   * reassurance-direction hazard this whole PR exists to remove) and the suite
+   * still passed 9/9. A guard whose headline claim is "fails the build on a
+   * fourth narrower anywhere in the tree" cannot be blind to the declaration
+   * style the next author happens to reach for.
+   *
+   * `): TrialFoodRole` is the one token sequence all three forms share —
+   * `function f(…): T`, `const f = (…): T =>`, and the method shorthand
+   * `f(…): T {`. It cannot collide with a PARAMETER of that type (`f(role:
+   * TrialFoodRole): number` has no `)` before the colon) nor with a type alias
+   * (`type F = (x) => TrialFoodRole` uses `=>`), so the annotation is a reliable
+   * marker for an implementation that decides a role.
+   */
+  function declaredRoleReturners(src: string): string[] {
+    const names: string[] = [];
+    for (const m of src.matchAll(/\)\s*:\s*TrialFoodRole\b/g)) {
+      // Walk back from the annotation's `)` to its matching `(`, so a nested
+      // paren in the parameter list cannot end the scan early.
+      let depth = 0;
+      let i = src.indexOf(')', m.index!);
+      for (; i >= 0; i--) {
+        if (src[i] === ')') depth++;
+        else if (src[i] === '(') { depth--; if (depth === 0) break; }
+      }
+      if (i < 0) continue;
+      const before = src.slice(0, i);
+      // `function foo(` / `foo(` (method shorthand) — the identifier sits
+      // immediately before the parameter list.
+      const direct = before.match(/(?:function\s+)?([A-Za-z_$][\w$]*)\s*$/);
+      if (direct) { names.push(direct[1]); continue; }
+      // `const foo = (` / `const foo: Fn = async (` — an arrow, so the name is
+      // back past the `=` and any type annotation.
+      const arrow = before.match(
+        /(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*(?::[^=]*)?=\s*(?:async\s+)?$/,
+      );
+      if (arrow) names.push(arrow[1]);
+    }
+    return names;
+  }
+
   it.each(CONSUMERS)('%s narrows role only via the shared function', (rel) => {
     const src = read(rel);
     expect(src).toContain('narrowTrialFoodRole');
 
-    // A local narrower is a `function <name>(...): TrialFoodRole`. The shared one
-    // is imported, never declared, so any declaration returning the type in a
-    // consumer is a second answer to the question by definition.
-    const declarations = [...src.matchAll(/function\s+(\w+)\s*\([^)]*\)\s*:\s*TrialFoodRole\b/g)];
-    expect(declarations.map((m) => m[1])).toEqual([]);
+    // The shared narrower is imported, never declared, so ANY function in a
+    // consumer that returns the type is a second answer to the question.
+    expect(declaredRoleReturners(read(rel))).toEqual([]);
   });
 
   it('no consumer re-lists the role set (the other way a second answer appears)', () => {
@@ -172,9 +216,8 @@ describe('B-556 drift guard — one narrower, not four', () => {
           if (['node_modules', '.git', '.expo', 'ios', 'android'].includes(entry.name)) continue;
           walk(rel);
         } else if (/\.tsx?$/.test(entry.name) && !/\.test\.tsx?$/.test(entry.name)) {
-          for (const m of readFileSync(join(root, rel), 'utf8')
-            .matchAll(/function\s+(\w+)\s*\([^)]*\)\s*:\s*TrialFoodRole\b/g)) {
-            if (!EXEMPT.has(m[1])) offenders.push(`${rel}:${m[1]}`);
+          for (const name of declaredRoleReturners(readFileSync(join(root, rel), 'utf8'))) {
+            if (!EXEMPT.has(name)) offenders.push(`${rel}:${name}`);
           }
         }
       }
