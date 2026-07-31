@@ -69,3 +69,9 @@ One real worry: **the count only advances when I log.** If I give a dose and for
 - **B-614** filed (`Next`, keyed to the B-394 design session).
 - No code changed; B-441 re-flagged as the immediate cheap fix that addresses half the observed misbehavior regardless of this decision.
 - Recommendation: PM rules the four decisions above (or defers them into the design session), then sequence = B-441 fix → B-394 design session (now including B-614) → additive schema PR.
+
+## Addendum — 2026-07-31: PM rulings + requirements finalized (same session, continued)
+
+The PM ruled: B-441 closes in its own session; entry default unit delegated to the team (ruled: **days**, flipping to doses when B-615's label prefill reads a quantity); the pace concept is **punted** from v1 entirely; the B-614 build runs in its own session. The count-semantics conflict was then put to the PM directly and ruled: **therapy delivered** — the counter advances on `given + partial` (matching the report's shipped `administered`), never on refused/missed/unrated/unconfirmed, with the existing flag line keeping Sam's bottle number visible.
+
+With every gate closed, the team convened on requirements and produced **`docs/nyx-medication-dose-duration-requirements.md` v1.0 BUILD-READY** — decision record D1–D7, schema (migration 049, one-denomination CHECK), the single `dosesTowardTarget` predicate with property tests, entry + card specs, verified seams (vet report / Ask / generate-signal need **no** changes in v1 — checked against code, not assumed), the §8 QA matrix, and the 4-PR plan with the build session's kickoff prompt. Filed **B-615** (label-quantity prefill, `Later`); updated B-614's row to build-ready; registered the doc in CLAUDE.md's Read-These table. All on this PR's branch.
