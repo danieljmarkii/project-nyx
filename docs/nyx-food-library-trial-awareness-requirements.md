@@ -1,6 +1,7 @@
 # Culprit — Food Library Trial-Awareness Requirements (B-616 + B-458 combined build)
 
-**Version:** 1.0 — BUILD-READY | **Last Updated:** 2026-07-31 | 🌱 Living
+**Version:** 1.1 — BUILD-READY | **Last Updated:** 2026-07-31 | 🌱 Living
+_v1.1 (same day): §6 expanded into the full per-PR build plan — scope, files, acceptance criteria, DoD gates, and per-session kickoff prompts, on the PM's request. No product decision changed._
 
 **Origin:** PM dogfood feedback 2026-07-30 ("the Food library has almost no awareness of the foods eligible during the diet trial") → same-day persona session → mock round 1 (`docs/culprit-food-library-trial-mockups.html`) → PM review + rulings 2026-07-31. Session record: `docs/sessions/2026-07-31-food-library-trial-awareness.md`. Backlog: **B-616** (this track) + **B-458** (the two list screens, absorbed as the combined build's core) + **B-475** (consumed by §4.6).
 
@@ -95,17 +96,61 @@ No exclamation marks; no "safe"/"unsafe"; no "picky"; nothing about the owner.
 6. **Re-photographed bag** (new `food_item_id`, same brand+product) — still reads on-list via the key arm of `matchAllowed` (D3).
 7. **Add during day 1 vs day 40** — `day N` in the sheet always matches the card's counter (one day-math source, `lib/analytics.ts:838`'s helper).
 
-## §6 PR plan
+## §6 Build plan — PR by PR
 
-| PR | Scope | Gates |
-|---|---|---|
-| 0 | **B-556** — one `narrowRole`, three consumers, regression test | `code-reviewer` |
-| 1 | Lib layer: allowed-set read hook + `addTrialFood` write + tests | `code-reviewer`; tests mandatory (store/lib rule) |
-| 2 | §2.2 + §2.3 (allowed-set screen + add flow) — the B-458 first half | `pm-feature-review` (Jordan), `nyx-voice` |
-| 3 | §2.1 + §2.4 (Foods tab strip/chips + detail row/action) | `pm-feature-review`, `nyx-voice` |
-| 4 | §2.5 picker section (H) + §2.6 exposures screen against `explainVerdict` (closes B-458 + B-475) | `pm-feature-review`; `clinical-guardrails` on the exposures copy |
+Five PRs across **~4 sessions** (PR 0 rides with PR 1). Sequencing: **0 → 1 → {2 ∥ 3} → 4**. PRs 2 and 3 are parallel-safe as separate sessions/branches once PR 1 lands (disjoint files; the one expected collision is `STATUS.md`/`docs/backlog.md` at wrap). No schema PR exists in this track — nothing to isolate. No `adversarial-reviewer` line anywhere: this track computes nothing, it renders the shipped predicate's answers; if any PR grows its own membership logic, that exemption dies with it and the DoD line comes back.
 
-PRs 2–4 are UI over PR 1's lib layer; 2/3 are parallel-safe (disjoint files) once 1 lands. No `adversarial-reviewer` line: this track computes nothing — it renders the shipped predicate's answers. If any PR grows its own membership logic, that exemption dies with it.
+### PR 0 + PR 1 — the gate and the lib layer (one session)
+
+**PR 0 — B-556: one `narrowRole`.**
+- *Scope:* align `lib/trialContaminant.ts`'s `narrowRole` (unknown role → `primary_diet` today) with `lib/dietTrialFacts.ts` and `generate-report/trial.ts` (→ `permitted_other`). Own commit or own small PR — it is a behavior fix, not part of the new surface.
+- *Why it gates:* §5.5 D-A derives `sanctionedProteins` from `primary_diet` rows **only** — mapping an unknown role to `primary_diet` lets a row of unknown provenance **widen what counts as on-diet**, which is the exact self-granted loophole D-A exists to close. Every new reader this track adds would inherit that inflation.
+- *AC:* all three consumers produce identical role narrowing on an unknown token; a cross-consumer regression test pins it (read all three sources, assert one mapping — the `detectionSoftDelete.test.ts` pattern).
+- *Gates:* `code-reviewer`. Tests mandatory.
+
+**PR 1 — allowed-set read hook + `addTrialFood` write.**
+- *Scope:* a read path — `useTrialAllowedSet(petId)` (or a pure `lib/` resolver + thin hook) that resolves the active trial via `isTrialRunning` (never raw `status`), loads the dated `diet_trial_foods` rows from the local mirror, and exposes `matchAllowed`-keyed lookups (`isOnList(food, date)`, role, `allowed_from`) for FR-2/FR-13/FR-16. And the one write — `addTrialFood` in `lib/dietTrialSetup.ts`: single insert reusing `buildTrialRows`'s row shape with `allowed_from` = today, role via `permittedRoleForFood`, mirror + fire-and-forget flush (FR-12).
+- *Files:* `lib/dietTrialSetup.ts`, new `lib/trialAllowedSet.ts` (+ hook), tests co-located.
+- *AC:* (1) membership is date-gated — a food with `allowed_from` tomorrow is not on-list today; (2) key-arm matching — a new `food_item_id` with the same case-folded brand+product key reads on-list (§5.4); (3) **convergence property test**: any (food, date) the hook calls on-list, `classifyFeeding` rungs to `permitted` for, and vice versa — the hook may never disagree with the classifier it fronts (R2 made executable); (4) `addTrialFood` row shape byte-matches a `buildTrialRows` row for the same input; (5) unhydrated set → the hook returns "unknown", and the contract says render nothing (FR/R2).
+- *Gates:* `code-reviewer`; `npm test` (lib rule — tests mandatory, no N/A available).
+
+> **Session kickoff prompt:**
+> *"Build B-616 PRs 0+1 per `docs/nyx-food-library-trial-awareness-requirements.md` §6: first the B-556 `narrowRole` alignment with its cross-consumer regression test, then the `useTrialAllowedSet` read hook + `addTrialFood` write in the lib layer, including the §6 convergence property test against `classifyFeeding`. Read the spec §0–§3 and `lib/dietTrial.ts`'s header first. No UI in this session."*
+
+### PR 2 — "What {pet} can eat" + the mid-trial add (one session)
+
+- *Scope:* FR-5→FR-12. New screen `app/trial-foods.tsx` (rows grouped `Trial diet` / `Also allowed`, dated facts, C6 line verbatim, designed empty state) + the add flow (`FoodPicker` selection mode → the FR-11 confirm sheet → `addTrialFood`). Wire the screen as a `DietTrialCard` handler (B-458's mechanism — one handler, no card change) and from the trial card's manage surface.
+- *Files:* `app/trial-foods.tsx`, `components/profile/` sheet component, `app/(tabs)/profile.tsx` (handler wiring only).
+- *AC:* (1) the sheet shows exactly the three FR-11 facts and two actions — no role question, no wisdom-check copy; (2) an add renders in the list immediately with `added <date>, day N`, and `day N` equals the card's counter (§5 edge 7); (3) a pre-add feeding of that food keeps its off-diet classification (verify via the completion-card flag or `classifyFeeding` directly — D5's no-amnesty rule); (4) empty extras group renders the §4 empty state; (5) C6 line renders verbatim, this screen only.
+- *Gates:* `pm-feature-review` (as Jordan), `nyx-voice`, `code-reviewer`. Manual QA script must include the D5 disclosure check on-device.
+
+> **Session kickoff prompt:**
+> *"Build B-616 PR 2 per spec §2.2–§2.3: the `What {pet} can eat` screen + mid-trial add flow over PR 1's lib layer, wired as a `DietTrialCard` handler. Mock screens B and C in `docs/culprit-food-library-trial-mockups.html` are the design authority. Copy pack is spec §4, verbatim."*
+
+### PR 3 — Foods tab + food detail (one session; parallel-safe with PR 2)
+
+- *Scope:* FR-1→FR-4 (trial strip + tile chips on `app/(tabs)/foods.tsx`) and FR-13→FR-15 (the `Trial` kv row + `Add to {pet}'s trial list` action on `app/food/[id].tsx`). The strip's tap target opens PR 2's screen when it exists; if PR 3 lands first, the strip ships tap-dead-ended to the trial card (acceptable for one PR, noted in the PR body).
+- *AC:* (1) chips render only on on-list tiles, via the hook — zero marking of any other tile (R1); (2) strip renders only while `isTrialRunning`, disappears cleanly at trial end (FR-4, §5 edge 3); (3) pet B's context shows no trial chrome for pet A's trial (D7, §5 edge 4); (4) archived on-list food: tile stays hidden, PR 2's list still names it (§5 edge 1); (5) detail row absent — not "Not on the list" — for off-list foods (FR-13); (6) the B-351 contaminant note co-renders untouched (FR-15/C2).
+- *Gates:* `pm-feature-review`, `nyx-voice`, `code-reviewer`.
+
+> **Session kickoff prompt:**
+> *"Build B-616 PR 3 per spec §2.1 + §2.4: the Foods-tab trial strip + allowed-set chips, and the food-detail membership row + add action. Mock screens A and D are the design authority. R1 is the review bar: nothing off-list is marked, anywhere."*
+
+### PR 4 — the picker's pinned section + the exposures screen (one session)
+
+- *Scope:* FR-16→FR-19 — the `On the trial list` section pinned above the rotation shelf in `components/log/FoodPicker.tsx` while the trial runs, tiles visually identical, absent in selection mode (FR-18). Plus §2.6: `app/trial-exposures.tsx` ("Outside the trial diet") built **against `explainVerdict`** — never new copy — wired via the card's declared `view_exposures` handler. Closes **B-458** and **B-475**.
+- *AC:* (1) picker section renders only in logging mode during an active trial; ordering only — no tile chrome anywhere (D4); (2) rotation shelf + library zones unchanged below (FR-17); (3) post-commit completion-card flag unchanged (FR-19 — regression-test the `evaluateMealTrialFlag` path); (4) every exposure row's reason comes from `explainVerdict` (B-475's bar: a flag the owner cannot interrogate is an unfalsifiable accusation); (5) the exposures screen renders G2-compliant framing only — counts as floors, no negative claim at any coverage.
+- *Gates:* `pm-feature-review`, `clinical-guardrails` (the exposures copy), `nyx-voice`, `code-reviewer`.
+
+> **Session kickoff prompt:**
+> *"Build B-616 PR 4 per spec §2.5–§2.6: the FoodPicker's pinned `On the trial list` section (variant H — ordering, not marking; absent in selection mode) and the `Outside the trial diet` screen against `lib/dietTrial.explainVerdict`, wired via the card's `view_exposures` handler. This PR closes B-458 and B-475. `clinical-guardrails` reviews the exposures copy; G2 governs every count."*
+
+### Parallelism & efficiencies
+
+- **PR 0+1 is the single unblocker** — everything else queues behind it; it needs no PM input and can run today.
+- **PRs 2 and 3 fan out** after PR 1: disjoint files, no logical dependency either direction. Two concurrent sessions/branches are safe; expect only the wrap-time `STATUS.md`/backlog collision.
+- **PR 4 last**, because FR-18 (selection-mode exclusion) wants PR 2's add flow in place to test against, and the exposures screen is the track's only clinically-registered copy — do it with full attention, not as a rider.
+- Nothing in this track is gated on a PM or expert call. The one external dependency named in §2.6's content contract (`classifyFeeding` output) shipped in B-417 PR 5.
 
 ## §7 Out of scope
 
