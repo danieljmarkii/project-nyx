@@ -1,7 +1,7 @@
 # Medication duration in doses — persona convening + product-team reaction
 
 **Date:** 2026-07-30
-**Type:** Discussion session (PM-requested). No app code changed. Filed **B-614**; shipped via the PR for `claude/medication-duration-doses-8of1se`.
+**Type:** Discussion session (PM-requested). No app code changed. Filed **B-614**; shipped via #521.
 
 ## The PM's report
 
