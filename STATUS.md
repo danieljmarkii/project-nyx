@@ -188,6 +188,9 @@ Spec `docs/nyx-med-strip-requirements.md` **v1.0** (2026-07-31) + design-locked 
 | M4 | Collapse rule + the multi-med fold | ⬜ |
 | M5 | Copy/safety pass — `nyx-voice` + `clinical-guardrails` + `pm-feature-review` | ⬜ |
 
+### B-618 Medication course length in doses — spec build-ready (v1.0); build queued in its own session
+Spec `docs/nyx-medication-dose-duration-requirements.md` **v1.0** (2026-07-31; filed as B-614, renumbered at wrap — the med-strip row above landed the ID on `main` first) + convening record `docs/sessions/2026-07-30-medication-duration-doses-discussion.md`. The PM's Motozol course was dispensed as **28 doses**; entered in days with an evening start, "Day X of Y" ran ahead of the bottle. All decisions closed: **D1** count = therapy-delivered `given + partial` (PM-ratified; refused/missed never advance, flag-line disclosure) · **D2** entry default days (flips to doses when B-619's label prefill ships) · **D3** no pace concept in v1 · **D7** reaching the target never renders completion/stop language. Verified no-op seams: vet report / Ask / `generate-signal` need zero changes in v1. Plan: PR 1 migration 049 (`target_duration_doses` + one-denomination CHECK) → PR 2 `dosesTowardTarget` predicate + data path → PR 3 entry unit chips → PR 4 the "Dose X of Y" card. Composes with the med-strip track above (M0 = B-441 is this spec's D4 pair) and hands B-394 its exact projection primitive.
+
 ### B-023 Patterns dashboard — PRs 1–4 merged; PR 5 blocked on Step 9
 Spec `docs/nyx-analytics-dashboard-requirements.md`. **No schema** (rides existing tables + `ai_signals` jsonb; migration 018 added an additive `summary`). Build gates resolved: §13 #1 name = "Patterns", §13 #6 colour-as-wellness ruling.
 
