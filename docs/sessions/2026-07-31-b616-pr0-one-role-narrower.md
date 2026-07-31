@@ -45,7 +45,18 @@ Required by the DoD and named on B-556's own row. It ran; a **container restart 
 
 3621 jest (160 suites) + 1094 deno green; `tsc --noEmit` clean. Deno is not installed in the cloud container — it was fetched at the pinned CI version (2.9.4) to run the Edge Function half locally rather than discovering a break in CI.
 
-The drift guard was **verified against a decoy**: a planted fourth narrower trips all three axes (local declaration, re-listed role set, tree-wide scan) and all pass when removed. A guard that cannot fail is worth nothing, and this one was cheap to falsify.
+## The drift guard was wrong, and the way it was caught is the point
+
+The guard was "verified against a decoy" — a planted fourth narrower that tripped all three axes and passed when removed. That was true and it was not enough: **the decoy was a `function` keyword declaration, and so was the regex.**
+
+`code-reviewer` broke it properly. It appended an *arrow-function* narrower reproducing the pre-fix bug verbatim — unknown role → `primary_diet`, the exact reassurance-direction hazard this PR exists to remove — and the suite still passed **9/9**. A guard whose headline claim is *"fails the build on a fourth narrower anywhere in the tree"* was blind to one of the three ordinary ways to write one.
+
+Fixed by keying on the return-type annotation `): TrialFoodRole` — the one token sequence `function f(…): T`, `const f = (…): T =>` and the method shorthand `f(…): T {` all share — with a paren-matching walk back to the parameter list to recover the name. It cannot collide with a *parameter* of that type (`f(role: TrialFoodRole): number` has no `)` before the colon) or with a type alias (`=>`, not `:`). Re-verified against **three** decoys, one per declaration form; each trips both the per-consumer test and the tree-wide scan.
+
+Two lessons worth keeping, because they generalise past this file:
+
+1. **A decoy written by the same author as the guard tests the same blind spot twice.** Falsifying your own check confirms it fires; it does not tell you what it cannot see. That takes a second party, which is precisely what the subagent gates are for.
+2. **The `EXEMPT` list is load-bearing and will grow.** `code-reviewer` flagged that any legitimate helper returning a `TrialFoodRole` now trips the guard and needs a manual exemption — already true once for `permittedRoleForFood`, and PR 1's `useTrialAllowedSet`/`addTrialFood` are likely to add more. That fails safe (it forces a review rather than hiding drift), but the next author should expect it rather than discover it.
 
 ## Two environment notes
 
