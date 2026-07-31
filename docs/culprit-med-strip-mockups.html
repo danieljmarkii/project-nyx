@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Medication strip on Home — low-fi mock, round 1 (B-614 D1)</title>
+<style>
+  /* Low-fidelity on purpose: structure and copy only. Grayscale + the one teal accent.
+     Visual design (type scale, night tokens, real spacing) comes in a later round. */
+  :root {
+    --accent: #00C2A8;
+    --rose: #F43F5E;
+    --ink: #1a1a1a;
+    --ink2: #6b6b6b;
+    --ink3: #9a9a9a;
+    --border: #EAEAEA;
+    --bg: #FAFAFA;
+    --card: #FFFFFF;
+    --ghost: #F0F0F0;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: var(--bg); color: var(--ink); padding: 32px 24px 64px; line-height: 1.45; }
+  h1 { font-size: 22px; margin-bottom: 4px; }
+  h2 { font-size: 15px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--ink2); margin: 40px 0 12px; }
+  .sub { color: var(--ink2); font-size: 14px; max-width: 720px; }
+  .ruled { display: inline-block; background: #E6F7F4; color: #067A6B; border-radius: 4px; padding: 1px 6px; font-size: 12px; font-weight: 600; }
+  .open { display: inline-block; background: #FDECEF; color: #B4123B; border-radius: 4px; padding: 1px 6px; font-size: 12px; font-weight: 600; }
+  .row { display: flex; flex-wrap: wrap; gap: 24px; align-items: flex-start; margin-top: 16px; }
+  .phone { width: 340px; background: var(--card); border: 1px solid var(--border); border-radius: 24px; padding: 16px 14px 24px; flex-shrink: 0; }
+  .phone h3 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 2px; }
+  .phone .opt-note { font-size: 12px; color: var(--ink2); margin-bottom: 12px; min-height: 48px; }
+  .ghost { background: var(--ghost); border-radius: 12px; color: var(--ink3); font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; display: flex; align-items: center; justify-content: center; }
+  .ghost.signal { height: 88px; margin-bottom: 12px; }
+  .ghost.today { height: 64px; margin-top: 12px; }
+  .ghost.trend { height: 48px; margin-top: 12px; }
+  .strip { border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; margin-bottom: 10px; background: var(--card); }
+  .strip .head { display: flex; justify-content: space-between; align-items: baseline; font-size: 14px; font-weight: 600; }
+  .strip .head .chev { color: var(--ink3); font-weight: 400; }
+  .bar { height: 4px; background: var(--ghost); border-radius: 2px; margin: 8px 0 8px; overflow: hidden; }
+  .bar > div { height: 100%; background: var(--accent); border-radius: 2px; }
+  .line { font-size: 12.5px; color: var(--ink2); }
+  .line.flag { color: var(--rose); }
+  .btn { display: inline-block; margin-top: 10px; border: 1.5px solid var(--accent); color: var(--accent); font-size: 13px; font-weight: 600; border-radius: 8px; padding: 7px 14px; }
+  .caption { font-size: 11px; color: var(--ink3); margin: -4px 0 10px 2px; }
+  .notes { max-width: 760px; }
+  .notes li { margin: 8px 0 8px 18px; font-size: 14px; }
+  .notes b { font-weight: 600; }
+  .decide { border: 1.5px solid var(--rose); border-radius: 12px; padding: 14px 18px; max-width: 760px; margin-top: 12px; font-size: 14px; background: #fff; }
+</style>
+</head>
+<body>
+
+<h1>Medication strip on Home — low-fi, round 1</h1>
+<p class="sub">
+  B-614. Already ruled by the PM (2026-07-31): <span class="ruled">D2 — ad-hoc tolerant</span> (the strip renders from doses alone; everyone gets value day one) and
+  <span class="ruled">D3 — one card per med</span> (no arbitrary favoring of one med over another).
+  This round settles <span class="open">D1 — what each card carries</span>: context only (A), today's action only (B), or both (C).
+  Every frame shows the same three meds so the comparison is fair: a <b>fixed course</b> (Amoxicillin, regimen with a length),
+  an <b>ongoing</b> med (Gabapentin, no end date), and <b>ad-hoc doses</b> (Prednisone — no regimen at all, today's dominant real shape).
+  Copy is coverage-framed by invariant: the app never says "missed" or "due" — it can't know either.
+</p>
+
+<h2>The three options — same pet, same three meds</h2>
+<div class="row">
+
+  <div class="phone">
+    <h3>Option A — context strip</h3>
+    <p class="opt-note">The TrialStrip twin. Answers "where are we" at a glance; the whole strip is one tap → Pet tab. No log action — logging stays on the FAB (the trial card's §4.2 rule).</p>
+    <div class="ghost signal">AI Signal</div>
+    <div class="strip">
+      <div class="head"><span>Amoxicillin · day 5 of 14</span><span class="chev">›</span></div>
+      <div class="bar"><div style="width:36%"></div></div>
+      <div class="line">2×/day · no dose logged yet today</div>
+    </div>
+    <div class="strip">
+      <div class="head"><span>Gabapentin · ongoing</span><span class="chev">›</span></div>
+      <div class="line" style="margin-top:6px">Last dose yesterday, 9:10pm</div>
+    </div>
+    <div class="strip">
+      <div class="head"><span>Prednisone</span><span class="chev">›</span></div>
+      <div class="line" style="margin-top:6px">3 doses this week · last Tuesday 7pm</div>
+    </div>
+    <div class="ghost today">Today</div>
+  </div>
+
+  <div class="phone">
+    <h3>Option B — today's action row</h3>
+    <p class="opt-note">The briefing spec's "Care due" shape. Leads with today's coverage and a one-tap Log dose. No day counter, no bar — the course context lives on the Pet tab.</p>
+    <div class="ghost signal">AI Signal</div>
+    <div class="strip">
+      <div class="head"><span>Amoxicillin</span><span class="chev">›</span></div>
+      <div class="line" style="margin-top:4px">No dose logged yet today · usually 2×/day</div>
+      <span class="btn">Log dose</span>
+    </div>
+    <div class="strip">
+      <div class="head"><span>Gabapentin</span><span class="chev">›</span></div>
+      <div class="line" style="margin-top:4px">Last dose yesterday, 9:10pm</div>
+      <span class="btn">Log dose</span>
+    </div>
+    <div class="strip">
+      <div class="head"><span>Prednisone</span><span class="chev">›</span></div>
+      <div class="line" style="margin-top:4px">3 doses this week · last Tuesday 7pm</div>
+      <span class="btn">Log dose</span>
+    </div>
+    <div class="ghost today">Today</div>
+  </div>
+
+  <div class="phone">
+    <h3>Option C — both</h3>
+    <p class="opt-note">Header is course context, bottom line is today's coverage, plus the one-tap. The most useful and the heaviest — three of these is a lot of Home.</p>
+    <div class="ghost signal">AI Signal</div>
+    <div class="strip">
+      <div class="head"><span>Amoxicillin · day 5 of 14</span><span class="chev">›</span></div>
+      <div class="bar"><div style="width:36%"></div></div>
+      <div class="line">No dose logged yet today</div>
+      <span class="btn">Log dose</span>
+    </div>
+    <div class="strip">
+      <div class="head"><span>Gabapentin · ongoing</span><span class="chev">›</span></div>
+      <div class="line" style="margin-top:6px">Last dose yesterday, 9:10pm</div>
+      <span class="btn">Log dose</span>
+    </div>
+    <div class="strip">
+      <div class="head"><span>Prednisone</span><span class="chev">›</span></div>
+      <div class="line" style="margin-top:6px">3 doses this week · last Tuesday 7pm</div>
+      <span class="btn">Log dose</span>
+    </div>
+    <div class="ghost today">Today</div>
+  </div>
+
+</div>
+
+<h2>States every option must handle (shown in Option A's dress)</h2>
+<div class="row">
+  <div class="phone">
+    <h3>Edge states</h3>
+    <p class="opt-note">These render identically in spirit across A/B/C — they're rules, not styling.</p>
+
+    <div class="strip">
+      <div class="head"><span>Amoxicillin · day 14 of 14</span><span class="chev">›</span></div>
+      <div class="bar"><div style="width:100%"></div></div>
+      <div class="line">Course length reached — tap to review with your vet's plan in hand</div>
+    </div>
+    <p class="caption">Course end: a calendar fact and a prompt to review — never "you can stop now." Ending a course is the vet's call.</p>
+
+    <div class="strip">
+      <div class="head"><span>Prednisolone · day 5 of 14</span><span class="chev">›</span></div>
+      <div class="bar"><div style="width:36%"></div></div>
+      <div class="line flag">2 of the last 5 doses refused — worth a word with your vet</div>
+    </div>
+    <p class="caption">Refusal on record: the cheery coverage line is withheld (refusal is a health signal, not a scheduling gap). Copy goes through clinical-guardrails before it's real.</p>
+
+    <div class="strip">
+      <div class="head"><span>Cerenia</span><span class="chev">›</span></div>
+      <div class="line" style="margin-top:6px">1 dose logged · Monday 8am</div>
+    </div>
+    <p class="caption">Brand-new ad-hoc med: renders from the very first dose. No setup required — this is what D2 (ad-hoc tolerant) buys.</p>
+  </div>
+
+  <div class="phone">
+    <h3>Full Home — Option C + your per-med ruling</h3>
+    <p class="opt-note">Sam's cat: three meds and an active diet trial. This is the honest cost of one-card-per-med — Today and Trend are below the fold. Shown so the ruling is made with eyes open, not to argue against it.</p>
+    <div class="ghost signal" style="height:72px">AI Signal</div>
+    <div class="strip">
+      <div class="head"><span>Diet trial · day 12 of 56</span><span class="chev">›</span></div>
+      <div class="bar"><div style="width:21%"></div></div>
+      <div class="line">Hydrolyzed protein · ends Sep 14</div>
+    </div>
+    <div class="strip">
+      <div class="head"><span>Prednisolone · day 5 of 14</span><span class="chev">›</span></div>
+      <div class="bar"><div style="width:36%"></div></div>
+      <div class="line">No dose logged yet today</div>
+      <span class="btn">Log dose</span>
+    </div>
+    <div class="strip">
+      <div class="head"><span>Gabapentin · ongoing</span><span class="chev">›</span></div>
+      <div class="line" style="margin-top:6px">Last dose yesterday, 9:10pm</div>
+      <span class="btn">Log dose</span>
+    </div>
+    <div class="strip">
+      <div class="head"><span>Cerenia</span><span class="chev">›</span></div>
+      <div class="line" style="margin-top:6px">1 dose logged · Monday 8am</div>
+      <span class="btn">Log dose</span>
+    </div>
+    <div class="ghost today">Today ↓ below the fold</div>
+    <div class="ghost trend">Trend ↓</div>
+  </div>
+</div>
+
+<h2>Notes for the decision</h2>
+<ul class="notes">
+  <li><b>A vs B/C is the real conflict.</b> The trial card's ratified rule says "logging is the FAB — a second door to the same room is not a feature" (that's A). The briefing's Care-due row was adopted with a one-tap Log dose in it (that's B/C). Picking an option resolves which text governs medication.</li>
+  <li><b>The progress bar is day progress, never compliance.</b> A bar bound to doses-given is the exact defect the trial card rebuild deleted. Ongoing and ad-hoc meds get no bar at all — nothing false to draw.</li>
+  <li><b>"No dose logged yet today" only renders for meds with a known daily cadence</b> (a regimen with doses-per-day). For ad-hoc meds the app doesn't know a dose was expected, so it states recency and stops.</li>
+  <li><b>With D3 (card per med), option C's weight compounds.</b> If C wins, a slimming pass is available without changing the ruling: the Log dose button could appear only on the card whose day is incomplete, with logged-today cards collapsing to one line.</li>
+  <li>Day counters wait on the B-441 day-math fix; nothing here needs new schema.</li>
+</ul>
+
+<div class="decide">
+  <b>PM decision (D1):</b> A (context only, tap-through) · B (today's action + one-tap) · C (both)?
+  Team lean: <b>C for a fixed course, A's quietness for everything else</b> — i.e. the one-tap earns its place where a course is live and today is incomplete, and stays out of the way otherwise.
+</div>
+
+</body>
+</html>
