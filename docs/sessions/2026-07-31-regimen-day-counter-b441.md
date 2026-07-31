@@ -2,7 +2,7 @@
 
 **Date:** 2026-07-31
 
-Shipped via **#523**. Closes the last carve-out in the B-421 guard test; unblocks **B-614** (the Home medication strip, whose day counter must route through the same primitive). Spawned **B-616**.
+Shipped via **#524**. Closes the last carve-out in the B-421 guard test; unblocks **B-614** (the Home medication strip, whose day counter must route through the same primitive). Spawned **B-618** (filed as B-616; renumbered at wrap — `main` took that ID via #520).
 
 ## What was wrong
 
@@ -74,7 +74,7 @@ That is a **false absence claim** in the B-494 shape: silence rendered as a nega
 
 **Caveat, flagged rather than papered over:** the DoD mandates the isolated `adversarial-reviewer` subagent for clinically load-bearing logic, and this session's harness instructions forbid spawning subagents. The falsification pass above was done in-context, which is exactly the anchoring the subagent exists to avoid. **Recommend a `adversarial-reviewer` run on this diff before merge** — the DoD line is not satisfied by the table above.
 
-## Deliberately out of scope → B-616
+## Deliberately out of scope → B-618
 
 `attributeDosesToRegimens` bounds its item+window fallback with `d.occurred_at < reg.started_at` — a lexicographic compare of a UTC instant against a local DATE, so the regimen boundary sits at UTC midnight. Same root cause, same fix shape, but a different function with a documented rationale, and changing it **changes dose counts** on the card and in the `ask/tools.ts` port (which the header marks KEEP IN LOCKSTEP). It needs its own test pass, not a ride-along.
 
