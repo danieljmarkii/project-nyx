@@ -172,6 +172,22 @@ Spec `docs/nyx-medication-logging-requirements.md` (§12 = 10-PR plan). Model = 
 
 Carry-forwards: B-122/123 satisfied; B-131 honored; B-128(b) defense-at-rest trigger (own schema PR); open sub-decisions B-132 (library delete), B-133 (`is_critical` owner toggle — PM call); **B-160** (med-details helper chips + copy — ✅ shipped #236); **B-171 + B-172** (dose-card copy — ✅ shipped #485: `drugDisplayName` gives the completion card the owner's word for the drug (brand-preferred, PM ruling (b)); `doseAdherencePrompt` restates a pre-lit adherence state with the correction named instead of re-asking, while in-doubt / unset / **unrated-vehicle combo** still ask. No default or threshold changed. `adversarial-reviewer` FAILed the first cut on two real breaks — both fixed: the serve-time combo assumed-`given` now keeps the question, and the brand-first reorder of the ROW surfaces was **reverted** to **B-522**, which needs a Dr. Chen call because the shared leading generic is the only cue for a duplicate active ingredient that `getDoubleDoseFlag` can't catch).
 
+### B-614 Medication strip on Home — **spec build-ready (v1.0); all three PM calls ruled; M0 is the first build commit**
+Spec `docs/nyx-med-strip-requirements.md` **v1.0** (2026-07-31) + design-locked round-2 mock `docs/culprit-med-strip-mockups.html`. Closes the gap the PM hit on TestFlight: an active medication lives only on the Pet tab, so the wedge owner — sent home with a 14-day course — never sees it on the surface they actually open. `TrialStrip`'s job, for meds.
+
+**Rulings (PM, 2026-07-31):** **D1 = C** (context *and* a one-tap) · **D2** ad-hoc tolerant (renders from doses alone — the PM's own account has 2 regimens, 0 with a duration) · **D3** one card per med, no ranking.
+
+**D1's reasoning generalises and is why this isn't a §4.2 violation** — the trial card's "second door" ban and the N7 briefing's one-tap `Log dose` are split by **register**: a control that opens a *form* is a second door; one that writes a row the app *could already describe* is a **confirmation** (Principle 2). Full statement + the two gates it implies (no pre-fillable dose ⇒ no button; the §7 collapse rule) in CLAUDE.md's B-614 row and the spec's §0.
+
+| PR | What | Status |
+|---|---|---|
+| M0 | **B-441** — `regimenDaysElapsed` → `lib/utils.localDayIndexOf`, with the zone tests | ⬜ first build commit |
+| M1 | `lib/medStrip.ts` — the pure resolver (`resolveMedStrips`), confirmability gate, withholding set | ⬜ |
+| M2 | `components/home/MedStrip.tsx` + Home wiring below `TrialStrip` | ⬜ |
+| M3 | The one-tap confirm write path (reuses `insertMedicationDose`) | ⬜ |
+| M4 | Collapse rule + the multi-med fold | ⬜ |
+| M5 | Copy/safety pass — `nyx-voice` + `clinical-guardrails` + `pm-feature-review` | ⬜ |
+
 ### B-023 Patterns dashboard — PRs 1–4 merged; PR 5 blocked on Step 9
 Spec `docs/nyx-analytics-dashboard-requirements.md`. **No schema** (rides existing tables + `ai_signals` jsonb; migration 018 added an additive `summary`). Build gates resolved: §13 #1 name = "Patterns", §13 #6 colour-as-wellness ruling.
 
@@ -186,6 +202,7 @@ Spec `docs/nyx-analytics-dashboard-requirements.md`. **No schema** (rides existi
 Open follow-ups: B-094 (decline-watch/diet-trial cards), B-095 (correlations/coverage cards), B-096 (re-enable Haiku summary), B-099 (over-time + dashboard range — reopens §13 #2), B-116 (summary↔card grounding). Shipped polish: #162/#163/#164/#185.
 
 ### Food library / intake
+- **B-616 food-library trial awareness — spec landed (#520) + PR 0 shipped via #523 (2026-07-31).** `docs/nyx-food-library-trial-awareness-requirements.md` is build-ready (D1–D8, PR plan 0–4); the PM ruled **variant H** (a pinned "On the trial list" section in the picker — ordering, not marking), **mid-trial add IN** (`allowed_from` = today, past feedings keep their original reading), and **promotion to Now as a combined build with B-458**. **PR 0 (= B-556) is done:** the three `diet_trial_foods.role` narrowers disagreed about an unrecognised value, and the odd one out let a role this build cannot read WIDEN the sanctioned protein set — so a real contaminant would classify with `antigens: []` trial-wide. All three now call one exported `narrowTrialFoodRole` (`lib/dietTrial.ts`), pinned by a convergence property test and a decoy-verified source-scan drift guard. **PR 1 (the lib layer — `useTrialAllowedSet` + `addTrialFood`) is next and now fully unblocked.** One residual from the adversarial pass → **B-617**. Detail: `docs/sessions/2026-07-31-b616-pr0-one-role-narrower.md`.
 - **B-568 wet/dry variant on the event surfaces — shipped via #500 (2026-07-28).** Two forms of one product (Royal Canin Selected Protein PR, 4 wet + 4 dry) rendered as the same string on Home/Today, History, the calendar drill-in, the completion card and the vet report; the library surfaces had always shown `BRAND · FORMAT`. No migration. **Two facts bind later work:** the label map is now dependency-free `lib/foodFormat.ts`, shared with the Deno functions (a second copy is the B-103 drift class); and `app/(tabs)/history.tsx`'s explicit row mapper drops any new *optional* `TimelineRow` field silently — `tsc` will not catch it. **`generate-report` is CODE ONLY — rides the existing B-494 deploy hold.** Detail: `docs/sessions/2026-07-28-food-variant-display.md`.
 - **Picker findability — ratified build queue (2026-07-15, #351):** **B-346** rotation shelf → **B-347** pinned search + chips (executes B-020); sequenced (same `FoodPicker.tsx`), both no-schema, ready to run. Photos held (B-348); blue-sky directions parked behind B-349/B-350. Design docs: `docs/food-picker-findability-mockups.html` + `docs/food-picker-reimagined-mockups.html` (both carry the PM decision record).
 - **B-004 standalone Food Library — COMPLETE** (#176–#182, 7 slices). 4th `Foods` tab, brand grouping, reliable-favorites, row thumbnails; picker stays 2-up tiles (PR 7 decision). + post-QA fixes #183/#184.

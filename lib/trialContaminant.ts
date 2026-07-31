@@ -95,13 +95,13 @@ import {
   buildTrialContext,
   classifyFeeding,
   contaminationNote,
+  narrowTrialFoodRole,
   proteinPhrase,
   sanctionedProteinsOn,
   trialContamination,
   uncharacterizedTrialDietFoodsInRange,
   type AllowedFood,
   type TrialContext,
-  type TrialFoodRole,
   type TrialSpec,
 } from './dietTrial';
 // The pure off-trial predicates moved to `./trialProtein` (B-351 slice 5) so the
@@ -145,6 +145,16 @@ export interface TrialProteinContext {
    *  owner designated no main protein" from "we never saw the food" — two states
    *  that must not share a sentence (see trialDietNote). */
   primaryResolved: number;
+  /** Does any row carry a `role` this build cannot read? (B-556.)
+   *
+   *  Same job as `primaryResolved` above, one state further out: with an
+   *  unrecognised role narrowed to `permitted_other`, a trial can hold rows while
+   *  `primaryCount` is 0, and the two ways that happens need different sentences.
+   *  "The owner marked a food as the diet and this build cannot read the marking"
+   *  is not "the owner never marked one" — asserting the second about the first
+   *  is an unproven claim about the record on a clinical surface, which is the
+   *  class B9 exists to correct. */
+  hasUnreadableRole: boolean;
   /** D10 gate over the trial diet's sets. `complete` ONLY when EVERY
    *  `primary_diet` food's ingredient panel was read — one unread food in a
    *  two-food trial means "anything else in it is still unknown" is true of the
@@ -380,14 +390,45 @@ export function trialDietNote(
     // there, i.e. the app contradicting itself. Not reassurance, but an unproven
     // assertion about the record on a clinical surface — the class B9 corrects.
     if (ctx.primaryCount === 0 || ctx.primaryResolved < ctx.primaryCount) {
-      return {
-        title: 'Culprit can’t check other foods against this trial yet',
-        body: ctx.primaryCount === 0
-          ? 'This trial has no food attached yet, so there’s nothing to compare other '
-            + 'foods against.'
-          : 'The trial food hasn’t loaded on this device yet, so there’s nothing to '
-            + 'compare against. This usually settles once everything syncs.',
-      };
+      // FOUR STATES NOW, AND TWO OF THEM ARE B-556'S DOING. `primaryCount === 0`
+      // used to mean "the allowed set is empty", because an unreadable role
+      // counted as `primary_diet`. It no longer does, so the same branch is now
+      // reachable with rows PRESENT, two ways — and the adversarial probe on this
+      // change reached BOTH:
+      //
+      //   • a row whose `role` this build cannot read (the B-556 path), and
+      //   • a set carrying only recognised non-primary roles — a permitted treat
+      //     or a supplement and no trial diet at all. That one was always
+      //     reachable and was always mis-worded.
+      //
+      // Rendering "This trial has no food attached yet" in either is exactly the
+      // defect B9 was written to correct, one state over: the card would assert an
+      // absence the record contradicts, on the same surface that renders the
+      // trial's own food label. So the empty-set sentence is now gated on the set
+      // actually being empty.
+      //
+      // AND THE TWO PRESENT-BUT-DARK STATES DO NOT SHARE A SENTENCE EITHER, for
+      // the same reason `primaryResolved` exists: "the owner marked a food as the
+      // diet and this build cannot read the marking" is a different fact from "the
+      // owner never marked one", and the first cut of this change collapsed them
+      // into a single "can't tell which food is the diet itself" — which reads as
+      // confusion among several foods when the truth is that none was designated.
+      // Neither sentence promises a fix it cannot deliver: "this usually settles
+      // once everything syncs" is FALSE of both (the rows arrived intact), so it
+      // stays on the hydration state where it is true.
+      const body =
+        ctx.primaryCount > 0
+          ? 'The trial food hasn’t loaded on this device yet, so there’s nothing to '
+            + 'compare against. This usually settles once everything syncs.'
+          : ctx.allowedFoods.length === 0
+            ? 'This trial has no food attached yet, so there’s nothing to compare other '
+              + 'foods against.'
+            : ctx.hasUnreadableRole
+              ? 'Culprit doesn’t recognise what role one of this trial’s foods plays, so '
+                + 'there’s nothing to compare other foods against.'
+              : 'None of this trial’s foods is marked as the diet itself, so there’s '
+                + 'nothing to compare other foods against.';
+      return { title: 'Culprit can’t check other foods against this trial yet', body };
     }
     return {
       title: 'Culprit can’t tell what this trial is built on',
@@ -607,21 +648,25 @@ interface AllowedRow {
   ai_extraction_confidence: string | null;
 }
 
-const ROLES: readonly TrialFoodRole[] = [
-  'primary_diet',
-  'permitted_treat',
-  'permitted_other',
-  'supplement',
-];
-
-/** An unrecognised role reads as `primary_diet` — the value the server column
- *  defaults to — rather than being dropped. Dropping the row would silently
- *  remove a food from the PERMIT set, which is the direction that flags a
- *  compliant owner. */
-function narrowRole(raw: string): TrialFoodRole {
-  return (ROLES as readonly string[]).includes(raw) ? (raw as TrialFoodRole) : 'primary_diet';
-}
-
+// ── B-556: THIS FILE NO LONGER NARROWS `role` ITSELF ─────────────────────────
+//
+// It used to, and it read an unknown role as `primary_diet` on the argument that
+// dropping the row would remove a food from the PERMIT set. That argument was
+// half right — dropping IS the wrong direction — but it named the wrong
+// alternative, and the other two consumers (`lib/dietTrialFacts.ts`,
+// `generate-report/trial.ts`) had independently reached the opposite answer. One
+// row, two client verdicts: the log-time flag and the card could disagree about
+// what the trial diet even is.
+//
+// `narrowTrialFoodRole` is now the single narrower and it falls to
+// `permitted_other`, which permits the food WITHOUT letting an unreadable value
+// widen the sanctioned comparator (§5.5 D-A). The full reasoning is on that
+// function; what matters HERE is the local consequence, which is the reason this
+// change needed its own PR: a garbled row no longer counts toward `primaryCount`,
+// so a trial whose only "primary" was unreadable now goes dark and DISCLOSES via
+// `trialDietNote` rather than comparing every food in the library against a row
+// nobody can read. That is the honest direction, and `trialDietNote` was taught
+// to say so accurately — see the third branch there.
 export async function loadTrialProteinContext(
   petId: string,
   opts?: { force?: boolean },
@@ -678,14 +723,14 @@ export async function loadTrialProteinContext(
         ? foodIntakeKey(r.brand ?? '', r.product_name ?? '')
         : null,
     label: r.food_label,
-    role: narrowRole(r.role),
+    role: narrowTrialFoodRole(r.role),
     allowedFrom: r.allowed_from,
     allowedUntil: r.allowed_until,
     primaryProtein: r.primary_protein,
     proteins: proteinsFromCacheText(r.proteins),
   }));
 
-  const primaryRows = rows.filter((r) => narrowRole(r.role) === 'primary_diet');
+  const primaryRows = rows.filter((r) => narrowTrialFoodRole(r.role) === 'primary_diet');
   const resolvedPrimary = primaryRows.filter((r) => r.brand !== null || r.product_name !== null);
 
   const ctx: TrialProteinContext = {
@@ -698,6 +743,10 @@ export async function loadTrialProteinContext(
       primaryRows.map((r) => r.food_label).filter(Boolean).join(' + ') || null,
     primaryCount: primaryRows.length,
     primaryResolved: resolvedPrimary.length,
+    // Compared against the RAW column, not against the narrowed value: the
+    // narrower is total, so the only evidence that a value was unreadable is that
+    // narrowing changed it.
+    hasUnreadableRole: rows.some((r) => narrowTrialFoodRole(r.role) !== r.role),
     // THE GATE IS OVER EVERY PRIMARY FOOD, AND `every` IS LOAD-BEARING. On a
     // wet+dry trial, one read panel and one unread one means "anything else in it
     // is still unknown" is TRUE of the trial — claiming completeness off the read

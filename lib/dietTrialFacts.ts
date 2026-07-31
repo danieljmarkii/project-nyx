@@ -53,13 +53,13 @@ import { getDb } from './db';
 import {
   computeTrialFacts,
   mayStateRecordClean,
+  narrowTrialFoodRole,
   trialFoodKey,
   type AllowedFood,
   type TrialArrangement,
   type TrialDose,
   type TrialFacts,
   type TrialFeeding,
-  type TrialFoodRole,
   type TrialSpec,
 } from './dietTrial';
 import { relativeDayLabel } from './food';
@@ -501,32 +501,6 @@ interface AllowedRow {
   proteins: string | null;
 }
 
-/**
- * An unrecognised role falls to `permitted_other`, NOT to `primary_diet`.
- *
- * This mirrors `generate-report/trial.ts.normaliseRole` deliberately, and the
- * direction matters: `primary_diet` rows DEFINE the sanctioned protein set, so
- * letting an unknown value land there lets a garbled row widen the comparator —
- * the one direction §5.5 D-A forbids. `permitted_other` still permits the food
- * (so a compliant owner is not flagged) without granting it diet-defining power.
- *
- * NOTE FOR A LATER PASS: `lib/trialContaminant.ts.narrowRole` makes the OPPOSITE
- * choice on the same column, with its own rationale. Two client surfaces reading
- * one row into two different roles is a real divergence — filed rather than fixed
- * here, because changing it moves the shipped log-time contaminant flag and that
- * belongs in its own PR with its own adversarial pass.
- */
-const ROLES: readonly TrialFoodRole[] = [
-  'primary_diet',
-  'permitted_treat',
-  'permitted_other',
-  'supplement',
-];
-
-function narrowRole(raw: string): TrialFoodRole {
-  return (ROLES as readonly string[]).includes(raw) ? (raw as TrialFoodRole) : 'permitted_other';
-}
-
 /** Null means UNREADABLE, which is not the same fact as an empty allowed set —
  *  see the call site. Every other read here fails soft to a default; this one
  *  cannot, because its default would accuse the owner. */
@@ -542,7 +516,7 @@ async function readAllowedFoods(trialId: string): Promise<AllowedFood[] | null> 
           ? trialFoodKey(r.brand, r.product_name)
           : null,
       label: r.food_label,
-      role: narrowRole(r.role),
+      role: narrowTrialFoodRole(r.role),
       allowedFrom: r.allowed_from,
       allowedUntil: r.allowed_until,
       primaryProtein: r.primary_protein,

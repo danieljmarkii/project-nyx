@@ -1,8 +1,8 @@
-# Medication Course Length in Doses — Requirements (B-614)
+# Medication Course Length in Doses — Requirements (B-618)
 
 **Version:** 1.0 — BUILD-READY | **Last Updated:** 2026-07-31
 **Status:** All decisions closed (D1 PM-ratified 2026-07-31; D2 PM-delegated → team-ruled; D3 PM punt; D4–D7 team/Dr. Chen from the 2026-07-30 convening). Build queued in its own session per PM.
-**Reads first:** `docs/sessions/2026-07-30-medication-duration-doses-discussion.md` (the convening record + conflict), backlog rows B-614 / B-441 / B-394.
+**Reads first:** `docs/sessions/2026-07-30-medication-duration-doses-discussion.md` (the convening record + conflict), backlog rows B-618 / B-441 / B-394.
 
 ---
 
@@ -11,9 +11,9 @@
 | # | Decision | Ruling | Who / when |
 |---|---|---|---|
 | **D1** | What does "Dose X of Y" count? | **Therapy delivered.** The counter advances on `given` **and** `partial` administrations — matching the vet report's shipped `administered = given + partial` (`render.ts:3845`). `refused`, `missed`, `unrated`, and `unconfirmed` **never** advance it; they surface through the existing flag line (`regimenFlagLine`), so Sam's bottle number stays visible without ever letting a refused tail read a course as complete. Note: the client compliance numerator (`administeredDoses = given` only, `lib/medications.ts:945`) is a deliberately stricter *rate* statistic and is unchanged — the spec names both so no session "fixes" one to match the other. | **PM-ratified 2026-07-31** (resolves the Dr. Chen vs Sam conflict toward Dr. Chen, with Sam's disclosure requirement kept) |
-| **D2** | Entry default unit for a new fixed course | **Days.** Continuity with every existing course and the verbal-Rx phrasing ("give it two weeks"); doses is one tap away on the same visible chip row. When the label-extraction quantity prefill ships (B-615), an extracted "#28" flips the default to doses, prefilled. Reversible by data if most fixed courses turn out dose-entered. | PM delegated → team ruling, 2026-07-31 |
+| **D2** | Entry default unit for a new fixed course | **Days.** Continuity with every existing course and the verbal-Rx phrasing ("give it two weeks"); doses is one tap away on the same visible chip row. When the label-extraction quantity prefill ships (B-619), an extracted "#28" flips the default to doses, prefilled. Reversible by data if most fixed courses turn out dose-entered. | PM delegated → team ruling, 2026-07-31 |
 | **D3** | Pace / "behind schedule" concept | **Punted entirely from v1.** No pace copy anywhere — not on the card, not in a nudge. The existing compliance % (an adherence rate) is unchanged and orthogonal. When calendar and count diverge (the under-logging case), the card states only what the record shows; it never infers, never nags (Principle 4). | PM, 2026-07-31 |
-| **D4** | Sequencing | B-441 (the `regimenDaysElapsed` UTC/DST over-count) closes in its **own session** — a soft pair, not a hard gate: the dose counter never touches `daysElapsed`, but the compliance line on the same card does, so the card isn't fully honest until both land. B-614's build runs in its own session against this spec. | PM, 2026-07-31 |
+| **D4** | Sequencing | B-441 (the `regimenDaysElapsed` UTC/DST over-count) closes in its **own session** — a soft pair, not a hard gate: the dose counter never touches `daysElapsed`, but the compliance line on the same card does, so the card isn't fully honest until both land. B-618's build runs in its own session against this spec. | PM, 2026-07-31 |
 | **D5** | Diet trials | **Stay days-denominated.** A trial is a time exposure; the G3 duration defaults are week-banded (species × indication). No unit generalization to `diet_trials`. | Team (Engineer + Dr. Chen), 2026-07-30 |
 | **D6** | One predicate | There is **one** count predicate, exported from `lib/medications.ts`, and every consumer reads it — the diet-trial §5.3 lesson (a second, contradictory off-diet definition shipped and had to be re-based). No surface re-derives "does this administration advance the count." | Team, 2026-07-30 |
 | **D7** | Completion language | Reaching the target **never** renders completion or stop language — no "course complete", no checkmark-of-doneness, and no path to a stop instruction (end-of-course is the vet's call; antibiotic early-stop hazard, B-394's line). `status` remains the only lifecycle authority; the owner/vet ends a course, a counter never does. | Dr. Chen, non-negotiable, 2026-07-30 |
@@ -25,7 +25,7 @@ A fixed course is expressible only in days (`medications.target_duration_days`, 
 ## §2 Scope / non-goals
 
 **In:** dose-denominated fixed courses for medications — schema, entry, profile-card progress, one shared count predicate.
-**Out (named, not implied):** tapers / variable-frequency schedules (a dose *total* still beats days for them, but the projection math needs per-phase frequency — future item); any pace concept (D3); diet trials (D5); the B-394 forward projection surface (its design session consumes this primitive); label-quantity prefill (**B-615**); Ask/report changes (§7 — verified no-ops for v1); B-441 (own session).
+**Out (named, not implied):** tapers / variable-frequency schedules (a dose *total* still beats days for them, but the projection math needs per-phase frequency — future item); any pace concept (D3); diet trials (D5); the B-394 forward projection surface (its design session consumes this primitive); label-quantity prefill (**B-619**); Ask/report changes (§7 — verified no-ops for v1); B-441 (own session).
 
 ## §3 Schema — PR 1
 
@@ -89,7 +89,7 @@ export function dosesTowardTarget(tally: AdherenceTally): number {
 | Ask | The `medications` tool reads status/adherence, not duration. The forward projection ("when's her last dose") is **B-394's design session**, which now has an exact primitive: `remaining = target − dosesTowardTarget(tally)`; a *date* projection additionally needs `doses_per_day` (PRN + dose target ⇒ count only, no date — honest). | None here; hand this spec to the B-394 session. |
 | generate-signal | Reads `diet_trials.target_duration_days` only. | None. |
 | Sync | `lib/sync.ts` medications select/upsert gains the one column (PR 2). | PR 2. |
-| Label extraction | Quantity dispensed ("#28") is on every Rx label; prefill → doses default. | **B-615** (filed). |
+| Label extraction | Quantity dispensed ("#28") is on every Rx label; prefill → doses default. | **B-619** (filed). |
 
 ## §8 QA matrix (PR-4 acceptance)
 
@@ -112,6 +112,6 @@ export function dosesTowardTarget(tally: AdherenceTally): number {
 | **4** | Card (§6): count line + bar + past-target handling. | PR 3. `pm-feature-review` + §8 matrix + on-device QA script. |
 
 Kickoff prompt for the build session:
-> Build B-614 PR 1 (schema) per `docs/nyx-medication-dose-duration-requirements.md` §3 — migration 049, isolated, pre-flight in the PR body, apply via MCP + `get_advisors`. Then continue PR 2 per §4 in the same session only if the PM confirms; otherwise stop at PR 1 per schema isolation.
+> Build B-618 PR 1 (schema) per `docs/nyx-medication-dose-duration-requirements.md` §3 — migration 049, isolated, pre-flight in the PR body, apply via MCP + `get_advisors`. Then continue PR 2 per §4 in the same session only if the PM confirms; otherwise stop at PR 1 per schema isolation.
 
 **Adversarial-review posture:** the count predicate is adherence-adjacent but deterministic and single-line; the DoD's adversarial line is satisfied by §4's property tests plus a named falsification in each build PR (the convening's two: the refused-tail course that must never read complete; the taper that stays out of scope). No statistical engine is touched, so the `adversarial-reviewer` subagent is optional, not mandatory — unless a build PR grows a projection surface, which re-triggers it.
