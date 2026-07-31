@@ -66,6 +66,52 @@ export type TrialFoodRole =
 
 export type TrialSpecies = 'dog' | 'cat' | 'other';
 
+const TRIAL_FOOD_ROLES: readonly TrialFoodRole[] = [
+  'primary_diet',
+  'permitted_treat',
+  'permitted_other',
+  'supplement',
+];
+
+/**
+ * `diet_trial_foods.role` → a role this build understands. THE ONLY NARROWER —
+ * B-556, and the reason it lives here rather than at each call site.
+ *
+ * ── WHY AN UNKNOWN ROLE FALLS TO `permitted_other` ───────────────────────────
+ *
+ * The two directions are not symmetric, and the asymmetry is the whole ruling:
+ *
+ *   → `primary_diet` (what `lib/trialContaminant.ts` used to do) lets a value
+ *     this build cannot read WIDEN `sanctionedProteinsOn`'s comparator — the one
+ *     direction §5.5 D-A forbids. Executed: a future `permitted_chew` row for a
+ *     chicken chew reads as diet-defining, chicken enters the sanctioned set for
+ *     the whole trial, and a genuine chicken contaminant then classifies with
+ *     `antigens: []` on every surface. A false NEGATIVE, silent, trial-wide, in
+ *     the reassurance direction `clinical-guardrails` forbids outright.
+ *
+ *   → `permitted_other` still PERMITS the food at rung 1 (membership is
+ *     role-agnostic), so the owner who followed instructions is never flagged
+ *     for it (§6.9) — it simply grants no diet-defining power. If such a row was
+ *     the trial's only "primary", the comparator goes dark and the surfaces
+ *     DISCLOSE that (B9) instead of answering confidently and wrongly.
+ *
+ * Dropping the row is a third option and the worst one: it removes a food from
+ * the PERMIT set, which is the direction that accuses a compliant owner.
+ *
+ * REACHABLE, not defensive: the server column is a PG enum, but the local mirror
+ * is `role TEXT NOT NULL` (`lib/dietTrialMirror.ts`) and `generate-report` reads
+ * whatever the column holds — so a role added to the enum by a newer build syncs
+ * down verbatim to an older one. Forward compatibility is the live path.
+ *
+ * Convergent by construction (`f(f(x)) === f(x)`), per the Class-A/Class-B
+ * canonicalizer convention — a narrowed role is always a member of the set.
+ */
+export function narrowTrialFoodRole(raw: string): TrialFoodRole {
+  return (TRIAL_FOOD_ROLES as readonly string[]).includes(raw)
+    ? (raw as TrialFoodRole)
+    : 'permitted_other';
+}
+
 /** One row of `diet_trial_foods`, plus the food's own protein evidence. */
 export interface AllowedFood {
   foodItemId: string;
