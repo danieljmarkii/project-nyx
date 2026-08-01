@@ -172,7 +172,7 @@ Spec `docs/nyx-medication-logging-requirements.md` (§12 = 10-PR plan). Model = 
 
 Carry-forwards: B-122/123 satisfied; B-131 honored; B-128(b) defense-at-rest trigger (own schema PR); open sub-decisions B-132 (library delete), B-133 (`is_critical` owner toggle — PM call); **B-160** (med-details helper chips + copy — ✅ shipped #236); **B-171 + B-172** (dose-card copy — ✅ shipped #485: `drugDisplayName` gives the completion card the owner's word for the drug (brand-preferred, PM ruling (b)); `doseAdherencePrompt` restates a pre-lit adherence state with the correction named instead of re-asking, while in-doubt / unset / **unrated-vehicle combo** still ask. No default or threshold changed. `adversarial-reviewer` FAILed the first cut on two real breaks — both fixed: the serve-time combo assumed-`given` now keeps the question, and the brand-first reorder of the ROW surfaces was **reverted** to **B-522**, which needs a Dr. Chen call because the shared leading generic is the only cue for a duplicate active ingredient that `getDoubleDoseFlag` can't catch).
 
-### B-614 Medication strip on Home — **spec build-ready (v1.0); all three PM calls ruled; M0 is the first build commit**
+### B-614 Medication strip on Home — **M0+M1 shipped (#525/#524, #534); M2–M5 remain**
 Spec `docs/nyx-med-strip-requirements.md` **v1.0** (2026-07-31) + design-locked round-2 mock `docs/culprit-med-strip-mockups.html`. Closes the gap the PM hit on TestFlight: an active medication lives only on the Pet tab, so the wedge owner — sent home with a 14-day course — never sees it on the surface they actually open. `TrialStrip`'s job, for meds.
 
 **Rulings (PM, 2026-07-31):** **D1 = C** (context *and* a one-tap) · **D2** ad-hoc tolerant (renders from doses alone — the PM's own account has 2 regimens, 0 with a duration) · **D3** one card per med, no ranking.
@@ -181,8 +181,8 @@ Spec `docs/nyx-med-strip-requirements.md` **v1.0** (2026-07-31) + design-locked 
 
 | PR | What | Status |
 |---|---|---|
-| M0 | **B-441** — `regimenDaysElapsed` → `lib/utils.localDayIndexOf`, with the zone tests | ⬜ first build commit |
-| M1 | `lib/medStrip.ts` — the pure resolver (`resolveMedStrips`), confirmability gate, withholding set | ⬜ |
+| M0 | **B-441** — `regimenDaysElapsed` → `lib/utils.localDayIndexOf`, with the zone tests | ✅ shipped #525 (read) + #524 (write half) |
+| M1 | `lib/medStrip.ts` — the pure resolver (`resolveMedStrips`), confirmability gate, withholding set | ✅ shipped #534 |
 | M2 | `components/home/MedStrip.tsx` + Home wiring below `TrialStrip` | ⬜ |
 | M3 | The one-tap confirm write path (reuses `insertMedicationDose`) | ⬜ |
 | M4 | Collapse rule + the multi-med fold | ⬜ |
@@ -265,6 +265,9 @@ Nearest live PM gates, none of which block code already in flight:
 ---
 
 ## Open PM Action Items
+
+**CI (B-514, #532) — one ruleset edit, 30 seconds**
+- [ ] **Add `App (jest, non-UTC timezones)` to the `main` ruleset's required-checks list.** #532 adds a third CI job that runs the full jest suite at UTC+14 / UTC+12:45 / UTC−10, because CI has only ever run at UTC and Nyx's day boundary is *local* midnight (B-421) — the gap that let B-417 PR 6 ship a real timezone inversion past a green suite. A new job reports but does not gate until it is named in the ruleset, which is exactly the state B-390 existed to fix for the first two jobs. Nothing else to do: the job is green and no existing check was weakened.
 
 **Event photos (B-105, #512) — one live cleanup, needs your call because it deletes health photos**
 - [ ] **Decide whether to delete the 3 pre-existing duplicate `event_attachments` rows in prod.** B-105 is fixed going forward, and the read fix means devices already show the right photo — but the client cannot reach rows already in Postgres, and `generate-report` renders *every* attachment per incident, so these 3 `vomit` incidents currently print **two photo cards each** on the vet report. All 3 belong to one pet; each is an original plus a replacement logged 1–3 days later. Row-count check before applying: `select count(*) from event_attachments a where exists (select 1 from event_attachments b where b.event_id = a.event_id and b.created_at > a.created_at);` → expect **3** (the older row of each pair). Destructive, irreversible for the Storage objects, and "which photo is the real one" is a judgement about a clinical record — so it is not taken automatically. Deferring is fine; the doubling is cosmetic on the report, not wrong.

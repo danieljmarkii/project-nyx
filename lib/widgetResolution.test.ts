@@ -278,9 +278,16 @@ describe('buildTreatChoices', () => {
 
 describe('resolveTrialContext', () => {
   it('delegates the day math to analytics (B-084 day-aligned counter)', () => {
+    // `NOW` (device-local 2026-07-24 20:00), NOT a UTC instant — this suite's
+    // whole fixture convention, and the one line that used to break it (B-514).
+    // `resolveTrialContext` takes no zone by design: the publisher runs on the
+    // device, whose own zone IS the owner's midnight (B-421). So "Day 12" is a
+    // claim about the LOCAL day, and only a local-component fixture states it;
+    // `Date.parse('2026-07-24T20:00:00.000Z')` is already 25 Jul in Auckland and
+    // read Day 13 there.
     const out = resolveTrialContext(
       { startedAt: '2026-07-13', targetDurationDays: 28, foodItemId: null, foodLabel: null },
-      Date.parse('2026-07-24T20:00:00.000Z'),
+      NOW.getTime(),
     );
     expect(out).toEqual({ trialDay: 12, trialTargetDays: 28 });
   });

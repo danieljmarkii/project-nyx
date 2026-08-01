@@ -48,14 +48,29 @@ function mealRow(
   };
 }
 
+// The fixture's clock, and the two things it has to be at once (B-514).
+//
+// `generatedAt` is built from device-LOCAL components — the sibling suite's
+// convention (widgetResolution.test.ts) — because `buildWidgetSnapshot` reads it
+// in the DEVICE zone for the trial day counter, and takes no zone argument by
+// design (the publisher runs on the device, whose own zone IS the owner's
+// midnight, B-421). Written as a UTC instant it silently meant "20:00Z", which is
+// already 25 Jul in Auckland: every "Day N" assertion below read one day high
+// there and the suite passed only because CI ran at UTC+00.
+//
+// `dayBounds` stays an explicit UTC window on purpose. It is an INPUT the caller
+// computes (`localDayBounds`, covered separately at the bottom of this file), so
+// the windowing tests pin bounds and rows that are both UTC instants and are
+// zone-free by construction. The two need not agree: no assertion here reads the
+// clock and the window together.
+const NOW_LOCAL = new Date(2026, 6, 24, 20, 0); // device-local 2026-07-24 20:00
+
 const base = {
-  generatedAt: '2026-07-24T20:00:00.000Z',
+  generatedAt: NOW_LOCAL.toISOString(),
   dayKey: '2026-07-24',
   freeFed: false,
   bowlConfirmedAt: null as string | null,
   meals: [] as SnapshotMealRow[],
-  // The UTC calendar day 2026-07-24 as the authoritative window (a UTC-aligned
-  // "device" for test determinism).
   dayBounds: {
     startMs: Date.parse('2026-07-24T00:00:00.000Z'),
     endMs: Date.parse('2026-07-25T00:00:00.000Z'),

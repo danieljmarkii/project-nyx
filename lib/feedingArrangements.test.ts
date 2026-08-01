@@ -339,7 +339,10 @@ describe('formatCalendarDate / confirmedLabel', () => {
 
   it('reads "today" for a same-day confirmation, else the date', () => {
     expect(confirmedLabel(new Date().toISOString())).toBe('today');
-    expect(confirmedLabel('2020-01-15T08:00:00.000Z')).toBe('Jan 15');
+    // The label renders on the owner's clock, so the fixture states a LOCAL
+    // instant (B-514): 2020-01-15T08:00:00Z is still 14 Jan in Honolulu, and this
+    // read "Jan 14" there — correct behaviour, a fixture that only held at UTC.
+    expect(confirmedLabel(new Date(2020, 0, 15, 8, 0).toISOString())).toBe('Jan 15');
   });
 });
 
