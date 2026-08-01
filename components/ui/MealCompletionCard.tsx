@@ -394,7 +394,7 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: 'rgba(255,255,255,0.06)',
+    backgroundColor: theme.colorFillOnDark,
     borderWidth: 1.5,
     borderColor: theme.colorMomentConfirm,
     justifyContent: 'center',
@@ -417,7 +417,7 @@ const styles = StyleSheet.create({
   },
   subLabel: {
     fontSize: theme.textSM,
-    color: 'rgba(255,255,255,0.7)',
+    color: theme.colorTextOnDarkSecondary,
     fontWeight: theme.weightRegular,
   },
   // 44pt min touch target (the 3am-test rule) — the underlined label alone is
@@ -436,13 +436,13 @@ const styles = StyleSheet.create({
     // Subtle separator so the chip row reads as a related-but-distinct
     // affordance, not a second action on the same line.
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: 'rgba(255,255,255,0.15)',
+    borderTopColor: theme.colorDividerOnDark,
     paddingTop: theme.space1,
     gap: 6,
   },
   intakeLabel: {
     fontSize: theme.textSM,
-    color: 'rgba(255,255,255,0.7)',
+    color: theme.colorTextOnDarkSecondary,
     fontWeight: theme.weightRegular,
   },
   // B-351 slice 4 — the passive trial-contaminant heads-up. Same divider treatment
@@ -452,7 +452,7 @@ const styles = StyleSheet.create({
   // headline carries slightly more weight than the detail so the fact lands first.
   flagWrap: {
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: 'rgba(255,255,255,0.15)',
+    borderTopColor: theme.colorDividerOnDark,
     paddingTop: theme.space1,
     gap: 2,
   },
@@ -464,21 +464,23 @@ const styles = StyleSheet.create({
   flagDetail: {
     fontSize: theme.textSM,
     lineHeight: theme.textSM * 1.4,
-    color: 'rgba(255,255,255,0.75)',
+    color: theme.colorTextOnDarkSecondary,
   },
   // The opt-in combo entry (B-156 PR B2b). ≥44pt tappable (the 3am-test floor) via
-  // minHeight; a faint divider so it reads as a separate, optional add-on beneath the
-  // intake row, never a peer of the logged act. Deliberately the quietest line.
+  // minHeight. It reads as a separate, optional add-on beneath the intake row —
+  // never a peer of the logged act — through its dimmer label + its position at the
+  // foot of the stack, not through a fainter divider (B-646: the divider is the one
+  // on-dark rung; a hairline 3% quieter isn't visible anyway).
   comboRow: {
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: 'rgba(255,255,255,0.12)',
+    borderTopColor: theme.colorDividerOnDark,
     paddingTop: theme.space1,
     minHeight: 44,
     justifyContent: 'center',
   },
   comboText: {
     fontSize: theme.textSM,
-    color: 'rgba(255,255,255,0.75)',
+    color: theme.colorTextOnDarkSecondary,
     fontWeight: theme.weightMedium,
   },
 

@@ -289,7 +289,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   chipDescActive: {
-    color: 'rgba(255,255,255,0.65)',
+    color: theme.colorTextOnDarkSecondary,
   },
   fieldBtn: {
     flexDirection: 'row',

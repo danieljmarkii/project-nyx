@@ -365,7 +365,7 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: 'rgba(255,255,255,0.06)',
+    backgroundColor: theme.colorFillOnDark,
     borderWidth: 1.5,
     borderColor: theme.colorMomentConfirm,
     justifyContent: 'center',
@@ -388,7 +388,7 @@ const styles = StyleSheet.create({
   },
   subLabel: {
     fontSize: theme.textSM,
-    color: 'rgba(255,255,255,0.7)',
+    color: theme.colorTextOnDarkSecondary,
     fontWeight: theme.weightRegular,
   },
   // 44pt min touch target (the 3am-test rule) — the underlined label alone is
@@ -405,34 +405,35 @@ const styles = StyleSheet.create({
   },
   adherenceWrap: {
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: 'rgba(255,255,255,0.15)',
+    borderTopColor: theme.colorDividerOnDark,
     paddingTop: theme.space1,
     gap: 6,
   },
   adherenceLabel: {
     fontSize: theme.textSM,
-    color: 'rgba(255,255,255,0.7)',
+    color: theme.colorTextOnDarkSecondary,
     fontWeight: theme.weightRegular,
   },
   // The in-doubt reason line — fainter than the prompt, sits between it and the chips.
   // Calm, never an alarm colour: the rose flag lives on the chip-row downgrade, not here.
   inDoubtReason: {
     fontSize: theme.textXS,
-    color: 'rgba(255,255,255,0.55)',
+    color: theme.colorTextOnDarkFaint,
     fontWeight: theme.weightRegular,
   },
-  // Subordinate to the adherence block: a fainter divider + dimmer label so the
-  // optional vehicle row reads as a quiet add-on under the primary "did they take
-  // it?" question, never a peer of it.
+  // Subordinate to the adherence block: a dimmer (faint-rung) label so the optional
+  // vehicle row reads as a quiet add-on under the primary "did they take it?"
+  // question, never a peer of it. The divider is the shared on-dark rung (B-646) —
+  // subordination comes from the label + position, not a fainter hairline.
   vehicleWrap: {
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: 'rgba(255,255,255,0.1)',
+    borderTopColor: theme.colorDividerOnDark,
     paddingTop: theme.space1,
     gap: 6,
   },
   vehicleLabel: {
     fontSize: theme.textSM,
-    color: 'rgba(255,255,255,0.55)',
+    color: theme.colorTextOnDarkFaint,
     fontWeight: theme.weightRegular,
   },
 

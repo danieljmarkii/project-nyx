@@ -66,9 +66,22 @@ export const theme = {
   colorTextSecondary: '#525252',
   colorTextTertiary: '#737373',
   colorTextDisabled: '#A3A3A3',
-  colorTextOnDark: '#FFFFFF',                 // text/icons on a dark button or photo scrim
-  colorTextOnDarkMuted: 'rgba(255,255,255,0.92)', // secondary text on a dark scrim
-  colorTextOnDarkSecondary: '#B4B8B4',        // dimmer body/label text on a solid dark surface
+  // On-dark ink ladder (B-646) — the emphasis rungs for white text/icons on a
+  // near-black surface (the completion cards, selected chips, dark modals). Rungs
+  // are spaced so each reads as a distinct level, not a decorative decimal; this
+  // ladder is what a drift of per-site alphas collapses onto — 0.65 / 0.70 / 0.75
+  // all meant "secondary" and 0.55 meant "faint". Values are SOLID hexes because
+  // these paint onto a solid dark ground, where an alpha-white would shift hue over
+  // a *coloured* surface; reach for colorTextOnDarkMuted (alpha) only where the
+  // ground is a photo scrim whose colour is unknown at author time.
+  //   primary   #FFFFFF   1.0
+  //   emphasis  0.92-white  (scrim only)
+  //   secondary #B4B8B4  ≈ 0.70-white on near-black
+  //   faint     #909090  ≈ 0.55-white on near-black
+  colorTextOnDark: '#FFFFFF',                 // primary — text/icons on a dark button or scrim
+  colorTextOnDarkMuted: 'rgba(255,255,255,0.92)', // emphasis on a photo scrim (alpha: ground varies)
+  colorTextOnDarkSecondary: '#B4B8B4',        // secondary body/label (≈ 0.70-white on near-black)
+  colorTextOnDarkFaint: '#909090',            // faint reason/metadata line (≈ 0.55-white on near-black)
   colorScrimDark: 'rgba(0,0,0,0.55)',         // gradient/overlay scrim over a photo hero
 
   // Dark premium/marketing surfaces. The onboarding paywall (B-251 PR 10) is the
@@ -78,7 +91,19 @@ export const theme = {
   // cover the type and accent marks on top of them.
   colorSurfaceDark: '#101312',                // the dark canvas of a premium surface
   colorSurfaceDarkElevated: '#16201E',        // an elevated tile/card on the dark canvas
-  colorBorderOnDark: '#33383A',               // hairline border/divider on a dark surface
+  colorBorderOnDark: '#33383A',               // solid hairline on a solid dark surface (paywall tiles)
+
+  // On-dark line/fill (B-646) — translucent white for internal separators and
+  // faint fills on a near-black CARD (the completion cards), where a line should
+  // read as "N% of white showing through" and track the card ground exactly.
+  // Distinct from colorBorderOnDark, which is a solid edge for the coloured paywall
+  // surfaces. One divider rung on purpose: at StyleSheet.hairlineWidth the old
+  // 0.10 / 0.12 / 0.15 steps are indistinguishable, so a subordinate row earns its
+  // quiet from a dimmer label + tighter spacing, not from a third hairline no one
+  // can see. If on-device QA finds a subordinate row now reads as a peer, the fix
+  // is spacing/label weight, not a fourth alpha.
+  colorDividerOnDark: 'rgba(255,255,255,0.15)', // internal separator on a dark card
+  colorFillOnDark: 'rgba(255,255,255,0.06)',    // faint tile/badge fill on a dark card
 
   // Brand "night" — the Culprit world/ground colour (B-275 palette half; Moon &
   // Signal icon field). This is a WORLD colour, not an accent: it is only ever a

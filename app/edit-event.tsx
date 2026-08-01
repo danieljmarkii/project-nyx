@@ -972,7 +972,7 @@ const styles = StyleSheet.create({
     marginRight: theme.space1,
   },
   foodItemBrandSelected: {
-    color: 'rgba(255,255,255,0.7)',
+    color: theme.colorTextOnDarkSecondary,
   },
   foodItemCheck: {
     fontSize: 15,
