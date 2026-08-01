@@ -9,6 +9,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { theme } from '../../constants/theme';
 import { WhorlSpinner } from '../../components/brand/WhorlSpinner';
 import { Card } from '../../components/ui/Card';
+import { EmptyState } from '../../components/ui/EmptyState';
 import { PrimaryButton } from '../../components/ui/PrimaryButton';
 import { Badge } from '../../components/ui/Badge';
 import { Divider } from '../../components/ui/Divider';
@@ -639,9 +640,11 @@ export default function ProfileScreen() {
   if (!activePet) {
     return (
       <SafeAreaView style={styles.container}>
-        <View style={styles.emptyState}>
-          <Text style={styles.emptyStateText}>No pet profile found.</Text>
-        </View>
+        <EmptyState
+          align="fill"
+          title="No pet profile yet"
+          body="Add a pet and their profile will show up here."
+        />
       </SafeAreaView>
     );
   }
@@ -1378,15 +1381,6 @@ const styles = StyleSheet.create({
   },
 
   // ── Empty / bottom ──
-  emptyState: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  emptyStateText: {
-    fontSize: theme.textMD,
-    color: theme.colorTextSecondary,
-  },
   bottomPad: {
     height: theme.space5,
   },
