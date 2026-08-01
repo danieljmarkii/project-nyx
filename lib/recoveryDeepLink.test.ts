@@ -105,6 +105,23 @@ describe('handleRecoveryDeepLink — the valid, provenance-present happy path', 
     // The producers key on useAuthStore.session, so it must be null by wipe time.
     expect(sessionAtWipe).toBeNull();
   });
+
+  it('nulls the store session BEFORE routing to the form (no pre-wipe render window)', async () => {
+    // The set-password form renders on (session && recoveryInProgress). On a warm
+    // deep link A's live session is in the store, so if the route to reset-password
+    // happened before setSession(null), a "Save" tap during the flush window would
+    // write B's password onto A's account (code-reviewer). Capture the store session
+    // at the moment the handler routes.
+    haveProvenance();
+    let sessionAtRoute: unknown = 'unset';
+    mockReplace.mockImplementation((route: string) => {
+      if (route === '/(auth)/reset-password' && sessionAtRoute === 'unset') {
+        sessionAtRoute = useAuthStore.getState().session;
+      }
+    });
+    await handleRecoveryDeepLink('nyx:///reset-password?code=abc', { nowMs: NOW });
+    expect(sessionAtRoute).toBeNull();
+  });
 });
 
 describe('handleRecoveryDeepLink — a failed exchange (FR-15)', () => {
@@ -118,6 +135,9 @@ describe('handleRecoveryDeepLink — a failed exchange (FR-15)', () => {
 
     // The signOut is the B-576 reconcile — AFTER the exchange, never before.
     expect(calls).toEqual(['flush', 'wipe', 'exchange', 'signOut']);
+    // Scoped LOCAL: it purges only this device's copy of A's tokens, never A's
+    // sessions on A's other devices (the default 'global' would — code-reviewer).
+    expect(mockSignOut).toHaveBeenCalledWith({ scope: 'local' });
     expect(useAuthStore.getState().recoveryScreen).toBe('link_unusable');
     // Gate released last (step 8).
     expect(useAuthStore.getState().recoveryInProgress).toBe(false);

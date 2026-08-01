@@ -349,7 +349,7 @@ const styles = StyleSheet.create({
     fontWeight: theme.weightMedium,
     color: theme.colorNeutralDark,
     textAlign: 'center',
-    marginBottom: 2,
+    marginBottom: theme.spaceMicro,
   },
   field: {
     marginBottom: theme.space2,

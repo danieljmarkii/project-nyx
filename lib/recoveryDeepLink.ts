@@ -47,9 +47,9 @@ const RECOVERY_ROUTE = '/(auth)/reset-password' as const;
 // Guards a cold-start launch URL and a warm `url` event from BOTH processing the
 // same single-use link — the second attempt would find the code spent and wipe the
 // device for a `link_unusable`. Set at ENTRY (before any await) so a concurrent
-// re-entry for the same URL is refused synchronously. A deliberate retry passes
-// `force` (the §5.6 "Try again"), which a spent-code retry is expected to fail
-// honestly rather than being silently deduped away.
+// re-entry for the same URL is refused synchronously. The §5.6 "Try again" does NOT
+// route back through here — it calls `retryRecoveryExchange` directly — so this
+// guard never blocks a deliberate retry.
 let lastHandledUrl: string | null = null;
 
 /**
@@ -88,7 +88,13 @@ async function runExchangeAndFinalize(code: string): Promise<void> {
     // A onto the just-wiped device. A real signOut purges them. Its SIGNED_OUT is
     // handled teardown-only by app/_layout while the gate is armed (routing + the
     // gate release are owned here, to avoid a route/release race).
-    await supabase.auth.signOut();
+    //
+    // `scope: 'local'` is load-bearing: the default is 'global', which would revoke
+    // A's sessions on EVERY device A owns — but a failed exchange (an expired or
+    // scanner-consumed link, D8's routine blameless cases) must only purge THIS
+    // device's copy of A's tokens, never evict A elsewhere for an event that never
+    // happened (code-reviewer).
+    await supabase.auth.signOut({ scope: 'local' });
   } catch (e) {
     console.warn('[recovery] reconcile sign-out failed:', e instanceof Error ? e.message : e);
   }
@@ -102,20 +108,20 @@ async function runExchangeAndFinalize(code: string): Promise<void> {
  * repeated identical URL; drives the whole §6.4 ordering.
  *
  * `nowMs` is injected for the provenance-window check (testability); defaults to the
- * wall clock. `force` bypasses the double-fire guard for a deliberate retry.
+ * wall clock.
  */
 export async function handleRecoveryDeepLink(
   url: string | null | undefined,
-  opts: { force?: boolean; nowMs?: number } = {},
+  opts: { nowMs?: number } = {},
 ): Promise<void> {
-  const { force = false, nowMs = Date.now() } = opts;
+  const { nowMs = Date.now() } = opts;
   const link = parseRecoveryLink(url);
   // Not a recovery link at all (a widget deep link, a confirm link, anything else) —
   // ignore it. NEVER treat it as a broken recovery attempt.
   if (link.kind === 'unrelated') return;
 
   const key = url ?? '';
-  if (!force && key === lastHandledUrl) return;
+  if (key === lastHandledUrl) return;
   lastHandledUrl = key;
 
   const store = useAuthStore.getState();
@@ -146,16 +152,25 @@ export async function handleRecoveryDeepLink(
   // failure state's pre-fill must come from this value, not a re-read (FR-12).
   store.setRecoveryEmail(marker.email);
 
-  // step 3: arm the gate (disk then memory) and show the working state.
+  // step 3: arm the gate (disk then memory), null the STORE session, then route to
+  // the working state. Nulling the session BEFORE the route is load-bearing: the
+  // set-password form renders on (session && recoveryInProgress), and on a WARM deep
+  // link A's live session is still in the store — so routing to the form while it is
+  // non-null would let a "Save and continue" tap DURING the step-4 flush window write
+  // B's new password onto A's account (Trap 2, caught by code-reviewer). With the
+  // session null, reset-password shows the working spinner until B's session arrives
+  // from the exchange, so the form is never reachable against A's session. Nulling
+  // the STORE (not auth-js) does not touch the flush, which drains A's queue under
+  // auth-js's own still-valid session at step 4.
   await armRecoveryGate();
   store.setRecoveryScreen(null);
+  useAuthStore.getState().setSession(null);
   router.replace(RECOVERY_ROUTE);
 
   // step 4: flush (best-effort, so a co-resident's unsynced queue is not destroyed
-  // by the wipe — B-430) then null the STORE and wipe. NO signOut (the verifier).
+  // by the wipe — B-430) then wipe. NO signOut (that deletes the verifier).
   await flushForSignOut().catch((e) =>
     console.warn('[recovery] pre-wipe flush failed:', e instanceof Error ? e.message : e));
-  useAuthStore.getState().setSession(null);
   await wipeLocalSession();
 
   // steps 5–8.

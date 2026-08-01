@@ -421,6 +421,6 @@ const styles = StyleSheet.create({
   supportSub: {
     fontSize: theme.textSM,
     color: theme.colorTextTertiary,
-    marginTop: 2,
+    marginTop: theme.spaceMicro,
   },
 });

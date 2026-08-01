@@ -82,8 +82,13 @@ export default function RootLayout() {
     // so the two do not race on setSession / router.replace. `getLinkingURL()` is
     // synchronous, so this reads the launch URL without racing.
     if (isRecoveryDeepLink(Linking.getLinkingURL())) {
-      void handleRecoveryDeepLink(Linking.getLinkingURL());
-      setLoading(false);
+      // Keep isLoading TRUE until the handler has finished routing — releasing it
+      // synchronously here would let a consumer of `isLoading` (e.g. the Landing's
+      // auth CTAs) observe loading:false with no session and no recovery route yet
+      // applied, flashing the login wall on the exact screen Jordan's "lands the
+      // owner in the app" rule protects (code-reviewer). `.finally` covers success
+      // and failure alike.
+      void handleRecoveryDeepLink(Linking.getLinkingURL()).finally(() => setLoading(false));
     } else {
       void initColdStart();
     }
