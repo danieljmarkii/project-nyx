@@ -37,12 +37,17 @@ export function useMedStrips(): { input: MedStripInput | null; isLoading: boolea
 
     loadMedStripInput({ id: petId, species })
       .then((next) => {
-        if (!cancelled) setInput(next);
+        // A read FAILURE resolves to `null` (never "no meds" — that is a non-null
+        // input with empty arrays), so on null we KEEP the previous input rather
+        // than flashing to empty: a strip already showing a withholding fact must
+        // not vanish on a transient hydration-tick failure. First-load failures
+        // leave the initial `null`, which correctly shows nothing.
+        if (!cancelled && next !== null) setInput(next);
       })
       .catch((e) => {
-        // A total read failure leaves the previous input in place rather than
-        // flashing an empty state — a context strip never asserts "no meds" from
-        // a failed read.
+        // Defensive: `loadMedStripInput` catches its own read errors and resolves
+        // to `null`, so this should not fire — but if it ever rejects, hold the
+        // previous input rather than clearing it.
         console.error('[MedStrip] load failed:', e);
       })
       .finally(() => {

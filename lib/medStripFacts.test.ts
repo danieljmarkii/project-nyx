@@ -17,12 +17,27 @@ jest.mock('./feedingArrangements', () => ({
   getActiveArrangementsForPet: jest.fn().mockResolvedValue([]),
 }));
 
+// The behavioral suite at the bottom drives `loadMedStripInput`'s control flow, so
+// `getDb` and `getIntakeDecline` are mocked (the SQL-STRING suites above never call
+// either — they run the exported strings against `node:sqlite` directly — so these
+// mocks are inert for them). `mockGetDb` is a function so one test can make `getDb`
+// itself throw (the "reject vs resolve-null" contract).
+const mockGetAllAsync = jest.fn();
+const mockGetDb = jest.fn();
+jest.mock('./db', () => ({ getDb: () => mockGetDb() }));
+
+const mockGetIntakeDecline = jest.fn();
+jest.mock('./analytics', () => ({
+  getIntakeDecline: (...args: unknown[]) => mockGetIntakeDecline(...args),
+}));
+
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { DatabaseSync } = require('node:sqlite');
 import {
   ACTIVE_REGIMENS_FOR_STRIP_SQL,
   ITEMS_FOR_STRIP_SQL,
   RECENT_DOSES_FOR_STRIP_SQL,
+  loadMedStripInput,
 } from './medStripFacts';
 
 const PET = 'pet-1';
@@ -191,5 +206,109 @@ describe('ITEMS_FOR_STRIP_SQL', () => {
     const rows = db.prepare(ITEMS_FOR_STRIP_SQL).all();
     expect(rows).toEqual([{ id: 'item-amox', generic_name: 'Amoxicillin', brand_name: null }]);
     db.close();
+  });
+});
+
+// ── loadMedStripInput — the control flow the SQL-string suites don't reach ─────
+// The sibling `dietTrialFacts.test.ts` grew a behavioural loader suite AFTER a PR
+// silently dropped a field from the loader's return with the suite still green.
+// The same regression class is reachable here (invert `intakeDeclineActive`, break
+// the core-fail→null contract, mis-build the `items` map), so it gets the same kind
+// of test: the READ layer is mocked, and these assert the assembly + the failure
+// posture, not the SQL (that is above, against a real engine).
+const NOW = Date.parse('2026-07-31T18:00:00.000Z');
+const REGIMEN = {
+  id: 'reg-1', medication_item_id: 'item-amox', drug_name: 'Amoxicillin',
+  dose_amount: '250 mg', doses_per_day: 2, started_at: '2026-07-27',
+  target_duration_days: 14,
+};
+const DOSE = {
+  medication_id: null, medication_item_id: 'item-amox', adherence: 'given',
+  dose_amount: '250 mg', paired_event_id: null, paired_vehicle_intake: null,
+  occurred_at: '2026-07-31T09:00:00.000Z', deleted_at: null,
+};
+const ITEM = { id: 'item-amox', generic_name: 'Amoxicillin', brand_name: null };
+
+// Queue the three core reads in the Promise.all's array order: regimens, doses,
+// items. `mockResolvedValueOnce` is consumed in call order.
+function coreReads(regimens: unknown[], doses: unknown[], items: unknown[]) {
+  mockGetAllAsync
+    .mockResolvedValueOnce(regimens)
+    .mockResolvedValueOnce(doses)
+    .mockResolvedValueOnce(items);
+}
+
+describe('loadMedStripInput — assembly + failure posture', () => {
+  beforeEach(() => {
+    mockGetAllAsync.mockReset();
+    mockGetIntakeDecline.mockReset();
+    mockGetDb.mockReset().mockReturnValue({ getAllAsync: mockGetAllAsync });
+  });
+
+  it('assembles the input, indexing the item cache by id (happy path)', async () => {
+    coreReads([REGIMEN], [DOSE], [ITEM, { id: 'item-gaba', generic_name: 'Gabapentin', brand_name: 'Neurontin' }]);
+    mockGetIntakeDecline.mockResolvedValue({ status: 'none' });
+
+    const input = await loadMedStripInput({ id: 'pet-1', species: 'cat' }, NOW);
+    expect(input).not.toBeNull();
+    expect(input!.regimens).toEqual([REGIMEN]);
+    expect(input!.doses).toEqual([DOSE]);
+    expect(input!.items).toEqual({
+      'item-amox': { generic_name: 'Amoxicillin', brand_name: null },
+      'item-gaba': { generic_name: 'Gabapentin', brand_name: 'Neurontin' },
+    });
+    expect(input!.nowMs).toBe(NOW);
+    expect(input!.intakeDeclineActive).toBe(false);
+  });
+
+  it('passes the doses read a window bound one day wider than the 14-day window', async () => {
+    coreReads([], [], []);
+    mockGetIntakeDecline.mockResolvedValue({ status: 'none' });
+    await loadMedStripInput({ id: 'pet-1', species: 'cat' }, NOW);
+    // Call order in the Promise.all: [0]=regimens, [1]=doses, [2]=items.
+    const [sql, params] = mockGetAllAsync.mock.calls[1];
+    expect(sql).toBe(RECENT_DOSES_FOR_STRIP_SQL);
+    const expectedLower = new Date(NOW - 15 * 86_400_000).toISOString();
+    expect(params).toEqual(['pet-1', 'pet-1', expectedLower]);
+  });
+
+  it('a core read failure resolves to null (Home draws no strips — N4)', async () => {
+    mockGetAllAsync.mockRejectedValue(new Error('offline'));
+    mockGetIntakeDecline.mockResolvedValue({ status: 'none' });
+    expect(await loadMedStripInput({ id: 'pet-1', species: 'cat' }, NOW)).toBeNull();
+    // The safety read is never reached once the core reads have failed.
+    expect(mockGetIntakeDecline).not.toHaveBeenCalled();
+  });
+
+  it('getDb throwing resolves to null, never rejects (contract)', async () => {
+    mockGetDb.mockImplementationOnce(() => {
+      throw new Error('openDatabaseSync failed');
+    });
+    await expect(loadMedStripInput({ id: 'pet-1', species: 'cat' }, NOW)).resolves.toBeNull();
+  });
+
+  it('an intake-decline read failure defaults to false without failing the load', async () => {
+    coreReads([REGIMEN], [], [ITEM]);
+    mockGetIntakeDecline.mockRejectedValue(new Error('decline read failed'));
+    const input = await loadMedStripInput({ id: 'pet-1', species: 'cat' }, NOW);
+    expect(input).not.toBeNull(); // the card still renders its med-specific facts
+    expect(input!.intakeDeclineActive).toBe(false); // the redundant safety lane fails soft
+  });
+
+  it('a live intake-decline flag sets intakeDeclineActive true', async () => {
+    coreReads([REGIMEN], [], [ITEM]);
+    mockGetIntakeDecline.mockResolvedValue({
+      status: 'watch',
+      flags: [{ trigger: 'consecutive_low', daysBelowBaseline: 2, refusedFoodLabel: null }],
+    });
+    const input = await loadMedStripInput({ id: 'pet-1', species: 'cat' }, NOW);
+    expect(input!.intakeDeclineActive).toBe(true);
+  });
+
+  it('a watch status with an EMPTY flags list is not active', async () => {
+    coreReads([REGIMEN], [], [ITEM]);
+    mockGetIntakeDecline.mockResolvedValue({ status: 'watch', flags: [] });
+    const input = await loadMedStripInput({ id: 'pet-1', species: 'cat' }, NOW);
+    expect(input!.intakeDeclineActive).toBe(false);
   });
 });

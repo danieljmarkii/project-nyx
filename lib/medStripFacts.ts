@@ -105,13 +105,18 @@ export async function loadMedStripInput(
   pet: { id: string; species: Species },
   nowMs: number = Date.now(),
 ): Promise<MedStripInput | null> {
-  const db = getDb();
-  const lowerIso = new Date(nowMs - (MED_STRIP_ADHOC_WINDOW_DAYS + 1) * MS_PER_DAY).toISOString();
-
   let regimens: MedStripRegimenRow[];
   let doses: MedStripDoseRow[];
   let itemRows: ItemRow[];
   try {
+    // `getDb()` and the `Date`→ISO bound are both INSIDE the try: `getDb`
+    // (openDatabaseSync) can throw, and the whole point of this block is that any
+    // read-path failure resolves to `null` (Home draws no strips) rather than
+    // rejecting — a reject would flow past the loader's stated contract.
+    const db = getDb();
+    const lowerIso = new Date(
+      nowMs - (MED_STRIP_ADHOC_WINDOW_DAYS + 1) * MS_PER_DAY,
+    ).toISOString();
     [regimens, doses, itemRows] = await Promise.all([
       db.getAllAsync<MedStripRegimenRow>(ACTIVE_REGIMENS_FOR_STRIP_SQL, [pet.id]),
       db.getAllAsync<MedStripDoseRow>(RECENT_DOSES_FOR_STRIP_SQL, [pet.id, pet.id, lowerIso]),
@@ -127,9 +132,26 @@ export async function loadMedStripInput(
     items[r.id] = { generic_name: r.generic_name, brand_name: r.brand_name };
   }
 
-  // Best-effort SAFETY lane — a failure here defaults to `false` (no withhold) and
-  // does NOT take the strip down, because the pet-level fact leads the Signal zone
-  // above the strip regardless. Mirrors `dietTrialFacts.readIntakeDecline`.
+  // Best-effort SAFETY lane — a failure here defaults to `false` (no med-strip
+  // withhold) and does NOT take the strip down. This is the ONE withholding reason
+  // that fails toward NOT-withholding, so it is a deliberate call, not an accident:
+  //
+  //   (1) It is an INDEPENDENTLY-REDUNDANT surface. The pet-level intake-decline
+  //       fact reaches Home through the Signal zone, which is driven by the
+  //       server-side `generate-signal` engine — a SEPARATE detection path
+  //       (`generate-signal/summary.ts`: "a safety finding (intake_decline /
+  //       symptom_worsening) drives the summary"), not this client `getIntakeDecline`
+  //       read. Principle 3 leads Home with that safety card. So a failure here
+  //       drops a COURTESY suppression on the med strip, never the primary surfacing.
+  //   (2) It mirrors the shipped, reviewed `dietTrialFacts.readIntakeDecline`
+  //       exactly — the wedge trial card already fails this read soft for the same
+  //       reason. The med-SPECIFIC withholds (refused / missed / in-doubt) come from
+  //       the core `Promise.all` above and fail CLOSED (a core failure → null → no
+  //       card at all), so the only reason that fails soft is the redundant one.
+  //
+  // Data Scientist ✓ (redundancy verified against `generate-signal`; consistent
+  // with the shipped diet-trial precedent). If a future change makes this the ONLY
+  // surfacing of a pet-level safety fact, the default must flip to failing closed.
   let intakeDeclineActive = false;
   try {
     const decline = await getIntakeDecline(pet.id, pet.species, nowMs);
