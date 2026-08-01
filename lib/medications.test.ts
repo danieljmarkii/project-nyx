@@ -21,6 +21,7 @@ import {
   canSaveMedicationItemEdit,
   computeRegimenCompliance,
   dosesTowardTarget,
+  doseCourseProgress,
   regimenDaysElapsed,
   attributeDosesToRegimens,
   regimenComplianceLine,
@@ -844,6 +845,96 @@ describe('dosesTowardTarget — therapy delivered = given + partial (§4, D1)', 
       doses.map((d) => ({ ...d, deleted_at: null })),
     ).get('reg-1')!;
     expect(dosesTowardTarget(allLive)).toBe(3);
+  });
+});
+
+// ── B-618 §6 — the profile card's dose-course line + bar (doseCourseProgress) ─────
+// The line and the bar must state the SAME n (the diet-trial bar lesson), n reads the
+// D6 predicate (never re-derived), and — non-negotiable, D7 — reaching or passing the
+// target must render no completion/stop language. The §8 QA matrix rows 1/3/5 live here.
+describe('doseCourseProgress — "Dose {n} of {target}" line + bar (§6, D7)', () => {
+  const NO_COMPLETION = /complete|done|finish|stop|✓|✔|check|over\b|ended/i;
+
+  it('zero-state: "Dose 0 of 28" with an empty bar before the first administration', () => {
+    const p = doseCourseProgress(tally(), 28);
+    expect(p.line).toBe('Dose 0 of 28');
+    expect(p.count).toBe(0);
+    expect(p.barFraction).toBe(0);
+    expect(p.pastTarget).toBe(false);
+  });
+
+  it('§8.1 in-range: a given dose reads "Dose 1 of 28"; the bar fraction equals n/target', () => {
+    const p = doseCourseProgress(tally({ given: 1 }), 28);
+    expect(p.line).toBe('Dose 1 of 28');
+    expect(p.barFraction).toBeCloseTo(1 / 28);
+    // The line's number and the bar's number are the same n — never one labelled with
+    // the other (the whole point of computing both here).
+    expect(p.count).toBe(1);
+  });
+
+  it('§8.3 a partial advances the count line (therapy delivered) — "Dose 5 of 28"', () => {
+    // 4 given + 1 partial = 5 toward the bottle (D1), even though the partial is also
+    // disclosed by regimenFlagLine. The count line and the compliance line disagree by
+    // the partial ON PURPOSE — that gap is pinned in the dosesTowardTarget suite.
+    const p = doseCourseProgress(tally({ given: 4, partial: 1 }), 28);
+    expect(p.line).toBe('Dose 5 of 28');
+    expect(p.count).toBe(5);
+  });
+
+  it('at exactly the target: "Dose 28 of 28", full bar, and NO completion word (D7)', () => {
+    const p = doseCourseProgress(tally({ given: 27, partial: 1 }), 28);
+    expect(p.line).toBe('Dose 28 of 28');
+    expect(p.barFraction).toBe(1);
+    expect(p.pastTarget).toBe(false);
+    // D7 is the reason this feature is careful: hitting the target is not "done".
+    expect(p.line).not.toMatch(NO_COMPLETION);
+  });
+
+  it('§8.5 past target: bar capped, extras disclosed, no error, no "complete"', () => {
+    // 29th administration on a 28-dose course. cap-the-bar / disclose-the-extras /
+    // render-no-error: the line stays TRUE ("28 of 28"), never "Dose 29 of 28", never
+    // "Day 30 of 7"-style nonsense, never a completion state.
+    const p = doseCourseProgress(tally({ given: 29 }), 28);
+    expect(p.line).toBe('28 of 28 doses · 1 more logged');
+    expect(p.pastTarget).toBe(true);
+    expect(p.barFraction).toBe(1); // capped, never 29/28
+    expect(p.line).not.toMatch(NO_COMPLETION);
+
+    const p2 = doseCourseProgress(tally({ given: 28, partial: 2 }), 28);
+    expect(p2.line).toBe('28 of 28 doses · 2 more logged');
+    expect(p2.count).toBe(30);
+  });
+
+  it('past target on a single-dose course reads "1 of 1 dose" (singular, not "doses")', () => {
+    // A one-time dose (e.g. a single dewormer) logged twice: the unit word inflects on
+    // the target, so a 1-dose course never reads the ungrammatical "1 of 1 doses".
+    const p = doseCourseProgress(tally({ given: 2 }), 1);
+    expect(p.line).toBe('1 of 1 dose · 1 more logged');
+    expect(p.barFraction).toBe(1);
+    expect(p.line).not.toMatch(NO_COMPLETION);
+  });
+
+  it('refused / missed / unrated never move the count line off "Dose 0 of N" (§8.2)', () => {
+    // A refused tail can never let a course read as complete — the count is 0, the bar
+    // is empty, and the refusals surface through regimenFlagLine, not this line.
+    const p = doseCourseProgress(tally({ refused: 3, missed: 2, unrated: 1 }), 14);
+    expect(p.line).toBe('Dose 0 of 14');
+    expect(p.barFraction).toBe(0);
+  });
+
+  it('property: barFraction is always in [0, 1] and the line never emits a completion word', () => {
+    for (const target of [1, 7, 14, 28]) {
+      for (let given = 0; given <= target + 3; given++) {
+        for (const partial of [0, 1, 2]) {
+          const p = doseCourseProgress(tally({ given, partial }), target);
+          expect(p.barFraction).toBeGreaterThanOrEqual(0);
+          expect(p.barFraction).toBeLessThanOrEqual(1);
+          expect(p.line).not.toMatch(NO_COMPLETION);
+          // The bar can never claim more progress than the count justifies.
+          expect(p.barFraction).toBeCloseTo(Math.min((given + partial) / target, 1));
+        }
+      }
+    }
   });
 });
 
