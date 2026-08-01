@@ -27,6 +27,7 @@ import {
   regimenFlagLine,
   buildRegimenPayload,
   canSaveRegimen,
+  resolveDurationColumns,
   doubleDoseWindowHours,
   detectDoubleDose,
   formatDoseGap,
@@ -990,6 +991,70 @@ describe('buildRegimenPayload / canSaveRegimen — regimen-setup write', () => {
     expect(canSaveRegimen({ drugName: 'Apoquel' })).toBe(true);
     expect(canSaveRegimen({ drugName: '' })).toBe(false);
     expect(canSaveRegimen({ drugName: '   ' })).toBe(false);
+  });
+});
+
+// ── B-618 §5 — the entry form's course-length → the two denomination columns ─────
+// The two load-bearing rules the entry UI (PR 3) leans on: AT MOST ONE denomination
+// is ever set (unrepresentable-to-set-both, the client half of the DB CHECK), and a
+// blank/zero/ongoing field fakes no course. Pinned here so a future edit to the modal
+// can't quietly reintroduce a both-set write or a zero-length course.
+describe('resolveDurationColumns — one denomination, never a faked course (§5)', () => {
+  it('writes days only when the unit is days (doses column stays null)', () => {
+    expect(resolveDurationColumns({ mode: 'fixed', unit: 'days', value: '14' })).toEqual({
+      target_duration_days: 14,
+      target_duration_doses: null,
+    });
+  });
+
+  it('writes doses only when the unit is doses (days column stays null)', () => {
+    expect(resolveDurationColumns({ mode: 'fixed', unit: 'doses', value: '28' })).toEqual({
+      target_duration_days: null,
+      target_duration_doses: 28,
+    });
+  });
+
+  it('an ongoing course writes BOTH null regardless of a lingering unit/value', () => {
+    // The mode gates everything: even if the field still holds a number from before the
+    // owner flipped back to Ongoing, no course is written.
+    expect(resolveDurationColumns({ mode: 'ongoing', unit: 'doses', value: '28' })).toEqual({
+      target_duration_days: null,
+      target_duration_doses: null,
+    });
+  });
+
+  it('a blank / zero / non-positive field never fakes a course (both null)', () => {
+    for (const value of ['', '0', '00']) {
+      expect(resolveDurationColumns({ mode: 'fixed', unit: 'days', value })).toEqual({
+        target_duration_days: null,
+        target_duration_doses: null,
+      });
+      expect(resolveDurationColumns({ mode: 'fixed', unit: 'doses', value })).toEqual({
+        target_duration_days: null,
+        target_duration_doses: null,
+      });
+    }
+  });
+
+  it('parses a leading-zero value as its positive integer (field is digit-stripped upstream)', () => {
+    expect(resolveDurationColumns({ mode: 'fixed', unit: 'doses', value: '028' }).target_duration_doses).toBe(28);
+  });
+
+  it('NEVER returns both denominations set, across the mode × unit × value cross-product', () => {
+    // The construction guarantee the DB CHECK backstops: both columns branch on the
+    // same `unit`, so no combination of inputs can set both. This is the test that
+    // fails first if a refactor ever writes the two columns independently.
+    const modes: ('ongoing' | 'fixed')[] = ['ongoing', 'fixed'];
+    const units: ('days' | 'doses')[] = ['days', 'doses'];
+    const values = ['', '0', '1', '14', '28', '365'];
+    for (const mode of modes) {
+      for (const unit of units) {
+        for (const value of values) {
+          const out = resolveDurationColumns({ mode, unit, value });
+          expect(out.target_duration_days != null && out.target_duration_doses != null).toBe(false);
+        }
+      }
+    }
   });
 });
 
