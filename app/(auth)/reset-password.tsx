@@ -85,7 +85,11 @@ export default function ResetPasswordScreen() {
     await supabase.auth.signOut({ scope: 'others' }).catch((e) =>
       console.warn('[recovery] evict-others failed:', e instanceof Error ? e.message : e));
     await releaseRecoveryGate();
+    // Clear the recovery state. recoveryEmail is held in memory past the FR-7 wipe by
+    // design (FR-12), so it needs explicit clearing when the flow ends — otherwise the
+    // owner's address lingers in the store after they are back in the app.
     useAuthStore.getState().setRecoveryScreen(null);
+    useAuthStore.getState().setRecoveryEmail(null);
     // Straight into the app — the recovery session IS the sign-in (Jordan's rule).
     router.replace('/(tabs)');
   }

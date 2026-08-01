@@ -112,10 +112,18 @@ export default function RootLayout() {
           // A live recovery session behind the gate → the set-password form.
           setSession(session);
           router.replace('/(auth)/reset-password');
+        } else if (decision === 'retain') {
+          // A TRANSIENT refresh failure on resume (null-with-error) — the recovery
+          // session is almost certainly still in storage, so do NOT release the gate
+          // over a network blip. Keep it and let autoRefresh recover: TOKEN_REFRESHED
+          // then arrives as SIGNED_IN and the FR-6 branch renders the form. Land on
+          // the auth entry meanwhile (the recovery session guard holds the redirect).
+          router.replace('/(auth)');
+          supabase.auth.startAutoRefresh().catch(() => {});
         } else {
-          // Gate armed but the recovery session is gone (expired, or a crash after a
-          // failed exchange). Nothing to resume — release the gate and route to auth
-          // rather than wedge the owner on a formless set-password screen.
+          // to-auth (null-without-error): the recovery session genuinely expired.
+          // Nothing to resume — release the gate and route to auth rather than wedge
+          // the owner on a formless set-password screen.
           await releaseRecoveryGate();
           router.replace('/(auth)');
         }
