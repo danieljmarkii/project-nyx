@@ -100,7 +100,7 @@ const styles = StyleSheet.create({
     flex: 1,
     fontFamily: theme.fontBody,
     fontSize: theme.textMD,
-    lineHeight: 20,
+    lineHeight: theme.lineHeightBody,
     color: theme.colorTextPrimary,
   },
   rankCount: {

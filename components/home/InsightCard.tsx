@@ -242,7 +242,7 @@ const styles = StyleSheet.create({
     marginTop: theme.space1,
     fontSize: theme.textSM,
     color: theme.colorTextSecondary,
-    lineHeight: 20,
+    lineHeight: theme.lineHeightBody,
   },
   expandHint: {
     marginTop: theme.space1,

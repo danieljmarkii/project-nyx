@@ -78,6 +78,6 @@ const styles = StyleSheet.create({
   text: {
     fontSize: theme.textSM,
     color: theme.colorTextSecondary,
-    lineHeight: 20, // raw lineHeight — folds into the B-101 lineHeightBody token sweep
+    lineHeight: theme.lineHeightBody,
   },
 });

@@ -76,7 +76,7 @@ const styles = StyleSheet.create({
     // A shade quieter than an active row's near-black product name — archived
     // foods are parked, not the surface's main content.
     color: theme.colorTextSecondary,
-    lineHeight: 20,
+    lineHeight: theme.lineHeightBody,
   },
   // The row's action, where FoodRow's chevron sits. Accent text (the one
   // interactive colour), ≥44pt via minWidth/minHeight + hitSlop.

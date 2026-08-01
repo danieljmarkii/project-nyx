@@ -171,7 +171,7 @@ const styles = StyleSheet.create({
   body: {
     fontSize: theme.textSM,
     color: theme.colorTextSecondary,
-    lineHeight: 20,
+    lineHeight: theme.lineHeightBody,
     textAlign: 'center',
     marginTop: theme.space1,
   },
