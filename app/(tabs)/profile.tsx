@@ -942,6 +942,19 @@ export default function ProfileScreen() {
               ...(trialAllowedSet.status === 'ready'
                 ? { view_allowed_foods: () => router.push('/trial-foods') }
                 : {}),
+              // B-616 PR 4 (§2.6) — the destination B-475 was filed for. The
+              // resolver has declared this action since PR 4 of B-417 and emits it
+              // only when `offDiet > 0`, so it really is handler-only: the card
+              // decides whether there is anything to drill into, and this line
+              // decides where the drill-in goes.
+              //
+              // UNCONDITIONAL, unlike the allowed-set link above. That one needs a
+              // hydrated allowed set to have anything to show; this one needs the
+              // exposure facts, which the card has already read to draw the count
+              // it is offering — a link the card only draws over a non-zero count
+              // cannot land on a screen with nothing on it for a reason the card
+              // could have known.
+              view_exposures: () => router.push('/trial-exposures'),
             }}
             onManage={() => setStartTrialVisible(true)}
           />
