@@ -98,6 +98,14 @@ export interface MedStripItem {
 }
 
 export interface MedStripInput {
+  // The pet this input was LOADED for. Carried through the resolver onto the confirm
+  // payload (below) so the pet id and the drug identity a one-tap writes can never
+  // desync: on a pet switch the loader holds the previous pet's input until the new
+  // read resolves, and the write must use THAT pet, not whatever pointer is live at
+  // tap time — else a tap in the swap window writes the new pet's id against the old
+  // pet's drug (a silent cross-pet dose, uncaught locally since the med FKs are
+  // server-only). One source of truth for both.
+  petId: string;
   regimens: MedStripRegimenRow[];             // active regimens only (caller-filtered)
   doses: MedStripDoseRow[];                   // the pet's recent doses (≥ the window)
   items: Record<string, MedStripItem>;        // medication_items_cache by id
@@ -111,6 +119,10 @@ export interface MedStripInput {
 // The row `insertMedicationDose` would write on a confirm tap (§5). Present only
 // when the button renders (`MedStripModel.confirm !== null`).
 export interface MedStripConfirm {
+  // The pet the dose is for — the `input.petId` this model was resolved from, so the
+  // write is bound to the same pet as the drug identity below (see `MedStripInput.petId`).
+  // The confirm carries it rather than the write re-reading the live active pet.
+  petId: string;
   // One of these two is non-null — the confirmability gate (§5.2 case 1). Both feed
   // `insertMedicationDose` directly.
   medicationItemId: string | null;
@@ -125,6 +137,11 @@ export interface MedStripModel {
   // Dedup + React key: the `medication_item_id`, else `regimen:<id>` for a free-text
   // regimen with no library item.
   key: string;
+  // The bare drug name (`drugDisplayName`, B-171), exposed so a consumer that needs
+  // just the name — the confirm button's screen-reader label — reads it directly
+  // instead of parsing it back out of `header`'s presentation copy (whose separator
+  // is M5-mutable and which a free-text name could itself contain).
+  drugName: string;
   // Indicative copy — locks at M5 (`nyx-voice` + `clinical-guardrails`).
   header: string;
   // Day progress in [0, 1], or null when there is no honest denominator (ongoing /
@@ -378,6 +395,7 @@ function buildModel(
   const confirm: MedStripConfirm | null =
     !collapsed && !isWithholding && attributable
       ? {
+          petId: input.petId,
           medicationItemId: itemId,
           medicationId: regimen?.id ?? null,
           doseAmount: regimen?.dose_amount ?? lastDose?.dose_amount ?? null,
@@ -387,6 +405,7 @@ function buildModel(
   return {
     model: {
       key: cand.key,
+      drugName: name,
       header,
       progressFraction,
       line,
