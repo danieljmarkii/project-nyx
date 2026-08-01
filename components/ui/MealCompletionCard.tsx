@@ -464,21 +464,21 @@ const styles = StyleSheet.create({
   flagDetail: {
     fontSize: theme.textSM,
     lineHeight: theme.textSM * 1.4,
-    color: theme.colorTextOnDarkDetail,
+    color: theme.colorTextOnDarkSubtle,
   },
   // The opt-in combo entry (B-156 PR B2b). ≥44pt tappable (the 3am-test floor) via
   // minHeight; a faint divider so it reads as a separate, optional add-on beneath the
   // intake row, never a peer of the logged act. Deliberately the quietest line.
   comboRow: {
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: theme.colorDividerOnDarkFaint,
+    borderTopColor: theme.colorDividerOnDark,
     paddingTop: theme.space1,
     minHeight: 44,
     justifyContent: 'center',
   },
   comboText: {
     fontSize: theme.textSM,
-    color: theme.colorTextOnDarkDetail,
+    color: theme.colorTextOnDarkSubtle,
     fontWeight: theme.weightMedium,
   },
 

@@ -426,7 +426,7 @@ const styles = StyleSheet.create({
   // it?" question, never a peer of it.
   vehicleWrap: {
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: theme.colorDividerOnDarkFainter,
+    borderTopColor: theme.colorDividerOnDark,
     paddingTop: theme.space1,
     gap: 6,
   },
