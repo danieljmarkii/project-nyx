@@ -546,6 +546,26 @@ describe('the saved moment’s copy (D2-r2)', () => {
     expect(savedMomentCopy('Pixel', [...a, ...b], NOW).cardSub).toBe('2 documents');
   });
 
+  // B-589 — the flag that decides whether "Name it" renders. It must track the
+  // DOCUMENT count, not the page count: a Name sheet opened over a "2 documents"
+  // card can only name the cover group, so the button is dropped there and naming
+  // moves to the library rows (each of which now carries its filename).
+  describe('multiDocument (drives whether the saved moment offers "Name it")', () => {
+    it('is false for one single-page document — the button stays', () => {
+      expect(savedMomentCopy('Pixel', build([page()]), NOW).multiDocument).toBe(false);
+    });
+
+    it('is false for one multi-page document — still one nameable document', () => {
+      expect(savedMomentCopy('Pixel', build([page(), page(), page()]), NOW).multiDocument).toBe(false);
+    });
+
+    it('is true when one capture filed several documents — the button is dropped', () => {
+      const a = build([page({ pickedMimeType: 'application/pdf' })], { newId: idFactory('a') });
+      const b = build([page({ pickedMimeType: 'application/pdf' })], { newId: idFactory('b') });
+      expect(savedMomentCopy('Pixel', [...a, ...b], NOW).multiDocument).toBe(true);
+    });
+  });
+
   it('renders the year on an older document date', () => {
     const rows = build([page({ exifIso: new Date(2025, 11, 19, 10, 0).toISOString() })]);
     expect(savedMomentCopy('Pixel', rows, NOW).cardTitle).toBe('Document — Dec 19, 2025');

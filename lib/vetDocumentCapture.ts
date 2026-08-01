@@ -455,6 +455,19 @@ export interface SavedMomentCopy {
   cardTitle: string;
   /** "3 pages" / "2 documents", or null when there is nothing to add. */
   cardSub: string | null;
+  /**
+   * B-589 — true when this one capture filed MORE THAN ONE document (a Files pick
+   * of two PDFs), as opposed to one multi-page document. The saved moment shows a
+   * single cover card, so "Name it" here could only ever name that cover group —
+   * yet the card reads "2 documents" and the sheet title reads "Name THIS
+   * document", so an owner types a name and believes they named what they saved.
+   * They named one, silently. When this is true the saved moment drops "Name it"
+   * to Done alone and naming happens in the library, where every row now carries
+   * its own filename to tell the documents apart (D11, B-546). This is NOT `cardSub
+   * != null`: a multi-PAGE single document is one nameable document and keeps the
+   * button.
+   */
+  multiDocument: boolean;
 }
 
 // D2-r2. Two lines were argued for in review and neither is decoration:
@@ -482,6 +495,7 @@ export function savedMomentCopy(
       groupCount > 1 ? `${groupCount} documents`
       : coverPages > 1 ? `${coverPages} pages`
       : null,
+    multiDocument: groupCount > 1,
   };
 }
 
