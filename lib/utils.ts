@@ -146,6 +146,23 @@ export function localDayIndexOf(value: string, timeZone?: string): number | null
   return localDayIndex(ms, timeZone);
 }
 
+// The inverse of `localDayIndexOf` for the 'YYYY-MM-DD' form: an epoch-day index
+// back to the calendar-day key it names. **It MUST be a UTC read**, and that is the
+// whole reason it lives beside `localDayIndexOf` rather than being re-spelled at
+// each call site.
+//
+// `localDayIndexOf` builds the index from `Date.UTC(...)`, so `index * MS_PER_DAY`
+// is UTC midnight of that calendar day — which is not midnight anywhere else.
+// Reading it back with `.toISOString()` lands on the same anchor; reading it with
+// the LOCAL getters (`toLocalDayKey`) lands on the PREVIOUS day at every negative
+// UTC offset. That inversion is exactly what `lib/dietTrialOutcomeFacts.ts` shipped
+// in B-417 PR 6 and B-517 hoisted here, so there is ONE epoch-day inverse to guard
+// (the day-math guard forbids a private copy from reappearing) rather than the six
+// near-identical copies that had accreted across the trial surfaces.
+export function dayKeyFromIndex(index: number): string {
+  return new Date(index * MS_PER_DAY).toISOString().slice(0, 10);
+}
+
 // Format a UTC day key (YYYY-MM-DD) as a short "Mon D" label ("Jun 24"). The Patterns
 // calendar buckets by UTC day (lib/analytics), so its cells, the day drill-in, and the
 // History single-day filter must all NAME the day in UTC — otherwise a near-midnight

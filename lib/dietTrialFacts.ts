@@ -486,7 +486,7 @@ export async function loadDietTrialFacts(args: {
 }
 
 /** The inverse of `localDayIndexOf`, which must be a UTC read — see
- *  `dietTrialOutcomeFacts.dayKeyFromIndex` for what happens when it isn't. */
+ *  `lib/utils.dayKeyFromIndex` (the canonical copy) for what happens when it isn't. */
 function dayKeyFromIndex(index: number): string {
   return new Date(index * 86_400_000).toISOString().slice(0, 10);
 }
