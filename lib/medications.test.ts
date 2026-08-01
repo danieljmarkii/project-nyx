@@ -653,85 +653,6 @@ describe('attributeDosesToRegimens — explicit regimen link (B-153/B-154) wins'
   });
 });
 
-// B-441 — the regimen day counter, on the same oracle as the diet-trial counter
-// (lib/analytics.test.ts "timezone honesty"). Two zones × two edges of the local day:
-// every one of these instants is the SAME local calendar day for its owner, so every
-// one must read the same Day N. `medications.started_at` is a Postgres DATE, and the
-// old implementation round-tripped it through `new Date(key)` — UTC midnight — before
-// flooring to local midnight, so for anyone behind UTC it counted from the previous
-// day and read one too high on a clinical adherence surface.
-const MINUS_7 = 'Etc/GMT+7'; // UTC−7
-const PLUS_11 = 'Etc/GMT-11'; // UTC+11
-
-describe('regimenDaysElapsed — one local day, one Day N (B-441)', () => {
-  const STARTED = '2026-06-10';
-
-  // Four instants that are all "14 Jun, local" for their respective owner. Day 1 is
-  // 10 Jun, so every one is Day 5 — whatever UTC date the instant itself carries.
-  const CASES = [
-    { label: 'UTC−7 @ 00:30 local', zone: MINUS_7, nowIso: '2026-06-14T07:30:00.000Z' },
-    { label: 'UTC−7 @ 23:30 local', zone: MINUS_7, nowIso: '2026-06-15T06:30:00.000Z' },
-    { label: 'UTC+11 @ 00:30 local', zone: PLUS_11, nowIso: '2026-06-13T13:30:00.000Z' },
-    { label: 'UTC+11 @ 23:30 local', zone: PLUS_11, nowIso: '2026-06-14T12:30:00.000Z' },
-  ];
-
-  it.each(CASES)('reads Day 5 at $label', ({ zone, nowIso }) => {
-    expect(regimenDaysElapsed(STARTED, Date.parse(nowIso), zone)).toBe(5);
-  });
-
-  it('all four readings agree', () => {
-    const counts = CASES.map(({ zone, nowIso }) => regimenDaysElapsed(STARTED, Date.parse(nowIso), zone));
-    expect(counts).toEqual([5, 5, 5, 5]);
-  });
-
-  it('the OLD implementation read one day high behind UTC — the defect this closes', () => {
-    // Not a test of shipped code: it pins WHY this exists, so a refactor back to
-    // "parse the DATE, floor two midnights, divide the span" fails against a test
-    // that states what it costs. Reproduced with the fixed UTC−7 offset the zone
-    // above names, since the old code read the DEVICE's zone via setHours.
-    const OFFSET_MS = 7 * 60 * 60 * 1000;
-    const floorLocalDay = (ms: number) => Math.floor((ms - OFFSET_MS) / 86_400_000) * 86_400_000;
-    const oldCount = (startedAt: string, nowMs: number) =>
-      Math.max(
-        1,
-        Math.floor(
-          (floorLocalDay(nowMs) - floorLocalDay(Date.parse(startedAt))) / (1000 * 60 * 60 * 24),
-        ) + 1,
-      );
-    const now = Date.parse('2026-06-14T07:30:00.000Z'); // 00:30 local, 14 Jun, UTC−7
-    expect(oldCount(STARTED, now)).toBe(6); // ← the bug: an owner on day 5 read day 6
-    expect(regimenDaysElapsed(STARTED, now, MINUS_7)).toBe(5);
-  });
-
-  it('counts a same-day start as Day 1, not Day 0', () => {
-    expect(regimenDaysElapsed('2026-06-14', Date.parse('2026-06-14T07:30:00.000Z'), MINUS_7)).toBe(1);
-  });
-
-  it('counts a start of yesterday-local as Day 2', () => {
-    // 23:30 local on 14 Jun in UTC+11 is already 15 Jun in UTC — the instant whose UTC
-    // date disagrees with the owner's. Started 13 Jun local → day 1 = 13th, so Day 2.
-    expect(regimenDaysElapsed('2026-06-13', Date.parse('2026-06-14T12:30:00.000Z'), PLUS_11)).toBe(2);
-  });
-
-  it('advances by exactly one across a DST spring-forward (a 23-hour local day)', () => {
-    // America/Los_Angeles springs forward 08 Mar 2026. Differencing two local
-    // midnights in MILLISECONDS makes that day 23h, which floors to 0 whole days and
-    // silently drops it. Calendar-component indexing cannot: every local day is one.
-    const LA = 'America/Los_Angeles';
-    const noonOn = (day: string, utcHour: number) => Date.parse(`2026-03-${day}T${utcHour}:00:00.000Z`);
-    // 12:00 local on the 7th (PST, UTC−8), the 8th and the 9th (PDT, UTC−7).
-    expect(regimenDaysElapsed('2026-03-07', noonOn('07', 20), LA)).toBe(1);
-    expect(regimenDaysElapsed('2026-03-07', noonOn('08', 19), LA)).toBe(2);
-    expect(regimenDaysElapsed('2026-03-07', noonOn('09', 19), LA)).toBe(3);
-  });
-
-  it('returns null — never NaN — for an unreadable start date', () => {
-    // The old arithmetic produced NaN here, which rendered "Day NaN of 14".
-    expect(regimenDaysElapsed('not-a-date', Date.parse('2026-06-14T07:30:00.000Z'), MINUS_7)).toBeNull();
-    expect(regimenDaysElapsed('2026-02-30', Date.parse('2026-06-14T07:30:00.000Z'), MINUS_7)).toBeNull();
-  });
-});
-
 describe('computeRegimenCompliance', () => {
   it('computes given ÷ expected for a clean scheduled regimen', () => {
     // 2×/day for 7 days = 14 expected; 14 given → 100%.
@@ -793,27 +714,6 @@ describe('computeRegimenCompliance', () => {
     expect(c.expectedDoses).toBe(4); // 0.5 × 8
     expect(c.percent).toBe(100);
   });
-
-  it('reports no percent when the elapsed-day count is UNKNOWN (B-441)', () => {
-    // An unreadable start day means an unknown denominator. The tempting fallback is
-    // daysElapsed=1, which is the SMALLEST denominator there is and would print
-    // "100% given" over a regimen with one dose logged in a fortnight — a manufactured
-    // reassurance on a clinical adherence surface. Unknown stays unknown.
-    const c = computeRegimenCompliance({ dosesPerDay: 2, daysElapsed: null, tally: tally({ given: 1 }) });
-    expect(c.expectedDoses).toBe(0);
-    expect(c.percent).toBeNull();
-    expect(c.loggedDoses).toBe(1); // what we DO know is still counted
-  });
-
-  it('still counts flagged doses when the elapsed-day count is unknown', () => {
-    // The safety half must survive a degraded denominator: refused/missed doses are a
-    // possible disease signal and are independent of how long the course has run.
-    const c = computeRegimenCompliance({
-      dosesPerDay: 1, daysElapsed: null, tally: tally({ refused: 2, missed: 1 }),
-    });
-    expect(c.flaggedDoses).toBe(3);
-    expect(c.percent).toBeNull();
-  });
 });
 
 describe('regimenComplianceLine — copy never reassures on absence (§6.1)', () => {
@@ -847,21 +747,6 @@ describe('regimenComplianceLine — copy never reassures on absence (§6.1)', ()
       .toBe('4 doses logged');
     expect(regimenComplianceLine(computeRegimenCompliance({ dosesPerDay: null, daysElapsed: 3, tally: tally() })))
       .toBe('No doses logged yet');
-  });
-
-  it('never claims "no doses logged" over doses that WERE logged (B-441)', () => {
-    // The unknown-denominator path (B-441) reaches `percent == null` with a non-zero
-    // tally — a state the old copy could not produce, and where the existing branch
-    // would have printed "No doses logged yet" over three real doses. That is a false
-    // ABSENCE claim: it reads as "you haven't been giving this" to an owner who has,
-    // and it is the same shape as the empty-safety-band failure (B-494) — silence
-    // rendered as a negative result. Report what is known, claim nothing about the rest.
-    const c = computeRegimenCompliance({ dosesPerDay: 2, daysElapsed: null, tally: tally({ given: 3 }) });
-    expect(c.percent).toBeNull();
-    const line = regimenComplianceLine(c);
-    expect(line).toBe('3 doses logged');
-    expect(line).not.toMatch(/no doses/i);
-    expect(line).not.toMatch(FORBIDDEN);
   });
 
   it('never emits an exclamation mark (nyx-voice)', () => {
@@ -1708,5 +1593,113 @@ describe('commonMedicationsForSpecies — species-first ordering, never a filter
     const both = cat.filter((m) => m.species === 'both').map((m) => m.name);
     const originalBoth = COMMON_MEDICATIONS.filter((m) => m.species === 'both').map((m) => m.name);
     expect(both).toEqual(originalBoth);
+  });
+});
+
+// ── B-441 — the regimen day counter ───────────────────────────────────────────
+// Mirrors the diet-trial oracle in lib/analytics.test.ts ("timezone honesty",
+// B-421) case for case, because this counter carried the identical flaw and the
+// two must not drift: the same instants, the same zones, the same expected day.
+describe('regimenDaysElapsed (B-441)', () => {
+  const MINUS_7 = 'Etc/GMT+7'; // UTC−7
+  const PLUS_11 = 'Etc/GMT-11'; // UTC+11
+  const STARTED = '2026-06-10';
+
+  // Four instants that are all "14 Jun, local" for their respective owner. Day 1 is
+  // 10 Jun, so every one is day 5 — whatever UTC date the instant happens to carry.
+  const CASES = [
+    { label: 'UTC−7 @ 00:30 local', zone: MINUS_7, nowIso: '2026-06-14T07:30:00.000Z', utcDate: '2026-06-14' },
+    { label: 'UTC−7 @ 23:30 local', zone: MINUS_7, nowIso: '2026-06-15T06:30:00.000Z', utcDate: '2026-06-15' },
+    { label: 'UTC+11 @ 00:30 local', zone: PLUS_11, nowIso: '2026-06-13T13:30:00.000Z', utcDate: '2026-06-13' },
+    { label: 'UTC+11 @ 23:30 local', zone: PLUS_11, nowIso: '2026-06-14T12:30:00.000Z', utcDate: '2026-06-14' },
+  ];
+
+  it.each(CASES)('reads day 5 at $label', ({ zone, nowIso }) => {
+    expect(regimenDaysElapsed(STARTED, Date.parse(nowIso), zone)).toBe(5);
+  });
+
+  it('all four readings agree — one local day, one day N', () => {
+    const counts = CASES.map(({ zone, nowIso }) => regimenDaysElapsed(STARTED, Date.parse(nowIso), zone));
+    expect(counts).toEqual([5, 5, 5, 5]);
+    expect(new Set(counts).size).toBe(1);
+  });
+
+  it('the shipped-before-B-441 arithmetic disagreed with itself across these instants', () => {
+    // Not a test of shipped code — it pins WHAT THIS COST, so a refactor back to
+    // `new Date(started_at)` + a ms-span divide fails against a test that says why.
+    // This is the exact old body, with the device zone stood in for by the UTC date
+    // the instant carries (which is what a UTC-parsed DATE effectively floors to).
+    const old = CASES.map(
+      ({ utcDate }) =>
+        Math.max(1, Math.floor(
+          (Date.parse(`${utcDate}T00:00:00Z`) - Date.parse('2026-06-10T00:00:00Z')) / (1000 * 60 * 60 * 24),
+        ) + 1),
+    );
+    expect(old).toEqual([5, 6, 4, 5]);
+    expect(Math.max(...old) - Math.min(...old)).toBe(2);
+  });
+
+  it('a course that started "yesterday" local reads day 2 on both sides of the date line', () => {
+    // The discrepancy owners actually hit: the course started yesterday where they
+    // live, but the UTC clock has already rolled past midnight (or has not reached it).
+    expect(regimenDaysElapsed('2026-06-13', Date.parse('2026-06-15T06:30:00.000Z'), MINUS_7)).toBe(2);
+    expect(regimenDaysElapsed('2026-06-13', Date.parse('2026-06-13T13:30:00.000Z'), PLUS_11)).toBe(2);
+  });
+
+  it('a course that started today reads day 1, not day 0', () => {
+    expect(regimenDaysElapsed('2026-06-14', Date.parse('2026-06-14T07:30:00.000Z'), MINUS_7)).toBe(1);
+  });
+
+  it('a future start date floors at day 1 rather than going negative', () => {
+    // An owner back-filling a prescription that begins tomorrow.
+    expect(regimenDaysElapsed('2026-06-20', Date.parse('2026-06-14T07:30:00.000Z'), MINUS_7)).toBe(1);
+  });
+
+  it('every local day advances the count by exactly one across a DST spring-forward', () => {
+    // 2026-03-08 is the US spring-forward. Differencing midnights in milliseconds
+    // makes that local day 23h long and loses a day; calendar indexing cannot.
+    const zone = 'America/Los_Angeles';
+    const counts = [
+      regimenDaysElapsed('2026-03-06', Date.parse('2026-03-07T20:00:00.000Z'), zone), // 7 Mar local
+      regimenDaysElapsed('2026-03-06', Date.parse('2026-03-08T20:00:00.000Z'), zone), // 8 Mar local
+      regimenDaysElapsed('2026-03-06', Date.parse('2026-03-09T20:00:00.000Z'), zone), // 9 Mar local
+    ];
+    expect(counts).toEqual([2, 3, 4]);
+  });
+
+  it('returns null for an unparseable start date rather than a guessed day', () => {
+    // The honest-null contract localDayIndexOf states. The old body returned NaN
+    // here, which flowed into the compliance denominator unchecked.
+    expect(regimenDaysElapsed('not-a-date', Date.parse('2026-06-14T07:30:00.000Z'))).toBeNull();
+    expect(regimenDaysElapsed('2026-02-30', Date.parse('2026-06-14T07:30:00.000Z'))).toBeNull();
+  });
+
+  it('returns null for a non-finite nowMs rather than NaN', () => {
+    // NaN is strictly worse than a wrong number: the profile card's render guard is
+    // `daysElapsed != null`, and `NaN != null` is TRUE — so a NaN sails past the very
+    // check added to stop "Day null of 14" and prints "Day NaN of 14" instead.
+    // Today's only caller takes the Date.now() default; B-614's Home strip will pass
+    // an explicit instant, which is why this is guarded now rather than when it bites.
+    expect(regimenDaysElapsed('2026-06-10', NaN)).toBeNull();
+    expect(regimenDaysElapsed('2026-06-10', Date.parse('nonsense'))).toBeNull();
+    expect(regimenDaysElapsed('2026-06-10', Infinity)).toBeNull();
+  });
+
+  it('a null day count yields a dose COUNT, never an inflated percent', () => {
+    // The profile card's degradation (B-441): with no denominator the regimen
+    // reports PRN-shaped output. Guessing `daysElapsed = 1` instead would report
+    // "100% given" over 3 doses of a twice-daily course — the reassuring direction.
+    const days = regimenDaysElapsed('not-a-date');
+    const c = computeRegimenCompliance({
+      dosesPerDay: days === null ? null : 2,
+      daysElapsed: days ?? 1,
+      tally: tally({ given: 3 }),
+    });
+    expect(c.isPrn).toBe(true);
+    expect(c.percent).toBeNull();
+    expect(c.loggedDoses).toBe(3);
+
+    const guessed = computeRegimenCompliance({ dosesPerDay: 2, daysElapsed: 1, tally: tally({ given: 3 }) });
+    expect(guessed.percent).toBe(100); // what the guess would have claimed
   });
 });

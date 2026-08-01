@@ -15,10 +15,9 @@
 //   food_items_cache → medication_items_cache  (global catalog cache)
 //   diet_trials      → medications             (pet-scoped regimen)
 //   meals            → medication_administrations (1:1 dose-event child)
-//
-// The one import is the shared day-boundary primitive (B-441): the regimen day counter
-// must define "a day" the same way every other counter in the app does. It is pure and
-// dependency-free, so the no-native-stack property above still holds.
+
+// `lib/utils` is itself import-free, so pulling the day-index primitives in keeps
+// this module's plain-jest testability intact (B-441).
 import { localDayIndex, localDayIndexOf } from './utils';
 
 // ── Local schema (mirrors supabase/migrations/020_medication_logging.sql) ─────
@@ -923,49 +922,12 @@ export interface AdherenceTally {
   unrated: number;
 }
 
-// Whole days the regimen has run, counting the start day as day 1 — the "Day N of M"
-// on the Current-medications card and the denominator of every compliance %.
-//
-// B-441: this used to live in `app/(tabs)/profile.tsx` and difference two hand-floored
-// local midnights, which was wrong twice. `medications.started_at` is a Postgres DATE,
-// so `new Date('2026-07-31')` parses as UTC MIDNIGHT — for anyone behind UTC that is
-// the previous local day, and the count read one too high. And differencing midnights
-// in milliseconds loses an hour across a DST transition, so a 23h local day divided
-// into 24h buckets silently drops a day. Both are gone: `localDayIndexOf` indexes a
-// DATE verbatim (zone-independently) and both ends are CALENDAR-COMPONENT indices, so
-// every local day advances the count by exactly 1. This is the same primitive the
-// diet-trial counter was moved onto by B-421 — one definition of "a day", not two.
-//
-// Returns NULL when `startedAt` is not a day we can name, rather than the NaN the old
-// arithmetic produced (which rendered "Day NaN of 14"). A null propagates as "we don't
-// know", never as a guessed day number — see computeRegimenCompliance.
-//
-// `nowMs`/`timeZone` are injectable for tests. OMIT BOTH in app code: the device's own
-// clock and zone ARE the owner's day boundary, and that is the production path.
-export function regimenDaysElapsed(
-  startedAt: string,
-  nowMs: number = Date.now(),
-  timeZone?: string,
-): number | null {
-  const startIndex = localDayIndexOf(startedAt, timeZone);
-  if (startIndex == null) return null;
-  // Floored at 1: a same-day start is "Day 1", and the alternative renders "Day 0 of
-  // 14". NOTE the floor points the REASSURING way for a future-dated start — 1 is the
-  // smallest denominator there is, so it would flatter the compliance % — but a future
-  // start is unreachable: `AddMedicationModal` bounds its picker with
-  // `maximumDate={new Date()}`. If that bound is ever relaxed, this floor needs a
-  // "hasn't started yet" branch rather than a silent Day 1.
-  return Math.max(1, localDayIndex(nowMs, timeZone) - startIndex + 1);
-}
-
 export interface RegimenComplianceInput {
   // medications.doses_per_day — NULL = PRN/as-needed (no compliance target).
   dosesPerDay: number | null;
-  // Whole days the regimen has been running, ≥1 — from `regimenDaysElapsed`. Kept as a
-  // plain number so this stays clock-free. NULL when the start day is unreadable: the
-  // denominator is then unknown, so no % is computed (B-441). Never substitute a
-  // fallback like 1 — that would invent the most flattering denominator there is.
-  daysElapsed: number | null;
+  // Whole days the regimen has been running, ≥1 (caller derives from started_at,
+  // mirroring the diet-trial card). Kept as a number so this stays clock-free.
+  daysElapsed: number;
   tally: AdherenceTally;
 }
 
@@ -980,6 +942,60 @@ export interface RegimenCompliance {
   percent: number | null;
 }
 
+// Whole days the regimen has been running, counting the start day as day 1.
+//
+// B-441 — this used to live inline in `app/(tabs)/profile.tsx` carrying the exact
+// flaw B-421 removed from the diet-trial counter, and it is moved here so it is
+// unit-testable and so the profile card and the Home strip (B-614) cannot drift
+// apart. The old shape was:
+//
+//     const start = new Date(startedAt); start.setHours(0, 0, 0, 0);
+//     ... Math.floor((today - start) / MS_PER_DAY) + 1
+//
+// which is wrong twice. `medications.started_at` is a date-only Postgres DATE, so
+// `new Date('2026-07-31')` parses as UTC midnight and the subsequent floor to LOCAL
+// midnight lands on the PREVIOUS local day for anyone behind UTC — every count one
+// too high. And differencing two midnights in milliseconds loses a day across a DST
+// transition, because a local day can be 23h or 25h.
+//
+// `localDayIndexOf` indexes a 'YYYY-MM-DD' verbatim and everything else by the
+// calendar day it falls on, so neither failure is reachable.
+//
+// This is not cosmetic: the return value is the DENOMINATOR of
+// `computeRegimenCompliance`, so an inflated day count understates adherence —
+// which is the safe direction, but wrong, and it is what the clinical-guardrails
+// copy on the profile card is computed from.
+//
+// Returns null on ANY unusable input — an unparseable `startedAt` or a non-finite
+// `nowMs` — never NaN. Unreachable through the app
+// (the column is a NOT NULL DATE), but the caller reports "unknown" rather than
+// counting from a guessed day — the same contract `localDayIndexOf` states.
+// `timeZone` mirrors the primitives' own optional zone and exists for the same
+// reason: the day boundary is a parameter of this problem, not a constant. OMIT IT
+// in the app — the device's zone IS the owner's midnight, and that is the production
+// path. Stating it explicitly is what lets the zone cases be pinned by a test that
+// does not have to mutate the process clock.
+export function regimenDaysElapsed(
+  startedAt: string,
+  nowMs: number = Date.now(),
+  timeZone?: string,
+): number | null {
+  // A 'YYYY-MM-DD' DATE is indexed verbatim (zone-independently); the zone applies
+  // to `nowMs`, which is a real instant and does fall on different days by zone.
+  const startIndex = localDayIndexOf(startedAt, timeZone);
+  // BOTH inputs are checked, and `nowMs` is the one that matters going forward:
+  // today's only caller takes the `Date.now()` default, but the B-614 Home strip
+  // will pass an explicit instant, and a non-finite one would flow through
+  // `Math.max(1, NaN)` to return NaN. NaN is worse than a wrong number here — the
+  // render guard is `!= null`, and `NaN != null` is TRUE, so it would sail past the
+  // check and print "Day NaN of 14". Matches `getDietTrialProgress`'s guard, which
+  // is the parity this extraction exists to hold.
+  if (startIndex === null || !Number.isFinite(nowMs)) return null;
+  // ≥1: a regimen started today is on day 1, and a start date in the future (an
+  // owner back-filling a prescription) counts as day 1 rather than day 0 or -3.
+  return Math.max(1, localDayIndex(nowMs, timeZone) - startIndex + 1);
+}
+
 export function computeRegimenCompliance(input: RegimenComplianceInput): RegimenCompliance {
   const { dosesPerDay, daysElapsed, tally } = input;
   const isPrn = dosesPerDay == null;
@@ -988,11 +1004,8 @@ export function computeRegimenCompliance(input: RegimenComplianceInput): Regimen
   const flaggedDoses = tally.partial + tally.missed + tally.refused;
   const loggedDoses = administeredDoses + flaggedDoses + tally.unrated;
 
-  // An unknown start day means an unknown denominator (B-441). Expected doses stay 0,
-  // which routes through the same `percent = null` path PRN uses — "not tracked",
-  // never a % built on a guessed elapsed-day count.
-  const safeDays = daysElapsed == null ? null : Math.max(1, Math.floor(daysElapsed));
-  const expectedDoses = isPrn || safeDays == null ? 0 : Math.round((dosesPerDay as number) * safeDays);
+  const safeDays = Math.max(1, Math.floor(daysElapsed));
+  const expectedDoses = isPrn ? 0 : Math.round((dosesPerDay as number) * safeDays);
 
   let percent: number | null = null;
   // Only a scheduled regimen with at least one logged dose gets a %. Zero logged
@@ -1109,13 +1122,6 @@ export function regimenComplianceLine(c: RegimenCompliance): string {
     return c.loggedDoses === 1 ? '1 dose logged' : `${c.loggedDoses} doses logged`;
   }
   if (c.percent == null) {
-    // Two ways a scheduled regimen has no %: nothing logged, or an unreadable start
-    // day (B-441) leaving the denominator unknown. Only the FIRST may say "no doses
-    // logged yet" — saying it over doses the owner actually logged is a false absence
-    // claim, and reads as "you haven't been giving this" when they have.
-    if (c.loggedDoses > 0) {
-      return c.loggedDoses === 1 ? '1 dose logged' : `${c.loggedDoses} doses logged`;
-    }
     // Scheduled regimen, nothing logged. "Not tracked", never "compliant"/"0% fine".
     return 'No doses logged yet';
   }

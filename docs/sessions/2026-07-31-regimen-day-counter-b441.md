@@ -2,7 +2,11 @@
 
 **Date:** 2026-07-31
 
-Shipped via **#524**. Closes the last carve-out in the B-421 guard test; unblocks **B-614** (the Home medication strip, whose day counter must route through the same primitive). Spawned **B-618** (filed as B-616; renumbered at wrap — `main` took that ID via #520).
+Shipped via **#524**. Spawned **B-621/B-622/B-623** (filed as B-616/B-618/B-619/B-620 and renumbered twice — see the collision note at the end).
+
+> **⚠️ Read this first — the PR was re-cut at wrap.** A sibling session fixed B-441 independently and landed it on `main` as **#525** while this branch was open. That fix covers the **READ** half only: the counter and the `Started …` label. It does **not** touch the write path, so `AddMedicationModal` still wrote `startedAt.toISOString().split('T')[0]` and `handleEndRegimen` still wrote `ended_at` the same way.
+>
+> **That combination is worse than either bug alone**, and it is exactly the configuration the `adversarial-reviewer` flagged on this branch: a corrected reader consuming rows a broken writer is still producing, trusting a skew it can no longer detect. So this PR was **re-cut on top of #525** — its counter implementation is kept wholesale (it landed first and is equivalent), and what remains here is the half `main` lacks.
 
 ## What was wrong
 
@@ -47,20 +51,28 @@ Reported compliance therefore **rises** for most of the user base — the Americ
 
 ## What shipped
 
-- **`regimenDaysElapsed` moved to `lib/medications.ts`** and re-anchored on `localDayIndexOf` (start) + `localDayIndex` (today) — calendar-component indexing, so a `DATE` is never re-read as UTC midnight and every local day advances the count by exactly 1 regardless of DST. Client-side there is now **one** definition of "a day".
-- **`app/(tabs)/profile.tsx` holds no day arithmetic at all.** `formatRegimenStart` parses the stored key with `dayKeyToLocalDate`; the `Day N` / `Started …` choice is precomputed in `buildRegimenDisplay` alongside the other derived lines, matching the file's own convention.
-- **`AddMedicationModal`** reads with `dayKeyToLocalDate` and writes with `toLocalDayKey`.
-- **Unknown is now a state, not a `NaN`.** `regimenDaysElapsed` returns `number | null`; `RegimenComplianceInput.daysElapsed` accepts null and routes to `percent = null` ("not tracked"). The old code produced `NaN` for an unreadable date and rendered **"Day NaN of 14"**.
+**The counter half — superseded by #525, and its implementation is what shipped.** This branch and the sibling reached the same design independently (`regimenDaysElapsed` in `lib/medications`, anchored on `localDayIndexOf` + `localDayIndex`, returning `number | null`, with `formatRegimenStart` parsing via `dayKeyToLocalDate`). #525 landed first, so its version is kept verbatim. The one substantive difference is null handling: #525 routes a null denominator to the PRN path (`dosesPerDay: null`), where this branch widened `RegimenComplianceInput` to accept null. #525's is simpler, reaches the same honest "count, not a percent" outcome, and is already merged — so it stands, and this branch's version was discarded rather than argued for.
 
-### The false-absence branch that null made reachable
+**The write half — what this PR actually contributes, and what `main` does not have:**
 
-`regimenComplianceLine` had one `percent == null` branch and it returned **"No doses logged yet"**. That was safe only because of an invariant the null breaks: with `daysElapsed ≥ 1` and `dosesPerDay ≥ 1`, `expectedDoses` was always `> 0`, so a non-PRN regimen with logged doses always got a percent. An unknown denominator reaches that branch *with a non-zero tally* — printing "No doses logged yet" over three doses the owner did log.
+- **`AddMedicationModal` WRITE** — `toLocalDayKey(startedAt)`, was `toISOString().split('T')[0]`. The mirror bug: local midnight in Sydney is still yesterday in UTC, so an owner ahead of UTC picking "today" stored **yesterday**, permanently. **#525's corrected counter reads those rows one day low.**
+- **`AddMedicationModal` READ** — `dayKeyToLocalDate`, was `new Date(existing.started_at)`; seeded the picker and its label with the previous day behind UTC.
+- **`handleEndRegimen`** — `ended_at` via `toLocalDayKey`, fourteen lines below code #525 rewrote. It widens `attributeDosesToRegimens`' upper bound and the vet report's regimen span.
+- **The dead `todayDateOnly()` UTC-key helper**, still sitting in the file #525 de-UTC'd (`tsconfig.json` has no `noUnusedLocals`).
 
-That is a **false absence claim** in the B-494 shape: silence rendered as a negative result, reading as *"you haven't been giving this"* to an owner who has. The branch now reports the count it knows and claims nothing about the rate.
+### The false-absence trap both branches had to avoid (and did, differently)
+
+`regimenComplianceLine`'s single `percent == null` branch returns **"No doses logged yet"**, which is safe only because of an invariant a null denominator breaks: with `daysElapsed ≥ 1` and `dosesPerDay ≥ 1`, `expectedDoses` was always `> 0`, so a scheduled regimen with logged doses always got a percent. Introduce a null and that branch becomes reachable *with a non-zero tally* — printing "No doses logged yet" over doses the owner did log. That is a **false absence claim** in the B-494 shape, reading as *"you haven't been giving this"* to someone who has.
+
+Both implementations avoided it, by different routes: this branch added an explicit `loggedDoses > 0` branch, #525 routes the null through `dosesPerDay: null` so the PRN path (which already reports a count) handles it. #525's shipped. Worth recording because the trap is invisible until someone makes `daysElapsed` nullable, and the next person to touch this — B-614's Home strip — will be doing exactly that.
 
 ## The guard test flipped from pinning the flaw to forbidding it
 
-`lib/dietTrialDayMath.guard.test.ts` asserted the defect's continued existence — `divisions).toHaveLength(1)`, `occurrences).toHaveLength(2)`, `toMatch(/function regimenDaysElapsed/)` — as a deliberate carve-out with B-441 named in the comment. Those three assertions are now their negations plus a delegation check, and a fourth was added for the display twin (`not.toMatch(/new Date\(\s*reg\.started_at\s*\)/)`). The budgeted count is gone: the screen holds **zero** day arithmetic, which is a stronger and less brittle guarantee than "exactly one".
+`lib/dietTrialDayMath.guard.test.ts` used to assert the defect's *continued existence* as a deliberate carve-out. #525 flipped those assertions to their negations, which is right and is kept.
+
+**But #525's guard passed while #525's own write bug was live in a file it guards** — because it forbids `new Date(reg.started_at)`, bound to the identifier `reg`, and says nothing about the write direction at all. A guard that covers only the direction you happened to fix certifies the other by silence.
+
+So this PR adds a guard on the **class**: two patterns (`.toISOString().split('T')[0]` / `.slice(0,10)`, and `new Date(<any>.started_at|ended_at|completed_at)`) across both medication surfaces. It was mutation-tested rather than assumed — reintroducing the UTC key fails the suite, restoring it passes. Five instances of one defect in one feature, three of them in files a prior fix had already edited, is the argument for guarding the shape instead of the sighting.
 
 ## Falsification attempts (adversarial pass, in-context — see caveat below)
 

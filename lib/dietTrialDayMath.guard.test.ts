@@ -138,43 +138,62 @@ describe('B-421 — one diet-trial day counter, not four', () => {
     expect(src).not.toMatch(/const loadDietTrial/);
     expect(src).toMatch(/resolveTrialCard\(/);
 
-    // B-441 closed the one carve-out this assertion used to hold open. The regimen
-    // counter was the last day math on this screen — a different feature's counter,
-    // left behind by B-421 on scope grounds and carrying the identical defect. It
-    // now lives in `lib/medications` and routes through the same primitive, so the
-    // screen holds NO day arithmetic at all and the count is exact, not a budget.
-    const code = readCode('app/(tabs)/profile.tsx');
-    expect(code).not.toMatch(DAY_DIVISION);
-    expect(code).not.toMatch(MANUAL_MIDNIGHT);
-    // Read the STRIPPED source: the comment left behind names the function it
-    // replaced, and a guard that reds on its own documentation is a guard people
-    // delete. (`readCode` exists for exactly this; use it on all three.)
-    expect(code).not.toMatch(/function regimenDaysElapsed/);
-    expect(code).toMatch(/regimenDaysElapsed\(/); // delegates instead
+    // B-441 CLOSED. This screen's LAST day-arithmetic — the medication regimen
+    // counter — moved to `lib/medications.regimenDaysElapsed` and now routes through
+    // the same `localDayIndexOf` primitive, so the exemption these two assertions
+    // used to carve out is gone and the screen holds NO day math at all.
+    //
+    // The assertions flipped from "exactly one is allowed" to "none are", which is
+    // the only form that stays honest: a count-based allowance passes just as
+    // happily when someone deletes the permitted one and adds a different one.
+    expect(readCode('app/(tabs)/profile.tsx')).not.toMatch(DAY_DIVISION);
+    expect(src).not.toMatch(MANUAL_MIDNIGHT);
+    expect(src).not.toMatch(/function regimenDaysElapsed/);
+    expect(src).toMatch(/regimenDaysElapsed\(/); // delegates to the shared helper
+
+    // The same UTC-parse also lived in this screen's "Started <date>" fallback:
+    // `new Date(<a date-only DATE>)` renders the PREVIOUS day behind UTC.
+    expect(src).not.toMatch(/new Date\(reg\.started_at\)/);
+    expect(readCode('app/(tabs)/profile.tsx')).toMatch(/dayKeyToLocalDate\(startedAt\)/);
   });
 
-  // B-441 found FIVE instances of one defect in a single feature, three of them in
-  // files a previous fix had already edited. So the guard is written against the
-  // CLASS, not the instances: an identifier-bound regex (`new Date(reg.started_at)`)
-  // is defeated by renaming `reg` to `r`, and pins only the past. These two patterns
-  // are what the class actually looks like in source.
+  it('the medication regimen counter indexes calendar days, never a ms span', () => {
+    // B-441. The counter's own module: it may not reintroduce either failure mode,
+    // and the header comment naming them is stripped by readCode so the prose does
+    // not fail its own guard.
+    const meds = readCode('lib/medications.ts');
+    expect(meds).not.toMatch(DAY_DIVISION);
+    expect(meds).not.toMatch(MANUAL_MIDNIGHT);
+    expect(meds).toMatch(/localDayIndexOf\(/);
+  });
+
+  // The READ side above was guarded while the WRITE side stayed broken — and this
+  // suite passed the whole time. `AddMedicationModal` was still writing
+  // `startedAt.toISOString().split('T')[0]`, the UTC day, so an owner AHEAD of UTC
+  // picking "today" stored YESTERDAY permanently; `handleEndRegimen` did the same to
+  // `ended_at` fourteen lines below code the counter fix had just rewritten. A guard
+  // that covers only the direction you happened to fix certifies the other by silence
+  // — and a fixed reader fed by a broken writer is worse than neither, because the
+  // reader now trusts the skew.
+  //
+  // So these forbid the two PATTERNS, not the past sightings. The assertion above,
+  // `not.toMatch(/new Date\(reg\.started_at\)/)`, is bound to the identifier `reg`:
+  // renaming it to `r` defeats the guard without touching the bug.
   const DATE_KEY_VIA_UTC = /\.toISOString\(\)\s*\.\s*(split\(\s*['"]T['"]\s*\)\s*\[\s*0\s*\]|slice\(\s*0\s*,\s*10\s*\))/;
   const DATE_COL_VIA_NEW_DATE = /new Date\(\s*[A-Za-z_$][\w$.]*\.(started_at|ended_at|completed_at)\s*\)/;
 
   const DATE_COLUMN_SURFACES = [
-    { file: 'app/(tabs)/profile.tsx', what: 'the Pet tab (regimen counter, Started line, End-regimen write)' },
+    { file: 'app/(tabs)/profile.tsx', what: 'the Pet tab (counter, Started line, End-regimen write)' },
     { file: 'components/profile/AddMedicationModal.tsx', what: 'the regimen setup modal (the WRITE path)' },
   ];
 
   it.each(DATE_COLUMN_SURFACES)('$what never round-trips a DATE column through UTC', ({ file }) => {
     const code = readCode(file);
-    // A UTC day key from an instant. `toLocalDayKey` is the local-component
-    // equivalent and is what a DATE column must be written with — an owner AHEAD of
-    // UTC picking "today" otherwise stores YESTERDAY, permanently.
+    // Writing: a UTC day key from an instant. A DATE column is written with
+    // `toLocalDayKey`, whose components are the owner's calendar day.
     expect(code).not.toMatch(DATE_KEY_VIA_UTC);
-    // The read direction: `new Date('2026-07-31')` is UTC midnight, which is the
-    // PREVIOUS local day behind UTC. Stored day keys are parsed with
-    // `dayKeyToLocalDate` / indexed with `localDayIndexOf`.
+    // Reading: `new Date('2026-07-31')` is UTC midnight — the PREVIOUS local day
+    // behind UTC. Stored day keys are parsed with `dayKeyToLocalDate`.
     expect(code).not.toMatch(DATE_COL_VIA_NEW_DATE);
   });
 

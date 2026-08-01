@@ -52,10 +52,10 @@ import {
 const PET_PHOTO_BUCKET = 'nyx-pet-photos';
 
 interface RegimenDisplay extends Regimen {
-  // null = the start day is unreadable, so the elapsed count is unknown (B-441).
+  // null = the start date did not parse, so the course's length is unknown (B-441).
+  // Every consumer must test `!= null` explicitly: a bare `daysElapsed <= target`
+  // coerces null to 0 and renders "Day null of 14".
   daysElapsed: number | null;
-  // "Day 5 of 14" / "Started Jun 10", or null when neither can be named honestly.
-  dayLine: string | null;
   tally: AdherenceTally;
   compliance: RegimenCompliance;
   complianceLine: string;
@@ -71,24 +71,17 @@ const EMPTY_TALLY = (): AdherenceTally => ({ given: 0, partial: 0, missed: 0, re
 function buildRegimenDisplay(reg: Regimen, tally: AdherenceTally): RegimenDisplay {
   const daysElapsed = regimenDaysElapsed(reg.started_at);
   const compliance = computeRegimenCompliance({
-    dosesPerDay: reg.doses_per_day, daysElapsed, tally,
+    // With no day count there is no honest denominator, so the regimen reports a
+    // dose COUNT instead of a percent — the same shape PRN already uses. Feeding a
+    // guessed `1` would shrink the denominator and inflate adherence, which is the
+    // reassuring direction and the one this must never drift toward (B-441).
+    dosesPerDay: daysElapsed === null ? null : reg.doses_per_day,
+    daysElapsed: daysElapsed ?? 1,
+    tally,
   });
-  // "Day X of Y" only while the course is within its planned window; once it has run
-  // past target_duration (still active — the owner hasn't ended it) the "of Y" is
-  // nonsense ("Day 30 of 7"), so fall back to the ongoing "Started …" format. An
-  // unknown elapsed count (B-441) takes the same fallback, and if the start day is
-  // unreadable too the line is null — the row omits it rather than naming a day it
-  // cannot compute.
-  const dayLine =
-    daysElapsed != null &&
-    reg.target_duration_days != null &&
-    daysElapsed <= reg.target_duration_days
-      ? `Day ${daysElapsed} of ${reg.target_duration_days}`
-      : formatRegimenStart(reg.started_at);
   return {
     ...reg,
     daysElapsed,
-    dayLine,
     tally,
     compliance,
     complianceLine: regimenComplianceLine(compliance),
@@ -112,20 +105,19 @@ function routeLabel(route: string | null): string | null {
   return MEDICATION_ROUTE_OPTIONS.find((o) => o.value === route)?.label ?? null;
 }
 
-// B-441: the regimen day counter used to live here and carried the local-midnight
-// arithmetic B-421 removed from the trial counter. It now lives in `lib/medications`
-// and routes through the same `lib/utils` day-boundary primitive every other counter
-// uses, so this screen holds no day math of its own — see the B-421 guard test.
+// The regimen day counter used to live here, carrying the flaw B-421 removed from
+// the diet-trial counter. B-441 moved it to `lib/medications.regimenDaysElapsed`,
+// routed through `lib/utils.localDayIndexOf` — this screen now holds no day math.
 
-// "Started Jul 31" for a regimen outside its planned window. `started_at` is a
-// Postgres DATE, so it is parsed with `dayKeyToLocalDate` rather than `new Date()`:
-// the latter reads it as UTC midnight and would NAME the previous day for anyone
-// behind UTC — the display twin of the counter bug above (B-441). Returns null for an
-// unreadable date so the row omits the line rather than printing "Started Invalid Date".
-function formatRegimenStart(startedAt: string): string | null {
+// "Started 12 Jun 2026" for the ongoing/overrun regimen row. `dayKeyToLocalDate`,
+// never `new Date(started_at)`: the column is a date-only DATE, so the bare parse
+// lands on UTC midnight and formats as the PREVIOUS day for anyone behind UTC —
+// the display half of the same B-441 defect that inflated the counter. Falls back
+// to the raw stored value if it does not parse, never to a confidently wrong date.
+function formatRegimenStart(startedAt: string): string {
   const d = dayKeyToLocalDate(startedAt);
-  if (!d) return null;
-  return `Started ${d.toLocaleDateString([], { year: 'numeric', month: 'short', day: 'numeric' })}`;
+  if (!d) return startedAt;
+  return d.toLocaleDateString([], { year: 'numeric', month: 'short', day: 'numeric' });
 }
 
 // Age display lives in lib/age.formatAge now (B-251 PR 9) so the honesty rule has
@@ -548,8 +540,8 @@ export default function ProfileScreen() {
         .from('medications')
         // `ended_at` is a DATE and gets the same treatment as `started_at` (B-441):
         // `toISOString()` yields the UTC day, so a behind-UTC owner ending a course in
-        // the evening stored TOMORROW — which widens the dose-attribution upper bound
-        // in `attributeDosesToRegimens` and lengthens the vet report's regimen span.
+        // the evening stored TOMORROW — widening the dose-attribution upper bound and
+        // the vet report's regimen span.
         .update({ status: 'completed', ended_at: toLocalDayKey(new Date()) })
         .eq('id', id)
         .select('id');
@@ -845,7 +837,19 @@ export default function ProfileScreen() {
                   <Divider style={styles.conditionDivider} />
                   <Text style={styles.medName}>{reg.drug_name}</Text>
                   {meta ? <Text style={styles.medMeta}>{meta}</Text> : null}
-                  {reg.dayLine ? <Text style={styles.medDays}>{reg.dayLine}</Text> : null}
+                  <Text style={styles.medDays}>
+                    {/* "Day X of Y" only while the course is within its planned
+                        window; once it's run past target_duration (still active —
+                        owner hasn't ended it) the "of Y" is nonsense ("Day 30 of
+                        7"), so fall back to the ongoing "Started …" format. */}
+                    {/* `daysElapsed != null` is load-bearing, not defensive: a bare
+                        `null <= 14` is TRUE in JS, so dropping it renders
+                        "Day null of 14" on the one row whose date we could not read. */}
+                    {reg.daysElapsed != null && reg.target_duration_days != null
+                     && reg.daysElapsed <= reg.target_duration_days
+                      ? `Day ${reg.daysElapsed} of ${reg.target_duration_days}`
+                      : `Started ${formatRegimenStart(reg.started_at)}`}
+                  </Text>
                   {reg.compliance.percent != null && (
                     <View style={styles.progressTrack}>
                       <View style={[styles.progressBar, { width: `${reg.compliance.percent}%` }]} />
