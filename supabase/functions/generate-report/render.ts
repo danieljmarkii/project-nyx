@@ -502,6 +502,13 @@ function proteinSwatch(id: string, color: string | null, texIndex: number): stri
   return `<svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true"><defs>${def}</defs><rect width="12" height="12" rx="2" fill="url(#${id})" stroke="rgba(20,24,34,.25)"/></svg>`
 }
 
+/** Off-diet feedings charted in a week: protein-band hits (a multi-protein food counts once per band)
+ *  plus the no-recorded-protein feedings. `0` iff the week had no off-diet feeding at all. One
+ *  definition, shared by the chart and its section so the "is this week empty?" test can't drift. */
+function proteinWeekTotal(t: import('./report.ts').ProteinTimeline, w: number): number {
+  return (t.bins[w]?.reduce((a, b) => a + b, 0) ?? 0) + (t.unknownByWeek[w] ?? 0)
+}
+
 function proteinTimelineChart(t: import('./report.ts').ProteinTimeline): string {
   const n = Math.max(1, t.weekStartDates.length)
   const L = 40
@@ -510,7 +517,7 @@ function proteinTimelineChart(t: import('./report.ts').ProteinTimeline): string 
   const TOP = 20
   const slot = (R - L) / n
   const barW = Math.max(12, Math.min(34, slot * 0.6))
-  const weekTotal = (w: number): number => t.bins[w].reduce((a, b) => a + b, 0) + (t.unknownByWeek[w] ?? 0)
+  const weekTotal = (w: number): number => proteinWeekTotal(t, w)
   const yMax = evenAxisMax(Array.from({ length: n }, (_, w) => weekTotal(w)))
   const yFor = (v: number): number => BASE - (v / yMax) * (BASE - TOP)
   const centerX = (i: number): number => L + (i + 0.5) * slot
@@ -806,10 +813,11 @@ function proteinTimelineSection(snap: ReportSnapshot): string {
     (t.hasUnknown ? `<span class="ptleg">${proteinSwatch('pts-u', null, 0)}no recorded protein ${num(t.unknownByWeek.reduce((a, b) => a + b, 0))}</span>` : '')
   // Name the dashed no-data marker where it is drawn (B-497). A week is unobserved iff no meal was
   // logged in it AND no off-diet feeding fell in it — the same test the chart applies bar-by-bar.
-  const anyUnobservedWeek = t.weekStartDates.some((_, i) => {
-    const weekTotal = (t.bins[i]?.reduce((a, b) => a + b, 0) ?? 0) + (t.unknownByWeek[i] ?? 0)
-    return weekTotal === 0 && (t.mealDaysByBucket[i] ?? 0) === 0
-  })
+  // Deliberately rendered as HTML below the chart, NOT as in-SVG <text> like the symptom chart's
+  // twin note: the protein SVG's viewBox has no vertical room for a legend line, and growing it would
+  // change chart geometry (which wants its own PNG cold read) — an HTML caption is also more legible
+  // to a screen reader. The two notes read identically to the reader; only their host element differs.
+  const anyUnobservedWeek = t.weekStartDates.some((_, i) => proteinWeekTotal(t, i) === 0 && (t.mealDaysByBucket[i] ?? 0) === 0)
   const noDataNote = anyUnobservedWeek
     ? `<div class="subnote">&ndash; marks a week the diet was not observed (no meal logged) — not a week without off-diet food.</div>`
     : ''
