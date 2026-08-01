@@ -314,6 +314,214 @@ describe('MedStrip — context card', () => {
   });
 });
 
+// ── M4 — the multi-med fold as a RENDERED SCREEN (§7 collapse + D8 ordering) ──────
+// The resolver (M1) owns the collapse predicate and the D8 sort, and `medStrip.test.ts`
+// pins them over the MODEL array. What M4 adds is the proof that the fold reads
+// correctly as an actual screen: several cards, some collapsed, rendered in D8 order
+// the way `app/(tabs)/index.tsx` renders them (`.map` over `resolveMedStrips`). These
+// are the mock's §04 morning/evening frames — the same three meds before the day's
+// doses are logged, and after — asserted as rendered output, not as model state.
+describe('the multi-med fold — §7 collapse + D8 ordering on a real screen (M4)', () => {
+  // Sam's cat (mock §04): a durationed course, an ongoing med, and an ad-hoc med.
+  // Start dates are EXPLICIT so the D8 order — expanded before collapsed, then oldest
+  // course first, then by name — is deterministic and asserted as the RULE, never the
+  // mock's illustrative card layout (whose start dates are unspecified).
+  const SCENE_ITEMS: Record<string, MedStripItem> = {
+    'i-amox': { generic_name: 'Amoxicillin', brand_name: null },
+    'i-gaba': { generic_name: 'Gabapentin', brand_name: null },
+    'i-ceren': { generic_name: 'Cerenia', brand_name: null },
+    'i-pred': { generic_name: 'Prednisolone', brand_name: null },
+    'i-furo': { generic_name: 'Furosemide', brand_name: null },
+  };
+
+  // A durationed course (day 5 of 14 at NOW), 2×/day.
+  const amox = (): MedStripRegimenRow => ({
+    id: 'reg-amox',
+    medication_item_id: 'i-amox',
+    drug_name: 'Amoxicillin',
+    dose_amount: '250 mg',
+    doses_per_day: 2,
+    started_at: '2026-07-27',
+    target_duration_days: 14,
+  });
+  // An ongoing chronic med (no duration → no bar), 1×/day, started long before Amox so
+  // it is the OLDER course and sorts first among expanded (and among collapsed).
+  const gaba = (): MedStripRegimenRow => ({
+    id: 'reg-gaba',
+    medication_item_id: 'i-gaba',
+    drug_name: 'Gabapentin',
+    dose_amount: '100 mg',
+    doses_per_day: 1,
+    started_at: '2026-07-01',
+    target_duration_days: null,
+  });
+  const doseFor = (item: string, over: Partial<MedStripDoseRow> = {}): MedStripDoseRow => ({
+    medication_id: null,
+    medication_item_id: item,
+    adherence: 'given',
+    dose_amount: null,
+    paired_event_id: null,
+    paired_vehicle_intake: null,
+    occurred_at: '2026-07-31T09:00:00.000Z', // today (UTC)
+    deleted_at: null,
+    ...over,
+  });
+  // Cerenia's only dose is two days ago → an ad-hoc candidate that is never "covered"
+  // (no cadence) and so never collapses, whatever its siblings do.
+  const cerenAdhoc = () => doseFor('i-ceren', { occurred_at: '2026-07-29T15:00:00.000Z' });
+
+  function scene(over: Partial<MedStripInput>): MedStripModel[] {
+    return resolveMedStrips({
+      petId: 'p1',
+      regimens: [],
+      doses: [],
+      items: SCENE_ITEMS,
+      nowMs: NOW,
+      timeZone: TZ,
+      ...over,
+    });
+  }
+  // Render the array exactly as Home does — one keyed `<MedStrip>` per model — so the
+  // rendered order under test IS the order the screen shows.
+  function renderList(models: MedStripModel[]) {
+    return render(
+      <>
+        {models.map((m) => (
+          <MedStrip key={m.key} model={m} />
+        ))}
+      </>,
+    );
+  }
+  // The rendered cards, top to bottom, by their accessibility label (which leads with
+  // the header) — the readable proxy for "what order does the owner see?".
+  const orderedLabels = (tree: ReturnType<typeof render>): string[] =>
+    tree.getAllByTestId('med-strip').map((n) => n.props.accessibilityLabel as string);
+
+  it('morning — nothing logged yet: every card expanded, oldest course first, ad-hoc last (D8)', () => {
+    const models = scene({ regimens: [amox(), gaba()], doses: [cerenAdhoc()] });
+    // Nothing is covered today, so nothing collapses.
+    expect(models.every((m) => !m.collapsed)).toBe(true);
+
+    const tree = renderList(models);
+    const labels = orderedLabels(tree);
+    expect(labels).toHaveLength(3);
+    // D8 among expanded cards: oldest start first (Gabapentin 07-01 < Amoxicillin
+    // 07-27), then the ad-hoc med (no start date) last.
+    expect(labels[0]).toContain('Gabapentin');
+    expect(labels[1]).toContain('Amoxicillin');
+    expect(labels[2]).toContain('Cerenia');
+    // Full dress: only the durationed course draws a day-progress bar; all three are
+    // confirmable, so three buttons — this is the honest worst case the mock names.
+    expect(tree.getAllByTestId('med-strip-track')).toHaveLength(1);
+    expect(tree.getAllByTestId('med-strip-confirm')).toHaveLength(3);
+  });
+
+  it('evening — covered meds collapse to a header line, and the fold pays down (§7)', () => {
+    const models = scene({
+      regimens: [amox(), gaba()],
+      doses: [
+        cerenAdhoc(), // ad-hoc, no dose today → stays expanded
+        doseFor('i-amox'),
+        doseFor('i-amox'), // 2 of 2 today → covered → collapsed
+        doseFor('i-gaba'), // 1 of 1 today → covered → collapsed
+      ],
+    });
+    const tree = renderList(models);
+    const labels = orderedLabels(tree);
+    expect(labels).toHaveLength(3);
+    // D8: the one expanded card (Cerenia) leads; then the collapsed group, oldest
+    // first (Gabapentin 07-01 before Amoxicillin 07-27). A collapsed card sinks
+    // because the record says today is handled — it does not get dropped.
+    expect(labels[0]).toContain('Cerenia');
+    expect(labels[1]).toContain('Gabapentin');
+    expect(labels[2]).toContain('Amoxicillin');
+
+    // The collapsed cards are one line: the count moved INTO the header, and both the
+    // bar and the button are gone. That is the fold cost being paid down — three
+    // buttons and a bar in the morning, one button and no bar now — without dropping
+    // or re-ranking a single med.
+    expect(tree.queryAllByTestId('med-strip-track')).toHaveLength(0);
+    expect(tree.queryAllByTestId('med-strip-confirm')).toHaveLength(1); // Cerenia only
+    expect(tree.getByText('Gabapentin · ongoing · 1 dose logged')).toBeTruthy();
+    expect(tree.getByText('Amoxicillin · day 5 of 14 · 2 doses logged')).toBeTruthy();
+    // N4 — the count is a header fact, never a cheery "…logged today" coverage line
+    // under a collapsed card.
+    expect(tree.queryByText(/logged today/)).toBeNull();
+  });
+
+  it('collapse is a state, never a cap — every med still renders however many collapse (D7)', () => {
+    // Five distinct cadenced meds; three are covered today. A "show three, hide the
+    // rest" cap would silently drop two — the exact failure D3 was ruled to prevent.
+    const reg = (id: string, item: string, name: string, startedAt: string): MedStripRegimenRow => ({
+      id,
+      medication_item_id: item,
+      drug_name: name,
+      dose_amount: null,
+      doses_per_day: 1,
+      started_at: startedAt,
+      target_duration_days: null,
+    });
+    const models = scene({
+      regimens: [
+        reg('r1', 'i-amox', 'Amoxicillin', '2026-07-20'),
+        reg('r2', 'i-gaba', 'Gabapentin', '2026-07-21'),
+        reg('r3', 'i-ceren', 'Cerenia', '2026-07-22'),
+        reg('r4', 'i-pred', 'Prednisolone', '2026-07-23'),
+        reg('r5', 'i-furo', 'Furosemide', '2026-07-24'),
+      ],
+      doses: [doseFor('i-amox'), doseFor('i-gaba'), doseFor('i-ceren')], // 3 covered → collapsed
+    });
+    expect(models.filter((m) => m.collapsed)).toHaveLength(3);
+
+    const tree = renderList(models);
+    // All five render — nothing capped away.
+    expect(tree.getAllByTestId('med-strip')).toHaveLength(5);
+    // The two still-open meds keep their buttons; the three covered ones stand down.
+    expect(tree.getAllByTestId('med-strip-confirm')).toHaveLength(2);
+    // Expanded-before-collapsed: the two uncovered meds lead, then the collapsed group.
+    const labels = orderedLabels(tree);
+    expect(labels[0]).toContain('Prednisolone'); // r4, uncovered, older of the two
+    expect(labels[1]).toContain('Furosemide'); // r5, uncovered
+    expect(labels.slice(2).every((l) => /dose logged/.test(l))).toBe(true); // collapsed tail
+  });
+
+  it('a no-cadence med never collapses, even beside collapsed siblings (§7 PRN row)', () => {
+    // A PRN regimen (doses_per_day null) with three doses today is NOT "covered" — the
+    // app cannot know a PRN med is done, and repeat dosing is the point. It must keep
+    // its full dress while a cadenced sibling folds.
+    const prn: MedStripRegimenRow = {
+      id: 'reg-prn',
+      medication_item_id: 'i-pred',
+      drug_name: 'Prednisolone',
+      dose_amount: null,
+      doses_per_day: null,
+      started_at: '2026-07-10',
+      target_duration_days: null,
+    };
+    const models = scene({
+      regimens: [amox(), prn],
+      doses: [
+        doseFor('i-amox'),
+        doseFor('i-amox'), // Amox 2 of 2 → collapsed
+        doseFor('i-pred'),
+        doseFor('i-pred'),
+        doseFor('i-pred'), // PRN, three today, still expanded
+      ],
+    });
+    const byName = (n: string) => models.find((m) => m.drugName === n)!;
+    expect(byName('Prednisolone').collapsed).toBe(false);
+    expect(byName('Amoxicillin').collapsed).toBe(true);
+
+    const tree = renderList(models);
+    const labels = orderedLabels(tree);
+    // Expanded-first: the PRN med leads, the collapsed course sinks below it.
+    expect(labels[0]).toContain('Prednisolone');
+    expect(labels[1]).toContain('Amoxicillin');
+    // Only the PRN med keeps a button.
+    expect(tree.getAllByTestId('med-strip-confirm')).toHaveLength(1);
+  });
+});
+
 describe('placement on Home (§8/D9)', () => {
   it('sits below TrialStrip and above TodayZone', () => {
     const home = readFileSync(join(__dirname, '..', '..', 'app', '(tabs)', 'index.tsx'), 'utf8');
