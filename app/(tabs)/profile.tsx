@@ -311,7 +311,8 @@ export default function ProfileScreen() {
         .from('medications')
         .select(
           'id, pet_id, medication_item_id, drug_name, dose_amount, route, doses_per_day, ' +
-          'schedule_notes, indication, prescribed_by, started_at, target_duration_days, status, ended_at',
+          'schedule_notes, indication, prescribed_by, started_at, target_duration_days, ' +
+          'target_duration_doses, status, ended_at',
         )
         .eq('pet_id', activePet.id)
         .eq('status', 'active')
@@ -532,6 +533,7 @@ export default function ProfileScreen() {
       doses_per_day: reg.doses_per_day, schedule_notes: reg.schedule_notes,
       indication: reg.indication, prescribed_by: reg.prescribed_by,
       started_at: reg.started_at, target_duration_days: reg.target_duration_days,
+      target_duration_doses: reg.target_duration_doses, // B-618 — carried so an edit round-trips the unit (PR 3 renders it)
       status: reg.status, ended_at: reg.ended_at,
     });
     setMedicationModalVisible(true);

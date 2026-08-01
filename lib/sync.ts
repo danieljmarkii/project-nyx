@@ -1283,7 +1283,9 @@ interface RemoteMedication {
   id: string; pet_id: string; medication_item_id: string | null; drug_name: string;
   dose_amount: string | null; route: string | null; doses_per_day: number | null;
   schedule_notes: string | null; indication: string | null; prescribed_by: string | null;
-  started_at: string; target_duration_days: number | null; status: string;
+  started_at: string; target_duration_days: number | null;
+  target_duration_doses: number | null; // B-618 — the doses-denominated sibling (migration 049)
+  status: string;
   ended_at: string | null; notes: string | null; created_at: string; updated_at: string;
 }
 interface RemoteMedicationAdministration {
@@ -1696,7 +1698,7 @@ async function hydrateMedications(db: Db, stale: () => boolean): Promise<void> {
     'medications',
     'id, pet_id, medication_item_id, drug_name, dose_amount, route, doses_per_day, ' +
       'schedule_notes, indication, prescribed_by, started_at, target_duration_days, ' +
-      'status, ended_at, notes, created_at, updated_at',
+      'target_duration_doses, status, ended_at, notes, created_at, updated_at',
     floor ? { column: 'updated_at', value: floor } : null,
   );
   if (!rows || rows.length === 0) return;
@@ -1709,14 +1711,15 @@ async function hydrateMedications(db: Db, stale: () => boolean): Promise<void> {
       `INSERT INTO medications
         (id, pet_id, medication_item_id, drug_name, dose_amount, route, doses_per_day,
          schedule_notes, indication, prescribed_by, started_at, target_duration_days,
-         status, ended_at, notes, created_at, updated_at, synced)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1)
+         target_duration_doses, status, ended_at, notes, created_at, updated_at, synced)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1)
        ON CONFLICT(id) DO UPDATE SET
          pet_id=excluded.pet_id, medication_item_id=excluded.medication_item_id,
          drug_name=excluded.drug_name, dose_amount=excluded.dose_amount, route=excluded.route,
          doses_per_day=excluded.doses_per_day, schedule_notes=excluded.schedule_notes,
          indication=excluded.indication, prescribed_by=excluded.prescribed_by,
          started_at=excluded.started_at, target_duration_days=excluded.target_duration_days,
+         target_duration_doses=excluded.target_duration_doses,
          status=excluded.status, ended_at=excluded.ended_at, notes=excluded.notes,
          created_at=excluded.created_at, updated_at=excluded.updated_at, synced=1
        WHERE medications.synced = 1`,
@@ -1724,6 +1727,7 @@ async function hydrateMedications(db: Db, stale: () => boolean): Promise<void> {
         m.id, m.pet_id, m.medication_item_id ?? null, m.drug_name, m.dose_amount ?? null,
         m.route ?? null, m.doses_per_day ?? null, m.schedule_notes ?? null, m.indication ?? null,
         m.prescribed_by ?? null, m.started_at, m.target_duration_days ?? null,
+        m.target_duration_doses ?? null,
         m.status, m.ended_at ?? null, m.notes ?? null, m.created_at, m.updated_at,
       ],
     );
