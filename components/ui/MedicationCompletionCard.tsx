@@ -383,12 +383,12 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: theme.textMD,
-    color: '#fff',
+    color: theme.colorTextOnDark,
     fontWeight: theme.weightMedium,
   },
   subLabel: {
     fontSize: theme.textSM,
-    color: theme.colorTextOnDarkSecondary,
+    color: theme.colorTextOnDarkSubtle,
     fontWeight: theme.weightRegular,
   },
   // 44pt min touch target (the 3am-test rule) — the underlined label alone is
@@ -399,7 +399,7 @@ const styles = StyleSheet.create({
   },
   action: {
     fontSize: theme.textMD,
-    color: '#fff',
+    color: theme.colorTextOnDark,
     fontWeight: theme.weightMedium,
     textDecorationLine: 'underline',
   },
@@ -411,7 +411,7 @@ const styles = StyleSheet.create({
   },
   adherenceLabel: {
     fontSize: theme.textSM,
-    color: theme.colorTextOnDarkSecondary,
+    color: theme.colorTextOnDarkSubtle,
     fontWeight: theme.weightRegular,
   },
   // The in-doubt reason line — fainter than the prompt, sits between it and the chips.
@@ -421,10 +421,9 @@ const styles = StyleSheet.create({
     color: theme.colorTextOnDarkFaint,
     fontWeight: theme.weightRegular,
   },
-  // Subordinate to the adherence block: a dimmer (faint-rung) label so the optional
-  // vehicle row reads as a quiet add-on under the primary "did they take it?"
-  // question, never a peer of it. The divider is the shared on-dark rung (B-646) —
-  // subordination comes from the label + position, not a fainter hairline.
+  // Subordinate to the adherence block: a fainter divider + dimmer label so the
+  // optional vehicle row reads as a quiet add-on under the primary "did they take
+  // it?" question, never a peer of it.
   vehicleWrap: {
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: theme.colorDividerOnDark,
@@ -441,7 +440,7 @@ const styles = StyleSheet.create({
   // cards present the same "Change time" surface.
   backdrop: {
     ...StyleSheet.absoluteFill,
-    backgroundColor: 'rgba(0,0,0,0.4)',
+    backgroundColor: theme.colorScrimBackdrop,
   },
   sheet: {
     position: 'absolute',

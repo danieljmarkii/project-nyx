@@ -1455,7 +1455,7 @@ const styles = StyleSheet.create({
   confirmBtnText: {
     fontSize: 16,
     fontWeight: theme.fontWeightMedium,
-    color: '#fff',
+    color: theme.colorTextOnDark,
   },
 
   // ── Severity ──
@@ -1495,7 +1495,7 @@ const styles = StyleSheet.create({
     color: theme.colorNeutralDark,
   },
   severityNumSelected: {
-    color: '#fff',
+    color: theme.colorTextOnDark,
   },
   severityLabel: {
     fontSize: 11,

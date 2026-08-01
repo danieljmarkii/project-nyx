@@ -65,6 +65,7 @@ function dose(over: Partial<MedStripDoseRow> = {}): MedStripDoseRow {
 
 function run(over: Partial<MedStripInput> = {}): MedStripModel[] {
   return resolveMedStrips({
+    petId: 'pet-1',
     regimens: [],
     doses: [],
     items: ITEMS,
@@ -115,6 +116,10 @@ describe('AC2 — an ad-hoc-only med (recent dose, no regimen) renders a card', 
     expect(models[0].confirm).not.toBeNull();
     expect(models[0].confirm?.medicationItemId).toBe(ITEM_PRED);
     expect(models[0].confirm?.medicationId).toBeNull();
+    // The confirm carries the loaded pet id (bound to the drug identity so a one-tap
+    // write can't cross pets on a switch); `drugName` is the bare name for the label.
+    expect(models[0].confirm?.petId).toBe('pet-1');
+    expect(models[0].drugName).toBe('Prednisone');
   });
 
   test('a dose exactly at the window edge counts; one day older ages off Home', () => {
@@ -324,11 +329,11 @@ describe('AC8 — the day counter is zone- and DST-correct (M0/B-441)', () => {
     // instant is the 15th too. The bug B-441 fixed made the behind-UTC device read 4.
     const minus7 = resolveMedStrips({
       regimens: [regimen({ started_at: started, target_duration_days: 30 })],
-      doses: [], items: ITEMS, nowMs: Date.parse('2026-06-15T13:30:00.000Z'), timeZone: 'Etc/GMT+7',
+      petId: 'pet-1', doses: [], items: ITEMS, nowMs: Date.parse('2026-06-15T13:30:00.000Z'), timeZone: 'Etc/GMT+7',
     });
     const plus11 = resolveMedStrips({
       regimens: [regimen({ started_at: started, target_duration_days: 30 })],
-      doses: [], items: ITEMS, nowMs: Date.parse('2026-06-15T02:00:00.000Z'), timeZone: 'Etc/GMT-11',
+      petId: 'pet-1', doses: [], items: ITEMS, nowMs: Date.parse('2026-06-15T02:00:00.000Z'), timeZone: 'Etc/GMT-11',
     });
     expect(minus7[0].header).toBe('Amoxicillin · day 3 of 30');
     expect(plus11[0].header).toBe('Amoxicillin · day 3 of 30');
@@ -338,11 +343,11 @@ describe('AC8 — the day counter is zone- and DST-correct (M0/B-441)', () => {
     // Etc/GMT+7 = UTC−7. 2026-06-15 00:30 local = 07:30Z; 23:30 local = 2026-06-16 06:30Z.
     const early = resolveMedStrips({
       regimens: [regimen({ started_at: started, target_duration_days: 30 })],
-      doses: [], items: ITEMS, nowMs: Date.parse('2026-06-15T07:30:00.000Z'), timeZone: 'Etc/GMT+7',
+      petId: 'pet-1', doses: [], items: ITEMS, nowMs: Date.parse('2026-06-15T07:30:00.000Z'), timeZone: 'Etc/GMT+7',
     });
     const late = resolveMedStrips({
       regimens: [regimen({ started_at: started, target_duration_days: 30 })],
-      doses: [], items: ITEMS, nowMs: Date.parse('2026-06-16T06:30:00.000Z'), timeZone: 'Etc/GMT+7',
+      petId: 'pet-1', doses: [], items: ITEMS, nowMs: Date.parse('2026-06-16T06:30:00.000Z'), timeZone: 'Etc/GMT+7',
     });
     expect(early[0].header).toBe('Amoxicillin · day 3 of 30');
     expect(late[0].header).toBe('Amoxicillin · day 3 of 30');

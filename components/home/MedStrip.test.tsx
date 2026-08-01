@@ -1,19 +1,22 @@
-// The Home medication strip component (B-614 PR M2). These assert what the CARD
+// The Home medication strip component (B-614 PR M2 + M3). These assert what the CARD
 // renders — the pure state logic is `medStrip.test.ts`'s job — so models are built
 // through the real `resolveMedStrips` (never hand-authored) so a component test can
 // never drift from a shape the resolver cannot actually produce.
 //
-// M2 is CONTEXT-ONLY, so the load-bearing assertions here are: the day-progress bar
-// binds to `progressFraction` and nothing else, a collapsed card is one line with
-// no bar, a withholding fact renders in the concern colour (not a cheery coverage
-// line), and NO confirm button renders yet (that is M3). The placement rule (§8/D9
-// — below TrialStrip, above TodayZone) is a property of the Home screen, so it is
-// asserted over the source at the bottom, the way `TrialStrip.test.tsx` does.
+// The M2 (context) assertions are: the day-progress bar binds to `progressFraction`
+// and nothing else, a collapsed card is one line with no bar, and a withholding fact
+// renders in the concern colour (not a cheery coverage line). The M3 (write)
+// assertions are the one-tap confirm (§5 + §9 state 10): the "Log dose" button
+// renders iff the resolver supplied a confirm payload, tapping it confirms exactly one
+// dose WITHOUT navigating (AC #9), it shows the optimistic "Dose logged just now" line
+// and then settles. The placement rule (§8/D9 — below TrialStrip, above TodayZone) is
+// a property of the Home screen, so it is asserted over the source at the bottom, the
+// way `TrialStrip.test.tsx` does.
 /// <reference types="node" />
 import { readFileSync } from 'fs';
 import { join } from 'path';
 
-import { fireEvent, render } from '@testing-library/react-native';
+import { act, fireEvent, render } from '@testing-library/react-native';
 import { StyleSheet } from 'react-native';
 import { MedStrip } from './MedStrip';
 import { theme } from '../../constants/theme';
@@ -25,6 +28,13 @@ import {
   type MedStripModel,
   type MedStripRegimenRow,
 } from '../../lib/medStrip';
+
+// The component imports `insertMedicationDose` (→ lib/sync → lib/supabase, which
+// fail-fasts on the unset test env, the house pattern VomitAnalysisSection.test uses).
+// Most tests inject `onConfirm` so the real write never runs; the one default-path test
+// below lets `performWrite` call this mock and asserts the payload it builds.
+import { insertMedicationDose } from '../../lib/medicationDose';
+jest.mock('../../lib/medicationDose', () => ({ insertMedicationDose: jest.fn() }));
 
 // Mirror `medStrip.test.ts`: a fixed instant + explicit zone so day math is
 // deterministic. NOW = 2026-07-31 18:00 UTC; a regimen started 2026-07-27 is day 5.
@@ -69,6 +79,7 @@ function dose(over: Partial<MedStripDoseRow> = {}): MedStripDoseRow {
 // renders one member, so every test pulls index 0 of a one-drug input.
 function model(over: Partial<MedStripInput>): MedStripModel {
   const models = resolveMedStrips({
+    petId: 'p1',
     regimens: [],
     doses: [],
     items: ITEMS,
@@ -150,16 +161,144 @@ describe('MedStrip — context card', () => {
     expect(flat.color).toBe(theme.colorTextSecondary);
   });
 
-  it('renders NO confirm button — M2 is context-only (M3 adds the write)', () => {
-    // Across every state that carries a confirm payload, the button is absent in M2.
+  it('renders the "Log dose" button when the model carries a confirm payload (M3, state 1/2)', () => {
     for (const input of [
-      { regimens: [regimen()] }, // state 1 — confirm present on the model…
-      { regimens: [regimen()], doses: [dose()] }, // state 2
+      { regimens: [regimen()] }, // state 1 — course open today
+      { regimens: [regimen()], doses: [dose()] }, // state 2 — partly covered
     ] as Partial<MedStripInput>[]) {
       const m = model(input);
-      expect(m.confirm).not.toBeNull(); // …the model DOES carry it,
+      expect(m.confirm).not.toBeNull();
       const tree = render(<MedStrip model={m} />);
-      expect(tree.queryByText(/log dose/i)).toBeNull(); // …but the card does not draw it yet.
+      expect(tree.getByTestId('med-strip-confirm')).toBeTruthy();
+      expect(tree.getByText('Log dose')).toBeTruthy();
+    }
+  });
+
+  it('renders NO button when the confirm payload is null (withholding §6, collapsed §7, AC #5/#6/#7)', () => {
+    // A refused dose in the window → withholding → the confirm stands down (§6).
+    const withholding = model({ regimens: [regimen()], doses: [dose({ adherence: 'refused' })] });
+    expect(withholding.confirm).toBeNull();
+    expect(render(<MedStrip model={withholding} />).queryByTestId('med-strip-confirm')).toBeNull();
+
+    // Cadence covered today (2 of 2) → collapsed → no button (§7).
+    const collapsed = model({ regimens: [regimen()], doses: [dose(), dose()] });
+    expect(collapsed.confirm).toBeNull();
+    expect(render(<MedStrip model={collapsed} />).queryByTestId('med-strip-confirm')).toBeNull();
+  });
+
+  it('the button confirms one dose and shows the optimistic line, without navigating (state 10, AC #9)', async () => {
+    // Inject `onConfirm` (mirrors `onPress`) so the state machine is exercised without
+    // the DB/store/sync; `onPress` is injected too, to prove the write never navigates.
+    const onConfirm = jest.fn().mockResolvedValue(undefined);
+    const onPress = jest.fn();
+    const m = model({ regimens: [regimen()] });
+    const tree = render(<MedStrip model={m} onConfirm={onConfirm} onPress={onPress} />);
+
+    await act(async () => {
+      fireEvent.press(tree.getByTestId('med-strip-confirm'));
+    });
+
+    expect(onConfirm).toHaveBeenCalledTimes(1);
+    expect(onPress).not.toHaveBeenCalled(); // tapping the button never opens the Pet tab
+    expect(tree.getByText('Dose logged just now')).toBeTruthy(); // §9 state 10
+    // While confirmed the button stands down — no button beside the "just logged" line.
+    expect(tree.queryByTestId('med-strip-confirm')).toBeNull();
+  });
+
+  it('stands the button down the instant the write starts, so one tap = one dose (AC #9)', async () => {
+    // A deferred promise holds the write in flight, so the assertions land while the
+    // component is in its 'submitting' phase — the button is gone, so there is no
+    // second tap to make.
+    let resolveWrite!: () => void;
+    const onConfirm = jest.fn(() => new Promise<void>((r) => (resolveWrite = r)));
+    const m = model({ regimens: [regimen()] });
+    const tree = render(<MedStrip model={m} onConfirm={onConfirm} />);
+
+    fireEvent.press(tree.getByTestId('med-strip-confirm'));
+    expect(onConfirm).toHaveBeenCalledTimes(1);
+    expect(tree.queryByTestId('med-strip-confirm')).toBeNull();
+
+    await act(async () => {
+      resolveWrite();
+    });
+  });
+
+  it('settles out of the optimistic line after the dwell (state 10 → 2/3)', async () => {
+    jest.useFakeTimers();
+    try {
+      const onConfirm = jest.fn().mockResolvedValue(undefined);
+      const m = model({ regimens: [regimen()] });
+      const tree = render(<MedStrip model={m} onConfirm={onConfirm} />);
+
+      await act(async () => {
+        fireEvent.press(tree.getByTestId('med-strip-confirm'));
+      });
+      expect(tree.getByText('Dose logged just now')).toBeTruthy();
+
+      act(() => {
+        jest.advanceTimersByTime(1500);
+      });
+      expect(tree.queryByText('Dose logged just now')).toBeNull();
+      // The static model still carries a confirm payload (no reload in a unit test), so
+      // the card returns to its live state and the button comes back.
+      expect(tree.getByTestId('med-strip-confirm')).toBeTruthy();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('the DEFAULT write path logs a given dose with the confirm payload (petId from the model)', async () => {
+    // No `onConfirm` → the real `performWrite` runs (the production path the injected
+    // tests bypass). This is the one place the write payload — including the petId bound
+    // to the loaded pet, NOT a live active-pet read (the cross-pet-write guard) — is
+    // asserted end to end.
+    const mockInsert = insertMedicationDose as jest.Mock;
+    mockInsert.mockClear();
+    mockInsert.mockResolvedValue({
+      eventId: 'e',
+      administrationId: 'a',
+      occurredAtIso: '2026-07-31T18:00:00.000Z',
+      now: '2026-07-31T18:00:00.000Z',
+    });
+    const m = model({ regimens: [regimen()] }); // confirm carries petId 'p1'
+    const tree = render(<MedStrip model={m} />);
+
+    await act(async () => {
+      fireEvent.press(tree.getByTestId('med-strip-confirm'));
+    });
+
+    expect(mockInsert).toHaveBeenCalledTimes(1);
+    expect(mockInsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        petId: 'p1',
+        medicationItemId: ITEM_AMOX,
+        medicationId: 'reg-amox',
+        adherence: 'given',
+        doseAmount: '250 mg',
+      }),
+    );
+    expect(tree.getByText('Dose logged just now')).toBeTruthy();
+  });
+
+  it('resets to the live button and shows no optimistic line when the write fails', async () => {
+    // A LOCAL write failure must never leave "Dose logged just now" on screen (that
+    // would claim a dose that was not recorded) and must return the button so the
+    // owner can retry. The catch also alerts; console.error is silenced to keep the
+    // run clean.
+    const errSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const onConfirm = jest.fn().mockRejectedValue(new Error('local write failed'));
+      const m = model({ regimens: [regimen()] });
+      const tree = render(<MedStrip model={m} onConfirm={onConfirm} />);
+
+      await act(async () => {
+        fireEvent.press(tree.getByTestId('med-strip-confirm'));
+      });
+
+      expect(tree.queryByText('Dose logged just now')).toBeNull();
+      expect(tree.getByTestId('med-strip-confirm')).toBeTruthy();
+    } finally {
+      errSpy.mockRestore();
     }
   });
 

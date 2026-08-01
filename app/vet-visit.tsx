@@ -455,7 +455,7 @@ const styles = StyleSheet.create({
   continueBtnText: {
     fontSize: 16,
     fontWeight: theme.fontWeightMedium,
-    color: '#fff',
+    color: theme.colorTextOnDark,
   },
 
   // ── Details form ──
@@ -530,7 +530,7 @@ const styles = StyleSheet.create({
   saveBtnText: {
     fontSize: 16,
     fontWeight: theme.fontWeightMedium,
-    color: '#fff',
+    color: theme.colorTextOnDark,
   },
 
   // ── Completion ──
@@ -549,7 +549,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  checkMark: { fontSize: 36, color: '#fff' },
+  checkMark: { fontSize: 36, color: theme.colorTextOnDark },
   loggedText: {
     fontSize: 20,
     fontWeight: theme.fontWeightMedium,

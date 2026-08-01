@@ -160,5 +160,8 @@ export async function loadMedStripInput(
     console.error('[MedStrip] intake-decline read failed:', e);
   }
 
-  return { regimens, doses, items, nowMs, intakeDeclineActive };
+  // `petId` rides on the input so it travels with the loaded data all the way to the
+  // confirm payload (`resolveMedStrips`), binding a one-tap write to the pet this read
+  // was for — not to whatever pet is active at tap time (the cross-pet-write race).
+  return { petId: pet.id, regimens, doses, items, nowMs, intakeDeclineActive };
 }

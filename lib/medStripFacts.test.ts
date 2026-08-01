@@ -251,6 +251,7 @@ describe('loadMedStripInput — assembly + failure posture', () => {
 
     const input = await loadMedStripInput({ id: 'pet-1', species: 'cat' }, NOW);
     expect(input).not.toBeNull();
+    expect(input!.petId).toBe('pet-1'); // bound to the loaded pet (cross-pet-write guard)
     expect(input!.regimens).toEqual([REGIMEN]);
     expect(input!.doses).toEqual([DOSE]);
     expect(input!.items).toEqual({

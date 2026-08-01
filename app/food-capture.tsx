@@ -1235,7 +1235,7 @@ const styles = StyleSheet.create({
   primaryBtnText: {
     fontSize: theme.textMD,
     fontWeight: theme.weightMedium,
-    color: '#fff',
+    color: theme.colorTextOnDark,
   },
   // Outline button — the on-screen "Choose from library" affordance. Reads as
   // a real button (visible border) so the library path isn't hidden, while
@@ -1355,17 +1355,17 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     padding: theme.space2,
-    backgroundColor: 'rgba(0,0,0,0.55)',
+    backgroundColor: theme.colorScrimDark,
     gap: 2,
   },
   confirmBrand: {
     fontSize: theme.textLG,
     fontWeight: theme.weightSemibold,
-    color: '#fff',
+    color: theme.colorTextOnDark,
   },
   confirmProduct: {
     fontSize: theme.textMD,
-    color: 'rgba(255,255,255,0.92)',
+    color: theme.colorTextOnDarkMuted,
     lineHeight: 20,
   },
   // Tier-1 protein disclosure on the confirm step — quiet, under the "Is this
@@ -1487,7 +1487,7 @@ const styles = StyleSheet.create({
   },
   checkMark: {
     fontSize: 36,
-    color: '#fff',
+    color: theme.colorTextOnDark,
   },
   loggedText: {
     fontSize: 20,

@@ -412,12 +412,12 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: theme.textMD,
-    color: '#fff',
+    color: theme.colorTextOnDark,
     fontWeight: theme.weightMedium,
   },
   subLabel: {
     fontSize: theme.textSM,
-    color: theme.colorTextOnDarkSecondary,
+    color: theme.colorTextOnDarkSubtle,
     fontWeight: theme.weightRegular,
   },
   // 44pt min touch target (the 3am-test rule) — the underlined label alone is
@@ -428,7 +428,7 @@ const styles = StyleSheet.create({
   },
   action: {
     fontSize: theme.textMD,
-    color: '#fff',
+    color: theme.colorTextOnDark,
     fontWeight: theme.weightMedium,
     textDecorationLine: 'underline',
   },
@@ -442,7 +442,7 @@ const styles = StyleSheet.create({
   },
   intakeLabel: {
     fontSize: theme.textSM,
-    color: theme.colorTextOnDarkSecondary,
+    color: theme.colorTextOnDarkSubtle,
     fontWeight: theme.weightRegular,
   },
   // B-351 slice 4 — the passive trial-contaminant heads-up. Same divider treatment
@@ -459,18 +459,16 @@ const styles = StyleSheet.create({
   flagHeadline: {
     fontSize: theme.textSM,
     fontWeight: theme.weightMedium,
-    color: '#fff',
+    color: theme.colorTextOnDark,
   },
   flagDetail: {
     fontSize: theme.textSM,
     lineHeight: theme.textSM * 1.4,
-    color: theme.colorTextOnDarkSecondary,
+    color: theme.colorTextOnDarkSubtle,
   },
   // The opt-in combo entry (B-156 PR B2b). ≥44pt tappable (the 3am-test floor) via
-  // minHeight. It reads as a separate, optional add-on beneath the intake row —
-  // never a peer of the logged act — through its dimmer label + its position at the
-  // foot of the stack, not through a fainter divider (B-646: the divider is the one
-  // on-dark rung; a hairline 3% quieter isn't visible anyway).
+  // minHeight; a faint divider so it reads as a separate, optional add-on beneath the
+  // intake row, never a peer of the logged act. Deliberately the quietest line.
   comboRow: {
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: theme.colorDividerOnDark,
@@ -480,13 +478,13 @@ const styles = StyleSheet.create({
   },
   comboText: {
     fontSize: theme.textSM,
-    color: theme.colorTextOnDarkSecondary,
+    color: theme.colorTextOnDarkSubtle,
     fontWeight: theme.weightMedium,
   },
 
   backdrop: {
     ...StyleSheet.absoluteFill,
-    backgroundColor: 'rgba(0,0,0,0.4)',
+    backgroundColor: theme.colorScrimBackdrop,
   },
   sheet: {
     position: 'absolute',
