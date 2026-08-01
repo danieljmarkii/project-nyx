@@ -748,11 +748,16 @@ function isUsableFoodKey(key: string | null | undefined): key is string {
  * is still present, so the id is the only identity available — and without it an
  * un-hydrated library would classify the trial diet itself as an exposure.
  */
+export interface AllowedMembershipHit {
+  food: AllowedFood;
+  matchedBy: 'food_id' | 'food_key';
+}
+
 function matchAllowed(
   candidates: readonly AllowedFood[],
   foodItemId: string | null,
   foodKey: string | null,
-): { food: AllowedFood; matchedBy: 'food_id' | 'food_key' } | null {
+): AllowedMembershipHit | null {
   if (foodItemId) {
     const byId = candidates.find((f) => f.foodItemId === foodItemId);
     if (byId) return { food: byId, matchedBy: 'food_id' };
@@ -762,6 +767,41 @@ function matchAllowed(
     if (byKey) return { food: byKey, matchedBy: 'food_key' };
   }
   return null;
+}
+
+/**
+ * RUNG 1, EXTRACTED — "is this food on the allowed list on this day", as one
+ * exported call rather than as two lines a surface can re-type (B-616 D3/R2).
+ *
+ * `classifyFeeding` calls this; so does every surface that RENDERS membership
+ * (the Foods-tab chip, the food-detail row, the picker's pinned section, the
+ * allowed-set screen). That is the point, and it is stronger than a convention:
+ * the library and the classifier cannot disagree about what is on the list,
+ * because there is only one function that answers.
+ *
+ * The alternative — a hook that filters `allowedFoods` for itself — is the
+ * `report.ts:2246` mistake at a smaller scale, and it fails in a specific,
+ * unnoticeable way. Two of the three things this composes are easy to omit and
+ * silent when omitted: the DATE gate (`membershipOn`, without which a mid-trial
+ * add renders as though it had always been on the list) and the KEY arm
+ * (`matchAllowed`, without which a re-photographed bag of the prescribed diet
+ * shows unmarked in the library while the classifier permits its every meal).
+ * A surface that disagrees with the classifier is worse than one that stays
+ * quiet: it teaches an owner a food is fine on a screen, then records it as an
+ * exposure on the report their vet reads.
+ *
+ * NO WINDOW CHECK HERE, deliberately. Membership is a fact about the LIST on a
+ * day; whether that day is inside the trial is `isInTrialWindow`'s question, and
+ * `classifyFeeding` asks it first. Folding the two together would make this
+ * return null for a day the food genuinely was on the list, which is the answer
+ * the allowed-set screen (which renders dated history) must not be given.
+ */
+export function allowedMembershipOn(
+  ctx: TrialContext,
+  dayIndex: number,
+  food: { foodItemId: string | null; foodKey: string | null },
+): AllowedMembershipHit | null {
+  return matchAllowed(allowedFoodsOn(ctx, dayIndex), food.foodItemId, food.foodKey);
 }
 
 // ── The classification (§5.3) ────────────────────────────────────────────────
@@ -888,8 +928,8 @@ export function classifyFeeding(
   const canAttributeUnrecognised =
     canAttribute && uncharacterizedTrialDietFoods(ctx, day).length === 0;
 
-  // Rung 1 — the ONLY permit path.
-  const hit = matchAllowed(allowedFoodsOn(ctx, day), feeding.foodItemId, feeding.foodKey);
+  // Rung 1 — the ONLY permit path, and the one every rendering surface shares.
+  const hit = allowedMembershipOn(ctx, day, feeding);
   if (hit) {
     return {
       verdict: 'permitted',
