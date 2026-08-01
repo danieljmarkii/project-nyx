@@ -729,8 +729,14 @@ export function trialFoodKey(brand: string | null, productName: string | null): 
  *  but not NON-EMPTY — so two blank-named rows would otherwise collide and the
  *  second would be silently treated as a trial food and never recorded. That is
  *  the dangerous direction. (Carried verbatim from `lib/trialContaminant.ts`,
- *  where the same hole was found.) */
-function isUsableFoodKey(key: string | null | undefined): key is string {
+ *  where the same hole was found.)
+ *
+ *  Exported at B-616 PR 2 because the allowed-set LIST has to group rows on the
+ *  identity `matchAllowed` actually resolves, and a second copy of this test is a
+ *  second answer to "are these two rows the same food". Two blank-named rows are
+ *  distinct to the predicate; a list that collapsed them would drop one food from
+ *  the set the owner is told their vet sanctioned. */
+export function isUsableFoodKey(key: string | null | undefined): key is string {
   return typeof key === 'string' && key.replace(/\u001F/g, '').trim().length > 0;
 }
 

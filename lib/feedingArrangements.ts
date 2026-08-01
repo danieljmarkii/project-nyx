@@ -71,7 +71,7 @@ export interface NewFeedingArrangement {
 
 import { getDb } from './db';
 import { syncPendingFeedingArrangements } from './sync';
-import { uuid } from './utils';
+import { formatCalendarDate, uuid } from './utils';
 
 // One currently-active free-choice arrangement joined with its food's display
 // fields — what the library "Always available" section renders. A view shape
@@ -524,16 +524,11 @@ export function sharedBowlHint(
 
 // ── Shared date formatters ───────────────────────────────────────────────────
 
-// 'YYYY-MM-DD' (a DATE column) → "Jun 2" for the "since {date}" lines. Built from
-// the parts so a bare calendar day doesn't shift across a timezone. Returns null
-// for a malformed/absent date so callers can omit the clause cleanly.
-export function formatCalendarDate(date: string | null): string | null {
-  if (!date) return null;
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
-  if (!m) return null;
-  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
-  return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
-}
+// 'YYYY-MM-DD' (a DATE column) → "Jun 2" for the "since {date}" lines. Moved to
+// `lib/utils` at B-616 PR 2 so the allowed-set screen can render the same shape
+// without importing this module's db + sync dependencies; re-exported here so
+// every existing caller keeps its import.
+export { formatCalendarDate };
 
 // An ISO timestamp (updated_at, reused as "last confirmed") → "today" or "Jun 2".
 // "today" when the confirmation happened on the device's current calendar day, so
