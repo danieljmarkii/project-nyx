@@ -2041,6 +2041,34 @@ Deno.test('B-351 — §5.6 reconciles in FEEDINGS: appendix rows, totalFeedings 
   )
 })
 
+Deno.test('B-497 — mealDaysByBucket counts MEALS, not any log: a logged symptom is not diet observation', () => {
+  // The adversarial-reviewer's counterexample. Week 0: an off-diet treat (so the timeline renders)
+  // — a meal-type log, so the diet was observed. Week 1: a logged VOMIT and NO meal — the canonical
+  // diet-trial owner who records symptoms but not meals. The off-diet chart's "was the diet
+  // observed?" signal (`mealDaysByBucket`) must NOT fire on the vomit, or week 1 renders a clean
+  // "0" over a diet nobody watched — reassurance-on-absence. This is why it counts meals, not
+  // `loggedDayNums` (the symptom chart's any-log signal, which DOES fire on the vomit).
+  const snap = assembleReport(
+    baseInput({
+      requestedWindow: { startDate: '2026-06-01', endDate: '2026-06-14' }, // 14 d → 2 weekly buckets
+      events: [
+        proteinMeal({ occurredAt: at('2026-06-02'), foodType: 'treat', primaryProtein: 'chicken', proteins: ['chicken'] }),
+        makeEvent({ type: 'vomit', occurredAt: at('2026-06-10') }),
+      ],
+    }),
+  )
+  const pt = snap.proteinTimeline
+  assert.equal(pt.mealDaysByBucket.length, 2, 'two weekly buckets')
+  assert.ok(pt.mealDaysByBucket[0] > 0, 'week 0 had a meal-type log — the diet was observed')
+  assert.equal(pt.mealDaysByBucket[1], 0, 'week 1 had only a vomit — a symptom is NOT diet observation')
+  assert.equal(pt.feedingsByWeek[1], 0, 'and no off-diet feeding fell in week 1')
+  // The contrast that proves the fix: the any-log signal (what the chart used to gate on) DOES fire
+  // on the vomit week, so gating the clean "0" on it would have asserted a clean diet nobody watched.
+  const vomit = snap.symptoms.find((s) => s.type === 'vomit')
+  assert.ok(vomit, 'the vomit aggregate exists')
+  assert.ok(vomit!.loggedDaysByBucket[1] > 0, 'any-log fires on the vomit week — the OLD, wrong signal')
+})
+
 // ── B-351 slice 5 — END-TO-END, from STORED COLUMN SHAPES to rendered HTML ─────
 //
 // The adversarial pass named a structural blind spot in the tests above: report.test

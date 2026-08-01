@@ -315,6 +315,19 @@ const GRAY_RAMP = ['#585c64', '#74777f', '#8f929a', '#a9acb2', '#c2c4c9', '#d8d9
 // ── Small SVG builders (all non-colour) ──────────────────────────────────────────
 
 /**
+ * Y-axis maximum for the weekly bar charts, forced to an EVEN number. The mid gridline is drawn
+ * at the geometric midpoint of the plot, whose value is exactly `yMax / 2`; on an ODD max that
+ * midpoint is an `x.5` value, and labelling it `round(x.5)` printed the `2.5` gridline as `3`, so
+ * a bar of 3 topped visibly ABOVE its own labelled line (B-498). Keeping the max even makes
+ * `yMax / 2` a whole number that sits exactly on the line it labels. The floor of 2 keeps a
+ * one-episode week off a single-gridline axis.
+ */
+function evenAxisMax(values: number[]): number {
+  const raw = Math.max(2, ...values)
+  return raw % 2 === 0 ? raw : raw + 1
+}
+
+/**
  * The symptom-frequency bar chart (§3.5, the hero) — non-colour, B&W-safe. Bars are
  * dark; a ZERO week renders as a short "nub" at the baseline with a `0` label (a
  * visible zero, never a blank). Dashed vertical intervention markers (§3.5) are drawn
@@ -333,7 +346,7 @@ function symptomChart(sym: SymptomAggregate, markers: ConcurrentChange[], window
   const plotW = R - L
   const slot = plotW / n
   const barW = Math.max(10, Math.min(30, slot * 0.5))
-  const yMax = Math.max(2, ...buckets)
+  const yMax = evenAxisMax(buckets)
   const centerX = (i: number): number => L + (i + 0.5) * slot
   const yFor = (count: number): number => BASE - (count / yMax) * (BASE - TOP)
 
@@ -343,24 +356,39 @@ function symptomChart(sym: SymptomAggregate, markers: ConcurrentChange[], window
   parts.push(`<line class="grid" x1="${L}" y1="${(TOP + BASE) / 2}" x2="${R}" y2="${(TOP + BASE) / 2}"/>`)
   parts.push(`<line class="axis" x1="${L}" y1="${BASE}" x2="${R}" y2="${BASE}"/>`)
   parts.push(`<text class="yl num" x="30" y="${TOP + 3}" text-anchor="end">${yMax}</text>`)
-  parts.push(`<text class="yl num" x="30" y="${(TOP + BASE) / 2 + 3}" text-anchor="end">${Math.round(yMax / 2)}</text>`)
+  parts.push(`<text class="yl num" x="30" y="${(TOP + BASE) / 2 + 3}" text-anchor="end">${yMax / 2}</text>`)
   parts.push(`<text class="yl num" x="30" y="${BASE + 3}" text-anchor="end">0</text>`)
 
   // Intervention markers (dashed verticals + a short date at the top of each). The date carries a
   // small "start" prefix and NO ▲ glyph — on the first real artifact the triangle read as a data
   // spike/peak on the chart itself (R2-6); a dashed rule + a labelled "start ·" is unambiguously a
   // divider, and the one-line legend below the panels spells out what it marks.
-  const markedBuckets = new Set<number>()
+  //
+  // The mark is WEEK-GRANULAR — drawn at the centre of the 7-day bucket the start falls in — so the
+  // legend promises the WEEK, not the day (B-496). Two interventions that start in the same week
+  // share one vertical: surface the COUNT rather than silently drop the second (the old de-dup
+  // discarded it from the chart entirely). Every start is still enumerated with its exact date in
+  // the "Reading the trend" note below.
+  const markersByBucket = new Map<number, ConcurrentChange[]>()
   for (const m of markers) {
     if (m.bucketIndex === null || m.bucketIndex < 0 || m.bucketIndex >= n) continue
-    if (markedBuckets.has(m.bucketIndex)) continue
-    markedBuckets.add(m.bucketIndex)
-    const mx = centerX(m.bucketIndex)
+    const group = markersByBucket.get(m.bucketIndex) ?? []
+    group.push(m)
+    markersByBucket.set(m.bucketIndex, group)
+  }
+  for (const [bucketIndex, group] of [...markersByBucket.entries()].sort((a, b) => a[0] - b[0])) {
+    const mx = centerX(bucketIndex)
     parts.push(`<line class="mark" x1="${mx.toFixed(1)}" y1="18" x2="${mx.toFixed(1)}" y2="${BASE}"/>`)
     // Anchor the date label so it stays inside the plot (end-anchor in the right third).
     const anchor = mx > L + plotW * 0.66 ? 'end' : 'start'
     const lx = anchor === 'end' ? mx - 3 : mx + 3
-    parts.push(`<text class="ann" x="${lx.toFixed(1)}" y="11" text-anchor="${anchor}">start &middot; ${h(fmtDay(m.startDate))}</text>`)
+    // Date the marker with the EARLIEST start in the week; prefix a count when it carries more.
+    const earliest = group.reduce((a, b) => ((a.startDate ?? '') <= (b.startDate ?? '') ? a : b))
+    const label =
+      group.length > 1
+        ? `${group.length} starts &middot; ${h(fmtDay(earliest.startDate))}`
+        : `start &middot; ${h(fmtDay(earliest.startDate))}`
+    parts.push(`<text class="ann" x="${lx.toFixed(1)}" y="11" text-anchor="${anchor}">${label}</text>`)
   }
 
   // X-axis: week-start date labels (PM) via the shared helper the protein chart also uses, so the
@@ -474,6 +502,13 @@ function proteinSwatch(id: string, color: string | null, texIndex: number): stri
   return `<svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true"><defs>${def}</defs><rect width="12" height="12" rx="2" fill="url(#${id})" stroke="rgba(20,24,34,.25)"/></svg>`
 }
 
+/** Off-diet feedings charted in a week: protein-band hits (a multi-protein food counts once per band)
+ *  plus the no-recorded-protein feedings. `0` iff the week had no off-diet feeding at all. One
+ *  definition, shared by the chart and its section so the "is this week empty?" test can't drift. */
+function proteinWeekTotal(t: import('./report.ts').ProteinTimeline, w: number): number {
+  return (t.bins[w]?.reduce((a, b) => a + b, 0) ?? 0) + (t.unknownByWeek[w] ?? 0)
+}
+
 function proteinTimelineChart(t: import('./report.ts').ProteinTimeline): string {
   const n = Math.max(1, t.weekStartDates.length)
   const L = 40
@@ -482,8 +517,8 @@ function proteinTimelineChart(t: import('./report.ts').ProteinTimeline): string 
   const TOP = 20
   const slot = (R - L) / n
   const barW = Math.max(12, Math.min(34, slot * 0.6))
-  const weekTotal = (w: number): number => t.bins[w].reduce((a, b) => a + b, 0) + (t.unknownByWeek[w] ?? 0)
-  const yMax = Math.max(2, ...Array.from({ length: n }, (_, w) => weekTotal(w)))
+  const weekTotal = (w: number): number => proteinWeekTotal(t, w)
+  const yMax = evenAxisMax(Array.from({ length: n }, (_, w) => weekTotal(w)))
   const yFor = (v: number): number => BASE - (v / yMax) * (BASE - TOP)
   const centerX = (i: number): number => L + (i + 0.5) * slot
 
@@ -496,35 +531,73 @@ function proteinTimelineChart(t: import('./report.ts').ProteinTimeline): string 
   parts.push(`<line class="grid" x1="${L}" y1="${(TOP + BASE) / 2}" x2="${R}" y2="${(TOP + BASE) / 2}"/>`)
   parts.push(`<line class="axis" x1="${L}" y1="${BASE}" x2="${R}" y2="${BASE}"/>`)
   parts.push(`<text class="yl num" x="30" y="${TOP + 3}" text-anchor="end">${yMax}</text>`)
-  parts.push(`<text class="yl num" x="30" y="${(TOP + BASE) / 2 + 3}" text-anchor="end">${Math.round(yMax / 2)}</text>`)
+  parts.push(`<text class="yl num" x="30" y="${(TOP + BASE) / 2 + 3}" text-anchor="end">${yMax / 2}</text>`)
   parts.push(`<text class="yl num" x="30" y="${BASE + 3}" text-anchor="end">0</text>`)
 
+  // AN OFF-DIET ZERO AND AN UNOBSERVED WEEK ARE NOT THE SAME FACT (B-497). This chart used to draw
+  // NOTHING for either — so a week the owner logged meals with no off-diet food (a clean week) was
+  // pixel-identical to a week the diet was never observed. On the one chart where blank could mean
+  // "clean", blank was indistinguishable from "no data", while the symptom charts beside it drew a
+  // labelled nub for the same emptiness — three charts on one page, two meanings for empty. So a
+  // week with the diet OBSERVED and nothing off-diet now draws a baseline nub + a `0`, and a week
+  // the diet was NOT observed draws a hollow dashed marker + a dash, never a measured `0`
+  // (clinical-guardrails: absence of a log is not evidence of adherence).
+  //
+  // The "observed" test is `mealDaysByBucket` — a MEAL was logged — NOT the symptom chart's any-log
+  // signal (adversarial-reviewer, B-497): a logged vomit is not diet observation, and counting it as
+  // one would assert a clean off-diet week over a diet nobody watched — the exact reassurance-on-
+  // absence this fix exists to kill, landing on the diet-trial owner who logs symptoms but not meals.
+  // (Treats/human food are themselves off-diet feedings, so on a zero-total week the only meal-type
+  // events left are on-diet meals — the right denominator.)
+  const unobservedWeeks: number[] = []
   for (let i = 0; i < n; i++) {
-    const x = centerX(i) - barW / 2
-    let yCursor = BASE
-    for (let j = 0; j < t.proteins.length; j++) {
-      const v = t.bins[i]?.[j] ?? 0
-      if (v <= 0) continue
-      const hgt = (v / yMax) * (BASE - TOP)
-      yCursor -= hgt
-      parts.push(
-        `<rect x="${x.toFixed(1)}" y="${yCursor.toFixed(1)}" width="${barW.toFixed(1)}" height="${hgt.toFixed(1)}" fill="url(#ptc-${j})" stroke="#fff" stroke-width="0.6"/>`,
-      )
-    }
-    const u = t.unknownByWeek[i] ?? 0
-    if (u > 0) {
-      const hgt = (u / yMax) * (BASE - TOP)
-      yCursor -= hgt
-      parts.push(
-        `<rect x="${x.toFixed(1)}" y="${yCursor.toFixed(1)}" width="${barW.toFixed(1)}" height="${hgt.toFixed(1)}" fill="url(#ptc-u)" stroke="#fff" stroke-width="0.6"/>`,
-      )
-    }
+    const cx = centerX(i)
+    const x = cx - barW / 2
     const total = weekTotal(i)
-    if (total > 0) parts.push(`<text class="cap num" x="${centerX(i).toFixed(1)}" y="${(yFor(total) - 5).toFixed(1)}" text-anchor="middle">${total}</text>`)
+    if (total > 0) {
+      let yCursor = BASE
+      for (let j = 0; j < t.proteins.length; j++) {
+        const v = t.bins[i]?.[j] ?? 0
+        if (v <= 0) continue
+        const hgt = (v / yMax) * (BASE - TOP)
+        yCursor -= hgt
+        parts.push(
+          `<rect x="${x.toFixed(1)}" y="${yCursor.toFixed(1)}" width="${barW.toFixed(1)}" height="${hgt.toFixed(1)}" fill="url(#ptc-${j})" stroke="#fff" stroke-width="0.6"/>`,
+        )
+      }
+      const u = t.unknownByWeek[i] ?? 0
+      if (u > 0) {
+        const hgt = (u / yMax) * (BASE - TOP)
+        yCursor -= hgt
+        parts.push(
+          `<rect x="${x.toFixed(1)}" y="${yCursor.toFixed(1)}" width="${barW.toFixed(1)}" height="${hgt.toFixed(1)}" fill="url(#ptc-u)" stroke="#fff" stroke-width="0.6"/>`,
+        )
+      }
+      parts.push(`<text class="cap num" x="${cx.toFixed(1)}" y="${(yFor(total) - 5).toFixed(1)}" text-anchor="middle">${total}</text>`)
+    } else if ((t.mealDaysByBucket[i] ?? 0) > 0) {
+      // A CLEAN week — a meal was logged, nothing off-diet was recorded. A measured zero, drawn as the
+      // symptom chart's observed-zero nub so "empty" reads the same across every chart on the page.
+      parts.push(`<rect class="nub" x="${x.toFixed(1)}" y="${BASE - 3}" width="${barW.toFixed(1)}" height="3" rx="1.5"/>`)
+      parts.push(`<text class="z num" x="${cx.toFixed(1)}" y="${BASE - 7}" text-anchor="middle">0</text>`)
+    } else {
+      // The diet was NOT observed that week (no meal logged) — never a measured `0`; a hollow marker
+      // + a dash keeps "diet not observed" distinct from "a week with zero off-diet food" (B-497).
+      unobservedWeeks.push(i)
+      parts.push(
+        `<rect class="nolog" x="${x.toFixed(1)}" y="${(BASE - 9).toFixed(1)}" width="${barW.toFixed(1)}" height="9" rx="2"/>`,
+      )
+      parts.push(`<text class="z num" x="${cx.toFixed(1)}" y="${BASE - 13}" text-anchor="middle">&ndash;</text>`)
+    }
   }
   parts.push(weekAxisLabels(t.weekStartDates, L, slot, n, BASE))
+  // The alt text draws the same three-way distinction the bars do — a week the diet was not observed
+  // is named as unlogged, never voiced as a zero (B-497; the symptom chart's aria does the same).
+  const ariaWeeks = Array.from({ length: n }, (_, i) =>
+    weekTotal(i) > 0 ? String(weekTotal(i)) : (t.mealDaysByBucket[i] ?? 0) > 0 ? '0' : 'not logged',
+  ).join(', ')
+  const aria = `Off-diet protein exposure per week: ${ariaWeeks}.`
   // print-color-adjust:exact inherits to the pattern fills so the bars survive a default clinic printer.
-  return `<svg viewBox="0 0 648 148" role="img" aria-label="Off-diet protein exposure per week." style="-webkit-print-color-adjust:exact;print-color-adjust:exact;"><defs>${defs}</defs>${parts.join('')}</svg>`
+  return `<svg viewBox="0 0 648 148" role="img" aria-label="${h(aria)}" style="-webkit-print-color-adjust:exact;print-color-adjust:exact;"><defs>${defs}</defs>${parts.join('')}</svg>`
 }
 
 /** Capitalise a protein label for the legend ("chicken" → "Chicken"), leaving multi-word casing alone. */
@@ -738,11 +811,22 @@ function proteinTimelineSection(snap: ReportSnapshot): string {
       .map((p, j) => `<span class="ptleg">${proteinSwatch(`pts-${j}`, PROTEIN_COLORS[j % PROTEIN_COLORS.length], j)}${h(capProtein(p))} ${num(t.totalByProtein[p] ?? 0)}</span>`)
       .join('') +
     (t.hasUnknown ? `<span class="ptleg">${proteinSwatch('pts-u', null, 0)}no recorded protein ${num(t.unknownByWeek.reduce((a, b) => a + b, 0))}</span>` : '')
+  // Name the dashed no-data marker where it is drawn (B-497). A week is unobserved iff no meal was
+  // logged in it AND no off-diet feeding fell in it — the same test the chart applies bar-by-bar.
+  // Deliberately rendered as HTML below the chart, NOT as in-SVG <text> like the symptom chart's
+  // twin note: the protein SVG's viewBox has no vertical room for a legend line, and growing it would
+  // change chart geometry (which wants its own PNG cold read) — an HTML caption is also more legible
+  // to a screen reader. The two notes read identically to the reader; only their host element differs.
+  const anyUnobservedWeek = t.weekStartDates.some((_, i) => proteinWeekTotal(t, i) === 0 && (t.mealDaysByBucket[i] ?? 0) === 0)
+  const noDataNote = anyUnobservedWeek
+    ? `<div class="subnote">&ndash; marks a week the diet was not observed (no meal logged) — not a week without off-diet food.</div>`
+    : ''
   return `
   <div class="sec">
     <h2>Off-diet protein exposure over time</h2>
     <div class="trend">
       ${proteinTimelineChart(t)}
+      ${noDataNote}
       <div class="ptlegend">${legend}</div>
       <div class="subnote">${num(t.totalFeedings)} off-diet feeding${
         t.totalFeedings === 1 ? '' : 's'
@@ -3004,7 +3088,7 @@ function symptomTrend(snap: ReportSnapshot): string {
   // the detail lives. Only shown when there is at least one marker to explain.
   const markerLegend =
     snap.concurrentChanges.some((c) => c.bucketIndex !== null)
-      ? `<div class="chartlegend">A dashed vertical marks when a diet, medication, or supplement <b>started</b> — each is named in &ldquo;Reading the trend&rdquo; below.</div>`
+      ? `<div class="chartlegend">A dashed vertical marks the <b>week</b> a diet, medication, or supplement started — each is named with its exact date in &ldquo;Reading the trend&rdquo; below.</div>`
       : ''
   return `
   <div class="sec">

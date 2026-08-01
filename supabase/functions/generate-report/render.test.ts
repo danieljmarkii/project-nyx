@@ -222,6 +222,7 @@ function baseSnapshot(overrides: Partial<ReportSnapshot> = {}): ReportSnapshot {
       proteins: [],
       bins: [],
       unknownByWeek: [],
+      mealDaysByBucket: [],
       feedingsByWeek: [],
       totalByProtein: {},
       hasUnknown: false,
@@ -1736,7 +1737,7 @@ Deno.test('R2-6 — an intervention marker is a neutral "start ·" label (no ▲
   const html = renderReport(snap)
   assert.ok(!html.includes('▲'), 'no triangle spike glyph on the chart')
   assert.ok(/start &middot;/.test(html), 'neutral "start ·" marker label')
-  assert.ok(/dashed vertical marks when a diet, medication, or supplement/i.test(html), 'chart legend line explains the marker')
+  assert.ok(/dashed vertical marks the <b>week<\/b> a diet, medication, or supplement started/i.test(html), 'chart legend line explains the marker is week-granular (B-496)')
 })
 
 Deno.test('the symptom chart draws week-start date labels (May 11, May 18 …), not bare month ticks', () => {
@@ -1764,6 +1765,7 @@ Deno.test('#9 protein-over-time section renders with a hue+texture legend when o
         proteins: ['chicken', 'turkey'],
         bins: [[2, 0], [3, 1], [0, 0]],
         unknownByWeek: [0, 1, 0],
+        mealDaysByBucket: [7, 7, 7],
         feedingsByWeek: [2, 5, 0],
         totalByProtein: { chicken: 5, turkey: 1 },
         hasUnknown: true,
@@ -1779,6 +1781,127 @@ Deno.test('#9 protein-over-time section renders with a hue+texture legend when o
   assert.ok(/reads in black &amp; white/.test(withTimeline), 'the print-safe note is present')
   // Absent when nothing off-diet — never an empty chart.
   assert.ok(!/Off-diet protein exposure over time/.test(renderReport(base())), 'no empty chart when nothing off-diet')
+})
+
+// ── B-498: the mid gridline label matches its geometric position on ODD maxima ──────────
+// The mid gridline is drawn at the plot's midpoint (value yMax/2). On an odd max the old code
+// labelled it round(yMax/2) — a "2.5" line printed as "3", so a bar of 3 topped above its own line.
+
+Deno.test('B-498 — an odd bucket max forces an EVEN axis, so the mid gridline label sits on its line', () => {
+  const html = renderReport(
+    base({
+      symptoms: [
+        aggregate({
+          type: 'itch',
+          count: 9,
+          weeklyBuckets: [1, 3, 5], // raw max 5 (odd) → the old bug: mid line at 2.5 labelled "3"
+          bucketStartDates: ['2026-05-01', '2026-05-08', '2026-05-15'],
+          windowDays: 21,
+        }),
+      ],
+    }),
+  )
+  // The three y-axis labels (class "yl num", x=30) are the top, the mid, and 0.
+  const ylabels = [...html.matchAll(/<text class="yl num" x="30"[^>]*>(\d+)<\/text>/g)].map((m) => Number(m[1]))
+  assert.ok(ylabels.length >= 3, 'three y-axis labels render')
+  const [top, midLbl, zero] = ylabels
+  assert.equal(top % 2, 0, 'the axis maximum is even, so its midpoint is a whole number')
+  assert.ok(top >= 5, 'the axis still covers the tallest bar (value 5)')
+  assert.equal(midLbl, top / 2, 'the mid label is EXACTLY half the max — it sits on the line it names')
+  assert.equal(zero, 0, 'the baseline label is 0')
+  // The old off-by-a-half: a "3" mid label under a "5" max (the 2.5 line mislabelled).
+  assert.ok(!(top === 5 && midLbl === 3), 'never the 5-max / 3-mid mislabel (B-498)')
+})
+
+// ── B-496: two interventions in one week surface a COUNT, and the legend promises the week ──
+
+Deno.test('B-496 — two starts in the same week render one marker with a count, not a silent collapse', () => {
+  const html = renderReport(
+    base({
+      symptoms: [
+        aggregate({
+          type: 'vomit',
+          count: 3,
+          weeklyBuckets: [3, 0, 0],
+          bucketStartDates: ['2026-05-01', '2026-05-08', '2026-05-15'],
+          windowDays: 21,
+        }),
+      ],
+      concurrentChanges: [
+        { kind: 'diet_trial', label: 'RC HP', startDate: '2026-05-02', bucketIndex: 0, ongoing: false, endInWindow: null },
+        { kind: 'medication', label: 'Metronidazole', startDate: '2026-05-04', bucketIndex: 0, ongoing: false, endInWindow: null },
+      ],
+    }),
+  )
+  // The second start is no longer invisible: the collapsed marker carries a count + the earliest date.
+  assert.ok(/2 starts &middot; May 2/.test(html), 'a two-start week is marked "2 starts · <earliest>", never silently one')
+  // Exactly one dashed vertical for that week (both starts share it — the count says so).
+  assert.equal((html.match(/class="mark"/g) ?? []).length, 1, 'one vertical for the shared week')
+  // The legend now promises the WEEK, not the day (the mark is bucket-granular).
+  assert.ok(/marks the <b>week<\/b> a diet, medication, or supplement started/.test(html), 'legend is honest about week granularity')
+})
+
+Deno.test('B-496 — a lone start still reads "start · <date>" (single-marker behaviour unchanged)', () => {
+  const html = renderReport(
+    base({
+      symptoms: [aggregate({ type: 'vomit', count: 2, weeklyBuckets: [1, 1], bucketStartDates: ['2026-05-01', '2026-05-08'], windowDays: 14 })],
+      concurrentChanges: [{ kind: 'diet_trial', label: 'RC HP', startDate: '2026-05-09', bucketIndex: 1, ongoing: false, endInWindow: null }],
+    }),
+  )
+  assert.ok(/start &middot; May 9/.test(html), 'a single start keeps its exact-date label')
+  assert.ok(!/\d+ starts &middot;/.test(html), 'no count prefix when the week carries one start')
+})
+
+// ── B-497: the off-diet chart tells a CLEAN week from an UNLOGGED one, never a measured 0 ──
+// The symptom chart already draws a nub for an observed-zero week and a dash for an unlogged one
+// (B-532). The off-diet chart used to draw NOTHING for both, so a clean week and a no-data week
+// were pixel-identical — reassurance-on-absence on the chart a vet reads fastest.
+
+Deno.test('B-497 — an off-diet week that was logged but clean draws a measured "0" nub', () => {
+  const html = renderReport(
+    base({
+      proteinTimeline: {
+        weekStartDates: ['2026-06-01', '2026-06-08', '2026-06-15'],
+        proteins: ['chicken'],
+        bins: [[2], [0], [1]],
+        unknownByWeek: [0, 0, 0],
+        mealDaysByBucket: [7, 7, 7], // a meal was logged every week; the middle week is a genuine clean week
+        feedingsByWeek: [2, 0, 1],
+        totalByProtein: { chicken: 3 },
+        hasUnknown: false,
+        totalFeedings: 3,
+        incompleteFeedings: 0,
+      },
+    }),
+  )
+  assert.ok(/class="nub"/.test(html), 'the observed-zero off-diet week draws a baseline nub (a measured clean week)')
+  assert.ok(!/class="nolog"/.test(html), 'a meal-observed clean week is never rendered as no-data')
+  assert.ok(!/diet was not observed/.test(html), 'no no-data note when the diet was observed every week')
+})
+
+Deno.test('B-497 — an off-diet week with NO meal logged draws a dashed no-data marker + a dash, never a "0"', () => {
+  const html = renderReport(
+    base({
+      proteinTimeline: {
+        weekStartDates: ['2026-06-01', '2026-06-08', '2026-06-15'],
+        proteins: ['chicken'],
+        bins: [[2], [0], [1]],
+        unknownByWeek: [0, 0, 0],
+        mealDaysByBucket: [7, 0, 7], // the middle week had NO meal logged (diet not observed)
+        feedingsByWeek: [2, 0, 1],
+        totalByProtein: { chicken: 3 },
+        hasUnknown: false,
+        totalFeedings: 3,
+        incompleteFeedings: 0,
+      },
+    }),
+  )
+  assert.ok(/class="nolog"/.test(html), 'the unobserved week draws its own hollow dashed marker')
+  assert.equal((html.match(/class="nolog"/g) ?? []).length, 1, 'exactly the one week no meal was logged')
+  // The alt text names it as unlogged — the screen-reader path never voices absence as a zero.
+  assert.ok(/aria-label="Off-diet protein exposure per week: 2, not logged, 1\./.test(html), 'aria names the unobserved bucket, never a 0')
+  // The dash is explained where it is drawn.
+  assert.ok(/diet was not observed \(no meal logged\)/.test(html), 'the no-data marker is named as diet-not-observed, not left to read as a clean week')
 })
 
 Deno.test('cold-read coherence — a completed/stopped medication carries its end date on the meds line + Appendix D', () => {
@@ -2143,6 +2266,7 @@ Deno.test('B-351 D10 — an under-counted protein tally is disclosed as a FLOOR'
         proteins: ['chicken'],
         bins: [[3]],
         unknownByWeek: [0],
+        mealDaysByBucket: [7],
         feedingsByWeek: [4],
         totalByProtein: { chicken: 3 },
         hasUnknown: false,
@@ -2172,6 +2296,7 @@ Deno.test('B-351 §9 — the exposure chart states that one feeding can fill sev
         proteins: ['chicken', 'duck'],
         bins: [[2, 2], [1, 0]],
         unknownByWeek: [0, 0],
+        mealDaysByBucket: [7, 7],
         feedingsByWeek: [2, 1],
         totalByProtein: { chicken: 3, duck: 2 },
         hasUnknown: false,
@@ -2405,6 +2530,7 @@ function breachedTrialSnap() {
       proteins: ['chicken'],
       bins: [[7]],
       unknownByWeek: [0],
+      mealDaysByBucket: [7],
       feedingsByWeek: [7],
       totalByProtein: { chicken: 7 },
       hasUnknown: false,

@@ -1763,6 +1763,14 @@ export interface ProteinTimeline {
   bins: number[][]
   /** Per-week count of off-diet feedings with no recorded protein (disclosed, never dropped, §5.1). */
   unknownByWeek: number[]
+  /** Distinct local days with a MEAL-type event logged, per weekly bucket. This is the "was the DIET
+   *  observed?" signal — deliberately NOT the symptom chart's any-log `loggedDaysByBucket`, which
+   *  would count a logged vomit as diet observation and assert a clean off-diet week over a diet
+   *  nobody watched (B-497, adversarial-reviewer). A week with zero off-diet feedings AND a meal
+   *  logged is a CLEAN week (draw a `0`); with zero off-diet feedings and no meal it is UNOBSERVED
+   *  (draw "not logged", never a `0`). Treats/human food are themselves off-diet feedings, so on a
+   *  zero-total week the only meal-type events left are on-diet meals — exactly the right denominator. */
+  mealDaysByBucket: number[]
   /** Per-week count of off-diet FEEDINGS (each counted once) — the honest denominator
    *  behind a stack whose segments may now sum higher than the feedings that produced it. */
   feedingsByWeek: number[]
@@ -3235,11 +3243,22 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
       if (j !== undefined) timelineBins[w][j]++
     }
   }
+  // Distinct meal-days per bucket — the off-diet chart's "was the diet observed?" test (B-497). A
+  // logged symptom is NOT diet observation, so this counts meal-type events only, never `loggedDayNums`.
+  const mealDayNums = new Set<number>()
+  for (const e of windowMeals) {
+    const dn = eventDayNumber(e.occurredAt, tz)
+    if (dn !== null) mealDayNums.add(dn)
+  }
+  const mealDaysByBucket = new Array(numBuckets).fill(0)
+  for (const dn of mealDayNums) mealDaysByBucket[bucketIndexOfDay(dn)]++
+
   const proteinTimeline: ProteinTimeline = {
     weekStartDates: bucketStartDates,
     proteins: timelineProteins,
     bins: timelineBins,
     unknownByWeek,
+    mealDaysByBucket,
     feedingsByWeek,
     totalByProtein: proteinExposureTally,
     hasUnknown: proteinUnknownCount > 0,
