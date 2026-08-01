@@ -222,7 +222,7 @@ function baseSnapshot(overrides: Partial<ReportSnapshot> = {}): ReportSnapshot {
       proteins: [],
       bins: [],
       unknownByWeek: [],
-      loggedDaysByBucket: [],
+      mealDaysByBucket: [],
       feedingsByWeek: [],
       totalByProtein: {},
       hasUnknown: false,
@@ -1765,7 +1765,7 @@ Deno.test('#9 protein-over-time section renders with a hue+texture legend when o
         proteins: ['chicken', 'turkey'],
         bins: [[2, 0], [3, 1], [0, 0]],
         unknownByWeek: [0, 1, 0],
-        loggedDaysByBucket: [7, 7, 7],
+        mealDaysByBucket: [7, 7, 7],
         feedingsByWeek: [2, 5, 0],
         totalByProtein: { chicken: 5, turkey: 1 },
         hasUnknown: true,
@@ -1865,7 +1865,7 @@ Deno.test('B-497 — an off-diet week that was logged but clean draws a measured
         proteins: ['chicken'],
         bins: [[2], [0], [1]],
         unknownByWeek: [0, 0, 0],
-        loggedDaysByBucket: [7, 7, 7], // every week logged; week 2 is a genuine clean week
+        mealDaysByBucket: [7, 7, 7], // a meal was logged every week; the middle week is a genuine clean week
         feedingsByWeek: [2, 0, 1],
         totalByProtein: { chicken: 3 },
         hasUnknown: false,
@@ -1875,11 +1875,11 @@ Deno.test('B-497 — an off-diet week that was logged but clean draws a measured
     }),
   )
   assert.ok(/class="nub"/.test(html), 'the observed-zero off-diet week draws a baseline nub (a measured clean week)')
-  assert.ok(!/class="nolog"/.test(html), 'a logged clean week is never rendered as no-data')
-  assert.ok(!/nothing off-diet food/.test(html) && !/no log of any kind/.test(html), 'no no-data note when every week was logged')
+  assert.ok(!/class="nolog"/.test(html), 'a meal-observed clean week is never rendered as no-data')
+  assert.ok(!/diet was not observed/.test(html), 'no no-data note when the diet was observed every week')
 })
 
-Deno.test('B-497 — an UNLOGGED off-diet week draws a dashed no-data marker + a dash, never a "0"', () => {
+Deno.test('B-497 — an off-diet week with NO meal logged draws a dashed no-data marker + a dash, never a "0"', () => {
   const html = renderReport(
     base({
       proteinTimeline: {
@@ -1887,7 +1887,7 @@ Deno.test('B-497 — an UNLOGGED off-diet week draws a dashed no-data marker + a
         proteins: ['chicken'],
         bins: [[2], [0], [1]],
         unknownByWeek: [0, 0, 0],
-        loggedDaysByBucket: [7, 0, 7], // week 2 has NO log of any kind
+        mealDaysByBucket: [7, 0, 7], // the middle week had NO meal logged (diet not observed)
         feedingsByWeek: [2, 0, 1],
         totalByProtein: { chicken: 3 },
         hasUnknown: false,
@@ -1896,12 +1896,12 @@ Deno.test('B-497 — an UNLOGGED off-diet week draws a dashed no-data marker + a
       },
     }),
   )
-  assert.ok(/class="nolog"/.test(html), 'the unlogged week draws its own hollow dashed marker')
-  assert.equal((html.match(/class="nolog"/g) ?? []).length, 1, 'exactly the one week nobody logged')
+  assert.ok(/class="nolog"/.test(html), 'the unobserved week draws its own hollow dashed marker')
+  assert.equal((html.match(/class="nolog"/g) ?? []).length, 1, 'exactly the one week no meal was logged')
   // The alt text names it as unlogged — the screen-reader path never voices absence as a zero.
-  assert.ok(/aria-label="Off-diet protein exposure per week: 2, not logged, 1\./.test(html), 'aria names the unlogged bucket, never a 0')
+  assert.ok(/aria-label="Off-diet protein exposure per week: 2, not logged, 1\./.test(html), 'aria names the unobserved bucket, never a 0')
   // The dash is explained where it is drawn.
-  assert.ok(/not a week without off-diet food/.test(html), 'the no-data marker is named, not left to read as a clean week')
+  assert.ok(/diet was not observed \(no meal logged\)/.test(html), 'the no-data marker is named as diet-not-observed, not left to read as a clean week')
 })
 
 Deno.test('cold-read coherence — a completed/stopped medication carries its end date on the meds line + Appendix D', () => {
@@ -2266,7 +2266,7 @@ Deno.test('B-351 D10 — an under-counted protein tally is disclosed as a FLOOR'
         proteins: ['chicken'],
         bins: [[3]],
         unknownByWeek: [0],
-        loggedDaysByBucket: [7],
+        mealDaysByBucket: [7],
         feedingsByWeek: [4],
         totalByProtein: { chicken: 3 },
         hasUnknown: false,
@@ -2296,7 +2296,7 @@ Deno.test('B-351 §9 — the exposure chart states that one feeding can fill sev
         proteins: ['chicken', 'duck'],
         bins: [[2, 2], [1, 0]],
         unknownByWeek: [0, 0],
-        loggedDaysByBucket: [7, 7],
+        mealDaysByBucket: [7, 7],
         feedingsByWeek: [2, 1],
         totalByProtein: { chicken: 3, duck: 2 },
         hasUnknown: false,
@@ -2530,7 +2530,7 @@ function breachedTrialSnap() {
       proteins: ['chicken'],
       bins: [[7]],
       unknownByWeek: [0],
-      loggedDaysByBucket: [7],
+      mealDaysByBucket: [7],
       feedingsByWeek: [7],
       totalByProtein: { chicken: 7 },
       hasUnknown: false,

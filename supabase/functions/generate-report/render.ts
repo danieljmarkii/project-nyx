@@ -527,15 +527,21 @@ function proteinTimelineChart(t: import('./report.ts').ProteinTimeline): string 
   parts.push(`<text class="yl num" x="30" y="${(TOP + BASE) / 2 + 3}" text-anchor="end">${yMax / 2}</text>`)
   parts.push(`<text class="yl num" x="30" y="${BASE + 3}" text-anchor="end">0</text>`)
 
-  // AN OFF-DIET ZERO AND AN UNLOGGED WEEK ARE NOT THE SAME FACT (B-497). This chart used to draw
-  // NOTHING for either — so a week the owner logged with no off-diet food (a clean week) was
-  // pixel-identical to a week nobody logged. On the one chart where blank could mean "clean", blank
-  // was indistinguishable from "no data", while the symptom charts beside it drew a labelled nub for
-  // the same emptiness — three charts on one page, two meanings for empty. So an observed-zero week
-  // now draws the symptom chart's baseline nub + a `0`, and an unlogged week draws a hollow dashed
-  // marker + a dash, never a measured `0` (clinical-guardrails: absence of a log is not evidence of
-  // adherence). The "observed" test is `loggedDaysByBucket` — the SAME signal the symptom chart
-  // uses — so "empty" reads identically across all three charts.
+  // AN OFF-DIET ZERO AND AN UNOBSERVED WEEK ARE NOT THE SAME FACT (B-497). This chart used to draw
+  // NOTHING for either — so a week the owner logged meals with no off-diet food (a clean week) was
+  // pixel-identical to a week the diet was never observed. On the one chart where blank could mean
+  // "clean", blank was indistinguishable from "no data", while the symptom charts beside it drew a
+  // labelled nub for the same emptiness — three charts on one page, two meanings for empty. So a
+  // week with the diet OBSERVED and nothing off-diet now draws a baseline nub + a `0`, and a week
+  // the diet was NOT observed draws a hollow dashed marker + a dash, never a measured `0`
+  // (clinical-guardrails: absence of a log is not evidence of adherence).
+  //
+  // The "observed" test is `mealDaysByBucket` — a MEAL was logged — NOT the symptom chart's any-log
+  // signal (adversarial-reviewer, B-497): a logged vomit is not diet observation, and counting it as
+  // one would assert a clean off-diet week over a diet nobody watched — the exact reassurance-on-
+  // absence this fix exists to kill, landing on the diet-trial owner who logs symptoms but not meals.
+  // (Treats/human food are themselves off-diet feedings, so on a zero-total week the only meal-type
+  // events left are on-diet meals — the right denominator.)
   const unobservedWeeks: number[] = []
   for (let i = 0; i < n; i++) {
     const cx = centerX(i)
@@ -561,14 +567,14 @@ function proteinTimelineChart(t: import('./report.ts').ProteinTimeline): string 
         )
       }
       parts.push(`<text class="cap num" x="${cx.toFixed(1)}" y="${(yFor(total) - 5).toFixed(1)}" text-anchor="middle">${total}</text>`)
-    } else if ((t.loggedDaysByBucket[i] ?? 0) > 0) {
-      // A CLEAN week — the owner logged, nothing off-diet was recorded. A measured zero, drawn as the
+    } else if ((t.mealDaysByBucket[i] ?? 0) > 0) {
+      // A CLEAN week — a meal was logged, nothing off-diet was recorded. A measured zero, drawn as the
       // symptom chart's observed-zero nub so "empty" reads the same across every chart on the page.
       parts.push(`<rect class="nub" x="${x.toFixed(1)}" y="${BASE - 3}" width="${barW.toFixed(1)}" height="3" rx="1.5"/>`)
       parts.push(`<text class="z num" x="${cx.toFixed(1)}" y="${BASE - 7}" text-anchor="middle">0</text>`)
     } else {
-      // NO log of any kind that week — never a measured `0`; a hollow marker + a dash, matching the
-      // symptom chart, keeps "no data" distinct from "a week with zero off-diet food" (B-497).
+      // The diet was NOT observed that week (no meal logged) — never a measured `0`; a hollow marker
+      // + a dash keeps "diet not observed" distinct from "a week with zero off-diet food" (B-497).
       unobservedWeeks.push(i)
       parts.push(
         `<rect class="nolog" x="${x.toFixed(1)}" y="${(BASE - 9).toFixed(1)}" width="${barW.toFixed(1)}" height="9" rx="2"/>`,
@@ -577,10 +583,10 @@ function proteinTimelineChart(t: import('./report.ts').ProteinTimeline): string 
     }
   }
   parts.push(weekAxisLabels(t.weekStartDates, L, slot, n, BASE))
-  // The alt text draws the same three-way distinction the bars do — a week with no log is named as
-  // unlogged, never voiced as a zero (B-497; the symptom chart's aria does the same).
+  // The alt text draws the same three-way distinction the bars do — a week the diet was not observed
+  // is named as unlogged, never voiced as a zero (B-497; the symptom chart's aria does the same).
   const ariaWeeks = Array.from({ length: n }, (_, i) =>
-    weekTotal(i) > 0 ? String(weekTotal(i)) : (t.loggedDaysByBucket[i] ?? 0) > 0 ? '0' : 'not logged',
+    weekTotal(i) > 0 ? String(weekTotal(i)) : (t.mealDaysByBucket[i] ?? 0) > 0 ? '0' : 'not logged',
   ).join(', ')
   const aria = `Off-diet protein exposure per week: ${ariaWeeks}.`
   // print-color-adjust:exact inherits to the pattern fills so the bars survive a default clinic printer.
@@ -798,14 +804,14 @@ function proteinTimelineSection(snap: ReportSnapshot): string {
       .map((p, j) => `<span class="ptleg">${proteinSwatch(`pts-${j}`, PROTEIN_COLORS[j % PROTEIN_COLORS.length], j)}${h(capProtein(p))} ${num(t.totalByProtein[p] ?? 0)}</span>`)
       .join('') +
     (t.hasUnknown ? `<span class="ptleg">${proteinSwatch('pts-u', null, 0)}no recorded protein ${num(t.unknownByWeek.reduce((a, b) => a + b, 0))}</span>` : '')
-  // Name the dashed no-data marker where it is drawn (B-497). A week is unlogged iff nothing at all
-  // was logged AND no off-diet feeding fell in it — the same test the chart applies bar-by-bar.
-  const anyUnloggedWeek = t.weekStartDates.some((_, i) => {
+  // Name the dashed no-data marker where it is drawn (B-497). A week is unobserved iff no meal was
+  // logged in it AND no off-diet feeding fell in it — the same test the chart applies bar-by-bar.
+  const anyUnobservedWeek = t.weekStartDates.some((_, i) => {
     const weekTotal = (t.bins[i]?.reduce((a, b) => a + b, 0) ?? 0) + (t.unknownByWeek[i] ?? 0)
-    return weekTotal === 0 && (t.loggedDaysByBucket[i] ?? 0) === 0
+    return weekTotal === 0 && (t.mealDaysByBucket[i] ?? 0) === 0
   })
-  const noDataNote = anyUnloggedWeek
-    ? `<div class="subnote">&ndash; marks a week with no log of any kind — not a week without off-diet food.</div>`
+  const noDataNote = anyUnobservedWeek
+    ? `<div class="subnote">&ndash; marks a week the diet was not observed (no meal logged) — not a week without off-diet food.</div>`
     : ''
   return `
   <div class="sec">
