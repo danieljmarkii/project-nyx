@@ -281,7 +281,7 @@ const styles = StyleSheet.create({
     color: theme.colorTextSecondary,
   },
   chipTextActive: {
-    color: '#fff',
+    color: theme.colorTextOnDark,
   },
   chipDesc: {
     fontSize: 11,
@@ -289,7 +289,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   chipDescActive: {
-    color: 'rgba(255,255,255,0.65)',
+    color: theme.colorTextOnDarkSubtle,
   },
   fieldBtn: {
     flexDirection: 'row',

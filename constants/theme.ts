@@ -23,6 +23,7 @@ export const theme = {
   lineHeightSignal: 34, // AI Signal headline leading (26 × ~1.3, per type-signal preview)
   lineHeightBody: 22, // body/paragraph leading — app-wide default for multi-line copy
   lineHeightSM: 18, // caption/compact-row leading (textSM × ~1.35) — e.g. the cross-pet banner
+  lineHeightXS: 16, // XS-note leading (textXS × ~1.45) — the metric-card note lines (B-193)
 
   // ── Font weights ──────────────────────────────────────────────────────────
   weightRegular: '400' as const,
@@ -71,6 +72,33 @@ export const theme = {
   colorTextOnDarkSecondary: '#B4B8B4',        // dimmer body/label text on a solid dark surface
   colorScrimDark: 'rgba(0,0,0,0.55)',         // gradient/overlay scrim over a photo hero
 
+  // ── On-dark surface scale (B-066 / B-129 tokenization; B-646 rationalization) ─
+  // Every value below shipped first as an inline literal on a KNOWN dark surface —
+  // the meal/med completion cards, the fullscreen photo viewer, dark-filled
+  // selected chips/items, the pet-photo overlay. B-066/B-129 (#540) moved them into
+  // the theme verbatim; B-646 then COLLAPSED the near-duplicate steps that sweep had
+  // preserved: the three "secondary" text alphas (0.65 / 0.70 / 0.75) onto one
+  // colorTextOnDarkSubtle, and the three divider alphas (0.10 / 0.12 / 0.15) onto one
+  // colorDividerOnDark. Those splits were drift, not intent — at StyleSheet.hairlineWidth
+  // 0.10/0.12/0.15 are indistinguishable, and the meal vs medication completion cards
+  // (built as twins) had disagreed 0.75/0.12 vs 0.70/0.10 on the same roles. A
+  // subordinate row keeps its quiet from a dimmer label + tighter spacing + position,
+  // not a hairline no one can see. Reusable chips that must blend over an UNKNOWN dark
+  // parent keep their translucent literals ON PURPOSE (B-168) and are absent here.
+  // colorTextOnDarkSecondary (#B4B8B4, above) is the SOLID-surface sibling of these
+  // translucent-white text tokens.
+  //
+  // White text on a solid dark card, descending prominence:
+  colorTextOnDarkSubtle: 'rgba(255,255,255,0.7)',   // secondary label / row / detail / caption
+  colorTextOnDarkFaint: 'rgba(255,255,255,0.55)',   // faintest line / inactive dot
+  // White hairlines + fills on a solid dark card:
+  colorDividerOnDark: 'rgba(255,255,255,0.15)',     // divider between card rows; also the photo-viewer secondary-button fill
+  colorFillOnDark: 'rgba(255,255,255,0.06)',        // subtle raised fill (the check badge)
+  colorDotOnDarkInactive: 'rgba(255,255,255,0.4)',  // inactive page dot on a photo
+  // Black overlays/scrims (role-named — colorScrimDark 0.55 stays the photo hero):
+  colorScrimPhoto: 'rgba(0,0,0,0.45)',    // pet-photo "change photo" overlay
+  colorScrimBackdrop: 'rgba(0,0,0,0.4)',  // completion-card time-edit sheet backdrop
+
   // Dark premium/marketing surfaces. The onboarding paywall (B-251 PR 10) is the
   // first full solid dark screen (a premium feel leans dark). These are solid
   // surface fills — distinct from colorScrimDark, which is a translucent overlay
@@ -78,7 +106,7 @@ export const theme = {
   // cover the type and accent marks on top of them.
   colorSurfaceDark: '#101312',                // the dark canvas of a premium surface
   colorSurfaceDarkElevated: '#16201E',        // an elevated tile/card on the dark canvas
-  colorBorderOnDark: '#33383A',               // hairline border/divider on a dark surface
+  colorBorderOnDark: '#33383A',               // solid hairline on a solid dark surface (paywall tiles)
 
   // Brand "night" — the Culprit world/ground colour (B-275 palette half; Moon &
   // Signal icon field). This is a WORLD colour, not an accent: it is only ever a
@@ -198,6 +226,10 @@ export const theme = {
   // sub-label that hugs it (section title → hint line). Deliberately below the
   // 8pt layout grid — it's type leading, not layout rhythm.
   spaceMicro: 2,
+  // 4pt inline gap — the icon↔text micro-gap on the metric/weight cards. Sits
+  // between the 2pt type sub-grid (spaceMicro) and the 8pt layout grid, which
+  // had nothing at 4 (B-193). Half of space1.
+  space0_5: 4,
   space1: 8,
   space2: 16,
   space3: 24,

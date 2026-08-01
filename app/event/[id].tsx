@@ -52,7 +52,7 @@ import { StoolAnalysisSection } from '../../components/event/StoolAnalysisSectio
 // gates can't drift.
 const isStoolEvent = (t: string | null | undefined): boolean =>
   t === 'stool_normal' || t === 'diarrhea';
-import { Header, PhotoViewer } from '../../components/ui';
+import { EmptyState, Header, PhotoViewer } from '../../components/ui';
 
 const HERO_HEIGHT = 320;
 const SIGNED_URL_TTL_SEC = 60 * 60;
@@ -544,10 +544,7 @@ export default function EventDetailScreen() {
     return (
       <SafeAreaView style={styles.container} edges={['top']}>
         <Header leading="back" onLeadingPress={() => router.back()} />
-        <View style={styles.loadingState}>
-          <Text style={styles.emptyTitle}>Event not found</Text>
-          <Text style={styles.emptyBody}>It may have been removed.</Text>
-        </View>
+        <EmptyState align="fill" title="Event not found" body="It may have been removed." />
       </SafeAreaView>
     );
   }
@@ -1065,14 +1062,5 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     gap: theme.space1,
-  },
-  emptyTitle: {
-    fontSize: theme.textLG,
-    fontWeight: theme.fontWeightMedium,
-    color: theme.colorTextPrimary,
-  },
-  emptyBody: {
-    fontSize: theme.textMD,
-    color: theme.colorTextSecondary,
   },
 });

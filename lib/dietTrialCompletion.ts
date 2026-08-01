@@ -592,12 +592,15 @@ export function buildOutcomeSheet(args: {
     saveLabel: 'Save',
     declineLead,
     // Verbatim in register with `dietTrialCard.pushDeclineLines`, because it is
-    // the same fact told to the same owner ten seconds later.
+    // the same fact told to the same owner ten seconds later — so the closing
+    // sentence names the READING it withholds ("a clean run"), never "the
+    // numbers" (B-561). The sibling was corrected for the same reason once the
+    // decline branches stopped deleting the off-diet count; this copy tracks it.
     declineNote: declineLead
       ? (args.species === 'cat'
           ? 'A cat that stops eating needs a call today, whatever the trial is doing.'
           : `A pet that goes off their food needs a call, whatever the trial is doing.`) +
-        ' Culprit isn’t showing the trial’s numbers while this is going on.'
+        ' Culprit isn’t reading these days as a clean run while this is going on.'
       : null,
   };
 }

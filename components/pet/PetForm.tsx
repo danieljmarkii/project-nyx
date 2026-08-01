@@ -79,7 +79,7 @@ export function PetForm({ title, subtitle, submitLabel, loading, onSubmit }: Pet
           activeOpacity={0.85}
         >
           {loading
-            ? <WhorlSpinner size="sm" tint="#fff" />
+            ? <WhorlSpinner size="sm" tint={theme.colorTextOnDark} />
             : <Text style={styles.buttonText}>{submitLabel}</Text>
           }
         </TouchableOpacity>
@@ -145,7 +145,7 @@ const styles = StyleSheet.create({
     opacity: 0.4,
   },
   buttonText: {
-    color: '#fff',
+    color: theme.colorTextOnDark,
     fontSize: theme.textMD,
     fontWeight: theme.weightMedium,
   },

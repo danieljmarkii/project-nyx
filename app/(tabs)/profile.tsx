@@ -9,6 +9,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { theme } from '../../constants/theme';
 import { WhorlSpinner } from '../../components/brand/WhorlSpinner';
 import { Card } from '../../components/ui/Card';
+import { EmptyState } from '../../components/ui/EmptyState';
 import { PrimaryButton } from '../../components/ui/PrimaryButton';
 import { Badge } from '../../components/ui/Badge';
 import { Divider } from '../../components/ui/Divider';
@@ -37,26 +38,35 @@ import {
   TrialCompletionSheet, type TrialCompletionEntry,
 } from '../../components/profile/TrialCompletionSheet';
 import { useDietTrial } from '../../hooks/useDietTrial';
+import { useTrialAllowedSet } from '../../hooks/useTrialAllowedSet';
 import { resolveTrialCard } from '../../lib/dietTrialCard';
 import { extensionDays, nextTargetDays } from '../../lib/dietTrialCompletion';
 import { extendTrial } from '../../lib/dietTrialSetup';
 import { getDietTrialProgress } from '../../lib/analytics';
-import { petPronouns } from '../../lib/utils';
+import { dayKeyToLocalDate, petPronouns, toLocalDayKey } from '../../lib/utils';
 import { Pet } from '../../store/petStore';
 import {
   MEDICATION_ROUTE_OPTIONS, computeRegimenCompliance, regimenComplianceLine,
-  regimenFlagLine, attributeDosesToRegimens,
+  regimenFlagLine, attributeDosesToRegimens, regimenDaysElapsed, doseCourseProgress,
   type AdherenceTally, type RegimenCompliance, type AttributableDose,
+  type DoseCourseProgress,
 } from '../../lib/medications';
 
 const PET_PHOTO_BUCKET = 'nyx-pet-photos';
 
 interface RegimenDisplay extends Regimen {
-  daysElapsed: number;
+  // null = the start date did not parse, so the course's length is unknown (B-441).
+  // Every consumer must test `!= null` explicitly: a bare `daysElapsed <= target`
+  // coerces null to 0 and renders "Day null of 14".
+  daysElapsed: number | null;
   tally: AdherenceTally;
   compliance: RegimenCompliance;
   complianceLine: string;
   flagLine: string | null;
+  // B-618 — non-null only for a doses-denominated fixed course (target_duration_doses
+  // set). Carries the "Dose {n} of {target}" line + its bar fraction; when null the
+  // card renders the days/ongoing path unchanged.
+  doseCourse: DoseCourseProgress | null;
 }
 
 const EMPTY_TALLY = (): AdherenceTally => ({ given: 0, partial: 0, missed: 0, refused: 0, unrated: 0 });
@@ -68,7 +78,13 @@ const EMPTY_TALLY = (): AdherenceTally => ({ given: 0, partial: 0, missed: 0, re
 function buildRegimenDisplay(reg: Regimen, tally: AdherenceTally): RegimenDisplay {
   const daysElapsed = regimenDaysElapsed(reg.started_at);
   const compliance = computeRegimenCompliance({
-    dosesPerDay: reg.doses_per_day, daysElapsed, tally,
+    // With no day count there is no honest denominator, so the regimen reports a
+    // dose COUNT instead of a percent — the same shape PRN already uses. Feeding a
+    // guessed `1` would shrink the denominator and inflate adherence, which is the
+    // reassuring direction and the one this must never drift toward (B-441).
+    dosesPerDay: daysElapsed === null ? null : reg.doses_per_day,
+    daysElapsed: daysElapsed ?? 1,
+    tally,
   });
   return {
     ...reg,
@@ -77,6 +93,16 @@ function buildRegimenDisplay(reg: Regimen, tally: AdherenceTally): RegimenDispla
     compliance,
     complianceLine: regimenComplianceLine(compliance),
     flagLine: regimenFlagLine(tally),
+    // B-618 §6 — a doses course drives the count line + bar off dosesTowardTarget,
+    // independent of the day math. Exactly one of target_duration_days /
+    // target_duration_doses is ever set (DB constraint, migration 049), so this
+    // never competes with the "Day X of Y" path on the same row. The `> 0` guard
+    // (not just `!= null`) means a corrupt/legacy local row with a 0 target — the
+    // local SQLite mirror does not enforce the server CHECK — degrades to the
+    // ongoing "Started …" path instead of rendering "Dose n of 0".
+    doseCourse: reg.target_duration_doses != null && reg.target_duration_doses > 0
+      ? doseCourseProgress(tally, reg.target_duration_doses)
+      : null,
   };
 }
 
@@ -96,20 +122,19 @@ function routeLabel(route: string | null): string | null {
   return MEDICATION_ROUTE_OPTIONS.find((o) => o.value === route)?.label ?? null;
 }
 
-// Whole days the regimen has run, ≥1. NOTE (B-421): this carries the local-midnight
-// arithmetic the diet-trial card used to duplicate, including its flaw — a date-only
-// `started_at` is parsed as UTC midnight before being floored to LOCAL midnight, so
-// for anyone behind UTC the start lands on the previous local day and the count reads
-// one too high. The trial counter now routes through `lib/utils.localDayIndexOf`,
-// which indexes a DATE verbatim; this one was left alone because it is a different
-// feature's counter and feeds clinical-guardrails compliance copy that has no tests
-// here. Route it through the same primitive when regimens are next touched — B-441.
-function regimenDaysElapsed(startedAt: string): number {
-  const start = new Date(startedAt);
-  start.setHours(0, 0, 0, 0);
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  return Math.max(1, Math.floor((today.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1);
+// The regimen day counter used to live here, carrying the flaw B-421 removed from
+// the diet-trial counter. B-441 moved it to `lib/medications.regimenDaysElapsed`,
+// routed through `lib/utils.localDayIndexOf` — this screen now holds no day math.
+
+// "Started 12 Jun 2026" for the ongoing/overrun regimen row. `dayKeyToLocalDate`,
+// never `new Date(started_at)`: the column is a date-only DATE, so the bare parse
+// lands on UTC midnight and formats as the PREVIOUS day for anyone behind UTC —
+// the display half of the same B-441 defect that inflated the counter. Falls back
+// to the raw stored value if it does not parse, never to a confidently wrong date.
+function formatRegimenStart(startedAt: string): string {
+  const d = dayKeyToLocalDate(startedAt);
+  if (!d) return startedAt;
+  return d.toLocaleDateString([], { year: 'numeric', month: 'short', day: 'numeric' });
 }
 
 // Age display lives in lib/age.formatAge now (B-251 PR 9) so the honesty rule has
@@ -157,6 +182,11 @@ export default function ProfileScreen() {
   // flushed, is still a row the card can see, so "No trial running." cannot be a
   // lie told by a failed network read.
   const { input: trialInput, isLoading: trialLoading, reload: reloadTrial } = useDietTrial();
+  // B-616 FR-5 — the card's door into "What {pet} can eat". Read here rather than
+  // inside the screen so R2 is enforced at the ENTRY: an allowed set that has not
+  // hydrated draws no action at all (`DietTrialCard` renders an action only when a
+  // handler exists), instead of a link that opens a screen with nothing to say.
+  const trialAllowedSet = useTrialAllowedSet();
   const [startTrialVisible, setStartTrialVisible] = useState(false);
   // B-535 — the start-modal → food-capture round trip. "Snap a new food" closes
   // the modal and routes out; the modal stays mounted so the half-filled form
@@ -297,7 +327,8 @@ export default function ProfileScreen() {
         .from('medications')
         .select(
           'id, pet_id, medication_item_id, drug_name, dose_amount, route, doses_per_day, ' +
-          'schedule_notes, indication, prescribed_by, started_at, target_duration_days, status, ended_at',
+          'schedule_notes, indication, prescribed_by, started_at, target_duration_days, ' +
+          'target_duration_doses, status, ended_at',
         )
         .eq('pet_id', activePet.id)
         .eq('status', 'active')
@@ -518,6 +549,7 @@ export default function ProfileScreen() {
       doses_per_day: reg.doses_per_day, schedule_notes: reg.schedule_notes,
       indication: reg.indication, prescribed_by: reg.prescribed_by,
       started_at: reg.started_at, target_duration_days: reg.target_duration_days,
+      target_duration_doses: reg.target_duration_doses, // B-618 — carried so an edit round-trips the unit (PR 3 renders it)
       status: reg.status, ended_at: reg.ended_at,
     });
     setMedicationModalVisible(true);
@@ -530,7 +562,11 @@ export default function ProfileScreen() {
       // success. A regimen is "ended", never soft-deleted (migration 020).
       const { data, error } = await supabase
         .from('medications')
-        .update({ status: 'completed', ended_at: new Date().toISOString().split('T')[0] })
+        // `ended_at` is a DATE and gets the same treatment as `started_at` (B-441):
+        // `toISOString()` yields the UTC day, so a behind-UTC owner ending a course in
+        // the evening stored TOMORROW — widening the dose-attribution upper bound and
+        // the vet report's regimen span.
+        .update({ status: 'completed', ended_at: toLocalDayKey(new Date()) })
         .eq('id', id)
         .select('id');
       if (error) throw error;
@@ -619,9 +655,11 @@ export default function ProfileScreen() {
   if (!activePet) {
     return (
       <SafeAreaView style={styles.container}>
-        <View style={styles.emptyState}>
-          <Text style={styles.emptyStateText}>No pet profile found.</Text>
-        </View>
+        <EmptyState
+          align="fill"
+          title="No pet profile yet"
+          body="Add a pet and their profile will show up here."
+        />
       </SafeAreaView>
     );
   }
@@ -694,7 +732,7 @@ export default function ProfileScreen() {
             )}
             {photoUploading && (
               <View style={styles.photoOverlay}>
-                <WhorlSpinner size="md" tint="#fff" />
+                <WhorlSpinner size="md" tint={theme.colorTextOnDark} />
               </View>
             )}
           </TouchableOpacity>
@@ -825,19 +863,50 @@ export default function ProfileScreen() {
                   <Divider style={styles.conditionDivider} />
                   <Text style={styles.medName}>{reg.drug_name}</Text>
                   {meta ? <Text style={styles.medMeta}>{meta}</Text> : null}
-                  <Text style={styles.medDays}>
-                    {/* "Day X of Y" only while the course is within its planned
-                        window; once it's run past target_duration (still active —
-                        owner hasn't ended it) the "of Y" is nonsense ("Day 30 of
-                        7"), so fall back to the ongoing "Started …" format. */}
-                    {reg.target_duration_days != null && reg.daysElapsed <= reg.target_duration_days
-                      ? `Day ${reg.daysElapsed} of ${reg.target_duration_days}`
-                      : `Started ${new Date(reg.started_at).toLocaleDateString([], { year: 'numeric', month: 'short', day: 'numeric' })}`}
-                  </Text>
-                  {reg.compliance.percent != null && (
-                    <View style={styles.progressTrack}>
-                      <View style={[styles.progressBar, { width: `${reg.compliance.percent}%` }]} />
+                  {reg.doseCourse ? (
+                    /* B-618 §6 — a doses course states its progress in DOSES, not
+                       days: "Dose {n} of {target}" (or, past target, "28 of 28
+                       doses · 2 more logged"). The count line and its n/target bar
+                       are ONE grouped unit (doseCourseGroup, tight gap) so the bar
+                       reads as course progress — bound to the number directly above
+                       it — and NOT as the adherence % on the compliance line below.
+                       (pm-feature-review B-618: a bar reads as the nearest
+                       percentage, and the bar's number is NOT that percentage; the
+                       group binds it to the dose line so the two can't be confused.)
+                       The bar caps at full past target (cap-the-bar / disclose-the-
+                       extras / render-no-error), renders from "Dose 0 of N" onward,
+                       and never falls back to "Started …". D7: no completion word is
+                       reachable through this line. */
+                    <View style={styles.doseCourseGroup}>
+                      <Text style={styles.medDays}>{reg.doseCourse.line}</Text>
+                      <View style={styles.progressTrack}>
+                        <View style={[styles.progressBar, { width: `${Math.round(reg.doseCourse.barFraction * 100)}%` }]} />
+                      </View>
                     </View>
+                  ) : (
+                    <>
+                      <Text style={styles.medDays}>
+                        {/* "Day X of Y" only while the course is within its planned
+                            window; once it's run past target_duration (still active —
+                            owner hasn't ended it) the "of Y" is nonsense ("Day 30 of
+                            7"), so fall back to the ongoing "Started …" format.
+                            `daysElapsed != null` is load-bearing, not defensive: a bare
+                            `null <= 14` is TRUE in JS, so dropping it renders
+                            "Day null of 14" on the one row whose date we could not read. */}
+                        {reg.daysElapsed != null && reg.target_duration_days != null
+                         && reg.daysElapsed <= reg.target_duration_days
+                          ? `Day ${reg.daysElapsed} of ${reg.target_duration_days}`
+                          : `Started ${formatRegimenStart(reg.started_at)}`}
+                      </Text>
+                      {/* Days/ongoing: the bar encodes ADHERENCE %, so it belongs
+                          directly above the compliance line (same number) and needs
+                          no grouping; shown only once something is logged. */}
+                      {reg.compliance.percent != null && (
+                        <View style={styles.progressTrack}>
+                          <View style={[styles.progressBar, { width: `${reg.compliance.percent}%` }]} />
+                        </View>
+                      )}
+                    </>
                   )}
                   <Text style={styles.medComplianceLine}>{reg.complianceLine}</Text>
                   {reg.flagLine && (
@@ -913,6 +982,24 @@ export default function ProfileScreen() {
               // the header link because on the one state whose message is "this
               // diet may need to change", the way out cannot be chrome.
               trial_manage: () => setStartTrialVisible(true),
+              // B-616 PR 2 (§2.2). Present only on a hydrated set — see the hook
+              // read above; `undefined` here means the card draws no link.
+              ...(trialAllowedSet.status === 'ready'
+                ? { view_allowed_foods: () => router.push('/trial-foods') }
+                : {}),
+              // B-616 PR 4 (§2.6) — the destination B-475 was filed for. The
+              // resolver has declared this action since PR 4 of B-417 and emits it
+              // only when `offDiet > 0`, so it really is handler-only: the card
+              // decides whether there is anything to drill into, and this line
+              // decides where the drill-in goes.
+              //
+              // UNCONDITIONAL, unlike the allowed-set link above. That one needs a
+              // hydrated allowed set to have anything to show; this one needs the
+              // exposure facts, which the card has already read to draw the count
+              // it is offering — a link the card only draws over a non-zero count
+              // cannot land on a screen with nothing on it for a reason the card
+              // could have known.
+              view_exposures: () => router.push('/trial-exposures'),
             }}
             onManage={() => setStartTrialVisible(true)}
           />
@@ -1087,13 +1174,13 @@ const styles = StyleSheet.create({
   photoInitials: {
     fontSize: 38,
     fontWeight: theme.weightMedium,
-    color: '#fff',
+    color: theme.colorTextOnDark,
   },
   photoOverlay: {
     position: 'absolute',
     top: 0, left: 0, right: 0, bottom: 0,
     borderRadius: 56,
-    backgroundColor: 'rgba(0,0,0,0.45)',
+    backgroundColor: theme.colorScrimPhoto,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1256,6 +1343,15 @@ const styles = StyleSheet.create({
     fontWeight: theme.weightMedium,
   },
 
+  // B-618 — the dose-course count line + its n/target bar are bound into one unit so
+  // the bar reads as course progress, not as the adherence % that follows on the next
+  // line. The internal gap (2) is deliberately TIGHTER than medRow's own gap (4), so
+  // the bar sits closer to the "Dose n of target" line above it than to the compliance
+  // line below (pm-feature-review B-618 — bar semantics; final spacing is a device-pass
+  // tuning, the binding is the point).
+  doseCourseGroup: {
+    gap: 2,
+  },
   // The MEDICATION regimen bar. Its width is bound to dose adherence, which is a
   // real ratio of discrete events; the diet-trial card's bar is bound to
   // `getDietTrialProgress().fraction` and lives in components/profile/DietTrialCard.
@@ -1336,15 +1432,6 @@ const styles = StyleSheet.create({
   },
 
   // ── Empty / bottom ──
-  emptyState: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  emptyStateText: {
-    fontSize: theme.textMD,
-    color: theme.colorTextSecondary,
-  },
   bottomPad: {
     height: theme.space5,
   },

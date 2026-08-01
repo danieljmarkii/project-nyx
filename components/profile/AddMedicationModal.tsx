@@ -24,9 +24,10 @@ import { theme } from '../../constants/theme';
 import { WhorlSpinner } from '../brand/WhorlSpinner';
 import { supabase } from '../../lib/supabase';
 import { getLibraryMedications, PickerMedication } from '../../lib/db';
+import { dayKeyToLocalDate, toLocalDayKey } from '../../lib/utils';
 import {
   MEDICATION_ROUTE_OPTIONS, buildRegimenPayload, canSaveRegimen,
-  type RegimenFormValues,
+  resolveDurationColumns, type RegimenFormValues,
 } from '../../lib/medications';
 import { MedicationNameChips } from '../medication/MedicationNameChips';
 import { ChipGroup } from '../ui/ChipGroup';
@@ -47,6 +48,7 @@ export interface Regimen {
   prescribed_by: string | null;
   started_at: string;
   target_duration_days: number | null;
+  target_duration_doses: number | null; // B-618 — the doses-denominated sibling (migration 049); entry UI is PR 3
   status: 'active' | 'completed' | 'stopped';
   ended_at: string | null;
 }
@@ -89,6 +91,19 @@ const DURATION_MODE_OPTIONS: { value: 'ongoing' | 'fixed'; label: string }[] = [
   { value: 'fixed', label: 'Set an end' },
 ];
 
+// B-618 — the unit a fixed course is counted in. 'days' is the default (D2 —
+// continuity with every existing course and the verbal-Rx phrasing "give it two
+// weeks"); 'doses' captures the dispensed truth for a bottle-counted course ("#28,
+// until gone"), where a day count only ever approximates the end. A closed two-option
+// set that gates the number field's unit label — a visible ChipGroup, never a menu
+// (the B-146 / filter-UX closed-set single-select rule). The selected unit picks which
+// ONE of target_duration_days / target_duration_doses the number writes
+// (resolveDurationColumns, §5); the other is always null.
+const DURATION_UNIT_OPTIONS: { value: 'days' | 'doses'; label: string }[] = [
+  { value: 'days', label: 'Days' },
+  { value: 'doses', label: 'Doses' },
+];
+
 interface Props {
   visible: boolean;
   petId: string;
@@ -96,10 +111,6 @@ interface Props {
   onClose: () => void;
   onAdded: (regimen: Regimen) => void;
   onUpdated?: (regimen: Regimen) => void;
-}
-
-function todayDateOnly(): string {
-  return new Date().toISOString().split('T')[0];
 }
 
 export function AddMedicationModal({
@@ -125,6 +136,7 @@ export function AddMedicationModal({
   const [startedAt, setStartedAt] = useState<Date>(new Date());
   const [targetDuration, setTargetDuration] = useState('');
   const [durationMode, setDurationMode] = useState<'ongoing' | 'fixed'>('ongoing');
+  const [durationUnit, setDurationUnit] = useState<'days' | 'doses'>('days');
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -140,13 +152,25 @@ export function AddMedicationModal({
       setScheduleNotes(existingRegimen.schedule_notes ?? '');
       setIndication(existingRegimen.indication ?? '');
       setPrescribedBy(existingRegimen.prescribed_by ?? '');
-      setStartedAt(existingRegimen.started_at ? new Date(existingRegimen.started_at) : new Date());
-      setTargetDuration(
-        existingRegimen.target_duration_days != null
-          ? String(existingRegimen.target_duration_days)
-          : '',
+      // `started_at` is a DATE, so it is read back through `dayKeyToLocalDate` — a
+      // bare `new Date(key)` parses UTC midnight, which for anyone BEHIND UTC seeds
+      // the picker (and the label above it) with the PREVIOUS day (B-441).
+      setStartedAt(
+        (existingRegimen.started_at ? dayKeyToLocalDate(existingRegimen.started_at) : null)
+          ?? new Date(),
       );
-      setDurationMode(existingRegimen.target_duration_days != null ? 'fixed' : 'ongoing');
+      // B-618 — an edit opens with the course's STORED unit lit (the DB CHECK
+      // guarantees at most one denomination is set): a doses course seeds 'doses' +
+      // its dose count, a days course 'days' + its day count, an ongoing course
+      // 'days' (the default the owner meets if they later pick "Set an end"). Switching
+      // units converts nothing — the number is the owner's to restate (§5).
+      const days = existingRegimen.target_duration_days;
+      const doses = existingRegimen.target_duration_doses;
+      setDurationMode(days != null || doses != null ? 'fixed' : 'ongoing');
+      setDurationUnit(doses != null ? 'doses' : 'days');
+      setTargetDuration(
+        doses != null ? String(doses) : days != null ? String(days) : '',
+      );
     } else {
       setDrugName('');
       setMedicationItemId(null);
@@ -159,6 +183,7 @@ export function AddMedicationModal({
       setStartedAt(new Date());
       setTargetDuration('');
       setDurationMode('ongoing');
+      setDurationUnit('days'); // B-618 — days is the default unit for a new course (D2)
     }
     setShowDatePicker(false);
   }, [visible, existingRegimen]);
@@ -195,7 +220,17 @@ export function AddMedicationModal({
   }
 
   function formValues(): RegimenFormValues {
-    const parsedDuration = parseInt(targetDuration, 10);
+    // B-618 §5 — the course-length controls (mode + unit + number field) resolve to
+    // EXACTLY ONE of the two denomination columns; the other is explicitly null.
+    // resolveDurationColumns owns the two rules (at-most-one, and a blank/zero/ongoing
+    // field never fakes a course) so they are pinned by a unit test rather than living
+    // as inline modal logic. The DB's medications_one_duration_denomination CHECK is
+    // the backstop; the form can't set both because both columns branch on `durationUnit`.
+    const duration = resolveDurationColumns({
+      mode: durationMode,
+      unit: durationUnit,
+      value: targetDuration,
+    });
     return {
       drugName,
       medicationItemId,
@@ -205,13 +240,14 @@ export function AddMedicationModal({
       scheduleNotes,
       indication,
       prescribedBy,
-      startedAt: startedAt.toISOString().split('T')[0],
-      // 'ongoing' always saves null; 'fixed' saves the entered days (still null if the
-      // field's left blank/zero, so a "Set an end" with no number never fakes a course).
-      targetDurationDays:
-        durationMode === 'fixed' && Number.isFinite(parsedDuration) && parsedDuration > 0
-          ? parsedDuration
-          : null,
+      // The DATE the owner picked, keyed from its LOCAL components (B-441). It used
+      // to be `toISOString().split('T')[0]` — the UTC day — so for anyone AHEAD of
+      // UTC, local midnight is still yesterday in UTC and picking "today" in Sydney
+      // stored YESTERDAY, permanently. #525 fixed the READER; this is the WRITER,
+      // and until both are fixed the reader is being fed skewed rows.
+      startedAt: toLocalDayKey(startedAt),
+      targetDurationDays: duration.target_duration_days,
+      targetDurationDoses: duration.target_duration_doses,
     };
   }
 
@@ -402,18 +438,44 @@ export function AddMedicationModal({
             {/* Only a fixed course needs a number — an ongoing med stays null (no fake
                 duration), and the card reads "Started …" rather than "Day X of Y". */}
             {durationMode === 'fixed' && (
-              <View style={styles.durationRow}>
-                <TextInput
-                  style={[styles.input, styles.durationInput]}
-                  value={targetDuration}
-                  onChangeText={(t) => setTargetDuration(t.replace(/[^0-9]/g, ''))}
-                  placeholder="e.g. 14"
-                  placeholderTextColor={theme.colorTextSecondary}
-                  keyboardType="number-pad"
-                  returnKeyType="done"
+              <>
+                {/* B-618 — days | doses picks how the course length is counted, and
+                    gates the field's unit label below. allowDeselect off: a fixed
+                    course is always counted in one of the two. */}
+                <ChipGroup
+                  options={DURATION_UNIT_OPTIONS}
+                  value={durationUnit}
+                  onChange={(next) => {
+                    const opt = DURATION_UNIT_OPTIONS.find((o) => o.value === next);
+                    // Switching units converts nothing (§5): "14 days" must never be
+                    // silently reread as "14 doses", so clear the field for the owner
+                    // to restate. Guard on a real change so re-tapping the lit chip
+                    // (allowDeselect off → onChange fires with the same value) doesn't
+                    // wipe a value the owner is mid-entry on.
+                    if (opt && opt.value !== durationUnit) {
+                      setDurationUnit(opt.value);
+                      setTargetDuration('');
+                    }
+                  }}
+                  allowDeselect={false}
+                  accessibilityLabel="Course length unit"
+                  style={styles.durationUnitChips}
                 />
-                <Text style={styles.durationUnit}>days</Text>
-              </View>
+                <View style={styles.durationRow}>
+                  <TextInput
+                    style={[styles.input, styles.durationInput]}
+                    value={targetDuration}
+                    onChangeText={(t) => setTargetDuration(t.replace(/[^0-9]/g, ''))}
+                    placeholder={durationUnit === 'doses' ? 'e.g. 28' : 'e.g. 14'}
+                    placeholderTextColor={theme.colorTextSecondary}
+                    keyboardType="number-pad"
+                    returnKeyType="done"
+                  />
+                  {/* The unit word after the field (nyx-voice: the plain unit, days /
+                      doses), tracking the selected chip. */}
+                  <Text style={styles.durationUnit}>{durationUnit === 'doses' ? 'doses' : 'days'}</Text>
+                </View>
+              </>
             )}
 
             <Text style={styles.label}>Schedule notes (optional)</Text>
@@ -530,6 +592,13 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: theme.colorAccent,
     fontWeight: theme.fontWeightMedium,
+  },
+  durationUnitChips: {
+    // Extra space ABOVE the unit chips, so whitespace groups them DOWN with the number
+    // field they govern ("[Days][Doses] → [14] days" is one control) and sets that whole
+    // revealed detail apart from the Ongoing/Set-an-end toggle above — otherwise the two
+    // chip rows read as one wrapping group (code-review NIT; Designer call).
+    marginTop: theme.space1,
   },
   durationRow: {
     flexDirection: 'row',

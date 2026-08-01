@@ -66,6 +66,52 @@ export type TrialFoodRole =
 
 export type TrialSpecies = 'dog' | 'cat' | 'other';
 
+const TRIAL_FOOD_ROLES: readonly TrialFoodRole[] = [
+  'primary_diet',
+  'permitted_treat',
+  'permitted_other',
+  'supplement',
+];
+
+/**
+ * `diet_trial_foods.role` → a role this build understands. THE ONLY NARROWER —
+ * B-556, and the reason it lives here rather than at each call site.
+ *
+ * ── WHY AN UNKNOWN ROLE FALLS TO `permitted_other` ───────────────────────────
+ *
+ * The two directions are not symmetric, and the asymmetry is the whole ruling:
+ *
+ *   → `primary_diet` (what `lib/trialContaminant.ts` used to do) lets a value
+ *     this build cannot read WIDEN `sanctionedProteinsOn`'s comparator — the one
+ *     direction §5.5 D-A forbids. Executed: a future `permitted_chew` row for a
+ *     chicken chew reads as diet-defining, chicken enters the sanctioned set for
+ *     the whole trial, and a genuine chicken contaminant then classifies with
+ *     `antigens: []` on every surface. A false NEGATIVE, silent, trial-wide, in
+ *     the reassurance direction `clinical-guardrails` forbids outright.
+ *
+ *   → `permitted_other` still PERMITS the food at rung 1 (membership is
+ *     role-agnostic), so the owner who followed instructions is never flagged
+ *     for it (§6.9) — it simply grants no diet-defining power. If such a row was
+ *     the trial's only "primary", the comparator goes dark and the surfaces
+ *     DISCLOSE that (B9) instead of answering confidently and wrongly.
+ *
+ * Dropping the row is a third option and the worst one: it removes a food from
+ * the PERMIT set, which is the direction that accuses a compliant owner.
+ *
+ * REACHABLE, not defensive: the server column is a PG enum, but the local mirror
+ * is `role TEXT NOT NULL` (`lib/dietTrialMirror.ts`) and `generate-report` reads
+ * whatever the column holds — so a role added to the enum by a newer build syncs
+ * down verbatim to an older one. Forward compatibility is the live path.
+ *
+ * Convergent by construction (`f(f(x)) === f(x)`), per the Class-A/Class-B
+ * canonicalizer convention — a narrowed role is always a member of the set.
+ */
+export function narrowTrialFoodRole(raw: string): TrialFoodRole {
+  return (TRIAL_FOOD_ROLES as readonly string[]).includes(raw)
+    ? (raw as TrialFoodRole)
+    : 'permitted_other';
+}
+
 /** One row of `diet_trial_foods`, plus the food's own protein evidence. */
 export interface AllowedFood {
   foodItemId: string;
@@ -683,8 +729,14 @@ export function trialFoodKey(brand: string | null, productName: string | null): 
  *  but not NON-EMPTY — so two blank-named rows would otherwise collide and the
  *  second would be silently treated as a trial food and never recorded. That is
  *  the dangerous direction. (Carried verbatim from `lib/trialContaminant.ts`,
- *  where the same hole was found.) */
-function isUsableFoodKey(key: string | null | undefined): key is string {
+ *  where the same hole was found.)
+ *
+ *  Exported at B-616 PR 2 because the allowed-set LIST has to group rows on the
+ *  identity `matchAllowed` actually resolves, and a second copy of this test is a
+ *  second answer to "are these two rows the same food". Two blank-named rows are
+ *  distinct to the predicate; a list that collapsed them would drop one food from
+ *  the set the owner is told their vet sanctioned. */
+export function isUsableFoodKey(key: string | null | undefined): key is string {
   return typeof key === 'string' && key.replace(/\u001F/g, '').trim().length > 0;
 }
 
@@ -702,11 +754,16 @@ function isUsableFoodKey(key: string | null | undefined): key is string {
  * is still present, so the id is the only identity available — and without it an
  * un-hydrated library would classify the trial diet itself as an exposure.
  */
+export interface AllowedMembershipHit {
+  food: AllowedFood;
+  matchedBy: 'food_id' | 'food_key';
+}
+
 function matchAllowed(
   candidates: readonly AllowedFood[],
   foodItemId: string | null,
   foodKey: string | null,
-): { food: AllowedFood; matchedBy: 'food_id' | 'food_key' } | null {
+): AllowedMembershipHit | null {
   if (foodItemId) {
     const byId = candidates.find((f) => f.foodItemId === foodItemId);
     if (byId) return { food: byId, matchedBy: 'food_id' };
@@ -716,6 +773,41 @@ function matchAllowed(
     if (byKey) return { food: byKey, matchedBy: 'food_key' };
   }
   return null;
+}
+
+/**
+ * RUNG 1, EXTRACTED — "is this food on the allowed list on this day", as one
+ * exported call rather than as two lines a surface can re-type (B-616 D3/R2).
+ *
+ * `classifyFeeding` calls this; so does every surface that RENDERS membership
+ * (the Foods-tab chip, the food-detail row, the picker's pinned section, the
+ * allowed-set screen). That is the point, and it is stronger than a convention:
+ * the library and the classifier cannot disagree about what is on the list,
+ * because there is only one function that answers.
+ *
+ * The alternative — a hook that filters `allowedFoods` for itself — is the
+ * `report.ts:2246` mistake at a smaller scale, and it fails in a specific,
+ * unnoticeable way. Two of the three things this composes are easy to omit and
+ * silent when omitted: the DATE gate (`membershipOn`, without which a mid-trial
+ * add renders as though it had always been on the list) and the KEY arm
+ * (`matchAllowed`, without which a re-photographed bag of the prescribed diet
+ * shows unmarked in the library while the classifier permits its every meal).
+ * A surface that disagrees with the classifier is worse than one that stays
+ * quiet: it teaches an owner a food is fine on a screen, then records it as an
+ * exposure on the report their vet reads.
+ *
+ * NO WINDOW CHECK HERE, deliberately. Membership is a fact about the LIST on a
+ * day; whether that day is inside the trial is `isInTrialWindow`'s question, and
+ * `classifyFeeding` asks it first. Folding the two together would make this
+ * return null for a day the food genuinely was on the list, which is the answer
+ * the allowed-set screen (which renders dated history) must not be given.
+ */
+export function allowedMembershipOn(
+  ctx: TrialContext,
+  dayIndex: number,
+  food: { foodItemId: string | null; foodKey: string | null },
+): AllowedMembershipHit | null {
+  return matchAllowed(allowedFoodsOn(ctx, dayIndex), food.foodItemId, food.foodKey);
 }
 
 // ── The classification (§5.3) ────────────────────────────────────────────────
@@ -842,8 +934,8 @@ export function classifyFeeding(
   const canAttributeUnrecognised =
     canAttribute && uncharacterizedTrialDietFoods(ctx, day).length === 0;
 
-  // Rung 1 — the ONLY permit path.
-  const hit = matchAllowed(allowedFoodsOn(ctx, day), feeding.foodItemId, feeding.foodKey);
+  // Rung 1 — the ONLY permit path, and the one every rendering surface shares.
+  const hit = allowedMembershipOn(ctx, day, feeding);
   if (hit) {
     return {
       verdict: 'permitted',

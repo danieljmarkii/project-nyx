@@ -340,6 +340,20 @@ export type TrialCardActionId =
   | 'trial_stopped_early'  // PR 6 — "Stopped early" → the reason sheet
   | 'open_report'          // shipped (/report)
   | 'view_exposures'       // PR 5's list screen
+  // B-616 PR 2 — "What {pet} can eat" (/trial-foods), the allowed set as a
+  // re-readable rule list. The card is the only surface that always knows a trial
+  // is running, so it is the entry point that cannot go missing; the Foods tab's
+  // strip (PR 3) and food detail add two more.
+  //
+  // IT IS THE SET'S ONLY DOOR ON THIS SCREEN, not a second one: the card's §4.2
+  // rule forbids a shortcut into the FAB's LOGGING flow, and nothing here logs.
+  // The list is also the only non-punitive place a permitted food can be added —
+  // every other trial surface reports what was fed.
+  //
+  // The handler is passed only when the allowed set is actually hydrated (R2), so
+  // this action self-suppresses on a read that could not answer rather than
+  // opening a screen with nothing on it.
+  | 'view_allowed_foods'
   // R1 — the refusal state's way out, opening the same sheet the header's
   // "Change" opens. It is a deliberate SECOND door to that room and the only one
   // on the card: §4.2's no-second-door rule is about logging (the FAB), and on the
@@ -1648,10 +1662,21 @@ function activeCard(
     dayLineRole: 'meta',
     windowLine: windowLineFor(endIndex, overrunDays),
     lines,
-    actions:
-      state === 'exposures' && (input.exposures?.offDiet ?? 0) > 0
-        ? [{ id: 'view_exposures', label: 'Outside the trial diet', emphasis: 'link' }]
-        : [],
+    actions: [
+      ...(state === 'exposures' && (input.exposures?.offDiet ?? 0) > 0
+        ? ([{ id: 'view_exposures', label: 'Outside the trial diet', emphasis: 'link' }] as const)
+        : []),
+      // B-616 FR-5. Last, and a `link`, because it is a REFERENCE rather than
+      // something to act on: the exposures drill-in answers a question the card
+      // just raised, and this one answers a question the owner brought with them.
+      // Both stay quiet — §4.2's weight belongs to the trial's own state.
+      //
+      // On every running state in this body, including `exposures`: the moment an
+      // owner has just been told a feeding fell outside the diet is exactly when
+      // "what CAN he eat?" is the next question, and answering it is the
+      // record-and-continue posture rather than a scolding.
+      { id: 'view_allowed_foods', label: `What ${input.petName} can eat`, emphasis: 'link' },
+    ],
   };
 }
 

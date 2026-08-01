@@ -16,6 +16,10 @@
 //   diet_trials      → medications             (pet-scoped regimen)
 //   meals            → medication_administrations (1:1 dose-event child)
 
+// `lib/utils` is itself import-free, so pulling the day-index primitives in keeps
+// this module's plain-jest testability intact (B-441).
+import { localDayIndex, localDayIndexOf } from './utils';
+
 // ── Local schema (mirrors supabase/migrations/020_medication_logging.sql) ─────
 //
 // Extracted as a string (not inlined in initDb like events/meals) ONLY so the
@@ -56,6 +60,14 @@ export const MEDICATION_SCHEMA_SQL = `
     prescribed_by        TEXT,
     started_at           TEXT NOT NULL,
     target_duration_days INTEGER,
+    -- B-618 — a fixed course denominated in DOSES ("#28, until gone") rather than
+    -- days; the sibling of target_duration_days, migration 049. At most one of the
+    -- two is ever set (the server's medications_one_duration_denomination CHECK);
+    -- both NULL = ongoing. Nullable, no default, so every existing local row reads
+    -- NULL — the honest value for a days- or ongoing-denominated regimen. Local
+    -- SQLite does NOT enforce the server's mutual-exclusion CHECK (SQLite CHECKs
+    -- aren't mirrored here); the entry path (§5, PR 3) is what writes exactly one.
+    target_duration_doses INTEGER,
     status               TEXT NOT NULL DEFAULT 'active',
     ended_at             TEXT,
     notes                TEXT,
@@ -148,6 +160,7 @@ export interface LocalMedication {
   prescribed_by: string | null;
   started_at: string;
   target_duration_days: number | null;
+  target_duration_doses: number | null; // B-618 — the doses-denominated sibling (migration 049)
   status: string;
   ended_at: string | null;
   notes: string | null;
@@ -222,6 +235,7 @@ export interface RemoteMedicationUpsert {
   prescribed_by: string | null;
   started_at: string;
   target_duration_days: number | null;
+  target_duration_doses: number | null; // B-618 — the doses-denominated sibling (migration 049)
   status: string;
   ended_at: string | null;
   notes: string | null;
@@ -250,6 +264,7 @@ export function medicationRowToRemote(row: LocalMedication): RemoteMedicationUps
     prescribed_by: row.prescribed_by,
     started_at: row.started_at,
     target_duration_days: row.target_duration_days,
+    target_duration_doses: row.target_duration_doses, // B-618 — forwarded as-is (null when days- or ongoing-denominated)
     status: row.status,
     ended_at: row.ended_at,
     notes: row.notes,
@@ -938,6 +953,60 @@ export interface RegimenCompliance {
   percent: number | null;
 }
 
+// Whole days the regimen has been running, counting the start day as day 1.
+//
+// B-441 — this used to live inline in `app/(tabs)/profile.tsx` carrying the exact
+// flaw B-421 removed from the diet-trial counter, and it is moved here so it is
+// unit-testable and so the profile card and the Home strip (B-614) cannot drift
+// apart. The old shape was:
+//
+//     const start = new Date(startedAt); start.setHours(0, 0, 0, 0);
+//     ... Math.floor((today - start) / MS_PER_DAY) + 1
+//
+// which is wrong twice. `medications.started_at` is a date-only Postgres DATE, so
+// `new Date('2026-07-31')` parses as UTC midnight and the subsequent floor to LOCAL
+// midnight lands on the PREVIOUS local day for anyone behind UTC — every count one
+// too high. And differencing two midnights in milliseconds loses a day across a DST
+// transition, because a local day can be 23h or 25h.
+//
+// `localDayIndexOf` indexes a 'YYYY-MM-DD' verbatim and everything else by the
+// calendar day it falls on, so neither failure is reachable.
+//
+// This is not cosmetic: the return value is the DENOMINATOR of
+// `computeRegimenCompliance`, so an inflated day count understates adherence —
+// which is the safe direction, but wrong, and it is what the clinical-guardrails
+// copy on the profile card is computed from.
+//
+// Returns null on ANY unusable input — an unparseable `startedAt` or a non-finite
+// `nowMs` — never NaN. Unreachable through the app
+// (the column is a NOT NULL DATE), but the caller reports "unknown" rather than
+// counting from a guessed day — the same contract `localDayIndexOf` states.
+// `timeZone` mirrors the primitives' own optional zone and exists for the same
+// reason: the day boundary is a parameter of this problem, not a constant. OMIT IT
+// in the app — the device's zone IS the owner's midnight, and that is the production
+// path. Stating it explicitly is what lets the zone cases be pinned by a test that
+// does not have to mutate the process clock.
+export function regimenDaysElapsed(
+  startedAt: string,
+  nowMs: number = Date.now(),
+  timeZone?: string,
+): number | null {
+  // A 'YYYY-MM-DD' DATE is indexed verbatim (zone-independently); the zone applies
+  // to `nowMs`, which is a real instant and does fall on different days by zone.
+  const startIndex = localDayIndexOf(startedAt, timeZone);
+  // BOTH inputs are checked, and `nowMs` is the one that matters going forward:
+  // today's only caller takes the `Date.now()` default, but the B-614 Home strip
+  // will pass an explicit instant, and a non-finite one would flow through
+  // `Math.max(1, NaN)` to return NaN. NaN is worse than a wrong number here — the
+  // render guard is `!= null`, and `NaN != null` is TRUE, so it would sail past the
+  // check and print "Day NaN of 14". Matches `getDietTrialProgress`'s guard, which
+  // is the parity this extraction exists to hold.
+  if (startIndex === null || !Number.isFinite(nowMs)) return null;
+  // ≥1: a regimen started today is on day 1, and a start date in the future (an
+  // owner back-filling a prescription) counts as day 1 rather than day 0 or -3.
+  return Math.max(1, localDayIndex(nowMs, timeZone) - startIndex + 1);
+}
+
 export function computeRegimenCompliance(input: RegimenComplianceInput): RegimenCompliance {
   const { dosesPerDay, daysElapsed, tally } = input;
   const isPrn = dosesPerDay == null;
@@ -960,6 +1029,76 @@ export function computeRegimenCompliance(input: RegimenComplianceInput): Regimen
   }
 
   return { isPrn, expectedDoses, administeredDoses, flaggedDoses, loggedDoses, percent };
+}
+
+// ── B-618 §4 — the ONE dose-count predicate for a fixed doses-denominated course ──
+// "Dose {n} of {target}" (PR 4) where n = dosesTowardTarget(tally). There is exactly
+// ONE definition of "does this administration advance the count", exported here, and
+// every consumer reads it — the PR-4 profile card, B-394's forward projection, the
+// vet report if it ever renders course targets. No surface re-derives it (D6 — the
+// diet-trial §5.3 lesson, where a second, contradictory off-diet definition shipped
+// and had to be re-based).
+//
+// D1 (PM-ratified 2026-07-31): the counter means THERAPY DELIVERED. `given` AND
+// `partial` advance it — the same "administered = given + partial" the vet report
+// already ships (render.ts). `refused` / `missed` / `unrated` (and the derived
+// `unconfirmed`, which is stored as `unrated`) NEVER advance it; they stay visible
+// through regimenFlagLine, so a refused tail can never let a course read as complete
+// and Sam's bottle number stays honest.
+//
+// DELIBERATELY NOT the compliance numerator. computeRegimenCompliance.administeredDoses
+// is `given` ONLY — a stricter *rate* statistic (D1) — so the two disagree by exactly
+// `tally.partial`, on purpose: a partial dose is therapy delivered toward the bottle
+// (it counts here) but is not a cleanly-given dose for the adherence rate (it does not
+// count there). They answer two different questions and MUST NOT be reconciled. The §4
+// test pins the exact-`partial` gap so a future "make these consistent" edit trips a
+// red test and reads this comment before changing either.
+//
+// The count follows the record: a soft-deleted dose event has already fallen out of
+// the tally at the query layer (attributeDosesToRegimens skips deleted_at), so deleting
+// a mislogged dose correctly decrements the count. That is a property, not a bug — §4
+// asserts it.
+export function dosesTowardTarget(tally: AdherenceTally): number {
+  return tally.given + tally.partial;
+}
+
+// ── B-618 §6 — the profile card's dose-course progress (PR 4) ────────────────────
+// The one place the "Dose {n} of {target}" line + its bar are formatted, so the line
+// and the bar always state the same n (the diet-trial bar lesson: never bind a bar to
+// one number and label it with another). `count` reads dosesTowardTarget — it does NOT
+// re-derive the D6 predicate.
+//
+// D7 (Dr. Chen, non-negotiable): reaching the target renders NO completion or stop
+// language. At n == target the line is "Dose 28 of 28" with a full bar — no checkmark,
+// no "complete", no dismissal, no path to a stop instruction (end-of-course is the
+// vet's call; `status` stays the only lifecycle authority). This helper can emit no
+// such word by construction — read the two format strings below and keep it that way.
+//
+// Past-target (n > target): extra administrations are EVIDENCE and are never hidden.
+// The rule is cap-the-bar / disclose-the-extras / render-no-error — the line switches
+// to "28 of 28 doses · 2 more logged" (barFraction clamped to 1), never falls back to
+// "Started …" the way the days path must ("Day 30 of 7" is nonsense; "28 of 28" is
+// still true), and never renders an error state for a course an owner is still on.
+export interface DoseCourseProgress {
+  count: number;          // dosesTowardTarget(tally) — therapy delivered (D1)
+  target: number;         // medications.target_duration_doses (> 0, DB-checked)
+  line: string;           // "Dose {n} of {target}" | "{t} of {t} doses · {x} more logged"
+  barFraction: number;    // min(count / target, 1), in [0, 1] — the bar width
+  pastTarget: boolean;    // count > target — extras are being disclosed
+}
+
+// Callers pass a POSITIVE target (the DB CHECK guarantees `target_duration_doses > 0`,
+// and the profile card gates on `> 0` so a corrupt local row degrades to the ongoing
+// path rather than rendering "Dose n of 0"). barFraction still guards `target > 0`
+// defensively for the exported B-394 consumer.
+export function doseCourseProgress(tally: AdherenceTally, target: number): DoseCourseProgress {
+  const count = dosesTowardTarget(tally);
+  const pastTarget = count > target;
+  const barFraction = target > 0 ? Math.min(count / target, 1) : 0;
+  const line = pastTarget
+    ? `${target} of ${target} ${target === 1 ? 'dose' : 'doses'} · ${count - target} more logged`
+    : `Dose ${count} of ${target}`;
+  return { count, target, line, barFraction, pastTarget };
 }
 
 // ── Dose → regimen attribution (compliance counting) ───────────────────────────
@@ -1121,7 +1260,12 @@ export interface RegimenFormValues {
   indication: string;
   prescribedBy: string;
   startedAt: string;               // 'YYYY-MM-DD'
+  // B-618 — exactly ONE of these is ever non-null (the entry form's job, §5/PR 3;
+  // the DB's medications_one_duration_denomination CHECK is the backstop). Both
+  // null = ongoing. This builder is a pure forwarder — it does not enforce the
+  // exclusion, mirroring how it already trusts the form for medicationItemId.
   targetDurationDays: number | null;
+  targetDurationDoses: number | null;
 }
 
 // The medications columns a regimen write sets. Deliberately omits status/ended_at
@@ -1138,6 +1282,7 @@ export interface RegimenWritePayload {
   prescribed_by: string | null;
   started_at: string;
   target_duration_days: number | null;
+  target_duration_doses: number | null; // B-618 — the doses-denominated sibling (migration 049)
 }
 
 export function buildRegimenPayload(v: RegimenFormValues): RegimenWritePayload {
@@ -1153,7 +1298,9 @@ export function buildRegimenPayload(v: RegimenFormValues): RegimenWritePayload {
     indication: trimOrNull(v.indication),
     prescribed_by: trimOrNull(v.prescribedBy),
     started_at: v.startedAt,
+    // B-618 — both forwarded verbatim; the form guarantees at most one is set.
     target_duration_days: v.targetDurationDays,
+    target_duration_doses: v.targetDurationDoses,
   };
 }
 
@@ -1161,6 +1308,40 @@ export function buildRegimenPayload(v: RegimenFormValues): RegimenWritePayload {
 // and the vet report §7 must always name the drug). Everything else is optional.
 export function canSaveRegimen(v: { drugName: string }): boolean {
   return v.drugName.trim().length > 0;
+}
+
+// ── B-618 §5 — the entry form's course-length → the two denomination columns ─────
+// AddMedicationModal's course-length controls are a mode (Ongoing / Set an end), a
+// unit (days / doses), and a raw number field. This resolves them to the exactly-one-
+// denomination write. Extracted here — not inlined in formValues() — so the two
+// load-bearing rules are pinned by a unit test rather than living as modal-local
+// state assembly (the same "invariant is a test, not a comment" stance the rest of
+// this module takes):
+//
+//   1. AT MOST ONE denomination is non-null. Both columns branch on the SAME `unit`,
+//      so a two-unit row is UNREPRESENTABLE from this form — the client half of the
+//      DB's medications_one_duration_denomination CHECK, satisfied by construction
+//      (the CHECK is the backstop, never the thing the owner trips).
+//   2. A BLANK / ZERO / non-integer field, or an Ongoing course, writes BOTH null —
+//      "Set an end" with no number never fakes a course (the same rule the pre-B-618
+//      target_duration_days path already enforced). Only a positive integer counts.
+//
+// The field text is digit-stripped upstream (onChangeText), so `value` is digits or
+// empty; parseInt('') → NaN → Number.isFinite false → null, and '0' → 0 → not >0 →
+// null. Nothing else here needs to know about days vs doses — the unit only picks
+// which column the single resolved number lands in.
+export function resolveDurationColumns(params: {
+  mode: 'ongoing' | 'fixed';
+  unit: 'days' | 'doses';
+  value: string;
+}): { target_duration_days: number | null; target_duration_doses: number | null } {
+  const parsed = parseInt(params.value, 10);
+  const n =
+    params.mode === 'fixed' && Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+  return {
+    target_duration_days: n != null && params.unit === 'days' ? n : null,
+    target_duration_doses: n != null && params.unit === 'doses' ? n : null,
+  };
 }
 
 // ── PR 8 double-dose detection (§6.4 "a double-dose is a flag, not normalized") ──

@@ -53,13 +53,13 @@ import { getDb } from './db';
 import {
   computeTrialFacts,
   mayStateRecordClean,
+  narrowTrialFoodRole,
   trialFoodKey,
   type AllowedFood,
   type TrialArrangement,
   type TrialDose,
   type TrialFacts,
   type TrialFeeding,
-  type TrialFoodRole,
   type TrialSpec,
 } from './dietTrial';
 import { relativeDayLabel } from './food';
@@ -151,37 +151,41 @@ const TRIAL_FOR_CARD_SQL = `
  */
 export const ENDED_TRIAL_GRACE_DAYS = 30;
 
-/** Reads the pet's active trial and everything the card needs to describe it.
+/**
+ * The predicate's answers for the pet's card-eligible trial, and nothing else.
  *
- *  FAILURE GRANULARITY, precisely — the old "every read is best-effort, a failure
- *  degrades one line" is no longer the whole truth and saying so invites a future
- *  reader to assume per-field degradation that does not exist. There are two
- *  classes now:
+ * ── WHY THIS IS ITS OWN EXPORT (B-616 PR 4) ─────────────────────────────────
  *
- *  • The two INDEPENDENT reads (`readIntakeDecline`, `readStandingNote`) still
- *    degrade one line each. The first is a safety lane and deliberately survives
- *    everything below it.
- *  • The four PREDICATE INPUTS degrade TOGETHER, to silence, because they are one
- *    input to one computation — see the call site for why none of them may fail
- *    soft to an empty array. A failure in any one drops the record lines and
- *    nothing else. */
-export async function loadDietTrialFacts(args: {
-  pet: DietTrialFactsPet;
-  otherPetNames?: string[];
-  nowMs?: number;
-}): Promise<TrialCardInput> {
-  const { pet } = args;
-  const nowMs = args.nowMs ?? Date.now();
+ * The exposures screen ("Outside the trial diet") renders `TrialFacts.exposures.items`
+ * — the per-feeding classifications — which `loadDietTrialFacts` deliberately does
+ * not carry: `TrialCardInput` is a CARD model and flattens the summary to four
+ * numbers. The screen therefore needs the same five reads over the same five
+ * tables, and the one thing it may not do is perform them itself. Two loaders
+ * against `diet_trial_foods` + `meals` + `medication_administrations` with slightly
+ * different window padding is how the card's count and the screen's list start
+ * disagreeing about the same trial — the §5.3 third-definition failure, arriving
+ * one layer up from the predicate this file was built to protect.
+ *
+ * So the reads live here, once, and both surfaces are consumers. Everything the
+ * caller below documents about failure granularity is a property of THIS function;
+ * a null return means "no trial to describe", and `facts: null` means "there is a
+ * trial and its record could not be read", which the two callers render differently
+ * but neither may confuse for an empty record.
+ */
+export interface TrialPredicateFacts {
+  trial: TrialCardTrial;
+  /** `diet_trials.stopped_reason === 'refused'`, derived once here so the card's
+   *  claim gate and any future consumer read the same token. */
+  stoppedForRefusal: boolean;
+  /** Null when the four predicate inputs (or the computation) could not be read —
+   *  see the call site. NEVER a zero-valued `TrialFacts` standing in for that. */
+  facts: TrialFacts | null;
+}
 
-  const base: TrialCardInput = {
-    trial: null,
-    nowMs,
-    petName: pet.name,
-    species: pet.species,
-    petObjectPronoun: petPronouns(pet.sex ?? 'unknown').object,
-    otherPetNames: args.otherPetNames ?? [],
-  };
-
+export async function loadTrialPredicateFacts(
+  pet: DietTrialFactsPet,
+  nowMs: number = Date.now(),
+): Promise<TrialPredicateFacts | null> {
   // The active trial, else one that ended inside the grace window (states 7a/7b,
   // reachable for the first time now that PR 6 can write them).
   const graceFrom = toLocalDayKey(new Date(nowMs - ENDED_TRIAL_GRACE_DAYS * 86_400_000));
@@ -189,10 +193,17 @@ export async function loadDietTrialFacts(args: {
   try {
     row = await getDb().getFirstAsync<TrialRow>(TRIAL_FOR_CARD_SQL, [pet.id, graceFrom]);
   } catch (e) {
+    // THROWS RATHER THAN RETURNING NULL, because null here means "this pet has no
+    // trial" — a fact — and a failed read is not that fact. Collapsing the two
+    // let a transient SQLite failure render "{Pet} isn't on a diet trial right
+    // now" on a screen the owner reached from a live trial's own card. The card's
+    // behaviour is unchanged: `loadDietTrialFacts` catches this and returns its
+    // base input, which is the trial-less card it has always drawn on a failed
+    // read.
     console.error('[DietTrial] load trial failed:', e);
-    return base;
+    throw e;
   }
-  if (!row) return base;
+  if (!row) return null;
 
   const trial: TrialCardTrial = {
     id: row.id,
@@ -248,15 +259,12 @@ export async function loadDietTrialFacts(args: {
     species: pet.species,
   };
 
-  const [allowedFoods, feedings, doses, arrangements, decline, standingNote] =
-    await Promise.all([
-      readAllowedFoods(row.id),
-      readFeedings(pet.id, row.started_at, endKey),
-      readDoses(pet.id, row.started_at, endKey),
-      readArrangements(pet.id, row.started_at, endKey),
-      readIntakeDecline(pet, nowMs),
-      readStandingNote(pet.id, pet.name),
-    ]);
+  const [allowedFoods, feedings, doses, arrangements] = await Promise.all([
+    readAllowedFoods(row.id),
+    readFeedings(pet.id, row.started_at, endKey),
+    readDoses(pet.id, row.started_at, endKey),
+    readArrangements(pet.id, row.started_at, endKey),
+  ]);
 
   // THE ONE CALL. Everything above is a read; nothing above decided anything.
   //
@@ -285,10 +293,11 @@ export async function loadDietTrialFacts(args: {
   // reached deliberately rather than by accident.
   //
   // AND SKIPPING IS NOT THE SAME AS FAILING THE WHOLE LOAD. The intake-decline
-  // read is a SAFETY lane and it is deliberately outside this gate — the record
-  // lines go quiet, the clinical flag does not. That is the direction §5.2
-  // requires: the animal outranks the trial, including when the trial's own data
-  // is the part that cannot be read.
+  // read is a SAFETY lane and it is deliberately outside this gate (it now sits in
+  // the caller below, which is the same fact expressed by scope) — the record lines
+  // go quiet, the clinical flag does not. That is the direction §5.2 requires: the
+  // animal outranks the trial, including when the trial's own data is the part that
+  // cannot be read.
   let facts: TrialFacts | null = null;
   if (allowedFoods !== null && feedings !== null && doses !== null && arrangements !== null) {
     try {
@@ -309,6 +318,65 @@ export async function loadDietTrialFacts(args: {
       console.error('[DietTrial] compute failed:', e);
     }
   }
+
+  return { trial, stoppedForRefusal: row.stopped_reason === 'refused', facts };
+}
+
+/** Reads the pet's active trial and everything the card needs to describe it.
+ *
+ *  FAILURE GRANULARITY, precisely — the old "every read is best-effort, a failure
+ *  degrades one line" is no longer the whole truth and saying so invites a future
+ *  reader to assume per-field degradation that does not exist. There are two
+ *  classes now:
+ *
+ *  • The two INDEPENDENT reads (`readIntakeDecline`, `readStandingNote`) still
+ *    degrade one line each. The first is a safety lane and deliberately survives
+ *    everything below it.
+ *  • The four PREDICATE INPUTS degrade TOGETHER, to silence, because they are one
+ *    input to one computation — see `loadTrialPredicateFacts` for why none of them
+ *    may fail soft to an empty array. A failure in any one drops the record lines
+ *    and nothing else. */
+export async function loadDietTrialFacts(args: {
+  pet: DietTrialFactsPet;
+  otherPetNames?: string[];
+  nowMs?: number;
+}): Promise<TrialCardInput> {
+  const { pet } = args;
+  const nowMs = args.nowMs ?? Date.now();
+
+  const base: TrialCardInput = {
+    trial: null,
+    nowMs,
+    petName: pet.name,
+    species: pet.species,
+    petObjectPronoun: petPronouns(pet.sex ?? 'unknown').object,
+    otherPetNames: args.otherPetNames ?? [],
+  };
+
+  // The trial-row read throws now (see there for why); the card's own answer to an
+  // unreadable trial is unchanged — the base input, i.e. state 0.
+  let core: TrialPredicateFacts | null;
+  try {
+    core = await loadTrialPredicateFacts(pet, nowMs);
+  } catch {
+    return base;
+  }
+  if (!core) return base;
+  const { trial, facts } = core;
+
+  // THE TWO INDEPENDENT LANES RUN AFTER THE TRIAL IS KNOWN TO EXIST, not beside
+  // it. An earlier cut started them eagerly to preserve the six-way `Promise.all`
+  // this function used to be, and `code-reviewer` priced it: `useDietTrial` runs on
+  // every pet switch and every hydration tick, most accounts have no active trial,
+  // and `readStandingNote` bypasses its own cache (`force: true`) — so the eager
+  // version bought overlap for the minority case by charging the majority two
+  // wasted SQLite reads on every tick. The cost of this ordering is that the two
+  // reads no longer overlap the four predicate reads for a pet that DOES have a
+  // trial; they are local reads on a screen that has already awaited four others.
+  const [decline, standingNote] = await Promise.all([
+    readIntakeDecline(pet, nowMs),
+    readStandingNote(pet.id, pet.name),
+  ]);
 
   // A NULL RANGE IS NOT A ZERO RECORD. `computeTrialFacts` returns its `base`
   // — `range: null`, `coverage: null`, `exposures` all-zero — on the two paths
@@ -362,7 +430,7 @@ export async function loadDietTrialFacts(args: {
           // because the pet would not eat it can never have its days read as
           // clean ones.
           mayStateRecordClean: mayStateRecordClean(readable, {
-            stoppedForRefusal: row.stopped_reason === 'refused',
+            stoppedForRefusal: core.stoppedForRefusal,
           }),
         }
       : null,
@@ -501,32 +569,6 @@ interface AllowedRow {
   proteins: string | null;
 }
 
-/**
- * An unrecognised role falls to `permitted_other`, NOT to `primary_diet`.
- *
- * This mirrors `generate-report/trial.ts.normaliseRole` deliberately, and the
- * direction matters: `primary_diet` rows DEFINE the sanctioned protein set, so
- * letting an unknown value land there lets a garbled row widen the comparator —
- * the one direction §5.5 D-A forbids. `permitted_other` still permits the food
- * (so a compliant owner is not flagged) without granting it diet-defining power.
- *
- * NOTE FOR A LATER PASS: `lib/trialContaminant.ts.narrowRole` makes the OPPOSITE
- * choice on the same column, with its own rationale. Two client surfaces reading
- * one row into two different roles is a real divergence — filed rather than fixed
- * here, because changing it moves the shipped log-time contaminant flag and that
- * belongs in its own PR with its own adversarial pass.
- */
-const ROLES: readonly TrialFoodRole[] = [
-  'primary_diet',
-  'permitted_treat',
-  'permitted_other',
-  'supplement',
-];
-
-function narrowRole(raw: string): TrialFoodRole {
-  return (ROLES as readonly string[]).includes(raw) ? (raw as TrialFoodRole) : 'permitted_other';
-}
-
 /** Null means UNREADABLE, which is not the same fact as an empty allowed set —
  *  see the call site. Every other read here fails soft to a default; this one
  *  cannot, because its default would accuse the owner. */
@@ -542,7 +584,7 @@ async function readAllowedFoods(trialId: string): Promise<AllowedFood[] | null> 
           ? trialFoodKey(r.brand, r.product_name)
           : null,
       label: r.food_label,
-      role: narrowRole(r.role),
+      role: narrowTrialFoodRole(r.role),
       allowedFrom: r.allowed_from,
       allowedUntil: r.allowed_until,
       primaryProtein: r.primary_protein,

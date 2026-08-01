@@ -38,9 +38,24 @@ one class of literal the task named.
 
 ## Backlog
 
-**B-193 narrowed** (not closed): its `lineHeight: 20` sub-part is now resolved by this PR;
-the `gap: 4` → `space0_5`/`gapInline` token and the `lineHeight: 16` → `lineHeightXS`
-migration remain open. B-101 itself stays `Done` — its original scope was the `22` sites.
+**B-193 now fully Done** (reconciled at merge). A sibling session (#540, its own theme-token
+sweep) landed on `main` while this was in flight: it added `space0_5: 4` + `lineHeightXS: 16`
+and migrated `gap: 4` + the `note` `lineHeight: 16` across MetricCard/WeightCard/WeightTrendCard,
+**deliberately leaving the `emptyText` `lineHeight: 20` for this B-101 sweep** (per the
+`MetricInfo.tsx:81` marker — a 20→22 behaviour change, out of #540's scope). This PR (#545)
+migrated that last `emptyText` `lineHeight: 20` → `lineHeightBody`, closing B-193's final
+sub-part. B-101 itself stays `Done` — its original scope was the `22` sites.
+
+## Merge note
+
+`main` advanced to `f646d67` mid-session (the large B-616/B-618/med-strip merge, #540 among
+them), so this branch was merged up. Two conflicts, both orthogonal unions:
+- `app/food-capture.tsx` `confirmProduct` — #540 migrated the hardcoded `rgba(255,255,255,0.92)`
+  to the new `theme.colorTextOnDarkMuted` token (same value); this PR migrated its `lineHeight: 20`
+  → `lineHeightBody`. Resolution takes both.
+- `docs/backlog.md` B-193 — reconciled to the single "fully Done" row above.
+
+Post-merge: zero bare `lineHeight: 20` literals remain in `**/*.{ts,tsx}`; full suite re-run green.
 
 ## Verification
 

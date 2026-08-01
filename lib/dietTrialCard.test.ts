@@ -455,8 +455,28 @@ describe('state 2 — mid-trial, clean', () => {
 
   it('has a forward line and no "Log a meal" action', () => {
     expect(textOf(model, 'forward')).toEqual(['5 weeks to go.']);
-    expect(model.actions).toEqual([]);
+    // §4.2's rule is about LOGGING — "a second door to the same room is not a
+    // feature" names the FAB's room. This was an `actions: []` assertion until
+    // B-616 PR 2 added the allowed-set reference link, which is why it now names
+    // the permitted set rather than asserting emptiness: an empty-array
+    // expectation reads as "no actions ever" and would have to be rewritten by
+    // every future addition, while what the card must never grow is a write path.
+    expect(model.actions.map((a) => a.id)).toEqual(['view_allowed_foods']);
     expect(allStrings(model).join(' ')).not.toMatch(/log a meal/i);
+  });
+
+  // B-616 FR-5 — the allowed set's entry point. It is a REFERENCE, so it is quiet
+  // (a link, never a button competing with the trial's own state) and it names its
+  // destination rather than an instruction.
+  it('offers the allowed set as a quiet reference link', () => {
+    const [action] = model.actions;
+    expect(action).toEqual({
+      id: 'view_allowed_foods',
+      label: 'What Biscuit can eat',
+      emphasis: 'link',
+    });
+    // R1: the link is about the LIST. Nothing here judges what was fed.
+    expect(action.label).not.toMatch(/off[- ]diet|slip|cheat|avoid|safe/i);
   });
 });
 

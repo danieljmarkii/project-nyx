@@ -195,10 +195,10 @@ const styles = StyleSheet.create({
     width: 6,
     height: 6,
     borderRadius: 3,
-    backgroundColor: 'rgba(255,255,255,0.55)',
+    backgroundColor: theme.colorTextOnDarkFaint,
   },
   dotActive: {
-    backgroundColor: '#fff',
+    backgroundColor: theme.colorTextOnDark,
     width: 8,
     height: 8,
     borderRadius: 4,

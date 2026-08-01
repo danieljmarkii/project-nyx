@@ -22,7 +22,12 @@ jest.mock('./sync', () => ({
   syncPendingFeedingArrangements: (...a: unknown[]) => mockSyncPendingFeedingArrangements(...a),
 }));
 
-jest.mock('./utils', () => ({ uuid: () => 'arr-1' }));
+// Only `uuid` is being pinned; everything else in `./utils` is pure and is the
+// real thing. A whole-module replacement here silently emptied the day-key
+// helpers the moment one of them moved into this module's own exports (B-616
+// PR 2's `formatCalendarDate`), which is a mock testing itself rather than the
+// code.
+jest.mock('./utils', () => ({ ...jest.requireActual('./utils'), uuid: () => 'arr-1' }));
 
 import {
   startFreeChoice, endFreeChoice, localDateString,
@@ -334,7 +339,10 @@ describe('formatCalendarDate / confirmedLabel', () => {
 
   it('reads "today" for a same-day confirmation, else the date', () => {
     expect(confirmedLabel(new Date().toISOString())).toBe('today');
-    expect(confirmedLabel('2020-01-15T08:00:00.000Z')).toBe('Jan 15');
+    // The label renders on the owner's clock, so the fixture states a LOCAL
+    // instant (B-514): 2020-01-15T08:00:00Z is still 14 Jan in Honolulu, and this
+    // read "Jan 14" there — correct behaviour, a fixture that only held at UTC.
+    expect(confirmedLabel(new Date(2020, 0, 15, 8, 0).toISOString())).toBe('Jan 15');
   });
 });
 

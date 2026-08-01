@@ -62,4 +62,39 @@ describe('ChipGroup', () => {
     expect(getByRole('radio', { name: 'Capsule' }).props.accessibilityState.selected).toBe(true);
     expect(getByRole('radio', { name: 'Tablet' }).props.accessibilityState.selected).toBe(false);
   });
+
+  // B-555 — the busy/disabled window. A group that writes on select needs a state
+  // between the tap and the re-render; without it the call site hand-rolled a
+  // re-entrancy guard. When disabled, a tap fires nothing.
+  it('does not call onChange when disabled', () => {
+    const onChange = jest.fn();
+    const { getByText } = render(
+      <ChipGroup options={OPTIONS} value="tablet" onChange={onChange} disabled />,
+    );
+    fireEvent.press(getByText('Liquid'));
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  // ...and the disabled state is announced, on the group and on every chip, so a
+  // screen-reader user isn't left tapping an inert control silently.
+  it('announces the disabled state on the group and its chips', () => {
+    const { getByLabelText, getByRole } = render(
+      <ChipGroup
+        options={OPTIONS}
+        value="tablet"
+        onChange={() => {}}
+        accessibilityLabel="Form"
+        disabled
+      />,
+    );
+    expect(getByLabelText('Form').props.accessibilityState.disabled).toBe(true);
+    expect(getByRole('radio', { name: 'Liquid' }).props.accessibilityState.disabled).toBe(true);
+  });
+
+  it('is interactive by default (disabled defaults to false)', () => {
+    const { getByRole } = render(
+      <ChipGroup options={OPTIONS} value="tablet" onChange={() => {}} accessibilityLabel="Form" />,
+    );
+    expect(getByRole('radio', { name: 'Liquid' }).props.accessibilityState.disabled).toBe(false);
+  });
 });

@@ -52,6 +52,12 @@ import {
   type RankedFood,
   type RankedProtein,
 } from './analytics';
+// The medication regimen counter is pinned AGAINST this one (B-441): B-614 renders
+// a course day count and a trial day count on the same screen, and B-421 exists
+// because three implementations of one counter disagreed by up to two days.
+// `lib/medications` is import-free, so it costs this suite nothing to pull in — the
+// reverse import is not possible, which is why the parity test lives here.
+import { regimenDaysElapsed } from './medications';
 
 const DAY = 86_400_000;
 const HOUR = 3_600_000;
@@ -803,21 +809,28 @@ describe('computeMealTreatComposition', () => {
 
 // ── Diet-trial progress ──────────────────────────────────────────────────────────
 
+// The zone is passed EXPLICITLY here (B-514). `NOW` is a UTC instant at 12:00Z, so
+// omitting the argument silently means "whatever zone the runner happens to be in" —
+// and 2026-06-14T12:00Z is 15 Jun in Auckland, which reads Day 6, not Day 5. These
+// are day-COUNT assertions, not day-BOUNDARY ones (the boundary is the B-421 block
+// below), so the honest fixture states the zone it counts in rather than inheriting
+// one. Same reason the CI matrix now runs a non-UTC leg: a fixture that only holds
+// at UTC+00 must say so, or it is not testing what it claims.
 describe('getDietTrialProgress', () => {
   it('day-counts inclusively from started_at (day 1 = the start day)', () => {
-    const out = getDietTrialProgress({ startedAt: '2026-06-10', targetDurationDays: 14 }, NOW);
+    const out = getDietTrialProgress({ startedAt: '2026-06-10', targetDurationDays: 14 }, NOW, 'UTC');
     expect(out).toEqual({ dayCounter: 5, targetDays: 14, daysRemaining: 9, fraction: 5 / 14, complete: false });
   });
 
   it('clamps a reached target to complete + fraction 1', () => {
-    const out = getDietTrialProgress({ startedAt: '2026-05-01', targetDurationDays: 14 }, NOW);
+    const out = getDietTrialProgress({ startedAt: '2026-05-01', targetDurationDays: 14 }, NOW, 'UTC');
     expect(out?.complete).toBe(true);
     expect(out?.fraction).toBe(1);
     expect(out?.daysRemaining).toBe(0);
   });
 
   it('returns null for an unparseable start date', () => {
-    expect(getDietTrialProgress({ startedAt: 'not-a-date', targetDurationDays: 14 }, NOW)).toBeNull();
+    expect(getDietTrialProgress({ startedAt: 'not-a-date', targetDurationDays: 14 }, NOW, 'UTC')).toBeNull();
   });
 });
 
@@ -887,6 +900,27 @@ describe('getDietTrialProgress — timezone honesty (B-421)', () => {
     expect(getDietTrialProgress(yesterday, Date.parse('2026-06-15T06:30:00.000Z'), MINUS_7)?.dayCounter).toBe(2);
     // UTC+11: local 14 Jun 00:30, but the UTC date is still 13 Jun.
     expect(getDietTrialProgress(yesterday, Date.parse('2026-06-13T13:30:00.000Z'), PLUS_11)?.dayCounter).toBe(2);
+  });
+
+  it('the medication regimen counter reads the SAME day for the same inputs (B-441)', () => {
+    // Not a duplicate of medications.test.ts's own oracle: that pins the medication
+    // counter against expected NUMBERS, this pins the two implementations against
+    // EACH OTHER, which is the failure B-421 actually shipped — two counters that
+    // were each independently defensible and disagreed on one screen.
+    for (const { zone, nowIso } of CASES) {
+      expect(regimenDaysElapsed(TRIAL.startedAt, Date.parse(nowIso), zone))
+        .toBe(getDietTrialProgress(TRIAL, Date.parse(nowIso), zone)?.dayCounter);
+    }
+    // And on the two cases that historically diverged.
+    const started = '2026-06-13';
+    for (const [nowIso, zone] of [
+      ['2026-06-15T06:30:00.000Z', MINUS_7],
+      ['2026-06-13T13:30:00.000Z', PLUS_11],
+    ] as const) {
+      expect(regimenDaysElapsed(started, Date.parse(nowIso), zone)).toBe(
+        getDietTrialProgress({ startedAt: started, targetDurationDays: 14 }, Date.parse(nowIso), zone)?.dayCounter,
+      );
+    }
   });
 
   it('a trial that started today reads Day 1 — never Day 0, never Day 2', () => {

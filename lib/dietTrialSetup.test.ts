@@ -43,7 +43,7 @@ jest.mock('./utils', () => {
 });
 
 import {
-  buildTrialRows, canStartTrial, defaultDurationDays, describeActiveTrial,
+  addTrialFood, buildTrialRows, canStartTrial, defaultDurationDays, describeActiveTrial,
   durationHelperLine, endActiveTrial, foodLabel, formatTrialEndDate,
   extendTrial, getActiveTrialForPet, permittedRoleForFood, secondTrialIntro, startDietTrial,
   stopReasonOptions, trialEndDayKey, trialSetupLines, TRIAL_RECORD_DISCLOSURE,
@@ -534,5 +534,83 @@ describe('foodLabel / permittedRoleForFood', () => {
       .toBe('Zignature Kangaroo Formula');
     expect(permittedRoleForFood('treat')).toBe('permitted_treat');
     expect(permittedRoleForFood(null)).toBe('permitted_other');
+  });
+});
+
+// ── The mid-trial add (B-616 PR 1, FR-12 / D5) ──────────────────────────────
+
+describe('addTrialFood', () => {
+  const AT = new Date('2026-07-31T09:15:00Z');
+
+  it('opens membership TODAY, not at the trial start — an add never rewrites history', async () => {
+    await addTrialFood({ trialId: 't-1', petId: 'pet-1', food: JERKY, now: AT });
+
+    expect(mockRunAsync).toHaveBeenCalledTimes(1);
+    const [sql, params] = mockRunAsync.mock.calls[0] as [string, unknown[]];
+    expect(sql).toContain('INSERT INTO diet_trial_foods');
+    // `allowed_from` is the 7th bind. Today — so the twelve feedings of this food
+    // before today keep the reading they already have, and the exposure count
+    // does not silently fall.
+    expect(params[6]).toBe(toLocalDayKey(AT));
+  });
+
+  it('AC4 — the row byte-matches the one buildTrialRows writes for the same food', async () => {
+    // The start modal and the add sheet write the same row for the same vet.
+    const rows = buildTrialRows(
+      input({ permittedFoods: [JERKY], startedAt: toLocalDayKey(AT) }),
+      AT.toISOString(),
+    );
+    const built = rows.foods.find((f) => f.food_item_id === JERKY.id);
+
+    await addTrialFood({ trialId: rows.trial.id, petId: 'pet-1', food: JERKY, now: AT });
+    const [, params] = mockRunAsync.mock.calls[0] as [string, unknown[]];
+
+    // Everything but the row's own id, which is a fresh uuid either way.
+    expect(params.slice(1)).toEqual([
+      built!.diet_trial_id, built!.pet_id, built!.food_item_id, built!.role,
+      built!.food_label, built!.allowed_from, built!.created_at, built!.updated_at,
+    ]);
+  });
+
+  it('infers the role from the food and can never write a diet-defining row', async () => {
+    // §5.5 D-A: a mid-trial add is a vet-sanctioned EXTRA. Letting this path
+    // write `primary_diet` would widen the sanctioned protein comparator from a
+    // screen whose whole copy is "your vet said this is OK".
+    await addTrialFood({ trialId: 't-1', petId: 'pet-1', food: JERKY, now: AT });
+    await addTrialFood({ trialId: 't-1', petId: 'pet-1', food: DRY, now: AT });
+    const roles = mockRunAsync.mock.calls.map(([, p]) => (p as unknown[])[4]);
+    expect(roles).toEqual(['permitted_treat', 'permitted_other']);
+    expect(roles).not.toContain('primary_diet');
+  });
+
+  it('writes unsynced with no error, and binds one parameter per placeholder', async () => {
+    await addTrialFood({ trialId: 't-1', petId: 'pet-1', food: JERKY, now: AT });
+    const [sql, params] = mockRunAsync.mock.calls[0] as [string, unknown[]];
+    // The mirror's contract for every local mutation — a row inserted at
+    // synced = 1 never reaches the server at all.
+    expect(sql).toContain('0, NULL');
+    expect((params as unknown[]).length).toBe((sql.match(/\?/g) ?? []).length);
+  });
+
+  it('denormalizes the label at write time — the row outlives the food', async () => {
+    await addTrialFood({ trialId: 't-1', petId: 'pet-1', food: JERKY, now: AT });
+    const [, params] = mockRunAsync.mock.calls[0] as [string, unknown[]];
+    expect(params[5]).toBe('Real Meat Kangaroo Jerky');
+  });
+
+  it('bumps the hydration tick so the surfaces rendering the list re-read', async () => {
+    const before = useSyncStore.getState().hydrationTick;
+    await addTrialFood({ trialId: 't-1', petId: 'pet-1', food: JERKY, now: AT });
+    expect(useSyncStore.getState().hydrationTick).toBeGreaterThan(before);
+  });
+
+  it('still writes locally when the flush fails — offline is the target case', async () => {
+    mockSyncTrialFoods.mockRejectedValueOnce(new Error('offline'));
+    await expect(
+      addTrialFood({ trialId: 't-1', petId: 'pet-1', food: JERKY, now: AT }),
+    ).resolves.toEqual(expect.any(String));
+    await flush();
+    expect(mockRunAsync).toHaveBeenCalledTimes(1);
+    expect(mockSyncTrialFoods).toHaveBeenCalled();
   });
 });

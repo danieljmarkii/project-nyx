@@ -277,7 +277,7 @@ const styles = StyleSheet.create({
   },
   unavailableText: {
     fontSize: 15,
-    color: 'rgba(255,255,255,0.7)',
+    color: theme.colorTextOnDarkSubtle,
   },
   dotsRow: {
     position: 'absolute',
@@ -292,10 +292,10 @@ const styles = StyleSheet.create({
     width: 6,
     height: 6,
     borderRadius: 3,
-    backgroundColor: 'rgba(255,255,255,0.4)',
+    backgroundColor: theme.colorDotOnDarkInactive,
   },
   dotActive: {
-    backgroundColor: '#fff',
+    backgroundColor: theme.colorTextOnDark,
     width: 8,
     height: 8,
     borderRadius: 4,
@@ -315,7 +315,7 @@ const styles = StyleSheet.create({
   },
   closeText: {
     fontSize: 16,
-    color: '#fff',
+    color: theme.colorTextOnDark,
     fontWeight: theme.fontWeightMedium,
   },
   rightActions: {
@@ -325,12 +325,12 @@ const styles = StyleSheet.create({
   secondary: {
     paddingVertical: theme.space1,
     paddingHorizontal: theme.space2,
-    backgroundColor: 'rgba(255,255,255,0.15)',
+    backgroundColor: theme.colorDividerOnDark,
     borderRadius: theme.radiusSmall,
   },
   secondaryText: {
     fontSize: 15,
-    color: '#fff',
+    color: theme.colorTextOnDark,
     fontWeight: theme.fontWeightMedium,
   },
   destructive: {

@@ -20,11 +20,15 @@ import {
   hasMedicationItemChanges,
   canSaveMedicationItemEdit,
   computeRegimenCompliance,
+  dosesTowardTarget,
+  doseCourseProgress,
+  regimenDaysElapsed,
   attributeDosesToRegimens,
   regimenComplianceLine,
   regimenFlagLine,
   buildRegimenPayload,
   canSaveRegimen,
+  resolveDurationColumns,
   doubleDoseWindowHours,
   detectDoubleDose,
   formatDoseGap,
@@ -122,6 +126,7 @@ describe('medicationRowToRemote — regimen upsert payload', () => {
     prescribed_by: 'Dr. Chen',
     started_at: '2026-06-01',
     target_duration_days: 7,
+    target_duration_doses: null, // B-618 — days-denominated, so doses is null
     status: 'active',
     ended_at: null,
     notes: null,
@@ -134,7 +139,8 @@ describe('medicationRowToRemote — regimen upsert payload', () => {
       [
         'created_at', 'dose_amount', 'doses_per_day', 'drug_name', 'ended_at', 'id',
         'indication', 'medication_item_id', 'notes', 'pet_id', 'prescribed_by', 'route',
-        'schedule_notes', 'started_at', 'status', 'target_duration_days', 'updated_at',
+        'schedule_notes', 'started_at', 'status', 'target_duration_days',
+        'target_duration_doses', 'updated_at',
       ].sort(),
     );
   });
@@ -144,6 +150,17 @@ describe('medicationRowToRemote — regimen upsert payload', () => {
     expect(prn.doses_per_day).toBeNull();
     expect(prn.medication_item_id).toBeNull();
     expect(prn.drug_name).toBe('prednisolone'); // denormalized name still carried
+  });
+
+  it('forwards a doses-denominated course verbatim, days null (B-618)', () => {
+    // A fixed course dispensed as "#28, until gone": the mapper carries the doses
+    // target up unchanged and leaves days null — the DB's one-denomination CHECK is
+    // never violated because the two are already mutually exclusive on the row.
+    const doses = medicationRowToRemote({
+      ...reg, target_duration_days: null, target_duration_doses: 28,
+    });
+    expect(doses.target_duration_doses).toBe(28);
+    expect(doses.target_duration_days).toBeNull();
   });
 });
 
@@ -256,6 +273,26 @@ describe('MEDICATION_SCHEMA_SQL — production local DDL', () => {
     const adm = db.prepare('SELECT * FROM medication_administrations WHERE id = ?').get('adm-1') as Record<string, unknown>;
     expect(adm.event_id).toBe('evt-1');
     expect(adm.synced).toBe(0);
+    db.close();
+  });
+
+  it('round-trips target_duration_doses through the local mirror; NULL for a days/ongoing course (B-618)', () => {
+    // The B-618 §3 local mirror column. A doses-denominated course must survive a
+    // write→read against the EXACT production DDL, and a days/ongoing course must
+    // read back NULL — not 0, not an empty string — the honest "no doses target"
+    // value the count predicate depends on. (Local SQLite carries no CHECK, so this
+    // only proves the column exists and round-trips; the mutual-exclusion invariant
+    // is the server's, migration 049.)
+    const db = freshDb();
+    db.exec(`INSERT INTO medications (id, pet_id, drug_name, started_at, target_duration_doses)
+             VALUES ('med-doses', 'pet-1', 'metronidazole', '2026-06-01', 28);`);
+    db.exec(`INSERT INTO medications (id, pet_id, drug_name, started_at, target_duration_days)
+             VALUES ('med-days', 'pet-1', 'prednisolone', '2026-06-01', 7);`);
+    const doses = db.prepare('SELECT target_duration_doses, target_duration_days FROM medications WHERE id = ?').get('med-doses') as Record<string, unknown>;
+    expect(doses.target_duration_doses).toBe(28);
+    expect(doses.target_duration_days).toBeNull();
+    const days = db.prepare('SELECT target_duration_doses FROM medications WHERE id = ?').get('med-days') as Record<string, unknown>;
+    expect(days.target_duration_doses).toBeNull();
     db.close();
   });
 
@@ -715,6 +752,192 @@ describe('computeRegimenCompliance', () => {
   });
 });
 
+// ── B-618 §4 — the dose-count predicate (dosesTowardTarget) ──────────────────
+// "Dose {n} of {target}" where n = dosesTowardTarget(tally). D1: therapy delivered
+// (given + partial). The last test is load-bearing: it PINS the deliberate exact-
+// `partial` gap between this count and computeRegimenCompliance's given-only rate, so
+// a future "make these consistent" edit trips a red test and reads the two-definitions
+// comment before touching either. Do not "fix" that test — it exists to fail on that.
+describe('dosesTowardTarget — therapy delivered = given + partial (§4, D1)', () => {
+  it('is 0 for an empty tally (honest "Dose 0 of N" before the first administration)', () => {
+    expect(dosesTowardTarget(tally())).toBe(0);
+  });
+
+  it('never advances on refused / missed / unrated (unconfirmed) — only given + partial', () => {
+    // Every non-therapy bucket, alone, advances the count by nothing: a refused tail
+    // can never let a course read as complete (D1). unrated is where a derived
+    // "unconfirmed" dose lands, so this covers it too.
+    expect(dosesTowardTarget(tally({ refused: 3 }))).toBe(0);
+    expect(dosesTowardTarget(tally({ missed: 4 }))).toBe(0);
+    expect(dosesTowardTarget(tally({ unrated: 5 }))).toBe(0);
+    expect(dosesTowardTarget(tally({ refused: 3, missed: 4, unrated: 5 }))).toBe(0);
+    // Mixed: only the two therapy buckets count, the noise around them does not.
+    expect(dosesTowardTarget(tally({ given: 2, partial: 1, refused: 5, missed: 3, unrated: 4 }))).toBe(3);
+  });
+
+  it('a partial dose advances the count (therapy delivered) even though it is disclosed as a flag', () => {
+    // The D1 "advances AND stays disclosed" fact: a partial is counted here but is not
+    // clean adherence — regimenFlagLine still surfaces it (asserted in its own suite).
+    expect(dosesTowardTarget(tally({ given: 27, partial: 1 }))).toBe(28);
+  });
+
+  it('property: dosesTowardTarget(t) ≤ every logged dose, over the bucket cross-product', () => {
+    // Deterministic enumeration (no Math.random → no flake): the count can never
+    // exceed the number of doses actually logged. loggedDoses is the sum of all
+    // buckets — the same value computeRegimenCompliance.loggedDoses reports — so the
+    // bar can never render "Dose 30 of 28" from more given+partial than were logged.
+    for (let given = 0; given <= 3; given++)
+      for (let partial = 0; partial <= 3; partial++)
+        for (let missed = 0; missed <= 3; missed++)
+          for (let refused = 0; refused <= 3; refused++)
+            for (let unrated = 0; unrated <= 3; unrated++) {
+              const t = tally({ given, partial, missed, refused, unrated });
+              const logged = given + partial + missed + refused + unrated;
+              const n = dosesTowardTarget(t);
+              expect(n).toBeLessThanOrEqual(logged);
+              // Tie the property to the actual RegimenCompliance field, not just the
+              // hand-summed total, so a change to how loggedDoses is derived is caught.
+              const c = computeRegimenCompliance({ dosesPerDay: 2, daysElapsed: 7, tally: t });
+              expect(n).toBeLessThanOrEqual(c.loggedDoses);
+            }
+  });
+
+  it('DELIBERATELY disagrees with computeRegimenCompliance.administeredDoses by exactly tally.partial', () => {
+    // THE PIN. dosesTowardTarget = given + partial (therapy delivered, D1); the
+    // compliance numerator = given only (a stricter rate statistic, D1). The two are
+    // two different questions and MUST stay unreconciled — the gap is exactly the
+    // number of partial doses, always. A "consistency fix" that makes them agree
+    // trips this test and must read lib/medications.ts:dosesTowardTarget before changing
+    // either definition.
+    const cases: AdherenceTally[] = [
+      tally(),                                             // 0 partial → agree (gap 0)
+      tally({ given: 5 }),                                 // 0 partial → agree
+      tally({ given: 5, partial: 2 }),                     // gap 2
+      tally({ given: 0, partial: 3 }),                     // gap 3, given 0
+      tally({ given: 4, partial: 1, missed: 2, refused: 1, unrated: 3 }), // noise doesn't move the gap
+    ];
+    for (const t of cases) {
+      const compliance = computeRegimenCompliance({ dosesPerDay: 1, daysElapsed: 10, tally: t });
+      expect(dosesTowardTarget(t) - compliance.administeredDoses).toBe(t.partial);
+    }
+  });
+
+  it('follows the record: a soft-deleted dose falls out of the tally, so the count decrements (§4)', () => {
+    // The count follows the record — attributeDosesToRegimens skips a dose whose parent
+    // event is soft-deleted, so deleting a mislogged dose correctly lowers the count.
+    // This is a property of how the tally is built, asserted end-to-end here.
+    const regimen: RegimenWindow = {
+      id: 'reg-1', medication_item_id: 'item-1', started_at: '2026-06-01', ended_at: null,
+    };
+    const doses: AttributableDose[] = [
+      { medication_id: 'reg-1', medication_item_id: 'item-1', adherence: 'given', deleted_at: null, occurred_at: '2026-06-02T09:00:00Z' },
+      { medication_id: 'reg-1', medication_item_id: 'item-1', adherence: 'given', deleted_at: null, occurred_at: '2026-06-02T21:00:00Z' },
+      // A mislogged dose, later soft-deleted — its event's deleted_at is set.
+      { medication_id: 'reg-1', medication_item_id: 'item-1', adherence: 'given', deleted_at: '2026-06-03T00:00:00Z', occurred_at: '2026-06-03T09:00:00Z' },
+    ];
+    const withDeleted = attributeDosesToRegimens([regimen], doses).get('reg-1')!;
+    expect(dosesTowardTarget(withDeleted)).toBe(2); // the soft-deleted dose does not count
+
+    // Undelete-equivalent: the same three doses all live → 3. Confirms the decrement
+    // is the deletion's doing, not a fixed cap.
+    const allLive = attributeDosesToRegimens(
+      [regimen],
+      doses.map((d) => ({ ...d, deleted_at: null })),
+    ).get('reg-1')!;
+    expect(dosesTowardTarget(allLive)).toBe(3);
+  });
+});
+
+// ── B-618 §6 — the profile card's dose-course line + bar (doseCourseProgress) ─────
+// The line and the bar must state the SAME n (the diet-trial bar lesson), n reads the
+// D6 predicate (never re-derived), and — non-negotiable, D7 — reaching or passing the
+// target must render no completion/stop language. The §8 QA matrix rows 1/3/5 live here.
+describe('doseCourseProgress — "Dose {n} of {target}" line + bar (§6, D7)', () => {
+  const NO_COMPLETION = /complete|done|finish|stop|✓|✔|check|over\b|ended/i;
+
+  it('zero-state: "Dose 0 of 28" with an empty bar before the first administration', () => {
+    const p = doseCourseProgress(tally(), 28);
+    expect(p.line).toBe('Dose 0 of 28');
+    expect(p.count).toBe(0);
+    expect(p.barFraction).toBe(0);
+    expect(p.pastTarget).toBe(false);
+  });
+
+  it('§8.1 in-range: a given dose reads "Dose 1 of 28"; the bar fraction equals n/target', () => {
+    const p = doseCourseProgress(tally({ given: 1 }), 28);
+    expect(p.line).toBe('Dose 1 of 28');
+    expect(p.barFraction).toBeCloseTo(1 / 28);
+    // The line's number and the bar's number are the same n — never one labelled with
+    // the other (the whole point of computing both here).
+    expect(p.count).toBe(1);
+  });
+
+  it('§8.3 a partial advances the count line (therapy delivered) — "Dose 5 of 28"', () => {
+    // 4 given + 1 partial = 5 toward the bottle (D1), even though the partial is also
+    // disclosed by regimenFlagLine. The count line and the compliance line disagree by
+    // the partial ON PURPOSE — that gap is pinned in the dosesTowardTarget suite.
+    const p = doseCourseProgress(tally({ given: 4, partial: 1 }), 28);
+    expect(p.line).toBe('Dose 5 of 28');
+    expect(p.count).toBe(5);
+  });
+
+  it('at exactly the target: "Dose 28 of 28", full bar, and NO completion word (D7)', () => {
+    const p = doseCourseProgress(tally({ given: 27, partial: 1 }), 28);
+    expect(p.line).toBe('Dose 28 of 28');
+    expect(p.barFraction).toBe(1);
+    expect(p.pastTarget).toBe(false);
+    // D7 is the reason this feature is careful: hitting the target is not "done".
+    expect(p.line).not.toMatch(NO_COMPLETION);
+  });
+
+  it('§8.5 past target: bar capped, extras disclosed, no error, no "complete"', () => {
+    // 29th administration on a 28-dose course. cap-the-bar / disclose-the-extras /
+    // render-no-error: the line stays TRUE ("28 of 28"), never "Dose 29 of 28", never
+    // "Day 30 of 7"-style nonsense, never a completion state.
+    const p = doseCourseProgress(tally({ given: 29 }), 28);
+    expect(p.line).toBe('28 of 28 doses · 1 more logged');
+    expect(p.pastTarget).toBe(true);
+    expect(p.barFraction).toBe(1); // capped, never 29/28
+    expect(p.line).not.toMatch(NO_COMPLETION);
+
+    const p2 = doseCourseProgress(tally({ given: 28, partial: 2 }), 28);
+    expect(p2.line).toBe('28 of 28 doses · 2 more logged');
+    expect(p2.count).toBe(30);
+  });
+
+  it('past target on a single-dose course reads "1 of 1 dose" (singular, not "doses")', () => {
+    // A one-time dose (e.g. a single dewormer) logged twice: the unit word inflects on
+    // the target, so a 1-dose course never reads the ungrammatical "1 of 1 doses".
+    const p = doseCourseProgress(tally({ given: 2 }), 1);
+    expect(p.line).toBe('1 of 1 dose · 1 more logged');
+    expect(p.barFraction).toBe(1);
+    expect(p.line).not.toMatch(NO_COMPLETION);
+  });
+
+  it('refused / missed / unrated never move the count line off "Dose 0 of N" (§8.2)', () => {
+    // A refused tail can never let a course read as complete — the count is 0, the bar
+    // is empty, and the refusals surface through regimenFlagLine, not this line.
+    const p = doseCourseProgress(tally({ refused: 3, missed: 2, unrated: 1 }), 14);
+    expect(p.line).toBe('Dose 0 of 14');
+    expect(p.barFraction).toBe(0);
+  });
+
+  it('property: barFraction is always in [0, 1] and the line never emits a completion word', () => {
+    for (const target of [1, 7, 14, 28]) {
+      for (let given = 0; given <= target + 3; given++) {
+        for (const partial of [0, 1, 2]) {
+          const p = doseCourseProgress(tally({ given, partial }), target);
+          expect(p.barFraction).toBeGreaterThanOrEqual(0);
+          expect(p.barFraction).toBeLessThanOrEqual(1);
+          expect(p.line).not.toMatch(NO_COMPLETION);
+          // The bar can never claim more progress than the count justifies.
+          expect(p.barFraction).toBeCloseTo(Math.min((given + partial) / target, 1));
+        }
+      }
+    }
+  });
+});
+
 describe('regimenComplianceLine — copy never reassures on absence (§6.1)', () => {
   const FORBIDDEN = /great|good|well|perfect|all set|on track|healthy|fine|compliant/i;
 
@@ -806,6 +1029,7 @@ describe('buildRegimenPayload / canSaveRegimen — regimen-setup write', () => {
     prescribedBy: '  Dr. Chen ',
     startedAt: '2026-06-19',
     targetDurationDays: 7,
+    targetDurationDoses: null, // B-618 — days-denominated form; doses null
   };
 
   it('trims the required name and nulls blank optionals; never carries pet_id/status/id', () => {
@@ -840,14 +1064,88 @@ describe('buildRegimenPayload / canSaveRegimen — regimen-setup write', () => {
     expect(out.medication_item_id).toBeNull();
     expect(out.doses_per_day).toBeNull();
     expect(out.target_duration_days).toBeNull();
+    expect(out.target_duration_doses).toBeNull(); // B-618 — ongoing course: neither denomination set
     expect(out.route).toBeNull();
     expect(out.drug_name).toBe('Prednisolone'); // denormalized name always present
+  });
+
+  it('forwards a doses-denominated course, days null (B-618 — one denomination on the wire)', () => {
+    // The entry form (PR 3) sets exactly one unit; this builder forwards both
+    // verbatim. A doses course must reach the write with days null so the DB's
+    // medications_one_duration_denomination CHECK is satisfied by construction.
+    const out = buildRegimenPayload({ ...form, targetDurationDays: null, targetDurationDoses: 28 });
+    expect(out.target_duration_doses).toBe(28);
+    expect(out.target_duration_days).toBeNull();
   });
 
   it('requires a non-empty drug name (medications.drug_name is NOT NULL)', () => {
     expect(canSaveRegimen({ drugName: 'Apoquel' })).toBe(true);
     expect(canSaveRegimen({ drugName: '' })).toBe(false);
     expect(canSaveRegimen({ drugName: '   ' })).toBe(false);
+  });
+});
+
+// ── B-618 §5 — the entry form's course-length → the two denomination columns ─────
+// The two load-bearing rules the entry UI (PR 3) leans on: AT MOST ONE denomination
+// is ever set (unrepresentable-to-set-both, the client half of the DB CHECK), and a
+// blank/zero/ongoing field fakes no course. Pinned here so a future edit to the modal
+// can't quietly reintroduce a both-set write or a zero-length course.
+describe('resolveDurationColumns — one denomination, never a faked course (§5)', () => {
+  it('writes days only when the unit is days (doses column stays null)', () => {
+    expect(resolveDurationColumns({ mode: 'fixed', unit: 'days', value: '14' })).toEqual({
+      target_duration_days: 14,
+      target_duration_doses: null,
+    });
+  });
+
+  it('writes doses only when the unit is doses (days column stays null)', () => {
+    expect(resolveDurationColumns({ mode: 'fixed', unit: 'doses', value: '28' })).toEqual({
+      target_duration_days: null,
+      target_duration_doses: 28,
+    });
+  });
+
+  it('an ongoing course writes BOTH null regardless of a lingering unit/value', () => {
+    // The mode gates everything: even if the field still holds a number from before the
+    // owner flipped back to Ongoing, no course is written.
+    expect(resolveDurationColumns({ mode: 'ongoing', unit: 'doses', value: '28' })).toEqual({
+      target_duration_days: null,
+      target_duration_doses: null,
+    });
+  });
+
+  it('a blank / zero / non-positive field never fakes a course (both null)', () => {
+    for (const value of ['', '0', '00']) {
+      expect(resolveDurationColumns({ mode: 'fixed', unit: 'days', value })).toEqual({
+        target_duration_days: null,
+        target_duration_doses: null,
+      });
+      expect(resolveDurationColumns({ mode: 'fixed', unit: 'doses', value })).toEqual({
+        target_duration_days: null,
+        target_duration_doses: null,
+      });
+    }
+  });
+
+  it('parses a leading-zero value as its positive integer (field is digit-stripped upstream)', () => {
+    expect(resolveDurationColumns({ mode: 'fixed', unit: 'doses', value: '028' }).target_duration_doses).toBe(28);
+  });
+
+  it('NEVER returns both denominations set, across the mode × unit × value cross-product', () => {
+    // The construction guarantee the DB CHECK backstops: both columns branch on the
+    // same `unit`, so no combination of inputs can set both. This is the test that
+    // fails first if a refactor ever writes the two columns independently.
+    const modes: ('ongoing' | 'fixed')[] = ['ongoing', 'fixed'];
+    const units: ('days' | 'doses')[] = ['days', 'doses'];
+    const values = ['', '0', '1', '14', '28', '365'];
+    for (const mode of modes) {
+      for (const unit of units) {
+        for (const value of values) {
+          const out = resolveDurationColumns({ mode, unit, value });
+          expect(out.target_duration_days != null && out.target_duration_doses != null).toBe(false);
+        }
+      }
+    }
   });
 });
 
@@ -1592,5 +1890,113 @@ describe('commonMedicationsForSpecies — species-first ordering, never a filter
     const both = cat.filter((m) => m.species === 'both').map((m) => m.name);
     const originalBoth = COMMON_MEDICATIONS.filter((m) => m.species === 'both').map((m) => m.name);
     expect(both).toEqual(originalBoth);
+  });
+});
+
+// ── B-441 — the regimen day counter ───────────────────────────────────────────
+// Mirrors the diet-trial oracle in lib/analytics.test.ts ("timezone honesty",
+// B-421) case for case, because this counter carried the identical flaw and the
+// two must not drift: the same instants, the same zones, the same expected day.
+describe('regimenDaysElapsed (B-441)', () => {
+  const MINUS_7 = 'Etc/GMT+7'; // UTC−7
+  const PLUS_11 = 'Etc/GMT-11'; // UTC+11
+  const STARTED = '2026-06-10';
+
+  // Four instants that are all "14 Jun, local" for their respective owner. Day 1 is
+  // 10 Jun, so every one is day 5 — whatever UTC date the instant happens to carry.
+  const CASES = [
+    { label: 'UTC−7 @ 00:30 local', zone: MINUS_7, nowIso: '2026-06-14T07:30:00.000Z', utcDate: '2026-06-14' },
+    { label: 'UTC−7 @ 23:30 local', zone: MINUS_7, nowIso: '2026-06-15T06:30:00.000Z', utcDate: '2026-06-15' },
+    { label: 'UTC+11 @ 00:30 local', zone: PLUS_11, nowIso: '2026-06-13T13:30:00.000Z', utcDate: '2026-06-13' },
+    { label: 'UTC+11 @ 23:30 local', zone: PLUS_11, nowIso: '2026-06-14T12:30:00.000Z', utcDate: '2026-06-14' },
+  ];
+
+  it.each(CASES)('reads day 5 at $label', ({ zone, nowIso }) => {
+    expect(regimenDaysElapsed(STARTED, Date.parse(nowIso), zone)).toBe(5);
+  });
+
+  it('all four readings agree — one local day, one day N', () => {
+    const counts = CASES.map(({ zone, nowIso }) => regimenDaysElapsed(STARTED, Date.parse(nowIso), zone));
+    expect(counts).toEqual([5, 5, 5, 5]);
+    expect(new Set(counts).size).toBe(1);
+  });
+
+  it('the shipped-before-B-441 arithmetic disagreed with itself across these instants', () => {
+    // Not a test of shipped code — it pins WHAT THIS COST, so a refactor back to
+    // `new Date(started_at)` + a ms-span divide fails against a test that says why.
+    // This is the exact old body, with the device zone stood in for by the UTC date
+    // the instant carries (which is what a UTC-parsed DATE effectively floors to).
+    const old = CASES.map(
+      ({ utcDate }) =>
+        Math.max(1, Math.floor(
+          (Date.parse(`${utcDate}T00:00:00Z`) - Date.parse('2026-06-10T00:00:00Z')) / (1000 * 60 * 60 * 24),
+        ) + 1),
+    );
+    expect(old).toEqual([5, 6, 4, 5]);
+    expect(Math.max(...old) - Math.min(...old)).toBe(2);
+  });
+
+  it('a course that started "yesterday" local reads day 2 on both sides of the date line', () => {
+    // The discrepancy owners actually hit: the course started yesterday where they
+    // live, but the UTC clock has already rolled past midnight (or has not reached it).
+    expect(regimenDaysElapsed('2026-06-13', Date.parse('2026-06-15T06:30:00.000Z'), MINUS_7)).toBe(2);
+    expect(regimenDaysElapsed('2026-06-13', Date.parse('2026-06-13T13:30:00.000Z'), PLUS_11)).toBe(2);
+  });
+
+  it('a course that started today reads day 1, not day 0', () => {
+    expect(regimenDaysElapsed('2026-06-14', Date.parse('2026-06-14T07:30:00.000Z'), MINUS_7)).toBe(1);
+  });
+
+  it('a future start date floors at day 1 rather than going negative', () => {
+    // An owner back-filling a prescription that begins tomorrow.
+    expect(regimenDaysElapsed('2026-06-20', Date.parse('2026-06-14T07:30:00.000Z'), MINUS_7)).toBe(1);
+  });
+
+  it('every local day advances the count by exactly one across a DST spring-forward', () => {
+    // 2026-03-08 is the US spring-forward. Differencing midnights in milliseconds
+    // makes that local day 23h long and loses a day; calendar indexing cannot.
+    const zone = 'America/Los_Angeles';
+    const counts = [
+      regimenDaysElapsed('2026-03-06', Date.parse('2026-03-07T20:00:00.000Z'), zone), // 7 Mar local
+      regimenDaysElapsed('2026-03-06', Date.parse('2026-03-08T20:00:00.000Z'), zone), // 8 Mar local
+      regimenDaysElapsed('2026-03-06', Date.parse('2026-03-09T20:00:00.000Z'), zone), // 9 Mar local
+    ];
+    expect(counts).toEqual([2, 3, 4]);
+  });
+
+  it('returns null for an unparseable start date rather than a guessed day', () => {
+    // The honest-null contract localDayIndexOf states. The old body returned NaN
+    // here, which flowed into the compliance denominator unchecked.
+    expect(regimenDaysElapsed('not-a-date', Date.parse('2026-06-14T07:30:00.000Z'))).toBeNull();
+    expect(regimenDaysElapsed('2026-02-30', Date.parse('2026-06-14T07:30:00.000Z'))).toBeNull();
+  });
+
+  it('returns null for a non-finite nowMs rather than NaN', () => {
+    // NaN is strictly worse than a wrong number: the profile card's render guard is
+    // `daysElapsed != null`, and `NaN != null` is TRUE — so a NaN sails past the very
+    // check added to stop "Day null of 14" and prints "Day NaN of 14" instead.
+    // Today's only caller takes the Date.now() default; B-614's Home strip will pass
+    // an explicit instant, which is why this is guarded now rather than when it bites.
+    expect(regimenDaysElapsed('2026-06-10', NaN)).toBeNull();
+    expect(regimenDaysElapsed('2026-06-10', Date.parse('nonsense'))).toBeNull();
+    expect(regimenDaysElapsed('2026-06-10', Infinity)).toBeNull();
+  });
+
+  it('a null day count yields a dose COUNT, never an inflated percent', () => {
+    // The profile card's degradation (B-441): with no denominator the regimen
+    // reports PRN-shaped output. Guessing `daysElapsed = 1` instead would report
+    // "100% given" over 3 doses of a twice-daily course — the reassuring direction.
+    const days = regimenDaysElapsed('not-a-date');
+    const c = computeRegimenCompliance({
+      dosesPerDay: days === null ? null : 2,
+      daysElapsed: days ?? 1,
+      tally: tally({ given: 3 }),
+    });
+    expect(c.isPrn).toBe(true);
+    expect(c.percent).toBeNull();
+    expect(c.loggedDoses).toBe(3);
+
+    const guessed = computeRegimenCompliance({ dosesPerDay: 2, daysElapsed: 1, tally: tally({ given: 3 }) });
+    expect(guessed.percent).toBe(100); // what the guess would have claimed
   });
 });

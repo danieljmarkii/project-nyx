@@ -59,4 +59,16 @@ describe('FilterChip', () => {
     expect(state?.checked).toBe(true);
     expect(state?.selected).toBeUndefined();
   });
+
+  // B-555 — the busy/disabled state blocks the press and announces itself, so a
+  // chip whose tap-write is in flight can't be re-fired.
+  it('blocks the press and announces disabled when disabled', () => {
+    const onPress = jest.fn();
+    const { getByText } = render(
+      <FilterChip label="Lab result" active onPress={onPress} disabled />,
+    );
+    fireEvent.press(getByText('Lab result'));
+    expect(onPress).not.toHaveBeenCalled();
+    expect((chipState(getByText, 'Lab result') as { disabled?: boolean })?.disabled).toBe(true);
+  });
 });

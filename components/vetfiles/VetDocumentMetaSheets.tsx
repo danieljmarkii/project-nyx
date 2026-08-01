@@ -72,6 +72,10 @@ interface KindProps {
   current: VetDocumentKind;
   onCancel: () => void;
   onSelect: (kind: VetDocumentKind) => void;
+  // A previous selection's write is in flight. Dims the chips and blocks a second
+  // tap (B-555) — the ChipGroup busy state that replaces the caller's hand-rolled
+  // re-entrancy guard.
+  busy?: boolean;
 }
 
 // §4.5: a closed single-select set → ChipGroup, wrapping, every option on screen
@@ -82,13 +86,14 @@ const KIND_OPTIONS: ChipGroupOption[] = VET_DOCUMENT_KINDS.map((kind) => ({
   label: VET_DOCUMENT_KIND_LABELS[kind],
 }));
 
-export function DocumentKindSheet({ visible, current, onCancel, onSelect }: KindProps) {
+export function DocumentKindSheet({ visible, current, onCancel, onSelect, busy }: KindProps) {
   return (
     <SheetShell visible={visible} onClose={onCancel} title="What kind of document is this?">
       <ScrollView bounces={false} style={styles.kindScroll}>
         <ChipGroup
           options={KIND_OPTIONS}
           value={current}
+          disabled={busy}
           onChange={(next) => {
             // allowDeselect is off, so `next` is always a value — the guard is for
             // the type, not for a reachable state.

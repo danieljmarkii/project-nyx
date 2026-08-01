@@ -365,7 +365,7 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: 'rgba(255,255,255,0.06)',
+    backgroundColor: theme.colorFillOnDark,
     borderWidth: 1.5,
     borderColor: theme.colorMomentConfirm,
     justifyContent: 'center',
@@ -383,12 +383,12 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: theme.textMD,
-    color: '#fff',
+    color: theme.colorTextOnDark,
     fontWeight: theme.weightMedium,
   },
   subLabel: {
     fontSize: theme.textSM,
-    color: 'rgba(255,255,255,0.7)',
+    color: theme.colorTextOnDarkSubtle,
     fontWeight: theme.weightRegular,
   },
   // 44pt min touch target (the 3am-test rule) — the underlined label alone is
@@ -399,26 +399,26 @@ const styles = StyleSheet.create({
   },
   action: {
     fontSize: theme.textMD,
-    color: '#fff',
+    color: theme.colorTextOnDark,
     fontWeight: theme.weightMedium,
     textDecorationLine: 'underline',
   },
   adherenceWrap: {
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: 'rgba(255,255,255,0.15)',
+    borderTopColor: theme.colorDividerOnDark,
     paddingTop: theme.space1,
     gap: 6,
   },
   adherenceLabel: {
     fontSize: theme.textSM,
-    color: 'rgba(255,255,255,0.7)',
+    color: theme.colorTextOnDarkSubtle,
     fontWeight: theme.weightRegular,
   },
   // The in-doubt reason line — fainter than the prompt, sits between it and the chips.
   // Calm, never an alarm colour: the rose flag lives on the chip-row downgrade, not here.
   inDoubtReason: {
     fontSize: theme.textXS,
-    color: 'rgba(255,255,255,0.55)',
+    color: theme.colorTextOnDarkFaint,
     fontWeight: theme.weightRegular,
   },
   // Subordinate to the adherence block: a fainter divider + dimmer label so the
@@ -426,13 +426,13 @@ const styles = StyleSheet.create({
   // it?" question, never a peer of it.
   vehicleWrap: {
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: 'rgba(255,255,255,0.1)',
+    borderTopColor: theme.colorDividerOnDark,
     paddingTop: theme.space1,
     gap: 6,
   },
   vehicleLabel: {
     fontSize: theme.textSM,
-    color: 'rgba(255,255,255,0.55)',
+    color: theme.colorTextOnDarkFaint,
     fontWeight: theme.weightRegular,
   },
 
@@ -440,7 +440,7 @@ const styles = StyleSheet.create({
   // cards present the same "Change time" surface.
   backdrop: {
     ...StyleSheet.absoluteFill,
-    backgroundColor: 'rgba(0,0,0,0.4)',
+    backgroundColor: theme.colorScrimBackdrop,
   },
   sheet: {
     position: 'absolute',

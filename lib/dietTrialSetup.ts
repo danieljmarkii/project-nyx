@@ -26,6 +26,7 @@
 // so an owner-visible fix (ending the other trial) re-arms a quarantined push
 // rather than leaving a permanently-parked row.
 import { getDb } from './db';
+import type { TrialFoodRole } from './dietTrial';
 import { trialStopReasons, type TrialOutcome } from './dietTrialCompletion';
 import { syncPendingDietTrials, syncPendingDietTrialFoods } from './sync';
 import { useSyncStore } from '../store/syncStore';
@@ -111,7 +112,11 @@ export function defaultDurationDays(
 // capturable in v1: it is not inferable from anything the library holds, and
 // asking for it would add a per-food decision to a screen whose whole acceptance
 // criterion is fifteen seconds.
-export type TrialFoodRole = 'primary_diet' | 'permitted_treat' | 'permitted_other' | 'supplement';
+// B-556: ALIASED, not re-declared. This was a second structural copy of the
+// union — identical today, and structurally compatible, so nothing broke; but a
+// member added to the schema enum would have landed in one copy and not the
+// other, which is the same shape of drift B-556 fixed on the READ side.
+export type { TrialFoodRole } from './dietTrial';
 
 // Role of a permitted extra, INFERRED from a fact the library already carries
 // rather than asked for. `food_type = 'treat'` → permitted_treat, everything else
@@ -165,10 +170,13 @@ export function formatTrialEndDate(dayKey: string, now: Date = new Date()): stri
   });
 }
 
-/** The helper line under the indication chips — the whole reason the indication
- *  can SET AND SHOW the duration without becoming a third field. It names the end
- *  DATE rather than a day count: "56 days" is not something an owner can plan
- *  around, and the date is what they will put in their calendar. */
+/** The duration/end-date helper — the whole reason the indication can SET AND
+ *  SHOW the duration without becoming a third field. It renders BELOW the
+ *  start-date field it describes (B-565): the sentence names the end date the
+ *  start date determines, so a back-date must change a line the owner can see,
+ *  not one scrolled off the top under the indication chips. It names the end DATE
+ *  rather than a day count: "56 days" is not something an owner can plan around,
+ *  and the date is what they will put in their calendar. */
 export function durationHelperLine(
   indication: TrialIndication,
   targetDays: number,
@@ -185,7 +193,7 @@ export function durationHelperLine(
         : `This one is set to ${weeks} weeks.`;
   const end = endDayKey ? formatTrialEndDate(endDayKey, now) : null;
   if (!end) return lead;
-  // The start date is editable behind "More options", so the sentence has to stay
+  // The start date sits on the primary screen (R3), so the sentence has to stay
   // true after a back-date — "Starting today" over a trial dated to 1 June is a
   // small lie on the one field whose semantic is already the subtle one.
   if (startDayKey === toLocalDayKey(now)) return `${lead} Starting today, that ends ${end}.`;
@@ -233,10 +241,12 @@ export function trialSetupLines(petName: string): [string, string] {
  *  silently zeroes the exposure count. */
 export const ALLOWED_SET_HELPER = 'Anything your vet said is OK.';
 
-/** The start-date field's label + helper. The default VALUE is today; the
- *  SEMANTIC is the first day of exclusive feeding (CAVD: start the countdown on
- *  the first day you feed only the elimination diet). */
-export const START_DATE_LABEL = 'First day on the trial diet only';
+/** The start-date field's label. Deliberately terse (B-565) — six wide-tracked
+ *  micro-caps beside two-word siblings was a parse, not a scan; `startDateHelper`
+ *  below the field does the teaching. The default VALUE is today; the SEMANTIC is
+ *  the first day of exclusive feeding (CAVD: start the countdown on the first day
+ *  you feed only the elimination diet), which the helper spells out. */
+export const START_DATE_LABEL = 'First day';
 
 export function startDateHelper(petName: string): string {
   return (
@@ -249,10 +259,16 @@ export const TRIAL_DIET_HELPER =
   'More than one is normal — a wet and a dry of the same diet, or two forms your vet ' +
   'named together.';
 
+// B-565: no longer ASSERTS "{pet}'s vet has put {pet} on an elimination diet" —
+// which may be false, and which named the pet three times in two sentences. It
+// leads with the instruction and closes on state 0's own payoff line (kept
+// verbatim, so the inviting card and the sheet it opens do not drift). That line
+// presumes only the recheck the whole feature is built around, not a specific
+// past directive — the same conditional posture `noTrialCard` already takes.
 export function startSheetIntro(petName: string): string {
   return (
-    `${petName}’s vet has put ${petName} on an elimination diet. Tell Culprit what ` +
-    `${petName} is eating and what it’s for.`
+    `Tell Culprit what ${petName} is eating and what it’s for. It keeps the dated ` +
+    'record your vet will ask for at the recheck.'
   );
 }
 
@@ -307,6 +323,46 @@ export interface NewTrialRows {
   }[];
 }
 
+export type NewTrialFoodRow = NewTrialRows['foods'][number];
+
+/**
+ * ONE `diet_trial_foods` row — the shape both write paths produce.
+ *
+ * Extracted at B-616 PR 1 rather than copied into `addTrialFood`, because the
+ * mid-trial add and the start modal write the same row for a vet, and a second
+ * builder is a second answer to "what does a permitted extra look like". The
+ * fields that would drift are the ones that matter most: `food_label` (which has
+ * to be denormalized at write time, because the row outlives the food) and
+ * `role` (which decides whether a food can widen the sanctioned comparator).
+ *
+ * Everything varying between the two paths is a PARAMETER — the id, the role and
+ * `allowed_from` — so the difference between "on the list from day 1" and "added
+ * today" is one argument rather than one duplicated function.
+ */
+export function buildTrialFoodRow(args: {
+  id: string;
+  trialId: string;
+  petId: string;
+  food: TrialFoodSelection;
+  role: TrialFoodRole;
+  /** 'YYYY-MM-DD' local day key. */
+  allowedFrom: string;
+  /** ISO instant for `created_at`/`updated_at`. */
+  now: string;
+}): NewTrialFoodRow {
+  return {
+    id: args.id,
+    diet_trial_id: args.trialId,
+    pet_id: args.petId,
+    food_item_id: args.food.id,
+    role: args.role,
+    food_label: foodLabel(args.food),
+    allowed_from: args.allowedFrom,
+    created_at: args.now,
+    updated_at: args.now,
+  };
+}
+
 /** ≥1 trial food and an indication. Everything else has a default or is optional
  *  — the field test is "what can an owner answer standing in a clinic car park
  *  holding a bag of food". */
@@ -358,20 +414,22 @@ export function buildTrialRows(
       food: f,
       role: permittedRoleForFood(f.food_type),
     })),
-  ].map(({ food, role }) => ({
-    id: newId(),
-    diet_trial_id: trialId,
-    pet_id: input.petId,
-    food_item_id: food.id,
-    role,
-    food_label: foodLabel(food),
-    // Membership is DATED (§3.2). It opens on the trial's own start day rather
-    // than "today", so a back-dated trial does not render its own prescribed diet
-    // as un-permitted for the days before the owner got around to telling us.
-    allowed_from: input.startedAt,
-    created_at: now,
-    updated_at: now,
-  }));
+  ].map(({ food, role }) =>
+    buildTrialFoodRow({
+      id: newId(),
+      trialId,
+      petId: input.petId,
+      food,
+      role,
+      // Membership is DATED (§3.2). At CREATION it opens on the trial's own start
+      // day rather than today, so a back-dated trial does not render its own
+      // prescribed diet as un-permitted for the days before the owner got around
+      // to telling us. A MID-TRIAL add is the other case and passes today — see
+      // `addTrialFood`.
+      allowedFrom: input.startedAt,
+      now,
+    }),
+  );
 
   return {
     trial: {
@@ -636,6 +694,96 @@ export async function extendTrial(params: {
   );
 }
 
+/** The one INSERT both write paths use. Shared for the same reason
+ *  `buildTrialFoodRow` is: a row written by the mid-trial add and a row written
+ *  by the start modal are the same row, and the column list is where a silent
+ *  divergence would live (`synced = 0, sync_error = NULL` is the mirror's stated
+ *  contract for every local write, and it is easy to forget at a new call site —
+ *  a row inserted at `synced = 1` never reaches the server at all). */
+const TRIAL_FOOD_INSERT_SQL = `INSERT INTO diet_trial_foods
+   (id, diet_trial_id, pet_id, food_item_id, role, food_label, allowed_from,
+    created_at, updated_at, synced, sync_error)
+ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL)`;
+
+function trialFoodInsertParams(f: NewTrialFoodRow): (string | null)[] {
+  return [
+    f.id, f.diet_trial_id, f.pet_id, f.food_item_id, f.role, f.food_label,
+    f.allowed_from, f.created_at, f.updated_at,
+  ];
+}
+
+/**
+ * Add ONE food to a running trial's allowed set — B-616 FR-12 (D5, PM-ruled
+ * 2026-07-31).
+ *
+ * ── AN ADD NEVER REWRITES HISTORY, AND THAT IS THE WHOLE MECHANISM ───────────
+ *
+ * `allowed_from` is TODAY, not the trial's start day, and the difference is the
+ * entire safety property of this function. Membership is dated (§3.2), so a row
+ * opened today permits today forward and says nothing about yesterday: the
+ * feedings before this moment keep the reading they already have, the exposure
+ * count does not fall, and the vet report's appendix does not quietly empty. Open
+ * it at `started_at` instead — the shape `buildTrialRows` correctly uses at
+ * creation — and adding the contraband on day 13 silently re-scores twelve prior
+ * exposures as permitted, flips the card to clean, and empties the appendix, with
+ * nothing on any page saying so. FR-11's confirm sheet tells the owner this in
+ * plain words before they tap; this is the half that makes the sentence true.
+ *
+ * SOFT PATH ONLY — one INSERT, never an UPDATE of an existing row. Re-dating a
+ * row that is already in force is the same retroactive rewrite by another route.
+ *
+ * THE ROLE IS INFERRED, NEVER ASKED (Principle 1 — no decisions at the moment of
+ * the event). `permittedRoleForFood` reads the food's own `food_type`; both
+ * permitted roles behave identically at rung 1, so a wrong guess costs a word of
+ * provenance on the vet report and nothing else. Note what is NOT reachable
+ * here: `primary_diet`. A mid-trial add is a vet-sanctioned EXTRA, and letting
+ * this path write a diet-defining row would let the allowed set widen the
+ * sanctioned protein comparator from a screen whose whole copy is "your vet said
+ * this is OK" — §5.5 D-A's self-granted loophole, opened by the front door.
+ *
+ * The caller filters foods already on the list (it renders the same set through
+ * `useTrialAllowedSet`). A duplicate reaching here is a UI bug rather than a data
+ * hazard: `trialListFoodsOn` dedupes by identity so the list and its count cannot
+ * double-render, and a second row cannot narrow the first one's membership.
+ *
+ * Returns the new row's id.
+ */
+export async function addTrialFood(params: {
+  trialId: string;
+  petId: string;
+  food: TrialFoodSelection;
+  /** Defaults to today. Injected only so tests and the FR-11 sheet agree on the
+   *  day being written; there is no product case for a caller choosing a
+   *  different one, and a PAST value would be the retroactive rewrite above. */
+  allowedFrom?: string;
+  now?: Date;
+}): Promise<string> {
+  const at = params.now ?? new Date();
+  const row = buildTrialFoodRow({
+    id: uuid(),
+    trialId: params.trialId,
+    petId: params.petId,
+    food: params.food,
+    role: permittedRoleForFood(params.food.food_type),
+    allowedFrom: params.allowedFrom ?? toLocalDayKey(at),
+    now: at.toISOString(),
+  });
+
+  await getDb().runAsync(TRIAL_FOOD_INSERT_SQL, trialFoodInsertParams(row));
+
+  notifyTrialChanged();
+
+  // Fire-and-forget, same contract as `startDietTrial`: offline the row stays
+  // queued at `synced = 0` and the next cycle picks it up. The parent trial
+  // landed long ago, so this is the child pass alone — there is no ordering
+  // hazard to respect here.
+  syncPendingDietTrialFoods().catch((err) =>
+    console.warn('[dietTrialSetup] add-trial-food sync failed (queued):', err),
+  );
+
+  return row.id;
+}
+
 /**
  * Write the trial + its allowed set locally, then kick a flush.
  *
@@ -680,16 +828,7 @@ export async function startDietTrial(input: StartTrialInput): Promise<string> {
     );
 
     for (const f of rows.foods) {
-      await db.runAsync(
-        `INSERT INTO diet_trial_foods
-           (id, diet_trial_id, pet_id, food_item_id, role, food_label, allowed_from,
-            created_at, updated_at, synced, sync_error)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL)`,
-        [
-          f.id, f.diet_trial_id, f.pet_id, f.food_item_id, f.role, f.food_label,
-          f.allowed_from, f.created_at, f.updated_at,
-        ],
-      );
+      await db.runAsync(TRIAL_FOOD_INSERT_SQL, trialFoodInsertParams(f));
     }
   });
 
