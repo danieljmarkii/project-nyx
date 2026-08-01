@@ -701,7 +701,7 @@ const styles = StyleSheet.create({
   },
   sheetSub: {
     fontSize: theme.textSM,
-    lineHeight: 20,
+    lineHeight: theme.lineHeightBody,
     color: theme.colorTextSecondary,
     marginBottom: theme.space1,
   },
@@ -833,7 +833,7 @@ const styles = StyleSheet.create({
   },
   consent: {
     fontSize: theme.textSM,
-    lineHeight: 20,
+    lineHeight: theme.lineHeightBody,
     color: theme.colorTextSecondary,
     backgroundColor: theme.colorNeutralLight,
     borderRadius: theme.radiusSmall,

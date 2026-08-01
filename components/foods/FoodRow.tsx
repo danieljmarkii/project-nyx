@@ -211,7 +211,7 @@ const styles = StyleSheet.create({
     fontSize: theme.textMD,
     fontWeight: theme.weightMedium,
     color: theme.colorTextPrimary,
-    lineHeight: 20,
+    lineHeight: theme.lineHeightBody,
   },
   // Per-pet intake annotation, below the product name. Sentence-case secondary
   // text — distinct from the all-caps tracked tertiary format eyebrow above the

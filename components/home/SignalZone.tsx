@@ -162,7 +162,7 @@ const styles = StyleSheet.create({
     fontSize: theme.textSM,
     fontWeight: theme.weightMedium,
     color: theme.colorTextPrimary,
-    lineHeight: 20,
+    lineHeight: theme.lineHeightBody,
     // Match the single-text states' bottom spacing so the two-line (action) variant
     // doesn't sit tighter against the card edge (code-review nit).
     marginBottom: theme.space2,
@@ -198,7 +198,7 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: theme.textSM,
     color: theme.colorTextPrimary,
-    lineHeight: 20,
+    lineHeight: theme.lineHeightBody,
     opacity: 0.65,
   },
 });

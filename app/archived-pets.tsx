@@ -170,7 +170,7 @@ const styles = StyleSheet.create({
   subtitle: {
     fontSize: theme.textSM,
     color: theme.colorTextSecondary,
-    lineHeight: 20,
+    lineHeight: theme.lineHeightBody,
     marginTop: theme.space1,
     marginBottom: theme.space3,
   },
@@ -180,7 +180,7 @@ const styles = StyleSheet.create({
   emptyText: {
     fontSize: theme.textSM,
     color: theme.colorTextSecondary,
-    lineHeight: 20,
+    lineHeight: theme.lineHeightBody,
   },
   petRow: {
     flexDirection: 'row',
