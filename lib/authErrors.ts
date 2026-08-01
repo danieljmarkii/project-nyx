@@ -79,6 +79,21 @@ export function isEmailNotConfirmed(error: AuthErrorLike): boolean {
   return messageText(error).includes('email not confirmed');
 }
 
+// Wrong email/password. On the change-password screen (B-280 PR 3) this is the
+// "that's not your current password" case: the re-check is a `signInWithPassword`
+// (Supabase has no verify-only endpoint), and a mismatch comes back as
+// invalid_credentials. Exported so the screen can render it inline on the
+// current-password field rather than as an alert — the same code/message pair the
+// `authErrorCopy` switch already keys on, factored out so both stay in step.
+// Deliberately does NOT weave in the account email: this predicate is the *client*
+// side of the enumeration posture (D2), so its callers must not disclose whether
+// an address is registered.
+export function isInvalidCredentials(error: AuthErrorLike): boolean {
+  if (!error) return false;
+  if (error.code === 'invalid_credentials') return true;
+  return messageText(error).includes('invalid login credentials');
+}
+
 export function isRateLimited(error: AuthErrorLike): boolean {
   if (!error) return false;
   if (

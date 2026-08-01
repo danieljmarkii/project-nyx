@@ -1,6 +1,7 @@
 import {
   authErrorCopy,
   isEmailNotConfirmed,
+  isInvalidCredentials,
   isOffline,
   isRateLimited,
   retryAfterSeconds,
@@ -25,6 +26,23 @@ describe('isEmailNotConfirmed', () => {
   it('does not match an unrelated failure', () => {
     expect(isEmailNotConfirmed({ code: 'invalid_credentials' })).toBe(false);
     expect(isEmailNotConfirmed(null)).toBe(false);
+  });
+});
+
+describe('isInvalidCredentials', () => {
+  it('matches the modern error code', () => {
+    expect(isInvalidCredentials({ code: 'invalid_credentials' })).toBe(true);
+  });
+
+  it('matches the legacy message text when no code is present', () => {
+    // What a wrong current password returns from the change-password re-check.
+    expect(isInvalidCredentials({ message: 'Invalid login credentials' })).toBe(true);
+  });
+
+  it('does not match an unrelated failure', () => {
+    expect(isInvalidCredentials({ code: 'email_not_confirmed' })).toBe(false);
+    expect(isInvalidCredentials({ message: 'Network request failed' })).toBe(false);
+    expect(isInvalidCredentials(null)).toBe(false);
   });
 });
 
