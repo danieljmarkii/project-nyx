@@ -47,8 +47,8 @@ describe('DocumentKindSheet — busy wiring', () => {
 // one portal produce a byte-identical sheet; the filename B-546 put on the library
 // row is the disambiguator, and this sheet was the one surface that withheld it.
 describe('NameDocumentSheet — the which-document identifier', () => {
-  it('shows the filename when one is passed', () => {
-    const { getByText } = render(
+  it('shows the filename under a "File name" lead-in when one is passed', () => {
+    const { getByText, getByLabelText } = render(
       <NameDocumentSheet
         visible
         initialTitle="Document — Jul 14"
@@ -59,6 +59,10 @@ describe('NameDocumentSheet — the which-document identifier', () => {
       />,
     );
     expect(getByText('CBC-Pixel-2026-07-14.pdf')).toBeTruthy();
+    // The lead-in that stops the grey box reading as a prefilled value.
+    expect(getByText('File name')).toBeTruthy();
+    // Spoken as one labelled node, not a raw filename mid-sheet (VoiceOver).
+    expect(getByLabelText('File name, CBC-Pixel-2026-07-14.pdf')).toBeTruthy();
   });
 
   it('shows no identifier when the document arrived without a filename', () => {

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity } from 'react-native';
+import { Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Check } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
@@ -70,11 +70,22 @@ export function NameDocumentSheet({
           library row is: head-truncation eats the extension and tail-truncation
           eats the distinguishing stem, and this string exists to separate
           "CBC-Pixel-…" from "Chem-Pixel-…". Sits above the field as context, not as
-          the value — the owner types their own name below it. */}
+          the value — the owner types their own name below it.
+
+          The "File name" lead-in is pm-feature-review's catch: a rounded box of
+          text directly above an empty input is the exact idiom for a prefilled
+          value or a tappable chip, and this is neither. The label turns "what's
+          this grey thing?" into a statement. Spoken as one labelled node so
+          VoiceOver reaches "File name, CBC-…" rather than an unpronounceable raw
+          filename mid-sheet — the same care the library row takes by voicing the
+          filename last. */}
       {fileLabel ? (
-        <Text style={styles.nameFileTag} numberOfLines={1} ellipsizeMode="middle">
-          {fileLabel}
-        </Text>
+        <View style={styles.nameFileTag} accessible accessibilityLabel={`File name, ${fileLabel}`}>
+          <Text style={styles.nameFileTagLabel}>File name</Text>
+          <Text style={styles.nameFileTagValue} numberOfLines={1} ellipsizeMode="middle">
+            {fileLabel}
+          </Text>
+        </View>
       ) : null}
       <TextField
         value={value}
@@ -328,13 +339,26 @@ const styles = StyleSheet.create({
   },
   // The "which document" identifier (B-588): a quiet full-width tag, so a long
   // filename truncates in the middle rather than growing the sheet. Subordinate to
-  // the field it sits above — it is context, not the thing being edited.
+  // the field it sits above — it is context, not the thing being edited. A row of
+  // [label][value] so the label carries the "this is a filename" meaning and the
+  // value keeps the room it needs to middle-truncate.
   nameFileTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.space1,
     marginTop: theme.space2,
     paddingHorizontal: theme.space2,
     paddingVertical: theme.space1,
     borderRadius: theme.radiusSmall,
     backgroundColor: theme.colorSurfaceSubtle,
+  },
+  nameFileTagLabel: {
+    fontSize: theme.textXS,
+    fontWeight: theme.weightSemibold,
+    color: theme.colorTextTertiary,
+  },
+  nameFileTagValue: {
+    flex: 1,
     fontSize: theme.textXS,
     color: theme.colorTextTertiary,
   },

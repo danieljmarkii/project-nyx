@@ -24,15 +24,17 @@ const baseCopy: SavedMomentCopy = {
 };
 
 describe('DocumentSavedMoment — the Name-it gate (B-589)', () => {
-  it('offers "Name it" for a single saved document', () => {
-    const { getByText } = render(
+  it('offers "Name it" for a single saved document, with no name-later cue', () => {
+    const { getByText, queryByText } = render(
       <DocumentSavedMoment copy={baseCopy} onName={() => {}} onDone={() => {}} />,
     );
     expect(getByText('Name it')).toBeTruthy();
     expect(getByText('Done')).toBeTruthy();
+    // The single-doc path teaches naming via the button, so it needs no text cue.
+    expect(queryByText('You can name each one later.')).toBeNull();
   });
 
-  it('drops "Name it" for a multi-document save, keeping Done as the only exit', () => {
+  it('drops "Name it" for a multi-document save but points forward to naming', () => {
     const { queryByText, getByText } = render(
       <DocumentSavedMoment
         copy={{ ...baseCopy, cardSub: '2 documents', multiDocument: true }}
@@ -42,6 +44,9 @@ describe('DocumentSavedMoment — the Name-it gate (B-589)', () => {
     );
     expect(queryByText('Name it')).toBeNull();
     expect(getByText('Done')).toBeTruthy();
+    // The forward-looking cue that keeps the multi-doc saver from being told nothing
+    // about naming (Principle 5, pm-feature-review).
+    expect(getByText('You can name each one later.')).toBeTruthy();
   });
 
   it('keeps "Name it" for one multi-PAGE document — it is still one nameable document', () => {
