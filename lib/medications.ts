@@ -1271,6 +1271,40 @@ export function canSaveRegimen(v: { drugName: string }): boolean {
   return v.drugName.trim().length > 0;
 }
 
+// ── B-618 §5 — the entry form's course-length → the two denomination columns ─────
+// AddMedicationModal's course-length controls are a mode (Ongoing / Set an end), a
+// unit (days / doses), and a raw number field. This resolves them to the exactly-one-
+// denomination write. Extracted here — not inlined in formValues() — so the two
+// load-bearing rules are pinned by a unit test rather than living as modal-local
+// state assembly (the same "invariant is a test, not a comment" stance the rest of
+// this module takes):
+//
+//   1. AT MOST ONE denomination is non-null. Both columns branch on the SAME `unit`,
+//      so a two-unit row is UNREPRESENTABLE from this form — the client half of the
+//      DB's medications_one_duration_denomination CHECK, satisfied by construction
+//      (the CHECK is the backstop, never the thing the owner trips).
+//   2. A BLANK / ZERO / non-integer field, or an Ongoing course, writes BOTH null —
+//      "Set an end" with no number never fakes a course (the same rule the pre-B-618
+//      target_duration_days path already enforced). Only a positive integer counts.
+//
+// The field text is digit-stripped upstream (onChangeText), so `value` is digits or
+// empty; parseInt('') → NaN → Number.isFinite false → null, and '0' → 0 → not >0 →
+// null. Nothing else here needs to know about days vs doses — the unit only picks
+// which column the single resolved number lands in.
+export function resolveDurationColumns(params: {
+  mode: 'ongoing' | 'fixed';
+  unit: 'days' | 'doses';
+  value: string;
+}): { target_duration_days: number | null; target_duration_doses: number | null } {
+  const parsed = parseInt(params.value, 10);
+  const n =
+    params.mode === 'fixed' && Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+  return {
+    target_duration_days: n != null && params.unit === 'days' ? n : null,
+    target_duration_doses: n != null && params.unit === 'doses' ? n : null,
+  };
+}
+
 // ── PR 8 double-dose detection (§6.4 "a double-dose is a flag, not normalized") ──
 // B-135. The PR 7 compliance card counts adherence BUCKETS only (AdherenceTally, no
 // per-dose times), so it structurally can't see two doses landing too close together;
