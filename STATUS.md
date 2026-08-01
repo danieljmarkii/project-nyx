@@ -172,7 +172,7 @@ Spec `docs/nyx-medication-logging-requirements.md` (§12 = 10-PR plan). Model = 
 
 Carry-forwards: B-122/123 satisfied; B-131 honored; B-128(b) defense-at-rest trigger (own schema PR); open sub-decisions B-132 (library delete), B-133 (`is_critical` owner toggle — PM call); **B-160** (med-details helper chips + copy — ✅ shipped #236); **B-171 + B-172** (dose-card copy — ✅ shipped #485: `drugDisplayName` gives the completion card the owner's word for the drug (brand-preferred, PM ruling (b)); `doseAdherencePrompt` restates a pre-lit adherence state with the correction named instead of re-asking, while in-doubt / unset / **unrated-vehicle combo** still ask. No default or threshold changed. `adversarial-reviewer` FAILed the first cut on two real breaks — both fixed: the serve-time combo assumed-`given` now keeps the question, and the brand-first reorder of the ROW surfaces was **reverted** to **B-522**, which needs a Dr. Chen call because the shared leading generic is the only cue for a duplicate active ingredient that `getDoubleDoseFlag` can't catch).
 
-### B-614 Medication strip on Home — **spec build-ready (v1.0); all three PM calls ruled; M0 is the first build commit**
+### B-614 Medication strip on Home — **M0+M1 shipped (#525/#524, #534); M2–M5 remain**
 Spec `docs/nyx-med-strip-requirements.md` **v1.0** (2026-07-31) + design-locked round-2 mock `docs/culprit-med-strip-mockups.html`. Closes the gap the PM hit on TestFlight: an active medication lives only on the Pet tab, so the wedge owner — sent home with a 14-day course — never sees it on the surface they actually open. `TrialStrip`'s job, for meds.
 
 **Rulings (PM, 2026-07-31):** **D1 = C** (context *and* a one-tap) · **D2** ad-hoc tolerant (renders from doses alone — the PM's own account has 2 regimens, 0 with a duration) · **D3** one card per med, no ranking.
@@ -182,7 +182,7 @@ Spec `docs/nyx-med-strip-requirements.md` **v1.0** (2026-07-31) + design-locked 
 | PR | What | Status |
 |---|---|---|
 | M0 | **B-441** — `regimenDaysElapsed` → `lib/utils.localDayIndexOf`, with the zone tests | ✅ shipped #525 (read) + #524 (write half) |
-| M1 | `lib/medStrip.ts` — the pure resolver (`resolveMedStrips`), confirmability gate, withholding set | 🔨 this session |
+| M1 | `lib/medStrip.ts` — the pure resolver (`resolveMedStrips`), confirmability gate, withholding set | ✅ shipped #534 |
 | M2 | `components/home/MedStrip.tsx` + Home wiring below `TrialStrip` | ⬜ |
 | M3 | The one-tap confirm write path (reuses `insertMedicationDose`) | ⬜ |
 | M4 | Collapse rule + the multi-med fold | ⬜ |
