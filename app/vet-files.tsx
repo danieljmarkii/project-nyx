@@ -444,12 +444,11 @@ export default function VetFilesScreen() {
   }
 
   async function handleKind(kind: VetDocumentKind) {
-    // `saving` doubles as the re-entrancy guard: ChipGroup carries no disabled
-    // state (and adding one to a shared primitive is wider than this pass), so a
-    // second tap while the first write is in flight would otherwise queue a
-    // second write and a second `load()`. Making the chips visibly busy is a
-    // ChipGroup change — filed rather than bolted on here.
-    if (!typing || saving) return;
+    // Re-entrancy is now the ChipGroup's job: the sheet passes `busy={saving}`, so
+    // while this write is in flight the chips are disabled and a second tap fires
+    // nothing (B-555). `saving` still drives that busy state; this guard only keeps
+    // TypeScript honest about `typing` being non-null.
+    if (!typing) return;
     setSaving(true);
     try {
       await setVetDocumentKind(typing.groupId, kind);
@@ -650,6 +649,7 @@ export default function VetFilesScreen() {
         current={typing?.kind ?? 'other'}
         onCancel={() => setTyping(null)}
         onSelect={handleKind}
+        busy={saving}
       />
 
       <RecentlyDeletedSheet
