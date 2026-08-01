@@ -338,6 +338,12 @@ export const COLUMN_UPGRADES: readonly ColumnUpgrade[] = [
   // B-156 slices B/C — the dose vehicle and the combo link (migrations 022/023).
   { table: 'medication_administrations', column: 'how_given', type: 'TEXT' },
   { table: 'medication_administrations', column: 'paired_event_id', type: 'TEXT' },
+  // B-618 / migration 049 — a fixed course denominated in DOSES, the sibling of
+  // target_duration_days. `medications` predates this build, so CREATE TABLE IF NOT
+  // EXISTS cannot add the column to an already-installed device — only this can.
+  // Nullable, no default: every pre-049 regimen is days- or ongoing-denominated and
+  // NULL is the honest value for all of them (no backfill).
+  { table: 'medications', column: 'target_duration_doses', type: 'INTEGER' },
   // B-289 / migration 038 — capture-surface provenance. The NOT NULL DEFAULT 'app'
   // is a true backfill: every pre-widget local row was written by the app.
   { table: 'events', column: 'logged_via', type: "TEXT NOT NULL DEFAULT 'app'" },

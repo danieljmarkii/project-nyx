@@ -311,7 +311,8 @@ export default function ProfileScreen() {
         .from('medications')
         .select(
           'id, pet_id, medication_item_id, drug_name, dose_amount, route, doses_per_day, ' +
-          'schedule_notes, indication, prescribed_by, started_at, target_duration_days, status, ended_at',
+          'schedule_notes, indication, prescribed_by, started_at, target_duration_days, ' +
+          'target_duration_doses, status, ended_at',
         )
         .eq('pet_id', activePet.id)
         .eq('status', 'active')
@@ -532,6 +533,7 @@ export default function ProfileScreen() {
       doses_per_day: reg.doses_per_day, schedule_notes: reg.schedule_notes,
       indication: reg.indication, prescribed_by: reg.prescribed_by,
       started_at: reg.started_at, target_duration_days: reg.target_duration_days,
+      target_duration_doses: reg.target_duration_doses, // B-618 — carried so an edit round-trips the unit (PR 3 renders it)
       status: reg.status, ended_at: reg.ended_at,
     });
     setMedicationModalVisible(true);
@@ -940,6 +942,19 @@ export default function ProfileScreen() {
               ...(trialAllowedSet.status === 'ready'
                 ? { view_allowed_foods: () => router.push('/trial-foods') }
                 : {}),
+              // B-616 PR 4 (§2.6) — the destination B-475 was filed for. The
+              // resolver has declared this action since PR 4 of B-417 and emits it
+              // only when `offDiet > 0`, so it really is handler-only: the card
+              // decides whether there is anything to drill into, and this line
+              // decides where the drill-in goes.
+              //
+              // UNCONDITIONAL, unlike the allowed-set link above. That one needs a
+              // hydrated allowed set to have anything to show; this one needs the
+              // exposure facts, which the card has already read to draw the count
+              // it is offering — a link the card only draws over a non-zero count
+              // cannot land on a screen with nothing on it for a reason the card
+              // could have known.
+              view_exposures: () => router.push('/trial-exposures'),
             }}
             onManage={() => setStartTrialVisible(true)}
           />

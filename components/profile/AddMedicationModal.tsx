@@ -48,6 +48,7 @@ export interface Regimen {
   prescribed_by: string | null;
   started_at: string;
   target_duration_days: number | null;
+  target_duration_doses: number | null; // B-618 — the doses-denominated sibling (migration 049); entry UI is PR 3
   status: 'active' | 'completed' | 'stopped';
   ended_at: string | null;
 }
@@ -220,6 +221,13 @@ export function AddMedicationModal({
         durationMode === 'fixed' && Number.isFinite(parsedDuration) && parsedDuration > 0
           ? parsedDuration
           : null,
+      // B-618 — the doses unit is not yet selectable from this form (the days|doses
+      // ChipGroup is PR 3, §5), so a regimen entered here is always days- or
+      // ongoing-denominated and doses stays null. Wiring the write path now (PR 2)
+      // keeps the entry PR to pure UI. This preserves the DB's one-denomination
+      // invariant by construction: targetDurationDays and targetDurationDoses can
+      // never both be set from this form until PR 3 makes them mutually exclusive.
+      targetDurationDoses: null,
     };
   }
 

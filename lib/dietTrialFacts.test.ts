@@ -725,3 +725,104 @@ describe('arrangementParams', () => {
     db.close();
   });
 });
+
+// B-616 PR 4 — `loadTrialPredicateFacts`, the read the exposures screen shares
+// with the card.
+//
+// It is tested directly because its THREE ANSWERS are three different facts and
+// the screen renders each one differently: `null` (this pet has no trial),
+// `facts: null` (a trial whose record could not be read), and a rejection (the
+// trial row itself could not be read). Collapsing any pair of them is how an
+// unreadable record renders as a clean one — and until this PR the loader
+// returned the same `null` for "no trial" and for a thrown read, so a transient
+// SQLite failure said "Biscuit isn't on a diet trial right now" on a screen the
+// owner reached from a live trial's own card.
+describe('loadTrialPredicateFacts — three answers, held apart', () => {
+  const TRIAL_ROW = {
+    id: 'trial-1',
+    started_at: '2026-07-03',
+    target_duration_days: 56,
+    status: 'active',
+    ended_at: null,
+    stopped_reason: null,
+    outcome: null,
+    indication: 'skin',
+    food_label: 'Royal Canin Duck',
+  };
+
+  async function loadWith(db: {
+    getFirstAsync: jest.Mock;
+    getAllAsync: jest.Mock;
+  }) {
+    jest.resetModules();
+    jest.doMock('./db', () => ({ getDb: () => db }));
+    jest.doMock('./analytics', () => ({
+      getIntakeDecline: jest.fn().mockResolvedValue({ status: 'none', flags: [] }),
+    }));
+    jest.doMock('./trialContaminant', () => ({
+      loadTrialProteinContext: jest.fn().mockResolvedValue(null),
+      trialDietNote: jest.fn(),
+    }));
+    const mod = require('./dietTrialFacts') as typeof import('./dietTrialFacts');
+    return mod;
+  }
+
+  const PET_ARG = { id: 'pet-1', name: 'Biscuit', species: 'dog' as const };
+
+  it('returns null when the pet genuinely has no trial', async () => {
+    const mod = await loadWith({
+      getFirstAsync: jest.fn().mockResolvedValue(null),
+      getAllAsync: jest.fn().mockResolvedValue([]),
+    });
+    await expect(mod.loadTrialPredicateFacts(PET_ARG)).resolves.toBeNull();
+  });
+
+  // A FAILED READ IS NOT THE FACT "NO TRIAL". It propagates, and each caller
+  // answers it in its own register: the card falls back to its trial-less state
+  // (unchanged behaviour), the exposures screen says it could not read the record.
+  it('rejects when the trial row could not be read', async () => {
+    const boom = jest.fn().mockRejectedValue(new Error('database is locked'));
+    const mod = await loadWith({ getFirstAsync: boom, getAllAsync: jest.fn() });
+    await expect(mod.loadTrialPredicateFacts(PET_ARG)).rejects.toThrow('database is locked');
+  });
+
+  it('leaves the card on its trial-less input when that read fails', async () => {
+    const boom = jest.fn().mockRejectedValue(new Error('database is locked'));
+    const mod = await loadWith({ getFirstAsync: boom, getAllAsync: jest.fn() });
+    const input = await mod.loadDietTrialFacts({ pet: PET_ARG });
+    expect(input.trial).toBeNull();
+    expect(input.exposures).toBeUndefined();
+  });
+
+  // The trial exists and one of the four predicate inputs did not read. Facts go
+  // null ENTIRELY rather than computing over a partial record — an empty allowed
+  // set would classify every feeding of the prescribed diet as off-diet.
+  it('returns the trial with null facts when a predicate input cannot be read', async () => {
+    const mod = await loadWith({
+      getFirstAsync: jest.fn().mockResolvedValue(TRIAL_ROW),
+      getAllAsync: jest.fn().mockImplementation((sql: string) =>
+        sql.includes('diet_trial_foods')
+          ? Promise.reject(new Error('no such table'))
+          : Promise.resolve([]),
+      ),
+    });
+    const core = await mod.loadTrialPredicateFacts(PET_ARG);
+    expect(core).not.toBeNull();
+    expect(core?.trial.id).toBe('trial-1');
+    expect(core?.facts).toBeNull();
+  });
+
+  it('carries the refusal token the claim gate keys on', async () => {
+    const mod = await loadWith({
+      getFirstAsync: jest.fn().mockResolvedValue({
+        ...TRIAL_ROW,
+        status: 'abandoned',
+        ended_at: '2026-07-20',
+        stopped_reason: 'refused',
+      }),
+      getAllAsync: jest.fn().mockResolvedValue([]),
+    });
+    const core = await mod.loadTrialPredicateFacts(PET_ARG);
+    expect(core?.stoppedForRefusal).toBe(true);
+  });
+});
