@@ -9,6 +9,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { theme } from '../../constants/theme';
 import { WhorlSpinner } from '../../components/brand/WhorlSpinner';
 import { Card } from '../../components/ui/Card';
+import { EmptyState } from '../../components/ui/EmptyState';
 import { PrimaryButton } from '../../components/ui/PrimaryButton';
 import { Badge } from '../../components/ui/Badge';
 import { Divider } from '../../components/ui/Divider';
@@ -46,8 +47,9 @@ import { dayKeyToLocalDate, petPronouns, toLocalDayKey } from '../../lib/utils';
 import { Pet } from '../../store/petStore';
 import {
   MEDICATION_ROUTE_OPTIONS, computeRegimenCompliance, regimenComplianceLine,
-  regimenFlagLine, attributeDosesToRegimens, regimenDaysElapsed,
+  regimenFlagLine, attributeDosesToRegimens, regimenDaysElapsed, doseCourseProgress,
   type AdherenceTally, type RegimenCompliance, type AttributableDose,
+  type DoseCourseProgress,
 } from '../../lib/medications';
 
 const PET_PHOTO_BUCKET = 'nyx-pet-photos';
@@ -61,6 +63,10 @@ interface RegimenDisplay extends Regimen {
   compliance: RegimenCompliance;
   complianceLine: string;
   flagLine: string | null;
+  // B-618 — non-null only for a doses-denominated fixed course (target_duration_doses
+  // set). Carries the "Dose {n} of {target}" line + its bar fraction; when null the
+  // card renders the days/ongoing path unchanged.
+  doseCourse: DoseCourseProgress | null;
 }
 
 const EMPTY_TALLY = (): AdherenceTally => ({ given: 0, partial: 0, missed: 0, refused: 0, unrated: 0 });
@@ -87,6 +93,16 @@ function buildRegimenDisplay(reg: Regimen, tally: AdherenceTally): RegimenDispla
     compliance,
     complianceLine: regimenComplianceLine(compliance),
     flagLine: regimenFlagLine(tally),
+    // B-618 §6 — a doses course drives the count line + bar off dosesTowardTarget,
+    // independent of the day math. Exactly one of target_duration_days /
+    // target_duration_doses is ever set (DB constraint, migration 049), so this
+    // never competes with the "Day X of Y" path on the same row. The `> 0` guard
+    // (not just `!= null`) means a corrupt/legacy local row with a 0 target — the
+    // local SQLite mirror does not enforce the server CHECK — degrades to the
+    // ongoing "Started …" path instead of rendering "Dose n of 0".
+    doseCourse: reg.target_duration_doses != null && reg.target_duration_doses > 0
+      ? doseCourseProgress(tally, reg.target_duration_doses)
+      : null,
   };
 }
 
@@ -639,9 +655,11 @@ export default function ProfileScreen() {
   if (!activePet) {
     return (
       <SafeAreaView style={styles.container}>
-        <View style={styles.emptyState}>
-          <Text style={styles.emptyStateText}>No pet profile found.</Text>
-        </View>
+        <EmptyState
+          align="fill"
+          title="No pet profile yet"
+          body="Add a pet and their profile will show up here."
+        />
       </SafeAreaView>
     );
   }
@@ -714,7 +732,7 @@ export default function ProfileScreen() {
             )}
             {photoUploading && (
               <View style={styles.photoOverlay}>
-                <WhorlSpinner size="md" tint="#fff" />
+                <WhorlSpinner size="md" tint={theme.colorTextOnDark} />
               </View>
             )}
           </TouchableOpacity>
@@ -845,23 +863,50 @@ export default function ProfileScreen() {
                   <Divider style={styles.conditionDivider} />
                   <Text style={styles.medName}>{reg.drug_name}</Text>
                   {meta ? <Text style={styles.medMeta}>{meta}</Text> : null}
-                  <Text style={styles.medDays}>
-                    {/* "Day X of Y" only while the course is within its planned
-                        window; once it's run past target_duration (still active —
-                        owner hasn't ended it) the "of Y" is nonsense ("Day 30 of
-                        7"), so fall back to the ongoing "Started …" format. */}
-                    {/* `daysElapsed != null` is load-bearing, not defensive: a bare
-                        `null <= 14` is TRUE in JS, so dropping it renders
-                        "Day null of 14" on the one row whose date we could not read. */}
-                    {reg.daysElapsed != null && reg.target_duration_days != null
-                     && reg.daysElapsed <= reg.target_duration_days
-                      ? `Day ${reg.daysElapsed} of ${reg.target_duration_days}`
-                      : `Started ${formatRegimenStart(reg.started_at)}`}
-                  </Text>
-                  {reg.compliance.percent != null && (
-                    <View style={styles.progressTrack}>
-                      <View style={[styles.progressBar, { width: `${reg.compliance.percent}%` }]} />
+                  {reg.doseCourse ? (
+                    /* B-618 §6 — a doses course states its progress in DOSES, not
+                       days: "Dose {n} of {target}" (or, past target, "28 of 28
+                       doses · 2 more logged"). The count line and its n/target bar
+                       are ONE grouped unit (doseCourseGroup, tight gap) so the bar
+                       reads as course progress — bound to the number directly above
+                       it — and NOT as the adherence % on the compliance line below.
+                       (pm-feature-review B-618: a bar reads as the nearest
+                       percentage, and the bar's number is NOT that percentage; the
+                       group binds it to the dose line so the two can't be confused.)
+                       The bar caps at full past target (cap-the-bar / disclose-the-
+                       extras / render-no-error), renders from "Dose 0 of N" onward,
+                       and never falls back to "Started …". D7: no completion word is
+                       reachable through this line. */
+                    <View style={styles.doseCourseGroup}>
+                      <Text style={styles.medDays}>{reg.doseCourse.line}</Text>
+                      <View style={styles.progressTrack}>
+                        <View style={[styles.progressBar, { width: `${Math.round(reg.doseCourse.barFraction * 100)}%` }]} />
+                      </View>
                     </View>
+                  ) : (
+                    <>
+                      <Text style={styles.medDays}>
+                        {/* "Day X of Y" only while the course is within its planned
+                            window; once it's run past target_duration (still active —
+                            owner hasn't ended it) the "of Y" is nonsense ("Day 30 of
+                            7"), so fall back to the ongoing "Started …" format.
+                            `daysElapsed != null` is load-bearing, not defensive: a bare
+                            `null <= 14` is TRUE in JS, so dropping it renders
+                            "Day null of 14" on the one row whose date we could not read. */}
+                        {reg.daysElapsed != null && reg.target_duration_days != null
+                         && reg.daysElapsed <= reg.target_duration_days
+                          ? `Day ${reg.daysElapsed} of ${reg.target_duration_days}`
+                          : `Started ${formatRegimenStart(reg.started_at)}`}
+                      </Text>
+                      {/* Days/ongoing: the bar encodes ADHERENCE %, so it belongs
+                          directly above the compliance line (same number) and needs
+                          no grouping; shown only once something is logged. */}
+                      {reg.compliance.percent != null && (
+                        <View style={styles.progressTrack}>
+                          <View style={[styles.progressBar, { width: `${reg.compliance.percent}%` }]} />
+                        </View>
+                      )}
+                    </>
                   )}
                   <Text style={styles.medComplianceLine}>{reg.complianceLine}</Text>
                   {reg.flagLine && (
@@ -1129,13 +1174,13 @@ const styles = StyleSheet.create({
   photoInitials: {
     fontSize: 38,
     fontWeight: theme.weightMedium,
-    color: '#fff',
+    color: theme.colorTextOnDark,
   },
   photoOverlay: {
     position: 'absolute',
     top: 0, left: 0, right: 0, bottom: 0,
     borderRadius: 56,
-    backgroundColor: 'rgba(0,0,0,0.45)',
+    backgroundColor: theme.colorScrimPhoto,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1298,6 +1343,15 @@ const styles = StyleSheet.create({
     fontWeight: theme.weightMedium,
   },
 
+  // B-618 — the dose-course count line + its n/target bar are bound into one unit so
+  // the bar reads as course progress, not as the adherence % that follows on the next
+  // line. The internal gap (2) is deliberately TIGHTER than medRow's own gap (4), so
+  // the bar sits closer to the "Dose n of target" line above it than to the compliance
+  // line below (pm-feature-review B-618 — bar semantics; final spacing is a device-pass
+  // tuning, the binding is the point).
+  doseCourseGroup: {
+    gap: 2,
+  },
   // The MEDICATION regimen bar. Its width is bound to dose adherence, which is a
   // real ratio of discrete events; the diet-trial card's bar is bound to
   // `getDietTrialProgress().fraction` and lives in components/profile/DietTrialCard.
@@ -1378,15 +1432,6 @@ const styles = StyleSheet.create({
   },
 
   // ── Empty / bottom ──
-  emptyState: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  emptyStateText: {
-    fontSize: theme.textMD,
-    color: theme.colorTextSecondary,
-  },
   bottomPad: {
     height: theme.space5,
   },

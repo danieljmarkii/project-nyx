@@ -19,6 +19,12 @@ interface Props {
   // Announced as the radio group's label (e.g. "Form", "Route", "Format"); pairs
   // with the on-screen SectionLabel above the group.
   accessibilityLabel?: string;
+  // Temporarily inert — no chip fires and the whole group dims. For a group that
+  // WRITES on select (the Vet Files kind filter), this is the "busy" window
+  // between the tap and the re-render, so a second tap can't queue a duplicate
+  // write. Replaces the hand-rolled re-entrancy guard the call site used to need
+  // because the primitive offered no busy state (B-555).
+  disabled?: boolean;
   style?: StyleProp<ViewStyle>;
 }
 
@@ -44,6 +50,7 @@ export function ChipGroup({
   allowDeselect = true,
   variant = 'filled',
   accessibilityLabel,
+  disabled = false,
   style,
 }: Props) {
   return (
@@ -51,6 +58,7 @@ export function ChipGroup({
       style={[styles.wrap, style]}
       accessibilityRole="radiogroup"
       accessibilityLabel={accessibilityLabel}
+      accessibilityState={{ disabled }}
     >
       {options.map((o) => (
         <FilterChip
@@ -59,7 +67,12 @@ export function ChipGroup({
           active={value === o.value}
           variant={variant}
           accessibilityRole="radio"
-          onPress={() => onChange(allowDeselect && value === o.value ? null : o.value)}
+          disabled={disabled}
+          // Each chip is `disabled` too, so the press is blocked at the touchable;
+          // this guard is belt-and-suspenders for any programmatic activation.
+          onPress={() =>
+            disabled ? undefined : onChange(allowDeselect && value === o.value ? null : o.value)
+          }
         />
       ))}
     </View>

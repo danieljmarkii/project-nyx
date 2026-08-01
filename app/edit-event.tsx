@@ -964,7 +964,7 @@ const styles = StyleSheet.create({
     color: theme.colorTextPrimary,
   },
   foodItemNameSelected: {
-    color: '#fff',
+    color: theme.colorTextOnDark,
   },
   foodItemBrand: {
     fontSize: 13,
@@ -972,11 +972,11 @@ const styles = StyleSheet.create({
     marginRight: theme.space1,
   },
   foodItemBrandSelected: {
-    color: 'rgba(255,255,255,0.7)',
+    color: theme.colorTextOnDarkSubtle,
   },
   foodItemCheck: {
     fontSize: 15,
-    color: '#fff',
+    color: theme.colorTextOnDark,
   },
   notesInput: {
     fontSize: 15,

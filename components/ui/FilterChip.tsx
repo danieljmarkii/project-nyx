@@ -16,14 +16,21 @@ interface Props {
   // multi-select group (MultiChipGroup) passes 'checkbox'. Left undefined for
   // filter/toggle usages, which keep TouchableOpacity's button role.
   accessibilityRole?: AccessibilityRole;
+  // Temporarily inert — blocks the press, dims the chip, and announces the
+  // disabled state. Used while a chip-tap's write is in flight (B-555), so a
+  // second tap can't queue a duplicate write before the first re-renders.
+  disabled?: boolean;
 }
 
-export function FilterChip({ label, active, onPress, variant = 'default', accessibilityRole }: Props) {
+export function FilterChip({
+  label, active, onPress, variant = 'default', accessibilityRole, disabled = false,
+}: Props) {
   const set = STYLE_BY_VARIANT[variant];
   return (
     <TouchableOpacity
-      style={[set.base, active && set.activeContainer]}
+      style={[set.base, active && set.activeContainer, disabled && styles.disabled]}
       onPress={onPress}
+      disabled={disabled}
       activeOpacity={0.7}
       accessibilityRole={accessibilityRole}
       // The active state is announced for EVERY chip, not just the ones a group
@@ -34,7 +41,9 @@ export function FilterChip({ label, active, onPress, variant = 'default', access
       // A checkbox announces `checked`, not `selected` — TalkBack reads a
       // checkbox with no checked state as "not checked" regardless of selection.
       accessibilityState={
-        accessibilityRole === 'checkbox' ? { checked: active } : { selected: active }
+        accessibilityRole === 'checkbox'
+          ? { checked: active, disabled }
+          : { selected: active, disabled }
       }
       // Chips are ~32pt tall; expand the tap zone vertically to the 44pt floor
       // (Designer anti-pattern: sub-44pt targets need hitSlop). Vertical-only so
@@ -129,3 +138,11 @@ const STYLE_BY_VARIANT = {
   filled: filledVariant,
   onDark: onDarkVariant,
 };
+
+// Variant-agnostic dim for the temporarily-inert state — layered over whichever
+// variant's container/label so the busy look is one rule, not three.
+const styles = StyleSheet.create({
+  disabled: {
+    opacity: 0.4,
+  },
+});

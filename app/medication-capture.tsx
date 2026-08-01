@@ -703,7 +703,7 @@ function StrengthGate({
         hitSlop={8}
       >
         <View style={[styles.checkbox, confirmed && styles.checkboxChecked]}>
-          {confirmed && <Check size={16} color="#fff" strokeWidth={3} />}
+          {confirmed && <Check size={16} color={theme.colorTextOnDark} strokeWidth={3} />}
         </View>
         <Text style={styles.confirmCheckText}>The strength matches the label</Text>
       </TouchableOpacity>

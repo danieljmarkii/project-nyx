@@ -1,4 +1,5 @@
 export { Card } from './Card';
+export { EmptyState } from './EmptyState';
 export { Header } from './Header';
 export { SectionLabel } from './SectionLabel';
 export { PrimaryButton } from './PrimaryButton';

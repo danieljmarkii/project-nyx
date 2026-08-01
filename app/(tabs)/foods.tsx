@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, router } from 'expo-router';
 import { Plus, ChevronDown, ChevronRight } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
+import { EmptyState } from '../../components/ui';
 import { FoodRow } from '../../components/foods/FoodRow';
 import { ArchivedFoodRow } from '../../components/foods/ArchivedFoodRow';
 import {
@@ -375,26 +376,16 @@ export default function FoodsScreen() {
       ) : null}
 
       {showError ? (
-        <View style={styles.centered}>
-          <Text style={styles.stateTitle}>Couldn't load your foods</Text>
-          <Text style={styles.stateBody}>Something went wrong loading your library.</Text>
-          <TouchableOpacity
-            style={styles.retry}
-            onPress={load}
-            activeOpacity={0.7}
-            accessibilityRole="button"
-          >
-            <Text style={styles.retryText}>Try again</Text>
-          </TouchableOpacity>
-        </View>
+        <EmptyState
+          title="Couldn't load your foods"
+          body="Something went wrong loading your library."
+          action={{ label: 'Try again', onPress: load }}
+        />
       ) : isEmpty ? (
-        <View style={styles.centered}>
-          <Text style={styles.stateTitle}>Your food library starts here</Text>
-          <Text style={styles.stateBody}>
-            Tap Add food to start your library, or snap one when you log food —
-            either way it shows up here, ready to reuse.
-          </Text>
-        </View>
+        <EmptyState
+          title="Your food library starts here"
+          body="Tap Add food to start your library, or snap one when you log food — either way it shows up here, ready to reuse."
+        />
       ) : (
         <ScrollView
           style={styles.scroll}
@@ -407,13 +398,11 @@ export default function FoodsScreen() {
               a browse surface its top inch every day. Opens §2.2 (PR 2's screen). */}
           <FoodsTrialStrip model={trialStrip} onPress={() => router.push('/trial-foods')} />
           {onlyArchived ? (
-            <View style={styles.onlyArchivedNote}>
-              <Text style={styles.stateTitle}>Your library is empty right now</Text>
-              <Text style={styles.stateBody}>
-                Everything's been removed. Restore a food below to feed it again, or tap
-                Add food to start fresh.
-              </Text>
-            </View>
+            <EmptyState
+              style={styles.onlyArchivedNote}
+              title="Your library is empty right now"
+              body="Everything's been removed. Restore a food below to feed it again, or tap Add food to start fresh."
+            />
           ) : null}
           {favoriteRows.length > 0 ? (
             <FavoritesShelf
@@ -720,11 +709,12 @@ const styles = StyleSheet.create({
   },
   // The library-empty-but-has-archived note (B-005 PR 3). A calm, forward-looking
   // block above the (auto-opened) Archived section — a designed in-between state,
-  // not the near-blank page it would otherwise be.
+  // not the near-blank page it would otherwise be. Overrides EmptyState's inset
+  // padding: it sits INSIDE the scroll above the Archived section, so it wants the
+  // tighter in-list spacing, not the top-of-screen inset.
   onlyArchivedNote: {
     paddingHorizontal: theme.space2,
     paddingTop: theme.space2,
-    gap: theme.space1,
   },
   groupHint: {
     fontSize: theme.textXS,
@@ -757,35 +747,5 @@ const styles = StyleSheet.create({
   rowDivider: {
     borderTopWidth: 1,
     borderTopColor: theme.colorBorder,
-  },
-  // Shared by the empty and error states — a centered, calm message near the top.
-  centered: {
-    paddingHorizontal: theme.space4,
-    paddingTop: theme.space6,
-    alignItems: 'center',
-    gap: theme.space1,
-  },
-  stateTitle: {
-    fontSize: theme.textLG,
-    fontWeight: theme.weightMedium,
-    color: theme.colorNeutralDark,
-    textAlign: 'center',
-  },
-  stateBody: {
-    fontSize: theme.textMD,
-    color: theme.colorTextSecondary,
-    textAlign: 'center',
-    lineHeight: theme.lineHeightBody,
-  },
-  retry: {
-    marginTop: theme.space2,
-    minHeight: 44,
-    justifyContent: 'center',
-    paddingHorizontal: theme.space2,
-  },
-  retryText: {
-    fontSize: theme.textMD,
-    fontWeight: theme.weightMedium,
-    color: theme.colorAccent,
   },
 });

@@ -248,7 +248,7 @@ export function StoolAnalysisSection(
             activeOpacity={0.8}
           >
             {retrying
-              ? <WhorlSpinner size="sm" tint="#fff" />
+              ? <WhorlSpinner size="sm" tint={theme.colorTextOnDark} />
               : <Text style={styles.retryBtnText}>Try again</Text>}
           </TouchableOpacity>
         </View>
@@ -724,7 +724,7 @@ const styles = StyleSheet.create({
   },
   retryBtnText: {
     fontSize: theme.textMD,
-    color: '#fff',
+    color: theme.colorTextOnDark,
     fontWeight: theme.fontWeightMedium,
   },
 });

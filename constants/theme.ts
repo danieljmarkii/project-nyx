@@ -23,6 +23,7 @@ export const theme = {
   lineHeightSignal: 34, // AI Signal headline leading (26 × ~1.3, per type-signal preview)
   lineHeightBody: 22, // body/paragraph leading — app-wide default for multi-line copy
   lineHeightSM: 18, // caption/compact-row leading (textSM × ~1.35) — e.g. the cross-pet banner
+  lineHeightXS: 16, // XS-note leading (textXS × ~1.45) — the metric-card note lines (B-193)
 
   // ── Font weights ──────────────────────────────────────────────────────────
   weightRegular: '400' as const,
@@ -70,6 +71,38 @@ export const theme = {
   colorTextOnDarkMuted: 'rgba(255,255,255,0.92)', // secondary text on a dark scrim
   colorTextOnDarkSecondary: '#B4B8B4',        // dimmer body/label text on a solid dark surface
   colorScrimDark: 'rgba(0,0,0,0.55)',         // gradient/overlay scrim over a photo hero
+
+  // ── On-dark surface scale (B-066 / B-129 detokenization sweep) ─────────────
+  // Every value below already shipped as an inline literal on a KNOWN dark
+  // surface — the meal/med completion cards, the fullscreen photo viewer,
+  // dark-filled selected chips/items, the pet-photo overlay. This block moves
+  // them into the theme VERBATIM: each token is byte-identical to the literal it
+  // replaced, so the sweep is zero-behaviour-change. The alpha steps encode the
+  // subordination those surfaces already expressed (three text weights, three
+  // divider weights) and are preserved exactly rather than rationalized —
+  // collapsing near-duplicate steps would move pixels, so it's a separate,
+  // behaviour-changing pass (B-646). The primary white ink, the 0.92 muted text
+  // and the 0.55 photo scrim already live just above (colorTextOnDark /
+  // colorTextOnDarkMuted / colorScrimDark). Reusable chips that must blend over
+  // an UNKNOWN dark parent keep their translucent literals ON PURPOSE (B-168) and
+  // are deliberately absent here — a token there would assert a fixed colour the
+  // component can't promise. colorTextOnDarkSecondary (#B4B8B4, above) is the
+  // SOLID-surface sibling of these translucent-white text tokens.
+  //
+  // White text on a solid dark card, descending prominence:
+  colorTextOnDarkSubtle: 'rgba(255,255,255,0.7)',   // secondary label/row text
+  colorTextOnDarkDetail: 'rgba(255,255,255,0.75)',  // detail/body line
+  colorTextOnDarkCaption: 'rgba(255,255,255,0.65)', // caption under a dark chip
+  colorTextOnDarkFaint: 'rgba(255,255,255,0.55)',   // faintest line / inactive dot
+  // White hairlines + fills on a solid dark card:
+  colorDividerOnDark: 'rgba(255,255,255,0.15)',        // divider between card rows; also the photo-viewer secondary-button fill
+  colorDividerOnDarkFaint: 'rgba(255,255,255,0.12)',   // fainter divider (subordinate row)
+  colorDividerOnDarkFainter: 'rgba(255,255,255,0.1)',  // faintest divider
+  colorFillOnDark: 'rgba(255,255,255,0.06)',           // subtle raised fill (the check badge)
+  colorDotOnDarkInactive: 'rgba(255,255,255,0.4)',     // inactive page dot on a photo
+  // Black overlays/scrims (role-named — colorScrimDark 0.55 stays the photo hero):
+  colorScrimPhoto: 'rgba(0,0,0,0.45)',    // pet-photo "change photo" overlay
+  colorScrimBackdrop: 'rgba(0,0,0,0.4)',  // completion-card time-edit sheet backdrop
 
   // Dark premium/marketing surfaces. The onboarding paywall (B-251 PR 10) is the
   // first full solid dark screen (a premium feel leans dark). These are solid
@@ -198,6 +231,10 @@ export const theme = {
   // sub-label that hugs it (section title → hint line). Deliberately below the
   // 8pt layout grid — it's type leading, not layout rhythm.
   spaceMicro: 2,
+  // 4pt inline gap — the icon↔text micro-gap on the metric/weight cards. Sits
+  // between the 2pt type sub-grid (spaceMicro) and the 8pt layout grid, which
+  // had nothing at 4 (B-193). Half of space1.
+  space0_5: 4,
   space1: 8,
   space2: 16,
   space3: 24,

@@ -153,7 +153,7 @@ const styles = StyleSheet.create({
     letterSpacing: theme.trackingWidest,
   },
   labelOnDark: {
-    color: 'rgba(255,255,255,0.7)',
+    color: theme.colorTextOnDarkSubtle,
   },
   row: {
     flexDirection: 'row',
@@ -173,6 +173,9 @@ const styles = StyleSheet.create({
     borderColor: theme.colorBorder,
     backgroundColor: theme.colorSurface,
   },
+  // Inactive chip on an UNKNOWN dark parent: the translucent white border +
+  // label (below) stay literals on purpose (B-168) — a token would assert a
+  // fixed colour this reusable row can't promise. The ACTIVE label is the token.
   chipOnDark: {
     borderColor: 'rgba(255,255,255,0.3)',
     backgroundColor: 'transparent',
@@ -185,9 +188,9 @@ const styles = StyleSheet.create({
     color: theme.colorTextSecondary,
   },
   chipLabelOnDark: {
-    color: 'rgba(255,255,255,0.85)',
+    color: 'rgba(255,255,255,0.85)', // translucent over an unknown dark card — literal on purpose (B-168)
   },
   chipLabelActive: {
-    color: '#fff',
+    color: theme.colorTextOnDark,
   },
 });

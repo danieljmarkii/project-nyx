@@ -108,7 +108,7 @@ const styles = StyleSheet.create({
     letterSpacing: theme.trackingWidest,
   },
   labelOnDark: {
-    color: 'rgba(255,255,255,0.7)',
+    color: theme.colorTextOnDarkSubtle,
   },
   row: {
     flexDirection: 'row',
