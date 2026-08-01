@@ -1,7 +1,8 @@
 # Culprit — Food Library Trial-Awareness Requirements (B-616 + B-458 combined build)
 
-**Version:** 1.1 — BUILD-READY | **Last Updated:** 2026-07-31 | 🌱 Living
-_v1.1 (same day): §6 expanded into the full per-PR build plan — scope, files, acceptance criteria, DoD gates, and per-session kickoff prompts, on the PM's request. No product decision changed._
+**Version:** 1.2 — SHIPPED | **Last Updated:** 2026-08-01 | 🌱 Living
+_v1.2 (2026-08-01): PRs 0–4 all shipped; three PR-3 `pm-feature-review` findings ruled + closed (D9–D11 below) — the Foods-tab pet subtitle (B-626), the trial strip naming its foods rather than counting them (B-627), and the mid-trial add's vet-framing caption (B-628). Copy pack §4 updated for the two copy changes._
+_v1.1 (2026-07-31): §6 expanded into the full per-PR build plan — scope, files, acceptance criteria, DoD gates, and per-session kickoff prompts, on the PM's request. No product decision changed._
 
 **Origin:** PM dogfood feedback 2026-07-30 ("the Food library has almost no awareness of the foods eligible during the diet trial") → same-day persona session → mock round 1 (`docs/culprit-food-library-trial-mockups.html`) → PM review + rulings 2026-07-31. Session record: `docs/sessions/2026-07-31-food-library-trial-awareness.md`. Backlog: **B-616** (this track) + **B-458** (the two list screens, absorbed as the combined build's core) + **B-475** (consumed by §4.6).
 
@@ -21,6 +22,9 @@ _v1.1 (same day): §6 expanded into the full per-PR build plan — scope, files,
 | D6 | Foods-tab entry | A **trial strip** under the Foods header while a trial is active (day counter + "N foods on the trial list"), opening the allowed-set screen | Mock round 1, PM-reviewed |
 | D7 | Pet scope | The library is per-account; trials are per-pet. **All trial chrome (strip, chips, picker section, detail row) renders for the active pet context only**, and the strip names the pet when the account has >1 pet. Build-time detail: the Foods tab and picker already operate in a pet context (`getRecentFoods(petId…)`, stats); the trial reads join on that same `pet_id` | Team; PM-reviewed in mock (flagged as the open build question; resolved: pet-context-scoped) |
 | D8 | Mid-trial removal | **Out of v1.** Schema supports dated removal (`allowed_until`); no UI writes it in this track. Backlog residual on the B-616 row | Team; round 1 draws add only |
+| D9 | Foods-tab pet context (B-626) | **A persistent `{Pet}'s library` subtitle** under the Foods header, whenever there is an active pet — NOT gated on multi-pet or on a trial. Three layers of the tab are per-active-pet over a per-account library (favorites shelf, intake notes, trial chips + strip); the subtitle is the one always-visible owner for all of them, so a chip on a shared library is not ownerless and an empty trial band reads as "this pet has no trial" rather than a dropped one. The mock's screen-A subtitle, restored | PM, 2026-08-01 (PR-3 review, decision 4) |
+| D10 | Strip line names, not counts (B-627) | The Foods-tab strip's second line **names the foods** (`{lead}, and N more`, lead = the `primary_diet` row) rather than `{k} foods on the trial list`. The count pointed at the 10-second answer one tap away instead of giving it on the wedge's own surface. Truncation on long product names is the accepted cost (the strip is `numberOfLines={1}`; the full list is one tap away on §2.2) | PM, 2026-08-01 (PR-3 review, decision 1) |
+| D11 | Vet framing on the add (B-628) | **A quiet caption on the confirm sheet** (both entry points share it): *"Extras are your vet's call — Culprit just records the dates."* FR-9's vet line only rendered on §2.2's empty extras group, so the add framed legitimacy from neither entry point. This is framing, NOT a wisdom-check (D5 / Dr. Chen's mock-C note forbid "are you sure this fits the trial?" — it states whose call an extra is, never second-guesses it, never blocks, never marks off-diet). Backlog option (c); it deliberately changes both entry points | PM, 2026-08-01 (PR-3 review, decision 2) |
 
 ## §1 The rules that govern every surface here
 

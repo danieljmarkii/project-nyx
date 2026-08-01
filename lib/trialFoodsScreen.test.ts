@@ -26,6 +26,7 @@ import { getDietTrialProgress } from './analytics';
 import { buildTrialContext, type AllowedFood } from './dietTrial';
 import type { TrialAllowedSet, TrialAllowedSetTrial } from './trialAllowedSet';
 import {
+  ADD_TRIAL_FOOD_CAPTION,
   ADD_TRIAL_FOOD_ERROR,
   alreadyOnListNote,
   buildAddTrialFoodSheet,
@@ -212,6 +213,8 @@ describe('the confirm sheet (FR-11)', () => {
 
   it('states exactly three facts and offers exactly two actions', () => {
     expect(sheet.title).toBe('Add to Biscuit’s trial list?');
+    // EXACTLY three — the B-628 caption is framing, not a fourth fact, so it does
+    // not touch this list.
     expect(sheet.rows).toEqual([
       { label: 'Food', value: 'Home-prepared plain sweet potato' },
       { label: 'Joins the list', value: 'Today, Jul 12 · day 12' },
@@ -221,12 +224,21 @@ describe('the confirm sheet (FR-11)', () => {
     expect(sheet.cancelLabel).toBe('Not now');
   });
 
+  // B-628 — the sheet frames WHOSE call an extra is, from both entry points (they
+  // share this model). Legitimacy, not a wisdom-check.
+  it('carries the vet-framing caption', () => {
+    expect(sheet.caption).toBe(ADD_TRIAL_FOOD_CAPTION);
+    expect(ADD_TRIAL_FOOD_CAPTION).toBe('Extras are your vet’s call — Culprit just records the dates.');
+  });
+
   // Principle 1 and Dr. Chen's mock note, as a greppable guard: no role question,
-  // and nothing that second-guesses the vet's call.
+  // and nothing that second-guesses the vet's call — the caption included, since it
+  // is the one line here that talks about the vet at all.
   it('asks nothing — not the role, not whether this is wise', () => {
-    const joined = [sheet.title, sheet.confirmLabel, sheet.cancelLabel, ...sheet.rows.flatMap((r) => [r.label, r.value])].join(' ');
-    expect(joined).not.toMatch(/are you sure|is this|treat or|which kind|category|role/i);
-    // Exactly one question mark in the whole sheet: the title.
+    const joined = [sheet.title, sheet.caption, sheet.confirmLabel, sheet.cancelLabel, ...sheet.rows.flatMap((r) => [r.label, r.value])].join(' ');
+    expect(joined).not.toMatch(/are you sure|is this|treat or|which kind|category|\brole\b|fits the trial|should you/i);
+    // Exactly one question mark in the whole sheet: the title. The caption states,
+    // it does not ask.
     expect(joined.match(/\?/g)).toHaveLength(1);
   });
 
@@ -262,6 +274,7 @@ describe('the register (R1, §6.9)', () => {
       r.label,
       r.value,
     ]),
+    ADD_TRIAL_FOOD_CAPTION,
     alreadyOnListNote('Sweet potato'),
     noTrialLine('Biscuit'),
     ADD_TRIAL_FOOD_ERROR,

@@ -74,6 +74,13 @@ export function AddTrialFoodSheet({
             </View>
           ))}
 
+          {/* B-628 — the legitimacy line, the last thing read before deciding. It
+              names whose call an extra is (the vet's) without a wisdom-check, and
+              is deliberately quiet: framing, not a fact. */}
+          <Text style={styles.caption} testID="add-trial-food-caption">
+            {model.caption}
+          </Text>
+
           {error !== null && (
             <Text testID="add-trial-food-error" style={styles.error}>
               {error}
@@ -159,6 +166,15 @@ const styles = StyleSheet.create({
     lineHeight: theme.textSM * 1.4,
     color: theme.colorTextPrimary,
     textAlign: 'right',
+  },
+  // B-628's legitimacy caption. Quiet (secondary, not primary) so it frames
+  // without competing with the three facts above it — a supporting line, in the
+  // register of the §2.2 disclosure, not a warning.
+  caption: {
+    fontSize: theme.textSM,
+    lineHeight: theme.textSM * 1.4,
+    color: theme.colorTextSecondary,
+    marginTop: theme.space2,
   },
   error: {
     fontSize: theme.textSM,
