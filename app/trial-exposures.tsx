@@ -48,7 +48,7 @@ export default function TrialExposuresScreen() {
   const state = useTrialFacts();
   const [open, setOpen] = useState<TrialExposureRow | null>(null);
 
-  const model = state.status === 'ready' ? buildTrialExposuresScreen(state.facts) : null;
+  const model = state.status === 'ready' ? buildTrialExposuresScreen(petName, state.facts) : null;
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>

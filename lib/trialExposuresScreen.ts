@@ -84,9 +84,12 @@ export const TRIAL_EXPOSURES_FOOTER =
  * link is drawn off a count that can be stale by the time the screen renders, and
  * because a feeding can be soft-deleted after the fact.
  */
-export const TRIAL_EXPOSURES_EMPTY =
-  'Feedings outside the trial diet are listed here, with dates, as they’re logged. ' +
-  'Culprit only ever sees what’s been logged.';
+export function trialExposuresEmptyLine(petName: string): string {
+  return (
+    `Feedings outside ${petName}’s trial diet are listed here, with dates, as they’re ` +
+    'logged. Culprit only ever sees what’s been logged.'
+  );
+}
 
 /** Rendered instead of the list when the trial ended while the owner was standing
  *  on this screen — the same shape `trialFoodsScreen.noTrialLine` uses, for the
@@ -239,6 +242,7 @@ function dayKeyFromIndex(index: number): string {
  * claim this track can make, and it would be a fabrication rather than a floor.
  */
 export function buildTrialExposuresScreen(
+  petName: string,
   facts: TrialFacts | null,
 ): TrialExposuresScreenModel | null {
   if (!facts || !facts.range) return null;
@@ -277,7 +281,7 @@ export function buildTrialExposuresScreen(
     groups,
     notes: blindSpots(facts),
     footer: TRIAL_EXPOSURES_FOOTER,
-    empty: empty ? TRIAL_EXPOSURES_EMPTY : null,
+    empty: empty ? trialExposuresEmptyLine(petName) : null,
   };
 }
 

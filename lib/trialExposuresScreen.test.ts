@@ -8,7 +8,7 @@
 import {
   buildTrialExposuresScreen,
   blindSpots,
-  TRIAL_EXPOSURES_EMPTY,
+  trialExposuresEmptyLine,
   TRIAL_EXPOSURES_FOOTER,
   TRIAL_EXPOSURES_GROUP_FEEDINGS,
   TRIAL_EXPOSURES_GROUP_ORAL,
@@ -129,7 +129,7 @@ function facts(over: {
 }
 
 function build(over?: Parameters<typeof facts>[0]): TrialExposuresScreenModel {
-  const model = buildTrialExposuresScreen(facts(over));
+  const model = buildTrialExposuresScreen('Rex', facts(over));
   if (model === null) throw new Error('expected a model');
   return model;
 }
@@ -263,7 +263,7 @@ describe('the window it reports over is the EVIDENCE window', () => {
     // The clip is real — this is the trap being avoided, asserted rather than
     // assumed.
     expect(f.range?.endDayIndex).toBeLessThan(f.exposureRange!.endDayIndex);
-    expect(buildTrialExposuresScreen(f)?.subtitle).toContain('Aug 15');
+    expect(buildTrialExposuresScreen('Rex', f)?.subtitle).toContain('Aug 15');
   });
 });
 
@@ -271,29 +271,62 @@ describe('the window it reports over is the EVIDENCE window', () => {
 
 describe('G2 — no negative claim, at any coverage, in any state', () => {
   const FORBIDDEN = [
+    // G2 — the negative claim about the world, deleted from the product.
     /\bno off-diet\b/i,
-    /\bnothing (off|outside)\b/i,
+    /\bnothing (off|outside|else)\b/i,
     /\ball\b[^.]*\bmatched\b/i,
     /\bclean\b/i,
     /\bstayed on\b/i,
     /\bperfect\b/i,
+    // The `clinical-guardrails` reassurance vocabulary (Pattern 1/8). This screen
+    // is not an AI read, but the asymmetry is the same one and the skill's rule is
+    // that it lives in an ASSERTION rather than a comment: absence of a logged
+    // exposure is not evidence the trial is going well, so no string here may say
+    // the pet or the record is fine.
+    /\b(fine|okay|ok|healthy|great|nothing to worry)\b/i,
     // §6.9 — nothing here scores the owner, in either direction.
     /\bwell done\b/i,
     /\bgood job\b/i,
     /\byou (didn|did not|slipped|failed)/i,
+    // §6.7 — record and continue. No copy may imply the trial is void.
+    /\b(ruined|spoil|invalid|start over|restart|void)/i,
+    // nyx-voice: no exclamation marks anywhere in the app.
+    /!/,
   ];
 
+  const BOWL: TrialArrangement = {
+    foodItemId: 'graze',
+    foodKey: 'friskiescrunch',
+    label: 'Friskies Crunch',
+    startedAt: '2026-07-02',
+    endedAt: null,
+  };
+  const ANON = feeding({ eventId: 'anon', occurredAt: at('2026-07-11') });
+
+  // EVERY reachable state of this screen, because Pattern 8's rule is that the
+  // sweep covers every string the module can emit — not the three it emits on the
+  // happy path.
   const scenarios: [string, TrialExposuresScreenModel][] = [
     ['a record with exposures', build({ doses: [CHEWABLE] })],
     ['a record with none', build({ feedings: [ON_DIET] })],
+    ['a record with nothing logged at all', build({ feedings: [] })],
+    ['a free-fed bowl off the list', build({ arrangements: [BOWL] })],
+    ['feedings that named no food', build({ feedings: [ON_DIET, BISCUIT, ANON] })],
     [
-      'a record with nothing logged at all',
-      build({ feedings: [] }),
+      'every disclosure at once',
+      build({ feedings: [ON_DIET, BISCUIT, SALMON, ANON], doses: [CHEWABLE], arrangements: [BOWL] }),
     ],
   ];
 
   it.each(scenarios)('%s says nothing negative about the world', (_name, model) => {
     for (const s of allStrings(model)) {
+      for (const pattern of FORBIDDEN) expect(s).not.toMatch(pattern);
+    }
+  });
+
+  // The two strings no scenario above can reach, swept by the same rules.
+  it('holds on the strings rendered outside a model', () => {
+    for (const s of [noTrialExposuresLine('Rex'), trialExposuresEmptyLine('Rex')]) {
       for (const pattern of FORBIDDEN) expect(s).not.toMatch(pattern);
     }
   });
@@ -304,7 +337,9 @@ describe('G2 — no negative claim, at any coverage, in any state', () => {
     const model = build({ feedings: [ON_DIET] });
     expect(model.subtitle).toBeNull();
     expect(model.groups).toEqual([]);
-    expect(model.empty).toBe(TRIAL_EXPOSURES_EMPTY);
+    expect(model.empty).toBe(trialExposuresEmptyLine('Rex'));
+    // Pattern 1 — the pet is the subject, by name.
+    expect(model.empty).toContain('Rex’s trial diet');
     expect(allStrings(model).join(' ')).not.toMatch(/\b0\b/);
   });
 
@@ -363,7 +398,7 @@ describe('blind spots', () => {
 
 describe('an unreadable record is never an empty one', () => {
   it('returns null when the facts could not be read', () => {
-    expect(buildTrialExposuresScreen(null)).toBeNull();
+    expect(buildTrialExposuresScreen('Rex', null)).toBeNull();
   });
 
   it('returns null when the module could not establish a range', () => {
@@ -376,7 +411,7 @@ describe('an unreadable record is never an empty one', () => {
       nowMs: NOW,
     });
     expect(degenerate.range).toBeNull();
-    expect(buildTrialExposuresScreen(degenerate)).toBeNull();
+    expect(buildTrialExposuresScreen('Rex', degenerate)).toBeNull();
   });
 
   it('says where the record went when the trial has ended', () => {
