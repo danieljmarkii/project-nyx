@@ -69,6 +69,18 @@ Actions stay SHA-pinned, `permissions: contents: read` is unchanged, and no exis
 - 3742/3742 cases, 167 suites — **count unchanged before and after**. Nothing was deleted, skipped, or loosened to get green.
 - Each originally-failing case confirmed failing *before* the change under a named zone.
 
+## The convention, written down
+
+Recorded in **CLAUDE.md § Code Conventions** (Tier 1 — the manual is updated in the moment, not in a session summary): the rule, the two idioms and when each applies, the same-time-of-day case for a value read two ways, the CI job that enforces it, and the counterintuitive finding that offset extremes are not a superset. Also carries the instruction not to "fix" a red timezone leg by pinning it back to UTC — which is the tempting wrong move the next time it goes red.
+
+## Two things that went sideways, recorded because they will recur
+
+**1. A `synchronize` event never reached Actions.** Commit `7802523` got three check suites (claude, supabase, cloudflare) and **no Actions suite at all** — so the PR head sat with zero CI, which under a required-checks ruleset is unmergeable. Closing and reopening the PR did not force one either. Merging `main` produced a normal run immediately, and every push after that behaved. So: a one-off dropped event, not a workflow defect — but the diagnostic is worth keeping, because "no Actions run" looks identical to "queued" from the PR page. Check `/commits/<sha>/check-suites`: if other apps' suites exist and Actions' does not, the event was dropped, and a new commit is the reliable remedy.
+
+**2. The backlog ID race, exactly as B-435 predicted.** This session filed its new row as B-632 against a working copy whose max was 631. By the time `main` was merged, a sibling had landed **B-632 through B-639**. Resolved by the first-lands-keeps rule: `main`'s rows kept the IDs, this session's row was renumbered to **B-640**, and its three cross-references (the test comment, this record, the PR body) were updated by attribution rather than blind replace — `lib/trialExposuresScreen.ts` legitimately references the *other* B-632 and was left alone. The duplicate-ID check was re-run after every merge from `main`, per the wrap rule; it is clean.
+
+`main` moved three times during the session (#528/#530/#531, then #533). Merged each time and re-swept the zones on each, since a sibling's new suites are exactly what would turn the new leg red on arrival — 3742 → 3792 → 3801 cases, all zone-clean.
+
 ## PM action item
 
-- [ ] Add `App (jest, non-UTC timezones)` to the `main` ruleset's required-checks list. A new job is not a required check until it is named there — until then it reports but does not gate, which is the same gap B-390 closed for the first two jobs.
+- [ ] Add `App (jest, non-UTC timezones)` to the `main` ruleset's required-checks list. A new job is not a required check until it is named there — until then it reports but does not gate, which is the same gap B-390 closed for the first two jobs. **Do this *after* #532 merges, not before:** adding it while the workflow is absent from `main` gives every open sibling PR a required check that cannot report, blocking them for no benefit.
