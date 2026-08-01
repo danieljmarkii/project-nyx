@@ -269,7 +269,13 @@ export function FoodPicker({
     // precise cross-pet leak D7 forbids. No match, no section.
     if (activePetId !== petId) return [];
     if (trialSet.status !== 'ready') return [];
-    const onList = library
+    // THE SCOPE CHIP GOVERNS THIS SECTION TOO. Reading raw `library` here put an
+    // unfiltered shelf above filtered results — the phantom-match hazard this file
+    // already names and fixes for `searching`, arriving through the other filter.
+    // Tapping "Treats" and still seeing the prescribed dry food pinned at the top
+    // is the picker answering a question the owner did not ask. When the scope
+    // empties the section, it disappears rather than falling back to everything.
+    const onList = filterFoodsByScope(library, scope)
       .map((f) => ({
         food: f,
         hit: trialListMembership(trialSet, {
@@ -288,7 +294,7 @@ export function FoodPicker({
         a.hit.role === b.hit.role ? 0 : a.hit.role === 'primary_diet' ? -1 : 1,
       )
       .map((e) => e.food);
-  }, [library, trialSet, selecting, activePetId, petId]);
+  }, [library, scope, trialSet, selecting, activePetId, petId]);
 
   return (
     <View style={styles.root}>

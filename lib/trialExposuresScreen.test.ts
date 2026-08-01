@@ -9,7 +9,9 @@ import {
   buildTrialExposuresScreen,
   blindSpots,
   trialExposuresEmptyLine,
+  EXPOSURE_REASON_TITLE,
   TRIAL_EXPOSURES_FOOTER,
+  TRIAL_EXPOSURES_UNREADABLE,
   TRIAL_EXPOSURES_GROUP_FEEDINGS,
   TRIAL_EXPOSURES_GROUP_ORAL,
   noTrialExposuresLine,
@@ -214,8 +216,16 @@ describe('the list', () => {
     expect(rows[1].meta).toContain('Jul 14');
   });
 
-  it('drops the group headers when there is only one group', () => {
+  it('drops the group header when feedings are the only group', () => {
     expect(build().groups.map((g) => g.title)).toEqual([null]);
+  });
+
+  // …but the oral-route group NEVER drops its own. A prescribed dose sitting bare
+  // under the words "Outside the trial diet" reads as the app calling a dose the
+  // owner was told to give a transgression.
+  it('keeps the oral-route header even when doses are the only group', () => {
+    const model = build({ feedings: [ON_DIET], doses: [CHEWABLE] });
+    expect(model.groups.map((g) => g.title)).toEqual([TRIAL_EXPOSURES_GROUP_ORAL]);
   });
 
   it('names both groups once a dose is in the record', () => {
@@ -324,9 +334,16 @@ describe('G2 — no negative claim, at any coverage, in any state', () => {
     }
   });
 
-  // The two strings no scenario above can reach, swept by the same rules.
+  // The strings no scenario above can reach, swept by the same rules — including
+  // the read-failure line, which is the one place a degradation could quietly
+  // become "couldn't read it, so there's probably nothing to see".
   it('holds on the strings rendered outside a model', () => {
-    for (const s of [noTrialExposuresLine('Rex'), trialExposuresEmptyLine('Rex')]) {
+    for (const s of [
+      noTrialExposuresLine('Rex'),
+      trialExposuresEmptyLine('Rex'),
+      TRIAL_EXPOSURES_UNREADABLE,
+      EXPOSURE_REASON_TITLE,
+    ]) {
       for (const pattern of FORBIDDEN) expect(s).not.toMatch(pattern);
     }
   });
@@ -418,5 +435,19 @@ describe('an unreadable record is never an empty one', () => {
     const line = noTrialExposuresLine('Rex');
     expect(line).toContain('Rex');
     expect(line).not.toMatch(/\bclean\b|\bno off-diet\b/i);
+  });
+});
+
+// ── The question must not contradict its own answer ────────────────────────
+
+describe('the reason sheet’s title', () => {
+  // The round-4 mock reads "Why this is on the list". B-616 then gave "the list"
+  // a second meaning (the ALLOWED set — "On the trial list"), and the sheet's own
+  // answer is `explainVerdict`'s "…isn't on the trial's list", so the locked title
+  // now reads as a contradiction of its own body. The answer carries clinical
+  // rulings and does not move; the question is this module's chrome and does.
+  it('does not promise to explain why something is “on the list”', () => {
+    expect(EXPOSURE_REASON_TITLE).not.toMatch(/on the list/i);
+    expect(EXPOSURE_REASON_TITLE).toBe('Why Culprit recorded this');
   });
 });

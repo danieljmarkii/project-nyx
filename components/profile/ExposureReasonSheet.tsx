@@ -22,7 +22,10 @@ import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-nati
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { theme } from '../../constants/theme';
 import { PrimaryButton } from '../ui/PrimaryButton';
-import type { TrialExposureRow } from '../../lib/trialExposuresScreen';
+import {
+  EXPOSURE_REASON_TITLE,
+  type TrialExposureRow,
+} from '../../lib/trialExposuresScreen';
 
 interface Props {
   row: TrialExposureRow;
@@ -41,7 +44,7 @@ export function ExposureReasonSheet({ row, onClose }: Props) {
       <SafeAreaView edges={['bottom']} style={styles.sheetWrap}>
         <View style={styles.sheet} testID="exposure-reason-sheet">
           <View style={styles.grabber} />
-          <Text style={styles.title}>Why this is on the list</Text>
+          <Text style={styles.title}>{EXPOSURE_REASON_TITLE}</Text>
           {/* The row's own identity, so the sheet can never be read against the
               wrong feeding — the list is chronological and two rows can carry the
               same food on different days. */}

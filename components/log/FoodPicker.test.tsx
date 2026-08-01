@@ -358,6 +358,28 @@ describe('FoodPicker — the pinned "On the trial list" section', () => {
     }
   });
 
+  // The scope chip is the picker's OTHER filter, and the same rule governs it:
+  // an unfiltered section above filtered results reads as phantom matches. Tapping
+  // "Treats" and still seeing the prescribed dry food pinned at the top is the
+  // picker answering a question the owner did not ask.
+  it('is filtered by the scope chip, and disappears when the scope empties it', async () => {
+    const { findByText, getAllByRole, queryByText, getAllByLabelText } = renderPicker();
+    await findByText('On the trial list');
+
+    // The scope chips are the radios in the pinned bar, in FOOD_SCOPE_OPTIONS
+    // order: All / Meals / Treats / Wet / Dry.
+    const chips = getAllByRole('radio');
+
+    // Both on-list foods are meals in this fixture, so Treats empties the section.
+    fireEvent.press(chips[2]);
+    expect(queryByText('On the trial list')).toBeNull();
+
+    // Meals keeps it — and the section holds only what the scope admits.
+    fireEvent.press(chips[1]);
+    expect(queryByText('On the trial list')).toBeTruthy();
+    expect(getAllByLabelText('Tiki Cat Chicken').length).toBeGreaterThanOrEqual(2);
+  });
+
   it('steps aside in search-results mode, like every other browse zone', async () => {
     const { findByText, getByPlaceholderText, queryByText } = renderPicker();
     await findByText('On the trial list');

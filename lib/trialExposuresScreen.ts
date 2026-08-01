@@ -101,6 +101,35 @@ export function noTrialExposuresLine(petName: string): string {
   );
 }
 
+/**
+ * The reason sheet's title.
+ *
+ * ⚠️ IT IS A DELIBERATE DEVIATION FROM THE ROUND-4 MOCK, which reads *"Why this is
+ * on the list"*, and the PM may revert it in one line. The mock was locked before
+ * B-616 introduced "On the trial list" for the ALLOWED set — so by the time an
+ * owner reaches this sheet, "the list" has been used for three different things
+ * inside one tap-path, and the sheet's own answer is `explainVerdict`'s *"…isn't
+ * on the trial's list."* The first-pass reading is a flat contradiction: it says
+ * it will explain why this is on the list, and answers that it is not on the list.
+ *
+ * The answer is untouchable (it carries clinical rulings). The question is this
+ * module's own chrome, so the question moves.
+ */
+export const EXPOSURE_REASON_TITLE = 'Why Culprit recorded this';
+
+/**
+ * The record could not be read — `nyx-voice` Pattern 8 and `clinical-guardrails`
+ * Pattern 5, which is the one register this screen was missing.
+ *
+ * It names the cause plainly, points at a next action, and — the part that matters
+ * on a health surface — does not degrade into reassurance. "Couldn't read it, so
+ * there's probably nothing to see" is the exact failure both patterns forbid, and
+ * an empty list would say precisely that without using the words.
+ */
+export const TRIAL_EXPOSURES_UNREADABLE =
+  'Culprit couldn’t read this trial’s record just now. Nothing has been lost — ' +
+  'this screen just couldn’t load it. Try again in a moment.';
+
 export const TRIAL_EXPOSURES_GROUP_FEEDINGS = 'Feedings';
 /** Rung 4 (C3). Its own group because A DOSE IS NOT A FEEDING: the module returns
  *  the oral route separately and never folds it into the feedings ratio, since
@@ -247,11 +276,21 @@ export function buildTrialExposuresScreen(
 ): TrialExposuresScreenModel | null {
   if (!facts || !facts.range) return null;
 
-  // NEWEST FIRST. The module sorts ascending because the report reads
-  // chronologically; an owner opening this from "4 logged feedings were outside
-  // the trial diet" is looking for the most recent one, which is the one they can
-  // still do something about.
-  const feedings = [...facts.exposures.items].reverse().map(feedingRow);
+  // NEWEST FIRST — an owner opening this from "4 logged feedings were outside the
+  // trial diet" is looking for the most recent one, which is the one they can
+  // still do something about. (The report reads the same rows chronologically,
+  // which is why the module hands them over ascending.)
+  //
+  // SORTED HERE RATHER THAN REVERSED. `computeTrialFacts` does sort `items`
+  // ascending today, so a `.reverse()` is correct — and it is correct only for as
+  // long as that holds, in another module, with nothing pointing back here. This
+  // list is what an owner checks a count against and what a vet is offered at the
+  // recheck; ordering it explicitly costs one comparator and removes a silent
+  // dependency on a sort that no caller owns. The doses group below already did
+  // this, and the asymmetry between two groups in one function was the tell.
+  const feedings = [...facts.exposures.items]
+    .sort((a, b) => b.occurredAt.localeCompare(a.occurredAt))
+    .map(feedingRow);
   const doses = [...facts.oralRoute]
     .sort((a, b) => b.occurredAt.localeCompare(a.occurredAt))
     .map(doseRow);
@@ -259,10 +298,19 @@ export function buildTrialExposuresScreen(
   const groups: TrialExposureGroup[] = [];
   const bothPresent = feedings.length > 0 && doses.length > 0;
   if (feedings.length > 0) {
+    // Unlabelled when it is the only group — a single list of feedings under a
+    // screen titled "Outside the trial diet" needs no second header.
     groups.push({ title: bothPresent ? TRIAL_EXPOSURES_GROUP_FEEDINGS : null, rows: feedings });
   }
   if (doses.length > 0) {
-    groups.push({ title: bothPresent ? TRIAL_EXPOSURES_GROUP_ORAL : null, rows: doses });
+    // THE ORAL-ROUTE GROUP ALWAYS KEEPS ITS HEADER, and this is a rule rather
+    // than symmetry. Dropping it in the doses-only case leaves a prescribed
+    // medication sitting bare under the words "Outside the trial diet" — which
+    // reads as the app calling a dose the owner was told to give a transgression,
+    // on the record their vet reads. It is unreachable today (the card draws the
+    // link only over a non-zero FEEDING count), and that is a reachability
+    // accident rather than a decision, so the rule holds here instead.
+    groups.push({ title: TRIAL_EXPOSURES_GROUP_ORAL, rows: doses });
   }
 
   const empty = groups.length === 0;

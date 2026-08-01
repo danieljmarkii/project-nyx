@@ -39,6 +39,9 @@ import { usePetStore } from '../store/petStore';
 import {
   buildTrialExposuresScreen,
   noTrialExposuresLine,
+  EXPOSURE_REASON_TITLE,
+  TRIAL_EXPOSURES_TITLE,
+  TRIAL_EXPOSURES_UNREADABLE,
   type TrialExposureRow,
 } from '../lib/trialExposuresScreen';
 
@@ -50,9 +53,14 @@ export default function TrialExposuresScreen() {
 
   const model = state.status === 'ready' ? buildTrialExposuresScreen(petName, state.facts) : null;
 
+  // A `ready` trial whose model came back null is a record that could not be read
+  // or computed — the same fact as a thrown read, reached one layer down, and it
+  // gets the same designed line rather than a spinner that never resolves.
+  const unreadable = state.status === 'unreadable' || (state.status === 'ready' && model === null);
+
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
-      <Header title="Diet trial" leading="back" onLeadingPress={() => router.back()} />
+      <Header title={TRIAL_EXPOSURES_TITLE} leading="back" onLeadingPress={() => router.back()} />
 
       {model === null ? (
         <View style={styles.centered}>
@@ -60,13 +68,19 @@ export default function TrialExposuresScreen() {
             <Text testID="trial-exposures-no-trial" style={styles.quiet}>
               {noTrialExposuresLine(petName)}
             </Text>
+          ) : unreadable ? (
+            <Text testID="trial-exposures-unreadable" style={styles.quiet}>
+              {TRIAL_EXPOSURES_UNREADABLE}
+            </Text>
           ) : (
+            // The ONLY spinner state: still reading, which resolves on its own.
             <WhorlSpinner size="md" ground="day" />
           )}
         </View>
       ) : (
         <ScrollView contentContainerStyle={styles.body}>
-          <Text style={styles.title}>{model.title}</Text>
+          {/* The nav header carries the title (it is the words the owner tapped),
+              so the body opens on the fact rather than repeating it. */}
           {model.subtitle !== null && (
             <Text testID="trial-exposures-subtitle" style={styles.subtitle}>
               {model.subtitle}
@@ -97,7 +111,7 @@ export default function TrialExposuresScreen() {
                   activeOpacity={0.7}
                   accessibilityRole={row.reason !== null ? 'button' : undefined}
                   accessibilityLabel={
-                    row.reason !== null ? `${row.label}. ${row.meta}. Why this is on the list` : undefined
+                    row.reason !== null ? `${row.label}. ${row.meta}. ${EXPOSURE_REASON_TITLE}` : undefined
                   }
                 >
                   <View style={styles.rowText}>

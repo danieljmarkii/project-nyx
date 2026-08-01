@@ -18,8 +18,15 @@ import { usePetStore } from '../store/petStore';
 import { useSyncStore } from '../store/syncStore';
 
 export type TrialFactsState =
-  /** Still reading, or a read that failed. RENDER NOTHING — never an empty list. */
+  /** STILL READING. Render a spinner — and only here, because this is the only
+   *  state that resolves on its own. */
   | { status: 'unknown' }
+  /** THE READ FAILED. Held apart from `unknown` because a spinner is an honest
+   *  rendering of "not yet" and a dead end for "not ever": the screen owes the
+   *  owner a cause and a next action (`nyx-voice` Pattern 8), and it may never
+   *  degrade into an empty list, which would say "nothing happened" about a
+   *  record nobody could read. */
+  | { status: 'unreadable' }
   /** No card-eligible trial for this pet (none, or one whose grace window closed). */
   | { status: 'no_trial' }
   /** A trial exists. `facts` is null when its record could not be read or computed —
@@ -59,9 +66,11 @@ export function useTrialFacts(): TrialFactsState {
       })
       .catch((e) => {
         // Never a fabricated "no trial": that would render the designed
-        // no-trial state over a live trial whose read simply threw.
+        // no-trial state over a live trial whose read simply threw. And never a
+        // silent return to `unknown` either — that is the spinner, and a spinner
+        // over a permanent failure is a screen that never answers.
         console.error('[useTrialFacts] load failed:', e);
-        if (!cancelled) setState({ petId, value: { status: 'unknown' } });
+        if (!cancelled) setState({ petId, value: { status: 'unreadable' } });
       });
     return () => {
       cancelled = true;

@@ -193,8 +193,15 @@ export async function loadTrialPredicateFacts(
   try {
     row = await getDb().getFirstAsync<TrialRow>(TRIAL_FOR_CARD_SQL, [pet.id, graceFrom]);
   } catch (e) {
+    // THROWS RATHER THAN RETURNING NULL, because null here means "this pet has no
+    // trial" — a fact — and a failed read is not that fact. Collapsing the two
+    // let a transient SQLite failure render "{Pet} isn't on a diet trial right
+    // now" on a screen the owner reached from a live trial's own card. The card's
+    // behaviour is unchanged: `loadDietTrialFacts` catches this and returns its
+    // base input, which is the trial-less card it has always drawn on a failed
+    // read.
     console.error('[DietTrial] load trial failed:', e);
-    return null;
+    throw e;
   }
   if (!row) return null;
 
@@ -346,19 +353,30 @@ export async function loadDietTrialFacts(args: {
     otherPetNames: args.otherPetNames ?? [],
   };
 
-  // STARTED BEFORE THE TRIAL ROW IS KNOWN, so the two independent lanes still
-  // overlap the predicate reads exactly as they did when all six shared one
-  // `Promise.all`. Both helpers narrow their own failures to null and never
-  // reject, so an early return below abandons them without an unhandled
-  // rejection; the cost of that return is two local reads whose answers are
-  // discarded, on a pet with no trial at all.
-  const declinePromise = readIntakeDecline(pet, nowMs);
-  const standingNotePromise = readStandingNote(pet.id, pet.name);
-
-  const core = await loadTrialPredicateFacts(pet, nowMs);
+  // The trial-row read throws now (see there for why); the card's own answer to an
+  // unreadable trial is unchanged — the base input, i.e. state 0.
+  let core: TrialPredicateFacts | null;
+  try {
+    core = await loadTrialPredicateFacts(pet, nowMs);
+  } catch {
+    return base;
+  }
   if (!core) return base;
   const { trial, facts } = core;
-  const [decline, standingNote] = await Promise.all([declinePromise, standingNotePromise]);
+
+  // THE TWO INDEPENDENT LANES RUN AFTER THE TRIAL IS KNOWN TO EXIST, not beside
+  // it. An earlier cut started them eagerly to preserve the six-way `Promise.all`
+  // this function used to be, and `code-reviewer` priced it: `useDietTrial` runs on
+  // every pet switch and every hydration tick, most accounts have no active trial,
+  // and `readStandingNote` bypasses its own cache (`force: true`) — so the eager
+  // version bought overlap for the minority case by charging the majority two
+  // wasted SQLite reads on every tick. The cost of this ordering is that the two
+  // reads no longer overlap the four predicate reads for a pet that DOES have a
+  // trial; they are local reads on a screen that has already awaited four others.
+  const [decline, standingNote] = await Promise.all([
+    readIntakeDecline(pet, nowMs),
+    readStandingNote(pet.id, pet.name),
+  ]);
 
   // A NULL RANGE IS NOT A ZERO RECORD. `computeTrialFacts` returns its `base`
   // — `range: null`, `coverage: null`, `exposures` all-zero — on the two paths
