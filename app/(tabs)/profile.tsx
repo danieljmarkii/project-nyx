@@ -41,7 +41,7 @@ import { resolveTrialCard } from '../../lib/dietTrialCard';
 import { extensionDays, nextTargetDays } from '../../lib/dietTrialCompletion';
 import { extendTrial } from '../../lib/dietTrialSetup';
 import { getDietTrialProgress } from '../../lib/analytics';
-import { dayKeyToLocalDate, petPronouns } from '../../lib/utils';
+import { dayKeyToLocalDate, petPronouns, toLocalDayKey } from '../../lib/utils';
 import { Pet } from '../../store/petStore';
 import {
   MEDICATION_ROUTE_OPTIONS, computeRegimenCompliance, regimenComplianceLine,
@@ -538,7 +538,11 @@ export default function ProfileScreen() {
       // success. A regimen is "ended", never soft-deleted (migration 020).
       const { data, error } = await supabase
         .from('medications')
-        .update({ status: 'completed', ended_at: new Date().toISOString().split('T')[0] })
+        // `ended_at` is a DATE and gets the same treatment as `started_at` (B-441):
+        // `toISOString()` yields the UTC day, so a behind-UTC owner ending a course in
+        // the evening stored TOMORROW — widening the dose-attribution upper bound and
+        // the vet report's regimen span.
+        .update({ status: 'completed', ended_at: toLocalDayKey(new Date()) })
         .eq('id', id)
         .select('id');
       if (error) throw error;

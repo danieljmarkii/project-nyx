@@ -167,6 +167,36 @@ describe('B-421 — one diet-trial day counter, not four', () => {
     expect(meds).toMatch(/localDayIndexOf\(/);
   });
 
+  // The READ side above was guarded while the WRITE side stayed broken — and this
+  // suite passed the whole time. `AddMedicationModal` was still writing
+  // `startedAt.toISOString().split('T')[0]`, the UTC day, so an owner AHEAD of UTC
+  // picking "today" stored YESTERDAY permanently; `handleEndRegimen` did the same to
+  // `ended_at` fourteen lines below code the counter fix had just rewritten. A guard
+  // that covers only the direction you happened to fix certifies the other by silence
+  // — and a fixed reader fed by a broken writer is worse than neither, because the
+  // reader now trusts the skew.
+  //
+  // So these forbid the two PATTERNS, not the past sightings. The assertion above,
+  // `not.toMatch(/new Date\(reg\.started_at\)/)`, is bound to the identifier `reg`:
+  // renaming it to `r` defeats the guard without touching the bug.
+  const DATE_KEY_VIA_UTC = /\.toISOString\(\)\s*\.\s*(split\(\s*['"]T['"]\s*\)\s*\[\s*0\s*\]|slice\(\s*0\s*,\s*10\s*\))/;
+  const DATE_COL_VIA_NEW_DATE = /new Date\(\s*[A-Za-z_$][\w$.]*\.(started_at|ended_at|completed_at)\s*\)/;
+
+  const DATE_COLUMN_SURFACES = [
+    { file: 'app/(tabs)/profile.tsx', what: 'the Pet tab (counter, Started line, End-regimen write)' },
+    { file: 'components/profile/AddMedicationModal.tsx', what: 'the regimen setup modal (the WRITE path)' },
+  ];
+
+  it.each(DATE_COLUMN_SURFACES)('$what never round-trips a DATE column through UTC', ({ file }) => {
+    const code = readCode(file);
+    // Writing: a UTC day key from an instant. A DATE column is written with
+    // `toLocalDayKey`, whose components are the owner's calendar day.
+    expect(code).not.toMatch(DATE_KEY_VIA_UTC);
+    // Reading: `new Date('2026-07-31')` is UTC midnight — the PREVIOUS local day
+    // behind UTC. Stored day keys are parsed with `dayKeyToLocalDate`.
+    expect(code).not.toMatch(DATE_COL_VIA_NEW_DATE);
+  });
+
   it('the trial-facts loader DELEGATES coverage rather than keying its own day', () => {
     // This assertion is the one the previous version of itself asked for. It read:
     // "B-417 PR 5 pinned the metric in `lib/dietTrial.computeTrialFacts`, but the

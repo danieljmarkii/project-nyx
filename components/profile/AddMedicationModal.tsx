@@ -24,6 +24,7 @@ import { theme } from '../../constants/theme';
 import { WhorlSpinner } from '../brand/WhorlSpinner';
 import { supabase } from '../../lib/supabase';
 import { getLibraryMedications, PickerMedication } from '../../lib/db';
+import { dayKeyToLocalDate, toLocalDayKey } from '../../lib/utils';
 import {
   MEDICATION_ROUTE_OPTIONS, buildRegimenPayload, canSaveRegimen,
   type RegimenFormValues,
@@ -98,10 +99,6 @@ interface Props {
   onUpdated?: (regimen: Regimen) => void;
 }
 
-function todayDateOnly(): string {
-  return new Date().toISOString().split('T')[0];
-}
-
 export function AddMedicationModal({
   visible, petId, existingRegimen, onClose, onAdded, onUpdated,
 }: Props) {
@@ -140,7 +137,13 @@ export function AddMedicationModal({
       setScheduleNotes(existingRegimen.schedule_notes ?? '');
       setIndication(existingRegimen.indication ?? '');
       setPrescribedBy(existingRegimen.prescribed_by ?? '');
-      setStartedAt(existingRegimen.started_at ? new Date(existingRegimen.started_at) : new Date());
+      // `started_at` is a DATE, so it is read back through `dayKeyToLocalDate` — a
+      // bare `new Date(key)` parses UTC midnight, which for anyone BEHIND UTC seeds
+      // the picker (and the label above it) with the PREVIOUS day (B-441).
+      setStartedAt(
+        (existingRegimen.started_at ? dayKeyToLocalDate(existingRegimen.started_at) : null)
+          ?? new Date(),
+      );
       setTargetDuration(
         existingRegimen.target_duration_days != null
           ? String(existingRegimen.target_duration_days)
@@ -205,7 +208,12 @@ export function AddMedicationModal({
       scheduleNotes,
       indication,
       prescribedBy,
-      startedAt: startedAt.toISOString().split('T')[0],
+      // The DATE the owner picked, keyed from its LOCAL components (B-441). It used
+      // to be `toISOString().split('T')[0]` — the UTC day — so for anyone AHEAD of
+      // UTC, local midnight is still yesterday in UTC and picking "today" in Sydney
+      // stored YESTERDAY, permanently. #525 fixed the READER; this is the WRITER,
+      // and until both are fixed the reader is being fed skewed rows.
+      startedAt: toLocalDayKey(startedAt),
       // 'ongoing' always saves null; 'fixed' saves the entered days (still null if the
       // field's left blank/zero, so a "Set an end" with no number never fakes a course).
       targetDurationDays:
