@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-01
 
-Shipped via **#—**. Spec: `docs/nyx-food-library-trial-awareness-requirements.md` §2.1 + §2.4 (§6's PR 3, FR-1→FR-4 and FR-13→FR-15). Design authority: mock **screens A and D** in `docs/culprit-food-library-trial-mockups.html`. Built over PR 1's lib layer (#526) and reusing PR 2's confirm sheet (#527) rather than a second one. Copy pack is spec §4, verbatim.
+Shipped via **#528**. Spec: `docs/nyx-food-library-trial-awareness-requirements.md` §2.1 + §2.4 (§6's PR 3, FR-1→FR-4 and FR-13→FR-15). Design authority: mock **screens A and D** in `docs/culprit-food-library-trial-mockups.html`. Built over PR 1's lib layer (#526) and reusing PR 2's confirm sheet (#527) rather than a second one. Copy pack is spec §4, verbatim.
 
 ## What shipped
 
