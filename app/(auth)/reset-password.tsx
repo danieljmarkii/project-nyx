@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import {
   View,
   Text,
@@ -39,6 +39,11 @@ import { retryRecoveryExchange } from '../../lib/recoveryDeepLink';
 // handler wins; then a live recovery session behind the gate is the form; anything
 // else (gate armed, exchange in flight) is the calm working state.
 
+// How long the working spinner may show before it falls to the §5.6 failed state.
+// Generous — a normal exchange resolves in ~1-2s; this only catches a stalled-open
+// connection RN's fetch won't time out on, so the owner is never stranded.
+const WORKING_WATCHDOG_MS = 20_000;
+
 export default function ResetPasswordScreen() {
   const recoveryScreen = useAuthStore((s) => s.recoveryScreen);
   const session = useAuthStore((s) => s.session);
@@ -53,6 +58,24 @@ export default function ResetPasswordScreen() {
   const [submitted, setSubmitted] = useState(false);
   const [saving, setSaving] = useState(false);
   const [busy, setBusy] = useState(false);
+
+  // Watchdog: the working spinner is the one recovery state with no forward action
+  // of its own, so it must never be a dead end. `exchangeCodeForSession` makes a
+  // network call that RN's fetch does not time out, so a stalled-but-open connection
+  // could hang it. If no outcome arrives within the window, fall to the §5.6 failed
+  // state (which has Try again + Back to log in). Generous (a normal exchange is
+  // ~1-2s) and SAFE: it does not cancel the in-flight exchange — if that resolves,
+  // its outcome overrides this, and this does not fire once a session or a failure
+  // state has landed. (pm-feature-review: the one exit-less state.)
+  const working = !recoveryScreen && !(session && recoveryInProgress);
+  useEffect(() => {
+    if (!working) return;
+    const id = setTimeout(() => {
+      const s = useAuthStore.getState();
+      if (!s.session && !s.recoveryScreen) s.setRecoveryScreen('failed');
+    }, WORKING_WATCHDOG_MS);
+    return () => clearTimeout(id);
+  }, [working]);
 
   const passwordErr = submitted ? passwordError(password) : null;
   // §5.4: name the pet only if the local mirror still has it. After an FR-7 wipe it
@@ -246,7 +269,10 @@ export default function ResetPasswordScreen() {
               {busy ? (
                 <WhorlSpinner size="sm" ground="day" />
               ) : (
-                <Text style={styles.escapeText}>Not now</Text>
+                // "Cancel", not "Not now": this abandons the reset and signs the owner
+                // out to the Landing — there is no "later" to return to. The label must
+                // name the action, not imply a deferral (nyx-voice + pm-feature-review).
+                <Text style={styles.escapeText}>Cancel</Text>
               )}
             </TouchableOpacity>
             <View style={styles.grow} />

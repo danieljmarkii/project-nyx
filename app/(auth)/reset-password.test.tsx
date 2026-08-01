@@ -1,4 +1,4 @@
-import { render, fireEvent, waitFor } from '@testing-library/react-native';
+import { render, fireEvent, waitFor, act } from '@testing-library/react-native';
 import { Alert } from 'react-native';
 import * as Linking from 'expo-linking';
 import { router } from 'expo-router';
@@ -71,6 +71,23 @@ describe('ResetPasswordScreen — terminal states', () => {
     useAuthStore.setState({ recoveryInProgress: true, session: null, recoveryScreen: null });
     const utils = render(<ResetPasswordScreen />);
     expect(utils.getByTestId('reset-working')).toBeTruthy();
+  });
+
+  it('never dead-ends on the working spinner: falls to failed if the exchange stalls', () => {
+    jest.useFakeTimers();
+    try {
+      useAuthStore.setState({ recoveryInProgress: true, session: null, recoveryScreen: null });
+      const utils = render(<ResetPasswordScreen />);
+      expect(utils.getByTestId('reset-working')).toBeTruthy();
+      // A stalled exchange never resolves; the watchdog gives the one exit-less state
+      // an exit (§5.6 failed → Try again / Back to log in).
+      act(() => {
+        jest.advanceTimersByTime(20_000);
+      });
+      expect(useAuthStore.getState().recoveryScreen).toBe('failed');
+    } finally {
+      jest.useRealTimers();
+    }
   });
 });
 
