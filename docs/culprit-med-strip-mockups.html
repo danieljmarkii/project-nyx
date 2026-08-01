@@ -256,7 +256,7 @@
 
   <header class="mast">
     <p class="eyebrow">
-      <span>B-614</span><span>Round 2</span><span>2026-07-31</span>
+      <span>B-614</span><span>Round 2.1</span><span>2026-08-01</span>
       <span class="locked">Design-locked</span>
     </p>
     <h1>The medication strip on Home</h1>
@@ -361,7 +361,7 @@
             <div class="card">
               <div class="card-head"><span class="card-title">Amoxicillin · day 5 of 14</span><span class="chev">›</span></div>
               <div class="track"><div class="fill" style="width:36%"></div></div>
-              <div class="card-line">No dose logged yet today · usually 2×/day</div>
+              <div class="card-line">No dose logged yet today · usually twice a day</div>
               <span class="confirm">Log dose</span>
             </div>
           </div>
@@ -411,7 +411,7 @@
             <div class="card">
               <div class="card-head"><span class="card-title">Amoxicillin · day 5 of 14</span><span class="chev">›</span></div>
               <div class="track"><div class="fill" style="width:36%"></div></div>
-              <div class="card-line">No dose logged yet today · usually 2×/day</div>
+              <div class="card-line">No dose logged yet today · usually twice a day</div>
               <span class="confirm">Log dose</span>
             </div>
             <div class="card">
@@ -427,7 +427,7 @@
           <p class="spec-name">Fixed course — today open, then partly covered</p>
           <div class="tags"><span class="tag yes">confirmable</span><span class="tag">day-progress bar</span><span class="tag no">never “due”</span></div>
           <p>
-            The headline case: a regimen with a length and a daily cadence. <em>Usually 2×/day</em>
+            The headline case: a regimen with a length and a daily cadence. <em>Usually twice a day</em>
             renders only because <code>doses_per_day</code> exists — it is the app describing the
             regimen, not asserting a schedule.
           </p>
@@ -443,7 +443,7 @@
         <div class="stage">
           <div class="phone">
             <div class="card">
-              <div class="card-head"><span class="card-title">Amoxicillin · day 5 of 14 · 2 doses logged</span><span class="chev">›</span></div>
+              <div class="card-head"><span class="card-title">Amoxicillin · day 5 of 14 · 2 doses logged today</span><span class="chev">›</span></div>
             </div>
           </div>
           <p class="caption">one line · no track · no button</p>
@@ -469,12 +469,12 @@
           <div class="phone">
             <div class="card">
               <div class="card-head"><span class="card-title">Gabapentin · ongoing</span><span class="chev">›</span></div>
-              <div class="card-line">Last dose yesterday, 9:10pm</div>
+              <div class="card-line">Last dose yesterday, 9:10 PM</div>
               <span class="confirm">Log dose</span>
             </div>
             <div class="card">
               <div class="card-head"><span class="card-title">Prednisone</span><span class="chev">›</span></div>
-              <div class="card-line">3 doses this week · last Tuesday 7pm</div>
+              <div class="card-line">Last dose Tuesday, 7:00 PM · 3 in the last 14 days</div>
               <span class="confirm">Log dose</span>
             </div>
           </div>
@@ -567,24 +567,27 @@
         <div class="stage">
           <div class="phone">
             <div class="card">
-              <div class="card-head"><span class="card-title">Cerenia</span><span class="chev">›</span></div>
-              <div class="card-line">1 dose logged · Monday 8am</div>
+              <div class="card-head"><span class="card-title">Tramadol</span><span class="chev">›</span></div>
+              <div class="card-line">Last dose Monday, 8:00 AM</div>
             </div>
             <div class="card">
               <div class="card-head"><span class="card-title">Gabapentin · ongoing</span><span class="chev">›</span></div>
               <div class="card-line just">Dose logged just now</div>
             </div>
           </div>
+          <p class="caption">state 9 is defensive — it does not occur in today's data model</p>
         </div>
         <div class="rules">
           <div class="spec-id">State 9 &amp; 10</div>
-          <p class="spec-name">Nothing to pre-fill, and just confirmed</p>
+          <p class="spec-name">The defensive fallback, and just confirmed</p>
           <div class="tags"><span class="tag no">no confirm</span><span class="tag yes">optimistic</span></div>
           <p>
-            <strong>9</strong> — the app cannot attribute the dose (no library item, no resolvable
-            regimen), so it cannot describe the row, so there is no button. Context only. A button that
-            guessed would be entry wearing a confirmation's clothes, writing a clinical record the
-            owner never asserted.
+            <strong>9 — the guard, not a state an owner reaches.</strong> To draw a card the app must be
+            able to <em>name</em> the med, and everything it can name today it can also attribute — a
+            library item, or a resolvable regimen. So there is no live path to “named but not
+            confirmable”: state 9 is the fallback that <em>would</em> fire if a future input ever produced
+            one, resolving it the safe way — context only, never a guessed dose. A nameable ad-hoc med
+            (the Cerenia in §04) is attributable, so it always shows its button.
           </p>
           <p>
             <strong>10</strong> — the write is optimistic and settles into state 2 or 3. A dose is
@@ -625,17 +628,19 @@
           </div>
           <div class="card">
             <div class="card-head"><span class="card-title">Gabapentin · ongoing</span><span class="chev">›</span></div>
-            <div class="card-line">Last dose yesterday, 9:10pm</div>
+            <div class="card-line">Last dose yesterday, 9:10 PM</div>
             <span class="confirm">Log dose</span>
           </div>
           <div class="card">
             <div class="card-head"><span class="card-title">Cerenia</span><span class="chev">›</span></div>
-            <div class="card-line">1 dose logged · Monday 8am</div>
+            <div class="card-line">Last dose Monday, 8:00 AM</div>
+            <span class="confirm">Log dose</span>
           </div>
           <div class="zone fold">Today ↓ below the fold</div>
         </div>
-        <figcaption><b>Morning</b> Three expanded cards. This is the honest worst case, and it is the
-        screen on the day the owner most needs it.</figcaption>
+        <figcaption><b>Morning</b> Three expanded cards, three one-tap confirms — every med here is
+        attributable, so each shows its button (the ad-hoc Cerenia included). This is the honest worst
+        case, and it is the screen on the day the owner most needs it.</figcaption>
       </figure>
 
       <figure>
@@ -648,24 +653,27 @@
           </div>
           <div class="card">
             <div class="card-head"><span class="card-title">Cerenia</span><span class="chev">›</span></div>
-            <div class="card-line">1 dose logged · Monday 8am</div>
+            <div class="card-line">Last dose Monday, 8:00 AM</div>
+            <span class="confirm">Log dose</span>
           </div>
           <div class="card">
-            <div class="card-head"><span class="card-title">Prednisolone · day 5 of 14 · 1 dose logged</span><span class="chev">›</span></div>
+            <div class="card-head"><span class="card-title">Prednisolone · day 5 of 14 · 1 dose logged today</span><span class="chev">›</span></div>
           </div>
           <div class="card">
-            <div class="card-head"><span class="card-title">Gabapentin · ongoing · 2 doses logged</span><span class="chev">›</span></div>
+            <div class="card-head"><span class="card-title">Gabapentin · ongoing · 2 doses logged today</span><span class="chev">›</span></div>
           </div>
           <div class="zone short">Today</div>
           <div class="zone short">Trend</div>
         </div>
-        <figcaption><b>Evening</b> Two collapse. Today and Trend come back above the fold. Nothing was
-        dropped, nothing was re-ranked — the record simply had less to say.</figcaption>
+        <figcaption><b>Evening</b> The two cadenced meds collapse; the ad-hoc Cerenia stays expanded and
+        keeps its one confirm. Today and Trend come back above the fold. Nothing was dropped, nothing
+        was re-ranked — the record simply had less to say.</figcaption>
       </figure>
     </div>
 
     <div class="col">
       <ul class="notes">
+        <li><strong>Three confirms in the morning reads calm — and it is the ceiling.</strong> Each is a quiet accent-light pill, left-aligned, not a full-width call to action: a confirmation, not a prompt. And it is the worst case by construction — the collapse rule pays it straight down to one by evening, so the busy frame is the exception, never the steady state.</li>
         <li><strong>Expanded before collapsed</strong>, then oldest course first, then by name. A stable order — a Home surface that silently re-sorts itself cannot be read at a glance.</li>
         <li><strong>No cap.</strong> No “show three, hide the rest”: that drops a med, which is the exact thing D3 was ruled to prevent, and it drops it in an order the app has no basis to choose.</li>
         <li><strong>The med cards sit below the trial strip</strong> when both are present. The trial is the wedge's primary object and runs eight to twelve weeks; a fourteen-day course is the shorter-lived guest. Fixed order, not a ranking.</li>
@@ -720,6 +728,7 @@
     <div class="sec-head"><span class="sec-num">06</span><h2>Locked, and still moving</h2></div>
     <div class="col">
       <ul class="notes">
+        <li><strong>Round 2.1 (2026-08-01) — the ad-hoc card shows its confirm.</strong> Round 2 drew the ad-hoc Cerenia card as state 9 (no button), but state 9 cannot occur: a nameable ad-hoc med is always attributable, so it always confirms. §03–§04 now draw it with its button, and the morning worst case is three confirms, not two (B-647). State 9 stays documented as the defensive guard. The recency and collapsed-header copy was also finalised to the M5 wording (“Last dose Monday, 8:00 AM”, “… · 2 doses logged today”).</li>
         <li><strong>Locked by this round</strong> — the anatomy, all ten states, the collapse rule and its ordering, placement below the trial strip, and every case in which the confirm does not render.</li>
         <li><strong>Still moving</strong> — the exact words. Every string above is indicative and locks at M5 behind <code>nyx-voice</code>, <code>clinical-guardrails</code> and a <code>pm-feature-review</code> pass. State 8's register in particular is a clinical-guardrails call, not a copy preference.</li>
         <li><strong>Prerequisite</strong> — the day-math fix lands first. A date-only start read as UTC midnight counts a day too many for anyone behind UTC, and that number is the denominator of the adherence copy on the Pet tab. Two surfaces counting the same course is this feature's entire premise.</li>

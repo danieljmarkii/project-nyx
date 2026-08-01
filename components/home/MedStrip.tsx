@@ -31,9 +31,10 @@ import { insertMedicationDose } from '../../lib/medicationDose';
 import { useSyncStore } from '../../store/syncStore';
 import type { MedStripModel } from '../../lib/medStrip';
 
-// §9 state 10 — the optimistic confirmation line. Indicative copy; the clinical
-// register locks at M5 (`nyx-voice` + `clinical-guardrails`). It is held briefly,
-// then the card settles into its reloaded state (2/3).
+// §9 state 10 — the optimistic confirmation line (locked at M5, `nyx-voice` +
+// `clinical-guardrails`): a calm statement about the RECORD ("dose logged"), never
+// a verdict about the pet, and no exclamation. It is held briefly, then the card
+// settles into its reloaded state (2/3).
 const CONFIRMED_LINE = 'Dose logged just now';
 
 // How long "Dose logged just now" dwells before the card settles into its reloaded
@@ -130,7 +131,9 @@ export function MedStrip({ model, onPress, onConfirm }: Props) {
       // silence over a failed health write would be the worst outcome.
       console.error('[MedStrip] confirm dose failed:', e);
       setPhase('idle');
-      Alert.alert("Couldn't log that dose", 'Something went wrong. Please try again.');
+      // Pattern 8 — honest, calm, points at the next action; no error code, no alarm.
+      // Curly apostrophe to match the app's copy convention (e.g. "vet's plan").
+      Alert.alert('Couldn’t log that dose', 'Please try again in a moment.');
       return;
     }
     setPhase('confirmed');
