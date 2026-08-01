@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-01
 
-Spec: `docs/nyx-food-library-trial-awareness-requirements.md` §2.2–§2.3 (§6's PR 2). Design authority: mock screens B and C in `docs/culprit-food-library-trial-mockups.html`. Built over PR 1's lib layer (#526); copy pack is spec §4, verbatim. Closes the **first half of B-458** — the second half (the exposures screen) is PR 4.
+Shipped via **#527**. Spec: `docs/nyx-food-library-trial-awareness-requirements.md` §2.2–§2.3 (§6's PR 2). Design authority: mock screens B and C in `docs/culprit-food-library-trial-mockups.html`. Built over PR 1's lib layer (#526); copy pack is spec §4, verbatim. Closes the **first half of B-458** — the second half (the exposures screen) is PR 4.
 
 ## What shipped
 
@@ -50,7 +50,7 @@ The register is asserted as a block rather than per-string: nothing on either su
 
 ## Verification
 
-`tsc --noEmit` clean; **3694 jest across 164 suites** green (28 new, in 2 new suites). Deno was not runnable in this container (not installed) — the only change under the Edge Functions' import graph is one added `export` keyword in `lib/dietTrial.ts`, which cannot change behaviour; CI's `deno test` job covers it.
+`tsc --noEmit` clean; **3694 jest across 164 suites** green (28 new, in 2 new suites). Deno was not runnable in this container (not installed) — the only change under the Edge Functions' import graph is one added `export` keyword in `lib/dietTrial.ts`, which cannot change behaviour. **CI closed that gap: both required checks passed on #527, including `Edge Functions (deno test)`.**
 
 Acceptance criteria (spec §6, PR 2):
 
