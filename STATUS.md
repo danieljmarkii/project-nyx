@@ -181,8 +181,8 @@ Spec `docs/nyx-med-strip-requirements.md` **v1.0** (2026-07-31) + design-locked 
 
 | PR | What | Status |
 |---|---|---|
-| M0 | **B-441** — `regimenDaysElapsed` → `lib/utils.localDayIndexOf`, with the zone tests | ⬜ first build commit |
-| M1 | `lib/medStrip.ts` — the pure resolver (`resolveMedStrips`), confirmability gate, withholding set | ⬜ |
+| M0 | **B-441** — `regimenDaysElapsed` → `lib/utils.localDayIndexOf`, with the zone tests | ✅ shipped #525 (read) + #524 (write half) |
+| M1 | `lib/medStrip.ts` — the pure resolver (`resolveMedStrips`), confirmability gate, withholding set | 🔨 this session |
 | M2 | `components/home/MedStrip.tsx` + Home wiring below `TrialStrip` | ⬜ |
 | M3 | The one-tap confirm write path (reuses `insertMedicationDose`) | ⬜ |
 | M4 | Collapse rule + the multi-med fold | ⬜ |
