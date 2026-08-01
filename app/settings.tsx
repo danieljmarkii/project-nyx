@@ -93,12 +93,20 @@ export default function SettingsScreen() {
   // FR-9 local wipe + routes away.
   async function doSignOut() {
     try {
+      // B-280 FR-20 (§7.2.4): mark this as a DELIBERATE sign-out so the SIGNED_OUT
+      // handler routes it to the Landing WITHOUT the "you were signed out" banner —
+      // that banner is for an INVOLUNTARY eviction on another device. Cleared again
+      // if the sign-out never happens, so a stale marker can't suppress a later
+      // genuine eviction banner.
+      useAuthStore.getState().setDeliberateSignOut(true);
       const { error } = await supabase.auth.signOut();
       if (error) {
+        useAuthStore.getState().setDeliberateSignOut(false);
         console.warn('[Settings] sign out failed:', error.message);
         Alert.alert("Couldn't sign out", 'Check your connection and try again.');
       }
     } catch (e) {
+      useAuthStore.getState().setDeliberateSignOut(false);
       console.warn('[Settings] sign out threw:', e);
       Alert.alert("Couldn't sign out", 'Check your connection and try again.');
     }

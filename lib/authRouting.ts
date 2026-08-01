@@ -31,3 +31,39 @@ export function coldStartDecision(
   if (error) return 'retain';
   return 'to-auth';
 }
+
+// Where a NON-recovery `SIGNED_OUT` routes, and whether it arms the FR-20 banner.
+// Pure + injected so the FR-20 discrimination is unit-testable without the root
+// layout. The RECOVERY case (a `SIGNED_OUT` while the gate is still armed — the
+// FR-15 reconcile on a failed exchange) is handled BEFORE this is called, because
+// the recovery handler owns that routing; so this function never sees it.
+//
+// The discrimination (B-280 FR-20 / §7.2.4): auth-js reports a revoked refresh
+// token — the FR-18 eviction on another device — as an ordinary non-retryable
+// `SIGNED_OUT`, indistinguishable at the client from a deliberate one. So a
+// deliberate sign-out is MARKED at its origin (`deliberateSignOut`), and anything
+// unmarked is treated as involuntary → login + the §5.6b banner that names the
+// likely cause without asserting it (the device cannot know it, §7.2.3).
+//
+// Gated on `recoveryEnabled`: while `PASSWORD_RECOVERY_ENABLED` is off there is no
+// eviction path in the app, so PR 2 must stay inert — every non-deletion sign-out
+// routes to the Landing exactly as it did before this track.
+export type SignedOutRoute = {
+  path: '/(auth)' | '/(auth)/login';
+  armBanner: boolean;
+};
+
+export function signedOutRoute(input: {
+  justDeletedAccount: boolean;
+  deliberateSignOut: boolean;
+  recoveryEnabled: boolean;
+}): SignedOutRoute {
+  // Deletion has its OWN banner (B-039), shown on login — never the FR-20 one.
+  if (input.justDeletedAccount) return { path: '/(auth)/login', armBanner: false };
+  // Involuntary: recovery live AND not a deliberate sign-out ⇒ the eviction case.
+  if (input.recoveryEnabled && !input.deliberateSignOut) {
+    return { path: '/(auth)/login', armBanner: true };
+  }
+  // Deliberate, or the flag-off default: the Landing, no banner (today's behaviour).
+  return { path: '/(auth)', armBanner: false };
+}

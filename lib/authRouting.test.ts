@@ -1,4 +1,4 @@
-import { coldStartDecision } from './authRouting';
+import { coldStartDecision, signedOutRoute } from './authRouting';
 import type { Session, AuthError } from '@supabase/supabase-js';
 
 // Minimal stand-ins — coldStartDecision only branches on presence, never shape.
@@ -20,5 +20,36 @@ describe('coldStartDecision', () => {
   it('routes to auth on null-without-error — genuinely no stored session', () => {
     expect(coldStartDecision(null, null)).toBe('to-auth');
     expect(coldStartDecision(null, undefined)).toBe('to-auth');
+  });
+});
+
+describe('signedOutRoute (B-280 FR-20)', () => {
+  it('sends a deletion to login WITHOUT the eviction banner (B-039 keeps its own)', () => {
+    expect(
+      signedOutRoute({ justDeletedAccount: true, deliberateSignOut: false, recoveryEnabled: true }),
+    ).toEqual({ path: '/(auth)/login', armBanner: false });
+  });
+
+  it('arms the §5.6b banner on an INVOLUNTARY sign-out when recovery is enabled', () => {
+    // Unmarked (not deliberate, not deletion) with the flag on = the FR-18 eviction.
+    expect(
+      signedOutRoute({ justDeletedAccount: false, deliberateSignOut: false, recoveryEnabled: true }),
+    ).toEqual({ path: '/(auth)/login', armBanner: true });
+  });
+
+  it('sends a DELIBERATE sign-out to the Landing, no banner, even with recovery on', () => {
+    expect(
+      signedOutRoute({ justDeletedAccount: false, deliberateSignOut: true, recoveryEnabled: true }),
+    ).toEqual({ path: '/(auth)', armBanner: false });
+  });
+
+  it('is INERT while the flag is off — every non-deletion sign-out goes to the Landing', () => {
+    // PR 2 ships with PASSWORD_RECOVERY_ENABLED=false; no behaviour change until then.
+    expect(
+      signedOutRoute({ justDeletedAccount: false, deliberateSignOut: false, recoveryEnabled: false }),
+    ).toEqual({ path: '/(auth)', armBanner: false });
+    expect(
+      signedOutRoute({ justDeletedAccount: true, deliberateSignOut: false, recoveryEnabled: false }),
+    ).toEqual({ path: '/(auth)/login', armBanner: false });
   });
 });

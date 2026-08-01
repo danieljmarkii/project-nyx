@@ -28,12 +28,39 @@ interface AuthState {
   // owner lands on Home with their password still unchanged and unknown — the
   // reset silently didn't happen, and the next cold start strands them again.
   recoveryInProgress: boolean;
+  // Which terminal FAILURE state `app/(auth)/reset-password.tsx` should render
+  // (FR-4's exchange-result half). In-memory only: the success/working states are
+  // derived from (gate + session), so this holds only the three failure outcomes
+  // the deep-link handler cannot recompute on the screen — the exchange response is
+  // gone by the time the screen renders. Cleared at the START of each attempt
+  // (§6.4 step 3) and by the FR-16 escape — deliberately NOT by the gate release,
+  // because on a failed exchange the gate is released WHILE this failure state must
+  // keep rendering (§6.4 step 8).
+  recoveryScreen: 'link_unusable' | 'wrong_device' | 'failed' | null;
+  // The address the reset was requested for, held in memory by the §6.4 handler
+  // BEFORE step 4's wipe clears the disk marker (FR-12) — so §5.5 / §5.5b can send
+  // a new link to a PRE-FILLED request screen without re-reading a marker the wipe
+  // has already deleted. Null on a wrong-device link (no local request existed).
+  recoveryEmail: string | null;
+  // One-shot (B-039 `justDeletedAccount` shape): set at the origin of a DELIBERATE
+  // sign-out (Settings, the recovery/confirm escapes) so the SIGNED_OUT handler can
+  // tell it apart from an INVOLUNTARY one — the FR-18 eviction on another device,
+  // whose refresh token was revoked. Absent ⇒ involuntary ⇒ FR-20 banner.
+  deliberateSignOut: boolean;
+  // One-shot: armed by the SIGNED_OUT handler on an involuntary sign-out, read once
+  // by the login screen to show the §5.6b "You were signed out" banner (FR-20),
+  // then cleared — same capture-then-clear lifecycle as `justDeletedAccount`.
+  signedOutInvoluntarily: boolean;
   setSession: (session: Session | null) => void;
   setLoading: (loading: boolean) => void;
   setJustDeletedAccount: (justDeletedAccount: boolean) => void;
   // In-memory only. Callers that need the gate to survive a force-quit must use
   // `armRecoveryGate` / `releaseRecoveryGate` below, which write disk too.
   setRecoveryInProgress: (recoveryInProgress: boolean) => void;
+  setRecoveryScreen: (recoveryScreen: AuthState['recoveryScreen']) => void;
+  setRecoveryEmail: (recoveryEmail: string | null) => void;
+  setDeliberateSignOut: (deliberateSignOut: boolean) => void;
+  setSignedOutInvoluntarily: (signedOutInvoluntarily: boolean) => void;
 }
 
 export const useAuthStore = create<AuthState>((set) => ({
@@ -42,10 +69,18 @@ export const useAuthStore = create<AuthState>((set) => ({
   isLoading: true,
   justDeletedAccount: false,
   recoveryInProgress: false,
+  recoveryScreen: null,
+  recoveryEmail: null,
+  deliberateSignOut: false,
+  signedOutInvoluntarily: false,
   setSession: (session) => set({ session, user: session?.user ?? null }),
   setLoading: (isLoading) => set({ isLoading }),
   setJustDeletedAccount: (justDeletedAccount) => set({ justDeletedAccount }),
   setRecoveryInProgress: (recoveryInProgress) => set({ recoveryInProgress }),
+  setRecoveryScreen: (recoveryScreen) => set({ recoveryScreen }),
+  setRecoveryEmail: (recoveryEmail) => set({ recoveryEmail }),
+  setDeliberateSignOut: (deliberateSignOut) => set({ deliberateSignOut }),
+  setSignedOutInvoluntarily: (signedOutInvoluntarily) => set({ signedOutInvoluntarily }),
 }));
 
 // ── The gate's disk half (FR-6) ─────────────────────────────────────────────────
