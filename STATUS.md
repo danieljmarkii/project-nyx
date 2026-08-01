@@ -172,6 +172,25 @@ Spec `docs/nyx-medication-logging-requirements.md` (§12 = 10-PR plan). Model = 
 
 Carry-forwards: B-122/123 satisfied; B-131 honored; B-128(b) defense-at-rest trigger (own schema PR); open sub-decisions B-132 (library delete), B-133 (`is_critical` owner toggle — PM call); **B-160** (med-details helper chips + copy — ✅ shipped #236); **B-171 + B-172** (dose-card copy — ✅ shipped #485: `drugDisplayName` gives the completion card the owner's word for the drug (brand-preferred, PM ruling (b)); `doseAdherencePrompt` restates a pre-lit adherence state with the correction named instead of re-asking, while in-doubt / unset / **unrated-vehicle combo** still ask. No default or threshold changed. `adversarial-reviewer` FAILed the first cut on two real breaks — both fixed: the serve-time combo assumed-`given` now keeps the question, and the brand-first reorder of the ROW surfaces was **reverted** to **B-522**, which needs a Dr. Chen call because the shared leading generic is the only cue for a duplicate active ingredient that `getDoubleDoseFlag` can't catch).
 
+### B-614 Medication strip on Home — **spec build-ready (v1.0); all three PM calls ruled; M0 is the first build commit**
+Spec `docs/nyx-med-strip-requirements.md` **v1.0** (2026-07-31) + design-locked round-2 mock `docs/culprit-med-strip-mockups.html`. Closes the gap the PM hit on TestFlight: an active medication lives only on the Pet tab, so the wedge owner — sent home with a 14-day course — never sees it on the surface they actually open. `TrialStrip`'s job, for meds.
+
+**Rulings (PM, 2026-07-31):** **D1 = C** (context *and* a one-tap) · **D2** ad-hoc tolerant (renders from doses alone — the PM's own account has 2 regimens, 0 with a duration) · **D3** one card per med, no ranking.
+
+**D1's reasoning generalises and is why this isn't a §4.2 violation** — the trial card's "second door" ban and the N7 briefing's one-tap `Log dose` are split by **register**: a control that opens a *form* is a second door; one that writes a row the app *could already describe* is a **confirmation** (Principle 2). Full statement + the two gates it implies (no pre-fillable dose ⇒ no button; the §7 collapse rule) in CLAUDE.md's B-614 row and the spec's §0.
+
+| PR | What | Status |
+|---|---|---|
+| M0 | **B-441** — `regimenDaysElapsed` → `lib/utils.localDayIndexOf`, with the zone tests | ⬜ first build commit |
+| M1 | `lib/medStrip.ts` — the pure resolver (`resolveMedStrips`), confirmability gate, withholding set | ⬜ |
+| M2 | `components/home/MedStrip.tsx` + Home wiring below `TrialStrip` | ⬜ |
+| M3 | The one-tap confirm write path (reuses `insertMedicationDose`) | ⬜ |
+| M4 | Collapse rule + the multi-med fold | ⬜ |
+| M5 | Copy/safety pass — `nyx-voice` + `clinical-guardrails` + `pm-feature-review` | ⬜ |
+
+### B-618 Medication course length in doses — spec build-ready (v1.0); build queued in its own session
+Spec `docs/nyx-medication-dose-duration-requirements.md` **v1.0** (2026-07-31; filed as B-614, renumbered at wrap — the med-strip row above landed the ID on `main` first) + convening record `docs/sessions/2026-07-30-medication-duration-doses-discussion.md`. The PM's Motozol course was dispensed as **28 doses**; entered in days with an evening start, "Day X of Y" ran ahead of the bottle. All decisions closed: **D1** count = therapy-delivered `given + partial` (PM-ratified; refused/missed never advance, flag-line disclosure) · **D2** entry default days (flips to doses when B-619's label prefill ships) · **D3** no pace concept in v1 · **D7** reaching the target never renders completion/stop language. Verified no-op seams: vet report / Ask / `generate-signal` need zero changes in v1. Plan: PR 1 migration 049 (`target_duration_doses` + one-denomination CHECK) → PR 2 `dosesTowardTarget` predicate + data path → PR 3 entry unit chips → PR 4 the "Dose X of Y" card. Composes with the med-strip track above (M0 = B-441 is this spec's D4 pair) and hands B-394 its exact projection primitive.
+
 ### B-023 Patterns dashboard — PRs 1–4 merged; PR 5 blocked on Step 9
 Spec `docs/nyx-analytics-dashboard-requirements.md`. **No schema** (rides existing tables + `ai_signals` jsonb; migration 018 added an additive `summary`). Build gates resolved: §13 #1 name = "Patterns", §13 #6 colour-as-wellness ruling.
 
@@ -387,6 +406,7 @@ Nearest live PM gates, none of which block code already in flight:
 - [ ] **Revoke the Supabase personal access token** (`nyx-cli-deploy`, 2026-06-07) — account-level, lives in a session transcript. Now obsolete: B-082 (#208) made backend deploys a token-free MCP path, so nothing uses it.
 - [ ] **Supabase CLI dev-dependency** — fold `supabase@^2.102.0` (on branch `claude/epic-volta-H8d6o`) into a PR so it survives merge.
 - [ ] _(awareness, no action)_ **B-074** — the free-fed exclusion fails safe but a single stray free-fed day landing on a selected control day can silence a real correlate.
+- [ ] **On-device QA of the regimen day counter (B-441, #524)** — the fix changes a *clinical number* the PM can see: adherence % **rises** for anyone behind UTC (the inflated denominator was under-reporting it), and a regimen started today now reads `Day 1 of N` rather than `Day 2 of N`. Two-zone check in the PR's Manual QA — a US zone for the counter, Sydney at ~1am for the write path (an owner ahead of UTC was storing the start date a day early, permanently).
 - [ ] _(awareness, before treating vet-report §8.6 as fully closed)_ **B-115 residual → B-163** — the shipped exact-ms treat-collapse (#219) guards the diet-confounder over-count for the **EXIF-collision / future-batch** case only; today's full-precision `new Date()` stamps mean a **rapid per-tap handful (distinct ms) is still over-counted**. Fully closing it needs a real-data-gated near-window widening (under-count tension) or a batch-log path — Phase-2/PR-6 can proceed; just don't read §8.6 as "fully resolved."
 
 ---

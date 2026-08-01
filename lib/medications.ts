@@ -16,6 +16,10 @@
 //   diet_trials      → medications             (pet-scoped regimen)
 //   meals            → medication_administrations (1:1 dose-event child)
 
+// `lib/utils` is itself import-free, so pulling the day-index primitives in keeps
+// this module's plain-jest testability intact (B-441).
+import { localDayIndex, localDayIndexOf } from './utils';
+
 // ── Local schema (mirrors supabase/migrations/020_medication_logging.sql) ─────
 //
 // Extracted as a string (not inlined in initDb like events/meals) ONLY so the
@@ -936,6 +940,60 @@ export interface RegimenCompliance {
   // null = not computable as a %: PRN, OR a scheduled regimen with nothing logged
   // yet. A null percent must render as "not tracked", NEVER as "compliant" (§6.1).
   percent: number | null;
+}
+
+// Whole days the regimen has been running, counting the start day as day 1.
+//
+// B-441 — this used to live inline in `app/(tabs)/profile.tsx` carrying the exact
+// flaw B-421 removed from the diet-trial counter, and it is moved here so it is
+// unit-testable and so the profile card and the Home strip (B-614) cannot drift
+// apart. The old shape was:
+//
+//     const start = new Date(startedAt); start.setHours(0, 0, 0, 0);
+//     ... Math.floor((today - start) / MS_PER_DAY) + 1
+//
+// which is wrong twice. `medications.started_at` is a date-only Postgres DATE, so
+// `new Date('2026-07-31')` parses as UTC midnight and the subsequent floor to LOCAL
+// midnight lands on the PREVIOUS local day for anyone behind UTC — every count one
+// too high. And differencing two midnights in milliseconds loses a day across a DST
+// transition, because a local day can be 23h or 25h.
+//
+// `localDayIndexOf` indexes a 'YYYY-MM-DD' verbatim and everything else by the
+// calendar day it falls on, so neither failure is reachable.
+//
+// This is not cosmetic: the return value is the DENOMINATOR of
+// `computeRegimenCompliance`, so an inflated day count understates adherence —
+// which is the safe direction, but wrong, and it is what the clinical-guardrails
+// copy on the profile card is computed from.
+//
+// Returns null on ANY unusable input — an unparseable `startedAt` or a non-finite
+// `nowMs` — never NaN. Unreachable through the app
+// (the column is a NOT NULL DATE), but the caller reports "unknown" rather than
+// counting from a guessed day — the same contract `localDayIndexOf` states.
+// `timeZone` mirrors the primitives' own optional zone and exists for the same
+// reason: the day boundary is a parameter of this problem, not a constant. OMIT IT
+// in the app — the device's zone IS the owner's midnight, and that is the production
+// path. Stating it explicitly is what lets the zone cases be pinned by a test that
+// does not have to mutate the process clock.
+export function regimenDaysElapsed(
+  startedAt: string,
+  nowMs: number = Date.now(),
+  timeZone?: string,
+): number | null {
+  // A 'YYYY-MM-DD' DATE is indexed verbatim (zone-independently); the zone applies
+  // to `nowMs`, which is a real instant and does fall on different days by zone.
+  const startIndex = localDayIndexOf(startedAt, timeZone);
+  // BOTH inputs are checked, and `nowMs` is the one that matters going forward:
+  // today's only caller takes the `Date.now()` default, but the B-614 Home strip
+  // will pass an explicit instant, and a non-finite one would flow through
+  // `Math.max(1, NaN)` to return NaN. NaN is worse than a wrong number here — the
+  // render guard is `!= null`, and `NaN != null` is TRUE, so it would sail past the
+  // check and print "Day NaN of 14". Matches `getDietTrialProgress`'s guard, which
+  // is the parity this extraction exists to hold.
+  if (startIndex === null || !Number.isFinite(nowMs)) return null;
+  // ≥1: a regimen started today is on day 1, and a start date in the future (an
+  // owner back-filling a prescription) counts as day 1 rather than day 0 or -3.
+  return Math.max(1, localDayIndex(nowMs, timeZone) - startIndex + 1);
 }
 
 export function computeRegimenCompliance(input: RegimenComplianceInput): RegimenCompliance {

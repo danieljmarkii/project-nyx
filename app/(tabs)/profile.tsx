@@ -41,18 +41,21 @@ import { resolveTrialCard } from '../../lib/dietTrialCard';
 import { extensionDays, nextTargetDays } from '../../lib/dietTrialCompletion';
 import { extendTrial } from '../../lib/dietTrialSetup';
 import { getDietTrialProgress } from '../../lib/analytics';
-import { petPronouns } from '../../lib/utils';
+import { dayKeyToLocalDate, petPronouns, toLocalDayKey } from '../../lib/utils';
 import { Pet } from '../../store/petStore';
 import {
   MEDICATION_ROUTE_OPTIONS, computeRegimenCompliance, regimenComplianceLine,
-  regimenFlagLine, attributeDosesToRegimens,
+  regimenFlagLine, attributeDosesToRegimens, regimenDaysElapsed,
   type AdherenceTally, type RegimenCompliance, type AttributableDose,
 } from '../../lib/medications';
 
 const PET_PHOTO_BUCKET = 'nyx-pet-photos';
 
 interface RegimenDisplay extends Regimen {
-  daysElapsed: number;
+  // null = the start date did not parse, so the course's length is unknown (B-441).
+  // Every consumer must test `!= null` explicitly: a bare `daysElapsed <= target`
+  // coerces null to 0 and renders "Day null of 14".
+  daysElapsed: number | null;
   tally: AdherenceTally;
   compliance: RegimenCompliance;
   complianceLine: string;
@@ -68,7 +71,13 @@ const EMPTY_TALLY = (): AdherenceTally => ({ given: 0, partial: 0, missed: 0, re
 function buildRegimenDisplay(reg: Regimen, tally: AdherenceTally): RegimenDisplay {
   const daysElapsed = regimenDaysElapsed(reg.started_at);
   const compliance = computeRegimenCompliance({
-    dosesPerDay: reg.doses_per_day, daysElapsed, tally,
+    // With no day count there is no honest denominator, so the regimen reports a
+    // dose COUNT instead of a percent — the same shape PRN already uses. Feeding a
+    // guessed `1` would shrink the denominator and inflate adherence, which is the
+    // reassuring direction and the one this must never drift toward (B-441).
+    dosesPerDay: daysElapsed === null ? null : reg.doses_per_day,
+    daysElapsed: daysElapsed ?? 1,
+    tally,
   });
   return {
     ...reg,
@@ -96,20 +105,19 @@ function routeLabel(route: string | null): string | null {
   return MEDICATION_ROUTE_OPTIONS.find((o) => o.value === route)?.label ?? null;
 }
 
-// Whole days the regimen has run, ≥1. NOTE (B-421): this carries the local-midnight
-// arithmetic the diet-trial card used to duplicate, including its flaw — a date-only
-// `started_at` is parsed as UTC midnight before being floored to LOCAL midnight, so
-// for anyone behind UTC the start lands on the previous local day and the count reads
-// one too high. The trial counter now routes through `lib/utils.localDayIndexOf`,
-// which indexes a DATE verbatim; this one was left alone because it is a different
-// feature's counter and feeds clinical-guardrails compliance copy that has no tests
-// here. Route it through the same primitive when regimens are next touched — B-441.
-function regimenDaysElapsed(startedAt: string): number {
-  const start = new Date(startedAt);
-  start.setHours(0, 0, 0, 0);
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  return Math.max(1, Math.floor((today.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1);
+// The regimen day counter used to live here, carrying the flaw B-421 removed from
+// the diet-trial counter. B-441 moved it to `lib/medications.regimenDaysElapsed`,
+// routed through `lib/utils.localDayIndexOf` — this screen now holds no day math.
+
+// "Started 12 Jun 2026" for the ongoing/overrun regimen row. `dayKeyToLocalDate`,
+// never `new Date(started_at)`: the column is a date-only DATE, so the bare parse
+// lands on UTC midnight and formats as the PREVIOUS day for anyone behind UTC —
+// the display half of the same B-441 defect that inflated the counter. Falls back
+// to the raw stored value if it does not parse, never to a confidently wrong date.
+function formatRegimenStart(startedAt: string): string {
+  const d = dayKeyToLocalDate(startedAt);
+  if (!d) return startedAt;
+  return d.toLocaleDateString([], { year: 'numeric', month: 'short', day: 'numeric' });
 }
 
 // Age display lives in lib/age.formatAge now (B-251 PR 9) so the honesty rule has
@@ -530,7 +538,11 @@ export default function ProfileScreen() {
       // success. A regimen is "ended", never soft-deleted (migration 020).
       const { data, error } = await supabase
         .from('medications')
-        .update({ status: 'completed', ended_at: new Date().toISOString().split('T')[0] })
+        // `ended_at` is a DATE and gets the same treatment as `started_at` (B-441):
+        // `toISOString()` yields the UTC day, so a behind-UTC owner ending a course in
+        // the evening stored TOMORROW — widening the dose-attribution upper bound and
+        // the vet report's regimen span.
+        .update({ status: 'completed', ended_at: toLocalDayKey(new Date()) })
         .eq('id', id)
         .select('id');
       if (error) throw error;
@@ -830,9 +842,13 @@ export default function ProfileScreen() {
                         window; once it's run past target_duration (still active —
                         owner hasn't ended it) the "of Y" is nonsense ("Day 30 of
                         7"), so fall back to the ongoing "Started …" format. */}
-                    {reg.target_duration_days != null && reg.daysElapsed <= reg.target_duration_days
+                    {/* `daysElapsed != null` is load-bearing, not defensive: a bare
+                        `null <= 14` is TRUE in JS, so dropping it renders
+                        "Day null of 14" on the one row whose date we could not read. */}
+                    {reg.daysElapsed != null && reg.target_duration_days != null
+                     && reg.daysElapsed <= reg.target_duration_days
                       ? `Day ${reg.daysElapsed} of ${reg.target_duration_days}`
-                      : `Started ${new Date(reg.started_at).toLocaleDateString([], { year: 'numeric', month: 'short', day: 'numeric' })}`}
+                      : `Started ${formatRegimenStart(reg.started_at)}`}
                   </Text>
                   {reg.compliance.percent != null && (
                     <View style={styles.progressTrack}>
