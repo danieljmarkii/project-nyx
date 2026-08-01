@@ -2,17 +2,20 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <style>
   /* ============================================================
-     Patterns dashboard + detail redesign — mock ROUND 1 (LOW-FI).
-     Deliberately lower fidelity: wireframe frames with real copy
-     and real structure, not pixel-final components. Round 2 will
-     raise fidelity on whichever direction the PM picks.
+     Patterns dashboard + detail redesign — mock ROUND 2.
+     Round 1's dashboard options A/B/C are SUPERSEDED (PM: too
+     text-heavy — "a graph can speak a thousand words"). The
+     detail-screen direction (round-1 frame D1) is APPROVED and
+     carried forward unchanged.
 
-     Document chrome mirrors the med-strip mock family: cool paper
-     biased toward brand indigo in light; night tokens in dark.
-     Device frames stay light in both themes — they render the
-     app's light-mode surfaces.
+     Round 2 is graph-led: a shared chart vocabulary (§02) and
+     three visual dashboard variants V1/V2/V3. Fidelity stepped
+     up on the charts, still wireframe on chrome.
 
-     Frame values are the real tokens from constants/theme.ts.
+     Document chrome mirrors the med-strip mock family. Device
+     frames stay light in both themes — they render the app's
+     light-mode surfaces. Frame values are real tokens from
+     constants/theme.ts.
      ============================================================ */
 
   :root {
@@ -99,6 +102,14 @@
     border-radius: 999px; padding: 4px 11px;
   }
   .roundtag::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+  .oktag {
+    display: inline-flex; align-items: center; gap: 7px;
+    font-family: var(--mono); font-size: 11px; letter-spacing: 0.1em;
+    text-transform: uppercase; font-weight: 600;
+    color: var(--teal-ink); background: var(--teal-wash);
+    border-radius: 999px; padding: 4px 11px;
+  }
+  .oktag::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
 
   section { margin-top: 72px; }
   .sec-head { display: flex; align-items: baseline; gap: 14px; margin-bottom: 8px; border-top: 1px solid var(--rule); padding-top: 18px; }
@@ -116,11 +127,6 @@
   td { padding: 9px 12px 9px 0; border-bottom: 1px solid var(--rule-soft); vertical-align: top; }
   .tablewrap { overflow-x: auto; }
 
-  .yes { color: var(--teal-ink); font-weight: 600; }
-  .no  { color: var(--rose-ink); font-weight: 600; }
-  .part { color: var(--med); font-weight: 600; }
-
-  /* callout */
   .callout {
     border: 1px solid var(--rule); border-left: 3px solid var(--teal);
     background: var(--paper-2); border-radius: 8px; padding: 16px 18px; margin: 20px 0;
@@ -129,13 +135,13 @@
   .callout.warn { border-left-color: var(--rose); }
   .callout .cl-tag { font-family: var(--mono); font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-3); display: block; margin-bottom: 6px; }
 
-  /* persona quotes */
-  .voices { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; margin: 20px 0; }
-  .voice { background: var(--paper-2); border: 1px solid var(--rule); border-radius: 10px; padding: 16px 18px; }
-  .voice .who { font-family: var(--mono); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 8px; }
-  .voice q { font-style: italic; color: var(--ink); quotes: "“" "”"; }
+  /* vocabulary swatch row */
+  .vocab { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 14px; margin: 22px 0; }
+  .vitem { background: var(--paper-2); border: 1px solid var(--rule); border-radius: 10px; padding: 14px 16px; }
+  .vitem .vt { font-weight: 600; font-size: 14px; margin: 8px 0 3px; }
+  .vitem .vd { font-size: 13px; color: var(--ink-2); line-height: 1.45; }
 
-  /* ── Wireframe device frames (LOW-FI on purpose) ─────────── */
+  /* ── Device frames ────────────────────────────────────────── */
   .frames { display: flex; flex-wrap: wrap; gap: 26px; margin: 26px 0 8px; align-items: flex-start; }
   .framewrap { width: 320px; flex-shrink: 0; }
   .framecap { font-size: 13px; color: var(--ink-2); margin-top: 10px; line-height: 1.5; }
@@ -150,12 +156,12 @@
   .f-nav { font-size: 12px; color: #525252; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; }
   .f-title { font-size: 17px; font-weight: 700; color: #0A0A0A; margin: 2px 0 10px; }
   .f-card { background: #FFFFFF; border: 1px solid #EAEAEA; border-radius: 12px; padding: 11px 12px; margin-bottom: 9px; }
-  .f-card.flat { background: transparent; border-style: dashed; }
+  .f-card.tight { padding: 9px 10px; }
   .f-kicker { font-size: 10px; letter-spacing: 0.09em; text-transform: uppercase; color: #8A8A8A; font-weight: 600; margin-bottom: 5px; }
   .f-lead { font-size: 13.5px; color: #0A0A0A; line-height: 1.4; }
   .f-sub { font-size: 11.5px; color: #525252; margin-top: 4px; }
   .f-faint { font-size: 11px; color: #8A8A8A; margin-top: 4px; }
-  .f-num { font-size: 24px; font-weight: 700; letter-spacing: -0.02em; }
+  .f-num { font-size: 22px; font-weight: 700; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
   .f-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
   .f-chevron { color: #B0B0B0; font-size: 14px; flex-shrink: 0; }
   .f-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
@@ -164,17 +170,10 @@
     border-radius: 999px; padding: 3px 9px; font-weight: 500;
   }
   .f-chip.ghost { color: #525252; background: #F5F5F5; border-color: #E3E3E3; }
+  .f-chip.on { color: #0A0A0A; background: #FFFFFF; border-color: #B0B0B0; font-weight: 600; }
   .f-seg { display: flex; background: #F0F0F0; border-radius: 8px; padding: 3px; gap: 3px; margin-bottom: 10px; }
   .f-seg span { flex: 1; text-align: center; padding: 5px 0; border-radius: 6px; font-size: 11.5px; color: #525252; }
   .f-seg .on { background: #FFFFFF; color: #0A0A0A; font-weight: 600; box-shadow: 0 1px 2px rgba(0,0,0,0.06); }
-  .f-band {
-    border-radius: 12px; padding: 11px 12px; margin-bottom: 9px;
-    background: #EAF0F7; border: 1px solid #D7E2EF;
-  }
-  .f-band.teal { background: #E0FBF7; border-color: #B5EDE3; }
-  .f-band.rose { background: #FFE4E6; border-color: #FBCFD6; }
-  .f-divider { border: 0; border-top: 1px solid #EAEAEA; margin: 10px 0; }
-  .f-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 6px; }
   .f-listrow { display: flex; gap: 8px; padding: 6px 0; border-bottom: 1px solid #F0F0F0; font-size: 11.5px; color: #333; align-items: baseline; }
   .f-listrow:last-child { border-bottom: 0; }
   .f-listrow .d { color: #8A8A8A; font-variant-numeric: tabular-nums; flex-shrink: 0; width: 44px; }
@@ -183,15 +182,35 @@
     font-weight: 600; color: #0B7B6C; background: #E0FBF7; border: 1px solid #B5EDE3; margin-top: 8px;
   }
   .f-btn.quiet { color: #525252; background: #FFFFFF; border-color: #E3E3E3; font-weight: 500; }
-  .f-key { display: flex; gap: 12px; font-size: 10px; color: #8A8A8A; margin-top: 6px; }
+  .f-key { display: flex; flex-wrap: wrap; gap: 10px 12px; font-size: 10px; color: #8A8A8A; margin-top: 6px; }
   .f-key span::before { content: ""; display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 4px; }
   .f-key .k-sym::before { background: #F43F5E; }
+  .f-key .k-sym2::before { background: #F43F5E; opacity: 0.45; }
   .f-key .k-meal::before { background: #00C2A8; }
   .f-key .k-food::before { background: #5B7A9E; border-radius: 2px; }
+  .f-key .k-none::before { background: transparent; border: 1px solid #C9C9C9; }
+
+  /* trial ribbon (visual, not a text card) */
+  .f-ribbon { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+  .f-ribbon .rlabel { font-size: 10.5px; color: #525252; font-weight: 600; white-space: nowrap; }
+  .f-ribbon .rbar { flex: 1; height: 6px; border-radius: 3px; background: #EAEAEA; position: relative; overflow: hidden; }
+  .f-ribbon .rbar i { position: absolute; left: 0; top: 0; bottom: 0; width: 45%; background: #00C2A8; border-radius: 3px; }
+  .f-ribbon .rnum { font-size: 10.5px; color: #8A8A8A; font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+  /* stat strip under hero */
+  .f-stats { display: flex; justify-content: space-between; padding: 8px 4px 0; }
+  .f-stat { text-align: center; }
+  .f-stat .n { font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .f-stat .l { font-size: 9.5px; color: #8A8A8A; letter-spacing: 0.04em; text-transform: uppercase; }
+
+  /* tile grid (V2) */
+  .f-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .f-tile { background: #FFFFFF; border: 1px solid #EAEAEA; border-radius: 12px; padding: 9px 10px 7px; }
+  .f-tile .t-label { font-size: 10px; letter-spacing: 0.07em; text-transform: uppercase; color: #8A8A8A; font-weight: 600; }
+  .f-tile .t-num { font-size: 17px; font-weight: 700; font-variant-numeric: tabular-nums; margin-top: 1px; }
+  .f-tile .t-num small { font-size: 10.5px; font-weight: 600; }
 
   .annot { font-size: 12px; color: var(--med); font-weight: 600; }
-
-  /* option header strip */
   .opt-meta { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0 4px; }
   .opt-pill { font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; border-radius: 999px; padding: 3px 10px; border: 1px solid var(--rule); color: var(--ink-2); background: var(--paper-2); }
 </style>
@@ -201,107 +220,117 @@
   <header class="mast">
     <p class="eyebrow">
       <span>Culprit · Patterns dashboard + detail</span>
-      <span>Mock round 1 · 2026-08-01</span>
-      <span class="roundtag">Low-fi exploration — nothing locked</span>
+      <span>Mock round 2 · 2026-08-01</span>
+      <span class="roundtag">Dashboard: graph-led iterations</span>
+      <span class="oktag">Detail screen: direction approved (round 1, frame D1)</span>
     </p>
-    <h1>Patterns should answer questions, not display metrics</h1>
+    <h1>Round 2 — let the charts do the talking</h1>
     <p class="standfirst">
-      The dashboard shipped as a correct, honest card stack — and the PM, our own wedge user,
-      doesn't open it. This round explores <strong>three directions</strong> (refine → restructure → swing),
-      a shared <strong>detail-screen redesign</strong>, and one <strong>feasibility-gated exploration</strong> (ingredients).
-      Round 2 raises fidelity on whatever survives this review.
+      Round 1's dashboard options A/B/C are <strong>superseded</strong> — the PM's call: too text-heavy,
+      a graph speaks a thousand words. Round 2 rebuilds the dashboard around a shared
+      <strong>chart vocabulary</strong> (§02) in three visual variants: <strong>V1 the month in one picture</strong>,
+      <strong>V2 small multiples</strong>, <strong>V3 rhythms</strong>. Words demote to kickers and denominators.
+      The approved detail screen is carried unchanged in §06 — every chart below opens into it.
     </p>
   </header>
 
-  <!-- ══════════════════ 01 · Diagnosis ══════════════════ -->
+  <!-- ══════════════════ 01 · Carried over ══════════════════ -->
   <section>
-    <div class="sec-head"><span class="sec-num">01</span><h2>Why the surface goes unvisited</h2></div>
+    <div class="sec-head"><span class="sec-num">01</span><h2>What round 1 settled</h2></div>
     <div class="col">
       <p>
-        Three findings from the research pass, matched against measured abandonment drivers
-        (~30% of tracker abandonment traces to “static data,” the largest single cause):
-      </p>
-      <p>
-        <strong>1 · The dashboard looks the same every visit.</strong> Cards restate standing facts
-        (“3 this month”) rather than leading with what <em>changed</em>. State of the art
-        (Oura Today, Apple Health Highlights) leads with detected change and lets standing
-        metrics sit one tier down.
-      </p>
-      <p>
-        <strong>2 · Every number is a dead end.</strong> Only symptom-count cards open a detail screen,
-        and that screen is a number + sparkline with no events behind it, no food context,
-        and no next action. The Whoop lesson: <em>a metric with no consequence attached goes stale.</em>
-      </p>
-      <p>
-        <strong>3 · The surface is blind to the wedge.</strong> A diet-trial owner's #1 question —
-        “is this trial getting anywhere?” — is unanswerable here: Patterns renders no trial state at all,
-        while Home, Profile, Foods, the widget, and the report all do. And eight detectors' worth of
-        engine findings render on Home only; Patterns gets just the LLM summary sentence.
+        <strong>Approved:</strong> the detail-screen direction (annotated trend + the days behind the
+        number + Ask/report exits). <strong>Superseded:</strong> all three dashboard layouts — they narrated
+        where they should have drawn. <strong>Still standing from round 1:</strong> the owner-question
+        inventory (the four jobs: <em>is the plan working · what changed · what does she eat · ready for the vet</em>),
+        the D2/D3/D5 decision asks, and every clinical constraint. Round 2's brief: the same four jobs,
+        answered <em>visually</em> — the sentence becomes the caption, not the content.
       </p>
     </div>
   </section>
 
-  <!-- ══════════════════ 02 · Owner questions ══════════════════ -->
+  <!-- ══════════════════ 02 · Chart vocabulary ══════════════════ -->
   <section>
-    <div class="sec-head"><span class="sec-num">02</span><h2>The questions owners actually bring</h2></div>
+    <div class="sec-head"><span class="sec-num">02</span><h2>The chart vocabulary — one language, every variant</h2></div>
     <div class="col">
       <p>
-        Jordan (mid-trial, dog Mochi, GI history) and Sam (two cats, fussy Pixel) were convened
-        against the current surface. Their questions, ranked by how well Patterns answers them today:
+        Five marks, used identically on the dashboard and the detail screen so the drill-in
+        feels like zooming, not switching apps. Color is by <em>event family</em>, never by verdict:
+        symptom rose, meal teal, food/med slate. Verdict tone stays where it already lives —
+        the delta text — under the shipped n=1 rules.
       </p>
     </div>
-
-    <div class="voices">
-      <div class="voice"><div class="who">Jordan · diet-trial dog owner</div>
-        <q>Is this trial getting anywhere, or are we three weeks into nothing?</q></div>
-      <div class="voice"><div class="who">Jordan</div>
-        <q>The vet visit is Friday. What do I actually say?</q></div>
-      <div class="voice"><div class="who">Sam · two-cat household</div>
-        <q>Pixel's eating less — is that fussy, or is that sick?</q></div>
-      <div class="voice"><div class="who">Sam</div>
-        <q>She rejected four cans this month. What do the ones she finishes have in common?</q></div>
-      <div class="voice"><div class="who">Jordan</div>
-        <q>He threw up Tuesday. What did he eat before that?</q></div>
-      <div class="voice"><div class="who">Sam</div>
-        <q>Is it always overnight? It feels like I only ever find it in the morning.</q></div>
+    <div class="vocab">
+      <div class="vitem">
+        <svg viewBox="0 0 170 34" width="170" height="34" role="img" aria-label="Event stems">
+          <line x1="4" y1="28" x2="166" y2="28" stroke="#DEDCE9" stroke-width="1"/>
+          <g stroke="#F43F5E" stroke-width="2"><line x1="52" y1="28" x2="52" y2="10"/><line x1="66" y1="28" x2="66" y2="16"/><line x1="120" y1="28" x2="120" y2="13"/></g>
+          <g fill="#F43F5E"><circle cx="52" cy="10" r="3"/><circle cx="66" cy="16" r="3"/><circle cx="120" cy="13" r="3"/></g>
+        </svg>
+        <div class="vt">Event stems</div>
+        <div class="vd">A symptom day is a discrete mark, not a wiggle in a line — height = count that day. Honest about zeros: no line implying continuity between incidents.</div>
+      </div>
+      <div class="vitem">
+        <svg viewBox="0 0 170 34" width="170" height="34" role="img" aria-label="Meal ticks">
+          <g fill="#00C2A8"><rect x="8" y="22" width="3" height="8" rx="1"/><rect x="22" y="22" width="3" height="8" rx="1"/><rect x="36" y="22" width="3" height="8" rx="1"/><rect x="64" y="22" width="3" height="8" rx="1"/><rect x="78" y="22" width="3" height="8" rx="1"/><rect x="92" y="22" width="3" height="8" rx="1"/><rect x="106" y="22" width="3" height="8" rx="1"/><rect x="134" y="22" width="3" height="8" rx="1"/><rect x="148" y="22" width="3" height="8" rx="1"/></g>
+          <g fill="none" stroke="#C9C9C9" stroke-width="1"><rect x="50" y="22" width="3" height="8" rx="1"/><rect x="120" y="22" width="3" height="8" rx="1"/></g>
+        </svg>
+        <div class="vt">Meal ticks + coverage gaps</div>
+        <div class="vd">Logging density under every timeline. A hollow tick is a day with nothing logged — silence renders as a visible gap, never as "all clear."</div>
+      </div>
+      <div class="vitem">
+        <svg viewBox="0 0 170 34" width="170" height="34" role="img" aria-label="Change markers">
+          <line x1="60" y1="4" x2="60" y2="30" stroke="#5B7A9E" stroke-width="1.5" stroke-dasharray="3 3"/>
+          <rect x="66" y="8" width="10" height="10" transform="rotate(45 71 13)" fill="#5B7A9E"/>
+        </svg>
+        <div class="vt">Change markers</div>
+        <div class="vd">A new food, a started med, a trial start: a slate diamond with a date. States the fact, never draws the arrow.</div>
+      </div>
+      <div class="vitem">
+        <svg viewBox="0 0 170 34" width="170" height="34" role="img" aria-label="Baseline band">
+          <rect x="4" y="12" width="162" height="12" rx="3" fill="#EAEAEA" opacity="0.7"/>
+          <polyline points="4,20 30,18 56,21 82,16 108,19 134,15 166,17" fill="none" stroke="#00C2A8" stroke-width="2"/>
+        </svg>
+        <div class="vt">Baseline band</div>
+        <div class="vd">"Her usual range" as a quiet grey band behind the line — the glance question becomes <em>inside or outside the band?</em> Renders only once the baseline is established.</div>
+      </div>
+      <div class="vitem">
+        <svg viewBox="0 0 170 34" width="170" height="34" role="img" aria-label="Heat cells">
+          <g>
+            <rect x="8" y="8" width="18" height="18" rx="4" fill="#FFE4E6"/>
+            <rect x="32" y="8" width="18" height="18" rx="4" fill="#F9A8B4"/>
+            <rect x="56" y="8" width="18" height="18" rx="4" fill="#F43F5E"/>
+            <rect x="80" y="8" width="18" height="18" rx="4" fill="#FFFFFF" stroke="#EAEAEA"/>
+            <rect x="104" y="8" width="18" height="18" rx="4" fill="none" stroke="#C9C9C9" stroke-dasharray="3 2"/>
+          </g>
+        </svg>
+        <div class="vt">Heat cells</div>
+        <div class="vd">Day cells shaded by count — one hue, light→dark. White = logged, quiet day. Dashed = nothing logged at all: a coverage hole, visually distinct from a good day.</div>
+      </div>
     </div>
-
-    <div class="tablewrap">
-    <table>
-      <tr><th>Owner question</th><th>Who</th><th>Answered today?</th><th>What it needs</th></tr>
-      <tr><td>Is the trial on track / getting anywhere?</td><td>Jordan</td><td class="no">No — surface is trial-blind</td><td>Trial band: day X of Y, coverage, symptom trend since start (record, never verdict)</td></tr>
-      <tr><td>What changed recently?</td><td>Both</td><td class="part">Partial — deltas on cards, buried</td><td>Change-led lead section; engine findings surfaced here, not just Home</td></tr>
-      <tr><td>What did she eat before the incident?</td><td>Both</td><td class="no">No — charts carry no events</td><td>Meals/doses annotated on the detail chart; day drill-in</td></tr>
-      <tr><td>What do the foods she finishes have in common?</td><td>Sam</td><td class="part">Partial — top food/protein ranks</td><td>Finish-rate lens by protein/format; ingredients gated on B-181</td></tr>
-      <tr><td>Fussy or sick?</td><td>Sam</td><td class="part">Partial — intake rate card exists</td><td>Baseline-band framing (“her normal,” not a bare %)</td></tr>
-      <tr><td>Is it always overnight?</td><td>Sam</td><td class="no">No — no time-of-day view (Ask's server tool has it; no chart does)</td><td>Time-of-day strip on symptom detail, or route to Ask</td></tr>
-      <tr><td>What do I tell the vet?</td><td>Jordan</td><td class="no">No — zero path to the report</td><td>Report bridge (B-023 PR 5, spec'd, unbuilt, now unblocked)</td></tr>
-      <tr><td>Is 3 vomits a month normal?</td><td>Sam</td><td class="no">No — and the dashboard must never answer norms</td><td>Route to Ask, which declines with honest framing (guardrail, not gap)</td></tr>
-    </table>
-    </div>
-
     <div class="callout">
-      <span class="cl-tag">The synthesis</span>
-      Every question is one of four jobs: <strong>“Is the plan working?”</strong> (trial/regimen),
-      <strong>“What changed?”</strong> (detection), <strong>“What does she actually eat?”</strong> (preference/intake),
-      <strong>“Get me ready for the vet.”</strong> (report). The three options below differ in how explicitly
-      the surface is organized around those four jobs.
+      <span class="cl-tag">Words budget</span>
+      Each dashboard card gets at most a kicker, a number with its denominator, and one optional
+      sub-line. The AI summary survives as a <em>single</em> collapsed line under the hero — tap to expand.
+      Everything longer lives one tap down, on the approved detail screen.
     </div>
   </section>
 
-  <!-- ══════════════════ 03 · Option A ══════════════════ -->
+  <!-- ══════════════════ 03 · V1 ══════════════════ -->
   <section>
-    <div class="sec-head"><span class="sec-num">03</span><h2>Option A — Keep the stack, fix the dead ends</h2></div>
+    <div class="sec-head"><span class="sec-num">03</span><h2>V1 — The month, in one picture</h2></div>
     <div class="opt-meta">
-      <span class="opt-pill">Conservative · fits shipped pattern</span>
-      <span class="opt-pill">~3 PRs</span>
-      <span class="opt-pill">No new layout system</span>
+      <span class="opt-pill">Hero overlay timeline</span>
+      <span class="opt-pill">Symptoms · meals · changes on one axis</span>
+      <span class="opt-pill">Designer's lean</span>
     </div>
     <div class="col">
       <p>
-        The card stack stays. Three additions: a trial strip at the top (reusing Home's
-        <code>TrialStrip</code> primitives), every card becomes a doorway (finish B-093),
-        and a report band closes the bottom. The real work lands on the detail screen (§06).
+        One hero chart owns the top: the last 30 days with symptom stems above the line,
+        meal ticks and coverage gaps below it, change markers through it, the trial span
+        as a quiet teal underlay. This <em>is</em> the D1 detail chart promoted to the dashboard —
+        drill-in becomes zoom-in. Compact chart rows follow; no card is textier than
+        a number and its denominator.
       </p>
     </div>
     <div class="frames">
@@ -309,67 +338,145 @@
         <div class="frame">
           <div class="f-nav"><span>‹ Back</span><span></span></div>
           <div class="f-title">Patterns</div>
-          <div class="f-band teal">
-            <div class="f-kicker">Diet trial · day 19 of 42</div>
-            <div class="f-lead">38 of 41 logged feedings matched the trial list</div>
-            <div class="f-sub">2 off-diet exposures logged · tap for the trial record</div>
+          <div class="f-ribbon">
+            <span class="rlabel">Trial · day 19 of 42</span>
+            <span class="rbar"><i></i></span>
+            <span class="rnum">38/41 on-list</span>
           </div>
-          <div class="f-card">
-            <div class="f-kicker">Summary</div>
-            <div class="f-lead">A quieter two weeks for Mochi — itching hasn't recurred since Jul 21.</div>
-            <div class="f-faint">Based on the cards below ↓</div>
-          </div>
-          <div class="f-card">
-            <div class="f-row">
-              <div>
-                <div class="f-kicker">Itch/Scratch · last 30 days</div>
-                <div class="f-num">3 <span style="font-size:12px; color:#B4123B; font-weight:600;">↑ up from none</span></div>
-              </div>
-              <span class="f-chevron">›</span>
+          <div class="f-card tight">
+            <div class="f-kicker">Last 30 days</div>
+            <svg viewBox="0 0 292 132" width="100%" height="132" role="img" aria-label="Month overlay: itch and vomit stems, meal ticks, food change marker, trial span">
+              <!-- trial span underlay -->
+              <rect x="120" y="8" width="168" height="102" rx="6" fill="#E0FBF7" opacity="0.5"/>
+              <text x="284" y="18" font-size="8" fill="#0B7B6C" text-anchor="end" font-family="sans-serif">trial</text>
+              <!-- axis -->
+              <line x1="6" y1="88" x2="286" y2="88" stroke="#EAEAEA" stroke-width="1"/>
+              <!-- food change marker -->
+              <line x1="142" y1="14" x2="142" y2="88" stroke="#5B7A9E" stroke-width="1.4" stroke-dasharray="3 3"/>
+              <rect x="137" y="20" width="9" height="9" transform="rotate(45 141.5 24.5)" fill="#5B7A9E"/>
+              <!-- vomit stem (lighter rose) -->
+              <line x1="58" y1="88" x2="58" y2="60" stroke="#F43F5E" stroke-width="2" opacity="0.45"/>
+              <circle cx="58" cy="60" r="3.2" fill="#F43F5E" opacity="0.45"/>
+              <!-- itch stems -->
+              <g stroke="#F43F5E" stroke-width="2">
+                <line x1="172" y1="88" x2="172" y2="36"/>
+                <line x1="182" y1="88" x2="182" y2="52"/>
+                <line x1="202" y1="88" x2="202" y2="52"/>
+              </g>
+              <g fill="#F43F5E">
+                <circle cx="172" cy="36" r="3.2"/>
+                <circle cx="182" cy="52" r="3.2"/>
+                <circle cx="202" cy="52" r="3.2"/>
+              </g>
+              <!-- meal ticks with gaps -->
+              <g fill="#00C2A8">
+                <rect x="10" y="96" width="3.2" height="8" rx="1"/><rect x="19" y="96" width="3.2" height="8" rx="1"/>
+                <rect x="28" y="96" width="3.2" height="8" rx="1"/><rect x="37" y="96" width="3.2" height="8" rx="1"/>
+                <rect x="46" y="96" width="3.2" height="8" rx="1"/><rect x="55" y="96" width="3.2" height="8" rx="1"/>
+                <rect x="64" y="96" width="3.2" height="8" rx="1"/><rect x="82" y="96" width="3.2" height="8" rx="1"/>
+                <rect x="91" y="96" width="3.2" height="8" rx="1"/><rect x="100" y="96" width="3.2" height="8" rx="1"/>
+                <rect x="109" y="96" width="3.2" height="8" rx="1"/><rect x="118" y="96" width="3.2" height="8" rx="1"/>
+                <rect x="127" y="96" width="3.2" height="8" rx="1"/><rect x="136" y="96" width="3.2" height="8" rx="1"/>
+                <rect x="145" y="96" width="3.2" height="8" rx="1"/><rect x="154" y="96" width="3.2" height="8" rx="1"/>
+                <rect x="163" y="96" width="3.2" height="8" rx="1"/><rect x="172" y="96" width="3.2" height="8" rx="1"/>
+                <rect x="181" y="96" width="3.2" height="8" rx="1"/><rect x="190" y="96" width="3.2" height="8" rx="1"/>
+                <rect x="199" y="96" width="3.2" height="8" rx="1"/><rect x="208" y="96" width="3.2" height="8" rx="1"/>
+                <rect x="217" y="96" width="3.2" height="8" rx="1"/><rect x="226" y="96" width="3.2" height="8" rx="1"/>
+                <rect x="235" y="96" width="3.2" height="8" rx="1"/><rect x="253" y="96" width="3.2" height="8" rx="1"/>
+                <rect x="262" y="96" width="3.2" height="8" rx="1"/><rect x="271" y="96" width="3.2" height="8" rx="1"/>
+                <rect x="280" y="96" width="3.2" height="8" rx="1"/>
+              </g>
+              <g fill="none" stroke="#C9C9C9" stroke-width="1">
+                <rect x="73" y="96" width="3.2" height="8" rx="1"/>
+                <rect x="244" y="96" width="3.2" height="8" rx="1"/>
+              </g>
+              <!-- x labels -->
+              <text x="10" y="122" font-size="8.5" fill="#8A8A8A" font-family="sans-serif">Jul 2</text>
+              <text x="142" y="122" font-size="8.5" fill="#5B7A9E" font-family="sans-serif" text-anchor="middle">Jul 16 · new food</text>
+              <text x="286" y="122" font-size="8.5" fill="#8A8A8A" text-anchor="end" font-family="sans-serif">Aug 1</text>
+            </svg>
+            <div class="f-key"><span class="k-sym">Itch</span><span class="k-sym2">Vomit</span><span class="k-meal">Meals</span><span class="k-food">Change</span><span class="k-none">No log</span></div>
+            <div class="f-stats">
+              <div class="f-stat"><div class="n">3</div><div class="l">itch</div></div>
+              <div class="f-stat"><div class="n">1</div><div class="l">vomit</div></div>
+              <div class="f-stat"><div class="n">58</div><div class="l">meals</div></div>
+              <div class="f-stat"><div class="n">28<small style="font-size:9px;">/30</small></div><div class="l">days logged</div></div>
             </div>
           </div>
-          <div class="f-card">
+          <div class="f-faint" style="margin:-2px 4px 8px;">Itching clustered Jul 18–21, none since — tap any mark ›</div>
+          <div class="f-card tight">
             <div class="f-row">
-              <div>
+              <div style="flex:1;">
                 <div class="f-kicker">Meals finished</div>
-                <div class="f-num">86%</div>
-                <div class="f-faint">vs 84% the previous 30 days</div>
+                <div class="f-num">86% <small style="font-size:10px; color:#8A8A8A; font-weight:500;">of 51 rated</small></div>
+              </div>
+              <svg viewBox="0 0 90 22" width="90" height="22" aria-label="Finish rate vs prior month">
+                <rect x="0" y="3" width="86" height="6" rx="3" fill="#EAEAEA"/>
+                <rect x="0" y="3" width="74" height="6" rx="3" fill="#00C2A8"/>
+                <rect x="0" y="14" width="86" height="6" rx="3" fill="#EAEAEA"/>
+                <rect x="0" y="14" width="72" height="6" rx="3" fill="#86D9CC"/>
+              </svg>
+              <span class="f-chevron">›</span>
+            </div>
+          </div>
+          <div class="f-card tight">
+            <div class="f-row">
+              <div style="flex:1;">
+                <div class="f-kicker">Weight</div>
+                <div class="f-num">12.4 <small style="font-size:10px; color:#8A8A8A; font-weight:500;">kg · Jul 24</small></div>
+              </div>
+              <svg viewBox="0 0 90 26" width="90" height="26" aria-label="Weight, last 6 readings">
+                <polyline points="4,16 20,15 36,17 52,14 68,13 84,13" fill="none" stroke="#525252" stroke-width="1.8"/>
+                <circle cx="84" cy="13" r="2.6" fill="#525252"/>
+              </svg>
+              <span class="f-chevron">›</span>
+            </div>
+          </div>
+          <div class="f-card tight">
+            <div class="f-row">
+              <div style="flex:1;">
+                <div class="f-kicker">Diet · 9 foods</div>
+                <svg viewBox="0 0 180 30" width="180" height="30" aria-label="Top foods by share of diet">
+                  <rect x="0" y="2" width="128" height="8" rx="3" fill="#00C2A8"/>
+                  <text x="132" y="9" font-size="8.5" fill="#525252" font-family="sans-serif">Hydrolyzed 71%</text>
+                  <rect x="0" y="17" width="34" height="8" rx="3" fill="#86D9CC"/>
+                  <text x="38" y="24" font-size="8.5" fill="#525252" font-family="sans-serif">Salmon treats 12% · new</text>
+                </svg>
               </div>
               <span class="f-chevron">›</span>
             </div>
           </div>
-          <div class="f-card flat" style="text-align:center; color:#8A8A8A;">… calendar · top food · top protein · weight …<br/><span style="font-size:10.5px;">(every card now opens a detail — B-093 completed)</span></div>
-          <div class="f-band">
-            <div class="f-kicker">For the vet</div>
-            <div class="f-lead">Turn this into the clinical report</div>
-            <div class="f-sub">Everything above, rendered for a 60-second clinical scan</div>
-            <a class="f-btn" style="margin-top:6px;">Preview the vet report</a>
+          <div class="f-row" style="padding: 0 2px;">
+            <span class="f-chip ghost">Report preview ›</span>
+            <span class="f-chip">Ask about this month</span>
           </div>
         </div>
-        <p class="framecap"><b>A1 · Dashboard.</b> Trial band leads (safety-first ordering preserved beneath it); report band closes. Cards unchanged otherwise.</p>
+        <p class="framecap"><b>V1 · Dashboard.</b> The hero answers "what happened, when, against what" in one look: the cluster, the new-food marker two days before it, the trial span, two coverage gaps. Rows beneath are charts with denominators, not paragraphs.</p>
       </div>
     </div>
-    <div class="col">
-      <p><em>Designer's honesty note:</em> A fixes the dead ends but not failure mode #1 —
-      the stack still looks the same every visit. It's the floor, not the ceiling.</p>
+    <div class="callout">
+      <span class="cl-tag">Why the designer leans V1</span>
+      It's the only variant where <em>time is shared</em> — the itch cluster, the food change, and the
+      trial span sit on one axis, so the eye does the cross-referencing the old card stack asked
+      the reader to do in their head. And it makes the approved detail screen feel inevitable:
+      tap the hero, get D1 with the same marks at higher zoom.
     </div>
   </section>
 
-  <!-- ══════════════════ 04 · Option B ══════════════════ -->
+  <!-- ══════════════════ 04 · V2 ══════════════════ -->
   <section>
-    <div class="sec-head"><span class="sec-num">04</span><h2>Option B — Lead with what changed</h2></div>
+    <div class="sec-head"><span class="sec-num">04</span><h2>V2 — Small multiples</h2></div>
     <div class="opt-meta">
-      <span class="opt-pill">Restructure · moderate swing</span>
-      <span class="opt-pill">Engine findings reach Patterns</span>
-      <span class="opt-pill">Cards demoted to evidence tier</span>
+      <span class="opt-pill">Chart-tile grid</span>
+      <span class="opt-pill">Most metrics per screen</span>
+      <span class="opt-pill">Apple-Health-favorites energy</span>
     </div>
     <div class="col">
       <p>
-        The dashboard becomes two tiers: <strong>“What changed”</strong> — a curated, capped set of
-        detected changes (the same engine findings Home shows, plus card-level deltas that
-        cleared their floors) — then <strong>“The record”</strong>, the full card stack collapsed into
-        grouped, tappable rows. The surface is different every visit <em>because it re-ranks on change</em>;
-        a quiet stretch says so honestly instead of re-dealing identical cards.
+        A 2-up grid of chart tiles — every tile is a real mini-chart with its number, nothing else.
+        Highest information density of the three; the whole record in one screenful.
+        The trade: no shared time axis, so cross-referencing ("the itching started after the new food")
+        is lost to the detail screen.
       </p>
     </div>
     <div class="frames">
@@ -377,60 +484,93 @@
         <div class="frame">
           <div class="f-nav"><span>‹ Back</span><span></span></div>
           <div class="f-title">Patterns</div>
-          <div class="f-band teal">
-            <div class="f-kicker">Diet trial · day 19 of 42</div>
-            <div class="f-lead">38 of 41 logged feedings matched the trial list</div>
+          <div class="f-ribbon">
+            <span class="rlabel">Trial · day 19 of 42</span>
+            <span class="rbar"><i></i></span>
+            <span class="rnum">38/41 on-list</span>
           </div>
-          <div class="f-kicker" style="margin:6px 2px;">What changed</div>
-          <div class="f-card" style="border-left: 3px solid #F43F5E;">
-            <div class="f-lead">Itching appeared this month — 3 events, Jul 18–21, after none the previous 30 days.</div>
-            <div class="f-sub">All three fell within 4 days · none since</div>
-            <div class="f-chips"><span class="f-chip ghost">See the days ›</span></div>
+          <div class="f-grid">
+            <div class="f-tile">
+              <div class="t-label">Itch/Scratch</div>
+              <div class="t-num">3 <small style="color:#B4123B;">↑</small></div>
+              <svg viewBox="0 0 128 30" width="100%" height="30" aria-label="Itch, 30 days">
+                <line x1="2" y1="26" x2="126" y2="26" stroke="#EAEAEA"/>
+                <g stroke="#F43F5E" stroke-width="2"><line x1="74" y1="26" x2="74" y2="8"/><line x1="79" y1="26" x2="79" y2="16"/><line x1="88" y1="26" x2="88" y2="16"/></g>
+              </svg>
+            </div>
+            <div class="f-tile">
+              <div class="t-label">Vomiting</div>
+              <div class="t-num">1</div>
+              <svg viewBox="0 0 128 30" width="100%" height="30" aria-label="Vomit, 30 days">
+                <line x1="2" y1="26" x2="126" y2="26" stroke="#EAEAEA"/>
+                <g stroke="#F43F5E" stroke-width="2" opacity="0.5"><line x1="26" y1="26" x2="26" y2="12"/></g>
+              </svg>
+            </div>
+            <div class="f-tile">
+              <div class="t-label">Meals finished</div>
+              <div class="t-num">86%</div>
+              <svg viewBox="0 0 128 30" width="100%" height="30" aria-label="Finish rate with baseline band">
+                <rect x="2" y="8" width="124" height="10" rx="3" fill="#EAEAEA" opacity="0.7"/>
+                <polyline points="2,14 22,13 42,15 62,12 82,14 102,11 126,12" fill="none" stroke="#00C2A8" stroke-width="1.8"/>
+              </svg>
+            </div>
+            <div class="f-tile">
+              <div class="t-label">Weight · kg</div>
+              <div class="t-num">12.4</div>
+              <svg viewBox="0 0 128 30" width="100%" height="30" aria-label="Weight readings">
+                <polyline points="4,18 26,17 48,19 70,16 92,15 118,15" fill="none" stroke="#525252" stroke-width="1.8"/>
+                <circle cx="118" cy="15" r="2.6" fill="#525252"/>
+              </svg>
+            </div>
+            <div class="f-tile">
+              <div class="t-label">Month grid</div>
+              <div class="t-num" style="font-size:12px; color:#525252; font-weight:600;">Jul</div>
+              <svg viewBox="0 0 128 30" width="100%" height="30" aria-label="Mini month heat">
+                <g>
+                  <rect x="4" y="4" width="10" height="10" rx="2" fill="#FFFFFF" stroke="#EAEAEA"/><rect x="17" y="4" width="10" height="10" rx="2" fill="#FFFFFF" stroke="#EAEAEA"/><rect x="30" y="4" width="10" height="10" rx="2" fill="#FFE4E6"/><rect x="43" y="4" width="10" height="10" rx="2" fill="#FFFFFF" stroke="#EAEAEA"/><rect x="56" y="4" width="10" height="10" rx="2" fill="none" stroke="#C9C9C9" stroke-dasharray="2 2"/><rect x="69" y="4" width="10" height="10" rx="2" fill="#FFFFFF" stroke="#EAEAEA"/><rect x="82" y="4" width="10" height="10" rx="2" fill="#FFFFFF" stroke="#EAEAEA"/><rect x="95" y="4" width="10" height="10" rx="2" fill="#FFFFFF" stroke="#EAEAEA"/><rect x="108" y="4" width="10" height="10" rx="2" fill="#FFFFFF" stroke="#EAEAEA"/>
+                  <rect x="4" y="17" width="10" height="10" rx="2" fill="#FFFFFF" stroke="#EAEAEA"/><rect x="17" y="17" width="10" height="10" rx="2" fill="#F9A8B4"/><rect x="30" y="17" width="10" height="10" rx="2" fill="#F43F5E"/><rect x="43" y="17" width="10" height="10" rx="2" fill="#F9A8B4"/><rect x="56" y="17" width="10" height="10" rx="2" fill="#FFFFFF" stroke="#EAEAEA"/><rect x="69" y="17" width="10" height="10" rx="2" fill="#FFFFFF" stroke="#EAEAEA"/><rect x="82" y="17" width="10" height="10" rx="2" fill="#FFFFFF" stroke="#EAEAEA"/><rect x="95" y="17" width="10" height="10" rx="2" fill="none" stroke="#C9C9C9" stroke-dasharray="2 2"/><rect x="108" y="17" width="10" height="10" rx="2" fill="#FFFFFF" stroke="#EAEAEA"/>
+                </g>
+              </svg>
+            </div>
+            <div class="f-tile">
+              <div class="t-label">Top protein</div>
+              <div class="t-num" style="font-size:12px; font-weight:600;">Hydrolyzed</div>
+              <svg viewBox="0 0 128 30" width="100%" height="30" aria-label="Protein shares">
+                <rect x="2" y="4" width="96" height="7" rx="3" fill="#00C2A8"/>
+                <rect x="2" y="15" width="26" height="7" rx="3" fill="#86D9CC"/>
+                <text x="32" y="21" font-size="8" fill="#8A8A8A" font-family="sans-serif">salmon · new</text>
+              </svg>
+            </div>
           </div>
-          <div class="f-card" style="border-left: 3px solid #5B7A9E;">
-            <div class="f-lead">Salmon treats entered the record Jul 16 — 4 servings since.</div>
-            <div class="f-sub">New food · first logged appearance</div>
+          <div class="f-row" style="padding: 8px 2px 0;">
+            <span class="f-chip ghost">Report preview ›</span>
+            <span class="f-chip">Ask</span>
           </div>
-          <div class="f-card flat">
-            <div class="f-lead" style="color:#525252;">Nothing else moved beyond its usual range this month.</div>
-            <div class="f-faint">Meals finished, weight and vomiting are steady — records below.</div>
-          </div>
-          <div class="f-kicker" style="margin:10px 2px 6px;">The record</div>
-          <div class="f-card"><div class="f-row"><div class="f-lead">Symptoms</div><span class="f-faint">itch 3 · vomit 1</span><span class="f-chevron">›</span></div></div>
-          <div class="f-card"><div class="f-row"><div class="f-lead">Eating</div><span class="f-faint">86% finished</span><span class="f-chevron">›</span></div></div>
-          <div class="f-card"><div class="f-row"><div class="f-lead">Foods &amp; proteins</div><span class="f-faint">9 foods · 4 proteins</span><span class="f-chevron">›</span></div></div>
-          <div class="f-card"><div class="f-row"><div class="f-lead">Weight</div><span class="f-faint">12.4 kg · Jul 24</span><span class="f-chevron">›</span></div></div>
-          <a class="f-btn quiet">Preview the vet report</a>
         </div>
-        <p class="framecap"><b>B1 · Dashboard.</b> Change tier is capped (≤3, safety leads); the quiet state is a designed sentence, never blankness. “The record” rows open the existing card details.</p>
+        <p class="framecap"><b>V2 · Dashboard.</b> Six chart tiles, one screenful, zero sentences. Every tile opens the approved detail. The mini month-grid tile doubles as the doorway to V3's full rhythm view.</p>
       </div>
     </div>
-    <div class="callout warn">
-      <span class="cl-tag">Data Scientist — binding constraint</span>
-      Everything in the “What changed” tier must clear the engine's existing floors
-      (<code>established</code>, n=1-never-colours, the G2 two-sided rule). The tier re-ranks on
-      change but never mints a claim the detectors didn't make. The “new food entered the record”
-      row is <em>descriptive</em> (a first appearance is a fact) — it is deliberately rendered in
-      medication-slate, not symptom-rose, and sits below any safety finding, because adjacency
-      to a symptom row must not imply causation the engine hasn't established.
+    <div class="col">
+      <p><em>Trade-off, stated plainly:</em> highest density, weakest story — the grid can't show that
+      the itching began two days after the new food, because those live in different tiles.
+      V2 is a great <strong>record</strong>; it is not an <strong>explanation</strong>.</p>
     </div>
   </section>
 
-  <!-- ══════════════════ 05 · Option C ══════════════════ -->
+  <!-- ══════════════════ 05 · V3 ══════════════════ -->
   <section>
-    <div class="sec-head"><span class="sec-num">05</span><h2>Option C — Organize the surface around the four jobs</h2></div>
+    <div class="sec-head"><span class="sec-num">05</span><h2>V3 — Rhythms</h2></div>
     <div class="opt-meta">
-      <span class="opt-pill">Swing for the fences</span>
-      <span class="opt-pill">Ask woven in (flag-gated)</span>
-      <span class="opt-pill">Sections adapt to the pet's situation</span>
+      <span class="opt-pill">Calendar heat + time-of-day</span>
+      <span class="opt-pill">The "when" dashboard</span>
+      <span class="opt-pill">Needs one new client aggregate (hour-of-day)</span>
     </div>
     <div class="col">
       <p>
-        The dashboard <em>is</em> the four jobs from §02, as named sections that adapt to the pet:
-        a mid-trial dog leads with the trial; a trial-less fussy cat leads with eating.
-        Each section carries one narrated read, its evidence, and — where a question outruns
-        what a chart can say — a suggested question that opens <strong>Ask, prefilled</strong>.
-        The report is a first-class job, not a footer link.
+        Leads with <em>when</em> instead of <em>how much</em>: the month as a heat grid (evolving the shipped
+        calendar card into the hero) plus a new time-of-day strip — the chart that finally answers
+        Sam's "is it always overnight?". The hour-of-day aggregate exists server-side for Ask
+        but has no client equivalent yet; it's a small, cheap addition to <code>lib/analytics.ts</code>.
       </p>
     </div>
     <div class="frames">
@@ -438,82 +578,85 @@
         <div class="frame">
           <div class="f-nav"><span>‹ Back</span><span></span></div>
           <div class="f-title">Patterns</div>
-          <div class="f-kicker" style="margin:2px;">The trial</div>
-          <div class="f-card">
-            <div class="f-lead">Day 19 of 42. The record so far: 38 of 41 logged feedings matched the trial list; itching appeared Jul 18–21, none since.</div>
-            <div class="f-faint">Coverage: 19 of 19 days have at least one logged meal</div>
-            <div class="f-chips"><span class="f-chip ghost">Trial record ›</span><span class="f-chip">Ask: what's left to rule out?</span></div>
+          <div class="f-ribbon">
+            <span class="rlabel">Trial · day 19 of 42</span>
+            <span class="rbar"><i></i></span>
+            <span class="rnum">38/41 on-list</span>
           </div>
-          <div class="f-kicker" style="margin:8px 2px 4px;">What changed</div>
-          <div class="f-card" style="border-left: 3px solid #F43F5E;">
-            <div class="f-lead">Itching appeared this month — 3 events after none the previous 30 days.</div>
-            <div class="f-chips"><span class="f-chip ghost">See the days ›</span><span class="f-chip">Ask: what preceded these?</span></div>
+          <div class="f-card tight">
+            <div class="f-row" style="margin-bottom:6px;">
+              <div class="f-kicker" style="margin:0;">July</div>
+              <div class="f-chips" style="margin:0;"><span class="f-chip on">Itch</span><span class="f-chip ghost">Vomit</span><span class="f-chip ghost">Meals</span></div>
+            </div>
+            <svg viewBox="0 0 292 118" width="100%" height="118" role="img" aria-label="July heat calendar, itch lens">
+              <g font-size="8" fill="#8A8A8A" font-family="sans-serif">
+                <text x="14" y="10">M</text><text x="55" y="10">T</text><text x="96" y="10">W</text><text x="137" y="10">T</text><text x="178" y="10">F</text><text x="219" y="10">S</text><text x="260" y="10">S</text>
+              </g>
+              <!-- 5 weeks x 7 cells; mostly white (logged, quiet), dashes (no log), rose (events) -->
+              <g>
+                <!-- w1 -->
+                <rect x="8" y="16" width="34" height="16" rx="4" fill="#FFFFFF" stroke="#EAEAEA"/><rect x="49" y="16" width="34" height="16" rx="4" fill="#FFFFFF" stroke="#EAEAEA"/><rect x="90" y="16" width="34" height="16" rx="4" fill="#FFFFFF" stroke="#EAEAEA"/><rect x="131" y="16" width="34" height="16" rx="4" fill="#FFFFFF" stroke="#EAEAEA"/><rect x="172" y="16" width="34" height="16" rx="4" fill="#FFFFFF" stroke="#EAEAEA"/><rect x="213" y="16" width="34" height="16" rx="4" fill="#FFFFFF" stroke="#EAEAEA"/><rect x="254" y="16" width="34" height="16" rx="4" fill="none" stroke="#C9C9C9" stroke-dasharray="3 2"/>
+                <!-- w2 -->
+                <rect x="8" y="36" width="34" height="16" rx="4" fill="#FFFFFF" stroke="#EAEAEA"/><rect x="49" y="36" width="34" height="16" rx="4" fill="#FFFFFF" stroke="#EAEAEA"/><rect x="90" y="36" width="34" height="16" rx="4" fill="#FFFFFF" stroke="#EAEAEA"/><rect x="131" y="36" width="34" height="16" rx="4" fill="#FFFFFF" stroke="#EAEAEA"/><rect x="172" y="36" width="34" height="16" rx="4" fill="#FFFFFF" stroke="#EAEAEA"/><rect x="213" y="36" width="34" height="16" rx="4" fill="#FFFFFF" stroke="#EAEAEA"/><rect x="254" y="36" width="34" height="16" rx="4" fill="#FFFFFF" stroke="#EAEAEA"/>
+                <!-- w3: 16th food change ring (Wed), 18 itch (Fri), 19 (Sat) -->
+                <rect x="8" y="56" width="34" height="16" rx="4" fill="#FFFFFF" stroke="#EAEAEA"/><rect x="49" y="56" width="34" height="16" rx="4" fill="#FFFFFF" stroke="#EAEAEA"/><rect x="90" y="56" width="34" height="16" rx="4" fill="#FFFFFF" stroke="#5B7A9E" stroke-width="1.6"/><rect x="131" y="56" width="34" height="16" rx="4" fill="#FFFFFF" stroke="#EAEAEA"/><rect x="172" y="56" width="34" height="16" rx="4" fill="#F43F5E"/><rect x="213" y="56" width="34" height="16" rx="4" fill="#F9A8B4"/><rect x="254" y="56" width="34" height="16" rx="4" fill="#FFFFFF" stroke="#EAEAEA"/>
+                <!-- w4: 21 itch (Tue) -->
+                <rect x="8" y="76" width="34" height="16" rx="4" fill="#FFFFFF" stroke="#EAEAEA"/><rect x="49" y="76" width="34" height="16" rx="4" fill="#F9A8B4"/><rect x="90" y="76" width="34" height="16" rx="4" fill="#FFFFFF" stroke="#EAEAEA"/><rect x="131" y="76" width="34" height="16" rx="4" fill="#FFFFFF" stroke="#EAEAEA"/><rect x="172" y="76" width="34" height="16" rx="4" fill="#FFFFFF" stroke="#EAEAEA"/><rect x="213" y="76" width="34" height="16" rx="4" fill="#FFFFFF" stroke="#EAEAEA"/><rect x="254" y="76" width="34" height="16" rx="4" fill="none" stroke="#C9C9C9" stroke-dasharray="3 2"/>
+                <!-- w5 -->
+                <rect x="8" y="96" width="34" height="16" rx="4" fill="#FFFFFF" stroke="#EAEAEA"/><rect x="49" y="96" width="34" height="16" rx="4" fill="#FFFFFF" stroke="#EAEAEA"/><rect x="90" y="96" width="34" height="16" rx="4" fill="#FFFFFF" stroke="#EAEAEA"/><rect x="131" y="96" width="34" height="16" rx="4" fill="#FFFFFF" stroke="#EAEAEA"/><rect x="172" y="96" width="34" height="16" rx="4" fill="#FFFFFF" stroke="#EAEAEA"/><rect x="213" y="96" width="34" height="16" rx="4" fill="#FFFFFF" stroke="#EAEAEA"/><rect x="254" y="96" width="34" height="16" rx="4" fill="#FFFFFF" stroke="#EAEAEA"/>
+              </g>
+            </svg>
+            <div class="f-key"><span class="k-sym">Event day (darker = more)</span><span class="k-food">Food change</span><span class="k-none">No log</span></div>
           </div>
-          <div class="f-kicker" style="margin:8px 2px 4px;">What Mochi eats</div>
-          <div class="f-card">
-            <div class="f-lead">Hydrolyzed kibble is 71% of the diet, finished 92% of the time.</div>
-            <div class="f-sub">Salmon treats new since Jul 16 · 4 proteins in rotation</div>
-            <div class="f-chips"><span class="f-chip ghost">Foods &amp; proteins ›</span></div>
+          <div class="f-card tight">
+            <div class="f-kicker">Time of day · itch, 3 months</div>
+            <svg viewBox="0 0 292 46" width="100%" height="46" role="img" aria-label="Itch events by hour of day, last 3 months">
+              <line x1="8" y1="30" x2="284" y2="30" stroke="#EAEAEA"/>
+              <g font-size="8" fill="#8A8A8A" font-family="sans-serif">
+                <text x="8" y="42">12a</text><text x="76" y="42">6a</text><text x="142" y="42">noon</text><text x="212" y="42">6p</text><text x="272" y="42">12a</text>
+              </g>
+              <g fill="#F43F5E">
+                <circle cx="224" cy="22" r="4"/><circle cx="236" cy="22" r="4"/><circle cx="243" cy="14" r="4"/><circle cx="252" cy="22" r="4"/>
+                <circle cx="120" cy="22" r="4" opacity="0.55"/>
+              </g>
+            </svg>
+            <div class="f-faint">4 of 5 events after 6pm · counts, not a diagnosis</div>
           </div>
-          <div class="f-kicker" style="margin:8px 2px 4px;">For the vet</div>
-          <div class="f-card">
-            <div class="f-lead">Friday's visit: the report covers the trial, the July itching, and the weight record.</div>
-            <div class="f-chips"><span class="f-chip">Preview report</span><span class="f-chip ghost">Ask: build me a rundown</span></div>
+          <div class="f-card tight">
+            <div class="f-row">
+              <div style="flex:1;">
+                <div class="f-kicker">Meals finished</div>
+                <div class="f-num">86% <small style="font-size:10px; color:#8A8A8A; font-weight:500;">of 51 rated</small></div>
+              </div>
+              <span class="f-chevron">›</span>
+            </div>
+          </div>
+          <div class="f-row" style="padding: 0 2px;">
+            <span class="f-chip ghost">Report preview ›</span>
+            <span class="f-chip">Ask</span>
           </div>
         </div>
-        <p class="framecap"><b>C1 · Mid-trial dog (Jordan/Mochi).</b> Trial leads. Every section: one read, evidence doorway, an Ask handoff where the follow-up outruns charts.</p>
-      </div>
-
-      <div class="framewrap">
-        <div class="frame">
-          <div class="f-nav"><span>‹ Back</span><span></span></div>
-          <div class="f-title">Patterns</div>
-          <div class="f-kicker" style="margin:2px;">What Pixel eats</div>
-          <div class="f-card">
-            <div class="f-lead">Pixel finished 61% of offered meals this month — inside her usual 55–70% grazing range.</div>
-            <div class="f-faint">Grazing is her normal. This number reads against her own baseline, not other cats.</div>
-            <div class="f-chips"><span class="f-chip ghost">Finish rates by food ›</span></div>
-          </div>
-          <div class="f-card">
-            <div class="f-lead">Finished most often: Weruva pâté (9 of 10). Left most often: the gravy-style cans (2 of 7).</div>
-            <div class="f-sub">Counts shown are servings logged this month</div>
-            <div class="f-chips"><span class="f-chip">Ask: what do the leftovers share?</span></div>
-          </div>
-          <div class="f-kicker" style="margin:8px 2px 4px;">What changed</div>
-          <div class="f-card flat">
-            <div class="f-lead" style="color:#525252;">Nothing moved beyond Pixel's usual range this month.</div>
-            <div class="f-faint">Vomiting 1 (typical months: 0–2) · weight steady</div>
-          </div>
-          <div class="f-kicker" style="margin:8px 2px 4px;">For the vet</div>
-          <div class="f-card">
-            <div class="f-lead">No visit planned — the report is ready whenever you need it.</div>
-            <div class="f-chips"><span class="f-chip ghost">Preview report</span></div>
-          </div>
-        </div>
-        <p class="framecap"><b>C2 · Trial-less fussy cat (Sam/Pixel).</b> Same skeleton, different lead: eating first, baseline-band framing (“her usual range”), quiet change section is a designed state.</p>
+        <p class="framecap"><b>V3 · Dashboard.</b> The month as texture: the cluster reads as a dark streak, coverage holes as dashed cells, the food change as a slate ring. The time-of-day strip is net-new capability — the evening cluster is visible before anyone asks.</p>
       </div>
     </div>
     <div class="callout warn">
-      <span class="cl-tag">Persona conflict — needs a PM call (D2 below)</span>
-      <strong>Designer:</strong> C's Ask chips are the strongest version of “every number has a next action” —
-      and Ask's 18 server tools already out-cover the charts (time-of-day, med history).
-      <strong>Engineer:</strong> <code>ask_enabled</code> is allowlist-off for everyone but the PM. If C ships
-      before Ask GA, its signature affordance is invisible to every real user — the sections must
-      earn their keep with the chips hidden. <strong>Dr. Chen:</strong> the trial section may present
-      the record (counts, coverage, symptom timing) but never a verdict — “is it working” is the
-      vet's sentence to say, and G2 forbids the negative claim at any coverage.
+      <span class="cl-tag">Data Scientist — on the time-of-day strip</span>
+      Hour-of-day clustering already has a floored server-side detector (⑥). The dashboard strip
+      renders <em>raw dots with counts</em> — descriptive, always true. The sentence beneath it
+      ("4 of 5 after 6pm") appears only when the count clears the same floor the detector uses;
+      below the floor the strip shows dots with no sentence. Same discipline as everywhere:
+      the chart may show, only the engine may say.
     </div>
   </section>
 
-  <!-- ══════════════════ 06 · Detail redesign ══════════════════ -->
+  <!-- ══════════════════ 06 · Detail (approved) ══════════════════ -->
   <section>
-    <div class="sec-head"><span class="sec-num">06</span><h2>The detail screen — shared across all three options</h2></div>
+    <div class="sec-head"><span class="sec-num">06</span><h2>The detail screen — approved, carried unchanged</h2></div>
     <div class="col">
       <p>
-        Today's detail screen is a number and a naked sparkline. The redesign makes the chart
-        <em>testify</em>: meals and new-food introductions annotated under the symptom line
-        (the Oura-Tags pattern, recast), the days listed behind the number, and two exits —
-        Ask and the report. This ships with <strong>any</strong> dashboard option.
+        Round 1's D1 frame, kept verbatim as the destination every chart above opens into.
+        (Quiet-state frame D2 also carries.) Round 3 polishes this to component-spec fidelity
+        alongside whichever dashboard wins.
       </p>
     </div>
     <div class="frames">
@@ -523,7 +666,6 @@
           <div class="f-title">Itch/Scratch</div>
           <div class="f-seg"><span>Week</span><span class="on">Month</span><span>3 Months</span></div>
           <div class="f-lead" style="margin-bottom:8px;">3 events this month, all within Jul 18–21 — up from none the previous 30 days. None in the 10 days since.</div>
-          <!-- annotated chart, low-fi -->
           <div class="f-card" style="padding:10px 8px 8px;">
             <svg viewBox="0 0 280 96" width="100%" height="96" role="img" aria-label="Itch events with meals and food changes annotated">
               <line x1="8" y1="70" x2="272" y2="70" stroke="#EAEAEA" stroke-width="1"/>
@@ -532,7 +674,6 @@
               <circle cx="104" cy="28" r="3.5" fill="#F43F5E"/>
               <circle cx="118" cy="34" r="3.5" fill="#F43F5E"/>
               <circle cx="140" cy="42" r="3.5" fill="#F43F5E"/>
-              <!-- meal ticks -->
               <g fill="#00C2A8">
                 <rect x="14" y="78" width="3" height="6" rx="1"/><rect x="30" y="78" width="3" height="6" rx="1"/>
                 <rect x="46" y="78" width="3" height="6" rx="1"/><rect x="62" y="78" width="3" height="6" rx="1"/>
@@ -543,7 +684,6 @@
                 <rect x="206" y="78" width="3" height="6" rx="1"/><rect x="222" y="78" width="3" height="6" rx="1"/>
                 <rect x="238" y="78" width="3" height="6" rx="1"/><rect x="254" y="78" width="3" height="6" rx="1"/>
               </g>
-              <!-- new-food marker -->
               <g>
                 <line x1="88" y1="14" x2="88" y2="70" stroke="#5B7A9E" stroke-width="1.5" stroke-dasharray="3 3"/>
                 <rect x="62" y="4" width="72" height="14" rx="7" fill="#EAF0F7"/>
@@ -563,102 +703,30 @@
             <span class="f-chip ghost">This is in the vet report ›</span>
           </div>
         </div>
-        <p class="framecap"><b>D1 · Detail, redesigned.</b> The chart carries its context: meal density below, food changes as slate markers. The day list makes the number inspectable. Two exits, both flag-aware.</p>
+        <p class="framecap"><b>D1 · Approved round 1.</b> The dashboard variants above all share its mark vocabulary, so tapping in feels like zooming, not switching.</p>
       </div>
-
-      <div class="framewrap">
-        <div class="frame">
-          <div class="f-nav"><span>‹ Patterns</span><span></span></div>
-          <div class="f-title">Itch/Scratch</div>
-          <div class="f-seg"><span>Week</span><span class="on">Month</span><span>3 Months</span></div>
-          <div class="f-lead" style="margin-bottom:8px;">Nothing logged this month — after 3 events in July.</div>
-          <div class="f-card flat">
-            <div class="f-lead" style="color:#525252;">A quiet month in the record.</div>
-            <div class="f-faint">A gap in logging isn't the same as an all-clear — if the itching truly stopped, this quiet stretch is worth telling the vet about too.</div>
-          </div>
-          <div class="f-chips" style="margin-top:2px;">
-            <span class="f-chip ghost">This is in the vet report ›</span>
-          </div>
-        </div>
-        <p class="framecap"><b>D2 · The quiet state.</b> Zero-after-N keeps the never-reassure framing that already ships — the redesign inherits it untouched.</p>
-      </div>
-    </div>
-    <div class="callout">
-      <span class="cl-tag">What the annotations may and may not say</span>
-      Markers state <em>facts with dates</em> (“Jul 16 · new food”) and never draw the arrow —
-      no “this caused that,” no highlighting a meal <em>because</em> it preceded a symptom.
-      If detector ① has an established correlation, its finding renders as its own labeled row
-      with counts, exactly as Home shows it. Visual adjacency is information; the engine's floors
-      decide when adjacency becomes a claim.
     </div>
   </section>
 
-  <!-- ══════════════════ 07 · Ingredients ══════════════════ -->
+  <!-- ══════════════════ 07 · Decisions ══════════════════ -->
   <section>
-    <div class="sec-head"><span class="sec-num">07</span><h2>Exploration — “what do the leftovers have in common?”</h2></div>
-    <div class="opt-meta"><span class="opt-pill">Feasibility-gated · not a round-1 commit</span></div>
-    <div class="col">
-      <p>
-        Sam's sharpest question. What we can answer <strong>today</strong>: commonality by
-        <strong>protein</strong> (structured, canonical) and <strong>format</strong> (pâté / gravy / kibble — an enum).
-        What we cannot: true ingredient-level commonality — <code>ingredients_notes</code> is a verbatim
-        text blob with no parser (B-181 territory, its own extraction/structuring track).
-        The Zoe lesson binds any version: <em>verdicts with hidden evidence destroy trust — counts inline, always.</em>
-      </p>
-    </div>
-    <div class="frames">
-      <div class="framewrap">
-        <div class="frame">
-          <div class="f-nav"><span>‹ Patterns</span><span></span></div>
-          <div class="f-title">Pixel's finish rates</div>
-          <div class="f-card">
-            <div class="f-kicker">By format · this month</div>
-            <div class="f-listrow"><span style="flex:1;">Pâté</span><span class="d" style="width:auto;">11 of 13 finished</span></div>
-            <div class="f-listrow"><span style="flex:1;">Gravy / chunks</span><span class="d" style="width:auto;">2 of 7 finished</span></div>
-            <div class="f-listrow"><span style="flex:1;">Dry</span><span class="d" style="width:auto;">free-fed · not rated</span></div>
-          </div>
-          <div class="f-card">
-            <div class="f-kicker">By protein · this month</div>
-            <div class="f-listrow"><span style="flex:1;">Chicken</span><span class="d" style="width:auto;">8 of 9 finished</span></div>
-            <div class="f-listrow"><span style="flex:1;">Tuna</span><span class="d" style="width:auto;">3 of 6 finished</span></div>
-            <div class="f-listrow"><span style="flex:1;">Beef</span><span class="d" style="width:auto;">1 of 4 finished</span></div>
-          </div>
-          <div class="f-card flat">
-            <div class="f-faint">Pattern here, not verdict: Pixel's record this month leans pâté over gravy. Counts are small — one case either way moves these numbers.</div>
-          </div>
-        </div>
-        <p class="framecap"><b>E1 · Buildable now.</b> Format + protein finish-rate lenses from existing structured fields. Denominators inline; free-fed honestly excluded; small-n disclosed in-line.</p>
-      </div>
-    </div>
-    <div class="col">
-      <p>
-        <em>If the PM wants true ingredient commonality</em> (“all three rejected cans contain carrageenan”),
-        that's a commissioned spike: parse or re-extract <code>ingredients_notes</code> into tokens,
-        with the same canonicalization discipline as proteins (Class A/B rules). Recommend logging it
-        as a backlog row gated on this round's direction call, not building speculatively.
-      </p>
-    </div>
-  </section>
-
-  <!-- ══════════════════ 08 · Decisions ══════════════════ -->
-  <section>
-    <div class="sec-head"><span class="sec-num">08</span><h2>Decisions this round needs</h2></div>
+    <div class="sec-head"><span class="sec-num">07</span><h2>Decisions — updated after round 1 review</h2></div>
     <div class="tablewrap">
     <table>
-      <tr><th>#</th><th>Decision</th><th>Options</th><th>Team lean</th></tr>
-      <tr><td>D1</td><td>Dashboard direction</td><td>A (fix dead ends) · B (change-led) · C (question-led)</td><td>B now, C's section logic as the growth path — C's adaptivity is the right destination but its Ask dependency is live (D2)</td></tr>
-      <tr><td>D2</td><td>Ask integration depth while <code>ask_enabled</code> is allowlist-off</td><td>Design C around Ask now (chips hidden when flag off) · hold Ask affordances until GA</td><td>Split — the §05 conflict; genuine PM call</td></tr>
-      <tr><td>D3</td><td>Report bridge placement</td><td>Footer band (A) · per-section “this is in the report” links (C) · both</td><td>Both — the bridge is B-023 PR 5, spec'd and unblocked; per-detail links are cheap trust</td></tr>
-      <tr><td>D4</td><td>Detail-screen annotation scope for round 2</td><td>Meals + food-changes (shown) · add med doses · add day drill-in only</td><td>Meals + food-changes + day list; med doses next round</td></tr>
-      <tr><td>D5</td><td>Ingredients track</td><td>Ship §07's format/protein lenses · also commission the B-181 structuring spike · defer both</td><td>Ship the lenses (cheap, honest); spike is a separate PM investment call</td></tr>
+      <tr><th>#</th><th>Decision</th><th>Status</th><th>Notes</th></tr>
+      <tr><td>D1</td><td>Dashboard direction</td><td class="part">Reset → this round</td><td>A/B/C superseded (too text-heavy). New call: <strong>V1 / V2 / V3, or a hybrid</strong> (designer's lean: V1 hero + V2's tile row beneath it for the secondary metrics; V3's time-of-day strip as a row in either)</td></tr>
+      <tr><td>D2</td><td>Ask depth while <code>ask_enabled</code> is allowlist-off</td><td class="no">Open</td><td>Round 2 keeps Ask to one flag-gated chip per screen — the graph-led layouts stand entirely without it, which softens (but doesn't close) the round-1 conflict</td></tr>
+      <tr><td>D3</td><td>Report bridge placement</td><td class="no">Open</td><td>All variants carry a compact "Report preview ›" chip; per-detail links live on D1. Ratify both?</td></tr>
+      <tr><td>D4</td><td>Detail annotation scope</td><td class="yes">Closed by D1 approval</td><td>Meals + food-changes + day list; med-dose markers = round 3 candidate</td></tr>
+      <tr><td>D5</td><td>Ingredients track</td><td class="no">Open</td><td>Format/protein finish-rate lenses (round 1 §07) buildable now; B-181 parsing spike is a separate investment call. Unchanged this round</td></tr>
+      <tr><td>D6</td><td><em>New:</em> hour-of-day client aggregate</td><td class="no">Open</td><td>V3's strip (and a D1-detail row later) needs a small <code>lib/analytics.ts</code> aggregate; server detector ⑥ already governs when a sentence may accompany it</td></tr>
     </table>
     </div>
     <div class="callout">
-      <span class="cl-tag">Standing constraints round 2 inherits (no PM input needed)</span>
-      G2 two-sided rule (no negative claims about the trial record at any coverage; no absence-based alarm);
-      one off-diet predicate (<code>lib/dietTrial.ts</code>); n=1 never colours; intake is not preference;
-      quiet states are designed, never blank; every count carries its denominator; trial "belief" reads
-      through <code>isTrialRunning</code>, never raw <code>status</code>.
+      <span class="cl-tag">Standing constraints (unchanged)</span>
+      G2 two-sided rule · one off-diet predicate (<code>lib/dietTrial.ts</code>) · n=1 never colours ·
+      intake is not preference · quiet states designed, never blank · every count carries its
+      denominator · trial belief via <code>isTrialRunning</code> · the chart may show, only the engine may say.
     </div>
   </section>
 
