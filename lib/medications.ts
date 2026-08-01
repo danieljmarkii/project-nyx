@@ -1062,6 +1062,45 @@ export function dosesTowardTarget(tally: AdherenceTally): number {
   return tally.given + tally.partial;
 }
 
+// ── B-618 §6 — the profile card's dose-course progress (PR 4) ────────────────────
+// The one place the "Dose {n} of {target}" line + its bar are formatted, so the line
+// and the bar always state the same n (the diet-trial bar lesson: never bind a bar to
+// one number and label it with another). `count` reads dosesTowardTarget — it does NOT
+// re-derive the D6 predicate.
+//
+// D7 (Dr. Chen, non-negotiable): reaching the target renders NO completion or stop
+// language. At n == target the line is "Dose 28 of 28" with a full bar — no checkmark,
+// no "complete", no dismissal, no path to a stop instruction (end-of-course is the
+// vet's call; `status` stays the only lifecycle authority). This helper can emit no
+// such word by construction — read the two format strings below and keep it that way.
+//
+// Past-target (n > target): extra administrations are EVIDENCE and are never hidden.
+// The rule is cap-the-bar / disclose-the-extras / render-no-error — the line switches
+// to "28 of 28 doses · 2 more logged" (barFraction clamped to 1), never falls back to
+// "Started …" the way the days path must ("Day 30 of 7" is nonsense; "28 of 28" is
+// still true), and never renders an error state for a course an owner is still on.
+export interface DoseCourseProgress {
+  count: number;          // dosesTowardTarget(tally) — therapy delivered (D1)
+  target: number;         // medications.target_duration_doses (> 0, DB-checked)
+  line: string;           // "Dose {n} of {target}" | "{t} of {t} doses · {x} more logged"
+  barFraction: number;    // min(count / target, 1), in [0, 1] — the bar width
+  pastTarget: boolean;    // count > target — extras are being disclosed
+}
+
+// Callers pass a POSITIVE target (the DB CHECK guarantees `target_duration_doses > 0`,
+// and the profile card gates on `> 0` so a corrupt local row degrades to the ongoing
+// path rather than rendering "Dose n of 0"). barFraction still guards `target > 0`
+// defensively for the exported B-394 consumer.
+export function doseCourseProgress(tally: AdherenceTally, target: number): DoseCourseProgress {
+  const count = dosesTowardTarget(tally);
+  const pastTarget = count > target;
+  const barFraction = target > 0 ? Math.min(count / target, 1) : 0;
+  const line = pastTarget
+    ? `${target} of ${target} ${target === 1 ? 'dose' : 'doses'} · ${count - target} more logged`
+    : `Dose ${count} of ${target}`;
+  return { count, target, line, barFraction, pastTarget };
+}
+
 // ── Dose → regimen attribution (compliance counting) ───────────────────────────
 // The Current-medications card counts a regimen's doses by matching on
 // medication_item_id within the regimen's window — NOT on medication_id. The
