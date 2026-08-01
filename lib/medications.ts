@@ -60,6 +60,14 @@ export const MEDICATION_SCHEMA_SQL = `
     prescribed_by        TEXT,
     started_at           TEXT NOT NULL,
     target_duration_days INTEGER,
+    -- B-618 — a fixed course denominated in DOSES ("#28, until gone") rather than
+    -- days; the sibling of target_duration_days, migration 049. At most one of the
+    -- two is ever set (the server's medications_one_duration_denomination CHECK);
+    -- both NULL = ongoing. Nullable, no default, so every existing local row reads
+    -- NULL — the honest value for a days- or ongoing-denominated regimen. Local
+    -- SQLite does NOT enforce the server's mutual-exclusion CHECK (SQLite CHECKs
+    -- aren't mirrored here); the entry path (§5, PR 3) is what writes exactly one.
+    target_duration_doses INTEGER,
     status               TEXT NOT NULL DEFAULT 'active',
     ended_at             TEXT,
     notes                TEXT,
@@ -152,6 +160,7 @@ export interface LocalMedication {
   prescribed_by: string | null;
   started_at: string;
   target_duration_days: number | null;
+  target_duration_doses: number | null; // B-618 — the doses-denominated sibling (migration 049)
   status: string;
   ended_at: string | null;
   notes: string | null;
@@ -226,6 +235,7 @@ export interface RemoteMedicationUpsert {
   prescribed_by: string | null;
   started_at: string;
   target_duration_days: number | null;
+  target_duration_doses: number | null; // B-618 — the doses-denominated sibling (migration 049)
   status: string;
   ended_at: string | null;
   notes: string | null;
@@ -254,6 +264,7 @@ export function medicationRowToRemote(row: LocalMedication): RemoteMedicationUps
     prescribed_by: row.prescribed_by,
     started_at: row.started_at,
     target_duration_days: row.target_duration_days,
+    target_duration_doses: row.target_duration_doses, // B-618 — forwarded as-is (null when days- or ongoing-denominated)
     status: row.status,
     ended_at: row.ended_at,
     notes: row.notes,
@@ -1020,6 +1031,37 @@ export function computeRegimenCompliance(input: RegimenComplianceInput): Regimen
   return { isPrn, expectedDoses, administeredDoses, flaggedDoses, loggedDoses, percent };
 }
 
+// ── B-618 §4 — the ONE dose-count predicate for a fixed doses-denominated course ──
+// "Dose {n} of {target}" (PR 4) where n = dosesTowardTarget(tally). There is exactly
+// ONE definition of "does this administration advance the count", exported here, and
+// every consumer reads it — the PR-4 profile card, B-394's forward projection, the
+// vet report if it ever renders course targets. No surface re-derives it (D6 — the
+// diet-trial §5.3 lesson, where a second, contradictory off-diet definition shipped
+// and had to be re-based).
+//
+// D1 (PM-ratified 2026-07-31): the counter means THERAPY DELIVERED. `given` AND
+// `partial` advance it — the same "administered = given + partial" the vet report
+// already ships (render.ts). `refused` / `missed` / `unrated` (and the derived
+// `unconfirmed`, which is stored as `unrated`) NEVER advance it; they stay visible
+// through regimenFlagLine, so a refused tail can never let a course read as complete
+// and Sam's bottle number stays honest.
+//
+// DELIBERATELY NOT the compliance numerator. computeRegimenCompliance.administeredDoses
+// is `given` ONLY — a stricter *rate* statistic (D1) — so the two disagree by exactly
+// `tally.partial`, on purpose: a partial dose is therapy delivered toward the bottle
+// (it counts here) but is not a cleanly-given dose for the adherence rate (it does not
+// count there). They answer two different questions and MUST NOT be reconciled. The §4
+// test pins the exact-`partial` gap so a future "make these consistent" edit trips a
+// red test and reads this comment before changing either.
+//
+// The count follows the record: a soft-deleted dose event has already fallen out of
+// the tally at the query layer (attributeDosesToRegimens skips deleted_at), so deleting
+// a mislogged dose correctly decrements the count. That is a property, not a bug — §4
+// asserts it.
+export function dosesTowardTarget(tally: AdherenceTally): number {
+  return tally.given + tally.partial;
+}
+
 // ── Dose → regimen attribution (compliance counting) ───────────────────────────
 // The Current-medications card counts a regimen's doses by matching on
 // medication_item_id within the regimen's window — NOT on medication_id. The
@@ -1179,7 +1221,12 @@ export interface RegimenFormValues {
   indication: string;
   prescribedBy: string;
   startedAt: string;               // 'YYYY-MM-DD'
+  // B-618 — exactly ONE of these is ever non-null (the entry form's job, §5/PR 3;
+  // the DB's medications_one_duration_denomination CHECK is the backstop). Both
+  // null = ongoing. This builder is a pure forwarder — it does not enforce the
+  // exclusion, mirroring how it already trusts the form for medicationItemId.
   targetDurationDays: number | null;
+  targetDurationDoses: number | null;
 }
 
 // The medications columns a regimen write sets. Deliberately omits status/ended_at
@@ -1196,6 +1243,7 @@ export interface RegimenWritePayload {
   prescribed_by: string | null;
   started_at: string;
   target_duration_days: number | null;
+  target_duration_doses: number | null; // B-618 — the doses-denominated sibling (migration 049)
 }
 
 export function buildRegimenPayload(v: RegimenFormValues): RegimenWritePayload {
@@ -1211,7 +1259,9 @@ export function buildRegimenPayload(v: RegimenFormValues): RegimenWritePayload {
     indication: trimOrNull(v.indication),
     prescribed_by: trimOrNull(v.prescribedBy),
     started_at: v.startedAt,
+    // B-618 — both forwarded verbatim; the form guarantees at most one is set.
     target_duration_days: v.targetDurationDays,
+    target_duration_doses: v.targetDurationDoses,
   };
 }
 
