@@ -174,6 +174,11 @@ export function StartTrialModal({
 
   const startDayKey = toLocalDayKey(startedAt);
   const endDayKey = targetDays > 0 ? trialEndDayKey(startDayKey, targetDays) : null;
+  // ONE date format on the sheet (B-565): the start date reads "28 July", matching
+  // the derived end date, rather than "July 28, 2026" two fields apart. `startDayKey`
+  // always parses back, so the fallback is unreachable and only satisfies the
+  // `string | null` return type.
+  const startDateDisplay = formatTrialEndDate(startDayKey) ?? startDayKey;
   const canStart = canStartTrial({ primaryFoods, indication });
 
   function toggleFood(food: PickerFood) {
@@ -460,13 +465,12 @@ export function StartTrialModal({
                 allowDeselect={false}
                 accessibilityLabel="What the trial is for"
               />
-              {indication ? (
-                <Text style={styles.help}>
-                  {durationHelperLine(indication, targetDays, startDayKey, endDayKey)}
-                </Text>
-              ) : null}
+              {/* The duration/end-date line used to render here, under the chips —
+                  but it names the end date the START DATE determines, so a
+                  back-date changed a sentence scrolled off the top. It moved below
+                  the start-date field it describes (B-565). */}
 
-              {/* ── First day on the trial diet only (R3, mock round 5) ───────
+              {/* ── First day — the start-date field (R3, mock round 5) ──────
                   PROMOTED FROM "More options", and the promotion is a clinical
                   fix rather than a layout preference. Day 1 is the first day of
                   EXCLUSIVE feeding, after the ≥1-week transition — a definition
@@ -486,11 +490,9 @@ export function StartTrialModal({
                 onPress={() => setShowDatePicker((v) => !v)}
                 activeOpacity={0.7}
                 accessibilityRole="button"
-                accessibilityLabel={`${START_DATE_LABEL}: ${startedAt.toLocaleDateString([], { year: 'numeric', month: 'long', day: 'numeric' })}`}
+                accessibilityLabel={`${START_DATE_LABEL}: ${startDateDisplay}`}
               >
-                <Text style={styles.fieldBtnText}>
-                  {startedAt.toLocaleDateString([], { year: 'numeric', month: 'long', day: 'numeric' })}
-                </Text>
+                <Text style={styles.fieldBtnText}>{startDateDisplay}</Text>
                 <Text style={styles.changeLabel}>{showDatePicker ? 'Done' : 'Change'}</Text>
               </TouchableOpacity>
               {showDatePicker && (
@@ -506,6 +508,14 @@ export function StartTrialModal({
                 />
               )}
               <Text style={styles.help}>{startDateHelper(petName)}</Text>
+              {/* Moved here from under the indication chips (B-565): this line
+                  names the end date the start date above it determines, so a
+                  back-date now changes a sentence the owner can see. */}
+              {indication ? (
+                <Text style={styles.help}>
+                  {durationHelperLine(indication, targetDays, startDayKey, endDayKey)}
+                </Text>
+              ) : null}
 
               {/* ── One disclosure. Three fields, none required. ────────────── */}
               <TouchableOpacity
