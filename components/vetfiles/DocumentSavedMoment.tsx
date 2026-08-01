@@ -106,8 +106,18 @@ export function DocumentSavedMoment({
           </TouchableOpacity>
         ))}
 
+        {/* B-589 — "Name it" is offered only when ONE document was saved. A
+            multi-document capture (two PDFs from a Files pick) renders a single
+            cover card reading "2 documents", so a Name sheet opened from here could
+            only name that cover group — while the singular sheet title told the
+            owner they were naming the whole save. That was the one Vet Files surface
+            where two PDFs stayed indistinguishable; the honest move (D11) is to let
+            the library, where each row now carries its filename, be where naming
+            happens. Done stands alone and is the shortest path off either way. */}
         <View style={styles.actions}>
-          <PrimaryButton label="Name it" variant="secondary" onPress={onName} />
+          {copy.multiDocument ? null : (
+            <PrimaryButton label="Name it" variant="secondary" onPress={onName} />
+          )}
           <PrimaryButton label="Done" onPress={onDone} />
         </View>
       </View>

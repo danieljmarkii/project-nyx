@@ -10,7 +10,7 @@ jest.mock('react-native-safe-area-context', () => ({
   useSafeAreaInsets: () => ({ top: 0, right: 0, bottom: 0, left: 0 }),
 }));
 
-import { DocumentKindSheet } from './VetDocumentMetaSheets';
+import { DocumentKindSheet, NameDocumentSheet } from './VetDocumentMetaSheets';
 import { VET_DOCUMENT_KIND_LABELS } from '../../lib/vetDocumentLibrary';
 
 // The kind sheet writes on a chip tap, so a second tap while the first write is in
@@ -40,5 +40,42 @@ describe('DocumentKindSheet — busy wiring', () => {
     );
     fireEvent.press(getByText(LAB_LABEL));
     expect(onSelect).not.toHaveBeenCalled();
+  });
+});
+
+// B-588 — the sheet must say WHICH document is being named. Two untitled PDFs from
+// one portal produce a byte-identical sheet; the filename B-546 put on the library
+// row is the disambiguator, and this sheet was the one surface that withheld it.
+describe('NameDocumentSheet — the which-document identifier', () => {
+  it('shows the filename when one is passed', () => {
+    const { getByText } = render(
+      <NameDocumentSheet
+        visible
+        initialTitle="Document — Jul 14"
+        untitled
+        fileLabel="CBC-Pixel-2026-07-14.pdf"
+        onCancel={() => {}}
+        onSave={() => {}}
+      />,
+    );
+    expect(getByText('CBC-Pixel-2026-07-14.pdf')).toBeTruthy();
+  });
+
+  it('shows no identifier when the document arrived without a filename', () => {
+    // A camera capture (fileLabel null) is told apart by its thumbnail on the row,
+    // so the sheet stays exactly as it was — no empty tag.
+    const { queryByText } = render(
+      <NameDocumentSheet
+        visible
+        initialTitle="Document — Jul 14"
+        untitled
+        fileLabel={null}
+        onCancel={() => {}}
+        onSave={() => {}}
+      />,
+    );
+    // The default title still shows only as the field placeholder, never as a
+    // rendered identifier tag.
+    expect(queryByText('CBC-Pixel-2026-07-14.pdf')).toBeNull();
   });
 });

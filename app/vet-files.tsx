@@ -95,9 +95,12 @@ export default function VetFilesScreen() {
   const signedAtRef = useRef<Map<string, number>>(new Map());
 
   // The Name sheet addresses a GROUP, and it is opened from two places — a library
-  // row and the saved moment — so it holds the three fields both can supply rather
-  // than a whole library row.
-  const [naming, setNaming] = useState<{ groupId: string; title: string; untitled: boolean } | null>(null);
+  // row and the saved moment — so it holds the fields both can supply rather than a
+  // whole library row. `fileLabel` is B-588's disambiguator: the filename shown in
+  // the sheet so the owner can tell which of two identical PDFs they opened.
+  const [naming, setNaming] = useState<
+    { groupId: string; title: string; untitled: boolean; fileLabel: string | null } | null
+  >(null);
   const [typing, setTyping] = useState<VetLibraryRow | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -520,6 +523,12 @@ export default function VetFilesScreen() {
               groupId: savedCover.document_group_id,
               title: savedCopy.cardTitle,
               untitled: true,
+              // The one just-saved document's own filename, when it has one. B-589
+              // removes this button entirely for a multi-document save, so this
+              // path only ever names a single document — there is no ambiguity to
+              // resolve here, but the identifier is free and keeps the sheet honest
+              // about what it is naming.
+              fileLabel: savedCover.source_filename ?? null,
             });
           }}
           onDone={() => setSaved(null)}
@@ -598,7 +607,7 @@ export default function VetFilesScreen() {
                 // cover row's id — a 3-page thread is one document, and its pages
                 // are what the detail screen swipes through.
                 onPress={() => router.push(`/vet-document/${row.groupId}`)}
-                onName={() => setNaming({ groupId: row.groupId, title: row.title, untitled: row.untitled })}
+                onName={() => setNaming({ groupId: row.groupId, title: row.title, untitled: row.untitled, fileLabel: row.fileLabel })}
                 onAddType={() => setTyping(row)}
               />
             ))}
@@ -639,6 +648,7 @@ export default function VetFilesScreen() {
         visible={naming != null}
         initialTitle={naming?.title ?? ''}
         untitled={naming?.untitled ?? true}
+        fileLabel={naming?.fileLabel ?? null}
         onCancel={() => setNaming(null)}
         onSave={handleRename}
         saving={saving}
