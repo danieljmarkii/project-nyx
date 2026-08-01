@@ -333,8 +333,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  plusH: { position: 'absolute', width: 20, height: 2, backgroundColor: '#fff', borderRadius: 1 },
-  plusV: { position: 'absolute', width: 2, height: 20, backgroundColor: '#fff', borderRadius: 1 },
+  plusH: { position: 'absolute', width: 20, height: 2, backgroundColor: theme.colorTextOnDark, borderRadius: 1 },
+  plusV: { position: 'absolute', width: 2, height: 20, backgroundColor: theme.colorTextOnDark, borderRadius: 1 },
 
   menu: {
     backgroundColor: theme.colorSurface,
