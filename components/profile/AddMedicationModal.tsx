@@ -594,9 +594,11 @@ const styles = StyleSheet.create({
     fontWeight: theme.fontWeightMedium,
   },
   durationUnitChips: {
-    // A small gap below the unit chips so the number field they gate reads as the next
-    // step, not a wrapped fourth chip.
-    marginBottom: theme.space1,
+    // Extra space ABOVE the unit chips, so whitespace groups them DOWN with the number
+    // field they govern ("[Days][Doses] → [14] days" is one control) and sets that whole
+    // revealed detail apart from the Ongoing/Set-an-end toggle above — otherwise the two
+    // chip rows read as one wrapping group (code-review NIT; Designer call).
+    marginTop: theme.space1,
   },
   durationRow: {
     flexDirection: 'row',
