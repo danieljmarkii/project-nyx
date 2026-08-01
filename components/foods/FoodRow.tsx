@@ -55,6 +55,28 @@ interface Props {
   hasPhoto?: boolean;
   photoUrl?: string | null;
   photoLoading?: boolean;
+  // Diet-trial list membership (B-616 FR-2) — "Trial diet" or "Also allowed",
+  // built by lib/trialLibraryChrome.trialChipLabel from the one membership
+  // predicate. Null for every other food, and NULL IS THE CONTRACT: this row
+  // never renders a negative chip, a grey chip, or an "off-diet" mark of any
+  // kind (R1 — positive marking only; a mark's absence is not a verdict either
+  // way). A row with no chip is a row saying nothing at all about the trial.
+  //
+  // Rendered as an EYEBROW at the head of the text column — the mock's own
+  // position (top-left of the tile, above the brand), and uppercase + tracked
+  // with a leading accent dot for the same reason the mock styled it that way:
+  // that treatment reads as a CATEGORY LABEL, where a sentence-case green pill
+  // reads as an approval badge, and this chip names the trial's list rather than
+  // blessing the food.
+  //
+  // It is deliberately NOT a trailing pill beside the chevron. At textXS with
+  // tracking, "Also allowed" plus its padding is ~82pt of a row that has already
+  // spent ~150pt on the thumbnail, gaps and chevron — which leaves the food's own
+  // name about 120pt on a 375pt phone and far less below that. The name is the
+  // one thing on this row that must never be squeezed for chrome.
+  //
+  // Announced first in the spoken label, matching where it now sits visually.
+  trialChip?: string | null;
 }
 
 // Full-width library row for the standalone Foods tab (B-004). Distinct from the
@@ -66,7 +88,7 @@ interface Props {
 // (BRAND · FORMAT) mirrors FoodTile's, sourced from the shared FORMAT_LABEL.
 export function FoodRow({
   brand, productName, format, onPress, hideBrand = false, intakeNote, favoriteNote,
-  proteinNote, hasPhoto, photoUrl, photoLoading,
+  proteinNote, hasPhoto, photoUrl, photoLoading, trialChip,
 }: Props) {
   const typeLabel = FORMAT_LABEL[format] ?? '';
   const formatMeta = typeLabel.toUpperCase();
@@ -77,7 +99,7 @@ export function FoodRow({
       : brand.toUpperCase();
   // Append whichever annotation lines are present to the spoken label, so a screen
   // reader hears the favorite rate / last-logged note, not just the name.
-  const spokenNotes = [proteinNote, favoriteNote, intakeNote].filter(Boolean).join(', ');
+  const spokenNotes = [trialChip, proteinNote, favoriteNote, intakeNote].filter(Boolean).join(', ');
 
   return (
     <TouchableOpacity
@@ -96,6 +118,14 @@ export function FoodRow({
         photoLoading={photoLoading}
       />
       <View style={styles.text}>
+        {trialChip ? (
+          <View style={styles.trialChip} testID="food-row-trial-chip">
+            <View style={styles.trialChipDot} />
+            <Text style={styles.trialChipText} numberOfLines={1}>
+              {trialChip}
+            </Text>
+          </View>
+        ) : null}
         {metaLine ? (
           <Text style={styles.meta} numberOfLines={1}>
             {metaLine}
@@ -233,6 +263,39 @@ const styles = StyleSheet.create({
   protein: {
     fontSize: theme.textXS,
     color: theme.colorTextTertiary,
+  },
+  // The trial-list chip. Same tinted accent pair and the same leading dot as the
+  // trial strip above it, so the two read as one piece of trial context rather
+  // than as two unrelated marks. `alignSelf: 'flex-start'` keeps it hugging its
+  // own text — a pill spanning the row would read as a banner over the food.
+  trialChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    gap: 4,
+    maxWidth: '100%',
+    backgroundColor: theme.colorAccentLight,
+    borderRadius: theme.radiusFull,
+    paddingHorizontal: theme.space1,
+    paddingVertical: 2,
+    marginBottom: 2,
+  },
+  trialChipDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
+    backgroundColor: theme.colorAccent,
+  },
+  // Uppercase + tracked, matching the eyebrow treatment this row already uses for
+  // the BRAND · FORMAT meta line directly below — which is the point: an eyebrow
+  // is read as a category, a sentence-case coloured pill is read as a verdict.
+  trialChipText: {
+    flexShrink: 1,
+    fontSize: theme.textXS,
+    fontWeight: theme.weightSemibold,
+    letterSpacing: theme.trackingWidest,
+    textTransform: 'uppercase',
+    color: theme.colorAccentInk,
   },
   chevron: {
     fontSize: theme.textLG,

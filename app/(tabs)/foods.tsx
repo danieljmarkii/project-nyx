@@ -19,6 +19,9 @@ import {
 import { getReliableFavorites } from '../../lib/foodFavorites';
 import { getSignedUrls } from '../../lib/storage';
 import { restoreFood } from '../../lib/foodArchive';
+import { FoodsTrialStrip } from '../../components/foods/FoodsTrialStrip';
+import { buildFoodsTrialStrip, trialChipLabel } from '../../lib/trialLibraryChrome';
+import { useTrialAllowedSet } from '../../hooks/useTrialAllowedSet';
 import { usePetStore } from '../../store/petStore';
 import { useFoodLibraryStore } from '../../store/foodLibraryStore';
 import { useSnackbarStore } from '../../store/snackbarStore';
@@ -81,6 +84,18 @@ export default function FoodsScreen() {
   const activePetSpecies = usePetStore((s) => s.activePet?.species ?? null);
   const [intakeStats, setIntakeStats] = useState<Map<string, FoodIntakeStat>>(new Map());
   const intakeNow = useRef(Date.now());
+
+  // The active pet's diet-trial allowed set (B-616 PR 3, FR-1/FR-2). Like the
+  // intake notes above it, this is a PER-ACTIVE-PET layer over a per-account
+  // catalog (D7): pet A's trial marks nothing while pet B is selected, which the
+  // hook guarantees by never resolving a trial for a pet that isn't active.
+  // `unknown` (a read that hasn't answered, or hasn't hydrated) renders nothing —
+  // no strip, no chips — rather than an un-marked library that looks identical to
+  // a pet with no trial (R2).
+  const trialSet = useTrialAllowedSet();
+  // D7: the strip names the pet only when there is another pet it could be
+  // confused with. `pets` holds non-archived pets only (petStore's invariant).
+  const multiPet = usePetStore((s) => s.pets.length > 1);
 
   // Reliable-favorites shelf (B-004 PR 5) — the positive-only, rate-over-N foods
   // the active pet reliably finishes (lib/foodFavorites → the pure selector). Like
@@ -235,6 +250,24 @@ export default function FoodsScreen() {
   // placeholder branch in FoodRow; photoUrl is null until that path signs (or if
   // it never does — offline / deleted object — in which case the row shows the
   // placeholder, never a broken image).
+  // FR-1's strip model. Null — and so no strip at all — with no running trial, an
+  // unhydrated set, or a list that permits nothing today; `buildFoodsTrialStrip`
+  // owns all three, so this surface has one condition rather than three.
+  const trialStrip = useMemo(
+    () => buildFoodsTrialStrip(trialSet, { petName: activePetName, multiPet }),
+    [trialSet, activePetName, multiPet],
+  );
+
+  // FR-2's per-row chip resolver, passed down the same way `noteFor` is so the
+  // group/shelf stay presentational. Returns null for every food that is not on
+  // the list — which is not a fallback but the rule (R1): nothing off-list is
+  // marked, anywhere, ever.
+  const trialChipFor = useCallback(
+    (f: PickerFood): string | null =>
+      trialChipLabel(trialSet, { id: f.id, brand: f.brand, productName: f.product_name }),
+    [trialSet],
+  );
+
   const thumbFor = useCallback(
     (f: PickerFood) => ({
       hasPhoto: f.photo_path != null,
@@ -327,6 +360,20 @@ export default function FoodsScreen() {
         </TouchableOpacity>
       </View>
 
+      {/* FR-1 in the two branches that never scroll. The trial read is INDEPENDENT
+          of the library read — a failed catalog load, or a fresh install where
+          `diet_trial_foods` hydrated before `food_items_cache`, leaves an owner
+          with no library and a live trial. That is precisely the owner who most
+          needs "here's what the trial permits", and the strip is a working path to
+          it, so withholding it would be the one state where this feature goes
+          missing exactly when it matters. Rendered above the state message rather
+          than inside it: the message is about the library, the strip is not. */}
+      {(showError || isEmpty) && trialStrip !== null ? (
+        <View style={styles.stripOnly}>
+          <FoodsTrialStrip model={trialStrip} onPress={() => router.push('/trial-foods')} />
+        </View>
+      ) : null}
+
       {showError ? (
         <View style={styles.centered}>
           <Text style={styles.stateTitle}>Couldn't load your foods</Text>
@@ -354,6 +401,11 @@ export default function FoodsScreen() {
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
         >
+          {/* FR-1 — under the header, above the library, scrolling with it. It is
+              context for the tab, not permanent chrome: a trial runs for eight
+              weeks, and a strip pinned over the library for all of them would cost
+              a browse surface its top inch every day. Opens §2.2 (PR 2's screen). */}
+          <FoodsTrialStrip model={trialStrip} onPress={() => router.push('/trial-foods')} />
           {onlyArchived ? (
             <View style={styles.onlyArchivedNote}>
               <Text style={styles.stateTitle}>Your library is empty right now</Text>
@@ -369,10 +421,11 @@ export default function FoodsScreen() {
               petName={activePetName}
               proteinNoteFor={proteinNoteFor}
               thumbFor={thumbFor}
+              trialChipFor={trialChipFor}
             />
           ) : null}
-          <FoodGroup label="Meals" foods={grouped.meals} noteFor={noteFor} proteinNoteFor={proteinNoteFor} thumbFor={thumbFor} />
-          <FoodGroup label="Treats" foods={grouped.treats} noteFor={noteFor} proteinNoteFor={proteinNoteFor} thumbFor={thumbFor} />
+          <FoodGroup label="Meals" foods={grouped.meals} noteFor={noteFor} proteinNoteFor={proteinNoteFor} thumbFor={thumbFor} trialChipFor={trialChipFor} />
+          <FoodGroup label="Treats" foods={grouped.treats} noteFor={noteFor} proteinNoteFor={proteinNoteFor} thumbFor={thumbFor} trialChipFor={trialChipFor} />
           <FoodGroup
             label="Unclassified"
             foods={grouped.other}
@@ -380,6 +433,7 @@ export default function FoodsScreen() {
             noteFor={noteFor}
             proteinNoteFor={proteinNoteFor}
             thumbFor={thumbFor}
+            trialChipFor={trialChipFor}
           />
           {archived.length > 0 ? (
             <ArchivedSection
@@ -408,12 +462,15 @@ export default function FoodsScreen() {
 // catalog rows below (a favorite also appears in its type group; the shelf is a
 // promotion, not a second list).
 function FavoritesShelf({
-  rows, petName, proteinNoteFor, thumbFor,
+  rows, petName, proteinNoteFor, thumbFor, trialChipFor,
 }: {
   rows: { fav: ReliableFavorite; food: LibraryFood }[];
   petName: string | null;
   proteinNoteFor: (f: PickerFood) => string | null;
   thumbFor: (f: PickerFood) => ThumbProps;
+  // Same resolver the type groups use (B-616 FR-2). A shelf row is the same food
+  // as its row below, so the two must agree — one resolver is how.
+  trialChipFor: (f: PickerFood) => string | null;
 }) {
   return (
     <View style={styles.group}>
@@ -432,6 +489,7 @@ function FavoritesShelf({
               format={food.format}
               proteinNote={proteinNoteFor(food)}
               favoriteNote={foodFavoriteNote(fav)}
+              trialChip={trialChipFor(food)}
               {...thumbFor(food)}
               onPress={() => router.push(`/food/${food.id}`)}
             />
@@ -452,7 +510,7 @@ function FavoritesShelf({
 // canonicalizeBrand. The brand-label + card-of-rows pairing reuses the same
 // Linear/Oura grouped-list idiom as the section header itself.
 function FoodGroup({
-  label, foods, hint, noteFor, proteinNoteFor, thumbFor,
+  label, foods, hint, noteFor, proteinNoteFor, thumbFor, trialChipFor,
 }: {
   label: string;
   foods: PickerFood[];
@@ -466,6 +524,10 @@ function FoodGroup({
   proteinNoteFor: (f: PickerFood) => string | null;
   // Per-row thumbnail resolver (B-004 PR 6), same pattern as noteFor.
   thumbFor: (f: PickerFood) => ThumbProps;
+  // Per-row diet-trial chip (B-616 FR-2). Null for anything not on the trial's
+  // list, which is every food in a library with no trial running — the group
+  // renders exactly as it did before in that case (R1).
+  trialChipFor: (f: PickerFood) => string | null;
 }) {
   if (foods.length === 0) return null;
   // Foods arrive alpha-by-brand+product from getLibraryFoods, so the brand
@@ -497,6 +559,7 @@ function FoodGroup({
                     format={f.format}
                     proteinNote={proteinNoteFor(f)}
                     intakeNote={noteFor(f)}
+                    trialChip={trialChipFor(f)}
                     {...thumbFor(f)}
                     onPress={() => router.push(`/food/${f.id}`)}
                   />
@@ -605,6 +668,11 @@ const styles = StyleSheet.create({
     fontSize: theme.textMD,
     fontWeight: theme.weightMedium,
     color: theme.colorAccent,
+  },
+  // The strip's own inset in the two non-scrolling branches, matching the padding
+  // `scrollContent` gives it in the normal one so it sits in the same column.
+  stripOnly: {
+    padding: theme.space2,
   },
   scroll: {
     flex: 1,
