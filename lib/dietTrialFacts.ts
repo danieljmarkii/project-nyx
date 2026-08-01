@@ -151,37 +151,41 @@ const TRIAL_FOR_CARD_SQL = `
  */
 export const ENDED_TRIAL_GRACE_DAYS = 30;
 
-/** Reads the pet's active trial and everything the card needs to describe it.
+/**
+ * The predicate's answers for the pet's card-eligible trial, and nothing else.
  *
- *  FAILURE GRANULARITY, precisely — the old "every read is best-effort, a failure
- *  degrades one line" is no longer the whole truth and saying so invites a future
- *  reader to assume per-field degradation that does not exist. There are two
- *  classes now:
+ * ── WHY THIS IS ITS OWN EXPORT (B-616 PR 4) ─────────────────────────────────
  *
- *  • The two INDEPENDENT reads (`readIntakeDecline`, `readStandingNote`) still
- *    degrade one line each. The first is a safety lane and deliberately survives
- *    everything below it.
- *  • The four PREDICATE INPUTS degrade TOGETHER, to silence, because they are one
- *    input to one computation — see the call site for why none of them may fail
- *    soft to an empty array. A failure in any one drops the record lines and
- *    nothing else. */
-export async function loadDietTrialFacts(args: {
-  pet: DietTrialFactsPet;
-  otherPetNames?: string[];
-  nowMs?: number;
-}): Promise<TrialCardInput> {
-  const { pet } = args;
-  const nowMs = args.nowMs ?? Date.now();
+ * The exposures screen ("Outside the trial diet") renders `TrialFacts.exposures.items`
+ * — the per-feeding classifications — which `loadDietTrialFacts` deliberately does
+ * not carry: `TrialCardInput` is a CARD model and flattens the summary to four
+ * numbers. The screen therefore needs the same five reads over the same five
+ * tables, and the one thing it may not do is perform them itself. Two loaders
+ * against `diet_trial_foods` + `meals` + `medication_administrations` with slightly
+ * different window padding is how the card's count and the screen's list start
+ * disagreeing about the same trial — the §5.3 third-definition failure, arriving
+ * one layer up from the predicate this file was built to protect.
+ *
+ * So the reads live here, once, and both surfaces are consumers. Everything the
+ * caller below documents about failure granularity is a property of THIS function;
+ * a null return means "no trial to describe", and `facts: null` means "there is a
+ * trial and its record could not be read", which the two callers render differently
+ * but neither may confuse for an empty record.
+ */
+export interface TrialPredicateFacts {
+  trial: TrialCardTrial;
+  /** `diet_trials.stopped_reason === 'refused'`, derived once here so the card's
+   *  claim gate and any future consumer read the same token. */
+  stoppedForRefusal: boolean;
+  /** Null when the four predicate inputs (or the computation) could not be read —
+   *  see the call site. NEVER a zero-valued `TrialFacts` standing in for that. */
+  facts: TrialFacts | null;
+}
 
-  const base: TrialCardInput = {
-    trial: null,
-    nowMs,
-    petName: pet.name,
-    species: pet.species,
-    petObjectPronoun: petPronouns(pet.sex ?? 'unknown').object,
-    otherPetNames: args.otherPetNames ?? [],
-  };
-
+export async function loadTrialPredicateFacts(
+  pet: DietTrialFactsPet,
+  nowMs: number = Date.now(),
+): Promise<TrialPredicateFacts | null> {
   // The active trial, else one that ended inside the grace window (states 7a/7b,
   // reachable for the first time now that PR 6 can write them).
   const graceFrom = toLocalDayKey(new Date(nowMs - ENDED_TRIAL_GRACE_DAYS * 86_400_000));
@@ -190,9 +194,9 @@ export async function loadDietTrialFacts(args: {
     row = await getDb().getFirstAsync<TrialRow>(TRIAL_FOR_CARD_SQL, [pet.id, graceFrom]);
   } catch (e) {
     console.error('[DietTrial] load trial failed:', e);
-    return base;
+    return null;
   }
-  if (!row) return base;
+  if (!row) return null;
 
   const trial: TrialCardTrial = {
     id: row.id,
@@ -248,15 +252,12 @@ export async function loadDietTrialFacts(args: {
     species: pet.species,
   };
 
-  const [allowedFoods, feedings, doses, arrangements, decline, standingNote] =
-    await Promise.all([
-      readAllowedFoods(row.id),
-      readFeedings(pet.id, row.started_at, endKey),
-      readDoses(pet.id, row.started_at, endKey),
-      readArrangements(pet.id, row.started_at, endKey),
-      readIntakeDecline(pet, nowMs),
-      readStandingNote(pet.id, pet.name),
-    ]);
+  const [allowedFoods, feedings, doses, arrangements] = await Promise.all([
+    readAllowedFoods(row.id),
+    readFeedings(pet.id, row.started_at, endKey),
+    readDoses(pet.id, row.started_at, endKey),
+    readArrangements(pet.id, row.started_at, endKey),
+  ]);
 
   // THE ONE CALL. Everything above is a read; nothing above decided anything.
   //
@@ -285,10 +286,11 @@ export async function loadDietTrialFacts(args: {
   // reached deliberately rather than by accident.
   //
   // AND SKIPPING IS NOT THE SAME AS FAILING THE WHOLE LOAD. The intake-decline
-  // read is a SAFETY lane and it is deliberately outside this gate — the record
-  // lines go quiet, the clinical flag does not. That is the direction §5.2
-  // requires: the animal outranks the trial, including when the trial's own data
-  // is the part that cannot be read.
+  // read is a SAFETY lane and it is deliberately outside this gate (it now sits in
+  // the caller below, which is the same fact expressed by scope) — the record lines
+  // go quiet, the clinical flag does not. That is the direction §5.2 requires: the
+  // animal outranks the trial, including when the trial's own data is the part that
+  // cannot be read.
   let facts: TrialFacts | null = null;
   if (allowedFoods !== null && feedings !== null && doses !== null && arrangements !== null) {
     try {
@@ -309,6 +311,54 @@ export async function loadDietTrialFacts(args: {
       console.error('[DietTrial] compute failed:', e);
     }
   }
+
+  return { trial, stoppedForRefusal: row.stopped_reason === 'refused', facts };
+}
+
+/** Reads the pet's active trial and everything the card needs to describe it.
+ *
+ *  FAILURE GRANULARITY, precisely — the old "every read is best-effort, a failure
+ *  degrades one line" is no longer the whole truth and saying so invites a future
+ *  reader to assume per-field degradation that does not exist. There are two
+ *  classes now:
+ *
+ *  • The two INDEPENDENT reads (`readIntakeDecline`, `readStandingNote`) still
+ *    degrade one line each. The first is a safety lane and deliberately survives
+ *    everything below it.
+ *  • The four PREDICATE INPUTS degrade TOGETHER, to silence, because they are one
+ *    input to one computation — see `loadTrialPredicateFacts` for why none of them
+ *    may fail soft to an empty array. A failure in any one drops the record lines
+ *    and nothing else. */
+export async function loadDietTrialFacts(args: {
+  pet: DietTrialFactsPet;
+  otherPetNames?: string[];
+  nowMs?: number;
+}): Promise<TrialCardInput> {
+  const { pet } = args;
+  const nowMs = args.nowMs ?? Date.now();
+
+  const base: TrialCardInput = {
+    trial: null,
+    nowMs,
+    petName: pet.name,
+    species: pet.species,
+    petObjectPronoun: petPronouns(pet.sex ?? 'unknown').object,
+    otherPetNames: args.otherPetNames ?? [],
+  };
+
+  // STARTED BEFORE THE TRIAL ROW IS KNOWN, so the two independent lanes still
+  // overlap the predicate reads exactly as they did when all six shared one
+  // `Promise.all`. Both helpers narrow their own failures to null and never
+  // reject, so an early return below abandons them without an unhandled
+  // rejection; the cost of that return is two local reads whose answers are
+  // discarded, on a pet with no trial at all.
+  const declinePromise = readIntakeDecline(pet, nowMs);
+  const standingNotePromise = readStandingNote(pet.id, pet.name);
+
+  const core = await loadTrialPredicateFacts(pet, nowMs);
+  if (!core) return base;
+  const { trial, facts } = core;
+  const [decline, standingNote] = await Promise.all([declinePromise, standingNotePromise]);
 
   // A NULL RANGE IS NOT A ZERO RECORD. `computeTrialFacts` returns its `base`
   // — `range: null`, `coverage: null`, `exposures` all-zero — on the two paths
@@ -362,7 +412,7 @@ export async function loadDietTrialFacts(args: {
           // because the pet would not eat it can never have its days read as
           // clean ones.
           mayStateRecordClean: mayStateRecordClean(readable, {
-            stoppedForRefusal: row.stopped_reason === 'refused',
+            stoppedForRefusal: core.stoppedForRefusal,
           }),
         }
       : null,

@@ -19,6 +19,8 @@ import {
 } from '../../lib/feedingArrangements';
 import { usePetStore, orderPetsActiveFirst } from '../../store/petStore';
 import { useFoodLibraryStore } from '../../store/foodLibraryStore';
+import { useTrialAllowedSet } from '../../hooks/useTrialAllowedSet';
+import { trialListMembership } from '../../lib/trialAllowedSet';
 import { FoodTile } from './FoodTile';
 
 interface Props {
@@ -236,6 +238,58 @@ export function FoodPicker({
   // neutral fallback covers the brief window before the pet's name is known.
   const rotationLabel = petName ? `${petName}'s rotation` : 'Rotation';
 
+  // ── B-616 FR-16–FR-19 — the pinned "On the trial list" section (variant H) ──
+  //
+  // ORDERING, NOT MARKING, and the distinction is the entire ruling. §6.4 lets the
+  // LIBRARY verdict because browsing is pre-decision; the picker is the moment of
+  // logging, where Dr. Chen's constraint binds: nothing may make an owner hesitate
+  // to record a transgression, because an unlogged exposure is worse than the
+  // exposure. Variant G (a glyph on allowed tiles) was closed for exactly that —
+  // at pick time a MISSING glyph reads as "don't", which is a log-time verdict by
+  // implication. A section lifts the trial's foods to the top and says nothing
+  // about anything else.
+  //
+  // So: the tiles here are visually identical to every other tile, the section
+  // label is the only signal, and the rotation shelf and library zones below are
+  // untouched (FR-17). A food on the list therefore appears twice — once here and
+  // once wherever it already was — which is deliberate: the alternative is
+  // FILTERING the shelves, and "{Pet}'s rotation" means what this pet was actually
+  // fed, not what the trial permits. The picker already repeats itself this way
+  // (the rotation shelf is a recency view of the same library grouped below).
+  const trialSet = useTrialAllowedSet();
+  const activePetId = usePetStore((s) => s.activePet?.id) ?? null;
+  const trialFoods = useMemo(() => {
+    // FR-18 — never in SELECTION mode. The two selection-mode callers are the
+    // start-a-trial modal and §2.3's mid-trial add, i.e. the screens that EDIT this
+    // list; a pinned section of the list you are editing is circular.
+    if (selecting) return [];
+    // D7 — the library is per-account, the trial is per-pet, and the hook resolves
+    // the ACTIVE pet's trial. Logging for a different pet than the one selected is
+    // reachable, and marking pet A's allowed foods on pet B's log screen is the
+    // precise cross-pet leak D7 forbids. No match, no section.
+    if (activePetId !== petId) return [];
+    if (trialSet.status !== 'ready') return [];
+    const onList = library
+      .map((f) => ({
+        food: f,
+        hit: trialListMembership(trialSet, {
+          id: f.id,
+          brand: f.brand,
+          productName: f.product_name,
+        }),
+      }))
+      .filter((e): e is { food: PickerFood; hit: NonNullable<typeof e.hit> } => e.hit !== null);
+    // The trial diet first, permitted extras after — within a section that is
+    // already all-allowed, so this orders the shelf without marking anything. It
+    // puts the prescribed food under the thumb at mealtime, which is the whole
+    // reason the section is pinned.
+    return onList
+      .sort((a, b) =>
+        a.hit.role === b.hit.role ? 0 : a.hit.role === 'primary_diet' ? -1 : 1,
+      )
+      .map((e) => e.food);
+  }, [library, trialSet, selecting, activePetId, petId]);
+
   return (
     <View style={styles.root}>
       {/* B-347 / B-020 — search + scope chips pinned directly under the picker
@@ -282,6 +336,23 @@ export function FoodPicker({
         {!searching && (
           <View style={styles.zone}>
             <AddFoodCta onPress={onAddNew} />
+          </View>
+        )}
+
+        {/* FR-16 — above the rotation shelf, below the pinned search bar. Hidden
+            in search-results mode for the same reason the rotation shelf is: an
+            unfiltered shelf sitting above filtered results reads as phantom
+            matches, and search is the lane for "I know what I'm looking for". */}
+        {!searching && trialFoods.length > 0 && (
+          <View style={styles.zone}>
+            <SectionLabel label="On the trial list" />
+            <TileGrid
+              foods={trialFoods}
+              compact
+              onPickFood={onPickFood}
+              onOpenDetail={onOpenDetail}
+              selectedFoodIds={selectedFoodIds}
+            />
           </View>
         )}
 
