@@ -5,10 +5,12 @@
 // which the spec requires be enforced by a test rather than by review: the words
 // "missed" and "due" appear NOWHERE in any rendered string, across every state.
 //
-// Copy is indicative until M5, so the string assertions below check STRUCTURE
-// (which fact renders in which state, the banned words, the counts) rather than the
-// final phrasing. A copy tweak at M5 that keeps the structure keeps these green; one
-// that reintroduces "missed"/"due" or drops a fact turns them red, which is the point.
+// M5 has locked the copy (nyx-voice + clinical-guardrails), so the string
+// assertions now pin the FINAL phrasing where a state's exact words matter — the
+// collapsed "logged today" legibility, the recency time, the withholding register —
+// and STRUCTURE elsewhere (which fact renders in which state, the banned words, the
+// counts). A change that reintroduces "missed"/"due", drops a fact, or regresses the
+// register turns them red, which is the point.
 import {
   resolveMedStrips,
   medStripWithholdingReasons,
@@ -224,17 +226,17 @@ describe('AC5 — a withholding record suppresses the coverage line and the butt
     expect(m.line).toMatch(/refused/i); // the med's own news is not swallowed
   });
 
-  // Pins the deliberate precedence flagged by code review: on a course that is
-  // BOTH past its length (states 6/7) AND carries a refused dose (state 8), the
-  // withholding fact wins the single line and the button stands down — the
-  // calendar advisory yields to the health signal. This composition is NOT
-  // specified in §9; the current behaviour is pinned here so it is a decision, and
-  // the clinical register call (should it say BOTH?) is carried to M5.
-  test('a past-length course with a refused dose surfaces the refusal, not the advisory', () => {
+  // M5 RULING (past-length + refused composition): on a course that is BOTH past
+  // its length (states 6/7) AND carries a refused dose (state 8), BOTH facts render
+  // — the overrun in the HEADER, the refusal in the LINE — and the calendar advisory
+  // string is subsumed, not lost: its action (check the vet) survives via the button
+  // standing down + the tap-through. So the line is the refusal alone, and nothing is
+  // dropped. Pinned so the register call stays a decision.
+  test('a past-length course with a refused dose: overrun in the header, refusal in the line', () => {
     const m = run({ regimens: [regimen({ started_at: '2026-07-15' })], doses: [dose({ adherence: 'refused' })] })[0]; // day 17 of 14
-    expect(m.header).toContain('3 days past'); // still the overrun header
-    expect(m.line).toMatch(/refused/i);
-    expect(m.line).not.toMatch(/course length|vet/i); // the advisory yields
+    expect(m.header).toContain('3 days past'); // the overrun fact lives in the header
+    expect(m.line).toBe('Last dose refused'); // the health signal takes the single line
+    expect(m.line).not.toMatch(/course length|vet/i); // the advisory string yields
     expect(m.confirm).toBeNull(); // withholding stands the button down
   });
 });
@@ -286,7 +288,8 @@ describe('AC7 — a covered cadence collapses; PRN never collapses', () => {
   test('doses_per_day met today → collapsed, one line, no bar, no button', () => {
     const m = run({ regimens: [regimen()], doses: [dose(), dose()] })[0]; // 2 of 2
     expect(m.collapsed).toBe(true);
-    expect(m.header).toBe('Amoxicillin · day 5 of 14 · 2 doses logged');
+    // M5 legibility — the count reads as TODAY's cadence met, not a lifetime tally.
+    expect(m.header).toBe('Amoxicillin · day 5 of 14 · 2 doses logged today');
     expect(m.line).toBeNull();
     expect(m.progressFraction).toBeNull();
     expect(m.confirm).toBeNull();
@@ -465,6 +468,52 @@ describe('medStripWithholdingReasons — the one list both surfaces read', () =>
   });
 });
 
+// ── M5 — the withholding LINE register (clinical-guardrails) ──────────────────
+// The one place M5 makes a clinical-copy call: how a withholding record READS.
+// Presence still gates whether it speaks (unchanged from M1, so no threshold and no
+// adversarial gate); this pins WHAT it prints.
+describe('M5 — the withholding line reads clean at n=1 and composes at n>1', () => {
+  test('a single recent refused dose reads "Last dose refused", not "1 of the last 1 dose refused"', () => {
+    const m = run({ regimens: [regimen()], doses: [dose({ adherence: 'refused' })] })[0];
+    expect(m.line).toBe('Last dose refused');
+  });
+
+  test('a single recent not-given dose reads "Last dose not given" — never the word "missed"', () => {
+    const m = run({ regimens: [regimen()], doses: [dose({ adherence: 'missed' })] })[0];
+    expect(m.line).toBe('Last dose not given');
+    expect(m.line).not.toMatch(/\bmissed\b/i);
+  });
+
+  test('several recent doses, some refused → "N of the last M doses refused"', () => {
+    // 5 recent doses (4 given + 1 refused) → n=5, refused=1.
+    const doses = [
+      dose({ occurred_at: '2026-07-27T09:00:00.000Z' }),
+      dose({ occurred_at: '2026-07-28T09:00:00.000Z' }),
+      dose({ occurred_at: '2026-07-29T09:00:00.000Z' }),
+      dose({ occurred_at: '2026-07-30T09:00:00.000Z' }),
+      dose({ adherence: 'refused', occurred_at: '2026-07-31T09:00:00.000Z' }),
+    ];
+    const m = run({ regimens: [regimen()], doses })[0];
+    expect(m.line).toBe('1 of the last 5 doses refused');
+  });
+
+  test('a compound record leads with refused and appends the rest as bare counts', () => {
+    // 4 recent doses: 1 refused, 1 not-given (missed), 2 given → n=4.
+    const doses = [
+      dose({ adherence: 'refused', occurred_at: '2026-07-29T09:00:00.000Z' }),
+      dose({ adherence: 'missed', occurred_at: '2026-07-30T09:00:00.000Z' }),
+      dose({ occurred_at: '2026-07-31T08:00:00.000Z' }),
+      dose({ occurred_at: '2026-07-31T09:00:00.000Z' }),
+    ];
+    const m = run({ regimens: [regimen()], doses })[0];
+    // Refused leads (the sharpest signal) and carries the "of the last N" frame; the
+    // not-given appends as a bare count. Still no "missed", no "due" (N1).
+    expect(m.line).toBe('1 of the last 4 doses refused · 1 not given');
+    expect(m.line).not.toMatch(/\bmissed\b/i);
+    expect(m.line).not.toMatch(/\bdue\b/i);
+  });
+});
+
 // ── Recency / ongoing lines ───────────────────────────────────────────────────
 describe('recency framing for ongoing + ad-hoc meds', () => {
   test('an ongoing regimen, no dose today, shows a last-dose line', () => {
@@ -473,27 +522,85 @@ describe('recency framing for ongoing + ad-hoc meds', () => {
       doses: [dose({ medication_item_id: ITEM_GABA, occurred_at: '2026-07-30T21:00:00.000Z' })],
     })[0];
     expect(m.header).toBe('Gabapentin · ongoing');
-    expect(m.line).toBe('Last dose yesterday');
+    // M5 — the recency line carries the clock time (7:00/9:00 PM etc.), tz-pinned.
+    expect(m.line).toBe('Last dose yesterday, 9:00 PM');
     expect(m.confirm).not.toBeNull();
   });
 
-  test('an ad-hoc med shows a recent count and its last dose', () => {
+  test('an ad-hoc med leads with its last dose, then the window count (>1)', () => {
     const m = run({
       doses: [
-        dose({ medication_item_id: ITEM_PRED, occurred_at: '2026-07-30T19:00:00.000Z' }), // yesterday
+        dose({ medication_item_id: ITEM_PRED, occurred_at: '2026-07-30T19:00:00.000Z' }), // yesterday 7pm
         dose({ medication_item_id: ITEM_PRED, occurred_at: '2026-07-25T19:00:00.000Z' }),
       ],
     })[0];
     expect(m.header).toBe('Prednisone');
-    expect(m.line).toBe(`2 doses in the last ${MED_STRIP_ADHOC_WINDOW_DAYS} days · last yesterday`);
+    expect(m.line).toBe(`Last dose yesterday, 7:00 PM · 2 in the last ${MED_STRIP_ADHOC_WINDOW_DAYS} days`);
+  });
+
+  test('a lone ad-hoc dose reads just its last dose, no redundant "1 in the last…" tail', () => {
+    const m = run({
+      doses: [dose({ medication_item_id: ITEM_PRED, occurred_at: '2026-07-29T15:00:00.000Z' })], // Jul 29, 3pm
+    })[0];
+    expect(m.line).toBe('Last dose Jul 29, 3:00 PM');
+  });
+
+  test('an ongoing med dosed earlier today reads "Last dose today, <time>"', () => {
+    // doses_per_day 3, one dose today → not covered → recency line, "today" branch.
+    const m = run({
+      regimens: [regimen({ id: 'reg-gaba', medication_item_id: ITEM_GABA, drug_name: 'Gabapentin', doses_per_day: 3, target_duration_days: null })],
+      doses: [dose({ medication_item_id: ITEM_GABA, occurred_at: '2026-07-31T15:00:00.000Z' })],
+    })[0];
+    expect(m.line).toBe('Last dose today, 3:00 PM');
+    expect(m.collapsed).toBe(false);
   });
 });
 
 // ── State 1 coverage line ─────────────────────────────────────────────────────
 describe('state 1 — a fixed course with today still open', () => {
-  test('names the record and the usual frequency, never "due"', () => {
-    const m = run({ regimens: [regimen()] })[0];
-    expect(m.line).toBe('No dose logged yet today · usually 2×/day');
+  test('names the record and the usual frequency in plain words, never "due"', () => {
+    const m = run({ regimens: [regimen()] })[0]; // doses_per_day 2
+    expect(m.line).toBe('No dose logged yet today · usually twice a day');
     expect(m.confirm).not.toBeNull();
+  });
+
+  // M5 nyx-voice — plain words for the common rates ("2×/day" reads as clinical
+  // shorthand beside "once a day"); the compact "N×/day" is the fallback only for 4+.
+  test('the frequency hint reads in plain words for 1–3, and falls back to N×/day for 4+', () => {
+    const hintFor = (dpd: number) =>
+      run({ regimens: [regimen({ doses_per_day: dpd })] })[0].line;
+    expect(hintFor(1)).toBe('No dose logged yet today · usually once a day');
+    expect(hintFor(3)).toBe('No dose logged yet today · usually three times a day');
+    expect(hintFor(4)).toBe('No dose logged yet today · usually 4×/day');
+    // A fractional rate carries no hint rather than reading "usually 0.5×/day".
+    expect(run({ regimens: [regimen({ doses_per_day: 1.5 })] })[0].line).toBe(
+      'No dose logged yet today',
+    );
+  });
+});
+
+// ── Durationed course with NO daily cadence (target set, doses_per_day null) ───
+// A "for 14 days, as needed" regimen: it never collapses (PRN) and has a day bar
+// (targetDays set), but the coverage line must NOT fabricate an "N of N" denominator
+// that reads as a met target (soft N4). It states the count only.
+describe('a durationed PRN course states the count, never a fabricated "N of N"', () => {
+  const durationedPrn = regimen({ doses_per_day: null, target_duration_days: 14 });
+
+  test('with a dose today: "N doses logged today", no invented denominator', () => {
+    const m = run({ regimens: [durationedPrn], doses: [dose(), dose()] })[0];
+    expect(m.collapsed).toBe(false); // PRN never collapses
+    expect(m.line).toBe('2 doses logged today');
+    expect(m.line).not.toMatch(/of 2/); // never "2 of 2"
+    expect(m.progressFraction).toBeCloseTo(5 / 14); // the day bar still renders
+  });
+
+  test('one dose today reads singular', () => {
+    const m = run({ regimens: [durationedPrn], doses: [dose()] })[0];
+    expect(m.line).toBe('1 dose logged today');
+  });
+
+  test('nothing logged today still reads the open-state line (no hint, PRN)', () => {
+    const m = run({ regimens: [durationedPrn] })[0];
+    expect(m.line).toBe('No dose logged yet today');
   });
 });
