@@ -8,40 +8,21 @@
 import { SYMPTOM_EVENT_TYPES } from './analytics';
 import { getDb } from './db';
 import { symptomLabel } from './metricDetail';
-import { localDayIndexOf, toLocalDayKey } from './utils';
+import { dayKeyFromIndex, localDayIndexOf, toLocalDayKey } from './utils';
 import type { TrialOutcomeFacts, TrialSymptomDelta } from './dietTrialCompletion';
 
 const SYMPTOM_SET: ReadonlySet<string> = new Set(SYMPTOM_EVENT_TYPES);
 
-const MS_PER_DAY = 86_400_000;
-
-/**
- * Day index → 'YYYY-MM-DD'. **The inverse of `localDayIndexOf`, and it must be a
- * UTC read.**
- *
- * `localDayIndexOf` returns a UTC-ANCHORED index of a LOCAL calendar day — the
- * index times a day is UTC midnight of that date, which is not midnight anywhere
- * else. Inverting it with `toLocalDayKey` (which reads `getFullYear/getMonth/
- * getDate`) lands on the PREVIOUS day at every negative UTC offset, and PR 6's
- * first cut did exactly that.
- *
- * The damage was not symmetric, which is why this is the headline fix rather than
- * an off-by-one: at UTC−7 the before-window ran a day LONG against a 56-day
- * denominator while the during-window LOST TODAY — the day the owner is deciding.
- * Both errors push the same way, *before* up and *during* down, i.e. toward "it
- * improved", on the one screen where an owner decides whether to stop a medical
- * intervention. Worst case, a trial started today: `duringEndKey` resolved to
- * yesterday, the membership test became unsatisfiable, and every during-count
- * rendered a hard 0 — three vomits today read as `Vomit: 4 before · 0 during`.
- *
- * Found by `adversarial-reviewer` under `TZ=America/Los_Angeles`, where this
- * module's own test fails. B-421 exists because this feature already grew three
- * disagreeing day-math paths; PR 6 quietly added a fourth. The tests below now pin
- * it at UTC−7 and UTC+11, the same two offsets §12's PR-4 criterion names.
- */
-function dayKeyFromIndex(index: number): string {
-  return new Date(index * MS_PER_DAY).toISOString().slice(0, 10);
-}
+// The epoch-day inverse (`dayKeyFromIndex`) and its `MS_PER_DAY` constant used to
+// live here. B-417 PR 6's first cut inverted `localDayIndexOf` with the LOCAL
+// getters instead of a UTC read, and the damage was asymmetric — both errors
+// pushed the before/during windows toward "it improved", on the one screen where
+// an owner decides whether to stop a medical intervention. Worst case, a trial
+// started today rendered every during-count as a hard 0. It was caught by review,
+// not by the day-math guard, because this file was never on the guard's list and
+// its `index * MS_PER_DAY` evaded a regex that matched division only (B-517). The
+// helper now lives once in `lib/utils` (guarded there against a private copy
+// reappearing) and this module delegates the boundary in BOTH directions.
 
 function shiftDayKey(dayKey: string, deltaDays: number): string | null {
   const index = localDayIndexOf(dayKey);

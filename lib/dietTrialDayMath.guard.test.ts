@@ -43,6 +43,20 @@ const readCode = (p: string) =>
  *  `/ MS_PER_DAY`, and `/ (1000 * 60 * 60 * 24)`. */
 const DAY_DIVISION = /\/\s*(86_400_000|86400000|MS_PER_DAY|\(\s*1000\s*\*\s*60\s*\*\s*60\s*\*\s*24\s*\))/;
 
+/** The INVERSE shape — a day index multiplied back into a ms instant. B-421's
+ *  guard matched division only, so `lib/dietTrialOutcomeFacts.ts` grew its own
+ *  `index * MS_PER_DAY` and evaded it (B-517): that multiplication is where PR 6's
+ *  headline day-key INVERSION bug actually lived, and the guard could not see it.
+ *
+ *  This is applied ONLY to files that must carry no epoch arithmetic of their own.
+ *  Two guarded files legitimately DO the inverse inline — `lib/dietTrialCard.ts`'s
+ *  `formatTrialDate` and `generate-report/trial.ts` — and each carves it out with a
+ *  comment; they keep the DAY_DIVISION check (the dangerous forward direction) but
+ *  not this one. The lasting fix is the hoist: the single inverse now lives in
+ *  `lib/utils.dayKeyFromIndex`, so a file that indexes days correctly imports it and
+ *  contains neither operator. */
+const DAY_MULTIPLICATION = /\*\s*(86_400_000|86400000|MS_PER_DAY|\(\s*1000\s*\*\s*60\s*\*\s*60\s*\*\s*24\s*\))/;
+
 /** Flooring an instant to midnight by hand — the profile.tsx shape. */
 const MANUAL_MIDNIGHT = /setHours\(\s*0\s*,\s*0\s*,\s*0\s*,\s*0\s*\)/;
 
@@ -238,6 +252,27 @@ describe('B-421 — one diet-trial day counter, not four', () => {
     const src = readCode('lib/trialContaminant.ts');
     expect(src).toMatch(/localDayIndex\(/);
     expect(src).not.toMatch(DAY_DIVISION);
+    expect(src).not.toMatch(MANUAL_MIDNIGHT);
+  });
+
+  it('the outcome-sheet loader indexes local days and carries no epoch math of its own (B-517)', () => {
+    // The fourth day-math path B-421 was written to catch, and the one it MISSED.
+    // B-417 PR 6 named this file as a consumer and then pinned it with value tests,
+    // so its index→dayKey INVERSION (the headline PR-6 bug) was caught by review
+    // rather than by this guard: the file was never on the list, and its private
+    // `index * MS_PER_DAY` inverse evaded DAY_DIVISION, which matches division only.
+    //
+    // B-517 closes both holes at once. The epoch-day inverse moved to
+    // `lib/utils.dayKeyFromIndex` (the single place `localDayIndexOf`'s inverse
+    // lives), so this file now delegates the boundary in BOTH directions and holds
+    // neither operator — and DAY_MULTIPLICATION below forbids the multiply from
+    // creeping back, the check that would have caught PR 6 the first time.
+    const src = readCode('lib/dietTrialOutcomeFacts.ts');
+    expect(src).toMatch(/localDayIndexOf\(/);
+    expect(src).toMatch(/dayKeyFromIndex\(/); // the shared inverse, imported not redefined
+    expect(src).not.toMatch(/const MS_PER_DAY/);
+    expect(src).not.toMatch(DAY_DIVISION);
+    expect(src).not.toMatch(DAY_MULTIPLICATION);
     expect(src).not.toMatch(MANUAL_MIDNIGHT);
   });
 
