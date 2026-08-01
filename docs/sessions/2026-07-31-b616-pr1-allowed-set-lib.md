@@ -2,7 +2,7 @@
 
 **Date:** 2026-07-31
 
-Spec: `docs/nyx-food-library-trial-awareness-requirements.md` §6 (PR 1). Gate PR 0 landed earlier the same day via #523, so `narrowTrialFoodRole` was already the single narrower this read had to call. No UI, per the kickoff.
+Shipped via **#526**. Spec: `docs/nyx-food-library-trial-awareness-requirements.md` §6 (PR 1). Gate PR 0 landed earlier the same day via #523, so `narrowTrialFoodRole` was already the single narrower this read had to call. No UI, per the kickoff.
 
 ## What shipped
 
