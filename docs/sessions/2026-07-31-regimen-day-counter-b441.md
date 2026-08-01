@@ -72,7 +72,56 @@ That is a **false absence claim** in the B-494 shape: silence rendered as a nega
 | Does a full ISO timestamp in `started_at` (the local SQLite mirror types it `TEXT`) break it? | **Held.** `localDayIndexOf` falls through to instant-indexing in the owner's zone, which is correct for a timestamp — no `NaN`, no silent wrong day. |
 | Do the two zone bugs cancel on a round-trip through the modal? | **Partially, and that is why #3 and #4 both had to be fixed.** Read-UTC + write-UTC round-trips a stored value unchanged while *displaying* the wrong day; touch the picker and the write shifts it. Fixing only one of the pair would have made re-saving walk the date. |
 
-**Caveat, flagged rather than papered over:** the DoD mandates the isolated `adversarial-reviewer` subagent for clinically load-bearing logic, and this session's harness instructions forbid spawning subagents. The falsification pass above was done in-context, which is exactly the anchoring the subagent exists to avoid. **Recommend a `adversarial-reviewer` run on this diff before merge** — the DoD line is not satisfied by the table above.
+**The in-context pass was run first and was not sufficient — the isolated `adversarial-reviewer` returned FAIL and found what it missed.** That is the whole argument for the subagent, demonstrated on this diff: the six attempts above were authored by the same reasoning that wrote the code, and every one of them probed the code's *new* behaviour. None probed the code's behaviour on **data the old code had already written**.
+
+### The adversarial-reviewer's blocking finding: the fix removed a COMPENSATING error
+
+The old writer stored `startedAt.toISOString().split('T')[0]`, and `startedAt` carries the **current time of day** (`useState<Date>(new Date())`), not midnight. So an owner behind UTC creating a regimen in the evening — 20:37 in `America/New_York`, the canonical "home from the vet" moment — crossed the UTC rollover and stored **tomorrow's** date:
+
+```
+picked (local):  2026-06-09 20:37 EDT
+old writer:      2026-06-10        ← one day LATE, permanently
+```
+
+On that row the two bugs cancelled, so the **old counter was correct** and the new one reads one day **low**:
+
+| | `daysElapsed` | line rendered |
+|---|---|---|
+| old code on a skewed row | 10 (correct) | `90% given · 18 of 20 doses` |
+| **new code on a skewed row** | **9** | **`100% given · 18 of 18 doses`** |
+
+Two unlogged doses vanish into a shrunken denominator, and nothing else on the card carries the fact — `flaggedDoses` is 0 because nothing was logged as `missed`, so `regimenFlagLine` is null. The denominator *was* the only signal. The progress bar fills to 100%. That is a manufactured reassurance on a `clinical-guardrails` surface, in the direction the guardrail exists to forbid — reproduced against the shipped modules, not simulated.
+
+It also splits the "compliance rises" claim above in two, and only one half was true: rows created **before** the local UTC rollover were stored correctly and the fix corrects them; rows created **after** it were stored a day late and the fix pushes them *past* the truth.
+
+**Blast radius, measured rather than assumed:** the triage query below returns **0 rows** against live production (3 regimens total). So the defect is real and confirmed but has no live victims today, and the fix is safe to land on the current data.
+
+```sql
+SELECT m.id, m.started_at, m.created_at, up.timezone
+FROM medications m
+JOIN pets p ON p.id = m.pet_id
+LEFT JOIN user_profiles up ON up.id = p.user_id
+WHERE m.started_at =  (m.created_at AT TIME ZONE 'UTC')::date
+  AND m.started_at <> (m.created_at AT TIME ZONE coalesce(up.timezone,'America/New_York'))::date;
+```
+
+What remains is a **mixed-client window**: an un-updated TestFlight/OTA client keeps writing UTC-keyed starts that an updated client then reads one day low. Tracked as **B-619**; re-run the query before the next TestFlight cut.
+
+### Its second finding: the same defect class survived in the files this PR edited
+
+The record above claimed a grep of "every consumer of `medications.started_at`". The defect is a *pattern*, not a column, and grepping the pattern found two more — both fixed in this PR after the review:
+
+- **`profile.tsx:549`** — `handleEndRegimen` wrote `ended_at: new Date().toISOString().split('T')[0]`, the identical UTC day key, **fourteen lines below** code this PR had already rewritten. It widens `attributeDosesToRegimens`' upper bound and the vet report's regimen span.
+- **`AddMedicationModal.tsx:102`** — `todayDateOnly()`, the exact same helper, left as **dead code** in the file this PR de-UTC'd. `tsconfig.json` has no `noUnusedLocals`, so nothing flagged it.
+
+**So the guard test was rewritten against the CLASS rather than the instances.** The first version pinned `new Date(reg.started_at)` — bound to the identifier `reg`, defeated by renaming it to `r`, and pinning only the past. It now forbids two patterns (`.toISOString().split('T')[0]` / `.slice(0,10)`, and `new Date(<anything>.started_at|ended_at|completed_at)`) across both medication surfaces. Five instances of one defect in one feature, three of them in files a previous fix had already touched, is the argument for guarding the shape instead of the sighting.
+
+### Findings accepted but not acted on
+
+- **Unrated doses go unqualified** in the new `percent == null` branch: 6 `unrated` (B-156 G1 *unconfirmed* — evidence **against** compliance) renders `6 doses logged` with no counterpart line. Real, but confined to the unreachable path below. → **B-620**.
+- **The whole `null` path is unreachable in production.** `started_at` is `DATE NOT NULL`, PostgREST always returns a well-formed key, and `lib/sync.ts` mirrors it verbatim. The null plumbing is *defensive*, not load-bearing — corrected in the record above rather than left as the PR's safety story.
+- **`generate-report/report.ts:3633`** computes its own windowed expected-dose denominator from the same column. Zone-correct on its own terms and asking a deliberately different question, so not a disagreeing counter — but it inherits the skew, which is why B-619 covers the report too.
+- **Device-zone dependence** (the card buckets by device zone, the report by `user_profiles.timezone`) is pre-existing, is B-443's shape, and is not a regression of this PR.
 
 ## Deliberately out of scope → B-618
 
@@ -80,4 +129,6 @@ That is a **false absence claim** in the B-494 shape: silence rendered as a nega
 
 ## Verification
 
-`tsc --noEmit` clean · **3623 jest tests green** (159 suites), 11 new. Deno suites not run locally (no `deno` binary in this container) — no `supabase/functions/` code is touched and `lib/medications.ts` has no Deno consumer, so CI's Edge Functions job is the check.
+`tsc --noEmit` clean · **3636 jest tests green** (160 suites), 13 new. CI green on both required checks (`App (typecheck + jest)`, `Edge Functions (deno test)`). Deno suites not run locally (no `deno` binary in this container) — no `supabase/functions/` code is touched and `lib/medications.ts` has no Deno consumer, so CI's Edge Functions job is the check.
+
+**Process note worth keeping.** This session flagged the missing `adversarial-reviewer` pass three times as a known DoD gap and was ready to describe the work as done without it, on the strength of an in-context falsification table that looked thorough and was. The subagent then returned FAIL inside ten minutes on a case that table structurally could not reach. The isolation is not ceremony — the in-context reviewer inherits the build's frame, and this diff's frame was *"the old code was wrong, the new code is right"*, which is precisely the assumption the blocking finding violates.

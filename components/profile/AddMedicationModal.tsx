@@ -99,10 +99,6 @@ interface Props {
   onUpdated?: (regimen: Regimen) => void;
 }
 
-function todayDateOnly(): string {
-  return new Date().toISOString().split('T')[0];
-}
-
 export function AddMedicationModal({
   visible, petId, existingRegimen, onClose, onAdded, onUpdated,
 }: Props) {

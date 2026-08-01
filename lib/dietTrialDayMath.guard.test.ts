@@ -146,13 +146,36 @@ describe('B-421 — one diet-trial day counter, not four', () => {
     const code = readCode('app/(tabs)/profile.tsx');
     expect(code).not.toMatch(DAY_DIVISION);
     expect(code).not.toMatch(MANUAL_MIDNIGHT);
-    expect(src).not.toMatch(/function regimenDaysElapsed/);
+    // Read the STRIPPED source: the comment left behind names the function it
+    // replaced, and a guard that reds on its own documentation is a guard people
+    // delete. (`readCode` exists for exactly this; use it on all three.)
+    expect(code).not.toMatch(/function regimenDaysElapsed/);
     expect(code).toMatch(/regimenDaysElapsed\(/); // delegates instead
+  });
 
-    // The counter's DISPLAY twin: `started_at` is a DATE, and naming it with
-    // `new Date(key)` reads UTC midnight, so it printed the previous day for anyone
-    // behind UTC. Parsing a stored day key belongs to `dayKeyToLocalDate`.
-    expect(code).not.toMatch(/new Date\(\s*reg\.started_at\s*\)/);
+  // B-441 found FIVE instances of one defect in a single feature, three of them in
+  // files a previous fix had already edited. So the guard is written against the
+  // CLASS, not the instances: an identifier-bound regex (`new Date(reg.started_at)`)
+  // is defeated by renaming `reg` to `r`, and pins only the past. These two patterns
+  // are what the class actually looks like in source.
+  const DATE_KEY_VIA_UTC = /\.toISOString\(\)\s*\.\s*(split\(\s*['"]T['"]\s*\)\s*\[\s*0\s*\]|slice\(\s*0\s*,\s*10\s*\))/;
+  const DATE_COL_VIA_NEW_DATE = /new Date\(\s*[A-Za-z_$][\w$.]*\.(started_at|ended_at|completed_at)\s*\)/;
+
+  const DATE_COLUMN_SURFACES = [
+    { file: 'app/(tabs)/profile.tsx', what: 'the Pet tab (regimen counter, Started line, End-regimen write)' },
+    { file: 'components/profile/AddMedicationModal.tsx', what: 'the regimen setup modal (the WRITE path)' },
+  ];
+
+  it.each(DATE_COLUMN_SURFACES)('$what never round-trips a DATE column through UTC', ({ file }) => {
+    const code = readCode(file);
+    // A UTC day key from an instant. `toLocalDayKey` is the local-component
+    // equivalent and is what a DATE column must be written with — an owner AHEAD of
+    // UTC picking "today" otherwise stores YESTERDAY, permanently.
+    expect(code).not.toMatch(DATE_KEY_VIA_UTC);
+    // The read direction: `new Date('2026-07-31')` is UTC midnight, which is the
+    // PREVIOUS local day behind UTC. Stored day keys are parsed with
+    // `dayKeyToLocalDate` / indexed with `localDayIndexOf`.
+    expect(code).not.toMatch(DATE_COL_VIA_NEW_DATE);
   });
 
   it('the trial-facts loader DELEGATES coverage rather than keying its own day', () => {
