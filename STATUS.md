@@ -28,13 +28,13 @@ _**No "Last updated" line, and no session list — deliberately (2026-07-25).** 
 
 ## Parallel Tracks
 
-### Password recovery (B-280) — spec v1.3; **PR 1 shipped**; PR 2's B-576 §6.4 blocker resolved, gated on the §9.3 device checks
+### Password recovery (B-280) — spec v1.3; **PR 1 + PR 2 built** (PR 2 = draft #553); enablement (PR 4) gated on §9.2 dashboard + §9.3 device checks
 Spec `docs/nyx-password-recovery-requirements.md` **v1.3** + design-locked mocks `docs/culprit-password-recovery-mockups.html`. Closes the app's sharpest returning-owner dead end and a submission gap (hardening audit §B2). Flow: login link → request → neutral Sent → same-phone deep link → set password → **in** (no credential re-entry).
 
 | PR | What | Status |
 |---|---|---|
 | 1 | Foundations — `flowType: 'pkce'`, pure `lib/passwordRecovery.ts` (two-stage FR-4 classification), **persisted** recovery gate, request marker, FR-17 log redaction, flag off | ✅ **shipped via #444** (79 new tests; no user-visible change) |
-| 2 | The whole flow (FR-1→FR-20) — deliberately not split further; a request without a handler ships a dead end, which is the defect this track removes | ⬜ **all rulings landed; §6.4's B-576 ordering blocker resolved in spec v1.3** (option (d) — null the store, don't `signOut()`, below). Gated on the **§9.3 device checks**; `rls-privacy-reviewer` is a **merge gate** |
+| 2 | The whole flow (FR-1→FR-20) — deliberately not split further; a request without a handler ships a dead end, which is the defect this track removes | ⚙️ **built this session — draft #553** (option (d) handler `lib/recoveryDeepLink.ts`; the §6.5 tabs gate; FR-18/FR-20; watchdog; the `recoveryExchangePending` adoption guard). **Flag stays off — no user-visible change.** Gates: **`rls-privacy-reviewer` PASS (F1–F5 HELD)** + re-review PASS after the code-review fixes; `code-reviewer` fix-before-merge all closed; `nyx-voice` ✓; `pm-feature-review` 2 NEEDS-WORK closed. ~55 new tests, jest 3970. §9.2 dashboard + §9.3 device checks are PM actions for enablement (PR 4) |
 | 3 | Settings → change password + the FR-19 eviction option | ⬜ **D4 ruled** — buildable after PR 1 |
 | 4 | Enablement — flip `PASSWORD_RECOVERY_ENABLED`, on-device end-to-end | 🔓 **SMTP gate LIFTED** (#445 — production SMTP verified by a live send). Now gated on **PR 2 existing** (§8's sequence needs a real reset sent end-to-end before the flip) + two §9.2 dashboard items: enumeration protection, and the recovery email template that still says "Nyx". **The redirect allowlist is DONE** — B-432's pass set `nyx://**` (2026-07-28), whose `**` matches separators, so `nyx:///reset-password` is already permitted |
 
