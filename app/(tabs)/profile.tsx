@@ -717,7 +717,7 @@ export default function ProfileScreen() {
             )}
             {photoUploading && (
               <View style={styles.photoOverlay}>
-                <WhorlSpinner size="md" tint="#fff" />
+                <WhorlSpinner size="md" tint={theme.colorTextOnDark} />
               </View>
             )}
           </TouchableOpacity>
@@ -1132,13 +1132,13 @@ const styles = StyleSheet.create({
   photoInitials: {
     fontSize: 38,
     fontWeight: theme.weightMedium,
-    color: '#fff',
+    color: theme.colorTextOnDark,
   },
   photoOverlay: {
     position: 'absolute',
     top: 0, left: 0, right: 0, bottom: 0,
     borderRadius: 56,
-    backgroundColor: 'rgba(0,0,0,0.45)',
+    backgroundColor: theme.colorScrimPhoto,
     alignItems: 'center',
     justifyContent: 'center',
   },

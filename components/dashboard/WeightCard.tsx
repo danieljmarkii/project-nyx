@@ -171,7 +171,7 @@ const styles = StyleSheet.create({
   deltaRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    gap: theme.space0_5,
   },
   deltaText: {
     fontSize: theme.textSM,
@@ -181,7 +181,7 @@ const styles = StyleSheet.create({
   note: {
     fontSize: theme.textXS,
     color: theme.colorTextTertiary,
-    lineHeight: 16,
+    lineHeight: theme.lineHeightXS,
   },
   emptyText: {
     fontSize: theme.textSM,
