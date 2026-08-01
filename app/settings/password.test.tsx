@@ -37,6 +37,12 @@ const mockUpdate = supabase.auth.updateUser as jest.Mock;
 const mockSignOut = supabase.auth.signOut as jest.Mock;
 const mockBack = router.back as jest.Mock;
 
+// Every success path calls useSnackbarStore.getState().show(...), whose real impl
+// schedules a delayMs reveal timer that leaks past the test (Jest force-exits and
+// warns). Stub it once here so no test has to remember to; the dedicated success
+// test asserts against this same spy.
+let showSpy: jest.SpyInstance;
+
 const CURRENT = 'oldsecret123';
 const NEXT = 'newsecret456';
 
@@ -50,6 +56,12 @@ beforeEach(() => {
   // An authenticated session always carries an email; the re-check addresses it.
   useAuthStore.setState({ user: { email: 'jordan@email.com' } as never });
   useSnackbarStore.setState({ visible: false, payload: null });
+  showSpy = jest.spyOn(useSnackbarStore.getState(), 'show').mockImplementation(() => {});
+});
+
+afterEach(() => {
+  // Restore spies (incl. showSpy and any Alert spies) so none leak between tests.
+  jest.restoreAllMocks();
 });
 
 describe('ChangePasswordScreen — validation gate', () => {
@@ -129,9 +141,6 @@ describe('ChangePasswordScreen — current-password re-check', () => {
 
 describe('ChangePasswordScreen — success', () => {
   it('confirms with a Snackbar and pops back, without touching other sessions', async () => {
-    // Stub the impl so the assertion holds without scheduling the store's real
-    // reveal/hide timers (which would leak past the test).
-    const showSpy = jest.spyOn(useSnackbarStore.getState(), 'show').mockImplementation(() => {});
     mockSignIn.mockResolvedValue({ error: null });
     mockUpdate.mockResolvedValue({ error: null });
     const utils = render(<ChangePasswordScreen />);
@@ -145,7 +154,6 @@ describe('ChangePasswordScreen — success', () => {
     );
     // Box off (default) — the household is untouched.
     expect(mockSignOut).not.toHaveBeenCalled();
-    showSpy.mockRestore();
   });
 });
 

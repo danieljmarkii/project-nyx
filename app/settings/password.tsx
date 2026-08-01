@@ -131,8 +131,9 @@ export default function ChangePasswordScreen() {
         return;
       }
       // Offline / rate-limited / unexpected — mapped copy, never a raw provider
-      // string (lib/authErrors). 'login' context: the remedy is "try again".
-      const copy = authErrorCopy(reauthError, 'login', email);
+      // string (lib/authErrors). 'password' context so an unmapped error's
+      // fallback title reads "Couldn't change your password", not a sign-in error.
+      const copy = authErrorCopy(reauthError, 'password', email);
       Alert.alert(copy.title, copy.message);
       return;
     }
@@ -149,7 +150,7 @@ export default function ChangePasswordScreen() {
     }
     if (updateError) {
       setLoading(false);
-      const copy = authErrorCopy(updateError, 'login', email);
+      const copy = authErrorCopy(updateError, 'password', email);
       Alert.alert(copy.title, copy.message);
       return;
     }
@@ -290,6 +291,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-start',
     gap: theme.space2,
+    // Explicit ≥44pt floor so the tap target is enforced, not left to incidental
+    // content height — a shorter translation or a Dynamic-Type-down setting can't
+    // silently drop this row under the minimum.
+    minHeight: 44,
     paddingVertical: theme.space1,
     marginBottom: theme.space3,
   },
