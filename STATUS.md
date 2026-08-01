@@ -262,6 +262,9 @@ Nearest live PM gates, none of which block code already in flight:
 
 ## Open PM Action Items
 
+**CI (B-514, #532) — one ruleset edit, 30 seconds**
+- [ ] **Add `App (jest, non-UTC timezones)` to the `main` ruleset's required-checks list.** #532 adds a third CI job that runs the full jest suite at UTC+14 / UTC+12:45 / UTC−10, because CI has only ever run at UTC and Nyx's day boundary is *local* midnight (B-421) — the gap that let B-417 PR 6 ship a real timezone inversion past a green suite. A new job reports but does not gate until it is named in the ruleset, which is exactly the state B-390 existed to fix for the first two jobs. Nothing else to do: the job is green and no existing check was weakened.
+
 **Event photos (B-105, #512) — one live cleanup, needs your call because it deletes health photos**
 - [ ] **Decide whether to delete the 3 pre-existing duplicate `event_attachments` rows in prod.** B-105 is fixed going forward, and the read fix means devices already show the right photo — but the client cannot reach rows already in Postgres, and `generate-report` renders *every* attachment per incident, so these 3 `vomit` incidents currently print **two photo cards each** on the vet report. All 3 belong to one pet; each is an original plus a replacement logged 1–3 days later. Row-count check before applying: `select count(*) from event_attachments a where exists (select 1 from event_attachments b where b.event_id = a.event_id and b.created_at > a.created_at);` → expect **3** (the older row of each pair). Destructive, irreversible for the Storage objects, and "which photo is the real one" is a judgement about a clinical record — so it is not taken automatically. Deferring is fine; the doubling is cosmetic on the report, not wrong.
 
