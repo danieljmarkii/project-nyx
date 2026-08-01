@@ -169,6 +169,19 @@ describe('FoodRow', () => {
     expect(getByText('Trial diet')).toBeTruthy();
   });
 
+  // The register, pinned — this is the difference the design authority cared
+  // about. Uppercase + tracked is read as a CATEGORY LABEL; the same words in
+  // sentence case on a green pill are read as an approval badge, and this chip
+  // names the trial's list rather than blessing the food. A regression here is
+  // silent (the words don't change), so it is asserted rather than reviewed.
+  it('styles the chip as an eyebrow, not as an approval badge', () => {
+    const { getByText } = render(
+      <FoodRow brand="Zignature" productName="Kangaroo Formula" format="dry_kibble"
+        trialChip="Also allowed" onPress={() => {}} />,
+    );
+    expect(getByText('Also allowed')).toHaveStyle({ textTransform: 'uppercase' });
+  });
+
   // The whole of R1 at this layer: a row with no chip prop is a row that says
   // nothing at all about the trial — no grey chip, no "off-diet" mark, nothing.
   it.each([

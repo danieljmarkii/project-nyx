@@ -75,18 +75,25 @@ const styles = StyleSheet.create({
     fontWeight: theme.weightMedium,
     color: theme.colorAccentInk,
   },
-  // A quiet secondary action, matching the screen's other non-destructive ones
-  // ("Re-run AI extraction"). Left-aligned to sit in the form's column rather than
-  // reading as a page-level button — adding a vet-sanctioned extra is a small,
-  // reversible-in-effect act, not a commitment the screen should dramatise.
+  // Mock D's ghost button, and the shape is load-bearing rather than decorative.
+  // This block sits at the head of a column of labelled TEXT INPUTS above a
+  // sticky Save bar, so a bare accent text link in that column reads as a field
+  // value — leaving an owner unsure whether tapping it also needs a Save (it
+  // does not; it opens a sheet and the sheet writes). A filled, full-width
+  // control is unmistakably an action. Calm rather than loud: the subtle surface
+  // fill, not the accent one — adding a vet-sanctioned extra is an ordinary act,
+  // not a commitment the screen should dramatise.
   action: {
-    alignSelf: 'flex-start',
+    alignItems: 'center',
     justifyContent: 'center',
-    minHeight: 44,
-    paddingRight: theme.space2,
+    minHeight: 48,
+    borderRadius: theme.radiusMedium,
+    backgroundColor: theme.colorSurfaceSubtle,
+    paddingHorizontal: theme.space2,
   },
   actionText: {
     fontSize: theme.textMD,
-    color: theme.colorAccent,
+    fontWeight: theme.weightMedium,
+    color: theme.colorTextPrimary,
   },
 });

@@ -71,6 +71,36 @@ describe('useTrialAllowedSet', () => {
     expect(mockLoad).toHaveBeenLastCalledWith('pet-2');
   });
 
+  // The GAP, not just the destination. The read is async, so the test above —
+  // which only asserts where the hook lands — passes just as happily while pet
+  // A's chrome is drawn over pet B's context for the frames in between. On a
+  // per-account food library that is the exact D7 leak, and PR 3 put three
+  // visible surfaces behind this hook, so the window is now three surfaces wide.
+  it('D7 — withholds pet A’s answer the INSTANT pet B is selected, not once the read lands', async () => {
+    selectPet('pet-1');
+    const { result } = renderHook(() => useTrialAllowedSet());
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+
+    // A read that never resolves, so the only thing under test is what the hook
+    // reports while it is in flight.
+    mockLoad.mockReturnValue(new Promise(() => {}));
+    selectPet('pet-2');
+    expect(result.current.status).toBe('unknown');
+  });
+
+  // The counterpart, and the reason the fix is a render-time pairing rather than
+  // a blanket reset: the tick fires on every sync cycle, and clearing on it would
+  // flash the strip and every chip off and back on while the pet has not changed.
+  it('does NOT blank the set on a hydration tick', async () => {
+    selectPet('pet-1');
+    const { result } = renderHook(() => useTrialAllowedSet());
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+
+    mockLoad.mockReturnValue(new Promise(() => {}));
+    act(() => useSyncStore.getState().bumpHydrationTick());
+    expect(result.current.status).toBe('ready');
+  });
+
   it('re-reads on the hydration tick — a mid-trial add lands without a manual refresh', async () => {
     selectPet('pet-1');
     const { result } = renderHook(() => useTrialAllowedSet());

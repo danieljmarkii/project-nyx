@@ -360,6 +360,20 @@ export default function FoodsScreen() {
         </TouchableOpacity>
       </View>
 
+      {/* FR-1 in the two branches that never scroll. The trial read is INDEPENDENT
+          of the library read — a failed catalog load, or a fresh install where
+          `diet_trial_foods` hydrated before `food_items_cache`, leaves an owner
+          with no library and a live trial. That is precisely the owner who most
+          needs "here's what the trial permits", and the strip is a working path to
+          it, so withholding it would be the one state where this feature goes
+          missing exactly when it matters. Rendered above the state message rather
+          than inside it: the message is about the library, the strip is not. */}
+      {(showError || isEmpty) && trialStrip !== null ? (
+        <View style={styles.stripOnly}>
+          <FoodsTrialStrip model={trialStrip} onPress={() => router.push('/trial-foods')} />
+        </View>
+      ) : null}
+
       {showError ? (
         <View style={styles.centered}>
           <Text style={styles.stateTitle}>Couldn't load your foods</Text>
@@ -654,6 +668,11 @@ const styles = StyleSheet.create({
     fontSize: theme.textMD,
     fontWeight: theme.weightMedium,
     color: theme.colorAccent,
+  },
+  // The strip's own inset in the two non-scrolling branches, matching the padding
+  // `scrollContent` gives it in the normal one so it sits in the same column.
+  stripOnly: {
+    padding: theme.space2,
   },
   scroll: {
     flex: 1,
