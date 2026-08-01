@@ -53,6 +53,23 @@ export type SignedOutRoute = {
   armBanner: boolean;
 };
 
+// During the recovery EXCHANGE WINDOW — from when the handler nulls the store
+// session (§6.4 step 3) until the exchange's `SIGNED_IN` arrives — the ONLY session
+// that may enter the store is the exchange's own `SIGNED_IN` (the new owner, B). A
+// `TOKEN_REFRESHED` / `INITIAL_SESSION` emission in that window is the PRE-recovery
+// owner (A), whose auth-js tokens are still live and whose `autoRefresh` can fire
+// mid-flush — and adopting it would re-render the set-password form against A, a
+// narrow Trap-2 sub-window (rls-privacy re-review, B-280). Pure + unit-tested. The
+// window is bounded by `recoveryExchangePending`, which a RESUME (row 21) never sets,
+// so a resumed session is adopted normally.
+export function shouldAdoptSessionDuringRecovery(
+  event: string,
+  recoveryExchangePending: boolean,
+): boolean {
+  if (!recoveryExchangePending) return true;
+  return event === 'SIGNED_IN';
+}
+
 export function signedOutRoute(input: {
   justDeletedAccount: boolean;
   deliberateSignOut: boolean;

@@ -1,4 +1,8 @@
-import { coldStartDecision, signedOutRoute } from './authRouting';
+import {
+  coldStartDecision,
+  signedOutRoute,
+  shouldAdoptSessionDuringRecovery,
+} from './authRouting';
 import type { Session, AuthError } from '@supabase/supabase-js';
 
 // Minimal stand-ins — coldStartDecision only branches on presence, never shape.
@@ -51,5 +55,22 @@ describe('signedOutRoute (B-280 FR-20)', () => {
     expect(
       signedOutRoute({ justDeletedAccount: true, deliberateSignOut: false, recoveryEnabled: false }),
     ).toEqual({ path: '/(auth)/login', armBanner: false });
+  });
+});
+
+describe('shouldAdoptSessionDuringRecovery (B-280 rls re-review)', () => {
+  it('adopts everything when no exchange window is open (normal auth untouched)', () => {
+    expect(shouldAdoptSessionDuringRecovery('TOKEN_REFRESHED', false)).toBe(true);
+    expect(shouldAdoptSessionDuringRecovery('SIGNED_IN', false)).toBe(true);
+    expect(shouldAdoptSessionDuringRecovery('INITIAL_SESSION', false)).toBe(true);
+  });
+
+  it('during the exchange window, adopts ONLY the exchange SIGNED_IN — never A re-emitted', () => {
+    // The Trap-2 sub-window: auth-js autoRefresh re-emits the pre-recovery owner A.
+    expect(shouldAdoptSessionDuringRecovery('TOKEN_REFRESHED', true)).toBe(false);
+    expect(shouldAdoptSessionDuringRecovery('INITIAL_SESSION', true)).toBe(false);
+    expect(shouldAdoptSessionDuringRecovery('USER_UPDATED', true)).toBe(false);
+    // The exchange's own SIGNED_IN(B) is the one session recovery adopts.
+    expect(shouldAdoptSessionDuringRecovery('SIGNED_IN', true)).toBe(true);
   });
 });

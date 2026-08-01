@@ -72,11 +72,19 @@ async function runExchangeAndFinalize(code: string): Promise<void> {
       message: e instanceof Error ? e.message : 'exchange failed',
     });
   }
+  // The exchange has resolved: its SIGNED_IN(B) (on success) has already been adopted,
+  // and A's tokens are gone from auth-js (overwritten by the exchange, or purged by
+  // the reconcile below). Close the adoption window so B's own later TOKEN_REFRESHED
+  // and a resume are adopted normally.
+  store.setRecoveryExchangePending(false);
 
   if (outcome === 'success') {
     // step 6/7: the SIGNED_IN from the exchange sets the session; the FR-6 branch in
     // onAuthStateChange routes to the set-password form (session + gate). No signOut
     // here — the exchange already replaced A's tokens with B's in auth-js storage.
+    // Clear any failure state a slow-exchange watchdog may have set on the screen, so
+    // a late success renders the form rather than a stale "failed".
+    store.setRecoveryScreen(null);
     return;
   }
 
@@ -152,16 +160,20 @@ export async function handleRecoveryDeepLink(
   // failure state's pre-fill must come from this value, not a re-read (FR-12).
   store.setRecoveryEmail(marker.email);
 
-  // step 3: arm the gate (disk then memory), null the STORE session, then route to
-  // the working state. Nulling the session BEFORE the route is load-bearing: the
-  // set-password form renders on (session && recoveryInProgress), and on a WARM deep
-  // link A's live session is still in the store — so routing to the form while it is
-  // non-null would let a "Save and continue" tap DURING the step-4 flush window write
-  // B's new password onto A's account (Trap 2, caught by code-reviewer). With the
-  // session null, reset-password shows the working spinner until B's session arrives
-  // from the exchange, so the form is never reachable against A's session. Nulling
-  // the STORE (not auth-js) does not touch the flush, which drains A's queue under
-  // auth-js's own still-valid session at step 4.
+  // step 3: open the exchange window, arm the gate (disk then memory), null the STORE
+  // session, then route to the working state. Nulling the session BEFORE the route is
+  // load-bearing: the set-password form renders on (session && recoveryInProgress),
+  // and on a WARM deep link A's live session is still in the store — so routing to the
+  // form while it is non-null would let a "Save and continue" tap DURING the step-4
+  // flush window write B's new password onto A's account (Trap 2, caught by
+  // code-reviewer). With the session null, reset-password shows the working spinner
+  // until B's session arrives from the exchange. `recoveryExchangePending` closes the
+  // sibling window the rls re-review found — auth-js's autoRefresh re-emitting A as a
+  // `TOKEN_REFRESHED` during the flush and the root listener re-adopting it; while it
+  // is set the listener adopts ONLY the exchange's `SIGNED_IN`. Nulling the STORE (not
+  // auth-js) does not touch the flush, which drains A's queue under auth-js's own
+  // still-valid session at step 4.
+  store.setRecoveryExchangePending(true);
   await armRecoveryGate();
   store.setRecoveryScreen(null);
   useAuthStore.getState().setSession(null);

@@ -48,6 +48,7 @@ beforeEach(() => {
     session: { user: { id: 'user-a' } } as never,
     recoveryInProgress: false,
     recoveryScreen: null,
+    recoveryExchangePending: false,
     recoveryEmail: null,
   });
   mockFlush.mockImplementation(async () => {
@@ -121,6 +122,21 @@ describe('handleRecoveryDeepLink — the valid, provenance-present happy path', 
     });
     await handleRecoveryDeepLink('nyx:///reset-password?code=abc', { nowMs: NOW });
     expect(sessionAtRoute).toBeNull();
+  });
+
+  it('opens the exchange window over the wipe and closes it after the exchange (rls re-review)', async () => {
+    // While the window is open the root listener adopts only the exchange SIGNED_IN,
+    // never an autoRefresh re-emission of A. It must be OPEN across the flush + wipe
+    // (when A's autoRefresh could fire) and CLOSED once the exchange resolves.
+    haveProvenance();
+    let pendingAtWipe: unknown = 'unset';
+    mockWipe.mockImplementation(async () => {
+      calls.push('wipe');
+      pendingAtWipe = useAuthStore.getState().recoveryExchangePending;
+    });
+    await handleRecoveryDeepLink('nyx:///reset-password?code=abc', { nowMs: NOW });
+    expect(pendingAtWipe).toBe(true);
+    expect(useAuthStore.getState().recoveryExchangePending).toBe(false);
   });
 });
 

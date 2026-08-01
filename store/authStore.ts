@@ -37,6 +37,14 @@ interface AuthState {
   // because on a failed exchange the gate is released WHILE this failure state must
   // keep rendering (§6.4 step 8).
   recoveryScreen: 'link_unusable' | 'wrong_device' | 'failed' | null;
+  // In-memory window flag (B-280, rls-privacy re-review): true from just before the
+  // §6.4 handler nulls the store session until the exchange resolves. While set, the
+  // root listener adopts ONLY the exchange's `SIGNED_IN` — never a `TOKEN_REFRESHED`
+  // re-emission of the PRE-recovery owner, which auth-js's autoRefresh can fire in the
+  // flush→exchange window and which would otherwise re-render the set-password form
+  // against the wrong account. Not persisted: a force-quit ends the window (the gate,
+  // which IS persisted, governs the resume).
+  recoveryExchangePending: boolean;
   // The address the reset was requested for, held in memory by the §6.4 handler
   // BEFORE step 4's wipe clears the disk marker (FR-12) — so §5.5 / §5.5b can send
   // a new link to a PRE-FILLED request screen without re-reading a marker the wipe
@@ -58,6 +66,7 @@ interface AuthState {
   // `armRecoveryGate` / `releaseRecoveryGate` below, which write disk too.
   setRecoveryInProgress: (recoveryInProgress: boolean) => void;
   setRecoveryScreen: (recoveryScreen: AuthState['recoveryScreen']) => void;
+  setRecoveryExchangePending: (recoveryExchangePending: boolean) => void;
   setRecoveryEmail: (recoveryEmail: string | null) => void;
   setDeliberateSignOut: (deliberateSignOut: boolean) => void;
   setSignedOutInvoluntarily: (signedOutInvoluntarily: boolean) => void;
@@ -70,6 +79,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   justDeletedAccount: false,
   recoveryInProgress: false,
   recoveryScreen: null,
+  recoveryExchangePending: false,
   recoveryEmail: null,
   deliberateSignOut: false,
   signedOutInvoluntarily: false,
@@ -78,6 +88,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   setJustDeletedAccount: (justDeletedAccount) => set({ justDeletedAccount }),
   setRecoveryInProgress: (recoveryInProgress) => set({ recoveryInProgress }),
   setRecoveryScreen: (recoveryScreen) => set({ recoveryScreen }),
+  setRecoveryExchangePending: (recoveryExchangePending) => set({ recoveryExchangePending }),
   setRecoveryEmail: (recoveryEmail) => set({ recoveryEmail }),
   setDeliberateSignOut: (deliberateSignOut) => set({ deliberateSignOut }),
   setSignedOutInvoluntarily: (signedOutInvoluntarily) => set({ signedOutInvoluntarily }),
