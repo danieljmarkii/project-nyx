@@ -117,7 +117,8 @@ export default function HomeScreen() {
               object (8–12 weeks); a 14-day course is the shorter-lived guest. A
               fixed order, not a ranking. `resolveMedStrips` returns an empty array
               when there is nothing to show, so Home draws no hole for a pet with
-              no meds (§8, AC #3). Context-only in M2 — the confirm lands in M3. */}
+              no meds (§8, AC #3). The card self-contains its one-tap confirm (M3),
+              which writes local-first and bumps the hydration tick above to settle. */}
           {(medInput ? resolveMedStrips(medInput) : []).map((m) => (
             <MedStrip key={m.key} model={m} />
           ))}
