@@ -1763,6 +1763,10 @@ export interface ProteinTimeline {
   bins: number[][]
   /** Per-week count of off-diet feedings with no recorded protein (disclosed, never dropped, §5.1). */
   unknownByWeek: number[]
+  /** Days with ANY log per weekly bucket — shares the symptom chart's `loggedDaysByBucket` exactly.
+   *  Lets the chart tell a CLEAN week (logged, zero off-diet) from an UNLOGGED one (no data at all),
+   *  so an off-diet zero is never conflated with silence (B-497). */
+  loggedDaysByBucket: number[]
   /** Per-week count of off-diet FEEDINGS (each counted once) — the honest denominator
    *  behind a stack whose segments may now sum higher than the feedings that produced it. */
   feedingsByWeek: number[]
@@ -3240,6 +3244,7 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     proteins: timelineProteins,
     bins: timelineBins,
     unknownByWeek,
+    loggedDaysByBucket,
     feedingsByWeek,
     totalByProtein: proteinExposureTally,
     hasUnknown: proteinUnknownCount > 0,
