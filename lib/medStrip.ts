@@ -447,10 +447,12 @@ function mostRecentDose(doses: MedStripDoseRow[]): MedStripDoseRow | null {
   return best;
 }
 
-// ── Copy (indicative; locks at M5) ────────────────────────────────────────────
-// Every string below avoids the words "missed" and "due" (N1 / AC #4). M5 refines
-// the phrasing, the time-of-day precision, and the clinical register; the STRUCTURE
-// — which fact renders in which state — is what M1 fixes.
+// ── Copy (M5 — locked behind nyx-voice + clinical-guardrails) ─────────────────
+// Every string below avoids the words "missed" and "due" (N1 / AC #4). M5 is the
+// copy + safety pass: it sets the final phrasing, adds the time-of-day precision
+// the recency lines carry, and fixes the clinical register (the withholding line
+// leads with the sharpest signal; the collapsed header says "logged today"). The
+// STRUCTURE — which fact renders in which state — was fixed by M1 and is unchanged.
 
 const COURSE_CHECK_LINE = 'Worth checking your vet’s plan';
 const COURSE_REACHED_LINE = 'Course length reached — worth checking your vet’s plan';
@@ -476,7 +478,11 @@ function buildHeader(p: {
     base = p.name; // ad-hoc, or a fixed course whose start date did not parse
   }
   if (p.collapsed) {
-    base += ` · ${p.dosesToday} ${p.dosesToday === 1 ? 'dose' : 'doses'} logged`;
+    // "logged TODAY" — a collapsed card means today's cadence is met, so the count
+    // is a fact about the record for *today*, never a lifetime tally (the M5
+    // legibility ruling the M4 review raised; still N4 — a counted fact, never
+    // "all caught up"). Without "today" the bare count reads as cumulative.
+    base += ` · ${p.dosesToday} ${p.dosesToday === 1 ? 'dose' : 'doses'} logged today`;
   }
   return base;
 }
@@ -498,14 +504,20 @@ function buildLine(p: {
 }): string | null {
   // Precedence is deliberate, not incidental. WITHHOLDING WINS OVER THE
   // COURSE-LENGTH ADVISORY: a refused / not-given / in-doubt record is a health
-  // signal (N3), and on a past-length course it is the more specific of the two
-  // "talk to your vet" prompts — so the strip surfaces the refusal fact and (via
-  // the gate) drops the button, rather than showing a calmer calendar advisory
-  // beside a record the pet is refusing. The strip has ONE line, so this is a
-  // genuine choice; the two together are NOT specified in §9. ⚠️ M5 owns the
-  // clinical register (§10) and must rule whether a past-length + refused state
-  // should say BOTH things (advisory + fact) rather than the fact alone. Pinned by
-  // a test so the current behaviour is a decision, not an accident.
+  // signal (N3), the sharper of the two "talk to your vet" prompts on a
+  // past-length course — so the strip surfaces the refusal fact and (via the gate)
+  // drops the button, never a calmer calendar advisory beside a record the pet is
+  // refusing.
+  //
+  // M5 RULING — past-length + refused composition (clinical-guardrails): the line
+  // carries the refusal ALONE, and nothing is lost by it, because the two facts
+  // render in DIFFERENT places. The calendar overrun is already in the HEADER
+  // ("day 17 — 3 days past"), and the advisory's action ("check your vet's plan")
+  // is preserved by the button standing down and the card becoming a tap-through
+  // to the Pet tab. So a past-length + refused card shows BOTH facts — overrun in
+  // the header, refusal in the line — and the advisory STRING is subsumed, not
+  // dropped. The strip has one line; giving it to the health signal is the
+  // clinical-guardrails call, ratified here and pinned by a test.
   if (p.isWithholding) return withholdingLine(p.withholding, p.recentDoses);
   if (p.collapsed) return null; // the count lives in the collapsed header
   if (p.courseReached) {
@@ -526,29 +538,51 @@ function buildLine(p: {
 // decline, because they are this med's news; an intake-decline-ONLY withhold returns
 // null and defers to the Signal card above (which owns the pet-level fact), mirroring
 // `resolveTrialStrip`'s intake-decline → null line.
+//
+// M5 register (clinical-guardrails): the clauses lead in clinical priority —
+// refused first (the sharpest signal), then a not-given (the STATE "missed", never
+// the WORD, N1), then an unconfirmed combo dose. The LEAD clause carries the "of
+// the last N doses" frame; any further reasons append as bare counts, so one reason
+// reads as a single clean fact and a compound record reads as a short list. When
+// there is only ONE recent dose the lead reads "Last dose refused", not the clumsy
+// "1 of the last 1 dose refused" — the count frame earns its place only across
+// several doses.
 function withholdingLine(
   reasons: MedStripWithholding[],
   recentDoses: MedStripDoseRow[],
 ): string | null {
   const n = recentDoses.length;
-  const parts: string[] = [];
   const refused = recentDoses.filter((d) => d.adherence === 'refused').length;
-  if (refused > 0) parts.push(`${refused} of the last ${n} ${n === 1 ? 'dose' : 'doses'} refused`);
-  // "not given", never "missed" (N1). Clinically accurate for an owner-logged
-  // `missed` dose; M5 owns the final register.
+  // "not given", never "missed" (N1) — clinically accurate for an owner-logged
+  // `missed` dose.
   const notGiven = recentDoses.filter((d) => d.adherence === 'missed').length;
-  if (notGiven > 0) parts.push(`${notGiven} not given`);
-  if (reasons.includes('dose_in_doubt')) {
-    const doubt = recentDoses.filter((d) =>
-      isComboDoseInDoubt({
-        isCombo: d.paired_event_id != null,
-        vehicleIntake: d.paired_vehicle_intake,
-        adherence: d.adherence,
-      }),
-    ).length;
-    if (doubt > 0) parts.push(`${doubt} unconfirmed`);
-  }
-  return parts.length > 0 ? parts.join(' · ') : null;
+  const doubt = reasons.includes('dose_in_doubt')
+    ? recentDoses.filter((d) =>
+        isComboDoseInDoubt({
+          isCombo: d.paired_event_id != null,
+          vehicleIntake: d.paired_vehicle_intake,
+          adherence: d.adherence,
+        }),
+      ).length
+    : 0;
+
+  const parts: { count: number; verb: string }[] = [];
+  if (refused > 0) parts.push({ count: refused, verb: 'refused' });
+  if (notGiven > 0) parts.push({ count: notGiven, verb: 'not given' });
+  if (doubt > 0) parts.push({ count: doubt, verb: 'unconfirmed' });
+  if (parts.length === 0) return null;
+
+  const [lead, ...rest] = parts;
+  // n === 1 → exactly one recent dose, and a dose carries exactly one adherence, so the
+  // three buckets are mutually exclusive per dose (`isComboDoseInDoubt` keys on
+  // `adherence == null`, disjoint from 'refused'/'missed'). `rest` is therefore always
+  // empty here, and "Last dose refused" reads far better than "1 of the last 1 dose
+  // refused".
+  const leadLine =
+    n === 1
+      ? `Last dose ${lead.verb}`
+      : `${lead.count} of the last ${n} doses ${lead.verb}`;
+  return [leadLine, ...rest.map((p) => `${p.count} ${p.verb}`)].join(' · ');
 }
 
 function coverageTodayLine(dosesToday: number, dosesPerDay: number | null): string {
@@ -557,10 +591,14 @@ function coverageTodayLine(dosesToday: number, dosesPerDay: number | null): stri
     const hint = frequencyHint(dosesPerDay);
     return hint ? `No dose logged yet today · ${hint}` : 'No dose logged yet today';
   }
-  // Partly covered (a fully-covered fixed course collapses instead). `dosesPerDay` is
-  // set here (coverage-today framing only runs for a scheduled course).
-  const target = dosesPerDay != null ? formatDoseCount(dosesPerDay) : `${dosesToday}`;
-  return `${dosesToday} of ${target} doses logged today`;
+  // A durationed course with NO daily cadence (target set, `doses_per_day` null — a
+  // "for 14 days, as needed" regimen) has no honest denominator: "N of N" would
+  // FABRICATE one and read as a met target (soft N4). State just the count.
+  if (dosesPerDay == null) {
+    return `${dosesToday} ${dosesToday === 1 ? 'dose' : 'doses'} logged today`;
+  }
+  // Partly covered (a fully-covered scheduled course collapses instead).
+  return `${dosesToday} of ${formatDoseCount(dosesPerDay)} doses logged today`;
 }
 
 function lastDoseLine(
@@ -568,9 +606,10 @@ function lastDoseLine(
   todayIndex: number,
   tz: string | undefined,
 ): string | null {
+  // An ongoing med with no dose ever logged — honest, and the button below is the
+  // way to log the first (no reassurance, just the record's state).
   if (!lastDose) return 'No doses logged yet';
-  const when = relativeDay(lastDose.occurred_at, todayIndex, tz);
-  return when ? `Last dose ${when}` : 'Last dose logged';
+  return recencyPhrase(lastDose.occurred_at, todayIndex, tz) ?? 'Last dose logged';
 }
 
 function adhocRecencyLine(
@@ -579,23 +618,30 @@ function adhocRecencyLine(
   todayIndex: number,
   tz: string | undefined,
 ): string | null {
+  if (!lastDose) return null;
+  const last = recencyPhrase(lastDose.occurred_at, todayIndex, tz);
+  if (!last) return null;
+  // The most-recent dose leads (what an owner glances for), sharing state 4's
+  // "Last dose …" shape; the window count follows only when there is MORE than one,
+  // because for a lone dose the "last dose" IS the whole record and a
+  // "1 in the last 14 days" tail would just be noise.
   const n = recentDoses.length;
-  const count =
-    n > 0
-      ? `${n} ${n === 1 ? 'dose' : 'doses'} in the last ${MED_STRIP_ADHOC_WINDOW_DAYS} days`
-      : null;
-  const when = lastDose ? relativeDay(lastDose.occurred_at, todayIndex, tz) : null;
-  const last = when ? `last ${when}` : null;
-  const parts = [count, last].filter((x): x is string => x != null);
-  if (parts.length === 0) return null;
-  return parts.join(' · ');
+  return n > 1 ? `${last} · ${n} in the last ${MED_STRIP_ADHOC_WINDOW_DAYS} days` : last;
 }
 
-// "usually 2×/day" — a scheduling HINT, never a schedule the schema does not carry
-// (N1). Skips a fractional or missing rate rather than reading "usually 0.5×/day".
+// "usually twice a day" — a scheduling HINT, never a schedule the schema does not
+// carry (N1). Plain words for the common rates (nyx-voice — "2×/day" is clinical
+// shorthand that reads oddly beside "once a day"); the compact "N×/day" is the
+// fallback only for 4+. Skips a fractional or missing rate rather than reading
+// "usually 0.5×/day".
+const FREQUENCY_WORDS: Record<number, string> = {
+  1: 'once a day',
+  2: 'twice a day',
+  3: 'three times a day',
+};
 function frequencyHint(dosesPerDay: number | null): string | null {
   if (dosesPerDay == null || !Number.isInteger(dosesPerDay) || dosesPerDay < 1) return null;
-  return dosesPerDay === 1 ? 'usually once a day' : `usually ${dosesPerDay}×/day`;
+  return `usually ${FREQUENCY_WORDS[dosesPerDay] ?? `${dosesPerDay}×/day`}`;
 }
 
 // A dose target for the coverage line — an integer renders plainly ("2"), a
@@ -604,10 +650,20 @@ function formatDoseCount(dosesPerDay: number): string {
   return Number.isInteger(dosesPerDay) ? `${dosesPerDay}` : `${Math.round(dosesPerDay * 10) / 10}`;
 }
 
-// "today" / "yesterday" / a short local date ("Jul 29"). Time-of-day precision
-// (", 9:10pm") is M5 polish. `occurred_at` is a real INSTANT, so `new Date(...)` is
-// correct here — unlike a DATE column, which is the B-441 trap this deliberately does
-// not fall into.
+// "Last dose yesterday, 9:10 PM" — the shared recency phrase for state 4 (ongoing)
+// and state 5 (ad-hoc). Day precision via `relativeDay` plus the clock time M1
+// deferred to M5; returns null only when the instant is unparseable, so the caller
+// can fall back to a day-less phrase.
+function recencyPhrase(occurredAt: string, todayIndex: number, tz: string | undefined): string | null {
+  const when = relativeDay(occurredAt, todayIndex, tz);
+  if (!when) return null;
+  const time = clockTime(occurredAt, tz);
+  return time ? `Last dose ${when}, ${time}` : `Last dose ${when}`;
+}
+
+// "today" / "yesterday" / a short local date ("Jul 29"). `occurred_at` is a real
+// INSTANT, so `new Date(...)` is correct here — unlike a DATE column, which is the
+// B-441 trap this deliberately does not fall into.
 function relativeDay(occurredAt: string, todayIndex: number, tz: string | undefined): string | null {
   const idx = localDayIndexOf(occurredAt, tz);
   if (idx == null) return null;
@@ -617,4 +673,18 @@ function relativeDay(occurredAt: string, todayIndex: number, tz: string | undefi
   const ms = Date.parse(occurredAt);
   if (!Number.isFinite(ms)) return null;
   return new Date(ms).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: tz });
+}
+
+// The local clock time ("9:10 PM") M5 adds to the recency lines. tz-aware so the
+// tests pin it deterministically (they inject 'UTC') and the app reads the device
+// zone (tz undefined). 'numeric' hour → "9:10 PM", matching the app's other time
+// surfaces (e.g. `TodayZone`) rather than a leading-zero "09:10".
+function clockTime(occurredAt: string, tz: string | undefined): string | null {
+  const ms = Date.parse(occurredAt);
+  if (!Number.isFinite(ms)) return null;
+  return new Date(ms).toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+    timeZone: tz,
+  });
 }

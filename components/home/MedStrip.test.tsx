@@ -95,7 +95,7 @@ describe('MedStrip — context card', () => {
   it('renders the header and the coverage line (state 1)', () => {
     const tree = render(<MedStrip model={model({ regimens: [regimen()] })} />);
     expect(tree.getByText('Amoxicillin · day 5 of 14')).toBeTruthy();
-    expect(tree.getByText('No dose logged yet today · usually 2×/day')).toBeTruthy();
+    expect(tree.getByText('No dose logged yet today · usually twice a day')).toBeTruthy();
     // The tap affordance is a chevron, same as the trial strip.
     expect(tree.getByText('›')).toBeTruthy();
   });
@@ -138,10 +138,11 @@ describe('MedStrip — context card', () => {
     const m = model({ regimens: [regimen()], doses: [dose(), dose()] });
     expect(m.collapsed).toBe(true);
     const tree = render(<MedStrip model={m} />);
-    expect(tree.getByText('Amoxicillin · day 5 of 14 · 2 doses logged')).toBeTruthy();
+    expect(tree.getByText('Amoxicillin · day 5 of 14 · 2 doses logged today')).toBeTruthy();
     expect(tree.queryByTestId('med-strip-track')).toBeNull();
-    // The count lives in the header; there is no separate fact line to render.
-    expect(tree.queryByText(/logged today/)).toBeNull();
+    // "logged today" (M5 legibility) lives IN the header only — there is no separate
+    // coverage/fact line under a collapsed card, so it appears exactly once.
+    expect(tree.getAllByText(/logged today/)).toHaveLength(1);
   });
 
   it('renders a withholding fact in the concern colour, not a coverage line (N3, state 8)', () => {
@@ -309,7 +310,7 @@ describe('MedStrip — context card', () => {
     fireEvent.press(tree.getByTestId('med-strip'));
     expect(onPress).toHaveBeenCalledTimes(1);
     expect(tree.getByTestId('med-strip').props.accessibilityLabel).toBe(
-      'Amoxicillin · day 5 of 14. No dose logged yet today · usually 2×/day. Open medications.',
+      'Amoxicillin · day 5 of 14. No dose logged yet today · usually twice a day. Open medications.',
     );
   });
 });
@@ -442,11 +443,12 @@ describe('the multi-med fold — §7 collapse + D8 ordering on a real screen (M4
     // or re-ranking a single med.
     expect(tree.queryAllByTestId('med-strip-track')).toHaveLength(0);
     expect(tree.queryAllByTestId('med-strip-confirm')).toHaveLength(1); // Cerenia only
-    expect(tree.getByText('Gabapentin · ongoing · 1 dose logged')).toBeTruthy();
-    expect(tree.getByText('Amoxicillin · day 5 of 14 · 2 doses logged')).toBeTruthy();
-    // N4 — the count is a header fact, never a cheery "…logged today" coverage line
-    // under a collapsed card.
-    expect(tree.queryByText(/logged today/)).toBeNull();
+    expect(tree.getByText('Gabapentin · ongoing · 1 dose logged today')).toBeTruthy();
+    expect(tree.getByText('Amoxicillin · day 5 of 14 · 2 doses logged today')).toBeTruthy();
+    // N4 / M5 — the "logged today" count is a HEADER fact, never a separate cheery
+    // coverage line under a collapsed card, so it appears exactly twice: once in each
+    // collapsed header (Cerenia stays expanded and shows a recency line, not "today").
+    expect(tree.getAllByText(/logged today/)).toHaveLength(2);
   });
 
   it('collapse is a state, never a cap — every med still renders however many collapse (D7)', () => {
