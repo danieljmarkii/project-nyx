@@ -5,6 +5,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, router, useLocalSearchParams } from 'expo-router';
 import { theme } from '../../constants/theme';
+import { EmptyState } from '../../components/ui';
 import { DateScopeControl } from '../../components/history/DateScopeControl';
 import { TypeScopeControl } from '../../components/history/TypeScopeControl';
 import { DAY_KEY_RE, effectiveRange } from '../../lib/historyDateFilter';
@@ -459,27 +460,25 @@ export default function HistoryScreen() {
           }
           ListEmptyComponent={
             isEmpty ? (
-              <View style={styles.emptyState}>
-                {typeFilter || datePreset || dayFilter ? (
-                  <>
-                    <Text style={styles.emptyTitle}>Nothing matches that filter</Text>
-                    <Text style={styles.emptyBody}>
-                      {activePet
-                        ? `Try clearing a filter to see more of ${activePet.name}'s history.`
-                        : 'Try clearing a filter to see more history.'}
-                    </Text>
-                  </>
-                ) : (
-                  <>
-                    <Text style={styles.emptyTitle}>Nothing logged yet</Text>
-                    <Text style={styles.emptyBody}>
-                      {activePet
-                        ? `Tap + anywhere to log ${activePet.name}'s first food or symptom. Everything you log builds up here.`
-                        : 'Tap + anywhere to log a first food or symptom. Everything you log builds up here.'}
-                    </Text>
-                  </>
-                )}
-              </View>
+              typeFilter || datePreset || dayFilter ? (
+                <EmptyState
+                  title="Nothing matches that filter"
+                  body={
+                    activePet
+                      ? `Try clearing a filter to see more of ${activePet.name}'s history.`
+                      : 'Try clearing a filter to see more history.'
+                  }
+                />
+              ) : (
+                <EmptyState
+                  title="Nothing logged yet"
+                  body={
+                    activePet
+                      ? `Tap + anywhere to log ${activePet.name}'s first food or symptom. Everything you log builds up here.`
+                      : 'Tap + anywhere to log a first food or symptom. Everything you log builds up here.'
+                  }
+                />
+              )
             ) : null
           }
           ListFooterComponent={
@@ -536,24 +535,6 @@ const styles = StyleSheet.create({
   listContainer: {
     flex: 1,
     backgroundColor: theme.colorNeutralLight,
-  },
-  emptyState: {
-    paddingHorizontal: theme.space4,
-    paddingTop: theme.space6,
-    alignItems: 'center',
-    gap: theme.space1,
-  },
-  emptyTitle: {
-    fontSize: 18,
-    fontWeight: theme.fontWeightMedium,
-    color: theme.colorNeutralDark,
-    textAlign: 'center',
-  },
-  emptyBody: {
-    fontSize: 15,
-    color: theme.colorTextSecondary,
-    textAlign: 'center',
-    lineHeight: theme.lineHeightBody,
   },
   listEmpty: {
     flexGrow: 1,
