@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-01
 
-**Shipped via #TBD** — draft PR, gated on on-device dark-card QA (this is a behaviour change).
+**Shipped via #541** — draft PR, gated on on-device dark-card QA (this is a behaviour change).
 
 ## The task
 
