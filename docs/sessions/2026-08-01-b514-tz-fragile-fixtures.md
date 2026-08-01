@@ -47,7 +47,7 @@ The rule that generalises: **a local-day question needs a local-day fixture.** T
 
 No single instant pins both halves in every zone — local-component fixtures fix the countdown and move the stem, and UTC fixtures do the reverse. So that cluster is pinned a third way, stated in the file: **UTC literals at the same time of day.** Two instants sharing a time-of-day shift by the same offset under any zone, so the local-day *difference* the countdown reads is invariant; and the lexical stem never moves at all. The original fixture failed precisely because it mixed `11:00Z` and `23:00Z` against a `12:00Z` "now".
 
-The underlying seam is a real (cosmetic) production inconsistency — a document deleted near local midnight renders a date the owner's phone disagrees with — filed as **B-632**, `Later`. Deliberately not fixed here: it is a production behaviour call, and B-421 says the fix direction is to index the stem locally, not to loosen the countdown.
+The underlying seam is a real (cosmetic) production inconsistency — a document deleted near local midnight renders a date the owner's phone disagrees with — filed as **B-640**, `Later`. Deliberately not fixed here: it is a production behaviour call, and B-421 says the fix direction is to index the stem locally, not to loosen the countdown.
 
 ## The CI leg
 

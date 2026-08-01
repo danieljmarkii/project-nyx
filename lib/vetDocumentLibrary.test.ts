@@ -463,7 +463,7 @@ describe('restoreCountdownLabel', () => {
 // off the stored UTC text (`formatVetDocumentDate`), the countdown in LOCAL
 // calendar days (`daysLeftToRestore`) — so no single instant pins both halves in
 // every zone, and the local-component fixtures used above make the stem move
-// instead. (The seam is real, and cheap in practice; filed as B-632 rather than
+// instead. (The seam is real, and cheap in practice; filed as B-640 rather than
 // fixed under a test-hygiene change.)
 //
 // So this cluster stays on UTC literals AT THE SAME TIME OF DAY, which is
