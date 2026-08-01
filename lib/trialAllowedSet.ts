@@ -53,6 +53,7 @@ import {
   buildTrialContext,
   allowedFoodsOn,
   isTrialRunning,
+  isUsableFoodKey,
   narrowTrialFoodRole,
   trialFoodKey,
   type AllowedFood,
@@ -182,25 +183,60 @@ export function isOnTrialList(
  * without asking whether the food is already on the list (the caller filters,
  * and a caller that does not is a UI bug, not a data hazard) — so a food added
  * twice would otherwise render twice in the list a vet is told about, and
- * inflate "K foods on the trial list". The FIRST row wins, matching
- * `matchAllowed`'s own `find`, so the count and the membership can never
- * disagree about which row is the one.
+ * inflate "K foods on the trial list".
+ *
+ * ── B-624: THE ROW THE PREDICATE WOULD PICK, NOT THE FIRST ONE ───────────────
+ *
+ * PR 1 kept the first row of each group and called that "matching `matchAllowed`'s
+ * own `find`". It is not the same thing, and the difference is a DATE — which is
+ * load-bearing copy on this screen, because D5 renders it as "added {date}, day N"
+ * and the whole no-amnesty promise rests on it. Two failures came out of the gap:
+ *
+ *   • the identity was `foodKey ?? foodItemId`, which skips the `isUsableFoodKey`
+ *     test the predicate applies — so two blank-named rows, which `matchAllowed`
+ *     treats as two distinct foods, collapsed into one and a sanctioned food fell
+ *     off the list entirely;
+ *   • and the group's representative was taken positionally rather than resolved,
+ *     so the fact rendered here was never actually the predicate's answer.
+ *
+ * Both are fixed by asking `allowedMembershipOn` — the one rung-1 call — for every
+ * row that survives the grouping, and rendering what it returns. This is R2 applied
+ * to the dated fact rather than only to the yes/no: the §2.2 list and the food
+ * detail row (FR-13, which queries by the food's own id) now resolve through the
+ * same function, so they cannot print two different "on the list since" dates for
+ * a food the owner is looking at from two directions.
+ *
+ * The residual B-624 named and this does NOT close: with two rows carrying the
+ * same key but different `food_item_id`, the predicate's answer genuinely depends
+ * on WHICH id is asked about, so a duplicate arriving from another device can
+ * still make detail-by-id disagree with the list's chosen representative. That is
+ * a property of `matchAllowed`'s id-before-key order, not of this function, and
+ * narrowing it belongs with the predicate.
  */
 export function trialListFoodsOn(
   set: TrialAllowedSet,
   atMs: number = Date.now(),
 ): AllowedFood[] {
   if (set.status !== 'ready') return [];
-  const inForce = allowedFoodsOn(set.ctx, localDayIndex(atMs, set.ctx.timeZone));
+  const dayIndex = localDayIndex(atMs, set.ctx.timeZone);
+  const inForce = allowedFoodsOn(set.ctx, dayIndex);
   const seen = new Set<string>();
   const out: AllowedFood[] = [];
   for (const f of inForce) {
-    // Keyed on the identity `matchAllowed` would resolve, id first, so a
-    // re-photographed bag (new id, same key) does not read as a second food.
-    const identity = f.foodKey ?? f.foodItemId;
+    // The identity `matchAllowed` resolves on: the key when it names something,
+    // the id otherwise — so a re-photographed bag (new id, same key) does not read
+    // as a second food, and two unnamed rows do not read as one.
+    const identity = isUsableFoodKey(f.foodKey) ? f.foodKey : f.foodItemId;
     if (seen.has(identity)) continue;
     seen.add(identity);
-    out.push(f);
+    // Rung 1, asked rather than assumed. `f` itself is the fallback only because a
+    // row drawn FROM the in-force set can always answer for itself; the `??` is a
+    // type narrowing, not a guess.
+    const hit = allowedMembershipOn(set.ctx, dayIndex, {
+      foodItemId: f.foodItemId,
+      foodKey: f.foodKey,
+    });
+    out.push(hit?.food ?? f);
   }
   return out;
 }

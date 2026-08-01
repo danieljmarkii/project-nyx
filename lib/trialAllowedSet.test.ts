@@ -235,6 +235,32 @@ describe('membership lookups', () => {
     expect(isOnTrialList(set, jerky, NOW)).toBe(true);
   });
 
+  // PR 2 AC 3 — D5's no-amnesty rule, stated where it actually bites: not on
+  // membership (AC1 above) but on the CLASSIFICATION the vet report is built
+  // from. The jerky joined the list on the 10th; the feeding on the 5th stays an
+  // off-diet exposure forever, and the only reason is that `allowed_from` is the
+  // day of the add rather than the trial's start. If this ever flips, the confirm
+  // sheet's "Earlier feedings — keep the reading they already have" becomes a
+  // sentence the app does not honour, and an appendix quietly empties.
+  it('AC3 — an add never rewrites history: a pre-add feeding stays off-diet', async () => {
+    const set = await loadReady();
+    if (set.status !== 'ready') throw new Error('expected a ready set');
+    const feeding = (dayKey: string): TrialFeeding =>
+      feedingOf(
+        {
+          name: 'mid-trial permitted treat',
+          id: 'food-jerky',
+          brand: 'Real Meat',
+          product: 'Kangaroo Jerky',
+        },
+        dayKey,
+      );
+    const before = classifyFeeding(set.ctx, feeding('2026-07-05'));
+    expect(before.verdict).toBe('off_diet_unrecognised');
+    expect(before.offDiet).toBe(true);
+    expect(classifyFeeding(set.ctx, feeding('2026-07-11')).verdict).toBe('permitted');
+  });
+
   it('AC2 — the KEY arm: a re-photographed bag reads on-list under a new id', async () => {
     const set = await loadReady();
     const rebought: TrialListFood = {
@@ -304,6 +330,76 @@ describe('membership lookups', () => {
     expect(trialListFoodsOn(set, at('2026-07-09')).map((f) => f.label)).toContain(
       'Hills Chicken Topper',
     );
+  });
+
+  // ── B-624 (PR 2) ──────────────────────────────────────────────────────────
+  //
+  // The list renders a DATE, and under D5 that date is load-bearing copy: "added
+  // Jul 31, day 12" is the visible half of the promise that an add never rewrites
+  // history. PR 1 took each dedupe group's first row positionally and called that
+  // "matching `matchAllowed`'s own find"; the two below are where it is not.
+
+  it('B-624 — keeps two unnamed rows apart, exactly as the predicate does', async () => {
+    const set = await loadReady([
+      allowedRow({
+        food_item_id: 'food-blank-a',
+        role: 'permitted_other',
+        food_label: 'Something the vet okayed',
+        allowed_from: '2026-07-01',
+        brand: '',
+        product_name: '',
+      }),
+      allowedRow({
+        food_item_id: 'food-blank-b',
+        role: 'permitted_other',
+        food_label: 'A second thing the vet okayed',
+        allowed_from: '2026-07-02',
+        brand: '',
+        product_name: '',
+      }),
+    ]);
+    // `isUsableFoodKey` is why: the bare separator names nothing, so `matchAllowed`
+    // resolves these two by ID and treats them as two foods. A list that grouped on
+    // the raw key would collapse them and drop a food the owner was told their vet
+    // sanctioned — off the screen whose whole job is to be the re-readable rule.
+    expect(trialListFoodsOn(set, NOW).map((f) => f.label)).toEqual([
+      'Something the vet okayed',
+      'A second thing the vet okayed',
+    ]);
+    // And both still read as on-list individually, which is the disagreement the
+    // grouping would otherwise have created between this screen and food detail.
+    for (const id of ['food-blank-a', 'food-blank-b']) {
+      expect(isOnTrialList(set, { id })).toBe(true);
+    }
+  });
+
+  it('B-624 — every listed row is the row the predicate resolves, not a neighbour', async () => {
+    const set = await loadReady([
+      ...ROWS,
+      allowedRow({
+        food_item_id: 'food-dry-again',
+        role: 'permitted_other',
+        food_label: 'Zignature Kangaroo Formula',
+        allowed_from: '2026-07-12',
+        brand: 'Zignature',
+        product_name: 'Kangaroo Formula',
+      }),
+    ]);
+    // The general form, which is what stops the date drifting again: for every row
+    // the list renders, asking rung 1 about that row's own identity returns THAT
+    // row — same `allowedFrom`, same role, same label. A positional pick can
+    // satisfy this only by coincidence.
+    for (const listed of trialListFoodsOn(set, NOW)) {
+      const resolved = trialListMembership(
+        set,
+        { id: listed.foodItemId, brand: null, productName: null },
+        NOW,
+      );
+      expect(resolved).not.toBeNull();
+      expect(resolved!.allowedFrom).toBe(listed.allowedFrom);
+      expect(resolved!.role).toBe(listed.role);
+      expect(resolved!.label).toBe(listed.label);
+    }
   });
 });
 

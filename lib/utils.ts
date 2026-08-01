@@ -55,6 +55,23 @@ export function dayKeyToLocalDate(key: string): Date | null {
   return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
 }
 
+// 'YYYY-MM-DD' (a DATE column) → "Jun 2", for the app's "since {date}" lines.
+// Built from the parts via dayKeyToLocalDate so a bare calendar day never shifts
+// across a timezone; returns null for a malformed/absent date so callers can omit
+// the clause cleanly rather than print "Invalid Date".
+//
+// Lifted here from `lib/feedingArrangements` at B-616 PR 2 (which now re-exports
+// it, so no call site changed): the allowed-set screen renders the same "on the
+// list since {date}" line, and a day-key formatter's siblings are `toLocalDayKey`,
+// `dayKeyToLocalDate` and `formatUtcDayShort` — not the free-choice bowl. Moving
+// it beats a second copy: two answers to "what does a bare calendar day look
+// like" is how one surface starts printing a day the other one doesn't.
+export function formatCalendarDate(date: string | null): string | null {
+  if (!date) return null;
+  const d = dayKeyToLocalDate(date);
+  return d ? d.toLocaleDateString([], { month: 'short', day: 'numeric' }) : null;
+}
+
 const MS_PER_DAY = 86_400_000;
 
 // Epoch-day index (whole days since 1970-01-01) of the calendar day `ms` falls on.

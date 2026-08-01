@@ -37,6 +37,7 @@ import {
   TrialCompletionSheet, type TrialCompletionEntry,
 } from '../../components/profile/TrialCompletionSheet';
 import { useDietTrial } from '../../hooks/useDietTrial';
+import { useTrialAllowedSet } from '../../hooks/useTrialAllowedSet';
 import { resolveTrialCard } from '../../lib/dietTrialCard';
 import { extensionDays, nextTargetDays } from '../../lib/dietTrialCompletion';
 import { extendTrial } from '../../lib/dietTrialSetup';
@@ -165,6 +166,11 @@ export default function ProfileScreen() {
   // flushed, is still a row the card can see, so "No trial running." cannot be a
   // lie told by a failed network read.
   const { input: trialInput, isLoading: trialLoading, reload: reloadTrial } = useDietTrial();
+  // B-616 FR-5 — the card's door into "What {pet} can eat". Read here rather than
+  // inside the screen so R2 is enforced at the ENTRY: an allowed set that has not
+  // hydrated draws no action at all (`DietTrialCard` renders an action only when a
+  // handler exists), instead of a link that opens a screen with nothing to say.
+  const trialAllowedSet = useTrialAllowedSet();
   const [startTrialVisible, setStartTrialVisible] = useState(false);
   // B-535 — the start-modal → food-capture round trip. "Snap a new food" closes
   // the modal and routes out; the modal stays mounted so the half-filled form
@@ -929,6 +935,11 @@ export default function ProfileScreen() {
               // the header link because on the one state whose message is "this
               // diet may need to change", the way out cannot be chrome.
               trial_manage: () => setStartTrialVisible(true),
+              // B-616 PR 2 (§2.2). Present only on a hydrated set — see the hook
+              // read above; `undefined` here means the card draws no link.
+              ...(trialAllowedSet.status === 'ready'
+                ? { view_allowed_foods: () => router.push('/trial-foods') }
+                : {}),
             }}
             onManage={() => setStartTrialVisible(true)}
           />

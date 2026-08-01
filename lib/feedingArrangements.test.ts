@@ -22,7 +22,12 @@ jest.mock('./sync', () => ({
   syncPendingFeedingArrangements: (...a: unknown[]) => mockSyncPendingFeedingArrangements(...a),
 }));
 
-jest.mock('./utils', () => ({ uuid: () => 'arr-1' }));
+// Only `uuid` is being pinned; everything else in `./utils` is pure and is the
+// real thing. A whole-module replacement here silently emptied the day-key
+// helpers the moment one of them moved into this module's own exports (B-616
+// PR 2's `formatCalendarDate`), which is a mock testing itself rather than the
+// code.
+jest.mock('./utils', () => ({ ...jest.requireActual('./utils'), uuid: () => 'arr-1' }));
 
 import {
   startFreeChoice, endFreeChoice, localDateString,
