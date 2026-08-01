@@ -185,12 +185,12 @@ const styles = StyleSheet.create({
   entryLabel: {
     flex: 1,
     fontSize: theme.textMD,
-    lineHeight: 20,
+    lineHeight: theme.lineHeightBody,
     color: theme.colorTextPrimary,
   },
   finished: {
     fontSize: theme.textMD,
-    lineHeight: 20,
+    lineHeight: theme.lineHeightBody,
     fontWeight: theme.weightSemibold,
     color: theme.colorTextPrimary,
     flexShrink: 0,
@@ -202,7 +202,7 @@ const styles = StyleSheet.create({
   },
   treat: {
     fontSize: theme.textXS,
-    lineHeight: 20,
+    lineHeight: theme.lineHeightBody,
     fontWeight: theme.weightMedium,
     color: theme.colorTextTertiary,
     textTransform: 'uppercase',
@@ -211,7 +211,7 @@ const styles = StyleSheet.create({
   },
   hint: {
     fontSize: theme.textSM,
-    lineHeight: 20,
+    lineHeight: theme.lineHeightBody,
     color: theme.colorTextTertiary,
     flexShrink: 0,
   },

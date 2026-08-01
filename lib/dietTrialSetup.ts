@@ -170,10 +170,13 @@ export function formatTrialEndDate(dayKey: string, now: Date = new Date()): stri
   });
 }
 
-/** The helper line under the indication chips — the whole reason the indication
- *  can SET AND SHOW the duration without becoming a third field. It names the end
- *  DATE rather than a day count: "56 days" is not something an owner can plan
- *  around, and the date is what they will put in their calendar. */
+/** The duration/end-date helper — the whole reason the indication can SET AND
+ *  SHOW the duration without becoming a third field. It renders BELOW the
+ *  start-date field it describes (B-565): the sentence names the end date the
+ *  start date determines, so a back-date must change a line the owner can see,
+ *  not one scrolled off the top under the indication chips. It names the end DATE
+ *  rather than a day count: "56 days" is not something an owner can plan around,
+ *  and the date is what they will put in their calendar. */
 export function durationHelperLine(
   indication: TrialIndication,
   targetDays: number,
@@ -190,7 +193,7 @@ export function durationHelperLine(
         : `This one is set to ${weeks} weeks.`;
   const end = endDayKey ? formatTrialEndDate(endDayKey, now) : null;
   if (!end) return lead;
-  // The start date is editable behind "More options", so the sentence has to stay
+  // The start date sits on the primary screen (R3), so the sentence has to stay
   // true after a back-date — "Starting today" over a trial dated to 1 June is a
   // small lie on the one field whose semantic is already the subtle one.
   if (startDayKey === toLocalDayKey(now)) return `${lead} Starting today, that ends ${end}.`;
@@ -238,10 +241,12 @@ export function trialSetupLines(petName: string): [string, string] {
  *  silently zeroes the exposure count. */
 export const ALLOWED_SET_HELPER = 'Anything your vet said is OK.';
 
-/** The start-date field's label + helper. The default VALUE is today; the
- *  SEMANTIC is the first day of exclusive feeding (CAVD: start the countdown on
- *  the first day you feed only the elimination diet). */
-export const START_DATE_LABEL = 'First day on the trial diet only';
+/** The start-date field's label. Deliberately terse (B-565) — six wide-tracked
+ *  micro-caps beside two-word siblings was a parse, not a scan; `startDateHelper`
+ *  below the field does the teaching. The default VALUE is today; the SEMANTIC is
+ *  the first day of exclusive feeding (CAVD: start the countdown on the first day
+ *  you feed only the elimination diet), which the helper spells out. */
+export const START_DATE_LABEL = 'First day';
 
 export function startDateHelper(petName: string): string {
   return (
@@ -254,10 +259,16 @@ export const TRIAL_DIET_HELPER =
   'More than one is normal — a wet and a dry of the same diet, or two forms your vet ' +
   'named together.';
 
+// B-565: no longer ASSERTS "{pet}'s vet has put {pet} on an elimination diet" —
+// which may be false, and which named the pet three times in two sentences. It
+// leads with the instruction and closes on state 0's own payoff line (kept
+// verbatim, so the inviting card and the sheet it opens do not drift). That line
+// presumes only the recheck the whole feature is built around, not a specific
+// past directive — the same conditional posture `noTrialCard` already takes.
 export function startSheetIntro(petName: string): string {
   return (
-    `${petName}’s vet has put ${petName} on an elimination diet. Tell Culprit what ` +
-    `${petName} is eating and what it’s for.`
+    `Tell Culprit what ${petName} is eating and what it’s for. It keeps the dated ` +
+    'record your vet will ask for at the recheck.'
   );
 }
 

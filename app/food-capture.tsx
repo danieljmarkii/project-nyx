@@ -1366,7 +1366,7 @@ const styles = StyleSheet.create({
   confirmProduct: {
     fontSize: theme.textMD,
     color: theme.colorTextOnDarkMuted,
-    lineHeight: 20,
+    lineHeight: theme.lineHeightBody,
   },
   // Tier-1 protein disclosure on the confirm step — quiet, under the "Is this
   // right?" caption, where it reads as part of what the owner is confirming.

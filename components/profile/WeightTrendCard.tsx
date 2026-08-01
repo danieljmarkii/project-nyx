@@ -260,7 +260,7 @@ const styles = StyleSheet.create({
   emptyText: {
     fontSize: theme.textSM,
     color: theme.colorTextSecondary,
-    lineHeight: 20,
+    lineHeight: theme.lineHeightBody,
   },
   // Primary action — accent text, 44pt floor (the same shape as the "Log a dose"
   // action on the medications card). minHeight + centered clears the tap target even

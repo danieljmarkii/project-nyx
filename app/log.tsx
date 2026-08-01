@@ -1595,7 +1595,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: theme.colorTextSecondary,
     flex: 1,
-    lineHeight: 20,
+    lineHeight: theme.lineHeightBody,
   },
   // Photo card in the type grid
   typeCardPhoto: {

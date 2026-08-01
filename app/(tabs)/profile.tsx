@@ -1278,7 +1278,7 @@ const styles = StyleSheet.create({
   emptyConditionsText: {
     fontSize: theme.textSM,
     color: theme.colorTextSecondary,
-    lineHeight: 20,
+    lineHeight: theme.lineHeightBody,
   },
   conditionRow: {
     gap: theme.space2,

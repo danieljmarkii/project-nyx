@@ -72,34 +72,29 @@ export const theme = {
   colorTextOnDarkSecondary: '#B4B8B4',        // dimmer body/label text on a solid dark surface
   colorScrimDark: 'rgba(0,0,0,0.55)',         // gradient/overlay scrim over a photo hero
 
-  // ── On-dark surface scale (B-066 / B-129 detokenization sweep) ─────────────
-  // Every value below already shipped as an inline literal on a KNOWN dark
-  // surface — the meal/med completion cards, the fullscreen photo viewer,
-  // dark-filled selected chips/items, the pet-photo overlay. This block moves
-  // them into the theme VERBATIM: each token is byte-identical to the literal it
-  // replaced, so the sweep is zero-behaviour-change. The alpha steps encode the
-  // subordination those surfaces already expressed (three text weights, three
-  // divider weights) and are preserved exactly rather than rationalized —
-  // collapsing near-duplicate steps would move pixels, so it's a separate,
-  // behaviour-changing pass (B-646). The primary white ink, the 0.92 muted text
-  // and the 0.55 photo scrim already live just above (colorTextOnDark /
-  // colorTextOnDarkMuted / colorScrimDark). Reusable chips that must blend over
-  // an UNKNOWN dark parent keep their translucent literals ON PURPOSE (B-168) and
-  // are deliberately absent here — a token there would assert a fixed colour the
-  // component can't promise. colorTextOnDarkSecondary (#B4B8B4, above) is the
-  // SOLID-surface sibling of these translucent-white text tokens.
+  // ── On-dark surface scale (B-066 / B-129 tokenization; B-646 rationalization) ─
+  // Every value below shipped first as an inline literal on a KNOWN dark surface —
+  // the meal/med completion cards, the fullscreen photo viewer, dark-filled
+  // selected chips/items, the pet-photo overlay. B-066/B-129 (#540) moved them into
+  // the theme verbatim; B-646 then COLLAPSED the near-duplicate steps that sweep had
+  // preserved: the three "secondary" text alphas (0.65 / 0.70 / 0.75) onto one
+  // colorTextOnDarkSubtle, and the three divider alphas (0.10 / 0.12 / 0.15) onto one
+  // colorDividerOnDark. Those splits were drift, not intent — at StyleSheet.hairlineWidth
+  // 0.10/0.12/0.15 are indistinguishable, and the meal vs medication completion cards
+  // (built as twins) had disagreed 0.75/0.12 vs 0.70/0.10 on the same roles. A
+  // subordinate row keeps its quiet from a dimmer label + tighter spacing + position,
+  // not a hairline no one can see. Reusable chips that must blend over an UNKNOWN dark
+  // parent keep their translucent literals ON PURPOSE (B-168) and are absent here.
+  // colorTextOnDarkSecondary (#B4B8B4, above) is the SOLID-surface sibling of these
+  // translucent-white text tokens.
   //
   // White text on a solid dark card, descending prominence:
-  colorTextOnDarkSubtle: 'rgba(255,255,255,0.7)',   // secondary label/row text
-  colorTextOnDarkDetail: 'rgba(255,255,255,0.75)',  // detail/body line
-  colorTextOnDarkCaption: 'rgba(255,255,255,0.65)', // caption under a dark chip
+  colorTextOnDarkSubtle: 'rgba(255,255,255,0.7)',   // secondary label / row / detail / caption
   colorTextOnDarkFaint: 'rgba(255,255,255,0.55)',   // faintest line / inactive dot
   // White hairlines + fills on a solid dark card:
-  colorDividerOnDark: 'rgba(255,255,255,0.15)',        // divider between card rows; also the photo-viewer secondary-button fill
-  colorDividerOnDarkFaint: 'rgba(255,255,255,0.12)',   // fainter divider (subordinate row)
-  colorDividerOnDarkFainter: 'rgba(255,255,255,0.1)',  // faintest divider
-  colorFillOnDark: 'rgba(255,255,255,0.06)',           // subtle raised fill (the check badge)
-  colorDotOnDarkInactive: 'rgba(255,255,255,0.4)',     // inactive page dot on a photo
+  colorDividerOnDark: 'rgba(255,255,255,0.15)',     // divider between card rows; also the photo-viewer secondary-button fill
+  colorFillOnDark: 'rgba(255,255,255,0.06)',        // subtle raised fill (the check badge)
+  colorDotOnDarkInactive: 'rgba(255,255,255,0.4)',  // inactive page dot on a photo
   // Black overlays/scrims (role-named — colorScrimDark 0.55 stays the photo hero):
   colorScrimPhoto: 'rgba(0,0,0,0.45)',    // pet-photo "change photo" overlay
   colorScrimBackdrop: 'rgba(0,0,0,0.4)',  // completion-card time-edit sheet backdrop
@@ -111,7 +106,7 @@ export const theme = {
   // cover the type and accent marks on top of them.
   colorSurfaceDark: '#101312',                // the dark canvas of a premium surface
   colorSurfaceDarkElevated: '#16201E',        // an elevated tile/card on the dark canvas
-  colorBorderOnDark: '#33383A',               // hairline border/divider on a dark surface
+  colorBorderOnDark: '#33383A',               // solid hairline on a solid dark surface (paywall tiles)
 
   // Brand "night" — the Culprit world/ground colour (B-275 palette half; Moon &
   // Signal icon field). This is a WORLD colour, not an accent: it is only ever a
