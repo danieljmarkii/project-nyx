@@ -169,11 +169,18 @@ describe('isSymptomShapedQuestion — the §16.1 #3 cap-copy guard', () => {
 });
 
 describe('formatResetLabel', () => {
+  // `formatResetLabel` renders the server's ISO instant on the OWNER's clock
+  // (`toLocaleDateString`, device zone) — that is the point of the label, so the
+  // fixture states the local day rather than a UTC one (B-514). The server's
+  // 2026-08-01T00:00:00Z reset is 31 July in Los Angeles, and this assertion used
+  // to claim "August" purely because CI ran at UTC+00.
+  const AUG_1_LOCAL = new Date(2026, 7, 1, 12, 0).toISOString();
+
   it('daily → tomorrow', () => {
-    expect(formatResetLabel('daily', '2026-08-01T00:00:00.000Z')).toBe('tomorrow');
+    expect(formatResetLabel('daily', AUG_1_LOCAL)).toBe('tomorrow');
   });
   it('monthly → a real month/day', () => {
-    expect(formatResetLabel('monthly', '2026-08-01T00:00:00.000Z')).toMatch(/August|Aug/);
+    expect(formatResetLabel('monthly', AUG_1_LOCAL)).toMatch(/August|Aug/);
   });
   it('degrades a bad value safely (never "Invalid Date")', () => {
     expect(formatResetLabel('monthly', 'garbage')).toBe('next month');
