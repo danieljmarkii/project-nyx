@@ -154,4 +154,41 @@ describe('FoodRow', () => {
     expect(queryByTestId('food-thumb-photo')).toBeNull();
     expect(getByTestId('food-thumb-placeholder')).toBeTruthy();
   });
+
+  // ── Diet-trial list chip (B-616 PR 3, FR-2) ──────────────────────────────
+  //
+  // The label itself is decided by lib/trialLibraryChrome (and tested there);
+  // what matters at this layer is that the row renders it when given one and
+  // renders NOTHING when not — R1, the PR's review bar.
+  it('renders the trial-list chip when the food is on the list', () => {
+    const { getByTestId, getByText } = render(
+      <FoodRow brand="Zignature" productName="Kangaroo Formula" format="dry_kibble"
+        trialChip="Trial diet" onPress={() => {}} />,
+    );
+    expect(getByTestId('food-row-trial-chip')).toBeTruthy();
+    expect(getByText('Trial diet')).toBeTruthy();
+  });
+
+  // The whole of R1 at this layer: a row with no chip prop is a row that says
+  // nothing at all about the trial — no grey chip, no "off-diet" mark, nothing.
+  it.each([
+    ['no trial running (undefined)', undefined],
+    ['not on the list (null)', null],
+  ])('marks nothing when %s', (_label, chip) => {
+    const { queryByTestId } = render(
+      <FoodRow brand="Kirkland" productName="Chicken & Rice" format="dry_kibble"
+        trialChip={chip} onPress={() => {}} />,
+    );
+    expect(queryByTestId('food-row-trial-chip')).toBeNull();
+  });
+
+  // A screen-reader owner gets the membership too — it leads the note list,
+  // matching the chip's visual prominence on the row.
+  it('announces the chip in the spoken label', () => {
+    const { getByLabelText } = render(
+      <FoodRow brand="Zignature" productName="Kangaroo Formula" format="dry_kibble"
+        trialChip="Trial diet" intakeNote="Last logged today" onPress={() => {}} />,
+    );
+    expect(getByLabelText('Zignature Kangaroo Formula, Trial diet, Last logged today')).toBeTruthy();
+  });
 });

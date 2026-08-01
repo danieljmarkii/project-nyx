@@ -37,12 +37,18 @@ import { useFoodLibraryStore } from '../../store/foodLibraryStore';
 import { usePetStore } from '../../store/petStore';
 import { ProteinDisclosure } from '../../components/food/ProteinDisclosure';
 import { TrialContaminantNote } from '../../components/food/TrialContaminantNote';
+import { TrialMembershipRow } from '../../components/food/TrialMembershipRow';
+import { AddTrialFoodSheet } from '../../components/profile/AddTrialFoodSheet';
 import {
   loadTrialProteinContext,
   foodContaminantFlag,
   standingFlagCopy,
   type TrialProteinContext,
 } from '../../lib/trialContaminant';
+import { useTrialAllowedSet } from '../../hooks/useTrialAllowedSet';
+import { addToTrialListLabel, trialMembershipLine } from '../../lib/trialLibraryChrome';
+import { buildAddTrialFoodSheet, ADD_TRIAL_FOOD_ERROR } from '../../lib/trialFoodsScreen';
+import { addTrialFood, foodLabel } from '../../lib/dietTrialSetup';
 
 const FOOD_FORMATS = [
   { value: 'dry_kibble', label: 'Dry kibble' },
@@ -130,6 +136,20 @@ export default function FoodDetailScreen() {
   // with no trial, or when the trial food's target protein is unknown, and a null
   // context renders NOTHING rather than an all-clear.
   const [trialCtx, setTrialCtx] = useState<TrialProteinContext | null>(null);
+
+  // B-616 FR-13/FR-14 — the active pet's allowed set, for this food's membership
+  // fact and the mid-trial add. INDEPENDENT of `trialCtx` above and deliberately
+  // so: that one is the B-351 protein-conflict context (Tier 2), this one is
+  // list membership. C2 forbids the two combining into a per-food verdict, and
+  // keeping them as two reads with two renderers is how that stays true by
+  // construction rather than by discipline.
+  const trialSet = useTrialAllowedSet();
+  // The mid-trial add's confirm sheet (FR-11), reused verbatim from PR 2 — the
+  // food is already known here, so this screen skips the picker step and opens
+  // the same sheet directly. Null = closed.
+  const [addingToTrial, setAddingToTrial] = useState(false);
+  const [trialAddSaving, setTrialAddSaving] = useState(false);
+  const [trialAddError, setTrialAddError] = useState<string | null>(null);
 
   const [saving, setSaving] = useState(false);
   const [retrying, setRetrying] = useState(false);
@@ -524,6 +544,41 @@ export default function FoodDetailScreen() {
     }
   }
 
+  // FR-14's write. Identical contract to the §2.2 screen's: one insert with
+  // `allowed_from` = today (never the trial's start — the add does not rewrite
+  // history), the role inferred from the food's own type, and the hydration tick
+  // bumped by `addTrialFood` so the fact row above replaces the action without a
+  // manual reload. A failure keeps the sheet open and says so — a sheet that
+  // closed over a failed insert would leave an owner believing a food is
+  // permitted when the record says it is not, which is the one screen-vs-record
+  // disagreement this whole track exists to prevent.
+  async function handleAddToTrialList() {
+    if (!row || trialSet.status !== 'ready' || !activePet || trialAddSaving) return;
+    setTrialAddSaving(true);
+    setTrialAddError(null);
+    try {
+      await addTrialFood({
+        trialId: trialSet.trial.id,
+        petId: activePet.id,
+        // The SAVED row, not the in-progress form state: the membership this
+        // writes has to key off the food as the record holds it, or an unsaved
+        // brand edit would put a food on the list under a name nothing else uses.
+        food: {
+          id: row.id,
+          brand: row.brand,
+          product_name: row.product_name,
+          food_type: row.food_type,
+        },
+      });
+      setAddingToTrial(false);
+    } catch (err) {
+      console.error('[food-detail] add to trial list failed:', err);
+      setTrialAddError(ADD_TRIAL_FOOD_ERROR);
+    } finally {
+      setTrialAddSaving(false);
+    }
+  }
+
   // Arm the undo snackbar. Factored out so an Undo that fails (network) can
   // re-arm itself, keeping the reversal retryable rather than stranding the food
   // as silently archived. Reads the stores via getState so the closure stays
@@ -594,6 +649,19 @@ export default function FoodDetailScreen() {
     ? standingFlagCopy(contaminantFlag, activePet?.name ?? 'your pet')
     : null;
 
+  // FR-13/FR-14. `trialMembershipLine` resolves through the one membership
+  // predicate and returns null for a food that is not on the list — so the fact
+  // row is ABSENT rather than negative (R1), and the add action takes its place
+  // only while a trial is actually running. Both are null with no trial or an
+  // unhydrated read, and `TrialMembershipRow` renders nothing at all then (R2).
+  const petName = activePet?.name ?? 'your pet';
+  const trialLine = trialMembershipLine(
+    trialSet,
+    { id: row.id, brand: row.brand, productName: row.product_name },
+    petName,
+  );
+  const canAddToTrial = trialSet.status === 'ready' && trialLine === null;
+
   const isPending = row.ai_extraction_status === 'pending';
   const isFailed = row.ai_extraction_status === 'failed';
   const isCompleted = row.ai_extraction_status === 'completed';
@@ -636,6 +704,17 @@ export default function FoodDetailScreen() {
                 </TouchableOpacity>
               </View>
             )}
+
+            {/* B-616 FR-13/FR-14 (mock D) — the food's relationship to the
+                running trial, stated first because it is the question an owner
+                mid-trial opens this screen to answer. Kept well clear of the
+                B-351 contaminant note further down: the two are independent and
+                must never read as one verdict (FR-15/C2). */}
+            <TrialMembershipRow
+              line={trialLine}
+              addLabel={addToTrialListLabel(petName)}
+              onAdd={canAddToTrial ? () => { setTrialAddError(null); setAddingToTrial(true); } : null}
+            />
 
             <SectionLabel label="Brand" />
             <TextInput
@@ -797,6 +876,28 @@ export default function FoodDetailScreen() {
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
+
+      {/* §2.3's confirm sheet, reused verbatim from PR 2 rather than a second
+          sheet — the three facts it states (and above all "Earlier feedings —
+          Keep the reading they already have") are the disclosure that makes the
+          dated write honest, and they must be identical from both entry points. */}
+      {addingToTrial && trialSet.status === 'ready' && (
+        <AddTrialFoodSheet
+          model={buildAddTrialFoodSheet(
+            petName,
+            foodLabel({ brand: row.brand, product_name: row.product_name }),
+            trialSet.trial,
+          )}
+          saving={trialAddSaving}
+          error={trialAddError}
+          onConfirm={handleAddToTrialList}
+          onCancel={() => {
+            if (trialAddSaving) return;
+            setTrialAddError(null);
+            setAddingToTrial(false);
+          }}
+        />
+      )}
     </SafeAreaView>
   );
 }

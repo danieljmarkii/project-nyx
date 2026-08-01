@@ -55,6 +55,18 @@ interface Props {
   hasPhoto?: boolean;
   photoUrl?: string | null;
   photoLoading?: boolean;
+  // Diet-trial list membership (B-616 FR-2) — "Trial diet" or "Also allowed",
+  // built by lib/trialLibraryChrome.trialChipLabel from the one membership
+  // predicate. Null for every other food, and NULL IS THE CONTRACT: this row
+  // never renders a negative chip, a grey chip, or an "off-diet" mark of any
+  // kind (R1 — positive marking only; a mark's absence is not a verdict either
+  // way). A row with no chip is a row saying nothing at all about the trial.
+  //
+  // Rendered as a trailing pill rather than a fourth line in the text stack: it
+  // is a property of the trial's list, not of the food or of this pet's history
+  // with it, so it sits apart from the protein/favorite/intake lines instead of
+  // joining their column. Announced in the spoken label like the other notes.
+  trialChip?: string | null;
 }
 
 // Full-width library row for the standalone Foods tab (B-004). Distinct from the
@@ -66,7 +78,7 @@ interface Props {
 // (BRAND · FORMAT) mirrors FoodTile's, sourced from the shared FORMAT_LABEL.
 export function FoodRow({
   brand, productName, format, onPress, hideBrand = false, intakeNote, favoriteNote,
-  proteinNote, hasPhoto, photoUrl, photoLoading,
+  proteinNote, hasPhoto, photoUrl, photoLoading, trialChip,
 }: Props) {
   const typeLabel = FORMAT_LABEL[format] ?? '';
   const formatMeta = typeLabel.toUpperCase();
@@ -77,7 +89,7 @@ export function FoodRow({
       : brand.toUpperCase();
   // Append whichever annotation lines are present to the spoken label, so a screen
   // reader hears the favorite rate / last-logged note, not just the name.
-  const spokenNotes = [proteinNote, favoriteNote, intakeNote].filter(Boolean).join(', ');
+  const spokenNotes = [trialChip, proteinNote, favoriteNote, intakeNote].filter(Boolean).join(', ');
 
   return (
     <TouchableOpacity
@@ -120,6 +132,13 @@ export function FoodRow({
           </Text>
         ) : null}
       </View>
+      {trialChip ? (
+        <View style={styles.trialChip} testID="food-row-trial-chip">
+          <Text style={styles.trialChipText} numberOfLines={1}>
+            {trialChip}
+          </Text>
+        </View>
+      ) : null}
       <Text style={styles.chevron}>›</Text>
     </TouchableOpacity>
   );
@@ -233,6 +252,23 @@ const styles = StyleSheet.create({
   protein: {
     fontSize: theme.textXS,
     color: theme.colorTextTertiary,
+  },
+  // The trial-list pill. Same tinted accent pair as the trial strip above it, so
+  // the two read as one piece of trial context rather than as two unrelated
+  // marks — and quiet: a small tinted pill, never a filled accent badge. It is a
+  // label, not an alert, and it must not out-shout the food's own name.
+  trialChip: {
+    flexShrink: 0,
+    maxWidth: 104,
+    backgroundColor: theme.colorAccentLight,
+    borderRadius: theme.radiusFull,
+    paddingHorizontal: theme.space1,
+    paddingVertical: 3,
+  },
+  trialChipText: {
+    fontSize: theme.textXS,
+    fontWeight: theme.weightMedium,
+    color: theme.colorAccentInk,
   },
   chevron: {
     fontSize: theme.textLG,
