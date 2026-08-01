@@ -31,8 +31,9 @@ import {
 
 // The component imports `insertMedicationDose` (→ lib/sync → lib/supabase, which
 // fail-fasts on the unset test env, the house pattern VomitAnalysisSection.test uses).
-// Every test here injects `onConfirm`, so the real write never runs — mock the module
-// to a no-op purely so the import chain resolves under jest.
+// Most tests inject `onConfirm` so the real write never runs; the one default-path test
+// below lets `performWrite` call this mock and asserts the payload it builds.
+import { insertMedicationDose } from '../../lib/medicationDose';
 jest.mock('../../lib/medicationDose', () => ({ insertMedicationDose: jest.fn() }));
 
 // Mirror `medStrip.test.ts`: a fixed instant + explicit zone so day math is
@@ -78,6 +79,7 @@ function dose(over: Partial<MedStripDoseRow> = {}): MedStripDoseRow {
 // renders one member, so every test pulls index 0 of a one-drug input.
 function model(over: Partial<MedStripInput>): MedStripModel {
   const models = resolveMedStrips({
+    petId: 'p1',
     regimens: [],
     doses: [],
     items: ITEMS,
@@ -243,6 +245,39 @@ describe('MedStrip — context card', () => {
     } finally {
       jest.useRealTimers();
     }
+  });
+
+  it('the DEFAULT write path logs a given dose with the confirm payload (petId from the model)', async () => {
+    // No `onConfirm` → the real `performWrite` runs (the production path the injected
+    // tests bypass). This is the one place the write payload — including the petId bound
+    // to the loaded pet, NOT a live active-pet read (the cross-pet-write guard) — is
+    // asserted end to end.
+    const mockInsert = insertMedicationDose as jest.Mock;
+    mockInsert.mockClear();
+    mockInsert.mockResolvedValue({
+      eventId: 'e',
+      administrationId: 'a',
+      occurredAtIso: '2026-07-31T18:00:00.000Z',
+      now: '2026-07-31T18:00:00.000Z',
+    });
+    const m = model({ regimens: [regimen()] }); // confirm carries petId 'p1'
+    const tree = render(<MedStrip model={m} />);
+
+    await act(async () => {
+      fireEvent.press(tree.getByTestId('med-strip-confirm'));
+    });
+
+    expect(mockInsert).toHaveBeenCalledTimes(1);
+    expect(mockInsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        petId: 'p1',
+        medicationItemId: ITEM_AMOX,
+        medicationId: 'reg-amox',
+        adherence: 'given',
+        doseAmount: '250 mg',
+      }),
+    );
+    expect(tree.getByText('Dose logged just now')).toBeTruthy();
   });
 
   it('resets to the live button and shows no optimistic line when the write fails', async () => {

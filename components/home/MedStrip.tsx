@@ -28,7 +28,6 @@ import { router } from 'expo-router';
 import { theme } from '../../constants/theme';
 import { Card } from '../ui/Card';
 import { insertMedicationDose } from '../../lib/medicationDose';
-import { usePetStore } from '../../store/petStore';
 import { useSyncStore } from '../../store/syncStore';
 import type { MedStripModel } from '../../lib/medStrip';
 
@@ -92,20 +91,22 @@ export function MedStrip({ model, onPress, onConfirm }: Props) {
   // amount is honest-null when unknown (§5.1/D5 — never fabricated to make the button
   // eligible). A dose is witnessed, so it stamps now(). Bumping the hydration tick
   // makes Home re-read the local mirror so the card settles into state 2/3.
+  //
+  // `confirm.petId` is the pet this strip was LOADED for, carried through the resolver
+  // with the drug identity — NOT the live active pet re-read at tap time. That is what
+  // makes a tap during a pet-switch swap window write to the pet the card belongs to,
+  // never the new pet's id against the old pet's drug (the cross-pet-write race).
   async function performWrite() {
     const confirm = model.confirm;
-    const petId = usePetStore.getState().activePet?.id;
-    // Both are guaranteed present when the button renders (`showButton` gates on
-    // `model.confirm`, and Home only resolves strips for the active pet). If either is
-    // somehow absent — e.g. the pet was switched between render and tap — THROW rather
-    // than resolve: a silent resolve would flip the card to "Dose logged just now"
-    // without a write, claiming a dose that never landed. The throw routes to
-    // handleConfirm's catch (reset to idle + alert), which is the safe direction.
-    if (!confirm || !petId) {
-      throw new Error('MedStrip confirm: no active pet or confirm payload at tap time');
+    // Non-null whenever the button renders (`showButton` gates on it); this guard is a
+    // defensive no-write fallback that THROWS rather than resolving — a silent resolve
+    // would flip the card to "Dose logged just now" without a write, claiming a dose
+    // that never landed. The throw routes to handleConfirm's catch (reset + alert).
+    if (!confirm) {
+      throw new Error('MedStrip confirm: no confirm payload at tap time');
     }
     await insertMedicationDose({
-      petId,
+      petId: confirm.petId,
       medicationItemId: confirm.medicationItemId,
       medicationId: confirm.medicationId,
       adherence: 'given',
@@ -139,12 +140,6 @@ export function MedStrip({ model, onPress, onConfirm }: Props) {
   // flight (§5). While submitting/confirmed it stands down, so there is no second tap
   // and no button beside the "just logged" line (§9 state 10).
   const showButton = model.confirm !== null && phase === 'idle';
-
-  // The bare drug name for the button's screen-reader label. `buildHeader` always
-  // leads with the name before the " · " qualifier, and an ad-hoc header IS just the
-  // name — so the split is exact in every state. Matches the Pet-tab card's
-  // "Log a dose of {name}" label.
-  const drugName = model.header.split(' · ')[0];
 
   const a11yLabel = [model.header, displayedLine]
     .filter((s): s is string => s != null)
@@ -197,7 +192,7 @@ export function MedStrip({ model, onPress, onConfirm }: Props) {
         <Pressable
           onPress={handleConfirm}
           accessibilityRole="button"
-          accessibilityLabel={`Log a dose of ${drugName}`}
+          accessibilityLabel={`Log a dose of ${model.drugName}`}
           // The pill is a ~34px visual (matching the design-locked mock); hitSlop lifts
           // the TAP target past the 44pt floor (B-136) without inflating the pill to
           // 44px, which `minHeight` would. The button carries its own padded ground, so
