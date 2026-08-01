@@ -51,3 +51,18 @@ The row shape is shared rather than parallel: `buildTrialFoodRow` and one `TRIAL
 **DoD gap, stated rather than papered over:** the spec's `code-reviewer` gate did **not** run — this environment instructs against dispatching subagents unprompted, which conflicts with CLAUDE.md's DoD. It is the one unchecked box on this PR. Worth a second pair of eyes for the same reason PR 0 needed one: that session's drift guard was verified against its author's own decoy, passed, and `code-reviewer` then broke it with an arrow-function variant on the first try.
 
 No `adversarial-reviewer` line, per §6 — this track computes nothing, it renders the shipped predicate's answers. That exemption is now doing real work rather than being an assumption: `allowedMembershipOn` is the mechanism that keeps it true, and if any later PR grows its own membership logic the exemption dies with it.
+
+## Falsification attempts (the DoD's adversarial line)
+
+Stated rather than ticked. Six attempts to break the layer, and what happened:
+
+1. **Can the library disagree with the classifier anywhere?** Swept 100 (food, day) pairs — the re-photographed bag, an unhydrated row whose id is its only identity, a dated removal on both sides of its boundary, an unreadable role, a no-identity feeding, a blank-named one, days before the start and past the target end. Zero disagreements; role and matched-arm agree on every permitted pair. **Held.**
+2. **Can that property be vacuous?** Planted the naive re-derivation (id-only, undated) and asserted it *fails* the same sweep. It does, on the three case classes the test names. So the sweep discriminates rather than comparing a function to itself. **Held.**
+3. **Can an un-hydrated set produce a reassuring render?** A live trial with zero rows returns `unknown`, so nothing renders. Ready-and-empty would have un-marked the prescribed diet on the Foods tab and printed "0 foods on the trial list". **Held by construction, and tested.**
+4. **Can `addTrialFood` retroactively permit a past exposure?** `allowed_from` = today, asserted at the bind; a pre-add feeding still classifies off-diet because `membershipOn` gates on the day. **Held.**
+5. **Can the add widen the sanctioned protein comparator?** `permittedRoleForFood`'s codomain is `{permitted_treat, permitted_other}` — `primary_diet` is unreachable from this path. Asserted. **Held.**
+6. **Does a stale `status = 'active'` trial keep marking foods forever?** A January trial with a 28-day target reads `no_trial` in July despite the column. **Held.**
+
+**One residual the attempts produced → B-624.** `trialListFoodsOn` dedupes by `foodKey ?? foodItemId` keeping the first row, while `matchAllowed` resolves id *before* key — so two rows for one brand+product with different ids make the §2.2 list and the food-detail row disagree about the *date* (both still say the food is on the list). Local double-adds are already prevented by the key arm in PR 2's filter, so the live path is a duplicate arriving from another device. Filed rather than patched: the fix belongs with the screen that renders the date.
+
+**Limits worth stating.** The sweep is a fixed cross-product, not a fuzzer — it covers the case classes the spec names, not arbitrary input. And the Edge Function half was verified in CI rather than locally (`deno` is not installed in this container).
