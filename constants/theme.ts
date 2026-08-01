@@ -81,7 +81,7 @@ export const theme = {
   // subordination those surfaces already expressed (three text weights, three
   // divider weights) and are preserved exactly rather than rationalized —
   // collapsing near-duplicate steps would move pixels, so it's a separate,
-  // behaviour-changing pass (B-642). The primary white ink, the 0.92 muted text
+  // behaviour-changing pass (B-646). The primary white ink, the 0.92 muted text
   // and the 0.55 photo scrim already live just above (colorTextOnDark /
   // colorTextOnDarkMuted / colorScrimDark). Reusable chips that must blend over
   // an UNKNOWN dark parent keep their translucent literals ON PURPOSE (B-168) and

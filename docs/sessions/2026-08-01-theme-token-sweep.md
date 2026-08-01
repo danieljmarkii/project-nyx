@@ -14,7 +14,7 @@ Closed three long-standing convention-debt rows in one PR (**#540**, draft): the
 
 ## Decisions / judgement calls
 
-- **One token per distinct value, not a rationalized scale.** Zero-behaviour-change forbids collapsing near-duplicate alphas (0.65/0.7/0.75 text; 0.1/0.12/0.15 dividers), so the drift was preserved as distinct tokens and the rationalization deferred to **B-642** (a deliberate, behaviour-changing follow-up). This is the honest cost of "centralize now, don't move pixels."
+- **One token per distinct value, not a rationalized scale.** Zero-behaviour-change forbids collapsing near-duplicate alphas (0.65/0.7/0.75 text; 0.1/0.12/0.15 dividers), so the drift was preserved as distinct tokens and the rationalization deferred to **B-646** (a deliberate, behaviour-changing follow-up; filed as B-642, renumbered at wrap — B-642 was taken on `main` by a B-618 PR 4 row). This is the honest cost of "centralize now, don't move pixels."
 - **Respected B-168.** `FilterChip` + the reusable chip rows' *inactive* translucent border/label blend over an **unknown** dark parent — a token there would assert a fixed colour the component can't promise. Those stay literals (a comment was added on the retained values); only the solid `#fff` active label + the row's fixed `labelOnDark` migrated.
 - **Left `emptyText` `lineHeight: 20`** in the weight cards to the separate **B-101** `lineHeightBody` sweep (per the in-code note at `MetricInfo.tsx:81`) — tokenizing it here would be a 20→22 behaviour change.
 - **Skipped non-colour / non-on-dark literals:** `MedicationNameChips`' `rgba(255,255,255,0)` gradient stop (over a *light* surface), `CulpritMark`'s SVG mask fills, `shadowColor: '#000'`, and the photo viewer's opaque `#000` backdrop.
@@ -29,5 +29,5 @@ Designer ✓ (theme-tokens-only convention; zero visual change) — Engineer ✓
 
 ## Follow-ups
 
-- **B-642** (new) — rationalize the on-dark alpha scale once a designer next touches the dark completion cards.
+- **B-646** (new) — rationalize the on-dark alpha scale once a designer next touches the dark completion cards.
 - **B-101** still owns the `lineHeight: 20` → `lineHeightBody` sweep.
