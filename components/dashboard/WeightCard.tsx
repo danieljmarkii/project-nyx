@@ -186,7 +186,7 @@ const styles = StyleSheet.create({
   emptyText: {
     fontSize: theme.textSM,
     color: theme.colorTextSecondary,
-    lineHeight: 20,
+    lineHeight: theme.lineHeightBody,
   },
   // Primary action — accent text, 44pt floor (the same shape as the Profile weight
   // card's "Log a weigh-in"). minHeight + centered clears the tap target.

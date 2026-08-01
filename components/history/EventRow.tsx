@@ -374,7 +374,7 @@ const styles = StyleSheet.create({
   notes: {
     fontSize: 14,
     color: theme.colorTextPrimary,
-    lineHeight: 20,
+    lineHeight: theme.lineHeightBody,
     paddingVertical: 4,
   },
   actions: {

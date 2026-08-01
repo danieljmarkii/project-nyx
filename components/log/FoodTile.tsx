@@ -145,6 +145,6 @@ const styles = StyleSheet.create({
     fontSize: theme.textMD,
     fontWeight: theme.weightMedium,
     color: theme.colorTextPrimary,
-    lineHeight: 20,
+    lineHeight: theme.lineHeightBody,
   },
 });
