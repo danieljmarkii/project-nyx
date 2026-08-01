@@ -5,8 +5,9 @@
 # the same two commands the hook runs, plus the Edge Function suites the hook
 # never touches, enforced where they can't be skipped.
 #
-# Two jobs on purpose, run in parallel so each reports independently:
+# Three jobs on purpose, run in parallel so each reports independently:
 #   app            — the RN/Expo app: `tsc --noEmit` + jest (self-contained)
+#   app-timezones  — the same jest suite again, under non-UTC clocks (B-514)
 #   edge-functions — `deno test` over supabase/functions (needs network once)
 # A network blip in one must not mask a real failure in the other.
 name: CI
@@ -60,6 +61,78 @@ jobs:
       # `--ci` makes an unmatched snapshot a failure instead of a silent write.
       - name: Jest
         run: npm test -- --ci
+
+  # ── The timezone leg (B-514) ────────────────────────────────────────────────
+  #
+  # The `app` job above runs on a UTC runner, and until this existed that was the
+  # ONLY clock the ~3,700 cases ever saw. Nyx's day boundary is LOCAL midnight
+  # (B-421) — trial day counters, medication day math, restore countdowns, the
+  # vet-document date, every "today" the owner reads — so a fixture written against
+  # a UTC instant asserts the runner's zone as much as the behaviour, and passes
+  # for the wrong reason. Seven suites had drifted that way by the time this was
+  # written, and the way it surfaced is the argument for the job: NOT from CI, but
+  # from a real timezone bug shipping in B-417 PR 6 that a green UTC suite could
+  # not see.
+  #
+  # Deliberately jest ONLY — no `tsc`. The type check cannot depend on the clock,
+  # so running it again here would buy nothing and cost a minute.
+  #
+  # The zones, and why these three:
+  #   Pacific/Kiritimati  UTC+14        the far side of the date line — the maximum
+  #                                     eastward offset there is
+  #   Pacific/Chatham     UTC+12:45     a quarter-hour offset, and the +12..+13 band
+  #                                     where two instants an hour apart straddle
+  #                                     local midnight (this is the one that caught
+  #                                     the vet-document countdown; +14 did not)
+  #   Pacific/Honolulu    UTC−10        the west side, far enough that a UTC instant
+  #                                     lands on the previous local day
+  # Two of the three never observe DST, so the leg's verdict does not drift with
+  # the calendar. Offset EXTREMES are not a superset of what mid-offsets catch —
+  # the Chatham entry is there precisely because +14 missed a real failure — so add
+  # a zone here rather than assuming the ends cover the middle.
+  #
+  # Every zone runs even after one fails: the useful output is WHICH clocks broke,
+  # since that is what names the assumption. `npm test` is invoked directly rather
+  # than through a matrix so this job reports under ONE stable check name — the
+  # `main` ruleset lists required checks by name, and a matrix would put three
+  # names in it that all have to be added and kept in step.
+  app-timezones:
+    name: App (jest, non-UTC timezones)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Jest under non-UTC clocks
+        shell: bash
+        run: |
+          set -uo pipefail
+          zones=(Pacific/Kiritimati Pacific/Chatham Pacific/Honolulu)
+          failed=()
+          for tz in "${zones[@]}"; do
+            echo "::group::TZ=${tz}"
+            if TZ="${tz}" npm test -- --ci; then
+              echo "${tz}: green"
+            else
+              failed+=("${tz}")
+            fi
+            echo "::endgroup::"
+          done
+          if [ "${#failed[@]}" -ne 0 ]; then
+            echo "::error::jest failed under ${#failed[@]} of ${#zones[@]} timezones: ${failed[*]}. The app job is green at UTC, so this is a fixture (or a day-boundary bug) that assumes the runner's clock — see B-514. Pin the fixture to an explicit zone or build its instants from local components; do NOT pin this job back to UTC."
+            exit 1
+          fi
+          echo "All ${#zones[@]} timezones green."
 
   edge-functions:
     name: Edge Functions (deno test)

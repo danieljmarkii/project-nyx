@@ -49,7 +49,12 @@ import {
 import { getDb } from './db';
 import type { LocalVetDocument } from './vetDocuments';
 
-const NOW = new Date('2026-07-26T15:00:00Z');
+// "Now": 2026-07-26 15:00 on the DEVICE's own clock, built from local components
+// rather than a UTC instant (B-514). `document_date` defaults to the owner's
+// calendar day, so a UTC "now" filed the document under 27 Jul in Kiritimati and
+// the saved-moment card read "Document — Jul 27" — a date the owner's phone
+// disagreed with, on the row the library sorts by.
+const NOW = new Date(2026, 6, 26, 15, 0);
 const PET = 'pet-1';
 
 // Deterministic ids so the assertions can name the keys they expect.
@@ -113,8 +118,13 @@ describe('pickedFilesFromImageAssets', () => {
       ],
       NOW,
     );
-    expect(a.exifIso).toContain('2026-07-14');
-    expect(b.exifIso).toContain('2026-07-15');
+    // EXIF carries a bare wall-clock reading with no zone, so it is parsed as the
+    // camera's LOCAL time and `exifIso` is that instant in UTC. Asserted as the
+    // whole instant rather than a `toContain('2026-07-14')` on the ISO text
+    // (B-514): east of UTC+9:30 the same local morning renders a UTC string dated
+    // the day before, and the substring check failed for a correct value.
+    expect(a.exifIso).toBe(new Date(2026, 6, 14, 9, 30).toISOString());
+    expect(b.exifIso).toBe(new Date(2026, 6, 15, 11, 0).toISOString());
   });
 
   // A wrong camera clock must not file a document under a date that has not

@@ -809,21 +809,28 @@ describe('computeMealTreatComposition', () => {
 
 // ── Diet-trial progress ──────────────────────────────────────────────────────────
 
+// The zone is passed EXPLICITLY here (B-514). `NOW` is a UTC instant at 12:00Z, so
+// omitting the argument silently means "whatever zone the runner happens to be in" —
+// and 2026-06-14T12:00Z is 15 Jun in Auckland, which reads Day 6, not Day 5. These
+// are day-COUNT assertions, not day-BOUNDARY ones (the boundary is the B-421 block
+// below), so the honest fixture states the zone it counts in rather than inheriting
+// one. Same reason the CI matrix now runs a non-UTC leg: a fixture that only holds
+// at UTC+00 must say so, or it is not testing what it claims.
 describe('getDietTrialProgress', () => {
   it('day-counts inclusively from started_at (day 1 = the start day)', () => {
-    const out = getDietTrialProgress({ startedAt: '2026-06-10', targetDurationDays: 14 }, NOW);
+    const out = getDietTrialProgress({ startedAt: '2026-06-10', targetDurationDays: 14 }, NOW, 'UTC');
     expect(out).toEqual({ dayCounter: 5, targetDays: 14, daysRemaining: 9, fraction: 5 / 14, complete: false });
   });
 
   it('clamps a reached target to complete + fraction 1', () => {
-    const out = getDietTrialProgress({ startedAt: '2026-05-01', targetDurationDays: 14 }, NOW);
+    const out = getDietTrialProgress({ startedAt: '2026-05-01', targetDurationDays: 14 }, NOW, 'UTC');
     expect(out?.complete).toBe(true);
     expect(out?.fraction).toBe(1);
     expect(out?.daysRemaining).toBe(0);
   });
 
   it('returns null for an unparseable start date', () => {
-    expect(getDietTrialProgress({ startedAt: 'not-a-date', targetDurationDays: 14 }, NOW)).toBeNull();
+    expect(getDietTrialProgress({ startedAt: 'not-a-date', targetDurationDays: 14 }, NOW, 'UTC')).toBeNull();
   });
 });
 

@@ -411,42 +411,68 @@ describe('buildVetFilesCardModel', () => {
 // recovery behind it is a worse product than an honest permanent delete, because
 // the owner only finds out at the moment they need the document back.
 
+// The countdown is counted and rendered in CALENDAR days on the owner's own
+// clock, so every instant below is built from device-LOCAL components (B-514).
+// Written as UTC literals these fixtures asserted the runner's zone as much as the
+// countdown: `2026-06-27T23:00:00Z` is already 28 Jun anywhere east of UTC+1, so
+// "1 day left" read as 2 in Berlin — and the deliberately boundary-hugging hours
+// (23:00, 11:00) are exactly the ones that make it a real test, so widening them
+// to midday would trade the fragility away for less coverage rather than more.
+const localIso = (y: number, mo: number, d: number, h = 0, mi = 0) =>
+  new Date(y, mo - 1, d, h, mi).toISOString();
+
+const NOW_LOCAL = new Date(2026, 6, 26, 12, 0); // device-local 2026-07-26 12:00
+
 describe('daysLeftToRestore', () => {
-  const now = new Date('2026-07-26T12:00:00Z');
+  const now = NOW_LOCAL;
 
   it('reads 30 on the day of deletion, matching what the ⋯ menu promised', () => {
     // Counted in calendar days, not elapsed hours: an hours-based floor would say
     // 29 an hour after the delete and read as an off-by-one to anyone who had just
     // seen "Kept for 30 days".
-    expect(daysLeftToRestore('2026-07-26T11:00:00Z', now)).toBe(30);
+    expect(daysLeftToRestore(localIso(2026, 7, 26, 11), now)).toBe(30);
   });
 
   it('counts down one per calendar day', () => {
-    expect(daysLeftToRestore('2026-07-24T12:00:00Z', now)).toBe(28);
-    expect(daysLeftToRestore('2026-06-27T23:00:00Z', now)).toBe(1);
+    expect(daysLeftToRestore(localIso(2026, 7, 24, 12), now)).toBe(28);
+    expect(daysLeftToRestore(localIso(2026, 6, 27, 23), now)).toBe(1);
   });
 
   it('never goes negative, and treats an unparseable stamp as expired', () => {
-    expect(daysLeftToRestore('2026-01-01T00:00:00Z', now)).toBe(0);
+    expect(daysLeftToRestore(localIso(2026, 1, 1), now)).toBe(0);
     expect(daysLeftToRestore('not a date', now)).toBe(0);
   });
 });
 
 describe('restoreCountdownLabel', () => {
-  const now = new Date('2026-07-26T12:00:00Z');
+  const now = NOW_LOCAL;
 
   it('says “1 day left” in the singular', () => {
-    expect(restoreCountdownLabel('2026-06-27T23:00:00Z', now)).toBe('1 day left');
+    expect(restoreCountdownLabel(localIso(2026, 6, 27, 23), now)).toBe('1 day left');
   });
 
   it('never renders “0 days left” next to a working Restore button', () => {
     // The query, not this label, decides whether the row is restorable — so a
     // countdown reading zero beside a live button is a contradiction the owner
     // would have to interpret.
-    expect(restoreCountdownLabel('2026-06-26T12:00:00Z', now)).toBe('Last day to restore');
+    expect(restoreCountdownLabel(localIso(2026, 6, 26, 12), now)).toBe('Last day to restore');
   });
 });
 
+// This label composes the SAME field read two different ways — the stem lexically
+// off the stored UTC text (`formatVetDocumentDate`), the countdown in LOCAL
+// calendar days (`daysLeftToRestore`) — so no single instant pins both halves in
+// every zone, and the local-component fixtures used above make the stem move
+// instead. (The seam is real, and cheap in practice; filed as B-632 rather than
+// fixed under a test-hygiene change.)
+//
+// So this cluster stays on UTC literals AT THE SAME TIME OF DAY, which is
+// zone-invariant for a different reason than the ones above rather than by luck:
+// the stem is lexical, so it never moves at all; and two instants sharing a
+// time-of-day shift by the same offset in any zone, so the DIFFERENCE between
+// their local days — which is all the countdown reads — is preserved everywhere.
+// Keep `now` and every `deleted_at` here on the same time-of-day; 11:00Z against a
+// 12:00Z "now" is what broke the sibling assertions at UTC+12:45.
 describe('buildDeletedVetDocumentRow', () => {
   const now = new Date('2026-07-26T12:00:00Z');
 
@@ -461,7 +487,7 @@ describe('buildDeletedVetDocumentRow', () => {
 
   it('carries the countdown for a document near the end of its window', () => {
     const row = buildDeletedVetDocumentRow(
-      { ...cover(), deleted_at: '2026-06-27T11:00:00Z' },
+      { ...cover(), deleted_at: '2026-06-27T12:00:00Z' },
       now,
     );
     expect(row.deletedLabel).toBe('Deleted Jun 27 · 1 day left');
@@ -469,7 +495,11 @@ describe('buildDeletedVetDocumentRow', () => {
 });
 
 describe('RECENTLY_DELETED_VET_DOCUMENTS_QUERY', () => {
-  const now = new Date('2026-07-26T12:00:00Z');
+  // Same local "now" as the countdown above. This describe compares absolute
+  // instants in SQL rather than calendar days, and its boundaries are days wide,
+  // so it was never zone-fragile — it shares the clock so the whole restore-window
+  // cluster reads from one fixture rather than two that agree by coincidence.
+  const now = NOW_LOCAL;
 
   function runDeletedQuery(docs: Doc[], petId = 'pet-1') {
     const db = new DatabaseSync(':memory:');

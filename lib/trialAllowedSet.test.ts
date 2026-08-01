@@ -40,13 +40,23 @@ import {
   type TrialListFood,
 } from './trialAllowedSet';
 
-const NOW = Date.parse('2026-07-20T12:00:00Z');
+/** Midday on the given calendar day, on the DEVICE's own clock — so the instant
+ *  lands on that day in every zone jest might run in, and BOTH sides of the
+ *  property are handed the same instant rather than the same string.
+ *
+ *  Built from local components, NOT `${dayKey}T12:00:00Z` (B-514). Membership is a
+ *  LOCAL-day question — `trialListMembership` indexes through `localDayIndex`, and
+ *  the client's context carries no zone because the device's own is the owner's
+ *  midnight (B-421) — and 12:00Z is ALREADY THE NEXT LOCAL DAY at UTC+13/+14. The
+ *  old spelling made the date-gate assertions read a day early in Kiritimati: a
+ *  mid-trial add appeared on the list the day before it was added, which is the
+ *  exact §5/D5 guarantee ("an add never rewrites history") the suite exists to pin. */
+const at = (dayKey: string) => {
+  const [y, m, d] = dayKey.split('-').map(Number);
+  return new Date(y, m - 1, d, 12, 0).getTime();
+};
 
-/** Midday UTC, so the instant lands on the same local day in every zone jest
- *  might run in — and BOTH sides of the property are handed the same instant
- *  rather than the same string, so the comparison never turns into a test of the
- *  runner's timezone. */
-const at = (dayKey: string) => Date.parse(`${dayKey}T12:00:00Z`);
+const NOW = at('2026-07-20');
 
 interface AllowedRowFixture {
   food_item_id: string;
