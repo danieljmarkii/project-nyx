@@ -218,6 +218,20 @@ describe('AC5 — a withholding record suppresses the coverage line and the butt
     expect(m.withholding).toEqual(expect.arrayContaining(['refused_dose', 'intake_decline']));
     expect(m.line).toMatch(/refused/i); // the med's own news is not swallowed
   });
+
+  // Pins the deliberate precedence flagged by code review: on a course that is
+  // BOTH past its length (states 6/7) AND carries a refused dose (state 8), the
+  // withholding fact wins the single line and the button stands down — the
+  // calendar advisory yields to the health signal. This composition is NOT
+  // specified in §9; the current behaviour is pinned here so it is a decision, and
+  // the clinical register call (should it say BOTH?) is carried to M5.
+  test('a past-length course with a refused dose surfaces the refusal, not the advisory', () => {
+    const m = run({ regimens: [regimen({ started_at: '2026-07-15' })], doses: [dose({ adherence: 'refused' })] })[0]; // day 17 of 14
+    expect(m.header).toContain('3 days past'); // still the overrun header
+    expect(m.line).toMatch(/refused/i);
+    expect(m.line).not.toMatch(/course length|vet/i); // the advisory yields
+    expect(m.confirm).toBeNull(); // withholding stands the button down
+  });
 });
 
 // ── AC #6 — the confirmability gate ───────────────────────────────────────────

@@ -365,6 +365,15 @@ function buildModel(
   // The button renders iff the app can DESCRIBE the row it would write, AND nothing
   // has stood it down. Attributable identity is the gate's core (§5.2 case 1); a
   // collapsed card (§7) and a withholding record (§6) both remove it.
+  //
+  // `attributable` is DEFENSIVE — unreachable as `false` given how candidates are
+  // built (a regimen candidate always has a regimen; an ad-hoc candidate is only
+  // created for a dose with a non-null `medication_item_id`, §4.2b's guard). So
+  // every candidate that survives naming is attributable, which means §9's state 9
+  // ("nameable but not confirmable") does not arise from the current local-mirror
+  // candidacy — a design note carried to M2 (PR body). The guard stays: the safe
+  // direction if a future input shape ever produces an unattributable candidate is
+  // no button, never a guessed dose.
   const attributable = itemId != null || regimen != null;
   const confirm: MedStripConfirm | null =
     !collapsed && !isWithholding && attributable
@@ -468,6 +477,16 @@ function buildLine(p: {
   todayIndex: number;
   tz: string | undefined;
 }): string | null {
+  // Precedence is deliberate, not incidental. WITHHOLDING WINS OVER THE
+  // COURSE-LENGTH ADVISORY: a refused / not-given / in-doubt record is a health
+  // signal (N3), and on a past-length course it is the more specific of the two
+  // "talk to your vet" prompts — so the strip surfaces the refusal fact and (via
+  // the gate) drops the button, rather than showing a calmer calendar advisory
+  // beside a record the pet is refusing. The strip has ONE line, so this is a
+  // genuine choice; the two together are NOT specified in §9. ⚠️ M5 owns the
+  // clinical register (§10) and must rule whether a past-length + refused state
+  // should say BOTH things (advisory + fact) rather than the fact alone. Pinned by
+  // a test so the current behaviour is a decision, not an accident.
   if (p.isWithholding) return withholdingLine(p.withholding, p.recentDoses);
   if (p.collapsed) return null; // the count lives in the collapsed header
   if (p.courseReached) {
