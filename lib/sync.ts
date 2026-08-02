@@ -26,6 +26,11 @@ import {
   type LocalDietTrialFood,
 } from './dietTrialMirror';
 import {
+  notificationPreferenceRowToRemote,
+  NOTIFICATION_PREFERENCE_PUSH_QUEUE_SQL,
+  type LocalNotificationPreference,
+} from './notificationPreferences';
+import {
   classifySyncFailure,
   formatSyncError,
   exhaustedAttemptsError,
@@ -111,7 +116,8 @@ type QueueTable =
   | 'medications'
   | 'medication_administrations'
   | 'diet_trials'
-  | 'diet_trial_foods';
+  | 'diet_trial_foods'
+  | 'notification_preferences';
 
 // SQLite's compiled variable limit is 999 on older builds; 400 keeps a chunk well
 // clear of it and matches loadLocalRowMeta's chunking above. Every writer below
@@ -1201,6 +1207,33 @@ export async function syncPendingDietTrialFoods(): Promise<void> {
   await pushRows(db, 'diet_trial_foods', unsynced, dietTrialFoodRowToRemote);
 }
 
+// ── Notification-preferences mirror push (B-661 PR 2) ────────────────────────
+//
+// Flush unsynced notification preferences. Refresh the JWT (Pattern 4) and upsert
+// last-write-wins (Pattern 5), only flipping synced = 1 for rows that actually
+// landed (Pattern 1, via pushRows). RLS gates the write to the owning account.
+//
+// The account owner (user_id) is stamped from the session by the mapper — it is
+// NOT stored locally (the mirror is single-account) and is required by the server
+// column + the RLS WITH CHECK. No pre-sync and no FK ordering in v1: pet_id is
+// NULL (account-wide, §4), and the only server FK a NULL-pet row has is to
+// auth.users — the session user, which exists by construction. A preference is
+// turned off (enabled = false), never deleted, so there is no DELETE path here.
+export async function syncPendingNotificationPreferences(): Promise<void> {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) return;
+
+  const db = getDb();
+  const unsynced = await db.getAllAsync<LocalNotificationPreference>(
+    NOTIFICATION_PREFERENCE_PUSH_QUEUE_SQL,
+  );
+  if (unsynced.length === 0) return;
+
+  await pushRows(db, 'notification_preferences', unsynced, (p) =>
+    notificationPreferenceRowToRemote(p, session.user.id),
+  );
+}
+
 // ============================================================
 // Down-sync / hydration (B-054 Phase 1 + Phase 3)
 // ============================================================
@@ -1310,6 +1343,14 @@ interface RemoteDietTrialFood {
   id: string; diet_trial_id: string; pet_id: string; food_item_id: string;
   role: string; food_label: string; allowed_from: string; allowed_until: string | null;
   deleted_at: string | null; created_at: string; updated_at: string;
+}
+interface RemoteNotificationPreference {
+  // user_id is NOT pulled — the mirror is single-account and stores no owner (the
+  // push mapper stamps it from the session). enabled is a Postgres boolean →
+  // JS boolean; fire_local_time is WALL-CLOCK 'HH:MM', not a timestamp (B-661 §4).
+  id: string; pet_id: string | null; category: string;
+  enabled: boolean; fire_local_time: string;
+  created_at: string; updated_at: string;
 }
 
 async function hydrateEvents(db: Db, stale: () => boolean): Promise<void> {
@@ -1904,6 +1945,56 @@ async function hydrateDietTrialFoods(db: Db, stale: () => boolean): Promise<void
   if (wm) await setWatermark('diet_trial_foods', wm);
 }
 
+async function hydrateNotificationPreferences(db: Db, stale: () => boolean): Promise<void> {
+  // B-661 — the per-account notification-preferences mirror. A pet-agnostic,
+  // account-scoped LWW table reconciled exactly like diet_trials: incremental on
+  // updated_at with the commit-skew overlap, replace only when the remote row is
+  // strictly newer (a pending local toggle isn't clobbered; push-before-pull ships
+  // it up first regardless). The `WHERE ...synced = 1` backstop guarantees a
+  // hydrate write can never overwrite an unpushed local edit, and keeps a
+  // QUARANTINED row (synced = 0, sync_error set) intact rather than rewritten.
+  //
+  // `user_id` is DELIBERATELY NOT selected: the mirror stores no account owner
+  // (single-account, RLS already scopes the pull to this account). `enabled` is a
+  // Postgres boolean → coerced to INTEGER 0/1 for SQLite. No local FK, so its order
+  // in the cycle is free. No absence pass — a preference is off-not-erased (never
+  // hard-deleted), so there is no server-side hard delete a pull cannot observe.
+  const since = await getWatermark('notification_preferences');
+  const floor = watermarkQueryFloor(since);
+  const rows = await fetchAllRows<RemoteNotificationPreference>(
+    'notification_preferences',
+    'id, pet_id, category, enabled, fire_local_time, created_at, updated_at',
+    floor ? { column: 'updated_at', value: floor } : null,
+  );
+  if (!rows || rows.length === 0) return;
+
+  const localById = await loadLocalRowMeta(
+    db, 'notification_preferences', rows.map((r) => r.id), 'updated_at',
+  );
+  const { toWrite } = reconcileBatch(rows, localById, 'lww');
+  if (stale()) return; // FR-9: signed out during the fetch — don't write to a wiped store.
+  for (const p of toWrite) {
+    // created_at is immutable and appears in the column list for the INSERT branch
+    // only (the hydrateMeals asymmetry, not B-057 drift). enabled coerces
+    // boolean → 0/1. fire_local_time rides as-is — wall-clock text, never parsed.
+    await db.runAsync(
+      `INSERT INTO notification_preferences
+        (id, pet_id, category, enabled, fire_local_time, created_at, updated_at, synced, sync_error)
+       VALUES (?,?,?,?,?,?,?,1,NULL)
+       ON CONFLICT(id) DO UPDATE SET
+         pet_id=excluded.pet_id, category=excluded.category, enabled=excluded.enabled,
+         fire_local_time=excluded.fire_local_time, updated_at=excluded.updated_at,
+         synced=1, sync_error=NULL
+       WHERE notification_preferences.synced = 1`,
+      [p.id, p.pet_id ?? null, p.category, p.enabled ? 1 : 0,
+       p.fire_local_time ?? '21:00', p.created_at, p.updated_at],
+    );
+  }
+  const wm = advanceWatermark(rows.map((r) => r.updated_at), since);
+  if (stale()) return;
+  if (wm) await setWatermark('notification_preferences', wm);
+}
+
 // FR-8 — hard-deleted-meal absence reconciliation (PM ruling: absence-reconcile,
 // not a tombstone schema). The food-deletion cascade hard-`DELETE`s meals
 // server-side, and a pull (incremental or full) can't observe a row that no
@@ -2023,6 +2114,9 @@ export async function hydrateFromCloud(): Promise<void> {
   await runHydrationStep('diet_trials', () => hydrateDietTrials(db, stale));
   if (stale()) return;
   await runHydrationStep('diet_trial_foods', () => hydrateDietTrialFoods(db, stale));
+  if (stale()) return;
+  // B-661: account-scoped, no local FK — order is free. Last, after the mirrors.
+  await runHydrationStep('notification_preferences', () => hydrateNotificationPreferences(db, stale));
 }
 
 // One full sync cycle: push local writes UP, then pull remote rows DOWN
@@ -2064,6 +2158,10 @@ async function pushAllQueues(): Promise<void> {
   // food_items (Pattern 6).
   await syncPendingDietTrials();
   await syncPendingDietTrialFoods();
+  // B-661: account-scoped, no FK to anything pushed above (v1 rows are
+  // account-wide, pet_id NULL), so its position is free — last, after the
+  // pet-scoped queues.
+  await syncPendingNotificationPreferences();
 }
 
 export async function syncNow(): Promise<void> {

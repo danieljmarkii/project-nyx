@@ -221,6 +221,8 @@ export const SYNC_QUEUES: readonly SyncQueue[] = [
   { table: 'medication_administrations', pendingSince: 'updated_at' },
   { table: 'diet_trials', pendingSince: 'updated_at' },
   { table: 'diet_trial_foods', pendingSince: 'updated_at' },
+  // B-661 — the per-account notification-preferences mirror (LWW, updated_at).
+  { table: 'notification_preferences', pendingSince: 'updated_at' },
 ];
 
 // The two quarantine columns every queue table carries. Kept here as the single
