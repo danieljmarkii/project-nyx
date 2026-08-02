@@ -112,4 +112,35 @@ All three render from the same snapshot v2 — the option choice changes only th
 layout function, not the W3 pipeline work. R4-1/2/3 remain open (all options assume
 the round-4 recommendations); new ask **R5-1** = pick a layout or name a hybrid.
 
+## Round 6 (same session, after the round-5 reaction)
+
+PM reaction to round 5: **H** — the bottom graph is helpful AND looks good; **I** —
+hates unsummarized info, summary approach wins; **H&I's** "usually but not logged
+yet" look-ahead — "might be a powerful nudge if we can pull it off"; forced pick
+today = **J**. One more iteration round, then converge.
+
+Round 6 ships **one design — "J, grounded"** — the composite the reaction described:
+J's content-gated stat-tile grid + H's bottom graph promoted to a permanent **ground
+band** (hairline + trial strip / 7-day pips + Log door, in every state) + the
+look-ahead element, which is the round's one open choice, shown three ways:
+
+- **V1 (recommended):** "Up next" as an outlined grid tile (nudge at fact-weight;
+  the slot self-heals to the trial-record tile when no window is ahead).
+- **V2:** a slim full-width row between grid and ground band (explicit past/future
+  split, denser).
+- **V3:** folded into the meals tile's sub-line (quietest, weakest).
+
+Feasibility of the look-ahead verified against `lib/widgetResolution.ts` — the
+learned-window machinery (≥4 distinct days, `SLOT_MIN_DAYS`) already ships in the
+snapshot; no new pipeline. Two honest edges named in the mock: multi-device
+staleness ("not logged yet" can lag a partner's log until this device's app runs —
+phrasing asserts the routine, not the world), and the after-the-window tone rule
+(the element never gains color/urgency; midnight resets it — B-156 G1). Edge states
+added: designed empty morning; evening-complete. I's raw ledger retired.
+
+Asks: **R6-1** pick the look-ahead placement (V1 recommended) · **R6-2** confirm
+"J, grounded" as THE design → next session rewrites `docs/nyx-widget-requirements.md`
+v2.0 (R4-1 executed, layout locked, snapshot v2 contract, W5 rebuild plan), folding
+in standing R4-2/R4-3.
+
 — shipped via #563
