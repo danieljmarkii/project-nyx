@@ -57,8 +57,9 @@ export const supabase = createClient(supabaseUrl!, supabaseAnonKey!, {
     // yet — recorded on B-401, which owns that path's routing.
     //
     // `detectSessionInUrl` deliberately stays false: the app handles the link
-    // explicitly (§6.4's sign-out-first ordering) rather than letting auth-js
-    // adopt a session behind the router's back, which is Trap 1 by another route.
+    // explicitly (§6.4's store-null-then-exchange ordering — B-576 option (d))
+    // rather than letting auth-js adopt a session behind the router's back, which
+    // is Trap 1 by another route.
     flowType: 'pkce',
     // Serialize every auth operation in-process. On React Native auth-js defaults
     // to `lockNoOp` (no serialization), so the app's concurrent auth traffic — the

@@ -68,8 +68,9 @@ describe('the recovery gate (B-280 FR-6)', () => {
   });
 
   it('is untouched by setSession(null) — the justDeletedAccount precedent (§6.3)', async () => {
-    // The §6.4 handler signs out DURING recovery, so a gate cleared by the
-    // sign-out transition would be destroyed exactly when it is needed.
+    // The §6.4 handler nulls the store session DURING recovery (step 4, B-576
+    // option (d)) — a direct teardown, not a signOut — so a gate cleared by that
+    // setSession(null) transition would be destroyed exactly when it is needed.
     await armRecoveryGate();
     useAuthStore.getState().setSession(null);
     expect(useAuthStore.getState().recoveryInProgress).toBe(true);

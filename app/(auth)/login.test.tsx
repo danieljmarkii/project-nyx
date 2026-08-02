@@ -42,8 +42,12 @@ function alertCall(spy: jest.SpyInstance, index = 0) {
 
 beforeEach(() => {
   jest.clearAllMocks();
-  // Reset the one-shot deletion flag so it can't bleed between tests.
-  useAuthStore.setState({ justDeletedAccount: false });
+  // Reset the one-shot flags so none can bleed between tests.
+  useAuthStore.setState({
+    justDeletedAccount: false,
+    signedOutInvoluntarily: false,
+    deliberateSignOut: false,
+  });
 });
 
 describe('LoginScreen — validation gate', () => {
@@ -188,6 +192,32 @@ describe('LoginScreen — back navigation', () => {
     fireEvent.press(utils.getByTestId('login-back'));
     expect(router.replace).toHaveBeenCalledWith('/(auth)');
     expect(router.back).not.toHaveBeenCalled();
+  });
+});
+
+// PASSWORD_RECOVERY_ENABLED ships false in PR 2, so the recovery entry point must be
+// invisible — no user-visible change until enablement (spec §8). The flag-ON wiring
+// is covered in login-recovery.test.tsx, which mocks the flag on.
+describe('LoginScreen — recovery entry hidden while the flag is off', () => {
+  it('does not render the Forgot password link', () => {
+    const utils = render(<LoginScreen />);
+    expect(utils.queryByTestId('login-forgot')).toBeNull();
+  });
+
+  it('shows the plain mapped alert on a bad credential (no Reset password action)', async () => {
+    const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    mockSignIn.mockResolvedValue({ error: { message: 'Invalid login credentials' } });
+    const utils = render(<LoginScreen />);
+    fireEvent.changeText(utils.getByTestId('login-email'), 'jordan@email.com');
+    fireEvent.changeText(utils.getByTestId('login-password'), 'wrongpass');
+    fireEvent.press(utils.getByTestId('login-submit'));
+
+    await waitFor(() => expect(alertSpy).toHaveBeenCalled());
+    const { title, buttons } = alertCall(alertSpy);
+    expect(title).toBe("That didn't match");
+    // No action buttons array on the plain alert.
+    expect(buttons).toBeUndefined();
+    alertSpy.mockRestore();
   });
 });
 
