@@ -13,6 +13,7 @@ import {
 } from './medications';
 import { ACTIVE_REGIMEN_FOR_DRUG_QUERY, LIBRARY_MEDICATIONS_QUERY, recentMedicationsQuery, PAIRED_DOSE_REVERSE_JOIN } from './medicationQueries';
 import { DIET_TRIAL_SCHEMA_SQL } from './dietTrialMirror';
+import { NOTIFICATION_SCHEMA_SQL } from './notificationPreferences';
 import {
   BASE_SCHEMA_SQL,
   LOCAL_URI_TABLES_SQL,
@@ -144,6 +145,23 @@ export async function initDb(): Promise<void> {
   // construction. Any column added AFTER this ships needs its own ALTER here —
   // CREATE TABLE IF NOT EXISTS will not add one to a device that already ran this.
   await database.execAsync(DIET_TRIAL_SCHEMA_SQL);
+
+  // B-661 PR 2 notification-preferences local mirror (migration 050). Same
+  // extraction rationale as the two mirrors above: the DDL lives in
+  // lib/notificationPreferences.ts as a string so notificationPreferences.test.ts
+  // can exercise THIS EXACT SQL against an in-memory node:sqlite. Order is FREE —
+  // the table declares no SQLite FK (account-scoped; its server FKs to auth.users
+  // and pets have no local analog), so it needs no positioning relative to the
+  // events block; it runs here purely so the mirrors read as one section.
+  //
+  // NET-NEW to local SQLite in this build, so `CREATE TABLE IF NOT EXISTS` covers
+  // every existing install and no ALTER upgrade path is needed for the table's own
+  // columns. The one exception is the B-398 quarantine pair (sync_attempts /
+  // sync_error): COLUMN_UPGRADES generates an ALTER for it from SYNC_QUEUES, which
+  // runs harmlessly below (the columns already exist from the CREATE, so the ALTER
+  // no-ops). Any column added AFTER this ships needs its own ALTER — CREATE TABLE
+  // IF NOT EXISTS will not add one to a device that already ran this.
+  await database.execAsync(NOTIFICATION_SCHEMA_SQL);
 
   // The column-upgrade path (B-398 made it data — lib/localSchema.ts
   // COLUMN_UPGRADES). `CREATE TABLE IF NOT EXISTS` above gives a FRESH install

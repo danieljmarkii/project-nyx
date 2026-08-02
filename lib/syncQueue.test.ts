@@ -50,6 +50,7 @@ import {
 } from './localSchema';
 import { MEDICATION_SCHEMA_SQL } from './medications';
 import { DIET_TRIAL_SCHEMA_SQL } from './dietTrialMirror';
+import { NOTIFICATION_SCHEMA_SQL } from './notificationPreferences';
 
 type Db = InstanceType<typeof DatabaseSync>;
 
@@ -60,7 +61,14 @@ type Db = InstanceType<typeof DatabaseSync>;
 // schema no device actually runs.
 async function realSchemaDb(): Promise<Db> {
   const db = new DatabaseSync(':memory:');
-  for (const sql of [BASE_SCHEMA_SQL, MEDICATION_SCHEMA_SQL, DIET_TRIAL_SCHEMA_SQL]) db.exec(sql);
+  for (const sql of [
+    BASE_SCHEMA_SQL,
+    MEDICATION_SCHEMA_SQL,
+    DIET_TRIAL_SCHEMA_SQL,
+    NOTIFICATION_SCHEMA_SQL,
+  ]) {
+    db.exec(sql);
+  }
   await applyColumnUpgrades(async (sql) => db.exec(sql));
   return db;
 }

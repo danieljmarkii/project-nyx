@@ -1,137 +1,169 @@
 # Culprit Home Screen Widget — Requirements
 
-**Version:** 1.0 (build-ready) | **Date:** 2026-07-24 | **Status:** PM-ratified 2026-07-24 (three mock rounds + reaction cycle, PR #419)
-**Pairs with:** `docs/culprit-widget-mockups.html` (the design-locked round-3 mock) · `docs/logging-capture-discovery.md` (the evidence base — widgets = Direction B) · backlog B-289 / B-290 / B-291
+**Version:** 2.0 (build-ready) | **Date:** 2026-08-02 | **Status:** PM-ratified 2026-08-02 (ideation rounds 4–7 on the round-3 shipped widget; R7-1 "confirm for build" given)
+**Supersedes:** v1.0, preserved verbatim at **`docs/nyx-widget-requirements-v1-frozen.md`** 🧊 (the as-built record of the build-35 capture widget). This file is the living spec; header-versioned per the 2026-07-19 doc-versioning rule.
+**Pairs with:** `docs/culprit-widget-mockups.html` (the design-locked **round-7** mock — the geometry the build copies, screenshot-verified) · `docs/sessions/2026-08-02-widget-redesign-ideation.md` (the full round 4→7 reaction record) · backlog **B-664** (the rebuild track) · B-481 (the on-device pass it absorbs)
 
 ---
 
 ## 0. Decision record
 
-Rulings from the 2026-07-23/24 ideation sessions. D1–D6 and D8–D9 are PM rulings; D7 was PM-delegated to the Dir. of Engineering and is taken recommend-and-proceed.
+Rulings from the 2026-08-02 redesign rounds (all PM), plus the v1 rulings that carry or die. The v1 decision numbers keep their names to stay greppable; new rulings are numbered V2-*.
 
 | # | Decision | Ruling |
 |---|---|---|
-| **D1** | Direction | **Candidate A** — one `systemMedium` widget ("most promise, most real estate"). The jobs-to-be-done frame is the spine (§1). Candidates B/C/D parked, not dropped (§9). |
-| **D2** | The no-garbage rule | **The widget only one-press-logs what it can name.** No generic events exist in any write path — "log a generic treat, edit later" is dead (PM: "no one is editing it later"). Every ambiguous path opens the app. |
-| **D3** | Interaction model | Resting state = packed status column + two big tiles (Meal / Treat). **Tap a tile → the widget flips in place to that category's named choices** (1–2 one-tap named options + a dashed "Something else… — opens Culprit" row, always last). Status rows are glance-only; tapping one deep-links into the app. One interaction model for both categories. |
-| **D4** | Monetization | **The widget ships free** (PM 2026-07-24: "easier logging means better retention; more data means more insights"). This **amends D-M1's "Home-screen widgets" Premium bullet** — Premium may later wrap widget *styles/extras*, never the capture surface. Tier-2 doc edits flagged in §10. |
-| **D5** | Multi-pet | **Per-widget pet binding at placement** (long-press → Edit Widget → pick pet); a multi-pet household stacks one widget per pet. PM: "good v1." The widget deliberately never follows the in-app active-pet switch (the B-086 hidden-switch hazard). |
-| **D6** | Feeding arrangements | Status rows are **driven by the pet's declared feeding arrangement** (B-040 machinery): scheduled slots → slot rows; a free-fed component → a bowl row; **hybrid (free-fed AND meals) coexists per pet** (the PM's own cat). A bowl "top up" is an arrangement event, never an intake claim. |
-| **D7** | Platform path + sequencing (OQ3) | **Native extension targets are ratified as inside the managed-workflow constraint, via the `expo-widgets` path**: SDK 54→56/57 upgrade (module stable in SDK 56; JS-authored widgets, no SwiftUI in repo, CNG intact, EAS-built). Runtime B becomes a custom dev client (one-time switch, §6). Runs **parallel to B-288**, not instead of it (B-288's notification pilot remains independently valuable and separately gated). Resolves the CLAUDE.md native-targets Open Question. |
-| **D8** | v1 event scope | **Meals + treats only.** No medication, symptom, or incident capture on the widget in v1 (med dosing carries safety semantics — B-156 G1 fail-safe, critical-drug escalation — that must not be compressed into a glanceable surface before those questions are settled; incidents are already well-served by camera-first capture). |
-| **D9** | AI on the widget | **None in v1.** No Signal/AI-read copy (widget refresh cadence can leave a clinical sentence stale on the Home Screen; a "no signal" state is reassurance-on-absence). Escalate-only surfaces may be revisited post-v1 with the refresh mechanics understood. |
+| **V2-1** (was R4-1) | Does the widget write? | **No — capture is retired from the widget entirely.** The PM's own on-device verdict on build 35: the widget is for *knowing what's been logged today* and *getting back into Culprit fast*; limited real estate + "which meal would it even log?" kills Home-Screen capture. Every element is a deep link; the dashed **Log ›** door opens quick-log. Reverses v1 D1–D3. W4's App Intents are **kept, parked** as the B-291 Siri/Action-Button rail — surfaces where voice/hardware makes the event unambiguous, which is where capture belongs. |
+| **V2-2** (rounds 5–6) | Layout | **"J, grounded"** — content-gated stat-tile grid + permanent ground band + the Up-next tile (round-6 V1 placement, PM-picked). The round-5 reaction set the register: summarized facts win; the raw ledger (I) and the time-axis (E) are rejected; H's bottom graph is promoted to a structural band. |
+| **V2-3** (was R4-2) | Symptom naming on the widget | **Name it** ("Vomiting ×2"), the frames' assumption, ratified by reaction through three rounds. The Home Screen is post-unlock, so this sits within the shipped T&S posture. **Escape valve recorded, not built:** a per-widget "discreet wording" Edit-Widget toggle ("2 symptoms logged") if dogfooding surfaces the houseguest-glance problem — backlog it only if it does. Lock-Screen accessories (parked) keep the stricter rule: counts and state only, never symptom text. |
+| **V2-4** (was R4-3) | The look-ahead | **Kept and promoted** — the "usually ~5p · not logged yet" element is the Up-next tile (§2.4). The PM: "might be a powerful nudge if we can actually pull it off." We can: it renders the learned-window field the snapshot already carries (`lib/widgetResolution.ts`, `SLOT_MIN_DAYS` ≥ 4 distinct days). |
+| **V2-5** (was R4-4 + round-5 scope call) | Size classes | **systemMedium only in v2.** Smalls (round-4 Candidate G) parked until the medium proves out on-device — B-481's lesson: prove one surface renders reliably first. |
+| **D4** (v1, carried) | Monetization | **The widget ships free.** Unchanged; an informational widget is even more clearly care, not convenience. The v1 §10 Tier-2 D-M1 amendment edits are still pending PM confirm and carry forward. |
+| **D5** (v1, carried) | Multi-pet | **Per-widget pet binding at placement** (slot enum, sticky/tombstoned index, never follows the in-app active-pet switch — B-086). Multi-pet households stack one widget per pet. Unchanged. |
+| **D6** (v1, carried, reshaped) | Feeding arrangements | Arrangement-driven facts carry: a free-fed component renders as the **bowl** fact ("Bowl topped 8:05a" in the meals tile's sub-line or its own tile when it's the day's only meal fact) — an arrangement re-attest, never an intake claim. A grazing pet with no learned window never grows an Up-next tile, so the grazing baseline never reads as a missed obligation. |
+| **D7** (v1, carried) | Platform | `expo-widgets` / SDK 57 / App Group snapshot pipeline / EAS-built extension — the W2/W3 rails are the whole architecture now (§4). |
+| **D8** (v1, reshaped) | Event-class scope | v1 excluded med/symptom **capture**; v2 has no capture, so the exclusion dissolves. **Display** of all four classes (meals, treats, meds, symptoms) is in scope as record facts. Med display obeys the med-strip register (§2.3): confirmation counts, never "missed"/"due", and a **denominator only when the regimen's cadence is known** (the B-614 confirmability gate, applied to display). |
+| **D9** (v1, carried) | AI on the widget | **None.** No Signal/AI copy, no reads, no reassurance on a refresh-lagged surface. Unchanged. |
 
 ---
 
-## 1. The widget's jobs (PM-defined)
+## 1. The widget's jobs (PM-defined, round 4)
 
-The widget will never be as robust as the app. It has exactly two jobs:
+1. **Answer "what's been logged today?" at a glance** — meals, treats, meds, symptoms; the kitchen-counter accountability question answered in under two seconds without opening the app.
+2. **Be the fastest door back into Culprit.** Every element deep-links somewhere specific. Logging happens in the app; the widget points at it and never impersonates it.
 
-1. **Keep Culprit top of mind** so logging happens, so we can help pets. The status column is the ambient half (the kitchen-counter "did you log it?" answered at a glance); the tiles are the capture half.
-2. **"When in doubt, app it out."** Any path that can't produce a *named* event in ≤2 taps opens the app instead. The dashed "Something else…" row is this job made visible — present in every picker, always last, always honest about what it does.
-
-**Non-goals (v1):** not a mini-app; no notifications (the widget is the anti-nag surface — Principle 4 untouched); no monetization state (D5 parity with Home); no reassurance of any kind; no streaks/scores; no per-person household stats (pet-centric only).
+**Non-goals:** no writes (V2-1); no notifications (the widget stays the anti-nag surface — the Up-next tile is ambient state, §2.4, and does not touch the Principle-4 budget); no AI (D9); no monetization state; no streaks/scores/praise; no per-person household stats (pet-centric only).
 
 ---
 
-## 2. The design (design-locked to the round-3 mock)
+## 2. The design (design-locked to the round-7 mock)
 
-One `systemMedium` widget, four states. Reference: `docs/culprit-widget-mockups.html`.
+One `systemMedium` widget. Reference: `docs/culprit-widget-mockups.html` round 7 — its geometry was screenshot-verified and **is the contract**; round 6's flexible-height jank is the counterexample that made fixed shares a requirement, not a preference.
 
-### 2.1 Resting state
-- **Header:** CulpritMark (crescent + teal Signal dot — real `CulpritMark` geometry, static, never pulsing on the widget) · pet name · right-aligned context line (`Day 12 of 28` during a trial; `free-fed + meals` for hybrid; empty otherwise).
-- **Status column (left, ~45%):** up to 2–3 chip rows from the feeding arrangement (D6). A logged slot shows `✓ + time`; an unlogged slot shows an open teal ring + expected window (`~6p`). **An unanswered slot is a visible gap — never an assumed ✓** (B-156 G1 generalized).
-- **Tiles (right, ~55%):** two full-height tiles — **Meal** (accent, the primary action) and **Treat** (neutral). Whole tile is the target. Glyphs come from the app's `EventIcon` set (species-neutral by default; the mock's emoji are placeholders — icon pass owed, §10).
+### 2.1 Geometry — the strict vertical budget
+In the mock's 364×172 px frame (content = 149 px after 12/11 padding): **header 16 · gap 6 · tile grid 94 (two 44 px rows, 6 px gap) · ground band 33 (6 gap + 1 px hairline + 6 pad + 20 row)**. The build maps these proportions to pt; the invariant is that **every region has a fixed share and no region competes**. Tile typography is metric-locked (label 11 px line / value 17 / sub 11 inside a 44 px row); **every text line clips with an ellipsis — nothing wraps, nothing overflows.**
 
-### 2.2 Picker states (the flip)
-- Tapping a tile flips the widget in place (iOS 17 interactive widget state) to that category's picker: header (`Which meal?` / `Which treat?` + `‹ back`), then:
-  - **Meal:** the next unlogged slot with its named food leads as the accent row (`Dinner — Hill's z/d · one tap · logs now`). During a diet trial the slot's food *is* the trial diet by definition. Hybrid pets also get their bowl row (`Top up bowl`). If a slot has no stable learned/declared usual food, it does not render as a one-tap row.
-  - **Treat:** the pet's 2 most-logged treat items as one-tap rows.
-  - **Always last:** `Something else… — opens Culprit` (dashed ghost row) → deep-link into quick-log with the category preselected.
-- The picker auto-reverts to resting after a short idle or `‹ back`.
+### 2.2 Header
+`CulpritMark` (16 pt, static — never pulses here) · pet name · right-aligned context line: trial day during a trial (via the shared `contextLineFor`, including the overrun rule — `Day 61 · 5d past`, never `Day 61 of 56`), else the arrangement shape (`free-fed + meals`), else empty.
 
-### 2.3 What a tap writes
-- A one-tap row writes the **named item** immediately: meal → `meals` row with the slot's `food_item_id`, assumed portion, **no `intake_rating`** (a widget tap is not a witnessed rating); treat → the named treat item; bowl → the arrangement event.
-- Post-write, the affected row shows `✓ just now · tap to undo` for ~60s (widget-local); the event is otherwise editable in-app like any other. (Undo interaction detail = build-time design pass, not a PM blocker.)
-- Every write carries `logged_via='widget'` (§3).
+### 2.3 The tile grid (content-gated)
+2×2 grid of fact tiles. **A tile exists only when its class carries information today; a missing tile is never a claim.** Tile anatomy: glyph + small-caps label / value line (count + recency in the value's unit style) / one name sub-line.
 
-### 2.4 Copy
-All strings get the `nyx-voice` pass at build time (draft copy in the mock). Register: plain, warm, zero exclamation marks; the widget never praises, never warns, never reassures.
+**Priority order (fixed):** ① **Symptom** — whenever ≥1 symptom event is logged today; **always renders, always top-left, never dropped** (Principle 3). One tile aggregates per symptom type shown as the label ("Vomiting ×2"); multiple distinct types render the most recent type with the total in the sub-line — build detail, Designer call at implementation. ② **Meals** ③ **Meds** ④ **Treats** ⑤ **Up next** (§2.4) ⑥ **Trial record** (during a trial: "12 of 12 days") ⑦ **Door tile** ("Log · opens Culprit ›"). The first four candidates render; the door tile fills a free slot only — the band's Log › chip is the door's permanent home.
+
+**Glyph vocabulary (shape first, color second — iOS 18 tinted mode / iOS 26 glass):** meal = large filled circle (`colorEventMeal`), treat = small filled circle, med = rounded square (`colorEventMedication`), symptom = rotated square (`colorEventSymptom`), learned window = hollow ring. Every distinction must survive monochrome rendering on shape alone.
+
+**Med tile register (B-614 rules, applied to display):** value = confirmation count. **A denominator ("1 of 2 today") renders only when the regimen's cadence is known** — resolved by the same predicate `lib/medStrip.ts` uses, never re-derived. No cadence → count + time only ("1 · 8:00a"). Never "missed", never "due", never a compliance bar, never a cheery line.
+
+### 2.4 The Up-next tile (V2-4)
+- **Presence rule:** renders only while a **learned meal window** (`lib/widgetResolution.ts`, ≥ `SLOT_MIN_DAYS` distinct days) lies **ahead of now and has no logged meal against it today**. No stable window → no tile, never a guessed one. Once the meal is logged, the tile vanishes (the fact moves into the meals tile).
+- **Style:** outlined (unfilled = not yet happened — the same filled/hollow grammar as the glyphs). Copy: the slot name + `usually ~5p · not logged yet`.
+- **The tone rule (non-negotiable):** after the window passes unlogged, the tile keeps the **identical neutral form** — no color change, no urgency, no imperative copy, ever. It resets at local midnight with the day (B-156 G1: unanswered = a visible, calm gap). The nudge is the visibility, never the tone.
+- **The honest edge, accepted:** in a multi-device household, a partner's log on another device can leave this device's tile saying "not logged yet" until this app next runs. The copy asserts the **routine** ("usually ~5p"), not the world — same edge the v1 status column carried.
+- **Tap:** deep-links to quick-log with meal preselected — the door, aimed.
+
+### 2.5 The ground band
+Full-width footer under a hairline, present in **every** state:
+- **During a trial:** the trial-day strip — one dot per trial day (filled = a day with logged events, hollow = a gap, today accented; **when the trial exceeds ~14 days, show the most recent 14 dots**; the caption always totals the whole trial: `11 of 12 trial days logged`). **All trial numbers come from the shared `lib/dietTrial` day math** — the widget introduces no third definition (the §5.3 one-predicate lesson), and its device-zone day boundary is the sanctioned widget/publisher path (B-514). Coverage language only — the strip describes the *record*, never the trial's outcome.
+- **Otherwise:** the 7-day pips — per local day: a tick (≥1 event logged) + a rose pip (≥1 symptom logged), today outlined. Label `last 7 days`. Coverage ≠ wellness; a bare day is "nothing logged," never "nothing happened."
+- **Always:** the dashed **Log ›** chip, right-aligned → quick-log.
+
+### 2.6 States
+1. **Resting** (Day-A/Day-B frames) — grid + band as above.
+2. **Empty day** — headline line `Nothing logged yet today` + single-row grid (Up-next tile if a window is ahead + door tile) + band. A designed state (Principle 5), never a nag, never "all quiet."
+3. **Complete evening** — no window ahead → no Up-next; the slot self-heals (trial-record tile or door). Reads complete as a *record*, never as praise.
+4. **Doors** (carried verbatim from v1): signed out / unbound slot / tombstoned pet — whole-widget message states, always a Link into the app.
+5. **Midnight/stale:** the `dayKey` staleness rule carries — a render on a later local day than the snapshot describes shows an empty day (no carried ticks, counts, or tiles) and drops the context line. Timeline = now + next local midnight entries, `.atEnd`, same as v1.
+
+### 2.7 Copy (draft — `nyx-voice` pass at build; no exclamation marks anywhere)
+
+| Surface | String |
+|---|---|
+| Empty headline | `Nothing logged yet today` |
+| Up next sub | `usually ~{time} · not logged yet` (future window: `usually ~{time}`) |
+| Trial caption | `{n} of {m} trial days logged` |
+| Pips caption | `last 7 days` |
+| Med value (cadence known / unknown) | `1 of 2 today` / `1 · 8:00a` |
+| Door tile / band chip | `Log — opens Culprit ›` / `Log ›` |
+| Doors | v1's three door strings, unchanged |
+
+**Grep-gated banned vocabulary on this surface:** `missed`, `due`, `overdue`, `all clear`, `all quiet`, `great job`, `streak`, praise of any kind.
 
 ---
 
-## 3. Data & provenance
+## 3. Data — snapshot & props v2
 
-- **B-289 `logged_via` lands first** (PR W1, own schema PR). Enum reserved values: `app` (default/backfill) · `notification` · `reconciled` · `widget` · `intent` · `watch` · `device`. Applied to `events`, `meals`, `medication_administrations`. Additive, non-destructive; unbackfillable later — this is why it precedes every capture surface.
-- Widget writes: `logged_via='widget'`. Future Siri/NFC/Action Button paths (the B-291 free riders) write `logged_via='intent'` through the same App Intents.
-- The engine/report treat a widget meal as **assumed-portion, unrated** intake — never conflated with a witnessed `intake_rating` (Data Scientist invariant from the discovery).
-- No new tables. The widget writes the same rows the app writes, through the same sync rules (LWW unchanged).
+`WIDGET_PROPS_SCHEMA_VERSION` → **2**. Everything remains **decided app-side, rendered widget-side** (the W5 architecture finding): the publisher computes facts; the layout is a pure renderer over them.
+
+**Per-pet panel adds:**
+- `todayByClass` — per class: `{ count, lastAt, names[], times[] }` (meals/treats/meds/symptoms), meds additionally `{ expectedToday: number | null }` (null unless the `lib/medStrip.ts` cadence predicate resolves — §2.3), symptoms additionally the leading type label.
+- `upNext: { label, approxTime } | null` — from the existing learned-window resolution, ahead-of-now + unlogged computed **at publish**, re-evaluated on each app foreground/sync tick.
+- `sevenDays: [{ dayKey, logged, symptomLogged }]` — record coverage, local days.
+- `trial: { day, target, daysLogged, daysElapsed, stripDays: [{ logged }] } | null` — all values from the shared `lib/dietTrial` helpers; invariant `daysLogged ≤ daysElapsed` (property-tested in the lib already).
+- **Removed:** `pending`, `revoked`, per-slot `ui` picker state — the outbox and its undo machinery leave the props contract entirely. `mealChoices`/`treatChoices` leave the panel (nothing picks).
+
+**Upgrade rule (one-time, in the rebuild PR):** before first publishing v2 props, the app **drains any residual v1 outbox** through the existing `lib/widgetBridge` path — a build-35 user's un-drained tap must not be dropped by the schema flip. The layout reads `schemaVersion` and renders the sign-in door on a mismatch rather than garbage.
+
+`logged_via` (W1) is untouched and stays the provenance rail for B-288/B-291. No schema migrations — this is all App Group JSON.
 
 ---
 
 ## 4. Architecture
 
-- **Module:** `expo-widgets` (stable SDK 56+; requires the SDK 54→56/57 upgrade, PR W2). Widget UI authored as JS components; App Group data sharing via the module's config plugin. No SwiftUI in the repo. CNG intact; EAS builds the extension.
-- **Write path (B-290, PR W3):** App Group container shared app↔extension. The widget/intents append capture records to an **inbox**; the RN app ingests into SQLite + the existing sync queue on next foreground (and the intent may attempt a direct Supabase REST write when online — inbox is the source of truth for reconciliation). Session token shared via Keychain access group — must compose with the chunked SecureStore adapter (#306). `rls-privacy-reviewer` mandatory on this PR (a new authenticated path to pet data outside the app process).
-- **Read path (widget state):** the app pushes a per-pet snapshot (slot states, named foods, treat shortlist, trial day) into App Group storage on every relevant change + on background refresh; the widget renders snapshots only — it never queries Supabase for display.
-- **App Intents:** `LogMeal(pet, foodItem, slot)` / `LogTreat(pet, foodItem)` / `TopUpBowl(pet)` defined once (PR W4); the widget buttons execute them in-process. Siri phrases / NFC / Action Button / Back Tap / Controls ride the same intents later (Phase 2 recipe, B-291).
-- **Deep links:** status rows → the day view; "Something else…" → quick-log with category preselected; all via existing routes.
+Unchanged rails: **W2** (SDK 57, dev client), **W3** (App Group container, snapshot publisher on foreground/sync/relevant-change, Keychain-shared session, `rls-privacy` posture — though v2's widget never uses the session for writes; the read path stays snapshot-only, the widget never queries Supabase). The **W5 JSC constraints** stand and are load-bearing (see the `widgets/CulpritWidget.tsx` header + the CLAUDE.md widget-layouts convention): no imports at runtime, no filesystem/network, SF Symbols + system face, flat child arrays, and the eval-in-a-stand-in-context test (`widgets/CulpritWidget.test.ts`) remains the enforcement.
 
-### 4.1 Spike checklist (answer in PR W3, before W5 is committed)
-1. Configurable widgets (per-widget pet binding, D5) supported by `expo-widgets`? (If not: fallback = a widget-kind per pet or `expo-apple-targets` for the config intent — decision returns to Dir. of Eng.)
-2. In-place interactive state flip (picker states) achievable within the module's `UserInteractionEvent` model? Latency acceptable?
-3. Timeline/refresh behavior: how stale can the status column get; what refresh budget do we get in practice?
-4. Cold-start reliability of the background write (inbox ingest) — no lost taps.
-5. Undo semantics (§2.3) — widget-local state vs a real revert write.
+**W4 App Intents:** kept in the repo, tested, **not invoked by the widget**. They are the B-291 free-rider rail (Siri phrases / NFC / Action Button / Back Tap), where capture belongs because the trigger disambiguates the event. `lib/widgetBridge`'s drain survives solely for the §3 one-time upgrade drain, then its call sites retire.
+
+**Deep links (all existing routes):** tiles → History filtered to today + class · symptom tile → the day view · Up next → quick-log (meal preselected) · trial elements → the trial card · pips → calendar · door → quick-log · header → Home. Carry the v1 `ts`-nonce lesson on History links.
 
 ---
 
-## 5. Acceptance criteria (v1)
+## 5. Acceptance criteria (v2)
 
-1. From the Home Screen, a **named** treat is logged in ≤2 taps with no app launch; the record carries the item id + `logged_via='widget'`.
-2. During an active diet trial, the meal picker's lead row is the trial diet; one tap logs it against the correct slot.
-3. An unlogged slot renders as a gap on the widget; it is never auto-completed by time passing.
-4. A hybrid pet (free-fed + scheduled meals) renders both row types; "Top up bowl" writes an arrangement event, not an intake rating.
-5. Two widgets bound to two different pets on one Home Screen write to the correct pets independently of the in-app active-pet selection.
-6. A widget write made offline appears in the app and syncs on reconnect through the existing queue (LWW intact).
-7. No widget state ever renders Signal/AI copy, reassurance, praise, or monetization state.
-8. **Kill criterion (B-291, unchanged):** ≥20% of spontaneous-event volume on dogfood devices after a month, or the watch app doesn't get funded.
+1. **No widget state can write.** Every interactive element is a `Link`/deep link; the props contract contains no outbox. (The v1 capture ACs are void.)
+2. Tiles are content-gated; a class with nothing logged renders no tile; the **symptom tile renders whenever ≥1 symptom is logged today and is always first** — never dropped for layout.
+3. The Up-next tile renders **only** under §2.4's presence rule; disappears when the meal is logged; keeps its identical neutral form after the window passes; is gone at local midnight.
+4. The med tile shows a denominator **only** when the cadence predicate resolves; its strings never include the banned vocabulary (grep gate).
+5. Trial strip + caption agree with the trial card's numbers on the same fixture (shared-lib test) — no third day-math definition.
+6. Midnight rollover renders an empty day — no tick, count, tile, or context line carried across `dayKey` (the v1 staleness tests carry, re-pointed at tiles).
+7. Two widgets bound to two pets render independently of the in-app active pet (D5, unchanged).
+8. No state renders AI copy, reassurance, praise, monetization, or per-person attribution.
+9. The emitted layout string evaluates clean in the JSC stand-in context, and the geometry matches §2.1's fixed shares (structural assertions in `CulpritWidget.test.ts` — row counts, fixed band presence, ellipsized lines).
+10. A widget rendered from a stale snapshot (app hasn't run today) shows the empty-day state, never yesterday's facts — on-device check in the B-481 pass.
+
+**Success measure (open, non-blocking):** v1's kill criterion (≥20% capture share) dies with capture. The v2 analog — widget-sourced app opens (a `src=widget` param on the deep links) — needs the B-016 analytics rail; recorded here so the links carry the param from day one, measured later.
 
 ---
 
-## 6. Dev & QA workflow changes
+## 6. Dev & QA workflow
 
-- **Runtime B changes once:** widgets don't run in Expo Go → per-push on-device testing moves to a custom dev client (`expo-dev-client` build installed once per device; Metro + tunnel workflow otherwise unchanged). Update `docs/dev-handoff-runbook.md` when PR W2 lands.
-- **Widget UI changes are not OTA-able:** each widget iteration needs a new binary (EAS build). PM previews ride **TestFlight builds** (Runtime A sessions) — expect a slower react-and-iterate cadence on widget visuals than the app's `eas update` path.
+Unchanged from v1 §6: widgets need the custom dev client (no Expo Go), **widget UI is not OTA-able** — every visual iteration is an EAS binary, PM previews ride TestFlight cuts. The B-481 on-device pass (which of the states actually renders) folds into this track's PR 3 rather than running against the doomed v1 layout.
 
 ---
 
 ## 7. PR plan
 
-Schema isolation, one-PR-per-session, and the Migration Safety Pre-flight all apply as usual.
+Schema isolation n/a (no migrations). One PR per session; standard DoD; the Migration Safety Pre-flight does not apply.
 
 | PR | What | Gates / notes |
 |---|---|---|
-| **W1** | **B-289 `logged_via` migration** — additive column + enum on `events`/`meals`/`medication_administrations`; own schema PR; pre-flight (rollback = `DROP COLUMN`; destructive **n**; backfill = default `'app'`) | Land before anything else; also unblocks B-288's provenance |
-| **W2** | **Expo SDK 54→56/57 upgrade** — no features; dev-client switch documented; full regression QA on-device | Its own session; the riskiest-blast-radius PR of the chain |
-| **W3** | **B-290 write path** — App Group + inbox + foreground ingest + Keychain-shared session + snapshot publisher; spike checklist §4.1 answered in the PR body | `rls-privacy-reviewer` **mandatory**; `code-reviewer` |
-| **W4** | **App Intents + resolution logic** — `LogMeal`/`LogTreat`/`TopUpBowl`; pure, unit-tested resolution lib (slot→named-food, treat shortlist, trial-day) | Tests required (lib logic); `code-reviewer` |
-| **W5** | **The widget** — round-3 states 1–4, pet binding, undo, deep links, EventIcon glyphs | `nyx-voice` + Designer + `pm-feature-review`; on-device QA via dev client |
-| **W6** | **TestFlight cut** (Runtime A session) — PM previews the real widget | The PM's original ask: "ideally these run in TestFlight" |
+| **V2-PR-0** | **This spec + the mock + records** — v2.0 at the canonical path, v1 frozen verbatim, CLAUDE.md Read-These row updated, rounds 4–7 mock history | ✅ ships via **#563** (this branch) |
+| **V2-PR-1** | **Snapshot v2, additive** — `lib/widgetSnapshot`/`widgetProps`: `todayByClass`, `upNext`, `sevenDays`, `trial` builders + types, all **alongside** the v1 fields (nothing consumes them yet; build-35 widgets keep rendering v1 props). Med denominator via the `lib/medStrip` predicate; trial numbers via `lib/dietTrial`. Full unit tests incl. timezone-honest fixtures (B-514 — the widget path deliberately uses the device zone) | Tests mandatory (lib logic); `code-reviewer`. Parallel-safe with everything |
+| **V2-PR-2** | **The layout rebuild** — `widgets/CulpritWidget.tsx` v2 (header/grid/band/Up-next/doors per §2), props flip to schema 2, v1 fields + outbox/undo/picker code deleted from layout & props, the §3 one-time residual-outbox drain, JSC eval + structural-geometry tests, `nyx-voice` pass over every string | Designer + `pm-feature-review`; `code-reviewer`; the banned-vocabulary grep gate lands here |
+| **V2-PR-3** | **On-device + B-481 closure** — fresh dev-client build from post-PR-2 `main`; walk every §2.6 state on the PM's device (incl. stale-snapshot and two-pet stacking); fix render defects found; close **B-481** with the findings | Needs the device + the PM; findings may loop one fix PR |
+| **V2-PR-4** | **TestFlight cut** (Runtime A session) — native `eas build` (widget UI is not OTA-able), PM lives with it | The v1 W6 redo, on a widget worth living with |
 
-**Phase 2 (parked, in rough order):** Candidate B small sibling (ships if A's interaction tests well) · free-rider owner recipe (Siri/NFC/Action Button/Back Tap — B-291's zero-marginal-code half) · Candidate C adaptive small (ground question = the D8 sibling call) · Candidate D Lock Screen accessories · StandBy audit · B-293 Live Activity (own track).
-
-**Parallelism:** W1 is independent and can land immediately. W2 is independent of W1. B-288 (notification pilot) remains parallel to this entire chain and shares only W1. The Ask track (A5/A7) is disjoint. The one shared-file collision across all of these: `STATUS.md` at wrap.
+**Parallelism:** PR-1 is independent and can land immediately; PR-2 queues behind it; PR-3/4 need the PM + device. The Ask A5/A7 track, B-661 notifications, and everything else in flight are disjoint — the one shared-file collision is `STATUS.md` at wrap. **Carried Tier-2 edits (still awaiting the PM's one-word confirm, from v1 §10):** the D-M1 "Home-screen widgets" Premium-bullet amendment in `docs/monetization-and-throttling-requirements.md` + the B-263 paywall-bullet swap.
 
 ---
 
-## 8. Safety & privacy invariants (inherited, restated for this surface)
+## 8. Safety & privacy invariants (restated for this surface)
 
-- **Fail-safe honesty:** no surface assumes an event into existence; unanswered = nothing recorded (B-156 G1 generalized).
-- **n=1 never reassures / intake is not preference:** the widget records; it never interprets. No "all clear," no "doing great," no per-incident language.
-- **Household visibility is pet-centric only:** counts like "2 logged today" never decompose per person; no partner-directed state (T&S surveillance guardrail).
-- **Pre-auth surfaces (Phase 2 Lock Screen):** slot state + counts only; never symptom text or AI language.
-- **Access control:** the extension's Supabase access uses the owner's own session (never a service key on device); RLS unchanged; `rls-privacy-reviewer` at W3.
+- **Fail-safe honesty:** a filled mark/count exists only where logged rows exist; hollow = not yet happened; unanswered = a visible calm gap; midnight empties the day (B-156 G1 generalized).
+- **Absence is never wellness:** `Nothing logged yet today` is a record fact; no state reads as an all-clear; the pips describe logging coverage, never health.
+- **Intake is not preference / n=1 never reassures:** the widget records and displays; it never interprets, rates, or reassures. No AI (D9).
+- **Med display:** confirmation register only; the confirmability gate governs denominators (B-614).
+- **Household visibility is pet-centric only:** no per-person counts or attribution, ever (T&S surveillance guardrail).
+- **Access control:** read path is snapshot-only (no Supabase queries from the extension); the App Group holds one account's data and is wiped on sign-out/account-swap (`wipeLocalSession` — the B-576 lesson applies: the publisher re-arms on session transitions, so wipe ordering matters); Lock-Screen surfaces remain parked with the stricter pre-auth rule.
 
 ---
 
@@ -139,21 +171,9 @@ Schema isolation, one-PR-per-session, and the Migration Safety Pre-flight all ap
 
 | Item | State |
 |---|---|
-| Candidate B (small one-press treat logger) | Small sibling of A's treat path; same flip interaction stacked vertically; needs the species-neutral icon pass. Ships behind A. |
-| Candidate C (adaptive status small) | Trial-aware small widget; **ground (day vs night) is an open brand question** — same call as the Signal card's D8 (`docs/culprit-in-app-brand-requirements.md`). |
-| Candidate D (Lock Screen accessories) | Phase 2; T&S pre-auth rule recorded (§8). |
-| Med / incident capture on the widget | Excluded by D8 (v1 scope); revisit after the med-completion-card safety questions settle. |
-| Signal/AI on the widget | Excluded by D9; escalate-only revisit post-v1. |
-
----
-
-## 10. Follow-ups & flagged doc edits
-
-**Build-time (no PM gate):** EventIcon glyph pass for the tiles (species-neutral default) · undo interaction design · `nyx-voice` copy pass · `dev-handoff-runbook.md` update at W2.
-
-**Tier-2 doc edits (PM confirmation before writing):**
-1. `docs/monetization-and-throttling-requirements.md` — remove/reframe the "Home-screen widgets" Premium bullet per D4 (Premium may wrap widget styles, never the capture surface).
-2. B-263 paywall bullet list — same swap when the paywall copy is next touched.
-3. `docs/logging-capture-discovery.md` is a frozen artifact — not edited; this doc supersedes its Direction-B sketch with the ratified design.
-
-**CLAUDE.md (Tier 1, applied with this doc):** the native-targets Open Question resolved per D7; this doc added to the Read-These table.
+| Small widget (round-4 Candidate G: one synthesized fact / trial ring) | Behind the medium proving out (V2-5); one snapshot already feeds it |
+| Lock Screen accessories / StandBy audit | Phase 2; pre-auth rule recorded (§8) |
+| Siri / NFC / Action Button / Back Tap capture (B-291) | The W4 intents rail, unchanged — capture lives where the trigger disambiguates |
+| "Discreet wording" per-widget toggle | The V2-3 escape valve; build only if dogfooding surfaces the problem |
+| Widget-sourced-opens metric | Links carry `src=widget` from PR-2; measurement waits on B-016 |
+| Multi-symptom-type tile treatment | Designer call at PR-2 (§2.3 ①) |
