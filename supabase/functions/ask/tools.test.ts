@@ -551,6 +551,43 @@ Deno.test('intakeTrend — treats and free-fed meals excluded in BOTH windows; c
   }
 })
 
+Deno.test('intakeTrend — a rating-density collapse is DISCLOSED, never absorbed (adversarial 2026-08-02)', () => {
+  // The counterexample that broke round 1: 12 meals fed this window but only the 4 she ate
+  // were rated (the 8 refusals logged unrated) → rate 4/4 = 1.0, direction 'up' — a
+  // worsening cat reading as improving. The rate itself is an honest fact about RATED
+  // meals; what was missing is the gap AS a fact. currentUnratedMeals now carries it, and
+  // buildProvenance renders it structurally beside the verdict (the C5 lesson).
+  const meals = [
+    ...ratedMealOnEachDay(0, 3, 'all', 'cur-rated'),
+    // 8 unrated meals in the current window — fed, never rated.
+    ...[0, 1, 2, 3, 4, 5, 6, 0].map((d, i) =>
+      meal({ id: `unrated-${i}`, occurredAt: new Date(NOW_MS - d * MS_PER_DAY - 3_600_000).toISOString(), foodType: 'meal', intakeRating: null, foodItemId: 'f1' }),
+    ),
+    ...ratedMealOnEachDay(7, 13, 'all', 'prior'),
+  ]
+  const r = intakeTrend(meals, { window: '7d', nowMs: NOW_MS, freeFedFoodIds: new Set() })
+  assert.equal(isNotEnoughData(r), false)
+  if (!isNotEnoughData(r)) {
+    assert.equal(r.current.ratedMeals, 4)
+    assert.equal(r.currentUnratedMeals, 8) // the gap is a first-class fact
+    assert.equal(r.priorUnratedMeals, 0)
+  }
+})
+
+Deno.test('intakeTrend — unrated treats and free-fed meals do NOT count as unrated-meal gaps', () => {
+  // The disclosure names meals that WOULD have qualified had they been rated — an unrated
+  // treat or a free-fed bowl was never going to enter the denominator, so it is not a gap.
+  const meals = [
+    ...ratedMealOnEachDay(0, 6, 'all', 'cur'),
+    meal({ occurredAt: new Date(NOW_MS - 1 * MS_PER_DAY).toISOString(), foodType: 'treat', intakeRating: null, foodItemId: 't1' }),
+    meal({ occurredAt: new Date(NOW_MS - 2 * MS_PER_DAY).toISOString(), foodType: 'meal', intakeRating: null, foodItemId: 'ff' }),
+  ]
+  const r = intakeTrend(meals, { window: '7d', nowMs: NOW_MS, freeFedFoodIds: new Set(['ff']) })
+  if (!isNotEnoughData(r)) {
+    assert.equal(r.currentUnratedMeals, 0)
+  }
+})
+
 Deno.test('intakeTrend — current-window numbers EQUAL intakeSummary for the same fixture (G5)', () => {
   // One denominator definition across the two intake tools — they can never disagree
   // about the same window's rate.

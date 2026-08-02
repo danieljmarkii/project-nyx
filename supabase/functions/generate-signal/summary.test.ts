@@ -207,6 +207,25 @@ Deno.test('buildSummaryPacket — a hidden SECONDARY protein can win the clause 
   assert.equal(validateSummary(summaryTemplate(packet!), packet!), true)
 })
 
+Deno.test('buildSummaryPacket — a structural tie yields NO protein clause, never an alphabetical winner (B-467 adversarial)', () => {
+  // The single-food multi-protein diet — post-B-467 the default tie case: every meal
+  // contributes both duck and chicken, so their counts are equal by construction. The old
+  // alphabetical tie-break would render "Chicken was the most-logged meal protein" on a
+  // duck formula, decided by 'c' < 'd'. A tied superlative is false as stated → no clause.
+  const packet = buildSummaryPacket({
+    petName: 'Pixel',
+    findings: [],
+    mealEvents: Array.from({ length: 6 }, (_, i) =>
+      meal({ occurredAt: daysAgoIso(i + 1), primaryProtein: 'duck', proteins: ['duck', 'chicken'], intakeRating: 'all' }),
+    ),
+    symptomEvents: [],
+    freeFedFoodIds: new Set(),
+    nowMs: NOW_MS,
+  })
+  assert.ok(packet) // the finished-rate clause still renders — only the superlative is withheld
+  assert.equal(packet!.clauses.some((c) => /most-logged meal protein/.test(c)), false)
+})
+
 Deno.test('buildSummaryPacket — the protein-clause floor still counts MEALS, not protein instances (B-467)', () => {
   // 3 meals × 2 proteins each = 6 instances but 3 identified meals — below the 4-meal floor,
   // so no protein clause is invented off a thin record.

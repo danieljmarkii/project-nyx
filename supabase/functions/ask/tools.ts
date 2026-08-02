@@ -1022,8 +1022,25 @@ export interface IntakeTrendResult {
    *  its finding still leads every answer via safetyLead (§7.2). What this tool adds is
    *  VISIBILITY (B-382): the planner can now SEE a falling finished-rate and phrase it in
    *  the calm health register (route toward the vet, never "picky" — G7), instead of the
-   *  decline being structurally invisible to every Ask answer. */
+   *  decline being structurally invisible to every Ask answer.
+   *
+   *  TWO REGISTER RULES the adversarial pass (2026-08-02) made explicit, enforced at the
+   *  tool description + validator (this field stays a bare fact):
+   *  • 'flat'/'up' is NEVER good news. A rate that stayed at or near zero is a standing
+   *    concern the trend cannot see — detectIntakeDecline is a RELATIVE detector, so a
+   *    diet refused from day 1 fires nothing and safetyLead is null (the B-494 shape).
+   *    "No drop" over a 0-of-19 record is reassurance-on-absence-of-a-delta.
+   *  • The direction compares RATED meals only. A rating-density collapse (meals fed but
+   *    left unrated) can read as 'up'; the unrated counts below are the C5-style
+   *    DISCLOSURE that keeps that honest, and they render structurally in the provenance. */
   direction: 'down' | 'up' | 'flat' | null
+  /** Non-treat, non-free-fed meals in the CURRENT span logged WITHOUT a rating — meals the
+   *  direction cannot see. Disclosed beside the verdict (the C5 lesson: logging density is
+   *  disclosed, never silently absorbed), so "4 of 4 finished" over 12 fed meals cannot
+   *  read as a clean improvement. */
+  currentUnratedMeals: number
+  /** Same for the prior span; null when the window has no prior span. */
+  priorUnratedMeals: number | null
   /** Rated non-treat meals excluded across BOTH spans because the food is free-fed. */
   freeFedExcluded: number
   /** §11 #6 caveat — set when ≥1 free-fed meal was excluded from either span. */
@@ -1057,8 +1074,17 @@ export function intakeTrend(
   const w = resolveWindow(params.window, params.nowMs, params.trialStartMs, params.timezone)
   const live = liveEvents(meals)
   const ratedNonTreat = (rows: AskMealRow[]) => rows.filter((m) => m.foodType !== 'treat' && m.intakeRating != null)
+  // Meals the direction cannot see: non-treat, non-free-fed, logged WITHOUT a rating —
+  // i.e. the meals that WOULD have qualified had they been rated. Disclosed, never
+  // absorbed (the C5 lesson): a rating-density collapse must not masquerade as 'up'.
+  const unratedNonTreat = (rows: AskMealRow[]) =>
+    rows.filter(
+      (m) => m.foodType !== 'treat' && m.intakeRating == null && !isFreeFedMeal(m, params.freeFedFoodIds),
+    ).length
 
-  const currentAll = ratedNonTreat(live.filter((m) => inSpan(m.occurredAt, w)))
+  const currentSpan = live.filter((m) => inSpan(m.occurredAt, w))
+  const currentAll = ratedNonTreat(currentSpan)
+  const currentUnratedMeals = unratedNonTreat(currentSpan)
   const currentFreeFed = currentAll.filter((m) => isFreeFedMeal(m, params.freeFedFoodIds)).length
   const current = currentAll.filter((m) => !isFreeFedMeal(m, params.freeFedFoodIds))
   if (current.length < ASK_FLOORS.minRatedMealsForIntakeRate) {
@@ -1067,11 +1093,12 @@ export function intakeTrend(
 
   let prior: IntakeWindowRate | null = null
   let priorRatedMeals: number | null = null
+  let priorUnratedMeals: number | null = null
   let priorFreeFed = 0
   if (w.priorStartMs != null && w.priorEndMs != null) {
-    const priorAll = ratedNonTreat(
-      live.filter((m) => inRange(m.occurredAt, w.priorStartMs as number, w.priorEndMs as number)),
-    )
+    const priorSpan = live.filter((m) => inRange(m.occurredAt, w.priorStartMs as number, w.priorEndMs as number))
+    const priorAll = ratedNonTreat(priorSpan)
+    priorUnratedMeals = unratedNonTreat(priorSpan)
     priorFreeFed = priorAll.filter((m) => isFreeFedMeal(m, params.freeFedFoodIds)).length
     const priorQualifying = priorAll.filter((m) => !isFreeFedMeal(m, params.freeFedFoodIds))
     priorRatedMeals = priorQualifying.length
@@ -1100,6 +1127,8 @@ export function intakeTrend(
     priorRatedMeals,
     delta,
     direction,
+    currentUnratedMeals,
+    priorUnratedMeals,
     freeFedExcluded,
     intakeNotDirectlyObserved: freeFedExcluded > 0,
   }

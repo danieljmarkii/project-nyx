@@ -333,7 +333,7 @@ export const MODEL_TOOLS: Record<string, unknown>[] = [
   {
     name: 'intake_trend',
     description:
-      "Compare the share of meals the pet finished in the window against the equal-length prior window (both rates with their denominators, delta, direction). Use for 'is she eating less than before', 'is her appetite dropping', 'has her eating changed'. A FALLING rate is a health signal — state the two rates plainly and route toward the vet if it continues; NEVER frame a decline as 'picky' or a preference. Below the sample floor returns not_enough_data; a prior window with too few rated meals returns prior=null (say the comparison isn't possible yet, never guess one).",
+      "Compare the share of meals the pet finished in the window against the equal-length prior window (both rates with their denominators, delta, direction). Use for 'is she eating less than before', 'is her appetite dropping', 'has her eating changed'. A FALLING rate is a health signal — state the two rates plainly and route toward the vet if it continues; NEVER frame a decline as 'picky' or a preference. A 'flat' or 'up' direction is NEVER good news and must never be phrased as improvement or 'no drop'/'no change to worry about' — state the counts plainly, and if finishedMeals is 0 or low in the current window, LEAD with that fact in the calm health register (a rate that stayed low is a standing concern the trend cannot see). The direction compares RATED meals only: when currentUnratedMeals or priorUnratedMeals is more than a couple, say the comparison covers only the rated meals and name the unrated count. Below the sample floor returns not_enough_data; a prior window with too few rated meals returns prior=null (say the comparison isn't possible yet, never guess one).",
     input_schema: {
       type: 'object',
       properties: { window: { type: 'string', enum: WINDOW_ENUM } },
@@ -385,7 +385,7 @@ export const MODEL_TOOLS: Record<string, unknown>[] = [
   {
     name: 'medications',
     description:
-      "Current medications + a per-drug adherence summary in the window: last given, and four honest dose buckets — given, partial (started but not fully taken), missed/refused, and unconfirmed (logged but never confirmed either way). Use for 'what meds is she on', 'when was her last dose', 'has she been getting her medication'. Report partial doses as 'not fully taken' and unconfirmed ones as 'unconfirmed' — name them, never fold them into given or missed, and never soften a refusal to fussiness; a pet not fully taking medication is worth a word with the vet.",
+      "Current medications + a per-drug adherence summary in the window: last given, and four honest dose buckets — given, partial (started but not fully taken), missed/refused, and unconfirmed (logged but never confirmed either way). Use for 'what meds is she on', 'when was her last dose', 'has she been getting her medication'. Report partial doses as 'not fully taken' and unconfirmed ones as 'unconfirmed' — name them, never fold them into given or missed, and never soften a refusal to fussiness; a pet not fully taking medication is worth a word with the vet. NEVER assert compliance: no 'as prescribed', 'on schedule', 'hasn't missed a dose', or 'none missed' — state the four counts and let them speak.",
     input_schema: {
       type: 'object',
       properties: { window: { type: 'string', enum: WINDOW_ENUM } },
@@ -845,8 +845,21 @@ export function buildPhotoReadResult(plan: Exclude<PhotoReadPlan, { action: 'run
 // "nothing remarkable/notable", "nothing of concern". `concern(?:s|ed)?` widens the
 // "nothing ... concern" arm to catch "nothing of concern" / "least concern". These are
 // verdict phrasings that never appear in an honest count/date recount, so no false positive.
+// B-382/B-395 additions (the 2026-08-02 adversarial pass — two demonstrated leak families):
+// • ABSENCE-OF-A-DELTA reassurance on an intake trend. The lexicon already banned "no
+//   change"/"unchanged"/"holding steady", but "no drop in her eating" and "nothing has
+//   changed" — one token away — both cleared the gate over a 0-of-19 uniformly-refusing
+//   record where the relative engine is structurally silent (the B-494 shape: a flat delta
+//   read as a negative result). Added: "no drop/dip/decline/fall", "nothing('s/has)
+//   changed", "hasn't changed", and the improvement verdict "picked up".
+// • COMPLIANCE assertions on a medication record. "hasn't missed a dose", "as prescribed",
+//   "none missed" all passed while a not-fully-taken/unconfirmed dose sat in the record —
+//   an absence claim about one bucket standing in for the whole. The honest form is the
+//   four counts (which the medications provenance now renders structurally); the verdict
+//   forms are banned. "log every dose" chips are a known, accepted casualty of the
+//   "every dose" arm (safe direction).
 const REASSURANCE_RE =
-  /\b(fine|okay|ok|healthy|all clear|nothing to worry|no need to worry|nothing serious|no issues?|no problems?|probably fine|no concern|no cause for concern|not a concern|no red flags?|nothing (?:\w+ )?(?:wrong|concern(?:s|ed|ing)?|alarming|unusual|amiss|out of the ordinary|jumped out|to note|notable|remarkable)|least concern(?:ing)?|no worries|not worr(?:y|ied|ying)|good sign|reassur(?:e|es|ed|ing)|encouraging|promising|came back clear|reads? clear|look(?:s|ed|ing)? clean|in the clear|clean bill|unremarkable|benign|look(?:s|ing)? good|don'?t worry|doing great|doing well|all good|on the mend|mend|mending|thriving|recover(?:s|ed|ing)?|much better|get(?:ting|s)? better|gotten better|improv(?:e|es|ed|ing)|back to normal|right track|she'?s well|he'?s well|they'?re well|stable|steady|holding steady|unchanged|no change|normal(?!\s+(?:stools?|poops?|bowels?|movements?))|nothing to change|no need to (?:change|do anything))\b/i
+  /\b(fine|okay|ok|healthy|all clear|nothing to worry|no need to worry|nothing serious|no issues?|no problems?|probably fine|no concern|no cause for concern|not a concern|no red flags?|nothing (?:\w+ )?(?:wrong|concern(?:s|ed|ing)?|alarming|unusual|amiss|out of the ordinary|jumped out|to note|notable|remarkable)|least concern(?:ing)?|no worries|not worr(?:y|ied|ying)|good sign|reassur(?:e|es|ed|ing)|encouraging|promising|came back clear|reads? clear|look(?:s|ed|ing)? clean|in the clear|clean bill|unremarkable|benign|look(?:s|ing)? good|don'?t worry|doing great|doing well|all good|on the mend|mend|mending|thriving|recover(?:s|ed|ing)?|much better|get(?:ting|s)? better|gotten better|improv(?:e|es|ed|ing)|back to normal|right track|she'?s well|he'?s well|they'?re well|stable|steady|holding steady|unchanged|no change|no (?:drop|dip|decline|fall)|nothing(?:'s| has| had)? changed|hasn'?t changed|pick(?:ed|s|ing)? (?:back )?up|as prescribed|on schedule|(?:hasn'?t|haven'?t|never) missed|none missed|no missed doses?|every dose|normal(?!\s+(?:stools?|poops?|bowels?|movements?))|nothing to change|no need to (?:change|do anything))\b/i
 const DISMISSIVE_RE = /\b(picky|fussy|finicky)\b/i
 // Flagrant spelled-out quantities that assert a count the tools never returned — the
 // number-word bypass of the numeral-subset check (A4 adversarial #2). A count claim must be
@@ -1052,11 +1065,16 @@ export function buildProvenance(featured: unknown): AnswerProvenance | null {
     case 'intake_trend': {
       // Both windows' denominators, stated (AC-8) — a trend claim is only honest with the
       // prior window's sample size beside it. Prior below floor → say so, never a bare rate.
+      // The unrated-meal counts render here STRUCTURALLY (the C5 disclosure — adversarial
+      // 2026-08-02): the direction compares rated meals only, so meals fed-but-unrated must
+      // be visible AS a gap in the same line as the verdict, whatever the prose says.
       const cur = r.current as { finishedMeals?: unknown; ratedMeals?: unknown } | null
       const pri = r.prior as { finishedMeals?: unknown; ratedMeals?: unknown } | null
       const curFinished = num(cur?.finishedMeals)
       const curRated = num(cur?.ratedMeals)
       const priorRated = num(r.priorRatedMeals)
+      const curUnrated = num(r.currentUnratedMeals) ?? 0
+      const priUnrated = num(r.priorUnratedMeals) ?? 0
       let denom: string | null = null
       if (curFinished != null && curRated != null) {
         denom = `${curFinished} of ${curRated} meals finished`
@@ -1065,8 +1083,40 @@ export function buildProvenance(featured: unknown): AnswerProvenance | null {
         } else if (priorRated != null) {
           denom += ` · only ${priorRated} rated meal${priorRated === 1 ? '' : 's'} the window before`
         }
+        if (curUnrated > 0 || priUnrated > 0) {
+          denom += ` · unrated meals not compared: ${curUnrated} this window${priUnrated > 0 ? `, ${priUnrated} before` : ''}`
+        }
       }
       return { window, denominator: denom, tapThrough: { kind: 'filter', window: str(r.window) } }
+    }
+    case 'medications': {
+      // Server-built bucket disclosure (adversarial 2026-08-02, B-395): the partial /
+      // unconfirmed counts must render whether or not the model's prose names them —
+      // otherwise the honest buckets are prompt-dependent end-to-end and "5 given, none
+      // missed" can stand alone over a record holding a not-fully-taken dose. One
+      // aggregate line across drugs, client-copy vocabulary ("not fully taken" =
+      // regimenFlagLine's own words). Zero-count buckets are omitted EXCEPT given, so the
+      // line never manufactures an absence claim — it states only what was logged.
+      const entries = Array.isArray(r.medications)
+        ? (r.medications as { dosesGiven?: unknown; dosesMissed?: unknown; dosesPartial?: unknown; dosesUnconfirmed?: unknown }[])
+        : []
+      const sum = (k: 'dosesGiven' | 'dosesMissed' | 'dosesPartial' | 'dosesUnconfirmed') =>
+        entries.reduce((s, e) => s + (num(e[k]) ?? 0), 0)
+      const given = sum('dosesGiven')
+      const partial = sum('dosesPartial')
+      const unconfirmed = sum('dosesUnconfirmed')
+      const missed = sum('dosesMissed')
+      const total = given + partial + unconfirmed + missed
+      if (total === 0) return { window, denominator: null, tapThrough: null }
+      const parts = [`${given} given`]
+      if (partial > 0) parts.push(`${partial} not fully taken`)
+      if (unconfirmed > 0) parts.push(`${unconfirmed} unconfirmed`)
+      if (missed > 0) parts.push(`${missed} missed or refused`)
+      return {
+        window,
+        denominator: `${total} dose${total === 1 ? '' : 's'} logged · ${parts.join(' · ')}`,
+        tapThrough: null,
+      }
     }
     case 'time_of_day': {
       const eligible = num(r.eligibleCount)

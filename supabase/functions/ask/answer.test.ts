@@ -386,6 +386,82 @@ Deno.test('buildProvenance: a count carries denominator + window (AC-8)', () => 
   assert.match(prov!.denominator ?? '', /logging on/)
 })
 
+Deno.test('validateAnswer: the flat-at-zero / density-collapse leak phrasings are blocked (adversarial 2026-08-02)', () => {
+  // The 0-of-19 uniformly-refusing cat: the relative engine is silent, direction is 'flat',
+  // and round 1 let "no drop" / "nothing has changed" clear the gate — absence-of-a-delta
+  // read as a negative result (the B-494 shape). And the density-collapse fixture let
+  // "picked up" through as an improvement verdict.
+  const allowed = new Set(['0', '19', '18', '7'])
+  for (const text of [
+    "There's been no drop in her eating this week compared with last.",
+    'Nothing has changed in how much she is eating over the last 7 days.',
+    "Nothing's changed in her eating.",
+    "Her eating hasn't changed.",
+    'Her eating has picked up this week.',
+    'Her appetite is picking back up.',
+    'No decline in her meals this week.',
+  ]) {
+    const v = validateAnswer({ text, allowedNumerals: allowed, mode: 'data' })
+    assert.equal(v.ok, false, `should reject: ${text}`)
+  }
+  // The honest recount of the same record still passes — counts, denominators, the vet.
+  const honest = validateAnswer({
+    text: 'She finished 0 of 19 rated meals this window and 0 of 18 the window before. That pattern is worth a call to her vet.',
+    allowedNumerals: allowed,
+    mode: 'data',
+  })
+  assert.equal(honest.ok, true)
+})
+
+Deno.test('validateAnswer: medication compliance assertions are blocked (adversarial 2026-08-02, B-395)', () => {
+  // "None missed" over a record holding a not-fully-taken + two unconfirmed doses is an
+  // absence claim about one bucket standing in for the whole. The honest form is the four
+  // counts (rendered structurally by the medications provenance).
+  const allowed = new Set(['5', '1', '2', '0', '7'])
+  for (const text of [
+    "She hasn't missed a dose of Amoxicillin in the last 7 days.",
+    'She has been taking her Amoxicillin as prescribed.',
+    'Amoxicillin: 5 given, none missed.',
+    'Her doses are right on schedule.',
+    'She never missed a dose this week.',
+    'She got every dose this week.',
+  ]) {
+    const v = validateAnswer({ text, allowedNumerals: allowed, mode: 'data' })
+    assert.equal(v.ok, false, `should reject: ${text}`)
+  }
+  // The honest bucket recount passes.
+  const honest = validateAnswer({
+    text: 'Amoxicillin: 5 doses given, 1 not fully taken, 2 unconfirmed in the last 7 days. The not-fully-taken and unconfirmed ones are worth a word with her vet.',
+    allowedNumerals: allowed,
+    mode: 'data',
+  })
+  assert.equal(honest.ok, true)
+})
+
+Deno.test('buildProvenance: medications renders the four buckets structurally (adversarial 2026-08-02, B-395)', () => {
+  // The disclosure must not be prompt-dependent: whatever the prose says, the flagged
+  // buckets render in the provenance line the client shows under the answer.
+  const res = {
+    kind: 'medications',
+    window: '7d',
+    windowLabel: 'the last 7 days',
+    medications: [
+      { medicationId: 'r1', drugLabel: 'Amoxicillin', active: true, doseAmount: '50mg', lastDoseAt: null, dosesGiven: 5, dosesMissed: 0, dosesPartial: 1, dosesUnconfirmed: 2 },
+      { medicationId: null, drugLabel: 'Prednisone', active: false, doseAmount: null, lastDoseAt: null, dosesGiven: 1, dosesMissed: 1, dosesPartial: 0, dosesUnconfirmed: 0 },
+    ],
+  }
+  const prov = buildProvenance(res)
+  assert.equal(prov?.window, 'the last 7 days')
+  assert.match(prov?.denominator ?? '', /10 doses logged/)
+  assert.match(prov?.denominator ?? '', /6 given/)
+  assert.match(prov?.denominator ?? '', /1 not fully taken/)
+  assert.match(prov?.denominator ?? '', /2 unconfirmed/)
+  assert.match(prov?.denominator ?? '', /1 missed or refused/)
+  // A no-doses window renders no line rather than a manufactured "0 missed" absence claim.
+  const empty = buildProvenance({ kind: 'medications', windowLabel: 'the last 7 days', medications: [{ dosesGiven: 0, dosesMissed: 0, dosesPartial: 0, dosesUnconfirmed: 0 }] })
+  assert.equal(empty?.denominator, null)
+})
+
 Deno.test('buildProvenance + buildComponent: intake_trend states BOTH windows\' denominators (AC-8, B-382)', () => {
   const full = {
     kind: 'intake_trend', window: '7d', windowLabel: 'the last 7 days',
@@ -408,6 +484,12 @@ Deno.test('buildProvenance + buildComponent: intake_trend states BOTH windows\' 
   const prov2 = buildProvenance(thinPrior)
   assert.match(prov2?.denominator ?? '', /only 2 rated meals the window before/)
   assert.equal(buildComponent(thinPrior), null)
+
+  // The density-collapse disclosure renders STRUCTURALLY (adversarial 2026-08-02): meals
+  // fed-but-unrated are visible as a gap in the same line as the verdict.
+  const collapsed = { ...full, current: { rate: 1, finishedMeals: 4, ratedMeals: 4 }, currentUnratedMeals: 8, priorUnratedMeals: 0 }
+  const prov3 = buildProvenance(collapsed)
+  assert.match(prov3?.denominator ?? '', /unrated meals not compared: 8 this window/)
 })
 
 Deno.test('buildComponent: a weight series with ≥2 readings becomes a spark', () => {

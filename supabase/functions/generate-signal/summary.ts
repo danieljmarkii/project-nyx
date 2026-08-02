@@ -217,6 +217,19 @@ export interface CachedSummary {
  *  number changes meaning. A meal with several proteins counts toward each; `identified`
  *  still counts MEALS (the floor's denominator), not protein instances.
  *
+ *  THE SUPERLATIVE NEEDS A STRICT WINNER (adversarial pass on the widening, same day).
+ *  Set membership makes an EXACT tie the default case for a single-food diet whose set has
+ *  ≥2 proteins — every meal contributes both, so counts are equal by construction — and
+ *  the old alphabetical tie-break would then hand the clause to whichever protein sorts
+ *  first ("Chicken was the most-logged" on a duck formula, decided by 'c' < 'd'). A tied
+ *  "most-logged" is false as stated, in the one consumer that compresses the ranking to a
+ *  single name with no count (the ranked-list consumers show every count, so ties are
+ *  visible there). So: a tie at the top yields NULL — no clause — because no claim beats a
+ *  false one. This also fixes the pre-B-467 latent case (two single-protein foods logged
+ *  equally often). A joint clause ("X and Y were…", mirroring the engine's slice-6 joint
+ *  candidates) is the richer alternative; it is new clinically-reviewed AI-summary copy,
+ *  so it is deliberately NOT minted here — tracked as B-684, build if missed in dogfood.
+ *
  *  Do NOT "align" this by dropping the treat filter — it
  *  would change a clinically-reviewed AI-summary claim. The card↔summary grounding nuance
  *  (card #1 may be a treat-sourced protein the clause omits) is a flagged Open Question for
@@ -233,12 +246,18 @@ function topMealProtein(meals: MealEvent[]): { protein: string; count: number } 
   }
   if (identified < MIN_MEALS_FOR_RANKING) return null
   let best: { protein: string; count: number } | null = null
+  let tiedAtTop = false
   for (const [protein, count] of byProtein) {
-    if (!best || count > best.count || (count === best.count && protein < best.protein)) {
+    if (!best || count > best.count) {
       best = { protein, count }
+      tiedAtTop = false
+    } else if (count === best.count) {
+      tiedAtTop = true
     }
   }
-  return best
+  // No strict winner ⇒ no superlative (see doc above — a tied "most-logged" is false as
+  // stated, and the alphabet must never decide a clinical sentence).
+  return tiedAtTop ? null : best
 }
 
 /** Finished-rate over MEALS ONLY (§11 #1 — treats finish at a ceiling rate and would mask a
