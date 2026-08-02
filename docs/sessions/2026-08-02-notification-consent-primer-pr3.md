@@ -119,6 +119,22 @@ or implication anywhere; no exclamation marks.
 - CI on #567's first commit: all three checks green (typecheck+jest, non-UTC
   timezones, Edge Functions deno test).
 
+## PM feedback (same session, post-review)
+
+- **One notification per account** — confirmed by the PM; already the D3 design, no change.
+- **The OS-denied banner was too subtle** → rebuilt as a **danger treatment**: a
+  red-tinted fill + hairline + `AlertTriangle` glyph + a bold title, with the fix
+  ("Open Settings") as a red-outlined action. Two new theme tokens
+  (`colorDestructiveLight` / `colorDestructiveBorder`), matched in intensity to the
+  `colorEventSymptom` safety-banner pair. Rationale on the record: this is a
+  *functional* system state, not a health flag, so nyx-voice's "no alarm" rule
+  (which governs health copy) doesn't apply — a loud, unmissable inert state is
+  honest states (Principle 5) done right. Mock state (c) + annotation updated and
+  re-published to the same URL.
+- **Schedule-vs-defer (PM Action Item #1)** — explained in full to the PM; decision
+  still theirs. Current behavior: PR 3 schedules via reconcile (interim PR-1
+  placeholder body); deferring to PR 4 is a small change.
+
 ## Not done / next
 
 - **PR 4** — `lib/daySummary.ts` + the `/day-summary` screen + the 9pm schedule wired

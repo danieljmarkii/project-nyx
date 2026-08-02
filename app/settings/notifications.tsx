@@ -4,6 +4,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useFocusEffect } from 'expo-router';
+import { AlertTriangle } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
 import { Card, Header } from '../../components/ui';
 import { SettingsRow } from '../../components/settings/SettingsRow';
@@ -199,13 +200,20 @@ export default function NotificationsScreen() {
       <Header title="Notifications" leading="back" onLeadingPress={handleBack} />
 
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
-        {/* State (c): OS-denied — one honest line + the door back (§2, AC 6). Calm,
-            never alarm (nyx-voice Pattern 8): a quiet subtle fill, not a red error. */}
+        {/* State (c): OS-denied — the prominent "danger" treatment (PM, 2026-08-02:
+            the quiet fill was too subtle to notice). A red-tinted fill + hairline +
+            warning glyph makes the inert state unmissable. This is a FUNCTIONAL
+            system-state, not a health flag, so the nyx-voice "no alarm" rule (which
+            governs health concerns) does not apply — surfacing it loudly is honest
+            states (Principle 5) done right (§2, AC 6). */}
         {denied && (
-          <Card style={styles.deniedNote}>
-            <Text style={styles.deniedText}>
-              Notifications are off for Culprit in {settingsAppName} — turn them on
-              there and this switch comes back to life.
+          <View style={styles.deniedBanner}>
+            <View style={styles.deniedHead}>
+              <AlertTriangle size={20} color={theme.colorDestructive} strokeWidth={2} />
+              <Text style={styles.deniedTitle}>Notifications are off for Culprit</Text>
+            </View>
+            <Text style={styles.deniedBody}>
+              Turn them back on in {settingsAppName} and this switch comes back to life.
             </Text>
             <TouchableOpacity
               onPress={openOsSettings}
@@ -216,7 +224,7 @@ export default function NotificationsScreen() {
             >
               <Text style={styles.deniedActionText}>Open Settings</Text>
             </TouchableOpacity>
-          </Card>
+          </View>
         )}
 
         {/* States (a)/(b): the G6 framing — everything is opt-in and reversible.
@@ -282,29 +290,49 @@ const styles = StyleSheet.create({
     gap: theme.space2,
   },
 
-  // ── OS-denied note ──
-  // Quiet neutral fill (the sibling You-screen disclaimer treatment) — no accent
-  // tint on the body, so the "one accent, never decorative" rule holds; the accent
-  // is spent only on the actionable "Open Settings" affordance.
-  deniedNote: {
-    backgroundColor: theme.colorSurfaceSubtle,
+  // ── OS-denied danger banner ──
+  // Red-tinted fill + hairline + warning glyph (PM: the quiet fill was too subtle).
+  // Matched in intensity to the colorEventSymptom safety banner, so it is prominent
+  // without a solid-red alarm. The red action carries the fix.
+  deniedBanner: {
+    backgroundColor: theme.colorDestructiveLight,
+    borderWidth: 1,
+    borderColor: theme.colorDestructiveBorder,
+    borderRadius: theme.radiusMedium,
+    padding: theme.space2,
+    gap: 6,
+  },
+  deniedHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: theme.space1,
   },
-  deniedText: {
-    fontFamily: theme.fontBody,
+  deniedTitle: {
+    flex: 1,
+    fontFamily: theme.fontBodySemibold,
     fontSize: theme.textMD,
+    color: theme.colorTextPrimary,
+  },
+  deniedBody: {
+    fontFamily: theme.fontBody,
+    fontSize: theme.textSM,
     color: theme.colorTextSecondary,
-    lineHeight: theme.lineHeightBody,
+    lineHeight: theme.lineHeightSM,
   },
   deniedAction: {
+    alignSelf: 'flex-start',
     minHeight: 44,
     justifyContent: 'center',
+    paddingHorizontal: theme.space2,
+    borderRadius: theme.radiusSmall,
+    borderWidth: 1,
+    borderColor: theme.colorDestructive,
+    marginTop: 2,
   },
   deniedActionText: {
-    fontFamily: theme.fontBody,
-    fontSize: theme.textMD,
-    fontWeight: theme.weightMedium,
-    color: theme.colorAccentInk,
+    fontFamily: theme.fontBodyMedium,
+    fontSize: theme.textSM,
+    color: theme.colorDestructive,
   },
 
   // ── Intro framing (states a/b) ──

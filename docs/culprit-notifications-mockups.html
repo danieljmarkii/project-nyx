@@ -219,14 +219,21 @@
   .sw.on::after { transform: translateX(20px); }
   .sw.dis { opacity: 0.45; }
 
-  /* denied note */
+  /* denied — the DANGER banner (PM: the quiet fill was too subtle) */
   .denied {
-    background: var(--f-subtle);
+    background: #FEE2E2;          /* theme.colorDestructiveLight */
+    border: 1px solid #FCA5A5;    /* theme.colorDestructiveBorder */
     border-radius: 16px;
     padding: 14px;
   }
-  .denied .d-text { font-size: 14px; color: var(--f-text-2); line-height: 1.5; }
-  .denied .d-action { margin-top: 8px; font-size: 15px; font-weight: 500; color: var(--f-accent-ink); }
+  .denied .d-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+  .denied .d-head svg { width: 20px; height: 20px; stroke: #DC2626; fill: none; flex: 0 0 auto; }
+  .denied .d-title { font-size: 15px; font-weight: 600; color: var(--f-text); }
+  .denied .d-text { font-size: 13px; color: var(--f-text-2); line-height: 1.45; }
+  .denied .d-action {
+    display: inline-block; margin-top: 10px; font-size: 13px; font-weight: 500;
+    color: #DC2626; border: 1px solid #DC2626; border-radius: 8px; padding: 8px 14px;
+  }
 
   /* scrim + primer sheet */
   .scrim { position: absolute; inset: 0; background: rgba(10,10,10,0.35); }
@@ -479,7 +486,11 @@
             <div class="nav"><div class="chev">‹</div><div class="title">Notifications</div><div></div></div>
             <div class="body">
               <div class="denied">
-                <div class="d-text">Notifications are off for Culprit in iOS Settings — turn them on there and this switch comes back to life.</div>
+                <div class="d-head">
+                  <svg viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>
+                  <div class="d-title">Notifications are off for Culprit</div>
+                </div>
+                <div class="d-text">Turn them back on in iOS Settings and this switch comes back to life.</div>
                 <div class="d-action">Open Settings</div>
               </div>
               <div class="card">
@@ -495,7 +506,7 @@
       <div class="note-col">
         <h3>Visibly inert — with the door back</h3>
         <p>The OS has denied notifications, so the switch cannot honor an "on". Rather than lie, the screen states it plainly and hands over a deep link straight to Culprit's iOS Settings page.</p>
-        <p>The line is <strong>calm, not alarm</strong> (nyx-voice Pattern 8): a quiet subtle-grey note, not a red error. The accent is spent only on the one action that fixes it — <strong>Open Settings</strong>.</p>
+        <p>The banner uses a <strong>danger treatment</strong> — a red-tinted fill, a hairline, and a warning glyph (PM call, 2026-08-02: the earlier quiet-grey note was too easy to miss). This is a <em>functional</em> system state, not a health flag, so nyx-voice's "no alarm" rule — which governs the pet's health — doesn't apply here; surfacing it loudly is honest states (Principle 5) done right. The red action carries the fix — <strong>Open Settings</strong>.</p>
         <div class="callout">
           <b>Even the pref underneath stays honest.</b> If the owner had turned Daily
           summary on and later revoked at the OS level, the switch still reads off
@@ -548,7 +559,7 @@
   </section>
 
   <footer class="footer">
-    <p><b>Round 1 — this URL.</b> Primer (both account shapes) + the settings screen's three honest states + the system prompt in context. All copy is verbatim from the PR 3 build. <em>Revised after pm-feature-review: the reserved "Coming soon" rows are removed (nyx-voice Pattern 3), the intro is state-independent, and the Settings doorway that led here is un-mocked in the same PR.</em></p>
+    <p><b>Round 1 — this URL.</b> Primer (both account shapes) + the settings screen's three honest states + the system prompt in context. All copy is verbatim from the PR 3 build. <em>Revised after pm-feature-review: the reserved "Coming soon" rows are removed (nyx-voice Pattern 3), the intro is state-independent, and the Settings doorway that led here is un-mocked in the same PR. Revised again on PM feedback: the state-(c) banner is now a prominent danger treatment (red tint + hairline + warning glyph), not the earlier quiet-grey note.</em></p>
     <p><b>Round 2 — next, same URL.</b> PR 4's Day Summary screen (ordinary / incident / zero-log / multi-pet) and the lock-screen notification itself. Re-published over this link so it never goes stale beside a newer one.</p>
     <p>Gates for PR 3: nyx-voice · clinical-guardrails (G4) · Designer. Spec: <b>docs/nyx-notification-foundation-requirements.md</b> §2, §6, AC 2/6.</p>
   </footer>
