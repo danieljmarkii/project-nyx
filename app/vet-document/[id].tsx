@@ -50,9 +50,9 @@ import {
   rejectedPickMessage,
   alsoAddLabel,
   alsoAddedLabel,
+  type AlsoAddTarget,
 } from '../../lib/vetDocumentCapture';
 import { pickVetImages } from '../../lib/vetDocumentPickers';
-import type { AlsoAddTarget } from '../../components/vetfiles/DocumentSavedMoment';
 
 // Vet Files — document detail (B-478 VF-4).
 // §4.3 + mock E-img-r2 / E-pdf-r2.
@@ -313,6 +313,14 @@ export default function VetDocumentDetailScreen() {
         groupId: detail.groupId,
         documentDate: detail.documentDate,
         startPageIndex: Math.max(...detail.pages.map((p) => p.pageIndex)) + 1,
+        // Carry the group's per-document facts so the appended page agrees with its
+        // siblings. Unlike the saved-moment append (always pre-metadata), this runs
+        // after the owner may have set them — `detail.title` is a RENDERED default
+        // when untitled, so pass NULL in that case to keep the cover's untitled state
+        // and the Name pill (code-reviewer).
+        kind: detail.kind,
+        title: detail.untitled ? null : detail.title,
+        notes: detail.notes,
       });
       await insertVetDocumentRows(built);
       await load();
@@ -343,14 +351,42 @@ export default function VetDocumentDetailScreen() {
     if (!detail || capturing || alsoAdded.has(otherPetId)) return;
     setCapturing(true);
     try {
+      // Every page needs durable local bytes BEFORE the copy. A copy inherits its
+      // source's local_uri, and for a page with none ('') duplicateVetDocumentRowsForPet
+      // correctly leaves the copy's local_uri '' too — but then needsObjectUpload is
+      // false, so sync never uploads an object to the copy's fresh key, and the row
+      // lands under the other pet pointing at bytes that do not exist: a permanently
+      // blank clinical document, silently. That happens exactly when the source was
+      // hydrated on this device and never opened (its bytes live only in Storage). So
+      // cache any un-cached page first, from the signed URLs the screen already
+      // resolved — the same download the share path does for one page, here for all
+      // (rls-privacy-reviewer, B-547).
+      for (const p of detail.pages) {
+        if (p.localUri) continue;
+        const url = signed.get(p.storagePath);
+        if (url) await cacheVetDocumentPage(p, url);
+      }
       const rows = await readLocalVetDocumentGroup(detail.groupId);
       // Gone between opening the menu and tapping (deleted here, or a soft delete
       // synced in from another device): nothing to copy, and copying a tombstone
       // would file a pre-deleted document under the other pet.
       if (rows.length === 0) return;
+      // A page still has no local bytes (offline, or its signature hadn't resolved):
+      // decline rather than file a copy that renders blank on every device. Same
+      // register as the share path's "needs a connection" — a document is safe on
+      // your account, it just can't be copied until this phone has fetched it once.
+      if (rows.some((r) => !r.local_uri)) {
+        Alert.alert(
+          'Needs a connection',
+          'This document is saved to your account. Open it once with a signal, then you can add it to another pet.',
+        );
+        return;
+      }
       const copies = duplicateVetDocumentRowsForPet(rows, { petId: otherPetId });
       await insertVetDocumentRows(copies);
       setAlsoAdded((prev) => new Set(prev).add(otherPetId));
+      // Re-read so a page cached above shows its adopted local copy immediately.
+      await load();
       syncPendingVetDocuments().catch((e) => console.warn('[vet-files] document push failed:', e));
     } catch (e) {
       console.warn('[vet-files] duplicate to pet failed:', e);

@@ -440,6 +440,45 @@ describe('buildVetDocumentRows', () => {
 
 // ── D13 duplicate-on-add ─────────────────────────────────────────────────────
 
+// B-549 — the detail-screen "Add another page" reaches buildVetDocumentRows AFTER
+// the owner may have named/typed the document, so an appended page must inherit the
+// group's kind/title/notes or a group ends up disagreeing with itself (masked today
+// by cover-pinned reads, a real defect the moment anything reads per-row).
+describe('buildVetDocumentRows — append inherits the group’s per-document facts', () => {
+  it('carries kind/title/notes onto the appended page', () => {
+    const [row] = build([page()], {
+      groupId: 'grp-1',
+      startPageIndex: 2,
+      documentDate: '2026-01-08',
+      kind: 'vaccination',
+      title: 'Rabies certificate',
+      notes: 'booster due next year',
+    });
+    expect(row.kind).toBe('vaccination');
+    expect(row.title).toBe('Rabies certificate');
+    expect(row.notes).toBe('booster due next year');
+    expect(row.document_group_id).toBe('grp-1');
+    expect(row.page_index).toBe(2);
+    // Never re-dates the group.
+    expect(row.document_date).toBe('2026-01-08');
+  });
+
+  it('keeps the D11 zero-decision defaults for a fresh capture (no overrides)', () => {
+    const [row] = build([page()]);
+    expect(row.kind).toBe('other');
+    expect(row.title).toBeNull();
+    expect(row.notes).toBeNull();
+  });
+
+  it('appends an untitled page (title null) under an untitled cover', () => {
+    // The detail screen passes NULL when the document is untitled, so the appended
+    // page stays untitled like the cover and keeps the Name pill.
+    const [row] = build([page()], { groupId: 'grp-1', title: null, kind: 'other' });
+    expect(row.title).toBeNull();
+    expect(row.kind).toBe('other');
+  });
+});
+
 describe('duplicateVetDocumentRowsForPet', () => {
   const source = build([page(), page()]);
 

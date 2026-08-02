@@ -276,6 +276,21 @@ export interface BuildVetDocumentRowsInput {
   startPageIndex?: number;
   /** The group's date when appending — a new page inherits it, never re-dates it. */
   documentDate?: string | null;
+  /**
+   * The group's per-document facts when appending. `kind`, `title` and `notes` are
+   * stored per-ROW but must AGREE across a group — buildVetDocumentDetail reads them
+   * from the cover, but a future per-row reader (a per-page kind, an Ask/report
+   * reader, a dedup pass) would see any disagreement. A fresh capture omits them and
+   * gets the D11 zero-decision defaults (`other` / NULL / NULL); the detail-screen
+   * "Add another page" (B-549) reaches this AFTER the owner may have named or typed
+   * the document, so it passes the group's current values. Without this an appended
+   * page silently landed as `other` / untitled beside a renamed, typed cover (found
+   * by code-reviewer — the saved-moment caller was always pre-metadata, this one is
+   * not).
+   */
+  kind?: string;
+  title?: string | null;
+  notes?: string | null;
   now?: Date;
   /** Seams for the test: an id factory and the durable-copy call. */
   newId?: () => string;
@@ -297,6 +312,11 @@ export function buildVetDocumentRows(input: BuildVetDocumentRowsInput): LocalVet
   const {
     petId, source, pages,
     startPageIndex = 0,
+    // Default to the D11 zero-decision capture values; the append path overrides
+    // them with the group's current facts so a group never disagrees with itself.
+    kind = VET_DOCUMENT_DEFAULT_KIND,
+    title = null,
+    notes = null,
     now = new Date(),
     newId = uuid,
     persistFile = persistCapture,
@@ -321,13 +341,17 @@ export function buildVetDocumentRows(input: BuildVetDocumentRowsInput): LocalVet
       // makes linkage a deferrable detail-screen action (VF-4).
       vet_visit_id: null,
       document_group_id: groupId,
-      kind: VET_DOCUMENT_DEFAULT_KIND,
-      // NULL, not a stored default: a stored "Document — Jul 26" is
-      // indistinguishable from an owner who typed it, and the row would lose its
-      // Name affordance forever (see lib/vetDocumentLibrary's header).
-      title: null,
+      // Defaults to `other` on a fresh capture (D11); on append it is the group's
+      // current kind so every page of one document agrees.
+      kind,
+      // NULL on a fresh capture, not a stored default: a stored "Document — Jul 26"
+      // is indistinguishable from an owner who typed it, and the row would lose its
+      // Name affordance forever (see lib/vetDocumentLibrary's header). On append it
+      // is the group's current title (still NULL if the cover is untitled).
+      title,
       document_date: documentDate,
-      notes: null,
+      // NULL on a fresh capture; the group's current notes on append.
+      notes,
       source,
       // B-546. Per PAGE, not per group — for the Files path each document IS one
       // page (two PDFs are two records, see the grouping note in app/vet-files.tsx),
@@ -505,6 +529,18 @@ export function savedMomentCopy(
       : null,
     multiDocument: groupCount > 1,
   };
+}
+
+// The shape of a D13 "also add to another pet" target, shared by the saved moment
+// (DocumentSavedMoment) and the detail ⋯ menu (DocumentMoreMenu). It lives here,
+// beside the label builders and the copy path it drives, rather than in either
+// component — both render it and the detail screen builds it, so a lib type is the
+// one home that isn't a sideways import between components.
+export interface AlsoAddTarget {
+  petId: string;
+  /** From alsoAddLabel, or alsoAddedLabel once the copy has been filed. */
+  label: string;
+  done: boolean;
 }
 
 export function alsoAddLabel(petName: string): string {

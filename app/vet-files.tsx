@@ -10,7 +10,7 @@ import { VetDocumentRow } from '../components/vetfiles/VetDocumentRow';
 import { VetFilesEmptyState } from '../components/vetfiles/VetFilesEmptyState';
 import { NameDocumentSheet, DocumentKindSheet } from '../components/vetfiles/VetDocumentMetaSheets';
 import { AddDocumentSheet } from '../components/vetfiles/AddDocumentSheet';
-import { DocumentSavedMoment, type AlsoAddTarget } from '../components/vetfiles/DocumentSavedMoment';
+import { DocumentSavedMoment } from '../components/vetfiles/DocumentSavedMoment';
 import { RecentlyDeletedSheet } from '../components/vetfiles/RecentlyDeletedSheet';
 import { usePetStore } from '../store/petStore';
 import { getSignedUrls } from '../lib/storage';
@@ -45,6 +45,7 @@ import {
   screenPickedFiles,
   alsoAddLabel,
   alsoAddedLabel,
+  type AlsoAddTarget,
   type PickedVetFile,
 } from '../lib/vetDocumentCapture';
 import { pickVetImages, pickVetPdfs } from '../lib/vetDocumentPickers';

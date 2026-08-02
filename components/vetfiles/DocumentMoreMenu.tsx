@@ -1,7 +1,7 @@
 import { Modal, Pressable, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { theme } from '../../constants/theme';
-import type { AlsoAddTarget } from './DocumentSavedMoment';
+import type { AlsoAddTarget } from '../../lib/vetDocumentCapture';
 
 interface Props {
   visible: boolean;
@@ -76,6 +76,7 @@ export function DocumentMoreMenu({
           disabled={busy}
           activeOpacity={0.7}
           accessibilityRole="button"
+          accessibilityState={{ disabled: !!busy }}
           accessibilityLabel="Add another page to this document"
         >
           <Text style={styles.itemText}>Add another page</Text>
@@ -94,7 +95,9 @@ export function DocumentMoreMenu({
           disabled={target.done || busy}
           activeOpacity={0.7}
           accessibilityRole="button"
-          accessibilityState={{ disabled: target.done }}
+          // Includes busy so an explicit state can't clobber the disabled-during-write
+          // one the `disabled` prop would otherwise convey (code-reviewer).
+          accessibilityState={{ disabled: target.done || !!busy }}
           accessibilityLabel={target.label}
         >
           <Text style={[styles.itemText, target.done && styles.itemDone]} numberOfLines={2}>

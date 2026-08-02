@@ -7,7 +7,7 @@ jest.mock('react-native-safe-area-context', () => ({
 }));
 
 import { DocumentMoreMenu } from './DocumentMoreMenu';
-import type { AlsoAddTarget } from './DocumentSavedMoment';
+import type { AlsoAddTarget } from '../../lib/vetDocumentCapture';
 
 // The ⋯ menu grew two conditional actions: "Add another page" (B-549, image docs
 // only) and D13's "Also add to {other pet}" (B-547, multi-pet only). Rename and
