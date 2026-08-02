@@ -165,4 +165,30 @@ The mock states explicitly: this is the geometry the build should copy.
 Remaining ask collapses to one: **R7-1 (= R6-2)** — confirm for build → spec v2.0
 rewrite + `widgets/CulpritWidget.tsx` rebuild, absorbing B-481's on-device pass.
 
+## Ratification + spec v2.0 (same session)
+
+**R7-1 confirmed by the PM** ("let's write those requirements"), with one explicit
+instruction: version the requirements rather than overwriting v1. Resolution honors
+both the PM's ask and the 2026-07-19 doc-versioning rule (header versions, stable
+canonical path): **v1.0 preserved verbatim** at
+`docs/nyx-widget-requirements-v1-frozen.md` 🧊 (banner marks it the as-built record
+of the build-35 capture widget — still describing an installed binary and the
+`CulpritWidget.tsx` on `main` until the rebuild lands), and **v2.0 written at the
+canonical path** `docs/nyx-widget-requirements.md`.
+
+v2.0 contents: decision record (V2-1 never-writes; V2-2 "J, grounded"; V2-3
+symptom-naming with the discreet-toggle escape valve; V2-4 the Up-next tile + tone
+rule; V2-5 medium-only; D4/D5/D6/D7/D9 carried; D8 dissolved — display of all four
+classes, capture n/a) · the round-7 geometry as contract (strict shares,
+ellipsis clipping) · tile content-gating with fixed priority (symptom always
+top-left, never dropped) · the med-display confirmability gate (denominator only
+via the `lib/medStrip` predicate) · the one-predicate trial rule (`lib/dietTrial`,
+strip caps at 14 dots, caption totals whole trial) · snapshot/props v2 contract
+(outbox/undo/picker fields deleted; one-time residual v1 outbox drain before the
+schema flip so no build-35 tap is dropped) · ACs 1–10 · the **V2-PR plan**:
+PR-0 spec (this PR) → PR-1 snapshot v2 additive → PR-2 layout rebuild →
+PR-3 on-device + B-481 closure → PR-4 TestFlight cut. CLAUDE.md Read-These row
+updated (Tier 1); B-663 row updated; v1 §10's Tier-2 D-M1 edits still carried
+awaiting the PM's confirm.
+
 — shipped via #563
