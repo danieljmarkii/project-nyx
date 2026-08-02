@@ -416,14 +416,13 @@
           <div class="screen">
             <div class="nav"><div class="chev">‹</div><div class="title">Notifications</div><div></div></div>
             <div class="body">
-              <div class="intro-line">Nothing’s on until you turn it on, and you can change your mind any time.</div>
+              <div class="intro-line">You choose what Culprit lets you know about — and you can change your mind any time.</div>
               <div class="card">
                 <div class="row"><div class="lead"><div class="r-label">Daily summary</div><div class="r-sub">A calm look back at the day’s record, around 9:00 each night</div></div><div class="sw"></div></div>
               </div>
-              <div class="card">
-                <div class="row"><div class="lead"><div class="r-label">Daily check-in nudge</div><div class="r-sub">One gentle nudge a day, only if nothing’s logged</div></div><div class="coming">Coming soon</div></div>
-                <div class="row"><div class="lead"><div class="r-label">Health insights</div><div class="r-sub">A heads-up when a pattern is worth a look</div></div><div class="coming">Coming soon</div></div>
-              </div>
+              <!-- Round 1.1: the reserved "Coming soon" rows are removed. On a live
+                   surface they are the placeholder nyx-voice Pattern 3 forbids + two
+                   dead toggles; future categories add live rows when they ship. -->
             </div>
           </div>
         </div>
@@ -434,10 +433,9 @@
         <p>The framing line carries <strong>G6</strong>: everything defaults off, and it says so.</p>
         <div class="chips">
           <span class="chip teal">Daily summary — live</span>
-          <span class="chip">Daily check-in nudge — reserved</span>
-          <span class="chip">Health insights — reserved</span>
+          <span class="chip">everything else — off (G6)</span>
         </div>
-        <p>The two reserved rows stay as honest "Coming soon" placeholders (B-288 / B-227) so turning them on later is a flag-flip, not a re-layout. Neither is a medication reminder — <strong>G4 holds</strong>.</p>
+        <p>The screen shows only what's real — one live category. Future ones (B-288's check-in nudge, B-227's health insights) add their own <em>live</em> rows when they ship, rather than sitting here as dead "Coming soon" toggles now. None of them is a medication reminder — <strong>G4 holds</strong>.</p>
       </div>
     </div>
 
@@ -449,14 +447,13 @@
           <div class="screen">
             <div class="nav"><div class="chev">‹</div><div class="title">Notifications</div><div></div></div>
             <div class="body">
-              <div class="intro-line">Nothing’s on until you turn it on, and you can change your mind any time.</div>
+              <div class="intro-line">You choose what Culprit lets you know about — and you can change your mind any time.</div>
               <div class="card">
                 <div class="row"><div class="lead"><div class="r-label">Daily summary</div><div class="r-sub">A calm look back at the day’s record, around 9:00 each night</div></div><div class="sw on"></div></div>
               </div>
-              <div class="card">
-                <div class="row"><div class="lead"><div class="r-label">Daily check-in nudge</div><div class="r-sub">One gentle nudge a day, only if nothing’s logged</div></div><div class="coming">Coming soon</div></div>
-                <div class="row"><div class="lead"><div class="r-label">Health insights</div><div class="r-sub">A heads-up when a pattern is worth a look</div></div><div class="coming">Coming soon</div></div>
-              </div>
+              <!-- Round 1.1: the reserved "Coming soon" rows are removed. On a live
+                   surface they are the placeholder nyx-voice Pattern 3 forbids + two
+                   dead toggles; future categories add live rows when they ship. -->
             </div>
           </div>
         </div>
@@ -488,10 +485,9 @@
               <div class="card">
                 <div class="row"><div class="lead"><div class="r-label">Daily summary</div><div class="r-sub">A calm look back at the day’s record, around 9:00 each night</div></div><div class="sw dis"></div></div>
               </div>
-              <div class="card">
-                <div class="row"><div class="lead"><div class="r-label">Daily check-in nudge</div><div class="r-sub">One gentle nudge a day, only if nothing’s logged</div></div><div class="coming">Coming soon</div></div>
-                <div class="row"><div class="lead"><div class="r-label">Health insights</div><div class="r-sub">A heads-up when a pattern is worth a look</div></div><div class="coming">Coming soon</div></div>
-              </div>
+              <!-- Round 1.1: the reserved "Coming soon" rows are removed. On a live
+                   surface they are the placeholder nyx-voice Pattern 3 forbids + two
+                   dead toggles; future categories add live rows when they ship. -->
             </div>
           </div>
         </div>
@@ -552,7 +548,7 @@
   </section>
 
   <footer class="footer">
-    <p><b>Round 1 — this URL.</b> Primer (both account shapes) + the settings screen's three honest states + the system prompt in context. All copy is verbatim from the PR 3 build.</p>
+    <p><b>Round 1 — this URL.</b> Primer (both account shapes) + the settings screen's three honest states + the system prompt in context. All copy is verbatim from the PR 3 build. <em>Revised after pm-feature-review: the reserved "Coming soon" rows are removed (nyx-voice Pattern 3), the intro is state-independent, and the Settings doorway that led here is un-mocked in the same PR.</em></p>
     <p><b>Round 2 — next, same URL.</b> PR 4's Day Summary screen (ordinary / incident / zero-log / multi-pet) and the lock-screen notification itself. Re-published over this link so it never goes stale beside a newer one.</p>
     <p>Gates for PR 3: nyx-voice · clinical-guardrails (G4) · Designer. Spec: <b>docs/nyx-notification-foundation-requirements.md</b> §2, §6, AC 2/6.</p>
   </footer>

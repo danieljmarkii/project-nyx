@@ -7,7 +7,6 @@ import { router, useFocusEffect } from 'expo-router';
 import { theme } from '../../constants/theme';
 import { Card, Header } from '../../components/ui';
 import { SettingsRow } from '../../components/settings/SettingsRow';
-import { ComingSoonLabel } from '../../components/settings/ComingSoonLabel';
 import { WhorlSpinner } from '../../components/brand/WhorlSpinner';
 import { NotificationPrimerSheet } from '../../components/notifications/NotificationPrimerSheet';
 import { ensurePermission, type NotificationPermission } from '../../lib/notifications';
@@ -203,11 +202,13 @@ export default function NotificationsScreen() {
           </Card>
         )}
 
-        {/* States (a)/(b): the G6 framing — nothing is on until the owner turns it
-            on, and it is always reversible. */}
+        {/* States (a)/(b): the G6 framing — everything is opt-in and reversible.
+            Deliberately STATE-INDEPENDENT: a present-tense "nothing's on" would
+            read false the moment Daily summary is enabled, so this frames the
+            choice, not the current count (pm-feature-review). */}
         {!loading && !denied && (
           <Text style={styles.intro}>
-            Nothing’s on until you turn it on, and you can change your mind any time.
+            You choose what Culprit lets you know about — and you can change your mind any time.
           </Text>
         )}
 
@@ -234,22 +235,11 @@ export default function NotificationsScreen() {
           />
         </Card>
 
-        {/* Reserved categories, shown plainly OFF (§S3 static rows). Both are
-            non-medication (G4-safe) and map to real later builds — kept so turning
-            them on stays a later flag-flip, not a re-layout. */}
-        <Card noPadding>
-          <SettingsRow
-            first
-            label="Daily check-in nudge"
-            sublabel="One gentle nudge a day, only if nothing’s logged"
-            trailing={<ComingSoonLabel />}
-          />
-          <SettingsRow
-            label="Health insights"
-            sublabel="A heads-up when a pattern is worth a look"
-            trailing={<ComingSoonLabel />}
-          />
-        </Card>
+        {/* No reserved "Coming soon" rows: on a now-live surface those are the
+            un-designed placeholder nyx-voice Pattern 3 + Principle 5 forbid, and
+            two dead toggles beside a working one. Future categories (B-288's
+            check-in nudge, B-227's health insights) add their own live rows when
+            they ship — a real launch each, not a dead slot held open now. */}
 
         <View style={styles.bottomPad} />
       </ScrollView>

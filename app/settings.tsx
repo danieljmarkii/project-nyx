@@ -196,20 +196,20 @@ export default function SettingsScreen() {
 
         {/* ── Preferences ── */}
         <Card noPadding>
-          {/* Notifications is MOCKED in v1 (§5): the row pushes the reserved
-              screen, and the "Coming soon" marker keeps it honest that nothing
-              fires yet — the safety gate lives on the pushed screen (no armed
-              med-reminder, D7). Preferences holds only this row in v1; the
-              Share-feedback row (PR 4) lands in the Support card below (§4.2). */}
+          {/* Notifications is LIVE as of B-661 PR 3: the pushed screen carries a
+              real Daily-summary toggle, so this doorway is a plain nav row — no
+              "Coming soon" marker (that would now be false, and beside a working
+              toggle it is the nyx-voice Pattern 3 placeholder). The safety gate
+              still lives on the pushed screen (no armed med-reminder, D7).
+              Preferences holds only this row in v1; the Share-feedback row (PR 4)
+              lands in the Support card below (§4.2). */}
           <SettingsRow
             first
             label="Notifications"
-            sublabel="Daily nudge · health insights"
-            trailing={<ComingSoonLabel />}
+            sublabel="A summary of the day, every evening"
             chevron
             onPress={() => router.push('/settings/notifications')}
-            accessibilityLabel="Notifications — coming soon"
-            accessibilityHint="Opens notifications, which aren’t turned on yet"
+            accessibilityHint="Opens your notification settings"
           />
         </Card>
 
