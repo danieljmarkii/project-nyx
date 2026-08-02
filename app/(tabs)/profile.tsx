@@ -85,6 +85,12 @@ function buildRegimenDisplay(reg: Regimen, tally: AdherenceTally): RegimenDispla
     dosesPerDay: daysElapsed === null ? null : reg.doses_per_day,
     daysElapsed: daysElapsed ?? 1,
     tally,
+    // B-618 — a dose-denominated course measures adherence against its dispensed TOTAL,
+    // not the calendar pace (which runs past the prescription and contradicts the
+    // "Dose N of target" counter above it). Null for a days/ongoing course → unchanged.
+    // Note this makes a dose course's compliance line independent of the day count, so
+    // an unparseable start date no longer drops it to a bare count.
+    targetDoses: reg.target_duration_doses,
   });
   return {
     ...reg,
