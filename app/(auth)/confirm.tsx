@@ -5,6 +5,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import * as Linking from 'expo-linking';
 import { MailCheck, MailOpen } from 'lucide-react-native';
 import { supabase } from '../../lib/supabase';
+import { useAuthStore } from '../../store/authStore';
 import { theme } from '../../constants/theme';
 import { WhorlSpinner } from '../../components/brand/WhorlSpinner';
 import { PrimaryButton } from '../../components/ui/PrimaryButton';
@@ -125,8 +126,13 @@ export default function ConfirmScreen() {
     // source of truth for the wipe (lib/session.ts). We deliberately don't route
     // here, and we don't clear the button's working state on success: the screen is
     // about to be replaced.
+    // B-280 FR-20: this is a DELIBERATE sign-out (the owner chose another account),
+    // so mark it — otherwise the SIGNED_OUT handler would read it as an involuntary
+    // eviction and show the §5.6b banner. Cleared if the sign-out fails.
+    useAuthStore.getState().setDeliberateSignOut(true);
     const { error } = await supabase.auth.signOut();
     if (error) {
+      useAuthStore.getState().setDeliberateSignOut(false);
       console.warn('[confirm] sign-out failed:', error.message);
       setSigningOut(false);
     }

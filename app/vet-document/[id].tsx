@@ -544,6 +544,13 @@ export default function VetDocumentDetailScreen() {
             visible={imageViewer}
             uris={detail.pages.map((p) => uriFor(p))}
             initialIndex={viewerStart}
+            // B-590 — the pet rides into the lightbox the same way it rides into the
+            // PDF viewer's bar just below: an image document is the primary capture
+            // class (§1/§2), so this chrome-less black surface was the higher-volume
+            // handover surface with no name on it. Same resolve-or-stay-silent rule
+            // as the header and the PDF title — a confident wrong name is worse than
+            // none on the surface a vet reads a patient's record off.
+            caption={documentPet ? `${documentPet.name} · ${detail.title}` : detail.title}
             // Matches the hero's sentence rather than the shared default's "Photo
             // unavailable": this is a clinical document, and AC 12 wants the cause
             // named, not the symptom.

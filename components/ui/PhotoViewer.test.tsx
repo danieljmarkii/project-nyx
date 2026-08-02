@@ -155,3 +155,25 @@ describe('PhotoViewer — pinch-zoom wiring (B-036)', () => {
     expect(tree.toJSON()).toBeNull();
   });
 });
+
+describe('PhotoViewer — caption (B-590)', () => {
+  it('names the lightbox when a caption is passed', () => {
+    // Vet Files' case: an image document turned around to face an ER vet must say
+    // whose pet it is. The caption reaching the chrome strip is the whole fix.
+    const tree = render(
+      <PhotoViewer visible uris={['file:///a.jpg']} caption="Pixel · Bloodwork from May" onClose={() => {}} />,
+    );
+    layout(tree);
+    expect(tree.getByText('Pixel · Bloodwork from May')).toBeTruthy();
+  });
+
+  it('renders no caption for the callers that pass none — the strip is unchanged', () => {
+    // The four existing callers (event, edit-event, medication, food) never pass a
+    // caption; the render-only-when-passed contract is what keeps this change free
+    // for them. Close is still there; nothing else is.
+    const tree = render(<PhotoViewer visible uris={['file:///a.jpg']} onClose={() => {}} />);
+    layout(tree);
+    expect(tree.getByText('✕  Close')).toBeTruthy();
+    expect(tree.queryByText(/·/)).toBeNull();
+  });
+});

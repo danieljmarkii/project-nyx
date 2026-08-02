@@ -20,6 +20,7 @@ import {
   AuthDeepLink,
   authDeepLinkUrl,
   parseAuthDeepLink,
+  RECOVERY_PATH,
 } from './authDeepLink';
 
 // ── The redirect target (D1b) ────────────────────────────────────────────────────
@@ -34,8 +35,10 @@ export { APP_SCHEME };
 // The route the recovery link lands on. Matches the expo-router file path
 // `app/(auth)/reset-password.tsx` — the deep link works because that file
 // exists, which is also why FR-14's provenance check is mandatory: any app or
-// webpage on the device can fire this URL.
-export const RECOVERY_PATH = 'reset-password';
+// webpage on the device can fire this URL. Declared once in `lib/authDeepLink.ts`
+// (the shared parser's home) and re-exported here so this module's consumers keep
+// their import unchanged.
+export { RECOVERY_PATH };
 
 /**
  * The `redirectTo` handed to `resetPasswordForEmail` (D1b).
@@ -69,6 +72,19 @@ export type RecoveryLink = AuthDeepLink;
  */
 export function parseRecoveryLink(url: string | null | undefined): RecoveryLink {
   return parseAuthDeepLink(url, RECOVERY_PATH);
+}
+
+/**
+ * Is this URL a recovery deep link of ANY shape (valid / error / malformed)?
+ *
+ * The root layout uses this to hand the cold-start auth transition to the recovery
+ * handler instead of running its normal `getSession` routing — the two must not
+ * race on `setSession` / `router.replace` (§6.4). Route-shape only: a link that is
+ * the right route but carries a dead code still belongs to the handler, which
+ * renders the designed failure state for it.
+ */
+export function isRecoveryDeepLink(url: string | null | undefined): boolean {
+  return parseRecoveryLink(url).kind !== 'unrelated';
 }
 
 // ── (b) FR-4: the exchange-result classification ────────────────────────────────

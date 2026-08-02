@@ -2,6 +2,7 @@ import {
   APP_SCHEME,
   AUTH_DEEP_LINK_PATHS,
   CONFIRM_PATH,
+  RECOVERY_PATH,
   authDeepLinkUrl,
   dissectUrl,
   isAuthDeepLink,
@@ -149,10 +150,12 @@ describe('isAuthDeepLink — the root layout cold-start guard', () => {
 
   it('lists only routes whose screen file exists', () => {
     // Suppressing the Landing bounce for an unregistered route would strand the
-    // owner on expo-router's not-found screen — strictly worse than the bounce. So
-    // reset-password joins this list in the SAME commit that adds its screen
-    // (B-280 PR 2), not before.
-    expect(AUTH_DEEP_LINK_PATHS).toEqual([CONFIRM_PATH]);
-    expect(isAuthDeepLink('nyx:///reset-password?code=abc')).toBe(false);
+    // owner on expo-router's not-found screen — strictly worse than the bounce. Both
+    // members have a screen: confirm.tsx (B-432) and reset-password.tsx (B-280 PR 2,
+    // added in the SAME commit that put reset-password on this list).
+    expect(AUTH_DEEP_LINK_PATHS).toEqual([CONFIRM_PATH, RECOVERY_PATH]);
+    expect(isAuthDeepLink('nyx:///reset-password?code=abc')).toBe(true);
+    // A cold start from a recovery link must NOT be bounced off its screen.
+    expect(isAuthDeepLink('nyx:///reset-password')).toBe(true);
   });
 });

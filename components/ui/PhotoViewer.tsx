@@ -53,6 +53,17 @@ interface Props {
   unavailableLabel?: string;
   // Which photo to open on first show; clamped to range.
   initialIndex?: number;
+  // An optional label for the whole lightbox, rendered in the chrome strip beside
+  // Close (B-590). Render-only-when-passed, exactly like onReplace/onRemove below —
+  // so the four photo callers that don't pass it are unchanged. Vet Files passes
+  // the pet's name here because an image document IS the app's primary capture
+  // class (email screenshots, §1/§2), and this is the surface Sam turns around to
+  // face an ER vet: a chrome-less black lightbox that named no one was the higher-
+  // volume half of B-550's mis-attribution gap, not the lower one. Deliberately NOT
+  // a title bar — the strip and the render-only pattern already exist, so a caption
+  // costs the other callers nothing and adds no gesture (B-022 tap-dismiss and
+  // B-036 pinch both stay untouched).
+  caption?: string;
   onClose: () => void;
   // Optional actions — the button renders only when its callback is provided,
   // so single-photo callers can opt into Replace/Remove and the food viewer
@@ -76,7 +87,7 @@ interface Box {
 
 export function PhotoViewer({
   visible, uris, initialIndex = 0, onClose, onReplace, onRemove, onPageChange,
-  unavailableLabel = 'Photo unavailable',
+  unavailableLabel = 'Photo unavailable', caption,
 }: Props) {
   const scrollRef = useRef<ScrollView>(null);
   const [page, setPage] = useState(initialIndex);
@@ -166,6 +177,13 @@ export function PhotoViewer({
           <TouchableOpacity style={styles.closeBtn} onPress={onClose} hitSlop={12}>
             <Text style={styles.closeText}>✕  Close</Text>
           </TouchableOpacity>
+          {/* The lightbox's label — quieter than Close so it reads as a caption,
+              not a second button. flex:1 lets it centre in the strip and truncate;
+              only Vet Files passes it, and that caller has no Replace/Remove, so it
+              never fights the right-hand actions for room. */}
+          {caption ? (
+            <Text style={styles.caption} numberOfLines={1}>{caption}</Text>
+          ) : null}
           <View style={styles.rightActions}>
             {onReplace && (
               <TouchableOpacity style={styles.secondary} onPress={onReplace} hitSlop={12}>
@@ -316,6 +334,14 @@ const styles = StyleSheet.create({
   closeText: {
     fontSize: 16,
     color: theme.colorTextOnDark,
+    fontWeight: theme.fontWeightMedium,
+  },
+  caption: {
+    flex: 1,
+    textAlign: 'center',
+    marginHorizontal: theme.space2,
+    fontSize: 15,
+    color: theme.colorTextOnDarkSubtle,
     fontWeight: theme.fontWeightMedium,
   },
   rightActions: {

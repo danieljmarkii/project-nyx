@@ -173,7 +173,7 @@ describe('authErrorCopy — the no-raw-strings contract', () => {
     null,
   ];
 
-  const CONTEXTS = ['signup', 'login', 'resend', 'password'] as const;
+  const CONTEXTS = ['signup', 'login', 'resend', 'reset', 'password'] as const;
 
   it.each(CONTEXTS)('never surfaces the provider string in the %s context', (context) => {
     for (const shape of SHAPES) {
@@ -209,7 +209,9 @@ describe('authErrorCopy — the no-raw-strings contract', () => {
     expect(authErrorCopy(unknown, 'signup').title).toBe("Couldn't create your account");
     expect(authErrorCopy(unknown, 'login').title).toBe("Couldn't sign you in");
     expect(authErrorCopy(unknown, 'resend').title).toBe("Couldn't send the link");
-    // The change-password screen must not read as a sign-in failure (B-280 PR 3).
+    // Recovery set-new-password write (B-280 §5.4) and the change-password screen
+    // (B-280 PR 3) each get their own title, not a sign-in error.
+    expect(authErrorCopy(unknown, 'reset').title).toBe("Couldn't save your password");
     expect(authErrorCopy(unknown, 'password').title).toBe("Couldn't change your password");
   });
 });
