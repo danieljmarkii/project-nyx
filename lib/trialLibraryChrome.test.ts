@@ -32,6 +32,7 @@ import {
   buildFoodsTrialStrip,
   trialChipLabel,
   trialMembershipLine,
+  trialStripFoodsLine,
   TRIAL_CHIP_PERMITTED,
   TRIAL_CHIP_PRIMARY,
 } from './trialLibraryChrome';
@@ -165,16 +166,40 @@ describe('the library chip (FR-2)', () => {
 describe('the Foods-tab trial strip (FR-1)', () => {
   const opts = { petName: 'Biscuit', multiPet: false };
 
-  it('renders the day counter and the count of foods on the list', () => {
+  // B-627 — the line NAMES the foods rather than counting them. SET leads with
+  // its primary_diet row; the one permitted extra becomes "and 1 more".
+  it('renders the day counter and names the foods on the list', () => {
     expect(buildFoodsTrialStrip(SET, opts, DAY_12)).toEqual({
       header: 'Diet trial — day 12 of 28',
-      line: '2 foods on the trial list',
+      line: 'Zignature Kangaroo Formula, and 1 more',
     });
   });
 
-  it('counts one food in the singular', () => {
+  it('names a single food with no "and N more" tail', () => {
     expect(buildFoodsTrialStrip(readySet([food()]), opts, DAY_12)?.line)
-      .toBe('1 food on the trial list');
+      .toBe('Zignature Kangaroo Formula');
+  });
+
+  // B-627 — the prescribed diet leads even when it is NOT the first row in force,
+  // because "which food is the trial diet?" is the question the tab answers.
+  it('leads the line with the primary diet, then counts the rest', () => {
+    const set = readySet([
+      food({
+        foodItemId: 'food-treat',
+        foodKey: trialFoodKey('Real Meat', 'Kangaroo Jerky'),
+        label: 'Real Meat Kangaroo Jerky',
+        role: 'permitted_treat',
+      }),
+      food({ label: 'Royal Canin Hydrolyzed Protein HP', role: 'primary_diet' }),
+      food({
+        foodItemId: 'food-chew',
+        foodKey: trialFoodKey('Vet', 'Dental Chew'),
+        label: 'Vet Dental Chew',
+        role: 'permitted_other',
+      }),
+    ]);
+    expect(buildFoodsTrialStrip(set, opts, DAY_12)?.line)
+      .toBe('Royal Canin Hydrolyzed Protein HP, and 2 more');
   });
 
   // D7. On a single-pet account "Biscuit's diet trial" is noise — there is no
@@ -235,12 +260,41 @@ describe('the Foods-tab trial strip (FR-1)', () => {
     expect(buildFoodsTrialStrip(closed, opts, DAY_12)).toBeNull();
   });
 
-  // The count is the LIST's size, never a coverage, adherence or match count
-  // (§6.9). A duplicate row — two devices adding the same food — must not
-  // inflate it, which is `trialListFoodsOn`'s identity dedupe doing its job here.
-  it('counts foods, not rows', () => {
+  // The line names the LIST, never a coverage, adherence or match count (§6.9). A
+  // duplicate row — two devices adding the same food — must not become a phantom
+  // "and 1 more", which is `trialListFoodsOn`'s identity dedupe doing its job here.
+  it('names foods, not rows', () => {
     const dupe = readySet([food(), food({ foodItemId: 'food-dry-2' })]);
-    expect(buildFoodsTrialStrip(dupe, opts, DAY_12)?.line).toBe('1 food on the trial list');
+    expect(buildFoodsTrialStrip(dupe, opts, DAY_12)?.line).toBe('Zignature Kangaroo Formula');
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// B-627 — the naming helper on its own
+// ════════════════════════════════════════════════════════════════════════════
+
+describe('trialStripFoodsLine (B-627)', () => {
+  const primary = food({ label: 'Royal Canin Hydrolyzed Protein HP', role: 'primary_diet' });
+  const treat = food({ label: 'Real Meat Kangaroo Jerky', role: 'permitted_treat' });
+  const chew = food({ label: 'Vet Dental Chew', role: 'permitted_other' });
+
+  it('is just the label for a one-food list', () => {
+    expect(trialStripFoodsLine([primary])).toBe('Royal Canin Hydrolyzed Protein HP');
+  });
+
+  it('appends "and N more" with the correct remainder', () => {
+    expect(trialStripFoodsLine([primary, treat])).toBe('Royal Canin Hydrolyzed Protein HP, and 1 more');
+    expect(trialStripFoodsLine([primary, treat, chew])).toBe('Royal Canin Hydrolyzed Protein HP, and 2 more');
+  });
+
+  it('leads with the primary diet whatever the order', () => {
+    expect(trialStripFoodsLine([treat, chew, primary])).toBe('Royal Canin Hydrolyzed Protein HP, and 2 more');
+  });
+
+  // A permitted-only set (no primary_diet row) is legal and rare — it falls back
+  // to the first food rather than dropping the lead name.
+  it('falls back to the first food when there is no primary diet', () => {
+    expect(trialStripFoodsLine([treat, chew])).toBe('Real Meat Kangaroo Jerky, and 1 more');
   });
 });
 
