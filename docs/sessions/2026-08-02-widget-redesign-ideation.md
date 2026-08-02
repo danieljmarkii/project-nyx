@@ -143,4 +143,26 @@ Asks: **R6-1** pick the look-ahead placement (V1 recommended) · **R6-2** confir
 v2.0 (R4-1 executed, layout locked, snapshot v2 contract, W5 rebuild plan), folding
 in standing R4-2/R4-3.
 
+## Round 7 (same session) — V1 fixed for implementation
+
+PM reaction to round 6: V1 is the shape ("starting to look good") — **but the
+rendered frames were broken** ("looks broken and fubar'd... if we copied it then it
+would look janky"). Root cause confirmed by arithmetic: the round-6 grid used
+flexible heights, so four tiles + the ground band competed for ~154px inside the
+149px content box — the band clipped and tiles squeezed unevenly. The round-6 page
+skipped the render-and-look verification step, which is exactly how the jank
+shipped.
+
+Round 7 = V1 only (R6-1 taken as answered), rebuilt on a **strict vertical budget**
+— header 16 · grid 94 (2×44 rows) · band 33, every region a fixed share; tile
+typography metric-locked (11/17/11px lines in a 44px row); every text line clips
+with an ellipsis. V2/V3 retired. Four frames: Day A, Day B, empty morning
+(single-row grid), evening-complete (Up-next slot self-heals to the trial-record
+tile). **Screenshot-verified before publishing this time** (headless Chromium
+against the committed file; frames render clean — nothing clips, band intact).
+The mock states explicitly: this is the geometry the build should copy.
+
+Remaining ask collapses to one: **R7-1 (= R6-2)** — confirm for build → spec v2.0
+rewrite + `widgets/CulpritWidget.tsx` rebuild, absorbing B-481's on-device pass.
+
 — shipped via #563
