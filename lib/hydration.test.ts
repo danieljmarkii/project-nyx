@@ -14,6 +14,7 @@ import { join } from 'path';
 import { BASE_SCHEMA_SQL } from './localSchema';
 import { MEDICATION_SCHEMA_SQL } from './medications';
 import { DIET_TRIAL_SCHEMA_SQL } from './dietTrialMirror';
+import { NOTIFICATION_SCHEMA_SQL } from './notificationPreferences';
 
 const T0 = '2026-06-01T10:00:00.000Z';
 const T1 = '2026-06-01T11:00:00.000Z'; // one hour after T0
@@ -317,7 +318,12 @@ const { DatabaseSync } = require('node:sqlite');
 // Every source of local DDL, i.e. everything initDb runs. Not bookkeeping: the
 // third test below scans the app source and fails if a CREATE TABLE exists that
 // none of these constants produce.
-const SCHEMA_SOURCES = [BASE_SCHEMA_SQL, MEDICATION_SCHEMA_SQL, DIET_TRIAL_SCHEMA_SQL];
+const SCHEMA_SOURCES = [
+  BASE_SCHEMA_SQL,
+  MEDICATION_SCHEMA_SQL,
+  DIET_TRIAL_SCHEMA_SQL,
+  NOTIFICATION_SCHEMA_SQL,
+];
 
 // Local tables deliberately NOT cleared on sign-out. Empty today, and adding a
 // name here is a Trust & Safety decision, not a way to quiet the test: it is a
