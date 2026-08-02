@@ -1,9 +1,10 @@
-import { Tabs } from 'expo-router';
+import { Tabs, Redirect } from 'expo-router';
 import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
 import { usePet } from '../../hooks/usePet';
 import { FAB } from '../../components/log/FAB';
 import { SyncBanner } from '../../components/ui';
 import { theme } from '../../constants/theme';
+import { useAuthStore } from '../../store/authStore';
 
 // Custom tab bar gives full control over layout — the default Expo Tabs
 // icon container clips text when using text-as-icon, so we own the bar entirely.
@@ -59,7 +60,19 @@ function NyxTabBar({ state, descriptors, navigation }: TabBarProps) {
 }
 
 export default function TabsLayout() {
+  // §6.5 — the recovery gate's enforcement point. FR-6 says the router holds the
+  // owner on the set-password screen; there is no other auth gate in the router, and
+  // the shipped widget emits `nyx:///history?…` / `nyx:///log?…` deep links, so a
+  // single Home Screen tap would otherwise walk straight past the gate into the tabs
+  // (§10 row 22, this guard's acceptance test). A `<Redirect>` here beats expo-
+  // router's built-in deep linking. Inert whenever no reset is in progress, so it is
+  // a no-op unless `PASSWORD_RECOVERY_ENABLED` is on and a reset is live.
+  const recoveryInProgress = useAuthStore((s) => s.recoveryInProgress);
   usePet();
+
+  if (recoveryInProgress) {
+    return <Redirect href="/(auth)/reset-password" />;
+  }
 
   return (
     <View style={styles.root}>

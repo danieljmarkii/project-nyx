@@ -39,12 +39,15 @@ export type AuthErrorCopy = {
 // identical — a rate-limited resend says "we'll send another shortly", a
 // rate-limited sign-in says "try again shortly" — so the caller names its context
 // rather than the mapper guessing from the error alone.
-export type AuthContext = 'signup' | 'login' | 'resend';
+export type AuthContext = 'signup' | 'login' | 'resend' | 'reset';
 
 const FALLBACK_TITLE: Record<AuthContext, string> = {
   signup: "Couldn't create your account",
   login: "Couldn't sign you in",
   resend: "Couldn't send the link",
+  // B-280 §5.4: the set-new-password write (`updateUser`). A weak_password /
+  // offline error maps ahead of this fallback; this covers the unknown case.
+  reset: "Couldn't save your password",
 };
 
 // Supabase's rate-limit message carries the wait in its prose, not in a
@@ -77,6 +80,16 @@ export function isEmailNotConfirmed(error: AuthErrorLike): boolean {
   if (!error) return false;
   if (error.code === 'email_not_confirmed') return true;
   return messageText(error).includes('email not confirmed');
+}
+
+// A credential mismatch — the "moment of discovery" for password recovery (B-280
+// §5.1b). Deliberately does NOT distinguish which of email/password was wrong (that
+// is the enumeration leak D2 exists to prevent); it only decides whether the login-
+// failure alert should offer the FR-13 "Reset password" action.
+export function isInvalidCredentials(error: AuthErrorLike): boolean {
+  if (!error) return false;
+  if (error.code === 'invalid_credentials') return true;
+  return messageText(error).includes('invalid login credentials');
 }
 
 export function isRateLimited(error: AuthErrorLike): boolean {

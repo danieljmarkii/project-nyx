@@ -26,6 +26,12 @@ export const APP_SCHEME = 'nyx';
 // path `app/(auth)/confirm.tsx` — the deep link works because that file exists.
 export const CONFIRM_PATH = 'confirm';
 
+// The route the password-recovery link lands on (B-280). Matches the expo-router
+// file path `app/(auth)/reset-password.tsx`. Kept here beside CONFIRM_PATH so the
+// cold-start "no session ⇒ Landing" suppression (below) and `lib/passwordRecovery`
+// read ONE definition of the recovery route.
+export const RECOVERY_PATH = 'reset-password';
+
 // Every path that is an AUTH link rather than an ordinary in-app deep link (the
 // widget's `nyx:///history?pet=…`, `nyx:///log?…`).
 //
@@ -36,10 +42,9 @@ export const CONFIRM_PATH = 'confirm';
 //
 // ONLY ADD A PATH ONCE ITS SCREEN FILE EXISTS. Suppressing the Landing bounce for
 // a route that isn't registered would strand the owner on expo-router's not-found
-// screen, which is strictly worse than the bounce. B-280 PR 2 adds
-// `reset-password` here in the same commit that adds
-// `app/(auth)/reset-password.tsx`.
-export const AUTH_DEEP_LINK_PATHS: readonly string[] = [CONFIRM_PATH];
+// screen, which is strictly worse than the bounce. `reset-password` is added here
+// in the same commit that adds `app/(auth)/reset-password.tsx` (B-280 PR 2).
+export const AUTH_DEEP_LINK_PATHS: readonly string[] = [CONFIRM_PATH, RECOVERY_PATH];
 
 /** The `emailRedirectTo` / `redirectTo` value for an auth route (e.g. `nyx:///confirm`). */
 export function authDeepLinkUrl(path: string): string {
