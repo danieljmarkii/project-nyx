@@ -76,6 +76,19 @@ describe('NOTIFICATION_CATEGORIES (v1 registers exactly daily_summary)', () => {
   it('uses channel = category (the Android channel id is the category id)', () => {
     expect(NOTIFICATION_CATEGORIES.daily_summary.channelId).toBe('daily_summary');
   });
+
+  it('carries a G1-safe body — the ritual, never the record contents (PR 4)', () => {
+    const c = NOTIFICATION_CATEGORIES.daily_summary;
+    // Neutral, multi-pet-safe: no pet name, no counts, no "incident"/"symptom" — a
+    // lock-screen body computed at schedule time must never assert what the record
+    // holds (D3 / clinical-guardrails). And nyx-voice: no exclamation.
+    const text = `${c.title} ${c.body}`.toLowerCase();
+    for (const banned of ['incident', 'symptom', 'vomit', 'no ', 'nothing', 'all clear', 'medication']) {
+      expect(text).not.toContain(banned);
+    }
+    expect(`${c.title}${c.body}`).not.toContain('!');
+    expect(c.body.trim().length).toBeGreaterThan(0);
+  });
 });
 
 // ── Identifiers ──────────────────────────────────────────────────────────────
@@ -235,6 +248,9 @@ describe('scheduleCategory', () => {
     expect(req.identifier).toBe(scheduleIdentifier('daily_summary'));
     expect(req.trigger).toMatchObject({ type: 'daily', hour: 21, minute: 0 });
     expect(req.content.data).toMatchObject({ category: 'daily_summary', route: '/day-summary' });
+    // The scheduled body is the registry's G1-safe copy, not the retired placeholder.
+    expect(req.content.title).toBe(NOTIFICATION_CATEGORIES.daily_summary.title);
+    expect(req.content.body).toBe(NOTIFICATION_CATEGORIES.daily_summary.body);
   });
 
   it('is idempotent — cancels any existing schedule before re-adding (no duplicate)', async () => {

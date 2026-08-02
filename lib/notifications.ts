@@ -49,6 +49,17 @@ export interface NotificationCategoryConfig {
   readonly route: string;
   /** Per-account budget weight — one schedule counts as 1 (§5.4). */
   readonly budgetWeight: number;
+  /** The notification title. Static, and G1-safe — see `body`. */
+  readonly title: string;
+  /**
+   * The notification body. STATIC and G1-safe: it never asserts record contents.
+   * iOS runs no JS at local-notification fire time, so any content-bearing body is
+   * computed early (at schedule time) and can misstate the record — a stale "no
+   * incidents" on a lock screen is reassurance from a wrong record, forbidden by
+   * `clinical-guardrails`. So the body speaks to the RITUAL, not the record, and is
+   * never wrong. The Day Summary SCREEN (opened on tap) renders live truth.
+   */
+  readonly body: string;
 }
 
 export const NOTIFICATION_CATEGORIES: Readonly<
@@ -65,6 +76,13 @@ export const NOTIFICATION_CATEGORIES: Readonly<
     minute: 0,
     route: '/day-summary',
     budgetWeight: 1,
+    // G1 (§5.2, §6). Neutral + ritual-specific, and deliberately the multi-pet-safe
+    // shape everywhere: one notification per account covers all pets (D3), so a
+    // single-pet body that named the pet ("Biscuit's day…") would still be the wrong
+    // shape on a multi-pet account, and putting a pet name on a lock screen is an
+    // open Designer + T&S question (spec §10 #3). Neutral until that mock-round call.
+    title: 'Today’s summary',
+    body: 'Today’s record is ready to read.',
   },
 };
 
@@ -273,11 +291,10 @@ export async function getScheduledCategories(): Promise<NotificationCategory[]> 
  * it fails safe; but a future direct caller (e.g. PR 3's toggle-on handler) must
  * go through reconcileSchedules or confirm permission itself, never schedule blind.
  *
- * The notification CONTENT here is a neutral placeholder: PR 1 wires nothing on a
- * user path to call this, so it never reaches a device, and PR 4 owns the real,
- * G1-safe body (which must never assert record contents — iOS runs no JS at fire
- * time, so a content-bearing body is computed early and can misstate the record).
- * Kept non-empty so a stray dev schedule is legible rather than a blank card.
+ * The notification CONTENT is read from the registry (`cfg.title` / `cfg.body`),
+ * which PR 4 populated with the real, G1-safe copy — a STATIC body that never
+ * asserts record contents (iOS runs no JS at fire time, so a content-bearing body
+ * is computed early and can misstate the record). See NotificationCategoryConfig.
  */
 export async function scheduleCategory(category: NotificationCategory): Promise<boolean> {
   const cfg = NOTIFICATION_CATEGORIES[category];
@@ -297,8 +314,8 @@ export async function scheduleCategory(category: NotificationCategory): Promise<
     await Notifications.scheduleNotificationAsync({
       identifier: scheduleIdentifier(category),
       content: {
-        title: cfg.channelName,
-        body: 'Open Culprit to read the day.', // PR 4 replaces (nyx-voice + G1).
+        title: cfg.title,
+        body: cfg.body,
         data: { category, route: cfg.route },
       },
       trigger: {

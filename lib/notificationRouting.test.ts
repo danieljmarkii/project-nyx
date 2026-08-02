@@ -1,0 +1,104 @@
+// Notification-tap routing tests (B-661 PR 4). The tap auth-gate and the
+// route-exactly-once dedup — the two behaviours the wiring depends on — proven
+// as pure functions, no expo-notifications listener or router involved.
+//
+// (The enabled-category reader + reconcile live in lib/notificationSettings.ts,
+// shipped and tested by PR 3; PR 4 reuses them rather than re-testing them here.)
+
+jest.mock('expo-notifications', () => ({
+  getPermissionsAsync: jest.fn(),
+  requestPermissionsAsync: jest.fn(),
+  scheduleNotificationAsync: jest.fn(),
+  cancelScheduledNotificationAsync: jest.fn(),
+  cancelAllScheduledNotificationsAsync: jest.fn(),
+  getAllScheduledNotificationsAsync: jest.fn(),
+  setNotificationChannelAsync: jest.fn(),
+  SchedulableTriggerInputTypes: { DAILY: 'daily' },
+  AndroidImportance: { DEFAULT: 3 },
+}));
+
+import { notificationRouteDecision, routeDedup } from './notificationRouting';
+
+// ── notificationRouteDecision (the tap auth gate) ────────────────────────────
+describe('notificationRouteDecision', () => {
+  const data = { category: 'daily_summary', route: '/day-summary' };
+
+  it('routes an authed tap and records the interaction', () => {
+    expect(notificationRouteDecision(data, { authed: true })).toEqual({
+      recordCategory: 'daily_summary',
+      routeTo: '/day-summary',
+    });
+  });
+
+  it('records the interaction but does NOT route when unauthenticated (behind the auth gate)', () => {
+    expect(notificationRouteDecision(data, { authed: false })).toEqual({
+      recordCategory: 'daily_summary',
+      routeTo: null,
+    });
+  });
+
+  it('never routes a foreign/stale route, even authed (G5 fail-safe)', () => {
+    expect(
+      notificationRouteDecision({ category: 'daily_summary', route: '/settings' }, { authed: true }),
+    ).toEqual({ recordCategory: 'daily_summary', routeTo: null });
+  });
+
+  it('records no interaction for an unknown category', () => {
+    expect(
+      notificationRouteDecision({ category: 'mystery', route: '/day-summary' }, { authed: true }),
+    ).toEqual({ recordCategory: null, routeTo: '/day-summary' });
+  });
+
+  it('tolerates a missing/garbage payload without throwing', () => {
+    expect(notificationRouteDecision(null, { authed: true })).toEqual({
+      recordCategory: null,
+      routeTo: null,
+    });
+    expect(notificationRouteDecision({ category: 5, route: {} }, { authed: true })).toEqual({
+      recordCategory: null,
+      routeTo: null,
+    });
+  });
+});
+
+// ── routeDedup (route-exactly-once + the pre-auth re-attempt) ─────────────────
+describe('routeDedup', () => {
+  const delivery = { identifier: 'nyx.notif.daily_summary', deliveredAt: 1_700_000_000_000 };
+
+  it('routes a fresh delivery and advances the signature', () => {
+    const out = routeDedup({ ...delivery, routeTo: '/day-summary', prevSig: null });
+    expect(out.route).toBe(true);
+    expect(out.sig).toBe('nyx.notif.daily_summary|1700000000000');
+  });
+
+  it('does NOT route the same delivery twice (listener + cold read surface it once)', () => {
+    const first = routeDedup({ ...delivery, routeTo: '/day-summary', prevSig: null });
+    const second = routeDedup({ ...delivery, routeTo: '/day-summary', prevSig: first.sig });
+    expect(second.route).toBe(false);
+    expect(second.sig).toBe(first.sig);
+  });
+
+  it('routes AGAIN for a later day (same schedule id, new delivery time)', () => {
+    const day1 = routeDedup({ ...delivery, routeTo: '/day-summary', prevSig: null });
+    const day2 = routeDedup({
+      identifier: delivery.identifier,
+      deliveredAt: 1_700_086_400_000, // +1 day
+      routeTo: '/day-summary',
+      prevSig: day1.sig,
+    });
+    expect(day2.route).toBe(true);
+    expect(day2.sig).not.toBe(day1.sig);
+  });
+
+  it('leaves the signature UNMARKED when it cannot route yet (pre-auth cold start)', () => {
+    // routeTo null (unauthenticated) → no route, and the sig must NOT advance, or
+    // the post-auth re-attempt below would be swallowed.
+    const preAuth = routeDedup({ ...delivery, routeTo: null, prevSig: null });
+    expect(preAuth).toEqual({ route: false, sig: null });
+
+    // Session lands → same delivery, now with a route → it routes (the swallowed-tap
+    // regression this guards against).
+    const postAuth = routeDedup({ ...delivery, routeTo: '/day-summary', prevSig: preAuth.sig });
+    expect(postAuth.route).toBe(true);
+  });
+});
