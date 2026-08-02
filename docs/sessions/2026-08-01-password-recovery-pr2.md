@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-01
 
-PR 2 of the 5-PR track, built from `docs/nyx-password-recovery-requirements.md` §9 on top of PR 1's foundations (#444). FR-1 → FR-20. **No user-visible change** — `PASSWORD_RECOVERY_ENABLED` ships off; enabling it is PR 4. Draft **#553**.
+PR 2 of the 5-PR track, built from `docs/nyx-password-recovery-requirements.md` §9 on top of PR 1's foundations (#444). FR-1 → FR-20. **No user-visible change** — `PASSWORD_RECOVERY_ENABLED` ships off; enabling it is PR 4. Shipped via **#553**.
 
 ## What landed
 
@@ -28,7 +28,7 @@ PR 2 of the 5-PR track, built from `docs/nyx-password-recovery-requirements.md` 
 - **`rls-privacy-reviewer` (mandatory merge gate) — PASS, F1–F5 all HELD.** Then re-verified after the code-review fixes → **PASS again**. It named one narrow, pre-existing Trap-2 residual (auth-js `TOKEN_REFRESHED(A)` re-adopted mid-flush) that the fixes *narrowed* but didn't fully close — **now closed** in this PR by the `recoveryExchangePending` guard (`shouldAdoptSessionDuringRecovery`): while the exchange window is open the root listener adopts ONLY the exchange's `SIGNED_IN(B)`, and a resume never sets the flag so it doesn't regress F3.
 - **`code-reviewer` — fix-before-merge, all closed.** Two were real access-control bugs on the Trap-2 boundary: **(1)** the handler routed to the form *before* nulling the store session, with an unbounded `flushForSignOut()` in between — on a **warm** link A's live session was still in the store, so a "Save" tap in that window would write B's password onto A's account. Fixed by nulling the store before the route (the flush pushes via auth-js's session, so A's queue still drains to A). **(2)** the FR-15 reconcile `signOut()` defaulted to `global` scope, evicting A on every device for a routine failed exchange → scoped `local`. Plus the cold-start `isLoading` flash (`.finally`), two `spaceMicro` nits, and a dead `force` param.
 - **`nyx-voice` — ✓.** Copy matches §5 verbatim; the load-bearing "usually" is present in §5.6b. Two optional polish notes; one ("Not now" → "Cancel") was adopted because `pm-feature-review` flagged it too.
-- **`pm-feature-review`** — login + forgot-password **SHIP-SHAPED**; reset-password **NEEDS-WORK ×2**, both fixed: the working state had no exit/timeout (→ the watchdog) and "Not now" mislabelled a full sign-out (→ "Cancel"). Filed **B-651** (a "Back to log in" on the Sent state) and **B-652** (a reset-success confirmation) as Later.
+- **`pm-feature-review`** — login + forgot-password **SHIP-SHAPED**; reset-password **NEEDS-WORK ×2**, both fixed: the working state had no exit/timeout (→ the watchdog) and "Not now" mislabelled a full sign-out (→ "Cancel"). Filed **B-653** (a "Back to log in" on the Sent state) and **B-654** (a reset-success confirmation) as Later — filed as B-651/B-652, renumbered at wrap after #550 took those IDs on `main` first.
 - `clinical-guardrails` **N/A**, stated (§7).
 
 tsc clean; jest **3970 / 180 suites** (~55 new recovery cases); no Edge Function files touched.
