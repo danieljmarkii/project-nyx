@@ -76,13 +76,37 @@ The v2 layout rebuild — the widget goes from a **capture** surface (build 35) 
 
 ## Gates
 
-- `code-reviewer` — <outcome>
-- `pm-feature-review` — <outcome>
-- Designer (in-context persona) — SHIP-SHAPED against the seven principles: symptom
+All three ran; the two subagents surfaced findings, all addressed in this PR before merge.
+
+- **`code-reviewer` — fix-before-merge (fixed).** Found a real regression: the §3
+  residual drain discarded its outcome and published unconditionally, so a build-35
+  user's un-applied tap (only durable copy = the v1 timeline) was lost when
+  `applyCapture` failed. **Fixed** by extracting a testable `publishWidgetPass` that
+  withholds the publish (leaving the v1 timeline intact for retry) when the drain
+  comes back with any `failed`/`deferredRevoke` — with the hook-seam tests the PR was
+  missing. Two non-blocking finds also fixed: the med tile named one drug over an
+  aggregate count (→ join distinct names, like the meal tile), and `symptomInk`/
+  `tickIdle` had no theme token (→ added `colorEventSymptomInk`/`colorTickIdle`).
+- **`pm-feature-review` — SHIP-SHAPED with two NEEDS-WORK (fixed).** Safety invariants
+  + Pets > $ verified by construction. **Fixed:** the generic Log door + band chip
+  deep-linked to a *meal* form (Sam friction) → now open the neutral picker (`log`);
+  the mixed-symptom tile led by recency → now leads by **count** (ties → most recent),
+  the safer default for a safety tile (also closes the code-reviewer's "×0" edge).
+  Deferred: full-grid vertical fit + mixed-symptom screenshot + stale render →
+  **V2-PR-3** device pass; §4 class-filtered / calendar deep-link targeting → backlog.
+- **Designer (in-context persona) — SHIP-SHAPED** against the seven principles: symptom
   tile always first + never dropped (P3), empty state designed + forward-looking (P5),
   Up-next warm-not-nagging + never gains urgency (P4), no monetization/AI (P7/D9),
   coverage-never-wellness on the band (§8). Geometry approximations (flexing grid, the
   pip "today" accent-vs-outline) verify on-device in PR 3.
+
+## PM decisions to confirm (provisional, low-risk to revert)
+
+- **Symptom tile leads by COUNT, not recency** (mixed-symptom day). Ruled provisionally
+  toward count because this is the safety lead and recency can bury the higher-count
+  symptom; §2.3 left the tie-break a build-detail. Revert to recency is one line.
+- **Generic "Log" opens the neutral picker** (not meal-preselected). The Up-next tile
+  stays meal-preselected (it *is* a meal).
 
 ## Tests
 

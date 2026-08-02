@@ -11,6 +11,7 @@ import {
   applyOutbox,
   clearWidgetTimeline,
   drainResidualV1Outbox,
+  publishWidgetPass,
   publishWidgetTimeline,
   __setWidgetHandleForTests,
   type DrainDeps,
@@ -187,5 +188,88 @@ describe('publishWidgetTimeline / clearWidgetTimeline', () => {
     __setWidgetHandleForTests(handle);
     clearWidgetTimeline();
     expect(published[0]).toEqual({ schemaVersion: 2, pets: {}, signedIn: false });
+  });
+});
+
+// ── The drain-gated publish seam (the residual-drain data-loss fix) ───────────
+//
+// A partial upgrade drain must NOT overwrite the v1 timeline — that timeline is
+// the un-applied tap's only durable copy. These pin that the publish is withheld
+// exactly when the drain came back incomplete.
+describe('publishWidgetPass', () => {
+  function fakeWidget(timeline: unknown[]) {
+    const published: CulpritWidgetProps[] = [];
+    const handle: WidgetHandle = {
+      getTimeline: async () => timeline as { date: Date; props: CulpritWidgetProps }[],
+      updateTimeline: (next) => next.forEach((e) => published.push(e.props)),
+    };
+    return { handle, published };
+  }
+  const v2Props = (): CulpritWidgetProps => ({ schemaVersion: 2, pets: {}, signedIn: true });
+
+  afterEach(() => __setWidgetHandleForTests(null));
+
+  it('publishes after a clean residual drain and reports drainComplete', async () => {
+    const { deps } = fakeDeps();
+    const { handle, published } = fakeWidget([
+      { date: new Date(), props: { schemaVersion: 1, pending: [capture()], revoked: [] } },
+    ]);
+    __setWidgetHandleForTests(handle);
+    const res = await publishWidgetPass(async () => v2Props(), { needsDrain: true, deps });
+    expect(res.drainComplete).toBe(true);
+    expect(published).toHaveLength(2); // now + midnight
+  });
+
+  it('does NOT publish when a residual capture fails to apply — the v1 timeline is preserved', async () => {
+    const { deps } = fakeDeps();
+    // A capture that names nothing can never be applied → outcome.failed.
+    const { handle, published } = fakeWidget([
+      { date: new Date(), props: { schemaVersion: 1, pending: [capture({ foodItemId: null })], revoked: [] } },
+    ]);
+    __setWidgetHandleForTests(handle);
+    const res = await publishWidgetPass(async () => v2Props(), { needsDrain: true, deps });
+    expect(res.drainComplete).toBe(false);
+    expect(published).toHaveLength(0); // the timeline holding the un-applied tap is untouched
+  });
+
+  it('does NOT publish when a revoke is deferred (ingest failed)', async () => {
+    const { deps } = fakeDeps();
+    deps.ingest = async () => {
+      throw new Error('db locked');
+    };
+    const { handle, published } = fakeWidget([
+      { date: new Date(), props: { schemaVersion: 1, pending: [], revoked: ['undo-me'] } },
+    ]);
+    __setWidgetHandleForTests(handle);
+    const res = await publishWidgetPass(async () => v2Props(), { needsDrain: true, deps });
+    expect(res.drainComplete).toBe(false);
+    expect(published).toHaveLength(0);
+  });
+
+  it('publishes directly when no drain is needed (steady state) — and never touches the drain', async () => {
+    const { deps, calls } = fakeDeps();
+    const { handle, published } = fakeWidget([]);
+    __setWidgetHandleForTests(handle);
+    let built = false;
+    const res = await publishWidgetPass(
+      async () => {
+        built = true;
+        return v2Props();
+      },
+      { needsDrain: false, deps },
+    );
+    expect(res.drainComplete).toBe(true);
+    expect(built).toBe(true);
+    expect(published).toHaveLength(2);
+    expect(calls).toEqual([]); // no apply / ingest — the drain was skipped entirely
+  });
+
+  it('a clean v2 timeline (no residual) publishes on the first pass', async () => {
+    const { deps } = fakeDeps();
+    const { handle, published } = fakeWidget([{ date: new Date(), props: v2Props() }]);
+    __setWidgetHandleForTests(handle);
+    const res = await publishWidgetPass(async () => v2Props(), { needsDrain: true, deps });
+    expect(res.drainComplete).toBe(true);
+    expect(published).toHaveLength(2);
   });
 });

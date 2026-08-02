@@ -132,6 +132,15 @@ describe('buildPetPanel — the tiles (§2.3)', () => {
     });
   });
 
+  it('names the AGGREGATE honestly when the count spans two drugs (no cross-med fabrication)', () => {
+    // Two meds, one dose each — "2 · Drug B" would read as two of Drug B (N2). The
+    // sub joins the distinct drug identities instead, mirroring the meal tile.
+    const p = panelFor(
+      today({ meds: { ...facts(2, at(14), ['Gabapentin', 'Amoxicillin'], [at(14), at(8)]), expectedToday: null } }),
+    );
+    expect(p.classTiles[0]).toMatchObject({ kind: 'med', value: '2', sub: 'Gabapentin, Amoxicillin' });
+  });
+
   it('a single symptom type is the label; the value counts it, the sub carries the times', () => {
     const p = panelFor(
       today({ symptoms: { ...facts(2, at(16, 40), ['Vomiting', 'Vomiting'], [at(16, 40), at(14, 14)]), leadingType: 'Vomiting' } }),
@@ -145,11 +154,28 @@ describe('buildPetPanel — the tiles (§2.3)', () => {
     });
   });
 
-  it('mixed symptom types lead with the most recent type; the total goes in the sub (§2.3 ①)', () => {
+  it('mixed symptom types lead by COUNT (not recency); the total goes in the sub (§2.3 ①)', () => {
+    // The MOST RECENT symptom is the single itch (3p), but vomiting has the higher
+    // count (×2) — the safety lead must foreground vomiting, not the recent itch.
     const p = panelFor(
-      today({ symptoms: { ...facts(3, at(16, 40), ['Vomiting', 'Vomiting', 'Itching'], [at(16, 40), at(14, 0), at(9, 0)]), leadingType: 'Vomiting' } }),
+      today({ symptoms: { ...facts(3, at(15, 0), ['Itching', 'Vomiting', 'Vomiting'], [at(15, 0), at(14, 0), at(9, 0)]), leadingType: 'Itching' } }),
     );
     expect(p.classTiles[0]).toMatchObject({ kind: 'symptom', label: 'Vomiting', value: '×2', sub: '3 symptoms today' });
+  });
+
+  it('breaks a symptom-count tie toward the most recent type', () => {
+    // One vomit (2p), one itch (3p), equal counts — the more recent (itch) leads.
+    const p = panelFor(
+      today({ symptoms: { ...facts(2, at(15, 0), ['Itching', 'Vomiting'], [at(15, 0), at(14, 0)]), leadingType: 'Itching' } }),
+    );
+    expect(p.classTiles[0]).toMatchObject({ kind: 'symptom', label: 'Itching', value: '×1', sub: '2 symptoms today' });
+  });
+
+  it('never renders a bare "Symptom ×0" if the leading type is somehow null', () => {
+    // Defensive: a hand-built facts with count>0 and a null leadingType still names
+    // a real logged type (the single-type branch reads types[0]), never "×0".
+    const p = panelFor(today({ symptoms: { ...facts(2, at(16), ['Vomiting', 'Vomiting'], [at(16), at(9)]), leadingType: null } }));
+    expect(p.classTiles[0]).toMatchObject({ kind: 'symptom', label: 'Vomiting', value: '×2' });
   });
 
   it('orders the class tiles symptom → meal → med → treat, symptom always first (Principle 3)', () => {

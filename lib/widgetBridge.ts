@@ -253,3 +253,40 @@ export function clearWidgetTimeline(): void {
     signedIn: false,
   });
 }
+
+/**
+ * One publish pass, with the §3 one-time residual drain folded in so the seam is
+ * TESTABLE (the hook is otherwise the only, untested, call site).
+ *
+ * ── WHY THE DRAIN GATES THE PUBLISH ──────────────────────────────────────────
+ * On a build-35 → v2 upgrade the un-applied v1 tap lives ONLY in the stored
+ * timeline's props (v1's tap could not reach the filesystem). Publishing v2 props
+ * OVERWRITES that timeline — so if the drain could not apply a capture (e.g.
+ * `runCapture` failed the inbox write → `outcome.failed`, a real handled failure
+ * mode), publishing would destroy the only durable copy. The inbox is the durable
+ * buffer ONLY for captures whose apply SUCCEEDED; a failed apply wrote nothing.
+ *
+ * So when `needsDrain` and the drain comes back incomplete (any `failed` apply or
+ * `deferredRevoke`), this does NOT publish and reports `drainComplete: false` — the
+ * v1 timeline is left intact and the caller retries on the next tick (the already-
+ * applied captures re-apply idempotently by id). A clean drain — including the
+ * steady-state v2 no-op, which finds no outbox — publishes and reports true.
+ */
+export async function publishWidgetPass(
+  buildProps: () => Promise<CulpritWidgetProps>,
+  opts: { needsDrain: boolean; deps?: DrainDeps; now?: Date },
+): Promise<{ drainComplete: boolean }> {
+  if (opts.needsDrain) {
+    const outcome = await drainResidualV1Outbox(opts.deps);
+    if (outcome.failed.length > 0 || outcome.deferredRevokes.length > 0) {
+      console.warn(
+        `[widgetBridge] residual v1 drain incomplete (${outcome.failed.length} failed, ` +
+          `${outcome.deferredRevokes.length} deferred) — NOT publishing over the v1 timeline; retrying next tick`,
+      );
+      return { drainComplete: false };
+    }
+  }
+  const props = await buildProps();
+  publishWidgetTimeline(props, opts.now);
+  return { drainComplete: true };
+}

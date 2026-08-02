@@ -189,10 +189,21 @@ describe('resting state (mock Day A)', () => {
     }
   });
 
-  it('links the trial strip to the trial card and the Log chip to quick-log', () => {
+  it('links the trial strip to the trial card, Up-next to a meal, the Log chip to the neutral picker', () => {
     const out = texts(render(props(), ENV));
     expect(out).toContain('link:nyx:///profile?pet=11111111-1111-4111-8111-111111111111&src=widget');
+    // Up-next IS a meal → the meal-preselected door.
     expect(out).toContain('link:nyx:///log?type=meal&pet=11111111-1111-4111-8111-111111111111&src=widget');
+    // The band's generic Log chip opens the neutral type picker, not a meal form.
+    expect(out).toContain('link:nyx:///log?pet=11111111-1111-4111-8111-111111111111&src=widget');
+  });
+
+  it('the empty-day door tile opens the neutral picker (a generic Log is not a meal form)', () => {
+    const empty = panel({ hasTodayEvents: false, classTiles: [], upNext: null });
+    const out = texts(render(props({ pets: { slot1: empty } }), ENV));
+    // No meal-preselected link on this state (no up-next); the door tile + chip are neutral.
+    expect(out).not.toContain('link:nyx:///log?type=meal&pet=11111111-1111-4111-8111-111111111111&src=widget');
+    expect(out).toContain('link:nyx:///log?pet=11111111-1111-4111-8111-111111111111&src=widget');
   });
 
   it('drops the up-next tile when the grid is full and shows the trial-record tile instead', () => {

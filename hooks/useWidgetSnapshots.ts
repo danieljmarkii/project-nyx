@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { publishWidgetSnapshots } from '../lib/widgetSnapshot';
 import { buildWidgetProps } from '../lib/widgetProps';
-import { drainResidualV1Outbox, publishWidgetTimeline } from '../lib/widgetBridge';
+import { publishWidgetPass } from '../lib/widgetBridge';
 import { useAuthStore } from '../store/authStore';
 import { useEventStore } from '../store/eventStore';
 import { usePetStore } from '../store/petStore';
@@ -34,27 +34,29 @@ export function useWidgetSnapshots() {
     if (!session) return;
 
     // The first publish after a session begins drains the residual v1 outbox
-    // (§3) before publishing; every subsequent publish is publish-only. The ref
-    // survives re-schedules within this effect and resets on session change (the
-    // effect re-runs), which is exactly when an upgrade drain could matter again
-    // (a fresh account on the same install has its own timeline).
-    let drainedThisSession = false;
+    // (§3) before publishing; every subsequent publish is publish-only. The flag
+    // resets on session change (the effect re-runs), which is exactly when an
+    // upgrade drain could matter again (a fresh account on the same install has
+    // its own timeline).
+    //
+    // `drainDone` is set ONLY when the drain came back clean. If a build-35 tap
+    // could not be applied, `publishWidgetPass` does NOT publish (it would
+    // overwrite the timeline that holds the un-applied tap — its only durable
+    // copy), returns `drainComplete: false`, and this leaves the flag unset so the
+    // next store-change tick retries. The drain-then-publish sequencing + this
+    // fail-safe live in `publishWidgetPass` so they are unit-tested, not buried in
+    // an untested hook.
+    let drainDone = false;
 
     const publish = async () => {
-      if (!drainedThisSession) {
-        drainedThisSession = true;
-        // Drain BEFORE building props: the applied captures ingest into SQLite in
-        // this pass, so the snapshot the publish then reads already contains them.
-        // Best-effort — a failed apply leaves the capture in the inbox for the
-        // regular sync cycle (see lib/widgetBridge), so publishing after it is safe.
-        try {
-          await drainResidualV1Outbox();
-        } catch (e) {
-          console.warn('[widgetSnapshots] residual drain failed:', e);
-        }
-      }
-      const { snapshots, index } = await publishWidgetSnapshots(usePetStore.getState().pets);
-      publishWidgetTimeline(buildWidgetProps({ index, snapshots, signedIn: true }));
+      const { drainComplete } = await publishWidgetPass(
+        async () => {
+          const { snapshots, index } = await publishWidgetSnapshots(usePetStore.getState().pets);
+          return buildWidgetProps({ index, snapshots, signedIn: true });
+        },
+        { needsDrain: !drainDone },
+      );
+      if (drainComplete) drainDone = true;
     };
 
     const schedule = () => {

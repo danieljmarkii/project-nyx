@@ -78,24 +78,26 @@ export function CulpritWidgetLayout(
   'widget';
 
   // Tokens, verbatim from constants/theme.ts (see the header on why they are
-  // inlined). The widget is light-ground only, matching the design-locked mock;
-  // it sets its own container background so a dark system material can never
-  // render this palette unreadable.
+  // inlined — the extension has no module graph, so nothing here can import the
+  // theme). The widget is light-ground only, matching the design-locked mock; it
+  // sets its own container background so a dark system material can never render
+  // this palette unreadable. Each value's `theme.*` token is named beside it so a
+  // drift is greppable across both files.
   const T = {
-    accent: '#00C2A8', // colorEventMeal / accent — meal + treat glyphs, the today dot
-    accentInk: '#0B7B6C', // a covered trial dot, a logged pip tick
-    med: '#5B7A9E', // colorEventMedication — the med glyph
-    symptom: '#F43F5E', // colorEventSymptom — the symptom glyph + rose pip
-    symptomLight: '#FFE4E6', // colorEventSymptomLight — the symptom tile ground
-    symptomInk: '#9F1239', // the symptom tile's small-caps label
-    surface: '#FFFFFF',
-    surfaceSubtle: '#F5F5F5',
-    border: '#EAEAEA',
-    tickIdle: '#C9C9C9', // an un-logged pip tick / a trial gap dot
-    textPrimary: '#0A0A0A',
-    textSecondary: '#525252',
-    textTertiary: '#737373',
-    crescent: '#211E4E',
+    accent: '#00C2A8', // theme.colorEventMeal — meal + treat glyphs, the today dot
+    accentInk: '#0B7B6C', // theme.colorAccentInk — a covered trial dot, a logged pip tick
+    med: '#5B7A9E', // theme.colorEventMedication — the med glyph
+    symptom: '#F43F5E', // theme.colorEventSymptom — the symptom glyph + rose pip
+    symptomLight: '#FFE4E6', // theme.colorEventSymptomLight — the symptom tile ground
+    symptomInk: '#9F1239', // theme.colorEventSymptomInk — the symptom tile's label
+    surface: '#FFFFFF', // theme.colorSurface
+    surfaceSubtle: '#F5F5F5', // theme.colorSurfaceSubtle
+    border: '#EAEAEA', // theme.colorBorder
+    tickIdle: '#C9C9C9', // theme.colorTickIdle — an un-logged pip tick / a trial gap dot
+    textPrimary: '#0A0A0A', // theme.colorTextPrimary
+    textSecondary: '#525252', // theme.colorTextSecondary
+    textTertiary: '#737373', // theme.colorTextTertiary
+    crescent: '#211E4E', // the CulpritMark disc (brand indigo family)
   };
 
   // Inlined, NOT imported: the layout runs as a bare string with no module graph,
@@ -372,10 +374,13 @@ export function CulpritWidgetLayout(
   }
 
   // The door tile (§2.3 ⑦): a dashed placeholder that opens quick-log. Fills a free
-  // grid slot only; the band's Log › chip is the door's permanent home.
+  // grid slot only; the band's Log › chip is the door's permanent home. Opens the
+  // NEUTRAL type picker (`log`, no `type`), not the meal form — a generic "Log"
+  // that dropped a symptom-logging owner into a food picker is friction (Sam;
+  // pm-feature-review). The Up-next tile is the only meal-preselected door.
   function doorTile(key: string) {
     return (
-      <Link key={key} destination={petLink('log?type=meal')}>
+      <Link key={key} destination={petLink('log')}>
         <VStack
           spacing={1}
           alignment="leading"
@@ -502,9 +507,11 @@ export function CulpritWidgetLayout(
   }
 
   // The dashed Log › chip — the door's permanent home (§2.5). A Link, right-aligned.
+  // The neutral type picker (`log`), same as the door tile — a generic "Log" opens
+  // the picker, not the meal form (pm-feature-review).
   function logChip() {
     return (
-      <Link key="logchip" destination={petLink('log?type=meal')}>
+      <Link key="logchip" destination={petLink('log')}>
         <HStack
           modifiers={[
             padding({ horizontal: 9, vertical: 3 }),

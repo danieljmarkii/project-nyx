@@ -256,37 +256,51 @@ function medTile(f: WidgetMedFacts): WidgetTile | null {
       sub: [drug, ...times].join(' · '),
     };
   }
-  // Cadence unknown: "N · time" (§2.7), sub names the drug. No fabricated denominator.
+  // Cadence unknown: "N · time" (§2.7). This branch is reached when the pet may
+  // have MORE than one med (2+ regimens, a regimen + an ad-hoc dose), so `value`
+  // aggregates across meds — and the sub must NOT name a single drug as if it
+  // accounted for the whole count (the N2 cross-med fabrication the denominator
+  // guards against, applied to the name). Join the distinct drug identities, like
+  // the meal tile; a single drug dosed twice still reads as one name.
   const clock = f.lastAt ? formatClock(f.lastAt) : '';
   const unit = clock ? (f.count === 1 ? `· ${clock}` : `· last ${clock}`) : '';
-  return { kind: 'med', label: 'Meds', value: `${f.count}`, unit, sub: drug };
+  return { kind: 'med', label: 'Meds', value: `${f.count}`, unit, sub: distinct(f.names).slice(0, 2).join(', ') };
 }
 
 // The symptom tile — always first, always rendered when ≥1 symptom is logged
 // (§2.3 ①, Principle 3). One type → the type is the label; multiple distinct
-// types → the most recent type leads and the total goes in the sub (the §2.3
-// build-detail call, flagged for the Designer). Naming symptoms on the widget is
-// in scope (V2-3, post-unlock Home Screen).
+// types → the **highest-count** type leads (ties → most recent), the total in the
+// sub. Leading by COUNT, not recency, is the safety call: this is the tile whose
+// whole job is the safety lead, and a day of "vomiting ×2 + one itch" must not
+// bury the vomiting under the more-recent itch (pm-feature-review; §2.3 left the
+// tie-break as a build-detail). Naming symptoms on the widget is in scope (V2-3,
+// post-unlock Home Screen). PROVISIONAL — flagged for PM confirm over recency.
 function symptomTile(s: WidgetSymptomFacts): WidgetTile | null {
   if (s.count <= 0) return null;
-  const leading = s.leadingType ?? 'Symptom';
   const lastClock = s.lastAt ? formatClock(s.lastAt) : '';
   const unit = lastClock ? `· last ${lastClock}` : '';
+  // `distinct` preserves most-recent-first order (names are recency-sorted), so it
+  // is also the tie-break: the first-seen (most recent) type wins an equal count.
   const types = distinct(s.names);
   if (types.length <= 1) {
     // One type: "Vomiting ×2 · last 4:40p", sub = the recent times (ascending).
+    // `types[0]` (never `leadingType`) so a null leadingType can never render a
+    // bare "Symptom ×0" — the label is always a real logged type.
+    const label = types[0] ?? s.leadingType ?? 'Symptom';
     const times = s.times.slice(0, 2).map(formatClock).filter(Boolean).reverse();
-    return { kind: 'symptom', label: leading, value: `×${s.count}`, unit, sub: times.join(' · ') };
+    return { kind: 'symptom', label, value: `×${s.count}`, unit, sub: times.join(' · ') };
   }
-  // Mixed: the leading type's own count as the value, the total in the sub (§2.3 ①).
-  const leadingCount = s.names.filter((n) => n === leading).length;
-  return {
-    kind: 'symptom',
-    label: leading,
-    value: `×${leadingCount}`,
-    unit,
-    sub: `${s.count} symptoms today`,
-  };
+  // Mixed: the highest-count type leads (ties → most recent), the total in the sub.
+  let leadType = types[0];
+  let leadCount = 0;
+  for (const t of types) {
+    const c = s.names.filter((n) => n === t).length;
+    if (c > leadCount) {
+      leadCount = c;
+      leadType = t;
+    }
+  }
+  return { kind: 'symptom', label: leadType, value: `×${leadCount}`, unit, sub: `${s.count} symptoms today` };
 }
 
 // The trial-record tile (§2.3 ⑥) — a record fact, never praise. Value = days
