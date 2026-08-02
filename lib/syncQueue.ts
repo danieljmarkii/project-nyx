@@ -145,6 +145,100 @@ export function classifySyncFailure(
   return 'rejected';
 }
 
+// ── Upload-failure classification (B-586) ────────────────────────────────────
+//
+// classifySyncFailure above keys off a Postgres error OBJECT — a `.code` SQLSTATE
+// that supabase-js RETURNS. The three file-bearing writers (event attachments,
+// vet-visit attachments, vet documents) fail their OBJECT-UPLOAD half a different
+// way: uploadPhoto RE-THROWS the Storage error, and the image re-encode /
+// bytes-read steps THROW a plain Error. A thrown error carries no SQLSTATE, so
+// classifySyncFailure calls every one of them 'transient' and charges nothing —
+// correct for a flaky network (the same throw) and WRONG for a file that can never
+// upload: a 413 on an oversize object, a 415 on an unsupported type, an image the
+// manipulator cannot decode. Left uncharged, such a row re-uploads every cycle
+// forever and, because these queues read oldest-first under a small LIMIT,
+// permanently occupies one of the slots.
+//
+// So thrown uploads get their own classifier. THE SAFETY LINE IS IDENTICAL to
+// classifySyncFailure's: a failure the SERVER never produced — the network, the
+// offline device — must cost nothing. Only the evidence differs (a Storage HTTP
+// status instead of a Postgres SQLSTATE).
+
+// A supabase StorageApiError carries a numeric `.status` (the HTTP status the
+// Storage server answered with — 413, 415, 5xx …). A StorageUnknownError (the
+// wrapper supabase puts around a network failure) sets `__isStorageError` but no
+// numeric status. Read the status structurally so this file stays free of the
+// storage-js import, exactly as the pure-split rationale at the top requires.
+export function uploadErrorStatus(error: unknown): number | null {
+  if (error && typeof error === 'object') {
+    const status = (error as { status?: unknown }).status;
+    if (typeof status === 'number' && Number.isFinite(status)) return status;
+  }
+  return null;
+}
+
+// The discriminator between "the network died" and "the file is unprocessable".
+// Every storage-js error (API or Unknown) sets this flag in its constructor; a
+// throw from the local re-encode / bytes-read does not.
+function isStorageErrorShape(error: unknown): boolean {
+  return !!error && typeof error === 'object' && '__isStorageError' in (error as object);
+}
+
+// HTTP statuses that mean the OBJECT ITSELF is unacceptable and always will be —
+// the Storage analog of the four terminal SQLSTATEs. 413 Payload Too Large (the
+// object exceeds the bucket's size limit; it will not shrink on a retry) and 415
+// Unsupported Media Type (the mime is not in the bucket's allowed set; it will not
+// change). The thousandth attempt fails like the first.
+export const TERMINAL_UPLOAD_STATUSES = [413, 415] as const;
+
+export function classifyUploadFailure(error: unknown): SyncFailureClass {
+  const status = uploadErrorStatus(error);
+  if (status !== null) {
+    // The Storage server answered, so it saw the request.
+    if ((TERMINAL_UPLOAD_STATUSES as readonly number[]).includes(status)) return 'terminal';
+    // Auth-race / timeout / rate-limit / server error: transient by the same
+    // argument as the PGRST + 08/53/57 cases — the row is not at fault and the
+    // condition resolves on a later cycle, so it must not spend the budget.
+    if (status === 401 || status === 403 || status === 408 || status === 429 || status >= 500) {
+      return 'transient';
+    }
+    // Any other 4xx the server produced against THIS object (400/404/422/…):
+    // spend an attempt and quarantine once the budget is gone — never re-send it
+    // silently for the life of the install.
+    return 'rejected';
+  }
+  // No numeric status. A wrapped Storage error with no status is a NETWORK failure
+  // (StorageUnknownError) — the offline case, the single most destructive thing to
+  // get wrong here — and must cost nothing.
+  if (isStorageErrorShape(error)) return 'transient';
+  // Not a Storage error at all: a LOCAL failure raised before the request ever left
+  // the device — the image re-encode threw (undecodable), or the file bytes could
+  // not be read (the capture is gone). Retrying is identical, so it spends the
+  // budget — but via 'rejected', not 'terminal', so a genuinely one-off blip (a
+  // transient decode OOM) still gets the full run of grace before it parks.
+  return 'rejected';
+}
+
+// The text parked in `sync_error` for a THROWN upload failure. Leads with the
+// class the way formatSyncError leads with the SQLSTATE, so the column stays
+// greppable by failure kind (`upload-413:` / `upload:`), then the message.
+export function formatUploadError(error: unknown): string {
+  const status = uploadErrorStatus(error);
+  let rawMessage = '';
+  if (error && typeof error === 'object') {
+    // An Error / StorageError object: use its message, or nothing if it has none.
+    // Never String(anObject) — that yields the useless '[object Object]'.
+    const message = (error as { message?: unknown }).message;
+    if (typeof message === 'string') rawMessage = message;
+  } else if (error != null) {
+    // A thrown primitive (a bare string / number) — rare, but keep it legible.
+    rawMessage = String(error);
+  }
+  const message = rawMessage.slice(0, 300);
+  const label = status !== null ? `upload-${status}` : 'upload';
+  return message ? `${label}: ${message}` : label;
+}
+
 // A PostgREST write that returns `{ error: null }` AND ZERO ROWS. This is not an
 // error object — it is the shape a silently-filtered write takes (the 009 trap,
 // where a food row resurrected from the local cache because an RLS-blocked delete
@@ -175,12 +269,19 @@ export const RLS_FILTERED_ERROR = {
 // dropping out of the push queue while the reason was temporary.
 export const MAX_SYNC_ATTEMPTS = 25;
 
+/** Append the "(unsent after N attempts)" suffix to any pre-formatted reason.
+ *  Shared by the row-write and object-upload give-up paths (B-586) so a parked row
+ *  reads the same regardless of which classifier produced its reason. */
+export function withUnsentSuffix(reason: string): string {
+  return `${reason} (unsent after ${MAX_SYNC_ATTEMPTS} attempts)`;
+}
+
 /** The reason text parked on a row that ran out of attempts. */
 export function exhaustedAttemptsError(error: {
   code?: string | null;
   message?: string | null;
 }): string {
-  return `${formatSyncError(error)} (unsent after ${MAX_SYNC_ATTEMPTS} attempts)`;
+  return withUnsentSuffix(formatSyncError(error));
 }
 
 // ── The queue registry ───────────────────────────────────────────────────────
