@@ -9,6 +9,8 @@
 import {
   resolveTimeModeChange,
   resolveFoundModeChange,
+  reconstructTimeControl,
+  sourceAfterPointEdit,
   DEFAULT_WINDOW_SPAN_MS,
 } from './eventTimeEdit';
 
@@ -77,6 +79,133 @@ describe('resolveTimeModeChange', () => {
       expect(resolveTimeModeChange('saw', 'found', false).asserted).toBe(true);
       expect(resolveTimeModeChange('found', 'saw', false).asserted).toBe(true);
     });
+  });
+
+  describe('tapping a segment from unclassified (B-527)', () => {
+    // Once B-527 seeds a NULL row to mode `null` (neither segment on), the FIRST
+    // tap on either segment is a genuine claim — never a no-op — so it must assert.
+    // This is the counterpart to the no-op re-tap: from null there is nothing to
+    // re-tap, so both directions are real assertions that classify the row.
+    it('asserts witnessed when "Saw it happen" is tapped from null', () => {
+      expect(resolveTimeModeChange(null, 'saw', false)).toEqual({
+        noOp: false,
+        seedFoundMode: null,
+        seedLatestFrom: null,
+        asserted: true,
+      });
+    });
+
+    it('asserts found and opens a window when "Found it" is tapped from null', () => {
+      expect(resolveTimeModeChange(null, 'found', false)).toEqual({
+        noOp: false,
+        seedFoundMode: 'before',
+        seedLatestFrom: 'now',
+        asserted: true,
+      });
+    });
+
+    it('seeds the window edge from a photo when entering found from null', () => {
+      expect(resolveTimeModeChange(null, 'found', true).seedLatestFrom).toBe('point');
+    });
+  });
+});
+
+describe('reconstructTimeControl (B-527)', () => {
+  it('seeds a witnessed row to the "Saw it happen" segment', () => {
+    expect(reconstructTimeControl({ confidence: 'witnessed', earliest: null, latest: null }))
+      .toEqual({ mode: 'saw', foundMode: null, earliest: null, latest: null });
+  });
+
+  it('seeds an estimated row to found / around', () => {
+    expect(reconstructTimeControl({ confidence: 'estimated', earliest: null, latest: null }))
+      .toEqual({ mode: 'found', foundMode: 'around', earliest: null, latest: null });
+  });
+
+  it('seeds a bounded window to found / between with both edges', () => {
+    expect(reconstructTimeControl({
+      confidence: 'window',
+      earliest: '2026-07-01T02:00:00.000Z',
+      latest: '2026-07-01T04:00:00.000Z',
+    })).toEqual({
+      mode: 'found',
+      foundMode: 'between',
+      earliest: '2026-07-01T02:00:00.000Z',
+      latest: '2026-07-01T04:00:00.000Z',
+    });
+  });
+
+  it('seeds an open-ended "before" window from the latest edge alone', () => {
+    expect(reconstructTimeControl({
+      confidence: 'window',
+      earliest: null,
+      latest: '2026-07-01T04:00:00.000Z',
+    })).toEqual({
+      mode: 'found',
+      foundMode: 'before',
+      earliest: null,
+      latest: '2026-07-01T04:00:00.000Z',
+    });
+  });
+
+  it('maps a degenerate lower-edge-only window to "before" off that edge', () => {
+    // A window with only an earliest edge is not a shape the UI produces, but a
+    // reconstruct must not throw on it — render it as an open-ended "before".
+    expect(reconstructTimeControl({
+      confidence: 'window',
+      earliest: '2026-07-01T02:00:00.000Z',
+      latest: null,
+    })).toEqual({
+      mode: 'found',
+      foundMode: 'before',
+      earliest: null,
+      latest: '2026-07-01T02:00:00.000Z',
+    });
+  });
+
+  it('seeds a NULL (unclassified) row to NEITHER segment — the B-527 fix', () => {
+    // The whole point: an unclassified row holds no claim, so the control must
+    // render with neither segment selected (mode null) rather than borrow
+    // "Saw it happen". Before B-527 this returned mode 'saw', so a NULL row was
+    // pixel-identical to a witnessed one and one tap could make the lie real.
+    expect(reconstructTimeControl({ confidence: null, earliest: null, latest: null }))
+      .toEqual({ mode: null, foundMode: null, earliest: null, latest: null });
+  });
+
+  it('never seeds a NULL row to a segment, whatever stray bounds it carries', () => {
+    // Bounds are illegal on a non-window row (chk_occurred_window_fields), but a
+    // malformed legacy row must still reconstruct to the absence, never to a
+    // borrowed classification.
+    expect(reconstructTimeControl({
+      confidence: null,
+      earliest: '2026-07-01T02:00:00.000Z',
+      latest: '2026-07-01T04:00:00.000Z',
+    }).mode).toBeNull();
+  });
+});
+
+describe('sourceAfterPointEdit (B-525)', () => {
+  it('flips a picker-edited now-sourced time to manual — the B-525 leak', () => {
+    // The live proof: a vomit set to a round 09:00:00 whose source stayed 'now'.
+    // A picker edit is an explicit choice, so its provenance is 'manual'.
+    expect(sourceAfterPointEdit('now', true)).toBe('manual');
+  });
+
+  it('flips a picker-edited exif-sourced time to manual', () => {
+    expect(sourceAfterPointEdit('exif', true)).toBe('manual');
+  });
+
+  it('keeps now on a peek that changes nothing', () => {
+    // Opening the picker and closing it without moving the value asserts nothing.
+    expect(sourceAfterPointEdit('now', false)).toBe('now');
+  });
+
+  it('keeps exif on a peek so the photo attribution is never silently dropped', () => {
+    expect(sourceAfterPointEdit('exif', false)).toBe('exif');
+  });
+
+  it('leaves manual as manual either way', () => {
+    expect(sourceAfterPointEdit('manual', true)).toBe('manual');
+    expect(sourceAfterPointEdit('manual', false)).toBe('manual');
   });
 });
 
