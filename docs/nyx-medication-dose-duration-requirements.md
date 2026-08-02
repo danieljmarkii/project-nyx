@@ -1,6 +1,6 @@
 # Medication Course Length in Doses — Requirements (B-618)
 
-**Version:** 1.0 — BUILD-READY | **Last Updated:** 2026-07-31
+**Version:** 1.1 | **Last Updated:** 2026-08-02 (§6 — a dose course's compliance denominator re-bases to the dispensed total; B-645/#557)
 **Status:** All decisions closed (D1 PM-ratified 2026-07-31; D2 PM-delegated → team-ruled; D3 PM punt; D4–D7 team/Dr. Chen from the 2026-07-30 convening). Build queued in its own session per PM.
 **Reads first:** `docs/sessions/2026-07-30-medication-duration-doses-discussion.md` (the convening record + conflict), backlog rows B-618 / B-441 / B-394.
 
@@ -77,7 +77,7 @@ export function dosesTowardTarget(tally: AdherenceTally): number {
 - A doses course renders **`Dose {n} of {target}`** where `n = dosesTowardTarget(tally)`, and the progress bar encodes `n / target` — the bar and the line state the same number (the diet-trial bar lesson).
 - `n` starts at 0: "Dose 0 of 28" before the first administration is honest; exact zero-state copy is a build-time `nyx-voice` pass.
 - **Past-target:** extra administrations are evidence and are never hidden — line becomes `28 of 28 doses · 2 more logged` (exact copy at build; the rule is *cap the bar, disclose the extras, render no error*). The card does **not** fall back to "Started …" the way the days path must ("Day 30 of 7" is nonsense; "28 of 28" stays true).
-- **No completion state** (D7): no checkmark, no "complete", no dismissal. The flag line (`2 refused`) and compliance line render exactly as today.
+- **No completion state** (D7): no checkmark, no "complete", no dismissal. The flag line (`2 refused`) renders exactly as today. The compliance line renders as today **with one change** (B-645, PM-ratified 2026-08-02): on a doses course its denominator is the **dispensed total** (`% given · N of target_duration_doses`), not the calendar pace (`doses_per_day × daysElapsed`). The pace denominator climbs past the prescribed total, so a fully-given #28 course rendered "78% given · 28 of 36 doses" directly under "Dose 28 of 28" — the reported completion contradiction. Re-basing makes the line agree with the counter ("100% given · 28 of 28 doses") and keeps it off the D3-punted pace framing. The given-only numerator (D1), the `percent=null` zero-state (§6.1), and days/ongoing/PRN courses are unchanged. One residual filed (B-658): "% given" now reads as course-progress on a dose card vs adherence-rate on a days card — a `nyx-voice` glance.
 - Days courses and ongoing courses render unchanged.
 - Sign-off: Designer (principles 1/3, bar semantics) + `pm-feature-review` on the built card.
 
