@@ -1016,11 +1016,11 @@ export async function refreshFoodCache(): Promise<void> {
 //
 // The one exception is narrow and self-inflicted, and worth naming rather than
 // claiming away: the placeholder is still SELECTABLE from the library while pending
-// (the local cache has no ai_extraction_status column to hide it — B-661), so an
+// (the local cache has no ai_extraction_status column to hide it — B-663), so an
 // owner who deliberately adds an 'Extracting…' food to a feeding arrangement or a
 // trial's allowed set inside this window would have that CASCADE-linked row (018 /
 // 040 are ON DELETE CASCADE) swept with it. Accepted here — it requires acting on a
-// tile literally titled 'Extracting…' — and the real fix is B-661 (stop showing the
+// tile literally titled 'Extracting…' — and the real fix is B-663 (stop showing the
 // placeholder at all), which also makes this reap a pure server-row backstop.
 //
 // A hard DELETE is the right shape here: food_items is per-account and hard-delete
