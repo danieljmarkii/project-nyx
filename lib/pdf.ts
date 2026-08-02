@@ -4,6 +4,7 @@ import { File, Paths } from 'expo-file-system';
 import { getSyncStatus } from './db';
 import { supabase } from './supabase';
 import { syncNow } from './sync';
+import { getDeviceTimezone } from './profile';
 
 // Vet report client (Step 9, Phase 2 PR 5 — the owner-facing MVP).
 //
@@ -127,7 +128,13 @@ export function reportFreshnessLine(f: ReportFreshness): string | null {
 }
 
 export async function generateVetReport(params: VetReportParams): Promise<VetReport> {
-  const { data, error } = await supabase.functions.invoke('generate-report', { body: params });
+  // timezone: the DEVICE zone, so the report's trial "Day N" buckets by the same clock the
+  // owner's card does (B-443), rather than a possibly-stale stored `user_profiles.timezone`.
+  // Injected here (not in VetReportParams) so every caller sends it without threading it; null
+  // when unresolvable → the server falls back to the stored zone. Never guessed.
+  const { data, error } = await supabase.functions.invoke('generate-report', {
+    body: { ...params, timezone: getDeviceTimezone() },
+  });
   if (error) throw new Error(`Report generation failed: ${error.message}`);
   if (!data || typeof data.html !== 'string' || data.html.length === 0) {
     // The function always renders SOMETHING (empty states are designed into the

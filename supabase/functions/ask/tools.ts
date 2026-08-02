@@ -199,6 +199,7 @@ export function resolveWindow(
   window: AskWindow,
   nowMs: number,
   trialStartMs?: number | null,
+  timezone?: string | null,
 ): ResolvedWindow {
   // Defense-in-depth (adversarial review, A3): coerce FIRST so an off-enum string a model
   // could emit ('90d', '6m') can never reach the FIXED_WINDOW_DAYS lookup and yield a NaN
@@ -222,24 +223,10 @@ export function resolveWindow(
     }
   }
 
+  // since_trial_start buckets by the OWNER'S midnight, not raw UTC like the fixed trailing
+  // windows below — its day count IS the trial's "Day N". See resolveTrialWindow (B-539).
   if (window === 'since_trial_start') {
-    if (trialStartMs == null || !Number.isFinite(trialStartMs)) {
-      // No trial in hand → honestly fall back to the default window (the caller sees
-      // window==='7d' and can phrase "the last 7 days" instead of a false trial span).
-      return resolveWindow(DEFAULT_WINDOW, nowMs)
-    }
-    const startIndex = Math.floor(trialStartMs / MS_PER_DAY)
-    const startMs = startIndex * MS_PER_DAY
-    return {
-      window,
-      windowDays: Math.max(1, todayIndex - startIndex + 1),
-      startMs,
-      endMs,
-      // A "since the trial started" span has no natural equal-length prior period.
-      priorStartMs: null,
-      priorEndMs: null,
-      label: 'since the diet trial started',
-    }
+    return resolveTrialWindow(nowMs, trialStartMs, timezone ?? null)
   }
 
   const days = FIXED_WINDOW_DAYS[window]
@@ -252,6 +239,57 @@ export function resolveWindow(
     priorStartMs: (todayIndex - (2 * days - 1)) * MS_PER_DAY,
     priorEndMs: startMs,
     label: `the last ${days} days`,
+  }
+}
+
+/**
+ * The `since_trial_start` window, bucketed by the OWNER'S midnight (B-539) — the fifth
+ * diet-trial day-math path, and the one B-421's guard originally missed. Kept SEPARATE from
+ * the fixed trailing windows on purpose: those are UTC-day-aligned so an Ask '7d' count
+ * equals the Patterns "week" (calendarWindow, the B-084 parity), but this window's day count
+ * IS the trial's "Day N", which the card renders on the owner's LOCAL clock
+ * (dietTrialStatus / getDietTrialProgress, §5.1 / B-421). A raw-UTC `Math.floor` here made
+ * two independent errors on a device off UTC: `windowDays` disagreed with the card by ±1,
+ * and the retrieval lower bound (UTC midnight of the start DATE) dropped the first hours of
+ * the owner's trial day 1 east of UTC and reached into the pre-trial day west of it. So the
+ * day indices come from the same zoned helpers dietTrialStatus uses, and the [startMs, endMs)
+ * bounds are the owner's LOCAL midnights (zonedDayStartMs) — the retrieved events are exactly
+ * those on local days [trial start … today].
+ *
+ * `trialStartMs` is midnight-UTC of a DATE column (index.ts parses `diet_trials.started_at`,
+ * a DATE). Its calendar day is recovered as a day KEY and indexed verbatim through
+ * zonedDayIndexOf — never `zonedDayIndex(trialStartMs, tz)`, which would read a behind-UTC
+ * zone's PREVIOUS day off that UTC-midnight instant (the localDayIndexOf trap the card
+ * already avoids). An absent/unparseable start falls back to the default window; a null zone
+ * degrades to UTC (the shipped fallback — B-443 is what keeps a real zone in hand).
+ */
+function resolveTrialWindow(
+  nowMs: number,
+  trialStartMs: number | null | undefined,
+  timezone: string | null,
+): ResolvedWindow {
+  if (trialStartMs == null || !Number.isFinite(trialStartMs)) {
+    // No trial in hand → honestly fall back to the default window (the caller sees
+    // window==='7d' and can phrase "the last 7 days" instead of a false trial span).
+    return resolveWindow(DEFAULT_WINDOW, nowMs)
+  }
+  // The trial's start DATE, read in UTC (trialStartMs is that DATE at UTC midnight), then
+  // indexed as a calendar day — zone-independent, the same value the card's start index has.
+  const startKey = new Date(trialStartMs).toISOString().slice(0, 10)
+  const startIndex = zonedDayIndexOf(startKey, timezone)
+  if (startIndex === null) return resolveWindow(DEFAULT_WINDOW, nowMs)
+  const todayIndex = zonedDayIndex(nowMs, timezone)
+  return {
+    window: 'since_trial_start',
+    // Identical formula to dietTrialStatus.dayCounter over the same zoned indices, so Ask's
+    // stated "since the diet trial started (N days)" and the card's "Day N" cannot diverge.
+    windowDays: Math.max(1, todayIndex - startIndex + 1),
+    startMs: zonedDayStartMs(startIndex, timezone),
+    endMs: zonedDayStartMs(todayIndex + 1, timezone),
+    // A "since the trial started" span has no natural equal-length prior period.
+    priorStartMs: null,
+    priorEndMs: null,
+    label: 'since the diet trial started',
   }
 }
 
@@ -470,9 +508,9 @@ export interface CountSymptomResult {
  *  full live event stream (any type) — used only to compute logged-day coverage. */
 export function countSymptom(
   allEvents: AskEventRow[],
-  params: { symptomType: string; window: AskWindow; nowMs: number; trialStartMs?: number | null },
+  params: { symptomType: string; window: AskWindow; nowMs: number; trialStartMs?: number | null; timezone?: string | null },
 ): CountSymptomResult {
-  const w = resolveWindow(params.window, params.nowMs, params.trialStartMs)
+  const w = resolveWindow(params.window, params.nowMs, params.trialStartMs, params.timezone)
   const live = liveEvents(allEvents)
   const inWindow = live.filter((e) => inSpan(e.occurredAt, w))
   const count = inWindow.filter((e) => e.type === params.symptomType).length
@@ -512,9 +550,9 @@ export interface SymptomTrendResult {
 /** Current-vs-prior symptom counts over the window (G5 parity with computeSymptomCounts). */
 export function symptomTrend(
   events: AskEventRow[],
-  params: { symptomType: string; window: AskWindow; nowMs: number; trialStartMs?: number | null },
+  params: { symptomType: string; window: AskWindow; nowMs: number; trialStartMs?: number | null; timezone?: string | null },
 ): SymptomTrendResult {
-  const w = resolveWindow(params.window, params.nowMs, params.trialStartMs)
+  const w = resolveWindow(params.window, params.nowMs, params.trialStartMs, params.timezone)
   const live = liveEvents(events).filter((e) => e.type === params.symptomType)
   const current = live.filter((e) => inSpan(e.occurredAt, w)).length
   let prior: number | null = null
@@ -581,7 +619,7 @@ export function timeOfDay(
     trialStartMs?: number | null
   },
 ): TimeOfDayResult {
-  const w = resolveWindow(params.window, params.nowMs, params.trialStartMs)
+  const w = resolveWindow(params.window, params.nowMs, params.trialStartMs, params.timezone)
   const base: TimeOfDayResult = {
     kind: 'time_of_day',
     symptomType: params.symptomType,
@@ -718,9 +756,10 @@ export function recentEvents(
     type?: string | null
     limit?: number
     trialStartMs?: number | null
+    timezone?: string | null
   },
 ): RecentEventsResult {
-  const w = resolveWindow(params.window, params.nowMs, params.trialStartMs)
+  const w = resolveWindow(params.window, params.nowMs, params.trialStartMs, params.timezone)
   // Number.isInteger guards NaN/Infinity/floats (which `??` lets through) → default cap.
   const requested = Number.isInteger(params.limit) ? (params.limit as number) : MAX_RECALL
   const cap = Math.max(1, Math.min(requested, MAX_RECALL))
@@ -876,9 +915,9 @@ export interface PhotoPresenceResult {
 /** Which events in a window carry a photo (presence + references only, §6.2 mode 1). */
 export function photoPresence(
   events: AskEventRow[],
-  params: { window: AskWindow; nowMs: number; type?: string | null; trialStartMs?: number | null },
+  params: { window: AskWindow; nowMs: number; type?: string | null; trialStartMs?: number | null; timezone?: string | null },
 ): PhotoPresenceResult {
-  const w = resolveWindow(params.window, params.nowMs, params.trialStartMs)
+  const w = resolveWindow(params.window, params.nowMs, params.trialStartMs, params.timezone)
   const withPhoto = liveEvents(events)
     .filter((e) => inSpan(e.occurredAt, w))
     .filter((e) => (params.type ? e.type === params.type : true))
@@ -921,9 +960,9 @@ export interface IntakeSummaryResult {
  */
 export function intakeSummary(
   meals: AskMealRow[],
-  params: { window: AskWindow; nowMs: number; freeFedFoodIds: ReadonlySet<string>; trialStartMs?: number | null },
+  params: { window: AskWindow; nowMs: number; freeFedFoodIds: ReadonlySet<string>; trialStartMs?: number | null; timezone?: string | null },
 ): IntakeSummaryResult | NotEnoughData {
-  const w = resolveWindow(params.window, params.nowMs, params.trialStartMs)
+  const w = resolveWindow(params.window, params.nowMs, params.trialStartMs, params.timezone)
   const inWindow = liveEvents(meals).filter((m) => inSpan(m.occurredAt, w))
   const ratedNonTreat = inWindow.filter((m) => m.foodType !== 'treat' && m.intakeRating != null)
   const freeFedExcluded = ratedNonTreat.filter((m) => isFreeFedMeal(m, params.freeFedFoodIds)).length
@@ -979,9 +1018,10 @@ export function topFoods(
     freeFedFoodIds?: ReadonlySet<string>
     limit?: number
     trialStartMs?: number | null
+    timezone?: string | null
   },
 ): TopFoodsResult | NotEnoughData {
-  const w = resolveWindow(params.window, params.nowMs, params.trialStartMs)
+  const w = resolveWindow(params.window, params.nowMs, params.trialStartMs, params.timezone)
   const limit = params.limit ?? 5
   const freeFed = params.freeFedFoodIds ?? new Set<string>()
   const inWindow = liveEvents(meals).filter((m) => inSpan(m.occurredAt, w))
@@ -1056,9 +1096,10 @@ export function topProteins(
     freeFedFoodIds?: ReadonlySet<string>
     limit?: number
     trialStartMs?: number | null
+    timezone?: string | null
   },
 ): TopProteinsResult | NotEnoughData {
-  const w = resolveWindow(params.window, params.nowMs, params.trialStartMs)
+  const w = resolveWindow(params.window, params.nowMs, params.trialStartMs, params.timezone)
   const limit = params.limit ?? 5
   const freeFed = params.freeFedFoodIds ?? new Set<string>()
   const inWindow = liveEvents(meals).filter((m) => inSpan(m.occurredAt, w))
@@ -1117,9 +1158,9 @@ export interface WeightSummaryResult {
  */
 export function weightSummary(
   readings: AskWeightRow[],
-  params: { window: AskWindow; nowMs: number; trialStartMs?: number | null },
+  params: { window: AskWindow; nowMs: number; trialStartMs?: number | null; timezone?: string | null },
 ): WeightSummaryResult {
-  const w = resolveWindow(params.window, params.nowMs, params.trialStartMs)
+  const w = resolveWindow(params.window, params.nowMs, params.trialStartMs, params.timezone)
   const live = liveEvents(readings).filter((r) => inSpan(r.occurredAt, w))
   const sorted = [...live].sort((a, b) => a.occurredAt.localeCompare(b.occurredAt))
   const seriesLbs = sorted.map((r) => kgToLbsNum(r.weightKg))
@@ -1160,28 +1201,36 @@ export interface DietTrialStatusResult {
 }
 
 /** Diet-trial progress — a faithful port of lib/analytics.ts getDietTrialProgress (G5: Ask
- *  must never quote a different Day N than the trial card the owner is looking at). A null OR
- *  soft-deleted trial ⇒ inactive (no trial to report), never an invented span. The trial
- *  carries its own `deletedAt` so this core enforces the soft-delete contract itself (§5.2 /
- *  B-071), rather than trusting the caller — matching `liveEvents` everywhere else.
+ *  must never quote a different Day N than the trial card the owner is looking at). A null or
+ *  non-active trial ⇒ inactive (no trial to report), never an invented span.
+ *
+ *  The active-ness gate is `status` (B-539). `diet_trials` has NO soft-delete column
+ *  (migration 001) — the prior `deletedAt` guard tested a field that does not exist and
+ *  index.ts hard-coded to null, so it never fired, and the function silently rested on the
+ *  upstream query's `.eq('status','active')` alone. This core now enforces the same predicate
+ *  itself (§5.2 / B-071 — don't trust the caller), so a future caller that forgets the filter
+ *  can't make an ended or abandoned trial read as an active Day N. A null status (a legacy row
+ *  or a fixture that omits it) is not asserted either way and proceeds, matching the report's
+ *  own `normaliseStatus` tolerance.
  *
  *  The day boundary is the OWNER'S midnight (§5.1, B-421), not UTC. The client can read the
- *  device clock; the server cannot, so it buckets by `user_profiles.timezone` exactly as
- *  `localHourOfDay` below and detection.ts already do. Unlike time_of_day, an absent or
- *  invalid zone does NOT go silent here — it falls back to UTC, which is the behaviour this
- *  shipped with, because a day counter is a plain fact the owner is owed and a "Day —" is a
- *  worse answer than a possibly-off-by-one one. */
+ *  device clock; the server cannot, so it buckets by the owner's zone — the caller resolves
+ *  that as the request's device zone, then `user_profiles.timezone`, then null (B-443), and
+ *  hands it in here. Unlike time_of_day, an absent zone does NOT go silent — it falls back to
+ *  UTC, which is the behaviour this shipped with, because a day counter is a plain fact the
+ *  owner is owed and a "Day —" is a worse answer than a possibly-off-by-one one. */
 export function dietTrialStatus(
-  trial: { startedAt: string; targetDurationDays: number; status?: string | null; deletedAt?: string | null } | null,
+  trial: { startedAt: string; targetDurationDays: number; status?: string | null } | null,
   nowMs: number,
   timezone?: string | null,
 ): DietTrialStatusResult {
-  if (!trial || trial.deletedAt != null) {
-    return { kind: 'diet_trial_status', active: false, dayCounter: null, targetDays: null, daysRemaining: null, complete: false }
+  const inactive: DietTrialStatusResult = { kind: 'diet_trial_status', active: false, dayCounter: null, targetDays: null, daysRemaining: null, complete: false }
+  if (!trial || (trial.status != null && trial.status !== 'active')) {
+    return inactive
   }
   const startIndex = zonedDayIndexOf(trial.startedAt, timezone ?? null)
   if (startIndex === null || !Number.isFinite(nowMs)) {
-    return { kind: 'diet_trial_status', active: false, dayCounter: null, targetDays: null, daysRemaining: null, complete: false }
+    return inactive
   }
   const todayIndex = zonedDayIndex(nowMs, timezone ?? null)
   const dayCounter = Math.max(1, todayIndex - startIndex + 1)
@@ -1251,9 +1300,9 @@ export interface MedicationsResult {
 export function medications(
   regimens: AskRegimenRow[],
   doses: AskDoseRow[],
-  params: { window: AskWindow; nowMs: number; trialStartMs?: number | null },
+  params: { window: AskWindow; nowMs: number; trialStartMs?: number | null; timezone?: string | null },
 ): MedicationsResult {
-  const w = resolveWindow(params.window, params.nowMs, params.trialStartMs)
+  const w = resolveWindow(params.window, params.nowMs, params.trialStartMs, params.timezone)
   const liveRegimens = liveEvents(regimens)
   const windowDoses = liveEvents(doses).filter((d) => inSpan(d.occurredAt, w))
 
@@ -1549,6 +1598,67 @@ function zonedDayIndexOf(value: string, timezone: string | null): number | null 
   const ms = Date.parse(value)
   if (!Number.isFinite(ms)) return null
   return zonedDayIndex(ms, timezone)
+}
+
+/**
+ * The UTC instant at which LOCAL day `dayIndex` BEGINS, in `timezone` — the inverse
+ * `resolveTrialWindow` needs to turn a local day back into a retrieval bound (B-539). The
+ * invariant it guarantees for the half-open `[startMs, endMs)` filter: `event >= startMs` iff
+ * the event's local day is `>= dayIndex`, so `zonedDayIndex(zonedDayStartMs(i, tz), tz) === i`
+ * holds for EVERY zone and day.
+ *
+ * `dayIndex * MS_PER_DAY` is UTC midnight of that date; the owner's local midnight is that
+ * shifted by the zone's offset AT that local time. Two candidates bracket any single DST
+ * transition (`c1` uses the offset at UTC midnight, `c2` re-probes at c1 — the date-fns-tz
+ * method). On an ORDINARY day both land on local midnight (day i). On a spring-forward-AT-
+ * midnight day (America/Havana, America/Santiago, America/Asuncion — local 00:00 is SKIPPED)
+ * local midnight does not exist, so the day begins at the transition (01:00): `c1` lands there,
+ * on day i; `c2` lands an hour before it, on day i-1. Taking the EARLIEST candidate that is
+ * actually on day i returns local midnight on ordinary days and the transition on the skip day
+ * — never an hour early on day i-1, which had dropped a today-in-trial event from the window
+ * for ≤1h/year in those three zones (adversarial-reviewer, 2026-08-02). A null/invalid zone
+ * returns UTC midnight — the shipped fallback, byte-identical to the raw `index * MS_PER_DAY`.
+ */
+function zonedDayStartMs(dayIndex: number, timezone: string | null): number {
+  const utcMidnight = dayIndex * MS_PER_DAY
+  if (!timezone) return utcMidnight
+  const c1 = utcMidnight - zoneOffsetMs(utcMidnight, timezone)
+  const c2 = utcMidnight - zoneOffsetMs(c1, timezone)
+  // Both candidates are within the DST amount (~1h) of local midnight, so each falls on day i
+  // or an adjacent one. The day BEGINS at the earliest instant whose local day is i.
+  const onDay = [c1, c2].filter((c) => zonedDayIndex(c, timezone) === dayIndex)
+  return onDay.length > 0 ? Math.min(...onDay) : Math.min(c1, c2)
+}
+
+/** The zone's UTC offset (ms) at instant `ms`: the wall-clock components in `timezone`,
+ *  reassembled as if they were UTC, minus `ms`. 0 for an invalid zone (→ UTC). Built on Intl
+ *  so it is portable across Deno Edge + the Node test runner and DST-correct per instant —
+ *  the same Intl.formatToParts machinery zonedDayIndex uses, extended to hh:mm:ss. */
+function zoneOffsetMs(ms: number, timezone: string): number {
+  try {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone,
+      year: 'numeric',
+      month: 'numeric',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: 'numeric',
+      second: 'numeric',
+      hour12: false,
+    }).formatToParts(new Date(ms))
+    const g = (t: string): number => Number(parts.find((p) => p.type === t)?.value)
+    let h = g('hour')
+    if (h === 24) h = 0 // some engines render midnight as 24:00
+    const y = g('year')
+    const mo = g('month')
+    const d = g('day')
+    const mi = g('minute')
+    const s = g('second')
+    if (![y, mo, d, h, mi, s].every(Number.isInteger)) return 0
+    return Date.UTC(y, mo - 1, d, h, mi, s) - ms
+  } catch {
+    return 0 // invalid IANA zone → treat as UTC
+  }
 }
 
 function localHourOfDay(ms: number, timezone: string): number | null {

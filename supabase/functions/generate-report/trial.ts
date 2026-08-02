@@ -71,7 +71,7 @@ import {
   type TrialSpecies,
 } from '../../../lib/dietTrial.ts'
 export type { ContaminationFact } from '../../../lib/dietTrial.ts'
-import { localDayIndexOf } from '../../../lib/utils.ts'
+import { localDayIndexOf, trialDayCounter } from '../../../lib/utils.ts'
 
 const MS_PER_DAY = 86_400_000
 
@@ -956,7 +956,13 @@ export function buildTrialBlock(args: BuildTrialBlockArgs): TrialBlock | null {
   // report say "day 112 — 56 days past" where the card said "Day 123 of 56": the
   // report understated the trial's staleness by exactly the overrun it was
   // reporting, which is the one number on that block a vet reads for recency.
-  const dayCounter = Math.max(1, evidence.endDayIndex - ctx.startDayIndex + 1)
+  // RE-BASED ON THE SINGLE ORACLE (B-449). The day-1-inclusive subtraction now lives in
+  // `lib/utils.trialDayCounter`, the same formula `getDietTrialProgress` uses — so the
+  // report's headline "Day N" and the card's can no longer drift in their arithmetic.
+  // The END index stays the report's own choice: `evidence.endDayIndex`, NOT today, so a
+  // scoped or overrun report reads the day the record shows (see the comment above and
+  // analytics.ts:getDietTrialProgress on why the report keeps its own end).
+  const dayCounter = trialDayCounter(ctx.startDayIndex as number, evidence.endDayIndex)
   const target = trial.targetDurationDays > 0 ? trial.targetDurationDays : 0
 
   return {
