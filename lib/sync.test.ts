@@ -19,13 +19,14 @@
 // above imports, so the control fn the factory closes over is mock-prefixed.
 
 const mockCompress = jest.fn();
+const mockUploadPhoto = jest.fn();
 const mockGetSession = jest.fn();
 const mockFrom = jest.fn();
 const mockRunAsync = jest.fn();
 const mockGetAllAsync = jest.fn();
 
 jest.mock('./storage', () => ({
-  uploadPhoto: jest.fn(),
+  uploadPhoto: (...args: unknown[]) => mockUploadPhoto(...args),
   compressForUpload: (...args: unknown[]) => mockCompress(...args),
 }));
 jest.mock('./supabase', () => ({
@@ -58,13 +59,17 @@ import { MAX_SYNC_ATTEMPTS } from './syncQueue';
 import {
   markSynced,
   prepareAttachmentUpload,
+  reapStalePendingFoods,
   refreshFoodCache,
   refreshMedicationCache,
+  syncPendingAttachments,
   syncPendingDietTrials,
   syncPendingDietTrialFoods,
   syncPendingEvents,
   syncPendingFeedingArrangements,
   syncPendingMeals,
+  syncPendingVetDocuments,
+  syncPendingVetVisits,
 } from './sync';
 
 // B-125 — the post-push `synced = 1` sweep every writer shares.
@@ -976,5 +981,192 @@ describe('pushRows — poison-pill isolation and the retry budget (B-398)', () =
     expect((db.prepare("SELECT synced FROM events WHERE id = 'e1'").get() as { synced: number }).synced)
       .toBe(0);
     db.close();
+  });
+});
+
+// ── B-586 — a THROWN upload failure gets the retry budget too ─────────────────
+//
+// B-398 gave every queue a budget, but recordPushFailure keys off a Postgres error
+// OBJECT. The object-upload half of the three file-bearing writers fails by
+// THROWING (uploadPhoto re-throws the Storage error; prepareVetDocumentUpload and
+// the bytes read throw), and a throw has no SQLSTATE — so before this fix every one
+// re-uploaded forever, permanently occupying an oldest-first slot. These assertions
+// prove the WIRING: each writer routes its catch through recordUploadFailure, and
+// the classifier's three outcomes reach the row.
+describe('file-bearing writers charge a thrown upload failure (B-586)', () => {
+  // storage-js's real error shapes: StorageApiError carries a numeric status,
+  // StorageUnknownError (a wrapped network failure) carries the flag but none.
+  const apiError = (status: number, message = 'boom') => ({
+    __isStorageError: true, name: 'StorageApiError', status, statusCode: String(status), message,
+  });
+  const networkError = { __isStorageError: true, name: 'StorageUnknownError', message: 'Network request failed' };
+
+  const parks = () =>
+    mockRunAsync.mock.calls.filter(
+      ([sql]) => String(sql).includes('SET sync_error = ?') && !String(sql).includes('CASE'));
+  const bumps = () =>
+    mockRunAsync.mock.calls.filter(([sql]) => String(sql).includes('sync_attempts = sync_attempts + 1'));
+  const marks = () => mockRunAsync.mock.calls.filter(([sql]) => String(sql).includes('synced = 1'));
+
+  const EVENT_ATT = {
+    id: 'a1', event_id: 'e1', pet_id: 'p1', local_uri: 'file:///a.jpg',
+    storage_path: 'k/a.jpg', mime_type: 'image/jpeg', taken_at: null,
+  };
+  const VISIT_ATT = {
+    id: 'va1', vet_visit_id: 'v1', pet_id: 'p1', local_uri: 'file:///v.jpg',
+    storage_path: 'k/v.jpg', mime_type: 'image/jpeg', taken_at: null,
+  };
+  const VET_DOC = {
+    id: 'd1', pet_id: 'p1', vet_visit_id: null, document_group_id: 'g1', kind: 'lab_result',
+    title: null, document_date: null, notes: null, source: 'camera', source_filename: null,
+    local_uri: 'file:///d.jpg', storage_path: 'p1/d1.jpg', mime_type: 'image/jpeg',
+    file_size_bytes: 1234, page_index: 0, deleted_at: null,
+    created_at: '2026-07-01T00:00:00.000Z', updated_at: '2026-07-01T00:00:00.000Z', synced: 0,
+  };
+
+  beforeEach(() => {
+    mockGetSession.mockReset();
+    mockGetSession.mockResolvedValue({ data: { session: { user: { id: 'user-A' } } } });
+    mockFrom.mockReset();
+    // A benign upsert chain: the row-write half never runs when the upload throws
+    // first, but syncPendingVetDocuments references supabase.from unconditionally.
+    mockFrom.mockReturnValue({
+      upsert: jest.fn().mockReturnValue({ select: jest.fn().mockResolvedValue({ data: [], error: null }) }),
+    });
+    mockRunAsync.mockReset();
+    mockRunAsync.mockResolvedValue(undefined);
+    mockGetAllAsync.mockReset();
+    mockCompress.mockReset();
+    mockCompress.mockResolvedValue('file:///compressed.jpg');
+    mockUploadPhoto.mockReset();
+    mockUploadPhoto.mockResolvedValue(undefined);
+    jest.spyOn(console, 'warn').mockImplementation(() => {});
+  });
+  afterEach(() => jest.restoreAllMocks());
+
+  it('event attachment: a 413 on the object quarantines (terminal), never marks synced', async () => {
+    mockGetAllAsync.mockResolvedValue([EVENT_ATT]);
+    mockUploadPhoto.mockRejectedValue(apiError(413, 'Payload too large'));
+
+    await syncPendingAttachments();
+
+    expect(parks()).toHaveLength(1);
+    expect(String(parks()[0][0])).toContain('UPDATE event_attachments SET sync_error = ?');
+    expect(parks()[0][1]).toEqual(['upload-413: Payload too large', 'a1']);
+    expect(bumps()).toHaveLength(0); // a terminal failure waits for nothing
+    expect(marks()).toHaveLength(0);
+  });
+
+  it('vet-visit attachment: a NETWORK throw records NOTHING — the offline case', async () => {
+    // The single most destructive way to get this wrong: charging the offline owner.
+    mockGetAllAsync.mockImplementation((sql: string) =>
+      Promise.resolve(String(sql).includes('vet_visit_attachments') ? [VISIT_ATT] : []));
+    mockUploadPhoto.mockRejectedValue(networkError);
+
+    await syncPendingVetVisits();
+
+    expect(mockRunAsync).not.toHaveBeenCalled(); // nothing parked, nothing bumped, nothing marked
+  });
+
+  it('vet document: a 413 on an oversize object quarantines (terminal)', async () => {
+    mockGetAllAsync.mockResolvedValue([VET_DOC]);
+    mockUploadPhoto.mockRejectedValue(apiError(413, 'Payload too large'));
+
+    await syncPendingVetDocuments();
+
+    expect(parks()).toHaveLength(1);
+    expect(String(parks()[0][0])).toContain('UPDATE vet_documents SET sync_error = ?');
+    expect(parks()[0][1]).toEqual(['upload-413: Payload too large', 'd1']);
+    expect(marks()).toHaveLength(0);
+  });
+
+  it('vet document: an undecodable image spends the budget (rejected), not an immediate park', async () => {
+    // prepareVetDocumentUpload has NO original-fallback (§6.2: no GPS-intact upload
+    // on a vet doc), so the compress throw propagates and is classified as a local
+    // failure — charged, but with the full run of grace before it quarantines.
+    mockGetAllAsync.mockResolvedValue([VET_DOC]);
+    mockCompress.mockRejectedValue(new Error('manipulator: could not decode image'));
+
+    await syncPendingVetDocuments();
+
+    expect(bumps()).toHaveLength(1);
+    expect(bumps()[0][1]).toEqual([MAX_SYNC_ATTEMPTS, expect.stringContaining('upload:'), 'd1']);
+    expect(parks()).toHaveLength(0);
+    expect(marks()).toHaveLength(0);
+    expect(mockUploadPhoto).not.toHaveBeenCalled(); // the throw was before the upload
+  });
+});
+
+// ── B-369 — reap orphaned in-progress food captures ──────────────────────────
+//
+// food-capture inserts the owner-locked food_items row BEFORE uploading its photos
+// (B-358, an RLS requirement), so an app death in that window strands a
+// 'pending'/'Extracting…' phantom in the library. The reaper deletes the account's
+// stale pending rows and drops them from the cache so the phantom disappears.
+describe('reapStalePendingFoods (B-369)', () => {
+  let selectFinal: jest.Mock;
+  let ltFn: jest.Mock;
+  let eq2: jest.Mock;
+  let eq1: jest.Mock;
+  let deleteFn: jest.Mock;
+
+  beforeEach(() => {
+    mockGetSession.mockReset();
+    mockGetSession.mockResolvedValue({ data: { session: { user: { id: 'user-A' } } } });
+    mockFrom.mockReset();
+    mockRunAsync.mockReset();
+    mockRunAsync.mockResolvedValue(undefined);
+    // supabase.from('food_items').delete().eq().eq().lt().select('id')
+    selectFinal = jest.fn().mockResolvedValue({ data: [], error: null });
+    ltFn = jest.fn().mockReturnValue({ select: selectFinal });
+    eq2 = jest.fn().mockReturnValue({ lt: ltFn });
+    eq1 = jest.fn().mockReturnValue({ eq: eq2 });
+    deleteFn = jest.fn().mockReturnValue({ eq: eq1 });
+    mockFrom.mockReturnValue({ delete: deleteFn });
+    jest.spyOn(console, 'warn').mockImplementation(() => {});
+  });
+  afterEach(() => jest.restoreAllMocks());
+
+  it('deletes ONLY this account\'s stale pending rows — scoped, status-gated, aged', async () => {
+    await reapStalePendingFoods();
+
+    expect(mockFrom).toHaveBeenCalledWith('food_items');
+    expect(deleteFn).toHaveBeenCalled();
+    expect(eq1).toHaveBeenCalledWith('created_by_user_id', 'user-A'); // account scope (belt-and-braces w/ RLS)
+    expect(eq2).toHaveBeenCalledWith('ai_extraction_status', 'pending'); // only in-progress captures
+    const [col, cutoff] = ltFn.mock.calls[0] as [string, string];
+    expect(col).toBe('created_at');
+    expect(new Date(cutoff).getTime()).toBeLessThan(Date.now()); // a past cutoff (now - 30 min)
+    expect(selectFinal).toHaveBeenCalledWith('id');
+  });
+
+  it('purges the reaped rows from the local cache so the phantom tile disappears now', async () => {
+    selectFinal.mockResolvedValue({ data: [{ id: 'f1' }, { id: 'f2' }], error: null });
+
+    await reapStalePendingFoods();
+
+    const cacheDelete = mockRunAsync.mock.calls.find(([sql]) => String(sql).includes('food_items_cache'));
+    expect(cacheDelete).toBeDefined();
+    expect(String(cacheDelete![0])).toContain('DELETE FROM food_items_cache WHERE id IN (?,?)');
+    expect(cacheDelete![1]).toEqual(['f1', 'f2']);
+  });
+
+  it('touches the cache for nothing when there is nothing stale to reap', async () => {
+    selectFinal.mockResolvedValue({ data: [], error: null });
+    await reapStalePendingFoods();
+    expect(mockRunAsync).not.toHaveBeenCalled();
+  });
+
+  it('never deletes without a session (Pattern 4)', async () => {
+    mockGetSession.mockResolvedValue({ data: { session: null } });
+    await reapStalePendingFoods();
+    expect(mockFrom).not.toHaveBeenCalled();
+    expect(mockRunAsync).not.toHaveBeenCalled();
+  });
+
+  it('logs and leaves the cache alone on a delete error — no silent failure', async () => {
+    selectFinal.mockResolvedValue({ data: null, error: { message: 'boom' } });
+    await reapStalePendingFoods();
+    expect(mockRunAsync).not.toHaveBeenCalled();
   });
 });
