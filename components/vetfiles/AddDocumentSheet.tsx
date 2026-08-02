@@ -5,6 +5,7 @@ import { SheetShell } from './SheetShell';
 import {
   ADD_SOURCE_ROWS,
   ADD_SHEET_SUBTITLE,
+  FILES_UNAVAILABLE_SUBTITLE,
   addSheetTitle,
 } from '../../lib/vetDocumentCapture';
 import type { VetDocumentSource } from '../../lib/vetDocuments';
@@ -12,6 +13,13 @@ import type { VetDocumentSource } from '../../lib/vetDocuments';
 interface Props {
   visible: boolean;
   petName: string;
+  /**
+   * B-548 — false when this binary can't pick a PDF (expo-document-picker absent,
+   * probed at mount by the host screen). The Files row then renders disabled with
+   * an honest subtitle instead of failing after the tap. Defaults to available so
+   * every other caller and test is unaffected.
+   */
+  filesAvailable?: boolean;
   onCancel: () => void;
   onPick: (source: VetDocumentSource) => void;
 }
@@ -33,7 +41,7 @@ const ICONS: Record<VetDocumentSource, typeof Camera> = {
 //
 // No kind chips, no title field, no visit picker — D11 and D7 respectively. The
 // only question this sheet may ask is "from where".
-export function AddDocumentSheet({ visible, petName, onCancel, onPick }: Props) {
+export function AddDocumentSheet({ visible, petName, filesAvailable = true, onCancel, onPick }: Props) {
   return (
     <SheetShell
       visible={visible}
@@ -44,21 +52,29 @@ export function AddDocumentSheet({ visible, petName, onCancel, onPick }: Props) 
       <View style={styles.rows}>
         {ADD_SOURCE_ROWS.map((row, i) => {
           const Icon = ICONS[row.source];
+          // B-548 — the Files row alone can be unavailable in a stale binary. It
+          // renders dimmed and non-tappable with the honest subtitle rather than
+          // vanishing: a disappearing option reads as a bug, and the row's absence
+          // would leave the owner wondering where PDFs went.
+          const disabled = row.source === 'files' && !filesAvailable;
+          const subtitle = disabled ? FILES_UNAVAILABLE_SUBTITLE : row.subtitle;
           return (
             <TouchableOpacity
               key={row.source}
-              style={[styles.row, i > 0 && styles.rowDivided]}
-              onPress={() => onPick(row.source)}
+              style={[styles.row, i > 0 && styles.rowDivided, disabled && styles.rowDisabled]}
+              onPress={disabled ? undefined : () => onPick(row.source)}
+              disabled={disabled}
               activeOpacity={0.7}
               accessibilityRole="button"
-              accessibilityLabel={`${row.title}. ${row.subtitle}`}
+              accessibilityState={{ disabled }}
+              accessibilityLabel={`${row.title}. ${subtitle}`}
             >
               <View style={styles.icon}>
                 <Icon size={17} color={theme.colorAccentInk} strokeWidth={1.9} />
               </View>
               <View style={styles.text}>
                 <Text style={styles.rowTitle}>{row.title}</Text>
-                <Text style={styles.rowSub}>{row.subtitle}</Text>
+                <Text style={styles.rowSub}>{subtitle}</Text>
               </View>
             </TouchableOpacity>
           );
@@ -94,6 +110,12 @@ const styles = StyleSheet.create({
   rowDivided: {
     borderTopWidth: 1,
     borderTopColor: theme.colorBorder,
+  },
+  // Dimmed rather than hidden (B-548). The whole row fades together so the icon,
+  // title and subtitle read as one unavailable affordance, not a live row with grey
+  // text.
+  rowDisabled: {
+    opacity: 0.45,
   },
   icon: {
     width: 34,

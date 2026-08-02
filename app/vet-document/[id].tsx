@@ -41,6 +41,18 @@ import {
   type VetDocumentPage,
   type VetVisitOption,
 } from '../../lib/vetDocumentDetail';
+import {
+  buildVetDocumentRows,
+  duplicateVetDocumentRowsForPet,
+  insertVetDocumentRows,
+  readLocalVetDocumentGroup,
+  screenPickedFiles,
+  rejectedPickMessage,
+  alsoAddLabel,
+  alsoAddedLabel,
+} from '../../lib/vetDocumentCapture';
+import { pickVetImages } from '../../lib/vetDocumentPickers';
+import type { AlsoAddTarget } from '../../components/vetfiles/DocumentSavedMoment';
 
 // Vet Files — document detail (B-478 VF-4).
 // §4.3 + mock E-img-r2 / E-pdf-r2.
@@ -48,8 +60,10 @@ import {
 // The last unbuilt Vet Files surface, and the one the feature is actually FOR:
 // §4.3 calls sharing "the single most important affordance after viewing" — the
 // ER moment, where a vet asks for the last bloodwork and the answer has to be two
-// taps rather than an inbox excavation. So the floor is Share alone, and the two
-// lesser actions (Rename, Delete) live behind ⋯ rather than competing with it.
+// taps rather than an inbox excavation. So the floor is Share alone, and every
+// secondary action lives behind ⋯ rather than competing with it: Rename and Delete,
+// plus the two additive ones — "Add another page" (B-549, image documents only) and
+// D13's "Also add to {other pet}" (B-547, multi-pet accounts only).
 //
 // Four things here are contracts rather than choices:
 //
@@ -100,6 +114,16 @@ export default function VetDocumentDetailScreen() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [sheet, setSheet] = useState<'name' | 'kind' | 'notes' | 'date' | 'visit' | null>(null);
   const [saving, setSaving] = useState(false);
+
+  // B-547 / B-549 — the two additive ⋯-menu actions. `capturing` guards a copy or a
+  // page-append write in flight; it is separate from `saving` (which drives the
+  // Share button's spinner and the edit sheets) because these run behind the menu
+  // and behind an OS picker, not behind the primary CTA. `alsoAdded` flips a per-pet
+  // copy line to its confirmed state so a second tap can't file a third copy. Both
+  // are per-mount, i.e. per-document, which is the correct scope: this route is one
+  // document, and expo-router mounts a fresh screen per groupId.
+  const [capturing, setCapturing] = useState(false);
+  const [alsoAdded, setAlsoAdded] = useState<Set<string>>(() => new Set());
 
   // A page whose bytes are being cached right now, so a fast second open doesn't
   // start a duplicate download of the same object.
@@ -253,6 +277,89 @@ export default function VetDocumentDetailScreen() {
     );
   }
 
+  // ── Add another page (B-549, §4.4) ──────────────────────────────────────────
+  //
+  // The detail-screen home for the append machinery that previously existed only on
+  // the saved moment: a discharge sheet whose page 4 was missed at capture is
+  // recovered by adding to the existing group, never by delete-and-recapture. Image
+  // documents only — a PDF group is one page per PDF (§4.4), and buildVetDocumentDetail
+  // reads the group's type from the cover, so appending an image page to a PDF would
+  // break that one-mime assumption; the ⋯ item is simply absent for a PDF.
+  //
+  // Camera only, matching the saved-moment append and the "snap the page you missed"
+  // moment this exists for. The menu stays OPEN across the picker for the same iOS
+  // reason the library's capture flow does (expo-image-picker presents from the
+  // topmost view controller, stable while this Modal is up and ambiguous mid-dismiss);
+  // it closes once the picker returns, before the write.
+  async function handleAddPage() {
+    if (!detail || detail.isPdf || capturing) return;
+    setCapturing(true);
+    try {
+      const picked = await pickVetImages('camera');
+      setMenuOpen(false);
+      if (picked.length === 0) return;
+      const screened = screenPickedFiles(picked);
+      if (screened.accepted.length === 0) {
+        const skipped = rejectedPickMessage(screened);
+        if (skipped) Alert.alert('Nothing to add', skipped);
+        return;
+      }
+      const built = buildVetDocumentRows({
+        petId: detail.petId,
+        source: 'camera',
+        pages: screened.accepted,
+        // The existing group, its date, and the next free page index: a new page
+        // joins the document, it never starts a second one or re-dates the first.
+        groupId: detail.groupId,
+        documentDate: detail.documentDate,
+        startPageIndex: Math.max(...detail.pages.map((p) => p.pageIndex)) + 1,
+      });
+      await insertVetDocumentRows(built);
+      await load();
+      syncPendingVetDocuments().catch((e) => console.warn('[vet-files] document push failed:', e));
+    } catch (e) {
+      console.warn('[vet-files] add page failed:', e);
+      Alert.alert('That page didn’t save', 'Something went wrong adding that page. Give it another try.');
+    } finally {
+      setCapturing(false);
+    }
+  }
+
+  // ── Also add to another pet (B-547 / D13) ───────────────────────────────────
+  //
+  // D13's copy-to-another-pet, on the detail ⋯ menu where the spec says it belongs
+  // (the saved moment shipped the other half). Reads the FULL local rows — the
+  // library and detail read models drop columns the copy needs (source,
+  // file_size_bytes, notes…) — and hands them to duplicateVetDocumentRowsForPet,
+  // which files a genuinely independent copy: new ids, new object keys under the
+  // other pet's prefix, its own local file, and no inherited visit link. The copy
+  // reflects the document's CURRENT state (a rename or a kind set here travels),
+  // because it reads live rows rather than the untitled capture rows the saved
+  // moment copies.
+  //
+  // The menu deliberately stays open so the tapped line flips to "✓ Added…" in
+  // place, and the guard on `alsoAdded` stops a second tap filing a third copy.
+  async function handleAlsoAdd(otherPetId: string) {
+    if (!detail || capturing || alsoAdded.has(otherPetId)) return;
+    setCapturing(true);
+    try {
+      const rows = await readLocalVetDocumentGroup(detail.groupId);
+      // Gone between opening the menu and tapping (deleted here, or a soft delete
+      // synced in from another device): nothing to copy, and copying a tombstone
+      // would file a pre-deleted document under the other pet.
+      if (rows.length === 0) return;
+      const copies = duplicateVetDocumentRowsForPet(rows, { petId: otherPetId });
+      await insertVetDocumentRows(copies);
+      setAlsoAdded((prev) => new Set(prev).add(otherPetId));
+      syncPendingVetDocuments().catch((e) => console.warn('[vet-files] document push failed:', e));
+    } catch (e) {
+      console.warn('[vet-files] duplicate to pet failed:', e);
+      Alert.alert('That copy didn’t save', 'Something went wrong filing the copy. Give it another try.');
+    } finally {
+      setCapturing(false);
+    }
+  }
+
   // ── Share (§4.3 — the ER moment) ────────────────────────────────────────────
   //
   // Shares the CURRENT page's file, one page at a time (aggregate "everything as
@@ -378,6 +485,21 @@ export default function VetDocumentDetailScreen() {
   const linkedVisit = detail?.vetVisitId
     ? visits.find((v) => v.id === detail.vetVisitId) ?? null
     : null;
+
+  // D13 targets — one per OTHER pet in the household; empty in a single-pet account,
+  // where the ⋯ menu shows only Rename/Delete (plus Add another page for an image).
+  // Excludes the document's OWN pet (detail.petId), never merely the active pet — a
+  // deep link or a mid-session pet switch must not offer "also add" to the pet the
+  // document already belongs to, nor mis-target the copy.
+  const alsoAddTargets: AlsoAddTarget[] = detail
+    ? pets
+        .filter((p) => p.id !== detail.petId)
+        .map((p) => ({
+          petId: p.id,
+          label: alsoAdded.has(p.id) ? alsoAddedLabel(p.name) : alsoAddLabel(p.name),
+          done: alsoAdded.has(p.id),
+        }))
+    : [];
 
   const metaRows: MetaRow[] = detail
     ? [
@@ -577,6 +699,12 @@ export default function VetDocumentDetailScreen() {
           <DocumentMoreMenu
             visible={menuOpen}
             onClose={() => setMenuOpen(false)}
+            // B-549 — image documents only (a PDF group is one page per PDF, §4.4).
+            onAddPage={detail.isPdf ? undefined : handleAddPage}
+            // B-547 / D13 — one line per other pet; empty ⇒ nothing renders.
+            alsoAdd={alsoAddTargets}
+            onAlsoAdd={handleAlsoAdd}
+            busy={capturing}
             onRename={() => { setMenuOpen(false); setSheet('name'); }}
             onDelete={confirmDelete}
           />

@@ -31,8 +31,10 @@ import {
   duplicateVetDocumentRowsForPet,
   inferPickedMimeType,
   insertVetDocumentRows,
+  isDocumentPickerAvailable,
   pickedFilesFromDocumentAssets,
   pickedFilesFromImageAssets,
+  readLocalVetDocumentGroup,
   rejectedPickMessage,
   savedMomentCopy,
   screenPickedFiles,
@@ -690,5 +692,97 @@ describe('insertVetDocumentRows', () => {
     await insertVetDocumentRows([]);
     expect(await db.getAllAsync('SELECT * FROM vet_documents')).toHaveLength(0);
     db.handle.close();
+  });
+});
+
+// ── readLocalVetDocumentGroup (B-547) ────────────────────────────────────────
+//
+// The reader the ⋯-menu "Also add to {other pet}" path uses. It exists because the
+// library and detail read models drop columns a COPY needs (source,
+// file_size_bytes, notes…), so it must round-trip the whole LocalVetDocument and
+// feed duplicateVetDocumentRowsForPet cleanly.
+describe('readLocalVetDocumentGroup', () => {
+  it('reads every column of a group, cover first, and round-trips into a copy', async () => {
+    const db = memoryDb();
+    (getDb as jest.Mock).mockReturnValue(db);
+    const rows = build([page(), page()]);
+    await insertVetDocumentRows(rows);
+
+    const read = await readLocalVetDocumentGroup(rows[0].document_group_id);
+    expect(read).toHaveLength(2);
+    // Cover first (page_index order), so a copy keeps the group's page order.
+    expect(read.map((r) => r.page_index)).toEqual([0, 1]);
+    // The columns the read models drop but a copy needs — present and correct.
+    expect(read[0].source).toBe('photo_library');
+    expect(read[0].storage_path).toBe(`${PET}/doc-1.jpg`);
+    expect(read.every((r) => r.synced === 0)).toBe(true);
+
+    // The whole point: it feeds duplicateVetDocumentRowsForPet without a gap.
+    const copies = duplicateVetDocumentRowsForPet(read, {
+      petId: 'pet-2', now: NOW, newId: idFactory('copy'), persistFile: (s, n) => n,
+    });
+    expect(copies.map((r) => r.pet_id)).toEqual(['pet-2', 'pet-2']);
+    expect(new Set(copies.map((r) => r.document_group_id)).size).toBe(1);
+    db.handle.close();
+  });
+
+  it('carries an owner edit into the copy — it reads live rows, not capture defaults', async () => {
+    const db = memoryDb();
+    (getDb as jest.Mock).mockReturnValue(db);
+    const rows = build([page()]);
+    await insertVetDocumentRows(rows);
+    await db.runAsync(
+      'UPDATE vet_documents SET title = ?, kind = ? WHERE document_group_id = ?',
+      ['Rabies certificate', 'vaccination', rows[0].document_group_id],
+    );
+
+    const read = await readLocalVetDocumentGroup(rows[0].document_group_id);
+    expect(read[0].title).toBe('Rabies certificate');
+    expect(read[0].kind).toBe('vaccination');
+    db.handle.close();
+  });
+
+  it('excludes soft-deleted pages — a copy of a tombstone would file a pre-deleted doc', async () => {
+    const db = memoryDb();
+    (getDb as jest.Mock).mockReturnValue(db);
+    const rows = build([page()]);
+    await insertVetDocumentRows(rows);
+    await db.runAsync(
+      'UPDATE vet_documents SET deleted_at = ? WHERE id = ?',
+      ['2026-07-27T00:00:00.000Z', rows[0].id],
+    );
+    expect(await readLocalVetDocumentGroup(rows[0].document_group_id)).toHaveLength(0);
+    db.handle.close();
+  });
+
+  it('returns [] for an unknown group', async () => {
+    const db = memoryDb();
+    (getDb as jest.Mock).mockReturnValue(db);
+    expect(await readLocalVetDocumentGroup('no-such-group')).toHaveLength(0);
+    db.handle.close();
+  });
+});
+
+// ── isDocumentPickerAvailable (B-548) ────────────────────────────────────────
+//
+// The mount-time probe that lets the Files row render disabled instead of failing
+// after the tap. The native-module absence surfaces as a THROW at require time
+// (expo-document-picker's entry calls requireNativeModule on import), so the probe's
+// only job is to turn that throw — and a null module — into a boolean.
+describe('isDocumentPickerAvailable', () => {
+  it('is true when the module loads', () => {
+    expect(isDocumentPickerAvailable(() => ({ getDocumentAsync: () => {} }))).toBe(true);
+  });
+
+  it('is false when the native module is absent (the loader throws)', () => {
+    expect(
+      isDocumentPickerAvailable(() => {
+        throw new Error('requireNativeModule("ExpoDocumentPicker") not found');
+      }),
+    ).toBe(false);
+  });
+
+  it('is false when the loader returns null', () => {
+    expect(isDocumentPickerAvailable(() => null)).toBe(false);
   });
 });

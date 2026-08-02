@@ -449,6 +449,14 @@ export function addSheetTitle(petName: string): string {
 // optional thing (D11).
 export const ADD_SHEET_SUBTITLE = 'Saved right away — you can name things later.';
 
+// B-548 — the Files row's subtitle when this binary can't pick a PDF (see
+// isDocumentPickerAvailable). Replaces "PDFs from email or a clinic portal" on the
+// disabled row: forward-looking and honest about what still works, never an error.
+// Deliberately does NOT say "update the app" as an instruction — a TestFlight tester
+// cannot act on that, and the next native build is the PM's to cut, not theirs.
+export const FILES_UNAVAILABLE_SUBTITLE =
+  'Available after the next app update — photos and the camera work now';
+
 export interface SavedMomentCopy {
   headline: string;
   offlineLine: string;
@@ -529,6 +537,61 @@ export function rejectedPickMessage(screened: ScreenedPicks): string | null {
 }
 
 // ── Local I/O ────────────────────────────────────────────────────────────────
+
+// Every LocalVetDocument column of one group, cover first — the full rows
+// duplicateVetDocumentRowsForPet needs, which the library and detail read models
+// do not carry.
+//
+// The list projects a cover-only summary (VetDocumentGroupRow) and the detail
+// screen projects only what it renders (VetDocumentPageRow drops source,
+// file_size_bytes, updated_at, synced…). D13's copy-to-another-pet needs EVERY
+// column, because the copy is the same document filed twice — its kind, notes,
+// document_date and source_filename all travel. So the ⋯-menu path (B-547) reads
+// the whole rows here rather than reconstructing a partial LocalVetDocument from a
+// read model that was never meant to round-trip.
+//
+// Soft-deleted pages are excluded: the only caller is a live detail screen, and
+// copying a tombstone would file an already-deleted document under the other pet.
+// Column order matches the LocalVetDocument interface (no sync_attempts/sync_error,
+// which are queue bookkeeping and not part of the row shape).
+export const LOCAL_VET_DOCUMENT_GROUP_QUERY =
+  `SELECT id, pet_id, vet_visit_id, document_group_id, kind, title, document_date,
+          notes, source, source_filename, local_uri, storage_path, mime_type,
+          file_size_bytes, page_index, deleted_at, created_at, updated_at, synced
+   FROM vet_documents
+   WHERE document_group_id = ? AND deleted_at IS NULL
+   ORDER BY page_index, created_at`;
+
+export async function readLocalVetDocumentGroup(groupId: string): Promise<LocalVetDocument[]> {
+  const db = getDb();
+  return db.getAllAsync<LocalVetDocument>(LOCAL_VET_DOCUMENT_GROUP_QUERY, [groupId]);
+}
+
+// B-548 — is the Files/PDF capture path usable in THIS binary, at all?
+//
+// expo-document-picker's entry point calls requireNativeModule('ExpoDocumentPicker')
+// at IMPORT time, which THROWS on any binary built before that dependency landed —
+// and Expo Go is retired for SDK 57, so the PM's current dev client and the
+// installed TestFlight build are both exactly that binary (see pickVetPdfs). Before
+// this probe the owner only learned that AFTER tapping the Files row, from an alert
+// telling them to update an app they cannot update from inside TestFlight. Probing
+// once at mount lets the row render disabled with an honest subtitle instead —
+// empty-states-are-features applied to a capability state.
+//
+// `load` is injected so this is testable without a native module; it defaults to
+// requiring the real one, wrapped so the throw becomes a boolean rather than taking
+// down the caller. Cheap to call repeatedly: `require` caches a module that
+// evaluated, and a module that threw is simply re-attempted (still caught).
+export function isDocumentPickerAvailable(
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  load: () => unknown = () => require('expo-document-picker'),
+): boolean {
+  try {
+    return load() != null;
+  } catch {
+    return false;
+  }
+}
 
 // Insert a capture's rows as one unit.
 //
