@@ -20,17 +20,26 @@ interface Props {
 //
 // THREE STATES, AND THE THIRD IS AN ACCEPTANCE CRITERION (§8 AC 12).
 //   • a page to show          → the page, with Open overlaid
-//   • a PDF                   → the glyph plus Open, always (D5: store-and-view,
-//                               no PDF thumbnailing, so a PDF has no preview even
-//                               when it is fully available)
+//   • a REACHABLE PDF         → the glyph plus Open (D5: store-and-view, no PDF
+//                               thumbnailing, so a PDF has no preview even when it
+//                               is fully available — but it still needs a URI to
+//                               open)
 //   • nothing reachable       → an honest "needs a connection" line, never a
-//                               spinner
+//                               spinner — for a PDF as much as an image
 //
 // That last rule is Sam's ER case, and it is why this component has no
 // WhorlSpinner anywhere in it. A spinner over a record a vet has just asked for
 // reads as "almost there" when the honest answer is "not without a signal" — and
 // the owner spends the wait believing the document is coming. The tile rests
 // instead, and says which it is.
+//
+// B-591 — the PDF unreachable state used to be a hole. The branch order tested
+// `isPdf` BEFORE reachability, so a never-opened remote PDF (uri == null on a
+// second device) fell into the PDF arm and drew the glyph + "PDF" badge with no
+// Open pill and no explanation: a tile that looks openable, isn't, and says
+// nothing about why. AC 12's honest sentence was structurally unreachable for the
+// PDF case. The isPdf arm now requires a URI, so an unreachable PDF falls through
+// to the same honest line an unreachable image gets — worded for the PDF.
 //
 // The hero is not itself the viewer: tapping anywhere on it calls `onOpen`, and the
 // screen decides whether that means the full-screen image viewer or the PDF one.
@@ -67,7 +76,10 @@ export function DocumentHero({
           resizeMode="cover"
           onError={() => setFailed(true)}
         />
-      ) : isPdf ? (
+      ) : isPdf && uri != null ? (
+        // Reachable PDF: the glyph stands in for the (deliberately absent) preview.
+        // The `uri != null` guard is B-591 — without it an unreachable PDF renders
+        // this openable-looking tile and never reaches the honest line below.
         <View style={styles.centre}>
           <FileText size={38} color={theme.colorTextTertiary} strokeWidth={1.5} />
           <Text style={styles.pdfBadge}>PDF</Text>
@@ -75,7 +87,12 @@ export function DocumentHero({
       ) : unreachable || failed ? (
         <View style={styles.centre}>
           <FileText size={34} color={theme.colorTextDisabled} strokeWidth={1.5} />
-          <Text style={styles.offline}>Needs a connection to show this page</Text>
+          {/* The sentence names what the owner cannot do: a PDF is opened, never
+              previewed (there is no page to "show"), so the two arms of AC 12 read
+              differently even though they share this branch. */}
+          <Text style={styles.offline}>
+            {isPdf ? 'Needs a connection to open this PDF' : 'Needs a connection to show this page'}
+          </Text>
         </View>
       ) : (
         // Loading: the surface itself is the pending state. Deliberately empty —
