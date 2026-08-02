@@ -32,11 +32,14 @@ import {
 } from './notificationPreferences';
 import {
   classifySyncFailure,
+  classifyUploadFailure,
   formatSyncError,
-  exhaustedAttemptsError,
+  formatUploadError,
+  withUnsentSuffix,
   MAX_SYNC_ATTEMPTS,
   RLS_FILTERED_ERROR,
   NOT_QUARANTINED_SQL,
+  type SyncFailureClass,
 } from './syncQueue';
 import { proteinsToCacheText, proteinsFromCacheText } from './protein';
 import {
@@ -171,21 +174,24 @@ export async function markSynced(db: Db, table: QueueTable, ids: string[]): Prom
 // row stays on the device and stays counted (as quarantined) by getSyncStatus, so
 // the outcome of giving up is that the owner is TOLD — never that a log quietly
 // disappears.
-async function recordPushFailure(
+// The give-up policy itself, shared by the row-write path (recordPushFailure) and
+// the object-upload path (recordUploadFailure — B-586). The two CLASSIFY
+// differently — a row write yields a Postgres SQLSTATE, an upload yields a Storage
+// HTTP status or a local encode throw — but the three OUTCOMES and the columns they
+// touch are identical, so the policy lives once here rather than being copied with
+// one word changed. `reason` is the pre-formatted sync_error text.
+async function applyFailurePolicy(
   db: Db,
   table: QueueTable,
   id: string,
-  error: { code?: string | null; message?: string | null },
+  failure: SyncFailureClass,
+  reason: string,
 ): Promise<void> {
-  const failure = classifySyncFailure(error);
   if (failure === 'transient') return;
 
   if (failure === 'terminal') {
-    console.warn(`[sync] ${table} row ${id} rejected permanently: ${formatSyncError(error)}`);
-    await db.runAsync(`UPDATE ${table} SET sync_error = ? WHERE id = ?`, [
-      formatSyncError(error),
-      id,
-    ]);
+    console.warn(`[sync] ${table} ${id} rejected permanently: ${reason}`);
+    await db.runAsync(`UPDATE ${table} SET sync_error = ? WHERE id = ?`, [reason, id]);
     return;
   }
 
@@ -198,8 +204,34 @@ async function recordPushFailure(
         SET sync_attempts = sync_attempts + 1,
             sync_error = CASE WHEN sync_attempts + 1 >= ? THEN ? ELSE sync_error END
       WHERE id = ?`,
-    [MAX_SYNC_ATTEMPTS, exhaustedAttemptsError(error), id],
+    [MAX_SYNC_ATTEMPTS, withUnsentSuffix(reason), id],
   );
+}
+
+async function recordPushFailure(
+  db: Db,
+  table: QueueTable,
+  id: string,
+  error: { code?: string | null; message?: string | null },
+): Promise<void> {
+  await applyFailurePolicy(db, table, id, classifySyncFailure(error), formatSyncError(error));
+}
+
+// B-586 — the object-upload half of the three file-bearing writers fails by
+// THROWING (uploadPhoto re-throws the Storage error; prepareVetDocumentUpload and
+// the bytes read throw). classifyUploadFailure reads the Storage HTTP status — or
+// recognises a local throw — where classifySyncFailure would read a SQLSTATE, so a
+// PERMANENT upload failure (413/415/undecodable) finally spends the retry budget
+// and quarantines instead of re-uploading forever, while a NETWORK throw (the
+// offline case) still costs nothing. `error` is `unknown` because it comes from a
+// `catch`, not from a supabase-js result object.
+async function recordUploadFailure(
+  db: Db,
+  table: QueueTable,
+  id: string,
+  error: unknown,
+): Promise<void> {
+  await applyFailurePolicy(db, table, id, classifyUploadFailure(error), formatUploadError(error));
 }
 
 // The payload shape every row mapper produces. Deliberately `object` and not
@@ -623,7 +655,13 @@ export async function syncPendingVetVisits(): Promise<void> {
       }
       await markSynced(db, 'vet_visit_attachments', [att.id]);
     } catch (e) {
+      // B-586 — an upload that THROWS (a 413 on the object, a 415, an image the
+      // manipulator cannot decode, a missing local file) has no SQLSTATE, so it
+      // never reached recordPushFailure and re-uploaded every cycle forever,
+      // occupying one of the 20 slots. Classify the throw so a permanent failure
+      // spends the budget and quarantines while a network throw stays free.
       console.warn('[sync] vet_visit_attachment upload failed:', e);
+      await recordUploadFailure(db, 'vet_visit_attachments', att.id, e);
     }
   }
 }
@@ -753,7 +791,14 @@ export async function syncPendingVetDocuments(): Promise<void> {
         [doc.id, doc.updated_at],
       );
     } catch (e) {
+      // B-586 — the upload half throws (prepareVetDocumentUpload re-encodes with
+      // NO original-fallback, so an undecodable image throws here; uploadPhoto
+      // re-throws a 413 on an oversize PDF). A throw has no SQLSTATE, so without
+      // this it re-ran every cycle forever against the ORDER BY created_at LIMIT 20
+      // window. Classify it: a permanent failure quarantines, a network throw is
+      // free.
       console.warn('[sync] vet_document upload failed:', e);
+      await recordUploadFailure(db, 'vet_documents', doc.id, e);
     }
   }
 }
@@ -811,7 +856,12 @@ export async function syncPendingAttachments(): Promise<void> {
       }
       await markSynced(db, 'event_attachments', [att.id]);
     } catch (e) {
+      // B-586 — a thrown upload (413/415/undecodable/missing file) carries no
+      // SQLSTATE, so it never reached recordPushFailure and re-uploaded forever,
+      // permanently holding one of the 20 slots. Classify the throw so a permanent
+      // failure quarantines while a network throw stays free.
       console.warn('[sync] event_attachment upload failed:', e);
+      await recordUploadFailure(db, 'event_attachments', att.id, e);
     }
   }
 }
@@ -948,6 +998,73 @@ export async function refreshFoodCache(): Promise<void> {
        now]
     );
   }
+}
+
+// B-369 — sweep away orphaned in-progress food captures.
+//
+// food-capture.tsx inserts the owner-locked food_items row BEFORE uploading its
+// photos (B-358 — the owner-scoped nyx-food-photos Storage INSERT policy resolves
+// each {foodId}/… path to its owner, so the row must exist first or the upload
+// 42501s). If the app dies in the narrow window between that insert and extraction
+// finishing, the server keeps a row stuck at ai_extraction_status = 'pending' with
+// the 'Extracting…' placeholder brand/product — a phantom tile that never resolves
+// in the owner's library, because the Edge Function that would flip its status
+// never ran.
+//
+// Extraction is a seconds-long server-side call, so a 'pending' row older than this
+// threshold is a dead capture, not one in flight. A COMMITTED food is never left
+// 'pending' (commitFood always writes completed / failed / manual), so a 'pending'
+// row is un-confirmed and, in the overwhelming common case, un-referenced — the meal
+// is only logged after the confirm step. The threshold is generous on purpose: the
+// phantom is untidy, not harmful, and a live capture the owner is slowly editing
+// self-heals anyway (commitFood upserts by id, re-creating the row if a sweep removed
+// it mid-edit).
+//
+// The one exception is narrow and self-inflicted, and worth naming rather than
+// claiming away: the placeholder is still SELECTABLE from the library while pending
+// (the local cache has no ai_extraction_status column to hide it — B-663), so an
+// owner who deliberately adds an 'Extracting…' food to a feeding arrangement or a
+// trial's allowed set inside this window would have that CASCADE-linked row (018 /
+// 040 are ON DELETE CASCADE) swept with it. Accepted here — it requires acting on a
+// tile literally titled 'Extracting…' — and the real fix is B-663 (stop showing the
+// placeholder at all), which also makes this reap a pure server-row backstop.
+//
+// A hard DELETE is the right shape here: food_items is per-account and hard-delete
+// (B-354 / the 009 food_items_delete policy: `USING (created_by_user_id =
+// auth.uid())`), NOT the events-only soft-delete rule. RLS already scopes the
+// delete to this account; the explicit created_by_user_id filter is belt-and-braces
+// with it and self-documenting.
+const STALE_PENDING_FOOD_MS = 30 * 60 * 1000;
+
+export async function reapStalePendingFoods(): Promise<void> {
+  // No session → nothing to scope the delete to (mirrors the other sync writers).
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) return;
+
+  const cutoff = new Date(Date.now() - STALE_PENDING_FOOD_MS).toISOString();
+  const { data, error } = await supabase
+    .from('food_items')
+    .delete()
+    .eq('created_by_user_id', session.user.id)
+    .eq('ai_extraction_status', 'pending')
+    .lt('created_at', cutoff)
+    .select('id');
+  // Log on failure, never throw — this is a best-effort tidy that must not break a
+  // sync cycle (CLAUDE.md "no silent failures in sync": a warn, not a swallow).
+  if (error) {
+    console.warn('[sync] reapStalePendingFoods failed:', error.message);
+    return;
+  }
+
+  // Drop the reaped rows from the local cache too, so the phantom 'Extracting…'
+  // tile disappears THIS cycle. refreshFoodCache only upserts — it never prunes a
+  // row the server no longer has — so without this the cache would keep showing a
+  // food the server has already deleted.
+  const ids = ((data ?? []) as { id: string }[]).map((r) => r.id);
+  if (ids.length === 0) return;
+  const db = getDb();
+  const placeholders = ids.map(() => '?').join(',');
+  await db.runAsync(`DELETE FROM food_items_cache WHERE id IN (${placeholders})`, ids);
 }
 
 // Refresh the account's medication_items library cache (B-117; per-account since
@@ -2171,6 +2288,10 @@ export async function syncNow(): Promise<void> {
     await pushAllQueues();
     // Pull down.
     await hydrateFromCloud();
+    // B-369 — reap dead 'Extracting…' captures BEFORE the catalog pull, so a
+    // deleted orphan is neither re-hydrated into the cache nor re-shown as a
+    // phantom library tile.
+    await reapStalePendingFoods();
     await refreshFoodCache();
     await refreshMedicationCache();
   } finally {
