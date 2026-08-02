@@ -47,6 +47,13 @@ import {
   type PetSlotIndex,
   type ResolutionMealRow,
 } from './widgetResolution';
+import type {
+  WidgetSevenDay,
+  WidgetSnapshotV2,
+  WidgetTodayByClass,
+  WidgetTrialSnapshot,
+  WidgetUpNext,
+} from './widgetSnapshotV2';
 
 export const WIDGET_SNAPSHOT_SCHEMA_VERSION = 1;
 
@@ -118,6 +125,27 @@ export interface WidgetSnapshot {
    * schema-version bump.
    */
   trialTargetDays: number | null;
+  // ── Widget V2 fields (spec v2.0 §3; lib/widgetSnapshotV2.ts) ───────────────
+  //
+  // ADDITIVE, and present ONLY when `buildWidgetSnapshot` is given the v2 block
+  // (an opt-in the production publisher does not yet pass — V2-PR-1 lands the
+  // builders + types alongside the v1 fields, "nothing consumes them yet; build-35
+  // widgets keep rendering v1 props"; V2-PR-2 flips the props schema to 2, wires
+  // the publisher reads, and deletes the v1 outbox). A v1 reader that doesn't know
+  // these keys ignores them, so no schema-version bump; a v2 reader treats their
+  // ABSENCE as "no v2 data", never as an assumed value. Each is a count, a
+  // coverage boolean, day math, or a record label — the D9/§8 no-forbidden-field
+  // contract holds field by field.
+  /** Today's events per class (§2.3 tiles) — {count,lastAt,names,times}, meds
+   *  +expectedToday, symptoms +leadingType. */
+  todayByClass?: WidgetTodayByClass;
+  /** The Up-next tile (§2.4): the next unlogged learned meal window, or null. */
+  upNext?: WidgetUpNext | null;
+  /** The ground-band pips (§2.5): per local day {dayKey, logged, symptomLogged}. */
+  sevenDays?: WidgetSevenDay[];
+  /** The trial-day strip (§2.5): {day,target,daysLogged,daysElapsed,stripDays},
+   *  numbers from the shared lib/dietTrial helpers so it agrees with the card. */
+  trial?: WidgetTrialSnapshot | null;
 }
 
 // One row of the publisher's meal query (the resolution lib's input shape —
@@ -150,6 +178,15 @@ export function buildWidgetSnapshot(
     /** The active diet trial, or null when the pet has none. Read from the
      *  local mirror (B-417 PR 2), so it is present offline. */
     trial: ActiveTrialInfo | null;
+    /**
+     * Widget V2 block (spec §3), pre-built by the caller via
+     * `buildWidgetSnapshotV2`. When present, its four fields are carried onto the
+     * snapshot additively; when absent — the current production path — none
+     * appear, so the published JSON is byte-identical and build-35 widgets keep
+     * rendering v1 props. The publisher wires this in V2-PR-2 (it owns the DB
+     * reads + `computeTrialFacts`); PR 1 only proves the passthrough is additive.
+     */
+    v2?: WidgetSnapshotV2;
   },
 ): WidgetSnapshot {
   const now = new Date(input.generatedAt);
@@ -214,7 +251,7 @@ export function buildWidgetSnapshot(
   const slotRows = buildSlotRows(slots, todayMeals);
   const { trialDay, trialTargetDays } = resolveTrialContext(trial, now.getTime());
 
-  return {
+  const snapshot: WidgetSnapshot = {
     schemaVersion: WIDGET_SNAPSHOT_SCHEMA_VERSION,
     petId: pet.id,
     petName: pet.name,
@@ -230,6 +267,20 @@ export function buildWidgetSnapshot(
     trialDay,
     trialTargetDays,
   };
+
+  // ── Widget V2 (opt-in, additive passthrough) ────────────────────────────────
+  // Carried only when the caller supplies the pre-built block. Nothing here
+  // recomputes it: the publisher (V2-PR-2) owns the reads that assemble the v2
+  // input, so a v1-only publisher leaves every v2 key absent and the published
+  // JSON unchanged.
+  if (input.v2) {
+    snapshot.todayByClass = input.v2.todayByClass;
+    snapshot.upNext = input.v2.upNext;
+    snapshot.sevenDays = input.v2.sevenDays;
+    snapshot.trial = input.v2.trial;
+  }
+
+  return snapshot;
 }
 
 // The device-local day's [start, end) — the same day the owner sees on the
