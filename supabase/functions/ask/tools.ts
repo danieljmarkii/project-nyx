@@ -1601,26 +1601,33 @@ function zonedDayIndexOf(value: string, timezone: string | null): number | null 
 }
 
 /**
- * The UTC instant of LOCAL midnight on the calendar day `dayIndex` names, in `timezone` —
- * the inverse `resolveTrialWindow` needs to turn a local day back into a retrieval bound
- * (B-539). `dayIndex * MS_PER_DAY` is UTC midnight of that date; the owner's local midnight is
- * that shifted by the zone's offset AT that local time, so
- * `zonedDayIndex(zonedDayStartMs(i, tz), tz) === i`. DST-correct: the offset is probed at the
- * candidate instant and re-probed once when the shift crosses a transition (the date-fns-tz
- * method). A null/invalid zone returns UTC midnight — the shipped fallback, byte-identical to
- * the raw `startIndex * MS_PER_DAY` this replaces.
+ * The UTC instant at which LOCAL day `dayIndex` BEGINS, in `timezone` — the inverse
+ * `resolveTrialWindow` needs to turn a local day back into a retrieval bound (B-539). The
+ * invariant it guarantees for the half-open `[startMs, endMs)` filter: `event >= startMs` iff
+ * the event's local day is `>= dayIndex`, so `zonedDayIndex(zonedDayStartMs(i, tz), tz) === i`
+ * holds for EVERY zone and day.
+ *
+ * `dayIndex * MS_PER_DAY` is UTC midnight of that date; the owner's local midnight is that
+ * shifted by the zone's offset AT that local time. Two candidates bracket any single DST
+ * transition (`c1` uses the offset at UTC midnight, `c2` re-probes at c1 — the date-fns-tz
+ * method). On an ORDINARY day both land on local midnight (day i). On a spring-forward-AT-
+ * midnight day (America/Havana, America/Santiago, America/Asuncion — local 00:00 is SKIPPED)
+ * local midnight does not exist, so the day begins at the transition (01:00): `c1` lands there,
+ * on day i; `c2` lands an hour before it, on day i-1. Taking the EARLIEST candidate that is
+ * actually on day i returns local midnight on ordinary days and the transition on the skip day
+ * — never an hour early on day i-1, which had dropped a today-in-trial event from the window
+ * for ≤1h/year in those three zones (adversarial-reviewer, 2026-08-02). A null/invalid zone
+ * returns UTC midnight — the shipped fallback, byte-identical to the raw `index * MS_PER_DAY`.
  */
 function zonedDayStartMs(dayIndex: number, timezone: string | null): number {
   const utcMidnight = dayIndex * MS_PER_DAY
   if (!timezone) return utcMidnight
-  const off1 = zoneOffsetMs(utcMidnight, timezone)
-  let ms = utcMidnight - off1
-  const off2 = zoneOffsetMs(ms, timezone)
-  // The first guess used the offset at UTC midnight; if local midnight sits on the other side
-  // of a DST change the offset differs there, so correct once. (A second correction can never
-  // be needed: two probes bracket any single transition.)
-  if (off2 !== off1) ms = utcMidnight - off2
-  return ms
+  const c1 = utcMidnight - zoneOffsetMs(utcMidnight, timezone)
+  const c2 = utcMidnight - zoneOffsetMs(c1, timezone)
+  // Both candidates are within the DST amount (~1h) of local midnight, so each falls on day i
+  // or an adjacent one. The day BEGINS at the earliest instant whose local day is i.
+  const onDay = [c1, c2].filter((c) => zonedDayIndex(c, timezone) === dayIndex)
+  return onDay.length > 0 ? Math.min(...onDay) : Math.min(c1, c2)
 }
 
 /** The zone's UTC offset (ms) at instant `ms`: the wall-clock components in `timezone`,

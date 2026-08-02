@@ -179,6 +179,26 @@ Deno.test('resolveWindow — since_trial_start survives a DST transition inside 
   assert.equal(w.endMs, Date.parse('2026-03-10T07:00:00Z'))
 })
 
+Deno.test('resolveWindow — since_trial_start bounds are correct when local midnight is SKIPPED (B-539, adversarial 2026-08-02)', () => {
+  // America/Havana springs forward AT midnight on 8 Mar 2026 (00:00 EST → 01:00 CDT), so local
+  // 00:00–00:59 does not exist and the day BEGINS at 05:00Z. The first cut of zonedDayStartMs put
+  // the bound an hour early (04:00Z, still 7 Mar local), which dropped a today-in-trial symptom
+  // from the window for ≤1h. The day now opens at the transition, on day i, never an hour before.
+  const tz = 'America/Havana'
+
+  // START bound — a trial that started ON the skip day opens at the transition (05:00Z), not an
+  // hour before it (which would reach into 7 Mar, the pre-trial day).
+  const w = resolveWindow('since_trial_start', Date.parse('2026-03-10T17:00:00Z'), Date.parse('2026-03-08T00:00:00Z'), tz)
+  assert.equal(w.startMs, Date.parse('2026-03-08T05:00:00Z')) // 01:00 CDT — day 8 begins here
+
+  // END bound — when TOMORROW is the skip day, today's late-evening events must stay in-window.
+  const now2 = Date.parse('2026-03-08T03:00:00Z') // 7 Mar 22:00 EST → today = 7 Mar local
+  const w2 = resolveWindow('since_trial_start', now2, Date.parse('2026-03-01T00:00:00Z'), tz)
+  assert.equal(w2.endMs, Date.parse('2026-03-08T05:00:00Z')) // start of 8 Mar (the transition)
+  // A vomit logged at 7 Mar 23:30 EST (04:30Z) — a real today, in-trial event — is INCLUDED.
+  assert.ok(Date.parse('2026-03-08T04:30:00Z') < (w2.endMs as number))
+})
+
 Deno.test('resolveWindow — a null/absent zone keeps the shipped UTC bounds (B-539 fallback)', () => {
   // The degrade is UNCHANGED from before B-539: with no zone the window is UTC-day-aligned,
   // byte-identical to the raw `startIndex * MS_PER_DAY` it replaced. B-443 is what keeps a real
