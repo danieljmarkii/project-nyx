@@ -101,9 +101,10 @@ or implication anywhere; no exclamation marks.
 
 ## Deferred (filed)
 
-- **B-664** — consolidate the app's bottom-sheet chrome into one shared shell (the
+- **B-667** — consolidate the app's bottom-sheet chrome into one shared shell (the
   primer hand-rolls the `SheetShell` chrome; right fix is relocating `SheetShell` →
-  `components/ui/` + a header slot, its own refactor).
+  `components/ui/` + a header slot, its own refactor). _(Filed as B-664; renumbered
+  to B-667 at the #563/#569 merge — B-664 was taken on `main` by the widget-v2 row.)_
 - **B-665** — post-grant "you're set — first summary tonight" confirmation microcopy
   (partly PR 4 territory).
 - **B-666** — PM decision: should the primer signal that the coming system prompt is

@@ -22,7 +22,7 @@ import { PrimaryButton } from '../ui';
 // medication reminder, armed or otherwise. Part 1 ships no reminder; nothing here
 // may read like one.
 //
-// CHROME NOTE (→ B-664): the Modal/backdrop/scrim/grabber/rounded-sheet below is
+// CHROME NOTE (→ B-667): the Modal/backdrop/scrim/grabber/rounded-sheet below is
 // the same chrome components/vetfiles/SheetShell.tsx owns — deliberately the SAME
 // tokens (colorScrim, radiusLarge, grabber 36×4, paddingTop:10) so there is no
 // drift, but a hand-rolled copy nonetheless. SheetShell isn't a drop-in (this sheet
