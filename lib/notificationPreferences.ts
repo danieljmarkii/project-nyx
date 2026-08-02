@@ -63,6 +63,16 @@
 //     collision, so — unlike diet_trial_foods — this mirror needs no
 //     collision-resolution SQL.
 //
+//     CARRY-FORWARD FOR PR 3's READ PATH (flagged by code-reviewer): the flip
+//     side of representing that duplicate is that a naive
+//     `SELECT ... WHERE category = ? AND pet_id IS NULL` could surface the STALE
+//     quarantined loser instead of the synced winner. PR 3's read must prefer the
+//     synced row — `ORDER BY synced DESC, updated_at DESC, id` — exactly as
+//     ACTIVE_DIET_TRIAL_QUERY (lib/dietTrialMirror.ts) resolves the same
+//     split-brain for the active trial. There is no reader yet, so this PR ships
+//     none; it is written here so PR 3 inherits the rule rather than rediscovering
+//     it as a bug.
+//
 // `sync_error` is a column and `synced` is NEVER set to 1 to escape one: a row
 // that can never land (the cross-device 23505) is quarantined by recording WHY,
 // not by lying about its state (the B-398 rule; see lib/syncQueue.ts).
