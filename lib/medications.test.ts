@@ -752,6 +752,100 @@ describe('computeRegimenCompliance', () => {
   });
 });
 
+// ── B-618 — dose-denominated compliance denominator (the reported completion bug) ──
+// A dose course measures adherence against its DISPENSED TOTAL (target_duration_doses),
+// not the calendar pace (doses_per_day × daysElapsed). The pace denominator climbs past
+// the prescription, so an owner who had given all 28 prescribed doses saw "28 of 36 ·
+// 78%" — behind — on the same card the dose counter (dosesTowardTarget) calls complete.
+// Re-basing to the total makes the two lines agree and keeps the % off the D3-punted
+// "pace" framing (it is "% of the course delivered", not "% of what you should have
+// given by now"). The numerator stays given-only (D1) — unchanged from the pace path.
+describe('computeRegimenCompliance — dose-denominated course (B-618, targetDoses)', () => {
+  it('THE BUG: a 28-of-28 course reads against the dispensed total, not the calendar', () => {
+    // Motozol: #28 dispensed, 2×/day, on calendar day 18 (pace would expect 36), all 28
+    // given. Pace denominator = 36 → "78% given · 28 of 36" (behind). Target denominator
+    // = 28 → 100%, agreeing with "Dose 28 of 28".
+    const c = computeRegimenCompliance({
+      dosesPerDay: 2, daysElapsed: 18, tally: tally({ given: 28 }), targetDoses: 28,
+    });
+    expect(c.expectedDoses).toBe(28); // NOT 2 × 18 = 36
+    expect(c.administeredDoses).toBe(28);
+    expect(c.percent).toBe(100); // NOT round(28/36) = 78
+    expect(c.isPrn).toBe(false);
+  });
+
+  it('mid-course: measures delivered against the total, not the pace', () => {
+    // 20 given of a 28-dose course, day 18 (pace expects 36). Target → 20/28 = 71%;
+    // pace would have read 20/36 = 56%. The honest figure is "% of the course delivered".
+    const c = computeRegimenCompliance({
+      dosesPerDay: 2, daysElapsed: 18, tally: tally({ given: 20 }), targetDoses: 28,
+    });
+    expect(c.expectedDoses).toBe(28);
+    expect(c.percent).toBe(71);
+  });
+
+  it('past target: extra administrations clamp the % to 100 (never > 100)', () => {
+    // 30 given on a 28-dose course — 2 past the bottle. administered(30) > expected(28),
+    // so the % clamps to 100 and regimenComplianceLine drops the "of N".
+    const c = computeRegimenCompliance({
+      dosesPerDay: 2, daysElapsed: 20, tally: tally({ given: 30 }), targetDoses: 28,
+    });
+    expect(c.expectedDoses).toBe(28);
+    expect(c.administeredDoses).toBe(30);
+    expect(c.percent).toBe(100);
+  });
+
+  it('a dose target with NO daily cadence is still a %, never a PRN count', () => {
+    // "#30, give as directed" (doses_per_day null) has a real denominator — the total —
+    // so it is NOT PRN for compliance: 12 given → "40% given · 12 of 30".
+    const c = computeRegimenCompliance({
+      dosesPerDay: null, daysElapsed: 9, tally: tally({ given: 12 }), targetDoses: 30,
+    });
+    expect(c.isPrn).toBe(false);
+    expect(c.expectedDoses).toBe(30);
+    expect(c.percent).toBe(40);
+  });
+
+  it('the numerator stays given-only (D1) — a partial advances the counter, NOT this %', () => {
+    // 26 given + 2 partial on a 28-dose course. dosesTowardTarget = 28 ("Dose 28 of 28"),
+    // but administered here = 26 (given-only), so the % is 26/28 = 93 and the 2 partials
+    // surface on the flag line — the deliberate two-definitions gap (D1), preserved on the
+    // dose path exactly as on the pace path.
+    const c = computeRegimenCompliance({
+      dosesPerDay: 2, daysElapsed: 14, tally: tally({ given: 26, partial: 2 }), targetDoses: 28,
+    });
+    expect(c.administeredDoses).toBe(26);
+    expect(c.expectedDoses).toBe(28);
+    expect(c.percent).toBe(93);
+    expect(dosesTowardTarget(tally({ given: 26, partial: 2 }))).toBe(28); // counter says done
+  });
+
+  it('nothing logged on a dose course → percent null ("not tracked"), never 0%', () => {
+    const c = computeRegimenCompliance({
+      dosesPerDay: 2, daysElapsed: 3, tally: tally(), targetDoses: 28,
+    });
+    expect(c.loggedDoses).toBe(0);
+    expect(c.percent).toBeNull();
+  });
+
+  it('a corrupt/legacy 0 target falls back to the calendar pace, never a 0 denominator', () => {
+    // The local SQLite mirror does not enforce the server CHECK (target > 0); a 0 must not
+    // become the denominator. It falls back to doses_per_day × daysElapsed = 2 × 5 = 10.
+    const c = computeRegimenCompliance({
+      dosesPerDay: 2, daysElapsed: 5, tally: tally({ given: 5 }), targetDoses: 0,
+    });
+    expect(c.expectedDoses).toBe(10); // pace path, not 0
+    expect(c.percent).toBe(50);
+  });
+
+  it('is opt-in: omitting targetDoses leaves the pace path byte-for-byte unchanged', () => {
+    const withUndef = computeRegimenCompliance({ dosesPerDay: 2, daysElapsed: 7, tally: tally({ given: 14 }) });
+    const withNull = computeRegimenCompliance({ dosesPerDay: 2, daysElapsed: 7, tally: tally({ given: 14 }), targetDoses: null });
+    expect(withUndef).toEqual(withNull);
+    expect(withUndef.expectedDoses).toBe(14); // 2 × 7 — the pace denominator, unchanged
+  });
+});
+
 // ── B-618 §4 — the dose-count predicate (dosesTowardTarget) ──────────────────
 // "Dose {n} of {target}" where n = dosesTowardTarget(tally). D1: therapy delivered
 // (given + partial). The last test is load-bearing: it PINS the deliberate exact-
@@ -960,6 +1054,19 @@ describe('regimenComplianceLine — copy never reassures on absence (§6.1)', ()
     const c = computeRegimenCompliance({ dosesPerDay: 1, daysElapsed: 2, tally: tally({ given: 5 }) });
     expect(c.percent).toBe(100);
     expect(regimenComplianceLine(c)).toBe('100% given · 5 doses logged');
+  });
+
+  it('a completed dose course reads "100% given · 28 of 28 doses" (B-618, agrees with the counter)', () => {
+    // The reported bug rendered "78% given · 28 of 36 doses" here; re-based to the total it
+    // reads 100% of 28 and no longer contradicts the "Dose 28 of 28" line above it.
+    const c = computeRegimenCompliance({ dosesPerDay: 2, daysElapsed: 18, tally: tally({ given: 28 }), targetDoses: 28 });
+    expect(regimenComplianceLine(c)).toBe('100% given · 28 of 28 doses');
+    expect(regimenComplianceLine(c)).not.toMatch(FORBIDDEN);
+  });
+
+  it('a dose course logged past its total drops the "of N" ("100% given · 30 doses logged")', () => {
+    const c = computeRegimenCompliance({ dosesPerDay: 2, daysElapsed: 20, tally: tally({ given: 30 }), targetDoses: 28 });
+    expect(regimenComplianceLine(c)).toBe('100% given · 30 doses logged');
   });
 
   it('reads a plain dose count for PRN, singular and plural', () => {
