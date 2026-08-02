@@ -1,7 +1,7 @@
 # Nyx Notification Foundation — Part 1 Requirements
 **Version:** 1.0 | **Date:** 2026-08-02 | **Status:** Build-ready for PRs 1–2; PRs 3–4 are mock-gated (§10). Decisions D1–D4 PM-ratified 2026-08-02 (same-day kickoff convening).
 
-**Read with:** `docs/logging-capture-discovery.md` (§4 Tier-1 is the platform evidence this spec builds on), `docs/nyx-settings-requirements.md` §5 (the mocked screen this un-mocks), `docs/nyx-design-principles-v1_0.md` §4–§5. Backlog: **B-658** (this track), and the rows it re-points: B-288, B-227, B-015, B-543, B-659.
+**Read with:** `docs/logging-capture-discovery.md` (§4 Tier-1 is the platform evidence this spec builds on), `docs/nyx-settings-requirements.md` §5 (the mocked screen this un-mocks), `docs/nyx-design-principles-v1_0.md` §4–§5. Backlog: **B-661** (this track — filed as B-658/B-659, renumbered at wrap; those IDs were taken on `main` first by #557/#558), and the rows it re-points: B-288, B-227, B-015, B-543, B-662.
 
 ---
 
@@ -29,7 +29,7 @@ The **fundamental building blocks** for every future notification workflow (med 
 3. **The preferences substrate** — `notification_preferences` + local mirror + sync.
 4. **The daily summary** — `lib/daySummary.ts` (pure, tested) + the Day Summary screen + the 9pm scheduled notification, **off by default**.
 
-What it is not: B-288 (confirmations), B-227 (configurable reminders), B-015 (post-meal intake ask), B-543 (trial intake push), B-659 (vet-appt reminders), remote push, Live Activities, household. All of those *consume* this foundation; none ship in it.
+What it is not: B-288 (confirmations), B-227 (configurable reminders), B-015 (post-meal intake ask), B-543 (trial intake push), B-662 (vet-appt reminders), remote push, Live Activities, household. All of those *consume* this foundation; none ship in it.
 
 ---
 
@@ -155,7 +155,7 @@ Opening the summary (or tapping the notification) records last-interaction for t
 | Actionable buttons / notification-originated writes | B-288 (inherits the primitive + `logged_via='notification'`) |
 | Owner-configured med/care reminders + their safety framing | B-227 (+ B-117 D3) |
 | Post-meal intake ask | B-015 |
-| Vet-appointment reminders (PM workflow #3 — no row existed; now filed) | **B-659** |
+| Vet-appointment reminders (PM workflow #3 — no row existed; now filed) | **B-662** |
 | Remote push: provider, tokens, server scheduler, entitlement un-strip | Part 2 (narrowed Open Question; first server-initiated notification decides it) |
 | The per-account budget *number* | B-288 scoping (the enforcement point ships here) |
 | Owner-configurable summary time | Later nicety; schema already carries `fire_local_time` |

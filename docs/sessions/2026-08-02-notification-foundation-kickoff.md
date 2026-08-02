@@ -1,6 +1,8 @@
-# 2026-08-02 — Notification foundation kickoff (B-658)
+# 2026-08-02 — Notification foundation kickoff (B-661)
 
-**Type:** team convening / discovery → requirements. **PR:** shipped via the session's draft PR on `claude/notification-system-foundation-rv1xsa`. **No app code, no schema.**
+**Type:** team convening / discovery → requirements. **PR:** shipped via #559. **No app code, no schema.**
+
+_(Track filed in-session as B-658/B-659; **renumbered to B-661/B-662 at wrap** — both IDs were taken on `main` first the same day by #557's "% given" dose-card row and #558's purge-guard residuals row; first-lands-keeps per B-435. References below use the final IDs.)_
 
 ## What happened
 
@@ -19,7 +21,7 @@ Pre-work established the real state: zero delivery capability (no `expo-notifica
 
 - **`docs/nyx-notification-foundation-requirements.md` v1.0** — decision record, consent model, the scheduling primitive (incl. the T&S wipe-path rule: scheduled notifications are cancelled in `wipeLocalSession` — a post-sign-out 9pm summary naming the previous account's pet is the leak class the wipe rules exist for), prefs schema (wall-clock `fire_local_time` as a documented exception to UTC-everywhere), the daily summary (builder + screen + zero-log designed state under the G2 lineage), the G1–G6 safety spine, the PR 1–5 plan (PRs 3–4 mock-gated), AC, deferrals.
 - CLAUDE.md: OQ row resolved (Principle 4) + OQ row narrowed (push provider) + Read-These row added.
-- Backlog: **B-658** (the track, `Now`) + **B-659** (vet-appt reminders, `Later`) filed; B-288/B-227/B-015/B-543 Blocks cells re-pointed off "push provider".
+- Backlog: **B-661** (the track, `Now`) + **B-662** (vet-appt reminders, `Later`) filed; B-288/B-227/B-015/B-543 Blocks cells re-pointed off "push provider".
 - STATUS.md: new parallel-track section.
 
 ## Open / next
