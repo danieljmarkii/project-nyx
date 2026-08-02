@@ -29,6 +29,7 @@ import {
   loadEnabledCategories,
   reconcileDailySummary,
   notificationRouteDecision,
+  routeDedup,
   type AccountPreferenceRow,
 } from './notificationSchedule';
 
@@ -217,5 +218,47 @@ describe('notificationRouteDecision', () => {
       recordCategory: null,
       routeTo: null,
     });
+  });
+});
+
+// ── routeDedup (route-exactly-once + the pre-auth re-attempt) ─────────────────
+describe('routeDedup', () => {
+  const delivery = { identifier: 'nyx.notif.daily_summary', deliveredAt: 1_700_000_000_000 };
+
+  it('routes a fresh delivery and advances the signature', () => {
+    const out = routeDedup({ ...delivery, routeTo: '/day-summary', prevSig: null });
+    expect(out.route).toBe(true);
+    expect(out.sig).toBe('nyx.notif.daily_summary|1700000000000');
+  });
+
+  it('does NOT route the same delivery twice (listener + cold read surface it once)', () => {
+    const first = routeDedup({ ...delivery, routeTo: '/day-summary', prevSig: null });
+    const second = routeDedup({ ...delivery, routeTo: '/day-summary', prevSig: first.sig });
+    expect(second.route).toBe(false);
+    expect(second.sig).toBe(first.sig);
+  });
+
+  it('routes AGAIN for a later day (same schedule id, new delivery time)', () => {
+    const day1 = routeDedup({ ...delivery, routeTo: '/day-summary', prevSig: null });
+    const day2 = routeDedup({
+      identifier: delivery.identifier,
+      deliveredAt: 1_700_086_400_000, // +1 day
+      routeTo: '/day-summary',
+      prevSig: day1.sig,
+    });
+    expect(day2.route).toBe(true);
+    expect(day2.sig).not.toBe(day1.sig);
+  });
+
+  it('leaves the signature UNMARKED when it cannot route yet (pre-auth cold start)', () => {
+    // routeTo null (unauthenticated) → no route, and the sig must NOT advance, or
+    // the post-auth re-attempt below would be swallowed.
+    const preAuth = routeDedup({ ...delivery, routeTo: null, prevSig: null });
+    expect(preAuth).toEqual({ route: false, sig: null });
+
+    // Session lands → same delivery, now with a route → it routes (the swallowed-tap
+    // regression this guards against).
+    const postAuth = routeDedup({ ...delivery, routeTo: '/day-summary', prevSig: preAuth.sig });
+    expect(postAuth.route).toBe(true);
   });
 });

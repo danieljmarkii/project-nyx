@@ -161,3 +161,30 @@ export function notificationRouteDecision(
   const routeTo = opts.authed && rawRoute && SAFE_NOTIFICATION_ROUTES.has(rawRoute) ? rawRoute : null;
   return { recordCategory, routeTo };
 }
+
+/**
+ * PURE: the per-delivery dedup that makes a notification tap route EXACTLY ONCE,
+ * even though both the warm response listener and the cold-start read can surface
+ * the SAME launch response. The signature keys on the schedule identifier PLUS the
+ * delivery time, which gives the three behaviours the wiring needs:
+ *   • one delivery surfaced twice (listener + cold read) → routes once (same sig);
+ *   • a real second tap on a later day → routes again (the identifier alone repeats
+ *     daily; the delivery time differs);
+ *   • a tap that could not route yet (unauthenticated cold start, `routeTo` null)
+ *     leaves the signature UNMARKED, so it re-routes once the session lands (§5.2)
+ *     rather than being swallowed.
+ *
+ * `prevSig` is the last-routed signature; the returned `sig` advances ONLY when
+ * `route` is true, which is exactly what preserves the pre-auth re-attempt.
+ */
+export function routeDedup(input: {
+  identifier: string | null | undefined;
+  deliveredAt: number | string | null | undefined;
+  routeTo: string | null;
+  prevSig: string | null;
+}): { route: boolean; sig: string | null } {
+  if (!input.routeTo) return { route: false, sig: input.prevSig };
+  const sig = `${input.identifier ?? ''}|${input.deliveredAt ?? ''}`;
+  if (sig === input.prevSig) return { route: false, sig: input.prevSig };
+  return { route: true, sig };
+}

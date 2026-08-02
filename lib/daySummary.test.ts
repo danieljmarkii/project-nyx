@@ -217,6 +217,24 @@ describe('buildDaySummary — multi-pet sections (§5.3)', () => {
     const model = buildDaySummary({ pets: [], nowMs, timeZone: tz });
     expect(model).toEqual({ sections: [], isEmpty: true, petCount: 0 });
   });
+
+  it('never shows another pet’s row under this pet (defense-in-depth pet scope)', () => {
+    // A row whose pet_id disagrees with its bucket is dropped — the guard against a
+    // future combined-query refactor cross-wiring two pets' records. The loader
+    // scopes per pet today, so this can only be exercised by handing the builder a
+    // deliberately mis-bucketed row.
+    const model = buildDaySummary({
+      pets: [
+        pet('pet-1', 'Biscuit', [
+          mkRow({ id: 'mine', pet_id: 'pet-1', occurred_at: '2026-08-02T09:00:00Z' }),
+          mkRow({ id: 'not-mine', pet_id: 'pet-2', occurred_at: '2026-08-02T10:00:00Z' }),
+        ]),
+      ],
+      nowMs,
+      timeZone: tz,
+    });
+    expect(model.sections[0].rows.map((r) => r.id)).toEqual(['mine']);
+  });
 });
 
 describe('localDayBoundsIso (device-zone prefetch bounds)', () => {

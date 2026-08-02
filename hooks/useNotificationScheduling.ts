@@ -24,7 +24,11 @@ import { useAppActive } from './useAppActive';
 import { useAuthStore } from '../store/authStore';
 import { useSyncStore } from '../store/syncStore';
 import { recordCategoryInteraction } from '../lib/notifications';
-import { reconcileDailySummary, notificationRouteDecision } from '../lib/notificationSchedule';
+import {
+  reconcileDailySummary,
+  notificationRouteDecision,
+  routeDedup,
+} from '../lib/notificationSchedule';
 
 export function useNotificationScheduling(): void {
   const appActive = useAppActive();
@@ -41,11 +45,11 @@ export function useNotificationScheduling(): void {
   }, [appActive, hydrationTick]);
 
   // ── Route a tap ─────────────────────────────────────────────────────────────
-  // Routing is deduped per DELIVERY (identifier + delivery date) so the launch
-  // response — which both the listener and the cold-start read can surface — routes
-  // once, while a real second tap on a different day (same schedule id, new date)
-  // still routes. The signature is marked ONLY on a real navigation, so a pre-auth
-  // cold-start tap re-routes once the session lands rather than being swallowed.
+  // The dedup that makes a tap route EXACTLY ONCE (the launch response can surface
+  // through BOTH the warm listener and the cold-start read) lives in the pure
+  // `routeDedup` — tested there. This ref just holds the last-routed signature it
+  // advances, so a pre-auth cold-start tap re-routes once the session lands rather
+  // than being swallowed.
   const routedSigRef = useRef<string | null>(null);
 
   const routeFromResponse = useCallback((resp: Notifications.NotificationResponse | null) => {
@@ -58,10 +62,14 @@ export function useNotificationScheduling(): void {
     // The tap IS the interaction (§5.4). recordCategoryInteraction just overwrites a
     // timestamp, so calling it again on a re-surfaced launch response is harmless.
     if (decision.recordCategory) void recordCategoryInteraction(decision.recordCategory);
-    if (!decision.routeTo) return; // unauthenticated, or not one of our routes (G5)
-    const sig = `${req?.identifier ?? ''}|${resp.notification?.date ?? ''}`;
-    if (routedSigRef.current === sig) return;
+    const { route, sig } = routeDedup({
+      identifier: req?.identifier,
+      deliveredAt: resp.notification?.date,
+      routeTo: decision.routeTo,
+      prevSig: routedSigRef.current,
+    });
     routedSigRef.current = sig;
+    if (!route || !decision.routeTo) return;
     // `routeTo` is a runtime string that notificationRouteDecision has already
     // validated against the registry's known routes (SAFE_NOTIFICATION_ROUTES), so
     // it is a real Href; the cast only bridges the opaque-string → typed-route gap.
@@ -74,11 +82,14 @@ export function useNotificationScheduling(): void {
     return () => sub.remove();
   }, [routeFromResponse]);
 
-  // Cold-start tap: the response that launched the app, routed once a session
-  // exists (the auth gate — §5.2 "cold-start tap routes after hydration"). Re-runs
-  // when the session transitions in, covering a tap that beat hydration.
+  // Cold-start tap: the response that launched the app, read ONCE the first time a
+  // session exists (the auth gate — §5.2 "cold-start tap routes after hydration").
+  // The one-shot ref keeps a later session-reference change (a token refresh) from
+  // re-invoking the native read for no purpose past the first check.
+  const launchCheckedRef = useRef(false);
   useEffect(() => {
-    if (!session) return;
+    if (!session || launchCheckedRef.current) return;
+    launchCheckedRef.current = true;
     let cancelled = false;
     Notifications.getLastNotificationResponseAsync?.()
       .then((resp) => {

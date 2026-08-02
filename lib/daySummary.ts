@@ -128,6 +128,13 @@ function buildSection(
   timeZone: string | undefined,
 ): DaySummarySection {
   const rows = input.rows
+    // Scope to THIS pet as the single enforcement point. The loader fetches per
+    // pet, so today this is redundant — but this is the first pure builder that
+    // folds MULTIPLE pets into one model, and a future "one combined query, group
+    // client-side by pet" refactor would cross-wire two pets' records invisibly
+    // without it. Same defense-in-depth rationale as the soft-delete filter below:
+    // no caller can forget it because the builder does not trust the grouping.
+    .filter((r) => r.pet_id === input.pet.id)
     // Soft-delete is enforced HERE as the single point (AC: a removed event never
     // shows in the summary), even though the loader's query also filters it.
     .filter((r) => r.deleted_at == null)
