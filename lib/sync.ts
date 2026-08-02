@@ -1006,13 +1006,22 @@ export async function refreshFoodCache(): Promise<void> {
 // never ran.
 //
 // Extraction is a seconds-long server-side call, so a 'pending' row older than this
-// threshold is a dead capture, not one in flight. Two facts make deleting it safe:
-// a COMMITTED food is never left 'pending' (commitFood always writes completed /
-// failed / manual), so a 'pending' row is by definition un-confirmed and nothing
-// references it — the meal is only logged after the confirm step. The threshold is
-// generous on purpose: the phantom is untidy, not harmful, and a live capture the
-// owner is slowly editing self-heals anyway (commitFood upserts by id, re-creating
-// the row if a sweep removed it mid-edit).
+// threshold is a dead capture, not one in flight. A COMMITTED food is never left
+// 'pending' (commitFood always writes completed / failed / manual), so a 'pending'
+// row is un-confirmed and, in the overwhelming common case, un-referenced — the meal
+// is only logged after the confirm step. The threshold is generous on purpose: the
+// phantom is untidy, not harmful, and a live capture the owner is slowly editing
+// self-heals anyway (commitFood upserts by id, re-creating the row if a sweep removed
+// it mid-edit).
+//
+// The one exception is narrow and self-inflicted, and worth naming rather than
+// claiming away: the placeholder is still SELECTABLE from the library while pending
+// (the local cache has no ai_extraction_status column to hide it — B-661), so an
+// owner who deliberately adds an 'Extracting…' food to a feeding arrangement or a
+// trial's allowed set inside this window would have that CASCADE-linked row (018 /
+// 040 are ON DELETE CASCADE) swept with it. Accepted here — it requires acting on a
+// tile literally titled 'Extracting…' — and the real fix is B-661 (stop showing the
+// placeholder at all), which also makes this reap a pure server-row backstop.
 //
 // A hard DELETE is the right shape here: food_items is per-account and hard-delete
 // (B-354 / the 009 food_items_delete policy: `USING (created_by_user_id =

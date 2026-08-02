@@ -192,8 +192,13 @@ function isStorageErrorShape(error: unknown): boolean {
 export const TERMINAL_UPLOAD_STATUSES = [413, 415] as const;
 
 export function classifyUploadFailure(error: unknown): SyncFailureClass {
+  const isStorage = isStorageErrorShape(error);
   const status = uploadErrorStatus(error);
-  if (status !== null) {
+  // Trust a numeric `.status` as an HTTP response ONLY when it came from a Storage
+  // error. A StorageApiError sets `__isStorageError` AND `.status` together, so this
+  // never rejects a real one — it just guards against a future non-storage throw
+  // that happens to carry a `.status` field being misrouted into the status branch.
+  if (isStorage && status !== null) {
     // The Storage server answered, so it saw the request.
     if ((TERMINAL_UPLOAD_STATUSES as readonly number[]).includes(status)) return 'terminal';
     // Auth-race / timeout / rate-limit / server error: transient by the same
@@ -207,10 +212,10 @@ export function classifyUploadFailure(error: unknown): SyncFailureClass {
     // silently for the life of the install.
     return 'rejected';
   }
-  // No numeric status. A wrapped Storage error with no status is a NETWORK failure
-  // (StorageUnknownError) — the offline case, the single most destructive thing to
-  // get wrong here — and must cost nothing.
-  if (isStorageErrorShape(error)) return 'transient';
+  // A Storage error with NO numeric status is a NETWORK failure (StorageUnknownError)
+  // — the offline case, the single most destructive thing to get wrong here — and
+  // must cost nothing.
+  if (isStorage) return 'transient';
   // Not a Storage error at all: a LOCAL failure raised before the request ever left
   // the device — the image re-encode threw (undecodable), or the file bytes could
   // not be read (the capture is gone). Retrying is identical, so it spends the
@@ -276,7 +281,10 @@ export function withUnsentSuffix(reason: string): string {
   return `${reason} (unsent after ${MAX_SYNC_ATTEMPTS} attempts)`;
 }
 
-/** The reason text parked on a row that ran out of attempts. */
+/** The reason text parked on a row that ran out of attempts. A public convenience
+ *  wrapper (and the shape syncQueue.test.ts pins) — the row-write path now composes
+ *  withUnsentSuffix(formatSyncError(...)) itself via applyFailurePolicy, so this has
+ *  no internal caller, but it stays as the documented one-call form. */
 export function exhaustedAttemptsError(error: {
   code?: string | null;
   message?: string | null;
