@@ -67,7 +67,7 @@ const CORS_HEADERS = {
 // traversal key, and the purge must not depend on the CHECK staying in place. The
 // event/vet-attachment lists remain un-scoped at this consumer — their prefix CHECKs
 // (025/043) carry the same traversal residual, and their guards are their own
-// three-segment shapes, tracked as B-658 rather than lifted blindly from this PR.
+// three-segment shapes, tracked as B-660 rather than lifted blindly from this PR.
 //
 // `vet_documents` (B-478) is pet-scoped too, and is nonetheless re-scoped via a third
 // key, `ownedPetIds`. Not because the ROW source is untrusted, but because

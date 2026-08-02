@@ -28,7 +28,7 @@ these filters *are* the access boundary (RLS is bypassed).
 - Corrected the two comments (`plan.ts`, `index.ts`) that claimed the pet-scoped lists
   "need no such guard: they come from pet-scoped rows" — B-431 finding 4: row ownership
   is pet-scoped, the column VALUE is not.
-- **B-658 filed** (`Later`): the event/vet-attachment lists stay un-scoped here. Same
+- **B-660 filed** (`Later`): the event/vet-attachment lists stay un-scoped here. Same
   traversal residual behind their 025/043 prefix CHECKs, but their keys are
   three-segment, so lifting the two-segment predicate would no-op their purge — they
   need their own predicate.
@@ -92,7 +92,7 @@ green.
 
 ## Follow-ups
 
-- **B-658** — three-segment guards for event/vet-attachment lists.
+- **B-660** — three-segment guards for event/vet-attachment lists.
 - **B-659** — F2/F3/F4/F5 residuals.
 - Post-merge: redeploy `delete-account` (MCP `deploy_edge_function`, `verify_jwt` true),
   read-back sha256, JWT'd boot smoke-test.

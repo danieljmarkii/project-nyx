@@ -172,7 +172,7 @@ export function cleanPaths(raw: ReadonlyArray<string | null | undefined>): strin
 // pet-scoped rows," and B-431 finding 4 showed that claim wrong on its own terms:
 // row ownership is pet-scoped, the column VALUE is not. The pet list now carries
 // its own guard (scopePetPhotoPaths, B-463); the event/vet-attachment lists are
-// tracked by B-658. (Returns the nullable shape so it composes directly into
+// tracked by B-660. (Returns the nullable shape so it composes directly into
 // cleanPaths, which does the dedupe/blank drop.)
 export function scopeMedicationPaths(
   paths: ReadonlyArray<string | null | undefined>,
@@ -231,7 +231,7 @@ export function scopeMedicationPaths(
 // two segments: `nyx-medication-photos` is `{uid}/{medId}/{slot}.jpg` (it has
 // its own uid-prefix guard above) and `nyx-event-attachments` /
 // `nyx-vet-attachments` are `{petId}/{eventOrVisitId}/{attId}.jpg` (un-scoped
-// at this consumer today — B-658). Applying this predicate there would silently
+// at this consumer today — B-660). Applying this predicate there would silently
 // drop every legitimate key and turn account deletion into a no-op for the
 // bucket. The shape is per-bucket; only the ownership half generalises.
 function scopeTwoSegmentOwnedPaths(
@@ -326,7 +326,7 @@ export function scopeFoodPaths(
 // scopePetPhotoPaths (B-463) — their conventions are genuinely two-segment too, and
 // one predicate cannot drift the way the food/vet-document twins did. The warning
 // that used to live here survives on the shared predicate itself: never lift it into
-// the three-segment event/vet-attachment lists (B-658).
+// the three-segment event/vet-attachment lists (B-660).
 export function scopeVetDocumentPaths(
   paths: ReadonlyArray<string | null | undefined>,
   ownedPetIds: ReadonlyArray<string>,
@@ -373,7 +373,7 @@ export function scopePetPhotoPaths(
 // crafted cross-tenant path never reaches the service-role purge. The
 // event/vet-attachment lists are NOT re-scoped here: their `{petId}/…` prefix CHECKs
 // (migrations 025/043) carry the same traversal residual, and their three-segment
-// shape guards are B-658, not a blind lift of the two-segment predicate.
+// shape guards are B-660, not a blind lift of the two-segment predicate.
 export function collectStoragePaths(input: OwnedStoragePaths): BucketPurge[] {
   const candidates: BucketPurge[] = [
     // petPhotos is re-scoped to the owned-pet-id SET (B-463) — defense-in-depth
