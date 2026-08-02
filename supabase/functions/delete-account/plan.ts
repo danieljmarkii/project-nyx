@@ -3,8 +3,9 @@
 // The PURE, unit-tested core of B-039 PR 1 (in-app account deletion). It holds
 // the two decisions that must be provably correct and that the
 // rls-privacy-reviewer will attack: (1) WHICH Storage objects get purged — path
-// collection and the two catalog cross-tenant scoping guards (medication uid-prefix,
-// food owned-id set) — and (2) the ORDER of
+// collection and the cross-tenant scoping guards (the medication uid-prefix, and
+// the shared two-segment owned-id guard on the food, vet-document and pet-photo
+// lists) — and (2) the ORDER of
 // destructive operations (FR-6: the auth user is deleted LAST, so a partial or
 // failed run is idempotent and re-runnable). No I/O lives here — the index.ts
 // shell fetches the user's OWNED rows and executes this plan. Keeping it pure is
@@ -70,6 +71,10 @@ export const STORAGE_REMOVE_CHUNK = 100
 // from client input, FR-3). Each list arrives straight from the DB and may contain
 // nulls (a pet with no photo), blanks, or duplicates; cleaning happens here.
 export interface OwnedStoragePaths {
+  // Pet profile photos, read from `pets.photo_path` for the user's own pets.
+  // Re-scoped before the purge (scopePetPhotoPaths, B-463) — migration 042's
+  // CHECK closed the plain cross-tenant form at the write path, but it is a
+  // prefix test, and this purge does not rely on it alone.
   petPhotoPaths: ReadonlyArray<string | null | undefined>
   eventAttachmentPaths: ReadonlyArray<string | null | undefined>
   vetAttachmentPaths: ReadonlyArray<string | null | undefined>
@@ -86,8 +91,9 @@ export interface OwnedStoragePaths {
   // Food-label photos (B-354 FR-7). `food_items.photo_paths` is a `TEXT[]` too, so
   // index.ts likewise flattens every owned row's array into this flat list. These are
   // scoped NOT by a uid prefix but by the owned-food-id SET (see scopeFoodPaths):
-  // food paths are `{foodItemId}/{slot}.jpg`, so the security key is "the first segment
-  // is a food row THIS user created," mirroring migration 033's food-photo SELECT policy.
+  // food paths are exactly `{foodItemId}/{slot}.jpg`, so the security key is the WHOLE
+  // two-segment shape with a first segment naming a food row THIS user created (B-582
+  // upgraded this from a first-segment-only test; see scopeFoodPaths).
   foodPhotoPaths: ReadonlyArray<string | null | undefined>
   // The ids of the `food_items` this user created (index.ts read them alongside the
   // photo_paths). They are the owned-id set scopeFoodPaths keeps `foodPhotoPaths` to —
@@ -100,7 +106,8 @@ export interface OwnedStoragePaths {
   // The ids of the `pets` this user owns (index.ts already read them — they are the
   // `.in('pet_id', petIds)` scope for every pet-child read). They are the owned-id set
   // scopeVetDocumentPaths keeps `vetDocumentPaths` to, mirroring the nyx-vet-documents
-  // Storage SELECT policy's `(storage.foldername(name))[1] IN (owned pet ids)` by hand.
+  // Storage SELECT policy's `(storage.foldername(name))[1] IN (owned pet ids)` by hand —
+  // and, since B-463, the set scopePetPhotoPaths keeps `petPhotoPaths` to as well.
   ownedPetIds: ReadonlyArray<string>
   // The deleting user's OWN auth uid (the verified-JWT userId index.ts scoped every
   // read by). It is the prefix-scope key for `medicationPhotoPaths` (see
@@ -158,10 +165,15 @@ export function cleanPaths(raw: ReadonlyArray<string | null | undefined>): strin
 // the prefix collapse to '/' and match every path — index.ts always supplies the
 // verified-JWT uid, so this is defense-in-depth.
 //
-// Scoped to medication paths ONLY: the pet/event/vet buckets come from pet-scoped
-// rows and use no per-user-prefix convention, so do NOT extend this filter to them —
-// it would drop their legitimate, un-prefixed keys. (Returns the nullable shape so it
-// composes directly into cleanPaths, which does the dedupe/blank drop.)
+// Scoped to medication paths ONLY: no other bucket uses the per-user-prefix
+// convention, so extending this filter would drop every one of their legitimate,
+// un-prefixed keys. Note the reason is the KEY SHAPE, not trust — an earlier
+// revision said the pet/event/vet lists "need no such guard: they come from
+// pet-scoped rows," and B-431 finding 4 showed that claim wrong on its own terms:
+// row ownership is pet-scoped, the column VALUE is not. The pet list now carries
+// its own guard (scopePetPhotoPaths, B-463); the event/vet-attachment lists are
+// tracked by B-660. (Returns the nullable shape so it composes directly into
+// cleanPaths, which does the dedupe/blank drop.)
 export function scopeMedicationPaths(
   paths: ReadonlyArray<string | null | undefined>,
   ownerUserId: string,
@@ -169,6 +181,77 @@ export function scopeMedicationPaths(
   if (!ownerUserId || ownerUserId.trim().length === 0) return []
   const prefix = `${ownerUserId}/`
   return paths.filter((p): p is string => typeof p === 'string' && p.startsWith(prefix))
+}
+
+// The ONE two-segment ownership predicate, shared by every guard below whose
+// bucket keys objects as `{ownedId}/{filename}` — food (B-582), vet documents
+// (B-478 VF-1), pet photos (B-463). Not exported: each bucket keeps its own
+// named, documented guard so call sites state WHICH convention they enforce,
+// but the predicate itself exists exactly once. That is the B-582 lesson
+// applied structurally: the food guard shipped as a first-segment test, the
+// VF-1 review proved that shape insufficient and fixed it for vet documents
+// ONLY, and the known-bad twin then sat in place on the older call site.
+// Twins drift; a single predicate cannot.
+//
+// The test, in three clauses, all load-bearing:
+//   (1) EXACTLY two segments (one '/'). This drops the multi-segment `..`
+//       traversal variants (`{own}/../{victim}/x`, `{own}/../../{victim}/x`,
+//       `{own}//../{victim}/x`) — their first segment genuinely is owned, so a
+//       first-segment-only test keeps them, and cleanPaths never normalises a
+//       path, so they would reach the service-role remove() verbatim.
+//   (2) the first segment an EXACT member of the owned-id set (never startsWith,
+//       so one id can never be a string prefix of another).
+//   (3) a NON-DEGENERATE second segment: non-empty, and not `.` or `..`. This is
+//       the B-582-review (F1) clause. Without it, the TWO-segment degenerate keys
+//       `{own}/`, `{own}/.`, `{own}/..` pass (1)+(2) — each is one separator, first
+//       segment owned — and reach a real purge step. None can name a victim, but
+//       `{own}/..` is the one whose blast radius under a normalising or genuinely
+//       prefix-semantic backend would be the bucket ROOT rather than one object.
+//       Every legitimate key has a real filename here (`profile.jpg`,
+//       `0-front.jpg`, `{docId}.pdf`), so this clause drops nothing real.
+//
+// Why all three rather than trusting Storage to no-op the degenerate keys: such a
+// key deletes nothing TODAY (`storage.objects.name` is an opaque literal; neither
+// storage-api nor S3 resolves `..`), but that is a boundary held by a third-party
+// implementation detail we do not own and do not test — the 043 argument — so it
+// is closed here rather than relied on. An empty owned-id set fails CLOSED
+// (drops everything).
+//
+// Residual this does NOT close, by design (B-582 review F2): a two-segment key
+// whose SECOND segment carries ENCODED or backslash traversal — `{own}/..%2f{victim}%2fx`,
+// `{own}/..\{victim}\x` — passes all three clauses (segment 2 is one opaque token,
+// not literally `.`/`..`). It cannot escape the owner's own `{own}/` namespace
+// unless Storage percent-decodes or resolves it, which is the same untested
+// backend behaviour clause (3) refuses to depend on for the literal case — but
+// closing it would require normalising the key, which risks mismatching a
+// legitimately odd-but-real filename. Left as the documented reliance rather than
+// guessed at; tracked with F3/F4 on the B-582 follow-up row.
+//
+// ⚠ Do NOT reach for this for a bucket whose legitimate keys have MORE than
+// two segments: `nyx-medication-photos` is `{uid}/{medId}/{slot}.jpg` (it has
+// its own uid-prefix guard above) and `nyx-event-attachments` /
+// `nyx-vet-attachments` are `{petId}/{eventOrVisitId}/{attId}.jpg` (un-scoped
+// at this consumer today — B-660). Applying this predicate there would silently
+// drop every legitimate key and turn account deletion into a no-op for the
+// bucket. The shape is per-bucket; only the ownership half generalises.
+function scopeTwoSegmentOwnedPaths(
+  paths: ReadonlyArray<string | null | undefined>,
+  ownedIds: ReadonlyArray<string>,
+): Array<string | null | undefined> {
+  const owned = new Set(
+    ownedIds.filter((id): id is string => typeof id === 'string' && id.trim().length > 0),
+  )
+  if (owned.size === 0) return []
+  return paths.filter((p): p is string => {
+    if (typeof p !== 'string') return false
+    const segments = p.split('/')
+    if (segments.length !== 2) return false
+    if (!owned.has(segments[0])) return false
+    // Clause (3): reject a degenerate second segment (`{own}/`, `{own}/.`,
+    // `{own}/..`). Every real object key has a filename here.
+    const name = segments[1]
+    return name.length > 0 && name !== '.' && name !== '..'
+  })
 }
 
 // B-354 FR-7 — cross-tenant delete guard for food-label photos.
@@ -185,38 +268,22 @@ export function scopeMedicationPaths(
 // owned row would turn the attacker's own account deletion into a cross-tenant DELETE of
 // the victim's label photo (the exact B-128 primitive, one catalog over).
 //
-// Defuse it at the consumer, mirroring 033's SELECT policy by hand: keep only paths whose
-// FIRST segment is the id of a food row THIS user created. We compare the whole first
-// segment for exact SET membership (not startsWith) so a food id can never be a string
-// prefix of another — UUIDs make collisions impossible, but exact-match is the honest
-// encoding of "(storage.foldername(name))[1] IN (owned ids)". An empty owned-id set fails
-// CLOSED (drops everything) — a user with no food rows has no food photos to purge, and a
-// path can never legitimately name a food id that isn't theirs.
-//
-// Scoped to food paths ONLY: the pet/event/vet buckets come from pet-scoped rows with no
-// per-id path convention, so do NOT extend this filter to them. (Returns the nullable
-// shape so it composes directly into cleanPaths, which does the dedupe/blank drop.)
+// B-582 (2026-08-02): this guard originally validated only the LEADING segment — a
+// faithful port of 033's SELECT policy — and the repo had already proved that shape
+// insufficient. The VF-1 review executed `{own}/../{victim}/x` against the identical
+// first-segment test on vet documents and it PASSED (the first segment IS owned; the
+// `..` is the second), and the B-577 review then executed the same attack against THIS
+// filter with the same result — a known-insufficient guard left standing on the older
+// of the two call sites. Every legitimate food key is exactly two segments —
+// `{foodItemId}/{n}-{slot}.jpg` (app/food-capture.tsx:300, app/food/[id].tsx) — so the
+// guard now checks the whole shape via the shared predicate above, which also encodes
+// "(storage.foldername(name))[1] IN (owned ids)": a slashless key has no folder
+// segment, so 033's policy drops it and so does the shape test.
 export function scopeFoodPaths(
   paths: ReadonlyArray<string | null | undefined>,
   ownedFoodItemIds: ReadonlyArray<string>,
 ): Array<string | null | undefined> {
-  const owned = new Set(
-    ownedFoodItemIds.filter((id): id is string => typeof id === 'string' && id.trim().length > 0),
-  )
-  if (owned.size === 0) return []
-  return paths.filter((p): p is string => {
-    if (typeof p !== 'string') return false
-    // Faithful port of 033's SELECT policy `(storage.foldername(name))[1] IN (owned ids)`:
-    // `storage.foldername` returns the FOLDER segments (everything before the final '/'),
-    // so a key with NO '/' has an empty folder list and `[1]` is NULL — the policy drops
-    // it. Require the separator here too: the food id must be the FOLDER the object lives
-    // in (`{ownedId}/{slot}.jpg`), not the whole opaque key. A bare, slashless key is not
-    // a real food photo and is dropped rather than deleting an object literally named for
-    // a food id.
-    const slash = p.indexOf('/')
-    if (slash < 0) return false
-    return owned.has(p.slice(0, slash))
-  })
+  return scopeTwoSegmentOwnedPaths(paths, ownedFoodItemIds)
 }
 
 // B-478 VF-1 — first-segment scope guard for Vet Files documents.
@@ -255,43 +322,66 @@ export function scopeFoodPaths(
 // fails CLOSED (drops everything) — a user with no pets has no documents, and a path
 // can never legitimately name a pet that is not theirs.
 //
-// Scoped to vet-document paths ONLY: do NOT lift the two-segment rule into
-// scopeFoodPaths or the pet/event/vet-attachment lists. `nyx-vet-attachments` keys
-// are `{pet_id}/{visit_id}/{attachment_id}.jpg` — THREE segments — so this exact
-// predicate would silently drop every legitimate key there and turn account deletion
-// into a no-op for that bucket. The shape is per-bucket; only the ownership half
-// generalises.
+// The two-segment shape is now DELIBERATELY shared with scopeFoodPaths (B-582) and
+// scopePetPhotoPaths (B-463) — their conventions are genuinely two-segment too, and
+// one predicate cannot drift the way the food/vet-document twins did. The warning
+// that used to live here survives on the shared predicate itself: never lift it into
+// the three-segment event/vet-attachment lists (B-660).
 export function scopeVetDocumentPaths(
   paths: ReadonlyArray<string | null | undefined>,
   ownedPetIds: ReadonlyArray<string>,
 ): Array<string | null | undefined> {
-  const owned = new Set(
-    ownedPetIds.filter((id): id is string => typeof id === 'string' && id.trim().length > 0),
-  )
-  if (owned.size === 0) return []
-  return paths.filter((p): p is string => {
-    if (typeof p !== 'string') return false
-    const segments = p.split('/')
-    // Exactly `{pet_id}/{document_id}.{ext}`. A slashless key has 1 segment (the
-    // Storage policy drops it too — `storage.foldername` returns an empty array, so
-    // `[1]` is NULL); anything with a second separator is not a key this app can
-    // mint, whatever it claims to be. Set membership on the first segment, never
-    // `startsWith`, so one pet id can never be a string prefix of another.
-    if (segments.length !== 2) return false
-    return owned.has(segments[0])
-  })
+  return scopeTwoSegmentOwnedPaths(paths, ownedPetIds)
+}
+
+// B-463 — cross-tenant delete guard for pet profile photos, defense-in-depth
+// BEHIND migration 042's DB CHECK (where the food/medication guards above stand
+// alone — their catalogs have no CHECK at all).
+//
+// B-431 (PR #460) closed the CAUSE: `pets.photo_path` was plain TEXT, and
+// `pets_owner` RLS gates which ROW you write, never the column CONTENTS — so an
+// attacker could point their own pet's `photo_path` at `{victimPetId}/profile.jpg`
+// and let their own account deletion service-role-delete the victim's photo
+// (042 finding 4; one victim per owned pet, and multi-pet is free). The
+// `pets_photo_path_pet_prefix` CHECK now makes that plain form unwritable. This
+// consumer-side guard exists anyway, for two reasons:
+//   1. The CHECK is `starts_with(photo_path, id::text || '/')` — a PREFIX test,
+//      the exact shape whose residual the VF-1 review executed on vet documents:
+//      `{ownPetId}/../{victimPetId}/profile.jpg` SATISFIES it. So even with the
+//      CHECK in place a traversal key is writable and reaches the purge verbatim;
+//      the two-segment shape test is what actually drops it.
+//   2. The purge must stay safe if the CHECK is ever dropped or relaxed by a
+//      future migration, or a future writer lands before its own constraint does —
+//      the guard-at-the-consumer posture every scoped list here takes.
+// Keyed on the owned-PET-id set — the same ids that scoped the `pets` read
+// (`user_id = userId`), so a path and the ids that permit it always travel
+// together. The convention is exactly `{petId}/profile.jpg` — two segments, one
+// writer (app/(tabs)/profile.tsx) — the shared predicate's shape.
+export function scopePetPhotoPaths(
+  paths: ReadonlyArray<string | null | undefined>,
+  ownedPetIds: ReadonlyArray<string>,
+): Array<string | null | undefined> {
+  return scopeTwoSegmentOwnedPaths(paths, ownedPetIds)
 }
 
 // Map each owned path-list to its bucket, dropping any bucket with nothing to
 // remove. The output can ONLY ever contain the seven STORAGE_BUCKETS above, and
 // PRESERVED_BUCKETS is now empty — every bucket a user's objects can live in is
-// purgeable. Three lists are re-scoped BEFORE cleaning, each against the key its own
+// purgeable. Four lists are re-scoped BEFORE cleaning, each against the key its own
 // Storage policy uses — medication to the owner's `{uid}/` prefix, food to the
-// owned-food-id SET, vet documents to the owned-pet-id SET — so a crafted
-// cross-tenant path never reaches the service-role purge.
+// owned-food-id SET, vet documents and pet photos to the owned-pet-id SET — so a
+// crafted cross-tenant path never reaches the service-role purge. The
+// event/vet-attachment lists are NOT re-scoped here: their `{petId}/…` prefix CHECKs
+// (migrations 025/043) carry the same traversal residual, and their three-segment
+// shape guards are B-660, not a blind lift of the two-segment predicate.
 export function collectStoragePaths(input: OwnedStoragePaths): BucketPurge[] {
   const candidates: BucketPurge[] = [
-    { bucket: STORAGE_BUCKETS.petPhotos, paths: cleanPaths(input.petPhotoPaths) },
+    // petPhotos is re-scoped to the owned-pet-id SET (B-463) — defense-in-depth
+    // behind migration 042's prefix CHECK, which a `..` traversal key satisfies.
+    {
+      bucket: STORAGE_BUCKETS.petPhotos,
+      paths: cleanPaths(scopePetPhotoPaths(input.petPhotoPaths, input.ownedPetIds)),
+    },
     { bucket: STORAGE_BUCKETS.eventAttachments, paths: cleanPaths(input.eventAttachmentPaths) },
     { bucket: STORAGE_BUCKETS.vetAttachments, paths: cleanPaths(input.vetAttachmentPaths) },
     // vetDocuments is pet-scoped like the three above, but its paths are ALSO
