@@ -31,8 +31,24 @@ import {
   type SnapshotMealRow,
   type SnapshotPet,
 } from './widgetSnapshot';
+import type { WidgetSnapshotV2 } from './widgetSnapshotV2';
 
 const PET: SnapshotPet = { id: 'pet-1', name: 'Pixel', species: 'cat' };
+
+// A minimal, well-formed v2 block (spec §3 shapes). buildWidgetSnapshot only ever
+// PASSES this through — the builders that produce it are exercised in
+// widgetSnapshotV2.test.ts; here we pin the additive wiring.
+const V2_FIXTURE: WidgetSnapshotV2 = {
+  todayByClass: {
+    meals: { count: 2, lastAt: '2026-07-24T12:00:00.000Z', names: ['Kibble'], times: ['2026-07-24T08:00:00.000Z'] },
+    treats: { count: 0, lastAt: null, names: [], times: [] },
+    meds: { count: 0, lastAt: null, names: [], times: [], expectedToday: null },
+    symptoms: { count: 0, lastAt: null, names: [], times: [], leadingType: null },
+  },
+  upNext: { label: 'Dinner', approxTime: '~6p' },
+  sevenDays: [{ dayKey: '2026-07-24', logged: true, symptomLogged: false }],
+  trial: { day: 12, target: 28, daysLogged: 10, daysElapsed: 12, stripDays: [{ logged: true }] },
+};
 
 function mealRow(
   occurred_at: string,
@@ -291,6 +307,39 @@ describe('buildWidgetSnapshot', () => {
         'trialTargetDays',
       ].sort(),
     );
+  });
+
+  // ── Widget V2 opt-in (spec §3; lib/widgetSnapshotV2.ts) ────────────────────
+  //
+  // buildWidgetSnapshot carries a pre-built v2 block additively. The four fields
+  // appear ONLY when the caller passes `v2`; the production publisher does not, so
+  // the default-path contract above is the steady state and the published JSON is
+  // byte-identical until V2-PR-2 wires the reads.
+  describe('the v2 opt-in', () => {
+    it('adds exactly the four v2 keys and carries the block through unchanged', () => {
+      const snap = buildWidgetSnapshot(PET, { ...base, v2: V2_FIXTURE });
+      const added = Object.keys(snap).filter((k) => !(k in buildWidgetSnapshot(PET, base)));
+      expect(added.sort()).toEqual(['sevenDays', 'todayByClass', 'trial', 'upNext']);
+      // Passthrough: the exact same references, no re-computation.
+      expect(snap.todayByClass).toBe(V2_FIXTURE.todayByClass);
+      expect(snap.upNext).toBe(V2_FIXTURE.upNext);
+      expect(snap.sevenDays).toBe(V2_FIXTURE.sevenDays);
+      expect(snap.trial).toBe(V2_FIXTURE.trial);
+    });
+
+    it('omits every v2 key when no v2 block is supplied (production path unchanged)', () => {
+      const keys = Object.keys(buildWidgetSnapshot(PET, base));
+      expect(keys).not.toContain('todayByClass');
+      expect(keys).not.toContain('upNext');
+      expect(keys).not.toContain('sevenDays');
+      expect(keys).not.toContain('trial');
+    });
+
+    it('carries a null v2 trial through (a stale/absent trial is the publisher’s call)', () => {
+      const snap = buildWidgetSnapshot(PET, { ...base, v2: { ...V2_FIXTURE, trial: null } });
+      expect(snap.trial).toBeNull();
+      expect('trial' in snap).toBe(true); // present-but-null, distinct from absent
+    });
   });
 });
 
