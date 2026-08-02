@@ -27,6 +27,7 @@ import { purgeRetiredStorage } from '../lib/retiredStorage';
 import { useSync } from '../hooks/useSync';
 import { useSyncTimezone } from '../hooks/useSyncTimezone';
 import { useWidgetSnapshots } from '../hooks/useWidgetSnapshots';
+import { useNotificationScheduling } from '../hooks/useNotificationScheduling';
 import { useAppActive } from '../hooks/useAppActive';
 import { initAppConfig, refreshAppConfig } from '../hooks/useAppConfig';
 import { MealCompletionCard } from '../components/ui/MealCompletionCard';
@@ -58,6 +59,11 @@ export default function RootLayout() {
   // B-085: keep user_profiles.timezone populated with the device zone so the
   // detection engine's detector ⑥ can run (engine input only — never surfaced).
   useSyncTimezone();
+  // B-661 PR 4: reconcile the 9pm daily-summary schedule against the owner's
+  // preference on each foreground, and route a notification tap to /day-summary
+  // (behind the auth gate). Inert until PR 3 ships the toggle — nothing is enabled,
+  // so it only ever cancels a stray schedule (a second sign-out-leak backstop).
+  useNotificationScheduling();
 
   // B-329: load the server-flippable app_config flags on start, then refresh on
   // every foreground (a PM flag flip reaches the client without a reinstall). Values
@@ -285,6 +291,7 @@ export default function RootLayout() {
         <Stack.Screen name="edit-event" options={{ presentation: 'modal' }} />
         <Stack.Screen name="event/[id]" />
         <Stack.Screen name="vet-document/[id]" />
+        <Stack.Screen name="day-summary" />
         <Stack.Screen name="ask" />
         <Stack.Screen name="report" />
         <Stack.Screen name="rundown" />
