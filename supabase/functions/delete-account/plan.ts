@@ -91,8 +91,9 @@ export interface OwnedStoragePaths {
   // Food-label photos (B-354 FR-7). `food_items.photo_paths` is a `TEXT[]` too, so
   // index.ts likewise flattens every owned row's array into this flat list. These are
   // scoped NOT by a uid prefix but by the owned-food-id SET (see scopeFoodPaths):
-  // food paths are `{foodItemId}/{slot}.jpg`, so the security key is "the first segment
-  // is a food row THIS user created," mirroring migration 033's food-photo SELECT policy.
+  // food paths are exactly `{foodItemId}/{slot}.jpg`, so the security key is the WHOLE
+  // two-segment shape with a first segment naming a food row THIS user created (B-582
+  // upgraded this from a first-segment-only test; see scopeFoodPaths).
   foodPhotoPaths: ReadonlyArray<string | null | undefined>
   // The ids of the `food_items` this user created (index.ts read them alongside the
   // photo_paths). They are the owned-id set scopeFoodPaths keeps `foodPhotoPaths` to —
