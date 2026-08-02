@@ -131,15 +131,17 @@ or implication anywhere; no exclamation marks.
   (which governs health copy) doesn't apply — a loud, unmissable inert state is
   honest states (Principle 5) done right. Mock state (c) + annotation updated and
   re-published to the same URL.
-- **Schedule-vs-defer (PM Action Item #1)** — explained in full to the PM; decision
-  still theirs. Current behavior: PR 3 schedules via reconcile (interim PR-1
-  placeholder body); deferring to PR 4 is a small change.
+- **Schedule-vs-defer (PM Action Item #1) — RESOLVED (PM, 2026-08-02): keep
+  scheduling in PR 3.** PR 3 schedules via reconcile using PR 1's interim
+  placeholder body; PR 4 replaces the body, adds the `/day-summary` destination, and
+  wires the app-foreground reconcile. This ratifies the current behavior — no code
+  change.
 
 ## Not done / next
 
-- **PR 4** — `lib/daySummary.ts` + the `/day-summary` screen + the 9pm schedule wired
-  to the pref + the real G1-safe body; mock round 2 adds the Day Summary + lock-screen
-  frames to the same artifact URL.
+- **PR 4** — `lib/daySummary.ts` + the `/day-summary` screen + the real G1-safe body +
+  the app-foreground reconcile (PR 3 already schedules from the toggle, PM-ratified);
+  mock round 2 adds the Day Summary + lock-screen frames to the same artifact URL.
 - **PR 5** — the `nyx-voice` / `pm-feature-review` / Dr. Chen finish pass.
 - The single-pet-body-naming open item (§10.3) and the two PM-decision backlog rows
   (B-666) await a PM call.
