@@ -913,12 +913,17 @@ export function canSaveMedicationItemEdit(edit: { generic_name: string }): boole
 //      NOT adherence. This makes the % under-read when an owner gives but doesn't
 //      log a dose — the SAFE direction (§6.1: absence of a logged dose ≠ wellness;
 //      we never assume an unlogged dose was given, and never over-reassure).
-//   2. The denominator is EXPECTED doses (doses_per_day × elapsed days, §5.4), so a
-//      scheduled regimen with zero logged doses is "not tracked" (percent=null),
+//   2. The denominator is EXPECTED doses — the dispensed TOTAL for a dose-denominated
+//      course (target_duration_doses, B-618), else doses_per_day × elapsed days (§5.4).
+//      Either way a regimen with zero logged doses is "not tracked" (percent=null),
 //      never "0% = compliant" and never "100% = all good".
 //
-// PRN/as-needed regimens (doses_per_day = NULL) have no adherence target, so they
-// report a dose COUNT and never a %.
+// A DOSE-denominated course ("#28, until gone") measures against its dispensed total,
+// so a completed 28-of-28 course reads "100% given · 28 of 28" instead of the calendar
+// pace running past the prescription ("28 of 36 · 78%") and contradicting the dose
+// counter on the same card — the reported bug (see the targetDoses field comment). PRN/
+// as-needed regimens (no doses_per_day AND no dose target) have no adherence
+// denominator, so they report a dose COUNT and never a %.
 
 export type DoseAdherence = 'given' | 'partial' | 'missed' | 'refused';
 
@@ -934,12 +939,24 @@ export interface AdherenceTally {
 }
 
 export interface RegimenComplianceInput {
-  // medications.doses_per_day — NULL = PRN/as-needed (no compliance target).
+  // medications.doses_per_day — NULL = PRN/as-needed (no calendar compliance target).
   dosesPerDay: number | null;
   // Whole days the regimen has been running, ≥1 (caller derives from started_at,
   // mirroring the diet-trial card). Kept as a number so this stays clock-free.
   daysElapsed: number;
   tally: AdherenceTally;
+  // B-618 — medications.target_duration_doses for a DOSE-denominated fixed course
+  // ("#28, until gone"), or null/undefined for a days-/ongoing-/PRN-denominated one.
+  // When set (> 0), it is the compliance DENOMINATOR: adherence is measured against
+  // the DISPENSED COURSE TOTAL, never the calendar pace (doses_per_day × daysElapsed).
+  // On a dose course the pace denominator keeps climbing past the prescribed total, so
+  // an owner who had given all 28 prescribed doses ("Dose 28 of 28", course done) saw
+  // "78% given · 28 of 36 doses" — behind, on the SAME card the counter calls complete
+  // (the reported bug: those 8 "missing" doses were never prescribed). Re-basing to the
+  // total makes the two lines agree AND keeps the line off the D3-punted "pace" framing:
+  // it now reads "% of the prescribed course delivered", not "% of what you should have
+  // given by now". The numerator is unchanged (given-only, the stricter rate — D1).
+  targetDoses?: number | null;
 }
 
 export interface RegimenCompliance {
@@ -1008,23 +1025,38 @@ export function regimenDaysElapsed(
 }
 
 export function computeRegimenCompliance(input: RegimenComplianceInput): RegimenCompliance {
-  const { dosesPerDay, daysElapsed, tally } = input;
-  const isPrn = dosesPerDay == null;
+  const { dosesPerDay, daysElapsed, tally, targetDoses } = input;
+
+  // B-618 — a positive target_duration_doses means the course is denominated in DOSES,
+  // so its denominator is the dispensed TOTAL, not the calendar pace. A dose course
+  // therefore always has a real denominator (even with no daily cadence), so it is never
+  // "PRN" for compliance — a "#30, give as directed" course reports "N of 30", not a
+  // bare count. Guard is `> 0` (not just `!= null`) so a corrupt/legacy 0 — the local
+  // SQLite mirror does not enforce the server CHECK — falls back to the pace path rather
+  // than a zero denominator (which the percent guard below nulls out anyway).
+  const isDoseDenominated = targetDoses != null && targetDoses > 0;
+  const isPrn = !isDoseDenominated && dosesPerDay == null;
 
   const administeredDoses = tally.given;
   const flaggedDoses = tally.partial + tally.missed + tally.refused;
   const loggedDoses = administeredDoses + flaggedDoses + tally.unrated;
 
   const safeDays = Math.max(1, Math.floor(daysElapsed));
-  const expectedDoses = isPrn ? 0 : Math.round((dosesPerDay as number) * safeDays);
+  const expectedDoses = isDoseDenominated
+    ? (targetDoses as number)
+    : isPrn
+      ? 0
+      : Math.round((dosesPerDay as number) * safeDays);
 
   let percent: number | null = null;
-  // Only a scheduled regimen with at least one logged dose gets a %. Zero logged
-  // doses → null → "not tracked" (never "0% = compliant"); PRN → null → show a count.
+  // Only a regimen with a real denominator AND at least one logged dose gets a %. Zero
+  // logged doses → null → "not tracked" (never "0% = compliant"); PRN → null → show a
+  // count. A dose course is never PRN, so it takes this branch as soon as one dose lands.
   if (!isPrn && expectedDoses > 0 && loggedDoses > 0) {
     percent = Math.round((administeredDoses / expectedDoses) * 100);
-    // Clamp: an owner can log more 'given' doses than the elapsed-days estimate
-    // expects (extra doses, same-day catch-up); a >100% adherence reads as nonsense.
+    // Clamp: an owner can log more 'given' doses than the denominator expects — extra
+    // doses / same-day catch-up on the pace path, or administrations past a dose target;
+    // a >100% adherence reads as nonsense.
     percent = Math.max(0, Math.min(100, percent));
   }
 
