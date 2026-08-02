@@ -179,6 +179,11 @@ export const theme = {
   // Event semantic colors
   colorEventSymptom: '#F43F5E',
   colorEventSymptomLight: '#FFE4E6',
+  // The deep rose ink for a small-caps label ON colorEventSymptomLight (the widget
+  // symptom tile's category label, round-7 mock). Single-sourced here so the
+  // widget's inlined-palette hex has a real token behind it and a future rose-on-
+  // rose-light label reuses the same value rather than reinventing it.
+  colorEventSymptomInk: '#9F1239',
   // Calm safety-surface border — a mid-tone between symptom and symptom-light, for
   // a tinted safety container that needs definition without alarm (the cross-pet
   // safety banner, multi-pet §4 / mock A3). Softer than colorEventSymptom so the
@@ -206,12 +211,22 @@ export const theme = {
   colorEventMedication: '#5B7A9E',
   colorEventMedicationLight: '#EAF0F7',
   colorChartEmpty: '#F0F0F0',
+  // The idle mark for an un-logged coverage pip / a trial-day gap dot (widget
+  // ground band, round-7 mock) — a mid-grey that reads "nothing here yet" without
+  // the weight of a filled state. Single-sourced for the same reason as
+  // colorEventSymptomInk (the widget inlines its palette but cannot import it).
+  colorTickIdle: '#C9C9C9',
 
   // Destructive — surface-aware. colorDestructive is tuned for light surfaces;
   // colorDestructiveOnDark is the known-good red for the black photo-viewer
   // backdrop, where #DC2626 reads muddy (see migration plan §3.4).
   colorDestructive: '#DC2626',
   colorDestructiveOnDark: '#ff6b6b',
+  // Destructive tint pair for a "danger" banner (fill + hairline), matched in
+  // intensity to the colorEventSymptom{Light,Border} safety-banner pair so a
+  // system-state warning reads as prominent without a solid-red alarm (B-661 PR 3).
+  colorDestructiveLight: '#FEE2E2',   // red-100 tint — danger-banner fill
+  colorDestructiveBorder: '#FCA5A5',  // red-300 — danger-banner hairline
 
   // Modal scrim — one value for every bottom-sheet/confirm overlay so stacked
   // surfaces dim identically (switcher sheet, archive confirm; FAB chip next).

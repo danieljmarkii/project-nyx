@@ -1,27 +1,25 @@
-// The app half of the widget (widget PR W5) — publish the timeline, drain the
-// outbox.
+// The app half of the widget (Widget V2, PR 2) — publish the timeline; drain the
+// v1 outbox ONCE on upgrade.
 //
-// The widget renders from ONE timeline that the app owns (expo-widgets stores
-// it in the App Group; the extension only reads it). Two directions cross this
-// seam:
+// v2 NEVER WRITES (V2-1): the widget is informational, every element is a Link,
+// and there is no ongoing outbox to drain. Only ONE direction crosses this seam
+// now:
 //
-//   app → widget   `publishWidgetTimeline` — the props built in lib/widgetProps
-//                  from the snapshots the W3 publisher just wrote.
-//   widget → app   `drainWidgetOutbox` — the taps captured on the Home Screen,
-//                  replayed through the SHIPPED W4 intents so the write path,
-//                  its ids, its provenance, and its trust boundary are exactly
-//                  the ones W3/W4 built and reviewed. Nothing here writes a row
-//                  itself.
+//   app → widget   `publishWidgetTimeline` — the v2 props built in lib/widgetProps
+//                  from the snapshots the publisher just wrote.
 //
-// ORDER IS LOAD-BEARING: `syncWidget` drains BEFORE it publishes. Publishing
-// replaces the stored timeline, which is also what clears `pending`/`revoked` —
-// so publishing first would throw away un-drained taps. The one residual race
-// is a tap landing between the drain's read and the publish's write; it is
-// milliseconds wide, and it is why the drain is also triggered by the
-// interaction event (below) rather than only by the debounced publisher.
+// The one exception is the §3 UPGRADE PATH. A build-35 user upgrading to v2 may
+// have an un-drained v1 capture still sitting in the stored timeline. Dropping it
+// would lose a meal the owner logged, so `drainResidualV1Outbox` replays it
+// through the SHIPPED W4 intents exactly once — the same apply/ingest/revoke path
+// v1 used — before the app's first v2 publish replaces the timeline (which is what
+// clears the outbox). After that publish the stored timeline is v2, carries no
+// outbox, and a re-drain is a cheap no-op. The W4 intents themselves stay in the
+// repo as the B-291 Siri/hardware rail (spec §4); only their per-tick drain call
+// site retires.
 //
 // Everything degrades to a clean no-op without the native module (Android, Expo
-// Go, a dev client built before this PR) — same posture as lib/appGroup.
+// Go, a dev client built before the widget shipped) — same posture as lib/appGroup.
 
 import { softDeleteEvent } from './db';
 import { usePetStore } from '../store/petStore';
@@ -32,13 +30,16 @@ import {
   buildWidgetTimeline,
   collectOutbox,
   type CulpritWidgetProps,
+  type V1OutboxProps,
   type WidgetPendingCapture,
 } from './widgetProps';
 import { CulpritWidgetLayout } from '../widgets/CulpritWidget';
 
 // The narrow slice of expo-widgets' `Widget` this module uses. Declared
-// structurally so the bridge can be unit-tested against a fake without the
-// native module (which throws at import time on a binary without it).
+// structurally so the bridge can be unit-tested against a fake without the native
+// module (which throws at import time on a binary without it). `getTimeline` may
+// return v1-shaped props on the upgrade path, so its props are read loosely by
+// `collectOutbox`.
 export interface WidgetHandle {
   updateTimeline(entries: { date: Date; props: CulpritWidgetProps }[]): void;
   getTimeline(): Promise<{ date: Date; props: CulpritWidgetProps }[]>;
@@ -47,15 +48,16 @@ export interface WidgetHandle {
 let handle: WidgetHandle | null = null;
 let handleResolved = false;
 
-// Lazily construct the widget. Constructing it is what writes the LAYOUT into
-// the App Group (expo-widgets' WidgetObject init), so this must run at least
-// once per app launch before any timeline update — otherwise the extension has
-// props with no layout to render them with.
+// Lazily construct the widget. Constructing it is what writes the LAYOUT into the
+// App Group (expo-widgets' WidgetObject init), so this must run at least once per
+// app launch before any timeline update — otherwise the extension has props with
+// no layout to render them with. On the upgrade path this is also what installs
+// the v2 layout, so a stored v1 timeline briefly renders through the v2 layout,
+// which the schema-mismatch door handles (§3) until the first v2 publish.
 //
-// `CulpritWidgetLayout` is a function to TypeScript and a source STRING at
-// runtime (babel-preset-expo's `'widget'` directive rewrites it), which is
-// exactly what `createWidget` wants; the cast is the seam between those two
-// truths, not a shortcut.
+// `CulpritWidgetLayout` is a function to TypeScript and a source STRING at runtime
+// (babel-preset-expo's `'widget'` directive rewrites it), which is exactly what
+// `createWidget` wants; the cast is the seam between those two truths.
 function getWidget(): WidgetHandle | null {
   if (handleResolved) return handle;
   handleResolved = true;
@@ -78,24 +80,13 @@ export function __setWidgetHandleForTests(fake: WidgetHandle | null): void {
   handleResolved = fake !== null;
 }
 
-// What one drain pass did. Returned (rather than logged) so the caller can
-// decide whether a re-publish is worth it and the test can assert on it.
+// ── The §3 one-time v1 residual-outbox drain ─────────────────────────────────
+
+// What one drain pass did (unchanged from v1 — the apply path is identical).
 export interface DrainOutcome {
   applied: number;
   revoked: number;
-  /**
-   * Captures that could NOT be applied and must survive the publish that
-   * follows. Re-seeded into the next props' outbox so a failed tap is retried,
-   * never silently dropped — the "no lost taps" guarantee (§4.1 Q4) restated
-   * for the app-side leg of the outbox.
-   */
   failed: WidgetPendingCapture[];
-  /**
-   * Revocations that could not be applied this pass (the ingest failed, so the
-   * rows they target may not exist locally yet). Carried into the next props
-   * for the same reason as `failed` — an undo the app dropped on the floor
-   * would resurrect the event on the next ingest.
-   */
   deferredRevokes: string[];
 }
 
@@ -103,10 +94,7 @@ export interface DrainDeps {
   logMeal: typeof logMealIntent;
   logTreat: typeof logTreatIntent;
   topUpBowl: typeof topUpBowlIntent;
-  /**
-   * Move the just-written inbox records into local SQLite + the sync queue.
-   * MUST run between the applies and the revokes — see applyOutbox.
-   */
+  /** Move the just-written inbox records into local SQLite + the sync queue. */
   ingest: () => Promise<void>;
   /** Soft-delete an already-ingested event; a no-op if it isn't there. */
   revokeEvent: (eventId: string) => Promise<void>;
@@ -117,11 +105,10 @@ function defaultDrainDeps(): DrainDeps {
     logMeal: logMealIntent,
     logTreat: logTreatIntent,
     topUpBowl: topUpBowlIntent,
-    // Same allowlisted ingest the sync cycle runs (hooks/useSync.ts) — the pet
-    // set is the trust boundary, so it is read here rather than derived from
-    // the captures themselves. Required lazily: captureInbox pulls in the
-    // Supabase client, whose import-time env guard deliberately throws, and
-    // this module must stay importable by anything that only needs its types.
+    // Same allowlisted ingest the sync cycle runs (hooks/useSync.ts) — the pet set
+    // is the trust boundary, so it is read here rather than derived from the
+    // captures themselves. Required lazily: captureInbox pulls in the Supabase
+    // client, whose import-time env guard deliberately throws.
     ingest: () => {
       // eslint-disable-next-line @typescript-eslint/no-var-requires
       const { ingestCaptureInbox } = require('./captureInbox');
@@ -131,10 +118,10 @@ function defaultDrainDeps(): DrainDeps {
   };
 }
 
-// Replay ONE captured tap through its W4 intent, carrying the widget's own ids
-// and tap time so the resulting row is byte-identical to what the intent would
-// have written from the extension. A capture that names nothing is dropped
-// rather than guessed at — the no-garbage rule (D2) survives the outbox hop.
+// Replay ONE captured tap through its W4 intent, carrying the widget's own ids and
+// tap time so the resulting row is byte-identical to what the intent would have
+// written from the extension. A capture that names nothing is dropped rather than
+// guessed at — the no-garbage rule survives the outbox hop.
 async function applyCapture(capture: WidgetPendingCapture, deps: DrainDeps): Promise<boolean> {
   if (!capture.petId) return false;
   if (capture.kind === 'bowl_topup') {
@@ -158,31 +145,14 @@ async function applyCapture(capture: WidgetPendingCapture, deps: DrainDeps): Pro
   return result.ok;
 }
 
-// Given the outbox, apply it. Exported for the unit test (the production
-// function runs against fakes, not a copy of itself).
-//
-// THE THREE STEPS ARE ORDERED, and the order is the whole correctness argument:
-//
-//   1. APPLY  — each capture goes through its W4 intent, which writes an inbox
-//               file (+ a best-effort direct REST leg). No local row exists yet.
-//   2. INGEST — the inbox is drained into local SQLite + the sync queue, in
-//               THIS pass. Without it the app's own snapshot (read right after,
-//               to republish) would still show the slot as unlogged, so the
-//               widget would drop its ✓ about a second after a tap that
-//               actually succeeded — an invitation to log the meal twice. The
-//               W3 contract assumed the extension wrote the inbox file long
-//               before a foreground; W5's outbox writes it DURING one, so the
-//               ingest has to be pulled into the same pass.
-//   3. REVOKE — only now can a soft-delete find the row. Revoking before the
-//               ingest would silently no-op, and the inbox record — which knows
-//               nothing about revocations — would then insert the event the
-//               owner explicitly undid.
-//
-// One undo path, honest whichever side of the drain the owner tapped on (the
-// W3 §4.1 Q5 recommendation). A bowl top-up creates no row, so its revoke is
-// pre-drain only; once drained the re-attest stands, and the publish that
-// follows has already cleared the affordance. That asymmetry is documented,
-// not hidden.
+// Given the v1 outbox, apply it. Exported for the unit test. THE THREE STEPS ARE
+// ORDERED (apply → ingest → revoke) and the order is the whole correctness
+// argument, unchanged from v1 (see the git history / the v1 comment): a capture is
+// written to the inbox, the inbox is ingested into SQLite in THIS pass, and only
+// then can a revoke's soft-delete find the row. A capture whose apply succeeds but
+// whose ingest fails is NOT lost — the inbox file persists and the regular sync
+// cycle ingests it, which is why publishing v2 (and clearing the timeline) after a
+// best-effort drain is safe.
 export async function applyOutbox(
   outbox: { pending: WidgetPendingCapture[]; revoked: string[] },
   deps: DrainDeps = defaultDrainDeps(),
@@ -201,9 +171,6 @@ export async function applyOutbox(
     }
   }
 
-  // Step 2. Best-effort like every other ingest call site — but a FAILED ingest
-  // must not let step 3 run against rows that aren't there yet, so a throw
-  // here defers the revokes to the next pass rather than burning them.
   let ingested = true;
   try {
     await deps.ingest();
@@ -222,9 +189,6 @@ export async function applyOutbox(
     }
   }
 
-  if (failed.length > 0) {
-    console.warn(`[widgetBridge] ${failed.length} widget capture(s) not applied — retrying`);
-  }
   return {
     applied,
     revoked: ingested ? revoked.size : 0,
@@ -235,8 +199,14 @@ export async function applyOutbox(
 
 const EMPTY_DRAIN: DrainOutcome = { applied: 0, revoked: 0, failed: [], deferredRevokes: [] };
 
-/** Read the widget's timeline and apply whatever the Home Screen captured. */
-export async function drainWidgetOutbox(deps?: DrainDeps): Promise<DrainOutcome> {
+/**
+ * Drain any residual v1 outbox from the stored timeline (the §3 one-time upgrade
+ * path). Idempotent and self-healing: once the app has published v2 props, the
+ * stored timeline carries no outbox and this returns EMPTY_DRAIN without applying
+ * anything. Meant to run BEFORE the first v2 publish, so the drained captures are
+ * ingested into SQLite and appear in the props that publish then builds.
+ */
+export async function drainResidualV1Outbox(deps?: DrainDeps): Promise<DrainOutcome> {
   const widget = getWidget();
   if (!widget) return EMPTY_DRAIN;
   let entries: { date: Date; props: CulpritWidgetProps }[] = [];
@@ -246,12 +216,16 @@ export async function drainWidgetOutbox(deps?: DrainDeps): Promise<DrainOutcome>
     console.warn('[widgetBridge] timeline read failed:', e);
     return EMPTY_DRAIN;
   }
-  const outbox = collectOutbox(entries);
+  // The stored props are v1-shaped on the upgrade path; read the outbox off them
+  // loosely (v2 props carry neither field, so this finds nothing post-upgrade).
+  const outbox = collectOutbox(entries as unknown as { props?: V1OutboxProps }[]);
   if (outbox.pending.length === 0 && outbox.revoked.length === 0) return EMPTY_DRAIN;
   return applyOutbox(outbox, deps);
 }
 
-/** Push the current props to the widget (this also clears the drained outbox). */
+// ── Publish ──────────────────────────────────────────────────────────────────
+
+/** Push the current v2 props to the widget. */
 export function publishWidgetTimeline(props: CulpritWidgetProps, now: Date = new Date()): void {
   const widget = getWidget();
   if (!widget) return;
@@ -262,46 +236,57 @@ export function publishWidgetTimeline(props: CulpritWidgetProps, now: Date = new
   }
 }
 
-// Sign-out wipe for the widget's OWN store (B-054 FR-9 parity). The timeline
-// lives in the App Group's UserDefaults, NOT in the container directory, so
+// Sign-out wipe for the widget's OWN store (B-054 FR-9 parity). The timeline lives
+// in the App Group's UserDefaults, NOT in the container directory, so
 // `clearWidgetData`'s directory delete does not touch it — without this, the
-// previous account's pet name, slots and named foods would keep rendering on
-// the Home Screen after sign-out. Publishing the signed-out props both erases
-// that data and leaves the widget in its honest "sign in to start logging"
-// state. Any un-drained captures are deliberately discarded with it: they
-// belong to the account that just left (the same reasoning as the inbox wipe).
+// previous account's pet name and facts would keep rendering on the Home Screen
+// after sign-out. Publishing the signed-out props both erases that data and leaves
+// the widget in its honest "sign in to start logging" state.
+//
+// The B-576 lesson applies here: `useWidgetSnapshots` keys on the auth session, so
+// a recovery/account swap re-arms the publisher — wipe ordering matters, and the
+// signed-out props are the teardown's visible half.
 export function clearWidgetTimeline(): void {
   publishWidgetTimeline({
     schemaVersion: WIDGET_PROPS_SCHEMA_VERSION,
     pets: {},
     signedIn: false,
-    ui: {},
-    pending: [],
-    revoked: [],
   });
 }
 
 /**
- * One full pass: drain what the Home Screen captured, then publish fresh props.
+ * One publish pass, with the §3 one-time residual drain folded in so the seam is
+ * TESTABLE (the hook is otherwise the only, untested, call site).
  *
- * `buildProps` is a callback, not a value, so the props are necessarily built
- * AFTER the drain has applied and ingested — otherwise the fresh snapshot would
- * pre-date the tap it is meant to reflect and the widget would drop its ✓ on a
- * capture that succeeded. Anything the drain could not finish (failed captures,
- * deferred revocations) is re-seeded into the published outbox so the next pass
- * retries it: publishing replaces the timeline, so what isn't carried is gone.
+ * ── WHY THE DRAIN GATES THE PUBLISH ──────────────────────────────────────────
+ * On a build-35 → v2 upgrade the un-applied v1 tap lives ONLY in the stored
+ * timeline's props (v1's tap could not reach the filesystem). Publishing v2 props
+ * OVERWRITES that timeline — so if the drain could not apply a capture (e.g.
+ * `runCapture` failed the inbox write → `outcome.failed`, a real handled failure
+ * mode), publishing would destroy the only durable copy. The inbox is the durable
+ * buffer ONLY for captures whose apply SUCCEEDED; a failed apply wrote nothing.
+ *
+ * So when `needsDrain` and the drain comes back incomplete (any `failed` apply or
+ * `deferredRevoke`), this does NOT publish and reports `drainComplete: false` — the
+ * v1 timeline is left intact and the caller retries on the next tick (the already-
+ * applied captures re-apply idempotently by id). A clean drain — including the
+ * steady-state v2 no-op, which finds no outbox — publishes and reports true.
  */
-export async function syncWidget(
+export async function publishWidgetPass(
   buildProps: () => Promise<CulpritWidgetProps>,
-  opts?: { deps?: DrainDeps; now?: Date },
-): Promise<DrainOutcome> {
-  const outcome = await drainWidgetOutbox(opts?.deps);
+  opts: { needsDrain: boolean; deps?: DrainDeps; now?: Date },
+): Promise<{ drainComplete: boolean }> {
+  if (opts.needsDrain) {
+    const outcome = await drainResidualV1Outbox(opts.deps);
+    if (outcome.failed.length > 0 || outcome.deferredRevokes.length > 0) {
+      console.warn(
+        `[widgetBridge] residual v1 drain incomplete (${outcome.failed.length} failed, ` +
+          `${outcome.deferredRevokes.length} deferred) — NOT publishing over the v1 timeline; retrying next tick`,
+      );
+      return { drainComplete: false };
+    }
+  }
   const props = await buildProps();
-  publishWidgetTimeline(
-    outcome.failed.length > 0 || outcome.deferredRevokes.length > 0
-      ? { ...props, pending: outcome.failed, revoked: outcome.deferredRevokes }
-      : props,
-    opts?.now ?? new Date(),
-  );
-  return outcome;
+  publishWidgetTimeline(props, opts.now);
+  return { drainComplete: true };
 }

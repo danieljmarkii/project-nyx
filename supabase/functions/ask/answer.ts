@@ -117,8 +117,9 @@ export interface AskDataContext {
   timezone: string | null
   /** Start-of-trial ms for the `since_trial_start` window, or null when no active trial. */
   trialStartMs: number | null
-  /** The active diet trial (for dietTrialStatus), or null. */
-  trial: { startedAt: string; targetDurationDays: number; status?: string | null; deletedAt?: string | null } | null
+  /** The active diet trial (for dietTrialStatus), or null. diet_trials has no soft-delete
+   *  column (migration 001); active-ness is `status` (B-539). */
+  trial: { startedAt: string; targetDurationDays: number; status?: string | null } | null
   events: AskEventRow[]
   meals: AskMealRow[]
   weights: AskWeightRow[]
@@ -447,7 +448,9 @@ export interface ToolCallResult {
 export function dispatchTool(name: string, rawInput: unknown, ctx: AskDataContext): ToolCallResult {
   const input = (rawInput && typeof rawInput === 'object' ? rawInput : {}) as Record<string, unknown>
   const window = (input.window as AskWindow) ?? undefined
-  const wp = { window: coerceWindow(window as string), nowMs: ctx.nowMs, trialStartMs: ctx.trialStartMs }
+  // timezone rides into every windowed tool so `since_trial_start` buckets by the owner's
+  // midnight (B-539) — the same zone dietTrialStatus already receives at line 481 below.
+  const wp = { window: coerceWindow(window as string), nowMs: ctx.nowMs, trialStartMs: ctx.trialStartMs, timezone: ctx.timezone }
   const type = typeof input.type === 'string' ? (input.type as string) : null
   const limit = typeof input.limit === 'number' ? (input.limit as number) : undefined
   const symptomType = typeof input.symptom_type === 'string' ? (input.symptom_type as string) : ''

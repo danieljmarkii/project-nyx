@@ -20,6 +20,9 @@ jest.mock('./supabase', () => ({
   supabase: { functions: { invoke: jest.fn() } },
 }));
 jest.mock('./db', () => ({ getDb: jest.fn() }));
+// getDeviceTimezone (B-443) rides the request; pin it to a fixed zone so the body assertion is
+// deterministic under any runner clock (the non-UTC CI job runs jest in Kiritimati/Chatham/Honolulu).
+jest.mock('./profile', () => ({ getDeviceTimezone: jest.fn(() => 'America/Chicago') }));
 
 const mockedInvoke = supabase.functions.invoke as jest.Mock;
 const mockedGetDb = getDb as jest.Mock;
@@ -100,7 +103,7 @@ describe('askQuestion — the network call', () => {
     mockedInvoke.mockResolvedValue({ data: { outcome: 'answer', headline: 'ok', detail: '', followups: [] }, error: null });
     const res = await askQuestion({ petId: 'p1', question: 'when did she last vomit?', conversation: [{ role: 'user', content: 'hi' }] });
     expect(mockedInvoke).toHaveBeenCalledWith('ask', {
-      body: { pet_id: 'p1', question: 'when did she last vomit?', conversation: [{ role: 'user', content: 'hi' }] },
+      body: { pet_id: 'p1', question: 'when did she last vomit?', conversation: [{ role: 'user', content: 'hi' }], timezone: 'America/Chicago' },
     });
     expect(res.ok).toBe(true);
   });

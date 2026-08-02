@@ -59,6 +59,7 @@ import { renderReport } from './render.ts'
 // B-568 — the same format-label map the app and report.ts render from (one copy,
 // two runtimes; a duplicate map here is the B-103 drift class).
 import { foodFormatWord } from '../../../lib/foodFormat.ts'
+import { resolveIanaZone } from '../../../lib/utils.ts'
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
@@ -736,6 +737,10 @@ export async function generateReportForPet(
   // dataUri stays null → the render shows placeholders): the report still generates. The unit tests
   // pass null (no live Storage); the handler passes a real admin client.
   adminClient: SupabaseClient | null = null,
+  // B-443 — the caller's device IANA zone, preferred over the stored profile zone so the
+  // report's trial "Day N" buckets by the same clock the owner's card does. Default null ⇒
+  // stored zone (the pre-B-443 behaviour), so every existing call site is unaffected.
+  requestTimezone: string | null = null,
 ): Promise<{ status: number; body: Record<string, unknown> }> {
   const nowIso = new Date(nowMs).toISOString()
 
@@ -794,7 +799,11 @@ export async function generateReportForPet(
       // Leave null → renders "Owner: not recorded".
     }
   }
-  const timezone = profile?.timezone || null
+  // Prefer the request's device zone, then the stored profile zone, then null (→ UTC). The
+  // stored zone can lag the device (a never-stamped profile still carries migration 001's
+  // `America/New_York` default), so trusting it alone let the report disagree with the card
+  // for a non-New-York owner; the device zone the client sends is the one the card uses (B-443).
+  const timezone = resolveIanaZone(requestTimezone, profile?.timezone)
   const vetVisits = mapVetVisitRows(rowsOrThrow<VetVisitRow>(vetVisitsRes, 'vet_visits'))
   const dietTrials = mapDietTrialRows(rowsOrThrow<DietTrialRow>(dietTrialsRes, 'diet_trials'))
 
@@ -981,6 +990,7 @@ const handler = async (req: Request): Promise<Response> => {
 
   let petId: string
   let requestedWindow: { startDate: string; endDate: string } | null = null
+  let requestTimezone: string | null = null
   try {
     const body = (await req.json()) as {
       petId?: string
@@ -991,11 +1001,14 @@ const handler = async (req: Request): Promise<Response> => {
       endDate?: string
       start_date?: string
       end_date?: string
+      // B-443 — the caller's device IANA zone (validated in resolveIanaZone before use).
+      timezone?: string
     }
     petId = body.petId ?? ''
     const start = body.startDate ?? body.start_date
     const end = body.endDate ?? body.end_date
     if (start && end) requestedWindow = { startDate: start, endDate: end }
+    requestTimezone = typeof body.timezone === 'string' ? body.timezone : null
   } catch {
     return Response.json({ error: 'Invalid JSON body' }, { status: 400, headers: CORS_HEADERS })
   }
@@ -1021,7 +1034,7 @@ const handler = async (req: Request): Promise<Response> => {
 
   try {
     const callerJwt = authHeader.replace(/^Bearer\s+/i, '').trim() || null
-    const { status, body } = await generateReportForPet(supabase, petId, Date.now(), requestedWindow, callerJwt, adminClient)
+    const { status, body } = await generateReportForPet(supabase, petId, Date.now(), requestedWindow, callerJwt, adminClient, requestTimezone)
     return Response.json(body, {
       status,
       // no-store: the report is a snapshot of health data; never cache it at any hop.
