@@ -180,6 +180,50 @@ Deno.test('buildSummaryPacket — quiet pet: descriptive intake + finished-rate,
   assert.equal(validateSummary(summaryTemplate(packet!), packet!), true)
 })
 
+Deno.test('buildSummaryPacket — a hidden SECONDARY protein can win the clause (B-467, set membership)', () => {
+  // No meal names chicken as its primary, but every meal's captured set carries it — the
+  // textbook elimination-trial contaminant. Pre-B-467 the clause read primary_protein alone
+  // and named duck; the card and the correlation engine already counted the set (B-351
+  // slice 6), so the summary sat above a card it disagreed with. Chicken: 5 meals; duck: 3;
+  // salmon: 2 — the secondary wins outright, no tie-break involved.
+  const packet = buildSummaryPacket({
+    petName: 'Pixel',
+    findings: [],
+    mealEvents: [
+      ...Array.from({ length: 3 }, (_, i) =>
+        meal({ occurredAt: daysAgoIso(i + 1), primaryProtein: 'duck', proteins: ['duck', 'chicken'] }),
+      ),
+      ...Array.from({ length: 2 }, (_, i) =>
+        meal({ occurredAt: daysAgoIso(i + 4), primaryProtein: 'salmon', proteins: ['salmon', 'chicken'] }),
+      ),
+    ],
+    symptomEvents: [],
+    freeFedFoodIds: new Set(),
+    nowMs: NOW_MS,
+  })
+  assert.ok(packet)
+  assert.ok(packet!.clauses.some((c) => /Chicken was Pixel's most-logged meal protein/.test(c)))
+  // The widened clause still passes the summary's own validator (Pattern 8).
+  assert.equal(validateSummary(summaryTemplate(packet!), packet!), true)
+})
+
+Deno.test('buildSummaryPacket — the protein-clause floor still counts MEALS, not protein instances (B-467)', () => {
+  // 3 meals × 2 proteins each = 6 instances but 3 identified meals — below the 4-meal floor,
+  // so no protein clause is invented off a thin record.
+  const packet = buildSummaryPacket({
+    petName: 'Pixel',
+    findings: [],
+    mealEvents: Array.from({ length: 3 }, (_, i) =>
+      meal({ occurredAt: daysAgoIso(i + 1), primaryProtein: 'duck', proteins: ['duck', 'chicken'] }),
+    ),
+    symptomEvents: [symptom()],
+    freeFedFoodIds: new Set(),
+    nowMs: NOW_MS,
+  })
+  assert.ok(packet)
+  assert.equal(packet!.clauses.some((c) => /most-logged meal protein/.test(c)), false)
+})
+
 Deno.test('buildSummaryPacket — reflection drives the lead when no safety finding', () => {
   const packet = buildSummaryPacket({
     petName: 'Pixel',

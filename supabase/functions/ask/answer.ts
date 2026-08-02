@@ -61,6 +61,7 @@ import {
   lastSymptom,
   photoPresence,
   intakeSummary,
+  intakeTrend,
   topFoods,
   topProteins,
   weightSummary,
@@ -330,6 +331,15 @@ export const MODEL_TOOLS: Record<string, unknown>[] = [
     },
   },
   {
+    name: 'intake_trend',
+    description:
+      "Compare the share of meals the pet finished in the window against the equal-length prior window (both rates with their denominators, delta, direction). Use for 'is she eating less than before', 'is her appetite dropping', 'has her eating changed'. A FALLING rate is a health signal — state the two rates plainly and route toward the vet if it continues; NEVER frame a decline as 'picky' or a preference. Below the sample floor returns not_enough_data; a prior window with too few rated meals returns prior=null (say the comparison isn't possible yet, never guess one).",
+    input_schema: {
+      type: 'object',
+      properties: { window: { type: 'string', enum: WINDOW_ENUM } },
+    },
+  },
+  {
     name: 'top_foods',
     description:
       "Most-LOGGED foods in the window, ranked by meal count, with per-food finished-rate. Positive framing only — 'what's fed most', never a preference verdict. Below the floor returns not_enough_data.",
@@ -344,7 +354,7 @@ export const MODEL_TOOLS: Record<string, unknown>[] = [
   {
     name: 'top_proteins',
     description:
-      "Most-consumed primary protein by exposure in the window. Use for 'what protein does she eat most'. Below the floor returns not_enough_data.",
+      "Most-consumed protein by exposure in the window — counts every protein in each food's captured ingredient set, so a food can contribute several proteins and the shares don't sum to 1. Use for 'what protein does she eat most', 'has she had any chicken'. Below the floor returns not_enough_data.",
     input_schema: {
       type: 'object',
       properties: {
@@ -375,7 +385,7 @@ export const MODEL_TOOLS: Record<string, unknown>[] = [
   {
     name: 'medications',
     description:
-      "Current medications + a one-line adherence summary per drug (last given, doses given/missed) in the window. Use for 'what meds is she on', 'when was her last dose'.",
+      "Current medications + a per-drug adherence summary in the window: last given, and four honest dose buckets — given, partial (started but not fully taken), missed/refused, and unconfirmed (logged but never confirmed either way). Use for 'what meds is she on', 'when was her last dose', 'has she been getting her medication'. Report partial doses as 'not fully taken' and unconfirmed ones as 'unconfirmed' — name them, never fold them into given or missed, and never soften a refusal to fussiness; a pet not fully taking medication is worth a word with the vet.",
     input_schema: {
       type: 'object',
       properties: { window: { type: 'string', enum: WINDOW_ENUM } },
@@ -473,6 +483,8 @@ export function dispatchTool(name: string, rawInput: unknown, ctx: AskDataContex
         return ok(photoPresence(ctx.events, { ...wp, type }))
       case 'intake_summary':
         return floored(intakeSummary(ctx.meals, { ...wp, freeFedFoodIds: ctx.freeFedFoodIds }))
+      case 'intake_trend':
+        return floored(intakeTrend(ctx.meals, { ...wp, freeFedFoodIds: ctx.freeFedFoodIds }))
       case 'top_foods':
         return floored(topFoods(ctx.meals, { ...wp, freeFedFoodIds: ctx.freeFedFoodIds, limit }))
       case 'top_proteins':
@@ -1037,6 +1049,25 @@ export function buildProvenance(featured: unknown): AnswerProvenance | null {
         tapThrough: { kind: 'filter', window: str(r.window) },
       }
     }
+    case 'intake_trend': {
+      // Both windows' denominators, stated (AC-8) — a trend claim is only honest with the
+      // prior window's sample size beside it. Prior below floor → say so, never a bare rate.
+      const cur = r.current as { finishedMeals?: unknown; ratedMeals?: unknown } | null
+      const pri = r.prior as { finishedMeals?: unknown; ratedMeals?: unknown } | null
+      const curFinished = num(cur?.finishedMeals)
+      const curRated = num(cur?.ratedMeals)
+      const priorRated = num(r.priorRatedMeals)
+      let denom: string | null = null
+      if (curFinished != null && curRated != null) {
+        denom = `${curFinished} of ${curRated} meals finished`
+        if (pri) {
+          denom += ` · ${num(pri.finishedMeals)} of ${num(pri.ratedMeals)} the window before`
+        } else if (priorRated != null) {
+          denom += ` · only ${priorRated} rated meal${priorRated === 1 ? '' : 's'} the window before`
+        }
+      }
+      return { window, denominator: denom, tapThrough: { kind: 'filter', window: str(r.window) } }
+    }
     case 'time_of_day': {
       const eligible = num(r.eligibleCount)
       const excluded = num(r.excludedCount)
@@ -1108,6 +1139,28 @@ export function buildComponent(featured: unknown): ComponentDescriptor | null {
       const bands = Array.isArray(r.byBand) ? (r.byBand as { label?: unknown; count?: unknown }[]) : []
       const data = bands.map((b) => ({ label: String(b.label ?? ''), count: num(b.count) ?? 0 }))
       return data.length ? { kind: 'ranked', data } : null
+    }
+    case 'intake_trend': {
+      // Two tiles, current vs prior — only when a real prior rate exists (one window alone
+      // is intake_summary's job, not a comparison). Values are "N of M finished" straight
+      // from the tool's numbers; no derived percentage (the model never does arithmetic,
+      // and neither does the component builder).
+      const cur = r.current as { finishedMeals?: unknown; ratedMeals?: unknown } | null
+      const pri = r.prior as { finishedMeals?: unknown; ratedMeals?: unknown } | null
+      const windowLabel = typeof r.windowLabel === 'string' ? (r.windowLabel as string) : 'this window'
+      if (!cur || !pri) return null
+      const cf = num(cur.finishedMeals)
+      const cr = num(cur.ratedMeals)
+      const pf = num(pri.finishedMeals)
+      const pr = num(pri.ratedMeals)
+      if (cf == null || cr == null || pf == null || pr == null) return null
+      return {
+        kind: 'tiles',
+        data: [
+          { label: windowLabel, value: `${cf} of ${cr} finished` },
+          { label: 'the window before', value: `${pf} of ${pr} finished` },
+        ],
+      }
     }
     default:
       return null

@@ -89,6 +89,7 @@
         "npm:expo-linear-gradient@~57.0.1",
         "npm:expo-linking@~57.0.4",
         "npm:expo-network@~57.0.1",
+        "npm:expo-notifications@~57.0.8",
         "npm:expo-print@~57.0.1",
         "npm:expo-router@~57.0.8",
         "npm:expo-secure-store@~57.0.1",

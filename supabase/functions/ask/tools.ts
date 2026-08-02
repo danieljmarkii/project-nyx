@@ -60,7 +60,7 @@
 // re-export so Ask, the dashboard, and the correlation engine key proteins identically
 // (esbuild inlines it into the deploy bundle, keeping the artifact self-contained).
 
-import { canonicalizeProtein } from '../generate-signal/protein.ts'
+import { canonicalizeProtein, readProteinSet } from '../generate-signal/protein.ts'
 
 // ── Shared constants ────────────────────────────────────────────────────────────
 
@@ -341,6 +341,11 @@ export interface AskMealRow {
   foodType: string | null
   /** Raw primary_protein — canonicalized INSIDE the protein core, never before. */
   primaryProtein: string | null
+  /** The food's full captured protein set (`food_items.proteins`, B-351). Read through
+   *  `readProteinSet` inside the protein core, never before — that helper hoists the
+   *  primary and applies the Class-A read key. Absent/empty degrades to the primary
+   *  (mirrors lib/analytics.ts AnalyticsMeal / detection.ts MealEvent). */
+  proteins?: string[] | null
   /** WSAVA rating string, or null when unrated. */
   intakeRating: string | null
   /** meals.notes free text (D2) — scoped-retrieval only. */
@@ -984,6 +989,122 @@ export function intakeSummary(
   }
 }
 
+/** One window's finished-rate, with its honest numerator/denominator. */
+export interface IntakeWindowRate {
+  /** finishedMeals / ratedMeals in [0,1]. */
+  rate: number
+  finishedMeals: number
+  /** Rated, non-treat, non-free-fed meals (§11 #1 / #6) — the same denominator as
+   *  intakeSummary, so the two tools can never disagree about one window's rate (G5). */
+  ratedMeals: number
+}
+
+export interface IntakeTrendResult {
+  kind: 'intake_trend'
+  window: AskWindow
+  windowLabel: string
+  /** The current window's rate. Floors guaranteed met (below-floor returns NotEnoughData). */
+  current: IntakeWindowRate
+  /** The equal-length prior window's rate, or null when the window has no prior span
+   *  ('all' / 'since_trial_start') OR the prior window is below the rated-meal floor —
+   *  a comparison is never fabricated off 1–3 prior meals (§5.2). */
+  prior: IntakeWindowRate | null
+  /** Qualifying rated meals found in the prior span even when below the floor (the honest
+   *  "only N rated meals logged before this window — not enough to compare" denominator).
+   *  Null when the window has no prior span at all. */
+  priorRatedMeals: number | null
+  /** current.rate − prior.rate; null when prior is null. */
+  delta: number | null
+  /** Descriptive direction of the FINISHED-RATE. 'down' = the pet is finishing a smaller
+   *  share of meals than the prior window — the CONCERN direction (inverted from
+   *  symptomTrend, where 'up' is the concern). This tool NEVER mints a safety verdict:
+   *  the deterministic engine (detectIntakeDecline) remains the only escalation minter and
+   *  its finding still leads every answer via safetyLead (§7.2). What this tool adds is
+   *  VISIBILITY (B-382): the planner can now SEE a falling finished-rate and phrase it in
+   *  the calm health register (route toward the vet, never "picky" — G7), instead of the
+   *  decline being structurally invisible to every Ask answer. */
+  direction: 'down' | 'up' | 'flat' | null
+  /** Rated non-treat meals excluded across BOTH spans because the food is free-fed. */
+  freeFedExcluded: number
+  /** §11 #6 caveat — set when ≥1 free-fed meal was excluded from either span. */
+  intakeNotDirectlyObserved: boolean
+}
+
+/**
+ * Finished-rate this window vs the equal-length prior window (B-382, closed 2026-08-02).
+ * The structural gap this closes: intakeSummary returns a single-window rate and
+ * symptomTrend only accepts ASK_SYMPTOM_TYPES, so a FALLING finished-rate could not be
+ * surfaced by any tool — the copy layer banned "picky" but the planner literally could not
+ * see the decline (adversarial pass A7, counterexample (c): the declining-intake cat asked
+ * "what does she prefer?"). Same qualifying-meal rules as intakeSummary in BOTH windows
+ * (rated, non-treat §11 #1, non-free-fed §11 #6), same floor on each window's denominator
+ * — the current window below floor returns NotEnoughData; a below-floor PRIOR window
+ * yields a current-only result (prior: null, priorRatedMeals honest), never a rate off
+ * 1–3 meals.
+ *
+ * Register contract (G4-adjacent): the direction is a bare, honest rate comparison —
+ * deliberately the same descriptive-only shape as symptomTrend, because Ask relays and
+ * never mints (§7.2). The engine's intake_decline detector (a different, richer metric:
+ * per-day score means vs an established baseline + refused-normal-food) stays the ONLY
+ * safety minter and structurally leads via safetyLead when live; A4's tool description +
+ * system prompt route a 'down' here to the calm health register. The two cannot contradict:
+ * the engine states the verdict, this states the counts.
+ */
+export function intakeTrend(
+  meals: AskMealRow[],
+  params: { window: AskWindow; nowMs: number; freeFedFoodIds: ReadonlySet<string>; trialStartMs?: number | null; timezone?: string | null },
+): IntakeTrendResult | NotEnoughData {
+  const w = resolveWindow(params.window, params.nowMs, params.trialStartMs, params.timezone)
+  const live = liveEvents(meals)
+  const ratedNonTreat = (rows: AskMealRow[]) => rows.filter((m) => m.foodType !== 'treat' && m.intakeRating != null)
+
+  const currentAll = ratedNonTreat(live.filter((m) => inSpan(m.occurredAt, w)))
+  const currentFreeFed = currentAll.filter((m) => isFreeFedMeal(m, params.freeFedFoodIds)).length
+  const current = currentAll.filter((m) => !isFreeFedMeal(m, params.freeFedFoodIds))
+  if (current.length < ASK_FLOORS.minRatedMealsForIntakeRate) {
+    return notEnoughData(current.length, ASK_FLOORS.minRatedMealsForIntakeRate)
+  }
+
+  let prior: IntakeWindowRate | null = null
+  let priorRatedMeals: number | null = null
+  let priorFreeFed = 0
+  if (w.priorStartMs != null && w.priorEndMs != null) {
+    const priorAll = ratedNonTreat(
+      live.filter((m) => inRange(m.occurredAt, w.priorStartMs as number, w.priorEndMs as number)),
+    )
+    priorFreeFed = priorAll.filter((m) => isFreeFedMeal(m, params.freeFedFoodIds)).length
+    const priorQualifying = priorAll.filter((m) => !isFreeFedMeal(m, params.freeFedFoodIds))
+    priorRatedMeals = priorQualifying.length
+    if (priorQualifying.length >= ASK_FLOORS.minRatedMealsForIntakeRate) {
+      const finished = priorQualifying.filter(isFinishedMeal).length
+      prior = { rate: finished / priorQualifying.length, finishedMeals: finished, ratedMeals: priorQualifying.length }
+    }
+  }
+
+  const currentFinished = current.filter(isFinishedMeal).length
+  const currentRate: IntakeWindowRate = {
+    rate: currentFinished / current.length,
+    finishedMeals: currentFinished,
+    ratedMeals: current.length,
+  }
+  const delta = prior ? currentRate.rate - prior.rate : null
+  const direction: IntakeTrendResult['direction'] =
+    delta == null ? null : delta < 0 ? 'down' : delta > 0 ? 'up' : 'flat'
+  const freeFedExcluded = currentFreeFed + priorFreeFed
+  return {
+    kind: 'intake_trend',
+    window: w.window,
+    windowLabel: w.label,
+    current: currentRate,
+    prior,
+    priorRatedMeals,
+    delta,
+    direction,
+    freeFedExcluded,
+    intakeNotDirectlyObserved: freeFedExcluded > 0,
+  }
+}
+
 export interface RankedFoodEntry {
   foodItemId: string
   label: string
@@ -1058,7 +1179,13 @@ export function topFoods(
 
 export interface RankedProteinEntry {
   protein: string
+  /** Total protein-EXPOSURE feedings (meals + treats) CONTAINING this protein in the
+   *  window — set membership, so a feeding with several proteins counts toward each. */
   count: number
+  /** count / total protein-identified feedings, [0,1]. Post-B-351 a feeding can contain
+   *  several proteins, so these shares NO LONGER SUM TO 1 across the ranking — each is an
+   *  independent "how much of what was logged had this in it" (the honest reading of a
+   *  set; mirrors lib/analytics.ts RankedProtein). */
   shareOfDiet: number
   finishedRate: number | null
   ratedMeals: number
@@ -1073,20 +1200,20 @@ export interface TopProteinsResult {
 }
 
 /**
- * Most-consumed primary protein by EXPOSURE in the window (canonicalized before ranking;
- * treats INCLUDED for exposure and flagged isTreat, B-111; finished-rate over non-treat
- * meals only, §11 #1; B-115 treat-relog collapse). Floored on identifiable feedings (§11 #5).
+ * Most-consumed protein by EXPOSURE in the window — a faithful port of lib/analytics.ts
+ * computeTopProteins again (B-467, closed 2026-08-02): a feeding contributes its WHOLE
+ * captured protein set (`readProteinSet(proteins, primaryProtein)`), so a protein reaching
+ * the pet as a hidden SECONDARY (the chicken in a "duck" formula) is counted as the real
+ * exposure it is — the same B-351 slice-6 widening the correlation engine and the Patterns
+ * dashboard already carry, applied here so a duck-trial owner asking Ask "has she had any
+ * chicken?" gets the same record the Signal card beside it reads. Consequence, inherited
+ * deliberately: a feeding with several proteins counts toward EACH, so `shareOfDiet`
+ * values no longer sum to 1 across the ranking (see RankedProteinEntry). An absent/empty
+ * set degrades to the primary — byte-identical to the pre-B-467 behavior.
  *
- * ⚠ NO LONGER A FAITHFUL PORT of lib/analytics.ts computeTopProteins, and this docstring
- * used to claim it was. B-351 slice 6 moved the dashboard and the correlation engine onto
- * SET membership (`readProteinSet` over `food_items.proteins`); this function still reads
- * `primary_protein` alone, so a protein reaching the pet as a hidden SECONDARY is invisible
- * here. It under-counts — a sensitivity gap, never a false claim — but the surface it feeds
- * is the LLM one, so a duck-trial owner asking Ask "has she had any chicken?" gets an
- * answer built from a narrower record than the Signal card beside it. Tracked as B-467;
- * left out of slice 6 to keep the adversarial pass on the statistics rather than on three
- * copy-bearing rankings. Fix by mirroring computeTopProteins, INCLUDING its shares-no-
- * longer-sum-to-1 semantics, and widen the food join in ask/index.ts to select `proteins`.
+ * Treats INCLUDED for exposure and flagged isTreat (B-111); finished-rate over non-treat
+ * meals only (§11 #1); B-115 treat-relog collapse; floored on identifiable feedings
+ * (§11 #5). KEEP IN LOCKSTEP with computeTopProteins (G5).
  */
 export function topProteins(
   meals: AskMealRow[],
@@ -1106,12 +1233,16 @@ export function topProteins(
   const byProtein = new Map<string, AskMealRow[]>()
   let identified = 0
   for (const m of collapseTreatRelogs(inWindow)) {
-    const key = canonicalizeProtein(m.primaryProtein)
-    if (key === null) continue
+    // B-351 slice 6 / B-467: the whole captured set, hoisted + Class-A-keyed inside the
+    // protein core. Empty set (junk/unknown primary, no captured proteins) → unidentified.
+    const keys = readProteinSet(m.proteins ?? null, m.primaryProtein)
+    if (keys.length === 0) continue
     identified += 1
-    const arr = byProtein.get(key)
-    if (arr) arr.push(m)
-    else byProtein.set(key, [m])
+    for (const key of keys) {
+      const arr = byProtein.get(key)
+      if (arr) arr.push(m)
+      else byProtein.set(key, [m])
+    }
   }
   if (identified < ASK_FLOORS.minMealsForRanking) {
     return notEnoughData(identified, ASK_FLOORS.minMealsForRanking)
@@ -1275,11 +1406,23 @@ export interface MedicationEntry {
    *  a clean administration — the never-reassure spine). */
   lastDoseAt: string | null
   /** Given-only count (adherence === 'given') — mirrors the client's administeredDoses.
-   *  Partial + null(unrated) are NOT counted here (nor in dosesMissed) — the safe under-read;
-   *  their honest surfacing is deferred (B-388). */
+   *  Partial + null(unrated) are NOT counted here (nor in dosesMissed) — they ride their
+   *  own buckets below (B-395), so no dose is silently under-reported. */
   dosesGiven: number
-  /** Not-given attention count: missed + refused (partial is separate — see B-388). */
+  /** Not-given attention count: missed + refused. */
   dosesMissed: number
+  /** 'partial' — the dose was started but not fully taken. A possible DISEASE signal (a pet
+   *  too nauseated/painful to finish a dose), which the client already surfaces via
+   *  regimenFlagLine ("N not fully taken"); B-395 gives Ask the same visibility. Phrase as
+   *  "not fully taken", route toward the vet — NEVER soften to picky/fussy (intake ≠
+   *  preference applies to medication vehicles too). */
+  dosesPartial: number
+  /** Null/unrated adherence — logged but never confirmed either way, incl. the B-156 G1
+   *  fail-safe's unconfirmed combo dose (evidence AGAINST compliance, parked at null rather
+   *  than auto-'given'). Phrase as "unconfirmed", never fold into given OR missed — the
+   *  record genuinely does not say, and Ask must not say for it (never-reassure, both
+   *  directions). Mirrors the client tally's `unrated` bucket (lib/medications.ts). */
+  dosesUnconfirmed: number
 }
 
 export interface MedicationsResult {
@@ -1291,11 +1434,12 @@ export interface MedicationsResult {
 
 /**
  * Current medications + a one-line adherence summary per drug (§3.4 family 4). Regimens
- * define the drugs (active = now within [startedAt, endedAt]); doses in the window give the
- * given/missed counts + last-given time. "Last given" counts only administered doses
- * (given/partial) — a refused/missed dose was NOT given (doseToMedicationWindow's clinical
- * rule). Adherence is never auto-reassuring — it reports counts, and a missed critical dose
- * is A4's escalation call, not a soft "all caught up" here.
+ * define the drugs (active = `status === 'active'`); doses in the window fill the four
+ * adherence buckets (given / partial / missed+refused / unconfirmed — B-395, mirroring the
+ * client tally) + the last-GIVEN time. "Last given" is adherence === 'given' only — a
+ * refused/missed/partial/unconfirmed dose was NOT cleanly given. Adherence is never
+ * auto-reassuring — it reports counts, and a missed critical dose is A4's escalation call,
+ * not a soft "all caught up" here.
  */
 export function medications(
   regimens: AskRegimenRow[],
@@ -1392,14 +1536,25 @@ function buildMedicationEntry(
   // null/unrated dose "must never default to 'given', or an unrated dose would read as a
   // confirmed-given one" (the n=1-never-reassures spine, spec §6). 'partial' is NOT a clean
   // given (the client flags it "not fully taken"); null is unrated (incl. the B-156 G1
-  // fail-safe's unconfirmed dose — evidence AGAINST compliance). Both are the SAFE-direction
-  // under-read: Ask never reports a partial/unconfirmed dose as given, and never names one as
-  // "last given". (Adversarial-reviewer 2026-07-19: the prior null/partial→given rule folded
-  // an unconfirmed dose into a NAMED drug's given-count once attribution attached it — a
-  // never-reassure violation.) Honestly surfacing partial/unconfirmed as their OWN bucket in
-  // the answer is deferred as a Dr. Chen/Data contract call — B-388.
+  // fail-safe's unconfirmed dose — evidence AGAINST compliance). Neither is ever "last
+  // given". (Adversarial-reviewer 2026-07-19: the prior null/partial→given rule folded an
+  // unconfirmed dose into a NAMED drug's given-count once attribution attached it — a
+  // never-reassure violation.)
+  //
+  // B-395 (closed 2026-08-02): partial + unconfirmed now ride their OWN buckets instead of
+  // falling into neither — the old shape was the safe under-read (never over-reassured) but
+  // silently dropped a possible disease signal from every Ask answer. The four buckets
+  // mirror the client's tally exactly (given / partial / missed+refused / unrated), so
+  // every logged dose lands in exactly one and Ask's per-drug counts reconcile with the
+  // pet-profile card's. An off-enum adherence string buckets as unconfirmed, matching the
+  // client tally's `default: unrated` — an unrecognised value is a dose the record can't
+  // vouch for, never a given.
   const given = doses.filter((d) => d.adherence === 'given')
   const missed = doses.filter((d) => d.adherence === 'missed' || d.adherence === 'refused')
+  const partial = doses.filter((d) => d.adherence === 'partial')
+  const unconfirmed = doses.filter(
+    (d) => d.adherence == null || !['given', 'partial', 'missed', 'refused'].includes(d.adherence),
+  )
   const lastGiven = given.sort((a, b) => b.occurredAt.localeCompare(a.occurredAt))[0]
   return {
     medicationId,
@@ -1409,6 +1564,8 @@ function buildMedicationEntry(
     lastDoseAt: lastGiven ? lastGiven.occurredAt : null,
     dosesGiven: given.length,
     dosesMissed: missed.length,
+    dosesPartial: partial.length,
+    dosesUnconfirmed: unconfirmed.length,
   }
 }
 

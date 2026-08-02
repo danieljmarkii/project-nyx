@@ -341,6 +341,32 @@ Deno.test('dispatchTool: intake_summary flags the NotEnoughData floor', () => {
   assert.equal(r.notEnoughData, true)
 })
 
+Deno.test('dispatchTool: intake_trend routes, floors, and surfaces a falling finished-rate (B-382)', () => {
+  // Below the floor → NotEnoughData, like every rate tool.
+  const empty = dispatchTool('intake_trend', { window: '7d' }, ctx({ meals: [] }))
+  assert.equal(empty.notEnoughData, true)
+
+  // A real decline: prior window all-finished, current window mostly refused. The planner
+  // can now SEE this — the structural gap B-382 named (intake_summary was single-window,
+  // symptom_trend symptom-typed, so a falling finished-rate had no tool at all).
+  const mealRow = (daysAgo: number, rating: string, id: string) => ({
+    id, occurredAt: iso(daysAgo), occurredAtConfidence: null, foodItemId: 'f1', foodLabel: 'Kibble',
+    foodType: 'meal', primaryProtein: null, intakeRating: rating, note: null, hasPhoto: false, deletedAt: null,
+  })
+  const meals = [
+    ...[0, 1, 2, 3].map((d) => mealRow(d, 'refused', `c${d}`)),
+    ...[4, 5, 6].map((d) => mealRow(d, 'all', `c${d}`)),
+    ...[7, 8, 9, 10, 11, 12, 13].map((d) => mealRow(d, 'all', `p${d}`)),
+  ]
+  const r = dispatchTool('intake_trend', { window: '7d' }, ctx({ meals }))
+  assert.equal(r.ok, true)
+  const res = r.result as { kind: string; direction: string | null; current: { ratedMeals: number }; prior: { ratedMeals: number } | null }
+  assert.equal(res.kind, 'intake_trend')
+  assert.equal(res.current.ratedMeals, 7)
+  assert.equal(res.prior?.ratedMeals, 7)
+  assert.equal(res.direction, 'down')
+})
+
 Deno.test('dispatchTool: recall of a scoped event carries only that event note (AC-11 spirit)', () => {
   const r = dispatchTool('recall_event', { event_id: 'e1' }, ctx())
   const res = r.result as { event: { note: string | null } | null }
@@ -358,6 +384,30 @@ Deno.test('buildProvenance: a count carries denominator + window (AC-8)', () => 
   assert.equal(prov!.window, 'the last 30 days')
   assert.match(prov!.denominator ?? '', /event/)
   assert.match(prov!.denominator ?? '', /logging on/)
+})
+
+Deno.test('buildProvenance + buildComponent: intake_trend states BOTH windows\' denominators (AC-8, B-382)', () => {
+  const full = {
+    kind: 'intake_trend', window: '7d', windowLabel: 'the last 7 days',
+    current: { rate: 3 / 7, finishedMeals: 3, ratedMeals: 7 },
+    prior: { rate: 1, finishedMeals: 7, ratedMeals: 7 },
+    priorRatedMeals: 7, delta: 3 / 7 - 1, direction: 'down',
+    freeFedExcluded: 0, intakeNotDirectlyObserved: false,
+  }
+  const prov = buildProvenance(full)
+  assert.equal(prov?.window, 'the last 7 days')
+  assert.match(prov?.denominator ?? '', /3 of 7 meals finished/)
+  assert.match(prov?.denominator ?? '', /7 of 7 the window before/)
+  const comp = buildComponent(full)
+  assert.equal(comp?.kind, 'tiles')
+  assert.equal((comp as { data: { value: string }[] }).data.length, 2)
+
+  // A below-floor prior renders the honest count, and gets NO comparison component —
+  // never a two-tile comparison one side of which was too thin to state.
+  const thinPrior = { ...full, prior: null, priorRatedMeals: 2, delta: null, direction: null }
+  const prov2 = buildProvenance(thinPrior)
+  assert.match(prov2?.denominator ?? '', /only 2 rated meals the window before/)
+  assert.equal(buildComponent(thinPrior), null)
 })
 
 Deno.test('buildComponent: a weight series with ≥2 readings becomes a spark', () => {

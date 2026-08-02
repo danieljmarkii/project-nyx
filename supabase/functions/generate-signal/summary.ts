@@ -46,7 +46,7 @@
 import type { Finding, MealEvent, SymptomEvent } from './detection.ts'
 import { intakeScore } from './detection.ts'
 import { SYMPTOM_LABEL, templateForFinding } from './phrasing.ts'
-import { canonicalizeProtein } from './protein.ts'
+import { readProteinSet } from './protein.ts'
 
 const MS_PER_DAY = 86_400_000
 
@@ -198,23 +198,24 @@ export interface CachedSummary {
 // ── Descriptive intake aggregates (server-side mirror of the PR-1 cards) ───────────────
 // Computed over the in-window meals the detection engine already loaded — NOT a second DB
 // read. These mirror lib/analytics.ts (same floors, same free-fed exclusions, same
-// canonicalization) so the summary's numbers match the cards it sits above — with TWO
-// exceptions, one deliberate and one outstanding: the protein CLAUSE stays meals-only (by
-// design, below), and since B-351 slice 6 it also still keys on `primary_protein` while the
-// card keys on the whole captured SET (B-467 — a real divergence, not a design choice).
+// set-membership protein keying) so the summary's numbers match the cards it sits above —
+// with ONE deliberate exception: the protein CLAUSE stays meals-only (by design, below).
 
-/** Most-logged MEAL protein this month, canonicalized. Treats excluded ON PURPOSE here —
- *  the summary makes the narrower "most-logged MEAL protein" claim ("what protein does Nyx
- *  eat"), so a treat's filler protein must not dominate the sentence. This DELIBERATELY
- *  DIVERGES from computeTopProteins, which (post-B-111, 2026-06-18) ranks protein EXPOSURE
- *  incl. treats (flagged) on the card.
+/** Most-logged MEAL protein this month. Treats excluded ON PURPOSE here — the summary
+ *  makes the narrower "most-logged MEAL protein" claim ("what protein does Nyx eat"), so a
+ *  treat's filler protein must not dominate the sentence. This DELIBERATELY DIVERGES from
+ *  computeTopProteins, which (post-B-111, 2026-06-18) ranks protein EXPOSURE incl. treats
+ *  (flagged) on the card.
  *
- *  ⚠ B-467 — a SECOND divergence, and this one is NOT deliberate: since B-351 slice 6 the
- *  card and the correlation engine count the whole captured protein SET, and this still
- *  reads `primary_protein`, so a protein present only as a secondary never wins the clause.
- *  Widening it is the right fix, but it changes a clinically-reviewed AI-summary claim, so
- *  it needs an explicit nod rather than a mechanical edit — which is exactly what the next
- *  sentence has always said about the treat filter.
+ *  B-467 (closed 2026-08-02, on the PM's explicit direction — the "explicit nod" the ⚠
+ *  paragraph that used to sit here required, not a mechanical alignment): the keying is now
+ *  the whole captured protein SET (`readProteinSet`, the B-351 slice-6 widening the card
+ *  and the correlation engine already carry), so a protein reaching the pet as a hidden
+ *  SECONDARY can win the clause — a real exposure the primary-only read made invisible.
+ *  The claim's semantics survive intact: "X was the most-logged meal protein" = X appeared
+ *  in more logged meals than any other protein, and the clause carries no count, so no
+ *  number changes meaning. A meal with several proteins counts toward each; `identified`
+ *  still counts MEALS (the floor's denominator), not protein instances.
  *
  *  Do NOT "align" this by dropping the treat filter — it
  *  would change a clinically-reviewed AI-summary claim. The card↔summary grounding nuance
@@ -225,10 +226,10 @@ function topMealProtein(meals: MealEvent[]): { protein: string; count: number } 
   let identified = 0
   for (const m of meals) {
     if (m.foodType === 'treat') continue
-    const key = canonicalizeProtein(m.primaryProtein)
-    if (key === null) continue
+    const keys = readProteinSet(m.proteins ?? null, m.primaryProtein)
+    if (keys.length === 0) continue
     identified += 1
-    byProtein.set(key, (byProtein.get(key) ?? 0) + 1)
+    for (const key of keys) byProtein.set(key, (byProtein.get(key) ?? 0) + 1)
   }
   if (identified < MIN_MEALS_FOR_RANKING) return null
   let best: { protein: string; count: number } | null = null
