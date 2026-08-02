@@ -1,0 +1,96 @@
+-- ============================================================
+-- occurred_at_confidence backfill — B-526 (migration 012's deferred backfill)
+-- See: docs/backlog.md B-526, B-010
+--      supabase/migrations/012_event_timestamp_confidence.sql (the deferral)
+--      docs/sessions/2026-07-27-b448-occurred-at-confidence.md (§44/§77 — why
+--        meals/doses/weigh-ins are witnessed by construction)
+-- ============================================================
+-- Migration 012 added occurred_at_confidence and left existing rows NULL
+-- ("NOT a claim either way"), deferring the backfill to a hand-population:
+-- "hand-populate the (small) set of existing rows rather than assert a blanket
+-- 'witnessed', which would bake in the false precision B-010 exists to remove."
+--
+-- The "blanket 'witnessed'" 012 rejected is one across ALL event types — ~65% of
+-- adverse incidents are DISCOVERED, not witnessed, so witnessing a symptom is
+-- false precision. But three event types are witnessed BY CONSTRUCTION, and
+-- calling them witnessed is the truth rather than an assertion:
+--   meal          — the owner puts the bowl down
+--   medication    — you do not "discover" that you gave a pill
+--   weight_check  — you read the scale
+-- This is the exact reasoning encoded in lib/occurredAtConfidence.guard.test.ts's
+-- ALLOWED list (insertMeal / insertMedicationDose / insertWeightCheck) and
+-- ratified in the B-448 review (§77): backfilling these to witnessed is honest,
+-- and it buys no false report-visible certainty either — the confidence tag
+-- renders only on the symptom log, never on meal/med/weight rows.
+--
+-- So this migration classifies ONLY that witnessed-by-construction subset. The
+-- discovery-prone symptom rows (vomit, diarrhea, …) are LEFT NULL — they render
+-- as 'unspecified' (honest) and stay migration 012's per-row PM hand-population.
+-- On live data at the time of writing: 146 NULL meals (all updated here), 0 NULL
+-- medication/weight_check rows, and 3 NULL live vomit rows (left for the PM).
+--
+-- ── Propagation to devices, and what the updated_at bump does (B-526) ─────────
+-- hydrateEvents (lib/sync.ts) pulls events INCREMENTALLY on updated_at (only rows
+-- past the device's high-water mark, minus a 2-min overlap) and reconciles
+-- last-write-wins on updated_at (a remote row wins only when STRICTLY newer). So
+-- a backfill only reaches an already-hydrated device if the row's updated_at
+-- MOVES: otherwise it sits below the watermark floor (never re-pulled) and ties
+-- the local row under LWW (skipped). B-526 is pinned by
+-- lib/hydrateConfidenceBackfill.test.ts.
+--
+-- IMPORTANT — the bump is guaranteed here even without the SET below. events
+-- carries `trg_events_updated_at BEFORE UPDATE … set_updated_at()`, whose body is
+-- `NEW.updated_at = NOW()` unconditionally, so ANY server-side UPDATE to events
+-- already bumps updated_at. (It is the same trigger that makes hydrate's LWW a
+-- SERVER-time LWW — lib/hydration.ts header.) The explicit `updated_at = now()`
+-- is therefore REDUNDANT on a normal run — the trigger overwrites it with the same
+-- transaction-time value. It is kept deliberately, for two reasons: it makes the
+-- propagation contract explicit at the call site rather than an invisible
+-- dependence on a trigger defined three dozen migrations away, and a bulk backfill
+-- run with triggers suppressed (`session_replication_role = 'replica'` or `ALTER
+-- TABLE … DISABLE TRIGGER`, sometimes used for large data migrations) would
+-- otherwise land un-propagated rows. So B-526's "a bare UPDATE never reaches a
+-- device" holds only when the trigger is bypassed.
+--
+-- ── The residual the bump does NOT fix — run when devices are quiet ───────────
+-- The real hazard is a concurrent local edit, and the updated_at bump does nothing
+-- for it. A device holding this row with an unsynced edit (synced = 0) will, via
+-- push-before-pull, send its stale local NULL up and re-bump updated_at, clobbering
+-- the backfill; and hydrate's own write carries `WHERE events.synced = 1`, so that
+-- device also won't RECEIVE the backfill on pull. Apply this when no device has
+-- unsynced edits pending. This is what "run when devices are quiet" protects — not
+-- the bump. Any future hand-population of the remaining NULL symptom rows must set
+-- updated_at = now() the same way and under the same timing.
+--
+-- Idempotent: the WHERE clause selects only NULL rows, so a second run is a no-op.
+--
+-- ── Migration Safety Pre-flight ──────────────────────────────────────────────
+--   Destructive:  n  (a nullable column NULL -> 'witnessed' on a bounded,
+--                 witnessed-by-construction set; no column altered/dropped, no
+--                 existing non-null confidence touched, symptom rows untouched)
+--   Affected:     events (occurred_at_confidence, updated_at)
+--   Row-count check (run BEFORE applying; confirm the number, then capture the
+--                 id set so a rollback can target exactly these rows):
+--                   SELECT count(*) FROM events
+--                    WHERE occurred_at_confidence IS NULL AND deleted_at IS NULL
+--                      AND event_type IN ('meal','medication','weight_check');
+--                 -- expected 146 (all event_type='meal') at time of writing;
+--                 -- the 3 live NULL vomit rows are deliberately NOT in scope.
+--   Backfill:     this migration IS the backfill.
+--   Rollback:     Not cleanly auto-reversible — after running, a backfilled
+--                 'witnessed' row is indistinguishable from a natively-witnessed
+--                 one, so a blanket reversal would also null out legitimately
+--                 witnessed meals/doses/weigh-ins logged since B-010. Capture the
+--                 affected id set from the SELECT above first; rollback is then
+--                   UPDATE events SET occurred_at_confidence = NULL  -- trigger bumps updated_at
+--                    WHERE id = ANY(<captured ids>);
+--                 (A rollback is rarely warranted: these types are witnessed by
+--                 construction, so the classification is correct.)
+-- ============================================================
+
+UPDATE events
+   SET occurred_at_confidence = 'witnessed',
+       updated_at = now()   -- redundant with trg_events_updated_at; explicit for triggers-disabled runs (see header)
+ WHERE occurred_at_confidence IS NULL
+   AND deleted_at IS NULL
+   AND event_type IN ('meal', 'medication', 'weight_check');
