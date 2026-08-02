@@ -159,6 +159,14 @@ export interface ReconcileActions {
  *   - a category desired, permitted, and not yet scheduled → schedule it, within
  *     budget (the backstop can only ever schedule FEWER, never more).
  * Pure and total: no I/O, no throw.
+ *
+ * Diffs on category PRESENCE only: a live schedule is "kept" without inspecting
+ * whether its static config (fire time, body, channel) still matches the registry.
+ * Inert in PR 1 (nothing schedules yet). Before PR 4 wires this to app-foreground —
+ * and before the owner-configurable time (§9) — a config change won't propagate to
+ * an already-live schedule without an explicit cancel+reschedule; give
+ * NotificationCategoryConfig a version/content field this compares if that becomes
+ * a live requirement.
  */
 export function computeReconcileActions(input: ReconcileInput): ReconcileActions {
   const scheduled = new Set(input.scheduled);
@@ -178,7 +186,11 @@ export function computeReconcileActions(input: ReconcileInput): ReconcileActions
   const toSchedule: NotificationCategory[] = [];
   for (const c of desired) {
     if (scheduled.has(c)) continue; // already live — kept, not re-scheduled
-    if (wouldExceedBudget(c, enabled)) continue; // budget backstop
+    // Budget backstop. Unreachable while v1's registry has one category (weight 1
+    // can't exceed a budget of 8); wouldExceedBudget is verified directly. Add a
+    // computeReconcileActions-level test forcing this branch when B-288/B-227
+    // register a second category.
+    if (wouldExceedBudget(c, enabled)) continue;
     toSchedule.push(c);
     enabled.add(c);
   }
@@ -254,6 +266,12 @@ export async function getScheduledCategories(): Promise<NotificationCategory[]> 
  * budget (§3, D1): if the OTHER already-scheduled categories plus this one would
  * exceed the budget, it refuses and schedules nothing. Returns whether a schedule
  * is now in place.
+ *
+ * CONTRACT: the caller confirms OS permission first — this does NOT re-check it.
+ * The one production caller, reconcileSchedules, gates on ensurePermission(false)
+ * before it ever reaches here, and iOS drops an unauthorized schedule anyway, so
+ * it fails safe; but a future direct caller (e.g. PR 3's toggle-on handler) must
+ * go through reconcileSchedules or confirm permission itself, never schedule blind.
  *
  * The notification CONTENT here is a neutral placeholder: PR 1 wires nothing on a
  * user path to call this, so it never reaches a device, and PR 4 owns the real,

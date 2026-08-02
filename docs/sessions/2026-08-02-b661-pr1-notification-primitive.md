@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-02
 
-Shipped via **#562** (draft). The first PR of the notification foundation (spec `docs/nyx-notification-foundation-requirements.md` §3, §7 PR 1). Adds the `expo-notifications` dependency and `lib/notifications.ts` — the building block every future notification workflow (B-288 confirmations, B-227 reminders, B-015 post-meal ask, B-662 vet-appt) sits on — plus the non-negotiable Trust & Safety piece: `wipeLocalSession` now cancels every scheduled notification on sign-out. **Zero user-visible change**: nothing on a user path schedules anything yet (no toggle: PR 3; no preferences store: PR 2).
+Shipped via **#562**. The first PR of the notification foundation (spec `docs/nyx-notification-foundation-requirements.md` §3, §7 PR 1). Adds the `expo-notifications` dependency and `lib/notifications.ts` — the building block every future notification workflow (B-288 confirmations, B-227 reminders, B-015 post-meal ask, B-662 vet-appt) sits on — plus the non-negotiable Trust & Safety piece: `wipeLocalSession` now cancels every scheduled notification on sign-out. **Zero user-visible change**: nothing on a user path schedules anything yet (no toggle: PR 3; no preferences store: PR 2).
 
 ## What shipped
 
@@ -29,8 +29,8 @@ The `expo-notifications` config plugin's only iOS effect is to add `aps-environm
 
 ## Gates
 
-- **tsc** clean; **jest** full suite green (186 suites / 4076 tests — no `wipeLocalSession`-caller test broke; `jest-expo` mocks `expo-notifications` for the transitive importers). The pre-push hook re-ran the suite green.
-- **code-reviewer** — dispatched on the diff; findings folded into the draft PR before it leaves draft.
+- **tsc** clean; **jest** full suite green (186 suites / 4076 tests — no `wipeLocalSession`-caller test broke; `jest-expo` mocks `expo-notifications` for the transitive importers). The pre-push hook re-ran the suite green. CI green on all three jobs (App typecheck+jest, App non-UTC timezones, Edge Functions deno test).
+- **code-reviewer** — **SHIP-READY.** No correctness bugs, no anti-patterns; it ran `npx expo config --type introspect` and empirically confirmed the final entitlements carry **no `aps-environment`**, validating the config-plugin omission. Its three non-blocking, forward-looking CLEANUP notes were folded in as comment-only hardening (zero logic change): (1) `computeReconcileActions` diffs on category **presence** only — documented that a config/fire-time change won't propagate to an already-live schedule without an explicit cancel+reschedule (matters at PR 4 / §9); (2) the budget-skip branch is unreachable while the registry has one category — noted to add a `computeReconcileActions`-level test when a second category lands (B-288/B-227); (3) `scheduleCategory` trusts the caller for OS permission — documented the contract (go through `reconcileSchedules`, which gates on `ensurePermission`, never schedule blind).
 - DoD: Engineer ✓ (pure/shell split, best-effort teardown, no `any`, explicit error handling on every async). Designer N/A (no user-facing surface; the one placeholder string never ships). Data/Dr. Chen N/A (no statistical/clinical logic — the summary builder that would trigger adversarial review is PR 4, and is descriptive). Adversarial review not triggered (§7: no threshold/verdict in this PR).
 
 ## Residuals
