@@ -118,6 +118,99 @@ Deno.test('resolveWindow — since_trial_start uses the trial start, falls back 
   assert.equal(fb.label, 'the last 7 days')
 })
 
+// ── since_trial_start is bucketed by the OWNER'S midnight, per zone (B-539) ──────────
+//
+// The fifth diet-trial day-math path — and the one B-421's guard first missed. Unlike the
+// fixed trailing windows (UTC-aligned for calendarWindow parity), this window's day count IS
+// the trial's "Day N", so it must track the card. A raw-UTC floor disagreed with the card by
+// ±1 for a device off UTC AND put the retrieval lower bound on UTC midnight of the start DATE,
+// dropping the first hours of trial day 1 east of UTC. Verified in three+ zones per the
+// timezone-honesty rule (B-514): every instant is explicit, so these are clock-independent.
+
+Deno.test('resolveWindow — since_trial_start windowDays EQUALS the card Day N, per zone (B-539 G5)', () => {
+  const trialStartMs = Date.parse('2026-06-10T00:00:00Z') // the DATE at UTC midnight (index.ts)
+  const trial = { startedAt: '2026-06-10', targetDurationDays: 14 }
+  // 14 Jun 08:00 in Sydney is still 13 Jun in UTC and in LA — the local day differs by zone,
+  // so windowDays must too. The invariant: windowDays === dietTrialStatus.dayCounter, ALWAYS.
+  const now = Date.parse('2026-06-13T21:00:00.000Z')
+  for (const tz of ['Pacific/Auckland', 'Asia/Kolkata', 'America/Los_Angeles', 'Australia/Sydney', 'UTC']) {
+    const w = resolveWindow('since_trial_start', now, trialStartMs, tz)
+    const card = dietTrialStatus(trial, now, tz)
+    assert.equal(w.windowDays, card.dayCounter, `windowDays must equal the card Day N in ${tz}`)
+  }
+  // And pin the concrete split so a bug that breaks BOTH sides identically can't hide behind
+  // the parity check: Auckland (UTC+12, no June DST) is already on 14 Jun → Day 5; LA (UTC-7)
+  // is still on 13 Jun → Day 4.
+  assert.equal(resolveWindow('since_trial_start', now, trialStartMs, 'Pacific/Auckland').windowDays, 5)
+  assert.equal(resolveWindow('since_trial_start', now, trialStartMs, 'America/Los_Angeles').windowDays, 4)
+})
+
+Deno.test('resolveWindow — since_trial_start bounds are the owner\'s LOCAL midnights, not UTC (B-539)', () => {
+  const trialStartMs = Date.parse('2026-06-10T00:00:00Z')
+  const now = Date.parse('2026-06-14T02:00:00Z') // 14 Jun 14:00 in Auckland
+  // Auckland is UTC+12 in June (no DST): local midnight of 10 Jun = 09 Jun 12:00Z.
+  const w = resolveWindow('since_trial_start', now, trialStartMs, 'Pacific/Auckland')
+  assert.equal(w.startMs, Date.parse('2026-06-09T12:00:00Z'))
+  // The raw-UTC lower bound was 10 Jun 00:00Z — so an event at 00:30 local on trial day 1
+  // (09 Jun 12:30Z) used to be DROPPED. It is now inside the window.
+  assert.ok((w.startMs as number) <= Date.parse('2026-06-09T12:30:00.000Z'))
+  // endMs = local midnight AFTER today: today local is 14 Jun → 15 Jun 00:00 Auckland = 14 Jun 12:00Z.
+  assert.equal(w.endMs, Date.parse('2026-06-14T12:00:00Z'))
+
+  // West of UTC the same math pulls the bound the other way: LA (UTC-7 in June) local midnight
+  // of 10 Jun is 10 Jun 07:00Z — so the raw-UTC bound (10 Jun 00:00Z) used to reach 7h into the
+  // PRE-trial day. Now the window opens at the owner's actual day-1 midnight.
+  const la = resolveWindow('since_trial_start', now, trialStartMs, 'America/Los_Angeles')
+  assert.equal(la.startMs, Date.parse('2026-06-10T07:00:00Z'))
+})
+
+Deno.test('resolveWindow — since_trial_start survives a DST transition inside the trial (B-539)', () => {
+  // LA springs forward on 8 Mar 2026. A trial started 6 Mar (PST, UTC-8) read on 9 Mar (PDT,
+  // UTC-7) is Day 4 — a ms-span divide floors the 71 local hours to Day 3. windowDays tracks
+  // the zoned counter, and the start bound stays on 6 Mar's PST midnight (6 Mar 08:00Z).
+  const trialStartMs = Date.parse('2026-03-06T00:00:00Z')
+  const trial = { startedAt: '2026-03-06', targetDurationDays: 14 }
+  const now = Date.parse('2026-03-09T19:00:00.000Z') // 9 Mar 12:00 PDT
+  const w = resolveWindow('since_trial_start', now, trialStartMs, 'America/Los_Angeles')
+  assert.equal(w.windowDays, 4)
+  assert.equal(w.windowDays, dietTrialStatus(trial, now, 'America/Los_Angeles').dayCounter)
+  assert.equal(w.startMs, Date.parse('2026-03-06T08:00:00Z')) // PST midnight, not PDT
+  // endMs is the PDT day boundary after today (10 Mar 00:00 PDT = 10 Mar 07:00Z).
+  assert.equal(w.endMs, Date.parse('2026-03-10T07:00:00Z'))
+})
+
+Deno.test('resolveWindow — since_trial_start bounds are correct when local midnight is SKIPPED (B-539, adversarial 2026-08-02)', () => {
+  // America/Havana springs forward AT midnight on 8 Mar 2026 (00:00 EST → 01:00 CDT), so local
+  // 00:00–00:59 does not exist and the day BEGINS at 05:00Z. The first cut of zonedDayStartMs put
+  // the bound an hour early (04:00Z, still 7 Mar local), which dropped a today-in-trial symptom
+  // from the window for ≤1h. The day now opens at the transition, on day i, never an hour before.
+  const tz = 'America/Havana'
+
+  // START bound — a trial that started ON the skip day opens at the transition (05:00Z), not an
+  // hour before it (which would reach into 7 Mar, the pre-trial day).
+  const w = resolveWindow('since_trial_start', Date.parse('2026-03-10T17:00:00Z'), Date.parse('2026-03-08T00:00:00Z'), tz)
+  assert.equal(w.startMs, Date.parse('2026-03-08T05:00:00Z')) // 01:00 CDT — day 8 begins here
+
+  // END bound — when TOMORROW is the skip day, today's late-evening events must stay in-window.
+  const now2 = Date.parse('2026-03-08T03:00:00Z') // 7 Mar 22:00 EST → today = 7 Mar local
+  const w2 = resolveWindow('since_trial_start', now2, Date.parse('2026-03-01T00:00:00Z'), tz)
+  assert.equal(w2.endMs, Date.parse('2026-03-08T05:00:00Z')) // start of 8 Mar (the transition)
+  // A vomit logged at 7 Mar 23:30 EST (04:30Z) — a real today, in-trial event — is INCLUDED.
+  assert.ok(Date.parse('2026-03-08T04:30:00Z') < (w2.endMs as number))
+})
+
+Deno.test('resolveWindow — a null/absent zone keeps the shipped UTC bounds (B-539 fallback)', () => {
+  // The degrade is UNCHANGED from before B-539: with no zone the window is UTC-day-aligned,
+  // byte-identical to the raw `startIndex * MS_PER_DAY` it replaced. B-443 is what keeps a real
+  // zone in hand so this path is the last resort, not the norm.
+  const trialStartMs = Date.parse('2026-06-10T00:00:00Z')
+  const now = Date.parse('2026-06-14T02:00:00Z')
+  const w = resolveWindow('since_trial_start', now, trialStartMs, null)
+  assert.equal(w.startMs, Date.parse('2026-06-10T00:00:00Z'))
+  assert.equal(w.endMs, Date.parse('2026-06-15T00:00:00Z'))
+  assert.equal(w.windowDays, 5) // 10→14 Jun inclusive in UTC
+})
+
 Deno.test('coerceWindow — unknown strings resolve to the default 7d, never an arbitrary range', () => {
   assert.equal(coerceWindow('30d'), '30d')
   assert.equal(coerceWindow('all'), 'all')
@@ -458,9 +551,20 @@ Deno.test('dietTrialStatus — day counter is inclusive from the start day; null
   assert.equal(dietTrialStatus(null, NOW_MS).active, false)
 })
 
-Deno.test('dietTrialStatus — a soft-deleted or unparseable trial is inactive', () => {
-  assert.equal(dietTrialStatus({ startedAt: '2026-07-01', targetDurationDays: 21, deletedAt: '2026-07-10T00:00:00Z' }, NOW_MS).active, false)
+Deno.test('dietTrialStatus — a non-active or unparseable trial is inactive (B-539 status guard)', () => {
+  // diet_trials has NO soft-delete column (migration 001); the active-ness gate is `status`.
+  // An ended/abandoned trial must not read as an active Day N even if it reaches this core —
+  // the upstream query filters to active, but the core enforces the same predicate itself so
+  // a caller that forgets the filter can't surface a stale trial as running (§5.2 / B-071).
+  for (const status of ['completed', 'abandoned']) {
+    assert.equal(dietTrialStatus({ startedAt: '2026-07-01', targetDurationDays: 21, status }, NOW_MS).active, false)
+  }
+  // An unparseable start date is inactive rather than a guessed day.
   assert.equal(dietTrialStatus({ startedAt: 'not-a-date', targetDurationDays: 21 }, NOW_MS).active, false)
+  // A null/absent status (legacy row or fixture) is not asserted either way and still reports
+  // the active Day N — matching the report's own normaliseStatus tolerance.
+  assert.equal(dietTrialStatus({ startedAt: '2026-07-01', targetDurationDays: 21 }, NOW_MS).active, true)
+  assert.equal(dietTrialStatus({ startedAt: '2026-07-01', targetDurationDays: 21, status: 'active' }, NOW_MS).active, true)
 })
 
 // ── B-421: the day boundary is the OWNER'S midnight, not UTC ───────────────────────
@@ -524,31 +628,35 @@ Deno.test('dietTrialStatus — an absent or invalid timezone degrades to UTC, ne
   }
 })
 
-// ── The LIMIT of the G5 parity claim — recorded, not papered over (B-443) ──────────
+// ── B-443: the fallback the caller now steps around ───────────────────────────────
 //
-// Every case above hands BOTH sides an explicit zone, so they agree by construction.
-// The one place client and server differ by design is the fallback: the client's
-// fallback is the DEVICE zone, the server's is UTC. And `user_profiles.timezone` is
-// `NOT NULL DEFAULT 'America/New_York'` (migration 001), so the reachable failure is
-// not an absent zone at all — it is a STALE DEFAULT that never reaches the fallback
-// and buckets a Sydney owner's day by New York. These tests pin the disagreement so
-// it is a known, sized bug with a backlog row rather than a claim nobody checked.
+// dietTrialStatus buckets by whatever zone it is HANDED; these cases pin how it degrades
+// when that zone is wrong, which is why B-443 changed the CALLER, not this function. The
+// client card buckets by the DEVICE zone; the server used to bucket by the stored
+// `user_profiles.timezone`, which is `NOT NULL DEFAULT 'America/New_York'` (migration 001) —
+// so a never-stamped Sydney owner's Ask answer disagreed with their card by a day, silently,
+// and no fallback was even reached (a real IANA default can't express "unknown"). The fix is
+// upstream (ask/index.ts): the client passes its device zone on the request, and
+// `resolveIanaZone(requestZone, storedZone)` prefers it — so Ask now buckets by the SAME zone
+// the card does BY CONSTRUCTION (resolveIanaZone's own preference is pinned in lib/utils.test.ts).
+// The stale-default / null cases below are the LAST-RESORT degrade the caller now avoids, not
+// an open bug: given a correct zone (what the caller now supplies), both sides agree.
 
-Deno.test('dietTrialStatus — B-443: a MISSING zone disagrees with an ahead-of-UTC device by one day', () => {
+Deno.test('dietTrialStatus — given the DEVICE zone (what the caller now supplies) it matches the card', () => {
   const trial = { startedAt: '2026-06-10', targetDurationDays: 14 }
   const at8amSydney = Date.parse('2026-06-13T21:00:00.000Z') // 14 Jun 08:00 in UTC+10
-  // What the owner's card shows (device zone), vs what Ask says with no stored zone.
+  // The card buckets by the device (Sydney) zone; the caller now hands Ask that same zone.
   assert.equal(dietTrialStatus(trial, at8amSydney, 'Australia/Sydney').dayCounter, 5)
-  assert.equal(dietTrialStatus(trial, at8amSydney, null).dayCounter, 4) // ← the gap
 })
 
-Deno.test('dietTrialStatus — B-443: the STALE DEFAULT zone is the reachable case, and it also disagrees', () => {
+Deno.test('dietTrialStatus — the stored NY default / null is the degrade B-443 steps around', () => {
   const trial = { startedAt: '2026-06-10', targetDurationDays: 14 }
   const at8amSydney = Date.parse('2026-06-13T21:00:00.000Z')
-  // A profile whose timezone was never stamped carries the migration-001 default.
+  // If the caller ever fell through to the stored NY default or a null zone, the counter would
+  // read Day 4 where the Sydney card reads Day 5. resolveIanaZone is what keeps that from being
+  // the zone dietTrialStatus is handed — it prefers the request's device zone (Sydney) over both.
   assert.equal(dietTrialStatus(trial, at8amSydney, 'America/New_York').dayCounter, 4)
-  // Correct once the real zone is stored — which is what B-443 has to guarantee.
-  assert.equal(dietTrialStatus(trial, at8amSydney, 'Australia/Sydney').dayCounter, 5)
+  assert.equal(dietTrialStatus(trial, at8amSydney, null).dayCounter, 4)
 })
 
 Deno.test('dietTrialStatus — a date-only start is never re-read as UTC midnight', () => {

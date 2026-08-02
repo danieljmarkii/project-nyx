@@ -1514,6 +1514,23 @@ export interface TrialFacts {
    */
   exposureRange: { startDayIndex: number; endDayIndex: number } | null;
   coverage: TrialCoverage | null;
+  /**
+   * The local-day indices that count toward `coverage.daysLogged` — every day in
+   * the coverage window carrying a logged NON-TREAT feeding, ascending. Exposed so
+   * a caller that needs to PAINT the coverage (the widget's trial-day strip, §2.5)
+   * reads the same set the ratio counted, rather than re-deriving "which days had a
+   * meal" one import away and drifting from `daysLogged` — the §5.3 one-predicate
+   * lesson applied to the widget. `[]` on the null-range paths, exactly where
+   * `coverage` is null.
+   *
+   * These are ABSOLUTE indices on the context's clock (`localDayIndexOf`), the same
+   * basis as `range.startDayIndex` and the trial's own `started_at` index — so a
+   * consumer keys the strip by `startIndex + dayOffset` and gets the right dot.
+   * Bounded to the coverage range `[range.startDayIndex, range.endDayIndex]` for
+   * the same reason `daysLogged` is (§5.1): a post-target feeding is evidence, not
+   * coverage.
+   */
+  coveredDayIndices: number[];
   exposures: TrialExposureSummary;
   oralRoute: OralRouteExposure[];
   contamination: ContaminationFact[];
@@ -2000,6 +2017,7 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
     range: null,
     exposureRange: null,
     coverage: null,
+    coveredDayIndices: [],
     exposures: empty,
     oralRoute: [],
     contamination: trialContamination(ctx),
@@ -2536,6 +2554,10 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
     range,
     exposureRange,
     coverage,
+    // The coverage numerator's own days, ascending — `daysLogged === coveredDays.size`
+    // by construction (line above), so the widget strip and the ratio can never
+    // disagree about which days were covered.
+    coveredDayIndices: [...coveredDays].sort((a, b) => a - b),
     exposures: {
       totalFeedings,
       offDiet,

@@ -26,9 +26,12 @@
 // counts are pet-centric facts that never decompose per person (T&S).
 
 import { File } from 'expo-file-system';
+import { SYMPTOM_EVENT_TYPES } from './analytics';
 import { getDb } from './db';
 import { isTrialRunning } from './dietTrial';
+import { loadTrialPredicateFacts } from './dietTrialFacts';
 import { ACTIVE_DIET_TRIAL_QUERY } from './dietTrialMirror';
+import { drugDisplayName } from './medications';
 import { getSnapshotDirectory } from './appGroup';
 // toLocalDayKey (not feedingArrangements' localDateString twin): utils is
 // dependency-free, so the publisher doesn't drag the sync/supabase import graph
@@ -36,9 +39,7 @@ import { getSnapshotDirectory } from './appGroup';
 import { toLocalDayKey } from './utils';
 import {
   assignPetSlots,
-  buildMealChoices,
   buildSlotRows,
-  buildTreatChoices,
   learnMealSlots,
   resolveTrialContext,
   PET_SLOT_INDEX_FILENAME,
@@ -47,6 +48,36 @@ import {
   type PetSlotIndex,
   type ResolutionMealRow,
 } from './widgetResolution';
+import {
+  buildWidgetSnapshotV2,
+  WIDGET_SEVEN_DAYS,
+  type SevenDayEventRow,
+  type TodayEventRow,
+  type WidgetSevenDay,
+  type WidgetTodayByClass,
+  type WidgetTrialSnapshot,
+  type WidgetUpNext,
+} from './widgetSnapshotV2';
+
+// The four record classes' symptom types (§2.5 rose pip / §2.3 symptom tile) —
+// the same set generate-signal + Trend treat as adverse symptoms, so the widget's
+// "is this a symptom?" agrees with the rest of the app. `stool_normal` is NOT here
+// (it is not adverse), matching SYMPTOM_EVENT_TYPES.
+const SYMPTOM_EVENT_SET: ReadonlySet<string> = new Set(SYMPTOM_EVENT_TYPES);
+
+// The widget symptom tile's label per event type (§2.3 ①). Gerund forms, matching
+// the design-locked round-7 mock ("Vomiting"), rather than the History-row nouns —
+// this label is the widget's own and is not shared with EventRow. `scratch` /
+// `skin_reaction` are not exposed in quick-log but reach here from legacy rows and
+// the detection set, so they carry a label rather than falling back to the raw key.
+const WIDGET_SYMPTOM_LABELS: Record<string, string> = {
+  vomit: 'Vomiting',
+  diarrhea: 'Loose stool',
+  itch: 'Itching',
+  scratch: 'Scratching',
+  skin_reaction: 'Skin',
+  lethargy: 'Lethargy',
+};
 
 export const WIDGET_SNAPSHOT_SCHEMA_VERSION = 1;
 
@@ -106,10 +137,12 @@ export interface WidgetSnapshot {
    */
   bowlConfirmedAt: string | null;
   today: WidgetSnapshotToday;
-  // ── W4 resolution-lib fields (filled by lib/widgetResolution.ts) ──
+  // ── Resolution-lib fields (filled by lib/widgetResolution.ts) ──
+  //
+  // `slots` stays (it feeds the header's arrangement line and the §2.4 Up-next
+  // tile); `mealChoices`/`treatChoices` are GONE — v2 has no picker, so nothing
+  // one-taps a named food (spec §3, "mealChoices/treatChoices leave the panel").
   slots: WidgetSlotRow[];
-  mealChoices: WidgetNamedChoice[];
-  treatChoices: WidgetNamedChoice[];
   /** Day N of the active diet trial, or null when no trial is active. */
   trialDay: number | null;
   /**
@@ -118,11 +151,35 @@ export interface WidgetSnapshot {
    * schema-version bump.
    */
   trialTargetDays: number | null;
+  // ── Widget V2 fields (spec v2.0 §3; lib/widgetSnapshotV2.ts) ───────────────
+  //
+  // The v2 layout renders FROM THESE. The publisher (V2-PR-2) always populates
+  // them; they are optional on the type only so a degraded read produces an empty
+  // block rather than throwing, and `buildPetPanel` treats an absent field as "no
+  // data" (never an assumed value). Each is a count, a coverage boolean, day math,
+  // or a record label — the D9/§8 no-forbidden-field contract holds field by field.
+  /** Today's events per class (§2.3 tiles) — {count,lastAt,names,times}, meds
+   *  +expectedToday, symptoms +leadingType. */
+  todayByClass?: WidgetTodayByClass;
+  /** The Up-next tile (§2.4): the next unlogged learned meal window, or null. */
+  upNext?: WidgetUpNext | null;
+  /** The ground-band pips (§2.5): per local day {dayKey, logged, symptomLogged}. */
+  sevenDays?: WidgetSevenDay[];
+  /** The trial-day strip (§2.5): {day,target,daysLogged,daysElapsed,stripDays},
+   *  numbers from the shared lib/dietTrial helpers so it agrees with the card. */
+  trial?: WidgetTrialSnapshot | null;
 }
 
 // One row of the publisher's meal query (the resolution lib's input shape —
 // events ⋈ meals ⟕ food_items_cache over the treat-lookback window).
 export type SnapshotMealRow = ResolutionMealRow;
+
+// "Hill's z/d" — brand + product, the same label convention as the resolution
+// lib and the food-detail surfaces. Null when the food row has not hydrated (no
+// name to show; the meal still counts).
+function foodLabelOf(row: { brand: string | null; product_name: string | null }): string | null {
+  return `${row.brand ?? ''} ${row.product_name ?? ''}`.trim() || null;
+}
 
 // Pure: the lookback window's meal rows + the bowl fact + the active trial →
 // the snapshot. A treat IS a meal event whose food is food_type='treat' (the
@@ -150,6 +207,26 @@ export function buildWidgetSnapshot(
     /** The active diet trial, or null when the pet has none. Read from the
      *  local mirror (B-417 PR 2), so it is present offline. */
     trial: ActiveTrialInfo | null;
+    // ── The v2-block raw inputs (spec §3), read by the async publisher below ──
+    //
+    // Passed in rather than read here so this function stays PURE and testable —
+    // the DB reads live in `readSnapshotInputs`, and the v2 block is assembled HERE
+    // (reusing the `slotRows` computed below, so the Up-next tile and the header
+    // read the same learned windows — no second slot definition).
+    /** Today's medication doses (event_type='medication'), pre-named. */
+    medDoses?: { name: string | null; occurredAt: string }[];
+    /** The single active regimen's expected daily doses, or null — the B-614
+     *  confirmability gate for the med tile's denominator (resolved upstream). */
+    medExpectedToday?: number | null;
+    /** Today's symptom events, pre-labelled (§2.3 ①). */
+    symptomEvents?: { label: string; occurredAt: string }[];
+    /** Coverage events over the 7-day pip window (occurredAt + isSymptom). */
+    sevenDayEvents?: SevenDayEventRow[];
+    /** `computeTrialFacts().coverage` for the active trial, or null. The strip's
+     *  numbers come from here so it agrees with the trial card (AC 5). */
+    trialCoverage?: { daysLogged: number; daysElapsed: number } | null;
+    /** `computeTrialFacts().coveredDayIndices` — the days the strip paints. */
+    trialCoveredDayIndices?: number[];
   },
 ): WidgetSnapshot {
   const now = new Date(input.generatedAt);
@@ -179,33 +256,25 @@ export function buildWidgetSnapshot(
     }
   }
 
-  // ── B-422 — A STALE-ACTIVE TRIAL IS DROPPED HERE, AND THIS IS THE WRITE PATH ──
+  // ── B-422 — A STALE-ACTIVE TRIAL IS DROPPED HERE ─────────────────────────────
   //
   // Nothing auto-completes a trial, so `status = 'active'` outlives the diet by
-  // default. `buildMealChoices` turns a trial into one-tap rows that NAME the
-  // trial diet for every unlogged slot — including a bare row for a pet with no
-  // learned slots at all — so a trial nobody ended keeps offering "Royal Canin
-  // Hydrolyzed" on the lock screen months after the pet went back to its normal
-  // food. A habitual tap then WRITES a meal event naming a food the pet has not
-  // eaten since spring, into the record a vet reads. That is corruption of the
-  // log, not a stale caption.
+  // default; stale-active is the steady state. The v2 widget no longer WRITES, so
+  // the old write-corruption hazard (a stale trial's one-tap row logging a food the
+  // pet hasn't eaten since spring) is gone with capture — but the header still says
+  // "Day N of M" and the ground band still paints the trial strip, and "Day 412 of
+  // 56" on a stale trial is noise on a glanceable surface. So the widget and the
+  // Pet-tab card still deliberately diverge: the card keeps an overrun trial forever
+  // because it carries the milestone (the one surface that can ACT on the overrun),
+  // the widget retires it.
   //
-  // Nulled ONCE, above both consumers, rather than gated inside each: the day
-  // counter and the one-tap rows must never disagree about whether the pet is on
-  // a trial, and the widget's own render has no way to re-check (it evaluates in
-  // a bare JSC context with no imports and no clock of its own — see the widget
-  // layout convention in CLAUDE.md).
+  // Nulled ONCE, above every consumer, so the day counter, the trial strip and the
+  // trial-record tile never disagree about whether the pet is on a trial.
   //
-  // SO THE WIDGET AND THE CARD DELIBERATELY DIVERGE HERE, and the divergence is
-  // the point rather than collateral: the Pet-tab card keeps an overrun trial
-  // forever because it carries the milestone — it is the one surface that can ACT
-  // on the overrun. The widget cannot. "Day 412 of 56" on a lock screen, with no
-  // way to resolve it, is noise on a glanceable surface, so it retires with the
-  // rows. (R6 punted the widget to a full design revamp — B-542; revisit there.)
-  //
-  // `isTrialRunning` gets no `status` — `ACTIVE_DIET_TRIAL_QUERY` filters it in
-  // SQL and does not select it back. It gets no `timeZone` either: the publisher
-  // runs on the device, whose own zone IS the owner's midnight (B-421).
+  // `isTrialRunning` gets no `status` — `ACTIVE_DIET_TRIAL_QUERY` filters it in SQL
+  // and does not select it back. It gets no `timeZone` either: the publisher runs
+  // on the device, whose own zone IS the owner's midnight (B-421) — the sanctioned
+  // widget/publisher device-zone path.
   const trial = input.trial !== null && isTrialRunning(input.trial, now.getTime())
     ? input.trial
     : null;
@@ -214,7 +283,38 @@ export function buildWidgetSnapshot(
   const slotRows = buildSlotRows(slots, todayMeals);
   const { trialDay, trialTargetDays } = resolveTrialContext(trial, now.getTime());
 
-  return {
+  // The v2 block (spec §3). Built from the SAME `slotRows` the header reads, so the
+  // Up-next tile and the arrangement line can never disagree about the learned
+  // windows. `today` is folded from the internally-filtered `todayMeals` plus the
+  // med/symptom rows the publisher pre-read — one today definition, one local-day
+  // filter (buildTodayByClass re-buckets by local day, B-421). No `timeZone`: the
+  // device zone is the owner's midnight (the widget/publisher path, B-514).
+  const todayEvents: TodayEventRow[] = [];
+  for (const row of todayMeals) {
+    todayEvents.push({
+      eventClass: row.food_type === 'treat' ? 'treat' : 'meal',
+      name: foodLabelOf(row),
+      occurredAt: row.occurred_at,
+    });
+  }
+  for (const dose of input.medDoses ?? []) {
+    todayEvents.push({ eventClass: 'med', name: dose.name, occurredAt: dose.occurredAt });
+  }
+  for (const sym of input.symptomEvents ?? []) {
+    todayEvents.push({ eventClass: 'symptom', name: sym.label, occurredAt: sym.occurredAt });
+  }
+  const v2 = buildWidgetSnapshotV2({
+    today: todayEvents,
+    medExpectedToday: input.medExpectedToday ?? null,
+    slots: slotRows,
+    sevenDayEvents: input.sevenDayEvents ?? [],
+    trial,
+    trialCoverage: input.trialCoverage ?? null,
+    trialCoveredDayIndices: input.trialCoveredDayIndices ?? [],
+    nowMs: now.getTime(),
+  });
+
+  const snapshot: WidgetSnapshot = {
     schemaVersion: WIDGET_SNAPSHOT_SCHEMA_VERSION,
     petId: pet.id,
     petName: pet.name,
@@ -225,11 +325,15 @@ export function buildWidgetSnapshot(
     bowlConfirmedAt: input.bowlConfirmedAt,
     today: { mealCount, treatCount, lastMealAt, lastTreatAt },
     slots: slotRows,
-    mealChoices: buildMealChoices(slots, slotRows, trial),
-    treatChoices: buildTreatChoices(input.meals, now),
     trialDay,
     trialTargetDays,
+    todayByClass: v2.todayByClass,
+    upNext: v2.upNext,
+    sevenDays: v2.sevenDays,
+    trial: v2.trial,
   };
+
+  return snapshot;
 }
 
 // The device-local day's [start, end) — the same day the owner sees on the
@@ -253,7 +357,8 @@ export function localDayBounds(now: Date = new Date()): {
   };
 }
 
-async function readSnapshotInputs(petId: string, now: Date) {
+async function readSnapshotInputs(pet: SnapshotPet, now: Date) {
+  const petId = pet.id;
   const db = getDb();
   const bounds = localDayBounds(now);
   // One query over the full treat-lookback window (slot learning uses its own
@@ -326,12 +431,142 @@ async function readSnapshotInputs(petId: string, now: Date) {
         foodLabel: trialRow.food_label || null,
       }
     : null;
+
+  // ── v2 reads (spec §3): today's meds + symptoms, the 7-day coverage row, and
+  //    the trial's coverage numbers. All local SQLite, so a publish still makes no
+  //    network call.
+  const todayStartIso = new Date(bounds.startMs - bufferMs).toISOString();
+  const todayEndIso = new Date(bounds.endMs + bufferMs).toISOString();
+
+  // Today's medication doses (event_type='medication'), named brand-first. The
+  // ma.medication_id / medication_item_id are read so the cadence denominator can
+  // check every today-dose belongs to the single regimen (below).
+  const medDoseRows = await db.getAllAsync<{
+    medication_id: string | null;
+    medication_item_id: string | null;
+    occurred_at: string;
+    generic_name: string | null;
+    brand_name: string | null;
+  }>(
+    `SELECT ma.medication_id, ma.medication_item_id, e.occurred_at, mi.generic_name, mi.brand_name
+     FROM medication_administrations ma
+     JOIN events e ON e.id = ma.event_id
+     LEFT JOIN medication_items_cache mi ON mi.id = ma.medication_item_id
+     WHERE e.pet_id = ? AND e.event_type = 'medication' AND e.deleted_at IS NULL
+       AND e.occurred_at >= ? AND e.occurred_at < ?`,
+    [petId, todayStartIso, todayEndIso],
+  );
+  const medDoses = medDoseRows.map((r) => ({
+    name: drugDisplayName(r.generic_name, r.brand_name),
+    occurredAt: r.occurred_at,
+  }));
+
+  // The med tile's denominator (§2.3, B-614 confirmability gate applied to
+  // display). A denominator is UNAMBIGUOUS only when the pet has exactly ONE
+  // active regimen, its cadence is a known positive integer, and every med dose
+  // today belongs to it — otherwise "N of M" would fabricate a cross-med schedule
+  // (N2). In every other case the tile shows count + recency, no denominator. The
+  // cadence gate mirrors `isMedCadenceCoveredToday` in lib/medStrip.ts (the same
+  // `doses_per_day > 0` field), never a second definition.
+  const regimens = await db.getAllAsync<{
+    id: string;
+    medication_item_id: string | null;
+    doses_per_day: number | null;
+  }>(`SELECT id, medication_item_id, doses_per_day FROM medications WHERE pet_id = ? AND status = 'active'`, [
+    petId,
+  ]);
+  let medExpectedToday: number | null = null;
+  if (regimens.length === 1) {
+    const r = regimens[0];
+    if (r.doses_per_day != null && Number.isInteger(r.doses_per_day) && r.doses_per_day > 0) {
+      const allBelong = medDoseRows.every(
+        (d) =>
+          d.medication_id === r.id ||
+          (r.medication_item_id != null && d.medication_item_id === r.medication_item_id),
+      );
+      if (allBelong) medExpectedToday = r.doses_per_day;
+    }
+  }
+
+  // Today's symptom events (§2.3 ①). SYMPTOM_EVENT_TYPES is the app-wide adverse
+  // set (`stool_normal` excluded — it is not adverse), so the widget's symptom
+  // definition agrees with Trend + the detection engine.
+  const symptomPlaceholders = SYMPTOM_EVENT_TYPES.map(() => '?').join(', ');
+  const symptomRows = await db.getAllAsync<{ event_type: string; occurred_at: string }>(
+    `SELECT event_type, occurred_at FROM events
+     WHERE pet_id = ? AND deleted_at IS NULL AND event_type IN (${symptomPlaceholders})
+       AND occurred_at >= ? AND occurred_at < ?`,
+    [petId, ...SYMPTOM_EVENT_TYPES, todayStartIso, todayEndIso],
+  );
+  const symptomEvents = symptomRows.map((r) => ({
+    label: WIDGET_SYMPTOM_LABELS[r.event_type] ?? r.event_type,
+    occurredAt: r.occurred_at,
+  }));
+
+  // The 7-day coverage row (§2.5 pips) — ANY event is a tick; a symptom also lights
+  // the rose pip. Fetch the last 7 local days (buffered); buildSevenDays re-buckets
+  // by local day and drops anything outside its own window.
+  const sevenStartMs = bounds.startMs - (WIDGET_SEVEN_DAYS - 1) * 86_400_000;
+  const coverageRows = await db.getAllAsync<{ event_type: string; occurred_at: string }>(
+    `SELECT event_type, occurred_at FROM events
+     WHERE pet_id = ? AND deleted_at IS NULL
+       AND occurred_at >= ? AND occurred_at < ?`,
+    [petId, new Date(sevenStartMs - bufferMs).toISOString(), new Date(bounds.endMs + bufferMs).toISOString()],
+  );
+  const sevenDayEvents: SevenDayEventRow[] = coverageRows.map((r) => ({
+    occurredAt: r.occurred_at,
+    isSymptom: SYMPTOM_EVENT_SET.has(r.event_type),
+  }));
+
+  // The trial's COVERAGE numbers + the covered-day set the strip paints, from the
+  // shared predicate — the SAME five reads + `computeTrialFacts` the trial card
+  // runs, so the widget strip and the card can never disagree (AC 5). Reused
+  // rather than re-read: `loadTrialPredicateFacts` is `lib/dietTrialFacts.ts`'s own
+  // export for exactly this "another surface needs the same answers" case.
+  //
+  // ONLY when the pet has a RUNNING trial (the one the strip renders) — gated on
+  // the same `isTrialRunning` predicate, same nowMs, that `buildWidgetSnapshot`
+  // applies below. This skips five SQL reads + a compute on every publish tick for
+  // the two cases the strip never shows: a pet with no trial, and a STALE-ACTIVE
+  // trial past its effective end (the B-422 steady state) — for which the coverage
+  // would be computed only to be discarded when the staleness gate drops the trial.
+  //
+  // Degrades to null (no strip; the band falls back to the pips) on any failure —
+  // `loadTrialPredicateFacts` THROWS on the trial-row read, so the try/catch is
+  // load-bearing, not defensive. `facts: null` (unreadable inputs) is honest
+  // silence, never a fabricated coverage.
+  let trialCoverage: { daysLogged: number; daysElapsed: number } | null = null;
+  let trialCoveredDayIndices: number[] = [];
+  if (trial && isTrialRunning(trial, now.getTime())) {
+    try {
+      const predicate = await loadTrialPredicateFacts(
+        { id: pet.id, name: pet.name, species: pet.species },
+        now.getTime(),
+      );
+      if (predicate?.facts?.coverage) {
+        trialCoverage = {
+          daysLogged: predicate.facts.coverage.daysLogged,
+          daysElapsed: predicate.facts.coverage.daysElapsed,
+        };
+        trialCoveredDayIndices = predicate.facts.coveredDayIndices;
+      }
+    } catch (e) {
+      console.warn('[widgetSnapshot] trial facts read failed:', e);
+    }
+  }
+
   return {
     meals,
     freeFed: !!bowl,
     bowlConfirmedAt: bowl?.updated_at ?? null,
     dayBounds: { startMs: bounds.startMs, endMs: bounds.endMs },
     trial,
+    medDoses,
+    medExpectedToday,
+    symptomEvents,
+    sevenDayEvents,
+    trialCoverage,
+    trialCoveredDayIndices,
   };
 }
 
@@ -388,9 +623,10 @@ export async function publishWidgetSnapshots(
   const published: WidgetSnapshot[] = [];
   for (const pet of pets) {
     try {
-      // Every input — meals, bowl, and (since B-417 PR 2) the active trial — now
-      // comes from local SQLite, so a publish makes no network call at all.
-      const inputs = await readSnapshotInputs(pet.id, now);
+      // Every input — meals, bowl, meds, symptoms, the 7-day coverage row and the
+      // trial's coverage — comes from local SQLite, so a publish makes no network
+      // call at all (the wedge case: an owner mid-diet-trial in airplane mode).
+      const inputs = await readSnapshotInputs(pet, now);
       const snapshot = buildWidgetSnapshot(pet, {
         generatedAt,
         dayKey,

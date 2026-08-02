@@ -27,7 +27,7 @@ import { AdherenceChipRow, DoseAdherence } from '../components/log/AdherenceChip
 import { VehicleChipRow } from '../components/log/VehicleChipRow';
 import { asDoseVehicle, type DoseVehicle } from '../lib/medications';
 import { TimeConfidenceField, TimeMode, FoundMode } from '../components/log/TimeConfidenceField';
-import { resolveTimeModeChange, resolveFoundModeChange, DEFAULT_WINDOW_SPAN_MS } from '../lib/eventTimeEdit';
+import { resolveTimeModeChange, resolveFoundModeChange, reconstructTimeControl, sourceAfterPointEdit, DEFAULT_WINDOW_SPAN_MS } from '../lib/eventTimeEdit';
 import { PhotoViewer } from '../components/ui';
 
 interface CachedFood {
@@ -72,9 +72,13 @@ export default function EditEventModal() {
   // editable after logging). Shown only for non-meal events; meals are always
   // witnessed — and so is a weight check (you read the scale), so it uses the
   // plain point picker too and never the Saw-it/Found-it control (B-197).
-  // Reconstructed from stored fields on mount. Mirrors log.tsx.
+  // Reconstructed from stored fields on mount (reconstructTimeControl).
   const showConfidenceControl = !config.hasFood && !isWeight && !isMedication;
-  const [timeMode, setTimeMode] = useState<TimeMode>('saw');
+  // Seeds NULL, not 'saw' (B-527): an unclassified row must render with neither
+  // segment selected, so the honest default before the reconstruct resolves is
+  // "we don't know yet", never a borrowed witnessed claim. The reconstruct sets
+  // the definite value for a classified row and leaves this null for a NULL one.
+  const [timeMode, setTimeMode] = useState<TimeMode | null>(null);
   const [foundMode, setFoundMode] = useState<FoundMode>('before');
   const [earliest, setEarliest] = useState<Date | null>(null);
   const [foundLatest, setFoundLatest] = useState<Date>(() =>
@@ -88,14 +92,16 @@ export default function EditEventModal() {
   // B-448 — did the owner actually touch a CONFIDENCE-bearing affordance in this
   // edit? Only then does the save restate the row's confidence.
   //
-  // Everything above is form state seeded with defaults, and `timeMode` starts at
-  // 'saw'. Without this flag every save asserted that default: opening a legacy
-  // row (occurred_at_confidence NULL — 149 live rows in production at the time of
+  // Everything above is form state seeded with defaults. Without this flag every
+  // save asserted whatever the control happened to show: opening a legacy row
+  // (occurred_at_confidence NULL — 149 live rows in production at the time of
   // writing) to fix a note wrote 'witnessed', turning the vet report's honest
   // 'unspecified' into 'seen' on a time nobody ever claimed to have witnessed. It
   // also lost real information whenever the async reconstruct below hadn't
   // resolved before a fast save — a stored 'estimated'/'window' row would be
   // flattened to 'witnessed'. Both directions move toward false precision.
+  // (B-527 also made the null seed render as an absence, but the write gate is
+  // still what keeps an untouched NULL row NULL on save.)
   //
   // The point-in-time picker deliberately does NOT set this: correcting WHEN
   // something happened is not a claim about how well the time is known. Same rule
@@ -219,28 +225,19 @@ export default function EditEventModal() {
 
     getEventSource(id).then(setOccurredAtSource).catch(console.error);
 
-    // Reconstruct the "Saw it / Found it" control from stored confidence +
-    // window bounds. Legacy/unclassified (null) rows default to witnessed.
-    getEventTimeFields(id).then(({ confidence, earliest: e, latest: l }) => {
-      if (confidence === 'estimated') {
-        setTimeMode('found');
-        setFoundMode('around');
+    // Reconstruct the "Saw it / Found it" control from the stored row. An
+    // unclassified (NULL) row seeds NEITHER segment — mode stays null — so it
+    // renders as the absence it is, never a borrowed "Saw it happen" (B-527).
+    // The pure mapping lives in reconstructTimeControl so it is pinned by a test.
+    getEventTimeFields(id).then((stored) => {
+      const seed = reconstructTimeControl(stored);
+      setTimeMode(seed.mode);
+      if (seed.foundMode) setFoundMode(seed.foundMode);
+      if (seed.mode === 'found' && seed.foundMode === 'around') {
         setEstimatedAt(occurredAtParam ? new Date(occurredAtParam) : new Date());
-      } else if (confidence === 'window') {
-        setTimeMode('found');
-        if (e && l) {
-          setFoundMode('between');
-          setEarliest(new Date(e));
-          setFoundLatest(new Date(l));
-        } else if (l) {
-          setFoundMode('before');
-          setFoundLatest(new Date(l));
-        } else if (e) {
-          // Degenerate lower-edge-only window — render as open-ended "before".
-          setFoundMode('before');
-          setFoundLatest(new Date(e));
-        }
       }
+      if (seed.earliest) setEarliest(new Date(seed.earliest));
+      if (seed.latest) setFoundLatest(new Date(seed.latest));
     }).catch(console.error);
   }, [id]);
 
@@ -298,12 +295,13 @@ export default function EditEventModal() {
     }
   }
 
-  // Witnessed point picker (TimeConfidenceField 'saw' mode). Provenance flips
-  // exif->manual only on an actual value change so a peek-tap keeps EXIF.
+  // Point picker (TimeConfidenceField 'saw'/unclassified mode, and the plain
+  // meal/weight/dose picker). Any value change makes the provenance 'manual',
+  // whatever it was — including a stored 'now' the pre-B-525 handler left drifting
+  // (B-525). A peek that changes nothing keeps the stored source, so opening the
+  // picker never silently drops an EXIF attribution.
   function handlePointChange(date: Date) {
-    if (occurredAtSource === 'exif' && date.getTime() !== occurredAt.getTime()) {
-      setOccurredAtSource('manual');
-    }
+    setOccurredAtSource(sourceAfterPointEdit(occurredAtSource, date.getTime() !== occurredAt.getTime()));
     setOccurredAt(date);
   }
 
@@ -358,7 +356,12 @@ export default function EditEventModal() {
   // occurred_at stays a single point; confidence + window bounds carry the
   // uncertainty. Meals never reach here — they're forced witnessed in handleSave.
   function buildTimeFields() {
-    if (timeMode === 'saw') {
+    // 'saw' AND unclassified (null) both resolve occurred_at to the plain point.
+    // For a null row the 'witnessed' here is inert: the save writes a confidence
+    // only when confidenceTouched is set, and the owner cannot touch a segment
+    // without leaving null (picking one sets 'saw'/'found'), so a still-null row
+    // never has an asserted confidence to write — its NULL is preserved (B-527/B-448).
+    if (timeMode !== 'found') {
       return { confidence: 'witnessed' as const, occurredAt, earliest: null as Date | null, latest: null as Date | null, source: occurredAtSource };
     }
     if (foundMode === 'around') {

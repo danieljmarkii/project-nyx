@@ -45,7 +45,11 @@ export interface TimeModeTransition {
 }
 
 export function resolveTimeModeChange(
-  current: TimeMode,
+  // `current` may be null on the edit screen: an unclassified row seeds neither
+  // segment (B-527). Tapping either one from null is therefore never a no-op — it
+  // is the owner making a first claim about how well the time is known — so it
+  // falls straight through to the asserted branches below.
+  current: TimeMode | null,
   requested: TimeMode,
   hasExifPoint: boolean,
 ): TimeModeTransition {
@@ -86,4 +90,77 @@ export function resolveFoundModeChange(
     seedEarliest: requested === 'between' && !hasEarliest,
     asserted: true,
   };
+}
+
+// ── Seeding the control from a stored row (B-527) ────────────────────────────
+//
+// The edit screen reconstructs the Saw-it / Found-it control from what the row
+// actually holds. The load-bearing case is the one B-527 names: a row whose
+// occurred_at_confidence is NULL has NO recorded claim about how well its time is
+// known — migration 012 is explicit that NULL is "NOT a claim either way". So it
+// must seed NEITHER segment (`mode: null`), rendering the absence as an absence.
+//
+// Before B-527 the screen seeded 'saw' and only ever *changed* it for a stored
+// estimated/window, so a NULL row rendered byte-identical to a witnessed one:
+// "Saw it happen", highlighted. That display asserted a certainty the record did
+// not hold — and until B-448's no-op rule, one tap on the already-highlighted
+// segment promoted the display into a stored 'witnessed', the exact reassuring-
+// direction misrepresentation the B-010 legend exists to prevent.
+//
+// Pure so the mapping is pinned by a test, not by an effect nobody re-reads.
+
+export interface TimeControlSeed {
+  /** null = unclassified: the record holds no claim, so neither segment is on. */
+  mode: TimeMode | null;
+  /** Meaningful only when mode === 'found'; null otherwise. */
+  foundMode: FoundMode | null;
+  /** ISO lower edge, only for a 'between' window; null otherwise. */
+  earliest: string | null;
+  /** ISO latest edge — the window's discovery time; null when not a window. */
+  latest: string | null;
+}
+
+export function reconstructTimeControl(stored: {
+  confidence: 'witnessed' | 'estimated' | 'window' | null;
+  earliest: string | null;
+  latest: string | null;
+}): TimeControlSeed {
+  if (stored.confidence === 'witnessed') {
+    return { mode: 'saw', foundMode: null, earliest: null, latest: null };
+  }
+  if (stored.confidence === 'estimated') {
+    return { mode: 'found', foundMode: 'around', earliest: null, latest: null };
+  }
+  if (stored.confidence === 'window') {
+    const { earliest: e, latest: l } = stored;
+    if (e && l) return { mode: 'found', foundMode: 'between', earliest: e, latest: l };
+    if (l) return { mode: 'found', foundMode: 'before', earliest: null, latest: l };
+    // Degenerate lower-edge-only window — render as open-ended "before" off that edge.
+    if (e) return { mode: 'found', foundMode: 'before', earliest: null, latest: e };
+    // A window with neither bound is illegal (chk_occurred_window_fields), but a
+    // reconstruct maps defensively rather than throwing on a malformed row.
+    return { mode: 'found', foundMode: 'before', earliest: null, latest: null };
+  }
+  // NULL — unclassified. Neither segment selected (B-527): show the absence.
+  return { mode: null, foundMode: null, earliest: null, latest: null };
+}
+
+// ── Provenance after a point-time edit (B-525) ───────────────────────────────
+//
+// Touching the picker to CHANGE the value is an explicit manual choice, so
+// occurred_at_source becomes 'manual' — whatever it was before. The pre-B-525
+// handlers only flipped 'exif'→'manual' and left 'now' untouched, so a picker
+// edit on a now-sourced row kept source='now'; a live row proves it (a vomit set
+// to a round 09:00:00 whose source stayed 'now'). The column exists so the vet
+// report and correlation engine can tell a witnessed-now log from an owner-
+// backfilled one, so a picker-set time still reading 'now' is quietly wrong. This
+// mirrors the completion cards, which write 'manual' on any picker save.
+//
+// A PEEK that changes nothing preserves the stored provenance — critically
+// 'exif', whose photo attribution must not be dropped merely by opening the picker.
+export function sourceAfterPointEdit(
+  current: 'manual' | 'exif' | 'now',
+  changed: boolean,
+): 'manual' | 'exif' | 'now' {
+  return changed && current !== 'manual' ? 'manual' : current;
 }

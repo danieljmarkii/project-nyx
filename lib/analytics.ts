@@ -45,7 +45,7 @@
 import { getDb } from './db';
 import { getActiveArrangementsForPet } from './feedingArrangements';
 import { canonicalizeProtein, proteinsFromCacheText, readProteinSet } from './protein';
-import { localDayIndex, localDayIndexOf } from './utils';
+import { localDayIndex, localDayIndexOf, trialDayCounter } from './utils';
 
 // ── Shared constants ─────────────────────────────────────────────────────────
 
@@ -882,7 +882,7 @@ export function getDietTrialProgress(
   const startIndex = localDayIndexOf(trial.startedAt, timeZone);
   if (startIndex === null || !Number.isFinite(nowMs)) return null;
   const todayIndex = localDayIndex(nowMs, timeZone);
-  const dayCounter = Math.max(1, todayIndex - startIndex + 1);
+  const dayCounter = trialDayCounter(startIndex, todayIndex);
   const targetDays = Math.max(0, Math.floor(trial.targetDurationDays));
   const daysRemaining = Math.max(0, targetDays - dayCounter);
   const fraction = targetDays > 0 ? Math.min(1, dayCounter / targetDays) : 0;

@@ -24,11 +24,11 @@ import { useAppActive } from './useAppActive';
 import { useAuthStore } from '../store/authStore';
 import { useSyncStore } from '../store/syncStore';
 import { recordCategoryInteraction } from '../lib/notifications';
-import {
-  reconcileDailySummary,
-  notificationRouteDecision,
-  routeDedup,
-} from '../lib/notificationSchedule';
+// The reconcile itself is PR 3's (lib/notificationSettings) — one reconcile
+// function, driven here on foreground and by the settings screen on focus. PR 4
+// owns only the tap-routing decision (lib/notificationRouting).
+import { reconcileFromPreferences } from '../lib/notificationSettings';
+import { notificationRouteDecision, routeDedup } from '../lib/notificationRouting';
 
 export function useNotificationScheduling(): void {
   const appActive = useAppActive();
@@ -36,12 +36,15 @@ export function useNotificationScheduling(): void {
   const session = useAuthStore((s) => s.session);
 
   // ── Reconcile on foreground + when a synced pref may have changed ───────────
-  // reconcileDailySummary reads permission with request=false, so this NEVER fires
-  // the system prompt; computeReconcileActions is a no-op when already in sync, so
-  // there is no churn. Failures inside are swallowed by the loader (fail-safe []).
+  // §3's app-foreground reconcile. reconcileFromPreferences (PR 3) reads permission
+  // with request=false, so this NEVER fires the system prompt; computeReconcileActions
+  // is a no-op when already in sync, so there is no churn. Complements the settings
+  // screen's on-focus reconcile (PR 3, AC 6) — same function, a second trigger.
   useEffect(() => {
     if (!appActive) return;
-    void reconcileDailySummary();
+    void reconcileFromPreferences().catch((e) =>
+      console.warn('[notifications] foreground reconcile failed:', e),
+    );
   }, [appActive, hydrationTick]);
 
   // ── Route a tap ─────────────────────────────────────────────────────────────
