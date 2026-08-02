@@ -212,6 +212,11 @@ export const theme = {
   // backdrop, where #DC2626 reads muddy (see migration plan §3.4).
   colorDestructive: '#DC2626',
   colorDestructiveOnDark: '#ff6b6b',
+  // Destructive tint pair for a "danger" banner (fill + hairline), matched in
+  // intensity to the colorEventSymptom{Light,Border} safety-banner pair so a
+  // system-state warning reads as prominent without a solid-red alarm (B-661 PR 3).
+  colorDestructiveLight: '#FEE2E2',   // red-100 tint — danger-banner fill
+  colorDestructiveBorder: '#FCA5A5',  // red-300 — danger-banner hairline
 
   // Modal scrim — one value for every bottom-sheet/confirm overlay so stacked
   // surfaces dim identically (switcher sheet, archive confirm; FAB chip next).

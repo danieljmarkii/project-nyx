@@ -44,7 +44,7 @@ Both Edge Functions this PR touches are **already** listed pending-redeploy in S
 
 ## Follow-up filed
 
-**B-665** — the stale-`America/New_York` default still misleads the **background** `generate-signal` engine (detector ⑥ time-of-day clustering), which can't be handed a request zone. Thin in practice (`syncUserTimezone` stamps the device zone on every foreground, and ⑥ already goes silent on a *missing* zone), but the root cause — a `NOT NULL DEFAULT` can't express "unknown" — is unfixed there; the real fix is the schema change (default NULL / a "confirmed" flag) in its own PR.
+**B-668** (filed as B-665, renumbered at the #571 merge — a sibling session took B-665 on `main` first) — the stale-`America/New_York` default still misleads the **background** `generate-signal` engine (detector ⑥ time-of-day clustering), which can't be handed a request zone. Thin in practice (`syncUserTimezone` stamps the device zone on every foreground, and ⑥ already goes silent on a *missing* zone), but the root cause — a `NOT NULL DEFAULT` can't express "unknown" — is unfixed there; the real fix is the schema change (default NULL / a "confirmed" flag) in its own PR.
 
 ## Persona sign-off
 
