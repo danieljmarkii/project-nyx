@@ -188,6 +188,13 @@ Deno.test('scopeFoodPaths — B-582: drops every `..` traversal variant the firs
   assertEquals(scopeFoodPaths(['food-mine/0-front.jpg'], ['food-mine']), ['food-mine/0-front.jpg'])
 })
 
+Deno.test('scopeFoodPaths — F1: a degenerate second segment is dropped', () => {
+  // Same F1 clause on the food guard (shared predicate) — `{own}/`, `{own}/.`,
+  // `{own}/..` are two-segment and owned, but carry no real filename.
+  assertEquals(scopeFoodPaths(['food-1/', 'food-1/.', 'food-1/..'], ['food-1']), [])
+  assertEquals(scopeFoodPaths(['food-1/..', 'food-1/0-front.jpg'], ['food-1']), ['food-1/0-front.jpg'])
+})
+
 // ── scopeVetDocumentPaths (B-478 VF-1) ───────────────────────────────────────
 // The vet-document twin of scopeFoodPaths, keyed on the owned PET id set. Exists
 // to close the `..` prefix residual migration 043 recorded on the sibling bucket,
@@ -242,6 +249,19 @@ Deno.test('scopeVetDocumentPaths — drops EVERY `..` traversal variant the CHEC
 Deno.test('scopeVetDocumentPaths — a pet id that is a string PREFIX of another is not a match', () => {
   // Exact set membership, never startsWith: `pet-1` must not permit `pet-12/…`.
   assertEquals(scopeVetDocumentPaths(['pet-12/d.pdf'], ['pet-1']), [])
+})
+
+Deno.test('scopeVetDocumentPaths — F1: a degenerate second segment is dropped (`{own}/`, `{own}/.`, `{own}/..`)', () => {
+  // The B-582-review F1 clause: these are TWO segments with an owned first segment,
+  // so they pass the shape+ownership test — but the second segment is empty / `.` /
+  // `..`, which is not a real document. `{own}/..` in particular must not survive:
+  // under a normalising backend its blast radius is the bucket root, not one object.
+  assertEquals(scopeVetDocumentPaths(['pet-1/', 'pet-1/.', 'pet-1/..'], ['pet-1']), [])
+  // The real key alongside them still survives — the clause drops nothing real.
+  assertEquals(
+    scopeVetDocumentPaths(['pet-1/', 'pet-1/doc-9.pdf', 'pet-1/..'], ['pet-1']),
+    ['pet-1/doc-9.pdf'],
+  )
 })
 
 Deno.test('scopeVetDocumentPaths — a slashless key is dropped (no folder segment)', () => {
@@ -315,6 +335,14 @@ Deno.test('scopePetPhotoPaths — drops every `..` traversal variant the 042 CHE
 
   // The legitimate key still survives.
   assertEquals(scopePetPhotoPaths(['pet-mine/profile.jpg'], ['pet-mine']), ['pet-mine/profile.jpg'])
+})
+
+Deno.test('scopePetPhotoPaths — F1: a degenerate second segment is dropped', () => {
+  // `{ownPet}/`, `{ownPet}/.`, `{ownPet}/..` pass the shape+ownership test but name
+  // no real photo; `{ownPet}/..` is the bucket-root-blast key the F1 clause exists
+  // to drop. Writable today: 042's CHECK is a starts_with prefix test.
+  assertEquals(scopePetPhotoPaths(['pet-1/', 'pet-1/.', 'pet-1/..'], ['pet-1']), [])
+  assertEquals(scopePetPhotoPaths(['pet-1/..', 'pet-1/profile.jpg'], ['pet-1']), ['pet-1/profile.jpg'])
 })
 
 Deno.test('scopePetPhotoPaths — a pet id that is a string PREFIX of another is not a match', () => {

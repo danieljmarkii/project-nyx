@@ -193,18 +193,39 @@ export function scopeMedicationPaths(
 // ONLY, and the known-bad twin then sat in place on the older call site.
 // Twins drift; a single predicate cannot.
 //
-// The test: exactly two segments (one '/'), and the first segment an EXACT
-// member of the owned-id set. Two-segments-exactly is what drops every `..`
-// traversal variant (`{own}/../{victim}/x`, `{own}/../../{victim}/x`,
-// `{own}//../{victim}/x`) BY CONSTRUCTION — their first segment genuinely is
-// owned, so a first-segment test keeps them, and cleanPaths never normalises a
-// path, so they reach the service-role remove() verbatim. Such a key deletes
-// nothing today (`storage.objects.name` is an opaque literal; neither
-// storage-api nor S3 resolves `..`), but that is a boundary held by a
-// third-party implementation detail we do not own and do not test — the 043
-// argument — so it is closed here rather than relied on. Exact SET membership,
-// never startsWith, so one id can never be a string prefix of another. An empty
-// owned-id set fails CLOSED (drops everything).
+// The test, in three clauses, all load-bearing:
+//   (1) EXACTLY two segments (one '/'). This drops the multi-segment `..`
+//       traversal variants (`{own}/../{victim}/x`, `{own}/../../{victim}/x`,
+//       `{own}//../{victim}/x`) — their first segment genuinely is owned, so a
+//       first-segment-only test keeps them, and cleanPaths never normalises a
+//       path, so they would reach the service-role remove() verbatim.
+//   (2) the first segment an EXACT member of the owned-id set (never startsWith,
+//       so one id can never be a string prefix of another).
+//   (3) a NON-DEGENERATE second segment: non-empty, and not `.` or `..`. This is
+//       the B-582-review (F1) clause. Without it, the TWO-segment degenerate keys
+//       `{own}/`, `{own}/.`, `{own}/..` pass (1)+(2) — each is one separator, first
+//       segment owned — and reach a real purge step. None can name a victim, but
+//       `{own}/..` is the one whose blast radius under a normalising or genuinely
+//       prefix-semantic backend would be the bucket ROOT rather than one object.
+//       Every legitimate key has a real filename here (`profile.jpg`,
+//       `0-front.jpg`, `{docId}.pdf`), so this clause drops nothing real.
+//
+// Why all three rather than trusting Storage to no-op the degenerate keys: such a
+// key deletes nothing TODAY (`storage.objects.name` is an opaque literal; neither
+// storage-api nor S3 resolves `..`), but that is a boundary held by a third-party
+// implementation detail we do not own and do not test — the 043 argument — so it
+// is closed here rather than relied on. An empty owned-id set fails CLOSED
+// (drops everything).
+//
+// Residual this does NOT close, by design (B-582 review F2): a two-segment key
+// whose SECOND segment carries ENCODED or backslash traversal — `{own}/..%2f{victim}%2fx`,
+// `{own}/..\{victim}\x` — passes all three clauses (segment 2 is one opaque token,
+// not literally `.`/`..`). It cannot escape the owner's own `{own}/` namespace
+// unless Storage percent-decodes or resolves it, which is the same untested
+// backend behaviour clause (3) refuses to depend on for the literal case — but
+// closing it would require normalising the key, which risks mismatching a
+// legitimately odd-but-real filename. Left as the documented reliance rather than
+// guessed at; tracked with F3/F4 on the B-582 follow-up row.
 //
 // ⚠ Do NOT reach for this for a bucket whose legitimate keys have MORE than
 // two segments: `nyx-medication-photos` is `{uid}/{medId}/{slot}.jpg` (it has
@@ -225,7 +246,11 @@ function scopeTwoSegmentOwnedPaths(
     if (typeof p !== 'string') return false
     const segments = p.split('/')
     if (segments.length !== 2) return false
-    return owned.has(segments[0])
+    if (!owned.has(segments[0])) return false
+    // Clause (3): reject a degenerate second segment (`{own}/`, `{own}/.`,
+    // `{own}/..`). Every real object key has a filename here.
+    const name = segments[1]
+    return name.length > 0 && name !== '.' && name !== '..'
   })
 }
 
