@@ -55,6 +55,17 @@ export default function NotificationsScreen() {
   const denied = permission === 'denied';
   const settingsAppName = Platform.OS === 'ios' ? 'iOS Settings' : 'Settings';
 
+  // The switch is ON only when THIS device can actually deliver — permission
+  // granted AND the pref enabled — plus the optimistic window while the primer is
+  // open. This is the 4th state the three named states didn't cover: a pref synced
+  // enabled=true from ANOTHER device whose OS permission is still undetermined HERE
+  // must NOT render a live ON switch, or a tap would fire the disable branch and
+  // turn the summary off account-wide (LWW) for the device that actually granted it
+  // (AC 8). Off-and-interactive here is both honest (nothing fires on this device
+  // until it grants) and safe (a tap walks the primer → grant, never a silent
+  // account-wide off).
+  const switchOn = primerVisible || (permission === 'granted' && enabled);
+
   // On focus (not just mount): the owner may leave to iOS Settings and return, so
   // permission is re-read every time the screen surfaces. reconcile repairs drift
   // in the safe direction — AC 6: a permission revoked at the OS level has its now-
@@ -76,7 +87,13 @@ export default function NotificationsScreen() {
           );
         } catch (e) {
           console.warn('[notifications] permission/pref read failed:', e);
-          if (!cancelled) setPermission('undetermined'); // fail to the interactive state
+          if (!cancelled) {
+            // Fail to the interactive state — and reset enabled too, so a transient
+            // read failure can't leave a stale enabled=true from a prior session
+            // (code-reviewer: the catch reset permission but not enabled).
+            setPermission('undetermined');
+            setEnabled(false);
+          }
         }
       })();
       return () => {
@@ -223,7 +240,7 @@ export default function NotificationsScreen() {
                 <WhorlSpinner size="sm" ground="day" />
               ) : (
                 <Switch
-                  value={denied ? false : enabled}
+                  value={switchOn}
                   onValueChange={handleToggleDailySummary}
                   disabled={denied || busy}
                   trackColor={{ true: theme.colorAccent, false: theme.colorBorderStrong }}

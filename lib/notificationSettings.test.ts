@@ -23,8 +23,19 @@ import {
   CATEGORY_PREFERENCE_READ_SQL,
   CATEGORY_PREFERENCE_UPDATE_SQL,
   CATEGORY_PREFERENCE_INSERT_SQL,
+  setCategoryEnabled,
+  applyCategoryPreference,
+  reconcileFromPreferences,
+  readCategoryEnabled,
 } from './notificationSettings';
 import { NOTIFICATION_SCHEMA_SQL } from './notificationPreferences';
+import { getDb } from './db';
+import { reconcileSchedules } from './notifications';
+import { syncPendingNotificationPreferences } from './sync';
+
+const mockGetDb = getDb as jest.Mock;
+const mockReconcile = reconcileSchedules as jest.Mock;
+const mockPush = syncPendingNotificationPreferences as jest.Mock;
 
 // node:sqlite is Node ≥ 22 core; require() keeps it off the babel/jest-expo path
 // (the loader trick lib/notificationPreferences.test.ts uses).
@@ -168,5 +179,87 @@ describe('the get-or-create write path (as the setCategoryEnabled SQL runs it)',
     expect(count).toBe(1);
     winner = readWinner(db);
     expect(winner?.enabled).toBe(0);
+  });
+});
+
+// ── The orchestration functions (getDb wired to a controllable fake) ──────────
+// The SQL-constant tests above prove the CONTRACT; these prove setCategoryEnabled
+// picks INSERT vs UPDATE correctly and threads params in order, and that
+// applyCategoryPreference persists-then-reconciles — the feedingArrangements /
+// dietTrialSetup precedent the SQL-only tests otherwise skip.
+type FakeDb = { getFirstAsync: jest.Mock; runAsync: jest.Mock };
+function fakeDb(existing: unknown): FakeDb {
+  return {
+    getFirstAsync: jest.fn().mockResolvedValue(existing),
+    runAsync: jest.fn().mockResolvedValue({ changes: 1 }),
+  };
+}
+
+describe('setCategoryEnabled — get-or-create + quarantine-clear', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockPush.mockResolvedValue(undefined);
+  });
+
+  it('INSERTs a fresh row (relying on schema defaults) when none exists, then pushes', async () => {
+    const db = fakeDb(null);
+    mockGetDb.mockReturnValue(db);
+    await setCategoryEnabled('daily_summary', true);
+    expect(db.runAsync).toHaveBeenCalledTimes(1);
+    const [sql, params] = db.runAsync.mock.calls[0];
+    expect(sql).toContain('INSERT INTO notification_preferences');
+    // params: [uuid, category, enabled, created_at, updated_at]
+    expect(params[1]).toBe('daily_summary');
+    expect(params[2]).toBe(1);
+    expect(mockPush).toHaveBeenCalledTimes(1);
+  });
+
+  it('UPDATEs the found row (no duplicate) and threads its id last', async () => {
+    const db = fakeDb({ id: 'existing-1', enabled: 1 });
+    mockGetDb.mockReturnValue(db);
+    await setCategoryEnabled('daily_summary', false);
+    const [sql, params] = db.runAsync.mock.calls[0];
+    expect(sql).toContain('UPDATE notification_preferences');
+    // params: [enabled, updated_at, id]
+    expect(params[0]).toBe(0);
+    expect(params[2]).toBe('existing-1');
+    expect(mockPush).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('readCategoryEnabled / applyCategoryPreference / reconcileFromPreferences', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockPush.mockResolvedValue(undefined);
+    mockReconcile.mockResolvedValue({ toSchedule: [], toCancel: [] });
+  });
+
+  it('readCategoryEnabled coerces the SQLite integer to a boolean', async () => {
+    mockGetDb.mockReturnValue(fakeDb({ id: 'x', enabled: 1 }));
+    expect(await readCategoryEnabled('daily_summary')).toBe(true);
+    mockGetDb.mockReturnValue(fakeDb({ id: 'x', enabled: 0 }));
+    expect(await readCategoryEnabled('daily_summary')).toBe(false);
+    mockGetDb.mockReturnValue(fakeDb(null)); // absent = off (G6)
+    expect(await readCategoryEnabled('daily_summary')).toBe(false);
+  });
+
+  it('applyCategoryPreference persists the pref THEN reconciles the schedule', async () => {
+    const db = fakeDb(null);
+    mockGetDb.mockReturnValue(db);
+    await applyCategoryPreference('daily_summary', true);
+    expect(db.runAsync).toHaveBeenCalled(); // wrote the pref
+    expect(mockReconcile).toHaveBeenCalledTimes(1); // then reconciled
+  });
+
+  it('reconcileFromPreferences passes only enabled categories as desired', async () => {
+    mockGetDb.mockReturnValue(fakeDb({ id: 'x', enabled: 1 })); // daily_summary on
+    await reconcileFromPreferences();
+    expect(mockReconcile).toHaveBeenCalledWith(['daily_summary']);
+  });
+
+  it('reconcileFromPreferences passes an empty desired set when nothing is enabled', async () => {
+    mockGetDb.mockReturnValue(fakeDb(null)); // nothing on
+    await reconcileFromPreferences();
+    expect(mockReconcile).toHaveBeenCalledWith([]);
   });
 });

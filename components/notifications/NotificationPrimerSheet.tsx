@@ -21,6 +21,14 @@ import { PrimaryButton } from '../ui';
 // RETROSPECTIVE — a look back at what the owner already logged — and implies no
 // medication reminder, armed or otherwise. Part 1 ships no reminder; nothing here
 // may read like one.
+//
+// CHROME NOTE (→ B-664): the Modal/backdrop/scrim/grabber/rounded-sheet below is
+// the same chrome components/vetfiles/SheetShell.tsx owns — deliberately the SAME
+// tokens (colorScrim, radiusLarge, grabber 36×4, paddingTop:10) so there is no
+// drift, but a hand-rolled copy nonetheless. SheetShell isn't a drop-in (this sheet
+// wants a hero header its plain `title` prop doesn't cover, and it lives under
+// vetfiles/), so consolidating the app's sheets onto one shared shell is filed as
+// its own refactor rather than smuggled into this feature PR.
 
 interface NotificationPrimerSheetProps {
   visible: boolean;

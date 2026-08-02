@@ -113,6 +113,32 @@ describe('state (a) undetermined — never asked', () => {
   });
 });
 
+// The 4th state code-reviewer named: a pref synced enabled=true from ANOTHER
+// device, while THIS device's OS permission is still undetermined (never asked
+// here). The switch must not render a live ON that a stray tap would flip to the
+// disable branch — that would turn the summary off account-wide (LWW) for the
+// device that actually granted it (AC 8).
+describe('4th state — pref synced on, but this device never granted', () => {
+  beforeEach(() => {
+    mockEnsure.mockResolvedValue('undetermined'); // never asked HERE
+    mockRead.mockResolvedValue(true); // enabled=true, synced from another device
+  });
+
+  it('renders the switch OFF, not a live ON a tap could silently disable', async () => {
+    const utils = await renderReady();
+    // Reflects "not active on this device", not the synced pref — so a stray tap
+    // fires the ENABLE path, never a silent account-wide disable.
+    expect(utils.getByRole('switch').props.value).toBe(false);
+  });
+
+  it('tapping it walks the primer (enable), never applyCategoryPreference(false)', async () => {
+    const utils = await renderReady();
+    fireEvent(utils.getByRole('switch'), 'valueChange', true);
+    await waitFor(() => utils.getByText(/A recap of Biscuit/)); // the primer, not a disable
+    expect(mockApply).not.toHaveBeenCalled();
+  });
+});
+
 describe('state (b) granted', () => {
   beforeEach(() => mockEnsure.mockResolvedValue('granted'));
 
