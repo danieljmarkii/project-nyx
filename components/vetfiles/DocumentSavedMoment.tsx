@@ -4,14 +4,7 @@ import { Check } from 'lucide-react-native';
 import { theme, shadows } from '../../constants/theme';
 import { PrimaryButton } from '../ui/PrimaryButton';
 import { VetDocumentThumb } from './VetDocumentThumb';
-import type { SavedMomentCopy } from '../../lib/vetDocumentCapture';
-
-export interface AlsoAddTarget {
-  petId: string;
-  /** "Also add to Juniper’s Vet Files", or the confirmed past tense once filed. */
-  label: string;
-  done: boolean;
-}
+import type { SavedMomentCopy, AlsoAddTarget } from '../../lib/vetDocumentCapture';
 
 interface Props {
   copy: SavedMomentCopy;
