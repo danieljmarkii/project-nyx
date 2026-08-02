@@ -85,4 +85,31 @@ untouched until the PM ratifies R4-1–R4-4 (Tier-2 protocol); the rewrite lands
 the ratification session. B-481 (widget unusable on-device) stays open — it needs a
 device regardless of direction.
 
+## Round 5 (same session, after PM reaction)
+
+The PM reacted to round 4: **E** ("Today on one line") — love the image, not super
+practical; **F** (flowsheet) — looks best, very readable, but a bit of wasted space;
+**small cards — don't invest for now** (answers R4-4: medium only). Asked for three
+new options.
+
+Round 5 shipped to the same file + artifact URL: readability adopted as the spine
+(all text-row/tile registers, the time-axis abstraction retired), the wasted space
+attacked three ways, same two fixture days across all options so the comparison is
+layout-only:
+
+- **Option H — "The flowsheet, packed":** F's class rows, content-gated (an empty
+  class renders no row — the briefing's own card-gating idiom), with the reclaimed
+  space spent on names and times ("Meals · 2 · Hill's z/d · 7:42a · 5:12p").
+  Symptom class always renders and leads. Footer trial strip / 7-day pips carried.
+- **Option I — "The ledger":** today as History's day view — chronological, named,
+  timestamped rows, each deep-linking to its event; expected window as a hollow
+  bottom row; overflow collapses the earliest rows. Trial line moves to the header.
+- **Option J — "The briefing":** a 2×2 content-gated stat-tile grid (count + recency
+  + a name sub-line per tile); symptom tile always top-left; trial record and 7-day
+  pips as tiles; zero empty space by construction.
+
+All three render from the same snapshot v2 — the option choice changes only the
+layout function, not the W3 pipeline work. R4-1/2/3 remain open (all options assume
+the round-4 recommendations); new ask **R5-1** = pick a layout or name a hybrid.
+
 — shipped via #563

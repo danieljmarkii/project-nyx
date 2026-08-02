@@ -109,7 +109,7 @@
   .concept-note { color: var(--page-text-2); font-size: 14.5px; line-height: 1.55; max-width: 680px; margin-bottom: 24px; }
   .concept-note strong { color: var(--page-text); }
 
-  /* supersedes banner */
+  /* supersedes / reaction banner */
   .supersedes {
     background: var(--flag-bg); border: 1px solid var(--flag-border); border-radius: 14px;
     padding: 14px 18px; font-size: 13.5px; line-height: 1.55; color: var(--page-text-2);
@@ -122,12 +122,6 @@
   .rule-hero .big { font-family: Georgia, serif; font-size: 24px; line-height: 1.3; margin-bottom: 14px; text-wrap: balance; }
   .rule-hero li { margin: 9px 0 9px 18px; font-size: 14.5px; line-height: 1.55; color: var(--page-text-2); }
   .rule-hero li strong { color: var(--page-text); }
-
-  /* research digest */
-  .research { display:grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px; }
-  .rcard { background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 14px; padding: 15px 17px; font-size: 13px; line-height: 1.55; color: var(--page-text-2); }
-  .rcard b { display:block; color: var(--page-text); margin-bottom: 5px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.8px; }
-  .rcard a { color: inherit; }
 
   /* wallpaper strip that widgets sit on */
   .shelf {
@@ -143,13 +137,12 @@
   .widget-stack { display: flex; flex-direction: column; gap: 8px; }
   .widget-label { font-size: 11.5px; color: rgba(255,255,255,0.9); text-shadow: 0 1px 2px rgba(0,0,0,0.3); font-weight: 500; text-align: center; max-width: 364px; }
 
-  /* iOS widget frames (approx. proportions; systemMedium 338×158pt, systemSmall 158×158pt) */
+  /* iOS widget frames (approx. proportions; systemMedium 338×158pt) */
   .w-medium { width: 364px; max-width: 100%; height: 172px; border-radius: 26px; }
-  .w-small { width: 172px; height: 172px; border-radius: 26px; }
   .widget {
     background: var(--surface);
     box-shadow: 0 8px 24px rgba(10,10,10,0.18);
-    padding: 14px;
+    padding: 13px 14px;
     display: flex; flex-direction: column;
     overflow: hidden;
     position: relative;
@@ -164,41 +157,16 @@
   .w-head .spacer { flex: 1; }
   .w-time { font-size: 10.5px; color: var(--text-tertiary-w); }
 
-  /* ── the day timeline ─────────────────────────────────────────── */
-  .tl { position: relative; height: 54px; margin-top: 4px; }
-  .tl-track { position: absolute; left: 2px; right: 2px; bottom: 17px; height: 2px; background: var(--border-w); border-radius: 1px; }
-  .tl-hour { position: absolute; bottom: 0; font-size: 8.5px; color: var(--text-tertiary-w); transform: translateX(-50%); font-variant-numeric: tabular-nums; }
-  .tl-now { position: absolute; bottom: 13px; width: 2px; height: 10px; background: var(--accent); border-radius: 1px; transform: translateX(-50%); }
-  .tl-now-lbl { position: absolute; bottom: 0; font-size: 8.5px; color: var(--accent-ink); font-weight: 600; transform: translateX(-50%); }
-  .mk { position: absolute; bottom: 13px; transform: translate(-50%, 0); }
-  .mk-meal { width: 11px; height: 11px; border-radius: 50%; background: var(--accent); }
-  .mk-treat { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); bottom: 15px; }
-  .mk-med { width: 9px; height: 9px; border-radius: 3px; background: var(--med); }
-  .mk-sym { width: 9px; height: 9px; border-radius: 2.5px; background: var(--symptom); transform: translate(-50%, 0) rotate(45deg); }
-  .mk-slot { width: 11px; height: 11px; border-radius: 50%; background: transparent; border: 1.5px solid var(--accent); opacity: 0.75; }
-  .mk-bowl { width: 10px; height: 10px; border-radius: 50%; border: 1.5px dotted var(--text-tertiary-w); }
-  .mk-lbl { position: absolute; bottom: 27px; font-size: 8.5px; color: var(--text-tertiary-w); transform: translateX(-50%); white-space: nowrap; }
+  /* shared event glyphs — shape carries type, color reinforces (iOS 18 tinted rule) */
+  .g { flex: none; display: inline-block; }
+  .g-meal  { width: 11px; height: 11px; border-radius: 50%; background: var(--accent); }
+  .g-treat { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
+  .g-med   { width: 9px; height: 9px; border-radius: 3px; background: var(--med); }
+  .g-sym   { width: 9px; height: 9px; border-radius: 2.5px; background: var(--symptom); transform: rotate(45deg); }
+  .g-slot  { width: 11px; height: 11px; border-radius: 50%; background: transparent; border: 1.5px solid var(--accent); opacity: 0.75; }
 
-  /* headline row */
-  .hl { display: flex; align-items: center; gap: 7px; margin-top: 3px; min-height: 20px; }
-  .hl .txt { font-size: 12.5px; font-weight: 500; color: var(--text-primary-w); }
-  .hl .txt .dim { color: var(--text-tertiary-w); font-weight: 400; }
-  .hl .tag {
-    display: inline-flex; align-items: center; gap: 5px;
-    background: var(--symptom-light); color: #9F1239;
-    border-radius: 8px; padding: 2px 8px; font-size: 11.5px; font-weight: 600;
-  }
-  .hl .tag::before { content: ""; width: 7px; height: 7px; border-radius: 2px; background: var(--symptom); transform: rotate(45deg); }
-
-  /* footer row: 7-day record pips OR trial record strip + the app door */
+  /* footer bits shared across options */
   .ft { display: flex; align-items: center; gap: 8px; margin-top: auto; }
-  .pips { display: flex; align-items: flex-end; gap: 5px; }
-  .pip-day { display: flex; flex-direction: column; align-items: center; gap: 2px; width: 10px; }
-  .pip-sym { width: 5px; height: 5px; border-radius: 50%; background: var(--symptom); }
-  .pip-sym.none { background: transparent; }
-  .pip-tick { width: 8px; height: 3px; border-radius: 1.5px; background: #C9C9C9; }
-  .pip-tick.on { background: var(--accent-ink); opacity: 0.55; }
-  .pip-day.today .pip-tick { outline: 1.5px solid var(--accent); outline-offset: 1.5px; }
   .ft .cap { font-size: 9.5px; color: var(--text-tertiary-w); }
   .ft .spacer { flex: 1; }
   .door {
@@ -210,26 +178,44 @@
   .td { width: 5px; height: 5px; border-radius: 50%; background: var(--accent-ink); opacity: 0.55; }
   .td.gap { background: transparent; border: 1px solid #C9C9C9; opacity: 1; }
   .td.today { background: var(--accent); opacity: 1; }
+  .pips { display: flex; align-items: flex-end; gap: 5px; }
+  .pip-day { display: flex; flex-direction: column; align-items: center; gap: 2px; width: 10px; }
+  .pip-sym { width: 5px; height: 5px; border-radius: 50%; background: var(--symptom); }
+  .pip-sym.none { background: transparent; }
+  .pip-tick { width: 8px; height: 3px; border-radius: 1.5px; background: #C9C9C9; }
+  .pip-tick.on { background: var(--accent-ink); opacity: 0.55; }
+  .pip-day.today .pip-tick { outline: 1.5px solid var(--accent); outline-offset: 1.5px; }
 
-  /* flowsheet variant */
-  .fs { display: flex; flex-direction: column; gap: 5px; margin-top: 6px; flex: 1; }
-  .fs-row { display: flex; align-items: center; gap: 8px; padding: 4px 8px; border-radius: 10px; background: var(--surface-subtle); font-size: 12px; }
-  .fs-row .glyph { width: 11px; height: 11px; flex: none; }
-  .fs-row .g-meal { border-radius: 50%; background: var(--accent); }
-  .fs-row .g-med { border-radius: 3px; background: var(--med); }
-  .fs-row .g-sym { border-radius: 2.5px; background: var(--symptom); transform: rotate(45deg); }
-  .fs-row .lbl { font-weight: 500; }
-  .fs-row .n { font-variant-numeric: tabular-nums; color: var(--text-secondary-w); }
-  .fs-row .when { margin-left: auto; font-size: 10.5px; color: var(--text-tertiary-w); font-variant-numeric: tabular-nums; }
+  /* ── Option H: the packed flowsheet ── */
+  .h-rows { display: flex; flex-direction: column; gap: 5px; margin-top: 7px; }
+  .h-row { display: flex; align-items: center; gap: 8px; padding: 5px 9px; border-radius: 11px; background: var(--surface-subtle); font-size: 12.5px; min-height: 26px; }
+  .h-row.sym { background: var(--symptom-light); }
+  .h-row .cls { font-weight: 600; }
+  .h-row .detail { color: var(--text-secondary-w); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .h-row .detail b { color: var(--text-primary-w); font-weight: 600; }
+  .h-row .when { margin-left: auto; font-size: 10.5px; color: var(--text-tertiary-w); font-variant-numeric: tabular-nums; flex: none; }
 
-  /* small widget */
-  .sm-ring { position: relative; width: 64px; height: 64px; border-radius: 50%; margin: 6px 0 4px; }
-  .sm-ring .fill { position: absolute; inset: 0; border-radius: 50%; }
-  .sm-ring .hole { position: absolute; inset: 6px; border-radius: 50%; background: var(--surface); display: flex; flex-direction: column; align-items: center; justify-content: center; }
-  .sm-ring .n { font-size: 19px; font-weight: 700; letter-spacing: -0.5px; line-height: 1; }
-  .sm-ring .of { font-size: 8.5px; color: var(--text-tertiary-w); }
-  .sm-line { font-size: 11px; color: var(--text-secondary-w); line-height: 1.35; }
-  .sm-big { font-size: 15px; font-weight: 650; letter-spacing: -0.2px; line-height: 1.25; margin: 6px 0 3px; }
+  /* ── Option I: the ledger ── */
+  .l-rows { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
+  .l-row { display: flex; align-items: center; gap: 9px; font-size: 12.5px; padding: 3.5px 6px 3.5px 2px; border-radius: 9px; }
+  .l-row .t { width: 44px; flex: none; font-size: 11px; color: var(--text-tertiary-w); font-variant-numeric: tabular-nums; text-align: right; }
+  .l-row .what { font-weight: 550; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .l-row .what .dim { color: var(--text-tertiary-w); font-weight: 400; }
+  .l-row.sym { background: var(--symptom-light); }
+  .l-row.sym .what { color: #9F1239; }
+  .l-row.expected .what { color: var(--text-tertiary-w); font-weight: 450; }
+  .l-rail { position: absolute; left: 66px; top: 34px; bottom: 34px; width: 2px; background: var(--border-w); border-radius: 1px; }
+
+  /* ── Option J: the briefing grid ── */
+  .j-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; margin-top: 7px; flex: 1; }
+  .j-tile { border-radius: 13px; background: var(--surface-subtle); padding: 7px 10px 6px; display: flex; flex-direction: column; justify-content: center; gap: 1px; min-height: 0; }
+  .j-tile.sym { background: var(--symptom-light); }
+  .j-tile .k { font-size: 9px; text-transform: uppercase; letter-spacing: 0.7px; color: var(--text-tertiary-w); font-weight: 600; display: flex; align-items: center; gap: 5px; }
+  .j-tile.sym .k { color: #9F1239; }
+  .j-tile .v { font-size: 15px; font-weight: 700; letter-spacing: -0.2px; font-variant-numeric: tabular-nums; }
+  .j-tile .v .u { font-size: 11px; font-weight: 500; color: var(--text-secondary-w); }
+  .j-tile .s { font-size: 9.5px; color: var(--text-tertiary-w); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .j-tile.door-tile { background: transparent; border: 1px dashed var(--border-w); align-items: flex-start; }
 
   /* annotations */
   .annos { display:grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; margin-top: 22px; }
@@ -242,16 +228,10 @@
   .rules li { margin: 8px 0 8px 18px; font-size: 14px; line-height: 1.55; color: var(--page-text-2); }
   .rules li strong { color: var(--page-text); }
 
-  table.plain { border-collapse: collapse; width: 100%; max-width: 760px; font-size: 13.5px; }
-  table.plain th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 0.8px; color: var(--page-text-3); padding: 8px 12px 6px 0; border-bottom: 1px solid var(--card-border); }
-  table.plain td { padding: 9px 12px 9px 0; border-bottom: 1px solid var(--card-border); vertical-align: top; line-height: 1.5; color: var(--page-text-2); }
-  table.plain td:first-child { color: var(--page-text); font-weight: 550; white-space: nowrap; }
-
   .decision { background: var(--card-bg); border: 1px solid var(--flag-border); border-radius: 14px; padding: 15px 18px; font-size: 13.5px; line-height: 1.55; color: var(--page-text-2); max-width: 760px; margin-bottom: 12px; }
   .decision b { color: var(--page-text); }
 
   .changelog { font-size: 13px; color: var(--page-text-3); line-height: 1.7; max-width: 700px; }
-  .table-wrap { overflow-x: auto; }
 </style>
 </head>
 <body>
@@ -259,72 +239,47 @@
 <div class="page">
 
   <h1>Culprit — Home Screen Widget</h1>
-  <p class="sub">Ideation <strong>round 4</strong> — the reimagining. The PM lived with the round-3 widget on a real Home Screen and re-called the direction: the widget's value is <strong>knowing what's been logged today and getting back into Culprit fast</strong> — not logging from the Home Screen, where limited real estate meets "which meal would it even log?" The infrastructure (W1–W5) is a great start; the surface on top of it changes.</p>
-  <p class="meta">2026-08-02 · round 3 (design-locked, shipped as v1 in build 35) → PM on-device reaction → this · widget tokens verbatim from <code>constants/theme.ts</code> · branch <code>claude/apple-widget-redesign-d91ghp</code></p>
+  <p class="sub">Ideation <strong>round 5</strong> — three new medium-widget options off the round-4 reaction: <strong>readability won</strong>. The timeline (E) looked good but not practical; the flowsheet (F) read best but wasted space. All three options below keep F's row-based legibility and attack the space problem three different ways. Small widgets are parked; medium only.</p>
+  <p class="meta">2026-08-02 · round 4 → PM reaction → this · widget tokens verbatim from <code>constants/theme.ts</code> · PR #563</p>
 
-  <div class="supersedes"><strong>Supersedes round 3's direction, not its record.</strong> The round-3 frames (status column + capture tiles + flip pickers) are the as-built reference for the v1 widget in TestFlight build 35 — they live in this file's git history and in <code>widgets/CulpritWidget.tsx</code>. Every frame below replaces them <strong>pending PM ratification</strong>. Nothing here is design-locked yet.</div>
+  <div class="supersedes"><strong>Round record.</strong> Round 3 (capture tiles + flip pickers) is the as-built v1 in TestFlight build 35 — git history holds it. Round 4 established the informational direction and was reacted 2026-08-02: <em>E "Today on one line" — love the image, not super practical · F "Flowsheet" — looks best, very readable, a bit of wasted space · small cards — don't invest for now.</em> The frames below supersede rounds 3–4 pending PM ratification. The round-4 research digest and decisions R4-1–R4-4 still stand and are summarized at the bottom.</div>
 
-  <!-- ================= JOBS ================= -->
+  <!-- ================= JOBS (unchanged) ================= -->
   <section>
-    <h2>The widget's jobs — re-called by the PM <span class="badge new">ROUND 4 SPINE</span></h2>
+    <h2>The jobs — unchanged from round 4</h2>
     <div class="rule-hero">
-      <div class="big">The widget shows the day's record and opens the door. It doesn't take dictation.</div>
+      <div class="big">Show the day's record. Open the door. Don't take dictation.</div>
       <ul>
-        <li><strong>Job 1 — answer "what's been logged today?" at a glance.</strong> Meals, treats, meds, symptoms — the kitchen-counter accountability question ("did anyone feed him? did anyone log it?") answered in under two seconds, without opening the app.</li>
-        <li><strong>Job 2 — be the fastest door back into Culprit.</strong> Every element deep-links somewhere specific: the timeline to today in History, the headline to Home, the trial strip to the trial card, the ghost chip to quick-log. Logging happens <em>in the app</em> — the widget points at it and never impersonates it.</li>
-        <li><strong>What this retires:</strong> round 3's capture tiles, the flip-to-picker interaction, and one-tap widget writes. "When in doubt, app it out" graduates from an escape hatch to the whole interaction model.</li>
+        <li><strong>Job 1</strong> — answer "what's been logged today?" (meals, treats, meds, symptoms) in under two seconds.</li>
+        <li><strong>Job 2</strong> — be the fastest door back into Culprit; every element deep-links somewhere specific, and the dashed <strong>Log ›</strong> chip opens quick-log. The widget never writes.</li>
       </ul>
     </div>
   </section>
 
-  <!-- ================= RESEARCH ================= -->
+  <!-- ================= FIXTURES NOTE ================= -->
   <section>
-    <h2>What the state-of-the-art research says <span class="badge new">2026 SWEEP</span></h2>
-    <p class="concept-note">Full brief covers Apple HIG/WWDC canon, iOS 18–26 platform shifts, and the widget-design canon (Flighty, Gentler Streak, Oura, Waterllama, Things, CARROT). The findings that shape this round:</p>
-    <div class="research">
-      <div class="rcard"><b>Informational is a first-class job</b>Apple's own trio — glanceable, relevant, personalized — and its three widget archetypes name "informational" explicitly: surface key data so the user stops opening the app for a repetitive check. The pivot isn't a retreat from interactivity; it's the platform's main lane. (WWDC20 "Design great widgets")</div>
-      <div class="rcard"><b>The best widgets are read-mostly</b>Flighty (ADA 2023), Gentler Streak, Oura, Copilot ship zero-to-minimal widget interactivity. The one beloved interactive widget — Waterllama — works because one tap = one unambiguous unit (a glass of water). A meal is not that: "which food, which slot, whose bowl?" is exactly the ambiguity the PM hit. The research validates killing capture.</div>
-      <div class="rcard"><b>A great informational widget is a state machine</b>Flighty's widget has ~15 context-aware states — it decides what the most important line is <em>right now</em> and leads with it. Let state, not layout, do the work: a symptom day, a routine day, an empty morning, and a trial day are different widgets wearing one design.</div>
-      <div class="rcard"><b>The glanceable idioms</b>Day strip (slots fill as logged), 7-day mini-trend vs. baseline (Gentler Streak), dot-grid consistency calendars (Streaks), recency stamps ("last logged 2h ago" — ages gracefully), and sparse status-vocabulary color: neutral by default, color only when it means something.</div>
-      <div class="rcard"><b>Platform mechanics that shape layout</b>Medium widgets support per-element deep links — each row its own doorway (this is what makes Job 2 real). Small = exactly one link. Glance time is ~1–2s; never render a loading state; a small widget carries ~4 facts max.</div>
-      <div class="rcard"><b>iOS 18 tinted mode + iOS 26 glass</b>Users can force widgets monochrome (tinted) and iOS 26 puts them on system glass grounds. Hue-only encoding dies there — every event type needs a <em>shape</em>, and the system increasingly owns the widget's ground. Content over chrome, redundant encoding, no hand-painted backgrounds.</div>
-      <div class="rcard"><b>Widgets fail on staleness lies</b>The #1 real-world complaint: a widget showing yesterday's data as today's. Phrase content so it can't rot; timestamp facts, not claims. Our midnight-rollover honesty rule (never carry a ✓ across days) already ships — it generalizes to the whole surface.</div>
-      <div class="rcard"><b>Calm technology</b>An ambient display should be ignorable on a routine day and instantly legible on an abnormal one (Weiser &amp; Brown). That is Principle 3 in widget form: quiet neutral ground normally; the notable fact leads — and is never suppressed — when it exists.</div>
-    </div>
+    <h2>How to compare <span class="badge new">SAME TWO DAYS, ALL THREE OPTIONS</span></h2>
+    <p class="concept-note">Every option renders the <strong>same two fixture days</strong>, so the comparison is layout-only. <strong>Day A — Biscuit</strong> (dog, trial day 12 of 28): Hill's z/d at 7:42a, amoxicillin at 8:00a, a dental chew at 3:05p, Hill's z/d again at 5:12p; 11 of 12 trial days logged. <strong>Day B — Pixel</strong> (cat): wet food at 8:05a, vomiting logged at 2:14p and 4:40p, wet dinner usually ~7p (not yet logged). Glyph vocabulary carries over from round 4 — meal <span class="g g-meal" style="vertical-align:-1px;"></span>, treat <span class="g g-treat"></span>, med <span class="g g-med" style="vertical-align:-1px;"></span>, symptom <span class="g g-sym" style="vertical-align:-1px;"></span>, expected-window <span class="g g-slot" style="vertical-align:-1px;"></span> — shape first, color second (iOS 18 tinted mode).</p>
   </section>
 
-  <!-- ================= CANDIDATE E ================= -->
+  <!-- ================= OPTION H ================= -->
   <section>
-    <h2>Candidate E — "Today, on one line" <span class="badge new">RECOMMENDED</span></h2>
-    <h3>A day-axis timeline of the record, one honest headline, and doorways everywhere</h3>
-    <p class="concept-note"><strong>The read, top to bottom:</strong> header (pet + trial context) · a <strong>6a→10p timeline</strong> where every logged event sits at its actual time as a typed mark — meal <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--accent);vertical-align:-1px;"></span>, treat <span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--accent);vertical-align:0;"></span> (smaller — same family), med <span style="display:inline-block;width:9px;height:9px;border-radius:3px;background:var(--med);vertical-align:-1px;"></span>, symptom <span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:var(--symptom);transform:rotate(45deg);vertical-align:-1px;"></span> — with hollow rings at learned meal windows not yet logged · a <strong>headline the state machine writes</strong> (counts + recency on a routine day; the symptom fact leads when one exists) · a footer that shows the <strong>record's last 7 days</strong> (or the trial's day strip when a trial is running). Filled = logged. Hollow = not logged. Shape carries type; color reinforces it.</p>
+    <h2>Option H — "The flowsheet, packed" <span class="badge new">F, WITH THE SPACE SPENT ON NAMES</span></h2>
+    <p class="concept-note">F's class rows, two fixes. <strong>Rows are content-gated</strong> — a class with nothing logged today doesn't render a row (an empty row is the wasted space you saw). And the reclaimed room is spent on <strong>what round-4 F never told you: the names and the times</strong> — which food, which drug, when. A symptom class, when present, always renders and always leads.</p>
 
     <div class="shelf">
-      <!-- State 1: routine trial day -->
       <div class="widget-stack">
         <div class="widget w-medium">
           <div class="w-head">
-            <svg class="mark" viewBox="0 0 100 100"><defs><mask id="m1"><rect width="100" height="100" fill="#fff"/><circle cx="61" cy="43" r="29" fill="#000"/></mask></defs><circle cx="45" cy="50" r="33" fill="#211E4E" mask="url(#m1)"/><circle cx="66" cy="53" r="10.5" fill="#00C2A8"/></svg>
+            <svg class="mark" viewBox="0 0 100 100"><defs><mask id="h1"><rect width="100" height="100" fill="#fff"/><circle cx="61" cy="43" r="29" fill="#000"/></mask></defs><circle cx="45" cy="50" r="33" fill="#211E4E" mask="url(#h1)"/><circle cx="66" cy="53" r="10.5" fill="#00C2A8"/></svg>
             <span class="w-pet">Biscuit</span>
             <span class="spacer"></span>
             <span class="w-time">Day 12 of 28</span>
           </div>
-          <div class="tl">
-            <div class="tl-track"></div>
-            <span class="tl-hour" style="left:2%">6a</span>
-            <span class="tl-hour" style="left:37.5%">noon</span>
-            <span class="tl-hour" style="left:75%">6p</span>
-            <div class="mk mk-med" style="left:11%"></div>
-            <div class="mk mk-meal" style="left:12.5%"></div>
-            <span class="mk-lbl" style="left:12.5%">7:42a</span>
-            <div class="mk mk-treat" style="left:53%"></div>
-            <div class="mk mk-meal" style="left:69.8%"></div>
-            <span class="mk-lbl" style="left:69.8%">5:12p</span>
-            <div class="tl-now" style="left:78%"></div>
-            <span class="tl-now-lbl" style="left:78%">now</span>
-          </div>
-          <div class="hl">
-            <span class="txt">2 meals · 1 treat · 1 dose <span class="dim">· last 5:12p</span></span>
+          <div class="h-rows">
+            <div class="h-row"><span class="g g-meal"></span><span class="cls">Meals</span><span class="detail"><b>2</b> · Hill's z/d</span><span class="when">7:42a · 5:12p</span></div>
+            <div class="h-row"><span class="g g-med"></span><span class="cls">Meds</span><span class="detail">Amoxicillin · <b>1 of 2</b> today</span><span class="when">8:00a</span></div>
+            <div class="h-row"><span class="g g-treat" style="margin:0 2px;"></span><span class="cls">Treats</span><span class="detail"><b>1</b> · Dental chew</span><span class="when">3:05p</span></div>
           </div>
           <div class="ft">
             <div class="trial-strip">
@@ -335,35 +290,21 @@
             <span class="door">Log ›</span>
           </div>
         </div>
-        <div class="widget-label">State 1 — routine trial day (dog). Everything logged today, at its actual time. The trial strip is the record's own progress — coverage, never a verdict. Tap zones: timeline → today in History · trial strip → trial card · Log › → quick-log.</div>
+        <div class="widget-label">H · Day A — three classes logged, three rows, each carrying its names and times. No symptom row because nothing was logged — a missing row is not a claim. Each row deep-links to its class in History.</div>
       </div>
 
-      <!-- State 2: symptom day -->
       <div class="widget-stack">
         <div class="widget w-medium">
           <div class="w-head">
-            <svg class="mark" viewBox="0 0 100 100"><defs><mask id="m2"><rect width="100" height="100" fill="#fff"/><circle cx="61" cy="43" r="29" fill="#000"/></mask></defs><circle cx="45" cy="50" r="33" fill="#211E4E" mask="url(#m2)"/><circle cx="66" cy="53" r="10.5" fill="#00C2A8"/></svg>
+            <svg class="mark" viewBox="0 0 100 100"><defs><mask id="h2"><rect width="100" height="100" fill="#fff"/><circle cx="61" cy="43" r="29" fill="#000"/></mask></defs><circle cx="45" cy="50" r="33" fill="#211E4E" mask="url(#h2)"/><circle cx="66" cy="53" r="10.5" fill="#00C2A8"/></svg>
             <span class="w-pet">Pixel</span>
             <span class="spacer"></span>
             <span class="w-time"></span>
           </div>
-          <div class="tl">
-            <div class="tl-track"></div>
-            <span class="tl-hour" style="left:2%">6a</span>
-            <span class="tl-hour" style="left:37.5%">noon</span>
-            <span class="tl-hour" style="left:75%">6p</span>
-            <div class="mk mk-meal" style="left:13%"></div>
-            <div class="mk mk-sym" style="left:51.5%"></div>
-            <div class="mk mk-sym" style="left:66.5%"></div>
-            <span class="mk-lbl" style="left:66.5%">4:40p</span>
-            <div class="mk mk-slot" style="left:81%"></div>
-            <span class="mk-lbl" style="left:81%">~7p</span>
-            <div class="tl-now" style="left:73%"></div>
-            <span class="tl-now-lbl" style="left:73%">now</span>
-          </div>
-          <div class="hl">
-            <span class="tag">Vomiting ×2</span>
-            <span class="txt dim" style="font-weight:400;color:var(--text-tertiary-w);">last 4:40p · 1 meal</span>
+          <div class="h-rows">
+            <div class="h-row sym"><span class="g g-sym"></span><span class="cls">Vomiting</span><span class="detail"><b>×2</b></span><span class="when">2:14p · 4:40p</span></div>
+            <div class="h-row"><span class="g g-meal"></span><span class="cls">Meals</span><span class="detail"><b>1</b> · wet food</span><span class="when">8:05a</span></div>
+            <div class="h-row"><span class="g g-slot"></span><span class="cls" style="color:var(--text-secondary-w);font-weight:500;">Wet dinner</span><span class="detail">usually ~7p · not logged yet</span><span class="when"></span></div>
           </div>
           <div class="ft">
             <div class="pips">
@@ -380,234 +321,146 @@
             <span class="door">Log ›</span>
           </div>
         </div>
-        <div class="widget-label">State 2 — symptom day (cat). The symptom fact leads the headline — a fact about the record, in calendar-v3's own pip vocabulary, never alarm copy. The 7p ring is tonight's usual meal, not yet logged — visible, never assumed. 7-day pips: ticks = days with logging; rose dots = days with a symptom logged.</div>
+        <div class="widget-label">H · Day B — the symptom class leads, in the rail color, with both times. The expected-window row keeps Jordan's "has dinner been logged?" answer (R4-3). Footer swaps to the 7-day record pips when no trial runs.</div>
       </div>
-
-      <!-- State 3: empty morning -->
-      <div class="widget-stack">
-        <div class="widget w-medium">
-          <div class="w-head">
-            <svg class="mark" viewBox="0 0 100 100"><defs><mask id="m3"><rect width="100" height="100" fill="#fff"/><circle cx="61" cy="43" r="29" fill="#000"/></mask></defs><circle cx="45" cy="50" r="33" fill="#211E4E" mask="url(#m3)"/><circle cx="66" cy="53" r="10.5" fill="#00C2A8"/></svg>
-            <span class="w-pet">Biscuit</span>
-            <span class="spacer"></span>
-            <span class="w-time">Day 13 of 28</span>
-          </div>
-          <div class="tl">
-            <div class="tl-track"></div>
-            <span class="tl-hour" style="left:2%">6a</span>
-            <span class="tl-hour" style="left:37.5%">noon</span>
-            <span class="tl-hour" style="left:75%">6p</span>
-            <div class="mk mk-slot" style="left:12.5%"></div>
-            <span class="mk-lbl" style="left:12.5%">~7:45a</span>
-            <div class="mk mk-slot" style="left:70%"></div>
-            <span class="mk-lbl" style="left:70%">~5p</span>
-            <div class="tl-now" style="left:6%"></div>
-            <span class="tl-now-lbl" style="left:6%">now</span>
-          </div>
-          <div class="hl">
-            <span class="txt dim" style="font-weight:400;color:var(--text-secondary-w);">Nothing logged yet today</span>
-          </div>
-          <div class="ft">
-            <div class="trial-strip">
-              <span class="td"></span><span class="td"></span><span class="td"></span><span class="td"></span><span class="td gap"></span><span class="td"></span><span class="td"></span><span class="td"></span><span class="td"></span><span class="td"></span><span class="td"></span><span class="td"></span><span class="td today" style="background:transparent;border:1px solid var(--accent);"></span>
-            </div>
-            <span class="cap">12 of 13 trial days logged</span>
-            <span class="spacer"></span>
-            <span class="door">Log ›</span>
-          </div>
-        </div>
-        <div class="widget-label">State 3 — 6:50 in the morning, nothing yet. A designed state, not a blank: the day's usual windows are visible ahead, the trial strip still carries the record. "Nothing logged yet today" — never "all quiet," never a nudge.</div>
-      </div>
-
-      <!-- State 4: hybrid cat -->
-      <div class="widget-stack">
-        <div class="widget w-medium">
-          <div class="w-head">
-            <svg class="mark" viewBox="0 0 100 100"><defs><mask id="m4"><rect width="100" height="100" fill="#fff"/><circle cx="61" cy="43" r="29" fill="#000"/></mask></defs><circle cx="45" cy="50" r="33" fill="#211E4E" mask="url(#m4)"/><circle cx="66" cy="53" r="10.5" fill="#00C2A8"/></svg>
-            <span class="w-pet">Mochi</span>
-            <span class="spacer"></span>
-            <span class="w-time">free-fed + meals</span>
-          </div>
-          <div class="tl">
-            <div class="tl-track"></div>
-            <span class="tl-hour" style="left:2%">6a</span>
-            <span class="tl-hour" style="left:37.5%">noon</span>
-            <span class="tl-hour" style="left:75%">6p</span>
-            <div class="mk mk-bowl" style="left:13.5%"></div>
-            <span class="mk-lbl" style="left:13.5%">bowl 8:05a</span>
-            <div class="mk mk-treat" style="left:44%"></div>
-            <div class="mk mk-slot" style="left:81.5%"></div>
-            <span class="mk-lbl" style="left:81.5%">~7p</span>
-            <div class="tl-now" style="left:64%"></div>
-            <span class="tl-now-lbl" style="left:64%">now</span>
-          </div>
-          <div class="hl">
-            <span class="txt">Bowl topped 8:05a · 1 treat <span class="dim">· wet dinner usually ~7p</span></span>
-          </div>
-          <div class="ft">
-            <div class="pips">
-              <div class="pip-day"><span class="pip-sym none"></span><span class="pip-tick on"></span></div>
-              <div class="pip-day"><span class="pip-sym none"></span><span class="pip-tick on"></span></div>
-              <div class="pip-day"><span class="pip-sym none"></span><span class="pip-tick on"></span></div>
-              <div class="pip-day"><span class="pip-sym none"></span><span class="pip-tick on"></span></div>
-              <div class="pip-day"><span class="pip-sym none"></span><span class="pip-tick"></span></div>
-              <div class="pip-day"><span class="pip-sym none"></span><span class="pip-tick on"></span></div>
-              <div class="pip-day today"><span class="pip-sym none"></span><span class="pip-tick on"></span></div>
-            </div>
-            <span class="cap">last 7 days</span>
-            <span class="spacer"></span>
-            <span class="door">Log ›</span>
-          </div>
-        </div>
-        <div class="widget-label">State 4 — hybrid cat (the PM's own). The bowl is a dotted ambient mark — an arrangement fact, never an intake claim; grazing days with few marks are normal, not gaps. The 7p ring is the scheduled wet meal only.</div>
-      </div>
-    </div>
-
-    <div class="annos">
-      <div class="anno new"><b>The state machine (Flighty's lesson)</b>One layout, and the headline decides what today's most important line is, in fixed priority: symptom logged today → symptom fact leads (never suppressed, Principle 3) · otherwise counts + recency · otherwise "Nothing logged yet today." The footer swaps by context: active trial → trial-day strip; no trial → 7-day record pips. State does the work; the layout never changes shape.</div>
-      <div class="anno new"><b>Every element is a doorway (Job 2)</b>Medium widgets support per-element links: timeline → History filtered to today · headline → Home (the intelligence surface) · trial strip → the trial card · 7-day pips → calendar · "Log ›" → quick-log. There is no dead glass. The dashed ghost chip is round 3's app door, kept — it was the one part of the old design whose job survives.</div>
-      <div class="anno"><b>Shape before color (iOS 18/26)</b>Meal = large filled circle, treat = small filled circle, med = rounded square, symptom = rotated square (diamond), bowl = dotted ring, expected-window = hollow ring. In tinted/monochrome rendering every distinction survives on shape alone; in full color, the app's own event palette (<code>colorEventMeal/Medication/Symptom</code>) reinforces. Validated: CVD separation passes; teal's low contrast on white is relieved by the labels beside every mark.</div>
-      <div class="anno"><b>Honesty rules, carried forward</b>Filled marks come only from real logged rows. Hollow rings at learned windows are round 3's "visible gap" rule re-drawn — never auto-completed by time passing (B-156 G1). At local midnight the timeline empties by construction (the <code>dayKey</code> staleness rule ships already). "Nothing logged yet today" is a fact about the record; no state ever reads as "all clear."</div>
     </div>
   </section>
 
-  <!-- ================= CANDIDATE F ================= -->
+  <!-- ================= OPTION I ================= -->
   <section>
-    <h2>Candidate F — "The flowsheet" <span class="badge deferred">ALTERNATE</span></h2>
-    <p class="concept-note">The same facts as class-rows instead of a time axis — the hospital-whiteboard read: <strong>class · count · last time</strong>. More legible for text-first readers and dense days; loses the <em>shape of the day</em> (a 2p vomit next to a 1:45p treat tells a story the flowsheet can't). Kept alive as the fallback if the timeline reads as too abstract on-device.</p>
+    <h2>Option I — "The ledger" <span class="badge new">TODAY AS HISTORY'S DAY VIEW</span></h2>
+    <p class="concept-note">The most literal answer to Job 1: <strong>today's events, in order, named, timestamped</strong> — the register the owner already knows from History. Chronology is the information H gives up (a 2:14p vomit sitting between breakfast and dinner tells a story class-rows can't). Four rows fit; a fifth event collapses the earliest into "+1 earlier ›". Every row deep-links to its event detail.</p>
+
     <div class="shelf">
       <div class="widget-stack">
         <div class="widget w-medium">
           <div class="w-head">
-            <svg class="mark" viewBox="0 0 100 100"><defs><mask id="m5"><rect width="100" height="100" fill="#fff"/><circle cx="61" cy="43" r="29" fill="#000"/></mask></defs><circle cx="45" cy="50" r="33" fill="#211E4E" mask="url(#m5)"/><circle cx="66" cy="53" r="10.5" fill="#00C2A8"/></svg>
+            <svg class="mark" viewBox="0 0 100 100"><defs><mask id="i1"><rect width="100" height="100" fill="#fff"/><circle cx="61" cy="43" r="29" fill="#000"/></mask></defs><circle cx="45" cy="50" r="33" fill="#211E4E" mask="url(#i1)"/><circle cx="66" cy="53" r="10.5" fill="#00C2A8"/></svg>
+            <span class="w-pet">Biscuit</span>
+            <span class="spacer"></span>
+            <span class="w-time">Day 12 of 28 · 11 of 12 logged</span>
+          </div>
+          <div class="l-rows">
+            <div class="l-row"><span class="t">7:42a</span><span class="g g-meal"></span><span class="what">Hill's z/d <span class="dim">— breakfast</span></span></div>
+            <div class="l-row"><span class="t">8:00a</span><span class="g g-med"></span><span class="what">Amoxicillin <span class="dim">— dose 1 of 2</span></span></div>
+            <div class="l-row"><span class="t">3:05p</span><span class="g g-treat" style="margin:0 2px;"></span><span class="what">Dental chew</span></div>
+            <div class="l-row"><span class="t">5:12p</span><span class="g g-meal"></span><span class="what">Hill's z/d <span class="dim">— dinner</span></span></div>
+          </div>
+          <div class="ft">
+            <span class="cap">4 logged today</span>
+            <span class="spacer"></span>
+            <span class="door">Log ›</span>
+          </div>
+        </div>
+        <div class="widget-label">I · Day A — the day reads top to bottom like a receipt. The trial line moves to the header ("Day 12 of 28 · 11 of 12 logged") so the body stays pure ledger.</div>
+      </div>
+
+      <div class="widget-stack">
+        <div class="widget w-medium">
+          <div class="w-head">
+            <svg class="mark" viewBox="0 0 100 100"><defs><mask id="i2"><rect width="100" height="100" fill="#fff"/><circle cx="61" cy="43" r="29" fill="#000"/></mask></defs><circle cx="45" cy="50" r="33" fill="#211E4E" mask="url(#i2)"/><circle cx="66" cy="53" r="10.5" fill="#00C2A8"/></svg>
             <span class="w-pet">Pixel</span>
+            <span class="spacer"></span>
+            <span class="w-time"></span>
+          </div>
+          <div class="l-rows">
+            <div class="l-row"><span class="t">8:05a</span><span class="g g-meal"></span><span class="what">Wet food <span class="dim">— breakfast</span></span></div>
+            <div class="l-row sym"><span class="t">2:14p</span><span class="g g-sym"></span><span class="what">Vomiting</span></div>
+            <div class="l-row sym"><span class="t">4:40p</span><span class="g g-sym"></span><span class="what">Vomiting</span></div>
+            <div class="l-row expected"><span class="t">~7p</span><span class="g g-slot"></span><span class="what">Wet dinner — usually · not logged yet</span></div>
+          </div>
+          <div class="ft">
+            <span class="cap">3 logged today</span>
+            <span class="spacer"></span>
+            <span class="door">Log ›</span>
+          </div>
+        </div>
+        <div class="widget-label">I · Day B — the two vomiting rows sit in the day where they happened; the expected dinner renders ahead, hollow, at the bottom. The count in the footer never includes the expected row.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= OPTION J ================= -->
+  <section>
+    <h2>Option J — "The briefing" <span class="badge new">STAT TILES, ZERO EMPTY SPACE</span></h2>
+    <p class="concept-note">Home's intelligence-surface register in miniature: a <strong>2×2 grid of fact tiles</strong>, content-gated like the briefing's cards — each tile is a number with its recency, and a tile only exists when it carries information today. The symptom tile, when it exists, is always top-left (safety leads, Principle 3). The most glanceable of the three; the trade is that times-of-day detail compresses to "last at."</p>
+
+    <div class="shelf">
+      <div class="widget-stack">
+        <div class="widget w-medium">
+          <div class="w-head">
+            <svg class="mark" viewBox="0 0 100 100"><defs><mask id="j1"><rect width="100" height="100" fill="#fff"/><circle cx="61" cy="43" r="29" fill="#000"/></mask></defs><circle cx="45" cy="50" r="33" fill="#211E4E" mask="url(#j1)"/><circle cx="66" cy="53" r="10.5" fill="#00C2A8"/></svg>
+            <span class="w-pet">Biscuit</span>
             <span class="spacer"></span>
             <span class="w-time">Day 12 of 28</span>
           </div>
-          <div class="fs">
-            <div class="fs-row"><span class="glyph g-meal"></span><span class="lbl">Meals</span><span class="n">2</span><span class="when">last 5:12p</span></div>
-            <div class="fs-row"><span class="glyph g-med"></span><span class="lbl">Meds</span><span class="n">1 of 2 today</span><span class="when">8:00a</span></div>
-            <div class="fs-row" style="background:var(--symptom-light);"><span class="glyph g-sym"></span><span class="lbl">Vomiting</span><span class="n">×2</span><span class="when">last 4:40p</span></div>
-          </div>
-          <div class="ft" style="margin-top:6px;">
-            <span class="cap">Treats: 1 · none logged since 3:05p</span>
-            <span class="spacer"></span>
-            <span class="door">Log ›</span>
+          <div class="j-grid">
+            <div class="j-tile"><span class="k"><span class="g g-meal" style="width:8px;height:8px;"></span>Meals</span><span class="v">2 <span class="u">· last 5:12p</span></span><span class="s">Hill's z/d, both</span></div>
+            <div class="j-tile"><span class="k"><span class="g g-med" style="width:8px;height:8px;"></span>Meds</span><span class="v">1 <span class="u">of 2 today</span></span><span class="s">Amoxicillin · 8:00a</span></div>
+            <div class="j-tile"><span class="k"><span class="g g-treat" style="width:6px;height:6px;"></span>Treats</span><span class="v">1 <span class="u">· 3:05p</span></span><span class="s">Dental chew</span></div>
+            <div class="j-tile"><span class="k">Trial record</span><span class="v">11 <span class="u">of 12 days</span></span><span class="s" style="display:flex;gap:3px;align-items:center;padding-top:2px;"><span class="td"></span><span class="td"></span><span class="td"></span><span class="td"></span><span class="td gap"></span><span class="td"></span><span class="td"></span><span class="td"></span><span class="td"></span><span class="td"></span><span class="td"></span><span class="td today"></span></span></div>
           </div>
         </div>
-        <div class="widget-label">Candidate F — class rows, counts, recency. "1 of 2 today" is the med-strip's confirmation register — never "missed," never "due." A class with nothing logged renders "none logged," not a blank.</div>
+        <div class="widget-label">J · Day A — four facts, four tiles, no dead space by construction. Each tile deep-links (meals → History filtered, trial → the trial card). The "Log ›" door lives on the grid only when a tile slot is free — otherwise the header mark is the app link.</div>
       </div>
-    </div>
-  </section>
 
-  <!-- ================= CANDIDATE G ================= -->
-  <section>
-    <h2>Candidate G — the small sibling <span class="badge deferred">PHASE 2 OF THIS ROUND</span></h2>
-    <p class="concept-note">systemSmall = one link, ~4 facts, and a free ride into StandBy. One synthesized fact chosen by the same state machine. During a trial, the ring is the trial's own day counter — the wedge user's countdown as the whole widget. Ships after the medium proves the direction.</p>
-    <div class="shelf">
       <div class="widget-stack">
-        <div class="widget w-small">
+        <div class="widget w-medium">
           <div class="w-head">
-            <svg class="mark" viewBox="0 0 100 100"><defs><mask id="m6"><rect width="100" height="100" fill="#fff"/><circle cx="61" cy="43" r="29" fill="#000"/></mask></defs><circle cx="45" cy="50" r="33" fill="#211E4E" mask="url(#m6)"/><circle cx="66" cy="53" r="10.5" fill="#00C2A8"/></svg>
-            <span class="w-pet">Biscuit</span>
-          </div>
-          <div class="sm-ring">
-            <div class="fill" style="background: conic-gradient(var(--accent) 0 154deg, var(--border-w) 154deg 360deg);"></div>
-            <div class="hole"><span class="n">12</span><span class="of">of 28</span></div>
-          </div>
-          <div class="sm-line">2 meals · 1 treat<br>last 5:12p</div>
-        </div>
-        <div class="widget-label">Small, trial state — the day counter as a ring (belief, from <code>target_duration_days</code>; overrun renders "Day 31 · 3d past," ring full, same rule as the card).</div>
-      </div>
-      <div class="widget-stack">
-        <div class="widget w-small">
-          <div class="w-head">
-            <svg class="mark" viewBox="0 0 100 100"><defs><mask id="m7"><rect width="100" height="100" fill="#fff"/><circle cx="61" cy="43" r="29" fill="#000"/></mask></defs><circle cx="45" cy="50" r="33" fill="#211E4E" mask="url(#m7)"/><circle cx="66" cy="53" r="10.5" fill="#00C2A8"/></svg>
+            <svg class="mark" viewBox="0 0 100 100"><defs><mask id="j2"><rect width="100" height="100" fill="#fff"/><circle cx="61" cy="43" r="29" fill="#000"/></mask></defs><circle cx="45" cy="50" r="33" fill="#211E4E" mask="url(#j2)"/><circle cx="66" cy="53" r="10.5" fill="#00C2A8"/></svg>
             <span class="w-pet">Pixel</span>
+            <span class="spacer"></span>
+            <span class="w-time"></span>
           </div>
-          <div class="sm-big"><span class="hl" style="margin:0;"><span class="tag">Vomiting ×2</span></span></div>
-          <div class="sm-line" style="margin-top:4px;">last 4:40p<br>1 meal · bowl topped 8a</div>
-          <div class="ft" style="margin-top:auto;">
-            <div class="pips">
-              <div class="pip-day"><span class="pip-sym none"></span><span class="pip-tick on"></span></div>
-              <div class="pip-day"><span class="pip-sym"></span><span class="pip-tick on"></span></div>
-              <div class="pip-day"><span class="pip-sym none"></span><span class="pip-tick"></span></div>
-              <div class="pip-day"><span class="pip-sym none"></span><span class="pip-tick on"></span></div>
-              <div class="pip-day"><span class="pip-sym none"></span><span class="pip-tick on"></span></div>
-              <div class="pip-day"><span class="pip-sym none"></span><span class="pip-tick on"></span></div>
-              <div class="pip-day today"><span class="pip-sym"></span><span class="pip-tick on"></span></div>
-            </div>
+          <div class="j-grid">
+            <div class="j-tile sym"><span class="k"><span class="g g-sym" style="width:7px;height:7px;"></span>Vomiting</span><span class="v">×2 <span class="u">· last 4:40p</span></span><span class="s">2:14p · 4:40p</span></div>
+            <div class="j-tile"><span class="k"><span class="g g-meal" style="width:8px;height:8px;"></span>Meals</span><span class="v">1 <span class="u">· 8:05a</span></span><span class="s">wet dinner usually ~7p</span></div>
+            <div class="j-tile"><span class="k">Last 7 days</span><span class="s" style="display:flex;gap:5px;align-items:flex-end;padding-top:4px;"><span class="pip-day"><span class="pip-sym none"></span><span class="pip-tick on"></span></span><span class="pip-day"><span class="pip-sym none"></span><span class="pip-tick on"></span></span><span class="pip-day"><span class="pip-sym"></span><span class="pip-tick on"></span></span><span class="pip-day"><span class="pip-sym none"></span><span class="pip-tick"></span></span><span class="pip-day"><span class="pip-sym none"></span><span class="pip-tick on"></span></span><span class="pip-day"><span class="pip-sym none"></span><span class="pip-tick on"></span></span><span class="pip-day today"><span class="pip-sym"></span><span class="pip-tick on"></span></span></span><span class="s" style="margin-top:2px;">ticks = logged days</span></div>
+            <div class="j-tile door-tile"><span class="k">Log</span><span class="s" style="margin-top:2px;">opens Culprit ›</span></div>
           </div>
         </div>
-        <div class="widget-label">Small, symptom state — the notable fact is the widget. One tap → Home.</div>
+        <div class="widget-label">J · Day B — the vomiting tile leads, top-left, with both times in its sub-line. Pixel has no meds or trial, so those tiles simply don't exist; the free slots go to the 7-day record and the door.</div>
       </div>
     </div>
   </section>
 
-  <!-- ================= PERSONA CONSULT ================= -->
+  <!-- ================= TEAM READ ================= -->
   <section>
-    <h2>The pet owners (and the rest of the team) on round 4</h2>
+    <h2>The team's read across H / I / J</h2>
     <div class="annos">
-      <div class="anno"><b>Jordan (dog, diet trial)</b>"The question I actually have at 7pm is 'did my partner feed him — and did anyone log it?' State 1 answers it without unlocking my phone. And '11 of 12 trial days logged' is the first time the widget tells me the record I'm building is worth something — that's why I'm doing this for six weeks." The trial strip is the discovery doc's sanctioned reward channel: competence feedback about the record, never streaks, never guilt — a missed day is a hollow dot, not a broken chain.</div>
-      <div class="anno"><b>Sam (two cats, grazers)</b>"Pixel's day having three marks and Juniper's having one must both look normal — and they do, because there's no goal ring over meals and the bowl mark isn't a task." Two cats = two stacked widgets, one per pet (D5 stands). Watch item: the rose diamond makes a symptom visible from across the room — Sam wants that some days and not others (→ decision R4-2).</div>
-      <div class="anno"><b>Designer</b>Content over chrome: the tiles, hints, and picker chrome are gone; the data is the design. One accent (teal) for live/interactive; rose only when a symptom fact exists; slate is quiet by design. The empty state is a designed moment (State 3). Round 3's dead-middle problem can't recur — there is no control surface to balance against.</div>
-      <div class="anno"><b>Data Scientist</b>Every mark maps 1:1 to a logged row; counts and times are the only claims. The 7-day pips describe the <em>record</em> (days with logging / days with a symptom logged), the calendar's own shipped vocabulary. Nothing here derives a verdict, a rate, or a comparison — so nothing can reassure. Widget writes dying also deletes the assumed-portion-unrated meal class from the data (a quiet win for intake integrity).</div>
-      <div class="anno"><b>Dr. Chen</b>"A surface that can lag must not carry clinical language — facts with timestamps only, and this is now all facts with timestamps." D9 (no AI/Signal copy) stands unchanged. "Vomiting ×2 · last 4:40p" is the owner's own record, not a read; no escalation copy on a surface that can't guarantee freshness.</div>
-      <div class="anno"><b>Dir. of Engineering</b>The riskiest machinery W5 shipped — the outbox, undo/revoked pool, double-log guards, picker state — is exactly what this retires. What remains is snapshot → render → deep links, all shapes the JSC runtime handles (circles, rounded rects, absolute offsets — the mark already renders this way). Timeline = arithmetic on <code>occurred_at</code>. Snapshot schema v2 adds: today's events (kind + time), 7-day record days, learned windows (already there), trial day (already there). B-481's failure surface shrinks with the interaction surface.</div>
-      <div class="anno flag"><b>Trust &amp; Safety</b>The Home Screen is post-unlock, so naming a symptom ("Vomiting ×2") is within the shipped posture — but it is new visibility (a houseguest glancing at a counter phone). Flagged as R4-2 rather than assumed. Lock-Screen accessories (Phase 2) keep the stricter rule: counts and slot state only, never symptom text. Household counts stay pet-centric — no per-person attribution on the widget, ever.</div>
-    </div>
-  </section>
-
-  <!-- ================= WHAT DIES / WHAT SURVIVES ================= -->
-  <section>
-    <h2>What dies, what survives <span class="badge dead">SCOPE CHANGE</span></h2>
-    <div class="table-wrap">
-    <table class="plain">
-      <tr><th>Retired (pending ratification)</th><th>Why</th></tr>
-      <tr><td>Capture tiles + flip pickers</td><td>The PM's on-device verdict; the research's "mini-app" failure mode; a meal is not an unambiguous one-tap unit.</td></tr>
-      <tr><td>Widget writes (outbox, undo, revoked pool)</td><td>No captures → no outbox. The highest-risk, least-testable machinery in the chain goes away entirely.</td></tr>
-      <tr><td>"tap to pick" hints, tile glyph pass</td><td>Chrome. The §10 icon-pass follow-up dies with the tiles.</td></tr>
-      <tr><th>Survives, unchanged</th><th>Role in round 4</th></tr>
-      <tr><td>W1 <code>logged_via</code> migration</td><td>Stands (default <code>'app'</code>); still the provenance rail for B-288 notifications and future Siri/intent surfaces.</td></tr>
-      <tr><td>W2 SDK 57 + dev client</td><td>The platform floor for any widget at all.</td></tr>
-      <tr><td>W3 App Group + snapshot publisher + Keychain session</td><td>The entire read path — round 4 is snapshot-driven rendering, so this is now the whole architecture. Schema bumps to v2 (today's events, 7-day record row).</td></tr>
-      <tr><td>W4 App Intents + resolution lib</td><td>Not called by the widget anymore; kept as the B-291 free-rider rail (Siri / Action Button / Back Tap log through them later). Learned-window resolution feeds the hollow rings.</td></tr>
-      <tr><td>Per-slot pet binding (D5), midnight staleness rule, deep-link routes</td><td>Verbatim. The staleness rule generalizes: the timeline empties at local midnight by construction.</td></tr>
-      <tr><td>Widget ships free (D4)</td><td>Unchanged; informational widgets are even more clearly "care, not convenience."</td></tr>
-    </table>
+      <div class="anno"><b>What each trades</b><strong>H</strong> groups by class — best for "did the meds happen?"; loses chronology. <strong>I</strong> keeps chronology and names — best for "what happened today?"; a heavy day overflows soonest. <strong>J</strong> is fastest at a glance and never wastes a pixel; compresses times to "last at," so it tells you <em>that</em>, not <em>when-in-the-day</em>.</div>
+      <div class="anno"><b>Jordan</b>All three answer the 7pm accountability question — H via the expected row, I via the hollow bottom row, J via the meals tile's sub-line. The trial record ("11 of 12 days logged") survives in all three: footer strip (H), header line (I), its own tile (J).</div>
+      <div class="anno"><b>Sam</b>A grazing day with one wet meal reads as normal in every option — no goal framing anywhere. I is the one that shows the vomit sitting two hours after nothing, which is the fussy-vs-sick context Sam actually wants at the vet. Two cats = two stacked widgets, unchanged.</div>
+      <div class="anno"><b>Designer</b>All three are F's register — rows/tiles of text with glyph anchors, no abstraction to decode. Content-gating (H's rows, J's tiles) is the briefing's own pattern (a card renders only when it carries information), so the space fix is a shipped idiom, not a new rule. One accent held; rose only when a symptom fact exists.</div>
+      <div class="anno"><b>Data Scientist / Dr. Chen</b>Same posture as round 4: every number maps to logged rows; "1 of 2 today" stays in the confirmation register (never "missed"); a missing row/tile is never a claim; nothing reassures. D9 (no AI copy) holds in all three.</div>
+      <div class="anno flag"><b>Engineering note</b>All three render from the same snapshot v2 (today's events with names + times, learned windows, trial day, 7-day record row) — the option choice doesn't change the W3 pipeline work, only the layout function. H and J are the simplest layouts; I needs the overflow rule and text truncation care for long food names.</div>
     </div>
   </section>
 
   <!-- ================= HELD CONSTANT ================= -->
   <section>
-    <h2>Held constant — the rules no direction change touches</h2>
+    <h2>Held constant — unchanged from round 4</h2>
     <div class="rules">
       <ul>
-        <li><strong>Fail-safe honesty:</strong> a filled mark exists only where a logged row exists; an expected window is a visible hollow ring, never an assumed ✓ (B-156 G1 generalized). Midnight empties the day.</li>
-        <li><strong>Absence is never wellness:</strong> "Nothing logged yet today" / "none logged" — no state reads as an all-clear, no praise, no streak language, no guilt language.</li>
-        <li><strong>No AI, no Signal copy, no reassurance</strong> on a refresh-lagged surface (D9 stands).</li>
-        <li><strong>Med register:</strong> counts use the confirmation register ("1 of 2 today") — never "missed," never "due," no compliance bars (the med-strip rules apply verbatim).</li>
-        <li><strong>Pet-centric only:</strong> counts never decompose per person (T&amp;S surveillance guardrail).</li>
-        <li><strong>Per-widget pet binding</strong> at placement; never follows the in-app active-pet switch (B-086).</li>
-        <li><strong>One accent:</strong> teal on live/interactive elements; rose is a semantic fact color, not decoration; no monetization state.</li>
-        <li><strong>Copy gets the <code>nyx-voice</code> pass at build time</strong> — the strings here are working drafts.</li>
+        <li><strong>The widget never writes</strong> (pending R4-1); the dashed <strong>Log ›</strong> chip and every row/tile are deep links only.</li>
+        <li><strong>Fail-safe honesty:</strong> filled marks map 1:1 to logged rows; expected windows render hollow, never assumed ✓; the day empties at local midnight.</li>
+        <li><strong>Absence is never wellness;</strong> no praise, no streaks, no reassurance; med counts in the confirmation register; counts pet-centric only; per-widget pet binding (D5); widget ships free (D4); no AI/Signal copy (D9).</li>
+        <li><strong>Copy gets the <code>nyx-voice</code> pass at build time</strong> — strings here are working drafts.</li>
       </ul>
     </div>
   </section>
 
-  <!-- ================= PM DECISIONS ================= -->
+  <!-- ================= PM ASKS ================= -->
   <section>
-    <h2>PM decisions this round needs</h2>
-    <div class="decision"><b>R4-1 — Ratify the direction: the widget stops writing.</b> Every tap becomes a doorway; capture retires from the widget entirely (the "Log ›" chip deep-links to quick-log). This reverses D1–D3 of the v1 spec. Recommended: yes — it is the PM's own re-direction, the research's strong consensus, and the largest reliability win available. (W4's intents stay for the Phase-2 Siri/Action-Button recipe, which remains capture — on surfaces where voice/hardware makes the event unambiguous.)</div>
-    <div class="decision"><b>R4-2 — Symptom naming on the Home Screen.</b> "Vomiting ×2" at a glance is Job 1 working — and new visibility for anyone who can see the unlocked phone. Options: (a) name it (as mocked), (b) neutral wording ("2 symptoms logged"), (c) an Edit-Widget "discreet wording" toggle per widget. Recommended: (a) with (c) as the escape valve if dogfooding says otherwise.</div>
-    <div class="decision"><b>R4-3 — Expected-window rings: keep or cut.</b> The hollow rings at learned meal windows are the one survivor of round 3's status column — they answer "has dinner been logged?" before the fact. Cutting them makes the widget purely retrospective. Recommended: keep (Jordan's 7pm question is the ambient job), with the existing no-stable-slot fallback (no ring rather than a guessed one).</div>
-    <div class="decision"><b>R4-4 — Small sibling timing.</b> Build G with the medium (one snapshot feeds both) or after the medium proves out on-device. Recommended: after — B-481 says prove one surface renders reliably first.</div>
+    <h2>What this round needs from the PM</h2>
+    <div class="decision"><b>R5-1 — pick the layout (or the hybrid).</b> H (classes, packed), I (chronological ledger), J (stat-tile briefing). They compose: J's grid could sit left with I's last-two-events right; H's class rows could carry I's chronology on tap-through. Naming a favorite plus one thing to steal from another option is enough for round 6 — or a straight pick locks the design.</div>
+    <div class="decision"><b>R4-1 / R4-2 / R4-3 still open</b> (the widget stops writing · symptom naming on the Home Screen · expected-window rows) — all three options assume yes / name-it / keep, matching round 4's recommendations. R4-4 is answered by this round's scope call (smalls parked).</div>
   </section>
 
   <!-- ================= CHANGELOG ================= -->
   <section>
-    <h2>Changed from round 3</h2>
-    <p class="changelog">① Direction re-called by the PM after living with build 35: informational + re-entry, not capture. ② Jobs rewritten — "show the day's record" and "open the door" replace "capture half / ambient half." ③ Capture tiles, flip pickers, and widget writes retired (pending R4-1); the dashed app door is the one interaction pattern kept. ④ The status column grows into a full day-axis timeline — typed, time-positioned marks; the ✓/gap rule becomes filled/hollow. ⑤ New: the state-machine headline (symptom fact leads, counts otherwise, honest empty). ⑥ New: footer record strip — trial days during a trial, 7-day calendar-pip vocabulary otherwise. ⑦ New: shape-redundant event encoding for iOS 18 tinted / iOS 26 glass. ⑧ Small sibling reframed from "one-press treat logger" to "one synthesized fact" (Candidate B's capture version dies with the direction). ⑨ Grounded in a 2026 state-of-the-art sweep (Apple HIG/WWDC, Flighty, Gentler Streak, Waterllama, calm-technology literature).</p>
+    <h2>Changed from round 4</h2>
+    <p class="changelog">① Reaction recorded: E beautiful-but-impractical, F most readable but loose, smalls parked. ② Readability adopted as the spine — all three new options are text-row/tile registers, no time-axis abstraction. ③ The wasted space attacked three ways: H content-gates class rows and spends the room on names + times; I fills the frame with the day's actual ledger; J tiles the frame so empty space can't exist. ④ Candidate G (smalls) parked per the PM; medium only. ⑤ Fixture days standardized across options so the comparison is layout-only. ⑥ Round-4 research digest trimmed to the round record (full text in git history at the round-4 commit); decisions R4-1–R4-3 carried, R4-4 superseded by the smalls-parked call.</p>
   </section>
 
 </div>
