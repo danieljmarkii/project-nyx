@@ -10,7 +10,9 @@ import {
   petAgeShort,
   petIdentityLine,
   petPronouns,
+  resolveIanaZone,
   toLocalDayKey,
+  trialDayCounter,
   utcDayBounds,
 } from './utils';
 
@@ -370,5 +372,50 @@ describe('confidenceUpdateForEdit (B-448 — an edit only writes a claim the own
         form: { confidence: 'estimated', earliest: at('2026-07-01T02:00:00.000Z'), latest: at('2026-07-01T04:00:00.000Z') },
       }),
     ).toEqual({ value: 'estimated', earliest: null, latest: null });
+  });
+});
+
+describe('trialDayCounter (B-421 / B-449 — the one Day N formula)', () => {
+  it('is day-1-inclusive and floored at 1, never 0', () => {
+    expect(trialDayCounter(100, 100)).toBe(1); // start day IS day 1
+    expect(trialDayCounter(100, 113)).toBe(14); // 14-day span
+  });
+
+  it('never goes below 1, even for a future-dated start', () => {
+    // A start index AFTER today (a future-dated trial) would give a non-positive raw span;
+    // the display counter clamps to Day 1 rather than "day 0" or a negative.
+    expect(trialDayCounter(110, 105)).toBe(1);
+    expect(trialDayCounter(110, 109)).toBe(1);
+  });
+
+  it('is the arithmetic getDietTrialProgress and the vet report both share', () => {
+    // Both surfaces supply their own (start, end) — the client counts to today, the report to
+    // its evidence end — but the subtraction is THIS one, so they cannot drift in the formula.
+    const start = 20_000;
+    for (const end of [20_000, 20_001, 20_055, 20_411]) {
+      expect(trialDayCounter(start, end)).toBe(Math.max(1, end - start + 1));
+    }
+  });
+});
+
+describe('resolveIanaZone (B-443 — request zone wins, then stored, then null)', () => {
+  it('prefers the first VALID candidate in order', () => {
+    // The request device zone is passed first, so it wins over a (possibly stale) stored zone.
+    expect(resolveIanaZone('Asia/Kolkata', 'America/New_York')).toBe('Asia/Kolkata');
+    expect(resolveIanaZone(null, 'America/New_York')).toBe('America/New_York');
+    expect(resolveIanaZone(undefined, undefined, 'Pacific/Auckland')).toBe('Pacific/Auckland');
+  });
+
+  it('skips an unusable candidate rather than trusting or throwing on it', () => {
+    // A garbage/spoofed request zone must not be trusted OR crash the read — fall to the next.
+    expect(resolveIanaZone('Not/AZone', 'America/New_York')).toBe('America/New_York');
+    expect(resolveIanaZone('', 'Asia/Tokyo')).toBe('Asia/Tokyo'); // empty skipped by the length guard
+    expect(resolveIanaZone('   ', 'Asia/Tokyo')).toBe('Asia/Tokyo'); // non-empty but invalid → Intl throws → skipped
+  });
+
+  it('returns null when nothing is usable (→ each surface degrades to UTC on its own)', () => {
+    expect(resolveIanaZone(null, undefined)).toBe(null);
+    expect(resolveIanaZone('nope', '')).toBe(null);
+    expect(resolveIanaZone()).toBe(null);
   });
 });

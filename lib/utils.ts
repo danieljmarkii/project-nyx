@@ -163,6 +163,56 @@ export function dayKeyFromIndex(index: number): string {
   return new Date(index * MS_PER_DAY).toISOString().slice(0, 10);
 }
 
+// The diet-trial "Day N" DISPLAY counter — `max(1, end - start + 1)` over two
+// epoch-day indices, defined ONCE (B-421 / B-449). Every surface that prints a trial
+// day already indexes its own start/end through `localDayIndexOf` (client) or
+// `zonedDayIndexOf` (server); this is the one place the day-1-inclusive subtraction
+// lives so a sixth surface can't re-spell it and drift.
+//
+// It is deliberately NOT the whole counter: the CHOICE of end index is the caller's
+// and stays deliberate — `getDietTrialProgress` counts to TODAY, the vet report
+// (generate-report/trial.ts) counts to the EVIDENCE END so a scoped or overrun report
+// reads the day the record shows, not today (analytics.ts:getDietTrialProgress and the
+// trial.ts dayCounter comment carry the why). What this shares is the arithmetic, which
+// is where "day 0 of 14" vs "Day 1" and off-by-one floors actually came from. The floor
+// is `1`, never `0`: a trial is on its first day the moment it starts. A caller that
+// needs an ELAPSED count that may be 0 (computeTrialFacts.trialDaysElapsed) is a
+// different metric and does not use this.
+export function trialDayCounter(startDayIndex: number, endDayIndex: number): number {
+  return Math.max(1, endDayIndex - startDayIndex + 1);
+}
+
+// Pick the first usable IANA zone from a preference-ordered list, or null when none is
+// usable (B-443). "Usable" = a non-empty string the runtime's Intl accepts; a name Intl
+// rejects (a typo, a spoofed value, a legacy Windows zone) is skipped rather than
+// throwing or being trusted downstream.
+//
+// The day-counter surfaces resolve their zone as
+// `resolveIanaZone(deviceZoneFromRequest, storedProfileZone)`: the client card buckets by
+// the DEVICE zone, so an Ask answer or a vet report generated FROM that device must bucket
+// by the same one, not by a `user_profiles.timezone` copy that can lag it (a never-stamped
+// profile still carries migration 001's `America/New_York` default — a real IANA string a
+// `NOT NULL DEFAULT` can't distinguish from "unknown"). Preferring the request zone makes
+// the card/Ask/report agreement hold BY CONSTRUCTION for any request that carries a zone,
+// with the stored zone as the fallback and null (→ each surface's own UTC degrade) as the
+// last resort — never a silent New York.
+export function resolveIanaZone(
+  ...candidates: (string | null | undefined)[]
+): string | null {
+  for (const c of candidates) {
+    if (typeof c === 'string' && c.length > 0) {
+      try {
+        // Intl throws (RangeError) on an unknown zone; a valid one constructs cleanly.
+        new Intl.DateTimeFormat('en-US', { timeZone: c });
+        return c;
+      } catch {
+        // not a zone this runtime knows — try the next candidate
+      }
+    }
+  }
+  return null;
+}
+
 // Format a UTC day key (YYYY-MM-DD) as a short "Mon D" label ("Jun 24"). The Patterns
 // calendar buckets by UTC day (lib/analytics), so its cells, the day drill-in, and the
 // History single-day filter must all NAME the day in UTC — otherwise a near-midnight
