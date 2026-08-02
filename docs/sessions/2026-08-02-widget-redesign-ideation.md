@@ -85,4 +85,4 @@ untouched until the PM ratifies R4-1–R4-4 (Tier-2 protocol); the rewrite lands
 the ratification session. B-481 (widget unusable on-device) stays open — it needs a
 device regardless of direction.
 
-— shipped via #560
+— shipped via #563
