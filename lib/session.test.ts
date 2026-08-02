@@ -15,6 +15,14 @@ jest.mock('./db', () => ({
 }));
 jest.mock('./appGroup', () => ({ clearWidgetData: jest.fn() }));
 jest.mock('./widgetBridge', () => ({ clearWidgetTimeline: jest.fn() }));
+// lib/notifications imports expo-notifications (throws at import without the
+// native module). Mock it — this test only cares that wipeLocalSession CALLS the
+// sign-out cancellation; the primitive's own behavior is covered by
+// notifications.test.ts.
+jest.mock('./notifications', () => ({
+  cancelAllScheduledNotifications: jest.fn().mockResolvedValue(undefined),
+  clearNotificationInteractions: jest.fn().mockResolvedValue(undefined),
+}));
 // session.ts pulls lib/trialContaminant for the B-351 slice-4 teardown, and that
 // module imports lib/supabase, which fail-fasts on missing env under jest. Stub
 // the client only — the two teardown functions themselves run for real below
@@ -27,6 +35,7 @@ import { notifySignedOut, flushPendingForSignOut } from './sync';
 import { clearLocalData, getSyncStatus } from './db';
 import { clearWidgetData } from './appGroup';
 import { clearWidgetTimeline } from './widgetBridge';
+import { cancelAllScheduledNotifications, clearNotificationInteractions } from './notifications';
 import { readRecoveryRequest, recordRecoveryRequest } from './recoveryMarker';
 import { hasFlaggedFoodInTrial, recordFlaggedFoodInTrial } from './trialContaminant';
 import { armRecoveryGate, useAuthStore } from '../store/authStore';
@@ -53,6 +62,29 @@ describe('wipeLocalSession — the shipped SIGNED_OUT teardown', () => {
     expect(clearLocalData).toHaveBeenCalled();
     expect(clearWidgetData).toHaveBeenCalled();
     expect(clearWidgetTimeline).toHaveBeenCalled();
+    expect(cancelAllScheduledNotifications).toHaveBeenCalled();
+    expect(clearNotificationInteractions).toHaveBeenCalled();
+  });
+
+  // B-661 (Trust & Safety, non-negotiable). A scheduled local notification lives
+  // in the OS, outside the app sandbox clearLocalData wipes — so an opted-in 9pm
+  // Day Summary scheduled by the account signing out would still fire on a shared
+  // device and name the previous owner's pet on the lock screen. The wipe must
+  // cancel every scheduled notification, and the interaction ledger (AsyncStorage,
+  // also outside SQLite) goes with it.
+  it('cancels every scheduled notification so a 9pm summary can never fire after sign-out', async () => {
+    await wipeLocalSession();
+    expect(cancelAllScheduledNotifications).toHaveBeenCalledTimes(1);
+    expect(clearNotificationInteractions).toHaveBeenCalledTimes(1);
+  });
+
+  it('still cancels scheduled notifications when an earlier wipe step throws', async () => {
+    // The T&S cancellation is the highest-stakes step; a failure in an earlier
+    // step must never skip it. Same best-effort contract as clearWidgetTimeline.
+    jest.spyOn(console, 'warn').mockImplementation(() => {});
+    (clearLocalData as jest.Mock).mockRejectedValueOnce(new Error('sqlite gone'));
+    await wipeLocalSession();
+    expect(cancelAllScheduledNotifications).toHaveBeenCalled();
   });
 
   // B-351 slice 4. The trial heads-up ledger is per-account bookkeeping living in
