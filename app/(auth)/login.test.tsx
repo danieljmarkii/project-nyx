@@ -11,6 +11,16 @@ import LoginScreen from './login';
 // Pure validation copy lives in lib/authValidation (unit-tested there); here we
 // pin how this SCREEN wires it.
 
+// This file pins the flag-OFF login rendering. PASSWORD_RECOVERY_ENABLED is now
+// ON in production (B-280 PR 4), so the off-state is mocked here rather than read
+// from the real constant — otherwise the "recovery entry hidden" block below would
+// assert against a state the constant no longer holds. The flag-ON wiring lives in
+// login-recovery.test.tsx, which mocks it on; between the two files both states stay
+// covered regardless of the production default.
+jest.mock('../../constants/flags', () => ({
+  PASSWORD_RECOVERY_ENABLED: false,
+  SOCIAL_AUTH_ENABLED: false,
+}));
 jest.mock('expo-router', () => ({
   router: { replace: jest.fn(), back: jest.fn(), push: jest.fn(), canGoBack: jest.fn(() => true) },
 }));
@@ -195,9 +205,9 @@ describe('LoginScreen — back navigation', () => {
   });
 });
 
-// PASSWORD_RECOVERY_ENABLED ships false in PR 2, so the recovery entry point must be
-// invisible — no user-visible change until enablement (spec §8). The flag-ON wiring
-// is covered in login-recovery.test.tsx, which mocks the flag on.
+// With the flag mocked off (see top of file), the recovery entry point must be
+// invisible and the failure alert must carry no Reset action — the pre-enablement
+// rendering (spec §8). The flag-ON wiring is covered in login-recovery.test.tsx.
 describe('LoginScreen — recovery entry hidden while the flag is off', () => {
   it('does not render the Forgot password link', () => {
     const utils = render(<LoginScreen />);
