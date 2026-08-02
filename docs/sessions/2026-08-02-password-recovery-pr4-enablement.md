@@ -13,7 +13,7 @@ PR 4 of the 5-PR track (`docs/nyx-password-recovery-requirements.md` §8/§9). F
 
 The flip is a **one-way, submission-blocking, user-facing** action the spec explicitly ties to on-device verification ("a 'check your inbox' state that lies is worse than the honest dead end"). The §9.2 prerequisites the task named ("remaining before the flip") are all **Supabase GoTrue platform config** — email templates, enumeration protection, password-changed email, JWT expiry — reachable only via the Supabase Dashboard or the Management API. **The cloud session has no Management API token (`SUPABASE_ACCESS_TOKEN` absent, per the Secrets Register) and no device**, so none of those four, nor the §10 on-device QA, could be performed here. The public `/auth/v1/settings` endpoint confirms only that email confirmation is ON (`mailer_autoconfirm: false`).
 
-Surfaced this to the PM with three options (draft-gated / hold / flip-and-close). **PM chose "flip + close B-280 now"** — the dashboard checklist + on-device QA become PM action items, tracked as **B-655** so they survive B-280's closure.
+Surfaced this to the PM with three options (draft-gated / hold / flip-and-close). **PM chose "flip + close B-280 now"** — the dashboard checklist + on-device QA become PM action items, tracked as **B-657** so they survive B-280's closure.
 
 ## Gates
 
@@ -22,7 +22,9 @@ Surfaced this to the PM with three options (draft-gated / hold / flip-and-close)
 - Confirmed no other test reads the real constant: `authRouting.test.ts` passes `recoveryEnabled` as an explicit param; there is no `_layout`/tabs-layout test depending on the flag.
 - `code-reviewer` / `adversarial-reviewer` — **N/A**: a one-line flag flip over already-reviewed code (PRs 1–3 carried the mandatory `rls-privacy-reviewer` + `nyx-voice` + `pm-feature-review` + `code-reviewer` gates). No new clinically/statistically load-bearing logic. The Engineer signs off the exemption.
 
-## The residual — B-655 (PM-only, gates real-user go-live)
+## The residual — B-657 (PM-only, gates real-user go-live)
+
+*(Filed as B-655; renumbered to B-657 at wrap when a sibling PR (#552) had already landed a B-655 on `main` — first-lands-keeps.)*
 
 The flow is now *reachable in code*; it is not yet correct/safe for real owners until:
 - **Dashboard (§9.2):** recovery email template off "Nyx" → Culprit (+ the "open on this phone" line); confirm enumeration-protection state before changing; turn ON password-changed email; read JWT + OTP expiry; confirm "Secure password change" ON.
@@ -30,4 +32,4 @@ The flow is now *reachable in code*; it is not yet correct/safe for real owners 
 
 ## Outcome
 
-B-280 closed (PRs 1–4 shipped via #554). PR 5 (email change, D9) → B-427. Go-live prerequisites → B-655.
+B-280 closed (PRs 1–4 shipped via #554). PR 5 (email change, D9) → B-427. Go-live prerequisites → B-657.
