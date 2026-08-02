@@ -16,7 +16,11 @@ export type FoundMode = 'before' | 'around' | 'between';
 type OpenPicker = 'point' | 'estimated' | 'earliest' | 'latest' | null;
 
 interface Props {
-  mode: TimeMode;
+  // null = unclassified: a stored row with no recorded confidence (migration 012
+  // NULL) seeds NEITHER segment, so the control shows the absence rather than a
+  // borrowed "Saw it happen" (B-527). Only ever null on the edit screen; a fresh
+  // log is always classified (log.tsx seeds 'saw').
+  mode: TimeMode | null;
   onModeChange: (m: TimeMode) => void;
   // The single point — used for witnessed ('saw') and estimated ('around').
   point: Date;
@@ -91,7 +95,12 @@ export function TimeConfidenceField({
         </TouchableOpacity>
       </View>
 
-      {mode === 'saw' && (
+      {/* 'saw' shows the witnessed point; unclassified (null) shows the SAME
+          neutral point row — the row itself asserts nothing, only the highlighted
+          segment does — plus an honest line naming the absence (B-527). The point
+          stays editable in both: correcting WHEN something happened is not a claim
+          about how well the time is known, so it never selects a segment. */}
+      {(mode === 'saw' || mode === null) && (
         <>
           <View style={styles.timeRow}>
             <Text style={styles.timeLabel}>
@@ -105,6 +114,9 @@ export function TimeConfidenceField({
             </TouchableOpacity>
           </View>
           {renderPicker('point', point, onPointChange, new Date())}
+          {mode === null && (
+            <Text style={styles.hint}>Not recorded as seen or found — choose one if you'd like.</Text>
+          )}
         </>
       )}
 

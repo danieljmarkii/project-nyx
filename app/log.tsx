@@ -13,7 +13,7 @@ import { FoodPicker } from '../components/log/FoodPicker';
 import { MedicationPicker } from '../components/log/MedicationPicker';
 import { ComboDoseConfirmSheet } from '../components/log/ComboDoseConfirmSheet';
 import { TimeConfidenceField, TimeMode, FoundMode } from '../components/log/TimeConfidenceField';
-import { resolveTimeModeChange, resolveFoundModeChange, DEFAULT_WINDOW_SPAN_MS } from '../lib/eventTimeEdit';
+import { resolveTimeModeChange, resolveFoundModeChange, sourceAfterPointEdit, DEFAULT_WINDOW_SPAN_MS } from '../lib/eventTimeEdit';
 import { EventIcon } from '../components/event/EventIcon';
 import { EVENT_TYPES, EventTypeKey, SYMPTOM_TYPES } from '../constants/eventTypes';
 import { usePetStore } from '../store/petStore';
@@ -887,13 +887,14 @@ export default function LogModal() {
     );
   }
 
-  // Provenance flips only on an actual value change, so tapping the row to
-  // peek at the picker doesn't silently drop the EXIF attribution.
+  // Any value change makes the provenance 'manual' (B-525), whatever it was;
+  // peeking at the picker without changing the value keeps the stored source, so
+  // it never silently drops an EXIF attribution. Shares the rule with
+  // edit-event.tsx via sourceAfterPointEdit. (A fresh symptom log here is 'manual'
+  // or 'exif', never 'now' — so this is defense-in-depth, one rule for both screens.)
   function handleTimePickerChange(date?: Date) {
     if (!date) return;
-    if (occurredAtSource === 'exif' && date.getTime() !== occurredAt.getTime()) {
-      setOccurredAtSource('manual');
-    }
+    setOccurredAtSource(sourceAfterPointEdit(occurredAtSource, date.getTime() !== occurredAt.getTime()));
     setOccurredAt(date);
   }
 
