@@ -61,5 +61,6 @@ comments — but worth knowing the ascii-charset guard has this hole.
 
 Live: `delete-account` **v8**, ACTIVE, `verify_jwt: true`, read-back-sha-verified,
 boot smoke-test clean. B-463 + B-582 hardening is now in effect on the live
-service-role purge. Shipped via #558 (deploy documented here + on the two backlog
-rows). No app/source change this session — deploy + record only.
+service-role purge. The code shipped via **#558**; this deploy + record ride in
+**#560** (docs-only — the two backlog rows' merge→live confirmation and this
+file). No app/source change this session — deploy + record only.
