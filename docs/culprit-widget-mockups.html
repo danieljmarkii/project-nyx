@@ -11,16 +11,17 @@
   :root {
     --accent: #00C2A8;
     --accent-light: #E0FBF7;
+    --accent-ink: #0B7B6C;
+    --symptom: #F43F5E;
+    --symptom-light: #FFE4E6;
+    --med: #5B7A9E;
+    --med-light: #EAF0F7;
     --text-primary-w: #0A0A0A;
     --text-secondary-w: #525252;
     --text-tertiary-w: #737373;
     --surface: #FFFFFF;
     --surface-subtle: #F5F5F5;
     --border-w: #EAEAEA;
-    --night: #13112E;
-    --moonlight: #F2EEE4;
-    --text-on-night: #ECEAF6;
-    --text-on-night-muted: #A6A2CE;
     --crescent-on-light: #211E4E;
 
     /* page chrome — theme-aware */
@@ -88,24 +89,22 @@
   code { background: var(--code-bg); border-radius: 4px; padding: 1px 5px; font-size: 0.9em; }
   .page { max-width: 900px; margin: 0 auto; }
   h1 { font-family: Georgia, "Times New Roman", serif; font-weight: 400; font-size: 34px; letter-spacing: -0.3px; margin-bottom: 6px; text-wrap: balance; }
-  .sub { color: var(--page-text-2); font-size: 15px; line-height: 1.5; max-width: 660px; margin-bottom: 8px; }
-  .meta { color: var(--page-text-3); font-size: 12.5px; margin-bottom: 40px; }
+  .sub { color: var(--page-text-2); font-size: 15px; line-height: 1.5; max-width: 680px; margin-bottom: 8px; }
+  .meta { color: var(--page-text-3); font-size: 12.5px; margin-bottom: 28px; }
   section { margin-bottom: 64px; }
   h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 1.4px; color: var(--page-text-3); font-weight: 600; margin-bottom: 6px; display:flex; align-items:center; gap:10px; }
-  h3 { font-size: 21px; font-weight: 600; letter-spacing: -0.2px; margin-bottom: 10px; text-wrap: balance; }
   .badge { font-size: 10px; letter-spacing: 0.8px; border-radius: 999px; padding: 3px 9px; font-weight: 700; }
   .badge.new { background: var(--new-bg); border: 1px solid var(--new-border); color: var(--page-text); }
-  .badge.deferred { background: var(--flag-bg); border: 1px solid var(--flag-border); color: var(--page-text); }
   .concept-note { color: var(--page-text-2); font-size: 14.5px; line-height: 1.55; max-width: 680px; margin-bottom: 24px; }
   .concept-note strong { color: var(--page-text); }
 
-  /* jobs card */
-  .rule-hero { background: var(--card-bg); border: 1px solid var(--new-border); border-radius: 18px; padding: 24px 28px; max-width: 760px; }
-  .rule-hero .big { font-family: Georgia, serif; font-size: 24px; line-height: 1.3; margin-bottom: 14px; text-wrap: balance; }
-  .rule-hero li { margin: 9px 0 9px 18px; font-size: 14.5px; line-height: 1.55; color: var(--page-text-2); }
-  .rule-hero li strong { color: var(--page-text); }
+  .supersedes {
+    background: var(--flag-bg); border: 1px solid var(--flag-border); border-radius: 14px;
+    padding: 14px 18px; font-size: 13.5px; line-height: 1.55; color: var(--page-text-2);
+    max-width: 760px; margin-bottom: 40px;
+  }
+  .supersedes strong { color: var(--page-text); }
 
-  /* wallpaper strip that widgets sit on */
   .shelf {
     background: linear-gradient(135deg, #C9D6D2 0%, #AEC3C9 55%, #93A8B8 100%);
     border-radius: 28px;
@@ -117,66 +116,103 @@
     overflow-x: auto;
   }
   .widget-stack { display: flex; flex-direction: column; gap: 8px; }
-  .widget-label { font-size: 11.5px; color: rgba(255,255,255,0.85); text-shadow: 0 1px 2px rgba(0,0,0,0.25); font-weight: 500; text-align: center; max-width: 364px; }
+  .widget-label { font-size: 11.5px; color: rgba(255,255,255,0.9); text-shadow: 0 1px 2px rgba(0,0,0,0.3); font-weight: 500; text-align: center; max-width: 364px; }
 
-  /* iOS widget frames (approx. proportions; systemMedium 338×158pt) */
+  /* ══ THE WIDGET FRAME — strict vertical budget ══════════════════════════
+     systemMedium ≈ 338×158pt → mocked at 364×172px.
+     Budget (content = 172 − 12 top − 11 bottom = 149px):
+       header 16 · gap 6 · grid 94 (2×44 + 6 gap) · band 33 (6 gap + 1px rule
+       + 6 pad + 20 row). Every element below has a fixed share — nothing
+       competes, nothing clips. */
   .w-medium { width: 364px; max-width: 100%; height: 172px; border-radius: 26px; }
   .widget {
     background: var(--surface);
     box-shadow: 0 8px 24px rgba(10,10,10,0.18);
-    padding: 14px;
+    padding: 12px 14px 11px;
     display: flex; flex-direction: column;
     overflow: hidden;
     position: relative;
     color: var(--text-primary-w);
   }
 
-  /* the real mark: crescent mask-cutout + teal Signal dot (CulpritMark geometry,
-     small-size dot bump per icon-kit §3) */
   .mark { width: 16px; height: 16px; flex: none; display: block; }
-
-  .w-head { display:flex; align-items:center; gap:6px; margin-bottom: 8px; }
-  .w-pet { font-size: 13px; font-weight: 600; letter-spacing: -0.1px; }
+  .w-head { display: flex; align-items: center; gap: 6px; height: 16px; flex: none; }
+  .w-pet { font-size: 13px; font-weight: 600; letter-spacing: -0.1px; line-height: 1; }
   .w-head .spacer { flex: 1; }
-  .w-time { font-size: 10.5px; color: var(--text-tertiary-w); }
+  .w-time { font-size: 10.5px; color: var(--text-tertiary-w); line-height: 1; }
 
-  /* A3 layout: status column + big action tiles */
-  .a3 { display:flex; gap:12px; flex:1; min-height:0; }
-  .a3-status { flex:1.15; display:flex; flex-direction:column; gap:5px; justify-content:center; }
-  .srow { display:flex; align-items:center; gap:8px; padding:6px 8px; border-radius:11px; background: var(--surface-subtle); font-size:13px; }
-  .srow .tick { width:18px; height:18px; border-radius:50%; flex:none; display:flex; align-items:center; justify-content:center; font-size:10.5px; }
-  .tick.done { background: var(--accent-light); color:#0B7B6C; }
-  .tick.open { border:1.5px solid var(--accent); color:transparent; }
-  .srow .name { font-weight:500; }
-  .srow .when { color: var(--text-tertiary-w); font-size:11px; margin-left:auto; }
-  .a3-tiles { flex:1; display:flex; gap:10px; }
-  .tile {
-    flex:1; border-radius:16px; display:flex; flex-direction:column;
-    align-items:center; justify-content:center; gap:5px;
-    background: var(--surface-subtle); border:1px solid var(--border-w);
+  /* event glyphs — shape carries type, color reinforces (iOS 18 tinted rule) */
+  .g { flex: none; display: inline-block; }
+  .g-meal  { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
+  .g-treat { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
+  .g-med   { width: 8px; height: 8px; border-radius: 2.5px; background: var(--med); }
+  .g-sym   { width: 7px; height: 7px; border-radius: 2px; background: var(--symptom); transform: rotate(45deg); }
+  .g-slot  { width: 8px; height: 8px; border-radius: 50%; background: transparent; border: 1.5px solid var(--accent); }
+
+  /* the tile grid — fixed height, two equal rows */
+  .j-grid {
+    height: 94px; flex: none;
+    margin-top: 6px;
+    display: grid; grid-template-columns: 1fr 1fr; grid-auto-rows: 44px; gap: 6px;
   }
-  .tile.accent { background: var(--accent); border-color: var(--accent); }
-  .tile .glyph { font-size:24px; line-height:1; }
-  .tile .lbl { font-size:13px; font-weight:600; }
-  .tile .hint { font-size:9.5px; color: var(--text-tertiary-w); }
-  .tile.accent .hint { color: rgba(10,10,10,0.6); }
-
-  /* picker (flipped) state */
-  .picker { display:flex; flex-direction:column; gap:8px; flex:1; justify-content:center; }
-  .prow {
-    display:flex; align-items:center; gap:10px;
-    border-radius:13px; padding:11px 14px;
-    background: var(--surface-subtle); border:1px solid var(--border-w);
-    font-size:13.5px; font-weight:600;
+  .j-tile {
+    border-radius: 12px; background: var(--surface-subtle);
+    padding: 0 10px;
+    display: flex; flex-direction: column; justify-content: center;
+    overflow: hidden;
   }
-  .prow.accent { background: var(--accent); border-color: var(--accent); color:#0A0A0A; }
-  .prow .sub { font-weight:400; font-size:11px; color: var(--text-tertiary-w); margin-left:auto; }
-  .prow.accent .sub { color: rgba(10,10,10,0.65); }
-  .prow.ghost { background:transparent; border-style:dashed; font-weight:500; color: var(--text-secondary-w); }
-  .picker-head { display:flex; align-items:center; gap:6px; font-size:11px; font-weight:600; color: var(--text-tertiary-w); text-transform:uppercase; letter-spacing:0.8px; }
-  .picker-head .back { margin-left:auto; font-weight:500; text-transform:none; letter-spacing:0; }
+  .j-tile.sym { background: var(--symptom-light); }
+  .j-tile.next { background: transparent; border: 1px solid var(--border-w); }
+  .j-tile .k {
+    font-size: 8.5px; line-height: 11px; text-transform: uppercase; letter-spacing: 0.6px;
+    color: var(--text-tertiary-w); font-weight: 600;
+    display: flex; align-items: center; gap: 5px;
+    white-space: nowrap; overflow: hidden;
+  }
+  .j-tile.sym .k { color: #9F1239; }
+  .j-tile .v {
+    font-size: 13.5px; line-height: 17px; font-weight: 700; letter-spacing: -0.2px;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .j-tile .v .u { font-size: 10px; font-weight: 500; color: var(--text-secondary-w); letter-spacing: 0; }
+  .j-tile .s {
+    font-size: 9px; line-height: 11px; color: var(--text-tertiary-w);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .j-tile.door-tile { background: transparent; border: 1px dashed var(--border-w); }
+  .j-tile.door-tile .v { font-size: 11.5px; font-weight: 550; color: var(--text-secondary-w); }
 
-  /* annotations */
+  /* the ground band — fixed height, hairline on top */
+  .ft {
+    flex: none; height: 33px;
+    margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--border-w);
+    display: flex; align-items: center; gap: 8px;
+  }
+  .ft .cap { font-size: 9.5px; line-height: 1; color: var(--text-tertiary-w); white-space: nowrap; }
+  .ft .spacer { flex: 1; }
+  .door {
+    display: inline-flex; align-items: center;
+    border: 1px dashed var(--border-w); border-radius: 9px; padding: 3px 9px;
+    font-size: 10.5px; line-height: 1.2; font-weight: 500; color: var(--text-secondary-w);
+    white-space: nowrap;
+  }
+  .trial-strip { display: flex; align-items: center; gap: 3px; flex: none; }
+  .td { width: 5px; height: 5px; border-radius: 50%; background: var(--accent-ink); opacity: 0.55; }
+  .td.gap { background: transparent; border: 1px solid #C9C9C9; opacity: 1; }
+  .td.today { background: var(--accent); opacity: 1; }
+  .pips { display: flex; align-items: flex-end; gap: 5px; flex: none; }
+  .pip-day { display: flex; flex-direction: column; align-items: center; gap: 2px; width: 10px; }
+  .pip-sym { width: 4px; height: 4px; border-radius: 50%; background: var(--symptom); }
+  .pip-sym.none { background: transparent; }
+  .pip-tick { width: 8px; height: 3px; border-radius: 1.5px; background: #C9C9C9; }
+  .pip-tick.on { background: var(--accent-ink); opacity: 0.55; }
+  .pip-day.today .pip-tick { outline: 1.5px solid var(--accent); outline-offset: 1px; }
+
+  /* empty-state line */
+  .hl-empty { font-size: 12px; line-height: 15px; color: var(--text-secondary-w); margin-top: 8px; flex: none; }
+  .j-grid.single { height: 71px; grid-auto-rows: 71px; margin-top: 8px; }
+
   .annos { display:grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; margin-top: 22px; }
   .anno { background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 14px; padding: 14px 16px; font-size: 13px; line-height: 1.5; color: var(--page-text-2); }
   .anno b { display:block; color: var(--page-text); margin-bottom: 4px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.8px; }
@@ -186,9 +222,9 @@
   .rules { background: var(--card-bg); border:1px solid var(--card-border); border-radius: 16px; padding: 20px 24px; max-width: 760px; }
   .rules li { margin: 8px 0 8px 18px; font-size: 14px; line-height: 1.55; color: var(--page-text-2); }
   .rules li strong { color: var(--page-text); }
-  .parked { max-width: 720px; }
-  .parked li { margin: 8px 0 8px 18px; font-size: 14px; line-height: 1.6; color: var(--page-text-2); }
-  .parked li strong { color: var(--page-text); }
+
+  .decision { background: var(--card-bg); border: 1px solid var(--flag-border); border-radius: 14px; padding: 15px 18px; font-size: 13.5px; line-height: 1.55; color: var(--page-text-2); max-width: 760px; margin-bottom: 12px; }
+  .decision b { color: var(--page-text); }
 
   .changelog { font-size: 13px; color: var(--page-text-3); line-height: 1.7; max-width: 700px; }
 </style>
@@ -198,175 +234,148 @@
 <div class="page">
 
   <h1>Culprit — Home Screen Widget</h1>
-  <p class="sub">Ideation <strong>round 3</strong> — all-in on Candidate A per the PM. The design finally clicked by importing B's simplicity: <strong>the resting state is two big tiles + a compact status column</strong>, and the flip-to-named-choices interaction the PM loved for treats now works identically for meals. No wasted space, no ambiguity about what a tap does.</p>
-  <p class="meta">2026-07-24 · round 2 → PM reaction → this · widget tokens + mark geometry verbatim from <code>constants/theme.ts</code> / <code>CulpritMark.tsx</code> · PR #419</p>
+  <p class="sub"><strong>Round 7 — the implementation candidate.</strong> V1 ("J, grounded" with the Up-next tile) carried round 6, but its frames were genuinely broken — the grid and ground band were competing for more vertical space than the widget has, so tiles squeezed unevenly and the band clipped. This round rebuilds the layout on a <strong>strict vertical budget</strong> (header 16 · grid 2×44 · band 33 — every pixel assigned, nothing competes), and every frame below was screenshot-verified before publishing. This is the geometry the build should copy.</p>
+  <p class="meta">2026-08-02 · round 6 → PM reaction ("V1, but fix the broken design") → this · widget tokens verbatim from <code>constants/theme.ts</code> · PR #563</p>
 
-  <!-- ================= JOBS ================= -->
-  <section>
-    <h2>The widget's jobs — PM-defined <span class="badge new">ROUND 3 SPINE</span></h2>
-    <div class="rule-hero">
-      <div class="big">The widget will never be as robust as the app. It has exactly two jobs.</div>
-      <ul>
-        <li><strong>Job 1 — keep Culprit top of mind</strong> so logging happens, so we can help pets. The status column is the ambient half; the big tiles are the capture half.</li>
-        <li><strong>Job 2 — "when in doubt, app it out."</strong> Every path that can't produce a <em>named</em> event in ≤2 taps opens the app instead. The dashed "Something else…" row is this job made visible — it appears in every picker, always last, always honest.</li>
-      </ul>
-    </div>
-  </section>
+  <div class="supersedes"><strong>Round record.</strong> Round 3 = as-built v1 (build 35). Round 4 = informational direction. Round 5 = H/I/J, reacted: J picked, H's bottom graph and the H/I look-ahead named as keepers. Round 6 = "J, grounded" with three look-ahead placements; reacted 2026-08-02: <em>V1 (the Up-next tile) is the shape — but the frames looked broken and would ship janky if copied.</em> This round is V1 only, fixed. R6-1 is treated as answered (V1); R6-2 (confirm for build) is the open ask.</div>
 
-  <!-- ================= A3 STATES ================= -->
+  <!-- ================= THE DESIGN ================= -->
   <section>
-    <h2>Candidate A — round 3</h2>
-    <h3>One layout, four states</h3>
-    <p class="concept-note"><strong>Resting:</strong> status column left (slots, packed), two big B-style tiles right (Meal / Treat — the whole tile is the tap target). <strong>Tap a tile → the widget flips in place</strong> to that category's named choices: 1–2 one-tap named options + the "Something else…" app door. Same interaction both categories — learn it once.</p>
+    <h2>"J, grounded" — V1, rebuilt <span class="badge new">SCREENSHOT-VERIFIED GEOMETRY</span></h2>
+    <p class="concept-note">Same design language as round 6, now with fixed proportions: <strong>header</strong> (mark · pet · trial day) → <strong>2×2 content-gated tile grid</strong> (44px rows: label, value, name-line) → <strong>ground band</strong> under a hairline (trial strip during a trial / 7-day pips otherwise · caption · the dashed <strong>Log ›</strong> door). The <strong>Up-next tile</strong> is outlined (unfilled = not yet happened) and exists only while a learned window is ahead and unlogged. Fixtures unchanged: Day A = Biscuit (trial dog) at 4:30p; Day B = Pixel (cat) at 5:40p.</p>
 
     <div class="shelf">
+      <!-- Frame 1: Day A -->
       <div class="widget-stack">
         <div class="widget w-medium">
           <div class="w-head">
-            <svg class="mark" viewBox="0 0 100 100"><defs><mask id="m1"><rect width="100" height="100" fill="#fff"/><circle cx="61" cy="43" r="29" fill="#000"/></mask></defs><circle cx="45" cy="50" r="33" fill="#211E4E" mask="url(#m1)"/><circle cx="66" cy="53" r="10.5" fill="#00C2A8"/></svg>
+            <svg class="mark" viewBox="0 0 100 100"><defs><mask id="f1"><rect width="100" height="100" fill="#fff"/><circle cx="61" cy="43" r="29" fill="#000"/></mask></defs><circle cx="45" cy="50" r="33" fill="#211E4E" mask="url(#f1)"/><circle cx="66" cy="53" r="10.5" fill="#00C2A8"/></svg>
             <span class="w-pet">Biscuit</span>
             <span class="spacer"></span>
             <span class="w-time">Day 12 of 28</span>
           </div>
-          <div class="a3">
-            <div class="a3-status">
-              <div class="srow">
-                <span class="tick done">✓</span>
-                <span class="name">Breakfast</span>
-                <span class="when">7:42a</span>
-              </div>
-              <div class="srow">
-                <span class="tick open"></span>
-                <span class="name">Dinner</span>
-                <span class="when">~6p</span>
-              </div>
+          <div class="j-grid">
+            <div class="j-tile"><span class="k"><span class="g g-meal"></span>Meals</span><span class="v">1 <span class="u">· 7:42a</span></span><span class="s">Hill's z/d</span></div>
+            <div class="j-tile"><span class="k"><span class="g g-med"></span>Meds</span><span class="v">1 <span class="u">of 2 today</span></span><span class="s">Amoxicillin · 8:00a</span></div>
+            <div class="j-tile"><span class="k"><span class="g g-treat"></span>Treats</span><span class="v">1 <span class="u">· 3:05p</span></span><span class="s">Dental chew</span></div>
+            <div class="j-tile next"><span class="k"><span class="g g-slot"></span>Up next</span><span class="v" style="font-size:12px;">Dinner</span><span class="s">usually ~5p · not logged yet</span></div>
+          </div>
+          <div class="ft">
+            <div class="trial-strip">
+              <span class="td"></span><span class="td"></span><span class="td"></span><span class="td"></span><span class="td gap"></span><span class="td"></span><span class="td"></span><span class="td"></span><span class="td"></span><span class="td"></span><span class="td"></span><span class="td today"></span>
             </div>
-            <div class="a3-tiles">
-              <div class="tile accent">
-                <span class="glyph">🍽</span>
-                <span class="lbl">Meal</span>
-                <span class="hint">tap to pick</span>
-              </div>
-              <div class="tile">
-                <span class="glyph">🐾</span>
-                <span class="lbl">Treat</span>
-                <span class="hint">tap to pick</span>
-              </div>
-            </div>
+            <span class="cap">11 of 12 trial days logged</span>
+            <span class="spacer"></span>
+            <span class="door">Log ›</span>
           </div>
         </div>
-        <div class="widget-label">State 1 — resting (dog, mid-trial). Status packed left, two big targets right. Status rows are glance-only; tapping one opens the app to that day.</div>
+        <div class="widget-label">Day A at 4:30p — three fact tiles + the outlined Up-next tile; ground band = trial strip + door. Up next deep-links to quick-log with meal preselected.</div>
       </div>
 
-      <div class="widget-stack">
-        <div class="widget w-medium">
-          <div class="picker-head">
-            <svg class="mark" viewBox="0 0 100 100"><defs><mask id="m2"><rect width="100" height="100" fill="#fff"/><circle cx="61" cy="43" r="29" fill="#000"/></mask></defs><circle cx="45" cy="50" r="33" fill="#211E4E" mask="url(#m2)"/><circle cx="66" cy="53" r="10.5" fill="#00C2A8"/></svg>
-            Which meal? <span class="back">‹ back</span>
-          </div>
-          <div class="picker">
-            <div class="prow accent">Dinner — Hill's z/d <span class="sub">one tap · logs now</span></div>
-            <div class="prow ghost">Something else… <span class="sub">opens Culprit</span></div>
-          </div>
-        </div>
-        <div class="widget-label">State 2 — after tapping Meal. The next unlogged slot with its named food leads (during a trial that's the trial diet by definition). Anything else = the app.</div>
-      </div>
-
-      <div class="widget-stack">
-        <div class="widget w-medium">
-          <div class="picker-head">
-            <svg class="mark" viewBox="0 0 100 100"><defs><mask id="m3"><rect width="100" height="100" fill="#fff"/><circle cx="61" cy="43" r="29" fill="#000"/></mask></defs><circle cx="45" cy="50" r="33" fill="#211E4E" mask="url(#m3)"/><circle cx="66" cy="53" r="10.5" fill="#00C2A8"/></svg>
-            Which treat? <span class="back">‹ back</span>
-          </div>
-          <div class="picker">
-            <div class="prow">Dental chew</div>
-            <div class="prow">Freeze-dried liver</div>
-            <div class="prow ghost">Something else… <span class="sub">opens Culprit</span></div>
-          </div>
-        </div>
-        <div class="widget-label">State 3 — after tapping Treat. The 2 most-logged named treats + the app door. Identical interaction to meals.</div>
-      </div>
-
+      <!-- Frame 2: Day B -->
       <div class="widget-stack">
         <div class="widget w-medium">
           <div class="w-head">
-            <svg class="mark" viewBox="0 0 100 100"><defs><mask id="m4"><rect width="100" height="100" fill="#fff"/><circle cx="61" cy="43" r="29" fill="#000"/></mask></defs><circle cx="45" cy="50" r="33" fill="#211E4E" mask="url(#m4)"/><circle cx="66" cy="53" r="10.5" fill="#00C2A8"/></svg>
-            <span class="w-pet">Mochi</span>
+            <svg class="mark" viewBox="0 0 100 100"><defs><mask id="f2"><rect width="100" height="100" fill="#fff"/><circle cx="61" cy="43" r="29" fill="#000"/></mask></defs><circle cx="45" cy="50" r="33" fill="#211E4E" mask="url(#f2)"/><circle cx="66" cy="53" r="10.5" fill="#00C2A8"/></svg>
+            <span class="w-pet">Pixel</span>
             <span class="spacer"></span>
-            <span class="w-time">free-fed + meals</span>
+            <span class="w-time"></span>
           </div>
-          <div class="a3">
-            <div class="a3-status">
-              <div class="srow">
-                <span class="tick done">✓</span>
-                <span class="name">Bowl topped</span>
-                <span class="when">8:05a</span>
-              </div>
-              <div class="srow">
-                <span class="tick open"></span>
-                <span class="name">Wet dinner</span>
-                <span class="when">~7p</span>
-              </div>
+          <div class="j-grid">
+            <div class="j-tile sym"><span class="k"><span class="g g-sym"></span>Vomiting</span><span class="v">×2 <span class="u">· last 4:40p</span></span><span class="s">2:14p · 4:40p</span></div>
+            <div class="j-tile"><span class="k"><span class="g g-meal"></span>Meals</span><span class="v">1 <span class="u">· 8:05a</span></span><span class="s">wet food</span></div>
+            <div class="j-tile next"><span class="k"><span class="g g-slot"></span>Up next</span><span class="v" style="font-size:12px;">Wet dinner</span><span class="s">usually ~7p · not logged yet</span></div>
+            <div class="j-tile door-tile"><span class="k">Log</span><span class="v">opens Culprit ›</span></div>
+          </div>
+          <div class="ft">
+            <div class="pips">
+              <div class="pip-day"><span class="pip-sym none"></span><span class="pip-tick on"></span></div>
+              <div class="pip-day"><span class="pip-sym none"></span><span class="pip-tick on"></span></div>
+              <div class="pip-day"><span class="pip-sym"></span><span class="pip-tick on"></span></div>
+              <div class="pip-day"><span class="pip-sym none"></span><span class="pip-tick"></span></div>
+              <div class="pip-day"><span class="pip-sym none"></span><span class="pip-tick on"></span></div>
+              <div class="pip-day"><span class="pip-sym none"></span><span class="pip-tick on"></span></div>
+              <div class="pip-day today"><span class="pip-sym"></span><span class="pip-tick on"></span></div>
             </div>
-            <div class="a3-tiles">
-              <div class="tile accent">
-                <span class="glyph">🍽</span>
-                <span class="lbl">Meal</span>
-                <span class="hint">tap to pick</span>
-              </div>
-              <div class="tile">
-                <span class="glyph">🐾</span>
-                <span class="lbl">Treat</span>
-                <span class="hint">tap to pick</span>
-              </div>
-            </div>
+            <span class="cap">last 7 days</span>
+            <span class="spacer"></span>
+            <span class="door">Log ›</span>
           </div>
         </div>
-        <div class="widget-label">State 4 — hybrid cat (the PM's own): free-fed kibble AND scheduled wet meals coexist as rows. Mochi's Meal picker offers "Top up bowl" and "Wet dinner — Royal Canin".</div>
+        <div class="widget-label">Day B — vomiting leads (always top-left); the free slot is the door tile; ground band swaps to the 7-day pips (ticks = days with logging, rose = a symptom logged that day).</div>
+      </div>
+
+      <!-- Frame 3: empty morning -->
+      <div class="widget-stack">
+        <div class="widget w-medium">
+          <div class="w-head">
+            <svg class="mark" viewBox="0 0 100 100"><defs><mask id="f3"><rect width="100" height="100" fill="#fff"/><circle cx="61" cy="43" r="29" fill="#000"/></mask></defs><circle cx="45" cy="50" r="33" fill="#211E4E" mask="url(#f3)"/><circle cx="66" cy="53" r="10.5" fill="#00C2A8"/></svg>
+            <span class="w-pet">Biscuit</span>
+            <span class="spacer"></span>
+            <span class="w-time">Day 13 of 28</span>
+          </div>
+          <div class="hl-empty">Nothing logged yet today</div>
+          <div class="j-grid single">
+            <div class="j-tile next"><span class="k"><span class="g g-slot"></span>Up next</span><span class="v" style="font-size:12px;">Breakfast</span><span class="s">usually ~7:45a</span></div>
+            <div class="j-tile door-tile"><span class="k">Log</span><span class="v">opens Culprit ›</span></div>
+          </div>
+          <div class="ft">
+            <div class="trial-strip">
+              <span class="td"></span><span class="td"></span><span class="td"></span><span class="td"></span><span class="td gap"></span><span class="td"></span><span class="td"></span><span class="td"></span><span class="td"></span><span class="td"></span><span class="td"></span><span class="td"></span><span class="td today" style="background:transparent;border:1px solid var(--accent);"></span>
+            </div>
+            <span class="cap">12 of 13 trial days logged</span>
+            <span class="spacer"></span>
+            <span class="door">Log ›</span>
+          </div>
+        </div>
+        <div class="widget-label">Empty morning, 6:50a — the honest line, the day's first window ahead, the record still in the ground band. A designed state, never a nag.</div>
+      </div>
+
+      <!-- Frame 4: evening complete -->
+      <div class="widget-stack">
+        <div class="widget w-medium">
+          <div class="w-head">
+            <svg class="mark" viewBox="0 0 100 100"><defs><mask id="f4"><rect width="100" height="100" fill="#fff"/><circle cx="61" cy="43" r="29" fill="#000"/></mask></defs><circle cx="45" cy="50" r="33" fill="#211E4E" mask="url(#f4)"/><circle cx="66" cy="53" r="10.5" fill="#00C2A8"/></svg>
+            <span class="w-pet">Biscuit</span>
+            <span class="spacer"></span>
+            <span class="w-time">Day 12 of 28</span>
+          </div>
+          <div class="j-grid">
+            <div class="j-tile"><span class="k"><span class="g g-meal"></span>Meals</span><span class="v">2 <span class="u">· last 5:12p</span></span><span class="s">Hill's z/d, both</span></div>
+            <div class="j-tile"><span class="k"><span class="g g-med"></span>Meds</span><span class="v">2 <span class="u">of 2 today</span></span><span class="s">Amoxicillin · 8a · 6:15p</span></div>
+            <div class="j-tile"><span class="k"><span class="g g-treat"></span>Treats</span><span class="v">1 <span class="u">· 3:05p</span></span><span class="s">Dental chew</span></div>
+            <div class="j-tile"><span class="k">Trial record</span><span class="v">12 <span class="u">of 12 days</span></span><span class="s">every day logged so far</span></div>
+          </div>
+          <div class="ft">
+            <div class="trial-strip">
+              <span class="td"></span><span class="td"></span><span class="td"></span><span class="td"></span><span class="td"></span><span class="td"></span><span class="td"></span><span class="td"></span><span class="td"></span><span class="td"></span><span class="td"></span><span class="td today"></span>
+            </div>
+            <span class="cap">12 of 12 trial days logged</span>
+            <span class="spacer"></span>
+            <span class="door">Log ›</span>
+          </div>
+        </div>
+        <div class="widget-label">Evening, everything logged — no window ahead, so no Up-next tile; the slot self-heals to the trial-record tile. Reads complete as a record, never as praise.</div>
       </div>
     </div>
 
     <div class="annos">
-      <div class="anno new"><b>Hybrid arrangements</b>Free-fed vs meal-fed isn't either/or — it's per-pet rows from the declared feeding arrangement (B-040 machinery): scheduled slots get slot rows, a free-fed component gets a bowl row. The same status column renders any mix. No separate "free-fed variant" widget anymore.</div>
-      <div class="anno"><b>Designer</b>Space audit vs round 2: the dead middle is gone — tiles take the full right half at full height, status rows are edge-to-edge chips, the header carries the trial line. Every region is either information or a target.</div>
-      <div class="anno"><b>Data Scientist</b>Unchanged invariants: every one-tap write is a named item + <code>logged_via='widget'</code>; the bowl "top up" is an arrangement event, never an intake claim (grazing intake stays unmeasured — no fake precision).</div>
-      <div class="anno flag"><b>Open — tile glyphs</b>Emoji placeholders (🍽 🐾) mark the slots only; production uses the app's own EventIcon set — species-neutral by default (Candidate B's icon note generalized here). Needs the icon pass, not a decision.</div>
+      <div class="anno new"><b>What was broken, and the fix</b>Round 6's grid used flexible heights, so the four tiles and the ground band competed for ~154px inside a 149px frame — the band clipped and tiles squeezed unevenly. Now every region has a fixed share (header 16 · grid 94 · band 33), tile typography is metric-locked (11/17/11px lines inside a 44px row), and every text line clips with an ellipsis instead of wrapping or overflowing. The build copies these proportions directly.</div>
+      <div class="anno"><b>The look-ahead, carried</b>Machinery ships today (<code>lib/widgetResolution.ts</code> learned windows, ≥4 distinct days). The two honest edges stand: a partner's log on another device can lag here until this app next runs ("usually ~5p" asserts the routine, not the world), and after the window passes the tile keeps the identical calm form — no color, no urgency — resetting at local midnight (B-156 G1).</div>
+      <div class="anno"><b>Held constant</b>The widget never writes (R4-1) — every tile deep-links (Up next → quick-log, meal preselected). Content-gating: no logged class, no tile; a missing tile is never a claim; symptoms always render and lead. Absence is never wellness; med counts stay confirmation-register; no AI copy (D9); counts pet-centric; per-widget pet binding (D5); free (D4). Copy gets the <code>nyx-voice</code> pass at build.</div>
     </div>
   </section>
 
-  <!-- ================= PARKED ================= -->
+  <!-- ================= PM ASKS ================= -->
   <section>
-    <h2>Parked this round <span class="badge deferred">NOT DROPPED</span></h2>
-    <div class="parked">
-      <ul>
-        <li><strong>Candidate B (small treat logger):</strong> both PM notes recorded — needs a generic or species-aware icon (see glyph note above), and its post-tap behavior is the <em>same flip</em> as A's State 3, just stacked vertically in the small frame; round 2's mock didn't show that state, which is why it read as unclear. Ships as the small sibling of A's treat path if A's interaction tests well.</li>
-        <li><strong>Candidate C (adaptive status small):</strong> unchanged from round 2; trial-aware; ground question still open (D8's sibling).</li>
-        <li><strong>Candidate D (Lock Screen):</strong> deferred to Phase 2, unchanged.</li>
-        <li><strong>Multi-pet:</strong> stack-two-widgets confirmed "good v1" by the PM. Per-widget pet binding at placement stands.</li>
-      </ul>
-    </div>
-  </section>
-
-  <!-- ================= RULES ================= -->
-  <section>
-    <h2>Held constant</h2>
-    <div class="rules">
-      <ul>
-        <li><strong>Logs only what it can name;</strong> every ambiguous path opens the app ("when in doubt, app it out" — Job 2). No generic events exist.</li>
-        <li><strong>Fail-safe honesty:</strong> unconfirmed slots are visible gaps, never assumed ✓ (B-156 G1 generalized).</li>
-        <li><strong>Provenance:</strong> <code>logged_via='widget'</code> + named item id on every write (B-289 first).</li>
-        <li><strong>Per-widget pet binding</strong> at placement; never follows the in-app active-pet switch (B-086).</li>
-        <li><strong>Never reassures;</strong> no Signal/AI copy in v1. <strong>No monetization state;</strong> the widget ships free (PM-ruled; D-M1 bullet amendment flagged).</li>
-        <li><strong>Silent by design;</strong> zero notifications. <strong>One accent:</strong> teal on the primary action only.</li>
-        <li><strong>Mis-tap undo:</strong> "✓ just now · tap to undo" for ~60s on the affected row (open design question from round 2, carried).</li>
-      </ul>
-    </div>
+    <h2>The one remaining ask</h2>
+    <div class="decision"><b>R7-1 (= R6-2) — confirm this for build.</b> On confirm, the next session rewrites <code>docs/nyx-widget-requirements.md</code> to v2.0 — R4-1 executed (capture retired; W4 intents parked as the B-291 Siri/hardware rail), this round's geometry design-locked, the snapshot v2 contract (today's events by class, learned windows, trial day + coverage, 7-day record row), and the <code>widgets/CulpritWidget.tsx</code> rebuild plan — then the rebuild session follows, absorbing B-481's on-device pass.</div>
   </section>
 
   <!-- ================= CHANGELOG ================= -->
   <section>
-    <h2>Changed from round 2</h2>
-    <p class="changelog">① All-in on Candidate A (PM call — most promise, most real estate). ② The PM's jobs-to-be-done frame is now the spine: top-of-mind + when-in-doubt-app-it-out. ③ B's simplicity imported: resting state = two big tiles, whole-tile targets, "tap to pick" hint. ④ The flip-to-named-choices interaction generalized from treats to meals (PM: "maybe it should be meal"). ⑤ Wasted space fixed: full-height tiles, chip-style status rows, trial line moved to the header. ⑥ Free-fed AND meals coexist per pet (the PM's cat) — arrangement-driven rows replace the separate free-fed variant. ⑦ Slot rows are glance-only now (tap opens the app); logging is tiles-only — one interaction model, no hidden second gesture. ⑧ B's two notes recorded in Parked (icon; its post-tap flip is A's State 3). ⑨ Emoji glyphs flagged as placeholders for the EventIcon pass.</p>
+    <h2>Changed from round 6</h2>
+    <p class="changelog">① V1 taken as the R6-1 answer; V2/V3 retired. ② The broken geometry rebuilt on a strict vertical budget — fixed header/grid/band heights, metric-locked tile typography, ellipsis clipping on every line; frames screenshot-verified before publishing (the step round 6 skipped, which is how the jank shipped). ③ Glyphs recut to sit on the 11px label line. ④ Edge states re-verified in the new geometry (empty morning uses a single-row grid; evening-complete unchanged). ⑤ Asks collapsed to one: R7-1, confirm for build.</p>
   </section>
 
 </div>
