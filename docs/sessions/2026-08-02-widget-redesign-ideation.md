@@ -49,7 +49,7 @@ artifact.
    - Five persona reads embedded (Jordan, Sam, Designer, Data Scientist, Dr. Chen,
      Dir. of Eng, T&S).
 
-3. **Backlog row B-663** (Now) — the ratify-then-rebuild path; absorbs the B-481 fix
+3. **Backlog row B-664** (Now) — the ratify-then-rebuild path; absorbs the B-481 fix
    path (the surface that must render reliably shrinks with the interaction surface).
 
 ## What dies / what survives (pending R4-1)
@@ -188,7 +188,7 @@ strip caps at 14 dots, caption totals whole trial) · snapshot/props v2 contract
 schema flip so no build-35 tap is dropped) · ACs 1–10 · the **V2-PR plan**:
 PR-0 spec (this PR) → PR-1 snapshot v2 additive → PR-2 layout rebuild →
 PR-3 on-device + B-481 closure → PR-4 TestFlight cut. CLAUDE.md Read-These row
-updated (Tier 1); B-663 row updated; v1 §10's Tier-2 D-M1 edits still carried
+updated (Tier 1); B-664 row updated; v1 §10's Tier-2 D-M1 edits still carried
 awaiting the PM's confirm.
 
 — shipped via #563

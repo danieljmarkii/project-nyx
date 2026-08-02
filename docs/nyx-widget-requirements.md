@@ -2,7 +2,7 @@
 
 **Version:** 2.0 (build-ready) | **Date:** 2026-08-02 | **Status:** PM-ratified 2026-08-02 (ideation rounds 4–7 on the round-3 shipped widget; R7-1 "confirm for build" given)
 **Supersedes:** v1.0, preserved verbatim at **`docs/nyx-widget-requirements-v1-frozen.md`** 🧊 (the as-built record of the build-35 capture widget). This file is the living spec; header-versioned per the 2026-07-19 doc-versioning rule.
-**Pairs with:** `docs/culprit-widget-mockups.html` (the design-locked **round-7** mock — the geometry the build copies, screenshot-verified) · `docs/sessions/2026-08-02-widget-redesign-ideation.md` (the full round 4→7 reaction record) · backlog **B-663** (the rebuild track) · B-481 (the on-device pass it absorbs)
+**Pairs with:** `docs/culprit-widget-mockups.html` (the design-locked **round-7** mock — the geometry the build copies, screenshot-verified) · `docs/sessions/2026-08-02-widget-redesign-ideation.md` (the full round 4→7 reaction record) · backlog **B-664** (the rebuild track) · B-481 (the on-device pass it absorbs)
 
 ---
 

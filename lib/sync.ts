@@ -26,12 +26,20 @@ import {
   type LocalDietTrialFood,
 } from './dietTrialMirror';
 import {
+  notificationPreferenceRowToRemote,
+  NOTIFICATION_PREFERENCE_PUSH_QUEUE_SQL,
+  type LocalNotificationPreference,
+} from './notificationPreferences';
+import {
   classifySyncFailure,
+  classifyUploadFailure,
   formatSyncError,
-  exhaustedAttemptsError,
+  formatUploadError,
+  withUnsentSuffix,
   MAX_SYNC_ATTEMPTS,
   RLS_FILTERED_ERROR,
   NOT_QUARANTINED_SQL,
+  type SyncFailureClass,
 } from './syncQueue';
 import { proteinsToCacheText, proteinsFromCacheText } from './protein';
 import {
@@ -111,7 +119,8 @@ type QueueTable =
   | 'medications'
   | 'medication_administrations'
   | 'diet_trials'
-  | 'diet_trial_foods';
+  | 'diet_trial_foods'
+  | 'notification_preferences';
 
 // SQLite's compiled variable limit is 999 on older builds; 400 keeps a chunk well
 // clear of it and matches loadLocalRowMeta's chunking above. Every writer below
@@ -165,21 +174,24 @@ export async function markSynced(db: Db, table: QueueTable, ids: string[]): Prom
 // row stays on the device and stays counted (as quarantined) by getSyncStatus, so
 // the outcome of giving up is that the owner is TOLD — never that a log quietly
 // disappears.
-async function recordPushFailure(
+// The give-up policy itself, shared by the row-write path (recordPushFailure) and
+// the object-upload path (recordUploadFailure — B-586). The two CLASSIFY
+// differently — a row write yields a Postgres SQLSTATE, an upload yields a Storage
+// HTTP status or a local encode throw — but the three OUTCOMES and the columns they
+// touch are identical, so the policy lives once here rather than being copied with
+// one word changed. `reason` is the pre-formatted sync_error text.
+async function applyFailurePolicy(
   db: Db,
   table: QueueTable,
   id: string,
-  error: { code?: string | null; message?: string | null },
+  failure: SyncFailureClass,
+  reason: string,
 ): Promise<void> {
-  const failure = classifySyncFailure(error);
   if (failure === 'transient') return;
 
   if (failure === 'terminal') {
-    console.warn(`[sync] ${table} row ${id} rejected permanently: ${formatSyncError(error)}`);
-    await db.runAsync(`UPDATE ${table} SET sync_error = ? WHERE id = ?`, [
-      formatSyncError(error),
-      id,
-    ]);
+    console.warn(`[sync] ${table} ${id} rejected permanently: ${reason}`);
+    await db.runAsync(`UPDATE ${table} SET sync_error = ? WHERE id = ?`, [reason, id]);
     return;
   }
 
@@ -192,8 +204,34 @@ async function recordPushFailure(
         SET sync_attempts = sync_attempts + 1,
             sync_error = CASE WHEN sync_attempts + 1 >= ? THEN ? ELSE sync_error END
       WHERE id = ?`,
-    [MAX_SYNC_ATTEMPTS, exhaustedAttemptsError(error), id],
+    [MAX_SYNC_ATTEMPTS, withUnsentSuffix(reason), id],
   );
+}
+
+async function recordPushFailure(
+  db: Db,
+  table: QueueTable,
+  id: string,
+  error: { code?: string | null; message?: string | null },
+): Promise<void> {
+  await applyFailurePolicy(db, table, id, classifySyncFailure(error), formatSyncError(error));
+}
+
+// B-586 — the object-upload half of the three file-bearing writers fails by
+// THROWING (uploadPhoto re-throws the Storage error; prepareVetDocumentUpload and
+// the bytes read throw). classifyUploadFailure reads the Storage HTTP status — or
+// recognises a local throw — where classifySyncFailure would read a SQLSTATE, so a
+// PERMANENT upload failure (413/415/undecodable) finally spends the retry budget
+// and quarantines instead of re-uploading forever, while a NETWORK throw (the
+// offline case) still costs nothing. `error` is `unknown` because it comes from a
+// `catch`, not from a supabase-js result object.
+async function recordUploadFailure(
+  db: Db,
+  table: QueueTable,
+  id: string,
+  error: unknown,
+): Promise<void> {
+  await applyFailurePolicy(db, table, id, classifyUploadFailure(error), formatUploadError(error));
 }
 
 // The payload shape every row mapper produces. Deliberately `object` and not
@@ -617,7 +655,13 @@ export async function syncPendingVetVisits(): Promise<void> {
       }
       await markSynced(db, 'vet_visit_attachments', [att.id]);
     } catch (e) {
+      // B-586 — an upload that THROWS (a 413 on the object, a 415, an image the
+      // manipulator cannot decode, a missing local file) has no SQLSTATE, so it
+      // never reached recordPushFailure and re-uploaded every cycle forever,
+      // occupying one of the 20 slots. Classify the throw so a permanent failure
+      // spends the budget and quarantines while a network throw stays free.
       console.warn('[sync] vet_visit_attachment upload failed:', e);
+      await recordUploadFailure(db, 'vet_visit_attachments', att.id, e);
     }
   }
 }
@@ -747,7 +791,14 @@ export async function syncPendingVetDocuments(): Promise<void> {
         [doc.id, doc.updated_at],
       );
     } catch (e) {
+      // B-586 — the upload half throws (prepareVetDocumentUpload re-encodes with
+      // NO original-fallback, so an undecodable image throws here; uploadPhoto
+      // re-throws a 413 on an oversize PDF). A throw has no SQLSTATE, so without
+      // this it re-ran every cycle forever against the ORDER BY created_at LIMIT 20
+      // window. Classify it: a permanent failure quarantines, a network throw is
+      // free.
       console.warn('[sync] vet_document upload failed:', e);
+      await recordUploadFailure(db, 'vet_documents', doc.id, e);
     }
   }
 }
@@ -805,7 +856,12 @@ export async function syncPendingAttachments(): Promise<void> {
       }
       await markSynced(db, 'event_attachments', [att.id]);
     } catch (e) {
+      // B-586 — a thrown upload (413/415/undecodable/missing file) carries no
+      // SQLSTATE, so it never reached recordPushFailure and re-uploaded forever,
+      // permanently holding one of the 20 slots. Classify the throw so a permanent
+      // failure quarantines while a network throw stays free.
       console.warn('[sync] event_attachment upload failed:', e);
+      await recordUploadFailure(db, 'event_attachments', att.id, e);
     }
   }
 }
@@ -942,6 +998,73 @@ export async function refreshFoodCache(): Promise<void> {
        now]
     );
   }
+}
+
+// B-369 — sweep away orphaned in-progress food captures.
+//
+// food-capture.tsx inserts the owner-locked food_items row BEFORE uploading its
+// photos (B-358 — the owner-scoped nyx-food-photos Storage INSERT policy resolves
+// each {foodId}/… path to its owner, so the row must exist first or the upload
+// 42501s). If the app dies in the narrow window between that insert and extraction
+// finishing, the server keeps a row stuck at ai_extraction_status = 'pending' with
+// the 'Extracting…' placeholder brand/product — a phantom tile that never resolves
+// in the owner's library, because the Edge Function that would flip its status
+// never ran.
+//
+// Extraction is a seconds-long server-side call, so a 'pending' row older than this
+// threshold is a dead capture, not one in flight. A COMMITTED food is never left
+// 'pending' (commitFood always writes completed / failed / manual), so a 'pending'
+// row is un-confirmed and, in the overwhelming common case, un-referenced — the meal
+// is only logged after the confirm step. The threshold is generous on purpose: the
+// phantom is untidy, not harmful, and a live capture the owner is slowly editing
+// self-heals anyway (commitFood upserts by id, re-creating the row if a sweep removed
+// it mid-edit).
+//
+// The one exception is narrow and self-inflicted, and worth naming rather than
+// claiming away: the placeholder is still SELECTABLE from the library while pending
+// (the local cache has no ai_extraction_status column to hide it — B-663), so an
+// owner who deliberately adds an 'Extracting…' food to a feeding arrangement or a
+// trial's allowed set inside this window would have that CASCADE-linked row (018 /
+// 040 are ON DELETE CASCADE) swept with it. Accepted here — it requires acting on a
+// tile literally titled 'Extracting…' — and the real fix is B-663 (stop showing the
+// placeholder at all), which also makes this reap a pure server-row backstop.
+//
+// A hard DELETE is the right shape here: food_items is per-account and hard-delete
+// (B-354 / the 009 food_items_delete policy: `USING (created_by_user_id =
+// auth.uid())`), NOT the events-only soft-delete rule. RLS already scopes the
+// delete to this account; the explicit created_by_user_id filter is belt-and-braces
+// with it and self-documenting.
+const STALE_PENDING_FOOD_MS = 30 * 60 * 1000;
+
+export async function reapStalePendingFoods(): Promise<void> {
+  // No session → nothing to scope the delete to (mirrors the other sync writers).
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) return;
+
+  const cutoff = new Date(Date.now() - STALE_PENDING_FOOD_MS).toISOString();
+  const { data, error } = await supabase
+    .from('food_items')
+    .delete()
+    .eq('created_by_user_id', session.user.id)
+    .eq('ai_extraction_status', 'pending')
+    .lt('created_at', cutoff)
+    .select('id');
+  // Log on failure, never throw — this is a best-effort tidy that must not break a
+  // sync cycle (CLAUDE.md "no silent failures in sync": a warn, not a swallow).
+  if (error) {
+    console.warn('[sync] reapStalePendingFoods failed:', error.message);
+    return;
+  }
+
+  // Drop the reaped rows from the local cache too, so the phantom 'Extracting…'
+  // tile disappears THIS cycle. refreshFoodCache only upserts — it never prunes a
+  // row the server no longer has — so without this the cache would keep showing a
+  // food the server has already deleted.
+  const ids = ((data ?? []) as { id: string }[]).map((r) => r.id);
+  if (ids.length === 0) return;
+  const db = getDb();
+  const placeholders = ids.map(() => '?').join(',');
+  await db.runAsync(`DELETE FROM food_items_cache WHERE id IN (${placeholders})`, ids);
 }
 
 // Refresh the account's medication_items library cache (B-117; per-account since
@@ -1201,6 +1324,33 @@ export async function syncPendingDietTrialFoods(): Promise<void> {
   await pushRows(db, 'diet_trial_foods', unsynced, dietTrialFoodRowToRemote);
 }
 
+// ── Notification-preferences mirror push (B-661 PR 2) ────────────────────────
+//
+// Flush unsynced notification preferences. Refresh the JWT (Pattern 4) and upsert
+// last-write-wins (Pattern 5), only flipping synced = 1 for rows that actually
+// landed (Pattern 1, via pushRows). RLS gates the write to the owning account.
+//
+// The account owner (user_id) is stamped from the session by the mapper — it is
+// NOT stored locally (the mirror is single-account) and is required by the server
+// column + the RLS WITH CHECK. No pre-sync and no FK ordering in v1: pet_id is
+// NULL (account-wide, §4), and the only server FK a NULL-pet row has is to
+// auth.users — the session user, which exists by construction. A preference is
+// turned off (enabled = false), never deleted, so there is no DELETE path here.
+export async function syncPendingNotificationPreferences(): Promise<void> {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) return;
+
+  const db = getDb();
+  const unsynced = await db.getAllAsync<LocalNotificationPreference>(
+    NOTIFICATION_PREFERENCE_PUSH_QUEUE_SQL,
+  );
+  if (unsynced.length === 0) return;
+
+  await pushRows(db, 'notification_preferences', unsynced, (p) =>
+    notificationPreferenceRowToRemote(p, session.user.id),
+  );
+}
+
 // ============================================================
 // Down-sync / hydration (B-054 Phase 1 + Phase 3)
 // ============================================================
@@ -1310,6 +1460,14 @@ interface RemoteDietTrialFood {
   id: string; diet_trial_id: string; pet_id: string; food_item_id: string;
   role: string; food_label: string; allowed_from: string; allowed_until: string | null;
   deleted_at: string | null; created_at: string; updated_at: string;
+}
+interface RemoteNotificationPreference {
+  // user_id is NOT pulled — the mirror is single-account and stores no owner (the
+  // push mapper stamps it from the session). enabled is a Postgres boolean →
+  // JS boolean; fire_local_time is WALL-CLOCK 'HH:MM', not a timestamp (B-661 §4).
+  id: string; pet_id: string | null; category: string;
+  enabled: boolean; fire_local_time: string;
+  created_at: string; updated_at: string;
 }
 
 async function hydrateEvents(db: Db, stale: () => boolean): Promise<void> {
@@ -1904,6 +2062,56 @@ async function hydrateDietTrialFoods(db: Db, stale: () => boolean): Promise<void
   if (wm) await setWatermark('diet_trial_foods', wm);
 }
 
+async function hydrateNotificationPreferences(db: Db, stale: () => boolean): Promise<void> {
+  // B-661 — the per-account notification-preferences mirror. A pet-agnostic,
+  // account-scoped LWW table reconciled exactly like diet_trials: incremental on
+  // updated_at with the commit-skew overlap, replace only when the remote row is
+  // strictly newer (a pending local toggle isn't clobbered; push-before-pull ships
+  // it up first regardless). The `WHERE ...synced = 1` backstop guarantees a
+  // hydrate write can never overwrite an unpushed local edit, and keeps a
+  // QUARANTINED row (synced = 0, sync_error set) intact rather than rewritten.
+  //
+  // `user_id` is DELIBERATELY NOT selected: the mirror stores no account owner
+  // (single-account, RLS already scopes the pull to this account). `enabled` is a
+  // Postgres boolean → coerced to INTEGER 0/1 for SQLite. No local FK, so its order
+  // in the cycle is free. No absence pass — a preference is off-not-erased (never
+  // hard-deleted), so there is no server-side hard delete a pull cannot observe.
+  const since = await getWatermark('notification_preferences');
+  const floor = watermarkQueryFloor(since);
+  const rows = await fetchAllRows<RemoteNotificationPreference>(
+    'notification_preferences',
+    'id, pet_id, category, enabled, fire_local_time, created_at, updated_at',
+    floor ? { column: 'updated_at', value: floor } : null,
+  );
+  if (!rows || rows.length === 0) return;
+
+  const localById = await loadLocalRowMeta(
+    db, 'notification_preferences', rows.map((r) => r.id), 'updated_at',
+  );
+  const { toWrite } = reconcileBatch(rows, localById, 'lww');
+  if (stale()) return; // FR-9: signed out during the fetch — don't write to a wiped store.
+  for (const p of toWrite) {
+    // created_at is immutable and appears in the column list for the INSERT branch
+    // only (the hydrateMeals asymmetry, not B-057 drift). enabled coerces
+    // boolean → 0/1. fire_local_time rides as-is — wall-clock text, never parsed.
+    await db.runAsync(
+      `INSERT INTO notification_preferences
+        (id, pet_id, category, enabled, fire_local_time, created_at, updated_at, synced, sync_error)
+       VALUES (?,?,?,?,?,?,?,1,NULL)
+       ON CONFLICT(id) DO UPDATE SET
+         pet_id=excluded.pet_id, category=excluded.category, enabled=excluded.enabled,
+         fire_local_time=excluded.fire_local_time, updated_at=excluded.updated_at,
+         synced=1, sync_error=NULL
+       WHERE notification_preferences.synced = 1`,
+      [p.id, p.pet_id ?? null, p.category, p.enabled ? 1 : 0,
+       p.fire_local_time ?? '21:00', p.created_at, p.updated_at],
+    );
+  }
+  const wm = advanceWatermark(rows.map((r) => r.updated_at), since);
+  if (stale()) return;
+  if (wm) await setWatermark('notification_preferences', wm);
+}
+
 // FR-8 — hard-deleted-meal absence reconciliation (PM ruling: absence-reconcile,
 // not a tombstone schema). The food-deletion cascade hard-`DELETE`s meals
 // server-side, and a pull (incremental or full) can't observe a row that no
@@ -2023,6 +2231,9 @@ export async function hydrateFromCloud(): Promise<void> {
   await runHydrationStep('diet_trials', () => hydrateDietTrials(db, stale));
   if (stale()) return;
   await runHydrationStep('diet_trial_foods', () => hydrateDietTrialFoods(db, stale));
+  if (stale()) return;
+  // B-661: account-scoped, no local FK — order is free. Last, after the mirrors.
+  await runHydrationStep('notification_preferences', () => hydrateNotificationPreferences(db, stale));
 }
 
 // One full sync cycle: push local writes UP, then pull remote rows DOWN
@@ -2064,6 +2275,10 @@ async function pushAllQueues(): Promise<void> {
   // food_items (Pattern 6).
   await syncPendingDietTrials();
   await syncPendingDietTrialFoods();
+  // B-661: account-scoped, no FK to anything pushed above (v1 rows are
+  // account-wide, pet_id NULL), so its position is free — last, after the
+  // pet-scoped queues.
+  await syncPendingNotificationPreferences();
 }
 
 export async function syncNow(): Promise<void> {
@@ -2073,6 +2288,10 @@ export async function syncNow(): Promise<void> {
     await pushAllQueues();
     // Pull down.
     await hydrateFromCloud();
+    // B-369 — reap dead 'Extracting…' captures BEFORE the catalog pull, so a
+    // deleted orphan is neither re-hydrated into the cache nor re-shown as a
+    // phantom library tile.
+    await reapStalePendingFoods();
     await refreshFoodCache();
     await refreshMedicationCache();
   } finally {
