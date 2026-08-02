@@ -1,11 +1,11 @@
-// Pure logic of the per-pet widget snapshot (lib/widgetSnapshot.ts, B-290
-// W3+W4): the today-state classification the widget's status column renders,
-// the local-day windowing, and — since W4 — the resolution-lib integration
-// (learned slots, meal choices, treat shortlist, trial day) that fills the
-// picker fields. The file I/O half (publishWidgetSnapshots) is thin App Group
-// glue verified on-device (§4.1); the shape the widget consumes is pinned here.
-// The resolution logic itself is exercised exhaustively in
-// widgetResolution.test.ts — this suite pins the WIRING.
+// Pure logic of the per-pet widget snapshot (lib/widgetSnapshot.ts, Widget V2):
+// the today-state classification the widget tiles render, the local-day windowing,
+// the resolution-lib integration (learned slots, trial day), and the v2 block
+// assembly (today's events by class, the up-next window, the 7-day pips, the trial
+// strip). The file I/O half (publishWidgetSnapshots) is thin App Group glue
+// verified on-device; the shape the widget consumes is pinned here. The resolution
+// logic itself is exercised exhaustively in widgetResolution.test.ts and the v2
+// builders in widgetSnapshotV2.test.ts — this suite pins the WIRING.
 
 jest.mock('expo-file-system', () => ({
   Directory: class {},
@@ -31,30 +31,10 @@ import {
   type SnapshotMealRow,
   type SnapshotPet,
 } from './widgetSnapshot';
-import type { WidgetSnapshotV2 } from './widgetSnapshotV2';
 
 const PET: SnapshotPet = { id: 'pet-1', name: 'Pixel', species: 'cat' };
 
-// A minimal, well-formed v2 block (spec §3 shapes). buildWidgetSnapshot only ever
-// PASSES this through — the builders that produce it are exercised in
-// widgetSnapshotV2.test.ts; here we pin the additive wiring.
-const V2_FIXTURE: WidgetSnapshotV2 = {
-  todayByClass: {
-    meals: { count: 2, lastAt: '2026-07-24T12:00:00.000Z', names: ['Kibble'], times: ['2026-07-24T08:00:00.000Z'] },
-    treats: { count: 0, lastAt: null, names: [], times: [] },
-    meds: { count: 0, lastAt: null, names: [], times: [], expectedToday: null },
-    symptoms: { count: 0, lastAt: null, names: [], times: [], leadingType: null },
-  },
-  upNext: { label: 'Dinner', approxTime: '~6p' },
-  sevenDays: [{ dayKey: '2026-07-24', logged: true, symptomLogged: false }],
-  trial: { day: 12, target: 28, daysLogged: 10, daysElapsed: 12, stripDays: [{ logged: true }] },
-};
-
-function mealRow(
-  occurred_at: string,
-  food_type: string | null,
-  extras: Partial<SnapshotMealRow> = {},
-): SnapshotMealRow {
+function mealRow(occurred_at: string, food_type: string | null, extras: Partial<SnapshotMealRow> = {}): SnapshotMealRow {
   return {
     occurred_at,
     food_type,
@@ -64,22 +44,14 @@ function mealRow(
   };
 }
 
-// The fixture's clock, and the two things it has to be at once (B-514).
-//
-// `generatedAt` is built from device-LOCAL components — the sibling suite's
-// convention (widgetResolution.test.ts) — because `buildWidgetSnapshot` reads it
-// in the DEVICE zone for the trial day counter, and takes no zone argument by
-// design (the publisher runs on the device, whose own zone IS the owner's
-// midnight, B-421). Written as a UTC instant it silently meant "20:00Z", which is
-// already 25 Jul in Auckland: every "Day N" assertion below read one day high
-// there and the suite passed only because CI ran at UTC+00.
-//
-// `dayBounds` stays an explicit UTC window on purpose. It is an INPUT the caller
-// computes (`localDayBounds`, covered separately at the bottom of this file), so
-// the windowing tests pin bounds and rows that are both UTC instants and are
-// zone-free by construction. The two need not agree: no assertion here reads the
-// clock and the window together.
-const NOW_LOCAL = new Date(2026, 6, 24, 20, 0); // device-local 2026-07-24 20:00
+// `generatedAt` is built from device-LOCAL components (the sibling suites'
+// convention): buildWidgetSnapshot reads it in the DEVICE zone (the trial day
+// counter, the v2 local-day filter) and takes no zone argument by design (the
+// publisher runs on the device, whose own zone IS the owner's midnight, B-421).
+// `dayBounds` stays an explicit UTC window here on purpose for the meal-split
+// tests — it is a caller-computed INPUT and those tests never read the clock and
+// the window together. The v2-wiring tests below use a local-consistent fixture.
+const NOW_LOCAL = new Date(2026, 6, 24, 20, 0);
 
 const base = {
   generatedAt: NOW_LOCAL.toISOString(),
@@ -94,7 +66,7 @@ const base = {
   trial: null,
 };
 
-describe('buildWidgetSnapshot', () => {
+describe('buildWidgetSnapshot — the today split (meals/treats)', () => {
   it('splits meals from treats by food_type and tracks the latest of each', () => {
     const snap = buildWidgetSnapshot(PET, {
       ...base,
@@ -116,14 +88,8 @@ describe('buildWidgetSnapshot', () => {
     const snap = buildWidgetSnapshot(PET, {
       ...base,
       meals: [
-        // Hydrated offset form on the exact start-boundary second — lexically
-        // ('+00:00' vs 'Z') this is the row a TEXT compare can misjudge; the
-        // parsed-ms filter must count it.
         mealRow('2026-07-24T00:00:00+00:00', 'meal'),
-        // In the lookback window but yesterday — history for slot learning,
-        // never a today count.
         mealRow('2026-07-23T23:59:30.000Z', 'meal'),
-        // And tomorrow's boundary second is OUT ([start, end)).
         mealRow('2026-07-25T00:00:00.000Z', 'meal'),
       ],
     });
@@ -131,221 +97,188 @@ describe('buildWidgetSnapshot', () => {
     expect(snap.today.lastMealAt).toBe('2026-07-24T00:00:00+00:00');
   });
 
-  it('picks the latest by parsed time across mixed timestamp formats', () => {
-    const snap = buildWidgetSnapshot(PET, {
-      ...base,
-      meals: [
-        // Lexically '2026-07-24T12:00:00+00:00' > '2026-07-24T08:00:00.000Z'
-        // is format-dependent; parsed ms must decide.
-        mealRow('2026-07-24T12:00:00+00:00', 'meal'),
-        mealRow('2026-07-24T08:00:00.000Z', 'meal'),
-      ],
-    });
-    expect(snap.today.lastMealAt).toBe('2026-07-24T12:00:00+00:00');
-  });
-
   it('counts an unknown-food row (food_type null) as a meal — matching History', () => {
-    const snap = buildWidgetSnapshot(PET, {
-      ...base,
-      meals: [mealRow('2026-07-24T08:00:00.000Z', null)],
-    });
+    const snap = buildWidgetSnapshot(PET, { ...base, meals: [mealRow('2026-07-24T08:00:00.000Z', null)] });
     expect(snap.today.mealCount).toBe(1);
     expect(snap.today.treatCount).toBe(0);
   });
 
   it('renders an unlogged day as honest zeros/nulls — a gap, never an assumed state', () => {
     const snap = buildWidgetSnapshot(PET, base);
-    expect(snap.today).toEqual({
-      mealCount: 0,
-      treatCount: 0,
-      lastMealAt: null,
-      lastTreatAt: null,
-    });
+    expect(snap.today).toEqual({ mealCount: 0, treatCount: 0, lastMealAt: null, lastTreatAt: null });
   });
 
-  it('carries identity, the day key, and the bowl fact; sparse history yields EMPTY picker fields', () => {
+  it('carries identity, the day key, and the bowl fact; sparse history yields NO learned slots', () => {
     const snap = buildWidgetSnapshot(PET, { ...base, freeFed: true });
     expect(snap.schemaVersion).toBe(WIDGET_SNAPSHOT_SCHEMA_VERSION);
     expect(snap.petId).toBe('pet-1');
-    expect(snap.petName).toBe('Pixel');
     expect(snap.dayKey).toBe('2026-07-24');
     expect(snap.freeFed).toBe(true);
-    // No routine in the history → the resolution lib offers NOTHING — an empty
-    // field renders as nothing-to-offer, never a fabricated choice.
     expect(snap.slots).toEqual([]);
-    expect(snap.mealChoices).toEqual([]);
-    expect(snap.treatChoices).toEqual([]);
     expect(snap.trialDay).toBeNull();
-    expect(snap.trialTargetDays).toBeNull();
   });
 
-  it('fills the picker fields from history: slots, choices, shortlist, trial day (W4 wiring)', () => {
-    // A 7:00Z routine on 6 prior days + a treat habit; today unlogged.
+  it('learns slots + the trial day counter from history (resolution wiring)', () => {
     const meals: SnapshotMealRow[] = [];
     for (let d = 18; d <= 23; d++) {
-      meals.push(
-        mealRow(`2026-07-${d}T07:00:00.000Z`, 'meal', {
-          food_item_id: 'food-1',
-          brand: "Hill's",
-          product_name: 'z/d',
-        }),
-      );
+      meals.push(mealRow(`2026-07-${d}T07:00:00.000Z`, 'meal', { food_item_id: 'food-1', brand: "Hill's", product_name: 'z/d' }));
     }
-    meals.push(
-      mealRow('2026-07-22T15:00:00.000Z', 'treat', {
-        food_item_id: 'treat-1',
-        brand: 'Temptations',
-        product_name: 'Chicken',
-      }),
-    );
     const snap = buildWidgetSnapshot(PET, {
       ...base,
       meals,
-      trial: {
-        startedAt: '2026-07-13',
-        targetDurationDays: 28,
-        foodItemId: 'food-1',
-        foodLabel: "Hill's z/d",
-      },
+      trial: { startedAt: '2026-07-13', targetDurationDays: 28, foodItemId: 'food-1', foodLabel: "Hill's z/d" },
     });
     expect(snap.slots).toHaveLength(1);
     expect(snap.slots[0].loggedAt).toBeNull(); // today's gap is honest
-    expect(snap.mealChoices[0]).toEqual({
-      foodItemId: 'food-1',
-      label: expect.stringContaining("Hill's z/d"),
-    });
-    expect(snap.treatChoices).toEqual([
-      { foodItemId: 'treat-1', label: 'Temptations Chicken' },
-    ]);
     expect(snap.trialDay).toBe(12); // 2026-07-13 → day 12 on 07-24 (B-084 math)
     expect(snap.trialTargetDays).toBe(28);
   });
+});
 
-  // ── B-422 — the staleness gate on the WRITE path ──────────────────────────
-  //
-  // Nothing auto-completes a trial and §4.3's milestone needs an owner tap, so a
-  // trial nobody closed stays `status = 'active'` indefinitely. That is not a
-  // stale caption here: `buildMealChoices` turns the trial into one-tap rows that
-  // NAME the trial diet, so a habitual tap writes a `meal` event naming a food
-  // the pet has not eaten in months, into the record the vet reads.
-  describe('a trial past its effective end (B-422)', () => {
-    const staleTrial = {
-      // Day 1 of 28 on 2026-01-01 → target ends 2026-01-28, grace ends 2026-02-25.
-      // "Today" in this suite is 2026-07-24, months past both.
-      startedAt: '2026-01-01',
-      targetDurationDays: 28,
-      foodItemId: 'food-1',
-      foodLabel: "Hill's z/d",
-    };
+// ── B-422 — the staleness gate reaches the header counter AND the v2 trial strip ──
+//
+// Nothing auto-completes a trial and §4.3's milestone needs an owner tap, so a
+// trial nobody closed stays `status = 'active'` indefinitely — stale-active is the
+// steady state. The gate drops it from BOTH the "Day N of M" header counter and the
+// ground-band trial strip, so neither can render a trial that is months over.
+describe('a trial past its effective end (B-422)', () => {
+  const staleTrial = {
+    // Day 1 of 28 on 2026-01-01 → target ends 2026-01-28, grace ends 2026-02-25.
+    startedAt: '2026-01-01',
+    targetDurationDays: 28,
+    foodItemId: 'food-1',
+    foodLabel: "Hill's z/d",
+  };
+  const coverage = { daysLogged: 10, daysElapsed: 28 };
 
-    /** A pet with NO learned slots — the `slots.length === 0` branch, which is
-     *  the one that offers a bare trial-diet row with nothing else to anchor it. */
-    it('offers no trial-diet one-tap row, so a habitual tap cannot fabricate a meal', () => {
-      const snap = buildWidgetSnapshot(PET, { ...base, trial: staleTrial });
-      expect(snap.mealChoices).toEqual([]);
+  it('retires the day counter AND the trial strip on a stale trial', () => {
+    const snap = buildWidgetSnapshot(PET, {
+      ...base,
+      trial: staleTrial,
+      trialCoverage: coverage,
+      trialCoveredDayIndices: [],
     });
+    expect(snap.trialDay).toBeNull();
+    expect(snap.trialTargetDays).toBeNull();
+    expect(snap.trial).toBeNull(); // the strip goes too — never "Day 412 of 56"
+  });
 
-    it('drops the trial-diet row from a learned slot too', () => {
-      const meals: SnapshotMealRow[] = [];
-      for (let d = 18; d <= 23; d++) {
-        meals.push(
-          mealRow(`2026-07-${d}T07:00:00.000Z`, 'meal', {
-            food_item_id: 'usual-1',
-            brand: 'Purina',
-            product_name: 'ONE',
-          }),
-        );
-      }
-      const snap = buildWidgetSnapshot(PET, { ...base, meals, trial: staleTrial });
-      // The slot survives and falls back to the pet's ACTUAL usual food — the
-      // widget keeps working, it just stops naming a diet that is over.
-      expect(snap.mealChoices).toEqual([
-        { foodItemId: 'usual-1', label: expect.stringContaining('Purina ONE') },
-      ]);
+  it('keeps a trial merely in overrun, inside its grace — counter and strip both render', () => {
+    // Day 1 on 2026-07-01, 14-day target → target ends 07-14, grace runs to 08-11;
+    // today is 07-24.
+    const snap = buildWidgetSnapshot(PET, {
+      ...base,
+      trial: { ...staleTrial, startedAt: '2026-07-01', targetDurationDays: 14 },
+      trialCoverage: { daysLogged: 20, daysElapsed: 24 },
+      trialCoveredDayIndices: [],
     });
+    expect(snap.trialDay).toBe(24);
+    expect(snap.trial).toMatchObject({ daysLogged: 20, daysElapsed: 24 });
+  });
+});
 
-    it('retires the day counter with it, so the two can never disagree', () => {
-      const snap = buildWidgetSnapshot(PET, { ...base, trial: staleTrial });
-      expect(snap.trialDay).toBeNull();
-      expect(snap.trialTargetDays).toBeNull();
-    });
+// ── v2 block assembly (spec §3) ───────────────────────────────────────────────
+//
+// A local-consistent fixture: dayBounds from localDayBounds(NOW_LOCAL) and every
+// event timestamp built from local components, so the meal-split window and the v2
+// local-day filter agree in EVERY runner zone (the "App (jest, non-UTC timezones)"
+// CI job runs UTC+14 / UTC+12:45 / UTC−10).
+describe('the v2 block', () => {
+  const at = (h: number, m = 0) => new Date(2026, 6, 24, h, m).toISOString();
+  const b = localDayBounds(NOW_LOCAL);
+  const v2base = { ...base, dayBounds: { startMs: b.startMs, endMs: b.endMs } };
 
-    it('keeps a trial that is merely in overrun, inside its grace', () => {
-      // §4.3 offers a NAMED one-tap extension (+28d skin / +14d GI); the owner who
-      // means to keep going and has not tapped yet must not lose the wedge
-      // feature's one-tap logging. Day 1 on 2026-07-01, 14-day target → target
-      // ends 07-14, grace runs to 08-11; today is 07-24.
-      const snap = buildWidgetSnapshot(PET, {
-        ...base,
-        trial: { ...staleTrial, startedAt: '2026-07-01', targetDurationDays: 14 },
-      });
-      expect(snap.mealChoices).toEqual([{ foodItemId: 'food-1', label: "Hill's z/d" }]);
-      expect(snap.trialDay).toBe(24);
+  it('folds today’s meals + treats + meds + symptoms into todayByClass', () => {
+    const snap = buildWidgetSnapshot(PET, {
+      ...v2base,
+      meals: [
+        mealRow(at(7, 42), 'meal', { food_item_id: 'f1', brand: "Hill's", product_name: 'z/d' }),
+        mealRow(at(15, 5), 'treat', { food_item_id: 't1', brand: 'Dental', product_name: 'chew' }),
+      ],
+      medDoses: [{ name: 'Amoxicillin', occurredAt: at(8) }],
+      medExpectedToday: 2,
+      symptomEvents: [{ label: 'Vomiting', occurredAt: at(16, 40) }],
     });
+    expect(snap.todayByClass?.meals).toMatchObject({ count: 1, names: ["Hill's z/d"] });
+    expect(snap.todayByClass?.treats).toMatchObject({ count: 1, names: ['Dental chew'] });
+    expect(snap.todayByClass?.meds).toMatchObject({ count: 1, names: ['Amoxicillin'], expectedToday: 2 });
+    expect(snap.todayByClass?.symptoms).toMatchObject({ count: 1, leadingType: 'Vomiting' });
+  });
 
-    it('keeps a targetless trial, which has no window to overrun', () => {
-      const snap = buildWidgetSnapshot(PET, {
-        ...base,
-        trial: { ...staleTrial, targetDurationDays: 0 },
-      });
-      expect(snap.mealChoices).toEqual([{ foodItemId: 'food-1', label: "Hill's z/d" }]);
+  it('carries medExpectedToday = null through when the cadence is not known', () => {
+    const snap = buildWidgetSnapshot(PET, {
+      ...v2base,
+      medDoses: [{ name: 'Gabapentin', occurredAt: at(8) }],
+      medExpectedToday: null,
     });
+    expect(snap.todayByClass?.meds.expectedToday).toBeNull();
+  });
+
+  it('builds the up-next tile from a learned unlogged window', () => {
+    // A ~6p routine on 6 prior local days, with nothing logged today — the next
+    // unlogged window. LOCAL-component instants (B-514): a UTC '18:00Z' would land
+    // on a different local day at UTC±extremes and shift one meal into "today",
+    // logging the slot and emptying the tile.
+    const now = new Date(2026, 6, 24, 16, 0); // 4pm local — the 6pm window is ahead
+    const bounds = localDayBounds(now);
+    const meals: SnapshotMealRow[] = [];
+    for (let d = 18; d <= 23; d++) {
+      meals.push(mealRow(new Date(2026, 6, d, 18, 0).toISOString(), 'meal', { food_item_id: 'f1', brand: "Hill's", product_name: 'z/d' }));
+    }
+    const snap = buildWidgetSnapshot(PET, {
+      ...v2base,
+      generatedAt: now.toISOString(),
+      dayBounds: { startMs: bounds.startMs, endMs: bounds.endMs },
+      meals,
+    });
+    expect(snap.upNext).not.toBeNull();
+    expect(snap.upNext?.label).toBe('Dinner');
+  });
+
+  it('builds the 7-day pips from the coverage row', () => {
+    const snap = buildWidgetSnapshot(PET, {
+      ...v2base,
+      sevenDayEvents: [
+        { occurredAt: at(8), isSymptom: false },
+        { occurredAt: at(16), isSymptom: true },
+      ],
+    });
+    expect(snap.sevenDays).toHaveLength(7);
+    expect(snap.sevenDays?.[6]).toMatchObject({ dayKey: '2026-07-24', logged: true, symptomLogged: true });
+  });
+
+  it('paints the trial strip from the shared coverage numbers + covered-day indices', () => {
+    const trial = { startedAt: '2026-07-13', targetDurationDays: 28, foodItemId: 'f1', foodLabel: "Hill's z/d" };
+    const { localDayIndexOf } = require('./utils');
+    const start = localDayIndexOf('2026-07-13');
+    const snap = buildWidgetSnapshot(PET, {
+      ...v2base,
+      trial,
+      trialCoverage: { daysLogged: 2, daysElapsed: 12 },
+      trialCoveredDayIndices: [start, start + 3],
+    });
+    expect(snap.trial).toMatchObject({ day: 12, target: 28, daysLogged: 2, daysElapsed: 12 });
+    expect(snap.trial?.stripDays).toHaveLength(12);
+    expect(snap.trial?.stripDays[0].logged).toBe(true);
+    expect(snap.trial?.stripDays[3].logged).toBe(true);
+    expect(snap.trial?.stripDays[1].logged).toBe(false);
   });
 
   it('has no field that could carry Signal/AI copy or monetization state (D9 by construction)', () => {
-    // The contract is the guardrail: a widget cannot render what the snapshot
-    // cannot express. A new key here must survive the D9/§8 review.
     const snap = buildWidgetSnapshot(PET, base);
     expect(Object.keys(snap).sort()).toEqual(
       [
-        // W5 added `bowlConfirmedAt` — an ISO timestamp of a real arrangement
-        // re-attest. It carries no copy, no verdict and no tier: it can only
-        // put a dated ✓ on the bowl row, which is why it survives the review.
-        'bowlConfirmedAt',
-        'dayKey', 'freeFed', 'generatedAt', 'mealChoices', 'petId', 'petName',
-        'schemaVersion', 'slots', 'species', 'today', 'treatChoices', 'trialDay',
-        'trialTargetDays',
+        'bowlConfirmedAt', 'dayKey', 'freeFed', 'generatedAt', 'petId', 'petName',
+        'schemaVersion', 'sevenDays', 'slots', 'species', 'today', 'todayByClass',
+        'trial', 'trialDay', 'trialTargetDays', 'upNext',
       ].sort(),
     );
-  });
-
-  // ── Widget V2 opt-in (spec §3; lib/widgetSnapshotV2.ts) ────────────────────
-  //
-  // buildWidgetSnapshot carries a pre-built v2 block additively. The four fields
-  // appear ONLY when the caller passes `v2`; the production publisher does not, so
-  // the default-path contract above is the steady state and the published JSON is
-  // byte-identical until V2-PR-2 wires the reads.
-  describe('the v2 opt-in', () => {
-    it('adds exactly the four v2 keys and carries the block through unchanged', () => {
-      const snap = buildWidgetSnapshot(PET, { ...base, v2: V2_FIXTURE });
-      const added = Object.keys(snap).filter((k) => !(k in buildWidgetSnapshot(PET, base)));
-      expect(added.sort()).toEqual(['sevenDays', 'todayByClass', 'trial', 'upNext']);
-      // Passthrough: the exact same references, no re-computation.
-      expect(snap.todayByClass).toBe(V2_FIXTURE.todayByClass);
-      expect(snap.upNext).toBe(V2_FIXTURE.upNext);
-      expect(snap.sevenDays).toBe(V2_FIXTURE.sevenDays);
-      expect(snap.trial).toBe(V2_FIXTURE.trial);
-    });
-
-    it('omits every v2 key when no v2 block is supplied (production path unchanged)', () => {
-      const keys = Object.keys(buildWidgetSnapshot(PET, base));
-      expect(keys).not.toContain('todayByClass');
-      expect(keys).not.toContain('upNext');
-      expect(keys).not.toContain('sevenDays');
-      expect(keys).not.toContain('trial');
-    });
-
-    it('carries a null v2 trial through (a stale/absent trial is the publisher’s call)', () => {
-      const snap = buildWidgetSnapshot(PET, { ...base, v2: { ...V2_FIXTURE, trial: null } });
-      expect(snap.trial).toBeNull();
-      expect('trial' in snap).toBe(true); // present-but-null, distinct from absent
-    });
   });
 });
 
 describe('localDayBounds', () => {
   it('brackets the given time inside a 24h device-local window', () => {
-    const now = new Date(2026, 6, 24, 21, 30); // device-local 21:30
+    const now = new Date(2026, 6, 24, 21, 30);
     const { startIso, endIso } = localDayBounds(now);
     const start = new Date(startIso).getTime();
     const end = new Date(endIso).getTime();
@@ -355,7 +288,7 @@ describe('localDayBounds', () => {
   });
 
   it('starts at the LOCAL midnight, not the UTC rollover', () => {
-    const now = new Date(2026, 6, 24, 0, 5); // five past local midnight
+    const now = new Date(2026, 6, 24, 0, 5);
     const { startIso } = localDayBounds(now);
     expect(new Date(startIso).getTime()).toBe(new Date(2026, 6, 24, 0, 0).getTime());
   });

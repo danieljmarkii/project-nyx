@@ -1,6 +1,6 @@
-// The Culprit Home Screen widget — round-3 states 1–4 (widget PR W5).
-// Design-locked to docs/culprit-widget-mockups.html; spec §2 of
-// docs/nyx-widget-requirements.md.
+// The Culprit Home Screen widget — v2, the informational rebuild (Widget V2, PR 2).
+// Design-locked to docs/culprit-widget-mockups.html ROUND 7; spec §2 of
+// docs/nyx-widget-requirements.md v2.0.
 //
 // ── READ THIS BEFORE EDITING ────────────────────────────────────────────────
 // This is NOT a React Native component and it does not run in the app process.
@@ -15,36 +15,29 @@
 //     the function. Referencing a module-scope constant — a theme token, a
 //     helper, anything imported — is a ReferenceError on device. Hence the
 //     inline `T` palette and the local helpers: they are duplication on purpose,
-//     and widgets/CulpritWidget.test.tsx evaluates the emitted string in a
+//     and widgets/CulpritWidget.test.ts evaluates the emitted string in a
 //     faithful stand-in context so a leak fails in CI, not on someone's phone.
-//   • NO filesystem and NO network. A button press cannot call W4's App Intents
-//     (they need expo-file-system + fetch). It returns a PROPS PATCH instead;
-//     WidgetKit's interaction intent merges it into the persisted timeline entry
-//     and reloads the widget — which is also why the picker flip is entirely
-//     extension-local and needs no running app (§4.1 Q2).
-//   • Captures therefore land in `props.pending` — the outbox — and the app
-//     drains them through the shipped W4 intents (lib/widgetBridge.ts). The row
-//     ids are generated HERE, at tap time, so the chain keeps W3's id-keyed
-//     idempotency end to end.
+//   • NO filesystem and NO network. v2 NEVER WRITES (V2-1): there is no capture,
+//     no outbox, no button — every interactive element is a `Link` that opens the
+//     app. The layout is a pure renderer over the props the publisher computed;
+//     it composes no facts.
 //   • A dynamic child list must be passed as ONE array expression. The native
 //     child walker reads `props.children` as a flat array of nodes and silently
-//     drops a NESTED array, so `{header}{rows}` loses `rows` — every list below
-//     is therefore built in JS and interpolated as a single child.
+//     drops a NESTED array, so every list below is built in JS and interpolated
+//     as a single child.
 //
-// Two deliberate v1 deviations, recorded rather than left to be discovered:
+// Two deliberate deviations, recorded rather than left to be discovered:
 //   • Custom fonts are not available to the extension (Geist is not in the
-//     widget target's bundle), so the widget renders in the system face — the
-//     standard widget look.
+//     widget target's bundle), so the widget renders in the system face.
 //   • Glyphs are SF Symbols, not the app's Lucide `EventIcon` family, for the
 //     same reason (no RN/SVG in this runtime). They are matched to the app's
-//     meaning (`fork.knife` ↔ UtensilsCrossed, `pawprint` ↔ PawPrint), so the
-//     two surfaces read as the same concepts in different families. Closing
-//     that gap needs the glyphs shipped into the extension's asset catalog —
-//     spec §10's icon pass, not a v1 blocker.
+//     meaning and, per §2.3, to a SHAPE that survives monochrome rendering:
+//     meal = filled circle, treat = small filled circle, med = rounded square,
+//     symptom = diamond (a rotated square), learned window = hollow ring.
 
 import {
-  Button,
   Circle,
+  Divider,
   HStack,
   Image,
   Link,
@@ -59,12 +52,19 @@ import {
   font,
   foregroundStyle,
   frame,
+  lineLimit,
   offset,
   padding,
   shapes,
   strokeBorder,
 } from '@expo/ui/swift-ui/modifiers';
-import type { CulpritWidgetProps, WidgetPetPanel, WidgetSlotUi } from '../lib/widgetProps';
+import {
+  type CulpritWidgetProps,
+  type WidgetBand,
+  type WidgetPetPanel,
+  type WidgetTile,
+  type WidgetUpNext,
+} from '../lib/widgetProps';
 
 /** The `petSlot` configuration parameter, as app.json declares it. */
 export interface CulpritWidgetConfiguration {
@@ -78,27 +78,35 @@ export function CulpritWidgetLayout(
   'widget';
 
   // Tokens, verbatim from constants/theme.ts (see the header on why they are
-  // inlined). The widget is light-ground only in v1, matching the design-locked
-  // mock; it sets its own container background so a dark system material can
-  // never render this palette unreadable.
+  // inlined). The widget is light-ground only, matching the design-locked mock;
+  // it sets its own container background so a dark system material can never
+  // render this palette unreadable.
   const T = {
-    accent: '#00C2A8',
-    accentLight: '#E0FBF7',
-    accentInk: '#0B7B6C', // theme.colorAccentInk — the ✓ mark on the tinted row
+    accent: '#00C2A8', // colorEventMeal / accent — meal + treat glyphs, the today dot
+    accentInk: '#0B7B6C', // a covered trial dot, a logged pip tick
+    med: '#5B7A9E', // colorEventMedication — the med glyph
+    symptom: '#F43F5E', // colorEventSymptom — the symptom glyph + rose pip
+    symptomLight: '#FFE4E6', // colorEventSymptomLight — the symptom tile ground
+    symptomInk: '#9F1239', // the symptom tile's small-caps label
     surface: '#FFFFFF',
     surfaceSubtle: '#F5F5F5',
     border: '#EAEAEA',
+    tickIdle: '#C9C9C9', // an un-logged pip tick / a trial gap dot
     textPrimary: '#0A0A0A',
     textSecondary: '#525252',
     textTertiary: '#737373',
     crescent: '#211E4E',
   };
 
+  // Inlined, NOT imported: the layout runs as a bare string with no module graph,
+  // so `WIDGET_PROPS_SCHEMA_VERSION` would be a ReferenceError on device. Kept in
+  // lockstep with lib/widgetProps.WIDGET_PROPS_SCHEMA_VERSION — the JSC eval test
+  // renders a mismatched schema and asserts the door, so a drift here fails CI.
+  const EXPECTED_SCHEMA_VERSION = 2;
+
   const slotKey = (environment.configuration && environment.configuration.petSlot) || 'slot1';
   const pets = props.pets || {};
   const panel: WidgetPetPanel | undefined = pets[slotKey];
-  const uiState: Record<string, WidgetSlotUi> = props.ui || {};
-  const ui: WidgetSlotUi = uiState[slotKey] || { view: 'resting', logged: null };
 
   // ── Local helpers ─────────────────────────────────────────────────────────
 
@@ -114,110 +122,29 @@ export function CulpritWidgetLayout(
     );
   }
 
-  // v4-shaped id, generated at tap time. It becomes the canonical events/meals
-  // row id, so it must satisfy the inbox's UUID guard (lib/captureInbox's
-  // UUID_RE) exactly. Math.random is the only entropy JavaScriptCore offers
-  // here; a collision across a household's taps is negligible, and the write is
-  // id-keyed and idempotent either way.
-  function uuid4(): string {
-    const hex = '0123456789abcdef';
-    let out = '';
-    for (let i = 0; i < 36; i++) {
-      if (i === 8 || i === 13 || i === 18 || i === 23) {
-        out += '-';
-      } else if (i === 14) {
-        out += '4';
-      } else {
-        let r = Math.floor(Math.random() * 16);
-        if (i === 19) r = (r & 0x3) | 0x8;
-        out += hex[r];
-      }
-    }
-    return out;
-  }
-
-  // '7:42a' — the same compact clock lib/widgetProps.formatClock renders for
-  // the status rows, so the undo strip and the row it will become agree.
-  function clock(d: Date): string {
-    const h24 = d.getHours();
-    const mm = d.getMinutes();
-    const h12 = ((h24 + 11) % 12) + 1;
-    const suffix = h24 < 12 ? 'a' : 'p';
-    return mm === 0 ? h12 + suffix : h12 + ':' + (mm < 10 ? '0' + mm : String(mm)) + suffix;
-  }
-
-  function withUi(next: WidgetSlotUi) {
-    const merged: Record<string, WidgetSlotUi> = {};
-    for (const key in uiState) merged[key] = uiState[key];
-    merged[slotKey] = next;
-    return merged;
-  }
-
+  // 'nyx:///<path>' carrying the widget's own pet and a `src=widget` marker (§5
+  // success measure: every widget-sourced open is labelled from day one). The pet
+  // makes the app open on the RIGHT pet regardless of the in-app active pet (D5).
   function petLink(path: string): string {
-    const petQuery = panel ? (path.indexOf('?') >= 0 ? '&' : '?') + 'pet=' + panel.petId : '';
-    return 'nyx:///' + path + petQuery;
+    const sep = path.indexOf('?') >= 0 ? '&' : '?';
+    const petQuery = panel ? 'pet=' + panel.petId + '&' : '';
+    return 'nyx:///' + path + sep + petQuery + 'src=widget';
   }
 
-  // The day view link. Two things the first cut got wrong:
-  //   • it must carry the `ts` nonce every other History doorway sends — the
-  //     screen ignores a `date` without one (app/(tabs)/history.tsx), and the
-  //     tab persists across navigation, so without it a widget tap on an
-  //     already-visited History opens whatever filter was last used;
-  //   • it must point at the day being RENDERED, not the day the snapshot
-  //     describes — on a stale render the rows already show today's gaps, so a
-  //     link to yesterday would contradict what the owner is looking at.
-  // The nonce is the evaluation clock, which advances on every widget refresh.
+  // The day-view link. Two things v1 got wrong and this keeps:
+  //   • it carries the `ts` nonce every History doorway sends — the screen
+  //     ignores a `date` without one (the tab persists across navigation);
+  //   • it points at the day being RENDERED, not the day the snapshot describes —
+  //     on a stale render the widget already shows the empty day, so a link to
+  //     yesterday would contradict what the owner is looking at.
   function dayLink(dayKey: string): string {
     return petLink('history?date=' + dayKey + '&ts=' + Date.now());
   }
 
-  // A press that captures: append to the outbox, drop back to resting, and
-  // offer the undo. Nothing here writes a row — the app does, from `pending`.
-  function capturePatch(
-    kind: 'meal' | 'treat' | 'bowl_topup',
-    foodItemId: string | null,
-    label: string,
-  ) {
-    const now = new Date();
-    const record = {
-      id: uuid4(),
-      mealId: kind === 'bowl_topup' ? null : uuid4(),
-      kind,
-      petId: panel ? panel.petId : '',
-      foodItemId,
-      occurredAt: now.toISOString(),
-      label,
-    };
-    return {
-      pending: (props.pending || []).concat([record]),
-      ui: withUi({ view: 'resting', logged: { id: record.id, label, at: clock(now) } }),
-    };
-  }
-
-  // Undo. One path, honest at any timing (the W3 §4.1 Q5 recommendation): the
-  // capture leaves the outbox AND its id is recorded as revoked, so a tap the
-  // app already drained is soft-deleted on the next drain rather than quietly
-  // standing. `revoked` is bounded; the app clears it on every publish.
-  // NOTE: `revoked` is one flat pool shared by every pet slot on the device
-  // (there is one timeline per widget KIND, not per instance). 20 is far above
-  // any realistic un-drained backlog — the app clears it on every publish — but
-  // the pool is shared, so a hypothetical multi-widget household churning
-  // captures faster than the app ever runs could evict an old revoke.
-  function undoPatch(captureId: string) {
-    const carried = (props.revoked || []).filter((id) => id !== captureId).slice(-19);
-    return {
-      pending: (props.pending || []).filter((p) => p.id !== captureId),
-      revoked: carried.concat([captureId]),
-      ui: withUi({ view: 'resting', logged: null }),
-    };
-  }
-
-  // ── Pieces ────────────────────────────────────────────────────────────────
-
-  // CulpritMark at 16pt — the real geometry (a disc carved by an overlapping
-  // disc in the ground colour, plus the teal Signal dot), scaled from the
-  // 100-unit viewBox of components/brand/CulpritMark.tsx. Static: the mark
-  // never pulses on the widget (§2.1).
+  // CulpritMark at 16pt — the real geometry (a disc carved by an overlapping disc
+  // in the ground colour, plus the teal Signal dot), scaled from the 100-unit
+  // viewBox of components/brand/CulpritMark.tsx. Static: the mark never pulses on
+  // the widget (§2.2).
   function mark() {
     const s = 0.16;
     return (
@@ -252,30 +179,34 @@ export function CulpritWidgetLayout(
     );
   }
 
+  // The header (§2.2): mark · pet name · right-aligned context line. A Link to
+  // Home (Job 2 — the fastest door back in). Fixed 16pt tall.
   function header(title: string, trailing: string) {
     return (
-      <HStack key="header" spacing={6} modifiers={[frame({ maxWidth: Infinity })]}>
-        {[
-          mark(),
-          <Text
-            key="title"
-            modifiers={[font({ size: 13, weight: 'semibold' }), foregroundStyle(T.textPrimary)]}>
-            {title}
-          </Text>,
-          <Spacer key="spacer" />,
-          <Text key="trailing" modifiers={[font({ size: 10.5 }), foregroundStyle(T.textTertiary)]}>
-            {trailing}
-          </Text>,
-        ]}
-      </HStack>
+      <Link key="header" destination={petLink('')}>
+        <HStack spacing={6} modifiers={[frame({ maxWidth: Infinity, height: 16 })]}>
+          {[
+            mark(),
+            <Text
+              key="title"
+              modifiers={[font({ size: 13, weight: 'semibold' }), foregroundStyle(T.textPrimary)]}>
+              {title}
+            </Text>,
+            <Spacer key="spacer" />,
+            <Text key="trailing" modifiers={[font({ size: 10.5 }), foregroundStyle(T.textTertiary)]}>
+              {trailing}
+            </Text>,
+          ]}
+        </HStack>
+      </Link>
     );
   }
 
-  // A whole-widget message state (signed out, unbound slot, tombstoned pet).
-  // Always a Link: every dead end on this surface opens the app (Job 2).
+  // A whole-widget message state (signed out, unbound slot, tombstoned pet,
+  // schema mismatch). Always a Link: every dead end on this surface opens the app.
   function door(title: string, detail: string) {
     return (
-      <Link destination="nyx:///">
+      <Link destination="nyx:///?src=widget">
         <VStack
           spacing={6}
           alignment="leading"
@@ -301,209 +232,292 @@ export function CulpritWidgetLayout(
     );
   }
 
-  // One status row. `stale` drops the tick AND its clock time together: a
-  // widget rendering on a later day than the snapshot describes shows the slot
-  // as an open gap, never yesterday's ✓ carried forward (B-156 G1 generalized).
-  function statusRow(
-    row: { label: string; done: boolean; when: string; expected: string; ambient: boolean },
-    stale: boolean,
-    key: string,
-  ) {
-    const done = row.done && !stale;
-    // An ambient row (the free-fed bowl) never wears the task vocabulary: an
-    // un-topped bowl is not an unmet obligation, and a top-up is an arrangement
-    // re-attest, never a fed-✓. It gets a quiet dotted mark in either state, so
-    // the only thing that changes is the fact in the trailing text.
-    const glyph = row.ambient ? 'circle.dotted' : done ? 'checkmark.circle.fill' : 'circle';
-    const glyphColor = row.ambient ? T.textTertiary : done ? T.accentInk : T.accent;
-    return (
-      <HStack
-        key={key}
-        spacing={7}
-        modifiers={[
-          padding({ horizontal: 8, vertical: 5 }),
-          background(T.surfaceSubtle, shapes.roundedRectangle({ cornerRadius: 11 })),
-          frame({ maxWidth: Infinity }),
-        ]}>
-        {[
-          <Image key="tick" systemName={glyph} size={13} color={glyphColor} />,
+  // The glyph for a tile kind (§2.3 vocabulary — shape first, colour second).
+  function tileGlyph(kind: string) {
+    if (kind === 'meal') return <Image key="g" systemName="circle.fill" size={8} color={T.accent} />;
+    if (kind === 'treat') return <Image key="g" systemName="circle.fill" size={6} color={T.accent} />;
+    if (kind === 'med') return <Image key="g" systemName="app.fill" size={9} color={T.med} />;
+    if (kind === 'symptom') return <Image key="g" systemName="diamond.fill" size={8} color={T.symptom} />;
+    if (kind === 'upNext') return <Image key="g" systemName="circle" size={8} color={T.accent} />;
+    return null; // trialRecord — label only, no glyph
+  }
+
+  // One fact tile: label line (glyph + small-caps label), value line (bold value +
+  // lighter unit), and a name sub-line. Every line clips with one line limit —
+  // nothing wraps (§2.1). `sub` may be '' (a two-line tile).
+  function factTile(tile: WidgetTile, dest: string, key: string) {
+    const isSymptom = tile.kind === 'symptom';
+    const glyph = tileGlyph(tile.kind);
+    const labelChildren = glyph
+      ? [
+          glyph,
           <Text
             key="label"
-            modifiers={[font({ size: 12, weight: 'medium' }), foregroundStyle(T.textPrimary)]}>
-            {row.label}
+            modifiers={[
+              lineLimit(1),
+              font({ size: 9, weight: 'semibold' }),
+              foregroundStyle(isSymptom ? T.symptomInk : T.textTertiary),
+            ]}>
+            {tile.label.toUpperCase()}
           </Text>,
-          <Spacer key="spacer" />,
-          <Text key="when" modifiers={[font({ size: 10.5 }), foregroundStyle(T.textTertiary)]}>
-            {done ? row.when : row.expected}
-          </Text>,
-        ]}
-      </HStack>
-    );
-  }
-
-  // The just-logged confirmation row — the mock's "✓ just now · tap to undo on
-  // the affected row". It sits ABOVE the status rows rather than replacing the
-  // column, so the widget keeps answering its ambient "did I log it?" question
-  // (Job 1) through a capture. It carries the minute, not "just now": the
-  // widget has no guaranteed re-render, so a relative claim would quietly go
-  // stale on the Home Screen.
-  //
-  // Undo is state-based, not timer-based, for the same reason — a "tap to undo"
-  // that silently stopped working would be worse than one that stays until the
-  // app takes the capture off our hands.
-  function loggedRow(logged: { id: string; label: string; at: string }) {
-    return (
-      <HStack
-        key="confirm"
-        spacing={7}
-        modifiers={[
-          padding({ horizontal: 8, vertical: 5 }),
-          background(T.accentLight, shapes.roundedRectangle({ cornerRadius: 11 })),
-          frame({ maxWidth: Infinity }),
-        ]}>
-        {[
-          <Image key="tick" systemName="checkmark.circle.fill" size={13} color={T.accentInk} />,
+        ]
+      : [
           <Text
             key="label"
-            modifiers={[font({ size: 12, weight: 'medium' }), foregroundStyle(T.textPrimary)]}>
-            {logged.label}
+            modifiers={[
+              lineLimit(1),font({ size: 9, weight: 'semibold' }), foregroundStyle(T.textTertiary)]}>
+            {tile.label.toUpperCase()}
           </Text>,
-          <Spacer key="spacer" />,
-          <Text key="when" modifiers={[font({ size: 10.5 }), foregroundStyle(T.textTertiary)]}>
-            {logged.at}
-          </Text>,
-        ]}
-      </HStack>
-    );
-  }
+        ];
 
-  function undoRow(logged: { id: string; label: string; at: string }) {
-    return (
-      <Button key="undo" target="undo" onPress={() => undoPatch(logged.id)}>
-        <HStack spacing={5} modifiers={[padding({ horizontal: 8 }), frame({ maxWidth: Infinity })]}>
-          {[
-            <Text
-              key="label"
-              modifiers={[font({ size: 11, weight: 'medium' }), foregroundStyle(T.textSecondary)]}>
-              Undo
-            </Text>,
-            <Spacer key="spacer" />,
-          ]}
-        </HStack>
-      </Button>
-    );
-  }
+    const valueChildren = [
+      <Text
+        key="value"
+        modifiers={[
+          lineLimit(1),font({ size: 15, weight: 'bold' }), foregroundStyle(T.textPrimary)]}>
+        {tile.value}
+      </Text>,
+    ];
+    if (tile.unit) {
+      valueChildren.push(
+        <Text key="unit" modifiers={[lineLimit(1), font({ size: 11 }), foregroundStyle(T.textSecondary)]}>
+          {tile.unit}
+        </Text>,
+      );
+    }
 
-  // One capture tile. The whole tile is the target (D3).
-  function tile(
-    target: string,
-    label: string,
-    systemName: Parameters<typeof Image>[0]['systemName'],
-    accent: boolean,
-    onPress: () => object,
-  ) {
-    return (
-      <Button
-        key={target}
-        target={target}
-        onPress={onPress}
-        modifiers={[frame({ maxWidth: Infinity, maxHeight: Infinity })]}>
-        <VStack
-          spacing={4}
+    const rows: React.JSX.Element[] = [
+      <HStack key="k" spacing={5} modifiers={[frame({ maxWidth: Infinity, alignment: 'leading' })]}>
+        {labelChildren}
+      </HStack>,
+      <HStack key="v" spacing={4} modifiers={[frame({ maxWidth: Infinity, alignment: 'leading' })]}>
+        {valueChildren.concat([<Spacer key="fill" />])}
+      </HStack>,
+    ];
+    if (tile.sub) {
+      rows.push(
+        <Text
+          key="s"
           modifiers={[
-            frame({ maxWidth: Infinity, maxHeight: Infinity }),
+            lineLimit(1),font({ size: 9.5 }), foregroundStyle(T.textTertiary)]}>
+          {tile.sub}
+        </Text>,
+      );
+    }
+
+    return (
+      <Link key={key} destination={dest}>
+        <VStack
+          spacing={1}
+          alignment="leading"
+          modifiers={[
+            frame({ maxWidth: Infinity, maxHeight: Infinity, alignment: 'leading' }),
+            padding({ horizontal: 10, vertical: 6 }),
             background(
-              accent ? T.accent : T.surfaceSubtle,
-              shapes.roundedRectangle({ cornerRadius: 16 }),
+              isSymptom ? T.symptomLight : T.surfaceSubtle,
+              shapes.roundedRectangle({ cornerRadius: 12 }),
             ),
           ]}>
+          {rows}
+        </VStack>
+      </Link>
+    );
+  }
+
+  // The Up-next tile (§2.4): outlined (unfilled = not yet happened), the slot name
+  // + the learned window. `restingSuffix` adds "· not logged yet" in the resting
+  // grid; the empty-day headline already says it, so that state passes ''.
+  function upNextTile(up: WidgetUpNext, restingSuffix: string, key: string) {
+    const sub = 'usually ' + up.approxTime + restingSuffix;
+    return (
+      <Link key={key} destination={petLink('log?type=meal')}>
+        <VStack
+          spacing={1}
+          alignment="leading"
+          modifiers={[
+            frame({ maxWidth: Infinity, maxHeight: Infinity, alignment: 'leading' }),
+            padding({ horizontal: 10, vertical: 6 }),
+            strokeBorder({
+              color: T.border,
+              style: { lineWidth: 1 },
+              shape: 'roundedRectangle',
+              cornerRadius: 12,
+            }),
+          ]}>
           {[
-            <Image
-              key="glyph"
-              systemName={systemName}
-              size={21}
-              color={accent ? T.textPrimary : T.textSecondary}
-            />,
+            <HStack key="k" spacing={5} modifiers={[frame({ maxWidth: Infinity, alignment: 'leading' })]}>
+              {[
+                <Image key="g" systemName="circle" size={8} color={T.accent} />,
+                <Text
+                  key="label"
+                  modifiers={[
+                    lineLimit(1),font({ size: 9, weight: 'semibold' }), foregroundStyle(T.textTertiary)]}>
+                  UP NEXT
+                </Text>,
+              ]}
+            </HStack>,
             <Text
-              key="label"
-              modifiers={[font({ size: 13, weight: 'semibold' }), foregroundStyle(T.textPrimary)]}>
-              {label}
-            </Text>,
-            <Text
-              key="hint"
+              key="v"
               modifiers={[
-                font({ size: 9.5 }),
-                foregroundStyle(accent ? T.textSecondary : T.textTertiary),
-              ]}>
-              tap to pick
+                lineLimit(1),font({ size: 12, weight: 'semibold' }), foregroundStyle(T.textPrimary)]}>
+              {up.label}
+            </Text>,
+            <Text key="s" modifiers={[lineLimit(1), font({ size: 9.5 }), foregroundStyle(T.textTertiary)]}>
+              {sub}
             </Text>,
           ]}
         </VStack>
-      </Button>
+      </Link>
     );
   }
 
-  // One one-tap picker row. `accent` marks the lead option.
-  function pickerRow(
-    target: string,
-    label: string,
-    hint: string,
-    accent: boolean,
-    onPress: () => object,
-  ) {
+  // The door tile (§2.3 ⑦): a dashed placeholder that opens quick-log. Fills a free
+  // grid slot only; the band's Log › chip is the door's permanent home.
+  function doorTile(key: string) {
     return (
-      <Button key={target} target={target} onPress={onPress}>
-        <HStack
-          spacing={8}
+      <Link key={key} destination={petLink('log?type=meal')}>
+        <VStack
+          spacing={1}
+          alignment="leading"
           modifiers={[
-            padding({ horizontal: 14, vertical: 9 }),
-            background(
-              accent ? T.accent : T.surfaceSubtle,
-              shapes.roundedRectangle({ cornerRadius: 13 }),
-            ),
-            frame({ maxWidth: Infinity }),
-          ]}>
-          {[
-            <Text
-              key="label"
-              modifiers={[font({ size: 13, weight: 'semibold' }), foregroundStyle(T.textPrimary)]}>
-              {label}
-            </Text>,
-            <Spacer key="spacer" />,
-            <Text key="hint" modifiers={[font({ size: 10.5 }), foregroundStyle(T.textSecondary)]}>
-              {hint}
-            </Text>,
-          ]}
-        </HStack>
-      </Button>
-    );
-  }
-
-  // The app door — always last in every picker, always honest about what it
-  // does (Job 2). A Link, not a Button: it opens Culprit rather than writing.
-  // Dashed, per the mock's ghost row.
-  function appDoorRow() {
-    return (
-      <Link key="door" destination={petLink('log?type=meal')}>
-        <HStack
-          spacing={8}
-          modifiers={[
-            padding({ horizontal: 14, vertical: 9 }),
+            frame({ maxWidth: Infinity, maxHeight: Infinity, alignment: 'leading' }),
+            padding({ horizontal: 10, vertical: 6 }),
             strokeBorder({
               color: T.border,
               style: { lineWidth: 1, dash: [4, 3] },
               shape: 'roundedRectangle',
-              cornerRadius: 13,
+              cornerRadius: 12,
             }),
-            frame({ maxWidth: Infinity }),
           ]}>
           {[
-            <Text key="label" modifiers={[font({ size: 13 }), foregroundStyle(T.textSecondary)]}>
-              Something else…
+            <Text
+              key="k"
+              modifiers={[
+                lineLimit(1),font({ size: 9, weight: 'semibold' }), foregroundStyle(T.textTertiary)]}>
+              LOG
             </Text>,
-            <Spacer key="spacer" />,
-            <Text key="hint" modifiers={[font({ size: 10.5 }), foregroundStyle(T.textTertiary)]}>
-              opens Culprit
+            <Text
+              key="v"
+              modifiers={[
+                lineLimit(1),font({ size: 11.5, weight: 'medium' }), foregroundStyle(T.textSecondary)]}>
+              opens Culprit ›
+            </Text>,
+          ]}
+        </VStack>
+      </Link>
+    );
+  }
+
+  // An empty grid cell — holds a column's width so an odd tile count still lays
+  // out 2×2 rather than stretching one tile across the row.
+  function emptyCell(key: string) {
+    return <Spacer key={key} modifiers={[frame({ maxWidth: Infinity, maxHeight: Infinity })]} />;
+  }
+
+  // The 2×2 grid from up to four tiles, padded to a fixed shape. The middle band
+  // FLEXES (maxHeight Infinity) while the header and ground band are fixed — so the
+  // ground band can never be squeezed off the bottom (round 6's failure), and the
+  // grid never competes with it.
+  function grid(cells: React.JSX.Element[]) {
+    const c = cells.slice(0, 4);
+    while (c.length < 4) c.push(emptyCell('empty' + c.length));
+    return (
+      <VStack key="grid" spacing={6} modifiers={[frame({ maxWidth: Infinity, maxHeight: Infinity })]}>
+        {[
+          <HStack key="row0" spacing={6} modifiers={[frame({ maxWidth: Infinity, maxHeight: Infinity })]}>
+            {[c[0], c[1]]}
+          </HStack>,
+          <HStack key="row1" spacing={6} modifiers={[frame({ maxWidth: Infinity, maxHeight: Infinity })]}>
+            {[c[2], c[3]]}
+          </HStack>,
+        ]}
+      </VStack>
+    );
+  }
+
+  // The single-row grid the empty-day state uses — up-next (if a window is ahead)
+  // + the door tile. Flexes, same as the full grid.
+  function singleRowGrid(cells: React.JSX.Element[]) {
+    const c = cells.slice(0, 2);
+    while (c.length < 2) c.push(emptyCell('empty' + c.length));
+    return (
+      <VStack key="grid" spacing={6} modifiers={[frame({ maxWidth: Infinity, maxHeight: Infinity })]}>
+        {[
+          <HStack key="row0" spacing={6} modifiers={[frame({ maxWidth: Infinity, maxHeight: Infinity })]}>
+            {[c[0], c[1]]}
+          </HStack>,
+        ]}
+      </VStack>
+    );
+  }
+
+  // ── The ground band (§2.5) ────────────────────────────────────────────────
+
+  // A trial-day dot. Covered → filled ink; a gap → hollow idle; today →
+  // accent-filled if covered, accent-ring if not yet (the same filled/hollow
+  // grammar as the tile glyphs).
+  function trialDot(logged: boolean, isToday: boolean, key: string) {
+    if (isToday) {
+      return (
+        <Image key={key} systemName={logged ? 'circle.fill' : 'circle'} size={6} color={T.accent} />
+      );
+    }
+    return (
+      <Image
+        key={key}
+        systemName={logged ? 'circle.fill' : 'circle'}
+        size={5}
+        color={logged ? T.accentInk : T.tickIdle}
+      />
+    );
+  }
+
+  // One 7-day pip: a rose symptom dot over a coverage tick, today accented. The
+  // rose dot is present-or-absent (never a "no symptom" claim); the tick is the
+  // day's logging coverage (never wellness).
+  function pip(day: { logged: boolean; symptomLogged: boolean }, isToday: boolean, key: string) {
+    const tickColor = day.logged ? (isToday ? T.accent : T.accentInk) : T.tickIdle;
+    return (
+      <VStack key={key} spacing={2} modifiers={[frame({ width: 10 })]}>
+        {[
+          day.symptomLogged ? (
+            <Circle
+              key="sym"
+              modifiers={[frame({ width: 4, height: 4 }), foregroundStyle(T.symptom)]}
+            />
+          ) : (
+            <Spacer key="sym" modifiers={[frame({ width: 4, height: 4 })]} />
+          ),
+          <HStack
+            key="tick"
+            modifiers={[
+              frame({ width: 8, height: 3 }),
+              background(tickColor, shapes.roundedRectangle({ cornerRadius: 1.5 })),
+            ]}>
+            {[]}
+          </HStack>,
+        ]}
+      </VStack>
+    );
+  }
+
+  // The dashed Log › chip — the door's permanent home (§2.5). A Link, right-aligned.
+  function logChip() {
+    return (
+      <Link key="logchip" destination={petLink('log?type=meal')}>
+        <HStack
+          modifiers={[
+            padding({ horizontal: 9, vertical: 3 }),
+            strokeBorder({
+              color: T.border,
+              style: { lineWidth: 1, dash: [4, 3] },
+              shape: 'roundedRectangle',
+              cornerRadius: 9,
+            }),
+          ]}>
+          {[
+            <Text key="t" modifiers={[font({ size: 10.5, weight: 'medium' }), foregroundStyle(T.textSecondary)]}>
+              Log ›
             </Text>,
           ]}
         </HStack>
@@ -511,35 +525,59 @@ export function CulpritWidgetLayout(
     );
   }
 
-  function pickerHeader(title: string) {
+  // The ground band, present in EVERY state (§2.5). A hairline, then the coverage
+  // content (trial strip / pips / nothing) + caption on the left and the Log chip
+  // on the right. Fixed height so it never competes with the flexing grid.
+  function band(bandData: WidgetBand) {
+    const left: React.JSX.Element[] = [];
+    if (bandData && bandData.type === 'trial') {
+      const dots = bandData.dots.map((d, i) =>
+        trialDot(d.logged, i === bandData.todayDotIndex, 'dot' + i),
+      );
+      left.push(
+        <Link key="strip" destination={petLink('profile')}>
+          <HStack spacing={3}>{dots}</HStack>
+        </Link>,
+      );
+      left.push(
+        <Text key="cap" modifiers={[lineLimit(1), font({ size: 9.5 }), foregroundStyle(T.textTertiary)]}>
+          {bandData.caption}
+        </Text>,
+      );
+    } else if (bandData && bandData.type === 'pips') {
+      const pips = bandData.days.map((d, i) => pip(d, i === bandData.days.length - 1, 'pip' + i));
+      left.push(
+        <Link key="pips" destination={dayLink(panel ? panel.dayKey : '')}>
+          <HStack spacing={5}>{pips}</HStack>
+        </Link>,
+      );
+      left.push(
+        <Text key="cap" modifiers={[lineLimit(1), font({ size: 9.5 }), foregroundStyle(T.textTertiary)]}>
+          {bandData.caption}
+        </Text>,
+      );
+    }
+
     return (
-      <HStack key="picker-header" spacing={6} modifiers={[frame({ maxWidth: Infinity })]}>
+      <VStack key="band" spacing={6} modifiers={[frame({ maxWidth: Infinity, height: 34 })]}>
         {[
-          mark(),
-          <Text
-            key="title"
-            modifiers={[font({ size: 11, weight: 'semibold' }), foregroundStyle(T.textTertiary)]}>
-            {title}
-          </Text>,
-          <Spacer key="spacer" />,
-          <Button
-            key="back"
-            target="back"
-            onPress={() => ({ ui: withUi({ view: 'resting', logged: null }) })}>
-            <Text modifiers={[font({ size: 11 }), foregroundStyle(T.textSecondary)]}>‹ back</Text>
-          </Button>,
+          <Divider key="rule" />,
+          <HStack key="row" spacing={8} modifiers={[frame({ maxWidth: Infinity })]}>
+            {left.concat([<Spacer key="sp" />, logChip()])}
+          </HStack>,
         ]}
-      </HStack>
+      </VStack>
     );
   }
 
   function shell(children: React.JSX.Element[]) {
     return (
       <VStack
-        spacing={7}
+        spacing={6}
         alignment="leading"
         modifiers={[
           frame({ maxWidth: Infinity, maxHeight: Infinity, alignment: 'topLeading' }),
+          padding({ horizontal: 14, top: 12, bottom: 11 }),
           containerBackground(T.surface, 'widget'),
         ]}>
         {children}
@@ -549,6 +587,11 @@ export function CulpritWidgetLayout(
 
   // ── States ────────────────────────────────────────────────────────────────
 
+  // A props payload from a newer or older app writes a schema it does not
+  // understand; the honest fallback is the sign-in door, never garbage (§3).
+  if (props.schemaVersion !== EXPECTED_SCHEMA_VERSION) {
+    return door('Open Culprit to catch up', 'Update the app to see this pet’s widget.');
+  }
   if (!props.signedIn) {
     return door('Sign in to start logging', 'Culprit keeps your pet’s record on your account.');
   }
@@ -565,194 +608,62 @@ export function CulpritWidgetLayout(
   const renderedDay = localDayKey(environment.date);
   const stale = panel.dayKey !== renderedDay;
 
-  // Spec §2.2's "auto-reverts to resting after a short idle", as closely as this
-  // platform allows: there is no timer, but every system refresh re-evaluates
-  // this function, so an abandoned picker falls back on the next one instead of
-  // leaving the Home Screen showing a menu where a status board should be.
-  const PICKER_IDLE_MS = 5 * 60 * 1000;
-  const abandoned =
-    ui.view !== 'resting' &&
-    typeof ui.openedAt === 'number' &&
-    Date.now() - ui.openedAt > PICKER_IDLE_MS;
-  const view = abandoned ? 'resting' : ui.view;
-
-  // A choice already captured this pass must not be offered again: props do not
-  // refresh until the app drains, so without this the picker keeps inviting the
-  // same dinner and two people on one counter log it twice.
-  function pendingCapture(foodItemId: string | null, kind: string) {
-    for (const p of props.pending || []) {
-      if (p.petId === panel!.petId && p.kind === kind && p.foodItemId === foodItemId) return p;
-    }
-    return null;
-  }
-
-  function alreadyLoggedRow(key: string, label: string, capture: { occurredAt: string }) {
-    return (
-      <HStack
-        key={key}
-        spacing={8}
-        modifiers={[
-          padding({ horizontal: 14, vertical: 9 }),
-          background(T.accentLight, shapes.roundedRectangle({ cornerRadius: 13 })),
-          frame({ maxWidth: Infinity }),
-        ]}>
-        {[
-          <Text key="label" modifiers={[font({ size: 13 }), foregroundStyle(T.textSecondary)]}>
-            {label}
-          </Text>,
-          <Spacer key="spacer" />,
-          <Text key="hint" modifiers={[font({ size: 10.5 }), foregroundStyle(T.textTertiary)]}>
-            {'logged ' + clock(new Date(capture.occurredAt))}
-          </Text>,
-        ]}
-      </HStack>
-    );
-  }
-
-  function pickerEmptyLine(text: string) {
-    return (
-      <Text key="picker-empty" modifiers={[font({ size: 11.5 }), foregroundStyle(T.textTertiary)]}>
-        {text}
-      </Text>
-    );
-  }
-
-  // State 2 — the meal picker. During a trial the lead row's food IS the trial
-  // diet (resolved app-side, spec §2.2). A slot with no stable named food never
-  // becomes a row here: the no-garbage rule leaves only the app door.
-  if (view === 'meal') {
-    const rows: React.JSX.Element[] = [pickerHeader('Which meal?')];
-    const choices = panel.mealChoices.slice(0, 2);
-    for (let i = 0; i < choices.length; i++) {
-      const choice = choices[i];
-      const already = pendingCapture(choice.foodItemId, 'meal');
-      rows.push(
-        already
-          ? alreadyLoggedRow('done:meal:' + i, choice.label, already)
-          : pickerRow(
-              'pick:meal:' + i,
-              choice.label,
-              i === 0 ? 'one tap · logs now' : 'one tap',
-              i === 0,
-              () => capturePatch('meal', choice.foodItemId, choice.label),
-            ),
-      );
-    }
-    // D6: a free-fed component gets its top-up here. The hint is load-bearing —
-    // a top-up re-attests the arrangement and is never an intake claim.
-    if (panel.bowl) {
-      const already = pendingCapture(null, 'bowl_topup');
-      rows.push(
-        already
-          ? alreadyLoggedRow('done:bowl', 'Top up bowl', already)
-          : pickerRow('pick:bowl', 'Top up bowl', 'not a meal', false, () =>
-              capturePatch('bowl_topup', null, 'Bowl topped up'),
-            ),
-      );
-    }
-    // Principle 5: a picker with nothing nameable is still a designed state.
-    if (choices.length === 0 && !panel.bowl) {
-      rows.push(
-        pickerEmptyLine(
-          'No usual meal to offer yet — Culprit is still learning ' + panel.petName + '’s routine.',
-        ),
-      );
-    }
-    rows.push(appDoorRow());
-    rows.push(<Spacer key="fill" />);
-    return shell(rows);
-  }
-
-  // State 3 — the treat picker. Identical interaction, 2 most-logged treats.
-  if (view === 'treat') {
-    const rows: React.JSX.Element[] = [pickerHeader('Which treat?')];
-    const choices = panel.treatChoices.slice(0, 2);
-    for (let i = 0; i < choices.length; i++) {
-      const choice = choices[i];
-      const already = pendingCapture(choice.foodItemId, 'treat');
-      rows.push(
-        already
-          ? alreadyLoggedRow('done:treat:' + i, choice.label, already)
-          : pickerRow('pick:treat:' + i, choice.label, 'one tap', false, () =>
-              capturePatch('treat', choice.foodItemId, choice.label),
-            ),
-      );
-    }
-    if (choices.length === 0) {
-      rows.push(
-        pickerEmptyLine('No usual treat yet — log a couple in Culprit and they show up here.'),
-      );
-    }
-    rows.push(appDoorRow());
-    rows.push(<Spacer key="fill" />);
-    return shell(rows);
-  }
-
-  // States 1 + 4 — resting. Status column left, two capture tiles right.
-  //
-  // The just-logged confirmation sits ABOVE the status rows rather than
-  // replacing them, so the ambient half of the widget's job survives a capture.
-  // Rows are capped at 3 slots' worth of height either way.
-  const rows: React.JSX.Element[] = [];
-  if (ui.logged) rows.push(loggedRow(ui.logged));
-  const visible = panel.rows.slice(0, ui.logged ? 1 : 3);
-  for (let i = 0; i < visible.length; i++) rows.push(statusRow(visible[i], stale, 'row' + i));
-  if (panel.rows.length === 0 && !ui.logged) {
-    rows.push(
-      // Principle 5 / nyx-voice Pattern 1+3: a designed empty state that names
-      // the pet and points forward. "About a week" is the honest wait — a slot
-      // needs 4 distinct days of a recurring time before it can exist
-      // (lib/widgetResolution.ts SLOT_MIN_DAYS).
-      <Text key="empty" modifiers={[font({ size: 11.5 }), foregroundStyle(T.textTertiary)]}>
-        {'Log meals for about a week and ' + panel.petName + '’s usual times show up here.'}
+  // Staleness (§2.6.5): a render on a later local day than the snapshot describes
+  // carries NO tick, count, tile or context line across the rollover. It shows the
+  // empty day, and the band drops to the Log chip alone — yesterday's coverage is
+  // not today's.
+  if (stale) {
+    return shell([
+      header(panel.petName, ''),
+      <Text
+        key="empty"
+        modifiers={[font({ size: 12 }), foregroundStyle(T.textSecondary), frame({ maxWidth: Infinity, alignment: 'leading' })]}>
+        Nothing logged yet today
       </Text>,
-    );
+      singleRowGrid([doorTile('door')]),
+      band(null),
+    ]);
   }
-  if (ui.logged) rows.push(undoRow(ui.logged));
-  rows.push(<Spacer key="fill" />);
 
-  // The status column is glance-only (D3): one Link into that day, never a
-  // second hidden way to log. While an undo is on offer the column can't be a
-  // Link (the Undo button would sit inside it), so it renders unlinked — the
-  // tiles and the day view are both one tap away again as soon as it clears.
-  const statusColumn = ui.logged ? (
-    <VStack
-      key="status"
-      spacing={5}
-      alignment="leading"
-      modifiers={[frame({ maxWidth: Infinity, maxHeight: Infinity, alignment: 'topLeading' })]}>
-      {rows}
-    </VStack>
-  ) : (
-    <Link key="status" destination={dayLink(renderedDay)}>
-      <VStack
-        spacing={5}
-        alignment="leading"
-        modifiers={[frame({ maxWidth: Infinity, maxHeight: Infinity, alignment: 'topLeading' })]}>
-        {rows}
-      </VStack>
-    </Link>
-  );
+  // Empty day (§2.6.2): nothing logged in any class today. A designed state — the
+  // honest line, the day's next window (if one is ahead), the record still in the
+  // band. Never a nag, never "all quiet".
+  if (!panel.hasTodayEvents) {
+    const cells: React.JSX.Element[] = [];
+    if (panel.upNext) cells.push(upNextTile(panel.upNext, '', 'upnext'));
+    cells.push(doorTile('door'));
+    return shell([
+      header(panel.petName, panel.contextLine),
+      <Text
+        key="empty"
+        modifiers={[font({ size: 12 }), foregroundStyle(T.textSecondary), frame({ maxWidth: Infinity, alignment: 'leading' })]}>
+        Nothing logged yet today
+      </Text>,
+      singleRowGrid(cells),
+      band(panel.band),
+    ]);
+  }
 
-  return shell([
-    header(panel.petName, stale ? '' : panel.contextLine),
-    <HStack key="body" spacing={10} modifiers={[frame({ maxWidth: Infinity, maxHeight: Infinity })]}>
-      {[
-        statusColumn,
-        <HStack
-          key="tiles"
-          spacing={8}
-          modifiers={[frame({ maxWidth: Infinity, maxHeight: Infinity })]}>
-          {[
-            tile('tile:meal', 'Meal', 'fork.knife', true, () => ({
-              ui: withUi({ view: 'meal', logged: null, openedAt: Date.now() }),
-            })),
-            tile('tile:treat', 'Treat', 'pawprint', false, () => ({
-              ui: withUi({ view: 'treat', logged: null, openedAt: Date.now() }),
-            })),
-          ]}
-        </HStack>,
-      ]}
-    </HStack>,
-  ]);
+  // Resting (§2.6.1): the content-gated tile grid + the band. Candidates in
+  // priority order (§2.3) — the class tiles, then the up-next tile, then the
+  // trial-record tile; the first four render. If fewer than four, the door tile
+  // fills one free slot (its permanent home is still the band's Log chip).
+  const candidates: React.JSX.Element[] = [];
+  for (let i = 0; i < panel.classTiles.length; i++) {
+    const t = panel.classTiles[i];
+    // Every class tile opens that day's record; the symptom tile lands on the same
+    // day view (§4). The `· not logged yet` suffix never applies to a logged fact.
+    candidates.push(factTile(t, dayLink(renderedDay), 'tile' + i));
+  }
+  if (candidates.length < 4 && panel.upNext) {
+    candidates.push(upNextTile(panel.upNext, ' · not logged yet', 'upnext'));
+  }
+  if (candidates.length < 4 && panel.trialRecord) {
+    candidates.push(factTile(panel.trialRecord, petLink('profile'), 'trialrec'));
+  }
+  if (candidates.length < 4) {
+    candidates.push(doorTile('door'));
+  }
+
+  return shell([header(panel.petName, panel.contextLine), grid(candidates), band(panel.band)]);
 }
