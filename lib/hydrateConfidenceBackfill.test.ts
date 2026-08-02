@@ -1,4 +1,4 @@
-// B-526 — the migration-050 occurred_at_confidence backfill only reaches a device
+// B-526 — the migration-052 occurred_at_confidence backfill only reaches a device
 // if the row's updated_at MOVES. This suite pins that dependence.
 //
 // hydrateEvents (lib/sync.ts) pulls events INCREMENTALLY on updated_at (only rows
@@ -15,7 +15,7 @@
 // `set_updated_at()` = `NEW.updated_at = NOW()` UNCONDITIONALLY, so ANY server-side
 // UPDATE to events already moves updated_at. So a bare backfill UPDATE does NOT
 // silently fail on a normal run — the trigger saves it (it is the same trigger
-// that makes hydrate a SERVER-time LWW; lib/hydration.ts header). Migration 050's
+// that makes hydrate a SERVER-time LWW; lib/hydration.ts header). Migration 052's
 // explicit `updated_at = now()` is therefore a defensive backstop for a bulk run
 // with triggers suppressed, not the sole source of the bump. Either way the
 // reconcile's REQUIREMENT is the same — an un-moved updated_at is skipped — which
@@ -42,7 +42,7 @@ const { DatabaseSync } = require('node:sqlite');
 type RawDb = InstanceType<typeof DatabaseSync>;
 
 // A legacy NULL row's updated_at == created_at (never edited); this is the B-525
-// live vomit's own stamp. BUMPED is what migration 050's `updated_at = now()` writes.
+// live vomit's own stamp. BUMPED is what migration 052's `updated_at = now()` writes.
 const OLD = '2026-05-30T09:40:00.000Z';
 const BUMPED = '2026-08-02T00:00:00.000Z';
 
@@ -114,7 +114,7 @@ describe('the hydrate upsert flips the confidence when it lands (B-526)', () => 
     ).run(opts.confidence, opts.updatedAt, opts.synced);
   }
 
-  // The backfilled remote row migration 050 produces for that meal: confidence
+  // The backfilled remote row migration 052 produces for that meal: confidence
   // 'witnessed', updated_at bumped, everything else unchanged.
   function applyBackfill(db: RawDb) {
     db.prepare(HYDRATE_UPSERT).run(

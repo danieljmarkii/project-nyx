@@ -1,4 +1,6 @@
 -- ============================================================
+-- (Authored as 050; renumbered 050 → 052 at wrap — 050/051 were taken on main by
+--  notification_preferences, B-661 PR 2. First-lands-keeps.)
 -- occurred_at_confidence backfill — B-526 (migration 012's deferred backfill)
 -- See: docs/backlog.md B-526, B-010
 --      supabase/migrations/012_event_timestamp_confidence.sql (the deferral)
