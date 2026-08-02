@@ -34,6 +34,7 @@
 
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { resolveAllowlistFlagFromRows } from '../_shared/flags.ts'
+import { resolveIanaZone } from '../../../lib/utils.ts'
 import { projectCachedRead } from './tools.ts'
 import type {
   AskEventRow,
@@ -555,6 +556,7 @@ async function fetchContext(
   petId: string,
   pet: { name: string; species: string },
   nowMs: number,
+  requestTimezone: string | null,
 ): Promise<AskDataContext> {
   const lookbackIso = new Date(nowMs - LOOKBACK_DAYS * MS_PER_DAY).toISOString()
 
@@ -760,12 +762,17 @@ async function fetchContext(
   // asking about "since the trial started" is asking about the span they can see.
   const trialRow = first((trialRes.data ?? []) as { started_at: string; target_duration_days: number | null; status: string }[])
   const trial = trialRow
-    ? { startedAt: trialRow.started_at, targetDurationDays: trialRow.target_duration_days ?? 0, status: trialRow.status, deletedAt: null }
+    ? { startedAt: trialRow.started_at, targetDurationDays: trialRow.target_duration_days ?? 0, status: trialRow.status }
     : null
   const trialStartMs = trial ? (Number.isFinite(Date.parse(trial.startedAt)) ? Date.parse(trial.startedAt) : null) : null
 
+  // B-443 — the day counter must bucket by the SAME zone the owner's card does, which is the
+  // DEVICE zone. The client passes it on the request; prefer it over the stored
+  // `user_profiles.timezone`, which can lag it (a never-stamped profile still carries
+  // migration 001's `America/New_York` default). Stored is the fallback, null (→ UTC) the
+  // last resort — never a silent New York the card never agreed with.
   const profile = profileRes.data as { timezone: string | null } | null
-  const timezone = profile?.timezone || null
+  const timezone = resolveIanaZone(requestTimezone, profile?.timezone)
 
   // ai_signals.findings is CachedFinding[] = { rank, text, finding{ type, priorityClass, ... } }.
   // Map to the engineFindings tool's relay shape (type + priorityClass + verbatim payload).
@@ -805,13 +812,16 @@ const handler = async (req: Request): Promise<Response> => {
   const authHeader = req.headers.get('Authorization')
   if (!authHeader) return Response.json({ error: 'Unauthorized' }, { status: 401, headers: CORS_HEADERS })
 
-  let body: { pet_id?: string; question?: string; conversation?: AskTurn[] }
+  let body: { pet_id?: string; question?: string; conversation?: AskTurn[]; timezone?: string }
   try {
     body = (await req.json()) as typeof body
   } catch {
     return Response.json({ error: 'Invalid JSON body' }, { status: 400, headers: CORS_HEADERS })
   }
   const petId = typeof body.pet_id === 'string' ? body.pet_id : ''
+  // The caller's device IANA zone (B-443) — validated in resolveIanaZone before use, so a
+  // garbage or spoofed value is simply ignored in favour of the stored zone, never trusted.
+  const requestTimezone = typeof body.timezone === 'string' ? body.timezone : null
   const question = typeof body.question === 'string' ? body.question.trim() : ''
   const conversation: AskTurn[] = Array.isArray(body.conversation)
     ? (body.conversation as unknown[])
@@ -882,7 +892,7 @@ const handler = async (req: Request): Promise<Response> => {
     const model = Deno.env.get('ASK_MODEL') || ASK_MODEL // S3 — model id via env override
 
     // 6. Fetch the working set (RLS-scoped) and run the bounded plan-loop.
-    const ctx = await fetchContext(client, petId, pet as { name: string; species: string }, nowMs)
+    const ctx = await fetchContext(client, petId, pet as { name: string; species: string }, nowMs, requestTimezone)
     const { body: loopBody } = await runAskLoop(client, ctx, question, conversation, generalEnabled, apiKey, model)
 
     // 6b. STRUCTURALLY attach a live engine SAFETY finding as the leading card (§7.2 — safety

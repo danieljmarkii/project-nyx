@@ -1,5 +1,6 @@
 import { supabase } from './supabase';
 import { getDb } from './db';
+import { getDeviceTimezone } from './profile';
 
 // Ask — the client data layer (B-228, PR A5; requirements §3, §4, §9.3).
 //
@@ -126,7 +127,15 @@ export async function askQuestion(params: {
 }): Promise<AskResponse> {
   try {
     const { data, error } = await supabase.functions.invoke('ask', {
-      body: { pet_id: params.petId, question: params.question, conversation: params.conversation },
+      // timezone: the DEVICE zone, so the server's trial "Day N" buckets by the same clock the
+      // card does (B-443). null when the runtime can't resolve one → the server falls back to
+      // the stored zone. Never guessed (getDeviceTimezone returns null, not UTC).
+      body: {
+        pet_id: params.petId,
+        question: params.question,
+        conversation: params.conversation,
+        timezone: getDeviceTimezone(),
+      },
     });
     if (error) return { ok: false, error: error.message };
     return parseAskResponse(data);

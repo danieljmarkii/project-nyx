@@ -20,6 +20,9 @@ import * as Sharing from 'expo-sharing';
 jest.mock('./supabase', () => ({
   supabase: { functions: { invoke: jest.fn() } },
 }));
+// getDeviceTimezone (B-443) rides the report request; pin it so the body assertion is
+// deterministic under any runner clock (the non-UTC CI job runs jest in Kiritimati/Chatham/Honolulu).
+jest.mock('./profile', () => ({ getDeviceTimezone: jest.fn(() => 'America/Chicago') }));
 // The freshness gate's two dependencies — mocked at the module edge so the gate's
 // control flow (the part the adversarial pass broke) is what the tests exercise.
 jest.mock('./db', () => ({ getSyncStatus: jest.fn() }));
@@ -86,7 +89,7 @@ describe('generateVetReport', () => {
     expect(r.startDate).toBe('2026-04-04');
     expect(r.scopeBasis).toBe('fallback_90d');
     expect(r.photoCount).toBe(0); // absent photo_count → 0, never undefined (owner-visibility line hides)
-    expect(mockedInvoke).toHaveBeenCalledWith('generate-report', { body: { petId: 'p1' } });
+    expect(mockedInvoke).toHaveBeenCalledWith('generate-report', { body: { petId: 'p1', timezone: 'America/Chicago' } });
   });
 
   it('parses photo_count for the owner-visibility line (PR 7)', async () => {
@@ -112,7 +115,7 @@ describe('generateVetReport', () => {
     mockedInvoke.mockResolvedValue({ data: { html: '<html></html>' }, error: null });
     await generateVetReport({ petId: 'p1', startDate: '2026-05-01', endDate: '2026-06-01' });
     expect(mockedInvoke).toHaveBeenCalledWith('generate-report', {
-      body: { petId: 'p1', startDate: '2026-05-01', endDate: '2026-06-01' },
+      body: { petId: 'p1', startDate: '2026-05-01', endDate: '2026-06-01', timezone: 'America/Chicago' },
     });
   });
 });
