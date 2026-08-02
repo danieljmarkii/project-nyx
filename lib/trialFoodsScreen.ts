@@ -58,6 +58,30 @@ export const TRIAL_FOODS_GROUP_PERMITTED = 'Also allowed';
 export const ADD_TRIAL_FOOD_CONFIRM = 'Add to the list';
 export const ADD_TRIAL_FOOD_CANCEL = 'Not now';
 
+/**
+ * B-628 — the one line that frames WHOSE call a mid-trial add is.
+ *
+ * The add flow said nothing about legitimacy from either entry point. FR-9's vet
+ * framing ("If your vet okays an extra, add it here") lives only on §2.2's empty
+ * "Also allowed" group — so it is gone the moment a first extra exists, and it is
+ * never seen at all by an owner who enters from food detail (FR-14). That left an
+ * anxious owner with nothing to hang legitimacy on at the moment of the write.
+ *
+ * This is the fix, placed on the CONFIRM SHEET because both entry points share it
+ * (PR 2's screen and PR 3's food detail build the model from `buildAddTrialFoodSheet`
+ * and render the same `AddTrialFoodSheet`) — so one line covers every path to an
+ * add, including the §2.2 second-add case the empty state has already vacated.
+ *
+ * It is NOT a wisdom-check, and that distinction is the whole design. D5 and Dr.
+ * Chen's mock-C note forbid "are you sure this fits the trial?" — second-guessing
+ * the vet's call judges the owner for following it. This line does the opposite: it
+ * states that extras ARE the vet's call (legitimacy, not interrogation) and that
+ * Culprit's job is only to date the record (reinforcing the "Earlier feedings" fact
+ * and C6, and keeping the app out of the role of arbiter). It never asks whether
+ * THIS food fits, never blocks, never marks anything off-diet.
+ */
+export const ADD_TRIAL_FOOD_CAPTION = 'Extras are your vet’s call — Culprit just records the dates.';
+
 /** A write that did not land. Plain cause, a concrete next action, no error code —
  *  and deliberately NOT silent: the sheet closing over a failed insert would leave
  *  an owner believing a food is permitted when the record says it isn't, which is
@@ -222,6 +246,9 @@ export interface AddTrialFoodSheetModel {
    *  feedings — and asks nothing else. No role question (Principle 1: the role is
    *  inferred from the food's own type), and no wisdom-check. */
   rows: { label: string; value: string }[];
+  /** B-628 — the legitimacy line. Framing, not a fourth fact and not an action, so
+   *  the FR-11 "exactly three facts / two actions" contract is intact. */
+  caption: string;
   confirmLabel: string;
   cancelLabel: string;
 }
@@ -266,6 +293,7 @@ export function buildAddTrialFoodSheet(
       { label: 'Joins the list', value: joins },
       { label: 'Earlier feedings', value: 'Keep the reading they already have' },
     ],
+    caption: ADD_TRIAL_FOOD_CAPTION,
     confirmLabel: ADD_TRIAL_FOOD_CONFIRM,
     cancelLabel: ADD_TRIAL_FOOD_CANCEL,
   };

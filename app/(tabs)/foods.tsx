@@ -342,7 +342,31 @@ export default function FoodsScreen() {
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
       <View style={styles.header}>
-        <Text style={styles.title}>Foods</Text>
+        {/* B-626 — the tab's persistent pet context. Three layers of this
+            surface are scoped to the ACTIVE PET over a per-account library (the
+            reliable-favorites shelf, the per-row intake notes, and the B-616
+            trial chips + strip), yet the only pet context the build shipped was
+            the trial strip — which scrolls away, and which is absent entirely
+            with no trial running. So a `pm-feature-review` (B-616 PR 3) read a
+            bare `TRIAL DIET` chip on a shared library as ownerless, and Mochi's
+            zero-chrome tab under an active Luna as indistinguishable from a bug.
+            The mock's own `Biscuit's library` subtitle (dropped in the build) is
+            the fix: one always-visible line naming whose context the tab is in,
+            so the per-pet layers below inherit an owner and an empty trial band
+            reads as "this pet has no trial" rather than a dropped one.
+
+            Shown whenever there is an active pet, NOT gated on multi-pet or on a
+            trial: the favorites and intake layers are per-pet on a single-pet
+            account too, and a subtitle that appeared only with a second pet would
+            make the header's context flicker as the household grows. */}
+        <View style={styles.titleBlock}>
+          <Text style={styles.title}>Foods</Text>
+          {activePetName ? (
+            <Text style={styles.subtitle} numberOfLines={1}>
+              {`${activePetName}’s library`}
+            </Text>
+          ) : null}
+        </View>
         {/* Add-food entry point (B-110). The FAB → Meal → "Snap a new food"
             path always LOGS a meal; a browse/manage destination needs a way to
             add a food to the library without logging one. Opens the capture
@@ -638,10 +662,24 @@ const styles = StyleSheet.create({
     paddingTop: 14,
     paddingBottom: 8,
   },
+  // The title + its per-pet subtitle stack (B-626). `flexShrink` so a long pet
+  // name truncates the subtitle rather than pushing the "Add food" action off the
+  // right edge; the action keeps its intrinsic width.
+  titleBlock: {
+    flexShrink: 1,
+  },
   title: {
     fontSize: theme.textPageTitle,
     fontWeight: theme.weightMedium,
     color: theme.colorNeutralDark,
+  },
+  // B-626 — "{Pet}'s library". The mock's `screen-sub` register: quiet, tertiary,
+  // just under the title. It names whose context this shared library is being read
+  // in, giving the per-pet shelf/notes/chips a persistent owner.
+  subtitle: {
+    fontSize: theme.textSM,
+    color: theme.colorTextTertiary,
+    marginTop: 2,
   },
   // "Add food" header action (B-110) — the no-meal entry into the capture flow.
   // Accent text + Plus. No explicit height/padding so the row stays title-driven
