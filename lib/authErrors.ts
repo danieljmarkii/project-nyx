@@ -39,15 +39,20 @@ export type AuthErrorCopy = {
 // identical — a rate-limited resend says "we'll send another shortly", a
 // rate-limited sign-in says "try again shortly" — so the caller names its context
 // rather than the mapper guessing from the error alone.
-export type AuthContext = 'signup' | 'login' | 'resend' | 'reset';
+export type AuthContext = 'signup' | 'login' | 'resend' | 'reset' | 'password';
 
 const FALLBACK_TITLE: Record<AuthContext, string> = {
   signup: "Couldn't create your account",
   login: "Couldn't sign you in",
   resend: "Couldn't send the link",
-  // B-280 §5.4: the set-new-password write (`updateUser`). A weak_password /
-  // offline error maps ahead of this fallback; this covers the unknown case.
+  // B-280 §5.4: the set-new-password write (`updateUser`) in the recovery flow. A
+  // weak_password / offline error maps ahead of this fallback; this covers the
+  // unknown case.
   reset: "Couldn't save your password",
+  // B-280 PR 3: the change-password screen. The owner is already signed in, so a
+  // 'login' fallback ("Couldn't sign you in") would read as a session problem it
+  // isn't. Its re-check AND its write both map through here.
+  password: "Couldn't change your password",
 };
 
 // Supabase's rate-limit message carries the wait in its prose, not in a
@@ -82,10 +87,16 @@ export function isEmailNotConfirmed(error: AuthErrorLike): boolean {
   return messageText(error).includes('email not confirmed');
 }
 
-// A credential mismatch — the "moment of discovery" for password recovery (B-280
-// §5.1b). Deliberately does NOT distinguish which of email/password was wrong (that
-// is the enumeration leak D2 exists to prevent); it only decides whether the login-
-// failure alert should offer the FR-13 "Reset password" action.
+// A credential mismatch. Two callers, one predicate:
+//   • login §5.1b — the "moment of discovery" for password recovery: decides
+//     whether the login-failure alert offers the FR-13 "Reset password" action.
+//   • change-password (B-280 PR 3) — the re-check is a `signInWithPassword`
+//     (Supabase has no verify-only endpoint), so a wrong current password surfaces
+//     here and is rendered inline on the field.
+// Deliberately does NOT distinguish which of email/password was wrong, and never
+// weaves in the email — that is the enumeration leak D2 exists to prevent, and the
+// client must not undo it. Also reused by `authErrorCopy` below so the match lives
+// in exactly one place.
 export function isInvalidCredentials(error: AuthErrorLike): boolean {
   if (!error) return false;
   if (error.code === 'invalid_credentials') return true;
@@ -170,7 +181,9 @@ export function authErrorCopy(
   const text = messageText(error);
   const code =
     error?.code ??
-    (text.includes('invalid login credentials')
+    // Reuse the exported predicate rather than re-deriving the match here, so a
+    // future legacy-string variant only has to be added in one place.
+    (isInvalidCredentials(error)
       ? 'invalid_credentials'
       : text.includes('already registered')
         ? 'user_already_exists'

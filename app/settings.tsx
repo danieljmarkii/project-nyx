@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { Alert, Linking, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Linking, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
+import { ChevronRight } from 'lucide-react-native';
 import { theme } from '../constants/theme';
 import { Card, Header } from '../components/ui';
 import { OwnerAvatar } from '../components/settings/OwnerAvatar';
@@ -167,8 +168,29 @@ export default function SettingsScreen() {
           {/* §7.1 — the vet report's "Owner:" line reads this name (relocated from
               the Pet tab, §4.3). */}
           <OwnerNameRow />
+          <View style={styles.accountDivider} />
+          {/* B-280 PR 3 (§5.7, D4) — retires the "coming soon" note. An inline nav
+              row (not a SettingsRow) so it aligns with this card's padded inline
+              rows (identity / name) rather than sitting at a SettingsRow's deeper
+              inset. */}
+          <TouchableOpacity
+            style={styles.changePasswordRow}
+            onPress={() => router.push('/settings/password')}
+            activeOpacity={0.6}
+            accessibilityRole="button"
+            accessibilityLabel="Change password"
+            accessibilityHint="Opens a screen to change your account password"
+          >
+            <Text style={styles.changePasswordLabel}>Change password</Text>
+            <ChevronRight size={18} color={theme.colorTextTertiary} strokeWidth={2} />
+          </TouchableOpacity>
+          {/* Email change is a support path, not an undated promise: nyx-voice
+              Pattern 3 bars "coming soon", and keeping one directly under a
+              newly-working row would re-create the half-built signal D4 removed.
+              A real answer, and the current one for an owner who has lost their
+              signup mailbox (spec §5.7 / §11). */}
           <Text style={styles.accountNote}>
-            Changing your email or password is coming soon.
+            To change your account email, contact support.
           </Text>
         </Card>
 
@@ -331,6 +353,17 @@ const styles = StyleSheet.create({
     height: 1,
     backgroundColor: theme.colorBorder,
     marginVertical: theme.space1,
+  },
+  changePasswordRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    minHeight: 44,
+  },
+  changePasswordLabel: {
+    fontFamily: theme.fontBody,
+    fontSize: theme.textMD,
+    color: theme.colorTextPrimary,
   },
   accountNote: {
     fontFamily: theme.fontBody,

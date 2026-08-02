@@ -291,6 +291,7 @@ export default function RootLayout() {
         <Stack.Screen name="settings" />
         <Stack.Screen name="settings/notifications" />
         <Stack.Screen name="settings/feedback" />
+        <Stack.Screen name="settings/password" />
       </Stack>
       <MealCompletionCard />
       <MedicationCompletionCard />
