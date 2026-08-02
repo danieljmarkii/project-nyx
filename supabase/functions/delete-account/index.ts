@@ -58,8 +58,16 @@ const CORS_HEADERS = {
 // medication paths to the deleting user's own `{uid}/` prefix (B-128), and
 // `ownedFoodItemIds` re-scopes the food paths to the set of food ids this user created
 // (B-354 FR-7, food paths being `{foodItemId}/…`) — so a crafted cross-tenant path never
-// reaches the service-role purge. The pet/event/vet-attachment/vet-report paths need no
-// such guard: they come from pet-scoped rows.
+// reaches the service-role purge. An earlier revision claimed the
+// pet/event/vet-attachment/vet-report paths "need no such guard: they come from
+// pet-scoped rows" — wrong on its own terms (B-431 finding 4): row ownership is
+// pet-scoped, the column VALUE is not. The pet-photo list is now re-scoped too, via
+// `ownedPetIds` → scopePetPhotoPaths (B-463): migration 042's CHECK closed the plain
+// cross-tenant form at the write path, but it is a prefix test that admits a `..`
+// traversal key, and the purge must not depend on the CHECK staying in place. The
+// event/vet-attachment lists remain un-scoped at this consumer — their prefix CHECKs
+// (025/043) carry the same traversal residual, and their guards are their own
+// three-segment shapes, tracked as B-658 rather than lifted blindly from this PR.
 //
 // `vet_documents` (B-478) is pet-scoped too, and is nonetheless re-scoped via a third
 // key, `ownedPetIds`. Not because the ROW source is untrusted, but because
@@ -219,10 +227,11 @@ async function collectOwnedPaths(adminClient: SupabaseClient, userId: string): P
     foodPhotoPaths,
     ownedFoodItemIds,
     // The same pet ids that scoped the reads above, passed through so
-    // scopeVetDocumentPaths can re-check each vet-document key against them — a path
-    // and the ids that permit it always travel together. It validates the whole
-    // `{pet_id}/{document_id}.{ext}` shape, not just the leading segment; a
-    // first-segment-only test keeps the `..` traversal key (see plan.ts).
+    // scopeVetDocumentPaths and scopePetPhotoPaths (B-463) can re-check each
+    // vet-document / pet-photo key against them — a path and the ids that permit it
+    // always travel together. Both validate the whole two-segment shape, not just
+    // the leading segment; a first-segment-only test keeps the `..` traversal key
+    // (see plan.ts).
     ownedPetIds: petIds,
     ownerUserId: userId,
   }
