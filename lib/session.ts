@@ -7,6 +7,7 @@ import { usePetStore, clearPersistedActivePetId } from '../store/petStore';
 import { useOnboardingDraftStore } from '../store/onboardingDraftStore';
 import { clearTrialContextCache, clearTrialHeadsUpLedger } from './trialContaminant';
 import { clearCachedAppConfig } from './appConfig';
+import { cancelAllScheduledNotifications, clearNotificationInteractions } from './notifications';
 
 /**
  * B-430 — the pre-sign-out drain. Push everything that can still be pushed, then
@@ -111,6 +112,16 @@ export async function wipeLocalSession(): Promise<void> {
   // the container directory clearWidgetData() deletes — so it needs its own
   // wipe, or the Home Screen keeps showing the previous account's pet.
   clearWidgetTimeline();
+  // B-661 (Trust & Safety, non-negotiable): a scheduled local notification lives
+  // in the OS, entirely outside the app sandbox clearLocalData wipes — so a 9pm
+  // Day Summary scheduled by the account signing out would still fire on a shared
+  // device and name the previous owner's pet on the lock screen. Same leak class
+  // as the App Group wipe above. Cancel every scheduled notification on sign-out;
+  // then clear the interaction ledger (AsyncStorage, also outside SQLite — the
+  // previous owner's per-category notification-interaction history). Both are
+  // internally best-effort (never throw), so teardown always continues.
+  await cancelAllScheduledNotifications();
+  await clearNotificationInteractions();
   // Device-local active-pet selection is account state too — wipe it and the
   // in-memory pet list so the next sign-in starts clean (FR-9 parity).
   await clearPersistedActivePetId();
