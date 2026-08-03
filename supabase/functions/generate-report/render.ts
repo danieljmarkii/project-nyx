@@ -482,7 +482,13 @@ function proteinPattern(id: string, color: string, texIndex: number): string {
   const ink = 'rgba(20,24,34,.34)'
   let tex = ''
   switch (texIndex % 8) {
-    case 0: tex = ''; break // solid (the dominant baseline protein)
+    // B-444 — case 0 carries a texture too. The caption promises the chart "reads in
+    // black & white", and §5.8 requires every datum be carried by a shape/texture, not
+    // colour. A solid case-0 made the LARGEST protein band a flat fill that a photocopy
+    // or fax could not tell apart from the solid "no recorded protein" band (`ptc-u`) —
+    // both distinguished only by lightness. Solid is now reserved for that no-protein
+    // band alone, so every actual protein band carries a mark and the caption is true.
+    case 0: tex = `<circle cx="4" cy="4" r="1.7" fill="none" stroke="${ink}" stroke-width="1.1"/>`; break // ring (the dominant baseline protein)
     case 1: tex = `<circle cx="4" cy="4" r="1.5" fill="${ink}"/>`; break // dots
     case 2: tex = `<path d="M0 4 H8" stroke="${ink}" stroke-width="1.4"/>`; break // horizontal
     case 3: tex = `<path d="M4 0 V8" stroke="${ink}" stroke-width="1.4"/>`; break // vertical
@@ -2781,8 +2787,15 @@ function atAGlance(snap: ReportSnapshot): string {
   // that shape the old tiles duplicated the trend headline, showed the misleading "0 of 25 fully
   // eaten" for a free-fed grazer (R2-3), and restated the range box.
   const tiles = snap.diet.trial ? trialTiles(snap) : monitoringTiles(snap)
+  // B-503 — NOT a blanket "counts over the N-day window". The symptom and weight tiles
+  // count over the report window, but the coverage and off-diet tiles count over the
+  // trial's own (narrower) range — §5.1 pins the coverage denominator to the trial's
+  // overlap, deliberately NOT the report window (else a recheck-scoped report reads
+  // "27 / 56"). A single-window heading turned the coverage tile's "43 / 43" into a
+  // 100%-of-46 reading; each tile now names the span it counts over, and the heading
+  // says which tiles depart from the window rather than overriding them with one number.
   const aside = snap.diet.trial
-    ? `counts over the ${num(ag.windowDays)}-day window`
+    ? `over the ${num(ag.windowDays)}-day window &mdash; except coverage &amp; off-diet, over the trial&rsquo;s own range`
     : `symptom trajectory over the window`
   return `
   <div class="sec">
@@ -3994,11 +4007,15 @@ function timingLine(c: CorrelationSummary, snap: ReportSnapshot): string {
       e.proteins && e.proteins.length > 1
         ? ` These proteins co-occur in every exposure on record, so the association <b>cannot be attributed to either one individually</b> — separating them would be informative.`
         : ''
+    // B-499 — NO "Detail in appendix C". Appendix C is the off-diet exposure table; it
+    // holds no correlation detail on any report, and is empty on a clean/refused one, so
+    // the pointer dead-ended. The statistical detail — cases, controls, p — is already
+    // inline on this line, which is where a vet reads it; there is nowhere else to send them.
     return `${h(e.protein)} reached the established association threshold for ${h(
       symptomLabel(e.symptomType).toLowerCase(),
     )} over this window (${num(e.caseExposed)}/${num(e.matchedPairs)} exposed cases vs ${num(
       e.controlExposed,
-    )} controls; p&nbsp;=&nbsp;${e.pValue.toFixed(3)}). An association, <b>not a proven cause</b>.${joint} Detail in appendix&nbsp;C.`
+    )} controls; p&nbsp;=&nbsp;${e.pValue.toFixed(3)}). An association, <b>not a proven cause</b>.${joint}`
   }
   const staple = c.stapleProtein
     // "IS OFFERED", NOT "EATS" (cold read round 10). The staple-washout reason is about
@@ -4021,7 +4038,11 @@ function timingLine(c: CorrelationSummary, snap: ReportSnapshot): string {
     .filter(Boolean)
     .join('; ')
   const timingBit = timing ? ` ${timing} — co-occurrence, not cause.` : ''
-  return `<b>No single food/protein reached the established correlation threshold</b> over this window${staple}.${timingBit} Detail in appendix&nbsp;C.`
+  // B-499 — NO "Detail in appendix C" here either: on a null result appendix C carries no
+  // correlation content and on a clean/refused report it is empty, so the pointer led a
+  // vet who followed it to an off-diet table or a blank page. (The negative branch still
+  // owes a denominator/power statement — that is B-489, folded in when either is picked up.)
+  return `<b>No single food/protein reached the established correlation threshold</b> over this window${staple}.${timingBit}`
 }
 
 // ── Footer (per page/section) ────────────────────────────────────────────────────
@@ -4966,8 +4987,18 @@ function dietHistoryAppendix(snap: ReportSnapshot): string {
   const suppBit = supps.length
     ? supps.map((m) => `${h(m.drugName)} (started ${h(fmtDay(m.startedAt))})`).join('; ')
     : NOT_LOGGED
+  // B-499 — "Dates in appendix C" only resolves on a NON-trial report, where appendix C
+  // IS the treats & table-food table and every treat is a dated row. On a trial report
+  // appendix C lists OFF-DIET exposures only, so a PERMITTED treat has no dated row there:
+  // the pointer dead-ended for all but the handful of off-diet treats (64 of 65 on the
+  // reviewed artifact). Under a trial the treats are otherwise accounted for — the
+  // allowed list and the appendix C permitted-extras tally carry their counts — so the
+  // honest form states the count without a cross-reference that cannot resolve.
+  const treatsDatedInAppendixC = !(snap.trial && !snap.trial.allowedSetUnavailable)
   const treatBit = d.treats.count
-    ? `${num(d.treats.count)} this window (${num(d.treats.distinctItems)} distinct). Dates in appendix&nbsp;C.`
+    ? `${num(d.treats.count)} this window (${num(d.treats.distinctItems)} distinct).${
+        treatsDatedInAppendixC ? ' Dates in appendix&nbsp;C.' : ''
+      }`
     : NOT_LOGGED
   // Meals (#7/#8) — the foods the owner logs AS MEALS (e.g. a wet diet). Previously discarded
   // before render, so a substantial part of the diet was invisible. Name the distinct foods here

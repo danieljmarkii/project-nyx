@@ -1783,6 +1783,101 @@ Deno.test('#9 protein-over-time section renders with a hue+texture legend when o
   assert.ok(!/Off-diet protein exposure over time/.test(renderReport(base())), 'no empty chart when nothing off-diet')
 })
 
+// ── B-444 / B-499 / B-503 — vet-report cold-read dead-ends (Step 9, PR 7) ────────────
+// Four things a cold reader followed on the rendered artifact and found nothing behind:
+// a chart that only separated in colour, a correlation and a treats cross-reference that
+// pointed at content the appendix does not hold, and an at-a-glance heading that claimed
+// one denominator for tiles counted over different ranges.
+
+Deno.test('B-444 — every protein band carries a texture; solid fill is reserved for "no recorded protein"', () => {
+  const html = renderReport(
+    base({
+      proteinTimeline: {
+        weekStartDates: ['2026-04-03', '2026-04-10'],
+        proteins: ['chicken', 'turkey'],
+        bins: [[4, 1], [2, 0]],
+        unknownByWeek: [1, 0],
+        mealDaysByBucket: [7, 7],
+        feedingsByWeek: [6, 2],
+        totalByProtein: { chicken: 6, turkey: 1 },
+        hasUnknown: true,
+        totalFeedings: 9,
+        incompleteFeedings: 0,
+      },
+    }),
+  )
+  // The caption promises the chart reads in black & white; it only does if the LARGEST
+  // band (index 0, the dominant protein) is textured too, not a flat fill a photocopy or
+  // fax cannot tell from the solid no-protein band.
+  assert.ok(/reads in black &amp; white/.test(html), 'the B&W promise is present')
+  const band = (id: string) => (html.match(new RegExp('<pattern id="' + id + '"[\\s\\S]*?</pattern>')) ?? [''])[0]
+  assert.ok(/<circle|<path/.test(band('ptc-0')), 'the dominant protein band (ptc-0) carries a texture, not a bare solid')
+  assert.ok(/<circle|<path/.test(band('ptc-1')), 'the second protein band carries a texture too')
+  // No NUMBERED protein band is a bare solid; the one solid fill is the no-recorded-protein band.
+  assert.equal((html.match(/<pattern id="ptc-\d+"[^>]*><rect[^>]*\/><\/pattern>/g) ?? []).length, 0, 'no numbered protein band is a bare solid fill')
+  assert.ok(/<pattern id="ptc-u"[^>]*><rect[^>]*\/><\/pattern>/.test(html), 'the no-recorded-protein band (ptc-u) is the solid one')
+})
+
+Deno.test('B-499 — the correlation line never dead-ends at appendix C (no correlation content lives there)', () => {
+  const established = renderReport(
+    base({
+      diet: { ...base().diet, trial: { foodLabel: 'RC HP', primaryProtein: 'hydrolyzed', proteinSet: pset(['hydrolyzed']), startedAt: '2026-05-08', targetDurationDays: 56, vetName: null } },
+      correlation: {
+        established: [{ symptomType: 'vomit', protein: 'chicken', matchedPairs: 20, caseExposed: 8, controlExposed: 2, riskDifference: 0.3, pValue: 0.02, symptomEventCount: 12, correlationWindowHours: 24 }],
+        hasEstablished: true, noThreshold: false, stapleProtein: null, timing: [],
+      },
+    }),
+  )
+  assert.ok(/established association threshold/.test(text(established)), 'the finding still renders, with its inline stats')
+  assert.ok(!/Detail in appendix/.test(established), 'the established correlation line has no dead-end appendix-C pointer')
+  const nullResult = renderReport(base({ correlation: { established: [], hasEstablished: false, noThreshold: true, stapleProtein: null, timing: [] } }))
+  assert.ok(/No single food\/protein reached the established correlation threshold/.test(text(nullResult)), 'the null line renders')
+  assert.ok(!/Detail in appendix/.test(nullResult), 'the null correlation line has no dead-end appendix-C pointer either')
+})
+
+Deno.test('B-499 — the diet-history treats line points at appendix C only where appendix C dates the treats', () => {
+  // Trial-derived report: appendix C lists OFF-DIET exposures, so a permitted treat has no
+  // dated row there — the pointer must not appear (it dead-ended for 64 of 65 on the artifact).
+  const trialSnap = base({
+    diet: {
+      ...base().diet,
+      trial: { foodLabel: 'RC HP', primaryProtein: 'hydrolyzed', proteinSet: pset(['hydrolyzed']), startedAt: '2026-05-08', targetDurationDays: 56, vetName: null },
+      treats: { count: 65, distinctItems: 2 },
+    },
+    trial: trialBlockFixture({ startedAt: '2026-05-08', allowedSetUnavailable: false }),
+  })
+  const trialFlat = text(renderReport(trialSnap)).replace(/\s+/g, ' ')
+  assert.ok(/65 this window \(2 distinct\)\./.test(trialFlat), 'the treat count still renders on a trial report')
+  assert.ok(!/65 this window \(2 distinct\)\. Dates in appendix/.test(trialFlat), 'no dead-end "Dates in appendix C" for permitted treats on a trial report')
+  // No-trial report: appendix C IS the treats & table-food table, so the pointer resolves and stays.
+  const noTrialSnap = base({
+    provenance: { ...base().provenance, confounders: [{ eventId: 't1', occurredAt: '2026-06-15T13:00:00Z', dayKey: '2026-06-15', foodLabel: 'Temptations', primaryProtein: 'chicken', proteinSet: pset(['chicken']), format: 'treat', foodType: 'treat', note: null }] },
+    diet: { ...base().diet, treats: { count: 4, distinctItems: 1 } },
+  })
+  const noTrialFlat = text(renderReport(noTrialSnap)).replace(/\s+/g, ' ')
+  assert.ok(/4 this window \(1 distinct\)\. Dates in appendix/.test(noTrialFlat), 'a no-trial report keeps the pointer (appendix C dates every treat)')
+})
+
+Deno.test('B-503 — the at-a-glance heading does not claim one window denominator for trial-range tiles', () => {
+  const snap = base({
+    symptoms: [aggregate({ type: 'vomit', count: 5 })],
+    diet: {
+      ...base().diet,
+      trial: { foodLabel: 'Hydrolyzed', primaryProtein: 'hydrolyzed', proteinSet: pset(['hydrolyzed']), startedAt: '2026-05-01', targetDurationDays: 56, vetName: null },
+      mealCompletion: null,
+      mealItems: [],
+    },
+    atAGlance: { ...base().atAGlance, windowDays: 46, trialDaysLogged: 43, primarySymptom: { type: 'vomit', count: 5 }, totalSymptomIncidents: 5 },
+    trial: trialBlockFixture({ startedAt: '2026-05-01', coverage: { daysLogged: 43, daysElapsed: 43 } }),
+  })
+  const html = renderReport(snap)
+  assert.ok(/Days a meal was logged/.test(html) && /43/.test(html), 'the coverage tile reads 43 / 43 (100% of its OWN range)')
+  // The heading must NOT bare-claim "counts over the 46-day window" — coverage & off-diet
+  // count over the trial's overlap (§5.1), not the window, so 43/43 is not 100% of 46.
+  assert.ok(!/counts over the 46-day window/.test(html), 'the heading no longer bare-claims the window as the denominator')
+  assert.ok(/except coverage &amp; off-diet, over the trial&rsquo;s own range/.test(html), 'the heading flags that coverage & off-diet depart from the window')
+})
+
 // ── B-498: the mid gridline label matches its geometric position on ODD maxima ──────────
 // The mid gridline is drawn at the plot's midpoint (value yMax/2). On an odd max the old code
 // labelled it round(yMax/2) — a "2.5" line printed as "3", so a bar of 3 topped above its own line.
