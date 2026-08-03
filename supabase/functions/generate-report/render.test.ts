@@ -2899,8 +2899,8 @@ Deno.test('B-532 — the unfinished meals are itemised with NO reduced-intake fl
     }),
   )
   const t = plain(html)
-  assert.ok(/Meals not finished/.test(t), 'the list renders and is captioned for its own population')
-  assert.ok(/2 unfinished meals shown/.test(t), 'and counted as unfinished meals, not "rated meals"')
+  assert.ok(/Meals not fully eaten/.test(t), 'the list renders and is captioned for its own population')
+  assert.ok(/2 not-fully-eaten meals shown/.test(t), 'and counted as not-fully-eaten meals, not "rated meals"')
   assert.ok(
     !/no fully-eaten meal was recorded in this window/.test(t),
     'NEVER the anchor absence claim — the fully-eaten meals are precisely what this list filters out',

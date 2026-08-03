@@ -487,7 +487,11 @@ function proteinPattern(id: string, color: string, texIndex: number): string {
     // colour. A solid case-0 made the LARGEST protein band a flat fill that a photocopy
     // or fax could not tell apart from the solid "no recorded protein" band (`ptc-u`) —
     // both distinguished only by lightness. Solid is now reserved for that no-protein
-    // band alone, so every actual protein band carries a mark and the caption is true.
+    // band alone, so every actual protein band carries a mark and the largest no longer
+    // collides with it. (Both texture and PROTEIN_COLORS cycle mod 8 over an uncapped
+    // protein list, so ≥9 distinct off-diet proteins still repeat a texture+colour pair —
+    // a pre-existing limit of the §5.8 colour-carve that wants a Designer, tracked as
+    // B-685; not this fix's to redesign.)
     case 0: tex = `<circle cx="4" cy="4" r="1.7" fill="none" stroke="${ink}" stroke-width="1.1"/>`; break // ring (the dominant baseline protein)
     case 1: tex = `<circle cx="4" cy="4" r="1.5" fill="${ink}"/>`; break // dots
     case 2: tex = `<path d="M0 4 H8" stroke="${ink}" stroke-width="1.4"/>`; break // horizontal
@@ -4348,9 +4352,13 @@ function intakeDetailTable(snap: ReportSnapshot, log: IntakeLogEntry[]): string 
     })
     .join('')
   const hasFull = log.some((e) => e.isLastFullMeal)
-  const noun = unfinishedOnly ? 'unfinished meal' : 'rated meal'
-  // `unfinished` is the app's one predicate (`feedingWasFinished`: `most`/`all` are eaten), so
-  // the rows listed here are exactly the rows this table bolds. Never a second definition.
+  const noun = unfinishedOnly ? 'not-fully-eaten meal' : 'rated meal'
+  // B-500 — this list's population is "not FULLY eaten" (`intakeRating !== 'all'` in report.ts),
+  // matching page 1's "N of M fully eaten" (`finishedMeals === 'all'`) and this table's own copy.
+  // It is deliberately NOT the app's `feedingWasFinished` bar (`most`/`all`), so the rows listed
+  // here are a SUPERSET of the rows this table bolds: `intakeLogRow` still bolds only the
+  // below-`most` ratings, so an "ate most" row is listed (page 1 counts it as not fully eaten) but
+  // rendered plain, since it is not a health signal.
   const hiddenBit =
     hidden > 0
       ? ` ${num(hidden)} earlier ${noun}${hidden === 1 ? '' : 's'} in this window ${
@@ -4379,7 +4387,7 @@ function intakeDetailTable(snap: ReportSnapshot, log: IntakeLogEntry[]): string 
           : 'no fully-eaten meal was recorded in this window, so page&nbsp;1 shows no &ldquo;last full meal&rdquo; and none is tagged here'
       }. Absence of a full meal is not evidence the pet ate nothing — only that no fully-eaten meal was recorded.`
   const lead = unfinishedOnly
-    ? '<b>Meals not finished</b> — every rated meal in this window the owner did not record as fully eaten, most recent first.'
+    ? '<b>Meals not fully eaten</b> — every rated meal in this window the owner did not record as fully eaten, most recent first.'
     : '<b>Recent rated meals</b> — the meals behind the reduced-intake flag on page&nbsp;1, most recent first.'
   return `
   <p class="note lead" style="margin-top:16px">${lead}${hiddenBit}</p>

@@ -448,11 +448,17 @@ Deno.test('B-213 — assembleReport threads lastFullMealIso + hoursSinceLastFull
   for (const e of snap.provenance.intakeLog) assert.ok(e.occurredAt && e.intakeRating)
 })
 
-Deno.test('B-213 — no intake flag ⇒ an EMPTY intake log (no meal dump on a calm report)', () => {
-  // Nyx's real dry-run: free-fed, no rated meals ⇒ no intake flag ⇒ no intake appendix.
+Deno.test('B-213/B-500 — no intake flag ⇒ the log itemises the not-fully-eaten meals only, never a full dump', () => {
+  // Nyx's real dry-run: free-fed + three rated tuna meals, one rated "most". No RELATIVE
+  // decline fires, so this is the non-flag population — but the one "most" meal is the "1"
+  // page 1 would count as not fully eaten, so it is dated here (B-500). The point B-213 pins
+  // survives: the two "all" tuna meals and every treat are NOT dumped in — the log holds that
+  // single not-fully-eaten meal and only it.
   const snap = assembleReport(buildNyxInput())
   assert.ok(!snap.safetyFlags.some((f) => f.kind === 'intake_decline'), 'no intake flag on the free-fed pet')
-  assert.equal(snap.provenance.intakeLog.length, 0, 'the intake log stays empty')
+  assert.equal(snap.provenance.intakeLogScope, 'unfinished')
+  assert.equal(snap.provenance.intakeLog.length, 1, 'only the one not-fully-eaten meal, never a dump of every rated meal')
+  assert.equal(snap.provenance.intakeLog[0].intakeRating, 'most')
   assert.equal(snap.provenance.intakeLogHiddenOlder, 0)
 })
 
@@ -2325,19 +2331,26 @@ Deno.test('B-532 — the intake log itemises unfinished meals with no intake fla
   assert.ok(!snap.provenance.intakeLog.some((e) => e.isLastFullMeal), 'and no anchor is tagged in this population')
 })
 
-Deno.test('B-532 — "ate most" is a FINISHED meal, so a calm record still itemises nothing', () => {
+Deno.test('B-500 — an "ate most" meal is NOT fully eaten, so it is itemised with its date (never only grouped)', () => {
   idSeq = 0
-  // One definition of finished, imported from `lib/dietTrial.feedingWasFinished` — the same
-  // bar §4.3's refusal lane and the appendix's own row emphasis use. A second one here
-  // ("!== all") would have put a single "ate most" meal into an otherwise calm report.
+  // Page 1 counts "fully eaten" as `=== 'all'`, so an "ate most" meal is the "1" in "N of M
+  // fully eaten", and this list's own copy says "meals … the owner did not record as fully
+  // eaten". B-532 filtered the list on `feedingWasFinished` (`most`/`all`) instead, so that one
+  // meal had no dated row anywhere while page 1 singled it out and the caption promised it
+  // (`vet-report-cold-read`, B-500). It is now itemised with its date — plain, not bolded, since
+  // `most` is a possible signal but not an alarm — AND still counted in the grouped breakdown.
   const snap = assembleReport(
     baseInput({
       events: [ratedMealEvent('2026-06-10', '08:00:00', 'all'), ratedMealEvent('2026-06-11', '08:00:00', 'most')],
     }),
   )
-  assert.equal(snap.provenance.intakeLogScope, null)
-  assert.equal(snap.provenance.intakeLog.length, 0)
-  // …and it is NOT lost: the grouped breakdown still counts it.
+  assert.ok(!snap.safetyFlags.some((f) => f.kind === 'intake_decline'), 'no relative decline fires on a calm record')
+  assert.equal(snap.provenance.intakeLogScope, 'unfinished')
+  assert.equal(snap.provenance.intakeLog.length, 1, 'the one not-fully-eaten meal is itemised, and only it')
+  assert.equal(snap.provenance.intakeLog[0].intakeRating, 'most')
+  assert.ok(snap.provenance.intakeLog[0].occurredAt.includes('2026-06-11'), 'and carries its own date, not a food-wide span')
+  assert.ok(!snap.provenance.intakeLog.some((e) => e.isLastFullMeal), 'no anchor is tagged in this population')
+  // …and it is NOT moved out of the grouped breakdown: it appears in both places.
   const item = snap.diet.mealItems.find((i) => i.count === 2)!
   assert.deepEqual(item.intakeBreakdown, [
     { rating: 'all', count: 1 },
