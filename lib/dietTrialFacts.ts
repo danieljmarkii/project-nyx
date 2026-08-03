@@ -118,12 +118,17 @@ interface TrialRow {
  *
  *  What is DELIBERATELY not aligned is the grace WINDOW (30 here vs. the report's
  *  90 — R5/B-538): that governs WHETHER the card shows a trial, not which one, and
- *  is a ruled UI-vs-clinical asymmetry. Residual: `started_at` is a timestamp while
- *  the report's `startDn` is a local-day index, so the two can still pick different
- *  trials when a pet holds two ended trials that START ON THE SAME LOCAL DAY — a
- *  state one pet reaches only by starting two trials on one calendar day. Narrower
- *  than either divergence this closes, and out of scope for B-601's "align the
- *  eligibility predicate, not the window lengths".
+ *  is a ruled UI-vs-clinical asymmetry. `started_at` is stored as a local day-key
+ *  (`YYYY-MM-DD`) on BOTH sides — server `DATE NOT NULL` (migration 001), local via
+ *  `toLocalDayKey` — so two ended trials that started the same local day hold an
+ *  IDENTICAL `started_at` and both surfaces tie straight to `id DESC`: they agree,
+ *  there is no timestamp-vs-day-index residual (adversarial-reviewer confirmed the
+ *  divergence needs a sub-day `started_at` this schema never stores). Two latent
+ *  risks to watch, neither live: (a) if `started_at` ever stored sub-day precision
+ *  the SQL timestamp order would split from the report's day-index; (b) amendment
+ *  A-2's proposed `paused` status would be EXCLUDED by this query's
+ *  `status IN ('completed','abandoned')` but INCLUDED by `selectReportTrial`'s
+ *  `status !== 'active'` — align the two predicates if A-2 lands.
  *
  *  `indication` IS selected as of PR 6, and the earlier note here said it should
  *  not be. That note was right about the principle and is now wrong about the
