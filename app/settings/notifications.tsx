@@ -120,7 +120,7 @@ export default function NotificationsScreen() {
       } catch (e) {
         console.error('[notifications] disable failed:', e);
         setEnabled(true); // revert — the write didn't land
-        Alert.alert("Couldn't update", 'Try again in a moment.');
+        Alert.alert('Couldn’t update', 'Try again in a moment.');
       } finally {
         setBusy(false);
       }
@@ -135,7 +135,7 @@ export default function NotificationsScreen() {
       } catch (e) {
         console.error('[notifications] enable failed:', e);
         setEnabled(false); // revert
-        Alert.alert("Couldn't update", 'Try again in a moment.');
+        Alert.alert('Couldn’t update', 'Try again in a moment.');
       } finally {
         setBusy(false);
       }
@@ -167,7 +167,7 @@ export default function NotificationsScreen() {
     } catch (e) {
       console.error('[notifications] permission request failed:', e);
       setEnabled(false);
-      Alert.alert("Couldn't turn on notifications", 'Try again in a moment.');
+      Alert.alert('Couldn’t turn on notifications', 'Try again in a moment.');
     } finally {
       setRequesting(false);
       setPrimerVisible(false);
@@ -187,8 +187,8 @@ export default function NotificationsScreen() {
     } catch (e) {
       console.warn('[notifications] open settings failed:', e);
       Alert.alert(
-        "Couldn't open Settings",
-        `Open Settings and find Culprit under Notifications to turn them back on.`,
+        'Couldn’t open Settings',
+        'Open Settings and find Culprit under Notifications to turn them back on.',
       );
     }
   }

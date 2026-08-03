@@ -55,15 +55,15 @@ export function NotificationPrimerSheet({
   const insets = useSafeAreaInsets();
 
   const title = petName
-    ? `A recap of ${petName}'s day, every evening`
+    ? `A recap of ${petName}’s day, every evening`
     : 'A recap of the day, every evening';
 
   // Retrospective by construction: "you logged" makes this a look BACK at the
   // record, never a forward reminder (G4). "Just one a night" + "turn it off
   // whenever you like" carry the how-often and the reversibility §2 asks for.
   const body = petName
-    ? `Around 9:00 each night, we'll let you know ${petName}'s day is ready to read — a calm look back at the meals, symptoms, and doses you logged. Just one notification a night, and you can turn it off whenever you like.`
-    : `Around 9:00 each night, we'll let you know the day is ready to read — a calm look back at the meals, symptoms, and doses you logged. One notification a night for all your pets, and you can turn it off whenever you like.`;
+    ? `Around 9:00 each night, we’ll let you know ${petName}’s day is ready to read — a calm look back at the meals, symptoms, and doses you logged. Just one notification a night, and you can turn it off whenever you like.`
+    : `Around 9:00 each night, we’ll let you know the day is ready to read — a calm look back at the meals, symptoms, and doses you logged. One notification a night for all your pets, and you can turn it off whenever you like.`;
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onDismiss}>
