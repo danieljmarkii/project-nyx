@@ -2505,3 +2505,45 @@ describe('B-530 — the gate is deliberately narrow, and both directions are pin
     expect(broken.rangeRefusal?.population).toBe('meal_record');
   });
 });
+
+// ── coveredDayIndices — the widget trial strip paints exactly these (§2.5 / AC 5) ──
+//
+// Exposed for the widget's ground band: the local-day indices that count toward
+// `coverage.daysLogged`, so the strip is painted from the SAME set the ratio
+// counted rather than a second "which days had a meal" definition one import away.
+describe('coveredDayIndices', () => {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { localDayIndexOf } = require('./utils');
+
+  it('lists the covered local days ascending, treat-excluded, and agrees with daysLogged', () => {
+    const facts = computeTrialFacts({
+      trial: TRIAL,
+      allowedFoods: ALLOWED,
+      feedings: [
+        // Non-treat feedings on three distinct local days (out of order on input).
+        feeding({ eventId: 'a', occurredAt: at('2026-07-05'), foodItemId: DRY_DUCK.foodItemId, foodKey: DRY_DUCK.foodKey, proteins: ['duck'] }),
+        feeding({ eventId: 'b', occurredAt: at('2026-07-01'), foodItemId: DRY_DUCK.foodItemId, foodKey: DRY_DUCK.foodKey, proteins: ['duck'] }),
+        feeding({ eventId: 'c', occurredAt: at('2026-07-03'), foodItemId: DRY_DUCK.foodItemId, foodKey: DRY_DUCK.foodKey, proteins: ['duck'] }),
+        // A treat does NOT count toward coverage (§5.1) — it must not appear in the set.
+        feeding({ eventId: 'd', occurredAt: at('2026-07-07'), foodItemId: RABBIT_JERKY.foodItemId, foodKey: RABBIT_JERKY.foodKey, foodType: 'treat', proteins: ['rabbit'] }),
+      ],
+      nowMs: new Date(2026, 6, 10, 12).getTime(),
+    });
+    const d1 = localDayIndexOf(at('2026-07-01'));
+    const d3 = localDayIndexOf(at('2026-07-03'));
+    const d5 = localDayIndexOf(at('2026-07-05'));
+    expect(facts.coveredDayIndices).toEqual([d1, d3, d5]);
+    expect(facts.coveredDayIndices.length).toBe(facts.coverage?.daysLogged);
+  });
+
+  it('is [] on the null-range path (unparseable start), where coverage is null too', () => {
+    const facts = computeTrialFacts({
+      trial: { ...TRIAL, startedAt: 'not-a-date' },
+      allowedFoods: ALLOWED,
+      feedings: [],
+      nowMs: new Date(2026, 6, 10, 12).getTime(),
+    });
+    expect(facts.coveredDayIndices).toEqual([]);
+    expect(facts.coverage).toBeNull();
+  });
+});
