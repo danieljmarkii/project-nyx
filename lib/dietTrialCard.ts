@@ -260,6 +260,22 @@ export interface TrialCardInput {
    * the card went on telling a fully compliant owner "0 matched, 40 did not".
    */
   allowedSetUnavailable?: boolean;
+  /**
+   * `lib/dietTrial.TrialFacts.antigenArmDark` (B-597) — the protein arm is off for
+   * part of the window (a `primary_diet` food with no readable source, a membership
+   * gap with nothing in force, or a suppressed contamination), so the trial's
+   * antigens could not be checked for that stretch.
+   *
+   * ITS STRUCTURALLY IDENTICAL SIBLING IS `allowedSetUnavailable`, and it is here
+   * for the same reason: the report reads `antigenArmDark` (renders "Antigen check
+   * paused" + the §7.2 caveat) and the CLAIM gate already reads it
+   * (`mayClaimAllMatched`), but the CARD LOADER dropped it — so the Home strip
+   * stated a plain coverage ratio while the arm was off, and the card carried no
+   * membership-gap disclosure the report had. THE BOOLEAN, not a food list: on a
+   * membership gap the arm is dark with nothing to name, so gating on a `.length`
+   * would keep the quiet ratio in exactly that state (`withholdingReasons`).
+   */
+  antigenArmDark?: boolean;
   /** §10 S3 — days between the trial's start and the first logged feeding. The
    *  coverage denominator excludes them (days the owner could not have logged are
    *  not a gap in their record), so the card has to SAY so rather than quietly
@@ -624,6 +640,7 @@ export type TrialCardWithholding =
   | 'range_refusal'
   | 'free_fed'
   | 'allowed_set_unavailable'
+  | 'antigen_arm_dark'
   | 'untracked_head'
   | 'below_floor';
 
@@ -639,6 +656,11 @@ export function withholdingReasons(input: TrialCardInput): TrialCardWithholding[
   if (input.rangeRefusal) reasons.push('range_refusal');
   if (input.freeFed) reasons.push('free_fed');
   if (input.allowedSetUnavailable) reasons.push('allowed_set_unavailable');
+  // B-597 — the dark antigen arm, the forgotten sibling of `allowed_set_unavailable`
+  // above. The report withholds the clean claim AND discloses on this (§7.2 caveat +
+  // "Antigen check paused" row); the strip has one line, so a dark arm is a reason it
+  // cannot state its ratio plainly — a caveat it has nowhere to put.
+  if (input.antigenArmDark) reasons.push('antigen_arm_dark');
   // `!== 0`, NOT `> 0`. The strip's predicate has always been "the head is
   // exactly zero" and its complement is not `> 0` — a negative or `NaN` head is
   // NOT a plain record, and rewriting the comparison the obvious way narrowed
@@ -2318,17 +2340,17 @@ export function resolveTrialStrip(input: TrialCardInput): TrialStripModel | null
       : `ends ${formatTrialDate(endIndex)}`,
   );
   // THE STRIP IS STRICTER THAN THE CARD, DELIBERATELY — AND ITS RULE IS NOW ONE
-  // SENTENCE: Home states the ratio only when the record carries NONE of the six
+  // SENTENCE: Home states the ratio only when the record carries NONE of the
   // withholding reasons.
   //
   // Home has one line and nowhere to put the can't-match caveat, the untracked
-  // head, or the "offered, not eaten" reframing that make a ratio honest on the
-  // card, so a reason the card can absorb is a reason the strip cannot. Every
-  // round-8/9 strip defect was this conjunction being patched one reason at a
-  // time — for the decline flag, then the head, then the refusal — with the NEXT
-  // reason still rendering. `withholdingReasons` is the list, in one place, that
-  // both surfaces read; a seventh reason cannot be added to one and forgotten on
-  // the other.
+  // head, the antigen-arm pause, or the "offered, not eaten" reframing that make a
+  // ratio honest on the card, so a reason the card can absorb is a reason the strip
+  // cannot. Every round-8/9 strip defect was this conjunction being patched one
+  // reason at a time — for the decline flag, then the head, then the refusal — with
+  // the NEXT reason still rendering. `withholdingReasons` is the list, in one place,
+  // that both surfaces read; a new reason (B-597's `antigen_arm_dark` was the
+  // latest) cannot be added to one and forgotten on the other.
   //
   // An earlier cut of this comment said "the strip states coverage only when the
   // card would state it plainly", which stopped being true the moment round 9's

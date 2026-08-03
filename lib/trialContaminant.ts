@@ -99,7 +99,6 @@ import {
   proteinPhrase,
   sanctionedProteinsOn,
   trialContamination,
-  uncharacterizedTrialDietFoodsInRange,
   type AllowedFood,
   type TrialContext,
   type TrialSpec,
@@ -372,6 +371,11 @@ export function standingFlagCopy(flag: TrialContaminantFlag, petName: string): {
 export function trialDietNote(
   ctx: TrialProteinContext,
   petName?: string | null,
+  /** `TrialFacts.antigenArmDark` + `antigenAttributionPaused.map(f => f.label)`,
+   *  passed in by the card loader rather than re-derived here (B-598). See branch
+   *  #3 below and `antigenPausedNote` for why the note reads the module's flag
+   *  instead of computing its own. */
+  opts?: { antigenArmDark?: boolean; pausedLabels?: readonly string[] },
 ): { title: string; body: string } | null {
   // B9 — the MOST unknown state must not get the LEAST disclosure. An unknown
   // trial diet silently disables every check in this module, and an earlier cut
@@ -441,45 +445,30 @@ export function trialDietNote(
   // AND permitted extras. Never a per-feeding verdict (C2).
   const note = contaminationNote(trialContamination(trialContextOf(ctx)), petName);
   if (note) return note;
-  // B-529/R7(c) — THE PARTIAL CASE, which the all-dark test above cannot see.
-  // One designated trial food and one undesignated one leaves the sanctioned set
-  // NON-empty, so every branch above stays quiet — while the undesignated food is
-  // dropped from that set and its own proteins fall outside it. `classifyFeeding`
-  // now goes quiet in that state; this is the sentence that stops it being
-  // quieter WITHOUT SAYING SO, which is the whole of B9's lesson: the most
-  // unknown state must not get the least disclosure.
+  // B-529/R7(c) + B-598 — THE PAUSED ANTIGEN ARM, read from the module's flag,
+  // never re-derived here.
   //
-  // AFTER `contaminationNote`, DELIBERATELY. The first cut returned here BEFORE
-  // it, and the adversarial pass executed the cost: an already-computed, still
-  // valid contamination finding about food A ("The trial food also lists
-  // chicken") was deleted from the owner's card because food B was missing a
-  // field. A real finding outranks an explanation of a gap — the gap is still
-  // disclosed on the vet report, which is the surface that carries the tally
-  // this pause affects.
+  // This branch used to compute its OWN `uncharacterizedTrialDietFoodsInRange`
+  // over `[startDayIndex … max(today, startDayIndex)]` — a SECOND definition of
+  // "is the arm dark" living one surface away from the one the vet report reads
+  // (`TrialFacts.antigenArmDark` / `antigenAttributionPaused`). Two answers to one
+  // question, the class B-598 was filed under, and it was wrong two ways the flag
+  // is not:
+  //   • a `primary_diet` MEMBERSHIP GAP darkens the arm with NO row to name, so the
+  //     re-derivation found nothing and returned null while the report rendered the
+  //     unnamed "Antigen check paused" row. The card went silent on a gap the vet
+  //     was shown — the disclosure pass 4 forced onto the report, missing here.
+  //   • its range END was `Date.now()`, so an ENDED trial saw rows in force AFTER
+  //     it ended (over-fire). `antigenArmDark` bounds on the evidence end.
+  // The flag is computed once, feeding-anchored, over the correct window, so the
+  // card now discloses exactly when the report does and names the same foods.
   //
-  // RANGE-anchored, not `today`-anchored: membership is dated, so a trial food
-  // swapped out mid-trial leaves days of missing attribution that a now-check
-  // cannot see, and a disclosure that disappears while its hole remains reads as
-  // though nothing was ever wrong.
-  const trialCtx = trialContextOf(ctx);
-  const todayIndex = localDayIndex(Date.now());
-  const unnamed = uncharacterizedTrialDietFoodsInRange(
-    trialCtx,
-    trialCtx.startDayIndex ?? todayIndex,
-    Math.max(todayIndex, trialCtx.startDayIndex ?? todayIndex),
-  );
-  if (unnamed.length > 0) {
-    const which = unnamed.length === 1 && unnamed[0].label
-      ? `${unnamed[0].label} has`
-      : 'One of the trial foods has';
-    return {
-      title: 'Protein checks are paused for this trial',
-      body:
-        `${which} no protein Culprit recognises as a source, so it can’t tell which ` +
-        'proteins belong to the trial diet and which don’t. Setting a main protein ' +
-        'on that food would turn the checks back on.',
-    };
-  }
+  // AFTER `contaminationNote`, DELIBERATELY (B-529 ④): a real finding about food A
+  // outranks an explanation of a gap caused by food B, and BEFORE the
+  // ingredients-unread note below, preserving the order the re-derivation had.
+  // `antigenPausedNote` is the owner-register mirror of `render.ts`'s row; both
+  // read `antigenAttributionPaused`.
+  if (opts?.antigenArmDark) return antigenPausedNote(opts.pausedLabels ?? []);
   if (!ctx.trialFoodCompleteness.complete) {
     return {
       title: 'The trial food’s ingredients haven’t been read',
@@ -490,6 +479,50 @@ export function trialDietNote(
     };
   }
   return null;
+}
+
+/**
+ * The card's "Antigen check paused" disclosure (B-598) — the owner-surface mirror
+ * of `render.ts`'s report row. Driven by `TrialFacts.antigenArmDark` +
+ * `antigenAttributionPaused` (the labels), the SAME two fields the report reads,
+ * so the two surfaces cannot disagree about whether the arm is dark. That is the
+ * one-record-two-answers class B-598 closes: the card used to re-derive this and
+ * missed the membership gap the report showed.
+ *
+ * TWO VARIANTS, because the arm darkens two ways and only one has a food to name
+ * (matching the report's own split): a `primary_diet` membership gap leaves the
+ * label list empty, so the named sentence would have no subject. An empty
+ * `pausedLabels` is that gap, NEVER "no pause" — the caller gates on the boolean
+ * flag, and reaches this function only when the arm is genuinely dark.
+ */
+export function antigenPausedNote(pausedLabels: readonly string[]): {
+  title: string;
+  body: string;
+} {
+  const title = 'Protein checks are paused for this trial';
+  const named = pausedLabels.filter((l) => l && l.trim().length > 0);
+  if (named.length === 0) {
+    // The membership gap — no diet was on the allowed list for part of the window,
+    // so there is no food to name. "Still counts what was eaten" is the §5.3 fact
+    // the vet report also carries: a dark arm costs ATTRIBUTION, not detection, so
+    // the off-diet count is intact and only the protein names are missing.
+    return {
+      title,
+      body:
+        'For part of this trial there was no diet on the allowed list to check other ' +
+        'foods against, so those proteins couldn’t be compared. Culprit still counts ' +
+        'what was eaten — it just can’t name the proteins for that stretch.',
+    };
+  }
+  const which = named.length === 1 ? `${named[0]} has` : 'Some of the trial foods have';
+  const thatFood = named.length === 1 ? 'that food' : 'those foods';
+  return {
+    title,
+    body:
+      `${which} no protein Culprit recognises as a source, so it can’t tell which ` +
+      `proteins belong to the trial diet and which don’t. Setting a main protein on ` +
+      `${thatFood} would turn the checks back on.`,
+  };
 }
 
 /**

@@ -2609,10 +2609,21 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
     // adversarial pass showed a proxy both MISSES the `primary_diet` membership
     // gap (no row in force → empty sanctioned set → dark, with nothing to name)
     // and FIRES on a ghost row where nothing was silenced.
+    // A NAMELESS FOOD CANNOT BE NAMED, so it is filtered here at the source rather
+    // than by each consumer (B-598 empty-label edge, found by adversarial-reviewer).
+    // An empty/whitespace `label` (a food row with no brand and no product name) left
+    // in this list made the CARD render the unnamed "no diet on the allowed list"
+    // variant (`antigenPausedNote` filters empties) while the REPORT rendered the
+    // named variant with an empty bold ("<b></b> is recorded…", `render.ts`'s raw
+    // `.length > 0`): one record, two disclosures. Filtering here means both surfaces
+    // see the same list and the named-vs-unnamed split agrees — a nameless dark food
+    // simply falls into the arm-dark-nothing-to-name case the membership gap already
+    // produces (the boolean below stays true; only the NAME is unavailable, which is
+    // the honest reading). One predicate, at the source.
     antigenAttributionPaused: dedupeAllowedFoods([
       ...[...darkDays].flatMap((d) => uncharacterizedTrialDietFoods(ctx, d)),
       ...contaminationSuppressed,
-    ]),
+    ]).filter((f) => !!f.label && f.label.trim().length > 0),
     // THE BOOLEAN, NOT THE LIST, IS WHAT GATES A CLAIM. On a membership gap the
     // arm is dark and there is NO allowed-row to name, so the list is empty
     // while the record is exactly as unchecked — gating on `.length` let that

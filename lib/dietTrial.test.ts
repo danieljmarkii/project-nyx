@@ -2079,6 +2079,44 @@ describe('B-529 R7(c) — the silence rule', () => {
     expect(facts.antigenAttributionPaused).toEqual([]);
   });
 
+  // B-598 empty-label edge (adversarial-reviewer finding 1). A NAMELESS dark food
+  // darkens the arm but cannot be NAMED, so it is filtered from the attribution list
+  // at the source — otherwise the card renders its unnamed "no diet on the allowed
+  // list" gap variant (`antigenPausedNote` filters empties) while the report renders
+  // the NAMED variant with an empty bold ("<b></b> is recorded…", render.ts's raw
+  // `.length > 0`): one record, two disclosures. Filtered here, both surfaces read
+  // the same list and land on the unnamed variant; the boolean stays true.
+  it('darkens the arm but names nothing for a nameless (empty-label) dark food', () => {
+    const KIB = food({
+      foodItemId: 'f-kib4', foodKey: 'rcduck kibble', label: 'RC Duck kibble',
+      role: 'primary_diet', primaryProtein: 'duck', proteins: ['duck'],
+    });
+    const NAMELESS = food({
+      foodItemId: 'f-nameless', foodKey: 'nameless', label: '   ',
+      role: 'primary_diet', primaryProtein: 'hydrolyzed protein', proteins: ['soy', 'beef'],
+    });
+    const facts = computeTrialFacts({
+      trial: TRIAL,
+      allowedFoods: [KIB, NAMELESS],
+      feedings: Array.from({ length: 12 }, (_, i) =>
+        feeding({
+          eventId: `n-${i}`,
+          occurredAt: at('2026-07-10', 6 + i),
+          foodItemId: KIB.foodItemId,
+          foodKey: KIB.foodKey,
+          proteins: ['duck'],
+        }),
+      ),
+      nowMs: new Date(2026, 6, 20, 12).getTime(),
+    });
+    // The soy/beef on the nameless row are unsanctioned → the arm is dark…
+    expect(facts.antigenArmDark).toBe(true);
+    // …but there is nothing to name, so both surfaces render the unnamed variant.
+    expect(facts.antigenAttributionPaused).toEqual([]);
+    // The claim is still withheld — off the boolean, never the list.
+    expect(mayClaimAllMatched(facts)).toBe(false);
+  });
+
   // The narrowing this rule is deliberately scoped to: a designated primary with
   // an unread panel is a different and far more common state, and darkening the
   // tally for it would silence nearly every real trial for no gain here.
