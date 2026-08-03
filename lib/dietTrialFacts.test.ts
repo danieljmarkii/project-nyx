@@ -27,6 +27,7 @@ import {
   ALLOWED_SET_SQL,
   ARRANGEMENTS_IN_WINDOW_SQL,
   ENDED_TRIAL_GRACE_DAYS,
+  TRIAL_FOR_CARD_SQL,
   arrangementParams,
   dosesQuery,
   feedingsQuery,
@@ -77,8 +78,52 @@ function freshDb() {
       method TEXT NOT NULL DEFAULT 'free_choice',
       active_from TEXT, active_until TEXT, deleted_at TEXT
     );
+    CREATE TABLE diet_trials (
+      id TEXT PRIMARY KEY, pet_id TEXT NOT NULL, food_item_id TEXT,
+      started_at TEXT NOT NULL, target_duration_days INTEGER NOT NULL,
+      status TEXT NOT NULL, ended_at TEXT, completed_at TEXT,
+      stopped_reason TEXT, outcome TEXT, indication TEXT, food_label TEXT,
+      synced INTEGER NOT NULL DEFAULT 0
+    );
   `);
   return db;
+}
+
+/** Insert a `diet_trials` row — enough shape to run `TRIAL_FOR_CARD_SQL` and the
+ *  predicate against a real engine (B-601). */
+function addTrial(
+  db: Db,
+  over: {
+    id: string;
+    started_at?: string;
+    target_duration_days?: number;
+    status?: string;
+    ended_at?: string | null;
+    completed_at?: string | null;
+    food_item_id?: string | null;
+    indication?: string | null;
+    pet?: string;
+  },
+) {
+  db.prepare(
+    `INSERT INTO diet_trials
+       (id, pet_id, food_item_id, started_at, target_duration_days, status,
+        ended_at, completed_at, stopped_reason, outcome, indication, food_label, synced)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,0)`,
+  ).run(
+    over.id,
+    over.pet ?? PET,
+    over.food_item_id ?? null,
+    over.started_at ?? '2026-06-01',
+    over.target_duration_days ?? 56,
+    over.status ?? 'active',
+    over.ended_at ?? null,
+    over.completed_at ?? null,
+    null,
+    null,
+    over.indication ?? 'skin',
+    null,
+  );
 }
 
 interface Db {
@@ -454,6 +499,9 @@ describe('loadDietTrialFacts → TrialCardInput (behavioural)', () => {
     jest.doMock('./trialContaminant', () => ({
       loadTrialProteinContext: jest.fn().mockResolvedValue(null),
       trialDietNote: jest.fn(),
+      // The fallback path (B-598) calls this directly when the note lane is null
+      // but the arm is dark, so the mock must carry it or the import is undefined.
+      antigenPausedNote: jest.fn(() => ({ title: 'Protein checks are paused for this trial', body: 'gap' })),
     }));
     const mod = require('./dietTrialFacts') as typeof import('./dietTrialFacts');
     return mod.loadDietTrialFacts({
@@ -726,6 +774,145 @@ describe('arrangementParams', () => {
   });
 });
 
+// ── B-601 — the card and the report must select the SAME ended trial ──────────
+//
+// `TRIAL_FOR_CARD_SQL`'s eligibility predicate and tie-break are run against a real
+// engine and pinned to what `generate-report/trial.selectReportTrial` would choose:
+// the two naming DIFFERENT trials off one record is the one-record-two-answers class.
+// The grace WINDOW is deliberately NOT aligned (30 vs 90, R5) — it governs whether the
+// card shows a trial, not which one — so every fixture here stays inside both windows.
+describe('B-601 — TRIAL_FOR_CARD_SQL picks the trial the report would', () => {
+  // The card passes `now - ENDED_TRIAL_GRACE_DAYS` as the bound; a fixed reference
+  // keeps the fixtures readable, and every ended fixture sits well inside it.
+  const GRACE_FROM = '2026-07-01';
+  const pick = (db: Db): { id: string } | null =>
+    (db.prepare(TRIAL_FOR_CARD_SQL).all(PET, GRACE_FROM) as Array<{ id: string }>)[0] ?? null;
+
+  it('selects an ended trial carrying only completed_at (no ended_at)', () => {
+    // `trialEndValue` = `ended_at ?? completed_at`; the old `ended_at IS NOT NULL`
+    // made this pre-migration-040 row (B-455's shape) eligible for the report and
+    // invisible to the card.
+    const db = freshDb();
+    addTrial(db, { id: 't-comp', status: 'completed', ended_at: null, completed_at: '2026-07-10' });
+    expect(pick(db)?.id).toBe('t-comp');
+    db.close();
+  });
+
+  it('still excludes an ended trial whose end predates the 30-day card grace', () => {
+    const db = freshDb();
+    addTrial(db, { id: 't-old', status: 'completed', ended_at: '2026-06-01', completed_at: null });
+    expect(pick(db)).toBeNull();
+    db.close();
+  });
+
+  it('ranks two ended trials by start-then-id, like the report — never by synced', () => {
+    // The report ranks [running, startDn, id] and consults no `synced`. Here the
+    // EARLIER-started trial synced more recently, so the old `synced DESC` before
+    // `started_at DESC` would have picked it; the report (and now the card) take the
+    // later start.
+    const db = freshDb();
+    addTrial(db, { id: 't-early', status: 'completed', ended_at: '2026-07-20', started_at: '2026-06-01' });
+    addTrial(db, { id: 't-late', status: 'abandoned', ended_at: '2026-07-20', started_at: '2026-06-15' });
+    db.prepare('UPDATE diet_trials SET synced = 1 WHERE id = ?').run('t-early');
+    expect(pick(db)?.id).toBe('t-late');
+    db.close();
+  });
+
+  it('breaks a same-start tie on the HIGHEST id (report is id-DESC), not the lowest', () => {
+    // The old `ORDER BY … t.id` was ASCending and picked 'aaa'; `selectReportTrial`
+    // takes `id > best`, so both surfaces must land on 'zzz'.
+    const db = freshDb();
+    addTrial(db, { id: 'aaa', status: 'completed', ended_at: '2026-07-20', started_at: '2026-06-10' });
+    addTrial(db, { id: 'zzz', status: 'completed', ended_at: '2026-07-20', started_at: '2026-06-10' });
+    expect(pick(db)?.id).toBe('zzz');
+    db.close();
+  });
+
+  it('an active trial always outranks an ended one', () => {
+    const db = freshDb();
+    addTrial(db, { id: 't-ended', status: 'completed', ended_at: '2026-07-20', started_at: '2026-06-20' });
+    addTrial(db, { id: 't-active', status: 'active', started_at: '2026-06-01' });
+    expect(pick(db)?.id).toBe('t-active');
+    db.close();
+  });
+});
+
+// ── B-597/B-598 — the antigen-arm flag reaches BOTH owner surfaces ────────────
+//
+// End-to-end against a real engine, through the real `computeTrialFacts`: a fed
+// designated primary plus an uncharacterized `primary_diet` row whose panel the trial
+// never sanctioned darkens the arm (dietTrial.test.ts pins that derivation). The
+// loader must (a) surface it as `input.antigenArmDark` — the passthrough the strip
+// reads (B-597) — and (b) fill the standing note from the flag when the protein-context
+// read is silent, so the card carries the report's membership-gap disclosure (B-598).
+describe('loadDietTrialFacts — the antigen-arm flag reaches the card', () => {
+  const asyncAdapter = (real: Db) => ({
+    getFirstAsync: (sql: string, params: unknown[] = []) =>
+      Promise.resolve((real.prepare(sql).all(...params) as unknown[])[0] ?? null),
+    getAllAsync: (sql: string, params: unknown[] = []) =>
+      Promise.resolve(real.prepare(sql).all(...params)),
+  });
+
+  const antigenPausedNoteMock = jest.fn((labels: readonly string[]) => ({
+    title: 'Protein checks are paused for this trial',
+    body: labels.length > 0 ? `named:${labels.join('|')}` : 'gap',
+  }));
+
+  async function loadWithDb(real: Db) {
+    jest.resetModules();
+    jest.doMock('./db', () => ({ getDb: () => asyncAdapter(real) }));
+    jest.doMock('./analytics', () => ({
+      getIntakeDecline: jest.fn().mockResolvedValue({ status: 'none', flags: [] }),
+    }));
+    // ctx null → `readStandingNote` returns null → the fallback must fire, which is
+    // exactly the ctx===null path B-598 covers. `antigenPausedNote` is a spy so the
+    // labels the fallback passes (the `antigenAttributionPaused` derivation) are pinned.
+    jest.doMock('./trialContaminant', () => ({
+      loadTrialProteinContext: jest.fn().mockResolvedValue(null),
+      trialDietNote: jest.fn().mockReturnValue(null),
+      antigenPausedNote: antigenPausedNoteMock,
+    }));
+    return require('./dietTrialFacts') as typeof import('./dietTrialFacts');
+  }
+
+  it('surfaces antigenArmDark and fills the standing note from the flag alone', async () => {
+    antigenPausedNoteMock.mockClear();
+    const db = freshDb();
+    addTrial(db, { id: 'trial-1', status: 'active', started_at: '2026-07-01', food_item_id: 'f-kib' });
+    db.prepare(
+      'INSERT INTO food_items_cache (id, brand, product_name, food_type, primary_protein, proteins) VALUES (?,?,?,?,?,?)',
+    ).run('f-kib', 'RC', 'Duck kibble', 'meal', 'duck', '["duck"]');
+    // The uncharacterized row: `hydrolyzed protein` has no source base, and soy/beef
+    // are not in the duck-sanctioned set → `contaminationSuppressed` darkens the arm.
+    db.prepare(
+      'INSERT INTO food_items_cache (id, brand, product_name, food_type, primary_protein, proteins) VALUES (?,?,?,?,?,?)',
+    ).run('f-hp', 'RC', 'HP Loaf', 'meal', 'hydrolyzed protein', '["soy","beef"]');
+    db.prepare(
+      'INSERT INTO diet_trial_foods (id, diet_trial_id, food_item_id, role, food_label, allowed_from, allowed_until) VALUES (?,?,?,?,?,?,?)',
+    ).run('tf-kib', 'trial-1', 'f-kib', 'primary_diet', 'RC Duck kibble', '2026-07-01', null);
+    db.prepare(
+      'INSERT INTO diet_trial_foods (id, diet_trial_id, food_item_id, role, food_label, allowed_from, allowed_until) VALUES (?,?,?,?,?,?,?)',
+    ).run('tf-hp', 'trial-1', 'f-hp', 'primary_diet', 'HP Loaf', '2026-07-01', null);
+    for (let i = 0; i < 32; i++) {
+      addEvent(db, `e-${i}`, `2026-07-1${i % 9}T12:00:00Z`);
+      addMeal(db, `e-${i}`, 'f-kib', 'finished');
+    }
+
+    const mod = await loadWithDb(db);
+    const input = await mod.loadDietTrialFacts({
+      pet: { id: PET, name: 'Biscuit', species: 'dog' },
+      nowMs: new Date('2026-07-20T12:00:00Z').getTime(),
+    });
+
+    // B-597 — the passthrough the strip reads.
+    expect(input.antigenArmDark).toBe(true);
+    // B-598 — the fallback fired with the food the module named, and stamped the note.
+    expect(antigenPausedNoteMock).toHaveBeenCalledWith(['HP Loaf']);
+    expect(input.standingNote?.body).toBe('named:HP Loaf');
+    db.close();
+  });
+});
+
 // B-616 PR 4 — `loadTrialPredicateFacts`, the read the exposures screen shares
 // with the card.
 //
@@ -762,6 +949,9 @@ describe('loadTrialPredicateFacts — three answers, held apart', () => {
     jest.doMock('./trialContaminant', () => ({
       loadTrialProteinContext: jest.fn().mockResolvedValue(null),
       trialDietNote: jest.fn(),
+      // The fallback path (B-598) calls this directly when the note lane is null
+      // but the arm is dark, so the mock must carry it or the import is undefined.
+      antigenPausedNote: jest.fn(() => ({ title: 'Protein checks are paused for this trial', body: 'gap' })),
     }));
     const mod = require('./dietTrialFacts') as typeof import('./dietTrialFacts');
     return mod;

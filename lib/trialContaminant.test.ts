@@ -38,6 +38,7 @@ import {
   trialFoodContaminants,
   foodContaminantFlag,
   trialDietNote,
+  antigenPausedNote,
   sanctionedProteinsForTrial,
   proteinList,
   mealFlagCopy,
@@ -643,12 +644,13 @@ describe('B-529 — a hydrolysed trial diet does not flag itself on the card', (
   });
 });
 
-describe('B-529 R7(c) — the partial-designation disclosure', () => {
-  // B9's existing branch only fires when the sanctioned set is EMPTY, which the
-  // partial case is not: one designated food leaves it non-empty while the
-  // undesignated one is dropped from it. The antigen arm goes quiet in that
-  // state, so something has to say so — going quieter without saying why is the
-  // exact failure B9 exists to prevent.
+describe('B-529 R7(c) + B-598 — the paused-arm disclosure reads the module flag', () => {
+  // B-598 moved the pause off a SECOND `uncharacterizedTrialDietFoodsInRange`
+  // re-derivation (today-anchored, blind to a membership gap) and onto the
+  // module's `antigenArmDark` + `antigenAttributionPaused` — the same fields the
+  // vet report reads. So `trialDietNote` now takes the flag rather than computing
+  // its own answer, and the DERIVATION (does this record darken the arm?) is
+  // `dietTrial.test.ts`'s job. These tests pin the note's PLACEMENT and copy.
   const partial = () => {
     const c = ctx({ primaryCount: 2, primaryResolved: 2 });
     c.allowedFoods = [
@@ -662,40 +664,108 @@ describe('B-529 R7(c) — the partial-designation disclosure', () => {
     return c;
   };
 
-  it('says the checks are paused, and names the food that needs a main protein', () => {
-    const note = trialDietNote(partial());
+  it('says the checks are paused, and names the food the flag pointed at', () => {
+    const note = trialDietNote(partial(), null, {
+      antigenArmDark: true,
+      pausedLabels: ['Zignature Duck Wet'],
+    });
     expect(note).not.toBeNull();
     expect(note!.title).toBe('Protein checks are paused for this trial');
     expect(note!.body).toContain('Zignature Duck Wet');
-    // The predicate means "names no protein SOURCE", not "the field is empty" —
-    // a bare `hydrolyzed` reaches this branch with a main protein visibly set, so
-    // copy saying "no main protein set" would contradict the food screen (B9's
-    // own self-contradiction rule).
+    // "names no protein SOURCE", not "the field is empty" — a bare `hydrolyzed`
+    // reaches this state with a main protein visibly set, so "no main protein set"
+    // would contradict the food screen (B9's self-contradiction rule).
     expect(note!.body).toMatch(/no protein Culprit recognises as a source/);
   });
 
-  it('reads as a record fact and never reassures', () => {
-    const note = trialDietNote(partial())!;
-    const text = `${note.title} ${note.body}`;
-    expect(text).not.toMatch(/!/);
-    expect(text).not.toMatch(/\b(fine|safe|clean|no problem|all good|nothing to worry)\b/i);
+  it('discloses the MEMBERSHIP GAP even with nothing to name — the B-598 hole', () => {
+    // The arm is dark and `antigenAttributionPaused` is EMPTY (no `primary_diet`
+    // row was in force for that stretch), so the re-derivation found nothing and
+    // returned null while the report rendered its unnamed row. The card is no
+    // longer silent, and the unnamed copy names no phantom food.
+    const note = trialDietNote(partial(), null, { antigenArmDark: true, pausedLabels: [] });
+    expect(note).not.toBeNull();
+    expect(note!.title).toBe('Protein checks are paused for this trial');
+    expect(note!.body).toMatch(/no diet on the allowed list/);
+    expect(note!.body).not.toMatch(/Zignature|Setting a main protein/);
+  });
+
+  it('reads as a record fact and never reassures, both variants', () => {
+    for (const labels of [['Zignature Duck Wet'], [] as string[]]) {
+      const note = trialDietNote(partial(), null, { antigenArmDark: true, pausedLabels: labels })!;
+      const text = `${note.title} ${note.body}`;
+      expect(text).not.toMatch(/!/);
+      expect(text).not.toMatch(/\b(fine|safe|clean|no problem|all good|nothing to worry)\b/i);
+    }
+  });
+
+  it('does not render the pause when the flag is absent or false', () => {
+    // Belt-and-suspenders on the plumbing: the note must not invent a pause the
+    // module did not compute. No opts and an explicit `false` both stay quiet.
+    expect(trialDietNote(partial())?.title ?? '').not.toMatch(/Protein checks are paused/);
+    expect(
+      trialDietNote(partial(), null, { antigenArmDark: false, pausedLabels: ['Zignature Duck Wet'] })
+        ?.title ?? '',
+    ).not.toMatch(/Protein checks are paused/);
+  });
+
+  it('a real contamination outranks the pause (B-529 ④), even with the flag set', () => {
+    // The precedence the re-derivation had is preserved: contamination is branch
+    // #2, the pause branch #3, so a genuine finding about food A is never deleted
+    // to explain a gap caused by food B.
+    const c = ctx({ primaryCount: 2, primaryResolved: 2 }, {
+      label: 'Duck Kibble', primaryProtein: 'duck', proteins: ['duck', 'chicken'],
+    });
+    c.allowedFoods = [
+      ...c.allowedFoods,
+      {
+        foodItemId: 'f-wet', foodKey: 'duck wet', label: 'Duck Wet',
+        role: 'primary_diet', allowedFrom: '2020-01-01', allowedUntil: null,
+        primaryProtein: null, proteins: ['duck'],
+      },
+    ];
+    const note = trialDietNote(c, null, { antigenArmDark: true, pausedLabels: ['Duck Wet'] });
+    expect(note?.title).toMatch(/also lists chicken/i);
+    expect(note?.title).not.toMatch(/paused/i);
   });
 
   it('stands down once every trial food carries a designation', () => {
-    // The pause disclosure is gone. What surfaces instead is the ORDINARY
-    // standing contamination fact — `duck liver` is a genuine extra against a
-    // `duck` primary, because the relation deliberately does NOT fold tissue
-    // terms on read (see proteinRelation's under-claim note; the write path's
-    // normalizeExtractedProtein is what folds them at capture). Asserting the
-    // stand-down as "null" would have been wrong, and pinning the real
-    // successor is what makes this test worth having.
+    // With the arm no longer dark (`antigenArmDark: false`), what surfaces instead
+    // is the ORDINARY standing contamination fact — `duck liver` is a genuine extra
+    // against a `duck` primary, because the relation deliberately does NOT fold
+    // tissue terms on read.
     const c = partial();
     c.allowedFoods = c.allowedFoods.map((f) =>
       f.primaryProtein == null ? { ...f, primaryProtein: 'duck' } : f,
     );
-    const note = trialDietNote(c);
+    const note = trialDietNote(c, null, { antigenArmDark: false, pausedLabels: [] });
     expect(note?.title).not.toMatch(/Protein checks are paused/);
     expect(note?.title).toMatch(/also lists duck liver/i);
+  });
+});
+
+describe('antigenPausedNote — the owner-register mirror of the report row', () => {
+  it('names one food', () => {
+    const note = antigenPausedNote(['Zignature Duck Wet']);
+    expect(note.body).toContain('Zignature Duck Wet has');
+    expect(note.body).toContain('that food');
+  });
+
+  it('pluralises for several, and never lists a phantom on the empty gap', () => {
+    const many = antigenPausedNote(['A Wet', 'B Kibble']);
+    expect(many.body).toMatch(/Some of the trial foods have/);
+    expect(many.body).toContain('those foods');
+    const gap = antigenPausedNote([]);
+    expect(gap.body).toMatch(/no diet on the allowed list/);
+    // §5.3 — a dark arm costs ATTRIBUTION, not detection: the count survives.
+    expect(gap.body).toMatch(/still counts what was eaten/);
+  });
+
+  it('ignores blank labels (a null-derived label never names a phantom)', () => {
+    // `antigenAttributionPaused.map(f => f.label)` can carry an empty string; that
+    // is the membership gap, not a food called "".
+    const note = antigenPausedNote(['', '   ']);
+    expect(note.body).toMatch(/no diet on the allowed list/);
   });
 });
 
