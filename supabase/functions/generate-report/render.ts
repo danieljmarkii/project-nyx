@@ -482,7 +482,17 @@ function proteinPattern(id: string, color: string, texIndex: number): string {
   const ink = 'rgba(20,24,34,.34)'
   let tex = ''
   switch (texIndex % 8) {
-    case 0: tex = ''; break // solid (the dominant baseline protein)
+    // B-444 — case 0 carries a texture too. The caption promises the chart "reads in
+    // black & white", and §5.8 requires every datum be carried by a shape/texture, not
+    // colour. A solid case-0 made the LARGEST protein band a flat fill that a photocopy
+    // or fax could not tell apart from the solid "no recorded protein" band (`ptc-u`) —
+    // both distinguished only by lightness. Solid is now reserved for that no-protein
+    // band alone, so every actual protein band carries a mark and the largest no longer
+    // collides with it. (Both texture and PROTEIN_COLORS cycle mod 8 over an uncapped
+    // protein list, so ≥9 distinct off-diet proteins still repeat a texture+colour pair —
+    // a pre-existing limit of the §5.8 colour-carve that wants a Designer, tracked as
+    // B-685; not this fix's to redesign.)
+    case 0: tex = `<circle cx="4" cy="4" r="1.7" fill="none" stroke="${ink}" stroke-width="1.1"/>`; break // ring (the dominant baseline protein)
     case 1: tex = `<circle cx="4" cy="4" r="1.5" fill="${ink}"/>`; break // dots
     case 2: tex = `<path d="M0 4 H8" stroke="${ink}" stroke-width="1.4"/>`; break // horizontal
     case 3: tex = `<path d="M4 0 V8" stroke="${ink}" stroke-width="1.4"/>`; break // vertical
@@ -2781,8 +2791,15 @@ function atAGlance(snap: ReportSnapshot): string {
   // that shape the old tiles duplicated the trend headline, showed the misleading "0 of 25 fully
   // eaten" for a free-fed grazer (R2-3), and restated the range box.
   const tiles = snap.diet.trial ? trialTiles(snap) : monitoringTiles(snap)
+  // B-503 — NOT a blanket "counts over the N-day window". The symptom and weight tiles
+  // count over the report window, but the coverage and off-diet tiles count over the
+  // trial's own (narrower) range — §5.1 pins the coverage denominator to the trial's
+  // overlap, deliberately NOT the report window (else a recheck-scoped report reads
+  // "27 / 56"). A single-window heading turned the coverage tile's "43 / 43" into a
+  // 100%-of-46 reading; each tile now names the span it counts over, and the heading
+  // says which tiles depart from the window rather than overriding them with one number.
   const aside = snap.diet.trial
-    ? `counts over the ${num(ag.windowDays)}-day window`
+    ? `over the ${num(ag.windowDays)}-day window &mdash; except coverage &amp; off-diet, over the trial&rsquo;s own range`
     : `symptom trajectory over the window`
   return `
   <div class="sec">
@@ -3994,11 +4011,15 @@ function timingLine(c: CorrelationSummary, snap: ReportSnapshot): string {
       e.proteins && e.proteins.length > 1
         ? ` These proteins co-occur in every exposure on record, so the association <b>cannot be attributed to either one individually</b> — separating them would be informative.`
         : ''
+    // B-499 — NO "Detail in appendix C". Appendix C is the off-diet exposure table; it
+    // holds no correlation detail on any report, and is empty on a clean/refused one, so
+    // the pointer dead-ended. The statistical detail — cases, controls, p — is already
+    // inline on this line, which is where a vet reads it; there is nowhere else to send them.
     return `${h(e.protein)} reached the established association threshold for ${h(
       symptomLabel(e.symptomType).toLowerCase(),
     )} over this window (${num(e.caseExposed)}/${num(e.matchedPairs)} exposed cases vs ${num(
       e.controlExposed,
-    )} controls; p&nbsp;=&nbsp;${e.pValue.toFixed(3)}). An association, <b>not a proven cause</b>.${joint} Detail in appendix&nbsp;C.`
+    )} controls; p&nbsp;=&nbsp;${e.pValue.toFixed(3)}). An association, <b>not a proven cause</b>.${joint}`
   }
   const staple = c.stapleProtein
     // "IS OFFERED", NOT "EATS" (cold read round 10). The staple-washout reason is about
@@ -4021,7 +4042,11 @@ function timingLine(c: CorrelationSummary, snap: ReportSnapshot): string {
     .filter(Boolean)
     .join('; ')
   const timingBit = timing ? ` ${timing} — co-occurrence, not cause.` : ''
-  return `<b>No single food/protein reached the established correlation threshold</b> over this window${staple}.${timingBit} Detail in appendix&nbsp;C.`
+  // B-499 — NO "Detail in appendix C" here either: on a null result appendix C carries no
+  // correlation content and on a clean/refused report it is empty, so the pointer led a
+  // vet who followed it to an off-diet table or a blank page. (The negative branch still
+  // owes a denominator/power statement — that is B-489, folded in when either is picked up.)
+  return `<b>No single food/protein reached the established correlation threshold</b> over this window${staple}.${timingBit}`
 }
 
 // ── Footer (per page/section) ────────────────────────────────────────────────────
@@ -4327,9 +4352,13 @@ function intakeDetailTable(snap: ReportSnapshot, log: IntakeLogEntry[]): string 
     })
     .join('')
   const hasFull = log.some((e) => e.isLastFullMeal)
-  const noun = unfinishedOnly ? 'unfinished meal' : 'rated meal'
-  // `unfinished` is the app's one predicate (`feedingWasFinished`: `most`/`all` are eaten), so
-  // the rows listed here are exactly the rows this table bolds. Never a second definition.
+  const noun = unfinishedOnly ? 'not-fully-eaten meal' : 'rated meal'
+  // B-500 — this list's population is "not FULLY eaten" (`intakeRating !== 'all'` in report.ts),
+  // matching page 1's "N of M fully eaten" (`finishedMeals === 'all'`) and this table's own copy.
+  // It is deliberately NOT the app's `feedingWasFinished` bar (`most`/`all`), so the rows listed
+  // here are a SUPERSET of the rows this table bolds: `intakeLogRow` still bolds only the
+  // below-`most` ratings, so an "ate most" row is listed (page 1 counts it as not fully eaten) but
+  // rendered plain, since it is not a health signal.
   const hiddenBit =
     hidden > 0
       ? ` ${num(hidden)} earlier ${noun}${hidden === 1 ? '' : 's'} in this window ${
@@ -4358,7 +4387,7 @@ function intakeDetailTable(snap: ReportSnapshot, log: IntakeLogEntry[]): string 
           : 'no fully-eaten meal was recorded in this window, so page&nbsp;1 shows no &ldquo;last full meal&rdquo; and none is tagged here'
       }. Absence of a full meal is not evidence the pet ate nothing — only that no fully-eaten meal was recorded.`
   const lead = unfinishedOnly
-    ? '<b>Meals not finished</b> — every rated meal in this window the owner did not record as fully eaten, most recent first.'
+    ? '<b>Meals not fully eaten</b> — every rated meal in this window the owner did not record as fully eaten, most recent first.'
     : '<b>Recent rated meals</b> — the meals behind the reduced-intake flag on page&nbsp;1, most recent first.'
   return `
   <p class="note lead" style="margin-top:16px">${lead}${hiddenBit}</p>
@@ -4966,8 +4995,18 @@ function dietHistoryAppendix(snap: ReportSnapshot): string {
   const suppBit = supps.length
     ? supps.map((m) => `${h(m.drugName)} (started ${h(fmtDay(m.startedAt))})`).join('; ')
     : NOT_LOGGED
+  // B-499 — "Dates in appendix C" only resolves on a NON-trial report, where appendix C
+  // IS the treats & table-food table and every treat is a dated row. On a trial report
+  // appendix C lists OFF-DIET exposures only, so a PERMITTED treat has no dated row there:
+  // the pointer dead-ended for all but the handful of off-diet treats (64 of 65 on the
+  // reviewed artifact). Under a trial the treats are otherwise accounted for — the
+  // allowed list and the appendix C permitted-extras tally carry their counts — so the
+  // honest form states the count without a cross-reference that cannot resolve.
+  const treatsDatedInAppendixC = !(snap.trial && !snap.trial.allowedSetUnavailable)
   const treatBit = d.treats.count
-    ? `${num(d.treats.count)} this window (${num(d.treats.distinctItems)} distinct). Dates in appendix&nbsp;C.`
+    ? `${num(d.treats.count)} this window (${num(d.treats.distinctItems)} distinct).${
+        treatsDatedInAppendixC ? ' Dates in appendix&nbsp;C.' : ''
+      }`
     : NOT_LOGGED
   // Meals (#7/#8) — the foods the owner logs AS MEALS (e.g. a wet diet). Previously discarded
   // before render, so a substantial part of the diet was invisible. Name the distinct foods here

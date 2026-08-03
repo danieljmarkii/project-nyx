@@ -108,7 +108,6 @@ import {
 } from './trial.ts'
 // B-494's flag carries the refusal fact verbatim rather than flattening it, so the
 // band and the trial block on the same page cannot state different numbers.
-import { feedingWasFinished } from '../../../lib/dietTrial.ts'
 import type { TrialDietRefusal, TrialSpecies } from '../../../lib/dietTrial.ts'
 export type {
   TrialBlock,
@@ -3275,16 +3274,19 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
   const ratedMealsInWindow = windowMeals
     .filter((e) => e.meal!.foodType === 'meal' && e.meal!.intakeRating != null)
     .sort((a, b) => b.occurredAt.localeCompare(a.occurredAt) || (a.id < b.id ? 1 : a.id > b.id ? -1 : 0))
-  // B-532 — the second population: the meals that were LEFT UNFINISHED.
+  // B-532/B-500 — the second population: every meal the owner did NOT record as FULLY EATEN.
   //
-  // ON THE APP'S ONE PREDICATE, imported rather than re-derived. `feedingWasFinished` is
-  // `most`/`all`, the same bar `lib/analytics.FINISHED_SCORE`, §4.3's refusal lane and this
-  // file's own `intakeLogRow` emphasis already use — and a second definition here ("!== 'all'")
-  // would have put one "ate most" meal into an otherwise calm report while the row it rendered
-  // was not even bolded. Every rating still reaches the reader: the grouped table above this
-  // one now carries the FULL breakdown, so `most` is counted there; what this list adds is the
-  // per-meal dates for the ratings that are a possible health signal.
-  const unfinishedRated = ratedMealsInWindow.filter((e) => feedingWasFinished(e.meal!.intakeRating) === false)
+  // The threshold is `!== 'all'`, matching page 1's "N of M rated meals FULLY EATEN"
+  // (`finishedMeals` counts `=== 'all'`) and this list's own copy — its lead reads "every
+  // rated meal … the owner did not record as fully eaten" and its caption "meals rated below
+  // 'ate it all'". B-532 filtered on `feedingWasFinished` (`most`/`all`) instead, so an "ate
+  // most" meal was NOT fully eaten on page 1 yet counted as finished here — the one meal page 1
+  // singles out as the "1" in "86 of 87" then had no dated row anywhere, and the list's own
+  // caption promised it (B-500, `vet-report-cold-read`). `most` is a possible-signal rating for
+  // this purpose (page 1 flags it) but not an alarm: `intakeLogRow` still bolds only the
+  // below-`most` ratings, so an "ate most" row is present and dated but plain, not a false
+  // alert. The grouped table above still carries the full breakdown either way.
+  const unfinishedRated = ratedMealsInWindow.filter((e) => e.meal!.intakeRating !== 'all')
   const intakeLogScope: 'intake_flag' | 'unfinished' | null = hasIntakeFlag
     ? 'intake_flag'
     : unfinishedRated.length > 0
