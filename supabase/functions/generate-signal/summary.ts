@@ -46,7 +46,7 @@
 import type { Finding, MealEvent, SymptomEvent } from './detection.ts'
 import { intakeScore } from './detection.ts'
 import { SYMPTOM_LABEL, templateForFinding } from './phrasing.ts'
-import { canonicalizeProtein } from './protein.ts'
+import { readProteinSet } from './protein.ts'
 
 const MS_PER_DAY = 86_400_000
 
@@ -198,23 +198,37 @@ export interface CachedSummary {
 // ── Descriptive intake aggregates (server-side mirror of the PR-1 cards) ───────────────
 // Computed over the in-window meals the detection engine already loaded — NOT a second DB
 // read. These mirror lib/analytics.ts (same floors, same free-fed exclusions, same
-// canonicalization) so the summary's numbers match the cards it sits above — with TWO
-// exceptions, one deliberate and one outstanding: the protein CLAUSE stays meals-only (by
-// design, below), and since B-351 slice 6 it also still keys on `primary_protein` while the
-// card keys on the whole captured SET (B-467 — a real divergence, not a design choice).
+// set-membership protein keying) so the summary's numbers match the cards it sits above —
+// with ONE deliberate exception: the protein CLAUSE stays meals-only (by design, below).
 
-/** Most-logged MEAL protein this month, canonicalized. Treats excluded ON PURPOSE here —
- *  the summary makes the narrower "most-logged MEAL protein" claim ("what protein does Nyx
- *  eat"), so a treat's filler protein must not dominate the sentence. This DELIBERATELY
- *  DIVERGES from computeTopProteins, which (post-B-111, 2026-06-18) ranks protein EXPOSURE
- *  incl. treats (flagged) on the card.
+/** Most-logged MEAL protein this month. Treats excluded ON PURPOSE here — the summary
+ *  makes the narrower "most-logged MEAL protein" claim ("what protein does Nyx eat"), so a
+ *  treat's filler protein must not dominate the sentence. This DELIBERATELY DIVERGES from
+ *  computeTopProteins, which (post-B-111, 2026-06-18) ranks protein EXPOSURE incl. treats
+ *  (flagged) on the card.
  *
- *  ⚠ B-467 — a SECOND divergence, and this one is NOT deliberate: since B-351 slice 6 the
- *  card and the correlation engine count the whole captured protein SET, and this still
- *  reads `primary_protein`, so a protein present only as a secondary never wins the clause.
- *  Widening it is the right fix, but it changes a clinically-reviewed AI-summary claim, so
- *  it needs an explicit nod rather than a mechanical edit — which is exactly what the next
- *  sentence has always said about the treat filter.
+ *  B-467 (closed 2026-08-02, on the PM's explicit direction — the "explicit nod" the ⚠
+ *  paragraph that used to sit here required, not a mechanical alignment): the keying is now
+ *  the whole captured protein SET (`readProteinSet`, the B-351 slice-6 widening the card
+ *  and the correlation engine already carry), so a protein reaching the pet as a hidden
+ *  SECONDARY can win the clause — a real exposure the primary-only read made invisible.
+ *  The claim's semantics survive intact: "X was the most-logged meal protein" = X appeared
+ *  in more logged meals than any other protein, and the clause carries no count, so no
+ *  number changes meaning. A meal with several proteins counts toward each; `identified`
+ *  still counts MEALS (the floor's denominator), not protein instances.
+ *
+ *  THE SUPERLATIVE NEEDS A STRICT WINNER (adversarial pass on the widening, same day).
+ *  Set membership makes an EXACT tie the default case for a single-food diet whose set has
+ *  ≥2 proteins — every meal contributes both, so counts are equal by construction — and
+ *  the old alphabetical tie-break would then hand the clause to whichever protein sorts
+ *  first ("Chicken was the most-logged" on a duck formula, decided by 'c' < 'd'). A tied
+ *  "most-logged" is false as stated, in the one consumer that compresses the ranking to a
+ *  single name with no count (the ranked-list consumers show every count, so ties are
+ *  visible there). So: a tie at the top yields NULL — no clause — because no claim beats a
+ *  false one. This also fixes the pre-B-467 latent case (two single-protein foods logged
+ *  equally often). A joint clause ("X and Y were…", mirroring the engine's slice-6 joint
+ *  candidates) is the richer alternative; it is new clinically-reviewed AI-summary copy,
+ *  so it is deliberately NOT minted here — tracked as B-684, build if missed in dogfood.
  *
  *  Do NOT "align" this by dropping the treat filter — it
  *  would change a clinically-reviewed AI-summary claim. The card↔summary grounding nuance
@@ -225,19 +239,25 @@ function topMealProtein(meals: MealEvent[]): { protein: string; count: number } 
   let identified = 0
   for (const m of meals) {
     if (m.foodType === 'treat') continue
-    const key = canonicalizeProtein(m.primaryProtein)
-    if (key === null) continue
+    const keys = readProteinSet(m.proteins ?? null, m.primaryProtein)
+    if (keys.length === 0) continue
     identified += 1
-    byProtein.set(key, (byProtein.get(key) ?? 0) + 1)
+    for (const key of keys) byProtein.set(key, (byProtein.get(key) ?? 0) + 1)
   }
   if (identified < MIN_MEALS_FOR_RANKING) return null
   let best: { protein: string; count: number } | null = null
+  let tiedAtTop = false
   for (const [protein, count] of byProtein) {
-    if (!best || count > best.count || (count === best.count && protein < best.protein)) {
+    if (!best || count > best.count) {
       best = { protein, count }
+      tiedAtTop = false
+    } else if (count === best.count) {
+      tiedAtTop = true
     }
   }
-  return best
+  // No strict winner ⇒ no superlative (see doc above — a tied "most-logged" is false as
+  // stated, and the alphabet must never decide a clinical sentence).
+  return tiedAtTop ? null : best
 }
 
 /** Finished-rate over MEALS ONLY (§11 #1 — treats finish at a ceiling rate and would mask a

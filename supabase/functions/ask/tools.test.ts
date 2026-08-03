@@ -26,6 +26,7 @@ import {
   engineFindings,
   freeFedStatus,
   intakeSummary,
+  intakeTrend,
   isNotEnoughData,
   lastSymptom,
   liveEvents,
@@ -74,6 +75,7 @@ function meal(partial: Partial<AskMealRow> & { occurredAt: string }): AskMealRow
     foodLabel: partial.foodLabel ?? null,
     foodType: partial.foodType ?? 'meal',
     primaryProtein: partial.primaryProtein ?? null,
+    proteins: partial.proteins ?? null,
     intakeRating: partial.intakeRating ?? null,
     note: partial.note ?? null,
     hasPhoto: partial.hasPhoto ?? false,
@@ -449,6 +451,159 @@ Deno.test('intakeSummary — free-fed meals excluded, caveat set (§11 #6)', () 
 })
 
 // ════════════════════════════════════════════════════════════════════════════════════
+// intakeTrend (B-382) — a falling finished-rate is VISIBLE, honestly floored, never minted
+// ════════════════════════════════════════════════════════════════════════════════════
+
+/** N rated meals per day across [fromDaysAgo … toDaysAgo] (inclusive), one per day. */
+function ratedMealOnEachDay(fromDaysAgo: number, toDaysAgo: number, rating: string, idPrefix: string): AskMealRow[] {
+  const out: AskMealRow[] = []
+  for (let d = fromDaysAgo; d <= toDaysAgo; d++) {
+    out.push(
+      meal({
+        id: `${idPrefix}-${d}`,
+        occurredAt: new Date(NOW_MS - d * MS_PER_DAY).toISOString(),
+        foodType: 'meal',
+        intakeRating: rating,
+        foodItemId: 'f1',
+      }),
+    )
+  }
+  return out
+}
+
+Deno.test('intakeTrend — a falling finished-rate is visible: down direction, both denominators (B-382)', () => {
+  // Prior window (7–13 days ago): 7 meals, all finished. Current window (0–6 days ago):
+  // 7 meals, only 2 finished. The A7 counterexample-(c) cat — before this tool, no Ask
+  // tool could surface this decline at all.
+  const meals = [
+    ...ratedMealOnEachDay(7, 13, 'all', 'prior'),
+    ...ratedMealOnEachDay(2, 6, 'refused', 'cur-low'),
+    ...ratedMealOnEachDay(0, 1, 'all', 'cur-ok'),
+  ]
+  const r = intakeTrend(meals, { window: '7d', nowMs: NOW_MS, freeFedFoodIds: new Set() })
+  assert.equal(isNotEnoughData(r), false)
+  if (!isNotEnoughData(r)) {
+    assert.equal(r.current.ratedMeals, 7)
+    assert.equal(r.current.finishedMeals, 2)
+    assert.equal(r.prior?.ratedMeals, 7)
+    assert.equal(r.prior?.finishedMeals, 7)
+    assert.equal(r.direction, 'down') // the concern direction — a FALLING finished-rate
+    assert.ok((r.delta as number) < 0)
+    assert.equal(r.windowLabel, 'the last 7 days')
+  }
+})
+
+Deno.test('intakeTrend — current window below the rated-meal floor ⇒ NotEnoughData, never a rate', () => {
+  const meals = [...ratedMealOnEachDay(7, 13, 'all', 'prior'), ...ratedMealOnEachDay(0, 2, 'refused', 'cur')]
+  const r = intakeTrend(meals, { window: '7d', nowMs: NOW_MS, freeFedFoodIds: new Set() })
+  assert.equal(isNotEnoughData(r), true)
+  if (isNotEnoughData(r)) {
+    assert.equal(r.samples, 3)
+    assert.equal(r.needed, ASK_FLOORS.minRatedMealsForIntakeRate)
+  }
+})
+
+Deno.test('intakeTrend — a below-floor PRIOR window yields no comparison, with the honest prior count', () => {
+  // A comparison off 2 prior meals would be a fabricated trend; the tool says "only 2
+  // rated meals the window before" instead (prior null, priorRatedMeals honest).
+  const meals = [...ratedMealOnEachDay(0, 6, 'all', 'cur'), ...ratedMealOnEachDay(8, 9, 'all', 'prior')]
+  const r = intakeTrend(meals, { window: '7d', nowMs: NOW_MS, freeFedFoodIds: new Set() })
+  if (!isNotEnoughData(r)) {
+    assert.equal(r.prior, null)
+    assert.equal(r.priorRatedMeals, 2)
+    assert.equal(r.delta, null)
+    assert.equal(r.direction, null) // never a guessed comparison
+  }
+})
+
+Deno.test('intakeTrend — windows with no prior span (all / since_trial_start) have no trend', () => {
+  const meals = ratedMealOnEachDay(0, 6, 'all', 'cur')
+  const r = intakeTrend(meals, { window: 'all', nowMs: NOW_MS, freeFedFoodIds: new Set() })
+  if (!isNotEnoughData(r)) {
+    assert.equal(r.prior, null)
+    assert.equal(r.priorRatedMeals, null)
+    assert.equal(r.direction, null)
+  }
+})
+
+Deno.test('intakeTrend — treats and free-fed meals excluded in BOTH windows; caveat set (§11 #1/#6)', () => {
+  const meals = [
+    // Current: 5 finished + 2 refused proper meals → 5/7.
+    ...ratedMealOnEachDay(0, 4, 'all', 'cur'),
+    ...ratedMealOnEachDay(5, 6, 'refused', 'cur-r'),
+    // Prior: 7 finished proper meals → 7/7.
+    ...ratedMealOnEachDay(7, 13, 'all', 'prior'),
+    // A refused treat in the current window must not deepen the decline (treats out, §11 #1)…
+    meal({ occurredAt: new Date(NOW_MS - 1 * MS_PER_DAY).toISOString(), foodType: 'treat', intakeRating: 'refused', foodItemId: 't1' }),
+    // …and a free-fed bowl's rating is excluded from the PRIOR denominator too (§11 #6).
+    meal({ occurredAt: new Date(NOW_MS - 9 * MS_PER_DAY).toISOString(), foodType: 'meal', intakeRating: 'refused', foodItemId: 'ff' }),
+  ]
+  const r = intakeTrend(meals, { window: '7d', nowMs: NOW_MS, freeFedFoodIds: new Set(['ff']) })
+  assert.equal(isNotEnoughData(r), false)
+  if (!isNotEnoughData(r)) {
+    assert.equal(r.current.ratedMeals, 7) // treat excluded
+    assert.equal(r.current.finishedMeals, 5)
+    assert.equal(r.prior?.ratedMeals, 7) // free-fed excluded
+    assert.equal(r.prior?.finishedMeals, 7)
+    assert.equal(r.freeFedExcluded, 1)
+    assert.equal(r.intakeNotDirectlyObserved, true)
+    assert.equal(r.direction, 'down') // 5/7 vs 7/7 — a real fall
+  }
+})
+
+Deno.test('intakeTrend — a rating-density collapse is DISCLOSED, never absorbed (adversarial 2026-08-02)', () => {
+  // The counterexample that broke round 1: 12 meals fed this window but only the 4 she ate
+  // were rated (the 8 refusals logged unrated) → rate 4/4 = 1.0, direction 'up' — a
+  // worsening cat reading as improving. The rate itself is an honest fact about RATED
+  // meals; what was missing is the gap AS a fact. currentUnratedMeals now carries it, and
+  // buildProvenance renders it structurally beside the verdict (the C5 lesson).
+  const meals = [
+    ...ratedMealOnEachDay(0, 3, 'all', 'cur-rated'),
+    // 8 unrated meals in the current window — fed, never rated.
+    ...[0, 1, 2, 3, 4, 5, 6, 0].map((d, i) =>
+      meal({ id: `unrated-${i}`, occurredAt: new Date(NOW_MS - d * MS_PER_DAY - 3_600_000).toISOString(), foodType: 'meal', intakeRating: null, foodItemId: 'f1' }),
+    ),
+    ...ratedMealOnEachDay(7, 13, 'all', 'prior'),
+  ]
+  const r = intakeTrend(meals, { window: '7d', nowMs: NOW_MS, freeFedFoodIds: new Set() })
+  assert.equal(isNotEnoughData(r), false)
+  if (!isNotEnoughData(r)) {
+    assert.equal(r.current.ratedMeals, 4)
+    assert.equal(r.currentUnratedMeals, 8) // the gap is a first-class fact
+    assert.equal(r.priorUnratedMeals, 0)
+  }
+})
+
+Deno.test('intakeTrend — unrated treats and free-fed meals do NOT count as unrated-meal gaps', () => {
+  // The disclosure names meals that WOULD have qualified had they been rated — an unrated
+  // treat or a free-fed bowl was never going to enter the denominator, so it is not a gap.
+  const meals = [
+    ...ratedMealOnEachDay(0, 6, 'all', 'cur'),
+    meal({ occurredAt: new Date(NOW_MS - 1 * MS_PER_DAY).toISOString(), foodType: 'treat', intakeRating: null, foodItemId: 't1' }),
+    meal({ occurredAt: new Date(NOW_MS - 2 * MS_PER_DAY).toISOString(), foodType: 'meal', intakeRating: null, foodItemId: 'ff' }),
+  ]
+  const r = intakeTrend(meals, { window: '7d', nowMs: NOW_MS, freeFedFoodIds: new Set(['ff']) })
+  if (!isNotEnoughData(r)) {
+    assert.equal(r.currentUnratedMeals, 0)
+  }
+})
+
+Deno.test('intakeTrend — current-window numbers EQUAL intakeSummary for the same fixture (G5)', () => {
+  // One denominator definition across the two intake tools — they can never disagree
+  // about the same window's rate.
+  const meals = [...ratedMealOnEachDay(0, 6, 'all', 'cur'), ...ratedMealOnEachDay(8, 14, 'some', 'prior')]
+  const trend = intakeTrend(meals, { window: '7d', nowMs: NOW_MS, freeFedFoodIds: new Set() })
+  const summary = intakeSummary(meals, { window: '7d', nowMs: NOW_MS, freeFedFoodIds: new Set() })
+  assert.equal(isNotEnoughData(trend), false)
+  assert.equal(isNotEnoughData(summary), false)
+  if (!isNotEnoughData(trend) && !isNotEnoughData(summary)) {
+    assert.equal(trend.current.ratedMeals, summary.ratedMeals)
+    assert.equal(trend.current.finishedMeals, summary.finishedMeals)
+    assert.equal(trend.current.rate, summary.rate)
+  }
+})
+
+// ════════════════════════════════════════════════════════════════════════════════════
 // Rankings — floors, canonicalization, treat handling (ported from analytics.ts)
 // ════════════════════════════════════════════════════════════════════════════════════
 
@@ -489,6 +644,62 @@ Deno.test('topProteins — a treat-only protein is flagged isTreat with null fin
     const duck = r.proteins.find((p) => p.protein === 'duck')
     assert.equal(duck?.isTreat, true)
     assert.equal(duck?.finishedRate, null)
+  }
+})
+
+Deno.test('topProteins — a hidden SECONDARY protein counts as real exposure (B-351 slice 6 / B-467)', () => {
+  // The textbook elimination-trial contaminant: a "duck" formula that also lists chicken.
+  // Pre-B-467 this ranking read primary_protein alone, so the chicken exposure vanished
+  // from every Ask answer ("has she had any chicken?" → no) while the Signal engine and
+  // the Patterns card both counted it. Now all three read the same set.
+  const meals = [
+    meal({ occurredAt: '2026-07-14T08:00:00Z', primaryProtein: 'duck', proteins: ['duck', 'chicken'], foodType: 'meal', foodItemId: 'f1' }),
+    meal({ occurredAt: '2026-07-13T08:00:00Z', primaryProtein: 'duck', proteins: ['duck', 'chicken'], foodType: 'meal', foodItemId: 'f1' }),
+    meal({ occurredAt: '2026-07-12T08:00:00Z', primaryProtein: 'duck', proteins: ['duck', 'chicken'], foodType: 'meal', foodItemId: 'f1' }),
+    meal({ occurredAt: '2026-07-11T08:00:00Z', primaryProtein: 'beef', foodType: 'meal', foodItemId: 'f2' }),
+  ]
+  const r = topProteins(meals, { window: '30d', nowMs: NOW_MS })
+  assert.equal(isNotEnoughData(r), false)
+  if (!isNotEnoughData(r)) {
+    const chicken = r.proteins.find((p) => p.protein === 'chicken')
+    const duck = r.proteins.find((p) => p.protein === 'duck')
+    assert.equal(chicken?.count, 3) // the hidden secondary IS the exposure
+    assert.equal(duck?.count, 3)
+    // Shares no longer sum to 1: 4 identified feedings, duck 3/4 + chicken 3/4 + beef 1/4.
+    assert.equal(chicken?.shareOfDiet, 3 / 4)
+    assert.equal(duck?.shareOfDiet, 3 / 4)
+    // An absent set still degrades to the primary (beef is counted, pre-B-467-identically).
+    assert.equal(r.proteins.find((p) => p.protein === 'beef')?.count, 1)
+  }
+})
+
+Deno.test('topProteins — the floor counts identified FEEDINGS, not protein instances (B-467)', () => {
+  // 3 meals each carrying 2 proteins = 6 protein instances but only 3 identified feedings —
+  // still below the 4-feeding ranking floor. A multi-protein food must not let 3 meals
+  // masquerade as a rankable sample.
+  const meals = [
+    meal({ occurredAt: '2026-07-14T08:00:00Z', primaryProtein: 'duck', proteins: ['duck', 'chicken'], foodType: 'meal', foodItemId: 'f1' }),
+    meal({ occurredAt: '2026-07-13T08:00:00Z', primaryProtein: 'duck', proteins: ['duck', 'chicken'], foodType: 'meal', foodItemId: 'f1' }),
+    meal({ occurredAt: '2026-07-12T08:00:00Z', primaryProtein: 'duck', proteins: ['duck', 'chicken'], foodType: 'meal', foodItemId: 'f1' }),
+  ]
+  const r = topProteins(meals, { window: '30d', nowMs: NOW_MS })
+  assert.equal(isNotEnoughData(r), true)
+  if (isNotEnoughData(r)) assert.equal(r.samples, 3)
+})
+
+Deno.test('topProteins — a secondary carried ONLY by treats is treat-flagged; via a meal it is not (§11 #1)', () => {
+  const meals = [
+    meal({ occurredAt: '2026-07-14T08:00:00Z', primaryProtein: 'beef', foodType: 'meal', intakeRating: 'all', foodItemId: 'f1' }),
+    meal({ occurredAt: '2026-07-13T08:00:00Z', primaryProtein: 'beef', foodType: 'meal', intakeRating: 'all', foodItemId: 'f1' }),
+    meal({ occurredAt: '2026-07-12T08:00:00Z', primaryProtein: 'beef', foodType: 'meal', intakeRating: 'all', foodItemId: 'f1' }),
+    // Chicken reaches the pet ONLY inside a treat's set → treat-sourced, no rate to fake.
+    meal({ occurredAt: '2026-07-11T08:00:00Z', primaryProtein: 'duck', proteins: ['duck', 'chicken'], foodType: 'treat', foodItemId: 't1' }),
+  ]
+  const r = topProteins(meals, { window: '30d', nowMs: NOW_MS })
+  if (!isNotEnoughData(r)) {
+    const chicken = r.proteins.find((p) => p.protein === 'chicken')
+    assert.equal(chicken?.isTreat, true)
+    assert.equal(chicken?.finishedRate, null)
   }
 })
 
@@ -709,6 +920,7 @@ Deno.test('medications — active regimen, last-given ignores refused/missed dos
   assert.equal(apoquel?.active, true)
   assert.equal(apoquel?.dosesGiven, 1) // 'given' ONLY — a null/unrated dose never reads as given (never-reassure)
   assert.equal(apoquel?.dosesMissed, 1) // refused
+  assert.equal(apoquel?.dosesUnconfirmed, 1) // the null dose is REPORTED, not silently dropped (B-395)
   assert.equal(apoquel?.lastDoseAt, '2026-07-14T08:00:00Z') // NOT the 07-15 refusal, NOT the 07-13 unrated
 })
 
@@ -726,6 +938,34 @@ Deno.test('medications — a partial or unconfirmed(null) dose never reads as "g
   const cet = r.medications.find((m) => m.medicationId === 'r1')
   assert.equal(cet?.dosesGiven, 0) // neither partial nor unconfirmed is a clean given
   assert.equal(cet?.lastDoseAt, null) // an unconfirmed dose is never named "last given"
+  // B-395: …but neither dose vanishes any more — each lands in its own honest bucket, so
+  // the planner can say "1 not fully taken, 1 unconfirmed" instead of reporting nothing.
+  assert.equal(cet?.dosesPartial, 1)
+  assert.equal(cet?.dosesUnconfirmed, 1)
+  assert.equal(cet?.dosesMissed, 0)
+})
+
+Deno.test('medications — every dose lands in exactly ONE bucket; off-enum adherence is unconfirmed (B-395)', () => {
+  // Four-bucket parity with the client tally (lib/medications.ts bucketAdherence): given /
+  // partial / missed+refused / unrated-or-unknown. An unrecognised adherence string is a
+  // dose the record can't vouch for — it buckets as unconfirmed, never as given.
+  const doses = [
+    { id: 'd1', medicationId: null, medicationItemId: 'item-x', drugLabel: 'Motozol', occurredAt: '2026-07-10T08:00:00Z', adherence: 'given', deletedAt: null },
+    { id: 'd2', medicationId: null, medicationItemId: 'item-x', drugLabel: 'Motozol', occurredAt: '2026-07-11T08:00:00Z', adherence: 'partial', deletedAt: null },
+    { id: 'd3', medicationId: null, medicationItemId: 'item-x', drugLabel: 'Motozol', occurredAt: '2026-07-12T08:00:00Z', adherence: 'missed', deletedAt: null },
+    { id: 'd4', medicationId: null, medicationItemId: 'item-x', drugLabel: 'Motozol', occurredAt: '2026-07-13T08:00:00Z', adherence: 'refused', deletedAt: null },
+    { id: 'd5', medicationId: null, medicationItemId: 'item-x', drugLabel: 'Motozol', occurredAt: '2026-07-14T08:00:00Z', adherence: null, deletedAt: null },
+    { id: 'd6', medicationId: null, medicationItemId: 'item-x', drugLabel: 'Motozol', occurredAt: '2026-07-15T08:00:00Z', adherence: 'sort-of', deletedAt: null }, // off-enum
+  ]
+  const r = medications([], doses, { window: '30d', nowMs: NOW_MS })
+  const m = r.medications.find((x) => x.drugLabel === 'Motozol')
+  assert.equal(m?.dosesGiven, 1)
+  assert.equal(m?.dosesPartial, 1)
+  assert.equal(m?.dosesMissed, 2) // missed + refused
+  assert.equal(m?.dosesUnconfirmed, 2) // null + the off-enum string
+  // Reconciliation: the buckets partition the logged doses — nothing dropped, nothing double-counted.
+  assert.equal((m!.dosesGiven + m!.dosesPartial + m!.dosesMissed + m!.dosesUnconfirmed), doses.length)
+  assert.equal(m?.lastDoseAt, '2026-07-10T08:00:00Z') // still the last GIVEN, not the off-enum 07-15
 })
 
 Deno.test('medications — active keys on status, not a [started,ended] interval (no UTC drift)', () => {

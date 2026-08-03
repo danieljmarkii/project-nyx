@@ -583,7 +583,7 @@ async function fetchContext(
     // Meal events with their food/protein/intake join (the rate/food/protein aggregates).
     client
       .from('events')
-      .select('id, occurred_at, occurred_at_confidence, event_attachments(id), meals(food_item_id, intake_rating, food_items(primary_protein, food_type, brand, product_name))')
+      .select('id, occurred_at, occurred_at_confidence, event_attachments(id), meals(food_item_id, intake_rating, food_items(primary_protein, proteins, food_type, brand, product_name))')
       .eq('pet_id', petId)
       .eq('event_type', 'meal')
       .is('deleted_at', null)
@@ -646,16 +646,17 @@ async function fetchContext(
   }))
 
   // ── meals ──
+  type FoodItemDb = { primary_protein: string | null; proteins: string[] | null; food_type: string | null; brand: string | null; product_name: string | null }
   type MealRowDb = {
     id: string
     occurred_at: string
     occurred_at_confidence: string | null
     event_attachments: { id: string }[] | null
-    meals: { food_item_id: string | null; intake_rating: string | null; food_items: { primary_protein: string | null; food_type: string | null; brand: string | null; product_name: string | null } | null } | { food_item_id: string | null; intake_rating: string | null; food_items: unknown }[] | null
+    meals: { food_item_id: string | null; intake_rating: string | null; food_items: FoodItemDb | null } | { food_item_id: string | null; intake_rating: string | null; food_items: unknown }[] | null
   }
   const meals: AskMealRow[] = ((mealsRes.data ?? []) as MealRowDb[]).map((r) => {
-    const meal = first(r.meals) as { food_item_id: string | null; intake_rating: string | null; food_items: { primary_protein: string | null; food_type: string | null; brand: string | null; product_name: string | null } | { primary_protein: string | null; food_type: string | null; brand: string | null; product_name: string | null }[] | null } | null
-    const fi = first(meal?.food_items ?? null) as { primary_protein: string | null; food_type: string | null; brand: string | null; product_name: string | null } | null
+    const meal = first(r.meals) as { food_item_id: string | null; intake_rating: string | null; food_items: FoodItemDb | FoodItemDb[] | null } | null
+    const fi = first(meal?.food_items ?? null) as FoodItemDb | null
     return {
       id: r.id,
       occurredAt: r.occurred_at,
@@ -664,6 +665,9 @@ async function fetchContext(
       foodLabel: fi ? `${fi.brand ?? ''} ${fi.product_name ?? ''}`.trim() || null : null,
       foodType: fi?.food_type ?? null,
       primaryProtein: fi?.primary_protein ?? null,
+      // B-467: the full captured protein set rides beside the primary so topProteins pools
+      // hidden secondaries — read through readProteinSet inside the tool, never here.
+      proteins: fi?.proteins ?? null,
       intakeRating: meal?.intake_rating ?? null,
       note: null, // aggregates carry no note (scoped-retrieval §6.1); event notes ride recall
       hasPhoto: Array.isArray(r.event_attachments) && r.event_attachments.length > 0,
