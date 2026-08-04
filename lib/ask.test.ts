@@ -130,13 +130,44 @@ describe('resolveTapThrough — provenance navigation (real routes only)', () =>
     expect(resolveTapThrough({ kind: 'events', eventIds: ['e1', 'e2', 'e3'] })).toEqual({ pathname: '/event/[id]', params: { id: 'e1' } });
   });
 
-  it('routes a symptom filter to that symptom Patterns detail', () => {
-    expect(resolveTapThrough({ kind: 'filter', symptomType: 'vomit', window: '30d' })).toEqual({ pathname: '/insights/[metric]', params: { metric: 'vomit' } });
+  // B-378 — a History-renderable symptom filter opens the FILTERED History list (audit the
+  // count at its source), NOT Patterns. window rides through in History's own vocabulary.
+  it('routes a History-renderable symptom filter to the filtered History list', () => {
+    expect(resolveTapThrough({ kind: 'filter', symptomType: 'vomit', window: '30d' })).toEqual({
+      pathname: '/(tabs)/history', params: { type: 'vomit', window: '30d' },
+    });
+    expect(resolveTapThrough({ kind: 'filter', symptomType: 'diarrhea', window: '7d' })).toEqual({
+      pathname: '/(tabs)/history', params: { type: 'diarrhea', window: '7d' },
+    });
+  });
+
+  // 14d has no History preset → widen to 30d (superset, never hides a counted event); all /
+  // since_trial_start / unset → all time (no window param at all).
+  it('maps the window to History vocabulary, widening where History has no preset', () => {
+    expect(resolveTapThrough({ kind: 'filter', symptomType: 'vomit', window: '14d' })).toEqual({
+      pathname: '/(tabs)/history', params: { type: 'vomit', window: '30d' },
+    });
+    expect(resolveTapThrough({ kind: 'filter', symptomType: 'vomit', window: 'all' })).toEqual({
+      pathname: '/(tabs)/history', params: { type: 'vomit' },
+    });
+    expect(resolveTapThrough({ kind: 'filter', symptomType: 'lethargy', window: 'since_trial_start' })).toEqual({
+      pathname: '/(tabs)/history', params: { type: 'lethargy' },
+    });
+    expect(resolveTapThrough({ kind: 'filter', symptomType: 'itch' })).toEqual({
+      pathname: '/(tabs)/history', params: { type: 'itch' },
+    });
+  });
+
+  // A symptom History has no filter chip for (scratch/skin_reaction) keeps the Patterns detail —
+  // the honest destination, since History would drop the type filter and show everything.
+  it('keeps a non-History-renderable symptom on its Patterns detail', () => {
+    expect(resolveTapThrough({ kind: 'filter', symptomType: 'scratch', window: '30d' })).toEqual({ pathname: '/insights/[metric]', params: { metric: 'scratch' } });
+    expect(resolveTapThrough({ kind: 'filter', symptomType: 'skin_reaction' })).toEqual({ pathname: '/insights/[metric]', params: { metric: 'skin_reaction' } });
   });
 
   it('routes a non-symptom / symptomless filter to the Patterns index', () => {
     expect(resolveTapThrough({ kind: 'filter', window: '7d' })).toEqual({ pathname: '/insights' });
-    // 'meal' is not a symptom metric → index, never a dead /insights/[metric].
+    // 'meal' is not a symptom metric → index, never a dead /insights/[metric] or a History link.
     expect(resolveTapThrough({ kind: 'filter', symptomType: 'meal' })).toEqual({ pathname: '/insights' });
   });
 
@@ -149,10 +180,13 @@ describe('resolveTapThrough — provenance navigation (real routes only)', () =>
 describe('tapThroughLabel', () => {
   it('names where it actually lands', () => {
     expect(tapThroughLabel({ kind: 'events', eventIds: ['e1'] })).toBe('Open the event');
-    // Several events open the LATEST one (no multi-event route), so the label must say
-    // so — never "Open in History" (which would promise a filtered list — pm-review fix).
+    // Several events open the LATEST one (no multi-event route), so the label must say so.
     expect(tapThroughLabel({ kind: 'events', eventIds: ['e1', 'e2'] })).toBe('Open the latest event');
-    expect(tapThroughLabel({ kind: 'filter', symptomType: 'vomit' })).toBe('Open in Patterns');
+    // B-378 — a History-renderable symptom now genuinely opens the filtered History list.
+    expect(tapThroughLabel({ kind: 'filter', symptomType: 'vomit' })).toBe('Open in History');
+    // A symptom History can't render still opens Patterns — the label follows the real route.
+    expect(tapThroughLabel({ kind: 'filter', symptomType: 'scratch' })).toBe('Open in Patterns');
+    expect(tapThroughLabel({ kind: 'filter', window: '7d' })).toBe('Open in Patterns');
     expect(tapThroughLabel(null)).toBeNull();
     expect(tapThroughLabel({ kind: 'events', eventIds: [] })).toBeNull();
   });

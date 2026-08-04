@@ -116,8 +116,15 @@ export default function FoodCaptureScreen() {
   const { activePet } = usePetStore();
   const { user } = useAuthStore();
   const { prependEvent } = useEventStore();
-  const { fromLog } = useLocalSearchParams<{ fromLog?: string }>();
+  const { fromLog, returnTo } = useLocalSearchParams<{ fromLog?: string; returnTo?: string }>();
   const cameFromMealLog = fromLog === '1';
+  // B-625 — a return-aware exit. The default exit unwinds the whole stack to Home
+  // (`dismissAll`), which is right for the two callers that PRESENT capture over a tab (the
+  // FAB's log flow, the Foods tab): the owner lands on Home, not on a stale picker. A screen
+  // that PUSHED capture as one step of its own flow (/trial-foods' mid-trial add is the first)
+  // passes `returnTo=back` so we pop back to IT instead of dismissing it along with the
+  // capture — the captured food is then one tap away on the screen that asked for it.
+  const returnToPusher = returnTo === 'back';
 
   // B-329 flag-aware state. Render-only: the Edge Function re-checks the flag + cap
   // server-side (B-252), so this only shapes what's shown, never what's allowed.
@@ -210,15 +217,21 @@ export default function FoodCaptureScreen() {
       Animated.spring(checkScale, { toValue: 1, useNativeDriver: true, tension: 60, friction: 7 }),
       Animated.timing(checkOpacity, { toValue: 1, duration: 150, useNativeDriver: true }),
     ]).start();
-    // dismissAll() unwinds both the food-capture modal and the underlying
-    // meal-log picker so the user lands on Home, not on a stale picker.
+    // Default exit: dismissAll() unwinds both the food-capture modal and the underlying
+    // meal-log picker so the user lands on Home, not on a stale picker. When a screen pushed
+    // capture as a step of its own flow (returnToPusher, B-625), pop back to it instead so it
+    // isn't dismissed along with the capture — guarded by canGoBack so a lost history still
+    // fails safe to dismissAll rather than a no-op.
     // 900ms is the plain confirmation beat. A trial heads-up adds two lines of
     // prose the owner has never seen and cannot get back by tapping (it is
     // passive by design), so the beat holds long enough to read it — the same
     // reasoning that extends the meal completion card's dwell when flagged.
-    const t = setTimeout(() => router.dismissAll(), loggedTrialFlag ? 3800 : 900);
+    const t = setTimeout(() => {
+      if (returnToPusher && router.canGoBack()) router.back();
+      else router.dismissAll();
+    }, loggedTrialFlag ? 3800 : 900);
     return () => clearTimeout(t);
-  }, [step, loggedTrialFlag]);
+  }, [step, loggedTrialFlag, returnToPusher]);
 
   // §6.1 flag-off: when photo extraction is disabled the flow has no camera path —
   // it opens directly on the manual edit step (no banner, no dead affordance). We

@@ -8,7 +8,7 @@ import { theme } from '../../constants/theme';
 import { EmptyState } from '../../components/ui';
 import { DateScopeControl } from '../../components/history/DateScopeControl';
 import { TypeScopeControl } from '../../components/history/TypeScopeControl';
-import { DAY_KEY_RE, effectiveRange } from '../../lib/historyDateFilter';
+import { DAY_KEY_RE, effectiveRange, coerceDatePreset } from '../../lib/historyDateFilter';
 import type { DatePreset } from '../../lib/historyDateFilter';
 import { EVENT_TYPES, EventTypeKey } from '../../constants/eventTypes';
 import { EventRow } from '../../components/history/EventRow';
@@ -82,6 +82,16 @@ function rowToEvent(row: TimelineRow): NyxEvent {
   };
 }
 
+// Coerce a `?type=` deep-link value onto a real EventTypeKey (B-378), or null when it isn't
+// one the UI can represent (a stale/foreign type, or one valid in the schema but not exposed
+// here — e.g. `scratch`). hasOwnProperty, not `in`, so an inherited key like `toString` can't
+// masquerade as an event type. A bad value degrades to "no type filter", never a crash.
+function coerceEventTypeKey(value: string | undefined | null): EventTypeKey | null {
+  return value && Object.prototype.hasOwnProperty.call(EVENT_TYPES, value)
+    ? (value as EventTypeKey)
+    : null;
+}
+
 export default function HistoryScreen() {
   const { activePet } = usePetStore();
   // Two doorways deep-link here with ?date=…&ts=<nonce>: the Home "Today" doorway (§8,
@@ -91,11 +101,25 @@ export default function HistoryScreen() {
   // scope clears it.
   // W5 adds a third: the widget's status column deep-links here with
   // ?date=YYYY-MM-DD&pet=<id> — the day AND whose day it is.
-  const params = useLocalSearchParams<{ date?: string; ts?: string; pet?: string }>();
+  // B-378 adds a fourth: Ask's answer-card provenance deep-links here with
+  // ?type=<event_type>&window=<preset>&ts=<nonce> to open the filtered list an answer's count
+  // was drawn from ("audit the whole count at its source") instead of a single event. A
+  // type/window link and a date link are mutually exclusive — Ask sends one shape or the other.
+  const params = useLocalSearchParams<{
+    date?: string; ts?: string; pet?: string; type?: string; window?: string;
+  }>();
   useWidgetPetLink(params.pet);
-  const initialDatePreset: DatePreset = params.date === 'today' ? 'today' : null;
+  // A type/window deep-link (B-378) and a date deep-link are separate doorways; whichever the
+  // navigation carried seeds the initial filter. `hasFilterLink` distinguishes a fresh
+  // type/window arrival from an ordinary mount so the date-based seeds don't fight it.
+  const hasFilterLink = !!(params.type || params.window);
+  const initialTypeFilter: EventTypeKey | null = coerceEventTypeKey(params.type);
+  const initialWindowPreset: DatePreset = coerceDatePreset(params.window);
+  const initialDatePreset: DatePreset = hasFilterLink
+    ? initialWindowPreset
+    : params.date === 'today' ? 'today' : null;
   const initialDay: string | null =
-    params.date && DAY_KEY_RE.test(params.date) ? params.date : null;
+    !hasFilterLink && params.date && DAY_KEY_RE.test(params.date) ? params.date : null;
   const { removeFromToday, todayEvents } = useEventStore();
   // B-054 §6 — reactive refresh-after-hydrate: re-read the timeline when a sync
   // cycle finishes while this tab is open, so another device's writes appear
@@ -110,7 +134,7 @@ export default function HistoryScreen() {
   const [offset, setOffset] = useState(0);
   const [hasMore, setHasMore] = useState(true);
   const [loading, setLoading] = useState(false);
-  const [typeFilter, setTypeFilter] = useState<EventTypeKey | null>(null);
+  const [typeFilter, setTypeFilter] = useState<EventTypeKey | null>(initialTypeFilter);
   const [datePreset, setDatePreset] = useState<DatePreset>(initialDatePreset);
   // A single-day filter from the Calendar v3 drill-in (B-308). Mutually exclusive with
   // datePreset — whichever the owner picked last wins; picking a preset clears the day.
@@ -244,17 +268,28 @@ export default function HistoryScreen() {
     loadFreeFeeding();
   }, [hydrationTick, loadEvents, loadFreeFeeding]);
 
-  // Re-apply a doorway date filter on a fresh navigation (the tab persists across switches,
-  // so a doorway tap doesn't remount). The `ts` nonce changes per tap; the ref guards
-  // against re-applying on unrelated re-renders. Setting datePreset/dayFilter re-runs the
-  // focus effect (which reloads). First mount is handled by initialDatePreset/initialDay
-  // above, so the ref is seeded to that ts to avoid a redundant re-apply. Handles BOTH the
-  // Home "Today" doorway (?date=today) and the Calendar drill-in (?date=YYYY-MM-DD, B-308).
+  // Re-apply a doorway filter on a fresh navigation (the tab persists across switches, so a
+  // doorway tap doesn't remount). The `ts` nonce changes per tap; the ref guards against
+  // re-applying on unrelated re-renders. Setting the filter state re-runs the focus effect
+  // (which reloads). First mount is handled by the initial* seeds above, so the ref is seeded
+  // to that ts to avoid a redundant re-apply. Handles the Home "Today" doorway (?date=today),
+  // the Calendar drill-in (?date=YYYY-MM-DD, B-308), AND Ask's provenance link
+  // (?type=&window=, B-378).
   const appliedDateTsRef = useRef<string | null>(
-    initialDatePreset || initialDay ? params.ts ?? null : null,
+    initialDatePreset || initialDay || hasFilterLink ? params.ts ?? null : null,
   );
   useEffect(() => {
-    if (!params.date || !params.ts || params.ts === appliedDateTsRef.current) return;
+    if (!params.ts || params.ts === appliedDateTsRef.current) return;
+    // B-378 — a type/window provenance link. Checked first because Ask sends this shape OR a
+    // date shape, never both; it sets the type filter + window and clears any day drill-in.
+    if (params.type || params.window) {
+      appliedDateTsRef.current = params.ts;
+      setDayFilter(null);
+      setTypeFilter(coerceEventTypeKey(params.type));
+      setDatePreset(coerceDatePreset(params.window));
+      return;
+    }
+    if (!params.date) return;
     if (params.date === 'today') {
       appliedDateTsRef.current = params.ts;
       setTypeFilter(null);
@@ -266,7 +301,7 @@ export default function HistoryScreen() {
       setDatePreset(null);
       setDayFilter(params.date);
     }
-  }, [params.date, params.ts]);
+  }, [params.date, params.ts, params.type, params.window]);
 
   // Real-time: prepend new events logged via FAB while this tab is visible
   const latestTodayId = todayEvents[0]?.id;

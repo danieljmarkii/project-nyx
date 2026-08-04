@@ -1,6 +1,9 @@
 import { supabase } from './supabase';
 import { getDb } from './db';
 import { getDeviceTimezone } from './profile';
+// Type-only: erased at build, so this module stays free of the lucide/RN dependency
+// constants/eventTypes.ts pulls in (lib/ask.ts is deliberately unit-testable offline).
+import type { EventTypeKey } from '../constants/eventTypes';
 
 // Ask — the client data layer (B-228, PR A5; requirements §3, §4, §9.3).
 //
@@ -238,25 +241,66 @@ function coerceTapThrough(t: unknown): AskTapThrough | null {
 export type AskNav =
   | { pathname: '/event/[id]'; params: { id: string } }
   | { pathname: '/insights/[metric]'; params: { metric: string } }
-  | { pathname: '/insights' };
+  | { pathname: '/insights' }
+  // B-378 — the filtered History list a symptom count was drawn from. `window` is History's own
+  // preset vocabulary (today/7d/30d); absent = all time. The screen adds a `ts` nonce at nav
+  // time so the filter re-applies even when the History tab is already mounted.
+  | { pathname: '/(tabs)/history'; params: { type: string; window?: string } };
 
 // The symptom event_types that have a real `/insights/[metric]` detail screen (a
 // symptom-count trend). count_symptom/time_of_day only parameterize over these
 // (ASK_SYMPTOM_TYPES), so a symptom `filter` always resolves to a live Patterns detail.
 const SYMPTOM_METRICS = new Set(['vomit', 'diarrhea', 'stool_normal', 'lethargy', 'itch', 'scratch', 'skin_reaction']);
 
+// B-378 — the symptoms History can render as a `?type=` filter: the intersection of
+// SYMPTOM_METRICS and the event types exposed in the History TypeScopeControl. `scratch` and
+// `skin_reaction` are valid schema values with a Patterns detail but NO History filter chip, so
+// they stay on the Patterns route. Typed EventTypeKey so a typo here fails the type-check
+// rather than silently degrading to an unfiltered History list.
+const HISTORY_SYMPTOM_TYPES = new Set<EventTypeKey>(['vomit', 'diarrhea', 'stool_normal', 'lethargy', 'itch']);
+
+/** The History `?type=` value for an Ask symptom, or null when History has no filter for it. */
+function historySymptomType(symptomType: string | undefined): EventTypeKey | null {
+  return symptomType && (HISTORY_SYMPTOM_TYPES as ReadonlySet<string>).has(symptomType)
+    ? (symptomType as EventTypeKey)
+    : null;
+}
+
+/** Map an Ask window enum onto History's own `?window=` vocabulary (today/7d/30d), or undefined
+ *  for all time. 7d/30d map exactly; 14d and since_trial_start — which History has no preset for
+ *  — widen to the SUPERSET (30d / all time) so the filtered list always holds every event the
+ *  count did, never fewer. History states its own active window, so the wider scope reads
+ *  honestly rather than as a mismatch. */
+function historyWindow(askWindow: string | undefined): string | undefined {
+  switch (askWindow) {
+    case '7d': return '7d';
+    case '30d': return '30d';
+    case '14d': return '30d';   // no 14d preset — widen, never hide a counted event
+    default: return undefined;  // 'all' / 'since_trial_start' / unset → all time
+  }
+}
+
 /** Resolve a provenance tap-through to a navigation target, or null when nothing is
- *  linkable. There is no multi-event route in the app, so an `events` tap-through with
- *  several ids opens the first (most-recent) event's detail — the honest available
- *  target; a symptom `filter` opens that symptom's Patterns detail; any other filter
- *  opens the Patterns index. Keeping this pure makes the mapping unit-testable and keeps
- *  the "does this even go anywhere" decision out of the render path. */
+ *  linkable. A symptom `filter` History can render opens the FILTERED History list (B-378 —
+ *  the mock's "Open in History", auditing the whole count at its source); a symptom History
+ *  can't render (scratch/skin_reaction) opens that symptom's Patterns detail; any other filter
+ *  opens the Patterns index. An `events` tap-through has no type/window to filter History by, so
+ *  it opens the first (most-recent) event's detail — the honest available target. Keeping this
+ *  pure makes the mapping unit-testable and keeps the "does this even go anywhere" decision out
+ *  of the render path. */
 export function resolveTapThrough(tp: AskTapThrough | null | undefined): AskNav | null {
   if (!tp) return null;
   if (tp.kind === 'events') {
     return tp.eventIds.length ? { pathname: '/event/[id]', params: { id: tp.eventIds[0] } } : null;
   }
   // filter
+  const historyType = historySymptomType(tp.symptomType);
+  if (historyType) {
+    const params: { type: string; window?: string } = { type: historyType };
+    const w = historyWindow(tp.window);
+    if (w) params.window = w;
+    return { pathname: '/(tabs)/history', params };
+  }
   if (tp.symptomType && SYMPTOM_METRICS.has(tp.symptomType)) {
     return { pathname: '/insights/[metric]', params: { metric: tp.symptomType } };
   }
@@ -265,17 +309,18 @@ export function resolveTapThrough(tp: AskTapThrough | null | undefined): AskNav 
 
 /** The owner-facing "go" label for a tap-through (mock §2 provenance row). The label MUST
  *  name where it actually lands (pm-feature-review: a mislabelled provenance link is the
- *  one interaction the feature's trust is built on). There is no multi-event route, so a
- *  several-event tap-through opens the LATEST event — the label says exactly that, never
- *  "Open in History" (which would promise a filtered list the app can't deep-link to yet;
- *  that's the backlog History `?type=` param). A single event opens the event; a filter
- *  opens Patterns. Null when there's nowhere to go. */
+ *  one interaction the feature's trust is built on). A History-renderable symptom `filter` now
+ *  opens the filtered History list, so it reads "Open in History" (B-378); a symptom History
+ *  can't render, or any other filter, opens Patterns. A single event opens the event; a
+ *  several-event tap-through has no filtered route, so it opens the LATEST event and says so.
+ *  Null when there's nowhere to go. */
 export function tapThroughLabel(tp: AskTapThrough | null | undefined): string | null {
   if (!tp) return null;
   if (tp.kind === 'events') {
     if (tp.eventIds.length === 0) return null;
     return tp.eventIds.length === 1 ? 'Open the event' : 'Open the latest event';
   }
+  if (historySymptomType(tp.symptomType)) return 'Open in History';
   return 'Open in Patterns';
 }
 

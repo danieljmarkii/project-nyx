@@ -1,4 +1,4 @@
-import { dateAfterForPreset, effectiveRange, DAY_KEY_RE } from './historyDateFilter';
+import { dateAfterForPreset, effectiveRange, DAY_KEY_RE, coerceDatePreset } from './historyDateFilter';
 
 // A fixed "now" so the preset math is deterministic regardless of when the suite runs.
 const NOW = new Date('2026-06-14T15:00:00.000Z');
@@ -59,5 +59,21 @@ describe('DAY_KEY_RE', () => {
     expect(DAY_KEY_RE.test('2026-06-24')).toBe(true);
     expect(DAY_KEY_RE.test('2026-6-4')).toBe(false); // unpadded
     expect(DAY_KEY_RE.test('today')).toBe(false);
+  });
+});
+
+describe('coerceDatePreset (B-378 — the ?window= deep-link)', () => {
+  it('accepts History\'s own preset vocabulary', () => {
+    expect(coerceDatePreset('today')).toBe('today');
+    expect(coerceDatePreset('7d')).toBe('7d');
+    expect(coerceDatePreset('30d')).toBe('30d');
+  });
+
+  it('degrades anything else — absent, unknown, or a foreign window — to all time (null)', () => {
+    expect(coerceDatePreset(undefined)).toBeNull();
+    expect(coerceDatePreset('')).toBeNull();
+    expect(coerceDatePreset('14d')).toBeNull();  // not a History preset; the Ask side widens it first
+    expect(coerceDatePreset('all')).toBeNull();
+    expect(coerceDatePreset('garbage')).toBeNull();
   });
 });
