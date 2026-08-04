@@ -1,0 +1,123 @@
+-- ============================================================
+-- Migration 053: diet_trials.target_protein + target_protein_set_at
+-- — the owner's stated trial protein, captured as a first-class,
+--   optional, confirm-not-ask fact (B-704 PR 1)
+--
+-- Spec: docs/nyx-trial-protein-requirements.md §5 (schema),
+--       §2 (what this is NOT — the never-permits invariant),
+--       §3 (the TG spine: TG-1 never permits, TG-2 silence is never
+--       an all-clear, TG-4 Class-A canonical key), §4 (the one predicate).
+-- Re-opens & ratifies: nyx-multi-protein-requirements.md §10 D6
+--       ("explicit protein on diet_trials: RATIFIED, deferred").
+-- ============================================================
+--
+-- WHAT THIS IS. Two nullable columns on diet_trials. Nothing else changes:
+-- no index, no policy, no trigger, no constraint, no existing column touched.
+--
+--   target_protein        TEXT         -- canonical protein key, or NULL
+--   target_protein_set_at TIMESTAMPTZ  -- when it was set/last changed, or NULL
+--
+-- WHY IT EXISTS. Today a trial's protein is DERIVED from the labels of its
+-- picked foods (resolveTargetProtein). The word the owner actually carries home
+-- from the vet — "rabbit" — never appears in the flow, attribution goes dark
+-- when a contaminant food's protein array is empty ("3 off-diet feedings"
+-- instead of "3 poultry exposures"), and a wrong-primary trial food is
+-- structurally undetectable because the food defines its own target. Storing
+-- the owner's intent fixes all three: the report can say "Elimination diet
+-- trial — rabbit", exposure naming survives a thin food record, and a day-0
+-- label mismatch becomes a finding instead of a day-14 statistical residue.
+--
+-- THE LOAD-BEARING INVARIANT — this column NEVER permits (TG-1, §2).
+-- diet_trial_foods (the allowed set) remains the SOLE authority on what counts
+-- as off-diet (diet-trial spec §5.5 D-A). target_protein can add a *naming* to
+-- the record; it can never make a feeding allowed and can never remove an
+-- off-diet verdict. classifyFeeding / the sanctioned-set union / rung order /
+-- counts / denominators / coverage are byte-identical for every value of this
+-- column, including NULL. A migration cannot enforce that — it is carried by
+-- the trialTargetProtein() predicate (§4) and a property test in PR 2 — but it
+-- is the reason this column is safe to add: it is descriptive, not decisive.
+--
+-- WHY TEXT AND NOT AN ENUM. Unlike diet_trials.indication (a closed clinical
+-- set, 040), the protein space is open and owner-/label-driven. The value is
+-- the output of canonicalizeProtein (lib/protein.ts) — a Class-A canonical key,
+-- convergent and covered by the existing cross-product property test (TG-4) —
+-- exactly as food_items.proteins[] stores keys (039). A raw label never lands
+-- here; the picker/derivation canonicalize before write. Keeping it TEXT lets
+-- an owner-picked chip and an AI-extracted label key identically, and lets a
+-- protein the enum-authors never anticipated be named without a migration.
+--
+-- NULL SEMANTICS — three product states, one column value. "Never set",
+-- "cleared", and "No single protein (hydrolyzed / special diet)" all store
+-- NULL, deliberately indistinguishable in the column because the distinction
+-- (inapplicable vs not-yet-set) matters nowhere downstream: all three mean "no
+-- naming, derivation off" (TG-2 — a null target yields no naming anywhere, and
+-- never an empty-state that reads as clean). The product distinction is carried
+-- by the picker UI (PR 3), not the schema.
+--
+-- THE PAIRED-NULL WRITE CONTRACT (enforced in PR 2, not here). target_protein_
+-- set_at is NULL whenever target_protein is NULL, and is stamped on every set
+-- and change (TP-3's disclosure hook — the report renders "protein confirmed
+-- day N" when it falls after day 1, §8). This migration deliberately adds NO
+-- CHECK for it: the spec routes the trial's invariants to a single predicate
+-- (trialTargetProtein, §4) plus PR 2 property tests (TG-1/TG-2/TG-4/TG-5), and
+-- a Postgres CHECK would not cover the SQLite mirror PR 2 must handle anyway.
+-- The dangling state a CHECK would forbid (set_at present, protein NULL) is
+-- also inert by construction: every reader resolves the protein first and, on
+-- NULL, never reads set_at. Keeping the schema to exactly the two specified
+-- columns keeps this PR minimal and its rollback a clean two-column drop.
+--
+-- BACKFILL — none, and this is a decision. Every existing trial (2 live rows
+-- at apply time) keeps deriving its protein at read, exactly as today; NULL is
+-- the honest value for all of them (the owner has confirmed nothing). There is
+-- no SQL mirror of resolveTargetProtein to run, and none is wanted — a stored
+-- value must mean "the owner said so", never "the app guessed and wrote it
+-- down" (that is precisely the derived/owner provenance distinction §4's
+-- predicate exists to preserve).
+--
+-- RLS / PRIVACY (T&S). No change. Two new columns on an existing pet-scoped
+-- table whose policies (001_schema.sql) are unchanged and already cover every
+-- column; reachable only through the same pet-ownership check, adding no new
+-- reader, grant or surface, and riding the existing delete-account cascade.
+-- The value is an owner-stated protein name — no health-photo or free-text
+-- note class of data.
+--
+-- ------------------------------------------------------------
+-- Migration Safety Pre-flight
+-- ------------------------------------------------------------
+--   Destructive y/n:  n. Purely additive — two nullable columns with no
+--                     default. Drops, renames or alters no existing column,
+--                     constraint, index, policy or row. An ADD COLUMN of a
+--                     nullable column with no default is O(1) in PG 11+ (no
+--                     table rewrite), so the 2 existing rows are untouched and
+--                     take NULL, which is correct for both.
+--   Affected tables:  public.diet_trials (2 live rows — verified this session:
+--                       SELECT count(*) FROM diet_trials;  -> 2
+--                     Row count does not gate this migration: both columns are
+--                     nullable with no default and no CHECK, so no value is
+--                     validated against existing rows. Optional confirm the
+--                     columns are not already present:
+--                       SELECT column_name FROM information_schema.columns
+--                        WHERE table_schema='public' AND table_name='diet_trials'
+--                          AND column_name IN
+--                              ('target_protein','target_protein_set_at');
+--                       -- expect 0 rows.)
+--   Backfill:         N/A — see "BACKFILL — none" above. NULL is the honest
+--                     value for every existing row; derivation stays at read.
+--   Rollback plan:    reversible, one statement:
+--                       ALTER TABLE public.diet_trials
+--                         DROP COLUMN IF EXISTS target_protein,
+--                         DROP COLUMN IF EXISTS target_protein_set_at;
+--                     Loses only owner-confirmed trial proteins entered after
+--                     apply; every trial, food and exposure count survives
+--                     untouched (the value is descriptive, never a permit).
+-- ============================================================
+
+ALTER TABLE public.diet_trials
+  ADD COLUMN IF NOT EXISTS target_protein        TEXT,
+  ADD COLUMN IF NOT EXISTS target_protein_set_at TIMESTAMPTZ;
+
+COMMENT ON COLUMN public.diet_trials.target_protein IS
+  'B-704 §5: the owner-stated trial protein — the word the vet named ("rabbit"). A Class-A canonical key (canonicalizeProtein, lib/protein.ts; TG-4 — a raw label never lands here). NULL = never set / cleared / "no single protein (hydrolyzed)", all indistinguishable and all meaning "no naming, derivation off" (TG-2). NEVER A PERMIT: diet_trial_foods remains the sole off-diet authority (diet-trial §5.5 D-A); this value only names what the record already counts and can never make a feeding allowed or remove an off-diet verdict (TG-1). Resolved stored-first with a read-time derivation fallback via trialTargetProtein() (§4), never re-derived per surface.';
+
+COMMENT ON COLUMN public.diet_trials.target_protein_set_at IS
+  'B-704 §5: when target_protein was set or last changed — the provenance hook TP-3 discloses (the vet report says "protein confirmed day N" when this falls after day 1; §8). Paired-null WRITE contract (enforced in PR 2, not by a DB CHECK): NULL whenever target_protein is NULL, stamped on every set and change. An edit is disclosed here, never versioned — one value, whole-trial (TP-3).';
