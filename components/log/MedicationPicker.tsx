@@ -110,7 +110,7 @@ export function MedicationPicker({ petId, onPickMedication, onAddNew, onOpenDeta
 
         {recent.length > 0 && (
           <View style={styles.zone}>
-            <SectionLabel label="Recent" />
+            <SectionLabel label="Recent" header />
             {/* B-355 — a wrapped compact 2-up grid (not a horizontal scroll): every
                 recent drug is visible at once, no hidden off-screen overflow (the
                 B-146 direction, mirroring FoodPicker's B-346 rotation shelf). Compact

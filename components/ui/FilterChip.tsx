@@ -143,6 +143,6 @@ const STYLE_BY_VARIANT = {
 // variant's container/label so the busy look is one rule, not three.
 const styles = StyleSheet.create({
   disabled: {
-    opacity: 0.4,
+    opacity: theme.opacityDisabled,
   },
 });

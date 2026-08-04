@@ -17,6 +17,7 @@ import {
   reconcileFromPreferences,
 } from '../../lib/notificationSettings';
 import { usePetStore } from '../../store/petStore';
+import { useSnackbarStore } from '../../store/snackbarStore';
 
 // Notifications — UN-MOCKED (B-661 PR 3, §2). Replaces the reserved "coming soon"
 // mock with a real, consent-honest surface for the one v1 category, Daily summary.
@@ -160,6 +161,15 @@ export default function NotificationsScreen() {
         await applyCategoryPreference('daily_summary', true);
         setEnabled(true);
         setPermission('granted');
+        // B-665: close the loop — without this, the first proof the grant worked
+        // is a 9pm notification whose body (by D3) asserts nothing. Names the
+        // schedule, not the first arrival ("tonight" would be wrong for a grant
+        // after 9), and asserts nothing about record contents. Delay lets the
+        // primer sheet dismiss first (the store's own pattern).
+        useSnackbarStore.getState().show(
+          { message: 'Daily summary is on — it arrives each evening around 9.' },
+          { delayMs: 300 },
+        );
       } else {
         setEnabled(false);
         setPermission(result); // 'denied' → inert state; 'undetermined' → stays interactive

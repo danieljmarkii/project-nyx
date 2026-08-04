@@ -84,6 +84,8 @@ Keep logging and {petName}'s first pattern will surface in about a week.
 
 **ANTI-PATTERN:** `"No data yet"`, an empty `View`, a zeroed-out chart with no copy, or `"Check back later"`. Each of these is the blank moment the principle exists to prevent. An empty state that doesn't (a) name what's being built and (b) point forward is not done.
 
+**CARVE-OUT — not-yet-live feature rows are NOT data empty states (B-285, PM-ruled 2026-08-04).** This pattern governs *data* empty states: surfaces that will fill as the owner logs. A settings/legal row for a feature the product has deliberately not shipped yet (the Privacy/Terms rows while `LEGAL_LINKS_ENABLED=false`, the pre-B-661 Notifications row) is a different thing — an honest statement that the door isn't open, chosen over a dead link (App Review visits legal URLs). A bare `"Coming soon"` is **sanctioned there, and only there**: the row must be a feature doorway (never a place logged data would appear), and the string must be the deliberate spec choice (onboarding spec §11 pins the literal). If a surface could ever fill with the pet's data, this carve-out does not apply — it gets a designed empty state, full stop.
+
 ---
 
 ## PATTERN 4: No Exclamation Marks, No Manufactured Enthusiasm

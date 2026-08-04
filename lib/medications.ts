@@ -1133,6 +1133,18 @@ export interface DoseCourseProgress {
   line: string;           // "Dose {n} of {target}" | "{t} of {t} doses · {x} more logged"
   barFraction: number;    // min(count / target, 1), in [0, 1] — the bar width
   pastTarget: boolean;    // count > target — extras are being disclosed
+  /** B-643: NOTHING has been logged on this course — not given, not refused, not
+   *  unrated. The line is the designed forward-looking zero state, and the render
+   *  site suppresses the compliance line's "No doses logged yet" (the same fact
+   *  twice on a freshly-added regimen). Deliberately NOT `count === 0`: a course
+   *  of 14 refusals also has count 0, and it keeps the plain "Dose 0 of 14" —
+   *  a warm "log the first" line over a refusal record is one of the four things
+   *  the med surfaces must never say (med-strip spec §6). */
+  fresh: boolean;
+  /** B-642: count has reached (or passed) the target, so the bar is full — the
+   *  render site pairs the line with the vet's-call note that counters the
+   *  full-bar-reads-as-done risk. D7 still holds: no completion or stop word. */
+  atTarget: boolean;
 }
 
 // Callers pass a POSITIVE target (the DB CHECK guarantees `target_duration_doses > 0`,
@@ -1142,11 +1154,21 @@ export interface DoseCourseProgress {
 export function doseCourseProgress(tally: AdherenceTally, target: number): DoseCourseProgress {
   const count = dosesTowardTarget(tally);
   const pastTarget = count > target;
+  const atTarget = count >= target;
+  const fresh =
+    tally.given + tally.partial + tally.missed + tally.refused + tally.unrated === 0;
   const barFraction = target > 0 ? Math.min(count / target, 1) : 0;
+  // The fresh zero state is a designed empty state (Principle 5), not a countdown
+  // label (B-643): forward-looking, names the course, points at the one action the
+  // card already carries. It survives D7's scan — no completion or stop word here.
   const line = pastTarget
     ? `${target} of ${target} ${target === 1 ? 'dose' : 'doses'} · ${count - target} more logged`
-    : `Dose ${count} of ${target}`;
-  return { count, target, line, barFraction, pastTarget };
+    : fresh
+      ? target === 1
+        ? '1 dose ahead — log it when you give it'
+        : `${target} doses ahead — log the first when you give it`
+      : `Dose ${count} of ${target}`;
+  return { count, target, line, barFraction, pastTarget, fresh, atTarget };
 }
 
 // ── Dose → regimen attribution (compliance counting) ───────────────────────────

@@ -75,11 +75,13 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: theme.space1,
   },
+  // Token parity with the sibling profile cards (B-553): the Vet report card
+  // directly above uses textMD/weightMedium/colorNeutralDark, and the substrate
+  // must not shout louder than the artifact it sits under.
   title: {
-    fontSize: theme.textLG,
-    fontWeight: theme.weightSemibold,
-    color: theme.colorTextPrimary,
-    letterSpacing: theme.trackingTight,
+    fontSize: theme.textMD,
+    fontWeight: theme.weightMedium,
+    color: theme.colorNeutralDark,
   },
   count: {
     fontSize: theme.textSM,

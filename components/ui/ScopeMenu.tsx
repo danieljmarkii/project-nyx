@@ -95,7 +95,7 @@ export function ScopeMenu({
           <Pressable style={styles.scrim} onPress={() => setOpen(false)} accessibilityLabel="Close" />
           <View style={[styles.sheet, { paddingBottom: insets.bottom + theme.space2 }]}>
             <View style={styles.grabber} />
-            <SectionLabel label={sheetLabel} style={styles.sheetLabel} />
+            <SectionLabel label={sheetLabel} header style={styles.sheetLabel} />
             {/* Longer sets (the 10-row event-type lens) can outgrow a small
                 screen; the sheet caps its height and the rows scroll INSIDE it
                 with the native indicator visible — never a hidden overflow. */}

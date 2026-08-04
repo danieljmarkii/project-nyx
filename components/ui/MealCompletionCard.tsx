@@ -736,6 +736,6 @@ const styles = StyleSheet.create({
     fontWeight: theme.weightMedium,
   },
   sheetSaveDisabled: {
-    opacity: 0.4,
+    opacity: theme.opacityDisabled,
   },
 });

@@ -246,7 +246,11 @@ export function FoodPicker({
   // preference framing (the B-112 intake-is-not-preference guardrail; recency is a
   // fact, "loves" is a preference read a one-tap-log surface must never assert). A
   // neutral fallback covers the brief window before the pet's name is known.
-  const rotationLabel = petName ? `${petName}'s rotation` : 'Rotation';
+  // B-356 (PM-ruled 2026-08-04): one food is not a rotation — Jordan on a strict
+  // elimination diet feeds exactly one, so at 1 the label degrades to the neutral,
+  // still recency-factual "Recently fed".
+  const rotationLabel =
+    rotation.length === 1 ? 'Recently fed' : petName ? `${petName}'s rotation` : 'Rotation';
 
   // ── B-616 FR-16–FR-19 — the pinned "On the trial list" section (variant H) ──
   //
@@ -361,7 +365,7 @@ export function FoodPicker({
             matches, and search is the lane for "I know what I'm looking for". */}
         {!searching && trialFoods.length > 0 && (
           <View style={styles.zone}>
-            <SectionLabel label="On the trial list" />
+            <SectionLabel label="On the trial list" header />
             <TileGrid
               foods={trialFoods}
               compact
@@ -374,7 +378,7 @@ export function FoodPicker({
 
         {!searching && rotation.length > 0 && (
           <View style={styles.zone}>
-            <SectionLabel label={rotationLabel} />
+            <SectionLabel label={rotationLabel} header />
             {/* B-346 — the rotation shelf is a WRAPPED 2-up grid, not a horizontal
                 scroll: every food in the window is visible at once (no hidden
                 off-screen overflow), which kills the picker's last silent h-scroll
@@ -447,7 +451,7 @@ export function FoodPicker({
             set. */}
         {!searching && !selecting && (
           <View style={styles.zone}>
-            <SectionLabel label="Always available" />
+            <SectionLabel label="Always available" header />
             {arrangements.length === 0 ? (
               <Text style={styles.alwaysEmpty}>
                 Nothing always-out yet. If {multiPet

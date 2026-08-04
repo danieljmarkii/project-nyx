@@ -12,6 +12,8 @@ export const theme = {
   fontDisplay: 'Newsreader',
 
   // ── Type scale (sp) ───────────────────────────────────────────────────────
+  textMicro: 9,  // micro badge/chip text ONLY (uppercase kind chips, the PDF tile badge)
+                 // — below textXS, always uppercase + tracked; not for sentences (B-553)
   textXS: 11,    // zone labels, metadata, badge text
   textSM: 13,    // captions, secondary detail
   textMD: 15,    // body, list items, buttons
@@ -273,6 +275,13 @@ export const theme = {
   radiusMedium: 16,
   radiusLarge: 24,
   radiusFull: 999,
+
+  // ── Opacity ──────────────────────────────────────────────────────────────
+  // The disabled/dimmed treatment — one decision, not a copied literal (B-641).
+  // Applies to a control that exists but can't be used right now (an unfilled
+  // form's save button, a chip mid-write). Not for hierarchy: de-emphasized but
+  // *live* text uses the colorText* scale, never opacity.
+  opacityDisabled: 0.4,
 
   // ── Motion ───────────────────────────────────────────────────────────────
   durationFast: 150,

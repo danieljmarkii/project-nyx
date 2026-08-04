@@ -45,7 +45,7 @@ export function SignalZone() {
     // stack of insight rows (PM-decided: rows + dividers, not separate cards, so
     // it reads as one calm intelligence surface, never a dashboard dump — §3.1).
     <Card elevated>
-      <SectionLabel label="Signal" style={styles.label} />
+      <SectionLabel label="Signal" header style={styles.label} />
       {state === 'live' ? (
         <LiveStack findings={findings} petName={petName} />
       ) : state === 'stale' ? (

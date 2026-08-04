@@ -142,7 +142,7 @@ const styles = StyleSheet.create({
     minHeight: 50,
   },
   buttonDisabled: {
-    opacity: 0.4,
+    opacity: theme.opacityDisabled,
   },
   buttonText: {
     color: theme.colorTextOnDark,

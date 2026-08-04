@@ -131,7 +131,7 @@ const styles = StyleSheet.create({
     paddingVertical: 3,
   },
   chipText: {
-    fontSize: 9,
+    fontSize: theme.textMicro,
     fontWeight: theme.weightSemibold,
     letterSpacing: theme.trackingWide,
     textTransform: 'uppercase',

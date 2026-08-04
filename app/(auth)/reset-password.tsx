@@ -21,6 +21,7 @@ import { PrimaryButton } from '../../components/ui/PrimaryButton';
 import { passwordError } from '../../lib/authValidation';
 import { authErrorCopy, isOffline } from '../../lib/authErrors';
 import { useAuthStore, releaseRecoveryGate } from '../../store/authStore';
+import { useSnackbarStore } from '../../store/snackbarStore';
 import { usePetStore } from '../../store/petStore';
 import { parseRecoveryLink } from '../../lib/passwordRecovery';
 import { retryRecoveryExchange } from '../../lib/recoveryDeepLink';
@@ -114,6 +115,11 @@ export default function ResetPasswordScreen() {
     useAuthStore.getState().setRecoveryScreen(null);
     useAuthStore.getState().setRecoveryEmail(null);
     // Straight into the app — the recovery session IS the sign-in (Jordan's rule).
+    // B-654: landing in the tabs was the ONLY signal the reset took, on the
+    // trust-fragile path. Same receipt as the settings change-password screen
+    // (§5.7's Snackbar, same copy, same delay so the route transition clears
+    // first); the password-changed email stays the backstop.
+    useSnackbarStore.getState().show({ message: 'Password updated.' }, { delayMs: 300 });
     router.replace('/(tabs)');
   }
 

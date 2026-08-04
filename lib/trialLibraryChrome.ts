@@ -98,8 +98,18 @@ export interface FoodsTrialStripModel {
  * returns no strip at all rather than a line about zero foods) before calling.
  */
 export function trialStripFoodsLine(foods: readonly AllowedFood[]): string {
-  const lead = foods.find((f) => f.role === 'primary_diet') ?? foods[0];
-  if (!lead) return '';
+  if (foods.length === 0) return '';
+  // B-656: never lead with a blank label. `food_label` is denormalised from a
+  // library row, and a blank one would render "​, and 2 more" (leading comma) or
+  // an empty line. Pick the lead among LABELLED foods only; a blank-label food
+  // still counts toward "and N more" — it is on the list, it just can't lead it.
+  const labelled = foods.filter((f) => f.label.trim().length > 0);
+  const lead = labelled.find((f) => f.role === 'primary_diet') ?? labelled[0];
+  if (!lead) {
+    // Every label blank — nothing to name, so degrade to the count register
+    // rather than printing an empty name (the one case naming can't serve).
+    return foods.length === 1 ? '1 food on the trial list' : `${foods.length} foods on the trial list`;
+  }
   const remaining = foods.length - 1;
   return remaining === 0 ? lead.label : `${lead.label}, and ${remaining} more`;
 }
