@@ -1176,6 +1176,41 @@ export interface AttributableDose {
   occurred_at: string;       // parent event timestamp (window test)
 }
 
+// The PostgREST row shape when a dose is read with its parent event embedded by the
+// DISAMBIGUATED FK — `events!medication_administrations_event_id_fkey(deleted_at,
+// occurred_at)` — for the soft-delete flag + timestamp attribution needs. The FK name
+// is required because migration 023 added a SECOND medication_administrations→events FK
+// (paired_event_id), so a bare `events(...)` embed is ambiguous (PGRST201, B-196).
+export interface DoseEmbedRow {
+  medication_id: string | null;
+  medication_item_id: string | null;
+  adherence: string | null;
+  // supabase-js surfaces a to-one embed as EITHER an object OR a 1-element array.
+  events:
+    | { deleted_at: string | null; occurred_at: string }
+    | { deleted_at: string | null; occurred_at: string }[]
+    | null;
+}
+
+// Map embedded dose rows to `AttributableDose[]`, flattening the object-or-array embed
+// and lifting the parent event's soft-delete + timestamp onto the dose. Shared by every
+// screen that reads doses for attribution (the profile's Current + Past medication
+// loaders) so the embed-shape handling — the exact class of bug B-196 was — lives in ONE
+// place. A missing embed (unreachable with the non-null event_id FK) yields
+// occurred_at = '' (ordered out by attribution, ignored by the tally), never a throw.
+export function mapDoseRowsToAttributable(rows: DoseEmbedRow[] | null | undefined): AttributableDose[] {
+  return (rows ?? []).map((d) => {
+    const ev = Array.isArray(d.events) ? d.events[0] : d.events;
+    return {
+      medication_id: d.medication_id,
+      medication_item_id: d.medication_item_id,
+      adherence: d.adherence,
+      deleted_at: ev?.deleted_at ?? null,
+      occurred_at: ev?.occurred_at ?? '',
+    };
+  });
+}
+
 function bucketAdherence(t: AdherenceTally, adherence: string | null): void {
   switch (adherence) {
     case 'given': t.given++; break;

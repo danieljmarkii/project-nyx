@@ -210,6 +210,13 @@ export const theme = {
   // circle and consumes only the glyph tint.
   colorEventMedication: '#5B7A9E',
   colorEventMedicationLight: '#EAF0F7',
+  // Darkened slate-blue for TEXT on colorEventMedicationLight — the twin of
+  // colorAccentInk (on accent-light) and colorEventSymptomInk (on symptom-light).
+  // colorEventMedication (#5B7A9E) is a graphical/glyph tint (~3:1 targets) and only
+  // reaches ~3.9:1 on the #EAF0F7 wash, short of AA for a text label; this ink is
+  // 6.3:1 on that wash, so the med family gets a readable text-on-tint for a pill/
+  // chip (first consumer: the B-140 "No end recorded" past-medication pill).
+  colorEventMedicationInk: '#3D5875',
   colorChartEmpty: '#F0F0F0',
   // The idle mark for an un-logged coverage pip / a trial-day gap dot (widget
   // ground band, round-7 mock) — a mid-grey that reads "nothing here yet" without
