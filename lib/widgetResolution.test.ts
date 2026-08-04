@@ -18,6 +18,7 @@ import {
   buildTreatChoices,
   formatApproxTime,
   learnMealSlots,
+  petSlotLabel,
   resolveTrialContext,
   slotLabelFor,
   MAX_MEAL_CHOICES,
@@ -389,5 +390,41 @@ describe('assignPetSlots (D5 — sticky slots with tombstones)', () => {
     expect(index.assignments.find((a) => a.petId === 'pet-2')!.slot).toBe(2);
     expect(index.assignments.find((a) => a.petId === 'pet-1')!.slot).toBe(1); // reassigned fresh
     expect(index.assignments.some((a) => a.petId === 'pet-9')).toBe(false);
+  });
+});
+
+describe('petSlotLabel (B-407 — the profile lookup line)', () => {
+  const pixel = { id: 'pet-1', name: 'Pixel' };
+  const juniper = { id: 'pet-2', name: 'Juniper' };
+  const mochi = { id: 'pet-3', name: 'Mochi' };
+
+  it('names the "Pet N" slot the widget picker shows for the pet', () => {
+    const index = assignPetSlots(null, [pixel, juniper]);
+    // Reads the exact enum name ("Pet 1"/"Pet 2") the Edit Widget picker offers.
+    expect(petSlotLabel(index, 'pet-1')).toBe('Pet 1');
+    expect(petSlotLabel(index, 'pet-2')).toBe('Pet 2');
+  });
+
+  it('names the STICKY slot after a removal, so the line matches the widget (B-086)', () => {
+    // The whole point: after Juniper leaves (slot 2 tombstoned) and Mochi joins at
+    // slot 3, a two-pet account is genuinely Pet 1 + Pet 3 — re-deriving from
+    // scratch would mislabel Mochi "Pet 2".
+    const first = assignPetSlots(null, [pixel, juniper]);
+    const second = assignPetSlots(first, [pixel, mochi]);
+    expect(petSlotLabel(second, 'pet-1')).toBe('Pet 1');
+    expect(petSlotLabel(second, 'pet-3')).toBe('Pet 3');
+  });
+
+  it('returns null for a tombstoned pet (its held slot is not bindable to it now)', () => {
+    const first = assignPetSlots(null, [pixel, juniper]);
+    const second = assignPetSlots(first, [pixel, mochi]); // Juniper tombstoned at slot 2
+    expect(petSlotLabel(second, 'pet-2')).toBeNull();
+  });
+
+  it('returns null for a pet with no slot, a null index, or a corrupt index', () => {
+    const index = assignPetSlots(null, [pixel]);
+    expect(petSlotLabel(index, 'pet-unknown')).toBeNull(); // never bound
+    expect(petSlotLabel(null, 'pet-1')).toBeNull(); // index not published yet
+    expect(petSlotLabel({ schemaVersion: 1 } as PetSlotIndex, 'pet-1')).toBeNull(); // no assignments array
   });
 });

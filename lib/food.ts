@@ -56,6 +56,22 @@ export const FOOD_SCOPE_OPTIONS: { value: FoodScope; label: string }[] = [
   { value: 'dry', label: 'Dry' },
 ];
 
+// The valid scope values, derived from the one option roster so a new chip can
+// never drift from what a deep link is allowed to preselect.
+const FOOD_SCOPE_VALUES: ReadonlySet<string> = new Set(FOOD_SCOPE_OPTIONS.map((o) => o.value));
+
+// Parse an untrusted scope string from a deep-link / route param into a FoodScope,
+// or `undefined` when it is absent or not one of the five known scopes (B-406). A
+// treat door opens `log?type=meal&scope=treat` so the picker lands pre-scoped to
+// treats — a treat is a meal EVENT carrying a food_type='treat' food, so there is
+// no `treat` event type to preselect; the scope preselects the picker's chip
+// instead, exactly as if the owner had tapped "Treats". Fails CLOSED to
+// `undefined` (→ the picker's own 'all' default) rather than throwing on a bad
+// value, so a malformed link never blocks logging. Pure.
+export function parseFoodScope(value: string | null | undefined): FoodScope | undefined {
+  return value && FOOD_SCOPE_VALUES.has(value) ? (value as FoodScope) : undefined;
+}
+
 // Filter a food list to the selected scope. 'all' returns the input unchanged.
 // Meals/Treats key on food_type (the B-011 usage bucket); Wet/Dry key on the
 // physical `format` enum (wet_canned / dry_kibble) — both facts on every row, so

@@ -10,6 +10,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { Camera } from 'lucide-react-native';
 import { theme } from '../constants/theme';
 import { FoodPicker } from '../components/log/FoodPicker';
+import { parseFoodScope } from '../lib/food';
 import { MedicationPicker } from '../components/log/MedicationPicker';
 import { ComboDoseConfirmSheet } from '../components/log/ComboDoseConfirmSheet';
 import { TimeConfidenceField, TimeMode, FoundMode } from '../components/log/TimeConfidenceField';
@@ -73,6 +74,7 @@ export default function LogModal() {
   const {
     type: typeParam,
     pet: petParam,
+    scope: scopeParam,
     pairedEventId,
     pairedPetId,
     pairedFoodType,
@@ -81,12 +83,17 @@ export default function LogModal() {
   } = useLocalSearchParams<{
     type?: string;
     pet?: string;
+    scope?: string;
     pairedEventId?: string;
     pairedPetId?: string;
     pairedFoodType?: string;
     pairedFoodName?: string;
     comboSource?: string;
   }>();
+  // B-406 — a treat door deep-links `log?type=meal&scope=treat`; validate the
+  // untrusted param down to a known FoodScope (or undefined) so the food picker
+  // opens pre-scoped. A bad value falls back to the picker's 'all' default.
+  const initialFoodScope = parseFoodScope(scopeParam);
   // W5 — the widget's "Something else…" app door names its bound pet, so this
   // screen opens on that pet rather than whichever one the app last showed.
   useWidgetPetLink(petParam);
@@ -1050,6 +1057,9 @@ export default function LogModal() {
           <FoodPicker
             petId={activePet.id}
             petName={activePet.name}
+            // B-406 — a treat door lands the picker pre-scoped to treats; undefined
+            // on every other entry point, leaving the picker's 'all' default.
+            initialScope={initialFoodScope}
             // Guarded (B-336): the first tap latches, so a rapid double-tap on a
             // tile can't write two meals.
             onPickFood={(food) => { void guardSubmit(() => handlePickFood(food)); }}
