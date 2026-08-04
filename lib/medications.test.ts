@@ -24,6 +24,9 @@ import {
   doseCourseProgress,
   regimenDaysElapsed,
   attributeDosesToRegimens,
+  attributeDoses,
+  tallyDoses,
+  emptyTally,
   regimenComplianceLine,
   regimenFlagLine,
   buildRegimenPayload,
@@ -2105,5 +2108,104 @@ describe('regimenDaysElapsed (B-441)', () => {
 
     const guessed = computeRegimenCompliance({ dosesPerDay: 2, daysElapsed: 1, tally: tally({ given: 3 }) });
     expect(guessed.percent).toBe(100); // what the guess would have claimed
+  });
+});
+
+// ── B-140 PR 1 — attributeDoses (the full attribution partition) + tallyDoses ─────
+// attributeDoses is the primitive attributeDosesToRegimens now delegates to; it exposes
+// the SAME single decision as three fields so lib/medicationHistory can read orphans and
+// per-regimen doses without a rival attribution. The load-bearing guarantees: the tallies
+// are byte-for-byte what attributeDosesToRegimens always returned, and every live dose is
+// partitioned exactly once across grouped ∪ unattributed (nothing double-counted, nothing
+// dropped).
+describe('attributeDoses — the full partition behind attributeDosesToRegimens (B-140)', () => {
+  const reg = (over: Partial<RegimenWindow> = {}): RegimenWindow => ({
+    id: 'reg-1', medication_item_id: 'item-pred', started_at: '2026-06-10', ended_at: null, ...over,
+  });
+  const dose = (over: Partial<AttributableDose> = {}): AttributableDose => ({
+    medication_id: null, medication_item_id: 'item-pred', adherence: 'given', deleted_at: null,
+    occurred_at: '2026-06-12T08:00:00+00:00', ...over,
+  });
+
+  it('its tallies equal attributeDosesToRegimens byte-for-byte, across mixed scenarios', () => {
+    // The delegation contract: adding grouped/unattributed must not perturb the tally
+    // any existing caller (the profile card, the med strip) already reads.
+    const scenarios: { regs: RegimenWindow[]; doses: AttributableDose[] }[] = [
+      { regs: [reg()], doses: [dose(), dose({ adherence: 'refused' }), dose({ medication_id: 'reg-1' })] },
+      { regs: [reg({ id: 'a', started_at: '2026-06-01', ended_at: '2026-06-10' }), reg({ id: 'b', started_at: '2026-06-11' })],
+        doses: [dose({ occurred_at: '2026-06-12T08:00:00+00:00' }), dose({ occurred_at: '2026-06-05T08:00:00+00:00' })] },
+      { regs: [reg({ medication_item_id: null, id: 'ft' })],
+        doses: [dose({ medication_id: 'ft', medication_item_id: null }), dose({ medication_item_id: null })] },
+      { regs: [], doses: [dose(), dose({ medication_id: 'ghost' })] },
+    ];
+    for (const s of scenarios) {
+      const viaDelegate = attributeDosesToRegimens(s.regs, s.doses);
+      const viaPrimitive = attributeDoses(s.regs, s.doses).tallies;
+      expect([...viaPrimitive.entries()]).toEqual([...viaDelegate.entries()]);
+    }
+  });
+
+  it('partitions every LIVE dose exactly once (grouped ∪ unattributed = live; disjoint)', () => {
+    const doses: AttributableDose[] = [
+      dose({ medication_id: 'reg-1' }),                                   // linked → grouped
+      dose({ medication_item_id: 'item-pred' }),                         // item+window → grouped
+      dose({ medication_item_id: 'item-other' }),                        // no regimen for drug → unattributed
+      dose({ medication_id: null, medication_item_id: null }),           // ad-hoc → unattributed
+      dose({ medication_id: 'ghost' }),                                  // linked to absent regimen → unattributed
+      dose({ deleted_at: '2026-06-12T09:00:00Z' }),                      // soft-deleted → neither
+    ];
+    const { grouped, unattributed } = attributeDoses([reg()], doses);
+    const groupedCount = [...grouped.values()].reduce((n, arr) => n + arr.length, 0);
+    expect(groupedCount).toBe(2);
+    expect(unattributed.length).toBe(3);
+    // 5 live doses, split with none dropped and none counted twice (the deleted one is in neither).
+    expect(groupedCount + unattributed.length).toBe(5);
+  });
+
+  it('surfaces a dose linked to a regimen ABSENT from the set as unattributed, never dropped', () => {
+    // The report's §3.8 stance: nothing logged is silently lost. It counts toward no
+    // tally (no reassignment) but is available to a course-grain reader.
+    const { tallies, unattributed } = attributeDoses([reg({ id: 'active' })], [
+      dose({ medication_id: 'ended-regimen' }),
+    ]);
+    expect(tallies.get('active')).toEqual(emptyTally());
+    expect(unattributed).toHaveLength(1);
+    expect(unattributed[0].medication_id).toBe('ended-regimen');
+  });
+
+  it('grouped holds the actual attributed doses, so first/last can be read from it', () => {
+    const { grouped } = attributeDoses([reg()], [
+      dose({ occurred_at: '2026-06-12T08:00:00Z' }),
+      dose({ occurred_at: '2026-06-14T20:00:00Z' }),
+    ]);
+    const rows = grouped.get('reg-1')!;
+    expect(rows).toHaveLength(2);
+    expect(rows.map((d) => d.occurred_at)).toEqual(['2026-06-12T08:00:00Z', '2026-06-14T20:00:00Z']);
+  });
+});
+
+describe('tallyDoses — shared adherence bucketer (B-140)', () => {
+  it('buckets a bare dose list identically to the attribution pass', () => {
+    const doses = [
+      { adherence: 'given' }, { adherence: 'partial' }, { adherence: 'missed' },
+      { adherence: 'refused' }, { adherence: null }, { adherence: 'given' },
+    ];
+    expect(tallyDoses(doses)).toEqual({ given: 2, partial: 1, missed: 1, refused: 1, unrated: 1 });
+  });
+
+  it('an empty list is an empty tally (never undefined)', () => {
+    expect(tallyDoses([])).toEqual(emptyTally());
+  });
+
+  it('agrees with attributeDoses for the same doses under one regimen (one bucketer)', () => {
+    const doses: AttributableDose[] = [
+      { medication_id: 'r', medication_item_id: 'i', adherence: 'given', deleted_at: null, occurred_at: '2026-06-12T08:00:00Z' },
+      { medication_id: 'r', medication_item_id: 'i', adherence: 'partial', deleted_at: null, occurred_at: '2026-06-12T20:00:00Z' },
+    ];
+    const viaAttribution = attributeDoses(
+      [{ id: 'r', medication_item_id: 'i', started_at: '2026-06-10', ended_at: null }],
+      doses,
+    ).tallies.get('r');
+    expect(tallyDoses(doses)).toEqual(viaAttribution);
   });
 });

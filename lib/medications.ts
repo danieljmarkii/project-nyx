@@ -18,7 +18,13 @@
 
 // `lib/utils` is itself import-free, so pulling the day-index primitives in keeps
 // this module's plain-jest testability intact (B-441).
-import { localDayIndex, localDayIndexOf } from './utils';
+//
+// The `.ts` extension is deliberate (B-140 PR 1): it makes this module — and now
+// its dose-attribution predicates — importable under Deno, the way `lib/dietTrial.ts`
+// already is, so `lib/medicationHistory.ts` (which reads `attributeDoses` here) and
+// through it `generate-report` can pull this whole chain. Jest/Metro resolve the
+// explicit extension too (`allowImportingTsExtensions`), so no app consumer changes.
+import { localDayIndex, localDayIndexOf } from './utils.ts';
 
 // ── Local schema (mirrors supabase/migrations/020_medication_logging.sql) ─────
 //
@@ -1174,6 +1180,18 @@ export function emptyTally(): AdherenceTally {
   return { given: 0, partial: 0, missed: 0, refused: 0, unrated: 0 };
 }
 
+// Bucket a bare list of doses into an AdherenceTally, using the SAME `bucketAdherence`
+// switch the attribution pass uses — so a consumer that already knows which doses
+// belong together (an orphan drug group in lib/medicationHistory) never re-implements
+// the given/partial/missed/refused/unrated bucketing and can never drift from it. The
+// count on top of this stays `dosesTowardTarget` (the one dose-count predicate). Only
+// `adherence` is read, so a caller may pass any dose-shaped rows.
+export function tallyDoses(doses: readonly { adherence: string | null }[]): AdherenceTally {
+  const t = emptyTally();
+  for (const d of doses) bucketAdherence(t, d.adherence);
+  return t;
+}
+
 // Tally each regimen's doses in two passes of precedence:
 //
 //   1. EXPLICIT LINK (B-153/B-154). A dose carrying a medication_id is attributed
@@ -1194,23 +1212,64 @@ export function emptyTally(): AdherenceTally {
 //      one-active-regimen-per-drug this is a direct match; if two regimens share a
 //      drug, the most-recently-started in-window one wins, so a dose is never
 //      double-counted. An ad-hoc dose with no item id and no link never matches.
-export function attributeDosesToRegimens(
+// The full result of one attribution pass. `attributeDosesToRegimens` returns only
+// `tallies` (its historical contract, unchanged); `attributeDoses` exposes the whole
+// partition so a course-grain consumer (lib/medicationHistory, B-140) can read the
+// SAME single attribution decision rather than re-deriving a second, drift-prone one
+// (the diet-trial §5.3 "one predicate" lesson — a rival off-diet definition shipped
+// there and had to be re-based). The three fields together partition every NON-deleted
+// dose exactly once:
+//   • tallies      — per-regimen AdherenceTally (id → tally); the count feeds dosesTowardTarget.
+//   • grouped      — the actual attributed doses per regimen (id → doses), so a consumer
+//                    can read a regimen's first/last dose without re-running the match.
+//   • unattributed — every live dose that matched NO regimen: an ad-hoc dose (no drug
+//                    identity), a drug with no in-window regimen, or a dose linked to a
+//                    regimen absent from `regimens`. Surfaced, never dropped — the report's
+//                    §3.8 orphan-dose stance ("nothing logged is silently lost").
+// Soft-deleted doses appear in none of the three (their event is gone).
+export interface DoseAttribution {
+  tallies: Map<string, AdherenceTally>;
+  grouped: Map<string, AttributableDose[]>;
+  unattributed: AttributableDose[];
+}
+
+// The ONE attribution pass. Same two-precedence logic as before (explicit link, then
+// item+window fallback), now also recording which doses landed where. `attributeDoses`
+// is the primitive; `attributeDosesToRegimens` is the thin tally-only accessor every
+// existing caller already uses — its returned Map is byte-for-byte what it always was,
+// because the added `grouped`/`unattributed` bookkeeping never touches `tallies`.
+export function attributeDoses(
   regimens: RegimenWindow[],
   doses: AttributableDose[],
-): Map<string, AdherenceTally> {
+): DoseAttribution {
   const tallies = new Map<string, AdherenceTally>(regimens.map((r) => [r.id, emptyTally()]));
+  const grouped = new Map<string, AttributableDose[]>(regimens.map((r) => [r.id, []]));
+  const unattributed: AttributableDose[] = [];
+
   for (const d of doses) {
     if (d.deleted_at) continue; // soft-deleted dose — its event is gone
 
     // 1. Explicit regimen link wins outright.
     if (d.medication_id) {
       const t = tallies.get(d.medication_id);
-      if (t) bucketAdherence(t, d.adherence);
+      if (t) {
+        bucketAdherence(t, d.adherence);
+        grouped.get(d.medication_id)!.push(d);
+      } else {
+        // Linked to a regimen NOT in this set (an ended one the caller didn't pass, or a
+        // hard-deleted row). It counts toward nothing here (no silent reassignment — the
+        // B-153 test pins that), but it is surfaced as an orphan of its own drug rather
+        // than dropped, so a course-grain reader never loses a logged dose.
+        unattributed.push(d);
+      }
       continue;
     }
 
     // 2. Unlinked dose → match by the same drug, in-window.
-    if (!d.medication_item_id) continue; // ad-hoc dose, no drug identity to match
+    if (!d.medication_item_id) {
+      unattributed.push(d); // ad-hoc dose, no drug identity to match → its own group
+      continue;
+    }
     let best: RegimenWindow | null = null;
     for (const reg of regimens) {
       if (reg.medication_item_id !== d.medication_item_id) continue;
@@ -1218,11 +1277,27 @@ export function attributeDosesToRegimens(
       if (reg.ended_at && d.occurred_at > reg.ended_at) continue; // after it ended
       if (!best || reg.started_at > best.started_at) best = reg;
     }
-    if (!best) continue;
+    if (!best) {
+      unattributed.push(d); // no regimen for this drug in-window → orphan
+      continue;
+    }
     const t = tallies.get(best.id);
-    if (t) bucketAdherence(t, d.adherence);
+    // best.id came from `regimens`, which seeded both maps, so `t` is always present;
+    // the guard mirrors the original and keeps the types honest.
+    if (t) {
+      bucketAdherence(t, d.adherence);
+      grouped.get(best.id)!.push(d);
+    }
   }
-  return tallies;
+
+  return { tallies, grouped, unattributed };
+}
+
+export function attributeDosesToRegimens(
+  regimens: RegimenWindow[],
+  doses: AttributableDose[],
+): Map<string, AdherenceTally> {
+  return attributeDoses(regimens, doses).tallies;
 }
 
 // Headline adherence line for a regimen card. FACTUAL only — counts and a plain
