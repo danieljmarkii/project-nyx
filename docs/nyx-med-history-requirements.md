@@ -23,7 +23,7 @@ The vet asks *"what medications has she been on?"* and the app cannot answer it 
 
 **In:** one shared course derivation (`lib/medicationHistory.ts`) + three in-app surfaces (profile "Past medications" section, past-course presentation on the med detail screen, rundown medication-history block) + the D2-gated report table.
 
-**Out (explicitly):** B-302 (promote-to-regimen nudge — its doorway is noted in the detail screen's "No regimen set up" line, nothing more) · B-212 (supplements) · any change to the med strip (B-614) · owner-scored outcomes ("did it help?" — the diet-trial C5 ruling stands: response context, if ever rendered, is the computed symptom trend across course dates) · auto-completing a course (nothing ever ends a course but an owner action) · a per-med History lens (filed as **B-686**; v1 links to History's existing Medication lens).
+**Out (explicitly):** B-302 (promote-to-regimen nudge — its doorway is noted in the detail screen's "No regimen set up" line, nothing more) · B-212 (supplements) · any change to the med strip (B-614) · owner-scored outcomes ("did it help?" — the diet-trial C5 ruling stands: response context, if ever rendered, is the computed symptom trend across course dates) · auto-completing a course (nothing ever ends a course but an owner action) · a per-med History lens (filed as **B-688**; v1 links to History's existing Medication lens).
 
 ## §3 The derivation contract — `lib/medicationHistory.ts`
 
@@ -60,7 +60,7 @@ Chain: **PR 1 is the gate**; PRs 2/3/4 depend only on PR 1 and are **mutually pa
 |---|---|---|---|
 | **1** | The derivation — `lib/medicationHistory.ts` + tests. Pure, Deno-compatible, no UI change. | `lib/medicationHistory.ts` (+ `.test.ts`) | **`adversarial-reviewer` MANDATORY** (feeds two vet-facing surfaces; counterexamples to try: a regimen with zero logged doses; doses spanning a deleted regimen; a dose after an explicit end; two regimens for the same item; DST/zone straddles). H1/H4 test-asserted. |
 | **2** | Profile "Past medications" section. | `app/(tabs)/profile.tsx` (+ components) | Designer (Principles 3/5, collapsed-by-default), `nyx-voice`, copy tests for H1/H2 strings. |
-| **3** | Past-course presentation on med detail + the History evidence link. | `app/medication/[id].tsx` | `nyx-voice`; QA: the link lands on History's Medication lens (B-686 notes the per-med lens as future). |
+| **3** | Past-course presentation on med detail + the History evidence link. | `app/medication/[id].tsx` | `nyx-voice`; QA: the link lands on History's Medication lens (B-688 notes the per-med lens as future). |
 | **4** | Rundown medication-history block (D3 provisional: 12 months + folded earlier count). | `lib/rundown.ts`, `app/rundown.tsx` | `clinical-guardrails` + `nyx-voice`; offline-path QA; **flag D3 for PM confirmation in the handoff**. |
 | **5** | Report lifetime table. **GATED: D2 + PM-approved Tier-2 edit to `nyx-vet-report-requirements.md`.** | `supabase/functions/generate-report/report.ts`, `render.ts` | `adversarial-reviewer` + `vet-report-cold-read` MANDATORY (all report changes); `deno test`; deploys **only** with the B-494-gated redeploy. |
 
@@ -77,4 +77,4 @@ Chain: **PR 1 is the gate**; PRs 2/3/4 depend only on PR 1 and are **mutually pa
 1. A past regimen the owner explicitly ended renders on all built surfaces with `Ended` and its dates. 2. An ad-hoc med with N doses and no regimen renders with first/last dose and count — and **never** an ending (H1). 3. An active course is never duplicated between the active card/strip and the past section. 4. Dose counts on every surface equal `dosesTowardTarget` for the same course (H4). 5. The detail screen's evidence link lands on History filtered to the Medication lens. 6. The rundown block renders offline. 7. No surface renders a percentage, grade, or outcome field (H2/H3).
 
 ---
-_Backlog: B-140 (this track) · B-686 (per-med History lens, filed this session) · B-302/B-212 out of scope · B-394 owns the forward tense._
+_Backlog: B-140 (this track) · B-688 (per-med History lens, filed this session) · B-302/B-212 out of scope · B-394 owns the forward tense._

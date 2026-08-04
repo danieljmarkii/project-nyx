@@ -2218,18 +2218,40 @@ function weightDuringTrial(snap: ReportSnapshot): string | null {
   if (!first || first <= 0) return null
   const dir = tr.deltaKg < 0 ? 'fell' : tr.deltaKg > 0 ? 'rose' : 'flat'
   if (dir === 'flat') return null
-  // #10b — PRECISION THE INSTRUMENT SUPPORTS. One 0.1 kg tick on a 2.0 kg cat is a
-  // single scale increment, and rendering it bolded as "5.0% of body weight" claims a
-  // resolution the reading does not have — against this function's own docstring. A
-  // delta of one tick is dropped; the rest round to a whole percent.
-  if (Math.abs(tr.deltaKg) < 0.15) return null
-  const pct = Math.round(Math.abs(tr.deltaKg / first) * 100)
-  if (pct < 1) return null
+  // #10b — PRECISION THE INSTRUMENT SUPPORTS, via the shared `weightDeltaPct`: it drops a
+  // sub-0.15 kg delta (one 0.1 kg tick on a 2.0 kg cat is a single scale increment, and
+  // "5.0% of body weight" would claim a resolution the reading does not have) and a sub-1%
+  // result, and rounds to a whole percent. The tile reads the same helper, so the figure
+  // can never differ between two renderings of the same fall.
+  const pct = weightDeltaPct(tr.deltaKg, first)
+  if (pct === null) return null
   return `Weight ${dir} ${num(first.toFixed(1))}&nbsp;&rarr;&nbsp;${num(
     (first + tr.deltaKg).toFixed(1),
   )}&nbsp;kg over ${h(fmtRange(tr.earliestDate, tr.latestDate))} &mdash; <b>about ${num(
     pct,
   )}% of body weight</b> (owner home-scale readings; ${num(tr.readingCount)} weigh-ins).`
+}
+
+/**
+ * The weight change as a percent of body weight — ONE derivation, shared by the trial
+ * sentence (`weightDuringTrial`) and the page-1 At-a-glance weight tile (`weightTile`), so
+ * a Labrador's −0.3 kg and a cat's −0.3 kg can never render the same magnitude on one
+ * surface and a different one on another (B-495; the diet-trial §5.3 one-predicate rule,
+ * applied to weight).
+ *
+ * `firstKg` is the EARLIEST reading of whatever series the caller scoped — the window for
+ * the tile, the trial range for the sentence — and the percent is the change relative to
+ * it. The guardrails are the instrument's, not a clinical threshold: a home scale resolves
+ * ~0.1 kg, so a sub-0.15 kg delta is one tick of noise and yields no percent, and the
+ * figure rounds to a whole number because a decimal would claim a resolution the reading
+ * does not have. The species sets what magnitude reads as notable; this invents no
+ * threshold and states no verdict. Returns null when no honest percent can be stated.
+ */
+function weightDeltaPct(deltaKg: number | null, firstKg: number | null): number | null {
+  if (deltaKg === null || firstKg === null || firstKg <= 0) return null
+  if (Math.abs(deltaKg) < 0.15) return null
+  const pct = Math.round(Math.abs(deltaKg / firstKg) * 100)
+  return pct < 1 ? null : pct
 }
 
 /** "a 56-day" but "an 84-day" — English takes the article from how the number is
@@ -3042,20 +3064,33 @@ function weightTile(snap: ReportSnapshot): string {
   if (snap.weight.isEmpty) {
     return tile('—', '', `Weight<br/>no weigh-ins yet — a useful trend to log`)
   }
-  if (snap.weight.trend && snap.weight.trend.readingCount >= 2 && snap.weight.trend.deltaKg !== null) {
-    const d = snap.weight.trend.deltaKg
+  const tr = snap.weight.trend
+  if (tr && tr.readingCount >= 2 && tr.deltaKg !== null) {
+    const d = tr.deltaKg
     const sign = d > 0 ? '+' : ''
-    // Descriptive, but NEVER reassuring — a loss is the danger direction (B-186 guardrail).
+    // % OF BODY WEIGHT, ALONGSIDE THE ABSOLUTE (B-495). `-0.3 kg` is species-blind — ~1% on
+    // a Labrador, ~7% on a cat, where on a refusing animal it is the most action-forcing
+    // number on the page and no percentage appeared anywhere in the report. Computed against
+    // the earliest in-window weigh-in by the shared `weightDeltaPct` (the same helper the
+    // trial sentence uses), and stated ONLY when the home scale supports one: a one-tick
+    // wobble leaves `pct` null and the tile falls back to the absolute-only label rather
+    // than manufacturing precision. Descriptive, never reassuring — a loss is the danger
+    // direction (B-186 guardrail), so the percent is never softened by magnitude.
+    const pct = weightDeltaPct(d, tr.seriesKg[0] ?? null)
+    const trend =
+      pct === null
+        ? `home-scale trajectory (descriptive)`
+        : `<b>&asymp;${pct}% of body weight</b> &middot; home-scale (descriptive)`
     return tile(
       `${sign}${d.toFixed(1)}`,
       `<small>&nbsp;kg</small>`,
-      `Weight over ${snap.weight.trend.readingCount} weigh-ins<br/>home-scale trajectory (descriptive)`,
+      `Weight over ${tr.readingCount} weigh-ins<br/>${trend}`,
     )
   }
   // IN-WINDOW readings only (weight.trend). weight.latest may be a stale, out-of-window reading —
   // the Weight block discloses it as "(before this window)", but a bare tile cannot carry that
   // caveat, so a months-old weight would read as current in the 60-second scan (code-review find).
-  const kg = snap.weight.trend?.latestKg ?? null
+  const kg = tr?.latestKg ?? null
   return kg === null
     ? tile('—', '', `Weight<br/>no reading in this window`)
     : tile(`${kg.toFixed(1)}`, `<small>&nbsp;kg</small>`, `Latest weigh-in<br/>single reading — no trend yet`)
@@ -3395,6 +3430,24 @@ function vomitCharacteristics(snap: ReportSnapshot): string {
     p.totalIncidents === 1 ? '' : 's'
   }; ${num(assessed)} ${assessed === 1 ? 'has' : 'have'} a legible AI read${stateDisclosure}.${consistBit} Per-incident detail in appendix&nbsp;A.`
 
+  // COLLAPSE THE EMPTY BLOCK TO A LINE (B-502). With nothing photographed the section said
+  // "no photo" three ways — a lead describing a read that never happened, a chart-shaped grey
+  // "no legible read yet" bar, and a Blood & foreign block repeating it a third time — ~100
+  // words and a quarter page to carry one fact. It collapses to a single note: the denominator
+  // (which already discloses the without-a-photo count, §5.10) plus the caveat, and the heading
+  // drops its "Automated photo analysis" tag, which advertised a feature this instance never used.
+  //
+  // THE "NOT A CLEARANCE" CAVEAT STAYS, WORD FOR WORD (B-494). On the artifact where nothing was
+  // read it is the only thing keeping the section's silence from reading as a negative result:
+  // absence of a photo is not absence of blood. Only the triple repetition of "no photo" goes.
+  if (p.withAnalysis === 0) {
+    return `
+  <div class="sec">
+    <h2>Vomit characteristics</h2>
+    <p class="note">${denom} <b>Not a clearance:</b> a photo cannot exclude bleeding, digested (coffee-ground) blood photographs poorly, and these are AI reads &mdash; if blood or foreign material <b>is</b> seen in any incident, that incident leads the flags for review at the top of the report.</p>
+  </div>`
+  }
+
   // Present-only blood/foreign (§5.9).
   const blood = p.bloodPresent
   const foreign = p.foreignPresent
@@ -3430,20 +3483,11 @@ function vomitCharacteristics(snap: ReportSnapshot): string {
       </div>`
   }
 
-  // NO PHOTO ANYWHERE ⇒ NO CHART FURNITURE (B-532, cold-read secondary). With zero
-  // photographed incidents the section still drew a full-width grey bar reading "no legible
-  // read yet" under a heading promising "Automated photo analysis" — a chart-shaped element
-  // standing in for data that does not exist, and the phrase "yet" implying a read is coming
-  // for incidents that were never photographed. It costs a quarter of a page and gives a
-  // scanner something to mistake for a finding.
-  //
-  // The blood/foreign limitation block is NOT dropped with it. That block is the one carrying
-  // "this is not a clearance", and on the artifact where nothing was read it is the only thing
-  // stopping the section's silence from reading as a negative result (the B-494 rule).
-  const noPhotoAtAll = p.withAnalysis === 0
-  const body = noPhotoAtAll
-    ? `<div class="mixkey">No incident in this window has a photo, so there is no automated read of colour, contents or consistency. ${denom}</div>`
-    : `<div>
+  // The photo-present body (the no-photo case returned above, collapsed to a line). B-532's
+  // no-chart-furniture rule is now structural: with zero legible photos the section never
+  // reaches this bar at all, so there is no grey "no legible read yet" stand-in to mistake
+  // for a finding.
+  const body = `<div>
         <div class="barmix">${mixHtml}</div>
         <div class="mixkey">${keyHtml}<br/>${denom}</div>
       </div>`
