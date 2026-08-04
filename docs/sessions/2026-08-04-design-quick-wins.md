@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-04
 
-**Outcome:** shipped via #PRNUM (one stacked PR, the quick-wins pattern applied to the Designer's queue instead of the Engineer's).
+**Outcome:** shipped via #586 (one stacked PR, the quick-wins pattern applied to the Designer's queue instead of the Engineer's).
 
 The PM asked for the quick-win sweep to shift lens: the prior stacks were engineering-heavy; this one mines the backlog for small, unblocked **design/UX/copy** items and knocks them out in one session. Selection rule: Open, no PM/Designer decision gate in the row, no device-only verification, no native build, no schema.
 
