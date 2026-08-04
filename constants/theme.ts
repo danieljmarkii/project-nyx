@@ -242,6 +242,14 @@ export const theme = {
   // Completion "moment" — consumed by PR 4 (gold ring in app/log.tsx).
   colorMomentGlow: '#FBBF24',
   colorMomentConfirm: '#00C2A8',
+  // B-693 — the amber "attention" wash behind the log-time trial-list heads-up,
+  // rendered as an inset panel on the DARK completion card. The moment-glow gold at
+  // 0.12 (the same gold already haloing this card's check badge), so the warning
+  // breaks the card's calm stack and can't be read past, while its claim-strength
+  // stays matched to what the record knows — list-absence, not harm (mock round 2,
+  // PM-ruled amber over a rose "danger" rendering). The bar + eyebrow reuse
+  // colorMomentGlow at full strength; only the fill is softened.
+  colorMomentGlowFillOnDark: 'rgba(251, 191, 36, 0.12)',
 
   // ── Spacing — 8pt grid ────────────────────────────────────────────────────
   // Sub-grid micro-gap (2pt): the typographic space between a label and the

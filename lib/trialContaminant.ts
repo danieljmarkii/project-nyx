@@ -262,6 +262,18 @@ export interface TrialMembershipFlag {
    *  flag, so a food spoken for once is not news again whichever kind spoke. */
   trialId: string;
   foodId: string;
+  /** The trial's day-math, so the surface that displays this flag can build the
+   *  shipped `AddTrialFoodSheet` (mock §3, the "+ Add to the trial list" hatch)
+   *  WITHOUT a second trial read. Carried for the same reason the contents flag
+   *  carries `trialProteins` and both carry `trialId`/`foodId`: the display surface
+   *  needs it, and re-deriving it there would be a second read of a trial the
+   *  evaluator already loaded for the meal's pet — which also removes any risk of
+   *  the card reading the *active* pet's trial when a queue-then-switch made it a
+   *  different pet than the meal's. These are TRIAL-SCHEDULE facts, never
+   *  food-contents ones, so they do not weaken the claim-strength guarantee that a
+   *  membership flag names nothing about what the food contains (§5, mock). */
+  trialStartedAt: string;
+  trialTargetDurationDays: number;
 }
 
 /**
@@ -429,7 +441,19 @@ export function foodMembershipFlag(
   // Rung 3 ONLY. `off_diet_protein` → the contents flag fires instead (never
   // both); `permitted` / `out_of_window` / `unclassifiable` → silence.
   if (classification.verdict !== 'off_diet_unrecognised') return null;
-  return { kind: 'off_trial_list', trialId: ctx.trialId, foodId };
+  return {
+    kind: 'off_trial_list',
+    trialId: ctx.trialId,
+    foodId,
+    // The schedule the add sheet renders "day N" from — read off the context the
+    // evaluator already loaded, never re-derived at the surface. `targetDurationDays`
+    // is NOT NULL in the DB, so it is always present on the real (loadTrialProteinContext)
+    // path; the `?? 0` is a type-level fallback for a hand-built context, and
+    // getDietTrialProgress still yields a correct day counter at 0 (it computes days
+    // from `startedAt` alone), so the sheet never prints a fabricated day.
+    trialStartedAt: ctx.spec.startedAt,
+    trialTargetDurationDays: ctx.spec.targetDurationDays ?? 0,
+  };
 }
 
 // ── Copy (nyx-voice + clinical-guardrails) ───────────────────────────────────
@@ -1182,54 +1206,44 @@ async function evaluateLogTimeFlag<T extends { trialId: string; foodId: string }
 }
 
 /**
- * The rung-2 CONTENTS heads-up for the meal-entry paths: this food carries a
- * protein the trial diet does not. Now gated on `isTrialRunning` (B-595). Its
- * output is UNCHANGED in shape, so existing callers (app/log.tsx, the FAB,
- * store/momentStore) keep working without a widen — the membership flag ships as
- * its own evaluator (below) rather than widening this one, because these callers
- * spend the ledger budget the instant this returns and the card cannot yet render
- * a membership flag (PR 2 wires that atomically with the render).
+ * The log-time trial heads-up for the meal-entry paths (app/log.tsx + the FAB) —
+ * the SINGLE-READ COMPOSITION the PR-1 lib layer set up and PR 2 now consumes.
+ *
+ * Returns exactly ONE of the two mutually-exclusive kinds, or null for silence:
+ * the rung-2 CONTENTS flag ("this has chicken in it") when the food's panel names
+ * an off-trial protein, else the rung-3 MEMBERSHIP flag ("this isn't on the trial
+ * list") when the food simply isn't on the allowed set (the modal case). It
+ * replaces the two single-kind evaluators PR 1 shipped: their split existed only
+ * because the card could not yet render a membership flag, so widening the meal
+ * callers would have spent the ledger budget on an unshowable flag. PR 2 renders
+ * both, so the split is resolved by composing the two PURE predicates here rather
+ * than reading the food record twice.
+ *
+ * ONE CONTEXT READ (TTL-cached) AND ONE FOOD-RECORD READ back the whole decision:
+ * `evaluateLogTimeFlag` loads both once, and `foodContaminantFlag(...) ??
+ * foodMembershipFlag(...)` runs both predicates over that same record. Rung-2
+ * precedence is the `??`: `classifyFeeding` returns one verdict, so a food with an
+ * off-trial protein takes the contents branch and never reaches membership — never
+ * both. The shared `isTrialRunning` gate (B-595) and the shared, kind-agnostic
+ * ledger (rule 3: one heads-up per food per trial, whichever kind spoke) both live
+ * in the spine, so a repeat of the same food stays quiet under either kind.
+ *
+ * THE CALLER MUST SPEND THE BUDGET ONLY AFTER THE FLAG IS ON SCREEN — `patchTrialFlag`
+ * returns true → THEN `noteTrialFlagShown` (see `applyTrialFlag` at both call sites).
+ * Recording before the card is shown re-opens the "a suppressed heads-up consumed the
+ * budget for a heads-up that was never given" defect (rule 3): the read/write split
+ * only holds if the write happens at render time.
  */
-export function evaluateMealTrialFlag(args: {
+export function evaluateMealLogTimeFlag(args: {
   petId: string;
   foodId: string;
   occurredAt: string;
-}): Promise<TrialContaminantFlag | null> {
-  return evaluateLogTimeFlag(args, (ctx, record) =>
-    foodContaminantFlag(ctx, args.foodId, record.proteins, record.foodKey, args.occurredAt),
-  );
-}
-
-/**
- * The rung-3 MEMBERSHIP heads-up for the meal-entry paths (B-693): this food is
- * not on the trial's allowed list. Same spine, same `isTrialRunning` gate, same
- * SHARED ledger as the contents flag — `classifyFeeding` returns one verdict, so
- * exactly one of the two evaluators can return non-null for a given feeding, and
- * a repeat of the same food stays quiet under either.
- *
- * PR 2 MUST SPEND THE BUDGET ONLY AFTER THE FLAG IS ON SCREEN, mirroring the
- * contents caller's order in `app/log.tsx` (`applyTrialFlag`: `patchTrialFlag`
- * returns true → THEN `noteTrialFlagShown`). Recording before the card is shown
- * re-opens the "a suppressed heads-up consumed the budget for a heads-up that was
- * never given" defect (rule 3 in the header) at the call site — the read/write
- * split here only holds if the write happens at render time.
- *
- * PR 2 NEEDS ONE FLAG, NOT TWO EVALUATOR CALLS. A feeding is at most one kind, so
- * calling both this and `evaluateMealTrialFlag` reads the food record twice (an
- * uncached SELECT; the context read is TTL-cached and nearly free). Prefer reading
- * the context + food record ONCE and composing the two exported pure predicates
- * with rung-2 precedence — `foodContaminantFlag(...) ?? foodMembershipFlag(...)` —
- * behind the same `isTrialRunning` gate + ledger read this spine already applies.
- * That single-read composition is the clean PR-2 shape; a combined evaluator can
- * wrap it there, where a caller actually consumes the union.
- */
-export function evaluateMealMembershipFlag(args: {
-  petId: string;
-  foodId: string;
-  occurredAt: string;
-}): Promise<TrialMembershipFlag | null> {
-  return evaluateLogTimeFlag(args, (ctx, record) =>
-    foodMembershipFlag(ctx, args.foodId, record.proteins, record.foodKey, args.occurredAt),
+}): Promise<LogTimeTrialFlag | null> {
+  return evaluateLogTimeFlag(
+    args,
+    (ctx, record) =>
+      foodContaminantFlag(ctx, args.foodId, record.proteins, record.foodKey, args.occurredAt) ??
+      foodMembershipFlag(ctx, args.foodId, record.proteins, record.foodKey, args.occurredAt),
   );
 }
 

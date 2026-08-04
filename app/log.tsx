@@ -34,7 +34,7 @@ import { inferDoseVehicleFromFoodType, initialComboDoseAdherence, isVehicleNotFi
 import { uploadPhoto, compressForUpload, persistCapture } from '../lib/storage';
 import { triggerVomitAnalysis, triggerStoolAnalysis } from '../lib/analysis';
 import { triggerSignalRegenDebounced } from '../lib/signal';
-import { evaluateMealTrialFlag, noteTrialFlagShown } from '../lib/trialContaminant';
+import { evaluateMealLogTimeFlag, noteTrialFlagShown } from '../lib/trialContaminant';
 import { uuid, exifDateToISO, trustedPastExifIso, formatExifAttribution, formatTime, deriveOccurredAt, OccurredConfidence } from '../lib/utils';
 
 type Step = 'type' | 'food' | 'medication' | 'symptom' | 'simple' | 'stool-type' | 'weight';
@@ -288,18 +288,20 @@ export default function LogModal() {
   // attached before reaching the picker, preserve that provenance and
   // the EXIF-derived time — Dr. Chen relies on EXIF-stamped meals for
   // clinical trust, and clobbering it here would silently drop that.
-  // B-351 slice 4 — resolve the trial-contaminant heads-up and land it on the
-  // card that is already showing. Fire-and-forget by design: the meal is written,
-  // the card is up, and this is strictly additive information. The ledger write
-  // happens ONLY if the patch landed, so the food's one-per-trial budget can never
-  // be spent on a heads-up the owner did not see.
+  // B-351 slice 4 / B-693 — resolve the log-time trial heads-up (contents OR
+  // membership, whichever fires) and land it on the card that is already showing.
+  // Fire-and-forget by design: the meal is written, the card is up, and this is
+  // strictly additive information. One evaluator, one read of the food record
+  // (B-693 single-read composition). The ledger write happens ONLY if the patch
+  // landed, so the food's one-per-trial budget can never be spent on a heads-up the
+  // owner did not see — the read/write split that keeps rule 3 honest.
   async function applyTrialFlag(
     eventId: string,
     petId: string,
     foodId: string,
     occurredAt: string,
   ) {
-    const flag = await evaluateMealTrialFlag({ petId, foodId, occurredAt });
+    const flag = await evaluateMealLogTimeFlag({ petId, foodId, occurredAt });
     if (!flag) return;
     if (!patchTrialFlag(eventId, flag)) return;
     rescheduleMoment(MEAL_FLAGGED_DURATION_MS);
