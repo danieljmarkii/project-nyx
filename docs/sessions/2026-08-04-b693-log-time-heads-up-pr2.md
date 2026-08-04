@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-04
 
-**Outcome: shipped via #<PR> (draft).** The surface half of B-693 — the amber "attention" membership panel on `MealCompletionCard` + the "+ Add to the trial list" hatch into the shipped `AddTrialFoodSheet`. No schema, no migration, no deploy.
+**Outcome: shipped via #592 (draft).** The surface half of B-693 — the amber "attention" membership panel on `MealCompletionCard` + the "+ Add to the trial list" hatch into the shipped `AddTrialFoodSheet`. No schema, no migration, no deploy.
 
 ## Build phase
 
