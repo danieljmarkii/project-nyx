@@ -842,6 +842,55 @@ Deno.test('weight trend → sparkline + descriptive framing, never a loss flag',
   assert.ok(!/losing weight|weight loss|is (?:worrying|concerning)/i.test(html), 'no loss flag / verdict')
 })
 
+// ── B-495 — the At-a-glance weight tile states % of body weight ──────────────────────
+// A `base()` snapshot is a no-trial (symptom-monitoring) report, so `weightDuringTrial`
+// never fires and the tile is the SOLE source of "% of body weight" — which is the point
+// of B-495: on that shape the percentage appeared nowhere in the whole report.
+function weightTileHtml(seriesKg: number[], deltaKg: number): string {
+  const last = seriesKg[seriesKg.length - 1]
+  return renderReport(
+    base({
+      weight: {
+        isEmpty: false,
+        latest: { kg: last, lbs: Math.round(last * 2.2046 * 10) / 10, date: '2026-06-19' },
+        trend: {
+          readingCount: seriesKg.length,
+          seriesLbs: seriesKg.map((k) => Math.round(k * 2.2046 * 10) / 10),
+          seriesKg,
+          latestLbs: Math.round(last * 2.2046 * 10) / 10,
+          latestKg: last,
+          earliestDate: '2026-06-02',
+          latestDate: '2026-06-19',
+          deltaLbs: Math.round(deltaKg * 2.2046 * 10) / 10,
+          deltaKg,
+          direction: deltaKg < 0 ? 'down' : 'up',
+        },
+      },
+    }),
+  )
+}
+
+Deno.test('B-495 — the weight tile states % of body weight, against the earliest in-window reading', () => {
+  // `-0.3 kg` renders identically for a cat and a Labrador; the percent is what makes it
+  // legible. Same absolute, different body mass, different reading — species-blind no more.
+  const cat = weightTileHtml([4.4, 4.1], -0.3)
+  assert.ok(/-0\.3<small>&nbsp;kg<\/small>/.test(cat), 'the absolute stays the headline value')
+  assert.ok(/&asymp;7% of body weight/.test(cat), '-0.3 kg on a 4.4 kg cat is ~7%')
+
+  const dog = weightTileHtml([32.4, 32.1], -0.3)
+  assert.ok(/&asymp;1% of body weight/.test(dog), 'the SAME -0.3 kg on a 32 kg dog is ~1%')
+  // The single source on a no-trial report: exactly one "% of body weight" on the page.
+  assert.equal(dog.match(/% of body weight/g)?.length, 1, 'stated once — the tile, not a caveat repeated')
+})
+
+Deno.test('B-495 — a one-tick weight wobble states NO percent (no manufactured precision)', () => {
+  // A home scale resolves ~0.1 kg, so a 0.1 kg delta is one increment and supports no honest
+  // percent; the tile falls back to the absolute-only label rather than inventing a figure.
+  const t = weightTileHtml([4.4, 4.3], -0.1)
+  assert.ok(!/% of body weight/.test(t), 'no percent for a sub-0.15 kg (one-tick) delta')
+  assert.ok(/home-scale trajectory \(descriptive\)/.test(t), 'the tile keeps its absolute-only label')
+})
+
 // ── §6 cherry-pick guard ────────────────────────────────────────────────────────────
 
 Deno.test('custom window with out-of-window events → cherry-pick disclosure', () => {
@@ -3076,7 +3125,7 @@ Deno.test('B-532 — a chronicity span that starts at the window edge is stated 
   assert.ok(!/is a floor/.test(observed), 'and NOT a floor when the record actually saw the start')
 })
 
-Deno.test('B-532 — with no photographed incident, the phenotype bar is gone and the caveat is not', () => {
+Deno.test('B-532/B-502 — with no photographed incident, the block collapses to a line and the caveat survives', () => {
   const html = renderReport(
     base({
       vomitPhenotype: {
@@ -3093,10 +3142,19 @@ Deno.test('B-532 — with no photographed incident, the phenotype bar is gone an
     }),
   )
   const t = plain(html)
-  assert.ok(!/no legible read yet/.test(t), 'no chart furniture standing in for data that does not exist')
-  assert.ok(/No incident in this window has a photo/.test(t), 'the state is stated in words')
-  assert.ok(/5 without a photo/.test(t), 'the denominator disclosure survives')
-  assert.ok(/This is not a clearance/.test(t), 'and so does the blood/foreign limitation — the load-bearing half')
+  assert.ok(!/no legible read yet/.test(t), 'no chart furniture standing in for data that does not exist (B-532)')
+  assert.ok(/5 without a photo/.test(t), 'the denominator disclosure survives (§5.10)')
+  // B-502 — the empty block collapses to ONE line: the section said "no photo" three ways (a
+  // photo-read lead, a repeated body, and the blood block), ~100 words for one fact. The lead
+  // that described a read that never happened is gone, the repeated body with it, and the
+  // "Automated photo analysis" tag no longer sits over a section that analysed nothing.
+  assert.ok(!/Colour, contents, and consistency are read automatically/i.test(t), 'the photo-read lead is gone')
+  assert.ok(!/No incident in this window has a photo/.test(t), 'and the repeated no-photo body with it')
+  assert.ok(!/Automated photo analysis/.test(t), 'and the analysis tag over a section that analysed nothing')
+  // B-494 — the not-a-clearance caveat is the load-bearing half: absence of a photo is not
+  // absence of blood, so the section's silence never reads as a negative result. It stays.
+  assert.ok(/Not a clearance:/.test(t), 'the not-a-clearance caveat survives the collapse')
+  assert.ok(/a photo cannot exclude bleeding/.test(t), 'with its substance intact')
 })
 
 Deno.test('B-532 — the weight sparkline states the range it is drawn over', () => {
