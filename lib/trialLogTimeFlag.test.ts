@@ -245,6 +245,96 @@ describe('the shared ledger — one heads-up per food per trial, across both kin
   });
 });
 
+// ── The six silence states (mock §4), verified END TO END through the spine ──────
+//
+// The PR-3 copy/safety matrix. The pure predicate (foodMembershipFlag) is
+// unit-tested per state in trialContaminant.test.ts; the completion card's own
+// silence is in MealCompletionCard.test.tsx. This block drives the same six through
+// the REAL composition + I/O spine (evaluateMealLogTimeFlag), because three of them —
+// ② unhydrated, ③ out-of-window, ⑤ permitted — were only ever covered at the pure
+// level, so a spine that bypassed the predicate's guard would still have passed.
+// ①/④/⑥ re-assert tersely here what the dedicated blocks above prove in depth, so
+// the §4 checklist reads in one place (this is the artifact QA verifies against).
+//
+// "Nothing anywhere reassures" is the shape of these rows: a silence state returns
+// the LITERAL absence of a flag (null), so there is no object and no field that
+// could carry an all-clear. The complementary guarantee — that the copy which DOES
+// fire never reassures — is pinned per-string in trialContaminant.test.ts
+// (membershipFlagCopy: "NEVER says off-diet, contaminant, or any all-clear"; and
+// mealFlagCopy's own no-reassure test). There is no seventh "this food is fine" path
+// to test, by construction.
+describe('the six silence states (mock §4) — end to end through the spine', () => {
+  // ① dedicated depth: 'is silent when there is no active trial' + the B-595 block.
+  it('① no running trial — no active row, and a stale-active trial past its effective end', async () => {
+    // (a) no trial at all → loadTrialProteinContext returns null.
+    expect(await evaluateMealLogTimeFlag({ petId: 'p1', foodId: 'dental-treats', occurredAt: NOW() })).toBeNull();
+    // (b) stale-active — target + 56d grace elapsed, isTrialRunning false (B-595). A
+    //     trial the owner never ended says nothing at the moment of a log.
+    seedDuckTrial({ startedDaysAgo: 400, targetDays: 28 });
+    expect(await evaluateMealLogTimeFlag({ petId: 'p1', foodId: 'dental-treats', occurredAt: NOW() })).toBeNull();
+  });
+
+  it('② trial list not loaded yet — an unhydrated allowed set never reads as empty', async () => {
+    seedDuckTrial({ startedDaysAgo: 5, targetDays: 84 });
+    // The primary-diet cache row has not landed: brand + product_name both null, so
+    // primaryResolved (0) < primaryCount (1) → allowedSetHydrated is false. Mid-sync,
+    // EVERY food (the prescribed diet included) looks absent, so the flag must stay
+    // quiet. Without the guard, membership would fire here — this is the P2 direction.
+    mockAllowedRows[0].brand = null;
+    mockAllowedRows[0].product_name = null;
+    expect(await evaluateMealLogTimeFlag({ petId: 'p1', foodId: 'dental-treats', occurredAt: NOW() })).toBeNull();
+  });
+
+  it('③ feeding outside the trial window — a backfilled pre-trial meal says nothing', async () => {
+    seedDuckTrial({ startedDaysAgo: 5, targetDays: 84 });
+    // occurredAt is 30 local days ago, before a trial that started 5 days ago →
+    // classifyFeeding returns out_of_window. Built from LOCAL components (B-514): the
+    // window buckets on local midnight, so a UTC literal would drift by the offset.
+    const before = new Date();
+    before.setDate(before.getDate() - 30);
+    before.setHours(12, 0, 0, 0);
+    expect(await evaluateMealLogTimeFlag({ petId: 'p1', foodId: 'dental-treats', occurredAt: before.toISOString() })).toBeNull();
+  });
+
+  // ④ dedicated depth: 'fires the CONTENTS flag on an off-trial protein'. The
+  //   membership flag's "silence" here is that the CONTENTS flag took the feeding.
+  it('④ rung-2 precedence — a panel-read protein conflict fires CONTENTS, membership stays silent', async () => {
+    seedDuckTrial({ startedDaysAgo: 5, targetDays: 84 });
+    const flag = await evaluateMealLogTimeFlag({ petId: 'p1', foodId: 'chicken-chew', occurredAt: NOW() });
+    // Never both: classifyFeeding returns one verdict, so the off-trial protein routes
+    // rung 2 and the membership flag never fires for this feeding.
+    expect(flag?.kind).toBe('off_diet_protein');
+    expect(flag?.kind).not.toBe('off_trial_list');
+  });
+
+  it('⑤ on the list (permitted) — a permitted food is never praised (G2)', async () => {
+    seedDuckTrial({ startedDaysAgo: 5, targetDays: 84 });
+    // A vet-approved rabbit jerky ON the list, with a hydrated cache row. classifyFeeding
+    // returns rung 1 (permitted), which pre-empts both contents and membership → total
+    // silence. Absence of a flag is never a verdict — a permitted food is not affirmed.
+    mockAllowedRows.push({
+      food_item_id: 'jerky', role: 'permitted_treat', food_label: 'Rabbit Jerky',
+      allowed_from: mockTrialRow!.started_at, allowed_until: null,
+      brand: 'Ziwi', product_name: 'Rabbit', primary_protein: 'rabbit',
+      proteins: '["rabbit"]', ingredients_notes: 'rabbit', ai_extraction_confidence: null,
+    });
+    mockFoodRows['jerky'] = {
+      brand: 'Ziwi', product_name: 'Rabbit',
+      proteins: '["rabbit"]', ingredients_notes: 'rabbit', ai_extraction_confidence: null,
+    };
+    expect(await evaluateMealLogTimeFlag({ petId: 'p1', foodId: 'jerky', occurredAt: NOW() })).toBeNull();
+  });
+
+  // ⑥ dedicated depth: 'a membership flag already SHOWN does not fire again'.
+  it('⑥ already told this trial — the shared ledger spends once per food per trial', async () => {
+    seedDuckTrial({ startedDaysAgo: 5, targetDays: 84 });
+    const first = await evaluateMealLogTimeFlag({ petId: 'p1', foodId: 'dental-treats', occurredAt: NOW() });
+    expect(first).not.toBeNull();
+    await noteTrialFlagShown(first!); // the surface spends the budget on render
+    expect(await evaluateMealLogTimeFlag({ petId: 'p1', foodId: 'dental-treats', occurredAt: NOW() })).toBeNull();
+  });
+});
+
 describe('foodIntakeKey sanity (the fixture keys match the real derivation)', () => {
   it('the logged food resolves the same case-folded key the app would', () => {
     // Guards the fixture: readFoodProteinRecord derives foodKey via foodIntakeKey,
