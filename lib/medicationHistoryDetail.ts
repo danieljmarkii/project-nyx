@@ -29,13 +29,22 @@ export interface CourseFactRow {
 
 export interface PastCoursePresentation {
   facts: CourseFactRow[];
-  // The evidence-link dose count — the course's `dosesLogged` (H4), or `null` when the
-  // record holds no delivered dose to open. When non-null the surface renders
-  // `evidenceLinkLabel(count)` → History's Medication lens. Gated on delivered doses so
-  // the link never reads "All 0 doses"; a zero-dose course states "0" in its facts and
-  // simply offers no doorway.
-  evidenceDoseCount: number | null;
+  // Whether this course has any logged dose event to open in History. Gated on the TOTAL
+  // administrations (every adherence state), NOT just delivered doses — so a course the
+  // pet REFUSED entirely (dosesLogged 0, but real refusal events) keeps its doorway to
+  // those events. Intake is not preference: a refusal record is a signal, never stranded.
+  // A course with zero logged events (an owner-ended regimen with nothing dosed) has no
+  // doorway — there is nothing to open.
+  hasEvidence: boolean;
 }
+
+// The evidence-link label. Deliberately NOT "All N doses in History" (the exploratory
+// mock's pre-nyx-voice copy): the link lands on History's WHOLE medication stream — a
+// per-drug filter is B-688, not v1 — and a course's delivered count (given + partial)
+// excludes the refused/missed events that are also in History, so "All N" would
+// over-promise in two directions. A plain, honest doorway; the count already lives in the
+// facts above. Final wording is a PM call (see the PR) once B-688 makes a per-drug count true.
+export const EVIDENCE_LINK_LABEL = 'See doses in History';
 
 // ── Date formatting ─────────────────────────────────────────────────────────────────
 // The course dates are all DATE-style 'YYYY-MM-DD' keys (a regimen's started_at/ended_at
@@ -77,10 +86,24 @@ export function formatCourseDateRange(startKey: string, endKey: string): string 
 
 // The dose count line. H4: reads `course.dosesLogged` (never a re-count). H2: a bare
 // count, optionally "of N planned" when the regimen carried a planned total — never a %.
+// The "of N planned" frame shows ONLY while delivered ≤ planned: doses can legitimately
+// post-date a course's end via an authoritative regimen link (lib/medicationHistory.ts),
+// so dosesLogged can exceed plannedDoses, and "30 of 28 planned" reads as a bug. Never
+// clamp the count (that hides a logged dose); drop the frame, which is meaningless once
+// the plan is exceeded — the bare count stays honest.
 function dosesLoggedValue(course: MedicationCourse): string {
-  return course.plannedDoses != null
+  return course.plannedDoses != null && course.dosesLogged <= course.plannedDoses
     ? `${course.dosesLogged} of ${course.plannedDoses} planned`
     : `${course.dosesLogged}`;
+}
+
+// Every logged administration of this course, whatever its adherence — the count of dose
+// EVENTS a reader would find in History (distinct from `dosesLogged`, which is delivered =
+// given + partial). Drives `hasEvidence`, so a fully-refused course still routes to its
+// events.
+function totalDoseEvents(course: MedicationCourse): number {
+  const t = course.tally;
+  return t.given + t.partial + t.missed + t.refused + t.unrated;
 }
 
 // H1's ONLY ending copy — reached solely from `end.kind === 'ended'`. The register (an
@@ -156,15 +179,6 @@ export function buildPastCourseFacts(course: MedicationCourse): PastCoursePresen
 
   return {
     facts,
-    evidenceDoseCount: course.dosesLogged > 0 ? course.dosesLogged : null,
+    hasEvidence: totalDoseEvents(course) > 0,
   };
-}
-
-/**
- * The evidence-link label — "All N doses in History" (mock §03), singular-aware. Lands on
- * History's Medication lens (the whole medication event stream; a PER-drug filter is
- * B-688, not v1), so the N contextualises this course rather than promising a filtered list.
- */
-export function evidenceLinkLabel(count: number): string {
-  return count === 1 ? '1 dose in History' : `All ${count} doses in History`;
 }

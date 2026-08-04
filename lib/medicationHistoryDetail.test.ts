@@ -12,7 +12,7 @@
 
 import {
   buildPastCourseFacts,
-  evidenceLinkLabel,
+  EVIDENCE_LINK_LABEL,
   formatCourseDay,
   formatCourseDateRange,
 } from './medicationHistoryDetail';
@@ -53,7 +53,7 @@ const ENDING_WORDS = /marked complete|stopped|\bended\b|completed/i;
 
 describe('buildPastCourseFacts — Frame A: an ended regimen (mock §03)', () => {
   it('renders the full counted fact set', () => {
-    const { facts, evidenceDoseCount } = buildPastCourseFacts(course());
+    const { facts, hasEvidence } = buildPastCourseFacts(course());
     expect(facts).toEqual([
       { label: 'Course', value: 'Mar 3 – Mar 16, 2026' },
       { label: 'Length', value: '14 days' },
@@ -61,7 +61,7 @@ describe('buildPastCourseFacts — Frame A: an ended regimen (mock §03)', () =>
       { label: 'Schedule', value: 'Twice a day, with food' },
       { label: 'Ended', value: 'Marked complete Mar 16' },
     ]);
-    expect(evidenceDoseCount).toBe(26);
+    expect(hasEvidence).toBe(true);
   });
 
   it('a stopped course names the stop register', () => {
@@ -96,14 +96,14 @@ describe('buildPastCourseFacts — Frame B: a dose-derived course (mock §03)', 
   });
 
   it('renders from doses alone — no length, no schedule, no ending', () => {
-    const { facts, evidenceDoseCount } = buildPastCourseFacts(orphan);
+    const { facts, hasEvidence } = buildPastCourseFacts(orphan);
     expect(facts).toEqual([
       { label: 'Doses logged', value: '3' },
       { label: 'First dose', value: 'Jun 2, 2026' },
       { label: 'Last dose logged', value: 'Jun 9, 2026' },
       { label: 'Course', value: 'No regimen set up' },
     ]);
-    expect(evidenceDoseCount).toBe(3);
+    expect(hasEvidence).toBe(true);
   });
 
   it('a single-day course states one date, not first + last', () => {
@@ -172,15 +172,34 @@ describe('buildPastCourseFacts — H4: the count is the derivation field, read v
     const facts = buildPastCourseFacts(course({ dosesLogged: 5, plannedDoses: null })).facts;
     expect(val(facts, 'Doses logged')).toBe('5');
   });
+
+  it('drops the "planned" frame when delivered exceeds planned (never "30 of 28")', () => {
+    // Doses can post-date an ended course via an authoritative link, so N can exceed M.
+    // The count is never clamped (that would hide a logged dose); the frame is dropped.
+    const facts = buildPastCourseFacts(course({ dosesLogged: 30, plannedDoses: 28 })).facts;
+    expect(val(facts, 'Doses logged')).toBe('30');
+  });
 });
 
-describe('buildPastCourseFacts — the evidence-link count', () => {
-  it('is null when no dose was delivered (never "All 0 doses")', () => {
-    expect(buildPastCourseFacts(course({ dosesLogged: 0 })).evidenceDoseCount).toBeNull();
+describe('buildPastCourseFacts — hasEvidence (the doorway to History)', () => {
+  const tally = (over: Partial<MedicationCourse['tally']> = {}) =>
+    ({ given: 0, partial: 0, missed: 0, refused: 0, unrated: 0, ...over });
+
+  it('is false when the course has no logged dose event (nothing to open)', () => {
+    // An owner-ended regimen with zero doses dosed — facts still state "0", but no doorway.
+    expect(buildPastCourseFacts(course({ dosesLogged: 0, tally: tally() })).hasEvidence).toBe(false);
   });
 
-  it('is the delivered count otherwise', () => {
-    expect(buildPastCourseFacts(course({ dosesLogged: 26 })).evidenceDoseCount).toBe(26);
+  it('is TRUE for a fully-refused course — its refusal events are not stranded', () => {
+    // dosesLogged (delivered) is 0, but 28 refusal events exist and are a health signal
+    // (intake is not preference). The doorway must survive a 0-delivered course.
+    const c = course({ dosesLogged: 0, plannedDoses: 28, tally: tally({ refused: 28 }) });
+    expect(buildPastCourseFacts(c).hasEvidence).toBe(true);
+    expect(val(buildPastCourseFacts(c).facts, 'Doses logged')).toBe('0 of 28 planned'); // honest shortfall
+  });
+
+  it('is true whenever any dose was logged', () => {
+    expect(buildPastCourseFacts(course({ tally: tally({ given: 1 }) })).hasEvidence).toBe(true);
   });
 });
 
@@ -215,10 +234,13 @@ describe('date formatting is timezone-honest (forces UTC — B-514)', () => {
   });
 });
 
-describe('evidenceLinkLabel', () => {
-  it('is singular-aware', () => {
-    expect(evidenceLinkLabel(1)).toBe('1 dose in History');
-    expect(evidenceLinkLabel(3)).toBe('All 3 doses in History');
-    expect(evidenceLinkLabel(26)).toBe('All 26 doses in History');
+describe('EVIDENCE_LINK_LABEL', () => {
+  it('is an honest doorway — no "All", no count that could over-promise the unfiltered lens', () => {
+    // The link lands on History's WHOLE medication stream (per-drug filter is B-688), and a
+    // count would exclude refused/missed events that ARE there — so "All N doses" over-
+    // promises in two directions. A plain doorway; the count lives in the facts.
+    expect(EVIDENCE_LINK_LABEL).toBe('See doses in History');
+    expect(EVIDENCE_LINK_LABEL).not.toMatch(/\ball\b/i);
+    expect(EVIDENCE_LINK_LABEL).not.toMatch(/\d/);
   });
 });

@@ -63,7 +63,7 @@ import {
   type MedicationItemEdit,
 } from '../../lib/medications';
 import { loadMedicationCourses } from '../../lib/medicationHistoryFacts';
-import { buildPastCourseFacts, evidenceLinkLabel } from '../../lib/medicationHistoryDetail';
+import { buildPastCourseFacts, EVIDENCE_LINK_LABEL } from '../../lib/medicationHistoryDetail';
 import type { MedicationCourse } from '../../lib/medicationHistory';
 
 interface MedicationItemRow {
@@ -442,7 +442,7 @@ export default function MedicationDetailScreen() {
             <View style={styles.historySection}>
               <SectionLabel label="Medication history" />
               {pastCourses.map((c) => {
-                const { facts, evidenceDoseCount } = buildPastCourseFacts(c);
+                const { facts, hasEvidence } = buildPastCourseFacts(c);
                 return (
                   <View key={c.key} style={styles.courseCard}>
                     {facts.map((f, i) => (
@@ -454,16 +454,16 @@ export default function MedicationDetailScreen() {
                         <Text style={styles.factValue}>{f.value}</Text>
                       </View>
                     ))}
-                    {evidenceDoseCount != null && (
+                    {hasEvidence && (
                       <TouchableOpacity
                         style={styles.linkRow}
                         onPress={openMedicationHistory}
                         activeOpacity={0.7}
                         hitSlop={8}
                         accessibilityRole="button"
-                        accessibilityLabel={evidenceLinkLabel(evidenceDoseCount)}
+                        accessibilityLabel={EVIDENCE_LINK_LABEL}
                       >
-                        <Text style={styles.linkText}>{evidenceLinkLabel(evidenceDoseCount)}</Text>
+                        <Text style={styles.linkText}>{EVIDENCE_LINK_LABEL}</Text>
                         <Text style={styles.linkChevron}>›</Text>
                       </TouchableOpacity>
                     )}
