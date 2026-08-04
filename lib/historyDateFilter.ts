@@ -11,6 +11,14 @@ import { utcDayBounds } from './utils';
 // re-exported by the control, so the pure logic doesn't depend on a component.
 export type DatePreset = 'today' | '7d' | '30d' | null;
 
+/** Coerce a `?window=` deep-link value onto a DatePreset (B-378). This is History's OWN
+ *  window vocabulary — a caller (Ask's provenance tap-through) maps its own window enum onto
+ *  these three strings, and anything unrecognised (or absent) falls to `null` = all time, so a
+ *  bad link degrades to the safe superset rather than throwing or hiding events. */
+export function coerceDatePreset(value: string | undefined | null): DatePreset {
+  return value === 'today' || value === '7d' || value === '30d' ? value : null;
+}
+
 // A single-day deep-link key ('YYYY-MM-DD') from the Calendar drill-in — an arbitrary UTC
 // calendar day, distinct from the 'today' preset. Matched loosely; utcDayBounds does the
 // real parse.

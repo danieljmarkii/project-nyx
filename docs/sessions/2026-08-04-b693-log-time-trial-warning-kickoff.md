@@ -1,4 +1,4 @@
-# B-689 — the log-time trial-list heads-up: filed, discussed, mocked, design-locked
+# B-693 — the log-time trial-list heads-up: filed, discussed, mocked, design-locked
 
 **Date:** 2026-08-04
 
@@ -13,9 +13,10 @@ but never surfaced at the moment of logging. No existing row covered the members
 
 ## What shipped
 
-- **Backlog row** — filed as B-686 at kickoff; **renumbered to B-689 at this wrap's merge from `main`**
-  (B-686 was taken on `main` first by the vet-report caveat de-dup row, PR #582; first-lands-keeps per
-  B-435; B-687/B-688 were also taken by the same sibling wrap). Provenance note is in the row.
+- **Backlog row** — filed as B-686 at kickoff; **renumbered twice at this wrap** (B-686 → B-689 → **B-693**),
+  once per merge from `main`: B-686 was taken first by the vet-report caveat de-dup row (#582, which also took
+  B-687/B-688), then B-689 by the IntakeBadge free-fed guard row (#584, which took B-689–B-692).
+  First-lands-keeps per B-435; the provenance chain is in the row.
 - **`docs/culprit-trial-log-warning-mockups.html`** — two mock rounds in one session, published as an
   Artifact (same URL across rounds). Round 1: the gap, the shipped rung-2 flag for contrast, variant
   A (prose-only) vs B (quiet add line), the reused confirm sheet, the after-state, six silence states.

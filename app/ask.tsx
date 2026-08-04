@@ -133,7 +133,11 @@ export default function AskScreen() {
   const goTapThrough = useCallback((nav: AskNav) => {
     // In-app navigation — the store keeps the conversation alive across it (D8).
     if (nav.pathname === '/insights') router.push('/insights');
-    else router.push({ pathname: nav.pathname, params: nav.params });
+    else if (nav.pathname === '/(tabs)/history') {
+      // B-378 — a per-tap nonce so History re-applies the filter even when the tab is already
+      // mounted (a deep-link tap is not a remount), mirroring the date doorways.
+      router.push({ pathname: nav.pathname, params: { ...nav.params, ts: String(Date.now()) } });
+    } else router.push({ pathname: nav.pathname, params: nav.params });
   }, []);
 
   // `disabled` (flag flipped off server-side mid-session) is an EXCLUSIVE state — it must

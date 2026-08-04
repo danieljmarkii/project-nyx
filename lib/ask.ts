@@ -1,6 +1,9 @@
 import { supabase } from './supabase';
 import { getDb } from './db';
 import { getDeviceTimezone } from './profile';
+// Type-only: erased at build, so this module stays free of the lucide/RN dependency
+// constants/eventTypes.ts pulls in (lib/ask.ts is deliberately unit-testable offline).
+import type { EventTypeKey } from '../constants/eventTypes';
 
 // Ask — the client data layer (B-228, PR A5; requirements §3, §4, §9.3).
 //
@@ -238,25 +241,72 @@ function coerceTapThrough(t: unknown): AskTapThrough | null {
 export type AskNav =
   | { pathname: '/event/[id]'; params: { id: string } }
   | { pathname: '/insights/[metric]'; params: { metric: string } }
-  | { pathname: '/insights' };
+  | { pathname: '/insights' }
+  // B-378 — the filtered History list a symptom count was drawn from. `window` is History's own
+  // preset vocabulary (today/7d/30d); absent = all time. The screen adds a `ts` nonce at nav
+  // time so the filter re-applies even when the History tab is already mounted.
+  | { pathname: '/(tabs)/history'; params: { type: string; window?: string } };
 
 // The symptom event_types that have a real `/insights/[metric]` detail screen (a
 // symptom-count trend). count_symptom/time_of_day only parameterize over these
 // (ASK_SYMPTOM_TYPES), so a symptom `filter` always resolves to a live Patterns detail.
 const SYMPTOM_METRICS = new Set(['vomit', 'diarrhea', 'stool_normal', 'lethargy', 'itch', 'scratch', 'skin_reaction']);
 
+// B-378 — the symptoms History can render as a `?type=` filter: the intersection of
+// SYMPTOM_METRICS and the event types exposed in the History TypeScopeControl. `scratch` and
+// `skin_reaction` are valid schema values with a Patterns detail but NO History filter chip, so
+// they stay on the Patterns route. Typed EventTypeKey so a typo here fails the type-check
+// rather than silently degrading to an unfiltered History list.
+const HISTORY_SYMPTOM_TYPES = new Set<EventTypeKey>(['vomit', 'diarrhea', 'stool_normal', 'lethargy', 'itch']);
+
+/** The History `?type=` value for an Ask symptom, or null when History has no filter for it. */
+function historySymptomType(symptomType: string | undefined): EventTypeKey | null {
+  return symptomType && (HISTORY_SYMPTOM_TYPES as ReadonlySet<string>).has(symptomType)
+    ? (symptomType as EventTypeKey)
+    : null;
+}
+
+/** The History `?window=` params for an Ask window History can represent EXACTLY, or null when
+ *  it can't. 7d/30d map to their presets; 'all' maps to an all-time link (no window param); and
+ *  14d / since_trial_start / an unstated window — which History has no exact preset for — return
+ *  null so the caller keeps the window-agnostic Patterns route instead.
+ *
+ *  Exact-match-only is deliberate (pm-feature-review, B-378): widening to a superset (14d→30d,
+ *  since_trial_start→all-time) would make the source list show MORE rows than the count it is
+ *  meant to audit — "3 since the trial started" opening onto 15 all-time vomits — which is the
+ *  G5 "Ask's number must never disagree with the Timeline's" red line surfacing at the UI. A
+ *  window History can't reproduce exactly is better audited on Patterns, which makes no count
+ *  promise. Returns `{}` (not `{ window: undefined }`) for all-time so the spread adds no key. */
+function historyWindow(askWindow: string | undefined): { window?: string } | null {
+  switch (askWindow) {
+    case '7d': return { window: '7d' };
+    case '30d': return { window: '30d' };
+    case 'all': return {};      // all time — an exact match, expressed as a History link with no window
+    default: return null;       // 14d / since_trial_start / unset → no exact History window
+  }
+}
+
 /** Resolve a provenance tap-through to a navigation target, or null when nothing is
- *  linkable. There is no multi-event route in the app, so an `events` tap-through with
- *  several ids opens the first (most-recent) event's detail — the honest available
- *  target; a symptom `filter` opens that symptom's Patterns detail; any other filter
- *  opens the Patterns index. Keeping this pure makes the mapping unit-testable and keeps
- *  the "does this even go anywhere" decision out of the render path. */
+ *  linkable. A symptom `filter` History can render, WITH a window History can reproduce exactly,
+ *  opens the FILTERED History list (B-378 — the mock's "Open in History", auditing the whole
+ *  count at its source). A symptom History can't render (scratch/skin_reaction), OR a window it
+ *  can't reproduce exactly (14d/since_trial_start), opens that symptom's Patterns detail — the
+ *  window-agnostic view that makes no count promise, so the source can never contradict the
+ *  count (G5). Any other filter opens the Patterns index. An `events` tap-through has no
+ *  type/window to filter History by, so it opens the first (most-recent) event's detail — the
+ *  honest available target. Pure, so the mapping is unit-testable and the "does this even go
+ *  anywhere" decision stays out of the render path. */
 export function resolveTapThrough(tp: AskTapThrough | null | undefined): AskNav | null {
   if (!tp) return null;
   if (tp.kind === 'events') {
     return tp.eventIds.length ? { pathname: '/event/[id]', params: { id: tp.eventIds[0] } } : null;
   }
   // filter
+  const historyType = historySymptomType(tp.symptomType);
+  const hw = historyType ? historyWindow(tp.window) : null;
+  if (historyType && hw) {
+    return { pathname: '/(tabs)/history', params: { type: historyType, ...hw } };
+  }
   if (tp.symptomType && SYMPTOM_METRICS.has(tp.symptomType)) {
     return { pathname: '/insights/[metric]', params: { metric: tp.symptomType } };
   }
@@ -265,17 +315,19 @@ export function resolveTapThrough(tp: AskTapThrough | null | undefined): AskNav 
 
 /** The owner-facing "go" label for a tap-through (mock §2 provenance row). The label MUST
  *  name where it actually lands (pm-feature-review: a mislabelled provenance link is the
- *  one interaction the feature's trust is built on). There is no multi-event route, so a
- *  several-event tap-through opens the LATEST event — the label says exactly that, never
- *  "Open in History" (which would promise a filtered list the app can't deep-link to yet;
- *  that's the backlog History `?type=` param). A single event opens the event; a filter
- *  opens Patterns. Null when there's nowhere to go. */
+ *  one interaction the feature's trust is built on). It opens the filtered History list — and
+ *  reads "Open in History" — ONLY when `resolveTapThrough` would actually route there: a
+ *  History-renderable symptom with a window History can reproduce exactly (B-378). Everything
+ *  else that came from a filter opens Patterns. A single event opens the event; a several-event
+ *  tap-through has no filtered route, so it opens the LATEST event and says so. Null when there's
+ *  nowhere to go. */
 export function tapThroughLabel(tp: AskTapThrough | null | undefined): string | null {
   if (!tp) return null;
   if (tp.kind === 'events') {
     if (tp.eventIds.length === 0) return null;
     return tp.eventIds.length === 1 ? 'Open the event' : 'Open the latest event';
   }
+  if (historySymptomType(tp.symptomType) && historyWindow(tp.window)) return 'Open in History';
   return 'Open in Patterns';
 }
 
