@@ -1,6 +1,6 @@
 # Trial Protein Capture — Requirements & PR Plan (B-704)
 
-**Version:** 1.0 · **Date:** 2026-08-04 · **Status:** 🌱 BUILD-READY except TP-1 (provisional, flagged for PM confirmation)
+**Version:** 1.0 · **Date:** 2026-08-04 · **Status:** 🌱 BUILD-READY — every decision ruled (TP-1 ruled **E1** by the PM 2026-08-04, overriding the provisional E2)
 **Decision record:** TP-1–TP-4 (§0) · **Re-opens:** D6 (`nyx-multi-protein-requirements.md` §10 — "explicit protein on `diet_trials`: RATIFIED, deferred") — re-opened and ratified by the PM 2026-08-04
 **Pairs with:** `docs/culprit-trial-protein-mockups.html` (round 2 — the design reference; frames cited below) · `docs/nyx-diet-trial-requirements.md` (§4.1 the start sheet, §5.3 the one predicate, §5.5 D-A the loophole guard) · `docs/nyx-multi-protein-requirements.md` (D6/D7/§8) · `docs/nyx-food-library-trial-awareness-requirements.md` (the allowed-set screen this adds a row to)
 
@@ -10,7 +10,7 @@
 
 | # | Decision | Ruling |
 |---|---|---|
-| **TP-1** | When nothing derives at setup — render an empty optional row (E1) or hide it (E2)? | **PROVISIONAL: E2 — hide at setup.** Taken under the one-session provisional rule; the PM ruled TP-2–TP-4 and skipped this one. Rationale for E2 over round 1's E1 lean: the PM's mid-trial requirement (TP-4) gives the protein a permanent, always-reachable home, so hiding at setup no longer orphans the affordance — and for a hydrolyzed patient "Not set" is the wrong register (the field is inapplicable, not incomplete). Designer's standing position was E2. **Flag to PM at next session; PR 3 renders E2 unless overridden.** |
+| **TP-1** | When nothing derives at setup — render an empty optional row (E1) or hide it (E2)? | **RULED (PM, 2026-08-04): E1 — render an empty optional row at setup, overriding the provisional E2.** The provisional (taken under the one-session rule when the PM ruled TP-2–TP-4 and skipped this one) leaned E2 — hide — arguing TP-4 gives the protein a permanent mid-trial home so hiding no longer orphans it, and that "Not set" is the wrong register for a hydrolyzed patient (Designer's standing position). The PM overrode to E1: the "Trial protein" row **always renders at setup**, empty/optional when nothing derives — an always-present affordance the owner can tap to set, matching round 1's E1 lean. The E2 rationale's worry (a bare "Not set" over a hydrolyzed patient) is answered by the picker's own first-class options (§7.2): "No single protein (hydrolyzed)" and "Not sure — leave it unset" carry the inapplicable-vs-incomplete distinction, so the empty row is a set-prompt, never a bare "Not set". **PR 3 builds E1** (the always-rendered empty-state row per §7.1). |
 | **TP-2** | Day-0 label mismatch — heads-up only, or require acknowledgment? | **RULED (PM, 2026-08-04): heads-up, never blocking — conditional on prominence.** The PM's own words: "as long as we believe that heads up is prominent enough." That condition is a **gate, not a hope** — see §6 for the prominence contract PR 3 must meet and QA must verify. Start stays enabled in every state. |
 | **TP-3** | Mid-trial edit semantics — correction (whole-trial) or dated (forward-only)? | **RULED (PM, 2026-08-04): correction semantics, per the team recommendation.** One value, whole-trial, editable any time. The house never-rewrites-history rule protects **evidence and counts**, and the protein touches neither — it changes only what the record *calls* things. The edit is **disclosed, not versioned**: `target_protein_set_at` records when, and the report carries a provenance word when the set/change happened after day 1 (§8). The confirm moment states the whole-trial effect in plain words (§7.3). |
 | **TP-4** | Where does mid-trial see/select live? | **RULED (PM, 2026-08-04): both, split by role — "strongly agree."** Surfaces that *name* the trial **show** it (the Pet-tab card and Home `TrialStrip` identity lines become "Rabbit trial …", zero new controls, so the card's §4.2 rule is untouched). The allowed-set screen ("What {pet} can eat", B-616) **edits** it — a "Trial protein" row above the food list opening the same picker as setup. **One editor, two-plus viewers.** |
@@ -86,7 +86,7 @@ Never blocking, in every state: Start enabled, save enabled, no acknowledge gate
 ## 7. Surfaces
 
 ### 7.1 Start sheet (PR 3 — mock frames B, C, D)
-The derived row under the trial diet block: label "Trial protein", value, sub-line "From the foods you picked — tap to change". Renders only when derivation returns a protein (TP-1 provisional E2: nothing derives → no row). Tap opens the picker sheet (§7.2). The mismatch heads-up per §6. **Designer's condition from the team read, carried as an AC:** the 15-second timed test re-runs on a physical device with the row present.
+The "Trial protein" row under the trial diet block: label "Trial protein", value, sub-line "From the foods you picked — tap to change". **Always renders (TP-1 ruled E1, 2026-08-04):** when derivation returns a protein it pre-fills the value; when nothing derives the row still renders in an empty/optional state (tap to set) rather than hiding — the sub-line degrades to a set-prompt (draft "Tap to name this trial's protein"; final at the PR 3 `nyx-voice` pass) and the row is never a bare "Not set", because the picker's own "No single protein (hydrolyzed)" / "Not sure — leave it unset" options (§7.2) carry the inapplicable-vs-incomplete distinction the E2 rationale worried about. Tap opens the picker sheet (§7.2). The mismatch heads-up per §6. **Designer's condition from the team read, carried as an AC:** the 15-second timed test re-runs on a physical device with the row present.
 
 ### 7.2 The picker sheet (PR 3, shared component — mock frame C)
 Intro carries the invariant in owner language: *"If your vet named one protein for this trial, keep it here. Culprit uses it to name what shows up in the record — it never changes what counts as off-diet."* Groups: derived-from-trial-diet first (with provenance sub-labels), common proteins, then the two escape hatches as first-class options — "No single protein (hydrolyzed or special diet — the food list is the trial)" and "Not sure — leave it unset". One component, mounted by the start sheet and the allowed-set screen. Copy is draft until the PR 3 `nyx-voice` pass.
@@ -109,7 +109,8 @@ Inherits through the predicate; no new tool, no boundary change (the §6 scoped-
 
 | Where | String |
 |---|---|
-| Setup row sub-line | "From the foods you picked — tap to change" |
+| Setup row sub-line (derived) | "From the foods you picked — tap to change" |
+| Setup row sub-line (empty / E1) | "Tap to name this trial's protein" (draft — nothing derived; the row still renders per TP-1 E1) |
 | Picker intro | "If your vet named one protein for this trial, keep it here. Culprit uses it to name what shows up in the record — it never changes what counts as off-diet." |
 | Hydrolyzed option | "No single protein — hydrolyzed or special diet. The food list is the trial." |
 | Unset option | "Not sure — leave it unset. Everything still works. You can set it later from {pet}'s trial." |
@@ -122,7 +123,7 @@ Never say: "wrong food" · "mistake" · any per-feeding rendering of the mismatc
 ## 9. Deferred / residuals
 
 - **A-1 · Multi-protein target** (a vet prescribing two novel proteins): deferred. The allowed set already handles the *permits*; only the naming is single. Revisit on real demand.
-- **A-2 · TP-1 ratification**: E2 is provisional — confirm or override at next session; the PR 3 build follows E2.
+- **A-2 · TP-1 ratification**: ✅ RESOLVED 2026-08-04 — the PM **overrode the provisional E2 to E1** (the empty optional row always renders at setup; §0 TP-1, §7.1). PR 3 builds E1.
 - **A-3 · Setup-time mismatch vs mid-trial food adds**: a food added mid-trial (FR-12 path) with a label conflicting the target gets the standing note (§6.5) but no setup-style inline heads-up — the add-confirm sheet already carries FR-11's disclosure; adding a second amber there is Principle-4 debt. Revisit if the standing note proves too quiet.
 
 ## 10. PR plan
@@ -131,7 +132,7 @@ Never say: "wrong food" · "mistake" · any per-feeding rendering of the mismatc
 |---|---|---|
 | **1** | Migration 0NN (§5): `target_protein` + `target_protein_set_at` on `diet_trials`. Server only, own PR, Migration Safety Pre-flight in the description. Apply via MCP `apply_migration` + `get_advisors`. | Schema-isolation rule; pre-flight. |
 | **2** | Local mirror + hydration + sync payload; `trialTargetProtein` stored-first predicate (§4) with `resolveTargetProtein` demoted to fallback; TG-1/TG-2/TG-4/TG-5 tests incl. the property passes. | **`adversarial-reviewer` mandatory** (feeds the vet report's naming). Engineer + Data sign-off. |
-| **3** | Start-sheet row (E2 per TP-1 provisional) + shared picker sheet + day-0 heads-up per the §6 contract. | Designer sign-off incl. the **re-timed 15-second test** on device; §6.6 QA criterion; `nyx-voice` on every §8 string. |
+| **3** | Start-sheet row (**E1 per TP-1** — always-rendered, empty-state when nothing derives) + shared picker sheet + day-0 heads-up per the §6 contract. | Designer sign-off incl. the **re-timed 15-second test** on device; §6.6 QA criterion; `nyx-voice` on every §8 string. |
 | **4** | Mid-trial: card/`TrialStrip` identity naming + allowed-set screen row/editor + standing mismatch note + correction confirm (§7.3). | `pm-feature-review` on the mid-trial flow; `nyx-voice`. |
 | **5** | Report render (§7.4): identity + provenance + stored-first attribution + disclosure line; TG-5 re-asserted against the report builder. | **`adversarial-reviewer` + `vet-report-cold-read`** on a rendered artifact. Merges independently; **production ships with the B-494 redeploy, never before.** |
 
