@@ -95,6 +95,19 @@ import {
 // dependency-free precisely so both runtimes share one copy; a second map here is the
 // B-103 drift class, where a new enum value reaches one surface and not the other).
 import { foodFormatWord } from '../../../lib/foodFormat.ts'
+// B-140 PR 5 — the ONE shared medication-course derivation, read (never re-derived) by
+// the report's lifetime "Medication history" table (§4.4). `lib/medicationHistory.ts` is
+// React-Native-free by construction precisely so `generate-report` imports it directly,
+// the way this file already imports `lib/dietTrial.ts` — so the report's course counts and
+// end registers can never contradict the profile / med-detail / rundown surfaces (H4/H1,
+// the diet-trial §5.3 one-predicate lesson applied to medications). It pulls in only
+// `lib/medications.ts` + `lib/utils.ts`, both already in this bundle.
+import {
+  deriveMedicationCourses,
+  type MedicationHistoryRegimen,
+  type CourseSource,
+} from '../../../lib/medicationHistory.ts'
+import type { AttributableDose } from '../../../lib/medications.ts'
 // The diet-trial answer (B-417 PR 7). `trial.ts` is the seam onto `lib/dietTrial.ts`
 // — the one shared predicate — and imports NOTHING from this file, so the two are a
 // tree rather than a cycle.
@@ -373,6 +386,14 @@ export interface ReportMedicationInput {
   prescribedBy: string | null
   startedAt: string // DATE 'YYYY-MM-DD'
   targetDurationDays: number | null
+  /**
+   * B-618 (migration 049) — a DOSE-denominated fixed course ("#28, until gone"). The
+   * CHECK constraint makes this mutually exclusive with `targetDurationDays`, so a regimen
+   * is days- XOR dose-denominated. Read by the §4.4 lifetime table to say "28 doses
+   * planned" vs "14 days". Optional so every pre-B-140-PR-5 fixture keeps compiling; absent
+   * ⇒ treated as null (ongoing / days-denominated), exactly as an unset column would be.
+   */
+  targetDurationDoses?: number | null
   status: string // 'active'|'completed'|'stopped'
   endedAt: string | null // DATE
   isPrescription?: boolean | null // false ⇒ treated as a supplement (concurrent intervention)
@@ -495,6 +516,17 @@ export interface ReportInput {
   aiAnalyses: ReportAiAnalysisInput[]
   weightChecks: ReportWeightCheckInput[]
   doses: ReportDoseInput[]
+  /**
+   * B-140 PR 5 — the pet's ENTIRE live dose history, UNTRIMMED by the lookback, for the
+   * window-ignoring lifetime "Medication history" table (§4.4). The DB already pulls every
+   * `medication_administrations` row (index.ts sets no `.gte` — a dose's instant lives on
+   * its parent event, so the lookback is an in-memory trim of `doses` for the windowed
+   * sections); this field carries the un-trimmed set so a course that ended before the
+   * ~180-day window still appears (the vet's "has she ever been on steroids?" question).
+   * Absent ⇒ the table derives over `doses` (older fixtures / callers) — correct but
+   * lookback-bounded, never wrong, just narrower.
+   */
+  lifetimeDoses?: ReportDoseInput[]
   medications: ReportMedicationInput[]
   /**
    * Names/metadata for the medication_items referenced by `doses` — so an ad-hoc dose with no
@@ -1809,6 +1841,65 @@ export interface UnlinkedMedicationGroup {
   doseDays: string[]
 }
 
+/**
+ * B-140 PR 5 (D2) — one row of the lifetime "Medication history" table (§4.4, mock §05).
+ *
+ * WINDOW-IGNORING by design: derived over the pet's ENTIRE logged record (all regimens +
+ * `lifetimeDoses`), NOT the report window — so a course that ended months before the
+ * window still appears. It sits beside the windowed Appendix D (dose-level detail), never
+ * replaces it: this is the "what has she been on, ever?" overview; Appendix D is the
+ * "how was the current course dosed?" detail.
+ *
+ * These are FACTS; `render.ts` formats the Dates / Course / Doses cells. Two invariants are
+ * STRUCTURAL here so the renderer cannot break them:
+ *   • H1 — `ended` / `endStatus` / `endedDay` come SOLELY from an owner action (a
+ *     completed/stopped regimen). A course that merely went quiet carries `ended: false`
+ *     and a null `endedDay`; there is no field silence can fill, so no code path prints an
+ *     ending the owner never made. `lastDoseDay` carries the honest "last dose" instead.
+ *   • H4 — `dosesLogged` is the derivation's `dosesTowardTarget` (given + partial), the
+ *     same predicate the profile card / med strip / Appendix D count, so no two surfaces
+ *     can disagree on how many doses a course delivered.
+ */
+export interface MedicationHistoryEntry {
+  key: string
+  source: CourseSource
+  /** Clinical name — a regimen's own `drug_name`, or the generic-first `medicationItemName`
+   *  for a dose-derived (orphan) course. Never a guessed name. */
+  drugName: string
+  isActive: boolean
+  // ── H1 — owner-action ending ONLY ──
+  ended: boolean
+  endStatus: 'completed' | 'stopped' | null
+  endedDay: string | null // regimen `ended_at` DATE; null unless `ended`
+  // ── Dates (all 'YYYY-MM-DD' local day keys, or null) ──
+  startedDay: string | null // regimen `started_at` DATE; null on a dose-derived course
+  firstDoseDay: string | null
+  lastDoseDay: string | null
+  singleDay: boolean // exactly one distinct logged dose day (→ a bare "Feb 11" cell)
+  // ── Course description facts (all null on a dose-derived course) ──
+  targetDurationDays: number | null
+  targetDurationDoses: number | null
+  dosesPerDay: number | null
+  scheduleNotes: string | null
+  runDays: number | null // inclusive start→end span, ENDED regimens only (never a countdown)
+  /** target_duration_doses OR dosesPerDay×days — the "of N" for an ended course's count. */
+  plannedDoses: number | null
+  // ── Dose evidence (H4) ──
+  dosesLogged: number // dosesTowardTarget (given + partial)
+}
+
+export interface MedicationHistoryTable {
+  /** Active-first, then most-recent last dose first — the derivation's own order. */
+  entries: MedicationHistoryEntry[]
+  /**
+   * The earliest dated point across all entries (a regimen start or a first dose), for the
+   * "Lifetime of record (since <month year>)" note. Null when nothing is dated. It is
+   * genuinely lifetime: `lifetimeDoses` is untrimmed and regimens are unbounded, so this is
+   * the floor of the actual record, not the lookback.
+   */
+  sinceDay: string | null
+}
+
 export interface ReportSnapshot {
   generatedAt: string
   timezone: string | null
@@ -1838,6 +1929,12 @@ export interface ReportSnapshot {
    * separately on page 1 + Appendix D so nothing logged goes unreported. Empty ⇒ nothing to show.
    */
   unlinkedMedications: UnlinkedMedicationGroup[]
+  /**
+   * B-140 PR 5 (D2) — the window-ignoring lifetime medication table (§4.4), or null when the
+   * pet has no medication record at all (no regimen ever configured, no dose ever logged).
+   * Renders beside Appendix D; every count reads `lib/medicationHistory.ts` (H4).
+   */
+  medicationHistory: MedicationHistoryTable | null
   correlation: CorrelationSummary
   concurrentChanges: ConcurrentChange[]
   proteinTimeline: ProteinTimeline
@@ -2670,6 +2767,9 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     scope,
     tz,
   )
+  // §4.4 (D2) — the LIFETIME medication table, window-ignoring on purpose: derived over the
+  // pet's whole record (all regimens + the untrimmed `lifetimeDoses`), not the scoped window.
+  const medicationHistory = buildMedicationHistory(input, droppedEventIds, tz)
 
   // ── Diet / confounder summary (§3.8) ─────────────────────────────────────────
   // The trial this report DESCRIBES — active, or ended inside the window (B-417 §7).
@@ -3540,6 +3640,7 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     trial: trialBlock,
     medications,
     unlinkedMedications,
+    medicationHistory,
     correlation,
     concurrentChanges,
     proteinTimeline,
@@ -3797,6 +3898,111 @@ function medicationItemName(item: ReportMedicationItemInput | null): string {
   const b = item.brandName?.trim() || null
   if (g && b && g.toLowerCase() !== b.toLowerCase()) return `${g} (${b})`
   return g || b || 'Unspecified medication'
+}
+
+/**
+ * §4.4 (D2) — assemble the LIFETIME "Medication history" table (mock §05). It reads the pet's
+ * WHOLE record — every regimen + `lifetimeDoses` (the untrimmed dose set) — through the ONE shared
+ * course derivation (`lib/medicationHistory.ts`), so it is window-ignoring by construction and its
+ * counts / end registers can never contradict the app's profile-card, med-detail or rundown surfaces
+ * (H4) nor fabricate an ending from silence (H1). Pure; `render.ts` formats the cells.
+ *
+ * Returns null when the pet has no medication record at all (no regimen ever configured AND no dose
+ * ever logged) — a null section, not an empty table with a fabricated "none" row.
+ */
+function buildMedicationHistory(
+  input: ReportInput,
+  droppedEventIds: Set<string>,
+  tz: string | null,
+): MedicationHistoryTable | null {
+  // The untrimmed dose set (window-ignoring); a caller without it falls back to the lookback-
+  // trimmed `doses` — narrower, never wrong. Then drop any dose whose parent event was collapsed
+  // as a duplicate, exactly as `liveDoses` does. (Medication events never dedup — each gets a
+  // unique key in dedupeEvents — so this is a no-op in practice, but the two dose paths must be
+  // defined identically, §5.11, so a future dedup change can't diverge them.)
+  const sourceDoses = input.lifetimeDoses ?? input.doses
+  const liveDoses = sourceDoses.filter((d) => !droppedEventIds.has(d.eventId))
+
+  // Map into the shared derivation's input shape. A ReportDoseInput becomes an AttributableDose
+  // with `deleted_at: null` — index.ts pulls only non-deleted doses (soft-deleted parents are
+  // dropped in mapDoseRows) and the dedup drop is filtered above, so every dose here is live.
+  const regimens: MedicationHistoryRegimen[] = input.medications.map((m) => ({
+    id: m.id,
+    medication_item_id: m.medicationItemId,
+    drug_name: m.drugName,
+    dose_amount: m.doseAmount,
+    route: m.route,
+    doses_per_day: m.dosesPerDay,
+    schedule_notes: m.scheduleNotes,
+    started_at: m.startedAt,
+    target_duration_days: m.targetDurationDays,
+    target_duration_doses: m.targetDurationDoses ?? null,
+    status: m.status,
+    ended_at: m.endedAt,
+  }))
+  const doses: AttributableDose[] = liveDoses.map((d) => ({
+    medication_id: d.medicationId,
+    medication_item_id: d.medicationItemId,
+    adherence: d.adherence,
+    deleted_at: null,
+    occurred_at: d.occurredAt,
+  }))
+
+  const courses = deriveMedicationCourses({ regimens, doses, timeZone: tz ?? undefined })
+  if (courses.length === 0) return null
+
+  const itemById = new Map((input.medicationItems ?? []).map((i) => [i.id, i]))
+  const regimenById = new Map(input.medications.map((m) => [m.id, m]))
+
+  const entries: MedicationHistoryEntry[] = courses.map((c) => {
+    // H1 — the ending fields are read SOLELY from the derivation's `ended` register (a completed/
+    // stopped owner action). Everything else leaves them false/null; a last-dose date can never
+    // become an ending here or downstream, because the renderer has no ending field to read.
+    const ended = c.end.kind === 'ended'
+    const endStatus = c.end.kind === 'ended' ? c.end.status : null
+    const endedDay = c.end.kind === 'ended' ? c.end.endedAt : null
+    // A regimen names itself (drug_name is NOT NULL); a dose-derived course resolves generic-first
+    // from the catalog. The report keeps its OWN clinical (generic-first) name, never the app's
+    // brand-first one (pastMedications.ts §name-resolution); unresolvable ⇒ "Unspecified medication".
+    const drugName =
+      c.drugName ??
+      medicationItemName(c.medicationItemId ? itemById.get(c.medicationItemId) ?? null : null)
+    const reg = c.regimenId ? regimenById.get(c.regimenId) ?? null : null
+    return {
+      key: c.key,
+      source: c.source,
+      drugName,
+      isActive: c.isActive,
+      ended,
+      endStatus,
+      endedDay,
+      startedDay: c.startedAt,
+      firstDoseDay: c.firstDoseDay,
+      lastDoseDay: c.lastDoseDay,
+      // One distinct logged dose day → a bare "Feb 11" cell (the single-ad-hoc-dose case).
+      singleDay: c.firstDoseDay !== null && c.firstDoseDay === c.lastDoseDay,
+      targetDurationDays: c.targetDurationDays,
+      // The dose-denominated total (B-618) is on the regimen, not the course; days- XOR dose-
+      // denominated by the migration-049 CHECK, so the renderer picks the phrasing off whichever is set.
+      targetDurationDoses: reg?.targetDurationDoses ?? null,
+      dosesPerDay: c.dosesPerDay,
+      scheduleNotes: c.scheduleNotes,
+      runDays: c.runDays,
+      plannedDoses: c.plannedDoses,
+      dosesLogged: c.dosesLogged,
+    }
+  })
+
+  // The "since" floor — the earliest dated point anywhere in the table (a regimen start or a first
+  // dose). A lexical 'YYYY-MM-DD' min IS the chronological min, with no instant parse (B-441-safe).
+  let sinceDay: string | null = null
+  for (const e of entries) {
+    for (const cand of [e.startedDay, e.firstDoseDay]) {
+      if (cand !== null && (sinceDay === null || cand < sinceDay)) sinceDay = cand
+    }
+  }
+
+  return { entries, sinceDay }
 }
 
 /**
