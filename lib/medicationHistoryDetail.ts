@@ -20,6 +20,7 @@
 //       delivered). This module never re-counts a tally — it reads the field, so the
 //       screen can never contradict the profile card / strip / report for the same course.
 import { formatUtcDayShort } from './utils';
+import { totalTally } from './medications';
 import type { MedicationCourse, MedicationCourseEnd } from './medicationHistory';
 
 export interface CourseFactRow {
@@ -97,14 +98,6 @@ function dosesLoggedValue(course: MedicationCourse): string {
     : `${course.dosesLogged}`;
 }
 
-// Every logged administration of this course, whatever its adherence — the count of dose
-// EVENTS a reader would find in History (distinct from `dosesLogged`, which is delivered =
-// given + partial). Drives `hasEvidence`, so a fully-refused course still routes to its
-// events.
-function totalDoseEvents(course: MedicationCourse): number {
-  const t = course.tally;
-  return t.given + t.partial + t.missed + t.refused + t.unrated;
-}
 
 // H1's ONLY ending copy — reached solely from `end.kind === 'ended'`. The register (an
 // owner marked it complete vs. stopped it) is the point; the short date echoes the
@@ -119,11 +112,10 @@ function endedValue(end: Extract<MedicationCourseEnd, { kind: 'ended' }>): strin
 // presets; "N× a day" beyond them.
 function formatSchedule(dosesPerDay: number | null, scheduleNotes: string | null): string | null {
   const notes = scheduleNotes?.trim() || null;
-  let freq: string | null;
+  let freq: string;
   if (dosesPerDay == null) freq = 'As needed';
   else if (dosesPerDay === 1) freq = 'Once a day';
   else if (dosesPerDay === 2) freq = 'Twice a day';
-  else if (Number.isInteger(dosesPerDay)) freq = `${dosesPerDay}× a day`;
   else freq = `${dosesPerDay}× a day`;
   if (freq && notes) return `${freq}, ${notes}`;
   return freq ?? notes;
@@ -179,6 +171,9 @@ export function buildPastCourseFacts(course: MedicationCourse): PastCoursePresen
 
   return {
     facts,
-    hasEvidence: totalDoseEvents(course) > 0,
+    // The doorway to History. Gated on TOTAL logged administrations (the shared
+    // `totalTally`, every adherence state), not delivered doses — so a fully-refused
+    // course keeps its route to those refusal events.
+    hasEvidence: totalTally(course.tally) > 0,
   };
 }
