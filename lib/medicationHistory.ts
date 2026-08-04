@@ -236,6 +236,16 @@ export function deriveMedicationCourses(input: MedicationHistoryInput): Medicati
     const isActive = r.status === 'active';
     const end = endRegister(r.status, r.ended_at, lastIso);
 
+    // An ended course's DOSE EVIDENCE (count, first/last dose) can legitimately post-date
+    // `ended_at`: a dose carrying an explicit `medication_id` link is authoritative and
+    // attributed regardless of the regimen window (B-153), so an owner who kept logging
+    // after marking a course complete adds real doses past its end date. `dosesLogged`
+    // and `lastDoseDay` stay honest to that; `runDays` does not (it spans the DATE columns
+    // only). A consumer that renders BOTH a date range and a count for an ended course —
+    // the PR 5 lifetime table — must keep the two coherent (carried into that PR's
+    // mandatory vet-report-cold-read). It is not resolved here: overriding the
+    // authoritative-link semantics is a base-module change with its own regression surface.
+
     // A length exists only once the owner ended the course; an ongoing/active regimen
     // has no honest "N days" (that would be a countdown, which §7/N2 forbids). Both
     // dates are DATE columns → zone-independent.
