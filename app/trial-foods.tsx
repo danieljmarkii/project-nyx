@@ -159,15 +159,15 @@ export default function TrialFoodsScreen() {
           // The vet-sanctioned extra is often something the library has never
           // seen, so capture stays one tap away.
           //
-          // KNOWN COST, stated rather than discovered: `food-capture` ends in
-          // `router.dismissAll()`, which unwinds this screen too — the owner lands
-          // back on the tab with the food captured but not yet on the list, and
-          // has to re-enter from the trial card to add it. It is a papercut and
-          // NOT B-535's class of bug: nothing was promised and no half-written
-          // state is lost, because the confirm sheet has not opened yet. Making
-          // the capture flow return-aware is a change to a shared route, so it is
-          // filed (B-625) rather than smuggled into this PR.
-          onAddNew={() => router.push('/food-capture')}
+          // `returnTo=back` (B-625) makes the capture flow return HERE on save instead of
+          // unwinding to Home: capture was PUSHED as a step of this screen's flow, not
+          // presented over a tab, so the owner lands back on this picker (FoodPicker reloads on
+          // focus, so the new food is in the library) rather than on Home having to re-enter the
+          // trial card. The captured food is saved to the LIBRARY, not the allowed set — the
+          // owner still finds it here (search is pinned) and taps it to add. Surfacing the
+          // just-captured food (pin/scroll-to, or carrying it straight to the confirm sheet) is
+          // a follow-up (B-692), not part of the exit fix.
+          onAddNew={() => router.push('/food-capture?returnTo=back')}
         />
       </SafeAreaView>
     );
