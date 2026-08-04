@@ -49,7 +49,7 @@ export function TodayZone() {
   return (
     <Card>
       <View style={styles.headerRow}>
-        <SectionLabel label="Today" />
+        <SectionLabel label="Today" header />
         <TouchableOpacity
           onPress={openHistoryToday}
           hitSlop={8}

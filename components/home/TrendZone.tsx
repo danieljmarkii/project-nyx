@@ -18,7 +18,7 @@ export function TrendZone() {
     <Card>
       {/* §8 doorway — the Trend zone opens the full Patterns dashboard. */}
       <View style={styles.headerRow}>
-        <SectionLabel label="Trend" />
+        <SectionLabel label="Trend" header />
         <Pressable
           onPress={() => router.push('/insights')}
           hitSlop={8}

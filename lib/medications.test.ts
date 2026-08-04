@@ -952,12 +952,22 @@ describe('dosesTowardTarget — therapy delivered = given + partial (§4, D1)', 
 describe('doseCourseProgress — "Dose {n} of {target}" line + bar (§6, D7)', () => {
   const NO_COMPLETION = /complete|done|finish|stop|✓|✔|check|over\b|ended/i;
 
-  it('zero-state: "Dose 0 of 28" with an empty bar before the first administration', () => {
+  it('fresh zero-state: a designed forward-looking line, empty bar, fresh=true (B-643)', () => {
+    // Nothing logged at all → the Principle-5 empty state, not a countdown label.
+    // The render site keys the compliance-line de-dupe on `fresh`.
     const p = doseCourseProgress(tally(), 28);
-    expect(p.line).toBe('Dose 0 of 28');
+    expect(p.line).toBe('28 doses ahead — log the first when you give it');
     expect(p.count).toBe(0);
     expect(p.barFraction).toBe(0);
     expect(p.pastTarget).toBe(false);
+    expect(p.fresh).toBe(true);
+    expect(p.atTarget).toBe(false);
+  });
+
+  it('fresh zero-state inflects for a single-dose course (B-643)', () => {
+    const p = doseCourseProgress(tally(), 1);
+    expect(p.line).toBe('1 dose ahead — log it when you give it');
+    expect(p.fresh).toBe(true);
   });
 
   it('§8.1 in-range: a given dose reads "Dose 1 of 28"; the bar fraction equals n/target', () => {
@@ -1014,9 +1024,21 @@ describe('doseCourseProgress — "Dose {n} of {target}" line + bar (§6, D7)', (
   it('refused / missed / unrated never move the count line off "Dose 0 of N" (§8.2)', () => {
     // A refused tail can never let a course read as complete — the count is 0, the bar
     // is empty, and the refusals surface through regimenFlagLine, not this line.
+    // NOT fresh (B-643): doses WERE logged, so the plain counter stays — a warm
+    // "log the first when you give it" over a refusal record is one of the four
+    // things the med surfaces must never say (med-strip spec §6).
     const p = doseCourseProgress(tally({ refused: 3, missed: 2, unrated: 1 }), 14);
     expect(p.line).toBe('Dose 0 of 14');
     expect(p.barFraction).toBe(0);
+    expect(p.fresh).toBe(false);
+  });
+
+  it('atTarget flags at and past the target, never before (B-642)', () => {
+    // The render site pairs a full bar with the vet's-call note off this flag.
+    expect(doseCourseProgress(tally({ given: 27 }), 28).atTarget).toBe(false);
+    expect(doseCourseProgress(tally({ given: 28 }), 28).atTarget).toBe(true);
+    expect(doseCourseProgress(tally({ given: 30 }), 28).atTarget).toBe(true);
+    expect(doseCourseProgress(tally({ given: 27, partial: 1 }), 28).atTarget).toBe(true);
   });
 
   it('property: barFraction is always in [0, 1] and the line never emits a completion word', () => {

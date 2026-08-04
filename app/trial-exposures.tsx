@@ -96,7 +96,7 @@ export default function TrialExposuresScreen() {
           {model.groups.map((group, i) => (
             <View key={group.title ?? `group-${i}`} style={styles.group}>
               {group.title !== null && (
-                <SectionLabel label={group.title} style={styles.groupLabel} />
+                <SectionLabel label={group.title} header style={styles.groupLabel} />
               )}
               {group.rows.map((row) => (
                 <TouchableOpacity

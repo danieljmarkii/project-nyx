@@ -296,6 +296,38 @@ describe('trialStripFoodsLine (B-627)', () => {
   it('falls back to the first food when there is no primary diet', () => {
     expect(trialStripFoodsLine([treat, chew])).toBe('Real Meat Kangaroo Jerky, and 1 more');
   });
+
+  // ── B-656 — a blank food_label never leads the line ────────────────────────
+  // `food_label` is denormalised from a library row; a blank one used to render
+  // "​, and 2 more" (leading comma) or an empty line.
+  describe('blank-label guard (B-656)', () => {
+    const blankPrimary = food({ label: '', role: 'primary_diet', foodItemId: 'food-blank' });
+    const spacesPrimary = food({ label: '   ', role: 'primary_diet', foodItemId: 'food-spaces' });
+
+    it('skips a blank-label primary diet and leads with the first labelled food', () => {
+      expect(trialStripFoodsLine([blankPrimary, treat, chew]))
+        .toBe('Real Meat Kangaroo Jerky, and 2 more');
+    });
+
+    it('treats a whitespace-only label as blank', () => {
+      expect(trialStripFoodsLine([spacesPrimary, treat]))
+        .toBe('Real Meat Kangaroo Jerky, and 1 more');
+    });
+
+    it('still counts the blank-label food in "and N more" — it is on the list', () => {
+      expect(trialStripFoodsLine([blankPrimary, treat]))
+        .toBe('Real Meat Kangaroo Jerky, and 1 more');
+    });
+
+    it('degrades to the count register when every label is blank', () => {
+      expect(trialStripFoodsLine([blankPrimary])).toBe('1 food on the trial list');
+      expect(trialStripFoodsLine([blankPrimary, spacesPrimary])).toBe('2 foods on the trial list');
+    });
+
+    it('still returns the empty string for an empty list (caller guards it)', () => {
+      expect(trialStripFoodsLine([])).toBe('');
+    });
+  });
 });
 
 // ════════════════════════════════════════════════════════════════════════════

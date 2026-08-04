@@ -907,6 +907,18 @@ export default function ProfileScreen() {
                       <View style={styles.progressTrack}>
                         <View style={[styles.progressBar, { width: `${Math.round(reg.doseCourse.barFraction * 100)}%` }]} />
                       </View>
+                      {/* B-642: at/past target the bar is FULL, and a full progress
+                          bar is itself a strong "you're done" signal — exactly the
+                          early-stop read D7 exists to prevent. D7 bans stop language;
+                          it does not ban this: a two-sided line that hands the ending
+                          to the vet without asserting done OR keep-dosing (the bottle
+                          may genuinely be empty). Dr. Chen-reviewed wording — see the
+                          session record. */}
+                      {reg.doseCourse.atTarget && (
+                        <Text style={styles.medCourseNote}>
+                          When the course ends is your vet's call.
+                        </Text>
+                      )}
                     </View>
                   ) : (
                     <>
@@ -933,7 +945,13 @@ export default function ProfileScreen() {
                       )}
                     </>
                   )}
-                  <Text style={styles.medComplianceLine}>{reg.complianceLine}</Text>
+                  {/* B-643: on a FRESH dose course (nothing logged at all) the
+                      zero-state line above already says it — "No doses logged yet"
+                      under it is the same fact twice. Any logged dose (including a
+                      refused one, where count stays 0) brings this line back. */}
+                  {!(reg.doseCourse && reg.doseCourse.fresh) && (
+                    <Text style={styles.medComplianceLine}>{reg.complianceLine}</Text>
+                  )}
                   {reg.flagLine && (
                     <View style={styles.medFlag}>
                       <Text style={styles.medFlagText}>{reg.flagLine}</Text>
@@ -1404,6 +1422,12 @@ const styles = StyleSheet.create({
   // matters: a dose either was or wasn't given, so a ratio is honest here — which
   // is exactly why B-417 D2 splits the DIET metric that isn't.
   medComplianceLine: {
+    fontSize: theme.textSM,
+    color: theme.colorTextSecondary,
+  },
+  // B-642's vet's-call note under a full course bar. Same quiet register as the
+  // compliance line — it is context, not a flag (the flag treatment is medFlag).
+  medCourseNote: {
     fontSize: theme.textSM,
     color: theme.colorTextSecondary,
   },

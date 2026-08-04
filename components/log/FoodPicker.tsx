@@ -361,7 +361,7 @@ export function FoodPicker({
             matches, and search is the lane for "I know what I'm looking for". */}
         {!searching && trialFoods.length > 0 && (
           <View style={styles.zone}>
-            <SectionLabel label="On the trial list" />
+            <SectionLabel label="On the trial list" header />
             <TileGrid
               foods={trialFoods}
               compact
@@ -374,7 +374,7 @@ export function FoodPicker({
 
         {!searching && rotation.length > 0 && (
           <View style={styles.zone}>
-            <SectionLabel label={rotationLabel} />
+            <SectionLabel label={rotationLabel} header />
             {/* B-346 — the rotation shelf is a WRAPPED 2-up grid, not a horizontal
                 scroll: every food in the window is visible at once (no hidden
                 off-screen overflow), which kills the picker's last silent h-scroll
@@ -447,7 +447,7 @@ export function FoodPicker({
             set. */}
         {!searching && !selecting && (
           <View style={styles.zone}>
-            <SectionLabel label="Always available" />
+            <SectionLabel label="Always available" header />
             {arrangements.length === 0 ? (
               <Text style={styles.alwaysEmpty}>
                 Nothing always-out yet. If {multiPet

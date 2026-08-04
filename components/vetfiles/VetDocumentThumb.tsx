@@ -81,7 +81,7 @@ const styles = StyleSheet.create({
     gap: 3,
   },
   pdfBadge: {
-    fontSize: 8,
+    fontSize: theme.textMicro,
     fontWeight: theme.weightSemibold,
     letterSpacing: theme.trackingWide,
     color: theme.colorTextSecondary,

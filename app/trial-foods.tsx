@@ -201,7 +201,7 @@ export default function TrialFoodsScreen() {
             if (group.rows.length === 0 && group.emptyState === null) return null;
             return (
               <View key={group.title} style={styles.group}>
-                <SectionLabel label={group.title} style={styles.groupLabel} />
+                <SectionLabel label={group.title} header style={styles.groupLabel} />
                 {group.rows.length === 0 ? (
                   <Text testID="trial-foods-empty-extras" style={styles.emptyState}>
                     {group.emptyState}
