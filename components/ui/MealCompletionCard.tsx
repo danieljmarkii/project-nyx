@@ -322,11 +322,20 @@ export function MealCompletionCard() {
     setAddSaving(true);
     setAddError(null);
     try {
-      // addTrialFood writes allowed_from = TODAY, so the feeding that fired this
-      // heads-up KEEPS its off-list reading — adding never launders the exposure
-      // (the sheet's "Earlier feedings" row is the visible half of that promise).
-      // The role is inferred from the food's type; a mid-trial add is only ever a
-      // permitted extra, never a diet-defining row.
+      // addTrialFood writes allowed_from = TODAY, which permits the food from today
+      // FORWARD (that function's own design). So EARLIER-DAY feedings keep their
+      // off-list reading — the sheet's "Earlier feedings" row, and the guard against
+      // adding contraband on day 13 to launder twelve prior exposures.
+      //
+      // ⚠️ THE SAME-DAY BOUNDARY IS UNRESOLVED (B-456), and B-693 makes it the
+      // PRIMARY path: membership is day-granular (`membershipOn`, dayIndex >= from),
+      // so the feeding that fired THIS heads-up — logged today, the same local day as
+      // the add — re-classifies as permitted at the next recompute and drops out of
+      // the off-diet count. Whether a vet-okayed add should un-count today's own
+      // triggering feeding, or `allowed_from` should be tomorrow so it stays off-list,
+      // is a clinical/product call (Dr. Chen) on the SHARED write, not a surface fix —
+      // routed, not silently decided. The role is inferred from the food's type; a
+      // mid-trial add is only ever a permitted extra, never a diet-defining row.
       await addTrialFood({
         trialId: addTarget.trial.id,
         petId: addTarget.petId,
