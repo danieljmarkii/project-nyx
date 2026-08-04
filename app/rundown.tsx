@@ -11,6 +11,7 @@ import {
   buildRundown,
   rundownToPlainText,
   rundownDateLine,
+  pastMedsSectionLabel,
   type Rundown,
   type RundownTap,
 } from '../lib/rundown';
@@ -157,6 +158,27 @@ export default function RundownScreen() {
                 />
               ))}
             </Card>
+
+            {/* Past medications — its own labelled card (B-140 PR 4). A course a vet
+                asks about ("has she been on steroids?") that ended is invisible in the
+                Current-meds block above; this is where the past lives, in read-aloud rows.
+                Rendered only when there is past history — an absent history is silence,
+                not a finding, so there is no empty state here. */}
+            {rundown.pastMedications.length > 0 && (
+              <>
+                <Text style={styles.sectionLabel}>{pastMedsSectionLabel()}</Text>
+                <Card noPadding style={styles.tileCard}>
+                  {rundown.pastMedications.map((tile, i) => (
+                    <RundownTileRow
+                      key={`${tile.key}-${i}`}
+                      tile={tile}
+                      isLast={i === rundown.pastMedications.length - 1}
+                      onPress={tile.tap ? () => navigateTo(tile.tap as RundownTap) : undefined}
+                    />
+                  ))}
+                </Card>
+              </>
+            )}
           </ScrollView>
 
           <View style={[styles.bar, { paddingBottom: insets.bottom + theme.space2 }]}>
@@ -223,6 +245,14 @@ const styles = StyleSheet.create({
     color: theme.colorTextTertiary,
     paddingHorizontal: theme.space1,
     marginTop: -theme.space1,
+  },
+  sectionLabel: {
+    fontFamily: theme.fontBodySemibold,
+    fontSize: theme.textSM,
+    fontWeight: theme.weightSemibold,
+    color: theme.colorTextSecondary,
+    paddingHorizontal: theme.space1,
+    marginTop: theme.space1,
   },
   tileCard: {
     overflow: 'hidden',
