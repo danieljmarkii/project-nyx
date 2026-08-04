@@ -72,7 +72,7 @@ describe('coerceDatePreset (B-378 — the ?window= deep-link)', () => {
   it('degrades anything else — absent, unknown, or a foreign window — to all time (null)', () => {
     expect(coerceDatePreset(undefined)).toBeNull();
     expect(coerceDatePreset('')).toBeNull();
-    expect(coerceDatePreset('14d')).toBeNull();  // not a History preset; the Ask side widens it first
+    expect(coerceDatePreset('14d')).toBeNull();  // not a History preset — Ask keeps this window on Patterns rather than linking here
     expect(coerceDatePreset('all')).toBeNull();
     expect(coerceDatePreset('garbage')).toBeNull();
   });
