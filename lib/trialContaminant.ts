@@ -348,6 +348,28 @@ export function foodContaminantFlag(
  * `primary_diet` row present AND resolved out of the food cache — so the two can
  * never disagree. An active trial always has at least one primary diet, so a zero
  * primary count is itself the unhydrated signal, never an empty-but-loaded set.
+ *
+ * WHAT THIS GUARDS, AND WHAT IT DOES NOT. This closes the HYDRATION route to the
+ * C2 inversion — the whole primary diet not yet loaded. It does NOT close two
+ * other over-fire routes, because they are `matchAllowed` id/exact-key
+ * limitations rather than hydration ones, and they are the SAME over-fire the
+ * rung-2 contents flag already carries (with a stronger, contents claim), not
+ * something B-693 invents:
+ *   • A re-photographed bag of the PRESCRIBED DIET whose freshly-extracted
+ *     brand+product text diverges from the stored allowed-set key (AI-extraction
+ *     variance, or a manual "Duck" vs "Duck Formula"): the §5.4 exact-key guard
+ *     misses, so it falls to rung 3 and membership fires on the trial diet. The
+ *     add-to-list escape hatch self-heals it (one tap adds the new capture), the
+ *     ledger bounds it to once, and it is over-fire not reassurance — but it is a
+ *     real gap. Root cause tracked as B-694 (a shared dedup fix, cross-cutting and
+ *     Deno-shared, deliberately out of this lib-only PR).
+ *   • A vet-PERMITTED food added mid-trial on another device, logged here before
+ *     its `diet_trial_foods` row has synced: the primary is resolved so this
+ *     returns true, but the missing permitted row cannot be detected (we do not
+ *     know how many permitted rows to expect). Transient (TTL + sync), over-fire,
+ *     and identical to the contents flag's own cross-device behaviour.
+ * Both are toward over-firing, never toward the reassurance direction (a genuine
+ * off-list food is never silenced), which is the direction that endangers a pet.
  */
 export function allowedSetHydrated(ctx: TrialProteinContext): boolean {
   return ctx.primaryCount > 0 && ctx.primaryResolved === ctx.primaryCount;
@@ -1180,8 +1202,14 @@ export function evaluateMealTrialFlag(args: {
  * not on the trial's allowed list. Same spine, same `isTrialRunning` gate, same
  * SHARED ledger as the contents flag — `classifyFeeding` returns one verdict, so
  * exactly one of the two evaluators can return non-null for a given feeding, and
- * a repeat of the same food stays quiet under either. PR 2 renders the amber
- * panel and spends the budget on render (`noteTrialFlagShown`).
+ * a repeat of the same food stays quiet under either.
+ *
+ * PR 2 MUST SPEND THE BUDGET ONLY AFTER THE FLAG IS ON SCREEN, mirroring the
+ * contents caller's order in `app/log.tsx` (`applyTrialFlag`: `patchTrialFlag`
+ * returns true → THEN `noteTrialFlagShown`). Recording before the card is shown
+ * re-opens the "a suppressed heads-up consumed the budget for a heads-up that was
+ * never given" defect (rule 3 in the header) at the call site — the read/write
+ * split here only holds if the write happens at render time.
  */
 export function evaluateMealMembershipFlag(args: {
   petId: string;

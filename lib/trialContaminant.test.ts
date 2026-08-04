@@ -325,6 +325,22 @@ describe('foodMembershipFlag — shape ③ (a food that is not on the allowed li
     // the prescribed food); with it, rung 1 matches and it stays silent.
     expect(foodMembershipFlag(ctx(), 'a-fresh-uuid', ['duck'], TRIAL_FOOD.foodKey)).toBeNull();
   });
+
+  it('KNOWN over-fire (B-694): a re-photo of the trial diet with DIVERGENT text fires membership', () => {
+    // Adversarial pass P3. The §5.4 key guard silences a re-photo only when the new
+    // capture's key EQUALS the stored diet's. Two captures of one bag can extract
+    // different product text ("Duck" vs "Duck Formula"), so the keys diverge, rung 1
+    // misses on both id and key, and membership fires on the PRESCRIBED diet — the
+    // C2 alarm-fatigue direction. It is OVER-FIRE, never reassurance (a genuine
+    // off-list food is never silenced), bounded to once by the ledger, and
+    // self-healed by the add-to-list escape hatch; the shared root-cause dedup fix
+    // is B-694 (cross-cutting, out of this lib-only PR). Pinned so the behaviour is
+    // a known quantity, not a silent surprise — and so B-694 has a red test to flip.
+    expect(foodMembershipFlag(ctx(), 'trial-food-rephoto', ['duck'], 'zignature-duck')?.kind)
+      .toBe('off_trial_list');
+    // Contrast: the SAME re-photo with a matching key is correctly silent (rung 1).
+    expect(foodMembershipFlag(ctx(), 'trial-food-rephoto', ['duck'], TRIAL_FOOD.foodKey)).toBeNull();
+  });
 });
 
 describe('membershipFlagCopy — list language only, never a contents claim', () => {
