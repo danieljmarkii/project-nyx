@@ -156,6 +156,18 @@
   .quiet-line { font-size: 13px; color: var(--card-faint); padding-top: 2px; }
   .quiet-line.add { color: var(--card-subtle); }
 
+  /* Round 2 — the two warning intensities, as inset panels on the dark card. */
+  .flag-panel { border-radius: 12px; padding: 10px 12px; display: flex; flex-direction: column; gap: 4px; }
+  .flag-panel .quiet-line.add { padding-top: 4px; }
+  .flag-panel.attention { background: rgba(251,191,36,0.12); border-left: 3px solid #FBBF24; }
+  .flag-panel.attention .flag-eyebrow { color: #FBBF24; }
+  .flag-panel.danger { background: rgba(244,63,94,0.16); border-left: 3px solid #FB7185; }
+  .flag-panel.danger .flag-eyebrow { color: #FB7185; }
+  .flag-eyebrow {
+    font-family: var(--mono); font-size: 10px; letter-spacing: 0.12em;
+    text-transform: uppercase; font-weight: 600;
+  }
+
   .silent-callout {
     align-self: center; margin-top: 4px;
     font-family: var(--mono); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase;
@@ -213,13 +225,14 @@
 
 <div class="wrap">
   <header class="mast">
-    <p class="eyebrow"><span>Culprit · diet-trial track</span><span>B-686 · mock round 1</span><span>2026-08-04</span></p>
+    <p class="eyebrow"><span>Culprit · diet-trial track</span><span>B-686 · mock round 2</span><span>2026-08-04</span></p>
     <h1>The log-time trial-list heads-up</h1>
-    <p class="standfirst">Biscuit is on a duck trial. Today, logging a food that isn't on her trial list says
-    <strong>nothing</strong> — the feeding is counted in the trial record, but the owner is never told at the one
-    moment they could act. This round renders the missing heads-up in place, next to what already ships, so the
-    open decisions can be ruled by looking. Every string on the dark cards is either shipped verbatim or the
-    round-1 proposal; nothing here blocks, delays, or gates the log.</p>
+    <p class="standfirst">Round 2 — three PM rulings are in and this page supersedes round 1's A/B comparison:
+    <strong>the warning exists</strong> ("we have a duty to show that an off-trial food has been logged"),
+    <strong>Variant B ships</strong> (the quiet add line stays), and it renders <strong>only while a trial is
+    genuinely running</strong>. What's live now is the last visual call: the PM asked for a more danger-styled
+    warning, and §2 renders that against the team's middle "attention" treatment so the intensity can be ruled by
+    looking. Nothing here blocks, delays, or gates the log.</p>
   </header>
 
   <!-- ════════════════════ Section 1 — today ════════════════════ -->
@@ -286,18 +299,19 @@
   </div>
 
   <!-- ════════════════════ Section 2 — the proposal ════════════════════ -->
-  <p class="kicker">§2 · Round-1 proposal</p>
-  <h2>The membership heads-up, two registers</h2>
-  <p class="lede">Same feeding as frame 2, with the B-686 heads-up in place. <strong>Variant B</strong> carries the
-  PM-ratified escape hatch — a quiet add line in the same voice as the shipped med line, opening the existing
-  confirm sheet. <strong>Variant A</strong> is prose-only: the same fact, no new affordance, pointing at the food's
-  own page (where the add action already ships). The difference between them is the live Designer flag: the card's
-  standing warning says a fourth affordance should stop and reconsider — variant B is that fourth affordance;
-  variant A is not.</p>
+  <p class="kicker">§2 · Ruled: Variant B · live: how loud</p>
+  <h2>The warning, at two intensities</h2>
+  <p class="lede">Variant B is ruled — heads-up plus the quiet add line. What's live is the visual register. The PM
+  asked for a danger-style warning; the team's counterweight is real and recorded here rather than argued away:
+  <strong>this would be Culprit's first danger-styled surface</strong> (even the shipped chicken flag and the
+  detail-screen safety notes are calm teal), the record only knows the food is <em>absent from a list</em> — often
+  because the vet okayed it and it was never entered — and red beside an "add it" action reads as an accusation the
+  sheet then walks back. The middle treatment keeps the PM's "duty to show" — tinted, barred, unmissable, clearly a
+  warning — without asserting harm the record can't back. <strong>Rule it by how the frames read.</strong></p>
 
   <div class="frames">
     <div class="frame">
-      <p class="frame-tag"><b>Variant B — lead</b> · heads-up + add line</p>
+      <p class="frame-tag"><b>B — attention</b> · team recommendation</p>
       <div class="screen">
         <div class="ghost"><div class="ghost-title">Log</div><div class="ghost-row"></div><div class="ghost-row"></div></div>
         <div class="card">
@@ -314,20 +328,24 @@
             <div class="chips"><span class="chip">Refused</span><span class="chip">Picked</span><span class="chip">Some</span><span class="chip">Most</span><span class="chip">All</span></div>
           </div>
           <div class="card-sect">
-            <div class="flag-headline">This one isn’t on Biscuit’s trial list.</div>
-            <div class="flag-detail">The meal’s saved, and it counts in the trial record. If your vet okayed this food, adding it to the list keeps the record straight.</div>
-            <div class="quiet-line add">+ Add to the trial list</div>
+            <div class="flag-panel attention">
+              <div class="flag-eyebrow">Off the trial list</div>
+              <div class="flag-headline">This one isn’t on Biscuit’s trial list.</div>
+              <div class="flag-detail">The meal’s saved, and it counts in the trial record. If your vet okayed this food, adding it to the list keeps the record straight.</div>
+              <div class="quiet-line add">+ Add to the trial list</div>
+            </div>
           </div>
           <div class="card-sect"><div class="quiet-line">+ Add a med given with this</div></div>
         </div>
       </div>
-      <p class="frame-note">The add line follows the med line's pattern — quiet, optional, read past by the majority.
-      Tapping it opens the shipped confirm sheet (frame 4); it never writes on the tap itself. This frame shows the
-      full realistic stack so the height cost is visible, not hidden.</p>
+      <p class="frame-note">Amber tint + bar (the moment-glow gold already on this card's check badge). Clearly a
+      warning — it breaks the card's calm stack and can't be read past — but its claim-strength matches the record:
+      <strong>attention, not harm</strong>. Dr. Chen: "warn" is right, "danger" asserts toxicity we haven't
+      established; Designer: red on this dark card is a klaxon over a meal that's already saved.</p>
     </div>
 
     <div class="frame">
-      <p class="frame-tag"><b>Variant A — alternative</b> · prose only</p>
+      <p class="frame-tag"><b>B — danger</b> · the PM's ask, rendered</p>
       <div class="screen">
         <div class="ghost"><div class="ghost-title">Log</div><div class="ghost-row"></div><div class="ghost-row"></div></div>
         <div class="card">
@@ -344,15 +362,20 @@
             <div class="chips"><span class="chip">Refused</span><span class="chip">Picked</span><span class="chip">Some</span><span class="chip">Most</span><span class="chip">All</span></div>
           </div>
           <div class="card-sect">
-            <div class="flag-headline">This one isn’t on Biscuit’s trial list.</div>
-            <div class="flag-detail">The meal’s saved, and it counts in the trial record. If your vet okayed this food, you can add it to the list from the food’s page.</div>
+            <div class="flag-panel danger">
+              <div class="flag-eyebrow">Off the trial list</div>
+              <div class="flag-headline">This one isn’t on Biscuit’s trial list.</div>
+              <div class="flag-detail">The meal’s saved, and it counts in the trial record. If your vet okayed this food, adding it to the list keeps the record straight.</div>
+              <div class="quiet-line add">+ Add to the trial list</div>
+            </div>
           </div>
           <div class="card-sect"><div class="quiet-line">+ Add a med given with this</div></div>
         </div>
       </div>
-      <p class="frame-note">Same fact, zero new affordances — the card stays passive prose, and the add action stays
-      where it already ships (food detail, Foods tab). Costs a navigation the owner may never make; respects the
-      card's fourth-affordance warning by construction.</p>
+      <p class="frame-note">The rose family (the app's symptom color). Unmissable — and the honest costs, named: the
+      modal off-list food is a benign or vet-permitted treat, so this fires red on innocents; a red panel whose
+      built-in reply is "add it to the list" undercuts its own alarm; and by C2's alarm-fatigue evidence, the more
+      often red is wrong, the less the owner believes it on the day it's right.</p>
     </div>
   </div>
 
@@ -419,7 +442,7 @@
   <p class="lede">Same discipline as the shipped flag: <strong>every uncertainty suppresses; nothing ever
   reassures.</strong> There is no "this food is fine" state anywhere in this feature.</p>
   <div class="tiles">
-    <div class="tile"><span class="verdict">no active trial</span><h4>No trial running</h4><p>Nothing to be off. The whole surface is inert outside a trial.</p></div>
+    <div class="tile"><span class="verdict">no running trial</span><h4>No trial genuinely running</h4><p>PM-ruled this round. And per the B-422 convention, "running" reads <em>isTrialRunning</em> (target + grace), never the raw status column — a trial stale-active since March is quiet here.</p></div>
     <div class="tile"><span class="verdict">unknown</span><h4>Trial list not loaded yet</h4><p>Fresh install, mid-sync, offline cold start — an unhydrated list must not be read as an empty one.</p></div>
     <div class="tile"><span class="verdict">out_of_window</span><h4>Feeding outside the trial dates</h4><p>A backfilled meal from before the trial started says nothing about the trial.</p></div>
     <div class="tile"><span class="verdict">off_diet_protein</span><h4>Panel read, protein conflict</h4><p>The stronger shipped flag fires instead (frame 1). Never both — one heads-up per moment.</p></div>
@@ -444,25 +467,24 @@
   and the copy says so first.</p>
 
   <div class="decision">
-    <h4>Decision 1 — does the library's "positive marking only" rule bind this surface?</h4>
-    <p>B-616 D2 ruled the <strong>library</strong> never marks a food off-diet. This card is a one-time note about a
-    <strong>feeding</strong>, not a standing mark on a food — the register the exposures screen already uses. The
-    frames above are the argument; if the rule binds log-time too, neither variant ships.</p>
+    <h4>Ruled this round (PM, 2026-08-04)</h4>
+    <p><strong>① The warning exists</strong> — "we have a duty to show that an off-trial food has been logged"; the
+    library's positive-marking-only rule governs standing marks, not the log-time event register.
+    <strong>② Variant B ships</strong> — the quiet add line stays, opening the shipped confirm sheet.
+    <strong>③ Active trial only</strong> — rendered only while a trial is genuinely running (<em>isTrialRunning</em>,
+    per the B-422 convention), which settles B-595 for this flag; the team recommends the same gate for the shipped
+    protein flag in the same PR.</p>
   </div>
   <div class="decision">
-    <h4>Decision 2 — variant A or B?</h4>
-    <p>B is the ratified escape hatch in place; A respects the card's fourth-affordance warning. The Designer flag is
-    genuine — <strong>rule it by how the frames read, not by the argument.</strong></p>
-  </div>
-  <div class="decision">
-    <h4>Decision 3 — stop firing past the trial's effective end? (B-595)</h4>
-    <p>Nothing auto-ends a trial, so "active" long outlives the target. Proposal: both log-time flags (this one and
-    the shipped protein flag) gate on the one shared "still genuinely running" definition — one fix, both flags,
-    ruled here rather than left open.</p>
+    <h4>Live — the one remaining call: how loud?</h4>
+    <p><strong>Attention (amber)</strong> or <strong>danger (rose)</strong> — §2, side by side. The team's
+    recommendation is attention; the danger frame is the PM's ask rendered faithfully with its costs named. Whichever
+    wins, the treatment breaks the card's calm stack and cannot be read past — the "duty to show" is honored in both.</p>
   </div>
 
-  <p class="foot">B-686 · mock round 1 · 2026-08-04. Frames render real tokens (constants/theme.ts) and shipped
-  strings (lib/trialContaminant.ts, lib/trialFoodsScreen.ts); the only new strings are the §5 proposals. The
-  completion card's dark ground, chip row, med line and check badge are as built. Round 2, if any, re-publishes over
-  this page at the same URL.</p>
+  <p class="foot">B-686 · mock round 2 · 2026-08-04 (supersedes round 1's A/B comparison — Variant B is ruled; round-1
+  frames showing Variant A are retired). Frames render real tokens (constants/theme.ts) and shipped strings
+  (lib/trialContaminant.ts, lib/trialFoodsScreen.ts); the only new strings are the §5 proposals. The completion
+  card's dark ground, chip row, med line and check badge are as built. Later rounds re-publish over this page at the
+  same URL.</p>
 </div>
