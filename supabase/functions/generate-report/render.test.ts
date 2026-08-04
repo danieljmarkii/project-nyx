@@ -22,6 +22,8 @@ import type {
   VomitPhenotype,
   MedicationAdherence,
   UnlinkedMedicationGroup,
+  MedicationHistoryEntry,
+  MedicationHistoryTable,
   SymptomLogEntry,
   ConfounderExposure,
   IncidentPhoto,
@@ -215,6 +217,7 @@ function baseSnapshot(overrides: Partial<ReportSnapshot> = {}): ReportSnapshot {
     },
     medications: [],
     unlinkedMedications: [],
+    medicationHistory: null,
     correlation: { established: [], hasEstablished: false, noThreshold: true, stapleProtein: null, timing: [] },
     concurrentChanges: [],
     proteinTimeline: {
@@ -3030,6 +3033,132 @@ Deno.test('B-532 — the unlogged-medication caveat also rides the EMPTY medicat
   const t = plain(renderReport(base()))
   assert.ok(/No prescription medication is recorded in this window/.test(t))
   assert.ok(/This lists only what the owner entered in Culprit/.test(t))
+})
+
+// ── §4.4 (D2) — the lifetime medication-history table render ────────────────────
+function mhEntry(over: Partial<MedicationHistoryEntry> & { drugName: string }): MedicationHistoryEntry {
+  return {
+    key: over.key ?? over.drugName,
+    source: over.source ?? 'regimen',
+    drugName: over.drugName,
+    isActive: over.isActive ?? false,
+    ended: over.ended ?? false,
+    endStatus: over.endStatus ?? null,
+    endedDay: over.endedDay ?? null,
+    startedDay: over.startedDay ?? null,
+    firstDoseDay: over.firstDoseDay ?? null,
+    lastDoseDay: over.lastDoseDay ?? null,
+    singleDay: over.singleDay ?? false,
+    targetDurationDays: over.targetDurationDays ?? null,
+    targetDurationDoses: over.targetDurationDoses ?? null,
+    dosesPerDay: over.dosesPerDay ?? null,
+    scheduleNotes: over.scheduleNotes ?? null,
+    runDays: over.runDays ?? null,
+    plannedDoses: over.plannedDoses ?? null,
+    dosesLogged: over.dosesLogged ?? 0,
+  }
+}
+function mhTable(entries: MedicationHistoryEntry[], sinceDay: string | null = null): MedicationHistoryTable {
+  return { entries, sinceDay }
+}
+
+Deno.test('§4.4 render — the table renders its title, coverage note and the H1 disclosure UP FRONT', () => {
+  const t = plain(renderReport(base({
+    medicationHistory: mhTable([
+      mhEntry({ drugName: 'Motozol', isActive: true, startedDay: '2026-07-22', targetDurationDoses: 28, dosesPerDay: 2, plannedDoses: 28, dosesLogged: 26, firstDoseDay: '2026-07-22', lastDoseDay: '2026-08-03' }),
+    ], '2026-02-11'),
+  })))
+  assert.ok(/Medication history/.test(t))
+  assert.ok(/Lifetime of the record \(since Feb 2026\)/.test(t))
+  assert.ok(/the medications logged in Culprit/.test(t))
+  // Dates are described accurately for BOTH registers (regimen span vs dose span).
+  assert.ok(/Dates are each course.s span/.test(t))
+  // The H1 disclosure, stated BEFORE the table (B-494 — a load-bearing disclosure a skimmer must apply).
+  assert.ok(/no end date is one whose end the owner never recorded/.test(t))
+  // The COMPLETENESS caveat lives ON the lifetime table (cold-read blocker #2): the lifetime
+  // overview is the surface that invites "is this everything she's ever had?", so "absence is
+  // not evidence it was not given" must sit here, not only under Appendix D.
+  assert.ok(/its absence is not evidence it was not given/.test(t))
+})
+
+Deno.test('§4.4 render — an ACTIVE dose-course: "– present", "N doses planned", a BARE count (no countdown)', () => {
+  const t = plain(renderReport(base({
+    medicationHistory: mhTable([
+      mhEntry({ drugName: 'Motozol', isActive: true, startedDay: '2026-07-22', targetDurationDoses: 28, dosesPerDay: 2, plannedDoses: 28, dosesLogged: 26, firstDoseDay: '2026-07-22', lastDoseDay: '2026-08-03' }),
+    ], '2026-07-22'),
+  })))
+  assert.ok(/Jul 22, 2026 – present/.test(t))
+  assert.ok(/28 doses planned, 2×\/day/.test(t))
+  // Active → the bare count, never "26 of 28": a mid-course "of N" reads as a countdown (B-618 D7).
+  assert.ok(!/26 of 28/.test(t))
+})
+
+Deno.test('§4.4 render — an ENDED regimen: a closed range, "ended by owner", and "of N" delivered/planned', () => {
+  const t = plain(renderReport(base({
+    medicationHistory: mhTable([
+      mhEntry({ drugName: 'Metronidazole', source: 'regimen', ended: true, endStatus: 'completed', startedDay: '2026-03-03', endedDay: '2026-03-16', targetDurationDays: 14, dosesPerDay: 2, plannedDoses: 28, dosesLogged: 26, runDays: 14, firstDoseDay: '2026-03-03', lastDoseDay: '2026-03-16' }),
+    ], '2026-03-03'),
+  })))
+  assert.ok(/Mar 3 – Mar 16, 2026/.test(t))
+  assert.ok(/14 days, 2×\/day · ended by owner/.test(t))
+  assert.ok(/26 of 28/.test(t))
+})
+
+Deno.test('§4.4 render/H1 — a dose-derived course NEVER reads as ended, and shows its dose span', () => {
+  const t = plain(renderReport(base({
+    medicationHistory: mhTable([
+      mhEntry({ drugName: 'Cetirizine HCl (Zyrtec)', source: 'doses', dosesLogged: 3, firstDoseDay: '2026-06-02', lastDoseDay: '2026-06-09' }),
+      mhEntry({ drugName: 'Maropitant (Cerenia)', source: 'doses', singleDay: true, dosesLogged: 1, firstDoseDay: '2026-02-11', lastDoseDay: '2026-02-11' }),
+    ], '2026-02-11'),
+  })))
+  // The orphan tell — never "ended by owner".
+  assert.ok(/No regimen recorded/.test(t))
+  assert.ok(/Single logged dose/.test(t))
+  assert.ok(!/ended by owner/.test(t))
+  // A dose span for the multi-dose orphan; a bare date for the single dose.
+  assert.ok(/Jun 2 – Jun 9, 2026/.test(t))
+  assert.ok(/Feb 11, 2026/.test(t))
+})
+
+Deno.test('§4.4 render — nothing renders when there is no medication history (a null section, not an empty table)', () => {
+  const t = plain(renderReport(base({ medicationHistory: null })))
+  assert.ok(!/Medication history/.test(t))
+})
+
+Deno.test('§4.4 render — an over-delivered ended course drops the "of N" frame (never "30 of 28")', () => {
+  const t = plain(renderReport(base({
+    medicationHistory: mhTable([
+      mhEntry({ drugName: 'Clavamox', source: 'regimen', ended: true, endStatus: 'completed', startedDay: '2026-07-01', endedDay: '2026-07-05', targetDurationDays: 5, dosesPerDay: 1, plannedDoses: 5, dosesLogged: 6, runDays: 5, firstDoseDay: '2026-07-01', lastDoseDay: '2026-07-08' }),
+    ], '2026-07-01'),
+  })))
+  assert.ok(/Clavamox/.test(t))
+  assert.ok(!/6 of 5/.test(t)) // the frame is dropped; the bare honest count stays
+})
+
+Deno.test('§4.4 render/H1 — an owner-ended course with NO recorded end date never fabricates one (adversarial)', () => {
+  // ended_at is nullable and the derivation models { ended, endedAt: null }. The Dates cell must NOT
+  // synthesize a closed range ending at the stray last-dose day — that is a fabricated recorded end.
+  const t = plain(renderReport(base({
+    medicationHistory: mhTable([
+      mhEntry({ drugName: 'Metronidazole', source: 'regimen', ended: true, endStatus: 'completed', endedDay: null, startedDay: '2026-03-03', targetDurationDays: 14, dosesPerDay: 2, plannedDoses: 28, dosesLogged: 2, firstDoseDay: '2026-03-03', lastDoseDay: '2026-06-09' }),
+    ], '2026-03-03'),
+  })))
+  assert.ok(/started Mar 3, 2026/.test(t)) // the start, stated plainly
+  assert.ok(/ended by owner/.test(t)) // the ending is still disclosed — in the Course cell
+  assert.ok(!/Mar 3 – Jun 9, 2026/.test(t)) // NEVER the fabricated closed range the adversarial pass caught
+})
+
+Deno.test('§4.4 render/H1 — a regimen neither active nor owner-ended shows only its start, never a finished-looking range (adversarial)', () => {
+  // A paused / unknown-status regimen (end.kind === "none", isActive false) with logged doses. Its
+  // Course cell shows a real regimen spec, so a closed "start – lastDose" range would read as finished.
+  const t = plain(renderReport(base({
+    medicationHistory: mhTable([
+      mhEntry({ drugName: 'Gabapentin', source: 'regimen', isActive: false, ended: false, startedDay: '2026-01-01', targetDurationDays: 14, dosesPerDay: 2, plannedDoses: 28, dosesLogged: 2, firstDoseDay: '2026-01-05', lastDoseDay: '2026-02-20' }),
+    ], '2026-01-01'),
+  })))
+  assert.ok(/started Jan 1, 2026/.test(t))
+  assert.ok(!/Jan 1 – Feb 20, 2026/.test(t)) // never a finished-looking closed range
+  assert.ok(!/ended by owner/.test(t)) // not ended → no ending marker
 })
 
 Deno.test('B-599 — page 1 never points at an "Also during the trial" row that will not render', () => {

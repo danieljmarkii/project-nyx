@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import type { IntakeRating } from '../components/log/IntakeChipRow';
 import type { DoseAdherence } from '../components/log/AdherenceChipRow';
 import type { DoseVehicle } from '../lib/medications';
-import type { TrialContaminantFlag } from '../lib/trialContaminant';
+import type { LogTimeTrialFlag } from '../lib/trialContaminant';
 
 // The earned completion surface, played after a successful log on any path so
 // the fastest taps get the same closure as the full flow (B-063). One store
@@ -68,15 +68,17 @@ export interface MealPayload {
   // In-flight intake rating. Starts null; updated optimistically via
   // patchIntakeRating when the owner taps a chip.
   intakeRating: IntakeRating | null;
-  // B-351 slice 4 — the Tier-2 trial-contaminant heads-up, resolved by
-  // evaluateMealTrialFlag AFTER the meal was committed and passed in at show
-  // time. Absent/null means nothing to say, which is NEVER an all-clear: the
-  // evaluator returns null for every uncertainty too (offline, unread panel, no
-  // trial), so the card must not — and does not — render any negative form.
-  // Passive by construction: it carries no action, so it does not make the card's
-  // deliberately-narrow affordance budget a line longer (Principle 1 — the log
-  // stays one tap and this never gates it).
-  trialFlag?: TrialContaminantFlag | null;
+  // B-351 slice 4 / B-693 — the Tier-2 log-time trial heads-up, resolved by
+  // evaluateMealLogTimeFlag AFTER the meal was committed and patched in at show
+  // time. One of two kinds (the union): the CONTENTS flag ("this has chicken")
+  // stays passive prose, and the MEMBERSHIP flag ("this isn't on the trial list",
+  // B-693) adds one affordance — the "+ Add to the trial list" line into the
+  // shipped confirm sheet. Absent/null means nothing to say, which is NEVER an
+  // all-clear: the evaluator returns null for every uncertainty too (offline,
+  // unread panel, no trial, stale trial), so the card must not — and does not —
+  // render any negative form. Neither kind ever gates the log (Principle 1 — the
+  // log stays one tap; the meal is already saved before this resolves).
+  trialFlag?: LogTimeTrialFlag | null;
 }
 
 export interface MedicationPayload {
@@ -150,8 +152,9 @@ interface MomentState {
   // nothing about the log path ever waits on it. Guarded by eventId: a second log
   // during the wait replaces the payload, and a late answer for the PREVIOUS meal
   // must not decorate the new one. Returns whether it landed, so the caller only
-  // spends rule 3's one-per-food budget on a heads-up actually rendered.
-  patchTrialFlag: (eventId: string, flag: TrialContaminantFlag) => boolean;
+  // spends rule 3's one-per-food budget on a heads-up actually rendered. Takes
+  // either kind of the log-time union (contents or membership, B-693).
+  patchTrialFlag: (eventId: string, flag: LogTimeTrialFlag) => boolean;
   // Mutates the in-flight MEDICATION card's adherence after a chip tap. Pair with
   // rescheduleHide() for a visible confirmation window. No-op on other payloads.
   patchAdherence: (adherence: DoseAdherence | null) => void;

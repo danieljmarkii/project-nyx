@@ -25,6 +25,7 @@ import {
   regimenDaysElapsed,
   attributeDosesToRegimens,
   attributeDoses,
+  mapDoseRowsToAttributable,
   tallyDoses,
   emptyTally,
   regimenComplianceLine,
@@ -2229,5 +2230,48 @@ describe('tallyDoses — shared adherence bucketer (B-140)', () => {
       doses,
     ).tallies.get('r');
     expect(tallyDoses(doses)).toEqual(viaAttribution);
+  });
+});
+
+// The shared embed-shape mapper both profile medication loaders read (B-140 PR 2). The
+// B-196 subtlety it exists to own: supabase-js surfaces a to-one embed as EITHER an
+// object OR a 1-element array, and the parent event's soft-delete + timestamp must lift
+// onto the dose either way.
+describe('mapDoseRowsToAttributable — dose embed → AttributableDose', () => {
+  const ev = { deleted_at: null, occurred_at: '2026-03-05T08:00:00Z' };
+
+  it('flattens an OBJECT embed onto the dose', () => {
+    const [d] = mapDoseRowsToAttributable([
+      { medication_id: 'r', medication_item_id: 'i', adherence: 'given', events: ev },
+    ]);
+    expect(d).toEqual({
+      medication_id: 'r', medication_item_id: 'i', adherence: 'given',
+      deleted_at: null, occurred_at: '2026-03-05T08:00:00Z',
+    });
+  });
+
+  it('flattens a 1-ELEMENT ARRAY embed identically (the B-196 shape)', () => {
+    const [d] = mapDoseRowsToAttributable([
+      { medication_id: null, medication_item_id: 'i', adherence: null, events: [ev] },
+    ]);
+    expect(d.occurred_at).toBe('2026-03-05T08:00:00Z');
+    expect(d.deleted_at).toBeNull();
+  });
+
+  it('carries a soft-deleted parent event through (so attribution can skip it)', () => {
+    const [d] = mapDoseRowsToAttributable([
+      { medication_id: 'r', medication_item_id: 'i', adherence: 'given', events: { deleted_at: '2026-03-06T09:00:00Z', occurred_at: '2026-03-06T08:00:00Z' } },
+    ]);
+    expect(d.deleted_at).toBe('2026-03-06T09:00:00Z');
+  });
+
+  it('a missing embed yields occurred_at "" (ordered out, never a throw); null/undefined rows → []', () => {
+    const [d] = mapDoseRowsToAttributable([
+      { medication_id: 'r', medication_item_id: 'i', adherence: 'given', events: null },
+    ]);
+    expect(d.occurred_at).toBe('');
+    expect(d.deleted_at).toBeNull();
+    expect(mapDoseRowsToAttributable(null)).toEqual([]);
+    expect(mapDoseRowsToAttributable(undefined)).toEqual([]);
   });
 });

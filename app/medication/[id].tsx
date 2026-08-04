@@ -51,6 +51,8 @@ import { PhotoViewer } from '../../components/ui';
 import { supabase } from '../../lib/supabase';
 import { getDb } from '../../lib/db';
 import { useAuthStore } from '../../store/authStore';
+import { usePetStore } from '../../store/petStore';
+import { useSyncStore } from '../../store/syncStore';
 import {
   uploadPhoto, compressForUpload, getSignedUrl,
   buildMedicationPhotoPath, MEDICATION_PHOTOS_BUCKET,
@@ -60,6 +62,9 @@ import {
   buildMedicationItemUpdate, hasMedicationItemChanges, canSaveMedicationItemEdit,
   type MedicationItemEdit,
 } from '../../lib/medications';
+import { loadMedicationCourses } from '../../lib/medicationHistoryFacts';
+import { buildPastCourseFacts, EVIDENCE_LINK_LABEL } from '../../lib/medicationHistoryDetail';
+import type { MedicationCourse } from '../../lib/medicationHistory';
 
 interface MedicationItemRow {
   id: string;
@@ -82,9 +87,18 @@ const SELECT_COLS =
 export default function MedicationDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { user } = useAuthStore();
+  const activePet = usePetStore((s) => s.activePet);
+  const hydrationTick = useSyncStore((s) => s.hydrationTick);
 
   const [row, setRow] = useState<MedicationItemRow | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+
+  // B-140 PR 3 — the active pet's PAST courses of this drug (course grain), derived from
+  // the local mirror. The active course (if any) lives on the profile card / med strip,
+  // never here (AC #3), so this is filtered to `!isActive`. Scoped to the active pet like
+  // every other medication surface (strip, trial, History, rundown); an empty list simply
+  // renders no history section.
+  const [pastCourses, setPastCourses] = useState<MedicationCourse[]>([]);
 
   // Editable fields — seeded from the row once on load.
   const [genericName, setGenericName] = useState('');
@@ -153,6 +167,31 @@ export default function MedicationDetailScreen() {
       .catch(() => { if (!cancelled) { setPhotoUrl(null); setPhotoLoading(false); } });
     return () => { cancelled = true; };
   }, [photoPath, photoNonce]);
+
+  // ── Load this drug's past courses for the active pet ──
+  // Re-runs on a pet switch and every hydration tick (a dose synced from another device
+  // changes the count). A read failure resolves to null and we hold the prior list rather
+  // than flashing the section away (the med-strip failure posture).
+  useEffect(() => {
+    const petId = activePet?.id;
+    if (!id || !petId) { setPastCourses([]); return; }
+    let cancelled = false;
+    // timeZone omitted on purpose — the device zone IS the owner's midnight (B-514).
+    loadMedicationCourses(petId)
+      .then((courses) => {
+        if (cancelled || courses == null) return;
+        setPastCourses(courses.filter((c) => c.medicationItemId === id && !c.isActive));
+      })
+      .catch((e) => { console.error('[medication-detail] course history load failed:', e); });
+    return () => { cancelled = true; };
+  }, [id, activePet?.id, hydrationTick]);
+
+  // The evidence link (§4.2) — History filtered to the Medication lens. A per-drug History
+  // lens is B-688 (not v1), so this opens the whole medication stream; the `ts` nonce
+  // re-applies the filter even if History is already mounted.
+  function openMedicationHistory() {
+    router.push({ pathname: '/(tabs)/history', params: { type: 'medication', ts: String(Date.now()) } });
+  }
 
   // Current form state as the pure edit shape (drives the diff + the payload).
   function currentEdit(): MedicationItemEdit {
@@ -395,6 +434,45 @@ export default function MedicationDetailScreen() {
             </TouchableOpacity>
           )}
 
+          {/* Past-course history for the active pet (B-140 PR 3, mock §03). Course-grain
+              facts over the event-grain evidence, with a route DOWN into History's dose
+              list — never instead of it. Shown regardless of catalog ownership: this is
+              the viewer's own pet's record, not the drug row's editability. */}
+          {pastCourses.length > 0 && (
+            <View style={styles.historySection}>
+              <SectionLabel label="Medication history" />
+              {pastCourses.map((c) => {
+                const { facts, hasEvidence } = buildPastCourseFacts(c);
+                return (
+                  <View key={c.key} style={styles.courseCard}>
+                    {facts.map((f, i) => (
+                      <View
+                        key={f.label}
+                        style={[styles.factRow, i === facts.length - 1 && styles.factRowLast]}
+                      >
+                        <Text style={styles.factLabel}>{f.label}</Text>
+                        <Text style={styles.factValue}>{f.value}</Text>
+                      </View>
+                    ))}
+                    {hasEvidence && (
+                      <TouchableOpacity
+                        style={styles.linkRow}
+                        onPress={openMedicationHistory}
+                        activeOpacity={0.7}
+                        hitSlop={8}
+                        accessibilityRole="button"
+                        accessibilityLabel={EVIDENCE_LINK_LABEL}
+                      >
+                        <Text style={styles.linkText}>{EVIDENCE_LINK_LABEL}</Text>
+                        <Text style={styles.linkChevron}>›</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                );
+              })}
+            </View>
+          )}
+
           {/* pointerEvents gates the whole form for a non-owner in one move (no
               per-control branching); the banner explains why it's not tappable. */}
           {!isOwner && (
@@ -548,6 +626,63 @@ const styles = StyleSheet.create({
   photoActionText: {
     fontSize: theme.textMD,
     color: theme.colorAccent,
+  },
+  historySection: {
+    paddingHorizontal: theme.space3,
+    paddingTop: theme.space2,
+    gap: theme.space1,
+  },
+  courseCard: {
+    backgroundColor: theme.colorSurface,
+    borderWidth: 1,
+    borderColor: theme.colorBorder,
+    borderRadius: theme.radiusMedium,
+    paddingHorizontal: theme.space2,
+    paddingVertical: theme.space0_5,
+  },
+  factRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'baseline',
+    gap: theme.space2,
+    paddingVertical: theme.space1,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: theme.colorBorder,
+  },
+  factRowLast: {
+    borderBottomWidth: 0,
+  },
+  factLabel: {
+    fontSize: theme.textSM,
+    color: theme.colorTextTertiary,
+    flexShrink: 0,
+  },
+  factValue: {
+    flex: 1,
+    fontSize: theme.textSM,
+    color: theme.colorTextPrimary,
+    fontWeight: theme.weightMedium,
+    textAlign: 'right',
+  },
+  linkRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: theme.space2,
+    minHeight: 44,
+    paddingVertical: theme.space1,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: theme.colorBorder,
+  },
+  linkText: {
+    fontSize: theme.textMD,
+    fontWeight: theme.weightMedium,
+    color: theme.colorAccentInk,
+  },
+  linkChevron: {
+    fontSize: theme.textLG,
+    color: theme.colorTextTertiary,
+    lineHeight: theme.textLG,
   },
   readOnlyBanner: {
     backgroundColor: theme.colorNeutralLight,

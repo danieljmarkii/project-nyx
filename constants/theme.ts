@@ -212,6 +212,13 @@ export const theme = {
   // circle and consumes only the glyph tint.
   colorEventMedication: '#5B7A9E',
   colorEventMedicationLight: '#EAF0F7',
+  // Darkened slate-blue for TEXT on colorEventMedicationLight — the twin of
+  // colorAccentInk (on accent-light) and colorEventSymptomInk (on symptom-light).
+  // colorEventMedication (#5B7A9E) is a graphical/glyph tint (~3:1 targets) and only
+  // reaches ~3.9:1 on the #EAF0F7 wash, short of AA for a text label; this ink is
+  // 6.3:1 on that wash, so the med family gets a readable text-on-tint for a pill/
+  // chip (first consumer: the B-140 "No end recorded" past-medication pill).
+  colorEventMedicationInk: '#3D5875',
   colorChartEmpty: '#F0F0F0',
   // The idle mark for an un-logged coverage pip / a trial-day gap dot (widget
   // ground band, round-7 mock) — a mid-grey that reads "nothing here yet" without
@@ -237,6 +244,14 @@ export const theme = {
   // Completion "moment" — consumed by PR 4 (gold ring in app/log.tsx).
   colorMomentGlow: '#FBBF24',
   colorMomentConfirm: '#00C2A8',
+  // B-693 — the amber "attention" wash behind the log-time trial-list heads-up,
+  // rendered as an inset panel on the DARK completion card. The moment-glow gold at
+  // 0.12 (the same gold already haloing this card's check badge), so the warning
+  // breaks the card's calm stack and can't be read past, while its claim-strength
+  // stays matched to what the record knows — list-absence, not harm (mock round 2,
+  // PM-ruled amber over a rose "danger" rendering). The bar + eyebrow reuse
+  // colorMomentGlow at full strength; only the fill is softened.
+  colorMomentGlowFillOnDark: 'rgba(251, 191, 36, 0.12)',
 
   // ── Spacing — 8pt grid ────────────────────────────────────────────────────
   // Sub-grid micro-gap (2pt): the typographic space between a label and the

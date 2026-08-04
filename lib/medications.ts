@@ -1045,7 +1045,7 @@ export function computeRegimenCompliance(input: RegimenComplianceInput): Regimen
 
   const administeredDoses = tally.given;
   const flaggedDoses = tally.partial + tally.missed + tally.refused;
-  const loggedDoses = administeredDoses + flaggedDoses + tally.unrated;
+  const loggedDoses = totalTally(tally); // === administeredDoses + flaggedDoses + unrated
 
   const safeDays = Math.max(1, Math.floor(daysElapsed));
   const expectedDoses = isDoseDenominated
@@ -1098,6 +1098,16 @@ export function computeRegimenCompliance(input: RegimenComplianceInput): Regimen
 // asserts it.
 export function dosesTowardTarget(tally: AdherenceTally): number {
   return tally.given + tally.partial;
+}
+
+// Every logged administration, whatever its adherence — the count of dose EVENTS behind a
+// tally (distinct from dosesTowardTarget, which is delivered = given + partial). The ONE
+// definition of "how many doses were logged"; computeRegimenCompliance.loggedDoses and the
+// med-history doorway gate both read it rather than re-summing the five buckets (the H4 /
+// §5.3 one-predicate rule — a second inline sum is a bucket the next AdherenceTally field
+// would silently miss).
+export function totalTally(tally: AdherenceTally): number {
+  return tally.given + tally.partial + tally.missed + tally.refused + tally.unrated;
 }
 
 // ── B-618 §6 — the profile card's dose-course progress (PR 4) ────────────────────
@@ -1186,6 +1196,41 @@ export interface AttributableDose {
   adherence: string | null;
   deleted_at: string | null; // parent event's soft-delete → not counted
   occurred_at: string;       // parent event timestamp (window test)
+}
+
+// The PostgREST row shape when a dose is read with its parent event embedded by the
+// DISAMBIGUATED FK — `events!medication_administrations_event_id_fkey(deleted_at,
+// occurred_at)` — for the soft-delete flag + timestamp attribution needs. The FK name
+// is required because migration 023 added a SECOND medication_administrations→events FK
+// (paired_event_id), so a bare `events(...)` embed is ambiguous (PGRST201, B-196).
+export interface DoseEmbedRow {
+  medication_id: string | null;
+  medication_item_id: string | null;
+  adherence: string | null;
+  // supabase-js surfaces a to-one embed as EITHER an object OR a 1-element array.
+  events:
+    | { deleted_at: string | null; occurred_at: string }
+    | { deleted_at: string | null; occurred_at: string }[]
+    | null;
+}
+
+// Map embedded dose rows to `AttributableDose[]`, flattening the object-or-array embed
+// and lifting the parent event's soft-delete + timestamp onto the dose. Shared by every
+// screen that reads doses for attribution (the profile's Current + Past medication
+// loaders) so the embed-shape handling — the exact class of bug B-196 was — lives in ONE
+// place. A missing embed (unreachable with the non-null event_id FK) yields
+// occurred_at = '' (ordered out by attribution, ignored by the tally), never a throw.
+export function mapDoseRowsToAttributable(rows: DoseEmbedRow[] | null | undefined): AttributableDose[] {
+  return (rows ?? []).map((d) => {
+    const ev = Array.isArray(d.events) ? d.events[0] : d.events;
+    return {
+      medication_id: d.medication_id,
+      medication_item_id: d.medication_item_id,
+      adherence: d.adherence,
+      deleted_at: ev?.deleted_at ?? null,
+      occurred_at: ev?.occurred_at ?? '',
+    };
+  });
 }
 
 function bucketAdherence(t: AdherenceTally, adherence: string | null): void {
