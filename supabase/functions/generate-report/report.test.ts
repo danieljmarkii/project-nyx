@@ -24,6 +24,7 @@ import {
   type ReportEventInput,
   type ReportAiAnalysisInput,
   type ReportMedicationInput,
+  type ReportMedicationItemInput,
   type ReportDoseInput,
 } from './report.ts'
 import type { FoodFormat } from '../generate-signal/detection.ts'
@@ -839,6 +840,274 @@ Deno.test('§3.8 orphan-dose — an unresolved item name reads "Unspecified medi
   assert.equal(snap.unlinkedMedications.length, 1)
   assert.equal(snap.unlinkedMedications[0].drugName, 'Unspecified medication')
   assert.equal(snap.unlinkedMedications[0].isSupplement, false) // unknown ⇒ never asserted OTC
+})
+
+// ── §4.4 (D2) — the lifetime medication-history table ──────────────────────────
+// The window-ignoring "what has she been on, ever?" table (mock §05), derived over the
+// pet's WHOLE record through `lib/medicationHistory.ts`. These tests pin the FACTS
+// (buildMedicationHistory); render.test.ts pins the clinical copy. now = 2026-08-04.
+
+const MED_NOW = '2026-08-04T12:00:00Z'
+
+// A UTC date-key walker for GENERATING sequential dose dates (not a local-day question —
+// the derivation buckets each instant by tz; the fixtures keep doses at 08:00Z/20:00Z, so
+// under both EST and EDT they fall on the UTC date, no local-midnight straddle — B-514).
+function addDayKey(dayKey: string, n: number): string {
+  return new Date(Date.parse(`${dayKey}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10)
+}
+function courseDoses(
+  regimenId: string | null,
+  itemId: string | null,
+  startDate: string,
+  days: number,
+  perDay: number,
+  adherence: string | null = 'given',
+): ReportDoseInput[] {
+  const out: ReportDoseInput[] = []
+  for (let d = 0; d < days; d++) {
+    const date = addDayKey(startDate, d)
+    for (let k = 0; k < perDay; k++) {
+      out.push({
+        eventId: nextId('dose'),
+        occurredAt: at(date, k === 0 ? '08:00:00' : '20:00:00'),
+        medicationId: regimenId,
+        medicationItemId: itemId,
+        adherence,
+        doseAmount: null,
+        pairedEventId: null,
+      })
+    }
+  }
+  return out
+}
+function orphanDose(itemId: string, date: string, adherence: string | null = 'given'): ReportDoseInput {
+  return { eventId: nextId('dose'), occurredAt: at(date, '13:00:00'), medicationId: null, medicationItemId: itemId, adherence, doseAmount: null, pairedEventId: null }
+}
+// A dose explicitly LINKED to a regimen (medication_id set — the B-153 authoritative path).
+function orphanDoseLinked(regimenId: string, itemId: string | null, date: string, adherence: string | null = 'given'): ReportDoseInput {
+  return { eventId: nextId('dose'), occurredAt: at(date, '10:00:00'), medicationId: regimenId, medicationItemId: itemId, adherence, doseAmount: null, pairedEventId: null }
+}
+
+// The mock §05 canonical record: an active dose-course, an ad-hoc antihistamine, an
+// owner-ended antibiotic, and a single anti-emetic — spanning Feb→Aug, most of it OUTSIDE
+// the 90-day report window (so it exercises "window-ignoring").
+function mockMedRecord(): {
+  medications: ReportMedicationInput[]
+  lifetimeDoses: ReportDoseInput[]
+  medicationItems: ReportMedicationItemInput[]
+} {
+  const medications: ReportMedicationInput[] = [
+    {
+      id: 'reg-motozol', medicationItemId: 'mi-motozol', drugName: 'Motozol', doseAmount: '50 mg', route: 'oral',
+      dosesPerDay: 2, scheduleNotes: null, indication: null, prescribedBy: null,
+      startedAt: '2026-07-22', targetDurationDays: null, targetDurationDoses: 28,
+      status: 'active', endedAt: null, isPrescription: true, strength: '50 mg',
+    },
+    {
+      id: 'reg-metro', medicationItemId: 'mi-metro', drugName: 'Metronidazole', doseAmount: '250 mg', route: 'oral',
+      dosesPerDay: 2, scheduleNotes: null, indication: 'GI', prescribedBy: null,
+      startedAt: '2026-03-03', targetDurationDays: 14, targetDurationDoses: null,
+      status: 'completed', endedAt: '2026-03-16', isPrescription: true, strength: '250 mg',
+    },
+  ]
+  const lifetimeDoses: ReportDoseInput[] = [
+    ...courseDoses('reg-motozol', 'mi-motozol', '2026-07-22', 13, 2), // 26 given, active
+    orphanDose('mi-zyrtec', '2026-06-02'),
+    orphanDose('mi-zyrtec', '2026-06-05'),
+    orphanDose('mi-zyrtec', '2026-06-09'),
+    ...courseDoses('reg-metro', 'mi-metro', '2026-03-03', 13, 2), // 26 given (Mar 3–15)
+    ...courseDoses('reg-metro', 'mi-metro', '2026-03-16', 1, 2, 'missed'), // 2 missed on the last day
+    orphanDose('mi-cerenia', '2026-02-11'),
+  ]
+  const medicationItems: ReportMedicationItemInput[] = [
+    { id: 'mi-zyrtec', genericName: 'Cetirizine HCl', brandName: 'Zyrtec', strength: '5 mg', route: 'oral', isPrescription: false },
+    { id: 'mi-cerenia', genericName: 'Maropitant', brandName: 'Cerenia', strength: '16 mg', route: 'oral', isPrescription: true },
+    { id: 'mi-motozol', genericName: 'Metronidazole', brandName: 'Motozol', strength: '50 mg', route: 'oral', isPrescription: true },
+    { id: 'mi-metro', genericName: 'Metronidazole', brandName: null, strength: '250 mg', route: 'oral', isPrescription: true },
+  ]
+  return { medications, lifetimeDoses, medicationItems }
+}
+
+Deno.test('§4.4 lifetime table — the mock §05 record derives all four courses, active-first', () => {
+  const rec = mockMedRecord()
+  const snap = assembleReport(baseInput({ now: MED_NOW, ...rec, doses: rec.lifetimeDoses }))
+  const mh = snap.medicationHistory
+  assert.ok(mh, 'medicationHistory present')
+  // Active first, then most-recent last dose first.
+  assert.deepEqual(mh!.entries.map((e) => e.drugName), [
+    'Motozol', 'Cetirizine HCl (Zyrtec)', 'Metronidazole', 'Maropitant (Cerenia)',
+  ])
+
+  const motozol = mh!.entries[0]
+  assert.equal(motozol.isActive, true)
+  assert.equal(motozol.ended, false)
+  assert.equal(motozol.dosesLogged, 26)
+  assert.equal(motozol.targetDurationDoses, 28)
+  assert.equal(motozol.targetDurationDays, null)
+  assert.equal(motozol.plannedDoses, 28)
+  assert.equal(motozol.startedDay, '2026-07-22')
+
+  const zyrtec = mh!.entries[1]
+  assert.equal(zyrtec.source, 'doses')
+  assert.equal(zyrtec.ended, false) // H1 — an ad-hoc course never ends
+  assert.equal(zyrtec.dosesLogged, 3)
+  assert.equal(zyrtec.firstDoseDay, '2026-06-02')
+  assert.equal(zyrtec.lastDoseDay, '2026-06-09')
+  assert.equal(zyrtec.singleDay, false)
+
+  const metro = mh!.entries[2]
+  assert.equal(metro.ended, true)
+  assert.equal(metro.endStatus, 'completed')
+  assert.equal(metro.endedDay, '2026-03-16')
+  assert.equal(metro.dosesLogged, 26) // H4 — given only; the 2 missed are not delivered
+  assert.equal(metro.plannedDoses, 28) // 14 days × 2/day
+  assert.equal(metro.targetDurationDays, 14)
+  assert.equal(metro.runDays, 14) // Mar 3 → Mar 16 inclusive
+
+  const cerenia = mh!.entries[3]
+  assert.equal(cerenia.source, 'doses')
+  assert.equal(cerenia.singleDay, true)
+  assert.equal(cerenia.dosesLogged, 1)
+  assert.equal(cerenia.ended, false)
+
+  assert.equal(mh!.sinceDay, '2026-02-11') // earliest dated point
+})
+
+Deno.test('§4.4 lifetime table — reads lifetimeDoses, not the windowed doses (window-ignoring)', () => {
+  const rec = mockMedRecord()
+  const snap = assembleReport(baseInput({
+    now: MED_NOW,
+    medications: rec.medications,
+    medicationItems: rec.medicationItems,
+    doses: [], // the windowed sections see nothing…
+    lifetimeDoses: rec.lifetimeDoses, // …but the lifetime table sees the whole record
+  }))
+  const mh = snap.medicationHistory!
+  assert.equal(mh.entries.length, 4)
+  // The Feb/Mar courses — entirely outside the 90-day window — still appear with their counts.
+  assert.ok(mh.entries.some((e) => e.drugName === 'Metronidazole' && e.dosesLogged === 26 && e.ended))
+  assert.ok(mh.entries.some((e) => e.drugName === 'Maropitant (Cerenia)' && e.dosesLogged === 1))
+  // The windowed orphan section reads `doses` (empty) — so it is empty, proving independence.
+  assert.equal(snap.unlinkedMedications.length, 0)
+})
+
+Deno.test('§4.4 lifetime table — falls back to `doses` when `lifetimeDoses` is absent (older callers)', () => {
+  const snap = assembleReport(baseInput({
+    now: MED_NOW,
+    doses: [orphanDose('mi-z', '2026-07-20')],
+    medicationItems: [{ id: 'mi-z', genericName: 'Cetirizine', brandName: null, strength: null, route: null, isPrescription: false }],
+    // lifetimeDoses intentionally omitted
+  }))
+  assert.equal(snap.medicationHistory!.entries.length, 1)
+  assert.equal(snap.medicationHistory!.entries[0].dosesLogged, 1)
+})
+
+Deno.test('§4.4/H1 — a stale-active regimen (long quiet) is never rendered as ended', () => {
+  // B-422: nothing auto-completes a course, so stale-active is the steady state. A regimen last
+  // dosed 200+ days ago but still `active` must stay ended:false — silence is not an ending.
+  const snap = assembleReport(baseInput({
+    now: MED_NOW,
+    medications: [{
+      id: 'reg-old', medicationItemId: 'mi-old', drugName: 'Gabapentin', doseAmount: null, route: 'oral',
+      dosesPerDay: 1, scheduleNotes: null, indication: null, prescribedBy: null,
+      startedAt: '2026-01-01', targetDurationDays: null, targetDurationDoses: null,
+      status: 'active', endedAt: null, isPrescription: true, strength: null,
+    }],
+    doses: [],
+    lifetimeDoses: [orphanDoseLinked('reg-old', 'mi-old', '2026-01-15')],
+  }))
+  const e = snap.medicationHistory!.entries[0]
+  assert.equal(e.isActive, true)
+  assert.equal(e.ended, false)
+  assert.equal(e.endStatus, null)
+  assert.equal(e.endedDay, null)
+  assert.equal(e.lastDoseDay, '2026-01-15') // the honest "last dose", never an ending
+  assert.equal(e.runDays, null) // no length until the owner ends it
+})
+
+Deno.test('§4.4/H1 — an owner-stopped regimen renders the stopped register, endedDay from the DATE column', () => {
+  const snap = assembleReport(baseInput({
+    now: MED_NOW,
+    medications: [{
+      id: 'reg-stop', medicationItemId: null, drugName: 'Apoquel', doseAmount: null, route: 'oral',
+      dosesPerDay: 2, scheduleNotes: null, indication: 'allergy', prescribedBy: null,
+      startedAt: '2026-06-01', targetDurationDays: 30, targetDurationDoses: null,
+      status: 'stopped', endedAt: '2026-06-10', isPrescription: true, strength: null,
+    }],
+    doses: [],
+    lifetimeDoses: [orphanDoseLinked('reg-stop', null, '2026-06-02')],
+  }))
+  const e = snap.medicationHistory!.entries[0]
+  assert.equal(e.ended, true)
+  assert.equal(e.endStatus, 'stopped')
+  assert.equal(e.endedDay, '2026-06-10')
+})
+
+Deno.test('§4.4/H4 — dosesLogged is dosesTowardTarget (given + partial), never the raw event count', () => {
+  const snap = assembleReport(baseInput({
+    now: MED_NOW,
+    medications: [{
+      id: 'reg-mix', medicationItemId: 'mi-mix', drugName: 'Amoxicillin', doseAmount: null, route: 'oral',
+      dosesPerDay: 2, scheduleNotes: null, indication: null, prescribedBy: null,
+      startedAt: '2026-07-01', targetDurationDays: null, targetDurationDoses: 10,
+      status: 'completed', endedAt: '2026-07-05', isPrescription: true, strength: null,
+    }],
+    doses: [],
+    lifetimeDoses: [
+      orphanDoseLinked('reg-mix', 'mi-mix', '2026-07-01', 'given'),
+      orphanDoseLinked('reg-mix', 'mi-mix', '2026-07-01', 'partial'),
+      orphanDoseLinked('reg-mix', 'mi-mix', '2026-07-02', 'missed'),
+      orphanDoseLinked('reg-mix', 'mi-mix', '2026-07-02', 'refused'),
+      orphanDoseLinked('reg-mix', 'mi-mix', '2026-07-03', null), // unconfirmed
+    ],
+  }))
+  const e = snap.medicationHistory!.entries[0]
+  assert.equal(e.dosesLogged, 2) // 1 given + 1 partial; missed/refused/unconfirmed excluded
+  assert.equal(e.plannedDoses, 10) // target_duration_doses
+})
+
+Deno.test('§4.4 — a dose logged AFTER the recorded end still counts; endedDay/runDays stay the regimen dates', () => {
+  // A dose carrying an explicit regimen link is attributed regardless of the regimen window
+  // (B-153), so an owner who logged one more after marking a course complete adds a real dose past
+  // ended_at. dosesLogged/lastDoseDay stay honest to it; endedDay/runDays are the DATE columns.
+  const snap = assembleReport(baseInput({
+    now: MED_NOW,
+    medications: [{
+      id: 'reg-post', medicationItemId: 'mi-post', drugName: 'Clavamox', doseAmount: null, route: 'oral',
+      dosesPerDay: 1, scheduleNotes: null, indication: null, prescribedBy: null,
+      startedAt: '2026-07-01', targetDurationDays: 5, targetDurationDoses: null,
+      status: 'completed', endedAt: '2026-07-05', isPrescription: true, strength: null,
+    }],
+    doses: [],
+    lifetimeDoses: [
+      ...['2026-07-01', '2026-07-02', '2026-07-03', '2026-07-04', '2026-07-05'].map((d) =>
+        orphanDoseLinked('reg-post', 'mi-post', d)),
+      orphanDoseLinked('reg-post', 'mi-post', '2026-07-08'), // logged after the recorded end
+    ],
+  }))
+  const e = snap.medicationHistory!.entries[0]
+  assert.equal(e.ended, true)
+  assert.equal(e.endedDay, '2026-07-05') // the DATE column — unmoved by the late dose
+  assert.equal(e.lastDoseDay, '2026-07-08') // the dose evidence is honest to the late dose
+  assert.equal(e.dosesLogged, 6) // all six delivered doses counted
+  assert.equal(e.runDays, 5) // start → ended_at, NOT to the late dose
+})
+
+Deno.test('§4.4 — an unresolved orphan drug reads "Unspecified medication" and never ends (H1)', () => {
+  const snap = assembleReport(baseInput({
+    now: MED_NOW,
+    doses: [],
+    lifetimeDoses: [orphanDose('mi-nameless', '2026-07-10')],
+    // medicationItems omitted → the name cannot be resolved
+  }))
+  const e = snap.medicationHistory!.entries[0]
+  assert.equal(e.drugName, 'Unspecified medication')
+  assert.equal(e.ended, false)
+})
+
+Deno.test('§4.4 — a pet with no regimen and no dose has a null medicationHistory (no empty table)', () => {
+  const snap = assembleReport(baseInput({ now: MED_NOW }))
+  assert.equal(snap.medicationHistory, null)
 })
 
 Deno.test('§5.11/§7 boundary-straddle — a duplicate across local midnight keeps the in-window bout + its phenotype', () => {

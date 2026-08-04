@@ -57,6 +57,7 @@ import type {
   DietSummary,
   MedicationAdherence,
   UnlinkedMedicationGroup,
+  MedicationHistoryEntry,
   CorrelationSummary,
   ConcurrentChange,
   SymptomLogEntry,
@@ -135,6 +136,13 @@ function fmtDayYear(dayKey: string | null): string {
   if (!dayKey) return '—'
   const p = dayParts(dayKey)
   return p ? `${MONTHS[p.m - 1]} ${p.d}, ${p.y}` : h(dayKey)
+}
+
+/** 'YYYY-MM-DD' → "Mon YYYY" — month + year, for the lifetime-coverage note (§4.4). */
+function fmtMonthYear(dayKey: string | null): string {
+  if (!dayKey) return '—'
+  const p = dayParts(dayKey)
+  return p ? `${MONTHS[p.m - 1]} ${p.y}` : h(dayKey)
 }
 
 /** Inclusive window "Mon D – Mon D, YYYY" (single year) or full both-years form. */
@@ -4555,6 +4563,7 @@ function appendixBCD(snap: ReportSnapshot): string {
   ${markedB ? offTrialFootnote(snap.diet.trialTargetProtein) : ''}
   ${offDietAppendix(snap)}
   ${!markedB && markedC ? offTrialFootnote(snap.diet.trialTargetProtein) : ''}
+  ${medicationHistoryTable(snap)}
   ${medicationAppendix(snap)}
   ${footer(snap, 'Appendices B–D — diet, exposures & meds')}
 </section>`
@@ -5263,6 +5272,97 @@ function doseDatesCell(doseDays: readonly string[]): string {
   return `${h(fmtRange(doseDays[0], doseDays[doseDays.length - 1]))}<br/><span class="rnote">${num(
     doseDays.length,
   )} days with a dose</span>`
+}
+
+// ── §4.4 (D2) — the lifetime "Medication history" table ──────────────────────────────
+// Window-IGNORING, sits directly above Appendix D. Four terse columns a vet scans in
+// seconds (mock §05): Drug · Dates · Course · Doses logged. The snapshot carries the
+// FACTS (buildMedicationHistory); these helpers own only the clinical phrasing.
+
+/**
+ * The Dates cell. H1 lives here in the DATE GRAMMAR (pastMedications.ts's lesson): a closed
+ * "start – end" range renders ONLY when the owner ended the course; every open course reads
+ * as a dose span whose Course cell says "No regimen recorded" and whose note says an absent
+ * end is an absent RECORD — so a range never reads as a completed course the owner never ended.
+ */
+function medHistoryDates(e: MedicationHistoryEntry): string {
+  if (e.ended && e.startedDay && e.endedDay) return h(fmtRange(e.startedDay, e.endedDay))
+  // Owner ended it but recorded no end date (H1's null-endedAt case) — state the end without a range.
+  if (e.ended && e.endedDay) return `ended ${h(fmtDayYear(e.endedDay))}`
+  if (e.isActive && e.startedDay) return `${h(fmtDayYear(e.startedDay))} &ndash; present`
+  // Open register — a dose-derived course, or (defensively) a regimen with neither an owner end
+  // nor an active status. A single logged day is a bare date; a span is the dose span, disambiguated
+  // by the Course cell + the note, never asserted as a continuous prescribed course.
+  if (e.singleDay && e.lastDoseDay) return h(fmtDayYear(e.lastDoseDay))
+  const start = e.startedDay ?? e.firstDoseDay
+  if (start && e.lastDoseDay && start !== e.lastDoseDay) return h(fmtRange(start, e.lastDoseDay))
+  if (start) return h(fmtDayYear(start))
+  if (e.lastDoseDay) return h(fmtDayYear(e.lastDoseDay))
+  return '&mdash;'
+}
+
+/**
+ * The Course cell — the regimen's shape, or the dose-derived tell. Days- XOR dose-denominated
+ * (the migration-049 CHECK), so exactly one length phrasing applies; "· ended by owner" is the
+ * H1 marker and appends ONLY from the owner-action register. A dose-derived course is never a
+ * regimen and never ends (H1 by construction): it reads "Single logged dose" / "No regimen recorded".
+ */
+function medHistoryCourse(e: MedicationHistoryEntry): string {
+  if (e.source !== 'regimen') return e.singleDay ? 'Single logged dose' : 'No regimen recorded'
+  // Raw numbers in this descriptive cell (the Appendix-D regimen-cell convention); the
+  // right-aligned Doses-logged column is where num() tabular figures belong.
+  const spec: string[] = []
+  if (e.targetDurationDoses != null) {
+    spec.push(`${e.targetDurationDoses} dose${e.targetDurationDoses === 1 ? '' : 's'} planned`)
+  } else if (e.targetDurationDays != null) {
+    spec.push(`${e.targetDurationDays} day${e.targetDurationDays === 1 ? '' : 's'}`)
+  }
+  if (e.dosesPerDay != null) spec.push(`${e.dosesPerDay}×/day`)
+  let s = spec.join(', ')
+  if (!s) s = 'As needed' // no fixed length AND no daily cadence → PRN
+  if (e.ended) s += ' &middot; ended by owner'
+  return s
+}
+
+/**
+ * The Doses-logged cell. H4: the count is `dosesLogged` (given + partial), never re-summed. "of N
+ * planned" shows ONLY for an ENDED course with a plan it did not exceed — a retrospective delivered-
+ * vs-planned fact; an ACTIVE course shows the bare count (its plan is already in the Course cell, and
+ * "of N" mid-course would read as a countdown — B-618 D7). Over-delivered ⇒ drop the frame (never "30 of 28").
+ */
+function medHistoryDoses(e: MedicationHistoryEntry): string {
+  if (e.ended && e.plannedDoses != null && e.dosesLogged <= e.plannedDoses) {
+    return `${num(e.dosesLogged)} of ${num(e.plannedDoses)}`
+  }
+  return num(e.dosesLogged)
+}
+
+/**
+ * The lifetime table (§4.4, D2). Renders nothing when the pet has no medication record — never an
+ * empty table with a fabricated "none" row (that would be the false-negative the report guards
+ * against elsewhere). The note carries BOTH the coverage AND the H1 disclosure UP FRONT, before the
+ * data — a deliberate refinement of the mock's bottom footnote, per the B-494 rule that a load-
+ * bearing disclosure a reader must apply to the table cannot sit where a skimmer never reaches it.
+ */
+function medicationHistoryTable(snap: ReportSnapshot): string {
+  const mh = snap.medicationHistory
+  if (!mh || mh.entries.length === 0) return ''
+  const rows = mh.entries
+    .map(
+      (e) =>
+        `<tr><td>${h(e.drugName)}</td><td>${medHistoryDates(e)}</td><td>${medHistoryCourse(
+          e,
+        )}</td><td class="c num">${medHistoryDoses(e)}</td></tr>`,
+    )
+    .join('')
+  const since = mh.sinceDay ? ` (since ${h(fmtMonthYear(mh.sinceDay))})` : ''
+  return `
+  <p class="appx-title serif" style="margin-top:22px">Medication history</p>
+  <p class="appx-sub">Lifetime of the record${since} — the medications logged in Culprit, including courses that ended before this report&rsquo;s window; dose-level detail for the report window is in appendix&nbsp;D below. Dates are each course&rsquo;s span: a regimen&rsquo;s own start and end where one was recorded, otherwise the first and last logged dose. A course shown with no end date is one whose end the owner never recorded &mdash; not one still under way.</p>
+  <table>
+    <thead><tr><th>Medication</th><th style="width:118px">Dates</th><th style="width:186px">Course</th><th class="c" style="width:84px">Doses logged</th></tr></thead>
+    <tbody>${rows}</tbody>
+  </table>`
 }
 
 function appendixF(snap: ReportSnapshot): string {

@@ -238,13 +238,27 @@ Deno.test('mapMedicationRows: item join supplies strength/is_prescription, doses
     id: 'reg1', medication_item_id: 'item1', drug_name: 'Metronidazole', dose_amount: '250 mg',
     route: 'oral', doses_per_day: '2.00', schedule_notes: '8am & 8pm', indication: 'GI',
     prescribed_by: 'Dr Chen', started_at: '2026-06-01', target_duration_days: 14,
-    status: 'active', ended_at: null,
+    target_duration_doses: null, status: 'active', ended_at: null,
     medication_items: { is_prescription: true, strength: '250 mg' },
   }])
   assert.equal(rows[0].dosesPerDay, 2)
   assert.equal(rows[0].isPrescription, true)
   assert.equal(rows[0].strength, '250 mg')
   assert.equal(rows[0].drugName, 'Metronidazole')
+  assert.equal(rows[0].targetDurationDays, 14)
+  assert.equal(rows[0].targetDurationDoses, null) // days- XOR dose-denominated (migration 049 CHECK)
+})
+
+Deno.test('mapMedicationRows: a dose-denominated regimen carries target_duration_doses (B-618, §4.4)', () => {
+  const rows = mapMedicationRows([{
+    id: 'reg-doses', medication_item_id: 'item1', drug_name: 'Motozol', dose_amount: '50 mg',
+    route: 'oral', doses_per_day: '2', schedule_notes: null, indication: null,
+    prescribed_by: null, started_at: '2026-07-22', target_duration_days: null,
+    target_duration_doses: 28, status: 'active', ended_at: null,
+    medication_items: { is_prescription: true, strength: '50 mg' },
+  }])
+  assert.equal(rows[0].targetDurationDoses, 28)
+  assert.equal(rows[0].targetDurationDays, null)
 })
 
 Deno.test('mapMedicationRows: null item join → null strength/is_prescription, PRN null dosesPerDay', () => {
@@ -252,7 +266,7 @@ Deno.test('mapMedicationRows: null item join → null strength/is_prescription, 
     id: 'reg1', medication_item_id: null, drug_name: 'Probiotic', dose_amount: null,
     route: null, doses_per_day: null, schedule_notes: null, indication: null,
     prescribed_by: null, started_at: '2026-06-01', target_duration_days: null,
-    status: 'active', ended_at: null, medication_items: null,
+    target_duration_doses: null, status: 'active', ended_at: null, medication_items: null,
   }])
   assert.equal(rows[0].dosesPerDay, null)
   assert.equal(rows[0].isPrescription, null)
