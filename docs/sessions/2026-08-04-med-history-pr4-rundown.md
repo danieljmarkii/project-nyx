@@ -28,7 +28,18 @@ The window is **past 12 months shown by name, earlier courses folded behind a co
 
 ## Verification
 
-`tsc --noEmit` clean · **full jest 4337/4337** (197 suites; +25 new rundown cases covering the helpers, the split, the copy, and an end-to-end `buildRundown` past-meds case) · green under the non-UTC CI zones **UTC+14 / +12:45 / −10** (B-514 — the DATE-column dates format zone-stably via `dayKeyToLocalDate`; the instant-derived dose days are asserted structurally, not by exact day, to avoid zone flake). **Offline verified by construction:** every input is a `getDb()` local read, the derivation is pure, no Supabase/network on the path; the screen's existing error posture (no silent failure, no fabricated empty) covers a read failure. `code-reviewer` run on the diff.
+`tsc --noEmit` clean · **full jest 4339/4339** (197 suites; +27 new rundown cases covering the helpers, the split, the copy, and an end-to-end `buildRundown` past-meds case) · green under the non-UTC CI zones **UTC+14 / +12:45 / −10** and **UTC−11** (B-514). **Offline verified by construction:** every input is a `getDb()` local read, the derivation is pure, no Supabase/network on the path; the screen's existing error posture (no silent failure, no fabricated empty) covers a read failure.
+
+## Code review — fix-before-merge, addressed
+
+`code-reviewer` on the diff returned one **fix-before-merge BUG** + two cleanups, all fixed in a follow-up commit:
+
+- **BUG (B-441 trap):** `courseRecencyMs` ran `Date.parse()` on the bare `'YYYY-MM-DD'` end/start fields (→ **UTC** midnight) but compared them against the **local**-wall-clock `medHistoryCutoffMs`, so a course within a day of the 12-month boundary folded a cycle early for owners **behind UTC** — the reviewer reproduced it under `Pacific/Pago_Pago` (UTC−11). The reviewer's tell: `formatMedDate` two functions down already did it right. Fixed — the DATE tiers now bucket to local midnight via `dayKeyToLocalDate` (`Date.parse` kept only for the real `lastDoseIso` instant). The old test "passed" only because both sides used the same UTC-midnight basis; the assertion is now zone-honest (local midnight) and green under UTC−11.
+- **CLEANUP (B-616):** `formatMedDate` was a near-fork of `lib/utils.formatCalendarDate`; it now delegates to it (and `formatMedDateRange`'s endpoints route through it too), so there is one answer to "what a bare calendar day looks like".
+- **NIT:** a cross-**year** range now carries both years ("Dec 30, 2025 – Jan 2, 2026") so it can't read as one year or a span running backwards.
+- Acknowledged non-blocking: the `setMonth(-12)` Feb-29 leap-day overflow (a 1-day cutoff shift only when the device "today" is literally Feb 29) — left as-is; D3's window is provisional and the effect is a boundary course shown-vs-folded, never a safety-tier miss.
+
+The reviewer confirmed H1 (type-enforced — "Ended" only reachable via `end.kind==='ended'`), H4 (single `dosesLogged` predicate), the offline path (all reads via `getDb()`, SQL columns verified against the live local schema), and the split (every non-active regimen course is `ended` by the 3-value status enum, so no course falls through unclassified and none is duplicated).
 
 ## Residuals / next
 
