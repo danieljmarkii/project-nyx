@@ -11,6 +11,15 @@ interface Props {
   // While this row's restore is in flight, swap the Restore label for a quiet
   // spinner and disable the tap — so a double-press can't fire two reverts.
   restoring?: boolean;
+  // B-630 (team-ruled 2026-08-04, PM-delegated): the diet-trial membership chip
+  // ("Trial diet" / "Also allowed"), HERE ONLY because this is the restore list —
+  // "restore this, it's the trial diet" is the one case where marking an archived
+  // food earns itself (an owner who archived the prescribed diet by mistake sees
+  // what it is at the moment the mistake gets corrected). This does not reopen
+  // B-005's "a chip never resurrects an archived tile" rule: the tile stays
+  // archived and hidden everywhere else; the chip marks, it does not resurrect.
+  // R1 still binds: null renders nothing, and nothing off-list is ever marked.
+  trialChip?: string | null;
 }
 
 // A removed-from-library food, shown in the Foods-tab Archived section (B-005
@@ -21,13 +30,23 @@ interface Props {
 // would be. The meta line still reads BRAND · FORMAT (from the shared
 // FORMAT_LABEL) so a food removed in one format stays distinguishable from an
 // active capture of the same name in another.
-export function ArchivedFoodRow({ brand, productName, format, onRestore, restoring = false }: Props) {
+export function ArchivedFoodRow({
+  brand, productName, format, onRestore, restoring = false, trialChip,
+}: Props) {
   const typeLabel = FORMAT_LABEL[format] ?? '';
   const metaLine = typeLabel ? `${brand.toUpperCase()} · ${typeLabel.toUpperCase()}` : brand.toUpperCase();
 
   return (
     <View style={styles.row}>
       <View style={styles.text}>
+        {trialChip ? (
+          // FoodRow's eyebrow treatment, unchanged — a category label, not an
+          // approval badge (same reasoning as FoodRow's own chip comment).
+          <View style={styles.trialChip} testID="archived-row-trial-chip">
+            <View style={styles.trialChipDot} />
+            <Text style={styles.trialChipText} numberOfLines={1}>{trialChip}</Text>
+          </View>
+        ) : null}
         {metaLine ? (
           <Text style={styles.meta} numberOfLines={1}>{metaLine}</Text>
         ) : null}
@@ -40,7 +59,11 @@ export function ArchivedFoodRow({ brand, productName, format, onRestore, restori
         style={styles.restoreBtn}
         activeOpacity={0.7}
         accessibilityRole="button"
-        accessibilityLabel={`Restore ${brand} ${productName} to your library`}
+        accessibilityLabel={
+          trialChip
+            ? `Restore ${brand} ${productName} to your library, ${trialChip}`
+            : `Restore ${brand} ${productName} to your library`
+        }
       >
         {restoring
           ? <WhorlSpinner size="sm" ground="day" />
@@ -90,5 +113,33 @@ const styles = StyleSheet.create({
     fontSize: theme.textMD,
     fontWeight: theme.weightMedium,
     color: theme.colorAccent,
+  },
+  // B-630 — FoodRow's trialChip styles, mirrored (same pill, same dot, same
+  // uppercase tracked text) so the mark reads identically on both surfaces.
+  trialChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    gap: 4,
+    maxWidth: '100%',
+    backgroundColor: theme.colorAccentLight,
+    borderRadius: theme.radiusFull,
+    paddingHorizontal: theme.space1,
+    paddingVertical: 2,
+    marginBottom: 2,
+  },
+  trialChipDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
+    backgroundColor: theme.colorAccent,
+  },
+  trialChipText: {
+    flexShrink: 1,
+    fontSize: theme.textXS,
+    fontWeight: theme.weightSemibold,
+    letterSpacing: theme.trackingWidest,
+    textTransform: 'uppercase',
+    color: theme.colorAccentInk,
   },
 });

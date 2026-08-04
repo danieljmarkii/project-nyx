@@ -246,7 +246,11 @@ export function FoodPicker({
   // preference framing (the B-112 intake-is-not-preference guardrail; recency is a
   // fact, "loves" is a preference read a one-tap-log surface must never assert). A
   // neutral fallback covers the brief window before the pet's name is known.
-  const rotationLabel = petName ? `${petName}'s rotation` : 'Rotation';
+  // B-356 (PM-ruled 2026-08-04): one food is not a rotation — Jordan on a strict
+  // elimination diet feeds exactly one, so at 1 the label degrades to the neutral,
+  // still recency-factual "Recently fed".
+  const rotationLabel =
+    rotation.length === 1 ? 'Recently fed' : petName ? `${petName}'s rotation` : 'Rotation';
 
   // ── B-616 FR-16–FR-19 — the pinned "On the trial list" section (variant H) ──
   //

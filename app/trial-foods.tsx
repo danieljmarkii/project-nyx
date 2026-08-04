@@ -28,7 +28,7 @@
 // owner (FR-4's clean disappearance, arriving here as a state rather than a stale
 // list).
 import { useCallback, useMemo, useState } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { theme } from '../constants/theme';
@@ -42,6 +42,7 @@ import { useTrialAllowedSet } from '../hooks/useTrialAllowedSet';
 import { usePetStore } from '../store/petStore';
 import { addTrialFood, foodLabel } from '../lib/dietTrialSetup';
 import { isOnTrialList, trialListFoodsOn } from '../lib/trialAllowedSet';
+import { TRIAL_EXPOSURES_TITLE } from '../lib/trialExposuresScreen';
 import {
   ADD_TRIAL_FOOD_ERROR,
   alreadyOnListNote,
@@ -234,6 +235,25 @@ export default function TrialFoodsScreen() {
           <Text testID="trial-foods-disclosure" style={styles.disclosure}>
             {model.disclosure}
           </Text>
+
+          {/* B-636 (PM-ruled 2026-08-04): the second door. The trial card only
+              links the exposures list once an exposure has FIRED (offDiet > 0),
+              but that screen's own footer promises a pre-visit artifact — "your
+              vet will want this list at the recheck" — so an owner prepping for
+              the recheck with a clean record had no way to reach it. Its empty
+              state is designed and G2-clean (trialExposuresEmptyLine — no verdict,
+              no "nothing logged" claim), so arriving with nothing on it is safe
+              by construction. Quiet register: a doorway, not a call to action. */}
+          <TouchableOpacity
+            testID="trial-foods-exposures-door"
+            onPress={() => router.push('/trial-exposures')}
+            style={styles.exposuresDoor}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            accessibilityRole="button"
+            accessibilityLabel="Outside the trial diet — the list your vet will want at the recheck"
+          >
+            <Text style={styles.exposuresDoorText}>{TRIAL_EXPOSURES_TITLE} ›</Text>
+          </TouchableOpacity>
         </ScrollView>
       )}
 
@@ -304,6 +324,17 @@ const styles = StyleSheet.create({
     lineHeight: theme.textXS * 1.5,
     color: theme.colorTextTertiary,
     marginTop: theme.space2,
+  },
+  // B-636's doorway — quieter than the add action above it, louder than the
+  // disclosure: a navigable row, not a caption and not a second CTA.
+  exposuresDoor: {
+    marginTop: theme.space2,
+    paddingVertical: theme.space0_5,
+  },
+  exposuresDoorText: {
+    fontSize: theme.textSM,
+    color: theme.colorTextSecondary,
+    fontWeight: theme.weightMedium,
   },
   pickerNote: {
     fontSize: theme.textSM,

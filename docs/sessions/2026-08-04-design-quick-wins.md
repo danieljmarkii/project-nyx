@@ -1,8 +1,8 @@
-# Design-lens quick wins — 8 stacked backlog items
+# Design-lens quick wins — 14 stacked backlog items (two stacks, one session)
 
 **Date:** 2026-08-04
 
-**Outcome:** shipped via #586 (one stacked PR, the quick-wins pattern applied to the Designer's queue instead of the Engineer's).
+**Outcome:** shipped via #586 (one stacked PR, the quick-wins pattern applied to the Designer's queue instead of the Engineer's). Stack #1 = 8 unblocked items; the PM then ruled the six gated siblings **in-session**, so stack #2 (below) shipped on the same PR the same day.
 
 The PM asked for the quick-win sweep to shift lens: the prior stacks were engineering-heavy; this one mines the backlog for small, unblocked **design/UX/copy** items and knocks them out in one session. Selection rule: Open, no PM/Designer decision gate in the row, no device-only verification, no native build, no schema.
 
@@ -34,6 +34,21 @@ The PM asked for the quick-win sweep to shift lens: the prior stacks were engine
 - `code-reviewer` run on the diff pre-push; findings addressed (see PR).
 - Designer ✓ (Principles 5 + token discipline) — Engineer ✓ (one predicate untouched; `fresh`/`atTarget` derived in the ONE formatter, never at render sites) — Dr. Chen ✓ (B-642/B-643 falsifications above) — Data N/A (no schema, no engine).
 
-## Excluded on purpose — the PM decision batch
+## Stack #2 — the six gated items, PM-ruled in-session (2026-08-04)
 
-Six sibling design quick wins each carry an explicit PM/Designer gate in their row and were left open; several are one-word calls that would unlock a second stack of this size: **B-356** (rotation label at 1 food — PM copy call), **B-636** (exposures screen as a reachable destination — PM call), **B-630** (trial chip inside Archived vs the B-005 spirit), **B-653** (spec §5.3 deliberately omits "Back to log in" — spec change), **B-314** (gerund labels in the frequency-calendar summary), **B-285** ("Coming soon" carve-out — Tier-2 skill/spec edits in lockstep). Also deferred: **B-553's** raw *spacing* literals (the row's "plus" clause — dimension-tuned values, riskier than type tokens without a screenshot), and the `AddDocumentSheet` 0.45 dim (a different value than the swept 0.4; left as-is rather than silently normalized).
+The stack-#1 exclusion list went to the PM as a decision batch with short briefs; all six came back ruled, none against the team's recommendation. Shipped the same day, same PR:
+
+| Item | Ruling | What shipped |
+|---|---|---|
+| B-356 | **Option A** | `FoodPicker` shelf label: ≥2 foods = "{Pet}'s rotation", exactly 1 = "Recently fed" (recency-factual both ways). Test added. |
+| B-636 | **Option A** | A quiet doorway row on the trial-foods screen → `/trial-exposures` (`TRIAL_EXPOSURES_TITLE ›`), under the C6 disclosure — the pre-visit artifact is now reachable with a clean record. The destination's designed, G2-clean empty state is what makes this safe. |
+| B-630 | **PM deferred → team ruled: narrow allow** | The trial chip (FoodRow's eyebrow pill, styles mirrored 1:1) renders inside the Archived/restore list ONLY, via the same `trialChipLabel` resolver (one membership predicate, D3). It marks, never resurrects — B-005 intact in letter and spirit; R1 (null = nothing) test-pinned in the new `ArchivedFoodRow.test.tsx`. |
+| B-653 | **Add the exit** | "Back to log in" last in the Sent state's control stack, mirroring the failed state's control verbatim; spec §5.3 updated + header bumped to **v1.4** (a Tier-2 edit, authorized by the ruling itself). Test added (`forgot-sent-back`). |
+| B-314 | **Option A** | New `symptomOccurrenceLabel` in `lib/metricDetail.ts` (vomit→Vomiting, diarrhea→Loose stools, itch→Itching; fallback `symptomLabel`), consumed ONLY by the calendar's `noun` (summary/empty/a11y) — chips, drill-in, and History stay terse. Display-only map; tests added. |
+| B-285 | **Option A — carve-out** | `nyx-voice` Pattern 3 gains the carve-out: bare "Coming soon" is sanctioned on not-yet-live FEATURE rows only (legal rows under `LEGAL_LINKS_ENABLED=false` etc.), never on a surface that could ever hold logged data. No product change, no §11/§D5 edits. |
+
+Gates for stack #2: `tsc` clean; jest **198 suites / 4327 tests** (new: `ArchivedFoodRow.test.tsx`, the FoodPicker 1-food case, the Sent-state exit case, 2 `symptomOccurrenceLabel` cases); second `code-reviewer` pass → **ship-ready** (its three test-coverage findings closed in the same push; its hitSlop nit matches the codebase's existing text-link convention, no change).
+
+## Still deferred (not ruled, not blocking)
+
+**B-553's** raw *spacing* literals (the row's "plus" clause — dimension-tuned values, riskier than type tokens without a screenshot), and the `AddDocumentSheet` 0.45 dim (a different value than the swept 0.4; left as-is rather than silently normalized).

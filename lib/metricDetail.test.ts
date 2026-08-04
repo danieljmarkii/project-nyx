@@ -6,6 +6,7 @@ jest.mock('./feedingArrangements', () => ({ getActiveArrangementsForPet: jest.fn
 
 import {
   symptomLabel,
+  symptomOccurrenceLabel,
   buildSymptomDetailWindow,
   buildSymptomDetailWindows,
   type SymptomWindowInput,
@@ -75,6 +76,22 @@ describe('symptomLabel', () => {
   it('title-cases schema symptom types not in the quick-log map (never a raw token)', () => {
     expect(symptomLabel('scratch')).toBe('Scratch');
     expect(symptomLabel('skin_reaction')).toBe('Skin reaction');
+  });
+});
+
+// B-314 — the occurrence-form variant for the calendar summary + a11y sentence
+// ONLY ("Vomiting on 5 days"). Display-only; every other surface stays on
+// symptomLabel's terse form.
+describe('symptomOccurrenceLabel', () => {
+  it('maps the sentence types to their occurrence forms', () => {
+    expect(symptomOccurrenceLabel('vomit')).toBe('Vomiting');
+    expect(symptomOccurrenceLabel('diarrhea')).toBe('Loose stools');
+    expect(symptomOccurrenceLabel('itch')).toBe('Itching');
+  });
+
+  it('falls back to symptomLabel where the label already reads as an occurrence', () => {
+    expect(symptomOccurrenceLabel('lethargy')).toBe('Lethargy');
+    expect(symptomOccurrenceLabel('skin_reaction')).toBe('Skin reaction');
   });
 });
 

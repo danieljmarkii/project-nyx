@@ -106,6 +106,16 @@ describe('FoodPicker search-results mode', () => {
     expect(getByText('Always available')).toBeTruthy();
   });
 
+  // B-356 (PM-ruled 2026-08-04): one food is not a rotation — Jordan's strict
+  // elimination diet feeds exactly one, so the shelf label degrades to the
+  // neutral, still recency-factual "Recently fed".
+  it('labels a single-food shelf "Recently fed", never "{pet}\'s rotation" (B-356)', async () => {
+    DB.getRecentFoods.mockResolvedValue([ROTATION[0]]);
+    const { findByText, queryByText } = renderPicker();
+    expect(await findByText('Recently fed')).toBeTruthy();
+    expect(queryByText("Nyx's rotation")).toBeNull();
+  });
+
   it('typing a query collapses the picker to just the matches', async () => {
     const { findByText, getByPlaceholderText, getByText, queryByText, queryAllByText } =
       renderPicker();

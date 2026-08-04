@@ -37,7 +37,7 @@ import {
   topProteinDefinition,
   compositionDefinition,
 } from '../../lib/dashboardCards';
-import { symptomLabel } from '../../lib/metricDetail';
+import { symptomLabel, symptomOccurrenceLabel } from '../../lib/metricDetail';
 import { MetricCard } from '../../components/dashboard/MetricCard';
 import { SkeletonCard } from '../../components/ui/Skeleton';
 import { RankingCard } from '../../components/dashboard/RankingCard';
@@ -285,7 +285,10 @@ function renderCard(card: DashboardCard, petId: string, petName?: string) {
               kind: 'symptom',
               symptomType: v.symptomType,
               chipLabel: symptomLabel(v.symptomType as string),
-              noun: symptomLabel(v.symptomType as string),
+              // B-314: the summary/empty/a11y sentence gets the occurrence form
+              // ("Vomiting on 5 days"); the chip + drill-in stay on the terse
+              // cross-surface label ("Vomit"), matching History.
+              noun: symptomOccurrenceLabel(v.symptomType as string),
               unit: 'time',
               definition: symptomFrequencyDefinition(
                 symptomLabel(v.symptomType as string).toLowerCase(),
