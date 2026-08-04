@@ -39,6 +39,7 @@ import {
 } from '../../components/profile/TrialCompletionSheet';
 import { useDietTrial } from '../../hooks/useDietTrial';
 import { useTrialAllowedSet } from '../../hooks/useTrialAllowedSet';
+import { useWidgetSlotLabel } from '../../hooks/useWidgetSlotLabel';
 import { resolveTrialCard } from '../../lib/dietTrialCard';
 import { extensionDays, nextTargetDays } from '../../lib/dietTrialCompletion';
 import { extendTrial } from '../../lib/dietTrialSetup';
@@ -165,6 +166,10 @@ function statusLabel(status: string): string {
 export default function ProfileScreen() {
   const { pets, activePet, updatePet } = usePetStore();
   const showMedicationMoment = useMomentStore((s) => s.showMedication);
+  // B-407 — which "Pet N" slot this pet holds in the Home Screen widget picker
+  // (null off-iOS / before the widget index is published), so the profile names
+  // the slot instead of leaving the owner to bind by trial and error.
+  const widgetSlotLabel = useWidgetSlotLabel(activePet?.id);
 
   const [editModalVisible, setEditModalVisible] = useState(false);
   const [conditionModalVisible, setConditionModalVisible] = useState(false);
@@ -781,6 +786,20 @@ export default function ProfileScreen() {
           </View>
         </Card>
 
+        {/* ── Widget slot (B-407) — a quiet lookup line naming the pet's slot in
+            the Home Screen "Edit Widget" picker, so a multi-pet household can bind
+            the right pet instead of guessing "Pet 1…Pet 6". Rendered only when the
+            pet actually holds a published slot (iOS + published index); absent
+            otherwise, never a placeholder. ── */}
+        {widgetSlotLabel && (
+          <Text
+            style={styles.widgetSlotLine}
+            accessibilityLabel={`In the Home Screen widget picker, ${activePet.name} is ${widgetSlotLabel}.`}
+          >
+            Home Screen widget · {widgetSlotLabel}
+          </Text>
+        )}
+
         {/* ── Weight trend (B-186) — descriptive, neutral; expands on the Weight
             chip above. snapshotKg lets the card show the profile weight before any
             weigh-in is logged, so it never contradicts the Weight chip. ── */}
@@ -1246,6 +1265,15 @@ const styles = StyleSheet.create({
     fontSize: theme.textMD,
     fontWeight: theme.weightMedium,
     color: theme.colorNeutralDark,
+  },
+
+  // B-407 — the widget-slot lookup caption. A quiet tertiary footnote to the info
+  // chips (a reference fact, not a daily control), edge-aligned under the card with
+  // a slight inset. Only ever renders when the pet holds a real published slot.
+  widgetSlotLine: {
+    fontSize: theme.textXS,
+    color: theme.colorTextTertiary,
+    paddingHorizontal: theme.space1,
   },
 
   // ── Section layout (gap for inner rows) ──
