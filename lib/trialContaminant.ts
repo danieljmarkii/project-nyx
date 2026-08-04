@@ -361,7 +361,7 @@ export function foodContaminantFlag(
  *     misses, so it falls to rung 3 and membership fires on the trial diet. The
  *     add-to-list escape hatch self-heals it (one tap adds the new capture), the
  *     ledger bounds it to once, and it is over-fire not reassurance — but it is a
- *     real gap. Root cause tracked as B-694 (a shared dedup fix, cross-cutting and
+ *     real gap. Root cause tracked as B-699 (a shared dedup fix, cross-cutting and
  *     Deno-shared, deliberately out of this lib-only PR).
  *   • A vet-PERMITTED food added mid-trial on another device, logged here before
  *     its `diet_trial_foods` row has synced: the primary is resolved so this

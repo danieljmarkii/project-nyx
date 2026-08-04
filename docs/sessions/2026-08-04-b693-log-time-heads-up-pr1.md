@@ -30,7 +30,7 @@ The shipped log-time flag fires on **rung 2 only** (`off_diet_protein` — a rea
 
 ## Reviews
 
-- **`adversarial-reviewer` (mandatory, claim-strength): PASS on the clinical-safety spine.** Claim-strength (no contents claim from a membership flag), no-reassurance (G2), rung-2 precedence/never-both, gate placement + fail-open direction (B-595), and ledger read/write split each held under a concrete counterexample. The *reassurance direction* — the one that endangers a pet — held everywhere it was attacked. **Two OVER-FIRE findings** (alarm-fatigue direction, never reassurance, ≤ the contents flag's existing behaviour): **P3** a divergent-key re-photo of the *prescribed diet* evades the exact-key dedup → membership on the trial diet (self-healed by the add-to-list hatch; bounded by the ledger); **P2** an unsynced cross-device permitted food. Response: docstrings scoped to what the guard actually prevents, P3 pinned as a known-limitation test, root cause filed as **B-694** (a shared `matchAllowed` dedup fix, Deno-shared, out of this lib-only PR). No behaviour change.
+- **`adversarial-reviewer` (mandatory, claim-strength): PASS on the clinical-safety spine.** Claim-strength (no contents claim from a membership flag), no-reassurance (G2), rung-2 precedence/never-both, gate placement + fail-open direction (B-595), and ledger read/write split each held under a concrete counterexample. The *reassurance direction* — the one that endangers a pet — held everywhere it was attacked. **Two OVER-FIRE findings** (alarm-fatigue direction, never reassurance, ≤ the contents flag's existing behaviour): **P3** a divergent-key re-photo of the *prescribed diet* evades the exact-key dedup → membership on the trial diet (self-healed by the add-to-list hatch; bounded by the ledger); **P2** an unsynced cross-device permitted food. Response: docstrings scoped to what the guard actually prevents, P3 pinned as a known-limitation test, root cause filed as **B-699** (a shared `matchAllowed` dedup fix, Deno-shared, out of this lib-only PR). No behaviour change.
 - **`code-reviewer`: ship-ready.** No BUG/ANTI-PATTERN findings; independently re-verified `tsc`, the full suite, the non-UTC matrix, and the union-widen safety across every consumer. Four low-severity items: (2) docstring over-claimed a "+"-prepend convention → **fixed**; (3) the shared-ledger test held trivially → **strengthened** to force a genuine rung flip + prove the ledger (not classification) suppresses; (1) double `readFoodProteinRecord` if PR 2 calls both evaluators → **documented** the single-read composition for PR 2; (4) `status`-select style divergence → left (both correct per contract).
 
 ## DoD
@@ -38,12 +38,12 @@ The shipped log-time flag fires on **rung 2 only** (`off_diet_protein` — a rea
 - AC (silence-state coverage): all pass — fires on rung-3 off-list; rung-2 precedence (never both); silent on unhydrated/out-of-window/permitted/trial-diet/no-context/ledger-spent; `isTrialRunning` gate suppresses both flags on a stale trial; copy carries no banned words / makes no contents claim.
 - Types green (`tsc --noEmit`); full suite green (198 suites / 4342 tests); new suites green under UTC+14 / UTC−10 / Chatham. CI green on the first commit (all 3 checks).
 - Persona sign-off: Engineer ✓ — Data/Biostatistician ✓ (adversarial PASS on the spine) — Designer N/A (no UI) — Dr. Chen N/A (no rendered clinical artifact; PR 3 owns the voice pass).
-- Adversarial review: run, PASS on the spine, findings routed to B-694 (not a merge blocker).
+- Adversarial review: run, PASS on the spine, findings routed to B-699 (not a merge blocker).
 - Tests: present and separated (pure layer / I/O spine / store fixtures).
 
 ## Known issues / tech debt
 
-- **B-694** (filed) — divergent-key re-photo of the trial diet + unsynced permitted food over-fire membership on a food that should be silent. Over-fire direction, bounded, self-healed by the add-to-list hatch; root cause is the shared `matchAllowed` exact-match dedup (cross-cutting, Deno-shared). Pinned by a red-ready test.
+- **B-699** (filed) — divergent-key re-photo of the trial diet + unsynced permitted food over-fire membership on a food that should be silent. Over-fire direction, bounded, self-healed by the add-to-list hatch; root cause is the shared `matchAllowed` exact-match dedup (cross-cutting, Deno-shared). Pinned by a red-ready test.
 
 ## PM action items
 
