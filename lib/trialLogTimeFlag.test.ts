@@ -1,13 +1,17 @@
-// The I/O half of the log-time trial flags: evaluateMealTrialFlag (contents,
-// rung 2) and evaluateMealMembershipFlag (list, rung 3). The pure predicates and
-// copy are exercised in trialContaminant.test.ts (which stubs the db to THROW, to
-// prove the pure layer never touches it). THIS suite is the opposite: a working
-// in-memory db so the evaluator spine — the B-595 `isTrialRunning` gate, the
-// shared ledger, and the food-record read — is covered end to end.
+// The I/O half of the log-time trial flag: evaluateMealLogTimeFlag — the B-693
+// single-read composition that app/log.tsx and the FAB consume. It reads the
+// trial context (TTL-cached) and the logged food's cache row ONCE, then composes
+// the two pure predicates with rung-2 precedence, returning ONE of the two kinds:
+// the CONTENTS flag (rung 2, a read panel names an off-trial protein) or the
+// MEMBERSHIP flag (rung 3, the food simply isn't on the allowed list). The pure
+// predicates and copy are exercised in trialContaminant.test.ts (which stubs the
+// db to THROW, to prove the pure layer never touches it). THIS suite is the
+// opposite: a working in-memory db so the evaluator spine — the B-595
+// `isTrialRunning` gate, the shared ledger, and the food-record read — is covered
+// end to end.
 //
 // The headline assertion here is B-595's close: a stale-active trial (past its
-// effective end) suppresses BOTH log-time flags at the moment of a log, while the
-// standing surfaces (tested elsewhere) keep their input.
+// effective end) suppresses the log-time flag whichever kind would have fired.
 jest.mock('./supabase', () => ({ supabase: {} }));
 
 // A controllable fake for the three reads the evaluator spine makes:
@@ -68,8 +72,7 @@ jest.mock('@react-native-async-storage/async-storage', () => ({
 }));
 
 import {
-  evaluateMealTrialFlag,
-  evaluateMealMembershipFlag,
+  evaluateMealLogTimeFlag,
   noteTrialFlagShown,
   hasFlaggedFoodInTrial,
   clearTrialContextCache,
@@ -90,8 +93,9 @@ function localDateDaysAgo(n: number): string {
   return `${y}-${m}-${day}`;
 }
 
-/** A hydrated duck trial: one resolved primary_diet food, allowed from day 1. */
-function seedDuckTrial(opts: { startedDaysAgo: number; targetDays: number }) {
+/** A hydrated duck trial: one resolved primary_diet food, allowed from day 1.
+ *  Returns the trial's start-day key so a test can assert the flag carries it. */
+function seedDuckTrial(opts: { startedDaysAgo: number; targetDays: number }): { startedAt: string } {
   const startedAt = localDateDaysAgo(opts.startedDaysAgo);
   mockTrialRow = { id: 'trial-1', started_at: startedAt, ended_at: null, target_duration_days: opts.targetDays };
   mockAllowedRows = [
@@ -122,6 +126,7 @@ function seedDuckTrial(opts: { startedDaysAgo: number; targetDays: number }) {
       proteins: '["chicken"]', ingredients_notes: 'chicken', ai_extraction_confidence: null,
     },
   };
+  return { startedAt };
 }
 
 const NOW = () => new Date().toISOString();
@@ -135,69 +140,80 @@ beforeEach(() => {
   mockFoodRows = {};
 });
 
-describe('evaluateMealMembershipFlag — the rung-3 list heads-up, end to end', () => {
-  it('fires on an off-list food during a running trial', async () => {
-    seedDuckTrial({ startedDaysAgo: 5, targetDays: 84 });
-    const flag = await evaluateMealMembershipFlag({ petId: 'p1', foodId: 'dental-treats', occurredAt: NOW() });
-    expect(flag).toEqual({ kind: 'off_trial_list', trialId: 'trial-1', foodId: 'dental-treats' });
+describe('evaluateMealLogTimeFlag — the single-read composition, end to end', () => {
+  it('fires the MEMBERSHIP flag on an off-list food, carrying the trial day-math for the add sheet', async () => {
+    // The dental treats the PM's dogfood found — never on the list, no panel read.
+    // The flag now carries the trial's start + target so the completion card can
+    // build the shipped AddTrialFoodSheet ("Joins the list · day N") without a
+    // second trial read (B-693 PR 2).
+    const { startedAt } = seedDuckTrial({ startedDaysAgo: 5, targetDays: 84 });
+    const flag = await evaluateMealLogTimeFlag({ petId: 'p1', foodId: 'dental-treats', occurredAt: NOW() });
+    expect(flag).toEqual({
+      kind: 'off_trial_list',
+      trialId: 'trial-1',
+      foodId: 'dental-treats',
+      trialStartedAt: startedAt,
+      trialTargetDurationDays: 84,
+    });
   });
 
-  it('routes an off-list food WITH an off-trial protein to the contents flag, never both', async () => {
-    // Rung-2 precedence through the real I/O path: the chicken chew is rung 2, so
-    // the contents evaluator fires and the membership one is silent.
+  it('fires the CONTENTS flag on an off-trial protein — rung-2 precedence, never both', async () => {
+    // The chicken chew carries chicken on a duck trial: the composition returns the
+    // CONTENTS flag and never the membership one — `??` short-circuits because
+    // classifyFeeding routes it rung 2. One call, one flag, the right kind.
     seedDuckTrial({ startedDaysAgo: 5, targetDays: 84 });
-    const membership = await evaluateMealMembershipFlag({ petId: 'p1', foodId: 'chicken-chew', occurredAt: NOW() });
-    expect(membership).toBeNull();
-    const contents = await evaluateMealTrialFlag({ petId: 'p1', foodId: 'chicken-chew', occurredAt: NOW() });
-    expect(contents?.kind).toBe('off_diet_protein');
+    const flag = await evaluateMealLogTimeFlag({ petId: 'p1', foodId: 'chicken-chew', occurredAt: NOW() });
+    expect(flag?.kind).toBe('off_diet_protein');
+    // And it carries no membership schedule fields — it is a different shape.
+    expect(Object.prototype.hasOwnProperty.call(flag, 'trialStartedAt')).toBe(false);
   });
 
   it('is silent when the logged food has no cache row (nothing to classify)', async () => {
     seedDuckTrial({ startedDaysAgo: 5, targetDays: 84 });
-    expect(await evaluateMealMembershipFlag({ petId: 'p1', foodId: 'ghost', occurredAt: NOW() })).toBeNull();
+    expect(await evaluateMealLogTimeFlag({ petId: 'p1', foodId: 'ghost', occurredAt: NOW() })).toBeNull();
   });
 
-  it('is silent when there is no active trial', async () => {
-    // mockTrialRow stays null → loadTrialProteinContext returns null → both evaluators
-    // go quiet. Nothing to be off the list of.
-    expect(await evaluateMealMembershipFlag({ petId: 'p1', foodId: 'dental-treats', occurredAt: NOW() })).toBeNull();
-    expect(await evaluateMealTrialFlag({ petId: 'p1', foodId: 'chicken-chew', occurredAt: NOW() })).toBeNull();
+  it('is silent when there is no active trial (nothing to be off the list of)', async () => {
+    // mockTrialRow stays null → loadTrialProteinContext returns null → the evaluator
+    // goes quiet for either kind.
+    expect(await evaluateMealLogTimeFlag({ petId: 'p1', foodId: 'dental-treats', occurredAt: NOW() })).toBeNull();
+    expect(await evaluateMealLogTimeFlag({ petId: 'p1', foodId: 'chicken-chew', occurredAt: NOW() })).toBeNull();
   });
 });
 
-describe('B-595 — the isTrialRunning gate suppresses BOTH log-time flags on a stale trial', () => {
-  it('a trial past its effective end says nothing at log time (membership)', async () => {
+describe('B-595 — the isTrialRunning gate suppresses the log-time flag on a stale trial', () => {
+  it('a trial past its effective end says nothing at log time — membership kind', async () => {
     // Started 400 days ago, 28-day target → effective end (target + 56d grace) is
     // ~317 days in the past. isTrialRunning is false, so the moment-of-log heads-up
     // is dropped (Principle 1 friction), even though the off-list food would
     // otherwise be a textbook rung-3 exposure.
     seedDuckTrial({ startedDaysAgo: 400, targetDays: 28 });
-    expect(await evaluateMealMembershipFlag({ petId: 'p1', foodId: 'dental-treats', occurredAt: NOW() })).toBeNull();
+    expect(await evaluateMealLogTimeFlag({ petId: 'p1', foodId: 'dental-treats', occurredAt: NOW() })).toBeNull();
   });
 
-  it('the same gate suppresses the contents flag too — this is B-595 closing', async () => {
-    // The whole point of doing both flags in one PR: the pre-existing rung-2 flag
+  it('the same gate suppresses the contents kind too — this is B-595 closing', async () => {
+    // The whole point of doing both flags in one gate: the pre-existing rung-2 flag
     // was NOT gated, so it kept interrupting logs on a trial abandoned months ago.
     seedDuckTrial({ startedDaysAgo: 400, targetDays: 28 });
-    expect(await evaluateMealTrialFlag({ petId: 'p1', foodId: 'chicken-chew', occurredAt: NOW() })).toBeNull();
+    expect(await evaluateMealLogTimeFlag({ petId: 'p1', foodId: 'chicken-chew', occurredAt: NOW() })).toBeNull();
   });
 
   it('still fires while the trial is genuinely running (the gate is not always-off)', async () => {
     seedDuckTrial({ startedDaysAgo: 5, targetDays: 84 });
-    expect(await evaluateMealMembershipFlag({ petId: 'p1', foodId: 'dental-treats', occurredAt: NOW() })).not.toBeNull();
+    expect(await evaluateMealLogTimeFlag({ petId: 'p1', foodId: 'dental-treats', occurredAt: NOW() })).not.toBeNull();
   });
 });
 
 describe('the shared ledger — one heads-up per food per trial, across both kinds', () => {
   it('a membership flag already SHOWN does not fire again', async () => {
     seedDuckTrial({ startedDaysAgo: 5, targetDays: 84 });
-    const first = await evaluateMealMembershipFlag({ petId: 'p1', foodId: 'dental-treats', occurredAt: NOW() });
+    const first = await evaluateMealLogTimeFlag({ petId: 'p1', foodId: 'dental-treats', occurredAt: NOW() });
     expect(first).not.toBeNull();
     // The surface spends the budget on render.
     await noteTrialFlagShown(first!);
     expect(await hasFlaggedFoodInTrial('trial-1', 'dental-treats')).toBe(true);
     // The second log of the same food is quiet — repeats are not news (mock §3).
-    expect(await evaluateMealMembershipFlag({ petId: 'p1', foodId: 'dental-treats', occurredAt: NOW() })).toBeNull();
+    expect(await evaluateMealLogTimeFlag({ petId: 'p1', foodId: 'dental-treats', occurredAt: NOW() })).toBeNull();
   });
 
   it('the budget is SHARED across kinds — a food told once stays quiet even after its rung flips', async () => {
@@ -207,25 +223,25 @@ describe('the shared ledger — one heads-up per food per trial, across both kin
     // chicken drops out — so the same food now classifies rung 3 and would otherwise
     // raise the MEMBERSHIP flag. The kind-agnostic ledger suppresses it.
     seedDuckTrial({ startedDaysAgo: 5, targetDays: 84 });
-    const contents = await evaluateMealTrialFlag({ petId: 'p1', foodId: 'chicken-chew', occurredAt: NOW() });
+    const contents = await evaluateMealLogTimeFlag({ petId: 'p1', foodId: 'chicken-chew', occurredAt: NOW() });
     expect(contents?.kind).toBe('off_diet_protein');
     await noteTrialFlagShown(contents!);
     // Re-read: chicken gone → the chew is now rung-3-eligible. A FRESH food in that
     // exact state fires membership, proving the classification really flipped...
     mockFoodRows['chicken-chew'].proteins = null;
     mockFoodRows['fresh-unread'] = { brand: 'X', product_name: 'Y', proteins: null, ingredients_notes: null, ai_extraction_confidence: null };
-    expect((await evaluateMealMembershipFlag({ petId: 'p1', foodId: 'fresh-unread', occurredAt: NOW() }))?.kind).toBe('off_trial_list');
+    expect((await evaluateMealLogTimeFlag({ petId: 'p1', foodId: 'fresh-unread', occurredAt: NOW() }))?.kind).toBe('off_trial_list');
     // ...but the chew, already spoken for by the contents flag, stays quiet. The
     // LEDGER silences it, not the classification (which is now membership-eligible).
-    expect(await evaluateMealMembershipFlag({ petId: 'p1', foodId: 'chicken-chew', occurredAt: NOW() })).toBeNull();
+    expect(await evaluateMealLogTimeFlag({ petId: 'p1', foodId: 'chicken-chew', occurredAt: NOW() })).toBeNull();
   });
 
   it('does NOT spend the budget just by evaluating (the read/write split holds)', async () => {
     seedDuckTrial({ startedDaysAgo: 5, targetDays: 84 });
-    await evaluateMealMembershipFlag({ petId: 'p1', foodId: 'dental-treats', occurredAt: NOW() });
+    await evaluateMealLogTimeFlag({ petId: 'p1', foodId: 'dental-treats', occurredAt: NOW() });
     // No noteTrialFlagShown call → the food can still fire.
     expect(await hasFlaggedFoodInTrial('trial-1', 'dental-treats')).toBe(false);
-    expect(await evaluateMealMembershipFlag({ petId: 'p1', foodId: 'dental-treats', occurredAt: NOW() })).not.toBeNull();
+    expect(await evaluateMealLogTimeFlag({ petId: 'p1', foodId: 'dental-treats', occurredAt: NOW() })).not.toBeNull();
   });
 });
 
@@ -233,6 +249,9 @@ describe('foodIntakeKey sanity (the fixture keys match the real derivation)', ()
   it('the logged food resolves the same case-folded key the app would', () => {
     // Guards the fixture: readFoodProteinRecord derives foodKey via foodIntakeKey,
     // so this is what the membership predicate sees for duplicate-capture matching.
-    expect(foodIntakeKey('PetCo', 'Dental Treats')).toBe('petcodental treats');
+    // The separator is the 0x1F unit-separator (lib/food.ts) — built with
+    // fromCharCode so an invisible literal can never be silently dropped from source.
+    const SEP = String.fromCharCode(0x1f);
+    expect(foodIntakeKey('PetCo', 'Dental Treats')).toBe(`petco${SEP}dental treats`);
   });
 });

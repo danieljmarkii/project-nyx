@@ -2,8 +2,8 @@
 // fail-fasts on missing env and lib/db pulls expo-sqlite, so both are stubbed —
 // the functions under test here take their facts as arguments precisely so the
 // decision logic can be exercised without either. (The I/O half —
-// loadTrialProteinContext / evaluateMealTrialFlag — is a thin assembly over these
-// and is covered by the on-device QA script.)
+// loadTrialProteinContext / evaluateMealLogTimeFlag — is a thin assembly over these
+// and is covered by lib/trialLogTimeFlag.test.ts + the on-device QA script.)
 //
 // RE-BASED BY B-417 PR 5. The predicate itself now lives in `lib/dietTrial.ts`
 // and is tested there; what is exercised here is this module's own layer — the
@@ -79,7 +79,9 @@ function ctx(
     trialId: 't1',
     petId: 'p1',
     startedAtMs: new Date(2020, 0, 1).getTime(),
-    spec: { id: 't1', startedAt: '2020-01-01' },
+    // `targetDurationDays` is carried so the B-693 membership flag can hand the
+    // completion card the trial's day-math for the shipped add sheet.
+    spec: { id: 't1', startedAt: '2020-01-01', targetDurationDays: 84 },
     allowedFoods: [{ ...TRIAL_FOOD, ...trialFood }],
     trialFoodLabel: 'Zignature Duck',
     primaryCount: 1,
@@ -265,6 +267,10 @@ describe('foodMembershipFlag — shape ③ (a food that is not on the allowed li
       kind: 'off_trial_list',
       trialId: 't1',
       foodId: 'dental-treats',
+      // B-693 — the trial day-math the completion card renders the add sheet from,
+      // read off ctx.spec (never re-derived at the surface).
+      trialStartedAt: '2020-01-01',
+      trialTargetDurationDays: 84,
     });
   });
 
@@ -287,11 +293,15 @@ describe('foodMembershipFlag — shape ③ (a food that is not on the allowed li
 
   it('never carries a proteins field — it cannot assert contents (claim-strength)', () => {
     // The type has no proteins; this pins that the runtime object has none either,
-    // so nothing downstream can read a contents claim off a membership flag.
+    // so nothing downstream can read a contents claim off a membership flag. B-693
+    // added the trial's start/target (schedule facts, for the add sheet) — never a
+    // contents field, which is the guarantee that matters here and still holds.
     const f = foodMembershipFlag(ctx(), 'dental-treats', []);
     expect(f).not.toBeNull();
     expect(Object.prototype.hasOwnProperty.call(f, 'proteins')).toBe(false);
-    expect(Object.keys(f as object).sort()).toEqual(['foodId', 'kind', 'trialId']);
+    expect(Object.keys(f as object).sort()).toEqual(
+      ['foodId', 'kind', 'trialId', 'trialStartedAt', 'trialTargetDurationDays'],
+    );
   });
 
   it('is silent for a food that IS on the list (permitted), and for the trial diet itself', () => {
@@ -528,7 +538,7 @@ describe('heads-up ledger — one per food per trial, counted in heads-ups given
 
   it('B1 — a SUPPRESSED meal does not consume the budget', async () => {
     // Owner logs the chicken chew on the subway: no trial context, so
-    // evaluateMealTrialFlag returns null and records nothing. An hour later, on
+    // evaluateMealLogTimeFlag returns null and records nothing. An hour later, on
     // wifi, the same chew is logged again. Under the old meal-count gate the
     // count was 2 and the food was never flagged for the rest of a 56-day trial.
     expect(await hasFlaggedFoodInTrial('t1', 'chew')).toBe(false);

@@ -677,8 +677,10 @@ export default function FoodCaptureScreen() {
     // written — an add-only commit already had its say in the soft confirm.
     //
     // Two guards this path needs and the picker paths get from
-    // evaluateMealTrialFlag, which it deliberately does not call (the food is
-    // brand-new and in memory, not in the cache yet):
+    // evaluateMealLogTimeFlag, which it deliberately does not call (the food is
+    // brand-new and in memory, not in the cache yet). NB this path surfaces the
+    // CONTENTS flag only (foodContaminantFlag) — the B-693 membership heads-up is a
+    // meal-log-time concern, not part of the food's own add flow:
     //   • THE TRIAL WINDOW. mealOccurredAt is EXIF-seeded, so a photo taken last
     //     week yields a meal that predates the trial — and the card would say
     //     "…'s duck trial should skip chicken. The meal's saved" about a
