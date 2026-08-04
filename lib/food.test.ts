@@ -4,7 +4,7 @@
 // and the standalone Foods tab inherits the same contract.
 import {
   groupFoodsByType, toFoodRows, canonicalizeBrand, groupFoodsByBrand,
-  splitBrandGroupsForPicker, filterFoodsByScope, FOOD_SCOPE_OPTIONS, FORMAT_LABEL,
+  splitBrandGroupsForPicker, filterFoodsByScope, parseFoodScope, FOOD_SCOPE_OPTIONS, FORMAT_LABEL,
   type FoodScope,
   foodIntakeKey, indexIntakeStats, relativeDayLabel, foodIntakeNote,
   selectReliableFavorites, foodFavoriteNote, shouldSuppressFavorites,
@@ -178,6 +178,29 @@ describe('filterFoodsByScope (B-347 picker scope chips)', () => {
     expect(FOOD_SCOPE_OPTIONS.map((o) => o.label)).toEqual(
       ['All', 'Meals', 'Treats', 'Wet', 'Dry'],
     );
+  });
+});
+
+describe('parseFoodScope (B-406 deep-link scope preselect)', () => {
+  it('accepts each of the five known scope values', () => {
+    for (const { value } of FOOD_SCOPE_OPTIONS) {
+      expect(parseFoodScope(value)).toBe(value);
+    }
+  });
+
+  it('resolves the treat door param to the treat scope', () => {
+    // The contract a treat door relies on: log?type=meal&scope=treat.
+    expect(parseFoodScope('treat')).toBe('treat');
+  });
+
+  it('fails closed to undefined on an absent or unknown value', () => {
+    expect(parseFoodScope(undefined)).toBeUndefined();
+    expect(parseFoodScope(null)).toBeUndefined();
+    expect(parseFoodScope('')).toBeUndefined();
+    // Not a scope — a bad link must never throw or coerce; the picker keeps 'all'.
+    expect(parseFoodScope('treats')).toBeUndefined(); // the LABEL, not the value
+    expect(parseFoodScope('Meal')).toBeUndefined(); // case-sensitive by design
+    expect(parseFoodScope('food_type=treat')).toBeUndefined();
   });
 });
 

@@ -158,6 +158,45 @@ describe('FoodPicker search-results mode', () => {
   });
 });
 
+// B-406 — the treat door lands the picker pre-scoped. `initialScope` seeds the
+// pinned scope chip exactly as if the owner had tapped it, so the library filters
+// to that scope on open. The rotation shelf is deliberately unfiltered (the B-347
+// scope-chip contract), so these tests empty the rotation to isolate the library.
+describe('FoodPicker initialScope (B-406)', () => {
+  const meal = (id: string, product: string): PickerFood => ({
+    id, brand: 'BrandM', product_name: product, format: 'dry_kibble', food_type: 'meal', photo_path: null,
+  });
+  const treat = (id: string, product: string): PickerFood => ({
+    id, brand: 'BrandT', product_name: product, format: 'jerky', food_type: 'treat', photo_path: null,
+  });
+  const LIB: PickerFood[] = [meal('m1', 'Kibble'), treat('t1', 'Jerky')];
+
+  beforeEach(() => {
+    // Empty the rotation so only the (scope-filtered) library renders — the
+    // rotation shelf shows recency regardless of scope, by B-347 design.
+    DB.getRecentFoods.mockResolvedValue([]);
+    DB.getLibraryFoods.mockResolvedValue(LIB as never);
+  });
+
+  it('opens scoped to treats — the treat shows, the meal is filtered out', async () => {
+    const { findByText, queryByText } = render(
+      <FoodPicker petId="p1" petName="Nyx" initialScope="treat"
+        onPickFood={jest.fn()} onAddNew={jest.fn()} />,
+    );
+    expect(await findByText('Jerky')).toBeTruthy();
+    expect(queryByText('Kibble')).toBeNull();
+  });
+
+  it('without initialScope the library shows every food (the control)', async () => {
+    const { findByText, getByText } = render(
+      <FoodPicker petId="p1" petName="Nyx"
+        onPickFood={jest.fn()} onAddNew={jest.fn()} />,
+    );
+    expect(await findByText('Jerky')).toBeTruthy();
+    expect(getByText('Kibble')).toBeTruthy();
+  });
+});
+
 // B-417 PR 3 — selection mode. The picker was single-select for its whole life;
 // a real elimination trial is often a wet AND a dry of the same diet, so the
 // trial diet takes N foods and writes N `diet_trial_foods` rows. What matters

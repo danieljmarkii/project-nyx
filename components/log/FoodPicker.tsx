@@ -47,6 +47,13 @@ interface Props {
   // rows at role='primary_diet'. Opening this picker N times to pick N foods would
   // have been the cheaper build and the worse screen.
   selectedFoodIds?: readonly string[];
+  // B-406 — the scope chip the picker opens on. A treat door (a widget/Siri/quick
+  // affordance for logging a treat) deep-links `log?type=meal&scope=treat`, and
+  // log.tsx passes 'treat' through here so Sam lands on the picker already scoped
+  // to treats instead of the general library. Omitted → the picker's own 'all'
+  // default (every existing caller is unaffected). It only SEEDS the chip: the
+  // owner can still switch scope from the pinned row, exactly as after a manual tap.
+  initialScope?: FoodScope;
 }
 
 // B-346 — the "{Pet}'s rotation" shelf. Recent was 5 foods / 14 days in a hidden
@@ -59,7 +66,7 @@ const ROTATION_LIMIT = 12;
 const SCREEN_PADDING = theme.space2;
 
 export function FoodPicker({
-  petId, petName, onPickFood, onAddNew, onOpenDetail, selectedFoodIds,
+  petId, petName, onPickFood, onAddNew, onOpenDetail, selectedFoodIds, initialScope,
 }: Props) {
   const selecting = selectedFoodIds !== undefined;
   const [rotation, setRotation] = useState<PickerFood[]>([]);
@@ -68,8 +75,11 @@ export function FoodPicker({
   const [search, setSearch] = useState('');
   // B-347 — the pinned scope chip. A closed single-select set (All/Meals/Treats/
   // Wet/Dry); 'all' is the default no-op. Filters the library by a FACT (food_type
-  // / format), never a preference read.
-  const [scope, setScope] = useState<FoodScope>('all');
+  // / format), never a preference read. B-406 — seeded from `initialScope` so a
+  // treat door opens pre-scoped; a mount-time seed (not a synced prop) because the
+  // picker is mounted fresh each time the log screen reaches the food step, and
+  // once open the chip is the owner's to change.
+  const [scope, setScope] = useState<FoodScope>(initialScope ?? 'all');
 
   // Multi-pet spec §3.4: the "Always available" section is a HOUSEHOLD view —
   // it shows every active pet's standing facts, each entry labeled with its

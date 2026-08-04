@@ -166,7 +166,7 @@ export default function TrialFoodsScreen() {
           // trial card. The captured food is saved to the LIBRARY, not the allowed set — the
           // owner still finds it here (search is pinned) and taps it to add. Surfacing the
           // just-captured food (pin/scroll-to, or carrying it straight to the confirm sheet) is
-          // a follow-up (B-688), not part of the exit fix.
+          // a follow-up (B-692), not part of the exit fix.
           onAddNew={() => router.push('/food-capture?returnTo=back')}
         />
       </SafeAreaView>

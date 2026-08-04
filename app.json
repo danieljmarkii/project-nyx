@@ -72,6 +72,7 @@
       "expo-sqlite",
       "expo-status-bar",
       "./plugins/withoutPushEntitlement",
+      "./plugins/withWidgetIphoneOnly",
       [
         "expo-widgets",
         {
