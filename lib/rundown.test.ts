@@ -47,11 +47,56 @@ import {
   visitDateLabel,
   rundownDateLine,
   rundownToPlainText,
+  medHistoryCutoffMs,
+  courseRecencyMs,
+  formatMedDate,
+  formatMedDateRange,
+  doseCountPhrase,
+  pastMedTileValue,
+  pastMedEndDetail,
+  earlierCoursesTile,
+  pastMedCourseTile,
+  splitPastCourses,
+  buildPastMedications,
+  pastMedsSectionLabel,
+  RUNDOWN_MED_HISTORY_MONTHS,
   TIME_BANDS,
   TIMING_MIN_EVENTS,
   type TimingCluster,
   type Rundown,
+  type MedItemName,
 } from './rundown';
+import type { MedicationCourse } from './medicationHistory';
+
+// A derived MedicationCourse fixture for the pure past-meds copy/split tests — full defaults
+// (a quiet, ended-less regimen course), overridable. The buildRundown integration test below
+// exercises the real `deriveMedicationCourses` end-to-end; these pin rundown's OWN logic.
+function course(over: Partial<MedicationCourse> = {}): MedicationCourse {
+  return {
+    key: 'reg-1',
+    source: 'regimen',
+    regimenId: 'reg-1',
+    medicationItemId: 'item-1',
+    drugName: 'Metronidazole',
+    isActive: false,
+    tally: { given: 0, partial: 0, missed: 0, refused: 0, unrated: 0 },
+    dosesLogged: 0,
+    firstDoseIso: null,
+    lastDoseIso: null,
+    firstDoseDay: null,
+    lastDoseDay: null,
+    startedAt: null,
+    dosesPerDay: null,
+    scheduleNotes: null,
+    route: null,
+    doseAmount: null,
+    plannedDoses: null,
+    targetDurationDays: null,
+    runDays: null,
+    end: { kind: 'none', lastDoseIso: null },
+    ...over,
+  };
+}
 
 describe('computeTimingCluster', () => {
   it('returns null below the minimum event floor', () => {
@@ -249,6 +294,228 @@ describe('visitDateLabel', () => {
   });
 });
 
+// ── Past medications (B-140 PR 4) — pure copy, windowing, and the H1 register ──────
+// The reassurance/H1 invariants are re-asserted end-to-end in buildRundown's own
+// past-meds case below (clinical-guardrails Pattern 8); these pin the pieces.
+
+describe('medHistoryCutoffMs', () => {
+  it('is roughly 12 months before now (zone-robust range)', () => {
+    const now = Date.parse('2026-08-04T12:00:00Z');
+    const daysBefore = (now - medHistoryCutoffMs(now)) / 86_400_000;
+    expect(daysBefore).toBeGreaterThanOrEqual(360);
+    expect(daysBefore).toBeLessThanOrEqual(372);
+    expect(RUNDOWN_MED_HISTORY_MONTHS).toBe(12);
+  });
+});
+
+describe('courseRecencyMs', () => {
+  it('prefers the last dose, then the ended date, then the start', () => {
+    expect(courseRecencyMs(course({ lastDoseIso: '2026-07-10T09:00:00Z' }))).toBe(
+      Date.parse('2026-07-10T09:00:00Z'),
+    );
+    expect(
+      courseRecencyMs(
+        course({ lastDoseIso: null, end: { kind: 'ended', status: 'completed', endedAt: '2026-03-16' } }),
+      ),
+    ).toBe(Date.parse('2026-03-16'));
+    expect(courseRecencyMs(course({ lastDoseIso: null, startedAt: '2026-02-01' }))).toBe(
+      Date.parse('2026-02-01'),
+    );
+  });
+  it('is null (→ never folded) when the course carries no usable date', () => {
+    expect(courseRecencyMs(course({ lastDoseIso: null, startedAt: null }))).toBeNull();
+  });
+});
+
+describe('formatMedDate', () => {
+  it('formats a day key as "Mon D", picking the right day (TZ-stable)', () => {
+    expect(formatMedDate('2026-03-16')).toMatch(/^\w+ 16$/);
+  });
+  it('slices a stray datetime to its calendar day', () => {
+    expect(formatMedDate('2026-03-16T09:00:00Z')).toMatch(/^\w+ 16$/);
+  });
+  it('returns null for absent/malformed input (never a guessed date)', () => {
+    expect(formatMedDate(null)).toBeNull();
+    expect(formatMedDate('garbage')).toBeNull();
+  });
+});
+
+describe('formatMedDateRange', () => {
+  it('collapses a same-month range to "Mon D – D"', () => {
+    expect(formatMedDateRange('2026-03-03', '2026-03-16')).toMatch(/ – 16$/);
+  });
+  it('keeps both months across a boundary', () => {
+    expect(formatMedDateRange('2026-03-30', '2026-04-02')).toMatch(/– \w+ 2$/);
+  });
+  it('renders a single day when the endpoints coincide', () => {
+    const r = formatMedDateRange('2026-02-11', '2026-02-11');
+    expect(r).toMatch(/^\w+ 11$/);
+    expect(r).not.toContain('–');
+  });
+  it('renders the one known endpoint, or null when neither is known', () => {
+    expect(formatMedDateRange('2026-02-11', null)).toMatch(/^\w+ 11$/);
+    expect(formatMedDateRange(null, '2026-02-11')).toMatch(/^\w+ 11$/);
+    expect(formatMedDateRange(null, null)).toBeNull();
+  });
+});
+
+describe('doseCountPhrase', () => {
+  it('pluralises', () => {
+    expect(doseCountPhrase(1)).toBe('1 dose');
+    expect(doseCountPhrase(26)).toBe('26 doses');
+    expect(doseCountPhrase(0)).toBe('0 doses');
+  });
+});
+
+describe('pastMedTileValue', () => {
+  it('an ended course leads with its window, then length, then count', () => {
+    const v = pastMedTileValue(
+      course({
+        startedAt: '2026-03-03',
+        runDays: 14,
+        dosesLogged: 26,
+        end: { kind: 'ended', status: 'completed', endedAt: '2026-03-16' },
+      }),
+    );
+    expect(v).toMatch(/ – 16 · 14 days · 26 doses$/);
+  });
+  it('a no-end course leads with the dose count, then the logged span', () => {
+    const v = pastMedTileValue(
+      course({
+        source: 'doses',
+        drugName: null,
+        dosesLogged: 3,
+        firstDoseDay: '2026-06-02',
+        lastDoseDay: '2026-06-09',
+        end: { kind: 'none', lastDoseIso: '2026-06-09T09:00:00Z' },
+      }),
+    );
+    expect(v).toMatch(/^3 doses · \w+ 2 – 9$/);
+  });
+  it('a single logged dose reads "1 dose · Mon D"', () => {
+    const v = pastMedTileValue(
+      course({
+        source: 'doses',
+        drugName: null,
+        dosesLogged: 1,
+        firstDoseDay: '2026-02-11',
+        lastDoseDay: '2026-02-11',
+      }),
+    );
+    expect(v).toMatch(/^1 dose · \w+ 11$/);
+  });
+});
+
+describe('pastMedEndDetail (H1 — ending only from an owner action)', () => {
+  it('renders "Ended {date}" ONLY for an owner-ended course', () => {
+    expect(
+      pastMedEndDetail(course({ end: { kind: 'ended', status: 'completed', endedAt: '2026-03-16' } })),
+    ).toMatch(/^Ended \w+ 16$/);
+    // Ended but the date did not survive: still "Ended", never a guessed date.
+    expect(
+      pastMedEndDetail(course({ end: { kind: 'ended', status: 'stopped', endedAt: null } })),
+    ).toBe('Ended');
+  });
+  it('renders "No end recorded" for silence — never "completed"/"ongoing"/a wellness word', () => {
+    const d = pastMedEndDetail(course({ end: { kind: 'none', lastDoseIso: null } }));
+    expect(d).toBe('No end recorded');
+    expect(d).not.toMatch(/\b(complete|completed|ongoing|active|fine|well|good|normal)\b/i);
+  });
+});
+
+describe('earlierCoursesTile (the D3 fold)', () => {
+  it('is a quiet, non-tappable disclosure with a pluralised count', () => {
+    expect(earlierCoursesTile(3)).toEqual({
+      key: 'meds_past',
+      label: 'Earlier',
+      value: '3 earlier courses, over a year ago',
+      tap: null,
+      empty: true,
+    });
+    expect(earlierCoursesTile(1).value).toBe('1 earlier course, over a year ago');
+  });
+});
+
+describe('pastMedCourseTile (tap targets)', () => {
+  it('a regimen course taps to its detail screen', () => {
+    expect(pastMedCourseTile(course({ source: 'regimen', regimenId: 'reg-9' }), 'Metronidazole').tap).toEqual(
+      { kind: 'medication', medicationId: 'reg-9' },
+    );
+  });
+  it('a dose-derived course (no regimen) taps to History', () => {
+    expect(
+      pastMedCourseTile(course({ source: 'doses', regimenId: null, drugName: null }), 'Zyrtec').tap,
+    ).toEqual({ kind: 'history' });
+  });
+});
+
+describe('splitPastCourses', () => {
+  const now = Date.parse('2026-08-04T12:00:00Z');
+  it('shows recent past courses, folds older ones, and drops active courses', () => {
+    const recent = course({ key: 'recent', lastDoseIso: '2026-07-01T12:00:00Z' });
+    const old = course({ key: 'old', lastDoseIso: '2024-01-01T12:00:00Z' });
+    const active = course({ key: 'active', isActive: true, lastDoseIso: '2026-08-01T12:00:00Z' });
+    const { shown, earlierCount } = splitPastCourses([recent, old, active], now);
+    expect(shown.map((c) => c.key)).toEqual(['recent']);
+    expect(earlierCount).toBe(1);
+  });
+});
+
+describe('buildPastMedications', () => {
+  const now = Date.parse('2026-08-04T12:00:00Z');
+  const names = new Map<string, MedItemName>([
+    ['item-zyrtec', { generic: 'cetirizine', brand: 'Zyrtec' }],
+  ]);
+  // Recency order (newest last dose first), as the derivation would hand them over.
+  const orphan = course({
+    key: 'item:item-zyrtec',
+    source: 'doses',
+    regimenId: null,
+    drugName: null,
+    medicationItemId: 'item-zyrtec',
+    dosesLogged: 3,
+    firstDoseDay: '2026-06-02',
+    lastDoseDay: '2026-06-09',
+    lastDoseIso: '2026-06-09T12:00:00Z',
+    end: { kind: 'none', lastDoseIso: '2026-06-09T12:00:00Z' },
+  });
+  const ended = course({
+    key: 'reg-metro',
+    source: 'regimen',
+    regimenId: 'reg-metro',
+    drugName: 'Metronidazole',
+    startedAt: '2026-03-03',
+    runDays: 14,
+    dosesLogged: 26,
+    lastDoseIso: '2026-03-16T12:00:00Z',
+    end: { kind: 'ended', status: 'completed', endedAt: '2026-03-16' },
+  });
+
+  it('names each course (brand-first for dose-derived) and sets the register + tap', () => {
+    const tiles = buildPastMedications([orphan, ended], names, now);
+    expect(tiles).toHaveLength(2);
+    expect(tiles[0].label).toBe('Zyrtec'); // brand-first (B-171)
+    expect(tiles[0].value).toContain('3 doses');
+    expect(tiles[0].detail).toBe('No end recorded');
+    expect(tiles[0].tap).toEqual({ kind: 'history' });
+    expect(tiles[1].label).toBe('Metronidazole');
+    expect(tiles[1].detail).toMatch(/^Ended /);
+    expect(tiles[1].tap).toEqual({ kind: 'medication', medicationId: 'reg-metro' });
+  });
+
+  it('falls back to "Medication" for a dose-derived course with no cached name', () => {
+    const nameless = course({ source: 'doses', regimenId: null, drugName: null, medicationItemId: 'item-unknown' });
+    expect(buildPastMedications([nameless], names, now)[0].label).toBe('Medication');
+  });
+
+  it('appends the folded "earlier courses" row when older courses exist', () => {
+    const old = course({ key: 'old', drugName: 'Prednisolone', lastDoseIso: '2024-05-01T12:00:00Z' });
+    const tiles = buildPastMedications([ended, old], names, now);
+    // ended shown; old folded → the final row is the fold, non-tappable.
+    expect(tiles[tiles.length - 1]).toEqual(earlierCoursesTile(1));
+  });
+});
+
 describe('rundownToPlainText', () => {
   const rundown: Rundown = {
     petName: 'Pixel',
@@ -264,6 +531,7 @@ describe('rundownToPlainText', () => {
       },
       { key: 'weight', label: 'Weight', value: 'No weigh-ins logged', tap: null, empty: true },
     ],
+    pastMedications: [],
   };
 
   it('renders a titled, denominator-carrying plain-text artifact', () => {
@@ -279,6 +547,22 @@ describe('rundownToPlainText', () => {
   it('carries no verdict / reassurance vocabulary', () => {
     expect(rundownToPlainText(rundown)).not.toMatch(/\b(fine|healthy|normal|picky|good|well)\b/i);
   });
+
+  it('delineates the past-meds section under its own heading when present', () => {
+    const withPast: Rundown = {
+      ...rundown,
+      pastMedications: [
+        { key: 'meds_past', label: 'Metronidazole', value: 'Mar 3 – 16 · 14 days · 26 doses', detail: 'Ended Mar 16', tap: null },
+        earlierCoursesTile(2),
+      ],
+    };
+    const text = rundownToPlainText(withPast);
+    expect(text).toContain(pastMedsSectionLabel());
+    expect(text).toContain('Metronidazole: Mar 3 – 16 · 14 days · 26 doses (Ended Mar 16)');
+    expect(text).toContain('Earlier: 2 earlier courses, over a year ago');
+    // The section sits above the sign-off, not after it.
+    expect(text.indexOf(pastMedsSectionLabel())).toBeLessThan(text.indexOf('From Culprit'));
+  });
 });
 
 // ── Orchestrator (buildRundown) — the never-reassure invariant as a TEST, not a
@@ -288,7 +572,8 @@ describe('rundownToPlainText', () => {
 const REASSURANCE_RE = /\b(fine|okay|healthy|nothing to worry|well|normal|good|picky|stable|all clear)\b/i;
 
 function assertNoReassuranceAcrossTiles(r: Rundown): void {
-  for (const tile of r.tiles) {
+  // Every rendered string, including the past-meds block (H1/reassurance ride on it too).
+  for (const tile of [...r.tiles, ...r.pastMedications]) {
     for (const s of [tile.label, tile.value, tile.detail ?? '']) {
       expect(s).not.toMatch(REASSURANCE_RE);
       expect(s).not.toContain('!');
@@ -318,6 +603,8 @@ describe('buildRundown', () => {
     expect(byKey('weight')?.value).toBe('No weigh-ins logged');
     expect(byKey('meds')?.value).toBe('None active');
     expect(byKey('since_visit')?.value).toBe('No prior visit logged');
+    // No regimens, no doses → no past-meds block (silence, not an empty-state finding).
+    expect(r.pastMedications).toEqual([]);
 
     assertNoReassuranceAcrossTiles(r);
   });
@@ -341,9 +628,14 @@ describe('buildRundown', () => {
     ]);
 
     mockGetAllAsync.mockImplementation(async (sql: string) => {
-      if (sql.includes('FROM medications')) {
+      // readActiveRegimens (the "Current meds" block) — matched by its status filter.
+      if (sql.includes("status = 'active'")) {
         return [{ id: 'reg-1', drug_name: 'Cerenia', doses_per_day: null, last_dose: '2026-07-10T09:00:00Z' }];
       }
+      // The three past-meds reads have no history in this test → empty (past block absent).
+      if (sql.includes('target_duration_doses')) return []; // readAllRegimens
+      if (sql.includes('ma.medication_id AS medication_id')) return []; // readAllDoses
+      if (sql.includes('medication_items_cache')) return []; // readMedicationItemNames
       if (sql.includes('event_type = ?')) {
         // 7 vomit events all at the same instant → one band, TZ-robust 7-of-7 cluster.
         return Array.from({ length: 7 }, () => ({ occurred_at: '2026-07-14T05:00:00Z' }));
@@ -372,6 +664,74 @@ describe('buildRundown', () => {
     expect(byKey('meds')?.value).toMatch(/^As needed · last /);
     expect(byKey('since_visit')?.value).toBe('2 new foods · 1 new med');
     expect(byKey('since_visit')?.tap).toEqual({ kind: 'foods' });
+    expect(r.pastMedications).toEqual([]);
+
+    assertNoReassuranceAcrossTiles(r);
+  });
+
+  it('builds the past-meds block end-to-end (ended + dose-derived), excluding active courses', async () => {
+    // Two regimens (one active, one owner-ended) + an ad-hoc dose-derived course. The whole
+    // path — local rows → deriveMedicationCourses → the block — offline and deterministic.
+    mockGetAllAsync.mockImplementation(async (sql: string) => {
+      if (sql.includes("status = 'active'")) {
+        // Current-meds block: the active course only.
+        return [{ id: 'reg-amox', drug_name: 'Amoxicillin', doses_per_day: 2, last_dose: '2026-08-01T12:00:00Z' }];
+      }
+      if (sql.includes('target_duration_doses')) {
+        // readAllRegimens — active + ended, both statuses (the amnesia B-140 undoes).
+        return [
+          {
+            id: 'reg-amox', medication_item_id: 'item-amox', drug_name: 'Amoxicillin', dose_amount: '50 mg',
+            route: 'oral', doses_per_day: 2, schedule_notes: null, started_at: '2026-07-28',
+            target_duration_days: 10, target_duration_doses: null, status: 'active', ended_at: null,
+          },
+          {
+            id: 'reg-metro', medication_item_id: 'item-metro', drug_name: 'Metronidazole', dose_amount: '250 mg',
+            route: 'oral', doses_per_day: 2, schedule_notes: null, started_at: '2026-03-03',
+            target_duration_days: 14, target_duration_doses: null, status: 'completed', ended_at: '2026-03-16',
+          },
+        ];
+      }
+      if (sql.includes('ma.medication_id AS medication_id')) {
+        // readAllDoses: 2 linked to the active regimen, 2 to the ended one, 3 ad-hoc (orphan).
+        return [
+          { medication_id: 'reg-amox', medication_item_id: 'item-amox', adherence: 'given', deleted_at: null, occurred_at: '2026-07-30T12:00:00Z' },
+          { medication_id: 'reg-amox', medication_item_id: 'item-amox', adherence: 'given', deleted_at: null, occurred_at: '2026-08-01T12:00:00Z' },
+          { medication_id: 'reg-metro', medication_item_id: 'item-metro', adherence: 'given', deleted_at: null, occurred_at: '2026-03-05T12:00:00Z' },
+          { medication_id: 'reg-metro', medication_item_id: 'item-metro', adherence: 'given', deleted_at: null, occurred_at: '2026-03-15T12:00:00Z' },
+          { medication_id: null, medication_item_id: 'item-zyrtec', adherence: 'given', deleted_at: null, occurred_at: '2026-06-02T12:00:00Z' },
+          { medication_id: null, medication_item_id: 'item-zyrtec', adherence: 'given', deleted_at: null, occurred_at: '2026-06-05T12:00:00Z' },
+          { medication_id: null, medication_item_id: 'item-zyrtec', adherence: 'given', deleted_at: null, occurred_at: '2026-06-09T12:00:00Z' },
+        ];
+      }
+      if (sql.includes('medication_items_cache')) {
+        return [{ id: 'item-zyrtec', generic_name: 'cetirizine', brand_name: 'Zyrtec' }];
+      }
+      if (sql.includes('event_type = ?')) return [];
+      return [];
+    });
+
+    const r = await buildRundown('pet-1', 'Pixel', Date.parse('2026-08-04T12:00:00Z'));
+
+    // The active course drives the current-meds tile and is NOT duplicated into the past block.
+    expect(r.tiles.find((t) => t.key === 'meds')?.label).toBe('Amoxicillin');
+    const past = r.pastMedications;
+    expect(past.map((t) => t.label)).not.toContain('Amoxicillin');
+
+    // The ended regimen renders with its window + length + count, and "Ended" (H1: owner action).
+    const metro = past.find((t) => t.label === 'Metronidazole');
+    expect(metro).toBeDefined();
+    expect(metro?.value).toContain('14 days'); // DATE-derived span — TZ-stable
+    expect(metro?.value).toContain('2 doses');
+    expect(metro?.detail).toMatch(/^Ended /);
+    expect(metro?.tap).toEqual({ kind: 'medication', medicationId: 'reg-metro' });
+
+    // The ad-hoc course renders brand-first, "No end recorded" (H1: silence never an ending).
+    const zyrtec = past.find((t) => t.label === 'Zyrtec');
+    expect(zyrtec).toBeDefined();
+    expect(zyrtec?.value).toContain('3 doses');
+    expect(zyrtec?.detail).toBe('No end recorded');
+    expect(zyrtec?.tap).toEqual({ kind: 'history' });
 
     assertNoReassuranceAcrossTiles(r);
   });

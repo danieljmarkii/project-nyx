@@ -35,7 +35,13 @@ import {
 } from './analytics';
 import { getWeightHistory, computeWeightTrend } from './weight';
 import { symptomLabel } from './metricDetail';
-import { toLocalDayKey } from './utils';
+import { toLocalDayKey, dayKeyToLocalDate } from './utils';
+import {
+  deriveMedicationCourses,
+  type MedicationCourse,
+  type MedicationHistoryRegimen,
+} from './medicationHistory';
+import { drugDisplayName, type AttributableDose } from './medications';
 
 // ── Tap targets ─────────────────────────────────────────────────────────────
 // Semantic (route-agnostic) so the pure layer stays testable; the screen maps
@@ -56,6 +62,7 @@ export type RundownTileKey =
   | 'appetite'
   | 'weight'
   | 'meds'
+  | 'meds_past'
   | 'since_visit';
 
 export interface RundownTile {
@@ -73,6 +80,14 @@ export interface Rundown {
   petName: string;
   generatedAtMs: number;
   tiles: RundownTile[];
+  // The "Medications — past 12 months" block (B-140 PR 4). Kept SEPARATE from
+  // `tiles` — not appended to it — so the screen renders it as its own labelled
+  // section (a card = a section) and the plain-text export delineates it. The
+  // register differs from `tiles` too: each row is a past course (drug → speakable
+  // dates → an end register), never a symptom/appetite datum. Empty when the pet
+  // has no ended/past courses (no designed empty state here — an absent history is
+  // silence, not a finding; the current-meds tile already answers "on anything now?").
+  pastMedications: RundownTile[];
 }
 
 // The window every count is scoped to — stated on-screen and in the export so a
@@ -85,6 +100,20 @@ export const RUNDOWN_WINDOW_DAYS = 30;
 // case is weighed monthly, so 12 readings could miss the relevant trajectory.
 // A high row cap ≈ "all recent weigh-ins" without an arbitrary time bound.
 export const RUNDOWN_WEIGHIN_LIMIT = 60;
+
+// The past-medications window (B-140 PR 4, D3 PROVISIONAL — flag for PM confirmation).
+// Courses whose most-recent activity is within this many months are listed by name;
+// anything older is folded behind a count ("3 earlier courses, over a year ago") so the
+// list stays speakable for a chronic-med cat while the lifetime question stays answerable
+// (the profile "Past medications" section — PR 2 — and the report table — PR 5 — carry the
+// full named lifetime). The window is a single source of truth: the section label, the
+// cutoff, and the plain-text export all read this constant, so a PM change moves them together.
+export const RUNDOWN_MED_HISTORY_MONTHS = 12;
+
+/** The past-meds section heading — one source, so a window change (D3) moves label + cutoff together. */
+export function pastMedsSectionLabel(): string {
+  return `Medications — past ${RUNDOWN_MED_HISTORY_MONTHS} months`;
+}
 
 /** "As of Jul 18, 2026 · last 30 days" — the artifact's own date stamp. */
 export function rundownDateLine(generatedAtMs: number): string {
@@ -270,6 +299,210 @@ export function visitDateLabel(visitedAt: string): string {
   return `Since ${new Date(ms).toLocaleDateString([], { month: 'short', day: 'numeric' })}`;
 }
 
+// ── Past medications (B-140 PR 4) — pure copy + windowing, tested off the DB ─────
+// The block reads the ONE shared course derivation (deriveMedicationCourses); these
+// helpers turn a derived course into a speakable rundown row and split the past into a
+// shown/folded window. Two invariants govern the copy, enforced by the reassurance scan
+// in rundown.test.ts (clinical-guardrails Pattern 8 — the invariant is a test):
+//   • H1 — "Ended" renders ONLY from `end.kind === 'ended'` (an owner action); silence is
+//     "No end recorded", NEVER "completed"/"ongoing". A history view that promotes a quiet
+//     course into an ending fabricates a clinical fact (the B-422 stale-active lesson).
+//   • H4 — the dose count is `course.dosesLogged` (= dosesTowardTarget), the SAME number the
+//     profile card / med strip / report show for the course; there is no second count here.
+// No verdict, no adherence %, no "picky"/wellness word — a factual course-recall aid.
+
+/**
+ * The lower bound of the shown window: `RUNDOWN_MED_HISTORY_MONTHS` calendar months
+ * before `nowMs`, in the owner's LOCAL calendar (the device zone is the owner's midnight,
+ * B-514) — "past 12 months" means "back to this date a year ago", not a 365-day count.
+ * Pure function of nowMs so it pins without touching the clock.
+ */
+export function medHistoryCutoffMs(nowMs: number): number {
+  const d = new Date(nowMs);
+  d.setMonth(d.getMonth() - RUNDOWN_MED_HISTORY_MONTHS);
+  return d.getTime();
+}
+
+/**
+ * A past course's recency for the shown/folded split: the last dose logged, else the
+ * owner-recorded end date, else the regimen start. Null only when a course carries none of
+ * these (structurally unreachable — every regimen has a start, every dose-derived course a
+ * dose), and a null sorts as SHOWN (we never fold a course we cannot date — showing is the
+ * safe direction on a clinical surface).
+ */
+export function courseRecencyMs(course: MedicationCourse): number | null {
+  const iso =
+    course.lastDoseIso ??
+    (course.end.kind === 'ended' ? course.end.endedAt : null) ??
+    course.startedAt;
+  if (!iso) return null;
+  const ms = Date.parse(iso);
+  return Number.isFinite(ms) ? ms : null;
+}
+
+/**
+ * "Mar 16" from a 'YYYY-MM-DD' day key (a derived local dose day, or a regimen DATE column).
+ * Goes through `dayKeyToLocalDate` (local midnight from the Y/M/D components) so formatting
+ * never shifts the day the way `new Date('2026-03-16')` (UTC-parsed) would behind UTC — the
+ * B-441 trap. Slices to the leading date so a stray datetime still yields its calendar day.
+ * Null (surface omits the date) when the value is absent or malformed — never a guessed date.
+ */
+export function formatMedDate(value: string | null): string | null {
+  if (!value) return null;
+  const d = dayKeyToLocalDate(value.slice(0, 10));
+  return d ? d.toLocaleDateString([], { month: 'short', day: 'numeric' }) : null;
+}
+
+/**
+ * A speakable date range: "Mar 3 – 16" (same month collapses the trailing month),
+ * "Mar 3 – Apr 2" (cross-month), "Mar 3" (single day, or only one endpoint known), or null
+ * (neither known). Month comparison is off the parsed local Dates, so the collapse is
+ * locale-safe (never a string-split guess).
+ */
+export function formatMedDateRange(
+  startKey: string | null,
+  endKey: string | null,
+): string | null {
+  const sd = startKey ? dayKeyToLocalDate(startKey.slice(0, 10)) : null;
+  const ed = endKey ? dayKeyToLocalDate(endKey.slice(0, 10)) : null;
+  const sStr = sd ? sd.toLocaleDateString([], { month: 'short', day: 'numeric' }) : null;
+  const eStr = ed ? ed.toLocaleDateString([], { month: 'short', day: 'numeric' }) : null;
+  if (sStr && ed && sd) {
+    if (sd.getTime() === ed.getTime()) return sStr; // single day
+    if (sd.getFullYear() === ed.getFullYear() && sd.getMonth() === ed.getMonth()) {
+      return `${sStr} – ${ed.getDate()}`; // same month: "Mar 3 – 16"
+    }
+    return `${sStr} – ${eStr}`; // cross-month: "Mar 3 – Apr 2"
+  }
+  return sStr ?? eStr ?? null;
+}
+
+/** "1 dose" / "26 doses" — plain count of doses delivered (H4: `course.dosesLogged`). */
+export function doseCountPhrase(n: number): string {
+  return `${n} dose${n === 1 ? '' : 's'}`;
+}
+
+/**
+ * The speakable facts line for a past course. An ENDED course leads with its window
+ * (start → owner-recorded end), then length, then dose count — the shape of a defined
+ * course a vet places on a timeline. A course with no recorded end leads with the dose
+ * count, then the logged span — "what was logged", since there is no formal window to state.
+ */
+export function pastMedTileValue(course: MedicationCourse): string {
+  const count = doseCountPhrase(course.dosesLogged);
+  if (course.end.kind === 'ended') {
+    const range = formatMedDateRange(course.startedAt, course.end.endedAt);
+    const parts: string[] = [];
+    if (range) parts.push(range);
+    if (course.runDays != null) {
+      parts.push(`${course.runDays} day${course.runDays === 1 ? '' : 's'}`);
+    }
+    parts.push(count);
+    return parts.join(' · ');
+  }
+  const range = formatMedDateRange(course.firstDoseDay, course.lastDoseDay);
+  return range ? `${count} · ${range}` : count;
+}
+
+/**
+ * The end-register secondary line (H1). "Ended {date}" renders ONLY for an owner-ended
+ * course; every other course reads "No end recorded" — the record's silence stated
+ * honestly, never softened into "completed"/"ongoing" and never a wellness word.
+ */
+export function pastMedEndDetail(course: MedicationCourse): string {
+  if (course.end.kind === 'ended') {
+    const when = formatMedDate(course.end.endedAt);
+    return when ? `Ended ${when}` : 'Ended';
+  }
+  return 'No end recorded';
+}
+
+/** The folded "earlier courses" row (D3): a quiet, non-tappable disclosure, never a data row. */
+export function earlierCoursesTile(count: number): RundownTile {
+  return {
+    key: 'meds_past',
+    label: 'Earlier',
+    value: `${count} earlier course${count === 1 ? '' : 's'}, over a year ago`,
+    tap: null,
+    empty: true,
+  };
+}
+
+/**
+ * One past-course row. Regimen courses tap to their detail screen (`/medication/[id]`,
+ * where PR 3 renders the past-course facts); a dose-derived course has no regimen, so it
+ * taps to History (its doses' home). Normal emphasis — a "No end recorded" course is a real
+ * course, not a designed-empty row, so it is NOT faded (the register line carries the
+ * distinction, not the styling).
+ */
+export function pastMedCourseTile(course: MedicationCourse, drugName: string): RundownTile {
+  return {
+    key: 'meds_past',
+    label: drugName,
+    value: pastMedTileValue(course),
+    detail: pastMedEndDetail(course),
+    tap:
+      course.source === 'regimen' && course.regimenId
+        ? { kind: 'medication', medicationId: course.regimenId }
+        : { kind: 'history' },
+  };
+}
+
+/**
+ * Split the derived courses into the past-meds rundown block: the courses shown by name
+ * (past, within the window) and a count of the earlier ones folded behind it. Active
+ * courses are dropped here — they belong to the "Current meds" block, so a course is never
+ * duplicated across the two (QA AC #3). Ordering is the derivation's (recency), preserved.
+ */
+export function splitPastCourses(
+  courses: MedicationCourse[],
+  nowMs: number,
+): { shown: MedicationCourse[]; earlierCount: number } {
+  const cutoff = medHistoryCutoffMs(nowMs);
+  const shown: MedicationCourse[] = [];
+  let earlierCount = 0;
+  for (const c of courses) {
+    if (c.isActive) continue; // the current-meds block owns active courses
+    const ms = courseRecencyMs(c);
+    if (ms == null || ms >= cutoff) shown.push(c);
+    else earlierCount++;
+  }
+  return { shown, earlierCount };
+}
+
+// Brand/generic pair from the drug cache, keyed by medication_item_id.
+export interface MedItemName {
+  generic: string | null;
+  brand: string | null;
+}
+
+// A course's owner-facing drug name. A regimen course carries its own `drug_name` (what the
+// owner entered — the same string the current-meds block shows). A dose-derived course has
+// none, so we resolve the drug library's brand-first name (B-171, the app's owner-facing
+// naming rule); a nameless dose (no item, or an uncached one) falls back to plain
+// "Medication" — honest (doses happened, the drug is unknown), never a guess.
+function resolveCourseName(course: MedicationCourse, itemNames: Map<string, MedItemName>): string {
+  if (course.drugName && course.drugName.trim().length > 0) return course.drugName;
+  const item = course.medicationItemId ? itemNames.get(course.medicationItemId) : undefined;
+  return (item ? drugDisplayName(item.generic, item.brand) : null) ?? 'Medication';
+}
+
+/**
+ * Assemble the past-medications block from the derived courses and the drug-name map:
+ * the shown courses as named rows, then the folded "earlier courses" row when any exist.
+ * Pure — the DB reads live in `buildRundown`, so this is unit-tested with fixtures.
+ */
+export function buildPastMedications(
+  courses: MedicationCourse[],
+  itemNames: Map<string, MedItemName>,
+  nowMs: number,
+): RundownTile[] {
+  const { shown, earlierCount } = splitPastCourses(courses, nowMs);
+  const tiles = shown.map((c) => pastMedCourseTile(c, resolveCourseName(c, itemNames)));
+  if (earlierCount > 0) tiles.push(earlierCoursesTile(earlierCount));
+  return tiles;
+}
+
 /**
  * A plain-text rendering of the rundown for the "Save for the visit" share — a
  * portable, offline artifact the owner can print, message to themselves, or hand
@@ -277,9 +510,15 @@ export function visitDateLabel(visitedAt: string): string {
  * value, denominator; no adjectives, no verdicts.
  */
 export function rundownToPlainText(rundown: Rundown): string {
+  const tileLine = (t: RundownTile) =>
+    t.detail ? `${t.label}: ${t.value} (${t.detail})` : `${t.label}: ${t.value}`;
   const lines = [`${rundown.petName} — visit rundown`, rundownDateLine(rundown.generatedAtMs), ''];
-  for (const tile of rundown.tiles) {
-    lines.push(tile.detail ? `${tile.label}: ${tile.value} (${tile.detail})` : `${tile.label}: ${tile.value}`);
+  for (const tile of rundown.tiles) lines.push(tileLine(tile));
+  // Past-medications block under its own heading, so a clinician reading the saved copy
+  // sees the same labelled section the screen renders (and knows its 12-month window).
+  if (rundown.pastMedications.length > 0) {
+    lines.push('', pastMedsSectionLabel());
+    for (const tile of rundown.pastMedications) lines.push(tileLine(tile));
   }
   lines.push('', "From Culprit — your pet's logged record.");
   return lines.join('\n');
@@ -322,6 +561,68 @@ async function readActiveRegimens(petId: string): Promise<ActiveRegimen[]> {
     dosesPerDay: r.doses_per_day,
     lastDoseIso: r.last_dose,
   }));
+}
+
+// The pet's WHOLE regimen set — active AND ended — for the past-meds derivation. NOT
+// filtered to `status = 'active'`: that filter is the amnesia B-140 exists to undo (spec §1),
+// and `deriveMedicationCourses` needs every status to tell current from past. Selects exactly
+// the columns `MedicationHistoryRegimen` carries (incl. the two duration targets and ended_at)
+// so the row is passed straight to the derivation.
+async function readAllRegimens(petId: string): Promise<MedicationHistoryRegimen[]> {
+  const db = getDb();
+  const rows = await db.getAllAsync<MedicationHistoryRegimen>(
+    `SELECT id, medication_item_id, drug_name, dose_amount, route, doses_per_day,
+            schedule_notes, started_at, target_duration_days, target_duration_doses,
+            status, ended_at
+       FROM medications
+      WHERE pet_id = ?`,
+    [petId],
+  );
+  return rows ?? [];
+}
+
+// Every non-deleted dose for the pet, in `AttributableDose` shape — the whole history, NOT a
+// recency window: the derivation attributes each dose to a course and counts it, and the fold
+// count needs the older courses too. Soft-delete is read THROUGH the parent event
+// (`e.deleted_at` — a dose carries no own deleted_at, migration 020); filtered here for a cheap
+// read AND passed through so `attributeDoses` re-applies it as its single enforcement point
+// (the med-strip pattern). Ordering is irrelevant — the derivation computes its own spans.
+async function readAllDoses(petId: string): Promise<AttributableDose[]> {
+  const db = getDb();
+  const rows = await db.getAllAsync<{
+    medication_id: string | null;
+    medication_item_id: string | null;
+    adherence: string | null;
+    deleted_at: string | null;
+    occurred_at: string;
+  }>(
+    `SELECT ma.medication_id AS medication_id, ma.medication_item_id AS medication_item_id,
+            ma.adherence AS adherence, e.deleted_at AS deleted_at, e.occurred_at AS occurred_at
+       FROM medication_administrations ma
+       JOIN events e ON e.id = ma.event_id
+      WHERE ma.pet_id = ? AND e.deleted_at IS NULL`,
+    [petId],
+  );
+  return (rows ?? []).map((r) => ({
+    medication_id: r.medication_id,
+    medication_item_id: r.medication_item_id,
+    adherence: r.adherence,
+    deleted_at: r.deleted_at,
+    occurred_at: r.occurred_at,
+  }));
+}
+
+// The whole per-account drug cache as an id → name map — a small, organically-built library
+// (B-117), so one read is cheaper than a per-course round trip. Only dose-derived courses need
+// it (a regimen course names itself); resolveCourseName brand-firsts these via drugDisplayName.
+async function readMedicationItemNames(): Promise<Map<string, MedItemName>> {
+  const db = getDb();
+  const rows = await db.getAllAsync<{ id: string; generic_name: string | null; brand_name: string | null }>(
+    `SELECT id, generic_name, brand_name FROM medication_items_cache`,
+  );
+  const map = new Map<string, MedItemName>();
+  for (const r of rows ?? []) map.set(r.id, { generic: r.generic_name, brand: r.brand_name });
+  return map;
 }
 
 /** The most recent logged vet visit's date (YYYY-MM-DD), or null if none logged. */
@@ -421,16 +722,32 @@ export async function buildRundown(
   const monthRange = calendarWindow('month', nowMs);
   const windowDays = WINDOW_DAYS.month;
 
-  const [monthCounts, weekCounts, intake, weightReadings, mealTimestamps, regimens, lastVisit] =
-    await Promise.all([
-      getSymptomCounts(petId, 'month', nowMs),
-      getSymptomCounts(petId, 'week', nowMs),
-      getIntakeRate(petId, 'month', nowMs),
-      getWeightHistory(petId, RUNDOWN_WEIGHIN_LIMIT),
-      readMealTimestamps(petId, monthRange.currentStartMs, monthRange.currentEndMs),
-      readActiveRegimens(petId),
-      readLastVisitDate(petId),
-    ]);
+  const [
+    monthCounts,
+    weekCounts,
+    intake,
+    weightReadings,
+    mealTimestamps,
+    regimens,
+    lastVisit,
+    allRegimens,
+    allDoses,
+    medItemNames,
+  ] = await Promise.all([
+    getSymptomCounts(petId, 'month', nowMs),
+    getSymptomCounts(petId, 'week', nowMs),
+    getIntakeRate(petId, 'month', nowMs),
+    getWeightHistory(petId, RUNDOWN_WEIGHIN_LIMIT),
+    readMealTimestamps(petId, monthRange.currentStartMs, monthRange.currentEndMs),
+    readActiveRegimens(petId),
+    readLastVisitDate(petId),
+    // Past-meds block: the whole regimen+dose history + the drug-name cache, read alongside
+    // everything else. readActiveRegimens (above) still drives the "Current meds" block
+    // unchanged; these three feed the SEPARATE past block via the shared course derivation.
+    readAllRegimens(petId),
+    readAllDoses(petId),
+    readMedicationItemNames(),
+  ]);
 
   const tiles: RundownTile[] = [];
 
@@ -556,5 +873,13 @@ export async function buildRundown(
     });
   }
 
-  return { petName, generatedAtMs: nowMs, tiles };
+  // 7 — Past medications (B-140 PR 4). The ONE shared course derivation over the whole
+  // regimen+dose history, split into a 12-month shown window with earlier courses folded
+  // (D3 provisional). Active courses are dropped here — the current-meds tiles above own
+  // them — so a course is never duplicated across the two blocks. Deterministic + offline:
+  // the derivation is pure and every input is a local-mirror read.
+  const courses = deriveMedicationCourses({ regimens: allRegimens, doses: allDoses });
+  const pastMedications = buildPastMedications(courses, medItemNames, nowMs);
+
+  return { petName, generatedAtMs: nowMs, tiles, pastMedications };
 }
