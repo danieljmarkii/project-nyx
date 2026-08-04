@@ -15,7 +15,7 @@ import { usePetStore } from '../../store/petStore';
 import { useMomentStore, MEAL_FLAGGED_DURATION_MS } from '../../store/momentStore';
 import { getRecentFoods, PickerFood } from '../../lib/db';
 import { insertMeal } from '../../lib/meals';
-import { evaluateMealTrialFlag, noteTrialFlagShown } from '../../lib/trialContaminant';
+import { evaluateMealLogTimeFlag, noteTrialFlagShown } from '../../lib/trialContaminant';
 
 export function FAB() {
   const { prependEvent } = useEventStore();
@@ -62,18 +62,20 @@ export function FAB() {
     return () => { cancelled = true; };
   }, [open, activePet]);
 
-  // B-351 slice 4 — resolve the trial-contaminant heads-up and land it on the
-  // card that is already showing. Fire-and-forget by design: the meal is written,
-  // the card is up, and this is strictly additive information. The ledger write
-  // happens ONLY if the patch landed, so the food's one-per-trial budget can never
-  // be spent on a heads-up the owner did not see.
+  // B-351 slice 4 / B-693 — resolve the log-time trial heads-up (contents OR
+  // membership, whichever fires) and land it on the card that is already showing.
+  // Fire-and-forget by design: the meal is written, the card is up, and this is
+  // strictly additive information. One evaluator, one read of the food record
+  // (B-693 single-read composition). The ledger write happens ONLY if the patch
+  // landed, so the food's one-per-trial budget can never be spent on a heads-up the
+  // owner did not see.
   async function applyTrialFlag(
     eventId: string,
     petId: string,
     foodId: string,
     occurredAt: string,
   ) {
-    const flag = await evaluateMealTrialFlag({ petId, foodId, occurredAt });
+    const flag = await evaluateMealLogTimeFlag({ petId, foodId, occurredAt });
     if (!flag) return;
     if (!patchTrialFlag(eventId, flag)) return;
     rescheduleMoment(MEAL_FLAGGED_DURATION_MS);

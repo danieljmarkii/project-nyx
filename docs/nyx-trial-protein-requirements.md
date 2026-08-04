@@ -1,4 +1,4 @@
-# Trial Protein Capture — Requirements & PR Plan (B-651)
+# Trial Protein Capture — Requirements & PR Plan (B-704)
 
 **Version:** 1.0 · **Date:** 2026-08-04 · **Status:** 🌱 BUILD-READY except TP-1 (provisional, flagged for PM confirmation)
 **Decision record:** TP-1–TP-4 (§0) · **Re-opens:** D6 (`nyx-multi-protein-requirements.md` §10 — "explicit protein on `diet_trials`: RATIFIED, deferred") — re-opened and ratified by the PM 2026-08-04

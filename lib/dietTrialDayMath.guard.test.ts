@@ -137,6 +137,32 @@ describe('B-421 — one diet-trial day counter, not four', () => {
     expect(trial).not.toMatch(MANUAL_MIDNIGHT);
   });
 
+  // B-449 — the vet report's "Day N" was the FIFTH implementation of the counter, outside this
+  // guard: a hand-rolled `Math.max(1, evidence.endDayIndex - ctx.startDayIndex + 1)`. It used
+  // the oracle's day INDICES but re-spelled the day-1-inclusive subtraction, and "each
+  // implementation independently happens to be right today" is precisely the state that precedes
+  // drift. The subtraction now lives once, in `lib/utils.trialDayCounter`, so the report and the
+  // canonical client counter share the arithmetic — the END index stays each caller's own
+  // deliberate choice (client → today, report → evidence end), which is where they MUST differ.
+  it('the vet report and the client oracle share the ONE Day N formula (B-449)', () => {
+    expect(read('supabase/functions/generate-report/trial.ts')).toMatch(/trialDayCounter\(/);
+    expect(read('lib/analytics.ts')).toMatch(/trialDayCounter\(/);
+    // Neither re-spells the inline subtraction the extraction replaced.
+    expect(readCode('supabase/functions/generate-report/trial.ts')).not.toMatch(
+      /Math\.max\(\s*1\s*,\s*evidence\.endDayIndex\s*-\s*ctx\.startDayIndex\s*\+\s*1\s*\)/,
+    );
+    expect(readCode('lib/analytics.ts')).not.toMatch(
+      /Math\.max\(\s*1\s*,\s*todayIndex\s*-\s*startIndex\s*\+\s*1\s*\)/,
+    );
+  });
+
+  it('the ONE Day N formula is defined once in lib/utils, day-1-inclusive (B-449)', () => {
+    const src = readCode('lib/utils.ts');
+    expect(src).toMatch(/export function trialDayCounter\(/);
+    // Floored at 1 — a trial is on its first day the moment it starts, never "day 0".
+    expect(src).toMatch(/Math\.max\(1,/);
+  });
+
   it('the widget resolver computes no day span of its own', () => {
     expect(read('lib/widgetResolution.ts')).not.toMatch(DAY_DIVISION);
   });
@@ -295,5 +321,26 @@ describe('B-421 — one diet-trial day counter, not four', () => {
     expect(body).not.toMatch(DAY_DIVISION);
     // and the caller actually hands it the zone it already loads for time_of_day
     expect(read('supabase/functions/ask/answer.ts')).toMatch(/dietTrialStatus\(ctx\.trial,\s*ctx\.nowMs,\s*ctx\.timezone\)/);
+  });
+
+  // B-539 — the SIXTH path, and the second one on the server boundary this guard reaches.
+  // `resolveWindow`'s since_trial_start branch used a raw UTC `Math.floor`: its windowDays
+  // disagreed with the card's Day N by ±1 for a device off UTC, and its retrieval lower bound
+  // (UTC midnight of the start DATE) dropped the first hours of trial day 1 east of UTC. It now
+  // lives in `resolveTrialWindow`, which derives its day indices from the SAME zoned helpers
+  // dietTrialStatus uses and its [startMs, endMs) bounds from zonedDayStartMs — so it buckets by
+  // the owner's midnight, never raw UTC. The fixed 7d/14d/30d windows deliberately STAY
+  // UTC-aligned (calendarWindow parity), so this guards the trial branch's own function, not the
+  // whole file.
+  it('the since_trial_start window buckets by the owner timezone, not raw UTC (B-539)', () => {
+    const tools = read('supabase/functions/ask/tools.ts');
+    const fn = tools.slice(tools.indexOf('function resolveTrialWindow'));
+    const body = fn.slice(0, fn.indexOf('\n}'));
+    expect(body).toMatch(/zonedDayIndexOf\(/);
+    expect(body).toMatch(/zonedDayIndex\(/);
+    expect(body).toMatch(/zonedDayStartMs\(/); // LOCAL-midnight retrieval bounds, not index*day
+    expect(body).not.toMatch(DAY_DIVISION);
+    // and the tool layer actually threads the owner zone into resolveWindow (not just the counter)
+    expect(read('supabase/functions/ask/answer.ts')).toMatch(/trialStartMs:\s*ctx\.trialStartMs,\s*timezone:\s*ctx\.timezone/);
   });
 });

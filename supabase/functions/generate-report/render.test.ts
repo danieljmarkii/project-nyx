@@ -22,6 +22,8 @@ import type {
   VomitPhenotype,
   MedicationAdherence,
   UnlinkedMedicationGroup,
+  MedicationHistoryEntry,
+  MedicationHistoryTable,
   SymptomLogEntry,
   ConfounderExposure,
   IncidentPhoto,
@@ -215,6 +217,7 @@ function baseSnapshot(overrides: Partial<ReportSnapshot> = {}): ReportSnapshot {
     },
     medications: [],
     unlinkedMedications: [],
+    medicationHistory: null,
     correlation: { established: [], hasEstablished: false, noThreshold: true, stapleProtein: null, timing: [] },
     concurrentChanges: [],
     proteinTimeline: {
@@ -222,6 +225,7 @@ function baseSnapshot(overrides: Partial<ReportSnapshot> = {}): ReportSnapshot {
       proteins: [],
       bins: [],
       unknownByWeek: [],
+      mealDaysByBucket: [],
       feedingsByWeek: [],
       totalByProtein: {},
       hasUnknown: false,
@@ -839,6 +843,55 @@ Deno.test('weight trend → sparkline + descriptive framing, never a loss flag',
   // No loss VERDICT: descriptive only. (The legend legitimately says "never … an alarm",
   // so match loss-as-a-finding phrasing rather than the bare word "alarm".)
   assert.ok(!/losing weight|weight loss|is (?:worrying|concerning)/i.test(html), 'no loss flag / verdict')
+})
+
+// ── B-495 — the At-a-glance weight tile states % of body weight ──────────────────────
+// A `base()` snapshot is a no-trial (symptom-monitoring) report, so `weightDuringTrial`
+// never fires and the tile is the SOLE source of "% of body weight" — which is the point
+// of B-495: on that shape the percentage appeared nowhere in the whole report.
+function weightTileHtml(seriesKg: number[], deltaKg: number): string {
+  const last = seriesKg[seriesKg.length - 1]
+  return renderReport(
+    base({
+      weight: {
+        isEmpty: false,
+        latest: { kg: last, lbs: Math.round(last * 2.2046 * 10) / 10, date: '2026-06-19' },
+        trend: {
+          readingCount: seriesKg.length,
+          seriesLbs: seriesKg.map((k) => Math.round(k * 2.2046 * 10) / 10),
+          seriesKg,
+          latestLbs: Math.round(last * 2.2046 * 10) / 10,
+          latestKg: last,
+          earliestDate: '2026-06-02',
+          latestDate: '2026-06-19',
+          deltaLbs: Math.round(deltaKg * 2.2046 * 10) / 10,
+          deltaKg,
+          direction: deltaKg < 0 ? 'down' : 'up',
+        },
+      },
+    }),
+  )
+}
+
+Deno.test('B-495 — the weight tile states % of body weight, against the earliest in-window reading', () => {
+  // `-0.3 kg` renders identically for a cat and a Labrador; the percent is what makes it
+  // legible. Same absolute, different body mass, different reading — species-blind no more.
+  const cat = weightTileHtml([4.4, 4.1], -0.3)
+  assert.ok(/-0\.3<small>&nbsp;kg<\/small>/.test(cat), 'the absolute stays the headline value')
+  assert.ok(/&asymp;7% of body weight/.test(cat), '-0.3 kg on a 4.4 kg cat is ~7%')
+
+  const dog = weightTileHtml([32.4, 32.1], -0.3)
+  assert.ok(/&asymp;1% of body weight/.test(dog), 'the SAME -0.3 kg on a 32 kg dog is ~1%')
+  // The single source on a no-trial report: exactly one "% of body weight" on the page.
+  assert.equal(dog.match(/% of body weight/g)?.length, 1, 'stated once — the tile, not a caveat repeated')
+})
+
+Deno.test('B-495 — a one-tick weight wobble states NO percent (no manufactured precision)', () => {
+  // A home scale resolves ~0.1 kg, so a 0.1 kg delta is one increment and supports no honest
+  // percent; the tile falls back to the absolute-only label rather than inventing a figure.
+  const t = weightTileHtml([4.4, 4.3], -0.1)
+  assert.ok(!/% of body weight/.test(t), 'no percent for a sub-0.15 kg (one-tick) delta')
+  assert.ok(/home-scale trajectory \(descriptive\)/.test(t), 'the tile keeps its absolute-only label')
 })
 
 // ── §6 cherry-pick guard ────────────────────────────────────────────────────────────
@@ -1736,7 +1789,7 @@ Deno.test('R2-6 — an intervention marker is a neutral "start ·" label (no ▲
   const html = renderReport(snap)
   assert.ok(!html.includes('▲'), 'no triangle spike glyph on the chart')
   assert.ok(/start &middot;/.test(html), 'neutral "start ·" marker label')
-  assert.ok(/dashed vertical marks when a diet, medication, or supplement/i.test(html), 'chart legend line explains the marker')
+  assert.ok(/dashed vertical marks the <b>week<\/b> a diet, medication, or supplement started/i.test(html), 'chart legend line explains the marker is week-granular (B-496)')
 })
 
 Deno.test('the symptom chart draws week-start date labels (May 11, May 18 …), not bare month ticks', () => {
@@ -1764,6 +1817,7 @@ Deno.test('#9 protein-over-time section renders with a hue+texture legend when o
         proteins: ['chicken', 'turkey'],
         bins: [[2, 0], [3, 1], [0, 0]],
         unknownByWeek: [0, 1, 0],
+        mealDaysByBucket: [7, 7, 7],
         feedingsByWeek: [2, 5, 0],
         totalByProtein: { chicken: 5, turkey: 1 },
         hasUnknown: true,
@@ -1779,6 +1833,222 @@ Deno.test('#9 protein-over-time section renders with a hue+texture legend when o
   assert.ok(/reads in black &amp; white/.test(withTimeline), 'the print-safe note is present')
   // Absent when nothing off-diet — never an empty chart.
   assert.ok(!/Off-diet protein exposure over time/.test(renderReport(base())), 'no empty chart when nothing off-diet')
+})
+
+// ── B-444 / B-499 / B-503 — vet-report cold-read dead-ends (Step 9, PR 7) ────────────
+// Four things a cold reader followed on the rendered artifact and found nothing behind:
+// a chart that only separated in colour, a correlation and a treats cross-reference that
+// pointed at content the appendix does not hold, and an at-a-glance heading that claimed
+// one denominator for tiles counted over different ranges.
+
+Deno.test('B-444 — every protein band carries a texture; solid fill is reserved for "no recorded protein"', () => {
+  const html = renderReport(
+    base({
+      proteinTimeline: {
+        weekStartDates: ['2026-04-03', '2026-04-10'],
+        proteins: ['chicken', 'turkey'],
+        bins: [[4, 1], [2, 0]],
+        unknownByWeek: [1, 0],
+        mealDaysByBucket: [7, 7],
+        feedingsByWeek: [6, 2],
+        totalByProtein: { chicken: 6, turkey: 1 },
+        hasUnknown: true,
+        totalFeedings: 9,
+        incompleteFeedings: 0,
+      },
+    }),
+  )
+  // The caption promises the chart reads in black & white; it only does if the LARGEST
+  // band (index 0, the dominant protein) is textured too, not a flat fill a photocopy or
+  // fax cannot tell from the solid no-protein band.
+  assert.ok(/reads in black &amp; white/.test(html), 'the B&W promise is present')
+  const band = (id: string) => (html.match(new RegExp('<pattern id="' + id + '"[\\s\\S]*?</pattern>')) ?? [''])[0]
+  assert.ok(/<circle|<path/.test(band('ptc-0')), 'the dominant protein band (ptc-0) carries a texture, not a bare solid')
+  assert.ok(/<circle|<path/.test(band('ptc-1')), 'the second protein band carries a texture too')
+  // No NUMBERED protein band is a bare solid; the one solid fill is the no-recorded-protein band.
+  assert.equal((html.match(/<pattern id="ptc-\d+"[^>]*><rect[^>]*\/><\/pattern>/g) ?? []).length, 0, 'no numbered protein band is a bare solid fill')
+  assert.ok(/<pattern id="ptc-u"[^>]*><rect[^>]*\/><\/pattern>/.test(html), 'the no-recorded-protein band (ptc-u) is the solid one')
+})
+
+Deno.test('B-499 — the correlation line never dead-ends at appendix C (no correlation content lives there)', () => {
+  const established = renderReport(
+    base({
+      diet: { ...base().diet, trial: { foodLabel: 'RC HP', primaryProtein: 'hydrolyzed', proteinSet: pset(['hydrolyzed']), startedAt: '2026-05-08', targetDurationDays: 56, vetName: null } },
+      correlation: {
+        established: [{ symptomType: 'vomit', protein: 'chicken', matchedPairs: 20, caseExposed: 8, controlExposed: 2, riskDifference: 0.3, pValue: 0.02, symptomEventCount: 12, correlationWindowHours: 24 }],
+        hasEstablished: true, noThreshold: false, stapleProtein: null, timing: [],
+      },
+    }),
+  )
+  assert.ok(/established association threshold/.test(text(established)), 'the finding still renders, with its inline stats')
+  assert.ok(!/Detail in appendix/.test(established), 'the established correlation line has no dead-end appendix-C pointer')
+  const nullResult = renderReport(base({ correlation: { established: [], hasEstablished: false, noThreshold: true, stapleProtein: null, timing: [] } }))
+  assert.ok(/No single food\/protein reached the established correlation threshold/.test(text(nullResult)), 'the null line renders')
+  assert.ok(!/Detail in appendix/.test(nullResult), 'the null correlation line has no dead-end appendix-C pointer either')
+})
+
+Deno.test('B-499 — the diet-history treats line points at appendix C only where appendix C dates the treats', () => {
+  // Trial-derived report: appendix C lists OFF-DIET exposures, so a permitted treat has no
+  // dated row there — the pointer must not appear (it dead-ended for 64 of 65 on the artifact).
+  const trialSnap = base({
+    diet: {
+      ...base().diet,
+      trial: { foodLabel: 'RC HP', primaryProtein: 'hydrolyzed', proteinSet: pset(['hydrolyzed']), startedAt: '2026-05-08', targetDurationDays: 56, vetName: null },
+      treats: { count: 65, distinctItems: 2 },
+    },
+    trial: trialBlockFixture({ startedAt: '2026-05-08', allowedSetUnavailable: false }),
+  })
+  const trialFlat = text(renderReport(trialSnap)).replace(/\s+/g, ' ')
+  assert.ok(/65 this window \(2 distinct\)\./.test(trialFlat), 'the treat count still renders on a trial report')
+  assert.ok(!/65 this window \(2 distinct\)\. Dates in appendix/.test(trialFlat), 'no dead-end "Dates in appendix C" for permitted treats on a trial report')
+  // No-trial report: appendix C IS the treats & table-food table, so the pointer resolves and stays.
+  const noTrialSnap = base({
+    provenance: { ...base().provenance, confounders: [{ eventId: 't1', occurredAt: '2026-06-15T13:00:00Z', dayKey: '2026-06-15', foodLabel: 'Temptations', primaryProtein: 'chicken', proteinSet: pset(['chicken']), format: 'treat', foodType: 'treat', note: null }] },
+    diet: { ...base().diet, treats: { count: 4, distinctItems: 1 } },
+  })
+  const noTrialFlat = text(renderReport(noTrialSnap)).replace(/\s+/g, ' ')
+  assert.ok(/4 this window \(1 distinct\)\. Dates in appendix/.test(noTrialFlat), 'a no-trial report keeps the pointer (appendix C dates every treat)')
+})
+
+Deno.test('B-503 — the at-a-glance heading does not claim one window denominator for trial-range tiles', () => {
+  const snap = base({
+    symptoms: [aggregate({ type: 'vomit', count: 5 })],
+    diet: {
+      ...base().diet,
+      trial: { foodLabel: 'Hydrolyzed', primaryProtein: 'hydrolyzed', proteinSet: pset(['hydrolyzed']), startedAt: '2026-05-01', targetDurationDays: 56, vetName: null },
+      mealCompletion: null,
+      mealItems: [],
+    },
+    atAGlance: { ...base().atAGlance, windowDays: 46, trialDaysLogged: 43, primarySymptom: { type: 'vomit', count: 5 }, totalSymptomIncidents: 5 },
+    trial: trialBlockFixture({ startedAt: '2026-05-01', coverage: { daysLogged: 43, daysElapsed: 43 } }),
+  })
+  const html = renderReport(snap)
+  assert.ok(/Days a meal was logged/.test(html) && /43/.test(html), 'the coverage tile reads 43 / 43 (100% of its OWN range)')
+  // The heading must NOT bare-claim "counts over the 46-day window" — coverage & off-diet
+  // count over the trial's overlap (§5.1), not the window, so 43/43 is not 100% of 46.
+  assert.ok(!/counts over the 46-day window/.test(html), 'the heading no longer bare-claims the window as the denominator')
+  assert.ok(/except coverage &amp; off-diet, over the trial&rsquo;s own range/.test(html), 'the heading flags that coverage & off-diet depart from the window')
+})
+
+// ── B-498: the mid gridline label matches its geometric position on ODD maxima ──────────
+// The mid gridline is drawn at the plot's midpoint (value yMax/2). On an odd max the old code
+// labelled it round(yMax/2) — a "2.5" line printed as "3", so a bar of 3 topped above its own line.
+
+Deno.test('B-498 — an odd bucket max forces an EVEN axis, so the mid gridline label sits on its line', () => {
+  const html = renderReport(
+    base({
+      symptoms: [
+        aggregate({
+          type: 'itch',
+          count: 9,
+          weeklyBuckets: [1, 3, 5], // raw max 5 (odd) → the old bug: mid line at 2.5 labelled "3"
+          bucketStartDates: ['2026-05-01', '2026-05-08', '2026-05-15'],
+          windowDays: 21,
+        }),
+      ],
+    }),
+  )
+  // The three y-axis labels (class "yl num", x=30) are the top, the mid, and 0.
+  const ylabels = [...html.matchAll(/<text class="yl num" x="30"[^>]*>(\d+)<\/text>/g)].map((m) => Number(m[1]))
+  assert.ok(ylabels.length >= 3, 'three y-axis labels render')
+  const [top, midLbl, zero] = ylabels
+  assert.equal(top % 2, 0, 'the axis maximum is even, so its midpoint is a whole number')
+  assert.ok(top >= 5, 'the axis still covers the tallest bar (value 5)')
+  assert.equal(midLbl, top / 2, 'the mid label is EXACTLY half the max — it sits on the line it names')
+  assert.equal(zero, 0, 'the baseline label is 0')
+  // The old off-by-a-half: a "3" mid label under a "5" max (the 2.5 line mislabelled).
+  assert.ok(!(top === 5 && midLbl === 3), 'never the 5-max / 3-mid mislabel (B-498)')
+})
+
+// ── B-496: two interventions in one week surface a COUNT, and the legend promises the week ──
+
+Deno.test('B-496 — two starts in the same week render one marker with a count, not a silent collapse', () => {
+  const html = renderReport(
+    base({
+      symptoms: [
+        aggregate({
+          type: 'vomit',
+          count: 3,
+          weeklyBuckets: [3, 0, 0],
+          bucketStartDates: ['2026-05-01', '2026-05-08', '2026-05-15'],
+          windowDays: 21,
+        }),
+      ],
+      concurrentChanges: [
+        { kind: 'diet_trial', label: 'RC HP', startDate: '2026-05-02', bucketIndex: 0, ongoing: false, endInWindow: null },
+        { kind: 'medication', label: 'Metronidazole', startDate: '2026-05-04', bucketIndex: 0, ongoing: false, endInWindow: null },
+      ],
+    }),
+  )
+  // The second start is no longer invisible: the collapsed marker carries a count + the earliest date.
+  assert.ok(/2 starts &middot; May 2/.test(html), 'a two-start week is marked "2 starts · <earliest>", never silently one')
+  // Exactly one dashed vertical for that week (both starts share it — the count says so).
+  assert.equal((html.match(/class="mark"/g) ?? []).length, 1, 'one vertical for the shared week')
+  // The legend now promises the WEEK, not the day (the mark is bucket-granular).
+  assert.ok(/marks the <b>week<\/b> a diet, medication, or supplement started/.test(html), 'legend is honest about week granularity')
+})
+
+Deno.test('B-496 — a lone start still reads "start · <date>" (single-marker behaviour unchanged)', () => {
+  const html = renderReport(
+    base({
+      symptoms: [aggregate({ type: 'vomit', count: 2, weeklyBuckets: [1, 1], bucketStartDates: ['2026-05-01', '2026-05-08'], windowDays: 14 })],
+      concurrentChanges: [{ kind: 'diet_trial', label: 'RC HP', startDate: '2026-05-09', bucketIndex: 1, ongoing: false, endInWindow: null }],
+    }),
+  )
+  assert.ok(/start &middot; May 9/.test(html), 'a single start keeps its exact-date label')
+  assert.ok(!/\d+ starts &middot;/.test(html), 'no count prefix when the week carries one start')
+})
+
+// ── B-497: the off-diet chart tells a CLEAN week from an UNLOGGED one, never a measured 0 ──
+// The symptom chart already draws a nub for an observed-zero week and a dash for an unlogged one
+// (B-532). The off-diet chart used to draw NOTHING for both, so a clean week and a no-data week
+// were pixel-identical — reassurance-on-absence on the chart a vet reads fastest.
+
+Deno.test('B-497 — an off-diet week that was logged but clean draws a measured "0" nub', () => {
+  const html = renderReport(
+    base({
+      proteinTimeline: {
+        weekStartDates: ['2026-06-01', '2026-06-08', '2026-06-15'],
+        proteins: ['chicken'],
+        bins: [[2], [0], [1]],
+        unknownByWeek: [0, 0, 0],
+        mealDaysByBucket: [7, 7, 7], // a meal was logged every week; the middle week is a genuine clean week
+        feedingsByWeek: [2, 0, 1],
+        totalByProtein: { chicken: 3 },
+        hasUnknown: false,
+        totalFeedings: 3,
+        incompleteFeedings: 0,
+      },
+    }),
+  )
+  assert.ok(/class="nub"/.test(html), 'the observed-zero off-diet week draws a baseline nub (a measured clean week)')
+  assert.ok(!/class="nolog"/.test(html), 'a meal-observed clean week is never rendered as no-data')
+  assert.ok(!/diet was not observed/.test(html), 'no no-data note when the diet was observed every week')
+})
+
+Deno.test('B-497 — an off-diet week with NO meal logged draws a dashed no-data marker + a dash, never a "0"', () => {
+  const html = renderReport(
+    base({
+      proteinTimeline: {
+        weekStartDates: ['2026-06-01', '2026-06-08', '2026-06-15'],
+        proteins: ['chicken'],
+        bins: [[2], [0], [1]],
+        unknownByWeek: [0, 0, 0],
+        mealDaysByBucket: [7, 0, 7], // the middle week had NO meal logged (diet not observed)
+        feedingsByWeek: [2, 0, 1],
+        totalByProtein: { chicken: 3 },
+        hasUnknown: false,
+        totalFeedings: 3,
+        incompleteFeedings: 0,
+      },
+    }),
+  )
+  assert.ok(/class="nolog"/.test(html), 'the unobserved week draws its own hollow dashed marker')
+  assert.equal((html.match(/class="nolog"/g) ?? []).length, 1, 'exactly the one week no meal was logged')
+  // The alt text names it as unlogged — the screen-reader path never voices absence as a zero.
+  assert.ok(/aria-label="Off-diet protein exposure per week: 2, not logged, 1\./.test(html), 'aria names the unobserved bucket, never a 0')
+  // The dash is explained where it is drawn.
+  assert.ok(/diet was not observed \(no meal logged\)/.test(html), 'the no-data marker is named as diet-not-observed, not left to read as a clean week')
 })
 
 Deno.test('cold-read coherence — a completed/stopped medication carries its end date on the meds line + Appendix D', () => {
@@ -2143,6 +2413,7 @@ Deno.test('B-351 D10 — an under-counted protein tally is disclosed as a FLOOR'
         proteins: ['chicken'],
         bins: [[3]],
         unknownByWeek: [0],
+        mealDaysByBucket: [7],
         feedingsByWeek: [4],
         totalByProtein: { chicken: 3 },
         hasUnknown: false,
@@ -2172,6 +2443,7 @@ Deno.test('B-351 §9 — the exposure chart states that one feeding can fill sev
         proteins: ['chicken', 'duck'],
         bins: [[2, 2], [1, 0]],
         unknownByWeek: [0, 0],
+        mealDaysByBucket: [7, 7],
         feedingsByWeek: [2, 1],
         totalByProtein: { chicken: 3, duck: 2 },
         hasUnknown: false,
@@ -2405,6 +2677,7 @@ function breachedTrialSnap() {
       proteins: ['chicken'],
       bins: [[7]],
       unknownByWeek: [0],
+      mealDaysByBucket: [7],
       feedingsByWeek: [7],
       totalByProtein: { chicken: 7 },
       hasUnknown: false,
@@ -2678,8 +2951,8 @@ Deno.test('B-532 — the unfinished meals are itemised with NO reduced-intake fl
     }),
   )
   const t = plain(html)
-  assert.ok(/Meals not finished/.test(t), 'the list renders and is captioned for its own population')
-  assert.ok(/2 unfinished meals shown/.test(t), 'and counted as unfinished meals, not "rated meals"')
+  assert.ok(/Meals not fully eaten/.test(t), 'the list renders and is captioned for its own population')
+  assert.ok(/2 not-fully-eaten meals shown/.test(t), 'and counted as not-fully-eaten meals, not "rated meals"')
   assert.ok(
     !/no fully-eaten meal was recorded in this window/.test(t),
     'NEVER the anchor absence claim — the fully-eaten meals are precisely what this list filters out',
@@ -2760,6 +3033,132 @@ Deno.test('B-532 — the unlogged-medication caveat also rides the EMPTY medicat
   const t = plain(renderReport(base()))
   assert.ok(/No prescription medication is recorded in this window/.test(t))
   assert.ok(/This lists only what the owner entered in Culprit/.test(t))
+})
+
+// ── §4.4 (D2) — the lifetime medication-history table render ────────────────────
+function mhEntry(over: Partial<MedicationHistoryEntry> & { drugName: string }): MedicationHistoryEntry {
+  return {
+    key: over.key ?? over.drugName,
+    source: over.source ?? 'regimen',
+    drugName: over.drugName,
+    isActive: over.isActive ?? false,
+    ended: over.ended ?? false,
+    endStatus: over.endStatus ?? null,
+    endedDay: over.endedDay ?? null,
+    startedDay: over.startedDay ?? null,
+    firstDoseDay: over.firstDoseDay ?? null,
+    lastDoseDay: over.lastDoseDay ?? null,
+    singleDay: over.singleDay ?? false,
+    targetDurationDays: over.targetDurationDays ?? null,
+    targetDurationDoses: over.targetDurationDoses ?? null,
+    dosesPerDay: over.dosesPerDay ?? null,
+    scheduleNotes: over.scheduleNotes ?? null,
+    runDays: over.runDays ?? null,
+    plannedDoses: over.plannedDoses ?? null,
+    dosesLogged: over.dosesLogged ?? 0,
+  }
+}
+function mhTable(entries: MedicationHistoryEntry[], sinceDay: string | null = null): MedicationHistoryTable {
+  return { entries, sinceDay }
+}
+
+Deno.test('§4.4 render — the table renders its title, coverage note and the H1 disclosure UP FRONT', () => {
+  const t = plain(renderReport(base({
+    medicationHistory: mhTable([
+      mhEntry({ drugName: 'Motozol', isActive: true, startedDay: '2026-07-22', targetDurationDoses: 28, dosesPerDay: 2, plannedDoses: 28, dosesLogged: 26, firstDoseDay: '2026-07-22', lastDoseDay: '2026-08-03' }),
+    ], '2026-02-11'),
+  })))
+  assert.ok(/Medication history/.test(t))
+  assert.ok(/Lifetime of the record \(since Feb 2026\)/.test(t))
+  assert.ok(/the medications logged in Culprit/.test(t))
+  // Dates are described accurately for BOTH registers (regimen span vs dose span).
+  assert.ok(/Dates are each course.s span/.test(t))
+  // The H1 disclosure, stated BEFORE the table (B-494 — a load-bearing disclosure a skimmer must apply).
+  assert.ok(/no end date is one whose end the owner never recorded/.test(t))
+  // The COMPLETENESS caveat lives ON the lifetime table (cold-read blocker #2): the lifetime
+  // overview is the surface that invites "is this everything she's ever had?", so "absence is
+  // not evidence it was not given" must sit here, not only under Appendix D.
+  assert.ok(/its absence is not evidence it was not given/.test(t))
+})
+
+Deno.test('§4.4 render — an ACTIVE dose-course: "– present", "N doses planned", a BARE count (no countdown)', () => {
+  const t = plain(renderReport(base({
+    medicationHistory: mhTable([
+      mhEntry({ drugName: 'Motozol', isActive: true, startedDay: '2026-07-22', targetDurationDoses: 28, dosesPerDay: 2, plannedDoses: 28, dosesLogged: 26, firstDoseDay: '2026-07-22', lastDoseDay: '2026-08-03' }),
+    ], '2026-07-22'),
+  })))
+  assert.ok(/Jul 22, 2026 – present/.test(t))
+  assert.ok(/28 doses planned, 2×\/day/.test(t))
+  // Active → the bare count, never "26 of 28": a mid-course "of N" reads as a countdown (B-618 D7).
+  assert.ok(!/26 of 28/.test(t))
+})
+
+Deno.test('§4.4 render — an ENDED regimen: a closed range, "ended by owner", and "of N" delivered/planned', () => {
+  const t = plain(renderReport(base({
+    medicationHistory: mhTable([
+      mhEntry({ drugName: 'Metronidazole', source: 'regimen', ended: true, endStatus: 'completed', startedDay: '2026-03-03', endedDay: '2026-03-16', targetDurationDays: 14, dosesPerDay: 2, plannedDoses: 28, dosesLogged: 26, runDays: 14, firstDoseDay: '2026-03-03', lastDoseDay: '2026-03-16' }),
+    ], '2026-03-03'),
+  })))
+  assert.ok(/Mar 3 – Mar 16, 2026/.test(t))
+  assert.ok(/14 days, 2×\/day · ended by owner/.test(t))
+  assert.ok(/26 of 28/.test(t))
+})
+
+Deno.test('§4.4 render/H1 — a dose-derived course NEVER reads as ended, and shows its dose span', () => {
+  const t = plain(renderReport(base({
+    medicationHistory: mhTable([
+      mhEntry({ drugName: 'Cetirizine HCl (Zyrtec)', source: 'doses', dosesLogged: 3, firstDoseDay: '2026-06-02', lastDoseDay: '2026-06-09' }),
+      mhEntry({ drugName: 'Maropitant (Cerenia)', source: 'doses', singleDay: true, dosesLogged: 1, firstDoseDay: '2026-02-11', lastDoseDay: '2026-02-11' }),
+    ], '2026-02-11'),
+  })))
+  // The orphan tell — never "ended by owner".
+  assert.ok(/No regimen recorded/.test(t))
+  assert.ok(/Single logged dose/.test(t))
+  assert.ok(!/ended by owner/.test(t))
+  // A dose span for the multi-dose orphan; a bare date for the single dose.
+  assert.ok(/Jun 2 – Jun 9, 2026/.test(t))
+  assert.ok(/Feb 11, 2026/.test(t))
+})
+
+Deno.test('§4.4 render — nothing renders when there is no medication history (a null section, not an empty table)', () => {
+  const t = plain(renderReport(base({ medicationHistory: null })))
+  assert.ok(!/Medication history/.test(t))
+})
+
+Deno.test('§4.4 render — an over-delivered ended course drops the "of N" frame (never "30 of 28")', () => {
+  const t = plain(renderReport(base({
+    medicationHistory: mhTable([
+      mhEntry({ drugName: 'Clavamox', source: 'regimen', ended: true, endStatus: 'completed', startedDay: '2026-07-01', endedDay: '2026-07-05', targetDurationDays: 5, dosesPerDay: 1, plannedDoses: 5, dosesLogged: 6, runDays: 5, firstDoseDay: '2026-07-01', lastDoseDay: '2026-07-08' }),
+    ], '2026-07-01'),
+  })))
+  assert.ok(/Clavamox/.test(t))
+  assert.ok(!/6 of 5/.test(t)) // the frame is dropped; the bare honest count stays
+})
+
+Deno.test('§4.4 render/H1 — an owner-ended course with NO recorded end date never fabricates one (adversarial)', () => {
+  // ended_at is nullable and the derivation models { ended, endedAt: null }. The Dates cell must NOT
+  // synthesize a closed range ending at the stray last-dose day — that is a fabricated recorded end.
+  const t = plain(renderReport(base({
+    medicationHistory: mhTable([
+      mhEntry({ drugName: 'Metronidazole', source: 'regimen', ended: true, endStatus: 'completed', endedDay: null, startedDay: '2026-03-03', targetDurationDays: 14, dosesPerDay: 2, plannedDoses: 28, dosesLogged: 2, firstDoseDay: '2026-03-03', lastDoseDay: '2026-06-09' }),
+    ], '2026-03-03'),
+  })))
+  assert.ok(/started Mar 3, 2026/.test(t)) // the start, stated plainly
+  assert.ok(/ended by owner/.test(t)) // the ending is still disclosed — in the Course cell
+  assert.ok(!/Mar 3 – Jun 9, 2026/.test(t)) // NEVER the fabricated closed range the adversarial pass caught
+})
+
+Deno.test('§4.4 render/H1 — a regimen neither active nor owner-ended shows only its start, never a finished-looking range (adversarial)', () => {
+  // A paused / unknown-status regimen (end.kind === "none", isActive false) with logged doses. Its
+  // Course cell shows a real regimen spec, so a closed "start – lastDose" range would read as finished.
+  const t = plain(renderReport(base({
+    medicationHistory: mhTable([
+      mhEntry({ drugName: 'Gabapentin', source: 'regimen', isActive: false, ended: false, startedDay: '2026-01-01', targetDurationDays: 14, dosesPerDay: 2, plannedDoses: 28, dosesLogged: 2, firstDoseDay: '2026-01-05', lastDoseDay: '2026-02-20' }),
+    ], '2026-01-01'),
+  })))
+  assert.ok(/started Jan 1, 2026/.test(t))
+  assert.ok(!/Jan 1 – Feb 20, 2026/.test(t)) // never a finished-looking closed range
+  assert.ok(!/ended by owner/.test(t)) // not ended → no ending marker
 })
 
 Deno.test('B-599 — page 1 never points at an "Also during the trial" row that will not render', () => {
@@ -2855,7 +3254,7 @@ Deno.test('B-532 — a chronicity span that starts at the window edge is stated 
   assert.ok(!/is a floor/.test(observed), 'and NOT a floor when the record actually saw the start')
 })
 
-Deno.test('B-532 — with no photographed incident, the phenotype bar is gone and the caveat is not', () => {
+Deno.test('B-532/B-502 — with no photographed incident, the block collapses to a line and the caveat survives', () => {
   const html = renderReport(
     base({
       vomitPhenotype: {
@@ -2872,10 +3271,19 @@ Deno.test('B-532 — with no photographed incident, the phenotype bar is gone an
     }),
   )
   const t = plain(html)
-  assert.ok(!/no legible read yet/.test(t), 'no chart furniture standing in for data that does not exist')
-  assert.ok(/No incident in this window has a photo/.test(t), 'the state is stated in words')
-  assert.ok(/5 without a photo/.test(t), 'the denominator disclosure survives')
-  assert.ok(/This is not a clearance/.test(t), 'and so does the blood/foreign limitation — the load-bearing half')
+  assert.ok(!/no legible read yet/.test(t), 'no chart furniture standing in for data that does not exist (B-532)')
+  assert.ok(/5 without a photo/.test(t), 'the denominator disclosure survives (§5.10)')
+  // B-502 — the empty block collapses to ONE line: the section said "no photo" three ways (a
+  // photo-read lead, a repeated body, and the blood block), ~100 words for one fact. The lead
+  // that described a read that never happened is gone, the repeated body with it, and the
+  // "Automated photo analysis" tag no longer sits over a section that analysed nothing.
+  assert.ok(!/Colour, contents, and consistency are read automatically/i.test(t), 'the photo-read lead is gone')
+  assert.ok(!/No incident in this window has a photo/.test(t), 'and the repeated no-photo body with it')
+  assert.ok(!/Automated photo analysis/.test(t), 'and the analysis tag over a section that analysed nothing')
+  // B-494 — the not-a-clearance caveat is the load-bearing half: absence of a photo is not
+  // absence of blood, so the section's silence never reads as a negative result. It stays.
+  assert.ok(/Not a clearance:/.test(t), 'the not-a-clearance caveat survives the collapse')
+  assert.ok(/a photo cannot exclude bleeding/.test(t), 'with its substance intact')
 })
 
 Deno.test('B-532 — the weight sparkline states the range it is drawn over', () => {

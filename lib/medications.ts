@@ -18,7 +18,13 @@
 
 // `lib/utils` is itself import-free, so pulling the day-index primitives in keeps
 // this module's plain-jest testability intact (B-441).
-import { localDayIndex, localDayIndexOf } from './utils';
+//
+// The `.ts` extension is deliberate (B-140 PR 1): it makes this module — and now
+// its dose-attribution predicates — importable under Deno, the way `lib/dietTrial.ts`
+// already is, so `lib/medicationHistory.ts` (which reads `attributeDoses` here) and
+// through it `generate-report` can pull this whole chain. Jest/Metro resolve the
+// explicit extension too (`allowImportingTsExtensions`), so no app consumer changes.
+import { localDayIndex, localDayIndexOf } from './utils.ts';
 
 // ── Local schema (mirrors supabase/migrations/020_medication_logging.sql) ─────
 //
@@ -913,12 +919,17 @@ export function canSaveMedicationItemEdit(edit: { generic_name: string }): boole
 //      NOT adherence. This makes the % under-read when an owner gives but doesn't
 //      log a dose — the SAFE direction (§6.1: absence of a logged dose ≠ wellness;
 //      we never assume an unlogged dose was given, and never over-reassure).
-//   2. The denominator is EXPECTED doses (doses_per_day × elapsed days, §5.4), so a
-//      scheduled regimen with zero logged doses is "not tracked" (percent=null),
+//   2. The denominator is EXPECTED doses — the dispensed TOTAL for a dose-denominated
+//      course (target_duration_doses, B-618), else doses_per_day × elapsed days (§5.4).
+//      Either way a regimen with zero logged doses is "not tracked" (percent=null),
 //      never "0% = compliant" and never "100% = all good".
 //
-// PRN/as-needed regimens (doses_per_day = NULL) have no adherence target, so they
-// report a dose COUNT and never a %.
+// A DOSE-denominated course ("#28, until gone") measures against its dispensed total,
+// so a completed 28-of-28 course reads "100% given · 28 of 28" instead of the calendar
+// pace running past the prescription ("28 of 36 · 78%") and contradicting the dose
+// counter on the same card — the reported bug (see the targetDoses field comment). PRN/
+// as-needed regimens (no doses_per_day AND no dose target) have no adherence
+// denominator, so they report a dose COUNT and never a %.
 
 export type DoseAdherence = 'given' | 'partial' | 'missed' | 'refused';
 
@@ -934,12 +945,24 @@ export interface AdherenceTally {
 }
 
 export interface RegimenComplianceInput {
-  // medications.doses_per_day — NULL = PRN/as-needed (no compliance target).
+  // medications.doses_per_day — NULL = PRN/as-needed (no calendar compliance target).
   dosesPerDay: number | null;
   // Whole days the regimen has been running, ≥1 (caller derives from started_at,
   // mirroring the diet-trial card). Kept as a number so this stays clock-free.
   daysElapsed: number;
   tally: AdherenceTally;
+  // B-618 — medications.target_duration_doses for a DOSE-denominated fixed course
+  // ("#28, until gone"), or null/undefined for a days-/ongoing-/PRN-denominated one.
+  // When set (> 0), it is the compliance DENOMINATOR: adherence is measured against
+  // the DISPENSED COURSE TOTAL, never the calendar pace (doses_per_day × daysElapsed).
+  // On a dose course the pace denominator keeps climbing past the prescribed total, so
+  // an owner who had given all 28 prescribed doses ("Dose 28 of 28", course done) saw
+  // "78% given · 28 of 36 doses" — behind, on the SAME card the counter calls complete
+  // (the reported bug: those 8 "missing" doses were never prescribed). Re-basing to the
+  // total makes the two lines agree AND keeps the line off the D3-punted "pace" framing:
+  // it now reads "% of the prescribed course delivered", not "% of what you should have
+  // given by now". The numerator is unchanged (given-only, the stricter rate — D1).
+  targetDoses?: number | null;
 }
 
 export interface RegimenCompliance {
@@ -1008,23 +1031,38 @@ export function regimenDaysElapsed(
 }
 
 export function computeRegimenCompliance(input: RegimenComplianceInput): RegimenCompliance {
-  const { dosesPerDay, daysElapsed, tally } = input;
-  const isPrn = dosesPerDay == null;
+  const { dosesPerDay, daysElapsed, tally, targetDoses } = input;
+
+  // B-618 — a positive target_duration_doses means the course is denominated in DOSES,
+  // so its denominator is the dispensed TOTAL, not the calendar pace. A dose course
+  // therefore always has a real denominator (even with no daily cadence), so it is never
+  // "PRN" for compliance — a "#30, give as directed" course reports "N of 30", not a
+  // bare count. Guard is `> 0` (not just `!= null`) so a corrupt/legacy 0 — the local
+  // SQLite mirror does not enforce the server CHECK — falls back to the pace path rather
+  // than a zero denominator (which the percent guard below nulls out anyway).
+  const isDoseDenominated = targetDoses != null && targetDoses > 0;
+  const isPrn = !isDoseDenominated && dosesPerDay == null;
 
   const administeredDoses = tally.given;
   const flaggedDoses = tally.partial + tally.missed + tally.refused;
-  const loggedDoses = administeredDoses + flaggedDoses + tally.unrated;
+  const loggedDoses = totalTally(tally); // === administeredDoses + flaggedDoses + unrated
 
   const safeDays = Math.max(1, Math.floor(daysElapsed));
-  const expectedDoses = isPrn ? 0 : Math.round((dosesPerDay as number) * safeDays);
+  const expectedDoses = isDoseDenominated
+    ? (targetDoses as number)
+    : isPrn
+      ? 0
+      : Math.round((dosesPerDay as number) * safeDays);
 
   let percent: number | null = null;
-  // Only a scheduled regimen with at least one logged dose gets a %. Zero logged
-  // doses → null → "not tracked" (never "0% = compliant"); PRN → null → show a count.
+  // Only a regimen with a real denominator AND at least one logged dose gets a %. Zero
+  // logged doses → null → "not tracked" (never "0% = compliant"); PRN → null → show a
+  // count. A dose course is never PRN, so it takes this branch as soon as one dose lands.
   if (!isPrn && expectedDoses > 0 && loggedDoses > 0) {
     percent = Math.round((administeredDoses / expectedDoses) * 100);
-    // Clamp: an owner can log more 'given' doses than the elapsed-days estimate
-    // expects (extra doses, same-day catch-up); a >100% adherence reads as nonsense.
+    // Clamp: an owner can log more 'given' doses than the denominator expects — extra
+    // doses / same-day catch-up on the pace path, or administrations past a dose target;
+    // a >100% adherence reads as nonsense.
     percent = Math.max(0, Math.min(100, percent));
   }
 
@@ -1060,6 +1098,16 @@ export function computeRegimenCompliance(input: RegimenComplianceInput): Regimen
 // asserts it.
 export function dosesTowardTarget(tally: AdherenceTally): number {
   return tally.given + tally.partial;
+}
+
+// Every logged administration, whatever its adherence — the count of dose EVENTS behind a
+// tally (distinct from dosesTowardTarget, which is delivered = given + partial). The ONE
+// definition of "how many doses were logged"; computeRegimenCompliance.loggedDoses and the
+// med-history doorway gate both read it rather than re-summing the five buckets (the H4 /
+// §5.3 one-predicate rule — a second inline sum is a bucket the next AdherenceTally field
+// would silently miss).
+export function totalTally(tally: AdherenceTally): number {
+  return tally.given + tally.partial + tally.missed + tally.refused + tally.unrated;
 }
 
 // ── B-618 §6 — the profile card's dose-course progress (PR 4) ────────────────────
@@ -1128,6 +1176,41 @@ export interface AttributableDose {
   occurred_at: string;       // parent event timestamp (window test)
 }
 
+// The PostgREST row shape when a dose is read with its parent event embedded by the
+// DISAMBIGUATED FK — `events!medication_administrations_event_id_fkey(deleted_at,
+// occurred_at)` — for the soft-delete flag + timestamp attribution needs. The FK name
+// is required because migration 023 added a SECOND medication_administrations→events FK
+// (paired_event_id), so a bare `events(...)` embed is ambiguous (PGRST201, B-196).
+export interface DoseEmbedRow {
+  medication_id: string | null;
+  medication_item_id: string | null;
+  adherence: string | null;
+  // supabase-js surfaces a to-one embed as EITHER an object OR a 1-element array.
+  events:
+    | { deleted_at: string | null; occurred_at: string }
+    | { deleted_at: string | null; occurred_at: string }[]
+    | null;
+}
+
+// Map embedded dose rows to `AttributableDose[]`, flattening the object-or-array embed
+// and lifting the parent event's soft-delete + timestamp onto the dose. Shared by every
+// screen that reads doses for attribution (the profile's Current + Past medication
+// loaders) so the embed-shape handling — the exact class of bug B-196 was — lives in ONE
+// place. A missing embed (unreachable with the non-null event_id FK) yields
+// occurred_at = '' (ordered out by attribution, ignored by the tally), never a throw.
+export function mapDoseRowsToAttributable(rows: DoseEmbedRow[] | null | undefined): AttributableDose[] {
+  return (rows ?? []).map((d) => {
+    const ev = Array.isArray(d.events) ? d.events[0] : d.events;
+    return {
+      medication_id: d.medication_id,
+      medication_item_id: d.medication_item_id,
+      adherence: d.adherence,
+      deleted_at: ev?.deleted_at ?? null,
+      occurred_at: ev?.occurred_at ?? '',
+    };
+  });
+}
+
 function bucketAdherence(t: AdherenceTally, adherence: string | null): void {
   switch (adherence) {
     case 'given': t.given++; break;
@@ -1140,6 +1223,18 @@ function bucketAdherence(t: AdherenceTally, adherence: string | null): void {
 
 export function emptyTally(): AdherenceTally {
   return { given: 0, partial: 0, missed: 0, refused: 0, unrated: 0 };
+}
+
+// Bucket a bare list of doses into an AdherenceTally, using the SAME `bucketAdherence`
+// switch the attribution pass uses — so a consumer that already knows which doses
+// belong together (an orphan drug group in lib/medicationHistory) never re-implements
+// the given/partial/missed/refused/unrated bucketing and can never drift from it. The
+// count on top of this stays `dosesTowardTarget` (the one dose-count predicate). Only
+// `adherence` is read, so a caller may pass any dose-shaped rows.
+export function tallyDoses(doses: readonly { adherence: string | null }[]): AdherenceTally {
+  const t = emptyTally();
+  for (const d of doses) bucketAdherence(t, d.adherence);
+  return t;
 }
 
 // Tally each regimen's doses in two passes of precedence:
@@ -1162,23 +1257,64 @@ export function emptyTally(): AdherenceTally {
 //      one-active-regimen-per-drug this is a direct match; if two regimens share a
 //      drug, the most-recently-started in-window one wins, so a dose is never
 //      double-counted. An ad-hoc dose with no item id and no link never matches.
-export function attributeDosesToRegimens(
+// The full result of one attribution pass. `attributeDosesToRegimens` returns only
+// `tallies` (its historical contract, unchanged); `attributeDoses` exposes the whole
+// partition so a course-grain consumer (lib/medicationHistory, B-140) can read the
+// SAME single attribution decision rather than re-deriving a second, drift-prone one
+// (the diet-trial §5.3 "one predicate" lesson — a rival off-diet definition shipped
+// there and had to be re-based). The three fields together partition every NON-deleted
+// dose exactly once:
+//   • tallies      — per-regimen AdherenceTally (id → tally); the count feeds dosesTowardTarget.
+//   • grouped      — the actual attributed doses per regimen (id → doses), so a consumer
+//                    can read a regimen's first/last dose without re-running the match.
+//   • unattributed — every live dose that matched NO regimen: an ad-hoc dose (no drug
+//                    identity), a drug with no in-window regimen, or a dose linked to a
+//                    regimen absent from `regimens`. Surfaced, never dropped — the report's
+//                    §3.8 orphan-dose stance ("nothing logged is silently lost").
+// Soft-deleted doses appear in none of the three (their event is gone).
+export interface DoseAttribution {
+  tallies: Map<string, AdherenceTally>;
+  grouped: Map<string, AttributableDose[]>;
+  unattributed: AttributableDose[];
+}
+
+// The ONE attribution pass. Same two-precedence logic as before (explicit link, then
+// item+window fallback), now also recording which doses landed where. `attributeDoses`
+// is the primitive; `attributeDosesToRegimens` is the thin tally-only accessor every
+// existing caller already uses — its returned Map is byte-for-byte what it always was,
+// because the added `grouped`/`unattributed` bookkeeping never touches `tallies`.
+export function attributeDoses(
   regimens: RegimenWindow[],
   doses: AttributableDose[],
-): Map<string, AdherenceTally> {
+): DoseAttribution {
   const tallies = new Map<string, AdherenceTally>(regimens.map((r) => [r.id, emptyTally()]));
+  const grouped = new Map<string, AttributableDose[]>(regimens.map((r) => [r.id, []]));
+  const unattributed: AttributableDose[] = [];
+
   for (const d of doses) {
     if (d.deleted_at) continue; // soft-deleted dose — its event is gone
 
     // 1. Explicit regimen link wins outright.
     if (d.medication_id) {
       const t = tallies.get(d.medication_id);
-      if (t) bucketAdherence(t, d.adherence);
+      if (t) {
+        bucketAdherence(t, d.adherence);
+        grouped.get(d.medication_id)!.push(d);
+      } else {
+        // Linked to a regimen NOT in this set (an ended one the caller didn't pass, or a
+        // hard-deleted row). It counts toward nothing here (no silent reassignment — the
+        // B-153 test pins that), but it is surfaced as an orphan of its own drug rather
+        // than dropped, so a course-grain reader never loses a logged dose.
+        unattributed.push(d);
+      }
       continue;
     }
 
     // 2. Unlinked dose → match by the same drug, in-window.
-    if (!d.medication_item_id) continue; // ad-hoc dose, no drug identity to match
+    if (!d.medication_item_id) {
+      unattributed.push(d); // ad-hoc dose, no drug identity to match → its own group
+      continue;
+    }
     let best: RegimenWindow | null = null;
     for (const reg of regimens) {
       if (reg.medication_item_id !== d.medication_item_id) continue;
@@ -1186,11 +1322,27 @@ export function attributeDosesToRegimens(
       if (reg.ended_at && d.occurred_at > reg.ended_at) continue; // after it ended
       if (!best || reg.started_at > best.started_at) best = reg;
     }
-    if (!best) continue;
+    if (!best) {
+      unattributed.push(d); // no regimen for this drug in-window → orphan
+      continue;
+    }
     const t = tallies.get(best.id);
-    if (t) bucketAdherence(t, d.adherence);
+    // best.id came from `regimens`, which seeded both maps, so `t` is always present;
+    // the guard mirrors the original and keeps the types honest.
+    if (t) {
+      bucketAdherence(t, d.adherence);
+      grouped.get(best.id)!.push(d);
+    }
   }
-  return tallies;
+
+  return { tallies, grouped, unattributed };
+}
+
+export function attributeDosesToRegimens(
+  regimens: RegimenWindow[],
+  doses: AttributableDose[],
+): Map<string, AdherenceTally> {
+  return attributeDoses(regimens, doses).tallies;
 }
 
 // Headline adherence line for a regimen card. FACTUAL only — counts and a plain

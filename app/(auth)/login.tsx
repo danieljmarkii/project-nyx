@@ -19,8 +19,9 @@ import { TextField } from '../../components/ui/TextField';
 import { PrimaryButton } from '../../components/ui/PrimaryButton';
 import { AuthBrandMark } from '../../components/onboarding/AuthBrandMark';
 import { emailError } from '../../lib/authValidation';
-import { authErrorCopy, isEmailNotConfirmed } from '../../lib/authErrors';
+import { authErrorCopy, isEmailNotConfirmed, isInvalidCredentials } from '../../lib/authErrors';
 import { confirmRedirectUrl } from '../../lib/emailConfirm';
+import { PASSWORD_RECOVERY_ENABLED } from '../../constants/flags';
 
 // Returning-owner sign-in (B-251). Rebuilt on the same design system as the
 // Landing (index) and account (signup) screens so the unauthenticated entry reads
@@ -46,8 +47,16 @@ export default function LoginScreen() {
   const justDeletedAccount = useAuthStore((s) => s.justDeletedAccount);
   const setJustDeletedAccount = useAuthStore((s) => s.setJustDeletedAccount);
   const [showDeletedConfirmation] = useState(justDeletedAccount);
+  // FR-20 §5.6b: an involuntary sign-out (the FR-18 eviction on another device) lands
+  // here with this one-shot armed. Same capture-then-clear lifecycle as the deletion
+  // banner — the two share the banner slot and never both show (a deletion is not an
+  // eviction). Deletion wins if somehow both are set.
+  const signedOutInvoluntarily = useAuthStore((s) => s.signedOutInvoluntarily);
+  const setSignedOutInvoluntarily = useAuthStore((s) => s.setSignedOutInvoluntarily);
+  const [showEvictedBanner] = useState(signedOutInvoluntarily && !justDeletedAccount);
   useEffect(() => {
     if (justDeletedAccount) setJustDeletedAccount(false);
+    if (signedOutInvoluntarily) setSignedOutInvoluntarily(false);
     // Run once on mount: capture-then-clear. Re-running on flag change would clear
     // it before the first paint shows the banner.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -103,7 +112,32 @@ export default function LoginScreen() {
       return;
     }
 
+    // §5.1b / FR-13: a credential mismatch is the moment an owner discovers they need
+    // recovery, so the affordance rides INSIDE the alert announcing the failure —
+    // otherwise the modal sits on top of the FR-1 link and hides it. Gated on the
+    // recovery flag, so until enablement this is exactly today's plain alert below.
+    if (PASSWORD_RECOVERY_ENABLED && isInvalidCredentials(error)) {
+      Alert.alert(
+        "Couldn't sign you in",
+        "We couldn't sign you in with that email and password.",
+        [
+          { text: 'Reset password', onPress: () => goToRecovery(cleanEmail) },
+          { text: 'Try again', style: 'cancel' },
+        ],
+      );
+      return;
+    }
+
     Alert.alert(copy.title, copy.message);
+  }
+
+  // FR-1 / §5.1b: into the request screen, carrying whatever the owner already typed
+  // (FR-2 pre-fill). `push`, not `replace`, so a mistaken tap can back out to login.
+  function goToRecovery(prefillEmail: string) {
+    router.push({
+      pathname: '/(auth)/forgot-password',
+      params: prefillEmail ? { email: prefillEmail } : {},
+    });
   }
 
   async function resendConfirmation(target: string) {
@@ -161,6 +195,18 @@ export default function LoginScreen() {
             <View style={styles.deletedBanner}>
               <Text style={styles.deletedBannerText}>{ACCOUNT_DELETED_MSG}</Text>
             </View>
+          ) : showEvictedBanner ? (
+            // FR-20 §5.6b: the evicted co-resident's landing. "Usually" is load-
+            // bearing — a revoked refresh token is indistinguishable from any other
+            // non-retryable failure, so the device CANNOT know the cause and must not
+            // claim one (§7.2.3). The authoritative "why" arrives by email.
+            <View style={styles.deletedBanner} testID="login-evicted-banner">
+              <Text style={styles.evictedTitle}>You were signed out</Text>
+              <Text style={styles.deletedBannerText}>
+                This usually happens when the account password is changed on another device.
+                Sign in again to pick up where you left off.
+              </Text>
+            </View>
           ) : (
             <Text style={styles.subtitle}>Pick up right where you left off.</Text>
           )}
@@ -193,6 +239,22 @@ export default function LoginScreen() {
             containerStyle={styles.field}
             testID="login-password"
           />
+
+          {/* FR-1: the recovery entry point, under the password field and reachable
+              before any submit. Hidden entirely while PASSWORD_RECOVERY_ENABLED is
+              off (clean store build, spec §8) — not shown-disabled. */}
+          {PASSWORD_RECOVERY_ENABLED ? (
+            <TouchableOpacity
+              onPress={() => goToRecovery(email.trim())}
+              style={styles.forgotLink}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              accessibilityRole="button"
+              accessibilityLabel="Forgot password?"
+              testID="login-forgot"
+            >
+              <Text style={styles.forgotText}>Forgot password?</Text>
+            </TouchableOpacity>
+          ) : null}
 
           <PrimaryButton
             label="Log in"
@@ -282,8 +344,28 @@ const styles = StyleSheet.create({
     lineHeight: theme.lineHeightBody,
     textAlign: 'center',
   },
+  evictedTitle: {
+    fontSize: theme.textSM,
+    fontWeight: theme.weightMedium,
+    color: theme.colorNeutralDark,
+    textAlign: 'center',
+    marginBottom: theme.spaceMicro,
+  },
   field: {
     marginBottom: theme.space2,
+  },
+  // FR-1 link — right-aligned under the password field, ≥44pt tap target, teal in
+  // the shipped auth-link language.
+  forgotLink: {
+    minHeight: 44,
+    alignSelf: 'flex-end',
+    justifyContent: 'center',
+    paddingHorizontal: theme.space1,
+  },
+  forgotText: {
+    fontSize: theme.textSM,
+    fontWeight: theme.weightMedium,
+    color: theme.colorAccent,
   },
   submit: {
     marginTop: theme.space2,

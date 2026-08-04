@@ -276,6 +276,21 @@ export interface BuildVetDocumentRowsInput {
   startPageIndex?: number;
   /** The group's date when appending — a new page inherits it, never re-dates it. */
   documentDate?: string | null;
+  /**
+   * The group's per-document facts when appending. `kind`, `title` and `notes` are
+   * stored per-ROW but must AGREE across a group — buildVetDocumentDetail reads them
+   * from the cover, but a future per-row reader (a per-page kind, an Ask/report
+   * reader, a dedup pass) would see any disagreement. A fresh capture omits them and
+   * gets the D11 zero-decision defaults (`other` / NULL / NULL); the detail-screen
+   * "Add another page" (B-549) reaches this AFTER the owner may have named or typed
+   * the document, so it passes the group's current values. Without this an appended
+   * page silently landed as `other` / untitled beside a renamed, typed cover (found
+   * by code-reviewer — the saved-moment caller was always pre-metadata, this one is
+   * not).
+   */
+  kind?: string;
+  title?: string | null;
+  notes?: string | null;
   now?: Date;
   /** Seams for the test: an id factory and the durable-copy call. */
   newId?: () => string;
@@ -297,6 +312,11 @@ export function buildVetDocumentRows(input: BuildVetDocumentRowsInput): LocalVet
   const {
     petId, source, pages,
     startPageIndex = 0,
+    // Default to the D11 zero-decision capture values; the append path overrides
+    // them with the group's current facts so a group never disagrees with itself.
+    kind = VET_DOCUMENT_DEFAULT_KIND,
+    title = null,
+    notes = null,
     now = new Date(),
     newId = uuid,
     persistFile = persistCapture,
@@ -321,13 +341,17 @@ export function buildVetDocumentRows(input: BuildVetDocumentRowsInput): LocalVet
       // makes linkage a deferrable detail-screen action (VF-4).
       vet_visit_id: null,
       document_group_id: groupId,
-      kind: VET_DOCUMENT_DEFAULT_KIND,
-      // NULL, not a stored default: a stored "Document — Jul 26" is
-      // indistinguishable from an owner who typed it, and the row would lose its
-      // Name affordance forever (see lib/vetDocumentLibrary's header).
-      title: null,
+      // Defaults to `other` on a fresh capture (D11); on append it is the group's
+      // current kind so every page of one document agrees.
+      kind,
+      // NULL on a fresh capture, not a stored default: a stored "Document — Jul 26"
+      // is indistinguishable from an owner who typed it, and the row would lose its
+      // Name affordance forever (see lib/vetDocumentLibrary's header). On append it
+      // is the group's current title (still NULL if the cover is untitled).
+      title,
       document_date: documentDate,
-      notes: null,
+      // NULL on a fresh capture; the group's current notes on append.
+      notes,
       source,
       // B-546. Per PAGE, not per group — for the Files path each document IS one
       // page (two PDFs are two records, see the grouping note in app/vet-files.tsx),
@@ -449,12 +473,33 @@ export function addSheetTitle(petName: string): string {
 // optional thing (D11).
 export const ADD_SHEET_SUBTITLE = 'Saved right away — you can name things later.';
 
+// B-548 — the Files row's subtitle when this binary can't pick a PDF (see
+// isDocumentPickerAvailable). Replaces "PDFs from email or a clinic portal" on the
+// disabled row: forward-looking and honest about what still works, never an error.
+// Deliberately does NOT say "update the app" as an instruction — a TestFlight tester
+// cannot act on that, and the next native build is the PM's to cut, not theirs.
+export const FILES_UNAVAILABLE_SUBTITLE =
+  'Available after the next app update — photos and the camera work now';
+
 export interface SavedMomentCopy {
   headline: string;
   offlineLine: string;
   cardTitle: string;
   /** "3 pages" / "2 documents", or null when there is nothing to add. */
   cardSub: string | null;
+  /**
+   * B-589 — true when this one capture filed MORE THAN ONE document (a Files pick
+   * of two PDFs), as opposed to one multi-page document. The saved moment shows a
+   * single cover card, so "Name it" here could only ever name that cover group —
+   * yet the card reads "2 documents" and the sheet title reads "Name THIS
+   * document", so an owner types a name and believes they named what they saved.
+   * They named one, silently. When this is true the saved moment drops "Name it"
+   * to Done alone and naming happens in the library, where every row now carries
+   * its own filename to tell the documents apart (D11, B-546). This is NOT `cardSub
+   * != null`: a multi-PAGE single document is one nameable document and keeps the
+   * button.
+   */
+  multiDocument: boolean;
 }
 
 // D2-r2. Two lines were argued for in review and neither is decoration:
@@ -482,7 +527,20 @@ export function savedMomentCopy(
       groupCount > 1 ? `${groupCount} documents`
       : coverPages > 1 ? `${coverPages} pages`
       : null,
+    multiDocument: groupCount > 1,
   };
+}
+
+// The shape of a D13 "also add to another pet" target, shared by the saved moment
+// (DocumentSavedMoment) and the detail ⋯ menu (DocumentMoreMenu). It lives here,
+// beside the label builders and the copy path it drives, rather than in either
+// component — both render it and the detail screen builds it, so a lib type is the
+// one home that isn't a sideways import between components.
+export interface AlsoAddTarget {
+  petId: string;
+  /** From alsoAddLabel, or alsoAddedLabel once the copy has been filed. */
+  label: string;
+  done: boolean;
 }
 
 export function alsoAddLabel(petName: string): string {
@@ -515,6 +573,61 @@ export function rejectedPickMessage(screened: ScreenedPicks): string | null {
 }
 
 // ── Local I/O ────────────────────────────────────────────────────────────────
+
+// Every LocalVetDocument column of one group, cover first — the full rows
+// duplicateVetDocumentRowsForPet needs, which the library and detail read models
+// do not carry.
+//
+// The list projects a cover-only summary (VetDocumentGroupRow) and the detail
+// screen projects only what it renders (VetDocumentPageRow drops source,
+// file_size_bytes, updated_at, synced…). D13's copy-to-another-pet needs EVERY
+// column, because the copy is the same document filed twice — its kind, notes,
+// document_date and source_filename all travel. So the ⋯-menu path (B-547) reads
+// the whole rows here rather than reconstructing a partial LocalVetDocument from a
+// read model that was never meant to round-trip.
+//
+// Soft-deleted pages are excluded: the only caller is a live detail screen, and
+// copying a tombstone would file an already-deleted document under the other pet.
+// Column order matches the LocalVetDocument interface (no sync_attempts/sync_error,
+// which are queue bookkeeping and not part of the row shape).
+export const LOCAL_VET_DOCUMENT_GROUP_QUERY =
+  `SELECT id, pet_id, vet_visit_id, document_group_id, kind, title, document_date,
+          notes, source, source_filename, local_uri, storage_path, mime_type,
+          file_size_bytes, page_index, deleted_at, created_at, updated_at, synced
+   FROM vet_documents
+   WHERE document_group_id = ? AND deleted_at IS NULL
+   ORDER BY page_index, created_at`;
+
+export async function readLocalVetDocumentGroup(groupId: string): Promise<LocalVetDocument[]> {
+  const db = getDb();
+  return db.getAllAsync<LocalVetDocument>(LOCAL_VET_DOCUMENT_GROUP_QUERY, [groupId]);
+}
+
+// B-548 — is the Files/PDF capture path usable in THIS binary, at all?
+//
+// expo-document-picker's entry point calls requireNativeModule('ExpoDocumentPicker')
+// at IMPORT time, which THROWS on any binary built before that dependency landed —
+// and Expo Go is retired for SDK 57, so the PM's current dev client and the
+// installed TestFlight build are both exactly that binary (see pickVetPdfs). Before
+// this probe the owner only learned that AFTER tapping the Files row, from an alert
+// telling them to update an app they cannot update from inside TestFlight. Probing
+// once at mount lets the row render disabled with an honest subtitle instead —
+// empty-states-are-features applied to a capability state.
+//
+// `load` is injected so this is testable without a native module; it defaults to
+// requiring the real one, wrapped so the throw becomes a boolean rather than taking
+// down the caller. Cheap to call repeatedly: `require` caches a module that
+// evaluated, and a module that threw is simply re-attempted (still caught).
+export function isDocumentPickerAvailable(
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  load: () => unknown = () => require('expo-document-picker'),
+): boolean {
+  try {
+    return load() != null;
+  } catch {
+    return false;
+  }
+}
 
 // Insert a capture's rows as one unit.
 //

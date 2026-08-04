@@ -13,6 +13,7 @@ import {
   scopeMedicationPaths,
   scopeFoodPaths,
   scopeVetDocumentPaths,
+  scopePetPhotoPaths,
   collectStoragePaths,
   buildDeletionPlan,
   chunk,
@@ -28,7 +29,9 @@ import {
 // legitimate, owner-prefixed paths through untouched. The cross-tenant cases set a
 // different ownerUserId explicitly via owned({ ... }). Food fixtures similarly pass
 // `ownedFoodItemIds` explicitly when they exercise a food path (scopeFoodPaths fails
-// closed on an empty owned-id set, so a food path with no matching id is dropped).
+// closed on an empty owned-id set, so a food path with no matching id is dropped),
+// and pet-photo / vet-document fixtures pass `ownedPetIds` for the same reason
+// (scopePetPhotoPaths / scopeVetDocumentPaths fail closed too — B-463 / VF-1).
 const emptyOwned: OwnedStoragePaths = {
   petPhotoPaths: [],
   eventAttachmentPaths: [],
@@ -159,6 +162,39 @@ Deno.test('scopeFoodPaths — drops nulls/blanks alongside cross-tenant paths', 
   )
 })
 
+Deno.test('scopeFoodPaths — B-582: drops every `..` traversal variant the first-segment test kept', () => {
+  // THE case B-582 exists for, executed by the B-577 rls-privacy-reviewer against
+  // the old filter: in each of these the first segment genuinely IS the attacker's
+  // own food id (the `..` is the SECOND segment), so the original first-segment
+  // test KEPT all three and they reached the service-role remove() verbatim —
+  // cleanPaths never normalises a path. Every legitimate food key is exactly two
+  // segments ({foodItemId}/{n}-{slot}.jpg), so the whole-shape test drops them by
+  // construction, exactly as scopeVetDocumentPaths already did for its bucket.
+  assertEquals(scopeFoodPaths([
+    'food-mine/../food-victim/0-front.jpg',
+    'food-mine/../../food-victim/0-front.jpg',
+    'food-mine//../food-victim/0-front.jpg',
+    'food-mine/sub/dir/0-front.jpg',
+  ], ['food-mine']), [])
+
+  // And the variants that do not even start with an owned segment.
+  assertEquals(
+    scopeFoodPaths(['../food-victim/0-front.jpg', 'food-victim/../food-mine/0-front.jpg'], ['food-mine']),
+    [],
+  )
+
+  // The legitimate two-segment key still survives — a guard that drops everything
+  // is not a guard.
+  assertEquals(scopeFoodPaths(['food-mine/0-front.jpg'], ['food-mine']), ['food-mine/0-front.jpg'])
+})
+
+Deno.test('scopeFoodPaths — F1: a degenerate second segment is dropped', () => {
+  // Same F1 clause on the food guard (shared predicate) — `{own}/`, `{own}/.`,
+  // `{own}/..` are two-segment and owned, but carry no real filename.
+  assertEquals(scopeFoodPaths(['food-1/', 'food-1/.', 'food-1/..'], ['food-1']), [])
+  assertEquals(scopeFoodPaths(['food-1/..', 'food-1/0-front.jpg'], ['food-1']), ['food-1/0-front.jpg'])
+})
+
 // ── scopeVetDocumentPaths (B-478 VF-1) ───────────────────────────────────────
 // The vet-document twin of scopeFoodPaths, keyed on the owned PET id set. Exists
 // to close the `..` prefix residual migration 043 recorded on the sibling bucket,
@@ -215,6 +251,19 @@ Deno.test('scopeVetDocumentPaths — a pet id that is a string PREFIX of another
   assertEquals(scopeVetDocumentPaths(['pet-12/d.pdf'], ['pet-1']), [])
 })
 
+Deno.test('scopeVetDocumentPaths — F1: a degenerate second segment is dropped (`{own}/`, `{own}/.`, `{own}/..`)', () => {
+  // The B-582-review F1 clause: these are TWO segments with an owned first segment,
+  // so they pass the shape+ownership test — but the second segment is empty / `.` /
+  // `..`, which is not a real document. `{own}/..` in particular must not survive:
+  // under a normalising backend its blast radius is the bucket root, not one object.
+  assertEquals(scopeVetDocumentPaths(['pet-1/', 'pet-1/.', 'pet-1/..'], ['pet-1']), [])
+  // The real key alongside them still survives — the clause drops nothing real.
+  assertEquals(
+    scopeVetDocumentPaths(['pet-1/', 'pet-1/doc-9.pdf', 'pet-1/..'], ['pet-1']),
+    ['pet-1/doc-9.pdf'],
+  )
+})
+
 Deno.test('scopeVetDocumentPaths — a slashless key is dropped (no folder segment)', () => {
   // storage.foldername on a key with no '/' returns an empty array, so [1] is NULL and
   // the policy drops it. A bare key named for a pet id is not a real document.
@@ -246,11 +295,85 @@ Deno.test('scopeVetDocumentPaths — passes nulls through for cleanPaths to drop
   assertEquals(scopeVetDocumentPaths([null, undefined, 'pet-1/d.pdf'], ['pet-1']), ['pet-1/d.pdf'])
 })
 
+// ── scopePetPhotoPaths (B-463) ───────────────────────────────────────────────
+// Defense-in-depth BEHIND migration 042's `pets_photo_path_pet_prefix` CHECK.
+// The CHECK closed the plain cross-tenant write; these cases pin the two things
+// the CHECK does NOT give us — the `..` traversal keys a prefix test admits, and
+// safety if the CHECK is ever dropped — so they are written as the attacks.
+
+Deno.test('scopePetPhotoPaths — keeps the legitimate {petId}/profile.jpg key', () => {
+  assertEquals(
+    scopePetPhotoPaths(['pet-1/profile.jpg', 'pet-2/profile.jpg'], ['pet-1', 'pet-2']),
+    ['pet-1/profile.jpg', 'pet-2/profile.jpg'],
+  )
+})
+
+Deno.test('scopePetPhotoPaths — B-431 finding 4: a path naming an unowned pet is dropped', () => {
+  // The original attack: an attacker sets their OWN pet's photo_path to
+  // `{victimPetId}/profile.jpg` and deletes their account, turning the service-role
+  // purge into a cross-tenant DELETE of the victim's photo. Migration 042's CHECK
+  // makes that unwritable through the API today; this is the belt to that braces,
+  // because the purge runs as the service role and would remove the literal string.
+  assertEquals(
+    scopePetPhotoPaths(['pet-mine/profile.jpg', 'pet-victim/profile.jpg'], ['pet-mine']),
+    ['pet-mine/profile.jpg'],
+  )
+})
+
+Deno.test('scopePetPhotoPaths — drops every `..` traversal variant the 042 CHECK admits', () => {
+  // The 042 CHECK is `starts_with(photo_path, id::text || '/')` — a PREFIX test —
+  // so every one of these is WRITABLE even with the CHECK in place: each starts
+  // with the attacker's own `{petId}/`. A first-segment filter keeps them all
+  // (the first segment genuinely is owned); the whole-shape test is what drops
+  // them. Same residual class the VF-1 review executed on vet documents.
+  assertEquals(scopePetPhotoPaths([
+    'pet-mine/../pet-victim/profile.jpg',
+    'pet-mine/../../pet-victim/profile.jpg',
+    'pet-mine//../pet-victim/profile.jpg',
+    'pet-mine/sub/dir/profile.jpg',
+  ], ['pet-mine']), [])
+
+  // The legitimate key still survives.
+  assertEquals(scopePetPhotoPaths(['pet-mine/profile.jpg'], ['pet-mine']), ['pet-mine/profile.jpg'])
+})
+
+Deno.test('scopePetPhotoPaths — F1: a degenerate second segment is dropped', () => {
+  // `{ownPet}/`, `{ownPet}/.`, `{ownPet}/..` pass the shape+ownership test but name
+  // no real photo; `{ownPet}/..` is the bucket-root-blast key the F1 clause exists
+  // to drop. Writable today: 042's CHECK is a starts_with prefix test.
+  assertEquals(scopePetPhotoPaths(['pet-1/', 'pet-1/.', 'pet-1/..'], ['pet-1']), [])
+  assertEquals(scopePetPhotoPaths(['pet-1/..', 'pet-1/profile.jpg'], ['pet-1']), ['pet-1/profile.jpg'])
+})
+
+Deno.test('scopePetPhotoPaths — a pet id that is a string PREFIX of another is not a match', () => {
+  // Exact set membership, never startsWith: `pet-1` must not permit `pet-12/…`.
+  assertEquals(scopePetPhotoPaths(['pet-12/profile.jpg'], ['pet-1']), [])
+})
+
+Deno.test('scopePetPhotoPaths — a slashless key is dropped', () => {
+  assertEquals(scopePetPhotoPaths(['pet-1', 'pet-1.jpg'], ['pet-1']), [])
+})
+
+Deno.test('scopePetPhotoPaths — an empty owned-pet set fails CLOSED', () => {
+  // A user with no pets has no pet photos; dropping everything is the safe
+  // direction, and it is also the real zero-pets state — index.ts derives both
+  // the paths and the ids from the same `pets` read, so they are empty together.
+  assertEquals(scopePetPhotoPaths(['pet-1/profile.jpg'], []), [])
+  assertEquals(scopePetPhotoPaths(['pet-1/profile.jpg'], ['', '   ']), [])
+})
+
+Deno.test('scopePetPhotoPaths — passes nulls through for cleanPaths to drop', () => {
+  // The dominant real-world shape: a pet row with no photo has photo_path NULL.
+  assertEquals(scopePetPhotoPaths([null, undefined, 'pet-1/profile.jpg'], ['pet-1']), ['pet-1/profile.jpg'])
+})
+
 // ── collectStoragePaths ───────────────────────────────────────────────────────
 
 Deno.test('collectStoragePaths — maps each owned list to its correct bucket', () => {
   const purges = collectStoragePaths(owned({
-    petPhotoPaths: ['pets/p1.jpg'],
+    // {pet_id}/profile.jpg — the B-431 convention (app/(tabs)/profile.tsx); the
+    // pet id must be in ownedPetIds or the B-463 guard drops it.
+    petPhotoPaths: ['pet-1/profile.jpg'],
     eventAttachmentPaths: ['ev/a1.jpg', 'ev/a2.jpg'],
     vetAttachmentPaths: ['vet/v1.jpg'],
     // {pet_id}/{document_id}.{ext} — the B-478 convention (buildVetDocumentPath).
@@ -265,7 +388,7 @@ Deno.test('collectStoragePaths — maps each owned list to its correct bucket', 
     ownedFoodItemIds: ['food-1'],
   }))
   const byBucket = Object.fromEntries(purges.map((p) => [p.bucket, p.paths]))
-  assertEquals(byBucket[STORAGE_BUCKETS.petPhotos], ['pets/p1.jpg'])
+  assertEquals(byBucket[STORAGE_BUCKETS.petPhotos], ['pet-1/profile.jpg'])
   assertEquals(byBucket[STORAGE_BUCKETS.eventAttachments], ['ev/a1.jpg', 'ev/a2.jpg'])
   assertEquals(byBucket[STORAGE_BUCKETS.vetAttachments], ['vet/v1.jpg'])
   assertEquals(byBucket[STORAGE_BUCKETS.vetDocuments], ['pet-1/doc-7.pdf'])
@@ -318,9 +441,48 @@ Deno.test('collectStoragePaths — empty account yields no purges', () => {
 })
 
 Deno.test('collectStoragePaths — a pet with a null photo_path produces no pet-photo purge', () => {
-  // Pet exists but never had a photo uploaded → photo_path is NULL → nothing to remove.
-  const purges = collectStoragePaths(owned({ petPhotoPaths: [null] }))
+  // Pet exists but never had a photo uploaded → photo_path is NULL → nothing to
+  // remove. ownedPetIds carries the pet, so it is the NULL (not the B-463 guard)
+  // doing the dropping here.
+  const purges = collectStoragePaths(owned({ petPhotoPaths: [null], ownedPetIds: ['pet-1'] }))
   assertEquals(purges, [])
+})
+
+Deno.test('collectStoragePaths — B-463: an owned pet photo lands in the nyx-pet-photos purge', () => {
+  // The guard must not cost the purge its legitimate objects: the one real key
+  // shape ({petId}/profile.jpg, the only writer's output) flows through to the
+  // bucket exactly as before the guard existed.
+  const purges = collectStoragePaths(owned({
+    petPhotoPaths: ['pet-1/profile.jpg'],
+    ownedPetIds: ['pet-1'],
+  }))
+  assertEquals(purges.length, 1)
+  assertEquals(purges[0].bucket, STORAGE_BUCKETS.petPhotos)
+  assertEquals(purges[0].bucket, 'nyx-pet-photos')
+  assertEquals(purges[0].paths, ['pet-1/profile.jpg'])
+})
+
+Deno.test('collectStoragePaths — B-463: a cross-tenant pet-photo path never reaches a purge', () => {
+  // End-to-end through the collector: a crafted photo_path naming ANOTHER owner's
+  // pet — or hiding the victim behind the owner's own prefix with `..` — is
+  // filtered out BEFORE the service-role purge is built.
+  const purges = collectStoragePaths(owned({
+    petPhotoPaths: ['pet-mine/profile.jpg', 'pet-victim/profile.jpg', 'pet-mine/../pet-victim/profile.jpg'],
+    ownedPetIds: ['pet-mine'],
+  }))
+  const pets = purges.find((p) => p.bucket === STORAGE_BUCKETS.petPhotos)
+  assert(pets, "expected a pet-photos purge for the owner's own path")
+  assertEquals(pets.paths, ['pet-mine/profile.jpg'])
+})
+
+Deno.test('collectStoragePaths — B-463: pet-photo paths with no owned pet ids yield NO purge', () => {
+  // Fails closed, and matches the real zero-pets state: index.ts derives paths and
+  // ids from the same `pets` read, so they can only be non-empty together.
+  assertEquals(
+    collectStoragePaths(owned({ petPhotoPaths: ['pet-1/profile.jpg'], ownedPetIds: [] }))
+      .some((p) => p.bucket === STORAGE_BUCKETS.petPhotos),
+    false,
+  )
 })
 
 Deno.test('collectStoragePaths — never emits a PRESERVED bucket (invariant survives an empty list)', () => {
@@ -328,7 +490,8 @@ Deno.test('collectStoragePaths — never emits a PRESERVED bucket (invariant sur
   // list), so this loop asserts nothing today — but the invariant + its test are kept
   // so that re-introducing any preserve-on-delete carve-out is guarded from day one.
   const purges = collectStoragePaths(owned({
-    petPhotoPaths: ['pets/p1.jpg'],
+    petPhotoPaths: ['pet-1/profile.jpg'],
+    ownedPetIds: ['pet-1'],
     eventAttachmentPaths: ['ev/a1.jpg'],
     vetAttachmentPaths: ['vet/v1.jpg'],
     vetReportPaths: ['rep/r1.pdf'],
@@ -433,7 +596,7 @@ Deno.test('PRESERVED_BUCKETS — B-127: nyx-medication-photos is PURGED, never p
 Deno.test('collectStoragePaths — output buckets are always a subset of the purgeable buckets', () => {
   const allowed = new Set<string>(Object.values(STORAGE_BUCKETS))
   const purges = collectStoragePaths(owned({
-    petPhotoPaths: ['pets/p1.jpg'],
+    petPhotoPaths: ['pet-1/profile.jpg'],
     eventAttachmentPaths: ['ev/a1.jpg'],
     vetAttachmentPaths: ['vet/v1.jpg'],
     vetDocumentPaths: ['pet-1/doc-7.pdf'],
@@ -469,7 +632,8 @@ const isAuthDelete = (s: DeletionStep) => s.kind === 'delete-auth-user'
 
 Deno.test('buildDeletionPlan — auth-user delete is ALWAYS the final step', () => {
   const plan = buildDeletionPlan(owned({
-    petPhotoPaths: ['pets/p1.jpg'],
+    petPhotoPaths: ['pet-1/profile.jpg'],
+    ownedPetIds: ['pet-1'],
     eventAttachmentPaths: ['ev/a1.jpg'],
     vetReportPaths: ['rep/r1.pdf'],
   }))
@@ -478,7 +642,8 @@ Deno.test('buildDeletionPlan — auth-user delete is ALWAYS the final step', () 
 
 Deno.test('buildDeletionPlan — auth-user delete appears EXACTLY once', () => {
   const plan = buildDeletionPlan(owned({
-    petPhotoPaths: ['pets/p1.jpg'],
+    petPhotoPaths: ['pet-1/profile.jpg'],
+    ownedPetIds: ['pet-1'],
     eventAttachmentPaths: ['ev/a1.jpg'],
     vetAttachmentPaths: ['vet/v1.jpg'],
     vetReportPaths: ['rep/r1.pdf'],
@@ -488,7 +653,8 @@ Deno.test('buildDeletionPlan — auth-user delete appears EXACTLY once', () => {
 
 Deno.test('buildDeletionPlan — every Storage purge precedes the auth delete', () => {
   const plan = buildDeletionPlan(owned({
-    petPhotoPaths: ['pets/p1.jpg'],
+    petPhotoPaths: ['pet-1/profile.jpg'],
+    ownedPetIds: ['pet-1'],
     eventAttachmentPaths: ['ev/a1.jpg'],
   }))
   const authIdx = plan.findIndex(isAuthDelete)
@@ -497,10 +663,21 @@ Deno.test('buildDeletionPlan — every Storage purge precedes the auth delete', 
 })
 
 Deno.test('buildDeletionPlan — single non-empty bucket: purge then auth delete', () => {
-  const plan = buildDeletionPlan(owned({ petPhotoPaths: ['pets/p1.jpg'] }))
+  const plan = buildDeletionPlan(owned({ petPhotoPaths: ['pet-1/profile.jpg'], ownedPetIds: ['pet-1'] }))
   assertEquals(plan.length, 2)
-  assertEquals(plan[0], { kind: 'purge-bucket', bucket: STORAGE_BUCKETS.petPhotos, paths: ['pets/p1.jpg'] })
+  assertEquals(plan[0], { kind: 'purge-bucket', bucket: STORAGE_BUCKETS.petPhotos, paths: ['pet-1/profile.jpg'] })
   assert(isAuthDelete(plan[1]))
+})
+
+Deno.test('buildDeletionPlan — B-463: a crafted cross-tenant pet-photo path is never purged', () => {
+  // The pet twin of the B-128 / B-354 cases, end-to-end: an account whose only
+  // photo_path values name a victim's pet (plain, or hidden behind the owner's
+  // own prefix with `..`) produces NO purge step — just the terminal auth delete.
+  const plan = buildDeletionPlan(owned({
+    petPhotoPaths: ['pet-victim/profile.jpg', 'pet-mine/../pet-victim/profile.jpg'],
+    ownedPetIds: ['pet-mine'],
+  }))
+  assertEquals(plan, [{ kind: 'delete-auth-user' }])
 })
 
 Deno.test('buildDeletionPlan — B-127: a medication photo is purged BEFORE the terminal auth delete', () => {

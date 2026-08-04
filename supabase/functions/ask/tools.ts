@@ -60,7 +60,7 @@
 // re-export so Ask, the dashboard, and the correlation engine key proteins identically
 // (esbuild inlines it into the deploy bundle, keeping the artifact self-contained).
 
-import { canonicalizeProtein } from '../generate-signal/protein.ts'
+import { canonicalizeProtein, readProteinSet } from '../generate-signal/protein.ts'
 
 // ── Shared constants ────────────────────────────────────────────────────────────
 
@@ -199,6 +199,7 @@ export function resolveWindow(
   window: AskWindow,
   nowMs: number,
   trialStartMs?: number | null,
+  timezone?: string | null,
 ): ResolvedWindow {
   // Defense-in-depth (adversarial review, A3): coerce FIRST so an off-enum string a model
   // could emit ('90d', '6m') can never reach the FIXED_WINDOW_DAYS lookup and yield a NaN
@@ -222,24 +223,10 @@ export function resolveWindow(
     }
   }
 
+  // since_trial_start buckets by the OWNER'S midnight, not raw UTC like the fixed trailing
+  // windows below — its day count IS the trial's "Day N". See resolveTrialWindow (B-539).
   if (window === 'since_trial_start') {
-    if (trialStartMs == null || !Number.isFinite(trialStartMs)) {
-      // No trial in hand → honestly fall back to the default window (the caller sees
-      // window==='7d' and can phrase "the last 7 days" instead of a false trial span).
-      return resolveWindow(DEFAULT_WINDOW, nowMs)
-    }
-    const startIndex = Math.floor(trialStartMs / MS_PER_DAY)
-    const startMs = startIndex * MS_PER_DAY
-    return {
-      window,
-      windowDays: Math.max(1, todayIndex - startIndex + 1),
-      startMs,
-      endMs,
-      // A "since the trial started" span has no natural equal-length prior period.
-      priorStartMs: null,
-      priorEndMs: null,
-      label: 'since the diet trial started',
-    }
+    return resolveTrialWindow(nowMs, trialStartMs, timezone ?? null)
   }
 
   const days = FIXED_WINDOW_DAYS[window]
@@ -252,6 +239,57 @@ export function resolveWindow(
     priorStartMs: (todayIndex - (2 * days - 1)) * MS_PER_DAY,
     priorEndMs: startMs,
     label: `the last ${days} days`,
+  }
+}
+
+/**
+ * The `since_trial_start` window, bucketed by the OWNER'S midnight (B-539) — the fifth
+ * diet-trial day-math path, and the one B-421's guard originally missed. Kept SEPARATE from
+ * the fixed trailing windows on purpose: those are UTC-day-aligned so an Ask '7d' count
+ * equals the Patterns "week" (calendarWindow, the B-084 parity), but this window's day count
+ * IS the trial's "Day N", which the card renders on the owner's LOCAL clock
+ * (dietTrialStatus / getDietTrialProgress, §5.1 / B-421). A raw-UTC `Math.floor` here made
+ * two independent errors on a device off UTC: `windowDays` disagreed with the card by ±1,
+ * and the retrieval lower bound (UTC midnight of the start DATE) dropped the first hours of
+ * the owner's trial day 1 east of UTC and reached into the pre-trial day west of it. So the
+ * day indices come from the same zoned helpers dietTrialStatus uses, and the [startMs, endMs)
+ * bounds are the owner's LOCAL midnights (zonedDayStartMs) — the retrieved events are exactly
+ * those on local days [trial start … today].
+ *
+ * `trialStartMs` is midnight-UTC of a DATE column (index.ts parses `diet_trials.started_at`,
+ * a DATE). Its calendar day is recovered as a day KEY and indexed verbatim through
+ * zonedDayIndexOf — never `zonedDayIndex(trialStartMs, tz)`, which would read a behind-UTC
+ * zone's PREVIOUS day off that UTC-midnight instant (the localDayIndexOf trap the card
+ * already avoids). An absent/unparseable start falls back to the default window; a null zone
+ * degrades to UTC (the shipped fallback — B-443 is what keeps a real zone in hand).
+ */
+function resolveTrialWindow(
+  nowMs: number,
+  trialStartMs: number | null | undefined,
+  timezone: string | null,
+): ResolvedWindow {
+  if (trialStartMs == null || !Number.isFinite(trialStartMs)) {
+    // No trial in hand → honestly fall back to the default window (the caller sees
+    // window==='7d' and can phrase "the last 7 days" instead of a false trial span).
+    return resolveWindow(DEFAULT_WINDOW, nowMs)
+  }
+  // The trial's start DATE, read in UTC (trialStartMs is that DATE at UTC midnight), then
+  // indexed as a calendar day — zone-independent, the same value the card's start index has.
+  const startKey = new Date(trialStartMs).toISOString().slice(0, 10)
+  const startIndex = zonedDayIndexOf(startKey, timezone)
+  if (startIndex === null) return resolveWindow(DEFAULT_WINDOW, nowMs)
+  const todayIndex = zonedDayIndex(nowMs, timezone)
+  return {
+    window: 'since_trial_start',
+    // Identical formula to dietTrialStatus.dayCounter over the same zoned indices, so Ask's
+    // stated "since the diet trial started (N days)" and the card's "Day N" cannot diverge.
+    windowDays: Math.max(1, todayIndex - startIndex + 1),
+    startMs: zonedDayStartMs(startIndex, timezone),
+    endMs: zonedDayStartMs(todayIndex + 1, timezone),
+    // A "since the trial started" span has no natural equal-length prior period.
+    priorStartMs: null,
+    priorEndMs: null,
+    label: 'since the diet trial started',
   }
 }
 
@@ -303,6 +341,11 @@ export interface AskMealRow {
   foodType: string | null
   /** Raw primary_protein — canonicalized INSIDE the protein core, never before. */
   primaryProtein: string | null
+  /** The food's full captured protein set (`food_items.proteins`, B-351). Read through
+   *  `readProteinSet` inside the protein core, never before — that helper hoists the
+   *  primary and applies the Class-A read key. Absent/empty degrades to the primary
+   *  (mirrors lib/analytics.ts AnalyticsMeal / detection.ts MealEvent). */
+  proteins?: string[] | null
   /** WSAVA rating string, or null when unrated. */
   intakeRating: string | null
   /** meals.notes free text (D2) — scoped-retrieval only. */
@@ -470,9 +513,9 @@ export interface CountSymptomResult {
  *  full live event stream (any type) — used only to compute logged-day coverage. */
 export function countSymptom(
   allEvents: AskEventRow[],
-  params: { symptomType: string; window: AskWindow; nowMs: number; trialStartMs?: number | null },
+  params: { symptomType: string; window: AskWindow; nowMs: number; trialStartMs?: number | null; timezone?: string | null },
 ): CountSymptomResult {
-  const w = resolveWindow(params.window, params.nowMs, params.trialStartMs)
+  const w = resolveWindow(params.window, params.nowMs, params.trialStartMs, params.timezone)
   const live = liveEvents(allEvents)
   const inWindow = live.filter((e) => inSpan(e.occurredAt, w))
   const count = inWindow.filter((e) => e.type === params.symptomType).length
@@ -512,9 +555,9 @@ export interface SymptomTrendResult {
 /** Current-vs-prior symptom counts over the window (G5 parity with computeSymptomCounts). */
 export function symptomTrend(
   events: AskEventRow[],
-  params: { symptomType: string; window: AskWindow; nowMs: number; trialStartMs?: number | null },
+  params: { symptomType: string; window: AskWindow; nowMs: number; trialStartMs?: number | null; timezone?: string | null },
 ): SymptomTrendResult {
-  const w = resolveWindow(params.window, params.nowMs, params.trialStartMs)
+  const w = resolveWindow(params.window, params.nowMs, params.trialStartMs, params.timezone)
   const live = liveEvents(events).filter((e) => e.type === params.symptomType)
   const current = live.filter((e) => inSpan(e.occurredAt, w)).length
   let prior: number | null = null
@@ -581,7 +624,7 @@ export function timeOfDay(
     trialStartMs?: number | null
   },
 ): TimeOfDayResult {
-  const w = resolveWindow(params.window, params.nowMs, params.trialStartMs)
+  const w = resolveWindow(params.window, params.nowMs, params.trialStartMs, params.timezone)
   const base: TimeOfDayResult = {
     kind: 'time_of_day',
     symptomType: params.symptomType,
@@ -718,9 +761,10 @@ export function recentEvents(
     type?: string | null
     limit?: number
     trialStartMs?: number | null
+    timezone?: string | null
   },
 ): RecentEventsResult {
-  const w = resolveWindow(params.window, params.nowMs, params.trialStartMs)
+  const w = resolveWindow(params.window, params.nowMs, params.trialStartMs, params.timezone)
   // Number.isInteger guards NaN/Infinity/floats (which `??` lets through) → default cap.
   const requested = Number.isInteger(params.limit) ? (params.limit as number) : MAX_RECALL
   const cap = Math.max(1, Math.min(requested, MAX_RECALL))
@@ -876,9 +920,9 @@ export interface PhotoPresenceResult {
 /** Which events in a window carry a photo (presence + references only, §6.2 mode 1). */
 export function photoPresence(
   events: AskEventRow[],
-  params: { window: AskWindow; nowMs: number; type?: string | null; trialStartMs?: number | null },
+  params: { window: AskWindow; nowMs: number; type?: string | null; trialStartMs?: number | null; timezone?: string | null },
 ): PhotoPresenceResult {
-  const w = resolveWindow(params.window, params.nowMs, params.trialStartMs)
+  const w = resolveWindow(params.window, params.nowMs, params.trialStartMs, params.timezone)
   const withPhoto = liveEvents(events)
     .filter((e) => inSpan(e.occurredAt, w))
     .filter((e) => (params.type ? e.type === params.type : true))
@@ -921,9 +965,9 @@ export interface IntakeSummaryResult {
  */
 export function intakeSummary(
   meals: AskMealRow[],
-  params: { window: AskWindow; nowMs: number; freeFedFoodIds: ReadonlySet<string>; trialStartMs?: number | null },
+  params: { window: AskWindow; nowMs: number; freeFedFoodIds: ReadonlySet<string>; trialStartMs?: number | null; timezone?: string | null },
 ): IntakeSummaryResult | NotEnoughData {
-  const w = resolveWindow(params.window, params.nowMs, params.trialStartMs)
+  const w = resolveWindow(params.window, params.nowMs, params.trialStartMs, params.timezone)
   const inWindow = liveEvents(meals).filter((m) => inSpan(m.occurredAt, w))
   const ratedNonTreat = inWindow.filter((m) => m.foodType !== 'treat' && m.intakeRating != null)
   const freeFedExcluded = ratedNonTreat.filter((m) => isFreeFedMeal(m, params.freeFedFoodIds)).length
@@ -940,6 +984,151 @@ export function intakeSummary(
     rate: finished / denominator.length,
     finishedMeals: finished,
     ratedMeals: denominator.length,
+    freeFedExcluded,
+    intakeNotDirectlyObserved: freeFedExcluded > 0,
+  }
+}
+
+/** One window's finished-rate, with its honest numerator/denominator. */
+export interface IntakeWindowRate {
+  /** finishedMeals / ratedMeals in [0,1]. */
+  rate: number
+  finishedMeals: number
+  /** Rated, non-treat, non-free-fed meals (§11 #1 / #6) — the same denominator as
+   *  intakeSummary, so the two tools can never disagree about one window's rate (G5). */
+  ratedMeals: number
+}
+
+export interface IntakeTrendResult {
+  kind: 'intake_trend'
+  window: AskWindow
+  windowLabel: string
+  /** The current window's rate. Floors guaranteed met (below-floor returns NotEnoughData). */
+  current: IntakeWindowRate
+  /** The equal-length prior window's rate, or null when the window has no prior span
+   *  ('all' / 'since_trial_start') OR the prior window is below the rated-meal floor —
+   *  a comparison is never fabricated off 1–3 prior meals (§5.2). */
+  prior: IntakeWindowRate | null
+  /** Qualifying rated meals found in the prior span even when below the floor (the honest
+   *  "only N rated meals logged before this window — not enough to compare" denominator).
+   *  Null when the window has no prior span at all. */
+  priorRatedMeals: number | null
+  /** current.rate − prior.rate; null when prior is null. */
+  delta: number | null
+  /** Descriptive direction of the FINISHED-RATE. 'down' = the pet is finishing a smaller
+   *  share of meals than the prior window — the CONCERN direction (inverted from
+   *  symptomTrend, where 'up' is the concern). This tool NEVER mints a safety verdict:
+   *  the deterministic engine (detectIntakeDecline) remains the only escalation minter and
+   *  its finding still leads every answer via safetyLead (§7.2). What this tool adds is
+   *  VISIBILITY (B-382): the planner can now SEE a falling finished-rate and phrase it in
+   *  the calm health register (route toward the vet, never "picky" — G7), instead of the
+   *  decline being structurally invisible to every Ask answer.
+   *
+   *  TWO REGISTER RULES the adversarial pass (2026-08-02) made explicit, enforced at the
+   *  tool description + validator (this field stays a bare fact):
+   *  • 'flat'/'up' is NEVER good news. A rate that stayed at or near zero is a standing
+   *    concern the trend cannot see — detectIntakeDecline is a RELATIVE detector, so a
+   *    diet refused from day 1 fires nothing and safetyLead is null (the B-494 shape).
+   *    "No drop" over a 0-of-19 record is reassurance-on-absence-of-a-delta.
+   *  • The direction compares RATED meals only. A rating-density collapse (meals fed but
+   *    left unrated) can read as 'up'; the unrated counts below are the C5-style
+   *    DISCLOSURE that keeps that honest, and they render structurally in the provenance. */
+  direction: 'down' | 'up' | 'flat' | null
+  /** Non-treat, non-free-fed meals in the CURRENT span logged WITHOUT a rating — meals the
+   *  direction cannot see. Disclosed beside the verdict (the C5 lesson: logging density is
+   *  disclosed, never silently absorbed), so "4 of 4 finished" over 12 fed meals cannot
+   *  read as a clean improvement. */
+  currentUnratedMeals: number
+  /** Same for the prior span; null when the window has no prior span. */
+  priorUnratedMeals: number | null
+  /** Rated non-treat meals excluded across BOTH spans because the food is free-fed. */
+  freeFedExcluded: number
+  /** §11 #6 caveat — set when ≥1 free-fed meal was excluded from either span. */
+  intakeNotDirectlyObserved: boolean
+}
+
+/**
+ * Finished-rate this window vs the equal-length prior window (B-382, closed 2026-08-02).
+ * The structural gap this closes: intakeSummary returns a single-window rate and
+ * symptomTrend only accepts ASK_SYMPTOM_TYPES, so a FALLING finished-rate could not be
+ * surfaced by any tool — the copy layer banned "picky" but the planner literally could not
+ * see the decline (adversarial pass A7, counterexample (c): the declining-intake cat asked
+ * "what does she prefer?"). Same qualifying-meal rules as intakeSummary in BOTH windows
+ * (rated, non-treat §11 #1, non-free-fed §11 #6), same floor on each window's denominator
+ * — the current window below floor returns NotEnoughData; a below-floor PRIOR window
+ * yields a current-only result (prior: null, priorRatedMeals honest), never a rate off
+ * 1–3 meals.
+ *
+ * Register contract (G4-adjacent): the direction is a bare, honest rate comparison —
+ * deliberately the same descriptive-only shape as symptomTrend, because Ask relays and
+ * never mints (§7.2). The engine's intake_decline detector (a different, richer metric:
+ * per-day score means vs an established baseline + refused-normal-food) stays the ONLY
+ * safety minter and structurally leads via safetyLead when live; A4's tool description +
+ * system prompt route a 'down' here to the calm health register. The two cannot contradict:
+ * the engine states the verdict, this states the counts.
+ */
+export function intakeTrend(
+  meals: AskMealRow[],
+  params: { window: AskWindow; nowMs: number; freeFedFoodIds: ReadonlySet<string>; trialStartMs?: number | null; timezone?: string | null },
+): IntakeTrendResult | NotEnoughData {
+  const w = resolveWindow(params.window, params.nowMs, params.trialStartMs, params.timezone)
+  const live = liveEvents(meals)
+  const ratedNonTreat = (rows: AskMealRow[]) => rows.filter((m) => m.foodType !== 'treat' && m.intakeRating != null)
+  // Meals the direction cannot see: non-treat, non-free-fed, logged WITHOUT a rating —
+  // i.e. the meals that WOULD have qualified had they been rated. Disclosed, never
+  // absorbed (the C5 lesson): a rating-density collapse must not masquerade as 'up'.
+  const unratedNonTreat = (rows: AskMealRow[]) =>
+    rows.filter(
+      (m) => m.foodType !== 'treat' && m.intakeRating == null && !isFreeFedMeal(m, params.freeFedFoodIds),
+    ).length
+
+  const currentSpan = live.filter((m) => inSpan(m.occurredAt, w))
+  const currentAll = ratedNonTreat(currentSpan)
+  const currentUnratedMeals = unratedNonTreat(currentSpan)
+  const currentFreeFed = currentAll.filter((m) => isFreeFedMeal(m, params.freeFedFoodIds)).length
+  const current = currentAll.filter((m) => !isFreeFedMeal(m, params.freeFedFoodIds))
+  if (current.length < ASK_FLOORS.minRatedMealsForIntakeRate) {
+    return notEnoughData(current.length, ASK_FLOORS.minRatedMealsForIntakeRate)
+  }
+
+  let prior: IntakeWindowRate | null = null
+  let priorRatedMeals: number | null = null
+  let priorUnratedMeals: number | null = null
+  let priorFreeFed = 0
+  if (w.priorStartMs != null && w.priorEndMs != null) {
+    const priorSpan = live.filter((m) => inRange(m.occurredAt, w.priorStartMs as number, w.priorEndMs as number))
+    const priorAll = ratedNonTreat(priorSpan)
+    priorUnratedMeals = unratedNonTreat(priorSpan)
+    priorFreeFed = priorAll.filter((m) => isFreeFedMeal(m, params.freeFedFoodIds)).length
+    const priorQualifying = priorAll.filter((m) => !isFreeFedMeal(m, params.freeFedFoodIds))
+    priorRatedMeals = priorQualifying.length
+    if (priorQualifying.length >= ASK_FLOORS.minRatedMealsForIntakeRate) {
+      const finished = priorQualifying.filter(isFinishedMeal).length
+      prior = { rate: finished / priorQualifying.length, finishedMeals: finished, ratedMeals: priorQualifying.length }
+    }
+  }
+
+  const currentFinished = current.filter(isFinishedMeal).length
+  const currentRate: IntakeWindowRate = {
+    rate: currentFinished / current.length,
+    finishedMeals: currentFinished,
+    ratedMeals: current.length,
+  }
+  const delta = prior ? currentRate.rate - prior.rate : null
+  const direction: IntakeTrendResult['direction'] =
+    delta == null ? null : delta < 0 ? 'down' : delta > 0 ? 'up' : 'flat'
+  const freeFedExcluded = currentFreeFed + priorFreeFed
+  return {
+    kind: 'intake_trend',
+    window: w.window,
+    windowLabel: w.label,
+    current: currentRate,
+    prior,
+    priorRatedMeals,
+    delta,
+    direction,
+    currentUnratedMeals,
+    priorUnratedMeals,
     freeFedExcluded,
     intakeNotDirectlyObserved: freeFedExcluded > 0,
   }
@@ -979,9 +1168,10 @@ export function topFoods(
     freeFedFoodIds?: ReadonlySet<string>
     limit?: number
     trialStartMs?: number | null
+    timezone?: string | null
   },
 ): TopFoodsResult | NotEnoughData {
-  const w = resolveWindow(params.window, params.nowMs, params.trialStartMs)
+  const w = resolveWindow(params.window, params.nowMs, params.trialStartMs, params.timezone)
   const limit = params.limit ?? 5
   const freeFed = params.freeFedFoodIds ?? new Set<string>()
   const inWindow = liveEvents(meals).filter((m) => inSpan(m.occurredAt, w))
@@ -1018,7 +1208,13 @@ export function topFoods(
 
 export interface RankedProteinEntry {
   protein: string
+  /** Total protein-EXPOSURE feedings (meals + treats) CONTAINING this protein in the
+   *  window — set membership, so a feeding with several proteins counts toward each. */
   count: number
+  /** count / total protein-identified feedings, [0,1]. Post-B-351 a feeding can contain
+   *  several proteins, so these shares NO LONGER SUM TO 1 across the ranking — each is an
+   *  independent "how much of what was logged had this in it" (the honest reading of a
+   *  set; mirrors lib/analytics.ts RankedProtein). */
   shareOfDiet: number
   finishedRate: number | null
   ratedMeals: number
@@ -1033,20 +1229,20 @@ export interface TopProteinsResult {
 }
 
 /**
- * Most-consumed primary protein by EXPOSURE in the window (canonicalized before ranking;
- * treats INCLUDED for exposure and flagged isTreat, B-111; finished-rate over non-treat
- * meals only, §11 #1; B-115 treat-relog collapse). Floored on identifiable feedings (§11 #5).
+ * Most-consumed protein by EXPOSURE in the window — a faithful port of lib/analytics.ts
+ * computeTopProteins again (B-467, closed 2026-08-02): a feeding contributes its WHOLE
+ * captured protein set (`readProteinSet(proteins, primaryProtein)`), so a protein reaching
+ * the pet as a hidden SECONDARY (the chicken in a "duck" formula) is counted as the real
+ * exposure it is — the same B-351 slice-6 widening the correlation engine and the Patterns
+ * dashboard already carry, applied here so a duck-trial owner asking Ask "has she had any
+ * chicken?" gets the same record the Signal card beside it reads. Consequence, inherited
+ * deliberately: a feeding with several proteins counts toward EACH, so `shareOfDiet`
+ * values no longer sum to 1 across the ranking (see RankedProteinEntry). An absent/empty
+ * set degrades to the primary — byte-identical to the pre-B-467 behavior.
  *
- * ⚠ NO LONGER A FAITHFUL PORT of lib/analytics.ts computeTopProteins, and this docstring
- * used to claim it was. B-351 slice 6 moved the dashboard and the correlation engine onto
- * SET membership (`readProteinSet` over `food_items.proteins`); this function still reads
- * `primary_protein` alone, so a protein reaching the pet as a hidden SECONDARY is invisible
- * here. It under-counts — a sensitivity gap, never a false claim — but the surface it feeds
- * is the LLM one, so a duck-trial owner asking Ask "has she had any chicken?" gets an
- * answer built from a narrower record than the Signal card beside it. Tracked as B-467;
- * left out of slice 6 to keep the adversarial pass on the statistics rather than on three
- * copy-bearing rankings. Fix by mirroring computeTopProteins, INCLUDING its shares-no-
- * longer-sum-to-1 semantics, and widen the food join in ask/index.ts to select `proteins`.
+ * Treats INCLUDED for exposure and flagged isTreat (B-111); finished-rate over non-treat
+ * meals only (§11 #1); B-115 treat-relog collapse; floored on identifiable feedings
+ * (§11 #5). KEEP IN LOCKSTEP with computeTopProteins (G5).
  */
 export function topProteins(
   meals: AskMealRow[],
@@ -1056,21 +1252,26 @@ export function topProteins(
     freeFedFoodIds?: ReadonlySet<string>
     limit?: number
     trialStartMs?: number | null
+    timezone?: string | null
   },
 ): TopProteinsResult | NotEnoughData {
-  const w = resolveWindow(params.window, params.nowMs, params.trialStartMs)
+  const w = resolveWindow(params.window, params.nowMs, params.trialStartMs, params.timezone)
   const limit = params.limit ?? 5
   const freeFed = params.freeFedFoodIds ?? new Set<string>()
   const inWindow = liveEvents(meals).filter((m) => inSpan(m.occurredAt, w))
   const byProtein = new Map<string, AskMealRow[]>()
   let identified = 0
   for (const m of collapseTreatRelogs(inWindow)) {
-    const key = canonicalizeProtein(m.primaryProtein)
-    if (key === null) continue
+    // B-351 slice 6 / B-467: the whole captured set, hoisted + Class-A-keyed inside the
+    // protein core. Empty set (junk/unknown primary, no captured proteins) → unidentified.
+    const keys = readProteinSet(m.proteins ?? null, m.primaryProtein)
+    if (keys.length === 0) continue
     identified += 1
-    const arr = byProtein.get(key)
-    if (arr) arr.push(m)
-    else byProtein.set(key, [m])
+    for (const key of keys) {
+      const arr = byProtein.get(key)
+      if (arr) arr.push(m)
+      else byProtein.set(key, [m])
+    }
   }
   if (identified < ASK_FLOORS.minMealsForRanking) {
     return notEnoughData(identified, ASK_FLOORS.minMealsForRanking)
@@ -1117,9 +1318,9 @@ export interface WeightSummaryResult {
  */
 export function weightSummary(
   readings: AskWeightRow[],
-  params: { window: AskWindow; nowMs: number; trialStartMs?: number | null },
+  params: { window: AskWindow; nowMs: number; trialStartMs?: number | null; timezone?: string | null },
 ): WeightSummaryResult {
-  const w = resolveWindow(params.window, params.nowMs, params.trialStartMs)
+  const w = resolveWindow(params.window, params.nowMs, params.trialStartMs, params.timezone)
   const live = liveEvents(readings).filter((r) => inSpan(r.occurredAt, w))
   const sorted = [...live].sort((a, b) => a.occurredAt.localeCompare(b.occurredAt))
   const seriesLbs = sorted.map((r) => kgToLbsNum(r.weightKg))
@@ -1160,28 +1361,36 @@ export interface DietTrialStatusResult {
 }
 
 /** Diet-trial progress — a faithful port of lib/analytics.ts getDietTrialProgress (G5: Ask
- *  must never quote a different Day N than the trial card the owner is looking at). A null OR
- *  soft-deleted trial ⇒ inactive (no trial to report), never an invented span. The trial
- *  carries its own `deletedAt` so this core enforces the soft-delete contract itself (§5.2 /
- *  B-071), rather than trusting the caller — matching `liveEvents` everywhere else.
+ *  must never quote a different Day N than the trial card the owner is looking at). A null or
+ *  non-active trial ⇒ inactive (no trial to report), never an invented span.
+ *
+ *  The active-ness gate is `status` (B-539). `diet_trials` has NO soft-delete column
+ *  (migration 001) — the prior `deletedAt` guard tested a field that does not exist and
+ *  index.ts hard-coded to null, so it never fired, and the function silently rested on the
+ *  upstream query's `.eq('status','active')` alone. This core now enforces the same predicate
+ *  itself (§5.2 / B-071 — don't trust the caller), so a future caller that forgets the filter
+ *  can't make an ended or abandoned trial read as an active Day N. A null status (a legacy row
+ *  or a fixture that omits it) is not asserted either way and proceeds, matching the report's
+ *  own `normaliseStatus` tolerance.
  *
  *  The day boundary is the OWNER'S midnight (§5.1, B-421), not UTC. The client can read the
- *  device clock; the server cannot, so it buckets by `user_profiles.timezone` exactly as
- *  `localHourOfDay` below and detection.ts already do. Unlike time_of_day, an absent or
- *  invalid zone does NOT go silent here — it falls back to UTC, which is the behaviour this
- *  shipped with, because a day counter is a plain fact the owner is owed and a "Day —" is a
- *  worse answer than a possibly-off-by-one one. */
+ *  device clock; the server cannot, so it buckets by the owner's zone — the caller resolves
+ *  that as the request's device zone, then `user_profiles.timezone`, then null (B-443), and
+ *  hands it in here. Unlike time_of_day, an absent zone does NOT go silent — it falls back to
+ *  UTC, which is the behaviour this shipped with, because a day counter is a plain fact the
+ *  owner is owed and a "Day —" is a worse answer than a possibly-off-by-one one. */
 export function dietTrialStatus(
-  trial: { startedAt: string; targetDurationDays: number; status?: string | null; deletedAt?: string | null } | null,
+  trial: { startedAt: string; targetDurationDays: number; status?: string | null } | null,
   nowMs: number,
   timezone?: string | null,
 ): DietTrialStatusResult {
-  if (!trial || trial.deletedAt != null) {
-    return { kind: 'diet_trial_status', active: false, dayCounter: null, targetDays: null, daysRemaining: null, complete: false }
+  const inactive: DietTrialStatusResult = { kind: 'diet_trial_status', active: false, dayCounter: null, targetDays: null, daysRemaining: null, complete: false }
+  if (!trial || (trial.status != null && trial.status !== 'active')) {
+    return inactive
   }
   const startIndex = zonedDayIndexOf(trial.startedAt, timezone ?? null)
   if (startIndex === null || !Number.isFinite(nowMs)) {
-    return { kind: 'diet_trial_status', active: false, dayCounter: null, targetDays: null, daysRemaining: null, complete: false }
+    return inactive
   }
   const todayIndex = zonedDayIndex(nowMs, timezone ?? null)
   const dayCounter = Math.max(1, todayIndex - startIndex + 1)
@@ -1226,11 +1435,23 @@ export interface MedicationEntry {
    *  a clean administration — the never-reassure spine). */
   lastDoseAt: string | null
   /** Given-only count (adherence === 'given') — mirrors the client's administeredDoses.
-   *  Partial + null(unrated) are NOT counted here (nor in dosesMissed) — the safe under-read;
-   *  their honest surfacing is deferred (B-388). */
+   *  Partial + null(unrated) are NOT counted here (nor in dosesMissed) — they ride their
+   *  own buckets below (B-395), so no dose is silently under-reported. */
   dosesGiven: number
-  /** Not-given attention count: missed + refused (partial is separate — see B-388). */
+  /** Not-given attention count: missed + refused. */
   dosesMissed: number
+  /** 'partial' — the dose was started but not fully taken. A possible DISEASE signal (a pet
+   *  too nauseated/painful to finish a dose), which the client already surfaces via
+   *  regimenFlagLine ("N not fully taken"); B-395 gives Ask the same visibility. Phrase as
+   *  "not fully taken", route toward the vet — NEVER soften to picky/fussy (intake ≠
+   *  preference applies to medication vehicles too). */
+  dosesPartial: number
+  /** Null/unrated adherence — logged but never confirmed either way, incl. the B-156 G1
+   *  fail-safe's unconfirmed combo dose (evidence AGAINST compliance, parked at null rather
+   *  than auto-'given'). Phrase as "unconfirmed", never fold into given OR missed — the
+   *  record genuinely does not say, and Ask must not say for it (never-reassure, both
+   *  directions). Mirrors the client tally's `unrated` bucket (lib/medications.ts). */
+  dosesUnconfirmed: number
 }
 
 export interface MedicationsResult {
@@ -1242,18 +1463,19 @@ export interface MedicationsResult {
 
 /**
  * Current medications + a one-line adherence summary per drug (§3.4 family 4). Regimens
- * define the drugs (active = now within [startedAt, endedAt]); doses in the window give the
- * given/missed counts + last-given time. "Last given" counts only administered doses
- * (given/partial) — a refused/missed dose was NOT given (doseToMedicationWindow's clinical
- * rule). Adherence is never auto-reassuring — it reports counts, and a missed critical dose
- * is A4's escalation call, not a soft "all caught up" here.
+ * define the drugs (active = `status === 'active'`); doses in the window fill the four
+ * adherence buckets (given / partial / missed+refused / unconfirmed — B-395, mirroring the
+ * client tally) + the last-GIVEN time. "Last given" is adherence === 'given' only — a
+ * refused/missed/partial/unconfirmed dose was NOT cleanly given. Adherence is never
+ * auto-reassuring — it reports counts, and a missed critical dose is A4's escalation call,
+ * not a soft "all caught up" here.
  */
 export function medications(
   regimens: AskRegimenRow[],
   doses: AskDoseRow[],
-  params: { window: AskWindow; nowMs: number; trialStartMs?: number | null },
+  params: { window: AskWindow; nowMs: number; trialStartMs?: number | null; timezone?: string | null },
 ): MedicationsResult {
-  const w = resolveWindow(params.window, params.nowMs, params.trialStartMs)
+  const w = resolveWindow(params.window, params.nowMs, params.trialStartMs, params.timezone)
   const liveRegimens = liveEvents(regimens)
   const windowDoses = liveEvents(doses).filter((d) => inSpan(d.occurredAt, w))
 
@@ -1343,14 +1565,25 @@ function buildMedicationEntry(
   // null/unrated dose "must never default to 'given', or an unrated dose would read as a
   // confirmed-given one" (the n=1-never-reassures spine, spec §6). 'partial' is NOT a clean
   // given (the client flags it "not fully taken"); null is unrated (incl. the B-156 G1
-  // fail-safe's unconfirmed dose — evidence AGAINST compliance). Both are the SAFE-direction
-  // under-read: Ask never reports a partial/unconfirmed dose as given, and never names one as
-  // "last given". (Adversarial-reviewer 2026-07-19: the prior null/partial→given rule folded
-  // an unconfirmed dose into a NAMED drug's given-count once attribution attached it — a
-  // never-reassure violation.) Honestly surfacing partial/unconfirmed as their OWN bucket in
-  // the answer is deferred as a Dr. Chen/Data contract call — B-388.
+  // fail-safe's unconfirmed dose — evidence AGAINST compliance). Neither is ever "last
+  // given". (Adversarial-reviewer 2026-07-19: the prior null/partial→given rule folded an
+  // unconfirmed dose into a NAMED drug's given-count once attribution attached it — a
+  // never-reassure violation.)
+  //
+  // B-395 (closed 2026-08-02): partial + unconfirmed now ride their OWN buckets instead of
+  // falling into neither — the old shape was the safe under-read (never over-reassured) but
+  // silently dropped a possible disease signal from every Ask answer. The four buckets
+  // mirror the client's tally exactly (given / partial / missed+refused / unrated), so
+  // every logged dose lands in exactly one and Ask's per-drug counts reconcile with the
+  // pet-profile card's. An off-enum adherence string buckets as unconfirmed, matching the
+  // client tally's `default: unrated` — an unrecognised value is a dose the record can't
+  // vouch for, never a given.
   const given = doses.filter((d) => d.adherence === 'given')
   const missed = doses.filter((d) => d.adherence === 'missed' || d.adherence === 'refused')
+  const partial = doses.filter((d) => d.adherence === 'partial')
+  const unconfirmed = doses.filter(
+    (d) => d.adherence == null || !['given', 'partial', 'missed', 'refused'].includes(d.adherence),
+  )
   const lastGiven = given.sort((a, b) => b.occurredAt.localeCompare(a.occurredAt))[0]
   return {
     medicationId,
@@ -1360,6 +1593,8 @@ function buildMedicationEntry(
     lastDoseAt: lastGiven ? lastGiven.occurredAt : null,
     dosesGiven: given.length,
     dosesMissed: missed.length,
+    dosesPartial: partial.length,
+    dosesUnconfirmed: unconfirmed.length,
   }
 }
 
@@ -1549,6 +1784,67 @@ function zonedDayIndexOf(value: string, timezone: string | null): number | null 
   const ms = Date.parse(value)
   if (!Number.isFinite(ms)) return null
   return zonedDayIndex(ms, timezone)
+}
+
+/**
+ * The UTC instant at which LOCAL day `dayIndex` BEGINS, in `timezone` — the inverse
+ * `resolveTrialWindow` needs to turn a local day back into a retrieval bound (B-539). The
+ * invariant it guarantees for the half-open `[startMs, endMs)` filter: `event >= startMs` iff
+ * the event's local day is `>= dayIndex`, so `zonedDayIndex(zonedDayStartMs(i, tz), tz) === i`
+ * holds for EVERY zone and day.
+ *
+ * `dayIndex * MS_PER_DAY` is UTC midnight of that date; the owner's local midnight is that
+ * shifted by the zone's offset AT that local time. Two candidates bracket any single DST
+ * transition (`c1` uses the offset at UTC midnight, `c2` re-probes at c1 — the date-fns-tz
+ * method). On an ORDINARY day both land on local midnight (day i). On a spring-forward-AT-
+ * midnight day (America/Havana, America/Santiago, America/Asuncion — local 00:00 is SKIPPED)
+ * local midnight does not exist, so the day begins at the transition (01:00): `c1` lands there,
+ * on day i; `c2` lands an hour before it, on day i-1. Taking the EARLIEST candidate that is
+ * actually on day i returns local midnight on ordinary days and the transition on the skip day
+ * — never an hour early on day i-1, which had dropped a today-in-trial event from the window
+ * for ≤1h/year in those three zones (adversarial-reviewer, 2026-08-02). A null/invalid zone
+ * returns UTC midnight — the shipped fallback, byte-identical to the raw `index * MS_PER_DAY`.
+ */
+function zonedDayStartMs(dayIndex: number, timezone: string | null): number {
+  const utcMidnight = dayIndex * MS_PER_DAY
+  if (!timezone) return utcMidnight
+  const c1 = utcMidnight - zoneOffsetMs(utcMidnight, timezone)
+  const c2 = utcMidnight - zoneOffsetMs(c1, timezone)
+  // Both candidates are within the DST amount (~1h) of local midnight, so each falls on day i
+  // or an adjacent one. The day BEGINS at the earliest instant whose local day is i.
+  const onDay = [c1, c2].filter((c) => zonedDayIndex(c, timezone) === dayIndex)
+  return onDay.length > 0 ? Math.min(...onDay) : Math.min(c1, c2)
+}
+
+/** The zone's UTC offset (ms) at instant `ms`: the wall-clock components in `timezone`,
+ *  reassembled as if they were UTC, minus `ms`. 0 for an invalid zone (→ UTC). Built on Intl
+ *  so it is portable across Deno Edge + the Node test runner and DST-correct per instant —
+ *  the same Intl.formatToParts machinery zonedDayIndex uses, extended to hh:mm:ss. */
+function zoneOffsetMs(ms: number, timezone: string): number {
+  try {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone,
+      year: 'numeric',
+      month: 'numeric',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: 'numeric',
+      second: 'numeric',
+      hour12: false,
+    }).formatToParts(new Date(ms))
+    const g = (t: string): number => Number(parts.find((p) => p.type === t)?.value)
+    let h = g('hour')
+    if (h === 24) h = 0 // some engines render midnight as 24:00
+    const y = g('year')
+    const mo = g('month')
+    const d = g('day')
+    const mi = g('minute')
+    const s = g('second')
+    if (![y, mo, d, h, mi, s].every(Number.isInteger)) return 0
+    return Date.UTC(y, mo - 1, d, h, mi, s) - ms
+  } catch {
+    return 0 // invalid IANA zone → treat as UTC
+  }
 }
 
 function localHourOfDay(ms: number, timezone: string): number | null {

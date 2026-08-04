@@ -39,6 +39,7 @@ import {
 } from '../../components/profile/TrialCompletionSheet';
 import { useDietTrial } from '../../hooks/useDietTrial';
 import { useTrialAllowedSet } from '../../hooks/useTrialAllowedSet';
+import { useWidgetSlotLabel } from '../../hooks/useWidgetSlotLabel';
 import { resolveTrialCard } from '../../lib/dietTrialCard';
 import { extensionDays, nextTargetDays } from '../../lib/dietTrialCompletion';
 import { extendTrial } from '../../lib/dietTrialSetup';
@@ -48,9 +49,15 @@ import { Pet } from '../../store/petStore';
 import {
   MEDICATION_ROUTE_OPTIONS, computeRegimenCompliance, regimenComplianceLine,
   regimenFlagLine, attributeDosesToRegimens, regimenDaysElapsed, doseCourseProgress,
+  mapDoseRowsToAttributable,
   type AdherenceTally, type RegimenCompliance, type AttributableDose,
-  type DoseCourseProgress,
+  type DoseCourseProgress, type DoseEmbedRow,
 } from '../../lib/medications';
+import { deriveMedicationCourses, type MedicationHistoryRegimen } from '../../lib/medicationHistory';
+import {
+  buildPastCourseRows, type PastCourseRow, type MedicationItemName,
+} from '../../lib/pastMedications';
+import { PastMedicationsSection } from '../../components/profile/PastMedicationsSection';
 
 const PET_PHOTO_BUCKET = 'nyx-pet-photos';
 
@@ -85,6 +92,12 @@ function buildRegimenDisplay(reg: Regimen, tally: AdherenceTally): RegimenDispla
     dosesPerDay: daysElapsed === null ? null : reg.doses_per_day,
     daysElapsed: daysElapsed ?? 1,
     tally,
+    // B-618 — a dose-denominated course measures adherence against its dispensed TOTAL,
+    // not the calendar pace (which runs past the prescription and contradicts the
+    // "Dose N of target" counter above it). Null for a days/ongoing course → unchanged.
+    // Note this makes a dose course's compliance line independent of the day count, so
+    // an unparseable start date no longer drops it to a bare count.
+    targetDoses: reg.target_duration_doses,
   });
   return {
     ...reg,
@@ -159,6 +172,10 @@ function statusLabel(status: string): string {
 export default function ProfileScreen() {
   const { pets, activePet, updatePet } = usePetStore();
   const showMedicationMoment = useMomentStore((s) => s.showMedication);
+  // B-407 — which "Pet N" slot this pet holds in the Home Screen widget picker
+  // (null off-iOS / before the widget index is published), so the profile names
+  // the slot instead of leaving the owner to bind by trial and error.
+  const widgetSlotLabel = useWidgetSlotLabel(activePet?.id);
 
   const [editModalVisible, setEditModalVisible] = useState(false);
   const [conditionModalVisible, setConditionModalVisible] = useState(false);
@@ -174,6 +191,11 @@ export default function ProfileScreen() {
   const [medicationsLoading, setMedicationsLoading] = useState(true);
   const [medicationModalVisible, setMedicationModalVisible] = useState(false);
   const [editingRegimen, setEditingRegimen] = useState<Regimen | undefined>(undefined);
+
+  // B-140 (extended) PR 2 — the "Past medications" section's rows. No loading state:
+  // it is collapsed-by-default reference material, so it simply appears once derived
+  // rather than flashing a spinner (and renders nothing until then / when empty).
+  const [pastRows, setPastRows] = useState<PastCourseRow[]>([]);
 
   // B-417 PR 4 — the trial card reads through one shared loader with the Home
   // strip, so the two surfaces cannot disagree about the same trial. It reads the
@@ -383,30 +405,9 @@ export default function ProfileScreen() {
           .eq('pet_id', activePet.id)
           .or(orParts.join(','));
         if (doseError) throw doseError;
-
-        type DoseRow = {
-          medication_id: string | null;
-          medication_item_id: string | null;
-          adherence: string | null;
-          // to-one embed: supabase-js may surface it as an object or a 1-element array
-          events:
-            | { deleted_at: string | null; occurred_at: string }
-            | { deleted_at: string | null; occurred_at: string }[]
-            | null;
-        };
-        doses = ((doseRows as unknown as DoseRow[]) ?? []).map((d) => {
-          const ev = Array.isArray(d.events) ? d.events[0] : d.events;
-          return {
-            medication_id: d.medication_id,
-            medication_item_id: d.medication_item_id,
-            adherence: d.adherence,
-            deleted_at: ev?.deleted_at ?? null,
-            // '' only when the FK'd parent event embed is absent (not reachable with
-            // the non-null events FK); harmless — pass 2 orders it out ('' < any date)
-            // and pass 1 ignores occurred_at entirely.
-            occurred_at: ev?.occurred_at ?? '',
-          };
-        });
+        // Shared embed-shape mapper (lib/medications) — the B-196 handling lives in one
+        // place, read identically here and by loadPastMedications.
+        doses = mapDoseRowsToAttributable(doseRows as unknown as DoseEmbedRow[]);
       }
 
       const tallies = attributeDosesToRegimens(regimens, doses);
@@ -415,6 +416,97 @@ export default function ProfileScreen() {
       console.error('[Profile] load medications failed:', e);
     } finally {
       setMedicationsLoading(false);
+    }
+  }, [activePet?.id]);
+
+  // B-140 (extended) PR 2 — the "Past medications" section. Derives PAST courses from
+  // the pet's WHOLE medication record (every regimen + every dose), not just the active
+  // regimens the Current-medications card reads: a course must survive its own ending,
+  // which is the amnesia this feature exists to cure (spec §1). Reads Supabase like the
+  // sibling Current card; on any failure it degrades to no section — a history read must
+  // never cost the owner the profile tab (the loadVetFiles stance).
+  //
+  // Kept SEPARATE from loadMedications rather than folded into one fetch: that loader
+  // drives a much richer active-only card (compliance %, dose-course bar, flag lines,
+  // "Log a dose") off RegimenDisplay, and re-pointing it at MedicationCourse would be a
+  // risky refactor outside this PR. The overlap is a bounded, per-pet double read on
+  // focus (acceptable); consolidating both surfaces onto one derivation is a later call.
+  const loadPastMedications = useCallback(async () => {
+    if (!activePet) return;
+    try {
+      // Every regimen for the pet — ALL statuses. The `status = 'active'` filter is
+      // exactly the bug this feature undoes, so it is deliberately absent here.
+      const { data: regimenRows, error: regimenError } = await supabase
+        .from('medications')
+        .select(
+          'id, medication_item_id, drug_name, dose_amount, route, doses_per_day, ' +
+          'schedule_notes, started_at, target_duration_days, target_duration_doses, status, ended_at',
+        )
+        .eq('pet_id', activePet.id);
+      if (regimenError) throw regimenError;
+
+      // Coerce doses_per_day (PostgREST serialises NUMERIC as a string) once at the
+      // boundary, matching loadMedications.
+      const regimens: MedicationHistoryRegimen[] =
+        ((regimenRows as unknown as MedicationHistoryRegimen[]) ?? []).map((r) => ({
+          ...r,
+          doses_per_day: r.doses_per_day == null ? null : Number(r.doses_per_day),
+        }));
+
+      // Every dose for the pet, with its parent event's soft-delete + timestamp (a
+      // dose's deletedness rides its event). The FK-disambiguated embed is B-196's fix
+      // (a bare events(...) is ambiguous since migration 023's paired_event_id). The
+      // derivation skips deleted doses; the unattributed ones become the dose-derived
+      // (orphan) courses that are most of the real history (spec D1).
+      //
+      // FORWARD-LOOKING (B-696): this reads ALL of the pet's doses on every focus with no
+      // window. The course COUNT stays small, but the dose volume behind it grows without
+      // bound for a years-long chronic patient — the rundown (§4.3/D3) capped the same
+      // derivation's window for exactly this reason. Fine at current volumes; revisit if
+      // a heavy account makes the per-focus read costly.
+      const { data: doseRows, error: doseError } = await supabase
+        .from('medication_administrations')
+        .select('medication_id, medication_item_id, adherence, events!medication_administrations_event_id_fkey(deleted_at, occurred_at)')
+        .eq('pet_id', activePet.id);
+      if (doseError) throw doseError;
+      const doses = mapDoseRowsToAttributable(doseRows as unknown as DoseEmbedRow[]);
+
+      // OMIT timeZone — the device zone IS the owner's midnight (the on-device rule the
+      // derivation documents); generate-report is the surface that passes a zone.
+      const courses = deriveMedicationCourses({ regimens, doses });
+
+      // Resolve dose-derived (orphan) names from the catalog — a regimen course names
+      // itself. medication_items is globally readable, and .in() parameterises the ids
+      // (no string interpolation, so no injection surface).
+      const orphanIds = [
+        ...new Set(
+          courses
+            .filter((c) => c.source === 'doses' && c.medicationItemId)
+            .map((c) => c.medicationItemId as string),
+        ),
+      ];
+      let itemNames = new Map<string, MedicationItemName>();
+      if (orphanIds.length > 0) {
+        const { data: nameRows, error: nameError } = await supabase
+          .from('medication_items')
+          .select('id, generic_name, brand_name')
+          .in('id', orphanIds);
+        if (nameError) throw nameError;
+        itemNames = new Map(
+          ((nameRows as unknown as { id: string; generic_name: string; brand_name: string | null }[]) ?? [])
+            .map((r) => [r.id, { generic_name: r.generic_name, brand_name: r.brand_name }]),
+        );
+      }
+
+      setPastRows(buildPastCourseRows(courses, itemNames));
+    } catch (e) {
+      // Leave the PRIOR successful result standing (matching the sibling loadMedications,
+      // never loadVetFiles' clear-on-error): a transient failure on a re-focus/after-End
+      // refetch must NOT blank an already-rendered history — with the section hidden at
+      // rows.length === 0, clearing here would make real history read as "never had any",
+      // the exact amnesia this feature exists to cure. Before the first success pastRows
+      // is already [], so a first-load failure still shows no section.
+      console.error('[Profile] load past medications failed:', e);
     }
   }, [activePet?.id]);
 
@@ -433,6 +525,10 @@ export default function ProfileScreen() {
   useFocusEffect(
     useCallback(() => {
       loadMedications();
+      // The Past medications section reconciles on the same focus: ending a course
+      // from the Current card, or editing/removing an old dose, changes what belongs
+      // in the past list.
+      loadPastMedications();
       // The trial card reconciles on focus for the same reason: an owner returns
       // to this tab after logging a meal, and the coverage line is denominated in
       // days that only move forward.
@@ -440,7 +536,7 @@ export default function ProfileScreen() {
       // And the Vet Files card, so returning from the library reflects a document
       // just added or renamed there.
       loadVetFiles();
-    }, [loadMedications, reloadTrial, loadVetFiles]),
+    }, [loadMedications, loadPastMedications, reloadTrial, loadVetFiles]),
   );
 
   async function handlePickPhoto() {
@@ -572,6 +668,9 @@ export default function ProfileScreen() {
       if (error) throw error;
       if (!data || data.length === 0) throw new Error('No row updated (not owned?)');
       setMedications((prev) => prev.filter((m) => m.id !== id));
+      // The just-ended course now belongs in the Past medications section — refresh it
+      // so the row moves down immediately, without waiting for the next tab focus.
+      loadPastMedications();
     } catch (e) {
       console.error('[Profile] end regimen failed:', e);
       Alert.alert('Could not update', 'Something went wrong. Try again.');
@@ -775,6 +874,20 @@ export default function ProfileScreen() {
           </View>
         </Card>
 
+        {/* ── Widget slot (B-407) — a quiet lookup line naming the pet's slot in
+            the Home Screen "Edit Widget" picker, so a multi-pet household can bind
+            the right pet instead of guessing "Pet 1…Pet 6". Rendered only when the
+            pet actually holds a published slot (iOS + published index); absent
+            otherwise, never a placeholder. ── */}
+        {widgetSlotLabel && (
+          <Text
+            style={styles.widgetSlotLine}
+            accessibilityLabel={`In the Home Screen widget picker, ${activePet.name} is ${widgetSlotLabel}.`}
+          >
+            Home Screen widget · {widgetSlotLabel}
+          </Text>
+        )}
+
         {/* ── Weight trend (B-186) — descriptive, neutral; expands on the Weight
             chip above. snapshotKg lets the card show the profile weight before any
             weigh-in is logged, so it never contradicts the Weight chip. ── */}
@@ -849,9 +962,14 @@ export default function ProfileScreen() {
           {medicationsLoading ? (
             <WhorlSpinner size="sm" ground="day" style={styles.sectionLoader} />
           ) : medications.length === 0 ? (
+            // With past history below, "No medications yet" would read as "never had
+            // any" directly over a populated Past list (the between-courses state — a
+            // pet just off its antibiotics). Say "right now" and point down; keep the
+            // forward-looking first-run copy only when there is genuinely no history.
             <Text style={styles.emptyConditionsText}>
-              No medications yet. Add a regimen once and logging each dose
-              becomes a single tap.
+              {pastRows.length > 0
+                ? `No medications right now — ${activePet.name}'s past courses are just below.`
+                : 'No medications yet. Add a regimen once and logging each dose becomes a single tap.'}
             </Text>
           ) : (
             medications.map((reg) => {
@@ -940,6 +1058,15 @@ export default function ProfileScreen() {
             })
           )}
         </Card>
+
+        {/* ── Past medications (B-140 extended, PR 2, mock §02) ──
+            A collapsed-by-default section beside the active cards, answering the
+            vet-chair "what has she been on?" the app has never been able to answer
+            (spec §1). Renders nothing until derived / when there is no past history.
+            Rows are non-tappable in PR 2 — PR 3 builds the past-course detail on
+            app/medication/[id] and lights up the tap then (a tap into today's editable
+            catalog screen would invite editing the wrong data). */}
+        <PastMedicationsSection rows={pastRows} />
 
         {/* ── Diet trial card v2 (B-417 PR 4, §4.2 — PR 3's modal behind it) ──
             Every string comes from `resolveTrialCard`; this screen only decides
@@ -1240,6 +1367,15 @@ const styles = StyleSheet.create({
     fontSize: theme.textMD,
     fontWeight: theme.weightMedium,
     color: theme.colorNeutralDark,
+  },
+
+  // B-407 — the widget-slot lookup caption. A quiet tertiary footnote to the info
+  // chips (a reference fact, not a daily control), edge-aligned under the card with
+  // a slight inset. Only ever renders when the pet holds a real published slot.
+  widgetSlotLine: {
+    fontSize: theme.textXS,
+    color: theme.colorTextTertiary,
+    paddingHorizontal: theme.space1,
   },
 
   // ── Section layout (gap for inner rows) ──

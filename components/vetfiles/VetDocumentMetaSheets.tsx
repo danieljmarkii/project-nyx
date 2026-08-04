@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity } from 'react-native';
+import { Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Check } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
@@ -25,13 +25,27 @@ interface NameProps {
   initialTitle: string;
   /** True when `initialTitle` is the rendered default, not the owner's words. */
   untitled: boolean;
+  /**
+   * B-588 — the filename this document arrived with, shown in the sheet so the
+   * owner can tell WHICH document they opened. It is the one disambiguator B-546
+   * put on the library row, and this sheet was the single Vet Files surface that
+   * withheld it: two untitled PDFs from one portal produce a byte-identical sheet
+   * (same title, same generic examples, same empty field), so an owner who taps
+   * Name on the second has no way to confirm it is the second. A PDF has no
+   * thumbnail (D5), so the filename is the only cue that survives the case this
+   * exists for. Null on a document that arrived without one (a camera capture) —
+   * those rows are already told apart by their thumbnail, so the sheet stays as it
+   * was. Purely informational: the owner still types their own name, so `title IS
+   * NULL` keeps meaning "nobody named this".
+   */
+  fileLabel?: string | null;
   onCancel: () => void;
   onSave: (title: string) => void;
   saving?: boolean;
 }
 
 export function NameDocumentSheet({
-  visible, initialTitle, untitled, onCancel, onSave, saving,
+  visible, initialTitle, untitled, fileLabel, onCancel, onSave, saving,
 }: NameProps) {
   // An untitled row opens EMPTY rather than pre-filled with "Document — Jul 26".
   // Pre-filling a placeholder makes the owner delete it before they can type, which
@@ -52,6 +66,27 @@ export function NameDocumentSheet({
       title="Name this document"
       subtitle="Whatever helps you find it later — “Rabies certificate”, “Bloodwork from May”."
     >
+      {/* Which document this is (B-588). Middle-truncated for the same reason the
+          library row is: head-truncation eats the extension and tail-truncation
+          eats the distinguishing stem, and this string exists to separate
+          "CBC-Pixel-…" from "Chem-Pixel-…". Sits above the field as context, not as
+          the value — the owner types their own name below it.
+
+          The "File name" lead-in is pm-feature-review's catch: a rounded box of
+          text directly above an empty input is the exact idiom for a prefilled
+          value or a tappable chip, and this is neither. The label turns "what's
+          this grey thing?" into a statement. Spoken as one labelled node so
+          VoiceOver reaches "File name, CBC-…" rather than an unpronounceable raw
+          filename mid-sheet — the same care the library row takes by voicing the
+          filename last. */}
+      {fileLabel ? (
+        <View style={styles.nameFileTag} accessible accessibilityLabel={`File name, ${fileLabel}`}>
+          <Text style={styles.nameFileTagLabel}>File name</Text>
+          <Text style={styles.nameFileTagValue} numberOfLines={1} ellipsizeMode="middle">
+            {fileLabel}
+          </Text>
+        </View>
+      ) : null}
       <TextField
         value={value}
         onChangeText={setValue}
@@ -301,6 +336,31 @@ const styles = StyleSheet.create({
   field: {
     marginTop: theme.space2,
     marginBottom: theme.space2,
+  },
+  // The "which document" identifier (B-588): a quiet full-width tag, so a long
+  // filename truncates in the middle rather than growing the sheet. Subordinate to
+  // the field it sits above — it is context, not the thing being edited. A row of
+  // [label][value] so the label carries the "this is a filename" meaning and the
+  // value keeps the room it needs to middle-truncate.
+  nameFileTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.space1,
+    marginTop: theme.space2,
+    paddingHorizontal: theme.space2,
+    paddingVertical: theme.space1,
+    borderRadius: theme.radiusSmall,
+    backgroundColor: theme.colorSurfaceSubtle,
+  },
+  nameFileTagLabel: {
+    fontSize: theme.textXS,
+    fontWeight: theme.weightSemibold,
+    color: theme.colorTextTertiary,
+  },
+  nameFileTagValue: {
+    flex: 1,
+    fontSize: theme.textXS,
+    color: theme.colorTextTertiary,
   },
   kindScroll: {
     flexGrow: 0,

@@ -273,6 +273,32 @@ Deno.test('buildContextualReadText — never reassures', () => {
 
 ---
 
+## PATTERN 9: Derive a Red Flag From the Owner-Editable Structured Fields, Never the Cached Read
+
+**Provenance:** re-homed from `CLAUDE.md` § Open Questions 2026-08-02 (B-487). The two rulings behind this pattern — the **B-340** red-flag elevation and the **B-247 PR 3** stool seam — used to live only as resolved rows in that table; they now live here (auto-loaded) and at their code seams. Full records in `docs/decisions-archive.md` → "Re-homed 2026-08-02 (B-487)".
+
+**RULE:** Any surface that *elevates or re-derives* a per-incident red flag from an existing analysis — a Home Signal (B-340), the vet report, an escalation floor, an Ask read — must compute it from the owner-editable **structured clinical fields** (`foreign_material_present`, `blood_present` / `stool_blood_present`, and siblings), **never** from the cached `visual_flags` array or the raw model read. An owner edit (Pattern 7) refreshes the structured fields but deliberately leaves the cached `visual_flags` / `recommendation` untouched, so the array can be stale the moment the owner clears a false flag. Derivation is **present-only** (elevate on the *presence* of a flag; never reassure on its absence — Pattern 1) and subtype-agnostic across the incident family. Two corollaries the two shipped incident types already encode:
+
+- **A monitor-tier visual finding surfaces via a structured field, never `visual_flags`.** Any entry in `visual_flags` forces `worth_a_call`, so a non-escalating observation (stool mucus-without-blood, B-247) rides its own structured column (`stool_mucus_present`) and the `monitor` copy stays generic — naming a benign finding in prose flirts with reassurance-on-absence.
+- **A "repeat" escalation keys off the pre-vision, owner-classified contextual flag, not this photo's read.** `repeated_loose_stool` / `repeated_vomiting` are computed before the vision call from the owner's event classifications (Pattern 3), so they survive the per-incident cap and the extraction being flag-gated off (Pattern 2; B-247 seam ruling (a)).
+
+**CANONICAL EXAMPLE** — the escalation floor unions a *derived* flag set with the model's array, trusting the structured fields, never the array alone (`supabase/functions/_shared/incident-analysis.ts`; mirrored in `generate-signal/detection.ts` B-340 lane and `generate-report`):
+
+```ts
+// Derive escalating visual flags from the structured clinical fields —
+// override-aware by construction — and UNION with the model's array.
+// Never trust visual_flags alone: an owner edit refreshes the fields, not the cache.
+const derived: string[] = []
+if (foreignMaterialPresent === 'yes') derived.push('suspected_foreign_material')
+if (bloodPresent === 'fresh_red' || bloodPresent === 'coffee_ground') derived.push('blood')
+// stool reads its own column (stool_blood_present === 'yes'), same shape.
+const escalatingFlags = union(derived, modelVisualFlags.filter(isEscalating))
+```
+
+**ANTI-PATTERN:** Reading `analysis.visual_flags` (or `recommendation`) directly to decide whether to elevate. After an owner clears a false flag via the B-028 edit path, that cached array still says "blood" — so you re-raise a flag the owner already corrected, or (the inverted, worse failure) you trust a cleared array and drop a flag the structured fields still assert.
+
+---
+
 ## Ambiguities Flagged
 
 These are gaps between what the skill claims and what the code currently enforces. They are intentionally left open for PM decision rather than silently "fixed" in this skill.

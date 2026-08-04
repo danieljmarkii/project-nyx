@@ -179,6 +179,11 @@ export const theme = {
   // Event semantic colors
   colorEventSymptom: '#F43F5E',
   colorEventSymptomLight: '#FFE4E6',
+  // The deep rose ink for a small-caps label ON colorEventSymptomLight (the widget
+  // symptom tile's category label, round-7 mock). Single-sourced here so the
+  // widget's inlined-palette hex has a real token behind it and a future rose-on-
+  // rose-light label reuses the same value rather than reinventing it.
+  colorEventSymptomInk: '#9F1239',
   // Calm safety-surface border — a mid-tone between symptom and symptom-light, for
   // a tinted safety container that needs definition without alarm (the cross-pet
   // safety banner, multi-pet §4 / mock A3). Softer than colorEventSymptom so the
@@ -205,13 +210,30 @@ export const theme = {
   // circle and consumes only the glyph tint.
   colorEventMedication: '#5B7A9E',
   colorEventMedicationLight: '#EAF0F7',
+  // Darkened slate-blue for TEXT on colorEventMedicationLight — the twin of
+  // colorAccentInk (on accent-light) and colorEventSymptomInk (on symptom-light).
+  // colorEventMedication (#5B7A9E) is a graphical/glyph tint (~3:1 targets) and only
+  // reaches ~3.9:1 on the #EAF0F7 wash, short of AA for a text label; this ink is
+  // 6.3:1 on that wash, so the med family gets a readable text-on-tint for a pill/
+  // chip (first consumer: the B-140 "No end recorded" past-medication pill).
+  colorEventMedicationInk: '#3D5875',
   colorChartEmpty: '#F0F0F0',
+  // The idle mark for an un-logged coverage pip / a trial-day gap dot (widget
+  // ground band, round-7 mock) — a mid-grey that reads "nothing here yet" without
+  // the weight of a filled state. Single-sourced for the same reason as
+  // colorEventSymptomInk (the widget inlines its palette but cannot import it).
+  colorTickIdle: '#C9C9C9',
 
   // Destructive — surface-aware. colorDestructive is tuned for light surfaces;
   // colorDestructiveOnDark is the known-good red for the black photo-viewer
   // backdrop, where #DC2626 reads muddy (see migration plan §3.4).
   colorDestructive: '#DC2626',
   colorDestructiveOnDark: '#ff6b6b',
+  // Destructive tint pair for a "danger" banner (fill + hairline), matched in
+  // intensity to the colorEventSymptom{Light,Border} safety-banner pair so a
+  // system-state warning reads as prominent without a solid-red alarm (B-661 PR 3).
+  colorDestructiveLight: '#FEE2E2',   // red-100 tint — danger-banner fill
+  colorDestructiveBorder: '#FCA5A5',  // red-300 — danger-banner hairline
 
   // Modal scrim — one value for every bottom-sheet/confirm overlay so stacked
   // surfaces dim identically (switcher sheet, archive confirm; FAB chip next).
@@ -220,6 +242,14 @@ export const theme = {
   // Completion "moment" — consumed by PR 4 (gold ring in app/log.tsx).
   colorMomentGlow: '#FBBF24',
   colorMomentConfirm: '#00C2A8',
+  // B-693 — the amber "attention" wash behind the log-time trial-list heads-up,
+  // rendered as an inset panel on the DARK completion card. The moment-glow gold at
+  // 0.12 (the same gold already haloing this card's check badge), so the warning
+  // breaks the card's calm stack and can't be read past, while its claim-strength
+  // stays matched to what the record knows — list-absence, not harm (mock round 2,
+  // PM-ruled amber over a rose "danger" rendering). The bar + eyebrow reuse
+  // colorMomentGlow at full strength; only the fill is softened.
+  colorMomentGlowFillOnDark: 'rgba(251, 191, 36, 0.12)',
 
   // ── Spacing — 8pt grid ────────────────────────────────────────────────────
   // Sub-grid micro-gap (2pt): the typographic space between a label and the

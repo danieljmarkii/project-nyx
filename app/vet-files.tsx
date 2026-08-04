@@ -2,7 +2,6 @@ import { useCallback, useRef, useState } from 'react';
 import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, router } from 'expo-router';
-import * as ImagePicker from 'expo-image-picker';
 import { Plus } from 'lucide-react-native';
 import { theme } from '../constants/theme';
 import { Header, ScopeMenu } from '../components/ui';
@@ -11,7 +10,7 @@ import { VetDocumentRow } from '../components/vetfiles/VetDocumentRow';
 import { VetFilesEmptyState } from '../components/vetfiles/VetFilesEmptyState';
 import { NameDocumentSheet, DocumentKindSheet } from '../components/vetfiles/VetDocumentMetaSheets';
 import { AddDocumentSheet } from '../components/vetfiles/AddDocumentSheet';
-import { DocumentSavedMoment, type AlsoAddTarget } from '../components/vetfiles/DocumentSavedMoment';
+import { DocumentSavedMoment } from '../components/vetfiles/DocumentSavedMoment';
 import { RecentlyDeletedSheet } from '../components/vetfiles/RecentlyDeletedSheet';
 import { usePetStore } from '../store/petStore';
 import { getSignedUrls } from '../lib/storage';
@@ -40,15 +39,16 @@ import {
   buildVetDocumentRows,
   duplicateVetDocumentRowsForPet,
   insertVetDocumentRows,
-  pickedFilesFromDocumentAssets,
-  pickedFilesFromImageAssets,
+  isDocumentPickerAvailable,
   rejectedPickMessage,
   savedMomentCopy,
   screenPickedFiles,
   alsoAddLabel,
   alsoAddedLabel,
+  type AlsoAddTarget,
   type PickedVetFile,
 } from '../lib/vetDocumentCapture';
+import { pickVetImages, pickVetPdfs } from '../lib/vetDocumentPickers';
 
 // Vet Files — the library (B-478 VF-2) and its capture flow (VF-3).
 // §4.1 / §4.2 + mock L-real / E1-r2 / D1-r2 / D2-r2.
@@ -95,9 +95,12 @@ export default function VetFilesScreen() {
   const signedAtRef = useRef<Map<string, number>>(new Map());
 
   // The Name sheet addresses a GROUP, and it is opened from two places — a library
-  // row and the saved moment — so it holds the three fields both can supply rather
-  // than a whole library row.
-  const [naming, setNaming] = useState<{ groupId: string; title: string; untitled: boolean } | null>(null);
+  // row and the saved moment — so it holds the fields both can supply rather than a
+  // whole library row. `fileLabel` is B-588's disambiguator: the filename shown in
+  // the sheet so the owner can tell which of two identical PDFs they opened.
+  const [naming, setNaming] = useState<
+    { groupId: string; title: string; untitled: boolean; fileLabel: string | null } | null
+  >(null);
   const [typing, setTyping] = useState<VetLibraryRow | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -123,6 +126,12 @@ export default function VetFilesScreen() {
   // A picker / write is in flight. Guards double-taps on the add affordances; no
   // spinner, because every step here is a local write behind OS-modal picker UI.
   const [capturing, setCapturing] = useState(false);
+  // B-548 — probe expo-document-picker ONCE, at mount, so the Files row can render
+  // disabled with an honest subtitle instead of failing after the tap. A lazy
+  // initializer runs it synchronously the first render and never again; the probe
+  // never throws (it catches the native-module absence itself), so this is safe even
+  // on the stale binary it exists to detect.
+  const [filesAvailable] = useState(() => isDocumentPickerAvailable());
 
   // A document captured on THIS device keeps a durable local file, so it renders
   // with no network at all — the free half of AC 12. A hydrated row carries '' and
@@ -208,89 +217,6 @@ export default function VetFilesScreen() {
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
-  // ── Pickers ─────────────────────────────────────────────────────────────────
-  // Returns [] for every "nothing happened" outcome — cancelled, denied — so the
-  // caller has one quiet path and no thrown control flow.
-
-  async function pickImages(source: 'camera' | 'photo_library'): Promise<PickedVetFile[]> {
-    if (source === 'camera') {
-      const { status } = await ImagePicker.requestCameraPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert(
-          'Camera access needed',
-          'Allow camera access in Settings to photograph a document, or choose one from Photos instead.',
-        );
-        return [];
-      }
-    } else {
-      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert('Photo access needed', 'Allow photo access in Settings to add a document from Photos.');
-        return [];
-      }
-    }
-
-    const opts: ImagePicker.ImagePickerOptions = {
-      mediaTypes: ['images'],
-      // No cropping: this is a record, and a crop is an edit to a clinical document.
-      allowsEditing: false,
-      quality: 0.9,
-      // Needed for document_date — the date ON the paper is usually the date the
-      // photo was taken (§4.2). GPS never travels: compressForUpload re-encodes
-      // before upload and prepareVetDocumentUpload has no original-fallback (§6.2).
-      exif: true,
-      // Multi-select is the Photos row's whole promise (§4.4): an email thread is N
-      // screenshots that are ONE document. The camera returns a single shot per
-      // launch, so its multi-page path is the saved moment's "Add another page".
-      ...(source === 'photo_library' ? { allowsMultipleSelection: true } : {}),
-    };
-
-    const result = source === 'camera'
-      ? await ImagePicker.launchCameraAsync(opts)
-      : await ImagePicker.launchImageLibraryAsync(opts);
-    if (result.canceled) return [];
-    return pickedFilesFromImageAssets(result.assets ?? []);
-  }
-
-  // `expo-document-picker` is required LAZILY, and that is not a style choice.
-  //
-  // Its entry point calls `requireNativeModule('ExpoDocumentPicker')` at IMPORT
-  // time, which THROWS on any binary built before this dependency landed — and
-  // Expo Go is retired for SDK 57, so the PM's current dev client and the installed
-  // TestFlight build are both exactly that binary. A static import would therefore
-  // take down the whole Vet Files ROUTE on the app people are testing with, not just
-  // this one row. Requiring it here contains the blast radius to the Files path: the
-  // camera and Photos rows keep working (expo-image-picker is already in every
-  // binary), and this one says so plainly until a fresh build exists.
-  async function pickPdfs(): Promise<PickedVetFile[]> {
-    let DocumentPicker: typeof import('expo-document-picker');
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      DocumentPicker = require('expo-document-picker');
-    } catch {
-      Alert.alert(
-        'PDFs need an app update',
-        'Picking a PDF from Files needs a newer version of the app. Photos and the camera work now.',
-      );
-      return [];
-    }
-    const result = await DocumentPicker.getDocumentAsync({
-      // PDFs only, which is exactly what the row promises ("PDFs from email or a
-      // clinic portal"). Images from Files would land as one document per file and
-      // quietly break the page-grouping promise the two photo rows make — a photo
-      // in Files belongs in the Photos path. A provider that ignores the filter is
-      // caught by screenPickedFiles, not by trust.
-      type: 'application/pdf',
-      multiple: true,
-      // Gives us a readable file:// copy on both platforms. Without it Android
-      // hands back a content:// URI that persistCapture skips and
-      // `new File(uri).bytes()` cannot read at upload time.
-      copyToCacheDirectory: true,
-    });
-    if (result.canceled) return [];
-    return pickedFilesFromDocumentAssets(result.assets ?? []);
-  }
-
   // ── The capture itself (§4.2) ───────────────────────────────────────────────
   //
   // Every source lands here, and the shape is the same: pick → screen → build →
@@ -316,7 +242,7 @@ export default function VetFilesScreen() {
 
     setCapturing(true);
     try {
-      const picked = source === 'files' ? await pickPdfs() : await pickImages(source);
+      const picked = source === 'files' ? await pickVetPdfs() : await pickVetImages(source);
       if (picked.length === 0) return;
 
       const screened = screenPickedFiles(picked);
@@ -373,7 +299,7 @@ export default function VetFilesScreen() {
     if (!current || current.length === 0 || capturing) return;
     setCapturing(true);
     try {
-      const picked = await pickImages('camera');
+      const picked = await pickVetImages('camera');
       if (picked.length === 0) return;
       const screened = screenPickedFiles(picked);
       if (screened.accepted.length === 0) {
@@ -520,6 +446,12 @@ export default function VetFilesScreen() {
               groupId: savedCover.document_group_id,
               title: savedCopy.cardTitle,
               untitled: true,
+              // The one just-saved document's own filename, when it has one. B-589
+              // removes this button entirely for a multi-document save, so this
+              // path only ever names a single document — there is no ambiguity to
+              // resolve here, but the identifier is free and keeps the sheet honest
+              // about what it is naming.
+              fileLabel: savedCover.source_filename ?? null,
             });
           }}
           onDone={() => setSaved(null)}
@@ -598,7 +530,7 @@ export default function VetFilesScreen() {
                 // cover row's id — a 3-page thread is one document, and its pages
                 // are what the detail screen swipes through.
                 onPress={() => router.push(`/vet-document/${row.groupId}`)}
-                onName={() => setNaming({ groupId: row.groupId, title: row.title, untitled: row.untitled })}
+                onName={() => setNaming({ groupId: row.groupId, title: row.title, untitled: row.untitled, fileLabel: row.fileLabel })}
                 onAddType={() => setTyping(row)}
               />
             ))}
@@ -631,6 +563,7 @@ export default function VetFilesScreen() {
       <AddDocumentSheet
         visible={addOpen}
         petName={petName}
+        filesAvailable={filesAvailable}
         onCancel={() => setAddOpen(false)}
         onPick={handlePick}
       />
@@ -639,6 +572,7 @@ export default function VetFilesScreen() {
         visible={naming != null}
         initialTitle={naming?.title ?? ''}
         untitled={naming?.untitled ?? true}
+        fileLabel={naming?.fileLabel ?? null}
         onCancel={() => setNaming(null)}
         onSave={handleRename}
         saving={saving}

@@ -34,6 +34,7 @@
 
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { resolveAllowlistFlagFromRows } from '../_shared/flags.ts'
+import { resolveIanaZone } from '../../../lib/utils.ts'
 import { projectCachedRead } from './tools.ts'
 import type {
   AskEventRow,
@@ -555,6 +556,7 @@ async function fetchContext(
   petId: string,
   pet: { name: string; species: string },
   nowMs: number,
+  requestTimezone: string | null,
 ): Promise<AskDataContext> {
   const lookbackIso = new Date(nowMs - LOOKBACK_DAYS * MS_PER_DAY).toISOString()
 
@@ -581,7 +583,7 @@ async function fetchContext(
     // Meal events with their food/protein/intake join (the rate/food/protein aggregates).
     client
       .from('events')
-      .select('id, occurred_at, occurred_at_confidence, event_attachments(id), meals(food_item_id, intake_rating, food_items(primary_protein, food_type, brand, product_name))')
+      .select('id, occurred_at, occurred_at_confidence, event_attachments(id), meals(food_item_id, intake_rating, food_items(primary_protein, proteins, food_type, brand, product_name))')
       .eq('pet_id', petId)
       .eq('event_type', 'meal')
       .is('deleted_at', null)
@@ -644,16 +646,17 @@ async function fetchContext(
   }))
 
   // ── meals ──
+  type FoodItemDb = { primary_protein: string | null; proteins: string[] | null; food_type: string | null; brand: string | null; product_name: string | null }
   type MealRowDb = {
     id: string
     occurred_at: string
     occurred_at_confidence: string | null
     event_attachments: { id: string }[] | null
-    meals: { food_item_id: string | null; intake_rating: string | null; food_items: { primary_protein: string | null; food_type: string | null; brand: string | null; product_name: string | null } | null } | { food_item_id: string | null; intake_rating: string | null; food_items: unknown }[] | null
+    meals: { food_item_id: string | null; intake_rating: string | null; food_items: FoodItemDb | null } | { food_item_id: string | null; intake_rating: string | null; food_items: unknown }[] | null
   }
   const meals: AskMealRow[] = ((mealsRes.data ?? []) as MealRowDb[]).map((r) => {
-    const meal = first(r.meals) as { food_item_id: string | null; intake_rating: string | null; food_items: { primary_protein: string | null; food_type: string | null; brand: string | null; product_name: string | null } | { primary_protein: string | null; food_type: string | null; brand: string | null; product_name: string | null }[] | null } | null
-    const fi = first(meal?.food_items ?? null) as { primary_protein: string | null; food_type: string | null; brand: string | null; product_name: string | null } | null
+    const meal = first(r.meals) as { food_item_id: string | null; intake_rating: string | null; food_items: FoodItemDb | FoodItemDb[] | null } | null
+    const fi = first(meal?.food_items ?? null) as FoodItemDb | null
     return {
       id: r.id,
       occurredAt: r.occurred_at,
@@ -662,6 +665,9 @@ async function fetchContext(
       foodLabel: fi ? `${fi.brand ?? ''} ${fi.product_name ?? ''}`.trim() || null : null,
       foodType: fi?.food_type ?? null,
       primaryProtein: fi?.primary_protein ?? null,
+      // B-467: the full captured protein set rides beside the primary so topProteins pools
+      // hidden secondaries — read through readProteinSet inside the tool, never here.
+      proteins: fi?.proteins ?? null,
       intakeRating: meal?.intake_rating ?? null,
       note: null, // aggregates carry no note (scoped-retrieval §6.1); event notes ride recall
       hasPhoto: Array.isArray(r.event_attachments) && r.event_attachments.length > 0,
@@ -760,12 +766,17 @@ async function fetchContext(
   // asking about "since the trial started" is asking about the span they can see.
   const trialRow = first((trialRes.data ?? []) as { started_at: string; target_duration_days: number | null; status: string }[])
   const trial = trialRow
-    ? { startedAt: trialRow.started_at, targetDurationDays: trialRow.target_duration_days ?? 0, status: trialRow.status, deletedAt: null }
+    ? { startedAt: trialRow.started_at, targetDurationDays: trialRow.target_duration_days ?? 0, status: trialRow.status }
     : null
   const trialStartMs = trial ? (Number.isFinite(Date.parse(trial.startedAt)) ? Date.parse(trial.startedAt) : null) : null
 
+  // B-443 — the day counter must bucket by the SAME zone the owner's card does, which is the
+  // DEVICE zone. The client passes it on the request; prefer it over the stored
+  // `user_profiles.timezone`, which can lag it (a never-stamped profile still carries
+  // migration 001's `America/New_York` default). Stored is the fallback, null (→ UTC) the
+  // last resort — never a silent New York the card never agreed with.
   const profile = profileRes.data as { timezone: string | null } | null
-  const timezone = profile?.timezone || null
+  const timezone = resolveIanaZone(requestTimezone, profile?.timezone)
 
   // ai_signals.findings is CachedFinding[] = { rank, text, finding{ type, priorityClass, ... } }.
   // Map to the engineFindings tool's relay shape (type + priorityClass + verbatim payload).
@@ -805,13 +816,16 @@ const handler = async (req: Request): Promise<Response> => {
   const authHeader = req.headers.get('Authorization')
   if (!authHeader) return Response.json({ error: 'Unauthorized' }, { status: 401, headers: CORS_HEADERS })
 
-  let body: { pet_id?: string; question?: string; conversation?: AskTurn[] }
+  let body: { pet_id?: string; question?: string; conversation?: AskTurn[]; timezone?: string }
   try {
     body = (await req.json()) as typeof body
   } catch {
     return Response.json({ error: 'Invalid JSON body' }, { status: 400, headers: CORS_HEADERS })
   }
   const petId = typeof body.pet_id === 'string' ? body.pet_id : ''
+  // The caller's device IANA zone (B-443) — validated in resolveIanaZone before use, so a
+  // garbage or spoofed value is simply ignored in favour of the stored zone, never trusted.
+  const requestTimezone = typeof body.timezone === 'string' ? body.timezone : null
   const question = typeof body.question === 'string' ? body.question.trim() : ''
   const conversation: AskTurn[] = Array.isArray(body.conversation)
     ? (body.conversation as unknown[])
@@ -882,7 +896,7 @@ const handler = async (req: Request): Promise<Response> => {
     const model = Deno.env.get('ASK_MODEL') || ASK_MODEL // S3 — model id via env override
 
     // 6. Fetch the working set (RLS-scoped) and run the bounded plan-loop.
-    const ctx = await fetchContext(client, petId, pet as { name: string; species: string }, nowMs)
+    const ctx = await fetchContext(client, petId, pet as { name: string; species: string }, nowMs, requestTimezone)
     const { body: loopBody } = await runAskLoop(client, ctx, question, conversation, generalEnabled, apiKey, model)
 
     // 6b. STRUCTURALLY attach a live engine SAFETY finding as the leading card (§7.2 — safety

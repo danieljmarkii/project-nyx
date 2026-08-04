@@ -58,6 +58,10 @@ it('draws all three facts and both actions', () => {
   // is invisible to the person it protects.
   tree.getByText('Earlier feedings');
   tree.getByText('Keep the reading they already have');
+  // B-628 — the vet-framing caption is actually on screen, from this entry point
+  // and food detail alike (both render this model).
+  tree.getByText(MODEL.caption);
+  tree.getByTestId('add-trial-food-caption');
   tree.getByText('Add to the list');
   tree.getByText('Not now');
 });

@@ -4,14 +4,7 @@ import { Check } from 'lucide-react-native';
 import { theme, shadows } from '../../constants/theme';
 import { PrimaryButton } from '../ui/PrimaryButton';
 import { VetDocumentThumb } from './VetDocumentThumb';
-import type { SavedMomentCopy } from '../../lib/vetDocumentCapture';
-
-export interface AlsoAddTarget {
-  petId: string;
-  /** "Also add to Juniper’s Vet Files", or the confirmed past tense once filed. */
-  label: string;
-  done: boolean;
-}
+import type { SavedMomentCopy, AlsoAddTarget } from '../../lib/vetDocumentCapture';
 
 interface Props {
   copy: SavedMomentCopy;
@@ -106,8 +99,29 @@ export function DocumentSavedMoment({
           </TouchableOpacity>
         ))}
 
+        {/* B-589 — "Name it" is offered only when ONE document was saved. A
+            multi-document capture (two PDFs from a Files pick) renders a single
+            cover card reading "2 documents", so a Name sheet opened from here could
+            only name that cover group — while the singular sheet title told the
+            owner they were naming the whole save. That was the one Vet Files surface
+            where two PDFs stayed indistinguishable; the honest move (D11) is to let
+            the library, where each row now carries its filename, be where naming
+            happens. Done stands alone and is the shortest path off either way.
+
+            But dropping the button silently would make the multi-doc saver LESS
+            likely to discover naming than the single-doc saver, who still sees a
+            literal "Name it" (pm-feature-review). So the button is replaced, not
+            just removed: a quiet forward-looking line that this completion state
+            would otherwise lack (Principle 5), echoing the add sheet's own "you can
+            name things later" promise. The owner lands on a library whose untitled
+            rows each carry a Name pill, so the cue and the affordance agree. */}
+        {copy.multiDocument ? (
+          <Text style={styles.nameLater}>You can name each one later.</Text>
+        ) : null}
         <View style={styles.actions}>
-          <PrimaryButton label="Name it" variant="secondary" onPress={onName} />
+          {copy.multiDocument ? null : (
+            <PrimaryButton label="Name it" variant="secondary" onPress={onName} />
+          )}
           <PrimaryButton label="Done" onPress={onDone} />
         </View>
       </View>
@@ -193,6 +207,13 @@ const styles = StyleSheet.create({
   quietActionDone: {
     fontWeight: theme.weightRegular,
     color: theme.colorTextTertiary,
+  },
+  // The multi-document forward-looking cue (B-589) — quiet and centred, the register
+  // of the offline line above rather than of an action.
+  nameLater: {
+    fontSize: theme.textSM,
+    color: theme.colorTextTertiary,
+    textAlign: 'center',
   },
   actions: {
     alignSelf: 'stretch',

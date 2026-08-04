@@ -1,5 +1,7 @@
 # Project Nyx — Technical Specification
-**Version:** 1.0 | **Status:** Living Document | **Last Updated:** May 2026
+**Version:** 1.1 | **Status:** 🌱 Living Document | **Last Updated:** 2026-08-02
+
+> _Header version lives here, not in the filename (`…-v1_0.md` is legacy — renaming breaks references). Bump the version + `Last Updated` on any material edit; see CLAUDE.md § Documentation Update Protocol (living vs. frozen)._
 
 ---
 
@@ -88,7 +90,7 @@ Stay in Expo managed workflow for the MVP. Do not eject unless a required native
 ├── __mocks__/                    # Jest manual mocks
 ├── docs/                         # All project documentation lives here
 │   ├── nyx-technical-spec-v1_0.md          # This file
-│   ├── nyx-schema-v1_0.sql                 # Canonical schema + reference queries
+│   ├── nyx-schema-v1_0.sql                 # FROZEN snapshot + reference queries (canonical schema = supabase/migrations/)
 │   ├── nyx-design-principles-v1_0.md       # The seven principles
 │   ├── nyx-research-v1_0.md                # Market / clinical / persona research dossier
 │   ├── nyx-competitive-landscape-v1_0.md   # Competitor + strategic-gap analysis
@@ -97,12 +99,15 @@ Stay in Expo managed workflow for the MVP. Do not eject unless a required native
 │   ├── *-requirements.md                   # Per-feature build specs
 │   └── research/                           # Append-only evidence briefs + README index
 └── supabase/
-    ├── migrations/               # Schema migrations (001 … 021)
+    ├── migrations/               # Schema migrations (001 … 049)
     └── functions/                # Edge Functions (Deno)
         ├── generate-signal/                # AI Signal (Haiku 4.5) + deterministic detection
-        ├── analyze-vomit/                  # Per-incident vision read
+        ├── generate-report/                # Vet report (server-rendered HTML)
+        ├── analyze-vomit/                  # Per-incident vomit vision read (Sonnet 4.6)
+        ├── analyze-stool/                  # Per-incident stool vision read (Sonnet 4.6)
         ├── extract-food-from-photo/        # Food-label vision (Sonnet 4.6)
         ├── extract-medication-from-photo/  # Drug-label vision (Sonnet 4.6)
+        ├── ask/                            # Q&A over the pet's record (Sonnet 4.6 tool-loop)
         └── delete-account/                 # Hard-delete cascade + Storage purge
 ```
 
@@ -284,15 +289,15 @@ These are decided. Do not revisit without a PM decision.
 
 ## Open Engineering Questions
 
-These are not decided. They need a resolution before the relevant feature is built.
+Three of the five below are now **decided** (marked Resolved, with a pointer to the fuller record); two remain genuinely open. A row stays here until its feature is built and the decision recorded.
 
-| Question | Blocks | Notes |
+| Question | Blocks | Status |
 |---|---|---|
-| Which PDF rendering library for the Edge Function? | Vet report | Candidates: `pdf-lib`, `puppeteer` (heavier, more layout control), `react-pdf`. Recommend `pdf-lib` for simplicity unless layout requirements demand HTML rendering. |
-| GDPR deletion cascade: what happens to event data when a user deletes their account? | Auth / data retention | `ON DELETE CASCADE` on `pets` and `events` will wipe all data. Confirm this is acceptable or implement an anonymization approach instead. |
-| AI Signal generation: which model and prompt structure? | Home screen Zone 1 | Model: Claude via Anthropic API called from Edge Function. Prompt must include recent event data, food log, and active conditions. Output must be a single sentence. Rate limit and cache — do not call on every home screen open. |
-| Minimum Expo SDK version? | Scaffold | Use latest stable Expo SDK at time of scaffold. Document the version in this file immediately after scaffold. |
-| Push notification provider? | Nudge (post-MVP) | Expo Notifications handles the client side. Backend delivery requires a service. Decide before implementing any notification logic. |
+| Which PDF rendering library for the Edge Function? | Vet report | **Resolved 2026-07-02 — HTML-first.** Canonical server-rendered HTML shown in-app via a WebView; handed to the vet as a PDF via the native share sheet. "Which library" is demoted to the B-144 render-path spike; the generation *location* (on-device `expo-print` vs server-side headless) is `docs/nyx-vet-report-requirements.md` §14 S7. |
+| GDPR deletion cascade: what happens to event data when a user deletes their account? | Auth / data retention | **Resolved 2026-06-19 — hard-delete (B-039).** `auth.admin.deleteUser` fires the `ON DELETE CASCADE` graph + an Edge-Function Storage purge; per-account `food_items` + food photos now purge with the account too (B-354). Spec: `docs/nyx-account-deletion-requirements.md`. |
+| AI Signal generation: which model and prompt structure? | Home screen Zone 1 | **Resolved 2026-05-31 — Haiku 4.5, architecture B.** A single forced `phrase_insight` tool phrases an already-true structured finding into one sentence (detection stays deterministic in `detection.ts`); templated fallback; findings cached in `ai_signals` (24h TTL); the home reads cache only. See `docs/decisions-archive.md`. |
+| Minimum Expo SDK version? | Scaffold | **Open** — the app currently runs **Expo SDK 57** (`expo ^57.0.8`, React Native 0.86, React 19). Pin/record the supported floor here once confirmed. |
+| Push notification provider? | Nudge (post-MVP) | **Open** — Expo Notifications on the client; backend delivery provider undecided. Also gated on the Principle-4 nudge-cap Open Question (B-288). |
 
 ---
 
@@ -315,22 +320,22 @@ Build in this order. Do not skip ahead.
 
 ## Design Tokens (for `constants/theme.ts`)
 
-Derived from `design-principles.md`. These values are directional — the designer owns final values.
+Derived from `design-principles.md`. **`constants/theme.ts` is now the single source of truth** — the resolved anchors are below (fonts, the sole accent, the neutrals, the additive brand-night ground); the live file carries the full token set. Do not hardcode values inline.
 
 ```typescript
 export const theme = {
-  // Typography
-  fontBody: 'System',           // One typeface, two weights
-  fontDisplay: 'TBD',           // Warm, not clinical — serif or humanist sans
+  // Typography — Geist (body) + Newsreader (display). RN can't synthesize
+  // custom-font weights, so weights map to loaded faces (Geist-Medium/-SemiBold).
+  fontBody: 'Geist',            // One body typeface
+  fontDisplay: 'Newsreader',    // Warm display face — the AI Signal headline
   fontWeightRegular: '400',
   fontWeightMedium: '500',
 
-  // Color
-  // One dominant neutral + one accent, used sparingly
-  // Final values TBD by designer — do not hardcode colors inline
-  colorAccent: 'TBD',           // Interactive elements and primary trend line only
-  colorNeutralDark: 'TBD',
-  colorNeutralLight: 'TBD',
+  // Color — one dominant neutral + one accent (teal), used sparingly.
+  colorAccent: '#00C2A8',       // Teal — the SOLE interactive / trend accent
+  colorNeutralDark: '#0A0A0A',
+  colorNeutralLight: '#FAFAFA',
+  colorBrandNight: '#13112E',   // Additive brand/night ground (background-only; teal stays the sole accent)
 
   // Spacing (8pt grid)
   space1: 8,
@@ -367,9 +372,10 @@ export const EVENT_TYPES = {
   other:        { label: 'Other',        icon: 'plus',      hasSeverity: false, hasFood: false },
 } as const;
 
-// skin_reaction, scratch, weight_check, medication are in the schema
-// but not exposed in the MVP quick-log UI. They are valid event_type values
-// and may be written programmatically or added to the UI post-MVP.
+// weight_check and medication are now shipped features with their own
+// capture/logging surfaces (medication logging B-117; weight tracking) —
+// no longer post-MVP. skin_reaction and scratch remain valid event_type
+// values surfaced via structured flows rather than a raw quick-log tile.
 ```
 
 ---
@@ -378,4 +384,5 @@ export const EVENT_TYPES = {
 
 | Version | Date | Summary |
 |---|---|---|
+| v1.1 | 2026-08-02 | Accuracy reconciliation (B-392). Header + `Last Updated` bumped; 3 of 5 Open-Eng questions marked Resolved (PDF-library → HTML-first / B-144; GDPR cascade → hard-delete / B-039; AI-Signal model → Haiku 4.5); design tokens refreshed off `constants/theme.ts` (Geist/Newsreader, teal `#00C2A8`, `colorBrandNight`); migration count 021 → 049; Edge-Functions list 5 → 8 (adds generate-report, analyze-stool, ask); event-type comment updated (weight_check + medication shipped); schema-doc label corrected to frozen snapshot. No stack / architecture / build-phase change. |
 | v1.0 | May 2026 | Initial spec. Stack, project structure, MVP feature set with acceptance criteria, architectural decisions, open questions, build sequence, design tokens, event type constants. |

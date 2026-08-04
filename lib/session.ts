@@ -7,6 +7,7 @@ import { usePetStore, clearPersistedActivePetId } from '../store/petStore';
 import { useOnboardingDraftStore } from '../store/onboardingDraftStore';
 import { clearTrialContextCache, clearTrialHeadsUpLedger } from './trialContaminant';
 import { clearCachedAppConfig } from './appConfig';
+import { cancelAllScheduledNotifications, clearNotificationInteractions } from './notifications';
 
 /**
  * B-430 — the pre-sign-out drain. Push everything that can still be pushed, then
@@ -111,6 +112,16 @@ export async function wipeLocalSession(): Promise<void> {
   // the container directory clearWidgetData() deletes — so it needs its own
   // wipe, or the Home Screen keeps showing the previous account's pet.
   clearWidgetTimeline();
+  // B-661 (Trust & Safety, non-negotiable): a scheduled local notification lives
+  // in the OS, entirely outside the app sandbox clearLocalData wipes — so a 9pm
+  // Day Summary scheduled by the account signing out would still fire on a shared
+  // device and name the previous owner's pet on the lock screen. Same leak class
+  // as the App Group wipe above. Cancel every scheduled notification on sign-out;
+  // then clear the interaction ledger (AsyncStorage, also outside SQLite — the
+  // previous owner's per-category notification-interaction history). Both are
+  // internally best-effort (never throw), so teardown always continues.
+  await cancelAllScheduledNotifications();
+  await clearNotificationInteractions();
   // Device-local active-pet selection is account state too — wipe it and the
   // in-memory pet list so the next sign-in starts clean (FR-9 parity).
   await clearPersistedActivePetId();
@@ -124,15 +135,17 @@ export async function wipeLocalSession(): Promise<void> {
   // shared device, which is Sam's household iPad exactly.
   //
   // ORDERING NOTE for the §6.4 handler, which is easy to get wrong: the wipe runs
-  // at step 5 (the pre-exchange signOut), BEFORE the exchange at step 6. So FR-12's
-  // pre-fill on a failure state must come from the value the handler already read
-  // at step 2 (the provenance check) and holds in memory for the attempt — not
-  // from a re-read of disk, which this line has by then cleared.
+  // at step 4 (`setSession(null)` + this call, invoked DIRECTLY — B-576 option (d),
+  // NOT via a pre-exchange `signOut()`, which would delete the PKCE verifier the
+  // exchange needs), BEFORE the exchange at step 5. So FR-12's pre-fill on a failure
+  // state must come from the value the handler already read at step 2 (the
+  // provenance check) and holds in memory for the attempt — not from a re-read of
+  // disk, which this line has by then cleared.
   //
-  // Deliberately NOT cleared here: the FR-6 recovery gate. The §6.4 signOut is what
-  // triggers this wipe, so clearing the gate here would destroy it at the exact
-  // moment it is needed — the same trap `justDeletedAccount` avoids by not being
-  // touched on teardown (spec §6.3).
+  // Deliberately NOT cleared here: the FR-6 recovery gate. The §6.4 handler calls
+  // this wipe directly while the gate is armed, so clearing the gate here would
+  // destroy it at the exact moment it is needed — the same trap `justDeletedAccount`
+  // avoids by not being touched on teardown (spec §6.3).
   await clearRecoveryRequest();
   // B-351 slice 4: the active-trial protein context is memoized per pet in a
   // module-level Map with a 5-minute TTL. It is account data — the trial's target

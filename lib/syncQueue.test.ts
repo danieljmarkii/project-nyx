@@ -27,11 +27,16 @@ import {
   QUARANTINE_COLUMNS,
   MAX_SYNC_ATTEMPTS,
   TERMINAL_SYNC_ERROR_CODES,
+  TERMINAL_UPLOAD_STATUSES,
   RLS_FILTERED_ERROR,
   classifySyncFailure,
+  classifyUploadFailure,
+  uploadErrorStatus,
   isTerminalSyncError,
   formatSyncError,
+  formatUploadError,
   exhaustedAttemptsError,
+  withUnsentSuffix,
   pendingStatusSql,
   quarantineCountSql,
 } from './syncQueue';
@@ -45,6 +50,7 @@ import {
 } from './localSchema';
 import { MEDICATION_SCHEMA_SQL } from './medications';
 import { DIET_TRIAL_SCHEMA_SQL } from './dietTrialMirror';
+import { NOTIFICATION_SCHEMA_SQL } from './notificationPreferences';
 
 type Db = InstanceType<typeof DatabaseSync>;
 
@@ -55,7 +61,14 @@ type Db = InstanceType<typeof DatabaseSync>;
 // schema no device actually runs.
 async function realSchemaDb(): Promise<Db> {
   const db = new DatabaseSync(':memory:');
-  for (const sql of [BASE_SCHEMA_SQL, MEDICATION_SCHEMA_SQL, DIET_TRIAL_SCHEMA_SQL]) db.exec(sql);
+  for (const sql of [
+    BASE_SCHEMA_SQL,
+    MEDICATION_SCHEMA_SQL,
+    DIET_TRIAL_SCHEMA_SQL,
+    NOTIFICATION_SCHEMA_SQL,
+  ]) {
+    db.exec(sql);
+  }
   await applyColumnUpgrades(async (sql) => db.exec(sql));
   return db;
 }
@@ -129,6 +142,86 @@ describe('classifySyncFailure — the retry budget\'s safety line (B-398)', () =
     // pet-hydration race that resolves).
     expect(classifySyncFailure(RLS_FILTERED_ERROR)).toBe('rejected');
     expect(isTerminalSyncError(RLS_FILTERED_ERROR)).toBe(false);
+  });
+});
+
+describe('classifyUploadFailure — the SAME safety line, for a THROWN upload (B-586)', () => {
+  // A supabase StorageApiError, shaped like storage-js actually builds it: the flag
+  // every StorageError sets, the HTTP status the server answered with, plus a name.
+  const apiError = (status: number, message = 'boom') => ({
+    __isStorageError: true,
+    name: 'StorageApiError',
+    status,
+    statusCode: String(status),
+    message,
+  });
+  // A StorageUnknownError — how storage-js wraps a NETWORK failure. It carries the
+  // flag but NO numeric status. This is the offline case.
+  const networkError = {
+    __isStorageError: true,
+    name: 'StorageUnknownError',
+    message: 'Network request failed',
+  };
+
+  it('gives up immediately when the object itself is unacceptable (413 / 415)', () => {
+    for (const status of TERMINAL_UPLOAD_STATUSES) {
+      expect(classifyUploadFailure(apiError(status))).toBe('terminal');
+    }
+  });
+
+  it('NEVER charges the offline case — a network throw the server never saw', () => {
+    // The upload analog of classifySyncFailure's codeless-network test, and just as
+    // load-bearing: an owner offline for a fortnight must not come back to a
+    // quarantined attachment queue. A StorageUnknownError has no status, so the
+    // status branch never fires; the storage-shape check routes it to transient.
+    expect(classifyUploadFailure(networkError)).toBe('transient');
+  });
+
+  it('treats auth / timeout / rate-limit / 5xx as transient — the row is not at fault', () => {
+    for (const status of [401, 403, 408, 429, 500, 502, 503]) {
+      expect(classifyUploadFailure(apiError(status))).toBe('transient');
+    }
+  });
+
+  it('spends an attempt on any OTHER 4xx the server produced against the object', () => {
+    // 400/404/422 are server responses that repeat identically, so they must not be
+    // re-sent forever — but they are not in the definitely-permanent set, so they go
+    // through the budget rather than an immediate quarantine.
+    for (const status of [400, 404, 409, 422]) {
+      expect(classifyUploadFailure(apiError(status))).toBe('rejected');
+    }
+  });
+
+  it('charges a LOCAL throw (undecodable image, missing file) against the budget', () => {
+    // Not a storage error at all: the re-encode threw, or the bytes could not be
+    // read. Retrying is identical, so it must not loop forever — but 'rejected', not
+    // 'terminal', so a one-off decode blip still gets the full run of grace.
+    expect(classifyUploadFailure(new Error('manipulator: could not decode image'))).toBe('rejected');
+    expect(classifyUploadFailure(new Error('File does not exist'))).toBe('rejected');
+  });
+
+  it('reads the HTTP status structurally, without importing storage-js', () => {
+    expect(uploadErrorStatus(apiError(413))).toBe(413);
+    expect(uploadErrorStatus(networkError)).toBeNull();
+    expect(uploadErrorStatus(new Error('x'))).toBeNull();
+    expect(uploadErrorStatus(null)).toBeNull();
+    expect(uploadErrorStatus({ status: 'not-a-number' })).toBeNull();
+  });
+
+  it('formats the parked reason greppable by class, then the message', () => {
+    expect(formatUploadError(apiError(413, 'Payload too large'))).toBe('upload-413: Payload too large');
+    expect(formatUploadError(new Error('could not decode'))).toBe('upload: could not decode');
+    expect(formatUploadError({})).toBe('upload');
+    expect(formatUploadError(apiError(413, 'x'.repeat(1000))).length).toBeLessThan(320);
+  });
+
+  it('shares the attempts suffix with the row-write path', () => {
+    // Both give-up paths append the same "(unsent after N)" tail, so a parked row
+    // reads the same whichever classifier produced it.
+    const text = withUnsentSuffix(formatUploadError(apiError(400, 'bad request')));
+    expect(text).toContain('upload-400');
+    expect(text).toContain(String(MAX_SYNC_ATTEMPTS));
+    expect(exhaustedAttemptsError({ code: '42501', message: 'no' })).toContain(String(MAX_SYNC_ATTEMPTS));
   });
 });
 

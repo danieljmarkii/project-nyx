@@ -1,0 +1,194 @@
+// B-693 PR 2 — the meal completion card's two trial-flag registers, rendered.
+//
+// The lib layer owns the DECISION (which kind fires, its copy, its day-math):
+// lib/trialContaminant.test.ts + lib/trialLogTimeFlag.test.ts. The store owns the
+// hand-off: store/momentStore.test.ts. The add sheet owns its own render + the
+// write is lib/dietTrialSetup.test.ts. What ONLY a rendered card can answer, and
+// what this suite owns:
+//   • the amber MEMBERSHIP panel actually draws its eyebrow, headline and the
+//     "+ Add to the trial list" hatch — a flag the card forgot to render is the
+//     exact way the PM's dogfood gap would silently return;
+//   • the CONTENTS flag still renders its calm form and NOT the amber eyebrow —
+//     the two registers do not bleed;
+//   • tapping the hatch opens the shipped confirm sheet and, on confirm, writes
+//     the RIGHT food to the RIGHT trial and the MEAL's pet — even when the active
+//     pet has since been switched (the queue-then-switch wrong-pet guard).
+
+// Stub the edges of the module graph the card pulls in. lib/dietTrialSetup is
+// mocked so the write is assertable without SQLite; buildAddTrialFoodSheet is
+// stubbed so the sheet renders without the analytics/day-math chain (its real
+// output is covered by lib/trialFoodsScreen.test.ts + AddTrialFoodSheet.test.tsx).
+jest.mock('../../lib/supabase', () => ({ supabase: {} }));
+jest.mock('../../lib/db', () => ({ updateEvent: jest.fn(), updateMealIntake: jest.fn() }));
+jest.mock('../../lib/sync', () => ({
+  syncPendingEvents: jest.fn().mockResolvedValue(undefined),
+  syncPendingMeals: jest.fn().mockResolvedValue(undefined),
+}));
+jest.mock('@react-native-async-storage/async-storage', () => ({
+  __esModule: true,
+  default: {
+    getItem: jest.fn().mockResolvedValue(null),
+    setItem: jest.fn().mockResolvedValue(undefined),
+    removeItem: jest.fn().mockResolvedValue(undefined),
+  },
+}));
+jest.mock('@react-native-community/datetimepicker', () => 'DateTimePicker');
+
+const mockAddTrialFood = jest.fn().mockResolvedValue('new-row-id');
+jest.mock('../../lib/dietTrialSetup', () => ({
+  addTrialFood: (args: unknown) => mockAddTrialFood(args),
+  foodLabel: (f: { brand?: string; product_name?: string }) =>
+    `${f.brand ?? ''} ${f.product_name ?? ''}`.trim(),
+}));
+jest.mock('../../lib/trialFoodsScreen', () => ({
+  ADD_TRIAL_FOOD_ERROR: 'That didn’t save. Try again in a moment.',
+  buildAddTrialFoodSheet: (petName: string, label: string) => ({
+    title: `Add to ${petName}’s trial list?`,
+    rows: [
+      { label: 'Food', value: label },
+      { label: 'Joins the list', value: 'Today · day 5' },
+      { label: 'Earlier feedings', value: 'Keep the reading they already have' },
+    ],
+    caption: 'Extras are your vet’s call — Culprit just records the dates.',
+    confirmLabel: 'Add to the list',
+    cancelLabel: 'Not now',
+  }),
+}));
+
+import { act, fireEvent, render } from '@testing-library/react-native';
+import { MealCompletionCard } from './MealCompletionCard';
+import { useMomentStore } from '../../store/momentStore';
+import { usePetStore } from '../../store/petStore';
+import type { LogTimeTrialFlag } from '../../lib/trialContaminant';
+
+const MEMBERSHIP_FLAG: LogTimeTrialFlag = {
+  kind: 'off_trial_list',
+  trialId: 'trial-1',
+  foodId: 'food-9',
+  trialStartedAt: '2026-06-01',
+  trialTargetDurationDays: 84,
+};
+
+const CONTENTS_FLAG: LogTimeTrialFlag = {
+  kind: 'off_diet_protein',
+  proteins: ['chicken'],
+  trialProteins: ['duck'],
+  trialId: 'trial-1',
+  foodId: 'food-9',
+};
+
+type MealOver = Partial<Parameters<ReturnType<typeof useMomentStore.getState>['showMeal']>[0]>;
+
+function seedMeal(over: MealOver = {}, activePetId = 'p1') {
+  usePetStore.setState({
+    pets: [
+      { id: 'p1', name: 'Biscuit' },
+      { id: 'p2', name: 'Mochi' },
+    ] as never,
+    activePet: { id: activePetId, name: activePetId === 'p1' ? 'Biscuit' : 'Mochi' } as never,
+  });
+  act(() => {
+    useMomentStore.getState().showMeal({
+      eventId: 'e1',
+      petId: 'p1',
+      occurredAt: '2026-06-07T14:00:00.000Z',
+      foodType: 'treat',
+      foodBrand: 'PetCo',
+      foodProductName: 'Dental Treats',
+      intakeRating: null,
+      ...over,
+    });
+  });
+}
+
+beforeEach(() => {
+  jest.useFakeTimers();
+  jest.clearAllMocks();
+  useMomentStore.getState().hide();
+  useMomentStore.setState({ payload: null });
+});
+
+afterEach(() => {
+  jest.useRealTimers();
+});
+
+describe('MealCompletionCard — the two trial-flag registers (B-693)', () => {
+  it('renders the amber MEMBERSHIP panel: eyebrow, headline, and the add hatch', () => {
+    seedMeal({ trialFlag: MEMBERSHIP_FLAG });
+    const { getByText } = render(<MealCompletionCard />);
+    getByText('Off the trial list');
+    getByText('This one isn’t on Biscuit’s trial list.');
+    getByText('+ Add to the trial list');
+  });
+
+  it('renders the CONTENTS flag in its calm form — never the amber eyebrow', () => {
+    seedMeal({ trialFlag: CONTENTS_FLAG });
+    const { getByText, queryByText } = render(<MealCompletionCard />);
+    getByText('This one has chicken.');
+    // The two registers do not bleed: a contents flag never shows the membership
+    // panel's eyebrow or its add hatch.
+    expect(queryByText('Off the trial list')).toBeNull();
+    expect(queryByText('+ Add to the trial list')).toBeNull();
+  });
+
+  it('renders no trial block at all when the flag is absent (never an all-clear)', () => {
+    seedMeal();
+    const { queryByText } = render(<MealCompletionCard />);
+    expect(queryByText('Off the trial list')).toBeNull();
+    expect(queryByText('+ Add to the trial list')).toBeNull();
+    // No "no conflict" / all-clear copy exists to render.
+    expect(queryByText(/no conflict|on the list/i)).toBeNull();
+  });
+
+  it('tapping "+ Add to the trial list" opens the shipped confirm sheet', () => {
+    seedMeal({ trialFlag: MEMBERSHIP_FLAG });
+    const { getByText, getByTestId } = render(<MealCompletionCard />);
+    act(() => {
+      fireEvent.press(getByText('+ Add to the trial list'));
+    });
+    // The shipped AddTrialFoodSheet — named for the meal's pet, carrying the food.
+    getByTestId('add-trial-food-sheet');
+    getByText('Add to Biscuit’s trial list?');
+    getByText('PetCo Dental Treats');
+  });
+
+  it('confirming writes the flagged food to the flag\'s trial and the MEAL\'s pet', async () => {
+    // The active pet is switched to p2 AFTER the meal (queue-then-switch), but the
+    // add must still land on p1 (the meal's pet) and trial-1 (the flag's trial),
+    // captured from the flag/payload — never a re-read active pet.
+    seedMeal({ trialFlag: MEMBERSHIP_FLAG }, 'p2');
+    const { getByText, getByTestId } = render(<MealCompletionCard />);
+    act(() => {
+      fireEvent.press(getByText('+ Add to the trial list'));
+    });
+    await act(async () => {
+      fireEvent.press(getByTestId('add-trial-food-confirm'));
+    });
+    expect(mockAddTrialFood).toHaveBeenCalledTimes(1);
+    expect(mockAddTrialFood).toHaveBeenCalledWith({
+      trialId: 'trial-1',
+      petId: 'p1',
+      food: { id: 'food-9', brand: 'PetCo', product_name: 'Dental Treats', food_type: 'treat' },
+    });
+  });
+
+  it('surfaces an error in-place on a failed write and does NOT close the sheet', async () => {
+    // The card logs the failure by design; silence it so the intentional rejection
+    // doesn't clutter the run.
+    const errSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    mockAddTrialFood.mockRejectedValueOnce(new Error('device write failed'));
+    seedMeal({ trialFlag: MEMBERSHIP_FLAG });
+    const { getByText, getByTestId, queryByTestId } = render(<MealCompletionCard />);
+    act(() => {
+      fireEvent.press(getByText('+ Add to the trial list'));
+    });
+    await act(async () => {
+      fireEvent.press(getByTestId('add-trial-food-confirm'));
+    });
+    // The sheet stays open (a silent close would leave the owner believing a food
+    // is on the list when the record says otherwise) and renders the error.
+    expect(queryByTestId('add-trial-food-sheet')).not.toBeNull();
+    getByTestId('add-trial-food-error');
+    errSpy.mockRestore();
+  });
+});

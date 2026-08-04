@@ -26,6 +26,7 @@ import {
   engineFindings,
   freeFedStatus,
   intakeSummary,
+  intakeTrend,
   isNotEnoughData,
   lastSymptom,
   liveEvents,
@@ -74,6 +75,7 @@ function meal(partial: Partial<AskMealRow> & { occurredAt: string }): AskMealRow
     foodLabel: partial.foodLabel ?? null,
     foodType: partial.foodType ?? 'meal',
     primaryProtein: partial.primaryProtein ?? null,
+    proteins: partial.proteins ?? null,
     intakeRating: partial.intakeRating ?? null,
     note: partial.note ?? null,
     hasPhoto: partial.hasPhoto ?? false,
@@ -116,6 +118,99 @@ Deno.test('resolveWindow — since_trial_start uses the trial start, falls back 
   const fb = resolveWindow('since_trial_start', NOW_MS, null)
   assert.equal(fb.window, '7d')
   assert.equal(fb.label, 'the last 7 days')
+})
+
+// ── since_trial_start is bucketed by the OWNER'S midnight, per zone (B-539) ──────────
+//
+// The fifth diet-trial day-math path — and the one B-421's guard first missed. Unlike the
+// fixed trailing windows (UTC-aligned for calendarWindow parity), this window's day count IS
+// the trial's "Day N", so it must track the card. A raw-UTC floor disagreed with the card by
+// ±1 for a device off UTC AND put the retrieval lower bound on UTC midnight of the start DATE,
+// dropping the first hours of trial day 1 east of UTC. Verified in three+ zones per the
+// timezone-honesty rule (B-514): every instant is explicit, so these are clock-independent.
+
+Deno.test('resolveWindow — since_trial_start windowDays EQUALS the card Day N, per zone (B-539 G5)', () => {
+  const trialStartMs = Date.parse('2026-06-10T00:00:00Z') // the DATE at UTC midnight (index.ts)
+  const trial = { startedAt: '2026-06-10', targetDurationDays: 14 }
+  // 14 Jun 08:00 in Sydney is still 13 Jun in UTC and in LA — the local day differs by zone,
+  // so windowDays must too. The invariant: windowDays === dietTrialStatus.dayCounter, ALWAYS.
+  const now = Date.parse('2026-06-13T21:00:00.000Z')
+  for (const tz of ['Pacific/Auckland', 'Asia/Kolkata', 'America/Los_Angeles', 'Australia/Sydney', 'UTC']) {
+    const w = resolveWindow('since_trial_start', now, trialStartMs, tz)
+    const card = dietTrialStatus(trial, now, tz)
+    assert.equal(w.windowDays, card.dayCounter, `windowDays must equal the card Day N in ${tz}`)
+  }
+  // And pin the concrete split so a bug that breaks BOTH sides identically can't hide behind
+  // the parity check: Auckland (UTC+12, no June DST) is already on 14 Jun → Day 5; LA (UTC-7)
+  // is still on 13 Jun → Day 4.
+  assert.equal(resolveWindow('since_trial_start', now, trialStartMs, 'Pacific/Auckland').windowDays, 5)
+  assert.equal(resolveWindow('since_trial_start', now, trialStartMs, 'America/Los_Angeles').windowDays, 4)
+})
+
+Deno.test('resolveWindow — since_trial_start bounds are the owner\'s LOCAL midnights, not UTC (B-539)', () => {
+  const trialStartMs = Date.parse('2026-06-10T00:00:00Z')
+  const now = Date.parse('2026-06-14T02:00:00Z') // 14 Jun 14:00 in Auckland
+  // Auckland is UTC+12 in June (no DST): local midnight of 10 Jun = 09 Jun 12:00Z.
+  const w = resolveWindow('since_trial_start', now, trialStartMs, 'Pacific/Auckland')
+  assert.equal(w.startMs, Date.parse('2026-06-09T12:00:00Z'))
+  // The raw-UTC lower bound was 10 Jun 00:00Z — so an event at 00:30 local on trial day 1
+  // (09 Jun 12:30Z) used to be DROPPED. It is now inside the window.
+  assert.ok((w.startMs as number) <= Date.parse('2026-06-09T12:30:00.000Z'))
+  // endMs = local midnight AFTER today: today local is 14 Jun → 15 Jun 00:00 Auckland = 14 Jun 12:00Z.
+  assert.equal(w.endMs, Date.parse('2026-06-14T12:00:00Z'))
+
+  // West of UTC the same math pulls the bound the other way: LA (UTC-7 in June) local midnight
+  // of 10 Jun is 10 Jun 07:00Z — so the raw-UTC bound (10 Jun 00:00Z) used to reach 7h into the
+  // PRE-trial day. Now the window opens at the owner's actual day-1 midnight.
+  const la = resolveWindow('since_trial_start', now, trialStartMs, 'America/Los_Angeles')
+  assert.equal(la.startMs, Date.parse('2026-06-10T07:00:00Z'))
+})
+
+Deno.test('resolveWindow — since_trial_start survives a DST transition inside the trial (B-539)', () => {
+  // LA springs forward on 8 Mar 2026. A trial started 6 Mar (PST, UTC-8) read on 9 Mar (PDT,
+  // UTC-7) is Day 4 — a ms-span divide floors the 71 local hours to Day 3. windowDays tracks
+  // the zoned counter, and the start bound stays on 6 Mar's PST midnight (6 Mar 08:00Z).
+  const trialStartMs = Date.parse('2026-03-06T00:00:00Z')
+  const trial = { startedAt: '2026-03-06', targetDurationDays: 14 }
+  const now = Date.parse('2026-03-09T19:00:00.000Z') // 9 Mar 12:00 PDT
+  const w = resolveWindow('since_trial_start', now, trialStartMs, 'America/Los_Angeles')
+  assert.equal(w.windowDays, 4)
+  assert.equal(w.windowDays, dietTrialStatus(trial, now, 'America/Los_Angeles').dayCounter)
+  assert.equal(w.startMs, Date.parse('2026-03-06T08:00:00Z')) // PST midnight, not PDT
+  // endMs is the PDT day boundary after today (10 Mar 00:00 PDT = 10 Mar 07:00Z).
+  assert.equal(w.endMs, Date.parse('2026-03-10T07:00:00Z'))
+})
+
+Deno.test('resolveWindow — since_trial_start bounds are correct when local midnight is SKIPPED (B-539, adversarial 2026-08-02)', () => {
+  // America/Havana springs forward AT midnight on 8 Mar 2026 (00:00 EST → 01:00 CDT), so local
+  // 00:00–00:59 does not exist and the day BEGINS at 05:00Z. The first cut of zonedDayStartMs put
+  // the bound an hour early (04:00Z, still 7 Mar local), which dropped a today-in-trial symptom
+  // from the window for ≤1h. The day now opens at the transition, on day i, never an hour before.
+  const tz = 'America/Havana'
+
+  // START bound — a trial that started ON the skip day opens at the transition (05:00Z), not an
+  // hour before it (which would reach into 7 Mar, the pre-trial day).
+  const w = resolveWindow('since_trial_start', Date.parse('2026-03-10T17:00:00Z'), Date.parse('2026-03-08T00:00:00Z'), tz)
+  assert.equal(w.startMs, Date.parse('2026-03-08T05:00:00Z')) // 01:00 CDT — day 8 begins here
+
+  // END bound — when TOMORROW is the skip day, today's late-evening events must stay in-window.
+  const now2 = Date.parse('2026-03-08T03:00:00Z') // 7 Mar 22:00 EST → today = 7 Mar local
+  const w2 = resolveWindow('since_trial_start', now2, Date.parse('2026-03-01T00:00:00Z'), tz)
+  assert.equal(w2.endMs, Date.parse('2026-03-08T05:00:00Z')) // start of 8 Mar (the transition)
+  // A vomit logged at 7 Mar 23:30 EST (04:30Z) — a real today, in-trial event — is INCLUDED.
+  assert.ok(Date.parse('2026-03-08T04:30:00Z') < (w2.endMs as number))
+})
+
+Deno.test('resolveWindow — a null/absent zone keeps the shipped UTC bounds (B-539 fallback)', () => {
+  // The degrade is UNCHANGED from before B-539: with no zone the window is UTC-day-aligned,
+  // byte-identical to the raw `startIndex * MS_PER_DAY` it replaced. B-443 is what keeps a real
+  // zone in hand so this path is the last resort, not the norm.
+  const trialStartMs = Date.parse('2026-06-10T00:00:00Z')
+  const now = Date.parse('2026-06-14T02:00:00Z')
+  const w = resolveWindow('since_trial_start', now, trialStartMs, null)
+  assert.equal(w.startMs, Date.parse('2026-06-10T00:00:00Z'))
+  assert.equal(w.endMs, Date.parse('2026-06-15T00:00:00Z'))
+  assert.equal(w.windowDays, 5) // 10→14 Jun inclusive in UTC
 })
 
 Deno.test('coerceWindow — unknown strings resolve to the default 7d, never an arbitrary range', () => {
@@ -356,6 +451,159 @@ Deno.test('intakeSummary — free-fed meals excluded, caveat set (§11 #6)', () 
 })
 
 // ════════════════════════════════════════════════════════════════════════════════════
+// intakeTrend (B-382) — a falling finished-rate is VISIBLE, honestly floored, never minted
+// ════════════════════════════════════════════════════════════════════════════════════
+
+/** N rated meals per day across [fromDaysAgo … toDaysAgo] (inclusive), one per day. */
+function ratedMealOnEachDay(fromDaysAgo: number, toDaysAgo: number, rating: string, idPrefix: string): AskMealRow[] {
+  const out: AskMealRow[] = []
+  for (let d = fromDaysAgo; d <= toDaysAgo; d++) {
+    out.push(
+      meal({
+        id: `${idPrefix}-${d}`,
+        occurredAt: new Date(NOW_MS - d * MS_PER_DAY).toISOString(),
+        foodType: 'meal',
+        intakeRating: rating,
+        foodItemId: 'f1',
+      }),
+    )
+  }
+  return out
+}
+
+Deno.test('intakeTrend — a falling finished-rate is visible: down direction, both denominators (B-382)', () => {
+  // Prior window (7–13 days ago): 7 meals, all finished. Current window (0–6 days ago):
+  // 7 meals, only 2 finished. The A7 counterexample-(c) cat — before this tool, no Ask
+  // tool could surface this decline at all.
+  const meals = [
+    ...ratedMealOnEachDay(7, 13, 'all', 'prior'),
+    ...ratedMealOnEachDay(2, 6, 'refused', 'cur-low'),
+    ...ratedMealOnEachDay(0, 1, 'all', 'cur-ok'),
+  ]
+  const r = intakeTrend(meals, { window: '7d', nowMs: NOW_MS, freeFedFoodIds: new Set() })
+  assert.equal(isNotEnoughData(r), false)
+  if (!isNotEnoughData(r)) {
+    assert.equal(r.current.ratedMeals, 7)
+    assert.equal(r.current.finishedMeals, 2)
+    assert.equal(r.prior?.ratedMeals, 7)
+    assert.equal(r.prior?.finishedMeals, 7)
+    assert.equal(r.direction, 'down') // the concern direction — a FALLING finished-rate
+    assert.ok((r.delta as number) < 0)
+    assert.equal(r.windowLabel, 'the last 7 days')
+  }
+})
+
+Deno.test('intakeTrend — current window below the rated-meal floor ⇒ NotEnoughData, never a rate', () => {
+  const meals = [...ratedMealOnEachDay(7, 13, 'all', 'prior'), ...ratedMealOnEachDay(0, 2, 'refused', 'cur')]
+  const r = intakeTrend(meals, { window: '7d', nowMs: NOW_MS, freeFedFoodIds: new Set() })
+  assert.equal(isNotEnoughData(r), true)
+  if (isNotEnoughData(r)) {
+    assert.equal(r.samples, 3)
+    assert.equal(r.needed, ASK_FLOORS.minRatedMealsForIntakeRate)
+  }
+})
+
+Deno.test('intakeTrend — a below-floor PRIOR window yields no comparison, with the honest prior count', () => {
+  // A comparison off 2 prior meals would be a fabricated trend; the tool says "only 2
+  // rated meals the window before" instead (prior null, priorRatedMeals honest).
+  const meals = [...ratedMealOnEachDay(0, 6, 'all', 'cur'), ...ratedMealOnEachDay(8, 9, 'all', 'prior')]
+  const r = intakeTrend(meals, { window: '7d', nowMs: NOW_MS, freeFedFoodIds: new Set() })
+  if (!isNotEnoughData(r)) {
+    assert.equal(r.prior, null)
+    assert.equal(r.priorRatedMeals, 2)
+    assert.equal(r.delta, null)
+    assert.equal(r.direction, null) // never a guessed comparison
+  }
+})
+
+Deno.test('intakeTrend — windows with no prior span (all / since_trial_start) have no trend', () => {
+  const meals = ratedMealOnEachDay(0, 6, 'all', 'cur')
+  const r = intakeTrend(meals, { window: 'all', nowMs: NOW_MS, freeFedFoodIds: new Set() })
+  if (!isNotEnoughData(r)) {
+    assert.equal(r.prior, null)
+    assert.equal(r.priorRatedMeals, null)
+    assert.equal(r.direction, null)
+  }
+})
+
+Deno.test('intakeTrend — treats and free-fed meals excluded in BOTH windows; caveat set (§11 #1/#6)', () => {
+  const meals = [
+    // Current: 5 finished + 2 refused proper meals → 5/7.
+    ...ratedMealOnEachDay(0, 4, 'all', 'cur'),
+    ...ratedMealOnEachDay(5, 6, 'refused', 'cur-r'),
+    // Prior: 7 finished proper meals → 7/7.
+    ...ratedMealOnEachDay(7, 13, 'all', 'prior'),
+    // A refused treat in the current window must not deepen the decline (treats out, §11 #1)…
+    meal({ occurredAt: new Date(NOW_MS - 1 * MS_PER_DAY).toISOString(), foodType: 'treat', intakeRating: 'refused', foodItemId: 't1' }),
+    // …and a free-fed bowl's rating is excluded from the PRIOR denominator too (§11 #6).
+    meal({ occurredAt: new Date(NOW_MS - 9 * MS_PER_DAY).toISOString(), foodType: 'meal', intakeRating: 'refused', foodItemId: 'ff' }),
+  ]
+  const r = intakeTrend(meals, { window: '7d', nowMs: NOW_MS, freeFedFoodIds: new Set(['ff']) })
+  assert.equal(isNotEnoughData(r), false)
+  if (!isNotEnoughData(r)) {
+    assert.equal(r.current.ratedMeals, 7) // treat excluded
+    assert.equal(r.current.finishedMeals, 5)
+    assert.equal(r.prior?.ratedMeals, 7) // free-fed excluded
+    assert.equal(r.prior?.finishedMeals, 7)
+    assert.equal(r.freeFedExcluded, 1)
+    assert.equal(r.intakeNotDirectlyObserved, true)
+    assert.equal(r.direction, 'down') // 5/7 vs 7/7 — a real fall
+  }
+})
+
+Deno.test('intakeTrend — a rating-density collapse is DISCLOSED, never absorbed (adversarial 2026-08-02)', () => {
+  // The counterexample that broke round 1: 12 meals fed this window but only the 4 she ate
+  // were rated (the 8 refusals logged unrated) → rate 4/4 = 1.0, direction 'up' — a
+  // worsening cat reading as improving. The rate itself is an honest fact about RATED
+  // meals; what was missing is the gap AS a fact. currentUnratedMeals now carries it, and
+  // buildProvenance renders it structurally beside the verdict (the C5 lesson).
+  const meals = [
+    ...ratedMealOnEachDay(0, 3, 'all', 'cur-rated'),
+    // 8 unrated meals in the current window — fed, never rated.
+    ...[0, 1, 2, 3, 4, 5, 6, 0].map((d, i) =>
+      meal({ id: `unrated-${i}`, occurredAt: new Date(NOW_MS - d * MS_PER_DAY - 3_600_000).toISOString(), foodType: 'meal', intakeRating: null, foodItemId: 'f1' }),
+    ),
+    ...ratedMealOnEachDay(7, 13, 'all', 'prior'),
+  ]
+  const r = intakeTrend(meals, { window: '7d', nowMs: NOW_MS, freeFedFoodIds: new Set() })
+  assert.equal(isNotEnoughData(r), false)
+  if (!isNotEnoughData(r)) {
+    assert.equal(r.current.ratedMeals, 4)
+    assert.equal(r.currentUnratedMeals, 8) // the gap is a first-class fact
+    assert.equal(r.priorUnratedMeals, 0)
+  }
+})
+
+Deno.test('intakeTrend — unrated treats and free-fed meals do NOT count as unrated-meal gaps', () => {
+  // The disclosure names meals that WOULD have qualified had they been rated — an unrated
+  // treat or a free-fed bowl was never going to enter the denominator, so it is not a gap.
+  const meals = [
+    ...ratedMealOnEachDay(0, 6, 'all', 'cur'),
+    meal({ occurredAt: new Date(NOW_MS - 1 * MS_PER_DAY).toISOString(), foodType: 'treat', intakeRating: null, foodItemId: 't1' }),
+    meal({ occurredAt: new Date(NOW_MS - 2 * MS_PER_DAY).toISOString(), foodType: 'meal', intakeRating: null, foodItemId: 'ff' }),
+  ]
+  const r = intakeTrend(meals, { window: '7d', nowMs: NOW_MS, freeFedFoodIds: new Set(['ff']) })
+  if (!isNotEnoughData(r)) {
+    assert.equal(r.currentUnratedMeals, 0)
+  }
+})
+
+Deno.test('intakeTrend — current-window numbers EQUAL intakeSummary for the same fixture (G5)', () => {
+  // One denominator definition across the two intake tools — they can never disagree
+  // about the same window's rate.
+  const meals = [...ratedMealOnEachDay(0, 6, 'all', 'cur'), ...ratedMealOnEachDay(8, 14, 'some', 'prior')]
+  const trend = intakeTrend(meals, { window: '7d', nowMs: NOW_MS, freeFedFoodIds: new Set() })
+  const summary = intakeSummary(meals, { window: '7d', nowMs: NOW_MS, freeFedFoodIds: new Set() })
+  assert.equal(isNotEnoughData(trend), false)
+  assert.equal(isNotEnoughData(summary), false)
+  if (!isNotEnoughData(trend) && !isNotEnoughData(summary)) {
+    assert.equal(trend.current.ratedMeals, summary.ratedMeals)
+    assert.equal(trend.current.finishedMeals, summary.finishedMeals)
+    assert.equal(trend.current.rate, summary.rate)
+  }
+})
+
+// ════════════════════════════════════════════════════════════════════════════════════
 // Rankings — floors, canonicalization, treat handling (ported from analytics.ts)
 // ════════════════════════════════════════════════════════════════════════════════════
 
@@ -396,6 +644,62 @@ Deno.test('topProteins — a treat-only protein is flagged isTreat with null fin
     const duck = r.proteins.find((p) => p.protein === 'duck')
     assert.equal(duck?.isTreat, true)
     assert.equal(duck?.finishedRate, null)
+  }
+})
+
+Deno.test('topProteins — a hidden SECONDARY protein counts as real exposure (B-351 slice 6 / B-467)', () => {
+  // The textbook elimination-trial contaminant: a "duck" formula that also lists chicken.
+  // Pre-B-467 this ranking read primary_protein alone, so the chicken exposure vanished
+  // from every Ask answer ("has she had any chicken?" → no) while the Signal engine and
+  // the Patterns card both counted it. Now all three read the same set.
+  const meals = [
+    meal({ occurredAt: '2026-07-14T08:00:00Z', primaryProtein: 'duck', proteins: ['duck', 'chicken'], foodType: 'meal', foodItemId: 'f1' }),
+    meal({ occurredAt: '2026-07-13T08:00:00Z', primaryProtein: 'duck', proteins: ['duck', 'chicken'], foodType: 'meal', foodItemId: 'f1' }),
+    meal({ occurredAt: '2026-07-12T08:00:00Z', primaryProtein: 'duck', proteins: ['duck', 'chicken'], foodType: 'meal', foodItemId: 'f1' }),
+    meal({ occurredAt: '2026-07-11T08:00:00Z', primaryProtein: 'beef', foodType: 'meal', foodItemId: 'f2' }),
+  ]
+  const r = topProteins(meals, { window: '30d', nowMs: NOW_MS })
+  assert.equal(isNotEnoughData(r), false)
+  if (!isNotEnoughData(r)) {
+    const chicken = r.proteins.find((p) => p.protein === 'chicken')
+    const duck = r.proteins.find((p) => p.protein === 'duck')
+    assert.equal(chicken?.count, 3) // the hidden secondary IS the exposure
+    assert.equal(duck?.count, 3)
+    // Shares no longer sum to 1: 4 identified feedings, duck 3/4 + chicken 3/4 + beef 1/4.
+    assert.equal(chicken?.shareOfDiet, 3 / 4)
+    assert.equal(duck?.shareOfDiet, 3 / 4)
+    // An absent set still degrades to the primary (beef is counted, pre-B-467-identically).
+    assert.equal(r.proteins.find((p) => p.protein === 'beef')?.count, 1)
+  }
+})
+
+Deno.test('topProteins — the floor counts identified FEEDINGS, not protein instances (B-467)', () => {
+  // 3 meals each carrying 2 proteins = 6 protein instances but only 3 identified feedings —
+  // still below the 4-feeding ranking floor. A multi-protein food must not let 3 meals
+  // masquerade as a rankable sample.
+  const meals = [
+    meal({ occurredAt: '2026-07-14T08:00:00Z', primaryProtein: 'duck', proteins: ['duck', 'chicken'], foodType: 'meal', foodItemId: 'f1' }),
+    meal({ occurredAt: '2026-07-13T08:00:00Z', primaryProtein: 'duck', proteins: ['duck', 'chicken'], foodType: 'meal', foodItemId: 'f1' }),
+    meal({ occurredAt: '2026-07-12T08:00:00Z', primaryProtein: 'duck', proteins: ['duck', 'chicken'], foodType: 'meal', foodItemId: 'f1' }),
+  ]
+  const r = topProteins(meals, { window: '30d', nowMs: NOW_MS })
+  assert.equal(isNotEnoughData(r), true)
+  if (isNotEnoughData(r)) assert.equal(r.samples, 3)
+})
+
+Deno.test('topProteins — a secondary carried ONLY by treats is treat-flagged; via a meal it is not (§11 #1)', () => {
+  const meals = [
+    meal({ occurredAt: '2026-07-14T08:00:00Z', primaryProtein: 'beef', foodType: 'meal', intakeRating: 'all', foodItemId: 'f1' }),
+    meal({ occurredAt: '2026-07-13T08:00:00Z', primaryProtein: 'beef', foodType: 'meal', intakeRating: 'all', foodItemId: 'f1' }),
+    meal({ occurredAt: '2026-07-12T08:00:00Z', primaryProtein: 'beef', foodType: 'meal', intakeRating: 'all', foodItemId: 'f1' }),
+    // Chicken reaches the pet ONLY inside a treat's set → treat-sourced, no rate to fake.
+    meal({ occurredAt: '2026-07-11T08:00:00Z', primaryProtein: 'duck', proteins: ['duck', 'chicken'], foodType: 'treat', foodItemId: 't1' }),
+  ]
+  const r = topProteins(meals, { window: '30d', nowMs: NOW_MS })
+  if (!isNotEnoughData(r)) {
+    const chicken = r.proteins.find((p) => p.protein === 'chicken')
+    assert.equal(chicken?.isTreat, true)
+    assert.equal(chicken?.finishedRate, null)
   }
 })
 
@@ -458,9 +762,20 @@ Deno.test('dietTrialStatus — day counter is inclusive from the start day; null
   assert.equal(dietTrialStatus(null, NOW_MS).active, false)
 })
 
-Deno.test('dietTrialStatus — a soft-deleted or unparseable trial is inactive', () => {
-  assert.equal(dietTrialStatus({ startedAt: '2026-07-01', targetDurationDays: 21, deletedAt: '2026-07-10T00:00:00Z' }, NOW_MS).active, false)
+Deno.test('dietTrialStatus — a non-active or unparseable trial is inactive (B-539 status guard)', () => {
+  // diet_trials has NO soft-delete column (migration 001); the active-ness gate is `status`.
+  // An ended/abandoned trial must not read as an active Day N even if it reaches this core —
+  // the upstream query filters to active, but the core enforces the same predicate itself so
+  // a caller that forgets the filter can't surface a stale trial as running (§5.2 / B-071).
+  for (const status of ['completed', 'abandoned']) {
+    assert.equal(dietTrialStatus({ startedAt: '2026-07-01', targetDurationDays: 21, status }, NOW_MS).active, false)
+  }
+  // An unparseable start date is inactive rather than a guessed day.
   assert.equal(dietTrialStatus({ startedAt: 'not-a-date', targetDurationDays: 21 }, NOW_MS).active, false)
+  // A null/absent status (legacy row or fixture) is not asserted either way and still reports
+  // the active Day N — matching the report's own normaliseStatus tolerance.
+  assert.equal(dietTrialStatus({ startedAt: '2026-07-01', targetDurationDays: 21 }, NOW_MS).active, true)
+  assert.equal(dietTrialStatus({ startedAt: '2026-07-01', targetDurationDays: 21, status: 'active' }, NOW_MS).active, true)
 })
 
 // ── B-421: the day boundary is the OWNER'S midnight, not UTC ───────────────────────
@@ -524,31 +839,35 @@ Deno.test('dietTrialStatus — an absent or invalid timezone degrades to UTC, ne
   }
 })
 
-// ── The LIMIT of the G5 parity claim — recorded, not papered over (B-443) ──────────
+// ── B-443: the fallback the caller now steps around ───────────────────────────────
 //
-// Every case above hands BOTH sides an explicit zone, so they agree by construction.
-// The one place client and server differ by design is the fallback: the client's
-// fallback is the DEVICE zone, the server's is UTC. And `user_profiles.timezone` is
-// `NOT NULL DEFAULT 'America/New_York'` (migration 001), so the reachable failure is
-// not an absent zone at all — it is a STALE DEFAULT that never reaches the fallback
-// and buckets a Sydney owner's day by New York. These tests pin the disagreement so
-// it is a known, sized bug with a backlog row rather than a claim nobody checked.
+// dietTrialStatus buckets by whatever zone it is HANDED; these cases pin how it degrades
+// when that zone is wrong, which is why B-443 changed the CALLER, not this function. The
+// client card buckets by the DEVICE zone; the server used to bucket by the stored
+// `user_profiles.timezone`, which is `NOT NULL DEFAULT 'America/New_York'` (migration 001) —
+// so a never-stamped Sydney owner's Ask answer disagreed with their card by a day, silently,
+// and no fallback was even reached (a real IANA default can't express "unknown"). The fix is
+// upstream (ask/index.ts): the client passes its device zone on the request, and
+// `resolveIanaZone(requestZone, storedZone)` prefers it — so Ask now buckets by the SAME zone
+// the card does BY CONSTRUCTION (resolveIanaZone's own preference is pinned in lib/utils.test.ts).
+// The stale-default / null cases below are the LAST-RESORT degrade the caller now avoids, not
+// an open bug: given a correct zone (what the caller now supplies), both sides agree.
 
-Deno.test('dietTrialStatus — B-443: a MISSING zone disagrees with an ahead-of-UTC device by one day', () => {
+Deno.test('dietTrialStatus — given the DEVICE zone (what the caller now supplies) it matches the card', () => {
   const trial = { startedAt: '2026-06-10', targetDurationDays: 14 }
   const at8amSydney = Date.parse('2026-06-13T21:00:00.000Z') // 14 Jun 08:00 in UTC+10
-  // What the owner's card shows (device zone), vs what Ask says with no stored zone.
+  // The card buckets by the device (Sydney) zone; the caller now hands Ask that same zone.
   assert.equal(dietTrialStatus(trial, at8amSydney, 'Australia/Sydney').dayCounter, 5)
-  assert.equal(dietTrialStatus(trial, at8amSydney, null).dayCounter, 4) // ← the gap
 })
 
-Deno.test('dietTrialStatus — B-443: the STALE DEFAULT zone is the reachable case, and it also disagrees', () => {
+Deno.test('dietTrialStatus — the stored NY default / null is the degrade B-443 steps around', () => {
   const trial = { startedAt: '2026-06-10', targetDurationDays: 14 }
   const at8amSydney = Date.parse('2026-06-13T21:00:00.000Z')
-  // A profile whose timezone was never stamped carries the migration-001 default.
+  // If the caller ever fell through to the stored NY default or a null zone, the counter would
+  // read Day 4 where the Sydney card reads Day 5. resolveIanaZone is what keeps that from being
+  // the zone dietTrialStatus is handed — it prefers the request's device zone (Sydney) over both.
   assert.equal(dietTrialStatus(trial, at8amSydney, 'America/New_York').dayCounter, 4)
-  // Correct once the real zone is stored — which is what B-443 has to guarantee.
-  assert.equal(dietTrialStatus(trial, at8amSydney, 'Australia/Sydney').dayCounter, 5)
+  assert.equal(dietTrialStatus(trial, at8amSydney, null).dayCounter, 4)
 })
 
 Deno.test('dietTrialStatus — a date-only start is never re-read as UTC midnight', () => {
@@ -601,6 +920,7 @@ Deno.test('medications — active regimen, last-given ignores refused/missed dos
   assert.equal(apoquel?.active, true)
   assert.equal(apoquel?.dosesGiven, 1) // 'given' ONLY — a null/unrated dose never reads as given (never-reassure)
   assert.equal(apoquel?.dosesMissed, 1) // refused
+  assert.equal(apoquel?.dosesUnconfirmed, 1) // the null dose is REPORTED, not silently dropped (B-395)
   assert.equal(apoquel?.lastDoseAt, '2026-07-14T08:00:00Z') // NOT the 07-15 refusal, NOT the 07-13 unrated
 })
 
@@ -618,6 +938,34 @@ Deno.test('medications — a partial or unconfirmed(null) dose never reads as "g
   const cet = r.medications.find((m) => m.medicationId === 'r1')
   assert.equal(cet?.dosesGiven, 0) // neither partial nor unconfirmed is a clean given
   assert.equal(cet?.lastDoseAt, null) // an unconfirmed dose is never named "last given"
+  // B-395: …but neither dose vanishes any more — each lands in its own honest bucket, so
+  // the planner can say "1 not fully taken, 1 unconfirmed" instead of reporting nothing.
+  assert.equal(cet?.dosesPartial, 1)
+  assert.equal(cet?.dosesUnconfirmed, 1)
+  assert.equal(cet?.dosesMissed, 0)
+})
+
+Deno.test('medications — every dose lands in exactly ONE bucket; off-enum adherence is unconfirmed (B-395)', () => {
+  // Four-bucket parity with the client tally (lib/medications.ts bucketAdherence): given /
+  // partial / missed+refused / unrated-or-unknown. An unrecognised adherence string is a
+  // dose the record can't vouch for — it buckets as unconfirmed, never as given.
+  const doses = [
+    { id: 'd1', medicationId: null, medicationItemId: 'item-x', drugLabel: 'Motozol', occurredAt: '2026-07-10T08:00:00Z', adherence: 'given', deletedAt: null },
+    { id: 'd2', medicationId: null, medicationItemId: 'item-x', drugLabel: 'Motozol', occurredAt: '2026-07-11T08:00:00Z', adherence: 'partial', deletedAt: null },
+    { id: 'd3', medicationId: null, medicationItemId: 'item-x', drugLabel: 'Motozol', occurredAt: '2026-07-12T08:00:00Z', adherence: 'missed', deletedAt: null },
+    { id: 'd4', medicationId: null, medicationItemId: 'item-x', drugLabel: 'Motozol', occurredAt: '2026-07-13T08:00:00Z', adherence: 'refused', deletedAt: null },
+    { id: 'd5', medicationId: null, medicationItemId: 'item-x', drugLabel: 'Motozol', occurredAt: '2026-07-14T08:00:00Z', adherence: null, deletedAt: null },
+    { id: 'd6', medicationId: null, medicationItemId: 'item-x', drugLabel: 'Motozol', occurredAt: '2026-07-15T08:00:00Z', adherence: 'sort-of', deletedAt: null }, // off-enum
+  ]
+  const r = medications([], doses, { window: '30d', nowMs: NOW_MS })
+  const m = r.medications.find((x) => x.drugLabel === 'Motozol')
+  assert.equal(m?.dosesGiven, 1)
+  assert.equal(m?.dosesPartial, 1)
+  assert.equal(m?.dosesMissed, 2) // missed + refused
+  assert.equal(m?.dosesUnconfirmed, 2) // null + the off-enum string
+  // Reconciliation: the buckets partition the logged doses — nothing dropped, nothing double-counted.
+  assert.equal((m!.dosesGiven + m!.dosesPartial + m!.dosesMissed + m!.dosesUnconfirmed), doses.length)
+  assert.equal(m?.lastDoseAt, '2026-07-10T08:00:00Z') // still the last GIVEN, not the off-enum 07-15
 })
 
 Deno.test('medications — active keys on status, not a [started,ended] interval (no UTC drift)', () => {

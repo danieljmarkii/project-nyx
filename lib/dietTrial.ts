@@ -1514,6 +1514,23 @@ export interface TrialFacts {
    */
   exposureRange: { startDayIndex: number; endDayIndex: number } | null;
   coverage: TrialCoverage | null;
+  /**
+   * The local-day indices that count toward `coverage.daysLogged` — every day in
+   * the coverage window carrying a logged NON-TREAT feeding, ascending. Exposed so
+   * a caller that needs to PAINT the coverage (the widget's trial-day strip, §2.5)
+   * reads the same set the ratio counted, rather than re-deriving "which days had a
+   * meal" one import away and drifting from `daysLogged` — the §5.3 one-predicate
+   * lesson applied to the widget. `[]` on the null-range paths, exactly where
+   * `coverage` is null.
+   *
+   * These are ABSOLUTE indices on the context's clock (`localDayIndexOf`), the same
+   * basis as `range.startDayIndex` and the trial's own `started_at` index — so a
+   * consumer keys the strip by `startIndex + dayOffset` and gets the right dot.
+   * Bounded to the coverage range `[range.startDayIndex, range.endDayIndex]` for
+   * the same reason `daysLogged` is (§5.1): a post-target feeding is evidence, not
+   * coverage.
+   */
+  coveredDayIndices: number[];
   exposures: TrialExposureSummary;
   oralRoute: OralRouteExposure[];
   contamination: ContaminationFact[];
@@ -2000,6 +2017,7 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
     range: null,
     exposureRange: null,
     coverage: null,
+    coveredDayIndices: [],
     exposures: empty,
     oralRoute: [],
     contamination: trialContamination(ctx),
@@ -2536,6 +2554,10 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
     range,
     exposureRange,
     coverage,
+    // The coverage numerator's own days, ascending — `daysLogged === coveredDays.size`
+    // by construction (line above), so the widget strip and the ratio can never
+    // disagree about which days were covered.
+    coveredDayIndices: [...coveredDays].sort((a, b) => a - b),
     exposures: {
       totalFeedings,
       offDiet,
@@ -2587,10 +2609,21 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
     // adversarial pass showed a proxy both MISSES the `primary_diet` membership
     // gap (no row in force → empty sanctioned set → dark, with nothing to name)
     // and FIRES on a ghost row where nothing was silenced.
+    // A NAMELESS FOOD CANNOT BE NAMED, so it is filtered here at the source rather
+    // than by each consumer (B-598 empty-label edge, found by adversarial-reviewer).
+    // An empty/whitespace `label` (a food row with no brand and no product name) left
+    // in this list made the CARD render the unnamed "no diet on the allowed list"
+    // variant (`antigenPausedNote` filters empties) while the REPORT rendered the
+    // named variant with an empty bold ("<b></b> is recorded…", `render.ts`'s raw
+    // `.length > 0`): one record, two disclosures. Filtering here means both surfaces
+    // see the same list and the named-vs-unnamed split agrees — a nameless dark food
+    // simply falls into the arm-dark-nothing-to-name case the membership gap already
+    // produces (the boolean below stays true; only the NAME is unavailable, which is
+    // the honest reading). One predicate, at the source.
     antigenAttributionPaused: dedupeAllowedFoods([
       ...[...darkDays].flatMap((d) => uncharacterizedTrialDietFoods(ctx, d)),
       ...contaminationSuppressed,
-    ]),
+    ]).filter((f) => !!f.label && f.label.trim().length > 0),
     // THE BOOLEAN, NOT THE LIST, IS WHAT GATES A CLAIM. On a membership gap the
     // arm is dark and there is NO allowed-row to name, so the list is empty
     // while the record is exactly as unchecked — gating on `.length` let that

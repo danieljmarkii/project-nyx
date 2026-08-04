@@ -1755,6 +1755,9 @@ describe('B-533 PR A — round 8 regressions', () => {
       }],
       ['a free-fed bowl', { freeFed: { loggedFeedings: 41 } }],
       ['an unobserved head', { untrackedDaysBeforeFirstLog: 12 }],
+      // B-597 — the forgotten sibling. The strip stated a plain ratio while the
+      // protein arm was off; the report withholds AND discloses on this.
+      ['a dark antigen arm', { antigenArmDark: true }],
     ];
     // Home has one line and no room for the caveat, the head, or the "meals
     // OFFERED, not eaten" reframing that make the ratio honest on the card. So
@@ -2277,6 +2280,7 @@ describe('the composition layer (B-559)', () => {
     && !input.rangeRefusal
     && !input.freeFed
     && !input.allowedSetUnavailable
+    && !input.antigenArmDark
     && !input.belowCoverageFloor
     && (input.untrackedDaysBeforeFirstLog ?? 0) === 0
   );
@@ -2299,12 +2303,17 @@ describe('the composition layer (B-559)', () => {
       rangeRefusal: REFUSING_RANGE,
       freeFed: { loggedFeedings: 4 },
       allowedSetUnavailable: true,
+      antigenArmDark: true,
       untrackedDaysBeforeFirstLog: 12,
       belowCoverageFloor: true,
     }))).toEqual([
       'intake_decline', 'trial_diet_refusal', 'range_refusal', 'free_fed',
-      'allowed_set_unavailable', 'untracked_head', 'below_floor',
+      'allowed_set_unavailable', 'antigen_arm_dark', 'untracked_head', 'below_floor',
     ]);
+    // B-597 — the dark arm silences the strip on its own, the forgotten-sibling
+    // case: nothing else is withholding, but the protein arm is off.
+    expect(withholdingReasons(activeInput({ antigenArmDark: true })))
+      .toEqual(['antigen_arm_dark']);
     // R1's now-fact is its OWN reason, keyed on the raw input rather than on
     // `liveRefusal`. A record carrying only the now-fact must silence the strip
     // even though `rangeRefusal` is absent — and, in the other direction, a range

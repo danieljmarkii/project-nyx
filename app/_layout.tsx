@@ -6,16 +6,28 @@ import * as SplashScreen from 'expo-splash-screen';
 import * as Linking from 'expo-linking';
 import { fontMap } from '../lib/fonts';
 import { supabase } from '../lib/supabase';
-import { useAuthStore } from '../store/authStore';
+import {
+  useAuthStore,
+  loadPersistedRecoveryGate,
+  releaseRecoveryGate,
+} from '../store/authStore';
 import { usePetStore } from '../store/petStore';
 import { initDb } from '../lib/db';
 import { wipeLocalSession } from '../lib/session';
-import { coldStartDecision } from '../lib/authRouting';
+import {
+  coldStartDecision,
+  signedOutRoute,
+  shouldAdoptSessionDuringRecovery,
+} from '../lib/authRouting';
 import { isAuthDeepLink } from '../lib/authDeepLink';
+import { isRecoveryDeepLink } from '../lib/passwordRecovery';
+import { handleRecoveryDeepLink } from '../lib/recoveryDeepLink';
+import { PASSWORD_RECOVERY_ENABLED } from '../constants/flags';
 import { purgeRetiredStorage } from '../lib/retiredStorage';
 import { useSync } from '../hooks/useSync';
 import { useSyncTimezone } from '../hooks/useSyncTimezone';
 import { useWidgetSnapshots } from '../hooks/useWidgetSnapshots';
+import { useNotificationScheduling } from '../hooks/useNotificationScheduling';
 import { useAppActive } from '../hooks/useAppActive';
 import { initAppConfig, refreshAppConfig } from '../hooks/useAppConfig';
 import { MealCompletionCard } from '../components/ui/MealCompletionCard';
@@ -47,6 +59,11 @@ export default function RootLayout() {
   // B-085: keep user_profiles.timezone populated with the device zone so the
   // detection engine's detector ⑥ can run (engine input only — never surfaced).
   useSyncTimezone();
+  // B-661 PR 4: reconcile the 9pm daily-summary schedule against the owner's
+  // preference on each foreground, and route a notification tap to /day-summary
+  // (behind the auth gate). Inert until PR 3 ships the toggle — nothing is enabled,
+  // so it only ever cancels a stray schedule (a second sign-out-leak backstop).
+  useNotificationScheduling();
 
   // B-329: load the server-flippable app_config flags on start, then refresh on
   // every foreground (a PM flag flip reaches the client without a reinstall). Values
@@ -69,62 +86,97 @@ export default function RootLayout() {
 
     initDb().catch(console.error);
 
-    supabase.auth.getSession().then(({ data: { session }, error }) => {
-      // The single most diagnostic moment: did the persisted session survive to
-      // this cold start? Crucially we now read `error` too — getSession returns
-      // null-WITH-error when the token was within its expiry margin and the refresh
-      // network call FAILED (offline/flaky on resume). That is NOT a sign-out, and
-      // treating it as one — the old `if (!session)` bounce — is the frequent-logout
-      // bug: a returning owner with a perfectly good refresh token still sitting in
-      // encrypted storage got kicked to the login wall over a network blip.
+    // Cold start FROM a recovery link (B-280 §6.4): the deep-link handler owns the
+    // ENTIRE auth transition — provenance (FR-14), the gate (FR-6), and the
+    // wipe-before-exchange (FR-7). Run it instead of the normal cold-start routing
+    // so the two do not race on setSession / router.replace. `getLinkingURL()` is
+    // synchronous, so this reads the launch URL without racing.
+    if (isRecoveryDeepLink(Linking.getLinkingURL())) {
+      // Keep isLoading TRUE until the handler has finished routing — releasing it
+      // synchronously here would let a consumer of `isLoading` (e.g. the Landing's
+      // auth CTAs) observe loading:false with no session and no recovery route yet
+      // applied, flashing the login wall on the exact screen Jordan's "lands the
+      // owner in the app" rule protects (code-reviewer). `.finally` covers success
+      // and failure alike.
+      void handleRecoveryDeepLink(Linking.getLinkingURL()).finally(() => setLoading(false));
+    } else {
+      void initColdStart();
+    }
+
+    async function initColdStart() {
+      // Load the persisted FR-6 gate alongside getSession. A force-quit on the
+      // set-password screen (§10 row 21) persists BOTH the recovery session and this
+      // gate; without loading it, the restored session would fall through to Home
+      // with the password still unchanged (Trap 1). Read in parallel so a normal
+      // cold start pays only one round-trip of latency, not two.
+      const [gateArmed, { data: { session }, error }] = await Promise.all([
+        loadPersistedRecoveryGate(),
+        supabase.auth.getSession(),
+      ]);
+      // The single most diagnostic moment: did the persisted session survive to this
+      // cold start? We read `error` too — getSession returns null-WITH-error when the
+      // token was within its expiry margin and the refresh network call FAILED
+      // (offline/flaky on resume). That is NOT a sign-out; treating it as one is the
+      // frequent-logout bug.
       const decision = coldStartDecision(session, error);
-      if (decision === 'proceed') {
-        // Writing the store is the routing here: the Landing (app/(auth)/index) is
-        // the cold-start initial route — `(auth)/index` beats `(tabs)/index` for
-        // "/" in expo-router's group sort — and its session guard replaces to the
-        // tabs the moment this write lands. For months nothing performed that
-        // route at all, which was the TestFlight login-every-launch bug: the
-        // session restored + refreshed fine, and the owner was still looking at
-        // the login wall.
+
+      if (gateArmed) {
+        // Resume an interrupted reset (§10 row 21). The gate is the routing here.
+        useAuthStore.getState().setRecoveryInProgress(true);
+        if (session) {
+          // A live recovery session behind the gate → the set-password form.
+          setSession(session);
+          router.replace('/(auth)/reset-password');
+        } else if (decision === 'retain') {
+          // A TRANSIENT refresh failure on resume (null-with-error) — the recovery
+          // session is almost certainly still in storage, so do NOT release the gate
+          // over a network blip. Keep it and let autoRefresh recover: TOKEN_REFRESHED
+          // then arrives as SIGNED_IN and the FR-6 branch renders the form. Land on
+          // the auth entry meanwhile (the recovery session guard holds the redirect).
+          router.replace('/(auth)');
+          supabase.auth.startAutoRefresh().catch(() => {});
+        } else {
+          // to-auth (null-without-error): the recovery session genuinely expired.
+          // Nothing to resume — release the gate and route to auth rather than wedge
+          // the owner on a formless set-password screen.
+          await releaseRecoveryGate();
+          router.replace('/(auth)');
+        }
+      } else if (decision === 'proceed') {
+        // Writing the store is the routing: the Landing's session guard replaces to
+        // the tabs the moment this write lands (the TestFlight login-every-launch fix).
         setSession(session);
       } else if (decision === 'to-auth') {
         // Genuinely no stored session (fresh install / cold start after a real
-        // sign-out). The Signal-led Landing (app/(auth)/index) is the unauthenticated
-        // entry point (B-251 PR 5) — a returning-but-logged-out owner taps "Log in"
-        // from there. A live session instead redirects off the Landing via its
-        // session guard; the usePet hook (in the tabs layout) then fetches the pet
-        // and redirects to onboarding if none.
+        // sign-out). The Signal-led Landing is the unauthenticated entry point.
         setSession(null);
-        // …EXCEPT on a cold start FROM an auth link (B-432's email confirmation;
-        // B-280's recovery link next). Those links have no session BY DEFINITION —
-        // establishing one is their entire job — so the bounce above would replace
-        // the route expo-router just opened from the link, milliseconds after
-        // opening it, and drop the owner on the Landing with no idea why their
-        // confirmation did nothing. `getLinkingURL()` is synchronous, so this
-        // reads the launch URL without racing the decision it guards.
+        // …EXCEPT on a cold start FROM an auth link (B-432 confirmation; B-280
+        // recovery). Those links have no session BY DEFINITION — establishing one is
+        // their entire job — so the bounce would replace the route expo-router just
+        // opened from the link. (A recovery link is handled above; this covers a
+        // confirm link and is the general guard.)
         if (!isAuthDeepLink(Linking.getLinkingURL())) {
           router.replace('/(auth)');
         }
       } else {
         // retain — a transient refresh failure. Do NOT null the store: a good
         // session may already have arrived (or is about to) via INITIAL_SESSION or
-        // the autoRefresh ticker auth-js starts on init, and setSession(null) here
-        // would clobber it and needlessly tear down sync (useSync keys on
-        // `session`). Leave the store as-is and force an immediate refresh retry so
-        // recovery isn't gated on the next ~30s tick; when it succeeds,
-        // TOKEN_REFRESHED writes the store and the Landing's session guard routes
-        // in. A real logout would instead arrive as SIGNED_OUT and route from the
-        // listener below. Known limit (B-609): on a genuinely OFFLINE cold start
-        // the retry can't succeed, so the owner waits on the Landing with the auth
-        // CTAs rather than reaching Home on local data — reaching Home there needs
-        // local-first pet hydration (usePet bails without a user), not a routing
-        // change here.
+        // the autoRefresh ticker; setSession(null) here would clobber it and tear
+        // down sync. Force an immediate refresh retry instead (B-609 known limit: an
+        // offline cold start waits on the Landing).
         supabase.auth.startAutoRefresh().catch(() => {});
       }
       // Release the initial-load gate only after the session decision above, so a
       // consumer of `isLoading` never observes loading:false with the session not
       // yet applied.
       setLoading(false);
+    }
+
+    // Warm deep links (app already running). `handleRecoveryDeepLink` ignores every
+    // non-recovery link (the widget's `nyx:///history?…` / `nyx:///log?…`, a confirm
+    // link), so attaching this unconditionally is safe and interferes with nothing.
+    const linkSub = Linking.addEventListener('url', ({ url }) => {
+      void handleRecoveryDeepLink(url);
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
@@ -141,12 +193,27 @@ export default function RootLayout() {
         // sign-in starts re-hydrating.
         await wipeLocalSession();
         setSession(null);
-        // Route to the new Landing on sign-out (B-251 PR 5) — EXCEPT a just-deleted
-        // account, which goes to login so the B-039 "your account has been deleted"
-        // confirmation banner (armed on the auth store, shown on the login screen)
-        // still surfaces immediately instead of behind the Landing's swipe cards.
-        const justDeleted = useAuthStore.getState().justDeletedAccount;
-        router.replace(justDeleted ? '/(auth)/login' : '/(auth)');
+        const store = useAuthStore.getState();
+        // B-280 §6.4 step 8: a SIGNED_OUT while the recovery gate is STILL armed is
+        // the FR-15 reconcile signOut on a FAILED exchange. The recovery handler
+        // owns that path's routing (it already showed the failure screen) AND the
+        // gate release — so here we run ONLY the teardown, then defer. Routing or
+        // releasing the gate here would race the handler. (The FR-7 wipe at step 4
+        // fires NO event — it nulls the store directly — so it never reaches here.)
+        if (store.recoveryInProgress) return;
+        // FR-20 (§7.2.4): tell an INVOLUNTARY sign-out (a revoked refresh token — the
+        // FR-18 eviction on another device) apart from a deliberate one, and land the
+        // former on login with the §5.6b banner that names the likely cause without
+        // asserting it. Deletion keeps its own B-039 banner. Gated on the recovery
+        // flag inside signedOutRoute so PR 2 stays inert until enablement.
+        const route = signedOutRoute({
+          justDeletedAccount: store.justDeletedAccount,
+          deliberateSignOut: store.deliberateSignOut,
+          recoveryEnabled: PASSWORD_RECOVERY_ENABLED,
+        });
+        if (store.deliberateSignOut) store.setDeliberateSignOut(false); // consume the one-shot
+        if (route.armBanner) store.setSignedOutInvoluntarily(true);
+        router.replace(route.path);
         return;
       }
       // Only WRITE a session we actually have. A non-SIGNED_OUT event can still carry
@@ -158,7 +225,24 @@ export default function RootLayout() {
       // getSession callback / autoRefresh and needlessly tear down sync. So set only
       // when present; otherwise leave the last-known session untouched.
       if (session) {
+        // During the recovery exchange window, adopt ONLY the exchange's SIGNED_IN(B)
+        // — never a TOKEN_REFRESHED re-emission of the pre-recovery owner A that
+        // auth-js's autoRefresh can fire mid-flush (rls-privacy re-review). Inert
+        // outside that window, so normal auth is untouched.
+        if (!shouldAdoptSessionDuringRecovery(event, useAuthStore.getState().recoveryExchangePending)) {
+          return;
+        }
         setSession(session);
+        // FR-6 / Trap 1: a recovery-exchange SIGNED_IN must land on set-password,
+        // never fall through to Home. The Landing guard and the §6.5 tabs gate also
+        // enforce this, but pinning it here routes the recovery session correctly the
+        // instant it is adopted, regardless of which screen was foreground. Returns
+        // before the config fetch — it runs after the reset completes and routes to
+        // the tabs.
+        if (useAuthStore.getState().recoveryInProgress) {
+          router.replace('/(auth)/reset-password');
+          return;
+        }
         // Config's SELECT policy is `authenticated`, so a fetch only succeeds once a
         // session exists. This one listener covers every fetchable transition:
         // INITIAL_SESSION (cold start with a persisted session), SIGNED_IN, and
@@ -168,7 +252,10 @@ export default function RootLayout() {
       }
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      linkSub.remove();
+      subscription.unsubscribe();
+    };
   }, []);
 
   // Auth init (above) runs in parallel while fonts resolve; only the rendered
@@ -204,12 +291,14 @@ export default function RootLayout() {
         <Stack.Screen name="edit-event" options={{ presentation: 'modal' }} />
         <Stack.Screen name="event/[id]" />
         <Stack.Screen name="vet-document/[id]" />
+        <Stack.Screen name="day-summary" />
         <Stack.Screen name="ask" />
         <Stack.Screen name="report" />
         <Stack.Screen name="rundown" />
         <Stack.Screen name="settings" />
         <Stack.Screen name="settings/notifications" />
         <Stack.Screen name="settings/feedback" />
+        <Stack.Screen name="settings/password" />
       </Stack>
       <MealCompletionCard />
       <MedicationCompletionCard />

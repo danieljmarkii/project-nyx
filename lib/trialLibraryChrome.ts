@@ -28,6 +28,7 @@ import {
   type TrialAllowedSet,
   type TrialListFood,
 } from './trialAllowedSet';
+import type { AllowedFood } from './dietTrial';
 import { getDietTrialProgress } from './analytics';
 
 // ── §4 copy pack, verbatim ──────────────────────────────────────────────────
@@ -67,8 +68,40 @@ export interface FoodsTrialStripModel {
   /** `Diet trial — day 12 of 28`, prefixed with the pet's name on a multi-pet
    *  account (D7 — the library is per-account, the trial is not). */
   header: string;
-  /** `3 foods on the trial list`. */
+  /** The list NAMED, not counted — `Royal Canin Hydrolyzed Protein HP, and 2
+   *  more` (B-627). See `trialStripFoodsLine`. */
   line: string;
+}
+
+/**
+ * The strip's second line, NAMING the foods on the list rather than counting
+ * them (B-627).
+ *
+ * The count ("3 foods on the trial list") pointed at the 10-second answer — "which
+ * foods?" — one tap away, on the wedge's own surface, instead of giving it. The
+ * cold reviewer's reaction was literally *"Three. Okay… which three?"*, and they
+ * scrolled the library before tapping through. So the line now leads with the food
+ * an owner opens this tab to check.
+ *
+ * LEADS WITH THE PRESCRIBED DIET. `primary_diet` is the most identifying row and
+ * the one the question is usually about, so it is named first regardless of the
+ * set's stored order; a permitted-only set (no `primary_diet` row — legal, rare)
+ * falls back to the first food in force. The remainder is a bare count, so a long
+ * pet's-worth of extras never runs the line off the strip — the strip's own
+ * `numberOfLines={1}` truncates it, which B-627 accepts as the cost of naming.
+ *
+ * Not "and 2 others" / "+2": "and N more" reads as a continuation of the named
+ * food (the vet's list continues), where "+2" reads as a count badge — and a count
+ * is the thing this line is replacing.
+ *
+ * Requires a non-empty set; `buildFoodsTrialStrip` guards the empty case (it
+ * returns no strip at all rather than a line about zero foods) before calling.
+ */
+export function trialStripFoodsLine(foods: readonly AllowedFood[]): string {
+  const lead = foods.find((f) => f.role === 'primary_diet') ?? foods[0];
+  if (!lead) return '';
+  const remaining = foods.length - 1;
+  return remaining === 0 ? lead.label : `${lead.label}, and ${remaining} more`;
 }
 
 /**
@@ -82,18 +115,21 @@ export interface FoodsTrialStripModel {
  *     FR-4's clean disappearance is this, arriving for free.
  *   • no rows in force today — see below.
  *
- * A `ready` set with an empty in-force list would print `0 foods on the trial
- * list`, which is a CLAIM ABOUT THE RECORD rather than an absence of one — the
- * same failure `loadTrialAllowedSet` refuses one layer down by answering `unknown`
- * for a hydrating set. It is reachable here without any hydration problem at all:
- * every row date-gated out (a future `allowed_from`, or an `allowed_until` that has
+ * A `ready` set with an empty in-force list would print a line about the record
+ * (once "0 foods on the trial list"; now a naming line with nothing to name),
+ * which is a CLAIM ABOUT THE RECORD rather than an absence of one — the same
+ * failure `loadTrialAllowedSet` refuses one layer down by answering `unknown` for a
+ * hydrating set. It is reachable here without any hydration problem at all: every
+ * row date-gated out (a future `allowed_from`, or an `allowed_until` that has
  * passed) leaves a live trial with a legitimately empty set for today. The honest
- * rendering of "the list permits nothing today" is not a strip saying zero; it is
- * no strip, and the trial card still carries the trial.
+ * rendering of "the list permits nothing today" is not a strip; it is no strip, and
+ * the trial card still carries the trial.
  *
  * The day counter is `getDietTrialProgress` — the app's ONE day-math source
  * (B-421) — so this number is the number the trial card and the §2.2 subtitle are
- * showing, by construction rather than by coincidence.
+ * showing, by construction rather than by coincidence. The second line NAMES the
+ * foods (B-627) via `trialStripFoodsLine`, over the same in-force set the count was
+ * taken from — so "which foods?" is answered on the strip rather than one tap away.
  */
 export function buildFoodsTrialStrip(
   set: TrialAllowedSet,
@@ -102,8 +138,8 @@ export function buildFoodsTrialStrip(
 ): FoodsTrialStripModel | null {
   if (set.status !== 'ready') return null;
 
-  const count = trialListFoodsOn(set, atMs).length;
-  if (count === 0) return null;
+  const foods = trialListFoodsOn(set, atMs);
+  if (foods.length === 0) return null;
 
   const progress = getDietTrialProgress(
     { startedAt: set.trial.startedAt, targetDurationDays: set.trial.targetDurationDays },
@@ -125,7 +161,7 @@ export function buildFoodsTrialStrip(
 
   return {
     header: dayClause === null ? subject : `${subject} — ${dayClause}`,
-    line: `${count} ${count === 1 ? 'food' : 'foods'} on the trial list`,
+    line: trialStripFoodsLine(foods),
   };
 }
 

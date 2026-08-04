@@ -291,6 +291,14 @@ export const LOCAL_WIPE_TABLES = [
   // from Supabase, so it's account-scoped data that must not leak to the next
   // account on a shared device. No local FK constraint, so order is free.
   'feeding_arrangements',
+  // B-661 notification_preferences — the per-account notification opt-in mirror.
+  // Account-scoped (not pet-scoped) and holds no health record, but it is still
+  // the prior account's state: which categories they turned on, and — through
+  // pet_id — which of their pets a preference names. A shared or borrowed device
+  // must not carry that into the next account, and (per the wipe-path rule) the
+  // scheduled OS notifications the mirror drives are cancelled separately in
+  // wipeLocalSession (B-661 PR 1 §3). No local FK, so order is free.
+  'notification_preferences',
   'food_items_cache',
   'sync_watermarks',
 ] as const;

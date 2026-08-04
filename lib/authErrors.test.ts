@@ -1,6 +1,7 @@
 import {
   authErrorCopy,
   isEmailNotConfirmed,
+  isInvalidCredentials,
   isOffline,
   isRateLimited,
   retryAfterSeconds,
@@ -25,6 +26,23 @@ describe('isEmailNotConfirmed', () => {
   it('does not match an unrelated failure', () => {
     expect(isEmailNotConfirmed({ code: 'invalid_credentials' })).toBe(false);
     expect(isEmailNotConfirmed(null)).toBe(false);
+  });
+});
+
+describe('isInvalidCredentials', () => {
+  it('matches the modern error code', () => {
+    expect(isInvalidCredentials({ code: 'invalid_credentials' })).toBe(true);
+  });
+
+  it('matches the legacy message text when no code is present', () => {
+    // What a wrong current password returns from the change-password re-check.
+    expect(isInvalidCredentials({ message: 'Invalid login credentials' })).toBe(true);
+  });
+
+  it('does not match an unrelated failure', () => {
+    expect(isInvalidCredentials({ code: 'email_not_confirmed' })).toBe(false);
+    expect(isInvalidCredentials({ message: 'Network request failed' })).toBe(false);
+    expect(isInvalidCredentials(null)).toBe(false);
   });
 });
 
@@ -155,7 +173,7 @@ describe('authErrorCopy — the no-raw-strings contract', () => {
     null,
   ];
 
-  const CONTEXTS = ['signup', 'login', 'resend'] as const;
+  const CONTEXTS = ['signup', 'login', 'resend', 'reset', 'password'] as const;
 
   it.each(CONTEXTS)('never surfaces the provider string in the %s context', (context) => {
     for (const shape of SHAPES) {
@@ -191,5 +209,9 @@ describe('authErrorCopy — the no-raw-strings contract', () => {
     expect(authErrorCopy(unknown, 'signup').title).toBe("Couldn't create your account");
     expect(authErrorCopy(unknown, 'login').title).toBe("Couldn't sign you in");
     expect(authErrorCopy(unknown, 'resend').title).toBe("Couldn't send the link");
+    // Recovery set-new-password write (B-280 §5.4) and the change-password screen
+    // (B-280 PR 3) each get their own title, not a sign-in error.
+    expect(authErrorCopy(unknown, 'reset').title).toBe("Couldn't save your password");
+    expect(authErrorCopy(unknown, 'password').title).toBe("Couldn't change your password");
   });
 });
