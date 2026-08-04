@@ -3075,6 +3075,10 @@ Deno.test('§4.4 render — the table renders its title, coverage note and the H
   assert.ok(/Dates are each course.s span/.test(t))
   // The H1 disclosure, stated BEFORE the table (B-494 — a load-bearing disclosure a skimmer must apply).
   assert.ok(/no end date is one whose end the owner never recorded/.test(t))
+  // The COMPLETENESS caveat lives ON the lifetime table (cold-read blocker #2): the lifetime
+  // overview is the surface that invites "is this everything she's ever had?", so "absence is
+  // not evidence it was not given" must sit here, not only under Appendix D.
+  assert.ok(/its absence is not evidence it was not given/.test(t))
 })
 
 Deno.test('§4.4 render — an ACTIVE dose-course: "– present", "N doses planned", a BARE count (no countdown)', () => {
@@ -3129,6 +3133,32 @@ Deno.test('§4.4 render — an over-delivered ended course drops the "of N" fram
   })))
   assert.ok(/Clavamox/.test(t))
   assert.ok(!/6 of 5/.test(t)) // the frame is dropped; the bare honest count stays
+})
+
+Deno.test('§4.4 render/H1 — an owner-ended course with NO recorded end date never fabricates one (adversarial)', () => {
+  // ended_at is nullable and the derivation models { ended, endedAt: null }. The Dates cell must NOT
+  // synthesize a closed range ending at the stray last-dose day — that is a fabricated recorded end.
+  const t = plain(renderReport(base({
+    medicationHistory: mhTable([
+      mhEntry({ drugName: 'Metronidazole', source: 'regimen', ended: true, endStatus: 'completed', endedDay: null, startedDay: '2026-03-03', targetDurationDays: 14, dosesPerDay: 2, plannedDoses: 28, dosesLogged: 2, firstDoseDay: '2026-03-03', lastDoseDay: '2026-06-09' }),
+    ], '2026-03-03'),
+  })))
+  assert.ok(/started Mar 3, 2026/.test(t)) // the start, stated plainly
+  assert.ok(/ended by owner/.test(t)) // the ending is still disclosed — in the Course cell
+  assert.ok(!/Mar 3 – Jun 9, 2026/.test(t)) // NEVER the fabricated closed range the adversarial pass caught
+})
+
+Deno.test('§4.4 render/H1 — a regimen neither active nor owner-ended shows only its start, never a finished-looking range (adversarial)', () => {
+  // A paused / unknown-status regimen (end.kind === "none", isActive false) with logged doses. Its
+  // Course cell shows a real regimen spec, so a closed "start – lastDose" range would read as finished.
+  const t = plain(renderReport(base({
+    medicationHistory: mhTable([
+      mhEntry({ drugName: 'Gabapentin', source: 'regimen', isActive: false, ended: false, startedDay: '2026-01-01', targetDurationDays: 14, dosesPerDay: 2, plannedDoses: 28, dosesLogged: 2, firstDoseDay: '2026-01-05', lastDoseDay: '2026-02-20' }),
+    ], '2026-01-01'),
+  })))
+  assert.ok(/started Jan 1, 2026/.test(t))
+  assert.ok(!/Jan 1 – Feb 20, 2026/.test(t)) // never a finished-looking closed range
+  assert.ok(!/ended by owner/.test(t)) // not ended → no ending marker
 })
 
 Deno.test('B-599 — page 1 never points at an "Also during the trial" row that will not render', () => {

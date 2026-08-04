@@ -1110,6 +1110,31 @@ Deno.test('§4.4 — a pet with no regimen and no dose has a null medicationHist
   assert.equal(snap.medicationHistory, null)
 })
 
+Deno.test('§4.4/H1 — a completed regimen with a NULL ended_at is ended-WITHOUT-a-date (adversarial: never a fabricated end)', () => {
+  // `medications.ended_at` is nullable (migration 020) and the derivation models
+  // `{ kind:'ended', endedAt:null }` — an owner marked the course complete but recorded no date. The
+  // entry must carry endedDay=null so the renderer cannot synthesize an end from the last-dose day.
+  const snap = assembleReport(baseInput({
+    now: MED_NOW,
+    medications: [{
+      id: 'reg-nulldate', medicationItemId: 'mi-x', drugName: 'Metronidazole', doseAmount: null, route: 'oral',
+      dosesPerDay: 2, scheduleNotes: null, indication: null, prescribedBy: null,
+      startedAt: '2026-03-03', targetDurationDays: 14, targetDurationDoses: null,
+      status: 'completed', endedAt: null, isPrescription: true, strength: null,
+    }],
+    doses: [],
+    lifetimeDoses: [
+      orphanDoseLinked('reg-nulldate', 'mi-x', '2026-03-03'),
+      orphanDoseLinked('reg-nulldate', 'mi-x', '2026-06-09'), // a later dose the renderer must NOT read as the end
+    ],
+  }))
+  const e = snap.medicationHistory!.entries[0]
+  assert.equal(e.ended, true) // an owner action (completed)
+  assert.equal(e.endStatus, 'completed')
+  assert.equal(e.endedDay, null) // no end DATE — the renderer must not invent one from the last dose
+  assert.equal(e.lastDoseDay, '2026-06-09') // the dose evidence stays honest
+})
+
 Deno.test('§5.11/§7 boundary-straddle — a duplicate across local midnight keeps the in-window bout + its phenotype', () => {
   // Adversarial finding 1: a near-simultaneous duplicate straddling the window boundary
   // at local midnight must NOT drop the genuine in-window bout (nor its completed phenotype),
