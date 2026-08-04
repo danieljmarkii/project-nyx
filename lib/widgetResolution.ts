@@ -472,3 +472,19 @@ export function assignPetSlots(
     assignments: [...next.values()].sort((a, b) => a.slot - b.slot),
   };
 }
+
+// B-407 — the owner-facing "Pet N" label a pet holds in the widget's slot enum,
+// or null when the pet has no ACTIVE slot (index not published yet, the pet is a
+// tombstone, or it is the account's 7th+ concurrent pet and never got a bindable
+// slot). The string matches the app.json configuration enum's names ("Pet 1"…
+// "Pet 6") verbatim, so the profile line is a LOOKUP KEY for the exact option the
+// owner sees in the Home Screen "Edit Widget" picker — turning slot binding from
+// trial-and-error (worse after a removal, since a tombstone holds its slot and a
+// two-pet account can genuinely be Pet 2 + Pet 3) into a lookup. Requires `active`
+// on purpose: a tombstone's held slot is not a slot this pet can be bound to now.
+// Pure — the profile reads the persisted index (lib/widgetSlot) and passes it here.
+export function petSlotLabel(index: PetSlotIndex | null, petId: string): string | null {
+  if (!index || !Array.isArray(index.assignments)) return null;
+  const entry = index.assignments.find((e) => e.petId === petId && e.active);
+  return entry ? `Pet ${entry.slot}` : null;
+}
