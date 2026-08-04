@@ -72,4 +72,11 @@ describe('IntakeBadge — rendering', () => {
     const { getByLabelText } = render(<IntakeBadge rating="most" />);
     expect(getByLabelText('Intake: most').props.pointerEvents).toBe('none');
   });
+
+  // Safe render for an out-of-enum rating (DB/SQLite enum drift): it degrades into the attention
+  // tier with its raw value, never crashing the row on an undefined label (adversarial review).
+  it('degrades an unknown rating into the attention tier without crashing', () => {
+    const { getByText } = render(<IntakeBadge rating={'weird' as IntakeRating} />);
+    expect(textColor(getByText('weird'))).toBe(theme.colorEventSymptomInk);
+  });
 });

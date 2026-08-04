@@ -161,9 +161,12 @@ export default function TrialFoodsScreen() {
           //
           // `returnTo=back` (B-625) makes the capture flow return HERE on save instead of
           // unwinding to Home: capture was PUSHED as a step of this screen's flow, not
-          // presented over a tab, so the owner lands back on this picker with the new food
-          // freshly in the library (FoodPicker reloads on focus) — one tap from the list,
-          // no re-entry from the trial card.
+          // presented over a tab, so the owner lands back on this picker (FoodPicker reloads on
+          // focus, so the new food is in the library) rather than on Home having to re-enter the
+          // trial card. The captured food is saved to the LIBRARY, not the allowed set — the
+          // owner still finds it here (search is pinned) and taps it to add. Surfacing the
+          // just-captured food (pin/scroll-to, or carrying it straight to the confirm sheet) is
+          // a follow-up (B-688), not part of the exit fix.
           onAddNew={() => router.push('/food-capture?returnTo=back')}
         />
       </SafeAreaView>

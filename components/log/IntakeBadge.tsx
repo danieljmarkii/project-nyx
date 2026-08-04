@@ -55,7 +55,11 @@ interface Props {
 export function IntakeBadge({ rating }: Props) {
   if (rating === null) return null;
   const tier = intakeTier(rating);
-  const label = LABEL[rating];
+  // Fall back to the raw value if an out-of-enum rating ever reaches here (DB/SQLite enum
+  // drift). `intakeTier` already places an unknown rating on the safe `decline` side; this keeps
+  // the render path honest too, so a stray value shows in the attention tier instead of throwing
+  // on `undefined.toLowerCase()` and crashing the row to its error boundary.
+  const label = LABEL[rating] ?? rating;
   return (
     // pointerEvents none so a tap falls through to the row's own expand/long-press gesture:
     // the badge is decoration over the row, never a dead touch target on top of it.

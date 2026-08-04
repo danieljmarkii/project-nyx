@@ -752,7 +752,10 @@ export default function FoodCaptureScreen() {
           <Text style={styles.checkMark}>✓</Text>
         </Animated.View>
         <Animated.Text style={[styles.loggedText, { opacity: checkOpacity }]}>
-          {cameFromMealLog ? 'Logged' : 'Added'}
+          {/* The add-only path saves to the food LIBRARY — it does not log a meal, and (on the
+              /trial-foods path) it does not put the food on the trial's allowed set. Name the
+              real destination so "Added" can't read as "added to the list" (B-625, pm-review). */}
+          {cameFromMealLog ? 'Logged' : 'Saved to your foods'}
         </Animated.Text>
         {/* The Tier-2 heads-up on the meal-log path — reported, never asked. The
             meal is already written by the time this renders. */}

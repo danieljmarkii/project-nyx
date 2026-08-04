@@ -266,28 +266,36 @@ function historySymptomType(symptomType: string | undefined): EventTypeKey | nul
     : null;
 }
 
-/** Map an Ask window enum onto History's own `?window=` vocabulary (today/7d/30d), or undefined
- *  for all time. 7d/30d map exactly; 14d and since_trial_start — which History has no preset for
- *  — widen to the SUPERSET (30d / all time) so the filtered list always holds every event the
- *  count did, never fewer. History states its own active window, so the wider scope reads
- *  honestly rather than as a mismatch. */
-function historyWindow(askWindow: string | undefined): string | undefined {
+/** The History `?window=` params for an Ask window History can represent EXACTLY, or null when
+ *  it can't. 7d/30d map to their presets; 'all' maps to an all-time link (no window param); and
+ *  14d / since_trial_start / an unstated window — which History has no exact preset for — return
+ *  null so the caller keeps the window-agnostic Patterns route instead.
+ *
+ *  Exact-match-only is deliberate (pm-feature-review, B-378): widening to a superset (14d→30d,
+ *  since_trial_start→all-time) would make the source list show MORE rows than the count it is
+ *  meant to audit — "3 since the trial started" opening onto 15 all-time vomits — which is the
+ *  G5 "Ask's number must never disagree with the Timeline's" red line surfacing at the UI. A
+ *  window History can't reproduce exactly is better audited on Patterns, which makes no count
+ *  promise. Returns `{}` (not `{ window: undefined }`) for all-time so the spread adds no key. */
+function historyWindow(askWindow: string | undefined): { window?: string } | null {
   switch (askWindow) {
-    case '7d': return '7d';
-    case '30d': return '30d';
-    case '14d': return '30d';   // no 14d preset — widen, never hide a counted event
-    default: return undefined;  // 'all' / 'since_trial_start' / unset → all time
+    case '7d': return { window: '7d' };
+    case '30d': return { window: '30d' };
+    case 'all': return {};      // all time — an exact match, expressed as a History link with no window
+    default: return null;       // 14d / since_trial_start / unset → no exact History window
   }
 }
 
 /** Resolve a provenance tap-through to a navigation target, or null when nothing is
- *  linkable. A symptom `filter` History can render opens the FILTERED History list (B-378 —
- *  the mock's "Open in History", auditing the whole count at its source); a symptom History
- *  can't render (scratch/skin_reaction) opens that symptom's Patterns detail; any other filter
- *  opens the Patterns index. An `events` tap-through has no type/window to filter History by, so
- *  it opens the first (most-recent) event's detail — the honest available target. Keeping this
- *  pure makes the mapping unit-testable and keeps the "does this even go anywhere" decision out
- *  of the render path. */
+ *  linkable. A symptom `filter` History can render, WITH a window History can reproduce exactly,
+ *  opens the FILTERED History list (B-378 — the mock's "Open in History", auditing the whole
+ *  count at its source). A symptom History can't render (scratch/skin_reaction), OR a window it
+ *  can't reproduce exactly (14d/since_trial_start), opens that symptom's Patterns detail — the
+ *  window-agnostic view that makes no count promise, so the source can never contradict the
+ *  count (G5). Any other filter opens the Patterns index. An `events` tap-through has no
+ *  type/window to filter History by, so it opens the first (most-recent) event's detail — the
+ *  honest available target. Pure, so the mapping is unit-testable and the "does this even go
+ *  anywhere" decision stays out of the render path. */
 export function resolveTapThrough(tp: AskTapThrough | null | undefined): AskNav | null {
   if (!tp) return null;
   if (tp.kind === 'events') {
@@ -295,11 +303,9 @@ export function resolveTapThrough(tp: AskTapThrough | null | undefined): AskNav 
   }
   // filter
   const historyType = historySymptomType(tp.symptomType);
-  if (historyType) {
-    const params: { type: string; window?: string } = { type: historyType };
-    const w = historyWindow(tp.window);
-    if (w) params.window = w;
-    return { pathname: '/(tabs)/history', params };
+  const hw = historyType ? historyWindow(tp.window) : null;
+  if (historyType && hw) {
+    return { pathname: '/(tabs)/history', params: { type: historyType, ...hw } };
   }
   if (tp.symptomType && SYMPTOM_METRICS.has(tp.symptomType)) {
     return { pathname: '/insights/[metric]', params: { metric: tp.symptomType } };
@@ -309,18 +315,19 @@ export function resolveTapThrough(tp: AskTapThrough | null | undefined): AskNav 
 
 /** The owner-facing "go" label for a tap-through (mock §2 provenance row). The label MUST
  *  name where it actually lands (pm-feature-review: a mislabelled provenance link is the
- *  one interaction the feature's trust is built on). A History-renderable symptom `filter` now
- *  opens the filtered History list, so it reads "Open in History" (B-378); a symptom History
- *  can't render, or any other filter, opens Patterns. A single event opens the event; a
- *  several-event tap-through has no filtered route, so it opens the LATEST event and says so.
- *  Null when there's nowhere to go. */
+ *  one interaction the feature's trust is built on). It opens the filtered History list — and
+ *  reads "Open in History" — ONLY when `resolveTapThrough` would actually route there: a
+ *  History-renderable symptom with a window History can reproduce exactly (B-378). Everything
+ *  else that came from a filter opens Patterns. A single event opens the event; a several-event
+ *  tap-through has no filtered route, so it opens the LATEST event and says so. Null when there's
+ *  nowhere to go. */
 export function tapThroughLabel(tp: AskTapThrough | null | undefined): string | null {
   if (!tp) return null;
   if (tp.kind === 'events') {
     if (tp.eventIds.length === 0) return null;
     return tp.eventIds.length === 1 ? 'Open the event' : 'Open the latest event';
   }
-  if (historySymptomType(tp.symptomType)) return 'Open in History';
+  if (historySymptomType(tp.symptomType) && historyWindow(tp.window)) return 'Open in History';
   return 'Open in Patterns';
 }
 
