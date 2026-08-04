@@ -1045,7 +1045,7 @@ export function computeRegimenCompliance(input: RegimenComplianceInput): Regimen
 
   const administeredDoses = tally.given;
   const flaggedDoses = tally.partial + tally.missed + tally.refused;
-  const loggedDoses = administeredDoses + flaggedDoses + tally.unrated;
+  const loggedDoses = totalTally(tally); // === administeredDoses + flaggedDoses + unrated
 
   const safeDays = Math.max(1, Math.floor(daysElapsed));
   const expectedDoses = isDoseDenominated
@@ -1098,6 +1098,16 @@ export function computeRegimenCompliance(input: RegimenComplianceInput): Regimen
 // asserts it.
 export function dosesTowardTarget(tally: AdherenceTally): number {
   return tally.given + tally.partial;
+}
+
+// Every logged administration, whatever its adherence — the count of dose EVENTS behind a
+// tally (distinct from dosesTowardTarget, which is delivered = given + partial). The ONE
+// definition of "how many doses were logged"; computeRegimenCompliance.loggedDoses and the
+// med-history doorway gate both read it rather than re-summing the five buckets (the H4 /
+// §5.3 one-predicate rule — a second inline sum is a bucket the next AdherenceTally field
+// would silently miss).
+export function totalTally(tally: AdherenceTally): number {
+  return tally.given + tally.partial + tally.missed + tally.refused + tally.unrated;
 }
 
 // ── B-618 §6 — the profile card's dose-course progress (PR 4) ────────────────────
