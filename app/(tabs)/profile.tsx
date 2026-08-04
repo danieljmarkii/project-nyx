@@ -49,8 +49,9 @@ import { Pet } from '../../store/petStore';
 import {
   MEDICATION_ROUTE_OPTIONS, computeRegimenCompliance, regimenComplianceLine,
   regimenFlagLine, attributeDosesToRegimens, regimenDaysElapsed, doseCourseProgress,
+  mapDoseRowsToAttributable,
   type AdherenceTally, type RegimenCompliance, type AttributableDose,
-  type DoseCourseProgress,
+  type DoseCourseProgress, type DoseEmbedRow,
 } from '../../lib/medications';
 import { deriveMedicationCourses, type MedicationHistoryRegimen } from '../../lib/medicationHistory';
 import {
@@ -404,30 +405,9 @@ export default function ProfileScreen() {
           .eq('pet_id', activePet.id)
           .or(orParts.join(','));
         if (doseError) throw doseError;
-
-        type DoseRow = {
-          medication_id: string | null;
-          medication_item_id: string | null;
-          adherence: string | null;
-          // to-one embed: supabase-js may surface it as an object or a 1-element array
-          events:
-            | { deleted_at: string | null; occurred_at: string }
-            | { deleted_at: string | null; occurred_at: string }[]
-            | null;
-        };
-        doses = ((doseRows as unknown as DoseRow[]) ?? []).map((d) => {
-          const ev = Array.isArray(d.events) ? d.events[0] : d.events;
-          return {
-            medication_id: d.medication_id,
-            medication_item_id: d.medication_item_id,
-            adherence: d.adherence,
-            deleted_at: ev?.deleted_at ?? null,
-            // '' only when the FK'd parent event embed is absent (not reachable with
-            // the non-null events FK); harmless — pass 2 orders it out ('' < any date)
-            // and pass 1 ignores occurred_at entirely.
-            occurred_at: ev?.occurred_at ?? '',
-          };
-        });
+        // Shared embed-shape mapper (lib/medications) — the B-196 handling lives in one
+        // place, read identically here and by loadPastMedications.
+        doses = mapDoseRowsToAttributable(doseRows as unknown as DoseEmbedRow[]);
       }
 
       const tallies = attributeDosesToRegimens(regimens, doses);
@@ -478,31 +458,18 @@ export default function ProfileScreen() {
       // (a bare events(...) is ambiguous since migration 023's paired_event_id). The
       // derivation skips deleted doses; the unattributed ones become the dose-derived
       // (orphan) courses that are most of the real history (spec D1).
+      //
+      // FORWARD-LOOKING (B-696): this reads ALL of the pet's doses on every focus with no
+      // window. The course COUNT stays small, but the dose volume behind it grows without
+      // bound for a years-long chronic patient — the rundown (§4.3/D3) capped the same
+      // derivation's window for exactly this reason. Fine at current volumes; revisit if
+      // a heavy account makes the per-focus read costly.
       const { data: doseRows, error: doseError } = await supabase
         .from('medication_administrations')
         .select('medication_id, medication_item_id, adherence, events!medication_administrations_event_id_fkey(deleted_at, occurred_at)')
         .eq('pet_id', activePet.id);
       if (doseError) throw doseError;
-
-      type DoseRow = {
-        medication_id: string | null;
-        medication_item_id: string | null;
-        adherence: string | null;
-        events:
-          | { deleted_at: string | null; occurred_at: string }
-          | { deleted_at: string | null; occurred_at: string }[]
-          | null;
-      };
-      const doses: AttributableDose[] = ((doseRows as unknown as DoseRow[]) ?? []).map((d) => {
-        const ev = Array.isArray(d.events) ? d.events[0] : d.events;
-        return {
-          medication_id: d.medication_id,
-          medication_item_id: d.medication_item_id,
-          adherence: d.adherence,
-          deleted_at: ev?.deleted_at ?? null,
-          occurred_at: ev?.occurred_at ?? '',
-        };
-      });
+      const doses = mapDoseRowsToAttributable(doseRows as unknown as DoseEmbedRow[]);
 
       // OMIT timeZone — the device zone IS the owner's midnight (the on-device rule the
       // derivation documents); generate-report is the surface that passes a zone.
@@ -533,8 +500,13 @@ export default function ProfileScreen() {
 
       setPastRows(buildPastCourseRows(courses, itemNames));
     } catch (e) {
+      // Leave the PRIOR successful result standing (matching the sibling loadMedications,
+      // never loadVetFiles' clear-on-error): a transient failure on a re-focus/after-End
+      // refetch must NOT blank an already-rendered history — with the section hidden at
+      // rows.length === 0, clearing here would make real history read as "never had any",
+      // the exact amnesia this feature exists to cure. Before the first success pastRows
+      // is already [], so a first-load failure still shows no section.
       console.error('[Profile] load past medications failed:', e);
-      setPastRows([]); // degrade to no section, never blank the tab
     }
   }, [activePet?.id]);
 
@@ -990,9 +962,14 @@ export default function ProfileScreen() {
           {medicationsLoading ? (
             <WhorlSpinner size="sm" ground="day" style={styles.sectionLoader} />
           ) : medications.length === 0 ? (
+            // With past history below, "No medications yet" would read as "never had
+            // any" directly over a populated Past list (the between-courses state — a
+            // pet just off its antibiotics). Say "right now" and point down; keep the
+            // forward-looking first-run copy only when there is genuinely no history.
             <Text style={styles.emptyConditionsText}>
-              No medications yet. Add a regimen once and logging each dose
-              becomes a single tap.
+              {pastRows.length > 0
+                ? `No medications right now — ${activePet.name}'s past courses are just below.`
+                : 'No medications yet. Add a regimen once and logging each dose becomes a single tap.'}
             </Text>
           ) : (
             medications.map((reg) => {
@@ -1086,24 +1063,10 @@ export default function ProfileScreen() {
             A collapsed-by-default section beside the active cards, answering the
             vet-chair "what has she been on?" the app has never been able to answer
             (spec §1). Renders nothing until derived / when there is no past history.
-            Tapping a catalog-backed course opens app/medication/[id]; PR 3 enriches
-            that screen with the past-course facts (until then it shows the drug's
-            catalog entry — a real, related destination, not the course view yet).
-            Free-text regimens and unspecified orphans have no catalog row, so their
-            rows render non-tappable. */}
-        <PastMedicationsSection
-          rows={pastRows}
-          onOpenCourse={(row) => {
-            if (!row.medicationItemId) return;
-            // Pass petId so PR 3 can scope its course derivation to THIS pet rather
-            // than assuming whatever pet is active when the detail screen loads (the
-            // route must carry it — PR 3 is disjoint and cannot edit this file).
-            router.push({
-              pathname: '/medication/[id]',
-              params: { id: row.medicationItemId, petId: activePet.id },
-            });
-          }}
-        />
+            Rows are non-tappable in PR 2 — PR 3 builds the past-course detail on
+            app/medication/[id] and lights up the tap then (a tap into today's editable
+            catalog screen would invite editing the wrong data). */}
+        <PastMedicationsSection rows={pastRows} />
 
         {/* ── Diet trial card v2 (B-417 PR 4, §4.2 — PR 3's modal behind it) ──
             Every string comes from `resolveTrialCard`; this screen only decides

@@ -133,11 +133,6 @@ describe('past-medications copy — H1: no ending from silence', () => {
     const c = orphan();
     const row = buildPastCourseRow(c, NAMES);
     expect(`${row.pill.label} ${row.meta}`).not.toMatch(/ended|complete|stopped|finished/i);
-    expect(row.faint).toBe(true); // the open register renders quieter
-  });
-
-  it('an ended course renders at full strength (not faint)', () => {
-    expect(buildPastCourseRow(course(), NAMES).faint).toBe(false);
   });
 });
 
@@ -145,8 +140,8 @@ describe('past-medications copy — H1: no ending from silence', () => {
 
 describe('past-medications copy — H2: counted facts, never a rate or a grade', () => {
   it('the ended fact line states a dose count, not a percentage or a denominator', () => {
-    const meta = pastCourseMeta(course()); // 26 logged, 28 planned
-    expect(meta).toContain('26 doses logged');
+    const meta = pastCourseMeta(course()); // 26 delivered, 28 planned
+    expect(meta).toContain('26 doses given');
     expect(meta).not.toContain('%');
     expect(meta).not.toContain('of 28'); // the "of N planned" denominator is the detail screen's (PR 3)
     expect(meta).not.toContain('28');
@@ -164,10 +159,10 @@ describe('past-medications copy — H2: counted facts, never a rate or a grade',
     }
   });
 
-  it('an ended course with zero logged doses is honest ("No doses logged"), never blank or reassuring', () => {
+  it('an ended course with zero delivered doses is honest ("No doses given"), never blank or reassuring', () => {
     const c = course({ dosesLogged: 0, tally: { given: 0, partial: 0, missed: 0, refused: 0, unrated: 0 } });
     const meta = pastCourseMeta(c);
-    expect(meta).toContain('No doses logged');
+    expect(meta).toContain('No doses given');
     expect(meta).toContain('14 days'); // the length is the owner-recorded span, independent of doses
     expect(meta).toContain('Mar 3 – Mar 16, 2026');
   });
@@ -176,30 +171,31 @@ describe('past-medications copy — H2: counted facts, never a rate or a grade',
 // ── The two fact-line registers, end to end ──────────────────────────────────────────
 
 describe('past-medications copy — the fact line', () => {
-  it('ended: "start – end, year · N days · N doses logged"', () => {
-    expect(pastCourseMeta(course())).toBe('Mar 3 – Mar 16, 2026 · 14 days · 26 doses logged');
+  it('ended: "start – end, year · N days · N doses given"', () => {
+    expect(pastCourseMeta(course())).toBe('Mar 3 – Mar 16, 2026 · 14 days · 26 doses given');
   });
 
   it('ended with a null end date still ends (owner asserted it), falling back to the start date', () => {
     const c = course({ end: { kind: 'ended', status: 'stopped', endedAt: null }, runDays: null });
     expect(pastCoursePill(c).label).toBe('Ended');
-    expect(pastCourseMeta(c)).toBe('Started Mar 3, 2026 · 26 doses logged');
+    expect(pastCourseMeta(c)).toBe('Started Mar 3, 2026 · 26 doses given');
   });
 
-  it('no end, multi-day span: "N doses · start – end, year"', () => {
-    // orphan(): 3 doses, Jun 2 → Jun 4. The span's end IS the last-dose date (H1's
-    // stand-in for the absent ending); no redundant "last dose logged" tail.
-    expect(pastCourseMeta(orphan())).toBe('3 doses · Jun 2 – Jun 4, 2026');
+  it('no end, multi-day: "N doses given · last dose {date}" — an OPEN register, never a closed range', () => {
+    // orphan(): 3 doses, Jun 2 → Jun 4. The line names the LAST dose rather than a
+    // "Jun 2 – Jun 4" range, so it can't be misread as a closed course fighting the
+    // "No end recorded" pill (and a months-apart burst can't read as continuous).
+    expect(pastCourseMeta(orphan())).toBe('3 doses given · last dose Jun 4, 2026');
   });
 
-  it('no end, single dose: "1 dose · date"', () => {
+  it('no end, single dose: "1 dose given · date" (a bare date needs no "last dose" framing)', () => {
     const c = orphan({
       tally: { given: 1, partial: 0, missed: 0, refused: 0, unrated: 0 }, dosesLogged: 1,
       firstDoseDay: '2026-02-11', lastDoseDay: '2026-02-11',
       firstDoseIso: '2026-02-11T13:00:00Z', lastDoseIso: '2026-02-11T13:00:00Z',
       end: { kind: 'none', lastDoseIso: '2026-02-11T13:00:00Z' },
     });
-    expect(pastCourseMeta(c)).toBe('1 dose · Feb 11, 2026');
+    expect(pastCourseMeta(c)).toBe('1 dose given · Feb 11, 2026');
   });
 });
 

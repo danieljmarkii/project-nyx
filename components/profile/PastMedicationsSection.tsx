@@ -13,9 +13,10 @@
 //     IS history without spending the space.
 //   • the pill tells the two end registers apart — a neutral grey "Ended" (an owner
 //     asserted it) vs the medication-blue "No end recorded" (the record went quiet).
-//   • a row is tappable only when it has a catalog item to open (PR 3 enriches
-//     app/medication/[id] with the past-course facts). A free-text regimen or an
-//     unspecified orphan has no such screen, so it renders as a plain, calm row.
+//   • rows are NON-tappable in PR 2. The eventual detail (PR 3) enriches
+//     app/medication/[id] with the past-course facts; until it exists, a tap would open
+//     today's editable drug-catalog form — inviting an owner to edit the wrong data — so
+//     the rows stay calm reference rows and PR 3 lights up the tap with a real destination.
 
 import { useState } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View, ViewStyle } from 'react-native';
@@ -27,9 +28,6 @@ import type { PastCourseRow, PastCoursePillTone } from '../../lib/pastMedication
 
 interface Props {
   rows: PastCourseRow[];
-  // Open a course's detail (PR 3). Called only for a catalog-backed row (medicationItemId
-  // present) — the parent routes to app/medication/[id].
-  onOpenCourse: (row: PastCourseRow) => void;
   style?: ViewStyle;
 }
 
@@ -52,35 +50,22 @@ function PastCoursePill({ label, tone }: { label: string; tone: PastCoursePillTo
   );
 }
 
-function PastRow({ row, onOpen }: { row: PastCourseRow; onOpen: (row: PastCourseRow) => void }) {
-  const tappable = row.medicationItemId != null;
-  const body = (
-    <>
+// A calm, non-tappable reference row (see the header note on why taps wait for PR 3).
+// One accessibility label reads the whole fact so a screen reader gets name + register
+// + detail as a unit, rather than three unlabelled fragments.
+function PastRow({ row }: { row: PastCourseRow }) {
+  return (
+    <View style={styles.row} accessible accessibilityLabel={`${row.name}. ${row.pill.label}. ${row.meta}`}>
       <View style={styles.rowLeft}>
         <Text style={styles.name} numberOfLines={1}>{row.name}</Text>
-        <Text style={[styles.meta, row.faint && styles.metaFaint]}>{row.meta}</Text>
+        <Text style={styles.meta}>{row.meta}</Text>
       </View>
       <PastCoursePill label={row.pill.label} tone={row.pill.tone} />
-    </>
-  );
-
-  if (!tappable) {
-    return <View style={styles.row}>{body}</View>;
-  }
-  return (
-    <TouchableOpacity
-      style={styles.row}
-      onPress={() => onOpen(row)}
-      activeOpacity={0.7}
-      accessibilityRole="button"
-      accessibilityLabel={`${row.name}. ${row.pill.label}. ${row.meta}`}
-    >
-      {body}
-    </TouchableOpacity>
+    </View>
   );
 }
 
-export function PastMedicationsSection({ rows, onOpenCourse, style }: Props) {
+export function PastMedicationsSection({ rows, style }: Props) {
   // Collapsed by default (spec §4.1) — component-only state (CLAUDE.md).
   const [expanded, setExpanded] = useState(false);
 
@@ -112,7 +97,7 @@ export function PastMedicationsSection({ rows, onOpenCourse, style }: Props) {
         rows.map((row) => (
           <View key={row.key}>
             <Divider style={styles.rowDivider} />
-            <PastRow row={row} onOpen={onOpenCourse} />
+            <PastRow row={row} />
           </View>
         ))}
     </Card>
@@ -165,14 +150,9 @@ const styles = StyleSheet.create({
     lineHeight: theme.lineHeightSM,
     color: theme.colorTextSecondary,
   },
-  // The no-end register renders one shade quieter — a softer record than an
-  // owner-asserted ending.
-  metaFaint: {
-    color: theme.colorTextTertiary,
-  },
   pill: {
     borderRadius: theme.radiusFull,
-    paddingHorizontal: 9,
+    paddingHorizontal: theme.space1,
     paddingVertical: 3,
     alignSelf: 'flex-start',
     // nudge the pill down to sit on the name's baseline row, not above it

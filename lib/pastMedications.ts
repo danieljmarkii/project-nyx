@@ -64,6 +64,12 @@ const MONTHS = [
   'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
 ] as const;
 
+// Range validation only (1–12 / 1–31), NOT full calendar validity — an impossible
+// 'YYYY-MM-DD' cannot reach here: every input is a Postgres DATE column or a
+// `dayKeyFromIndex` output, both calendar-valid by construction. A `new Date`-based
+// round-trip (as `localDayIndexOf` uses) would catch Feb-30, but re-introducing the
+// instant parsing this module deliberately avoids (B-441) to guard an unreachable case
+// isn't worth it. The regex rejects the shapes that actually vary (nulls, free text).
 function parseKey(key: string): { y: number; m: number; d: number } | null {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(key);
   if (!match) return null;
@@ -110,24 +116,32 @@ export function courseDateRange(startKey: string | null, endKey: string | null):
 }
 
 // ── Dose count phrase ────────────────────────────────────────────────────────────
-// A COUNT, never a rate (H2). An ended course reads as a completed summary ("26 doses
-// logged"); an open record leads with the bare count and pairs it with a date. Zero is
-// stated plainly, never hidden — an ended regimen with no logged dose is honest about it.
-function dosesPhrase(count: number, ended: boolean): string {
-  if (count === 0) return 'No doses logged';
+// A COUNT, never a rate (H2). The number is `dosesLogged` = `dosesTowardTarget` (given +
+// partial — therapy delivered, the H4 predicate), so the verb is "given", NOT "logged":
+// "logged" implies the raw count of recorded events and would quietly disown the refused/
+// missed doses the count already excludes. Zero reads "No doses given", which is honest
+// for both an ended regimen with nothing recorded and a course whose doses were all
+// refused — no therapy was delivered either way. (Whether this reference surface should
+// additionally SURFACE refusals is a clinical/design call tracked in the backlog, not a
+// copy tweak — the count itself is H4-mandated and correct.)
+function dosesPhrase(count: number): string {
+  if (count === 0) return 'No doses given';
   const noun = count === 1 ? 'dose' : 'doses';
-  return ended ? `${count} ${noun} logged` : `${count} ${noun}`;
+  return `${count} ${noun} given`;
 }
 
-// The one fact line under the drug name. Two registers, structurally distinct:
+// The one fact line under the drug name. The two registers use DISTINCT date grammar on
+// purpose, so the line never contradicts the pill above it:
 //
-//   • Ended — the owner-recorded course window (start → end), its length, and the dose
-//     count as a summary: "Mar 3 – Mar 16, 2026 · 14 days · 26 doses logged". The dates
-//     are the regimen's DATE columns (what the owner asserted), never the dose span.
+//   • Ended — a closed "start – end" window (the owner asserted the end), its length, and
+//     the count: "Mar 3 – Mar 16, 2026 · 14 days · 26 doses given". The dates are the
+//     regimen's DATE columns (what the owner asserted), never the dose span.
 //
-//   • No end recorded — the count first, then the dose span (whose end IS the last-dose
-//     date, H1's honest stand-in for the absent ending): "3 doses · Jun 2 – Jun 9, 2026".
-//     A regimen with no logged dose falls back to its start date ("Started …").
+//   • No end recorded — the count, then the LAST-dose date framed AS the last dose:
+//     "3 doses given · last dose Jun 4, 2026". Deliberately NOT a "start – end" range —
+//     that grammar reads as a closed course and would fight the "No end recorded" pill,
+//     and a wide span (an ad-hoc drug logged in separate bursts months apart) would read
+//     as one continuous course. Showing only the last dose keeps the open register honest.
 export function pastCourseMeta(course: MedicationCourse): string {
   if (course.end.kind === 'ended') {
     const parts: string[] = [];
@@ -144,17 +158,24 @@ export function pastCourseMeta(course: MedicationCourse): string {
     if (course.runDays != null) {
       parts.push(`${course.runDays} ${course.runDays === 1 ? 'day' : 'days'}`);
     }
-    parts.push(dosesPhrase(course.dosesLogged, true));
+    parts.push(dosesPhrase(course.dosesLogged));
     return parts.join(' · ');
   }
 
-  // No end recorded — lead with the count, then the last-dose date. A course with no
-  // logged dose AND no start (a bare, item-less orphan — vanishingly rare) collapses to
-  // just the count line, which is still honest.
-  const parts: string[] = [dosesPhrase(course.dosesLogged, false)];
-  const span = courseDateRange(course.firstDoseDay, course.lastDoseDay);
-  if (span) parts.push(span);
-  else if (course.startedAt) parts.push(`Started ${shortDayYear(course.startedAt)}`);
+  // No end recorded — the count, then the last-dose date. A single dose shows a bare date
+  // (no range grammar to disambiguate); multiple doses name it "last dose {date}" so the
+  // line reads as an open record, not a closed span. A course with no logged dose falls
+  // back to its start date; a bare item-less orphan (vanishingly rare) shows just the count.
+  const parts: string[] = [dosesPhrase(course.dosesLogged)];
+  if (course.lastDoseDay) {
+    parts.push(
+      course.firstDoseDay === course.lastDoseDay
+        ? (shortDayYear(course.lastDoseDay) as string)
+        : `last dose ${shortDayYear(course.lastDoseDay) as string}`,
+    );
+  } else if (course.startedAt) {
+    parts.push(`Started ${shortDayYear(course.startedAt) as string}`);
+  }
   return parts.join(' · ');
 }
 
@@ -181,12 +202,11 @@ export interface PastCourseRow {
   key: string;
   name: string;
   meta: string;
-  // The no-end register renders quieter (a softer record than an owner-asserted end).
-  faint: boolean;
   pill: PastCoursePill;
-  // The detail-screen target (PR 3 enriches `app/medication/[id]`, which is keyed by a
-  // catalog item id). Null for a free-text regimen or an unspecified orphan — those have
-  // no catalog row, so the row renders non-tappable rather than routing nowhere.
+  // The course's catalog item, retained for the PR-3 detail route (which is keyed by a
+  // medication_items id). Null for a free-text regimen or an unspecified orphan. NOT used
+  // for navigation in PR 2 — past rows are non-tappable until PR 3 builds the destination
+  // (a tap into today's editable catalog screen would invite editing the wrong data).
   medicationItemId: string | null;
 }
 
@@ -198,7 +218,6 @@ export function buildPastCourseRow(
     key: course.key,
     name: pastCourseName(course, itemNames),
     meta: pastCourseMeta(course),
-    faint: course.end.kind === 'none',
     pill: pastCoursePill(course),
     medicationItemId: course.medicationItemId,
   };
