@@ -37,15 +37,19 @@ import {
   resetHeadsUpLedgerCache,
   trialFoodContaminants,
   foodContaminantFlag,
+  foodMembershipFlag,
+  allowedSetHydrated,
   trialDietNote,
   antigenPausedNote,
   sanctionedProteinsForTrial,
   proteinList,
   mealFlagCopy,
+  membershipFlagCopy,
   addFlagCopy,
   standingFlagCopy,
   localMidnightMs,
   type TrialContaminantFlag,
+  type TrialMembershipFlag,
   type TrialProteinContext,
 } from './trialContaminant';
 import type { AllowedFood } from './dietTrial';
@@ -90,7 +94,7 @@ function ctx(
 const UNKNOWN_DIET = () => ctx({}, { primaryProtein: null, proteins: [] });
 
 function flag(over: Partial<TrialContaminantFlag> = {}): TrialContaminantFlag {
-  return { proteins: ['chicken'], trialProteins: ['duck'], trialId: 't1', foodId: 'f1', ...over };
+  return { kind: 'off_diet_protein', proteins: ['chicken'], trialProteins: ['duck'], trialId: 't1', foodId: 'f1', ...over };
 }
 
 describe('offTrialProteins', () => {
@@ -196,6 +200,7 @@ describe('the sanctioned set is the union over every primary_diet food (B-453)',
 describe('foodContaminantFlag — shape ② (a food that is not on the allowed list)', () => {
   it('flags an off-trial protein in a different food', () => {
     expect(foodContaminantFlag(ctx(), 'other-food', ['chicken'])).toEqual({
+      kind: 'off_diet_protein',
       proteins: ['chicken'],
       trialProteins: ['duck'],
       trialId: 't1',
@@ -228,6 +233,129 @@ describe('foodContaminantFlag — shape ② (a food that is not on the allowed l
     // that it did not get lost on the way.
     expect(foodContaminantFlag(ctx(), 'other-food', ['chicken'], null, '2019-06-01T12:00:00Z'))
       .toBeNull();
+  });
+});
+
+// ── B-693 — the rung-3 MEMBERSHIP flag (a food not on the trial list) ─────────
+describe('allowedSetHydrated — the one settled-ness test the flag and the cache share', () => {
+  it('is true only when every primary_diet row is present AND resolved', () => {
+    expect(allowedSetHydrated(ctx())).toBe(true);
+  });
+
+  it('is false while a primary_diet row is still un-resolved (mid-sync)', () => {
+    // The food-cache row for the diet has not landed yet: primaryResolved < count.
+    // An unhydrated list makes EVERY food look absent, so this must read false.
+    expect(allowedSetHydrated(ctx({ primaryCount: 1, primaryResolved: 0 }))).toBe(false);
+    expect(allowedSetHydrated(ctx({ primaryCount: 2, primaryResolved: 1 }))).toBe(false);
+  });
+
+  it('is false for a zero-primary set — an active trial always has a diet', () => {
+    // A trial holding only a permitted treat, or nothing at all: `primaryCount`
+    // is 0, which is the unhydrated signal, never an empty-but-loaded set.
+    expect(allowedSetHydrated(ctx({ primaryCount: 0, primaryResolved: 0, allowedFoods: [] }))).toBe(false);
+  });
+});
+
+describe('foodMembershipFlag — shape ③ (a food that is not on the allowed list)', () => {
+  it('fires on the modal case: off the list, panel never read', () => {
+    // The dental treats the PM's dogfood found — never added to the list, no
+    // panel read — landed silently before B-693. Now it raises a MEMBERSHIP flag,
+    // a fact about the list and never about contents.
+    expect(foodMembershipFlag(ctx(), 'dental-treats', [])).toEqual({
+      kind: 'off_trial_list',
+      trialId: 't1',
+      foodId: 'dental-treats',
+    });
+  });
+
+  it('fires even when the off-list food carries ONLY the trial protein', () => {
+    // A duck treat that is not on a duck trial's list is still off the list. The
+    // flag is about MEMBERSHIP, not proteins — its own copy makes no contents
+    // claim, so naming duck here would be neither possible nor wanted.
+    expect(foodMembershipFlag(ctx(), 'plain-duck-treat', ['duck'])?.kind).toBe('off_trial_list');
+  });
+
+  it('RUNG-2 PRECEDENCE — an off-trial protein routes to the contents flag, never both', () => {
+    // The single most important invariant: a food that carries chicken on a duck
+    // trial is classified rung 2, so the CONTENTS flag fires and the membership
+    // flag is silent. classifyFeeding returns one verdict, so the two can never
+    // both fire for one feeding.
+    const c = ctx();
+    expect(foodMembershipFlag(c, 'chicken-chew', ['chicken'])).toBeNull();
+    expect(foodContaminantFlag(c, 'chicken-chew', ['chicken'])?.kind).toBe('off_diet_protein');
+  });
+
+  it('never carries a proteins field — it cannot assert contents (claim-strength)', () => {
+    // The type has no proteins; this pins that the runtime object has none either,
+    // so nothing downstream can read a contents claim off a membership flag.
+    const f = foodMembershipFlag(ctx(), 'dental-treats', []);
+    expect(f).not.toBeNull();
+    expect(Object.prototype.hasOwnProperty.call(f, 'proteins')).toBe(false);
+    expect(Object.keys(f as object).sort()).toEqual(['foodId', 'kind', 'trialId']);
+  });
+
+  it('is silent for a food that IS on the list (permitted), and for the trial diet itself', () => {
+    const withTreat = ctx({
+      allowedFoods: [
+        TRIAL_FOOD,
+        { ...TRIAL_FOOD, foodItemId: 'jerky', foodKey: null, role: 'permitted_treat', primaryProtein: 'rabbit', proteins: ['rabbit', 'chicken'] },
+      ],
+    });
+    // A permitted food is never praised — absence of a flag is not a verdict (G2).
+    // Matched by id (the diet_trial_foods row's food_item_id), as rung 1 does.
+    expect(foodMembershipFlag(withTreat, 'jerky', ['rabbit', 'chicken'])).toBeNull();
+    // The trial diet itself is on the list, so it is never a membership miss.
+    expect(foodMembershipFlag(ctx(), 'trial-food', ['duck'])).toBeNull();
+  });
+
+  it('is silent with no context, out of window, and mid-sync (unhydrated list)', () => {
+    // No trial → nothing to be off the list of.
+    expect(foodMembershipFlag(null, 'x', [])).toBeNull();
+    // Before the trial began — classifyFeeding returns out_of_window.
+    expect(foodMembershipFlag(ctx(), 'x', [], null, '2019-06-01T12:00:00Z')).toBeNull();
+    // THE CRITICAL SILENCE STATE: an unhydrated allowed set makes every food look
+    // absent, the prescribed diet included. It must not fire until the list loads.
+    expect(foodMembershipFlag(ctx({ primaryCount: 1, primaryResolved: 0 }), 'anything', [])).toBeNull();
+    expect(foodMembershipFlag(ctx({ primaryCount: 0, primaryResolved: 0, allowedFoods: [] }), 'anything', [])).toBeNull();
+  });
+
+  it('never fires on the trial diet re-photographed under a fresh id (§5.4 key match)', () => {
+    // The duplicate-capture hole: a re-photographed bag of the trial diet mints a
+    // new uuid. Without the key it is "not on the list" (membership would fire on
+    // the prescribed food); with it, rung 1 matches and it stays silent.
+    expect(foodMembershipFlag(ctx(), 'a-fresh-uuid', ['duck'], TRIAL_FOOD.foodKey)).toBeNull();
+  });
+});
+
+describe('membershipFlagCopy — list language only, never a contents claim', () => {
+  it('names the list and the pet, and reports a saved meal (never asks)', () => {
+    const copy = membershipFlagCopy('Biscuit');
+    expect(copy.eyebrow).toBe('Off the trial list');
+    expect(copy.headline).toBe('This one isn’t on Biscuit’s trial list.');
+    expect(copy.detail).toContain('The meal’s saved');
+    expect(copy.detail).toContain('counts in the trial record');
+    expect(copy.detail).toContain('vet');
+    expect(copy.addLine).toBe('Add to the trial list');
+    // Principle 1 — the log is done; nothing here is a question, a gate, or a '+'.
+    expect(`${copy.headline}${copy.detail}`).not.toMatch(/\?|are you sure|log anyway|!/i);
+    expect(copy.addLine).not.toContain('+');
+  });
+
+  it('NEVER says off-diet, contaminant, or any all-clear (claim-strength + G2)', () => {
+    // The adversarial line: an unread food must never be called a contaminant, and
+    // no string may reassure on the absence of a finding.
+    const all = Object.values(membershipFlagCopy('Biscuit')).join(' ').toLowerCase();
+    for (const banned of [
+      'off-diet', 'off diet', 'contaminant', 'contaminate',
+      'no conflict', 'nothing off', 'all clear', 'looks clean', 'is clean',
+      'safe', 'fine', 'no problem', 'nothing to worry',
+    ]) {
+      expect(all).not.toContain(banned);
+    }
+  });
+
+  it('carries no exclamation mark in any string (nyx-voice)', () => {
+    for (const s of Object.values(membershipFlagCopy('Biscuit'))) expect(s).not.toContain('!');
   });
 });
 
@@ -450,7 +578,7 @@ describe('rung 1 survives a duplicate capture of the trial food', () => {
 
   it('still flags a genuinely different food that happens to be captured twice', () => {
     expect(foodContaminantFlag(ctx(), 'other', ['chicken'], 'purina\u001Fone chicken'))
-      .toEqual({ proteins: ['chicken'], trialProteins: ['duck'], trialId: 't1', foodId: 'other' });
+      .toEqual({ kind: 'off_diet_protein', proteins: ['chicken'], trialProteins: ['duck'], trialId: 't1', foodId: 'other' });
   });
 });
 
