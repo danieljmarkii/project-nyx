@@ -1,0 +1,592 @@
+<title>Culprit — Diet trial protein capture</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  /* ============================================================
+     Diet trial protein capture — mock ROUND 1 (low-fi, for reaction).
+     Nothing on this page is locked. It exists so the PM can see the
+     proposed confirm-not-ask shape and react to it.
+
+     Re-opens D6 (nyx-multi-protein-requirements §10: explicit
+     protein on diet_trials — "RATIFIED, deferred"). This round is
+     the reaction surface for that re-open, not a build authority.
+
+     Document chrome matches the house mock system (med-strip /
+     food-library rounds): cool paper tinted toward brand indigo in
+     light, the app's night tokens in dark. DEVICE FRAMES stay light
+     in both themes on purpose — they render the app's light-mode
+     surfaces, and flipping them would misrepresent what ships.
+
+     Frame values are the real tokens from constants/theme.ts, so a
+     future build copies rather than approximates.
+     ============================================================ */
+
+  :root {
+    --paper:      #F5F4F9;
+    --paper-2:    #FFFFFF;
+    --ink:        #1B1A2E;
+    --ink-2:      #5F5C7A;
+    --ink-3:      #8B87A8;
+    --rule:       #DEDCE9;
+    --rule-soft:  #E9E7F1;
+    --teal:       #00C2A8;   /* theme.colorAccent */
+    --teal-ink:   #0B7B6C;   /* theme.colorAccentInk */
+    --teal-wash:  #E0FBF7;   /* theme.colorAccentLight */
+    --rose-ink:   #B4123B;
+    --rose-wash:  #FFE4E6;
+    --amber-ink:  #92610C;   /* the Tier-2 heads-up register (multi-protein D7) */
+    --amber-wash: #FDF3DC;
+
+    --serif: ui-serif, Charter, "Bitstream Charter", "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper:     #13112E;
+      --paper-2:   #1D1A42;
+      --ink:       #ECEAF6;
+      --ink-2:     #A6A2CE;
+      --ink-3:     #706BA6;
+      --rule:      rgba(196,190,255,0.20);
+      --rule-soft: rgba(196,190,255,0.11);
+      --teal-ink:  #4FD8C4;
+      --teal-wash: rgba(0,194,168,0.14);
+      --rose-ink:  #FB7185;
+      --rose-wash: rgba(251,113,133,0.14);
+      --amber-ink: #E8B45A;
+      --amber-wash: rgba(232,180,90,0.13);
+    }
+  }
+  :root[data-theme="light"] {
+    --paper: #F5F4F9; --paper-2: #FFFFFF; --ink: #1B1A2E; --ink-2: #5F5C7A;
+    --ink-3: #8B87A8; --rule: #DEDCE9; --rule-soft: #E9E7F1;
+    --teal-ink: #0B7B6C; --teal-wash: #E0FBF7;
+    --rose-ink: #B4123B; --rose-wash: #FFE4E6;
+    --amber-ink: #92610C; --amber-wash: #FDF3DC;
+  }
+  :root[data-theme="dark"] {
+    --paper: #13112E; --paper-2: #1D1A42; --ink: #ECEAF6; --ink-2: #A6A2CE;
+    --ink-3: #706BA6; --rule: rgba(196,190,255,0.20); --rule-soft: rgba(196,190,255,0.11);
+    --teal-ink: #4FD8C4; --teal-wash: rgba(0,194,168,0.14);
+    --rose-ink: #FB7185; --rose-wash: rgba(251,113,133,0.14);
+    --amber-ink: #E8B45A; --amber-wash: rgba(232,180,90,0.13);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--paper); color: var(--ink);
+    font-family: var(--sans); font-size: 16px; line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 56px 28px 96px; }
+  .col  { max-width: 68ch; }
+
+  .mast { border-bottom: 1px solid var(--rule); padding-bottom: 28px; margin-bottom: 40px; }
+  .eyebrow {
+    font-family: var(--mono); font-size: 11px; letter-spacing: 0.14em;
+    text-transform: uppercase; color: var(--ink-3); margin: 0 0 14px;
+    display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center;
+  }
+  h1 {
+    font-family: var(--serif); font-weight: 600; font-size: clamp(30px, 4.4vw, 44px);
+    line-height: 1.12; letter-spacing: -0.015em; margin: 0 0 14px; text-wrap: balance;
+  }
+  .standfirst { font-size: 17px; color: var(--ink-2); margin: 0; max-width: 62ch; }
+  .standfirst strong { color: var(--ink); font-weight: 600; }
+
+  .draft {
+    display: inline-flex; align-items: center; gap: 7px;
+    font-family: var(--mono); font-size: 11px; letter-spacing: 0.1em;
+    text-transform: uppercase; font-weight: 600;
+    color: var(--amber-ink); background: var(--amber-wash);
+    border-radius: 999px; padding: 4px 11px;
+  }
+  .draft::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+
+  section { margin-top: 72px; }
+  .sec-head { display: flex; align-items: baseline; gap: 14px; margin-bottom: 8px; border-top: 1px solid var(--rule); padding-top: 18px; }
+  .sec-num { font-family: var(--mono); font-size: 12px; color: var(--ink-3); letter-spacing: 0.08em; flex-shrink: 0; }
+  h2 { font-family: var(--serif); font-weight: 600; font-size: clamp(22px, 2.6vw, 28px); line-height: 1.2; letter-spacing: -0.01em; margin: 0; text-wrap: balance; }
+  h3 { font-family: var(--sans); font-weight: 600; font-size: 15px; margin: 32px 0 8px; }
+  p { margin: 0 0 16px; }
+  .col p:last-child { margin-bottom: 0; }
+  em { font-style: italic; color: var(--ink-2); }
+  strong { font-weight: 600; }
+  code { font-family: var(--mono); font-size: 0.855em; background: var(--rule-soft); border-radius: 4px; padding: 1px 5px; }
+
+  .ruling {
+    margin: 28px 0 8px; padding: 30px 32px;
+    background: var(--paper-2); border: 1px solid var(--rule); border-radius: 3px;
+  }
+  .ruling .lede { font-family: var(--mono); font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-3); margin: 0 0 18px; }
+  .ruling dl { margin: 0; display: grid; gap: 20px; }
+  .ruling dt {
+    font-family: var(--serif); font-size: clamp(19px, 2.2vw, 24px); font-weight: 600;
+    line-height: 1.3; letter-spacing: -0.008em; margin-bottom: 5px; text-wrap: balance;
+  }
+  .ruling dd { margin: 0; color: var(--ink-2); font-size: 15.5px; }
+  .forbid { color: var(--rose-ink); font-weight: 600; }
+  .permit { color: var(--teal-ink); font-weight: 600; }
+
+  .callout {
+    border-left: 2px solid var(--teal); padding: 2px 0 2px 20px;
+    margin: 24px 0; color: var(--ink-2); font-size: 15.5px;
+  }
+  .callout strong { color: var(--ink); }
+
+  /* ── Two-up / n-up frame comparison ───────────────────────── */
+  .compare { display: flex; flex-wrap: wrap; gap: 28px; margin-top: 28px; align-items: flex-start; }
+  .compare figure { margin: 0; display: flex; flex-direction: column; gap: 12px; }
+  .compare figcaption { font-size: 13.5px; color: var(--ink-2); max-width: 320px; }
+  .compare figcaption b { color: var(--ink); font-weight: 600; display: block; margin-bottom: 3px; font-family: var(--mono); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; }
+
+  /* ── THE DEVICE FRAME — light in both themes, on purpose ──── */
+  .phone {
+    width: 320px; max-width: 100%;
+    background: #FAFAFA; border: 1px solid #EAEAEA; border-radius: 24px;
+    padding: 14px 14px 18px; color: #0A0A0A;
+    font-family: var(--sans); color-scheme: light;
+  }
+  .sheet-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+  .sheet-cancel { font-size: 13px; color: #737373; }
+  .sheet-title { font-size: 15px; font-weight: 600; color: #0A0A0A; }
+  .sheet-spacer { width: 44px; }
+  .intro { font-size: 12.5px; color: #525252; line-height: 1.45; margin-bottom: 12px; }
+
+  .f-label { font-size: 12px; font-weight: 600; color: #0A0A0A; letter-spacing: 0.02em; margin: 12px 0 6px; }
+  .f-help { font-size: 11px; color: #737373; line-height: 1.4; margin-top: 5px; }
+
+  .food-row {
+    background: #FFFFFF; border: 1px solid #EAEAEA; border-radius: 12px;
+    padding: 9px 12px; margin-bottom: 6px;
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  }
+  .food-name { font-size: 13px; font-weight: 500; color: #0A0A0A; }
+  .food-sub  { font-size: 11px; color: #737373; margin-top: 1px; }
+  .food-x { color: #A3A3A3; font-size: 14px; }
+  .add-row {
+    border: 1px dashed #D4D4D4; border-radius: 12px; padding: 9px 12px; margin-bottom: 2px;
+    font-size: 13px; color: #737373;
+  }
+
+  /* The subject of the round — the derived protein row. */
+  .proto-row {
+    background: #FFFFFF; border: 1px solid #EAEAEA; border-radius: 12px;
+    padding: 9px 12px; margin-top: 6px;
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  }
+  .proto-row.hot { outline: 2px dashed #00C2A8; outline-offset: 3px; }
+  .proto-k { font-size: 11px; color: #737373; }
+  .proto-v { font-size: 13.5px; font-weight: 600; color: #0A0A0A; margin-top: 1px; }
+  .proto-sub { font-size: 10.5px; color: #A3A3A3; margin-top: 2px; }
+  .chev { color: #A3A3A3; font-size: 15px; }
+
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 2px; }
+  .chip {
+    border: 1px solid #EAEAEA; background: #FFFFFF; border-radius: 999px;
+    font-size: 12px; color: #525252; padding: 6px 12px;
+  }
+  .chip.on { background: #E0FBF7; border-color: #00C2A8; color: #0B7B6C; font-weight: 600; }
+
+  .date-row {
+    background: #FFFFFF; border: 1px solid #EAEAEA; border-radius: 12px;
+    padding: 9px 12px; font-size: 13px; color: #0A0A0A;
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .more { display: flex; align-items: center; gap: 6px; font-size: 13px; color: #525252; margin: 14px 0 4px; }
+
+  .disclosure { font-size: 10.5px; color: #737373; line-height: 1.45; margin: 12px 0 8px; }
+  .start-btn {
+    background: #0A0A0A; color: #FFFFFF; border-radius: 999px;
+    text-align: center; font-size: 14px; font-weight: 600; padding: 12px;
+  }
+  .start-btn.off { background: #E5E5E5; color: #A3A3A3; }
+
+  .headsup {
+    background: var(--amber-wash-frame, #FDF3DC); border: 1px solid #F2DFB3; border-radius: 12px;
+    padding: 9px 12px; margin: 6px 0 2px;
+    font-size: 11.5px; line-height: 1.45; color: #6B4A0E;
+  }
+  .headsup b { color: #4A3407; }
+
+  /* Option rows on the protein sheet */
+  .opt {
+    background: #FFFFFF; border: 1px solid #EAEAEA; border-radius: 12px;
+    padding: 10px 12px; margin-bottom: 6px;
+    display: flex; align-items: center; gap: 10px; font-size: 13px; color: #0A0A0A;
+  }
+  .opt .radio { width: 16px; height: 16px; border-radius: 50%; border: 1.5px solid #D4D4D4; flex-shrink: 0; }
+  .opt.on { border-color: #00C2A8; }
+  .opt.on .radio { border-color: #00C2A8; background: radial-gradient(circle at center, #00C2A8 0 5px, transparent 5.5px); }
+  .opt .o-sub { display: block; font-size: 10.5px; color: #737373; margin-top: 1px; }
+  .opt-group { font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: #A3A3A3; font-weight: 600; margin: 12px 0 6px; }
+
+  /* Small non-phone specimens (report / card) */
+  .specimen {
+    background: var(--paper-2); border: 1px solid var(--rule); border-radius: 3px;
+    padding: 20px 24px; margin-top: 16px; max-width: 560px;
+  }
+  .specimen .s-k { font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 10px; }
+  .report-line { font-family: var(--serif); font-size: 16.5px; margin: 0 0 4px; }
+  .report-sub { font-size: 13.5px; color: var(--ink-2); margin: 0; }
+  .was { color: var(--ink-3); text-decoration: line-through; text-decoration-thickness: 1px; }
+  .now-better { color: var(--teal-ink); font-weight: 600; }
+
+  .tablewrap { overflow-x: auto; margin-top: 26px; }
+  table { border-collapse: collapse; width: 100%; min-width: 620px; font-size: 14.5px; }
+  th, td { text-align: left; vertical-align: top; padding: 13px 16px 13px 0; border-bottom: 1px solid var(--rule-soft); }
+  th { font-family: var(--mono); font-size: 11px; letter-spacing: 0.11em; text-transform: uppercase; color: var(--ink-3); font-weight: 600; border-bottom-color: var(--rule); padding-top: 0; }
+  td:first-child { font-family: var(--mono); font-size: 12px; color: var(--ink-3); white-space: nowrap; padding-right: 22px; }
+
+  ul.notes { margin: 16px 0 0; padding-left: 0; list-style: none; display: grid; gap: 12px; }
+  ul.notes li { padding-left: 20px; position: relative; color: var(--ink-2); font-size: 15.5px; }
+  ul.notes li::before { content: ""; position: absolute; left: 0; top: 0.62em; width: 7px; height: 1px; background: var(--ink-3); }
+  ul.notes li strong { color: var(--ink); }
+
+  footer { margin-top: 80px; border-top: 1px solid var(--rule); padding-top: 22px; font-size: 13.5px; color: var(--ink-3); }
+</style>
+
+<div class="wrap">
+
+  <header class="mast">
+    <p class="eyebrow">
+      <span>Trial protein</span><span>Round 1 · low-fi</span><span>2026-08-04</span>
+      <span class="draft">For reaction — nothing locked</span>
+    </p>
+    <h1>Naming the trial&rsquo;s protein</h1>
+    <p class="standfirst">
+      Today the start-a-trial sheet captures <strong>foods</strong>, and the trial&rsquo;s protein is
+      derived from their labels. The word an owner is actually carrying home from the vet —
+      <em>&ldquo;rabbit&rdquo;</em> — never appears. This round makes one proposed shape concrete:
+      a <strong>derived confirmation, not a new question</strong>. It re-opens D6
+      (multi-protein spec: explicit protein on the trial — ratified, deferred), so it ships
+      nothing until the PM says so.
+    </p>
+  </header>
+
+  <div class="col">
+    <p>
+      The scenario in every frame: a cat, <strong>Miso</strong>, on an elimination trial where
+      everything but rabbit is off the menu — the PM&rsquo;s own household case, and the wedge
+      user&rsquo;s. Stomach &amp; gut indication, so the cat default of 42 days applies.
+    </p>
+  </div>
+
+  <!-- ══ 01 ══════════════════════════════════════════════════ -->
+  <section>
+    <div class="sec-head"><span class="sec-num">01</span><h2>The shape in one rule</h2></div>
+    <div class="col">
+      <p>
+        The sheet&rsquo;s acceptance criterion is fifteen seconds, answerable standing in a clinic
+        car park holding a bag of food. A required &ldquo;what protein is this trial about?&rdquo;
+        question fails that test — some owners were told a protein, some were told a food, and a
+        hydrolyzed trial has no answer at all. So the protein is never <em>asked</em>. It is
+        <em>shown</em>, already filled in, from the foods just picked.
+      </p>
+    </div>
+
+    <div class="ruling">
+      <p class="lede">The register rule, applied here</p>
+      <dl>
+        <div>
+          <dt>A blank protein question is an <span class="forbid">entry</span> — Principle 1 forbids it here.</dt>
+          <dd>It adds a decision to the golden path, and it is unanswerable for the hydrolyzed patient — the most refractory case, prescribed after a protein trial already failed.</dd>
+        </div>
+        <div>
+          <dt>A pre-filled &ldquo;Trial protein: Rabbit&rdquo; line is a <span class="permit">confirmation</span> — Principle 2&rsquo;s job.</dt>
+          <dd>The app derives it from the picked foods and shows its work. Zero added decisions when the derivation is right, which is the common case. Tap to correct it, or clear it, or ignore it.</dd>
+        </div>
+        <div>
+          <dt>The stored protein <span class="forbid">never permits anything</span>.</dt>
+          <dd>The food list stays the only permit path (§5.5 D-A). The protein is attribution and disclosure — it can add an off-diet naming to the record, never remove one. An empty or wrong value cannot make a contaminant &ldquo;allowed.&rdquo;</dd>
+        </div>
+      </dl>
+    </div>
+  </section>
+
+  <!-- ══ 02 ══════════════════════════════════════════════════ -->
+  <section>
+    <div class="sec-head"><span class="sec-num">02</span><h2>The sheet, before and after</h2></div>
+    <div class="col">
+      <p>
+        Left: the sheet as shipped (B-417 PR 3, verbatim copy). Right: the one addition — a
+        quiet confirm row under the trial diet, dashed outline marking the new element. Everything
+        else is untouched.
+      </p>
+    </div>
+
+    <div class="compare">
+      <figure>
+        <div class="phone">
+          <div class="sheet-head"><span class="sheet-cancel">Cancel</span><span class="sheet-title">Start a trial</span><span class="sheet-spacer"></span></div>
+          <p class="intro">Tell Culprit what Miso is eating and what it&rsquo;s for. It keeps the dated record your vet will ask for at the recheck.</p>
+          <div class="f-label">Trial diet</div>
+          <div class="food-row"><div><div class="food-name">Royal Canin Selected Protein PR</div><div class="food-sub">Dry</div></div><span class="food-x">✕</span></div>
+          <div class="food-row"><div><div class="food-name">Instinct Limited Ingredient Rabbit</div><div class="food-sub">Wet</div></div><span class="food-x">✕</span></div>
+          <div class="add-row">＋ Add a food</div>
+          <p class="f-help">More than one is normal — a wet and a dry of the same diet, or two forms your vet named together.</p>
+          <div class="f-label">What&rsquo;s it for?</div>
+          <div class="chips"><span class="chip">Skin</span><span class="chip on">Stomach &amp; gut</span><span class="chip">Something else</span></div>
+          <div class="f-label">First day</div>
+          <div class="date-row"><span>4 August 2026</span><span class="chev">›</span></div>
+          <p class="f-help">Most stomach trials run 6 weeks. Starting today, that ends 14 September.</p>
+          <div class="more">More options <span class="chev">⌄</span></div>
+          <p class="disclosure">While the trial runs, Culprit records which feedings matched the trial diet and which didn&rsquo;t, with dates. That&rsquo;s the part your vet needs.</p>
+          <div class="start-btn">Start the trial</div>
+        </div>
+        <figcaption><b>A — Shipped today</b>The protein exists only inside the food labels. Nothing on this screen says &ldquo;rabbit.&rdquo;</figcaption>
+      </figure>
+
+      <figure>
+        <div class="phone">
+          <div class="sheet-head"><span class="sheet-cancel">Cancel</span><span class="sheet-title">Start a trial</span><span class="sheet-spacer"></span></div>
+          <p class="intro">Tell Culprit what Miso is eating and what it&rsquo;s for. It keeps the dated record your vet will ask for at the recheck.</p>
+          <div class="f-label">Trial diet</div>
+          <div class="food-row"><div><div class="food-name">Royal Canin Selected Protein PR</div><div class="food-sub">Dry</div></div><span class="food-x">✕</span></div>
+          <div class="food-row"><div><div class="food-name">Instinct Limited Ingredient Rabbit</div><div class="food-sub">Wet</div></div><span class="food-x">✕</span></div>
+          <div class="add-row">＋ Add a food</div>
+          <div class="proto-row hot">
+            <div>
+              <div class="proto-k">Trial protein</div>
+              <div class="proto-v">Rabbit</div>
+              <div class="proto-sub">From the foods you picked — tap to change</div>
+            </div>
+            <span class="chev">›</span>
+          </div>
+          <div class="f-label">What&rsquo;s it for?</div>
+          <div class="chips"><span class="chip">Skin</span><span class="chip on">Stomach &amp; gut</span><span class="chip">Something else</span></div>
+          <div class="f-label">First day</div>
+          <div class="date-row"><span>4 August 2026</span><span class="chev">›</span></div>
+          <p class="f-help">Most stomach trials run 6 weeks. Starting today, that ends 14 September.</p>
+          <div class="more">More options <span class="chev">⌄</span></div>
+          <p class="disclosure">While the trial runs, Culprit records which feedings matched the trial diet and which didn&rsquo;t, with dates. That&rsquo;s the part your vet needs.</p>
+          <div class="start-btn">Start the trial</div>
+        </div>
+        <figcaption><b>B — Proposed</b>One derived row, filled in before the owner reaches it. The golden path is still two answers; this row costs a glance, not a decision.</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <!-- ══ 03 ══════════════════════════════════════════════════ -->
+  <section>
+    <div class="sec-head"><span class="sec-num">03</span><h2>Tapping the row</h2></div>
+    <div class="col">
+      <p>
+        The row opens a small picker. Derived options lead (with their provenance), common
+        proteins follow, and the two escape hatches are first-class options rather than fine
+        print — because for a hydrolyzed patient, &ldquo;no single protein&rdquo; is the
+        <em>correct</em> answer, not a shrug.
+      </p>
+    </div>
+
+    <div class="compare">
+      <figure>
+        <div class="phone">
+          <div class="sheet-head"><span class="sheet-cancel">Back</span><span class="sheet-title">Trial protein</span><span class="sheet-spacer"></span></div>
+          <p class="intro">If your vet named one protein for this trial, keep it here. Culprit uses it to name what shows up in the record — it never changes what counts as off-diet.</p>
+          <div class="opt-group">From Miso&rsquo;s trial diet</div>
+          <div class="opt on"><span class="radio"></span><span>Rabbit<span class="o-sub">Listed on both trial foods</span></span></div>
+          <div class="opt-group">Other proteins</div>
+          <div class="opt"><span class="radio"></span><span>Chicken</span></div>
+          <div class="opt"><span class="radio"></span><span>Turkey</span></div>
+          <div class="opt"><span class="radio"></span><span>Beef</span></div>
+          <div class="opt"><span class="radio"></span><span>Salmon</span></div>
+          <div class="opt"><span class="radio"></span><span>Duck</span></div>
+          <div class="opt-group">Neither of these?</div>
+          <div class="opt"><span class="radio"></span><span>No single protein<span class="o-sub">Hydrolyzed or special diet — the food list is the trial</span></span></div>
+          <div class="opt"><span class="radio"></span><span>Not sure — leave it unset<span class="o-sub">Everything still works. You can set it later from the trial card.</span></span></div>
+        </div>
+        <figcaption><b>C — The picker</b>Derived first, escape hatches honest. Selecting anything here is optional forever.</figcaption>
+      </figure>
+    </div>
+
+    <div class="col">
+      <p style="margin-top:24px;">
+        The intro line carries the invariant in owner language: <em>&ldquo;it never changes what
+        counts as off-diet.&rdquo;</em> That sentence is the §5.5 loophole guard, spoken out loud —
+        an owner cannot launder a chicken treat into the trial by editing this field, and the copy
+        tells them so before they try.
+      </p>
+    </div>
+  </section>
+
+  <!-- ══ 04 ══════════════════════════════════════════════════ -->
+  <section>
+    <div class="sec-head"><span class="sec-num">04</span><h2>The day-0 catch — when the label disagrees</h2></div>
+    <div class="col">
+      <p>
+        The strongest argument for storing intent separately from the food: it makes a
+        <strong>wrong trial food</strong> detectable at setup. Today the target protein is read
+        <em>from</em> the trial food, so the food can never be found to contradict it. With the
+        owner&rsquo;s &ldquo;rabbit&rdquo; on record, a picked food whose label leads with chicken
+        becomes a finding — on day 0, where the clinical sources say trials silently fail, not on
+        day 14 when the exposure detector finally has enough meals.
+      </p>
+    </div>
+
+    <div class="compare">
+      <figure>
+        <div class="phone">
+          <div class="sheet-head"><span class="sheet-cancel">Cancel</span><span class="sheet-title">Start a trial</span><span class="sheet-spacer"></span></div>
+          <p class="intro">Tell Culprit what Miso is eating and what it&rsquo;s for. It keeps the dated record your vet will ask for at the recheck.</p>
+          <div class="f-label">Trial diet</div>
+          <div class="food-row"><div><div class="food-name">Instinct Limited Ingredient Rabbit</div><div class="food-sub">Wet</div></div><span class="food-x">✕</span></div>
+          <div class="food-row"><div><div class="food-name">Blue Buffalo Sensitive Stomach</div><div class="food-sub">Dry</div></div><span class="food-x">✕</span></div>
+          <div class="headsup">
+            <b>Blue Buffalo Sensitive Stomach lists chicken as its main protein.</b>
+            If Miso&rsquo;s trial is rabbit-only, worth checking this bag with your vet before day 1.
+          </div>
+          <div class="add-row">＋ Add a food</div>
+          <div class="proto-row">
+            <div>
+              <div class="proto-k">Trial protein</div>
+              <div class="proto-v">Rabbit</div>
+              <div class="proto-sub">From Instinct Limited Ingredient Rabbit — tap to change</div>
+            </div>
+            <span class="chev">›</span>
+          </div>
+          <div class="f-label">What&rsquo;s it for?</div>
+          <div class="chips"><span class="chip">Skin</span><span class="chip on">Stomach &amp; gut</span><span class="chip">Something else</span></div>
+          <div class="disclosure">While the trial runs, Culprit records which feedings matched the trial diet and which didn&rsquo;t, with dates. That&rsquo;s the part your vet needs.</div>
+          <div class="start-btn">Start the trial</div>
+        </div>
+        <figcaption><b>D — Mismatch, non-blocking</b>The heads-up is the multi-protein Tier-2 amber register: factual, no alarm, never blocks Start. The owner may know something the label doesn&rsquo;t — the vet may have approved this food deliberately.</figcaption>
+      </figure>
+    </div>
+
+    <div class="col">
+      <p style="margin-top:24px;">
+        Two things this frame is deliberately <em>not</em>: it is not a modal (the owner is not
+        interrogated at the moment of setup — Principle 1), and it is not an error (Start stays
+        enabled; the record keeps both facts — the declared protein <em>and</em> the food&rsquo;s
+        label — and the vet report can disclose the tension rather than resolve it).
+      </p>
+    </div>
+  </section>
+
+  <!-- ══ 05 ══════════════════════════════════════════════════ -->
+  <section>
+    <div class="sec-head"><span class="sec-num">05</span><h2>When nothing derives</h2></div>
+    <div class="col">
+      <p>
+        A hand-entered food with no protein data, or a hydrolyzed diet — the derivation comes back
+        empty. Two candidate behaviours, and this is the first genuine call for the PM
+        (<strong>Q1</strong> below). Both keep Start enabled and neither ever guesses.
+      </p>
+    </div>
+
+    <div class="compare">
+      <figure>
+        <div class="phone">
+          <div class="f-label">Trial diet</div>
+          <div class="food-row"><div><div class="food-name">Hill&rsquo;s z/d Hydrolyzed</div><div class="food-sub">Dry</div></div><span class="food-x">✕</span></div>
+          <div class="add-row">＋ Add a food</div>
+          <div class="proto-row hot">
+            <div>
+              <div class="proto-k">Trial protein</div>
+              <div class="proto-v" style="color:#737373; font-weight:400;">Not set</div>
+              <div class="proto-sub">Add one if your vet named it — optional</div>
+            </div>
+            <span class="chev">›</span>
+          </div>
+          <div class="f-label">What&rsquo;s it for?</div>
+          <div class="chips"><span class="chip on">Skin</span><span class="chip">Stomach &amp; gut</span><span class="chip">Something else</span></div>
+        </div>
+        <figcaption><b>E1 — Render, quietly optional</b>The row is present but empty, in the disabled register. Visible, ignorable, honest.</figcaption>
+      </figure>
+
+      <figure>
+        <div class="phone">
+          <div class="f-label">Trial diet</div>
+          <div class="food-row"><div><div class="food-name">Hill&rsquo;s z/d Hydrolyzed</div><div class="food-sub">Dry</div></div><span class="food-x">✕</span></div>
+          <div class="add-row">＋ Add a food</div>
+          <div class="f-label">What&rsquo;s it for?</div>
+          <div class="chips"><span class="chip on">Skin</span><span class="chip">Stomach &amp; gut</span><span class="chip">Something else</span></div>
+          <p class="f-help" style="margin-top:10px;">Trial protein appears here when Culprit can read one off the trial foods. Set it any time from the trial card.</p>
+        </div>
+        <figcaption><b>E2 — Hide entirely</b>No empty field on the golden path. The affordance moves to the trial card. (The helper line here is annotation, not proposed UI.)</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <!-- ══ 06 ══════════════════════════════════════════════════ -->
+  <section>
+    <div class="sec-head"><span class="sec-num">06</span><h2>Where it pays off downstream</h2></div>
+    <div class="col">
+      <p>
+        The stored value flows through <code>resolveTargetProtein</code> — stored-first, derivation
+        as fallback — so every consumer inherits it through the one predicate. Three places the
+        reader feels it:
+      </p>
+    </div>
+
+    <div class="specimen">
+      <div class="s-k">Vet report — trial block identity</div>
+      <p class="report-line">Elimination diet trial — <strong>rabbit</strong> · day 12 of 42</p>
+      <p class="report-sub">Royal Canin Selected Protein PR + Instinct LID Rabbit · owner-confirmed protein</p>
+    </div>
+
+    <div class="specimen">
+      <div class="s-k">Vet report — exposure attribution when food data is thin</div>
+      <p class="report-line"><span class="was">3 off-diet feedings</span> → <span class="now-better">3 poultry exposures</span></p>
+      <p class="report-sub">The antigen line survives an empty protein array on the contaminant food&rsquo;s record — the stored target keeps attribution alive when derivation goes dark.</p>
+    </div>
+
+    <div class="specimen">
+      <div class="s-k">Trial card — identity line (today it names only the food)</div>
+      <p class="report-line" style="font-family:var(--sans); font-size:15px;">Rabbit trial · Royal Canin Selected Protein PR</p>
+      <p class="report-sub">The card finally speaks the owner&rsquo;s own mental model of the trial back to them.</p>
+    </div>
+
+    <div class="callout">
+      <strong>What does not change:</strong> detection. The off-diet chain stays closed-world on the
+      food list; the protein arm still only ever <em>adds</em> an off-diet naming. A stored protein
+      widens what the record can <em>say</em>, never what it <em>permits</em>.
+    </div>
+  </section>
+
+  <!-- ══ 07 ══════════════════════════════════════════════════ -->
+  <section>
+    <div class="sec-head"><span class="sec-num">07</span><h2>Open calls for reaction</h2></div>
+    <div class="tablewrap">
+      <table>
+        <tr><th>#</th><th>Question</th><th>The lean, and why</th></tr>
+        <tr>
+          <td>Q1</td>
+          <td>When nothing derives — render the empty row (E1) or hide it (E2)?</td>
+          <td>Lean E1. An invisible affordance is one nobody uses, and &ldquo;Not set&rdquo; in the quiet register is honest without nagging. Designer dissent noted: E2 is the purer Principle-1 read.</td>
+        </tr>
+        <tr>
+          <td>Q2</td>
+          <td>Mismatch (frame D) — heads-up only, or require a tap to acknowledge?</td>
+          <td>Lean heads-up only. An acknowledge gate is a form of blocking, and the owner may know the vet approved the food. The record keeps both facts either way.</td>
+        </tr>
+        <tr>
+          <td>Q3</td>
+          <td>Does the confirmed protein render on the trial card (&ldquo;Rabbit trial&rdquo;), or report-only?</td>
+          <td>Lean card too — it is the owner&rsquo;s own vocabulary for the trial, and the card is the surface they live with for 42 days.</td>
+        </tr>
+        <tr>
+          <td>Q4</td>
+          <td>Is this worth its place in the queue at all?</td>
+          <td>Genuinely the PM&rsquo;s call. The system works today when food data is good; this buys legibility, attribution robustness, and the day-0 wrong-primary catch. It re-opens ratified-deferred D6, so the default answer is no until said otherwise.</td>
+        </tr>
+      </table>
+    </div>
+
+    <ul class="notes">
+      <li><strong>Schema, if built:</strong> one nullable <code>target_protein</code> column on <code>diet_trials</code> (canonical key, Class-A canonicalized), its own migration PR per house rule. Zero backfill — every existing trial derives, exactly as today.</li>
+      <li><strong>Predicate, if built:</strong> <code>resolveTargetProtein</code> gains a stored-value-first branch. No consumer changes — report, contaminant flags and Ask all already read through it.</li>
+      <li><strong>Copy on this page is draft,</strong> written to nyx-voice but not passed through it. A build round would run the skill properly.</li>
+    </ul>
+  </section>
+
+  <footer>
+    Round 1 · 2026-08-04 · Source of truth: <code>docs/culprit-trial-protein-mockups.html</code> ·
+    Pairs with <code>docs/nyx-diet-trial-requirements.md</code> (§4.1, §5.5) and
+    <code>docs/nyx-multi-protein-requirements.md</code> (D6, §8) ·
+    A later round re-publishes over this artifact URL, per house convention.
+  </footer>
+
+</div>
