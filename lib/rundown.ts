@@ -101,7 +101,8 @@ export const RUNDOWN_WINDOW_DAYS = 30;
 // A high row cap ≈ "all recent weigh-ins" without an arbitrary time bound.
 export const RUNDOWN_WEIGHIN_LIMIT = 60;
 
-// The past-medications window (B-140 PR 4, D3 PROVISIONAL — flag for PM confirmation).
+// The past-medications window (B-140 PR 4, D3 RATIFIED 2026-08-04 — PM confirmed the
+// provisional: 12 months shown by name, earlier courses folded behind a count).
 // Courses whose most-recent activity is within this many months are listed by name;
 // anything older is folded behind a count ("3 earlier courses, over a year ago") so the
 // list stays speakable for a chronic-med cat while the lifetime question stays answerable
@@ -887,7 +888,7 @@ export async function buildRundown(
 
   // 7 — Past medications (B-140 PR 4). The ONE shared course derivation over the whole
   // regimen+dose history, split into a 12-month shown window with earlier courses folded
-  // (D3 provisional). Active courses are dropped here — the current-meds tiles above own
+  // (D3 ratified 2026-08-04). Active courses are dropped here — the current-meds tiles above own
   // them — so a course is never duplicated across the two blocks. Deterministic + offline:
   // the derivation is pure and every input is a local-mirror read.
   const courses = deriveMedicationCourses({ regimens: allRegimens, doses: allDoses });
