@@ -215,6 +215,7 @@ interface MedicationRow {
   prescribed_by: string | null
   started_at: string
   target_duration_days: number | null
+  target_duration_doses: number | null // B-618 (migration 049) — dose-denominated fixed course
   status: string
   ended_at: string | null
   medication_items: MedItemJoin | MedItemJoin[] | null
@@ -506,6 +507,7 @@ export function mapMedicationRows(rows: MedicationRow[]): ReportMedicationInput[
       prescribedBy: r.prescribed_by ?? null,
       startedAt: r.started_at,
       targetDurationDays: r.target_duration_days ?? null,
+      targetDurationDoses: r.target_duration_doses ?? null,
       status: r.status,
       endedAt: r.ended_at ?? null,
       isPrescription: item?.is_prescription ?? null,
@@ -884,8 +886,8 @@ export async function generateReportForPet(
       .from('medications')
       .select(
         'id, medication_item_id, drug_name, dose_amount, route, doses_per_day, schedule_notes, ' +
-          'indication, prescribed_by, started_at, target_duration_days, status, ended_at, ' +
-          'medication_items(is_prescription, strength)',
+          'indication, prescribed_by, started_at, target_duration_days, target_duration_doses, ' +
+          'status, ended_at, medication_items(is_prescription, strength)',
       )
       .eq('pet_id', petId),
     // Free-fed / meal-fed standing facts (B-040). No lookback: a bowl set long ago
@@ -913,12 +915,24 @@ export async function generateReportForPet(
   // process its entire dose/weight history (report.ts scopes to the window regardless).
   const lookbackMs = Date.parse(lookbackIso)
 
-  const doses = mapDoseRows(rowsOrThrow<DoseRow>(dosesRes, 'medication_administrations'), lookbackMs)
+  // The DB query already returns EVERY dose (medication_administrations can't be .gte-bounded — a
+  // dose's instant lives on its parent event), so `doseRows` is the pet's whole dose history. Map it
+  // TWICE off the one pull: `doses` trimmed to the lookback for the windowed sections, and
+  // `lifetimeDoses` untrimmed for the §4.4 window-ignoring medication-history table (B-140 PR 5).
+  // KNOWN LIMIT (pre-existing, shared with every pull here): the query carries no explicit .limit(),
+  // so a pet with more doses than PostgREST's default max-rows would truncate — which is why the
+  // table's copy says "the medications logged", not "every dose ever", and why it never claims a
+  // count is exhaustive. Realistic reactive-tracking volumes are far under the cap; revisit
+  // (paginate the dose pull) if a chronic-med pet ever nears it.
+  const doseRows = rowsOrThrow<DoseRow>(dosesRes, 'medication_administrations')
+  const doses = mapDoseRows(doseRows, lookbackMs)
+  const lifetimeDoses = mapDoseRows(doseRows)
   // §3.8 orphan-dose gap: resolve names for the medication_items behind the doses so an ad-hoc dose
   // logged with NO regimen still reports by drug name (a daily OTC antihistamine otherwise vanished
-  // from the report). Fetched by the exact item ids present on the doses — the global catalog, the
-  // same RLS the regimen→medication_items join already relies on. Skipped when there are no doses.
-  const doseItemIds = [...new Set(doses.map((d) => d.medicationItemId).filter((v): v is string => v !== null))]
+  // from the report). Keyed off the LIFETIME set (a superset of `doses`) so a course whose only doses
+  // predate the lookback still names its drug in the lifetime table. Same RLS the regimen→
+  // medication_items join relies on; skipped when there are no doses.
+  const doseItemIds = [...new Set(lifetimeDoses.map((d) => d.medicationItemId).filter((v): v is string => v !== null))]
   let medicationItems: ReportMedicationItemInput[] = []
   if (doseItemIds.length > 0) {
     const medItemsRes = await supabase
@@ -938,6 +952,7 @@ export async function generateReportForPet(
     aiAnalyses: mapAiAnalysisRows(rowsOrThrow<AiAnalysisRow>(aiRes, 'event_ai_analysis')),
     weightChecks: mapWeightRows(rowsOrThrow<WeightRow>(weightRes, 'weight_checks'), lookbackMs),
     doses,
+    lifetimeDoses,
     medications: mapMedicationRows(rowsOrThrow<MedicationRow>(medsRes, 'medications')),
     medicationItems,
     dietTrials,
