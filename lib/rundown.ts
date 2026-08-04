@@ -35,7 +35,7 @@ import {
 } from './analytics';
 import { getWeightHistory, computeWeightTrend } from './weight';
 import { symptomLabel } from './metricDetail';
-import { toLocalDayKey, dayKeyToLocalDate } from './utils';
+import { toLocalDayKey, dayKeyToLocalDate, formatCalendarDate } from './utils';
 import {
   deriveMedicationCourses,
   type MedicationCourse,
@@ -329,35 +329,43 @@ export function medHistoryCutoffMs(nowMs: number): number {
  * these (structurally unreachable — every regimen has a start, every dose-derived course a
  * dose), and a null sorts as SHOWN (we never fold a course we cannot date — showing is the
  * safe direction on a clinical surface).
+ *
+ * The last dose is a real INSTANT, so its absolute ms is the honest recency. The end/start
+ * are DATE-only 'YYYY-MM-DD' columns, which MUST bucket to LOCAL midnight via
+ * `dayKeyToLocalDate` — NEVER `Date.parse`, which reads a bare date as UTC and lands a day
+ * early behind UTC (the B-441 trap). `medHistoryCutoffMs` is a local-wall-clock instant, so
+ * both operands of the split's `>= cutoff` compare on one local basis; parsing a DATE as UTC
+ * would fold a boundary course a day early for every owner behind UTC.
  */
 export function courseRecencyMs(course: MedicationCourse): number | null {
-  const iso =
-    course.lastDoseIso ??
-    (course.end.kind === 'ended' ? course.end.endedAt : null) ??
-    course.startedAt;
-  if (!iso) return null;
-  const ms = Date.parse(iso);
-  return Number.isFinite(ms) ? ms : null;
+  if (course.lastDoseIso) {
+    const ms = Date.parse(course.lastDoseIso);
+    if (Number.isFinite(ms)) return ms;
+  }
+  const dateKey = (course.end.kind === 'ended' ? course.end.endedAt : null) ?? course.startedAt;
+  const local = dateKey ? dayKeyToLocalDate(dateKey.slice(0, 10)) : null;
+  return local ? local.getTime() : null;
 }
 
 /**
  * "Mar 16" from a 'YYYY-MM-DD' day key (a derived local dose day, or a regimen DATE column).
- * Goes through `dayKeyToLocalDate` (local midnight from the Y/M/D components) so formatting
- * never shifts the day the way `new Date('2026-03-16')` (UTC-parsed) would behind UTC — the
- * B-441 trap. Slices to the leading date so a stray datetime still yields its calendar day.
- * Null (surface omits the date) when the value is absent or malformed — never a guessed date.
+ * Delegates the day→string conversion to `lib/utils.formatCalendarDate` (the ONE answer to
+ * "what does a bare calendar day look like" — B-616), which routes through `dayKeyToLocalDate`
+ * so the day never shifts across a timezone (the B-441 trap). Slices to the leading date so a
+ * stray datetime still yields its calendar day. Null (surface omits the date) when absent or
+ * malformed — never a guessed date.
  */
 export function formatMedDate(value: string | null): string | null {
-  if (!value) return null;
-  const d = dayKeyToLocalDate(value.slice(0, 10));
-  return d ? d.toLocaleDateString([], { month: 'short', day: 'numeric' }) : null;
+  return value ? formatCalendarDate(value.slice(0, 10)) : null;
 }
 
 /**
  * A speakable date range: "Mar 3 – 16" (same month collapses the trailing month),
- * "Mar 3 – Apr 2" (cross-month), "Mar 3" (single day, or only one endpoint known), or null
- * (neither known). Month comparison is off the parsed local Dates, so the collapse is
- * locale-safe (never a string-split guess).
+ * "Mar 3 – Apr 2" (cross-month), "Dec 30, 2025 – Jan 2, 2026" (cross-YEAR carries the years so
+ * "Dec 30 – Jan 2" can't read as one year, or worse, a 11-month span read backwards), "Mar 3"
+ * (single day, or only one endpoint known), or null (neither known). Endpoint strings go
+ * through `formatMedDate` (→ formatCalendarDate); the parsed Dates are used only for the
+ * month/year/day COMPARISON, so the collapse is locale-safe (never a string-split guess).
  */
 export function formatMedDateRange(
   startKey: string | null,
@@ -365,14 +373,18 @@ export function formatMedDateRange(
 ): string | null {
   const sd = startKey ? dayKeyToLocalDate(startKey.slice(0, 10)) : null;
   const ed = endKey ? dayKeyToLocalDate(endKey.slice(0, 10)) : null;
-  const sStr = sd ? sd.toLocaleDateString([], { month: 'short', day: 'numeric' }) : null;
-  const eStr = ed ? ed.toLocaleDateString([], { month: 'short', day: 'numeric' }) : null;
-  if (sStr && ed && sd) {
+  const sStr = formatMedDate(startKey);
+  const eStr = formatMedDate(endKey);
+  if (sStr && eStr && sd && ed) {
     if (sd.getTime() === ed.getTime()) return sStr; // single day
-    if (sd.getFullYear() === ed.getFullYear() && sd.getMonth() === ed.getMonth()) {
+    if (sd.getFullYear() !== ed.getFullYear()) {
+      // Cross-year — carry both years so the direction is unambiguous.
+      return `${sStr}, ${sd.getFullYear()} – ${eStr}, ${ed.getFullYear()}`;
+    }
+    if (sd.getMonth() === ed.getMonth()) {
       return `${sStr} – ${ed.getDate()}`; // same month: "Mar 3 – 16"
     }
-    return `${sStr} – ${eStr}`; // cross-month: "Mar 3 – Apr 2"
+    return `${sStr} – ${eStr}`; // same year, cross-month: "Mar 3 – Apr 2"
   }
   return sStr ?? eStr ?? null;
 }

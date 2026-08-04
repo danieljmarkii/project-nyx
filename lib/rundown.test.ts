@@ -67,6 +67,7 @@ import {
   type MedItemName,
 } from './rundown';
 import type { MedicationCourse } from './medicationHistory';
+import { dayKeyToLocalDate } from './utils';
 
 // A derived MedicationCourse fixture for the pure past-meds copy/split tests — full defaults
 // (a quiet, ended-less regimen course), overridable. The buildRundown integration test below
@@ -298,7 +299,7 @@ describe('visitDateLabel', () => {
 // The reassurance/H1 invariants are re-asserted end-to-end in buildRundown's own
 // past-meds case below (clinical-guardrails Pattern 8); these pin the pieces.
 
-describe('medHistoryCutoffMs', () => {
+describe('medHistoryCutoffMs / pastMedsSectionLabel', () => {
   it('is roughly 12 months before now (zone-robust range)', () => {
     const now = Date.parse('2026-08-04T12:00:00Z');
     const daysBefore = (now - medHistoryCutoffMs(now)) / 86_400_000;
@@ -306,20 +307,26 @@ describe('medHistoryCutoffMs', () => {
     expect(daysBefore).toBeLessThanOrEqual(372);
     expect(RUNDOWN_MED_HISTORY_MONTHS).toBe(12);
   });
+  it('labels the section from the same window constant (pins the copy)', () => {
+    expect(pastMedsSectionLabel()).toBe('Medications — past 12 months');
+  });
 });
 
 describe('courseRecencyMs', () => {
-  it('prefers the last dose, then the ended date, then the start', () => {
+  it('prefers the last dose (an instant), then the ended date, then the start', () => {
+    // A real instant → its absolute ms.
     expect(courseRecencyMs(course({ lastDoseIso: '2026-07-10T09:00:00Z' }))).toBe(
       Date.parse('2026-07-10T09:00:00Z'),
     );
+    // A DATE-only field → LOCAL midnight (via dayKeyToLocalDate), NOT Date.parse's UTC
+    // midnight — so the split compares on the same local basis as medHistoryCutoffMs (B-441).
     expect(
       courseRecencyMs(
         course({ lastDoseIso: null, end: { kind: 'ended', status: 'completed', endedAt: '2026-03-16' } }),
       ),
-    ).toBe(Date.parse('2026-03-16'));
+    ).toBe(dayKeyToLocalDate('2026-03-16')!.getTime());
     expect(courseRecencyMs(course({ lastDoseIso: null, startedAt: '2026-02-01' }))).toBe(
-      Date.parse('2026-02-01'),
+      dayKeyToLocalDate('2026-02-01')!.getTime(),
     );
   });
   it('is null (→ never folded) when the course carries no usable date', () => {
@@ -344,8 +351,14 @@ describe('formatMedDateRange', () => {
   it('collapses a same-month range to "Mon D – D"', () => {
     expect(formatMedDateRange('2026-03-03', '2026-03-16')).toMatch(/ – 16$/);
   });
-  it('keeps both months across a boundary', () => {
+  it('keeps both months across a same-year boundary', () => {
     expect(formatMedDateRange('2026-03-30', '2026-04-02')).toMatch(/– \w+ 2$/);
+  });
+  it('carries both years across a year boundary (never a bare "Dec 30 – Jan 2")', () => {
+    const r = formatMedDateRange('2025-12-30', '2026-01-02');
+    expect(r).toContain('2025');
+    expect(r).toContain('2026');
+    expect(r).toMatch(/^\w+ 30, 2025 – \w+ 2, 2026$/);
   });
   it('renders a single day when the endpoints coincide', () => {
     const r = formatMedDateRange('2026-02-11', '2026-02-11');
