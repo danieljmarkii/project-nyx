@@ -484,8 +484,11 @@ export function mealFlagCopy(flag: TrialContaminantFlag, petName: string): {
  * copy reports (and says so first) rather than asking — it is not a gate
  * (Principle 1). `addLine` is the §3 escape hatch: if the vet okayed the food,
  * adding it to the list repairs the record instead of scoring the owner (§6.9).
- * The "+" affordance glyph is the surface's to prepend, matching the card's
- * existing "+ Add a med…" line, so it is not baked into the string.
+ * The "+" affordance glyph is NOT baked into the string — the copy layer carries
+ * words, not chrome; PR 2's surface renders `+ ${addLine}` in JSX, the way the
+ * card's existing combo row hardcodes its own "+ Add a med given with this"
+ * literal (there is no shared prepend convention to reuse — just the same glyph
+ * rendered at the call site).
  */
 export function membershipFlagCopy(petName: string): {
   eyebrow: string;
@@ -1210,6 +1213,15 @@ export function evaluateMealTrialFlag(args: {
  * re-opens the "a suppressed heads-up consumed the budget for a heads-up that was
  * never given" defect (rule 3 in the header) at the call site — the read/write
  * split here only holds if the write happens at render time.
+ *
+ * PR 2 NEEDS ONE FLAG, NOT TWO EVALUATOR CALLS. A feeding is at most one kind, so
+ * calling both this and `evaluateMealTrialFlag` reads the food record twice (an
+ * uncached SELECT; the context read is TTL-cached and nearly free). Prefer reading
+ * the context + food record ONCE and composing the two exported pure predicates
+ * with rung-2 precedence — `foodContaminantFlag(...) ?? foodMembershipFlag(...)` —
+ * behind the same `isTrialRunning` gate + ledger read this spine already applies.
+ * That single-read composition is the clean PR-2 shape; a combined evaluator can
+ * wrap it there, where a caller actually consumes the union.
  */
 export function evaluateMealMembershipFlag(args: {
   petId: string;

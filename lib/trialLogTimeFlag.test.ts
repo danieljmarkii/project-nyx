@@ -200,15 +200,23 @@ describe('the shared ledger — one heads-up per food per trial, across both kin
     expect(await evaluateMealMembershipFlag({ petId: 'p1', foodId: 'dental-treats', occurredAt: NOW() })).toBeNull();
   });
 
-  it('the budget is SHARED with the contents flag — a food told once stays quiet either way', async () => {
-    // A food spoken for by the contents flag is not re-raised as a membership flag
-    // (and vice versa). Here the contents flag speaks for the chicken chew; a later
-    // membership evaluation of the same food finds the budget spent. (Only reachable
-    // if the food's classification changed between logs — a mid-trial panel edit —
-    // but the ledger is kind-agnostic by design, so it holds regardless.)
+  it('the budget is SHARED across kinds — a food told once stays quiet even after its rung flips', async () => {
+    // The genuine shared-ledger path (not the trivial one, where the food would be
+    // rung-2 on both calls anyway): the chicken chew fires the CONTENTS flag (rung
+    // 2), the surface spends the budget, THEN the panel is re-read mid-trial and the
+    // chicken drops out — so the same food now classifies rung 3 and would otherwise
+    // raise the MEMBERSHIP flag. The kind-agnostic ledger suppresses it.
     seedDuckTrial({ startedDaysAgo: 5, targetDays: 84 });
     const contents = await evaluateMealTrialFlag({ petId: 'p1', foodId: 'chicken-chew', occurredAt: NOW() });
+    expect(contents?.kind).toBe('off_diet_protein');
     await noteTrialFlagShown(contents!);
+    // Re-read: chicken gone → the chew is now rung-3-eligible. A FRESH food in that
+    // exact state fires membership, proving the classification really flipped...
+    mockFoodRows['chicken-chew'].proteins = null;
+    mockFoodRows['fresh-unread'] = { brand: 'X', product_name: 'Y', proteins: null, ingredients_notes: null, ai_extraction_confidence: null };
+    expect((await evaluateMealMembershipFlag({ petId: 'p1', foodId: 'fresh-unread', occurredAt: NOW() }))?.kind).toBe('off_trial_list');
+    // ...but the chew, already spoken for by the contents flag, stays quiet. The
+    // LEDGER silences it, not the classification (which is now membership-eligible).
     expect(await evaluateMealMembershipFlag({ petId: 'p1', foodId: 'chicken-chew', occurredAt: NOW() })).toBeNull();
   });
 
