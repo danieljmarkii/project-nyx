@@ -2398,6 +2398,33 @@ Deno.test('B-704 — no protein_mismatch flag or caveat when the target and the 
   assert.ok(!/Measured against the trial food/.test(html), 'no baseline caveat when there is no mismatch')
 })
 
+Deno.test('B-704 — on a mismatch the baseline caveat rides BOTH the page-1 tally AND the appendix-D antigen line', () => {
+  // The adversarial residual: the appendix is where a vet is SENT to check the page-1
+  // figure, so an un-annotated antigen count there is the last spot a mismatch count could
+  // be lifted out of its baseline context. `allowedSetUnavailable: false` makes the
+  // appendix-D antigen line render.
+  const html = renderReport(
+    base({
+      safetyFlags: [{ kind: 'protein_mismatch', recordedProtein: 'rabbit', foodProtein: 'duck', trialDietLabels: ['Novel Duck'] }],
+      trial: trialBlockFixture({
+        trialDietLabels: ['Novel Duck'],
+        startedAt: '2026-05-08',
+        allowedSetUnavailable: false,
+        antigenTally: [{ protein: 'chicken', feedings: 3, fromPermitted: 0 }],
+      }),
+      diet: proteinDiet({
+        trialTargetProtein: 'duck',
+        trialProteinProvenance: { source: 'derived', confirmedDay: null },
+        trialProteinMismatch: { target: 'rabbit', foodProtein: 'duck', foodLabel: 'Novel Duck' },
+      }),
+    }),
+  )
+  // Two antigen counts on a mismatch (page-1 trial row + appendix D) → two caveats, so
+  // neither figure can be read against the wrong baseline.
+  const caveats = html.split('Measured against the trial food').length - 1
+  assert.ok(caveats >= 2, `both antigen counts carry the baseline caveat (found ${caveats})`)
+})
+
 Deno.test('B-704 — NO protein resolved falls back to the food-label-led identity (no bare "Elimination diet trial —")', () => {
   const html = text(
     renderReport(

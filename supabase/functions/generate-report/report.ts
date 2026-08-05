@@ -3287,11 +3287,14 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
       })
     }
   }
-  // B-704 §6 — the target-vs-label mismatch, promoted to a safety flag so it leads the
-  // band the report teaches a vet to scan (the B-494 rule; `vet-report-cold-read`
-  // 2026-08-05). Trial-level, never per-feeding (TG-3); it names a discrepancy and moves
-  // no count. `trialProteinMismatch` is non-null only when there is an owner value that
-  // disagrees with the food's designated primary, which requires a live trial.
+  // B-704 §6 — the target-vs-label mismatch, promoted to a safety flag so the discrepancy
+  // is STATED in the flag zone the report teaches a vet to scan first, never left silent
+  // (the B-494 rule; `vet-report-cold-read` 2026-08-05). Ordered here — after the intake /
+  // blood / foreign flags, before chronicity / worsening — so a genuine physical-sign flag
+  // still outranks it; what matters for B-494 is presence in the band, not the top slot.
+  // Trial-level, never per-feeding (TG-3); it names a discrepancy and moves no count.
+  // `trialProteinMismatch` is non-null only when an owner value disagrees with the food's
+  // designated primary, which requires a live trial.
   if (trialProteinMismatch) {
     safetyFlags.push({
       kind: 'protein_mismatch',

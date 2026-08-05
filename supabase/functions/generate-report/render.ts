@@ -4892,7 +4892,15 @@ function offDietAppendix(snap: ReportSnapshot): string {
       // finding it qualifies — "Antigen exposures in the 31 trial days this report
       // covers: Beef ×1 — proteins fed in the 31 trial days this report covers that…",
       // pushing the number to the middle. The scoping is right; the density was not.
-      `<b>Antigen exposures ${antigenScope}:</b> ${antigens}${unknownBit} — proteins fed in that range that the trial diet does not contain, counted on approved and unapproved feedings alike. A food containing several counts once for each.`,
+      // B-704 — mirror page 1's baseline caveat onto the appendix a vet is sent here to
+      // CHECK the page-1 figure against: on a mismatch this count is measured against the
+      // trial food's label, not the recorded protein, and the un-annotated appendix figure
+      // is the last spot a mismatch count could be lifted out of that context.
+      `<b>Antigen exposures ${antigenScope}:</b> ${antigens}${unknownBit} — proteins fed in that range that the trial diet does not contain, counted on approved and unapproved feedings alike. A food containing several counts once for each.${
+        snap.diet.trialProteinMismatch
+          ? ` Measured against the trial food&rsquo;s label (${h(capProtein(snap.diet.trialProteinMismatch.foodProtein))}), not the recorded protein (${h(capProtein(snap.diet.trialProteinMismatch.target))}).`
+          : ''
+      }`,
     )
   } else if (tally) {
     tallyParts.push(
