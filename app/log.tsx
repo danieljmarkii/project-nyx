@@ -23,7 +23,7 @@ import { useSubmitGuard } from '../hooks/useSubmitGuard';
 import { useAuthStore } from '../store/authStore';
 import { useEventStore } from '../store/eventStore';
 import { useAttachmentStore } from '../store/attachmentStore';
-import { useMomentStore, MEAL_FLAGGED_DURATION_MS } from '../store/momentStore';
+import { useMomentStore, MEAL_FLAGGED_DURATION_MS, whenMealCardVisible } from '../store/momentStore';
 import { getDb, getActiveRegimenForDrug, getMealForEvent, updateDoseAdherence, PickerFood, PickerMedication } from '../lib/db';
 import { supabase } from '../lib/supabase';
 import { syncPendingEvents, syncPendingMeals, syncPendingMedicationAdministrations } from '../lib/sync';
@@ -303,6 +303,13 @@ export default function LogModal() {
   ) {
     const flag = await evaluateMealLogTimeFlag({ petId, foodId, occurredAt });
     if (!flag) return;
+    // Wait for the card to actually be on screen before patching. This path defers
+    // the reveal (delayMs below) and the eval above is now an all-local read that
+    // resolves first — so a bare patch would hit a not-yet-revealed card, return
+    // false, and drop the heads-up (the FAB path has no delay and never saw this).
+    // whenMealCardVisible resolves the instant the card reveals; false means a newer
+    // log superseded it, in which case we skip BOTH the patch and rule 3's spend.
+    if (!(await whenMealCardVisible(eventId))) return;
     if (!patchTrialFlag(eventId, flag)) return;
     rescheduleMoment(MEAL_FLAGGED_DURATION_MS);
     await noteTrialFlagShown(flag);
@@ -369,15 +376,15 @@ export default function LogModal() {
         },
         { delayMs: 450 },
       );
-      // B-351 slice 4 — the trial-contaminant heads-up, resolved AFTER the card is
-      // already on screen and patched in if it lands. Deliberately NOT awaited
-      // before the card: on a cold trial cache this makes one network call, and an
-      // earlier cut awaited it behind a 1200ms timeout — which both delayed the
-      // owner's confirmation on the wedge's hot path AND (because a JS promise is
-      // not cancellable) let the abandoned evaluation spend the food's one
-      // heads-up on a card that never showed it. Patch-on-arrival has neither
-      // problem: nothing waits, and the budget is spent by the surface that
-      // renders it.
+      // B-351 slice 4 / B-693 — the log-time trial heads-up, resolved
+      // fire-and-forget so neither the log nor the card ever waits on it
+      // (Principle 1: the log stays one tap, the meal is already saved). The card
+      // above reveals behind delayMs to clear the dismissing /log modal on iOS;
+      // applyTrialFlag itself waits for THAT reveal before patching (whenMealCardVisible)
+      // rather than racing ahead of it — the evaluation is a fast local read now, so
+      // without the wait the patch landed on a not-yet-visible card and the warning
+      // was dropped. The one-per-trial budget is still spent only once the heads-up
+      // is genuinely on screen, so a card that never shows can't burn it.
       void applyTrialFlag(result.eventId, result.petId, food.id, result.occurredAt);
     } catch (e) {
       console.error('[log] meal saved, but its completion card failed:', e);
