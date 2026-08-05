@@ -55,13 +55,15 @@ const styles = StyleSheet.create({
   },
   fact: {
     fontSize: theme.textSM,
-    lineHeight: 19,
+    // Derived from the token, matching the sibling TrialContaminantNote's body line
+    // rather than a bare literal.
+    lineHeight: theme.textSM * 1.45,
     fontWeight: theme.weightSemibold,
     color: theme.colorAttentionInk,
   },
   advice: {
     fontSize: theme.textSM,
-    lineHeight: 19,
+    lineHeight: theme.textSM * 1.45,
     color: theme.colorAttentionInk,
   },
 });

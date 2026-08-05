@@ -230,7 +230,10 @@ export function unsetOption(petName: string): { label: string; subLabel: string 
 
 /** The day-0 mismatch heads-up (§6.2 / §8, mock frame D), split into the FACT it
  *  leads with (rendered prominently) and the non-alarming advice that follows.
- *  `foodLabel` and the two proteins are already Title-cased/humane by the caller. */
+ *  `foodProtein` and `targetProtein` are lowercase canonical keys, interpolated
+ *  verbatim — mid-sentence lowercase is the house convention for protein names (as
+ *  `TrialContaminantNote`'s "…lists chicken…" copy does, and the §8 tests assert).
+ *  `foodLabel` is the food's display label. */
 export function mismatchHeadsUp(args: {
   foodLabel: string;
   foodProtein: string; // canonical key
