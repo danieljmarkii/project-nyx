@@ -95,6 +95,30 @@ describe('DIET_TRIAL_SCHEMA_SQL — production local DDL', () => {
     db.close();
   });
 
+  it('carries the B-704 trial-protein columns, defaulting NULL for a never-set trial', () => {
+    // migration 053: two nullable columns the vet-report naming reads. A column
+    // missing from the local DDL reads back undefined on device and silently blanks
+    // the report's protein identity — the same failure mode the 040 test guards.
+    // insertTrial sets neither, so both default NULL (the honest value: the owner
+    // has confirmed nothing, and derivation still runs at read).
+    const db = freshDb();
+    insertTrial(db);
+    let t = db.prepare('SELECT * FROM diet_trials WHERE id = ?').get('trial-1') as Row;
+    expect(t.target_protein).toBeNull();
+    expect(t.target_protein_set_at).toBeNull();
+
+    // A hydrated owner-confirmed protein round-trips, with its ISO/UTC provenance
+    // stamp intact (TEXT locally, so it compares on one clock — the mirror header's
+    // TIMESTAMPTZ→ISO rule).
+    db.exec(`UPDATE diet_trials SET
+      target_protein = 'duck', target_protein_set_at = '2026-07-03T09:00:00.000Z'
+      WHERE id = 'trial-1'`);
+    t = db.prepare('SELECT * FROM diet_trials WHERE id = ?').get('trial-1') as Row;
+    expect(t.target_protein).toBe('duck');
+    expect(t.target_protein_set_at).toBe('2026-07-03T09:00:00.000Z');
+    db.close();
+  });
+
   it('does NOT enforce one active trial per pet locally (the split-brain must be representable)', () => {
     // Server-side this is a UNIQUE index (migration 040 §3.3). Locally it must
     // NOT be: a device that lost the race holds its own unsynced active row AND
@@ -381,6 +405,7 @@ describe('row → Supabase upsert mappers', () => {
     vet_name: 'Dr Chen', notes: null, food_label: 'RC HP', indication: 'skin',
     phase: 'elimination', outcome: null, outcome_notes: null, stopped_reason: null,
     ended_at: null, transition_started_at: '2026-06-24',
+    target_protein: 'duck', target_protein_set_at: '2026-07-01T00:00:00.000Z',
     created_at: '2026-07-01T00:00:00.000Z', updated_at: '2026-07-01T00:00:00.000Z',
   };
 
@@ -399,6 +424,7 @@ describe('row → Supabase upsert mappers', () => {
         'completed_at', 'created_at', 'ended_at', 'food_item_id', 'food_label', 'id',
         'indication', 'notes', 'outcome', 'outcome_notes', 'pet_id', 'phase',
         'started_at', 'status', 'stopped_reason', 'target_duration_days',
+        'target_protein', 'target_protein_set_at',
         'transition_started_at', 'updated_at', 'vet_name',
       ].sort(),
     );
@@ -412,6 +438,18 @@ describe('row → Supabase upsert mappers', () => {
     });
     expect(payload).not.toHaveProperty('synced');
     expect(payload).not.toHaveProperty('sync_error');
+  });
+
+  it('forwards the B-704 trial-protein columns by value, and a null protein as null', () => {
+    // The mapper is what carries an owner-confirmed protein UP to the server. The
+    // key-set test proves the columns are present; this proves the VALUES ride,
+    // including the null case (a cleared / never-set / hydrolyzed trial), which
+    // must travel as null rather than being dropped.
+    expect(dietTrialRowToRemote(trial).target_protein).toBe('duck');
+    expect(dietTrialRowToRemote(trial).target_protein_set_at).toBe('2026-07-01T00:00:00.000Z');
+    const cleared = dietTrialRowToRemote({ ...trial, target_protein: null, target_protein_set_at: null });
+    expect(cleared.target_protein).toBeNull();
+    expect(cleared.target_protein_set_at).toBeNull();
   });
 
   it('forwards every diet_trial_foods server column', () => {

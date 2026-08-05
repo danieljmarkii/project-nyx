@@ -356,6 +356,15 @@ export const COLUMN_UPGRADES: readonly ColumnUpgrade[] = [
   // legitimately has no filename worth keeping, and no pre-048 row has one to
   // recover, so NULL is the honest value for both.
   { table: 'vet_documents', column: 'source_filename', type: 'TEXT' },
+  // B-704 / migration 053 — the owner-stated trial protein + its provenance stamp.
+  // `diet_trials` predates this build, so CREATE TABLE IF NOT EXISTS cannot add the
+  // columns to an already-installed device — only this can. Both nullable, no
+  // default: every pre-053 trial derives its protein at read (no stored value), and
+  // NULL is the honest value for all of them (the owner has confirmed nothing) — so
+  // there is nothing to backfill. target_protein_set_at holds an ISO/UTC string, so
+  // TEXT locally like every other timestamp column in the diet-trial mirror.
+  { table: 'diet_trials', column: 'target_protein', type: 'TEXT' },
+  { table: 'diet_trials', column: 'target_protein_set_at', type: 'TEXT' },
   // B-398 — the quarantine pair, on every queue table. Generated from SYNC_QUEUES
   // rather than typed out twelve times, so the set that gets the columns and the
   // set the badge counts are provably the same set.

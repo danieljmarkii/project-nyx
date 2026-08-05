@@ -58,9 +58,62 @@ export function offTrialProteins(
   return out;
 }
 
+export type TrialProteinSource = 'owner' | 'derived';
+
 /**
- * The trial target: the trial food's OWNER-DESIGNATED `primary_protein`, and
- * deliberately NOT `proteins[0]`.
+ * The trial's target protein — STORED-FIRST, with a read-time derivation fallback,
+ * returning the protein AND its provenance (B-704 §4). This is THE ONE predicate:
+ * every consumer that needs to name a trial's protein reads it through here — the
+ * §5.3 one-predicate lesson, applied before a third, contradictory definition can
+ * exist. (`resolveTargetProtein` below is now its fallback arm, not a public entry
+ * point; a consumer importing it directly is a review-blocking finding.)
+ *
+ * WHY PROVENANCE IS PART OF THE RETURN. The vet report renders the two sources
+ * differently ("owner-confirmed" vs "from the trial diet"), and a consumer that
+ * cannot tell an owner's stated protein from the app's best guess will eventually
+ * present a guess as a confirmation. Returning `source` makes that distinction
+ * impossible to drop by accident.
+ *
+ * NEVER A PERMIT (TG-1). This value only NAMES what the record already counts. The
+ * allowed set (`diet_trial_foods`) remains the sole authority on what is off-diet
+ * (diet-trial §5.5 D-A); `classifyFeeding`, the sanctioned-set union, rung order,
+ * counts, denominators and coverage are byte-identical for every value returned
+ * here, including null. Silence (a null protein) is never an all-clear (TG-2): a
+ * consumer must conclude nothing from a null target — nothing was named, and
+ * nothing was compared.
+ *
+ * @param trial          the trial row, read for its owner-stated `target_protein`.
+ * @param primaryFoods   the trial's primary-diet foods, most-prominent first — the
+ *                       derivation source when nothing is stored. One food yields
+ *                       exactly `canonicalizeProtein(primaryProtein)`, so an existing
+ *                       single-food caller is unchanged by routing through here.
+ */
+export function trialTargetProtein(
+  trial: { target_protein: string | null },
+  primaryFoods: readonly { primaryProtein: string | null }[],
+): { protein: string | null; source: TrialProteinSource | null } {
+  // Stored-first: an owner-confirmed protein wins outright. Canonicalize on READ
+  // too — a Class-A convergent op, so re-keying a value already written canonical
+  // (TG-4) is a no-op, and a value that somehow is NOT a key drops to the
+  // derivation rather than being asserted to the vet as owner-confirmed junk.
+  const stored = canonicalizeProtein(trial.target_protein);
+  if (stored != null) return { protein: stored, source: 'owner' };
+
+  // Fallback: derive from the picked primary-diet foods, in prominence order. The
+  // derivation is BEST-EFFORT by construction — it is exactly the "the food defines
+  // its own target" blindness the stored value exists to fix — so it is always
+  // labelled `derived`, never `owner`.
+  for (const food of primaryFoods) {
+    const derived = resolveTargetProtein(food.primaryProtein);
+    if (derived != null) return { protein: derived, source: 'derived' };
+  }
+  return { protein: null, source: null };
+}
+
+/**
+ * The DERIVATION FALLBACK ARM of `trialTargetProtein` (B-704 §4) — no longer a
+ * public entry point. Reads the trial food's OWNER-DESIGNATED `primary_protein`,
+ * and deliberately NOT `proteins[0]`.
  *
  * They are the same value on every ordinary row (migration 039's contract), and
  * differ in exactly one case: when the owner CLEARS the main protein, slice 3
@@ -70,8 +123,11 @@ export function offTrialProteins(
  * whole check: every OTHER protein — including the real trial protein — would be
  * reported as the contaminant. A null target disables the check (silence, never
  * an all-clear).
+ *
+ * Kept as a named internal helper rather than inlined so this rationale stays
+ * attached to the read it justifies.
  */
-export function resolveTargetProtein(primaryProtein: string | null | undefined): string | null {
+function resolveTargetProtein(primaryProtein: string | null | undefined): string | null {
   return canonicalizeProtein(primaryProtein);
 }
 

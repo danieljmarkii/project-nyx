@@ -89,7 +89,7 @@ import {
 import {
   offTrialProteins,
   offTrialProteinsInTrialFood,
-  resolveTargetProtein,
+  trialTargetProtein,
 } from '../../../lib/trialProtein.ts'
 // B-568 — the SAME format-label map the app renders from (lib/foodFormat.ts is
 // dependency-free precisely so both runtimes share one copy; a second map here is the
@@ -2777,13 +2777,26 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
   // report the feature produces: the one sent the morning after the trial finished.
   const reportTrialInput = selectReportTrial(input.dietTrials, scope, tz, TRIAL_ANCHOR_GRACE_DAYS)
 
-  // The trial's target protein, resolved ONCE and threaded into every protein view
-  // below (B-351 slice 5). Null — no active trial, or a trial food with no
-  // designated main protein — disables the off-trial marking entirely: silence,
-  // never an all-clear. Deliberately the owner-designated `primary_protein` and NOT
-  // `proteins[0]`; see resolveTargetProtein for why reading the derived primary
-  // would invert the check on a cleared designation.
-  const trialTargetProtein = reportTrialInput ? resolveTargetProtein(reportTrialInput.primaryProtein) : null
+  // The trial's target protein, resolved ONCE through the SHARED stored-first
+  // predicate (B-704 §4) and threaded into every protein view below. Null — no
+  // active trial, or a trial food with no designated main protein — disables the
+  // off-trial marking entirely: silence, never an all-clear. Still deliberately the
+  // owner-designated `primary_protein` and NOT `proteins[0]`; see the derivation
+  // arm's note for why the derived primary would invert the check on a cleared
+  // designation.
+  //
+  // B-704 PR 2 routes this through `trialTargetProtein` but does NOT yet thread the
+  // owner-stated `diet_trials.target_protein` — the report snapshot carries no such
+  // field until PR 5. Passing `target_protein: null` here makes the call fall to the
+  // derivation arm, byte-identical to the old `resolveTargetProtein(primaryProtein)`
+  // (the unchanged `snap.diet.trialTargetProtein === 'duck'` assertion pins that).
+  // PR 5 threads the stored value + renders its provenance.
+  const trialProteinTarget = reportTrialInput
+    ? trialTargetProtein(
+        { target_protein: null },
+        [{ primaryProtein: reportTrialInput.primaryProtein ?? null }],
+      ).protein
+    : null
 
   /**
    * Build the render-ready protein view for one food.
@@ -2815,8 +2828,8 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
       proteins,
       complete: mayClaimCompleteProteinSet(proteins, food.ingredientsNotes ?? null, food.extractionConfidence),
       offTrial: opts?.isTrialDiet
-        ? offTrialProteinsInTrialFood(proteins, trialTargetProtein)
-        : offTrialProteins(proteins, trialTargetProtein),
+        ? offTrialProteinsInTrialFood(proteins, trialProteinTarget)
+        : offTrialProteins(proteins, trialProteinTarget),
     }
   }
 
@@ -3006,7 +3019,7 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     : null
 
   const diet: DietSummary = {
-    trialTargetProtein,
+    trialTargetProtein: trialProteinTarget,
     trial,
     freeFed,
     intakeNotDirectlyObserved: freeFed.length > 0,
