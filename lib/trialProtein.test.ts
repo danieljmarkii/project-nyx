@@ -26,7 +26,9 @@
 
 import {
   trialTargetProtein,
+  trialFoodProteinMismatches,
   offTrialProteins,
+  type TrialFoodPrimaryProtein,
   type TrialProteinSource,
 } from './trialProtein';
 import {
@@ -409,6 +411,95 @@ describe('TG-5 — editing the target protein never moves a count, denominator, 
     expect(namedBefore).toEqual(['rabbit', 'chicken']);
     expect(namedAfter).toEqual(['rabbit']);
     expect(namedAfter).not.toEqual(namedBefore);
+  });
+});
+
+// ── The day-0 mismatch (§6, TG-3) ────────────────────────────────────────────
+//
+// The scenario is the mock's frame D: a rabbit trial, one of whose picked foods
+// leads with chicken. The predicate makes that a finding at setup, where clinical
+// sources say trials silently fail — never a per-feeding flag, never a block.
+
+describe('trialFoodProteinMismatches — the day-0 label-vs-target catch', () => {
+  function pf(over: Partial<TrialFoodPrimaryProtein> & Pick<TrialFoodPrimaryProtein, 'foodItemId'>): TrialFoodPrimaryProtein {
+    return { foodLabel: 'Food', primaryProtein: null, ...over };
+  }
+
+  const RABBIT_FOOD = pf({ foodItemId: 'instinct-rabbit', foodLabel: 'Instinct LID Rabbit', primaryProtein: 'rabbit' });
+  const CHICKEN_FOOD = pf({ foodItemId: 'blue-buffalo', foodLabel: 'Blue Buffalo Sensitive Stomach', primaryProtein: 'chicken' });
+
+  it('flags a picked food whose main protein differs from the target (mock frame D)', () => {
+    const out = trialFoodProteinMismatches('rabbit', [RABBIT_FOOD, CHICKEN_FOOD]);
+    expect(out).toEqual([
+      { foodItemId: 'blue-buffalo', foodLabel: 'Blue Buffalo Sensitive Stomach', foodProtein: 'chicken' },
+    ]);
+  });
+
+  it('the target food itself never mismatches — only the disagreeing food surfaces', () => {
+    // Both foods present; only the one whose main ≠ target is returned. The rabbit
+    // food, from which the target derives, is silent.
+    const out = trialFoodProteinMismatches('rabbit', [RABBIT_FOOD, CHICKEN_FOOD]);
+    expect(out.map((m) => m.foodItemId)).toEqual(['blue-buffalo']);
+  });
+
+  it('TG-2 — a null target names nothing and compares nothing (empty, never an all-clear)', () => {
+    expect(trialFoodProteinMismatches(null, [RABBIT_FOOD, CHICKEN_FOOD])).toEqual([]);
+  });
+
+  it('an empty return over a matching set is silence, not a verdict', () => {
+    // Every food's main IS the target → nothing to flag. The caller must never
+    // render this as "all foods on-target"; it means only "nothing surfaced".
+    expect(trialFoodProteinMismatches('rabbit', [RABBIT_FOOD, pf({ foodItemId: 'x', primaryProtein: 'Rabbit' })])).toEqual([]);
+  });
+
+  it('is kinship-aware — a hydrolyzed form of the target is NOT a mismatch (R7)', () => {
+    // A hydrolyzed-chicken adjunct on a chicken trial is the same source at a
+    // different processing stage, not an off-target protein. `proteinsAreKin` holds.
+    expect(
+      trialFoodProteinMismatches('chicken', [pf({ foodItemId: 'zd', foodLabel: "Hill's z/d", primaryProtein: 'hydrolyzed chicken' })]),
+    ).toEqual([]);
+  });
+
+  it('never fires when the TARGET names no usable source (a bare process word) — the guard is symmetric', () => {
+    // Regression (adversarial round 1): the target guard was `canonicalizeProtein
+    // == null` while the food guard was `proteinSourceBase == null`, so a source-less
+    // process-word target ('hydrolyzed protein') slipped the early return and fired a
+    // spurious amber on every sibling food. A hydrolyzed-Rx label captured as
+    // primary_protein='hydrolyzed protein' made this reachable with zero owner action.
+    for (const sourceless of ['hydrolyzed protein', 'hydrolyzed', 'protein', 'hydrolysate']) {
+      expect(trialFoodProteinMismatches(sourceless, [CHICKEN_FOOD, RABBIT_FOOD])).toEqual([]);
+    }
+    // A source-BEARING hydrolyzed target still works: it names chicken, so a sibling
+    // rabbit food is genuinely off-target, and a chicken sibling is kin (not flagged).
+    expect(trialFoodProteinMismatches('hydrolyzed chicken', [RABBIT_FOOD]).map((m) => m.foodProtein)).toEqual(['rabbit']);
+    expect(trialFoodProteinMismatches('hydrolyzed chicken', [CHICKEN_FOOD])).toEqual([]);
+  });
+
+  it('never fires on a food whose main names no usable source (a bare process word)', () => {
+    // `hydrolyzed` / `protein` canonicalize to a non-null fixpoint but name no
+    // source (proteinSourceBase === null), so there is no confident protein to
+    // accuse the bag of — safe, under-claiming direction.
+    for (const notASource of ['hydrolyzed', 'protein', 'meal', '   ', null]) {
+      expect(trialFoodProteinMismatches('rabbit', [pf({ foodItemId: 'p', primaryProtein: notASource })])).toEqual([]);
+    }
+  });
+
+  it('canonicalizes both sides — a dirty stored main still resolves against the target', () => {
+    expect(
+      trialFoodProteinMismatches('rabbit', [pf({ foodItemId: 'c', foodLabel: 'Bag', primaryProtein: 'Chicken By-Product Meal' })]),
+    ).toEqual([{ foodItemId: 'c', foodLabel: 'Bag', foodProtein: 'chicken' }]);
+  });
+
+  it('preserves order and returns every disagreeing food (three foods, mismatch in the middle — §6.6)', () => {
+    // The §6.6 QA shape at the data layer: three primary foods, the middle one off-
+    // target. The caller anchors the heads-up to `foodItemId`, so the render can put
+    // it in the same viewport as its row.
+    const out = trialFoodProteinMismatches('rabbit', [
+      RABBIT_FOOD,
+      pf({ foodItemId: 'middle', foodLabel: 'Purina Chicken', primaryProtein: 'chicken' }),
+      pf({ foodItemId: 'last', foodLabel: 'Also Rabbit', primaryProtein: 'rabbit' }),
+    ]);
+    expect(out.map((m) => m.foodItemId)).toEqual(['middle']);
   });
 });
 
