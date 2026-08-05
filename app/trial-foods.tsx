@@ -28,7 +28,7 @@
 // owner (FR-4's clean disappearance, arriving here as a state rather than a stale
 // list).
 import { useCallback, useMemo, useState } from 'react';
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { theme } from '../constants/theme';
@@ -38,10 +38,25 @@ import { SectionLabel } from '../components/ui/SectionLabel';
 import { WhorlSpinner } from '../components/brand/WhorlSpinner';
 import { FoodPicker } from '../components/log/FoodPicker';
 import { AddTrialFoodSheet } from '../components/profile/AddTrialFoodSheet';
+import { TrialProteinPicker } from '../components/profile/TrialProteinPicker';
+import { TrialProteinCorrectionSheet } from '../components/profile/TrialProteinCorrectionSheet';
+import { TrialContaminantNote } from '../components/food/TrialContaminantNote';
 import { useTrialAllowedSet } from '../hooks/useTrialAllowedSet';
+import { useDietTrial } from '../hooks/useDietTrial';
 import { usePetStore } from '../store/petStore';
-import { addTrialFood, foodLabel } from '../lib/dietTrialSetup';
+import { addTrialFood, foodLabel, setTrialTargetProtein } from '../lib/dietTrialSetup';
 import { isOnTrialList, trialListFoodsOn } from '../lib/trialAllowedSet';
+import { trialTargetProtein } from '../lib/trialProtein';
+import {
+  isTrialProteinCorrection,
+  midTrialInitialChoice,
+  midTrialProteinRow,
+  trialProteinCorrectionLabel,
+  trialProteinToStore,
+  TRIAL_PROTEIN_CORRECTION_NOTE,
+  TRIAL_PROTEIN_ROW_LABEL,
+  type TrialProteinChoice,
+} from '../lib/trialProteinPicker';
 import { TRIAL_EXPOSURES_TITLE } from '../lib/trialExposuresScreen';
 import {
   ADD_TRIAL_FOOD_ERROR,
@@ -131,6 +146,121 @@ export default function TrialFoodsScreen() {
     }
   }, [set, pending, activePet]);
 
+  // ── B-704 §7.3 — the trial protein: the "Trial protein" row + PR 3's shared picker ─
+  // PR 3 shipped the shared `TrialProteinPicker` (setup + this screen); PR 4 mounts
+  // it here and INTERPOSES the correction confirm (TP-3) on a mid-trial CHANGE — the
+  // host/picker split the picker's own header describes. The write is
+  // `setTrialTargetProtein` (the mid-trial path PR 3's setup write does not cover).
+  const [proteinPickerOpen, setProteinPickerOpen] = useState(false);
+  const [choice, setChoice] = useState<TrialProteinChoice>({ kind: 'derived' });
+  // A choice awaiting the correction confirm (frame H) — set only for a change to an
+  // existing owner value; its presence renders the confirm sheet.
+  const [pendingCorrection, setPendingCorrection] = useState<TrialProteinChoice | null>(null);
+  const [savingProtein, setSavingProtein] = useState(false);
+  const [proteinError, setProteinError] = useState<string | null>(null);
+
+  // The standing mismatch note (§6.5) is the SAME note the Pet-tab card renders,
+  // read through `useDietTrial` rather than re-derived here — so the two surfaces
+  // can never disagree about the trial's contamination (the one-answer rule the
+  // shared predicate exists for). It carries the antigen-pause disclosure the
+  // card's loader wires; an opts-less re-derivation here would diverge on exactly
+  // that edge.
+  const { input: trialInput } = useDietTrial();
+
+  const readyTrial = set.status === 'ready' ? set.trial : null;
+  const trialId = readyTrial?.id ?? null;
+  const storedProtein = readyTrial?.targetProtein ?? null;
+
+  // The derivation source is the trial's own `primary_diet` foods, never the
+  // permitted extras — the same source `trialTargetProtein` uses, so the row, the
+  // picker's derived group, and the card cannot disagree.
+  const primaryFoods = useMemo(
+    () => (set.status === 'ready' ? set.foods.filter((f) => f.role === 'primary_diet') : []),
+    [set],
+  );
+  const resolvedProtein = useMemo(
+    () => trialTargetProtein({ target_protein: storedProtein }, primaryFoods),
+    [storedProtein, primaryFoods],
+  );
+  // The picker's derived group + highlight key off the PURE derivation (ignoring the
+  // stored value), so a derived option shows filled when nothing is owner-set.
+  const derivedKey = useMemo(
+    () => trialTargetProtein({ target_protein: null }, primaryFoods).protein,
+    [primaryFoods],
+  );
+  const derivedFoods = useMemo(
+    () => primaryFoods.map((f) => ({ primaryProtein: f.primaryProtein, foodLabel: f.label })),
+    [primaryFoods],
+  );
+  const proteinRow = midTrialProteinRow(resolvedProtein);
+
+  const openProteinPicker = useCallback(() => {
+    setProteinError(null);
+    setChoice(midTrialInitialChoice(resolvedProtein));
+    setProteinPickerOpen(true);
+  }, [resolvedProtein]);
+
+  // Write the chosen protein (null for either escape hatch). A no-op when the store
+  // would not change (re-pick, or null-over-null); otherwise `setTrialTargetProtein`.
+  // A CORRECTION routes here from the confirm sheet (which shows saving/error); a
+  // first-set routes here directly (no sheet), so its rare failure surfaces as an
+  // Alert.
+  const commitProtein = useCallback(
+    async (next: TrialProteinChoice) => {
+      if (!trialId) return;
+      const fromCorrection = pendingCorrection !== null;
+      const newStored = trialProteinToStore(next);
+      setProteinPickerOpen(false);
+      // No-op ONLY when re-picking the value the owner already set — gated on
+      // ownership + identity, never on the write value alone: both escape hatches
+      // write null and a non-owner trial's column is null too, so a value-only guard
+      // would silently close an escape hatch over a derived/unset value (the BUG both
+      // reviewers caught). A null commit cannot suppress a name the foods still
+      // DERIVE (§5 vs §4/§7.3 — B-707); the write is honest, the residual is the
+      // predicate's, not this screen's.
+      const isRetapOfOwnerValue = storedProtein != null && newStored === storedProtein;
+      if (isRetapOfOwnerValue) {
+        setPendingCorrection(null);
+        return;
+      }
+      setSavingProtein(true);
+      setProteinError(null);
+      try {
+        await setTrialTargetProtein({ trialId, protein: newStored });
+        // `notifyTrialChanged` bumps the hydration tick, so `useTrialAllowedSet` and
+        // `useDietTrial` re-read — the row, the card and the strip show the new value.
+        setPendingCorrection(null);
+      } catch (err) {
+        console.error('[trial-foods] set protein failed:', err);
+        if (fromCorrection) {
+          setProteinError(ADD_TRIAL_FOOD_ERROR); // rendered on the correction sheet
+        } else {
+          Alert.alert('Could not update', ADD_TRIAL_FOOD_ERROR);
+        }
+      } finally {
+        setSavingProtein(false);
+      }
+    },
+    [trialId, storedProtein, pendingCorrection],
+  );
+
+  const handleProteinSelect = useCallback(
+    (next: TrialProteinChoice) => {
+      setChoice(next);
+      if (isTrialProteinCorrection(storedProtein, next)) {
+        // A change to an existing owner value → confirm the whole-trial effect first
+        // (frame H). The write waits for the confirm.
+        setProteinPickerOpen(false);
+        setPendingCorrection(next);
+        return;
+      }
+      // First-set, a derived confirmation, or a re-pick → commit straight away
+      // (frame C — no confirm).
+      void commitProtein(next);
+    },
+    [storedProtein, commitProtein],
+  );
+
   // ── The picker step (FR-10) ───────────────────────────────────────────────
   // `selectedFoodIds` puts the picker in SELECTION mode, which is what FR-18 keys
   // off: PR 4's pinned "On the trial list" section is suppressed here, and it
@@ -198,6 +328,32 @@ export default function TrialFoodsScreen() {
             </Text>
           )}
 
+          {/* B-704 §7.3 — the "Trial protein" row sits ABOVE the food list and is
+              the ONE editor for the trial's protein. Tapping opens the shared
+              picker (§7.2). It NAMES; it never permits — the food list below stays
+              the sole authority on what is off-diet (§5.5 D-A), so this is not a
+              second door to the room the FAB owns (§4.2 untouched). */}
+          <TouchableOpacity
+            testID="trial-protein-row"
+            onPress={openProteinPicker}
+            style={styles.proteinRow}
+            accessibilityRole="button"
+            accessibilityLabel={`${TRIAL_PROTEIN_ROW_LABEL}: ${proteinRow.value}. ${proteinRow.subLine}`}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <View style={styles.proteinRowText}>
+              <Text style={styles.proteinRowLabel}>{TRIAL_PROTEIN_ROW_LABEL}</Text>
+              <Text
+                testID="trial-protein-row-value"
+                style={[styles.proteinRowValue, !proteinRow.valueIsSet && styles.proteinRowValueEmpty]}
+              >
+                {proteinRow.value}
+              </Text>
+              <Text style={styles.proteinRowSub}>{proteinRow.subLine}</Text>
+            </View>
+            <Text style={styles.proteinRowChevron}>›</Text>
+          </TouchableOpacity>
+
           {model.groups.map((group) => {
             if (group.rows.length === 0 && group.emptyState === null) return null;
             return (
@@ -218,6 +374,20 @@ export default function TrialFoodsScreen() {
               </View>
             );
           })}
+
+          {/* B-704 §6.5 — the standing mismatch note, the mid-trial home for the
+              trial-contaminant tension (TG-3: trial-level, never per-feeding). It
+              is the SAME note the Pet-tab card renders (read via `useDietTrial`),
+              so a food on the list carrying an off-trial protein reads identically
+              on both surfaces. Presence-only — its absence is never an all-clear. */}
+          {trialInput?.standingNote && (
+            <View style={styles.noteWrap}>
+              <TrialContaminantNote
+                title={trialInput.standingNote.title}
+                body={trialInput.standingNote.body}
+              />
+            </View>
+          )}
 
           <PrimaryButton
             testID="trial-foods-add"
@@ -270,6 +440,38 @@ export default function TrialFoodsScreen() {
           }}
         />
       )}
+
+      {/* PR 3's shared picker (§7.2), mounted for mid-trial editing. It reports the
+          owner's tap via onSelect and owns nothing else; the host decides whether a
+          tap is a first-set (commit) or a change to an owner value (confirm first). */}
+      {set.status === 'ready' && (
+        <TrialProteinPicker
+          visible={proteinPickerOpen}
+          petName={petName}
+          choice={choice}
+          derivedKey={derivedKey}
+          derivedFoods={derivedFoods}
+          onSelect={handleProteinSelect}
+          onClose={() => setProteinPickerOpen(false)}
+        />
+      )}
+
+      {/* The correction confirm (TP-3, frame H) — interposed only on a change to an
+          existing owner value. */}
+      {pendingCorrection !== null && (
+        <TrialProteinCorrectionSheet
+          note={TRIAL_PROTEIN_CORRECTION_NOTE}
+          confirmLabel={trialProteinCorrectionLabel(pendingCorrection)}
+          saving={savingProtein}
+          error={proteinError}
+          onConfirm={() => void commitProtein(pendingCorrection)}
+          onCancel={() => {
+            if (savingProtein) return;
+            setProteinError(null);
+            setPendingCorrection(null);
+          }}
+        />
+      )}
     </SafeAreaView>
   );
 }
@@ -296,6 +498,50 @@ const styles = StyleSheet.create({
     color: theme.colorTextSecondary,
     marginTop: 2,
   },
+  // B-704 — the "Trial protein" row. A tappable card above the food list, in the
+  // register of the rows below it (a fact about the trial, with a way to change
+  // it), not a form field. The chevron marks it as opening the picker.
+  proteinRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: theme.space2,
+    marginTop: theme.space3,
+    paddingVertical: theme.space2,
+    paddingHorizontal: theme.space2,
+    borderRadius: theme.radiusMedium,
+    borderWidth: 1,
+    borderColor: theme.colorBorder,
+  },
+  proteinRowText: { flex: 1 },
+  proteinRowLabel: {
+    fontSize: theme.textXS,
+    color: theme.colorTextSecondary,
+  },
+  proteinRowValue: {
+    fontSize: theme.textMD,
+    fontWeight: theme.weightMedium,
+    color: theme.colorTextPrimary,
+    marginTop: theme.spaceMicro,
+  },
+  // The E1 empty register (TP-1): dimmed, so "Not set" reads as an optional
+  // set-prompt rather than a filled value.
+  proteinRowValueEmpty: {
+    fontWeight: theme.weightRegular,
+    color: theme.colorTextTertiary,
+  },
+  proteinRowSub: {
+    fontSize: theme.textXS,
+    lineHeight: theme.textXS * 1.4,
+    color: theme.colorTextTertiary,
+    marginTop: theme.spaceMicro,
+  },
+  proteinRowChevron: {
+    fontSize: theme.textLG,
+    color: theme.colorTextSecondary,
+  },
+  // §6.5 — the standing note sits below the food list it is a fact about.
+  noteWrap: { marginTop: theme.space3 },
   group: { marginTop: theme.space3 },
   groupLabel: { marginBottom: theme.space1 },
   row: {

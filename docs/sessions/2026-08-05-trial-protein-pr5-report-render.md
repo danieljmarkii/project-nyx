@@ -45,8 +45,8 @@ Dr. Chen (cold read, two rounds, rendered artifacts): mismatch report flips to C
 ## Residuals / follow-ups
 
 - **§7.4 Tier-2 amendment — flagged for PM ratification (not written).** §7.4 specified a "disclosure line" + "stored-first" attribution; the gates showed both produced a false-reassurance / self-contradictory artifact. This PR promotes the mismatch to a safety flag (per B-494) and makes attribution derived-first-with-stored-fallback. Shipped provisionally under the blocking-issue rule; PM action item filed.
-- **B-706** — the At-a-glance "N not matched" tile lacks the mismatch marker (cold-read NIT; safe-direction, mitigated by the leading flag).
-- **B-707** — page-1 "nothing more can be said" prose slightly undersells Appendix C's front-of-pack protein ID (cold-read NIT; errs safe).
+- **B-708** (filed as B-706, renumbered at the #596/#598 merge — PR 4 took B-706/707 first) — the At-a-glance "N not matched" tile lacks the mismatch marker (cold-read NIT; safe-direction, mitigated by the leading flag).
+- **B-709** (filed as B-707, renumbered) — page-1 "nothing more can be said" prose slightly undersells Appendix C's front-of-pack protein ID (cold-read NIT; errs safe).
 - **B-705** (derived-arm source-gate unification) stays **open** — not gate-required, and it risks the report's derived-value property test (primaries like `green tripe` / `egg whites` whose `proteinSourceBase` may be null), so deferred; the derived arm stays on plain `canonicalizeProtein` as in PR 2.
 - **Adversarial residual (no row):** the mismatch predicate uses exact canonical-key equality, so a taxonomic-kin owner value ('poultry' vs food 'chicken') fires the flag — the documented safe direction (surface for vet confirmation), not a bug.
 - **Cold-read NIT 3 (PD-vs-Dry product-name drift)** looked like a report data-hygiene issue but is largely a *fixture artifact* of the throwaway generator (trial food named "…PD (Duck)", logged meals defaulted to "…(Dry)"). Not filed as a product row; verify on real data if it recurs.

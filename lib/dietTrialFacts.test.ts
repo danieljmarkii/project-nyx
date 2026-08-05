@@ -83,6 +83,7 @@ function freshDb() {
       started_at TEXT NOT NULL, target_duration_days INTEGER NOT NULL,
       status TEXT NOT NULL, ended_at TEXT, completed_at TEXT,
       stopped_reason TEXT, outcome TEXT, indication TEXT, food_label TEXT,
+      target_protein TEXT, target_protein_set_at TEXT,
       synced INTEGER NOT NULL DEFAULT 0
     );
   `);
@@ -439,6 +440,7 @@ describe('loadDietTrialFacts → TrialCardInput (behavioural)', () => {
     outcome: string | null;
     indication: string;
     food_label: string;
+    target_protein: string | null;
   } = {
     id: 't1',
     started_at: '2026-07-03',
@@ -449,6 +451,7 @@ describe('loadDietTrialFacts → TrialCardInput (behavioural)', () => {
     outcome: null,
     indication: 'skin',
     food_label: 'Royal Canin Duck',
+    target_protein: null,
   };
 
   /** Drives the loader off in-memory rows: the trial, its allowed set, and one
@@ -509,6 +512,21 @@ describe('loadDietTrialFacts → TrialCardInput (behavioural)', () => {
       nowMs,
     });
   }
+
+  // B-704 — the identity protein reaches the card, resolved through the ONE
+  // predicate. No stored value → derived from the trial food (the duck stub).
+  it('derives the trial protein from the trial food when nothing is stored', async () => {
+    const input = await load([{ id: 'e1', at: new Date(2026, 6, 4, 8).toISOString(), food: 'f1' }],
+      new Date(2026, 6, 25, 20).getTime());
+    expect(input.trial?.trialProtein).toEqual({ protein: 'duck', source: 'derived' });
+  });
+
+  it('prefers a stored owner protein over the derivation (stored-first)', async () => {
+    const input = await load([{ id: 'e1', at: new Date(2026, 6, 4, 8).toISOString(), food: 'f1' }],
+      new Date(2026, 6, 25, 20).getTime(), { target_protein: 'rabbit' });
+    // Owner's word wins, tagged owner — even though the trial food lists duck.
+    expect(input.trial?.trialProtein).toEqual({ protein: 'rabbit', source: 'owner' });
+  });
 
   // THE MERGE-BLOCKER, as a behavioural assertion. Trial back-dated to the
   // clinic visit; the owner starts logging 28 days later.

@@ -65,6 +65,7 @@ import {
 import { relativeDayLabel } from './food';
 import { proteinsFromCacheText } from './protein';
 import { antigenPausedNote, loadTrialProteinContext, trialDietNote } from './trialContaminant';
+import { trialTargetProtein } from './trialProtein';
 import { localDayIndexOf, petPronouns, toLocalDayKey } from './utils';
 import type { TrialCardInput, TrialCardTrial } from './dietTrialCard';
 
@@ -86,6 +87,9 @@ interface TrialRow {
   outcome: string | null;
   indication: string | null;
   food_label: string | null;
+  /** B-704 — the owner-stated trial protein (canonical key or null). Resolved
+   *  stored-first through `trialTargetProtein` into the card/strip identity. */
+  target_protein: string | null;
 }
 
 /** The card's read, against the LOCAL mirror B-417 PR 2 shipped (#453).
@@ -139,7 +143,7 @@ interface TrialRow {
  *  and renders nothing but a day counter. */
 export const TRIAL_FOR_CARD_SQL = `
   SELECT t.id, t.started_at, t.target_duration_days, t.status,
-         t.ended_at, t.stopped_reason, t.outcome, t.indication,
+         t.ended_at, t.stopped_reason, t.outcome, t.indication, t.target_protein,
          COALESCE(
            NULLIF(TRIM(COALESCE(f.brand, '') || ' ' || COALESCE(f.product_name, '')), ''),
            t.food_label
@@ -351,7 +355,26 @@ export async function loadTrialPredicateFacts(
     }
   }
 
-  return { trial, stoppedForRefusal: row.stopped_reason === 'refused', facts };
+  // B-704 — the trial's identity protein, resolved through the ONE predicate:
+  // stored-first (the owner's confirmed word), derivation fallback (the primary
+  // foods' own designated protein), with provenance. The card and Home strip name
+  // the trial "{Protein} trial" from this; a null resolution falls back to the
+  // food-label naming, unchanged.
+  //
+  // NAMING IS NOT A CLAIM (TG-1/TG-2), so it sits OUTSIDE the predicate-facts gate
+  // above: a null `allowedFoods` (unreadable set) leaves derivation with nothing,
+  // so a stored value still names the trial while derivation simply goes dark —
+  // and a null result names nothing (never "no protein", never an all-clear). It
+  // is deliberately independent of `facts`: an unreadable record silences the
+  // COUNTS, not the trial's name.
+  const primaryFoods = (allowedFoods ?? []).filter((f) => f.role === 'primary_diet');
+  const trialProtein = trialTargetProtein({ target_protein: row.target_protein }, primaryFoods);
+
+  return {
+    trial: { ...trial, trialProtein },
+    stoppedForRefusal: row.stopped_reason === 'refused',
+    facts,
+  };
 }
 
 /** Reads the pet's active trial and everything the card needs to describe it.

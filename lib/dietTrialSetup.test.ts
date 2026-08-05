@@ -45,7 +45,8 @@ jest.mock('./utils', () => {
 import {
   addTrialFood, buildTrialRows, canStartTrial, defaultDurationDays, describeActiveTrial,
   durationHelperLine, endActiveTrial, foodLabel, formatTrialEndDate,
-  extendTrial, getActiveTrialForPet, permittedRoleForFood, secondTrialIntro, startDietTrial,
+  extendTrial, getActiveTrialForPet, permittedRoleForFood, secondTrialIntro,
+  setTrialTargetProtein, startDietTrial,
   stopReasonOptions, trialEndDayKey, trialSetupLines, TRIAL_RECORD_DISCLOSURE,
   type StartTrialInput,
 } from './dietTrialSetup';
@@ -417,6 +418,67 @@ describe('extendTrial — `Keep going`', () => {
       await expect(extendTrial({ trialId: 't-1', targetDurationDays: bad })).rejects.toThrow();
     }
     expect(mockRunAsync).not.toHaveBeenCalled();
+  });
+});
+
+describe('setTrialTargetProtein — B-704 the write path', () => {
+  const NOW = new Date('2026-08-05T10:00:00.000Z');
+
+  it('writes a canonical key with a set_at stamp, and re-arms the push', async () => {
+    await setTrialTargetProtein({ trialId: 't-1', protein: 'rabbit', now: NOW });
+    const [sql, params] = mockRunAsync.mock.calls[0] as [string, unknown[]];
+    expect(sql).toContain('UPDATE diet_trials');
+    expect(sql).toContain('target_protein = ?');
+    expect(sql).toContain('target_protein_set_at = ?');
+    // TG-4: a canonical key lands, with the paired non-null stamp.
+    expect(params[0]).toBe('rabbit');
+    expect(params[1]).toBe('2026-08-05T10:00:00.000Z');
+    expect(params[3]).toBe('t-1');
+    // The mirror's re-arm contract, same as every other trial write.
+    expect(sql).toContain('synced = 0');
+    expect(sql).toContain('sync_attempts = 0');
+    expect(sql).toContain('sync_error = NULL');
+  });
+
+  it('canonicalizes a raw label rather than storing it verbatim (TG-4)', async () => {
+    await setTrialTargetProtein({ trialId: 't-1', protein: 'Rabbit', now: NOW });
+    const [, params] = mockRunAsync.mock.calls[0] as [string, unknown[]];
+    // A raw label never lands in the column — Class-A canonicalization on write.
+    expect(params[0]).toBe('rabbit');
+  });
+
+  it('writes NULL protein AND NULL set_at when cleared (the paired-null contract, §5)', async () => {
+    await setTrialTargetProtein({ trialId: 't-1', protein: null, now: NOW });
+    const [, params] = mockRunAsync.mock.calls[0] as [string, unknown[]];
+    // set_at is null whenever protein is null — never a stamp over a null value.
+    expect(params[0]).toBeNull();
+    expect(params[1]).toBeNull();
+  });
+
+  it('collapses an unusable value (junk/empty) to the null branch, never a junk key', async () => {
+    // `canonicalizeProtein` returns null for the PROTEIN_JUNK set, so a cleared or
+    // unusable value naturally lands as null + null — the picker never sends these,
+    // but the write path holds the contract regardless.
+    await setTrialTargetProtein({ trialId: 't-1', protein: 'unknown', now: NOW });
+    const [, params] = mockRunAsync.mock.calls[0] as [string, unknown[]];
+    expect(params[0]).toBeNull();
+    expect(params[1]).toBeNull();
+  });
+
+  it('NEVER touches status, started_at, or the allowed set (TG-1: it only names)', async () => {
+    await setTrialTargetProtein({ trialId: 't-1', protein: 'rabbit', now: NOW });
+    const [sql] = mockRunAsync.mock.calls[0] as [string];
+    expect(sql).not.toContain('status =');
+    expect(sql).not.toContain('started_at =');
+    expect(sql).not.toContain('ended_at =');
+    expect(sql.toUpperCase()).not.toContain('INSERT');
+    expect(sql).toContain('WHERE id = ?');
+  });
+
+  it('bumps the hydration tick so BOTH the card and the Home strip re-read', async () => {
+    const before = useSyncStore.getState().hydrationTick;
+    await setTrialTargetProtein({ trialId: 't-1', protein: 'rabbit', now: NOW });
+    expect(useSyncStore.getState().hydrationTick).toBe(before + 1);
   });
 });
 

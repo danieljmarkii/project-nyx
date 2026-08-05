@@ -16,6 +16,15 @@ import {
   mismatchHeadsUp,
   unsetOption,
   derivedGroupHeader,
+  isTrialProteinCorrection,
+  trialProteinCorrectionLabel,
+  midTrialProteinRow,
+  midTrialInitialChoice,
+  TRIAL_PROTEIN_CORRECTION_NOTE,
+  TRIAL_PROTEIN_SUBLINE_CHOSEN,
+  TRIAL_PROTEIN_SUBLINE_DERIVED,
+  TRIAL_PROTEIN_SUBLINE_EMPTY,
+  TRIAL_PROTEIN_VALUE_UNSET,
   type TrialProteinChoice,
   type DerivedProteinFood,
 } from './trialProteinPicker';
@@ -171,5 +180,79 @@ describe('copy builders', () => {
 
   it('the derived group header names the pet (mock C)', () => {
     expect(derivedGroupHeader('Miso')).toBe("From Miso's trial diet");
+  });
+});
+
+// ── Mid-trial editing (B-704 PR 4 — the correction gate + row, mock frames G/H) ──
+
+describe('isTrialProteinCorrection', () => {
+  it('is a correction when an owner value changes to a different protein', () => {
+    expect(isTrialProteinCorrection('rabbit', { kind: 'protein', key: 'venison' })).toBe(true);
+  });
+  it('is a correction when clearing an owner value to an escape hatch', () => {
+    expect(isTrialProteinCorrection('rabbit', { kind: 'hydrolyzed' })).toBe(true);
+    expect(isTrialProteinCorrection('rabbit', { kind: 'unset' })).toBe(true);
+  });
+  it('is NOT a correction when re-picking the same owner value', () => {
+    expect(isTrialProteinCorrection('rabbit', { kind: 'protein', key: 'rabbit' })).toBe(false);
+  });
+  it('is NEVER a correction on a non-owner (null) trial — that is a first-set', () => {
+    expect(isTrialProteinCorrection(null, { kind: 'protein', key: 'venison' })).toBe(false);
+    expect(isTrialProteinCorrection(null, { kind: 'hydrolyzed' })).toBe(false);
+    expect(isTrialProteinCorrection(null, { kind: 'derived' })).toBe(false);
+  });
+});
+
+describe('trialProteinCorrectionLabel', () => {
+  it('names the destination protein (mock frame H "Change to venison")', () => {
+    expect(trialProteinCorrectionLabel({ kind: 'protein', key: 'venison' })).toBe('Change to venison');
+  });
+  it('reads as a removal for either escape hatch', () => {
+    expect(trialProteinCorrectionLabel({ kind: 'hydrolyzed' })).toBe('Remove the trial protein');
+    expect(trialProteinCorrectionLabel({ kind: 'unset' })).toBe('Remove the trial protein');
+  });
+});
+
+describe('TRIAL_PROTEIN_CORRECTION_NOTE', () => {
+  it('states the whole-trial effect and that off-diet counts do not move (§8/TG-1)', () => {
+    expect(TRIAL_PROTEIN_CORRECTION_NOTE).toContain("the trial's whole record");
+    expect(TRIAL_PROTEIN_CORRECTION_NOTE).toContain("What counted as off-diet doesn't change");
+  });
+});
+
+describe('midTrialProteinRow', () => {
+  it('shows an owner-confirmed protein with the "tap to change" sub-line', () => {
+    expect(midTrialProteinRow({ protein: 'rabbit', source: 'owner' })).toEqual({
+      value: 'Rabbit',
+      valueIsSet: true,
+      subLine: TRIAL_PROTEIN_SUBLINE_CHOSEN,
+    });
+  });
+  it('marks a derived protein as from the picked foods, not owner-confirmed', () => {
+    expect(midTrialProteinRow({ protein: 'rabbit', source: 'derived' })).toEqual({
+      value: 'Rabbit',
+      valueIsSet: true,
+      subLine: TRIAL_PROTEIN_SUBLINE_DERIVED,
+    });
+  });
+  it('is a set-prompt when nothing resolves (E1) — never a "no protein" verdict', () => {
+    expect(midTrialProteinRow({ protein: null, source: null })).toEqual({
+      value: TRIAL_PROTEIN_VALUE_UNSET,
+      valueIsSet: false,
+      subLine: TRIAL_PROTEIN_SUBLINE_EMPTY,
+    });
+  });
+});
+
+describe('midTrialInitialChoice', () => {
+  it('pre-selects an owner-set protein', () => {
+    expect(midTrialInitialChoice({ protein: 'rabbit', source: 'owner' })).toEqual({
+      kind: 'protein',
+      key: 'rabbit',
+    });
+  });
+  it('opens on `derived` for a derived or unset trial (the neutral default)', () => {
+    expect(midTrialInitialChoice({ protein: 'rabbit', source: 'derived' })).toEqual({ kind: 'derived' });
+    expect(midTrialInitialChoice({ protein: null, source: null })).toEqual({ kind: 'derived' });
   });
 });
