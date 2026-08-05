@@ -2288,6 +2288,156 @@ Deno.test('B-351 §9 — a CLEAN trial diet gets no page-1 line at all (there is
   assert.ok(!/no contaminants|no other proteins|clean/i.test(html.slice(0, html.indexOf('Appendix'))), 'and no reassuring inverse')
 })
 
+// ── B-704 — the trial block identity names the protein, with provenance (§7.4) ────
+
+/** The diet half of a trial snapshot for the B-704 identity tests: a protein resolves,
+ *  its provenance/mismatch are the free parameters. */
+function proteinDiet(over: Partial<import('./report.ts').DietSummary>): import('./report.ts').DietSummary {
+  return {
+    trialTargetProtein: 'duck',
+    trialProteinProvenance: { source: 'derived', confirmedDay: null },
+    trial: { ...DUCK_TRIAL, proteinSet: pset(['duck'], { complete: true }) },
+    freeFed: [],
+    intakeNotDirectlyObserved: false,
+    mealCompletion: null,
+    mealItems: [],
+    treats: { count: 0, distinctItems: 0 },
+    humanFood: { count: 0, days: 0, items: [] },
+    ...over,
+  }
+}
+
+Deno.test('B-704 §7.4 — the identity leads with "Elimination diet trial — {protein}" and the derived provenance', () => {
+  const html = text(
+    renderReport(
+      base({
+        trial: trialBlockFixture({ trialDietLabels: ['Novel Duck'], startedAt: '2026-05-08' }),
+        diet: proteinDiet({ trialTargetProtein: 'duck', trialProteinProvenance: { source: 'derived', confirmedDay: null } }),
+      }),
+    ),
+  )
+  assert.ok(/Elimination diet trial/.test(html), 'the block leads with the elimination-trial framing')
+  assert.ok(/Duck/.test(html), 'the protein is named')
+  assert.ok(/read from the trial diet/.test(html), 'a derived target is disclosed as read off the label, not owner-stated')
+  assert.ok(!/owner-confirmed/.test(html), 'a derived target is NOT presented as owner-confirmed')
+})
+
+Deno.test('B-704 §7.4 — an OWNER target reads "owner-confirmed protein"', () => {
+  const html = text(
+    renderReport(
+      base({
+        trial: trialBlockFixture({ trialDietLabels: ['Instinct Rabbit'], startedAt: '2026-05-08' }),
+        diet: proteinDiet({ trialTargetProtein: 'rabbit', trialProteinProvenance: { source: 'owner', confirmedDay: null } }),
+      }),
+    ),
+  )
+  assert.ok(/Elimination diet trial/.test(html))
+  assert.ok(/Rabbit/.test(html), 'the owner-stated protein names the trial')
+  assert.ok(/owner-confirmed protein/.test(html))
+})
+
+Deno.test('B-704 §7.4 — an owner target set after day 1 discloses "recorded on day N"', () => {
+  const html = text(
+    renderReport(
+      base({
+        trial: trialBlockFixture({ trialDietLabels: ['Instinct Rabbit'], startedAt: '2026-05-08' }),
+        diet: proteinDiet({ trialTargetProtein: 'rabbit', trialProteinProvenance: { source: 'owner', confirmedDay: 8 } }),
+      }),
+    ),
+  )
+  assert.ok(/owner-confirmed protein/.test(html))
+  assert.ok(/recorded on day 8/.test(html), 'a mid-trial confirmation is dated')
+})
+
+Deno.test('B-704 §6/TG-3 — the mismatch LEADS the safety band, names the consequence, and stays trial-level', () => {
+  // On a mismatch the exposure baseline is the FOOD (duck); the owner's rabbit is the
+  // safety flag. The render receives the flag in `safetyFlags` (assembleReport builds it)
+  // and an antigen tally to caveat.
+  const html = renderReport(
+    base({
+      safetyFlags: [{ kind: 'protein_mismatch', recordedProtein: 'rabbit', foodProtein: 'duck', trialDietLabels: ['Novel Duck'] }],
+      trial: trialBlockFixture({
+        trialDietLabels: ['Novel Duck'],
+        startedAt: '2026-05-08',
+        antigenTally: [{ protein: 'chicken', feedings: 3, fromPermitted: 0 }],
+      }),
+      diet: proteinDiet({
+        trialTargetProtein: 'duck', // the baseline is the food, coherent with the counts
+        trialProteinProvenance: { source: 'derived', confirmedDay: null },
+        trialProteinMismatch: { target: 'rabbit', foodProtein: 'duck', foodLabel: 'Novel Duck' },
+      }),
+    }),
+  )
+  const t = text(html)
+  // The safety band carries the flag and the LOAD-BEARING consequence.
+  assert.ok(/class="safetyband"/.test(html), 'the safety band renders')
+  assert.ok(/recorded trial protein is not the protein on the trial food/.test(t), 'the flag states the discrepancy')
+  assert.ok(/Rabbit/.test(t) && /Duck/.test(t), 'both proteins are named')
+  assert.ok(/every feeding of the trial diet is itself off-target/.test(t), 'names the false-reassurance consequence (the cold-read blocker)')
+  assert.ok(/elimination cannot be confirmed from this record/.test(t))
+  // The identity names the FOOD protein (duck), not the owner belief — coherent baseline.
+  assert.ok(/Elimination diet trial/.test(t) && /read from the trial diet/.test(t), 'identity names the label-read baseline (duck), not a false owner-confirmed')
+  // The antigen count carries the baseline caveat inline, pointing at the flag.
+  assert.ok(/Measured against the trial food&rsquo;s label/.test(html) || /Measured against the trial food's label/.test(t), 'the antigen count is caveated with its baseline')
+  // TG-3 / §8: trial-level, once, and never the forbidden framing.
+  assert.equal(t.split('recorded trial protein is not the protein').length - 1, 1, 'one trial-level line, never per feeding')
+  const flagText = t.slice(t.indexOf('recorded trial protein'), t.indexOf('recorded trial protein') + 600)
+  assert.ok(!/wrong food|\bmistake\b/i.test(flagText), 'never "wrong food" / "mistake" (§8)')
+})
+
+Deno.test('B-704 — no protein_mismatch flag or caveat when the target and the label agree', () => {
+  const html = text(
+    renderReport(
+      base({
+        trial: trialBlockFixture({ trialDietLabels: ['Novel Duck'], startedAt: '2026-05-08', antigenTally: [{ protein: 'chicken', feedings: 3, fromPermitted: 0 }] }),
+        diet: proteinDiet({ trialTargetProtein: 'duck', trialProteinProvenance: { source: 'owner', confirmedDay: null }, trialProteinMismatch: null }),
+      }),
+    ),
+  )
+  assert.ok(!/recorded trial protein is not the protein/.test(html), 'no flag when there is no tension')
+  assert.ok(!/Measured against the trial food/.test(html), 'no baseline caveat when there is no mismatch')
+})
+
+Deno.test('B-704 — on a mismatch the baseline caveat rides BOTH the page-1 tally AND the appendix-D antigen line', () => {
+  // The adversarial residual: the appendix is where a vet is SENT to check the page-1
+  // figure, so an un-annotated antigen count there is the last spot a mismatch count could
+  // be lifted out of its baseline context. `allowedSetUnavailable: false` makes the
+  // appendix-D antigen line render.
+  const html = renderReport(
+    base({
+      safetyFlags: [{ kind: 'protein_mismatch', recordedProtein: 'rabbit', foodProtein: 'duck', trialDietLabels: ['Novel Duck'] }],
+      trial: trialBlockFixture({
+        trialDietLabels: ['Novel Duck'],
+        startedAt: '2026-05-08',
+        allowedSetUnavailable: false,
+        antigenTally: [{ protein: 'chicken', feedings: 3, fromPermitted: 0 }],
+      }),
+      diet: proteinDiet({
+        trialTargetProtein: 'duck',
+        trialProteinProvenance: { source: 'derived', confirmedDay: null },
+        trialProteinMismatch: { target: 'rabbit', foodProtein: 'duck', foodLabel: 'Novel Duck' },
+      }),
+    }),
+  )
+  // Two antigen counts on a mismatch (page-1 trial row + appendix D) → two caveats, so
+  // neither figure can be read against the wrong baseline.
+  const caveats = html.split('Measured against the trial food').length - 1
+  assert.ok(caveats >= 2, `both antigen counts carry the baseline caveat (found ${caveats})`)
+})
+
+Deno.test('B-704 — NO protein resolved falls back to the food-label-led identity (no bare "Elimination diet trial —")', () => {
+  const html = text(
+    renderReport(
+      base({
+        trial: trialBlockFixture({ trialDietLabels: ['Hydrolyzed HP'], startedAt: '2026-05-08' }),
+        diet: proteinDiet({ trialTargetProtein: null, trialProteinProvenance: null, trial: { ...DUCK_TRIAL, primaryProtein: 'hydrolyzed', proteinSet: pset(['hydrolyzed'], { complete: true }) } }),
+      }),
+    ),
+  )
+  assert.ok(!/Elimination diet trial/.test(html), 'no protein → no elimination-trial lead with an empty dash')
+  assert.ok(/Hydrolyzed HP/.test(html), 'the food labels still lead the identity')
+})
+
 Deno.test('B-351 D10 — an unread ingredient list NEVER renders "nothing else on the label"', () => {
   // The single string this whole gate exists to prevent. `['duck']` from a
   // marketing-name-only read is byte-identical to a genuinely single-protein duck food.

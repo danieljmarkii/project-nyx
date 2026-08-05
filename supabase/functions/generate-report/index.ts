@@ -255,6 +255,9 @@ interface DietTrialRow {
   /** §3.1's denormalized display fallback — survives archiving the trial food. */
   food_label: string | null
   vet_name: string | null
+  /** B-704 migration 053 — the owner's stored trial protein + when it was set. */
+  target_protein: string | null
+  target_protein_set_at: string | null
   food_items: FoodItemJoin | FoodItemJoin[] | null
   diet_trial_foods: DietTrialFoodRow[] | null
 }
@@ -540,6 +543,10 @@ export function mapDietTrialRows(rows: DietTrialRow[]): ReportDietTrialInput[] {
       // value, it is the one that outlives the row.
       foodLabel: foodLabel(fi) ?? r.food_label ?? null,
       primaryProtein: fi?.primary_protein ?? null,
+      // B-704 (migration 053) — the owner's stored trial protein, read STORED-FIRST by
+      // `trialTargetProtein`; null derives, exactly as today. Never permits (TG-1).
+      targetProtein: r.target_protein ?? null,
+      targetProteinSetAt: r.target_protein_set_at ?? null,
       ...mapFoodProteins(fi),
       allowedFoods: (r.diet_trial_foods ?? []).map((f) => {
         const ffi = first(f.food_items)
@@ -763,6 +770,10 @@ export async function generateReportForPet(
       .select(
         'id, food_item_id, started_at, target_duration_days, status, completed_at, ended_at, ' +
           'indication, outcome, outcome_notes, stopped_reason, food_label, vet_name, ' +
+          // B-704 migration 053 — the owner's stored trial protein feeds the report's
+          // stored-first naming (§7.4). Selecting it is inert until `generate-report` is
+          // redeployed; that redeploy rides the standing B-494 gate, never on its own.
+          'target_protein, target_protein_set_at, ' +
           `food_items(food_type, format, ${FOOD_PROTEIN_COLS}, brand, product_name), ` +
           // The allowed set (§3.2) — rung 1 of §5.3, and the only reason the report
           // can tell a vet-permitted treat from a contaminant. Soft-deleted rows are

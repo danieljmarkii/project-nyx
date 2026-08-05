@@ -1439,6 +1439,21 @@ function safetyFlagRow(f: SafetyFlag, snap: ReportSnapshot): string {
             )} days to ${num(f.currentCount)} in the recent ${num(w)} days.`
       return flagRow('Worsening', `<b>Rising frequency.</b> ${detail}`)
     }
+    case 'protein_mismatch': {
+      // B-704 §6 — the wrong-primary trial food, made a lead safety line rather than a
+      // buried disclosure (`vet-report-cold-read` 2026-08-05). The load-bearing sentence
+      // is the CONSEQUENCE: if the recorded protein is the real antigen, the trial diet
+      // ITSELF is off-target, so the "nearly clean" exposure count is a false-reassurance
+      // read. Trial-level and non-causal; never "wrong food" / "mistake" (§8). It states
+      // which baseline the figures use so a vet is not misled by them, and moves no count.
+      const labels = f.trialDietLabels.length ? h(f.trialDietLabels.join(' / ')) : 'the trial food'
+      const recorded = h(capProtein(f.recordedProtein))
+      const food = h(capProtein(f.foodProtein))
+      return flagRow(
+        'Trial protein',
+        `<b>The recorded trial protein is not the protein on the trial food&rsquo;s label.</b> The owner recorded <b>${recorded}</b> as this trial&rsquo;s protein; ${labels} lists <b>${food}</b> as its main protein. This record cannot resolve which is the elimination antigen. The exposure figures on this report are measured against ${food} (the food&rsquo;s label); <b>if ${recorded} is the intended antigen, every feeding of the trial diet is itself off-target and the elimination cannot be confirmed from this record.</b> Worth confirming the bag against the prescription.`,
+      )
+    }
   }
 }
 
@@ -1571,6 +1586,25 @@ function dietTrialSection(snap: ReportSnapshot): string {
   const labels = t.trialDietLabels.length
     ? t.trialDietLabels.map((l) => h(l)).join(' + ')
     : 'Trial diet (not named)'
+  // B-704 §7.4 — NAME THE PROTEIN. `trialTargetProtein` is the EXPOSURE BASELINE (the
+  // derived-first key every off-trial marking on this page is measured against), so the
+  // identity names the same protein the exposure figures use — the two can never disagree.
+  // When the owner CONFIRMS that protein the provenance says so ("owner-confirmed"); when
+  // it was read off the label it says that instead; and on a MISMATCH the baseline is the
+  // food's own protein (duck), the identity names it as label-read, and the owner's
+  // different word (rabbit) leads the safety band above as a `protein_mismatch` flag —
+  // never a false "owner-confirmed" over the food's protein. No protein resolves
+  // (hydrolyzed / cleared / a thin trial food with no stored value) → the food-label-led
+  // form, never a bare "Elimination diet trial —" with nothing after the dash.
+  const protein = snap.diet.trialTargetProtein
+  const prov = snap.diet.trialProteinProvenance
+  const provWord = !prov
+    ? ''
+    : prov.source === 'owner'
+      ? prov.confirmedDay != null
+        ? `owner-confirmed protein &middot; recorded on day ${num(prov.confirmedDay)}`
+        : 'owner-confirmed protein'
+      : 'protein read from the trial diet&rsquo;s label'
   const identity: string[] = [
     // THE JOIN NEEDS ITS OWN PUNCTUATION (cold read round 10, all four artifacts). The
     // phrase was concatenated straight onto the next clause, and on an ended trial that
@@ -1578,8 +1612,16 @@ function dietTrialSection(snap: ReportSnapshot): string {
     // asserts a 42-day window spanning nineteen days. A later sentence corrects each
     // one, which is why no artifact was blocked by it — and why one delimiter fixes it
     // on all four.
-    `${labels} &middot; ${trialDayPhrase(t, t.targetDurationDays)}.`,
+    protein
+      ? `Elimination diet trial &mdash; <b>${h(capProtein(protein))}</b> &middot; ${trialDayPhrase(t, t.targetDurationDays)}.`
+      : `${labels} &middot; ${trialDayPhrase(t, t.targetDurationDays)}.`,
   ]
+  // The food labels + provenance sub-line, only when the lead named the protein instead
+  // of the labels (else the labels already lead and this would repeat them). The labels
+  // ALWAYS ride this line so they never vanish; the provenance word rides it only when
+  // present (it always is in production — provenance travels with the resolved protein —
+  // but a display-only fixture may omit it, so no dangling delimiter either way).
+  if (protein) identity.push(`${labels}${provWord ? ` &middot; ${provWord}` : ''}.`)
   identity.push(
     t.status === 'active'
       ? `Started ${h(fmtDay(t.startedAt))}.`
@@ -1591,6 +1633,12 @@ function dietTrialSection(snap: ReportSnapshot): string {
   if (t.vetName) identity.push(`Directed by ${h(t.vetName)}.`)
   if (t.stoppedReason) identity.push(`<b>${h(stoppedReasonLine(snap.signalment.name, t.stoppedReason, t))}</b>`)
   rows.push(kv('Trial', identity.join(' ')))
+
+  // B-704 §6 — the target-vs-label tension does NOT render a second disclosure line here.
+  // It leads the SAFETY BAND above (a `protein_mismatch` flag), because a disclosure line
+  // in the trial block was where a vet formed a false-reassurance impression before ever
+  // reaching it (`vet-report-cold-read` 2026-08-05). The antigen-exposure row below carries
+  // a one-clause pointer to that flag so the count is never read out of its context.
 
   // ── §5.1's two facts, over ONE explicit range, never in one sentence ────────
   //
@@ -1788,7 +1836,17 @@ function dietTrialSection(snap: ReportSnapshot): string {
         // biopsy rather than at re-running an interpretable trial. The general
         // disclaimer four lines up cannot carry it, because the reader who lifts this
         // number has already stopped reading prose.
-        `${tally}. Proteins fed ${antigenScope} that the trial diet does not contain, counted on approved and unapproved feedings alike. ${PROTEIN_READ_CAVEAT}`,
+        // B-704 — on a mismatch the tally is measured against the trial food's OWN label
+        // (`snap.diet.trialTargetProtein` = the derived baseline), which is NOT the protein
+        // the owner recorded. A vet who lifts this count must know that, or "Chicken ×3"
+        // reads as a near-clean elimination while, if the recorded protein is the antigen,
+        // every trial-diet feeding is itself off-target. Points at the safety flag rather
+        // than re-arguing it here.
+        `${tally}. Proteins fed ${antigenScope} that the trial diet does not contain, counted on approved and unapproved feedings alike.${
+          snap.diet.trialProteinMismatch
+            ? ` <b>Measured against the trial food&rsquo;s label (${h(capProtein(snap.diet.trialProteinMismatch.foodProtein))}), not the recorded protein (${h(capProtein(snap.diet.trialProteinMismatch.target))}) &mdash; see the trial-protein safety flag.</b>`
+            : ''
+        } ${PROTEIN_READ_CAVEAT}`,
       ),
     )
   }
@@ -4834,7 +4892,15 @@ function offDietAppendix(snap: ReportSnapshot): string {
       // finding it qualifies — "Antigen exposures in the 31 trial days this report
       // covers: Beef ×1 — proteins fed in the 31 trial days this report covers that…",
       // pushing the number to the middle. The scoping is right; the density was not.
-      `<b>Antigen exposures ${antigenScope}:</b> ${antigens}${unknownBit} — proteins fed in that range that the trial diet does not contain, counted on approved and unapproved feedings alike. A food containing several counts once for each.`,
+      // B-704 — mirror page 1's baseline caveat onto the appendix a vet is sent here to
+      // CHECK the page-1 figure against: on a mismatch this count is measured against the
+      // trial food's label, not the recorded protein, and the un-annotated appendix figure
+      // is the last spot a mismatch count could be lifted out of that context.
+      `<b>Antigen exposures ${antigenScope}:</b> ${antigens}${unknownBit} — proteins fed in that range that the trial diet does not contain, counted on approved and unapproved feedings alike. A food containing several counts once for each.${
+        snap.diet.trialProteinMismatch
+          ? ` Measured against the trial food&rsquo;s label (${h(capProtein(snap.diet.trialProteinMismatch.foodProtein))}), not the recorded protein (${h(capProtein(snap.diet.trialProteinMismatch.target))}).`
+          : ''
+      }`,
     )
   } else if (tally) {
     tallyParts.push(
