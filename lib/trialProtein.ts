@@ -23,7 +23,7 @@
 // "bundler"` (expo's base tsconfig) and Metro both accept it, so one spelling
 // satisfies every consumer. Same reason the Edge Functions spell `lib/protein.ts`.
 import { canonicalizeProtein } from './protein.ts';
-import { dropKinOfPrimary } from './proteinRelation.ts';
+import { dropKinOfPrimary, proteinSourceBase } from './proteinRelation.ts';
 
 /**
  * The proteins in `foodProteins` that the trial diet does not include.
@@ -82,6 +82,22 @@ export type TrialProteinSource = 'owner' | 'derived';
  * consumer must conclude nothing from a null target — nothing was named, and
  * nothing was compared.
  *
+ * WHAT COUNTS AS A PROTEIN — ONE NOTION, shared with the antigen path (TG-4). The
+ * stored value is accepted only when it names a protein SOURCE, gated on the SAME
+ * `proteinSourceBase` `isUncharacterizedTrialDiet` uses — so the naming path and
+ * the sanctioned-set path can never disagree about whether a value is a protein. A
+ * bare process word ('hydrolyzed', 'protein') canonicalizes to a non-null fixpoint
+ * but names no source, and asserting it "owner-confirmed" on a vet report would
+ * both misname the diet and contradict the antigen arm; it drops to derivation
+ * instead. This read gate is NOT a full validator, though — `canonicalizeProtein`
+ * is a keyer, so arbitrary well-formed non-protein text ('not a real key') keys to
+ * a fixpoint and DOES survive as the owner's word. Keeping that out of the column
+ * is the WRITE path's job (the picker's "Other" escape, PR 3, B-412/D9 pattern);
+ * the gate here only stops the process-word class from being mislabelled owner.
+ * The derivation arm below stays plain `canonicalizeProtein` — the historical
+ * report derivation, so the PR-2 report migration is byte-identical; unifying it
+ * onto the source gate is a PR-5 report-render change, under the cold-read gate.
+ *
  * @param trial          the trial row, read for its owner-stated `target_protein`.
  * @param primaryFoods   the trial's primary-diet foods, most-prominent first — the
  *                       derivation source when nothing is stored. One food yields
@@ -92,12 +108,17 @@ export function trialTargetProtein(
   trial: { target_protein: string | null },
   primaryFoods: readonly { primaryProtein: string | null }[],
 ): { protein: string | null; source: TrialProteinSource | null } {
-  // Stored-first: an owner-confirmed protein wins outright. Canonicalize on READ
-  // too — a Class-A convergent op, so re-keying a value already written canonical
-  // (TG-4) is a no-op, and a value that somehow is NOT a key drops to the
-  // derivation rather than being asserted to the vet as owner-confirmed junk.
+  // Stored-first: an owner-confirmed protein wins — but ONLY when it names a usable
+  // source (`proteinSourceBase != null`, the gate the antigen path uses). Canonicalize
+  // on READ (a Class-A convergent op — a no-op on a value already written canonical,
+  // TG-4). A process word ('hydrolyzed') keys to a non-null fixpoint yet names no
+  // source, so it is NOT asserted owner-confirmed; it falls to derivation. Arbitrary
+  // non-protein text still survives (the keyer is not a dictionary) — that residual
+  // is the write path's to close, see the docstring.
   const stored = canonicalizeProtein(trial.target_protein);
-  if (stored != null) return { protein: stored, source: 'owner' };
+  if (stored != null && proteinSourceBase(stored) != null) {
+    return { protein: stored, source: 'owner' };
+  }
 
   // Fallback: derive from the picked primary-diet foods, in prominence order. The
   // derivation is BEST-EFFORT by construction — it is exactly the "the food defines

@@ -129,12 +129,15 @@ const CORPUS: readonly TrialFeeding[] = [
 // protein" null. If any one of these moved a verdict, target_protein would be a
 // permit — which is the whole thing the track forbids.
 const TARGET_VALUES: readonly (string | null)[] = [
-  null, // unset / hydrolyzed / cleared — all store null
+  null, // unset / hydrolyzed-option / cleared — all store null
   'duck', // the real target, owner-confirmed
   'chicken', // a DIFFERENT protein — the mismatch case
   'rabbit',
-  'Poultry', // mixed case → canonicalizes
-  'NOT A REAL KEY!!! $$$', // junk → canonicalizes to null → falls to derivation
+  'Poultry', // mixed case → canonicalizes to 'poultry', accepted as owner
+  'hydrolyzed', // a PROCESS WORD — names no source, so it drops to derivation, not owner
+  'NOT A REAL KEY!!! $$$', // keys to the fixpoint 'not a real key' (canonicalizeProtein is a
+                           // keyer, not a dictionary) → survives as owner; the write path is
+                           // the validator of record (PR 3), not this read gate
 ];
 
 /** The classification, reduced to the fields a number or a verdict is drawn from.
@@ -218,17 +221,40 @@ describe('TG-4 — the resolved protein is always a Class-A canonical key', () =
     });
   });
 
-  it('a stored value that is NOT a usable key falls through to derivation, never asserted as owner-confirmed junk', () => {
-    // Defensive: the write contract forbids this, but if a non-key ('meal', junk,
-    // whitespace) somehow lands, the safe direction is to derive (honestly labelled
-    // 'derived') rather than present junk to the vet as the owner's word.
-    expect(trialTargetProtein({ target_protein: 'meal' }, [{ primaryProtein: 'duck' }])).toEqual({
-      protein: 'duck',
-      source: 'derived',
-    });
-    expect(trialTargetProtein({ target_protein: '   ' }, [{ primaryProtein: 'duck' }])).toEqual({
-      protein: 'duck',
-      source: 'derived',
+  it('a stored value that names no protein SOURCE falls through to derivation (the proteinSourceBase gate)', () => {
+    // The stored arm uses the SAME usable-source gate the antigen path
+    // (isUncharacterizedTrialDiet, lib/dietTrial.ts) uses, so the two never disagree
+    // about whether a value is a protein. A value that canonicalizes to null ('meal',
+    // whitespace) AND a bare process word ('hydrolyzed', 'protein', 'hydrolysate') all
+    // name no source, so all drop to derivation — never asserted as the owner's word.
+    for (const notASource of ['meal', '   ', 'hydrolyzed', 'protein', 'hydrolysate']) {
+      expect(trialTargetProtein({ target_protein: notASource }, [{ primaryProtein: 'duck' }])).toEqual({
+        protein: 'duck',
+        source: 'derived',
+      });
+    }
+  });
+
+  it('the "hydrolyzed" case agrees with isUncharacterizedTrialDiet — never named owner-confirmed', () => {
+    // The clinically-pointed case (found by adversarial review). canonicalizeProtein
+    // ('hydrolyzed') === 'hydrolyzed' is a non-null fixpoint, so a naive `stored != null`
+    // check would render "Elimination diet trial — hydrolyzed (owner-confirmed)" on a
+    // vet report while the antigen arm treats that diet as uncharacterized. The source
+    // gate closes that disagreement: a stored 'hydrolyzed' is not the owner's protein.
+    expect(trialTargetProtein({ target_protein: 'hydrolyzed' }, []).source).not.toBe('owner');
+    expect(trialTargetProtein({ target_protein: 'hydrolyzed' }, []).protein).toBeNull();
+  });
+
+  it('KNOWN RESIDUAL — arbitrary non-protein text survives as owner; the write path is the validator, not this gate', () => {
+    // Honest boundary. canonicalizeProtein is a keyer, not a protein dictionary:
+    // 'not a real key' carries no process qualifier to strip, so proteinSourceBase
+    // returns it unchanged and it is accepted as the owner's word. Closing THIS is the
+    // picker's typed-"Other" sanitisation (PR 3, B-412/D9 pattern) — the read gate here
+    // deliberately handles only the process-word class. If this ever returns null, the
+    // write-path guard has arrived: update the expectation then.
+    expect(trialTargetProtein({ target_protein: 'NOT A REAL KEY!!! $$$' }, [{ primaryProtein: 'duck' }])).toEqual({
+      protein: 'not a real key',
+      source: 'owner',
     });
   });
 
