@@ -53,9 +53,6 @@ export function TrialProteinPickerSheet({
   // The armed correction (TP-3). Null on the first-set/radio path.
   const [pending, setPending] = useState<TrialProteinOption | null>(null);
 
-  // The stored OWNER value — the only thing a change is measured against. A
-  // derived or unset value is not "an existing value" (the owner never set it).
-  const storedOwnerValue = model.isOwnerSet ? model.selectedId : null;
   // What the radio shows as filled: the armed pending option, else the resolved
   // value. Null leaves nothing filled (never the escape hatches — §5).
   const activeId = pending ? pending.id : model.selectedId;
@@ -63,9 +60,15 @@ export function TrialProteinPickerSheet({
   const handleSelect = (option: TrialProteinOption) => {
     if (saving) return;
     const resulting = proteinValueOf(option);
-    // No-op: selecting the value already stored. Disarm a pending change if one is
-    // armed; otherwise the sheet's job is done, so close.
-    if (resulting === storedOwnerValue) {
+    // The ONLY no-op is re-tapping the value the owner already set. Gate it on
+    // OWNERSHIP + OPTION IDENTITY, never on the resulting write value: both escape
+    // hatches write null, and an unset/derived state has a null owner value too, so
+    // a value-only guard (`resulting === storedOwnerValue`) swallowed every escape
+    // hatch over a non-owner state as a silent cancel — the hydrolyzed owner tapped
+    // "No single protein" and nothing happened (code-review + pm-review BUG). Every
+    // other tap falls through to the documented first-set/correction contract.
+    const isRetapOfOwnerValue = model.isOwnerSet && proteinValueOf(option) === model.selectedId;
+    if (isRetapOfOwnerValue) {
       if (pending) setPending(null);
       else onCancel();
       return;
@@ -75,8 +78,12 @@ export function TrialProteinPickerSheet({
       setPending(option);
       return;
     }
-    // First-set, or a derived→owner confirmation, or setting from unset → commit
-    // straight away (frame C — no confirm).
+    // First-set, a derived→owner confirmation, or setting/clearing from a non-owner
+    // state → commit straight away (frame C — no confirm). A null commit over a
+    // food that still DERIVES a protein cannot yet suppress that derived name (null
+    // re-derives, §5 vs §4/§7.3 — the standing contradiction filed as B-707 and
+    // mitigated by B-705's PR-5 derived-arm gate); the write is honest, the residual
+    // is the predicate's, not this sheet's.
     onCommit(resulting);
   };
 
@@ -96,7 +103,13 @@ export function TrialProteinPickerSheet({
           <Text style={styles.title}>{model.title}</Text>
           <Text style={styles.intro}>{model.intro}</Text>
 
-          <ScrollView style={styles.list} contentContainerStyle={styles.listContent}>
+          {/* One single-select across every group, so the radiogroup role spans
+              the whole list (the ChipGroup convention), not each section. */}
+          <ScrollView
+            style={styles.list}
+            contentContainerStyle={styles.listContent}
+            accessibilityRole="radiogroup"
+          >
             {model.groups.map((group) => (
               <View key={group.title} style={styles.group}>
                 <SectionLabel label={group.title} header style={styles.groupLabel} />
@@ -193,7 +206,7 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     width: 36,
     height: 4,
-    borderRadius: 2,
+    borderRadius: theme.radiusFull,
     backgroundColor: theme.colorBorderStrong,
     marginBottom: theme.space2,
   },
