@@ -132,6 +132,35 @@ export function trialTargetProtein(
 }
 
 /**
+ * The target-vs-trial-food tension (B-704 §6 / TG-3): the owner STORED a protein and
+ * the trial food's own designated primary names a DIFFERENT one. Returns the
+ * disagreeing food-primary canonical key when the tension is live, else null.
+ *
+ * A TRIAL-LEVEL STANDING FACT, never a per-feeding flag (TG-3). This predicate only
+ * REPORTS the disagreement; the consumer decides how to disclose it (the report's
+ * §5.5-style line, the client's §6 heads-up / standing note). It never permits and
+ * never touches a count — it is pure comparison over two canonical keys.
+ *
+ * Fires ONLY on an OWNER-stored target: a DERIVED target came FROM the label, so it
+ * cannot disagree with it (comparing a value to its own source is never a finding).
+ * Fires ONLY when the food HAS a designated primary — §6 leads with "{Food} lists
+ * {protein} as its MAIN protein", and a food with no main protein has nothing to
+ * disagree with (silence, never a manufactured mismatch — the TG-2 shape). The
+ * comparison is EXACT canonical-key equality (via the resolver's already-canonical
+ * target and a `canonicalizeProtein` on the food primary), so casing or a form
+ * qualifier never fabricates a mismatch (`Duck` vs `duck`, `chicken` vs `chicken meal`).
+ */
+export function trialProteinLabelMismatch(
+  resolved: { protein: string | null; source: TrialProteinSource | null },
+  foodPrimaryProtein: string | null,
+): string | null {
+  if (resolved.source !== 'owner' || resolved.protein == null) return null;
+  const foodKey = canonicalizeProtein(foodPrimaryProtein);
+  if (foodKey == null || foodKey === resolved.protein) return null;
+  return foodKey;
+}
+
+/**
  * The DERIVATION FALLBACK ARM of `trialTargetProtein` (B-704 §4) — no longer a
  * public entry point. Reads the trial food's OWNER-DESIGNATED `primary_protein`,
  * and deliberately NOT `proteins[0]`.

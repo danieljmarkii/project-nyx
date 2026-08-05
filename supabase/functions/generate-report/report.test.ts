@@ -2504,6 +2504,151 @@ Deno.test('B-351 — PROPERTY: a trial food is never off-trial against itself, o
   assert.ok(checked > 300, `the cross-product actually ran (${checked} cases)`)
 })
 
+// ── B-704 — the owner's stored trial protein: naming + provenance + mismatch ──────
+//
+// PR 5 threads `diet_trials.target_protein` into the report's stored-first naming.
+// These tests pin the DATA the render reads (identity provenance, the mismatch fact,
+// attribution surviving thin food data) and re-assert TG-5 against the report builder:
+// a protein edit moves the NAMING and never a number.
+
+/** A duck elimination trial, with the owner's stored protein a free parameter. One
+ *  primary-diet allowed food so coverage/exposure numbers are non-trivial. */
+function proteinTrialInput(over: { targetProtein?: string | null; targetProteinSetAt?: string | null; primaryProtein?: string | null } = {}): Partial<ReportInput> {
+  return {
+    dietTrials: [
+      {
+        id: 'dt-p', foodItemId: 'f-trial', startedAt: '2026-05-08', targetDurationDays: 56,
+        status: 'active', completedAt: null, vetName: 'Dr. Chen', foodLabel: 'Novel Duck',
+        primaryProtein: over.primaryProtein === undefined ? 'duck' : over.primaryProtein,
+        proteins: over.primaryProtein === undefined ? ['duck', 'chicken'] : (over.primaryProtein ? [over.primaryProtein] : ['duck', 'chicken']),
+        ingredientsNotes: PANEL_DUCK_CHICKEN,
+        extractionConfidence: { proteins: 0.9 },
+        targetProtein: over.targetProtein ?? null,
+        targetProteinSetAt: over.targetProteinSetAt ?? null,
+        allowedFoods: [
+          {
+            foodItemId: 'f-trial', foodLabel: 'Novel Duck', role: 'primary_diet',
+            allowedFrom: '2026-05-08', allowedUntil: null, primaryProtein: 'duck',
+            brand: 'Brand', productName: 'Novel Duck', proteins: ['duck'],
+            ingredientsNotes: 'Duck, duck meal, brewers rice.', extractionConfidence: { proteins: 0.9 },
+          },
+        ],
+      },
+    ],
+    events: [
+      // The prescribed diet, fed and finished (on-diet).
+      proteinMeal({ occurredAt: at('2026-06-01'), foodItemId: 'f-trial', foodType: 'meal', format: 'dry_kibble', primaryProtein: 'duck', proteins: ['duck'], intakeRating: 'all', ingredientsNotes: 'Duck, duck meal, brewers rice.', extractionConfidence: { proteins: 0.9 } }),
+      // Off-diet chicken treat — a poultry exposure regardless of the target.
+      proteinMeal({ occurredAt: at('2026-06-05'), foodItemId: 'chick-treat', foodType: 'treat', format: 'treat', primaryProtein: 'chicken', proteins: ['chicken'], ingredientsNotes: 'Chicken, chicken meal.', extractionConfidence: { proteins: 0.9 } }),
+      // Off-diet DUCK treat — its off-target naming is EXACTLY what a target edit moves
+      // (duck is on-target for a duck trial, off-target for a rabbit one).
+      proteinMeal({ occurredAt: at('2026-06-07'), foodItemId: 'duck-treat', foodType: 'treat', format: 'treat', primaryProtein: 'duck', proteins: ['duck'], ingredientsNotes: 'Duck, duck meal.', extractionConfidence: { proteins: 0.9 } }),
+      // A human-food scrap — the #1 confounder line.
+      proteinMeal({ occurredAt: at('2026-06-09'), foodItemId: 'scrap', foodType: 'treat', format: 'human_food', primaryProtein: 'beef', proteins: ['beef'] }),
+    ],
+  }
+}
+
+Deno.test('B-704 — a DERIVED target carries source "derived", no confirmed-day', () => {
+  const snap = assembleReport(baseInput(proteinTrialInput({ targetProtein: null })))
+  assert.equal(snap.diet.trialTargetProtein, 'duck', 'derives the trial food primary, exactly as before PR 5')
+  assert.deepEqual(snap.diet.trialProteinProvenance, { source: 'derived', confirmedDay: null })
+  assert.equal(snap.diet.trialProteinMismatch, null, 'a derived target came FROM the label — it cannot disagree with it')
+})
+
+Deno.test('B-704 — an OWNER target that AGREES with the label carries source "owner", no mismatch', () => {
+  const snap = assembleReport(baseInput(proteinTrialInput({ targetProtein: 'duck' })))
+  assert.equal(snap.diet.trialTargetProtein, 'duck')
+  assert.deepEqual(snap.diet.trialProteinProvenance, { source: 'owner', confirmedDay: null })
+  assert.equal(snap.diet.trialProteinMismatch, null, 'owner and label agree — no tension')
+})
+
+Deno.test('B-704 — an OWNER target set AFTER day 1 discloses the confirmed day', () => {
+  // Trial started 2026-05-08; the owner named the protein on 2026-05-15 → day 8.
+  const snap = assembleReport(baseInput(proteinTrialInput({ targetProtein: 'duck', targetProteinSetAt: '2026-05-15T14:00:00Z' })))
+  assert.deepEqual(snap.diet.trialProteinProvenance, { source: 'owner', confirmedDay: 8 })
+})
+
+Deno.test('B-704 — an OWNER target set on day 1 discloses NO day (setup, not a mid-trial change)', () => {
+  const snap = assembleReport(baseInput(proteinTrialInput({ targetProtein: 'duck', targetProteinSetAt: '2026-05-08T09:00:00Z' })))
+  assert.deepEqual(snap.diet.trialProteinProvenance, { source: 'owner', confirmedDay: null }, 'day 1 is setup — no "confirmed day" disclosure')
+})
+
+Deno.test('B-704 §6/TG-3 — an owner target that DISAGREES with the label is a trial-level mismatch, never a self-contamination', () => {
+  // The wrong-primary trial food, structurally undetectable before this: the owner
+  // recorded RABBIT, the trial diet's label says DUCK.
+  const snap = assembleReport(baseInput(proteinTrialInput({ targetProtein: 'rabbit' })))
+  assert.equal(snap.diet.trialTargetProtein, 'rabbit', 'the owner word wins the naming')
+  assert.deepEqual(snap.diet.trialProteinProvenance, { source: 'owner', confirmedDay: null })
+  assert.deepEqual(snap.diet.trialProteinMismatch, { target: 'rabbit', foodProtein: 'duck', foodLabel: 'Novel Duck' })
+  // TG-3: the trial food's OWN duck primary is NOT reported as its own contaminant —
+  // self-contamination is checked against the food's own primary, not the stored target.
+  // Its genuine self-listing (chicken) still surfaces; duck never does.
+  assert.deepEqual(snap.diet.trial!.proteinSet.offTrial, ['chicken'], 'chicken is a real self-contaminant; the duck primary is not, despite the rabbit target')
+})
+
+Deno.test('B-704 — a stored target keeps attribution alive when the trial food primary is THIN (derivation goes dark)', () => {
+  // The trial food carries no designated primary (thin data), so derivation returns
+  // null and every off-target naming would go dark. The owner's stored "rabbit" keeps
+  // it alive: a chicken confounder is still named as an off-target exposure.
+  const snap = assembleReport(baseInput(proteinTrialInput({ targetProtein: 'rabbit', primaryProtein: null })))
+  assert.equal(snap.diet.trialTargetProtein, 'rabbit', 'the stored target survives the thin food record')
+  assert.deepEqual(snap.diet.trialProteinProvenance, { source: 'owner', confirmedDay: null })
+  // The chicken treat is named as off-target — "poultry exposure", not a bare "off-diet feeding".
+  const chick = snap.provenance.confounders.find((c) => c.proteinSet.proteins.includes('chicken'))
+  assert.ok(chick, 'the chicken confounder is present')
+  assert.deepEqual(chick!.proteinSet.offTrial, ['chicken'], 'named off-target against the stored rabbit, not dark')
+  // No mismatch — the thin food has no designated primary to disagree with (silence, not a manufactured tension).
+  assert.equal(snap.diet.trialProteinMismatch, null)
+})
+
+Deno.test('B-704 — with NO stored target and a thin food, attribution IS dark — silence, never an all-clear (TG-2)', () => {
+  const snap = assembleReport(baseInput(proteinTrialInput({ targetProtein: null, primaryProtein: null })))
+  assert.equal(snap.diet.trialTargetProtein, null, 'nothing stored, nothing derivable — no target')
+  assert.equal(snap.diet.trialProteinProvenance, null, 'provenance travels with the protein — both null')
+  const chick = snap.provenance.confounders.find((c) => c.proteinSet.proteins.includes('chicken'))
+  assert.deepEqual(chick!.proteinSet.offTrial, [], 'nothing compared — [] is silence, not "clean"')
+})
+
+Deno.test('B-704 TG-5 — editing the stored target never moves a report NUMBER (naming only)', () => {
+  // The tally every trial surface is built on. Snapshot it, edit the target from derived
+  // 'duck' to owner 'rabbit' (the largest possible naming change — a full mismatch), and
+  // re-snapshot: byte-identical. The antigen tally / coverage / exposures come from
+  // computeTrialFacts, which never sees the target; the confounder counts and protein
+  // tallies are target-independent by construction. This re-asserts PR 2's TG-5 one layer
+  // out, against the whole report builder.
+  const numbers = (targetProtein: string | null) => {
+    idSeq = 0 // deterministic event ids, so the two builds' exposure items compare cleanly
+    const s = assembleReport(baseInput(proteinTrialInput({ targetProtein })))
+    return {
+      coverage: s.trial!.coverage,
+      exposures: s.trial!.exposures,
+      antigenTally: s.trial!.antigenTally,
+      mealCompletion: s.diet.mealCompletion,
+      treats: s.diet.treats,
+      humanFood: { count: s.diet.humanFood.count, days: s.diet.humanFood.days },
+      proteinExposureTally: s.provenance.proteinExposureTally,
+      proteinTimelineTotal: s.proteinTimeline.totalFeedings,
+      totalByProtein: s.proteinTimeline.totalByProtein,
+    }
+  }
+  const before = numbers(null) // derived 'duck'
+  const after = numbers('rabbit') // owner overrides to a DIFFERENT protein
+  assert.deepEqual(after, before, 'every count / denominator / coverage figure is byte-identical across the edit')
+
+  // NOT a vacuous test: the same edit genuinely MOVES the naming.
+  idSeq = 0
+  const dSnap = assembleReport(baseInput(proteinTrialInput({ targetProtein: null })))
+  idSeq = 0
+  const rSnap = assembleReport(baseInput(proteinTrialInput({ targetProtein: 'rabbit' })))
+  assert.equal(dSnap.diet.trialTargetProtein, 'duck')
+  assert.equal(rSnap.diet.trialTargetProtein, 'rabbit')
+  // A duck confounder is on-target under the duck trial ([]), off-target under rabbit (['duck']).
+  const duckConfd = (s: typeof dSnap) => s.provenance.confounders.find((c) => c.proteinSet.proteins.length === 1 && c.proteinSet.proteins[0] === 'duck')!.proteinSet.offTrial
+  assert.deepEqual(duckConfd(dSnap), [], 'duck is on-target for the duck trial')
+  assert.deepEqual(duckConfd(rSnap), ['duck'], 'duck is off-target for the rabbit trial — the naming moved')
+})
+
 // ── B-532 — the data layer behind the render-honesty pass ────────────────────────
 
 Deno.test('B-532 — trendHalves are EQUAL over an even window', () => {

@@ -26,6 +26,7 @@
 
 import {
   trialTargetProtein,
+  trialProteinLabelMismatch,
   offTrialProteins,
   type TrialProteinSource,
 } from './trialProtein';
@@ -409,6 +410,50 @@ describe('TG-5 — editing the target protein never moves a count, denominator, 
     expect(namedBefore).toEqual(['rabbit', 'chicken']);
     expect(namedAfter).toEqual(['rabbit']);
     expect(namedAfter).not.toEqual(namedBefore);
+  });
+});
+
+// ── B-704 §6 / TG-3 · the target-vs-label mismatch predicate ─────────────────
+//
+// The wrong-primary trial food made nameable: the owner STORED one protein and the
+// trial food's own label names another. A trial-level standing fact, never a
+// per-feeding flag — this predicate only REPORTS the disagreement; the render decides
+// how to disclose it (never permits, never a count — TG-1/TG-3).
+describe('trialProteinLabelMismatch — owner-stored target vs the food label', () => {
+  const owner = (p: string) => trialTargetProtein({ target_protein: p }, []);
+  const derived = (p: string) => trialTargetProtein({ target_protein: null }, [{ primaryProtein: p }]);
+
+  it('fires when an OWNER target disagrees with the food primary (returns the disagreeing key)', () => {
+    expect(trialProteinLabelMismatch(owner('rabbit'), 'duck')).toBe('duck');
+  });
+
+  it('is SILENT when the owner target agrees with the food primary', () => {
+    expect(trialProteinLabelMismatch(owner('duck'), 'duck')).toBeNull();
+  });
+
+  it('never fires on a DERIVED target — it came FROM the label, so it cannot disagree with it', () => {
+    // Even when the food primary differs from the derived value's food, a derived
+    // target is not the owner asserting anything; there is no tension to surface.
+    expect(trialProteinLabelMismatch(derived('duck'), 'chicken')).toBeNull();
+  });
+
+  it('is SILENT when the food has no designated primary (nothing to disagree with — TG-2 shape)', () => {
+    expect(trialProteinLabelMismatch(owner('rabbit'), null)).toBeNull();
+    expect(trialProteinLabelMismatch(owner('rabbit'), '  ')).toBeNull();
+    expect(trialProteinLabelMismatch(owner('rabbit'), 'meal')).toBeNull();
+  });
+
+  it('is SILENT on a null resolution', () => {
+    expect(trialProteinLabelMismatch({ protein: null, source: null }, 'duck')).toBeNull();
+  });
+
+  it('compares CANONICAL keys — casing and a form qualifier never fabricate a mismatch', () => {
+    // `owner('duck')` stores the canonical 'duck'; the food primary arrives raw.
+    expect(trialProteinLabelMismatch(owner('duck'), 'Duck')).toBeNull();
+    expect(trialProteinLabelMismatch(owner('duck'), '  DUCK  ')).toBeNull();
+    expect(trialProteinLabelMismatch(owner('duck'), 'Duck By-Product Meal')).toBeNull();
+    // A genuinely different animal still fires, through the qualifier.
+    expect(trialProteinLabelMismatch(owner('duck'), 'Chicken Meal')).toBe('chicken');
   });
 });
 

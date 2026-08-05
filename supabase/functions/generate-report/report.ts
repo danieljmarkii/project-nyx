@@ -90,6 +90,8 @@ import {
   offTrialProteins,
   offTrialProteinsInTrialFood,
   trialTargetProtein,
+  trialProteinLabelMismatch,
+  type TrialProteinSource,
 } from '../../../lib/trialProtein.ts'
 // B-568 — the SAME format-label map the app renders from (lib/foodFormat.ts is
 // dependency-free precisely so both runtimes share one copy; a second map here is the
@@ -444,6 +446,18 @@ export interface ReportDietTrialInput extends ReportFoodProteinInput {
   vetName: string | null
   foodLabel?: string | null
   primaryProtein?: string | null
+  /**
+   * `diet_trials.target_protein` (migration 053, B-704) — the owner's STORED trial
+   * protein, or null (never set / cleared / "no single protein (hydrolyzed)"). A
+   * canonical key (TG-4). Read STORED-FIRST through `trialTargetProtein`; null falls to
+   * the derivation arm, byte-identical to the pre-PR-5 report. NEVER a permit (TG-1).
+   */
+  targetProtein?: string | null
+  /** `diet_trials.target_protein_set_at` (migration 053) — when the protein was set or
+   *  last changed, or null when `targetProtein` is null. Dates the provenance
+   *  disclosure ("protein confirmed day N" when it falls after day 1, §7.4); it never
+   *  versions the value (TP-3: one value, whole-trial, disclosed not versioned). */
+  targetProteinSetAt?: string | null
   /** What the trial is FOR (migration 040). Renders verbatim to a clinician and
    *  decides whether an antibiotic course is worth naming (§7). */
   indication?: 'skin' | 'gi' | 'other' | null
@@ -1343,6 +1357,34 @@ export interface DietSummary {
    * when this is null, because nothing was compared.
    */
   trialTargetProtein: string | null
+  /**
+   * How `trialTargetProtein` was resolved (B-704 §7.4), so the report renders the
+   * provenance a vet needs to weigh it: an OWNER's stated antigen ("owner-confirmed")
+   * reads differently from the app's best guess off the label ("from the trial diet"),
+   * and a mid-trial confirmation is disclosed ("protein confirmed day N").
+   *
+   * NULL exactly when `trialTargetProtein` is null (no protein resolved) — the two
+   * travel together, so a null here is the same silence, never an all-clear (TG-2).
+   * `confirmedDay` is the 1-based trial day the owner set/changed the protein when
+   * `target_protein_set_at` falls AFTER day 1; null for a derived target, an owner set
+   * at/before day 1, or a missing/unparseable set-at.
+   *
+   * OPTIONAL, unlike `trialTargetProtein` above: this is display-only provenance metadata
+   * (no code path keys a decision off it), so it is additive. `buildSnapshot` always sets
+   * it; an older fixture that omits it renders the identity without a provenance word —
+   * the same graceful degradation as a null. `trialTargetProtein` stays required because
+   * the off-trial naming is built on it.
+   */
+  trialProteinProvenance?: { source: TrialProteinSource; confirmedDay: number | null } | null
+  /**
+   * The target-vs-label tension (B-704 §6 / TG-3), when live: the owner stored a
+   * protein and the trial food's own designated primary names a DIFFERENT one. A
+   * TRIAL-LEVEL standing fact, rendered as one disclosure line — NEVER a per-feeding
+   * flag, and it never changes a count or a feeding's classification (TG-1). Null/absent
+   * when there is no tension (derived target, no stored value, or they agree). Optional
+   * for the same reason as `trialProteinProvenance` — additive display metadata.
+   */
+  trialProteinMismatch?: { target: string; foodProtein: string; foodLabel: string | null } | null
   /**
    * The PROTEIN-SET VIEW of the trial this report describes — the half B-351's
    * off-trial marking is built on. Non-null exactly when `ReportSnapshot.trial` is:
@@ -2785,18 +2827,70 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
   // arm's note for why the derived primary would invert the check on a cleared
   // designation.
   //
-  // B-704 PR 2 routes this through `trialTargetProtein` but does NOT yet thread the
-  // owner-stated `diet_trials.target_protein` — the report snapshot carries no such
-  // field until PR 5. Passing `target_protein: null` here makes the call fall to the
-  // derivation arm, byte-identical to the old `resolveTargetProtein(primaryProtein)`
-  // (the unchanged `snap.diet.trialTargetProtein === 'duck'` assertion pins that).
-  // PR 5 threads the stored value + renders its provenance.
-  const trialProteinTarget = reportTrialInput
+  // B-704 PR 5 threads the owner-stated `diet_trials.target_protein` — STORED-FIRST,
+  // derivation as the fallback arm (§4). A stored value keeps the target alive when the
+  // trial food's own primary is thin (derivation goes dark), so the diet-section breach
+  // naming survives ("poultry exposures", not bare "off-diet feedings"); a null column
+  // falls to derivation, byte-identical to the pre-PR-5 report (the derivation-only
+  // fixtures, e.g. `snap.diet.trialTargetProtein === 'duck'`, still pass unchanged).
+  // NEVER a permit (TG-1): this only NAMES; counts/denominators/coverage are untouched.
+  const trialProteinResolved: { protein: string | null; source: TrialProteinSource | null } = reportTrialInput
+    ? trialTargetProtein(
+        { target_protein: reportTrialInput.targetProtein ?? null },
+        [{ primaryProtein: reportTrialInput.primaryProtein ?? null }],
+      )
+    : { protein: null, source: null }
+  const trialProteinTarget = trialProteinResolved.protein
+
+  // The trial food's OWN self-contamination is checked against its OWN designated
+  // primary (the DERIVED target), NEVER the owner-stored target. When the two disagree
+  // (the §6 mismatch — owner stored rabbit, the food's label says duck), checking the
+  // trial food against the stored target would render the food's own front-of-pack
+  // protein as a self-contamination breach in bold on page 1 — the exact per-feeding
+  // rendering of the tension TG-3 forbids. The tension is a trial-level disclosure line
+  // instead (`trialProteinMismatch` below). Identical to `trialProteinTarget` whenever
+  // nothing is stored, so the derivation-only fixtures are unchanged.
+  const derivedTrialTarget = reportTrialInput
     ? trialTargetProtein(
         { target_protein: null },
         [{ primaryProtein: reportTrialInput.primaryProtein ?? null }],
       ).protein
     : null
+
+  // Provenance for the identity line (§7.4). `confirmedDay` discloses a mid-trial set:
+  // the 1-based trial day `target_protein_set_at` lands on, shown ONLY when it falls
+  // after day 1 (an owner who set it at setup needs no "day N"). Uses the same local-day
+  // arithmetic the rest of the report uses (`eventDayNumber`/`dayNumber` over `tz`), so
+  // it can never drift from the block's own day counter.
+  let confirmedDay: number | null = null
+  if (reportTrialInput && trialProteinResolved.source === 'owner' && reportTrialInput.targetProteinSetAt) {
+    const setDay = eventDayNumber(reportTrialInput.targetProteinSetAt, tz)
+    const startDay = dayNumber(reportTrialInput.startedAt)
+    if (setDay !== null && startDay !== null) {
+      const d = setDay - startDay + 1
+      if (d >= 2) confirmedDay = d
+    }
+  }
+  const trialProteinProvenance =
+    trialProteinTarget !== null && trialProteinResolved.source !== null
+      ? { source: trialProteinResolved.source, confirmedDay }
+      : null
+
+  // The target-vs-label tension (§6 / TG-3), as a trial-level fact. Fires only on an
+  // OWNER target that disagrees with the trial food's designated primary (a derived
+  // target came from that label and cannot disagree with it). One disclosure line,
+  // never per-feeding — see the render.
+  const trialProteinMismatchKey = reportTrialInput
+    ? trialProteinLabelMismatch(trialProteinResolved, reportTrialInput.primaryProtein ?? null)
+    : null
+  const trialProteinMismatch =
+    trialProteinMismatchKey !== null && trialProteinResolved.protein !== null
+      ? {
+          target: trialProteinResolved.protein,
+          foodProtein: trialProteinMismatchKey,
+          foodLabel: reportTrialInput!.foodLabel ?? null,
+        }
+      : null
 
   /**
    * Build the render-ready protein view for one food.
@@ -2824,12 +2918,18 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     opts?: { isTrialDiet?: boolean },
   ): ProteinSetView {
     const proteins = readProteinSet(food.proteins ?? null, food.primaryProtein ?? null)
+    // The trial diet's OWN set is compared to its OWN designated primary (`derivedTrialTarget`);
+    // every other food to the stored-first `trialProteinTarget`. They differ only in the §6
+    // mismatch, where using the stored target on the trial food would surface the tension
+    // per-feeding (TG-3 forbids that — it is a trial-level disclosure). Equal whenever nothing
+    // is stored, so the derivation-only path is byte-identical.
+    const target = opts?.isTrialDiet ? derivedTrialTarget : trialProteinTarget
     return {
       proteins,
       complete: mayClaimCompleteProteinSet(proteins, food.ingredientsNotes ?? null, food.extractionConfidence),
       offTrial: opts?.isTrialDiet
-        ? offTrialProteinsInTrialFood(proteins, trialProteinTarget)
-        : offTrialProteins(proteins, trialProteinTarget),
+        ? offTrialProteinsInTrialFood(proteins, target)
+        : offTrialProteins(proteins, target),
     }
   }
 
@@ -3020,6 +3120,8 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
 
   const diet: DietSummary = {
     trialTargetProtein: trialProteinTarget,
+    trialProteinProvenance,
+    trialProteinMismatch,
     trial,
     freeFed,
     intakeNotDirectlyObserved: freeFed.length > 0,

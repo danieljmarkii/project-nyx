@@ -2288,6 +2288,117 @@ Deno.test('B-351 §9 — a CLEAN trial diet gets no page-1 line at all (there is
   assert.ok(!/no contaminants|no other proteins|clean/i.test(html.slice(0, html.indexOf('Appendix'))), 'and no reassuring inverse')
 })
 
+// ── B-704 — the trial block identity names the protein, with provenance (§7.4) ────
+
+/** The diet half of a trial snapshot for the B-704 identity tests: a protein resolves,
+ *  its provenance/mismatch are the free parameters. */
+function proteinDiet(over: Partial<import('./report.ts').DietSummary>): import('./report.ts').DietSummary {
+  return {
+    trialTargetProtein: 'duck',
+    trialProteinProvenance: { source: 'derived', confirmedDay: null },
+    trial: { ...DUCK_TRIAL, proteinSet: pset(['duck'], { complete: true }) },
+    freeFed: [],
+    intakeNotDirectlyObserved: false,
+    mealCompletion: null,
+    mealItems: [],
+    treats: { count: 0, distinctItems: 0 },
+    humanFood: { count: 0, days: 0, items: [] },
+    ...over,
+  }
+}
+
+Deno.test('B-704 §7.4 — the identity leads with "Elimination diet trial — {protein}" and the derived provenance', () => {
+  const html = text(
+    renderReport(
+      base({
+        trial: trialBlockFixture({ trialDietLabels: ['Novel Duck'], startedAt: '2026-05-08' }),
+        diet: proteinDiet({ trialTargetProtein: 'duck', trialProteinProvenance: { source: 'derived', confirmedDay: null } }),
+      }),
+    ),
+  )
+  assert.ok(/Elimination diet trial/.test(html), 'the block leads with the elimination-trial framing')
+  assert.ok(/Duck/.test(html), 'the protein is named')
+  assert.ok(/read from the trial diet/.test(html), 'a derived target is disclosed as read off the label, not owner-stated')
+  assert.ok(!/owner-confirmed/.test(html), 'a derived target is NOT presented as owner-confirmed')
+})
+
+Deno.test('B-704 §7.4 — an OWNER target reads "owner-confirmed protein"', () => {
+  const html = text(
+    renderReport(
+      base({
+        trial: trialBlockFixture({ trialDietLabels: ['Instinct Rabbit'], startedAt: '2026-05-08' }),
+        diet: proteinDiet({ trialTargetProtein: 'rabbit', trialProteinProvenance: { source: 'owner', confirmedDay: null } }),
+      }),
+    ),
+  )
+  assert.ok(/Elimination diet trial/.test(html))
+  assert.ok(/Rabbit/.test(html), 'the owner-stated protein names the trial')
+  assert.ok(/owner-confirmed protein/.test(html))
+})
+
+Deno.test('B-704 §7.4 — an owner target set after day 1 discloses "recorded on day N"', () => {
+  const html = text(
+    renderReport(
+      base({
+        trial: trialBlockFixture({ trialDietLabels: ['Instinct Rabbit'], startedAt: '2026-05-08' }),
+        diet: proteinDiet({ trialTargetProtein: 'rabbit', trialProteinProvenance: { source: 'owner', confirmedDay: 8 } }),
+      }),
+    ),
+  )
+  assert.ok(/owner-confirmed protein/.test(html))
+  assert.ok(/recorded on day 8/.test(html), 'a mid-trial confirmation is dated')
+})
+
+Deno.test('B-704 §6/TG-3 — the target-vs-label mismatch renders ONE trial-level disclosure, never a per-feeding flag', () => {
+  const html = renderReport(
+    base({
+      trial: trialBlockFixture({ trialDietLabels: ['Novel Duck'], startedAt: '2026-05-08' }),
+      diet: proteinDiet({
+        trialTargetProtein: 'rabbit',
+        trialProteinProvenance: { source: 'owner', confirmedDay: null },
+        trialProteinMismatch: { target: 'rabbit', foodProtein: 'duck', foodLabel: 'Novel Duck' },
+      }),
+    }),
+  )
+  const t = text(html)
+  assert.ok(/The owner recorded/.test(t), 'the disclosure names the tension')
+  assert.ok(/Rabbit/.test(t) && /Duck/.test(t), 'both the stated protein and the label protein are named')
+  assert.ok(/cannot resolve which is the elimination antigen/.test(t), 'it states the record cannot resolve it — never "wrong food"')
+  assert.ok(/changes no feeding/.test(t), 'it states the never-permits invariant for the reader (TG-1)')
+  // TG-3: it is a STANDING FACT — exactly one line, never repeated per feeding.
+  const hits = t.split('cannot resolve which is the elimination antigen').length - 1
+  assert.equal(hits, 1, 'the mismatch renders once, as a trial-level line, not per feeding')
+  // And the disclosure itself never uses the forbidden framing (§8). Scoped to the
+  // sentence, since unrelated report copy legitimately says "mistaken for".
+  const disclosure = t.slice(t.indexOf('The owner recorded'), t.indexOf('The owner recorded') + 400)
+  assert.ok(!/wrong food|mistake/i.test(disclosure), 'never "wrong food" / "mistake" (§8)')
+})
+
+Deno.test('B-704 — no mismatch line when the target and the label agree', () => {
+  const html = text(
+    renderReport(
+      base({
+        trial: trialBlockFixture({ trialDietLabels: ['Novel Duck'], startedAt: '2026-05-08' }),
+        diet: proteinDiet({ trialTargetProtein: 'duck', trialProteinProvenance: { source: 'owner', confirmedDay: null }, trialProteinMismatch: null }),
+      }),
+    ),
+  )
+  assert.ok(!/cannot resolve which is the elimination antigen/.test(html), 'no disclosure when there is no tension')
+})
+
+Deno.test('B-704 — NO protein resolved falls back to the food-label-led identity (no bare "Elimination diet trial —")', () => {
+  const html = text(
+    renderReport(
+      base({
+        trial: trialBlockFixture({ trialDietLabels: ['Hydrolyzed HP'], startedAt: '2026-05-08' }),
+        diet: proteinDiet({ trialTargetProtein: null, trialProteinProvenance: null, trial: { ...DUCK_TRIAL, primaryProtein: 'hydrolyzed', proteinSet: pset(['hydrolyzed'], { complete: true }) } }),
+      }),
+    ),
+  )
+  assert.ok(!/Elimination diet trial/.test(html), 'no protein → no elimination-trial lead with an empty dash')
+  assert.ok(/Hydrolyzed HP/.test(html), 'the food labels still lead the identity')
+})
+
 Deno.test('B-351 D10 — an unread ingredient list NEVER renders "nothing else on the label"', () => {
   // The single string this whole gate exists to prevent. `['duck']` from a
   // marketing-name-only read is byte-identical to a genuinely single-protein duck food.

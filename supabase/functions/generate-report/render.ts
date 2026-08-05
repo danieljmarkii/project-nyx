@@ -1571,6 +1571,22 @@ function dietTrialSection(snap: ReportSnapshot): string {
   const labels = t.trialDietLabels.length
     ? t.trialDietLabels.map((l) => h(l)).join(' + ')
     : 'Trial diet (not named)'
+  // B-704 §7.4 — NAME THE PROTEIN. The word the owner carries home from the vet
+  // ("rabbit") is the trial's identity; when one resolves (stored or derived), the
+  // block leads with it — "Elimination diet trial — Rabbit" — and moves the food
+  // labels to a sub-line carrying the PROVENANCE a vet needs to weigh it (an owner's
+  // stated antigen reads differently from a guess off a label). No protein resolves
+  // (hydrolyzed / cleared / a thin trial food) → the unchanged food-label-led form,
+  // never a bare "Elimination diet trial —" with nothing after the dash.
+  const protein = snap.diet.trialTargetProtein
+  const prov = snap.diet.trialProteinProvenance
+  const provWord = !prov
+    ? ''
+    : prov.source === 'owner'
+      ? prov.confirmedDay != null
+        ? `owner-confirmed protein &middot; recorded on day ${num(prov.confirmedDay)}`
+        : 'owner-confirmed protein'
+      : 'protein read from the trial diet&rsquo;s label'
   const identity: string[] = [
     // THE JOIN NEEDS ITS OWN PUNCTUATION (cold read round 10, all four artifacts). The
     // phrase was concatenated straight onto the next clause, and on an ended trial that
@@ -1578,8 +1594,16 @@ function dietTrialSection(snap: ReportSnapshot): string {
     // asserts a 42-day window spanning nineteen days. A later sentence corrects each
     // one, which is why no artifact was blocked by it — and why one delimiter fixes it
     // on all four.
-    `${labels} &middot; ${trialDayPhrase(t, t.targetDurationDays)}.`,
+    protein
+      ? `Elimination diet trial &mdash; <b>${h(capProtein(protein))}</b> &middot; ${trialDayPhrase(t, t.targetDurationDays)}.`
+      : `${labels} &middot; ${trialDayPhrase(t, t.targetDurationDays)}.`,
   ]
+  // The food labels + provenance sub-line, only when the lead named the protein instead
+  // of the labels (else the labels already lead and this would repeat them). The labels
+  // ALWAYS ride this line so they never vanish; the provenance word rides it only when
+  // present (it always is in production — provenance travels with the resolved protein —
+  // but a display-only fixture may omit it, so no dangling delimiter either way).
+  if (protein) identity.push(`${labels}${provWord ? ` &middot; ${provWord}` : ''}.`)
   identity.push(
     t.status === 'active'
       ? `Started ${h(fmtDay(t.startedAt))}.`
@@ -1591,6 +1615,31 @@ function dietTrialSection(snap: ReportSnapshot): string {
   if (t.vetName) identity.push(`Directed by ${h(t.vetName)}.`)
   if (t.stoppedReason) identity.push(`<b>${h(stoppedReasonLine(snap.signalment.name, t.stoppedReason, t))}</b>`)
   rows.push(kv('Trial', identity.join(' ')))
+
+  // ── B-704 §6 / TG-3 — the target-vs-label tension, as ONE trial-level line ───
+  // The owner recorded a protein and the trial diet's own label names a different one
+  // (a wrong-primary trial food, "structurally undetectable" before this — §1). It is a
+  // STANDING FACT, never a per-feeding flag: it renders here once, immediately below the
+  // identity where the vet forms the impression it corrects, and it changes no count and
+  // no feeding's classification (TG-1). The antigen names elsewhere on the page follow
+  // the owner's stated protein, so this line tells the reader how to read them.
+  const mismatch = snap.diet.trialProteinMismatch
+  if (mismatch) {
+    rows.push(
+      kv(
+        'Trial protein',
+        // The exposure COUNTS (antigen tally, off-diet count) are computed closed-world
+        // against the trial diet's own label — TG-1 forbids the stored protein moving a
+        // number — so on a mismatch they measure against the food, not the owner's word.
+        // The line says so rather than claiming they follow the recorded protein: if the
+        // owner's protein is the real antigen, those counts UNDER-state it, and a vet
+        // must know which baseline the numbers use.
+        `The owner recorded <b>${h(capProtein(mismatch.target))}</b> as this trial&rsquo;s protein, but the trial diet${
+          mismatch.foodLabel ? ` (${h(mismatch.foodLabel)})` : ''
+        } lists <b>${h(capProtein(mismatch.foodProtein))}</b> as its main protein. This record cannot resolve which is the elimination antigen, and the exposure counts on this page are measured against the trial diet&rsquo;s own label, not the recorded protein. It changes no feeding&rsquo;s classification.`,
+      ),
+    )
+  }
 
   // ── §5.1's two facts, over ONE explicit range, never in one sentence ────────
   //

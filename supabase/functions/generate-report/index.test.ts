@@ -296,6 +296,7 @@ Deno.test('mapDietTrialRows: builds "Brand Product" label from food join', () =>
     status: 'active', completed_at: null, ended_at: null, indication: 'skin',
     outcome: null, outcome_notes: null, stopped_reason: null, food_label: 'Royal Canin Hydrolyzed',
     vet_name: 'Dr Chen',
+    target_protein: 'duck', target_protein_set_at: '2026-05-03T10:00:00Z',
     food_items: { food_type: 'meal', format: 'kibble', primary_protein: 'duck', proteins: ['duck'], ingredients_notes: null, ai_extraction_confidence: null, brand: 'Royal Canin', product_name: 'Hydrolyzed' },
     diet_trial_foods: [{
       food_item_id: 'f1', food_label: 'Royal Canin Hydrolyzed', role: 'primary_diet',
@@ -313,6 +314,9 @@ Deno.test('mapDietTrialRows: builds "Brand Product" label from food join', () =>
   assert.equal(rows[0].allowedFoods?.[0].role, 'primary_diet')
   assert.deepEqual(rows[0].allowedFoods?.[0].proteins, ['duck', 'chicken'])
   assert.equal(rows[0].allowedFoods?.[0].brand, 'Royal Canin')
+  // B-704 — the owner's stored trial protein + set-at reach the pure layer (§7.4).
+  assert.equal(rows[0].targetProtein, 'duck')
+  assert.equal(rows[0].targetProteinSetAt, '2026-05-03T10:00:00Z')
 })
 
 Deno.test('mapDietTrialRows: an ABANDONED trial carries ended_at, and food_label survives an archived food (B-455)', () => {
@@ -324,13 +328,18 @@ Deno.test('mapDietTrialRows: an ABANDONED trial carries ended_at, and food_label
     id: 't2', food_item_id: null, started_at: '2026-05-01', target_duration_days: 28,
     status: 'abandoned', completed_at: null, ended_at: '2026-05-19', indication: 'gi',
     outcome: null, outcome_notes: null, stopped_reason: 'refused',
-    food_label: 'Purina HA', vet_name: null, food_items: null, diet_trial_foods: null,
+    food_label: 'Purina HA', vet_name: null,
+    target_protein: null, target_protein_set_at: null,
+    food_items: null, diet_trial_foods: null,
   }])
   assert.equal(rows[0].endedAt, '2026-05-19')
   assert.equal(rows[0].completedAt, null)
   assert.equal(rows[0].foodLabel, 'Purina HA')
   assert.equal(rows[0].stoppedReason, 'refused')
   assert.deepEqual(rows[0].allowedFoods, [])
+  // B-704 — a trial with no stored protein maps null (derivation still runs downstream).
+  assert.equal(rows[0].targetProtein, null)
+  assert.equal(rows[0].targetProteinSetAt, null)
 })
 
 Deno.test('mapFeedingArrangementRows: label + protein from join, method + shared carried', () => {
