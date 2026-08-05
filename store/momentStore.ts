@@ -322,6 +322,9 @@ export function whenMealCardVisible(
   const isUp = (s: MomentState) =>
     s.visible && s.payload?.kind === 'meal' && s.payload.eventId === eventId;
   if (isUp(useMomentStore.getState())) return Promise.resolve(true);
+  // Never rejects, by construction: the executor has no throwing operations and
+  // never calls a reject — it only ever resolves true/false. That is the contract
+  // the fire-and-forget callers rely on (they await it without a catch), so keep it.
   return new Promise((resolve) => {
     let settled = false;
     let unsub = () => {};

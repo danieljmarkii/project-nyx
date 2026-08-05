@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-05
 
-**Outcome: shipped via #<PR> — closes B-710** (branch `claude/diet-trial-warning-missing-vo5q1g`). A one-line
+**Outcome: shipped via #599 — closes B-710** (branch `claude/diet-trial-warning-missing-vo5q1g`). A one-line
 timing fix to the wiring that delivers the B-693 / B-351-slice-4 log-time trial heads-up to the meal
 completion card. No clinical logic, no copy, no schema changed.
 
