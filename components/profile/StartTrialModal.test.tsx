@@ -21,12 +21,13 @@ jest.mock('../../lib/sync', () => ({
 }));
 
 // Keep every pure export real (copy, INDICATION_OPTIONS, canStartTrial, the day
-// math, the reason set); replace only the three functions that touch the db/queue.
+// math, the reason set); replace only the functions that touch the db/queue.
 jest.mock('../../lib/dietTrialSetup', () => ({
   ...jest.requireActual('../../lib/dietTrialSetup'),
   getActiveTrialForPet: jest.fn(),
   endActiveTrial: jest.fn(),
   startDietTrial: jest.fn(),
+  getFoodPrimaryProteins: jest.fn(),
 }));
 
 // Heavy children stand in for pressables: the picker just yields a food, the date
@@ -50,6 +51,22 @@ jest.mock('../log/FoodPicker', () => {
               }),
           },
           React.createElement(Text, null, 'Pick a food'),
+        ),
+        // A SECOND food, so the two-food day-0 mismatch (mock frame D) is reachable
+        // at the modal level: food-1 derives the target, food-2 can disagree.
+        React.createElement(
+          TouchableOpacity,
+          {
+            testID: 'pick-food-2',
+            onPress: () =>
+              onPickFood({
+                id: 'food-2',
+                brand: 'Blue Buffalo',
+                product_name: 'Sensitive Stomach',
+                food_type: 'food',
+              }),
+          },
+          React.createElement(Text, null, 'Pick a second food'),
         ),
         React.createElement(
           TouchableOpacity,
@@ -86,6 +103,7 @@ import {
   getActiveTrialForPet,
   endActiveTrial,
   startDietTrial,
+  getFoodPrimaryProteins,
   stopReasonOptions,
 } from '../../lib/dietTrialSetup';
 import { toLocalDayKey } from '../../lib/utils';
@@ -93,6 +111,7 @@ import { toLocalDayKey } from '../../lib/utils';
 const mockedGetActive = getActiveTrialForPet as jest.Mock;
 const mockedEnd = endActiveTrial as jest.Mock;
 const mockedStart = startDietTrial as jest.Mock;
+const mockedProteins = getFoodPrimaryProteins as jest.Mock;
 
 function renderModal(over: Partial<React.ComponentProps<typeof StartTrialModal>> = {}) {
   const props = {
@@ -125,6 +144,10 @@ async function fillForm(screen: ReturnType<typeof render>) {
   fireEvent.press(await screen.findByTestId('pick-food'));
   fireEvent.press(screen.getByText('Back'));
   fireEvent.press(screen.getByText('Skin'));
+  // Picking a food kicks the async protein lookup; await its settle so the state
+  // update lands inside act (the row is on-screen by then), exactly as the
+  // active-trial effect is awaited on mount.
+  await screen.findByText('Start trial');
 }
 
 beforeEach(() => {
@@ -132,6 +155,9 @@ beforeEach(() => {
   mockedGetActive.mockResolvedValue(null);
   mockedEnd.mockResolvedValue(undefined);
   mockedStart.mockResolvedValue('trial-new');
+  // Default: the cache holds no protein for the picked foods, so the row renders
+  // its empty state. Tests that need a derived value or a mismatch override this.
+  mockedProteins.mockResolvedValue({});
 });
 
 describe('StartTrialModal — the D-screen gate', () => {
@@ -255,5 +281,149 @@ describe('StartTrialModal — end-and-continue ordering', () => {
     expect(screen.props.onClose).toHaveBeenCalledTimes(1);
     expect(mockedEnd).not.toHaveBeenCalled();
     expect(mockedStart).not.toHaveBeenCalled();
+  });
+});
+
+// ── B-704 §7.1 — the Trial protein row ────────────────────────────────────────
+describe('StartTrialModal — the Trial protein row', () => {
+  async function pickPrimary(screen: ReturnType<typeof render>) {
+    fireEvent.press(screen.getByText('Choose the trial diet'));
+    fireEvent.press(await screen.findByTestId('pick-food'));
+    fireEvent.press(screen.getByText('Back'));
+    // Await the async protein lookup's settle so its state update lands inside act.
+    await screen.findByText('Trial protein');
+  }
+
+  it('renders the always-present empty-but-optional row when nothing derives (E1)', async () => {
+    mockedProteins.mockResolvedValue({}); // no cached protein for food-1
+    const screen = renderModal();
+    await waitFor(() => expect(screen.getByText('Choose the trial diet')).toBeTruthy());
+    await pickPrimary(screen);
+    expect(await screen.findByText('Trial protein')).toBeTruthy();
+    // A set-prompt, never a bare "Not set" alone — the row invites, it does not verdict.
+    expect(screen.getByText("Tap to name this trial's protein")).toBeTruthy();
+  });
+
+  it('a hydrolyzed diet (source-less primary) shows the empty optional row, never a process word (mock frame E)', async () => {
+    // Regression (adversarial round 1): a source-less process word must read as
+    // "nothing derived" — the food list is the trial. The row must NOT prefill
+    // "Hydrolyzed protein".
+    mockedProteins.mockResolvedValue({ 'food-1': 'hydrolyzed protein' });
+    const screen = renderModal();
+    await waitFor(() => expect(screen.getByText('Choose the trial diet')).toBeTruthy());
+    await pickPrimary(screen);
+    expect(screen.getByText("Tap to name this trial's protein")).toBeTruthy();
+    expect(screen.queryByText('Hydrolyzed protein')).toBeNull();
+  });
+
+  it('pre-fills the derived protein as a confirmation (a glance, not a decision)', async () => {
+    mockedProteins.mockResolvedValue({ 'food-1': 'rabbit' });
+    const screen = renderModal();
+    await waitFor(() => expect(screen.getByText('Choose the trial diet')).toBeTruthy());
+    await pickPrimary(screen);
+    expect(await screen.findByText('Rabbit')).toBeTruthy();
+    expect(screen.getByText('From the foods you picked — tap to change')).toBeTruthy();
+  });
+
+  it('the untouched golden path stores NULL — derivation stands, the read re-derives', async () => {
+    mockedProteins.mockResolvedValue({ 'food-1': 'rabbit' });
+    const screen = renderModal();
+    await waitFor(() => expect(screen.getByText('Choose the trial diet')).toBeTruthy());
+    await fillForm(screen);
+    await screen.findByText('Rabbit'); // the derived prefill has resolved
+    fireEvent.press(screen.getByText('Start trial'));
+    await waitFor(() => expect(mockedStart).toHaveBeenCalledTimes(1));
+    expect(mockedStart.mock.calls[0][0].targetProtein).toBeNull();
+  });
+
+  it('an explicit pick is stored as the owner-confirmed canonical protein', async () => {
+    mockedProteins.mockResolvedValue({ 'food-1': 'rabbit' });
+    const screen = renderModal();
+    await waitFor(() => expect(screen.getByText('Choose the trial diet')).toBeTruthy());
+    await fillForm(screen);
+    await screen.findByText('Rabbit');
+    fireEvent.press(screen.getByTestId('trial-protein-row'));
+    fireEvent.press(await screen.findByText('Duck')); // a common protein
+    expect(await screen.findByText('Duck')).toBeTruthy(); // row updated
+    fireEvent.press(screen.getByText('Start trial'));
+    await waitFor(() => expect(mockedStart).toHaveBeenCalledTimes(1));
+    expect(mockedStart.mock.calls[0][0].targetProtein).toBe('duck');
+  });
+
+  it('choosing "No single protein" stores null (§5) and never blocks Start', async () => {
+    mockedProteins.mockResolvedValue({ 'food-1': 'rabbit' });
+    const screen = renderModal();
+    await waitFor(() => expect(screen.getByText('Choose the trial diet')).toBeTruthy());
+    await fillForm(screen);
+    await screen.findByText('Rabbit');
+    fireEvent.press(screen.getByTestId('trial-protein-row'));
+    fireEvent.press(await screen.findByText('No single protein'));
+    fireEvent.press(screen.getByText('Start trial'));
+    await waitFor(() => expect(mockedStart).toHaveBeenCalledTimes(1));
+    expect(mockedStart.mock.calls[0][0].targetProtein).toBeNull();
+  });
+});
+
+// ── B-704 §6 — the day-0 mismatch heads-up ────────────────────────────────────
+describe('StartTrialModal — the day-0 mismatch heads-up', () => {
+  async function pickTwoFoods(screen: ReturnType<typeof render>) {
+    fireEvent.press(screen.getByText('Choose the trial diet'));
+    fireEvent.press(await screen.findByTestId('pick-food')); // food-1 (rabbit target)
+    fireEvent.press(screen.getByTestId('pick-food-2'));      // food-2 (chicken)
+    fireEvent.press(screen.getByText('Back'));
+    // Await the async protein lookup's settle so its state update lands inside act.
+    await screen.findByText('Trial protein');
+  }
+
+  it('flags a picked food whose main protein disagrees with the target, without blocking Start (§6, frame D)', async () => {
+    mockedProteins.mockResolvedValue({ 'food-1': 'rabbit', 'food-2': 'chicken' });
+    const screen = renderModal();
+    await waitFor(() => expect(screen.getByText('Choose the trial diet')).toBeTruthy());
+    await pickTwoFoods(screen);
+    fireEvent.press(screen.getByText('Skin')); // make it startable
+
+    expect(
+      await screen.findByText('Blue Buffalo Sensitive Stomach lists chicken as its main protein.'),
+    ).toBeTruthy();
+    expect(
+      screen.getByText("If Pixel's trial is rabbit-only, worth checking that bag with your vet."),
+    ).toBeTruthy();
+
+    // Never blocking — Start still creates the trial.
+    fireEvent.press(screen.getByText('Start trial'));
+    await waitFor(() => expect(mockedStart).toHaveBeenCalledTimes(1));
+  });
+
+  it('stays silent when the derived target is a source-less process word (adversarial round 1 regression)', async () => {
+    // food-1 primary 'hydrolyzed protein' (source-less) → nothing nameable derives,
+    // so food-2 (chicken) draws NO amber. The old target guard fired here with a
+    // nonsense "…if the trial is hydrolyzed protein-only…" line and zero owner action.
+    mockedProteins.mockResolvedValue({ 'food-1': 'hydrolyzed protein', 'food-2': 'chicken' });
+    const screen = renderModal();
+    await waitFor(() => expect(screen.getByText('Choose the trial diet')).toBeTruthy());
+    await pickTwoFoods(screen);
+    fireEvent.press(screen.getByText('Skin'));
+    expect(screen.queryByText(/lists chicken as its main protein/)).toBeNull();
+    // And Start still works.
+    fireEvent.press(screen.getByText('Start trial'));
+    await waitFor(() => expect(mockedStart).toHaveBeenCalledTimes(1));
+  });
+
+  it('goes silent when the owner declares "No single protein" (TG-2: no target, nothing compared)', async () => {
+    mockedProteins.mockResolvedValue({ 'food-1': 'rabbit', 'food-2': 'chicken' });
+    const screen = renderModal();
+    await waitFor(() => expect(screen.getByText('Choose the trial diet')).toBeTruthy());
+    await pickTwoFoods(screen);
+    expect(
+      await screen.findByText('Blue Buffalo Sensitive Stomach lists chicken as its main protein.'),
+    ).toBeTruthy();
+
+    fireEvent.press(screen.getByTestId('trial-protein-row'));
+    fireEvent.press(await screen.findByText('No single protein'));
+    await waitFor(() =>
+      expect(
+        screen.queryByText('Blue Buffalo Sensitive Stomach lists chicken as its main protein.'),
+      ).toBeNull(),
+    );
   });
 });

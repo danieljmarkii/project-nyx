@@ -237,6 +237,19 @@ export const theme = {
   colorDestructiveLight: '#FEE2E2',   // red-100 tint — danger-banner fill
   colorDestructiveBorder: '#FCA5A5',  // red-300 — danger-banner hairline
 
+  // ── Attention (amber) — light-surface "heads-up", NOT a danger state ─────────
+  // The Tier-2 register (multi-protein D7): a factual heads-up whose claim-strength
+  // is matched to what the record actually knows — a label tension, not harm — so
+  // it is deliberately amber, never the rose "danger" pair above (the same call the
+  // PM made on B-693's log-time trial-list heads-up, which uses this register on the
+  // dark card via colorMomentGlowFillOnDark). First consumed by the B-704 §6 day-0
+  // trial-protein mismatch heads-up (a light surface, so it needs its own trio).
+  // No icon, no colour-only meaning: the copy carries the fact in words, so the
+  // panel survives a greyscale screenshot. Ink contrast 7.3:1 on the fill (WCAG AA).
+  colorAttentionInk: '#6B4A0E',    // text ink on the wash
+  colorAttentionLight: '#FDF3DC',  // amber-50 wash — panel fill
+  colorAttentionBorder: '#F2DFB3', // amber hairline
+
   // Modal scrim — one value for every bottom-sheet/confirm overlay so stacked
   // surfaces dim identically (switcher sheet, archive confirm; FAB chip next).
   colorScrim: 'rgba(10, 10, 10, 0.35)',
