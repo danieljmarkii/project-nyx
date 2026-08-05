@@ -68,6 +68,7 @@ function input(overrides: Partial<StartTrialInput> = {}): StartTrialInput {
     targetDurationDays: 56,
     startedAt: '2026-07-03',
     vetName: null,
+    targetProtein: null,
     ...overrides,
   };
 }
@@ -210,6 +211,34 @@ describe('buildTrialRows', () => {
     expect(rows.trial.phase).toBe('elimination');
     expect(rows.trial.status).toBe('active');
     expect(rows.trial.vet_name).toBeNull();
+  });
+
+  // ── B-704 §5 — the target protein columns ──────────────────────────────────
+  it('writes a null protein and null set_at when nothing was chosen (derived/none/unset)', () => {
+    const rows = buildTrialRows(input({ targetProtein: null }), '2026-07-03T09:00:00.000Z');
+    expect(rows.trial.target_protein).toBeNull();
+    // set_at is dated ONLY alongside a non-null protein, so the report can trust it.
+    expect(rows.trial.target_protein_set_at).toBeNull();
+  });
+
+  it('writes the owner-chosen protein and dates set_at to `now`', () => {
+    const rows = buildTrialRows(input({ targetProtein: 'rabbit' }), '2026-07-03T09:00:00.000Z');
+    expect(rows.trial.target_protein).toBe('rabbit');
+    expect(rows.trial.target_protein_set_at).toBe('2026-07-03T09:00:00.000Z');
+  });
+
+  it('canonicalizes the stored protein at the write boundary (TG-4) — a raw label never lands', () => {
+    // Defense in depth: the picker only offers canonical keys, but the column is
+    // canonical whatever the caller passes.
+    const rows = buildTrialRows(input({ targetProtein: 'Chicken By-Product Meal' }), 'now');
+    expect(rows.trial.target_protein).toBe('chicken');
+    expect(rows.trial.target_protein_set_at).toBe('now');
+  });
+
+  it('a junk protein canonicalizes to null and is not dated (TG-2)', () => {
+    const rows = buildTrialRows(input({ targetProtein: '   ' }), 'now');
+    expect(rows.trial.target_protein).toBeNull();
+    expect(rows.trial.target_protein_set_at).toBeNull();
   });
 });
 

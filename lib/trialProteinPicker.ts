@@ -1,297 +1,321 @@
-// The trial-protein picker + the allowed-set editor row + the correction confirm
-// — B-704 PR 4 (spec §7.2/§7.3, mock frames C, G, H).
+// The trial-protein picker's PURE support layer — B-704 PR 3 (§7.1/§7.2, mock
+// frames B/C/D). One home for the picker's state model, its option lists, its
+// selection→storage resolution, and every §8 string, so the setup sheet
+// (`StartTrialModal`) and the mid-trial allowed-set screen (PR 4) render the same
+// picker from the same source of truth rather than two drifting copies.
 //
-// PURE. Every string these surfaces render is built here, for the same reason
-// `trialFoodsScreen.ts` and `dietTrialCard.ts` exist: the §8 copy pack is
-// verbatim and copy that lives inside a component is copy no test can hold still.
-// The picker component (components/profile/TrialProteinPickerSheet.tsx) lays this
-// model out and owns exactly one judgement of its own — the confirm-step UI state
-// — while the WRITE goes through `setTrialTargetProtein` (lib/dietTrialSetup.ts).
+// DEPENDENCY-FREE OF THE DB / UI — pure logic + copy only, so it is exercised in
+// plain jest and imported by whichever component mounts the picker. The keying it
+// leans on is the shared one: `canonicalizeProtein` (Class-A, TG-4) and
+// `trialTargetProtein`'s COMMON_PROTEINS set, never a second protein vocabulary.
 //
-// ── THE SHARED PICKER (§7.2) ─────────────────────────────────────────────────
-//
-// One component, two mounts: the allowed-set screen's editor row (this PR) and
-// the start sheet (PR 3). PR 4 lands first, so it builds the shared model here and
-// PR 3 consumes it. The options are the SAME source of truth as `ProteinPicker`
-// (`COMMON_PROTEINS`, `lib/protein.ts`), so an owner-picked value and an
-// AI-extracted value key through the one `canonicalizeProtein` on read.
-//
-// ── NEVER A PERMIT, NEVER A CLAIM (TG-1/TG-2) ────────────────────────────────
-//
-// The picker only ever offers real protein keys or the two null escape hatches;
-// there is no free-text entry, so arbitrary text can never reach the column (the
-// write path's job per PR 2's `trialProtein.ts` docstring, discharged here by
-// construction rather than by a sanitiser). A null resolution names nothing
-// anywhere — the empty row is a set-prompt, never a "no protein" verdict.
+// THE ONE INVARIANT THIS FILE CARRIES (TG-1, restated for the write path it feeds):
+// the value produced by `trialProteinToStore` only ever NAMES a trial's protein —
+// it is never a permit. The food list (`diet_trial_foods`) stays the sole off-diet
+// authority (diet-trial §5.5 D-A); nothing here can make a contaminant allowed.
 import { COMMON_PROTEINS, canonicalizeProtein } from './protein';
-import { capitalizeProtein, type TrialProteinSource } from './trialProtein';
+import { proteinSourceBase } from './proteinRelation';
 
-// ── Sentinels for the two null-writing escape hatches ────────────────────────
+// ── The selection model ──────────────────────────────────────────────────────
 //
-// Both store NULL (§5 — deliberately indistinguishable in the column; the
-// product distinction is carried here in the UI and matters nowhere downstream).
-// They are distinct IDs only so the picker can render two rows and the confirm's
-// button can read which one was tapped; neither is ever written.
-export const TRIAL_PROTEIN_HYDROLYZED = '__hydrolyzed__';
-export const TRIAL_PROTEIN_UNSET = '__unset__';
+// Four kinds, and the split between them is the whole of §5's "no single protein
+// stores null" ruling made legible in the UI:
+//
+//   • derived      — the owner never opened the picker; the app's read of the
+//                    picked foods stands. STORES NULL, so the read re-derives and
+//                    the record honestly labels it "from the trial diet" (§7.4).
+//                    The GOLDEN PATH: a glance, not a decision (mock frame B).
+//   • protein      — the owner actively picked a protein (a derived option or a
+//                    common one). STORES that canonical key → "owner-confirmed".
+//   • hydrolyzed   — "No single protein (hydrolyzed / special diet)". STORES NULL
+//                    (§5), because for a hydrolysed patient the food list IS the
+//                    trial; the picker copy carries the inapplicable-vs-unset
+//                    distinction that the null column deliberately does not.
+//   • unset        — "Not sure — leave it unset". STORES NULL.
+//
+// `hydrolyzed` and `unset` are indistinguishable downstream by design (§5: both
+// mean "no owner naming"); they differ only in what the owner SEES at selection
+// time, which is a real product distinction and a null-column non-distinction at
+// once. See `KNOWN RESIDUAL` on `effectiveTrialProteinKey`.
+export type TrialProteinChoice =
+  | { kind: 'derived' }
+  | { kind: 'protein'; key: string }
+  | { kind: 'hydrolyzed' }
+  | { kind: 'unset' };
 
-// ── §8 copy pack (DRAFT — every string passes `nyx-voice` in this PR) ─────────
+/** The picker opens here on a fresh trial: nothing chosen, derivation stands. */
+export const INITIAL_TRIAL_PROTEIN_CHOICE: TrialProteinChoice = { kind: 'derived' };
 
-export const TRIAL_PROTEIN_PICKER_TITLE = 'Trial protein';
+/**
+ * The canonical key to WRITE to `diet_trials.target_protein` for a choice (TG-4,
+ * §5). Only an explicit `protein` pick stores a value; `derived`, `hydrolyzed` and
+ * `unset` all store null — the three states §5 collapses onto one null column.
+ *
+ * Canonicalized here even though every offered key is already canonical, so the
+ * "canonical key only" invariant holds by construction regardless of how the
+ * picker's option set evolves — a raw label can never reach the column.
+ */
+export function trialProteinToStore(choice: TrialProteinChoice): string | null {
+  return choice.kind === 'protein' ? canonicalizeProtein(choice.key) : null;
+}
 
-/** The invariant, in owner language: the field NAMES, it never permits (§5.5 D-A,
- *  spoken out loud so an owner cannot hope to launder a treat into the trial by
- *  editing it). LOCKED in §8. */
+/**
+ * The target key the setup ROW displays and the day-0 mismatch check reads — which
+ * is NOT the same as the stored value, and the difference is deliberate:
+ *
+ *   • `derived`  resolves to the derivation (`derivedKey`), so the row shows
+ *     "Rabbit" and the mismatch can fire — even though it stores null.
+ *   • `protein`  resolves to the owner's key.
+ *   • `hydrolyzed` / `unset` resolve to null — no target is NAMED, so the mismatch
+ *     goes silent (TG-2: silence, never an all-clear).
+ *
+ * KNOWN RESIDUAL (§5, ratified). Because `hydrolyzed`/`unset` store null, a DOWNSTREAM
+ * read (`trialTargetProtein`) re-derives from the foods and may name a protein the
+ * owner explicitly declined here — but only on a trial whose foods derive a clean
+ * protein, i.e. contradictory input (picking "no single protein" on a rabbit-
+ * deriving diet). §5 accepts this: the distinction "matters nowhere downstream",
+ * both states store null, and a genuinely hydrolysed diet derives empty. The MODAL
+ * itself never shows that contradiction — it reads this function, not the stored
+ * null — so the owner's choice is honoured everywhere they can see it at setup.
+ */
+export function effectiveTrialProteinKey(
+  choice: TrialProteinChoice,
+  derivedKey: string | null,
+): string | null {
+  switch (choice.kind) {
+    case 'protein':
+      return canonicalizeProtein(choice.key);
+    case 'derived':
+      return derivedKey;
+    case 'hydrolyzed':
+    case 'unset':
+      return null;
+  }
+}
+
+// ── The option lists (mock frame C) ──────────────────────────────────────────
+
+/** One selectable protein row: a canonical key, its display label, and an optional
+ *  provenance sub-label (the derived group carries these; common proteins do not). */
+export interface TrialProteinOption {
+  key: string;
+  label: string;
+  subLabel?: string;
+}
+
+/** A primary trial food as the derived-options builder reads it. */
+export interface DerivedProteinFood {
+  foodLabel: string;
+  primaryProtein: string | null;
+}
+
+/** "rabbit" → "Rabbit". The picker's single display transform, matching the B-332
+ *  ProteinPicker / ProteinSetPicker convention (Title-case the canonical key). */
+export function titleProtein(key: string): string {
+  return key.length ? key.charAt(0).toUpperCase() + key.slice(1) : key;
+}
+
+/**
+ * The "From {pet}'s trial diet" group: the distinct canonical primary proteins of
+ * the picked primary foods, in first-seen prominence order, each with a provenance
+ * sub-label naming WHERE it came from (mock frame C: "Listed on both trial foods";
+ * frame D row: "From Instinct LID Rabbit").
+ *
+ * For SOURCE-BEARING primaries the FIRST option's key is exactly
+ * `trialTargetProtein({target_protein:null}, foods).protein` — both walk the same
+ * canonicalized primaries in the same order and take the first non-null — so the
+ * picker's default selection and the row's derived prefill agree. They diverge by
+ * design only on a source-less process word ('hydrolyzed protein'), which this drops
+ * (it is not a nameable protein) while `trialTargetProtein`'s derived arm still
+ * returns it (kept plain-`canonicalizeProtein` for report behavior-neutrality until
+ * B-705); the setup row applies the SAME source gate before display, so the row, the
+ * picker and the mismatch all treat that value as "nothing derived" (mock frame E).
+ * Locked by a test.
+ */
+export function buildDerivedProteinOptions(foods: readonly DerivedProteinFood[]): TrialProteinOption[] {
+  const total = foods.length;
+  // Group foods by their canonical primary protein, preserving first-seen order.
+  const order: string[] = [];
+  const labelsByKey = new Map<string, string[]>();
+  for (const f of foods) {
+    const key = canonicalizeProtein(f.primaryProtein);
+    // Skip a source-less process word ('hydrolyzed protein'): it names no antigen,
+    // so it is not a selectable trial protein — the "No single protein (hydrolyzed)"
+    // escape hatch is the answer for that diet, not a derived option that would behave
+    // oppositely (store a value + fire the mismatch). Mirrors the mismatch predicate's
+    // and the setup row's source gate, so all three agree on what "derives".
+    if (key == null || proteinSourceBase(key) == null) continue;
+    if (!labelsByKey.has(key)) {
+      labelsByKey.set(key, []);
+      order.push(key);
+    }
+    labelsByKey.get(key)!.push(f.foodLabel);
+  }
+
+  return order.map((key) => {
+    const labels = labelsByKey.get(key)!;
+    const count = labels.length;
+    let subLabel: string;
+    if (count === total && total >= 2) {
+      subLabel = total === 2 ? 'Listed on both trial foods' : 'Listed on all trial foods';
+    } else if (count === 1) {
+      subLabel = `From ${labels[0]}`;
+    } else {
+      subLabel = `Listed on ${count} trial foods`;
+    }
+    return { key, label: titleProtein(key), subLabel };
+  });
+}
+
+/** The "Other proteins" group: the common canonical set MINUS anything already
+ *  offered in the derived group (mock frame C shows rabbit only in the derived
+ *  group, never repeated below). Single source of truth: `COMMON_PROTEINS`. */
+export function commonProteinOptions(derivedKeys: readonly string[]): TrialProteinOption[] {
+  const derived = new Set(derivedKeys);
+  return COMMON_PROTEINS.filter((p) => !derived.has(p)).map((p) => ({ key: p, label: titleProtein(p) }));
+}
+
+// ── Copy (§8 draft — passed through nyx-voice in this PR) ─────────────────────
+//
+// LOCKED here rather than in the component so it is greppable, testable, and shared
+// by both mounting screens. Every string is owner-facing (Jordan / Sam) and says
+// "Culprit" (B-274 shipped). Never: "wrong food", "mistake", a per-feeding
+// rendering of the mismatch, or any all-clear derived from an absent protein.
+
+/** The row label under the trial-diet block (mock frames B/D). */
+export const TRIAL_PROTEIN_ROW_LABEL = 'Trial protein';
+
+/** Row sub-line when the value is DERIVED (untouched prefill) — mock frame B. */
+export const TRIAL_PROTEIN_SUBLINE_DERIVED = 'From the foods you picked — tap to change';
+
+/** Row sub-line when nothing derives (E1 empty state, TP-1) — mock frame B/E. The
+ *  row still renders; this is a set-prompt, never a bare "Not set", because the
+ *  picker's own first-class options carry the inapplicable-vs-incomplete meaning. */
+export const TRIAL_PROTEIN_SUBLINE_EMPTY = "Tap to name this trial's protein";
+
+/** Row sub-line once the owner has made any explicit choice (a protein, or one of
+ *  the two escape hatches) — the value carries the meaning, the sub-line just keeps
+ *  the affordance visible. */
+export const TRIAL_PROTEIN_SUBLINE_CHOSEN = 'Tap to change';
+
+/** The row VALUE shown for the "No single protein (hydrolyzed)" choice. */
+export const TRIAL_PROTEIN_VALUE_HYDROLYZED = 'No single protein';
+/** The row VALUE shown when unset (nothing derived and untouched, or "Not sure"). */
+export const TRIAL_PROTEIN_VALUE_UNSET = 'Not set';
+
+/** The picker intro — the §5.5 loophole guard spoken in owner language (mock C). */
 export const TRIAL_PROTEIN_PICKER_INTRO =
   'If your vet named one protein for this trial, keep it here. Culprit uses it to ' +
   'name what shows up in the record — it never changes what counts as off-diet.';
 
-/** The correction confirm (TP-3), verbatim from §8 — shown before an edit that
- *  CHANGES an existing owner-set value commits. Disclosed, not versioned: it says
- *  the whole-trial effect in two sentences, with the load-bearing second one that
- *  the off-diet counts do not move (TG-1/TG-5). First-time sets never see it. */
-export const TRIAL_PROTEIN_CORRECTION_NOTE =
-  'This updates the trial’s whole record, including days already logged. What ' +
-  'counted as off-diet doesn’t change.';
+/** Picker group headers (mock frame C). */
+export function derivedGroupHeader(petName: string): string {
+  return `From ${petName}'s trial diet`;
+}
+export const OTHER_PROTEINS_GROUP_HEADER = 'Other proteins';
+export const ESCAPE_GROUP_HEADER = 'Neither of these?';
 
-// ── The editor row (frame G) ─────────────────────────────────────────────────
+/** The two escape-hatch options, first-class (mock frame C; §8 copy pack). */
+export const HYDROLYZED_OPTION = {
+  label: 'No single protein',
+  subLabel: 'Hydrolyzed or special diet — the food list is the trial.',
+} as const;
 
-export const TRIAL_PROTEIN_ROW_LABEL = 'Trial protein';
-/** The E1 empty register (TP-1) — a set-prompt, never a bare "Not set" verdict. */
-export const TRIAL_PROTEIN_ROW_EMPTY_VALUE = 'Not set';
-/** SECOND PERSON, not the report's "owner-confirmed" (nyx-voice Pattern 1 — never
- *  third-person about the owner). The report is a vet-facing artifact where
- *  "owner-confirmed" is the right provenance word (PR 5, §7.4); this is the
- *  owner's own screen, so it addresses them as "you". */
-export const TRIAL_PROTEIN_ROW_SUB_OWNER = 'You set this — tap to change';
-export const TRIAL_PROTEIN_ROW_SUB_DERIVED = 'From the trial diet — tap to change';
-export const TRIAL_PROTEIN_ROW_SUB_EMPTY = 'Tap to name this trial’s protein';
-
-// ── The escape hatches (frame C) ─────────────────────────────────────────────
-
-export const TRIAL_PROTEIN_HYDROLYZED_LABEL = 'No single protein';
-export const TRIAL_PROTEIN_HYDROLYZED_SUB =
-  'Hydrolyzed or special diet — the food list is the trial';
-export const TRIAL_PROTEIN_UNSET_LABEL = 'Not sure — leave it unset';
-
-export const TRIAL_PROTEIN_GROUP_OTHER = 'Other proteins';
-export const TRIAL_PROTEIN_GROUP_ESCAPE = 'Neither of these?';
-
-/** A write that did not land — plain cause, a concrete next action, no error code,
- *  and NOT silent (the sheet stays open, says so). Matches `ADD_TRIAL_FOOD_ERROR`'s
- *  phrasing: the row is local-first, so "in a moment" is honest — a device write
- *  failing, not the network. */
-export const SET_TRIAL_PROTEIN_ERROR = 'That didn’t save. Try again in a moment.';
-
-/** "Everything still works. You can set it later from {pet}'s trial." — the
- *  reassurance that unset is a first-class answer, not a shrug (§8). */
-export function trialProteinUnsetSubLabel(petName: string): string {
-  return `Everything still works. You can set it later from ${petName}’s trial.`;
+export function unsetOption(petName: string): { label: string; subLabel: string } {
+  return {
+    label: 'Not sure — leave it unset',
+    subLabel: `Everything still works. You can set it later from ${petName}'s trial.`,
+  };
 }
 
-/** The derived group's provenance sub-label — how many of the trial's own foods
- *  list this protein. Accurate rather than fixed: "both" reads best for the mock's
- *  two-food case, but the phrasing degrades honestly for one food or three. */
-export function derivedProteinSubLabel(count: number, totalPrimary: number): string {
-  if (totalPrimary >= 2 && count === totalPrimary) {
-    return count === 2 ? 'Listed on both trial foods' : `Listed on all ${count} trial foods`;
-  }
-  if (count >= 2) return `Listed on ${count} of your trial foods`;
-  return 'Listed on the trial diet';
-}
-
-// ── The picker model (frame C) ───────────────────────────────────────────────
-
-export interface TrialProteinOption {
-  /** The value the picker reports on select: a canonical protein key, or a
-   *  null-writing sentinel (`TRIAL_PROTEIN_HYDROLYZED` / `TRIAL_PROTEIN_UNSET`). */
-  id: string;
-  /** Capitalised for display (§8 "capitalized protein"). */
-  label: string;
-  subLabel: string | null;
-  /** True for the two escape hatches — selecting one writes null. Carried so the
-   *  component maps a selection to a protein without string-matching the sentinel. */
-  writesNull: boolean;
-}
-
-export interface TrialProteinGroup {
-  title: string;
-  options: TrialProteinOption[];
-}
-
-export interface TrialProteinPickerModel {
-  title: string;
-  intro: string;
-  groups: TrialProteinGroup[];
-  /** The canonical key currently in force (owner OR derived), for the filled
-   *  radio. Null when nothing resolves — NO radio filled, never the escape hatches
-   *  pre-selected (the two null states are indistinguishable by design, §5). */
-  selectedId: string | null;
-  /** `source === 'owner'`. The component reads this to decide whether a DIFFERENT
-   *  selection is a CORRECTION (needs the confirm, TP-3) or a first-set (no
-   *  confirm). A derived value is never "an existing value" — the owner never set
-   *  it — so picking over a derived value is a first-set. */
-  isOwnerSet: boolean;
-}
-
-/**
- * The grouped options: derived-from-the-trial-diet first (with provenance),
- * common proteins next, the two escape hatches last (frame C).
- *
- * The derived group is the distinct non-null `canonicalizeProtein(primaryProtein)`
- * across the trial's `primary_diet` foods — the SAME source `trialTargetProtein`
- * derives from, deliberately NOT `proteins[0]` (that would resurrect a cleared
- * designation; see the predicate's docstring). "Other proteins" excludes anything
- * already shown in the derived group, so a protein never appears twice.
- */
-export function buildTrialProteinPicker(args: {
+/** The day-0 mismatch heads-up (§6.2 / §8, mock frame D), split into the FACT it
+ *  leads with (rendered prominently) and the non-alarming advice that follows.
+ *  `foodProtein` and `targetProtein` are lowercase canonical keys, interpolated
+ *  verbatim — mid-sentence lowercase is the house convention for protein names (as
+ *  `TrialContaminantNote`'s "…lists chicken…" copy does, and the §8 tests assert).
+ *  `foodLabel` is the food's display label. */
+export function mismatchHeadsUp(args: {
+  foodLabel: string;
+  foodProtein: string; // canonical key
   petName: string;
-  /** The trial's `primary_diet` foods, for the derived group. */
-  primaryFoods: readonly { primaryProtein: string | null }[];
-  /** The resolved `{ protein, source }` from `trialTargetProtein` — sets the
-   *  filled radio and the correction gate. */
-  resolved: { protein: string | null; source: TrialProteinSource | null };
-}): TrialProteinPickerModel {
-  const { petName, primaryFoods, resolved } = args;
-
-  const derivedSeen = new Set<string>();
-  const derivedKeys: string[] = [];
-  for (const f of primaryFoods) {
-    const key = canonicalizeProtein(f.primaryProtein);
-    if (key != null && !derivedSeen.has(key)) {
-      derivedSeen.add(key);
-      derivedKeys.push(key);
-    }
-  }
-  const totalPrimary = primaryFoods.length;
-  const derivedOptions: TrialProteinOption[] = derivedKeys.map((key) => {
-    const count = primaryFoods.filter((f) => canonicalizeProtein(f.primaryProtein) === key).length;
-    return {
-      id: key,
-      label: capitalizeProtein(key),
-      subLabel: derivedProteinSubLabel(count, totalPrimary),
-      writesNull: false,
-    };
-  });
-
-  const otherOptions: TrialProteinOption[] = COMMON_PROTEINS.filter(
-    (p) => !derivedSeen.has(p),
-  ).map((p) => ({ id: p, label: capitalizeProtein(p), subLabel: null, writesNull: false }));
-
-  const escapeOptions: TrialProteinOption[] = [
-    {
-      id: TRIAL_PROTEIN_HYDROLYZED,
-      label: TRIAL_PROTEIN_HYDROLYZED_LABEL,
-      subLabel: TRIAL_PROTEIN_HYDROLYZED_SUB,
-      writesNull: true,
-    },
-    {
-      id: TRIAL_PROTEIN_UNSET,
-      label: TRIAL_PROTEIN_UNSET_LABEL,
-      subLabel: trialProteinUnsetSubLabel(petName),
-      writesNull: true,
-    },
-  ];
-
-  const groups: TrialProteinGroup[] = [];
-  if (derivedOptions.length > 0) {
-    groups.push({ title: `From ${petName}’s trial diet`, options: derivedOptions });
-  }
-  groups.push({ title: TRIAL_PROTEIN_GROUP_OTHER, options: otherOptions });
-  groups.push({ title: TRIAL_PROTEIN_GROUP_ESCAPE, options: escapeOptions });
-
+  targetProtein: string; // canonical key
+}): { fact: string; advice: string } {
   return {
-    title: TRIAL_PROTEIN_PICKER_TITLE,
-    intro: TRIAL_PROTEIN_PICKER_INTRO,
-    groups,
-    // Never a sentinel — a null resolution leaves nothing selected.
-    selectedId: resolved.protein,
-    isOwnerSet: resolved.source === 'owner',
+    fact: `${args.foodLabel} lists ${args.foodProtein} as its main protein.`,
+    advice: `If ${args.petName}'s trial is ${args.targetProtein}-only, worth checking that bag with your vet.`,
   };
 }
 
-// ── The editor row (frame G) ─────────────────────────────────────────────────
+// ── Mid-trial editing (PR 4 — the correction confirm + the row, mock frames G/H) ─
+//
+// The setup mount is first-set only; the mid-trial allowed-set screen reuses this
+// same picker and INTERPOSES a correction confirm when an edit CHANGES an existing
+// OWNER-set value (TP-3). These helpers are that layer — the setup mount never
+// touches them, which is exactly the split `TrialProteinPicker`'s header describes
+// ("the HOST owns the choice… what lets PR 4 interpose the correction-confirm").
 
-export interface TrialProteinRowModel {
-  label: string;
-  value: string;
-  /** False when nothing is set — the value renders in the dimmed register, and
-   *  the row is a set-prompt (TP-1 E1), never a bare "Not set" verdict. */
-  valueSet: boolean;
-  subLine: string;
-}
-
-/**
- * The "Trial protein" row above the food list. Provenance drives the sub-line —
- * an owner's confirmed word reads differently from the app's best guess, and a
- * consumer that cannot tell them apart eventually presents a guess as a
- * confirmation (the same reason `trialTargetProtein` returns `source`).
- */
-export function buildTrialProteinRow(resolved: {
+/** The mid-trial resolved value the row + gate read — the SAME shape
+ *  `trialTargetProtein` returns, so the row and the card cannot disagree. */
+export interface ResolvedTrialProtein {
   protein: string | null;
-  source: TrialProteinSource | null;
-}): TrialProteinRowModel {
+  source: 'owner' | 'derived' | null;
+}
+
+/** The correction confirm (TP-3, §8 verbatim, mock frame H) — shown before a
+ *  mid-trial edit that CHANGES an existing owner value commits. Disclosed, not
+ *  versioned: it names the whole-trial effect, and the load-bearing second sentence
+ *  is that the off-diet counts do not move (TG-1/TG-5). First-set edits never see it. */
+export const TRIAL_PROTEIN_CORRECTION_NOTE =
+  "This updates the trial's whole record, including days already logged. What " +
+  "counted as off-diet doesn't change.";
+
+/**
+ * Does committing `choice` on a trial whose STORED column is `storedTargetProtein`
+ * CHANGE an existing owner value (TP-3)? True only when the trial already carries an
+ * owner-set protein (`storedTargetProtein != null`) AND the new stored value differs.
+ * A derived/unset trial (null column) is never "an existing value" — editing it is a
+ * first-set, no confirm; re-picking the same owner value is not a change.
+ */
+export function isTrialProteinCorrection(
+  storedTargetProtein: string | null,
+  choice: TrialProteinChoice,
+): boolean {
+  if (storedTargetProtein == null) return false;
+  return trialProteinToStore(choice) !== storedTargetProtein;
+}
+
+/** The correction confirm's commit button (mock frame H "Change to venison"). A
+ *  protein pick names the destination (lowercase canonical key — the house
+ *  mid-sentence convention); either escape hatch clears the naming. */
+export function trialProteinCorrectionLabel(choice: TrialProteinChoice): string {
+  const key = trialProteinToStore(choice);
+  return key != null ? `Change to ${key}` : 'Remove the trial protein';
+}
+
+/** The mid-trial "Trial protein" row (mock frame G), built from the RESOLVED value
+ *  the card also reads (`trialTargetProtein`) — not a live picker choice. Owner and
+ *  derived both show the protein; the sub-line carries provenance and keeps the tap
+ *  affordance visible. Null renders the E1 set-prompt, never a "no protein" verdict
+ *  (TG-2). */
+export function midTrialProteinRow(
+  resolved: ResolvedTrialProtein,
+): { value: string; valueIsSet: boolean; subLine: string } {
   if (resolved.protein == null) {
-    return {
-      label: TRIAL_PROTEIN_ROW_LABEL,
-      value: TRIAL_PROTEIN_ROW_EMPTY_VALUE,
-      valueSet: false,
-      subLine: TRIAL_PROTEIN_ROW_SUB_EMPTY,
-    };
+    return { value: TRIAL_PROTEIN_VALUE_UNSET, valueIsSet: false, subLine: TRIAL_PROTEIN_SUBLINE_EMPTY };
   }
   return {
-    label: TRIAL_PROTEIN_ROW_LABEL,
-    value: capitalizeProtein(resolved.protein),
-    valueSet: true,
+    value: titleProtein(resolved.protein),
+    valueIsSet: true,
     subLine:
-      resolved.source === 'owner' ? TRIAL_PROTEIN_ROW_SUB_OWNER : TRIAL_PROTEIN_ROW_SUB_DERIVED,
+      resolved.source === 'owner' ? TRIAL_PROTEIN_SUBLINE_CHOSEN : TRIAL_PROTEIN_SUBLINE_DERIVED,
   };
 }
 
-// ── The correction confirm (frame H) ─────────────────────────────────────────
-
-export interface ProteinCorrectionConfirm {
-  note: string;
-  confirmLabel: string;
-}
-
-/**
- * The confirm shown before a CHANGE to an existing owner-set value commits (frame
- * H). The note is §8 verbatim; the button names the destination so the commit is
- * unambiguous ("Change to venison"). A change to either null escape hatch removes
- * the naming, so the button says so.
- */
-export function buildProteinCorrectionConfirm(
-  newSelection: TrialProteinOption,
-): ProteinCorrectionConfirm {
-  return {
-    note: TRIAL_PROTEIN_CORRECTION_NOTE,
-    confirmLabel: newSelection.writesNull
-      ? 'Remove the trial protein'
-      : `Change to ${newSelection.label.toLowerCase()}`,
-  };
-}
-
-/**
- * Map an option to the value the write path stores: a canonical key, or null for
- * either escape hatch. The one place the sentinel→null mapping lives.
- */
-export function proteinValueOf(option: TrialProteinOption): string | null {
-  return option.writesNull ? null : option.id;
-}
-
-/**
- * Does selecting `option` need the correction confirm (TP-3)?
- *
- * TRUE only when the current value is OWNER-set AND the new value differs. A
- * derived or unset value is never "an existing value", so selecting over it is a
- * first-set (no confirm); re-selecting the current owner value is a no-op (the
- * component closes without writing rather than confirming a change to itself).
- */
-export function isProteinCorrection(
-  model: Pick<TrialProteinPickerModel, 'selectedId' | 'isOwnerSet'>,
-  option: TrialProteinOption,
-): boolean {
-  if (!model.isOwnerSet) return false;
-  return proteinValueOf(option) !== model.selectedId;
+/** The picker's initial choice when the mid-trial editor opens: an owner-set protein
+ *  pre-selects itself; everything else opens on `derived` (the neutral default — a
+ *  null column can't distinguish hydrolyzed from unset, §5). */
+export function midTrialInitialChoice(resolved: ResolvedTrialProtein): TrialProteinChoice {
+  return resolved.source === 'owner' && resolved.protein != null
+    ? { kind: 'protein', key: resolved.protein }
+    : { kind: 'derived' };
 }

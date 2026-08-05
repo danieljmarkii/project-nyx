@@ -97,7 +97,8 @@ import {
   type TrialIntakeRating,
 } from './dietTrial';
 import { milestoneNote, trialDecisionChoices, type TrialOutcome } from './dietTrialCompletion';
-import { capitalizeProtein, type TrialProteinSource } from './trialProtein';
+import { type TrialProteinSource } from './trialProtein';
+import { titleProtein } from './trialProteinPicker';
 import { localDayIndexOf } from './utils';
 import type { TrialIndication } from './dietTrialSetup';
 
@@ -172,7 +173,7 @@ export interface TrialCardTrial {
  */
 export function trialIdentityLabel(trial: TrialCardTrial | null | undefined): string {
   const protein = trial?.trialProtein?.protein ?? null;
-  return protein ? `${capitalizeProtein(protein)} trial` : 'Diet trial';
+  return protein ? `${titleProtein(protein)} trial` : 'Diet trial';
 }
 
 /** §5.1 coverage: distinct local days with ≥1 logged NON-TREAT feeding, over the
