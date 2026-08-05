@@ -23,7 +23,7 @@
 // "bundler"` (expo's base tsconfig) and Metro both accept it, so one spelling
 // satisfies every consumer. Same reason the Edge Functions spell `lib/protein.ts`.
 import { canonicalizeProtein } from './protein.ts';
-import { dropKinOfPrimary, proteinSourceBase } from './proteinRelation.ts';
+import { dropKinOfPrimary, proteinsAreKin, proteinSourceBase } from './proteinRelation.ts';
 
 /**
  * The proteins in `foodProteins` that the trial diet does not include.
@@ -132,35 +132,6 @@ export function trialTargetProtein(
 }
 
 /**
- * The target-vs-trial-food tension (B-704 §6 / TG-3): the owner STORED a protein and
- * the trial food's own designated primary names a DIFFERENT one. Returns the
- * disagreeing food-primary canonical key when the tension is live, else null.
- *
- * A TRIAL-LEVEL STANDING FACT, never a per-feeding flag (TG-3). This predicate only
- * REPORTS the disagreement; the consumer decides how to disclose it (the report's
- * §5.5-style line, the client's §6 heads-up / standing note). It never permits and
- * never touches a count — it is pure comparison over two canonical keys.
- *
- * Fires ONLY on an OWNER-stored target: a DERIVED target came FROM the label, so it
- * cannot disagree with it (comparing a value to its own source is never a finding).
- * Fires ONLY when the food HAS a designated primary — §6 leads with "{Food} lists
- * {protein} as its MAIN protein", and a food with no main protein has nothing to
- * disagree with (silence, never a manufactured mismatch — the TG-2 shape). The
- * comparison is EXACT canonical-key equality (via the resolver's already-canonical
- * target and a `canonicalizeProtein` on the food primary), so casing or a form
- * qualifier never fabricates a mismatch (`Duck` vs `duck`, `chicken` vs `chicken meal`).
- */
-export function trialProteinLabelMismatch(
-  resolved: { protein: string | null; source: TrialProteinSource | null },
-  foodPrimaryProtein: string | null,
-): string | null {
-  if (resolved.source !== 'owner' || resolved.protein == null) return null;
-  const foodKey = canonicalizeProtein(foodPrimaryProtein);
-  if (foodKey == null || foodKey === resolved.protein) return null;
-  return foodKey;
-}
-
-/**
  * The DERIVATION FALLBACK ARM of `trialTargetProtein` (B-704 §4) — no longer a
  * public entry point. Reads the trial food's OWNER-DESIGNATED `primary_protein`,
  * and deliberately NOT `proteins[0]`.
@@ -179,6 +150,84 @@ export function trialProteinLabelMismatch(
  */
 function resolveTargetProtein(primaryProtein: string | null | undefined): string | null {
   return canonicalizeProtein(primaryProtein);
+}
+
+/** One primary trial food, as the mismatch check reads it. `primaryProtein` is
+ *  the food's OWN designated main protein (the raw stored value — canonicalized
+ *  here, never before). `foodItemId` is carried through so a caller can anchor a
+ *  heads-up to the exact row that mismatches (§6.1: inline, below the offending
+ *  food). */
+export interface TrialFoodPrimaryProtein {
+  foodItemId: string;
+  foodLabel: string;
+  primaryProtein: string | null;
+}
+
+/** A primary trial food whose OWN main protein disagrees with the trial's target. */
+export interface TrialFoodProteinMismatch {
+  foodItemId: string;
+  foodLabel: string;
+  /** The food's main protein, canonical key — the off-target protein to NAME in the
+   *  heads-up ("{Food} lists {protein} as its main protein"). */
+  foodProtein: string;
+}
+
+/**
+ * The day-0 catch (B-704 §6, mock frame D): the primary trial foods whose OWN main
+ * protein is a real protein SOURCE that differs from the trial's target protein.
+ *
+ * This is the whole argument for storing intent separately from the food — with the
+ * owner's "rabbit" on record, a picked food whose label leads with chicken becomes a
+ * finding on day 0, where the clinical sources say trials silently fail, rather than
+ * on day 14 when the exposure detector finally has enough meals. Today the target is
+ * read FROM the trial food, so the food can never be found to contradict it.
+ *
+ * ── THE THREE RULES THIS ENCODES ────────────────────────────────────────────────
+ *
+ *   • TG-2 (silence is never an all-clear). A null — OR source-less (a bare process
+ *     word like 'hydrolyzed protein') — target names nothing and compares nothing, so
+ *     it returns [] — never a "no off-target proteins" result. The ABSENCE of a
+ *     mismatch is likewise never a verdict: an empty return means only "nothing to
+ *     flag", never "the foods are on-target".
+ *   • TG-3 (never per-feeding, never blocks). This is a TRIAL-LEVEL standing fact —
+ *     the setup heads-up, the mid-trial standing note, a report disclosure line — and
+ *     the caller renders it non-blocking. It never touches a single feeding's verdict.
+ *   • KINSHIP-AWARE, and gated on a usable source. A food whose main is the SAME
+ *     source as the target at a different processing stage (`hydrolyzed chicken` vs
+ *     `chicken`) is NOT a mismatch — that pair is one source named twice, exactly the
+ *     R7 asymmetry `proteinsAreKin` exists for. And a main that canonicalizes to a
+ *     process word with no source (`hydrolyzed`, `protein`) never fires a spurious
+ *     heads-up: `proteinSourceBase(main) == null` ⇒ skipped. Both are the safe,
+ *     under-claiming direction — a missed heads-up costs a conversation with a vet;
+ *     a false one cries wolf on the prescribed diet.
+ *
+ * The target food itself never mismatches (its own main equals the target key, or is
+ * kin to it), so this returns only the OTHER foods that disagree. Order is preserved.
+ */
+export function trialFoodProteinMismatches(
+  targetProtein: string | null,
+  primaryFoods: readonly TrialFoodPrimaryProtein[],
+): TrialFoodProteinMismatch[] {
+  // The target must NAME A USABLE SOURCE, mirroring the food-side guard below — the
+  // symmetry the antigen path keeps. A source-less-but-canonical process word
+  // ('hydrolyzed protein', 'protein') is non-null yet names no antigen, so it is not
+  // a protein to hold a food against; comparing every sibling food to it fires a
+  // spurious amber (over-flag — safe direction — but broken copy on exactly the
+  // hydrolyzed population the escape hatch serves). Null OR source-less ⇒ nothing
+  // named, nothing compared (TG-2).
+  const target = canonicalizeProtein(targetProtein);
+  if (target == null || proteinSourceBase(target) == null) return [];
+  const out: TrialFoodProteinMismatch[] = [];
+  for (const food of primaryFoods) {
+    const main = canonicalizeProtein(food.primaryProtein);
+    // Skip a food with no readable main, or a main that names no usable source (a
+    // bare process word): we have no confident protein to accuse the bag of.
+    if (main == null || proteinSourceBase(main) == null) continue;
+    // The same source at a different processing stage is not a mismatch (R7).
+    if (main === target || proteinsAreKin(main, target)) continue;
+    out.push({ foodItemId: food.foodItemId, foodLabel: food.foodLabel, foodProtein: main });
+  }
+  return out;
 }
 
 /**

@@ -90,7 +90,7 @@ import {
   offTrialProteins,
   offTrialProteinsInTrialFood,
   trialTargetProtein,
-  trialProteinLabelMismatch,
+  trialFoodProteinMismatches,
   type TrialProteinSource,
 } from '../../../lib/trialProtein.ts'
 // B-568 — the SAME format-label map the app renders from (lib/foodFormat.ts is
@@ -2893,16 +2893,31 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
   const trialProteinTarget = derivedTrialTarget ?? trialProteinResolved.protein
 
   // The mismatch: the owner stored a protein that DISAGREES with the trial food's own
-  // designated primary. Fires only on an owner value (a derived value came from the label
-  // and cannot disagree with it). `target` is the owner's word; `foodProtein` is the food's.
-  const trialProteinMismatchKey = reportTrialInput
-    ? trialProteinLabelMismatch(trialProteinResolved, reportTrialInput.primaryProtein ?? null)
-    : null
+  // designated primary. Reuses PR 3's `trialFoodProteinMismatches` — THE ONE predicate
+  // for this question (the §5.3 rule; my initial `trialProteinLabelMismatch` was deleted
+  // at the #597 merge as a contradictory duplicate). It is kinship-aware and source-gated:
+  // it fires only when the owner's stored value names a usable source AND differs from the
+  // food's primary at a different animal (so 'poultry' vs 'chicken' — kin — is NOT a
+  // mismatch, and a source-less process word never fires), which is exactly what the setup
+  // sheet's day-0 heads-up uses, so the two surfaces can never disagree. Passing the OWNER's
+  // stored value as the target (not the resolved baseline) is what makes it fire only on an
+  // owner value — a derived target came from the label and cannot disagree with it.
+  const trialProteinMismatchFoods = reportTrialInput
+    ? trialFoodProteinMismatches(reportTrialInput.targetProtein ?? null, [
+        {
+          foodItemId: reportTrialInput.foodItemId ?? 'trial',
+          foodLabel: reportTrialInput.foodLabel ?? '',
+          primaryProtein: reportTrialInput.primaryProtein ?? null,
+        },
+      ])
+    : []
+  // When it fires, the stored value was a usable source, so the stored-first resolution is
+  // 'owner' and `trialProteinResolved.protein` is that word — the protein to NAME in the flag.
   const trialProteinMismatch =
-    trialProteinMismatchKey !== null && trialProteinResolved.protein !== null
+    trialProteinMismatchFoods.length > 0 && trialProteinResolved.protein !== null
       ? {
           target: trialProteinResolved.protein,
-          foodProtein: trialProteinMismatchKey,
+          foodProtein: trialProteinMismatchFoods[0].foodProtein,
           foodLabel: reportTrialInput!.foodLabel ?? null,
         }
       : null
