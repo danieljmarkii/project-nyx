@@ -194,6 +194,14 @@ describe('loadTrialAllowedSet', () => {
     expect(mockGetAllAsync).toHaveBeenCalledWith(expect.any(String), ['trial-1']);
   });
 
+  it('B-704 — carries the stored target protein through to the trial', async () => {
+    const ready = await loadReady(ROWS, trialRow({ target_protein: 'rabbit' }));
+    expect(ready.status).toBe('ready');
+    if (ready.status !== 'ready') return;
+    // The row is carried raw; the screen resolves it stored-first against `foods`.
+    expect(ready.trial.targetProtein).toBe('rabbit');
+  });
+
   it('is `no_trial` when the pet has no active row', async () => {
     mockGetFirstAsync.mockResolvedValue(null);
     await expect(loadTrialAllowedSet('pet-1', NOW)).resolves.toEqual({ status: 'no_trial' });

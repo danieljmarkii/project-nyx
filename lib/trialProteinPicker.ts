@@ -245,3 +245,77 @@ export function mismatchHeadsUp(args: {
     advice: `If ${args.petName}'s trial is ${args.targetProtein}-only, worth checking that bag with your vet.`,
   };
 }
+
+// ── Mid-trial editing (PR 4 — the correction confirm + the row, mock frames G/H) ─
+//
+// The setup mount is first-set only; the mid-trial allowed-set screen reuses this
+// same picker and INTERPOSES a correction confirm when an edit CHANGES an existing
+// OWNER-set value (TP-3). These helpers are that layer — the setup mount never
+// touches them, which is exactly the split `TrialProteinPicker`'s header describes
+// ("the HOST owns the choice… what lets PR 4 interpose the correction-confirm").
+
+/** The mid-trial resolved value the row + gate read — the SAME shape
+ *  `trialTargetProtein` returns, so the row and the card cannot disagree. */
+export interface ResolvedTrialProtein {
+  protein: string | null;
+  source: 'owner' | 'derived' | null;
+}
+
+/** The correction confirm (TP-3, §8 verbatim, mock frame H) — shown before a
+ *  mid-trial edit that CHANGES an existing owner value commits. Disclosed, not
+ *  versioned: it names the whole-trial effect, and the load-bearing second sentence
+ *  is that the off-diet counts do not move (TG-1/TG-5). First-set edits never see it. */
+export const TRIAL_PROTEIN_CORRECTION_NOTE =
+  "This updates the trial's whole record, including days already logged. What " +
+  "counted as off-diet doesn't change.";
+
+/**
+ * Does committing `choice` on a trial whose STORED column is `storedTargetProtein`
+ * CHANGE an existing owner value (TP-3)? True only when the trial already carries an
+ * owner-set protein (`storedTargetProtein != null`) AND the new stored value differs.
+ * A derived/unset trial (null column) is never "an existing value" — editing it is a
+ * first-set, no confirm; re-picking the same owner value is not a change.
+ */
+export function isTrialProteinCorrection(
+  storedTargetProtein: string | null,
+  choice: TrialProteinChoice,
+): boolean {
+  if (storedTargetProtein == null) return false;
+  return trialProteinToStore(choice) !== storedTargetProtein;
+}
+
+/** The correction confirm's commit button (mock frame H "Change to venison"). A
+ *  protein pick names the destination (lowercase canonical key — the house
+ *  mid-sentence convention); either escape hatch clears the naming. */
+export function trialProteinCorrectionLabel(choice: TrialProteinChoice): string {
+  const key = trialProteinToStore(choice);
+  return key != null ? `Change to ${key}` : 'Remove the trial protein';
+}
+
+/** The mid-trial "Trial protein" row (mock frame G), built from the RESOLVED value
+ *  the card also reads (`trialTargetProtein`) — not a live picker choice. Owner and
+ *  derived both show the protein; the sub-line carries provenance and keeps the tap
+ *  affordance visible. Null renders the E1 set-prompt, never a "no protein" verdict
+ *  (TG-2). */
+export function midTrialProteinRow(
+  resolved: ResolvedTrialProtein,
+): { value: string; valueIsSet: boolean; subLine: string } {
+  if (resolved.protein == null) {
+    return { value: TRIAL_PROTEIN_VALUE_UNSET, valueIsSet: false, subLine: TRIAL_PROTEIN_SUBLINE_EMPTY };
+  }
+  return {
+    value: titleProtein(resolved.protein),
+    valueIsSet: true,
+    subLine:
+      resolved.source === 'owner' ? TRIAL_PROTEIN_SUBLINE_CHOSEN : TRIAL_PROTEIN_SUBLINE_DERIVED,
+  };
+}
+
+/** The picker's initial choice when the mid-trial editor opens: an owner-set protein
+ *  pre-selects itself; everything else opens on `derived` (the neutral default — a
+ *  null column can't distinguish hydrolyzed from unset, §5). */
+export function midTrialInitialChoice(resolved: ResolvedTrialProtein): TrialProteinChoice {
+  return resolved.source === 'owner' && resolved.protein != null
+    ? { kind: 'protein', key: resolved.protein }
+    : { kind: 'derived' };
+}
