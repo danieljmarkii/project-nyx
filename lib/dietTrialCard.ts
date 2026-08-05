@@ -97,6 +97,7 @@ import {
   type TrialIntakeRating,
 } from './dietTrial';
 import { milestoneNote, trialDecisionChoices, type TrialOutcome } from './dietTrialCompletion';
+import { capitalizeProtein, type TrialProteinSource } from './trialProtein';
 import { localDayIndexOf } from './utils';
 import type { TrialIndication } from './dietTrialSetup';
 
@@ -145,6 +146,33 @@ export interface TrialCardTrial {
    *  process boundary and renders a day counter. This card renders on the pet's own
    *  profile, next to the pet's own trial diet, in the app. */
   indication?: TrialIndication | null;
+  /** B-704 — the resolved trial protein for the "{Protein} trial" identity naming
+   *  (TP-4 viewers). ALREADY RESOLVED by `loadDietTrialFacts` through the one
+   *  predicate (`trialTargetProtein`, stored-first with derivation fallback), so
+   *  this pure resolver never re-derives it — it has no allowed foods to derive
+   *  from, and a second definition of "the trial's protein" is exactly the §5.3
+   *  failure the predicate exists to prevent. `{ protein: null }` (or omitted) is
+   *  the honest no-naming state and falls the identity back to "Diet trial" — never
+   *  an all-clear (TG-2). */
+  trialProtein?: { protein: string | null; source: TrialProteinSource | null };
+}
+
+/**
+ * The card/strip identity — "{Protein} trial" when a protein resolves (either
+ * source, TP-4), else the unchanged "Diet trial" (B-704 §7.3, §8).
+ *
+ * It is the LEADING token of both the card kicker ("Rabbit trial · finished") and
+ * the strip header ("Rabbit trial · day 12 of 42"); each caller appends its own
+ * lifecycle/day suffix. The food label stays the naming BELOW it, so the
+ * no-protein fallback is the card exactly as it renders today.
+ *
+ * NEVER A CLAIM. A null protein yields the generic "Diet trial" — it never says
+ * "no protein set" and never reads as an all-clear (TG-2); the absence of a name
+ * is not a verdict.
+ */
+export function trialIdentityLabel(trial: TrialCardTrial | null | undefined): string {
+  const protein = trial?.trialProtein?.protein ?? null;
+  return protein ? `${capitalizeProtein(protein)} trial` : 'Diet trial';
 }
 
 /** §5.1 coverage: distinct local days with ≥1 logged NON-TREAT feeding, over the
@@ -1127,9 +1155,9 @@ export function resolveTrialCard(input: TrialCardInput): TrialCardModel {
   if (!ctx) {
     return {
       state: degenerateStateFor(trial),
-      kicker: trial.status === 'abandoned' ? 'Diet trial · stopped early'
-        : trial.status === 'completed' ? 'Diet trial · finished'
-          : 'Diet trial',
+      kicker: trial.status === 'abandoned' ? `${trialIdentityLabel(trial)} · stopped early`
+        : trial.status === 'completed' ? `${trialIdentityLabel(trial)} · finished`
+          : trialIdentityLabel(trial),
       foodLabel: trial.foodLabel ?? null,
       dayLine: null,
       dayLineRole: 'meta',
@@ -1379,7 +1407,9 @@ function activeCard(
   const endIndex = trialEndDayIndex(startIndex, trial.targetDurationDays);
 
   const base = {
-    kicker: 'Diet trial',
+    // B-704 — "{Protein} trial" when a protein resolves, else "Diet trial". The
+    // food label stays the naming below it, so the fallback is today's card.
+    kicker: trialIdentityLabel(input.trial),
     foodLabel: trial.foodLabel ?? null,
     // R2: the ONLY number that becomes a width, and it is day progress.
     progressFraction: progress.fraction,
@@ -2117,7 +2147,7 @@ function completedCard(
   }
   return {
     state: 'completed',
-    kicker: 'Diet trial · finished',
+    kicker: `${trialIdentityLabel(input.trial)} · finished`,
     foodLabel: trial.foodLabel ?? null,
     dayLine: terminalRange(trial, startIndex),
     dayLineRole: 'meta',
@@ -2255,7 +2285,7 @@ function abandonedCard(
   if (register === 'decline') {
     return {
       state: 'abandoned',
-      kicker: 'Diet trial · stopped early',
+      kicker: `${trialIdentityLabel(input.trial)} · stopped early`,
       foodLabel: trial.foodLabel ?? null,
       dayLine: range,
       dayLineRole: 'meta',
@@ -2274,7 +2304,7 @@ function abandonedCard(
     state: 'abandoned',
     // §6.6 — an abandoned trial is a legitimate clinical fact, never a failure
     // state, so the kicker states what happened and judges none of it.
-    kicker: 'Diet trial · stopped early',
+    kicker: `${trialIdentityLabel(input.trial)} · stopped early`,
     foodLabel: trial.foodLabel ?? null,
     dayLine: range,
     dayLineRole: 'meta',
@@ -2312,10 +2342,14 @@ export function resolveTrialStrip(input: TrialCardInput): TrialStripModel | null
   );
   if (!progress || startIndex === null) return null;
 
+  // B-704 — the identity leads, then the day suffix ("Rabbit trial · day 12 of
+  // 42"). Falls back to "Diet trial" when no protein resolves; the food label
+  // stays in the strip's line below, so the fallback is today's strip unchanged.
+  const identity = trialIdentityLabel(trial);
   const overrunDays = progress.dayCounter - progress.targetDays;
   const header = overrunDays > 0
-    ? `Diet trial · day ${progress.dayCounter} — ${overrunDays} ${overrunDays === 1 ? 'day' : 'days'} past`
-    : `Diet trial · day ${progress.dayCounter} of ${progress.targetDays}`;
+    ? `${identity} · day ${progress.dayCounter} — ${overrunDays} ${overrunDays === 1 ? 'day' : 'days'} past`
+    : `${identity} · day ${progress.dayCounter} of ${progress.targetDays}`;
 
   // While an intake-decline flag is live the strip carries the day count and
   // nothing else: SignalZone sits above it and owns the safety card, and a

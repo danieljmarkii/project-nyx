@@ -27,6 +27,7 @@
 import {
   trialTargetProtein,
   offTrialProteins,
+  capitalizeProtein,
   type TrialProteinSource,
 } from './trialProtein';
 import {
@@ -423,5 +424,18 @@ describe('TrialProteinSource', () => {
       trialTargetProtein({ target_protein: null }, []).source,
     ];
     expect(sources).toEqual(['owner', 'derived', null]);
+  });
+});
+
+// ── capitalizeProtein (B-704 §8 "capitalized protein") ───────────────────────
+
+describe('capitalizeProtein', () => {
+  it('Title-cases the first letter of a stored-lowercase key', () => {
+    expect(capitalizeProtein('rabbit')).toBe('Rabbit');
+    expect(capitalizeProtein('whitefish')).toBe('Whitefish');
+  });
+
+  it('is a no-op on the empty string', () => {
+    expect(capitalizeProtein('')).toBe('');
   });
 });

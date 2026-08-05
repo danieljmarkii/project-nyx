@@ -28,6 +28,7 @@
 import { getDb } from './db';
 import type { TrialFoodRole } from './dietTrial';
 import { trialStopReasons, type TrialOutcome } from './dietTrialCompletion';
+import { canonicalizeProtein } from './protein';
 import { syncPendingDietTrials, syncPendingDietTrialFoods } from './sync';
 import { useSyncStore } from '../store/syncStore';
 import { uuid, toLocalDayKey, dayKeyToLocalDate } from './utils';
@@ -691,6 +692,80 @@ export async function extendTrial(params: {
   notifyTrialChanged();
   syncPendingDietTrials().catch((err) =>
     console.warn('[dietTrialSetup] extend-trial sync failed (queued):', err),
+  );
+}
+
+/**
+ * Set (or clear) the trial's owner-stated protein — B-704 §5/§7.3, the write path
+ * PR 2's mirror comment deferred to "PR 3", consumed here because PR 4 lands first.
+ *
+ * ── NEVER A PERMIT (TG-1), SO IT RIDES THE ORDINARY COLUMN UPDATE ─────────────
+ *
+ * The stored protein only ever NAMES what the record already counts — it never
+ * changes what `classifyFeeding` calls off-diet (the food list stays the sole
+ * permit path, §5.5 D-A). So there is no allowed-set write here, no re-classify,
+ * no recompute: it is one LWW column update, exactly like `extendTrial`.
+ *
+ * ── THE PAIRED-NULL CONTRACT (§5), ENFORCED HERE ─────────────────────────────
+ *
+ * `target_protein_set_at` is null whenever `target_protein` is null, and holds an
+ * ISO/UTC instant otherwise. Both the "no single protein (hydrolyzed)" and the
+ * "leave it unset" picker options store null (deliberately indistinguishable in
+ * the column — the product distinction is carried by the picker UI and matters
+ * nowhere downstream, §5). Clearing an owner-set value lands here as `null` too.
+ *
+ * ── CANONICAL ON WRITE (TG-4) ────────────────────────────────────────────────
+ *
+ * The value is `canonicalizeProtein`'d before it lands, so a raw label never
+ * reaches the column — a Class-A convergent op, so a value the picker already
+ * passes canonical is unchanged. `canonicalizeProtein` returns null for junk/empty
+ * (the `PROTEIN_JUNK` set), so a cleared or unusable value naturally collapses to
+ * the null branch and the paired-null contract holds by construction. The picker
+ * only ever offers real protein keys or the two null escape hatches, so the read
+ * gate's process-word residual (`trialTargetProtein`'s docstring) cannot arrive by
+ * this door.
+ *
+ * `synced = 0, sync_attempts = 0, sync_error = NULL` in the same statement — the
+ * mirror's stated contract for every local mutation, and what re-arms a row that
+ * was previously quarantined. `notifyTrialChanged()` bumps the hydration tick so
+ * the Pet-tab card AND the Home strip re-read the new naming, not just the surface
+ * that wrote it (B-534's lesson).
+ */
+export async function setTrialTargetProtein(params: {
+  trialId: string;
+  /** A canonical protein key, a raw label (canonicalized here), or null to clear
+   *  / "no single protein" / "leave it unset" — all three collapse to the null
+   *  branch. */
+  protein: string | null;
+  /** Injected only so tests pin the exact `set_at` written; production passes
+   *  now. */
+  now?: Date;
+}): Promise<void> {
+  const key = params.protein != null ? canonicalizeProtein(params.protein) : null;
+  const at = params.now ?? new Date();
+  const nowIso = at.toISOString();
+  // Paired-null: a null protein forces a null stamp; a non-null protein stamps
+  // when it was set (TP-3's disclosure hook — the report reads it for the
+  // "confirmed day N" provenance).
+  const setAt = key != null ? nowIso : null;
+
+  const db = getDb();
+  await db.runAsync(
+    `UPDATE diet_trials
+        SET target_protein = ?, target_protein_set_at = ?, updated_at = ?,
+            synced = 0, sync_attempts = 0, sync_error = NULL
+      WHERE id = ?`,
+    [key, setAt, nowIso, params.trialId],
+  );
+
+  notifyTrialChanged();
+
+  // Fire-and-forget, same contract as every trial write here: offline the row
+  // stays queued at `synced = 0` and the next cycle picks it up. This is a parent
+  // update only — no `diet_trial_foods` children change — so there is no ordering
+  // hazard, unlike start/end.
+  syncPendingDietTrials().catch((err) =>
+    console.warn('[dietTrialSetup] set-trial-protein sync failed (queued):', err),
   );
 }
 

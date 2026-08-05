@@ -23,6 +23,7 @@ import {
   resolveTrialCard,
   resolveTrialStrip,
   planTrialCard,
+  trialIdentityLabel,
   withholdingReasons,
   formatTrialDate,
   trialEndDayIndex,
@@ -2831,5 +2832,72 @@ describe('B-530 — the register speaks when the trial diet cannot be identified
       .join(' ');
     expect(text).toMatch(/trial-diet feedings/);
     expect(text).not.toMatch(/can’t match these meals/);
+  });
+});
+
+// ── B-704 — the "{Protein} trial" identity naming (TP-4 viewers) ──────────────
+//
+// The card kicker and the Home strip header lead with "{Protein} trial" when a
+// protein resolves (either source), and fall back to the unchanged "Diet trial"
+// otherwise. The food label stays the naming below, so the fallback is today's
+// surface. `trialProtein` is already resolved by the loader — the resolver never
+// re-derives it.
+
+describe('B-704 trialIdentityLabel', () => {
+  const base: TrialCardTrial = {
+    status: 'active',
+    startedAt: '2026-07-03',
+    targetDurationDays: 42,
+  };
+
+  it('names the trial by its protein, capitalized, from either source', () => {
+    expect(trialIdentityLabel({ ...base, trialProtein: { protein: 'rabbit', source: 'owner' } }))
+      .toBe('Rabbit trial');
+    expect(trialIdentityLabel({ ...base, trialProtein: { protein: 'rabbit', source: 'derived' } }))
+      .toBe('Rabbit trial');
+  });
+
+  it('falls back to "Diet trial" when nothing resolves — never a "no protein" claim', () => {
+    expect(trialIdentityLabel({ ...base, trialProtein: { protein: null, source: null } }))
+      .toBe('Diet trial');
+    expect(trialIdentityLabel({ ...base })).toBe('Diet trial');
+    expect(trialIdentityLabel(null)).toBe('Diet trial');
+  });
+});
+
+describe('B-704 card + strip render the protein identity', () => {
+  const withProtein = (over: Partial<TrialCardInput> = {}): TrialCardInput => {
+    const inp = activeInput(over);
+    return { ...inp, trial: { ...inp.trial!, trialProtein: { protein: 'rabbit', source: 'owner' } } };
+  };
+
+  it('the active card kicker leads with the protein', () => {
+    expect(resolveTrialCard(withProtein()).kicker).toBe('Rabbit trial');
+  });
+
+  it('the strip header leads with the protein, then the day suffix', () => {
+    const strip = resolveTrialStrip(withProtein());
+    expect(strip?.header).toBe('Rabbit trial · day 23 of 56');
+  });
+
+  it('the completed kicker keeps the protein identity', () => {
+    const model = resolveTrialCard(withProtein({
+      trial: {
+        status: 'completed', startedAt: '2026-07-03', endedAt: '2026-08-27',
+        targetDurationDays: 56, foodLabel: FOOD, outcome: 'improved',
+        trialProtein: { protein: 'rabbit', source: 'owner' },
+      },
+      nowMs: localNoon(2026, 8, 28),
+    }));
+    expect(model.kicker).toBe('Rabbit trial · finished');
+  });
+
+  it('unchanged fallback — no protein leaves the kicker and header as "Diet trial"', () => {
+    expect(resolveTrialCard(activeInput()).kicker).toBe('Diet trial');
+    expect(resolveTrialStrip(activeInput())?.header).toBe('Diet trial · day 23 of 56');
+  });
+
+  it('the food label is untouched by the naming — it stays the line below', () => {
+    expect(resolveTrialCard(withProtein()).foodLabel).toBe(FOOD);
   });
 });

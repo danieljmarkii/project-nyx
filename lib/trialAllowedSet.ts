@@ -72,6 +72,18 @@ export interface TrialAllowedSetTrial {
   startedAt: string;
   targetDurationDays: number;
   endedAt: string | null;
+  /** B-704 — the owner-stated trial protein (canonical key or null). Carried so
+   *  the allowed-set screen's "Trial protein" row (§7.3) can resolve it
+   *  stored-first through `trialTargetProtein` and decide first-set vs correction.
+   *  Null/absent = never set / cleared / "no single protein".
+   *
+   *  OPTIONAL because most `TrialAllowedSetTrial` consumers do not carry it: the
+   *  mid-trial add sheet (`buildAddTrialFoodSheet`) reads only the dates, and the
+   *  meal-completion card builds this shape from a log-time flag that has no
+   *  protein to hand. The one loader that backs the protein row
+   *  (`loadTrialAllowedSet`) always sets it; a consumer that omits it reads as
+   *  "not set", which derivation then answers — never a wrong value. */
+  targetProtein?: string | null;
 }
 
 export interface TrialAllowedSetReady {
@@ -252,7 +264,7 @@ export function trialListFoodsOn(
  *  device can briefly hold its own losing offline row beside the server's
  *  winner, and the row the server accepted is the one every surface agrees on. */
 export const RUNNING_TRIAL_SQL = `
-  SELECT id, started_at, ended_at, target_duration_days, status
+  SELECT id, started_at, ended_at, target_duration_days, status, target_protein
     FROM diet_trials
    WHERE pet_id = ? AND status = 'active'
    ORDER BY synced DESC, started_at DESC, id
@@ -280,6 +292,7 @@ interface TrialRow {
   ended_at: string | null;
   target_duration_days: number;
   status: string;
+  target_protein: string | null;
 }
 
 interface AllowedRow {
@@ -374,6 +387,9 @@ export async function loadTrialAllowedSet(
       startedAt: trial.started_at,
       targetDurationDays: trial.target_duration_days,
       endedAt: trial.ended_at,
+      // B-704 — carried raw; the screen resolves it stored-first through
+      // `trialTargetProtein` against `foods` (the derivation source below).
+      targetProtein: trial.target_protein,
     },
     // No `timeZone`: the device's own zone is the owner's midnight (B-421).
     ctx: buildTrialContext(spec, foods),

@@ -195,3 +195,12 @@ export function proteinList(keys: readonly string[]): string {
   if (keys.length === 1) return keys[0];
   return `${keys.slice(0, -1).join(', ')} and ${keys[keys.length - 1]}`;
 }
+
+/** Display form of a canonical protein key — Title-cased first letter, the app's
+ *  standing convention for showing a stored-lowercase key back to an owner
+ *  (`ProteinPicker`, the report identity, §8 "capitalized protein"). "rabbit" →
+ *  "Rabbit". A no-op on the empty string. Pure and Deno-safe, so the vet-report
+ *  render (PR 5) can name the trial identically. */
+export function capitalizeProtein(protein: string): string {
+  return protein.length === 0 ? protein : protein.charAt(0).toUpperCase() + protein.slice(1);
+}
