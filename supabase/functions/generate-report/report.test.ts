@@ -2574,17 +2574,25 @@ Deno.test('B-704 — an OWNER target set on day 1 discloses NO day (setup, not a
   assert.deepEqual(snap.diet.trialProteinProvenance, { source: 'owner', confirmedDay: null }, 'day 1 is setup — no "confirmed day" disclosure')
 })
 
-Deno.test('B-704 §6/TG-3 — an owner target that DISAGREES with the label is a trial-level mismatch, never a self-contamination', () => {
+Deno.test('B-704 §6/TG-3 — an owner target that DISAGREES with the label: baseline stays the food, the owner word is a safety flag', () => {
   // The wrong-primary trial food, structurally undetectable before this: the owner
   // recorded RABBIT, the trial diet's label says DUCK.
   const snap = assembleReport(baseInput(proteinTrialInput({ targetProtein: 'rabbit' })))
-  assert.equal(snap.diet.trialTargetProtein, 'rabbit', 'the owner word wins the naming')
-  assert.deepEqual(snap.diet.trialProteinProvenance, { source: 'owner', confirmedDay: null })
+  // The EXPOSURE BASELINE stays the food's own primary (duck) — coherent with the
+  // TG-1-locked counts. Marking against the owner's rabbit here is what made the report
+  // self-contradict (antigen tally against duck, `*` markings against rabbit). The owner's
+  // word does not re-base the exposure section; it becomes a safety flag instead.
+  assert.equal(snap.diet.trialTargetProtein, 'duck', 'the baseline is the food, not the owner word')
+  assert.deepEqual(snap.diet.trialProteinProvenance, { source: 'derived', confirmedDay: null }, 'baseline is label-read, never a false owner-confirmed over the food protein')
   assert.deepEqual(snap.diet.trialProteinMismatch, { target: 'rabbit', foodProtein: 'duck', foodLabel: 'Novel Duck' })
-  // TG-3: the trial food's OWN duck primary is NOT reported as its own contaminant —
-  // self-contamination is checked against the food's own primary, not the stored target.
-  // Its genuine self-listing (chicken) still surfaces; duck never does.
-  assert.deepEqual(snap.diet.trial!.proteinSet.offTrial, ['chicken'], 'chicken is a real self-contaminant; the duck primary is not, despite the rabbit target')
+  // The mismatch leads the SAFETY BAND (B-494 rule; the cold-read gate).
+  const flag = snap.safetyFlags.find((f) => f.kind === 'protein_mismatch')
+  assert.ok(flag, 'a protein_mismatch safety flag fires')
+  assert.equal(flag!.kind === 'protein_mismatch' && flag.recordedProtein, 'rabbit')
+  assert.equal(flag!.kind === 'protein_mismatch' && flag.foodProtein, 'duck')
+  // The trial food's OWN duck primary is NOT a contaminant against the duck baseline; its
+  // genuine self-listing (chicken) still surfaces.
+  assert.deepEqual(snap.diet.trial!.proteinSet.offTrial, ['chicken'], 'chicken is a real self-contaminant; the duck primary is the diet')
 })
 
 Deno.test('B-704 — a stored target keeps attribution alive when the trial food primary is THIN (derivation goes dark)', () => {
@@ -2636,17 +2644,24 @@ Deno.test('B-704 TG-5 — editing the stored target never moves a report NUMBER 
   const after = numbers('rabbit') // owner overrides to a DIFFERENT protein
   assert.deepEqual(after, before, 'every count / denominator / coverage figure is byte-identical across the edit')
 
-  // NOT a vacuous test: the same edit genuinely MOVES the naming.
+  // NOT a vacuous test: the same edit genuinely MOVES a rendered fact — but it is the
+  // MISMATCH FLAG, not the exposure markings. The markings stay on the derived baseline
+  // (duck) in BOTH snapshots — that stability IS the coherence fix (the stored value never
+  // re-bases the exposure section on a non-thin food; it only names a discrepancy).
   idSeq = 0
   const dSnap = assembleReport(baseInput(proteinTrialInput({ targetProtein: null })))
   idSeq = 0
   const rSnap = assembleReport(baseInput(proteinTrialInput({ targetProtein: 'rabbit' })))
-  assert.equal(dSnap.diet.trialTargetProtein, 'duck')
-  assert.equal(rSnap.diet.trialTargetProtein, 'rabbit')
-  // A duck confounder is on-target under the duck trial ([]), off-target under rabbit (['duck']).
+  assert.equal(dSnap.diet.trialTargetProtein, 'duck', 'baseline is the food primary')
+  assert.equal(rSnap.diet.trialTargetProtein, 'duck', 'and the stored rabbit does NOT re-base it (coherence with the counts)')
   const duckConfd = (s: typeof dSnap) => s.provenance.confounders.find((c) => c.proteinSet.proteins.length === 1 && c.proteinSet.proteins[0] === 'duck')!.proteinSet.offTrial
-  assert.deepEqual(duckConfd(dSnap), [], 'duck is on-target for the duck trial')
-  assert.deepEqual(duckConfd(rSnap), ['duck'], 'duck is off-target for the rabbit trial — the naming moved')
+  assert.deepEqual(duckConfd(dSnap), [], 'duck is on-target (the diet) in both')
+  assert.deepEqual(duckConfd(rSnap), [], 'still on-target under the stored rabbit — the markings did not move')
+  // What DID move: the mismatch surfaced (null → the discrepancy), as a safety flag.
+  assert.equal(dSnap.diet.trialProteinMismatch, null)
+  assert.deepEqual(rSnap.diet.trialProteinMismatch, { target: 'rabbit', foodProtein: 'duck', foodLabel: 'Novel Duck' })
+  assert.ok(!dSnap.safetyFlags.some((f) => f.kind === 'protein_mismatch'), 'no flag without a mismatch')
+  assert.ok(rSnap.safetyFlags.some((f) => f.kind === 'protein_mismatch'), 'the mismatch flag is the visible effect of the edit')
 })
 
 // ── B-532 — the data layer behind the render-honesty pass ────────────────────────

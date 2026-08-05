@@ -1107,6 +1107,34 @@ export type SafetyFlag =
       tier: SymptomWorseningFinding['tier']
       windowDays: number
     }
+  | {
+      /**
+       * B-704 §6 — THE TARGET-VS-LABEL MISMATCH, AS A SAFETY FLAG.
+       *
+       * The owner recorded one trial protein and the trial food's own label names another
+       * (a wrong-primary trial food). Made a flag, not just a disclosure line, for the
+       * B-494 reason its sibling was: the report TEACHES the reader to scan the flag zone,
+       * and the legend advertises "a prescribed diet going uneaten" as a trigger — so a
+       * trial where the pet may have eaten the WRONG protein for the whole window, left out
+       * of the band, reads as a negative result on a fast scan. `vet-report-cold-read`
+       * (2026-08-05) ruled the disclosure-line-only treatment a false-reassurance trap: the
+       * exposure counts (measured against the food's label) look "nearly clean" while, if
+       * the recorded protein is the true antigen, every trial-diet feeding is itself
+       * off-target and the elimination never happened.
+       *
+       * TRIAL-LEVEL, never per-feeding (TG-3) — like chronicity, it is an aggregate standing
+       * fact, not an alarm on any one meal. It NEVER moves a count or a feeding's
+       * classification (TG-1): it names a discrepancy the record cannot resolve and states
+       * which baseline the exposure figures use, so a vet is not misled by them.
+       */
+      kind: 'protein_mismatch'
+      /** The owner's recorded protein (what they believe the trial tests). */
+      recordedProtein: string
+      /** The trial food's own designated primary — what the exposure figures measure against. */
+      foodProtein: string
+      /** Every `primary_diet` label in force — the bag to name. */
+      trialDietLabels: string[]
+    }
 
 export interface SymptomAggregate {
   type: ReportSymptomType
@@ -2819,37 +2847,41 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
   // report the feature produces: the one sent the morning after the trial finished.
   const reportTrialInput = selectReportTrial(input.dietTrials, scope, tz, TRIAL_ANCHOR_GRACE_DAYS)
 
-  // The trial's target protein, resolved ONCE through the SHARED stored-first
-  // predicate (B-704 §4) and threaded into every protein view below. Null — no
-  // active trial, or a trial food with no designated main protein — disables the
-  // off-trial marking entirely: silence, never an all-clear. Still deliberately the
-  // owner-designated `primary_protein` and NOT `proteins[0]`; see the derivation
-  // arm's note for why the derived primary would invert the check on a cleared
-  // designation.
+  // ── B-704 §7.4 — the trial's protein: naming, provenance, and the mismatch ──────
   //
-  // B-704 PR 5 threads the owner-stated `diet_trials.target_protein` — STORED-FIRST,
-  // derivation as the fallback arm (§4). A stored value keeps the target alive when the
-  // trial food's own primary is thin (derivation goes dark), so the diet-section breach
-  // naming survives ("poultry exposures", not bare "off-diet feedings"); a null column
-  // falls to derivation, byte-identical to the pre-PR-5 report (the derivation-only
-  // fixtures, e.g. `snap.diet.trialTargetProtein === 'duck'`, still pass unchanged).
-  // NEVER a permit (TG-1): this only NAMES; counts/denominators/coverage are untouched.
+  // TWO protein values live here and conflating them produces a self-contradictory
+  // report (the adversarial finding on a stored-first marking baseline):
+  //
+  //   • the EXPOSURE BASELINE (`trialProteinTarget`) — the ONE key every off-trial
+  //     marking and the antigen footnote are measured against. DERIVED-FIRST (the trial
+  //     food's own designated primary), because the antigen COUNTS are closed-world on
+  //     the food list (`sanctionedProteinsOn`, TG-1) and never move for any stored value.
+  //     Marking against a DIFFERENT protein than the counts use is how one Appendix C
+  //     row read "carries nothing the trial diet does not" beside "Duck* — other than the
+  //     trial protein (Rabbit)". One baseline for every exposure surface, so the markings,
+  //     the footnote and the counts can never disagree. The owner's stored value is only a
+  //     FALLBACK — for a THIN trial food whose own primary is unknown, where there is no
+  //     count to contradict (the antigen arm is dark) and the stored value rescues the
+  //     naming (§7.4's "survives thin food data" intent, preserved without the incoherence).
+  //
+  //   • the OWNER'S STORED PROTEIN (`trialProteinResolved`) — what the owner recorded the
+  //     trial as testing. It drives the identity's "owner-confirmed" provenance and, when
+  //     it DISAGREES with the baseline, the `protein_mismatch` safety flag. It never moves
+  //     a count (TG-1) and, on a mismatch, never re-bases a marking — the discrepancy is
+  //     the flag's subject, not a silent re-labelling of the exposure section.
+  //
+  // A null baseline (no trial, or a thin food with no stored value) disables off-trial
+  // marking entirely: silence, never an all-clear (TG-2).
   const trialProteinResolved: { protein: string | null; source: TrialProteinSource | null } = reportTrialInput
     ? trialTargetProtein(
         { target_protein: reportTrialInput.targetProtein ?? null },
         [{ primaryProtein: reportTrialInput.primaryProtein ?? null }],
       )
     : { protein: null, source: null }
-  const trialProteinTarget = trialProteinResolved.protein
 
-  // The trial food's OWN self-contamination is checked against its OWN designated
-  // primary (the DERIVED target), NEVER the owner-stored target. When the two disagree
-  // (the §6 mismatch — owner stored rabbit, the food's label says duck), checking the
-  // trial food against the stored target would render the food's own front-of-pack
-  // protein as a self-contamination breach in bold on page 1 — the exact per-feeding
-  // rendering of the tension TG-3 forbids. The tension is a trial-level disclosure line
-  // instead (`trialProteinMismatch` below). Identical to `trialProteinTarget` whenever
-  // nothing is stored, so the derivation-only fixtures are unchanged.
+  // The trial food's OWN designated primary (derivation arm only — the sanctioned-set
+  // baseline the counts use, and deliberately NOT `proteins[0]`; see the derivation arm's
+  // note on why a cleared designation would invert the check).
   const derivedTrialTarget = reportTrialInput
     ? trialTargetProtein(
         { target_protein: null },
@@ -2857,29 +2889,12 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
       ).protein
     : null
 
-  // Provenance for the identity line (§7.4). `confirmedDay` discloses a mid-trial set:
-  // the 1-based trial day `target_protein_set_at` lands on, shown ONLY when it falls
-  // after day 1 (an owner who set it at setup needs no "day N"). Uses the same local-day
-  // arithmetic the rest of the report uses (`eventDayNumber`/`dayNumber` over `tz`), so
-  // it can never drift from the block's own day counter.
-  let confirmedDay: number | null = null
-  if (reportTrialInput && trialProteinResolved.source === 'owner' && reportTrialInput.targetProteinSetAt) {
-    const setDay = eventDayNumber(reportTrialInput.targetProteinSetAt, tz)
-    const startDay = dayNumber(reportTrialInput.startedAt)
-    if (setDay !== null && startDay !== null) {
-      const d = setDay - startDay + 1
-      if (d >= 2) confirmedDay = d
-    }
-  }
-  const trialProteinProvenance =
-    trialProteinTarget !== null && trialProteinResolved.source !== null
-      ? { source: trialProteinResolved.source, confirmedDay }
-      : null
+  // THE EXPOSURE BASELINE: derived-first, the stored value only as the thin-food fallback.
+  const trialProteinTarget = derivedTrialTarget ?? trialProteinResolved.protein
 
-  // The target-vs-label tension (§6 / TG-3), as a trial-level fact. Fires only on an
-  // OWNER target that disagrees with the trial food's designated primary (a derived
-  // target came from that label and cannot disagree with it). One disclosure line,
-  // never per-feeding — see the render.
+  // The mismatch: the owner stored a protein that DISAGREES with the trial food's own
+  // designated primary. Fires only on an owner value (a derived value came from the label
+  // and cannot disagree with it). `target` is the owner's word; `foodProtein` is the food's.
   const trialProteinMismatchKey = reportTrialInput
     ? trialProteinLabelMismatch(trialProteinResolved, reportTrialInput.primaryProtein ?? null)
     : null
@@ -2891,6 +2906,35 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
           foodLabel: reportTrialInput!.foodLabel ?? null,
         }
       : null
+
+  // Identity provenance (§7.4): the baseline is "owner-confirmed" ONLY when the owner's
+  // stored value IS the baseline — it defines a thin food's baseline, or corroborates the
+  // derived one. On a mismatch the baseline is the derived food protein and the owner's
+  // (different) value lives in the safety flag, so the identity reads "from the trial diet's
+  // label", never a false "owner-confirmed" over the food's protein.
+  const provenanceSource: TrialProteinSource | null =
+    trialProteinTarget === null
+      ? null
+      : trialProteinResolved.source === 'owner' && trialProteinResolved.protein === trialProteinTarget
+        ? 'owner'
+        : 'derived'
+
+  // `confirmedDay` discloses a mid-trial owner set: the 1-based trial day
+  // `target_protein_set_at` lands on, shown ONLY when the owner value IS the baseline
+  // (provenance 'owner') and it falls after day 1. Same local-day arithmetic the rest of
+  // the report uses (`eventDayNumber`/`dayNumber` over `tz`), so it never drifts from the
+  // block's own day counter.
+  let confirmedDay: number | null = null
+  if (provenanceSource === 'owner' && reportTrialInput && reportTrialInput.targetProteinSetAt) {
+    const setDay = eventDayNumber(reportTrialInput.targetProteinSetAt, tz)
+    const startDay = dayNumber(reportTrialInput.startedAt)
+    if (setDay !== null && startDay !== null) {
+      const d = setDay - startDay + 1
+      if (d >= 2) confirmedDay = d
+    }
+  }
+  const trialProteinProvenance =
+    provenanceSource !== null ? { source: provenanceSource, confirmedDay } : null
 
   /**
    * Build the render-ready protein view for one food.
@@ -2918,18 +2962,18 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     opts?: { isTrialDiet?: boolean },
   ): ProteinSetView {
     const proteins = readProteinSet(food.proteins ?? null, food.primaryProtein ?? null)
-    // The trial diet's OWN set is compared to its OWN designated primary (`derivedTrialTarget`);
-    // every other food to the stored-first `trialProteinTarget`. They differ only in the §6
-    // mismatch, where using the stored target on the trial food would surface the tension
-    // per-feeding (TG-3 forbids that — it is a trial-level disclosure). Equal whenever nothing
-    // is stored, so the derivation-only path is byte-identical.
-    const target = opts?.isTrialDiet ? derivedTrialTarget : trialProteinTarget
+    // EVERY food — the trial diet included — is compared to the SAME `trialProteinTarget`
+    // (the derived-first exposure baseline). The trial food takes the kin-absorbing
+    // `offTrialProteinsInTrialFood` (its own label naming its own source twice is not a
+    // contamination); every other food takes the plain comparison. One baseline, so the
+    // markings can never disagree with the counts (which are computed against the same
+    // derived primary) — the coherence the adversarial pass required on a mismatch.
     return {
       proteins,
       complete: mayClaimCompleteProteinSet(proteins, food.ingredientsNotes ?? null, food.extractionConfidence),
       offTrial: opts?.isTrialDiet
-        ? offTrialProteinsInTrialFood(proteins, target)
-        : offTrialProteins(proteins, target),
+        ? offTrialProteinsInTrialFood(proteins, trialProteinTarget)
+        : offTrialProteins(proteins, trialProteinTarget),
     }
   }
 
@@ -3242,6 +3286,24 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
         evidenceEndDate: trialBlock.evidenceEndDate,
       })
     }
+  }
+  // B-704 §6 — the target-vs-label mismatch, promoted to a safety flag so it leads the
+  // band the report teaches a vet to scan (the B-494 rule; `vet-report-cold-read`
+  // 2026-08-05). Trial-level, never per-feeding (TG-3); it names a discrepancy and moves
+  // no count. `trialProteinMismatch` is non-null only when there is an owner value that
+  // disagrees with the food's designated primary, which requires a live trial.
+  if (trialProteinMismatch) {
+    safetyFlags.push({
+      kind: 'protein_mismatch',
+      recordedProtein: trialProteinMismatch.target,
+      foodProtein: trialProteinMismatch.foodProtein,
+      trialDietLabels:
+        trialBlock?.trialDietLabels.length
+          ? trialBlock.trialDietLabels
+          : trialProteinMismatch.foodLabel
+            ? [trialProteinMismatch.foodLabel]
+            : [],
+    })
   }
   if (detection.chronicity) {
     const f = detection.chronicity
