@@ -1454,6 +1454,8 @@ interface RemoteDietTrial {
   food_label: string | null; indication: string | null; phase: string;
   outcome: string | null; outcome_notes: string | null; stopped_reason: string | null;
   ended_at: string | null; transition_started_at: string | null;
+  // migration 053 (B-704) — owner-stated trial protein + its provenance stamp.
+  target_protein: string | null; target_protein_set_at: string | null;
   created_at: string; updated_at: string;
 }
 interface RemoteDietTrialFood {
@@ -1967,7 +1969,8 @@ async function hydrateDietTrials(db: Db, stale: () => boolean): Promise<void> {
     'diet_trials',
     'id, pet_id, food_item_id, started_at, target_duration_days, status, completed_at, ' +
       'vet_name, notes, food_label, indication, phase, outcome, outcome_notes, ' +
-      'stopped_reason, ended_at, transition_started_at, created_at, updated_at',
+      'stopped_reason, ended_at, transition_started_at, target_protein, ' +
+      'target_protein_set_at, created_at, updated_at',
     floor ? { column: 'updated_at', value: floor } : null,
   );
   if (!rows || rows.length === 0) return;
@@ -1980,8 +1983,9 @@ async function hydrateDietTrials(db: Db, stale: () => boolean): Promise<void> {
       `INSERT INTO diet_trials
         (id, pet_id, food_item_id, started_at, target_duration_days, status, completed_at,
          vet_name, notes, food_label, indication, phase, outcome, outcome_notes,
-         stopped_reason, ended_at, transition_started_at, created_at, updated_at, synced, sync_error)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,NULL)
+         stopped_reason, ended_at, transition_started_at, target_protein, target_protein_set_at,
+         created_at, updated_at, synced, sync_error)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,NULL)
        ON CONFLICT(id) DO UPDATE SET
          pet_id=excluded.pet_id, food_item_id=excluded.food_item_id,
          started_at=excluded.started_at, target_duration_days=excluded.target_duration_days,
@@ -1990,6 +1994,7 @@ async function hydrateDietTrials(db: Db, stale: () => boolean): Promise<void> {
          indication=excluded.indication, phase=excluded.phase, outcome=excluded.outcome,
          outcome_notes=excluded.outcome_notes, stopped_reason=excluded.stopped_reason,
          ended_at=excluded.ended_at, transition_started_at=excluded.transition_started_at,
+         target_protein=excluded.target_protein, target_protein_set_at=excluded.target_protein_set_at,
          updated_at=excluded.updated_at, synced=1, sync_error=NULL
        WHERE diet_trials.synced = 1`,
       [
@@ -1997,7 +2002,9 @@ async function hydrateDietTrials(db: Db, stale: () => boolean): Promise<void> {
         t.status, t.completed_at ?? null, t.vet_name ?? null, t.notes ?? null,
         t.food_label ?? null, t.indication ?? null, t.phase ?? 'elimination',
         t.outcome ?? null, t.outcome_notes ?? null, t.stopped_reason ?? null,
-        t.ended_at ?? null, t.transition_started_at ?? null, t.created_at, t.updated_at,
+        t.ended_at ?? null, t.transition_started_at ?? null,
+        t.target_protein ?? null, t.target_protein_set_at ?? null,
+        t.created_at, t.updated_at,
       ],
     );
   }

@@ -28,7 +28,6 @@ jest.mock('@react-native-async-storage/async-storage', () => ({
 
 import {
   offTrialProteins,
-  resolveTargetProtein,
   trialTargetLine,
   hasFlaggedFoodInTrial,
   recordFlaggedFoodInTrial,
@@ -138,21 +137,12 @@ describe('offTrialProteins', () => {
   });
 });
 
-describe('resolveTargetProtein', () => {
-  it('reads the owner-designated primary, canonicalized', () => {
-    expect(resolveTargetProtein('Duck')).toBe('duck');
-    expect(resolveTargetProtein('Duck By-Product Meal')).toBe('duck');
-  });
-
-  it('is null for a cleared / junk / missing designation', () => {
-    // Slice 3 writes a NULL primary when the owner CLEARS the main protein and
-    // demotes it into the tail. Falling back to proteins[0] there would
-    // resurrect the cleared designation and invert the whole check.
-    expect(resolveTargetProtein(null)).toBeNull();
-    expect(resolveTargetProtein('null')).toBeNull();
-    expect(resolveTargetProtein('  ')).toBeNull();
-  });
-});
+// `resolveTargetProtein` is no longer a public entry point (B-704 §4) — it is the
+// internal derivation-fallback arm of `trialTargetProtein`. Its canonicalization
+// behaviour (owner-designated primary → key; cleared/junk/missing → null, silence
+// never an all-clear) is now covered through the predicate's DERIVED arm in
+// lib/trialProtein.test.ts, so the old direct-call block moved there rather than
+// being dropped.
 
 // ── The re-base: the trial diet is N foods, not one ──────────────────────────
 describe('the sanctioned set is the union over every primary_diet food (B-453)', () => {

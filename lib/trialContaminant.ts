@@ -88,13 +88,16 @@
 //    The standing fact remains visible on the food's detail screen, which is where
 //    a standing fact belongs — that is what makes suppressing the repeat safe.
 //
-// 4. THE TARGET PROTEIN COMES FROM THE OWNER'S DESIGNATION, NOT FROM proteins[0].
-//    See resolveTargetProtein below — the one place where the derived-primary
-//    convenience is deliberately not used.
+// 4. THE TARGET PROTEIN IS STORED-FIRST, THEN THE OWNER'S DESIGNATION — NEVER
+//    proteins[0]. `trialTargetProtein` (./trialProtein, B-704 §4) reads the
+//    owner-stated `diet_trials.target_protein` first and falls back to the trial
+//    food's owner-designated primary; its derivation arm is the one place the
+//    derived-primary convenience is deliberately not used.
 //
-// No `diet_trials` schema change (D6, RATIFIED-deferred): v1 keys off the trial
-// food's own designated protein. `nyx-voice` + `clinical-guardrails` govern every
-// string this module builds.
+// B-704 (D6, re-opened + ratified 2026-08-04) added `diet_trials.target_protein`,
+// so the target is now stored-first — but it NEVER permits (TG-1): the allowed set
+// remains the sole off-diet authority and this module's classification is unchanged.
+// `nyx-voice` + `clinical-guardrails` govern every string this module builds.
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getDb } from './db';
 import { foodIntakeKey } from './food';
@@ -121,9 +124,13 @@ import {
 // vet-report Edge Function can import the SAME implementation — this module's
 // AsyncStorage/supabase/db imports make it unreachable from Deno. Re-exported
 // here so every existing call site and test keeps its import path.
-import { offTrialProteins, resolveTargetProtein, proteinList } from './trialProtein';
+//
+// B-704 §4: `trialTargetProtein` (the stored-first predicate) replaces the direct
+// `resolveTargetProtein` re-export — that function is now trialTargetProtein's
+// internal fallback arm, and a consumer importing it directly is review-blocking.
+import { offTrialProteins, trialTargetProtein, proteinList } from './trialProtein';
 
-export { offTrialProteins, resolveTargetProtein, proteinList } from './trialProtein';
+export { offTrialProteins, trialTargetProtein, proteinList } from './trialProtein';
 
 // ── The pure predicate layer ─────────────────────────────────────────────────
 
