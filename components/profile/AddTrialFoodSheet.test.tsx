@@ -52,7 +52,7 @@ it('draws all three facts and both actions', () => {
   tree.getByText('Food');
   tree.getByText('Home-prepared plain sweet potato');
   tree.getByText('Joins the list');
-  tree.getByText('Today, Jul 12 · day 12');
+  tree.getByText('Today, 12 July · day 12');
   // THE LOAD-BEARING PAIR. Without this line on screen the sheet reads as an
   // amnesty, and the write path's whole safety property (`allowed_from` = today)
   // is invisible to the person it protects.
