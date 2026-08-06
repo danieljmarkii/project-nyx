@@ -185,6 +185,12 @@ export const MEAL_FLAGGED_DURATION_MS = 7000;
 // Medication-card dwell: same rationale as the meal card — interactive (the
 // adherence chip row needs reading + a deliberate tap before auto-dismiss).
 const MEDICATION_DURATION_MS = 5000;
+// How long a fire-and-forget flag evaluation waits for the meal card to actually
+// appear before giving up (see whenMealCardVisible). Sized well above the picker
+// path's ~450ms reveal defer: a card that has not appeared by now was superseded
+// by a newer log, and the wait resolves false so the caller skips the patch — and,
+// with it, rule 3's ledger spend — rather than hang.
+const CARD_REVEAL_WAIT_MS = 3000;
 
 // Module-scoped so a rapid second log cleanly cancels the prior timers rather
 // than racing two hides.
@@ -282,3 +288,59 @@ export const useMomentStore = create<MomentState>((set) => ({
     }, durationMs);
   },
 }));
+
+/**
+ * Resolve once the MEAL card for `eventId` is actually on screen — `true` when it
+ * is (now, or after a deferred reveal), `false` if it was superseded or never
+ * shown within `timeoutMs`.
+ *
+ * WHY THIS EXISTS. `patchTrialFlag` only lands on a card that is already visible —
+ * that is its whole contract, and it is right: a not-yet-revealed or dismissed
+ * card must never be patched, or a heads-up decorates the wrong meal / burns its
+ * one-per-trial ledger budget on something nobody saw. The FAB quick-log reveals
+ * the card SYNCHRONOUSLY, so its fire-and-forget flag evaluation always patches a
+ * live card. The picker path (`app/log.tsx`) defers the reveal behind `delayMs` so
+ * the dismissing `/log` modal doesn't occlude the card on iOS — and since B-417
+ * PR 2 removed the trial context's network read, the evaluation became an all-LOCAL
+ * read that resolves in a few milliseconds, i.e. BEFORE the reveal. A bare patch
+ * then hit an invisible card, returned false, and the log-time trial warning was
+ * silently dropped on the app's main food-logging path (the FAB never saw it,
+ * having no `delayMs`). Callers await this so the patch runs the instant the card
+ * is genuinely visible and never before — immediately on the FAB path, ~450ms
+ * later on the picker path.
+ *
+ * Bounded on purpose: a second log during the wait cancels the first card's reveal
+ * (`present` clears the show timer), and this must then resolve `false` rather than
+ * hang — the caller skips the patch AND `noteTrialFlagShown`, so a warning nobody
+ * saw can't be marked shown. `subscribe` fires on every `set`, so the deferred
+ * `reveal()`'s `set({ visible: true, payload })` wakes it exactly once.
+ */
+export function whenMealCardVisible(
+  eventId: string,
+  timeoutMs = CARD_REVEAL_WAIT_MS,
+): Promise<boolean> {
+  const isUp = (s: MomentState) =>
+    s.visible && s.payload?.kind === 'meal' && s.payload.eventId === eventId;
+  if (isUp(useMomentStore.getState())) return Promise.resolve(true);
+  // Never rejects, by construction: the executor has no throwing operations and
+  // never calls a reject — it only ever resolves true/false. That is the contract
+  // the fire-and-forget callers rely on (they await it without a catch), so keep it.
+  return new Promise((resolve) => {
+    let settled = false;
+    let unsub = () => {};
+    function finish(v: boolean) {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      unsub();
+      resolve(v);
+    }
+    // Scheduled before subscribe so the timeout is armed even if a subscribe
+    // callback were to fire synchronously (zustand's does not, but finish() is
+    // safe either way — it is idempotent and clears whichever fires second).
+    const timer = setTimeout(() => finish(false), timeoutMs);
+    unsub = useMomentStore.subscribe((s) => {
+      if (isUp(s)) finish(true);
+    });
+  });
+}

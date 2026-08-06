@@ -86,7 +86,7 @@ function readySet(foods: AllowedFood[], trial: TrialAllowedSetTrial = TRIAL): Tr
 describe('the dated membership fact (FR-6)', () => {
   it('reads as the trial’s own opening set on day 1', () => {
     expect(membershipFact(TRIAL, food({ allowedFrom: '2026-07-01' })))
-      .toBe('On the list since Jul 1');
+      .toBe('On the list since 1 July');
   });
 
   // D5's visible half. A mid-trial add rendered as a plain "since" would read as
@@ -94,7 +94,7 @@ describe('the dated membership fact (FR-6)', () => {
   // explicitly denies and the write path structurally refuses.
   it('names the DAY a mid-trial add joined, never just the date', () => {
     expect(membershipFact(TRIAL, food({ allowedFrom: '2026-07-12' })))
-      .toBe('Added Jul 12, day 12');
+      .toBe('Added 12 July, day 12');
   });
 
   it('omits the clause rather than printing a fabricated day', () => {
@@ -119,7 +119,7 @@ describe('the dated membership fact (FR-6)', () => {
   // was-this-an-add flag is needed, and none exists.
   it('treats a row dated before the start as founding, not as an add', () => {
     expect(membershipFact(TRIAL, food({ allowedFrom: '2026-06-28' })))
-      .toBe('On the list since Jun 28');
+      .toBe('On the list since 28 June');
   });
 });
 
@@ -158,7 +158,7 @@ describe('the screen (§2.2)', () => {
       'Real Meat Kangaroo Jerky',
       'Vet Dental Chew',
     ]);
-    expect(model.groups[1].rows[0].fact).toBe('Added Jul 12, day 12');
+    expect(model.groups[1].rows[0].fact).toBe('Added 12 July, day 12');
   });
 
   // Principle 5. An empty extras group is the NORMAL shape of a strict
@@ -217,7 +217,7 @@ describe('the confirm sheet (FR-11)', () => {
     // not touch this list.
     expect(sheet.rows).toEqual([
       { label: 'Food', value: 'Home-prepared plain sweet potato' },
-      { label: 'Joins the list', value: 'Today, Jul 12 · day 12' },
+      { label: 'Joins the list', value: 'Today, 12 July · day 12' },
       { label: 'Earlier feedings', value: 'Keep the reading they already have' },
     ]);
     expect(sheet.confirmLabel).toBe('Add to the list');
@@ -259,7 +259,7 @@ describe('the confirm sheet (FR-11)', () => {
     // A trial past its target still counts forward — the sheet names the day the
     // add happened, and `getDietTrialProgress` is the one thing that decides it.
     const late = buildAddTrialFoodSheet('Biscuit', 'Sweet potato', TRIAL, localNoon(2026, 8, 20));
-    expect(late.rows[1].value).toBe('Today, Aug 20 · day 51');
+    expect(late.rows[1].value).toBe('Today, 20 August · day 51');
   });
 });
 

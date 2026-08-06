@@ -5,6 +5,7 @@ import {
   dayKeyToLocalDate,
   deriveOccurredAt,
   describeOccurredAt,
+  formatLongDate,
   formatTime,
   formatUtcDayShort,
   petAgeShort,
@@ -17,6 +18,17 @@ import {
 } from './utils';
 
 const at = (iso: string) => new Date(iso);
+
+describe('formatLongDate — the trial surfaces’ locale-independent long date (B-706)', () => {
+  it('renders "27 August" day-first, matching the trial card', () => {
+    expect(formatLongDate('2026-08-27')).toBe('27 August');
+    expect(formatLongDate('2026-07-01')).toBe('1 July');
+  });
+  it('returns null for an absent or malformed key so callers omit the clause', () => {
+    expect(formatLongDate(null)).toBeNull();
+    expect(formatLongDate('not-a-date')).toBeNull();
+  });
+});
 
 // Build a DOB exactly `m` whole months before today. petAgeShort diffs by
 // calendar month and ignores day-of-month, so a fixed day (15th) keeps the

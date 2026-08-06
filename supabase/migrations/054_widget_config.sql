@@ -1,0 +1,61 @@
+-- ============================================================
+-- widget_config — seed the `widget_enabled` Beta-features eligibility flag
+-- (Beta features program / B-712, PR 1)
+-- See: docs/nyx-beta-features-requirements.md §5 (PR 1), §2 (the two-gate
+--      architecture), and §0 D2 (eligibility = the Ask allowlist primitive).
+-- ============================================================
+-- The Home Screen widget is the first (and, in v1, only) beta. It must ship DARK
+-- in the App Store submission binary — on for a hand-picked cohort, invisible to
+-- everyone else — so that slow, secondary widget work never gates the release.
+-- This migration seeds the single eligibility flag that makes that possible.
+--
+--   widget_enabled   Gate 1 (server-owned): is this account eligible for the
+--                    widget beta? Resolved client-side by resolveAllowlistFlag
+--                    (lib/appConfig.ts) against the caller's uid. Gate 2 — the
+--                    owner's local opt-in — is Phase 2 and lives on-device, never
+--                    here. The two gates are deliberately NEVER conflated (§2/D3),
+--                    which is exactly what keeps the future Premium swap one line.
+--
+-- THE ALLOWLIST SHAPE (§0 D2): reuses the experimental-flag primitive seeded for
+-- Ask (037) verbatim —
+--   {"enabled": bool, "allowlist": ["<user-uuid>", …]}
+-- Resolution (already implemented, client + server): enabled=true => on for
+-- everyone; else on iff the caller's uid is in allowlist; malformed/absent =>
+-- fail CLOSED (off). No new mechanism, no new table, no new column, no new policy
+-- — app_config already exists (030) with its read-only-to-authenticated RLS,
+-- which this row inherits unchanged.
+--
+-- SHIP-DARK (§1, §5): {"enabled": false, "allowlist": []} means the widget is
+-- eligible for no one. Creating this row changes nothing an owner can see. The
+-- publish gate + presentable empty state land in PR 2; enabling an account is a
+-- later, recorded config UPDATE (§5 enablement step), never a deploy side effect
+-- and deliberately NOT baked into this seed — the 037 lesson: a re-applied seed
+-- must never reset a live allowlist.
+--
+-- Scope: this PR is the SEED HALF only (one app_config row), isolated per the
+-- CLAUDE.md migration-isolation rule. The two-line client registration in
+-- lib/appConfig.ts (ALLOWLIST_FLAG_KEYS + ALLOWLIST_FLAGS_UNSET) rides this same
+-- PR — it is not schema, but the seed is inert without it and it touches no other
+-- feature (§5 PR 1).
+--
+-- Migration Safety Pre-flight:
+--   Destructive:  n  (purely additive — 1 new seed row in an existing table;
+--                     no column, type, table, row, or policy is dropped,
+--                     renamed, retyped, or altered.)
+--   Rollback:     DELETE FROM app_config WHERE key = 'widget_enabled';
+--   Backfill:     N/A — one brand-new config row; no existing data is read or
+--                 written.
+--   Affected tables: app_config (INSERT only). Row-count sanity check before
+--                 applying:
+--                   SELECT key FROM app_config WHERE key = 'widget_enabled';
+--                   -- expect: 0 rows (the key does not exist yet)
+-- ============================================================
+
+-- ON CONFLICT DO NOTHING makes the seed idempotent AND safe: if this migration is
+-- ever re-applied after the flag has been flipped/allowlisted in prod, it
+-- preserves the live value rather than resetting it to the shipped-dark seed.
+-- (Same discipline as the 030/037 seeds.)
+
+INSERT INTO app_config (key, value) VALUES
+  ('widget_enabled', '{"enabled": false, "allowlist": []}'::jsonb)
+ON CONFLICT (key) DO NOTHING;

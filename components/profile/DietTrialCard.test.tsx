@@ -172,32 +172,44 @@ describe('the entry point to PR 3’s start-a-trial modal', () => {
     )).toBeTruthy();
   });
 
-  it('offers "+ Start" on the empty card and "Change" on a running one', () => {
+  it('suppresses the header affordance on the empty card and says "Replace" on a running one', () => {
+    // no_trial: the body carries "Start a diet trial", so the header manage
+    // affordance is suppressed rather than shown as a duplicate "+ Start".
     const empty = render(
       <DietTrialCard model={resolveTrialCard({ ...input(), trial: null })} onManage={jest.fn()} />,
     );
-    expect(empty.getByText('+ Start')).toBeTruthy();
+    expect(empty.queryByText('+ Start')).toBeNull();
+    expect(empty.queryByText('Change')).toBeNull();
 
+    // A running trial: the header opens the end-and-replace sheet, so it says what
+    // it does — "Replace" — never "Change" (which read as an edit).
     const running = render(
       <DietTrialCard model={resolveTrialCard(input())} onManage={jest.fn()} />,
     );
-    expect(running.getByText('Change')).toBeTruthy();
-    expect(running.queryByText('+ Start')).toBeNull();
+    expect(running.getByText('Replace')).toBeTruthy();
+    expect(running.queryByText('Change')).toBeNull();
   });
 
-  it('opens the modal from both doors', () => {
-    const onManage = jest.fn();
+  it('opens the start modal from the empty card body, and end-and-replace from a running header', () => {
+    // The empty card has ONE start door now — the body CTA, not a duplicate header.
     const onStart = jest.fn();
-    const tree = render(
+    const empty = render(
       <DietTrialCard
         model={resolveTrialCard({ ...input(), trial: null })}
         actions={{ start_trial: onStart }}
-        onManage={onManage}
+        onManage={jest.fn()}
       />,
     );
-    fireEvent.press(tree.getByText('Start a diet trial'));
+    fireEvent.press(empty.getByText('Start a diet trial'));
     expect(onStart).toHaveBeenCalledTimes(1);
-    fireEvent.press(tree.getByText('+ Start'));
+    expect(empty.queryByText('+ Start')).toBeNull();
+
+    // On a running trial the header "Replace" is the way into end-and-replace.
+    const onManage = jest.fn();
+    const running = render(
+      <DietTrialCard model={resolveTrialCard(input())} onManage={onManage} />,
+    );
+    fireEvent.press(running.getByText('Replace'));
     expect(onManage).toHaveBeenCalledTimes(1);
   });
 });

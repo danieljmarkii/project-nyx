@@ -72,6 +72,29 @@ export function formatCalendarDate(date: string | null): string | null {
   return d ? d.toLocaleDateString([], { month: 'short', day: 'numeric' }) : null;
 }
 
+// Full month names, shared with the trial card's `formatTrialDate` (which imports
+// this) so a date reads IDENTICALLY on the card and on the trial list screens.
+// Locale-INDEPENDENT by construction — a trial date is read next to a vet's
+// instructions, not localised — which is the whole reason the trial surfaces do
+// not use `toLocaleDateString` like `formatCalendarDate` above.
+export const MONTHS: readonly string[] = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+];
+
+// 'YYYY-MM-DD' → "27 August" (day-first, locale-independent). The long-form
+// sibling of `formatCalendarDate`'s "Jun 2", used on the trial surfaces (B-706
+// consistency pass) so a list-screen date matches the "27 August" the trial card
+// and setup flow already render one tap away, instead of flipping "3 July" to
+// "Jul 19" in a single hop. No year — matching the card; a trial's "allowed since"
+// dates are recent and same-year-dominant. Returns null for a malformed/absent
+// key so callers omit the clause cleanly.
+export function formatLongDate(date: string | null): string | null {
+  if (!date) return null;
+  const d = dayKeyToLocalDate(date);
+  return d ? `${d.getDate()} ${MONTHS[d.getMonth()]}` : null;
+}
+
 const MS_PER_DAY = 86_400_000;
 
 // Epoch-day index (whole days since 1970-01-01) of the calendar day `ms` falls on.

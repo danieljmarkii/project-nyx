@@ -29,7 +29,7 @@
 import { getDietTrialProgress } from './analytics';
 import type { AllowedFood, TrialFoodRole } from './dietTrial';
 import { trialListFoodsOn, type TrialAllowedSet, type TrialAllowedSetTrial } from './trialAllowedSet';
-import { dayKeyToLocalDate, formatCalendarDate, toLocalDayKey } from './utils';
+import { dayKeyToLocalDate, formatLongDate, toLocalDayKey } from './utils';
 
 // ── §4 copy pack, verbatim ──────────────────────────────────────────────────
 //
@@ -160,8 +160,8 @@ export function trialDayOn(trial: TrialAllowedSetTrial, dayKey: string): number 
  * FR-6's dated fact for one row.
  *
  * TWO READINGS, and the split is D5's whole disclosure. A food that has been on
- * the list since the trial opened reads "On the list since Jul 19" — it is part of
- * what the vet prescribed. A food added later reads "Added Jul 31, day 12", which
+ * the list since the trial opened reads "On the list since 19 July" — it is part of
+ * what the vet prescribed. A food added later reads "Added 31 July, day 12", which
  * names the day membership STARTED, and that is the visible half of the promise
  * the write path keeps: `allowed_from` is today, so the feedings before it keep
  * the reading they already have. A mid-trial add rendered as a plain "since" would
@@ -174,7 +174,7 @@ export function trialDayOn(trial: TrialAllowedSetTrial, dayKey: string): number 
  * inferring it from a stored boolean would mean adding one.
  */
 export function membershipFact(trial: TrialAllowedSetTrial, food: AllowedFood): string {
-  const date = formatCalendarDate(food.allowedFrom);
+  const date = formatLongDate(food.allowedFrom);
   if (!date) return 'On the list';
   const day = trialDayOn(trial, food.allowedFrom);
   if (day === null || day <= 1) return `On the list since ${date}`;
@@ -215,7 +215,7 @@ export function buildTrialFoodsScreen(
   });
 
   return {
-    title: `What ${petName} can eat`,
+    title: trialFoodsTitle(petName),
     subtitle:
       progress && progress.targetDays > 0
         ? `Diet trial · day ${progress.dayCounter} of ${progress.targetDays}`
@@ -278,7 +278,7 @@ export function buildAddTrialFoodSheet(
   // The LOCAL day, because that is the day key `addTrialFood` will write. Naming
   // a different date here than the row records is the one way this sheet could
   // lie, and it would only show up near midnight.
-  const today = formatCalendarDate(toLocalDayKey(new Date(nowMs)));
+  const today = formatLongDate(toLocalDayKey(new Date(nowMs)));
   const joins = [
     today ? `Today, ${today}` : 'Today',
     progress ? `day ${progress.dayCounter}` : null,
@@ -311,6 +311,13 @@ export function alreadyOnListNote(foodLabel: string): string {
  *  list). Designed, not blank (Principle 5): it says what is true now AND what
  *  this screen is for, so the owner leaves knowing where the list will be rather
  *  than wondering what they broke. */
+/** "What {pet} can eat" — the screen's identity, shown in the nav header (B-616
+ *  consistency pass; aligned with the exposures screen's nav-title pattern) and
+ *  carried on the model from this same source so the two never drift. */
+export function trialFoodsTitle(petName: string): string {
+  return `What ${petName} can eat`;
+}
+
 export function noTrialLine(petName: string): string {
   return `${petName} isn’t on a diet trial right now. When one is running, the foods it allows show up here.`;
 }
