@@ -307,4 +307,16 @@ describe('widget_enabled — Beta-features eligibility (B-712 PR 1)', () => {
     expect(resolveAllowlistFlag(gated, 'someone-else', false)).toBe(false);
     expect(resolveAllowlistFlag(gated, null, false)).toBe(false); // signed out → off
   });
+
+  it('survives the cache round-trip; a cache lacking it decodes to undefined', () => {
+    // The third code path beyond extract + resolve: coerceAllowlistFlags decodes a
+    // persisted (AsyncStorage) bundle. A stored widget value must round-trip intact,
+    // and a legacy cache without the key leaves it undefined ⇒ resolves fail-closed.
+    const stored = { widget_enabled: { enabled: false, allowlist: ['pm-uid'] } };
+    expect(coerceAllowlistFlags(stored).widget_enabled).toEqual({
+      enabled: false,
+      allowlist: ['pm-uid'],
+    });
+    expect(coerceAllowlistFlags({ ask_enabled: true }).widget_enabled).toBeUndefined();
+  });
 });
