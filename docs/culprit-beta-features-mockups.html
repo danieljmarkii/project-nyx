@@ -462,10 +462,13 @@
           how the row reads its own state. Sam’s account (right) is off the list, so the whole program is
           absent for them.
         </p>
-        <div class="callout">
-          <b>Why this is safe for the store.</b> Your App Review demo account isn’t on the allowlist, so
-          reviewers never encounter the unfinished widget surface. Flagging it dark <em>de-risks</em> the
-          submission instead of threatening it.
+        <div class="callout amber">
+          <b>A caveat, corrected.</b> Flagging dark hides the in-app <em>Beta features row</em> from the review
+          account — but it does <b>not</b> hide the widget itself. iOS shows every app’s widgets in the gallery
+          to anyone who has the app; the flag only controls whether we publish <em>data</em>. So a reviewer (or
+          any curious user) can still add the widget and see its ungated state — which is exactly why that empty
+          state must look deliberate, not broken (see “The beta page”). Net: this <em>reduces</em> review
+          exposure, it doesn’t eliminate it.
         </div>
       </div>
     </div>
@@ -707,6 +710,13 @@
       <b>Real vs. illustrative:</b> the widget beta, the allowlist mechanism, the Settings placement, and the
       SettingsRow + switch idiom are real (all already in the codebase). The second “Ask” card in the final frame
       is illustrative of the pattern, not committed scope.
+    </p>
+    <p>
+      <b>Correction (post pre-mortem, 2026-08-06):</b> an earlier draft claimed reviewers would “never see” the
+      widget. Too strong — a home-screen widget <b>can’t be hidden per-account</b> (iOS surfaces every app’s
+      widgets in the gallery to anyone who has the app), so the flag gates the widget’s <em>data</em>, not its
+      availability. Flagging dark reduces review exposure but doesn’t eliminate it — which is why the widget’s
+      ungated empty state must look deliberate. Reflected in the “Where it lives” note above.
     </p>
     <p>
       <b>Open items for this round:</b> (1) the name — <em>Beta features</em> / <em>Labs</em> / <em>Early access</em>;
