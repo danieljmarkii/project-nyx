@@ -78,7 +78,7 @@ meal"; a back-dated start reads "Log a meal for {pet}".
   `durationHelperLine`, but the two have distinct documented rationales (B-565
   always-visible disclosure vs. local feedback at the point of duration override) and
   sit at different scroll positions. Removing it would strip live feedback. Filed as
-  B-715 for a device look rather than guessed-and-removed.
+  B-717 for a device look rather than guessed-and-removed.
 
 ## What broke and how it was fixed
 
@@ -121,13 +121,15 @@ meal"; a back-dated start reads "Log a meal for {pet}".
 
 ## Filed, not fixed (new backlog rows)
 
-- **B-712** — Home trial strip taps to the top of the Pet tab, not the trial card
+_(Filed as B-712–B-715; **renumbered to B-714–B-717** at merge — main's #601 took B-712/B-713 for the Beta-features program; first-lands-keeps per B-435.)_
+
+- **B-714** — Home trial strip taps to the top of the Pet tab, not the trial card
   (needs a scroll-to-anchor; on-device confirm). *Later.*
-- **B-713** — completing via the "start another" back-door drops the owner's outcome
+- **B-715** — completing via the "start another" back-door drops the owner's outcome
   (PM call: accept, or route through the outcome step). *Next.*
-- **B-714** — no mid-trial way to correct a trial's duration short of the milestone
+- **B-716** — no mid-trial way to correct a trial's duration short of the milestone
   (the real gap behind the old "Change" header). *Later.*
-- **B-715** — the `StartTrialModal` "Ends {date}." device-judgment nit above. *Later.*
+- **B-717** — the `StartTrialModal` "Ends {date}." device-judgment nit above. *Later.*
 
 ## Parked (unchanged this session)
 
