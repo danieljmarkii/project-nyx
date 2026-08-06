@@ -1,4 +1,4 @@
-<title>Culprit — Vet Files mock round 2</title>
+<title>Culprit — Vet Files mock</title>
 <style>
   /* ============================================================
      PAGE (studio presentation layer) — theme-aware tokens.
@@ -232,23 +232,195 @@
 
   .foot { margin-top: clamp(56px, 8vw, 90px); border-top: 1px solid var(--line); padding-top: 26px; font-size: 13.5px; color: var(--ink-faint); max-width: 74ch; }
   .foot b { color: var(--ink-soft); }
+
+  /* ============================================================
+     ROUND 3 — the populated-state pass (before / after).
+     Page-level helpers use page tokens; anything inside a .phone
+     uses the fixed app tokens already defined on .phone.
+     ============================================================ */
+  .ba { display: grid; grid-template-columns: repeat(auto-fit, minmax(258px, 1fr)); gap: clamp(20px, 4vw, 40px); margin-top: 30px; align-items: start; }
+  .ba-col { display: flex; flex-direction: column; align-items: center; gap: 14px; }
+  .ba-lab { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
+  .ba-lab .dot { width: 9px; height: 9px; border-radius: 999px; }
+  .ba-lab.was { color: var(--ink-faint); }
+  .ba-lab.was .dot { background: var(--ink-faint); }
+  .ba-lab.now { color: var(--accent); }
+  .ba-lab.now .dot { background: var(--accent); }
+  .ba-cap { text-align: center; max-width: 36ch; font-size: 13.5px; color: var(--ink-soft); line-height: 1.5; }
+  .ba-cap b { color: var(--ink); font-weight: 600; }
+
+  /* card head with a count, and the in-card "latest document" preview
+     that replaces the strip */
+  .card-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+  .card-count { font-size: 11px; color: var(--a-text3); flex: none; }
+  .preview { display: flex; align-items: center; gap: 11px; margin-top: 11px; padding: 9px 11px; border: 1px solid var(--a-border); border-radius: 12px; background: var(--a-subtle); }
+  .preview-main { flex: 1; min-width: 0; }
+  .preview-title { font-size: 12.5px; font-weight: 500; letter-spacing: -.1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .preview-title.untitled { color: var(--a-text2); font-weight: 400; }
+  .preview-meta { display: flex; align-items: center; gap: 6px; margin-top: 4px; }
+  .preview-more { font-size: 11px; font-weight: 600; color: var(--a-text3); flex: none; }
+
+  /* list low-count footer — the young-library state */
+  .lowcount { margin-top: 16px; padding: 4px 6px; display: flex; flex-direction: column; align-items: center; gap: 11px; text-align: center; }
+  .lowcount p { font-size: 12px; color: var(--a-text3); line-height: 1.55; max-width: 32ch; margin: 0; }
+  .addmore { font-size: 12.5px; font-weight: 600; color: var(--a-accent-ink); }
+
+  /* the divider that hands off to the shipped rounds below */
+  .superseded { margin-top: clamp(50px, 8vw, 84px); text-align: center; border-top: 1px dashed var(--line); padding-top: 24px; }
+  .super-note { display: inline-block; font-size: 11px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--ink-faint); background: var(--line-soft); border-radius: 999px; padding: 5px 13px; }
 </style>
 
 <div class="wrap">
-  <p class="eyebrow">Culprit · design review · B-478 Vet Files</p>
-  <h1 class="title serif">Vet Files — mock round 2</h1>
-  <p class="lede">Round 1 feedback from the Jordan and Sam persona reviews, incorporated. The demo pet is now Sam’s cat Pixel (with Juniper in the household) — the multi-pet gaps round 1 hid are visible by construction. Four decisions remain deliberately open and are tagged amber.</p>
+  <p class="eyebrow">Culprit · design review · B-478 Vet Files · round 3</p>
+  <h1 class="title serif">Vet Files — the populated-state pass</h1>
+  <p class="lede">The feature shipped and works: capture, detail, share and soft-delete are all sound. But the PM flagged the lived-in surfaces as <b>underwhelming</b> — and they are. The reason is specific: the states nobody drew are the ones every owner meets first — a library holding <b>one document</b>. Round 3 redesigns exactly those two frames — the profile card and the library at n=1 — and leaves everything ruled in rounds 1–2 untouched below. Real content throughout: Nyx, one prescription PDF, Jul 30 — the PM’s own screen.</p>
 
   <div class="ledger">
-    <div class="ledger-h">What changed since round 1 — and who asked</div>
-    <div class="ledger-row"><span class="ledger-who">Both</span><div><b>E1 ruled, amended.</b> E2 dropped. Pet name on the screen, completeness claim removed from the headline (“every record” was a total; copy now claims only a floor), one concrete moment line, and a visible “add several at once” nod.</div></div>
-    <div class="ledger-row"><span class="ledger-who">Both</span><div><b>L1 ruled; the honest library is now the mocked one.</b> L-real shows exactly what the instant-save defaults produce — untitled rows, kind unset — plus the recovery affordances instead of a fantasy curated list.</div></div>
-    <div class="ledger-row"><span class="ledger-who">Both</span><div><b>“Link a visit” hidden until a visit exists.</b> The row appears only when ≥1 vet visit is on record (E-pdf shows the exists case). No empty picker, no dead end.</div></div>
-    <div class="ledger-row"><span class="ledger-who">Sam</span><div><b>Delete moved into the ⋯ menu</b> (the round-1 open call, answered) with soft-delete reassurance in the confirm; Rename joins it. Share keeps the floor to itself.</div></div>
-    <div class="ledger-row"><span class="ledger-who">Sam</span><div><b>A1 re-mocked against the profile that ships</b> — full cards with blurbs, not compact rows — and the zero-document state is now mocked.</div></div>
-    <div class="ledger-row"><span class="ledger-who">Jordan</span><div><b>D2 says where it saved and that offline is safe</b> (“On this phone now — backs up when you’re online”), and “Add details” became “Name it.”</div></div>
-    <div class="ledger-row"><span class="ledger-who">Sam</span><div><b>Camera row now covers multi-page</b> (“Snap each page — they stay together”), matching the Photos row’s promise.</div></div>
-    <div class="ledger-row"><span class="ledger-who">PM</span><div><b>Ruled after round 2 (D11–D13):</b> kind chips OUT of v1 (Jordan’s position — the list-row Name affordance is the recovery), search OUT of v1 (→ B-479), and multi-pet documents IN via duplicate-on-add — the saved moment gains “Also add to Juniper’s Vet Files.” This page reflects all three.</div></div>
+    <div class="ledger-h">What round 3 changes — and the principle under each call</div>
+    <div class="ledger-row"><span class="ledger-who">Card</span><div><b>The thumbnail strip strands a single tile.</b> It was tuned for three tiles and a “+3”, so at one document it renders one 34×44 glyph beside a wide gutter — it reads as a thumbnail that failed to load, on the card whose job is to make the feature feel worth opening. Replaced with a <b>latest-document preview</b> (thumb · name · type · date) that carries real information at n=1 and scales up. <i>Data is not the product; understanding is</i> — show the record, not a grey rectangle.</div></div>
+    <div class="ledger-row"><span class="ledger-who">List</span><div><b>A type filter over one document is scaffolding.</b> The “All types” lens can’t change a single-type list. It renders only once the library actually <b>spans ≥2 types</b> — until then there’s nothing to lens, and its absence is honest, not a missing control. (Filter-UX rule: a lens earns its place when filtering would change the result.)</div></div>
+    <div class="ledger-row"><span class="ledger-who">List</span><div><b>One row on a full screen is a void, not a state.</b> Principle 5 (empty states are features) extended to the <i>young</i> library: a quiet, forward-looking line names what else belongs here and offers the next add — designed space instead of accidental blankness.</div></div>
+    <div class="ledger-row"><span class="ledger-who">Hold</span><div><b>The hierarchy is right — leave it.</b> Vet Files stays the quieter sibling of the Vet report: secondary button, calm type, the substrate never louder than the artifact it sits under. Round 3 lifts the card with <b>information</b>, never a louder button.</div></div>
+  </div>
+
+  <!-- ═══════════════ R3a · THE CARD ═══════════════ -->
+  <section>
+    <p class="sec-eyebrow">R3a · The profile card — one document</p>
+    <h2 class="serif">A strip of one reads as broken. Show the record instead.</h2>
+    <p class="sec-lede">The strip was validated at three tiles and a “+3”. At one document it collapses to a lone glyph and a gutter. Round 3 replaces the decorative strip with the latest document itself — the thing the owner actually filed.</p>
+
+    <div class="ba">
+      <div class="ba-col">
+        <span class="ba-lab was"><span class="dot"></span>Shipped today</span>
+        <div class="phone"><div class="ph-screen" style="min-height:auto">
+          <div class="ph-nav"><span class="ph-back">‹ Pets</span><span class="ph-title"></span><span style="width:30px"></span></div>
+          <div class="pet-hero"><div class="pet-avatar"></div><div><div class="pet-name">Nyx</div><div class="pet-sub">Domestic shorthair · 8 yrs · 4.0 kg</div></div></div>
+          <div class="big-card dim">
+            <h4>Vet report</h4>
+            <div class="blurb">A clinical summary of Nyx’s symptoms, diet and trends — view it here, then send it to your vet as a PDF.</div>
+            <div class="cardbtn">Open vet report</div>
+          </div>
+          <div class="big-card">
+            <div class="card-head"><h4>Vet Files</h4><span class="card-count">1 document</span></div>
+            <div class="blurb">Records, results &amp; clinic emails you’ve saved. Not included in the vet report — shared one at a time.</div>
+            <div class="doc-strip"><div class="strip-thumb"></div></div>
+            <div class="cardbtn ghost">Open Vet Files</div>
+          </div>
+        </div></div>
+        <div class="ba-cap"><b>One tile, adrift.</b> The three-up rhythm collapses to a single glyph and a gutter — a filing that looks like a load failure.</div>
+      </div>
+
+      <div class="ba-col">
+        <span class="ba-lab now"><span class="dot"></span>Round 3</span>
+        <div class="phone"><div class="ph-screen" style="min-height:auto">
+          <div class="ph-nav"><span class="ph-back">‹ Pets</span><span class="ph-title"></span><span style="width:30px"></span></div>
+          <div class="pet-hero"><div class="pet-avatar"></div><div><div class="pet-name">Nyx</div><div class="pet-sub">Domestic shorthair · 8 yrs · 4.0 kg</div></div></div>
+          <div class="big-card dim">
+            <h4>Vet report</h4>
+            <div class="blurb">A clinical summary of Nyx’s symptoms, diet and trends — view it here, then send it to your vet as a PDF.</div>
+            <div class="cardbtn">Open vet report</div>
+          </div>
+          <div class="big-card">
+            <div class="card-head"><h4>Vet Files</h4><span class="card-count">1 document</span></div>
+            <div class="blurb">Records, results &amp; clinic emails you’ve saved. Not included in the vet report — shared one at a time.</div>
+            <div class="preview">
+              <div class="doc-thumb pdf"><span class="pdf-chip">PDF</span></div>
+              <div class="preview-main">
+                <div class="preview-title">Science Diet — Rabbit Prescription Food</div>
+                <div class="preview-meta"><span class="kind">Prescription</span><span class="doc-date">Jul 30</span></div>
+              </div>
+            </div>
+            <div class="cardbtn ghost">Open Vet Files</div>
+          </div>
+        </div></div>
+        <div class="ba-cap"><b>The document, previewed.</b> The card names what’s inside, so one filing looks deliberate. Same secondary button, same calm type.</div>
+      </div>
+    </div>
+
+    <div class="rail rail-2" style="margin-top:38px">
+      <div class="opt">
+        <div class="phone"><div class="ph-screen" style="min-height:auto">
+          <div class="big-card">
+            <div class="card-head"><h4>Vet Files</h4><span class="card-count">5 documents</span></div>
+            <div class="blurb">Records, results &amp; clinic emails you’ve saved. Not included in the vet report — shared one at a time.</div>
+            <div class="preview">
+              <div class="doc-thumb pdf"><span class="pdf-chip">PDF</span></div>
+              <div class="preview-main">
+                <div class="preview-title">Senior panel — CBC &amp; chemistry</div>
+                <div class="preview-meta"><span class="kind">Lab result</span><span class="doc-date">Jul 14</span></div>
+              </div>
+              <span class="preview-more">+4 more</span>
+            </div>
+            <div class="cardbtn ghost">Open Vet Files</div>
+          </div>
+        </div></div>
+        <div class="opt-cap"><span class="k">Scales up · 5 documents</span><p>Preview the most recent; “+4 more” carries the rest. The strip’s pulse is kept — as information now, not texture.</p></div>
+      </div>
+
+      <div class="opt">
+        <div class="phone"><div class="ph-screen" style="min-height:auto">
+          <div class="big-card">
+            <div class="card-head"><h4>Vet Files</h4><span class="card-count">3 documents</span></div>
+            <div class="blurb">Records, results &amp; clinic emails you’ve saved. Not included in the vet report — shared one at a time.</div>
+            <div class="preview">
+              <div class="doc-thumb shot"></div>
+              <div class="preview-main">
+                <div class="preview-title untitled">Document — Jul 30</div>
+                <div class="preview-meta"><span class="doc-extra">3 pages</span></div>
+              </div>
+              <span class="preview-more">+2 more</span>
+            </div>
+            <div class="cardbtn ghost">Open Vet Files</div>
+          </div>
+        </div></div>
+        <div class="opt-cap"><span class="k">Handles the default · untitled latest</span><p>Capture asks nothing (D11), so the newest doc is often unnamed. The preview falls back to “Document — Jul 30” in a quieter weight — never a blank.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════ R3b · THE LIBRARY ═══════════════ -->
+  <section>
+    <p class="sec-eyebrow">R3b · The library — one document</p>
+    <h2 class="serif">Don’t filter a set of one. Fill the space with intent.</h2>
+    <p class="sec-lede">Two changes, both about the same emptiness: the type lens steps back until there’s something to filter, and the room below the single row becomes a designed, forward-looking invitation rather than a blank.</p>
+
+    <div class="ba">
+      <div class="ba-col">
+        <span class="ba-lab was"><span class="dot"></span>Shipped today</span>
+        <div class="phone"><div class="ph-screen" style="min-height:auto">
+          <div class="ph-nav"><span class="ph-back">‹ Nyx</span><span class="ph-title"></span><span class="ph-add">+</span></div>
+          <div><div class="ph-pagetitle">Vet Files</div><div class="ph-sub">Nyx · 1 document</div></div>
+          <div style="display:flex; gap:8px; align-items:center;"><div class="scope-pill">All types <span class="car">▼</span></div></div>
+          <div class="doc-row"><div class="doc-thumb pdf"><span class="pdf-chip">PDF</span></div><div class="doc-main"><div class="doc-title">Science Diet — Rabbit Prescription Food</div><div class="doc-meta"><span class="kind">Prescription</span><span class="doc-date">Jul 30</span></div></div><span class="doc-chev">›</span></div>
+          <div style="height:190px"></div>
+        </div></div>
+        <div class="ba-cap"><b>A lens with nothing to lens, over a void.</b> The filter can only offer “All types,” and the screen is mostly blank beneath one row.</div>
+      </div>
+
+      <div class="ba-col">
+        <span class="ba-lab now"><span class="dot"></span>Round 3</span>
+        <div class="phone"><div class="ph-screen" style="min-height:auto">
+          <div class="ph-nav"><span class="ph-back">‹ Nyx</span><span class="ph-title"></span><span class="ph-add">+</span></div>
+          <div><div class="ph-pagetitle">Vet Files</div><div class="ph-sub">Nyx · 1 document</div></div>
+          <div class="doc-row"><div class="doc-thumb pdf"><span class="pdf-chip">PDF</span></div><div class="doc-main"><div class="doc-title">Science Diet — Rabbit Prescription Food</div><div class="doc-meta"><span class="kind">Prescription</span><span class="doc-date">Jul 30</span></div></div><span class="doc-chev">›</span></div>
+          <div class="lowcount">
+            <p>Vaccine certificates, lab results and clinic emails all live here too — whatever a future vet might ask for.</p>
+            <span class="addmore">+  Add another document</span>
+          </div>
+        </div></div>
+        <div class="ba-cap"><b>No filter, a reason to add the next.</b> The lens is gone until a second type exists; the quiet line names what belongs here and offers the next add.</div>
+      </div>
+    </div>
+
+    <div class="note-grid">
+      <div class="note teal"><b>The filter returns when it can act</b>Once the library spans two or more types the “All types” lens reappears — the 5-document frame in the round-2 library below still shows it. The condition is semantic, not a document count.</div>
+      <div class="note teal"><b>Not an empty state — a young one</b>There is a document, so this isn’t E1. It’s the state between one and many that nothing designed. The line is tertiary and calm: it invites, it doesn’t nag (Principle 4).</div>
+      <div class="note amber"><b>PM call — the only open decision</b>“Two or more types present” is the recommended trigger for the filter. If you’d rather it always show for consistency, that’s a one-line change either way — say which and VF-polish is build-ready.</div>
+    </div>
+  </section>
+
+  <div class="superseded">
+    <span class="super-note">Rounds 1–2 — the design as shipped · reference</span>
   </div>
 
   <!-- ═══════════════ A · ENTRY POINT ═══════════════ -->
@@ -281,7 +453,7 @@
         </div></div>
         <div class="opt-cap">
           <span class="k">A1-r2 · Populated <span class="tag open">coherence line — PM call</span></span>
-          <p>Recent thumbnails give the card a pulse the bare “6” lacked. The blurb carries the honesty line both reviewers asked for — “not included in the vet report” — worded as fact, not apology. Whether that line lives here, on the report screen, or both is yours to call.</p>
+          <p>Recent thumbnails give the card a pulse the bare “6” lacked. The blurb carries the honesty line both reviewers asked for — “not included in the vet report” — worded as fact, not apology. Whether that line lives here, on the report screen, or both is yours to call. <b>Superseded at n=1 by R3 above</b> — the strip strands a single tile when the library holds one document.</p>
         </div>
       </div>
 
@@ -363,7 +535,7 @@
         </div></div>
         <div class="opt-cap">
           <span class="k">L-real · Week-one truth <span class="tag rec">replaces L1’s fantasy</span></span>
-          <p>Untitled rows say “Document — date” in a quieter weight, carry a dashed <b>Add type</b> chip, and swap the chevron for a one-tap <b>Name</b>. The mix is realistic: two rows were named via the save-moment chips, one by hand, two never. The header carries the pet’s name.</p>
+          <p>Untitled rows say “Document — date” in a quieter weight, carry a dashed <b>Add type</b> chip, and swap the chevron for a one-tap <b>Name</b>. The mix is realistic: two rows were named via the save-moment chips, one by hand, two never. The header carries the pet’s name. <b>Still current at ≥2 types</b> — this five-document frame is exactly where the filter earns its place; the one-document case is redesigned in R3b above.</p>
         </div>
       </div>
 
@@ -494,6 +666,6 @@
   </section>
 
   <div class="foot">
-    <b>How to react.</b> Codes this round: A1-r2 / A1z, E1-r2, L-real, D1-r2 / D2-r2, E-img-r2 / E-pdf-r2. D11–D13 are ruled and reflected on this page; the one remaining call is the report paperclip (amber note). A ruling there plus any per-mock notes locks VF-2–VF-4. Copy still goes through the nyx-voice pass at build; the pm-feature-review and on-device passes happen against built screens.
+    <b>How to react — round 3.</b> This round touches only the populated states the PM flagged as underwhelming: the profile card and the library at one document (R3a / R3b, above). The single open decision is the filter threshold (amber). Everything below is rounds 1–2 — ruled, shipped, kept for reference. On ratification the build is three small, test-covered changes: the card model (latest-document preview in place of the strip), the filter’s render condition (≥2 types present), and the library’s low-count footer. Copy still goes through nyx-voice; pm-feature-review and the on-device pass run against the built screens.
   </div>
 </div>
