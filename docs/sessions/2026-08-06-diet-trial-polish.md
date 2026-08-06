@@ -90,6 +90,16 @@ meal"; a back-dated start reads "Log a meal for {pet}".
 - The "Change" relabel + suppression broke two `DietTrialCard` component tests that
   pinned the old behaviour; rewrote them to the new intent and *strengthened* them
   (asserting the duplicate CTA is gone).
+- **`code-reviewer` caught a real fix-before-merge bug** the green suite couldn't:
+  my first `trialManageLabel` suppressed the header on *every* `abandoned` card, but
+  two branches ship `actions: []` with no body Start CTA (the intake-decline
+  replacement and the degenerate unparseable-start branch) — and this card is the
+  app's **only** trial-start entry point, so those cards would have had zero controls.
+  Refixed to key suppression on the body's actual actions, not `state`, with two
+  regression tests through `resolveTrialCard` (shipped in a follow-up commit on #603).
+  The same review folded in three small items (`MONTHS` typed `readonly`, the
+  `viewAllowedFoodsAction` "2/3" docstring correction, four stale short-date comment
+  examples).
 
 ## Tests / DoD
 
@@ -105,7 +115,9 @@ meal"; a back-dated start reads "Log a meal for {pet}".
   **N/A** and **adversarial review N/A**: this diff touches no clinically or
   statistically load-bearing logic (labels, date formatting, a nav link extended to
   more states, a copy conditional) — nothing feeds detection, coverage, escalation, or
-  the vet report's computations. `code-reviewer` run on the diff.
+  the vet report's computations. `code-reviewer` run on the diff — it caught one
+  fix-before-merge stranding bug (fixed, with regression tests) plus three small
+  cleanups; re-verified green after.
 
 ## Filed, not fixed (new backlog rows)
 
