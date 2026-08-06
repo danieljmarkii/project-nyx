@@ -1141,20 +1141,33 @@ function degenerateStateFor(trial: TrialCardTrial | null): TrialCardState {
 /**
  * The header "manage" affordance's label — or null to hide it entirely.
  *
- * One active trial per pet is a DATABASE constraint (migration 040), so on a
- * RUNNING trial the header opens the ordered "end this one and start the new one"
- * sheet. It therefore says what it does — "Replace" — never "Change", which read
- * as an EDIT and routed an active trial (and, on `day_one`, the ONLY control on
- * the card) straight to its own destruction. On the empty and `abandoned` cards
- * the body already carries a Start CTA, so the header is suppressed rather than
- * shown twice; `completed` has no body Start CTA, so it keeps a "+ Start".
+ * SUPPRESSION IS KEYED ON THE BODY'S ACTUAL ACTIONS, NOT ON `state`. The header
+ * is a duplicate only when the body already carries a way to start a trial
+ * (`no_trial`'s "Start a diet trial"; the ordinary `abandoned` card's "Start a new
+ * trial"), so it is suppressed there and ONLY there. Two `abandoned` branches ship
+ * `actions: []` with no body Start CTA — the intake-decline replacement (§5.2, a
+ * pet that has stopped eating) and the degenerate unparseable-start branch — and
+ * this card is the app's ONLY entry point to starting a trial (`profile.tsx`
+ * §1097), so suppressing on `state` alone would strand those cards with zero
+ * controls. (Regression: caught by `code-reviewer`, 2026-08-06.)
+ *
+ * When it IS shown, the verb says what `onManage` opens: on a RUNNING trial the
+ * ordered end-and-replace sheet ("Replace" — never "Change", which read as an EDIT
+ * and routed an active trial, and on `day_one` the card's ONLY control, straight to
+ * its own destruction); on a terminal/degenerate card the start form ("+ Start").
  */
-export function trialManageLabel(state: TrialCardState): string | null {
+export function trialManageLabel(
+  model: Pick<TrialCardModel, 'state' | 'actions'>,
+): string | null {
+  if (model.actions.some((a) => a.id === 'start_trial')) return null;
+  return trialManageVerb(model.state);
+}
+
+function trialManageVerb(state: TrialCardState): string {
   switch (state) {
     case 'no_trial':
-    case 'abandoned':
-      return null;
     case 'completed':
+    case 'abandoned':
       return '+ Start';
     case 'day_one':
     case 'clean':
@@ -1175,13 +1188,15 @@ export function trialManageLabel(state: TrialCardState): string | null {
   }
 }
 
-/** The "What {pet} can eat" reference link. Offered on every RUNNING state so the
- *  owner can reach the rule list from the card, not only via the Foods tab — B-616
- *  FR-5 shipped it on states 2/3/6, and the polish pass adds it to `day_one` /
- *  `free_fed` / `below_floor`, where "what CAN he eat?" is just as live (day 1 most
- *  of all, when it is otherwise the card's only action). Drawn only when the
- *  allowed set is hydrated — the handler in profile.tsx is conditional — so it
- *  degrades to nothing offline. */
+/** The "What {pet} can eat" reference link. B-616 FR-5 shipped it on the mid-trial
+ *  clean/exposures cards (states 2/3, via the shared body below); the polish pass
+ *  adds it to `day_one` / `free_fed` / `below_floor`, where "what CAN he eat?" is
+ *  just as live (day 1 most of all, when it is otherwise the card's only action).
+ *  Deliberately NOT on the two decision cards — `milestone` (state 5, whose
+ *  choose-the-next-step buttons own it) and `overrun` (state 6, whose one action is
+ *  the milestone prompt) — where a food-list link would dilute the decision. Drawn
+ *  only when the allowed set is hydrated (the handler in profile.tsx is
+ *  conditional), so it degrades to nothing offline. */
 function viewAllowedFoodsAction(petName: string): TrialCardAction {
   return { id: 'view_allowed_foods', label: `What ${petName} can eat`, emphasis: 'link' };
 }

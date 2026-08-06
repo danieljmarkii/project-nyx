@@ -454,13 +454,17 @@ describe('the "What {pet} can eat" link is offered on every running state', () =
 });
 
 describe('trialManageLabel — the header affordance, honest per state', () => {
-  it('suppresses on the empty and abandoned cards (the body carries the Start CTA)', () => {
-    expect(trialManageLabel('no_trial')).toBeNull();
-    expect(trialManageLabel('abandoned')).toBeNull();
+  const start = { id: 'start_trial' as const, label: 'Start a diet trial', emphasis: 'secondary' as const };
+  const link = { id: 'view_allowed_foods' as const, label: 'What Biscuit can eat', emphasis: 'link' as const };
+
+  it('suppresses when the body already carries a Start CTA (empty + ordinary abandoned)', () => {
+    expect(trialManageLabel({ state: 'no_trial', actions: [start] })).toBeNull();
+    expect(trialManageLabel({ state: 'abandoned', actions: [start] })).toBeNull();
   });
 
-  it('keeps a "+ Start" on the completed card (which has no body Start CTA)', () => {
-    expect(trialManageLabel('completed')).toBe('+ Start');
+  it('keeps a "+ Start" on a terminal card whose body has NO Start CTA', () => {
+    // `completed`'s body is "Open vet report" only, so the header is its Start path.
+    expect(trialManageLabel({ state: 'completed', actions: [] })).toBe('+ Start');
   });
 
   // "Replace", never "Change": on a running trial the header opens end-and-replace,
@@ -471,8 +475,45 @@ describe('trialManageLabel — the header affordance, honest per state', () => {
       'day_one', 'clean', 'exposures', 'below_floor', 'milestone',
       'overrun', 'intake_decline', 'free_fed', 'trial_refusal',
     ] as const) {
-      expect(trialManageLabel(s)).toBe('Replace');
+      expect(trialManageLabel({ state: s, actions: [link] })).toBe('Replace');
     }
+  });
+
+  // REGRESSION (`code-reviewer`, 2026-08-06): suppression is keyed on the ACTIONS,
+  // not on `state` — an `abandoned` card whose body offers no way out must keep the
+  // header, or the app's only trial-start entry point is a dead end.
+  it('does NOT suppress an abandoned card whose body has no Start CTA', () => {
+    expect(trialManageLabel({ state: 'abandoned', actions: [] })).toBe('+ Start');
+  });
+});
+
+describe('the trial-start entry point is never stranded (code-reviewer regression)', () => {
+  // Both branches below ship `state: 'abandoned', actions: []`, and this card is the
+  // app's ONLY way to start a trial — so the header must be SHOWN, not suppressed.
+  it('an abandoned trial with a live intake-decline flag keeps a way to start a new trial', () => {
+    const m = resolveTrialCard(activeInput({
+      species: 'cat',
+      petName: 'Mochi',
+      trial: {
+        status: 'abandoned', startedAt: '2026-07-03', endedAt: '2026-07-21',
+        targetDurationDays: 56, foodLabel: FOOD, stoppedReason: 'other',
+      },
+      coverage: { daysLogged: 18, daysElapsed: 19 },
+      exposures: { mayStateRecordClean: true, totalFeedings: 54, offDiet: 0 },
+      intakeDeclineHeadline: 'Mochi has left most of her food for 3 days.',
+    }));
+    expect(m.state).toBe('abandoned');
+    expect(m.actions).toEqual([]); // the decline branch offers no body CTA…
+    expect(trialManageLabel(m)).toBe('+ Start'); // …so the header must not be suppressed
+  });
+
+  it('a trial with an unparseable start date keeps a way to start a new trial', () => {
+    const m = resolveTrialCard(activeInput({
+      trial: { status: 'abandoned', startedAt: 'not-a-date', targetDurationDays: 56, foodLabel: FOOD },
+    }));
+    expect(m.state).toBe('abandoned');
+    expect(m.actions).toEqual([]);
+    expect(trialManageLabel(m)).toBe('+ Start');
   });
 });
 

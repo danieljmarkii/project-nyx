@@ -59,7 +59,7 @@ export function DietTrialCard({ model, actions, onManage, busyAction, style }: P
   // → suppressed since the body already carries a Start CTA, completed → "+ Start"),
   // replacing the old '+ Start'/'Change' split that labelled a destructive
   // end-and-replace as a benign "Change".
-  const manageLabel = trialManageLabel(model.state);
+  const manageLabel = trialManageLabel(model);
   // NORMALISED, because the prop is optional and `undefined !== null`. The first
   // cut compared `busyAction !== null` directly, so on every surface that does not
   // pass the prop at all — which is every state but the milestone — the guard read
@@ -78,7 +78,7 @@ export function DietTrialCard({ model, actions, onManage, busyAction, style }: P
             style={styles.manageTouch}
             accessibilityRole="button"
             accessibilityLabel={
-              model.state === 'completed' ? 'Start a diet trial' : 'Replace this diet trial'
+              manageLabel === 'Replace' ? 'Replace this diet trial' : 'Start a diet trial'
             }
           >
             <Text style={styles.manageText}>{manageLabel}</Text>

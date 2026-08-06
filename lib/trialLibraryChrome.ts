@@ -200,7 +200,7 @@ export function buildFoodsTrialStrip(
  *
  * Unlike §2.2's `membershipFact`, this does NOT split "since" from "added" — §4
  * pins one string for this surface, and mock D shows a food added mid-trial reading
- * `since Jul 31`. That is not a loss of the D5 disclosure: the date IS the
+ * `since 31 July`. That is not a loss of the D5 disclosure: the date IS the
  * disclosure here (it is the day membership starts, and it is visibly not the
  * trial's start date), and the full "earlier feedings keep the reading they already
  * have" sentence is stated at the moment it matters — in the confirm sheet, before

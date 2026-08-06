@@ -77,7 +77,7 @@ export function formatCalendarDate(date: string | null): string | null {
 // Locale-INDEPENDENT by construction — a trial date is read next to a vet's
 // instructions, not localised — which is the whole reason the trial surfaces do
 // not use `toLocaleDateString` like `formatCalendarDate` above.
-export const MONTHS = [
+export const MONTHS: readonly string[] = [
   'January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December',
 ];

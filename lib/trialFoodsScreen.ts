@@ -160,8 +160,8 @@ export function trialDayOn(trial: TrialAllowedSetTrial, dayKey: string): number 
  * FR-6's dated fact for one row.
  *
  * TWO READINGS, and the split is D5's whole disclosure. A food that has been on
- * the list since the trial opened reads "On the list since Jul 19" — it is part of
- * what the vet prescribed. A food added later reads "Added Jul 31, day 12", which
+ * the list since the trial opened reads "On the list since 19 July" — it is part of
+ * what the vet prescribed. A food added later reads "Added 31 July, day 12", which
  * names the day membership STARTED, and that is the visible half of the promise
  * the write path keeps: `allowed_from` is today, so the feedings before it keep
  * the reading they already have. A mid-trial add rendered as a plain "since" would
