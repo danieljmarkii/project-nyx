@@ -218,21 +218,61 @@ export function filterByKind(rows: VetLibraryRow[], kind: string | null): VetLib
   return kind == null ? rows : rows.filter((r) => r.kind === kind);
 }
 
+// The kind lens earns its place only once the library spans ≥2 types (B-712, the
+// PM-ratified trigger). A lens that can only offer "All types" is machinery over a
+// set it cannot change — the filter-UX rule is that a lens earns its place when
+// filtering would change the result, and at one type it never does. Rendering it
+// over a single-type library is what made the one-document screen read as
+// scaffolding. Semantic, not a document count: five labs still show no lens.
+export function shouldShowKindLens(rows: VetLibraryRow[]): boolean {
+  return new Set(rows.map((r) => r.kind)).size >= 2;
+}
+
+// The "young library" note (B-712). A library holding one or two documents is not
+// empty — that is VetFilesEmptyState, a different screen — but on a full phone it
+// reads as a void beneath a single row. This is the designed state between one and
+// many that nothing else covered (Principle 5 extended to the near-empty): the
+// screen earns a quiet, forward-looking line naming what else belongs here. Bounded
+// low so it retires the moment the list can stand on its own.
+export const VET_FILES_LOWCOUNT_MAX = 2;
+export function isYoungLibrary(rows: VetLibraryRow[]): boolean {
+  return rows.length > 0 && rows.length <= VET_FILES_LOWCOUNT_MAX;
+}
+
 // ── The profile card (A1-r2 / A1z) ───────────────────────────────────────────
+
+// What the card previews of the library: the single most-recent document, not a
+// strip of cover thumbnails (B-712). The strip was tuned for three tiles and a
+// "+3", so at one document — every new owner's day one — it stranded a lone tile in
+// a wide gutter and read as a failed load. A preview of the actual latest filing
+// carries information at n=1 and scales the same way at N.
+export interface VetFilesCardPreview {
+  groupId: string;
+  /** The owner's title, or the rendered "Document — {date}" default. */
+  title: string;
+  /** Drives the quieter title weight — the newest doc is often unnamed (D11). */
+  untitled: boolean;
+  /** null ⇒ no kind chip (the capture default is an absence, not "Other"). */
+  kindLabel: string | null;
+  dateLabel: string;
+  /** "3 pages", or null for a single-page document. */
+  pageLabel: string | null;
+  isPdf: boolean;
+  storagePath: string;
+  /** '' for a hydrated row whose bytes live only in Storage. */
+  localUri: string;
+}
 
 export interface VetFilesCardModel {
   blurb: string;
   actionLabel: string;
   documentCount: number;
-  /** Cover paths for the thumbnail strip; [] in the zero state. */
-  stripPaths: string[];
-  /** "+3" overflow badge, or null when the strip shows everything. */
-  overflowLabel: string | null;
+  /** The most-recent document, previewed in the card; null in the zero state. */
+  preview: VetFilesCardPreview | null;
+  /** "+4 more" when the library holds more than the one previewed; else null. */
+  moreLabel: string | null;
   countLabel: string | null;
 }
-
-// The strip is a pulse, not a browse surface — three tiles and a count.
-export const VET_FILES_STRIP_LIMIT = 3;
 
 // Signed-URL lifetime for a vet document (§5.1, §6.2: short-lived, request-time,
 // never persisted).
@@ -287,13 +327,15 @@ export function buildVetFilesCardModel(
       blurb: `One place for ${petName}’s records, results and clinic emails — starting with whatever’s in your camera roll.`,
       actionLabel: 'Add the first one',
       documentCount: 0,
-      stripPaths: [],
-      overflowLabel: null,
+      preview: null,
+      moreLabel: null,
       countLabel: null,
     };
   }
-  const strip = rows.slice(0, VET_FILES_STRIP_LIMIT);
-  const overflow = documentCount - strip.length;
+  // The library is newest-first, so rows[0] is the latest filing — the one the card
+  // previews. The rest become a count, not more thumbnails (B-712).
+  const latest = rows[0];
+  const remaining = documentCount - 1;
   return {
     // A1-r2. The second sentence is the D14 honesty line, and it is load-bearing:
     // this card sits directly beneath the Vet report card, and both persona reviews
@@ -303,8 +345,18 @@ export function buildVetFilesCardModel(
     blurb: 'Records, results and clinic emails you’ve saved. Not included in the vet report — shared one at a time.',
     actionLabel: 'Open Vet Files',
     documentCount,
-    stripPaths: strip.map((r) => r.storagePath),
-    overflowLabel: overflow > 0 ? `+${overflow}` : null,
+    preview: {
+      groupId: latest.groupId,
+      title: latest.title,
+      untitled: latest.untitled,
+      kindLabel: latest.kindLabel,
+      dateLabel: latest.dateLabel,
+      pageLabel: latest.pageLabel,
+      isPdf: latest.isPdf,
+      storagePath: latest.storagePath,
+      localUri: latest.localUri,
+    },
+    moreLabel: remaining > 0 ? `+${remaining} more` : null,
     countLabel: `${documentCount} ${documentCount === 1 ? 'document' : 'documents'}`,
   };
 }

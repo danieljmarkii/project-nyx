@@ -20,7 +20,7 @@ import { VET_FILES_ENTRY_ENABLED } from '../../lib/vetFilesEntry';
 import { VET_DOCUMENTS_BUCKET } from '../../lib/vetDocuments';
 import {
   readVetLibrary, buildVetFilesCardModel, VET_DOCUMENT_SIGNED_URL_TTL_SEC,
-  VET_FILES_STRIP_LIMIT, type VetLibraryRow,
+  type VetLibraryRow,
 } from '../../lib/vetDocumentLibrary';
 import { archiveBlockedCopy } from '../../lib/utils';
 import { formatAge } from '../../lib/age';
@@ -283,10 +283,10 @@ export default function ProfileScreen() {
 
   const [photoUploading, setPhotoUploading] = useState(false);
 
-  // Vet Files card (B-478 VF-2, mock A1-r2 / A1z). Local-first like the library
-  // itself — the read is SQLite, so the card is correct offline and costs no
-  // round-trip. Only the three strip thumbnails touch the network, and only for
-  // documents this device has no local copy of.
+  // Vet Files card (B-478 VF-2; preview redesign B-712). Local-first like the
+  // library itself — the read is SQLite, so the card is correct offline and costs no
+  // round-trip. The card previews only the latest document, so at most one thumbnail
+  // touches the network, and only when that document has no local copy of its own.
   const [vetDocuments, setVetDocuments] = useState<VetLibraryRow[]>([]);
   const [vetThumbs, setVetThumbs] = useState<Map<string, string>>(new Map());
   const [vetThumbsLoading, setVetThumbsLoading] = useState(false);
@@ -296,16 +296,14 @@ export default function ProfileScreen() {
     try {
       const rows = await readVetLibrary(activePet.id);
       setVetDocuments(rows);
-      // Sign only the strip's own paths, and only those without a local file.
-      const stripPaths = rows
-        .slice(0, VET_FILES_STRIP_LIMIT)
-        .filter((r) => !r.localUri)
-        .map((r) => r.storagePath);
-      if (stripPaths.length === 0) { setVetThumbs(new Map()); return; }
+      // Sign only the previewed (latest) document's path, and only when it has no
+      // local file — a device-captured document renders offline from its own copy.
+      const latest = rows[0];
+      if (!latest || latest.localUri) { setVetThumbs(new Map()); return; }
       setVetThumbsLoading(true);
       try {
         setVetThumbs(
-          await getSignedUrls(VET_DOCUMENTS_BUCKET, stripPaths, VET_DOCUMENT_SIGNED_URL_TTL_SEC),
+          await getSignedUrls(VET_DOCUMENTS_BUCKET, [latest.storagePath], VET_DOCUMENT_SIGNED_URL_TTL_SEC),
         );
       } finally {
         setVetThumbsLoading(false);

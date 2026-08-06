@@ -3,7 +3,7 @@
 **Date:** 2026-08-06
 **Track:** B-478 Vet Files (shipped v1) → **B-712** (this design pass)
 **Persona lead:** Sr. Product Designer
-**Outcome:** Mock round 3 published (same artifact URL); build gated on one PM call. No app code changed this session.
+**Outcome:** Mock round 3 published (same artifact URL) → PM ratified the recommendation same session → **built and shipped in the same PR (#602).** The filter trigger is "≥2 types present."
 
 ---
 
@@ -39,21 +39,22 @@ The round-1/2 sections are kept below the round-3 pass as the record, with the t
 
 **Filter trigger.** Recommended: render the kind lens only when **≥2 types are present** (semantic — a lens earns its place when filtering would change the result). Alternative: always show it for consistency. One-line condition either way; it's the only open call in this round. (Tagged amber in the mock.)
 
-## Build plan (ratification-gated — no code this session)
+## Build (shipped this session, PR #602)
 
-On PM ratification, three small, test-covered changes:
-1. **Card model** — `buildVetFilesCardModel` exposes the latest document's title/kind/date (+ overflow count) instead of `stripPaths`; `VetFilesCard.tsx` renders the preview row instead of the strip. (`vetDocumentLibrary` model tests updated.)
-2. **Filter render-condition** — `app/vet-files.tsx` gates the `ScopeMenu` on `kindOptions` spanning ≥2 real kinds.
-3. **Low-count footer** — a new calm component beneath the list at low N, copy through `nyx-voice`.
+The PM ratified the recommendation ("go with your recommendation… /wrap and merge") the same session, so the three changes were built against the "≥2 types present" trigger:
 
-Then `pm-feature-review` + the on-device pass against built screens (this pass is a static read of the screens, not a device test).
+1. **Card model** — `buildVetFilesCardModel` now returns a `preview` (the latest document's title / kind / date / thumb path / untitled flag) plus a `moreLabel` ("+N more"), in place of `stripPaths`/`overflowLabel`. `VetFilesCard.tsx` renders the preview row; `app/(tabs)/profile.tsx` signs only the latest document's path (down from three).
+2. **Filter render-condition** — new pure predicate `shouldShowKindLens(rows)` (`≥2 distinct kinds`); `app/vet-files.tsx` renders the `ScopeMenu` only when true and ignores any stale selection while hidden, so a library dropping back to one type can't strand a filtered view.
+3. **Low-count footer** — new pure predicate `isYoungLibrary(rows)` (`1–2 documents`) gates a new calm component `components/vetfiles/VetFilesLowCountNote.tsx`; copy ran through `nyx-voice` (specific record types, forward-looking, no exclamation, clear action).
+
+**Tests:** `lib/vetDocumentLibrary.test.ts` updated for the new model + new describes for both predicates (58 pass); 317 pass across the vetfiles/profile suites; `tsc --noEmit` clean. **Owed:** `pm-feature-review` + the on-device pass against the built screens (a device test, not a static read) — flagged in STATUS.
 
 ## Persona sign-off
 
-Designer ✓ (Principles 3, 5, 4; filter-UX lens rule; "substrate never louder than the artifact" held). Engineer — N/A this session (no code; the three changes are scoped and behind existing tests). Copy is provisional pending `nyx-voice` at build. PM decision pending: the filter trigger.
+Designer ✓ (Principles 3, 5, 4; filter-UX lens rule; "substrate never louder than the artifact" held) — Engineer ✓ (three changes scoped; the model + both predicates are pure and unit-tested; the footer is pure presentational) — `nyx-voice` ✓ on the one new string. Data / Dr. Chen N/A (no clinical or statistical logic — presentation only, so no adversarial pass required). Access control unchanged (the signed-URL path is untouched; the card signs *fewer* paths), so no `rls-privacy-reviewer` pass.
 
-## Why mock-first, not a direct code fix
+## Why mock-first, then build in the same PR
 
-This is a design-locked, shipped surface. Changing the card's information model, the filter's render rule, and adding a new designed state are design-direction changes the PM should *see* — and the repo's whole discipline is mock round → PM ruling → build. Round 3 re-published to the round-2 artifact URL so the PM's existing link resolves to the redesign.
+This was a design-locked, shipped surface, so the redesign went out as a mock round for the PM to *see* first (mock → ruling → build is the repo discipline) — round 3 re-published to the round-2 artifact URL so the PM's existing link resolved to it. The PM ruled and asked to ship in the same breath, so the build landed in the same PR (one PR per session).
 
 **Artifact:** https://claude.ai/code/artifact/0d5e5f7b-1bf9-449d-805a-6c13d9bba7ed
