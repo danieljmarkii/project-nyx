@@ -60,6 +60,8 @@ import {
   pairedDoseLinkLabel,
   COMMON_MEDICATIONS,
   commonMedicationsForSpecies,
+  courseReachedPlannedEnd,
+  courseEndPromptLede,
   type CommonMedication,
   type DoseVehicle,
   type LocalMedicationItem,
@@ -2273,5 +2275,143 @@ describe('mapDoseRowsToAttributable — dose embed → AttributableDose', () => 
     expect(d.deleted_at).toBeNull();
     expect(mapDoseRowsToAttributable(null)).toEqual([]);
     expect(mapDoseRowsToAttributable(undefined)).toEqual([]);
+  });
+});
+
+describe('courseReachedPlannedEnd (B-710) — the finish-prompt trigger', () => {
+  // Real DoseCourseProgress values, built through the shipped helper so the test
+  // exercises the SAME atTarget definition the card does (never a hand-faked shape).
+  const doseAtTarget = doseCourseProgress(tally({ given: 28 }), 28); // 28/28 → atTarget
+  const doseBelow = doseCourseProgress(tally({ given: 12 }), 28);    // 12/28 → not
+  const doseOne = doseCourseProgress(tally({ given: 1 }), 1);        // 1-dose course, delivered
+  const doseOneEmpty = doseCourseProgress(tally(), 1);              // 1-dose course, nothing given
+
+  describe('dose-denominated trigger', () => {
+    it('reaches its end when therapy delivered meets the dispensed target', () => {
+      expect(courseReachedPlannedEnd({
+        status: 'active', doseCourse: doseAtTarget, targetDurationDays: null, daysElapsed: null,
+      })).toEqual({ reached: true, denomination: 'doses' });
+    });
+
+    it('is not reached below target', () => {
+      expect(courseReachedPlannedEnd({
+        status: 'active', doseCourse: doseBelow, targetDurationDays: null, daysElapsed: null,
+      })).toEqual({ reached: false, denomination: null });
+    });
+
+    it('a 1-dose course is reached the instant its single dose is given (inclusive)', () => {
+      expect(courseReachedPlannedEnd({
+        status: 'active', doseCourse: doseOne, targetDurationDays: null, daysElapsed: null,
+      }).reached).toBe(true);
+      expect(courseReachedPlannedEnd({
+        status: 'active', doseCourse: doseOneEmpty, targetDurationDays: null, daysElapsed: null,
+      }).reached).toBe(false);
+    });
+
+    it('never prompts a dose course that is not active (status gate — H1/B-422)', () => {
+      for (const status of ['completed', 'paused', 'archived']) {
+        expect(courseReachedPlannedEnd({
+          status, doseCourse: doseAtTarget, targetDurationDays: null, daysElapsed: null,
+        }).reached).toBe(false);
+      }
+    });
+  });
+
+  describe('day-denominated trigger (strictly past the span)', () => {
+    it('reaches its end the day AFTER the last prescribed day', () => {
+      expect(courseReachedPlannedEnd({
+        status: 'active', doseCourse: null, targetDurationDays: 14, daysElapsed: 15,
+      })).toEqual({ reached: true, denomination: 'days' });
+    });
+
+    it('is NOT reached on the last day itself (day 14 of 14) — the day is not yet up', () => {
+      expect(courseReachedPlannedEnd({
+        status: 'active', doseCourse: null, targetDurationDays: 14, daysElapsed: 14,
+      })).toEqual({ reached: false, denomination: null });
+    });
+
+    it('is not reached before the last day', () => {
+      expect(courseReachedPlannedEnd({
+        status: 'active', doseCourse: null, targetDurationDays: 14, daysElapsed: 5,
+      }).reached).toBe(false);
+    });
+
+    it('a 1-day course is not finished on its start day, but is the next day (the asymmetry proof)', () => {
+      expect(courseReachedPlannedEnd({
+        status: 'active', doseCourse: null, targetDurationDays: 1, daysElapsed: 1,
+      }).reached).toBe(false);
+      expect(courseReachedPlannedEnd({
+        status: 'active', doseCourse: null, targetDurationDays: 1, daysElapsed: 2,
+      }).reached).toBe(true);
+    });
+
+    it('never guesses an ending from an unparseable start date (daysElapsed null)', () => {
+      expect(courseReachedPlannedEnd({
+        status: 'active', doseCourse: null, targetDurationDays: 14, daysElapsed: null,
+      }).reached).toBe(false);
+    });
+
+    it('never prompts an ended day course (status gate)', () => {
+      expect(courseReachedPlannedEnd({
+        status: 'completed', doseCourse: null, targetDurationDays: 14, daysElapsed: 99,
+      }).reached).toBe(false);
+    });
+
+    it('a corrupt 0/negative day target degrades to no prompt (never "Day n of 0")', () => {
+      expect(courseReachedPlannedEnd({
+        status: 'active', doseCourse: null, targetDurationDays: 0, daysElapsed: 99,
+      }).reached).toBe(false);
+      expect(courseReachedPlannedEnd({
+        status: 'active', doseCourse: null, targetDurationDays: -3, daysElapsed: 99,
+      }).reached).toBe(false);
+    });
+  });
+
+  describe('no defined end / precedence', () => {
+    it('an ongoing / PRN course (no denomination) is never reached, however long it runs', () => {
+      expect(courseReachedPlannedEnd({
+        status: 'active', doseCourse: null, targetDurationDays: null, daysElapsed: 400,
+      })).toEqual({ reached: false, denomination: null });
+    });
+
+    it('the dose denomination wins when a corrupt row carries both, day span not yet past', () => {
+      expect(courseReachedPlannedEnd({
+        status: 'active', doseCourse: doseAtTarget, targetDurationDays: 14, daysElapsed: 2,
+      })).toEqual({ reached: true, denomination: 'doses' });
+    });
+  });
+});
+
+describe('courseEndPromptLede (B-710) — the fact lede', () => {
+  it('the dose lede names the pet and the dispensed count', () => {
+    expect(courseEndPromptLede({
+      denomination: 'doses', petName: 'Nyx', targetDoses: 28, targetDays: null,
+    })).toBe('Nyx has had all 28 doses.');
+  });
+
+  it('the dose lede is singular for a 1-dose course', () => {
+    expect(courseEndPromptLede({
+      denomination: 'doses', petName: 'Mochi', targetDoses: 1, targetDays: null,
+    })).toBe('Mochi has had the dose.');
+  });
+
+  it('the day lede speaks only to the calendar (so it stays true when doses were missed)', () => {
+    expect(courseEndPromptLede({
+      denomination: 'days', petName: 'Nyx', targetDoses: null, targetDays: 14,
+    })).toBe('The 14 days for this course are up.');
+  });
+
+  it('the day lede is singular for a 1-day course', () => {
+    expect(courseEndPromptLede({
+      denomination: 'days', petName: 'Nyx', targetDoses: null, targetDays: 1,
+    })).toBe('The day for this course is up.');
+  });
+
+  it('the day lede never names a dose count — no path to implying compliance', () => {
+    const lede = courseEndPromptLede({
+      denomination: 'days', petName: 'Nyx', targetDoses: null, targetDays: 10,
+    });
+    expect(lede).not.toMatch(/dose/i);
+    expect(lede).not.toMatch(/given|taken|missed/i);
   });
 });

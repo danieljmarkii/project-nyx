@@ -50,8 +50,10 @@ import {
   MEDICATION_ROUTE_OPTIONS, computeRegimenCompliance, regimenComplianceLine,
   regimenFlagLine, attributeDosesToRegimens, regimenDaysElapsed, doseCourseProgress,
   mapDoseRowsToAttributable,
+  courseReachedPlannedEnd, courseEndPromptLede,
+  COURSE_END_PROMPT_QUESTION, COURSE_END_PROMPT_ACTION,
   type AdherenceTally, type RegimenCompliance, type AttributableDose,
-  type DoseCourseProgress, type DoseEmbedRow,
+  type DoseCourseProgress, type DoseEmbedRow, type PlannedEndState,
 } from '../../lib/medications';
 import { deriveMedicationCourses, type MedicationHistoryRegimen } from '../../lib/medicationHistory';
 import {
@@ -74,6 +76,9 @@ interface RegimenDisplay extends Regimen {
   // set). Carries the "Dose {n} of {target}" line + its bar fraction; when null the
   // card renders the days/ongoing path unchanged.
   doseCourse: DoseCourseProgress | null;
+  // B-710 — has this ACTIVE course reached its planned end (dose count or day span)?
+  // Drives the confirm-in-the-loop "Is this course finished?" prompt on the card.
+  courseEnd: PlannedEndState;
 }
 
 const EMPTY_TALLY = (): AdherenceTally => ({ given: 0, partial: 0, missed: 0, refused: 0, unrated: 0 });
@@ -99,6 +104,16 @@ function buildRegimenDisplay(reg: Regimen, tally: AdherenceTally): RegimenDispla
     // an unparseable start date no longer drops it to a bare count.
     targetDoses: reg.target_duration_doses,
   });
+  // B-618 §6 — a doses course drives the count line + bar off dosesTowardTarget,
+  // independent of the day math. Exactly one of target_duration_days /
+  // target_duration_doses is ever set (DB constraint, migration 049), so this
+  // never competes with the "Day X of Y" path on the same row. The `> 0` guard
+  // (not just `!= null`) means a corrupt/legacy local row with a 0 target — the
+  // local SQLite mirror does not enforce the server CHECK — degrades to the
+  // ongoing "Started …" path instead of rendering "Dose n of 0".
+  const doseCourse = reg.target_duration_doses != null && reg.target_duration_doses > 0
+    ? doseCourseProgress(tally, reg.target_duration_doses)
+    : null;
   return {
     ...reg,
     daysElapsed,
@@ -106,16 +121,17 @@ function buildRegimenDisplay(reg: Regimen, tally: AdherenceTally): RegimenDispla
     compliance,
     complianceLine: regimenComplianceLine(compliance),
     flagLine: regimenFlagLine(tally),
-    // B-618 §6 — a doses course drives the count line + bar off dosesTowardTarget,
-    // independent of the day math. Exactly one of target_duration_days /
-    // target_duration_doses is ever set (DB constraint, migration 049), so this
-    // never competes with the "Day X of Y" path on the same row. The `> 0` guard
-    // (not just `!= null`) means a corrupt/legacy local row with a 0 target — the
-    // local SQLite mirror does not enforce the server CHECK — degrades to the
-    // ongoing "Started …" path instead of rendering "Dose n of 0".
-    doseCourse: reg.target_duration_doses != null && reg.target_duration_doses > 0
-      ? doseCourseProgress(tally, reg.target_duration_doses)
-      : null,
+    doseCourse,
+    // B-710 — the finish-prompt trigger, composed from the two existing course
+    // definitions (doseCourse.atTarget for the dose trigger, daysElapsed vs
+    // target_duration_days for the day trigger). Pure + unit-tested in
+    // lib/medications so the "reached its planned end" read can't drift per surface.
+    courseEnd: courseReachedPlannedEnd({
+      status: reg.status,
+      doseCourse,
+      targetDurationDays: reg.target_duration_days,
+      daysElapsed,
+    }),
   };
 }
 
@@ -1000,18 +1016,6 @@ export default function ProfileScreen() {
                       <View style={styles.progressTrack}>
                         <View style={[styles.progressBar, { width: `${Math.round(reg.doseCourse.barFraction * 100)}%` }]} />
                       </View>
-                      {/* B-642: at/past target the bar is FULL, and a full progress
-                          bar is itself a strong "you're done" signal — exactly the
-                          early-stop read D7 exists to prevent. D7 bans stop language;
-                          it does not ban this: a two-sided line that hands the ending
-                          to the vet without asserting done OR keep-dosing (the bottle
-                          may genuinely be empty). Dr. Chen-reviewed wording — see the
-                          session record. */}
-                      {reg.doseCourse.atTarget && (
-                        <Text style={styles.medCourseNote}>
-                          When the course ends is your vet's call.
-                        </Text>
-                      )}
                     </View>
                   ) : (
                     <>
@@ -1037,6 +1041,39 @@ export default function ProfileScreen() {
                         </View>
                       )}
                     </>
+                  )}
+                  {/* B-710 — confirm-in-the-loop: an ACTIVE course that has reached its
+                      planned end (dose count or day span) offers a calm finish prompt.
+                      Replaces B-642's inert "vet's call" note under a full dose bar —
+                      the note described the moment but gave no way to act on it, so a
+                      finished course sat under "Current medications" until the owner
+                      found the utility-row End (the PM's own dogfood miss). It never
+                      auto-ends and the copy asserts no completion (D7); the tap reuses
+                      the shipped confirmEndRegimen dialog. The utility-row End stays —
+                      this IS that action, surfaced at the moment the course is done, so
+                      a course can still be ended early too. reg.courseEnd is the one
+                      tested predicate (lib/medications.courseReachedPlannedEnd). */}
+                  {reg.courseEnd.reached && reg.courseEnd.denomination && (
+                    <View style={styles.coursePrompt}>
+                      <Text style={styles.coursePromptText}>
+                        {courseEndPromptLede({
+                          denomination: reg.courseEnd.denomination,
+                          petName: activePet.name,
+                          targetDoses: reg.target_duration_doses,
+                          targetDays: reg.target_duration_days,
+                        })}{' '}
+                        {COURSE_END_PROMPT_QUESTION}
+                      </Text>
+                      <TouchableOpacity
+                        style={styles.coursePromptButton}
+                        onPress={() => confirmEndRegimen(reg)}
+                        hitSlop={8}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Mark ${reg.drug_name} as finished`}
+                      >
+                        <Text style={styles.coursePromptButtonText}>{COURSE_END_PROMPT_ACTION}</Text>
+                      </TouchableOpacity>
+                    </View>
                   )}
                   {/* B-643: on a FRESH dose course (nothing logged at all) the
                       zero-state line above already says it — "No doses logged yet"
@@ -1527,11 +1564,36 @@ const styles = StyleSheet.create({
     fontSize: theme.textSM,
     color: theme.colorTextSecondary,
   },
-  // B-642's vet's-call note under a full course bar. Same quiet register as the
-  // compliance line — it is context, not a flag (the flag treatment is medFlag).
-  medCourseNote: {
+  // ── B-710 — the confirm-in-the-loop finish prompt (replaces B-642's inert note) ──
+  // The question sits in the card's primary ink at medium weight — a shade more present
+  // than the secondary count/compliance lines around it — so the "reached its end"
+  // moment reads as something to attend to. The accent-light button is the discoverable
+  // affordance the old plain-text note never was; no panel, no fill — the button alone
+  // carries the action, staying calm (Principle 6 / the Calm benchmark), never a loud
+  // "done" banner.
+  coursePrompt: {
+    marginTop: theme.space1,
+    gap: theme.space1,
+    alignItems: 'flex-start',
+  },
+  coursePromptText: {
     fontSize: theme.textSM,
-    color: theme.colorTextSecondary,
+    color: theme.colorTextPrimary,
+    fontWeight: theme.weightMedium,
+    lineHeight: theme.lineHeightSM,
+  },
+  coursePromptButton: {
+    backgroundColor: theme.colorAccentLight,
+    borderRadius: theme.radiusSmall,
+    paddingVertical: theme.space1,
+    paddingHorizontal: theme.space2,
+    minHeight: 40,
+    justifyContent: 'center',
+  },
+  coursePromptButtonText: {
+    fontSize: theme.textSM,
+    fontWeight: theme.weightSemibold,
+    color: theme.colorAccentInk,
   },
 
   // ── Current medications (rows mirror the conditions list + the diet-trial bar) ──
