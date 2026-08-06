@@ -29,7 +29,7 @@
 import { getDietTrialProgress } from './analytics';
 import type { AllowedFood, TrialFoodRole } from './dietTrial';
 import { trialListFoodsOn, type TrialAllowedSet, type TrialAllowedSetTrial } from './trialAllowedSet';
-import { dayKeyToLocalDate, formatCalendarDate, toLocalDayKey } from './utils';
+import { dayKeyToLocalDate, formatLongDate, toLocalDayKey } from './utils';
 
 // ── §4 copy pack, verbatim ──────────────────────────────────────────────────
 //
@@ -174,7 +174,7 @@ export function trialDayOn(trial: TrialAllowedSetTrial, dayKey: string): number 
  * inferring it from a stored boolean would mean adding one.
  */
 export function membershipFact(trial: TrialAllowedSetTrial, food: AllowedFood): string {
-  const date = formatCalendarDate(food.allowedFrom);
+  const date = formatLongDate(food.allowedFrom);
   if (!date) return 'On the list';
   const day = trialDayOn(trial, food.allowedFrom);
   if (day === null || day <= 1) return `On the list since ${date}`;
@@ -278,7 +278,7 @@ export function buildAddTrialFoodSheet(
   // The LOCAL day, because that is the day key `addTrialFood` will write. Naming
   // a different date here than the row records is the one way this sheet could
   // lie, and it would only show up near midnight.
-  const today = formatCalendarDate(toLocalDayKey(new Date(nowMs)));
+  const today = formatLongDate(toLocalDayKey(new Date(nowMs)));
   const joins = [
     today ? `Today, ${today}` : 'Today',
     progress ? `day ${progress.dayCounter}` : null,

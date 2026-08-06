@@ -54,7 +54,7 @@ import {
   type TrialFacts,
   type VerdictReason,
 } from './dietTrial';
-import { formatCalendarDate, formatTime, toLocalDayKey } from './utils';
+import { formatLongDate, formatTime, toLocalDayKey } from './utils';
 
 // ── Copy this module owns ───────────────────────────────────────────────────
 
@@ -192,12 +192,12 @@ function rungTag(rung: ClassificationRung, antigens: readonly string[]): string 
 }
 
 /** "Jul 24, 6:40 PM". The LOCAL day and the local time — the owner's own clock is
- *  the one they logged against, and `formatCalendarDate` takes a day key rather
+ *  the one they logged against, and `formatLongDate` takes a day key rather
  *  than an instant precisely so a bare calendar day can never shift a date. */
 function whenLabel(occurredAt: string): string | null {
   const at = new Date(occurredAt);
   if (Number.isNaN(at.getTime())) return null;
-  const date = formatCalendarDate(toLocalDayKey(at));
+  const date = formatLongDate(toLocalDayKey(at));
   if (date === null) return null;
   return `${date}, ${formatTime(at)}`;
 }
@@ -247,8 +247,8 @@ function doseRow(exposure: OralRouteExposure): TrialExposureRow {
 function windowLabel(facts: TrialFacts): string | null {
   const r = facts.exposureRange;
   if (!r) return null;
-  const from = formatCalendarDate(dayKeyFromIndex(r.startDayIndex));
-  const to = formatCalendarDate(dayKeyFromIndex(r.endDayIndex));
+  const from = formatLongDate(dayKeyFromIndex(r.startDayIndex));
+  const to = formatLongDate(dayKeyFromIndex(r.endDayIndex));
   return from !== null && to !== null ? `${from} – ${to}` : null;
 }
 

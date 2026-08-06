@@ -115,6 +115,16 @@ export function titleProtein(key: string): string {
   return key.length ? key.charAt(0).toUpperCase() + key.slice(1) : key;
 }
 
+/** "rabbit" → "Rabbit trial"; null → "Diet trial". The shared identity token for
+ *  EVERY "{Protein} trial" surface — the Pet-tab card kicker, the Home strip
+ *  (`trialIdentityLabel`) and the Foods-tab strip (B-706) — so no two surfaces can
+ *  disagree on the trial's name one tap apart. NEVER a claim: a null protein yields
+ *  the generic "Diet trial", never "no protein set" and never an all-clear (TG-2);
+ *  the absence of a name is not a verdict. */
+export function proteinTrialLabel(protein: string | null): string {
+  return protein ? `${titleProtein(protein)} trial` : 'Diet trial';
+}
+
 /**
  * The "From {pet}'s trial diet" group: the distinct canonical primary proteins of
  * the picked primary foods, in first-seen prominence order, each with a provenance

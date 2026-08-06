@@ -212,8 +212,8 @@ describe('the list', () => {
   it('is newest first — the exposure an owner can still act on leads', () => {
     const rows = build().groups[0].rows;
     expect(rows[0].label).toBe('Purina Pro Plan Salmon');
-    expect(rows[0].meta).toContain('Jul 20');
-    expect(rows[1].meta).toContain('Jul 14');
+    expect(rows[0].meta).toContain('20 July');
+    expect(rows[1].meta).toContain('14 July');
   });
 
   it('drops the group header when feedings are the only group', () => {
@@ -264,7 +264,7 @@ describe('the window it reports over is the EVIDENCE window', () => {
   it('lists an exposure logged past the coverage tail clip', () => {
     const model = build({ trial: OVERRUN, feedings: [ON_DIET, LATE], nowMs: AUG_15 });
     expect(model.groups[0].rows.map((r) => r.meta)).toEqual([
-      expect.stringContaining('Aug 10'),
+      expect.stringContaining('10 August'),
     ]);
   });
 
@@ -273,7 +273,7 @@ describe('the window it reports over is the EVIDENCE window', () => {
     // The clip is real — this is the trap being avoided, asserted rather than
     // assumed.
     expect(f.range?.endDayIndex).toBeLessThan(f.exposureRange!.endDayIndex);
-    expect(buildTrialExposuresScreen('Rex', f)?.subtitle).toContain('Aug 15');
+    expect(buildTrialExposuresScreen('Rex', f)?.subtitle).toContain('15 August');
   });
 });
 
@@ -369,7 +369,7 @@ describe('G2 — no negative claim, at any coverage, in any state', () => {
   });
 
   it('states the count as a fraction of the logged record', () => {
-    expect(build().subtitle).toBe('2 of 3 logged feedings · Jul 1 – Jul 25');
+    expect(build().subtitle).toBe('2 of 3 logged feedings · 1 July – 25 July');
   });
 });
 

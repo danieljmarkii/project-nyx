@@ -98,8 +98,8 @@ import {
 } from './dietTrial';
 import { milestoneNote, trialDecisionChoices, type TrialOutcome } from './dietTrialCompletion';
 import { type TrialProteinSource } from './trialProtein';
-import { titleProtein } from './trialProteinPicker';
-import { localDayIndexOf } from './utils';
+import { proteinTrialLabel } from './trialProteinPicker';
+import { localDayIndexOf, MONTHS } from './utils';
 import type { TrialIndication } from './dietTrialSetup';
 
 const MS_PER_DAY = 86_400_000;
@@ -172,8 +172,7 @@ export interface TrialCardTrial {
  * is not a verdict.
  */
 export function trialIdentityLabel(trial: TrialCardTrial | null | undefined): string {
-  const protein = trial?.trialProtein?.protein ?? null;
-  return protein ? `${titleProtein(protein)} trial` : 'Diet trial';
+  return proteinTrialLabel(trial?.trialProtein?.protein ?? null);
 }
 
 /** §5.1 coverage: distinct local days with ≥1 logged NON-TREAT feeding, over the
@@ -484,11 +483,6 @@ const DECISION_ACTION_ID: Record<'extend' | 'complete' | 'stopped_early', TrialC
   complete: 'trial_complete',
   stopped_early: 'trial_stopped_early',
 };
-
-const MONTHS = [
-  'January', 'February', 'March', 'April', 'May', 'June',
-  'July', 'August', 'September', 'October', 'November', 'December',
-];
 
 // ── Small pure helpers ───────────────────────────────────────────────────────
 

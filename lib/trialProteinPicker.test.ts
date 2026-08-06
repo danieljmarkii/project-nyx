@@ -13,6 +13,7 @@ import {
   buildDerivedProteinOptions,
   commonProteinOptions,
   titleProtein,
+  proteinTrialLabel,
   mismatchHeadsUp,
   unsetOption,
   derivedGroupHeader,
@@ -153,6 +154,17 @@ describe('titleProtein', () => {
   it('Title-cases a canonical key for display', () => {
     expect(titleProtein('rabbit')).toBe('Rabbit');
     expect(titleProtein('')).toBe('');
+  });
+});
+
+describe('proteinTrialLabel — the shared "{Protein} trial" identity token (B-706)', () => {
+  it('names the trial by its protein', () => {
+    expect(proteinTrialLabel('rabbit')).toBe('Rabbit trial');
+  });
+  // TG-2: a null protein is the generic label, NEVER "no protein set" and never
+  // an all-clear — the absence of a name is not a verdict.
+  it('falls back to the generic "Diet trial" for a null protein, never a claim', () => {
+    expect(proteinTrialLabel(null)).toBe('Diet trial');
   });
 });
 
