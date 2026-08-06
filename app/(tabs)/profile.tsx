@@ -51,7 +51,7 @@ import {
   regimenFlagLine, attributeDosesToRegimens, regimenDaysElapsed, doseCourseProgress,
   mapDoseRowsToAttributable,
   courseReachedPlannedEnd, courseEndPromptLede,
-  COURSE_END_PROMPT_QUESTION, COURSE_END_PROMPT_ACTION,
+  COURSE_END_PROMPT_QUESTION, COURSE_END_PROMPT_HEDGE, COURSE_END_PROMPT_ACTION,
   type AdherenceTally, type RegimenCompliance, type AttributableDose,
   type DoseCourseProgress, type DoseEmbedRow, type PlannedEndState,
 } from '../../lib/medications';
@@ -1064,6 +1064,12 @@ export default function ProfileScreen() {
                         })}{' '}
                         {COURSE_END_PROMPT_QUESTION}
                       </Text>
+                      {/* B-710 finding ④ — the vet-deferral hedge, restored at B-642's
+                          original quiet register. The app cannot tell a taper / "finish
+                          till the recheck" course from a simple one, so the prompt keeps
+                          a short "your vet's call" beside the question rather than nudging
+                          an abrupt stop. Load-bearing, not polish (adversarial-reviewer). */}
+                      <Text style={styles.coursePromptHedge}>{COURSE_END_PROMPT_HEDGE}</Text>
                       <TouchableOpacity
                         style={styles.coursePromptButton}
                         onPress={() => confirmEndRegimen(reg)}
@@ -1580,6 +1586,14 @@ const styles = StyleSheet.create({
     fontSize: theme.textSM,
     color: theme.colorTextPrimary,
     fontWeight: theme.weightMedium,
+    lineHeight: theme.lineHeightSM,
+  },
+  // The vet-deferral hedge (B-710 finding ④) — B-642's note register verbatim: the same
+  // quiet textSM/secondary as the compliance line it sits near, so it reads as context,
+  // not the CTA (the button is the CTA), while still restoring the early-stop hedge.
+  coursePromptHedge: {
+    fontSize: theme.textSM,
+    color: theme.colorTextSecondary,
     lineHeight: theme.lineHeightSM,
   },
   coursePromptButton: {

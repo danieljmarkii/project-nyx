@@ -2308,6 +2308,17 @@ describe('courseReachedPlannedEnd (B-710) — the finish-prompt trigger', () => 
       }).reached).toBe(false);
     });
 
+    it('fires when the count is reached with PARTIAL doses (dosesTowardTarget = given + partial)', () => {
+      // adversarial-reviewer B-710 finding ③: the target is reachable WITH partials in the
+      // count, so the trigger must still fire here — and the record-framed lede (not "has had
+      // all N given") is what keeps it from overstating delivery. See courseEndPromptLede tests.
+      const partialsAtTarget = doseCourseProgress(tally({ partial: 30 }), 28);
+      expect(partialsAtTarget.atTarget).toBe(true);
+      expect(courseReachedPlannedEnd({
+        status: 'active', doseCourse: partialsAtTarget, targetDurationDays: null, daysElapsed: null,
+      })).toEqual({ reached: true, denomination: 'doses' });
+    });
+
     it('never prompts a dose course that is not active (status gate — H1/B-422)', () => {
       for (const status of ['completed', 'paused', 'archived']) {
         expect(courseReachedPlannedEnd({
@@ -2383,16 +2394,28 @@ describe('courseReachedPlannedEnd (B-710) — the finish-prompt trigger', () => 
 });
 
 describe('courseEndPromptLede (B-710) — the fact lede', () => {
-  it('the dose lede names the pet and the dispensed count', () => {
+  it('the dose lede names the pet and record-frames the count (never a delivery claim)', () => {
     expect(courseEndPromptLede({
       denomination: 'doses', petName: 'Nyx', targetDoses: 28, targetDays: null,
-    })).toBe('Nyx has had all 28 doses.');
+    })).toBe("Nyx's 28 doses are all logged.");
   });
 
   it('the dose lede is singular for a 1-dose course', () => {
     expect(courseEndPromptLede({
       denomination: 'doses', petName: 'Mochi', targetDoses: 1, targetDays: null,
-    })).toBe('Mochi has had the dose.');
+    })).toBe("Mochi's dose is logged.");
+  });
+
+  // adversarial-reviewer B-710 finding ③: dosesTowardTarget = given + partial, so a course
+  // reaches its target WITH partials in the count. The lede must state the RECORD ("logged"),
+  // never a delivery claim ("has had all N given"), which would be false when partials made
+  // up the count — and it renders MORE prominently than the flag line that corrects it.
+  it('the dose lede never asserts the pet was GIVEN the doses (partials count toward target)', () => {
+    const lede = courseEndPromptLede({
+      denomination: 'doses', petName: 'Nyx', targetDoses: 28, targetDays: null,
+    });
+    expect(lede).not.toMatch(/has had|took|taken|received|given/i);
+    expect(lede).toMatch(/logged/);
   });
 
   it('the day lede speaks only to the calendar (so it stays true when doses were missed)', () => {

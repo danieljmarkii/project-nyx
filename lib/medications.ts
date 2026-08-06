@@ -1246,19 +1246,31 @@ export function courseReachedPlannedEnd(input: {
 }
 
 // B-710 — the finish-prompt copy. A short FACT lede per denomination, then the shared
-// question + action. The lede states the RECORD/CALENDAR fact and never the pet's
-// wellness (clinical-guardrails): the dose lede counts therapy delivered; the DAY lede
-// speaks only to the calendar, so it stays true even when doses were missed — it must
-// never imply full compliance (the missed doses show on the flag/compliance line, never
-// here). nyx-voice: pet by name on the dose lede, specific over generic, no exclamation.
+// question, a vet-deferral hedge, and the action. The lede states the RECORD/CALENDAR
+// fact and never the pet's wellness (clinical-guardrails):
+//   • The DOSE lede says the prescribed doses are all LOGGED — never "has had"/"given".
+//     dosesTowardTarget counts `partial` (§4/D1), so a course reaches its target WITH
+//     partial doses in the count; "has had all N doses" would overstate delivery (worst
+//     case given=0/partial=30/target=28 → "had all 28" when none were fully given), and
+//     the prompt text renders MORE prominently than the flag line that would correct it.
+//     "are all logged" is true regardless of the given/partial split (adversarial-reviewer
+//     B-710, finding ③).
+//   • The DAY lede speaks only to the calendar, so it stays true even when doses were
+//     missed — it must never imply full compliance (the misses show on the flag/compliance
+//     line, never here).
+// nyx-voice: pet by name on the dose lede, specific over generic, no exclamation.
 //
-// The DEFERRAL half of B-642's note ("when the course ends is your vet's call") was
-// dropped on the PM's call: a course with a *defined* end only ever gets this prompt when
-// the vet's own prescribed span/count is reached, and an open-ended course gets no prompt
-// at all — so the schedule IS the vet's instruction and re-deferring is redundant. The
-// prompt stays an offer, never an assertion, and the question form keeps the owner's call.
-// Final wording is Dr. Chen- / nyx-voice-reviewed; these constants are the one edit point.
+// THE HEDGE IS LOAD-BEARING, not decoration (adversarial-reviewer B-710, finding ④).
+// B-642's note ("when the course ends is your vet's call") existed to stop a full bar
+// reading as "stop now"; the PM's first call was to drop it as redundant with the dosing
+// schedule. The adversarial pass found the exception that reopens it: on a course the app
+// CANNOT tell apart from a simple one — a prednisolone that must be TAPERED, an antibiotic
+// to "finish till the recheck" — the prescribed span's end is NOT "stop", so an un-hedged
+// "Is this course finished?" nudges an abrupt stop that can harm. So a short vet-deferral
+// is kept beside the question. Exact wording is a PM / Dr. Chen call (session record
+// 2026-08-06); these constants are the one edit point.
 export const COURSE_END_PROMPT_QUESTION = 'Is this course finished?';
+export const COURSE_END_PROMPT_HEDGE = 'Your vet has the final say.';
 export const COURSE_END_PROMPT_ACTION = 'Mark as finished';
 
 export function courseEndPromptLede(params: {
@@ -1269,9 +1281,11 @@ export function courseEndPromptLede(params: {
 }): string {
   if (params.denomination === 'doses') {
     const n = params.targetDoses ?? 0;
+    // "are all logged", never "has had all" — the record framing is true whether the
+    // target was reached with given or partial doses (see the header note, finding ③).
     return n === 1
-      ? `${params.petName} has had the dose.`
-      : `${params.petName} has had all ${n} doses.`;
+      ? `${params.petName}'s dose is logged.`
+      : `${params.petName}'s ${n} doses are all logged.`;
   }
   const d = params.targetDays ?? 0;
   return d === 1
