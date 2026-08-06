@@ -1,7 +1,7 @@
 # Beta features program — build-ready spec + PR plan (v1.0)
 
 **Date:** 2026-08-06
-**PR:** shipped via #NNN (draft — docs-only, the requirements + PR plan)
+**PR:** shipped via #604 (draft — docs-only, the requirements + PR plan)
 **Track:** Beta features program (B-712); guardrails (B-713)
 **Type:** Spec / planning. No app code, no schema. Follows the same-day mocks session (`2026-08-06-beta-features-program-mocks.md`).
 
