@@ -528,7 +528,13 @@ export function StartTrialModal({
               style={styles.quietAction}
               hitSlop={8}
             >
-              <Text style={styles.quietActionText}>Log {petName}’s first meal</Text>
+              {/* "first meal" only holds on a same-day start; R3 made back-dating
+                  the encouraged path, so a day-11 trial's first meal was days ago. */}
+              <Text style={styles.quietActionText}>
+                {(startedSummary?.dayCounter ?? 1) > 1
+                  ? `Log a meal for ${petName}`
+                  : `Log ${petName}’s first meal`}
+              </Text>
             </TouchableOpacity>
           </ScrollView>
         </SafeAreaView>

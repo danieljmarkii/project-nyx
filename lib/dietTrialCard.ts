@@ -98,8 +98,8 @@ import {
 } from './dietTrial';
 import { milestoneNote, trialDecisionChoices, type TrialOutcome } from './dietTrialCompletion';
 import { type TrialProteinSource } from './trialProtein';
-import { titleProtein } from './trialProteinPicker';
-import { localDayIndexOf } from './utils';
+import { proteinTrialLabel } from './trialProteinPicker';
+import { localDayIndexOf, MONTHS } from './utils';
 import type { TrialIndication } from './dietTrialSetup';
 
 const MS_PER_DAY = 86_400_000;
@@ -172,8 +172,7 @@ export interface TrialCardTrial {
  * is not a verdict.
  */
 export function trialIdentityLabel(trial: TrialCardTrial | null | undefined): string {
-  const protein = trial?.trialProtein?.protein ?? null;
-  return protein ? `${titleProtein(protein)} trial` : 'Diet trial';
+  return proteinTrialLabel(trial?.trialProtein?.protein ?? null);
 }
 
 /** §5.1 coverage: distinct local days with ≥1 logged NON-TREAT feeding, over the
@@ -484,11 +483,6 @@ const DECISION_ACTION_ID: Record<'extend' | 'complete' | 'stopped_early', TrialC
   complete: 'trial_complete',
   stopped_early: 'trial_stopped_early',
 };
-
-const MONTHS = [
-  'January', 'February', 'March', 'April', 'May', 'June',
-  'July', 'August', 'September', 'October', 'November', 'December',
-];
 
 // ── Small pure helpers ───────────────────────────────────────────────────────
 
@@ -1144,6 +1138,69 @@ function degenerateStateFor(trial: TrialCardTrial | null): TrialCardState {
       : 'day_one';
 }
 
+/**
+ * The header "manage" affordance's label — or null to hide it entirely.
+ *
+ * SUPPRESSION IS KEYED ON THE BODY'S ACTUAL ACTIONS, NOT ON `state`. The header
+ * is a duplicate only when the body already carries a way to start a trial
+ * (`no_trial`'s "Start a diet trial"; the ordinary `abandoned` card's "Start a new
+ * trial"), so it is suppressed there and ONLY there. Two `abandoned` branches ship
+ * `actions: []` with no body Start CTA — the intake-decline replacement (§5.2, a
+ * pet that has stopped eating) and the degenerate unparseable-start branch — and
+ * this card is the app's ONLY entry point to starting a trial (`profile.tsx`
+ * §1097), so suppressing on `state` alone would strand those cards with zero
+ * controls. (Regression: caught by `code-reviewer`, 2026-08-06.)
+ *
+ * When it IS shown, the verb says what `onManage` opens: on a RUNNING trial the
+ * ordered end-and-replace sheet ("Replace" — never "Change", which read as an EDIT
+ * and routed an active trial, and on `day_one` the card's ONLY control, straight to
+ * its own destruction); on a terminal/degenerate card the start form ("+ Start").
+ */
+export function trialManageLabel(
+  model: Pick<TrialCardModel, 'state' | 'actions'>,
+): string | null {
+  if (model.actions.some((a) => a.id === 'start_trial')) return null;
+  return trialManageVerb(model.state);
+}
+
+function trialManageVerb(state: TrialCardState): string {
+  switch (state) {
+    case 'no_trial':
+    case 'completed':
+    case 'abandoned':
+      return '+ Start';
+    case 'day_one':
+    case 'clean':
+    case 'exposures':
+    case 'below_floor':
+    case 'milestone':
+    case 'overrun':
+    case 'intake_decline':
+    case 'free_fed':
+    case 'trial_refusal':
+      return 'Replace';
+    default: {
+      // Exhaustive: a new TrialCardState fails to compile here rather than
+      // silently inheriting "Replace".
+      const _exhaustive: never = state;
+      return _exhaustive;
+    }
+  }
+}
+
+/** The "What {pet} can eat" reference link. B-616 FR-5 shipped it on the mid-trial
+ *  clean/exposures cards (states 2/3, via the shared body below); the polish pass
+ *  adds it to `day_one` / `free_fed` / `below_floor`, where "what CAN he eat?" is
+ *  just as live (day 1 most of all, when it is otherwise the card's only action).
+ *  Deliberately NOT on the two decision cards — `milestone` (state 5, whose
+ *  choose-the-next-step buttons own it) and `overrun` (state 6, whose one action is
+ *  the milestone prompt) — where a food-list link would dilute the decision. Drawn
+ *  only when the allowed set is hydrated (the handler in profile.tsx is
+ *  conditional), so it degrades to nothing offline. */
+function viewAllowedFoodsAction(petName: string): TrialCardAction {
+  return { id: 'view_allowed_foods', label: `What ${petName} can eat`, emphasis: 'link' };
+}
+
 export function resolveTrialCard(input: TrialCardInput): TrialCardModel {
   const { trial, petName } = input;
 
@@ -1602,7 +1659,7 @@ function activeCard(
       dayLineRole: 'meta',
       windowLine: windowLineFor(endIndex, overrunDays),
       lines,
-      actions: [],
+      actions: [viewAllowedFoodsAction(input.petName)],
     };
   }
 
@@ -1628,7 +1685,7 @@ function activeCard(
       dayLineRole: 'meta',
       windowLine: windowLineFor(endIndex, overrunDays),
       lines,
-      actions: [],
+      actions: [viewAllowedFoodsAction(input.petName)],
     };
   }
 
@@ -1647,7 +1704,7 @@ function activeCard(
       dayLineRole: 'meta',
       windowLine: windowLineFor(endIndex, overrunDays),
       lines: recordRegion(register, input, rc),
-      actions: [],
+      actions: [viewAllowedFoodsAction(input.petName)],
     };
   }
 
@@ -1728,7 +1785,7 @@ function activeCard(
       // owner has just been told a feeding fell outside the diet is exactly when
       // "what CAN he eat?" is the next question, and answering it is the
       // record-and-continue posture rather than a scolding.
-      { id: 'view_allowed_foods', label: `What ${input.petName} can eat`, emphasis: 'link' },
+      viewAllowedFoodsAction(input.petName),
     ],
   };
 }

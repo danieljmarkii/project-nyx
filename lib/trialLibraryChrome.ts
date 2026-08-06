@@ -21,7 +21,7 @@
 // the entire pantry, and G2 is two-sided: a mark's ABSENCE is not a verdict either.
 // The type signatures carry that: `string | null`, never a `{ onList: boolean }`
 // that invites a caller to render the false branch.
-import { formatCalendarDate } from './utils';
+import { formatLongDate } from './utils';
 import {
   trialListFoodsOn,
   trialListMembership,
@@ -30,6 +30,7 @@ import {
 } from './trialAllowedSet';
 import type { AllowedFood } from './dietTrial';
 import { getDietTrialProgress } from './analytics';
+import { proteinTrialLabel } from './trialProteinPicker';
 
 // ── §4 copy pack, verbatim ──────────────────────────────────────────────────
 //
@@ -65,8 +66,9 @@ export function trialChipLabel(
 // ── The Foods-tab strip (§2.1 / FR-1, mock A) ───────────────────────────────
 
 export interface FoodsTrialStripModel {
-  /** `Diet trial — day 12 of 28`, prefixed with the pet's name on a multi-pet
-   *  account (D7 — the library is per-account, the trial is not). */
+  /** `Rabbit trial · day 12 of 28` (the "{Protein} trial" identity, B-706; falls
+   *  back to `Diet trial · …` when no protein resolves), prefixed with the pet's
+   *  name on a multi-pet account (D7 — the library is per-account, the trial is not). */
   header: string;
   /** The list NAMED, not counted — `Royal Canin Hydrolyzed Protein HP, and 2
    *  more` (B-627). See `trialStripFoodsLine`. */
@@ -165,12 +167,23 @@ export function buildFoodsTrialStrip(
         ? `day ${progress.dayCounter} of ${progress.targetDays}`
         : `day ${progress.dayCounter}`;
 
-  // D7: the name only when the account holds more than one pet. On a single-pet
-  // account "Biscuit's diet trial" is noise — there is no other trial it could be.
-  const subject = opts.multiPet && opts.petName ? `${opts.petName}’s diet trial` : 'Diet trial';
+  // B-706: the "{Protein} trial" identity, the SAME token the Pet-tab card kicker
+  // and the Home strip render (`proteinTrialLabel`), so the Foods tab does not read
+  // "Diet trial" one tap from a card reading "Rabbit trial". Null protein → the
+  // generic "Diet trial", never a claim (TG-2).
+  const identity = proteinTrialLabel(set.trial.targetProtein ?? null);
+  // D7: the pet's name only when the account holds more than one pet. On a
+  // single-pet account "Biscuit's rabbit trial" is noise — there is no other trial
+  // it could be. The identity lower-cases into the possessive form.
+  const subject =
+    opts.multiPet && opts.petName
+      ? `${opts.petName}’s ${identity.charAt(0).toLowerCase()}${identity.slice(1)}`
+      : identity;
 
   return {
-    header: dayClause === null ? subject : `${subject} — ${dayClause}`,
+    // Middle-dot, not an em-dash (B-706): the Home strip and the "What {pet} can
+    // eat" subtitle this strip taps into both use " · ".
+    header: dayClause === null ? subject : `${subject} · ${dayClause}`,
     line: trialStripFoodsLine(foods),
   };
 }
@@ -187,7 +200,7 @@ export function buildFoodsTrialStrip(
  *
  * Unlike §2.2's `membershipFact`, this does NOT split "since" from "added" — §4
  * pins one string for this surface, and mock D shows a food added mid-trial reading
- * `since Jul 31`. That is not a loss of the D5 disclosure: the date IS the
+ * `since 31 July`. That is not a loss of the D5 disclosure: the date IS the
  * disclosure here (it is the day membership starts, and it is visibly not the
  * trial's start date), and the full "earlier feedings keep the reading they already
  * have" sentence is stated at the moment it matters — in the confirm sheet, before
@@ -202,7 +215,7 @@ export function trialMembershipLine(
   const hit = trialListMembership(set, food, atMs);
   if (!hit) return null;
   const onList = `On ${petName}’s trial list`;
-  const date = formatCalendarDate(hit.allowedFrom);
+  const date = formatLongDate(hit.allowedFrom);
   return date === null ? onList : `${onList} · since ${date}`;
 }
 
