@@ -215,7 +215,7 @@ export function buildTrialFoodsScreen(
   });
 
   return {
-    title: `What ${petName} can eat`,
+    title: trialFoodsTitle(petName),
     subtitle:
       progress && progress.targetDays > 0
         ? `Diet trial · day ${progress.dayCounter} of ${progress.targetDays}`
@@ -311,6 +311,13 @@ export function alreadyOnListNote(foodLabel: string): string {
  *  list). Designed, not blank (Principle 5): it says what is true now AND what
  *  this screen is for, so the owner leaves knowing where the list will be rather
  *  than wondering what they broke. */
+/** "What {pet} can eat" — the screen's identity, shown in the nav header (B-616
+ *  consistency pass; aligned with the exposures screen's nav-title pattern) and
+ *  carried on the model from this same source so the two never drift. */
+export function trialFoodsTitle(petName: string): string {
+  return `What ${petName} can eat`;
+}
+
 export function noTrialLine(petName: string): string {
   return `${petName} isn’t on a diet trial right now. When one is running, the foods it allows show up here.`;
 }

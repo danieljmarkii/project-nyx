@@ -64,6 +64,7 @@ import {
   buildAddTrialFoodSheet,
   buildTrialFoodsScreen,
   noTrialLine,
+  trialFoodsTitle,
 } from '../lib/trialFoodsScreen';
 import type { PickerFood } from '../lib/db';
 
@@ -306,7 +307,7 @@ export default function TrialFoodsScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
-      <Header title="Diet trial" leading="back" onLeadingPress={() => router.back()} />
+      <Header title={trialFoodsTitle(petName)} leading="back" onLeadingPress={() => router.back()} />
 
       {model === null ? (
         <View style={styles.centered}>
@@ -321,7 +322,10 @@ export default function TrialFoodsScreen() {
         </View>
       ) : (
         <ScrollView contentContainerStyle={styles.body}>
-          <Text style={styles.title}>{model.title}</Text>
+          {/* The nav header carries the title (it is the words the owner tapped),
+              so the body opens on the day-context subtitle rather than repeating
+              it — the same pattern as the exposures screen (B-616 consistency pass:
+              "Diet trial" no longer appears in both the nav bar and the subtitle). */}
           {model.subtitle !== null && (
             <Text testID="trial-foods-subtitle" style={styles.subtitle}>
               {model.subtitle}
@@ -487,11 +491,6 @@ const styles = StyleSheet.create({
   body: {
     paddingHorizontal: theme.space3,
     paddingBottom: theme.space4,
-  },
-  title: {
-    fontSize: theme.textXL,
-    fontWeight: theme.weightMedium,
-    color: theme.colorNeutralDark,
   },
   subtitle: {
     fontSize: theme.textSM,
