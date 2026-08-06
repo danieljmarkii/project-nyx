@@ -44,7 +44,13 @@ export type AppConfigKey = keyof AppConfigValues;
 // never dark-holes or half-enables. Implemented once; reusable for every future
 // experiment (zero schema — the shape rides the existing JSONB `value`).
 
-export const ALLOWLIST_FLAG_KEYS = ['ask_enabled', 'ask_general_enabled'] as const;
+// `ask_enabled` / `ask_general_enabled` gate the Ask surface (037). `widget_enabled`
+// is the Home-Screen-widget eligibility gate for the Beta features program (B-712,
+// migration 054) — the SAME shape and the same fail-closed resolution, zero new
+// mechanism. It gates the widget's *data* server-side; the owner's local opt-in is a
+// separate Phase-2 gate that never lives here (spec §2 — the two gates stay split so
+// the future Premium swap is one line).
+export const ALLOWLIST_FLAG_KEYS = ['ask_enabled', 'ask_general_enabled', 'widget_enabled'] as const;
 export type AllowlistFlagKey = (typeof ALLOWLIST_FLAG_KEYS)[number];
 
 // Raw, UN-coerced allowlist-flag values (a bool, an { enabled, allowlist } object,
@@ -58,6 +64,7 @@ export type AllowlistFlagValues = Record<AllowlistFlagKey, unknown>;
 export const ALLOWLIST_FLAGS_UNSET: AllowlistFlagValues = {
   ask_enabled: undefined,
   ask_general_enabled: undefined,
+  widget_enabled: undefined,
 };
 
 // The pure primitive. `userId` is the signed-in caller's uid (null when unknown /
