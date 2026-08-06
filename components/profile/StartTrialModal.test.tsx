@@ -196,6 +196,9 @@ describe('StartTrialModal — starting a fresh trial', () => {
 
     // Real day math: a trial started today is day 1 (the inclusive convention).
     expect(screen.getByText('Pixel is on day 1')).toBeTruthy();
+    // Day 1 keeps "first meal"; a back-dated start (dayCounter > 1) renders "Log a
+    // meal for {pet}" instead — the same `> 1` guard the subtitle uses one line up.
+    expect(screen.getByText('Log Pixel’s first meal')).toBeTruthy();
 
     // The write carries the default-path values: one primary food, the chosen
     // indication, the species duration default, and today as the start day.
