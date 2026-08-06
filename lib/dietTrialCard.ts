@@ -1138,6 +1138,54 @@ function degenerateStateFor(trial: TrialCardTrial | null): TrialCardState {
       : 'day_one';
 }
 
+/**
+ * The header "manage" affordance's label — or null to hide it entirely.
+ *
+ * One active trial per pet is a DATABASE constraint (migration 040), so on a
+ * RUNNING trial the header opens the ordered "end this one and start the new one"
+ * sheet. It therefore says what it does — "Replace" — never "Change", which read
+ * as an EDIT and routed an active trial (and, on `day_one`, the ONLY control on
+ * the card) straight to its own destruction. On the empty and `abandoned` cards
+ * the body already carries a Start CTA, so the header is suppressed rather than
+ * shown twice; `completed` has no body Start CTA, so it keeps a "+ Start".
+ */
+export function trialManageLabel(state: TrialCardState): string | null {
+  switch (state) {
+    case 'no_trial':
+    case 'abandoned':
+      return null;
+    case 'completed':
+      return '+ Start';
+    case 'day_one':
+    case 'clean':
+    case 'exposures':
+    case 'below_floor':
+    case 'milestone':
+    case 'overrun':
+    case 'intake_decline':
+    case 'free_fed':
+    case 'trial_refusal':
+      return 'Replace';
+    default: {
+      // Exhaustive: a new TrialCardState fails to compile here rather than
+      // silently inheriting "Replace".
+      const _exhaustive: never = state;
+      return _exhaustive;
+    }
+  }
+}
+
+/** The "What {pet} can eat" reference link. Offered on every RUNNING state so the
+ *  owner can reach the rule list from the card, not only via the Foods tab — B-616
+ *  FR-5 shipped it on states 2/3/6, and the polish pass adds it to `day_one` /
+ *  `free_fed` / `below_floor`, where "what CAN he eat?" is just as live (day 1 most
+ *  of all, when it is otherwise the card's only action). Drawn only when the
+ *  allowed set is hydrated — the handler in profile.tsx is conditional — so it
+ *  degrades to nothing offline. */
+function viewAllowedFoodsAction(petName: string): TrialCardAction {
+  return { id: 'view_allowed_foods', label: `What ${petName} can eat`, emphasis: 'link' };
+}
+
 export function resolveTrialCard(input: TrialCardInput): TrialCardModel {
   const { trial, petName } = input;
 
@@ -1596,7 +1644,7 @@ function activeCard(
       dayLineRole: 'meta',
       windowLine: windowLineFor(endIndex, overrunDays),
       lines,
-      actions: [],
+      actions: [viewAllowedFoodsAction(input.petName)],
     };
   }
 
@@ -1622,7 +1670,7 @@ function activeCard(
       dayLineRole: 'meta',
       windowLine: windowLineFor(endIndex, overrunDays),
       lines,
-      actions: [],
+      actions: [viewAllowedFoodsAction(input.petName)],
     };
   }
 
@@ -1641,7 +1689,7 @@ function activeCard(
       dayLineRole: 'meta',
       windowLine: windowLineFor(endIndex, overrunDays),
       lines: recordRegion(register, input, rc),
-      actions: [],
+      actions: [viewAllowedFoodsAction(input.petName)],
     };
   }
 
@@ -1722,7 +1770,7 @@ function activeCard(
       // owner has just been told a feeding fell outside the diet is exactly when
       // "what CAN he eat?" is the next question, and answering it is the
       // record-and-continue posture rather than a scolding.
-      { id: 'view_allowed_foods', label: `What ${input.petName} can eat`, emphasis: 'link' },
+      viewAllowedFoodsAction(input.petName),
     ],
   };
 }

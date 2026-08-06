@@ -22,6 +22,7 @@ import { theme } from '../../constants/theme';
 import { Card } from '../ui/Card';
 import { PrimaryButton } from '../ui/PrimaryButton';
 import { TrialContaminantNote } from '../food/TrialContaminantNote';
+import { trialManageLabel } from '../../lib/dietTrialCard';
 import type {
   TrialCardActionId,
   TrialCardLine,
@@ -53,7 +54,12 @@ interface Props {
 }
 
 export function DietTrialCard({ model, actions, onManage, busyAction, style }: Props) {
-  const manageLabel = model.state === 'no_trial' ? '+ Start' : 'Change';
+  // The header affordance's label, or null to hide it. The resolver owns the
+  // per-state judgement (`trialManageLabel`: running → "Replace", empty/abandoned
+  // → suppressed since the body already carries a Start CTA, completed → "+ Start"),
+  // replacing the old '+ Start'/'Change' split that labelled a destructive
+  // end-and-replace as a benign "Change".
+  const manageLabel = trialManageLabel(model.state);
   // NORMALISED, because the prop is optional and `undefined !== null`. The first
   // cut compared `busyAction !== null` directly, so on every surface that does not
   // pass the prop at all — which is every state but the milestone — the guard read
@@ -65,14 +71,14 @@ export function DietTrialCard({ model, actions, onManage, busyAction, style }: P
     <Card style={style}>
       <View style={styles.headerRow}>
         <Text style={styles.kicker}>{model.kicker}</Text>
-        {onManage && (
+        {onManage && manageLabel !== null && (
           <TouchableOpacity
             onPress={onManage}
             hitSlop={8}
             style={styles.manageTouch}
             accessibilityRole="button"
             accessibilityLabel={
-              model.state === 'no_trial' ? 'Start a diet trial' : 'Change this diet trial'
+              model.state === 'completed' ? 'Start a diet trial' : 'Replace this diet trial'
             }
           >
             <Text style={styles.manageText}>{manageLabel}</Text>

@@ -21,6 +21,7 @@ jest.mock('./feedingArrangements', () => ({
 
 import {
   resolveTrialCard,
+  trialManageLabel,
   resolveTrialStrip,
   planTrialCard,
   trialIdentityLabel,
@@ -414,6 +415,64 @@ describe('state 1 — day one', () => {
   // The state that would render "0 off-diet foods" most confidently.
   it('renders no exposure sentence at all', () => {
     expect(allStrings(model).join(' ')).not.toMatch(/matched/);
+  });
+});
+
+// The polish pass extends B-616 FR-5's "What {pet} can eat" link from states 2/3/6
+// to day_one/free_fed/below_floor — the running states that used to carry no action
+// at all (day 1 most of all, where it removes the header being the only control).
+describe('the "What {pet} can eat" link is offered on every running state', () => {
+  it('day one offers it — the state where it was otherwise the only affordance', () => {
+    const m = resolveTrialCard(activeInput({
+      nowMs: localNoon(2026, 7, 3),
+      coverage: { daysLogged: 0, daysElapsed: 1 },
+      exposures: null,
+    }));
+    expect(m.state).toBe('day_one');
+    expect(m.actions.map((a) => a.id)).toContain('view_allowed_foods');
+  });
+
+  it('below the coverage floor offers it', () => {
+    const m = resolveTrialCard(activeInput({
+      belowCoverageFloor: true,
+      coverage: { daysLogged: 6, daysElapsed: 23 },
+      exposures: { mayStateRecordClean: true, totalFeedings: 9, offDiet: 0 },
+    }));
+    expect(m.state).toBe('below_floor');
+    expect(m.actions.map((a) => a.id)).toContain('view_allowed_foods');
+  });
+
+  it('the free-fed replacement offers it', () => {
+    const m = resolveTrialCard(activeInput({
+      petName: 'Mochi',
+      freeFed: { loggedFeedings: 22 },
+      exposures: { mayStateRecordClean: false, totalFeedings: 22, offDiet: 0 },
+    }));
+    expect(m.state).toBe('free_fed');
+    expect(m.actions.map((a) => a.id)).toContain('view_allowed_foods');
+  });
+});
+
+describe('trialManageLabel — the header affordance, honest per state', () => {
+  it('suppresses on the empty and abandoned cards (the body carries the Start CTA)', () => {
+    expect(trialManageLabel('no_trial')).toBeNull();
+    expect(trialManageLabel('abandoned')).toBeNull();
+  });
+
+  it('keeps a "+ Start" on the completed card (which has no body Start CTA)', () => {
+    expect(trialManageLabel('completed')).toBe('+ Start');
+  });
+
+  // "Replace", never "Change": on a running trial the header opens end-and-replace,
+  // and "Change" read as an edit — routing an active (day-1: the ONLY) card to its
+  // own destruction.
+  it('says "Replace" on every running state', () => {
+    for (const s of [
+      'day_one', 'clean', 'exposures', 'below_floor', 'milestone',
+      'overrun', 'intake_decline', 'free_fed', 'trial_refusal',
+    ] as const) {
+      expect(trialManageLabel(s)).toBe('Replace');
+    }
   });
 });
 
