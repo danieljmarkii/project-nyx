@@ -1,0 +1,718 @@
+<title>Culprit — Beta features</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  /* ============================================================
+     Beta features — a cohort-gated, self-serve shelf for
+     unfinished features. Mock ROUND 1.
+
+     The thesis: the Home screen widget is slow, secondary work that
+     shouldn't gate the App Store submission. A per-account feature
+     flag lets it live inside the app — on for the PM's account,
+     invisible to everyone else — and a "Beta features" page in
+     Settings turns that flag into something a hand-picked cohort can
+     opt into, feature by feature.
+
+     SCOPE, cut per PM (2026-08-06): no Premium gating now. Access is
+     managed in the DATABASE (the allowlist primitive from the Ask
+     feature). Tying eligibility to Premium is a deliberate, later,
+     one-line change — the whole point of splitting the two gates.
+
+     Document chrome mirrors the house mock system (see
+     culprit-notifications-mockups.html): a cool paper tinted toward
+     the brand indigo in light, the app's night tokens in dark. The
+     DEVICE FRAMES stay light in both themes on purpose — they render
+     the app's real light-mode surfaces, and flipping them would
+     misrepresent what ships. Frame values are the real tokens from
+     constants/theme.ts.
+     ============================================================ */
+
+  :root {
+    /* Document — light */
+    --paper:     #F5F4F9;   /* cool paper, biased toward the brand indigo */
+    --paper-2:   #FFFFFF;
+    --ink:       #1B1A2E;
+    --ink-2:     #5F5C7A;
+    --ink-3:     #8B87A8;
+    --rule:      #DEDCE9;
+    --rule-soft: #E9E7F1;
+    --teal-ink:  #0B7B6C;   /* theme.colorAccentInk — teal that passes as text */
+    --teal-wash: #E0FBF7;   /* theme.colorAccentLight */
+    --amber-ink: #9A6A00;   /* the "attention, not alarm" note ink */
+
+    --serif: ui-serif, Charter, "Bitstream Charter", "Iowan Old Style", Georgia, serif;
+    --sans:  -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --mono:  ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+
+    /* Device-frame palette — FIXED light tokens (constants/theme.ts),
+       identical in both document themes. */
+    --f-neutral:   #FAFAFA;  /* colorNeutralLight — screen ground */
+    --f-surface:   #FFFFFF;  /* colorSurface — cards */
+    --f-subtle:    #F5F5F5;  /* colorSurfaceSubtle */
+    --f-text:      #0A0A0A;  /* colorTextPrimary */
+    --f-text-2:    #525252;  /* colorTextSecondary */
+    --f-text-3:    #737373;  /* colorTextTertiary */
+    --f-text-dis:  #A3A3A3;  /* colorTextDisabled */
+    --f-border:    #EAEAEA;  /* colorBorder */
+    --f-border-st: #D4D4D4;  /* colorBorderStrong — switch-off track */
+    --f-accent:    #00C2A8;  /* colorAccent — switch-on track */
+    --f-accent-l:  #E0FBF7;  /* colorAccentLight */
+    --f-accent-ink:#0B7B6C;  /* colorAccentInk */
+    --f-black:     #0A0A0A;  /* colorNeutralDark */
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper:     #13112E;
+      --paper-2:   #1D1A42;
+      --ink:       #ECEAF6;
+      --ink-2:     #A6A2CE;
+      --ink-3:     #706BA6;
+      --rule:      rgba(196,190,255,0.20);
+      --rule-soft: rgba(196,190,255,0.11);
+      --teal-ink:  #4FD8C4;
+      --teal-wash: rgba(0,194,168,0.14);
+      --amber-ink: #E4B25C;
+    }
+  }
+  :root[data-theme="light"] {
+    --paper: #F5F4F9; --paper-2: #FFFFFF; --ink: #1B1A2E; --ink-2: #5F5C7A;
+    --ink-3: #8B87A8; --rule: #DEDCE9; --rule-soft: #E9E7F1;
+    --teal-ink: #0B7B6C; --teal-wash: #E0FBF7; --amber-ink: #9A6A00;
+  }
+  :root[data-theme="dark"] {
+    --paper: #13112E; --paper-2: #1D1A42; --ink: #ECEAF6; --ink-2: #A6A2CE;
+    --ink-3: #706BA6; --rule: rgba(196,190,255,0.20); --rule-soft: rgba(196,190,255,0.11);
+    --teal-ink: #4FD8C4; --teal-wash: rgba(0,194,168,0.14); --amber-ink: #E4B25C;
+  }
+
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 16px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 52px 26px 108px; }
+
+  /* ── Masthead ─────────────────────────────────────────────── */
+  .mast { border-bottom: 1px solid var(--rule); padding-bottom: 26px; margin-bottom: 8px; }
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--teal-ink);
+    margin: 0 0 14px;
+  }
+  h1 {
+    font-family: var(--serif);
+    font-weight: 600;
+    font-size: clamp(30px, 5vw, 46px);
+    line-height: 1.08;
+    letter-spacing: -0.015em;
+    text-wrap: balance;
+    margin: 0 0 16px;
+  }
+  .lede { max-width: 66ch; color: var(--ink-2); font-size: 17px; margin: 0; }
+  .lede strong { color: var(--ink); font-weight: 600; }
+
+  .meta {
+    display: flex; flex-wrap: wrap; gap: 10px 18px;
+    margin-top: 22px; font-family: var(--mono); font-size: 12px; color: var(--ink-3);
+  }
+  .meta b { color: var(--ink-2); font-weight: 600; }
+
+  /* ── Section headers ──────────────────────────────────────── */
+  .section { margin-top: 64px; }
+  .section > h2 {
+    font-family: var(--serif);
+    font-weight: 600;
+    font-size: 26px;
+    letter-spacing: -0.01em;
+    margin: 0 0 6px;
+  }
+  .section > .sub { color: var(--ink-2); max-width: 70ch; margin: 0 0 30px; }
+
+  /* ── Plate: device(s) + annotation ────────────────────────── */
+  .plate {
+    display: grid;
+    grid-template-columns: 320px 1fr;
+    gap: 40px;
+    align-items: start;
+    padding: 30px 0;
+    border-top: 1px solid var(--rule-soft);
+  }
+  .plate:first-of-type { border-top: none; }
+  /* a plate that holds two side-by-side devices needs a wider device column */
+  .plate.duo { grid-template-columns: 560px 1fr; }
+  @media (max-width: 900px) {
+    .plate.duo { grid-template-columns: 1fr; gap: 26px; justify-items: center; }
+  }
+  @media (max-width: 760px) {
+    .plate { grid-template-columns: 1fr; gap: 26px; justify-items: center; }
+    .note-col { justify-self: stretch; }
+  }
+
+  .duo-devices { display: flex; gap: 20px; flex-wrap: wrap; justify-content: center; }
+
+  .frame-label {
+    font-family: var(--mono); font-size: 11px; letter-spacing: 0.08em;
+    text-transform: uppercase; color: var(--ink-3); margin: 0 0 12px; text-align: center;
+  }
+  .frame-label b { color: var(--teal-ink); font-weight: 600; }
+
+  /* ── The device ───────────────────────────────────────────── */
+  .device {
+    width: 270px;
+    border-radius: 42px;
+    background: #E7E5EE;
+    padding: 9px;
+    box-shadow: 0 1px 0 rgba(255,255,255,0.6) inset, 0 22px 44px -20px rgba(20,16,46,0.5);
+    margin: 0 auto;
+  }
+  :root[data-theme="dark"] .device { background: #2A2752; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .device { background: #2A2752; } }
+
+  .screen {
+    position: relative;
+    border-radius: 34px;
+    overflow: hidden;
+    background: var(--f-neutral);
+    height: 566px;
+    display: flex;
+    flex-direction: column;
+    font-size: 15px;
+    color: var(--f-text);
+  }
+
+  /* nav bar */
+  .nav {
+    height: 50px; flex: 0 0 auto;
+    display: grid; grid-template-columns: 44px 1fr 44px; align-items: center;
+    background: var(--f-neutral);
+  }
+  .nav .chev { font-size: 24px; color: var(--f-text); text-align: center; line-height: 1; }
+  .nav .title { text-align: center; font-weight: 600; font-size: 16px; }
+
+  .body {
+    flex: 1 1 auto; overflow: hidden;
+    padding: 16px 14px; display: flex; flex-direction: column; gap: 14px;
+  }
+  .body.hub { gap: 18px; }
+
+  /* the large screen title used on hub-style screens */
+  .screen-title { font-family: var(--serif); font-size: 24px; font-weight: 600; letter-spacing: -0.01em; padding: 2px 4px 0; }
+
+  .group-label {
+    font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.09em;
+    text-transform: uppercase; color: var(--f-text-3); padding: 0 6px 6px; margin-top: 2px;
+  }
+
+  .intro-line {
+    font-size: 12.5px; color: var(--f-text-3); line-height: 1.45; padding: 0 6px;
+  }
+
+  /* cards + rows (SettingsRow) */
+  .card {
+    background: var(--f-surface);
+    border-radius: 16px;
+    box-shadow: 0 1px 2px rgba(20,16,46,0.05);
+    overflow: hidden;
+  }
+  .row {
+    display: flex; align-items: center; gap: 13px;
+    padding: 12px 14px; min-height: 56px;
+  }
+  .row + .row { border-top: 1px solid var(--f-border); }
+  .row .lead { flex: 1 1 auto; min-width: 0; }
+  .row .r-label { font-size: 15px; color: var(--f-text); }
+  .row .r-sub { font-size: 12px; color: var(--f-text-3); margin-top: 2px; line-height: 1.35; }
+  .row .nav-chev { font-size: 20px; color: var(--f-text-dis); flex: 0 0 auto; line-height: 1; }
+  .row .trail-note { font-size: 12.5px; color: var(--f-accent-ink); font-family: var(--mono); white-space: nowrap; }
+
+  /* avatar (account row) */
+  .avatar {
+    width: 42px; height: 42px; border-radius: 999px; flex: 0 0 auto;
+    background: var(--f-accent-l); color: var(--f-accent-ink);
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 600; font-size: 16px;
+  }
+
+  /* leading feature-tile icon on a beta card */
+  .ftile {
+    width: 40px; height: 40px; border-radius: 11px; flex: 0 0 auto;
+    background: var(--f-accent-l);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .ftile svg { width: 21px; height: 21px; stroke: var(--f-accent-ink); fill: none; }
+  .ftile.mute { background: var(--f-subtle); }
+  .ftile.mute svg { stroke: var(--f-text-3); }
+
+  /* iOS switch */
+  .sw { width: 51px; height: 31px; border-radius: 999px; position: relative; flex: 0 0 auto; background: var(--f-border-st); transition: background .15s; }
+  .sw::after { content: ""; position: absolute; top: 2px; left: 2px; width: 27px; height: 27px; border-radius: 999px; background: #fff; box-shadow: 0 2px 4px rgba(0,0,0,0.28); transition: transform .15s; }
+  .sw.on { background: var(--f-accent); }
+  .sw.on::after { transform: translateX(20px); }
+
+  /* ── Beta shelf: one card per feature ─────────────────────── */
+  .beta-card { background: var(--f-surface); border-radius: 16px; box-shadow: 0 1px 2px rgba(20,16,46,0.05); padding: 13px 14px; }
+  .beta-head { display: flex; align-items: center; gap: 13px; }
+  .beta-head .lead { flex: 1 1 auto; min-width: 0; }
+  .beta-title { display: flex; align-items: center; gap: 8px; }
+  .beta-title .t { font-size: 15px; font-weight: 600; color: var(--f-text); }
+  .beta-pill {
+    font-family: var(--mono); font-size: 9px; letter-spacing: 0.09em; text-transform: uppercase;
+    color: var(--f-accent-ink); background: var(--f-accent-l);
+    padding: 2px 7px; border-radius: 999px; line-height: 1.5;
+  }
+  .beta-sub { font-size: 12.5px; color: var(--f-text-3); line-height: 1.4; margin-top: 9px; }
+  /* the on-state instructional hint */
+  .hint {
+    margin-top: 11px; background: var(--f-accent-l); border-radius: 11px;
+    padding: 9px 11px; display: flex; gap: 8px; align-items: flex-start;
+  }
+  .hint svg { width: 15px; height: 15px; stroke: var(--f-accent-ink); fill: none; flex: 0 0 auto; margin-top: 1px; }
+  .hint .h-text { font-size: 12px; color: var(--f-accent-ink); line-height: 1.4; }
+  .hint .h-text b { font-weight: 600; }
+
+  .beta-note { font-size: 11.5px; color: var(--f-text-3); line-height: 1.45; padding: 2px 6px 0; }
+
+  /* ── Two-gate schematic (Section 3) ───────────────────────── */
+  .gates {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 18px;
+    margin: 6px 0 8px;
+  }
+  @media (max-width: 720px) { .gates { grid-template-columns: 1fr; } }
+  .gate {
+    border: 1px solid var(--rule); border-radius: 16px; background: var(--paper-2);
+    padding: 18px 18px 16px;
+  }
+  .gate .g-tag {
+    font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--teal-ink); margin: 0 0 8px;
+  }
+  .gate .g-q { font-family: var(--serif); font-size: 18px; font-weight: 600; letter-spacing: -0.01em; margin: 0 0 12px; color: var(--ink); }
+  .branch { display: flex; gap: 10px; align-items: baseline; font-size: 14px; margin: 7px 0; }
+  .branch .yn { font-family: var(--mono); font-size: 11px; font-weight: 600; flex: 0 0 42px; }
+  .branch .yn.y { color: var(--teal-ink); }
+  .branch .yn.n { color: var(--ink-3); }
+  .branch .bx { color: var(--ink-2); }
+  .branch .bx b { color: var(--ink); font-weight: 600; }
+  .gate .owner { margin-top: 13px; font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.03em; color: var(--ink-3); border-top: 1px dashed var(--rule); padding-top: 10px; }
+  .gate .owner b { color: var(--ink-2); }
+
+  /* ── Annotation column ────────────────────────────────────── */
+  .note-col { padding-top: 4px; max-width: 62ch; }
+  .note-col h3 { font-size: 17px; margin: 0 0 8px; letter-spacing: -0.01em; }
+  .note-col p { margin: 0 0 12px; color: var(--ink-2); font-size: 14.5px; }
+  .note-col p strong { color: var(--ink); font-weight: 600; }
+  .chips { display: flex; flex-wrap: wrap; gap: 7px; margin: 4px 0 16px; }
+  .chip {
+    font-family: var(--mono); font-size: 11px; letter-spacing: 0.02em;
+    padding: 4px 9px; border-radius: 999px; border: 1px solid var(--rule);
+    color: var(--ink-2); background: var(--paper-2);
+  }
+  .chip.teal { color: var(--teal-ink); border-color: color-mix(in srgb, var(--teal-ink) 40%, transparent); background: var(--teal-wash); }
+  ul.tight { margin: 0 0 12px; padding-left: 18px; color: var(--ink-2); font-size: 14.5px; }
+  ul.tight li { margin: 5px 0; }
+  ul.tight b { color: var(--ink); font-weight: 600; }
+
+  /* callout */
+  .callout {
+    margin-top: 14px; border-left: 3px solid var(--teal-ink);
+    padding: 12px 16px; background: var(--paper-2); border-radius: 0 12px 12px 0;
+    font-size: 14px; color: var(--ink-2);
+  }
+  .callout b { color: var(--ink); }
+  .callout.amber { border-left-color: var(--amber-ink); }
+
+  .footer { margin-top: 72px; padding-top: 24px; border-top: 1px solid var(--rule); color: var(--ink-3); font-size: 13px; }
+  .footer p { margin: 0 0 12px; max-width: 90ch; }
+  .footer b { color: var(--ink-2); }
+  .footer em { color: var(--ink-3); }
+
+  a { color: var(--teal-ink); }
+  :focus-visible { outline: 2px solid var(--teal-ink); outline-offset: 2px; border-radius: 4px; }
+</style>
+
+<div class="wrap">
+  <header class="mast">
+    <p class="eyebrow">Beta features program · Round 1</p>
+    <h1>A place to try features before they’re finished</h1>
+    <p class="lede">
+      Beta features is a short list of things we’re still building — switched
+      <strong>off for everyone by default</strong>, and visible only to accounts we’ve let in.
+      It lets the <strong>Home screen widget</strong> live inside the shipping app —
+      on for your account, invisible to everyone else — so its slow, secondary progress
+      never holds up the App Store submission. Access is <strong>managed in the database</strong>
+      for now; tying eligibility to Premium later is a deliberate one-line change, which is
+      exactly why the two gates are kept separate.
+    </p>
+    <div class="meta">
+      <span><b>First beta:</b> Home screen widget</span>
+      <span><b>Access:</b> allowlist (DB-managed)</span>
+      <span><b>Default:</b> off for all</span>
+      <span><b>Premium:</b> deferred — swap-in later</span>
+      <span><b>Reuses:</b> the Ask flag primitive</span>
+    </div>
+  </header>
+
+  <!-- ============================================================ WHERE IT LIVES -->
+  <section class="section">
+    <h2>Where it lives — and who sees it</h2>
+    <p class="sub">
+      Beta features sits in <b>Settings → Preferences</b>, next to Notifications. But the row
+      only exists for accounts on the allowlist. Everyone else’s Settings looks exactly as it
+      does today — no row, no hint that a beta program exists.
+    </p>
+
+    <div class="plate duo">
+      <div>
+        <div class="duo-devices">
+          <div>
+            <p class="frame-label">Settings · <b>on the allowlist</b></p>
+            <div class="device">
+              <div class="screen">
+                <div class="nav"><div class="chev">‹</div><div class="title">Settings</div><div></div></div>
+                <div class="body hub">
+                  <div class="card">
+                    <div class="row">
+                      <div class="avatar">J</div>
+                      <div class="lead"><div class="r-label">Jordan</div><div class="r-sub">jordan@example.com</div></div>
+                    </div>
+                    <div class="row"><div class="lead"><div class="r-label">Change password</div></div><div class="nav-chev">›</div></div>
+                  </div>
+
+                  <div>
+                    <div class="group-label">Preferences</div>
+                    <div class="card">
+                      <div class="row"><div class="lead"><div class="r-label">Notifications</div></div><div class="nav-chev">›</div></div>
+                      <div class="row"><div class="lead"><div class="r-label">Beta features</div><div class="r-sub">Try features early</div></div><div class="trail-note">1&nbsp;on</div><div class="nav-chev">›</div></div>
+                    </div>
+                  </div>
+
+                  <div>
+                    <div class="group-label">Support</div>
+                    <div class="card">
+                      <div class="row"><div class="lead"><div class="r-label">Contact support</div></div><div class="nav-chev">›</div></div>
+                      <div class="row"><div class="lead"><div class="r-label">Share feedback</div></div><div class="nav-chev">›</div></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <p class="frame-label">Settings · <b>everyone else</b></p>
+            <div class="device">
+              <div class="screen">
+                <div class="nav"><div class="chev">‹</div><div class="title">Settings</div><div></div></div>
+                <div class="body hub">
+                  <div class="card">
+                    <div class="row">
+                      <div class="avatar">S</div>
+                      <div class="lead"><div class="r-label">Sam</div><div class="r-sub">sam@example.com</div></div>
+                    </div>
+                    <div class="row"><div class="lead"><div class="r-label">Change password</div></div><div class="nav-chev">›</div></div>
+                  </div>
+
+                  <div>
+                    <div class="group-label">Preferences</div>
+                    <div class="card">
+                      <div class="row"><div class="lead"><div class="r-label">Notifications</div></div><div class="nav-chev">›</div></div>
+                    </div>
+                  </div>
+
+                  <div>
+                    <div class="group-label">Support</div>
+                    <div class="card">
+                      <div class="row"><div class="lead"><div class="r-label">Contact support</div></div><div class="nav-chev">›</div></div>
+                      <div class="row"><div class="lead"><div class="r-label">Share feedback</div></div><div class="nav-chev">›</div></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="note-col">
+        <h3>Invisible unless we’ve let you in</h3>
+        <p>
+          The eligibility gate is the <strong>same allowlist primitive the Ask feature already uses</strong> —
+          a list of account IDs kept in <code>app_config</code>. If your ID isn’t on it, the Beta features
+          row simply isn’t rendered. That’s the scope cut: no Premium check, no paywall, just a
+          hand-picked cohort we manage in the database.
+        </p>
+        <div class="chips">
+          <span class="chip teal">allowlist · app_config</span>
+          <span class="chip">on for your account</span>
+          <span class="chip">invisible to others</span>
+          <span class="chip">reuses Ask primitive</span>
+        </div>
+        <p>
+          The <b>“1 on”</b> hint on your row is optional polish — a quiet count of active betas, mirroring
+          how the row reads its own state. Sam’s account (right) is off the list, so the whole program is
+          absent for them.
+        </p>
+        <div class="callout">
+          <b>Why this is safe for the store.</b> Your App Review demo account isn’t on the allowlist, so
+          reviewers never encounter the unfinished widget surface. Flagging it dark <em>de-risks</em> the
+          submission instead of threatening it.
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================ THE BETA PAGE -->
+  <section class="section">
+    <h2>The beta page</h2>
+    <p class="sub">
+      One card per beta, each a plain switch you control — on to try it, off to stop. Today there is
+      exactly one: the Home screen widget. Being on the allowlist doesn’t turn anything on; it just lets
+      you see the shelf.
+    </p>
+
+    <!-- (a) nothing on -->
+    <div class="plate">
+      <div>
+        <p class="frame-label">Beta features · <b>nothing on yet</b></p>
+        <div class="device">
+          <div class="screen">
+            <div class="nav"><div class="chev">‹</div><div class="title">Beta features</div><div></div></div>
+            <div class="body">
+              <div class="intro-line">Features we’re still working on. Switch one on to try it early — you can switch it back off whenever you like.</div>
+              <div class="beta-card">
+                <div class="beta-head">
+                  <div class="ftile">
+                    <svg viewBox="0 0 24 24" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
+                  </div>
+                  <div class="lead">
+                    <div class="beta-title"><span class="t">Home screen widget</span><span class="beta-pill">Beta</span></div>
+                  </div>
+                  <div class="sw"></div>
+                </div>
+                <div class="beta-sub">See today’s log and what’s coming up from your home screen, without opening Culprit.</div>
+              </div>
+              <div class="beta-note">Beta features may change or be pulled while we work on them. Turning one on won’t affect your records.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="note-col">
+        <h3>The opt-in layer — your choice, per feature</h3>
+        <p>
+          This is the second gate. Eligibility got you the shelf; nothing on it is live until you flip it.
+          Each beta is <strong>off by default</strong>, and the intro line says so plainly.
+        </p>
+        <div class="chips">
+          <span class="chip">defaults off</span>
+          <span class="chip">reversible</span>
+          <span class="chip teal">one card per beta</span>
+          <span class="chip">records untouched</span>
+        </div>
+        <p>
+          The <b>Beta</b> pill and the intro set expectations without over-promising: these features aren’t
+          finished, and they might change. Warm and honest — no exclamation, no “new!” confetti
+          (<em>nyx-voice</em>).
+        </p>
+        <p>
+          <strong>Naming is an open call.</strong> The mock uses “Beta features”; “Labs” and “Early access”
+          are the alternates — the last reads best if this becomes a Premium perk later.
+        </p>
+      </div>
+    </div>
+
+    <!-- (b) widget on -->
+    <div class="plate">
+      <div>
+        <p class="frame-label">Beta features · <b>widget on</b></p>
+        <div class="device">
+          <div class="screen">
+            <div class="nav"><div class="chev">‹</div><div class="title">Beta features</div><div></div></div>
+            <div class="body">
+              <div class="intro-line">Features we’re still working on. Switch one on to try it early — you can switch it back off whenever you like.</div>
+              <div class="beta-card">
+                <div class="beta-head">
+                  <div class="ftile">
+                    <svg viewBox="0 0 24 24" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
+                  </div>
+                  <div class="lead">
+                    <div class="beta-title"><span class="t">Home screen widget</span><span class="beta-pill">Beta</span></div>
+                  </div>
+                  <div class="sw on"></div>
+                </div>
+                <div class="beta-sub">See today’s log and what’s coming up from your home screen, without opening Culprit.</div>
+                <div class="hint">
+                  <svg viewBox="0 0 24 24" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+                  <div class="h-text"><b>It’s on.</b> To add it: touch and hold your home screen, tap <b>+</b>, then search for Culprit.</div>
+                </div>
+              </div>
+              <div class="beta-note">Beta features may change or be pulled while we work on them. Turning one on won’t affect your records.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="note-col">
+        <h3>On is what actually starts it</h3>
+        <p>
+          Turning the widget on is what begins publishing its data to the home screen; turning it off stops
+          that cleanly. The switch is the plain truth of the preference — no separate “apply”, no lie.
+        </p>
+        <p>
+          The teal hint appears only in the on state, because that’s the one moment the instruction is
+          useful — iOS makes <em>you</em> add the widget from the home screen; the app can’t place it for you.
+        </p>
+        <div class="callout amber">
+          <b>One genuinely new build piece.</b> If you turn the widget off <em>after</em> adding it to your home
+          screen, it needs an honest “switched off” state — otherwise it falls back to the generic
+          “Sign in to start logging” placeholder, which would be a lie for a signed-in owner. That’s the
+          only new widget UI this needs, and it’s only reachable once an owner can flip it off themselves.
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================ HOW ACCESS WORKS -->
+  <section class="section">
+    <h2>How access works — two gates, never conflated</h2>
+    <p class="sub">
+      Eligibility decides whether you <em>see</em> the shelf. Opt-in decides what’s <em>on</em>. Keeping them
+      separate is the whole trick: it’s what makes the eventual Premium swap a one-line change rather than
+      a redesign.
+    </p>
+
+    <div class="plate">
+      <div style="width:100%; max-width:560px;">
+        <div class="gates">
+          <div class="gate">
+            <p class="g-tag">Gate 1 · eligibility</p>
+            <p class="g-q">On the allowlist?</p>
+            <div class="branch"><span class="yn n">No →</span><span class="bx">Beta features <b>doesn’t appear</b> in Settings at all.</span></div>
+            <div class="branch"><span class="yn y">Yes →</span><span class="bx">You see the <b>Beta features</b> shelf.</span></div>
+            <div class="owner"><b>Owned by us.</b> A list of account IDs in the database.</div>
+          </div>
+          <div class="gate">
+            <p class="g-tag">Gate 2 · opt-in</p>
+            <p class="g-q">Toggled on?</p>
+            <div class="branch"><span class="yn n">No →</span><span class="bx">Feature stays <b>off</b> (the default).</span></div>
+            <div class="branch"><span class="yn y">Yes →</span><span class="bx">Feature is <b>live</b> for your account.</span></div>
+            <div class="owner"><b>Owned by you.</b> A switch on the beta page.</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="note-col">
+        <h3>Today, and the one-line future</h3>
+        <ul class="tight">
+          <li><b>Gate 1 today</b> = the allowlist. We add an account ID in the database; that account sees the shelf. Yours is the first.</li>
+          <li><b>Gate 1 later</b> = <b>Premium member</b> — or “Premium <em>or</em> on the allowlist”, so we keep internal testers. This is the only line that changes.</li>
+          <li><b>Gate 2</b> = the toggles. This never changes.</li>
+        </ul>
+        <div class="callout">
+          <b>The swap costs nothing on this page.</b> When Premium ships (RevenueCat + entitlements), Gate 1’s
+          check moves from “is your ID on the list” to “are you Premium”. The beta page, the toggles, and the
+          widget don’t change at all — which is why we’re <em>not</em> building any of the Premium machinery now.
+        </div>
+        <p style="margin-top:14px;">
+          One honest limit worth stating: the allowlist resolves on the client, so it’s a
+          <strong>cohort gate, not a hard paywall</strong>. Perfect for a beta (worst case, someone sees a
+          widget early). When money is involved, the real enforcement is the server-side entitlement check —
+          that’s Gate 1’s future job, not the allowlist’s.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================ THE SHELF GROWS -->
+  <section class="section">
+    <h2>As the shelf grows <span style="font-family:var(--mono);font-size:14px;color:var(--ink-3);letter-spacing:0.02em;">(illustrative)</span></h2>
+    <p class="sub">
+      One beta today. The pattern is built to hold more without a redesign — every new early feature is
+      just another card with a switch. Shown here with a second, <b>illustrative</b> entry to make the
+      direction concrete.
+    </p>
+    <div class="plate">
+      <div>
+        <p class="frame-label">Beta features · <b>illustrative future</b></p>
+        <div class="device">
+          <div class="screen">
+            <div class="nav"><div class="chev">‹</div><div class="title">Beta features</div><div></div></div>
+            <div class="body">
+              <div class="intro-line">Features we’re still working on. Switch one on to try it early — you can switch it back off whenever you like.</div>
+              <div class="beta-card">
+                <div class="beta-head">
+                  <div class="ftile">
+                    <svg viewBox="0 0 24 24" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
+                  </div>
+                  <div class="lead"><div class="beta-title"><span class="t">Home screen widget</span><span class="beta-pill">Beta</span></div></div>
+                  <div class="sw on"></div>
+                </div>
+                <div class="beta-sub">See today’s log and what’s coming up from your home screen.</div>
+              </div>
+              <div class="beta-card">
+                <div class="beta-head">
+                  <div class="ftile mute">
+                    <svg viewBox="0 0 24 24" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-8.5 8.5 8.5 8.5 0 0 1-3.6-.8L3 21l1.9-5.7A8.38 8.38 0 0 1 4 11.5 8.5 8.5 0 0 1 12.5 3 8.38 8.38 0 0 1 21 11.5Z"/></svg>
+                  </div>
+                  <div class="lead"><div class="beta-title"><span class="t">Ask</span><span class="beta-pill">Beta</span></div></div>
+                  <div class="sw"></div>
+                </div>
+                <div class="beta-sub">Ask a question about your pet’s record and get a plain-language answer.</div>
+              </div>
+              <div class="beta-note">Beta features may change or be pulled while we work on them.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="note-col">
+        <h3>New betas cost one card each</h3>
+        <p>
+          <strong>Ask already lives behind the same per-account flag</strong>, so it’s the natural next
+          candidate to surface here as a self-serve beta — shown as an example, <em>not</em> committed scope.
+          Nothing else on the page moves when a beta is added or graduates out.
+        </p>
+        <p>
+          When a beta “graduates”, its card leaves the shelf and it becomes an ordinary feature — free or
+          Premium is decided by <em>that feature’s</em> nature at that time, separately from beta access. Early
+          access is a convenience; it never means a care feature gets paywalled (<em>Pets&nbsp;&gt;&nbsp;$</em>).
+        </p>
+        <div class="callout">
+          <b>Feedback is the point of a beta.</b> The “Share feedback” row already in Settings → Support is the
+          low-lift channel for round 1; a beta-specific prompt is a later nicety, not a blocker.
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <footer class="footer">
+    <p>
+      <b>Round 1 — this URL.</b> The entry point (cohort vs. everyone-else), the beta page (nothing-on / widget-on),
+      the two-gate access model, and an illustrative grown shelf. Copy is draft, written to <em>nyx-voice</em>
+      (warm, honest, reversible, no exclamation) and open to a proper voice pass before build.
+    </p>
+    <p>
+      <b>Scope locked this round (PM, 2026-08-06):</b> no Premium gating now — access is an allowlist managed in
+      the database (the Ask flag primitive); the Home screen widget is the first and only beta; everything defaults
+      off for all. Premium becomes Gate 1 later as a one-line swap.
+    </p>
+    <p>
+      <b>Real vs. illustrative:</b> the widget beta, the allowlist mechanism, the Settings placement, and the
+      SettingsRow + switch idiom are real (all already in the codebase). The second “Ask” card in the final frame
+      is illustrative of the pattern, not committed scope.
+    </p>
+    <p>
+      <b>Open items for this round:</b> (1) the name — <em>Beta features</em> / <em>Labs</em> / <em>Early access</em>;
+      (2) the optional “1 on” count on the Settings row; (3) whether feedback stays the existing Support row or gets
+      a beta-specific prompt. <b>Reuses:</b> the Ask allowlist primitive (<code>app_config</code>), the
+      <code>SettingsRow</code> + <code>Switch</code> pattern, and the existing settings sub-page navigation.
+    </p>
+  </footer>
+</div>
