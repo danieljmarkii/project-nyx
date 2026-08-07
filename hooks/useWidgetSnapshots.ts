@@ -1,7 +1,9 @@
 import { useEffect, useRef } from 'react';
-import { publishWidgetSnapshots } from '../lib/widgetSnapshot';
-import { buildWidgetProps } from '../lib/widgetProps';
+import { publishWidgetSnapshots, type SnapshotPet } from '../lib/widgetSnapshot';
+import { buildWidgetProps, type CulpritWidgetProps } from '../lib/widgetProps';
 import { publishWidgetPass } from '../lib/widgetBridge';
+import { clearWidgetData } from '../lib/appGroup';
+import { useAllowlistFlag } from './useAppConfig';
 import { useAuthStore } from '../store/authStore';
 import { useEventStore } from '../store/eventStore';
 import { usePetStore } from '../store/petStore';
@@ -21,13 +23,72 @@ import { useSyncStore } from '../store/syncStore';
 // no-op once the timeline is already v2), so a build-35 user's un-drained tap is
 // applied before the v2 publish replaces the timeline that held it.
 //
+// ── The B-712 eligibility gate (Beta features, spec §2 Gate 1 / §4.1) ─────────
+// The widget publishes REAL per-pet data only for an account in the
+// `widget_enabled` allowlist. Everyone else gets a NEUTRAL signed-in-empty
+// payload so an added widget shows the honest "No pet in this slot yet" door
+// rather than looking broken (or the "Sign in" lie) — the widget can't be hidden
+// per-account on iOS (D5), so its ungated state must be presentable, and this
+// path must ship in the App Store submission binary. The whole gate is app-process
+// JS (OTA-able); the choke is `buildWidgetPublishProps` below.
+//
 // Debounced: a burst (hydration writing dozens of rows, a log + its optimistic
 // store update) collapses into one publish. On non-iOS / entitlement-less builds
 // publishWidgetSnapshots no-ops at the container check, so this hook is inert.
 const PUBLISH_DEBOUNCE_MS = 1000;
 
+// The dependency seam for `buildWidgetPublishProps` — the real functions by
+// default, swapped in the unit test so the eligibility branches run without a
+// device (no App Group container, no SQLite). Mirrors lib/widgetBridge's DrainDeps.
+export interface WidgetPublishDeps {
+  publishSnapshots: typeof publishWidgetSnapshots;
+  clearData: typeof clearWidgetData;
+  getPets: () => SnapshotPet[];
+}
+
+function defaultPublishDeps(): WidgetPublishDeps {
+  return {
+    publishSnapshots: publishWidgetSnapshots,
+    clearData: clearWidgetData,
+    getPets: () => usePetStore.getState().pets,
+  };
+}
+
+// The eligibility gate itself (spec §2 Gate 1 / §4.1), extracted so BOTH the
+// flag-on and flag-off branches are unit-tested rather than buried in the effect
+// — the lib/widgetBridge lesson: CI cannot reach a flag's on-state unless a test
+// sets it (spec §7). Returns the props the publish pass will push to the timeline:
+//   • eligible → the real per-pet snapshot the publisher writes today.
+//   • not eligible → drop the per-pet snapshot FILES (they hold pet names, trial
+//     day counts, meal counts — health state that must not linger in the App
+//     Group for an account that shouldn't have a widget) and return a NEUTRAL
+//     signed-in-EMPTY payload. That renders the "No pet in this slot yet" door on
+//     an added widget. `signedIn` STAYS true — the "Sign in" door
+//     (`clearWidgetTimeline`, which pushes `signedIn:false`) is a lie for a
+//     signed-in owner and is deliberately NOT used here (§4.1).
+// The owner's own logs are never withheld by this gate: it runs INSIDE
+// `publishWidgetPass`, so the §3 residual-v1 drain has already applied any
+// build-35 capture to the record regardless of eligibility — the gate withholds
+// the widget's DATA, not the log.
+export async function buildWidgetPublishProps(
+  eligible: boolean,
+  deps: WidgetPublishDeps = defaultPublishDeps(),
+): Promise<CulpritWidgetProps> {
+  if (!eligible) {
+    deps.clearData();
+    return buildWidgetProps({ index: null, snapshots: [], signedIn: true });
+  }
+  const { snapshots, index } = await deps.publishSnapshots(deps.getPets());
+  return buildWidgetProps({ index, snapshots, signedIn: true });
+}
+
 export function useWidgetSnapshots() {
   const { session } = useAuthStore();
+  // Gate 1 (server allowlist). Render-only + fail-CLOSED (useAllowlistFlag): an
+  // unset / unreachable / malformed flag, or a signed-out caller, resolves false
+  // → the neutral empty path. In the effect deps below, so adding or removing the
+  // account from the allowlist re-publishes on the next config refresh.
+  const widgetEligible = useAllowlistFlag('widget_enabled');
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -49,11 +110,11 @@ export function useWidgetSnapshots() {
     let drainDone = false;
 
     const publish = async () => {
+      // `buildWidgetPublishProps` chooses real data vs. the neutral empty payload
+      // by eligibility; `publishWidgetPass` runs the §3 drain first and only
+      // publishes on a clean drain (so a failed build-35 capture is never lost).
       const { drainComplete } = await publishWidgetPass(
-        async () => {
-          const { snapshots, index } = await publishWidgetSnapshots(usePetStore.getState().pets);
-          return buildWidgetProps({ index, snapshots, signedIn: true });
-        },
+        () => buildWidgetPublishProps(widgetEligible),
         { needsDrain: !drainDone },
       );
       if (drainComplete) drainDone = true;
@@ -83,5 +144,5 @@ export function useWidgetSnapshots() {
         timer.current = null;
       }
     };
-  }, [session]);
+  }, [session, widgetEligible]);
 }
