@@ -125,6 +125,27 @@ The gap was presentational, not principled: Dr. Chen's own sanctioned sentence (
 - **The Change Contract** (§7) negotiated and folded into round 2; supersedes R1-3.
 - **Round 2** (2026-08-07): republished to the same artifact URL — the Change Contract section + demo frame (CC-1), the rebuilt §02 spine (round 1's CSS-counter chips failed to render on the PM's device), the receipt-shape table (dot lane / binned bars / stacked compare + S10 assignments), the acknowledgment sequence (2b′), the lighter rough morning (3a′), the E1/E2 empty-state frames, the de-calendared week (4a′), and the build-contract section.
 - No app code, no schema, no engine/phrasing changes at any point in this session.
-- Next: PM reacts R2-1…R2-6 (R2-6 bundles the four round-1 leftovers: rung pick, spine S1–S10, D8 paper-close, N4/N7 absorption) → ruling all of them turns round 3 into the requirements doc rather than another mock round.
+- Round-2 PM reactions landed 2026-08-07 → §9. Round 3 = the requirements doc (`docs/nyx-signal-home-requirements.md`), written same session.
+
+## 9. Round-2 PM reactions (2026-08-07) + the delegated decisions
+
+**Explicit rulings:**
+
+1. **CC-1 "dense" + CC-2 "baseline is more helpful — more streamlined" → the pair-chips are OUT; the sentence carries the change.** This is the Change Contract **v1.1**: everything semantic stands (engine-computed change states, count-anchored language, the density gate, the trial adjacency, the residual vetoes — all inside Dr. Chen's sanctioned envelope, so no re-negotiation needed; sentence-only was his opening preference), but the presentation is sentence-first. The chip inventory shrinks to two: the existing `Early pattern` tag and a small `New` (which carries the one fact a sentence naturally doesn't — that this pattern wasn't here last generation). `Day N` / `Since March` chips die with the pair-chips (they duplicated their sentences — CC-1's density was exactly this). S10 now governs chips as well as strips: anything on the meta row must carry something the sentence doesn't.
+2. **Receipt shapes: A + C in, B out.** "Shape B seems chunky and gives less granular information than A." Large-n degradation re-ruled: when a dot lane outgrows countable dots, it degrades to **Shape C** (the within-window vs outside counts as stacked compare), never to bins.
+3. **Dot lane re-affirmed** ("the third… dot style distribution curve is an awesome representation" — the ack sequence's payoff panel).
+4. **Empty state: confirmed, "love it," + "work in some color"** → E1-c color variant drawn in round 2.1 (washes on the ghost receipts — teal/slate, nothing alarm-adjacent, no fake data).
+5. **4a′ stacked-bars week: "I LOVE the bar charts."** Visual confirmed.
+
+**Delegated decisions (PM: "if there are high priority items there, brief me; if not, decide for me" — none met the brief bar; all four decided per the standing recommendations, vetoable):**
+
+- **R2-3 ack sequence: KEEP** (no objection raised, the payoff panel drew the "awesome," machinery already ships; one conditional line).
+- **R2-6a rung pick: RUNGS 1+2** (rung 1 is ratified-owed work; rung 2 is where the PM's strongest reactions landed; rung 3 briefing follows as its own phase once the card system is real — its 3a′ lightening is recorded for that phase).
+- **R2-6b spine: RATIFIED S1–S10** as this track's standing spec (S5 rewritten sentence-first per v1.1). The S1/S6 Tier-2 `design-principles.md` additions remain **flagged, not written** — proposed wording ships in the requirements doc §10 for PM approval per the Tier-2 protocol.
+- **R2-6c D8: PAPER-CLOSED LIGHT, night variant unbuilt.** Proposed B-284 §7.2/§7.4 amendment text in the requirements doc §10 — flagged, not written.
+- **R2-6d N4/N7: ABSORBED.** `docs/nyx-signal-home-requirements.md` is now the canonical spec for the Signal/Home surface; the B-284 pointer note is likewise a flagged Tier-2 edit.
+- **R2-4 weekly review: PARKED, first in queue post-build** (the LOVE on 4a′'s bars is recorded; it re-enters as its own discovery once rungs 1–2 are building — the compare treatment it needs ships anyway).
+
+**Round 2.1** republished to the same artifact URL with the rulings annotated in place (CC-2 baseline marked ruled, Shape B struck, E1-c drawn, §08/§09 resolved).
 
 **Persona sign-off (exploration):** Designer ✓ (ladder + spine authored; conflicts surfaced not resolved) — Jordan ✓ / Sam ✓ / Dr. Chen ✓ (interviewed in isolation; verdicts recorded verbatim above) — Data Scientist ✓ (all proposed visuals count-backed, control-sided, floor-gated; no new statistics) — Dir. of Eng ✓ (rungs 1–2 zero-server/zero-dep confirmed against the payload map; rung-4 costs named) — QA N/A (no build) — T&S ✓ (no data-boundary change; the timezone/`feedingFormsInEvidence` fields stay unrendered).
