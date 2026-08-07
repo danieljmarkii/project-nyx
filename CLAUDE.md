@@ -264,6 +264,16 @@ Then read the relevant docs for the confirmed build step before writing any code
 
 **Shortcut:** run `/kickoff` to auto-generate this orientation — it reads `STATUS.md`, surfaces any backlog item that blocks the current Phase, and proposes a concrete first task. It's the mirror of `/wrap`.
 
+### Presenting decisions to the PM — decision briefs (instituted 2026-08-07, PM directive)
+
+Whenever a PM decision is requested — an Open Questions row, a mock round's reaction prompts (R-x), a decision gate in a session summary, or an escalated persona conflict — present each decision as a **decision brief**, not a bare question:
+
+- **Deciding:** one line on what actually changes based on the answer.
+- **Options:** the 2–4 real options, each ≤1 line, with the team's **recommendation marked and its one-line why**. If there's a genuine persona conflict, name the dissent instead of a recommendation (Conflict Protocol still applies).
+- **Consequence:** one line on what the ruling unblocks or forecloses (build scope, spec edits, deferrals).
+
+Keep each brief to ~4 lines. The bar: the PM can rule from the brief alone, without re-reading the underlying doc. A bare "thoughts?" or an option list with no recommendation is not a decision request. This applies everywhere decisions are surfaced — chat wrap-ups, mock React sections, session docs, and Open Questions rows alike.
+
 ### Definition of Done — Before Saying "Done"
 
 Before reporting a feature, sub-step, or PR as complete, run this checklist explicitly and surface pass/fail. Do not collapse it to "looks good."
