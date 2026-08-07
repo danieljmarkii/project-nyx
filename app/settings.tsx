@@ -188,9 +188,14 @@ export default function SettingsScreen() {
               Pattern 3 bars "coming soon", and keeping one directly under a
               newly-working row would re-create the half-built signal D4 removed.
               A real answer, and the current one for an owner who has lost their
-              signup mailbox (spec §5.7 / §11). */}
+              signup mailbox (spec §5.7 / §11).
+              "instead" is load-bearing: this note sits immediately under the
+              working Change-password row, so without it the "contact support"
+              reads as the PASSWORD path (the exact misread reported from an older
+              build where password itself routed to support). It scopes the support
+              route to EMAIL only — password is a real in-app screen now. */}
           <Text style={styles.accountNote}>
-            To change your account email, contact support.
+            To change your account email instead, contact support.
           </Text>
         </Card>
 
