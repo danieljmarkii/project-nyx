@@ -76,7 +76,7 @@ interface RegimenDisplay extends Regimen {
   // set). Carries the "Dose {n} of {target}" line + its bar fraction; when null the
   // card renders the days/ongoing path unchanged.
   doseCourse: DoseCourseProgress | null;
-  // B-710 — has this ACTIVE course reached its planned end (dose count or day span)?
+  // B-719 — has this ACTIVE course reached its planned end (dose count or day span)?
   // Drives the confirm-in-the-loop "Is this course finished?" prompt on the card.
   courseEnd: PlannedEndState;
 }
@@ -122,7 +122,7 @@ function buildRegimenDisplay(reg: Regimen, tally: AdherenceTally): RegimenDispla
     complianceLine: regimenComplianceLine(compliance),
     flagLine: regimenFlagLine(tally),
     doseCourse,
-    // B-710 — the finish-prompt trigger, composed from the two existing course
+    // B-719 — the finish-prompt trigger, composed from the two existing course
     // definitions (doseCourse.atTarget for the dose trigger, daysElapsed vs
     // target_duration_days for the day trigger). Pure + unit-tested in
     // lib/medications so the "reached its planned end" read can't drift per surface.
@@ -1040,7 +1040,7 @@ export default function ProfileScreen() {
                       )}
                     </>
                   )}
-                  {/* B-710 — confirm-in-the-loop: an ACTIVE course that has reached its
+                  {/* B-719 — confirm-in-the-loop: an ACTIVE course that has reached its
                       planned end (dose count or day span) offers a calm finish prompt.
                       Replaces B-642's inert "vet's call" note under a full dose bar —
                       the note described the moment but gave no way to act on it, so a
@@ -1062,7 +1062,7 @@ export default function ProfileScreen() {
                         })}{' '}
                         {COURSE_END_PROMPT_QUESTION}
                       </Text>
-                      {/* B-710 finding ④ — the vet-deferral hedge, restored at B-642's
+                      {/* B-719 finding ④ — the vet-deferral hedge, restored at B-642's
                           original quiet register. The app cannot tell a taper / "finish
                           till the recheck" course from a simple one, so the prompt keeps
                           a short "your vet's call" beside the question rather than nudging
@@ -1568,7 +1568,7 @@ const styles = StyleSheet.create({
     fontSize: theme.textSM,
     color: theme.colorTextSecondary,
   },
-  // ── B-710 — the confirm-in-the-loop finish prompt (replaces B-642's inert note) ──
+  // ── B-719 — the confirm-in-the-loop finish prompt (replaces B-642's inert note) ──
   // The question sits in the card's primary ink at medium weight — a shade more present
   // than the secondary count/compliance lines around it — so the "reached its end"
   // moment reads as something to attend to. The accent-light button is the discoverable
@@ -1586,7 +1586,7 @@ const styles = StyleSheet.create({
     fontWeight: theme.weightMedium,
     lineHeight: theme.lineHeightSM,
   },
-  // The vet-deferral hedge (B-710 finding ④) — B-642's note register verbatim: the same
+  // The vet-deferral hedge (B-719 finding ④) — B-642's note register verbatim: the same
   // quiet textSM/secondary as the compliance line it sits near, so it reads as context,
   // not the CTA (the button is the CTA), while still restoring the early-stop hedge.
   coursePromptHedge: {
@@ -1599,7 +1599,9 @@ const styles = StyleSheet.create({
     borderRadius: theme.radiusSmall,
     paddingVertical: theme.space1,
     paddingHorizontal: theme.space2,
-    minHeight: 40,
+    // 44pt tap-target floor — the same one cardActionTouch documents on this screen,
+    // reached here by height (this is a filled button) rather than by hitSlop.
+    minHeight: 44,
     justifyContent: 'center',
   },
   coursePromptButtonText: {

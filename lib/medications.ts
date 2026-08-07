@@ -1141,9 +1141,9 @@ export interface DoseCourseProgress {
    *  a warm "log the first" line over a refusal record is one of the four things
    *  the med surfaces must never say (med-strip spec §6). */
   fresh: boolean;
-  /** B-642 / B-710: count has reached (or passed) the target, so the bar is full —
+  /** B-642 / B-719: count has reached (or passed) the target, so the bar is full —
    *  a full bar reads as "done", the early-stop risk D7 addresses. B-642 met it with a
-   *  passive "vet's call" note; B-710 replaces that note with the confirm-in-the-loop
+   *  passive "vet's call" note; B-719 replaces that note with the confirm-in-the-loop
    *  finish prompt (courseReachedPlannedEnd reads this flag as the DOSE trigger). D7
    *  still holds: this helper emits no completion or stop word. */
   atTarget: boolean;
@@ -1173,7 +1173,7 @@ export function doseCourseProgress(tally: AdherenceTally, target: number): DoseC
   return { count, target, line, barFraction, pastTarget, fresh, atTarget };
 }
 
-// ── B-710 — has an ACTIVE course reached its planned end? ─────────────────────
+// ── B-719 — has an ACTIVE course reached its planned end? ─────────────────────
 // The ONE predicate behind the confirm-in-the-loop finish prompt on the profile
 // "Current medications" card (docs/culprit-med-course-end-mockups.html). A course
 // with a defined end — a dose count OR a day span — reaches it, and the card then
@@ -1245,7 +1245,7 @@ export function courseReachedPlannedEnd(input: {
   return COURSE_NOT_ENDED;
 }
 
-// B-710 — the finish-prompt copy. A short FACT lede per denomination, then the shared
+// B-719 — the finish-prompt copy. A short FACT lede per denomination, then the shared
 // question, a vet-deferral hedge, and the action. The lede states the RECORD/CALENDAR
 // fact and never the pet's wellness (clinical-guardrails):
 //   • The DOSE lede says the prescribed doses are all LOGGED — never "has had"/"given".
@@ -1254,13 +1254,13 @@ export function courseReachedPlannedEnd(input: {
 //     case given=0/partial=30/target=28 → "had all 28" when none were fully given), and
 //     the prompt text renders MORE prominently than the flag line that would correct it.
 //     "are all logged" is true regardless of the given/partial split (adversarial-reviewer
-//     B-710, finding ③).
+//     B-719, finding ③).
 //   • The DAY lede speaks only to the calendar, so it stays true even when doses were
 //     missed — it must never imply full compliance (the misses show on the flag/compliance
 //     line, never here).
 // nyx-voice: pet by name on the dose lede, specific over generic, no exclamation.
 //
-// THE HEDGE IS LOAD-BEARING, not decoration (adversarial-reviewer B-710, finding ④).
+// THE HEDGE IS LOAD-BEARING, not decoration (adversarial-reviewer B-719, finding ④).
 // B-642's note ("when the course ends is your vet's call") existed to stop a full bar
 // reading as "stop now"; the PM's first call was to drop it as redundant with the dosing
 // schedule. The adversarial pass found the exception that reopens it: on a course the app

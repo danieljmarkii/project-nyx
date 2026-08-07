@@ -290,6 +290,10 @@ Nearest live PM gates, none of which block code already in flight:
 
 ## Open PM Action Items
 
+**Medication course-end prompt (B-719, #600) — one copy call; the rest is device QA**
+- [ ] **Confirm the finish-prompt hedge wording (④).** The card now offers "Is this course finished?" with a restored vet-deferral hedge — *"Your vet has the final say."* — the safe default the adversarial pass required after it found a bare question nudges an abrupt stop on a taper (e.g. a prednisolone entered as a fixed course) the app can't distinguish from a simple one. Options: keep it (recommended), go fuller (mock variant B's full deferral), or drop the hedge and accept the taper risk (needs explicit sign-off). One-line change either way.
+- [ ] **On-device QA of the finish prompt** (Manual QA in `docs/sessions/2026-08-06-b719-medication-course-end-prompt.md` / PR #600): a dose course at target and a day course past its span show the prompt; "Mark as finished" moves the course to Past ("Ended"); an ongoing/PRN course and a mid-course regimen show no prompt.
+
 **Trial protein (B-704) — one Tier-2 spec ratification from PR 5 (#598), ~2 minutes**
 - [ ] **Ratify (or override) the PR 5 §7.4 amendment.** Both review gates showed §7.4's ruled treatment — a "disclosure line" for the mismatch + "stored-first" exposure attribution — produced a false-reassurance / self-contradictory vet report on the wrong-primary case (owner recorded rabbit, trial food label reads duck). PR 5 instead: **(a)** promotes the target-vs-label mismatch to a `protein_mismatch` **safety flag** (per the ratified B-494 rule — a report that teaches a reader to scan a zone may not leave it silent on trouble the record knows about), and **(b)** makes exposure attribution **derived-first with a stored fallback** so markings/counts/footnote/identity share one baseline (§7.4's "survives thin food data" intent preserved). Shipped provisionally under the blocking-issue rule; `adversarial-reviewer` PASS + `vet-report-cold-read` CLINIC-READY on both artifacts. If ratified I'll write the Tier-2 edit to `docs/nyx-trial-protein-requirements.md` §7.4.
 

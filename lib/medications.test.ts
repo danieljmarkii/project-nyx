@@ -2278,7 +2278,7 @@ describe('mapDoseRowsToAttributable — dose embed → AttributableDose', () => 
   });
 });
 
-describe('courseReachedPlannedEnd (B-710) — the finish-prompt trigger', () => {
+describe('courseReachedPlannedEnd (B-719) — the finish-prompt trigger', () => {
   // Real DoseCourseProgress values, built through the shipped helper so the test
   // exercises the SAME atTarget definition the card does (never a hand-faked shape).
   const doseAtTarget = doseCourseProgress(tally({ given: 28 }), 28); // 28/28 → atTarget
@@ -2309,7 +2309,7 @@ describe('courseReachedPlannedEnd (B-710) — the finish-prompt trigger', () => 
     });
 
     it('fires when the count is reached with PARTIAL doses (dosesTowardTarget = given + partial)', () => {
-      // adversarial-reviewer B-710 finding ③: the target is reachable WITH partials in the
+      // adversarial-reviewer B-719 finding ③: the target is reachable WITH partials in the
       // count, so the trigger must still fire here — and the record-framed lede (not "has had
       // all N given") is what keeps it from overstating delivery. See courseEndPromptLede tests.
       const partialsAtTarget = doseCourseProgress(tally({ partial: 30 }), 28);
@@ -2320,7 +2320,8 @@ describe('courseReachedPlannedEnd (B-710) — the finish-prompt trigger', () => 
     });
 
     it('never prompts a dose course that is not active (status gate — H1/B-422)', () => {
-      for (const status of ['completed', 'paused', 'archived']) {
+      // the real medication_status enum's non-active values (migration 020)
+      for (const status of ['completed', 'stopped']) {
         expect(courseReachedPlannedEnd({
           status, doseCourse: doseAtTarget, targetDurationDays: null, daysElapsed: null,
         }).reached).toBe(false);
@@ -2393,7 +2394,7 @@ describe('courseReachedPlannedEnd (B-710) — the finish-prompt trigger', () => 
   });
 });
 
-describe('courseEndPromptLede (B-710) — the fact lede', () => {
+describe('courseEndPromptLede (B-719) — the fact lede', () => {
   it('the dose lede names the pet and record-frames the count (never a delivery claim)', () => {
     expect(courseEndPromptLede({
       denomination: 'doses', petName: 'Nyx', targetDoses: 28, targetDays: null,
@@ -2406,7 +2407,7 @@ describe('courseEndPromptLede (B-710) — the fact lede', () => {
     })).toBe("Mochi's dose is logged.");
   });
 
-  // adversarial-reviewer B-710 finding ③: dosesTowardTarget = given + partial, so a course
+  // adversarial-reviewer B-719 finding ③: dosesTowardTarget = given + partial, so a course
   // reaches its target WITH partials in the count. The lede must state the RECORD ("logged"),
   // never a delivery claim ("has had all N given"), which would be false when partials made
   // up the count — and it renders MORE prominently than the flag line that corrects it.
