@@ -148,4 +148,10 @@ The gap was presentational, not principled: Dr. Chen's own sanctioned sentence (
 
 **Round 2.1** republished to the same artifact URL with the rulings annotated in place (CC-2 baseline marked ruled, Shape B struck, E1-c drawn, §08/§09 resolved).
 
+## 10. Finalization (2026-08-07, PM: "add a feature flag requirement here and then finalize")
+
+- Spec bumped **v1.0 → v1.1 FINALIZED**: §7 gains **FR-FLAG-1..5** as hard requirements — no leak (all-or-nothing per screen), byte-identical flag-off (snapshot-pinned per PR), seed-first (SR-0 before any UI merge), **beta-shelf before GA** (the feature joins the B-712 shelf at its Phase 2, `eligible && optedIn`, and may not GA without having been available through it — enablement always flows through the beta workflow; allowlist-only is the dark/dogfood phase), retire-by-GA-call-only. SD-10 added to the decision record (parallel sequencing vs B-712 — no coupling, the shelf row snaps in when Phase 2 lands).
+- Mock **round 2.1 marked FINAL / design-locked** — the design authority for SR-1–SR-6; republished to the same artifact URL. The one intentionally-open design pick: E1 vs E1-c intensity, decided on-device at SR-2's QA.
+- Track state at close: **spec finalized, mocks locked, PR #606 carries the full record** — build starts at SR-0.
+
 **Persona sign-off (exploration):** Designer ✓ (ladder + spine authored; conflicts surfaced not resolved) — Jordan ✓ / Sam ✓ / Dr. Chen ✓ (interviewed in isolation; verdicts recorded verbatim above) — Data Scientist ✓ (all proposed visuals count-backed, control-sided, floor-gated; no new statistics) — Dir. of Eng ✓ (rungs 1–2 zero-server/zero-dep confirmed against the payload map; rung-4 costs named) — QA N/A (no build) — T&S ✓ (no data-boundary change; the timezone/`feedingFormsInEvidence` fields stay unrendered).

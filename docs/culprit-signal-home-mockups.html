@@ -289,7 +289,7 @@
   <header class="mast">
     <p class="eyebrow">
       <span>Culprit</span><span>Signal &amp; Home design exploration</span><span>B-718</span><span>2026-08-07</span>
-      <span class="roundtag"><b>Round 2.1</b>&nbsp;— ruled 2026-08-07 · supersedes round 1</span>
+      <span class="roundtag"><b>Round 2.1 — FINAL</b>&nbsp;· design-locked 2026-08-07 · supersedes round 1</span>
     </p>
     <h1>Round 2: the Change Contract,<br/>selective receipts, and the empty state that earns trust.</h1>
     <p class="standfirst">
@@ -825,13 +825,14 @@
       </div>
     </div>
     <div class="col">
-      <h3>Build contract additions (your two directives, recorded)</h3>
-      <p><strong>Beta-flagged rollout.</strong> The redesigned surface ships dark behind <code>signal_design_v2</code> —
-      an <code>app_config</code> allowlist flag via the B-712 primitive (the <code>widget_enabled</code> shape,
-      account-gated, resolved by <code>useAllowlistFlag</code>), so it enables cohort-by-cohort through the beta
-      workflow. Flag-off renders the shipped surface untouched; the flip is data-driven, no second binary. Client-only
-      pieces gate client-side; the day any piece costs server money (prior-set memory), that piece gates server-side
-      too — the B-712 rule.</p>
+      <h3>Build contract additions (your directives, recorded — now FR-FLAG in the spec)</h3>
+      <p><strong>Beta-flagged rollout is a hard requirement (FR-FLAG-1..5, spec §7).</strong> The surface ships dark
+      behind <code>signal_design_v2</code> (the B-712 allowlist shape): no partial leaks, flag-off byte-identical and
+      snapshot-pinned, the seed migration (SR-0) lands before any UI PR, the feature joins the beta shelf at B-712
+      Phase 2 (<code>eligible && optedIn</code>) and <strong>may not GA before it has been available through the
+      shelf</strong> — enablement always flows through the beta workflow. The flag retires only on an explicit PM GA
+      call. Client-only pieces gate client-side; anything with per-cohort server cost would gate server-side too
+      (checked: nothing in rungs 1+2 does).</p>
       <p><strong>The empty state is an AC, not an afterthought.</strong> E1/E2 (or their round-3 successors) ship with
       rung 1 — the building state is most owners' first week with the product's centerpiece, and it must inspire the
       confidence that keeps them logging until the first real finding lands.</p>
@@ -906,8 +907,8 @@
   </section>
 
   <p class="provenance">
-    Round 2.1 · ruled 2026-08-07 · supersedes round 1 (2026-08-06) — round-1 frames 1a/1b/1c, 2a, 3b remain reference drawings; the household frame, week-grid, pair-chips and Shape B are dead.
-    Build contract: <code>docs/nyx-signal-home-requirements.md</code> (rungs 1+2).
+    Round 2.1 — FINAL · design-locked 2026-08-07 · supersedes round 1 (2026-08-06) — round-1 frames 1a/1b/1c, 2a, 3b remain reference drawings; the household frame, week-grid, pair-chips and Shape B are dead.
+    This page is the design authority for build PRs SR-1–SR-6. Build contract: <code>docs/nyx-signal-home-requirements.md</code> v1.1 (FINALIZED — rungs 1+2, FR-FLAG). The one intentionally-open design pick: E1 vs E1-c intensity, decided on-device at SR-2's QA.
     Full record incl. interview transcripts, the 14 round-1 reactions, and the Change Contract negotiation:
     <code>docs/sessions/2026-08-06-signal-home-design-exploration.md</code>.
     Frames render the shipping light system with real <code>constants/theme.ts</code> values; every round republishes to this same artifact URL.

@@ -1,6 +1,6 @@
 # Culprit — Signal / Home Design Uplift Requirements (B-718)
 
-**Version:** 1.0 (build-ready for rungs 1+2) · **Date:** 2026-08-07 · **Owner:** Sr. Product Designer, ratified by PM through mock rounds 1–2.1
+**Version:** 1.1 (**FINALIZED** — build-ready for rungs 1+2) · **Date:** 2026-08-07 (finalized same day; v1.1 adds FR-FLAG) · **Owner:** Sr. Product Designer, ratified by PM through mock rounds 1–2.1
 **Provenance:** `docs/sessions/2026-08-06-signal-home-design-exploration.md` (interviews, research, the team review, the Change Contract negotiation, every PM ruling) + `docs/culprit-signal-home-mockups.html` (round 2.1, the design authority — artifact 🌒, same-URL across rounds).
 **This doc is the canonical spec for the Signal/Home surface** (R2-6d absorption ruling): B-284's N4/N7 narrow to pointers here (Tier-2 edit pending, §10). It composes with — never modifies — `docs/nyx-ai-signal-requirements.md` (the engine/spec substrate; its §3.2/§11f per-type-presentation mandate is what rung 1 finally executes).
 
@@ -21,6 +21,7 @@ Every decision below is PM-ruled (mock rounds 1–2.1, 2026-08-06/07) or PM-dele
 | SD-7 | D8 (Signal night ground) | **Paper-closed LIGHT, night variant unbuilt** [D]. B-284 §7.2/§7.4 amendment text in §10. The record surface stays in daylight (S7). |
 | SD-8 | Rollout | **Ships dark behind `signal_design_v2`** — `app_config` allowlist flag via the B-712 primitive (PM directive). §7. |
 | SD-9 | Weekly review | Parked [D]; re-enters as its own discovery once SR-1..SR-3 are building. The stacked-compare treatment it needs ships anyway (Shape C). |
+| SD-10 | Flag requirement + sequencing | **FR-FLAG is a hard requirement** (§7) and the build runs **parallel to B-712** (PM-directed 2026-08-07): allowlist-only enablement during the dark phase; the beta-shelf entry snaps in at B-712 Phase 2 and is **required before GA** — enablement always flows through the beta workflow. |
 
 ## 1. Scope
 
@@ -83,7 +84,15 @@ Negotiated with Dr. Chen under the PM's consumer-centric directive (full negotia
 **E2 — mature, nothing established:** the shipped B-284 §9 copy verbatim + the top B-053 coverage diagnostic as the one calm corrective (shipped behavior, restyled into the new card rhythm).
 Presence rules unchanged from the shipped `useSignal` display states; nothing here reads absence as wellness (E2's copy says so explicitly).
 
-## 7. Flag + rollout
+## 7. Flag + rollout — FR-FLAG (hard requirement, PM-directed 2026-08-07)
+
+Five clauses, each an enforceable requirement, not guidance:
+
+- **FR-FLAG-1 · No leak.** Every user-facing change in this track renders only when `signal_design_v2` resolves eligible. No partial adoption: a screen either renders the shipped surface or the new one, never a mix.
+- **FR-FLAG-2 · Byte-identical off.** Flag-off renders the shipped surface unchanged, snapshot-pinned as a per-PR AC (§11).
+- **FR-FLAG-3 · Seed first.** SR-0 (the flag's seed migration) merges and is applied live before any UI PR merges.
+- **FR-FLAG-4 · Beta-shelf before GA.** When B-712 Phase 2 ships the beta page, this feature joins it (`eligible && optedIn`, the two-gate composition below) — and the feature may not GA before it has been available through the beta shelf. Enablement always flows through the beta workflow; the allowlist-only mode is the dark/dogfood phase, not a parallel distribution channel.
+- **FR-FLAG-5 · Retire by GA call only.** The flag comes out via a removal PR on an explicit PM GA ruling, never silently.
 
 `signal_design_v2` — an `app_config` allowlist flag (the B-712 / `widget_enabled` shape, decoded by `resolveAllowlistFlag`/`useAllowlistFlag`), **seeded in its own schema-isolated migration PR (SR-0), default nobody**. Flag-off renders the shipped surface byte-identical; flag-on renders this track. Every client PR lands dark behind it. The SR-4 server additions are **flag-independent and behavior-additive** (new payload fields old clients ignore; the density gate only ever *withholds* a comparison, which is safe in both worlds — Dr. Chen's fail-toward-escalation direction). Cohort enablement = an `app_config` UPDATE (PM action, same as the widget's). Cleanup: when the PM calls the design GA, the flag retires in a removal PR (flag-off path deleted); until then both paths are test-covered.
 
@@ -129,7 +138,7 @@ SR-1/SR-2 are disjoint and parallel-safe (separate sessions/branches; the one co
 
 ## 11. Acceptance criteria (QA-enforced per PR; verified flag-on AND flag-off)
 
-- Flag-off: the shipped surface renders byte-identical (snapshot-pinned).
+- FR-FLAG-1..3 hold on every PR: no surface in this track renders outside `signal_design_v2`; flag-off is byte-identical (snapshot-pinned); SR-0 applied before any UI merge. FR-FLAG-4's composition is test-asserted when the B-712 shelf lands.
 - Every receipt obeys S2 (control side present at the layer it fits) and S10 (no strip duplicating its sentence); safety card faces carry no strip/graphic (S1, snapshot-pinned).
 - A→C degradation fires at the cap; dots never overlap illegibly (fixture at cap±1).
 - Change clauses present in every change-capable template (test-pinned); no banned vocabulary (regex screens); a11y labels are full sentences.
