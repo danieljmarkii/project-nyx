@@ -1,0 +1,907 @@
+<title>Culprit — Signal &amp; Home design exploration</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  /* ============================================================
+     Signal / Home design exploration — B-718, mock ROUND 1
+     (exploratory — a comparison round, nothing here is locked).
+
+     Document chrome follows the house mock convention: cool paper
+     tinted toward the brand indigo in light, the app's real night
+     tokens in dark. DEVICE FRAMES stay light in both themes on
+     purpose — they render the app's shipping light surfaces, and
+     flipping them would misrepresent what ships (and would beg the
+     exact D8 question §8 recommends closing as "light").
+
+     Frame values are the real tokens from constants/theme.ts, so
+     a build copies rather than approximates.
+     ============================================================ */
+
+  :root {
+    --paper:      #F5F4F9;
+    --paper-2:    #FFFFFF;
+    --ink:        #1B1A2E;
+    --ink-2:      #5F5C7A;
+    --ink-3:      #8B87A8;
+    --rule:       #DEDCE9;
+    --rule-soft:  #E9E7F1;
+    --teal:       #00C2A8;   /* theme.colorAccent */
+    --teal-ink:   #0B7B6C;   /* theme.colorAccentInk */
+    --teal-wash:  #E0FBF7;   /* theme.colorAccentLight */
+    --rose:       #F43F5E;   /* theme.colorEventSymptom */
+    --rose-ink:   #B4123B;
+    --rose-wash:  #FFE4E6;
+    --med:        #5B7A9E;   /* theme.colorEventMedication */
+    --med-wash:   #EAF0F7;
+
+    --serif: ui-serif, Charter, "Bitstream Charter", "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper:     #13112E;  /* theme.colorBrandNight */
+      --paper-2:   #1D1A42;
+      --ink:       #ECEAF6;
+      --ink-2:     #A6A2CE;
+      --ink-3:     #706BA6;
+      --rule:      rgba(196,190,255,0.20);
+      --rule-soft: rgba(196,190,255,0.11);
+      --teal-ink:  #4FD8C4;
+      --teal-wash: rgba(0,194,168,0.14);
+      --rose-ink:  #FB7185;
+      --rose-wash: rgba(251,113,133,0.14);
+      --med:       #93B0CE;
+      --med-wash:  rgba(91,122,158,0.18);
+    }
+  }
+  :root[data-theme="light"] {
+    --paper: #F5F4F9; --paper-2: #FFFFFF; --ink: #1B1A2E; --ink-2: #5F5C7A;
+    --ink-3: #8B87A8; --rule: #DEDCE9; --rule-soft: #E9E7F1;
+    --teal-ink: #0B7B6C; --teal-wash: #E0FBF7;
+    --rose-ink: #B4123B; --rose-wash: #FFE4E6;
+    --med: #5B7A9E; --med-wash: #EAF0F7;
+  }
+  :root[data-theme="dark"] {
+    --paper: #13112E; --paper-2: #1D1A42; --ink: #ECEAF6; --ink-2: #A6A2CE;
+    --ink-3: #706BA6; --rule: rgba(196,190,255,0.20); --rule-soft: rgba(196,190,255,0.11);
+    --teal-ink: #4FD8C4; --teal-wash: rgba(0,194,168,0.14);
+    --rose-ink: #FB7185; --rose-wash: rgba(251,113,133,0.14);
+    --med: #93B0CE; --med-wash: rgba(91,122,158,0.18);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--paper); color: var(--ink);
+    font-family: var(--sans); font-size: 16px; line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 56px 28px 96px; }
+  .col  { max-width: 68ch; }
+
+  .mast { border-bottom: 1px solid var(--rule); padding-bottom: 28px; margin-bottom: 40px; }
+  .eyebrow {
+    font-family: var(--mono); font-size: 11px; letter-spacing: 0.14em;
+    text-transform: uppercase; color: var(--ink-3); margin: 0 0 14px;
+    display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center;
+  }
+  h1 {
+    font-family: var(--serif); font-weight: 600; font-size: clamp(30px, 4.4vw, 44px);
+    line-height: 1.12; letter-spacing: -0.015em; margin: 0 0 14px; text-wrap: balance;
+  }
+  .standfirst { font-size: 17px; color: var(--ink-2); margin: 0; max-width: 62ch; }
+  .standfirst strong { color: var(--ink); font-weight: 600; }
+  .roundtag {
+    display: inline-flex; align-items: center; gap: 7px;
+    font-family: var(--mono); font-size: 11px; letter-spacing: 0.1em;
+    text-transform: uppercase; font-weight: 600;
+    color: var(--teal-ink); background: var(--teal-wash);
+    border-radius: 999px; padding: 4px 11px;
+  }
+  .roundtag::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+
+  section { margin-top: 72px; }
+  .sec-head { display: flex; align-items: baseline; gap: 14px; margin-bottom: 8px; border-top: 1px solid var(--rule); padding-top: 18px; }
+  .sec-num { font-family: var(--mono); font-size: 12px; color: var(--ink-3); letter-spacing: 0.08em; flex-shrink: 0; }
+  h2 { font-family: var(--serif); font-weight: 600; font-size: clamp(22px, 2.6vw, 28px); line-height: 1.2; letter-spacing: -0.01em; margin: 0; text-wrap: balance; }
+  h3 { font-weight: 600; font-size: 15px; margin: 32px 0 8px; }
+  p { margin: 0 0 16px; }
+  .col p:last-child { margin-bottom: 0; }
+  em { font-style: italic; color: var(--ink-2); }
+  strong { font-weight: 600; }
+  code { font-family: var(--mono); font-size: 0.855em; background: var(--rule-soft); border-radius: 4px; padding: 1px 5px; }
+  .callout { border-left: 2px solid var(--teal); padding: 2px 0 2px 20px; margin: 24px 0; color: var(--ink-2); font-size: 15.5px; }
+  .callout strong { color: var(--ink); }
+  .callout.warn { border-left-color: var(--rose); }
+
+  /* verdict table */
+  .tablewrap { overflow-x: auto; margin: 24px 0; }
+  table.verdicts { border-collapse: collapse; width: 100%; min-width: 640px; font-size: 14px; }
+  table.verdicts th, table.verdicts td { text-align: left; padding: 9px 14px 9px 0; border-bottom: 1px solid var(--rule-soft); vertical-align: top; }
+  table.verdicts th { font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-3); font-weight: 600; }
+  table.verdicts td:first-child { font-weight: 600; white-space: nowrap; }
+  .v-love { color: var(--teal-ink); font-weight: 600; }
+  .v-no   { color: var(--rose-ink); font-weight: 600; }
+  .v-cond { color: var(--ink-2); font-weight: 600; }
+
+  /* spine list */
+  ol.spine { margin: 24px 0 0; padding: 0 0 0 0; list-style: none; counter-reset: spine; display: grid; gap: 14px; }
+  ol.spine li { counter-increment: spine; display: grid; grid-template-columns: 44px 1fr; gap: 12px; font-size: 15px; color: var(--ink-2); }
+  ol.spine li::before {
+    content: "S" counter(spine); font-family: var(--mono); font-size: 12px; font-weight: 600;
+    color: var(--teal-ink); background: var(--teal-wash); border-radius: 6px;
+    height: 24px; display: inline-flex; align-items: center; justify-content: center; margin-top: 1px;
+  }
+  ol.spine li strong { color: var(--ink); }
+
+  /* rung ladder */
+  .ladder { display: grid; gap: 12px; margin: 28px 0 8px; }
+  .rung { background: var(--paper-2); border: 1px solid var(--rule); border-radius: 3px; padding: 20px 24px; display: grid; grid-template-columns: 120px 1fr; gap: 18px; }
+  @media (max-width: 640px) { .rung { grid-template-columns: 1fr; } }
+  .rung .tag { font-family: var(--mono); font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-3); font-weight: 600; line-height: 1.9; }
+  .rung .tag b { display: block; font-family: var(--serif); font-size: 21px; letter-spacing: -0.01em; color: var(--ink); text-transform: none; font-weight: 600; }
+  .rung p { font-size: 14.5px; color: var(--ink-2); margin: 0; }
+  .rung p strong { color: var(--ink); }
+  .cost { font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; margin-top: 8px; color: var(--ink-3); display: block; }
+
+  /* ── Phone frames ─────────────────────────────────────────── */
+  .frames { display: flex; flex-wrap: wrap; gap: 36px 28px; margin-top: 32px; align-items: flex-start; }
+  .frame-slot { width: 316px; max-width: 100%; }
+  .frame-cap { margin: 14px 2px 0; font-size: 13.5px; color: var(--ink-2); line-height: 1.5; }
+  .frame-cap b { color: var(--ink); font-weight: 600; display: block; margin-bottom: 2px; font-size: 13px; }
+  .frame-cap .fnote { color: var(--ink-3); font-size: 12.5px; }
+
+  .phone {
+    width: 316px; max-width: 100%; background: #F2F2F4; border-radius: 34px;
+    border: 1px solid rgba(27,26,46,0.16); box-shadow: 0 18px 44px rgba(19,17,46,0.16);
+    padding: 12px 12px 20px; color: #1A1A24; font-family: var(--sans);
+  }
+  .notch { width: 96px; height: 22px; background: #0B0B12; border-radius: 12px; margin: 0 auto 10px; }
+  .appbody { display: grid; gap: 12px; }
+
+  /* app header */
+  .apphead { background: #FFFFFF; border-radius: 18px; padding: 12px 14px 10px; }
+  .apphead .chrome { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+  .brandrow { display: flex; align-items: center; gap: 6px; }
+  .crescent { width: 15px; height: 15px; position: relative; }
+  .crescent svg { display: block; }
+  .wordmark { font-family: var(--serif); font-weight: 600; font-size: 13.5px; letter-spacing: -0.02em; color: #211E4E; }
+  .avatar { width: 26px; height: 26px; border-radius: 50%; background: linear-gradient(135deg,#C9C5E6,#8B87A8); }
+  .petrow { display: flex; align-items: center; gap: 9px; }
+  .petavatar { width: 32px; height: 32px; border-radius: 50%; background: linear-gradient(135deg,#4A4668,#211E4E); display:flex; align-items:center; justify-content:center; color:#F2EEE4; font-size:13px; font-weight:600; }
+  .petname { font-weight: 600; font-size: 16px; color: #1A1A24; }
+  .petsub { font-size: 10.5px; color: #8B87A8; }
+
+  /* app cards */
+  .acard { background: #FFFFFF; border-radius: 18px; padding: 14px 14px 12px; box-shadow: 0 2px 10px rgba(19,17,46,0.05); }
+  .seclabel { font-size: 10px; font-weight: 600; letter-spacing: 0.13em; text-transform: uppercase; color: #8B87A8; margin-bottom: 8px; }
+  .seclabel.dim { color: #B9B6CC; }
+
+  .irow { display: flex; gap: 9px; padding: 8px 0; }
+  .irow + .irow { border-top: 1px solid #F0EFF5; }
+  .rail { width: 3px; border-radius: 2px; flex-shrink: 0; opacity: 0.85; }
+  .rail.safety { background: #F43F5E; }
+  .rail.insight { background: #00C2A8; }
+  .ibody { flex: 1; min-width: 0; }
+  .lead { font-family: var(--serif); font-size: 19.5px; line-height: 1.32; letter-spacing: -0.012em; color: #1A1A24; margin: 0 0 6px; }
+  .lead.big { font-size: 21.5px; }
+  .sent { font-size: 13.5px; line-height: 1.45; color: #1A1A24; margin: 0 0 6px; }
+  .meta { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; margin-top: 5px; }
+  .badge { font-size: 9.5px; font-weight: 600; letter-spacing: 0.04em; color: #5F5C7A; background: #F0EFF5; border-radius: 999px; padding: 2px 8px; }
+  .chip-new { font-size: 9.5px; font-weight: 600; letter-spacing: 0.04em; color: #0B7B6C; background: #E0FBF7; border-radius: 999px; padding: 2px 8px; }
+  .sample { font-size: 10.5px; color: #8B87A8; }
+  .whylink { font-size: 10.5px; font-weight: 600; color: #00C2A8; margin-top: 6px; }
+  .ctxline { font-size: 10.5px; color: #8B87A8; margin-top: 5px; }
+  .ctxline .pill { display:inline-block; width: 7px; height: 7px; border-radius: 2px; background: #5B7A9E; margin-right: 4px; vertical-align: 1px; }
+
+  /* evidence strips */
+  .estrip { margin: 7px 0 2px; }
+  .e-axis { display: flex; justify-content: space-between; font-size: 8.5px; color: #B9B6CC; margin-top: 3px; }
+  .lane { position: relative; height: 22px; background: #FAFAFC; border: 1px solid #F0EFF5; border-radius: 6px; }
+  .lane .band { position: absolute; top: 0; bottom: 0; border-radius: 5px; background: rgba(0,194,168,0.10); border-right: 1px dashed rgba(0,194,168,0.5); }
+  .dot { position: absolute; top: 50%; width: 7px; height: 7px; border-radius: 50%; transform: translate(-50%,-50%); background: #F43F5E; }
+  .dot.out { background: #C9C5E6; }
+  .ticklab { font-size: 8.5px; color: #B9B6CC; position: absolute; top: -12px; }
+
+  .cmprow { display: grid; grid-template-columns: 76px 1fr 34px; gap: 8px; align-items: center; font-size: 10.5px; color: #5F5C7A; margin-top: 5px; }
+  .cmprow .bar { height: 8px; border-radius: 4px; background: #F0EFF5; position: relative; overflow: hidden; }
+  .cmprow .bar i { position: absolute; inset: 0 auto 0 0; border-radius: 4px; background: #F43F5E; opacity: 0.85; }
+  .cmprow .bar i.calm { background: #00C2A8; }
+  .cmprow .n { text-align: right; font-variant-numeric: tabular-nums; color: #8B87A8; font-size: 10px; }
+
+  .weekbins { display: flex; align-items: flex-end; gap: 3px; height: 40px; margin-top: 8px; }
+  .weekbins i { flex: 1; background: #F43F5E; opacity: 0.8; border-radius: 2px 2px 0 0; }
+  .weekbins i.zero { background: #F0F0F0; opacity: 1; height: 100% !important; border-radius: 2px; }
+  .densticks { display: flex; gap: 3px; margin-top: 3px; }
+  .densticks i { flex: 1; height: 3px; border-radius: 2px; background: #C9C5E6; }
+  .densticks i.thin { opacity: 0.35; }
+
+  .evid { background: #FAFAFC; border: 1px solid #F0EFF5; border-radius: 10px; padding: 9px 10px; margin-top: 8px; }
+  .evid .et { font-size: 9px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: #8B87A8; margin-bottom: 5px; }
+  .evid p { font-size: 11px; line-height: 1.5; color: #5F5C7A; margin: 0 0 6px; }
+  .evid p:last-child { margin: 0; }
+  .script { border-left: 2px solid #F43F5E; padding-left: 8px; }
+  .script li { font-size: 11px; color: #1A1A24; margin: 0 0 3px 12px; }
+  .script-lab { font-size: 9px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: #B4123B; margin-bottom: 4px; }
+
+  .quiet { text-align: left; font-size: 12.5px; color: #5F5C7A; padding: 4px 0 2px; }
+  .footlink { border-top: 1px solid #F0EFF5; margin-top: 8px; padding-top: 8px; font-size: 11.5px; font-weight: 600; color: #00C2A8; }
+  .footlink.dim { color: #7BD8C9; }
+
+  .strip { background: #FFFFFF; border-radius: 18px; padding: 12px 14px; box-shadow: 0 2px 10px rgba(19,17,46,0.05); }
+  .strip .h { display: flex; justify-content: space-between; font-size: 12.5px; font-weight: 600; color: #1A1A24; }
+  .strip .h span:last-child { color: #C9C5E6; }
+  .track { height: 4px; border-radius: 2px; background: #F0F0F0; margin-top: 8px; overflow: hidden; position: relative; }
+  .track i { position: absolute; inset: 0 auto 0 0; background: #00C2A8; border-radius: 2px; }
+  .strip .s { font-size: 10.5px; color: #8B87A8; margin-top: 6px; }
+
+  .todayrow { display: flex; align-items: center; gap: 9px; padding: 6px 0; font-size: 12px; color: #1A1A24; }
+  .todayrow + .todayrow { border-top: 1px solid #F0EFF5; }
+  .evicon { width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 11px; }
+  .evicon.meal { background: #E0FBF7; }
+  .evicon.sym { background: #FFE4E6; }
+  .todayrow .t { margin-left: auto; font-size: 10px; color: #8B87A8; font-variant-numeric: tabular-nums; }
+
+  .banner { background: #FFF7ED; border: 1px solid #FED7AA; border-radius: 14px; padding: 9px 12px; font-size: 11.5px; color: #7C2D12; }
+
+  .ackline { display: flex; align-items: center; gap: 7px; font-size: 11px; color: #0B7B6C; padding: 2px 0 6px; }
+  .ackdot { width: 8px; height: 8px; border-radius: 50%; border: 2px solid #00C2A8; border-top-color: transparent; }
+
+  /* review card */
+  .wk { background: #FFFFFF; border-radius: 18px; padding: 14px; box-shadow: 0 2px 10px rgba(19,17,46,0.05); }
+  .wk .kicker { font-size: 10px; font-weight: 600; letter-spacing: 0.13em; text-transform: uppercase; color: #8B87A8; }
+  .wk .t { font-family: var(--serif); font-size: 19px; letter-spacing: -0.012em; margin: 4px 0 8px; color: #1A1A24; }
+  .wkgrid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; margin: 8px 0 4px; }
+  .wkday { height: 26px; border-radius: 6px; background: #FAFAFC; border: 1px solid #F0EFF5; display: flex; align-items: center; justify-content: center; font-size: 9px; color: #B9B6CC; }
+  .wkday.clean { background: #E0FBF7; border-color: rgba(0,194,168,0.25); color: #0B7B6C; }
+  .wkday.ep { background: #FFE4E6; border-color: rgba(244,63,94,0.3); color: #B4123B; font-weight: 600; }
+  .wk .l { font-size: 11px; color: #5F5C7A; margin-top: 6px; }
+  .sharehint { display: inline-flex; align-items: center; gap: 6px; margin-top: 9px; font-size: 10.5px; font-weight: 600; color: #00C2A8; }
+
+  /* household */
+  .petband { display: flex; align-items: center; gap: 7px; margin: 2px 0 6px; }
+  .petband .petavatar { width: 22px; height: 22px; font-size: 10px; }
+  .petband b { font-size: 12px; }
+
+  /* reaction prompts */
+  .prompts { margin-top: 28px; display: grid; gap: 0; border: 1px solid var(--rule); border-radius: 3px; background: var(--paper-2); }
+  .prompt { display: grid; grid-template-columns: 64px 1fr; gap: 16px; padding: 18px 22px; border-top: 1px solid var(--rule-soft); }
+  .prompt:first-child { border-top: 0; }
+  .prompt .pid { font-family: var(--mono); font-size: 12px; font-weight: 600; color: var(--teal-ink); }
+  .prompt p { margin: 0; font-size: 15px; color: var(--ink-2); }
+  .prompt p strong { color: var(--ink); }
+
+  .provenance { margin-top: 72px; border-top: 1px solid var(--rule); padding-top: 18px; font-size: 13px; color: var(--ink-3); }
+  .provenance code { font-size: 12px; }
+</style>
+
+<div class="wrap">
+
+  <header class="mast">
+    <p class="eyebrow">
+      <span>Culprit</span><span>Signal &amp; Home design exploration</span><span>B-718</span><span>2026-08-06</span>
+      <span class="roundtag">Round 1 — exploratory</span>
+    </p>
+    <h1>The Signal already knows things.<br/>Round 1 is about letting you see them.</h1>
+    <p class="standfirst">
+      Five inputs shaped this round: a code map of every Home surface, the Signal spec's own unfinished
+      mandate, isolated interviews with <strong>Jordan</strong>, <strong>Sam</strong>, and <strong>Dr.&nbsp;Chen</strong>,
+      and a research sweep of Oura, Whoop, Apple Health, Flighty, Gentler Streak, and Linear. They converge hard:
+      <strong>keep the sentence in charge, put the evidence one glance away, and let the safety lane's plainness become the signal.</strong>
+      Four rungs below, conservative → swing. Nothing is locked; react with R1-1…R1-6 at the end.
+    </p>
+  </header>
+
+  <!-- ══════════════════ 1 · WHAT WE HEARD ══════════════════ -->
+  <section>
+    <div class="sec-head"><span class="sec-num">01</span><h2>What we heard, compressed</h2></div>
+    <div class="col">
+      <p>Each stakeholder was interviewed in isolation against the live implementation and the same six candidate
+      directions. The verdicts aligned to a degree we rarely get:</p>
+    </div>
+    <div class="tablewrap">
+      <table class="verdicts">
+        <tr><th>Direction</th><th>Jordan</th><th>Sam</th><th>Dr. Chen</th></tr>
+        <tr>
+          <td>A · Inline evidence visuals</td>
+          <td><span class="v-love">Love</span> — "do this one"; dots yes, axes no</td>
+          <td><span class="v-love">Love</span> — "clustered or scattered?" answered at a glance</td>
+          <td><span class="v-cond">Yes, if two-sided</span> — the control margin must be drawn</td>
+        </tr>
+        <tr>
+          <td>B · Night-sky hero card</td>
+          <td><span class="v-no">Suspicious</span> — "a coworker, not a planetarium"</td>
+          <td><span class="v-no">Hate</span> — "a mild note reads as an omen"</td>
+          <td><span class="v-no">Veto near safety</span> — no decorative grounds</td>
+        </tr>
+        <tr>
+          <td>C · Briefing Home (content-gated)</td>
+          <td><span class="v-cond">Love, if quiet is labeled</span></td>
+          <td><span class="v-cond">Love, if quiet is labeled</span></td>
+          <td>—</td>
+        </tr>
+        <tr>
+          <td>D · Change over time on findings</td>
+          <td><span class="v-love">Love most</span> — "the sentence in my head"</td>
+          <td><span class="v-love">Most valuable on the list</span></td>
+          <td><span class="v-no">Veto arrows on safety</span> — worded, insight lane only</td>
+        </tr>
+        <tr>
+          <td>E · Weekly review moment</td>
+          <td><span class="v-cond">Content yes, ceremony no</span></td>
+          <td><span class="v-cond">Content yes, ceremony no</span></td>
+          <td>—</td>
+        </tr>
+        <tr>
+          <td>F · Household Home (Sam only)</td>
+          <td>—</td>
+          <td><span class="v-cond">Love — as <em>the</em> Home, not a third view</span></td>
+          <td>—</td>
+        </tr>
+      </table>
+    </div>
+    <div class="col">
+      <p class="callout"><strong>The research through-line matches:</strong> every benchmark app lands on
+      <em>sentence first, evidence one gesture away, mechanism visible on demand</em> — and the craft leaders
+      (Flighty, Linear) differentiate not by adding visuals but by <strong>showing the causal machinery and dimming
+      everything else</strong>. Flighty doesn't tell you the flight is delayed; it shows you where the inbound
+      aircraft is, and the conclusion becomes yours. That is exactly what "5 of 7 episodes within 30 minutes"
+      wants to be.</p>
+      <p class="callout warn"><strong>Dr. Chen's discipline, in one line:</strong> "A visualization that can only fit
+      the numerator should not ship." Five dots huddled against a meal marker is a picture of causation — the strip
+      is honest only if the meals <em>without</em> episodes and the episodes <em>outside</em> the window are drawn too.
+      Hard vetoes: contributor bars, confidence meters, hero numbers shed of their qualifiers, trend arrows on the
+      safety lane, any motion or decoration on a safety card.</p>
+    </div>
+  </section>
+
+  <!-- ══════════════════ 2 · THE SPINE ══════════════════ -->
+  <section>
+    <div class="sec-head"><span class="sec-num">02</span><h2>The spine — rules that hold at every rung</h2></div>
+    <div class="col">
+      <p>Nine rules distilled from the interviews, the consult, and the shipped invariants. Every frame below obeys
+      them; ratifying them (R1-2) is more important than picking a rung.</p>
+      <ol class="spine">
+        <li><strong>The register drop.</strong> Safety cards stay austere — text, rail, sample line; no evidence graphic on the card face, no motion, no decorative ground. As benign cards get richer, plainness itself signals severity.</li>
+        <li><strong>The control-side rule.</strong> No evidence visual ships numerator-only. If the control margin doesn't fit on the card, the visual moves to the expanded state where it does.</li>
+        <li><strong>No borrowed authority.</strong> No composite scores, contributor bars, meters, or percentages. The sample line is the honest confidence display.</li>
+        <li><strong>No hero numbers.</strong> The sentence stays the headline; counts stay subordinate with their qualifiers attached.</li>
+        <li><strong>Change is worded, never arrowed.</strong> <code>New</code> / <code>Seen more than last week</code> / <code>Seen less lately</code> on the insight lane only — never "improving," and safety findings keep change inside the sentence.</li>
+        <li><strong>Quiet is labeled.</strong> A presence-gated surface renders absence as one explicit line, never as silent shortening.</li>
+        <li><strong>The record stays in daylight.</strong> No night grounds on the Signal or any record surface; night remains the working-on-the-pet's-behalf register.</li>
+        <li><strong>Grazer-honest intake visuals.</strong> Day-level, drawn against the pet's own baseline band, never event-level activity.</li>
+        <li><strong>Evidence one gesture away.</strong> Card face = sentence + glance evidence; tap = the mechanism; the safety tap = the phone-call script.</li>
+      </ol>
+    </div>
+  </section>
+
+  <!-- ══════════════════ 3 · THE LADDER ══════════════════ -->
+  <section>
+    <div class="sec-head"><span class="sec-num">03</span><h2>Four rungs, conservative → swing</h2></div>
+    <div class="ladder">
+      <div class="rung">
+        <span class="tag">Rung 1<b>Receipts</b></span>
+        <p>Finish the spec's own unfinished mandate (§11f per-type presentation): per-type inline evidence on the insight lane, two-sided mechanism visuals in the expanded state, recency lines + the phone-call script on safety expands.
+        <span class="cost">Zero server changes · zero new deps · already-ratified scope</span></p>
+      </div>
+      <div class="rung">
+        <span class="tag">Rung 2<b>The register</b></span>
+        <p>Restructure the surface: the lead finding gets one-big-thing canvas (sentence stays the headline), chrome recedes, a worded <strong>New</strong> chip on the insight lane, the post-log acknowledgment state, and a medication-on-board context line.
+        <span class="cost">One small server payload addition (med context) · rest client-only</span></p>
+      </div>
+      <div class="rung">
+        <span class="tag">Rung 3<b>The briefing</b></span>
+        <p>The content-gated Home (B-284 N7, amended): cards render only when they carry information, <strong>quiet is labeled</strong>, context-adaptive lead, grazer-honest intake band.
+        <span class="cost">Requires the Tier-2 Principle-3 edit already flagged in B-284 §8.2</span></p>
+      </div>
+      <div class="rung">
+        <span class="tag">Rung 4<b>The story</b></span>
+        <p>Three separable swings: <strong>The week with {pet}</strong> (composed, shareable weekly review — no ceremony), <strong>finding evolution</strong> (strengthening/fading chips; needs server memory of prior finding sets), and <strong>the household Home</strong> (both pets, attribution-honest).
+        <span class="cost">Each gated on its own discovery · migration for evolution · multi-pet OQ for household</span></p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════════════ 4 · RUNG 1 FRAMES ══════════════════ -->
+  <section>
+    <div class="sec-head"><span class="sec-num">04</span><h2>Rung 1 — Receipts</h2></div>
+    <div class="col">
+      <p>Same card, same findings, same ranking — the only change is that each insight-lane finding now shows its
+      evidence instead of only describing it. The frames use Nyx's real finding shapes (postprandial timing,
+      time-of-day clustering, chronicity). Note what does <em>not</em> change: the chronicity safety card at the top
+      keeps sentence-only treatment — that contrast is S1, not an omission.</p>
+    </div>
+    <div class="frames">
+
+      <!-- Frame 1: baseline -->
+      <div class="frame-slot">
+        <div class="phone">
+          <div class="notch"></div>
+          <div class="appbody">
+            <div class="apphead">
+              <div class="chrome">
+                <div class="brandrow">
+                  <span class="crescent"><svg width="15" height="15" viewBox="0 0 100 100"><defs><mask id="m1"><rect width="100" height="100" fill="#fff"/><circle cx="61" cy="43" r="29" fill="#000"/></mask></defs><circle cx="45" cy="50" r="33" fill="#211E4E" mask="url(#m1)"/><circle cx="66" cy="53" r="10.5" fill="#00C2A8"/></svg></span>
+                  <span class="wordmark">Culprit</span>
+                </div>
+                <span class="avatar"></span>
+              </div>
+              <div class="petrow">
+                <span class="petavatar">N</span>
+                <span><span class="petname">Nyx</span><br/><span class="petsub">Domestic shorthair · 3</span></span>
+              </div>
+            </div>
+            <div class="acard">
+              <div class="seclabel">Signal</div>
+              <div class="irow">
+                <span class="rail safety"></span>
+                <div class="ibody">
+                  <p class="lead">Nyx has been vomiting on and off for six weeks — 14 episodes, most recently 2 days ago.</p>
+                  <div class="meta"><span class="sample">14 episodes · 5 of the last 6 weeks</span></div>
+                  <p class="whylink">Why we're showing this</p>
+                </div>
+              </div>
+              <div class="irow">
+                <span class="rail insight"></span>
+                <div class="ibody">
+                  <p class="sent">Most of Nyx's vomiting has come within 30 minutes of eating — 5 of the 7 timed episodes this month.</p>
+                  <div class="meta"><span class="sample">5 of 7 timed episodes · median 18m</span></div>
+                  <p class="whylink">Why we're showing this</p>
+                </div>
+              </div>
+              <div class="irow">
+                <span class="rail insight"></span>
+                <div class="ibody">
+                  <p class="sent">Nyx's vomiting leans early-morning — 6 of 9 episodes between 5 and 9am.</p>
+                  <div class="meta"><span class="sample">6 of 9 episodes · last 30 days</span></div>
+                  <p class="whylink">Why we're showing this</p>
+                </div>
+              </div>
+              <div class="footlink">See all of Nyx's patterns →</div>
+            </div>
+          </div>
+        </div>
+        <p class="frame-cap"><b>1a — Today (baseline, as shipped)</b>
+        Three true findings, all rendered as sentences. Jordan's words: "I wanted to see the seven episodes, not read about them."</p>
+      </div>
+
+      <!-- Frame 2: rung 1 -->
+      <div class="frame-slot">
+        <div class="phone">
+          <div class="notch"></div>
+          <div class="appbody">
+            <div class="apphead">
+              <div class="chrome">
+                <div class="brandrow">
+                  <span class="crescent"><svg width="15" height="15" viewBox="0 0 100 100"><defs><mask id="m2"><rect width="100" height="100" fill="#fff"/><circle cx="61" cy="43" r="29" fill="#000"/></mask></defs><circle cx="45" cy="50" r="33" fill="#211E4E" mask="url(#m2)"/><circle cx="66" cy="53" r="10.5" fill="#00C2A8"/></svg></span>
+                  <span class="wordmark">Culprit</span>
+                </div>
+                <span class="avatar"></span>
+              </div>
+              <div class="petrow">
+                <span class="petavatar">N</span>
+                <span><span class="petname">Nyx</span><br/><span class="petsub">Domestic shorthair · 3</span></span>
+              </div>
+            </div>
+            <div class="acard">
+              <div class="seclabel">Signal</div>
+              <div class="irow">
+                <span class="rail safety"></span>
+                <div class="ibody">
+                  <p class="lead">Nyx has been vomiting on and off for six weeks — 14 episodes, most recently 2 days ago.</p>
+                  <div class="meta"><span class="sample">14 episodes · 5 of the last 6 weeks</span></div>
+                  <p class="whylink">Why we're showing this</p>
+                </div>
+              </div>
+              <div class="irow">
+                <span class="rail insight"></span>
+                <div class="ibody">
+                  <p class="sent">Most of Nyx's vomiting has come within 30 minutes of eating — 5 of the 7 timed episodes this month.</p>
+                  <div class="estrip">
+                    <div class="lane">
+                      <span class="band" style="left:0; width:26%;"></span>
+                      <span class="dot" style="left:6%"></span>
+                      <span class="dot" style="left:11%"></span>
+                      <span class="dot" style="left:16%"></span>
+                      <span class="dot" style="left:20%"></span>
+                      <span class="dot" style="left:24%"></span>
+                      <span class="dot out" style="left:58%"></span>
+                      <span class="dot out" style="left:87%"></span>
+                    </div>
+                    <div class="e-axis"><span>ate</span><span>30m</span><span>2h+</span></div>
+                  </div>
+                  <div class="meta"><span class="sample">5 of 7 timed episodes · median 18m</span></div>
+                  <p class="whylink">Why we're showing this</p>
+                </div>
+              </div>
+              <div class="irow">
+                <span class="rail insight"></span>
+                <div class="ibody">
+                  <p class="sent">Nyx's vomiting leans early-morning — 6 of 9 episodes between 5 and 9am.</p>
+                  <div class="estrip">
+                    <div class="lane">
+                      <span class="band" style="left:21%; width:17%; border-left:1px dashed rgba(0,194,168,0.5);"></span>
+                      <span class="dot" style="left:23%"></span>
+                      <span class="dot" style="left:26%"></span>
+                      <span class="dot" style="left:29%"></span>
+                      <span class="dot" style="left:32%"></span>
+                      <span class="dot" style="left:34%"></span>
+                      <span class="dot" style="left:36%"></span>
+                      <span class="dot out" style="left:55%"></span>
+                      <span class="dot out" style="left:70%"></span>
+                      <span class="dot out" style="left:90%"></span>
+                    </div>
+                    <div class="e-axis"><span>12a</span><span>6a</span><span>12p</span><span>6p</span><span>12a</span></div>
+                  </div>
+                  <div class="meta"><span class="sample">6 of 9 episodes · last 30 days</span></div>
+                  <p class="whylink">Why we're showing this</p>
+                </div>
+              </div>
+              <div class="footlink">See all of Nyx's patterns →</div>
+            </div>
+          </div>
+        </div>
+        <p class="frame-cap"><b>1b — Rung 1: the same card, with receipts</b>
+        Insight-lane findings gain a one-glance strip: filled dots = episodes in the named window, pale dots = the ones outside it (the exceptions stay visible — that honesty is the point). The safety card above them <em>deliberately doesn't change</em> — S1.
+        <span class="fnote">Strips are hand-rolled Views like TrendZone's chart; no library, no server change.</span></p>
+      </div>
+
+      <!-- Frame 3: expanded evidence -->
+      <div class="frame-slot">
+        <div class="phone">
+          <div class="notch"></div>
+          <div class="appbody">
+            <div class="acard">
+              <div class="seclabel">Signal</div>
+              <div class="irow">
+                <span class="rail insight"></span>
+                <div class="ibody">
+                  <p class="sent">Most of Nyx's vomiting has come within 30 minutes of eating — 5 of the 7 timed episodes this month.</p>
+                  <div class="estrip">
+                    <div class="lane">
+                      <span class="band" style="left:0; width:26%;"></span>
+                      <span class="dot" style="left:6%"></span>
+                      <span class="dot" style="left:11%"></span>
+                      <span class="dot" style="left:16%"></span>
+                      <span class="dot" style="left:20%"></span>
+                      <span class="dot" style="left:24%"></span>
+                      <span class="dot out" style="left:58%"></span>
+                      <span class="dot out" style="left:87%"></span>
+                    </div>
+                    <div class="e-axis"><span>ate</span><span>30m</span><span>2h+</span></div>
+                  </div>
+                  <div class="evid">
+                    <div class="et">The other side of the picture</div>
+                    <div class="cmprow"><span>Meals followed by an episode</span><span class="bar"><i style="width:14%"></i></span><span class="n">5</span></div>
+                    <div class="cmprow"><span>Meals with no episode after</span><span class="bar"><i class="calm" style="width:100%"></i></span><span class="n">31</span></div>
+                    <p style="margin-top:7px;">Two episodes weren't near any logged meal. This is a pattern in Nyx's timing, not a proven link to food — most meals are followed by nothing.</p>
+                  </div>
+                  <p class="whylink">Hide details</p>
+                </div>
+              </div>
+              <div class="irow">
+                <span class="rail safety"></span>
+                <div class="ibody">
+                  <p class="sent">Nyx has been vomiting on and off for six weeks — 14 episodes, most recently 2 days ago.</p>
+                  <div class="evid">
+                    <div class="et">If you call your clinic, the facts to have ready</div>
+                    <ul class="script" style="list-style:none; padding:0; margin:0;">
+                      <li>· Vomiting, 14 episodes</li>
+                      <li>· Across 6 weeks, 5 of them active</li>
+                      <li>· Most recent: Tuesday evening</li>
+                      <li>· Currently on: amoxicillin, day 9</li>
+                    </ul>
+                  </div>
+                  <p class="whylink">Hide details</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <p class="frame-cap"><b>1c — The expanded states (S2 + S9)</b>
+        The timing expand draws the control side — 31 quiet meals against 5 loud ones — so the picture argues <em>against</em> over-reading itself. The safety expand becomes the phone-call script: "scripts convert, sirens don't" (Dr. Chen).
+        <span class="fnote">The med line in the script is rung-2 data; shown here to test the script shape.</span></p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════════════ 5 · RUNG 2 FRAMES ══════════════════ -->
+  <section>
+    <div class="sec-head"><span class="sec-num">05</span><h2>Rung 2 — The register</h2></div>
+    <div class="col">
+      <p>The surface restructure. The lead finding gets real canvas — the sentence stays the headline (S4: no hero
+      numbers), its evidence strip moves up under it, and everything that is not the point recedes a notch. Two new
+      moments: the worded <code>New</code> chip (S5), and the post-log acknowledgment — Jordan logged a vomit, came
+      back, and the unchanged card "felt like the app didn't see what I just went through."</p>
+    </div>
+    <div class="frames">
+
+      <!-- Frame 4: hero register -->
+      <div class="frame-slot">
+        <div class="phone">
+          <div class="notch"></div>
+          <div class="appbody">
+            <div class="acard">
+              <div class="seclabel dim">Signal</div>
+              <div class="irow" style="border-top:0;">
+                <span class="rail insight"></span>
+                <div class="ibody">
+                  <p class="lead big">Most of Nyx's vomiting has come within 30 minutes of eating.</p>
+                  <div class="estrip">
+                    <div class="lane" style="height:26px;">
+                      <span class="band" style="left:0; width:26%;"></span>
+                      <span class="dot" style="left:6%"></span>
+                      <span class="dot" style="left:11%"></span>
+                      <span class="dot" style="left:16%"></span>
+                      <span class="dot" style="left:20%"></span>
+                      <span class="dot" style="left:24%"></span>
+                      <span class="dot out" style="left:58%"></span>
+                      <span class="dot out" style="left:87%"></span>
+                    </div>
+                    <div class="e-axis"><span>ate</span><span>30m</span><span>2h+</span></div>
+                  </div>
+                  <div class="meta"><span class="sample">5 of 7 timed episodes this month · median 18m</span></div>
+                  <p class="ctxline"><span class="pill"></span>During an active amoxicillin course — 9 doses logged</p>
+                  <p class="whylink">Why we're showing this</p>
+                </div>
+              </div>
+              <div class="irow">
+                <span class="rail insight"></span>
+                <div class="ibody">
+                  <p class="sent">Nyx's vomiting leans early-morning — 6 of 9 episodes between 5 and 9am.</p>
+                  <div class="meta"><span class="chip-new">New</span><span class="sample">6 of 9 episodes · last 30 days</span></div>
+                </div>
+              </div>
+              <div class="footlink dim">See all of Nyx's patterns →</div>
+            </div>
+          </div>
+        </div>
+        <p class="frame-cap"><b>2a — One big thing, quieter chrome</b>
+        The lead earns its canvas; secondary rows compress; the section label and footer dim a notch (Linear's recede-to-elevate). The slate context line is Dr. Chen's one addition — medication on-board, stated as fact, never as explanation.
+        <span class="fnote">The context line is the rung's one server touch: the payload gains a med-on-board field the engine already knows.</span></p>
+      </div>
+
+      <!-- Frame 5: ack state -->
+      <div class="frame-slot">
+        <div class="phone">
+          <div class="notch"></div>
+          <div class="appbody">
+            <div class="acard">
+              <div class="seclabel dim">Signal</div>
+              <div class="ackline"><span class="ackdot"></span> Noted — updating Nyx's picture…</div>
+              <div class="irow" style="border-top:1px solid #F0EFF5;">
+                <span class="rail safety"></span>
+                <div class="ibody">
+                  <p class="lead">Nyx has been vomiting on and off for six weeks — 14 episodes, most recently 2 days ago.</p>
+                  <div class="meta"><span class="sample">14 episodes · 5 of the last 6 weeks</span></div>
+                </div>
+              </div>
+              <div class="irow">
+                <span class="rail insight"></span>
+                <div class="ibody">
+                  <p class="sent">Most of Nyx's vomiting has come within 30 minutes of eating — 5 of the 7 timed episodes this month.</p>
+                  <div class="meta"><span class="sample">5 of 7 timed episodes · median 18m</span></div>
+                </div>
+              </div>
+              <div class="footlink dim">See all of Nyx's patterns →</div>
+            </div>
+          </div>
+        </div>
+        <p class="frame-cap"><b>2b — The acknowledgment state</b>
+        For the minutes between a fresh log and the debounced regeneration, one quiet line says the record heard you. When the count flips 5-of-7 → 6-of-8, that update is the loyalty moment Jordan described — "it's not chaos, it's a thing with a shape."
+        <span class="fnote">Client-only: the regen call already exists; this is an honest state for its in-flight window — no spinner theater, the stale findings stay readable.</span></p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════════════ 6 · RUNG 3 FRAMES ══════════════════ -->
+  <section>
+    <div class="sec-head"><span class="sec-num">06</span><h2>Rung 3 — The briefing</h2></div>
+    <div class="col">
+      <p>B-284 N7, amended by what the interviews taught us. Cards render only when they carry information — and the
+      quiet day says so out loud (S6), because both owners independently said silent absence reads as breakage
+      ("silence I can't attribute is worse than noise"). Two mornings, same pet, same design:</p>
+    </div>
+    <div class="frames">
+
+      <!-- Frame 6: rough morning -->
+      <div class="frame-slot">
+        <div class="phone">
+          <div class="notch"></div>
+          <div class="appbody">
+            <div class="banner">Pixel — vomiting logged overnight. Her Signal has the details →</div>
+            <div class="acard">
+              <div class="seclabel dim">Signal · Mochi</div>
+              <div class="irow" style="border-top:0;">
+                <span class="rail safety"></span>
+                <div class="ibody">
+                  <p class="lead">Mochi refused this morning's meal — the second refusal in two days.</p>
+                  <div class="meta"><span class="sample">2 of the last 4 offered meals · trial day 19</span></div>
+                  <p class="whylink">Why we're showing this</p>
+                </div>
+              </div>
+            </div>
+            <div class="strip">
+              <div class="h"><span>Diet trial — day 19 of 42</span><span>›</span></div>
+              <div class="track"><i style="width:45%"></i></div>
+              <div class="s">Hydrolyzed protein · last logged this morning</div>
+            </div>
+            <div class="strip">
+              <div class="h"><span>Amoxicillin — day 9 of 14</span><span>›</span></div>
+              <div class="track"><i style="width:64%"></i></div>
+              <div class="s">Last dose yesterday evening</div>
+            </div>
+            <div class="acard">
+              <div class="seclabel">Today</div>
+              <div class="todayrow"><span class="evicon sym">✕</span> Meal refused <span class="t">7:12a</span></div>
+              <div class="todayrow"><span class="evicon meal">●</span> Water topped up <span class="t">7:15a</span></div>
+            </div>
+          </div>
+        </div>
+        <p class="frame-cap"><b>3a — A rough morning</b>
+        Everything on screen is carrying information: the cross-pet banner, a safety lead, both course strips, today's record. Nothing had to be dropped to "make room" — the rough morning simply <em>is</em> longer.</p>
+      </div>
+
+      <!-- Frame 7: quiet day -->
+      <div class="frame-slot">
+        <div class="phone">
+          <div class="notch"></div>
+          <div class="appbody">
+            <div class="acard">
+              <div class="seclabel dim">Signal · Mochi</div>
+              <div class="irow" style="border-top:0;">
+                <span class="rail insight"></span>
+                <div class="ibody">
+                  <p class="lead">Two weeks into the new protein, vomiting is down — 1 episode in 14 days, 6 in the two weeks before.</p>
+                  <div class="estrip">
+                    <div class="cmprow"><span>Before the switch</span><span class="bar"><i style="width:86%"></i></span><span class="n">6</span></div>
+                    <div class="cmprow"><span>Since the switch</span><span class="bar"><i style="width:14%"></i></span><span class="n">1</span></div>
+                  </div>
+                  <div class="meta"><span class="sample">14 days each side of the switch · logging steady</span></div>
+                  <p class="whylink">Why we're showing this</p>
+                </div>
+              </div>
+              <div class="quiet" style="border-top:1px solid #F0EFF5; margin-top:8px; padding-top:10px;">Nothing new since yesterday — day 19 of 42, on track.</div>
+            </div>
+            <div class="acard">
+              <div class="seclabel">Today</div>
+              <div class="todayrow"><span class="evicon meal">●</span> Breakfast — finished <span class="t">7:04a</span></div>
+            </div>
+          </div>
+        </div>
+        <p class="frame-cap"><b>3b — A quiet day, labeled</b>
+        The trial strip and med strip earned nothing today, so they're gone — but the quiet line says so, with the day count, so absence reads as "quiet," never "broken." The trend read here is the one defensible reassuring form: multi-sample, quantified, anchored on the switch — and its two-bar compare carries a logging-density note (S8's sibling).
+        <span class="fnote">This composed trend line is also Jordan's named screenshot: "the last three weeks counting."</span></p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════════════ 7 · RUNG 4 FRAMES ══════════════════ -->
+  <section>
+    <div class="sec-head"><span class="sec-num">07</span><h2>Rung 4 — The story (three separable swings)</h2></div>
+    <div class="col">
+      <p>Each of these is its own product decision with its own discovery. They're drawn so the ceiling is visible,
+      not to smuggle them into a build.</p>
+    </div>
+    <div class="frames">
+
+      <!-- Frame 8: weekly review -->
+      <div class="frame-slot">
+        <div class="phone">
+          <div class="notch"></div>
+          <div class="appbody">
+            <div class="wk">
+              <div class="kicker">The week with Mochi</div>
+              <p class="t">Week 3 of the trial: 6 clean days, 1 episode.</p>
+              <div class="wkgrid">
+                <span class="wkday clean">M</span><span class="wkday clean">T</span><span class="wkday ep">W</span>
+                <span class="wkday clean">T</span><span class="wkday clean">F</span><span class="wkday clean">S</span>
+                <span class="wkday clean">S</span>
+              </div>
+              <p class="l">Wednesday's episode came 3 hours after dinner — outside the usual pattern. 11 of 14 meals finished. Day 21 of 42 tomorrow.</p>
+              <div class="sharehint">Share this week ↗</div>
+            </div>
+            <div class="acard">
+              <div class="seclabel dim">Signal</div>
+              <div class="irow" style="border-top:0;">
+                <span class="rail insight"></span>
+                <div class="ibody">
+                  <p class="sent">Vomiting is down since the switch — 1 episode in 14 days, 6 in the two weeks before.</p>
+                  <div class="meta"><span class="sample">14 days each side · logging steady</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <p class="frame-cap"><b>4a — The week with Mochi</b>
+        Composed deterministically from counts the engine already has; appears Sunday as a plain card — no arrival ceremony ("spend the animation budget on nothing" — Sam). Share renders it as an image: it's the text Jordan already sends their partner every Sunday, and the artifact a vet can glance at.
+        <span class="fnote">Discovery owns: composition rules, the no-clean-week-on-a-refusal-record guardrail, share format.</span></p>
+      </div>
+
+      <!-- Frame 9: household -->
+      <div class="frame-slot">
+        <div class="phone">
+          <div class="notch"></div>
+          <div class="appbody">
+            <div class="acard">
+              <div class="seclabel">Signal · The household</div>
+              <div class="petband"><span class="petavatar">P</span><b>Pixel</b></div>
+              <div class="irow" style="border-top:0;">
+                <span class="rail safety"></span>
+                <div class="ibody">
+                  <p class="sent">Pixel has eaten less than usual for two days — worth keeping an eye on.</p>
+                  <div class="meta"><span class="sample">Rated meals, 2 days below her usual</span></div>
+                </div>
+              </div>
+              <div class="irow">
+                <span class="rail insight"></span>
+                <div class="ibody">
+                  <p class="sent">Vomiting logged 5 times this month — 2 of the 5 weren't witnessed, so the cat is a best guess.</p>
+                  <div class="meta"><span class="sample">3 witnessed · 2 unwitnessed</span></div>
+                </div>
+              </div>
+              <div class="petband" style="margin-top:10px;"><span class="petavatar" style="background:linear-gradient(135deg,#7BC4B2,#0B7B6C);">J</span><b>Juniper</b></div>
+              <div class="irow" style="border-top:0;">
+                <span class="rail insight"></span>
+                <div class="ibody">
+                  <p class="sent">Juniper finished 2 of Pixel's abandoned meals this week — her intake numbers include them.</p>
+                  <div class="meta"><span class="sample">Shared-bowl notes on 2 meals</span></div>
+                </div>
+              </div>
+              <div class="footlink dim">See each cat's patterns →</div>
+            </div>
+          </div>
+        </div>
+        <p class="frame-cap"><b>4b — The household Home (sketch)</b>
+        Sam's actual life on one surface: both cats, and the app honest about attribution the way it's honest about everything else — "2 of 5 unwitnessed" sits in the same sample line that already carries the denominators. Big scope: touches the multi-pet open design question and the B-292 household primitive.
+        <span class="fnote">Explicitly a discovery candidate, not a build candidate — drawn to test appetite (R1-6).</span></p>
+      </div>
+    </div>
+    <div class="col">
+      <p class="callout"><strong>The third swing — finding evolution</strong> (<code>Seen more than last week</code> /
+      <code>Seen less lately</code> chips) isn't drawn as its own frame: visually it is the 2a <code>New</code> chip
+      with more words. What it actually needs is server memory — the engine comparing this generation's finding set
+      against the last — which is an additive migration and its own small spec. The wording family is the design
+      decision, and it's on the table as R1-3.</p>
+    </div>
+  </section>
+
+  <!-- ══════════════════ 8 · N4 / N7 / D8 ══════════════════ -->
+  <section>
+    <div class="sec-head"><span class="sec-num">08</span><h2>What this means for B-284's N4, N7, and D8</h2></div>
+    <div class="col">
+      <p><strong>D8 (the Signal night ground):</strong> the team recommends closing it <strong>light, without building
+      the night variant</strong>. The evidence stacked up on one side — both owners rejected the dark card in isolation
+      (Sam: "a mild note reads as an omen"; Jordan: "a coworker, not a planetarium"), your own iteration-3 note leaned
+      the same way, the PTR night band already failed on-device and was retracted, and Dr. Chen vetoes decorative
+      grounds anywhere near the safety lane. B-284 §7.4 as written wants an on-device A/B of two built variants;
+      building a variant every signal says will die is spec-faithful but wasteful. Your call — R1-4.</p>
+      <p><strong>N4's content system</strong> is absorbed by rung 1 (presence rule, light-card polish, the per-row
+      system). <strong>N7</strong> <em>is</em> rung 3, plus the quiet-is-labeled amendment. If you ratify the
+      absorption (R1-5), this track's requirements doc becomes the canonical spec for the surface and B-284 gets a
+      pointer note — one spec per surface, no drift.</p>
+    </div>
+  </section>
+
+  <!-- ══════════════════ 9 · REACT ══════════════════ -->
+  <section>
+    <div class="sec-head"><span class="sec-num">09</span><h2>React — R1-1 … R1-6</h2></div>
+    <div class="prompts">
+      <div class="prompt"><span class="pid">R1-1</span><p><strong>How far up the ladder?</strong> Rung 1 alone / 1+2 / 1+2+3 — and is any rung-4 element worth its own discovery session now?</p></div>
+      <div class="prompt"><span class="pid">R1-2</span><p><strong>The spine (§02):</strong> ratify S1–S9 as the standing rules for this surface? S1 (register drop) and S6 (quiet is labeled) would become Tier-2 <code>design-principles.md</code> additions.</p></div>
+      <div class="prompt"><span class="pid">R1-3</span><p><strong>Change chips:</strong> confirm the register split — worded chips (<code>New</code> / <code>Seen more than last week</code> / <code>Seen less lately</code>) on the insight lane only, safety keeps change inside the sentence. Jordan and Sam ranked this the most valuable direction; Dr. Chen's veto shaped its bounds.</p></div>
+      <div class="prompt"><span class="pid">R1-4</span><p><strong>D8:</strong> paper-close the Signal ground as light (no night variant built), or keep B-284's on-device A/B?</p></div>
+      <div class="prompt"><span class="pid">R1-5</span><p><strong>Spec ownership:</strong> absorb N4/N7 into this track as recommended in §08?</p></div>
+      <div class="prompt"><span class="pid">R1-6</span><p><strong>The swings:</strong> of the weekly review, finding evolution, and the household Home — which (if any) get discovery sessions, and in what order?</p></div>
+    </div>
+  </section>
+
+  <p class="provenance">
+    Round 1 · 2026-08-06 · exploration record with the full interview transcripts and team review:
+    <code>docs/sessions/2026-08-06-signal-home-design-exploration.md</code> · inputs: code map of
+    <code>components/home/</code> + <code>lib/signal*.ts</code>, <code>docs/nyx-ai-signal-requirements.md</code> §3.2/§11f,
+    <code>docs/culprit-in-app-brand-requirements.md</code> §7–§8, isolated Jordan / Sam / Dr. Chen interviews,
+    external research (Oura · Whoop · Apple Health · Flighty · Gentler Streak · Linear).
+    Frames render the shipping light system with real <code>constants/theme.ts</code> values; future rounds republish to this same artifact URL.
+  </p>
+
+</div>
