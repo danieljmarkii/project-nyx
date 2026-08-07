@@ -85,7 +85,28 @@ Four rungs, independently shippable, strictly additive — each includes everyth
 - **R1-5** — Conflict 3: absorb N4/N7 into this track?
 - **R1-6** — Which rung-4 elements (weekly review / finding evolution / household Home) earn their own discovery sessions, and in what order?
 
-## 6. Session outcome
+## 6. Round-1 PM reactions (2026-08-07, on-the-fly walkthrough) → round 2
+
+The PM reacted to the artifact frame by frame. Recorded verbatim-adjacent, each with its round-2 consequence:
+
+1. **Change over time (Conflict 1): PM overrides the blanket bound.** "Both personas said change over time was their top priority and Dr. Chen is the blocker. We need to be consumer centric here — work with Dr. Chen to get to a version we can live with." → A focused Chen negotiation ran same session; its output is **the Change Contract** (see §7 / the mock's change section), which replaces round 1's insight-lane-only proposal. R1-3 is superseded — the open question is now "sign the contract," not "pick a side."
+2. **§02 didn't render on the PM's phone.** The spine list used CSS counters for its S-chips; round 2 rebuilds it with plain markup that can't fail.
+3. **The dot strip is not the old heatmap aversion.** "What we're showing here is closer almost to a distribution curve which I think is uber uber informative." The distribution *shape* is the value.
+4. **Selective receipts (new rule S10).** "If we don't need to show receipts then let's not. Not all cards need receipts. We can use our judgement." → A strip renders only when the shape adds information the sentence can't carry; otherwise sentence-only. Codified as spine rule S10.
+5. **1c expanded-state data-vis: liked.** Stays.
+6. **2a (the register): "really liking the design."** Loves the evidence image; wants alternates explored — "if the image isn't a value add then punt." → Round 2 adds an alternates row (dot lane vs binned histogram vs paired compare) per finding shape.
+7. **2b (acknowledgment state): insufficient to judge.** → Round 2 draws the full sequence (log → acknowledgment → updated card) so it can be judged or killed.
+8. **Cross-pet banner: keep, embrace.** (Shipped behavior; unchanged.)
+9. **3a too dense.** "Not all components need to be graphs… even text can be information carrying." → Round 2 lightens the rough-morning frame: strips collapse to text lines where a bar adds nothing (composes with S10).
+10. **3b stacked before/after: "awesome. Love the stacked."** Promoted to a first-class treatment for comparison-shaped findings.
+11. **4a weekly review: "We typically suck at calendars."** → De-calendared in round 2 — the week composes as sentence + stacked compare + a day-count line, no grid.
+12. **4b household Home: CUT.** "Let's not co-mingle households. It might get complex." Cross-pet stays banner-injection-shaped (the shipped pattern). This half-answers R1-6: household is out; weekly review + finding evolution remain candidates.
+13. **NEW build directive — beta-flagged rollout.** The redesign ships behind an account-gated flag via the B-712 beta primitive (`app_config` allowlist, the `widget_enabled` shape) so it can be enabled cohort-by-cohort. Goes in the requirements doc's build contract.
+14. **NEW build directive — the empty state is a first-class deliverable.** "It's going to take us a moment to create a signal so the empty state must inspire confidence." → Round 2 draws the building/empty states as designed frames; the requirements doc carries them as ACs, not afterthoughts.
+
+**Gate status after reactions:** R1-3 superseded (Change Contract pending sign-off) · R1-6 half-ruled (household out) · R1-1 / R1-2 / R1-4 / R1-5 still open — the PM's "as we're aligning on requirements and thinking about building this one" reads as build intent for the lower rungs, but no rung pick is recorded yet.
+
+## 7. Session outcome
 
 - Mock round 1 committed at `docs/culprit-signal-home-mockups.html` and published as an Artifact (same-URL convention for future rounds).
 - Backlog: **B-718** filed (the track row).
