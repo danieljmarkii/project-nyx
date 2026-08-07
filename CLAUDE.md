@@ -274,6 +274,8 @@ Whenever a PM decision is requested — an Open Questions row, a mock round's re
 
 Keep each brief to ~4 lines. The bar: the PM can rule from the brief alone, without re-reading the underlying doc. A bare "thoughts?" or an option list with no recommendation is not a decision request. This applies everywhere decisions are surfaced — chat wrap-ups, mock React sections, session docs, and Open Questions rows alike.
 
+**Mock what you change (PM directive, 2026-08-07).** A design change is shown, never only described: any change to a user-facing surface lands as frames in the current mock round (republished to the same artifact URL) in the same session it's proposed, and a decision whose options differ *visually* renders those options **side by side in the mock** — the brief then points at the frames. Presenting a visual choice in words alone is the anti-pattern this rule exists to stop. (Process/code-internal changes that have no rendered surface are exempt — there is nothing to draw.)
+
 ### Definition of Done — Before Saying "Done"
 
 Before reporting a feature, sub-step, or PR as complete, run this checklist explicitly and surface pass/fail. Do not collapse it to "looks good."
