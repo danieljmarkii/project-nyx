@@ -106,12 +106,25 @@ The PM reacted to the artifact frame by frame. Recorded verbatim-adjacent, each 
 
 **Gate status after reactions:** R1-3 superseded (Change Contract pending sign-off) · R1-6 half-ruled (household out) · R1-1 / R1-2 / R1-4 / R1-5 still open — the PM's "as we're aligning on requirements and thinking about building this one" reads as build intent for the lower rungs, but no rung pick is recorded yet.
 
-## 7. Session outcome
+## 7. The Change Contract (negotiated ruling — Dr. Chen under the PM's consumer-centric directive, 2026-08-07)
 
-- Mock round 1 committed at `docs/culprit-signal-home-mockups.html` and published as an Artifact (same-URL convention for future rounds).
-- Backlog: **B-718** filed (the track row).
-- STATUS.md: parallel-track entry added.
-- No app code, no schema, no engine/phrasing changes (this session deliberately touches nothing under `supabase/functions/` or `lib/`).
-- Next: PM reacts to the mock (R1-1…R1-6) → requirements doc for the chosen rung(s) → PR-planned build (rung 1 is a candidate for the standard per-PR flow immediately after ratification, since its mandate — §11f — is already ratified).
+The gap was presentational, not principled: Dr. Chen's own sanctioned sentence ("5 days this week, up from 2") *is* change-over-time — what he vetoed was the arrow, which asserts direction without magnitude. Resolution: **a time-ordered count pair (`2 → 5 days`) is time's arrow, not a verdict's** — both counts render, the reader computes the direction, and it's self-calibrating (2→3 and 2→9 read differently), so it carries more information with less alarm than any glyph. The lane structure carries the asymmetry that made arrows dangerous: a safety finding can only rise or stop rendering (resolution = disappearance = silence, not a claim), and falling pairs render only on the insight lane.
+
+**Five rules:** (1) a chip may only *compress the card's sample line* — no new claim at the glance layer; (2) counts, never verdicts — no direction words, no ↑/↓, no percentages; (3) the chip names the axis that rose (days vs episodes — the trigger axis); (4) server-computed, one predicate — the engine compares against the prior cached `ai_signals` set before delete-then-insert, transitions ride the payload, the client stays dumb (the diet-trial §5.3 one-predicate lesson, applied preemptively); (5) every string passes the guardrail regex screens, and the a11y label is the full sentence.
+
+**Per-finding:** worsening → `2 → 5 days` / `1 → 4 episodes` (v1, payload exists) · intake-decline ongoing → `Day N` (v1) · chronicity → `Since March · last 2d ago`, never a week-pair (v1) · reflection → count-pair, density-gated when falling (v1) · correlation → the tier tag is the vocabulary + a one-render `Now established` transition (v2) · postprandial/time-of-day → `New` only (v2 — fraction-pairs vetoed as unglanceable) · photo red flag → **nothing** (n of 1–3; a trend chip there is noise in a trend costume) · first appearance of any type → `New`, replacing the pair when prior is zero (`0 → 4` fakes precision).
+
+**The density rule (asymmetric, both directions failing toward escalation):** a falling insight pair renders only when week-over-week logging density is comparable (`densityComparable`, engine constant, adversarial-review-gated) — falling density flatters, so the flattering render is what gets suppressed, with the expanded state saying why; a rising safety pair is never suppressed; the disclosure line ("Counted from days you logged: 6 this week, 5 last") lives one tap deep. **The fading adjacency (accepted knowingly):** during `isTrialRunning`, a falling reflection's expanded text appends "A quieter week partway through a diet trial isn't the trial's verdict — the full run is what makes it readable." Expanded-only, weakening-only.
+
+**Residual vetoes (small, named):** ↑/↓/sparkline-slope glyphs on chips · percentages · verdict words (worse/better/improving/quieter) as chip vocabulary · any change chip on `incident_red_flag` · week-pairs on chronicity · fraction-pair chips on timing findings · any "Resolved" state (an all-clear inferred from absence of detection). **v2 engineering note:** prior-set memory = read the existing `ai_signals` row before regeneration; new payload fields `priorFindingPresent` / `densityComparable` / `loggedDaysCurrent/Prior`. The one open Designer call: chip form (`2 → 5 days` vs `2 last wk · 5 this wk`) — semantics are fixed, form is R2-1's sub-call.
+
+## 8. Session outcome
+
+- **Round 1** (2026-08-06): mocks committed + published as an Artifact; B-718 filed; STATUS.md entry added.
+- **Round 1 reactions** (2026-08-07): all 14 recorded as rulings (§6); household Home cut; weekly review de-calendared; selective-receipts → S10; two build directives (beta flag via B-712 primitive; empty state as AC).
+- **The Change Contract** (§7) negotiated and folded into round 2; supersedes R1-3.
+- **Round 2** (2026-08-07): republished to the same artifact URL — the Change Contract section + demo frame (CC-1), the rebuilt §02 spine (round 1's CSS-counter chips failed to render on the PM's device), the receipt-shape table (dot lane / binned bars / stacked compare + S10 assignments), the acknowledgment sequence (2b′), the lighter rough morning (3a′), the E1/E2 empty-state frames, the de-calendared week (4a′), and the build-contract section.
+- No app code, no schema, no engine/phrasing changes at any point in this session.
+- Next: PM reacts R2-1…R2-6 (R2-6 bundles the four round-1 leftovers: rung pick, spine S1–S10, D8 paper-close, N4/N7 absorption) → ruling all of them turns round 3 into the requirements doc rather than another mock round.
 
 **Persona sign-off (exploration):** Designer ✓ (ladder + spine authored; conflicts surfaced not resolved) — Jordan ✓ / Sam ✓ / Dr. Chen ✓ (interviewed in isolation; verdicts recorded verbatim above) — Data Scientist ✓ (all proposed visuals count-backed, control-sided, floor-gated; no new statistics) — Dir. of Eng ✓ (rungs 1–2 zero-server/zero-dep confirmed against the payload map; rung-4 costs named) — QA N/A (no build) — T&S ✓ (no data-boundary change; the timezone/`feedingFormsInEvidence` fields stay unrendered).
