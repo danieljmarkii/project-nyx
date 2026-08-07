@@ -1141,9 +1141,11 @@ export interface DoseCourseProgress {
    *  a warm "log the first" line over a refusal record is one of the four things
    *  the med surfaces must never say (med-strip spec §6). */
   fresh: boolean;
-  /** B-642: count has reached (or passed) the target, so the bar is full — the
-   *  render site pairs the line with the vet's-call note that counters the
-   *  full-bar-reads-as-done risk. D7 still holds: no completion or stop word. */
+  /** B-642 / B-719: count has reached (or passed) the target, so the bar is full —
+   *  a full bar reads as "done", the early-stop risk D7 addresses. B-642 met it with a
+   *  passive "vet's call" note; B-719 replaces that note with the confirm-in-the-loop
+   *  finish prompt (courseReachedPlannedEnd reads this flag as the DOSE trigger). D7
+   *  still holds: this helper emits no completion or stop word. */
   atTarget: boolean;
 }
 
@@ -1169,6 +1171,126 @@ export function doseCourseProgress(tally: AdherenceTally, target: number): DoseC
         : `${target} doses ahead — log the first when you give it`
       : `Dose ${count} of ${target}`;
   return { count, target, line, barFraction, pastTarget, fresh, atTarget };
+}
+
+// ── B-719 — has an ACTIVE course reached its planned end? ─────────────────────
+// The ONE predicate behind the confirm-in-the-loop finish prompt on the profile
+// "Current medications" card (docs/culprit-med-course-end-mockups.html). A course
+// with a defined end — a dose count OR a day span — reaches it, and the card then
+// offers a calm "Is this course finished?" affordance. It NEVER auto-ends (H1/B-422 —
+// an ending comes only from the owner's End action) and the copy NEVER asserts
+// completion (D7); this predicate only decides WHEN the offer appears.
+//
+// Extracted here — pure, unit-tested, read by buildRegimenDisplay — for the same
+// reason every other course predicate in this module is: a "reached its end" read that
+// drives an owner-facing action must be pinned by a test, never re-derived per surface
+// (the diet-trial §5.3 one-predicate lesson). It COMPOSES the two existing definitions
+// rather than restating them: DoseCourseProgress.atTarget for the dose trigger, and
+// regimenDaysElapsed (passed in as daysElapsed) for the day trigger.
+//
+// THE DOSE-vs-DAY THRESHOLD ASYMMETRY IS DELIBERATE and load-bearing:
+//   • Dose course: reached when count >= target (atTarget, INCLUSIVE). Delivering the
+//     target-th dose completes an N-dose course — a 1-dose course is done the instant
+//     its single dose is given.
+//   • Day course: reached when daysElapsed > target (STRICTLY past). regimenDaysElapsed
+//     counts the start day as day 1, so the full prescribed span has elapsed only AFTER
+//     the last day passes: a 14-day course finishes when day 15 arrives, not on day 14.
+//     A `>=` here would fire "Is this course finished?" on the START day of a 1-day
+//     course (daysElapsed 1) and would make the day lede ("the 14 days are up") FALSE on
+//     day 14 — the day isn't up until it's over. That is why the day trigger is strict
+//     and the dose trigger is not; the 1-day course is the proof the two must differ.
+//
+// A null daysElapsed (unparseable start date, B-441) is NEVER reached — the app must not
+// guess an ending. Only status 'active' is prompted: a 'completed' course has already
+// left the Current list, and no other status is "running toward an end".
+export type CourseEndDenomination = 'doses' | 'days';
+
+export interface PlannedEndState {
+  reached: boolean;
+  // Which trigger fired, for the denomination-specific lede; null when not reached.
+  denomination: CourseEndDenomination | null;
+}
+
+const COURSE_NOT_ENDED: PlannedEndState = { reached: false, denomination: null };
+
+export function courseReachedPlannedEnd(input: {
+  status: string;
+  // reg.doseCourse — non-null iff the course is dose-denominated (target_duration_doses
+  // set); carries atTarget, the one dose-count predicate. Never re-derived here.
+  doseCourse: DoseCourseProgress | null;
+  targetDurationDays: number | null;
+  // regimenDaysElapsed(started_at) — start day = day 1; null when the start did not parse.
+  daysElapsed: number | null;
+}): PlannedEndState {
+  if (input.status !== 'active') return COURSE_NOT_ENDED;
+
+  // Dose-denominated wins outright when present. Exactly one denomination is ever set
+  // (the medications_one_duration_denomination CHECK); were a corrupt local row to carry
+  // both, the dose course is the more specific signal. Reached iff therapy delivered has
+  // met the dispensed target.
+  if (input.doseCourse) {
+    return input.doseCourse.atTarget
+      ? { reached: true, denomination: 'doses' }
+      : COURSE_NOT_ENDED;
+  }
+
+  // Day-denominated: STRICTLY past the planned span (see the asymmetry note above).
+  if (input.targetDurationDays != null && input.targetDurationDays > 0) {
+    return input.daysElapsed != null && input.daysElapsed > input.targetDurationDays
+      ? { reached: true, denomination: 'days' }
+      : COURSE_NOT_ENDED;
+  }
+
+  // Ongoing / PRN — no defined end, so nothing to confirm (mock State 4).
+  return COURSE_NOT_ENDED;
+}
+
+// B-719 — the finish-prompt copy. A short FACT lede per denomination, then the shared
+// question, a vet-deferral hedge, and the action. The lede states the RECORD/CALENDAR
+// fact and never the pet's wellness (clinical-guardrails):
+//   • The DOSE lede says the prescribed doses are all LOGGED — never "has had"/"given".
+//     dosesTowardTarget counts `partial` (§4/D1), so a course reaches its target WITH
+//     partial doses in the count; "has had all N doses" would overstate delivery (worst
+//     case given=0/partial=30/target=28 → "had all 28" when none were fully given), and
+//     the prompt text renders MORE prominently than the flag line that would correct it.
+//     "are all logged" is true regardless of the given/partial split (adversarial-reviewer
+//     B-719, finding ③).
+//   • The DAY lede speaks only to the calendar, so it stays true even when doses were
+//     missed — it must never imply full compliance (the misses show on the flag/compliance
+//     line, never here).
+// nyx-voice: pet by name on the dose lede, specific over generic, no exclamation.
+//
+// THE HEDGE IS LOAD-BEARING, not decoration (adversarial-reviewer B-719, finding ④).
+// B-642's note ("when the course ends is your vet's call") existed to stop a full bar
+// reading as "stop now"; the PM's first call was to drop it as redundant with the dosing
+// schedule. The adversarial pass found the exception that reopens it: on a course the app
+// CANNOT tell apart from a simple one — a prednisolone that must be TAPERED, an antibiotic
+// to "finish till the recheck" — the prescribed span's end is NOT "stop", so an un-hedged
+// "Is this course finished?" nudges an abrupt stop that can harm. So a short vet-deferral
+// is kept beside the question. Exact wording is a PM / Dr. Chen call (session record
+// 2026-08-06); these constants are the one edit point.
+export const COURSE_END_PROMPT_QUESTION = 'Is this course finished?';
+export const COURSE_END_PROMPT_HEDGE = 'Your vet has the final say.';
+export const COURSE_END_PROMPT_ACTION = 'Mark as finished';
+
+export function courseEndPromptLede(params: {
+  denomination: CourseEndDenomination;
+  petName: string;
+  targetDoses: number | null;
+  targetDays: number | null;
+}): string {
+  if (params.denomination === 'doses') {
+    const n = params.targetDoses ?? 0;
+    // "are all logged", never "has had all" — the record framing is true whether the
+    // target was reached with given or partial doses (see the header note, finding ③).
+    return n === 1
+      ? `${params.petName}'s dose is logged.`
+      : `${params.petName}'s ${n} doses are all logged.`;
+  }
+  const d = params.targetDays ?? 0;
+  return d === 1
+    ? 'The day for this course is up.'
+    : `The ${d} days for this course are up.`;
 }
 
 // ── Dose → regimen attribution (compliance counting) ───────────────────────────

@@ -1,0 +1,806 @@
+<title>Culprit — When a medication course reaches its end</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  /* ============================================================
+     When a medication course reaches its end — B-719, mock ROUND 1.
+     Exploratory: the MECHANISM is ruled (confirm-in-the-loop; the PM
+     rejected auto-end). What this round asks the PM to react to is the
+     COPY and the full set of states. Nothing here is design-locked.
+
+     Document chrome is deliberately NOT the app: a cool paper tinted
+     toward the brand indigo in light, the app's real night tokens in
+     dark. The DEVICE FRAMES stay light in both themes on purpose —
+     they render the app's light-mode surfaces, and flipping them
+     would misrepresent what ships.
+
+     Frame values are the real tokens from constants/theme.ts, so the
+     build copies rather than approximates.
+     ============================================================ */
+
+  :root {
+    --paper:      #F5F4F9;   /* cool paper, biased toward colorBrandNight */
+    --paper-2:    #FFFFFF;
+    --ink:        #1B1A2E;
+    --ink-2:      #5F5C7A;
+    --ink-3:      #8B87A8;
+    --rule:       #DEDCE9;
+    --rule-soft:  #E9E7F1;
+    --teal:       #00C2A8;   /* theme.colorAccent */
+    --teal-ink:   #0B7B6C;   /* theme.colorAccentInk — teal that passes as text */
+    --teal-wash:  #E0FBF7;   /* theme.colorAccentLight */
+    --rose:       #F43F5E;   /* theme.colorEventSymptom */
+    --rose-ink:   #B4123B;
+    --rose-wash:  #FFE4E6;   /* theme.colorEventSymptomLight */
+    --med:        #5B7A9E;   /* theme.colorEventMedication */
+    --med-ink:    #3D5875;   /* theme.colorEventMedicationInk */
+    --med-wash:   #EAF0F7;   /* theme.colorEventMedicationLight */
+
+    --serif: ui-serif, Charter, "Bitstream Charter", "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper:     #13112E;  /* theme.colorBrandNight */
+      --paper-2:   #1D1A42;
+      --ink:       #ECEAF6;  /* theme.colorTextOnNight */
+      --ink-2:     #A6A2CE;  /* theme.colorTextOnNightMuted */
+      --ink-3:     #706BA6;  /* theme.colorTextOnNightFaint */
+      --rule:      rgba(196,190,255,0.20);
+      --rule-soft: rgba(196,190,255,0.11);
+      --teal-ink:  #4FD8C4;
+      --teal-wash: rgba(0,194,168,0.14);
+      --rose-ink:  #FB7185;  /* theme.colorEventSymptomOnNight */
+      --rose-wash: rgba(251,113,133,0.14);
+      --med:       #93B0CE;
+      --med-ink:   #B9CBDE;
+      --med-wash:  rgba(91,122,158,0.18);
+    }
+  }
+  :root[data-theme="light"] {
+    --paper: #F5F4F9; --paper-2: #FFFFFF; --ink: #1B1A2E; --ink-2: #5F5C7A;
+    --ink-3: #8B87A8; --rule: #DEDCE9; --rule-soft: #E9E7F1;
+    --teal-ink: #0B7B6C; --teal-wash: #E0FBF7;
+    --rose-ink: #B4123B; --rose-wash: #FFE4E6;
+    --med: #5B7A9E; --med-ink: #3D5875; --med-wash: #EAF0F7;
+  }
+  :root[data-theme="dark"] {
+    --paper: #13112E; --paper-2: #1D1A42; --ink: #ECEAF6; --ink-2: #A6A2CE;
+    --ink-3: #706BA6; --rule: rgba(196,190,255,0.20); --rule-soft: rgba(196,190,255,0.11);
+    --teal-ink: #4FD8C4; --teal-wash: rgba(0,194,168,0.14);
+    --rose-ink: #FB7185; --rose-wash: rgba(251,113,133,0.14);
+    --med: #93B0CE; --med-ink: #B9CBDE; --med-wash: rgba(91,122,158,0.18);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 16px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 56px 28px 96px; }
+  .col  { max-width: 68ch; }
+
+  /* ── Masthead ─────────────────────────────────────────────── */
+  .mast { border-bottom: 1px solid var(--rule); padding-bottom: 28px; margin-bottom: 40px; }
+  .eyebrow {
+    font-family: var(--mono); font-size: 11px; letter-spacing: 0.14em;
+    text-transform: uppercase; color: var(--ink-3); margin: 0 0 14px;
+    display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center;
+  }
+  h1 {
+    font-family: var(--serif); font-weight: 600; font-size: clamp(30px, 4.4vw, 44px);
+    line-height: 1.12; letter-spacing: -0.015em; margin: 0 0 14px; text-wrap: balance;
+  }
+  .standfirst { font-size: 17px; color: var(--ink-2); margin: 0; max-width: 64ch; }
+  .standfirst strong { color: var(--ink); font-weight: 600; }
+
+  .badge {
+    display: inline-flex; align-items: center; gap: 7px;
+    font-family: var(--mono); font-size: 11px; letter-spacing: 0.1em;
+    text-transform: uppercase; font-weight: 600;
+    color: var(--med-ink); background: var(--med-wash);
+    border-radius: 999px; padding: 4px 11px;
+  }
+  .badge::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+
+  /* ── Section scaffolding ──────────────────────────────────── */
+  section { margin-top: 72px; }
+  .sec-head { display: flex; align-items: baseline; gap: 14px; margin-bottom: 8px; border-top: 1px solid var(--rule); padding-top: 18px; }
+  .sec-num { font-family: var(--mono); font-size: 12px; color: var(--ink-3); letter-spacing: 0.08em; flex-shrink: 0; }
+  h2 { font-family: var(--serif); font-weight: 600; font-size: clamp(22px, 2.6vw, 28px); line-height: 1.2; letter-spacing: -0.01em; margin: 0; text-wrap: balance; }
+  h3 { font-family: var(--sans); font-weight: 600; font-size: 15px; letter-spacing: 0.005em; margin: 32px 0 8px; }
+  p { margin: 0 0 16px; }
+  .col p:last-child { margin-bottom: 0; }
+  em { font-style: italic; color: var(--ink-2); }
+  strong { font-weight: 600; }
+  code {
+    font-family: var(--mono); font-size: 0.855em;
+    background: var(--rule-soft); border-radius: 4px; padding: 1px 5px;
+  }
+
+  /* ── The ruling block ─────────────────────────────────────── */
+  .ruling {
+    margin: 28px 0 8px; padding: 30px 32px;
+    background: var(--paper-2); border: 1px solid var(--rule);
+    border-radius: 3px;
+  }
+  .ruling .lede { font-family: var(--mono); font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-3); margin: 0 0 18px; }
+  .ruling dl { margin: 0; display: grid; gap: 20px; }
+  .ruling dt {
+    font-family: var(--serif); font-size: clamp(19px, 2.2vw, 24px); font-weight: 600;
+    line-height: 1.3; letter-spacing: -0.008em; margin-bottom: 5px; text-wrap: balance;
+  }
+  .ruling dd { margin: 0; color: var(--ink-2); font-size: 15.5px; }
+  .ruling .vs {
+    display: block; font-family: var(--mono); font-size: 11px; letter-spacing: 0.16em;
+    text-transform: uppercase; color: var(--ink-3); margin: 2px 0 6px;
+  }
+  .forbid { color: var(--rose-ink); font-weight: 600; }
+  .permit { color: var(--teal-ink); font-weight: 600; }
+
+  .callout {
+    border-left: 2px solid var(--teal); padding: 2px 0 2px 20px;
+    margin: 24px 0; color: var(--ink-2); font-size: 15.5px;
+  }
+  .callout strong { color: var(--ink); }
+
+  /* ── Rulings strip ────────────────────────────────────────── */
+  .rulings { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 1px; background: var(--rule); border: 1px solid var(--rule); margin: 26px 0 0; }
+  .rulings > div { background: var(--paper); padding: 18px 20px; }
+  .rulings .k { font-family: var(--mono); font-size: 11px; letter-spacing: 0.12em; color: var(--ink-3); text-transform: uppercase; }
+  .rulings .v { font-family: var(--serif); font-size: 20px; font-weight: 600; margin: 6px 0 5px; letter-spacing: -0.005em; }
+  .rulings .v.no { color: var(--rose-ink); }
+  .rulings .n { font-size: 13.5px; color: var(--ink-2); line-height: 1.45; }
+
+  /* ── Specimen grid: frame + rule card ─────────────────────── */
+  .specimens { display: grid; gap: 1px; background: var(--rule); border: 1px solid var(--rule); margin-top: 30px; }
+  .spec { background: var(--paper); display: grid; grid-template-columns: 372px 1fr; gap: 0; }
+  .spec > .stage { padding: 26px; border-right: 1px solid var(--rule-soft); display: flex; flex-direction: column; gap: 12px; }
+  .spec > .rules { padding: 26px 28px; min-width: 0; }
+  @media (max-width: 860px) {
+    .spec { grid-template-columns: 1fr; }
+    .spec > .stage { border-right: 0; border-bottom: 1px solid var(--rule-soft); }
+  }
+  .spec-id { font-family: var(--mono); font-size: 11px; letter-spacing: 0.12em; color: var(--ink-3); text-transform: uppercase; margin-bottom: 3px; }
+  .spec-name { font-family: var(--serif); font-size: 21px; font-weight: 600; line-height: 1.25; margin: 0 0 12px; letter-spacing: -0.008em; text-wrap: balance; }
+  .rules p { font-size: 14.5px; color: var(--ink-2); margin: 0 0 14px; }
+  .rules p:last-child { margin-bottom: 0; }
+  .tags { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 14px; }
+  .tag {
+    font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.07em; font-weight: 600;
+    padding: 3px 8px; border-radius: 3px; background: var(--rule-soft); color: var(--ink-2);
+    white-space: nowrap;
+  }
+  .tag.no  { background: var(--rose-wash); color: var(--rose-ink); }
+  .tag.yes { background: var(--teal-wash); color: var(--teal-ink); }
+
+  /* ── THE DEVICE FRAME — light in both themes, on purpose ──── */
+  .phone {
+    width: 320px; max-width: 100%;
+    background: #FAFAFA;                 /* theme.colorNeutralLight */
+    border: 1px solid #EAEAEA;           /* theme.colorBorder */
+    border-radius: 24px;                 /* theme.radiusLarge */
+    padding: 14px 12px 16px;
+    color: #0A0A0A;                      /* theme.colorTextPrimary */
+    font-family: var(--sans);
+    color-scheme: light;
+  }
+  .section-title {
+    font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
+    color: #737373; font-weight: 600; margin: 2px 4px 8px;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .section-title .add { color: #737373; font-weight: 500; text-transform: none; letter-spacing: 0; font-size: 12px; }
+
+  /* The regimen card — mirrors the profile "Current medications" row.
+     Values are real: radius 16, border #EAEAEA, name 17/500, meta/day/
+     compliance 13 secondary #525252, track 5px, fill teal. */
+  .card {
+    background: #FFFFFF; border: 1px solid #EAEAEA;
+    border-radius: 16px; padding: 13px 14px 12px; margin-bottom: 8px;
+  }
+  .med-name { font-size: 17px; font-weight: 500; color: #0A0A0A; letter-spacing: -0.003em; }
+  .med-meta { font-size: 13px; color: #525252; margin-top: 2px; }
+  .med-days { font-size: 13px; color: #525252; margin-top: 6px; }
+  .track { height: 5px; border-radius: 3px; background: #F0F0F0; overflow: hidden; margin-top: 7px; }
+  .fill  { height: 5px; border-radius: 3px; background: #00C2A8; }
+  .med-note { font-size: 13px; color: #525252; margin-top: 8px; }
+  .med-compliance { font-size: 13px; color: #525252; margin-top: 9px; }
+
+  /* The confirm-in-the-loop prompt — a calm inset the eye lands on,
+     colorSurfaceSubtle ground + colorBorder hairline, radiusSmall. */
+  .prompt {
+    margin-top: 10px; background: #F5F5F5; border: 1px solid #EAEAEA;
+    border-radius: 8px; padding: 11px 12px 12px;
+    display: flex; flex-direction: column; gap: 5px;
+  }
+  .prompt-lede  { font-size: 13px; color: #0A0A0A; font-weight: 500; }
+  .prompt-defer { font-size: 12px; color: #737373; line-height: 1.42; }
+  /* accent-light ground + accent-ink text: the contrast-safe pair, the
+     same treatment the med-strip mock uses for its one-tap. Calm, not a
+     loud "done!" button — the owner is ending it, the app is not. */
+  .confirm-btn {
+    align-self: flex-start; margin-top: 4px;
+    background: #E0FBF7; color: #0B7B6C;
+    font-size: 13px; font-weight: 600; letter-spacing: 0.005em;
+    border: 0; border-radius: 8px; padding: 8px 14px; min-height: 36px;
+    font-family: inherit; cursor: pointer;
+  }
+  .confirm-btn:focus-visible { outline: 2px solid #00C2A8; outline-offset: 2px; }
+  /* variant C — the quiet text link, no panel */
+  .link-act {
+    align-self: flex-start; margin-top: 7px; background: none; border: 0; padding: 4px 0;
+    font-family: inherit; font-size: 13px; font-weight: 600; color: #0B7B6C; cursor: pointer;
+  }
+  .link-act:focus-visible { outline: 2px solid #00C2A8; outline-offset: 2px; }
+
+  .med-actions { display: flex; align-items: center; gap: 8px; margin-top: 12px; }
+  .act { font-size: 11px; color: #525252; text-decoration: underline; }
+  .act.log { color: #00C2A8; font-weight: 500; }
+  .act.end { color: #DC2626; }
+  .dot { font-size: 11px; color: #EAEAEA; }
+
+  /* past-medications result row */
+  .card.past { background: #FFFFFF; }
+  .past-pill {
+    display: inline-block; margin-top: 8px;
+    background: #EAF0F7; color: #3D5875;
+    font-size: 12px; font-weight: 600; border-radius: 999px; padding: 3px 10px;
+  }
+
+  .caption { font-size: 12px; color: var(--ink-3); font-family: var(--mono); letter-spacing: 0.03em; }
+
+  /* ── Copy-variant comparison — the round's real decision ───── */
+  .variants { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 22px; margin-top: 28px; align-items: start; }
+  .variant { display: flex; flex-direction: column; gap: 12px; }
+  .variant-cap { font-size: 13.5px; color: var(--ink-2); }
+  .variant-cap b { display: block; font-family: var(--mono); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink); margin-bottom: 4px; }
+  .variant.pick .variant-cap b { color: var(--teal-ink); }
+  .picktag {
+    display: inline-block; font-family: var(--mono); font-size: 10px; letter-spacing: 0.1em;
+    text-transform: uppercase; font-weight: 600; color: var(--teal-ink); background: var(--teal-wash);
+    border-radius: 3px; padding: 2px 7px; margin-left: 8px; vertical-align: middle;
+  }
+
+  /* ── The confirm dialog (iOS alert) on a scrim ────────────── */
+  .scrim {
+    background: rgba(10,10,10,0.35); border-radius: 16px; padding: 44px 20px;
+    display: flex; justify-content: center; margin-top: 4px;
+  }
+  .dialog {
+    width: 272px; background: #F7F7F7; border-radius: 14px; overflow: hidden;
+    font-family: var(--sans); color: #0A0A0A; box-shadow: 0 10px 40px rgba(0,0,0,0.25);
+    color-scheme: light;
+  }
+  .dialog-body { padding: 19px 16px 15px; text-align: center; }
+  .dialog-title { font-size: 15px; font-weight: 600; }
+  .dialog-msg { font-size: 12.5px; color: #3A3A3A; margin-top: 4px; line-height: 1.4; }
+  .dialog-actions { display: flex; border-top: 1px solid #D8D8DC; }
+  .dialog-btn { flex: 1; padding: 11px 6px; font-size: 15px; color: #0A84FF; text-align: center; }
+  .dialog-btn.strong { font-weight: 600; }
+  .dialog-btn + .dialog-btn { border-left: 1px solid #D8D8DC; }
+
+  .flow { display: flex; flex-wrap: wrap; align-items: center; gap: 18px; margin-top: 26px; }
+  .flow .arrow { font-size: 22px; color: var(--ink-3); }
+  .flow figure { margin: 0; display: flex; flex-direction: column; gap: 10px; max-width: 320px; }
+  .flow figcaption { font-size: 13px; color: var(--ink-2); }
+
+  /* ── Never-say table ──────────────────────────────────────── */
+  .tablewrap { overflow-x: auto; margin-top: 26px; }
+  table { border-collapse: collapse; width: 100%; min-width: 640px; font-size: 14.5px; }
+  th, td { text-align: left; vertical-align: top; padding: 13px 16px 13px 0; border-bottom: 1px solid var(--rule-soft); }
+  th { font-family: var(--mono); font-size: 11px; letter-spacing: 0.11em; text-transform: uppercase; color: var(--ink-3); font-weight: 600; border-bottom-color: var(--rule); padding-top: 0; }
+  td.rule-ref { font-family: var(--mono); font-size: 12px; color: var(--ink-3); white-space: nowrap; padding-right: 22px; }
+  td.say { color: var(--ink-2); }
+  .never { color: var(--rose-ink); text-decoration: line-through; text-decoration-thickness: 1px; }
+
+  ul.notes { margin: 16px 0 0; padding-left: 0; list-style: none; display: grid; gap: 12px; }
+  ul.notes li { padding-left: 20px; position: relative; color: var(--ink-2); font-size: 15.5px; }
+  ul.notes li::before { content: ""; position: absolute; left: 0; top: 0.62em; width: 7px; height: 1px; background: var(--ink-3); }
+  ul.notes li strong { color: var(--ink); }
+
+  footer { margin-top: 80px; border-top: 1px solid var(--rule); padding-top: 22px; font-size: 13.5px; color: var(--ink-3); }
+  footer a { color: var(--teal-ink); }
+  footer code { color: var(--ink-2); }
+</style>
+
+<div class="wrap">
+
+  <header class="mast">
+    <p class="eyebrow">
+      <span>B-719</span><span>Round 1</span><span>2026-08-06</span>
+      <span class="badge">For review</span>
+    </p>
+    <h1>When a medication course reaches its end</h1>
+    <p class="standfirst">
+      Nyx finished a 28-dose course of Motozol — all 28 logged as given — and the regimen still sits under
+      <strong>Current medications</strong>, because the only thing that moves a course to <em>past</em> is the owner
+      finding the small <strong>End</strong> control and tapping it. Even the PM didn't know it was required. A
+      prescription <em>has</em> a defined end; the app should recognise it. The mechanism is ruled —
+      <strong>confirm-in-the-loop</strong> — so this round is about the words and the states, not whether to build.
+    </p>
+  </header>
+
+  <div class="col">
+    <p>
+      This is the wedge user's most-visited health record: the person sent home with a course to finish. When the
+      course is over, the record should close cleanly — but nothing about the app admits the course <em>can</em> end
+      except a red word in a utility row the owner had no reason to read. The fix is not a new mechanism. The card
+      already ends a course; it just never says so at the moment it matters.
+    </p>
+  </div>
+
+  <div class="rulings">
+    <div>
+      <div class="k">Mechanism · ruled</div>
+      <div class="v">Confirm-in-the-loop</div>
+      <div class="n">When a course reaches its planned end, surface a calm prompt to finish it. The owner always confirms.</div>
+    </div>
+    <div>
+      <div class="k">Rejected</div>
+      <div class="v no">Auto-end</div>
+      <div class="n">Both silent auto-end and auto-end-with-undo. Ending a course is a clinical judgement — the app must never make it for the owner.</div>
+    </div>
+    <div>
+      <div class="k">Scope · v1</div>
+      <div class="v">The Pet-tab card</div>
+      <div class="n">Both triggers: a dose count reached, and an end date passed. One pure predicate, reusing the shipped End path.</div>
+    </div>
+  </div>
+
+  <!-- ══ 01 ══════════════════════════════════════════════════ -->
+  <section>
+    <div class="sec-head"><span class="sec-num">01</span><h2>The gap today</h2></div>
+    <div class="col">
+      <p>
+        Here is the card Nyx's owner is actually looking at. B-642 already did something deliberate and
+        Dr. Chen-reviewed here — under a full bar it added <em>"When the course ends is your vet's call,"</em>
+        precisely so a full progress bar could not be read as <em>"stop now."</em> That line is right, and this
+        round keeps it. The gap is that the line <strong>describes</strong> the moment and then offers no way to
+        <strong>act</strong> on it. When the vet does make the call, the owner is left hunting for the red word.
+      </p>
+    </div>
+
+    <div class="specimens">
+      <div class="spec">
+        <div class="stage">
+          <div class="phone">
+            <div class="section-title"><span>Current medications</span><span class="add">+ Add</span></div>
+            <div class="card">
+              <div class="med-name">Motozol</div>
+              <div class="med-meta">5 mg · Oral · Twice daily</div>
+              <div class="med-days">28 of 28 doses</div>
+              <div class="track"><div class="fill" style="width:100%"></div></div>
+              <div class="med-note">When the course ends is your vet's call.</div>
+              <div class="med-compliance">28 doses given</div>
+              <div class="med-actions"><span class="act log">Log a dose</span><span class="dot">·</span><span class="act">Edit</span><span class="dot">·</span><span class="act end">End</span></div>
+            </div>
+          </div>
+          <p class="caption">as-built · the note is inert, the only door is “End”</p>
+        </div>
+        <div class="rules">
+          <div class="spec-id">What's wrong</div>
+          <p class="spec-name">A finished course that can't tell you it's finished</p>
+          <p>
+            The bar is full, the count says <code>28 of 28</code>, and the compliance line says every dose went in.
+            Everything reads <em>done</em> — except the app never lets the owner close it without knowing that the
+            quiet, red, underlined <strong>End</strong> in the action row is the way.
+          </p>
+          <p>
+            <strong>Not the fix:</strong> auto-completing at 28. A course can genuinely run past its bottle, and a
+            vet may extend it. The app deciding it's over is the exact early-stop error B-642 was written to avoid.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══ 02 ══════════════════════════════════════════════════ -->
+  <section>
+    <div class="sec-head"><span class="sec-num">02</span><h2>The proposal</h2></div>
+    <div class="col">
+      <p>
+        Keep B-642's deferral to the vet, and give it a hand to act with. The card gains one calm inset at the
+        moment a course reaches its planned end: the fact, the deferral, and a single confirming tap. It never
+        asserts the course is over — it offers the affordance for <em>when the vet says it is.</em>
+      </p>
+    </div>
+
+    <div class="specimens">
+      <div class="spec">
+        <div class="stage">
+          <div class="phone">
+            <div class="section-title"><span>Current medications</span><span class="add">+ Add</span></div>
+            <div class="card">
+              <div class="med-name">Motozol</div>
+              <div class="med-meta">5 mg · Oral · Twice daily</div>
+              <div class="med-days">28 of 28 doses</div>
+              <div class="track"><div class="fill" style="width:100%"></div></div>
+              <div class="prompt">
+                <div class="prompt-lede">All 28 doses are logged.</div>
+                <div class="prompt-defer">When the course ends is your vet's call — mark it finished here once it is.</div>
+                <button class="confirm-btn">Mark as finished</button>
+              </div>
+              <div class="med-compliance">28 doses given</div>
+              <div class="med-actions"><span class="act log">Log a dose</span><span class="dot">·</span><span class="act">Edit</span><span class="dot">·</span><span class="act end">End</span></div>
+            </div>
+          </div>
+          <p class="caption">proposed · the inset replaces the inert note</p>
+        </div>
+        <div class="rules">
+          <div class="spec-id">Anatomy</div>
+          <p class="spec-name">The fact, the deferral, the tap — in that order</p>
+          <div class="tags">
+            <span class="tag yes">asks, never asserts</span>
+            <span class="tag yes">reuses handleEndRegimen</span>
+            <span class="tag no">no auto-end</span>
+            <span class="tag no">no “complete”</span>
+          </div>
+          <p>
+            <strong>The fact</strong> — <code>All 28 doses are logged.</code> For a dose course this is always true
+            at target, because refused and missed doses never count toward it. Stating the record, not judging the pet.
+          </p>
+          <p>
+            <strong>The deferral</strong> — B-642's blessed sentence, kept verbatim in spirit so no early-stop read is possible.
+          </p>
+          <p>
+            <strong>The tap</strong> — accent-light ground, accent-ink text: calm, not a loud “done” button. It reuses the
+            shipped <code>confirmEndRegimen</code> → <code>handleEndRegimen</code> path; no new write. The utility-row
+            <strong>End</strong> stays, because you can still end a course early — the prompt is that same action, surfaced
+            at the right moment.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══ 03 ══════════════════════════════════════════════════ -->
+  <section>
+    <div class="sec-head"><span class="sec-num">03</span><h2>Which words</h2></div>
+    <div class="col">
+      <p>
+        This is the decision the round exists for. Three directions, same mechanism. The clinical hinge is whether the
+        prompt <em>asks if the pet is done</em> (which subtly implies they should be) or <em>offers the affordance while
+        leaving the call to the vet.</em> Given B-642, I'd keep the deferral — <strong>B</strong>. Final wording still goes
+        through <code>nyx-voice</code> and Dr. Chen.
+      </p>
+    </div>
+
+    <div class="variants">
+      <!-- A -->
+      <div class="variant">
+        <div class="phone">
+          <div class="card">
+            <div class="med-name">Motozol</div>
+            <div class="med-meta">5 mg · Oral · Twice daily</div>
+            <div class="med-days">28 of 28 doses</div>
+            <div class="track"><div class="fill" style="width:100%"></div></div>
+            <div class="prompt">
+              <div class="prompt-lede">Nyx has had all 28 doses.</div>
+              <div class="prompt-defer">Is this course finished?</div>
+              <button class="confirm-btn">Mark as finished</button>
+            </div>
+          </div>
+        </div>
+        <p class="variant-cap"><b>A · Ask plainly</b>
+          Clearest and shortest. But <em>“Is this course finished?”</em> nudges toward yes — the early-stop read B-642 exists to prevent.</p>
+      </div>
+
+      <!-- B (recommended) -->
+      <div class="variant pick">
+        <div class="phone">
+          <div class="card">
+            <div class="med-name">Motozol</div>
+            <div class="med-meta">5 mg · Oral · Twice daily</div>
+            <div class="med-days">28 of 28 doses</div>
+            <div class="track"><div class="fill" style="width:100%"></div></div>
+            <div class="prompt">
+              <div class="prompt-lede">All 28 doses are logged.</div>
+              <div class="prompt-defer">When the course ends is your vet's call — mark it finished here once it is.</div>
+              <button class="confirm-btn">Mark as finished</button>
+            </div>
+          </div>
+        </div>
+        <p class="variant-cap"><b>B · Defer to the vet <span class="picktag">Recommended</span></b>
+          Keeps B-642's already-approved sentence and adds the action. Offers, never asks. Safest against early-stop, and the record is a fact, not a verdict.</p>
+      </div>
+
+      <!-- C -->
+      <div class="variant">
+        <div class="phone">
+          <div class="card">
+            <div class="med-name">Motozol</div>
+            <div class="med-meta">5 mg · Oral · Twice daily</div>
+            <div class="med-days">28 of 28 doses</div>
+            <div class="track"><div class="fill" style="width:100%"></div></div>
+            <div class="med-note">When the course ends is your vet's call.</div>
+            <button class="link-act">Mark this course finished →</button>
+          </div>
+        </div>
+        <p class="variant-cap"><b>C · Quiet link</b>
+          Lightest touch — the existing note plus one text link, no inset. Least visual weight; also the least likely to be noticed, which is the whole problem we're solving.</p>
+      </div>
+    </div>
+
+    <div class="col">
+      <div class="callout">
+        <strong>Open sub-question for any variant:</strong> a second, quiet <em>“Not yet”</em> to dismiss the prompt for now?
+        It reads considerate, but it needs a scrap of stored state and it risks letting an owner permanently silence the one
+        cue that closes the record. My lean: <strong>no dismiss in v1</strong> — the inset is calm and inline (not a nudge, so
+        Principle 4 doesn't bite), and it simply stays until the course is ended.
+      </div>
+    </div>
+  </section>
+
+  <!-- ══ 04 ══════════════════════════════════════════════════ -->
+  <section>
+    <div class="sec-head"><span class="sec-num">04</span><h2>Every state</h2></div>
+    <div class="col">
+      <p>
+        Two courses can reach an end — a dose count, or an end date — and the prompt has to be right for both, including
+        when doses were missed. Just as important is where it must <strong>not</strong> appear: an open-ended course has no
+        end to confirm, and a course still in progress hasn't reached one.
+      </p>
+    </div>
+
+    <div class="specimens">
+
+      <!-- state 1 -->
+      <div class="spec">
+        <div class="stage">
+          <div class="phone">
+            <div class="card">
+              <div class="med-name">Motozol</div>
+              <div class="med-meta">5 mg · Oral · Twice daily</div>
+              <div class="med-days">28 of 28 doses</div>
+              <div class="track"><div class="fill" style="width:100%"></div></div>
+              <div class="prompt">
+                <div class="prompt-lede">All 28 doses are logged.</div>
+                <div class="prompt-defer">When the course ends is your vet's call — mark it finished here once it is.</div>
+                <button class="confirm-btn">Mark as finished</button>
+              </div>
+              <div class="med-compliance">28 doses given</div>
+            </div>
+          </div>
+          <p class="caption">trigger · doses ≥ target_duration_doses</p>
+        </div>
+        <div class="rules">
+          <div class="spec-id">State 1 · dose course, at target</div>
+          <p class="spec-name">The Motozol case</p>
+          <p>Fires when <code>dosesTowardTarget ≥ target_duration_doses</code> — which the card already computes as <code>doseCourse.atTarget</code>, so the trigger is free.</p>
+        </div>
+      </div>
+
+      <!-- state 2 -->
+      <div class="spec">
+        <div class="stage">
+          <div class="phone">
+            <div class="card">
+              <div class="med-name">Gabapentin</div>
+              <div class="med-meta">50 mg · Oral · Twice daily</div>
+              <div class="med-days">Day 14 of 14</div>
+              <div class="track"><div class="fill" style="width:100%"></div></div>
+              <div class="prompt">
+                <div class="prompt-lede">The 14 days for this course are up.</div>
+                <div class="prompt-defer">When the course ends is your vet's call — mark it finished here once it is.</div>
+                <button class="confirm-btn">Mark as finished</button>
+              </div>
+              <div class="med-compliance">26 of 28 doses given</div>
+            </div>
+          </div>
+          <p class="caption">trigger · today ≥ started_at + target_duration_days</p>
+        </div>
+        <div class="rules">
+          <div class="spec-id">State 2 · day course, days up</div>
+          <p class="spec-name">A calendar end, spoken in calendar terms</p>
+          <p>
+            The lede is about the <strong>days</strong>, never the doses — <code>The 14 days for this course are up</code> —
+            so it stays true no matter how many doses were logged. Note the compliance line reads <code>26 of 28</code>: two
+            were missed, and the prompt still doesn't imply otherwise.
+          </p>
+        </div>
+      </div>
+
+      <!-- state 3 -->
+      <div class="spec">
+        <div class="stage">
+          <div class="phone">
+            <div class="card">
+              <div class="med-name">Prednisolone</div>
+              <div class="med-meta">5 mg · Oral · Once daily</div>
+              <div class="med-days">Day 10 of 10</div>
+              <div class="track"><div class="fill" style="width:100%"></div></div>
+              <div class="prompt">
+                <div class="prompt-lede">The 10 days for this course are up.</div>
+                <div class="prompt-defer">When the course ends is your vet's call — mark it finished here once it is.</div>
+                <button class="confirm-btn">Mark as finished</button>
+              </div>
+              <div class="med-compliance">6 of 10 doses given · 4 missed</div>
+            </div>
+          </div>
+          <p class="caption">edge · days up, doses missed — copy unchanged</p>
+        </div>
+        <div class="rules">
+          <div class="spec-id">State 3 · day course, doses missed</div>
+          <p class="spec-name">The prompt never launders a gap</p>
+          <div class="tags"><span class="tag no">never “all doses given”</span><span class="tag no">never “well done”</span></div>
+          <p>
+            Same words as State 2 by design. The four missed doses are the record's business — shown plainly on the
+            compliance line — and the calendar prompt speaks only to the calendar. It offers to close the course; it never
+            congratulates or reassures.
+          </p>
+        </div>
+      </div>
+
+      <!-- state 4 -->
+      <div class="spec">
+        <div class="stage">
+          <div class="phone">
+            <div class="card">
+              <div class="med-name">Apoquel</div>
+              <div class="med-meta">3.6 mg · Oral · As needed</div>
+              <div class="med-days">Started 12 Jul</div>
+              <div class="med-compliance">Last dose 2 days ago</div>
+              <div class="med-actions"><span class="act log">Log a dose</span><span class="dot">·</span><span class="act">Edit</span><span class="dot">·</span><span class="act end">End</span></div>
+            </div>
+          </div>
+          <p class="caption">no target set · no prompt, ever</p>
+        </div>
+        <div class="rules">
+          <div class="spec-id">State 4 · ongoing / as-needed</div>
+          <p class="spec-name">No end to confirm</p>
+          <div class="tags"><span class="tag no">no prompt</span></div>
+          <p>
+            With neither <code>target_duration_doses</code> nor <code>target_duration_days</code> set, the course has no
+            defined end — so there is nothing to recognise and no prompt. An open-ended regimen is never nudged to close;
+            the utility-row <strong>End</strong> remains for whenever the owner decides.
+          </p>
+        </div>
+      </div>
+
+      <!-- state 5 -->
+      <div class="spec">
+        <div class="stage">
+          <div class="phone">
+            <div class="card">
+              <div class="med-name">Motozol</div>
+              <div class="med-meta">5 mg · Oral · Twice daily</div>
+              <div class="med-days">Dose 12 of 28</div>
+              <div class="track"><div class="fill" style="width:43%"></div></div>
+              <div class="med-compliance">12 doses given</div>
+              <div class="med-actions"><span class="act log">Log a dose</span><span class="dot">·</span><span class="act">Edit</span><span class="dot">·</span><span class="act end">End</span></div>
+            </div>
+          </div>
+          <p class="caption">mid-course · nothing has reached an end</p>
+        </div>
+        <div class="rules">
+          <div class="spec-id">State 5 · still in progress</div>
+          <p class="spec-name">The unchanged, common case</p>
+          <div class="tags"><span class="tag no">no prompt</span></div>
+          <p>
+            Below target (or inside the day window) the card is exactly as it ships today. The prompt is a moment, not a
+            fixture — it exists only at the end, so the everyday mid-course view gains nothing and loses nothing.
+          </p>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ══ 05 ══════════════════════════════════════════════════ -->
+  <section>
+    <div class="sec-head"><span class="sec-num">05</span><h2>What the tap does</h2></div>
+    <div class="col">
+      <p>
+        The confirming tap reuses the shipped End flow verbatim — the same reassuring dialog, the same
+        <code>handleEndRegimen</code> write. The course moves to <strong>Past medications</strong> as an owner-marked
+        ending, which is the only kind of ending the record ever shows (H1).
+      </p>
+    </div>
+
+    <div class="flow">
+      <figure>
+        <div class="scrim">
+          <div class="dialog">
+            <div class="dialog-body">
+              <div class="dialog-title">End medication</div>
+              <div class="dialog-msg">Mark Motozol as finished? Its logged doses stay on the timeline and in vet reports.</div>
+            </div>
+            <div class="dialog-actions">
+              <div class="dialog-btn">Cancel</div>
+              <div class="dialog-btn strong">End medication</div>
+            </div>
+          </div>
+        </div>
+        <figcaption><b>Confirm</b> — the shipped dialog, unchanged. The reassurance that doses are kept is exactly what makes “finish” safe to tap.</figcaption>
+      </figure>
+
+      <span class="arrow" aria-hidden="true">→</span>
+
+      <figure>
+        <div class="phone">
+          <div class="section-title"><span>Past medications</span></div>
+          <div class="card past">
+            <div class="med-name">Motozol</div>
+            <div class="med-meta">5 mg · Oral · Twice daily</div>
+            <span class="past-pill">Ended 6 Aug · 28 of 28 doses</span>
+          </div>
+        </div>
+        <figcaption><b>Result</b> — the row moves down to Past medications, dated. “Ended” appears only from this owner action — never on its own.</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <!-- ══ 06 ══════════════════════════════════════════════════ -->
+  <section>
+    <div class="sec-head"><span class="sec-num">06</span><h2>What it must never say</h2></div>
+    <div class="col">
+      <p>
+        The guardrails this surface inherits. Each is a rule the copy and the mechanism are held to, with the ruling it
+        comes from — so the build (and its Dr. Chen / <code>nyx-voice</code> pass) has one place to check against.
+      </p>
+    </div>
+
+    <div class="tablewrap">
+      <table>
+        <thead>
+          <tr><th>Never</th><th>Instead</th><th>Because</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="say"><span class="never">“Course complete.” / “All done!” / “Finished!”</span></td>
+            <td class="say">Offer to mark it finished; state the fact.</td>
+            <td class="rule-ref">D7 · B-618</td>
+          </tr>
+          <tr>
+            <td class="say"><span class="never">Auto-complete the course at target</span></td>
+            <td class="say">The owner confirms, every time.</td>
+            <td class="rule-ref">H1 · B-422</td>
+          </tr>
+          <tr>
+            <td class="say"><span class="never">“Great adherence!” / any praise</span></td>
+            <td class="say">Report the count; make no verdict.</td>
+            <td class="rule-ref">clinical-guardrails</td>
+          </tr>
+          <tr>
+            <td class="say"><span class="never">“All 10 doses given” on a course with gaps</span></td>
+            <td class="say">Speak to the calendar; let the compliance line show misses.</td>
+            <td class="rule-ref">intake ≠ preference</td>
+          </tr>
+          <tr>
+            <td class="say"><span class="never">Prompt an as-needed / open-ended course</span></td>
+            <td class="say">No defined end → no prompt.</td>
+            <td class="rule-ref">State 4</td>
+          </tr>
+          <tr>
+            <td class="say"><span class="never">A push notification to “finish” the course</span></td>
+            <td class="say">Inline only in v1; notifications are their own track.</td>
+            <td class="rule-ref">B-661</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <ul class="notes">
+      <li><strong>One predicate.</strong> “Has this course reached its planned end?” is a single pure function, unit-tested, reused by both triggers — the diet-trial §5.3 lesson applied preemptively.</li>
+      <li><strong>Out of scope, on purpose.</strong> Auto-superseding an old course when a new regimen for the same drug starts (needs a drug-identity match that can misfire), a reminder notification (B-661), and mirroring this onto the Home med strip (B-614) — each its own row if pursued.</li>
+    </ul>
+  </section>
+
+  <footer>
+    <p>
+      Source of truth: <code>docs/culprit-med-course-end-mockups.html</code> · Backlog <code>B-719</code> · extends
+      <code>B-618</code> (dose-course card) and <code>B-140</code> (med-history end registers) · reuses
+      <code>handleEndRegimen</code>. Round 1 — mechanism ruled (confirm-in-the-loop), copy and states for PM review.
+      Not design-locked; final wording pending <code>nyx-voice</code> + Dr. Chen.
+    </p>
+  </footer>
+
+</div>
