@@ -15,6 +15,15 @@ import {
   validateBannerPhrasing,
   signalFindingsSignature,
   hasUnseenFinding,
+  dotLaneModel,
+  timingReceiptDegrades,
+  timingCompareRows,
+  timingControlDisclosure,
+  dotLaneA11yLabel,
+  stackedCompareA11yLabel,
+  phoneScript,
+  isTimingFinding,
+  DOT_LANE_MAX,
   type BannerSafetyFinding,
 } from './signalCopy';
 import type {
@@ -1216,5 +1225,238 @@ describe('validateBannerPhrasing', () => {
   it('rejects too-short and too-long strings', () => {
     expect(validateBannerPhrasing('hi')).toBe(false);
     expect(validateBannerPhrasing('a'.repeat(201))).toBe(false);
+  });
+});
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Receipts (SR-1, B-721) — the pure evidence models.
+// ══════════════════════════════════════════════════════════════════════════════
+// The geometry and copy behind the Signal design-uplift strips. These are derived
+// from the finding's EXISTING counts (no payload change), so the invariants under
+// test are: one dot per timeable episode split correctly by the window; the A→C
+// degradation at the legibility cap; both compare counts printed; the un-timeable
+// remainder always disclosed; and the safety phone-script held to the same guardrail
+// screen the rest of the safety copy is (never reassures / dismisses / blames / shouts).
+
+describe('isTimingFinding', () => {
+  it('is true for the two timing types only', () => {
+    expect(isTimingFinding(postprandial())).toBe(true);
+    expect(isTimingFinding(timeofday())).toBe(true);
+    expect(isTimingFinding(correlation())).toBe(false);
+    expect(isTimingFinding(worsening())).toBe(false);
+    expect(isTimingFinding(reflection())).toBe(false);
+    expect(isTimingFinding(intakeDecline())).toBe(false);
+  });
+});
+
+describe('dotLaneModel — Shape A geometry', () => {
+  it('postprandial: one dot per timeable episode, split in/out of the window', () => {
+    const m = dotLaneModel(postprandial({ rapidCount: 4, eligibleCount: 12 }));
+    // 12 timeable episodes → 12 dots; 4 within the window, 8 outside (never the raw total).
+    expect(m.dots).toHaveLength(12);
+    expect(m.dots.filter((d) => d.inWindow)).toHaveLength(4);
+    expect(m.dots.filter((d) => !d.inWindow)).toHaveLength(8);
+  });
+
+  it('postprandial: the window is a single band anchored at the start of the lane', () => {
+    const m = dotLaneModel(postprandial({ rapidWindowMinutes: 30 }));
+    expect(m.bands).toHaveLength(1);
+    expect(m.bands[0].start).toBe(0);
+    expect(m.bands[0].end).toBeGreaterThan(0);
+    expect(m.bands[0].end).toBeLessThanOrEqual(0.5);
+    expect(m.axis).toEqual(['ate', '30m', '2h+']);
+  });
+
+  it('postprandial: in-window dots fall inside the band, out dots outside it', () => {
+    const m = dotLaneModel(postprandial({ rapidCount: 3, eligibleCount: 9 }));
+    const bandEnd = m.bands[0].end;
+    for (const d of m.dots) {
+      if (d.inWindow) expect(d.pos).toBeLessThanOrEqual(bandEnd + 1e-9);
+      else expect(d.pos).toBeGreaterThanOrEqual(bandEnd - 1e-9);
+    }
+    // Dots are returned left-to-right so the render order is stable.
+    const positions = m.dots.map((d) => d.pos);
+    expect(positions).toEqual([...positions].sort((a, b) => a - b));
+    // Every position is a real lane fraction.
+    for (const p of positions) {
+      expect(p).toBeGreaterThanOrEqual(0);
+      expect(p).toBeLessThanOrEqual(1);
+    }
+  });
+
+  it('timeofday: a non-wrapping band is one segment; dots split by the clock band', () => {
+    const m = dotLaneModel(timeofday({ clusterStartLocalHour: 4, clusterWindowHours: 4, clusterCount: 5, eligibleCount: 8 }));
+    expect(m.bands).toHaveLength(1);
+    expect(m.bands[0].start).toBeCloseTo(4 / 24, 6);
+    expect(m.bands[0].end).toBeCloseTo(8 / 24, 6);
+    expect(m.dots).toHaveLength(8);
+    expect(m.dots.filter((d) => d.inWindow)).toHaveLength(5);
+    expect(m.axis).toEqual(['12am', '12pm', '12am']);
+  });
+
+  it('timeofday: a band that crosses midnight is drawn as two segments (no lost band)', () => {
+    // 11pm + 4h → 3am wraps the lane edge.
+    const m = dotLaneModel(timeofday({ clusterStartLocalHour: 23, clusterWindowHours: 4, clusterCount: 4, eligibleCount: 6 }));
+    expect(m.bands).toHaveLength(2);
+    expect(m.bands.some((b) => b.end === 1)).toBe(true); // the pre-midnight segment reaches the edge
+    expect(m.bands.some((b) => b.start === 0)).toBe(true); // the post-midnight segment starts at the edge
+    // In-window dots land inside one of the two segments.
+    const inBand = (p: number) => m.bands.some((b) => p >= b.start - 1e-9 && p <= b.end + 1e-9);
+    for (const d of m.dots.filter((x) => x.inWindow)) expect(inBand(d.pos)).toBe(true);
+    expect(m.dots.filter((d) => d.inWindow)).toHaveLength(4);
+  });
+
+  it('clamps a malformed cache (rapidCount > eligibleCount) rather than drawing negative dots', () => {
+    const m = dotLaneModel(postprandial({ rapidCount: 20, eligibleCount: 5 }));
+    expect(m.dots).toHaveLength(5);
+    expect(m.dots.filter((d) => d.inWindow)).toHaveLength(5); // capped at eligible, never 20
+    expect(m.dots.filter((d) => !d.inWindow)).toHaveLength(0);
+  });
+});
+
+describe('timingReceiptDegrades — the A→C legibility cap (§4 / cap±1)', () => {
+  it('renders the dot lane at exactly the cap', () => {
+    expect(timingReceiptDegrades(postprandial({ eligibleCount: DOT_LANE_MAX }))).toBe(false);
+    expect(timingReceiptDegrades(timeofday({ eligibleCount: DOT_LANE_MAX }))).toBe(false);
+  });
+  it('degrades to the compare one past the cap', () => {
+    expect(timingReceiptDegrades(postprandial({ eligibleCount: DOT_LANE_MAX + 1 }))).toBe(true);
+    expect(timingReceiptDegrades(timeofday({ eligibleCount: DOT_LANE_MAX + 1 }))).toBe(true);
+  });
+});
+
+describe('timingCompareRows — Shape C, both counts printed', () => {
+  it('postprandial: pattern side (rose/concern) vs the rest (muted), counts printed', () => {
+    const [inRow, outRow] = timingCompareRows(postprandial({ rapidCount: 4, eligibleCount: 12, rapidWindowMinutes: 30 }));
+    expect(inRow).toEqual({ label: 'Within 30 min of eating', count: 4, tone: 'concern' });
+    expect(outRow).toEqual({ label: 'Timed, but later', count: 8, tone: 'muted' });
+  });
+
+  it('timeofday: the clock range labels the pattern side; other times are the control', () => {
+    const [inRow, outRow] = timingCompareRows(timeofday({ clusterStartLocalHour: 4, clusterWindowHours: 4, clusterCount: 5, eligibleCount: 8 }));
+    expect(inRow).toEqual({ label: '4am–8am', count: 5, tone: 'concern' });
+    expect(outRow).toEqual({ label: 'Other times of day', count: 3, tone: 'muted' });
+  });
+
+  it('never emits a negative control count from a malformed cache', () => {
+    const [, outRow] = timingCompareRows(postprandial({ rapidCount: 20, eligibleCount: 5 }));
+    expect(outRow.count).toBe(0);
+  });
+});
+
+describe('timingControlDisclosure — the honest un-timeable remainder', () => {
+  it('names the episodes that were not near any logged meal', () => {
+    expect(timingControlDisclosure(postprandial({ eligibleCount: 12, totalEpisodes: 14 }))).toBe(
+      "2 episodes weren't near any logged meal",
+    );
+  });
+  it('singularises', () => {
+    expect(timingControlDisclosure(postprandial({ eligibleCount: 12, totalEpisodes: 13 }))).toBe(
+      "1 episode weren't near any logged meal",
+    );
+  });
+  it('names the episodes with no clear time for time-of-day', () => {
+    expect(timingControlDisclosure(timeofday({ eligibleCount: 8, totalEpisodes: 11 }))).toBe(
+      "3 episodes didn't have a clear enough time to place",
+    );
+  });
+  it('is null when every episode was timeable (nothing to disclose)', () => {
+    expect(timingControlDisclosure(postprandial({ eligibleCount: 12, totalEpisodes: 12 }))).toBeNull();
+    expect(timingControlDisclosure(timeofday({ eligibleCount: 8, totalEpisodes: 8 }))).toBeNull();
+  });
+});
+
+describe('a11y labels are full sentences (§11)', () => {
+  it('dot lane reads its split as a sentence', () => {
+    expect(dotLaneA11yLabel(postprandial({ rapidCount: 4, eligibleCount: 12, rapidWindowMinutes: 30 }))).toBe(
+      '4 of 12 timed episodes fell within 30 minutes of eating.',
+    );
+    expect(dotLaneA11yLabel(timeofday({ clusterStartLocalHour: 4, clusterWindowHours: 4, clusterCount: 5, eligibleCount: 8 }))).toBe(
+      '5 of 8 timed episodes fell between 4am and 8am.',
+    );
+  });
+  it('stacked compare reads its labelled counts in order', () => {
+    const rows = timingCompareRows(postprandial({ rapidCount: 4, eligibleCount: 12, rapidWindowMinutes: 30 }));
+    expect(stackedCompareA11yLabel(rows)).toBe('Within 30 min of eating, 4; Timed, but later, 8.');
+  });
+});
+
+describe('phoneScript — the safety phone-call facts (§4/§9)', () => {
+  it('is null for every non-safety type (the script is safety-only)', () => {
+    expect(phoneScript(correlation(), 'Nyx')).toBeNull();
+    expect(phoneScript(reflection(), 'Nyx')).toBeNull();
+    expect(phoneScript(postprandial(), 'Nyx')).toBeNull();
+    expect(phoneScript(timeofday(), 'Nyx')).toBeNull();
+  });
+
+  it('worsening: symptom + this-week/last-week counts + window, NO recency (payload has none)', () => {
+    const facts = phoneScript(worsening({ symptomType: 'vomit', currentCount: 5, priorCount: 2, currentDays: 3, windowDays: 14 }), 'Nyx');
+    expect(facts).toEqual([
+      { label: 'Sign', value: 'vomiting' },
+      { label: 'This week', value: '5 episodes on 3 days' },
+      { label: 'Week before', value: '2 episodes' },
+      { label: 'Watched over', value: 'the last 14 days' },
+    ]);
+    // recency renders only where the payload carries it — worsening never does.
+    expect(facts?.some((f) => f.label === 'Most recent')).toBe(false);
+  });
+
+  it('worsening (more_days arm): talks in days, never miscounts on the episode axis', () => {
+    const facts = phoneScript(worsening({ trigger: 'more_days', currentDays: 4, priorDays: 2, symptomType: 'itch' }), 'Nyx');
+    expect(facts).toContainEqual({ label: 'This week', value: '4 days with itching' });
+    expect(facts).toContainEqual({ label: 'Week before', value: '2 days' });
+  });
+
+  it('chronicity: carries the recency line (payload has daysSinceLastEpisode)', () => {
+    const facts = phoneScript(chronicity({ daysSinceLastEpisode: 1, episodeCount: 20, activeWeeks: 6, windowDays: 56, firstOnsetIso: '2026-05-15T08:00:00.000Z' }), 'Nyx');
+    expect(facts).toContainEqual({ label: 'Ongoing since', value: 'May' });
+    expect(facts).toContainEqual({ label: 'How often', value: '20 episodes across 6 of 8 weeks' });
+    expect(facts).toContainEqual({ label: 'Most recent', value: 'yesterday' });
+  });
+
+  it('incident_red_flag: carries what a photo showed + a most-recent date', () => {
+    const facts = phoneScript(incidentRedFlag({ flags: ['blood'], incidentType: 'vomit', flaggedIncidentCount: 2, mostRecentFlaggedIso: '2026-07-16T08:00:00.000Z' }), 'Nyx');
+    expect(facts).toContainEqual({ label: 'What a photo showed', value: "possible blood in Nyx's vomiting" });
+    expect(facts).toContainEqual({ label: 'From', value: '2 logged photos' });
+    expect(facts).toContainEqual({ label: 'Most recent', value: 'July 16' });
+  });
+
+  it('intake_decline (refusal): names the refused food, capping a long free-text label', () => {
+    const longLabel = 'Some Very Long Brand Name Premium Grain-Free Ocean Whitefish Recipe';
+    const facts = phoneScript(intakeDecline({ trigger: 'refused_normal_food', refusedFoodLabel: longLabel, ratedMealsConsidered: 9 }), 'Nyx');
+    expect(facts?.[0]).toEqual({ label: 'Concern', value: 'refused a food normally eaten' });
+    const food = facts?.find((f) => f.label === 'Food');
+    expect(food).toBeTruthy();
+    expect((food?.value.length ?? 0)).toBeLessThanOrEqual(40);
+  });
+
+  it('intake_decline (consecutive low): span + comparison, no invented recency', () => {
+    const facts = phoneScript(intakeDecline({ trigger: 'consecutive_low', daysBelowBaseline: 3, ratedMealsConsidered: 9 }), 'Nyx');
+    expect(facts).toEqual([
+      { label: 'Concern', value: 'eating less than usual' },
+      { label: 'How long', value: '3 days below the usual' },
+      { label: 'Compared with', value: '9 recent meals' },
+    ]);
+  });
+
+  it('every safety phone-script string passes the guardrail screen (never reassures/dismisses/blames)', () => {
+    const safety: BannerSafetyFinding[] = [
+      worsening(),
+      worsening({ trigger: 'more_days' }),
+      chronicity(),
+      incidentRedFlag(),
+      incidentRedFlag({ flags: ['blood', 'foreign_material'], incidentType: 'stool' }),
+      intakeDecline({ trigger: 'consecutive_low' }),
+      intakeDecline({ trigger: 'refused_normal_food', refusedFoodLabel: 'Chicken & Rice' }),
+    ];
+    for (const f of safety) {
+      const facts = phoneScript(f, 'Nyx');
+      expect(facts).not.toBeNull();
+      const blob = facts!.map((x) => `${x.label} ${x.value}`).join(' ');
+      expect(blob).not.toMatch(REASSURANCE_RE);
+      expect(blob).not.toMatch(DISMISSIVE_RE);
+      expect(blob).not.toMatch(CAUSAL_RE);
+      expect(blob).not.toContain('!');
+    }
   });
 });

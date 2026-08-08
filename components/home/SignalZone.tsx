@@ -7,6 +7,7 @@ import { Divider } from '../ui/Divider';
 import { SectionLabel } from '../ui/SectionLabel';
 import { InsightCard } from './InsightCard';
 import { useSignal } from '../../hooks/useSignal';
+import { useAllowlistFlag } from '../../hooks/useAppConfig';
 import { buildingIntro, coverageCopy, noPatternIntro, staleIntro } from '../../lib/signalCopy';
 import type { CachedFinding, CoverageDiagnostic } from '../../lib/signal';
 
@@ -19,6 +20,11 @@ const PREVIEW_INSIGHTS = [
 
 export function SignalZone() {
   const { findings, coverage, displayState, petName, isLoading, markSeen } = useSignal();
+  // Signal/Home design uplift (SR-1, B-721) — dark behind the allowlist flag. Resolved
+  // once here and threaded down so the whole zone reads one eligibility (fail-closed to
+  // the shipped surface for everyone else). SR-2/SR-3 gate the empty states + register
+  // on this same value.
+  const designV2 = useAllowlistFlag('signal_design_v2');
 
   // While the first cache read is in flight, hold the warm building state rather
   // than letting the empty findings flash 'stale' for a frame.
@@ -47,7 +53,7 @@ export function SignalZone() {
     <Card elevated>
       <SectionLabel label="Signal" header style={styles.label} />
       {state === 'live' ? (
-        <LiveStack findings={findings} petName={petName} />
+        <LiveStack findings={findings} petName={petName} designV2={designV2} />
       ) : state === 'stale' ? (
         <Text style={styles.intro}>{staleIntro(petName)}</Text>
       ) : state === 'no_pattern' ? (
@@ -103,14 +109,22 @@ function NoPatternState({
 // the pet's context-lead type, then tier — §5/§8); we render in that order and
 // only add the visual rhythm. Hairline dividers between rows keep one container
 // reading as a quiet list, not a wall of boxes.
-function LiveStack({ findings, petName }: { findings: CachedFinding[]; petName: string }) {
+function LiveStack({
+  findings,
+  petName,
+  designV2,
+}: {
+  findings: CachedFinding[];
+  petName: string;
+  designV2: boolean;
+}) {
   const ordered = [...findings].sort((a, b) => a.rank - b.rank);
   return (
     <View>
       {ordered.map((f, i) => (
         <View key={`${f.finding.type}-${f.rank}`}>
           {i > 0 && <Divider style={styles.rowDivider} />}
-          <InsightCard cached={f} petName={petName} isLead={i === 0} />
+          <InsightCard cached={f} petName={petName} isLead={i === 0} designV2={designV2} />
         </View>
       ))}
     </View>

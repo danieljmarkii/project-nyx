@@ -9,9 +9,17 @@
 // flagship wedge surface, which is exactly the false attribution the joint candidate
 // exists to prevent.
 
-import { render } from '@testing-library/react-native';
+import { type ReactElement } from 'react';
+import { fireEvent, render } from '@testing-library/react-native';
 import { InsightCard } from './InsightCard';
-import type { CachedFinding, CorrelationFinding } from '../../lib/signal';
+import { dotLaneA11yLabel } from '../../lib/signalCopy';
+import type {
+  CachedFinding,
+  CorrelationFinding,
+  PostprandialTimingFinding,
+  ReflectionFinding,
+  SymptomWorseningFinding,
+} from '../../lib/signal';
 
 const correlation = (over: Partial<CorrelationFinding> = {}): CorrelationFinding => ({
   type: 'food_symptom_correlation',
@@ -74,5 +82,142 @@ describe('InsightCard — joint candidate linked pair', () => {
   it('exposes the pair to screen readers as one phrase, not as loose chips', () => {
     const { getByLabelText } = render(<InsightCard cached={cached(joint())} petName="Pixel" />);
     expect(getByLabelText('Chicken and Duck — always fed together')).toBeTruthy();
+  });
+});
+
+// ── SR-1 (B-721) — the design-uplift receipts, dark behind signal_design_v2 ──────
+// The load-bearing invariant is FR-FLAG-2: flag-OFF is BYTE-IDENTICAL to the shipped
+// card. So designV2={false} renders exactly the default, and correlation/reflection
+// are unchanged even flag-ON (they carry no card-face strip — S10 / sentence-only).
+// Flag-ON adds the timing dot lane (degrading to the compare at large n) and, in the
+// expand, the safety phone-call script + the two-sided timing control side. These are
+// the render-side checks; the pure geometry/copy is covered in lib/signalCopy.test.ts.
+
+const postprandial = (over: Partial<PostprandialTimingFinding> = {}): PostprandialTimingFinding => ({
+  type: 'postprandial_timing',
+  priorityClass: 'insight',
+  symptomType: 'vomit',
+  rapidCount: 4,
+  eligibleCount: 8,
+  totalEpisodes: 10,
+  rapidWindowMinutes: 30,
+  lastTwoEligibleRapid: true,
+  medianMinutesSinceFeeding: 18,
+  feedingFormsInEvidence: ['dry treat'],
+  windowDays: 60,
+  ...over,
+});
+
+const worsening = (over: Partial<SymptomWorseningFinding> = {}): SymptomWorseningFinding => ({
+  type: 'symptom_worsening',
+  priorityClass: 'safety',
+  symptomType: 'vomit',
+  currentCount: 5,
+  priorCount: 2,
+  currentDays: 3,
+  priorDays: 2,
+  trigger: 'more_episodes',
+  tier: 'standard',
+  windowDays: 14,
+  ...over,
+});
+
+const reflection = (over: Partial<ReflectionFinding> = {}): ReflectionFinding => ({
+  type: 'reflection',
+  priorityClass: 'insight',
+  symptomType: 'vomit',
+  currentCount: 2,
+  priorCount: 5,
+  direction: 'improving',
+  windowDays: 7,
+  ...over,
+});
+
+const anyCached = (finding: CachedFinding['finding'], text = 'A sentence.'): CachedFinding => ({
+  rank: 0,
+  text,
+  finding,
+});
+
+// The rendered tree as a stable structural string. JSON.stringify drops the Pressable's
+// event-handler function props (new closures every render — never identity-equal), so
+// two renders of the same structure compare equal; the a11y/style/text structure is
+// exactly what FR-FLAG-2 "byte-identical" means.
+const structureOf = (node: ReactElement) => JSON.stringify(render(node).toJSON());
+
+describe('InsightCard — SR-1 flag gating (signal_design_v2)', () => {
+  it('flag-OFF is byte-identical to the shipped default, and snapshot-pinned (FR-FLAG-2)', () => {
+    const cases: CachedFinding[] = [
+      anyCached(correlation()),
+      anyCached(postprandial()),
+      anyCached(worsening()),
+      anyCached(reflection()),
+    ];
+    for (const c of cases) {
+      // Passing designV2={false} renders exactly the shipped default (no prop).
+      expect(structureOf(<InsightCard cached={c} petName="Nyx" designV2={false} />)).toBe(
+        structureOf(<InsightCard cached={c} petName="Nyx" />),
+      );
+      // Pin the shipped surface so a future flag-off drift fails CI (snapshot per type).
+      expect(render(<InsightCard cached={c} petName="Nyx" designV2={false} />).toJSON()).toMatchSnapshot(
+        `flag-off ${c.finding.type}`,
+      );
+    }
+  });
+
+  it('a timing card gains its dot-lane receipt only when the flag is on', () => {
+    const c = anyCached(postprandial());
+    const label = dotLaneA11yLabel(postprandial());
+    expect(render(<InsightCard cached={c} petName="Nyx" designV2={false} />).queryByLabelText(label)).toBeNull();
+    expect(render(<InsightCard cached={c} petName="Nyx" designV2 />).queryByLabelText(label)).toBeTruthy();
+  });
+
+  it('a large-n timing card degrades to the compare (no dot lane) on the card face', () => {
+    const finding = postprandial({ eligibleCount: 20, totalEpisodes: 24, rapidCount: 12 });
+    const view = render(<InsightCard cached={anyCached(finding)} petName="Nyx" designV2 />);
+    expect(view.queryByLabelText(dotLaneA11yLabel(finding))).toBeNull(); // no lane above the cap
+    expect(view.queryByText('Within 30 min of eating')).toBeTruthy();
+    expect(view.queryByText('Timed, but later')).toBeTruthy();
+  });
+
+  it('correlation stays sentence-only even flag-ON (S10 — the sample line carries it)', () => {
+    const c = anyCached(correlation());
+    expect(structureOf(<InsightCard cached={c} petName="Nyx" designV2 />)).toBe(
+      structureOf(<InsightCard cached={c} petName="Nyx" designV2={false} />),
+    );
+  });
+
+  it('reflection stays sentence-only even flag-ON (the density-gated compare is SR-5)', () => {
+    const c = anyCached(reflection());
+    expect(structureOf(<InsightCard cached={c} petName="Nyx" designV2 />)).toBe(
+      structureOf(<InsightCard cached={c} petName="Nyx" designV2={false} />),
+    );
+  });
+
+  it('a SAFETY card carries no strip on its face (S1 — plainness is the severity signal)', () => {
+    // Collapsed, the only flag-ON change lives inside the expand — the face is unchanged.
+    const c = anyCached(worsening());
+    expect(structureOf(<InsightCard cached={c} petName="Nyx" designV2 />)).toBe(
+      structureOf(<InsightCard cached={c} petName="Nyx" designV2={false} />),
+    );
+  });
+
+  it('the safety expand renders the phone-call script only when the flag is on', () => {
+    const c = anyCached(worsening());
+    const offView = render(<InsightCard cached={c} petName="Nyx" designV2={false} />);
+    fireEvent.press(offView.getByLabelText('A sentence.'));
+    expect(offView.queryByText('If you call your clinic, the facts to have ready')).toBeNull();
+
+    const onView = render(<InsightCard cached={c} petName="Nyx" designV2 />);
+    fireEvent.press(onView.getByLabelText('A sentence.'));
+    expect(onView.queryByText('If you call your clinic, the facts to have ready')).toBeTruthy();
+  });
+
+  it('the timing expand draws the control side + the honest un-timeable remainder', () => {
+    const c = anyCached(postprandial({ eligibleCount: 8, totalEpisodes: 10, rapidCount: 4 }));
+    const view = render(<InsightCard cached={c} petName="Nyx" designV2 />);
+    fireEvent.press(view.getByLabelText('A sentence.'));
+    expect(view.queryByText('The other side of the picture')).toBeTruthy();
+    expect(view.queryByText("2 episodes weren't near any logged meal")).toBeTruthy();
   });
 });
