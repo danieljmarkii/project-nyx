@@ -20,7 +20,8 @@
 --                      adoption — a screen renders one surface or the other,
 --                      never a mix (FR-FLAG-1).
 --
--- CLIENT-RENDER-ONLY (spec §7, §101) — the ONE difference from widget_enabled
+-- CLIENT-RENDER-ONLY (spec §7, the "Beta-shelf composition" paragraph) — the ONE
+-- difference from widget_enabled
 -- (054): this flag gates only what the CLIENT draws. Unlike the widget (whose
 -- flag gates server-computed data) and unlike Ask (whose flag gates an Edge
 -- Function), the uplift's one server change — SR-4's additive `generate-signal`

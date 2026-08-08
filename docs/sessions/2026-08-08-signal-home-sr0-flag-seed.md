@@ -37,7 +37,7 @@ any UI PR merges.
 `signal_design_v2` is deliberately **not** registered server-side (there was a live
 temptation to mirror it into `supabase/functions/_shared/flags.ts` the way `ask_*`
 is gated in `ask/index.ts`). It isn't, for a reason the spec is explicit about
-(§7/§101): unlike `widget_enabled` (which gates server-*computed data*) and Ask
+(§7): unlike `widget_enabled` (which gates server-*computed data*) and Ask
 (which gates an *Edge Function*), this flag gates only what the **client draws**
 (SR-1..SR-6). The uplift's single server change — SR-4's additive `generate-signal`
 payload (med-on-board facts + `densityComparable`) — is computed *uniformly for

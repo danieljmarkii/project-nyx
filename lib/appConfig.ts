@@ -56,7 +56,7 @@ export type AppConfigKey = keyof AppConfigValues;
 // it is CLIENT-RENDER-ONLY: it gates only what the client draws (SR-1..SR-6), never
 // server data. The uplift's one server change (SR-4's additive `generate-signal`
 // payload) is computed uniformly for every account and is flag-independent, so there
-// is deliberately no server-side registration of this key (spec §7/§101).
+// is deliberately no server-side registration of this key (spec §7).
 export const ALLOWLIST_FLAG_KEYS = [
   'ask_enabled',
   'ask_general_enabled',

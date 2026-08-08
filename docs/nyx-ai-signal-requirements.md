@@ -419,9 +419,11 @@ per card; confidence tag is a short calm label.
 
 ## 11. Decisions (finalized 2026-05-30) + remaining design-phase items
 
-All PM-facing open decisions are now **resolved**. Two items below remain as
-*design-phase tasks* (b, f) — they don't block build start; they're tuned/decided
-during the build, not before it.
+All PM-facing open decisions are now **resolved**. One item below remains a
+*design-phase task* (b — threshold tuning against live data); item (f) (per-type
+presentation) was **resolved 2026-08-07** by `docs/nyx-signal-home-requirements.md`
+(see below). Neither blocks build start; they're tuned/decided during the build,
+not before it.
 
 - **(a) Tap-to-expand evidence — DECIDED: in v1.** Each card is tappable to reveal the
   evidence behind it (§3.2). PM stretched for it in v1; the engine already carries the

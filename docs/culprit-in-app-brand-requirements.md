@@ -175,7 +175,7 @@ Banned vocabulary (grep gate in every N-PR): weather, rain, forecast, climate, s
 | D4 | Night tokens | **Closed** — §2 (dusk/tint dropped) |
 | D7 | Night moment | **Closed** — §6 (medium-large background whorl per iteration 3) |
 | D8 | Signal ground | **CLOSED light, night variant unbuilt** — §7.5 (amended 2026-08-08; no on-device A/B; `SIGNAL_NIGHT_GROUND` never created). Was "closed as a gate — §7.4". |
-| D9 | Home briefing | **Adopted directionally** — §8.2 (merge gated on the Tier-2 §3 sign-off) |
+| D9 | Home briefing | **Adopted directionally — now superseded** (2026-08-08) — see the §8.2 note: N7's briefing is the **rung-3 phase** of `docs/nyx-signal-home-requirements.md`. Was "adopted directionally — §8.2 (merge gated on the Tier-2 §3 sign-off)". |
 | D10 | Calendar v3 | **Closed** — §8.1 (strip cut; months-read → vet report) |
 | D11 | Completion pushes | **Closed with a cut-line** — §10 |
 
