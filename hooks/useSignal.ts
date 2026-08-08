@@ -36,8 +36,10 @@ export interface SignalState {
   hasUnseenSignal: boolean;
   /** E1 building-state headline inputs (B-721 SR-2, §6): the B-421 local-day count
    * from the pet's first logged event (day-1-inclusive, min 1) and the total
-   * non-deleted event count. Only meaningful in the `building` display state; 1/0
-   * otherwise. Derived from the same local-SQLite read as the empty-state split. */
+   * non-deleted event count. Computed from the pet's local events for EVERY state
+   * (only E1 renders them today), from the same SQLite read as the presence split.
+   * They hold Day 1 / 0 events only before the first read lands (EMPTY_LOCAL_CONTEXT)
+   * — which is why BuildingStateV2 holds the day-count clause back at eventCount 0. */
   dayNumber: number;
   eventCount: number;
   /** Marks THIS pet's current finding set as seen (spec §3 — "flips false when

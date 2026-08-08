@@ -133,6 +133,19 @@ describe('SignalZone — flag ON (E1/E2 restyle, FR-FLAG-1 no mix)', () => {
     expect(queryByText(noPatternIntro('Nyx'))).toBeNull();
   });
 
+  it('E1 building: holds the day-count clause back on the pre-read frame (eventCount 0)', () => {
+    // The isLoading→building override can render E1 before the local read lands; a real
+    // building pet always has ≥1 recent event, so eventCount 0 is the pre-read sentinel —
+    // it must NOT flash a fabricated "Day 1 — 0 events so far" (§6 no fabricated numbers).
+    mockUseSignal.mockReturnValue(
+      signalState({ displayState: 'building', dayNumber: 1, eventCount: 0 }),
+    );
+    const { getByText, queryByText } = render(<SignalZone />);
+    expect(getByText("We're getting to know Nyx.")).toBeTruthy(); // the warm lead still renders
+    expect(queryByText(/Day \d+ —/)).toBeNull(); // no day-count clause
+    expect(queryByText(/0 events/)).toBeNull(); // never a zero count
+  });
+
   it('E2 with no coverage diagnostic: the §9 copy stands alone', () => {
     mockUseSignal.mockReturnValue(signalState({ displayState: 'no_pattern', coverage: [] }));
     const { getByText } = render(<SignalZone />);

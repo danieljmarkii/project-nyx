@@ -205,20 +205,31 @@ function BuildingStateV2({
 }) {
   return (
     <View>
+      {/* eventCount 0 ⇒ the pre-read sentinel (a real building pet always has ≥1 recent
+          event — deriveDisplayState requires hasRecentActivity), so hold the day-count
+          clause back for that one load frame rather than flash a fabricated
+          "Day 1 — 0 events so far". Once the local read lands it renders in full. */}
       <Text
         style={styles.v2Headline}
-        accessibilityLabel={buildingHeadline(petName, dayNumber, eventCount)}
+        accessibilityLabel={
+          eventCount > 0 ? buildingHeadline(petName, dayNumber, eventCount) : buildingHeadlineLead(petName)
+        }
       >
-        {buildingHeadlineLead(petName)}{' '}
-        <Text style={[styles.v2DayCount, { color: GHOST.dayCountColor, fontWeight: GHOST.dayCountWeight }]}>
-          {buildingDayCount(dayNumber, eventCount)}
-        </Text>
+        {buildingHeadlineLead(petName)}
+        {eventCount > 0 ? (
+          <Text style={[styles.v2DayCount, { color: GHOST.dayCountColor, fontWeight: GHOST.dayCountWeight }]}>
+            {' '}
+            {buildingDayCount(dayNumber, eventCount)}
+          </Text>
+        ) : null}
       </Text>
       <Text style={styles.v2Sub}>{BUILDING_SUB}</Text>
 
       {/* The three things the engine is building toward, in the mock's order
-          (timing → food → change), each with a ghost preview of its future receipt. */}
-      <WatchingForRow text={BUILDING_WATCHING_FOR[0]} railColor={GHOST.rails[0]} first>
+          (timing → food → change), each with a ghost preview of its future receipt.
+          Every row carries a top hairline — the first one separates the list from the
+          sub-line above (matching the mock's three-divider rhythm). */}
+      <WatchingForRow text={BUILDING_WATCHING_FOR[0]} railColor={GHOST.rails[0]}>
         <GhostLane />
       </WatchingForRow>
       <WatchingForRow text={BUILDING_WATCHING_FOR[1]} railColor={GHOST.rails[1]} />
@@ -236,16 +247,14 @@ function BuildingStateV2({
 function WatchingForRow({
   text,
   railColor,
-  first = false,
   children,
 }: {
   text: string;
   railColor: string;
-  first?: boolean;
   children?: ReactNode;
 }) {
   return (
-    <View style={[styles.watchRow, !first && styles.watchRowDivider]}>
+    <View style={styles.watchRow}>
       <View style={[styles.ghostRail, { backgroundColor: railColor, opacity: GHOST.railOpacity }]} />
       <View style={styles.watchBody}>
         <Text style={styles.watchText}>{text}</Text>
@@ -422,12 +431,12 @@ const styles = StyleSheet.create({
     marginBottom: theme.space1,
   },
   // A "watching for" row — a ghost rail + the named thing + an optional ghost receipt.
+  // Every row carries a top hairline; the first row's separates the list from the
+  // sub-line above (the mock's three-divider rhythm).
   watchRow: {
     flexDirection: 'row',
     gap: theme.space1,
     paddingVertical: theme.space1,
-  },
-  watchRowDivider: {
     borderTopWidth: 1,
     borderTopColor: theme.colorBorder,
   },
