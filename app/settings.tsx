@@ -184,18 +184,20 @@ export default function SettingsScreen() {
             <Text style={styles.changePasswordLabel}>Change password</Text>
             <ChevronRight size={18} color={theme.colorTextTertiary} strokeWidth={2} />
           </TouchableOpacity>
-          {/* Email change is a support path, not an undated promise: nyx-voice
-              Pattern 3 bars "coming soon", and keeping one directly under a
-              newly-working row would re-create the half-built signal D4 removed.
-              A real answer, and the current one for an owner who has lost their
-              signup mailbox (spec §5.7 / §11).
-              "instead" is load-bearing: this note sits immediately under the
-              working Change-password row, so without it the "contact support"
-              reads as the PASSWORD path (the exact misread reported from an older
-              build where password itself routed to support). It scopes the support
-              route to EMAIL only — password is a real in-app screen now. */}
+          {/* The email note gets its OWN divider-bounded cell. Without the
+              divider it hugs the Change-password row and — because the Your-name
+              row just above establishes the label + grey-caption shape — the note
+              reads as THAT row's caption, i.e. "Change password → contact support"
+              (the reported misread; PM screenshot 2026-08-08, on a build that
+              already has the working in-app screen). Detached, it reads as what it
+              is: a standalone note about the account email. Email change stays a
+              support path in v1 (nyx-voice Pattern 3 bars "coming soon"; in-app
+              email change is deferred → B-427); the general Contact support row
+              below is the same destination, and this is the honest answer for an
+              owner who has lost their signup mailbox (spec §5.7 / §11). */}
+          <View style={styles.accountDivider} />
           <Text style={styles.accountNote}>
-            To change your account email instead, contact support.
+            To change your account email, contact support.
           </Text>
         </Card>
 
