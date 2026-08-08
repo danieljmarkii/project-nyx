@@ -1,6 +1,6 @@
 # 2026-08-06 — Signal / Home design exploration (round 1)
 
-**Track:** B-718 (filed this session) · **Branch:** `claude/signals-design-exploration-v070e0` · **Type:** ideation + mock round 1 (no app code)
+**Track:** B-721 (filed this session as B-718; renumbered at wrap — B-718 was taken on `main` first by the Vet Files round-3 row) · **Shipped via:** #606 · **Branch:** `claude/signals-design-exploration-v070e0` · **Type:** ideation + mock round 1 (no app code)
 **Prompt:** PM asked how to take the Signal section — "awesome, clean, information-forward… lightbulb moment in a small space" — to the next level, plus broader Home thoughts; wanted a brainstorm, stakeholder interviews, research, a product-team review, and a range of options from conservative to swing-for-the-fences.
 **Deliverables:** `docs/culprit-signal-home-mockups.html` (round 1, published as an Artifact) + this record.
 

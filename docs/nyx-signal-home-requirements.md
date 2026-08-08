@@ -1,4 +1,6 @@
-# Culprit — Signal / Home Design Uplift Requirements (B-718)
+# Culprit — Signal / Home Design Uplift Requirements (B-721)
+
+_Track ID: filed as B-718; renumbered to **B-721** at the 2026-08-07 wrap (B-718 was taken on `main` first by the Vet Files round-3 row)._
 
 **Version:** 1.1 (**FINALIZED** — build-ready for rungs 1+2) · **Date:** 2026-08-07 (finalized same day; v1.1 adds FR-FLAG) · **Owner:** Sr. Product Designer, ratified by PM through mock rounds 1–2.1
 **Provenance:** `docs/sessions/2026-08-06-signal-home-design-exploration.md` (interviews, research, the team review, the Change Contract negotiation, every PM ruling) + `docs/culprit-signal-home-mockups.html` (round 2.1, the design authority — artifact 🌒, same-URL across rounds).
