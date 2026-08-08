@@ -14,6 +14,7 @@ import {
 } from '../lib/signal';
 import {
   bannerCopy,
+  buildingDayNumber,
   deriveDisplayState,
   hasUnseenFinding,
   selectCrossPetSafetyFinding,
@@ -33,6 +34,12 @@ export interface SignalState {
   /** The CulpritMark pulse contract (B-284 §3) — true while this pet has a live,
    * unseen finding set. */
   hasUnseenSignal: boolean;
+  /** E1 building-state headline inputs (B-721 SR-2, §6): the B-421 local-day count
+   * from the pet's first logged event (day-1-inclusive, min 1) and the total
+   * non-deleted event count. Only meaningful in the `building` display state; 1/0
+   * otherwise. Derived from the same local-SQLite read as the empty-state split. */
+  dayNumber: number;
+  eventCount: number;
   /** Marks THIS pet's current finding set as seen (spec §3 — "flips false when
    * the Signal zone is viewed"). Bound to this hook instance's own petId +
    * findings — always a consistent pair by construction, so callers never have
@@ -58,13 +65,26 @@ const SUBSTANTIAL_MIN_DAYS = 7;
 interface LocalSignalContext {
   hasRecentActivity: boolean;
   hasSubstantialHistory: boolean;
+  // E1 building-state headline inputs (B-721 SR-2) — the pet's total non-deleted
+  // event count and the B-421 local-day count from its first logged event. Read
+  // from the SAME query as the presence-state split (no extra round-trip).
+  eventCount: number;
+  dayNumber: number;
 }
+
+const EMPTY_LOCAL_CONTEXT: LocalSignalContext = {
+  hasRecentActivity: false,
+  hasSubstantialHistory: false,
+  eventCount: 0,
+  dayNumber: 1,
+};
 
 // Read straight from local SQLite (fast, offline-capable, same pattern as
 // useTrend) so the empty-state distinctions work without a network round-trip.
 function getLocalSignalContext(petId: string): LocalSignalContext {
   try {
-    const recentCutoff = new Date(Date.now() - RECENT_ACTIVITY_MS).toISOString();
+    const now = Date.now();
+    const recentCutoff = new Date(now - RECENT_ACTIVITY_MS).toISOString();
     const rows = getDb().getAllSync<{ total: number; recent: number; earliest: string | null }>(
       `SELECT COUNT(*) AS total,
               COUNT(CASE WHEN occurred_at >= ? THEN 1 END) AS recent,
@@ -75,14 +95,18 @@ function getLocalSignalContext(petId: string): LocalSignalContext {
     const r = rows[0];
     const total = r?.total ?? 0;
     const spanDays = r?.earliest
-      ? (Date.now() - Date.parse(r.earliest)) / (24 * 60 * 60 * 1000)
+      ? (now - Date.parse(r.earliest)) / (24 * 60 * 60 * 1000)
       : 0;
     return {
       hasRecentActivity: (r?.recent ?? 0) > 0,
       hasSubstantialHistory: total >= SUBSTANTIAL_MIN_EVENTS && spanDays >= SUBSTANTIAL_MIN_DAYS,
+      eventCount: total,
+      // One day definition (B-421): the local-day counter, device zone. The floor
+      // is Day 1, so a pet logged for the first time today never reads "Day 0".
+      dayNumber: buildingDayNumber(r?.earliest ?? null, now),
     };
   } catch {
-    return { hasRecentActivity: false, hasSubstantialHistory: false };
+    return EMPTY_LOCAL_CONTEXT;
   }
 }
 
@@ -100,10 +124,7 @@ export function useSignal(): SignalState {
   const [findings, setFindings] = useState<CachedFinding[]>([]);
   const [coverage, setCoverage] = useState<CoverageDiagnostic[]>([]);
   const [signalText, setSignalText] = useState<string | null>(null);
-  const [localCtx, setLocalCtx] = useState<LocalSignalContext>({
-    hasRecentActivity: false,
-    hasSubstantialHistory: false,
-  });
+  const [localCtx, setLocalCtx] = useState<LocalSignalContext>(EMPTY_LOCAL_CONTEXT);
   const [isLoading, setIsLoading] = useState(false);
 
   const petId = activePet?.id ?? null;
@@ -188,7 +209,18 @@ export function useSignal(): SignalState {
     useSignalMarkStore.getState().markSeen(petId, signalFindingsSignature(findings));
   }, [petId, findings]);
 
-  return { findings, coverage, displayState, signalText, petName, isLoading, hasUnseenSignal, markSeen };
+  return {
+    findings,
+    coverage,
+    displayState,
+    signalText,
+    petName,
+    isLoading,
+    hasUnseenSignal,
+    dayNumber: localCtx.dayNumber,
+    eventCount: localCtx.eventCount,
+    markSeen,
+  };
 }
 
 export interface CrossPetBanner {

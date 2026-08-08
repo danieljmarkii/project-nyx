@@ -1,0 +1,321 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`SignalZone — flag OFF (shipped surface byte-identical, FR-FLAG-2) building renders the shipped ghost previews, not the new E1 1`] = `
+<View
+  style={
+    [
+      {
+        "backgroundColor": "#FFFFFF",
+        "borderRadius": 16,
+        "padding": 24,
+      },
+      {
+        "elevation": 4,
+        "shadowColor": "#000",
+        "shadowOffset": {
+          "height": 2,
+          "width": 0,
+        },
+        "shadowOpacity": 0.1,
+        "shadowRadius": 10,
+      },
+      false,
+      undefined,
+    ]
+  }
+>
+  <Text
+    accessibilityRole="header"
+    style={
+      [
+        {
+          "color": "#525252",
+          "fontSize": 11,
+          "fontWeight": "500",
+          "letterSpacing": 0.8,
+          "textTransform": "uppercase",
+        },
+        {
+          "marginBottom": 16,
+        },
+      ]
+    }
+  >
+    Signal
+  </Text>
+  <Text
+    style={
+      {
+        "color": "#525252",
+        "fontSize": 15,
+        "lineHeight": 22,
+        "marginBottom": 16,
+      }
+    }
+  >
+    We're getting to know Nyx. Keep logging and the first patterns start to surface in a few days.
+  </Text>
+  <View
+    style={
+      {
+        "gap": 8,
+      }
+    }
+  >
+    <Text
+      style={
+        {
+          "color": "#737373",
+          "fontSize": 11,
+          "fontWeight": "500",
+          "letterSpacing": 0.4,
+          "marginBottom": 4,
+          "textTransform": "uppercase",
+        }
+      }
+    >
+      What the signal looks like:
+    </Text>
+    <View
+      style={
+        {
+          "backgroundColor": "#FAFAFA",
+          "borderRadius": 8,
+          "flexDirection": "row",
+          "gap": 10,
+          "padding": 16,
+        }
+      }
+    >
+      <View
+        style={
+          {
+            "backgroundColor": "#00C2A8",
+            "borderRadius": 1,
+            "opacity": 0.5,
+            "width": 2,
+          }
+        }
+      />
+      <Text
+        style={
+          {
+            "color": "#0A0A0A",
+            "flex": 1,
+            "fontSize": 13,
+            "lineHeight": 22,
+            "opacity": 0.65,
+          }
+        }
+      >
+        Vomiting dropped 60% in the two weeks after switching proteins — the diet trial appears to be working.
+      </Text>
+    </View>
+    <View
+      style={
+        {
+          "backgroundColor": "#FAFAFA",
+          "borderRadius": 8,
+          "flexDirection": "row",
+          "gap": 10,
+          "padding": 16,
+        }
+      }
+    >
+      <View
+        style={
+          {
+            "backgroundColor": "#00C2A8",
+            "borderRadius": 1,
+            "opacity": 0.5,
+            "width": 2,
+          }
+        }
+      />
+      <Text
+        style={
+          {
+            "color": "#0A0A0A",
+            "flex": 1,
+            "fontSize": 13,
+            "lineHeight": 22,
+            "opacity": 0.65,
+          }
+        }
+      >
+        Itching tends to follow meals containing chicken. No reaction logged after salmon.
+      </Text>
+    </View>
+  </View>
+  <View
+    accessibilityLabel="See all of Nyx's patterns"
+    accessibilityRole="button"
+    accessibilityState={
+      {
+        "busy": undefined,
+        "checked": undefined,
+        "disabled": undefined,
+        "expanded": undefined,
+        "selected": undefined,
+      }
+    }
+    accessibilityValue={
+      {
+        "max": undefined,
+        "min": undefined,
+        "now": undefined,
+        "text": undefined,
+      }
+    }
+    accessible={true}
+    collapsable={false}
+    focusable={true}
+    hitSlop={8}
+    onBlur={[Function]}
+    onClick={[Function]}
+    onFocus={[Function]}
+    onResponderGrant={[Function]}
+    onResponderMove={[Function]}
+    onResponderRelease={[Function]}
+    onResponderTerminate={[Function]}
+    onResponderTerminationRequest={[Function]}
+    onStartShouldSetResponder={[Function]}
+    style={
+      {
+        "borderTopColor": "#EAEAEA",
+        "borderTopWidth": 1,
+        "marginTop": 8,
+        "paddingTop": 16,
+      }
+    }
+  >
+    <Text
+      style={
+        {
+          "color": "#00C2A8",
+          "fontSize": 13,
+          "fontWeight": "500",
+        }
+      }
+    >
+      See all of 
+      Nyx
+      's patterns →
+    </Text>
+  </View>
+</View>
+`;
+
+exports[`SignalZone — flag OFF (shipped surface byte-identical, FR-FLAG-2) no_pattern renders the shipped intro, not the new E2 1`] = `
+<View
+  style={
+    [
+      {
+        "backgroundColor": "#FFFFFF",
+        "borderRadius": 16,
+        "padding": 24,
+      },
+      {
+        "elevation": 4,
+        "shadowColor": "#000",
+        "shadowOffset": {
+          "height": 2,
+          "width": 0,
+        },
+        "shadowOpacity": 0.1,
+        "shadowRadius": 10,
+      },
+      false,
+      undefined,
+    ]
+  }
+>
+  <Text
+    accessibilityRole="header"
+    style={
+      [
+        {
+          "color": "#525252",
+          "fontSize": 11,
+          "fontWeight": "500",
+          "letterSpacing": 0.8,
+          "textTransform": "uppercase",
+        },
+        {
+          "marginBottom": 16,
+        },
+      ]
+    }
+  >
+    Signal
+  </Text>
+  <Text
+    style={
+      {
+        "color": "#525252",
+        "fontSize": 15,
+        "lineHeight": 22,
+        "marginBottom": 16,
+      }
+    }
+  >
+    No clear patterns in Nyx's logs yet — we'll keep looking as you keep logging.
+  </Text>
+  <View
+    accessibilityLabel="See all of Nyx's patterns"
+    accessibilityRole="button"
+    accessibilityState={
+      {
+        "busy": undefined,
+        "checked": undefined,
+        "disabled": undefined,
+        "expanded": undefined,
+        "selected": undefined,
+      }
+    }
+    accessibilityValue={
+      {
+        "max": undefined,
+        "min": undefined,
+        "now": undefined,
+        "text": undefined,
+      }
+    }
+    accessible={true}
+    collapsable={false}
+    focusable={true}
+    hitSlop={8}
+    onBlur={[Function]}
+    onClick={[Function]}
+    onFocus={[Function]}
+    onResponderGrant={[Function]}
+    onResponderMove={[Function]}
+    onResponderRelease={[Function]}
+    onResponderTerminate={[Function]}
+    onResponderTerminationRequest={[Function]}
+    onStartShouldSetResponder={[Function]}
+    style={
+      {
+        "borderTopColor": "#EAEAEA",
+        "borderTopWidth": 1,
+        "marginTop": 8,
+        "paddingTop": 16,
+      }
+    }
+  >
+    <Text
+      style={
+        {
+          "color": "#00C2A8",
+          "fontSize": 13,
+          "fontWeight": "500",
+        }
+      }
+    >
+      See all of 
+      Nyx
+      's patterns →
+    </Text>
+  </View>
+</View>
+`;

@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, type ReactNode } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import { theme } from '../../constants/theme';
@@ -7,7 +7,21 @@ import { Divider } from '../ui/Divider';
 import { SectionLabel } from '../ui/SectionLabel';
 import { InsightCard } from './InsightCard';
 import { useSignal } from '../../hooks/useSignal';
-import { buildingIntro, coverageCopy, noPatternIntro, staleIntro } from '../../lib/signalCopy';
+import { useAllowlistFlag } from '../../hooks/useAppConfig';
+import {
+  BUILDING_FLOOR,
+  BUILDING_SUB,
+  BUILDING_WATCHING_FOR,
+  NO_PATTERN_HEADLINE,
+  NO_PATTERN_SUB,
+  buildingDayCount,
+  buildingHeadline,
+  buildingHeadlineLead,
+  buildingIntro,
+  coverageCopy,
+  noPatternIntro,
+  staleIntro,
+} from '../../lib/signalCopy';
 import type { CachedFinding, CoverageDiagnostic } from '../../lib/signal';
 
 // Ghosted "what insights look like" previews — kept in the building state so the
@@ -18,7 +32,15 @@ const PREVIEW_INSIGHTS = [
 ];
 
 export function SignalZone() {
-  const { findings, coverage, displayState, petName, isLoading, markSeen } = useSignal();
+  const { findings, coverage, displayState, petName, isLoading, dayNumber, eventCount, markSeen } =
+    useSignal();
+
+  // B-721 SR-2: the empty-state restyle (E1/E2) ships dark behind this allowlist
+  // flag. Flag-off renders the shipped states byte-identical (FR-FLAG-2); flag-on
+  // renders the round-2.1 designs. The flag gates ONLY what this PR builds — the
+  // building + no_pattern bodies. `live` (SR-1) and `stale` are untouched here, so
+  // they render identically in both worlds until their own slice lands.
+  const designV2 = useAllowlistFlag('signal_design_v2');
 
   // While the first cache read is in flight, hold the warm building state rather
   // than letting the empty findings flash 'stale' for a frame.
@@ -55,7 +77,13 @@ export function SignalZone() {
         // previews (the owner has logged enough to know the surface). B-053: when
         // the engine knows WHY there's no signal yet, surface the top coverage
         // diagnostic's one-line why + ≤1 safe action instead of the generic line.
-        <NoPatternState petName={petName} coverage={coverage} />
+        designV2 ? (
+          <NoPatternStateV2 petName={petName} coverage={coverage} />
+        ) : (
+          <NoPatternState petName={petName} coverage={coverage} />
+        )
+      ) : designV2 ? (
+        <BuildingStateV2 petName={petName} dayNumber={dayNumber} eventCount={eventCount} />
       ) : (
         <BuildingState petName={petName} />
       )}
@@ -134,6 +162,179 @@ function BuildingState({ petName }: { petName: string }) {
   );
 }
 
+// ── SR-2 empty states (B-721 §6) — flag-on E1 (building) + E2 (no_pattern) ──────
+// These render only behind `signal_design_v2`. E1 shows the SHAPE of what's coming:
+// ghosted receipts (a dot lane + a stacked compare), hollow dots, and DASHES where a
+// real receipt would print a count — never a fabricated number (§6). E2 is the mature
+// "nothing established" record: the verbatim B-284 §9 copy + the top B-053 coverage
+// diagnostic, restyled into the card rhythm. Neither reads absence as wellness.
+
+// The E1-vs-E1-c intensity pick (§6) — the ONE open design decision of this PR,
+// resolved on the PM's device at QA. Ships as E1-c, the COLOR pass: accent + slate
+// washes at ghost opacity, the day counter in accent ink. (Dialing a drawn color
+// pass down on-device is easier than imagining it on a neutral build, so E1-c is the
+// QA starting point.) Every tunable lives in this ONE object so the decision is a
+// single edit, never a hunt through the stylesheet:
+//   • plain E1 (neutral ghost): rails → colorTickIdle at 0.85; band 0.05; dots →
+//     colorTickIdle; compare 0.25; dayCount → colorTextPrimary / weightRegular.
+//   • "somewhere between": nudge the opacities.
+// Rose is deliberately absent — no alarm tone on a state with nothing to report. The
+// row-2 slate is colorEventMedication (a slate-blue WORLD hue); at ghost opacity on a
+// building-state rail it reads as a neutral slate, never a medication cue.
+const GHOST = {
+  rails: [theme.colorAccent, theme.colorEventMedication, theme.colorAccent] as const,
+  railOpacity: 0.35,
+  band: theme.colorAccent,
+  bandOpacity: 0.12,
+  dotInWindow: theme.colorAccent,
+  dotOutWindow: theme.colorTickIdle, // the honest exception: present but pale
+  compareFill: theme.colorAccent,
+  compareFillOpacity: 0.4,
+  dayCountColor: theme.colorAccentInk,
+  dayCountWeight: theme.weightSemibold,
+} as const;
+
+function BuildingStateV2({
+  petName,
+  dayNumber,
+  eventCount,
+}: {
+  petName: string;
+  dayNumber: number;
+  eventCount: number;
+}) {
+  return (
+    <View>
+      <Text
+        style={styles.v2Headline}
+        accessibilityLabel={buildingHeadline(petName, dayNumber, eventCount)}
+      >
+        {buildingHeadlineLead(petName)}{' '}
+        <Text style={[styles.v2DayCount, { color: GHOST.dayCountColor, fontWeight: GHOST.dayCountWeight }]}>
+          {buildingDayCount(dayNumber, eventCount)}
+        </Text>
+      </Text>
+      <Text style={styles.v2Sub}>{BUILDING_SUB}</Text>
+
+      {/* The three things the engine is building toward, in the mock's order
+          (timing → food → change), each with a ghost preview of its future receipt. */}
+      <WatchingForRow text={BUILDING_WATCHING_FOR[0]} railColor={GHOST.rails[0]} first>
+        <GhostLane />
+      </WatchingForRow>
+      <WatchingForRow text={BUILDING_WATCHING_FOR[1]} railColor={GHOST.rails[1]} />
+      <WatchingForRow text={BUILDING_WATCHING_FOR[2]} railColor={GHOST.rails[2]}>
+        <GhostCompare />
+      </WatchingForRow>
+
+      {/* The safety floor — the weekly-pattern framing must never read as "nothing
+          urgent surfaces before then". Absence is never wellness (§6). */}
+      <Text style={styles.v2Floor}>{BUILDING_FLOOR}</Text>
+    </View>
+  );
+}
+
+function WatchingForRow({
+  text,
+  railColor,
+  first = false,
+  children,
+}: {
+  text: string;
+  railColor: string;
+  first?: boolean;
+  children?: ReactNode;
+}) {
+  return (
+    <View style={[styles.watchRow, !first && styles.watchRowDivider]}>
+      <View style={[styles.ghostRail, { backgroundColor: railColor, opacity: GHOST.railOpacity }]} />
+      <View style={styles.watchBody}>
+        <Text style={styles.watchText}>{text}</Text>
+        {children}
+      </View>
+    </View>
+  );
+}
+
+// Ghosted dot lane — the SHAPE of a timing receipt (Shape A) before any real episode
+// exists: hollow dots, a tinted "window" band, and one pale out-of-window dot (the
+// honest exception — §4 "the exceptions are the honesty"). No axis numbers, no counts.
+const GHOST_LANE_DOTS = [
+  { left: '8%', inWindow: true },
+  { left: '15%', inWindow: true },
+  { left: '21%', inWindow: true },
+  { left: '62%', inWindow: false },
+] as const;
+
+function GhostLane() {
+  return (
+    <View style={styles.estrip}>
+      <View style={styles.ghostLane}>
+        <View style={[styles.ghostBand, { backgroundColor: GHOST.band, opacity: GHOST.bandOpacity }]} />
+        {GHOST_LANE_DOTS.map((d) => (
+          <View
+            key={d.left}
+            style={[
+              styles.ghostDot,
+              { left: d.left, borderColor: d.inWindow ? GHOST.dotInWindow : GHOST.dotOutWindow },
+            ]}
+          />
+        ))}
+      </View>
+    </View>
+  );
+}
+
+// Ghosted stacked-compare — the SHAPE of a change receipt (Shape C): two labeled
+// rows, proportional bars at ghost opacity, and DASHES for the counts. A real
+// week-over-week compare prints numbers here; the building state must not invent them
+// (§6 — "dashes for counts, never fake numbers").
+const GHOST_COMPARE_ROWS = [
+  { label: 'Last week', fill: '40%' },
+  { label: 'This week', fill: '65%' },
+] as const;
+
+function GhostCompare() {
+  return (
+    <View style={styles.estrip}>
+      {GHOST_COMPARE_ROWS.map((r) => (
+        <View key={r.label} style={styles.cmpRow}>
+          <Text style={styles.cmpLabel}>{r.label}</Text>
+          <View style={styles.cmpTrack}>
+            <View
+              style={[
+                styles.cmpFill,
+                { width: r.fill, backgroundColor: GHOST.compareFill, opacity: GHOST.compareFillOpacity },
+              ]}
+            />
+          </View>
+          <Text style={styles.cmpDash}>—</Text>
+        </View>
+      ))}
+    </View>
+  );
+}
+
+// E2 — mature record, nothing established. The verbatim B-284 §9 copy (headline +
+// dimmed sub), then the top B-053 coverage diagnostic as the one calm corrective
+// (shipped behavior, restyled). No coverage diagnostic → the §9 copy stands alone.
+// The sub line is load-bearing: "isn't an all-clear" — absence is never wellness.
+function NoPatternStateV2({ petName, coverage }: { petName: string; coverage: CoverageDiagnostic[] }) {
+  const top = coverage[0];
+  const cov = top ? coverageCopy(top, petName) : null;
+  return (
+    <View>
+      <Text style={styles.v2Headline}>{NO_PATTERN_HEADLINE}</Text>
+      <Text style={styles.v2Sub}>{NO_PATTERN_SUB}</Text>
+      {cov ? (
+        <View style={styles.v2Quiet}>
+          <Text style={styles.v2QuietText}>{cov.why}</Text>
+          {cov.action ? <Text style={styles.v2QuietAction}>{cov.action}</Text> : null}
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   label: {
     marginBottom: theme.space2,
@@ -200,5 +401,144 @@ const styles = StyleSheet.create({
     color: theme.colorTextPrimary,
     lineHeight: theme.lineHeightBody,
     opacity: 0.65,
+  },
+
+  // ── SR-2 empty states (E1/E2) — flag-on rhythm ──────────────────────────────
+  v2Headline: {
+    fontSize: theme.textMD,
+    color: theme.colorTextPrimary,
+    lineHeight: theme.lineHeightBody,
+    marginBottom: theme.spaceMicro,
+  },
+  // The day-count clause — its color + weight come from GHOST (the E1-vs-E1-c pick),
+  // applied inline; the size matches the surrounding headline so it reads as one line.
+  v2DayCount: {
+    fontSize: theme.textMD,
+  },
+  v2Sub: {
+    fontSize: theme.textSM,
+    color: theme.colorTextSecondary,
+    lineHeight: theme.lineHeightSM,
+    marginBottom: theme.space1,
+  },
+  // A "watching for" row — a ghost rail + the named thing + an optional ghost receipt.
+  watchRow: {
+    flexDirection: 'row',
+    gap: theme.space1,
+    paddingVertical: theme.space1,
+  },
+  watchRowDivider: {
+    borderTopWidth: 1,
+    borderTopColor: theme.colorBorder,
+  },
+  ghostRail: {
+    width: 3,
+    borderRadius: 2,
+    // backgroundColor + opacity applied inline from GHOST.
+  },
+  watchBody: {
+    flex: 1,
+    minWidth: 0,
+  },
+  watchText: {
+    fontSize: theme.textSM,
+    color: theme.colorTextTertiary,
+    lineHeight: theme.lineHeightSM,
+  },
+  // Ghost receipts — the previews of a real Shape-A lane / Shape-C compare.
+  estrip: {
+    marginTop: theme.space1,
+  },
+  ghostLane: {
+    height: 22,
+    borderRadius: theme.radiusSmall,
+    borderWidth: 1,
+    borderColor: theme.colorBorder,
+    borderStyle: 'dashed',
+    position: 'relative',
+  },
+  ghostBand: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    left: 0,
+    width: '26%',
+    borderRadius: theme.radiusSmall,
+    // backgroundColor + opacity applied inline from GHOST.
+  },
+  ghostDot: {
+    position: 'absolute',
+    top: '50%',
+    // Center the 7pt dot on its left% / vertical midpoint (RN has no translate-by-%).
+    marginTop: -3.5,
+    marginLeft: -3.5,
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
+    borderWidth: 1.5,
+    backgroundColor: 'transparent', // hollow — nothing here is logged yet
+    // left + borderColor applied inline.
+  },
+  cmpRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.space1,
+    marginTop: theme.spaceMicro,
+  },
+  cmpLabel: {
+    width: 72,
+    fontSize: theme.textXS,
+    color: theme.colorTextDisabled,
+  },
+  cmpTrack: {
+    flex: 1,
+    height: 8,
+    borderRadius: theme.radiusXS,
+    backgroundColor: theme.colorChartEmpty,
+    overflow: 'hidden',
+  },
+  cmpFill: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    left: 0,
+    borderRadius: theme.radiusXS,
+    // width + backgroundColor + opacity applied inline.
+  },
+  cmpDash: {
+    width: 28,
+    textAlign: 'right',
+    fontSize: theme.textXS,
+    color: theme.colorTextDisabled,
+  },
+  // The quiet block under E2 — the coverage diagnostic, hairline-set-off like the
+  // shipped states' bottom rhythm.
+  v2Quiet: {
+    borderTopWidth: 1,
+    borderTopColor: theme.colorBorder,
+    marginTop: theme.space2,
+    paddingTop: theme.space1,
+  },
+  v2QuietText: {
+    fontSize: theme.textSM,
+    color: theme.colorTextSecondary,
+    lineHeight: theme.lineHeightSM,
+  },
+  v2QuietAction: {
+    fontSize: theme.textSM,
+    fontWeight: theme.weightMedium,
+    color: theme.colorTextPrimary,
+    lineHeight: theme.lineHeightSM,
+    marginTop: theme.spaceMicro,
+  },
+  // The E1 safety-floor line — same hairline-set-off treatment as E2's quiet block.
+  v2Floor: {
+    borderTopWidth: 1,
+    borderTopColor: theme.colorBorder,
+    marginTop: theme.space2,
+    paddingTop: theme.space1,
+    fontSize: theme.textSM,
+    color: theme.colorTextSecondary,
+    lineHeight: theme.lineHeightSM,
   },
 });
