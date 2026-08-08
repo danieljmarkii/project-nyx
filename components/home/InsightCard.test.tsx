@@ -165,17 +165,21 @@ describe('InsightCard — SR-1 flag gating (signal_design_v2)', () => {
     }
   });
 
-  it('a timing card gains its dot-lane receipt only when the flag is on', () => {
+  it("a timing card folds its dot-lane sentence into the card's own a11y label only when the flag is on", () => {
+    // The strip Views are decorative (swallowed by the outer Pressable); the receipt's
+    // sentence must reach VoiceOver via the card button's OWN label. {exact:false} = the
+    // sentence is CONTAINED in the composite `${cached.text}. ${receipt}` label.
     const c = anyCached(postprandial());
     const label = dotLaneA11yLabel(postprandial());
-    expect(render(<InsightCard cached={c} petName="Nyx" designV2={false} />).queryByLabelText(label)).toBeNull();
-    expect(render(<InsightCard cached={c} petName="Nyx" designV2 />).queryByLabelText(label)).toBeTruthy();
+    expect(render(<InsightCard cached={c} petName="Nyx" designV2={false} />).queryByLabelText(label, { exact: false })).toBeNull();
+    expect(render(<InsightCard cached={c} petName="Nyx" designV2 />).queryByLabelText(label, { exact: false })).toBeTruthy();
   });
 
   it('a large-n timing card degrades to the compare (no dot lane) on the card face', () => {
     const finding = postprandial({ eligibleCount: 20, totalEpisodes: 24, rapidCount: 12 });
     const view = render(<InsightCard cached={anyCached(finding)} petName="Nyx" designV2 />);
-    expect(view.queryByLabelText(dotLaneA11yLabel(finding))).toBeNull(); // no lane above the cap
+    // Degraded → the card-face + label carry the COMPARE sentence, not the dot-lane one.
+    expect(view.queryByLabelText(dotLaneA11yLabel(finding), { exact: false })).toBeNull();
     expect(view.queryByText('Within 30 min of eating')).toBeTruthy();
     expect(view.queryByText('Timed, but later')).toBeTruthy();
   });
@@ -205,18 +209,18 @@ describe('InsightCard — SR-1 flag gating (signal_design_v2)', () => {
   it('the safety expand renders the phone-call script only when the flag is on', () => {
     const c = anyCached(worsening());
     const offView = render(<InsightCard cached={c} petName="Nyx" designV2={false} />);
-    fireEvent.press(offView.getByLabelText('A sentence.'));
+    fireEvent.press(offView.getByRole('button'));
     expect(offView.queryByText('If you call your clinic, the facts to have ready')).toBeNull();
 
     const onView = render(<InsightCard cached={c} petName="Nyx" designV2 />);
-    fireEvent.press(onView.getByLabelText('A sentence.'));
+    fireEvent.press(onView.getByRole('button'));
     expect(onView.queryByText('If you call your clinic, the facts to have ready')).toBeTruthy();
   });
 
   it('the timing expand draws the control side + the honest un-timeable remainder', () => {
     const c = anyCached(postprandial({ eligibleCount: 8, totalEpisodes: 10, rapidCount: 4 }));
     const view = render(<InsightCard cached={c} petName="Nyx" designV2 />);
-    fireEvent.press(view.getByLabelText('A sentence.'));
+    fireEvent.press(view.getByRole('button'));
     expect(view.queryByText('The other side of the picture')).toBeTruthy();
     expect(view.queryByText("2 episodes weren't near any logged meal")).toBeTruthy();
   });

@@ -30,22 +30,27 @@ const TONE_FILL: Record<CompareRow['tone'], string> = {
 };
 
 // ── Shape A — the dot lane ────────────────────────────────────────────────────
-export function DotLane({
-  model,
-  accessibilityLabel,
-}: {
-  model: DotLaneModel;
-  accessibilityLabel: string;
-}) {
+// Decorative in context: the lane's meaning is carried as a full sentence in the
+// PARENT card's own accessibilityLabel (InsightCard) — a self-label here would be
+// swallowed by the outer Pressable's accessible container and never reach VoiceOver
+// (the MedStrip / HomeHeader idiom). `accessible={false}` makes that intent explicit.
+export function DotLane({ model }: { model: DotLaneModel }) {
   return (
     // No own margin: on the card face the parent body's `gap` spaces the lane from
     // the sentence and meta; the axis row hugs the lane via its own small top margin.
-    <View accessible accessibilityLabel={accessibilityLabel}>
+    <View accessible={false}>
       <View style={styles.lane}>
         {model.bands.map((b, i) => (
           <View
             key={`band-${i}`}
-            style={[styles.band, { left: `${b.start * 100}%`, width: `${(b.end - b.start) * 100}%` }]}
+            // The dashed edge marks the window's TRUE end. A wrapping clock band's
+            // pre-midnight segment ends at the lane's own right border (not a boundary),
+            // so it gets the fill only — one dashed edge per window (§4), never two.
+            style={[
+              styles.band,
+              b.end < 0.999 ? styles.bandDashedEnd : null,
+              { left: `${b.start * 100}%`, width: `${(b.end - b.start) * 100}%` },
+            ]}
           />
         ))}
         {model.dots.map((d, i) => (
@@ -69,18 +74,15 @@ export function DotLane({
 // ── Shape C — the stacked compare ─────────────────────────────────────────────
 // Bare rows (no container). The caller renders it inline as a card-face receipt (the
 // dot-lane degradation) or inside an EvidenceBox as the expanded control side.
-export function StackedCompare({
-  rows,
-  accessibilityLabel,
-}: {
-  rows: CompareRow[];
-  accessibilityLabel: string;
-}) {
+// Decorative in context, like DotLane: the compare's meaning rides the parent card's
+// own accessibilityLabel, so a self-label here would be swallowed by the outer
+// Pressable — `accessible={false}` makes that explicit.
+export function StackedCompare({ rows }: { rows: CompareRow[] }) {
   // Bars are PROPORTION only (§4 — no axis): the longest count fills the track, the
   // rest scale against it. Guard the all-zero case so the divisor is never 0.
   const max = Math.max(1, ...rows.map((r) => r.count));
   return (
-    <View style={styles.compare} accessible accessibilityLabel={accessibilityLabel}>
+    <View style={styles.compare} accessible={false}>
       {rows.map((r, i) => (
         <View key={`cmp-${i}`} style={styles.cmpRow}>
           <Text style={styles.cmpLabel} numberOfLines={1}>
@@ -139,10 +141,14 @@ const styles = StyleSheet.create({
     top: 0,
     bottom: 0,
     backgroundColor: theme.colorAccentLight,
+    borderRadius: theme.radiusXS,
+  },
+  // The dashed right edge — applied only to the segment whose end is the window's
+  // true boundary (never a wrap segment that ends at the lane border).
+  bandDashedEnd: {
     borderRightWidth: 1,
     borderStyle: 'dashed',
     borderColor: theme.colorAccent,
-    borderRadius: theme.radiusXS,
   },
   dot: {
     position: 'absolute',

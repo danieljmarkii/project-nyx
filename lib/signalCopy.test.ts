@@ -1350,9 +1350,9 @@ describe('timingControlDisclosure — the honest un-timeable remainder', () => {
       "2 episodes weren't near any logged meal",
     );
   });
-  it('singularises', () => {
+  it('singularises (subject-verb agreement at one)', () => {
     expect(timingControlDisclosure(postprandial({ eligibleCount: 12, totalEpisodes: 13 }))).toBe(
-      "1 episode weren't near any logged meal",
+      "1 episode wasn't near any logged meal",
     );
   });
   it('names the episodes with no clear time for time-of-day', () => {

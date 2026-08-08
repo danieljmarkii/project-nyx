@@ -88,10 +88,20 @@ function SentenceBody({ cached, isLead, designV2 }: InsightBodyProps) {
 function CardFaceReceipt({ finding, designV2 }: { finding: SignalFinding; designV2: boolean }) {
   if (!designV2 || !isTimingFinding(finding)) return null;
   if (timingReceiptDegrades(finding)) {
-    const rows = timingCompareRows(finding);
-    return <StackedCompare rows={rows} accessibilityLabel={stackedCompareA11yLabel(rows)} />;
+    return <StackedCompare rows={timingCompareRows(finding)} />;
   }
-  return <DotLane model={dotLaneModel(finding)} accessibilityLabel={dotLaneA11yLabel(finding)} />;
+  return <DotLane model={dotLaneModel(finding)} />;
+}
+
+// The card-face receipt's evidence phrased as one sentence, for the card's OWN
+// accessibilityLabel — the strip Views are decorative (a self-label on them is
+// swallowed by the outer Pressable and never reaches VoiceOver; see SignalReceipts).
+// Null when the flag is off or the type carries no card-face strip.
+function cardFaceReceiptA11y(finding: SignalFinding, designV2: boolean): string | null {
+  if (!designV2 || !isTimingFinding(finding)) return null;
+  return timingReceiptDegrades(finding)
+    ? stackedCompareA11yLabel(timingCompareRows(finding))
+    : dotLaneA11yLabel(finding);
 }
 
 // ── Expanded-state evidence (SR-1, §4) ────────────────────────────────────────
@@ -108,7 +118,7 @@ function ExpandedReceipts({ finding, petName }: { finding: SignalFinding; petNam
     if (!rows && !disclosure) return null;
     return (
       <EvidenceBox title="The other side of the picture">
-        {rows && <StackedCompare rows={rows} accessibilityLabel={stackedCompareA11yLabel(rows)} />}
+        {rows && <StackedCompare rows={rows} />}
         {disclosure ? (
           <Text style={[styles.disclosure, rows ? styles.disclosureSpaced : null]}>{disclosure}</Text>
         ) : null}
@@ -201,6 +211,13 @@ export function InsightCard({ cached, petName, isLead = false, designV2 = false 
 
   const rail = RAIL_COLOR[cached.finding.priorityClass];
 
+  // The card is one accessible button (the whole row), so its label must carry the
+  // card-face glance evidence too — a self-label on the receipt Views would be swallowed
+  // by this container and never reach VoiceOver (code-review / MedStrip idiom). Flag-off
+  // (or a non-timing type) → null → the label stays exactly the shipped `cached.text`.
+  const receiptA11y = cardFaceReceiptA11y(cached.finding, designV2);
+  const accessibilityLabel = receiptA11y ? `${cached.text}. ${receiptA11y}` : cached.text;
+
   function toggle() {
     LayoutAnimation.configureNext(LayoutAnimation.create(theme.durationMedium, 'easeInEaseOut', 'opacity'));
     setExpanded((e) => !e);
@@ -213,7 +230,7 @@ export function InsightCard({ cached, petName, isLead = false, designV2 = false 
       hitSlop={8}
       accessibilityRole="button"
       accessibilityState={{ expanded }}
-      accessibilityLabel={cached.text}
+      accessibilityLabel={accessibilityLabel}
       accessibilityHint="Shows the evidence behind this insight"
       style={styles.row}
     >

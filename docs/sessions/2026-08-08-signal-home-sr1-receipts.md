@@ -76,7 +76,7 @@ system), §11 (ACs). Design authority: `docs/culprit-signal-home-mockups.html`
   no strip on safety faces — snapshot-pinned), A→C at cap±1, a11y labels are full
   sentences, no banned vocabulary (phone-script run through the guardrail screen).
   **No changes under `supabase/functions/`** (diff-scoped).
-- **Types/tests:** `tsc --noEmit` clean; full suite **210 suites / 4657 tests** green;
+- **Types/tests:** `tsc --noEmit` clean; full suite **210 suites / 4660 tests** green;
   new tests: `lib/signalCopy.test.ts` (+geometry/degradation/compare/disclosure/phone-script/a11y),
   `components/home/InsightCard.test.tsx` (+flag gating, byte-identical, degradation, expand),
   `components/home/SignalReceipts.test.tsx` (Shape C proportion + zero-guard).
@@ -93,6 +93,8 @@ system), §11 (ACs). Design authority: `docs/culprit-signal-home-mockups.html`
   `more_days` phone script with *falling* episodes reads days and never surfaces a false
   "up from" direction (the axis-miscount trap held); a wrapped-midnight band keeps every
   in-window dot inside its two segments. Two LOW findings (below).
+- **Code review — 3 findings, all fixed this session** (see below). No blocking
+  data-correctness or flag-leak issues; FR-FLAG-2 gating confirmed airtight.
 
 ## Findings + rulings
 
@@ -117,6 +119,26 @@ system), §11 (ACs). Design authority: `docs/culprit-signal-home-mockups.html`
   total`), and it deliberately **matches the shipped `sampleLine` convention** (both print
   raw) — clamping the a11y alone would introduce a *new* a11y-vs-sample disagreement.
   Neither direction reassures. Accepted as-is.
+
+### Code-review findings (all fixed, `da54016`→follow-up)
+
+- **[BUG → fixed] The receipts' own a11y labels were swallowed by the outer `Pressable`.**
+  `InsightCard`'s whole row is one `accessible` button (label = `cached.text`), so a
+  self-`accessibilityLabel` on the nested `DotLane`/`StackedCompare` never reaches
+  VoiceOver — the §11 "full-sentence a11y labels" AC was dead for screen-reader users.
+  Fixed the `MedStrip`/`HomeHeader` way: the strip Views are now `accessible={false}`
+  (decorative) and the card-face receipt sentence is **folded into the card button's own
+  label** (`${cached.text}. ${receiptSentence}`) via `cardFaceReceiptA11y`. Flag-off (or a
+  non-timing type) → null → the label stays exactly `cached.text` (byte-identical holds).
+  Now test-asserted against the composite label, not the swallowed one.
+- **[NIT → fixed] "1 episode weren't near any logged meal"** — subject-verb disagreement
+  at `untimed === 1`. `timingControlDisclosure` now reads `wasn't`/`weren't` by count (the
+  test that had pinned the ungrammatical string is corrected).
+- **[CLEANUP → fixed] A midnight-wrapping band drew two dashed edges.** Both segments got
+  the dashed right border, so the pre-midnight segment drew a spurious edge on the lane's
+  own border. The dashed edge now renders only on the segment whose end is the window's
+  true boundary (`b.end < 0.999`) — one edge per window (§4). New `DotLane` render tests
+  cover the split + the single-edge invariant (closing the reviewer's coverage gap).
 
 ## Known / deferred
 

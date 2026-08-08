@@ -686,7 +686,7 @@ export function timingControlDisclosure(finding: TimingFinding): string | null {
   const untimed = Math.max(0, finding.totalEpisodes - finding.eligibleCount);
   if (untimed <= 0) return null;
   return finding.type === 'postprandial_timing'
-    ? `${count(untimed, 'episode', 'episodes')} weren't near any logged meal`
+    ? `${count(untimed, 'episode', 'episodes')} ${untimed === 1 ? "wasn't" : "weren't"} near any logged meal`
     : `${count(untimed, 'episode', 'episodes')} didn't have a clear enough time to place`;
 }
 
