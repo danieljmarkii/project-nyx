@@ -1,6 +1,7 @@
 # Culprit In-App Brand Alignment — Requirements (B-284)
 
-**Version:** 1.0 (build-ready) · **Date:** 2026-07-10 · **Owner:** Sr. Product Designer, ratified by PM through four review rounds
+**Version:** 1.1 (build-ready) · **Date:** 2026-07-10 (last amended 2026-08-08) · **Owner:** Sr. Product Designer, ratified by PM through four review rounds
+**Amendment (2026-08-08, B-721 SD-7 / §10):** §7.5 records D8 closed light (night variant unbuilt, `SIGNAL_NIGHT_GROUND` never created); N4 (§7) + N7 (§8.2) are absorbed by `docs/nyx-signal-home-requirements.md`, the now-canonical Signal/Home spec.
 **Provenance:** `docs/brand/culprit-direction.html` (the brand system) → `docs/brand/culprit-in-app-direction.html` (r1) → `-r2.html` (r2) → `-r3.html` (r3) → the PM's iteration-3 reactions (2026-07-10). All four are durable records in `docs/brand/` (see its README).
 **Build plan:** §10 — PRs N1–N7. Zero new dependencies (`react-native-svg 15.12.1` + `expo-linear-gradient` already shipped).
 
@@ -98,7 +99,7 @@ PM r2: didn't grok → r3 full-bleed: "is it too big. Maybe there's a world wher
 
 ---
 
-## 7. The Signal card — PR N4 (D8 resolved to a decision gate)
+## 7. The Signal card — PR N4 (D8 CLOSED light — see §7.5; superseded by the Signal/Home uplift spec)
 
 Four rounds of reactions: r1 "direction genuinely good, contrast too high" → r2 treatments "hate it" → r3 rule "love the improvement" but iteration 3: **"not sure I love the dark background at all."** The spec honors the uncertainty: **the content system ships ground-agnostic; the ground itself is a one-flag variant decided on-device, where contrast is real.**
 
@@ -116,6 +117,10 @@ Four rounds of reactions: r1 "direction genuinely good, contrast too high" → r
 
 **AC-N4:** presence rule unit-tested (findings → styled card; none/building → plain card); both grounds snapshot-tested with a safety + an ordinary finding; danger styling identical in semantics across grounds; empty/building copy verbatim from §9; zero changes under `supabase/functions/` or `lib/signal.ts` ranking/phrasing; the on-device ground call recorded before merge (the PR may merge flag-false with the gate noted if the PM defers).
 
+**7.5 D8 — CLOSED (amended 2026-08-08; supersedes the §7.2 flag + §7.4 gate above).** D8 closed 2026-08-07 without the on-device A/B: the Signal ground is light, the night variant is not built (`SIGNAL_NIGHT_GROUND` is not created). Evidence: both owner-persona interviews rejected the dark card, the PM's iteration-3 lean, the PTR night band's on-device retraction (2026-07-12), and the clinical veto on decorative grounds near safety. §7.1's content system is superseded by `docs/nyx-signal-home-requirements.md`; §8.2's briefing is that spec's rung-3 phase.
+
+**N4/N7 absorption (SD-8 / R2-6d).** `docs/nyx-signal-home-requirements.md` is now the canonical spec for the Signal/Home surface — it absorbs **N4** (this §7) and **N7** (§8.2), and its uplift ships dark behind the `signal_design_v2` `app_config` allowlist flag (migration 055, B-721 SR-0). Read that spec — not §7.2/§7.4's night-ground gate — for how the Signal renders. Consequently the §7.2 "both variants built" / §7.4 on-device-gate framing and AC-N4's night-ground snapshot rows are **moot**: only the light ground exists, and `SIGNAL_NIGHT_GROUND` is never created.
+
 ---
 
 ## 8. Calendar v3 — PR N5 (D10 CLOSED; resolves B-226) · The briefing — PR N7 (D9 adopted directionally)
@@ -130,6 +135,7 @@ Four rounds of reactions: r1 "direction genuinely good, contrast too high" → r
 - **AC-N5:** `buildHeatRows`' weekday math reused/retested; B-226's three complaints each have a passing AC (drill-in shows all types; paging works across month boundaries incl. DST months; no shade-decoding anywhere); pip counts render exactly; VoiceOver reads day labels; History deep-link lands filtered.
 
 **8.2 The Home briefing (iteration 3: "Love the improvement… moved the ball downfield" — adopted, iteration expected):**
+- **Superseded / absorbed (2026-08-08, SD-8 / R2-6d):** N7's briefing is now the **rung-3 phase** of `docs/nyx-signal-home-requirements.md` (its own later phase, carrying the labeled-quiet rule from that spec's §6). Build against that spec, not this §8.2, when the briefing is scoped; the content-gating contract below stands as the substrate it inherits.
 - Content-gated cards in fixed priority: cross-pet safety → Signal → Today → Care due → Diet trial → Trend → Weight. A card renders only when it carries information today (no meds → no Care card; no trial → no trial card). **Safety is never gated, capped, or reordered.** A pet with none of the extras sees exactly the current three zones.
 - Care due: at most one row per day, factual copy (§9), one-tap "Log dose"; never a push notification (Principle 4 untouched).
 - **Requires the Tier-2 `design-principles.md` §3 edit** — proposed replacement text ships in this PR's description for formal PM ratification (Tier-2 protocol); the PR merges only with that sign-off.
@@ -168,8 +174,8 @@ Banned vocabulary (grep gate in every N-PR): weather, rain, forecast, climate, s
 | D1–D3, D5, D6 (r1) | Superseded/absorbed: D1→§7's gate, D2→N7, D3→N5, D5→rule §1.5, D6→N6 | Closed into this spec |
 | D4 | Night tokens | **Closed** — §2 (dusk/tint dropped) |
 | D7 | Night moment | **Closed** — §6 (medium-large background whorl per iteration 3) |
-| D8 | Signal ground | **Closed as a gate** — §7.4 (light default; night variant flag; on-device call locks it) |
-| D9 | Home briefing | **Adopted directionally** — §8.2 (merge gated on the Tier-2 §3 sign-off) |
+| D8 | Signal ground | **CLOSED light, night variant unbuilt** — §7.5 (amended 2026-08-08; no on-device A/B; `SIGNAL_NIGHT_GROUND` never created). Was "closed as a gate — §7.4". |
+| D9 | Home briefing | **Adopted directionally — now superseded** (2026-08-08) — see the §8.2 note: N7's briefing is the **rung-3 phase** of `docs/nyx-signal-home-requirements.md`. Was "adopted directionally — §8.2 (merge gated on the Tier-2 §3 sign-off)". |
 | D10 | Calendar v3 | **Closed** — §8.1 (strip cut; months-read → vet report) |
 | D11 | Completion pushes | **Closed with a cut-line** — §10 |
 
