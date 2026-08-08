@@ -1,6 +1,6 @@
 # Password Recovery — Requirements & Design (B-280)
 
-**Version:** 1.3 — *§6.4 re-sequenced (B-576): the pre-exchange `signOut()` deleted the PKCE verifier* | **Last Updated:** 2026-08-01
+**Version:** 1.4 — *§5.3 gains a last-ranked `Back to log in` exit (B-653, PM-ruled)* | **Last Updated:** 2026-08-04
 **Backlog:** B-280 (`Now`) · touches B-152, B-278, B-281, B-401, B-271 · files B-426/B-427/B-428/B-429
 **Status:** design session complete; **all three PM rulings landed 2026-07-25.** **D1c ✅ accept · D4 ✅ yes (+ email change scoped → D9) · D6b ✅ yes — best-practice session workflow adopted and scoped in §7.2.** PR 1 build-ready; PR 2 now gated only on the **three device checks (§9.3)**.
 **Reviews run:** `nyx-voice` ✓ · `pm-feature-review` (2 SHIP-SHAPED / 2 NEEDS-WORK / 1 INSUFFICIENT) · `rls-privacy-reviewer` **FAIL on v1.0 — 5 merge blockers, all folded in**. Full record + attack log: **§12**.
@@ -258,8 +258,9 @@ Putting the recovery affordance *inside* the alert announcing the failure is the
 - Secondary: **`Use a different email`** — teal, in the shipped auth-link language (`login.tsx:266`, `signup.tsx:483`), **not** grey. It is the single affordance that rescues the typo case; styling it as a caption is what makes D2's neutrality unaffordable.
 - Tertiary: **`Resend in {n}s`** → **`Resend link`** when cool
 - **`Still nothing? Contact support`** + `We usually reply within a day.` (the expectation `settings.tsx:164` already ships) → `SUPPORT_EMAIL` mailto
+- Last: **`Back to log in`** — muted register, `replace('/(auth)/login')`, mirroring §5.6's control. *(B-653, PM-ruled 2026-08-04: the track's thesis is "every state has an exit" (FR-9), and this state's only way back was two taps through the edit-address path. Rev 1 deliberately omitted it; the ruling reverses that. Last in the stack so it cannot compete with the email link, which stays the intended forward path.)*
 
-**Control order is deliberate:** primary → edit-address → resend → support. The two *escapes* must not rank below a disabled countdown, which is where a naive layout puts them.
+**Control order is deliberate:** primary → edit-address → resend → support → back-to-login. The two *escapes* must not rank below a disabled countdown, which is where a naive layout puts them; the back exit ranks last of all — it is the leave-the-flow option, not a recovery affordance.
 
 ### 5.4 Set new password (`app/(auth)/reset-password.tsx`)
 - Title: **`Set a new password`**

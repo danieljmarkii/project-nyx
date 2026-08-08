@@ -45,7 +45,8 @@ jest.mock('./utils', () => {
 import {
   addTrialFood, buildTrialRows, canStartTrial, defaultDurationDays, describeActiveTrial,
   durationHelperLine, endActiveTrial, foodLabel, formatTrialEndDate,
-  extendTrial, getActiveTrialForPet, permittedRoleForFood, secondTrialIntro, startDietTrial,
+  extendTrial, getActiveTrialForPet, permittedRoleForFood, secondTrialIntro,
+  setTrialTargetProtein, startDietTrial,
   stopReasonOptions, trialEndDayKey, trialSetupLines, TRIAL_RECORD_DISCLOSURE,
   type StartTrialInput,
 } from './dietTrialSetup';
@@ -67,6 +68,7 @@ function input(overrides: Partial<StartTrialInput> = {}): StartTrialInput {
     targetDurationDays: 56,
     startedAt: '2026-07-03',
     vetName: null,
+    targetProtein: null,
     ...overrides,
   };
 }
@@ -209,6 +211,34 @@ describe('buildTrialRows', () => {
     expect(rows.trial.phase).toBe('elimination');
     expect(rows.trial.status).toBe('active');
     expect(rows.trial.vet_name).toBeNull();
+  });
+
+  // ── B-704 §5 — the target protein columns ──────────────────────────────────
+  it('writes a null protein and null set_at when nothing was chosen (derived/none/unset)', () => {
+    const rows = buildTrialRows(input({ targetProtein: null }), '2026-07-03T09:00:00.000Z');
+    expect(rows.trial.target_protein).toBeNull();
+    // set_at is dated ONLY alongside a non-null protein, so the report can trust it.
+    expect(rows.trial.target_protein_set_at).toBeNull();
+  });
+
+  it('writes the owner-chosen protein and dates set_at to `now`', () => {
+    const rows = buildTrialRows(input({ targetProtein: 'rabbit' }), '2026-07-03T09:00:00.000Z');
+    expect(rows.trial.target_protein).toBe('rabbit');
+    expect(rows.trial.target_protein_set_at).toBe('2026-07-03T09:00:00.000Z');
+  });
+
+  it('canonicalizes the stored protein at the write boundary (TG-4) — a raw label never lands', () => {
+    // Defense in depth: the picker only offers canonical keys, but the column is
+    // canonical whatever the caller passes.
+    const rows = buildTrialRows(input({ targetProtein: 'Chicken By-Product Meal' }), 'now');
+    expect(rows.trial.target_protein).toBe('chicken');
+    expect(rows.trial.target_protein_set_at).toBe('now');
+  });
+
+  it('a junk protein canonicalizes to null and is not dated (TG-2)', () => {
+    const rows = buildTrialRows(input({ targetProtein: '   ' }), 'now');
+    expect(rows.trial.target_protein).toBeNull();
+    expect(rows.trial.target_protein_set_at).toBeNull();
   });
 });
 
@@ -388,6 +418,67 @@ describe('extendTrial — `Keep going`', () => {
       await expect(extendTrial({ trialId: 't-1', targetDurationDays: bad })).rejects.toThrow();
     }
     expect(mockRunAsync).not.toHaveBeenCalled();
+  });
+});
+
+describe('setTrialTargetProtein — B-704 the write path', () => {
+  const NOW = new Date('2026-08-05T10:00:00.000Z');
+
+  it('writes a canonical key with a set_at stamp, and re-arms the push', async () => {
+    await setTrialTargetProtein({ trialId: 't-1', protein: 'rabbit', now: NOW });
+    const [sql, params] = mockRunAsync.mock.calls[0] as [string, unknown[]];
+    expect(sql).toContain('UPDATE diet_trials');
+    expect(sql).toContain('target_protein = ?');
+    expect(sql).toContain('target_protein_set_at = ?');
+    // TG-4: a canonical key lands, with the paired non-null stamp.
+    expect(params[0]).toBe('rabbit');
+    expect(params[1]).toBe('2026-08-05T10:00:00.000Z');
+    expect(params[3]).toBe('t-1');
+    // The mirror's re-arm contract, same as every other trial write.
+    expect(sql).toContain('synced = 0');
+    expect(sql).toContain('sync_attempts = 0');
+    expect(sql).toContain('sync_error = NULL');
+  });
+
+  it('canonicalizes a raw label rather than storing it verbatim (TG-4)', async () => {
+    await setTrialTargetProtein({ trialId: 't-1', protein: 'Rabbit', now: NOW });
+    const [, params] = mockRunAsync.mock.calls[0] as [string, unknown[]];
+    // A raw label never lands in the column — Class-A canonicalization on write.
+    expect(params[0]).toBe('rabbit');
+  });
+
+  it('writes NULL protein AND NULL set_at when cleared (the paired-null contract, §5)', async () => {
+    await setTrialTargetProtein({ trialId: 't-1', protein: null, now: NOW });
+    const [, params] = mockRunAsync.mock.calls[0] as [string, unknown[]];
+    // set_at is null whenever protein is null — never a stamp over a null value.
+    expect(params[0]).toBeNull();
+    expect(params[1]).toBeNull();
+  });
+
+  it('collapses an unusable value (junk/empty) to the null branch, never a junk key', async () => {
+    // `canonicalizeProtein` returns null for the PROTEIN_JUNK set, so a cleared or
+    // unusable value naturally lands as null + null — the picker never sends these,
+    // but the write path holds the contract regardless.
+    await setTrialTargetProtein({ trialId: 't-1', protein: 'unknown', now: NOW });
+    const [, params] = mockRunAsync.mock.calls[0] as [string, unknown[]];
+    expect(params[0]).toBeNull();
+    expect(params[1]).toBeNull();
+  });
+
+  it('NEVER touches status, started_at, or the allowed set (TG-1: it only names)', async () => {
+    await setTrialTargetProtein({ trialId: 't-1', protein: 'rabbit', now: NOW });
+    const [sql] = mockRunAsync.mock.calls[0] as [string];
+    expect(sql).not.toContain('status =');
+    expect(sql).not.toContain('started_at =');
+    expect(sql).not.toContain('ended_at =');
+    expect(sql.toUpperCase()).not.toContain('INSERT');
+    expect(sql).toContain('WHERE id = ?');
+  });
+
+  it('bumps the hydration tick so BOTH the card and the Home strip re-read', async () => {
+    const before = useSyncStore.getState().hydrationTick;
+    await setTrialTargetProtein({ trialId: 't-1', protein: 'rabbit', now: NOW });
+    expect(useSyncStore.getState().hydrationTick).toBe(before + 1);
   });
 });
 

@@ -72,6 +72,7 @@
       "expo-sqlite",
       "expo-status-bar",
       "./plugins/withoutPushEntitlement",
+      "./plugins/withWidgetIphoneOnly",
       [
         "expo-widgets",
         {
@@ -80,12 +81,12 @@
             {
               "name": "CulpritWidget",
               "displayName": "Culprit",
-              "description": "Log a meal or a treat without opening the app.",
+              "description": "See what's been logged today at a glance — meals, treats, meds, and symptoms.",
               "ios": {
                 "supportedFamilies": ["systemMedium"],
                 "configuration": {
                   "title": "Pet",
-                  "description": "Pick which pet this widget logs for. Pet slots follow the order you added your pets — the widget shows the name so you can check.",
+                  "description": "Pick which pet this widget is for. Pet slots follow the order you added your pets — the widget shows the name so you can check.",
                   "parameters": {
                     "petSlot": {
                       "title": "Pet",

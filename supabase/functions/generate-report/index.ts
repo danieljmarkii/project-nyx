@@ -215,6 +215,7 @@ interface MedicationRow {
   prescribed_by: string | null
   started_at: string
   target_duration_days: number | null
+  target_duration_doses: number | null // B-618 (migration 049) — dose-denominated fixed course
   status: string
   ended_at: string | null
   medication_items: MedItemJoin | MedItemJoin[] | null
@@ -254,6 +255,9 @@ interface DietTrialRow {
   /** §3.1's denormalized display fallback — survives archiving the trial food. */
   food_label: string | null
   vet_name: string | null
+  /** B-704 migration 053 — the owner's stored trial protein + when it was set. */
+  target_protein: string | null
+  target_protein_set_at: string | null
   food_items: FoodItemJoin | FoodItemJoin[] | null
   diet_trial_foods: DietTrialFoodRow[] | null
 }
@@ -506,6 +510,7 @@ export function mapMedicationRows(rows: MedicationRow[]): ReportMedicationInput[
       prescribedBy: r.prescribed_by ?? null,
       startedAt: r.started_at,
       targetDurationDays: r.target_duration_days ?? null,
+      targetDurationDoses: r.target_duration_doses ?? null,
       status: r.status,
       endedAt: r.ended_at ?? null,
       isPrescription: item?.is_prescription ?? null,
@@ -538,6 +543,10 @@ export function mapDietTrialRows(rows: DietTrialRow[]): ReportDietTrialInput[] {
       // value, it is the one that outlives the row.
       foodLabel: foodLabel(fi) ?? r.food_label ?? null,
       primaryProtein: fi?.primary_protein ?? null,
+      // B-704 (migration 053) — the owner's stored trial protein, read STORED-FIRST by
+      // `trialTargetProtein`; null derives, exactly as today. Never permits (TG-1).
+      targetProtein: r.target_protein ?? null,
+      targetProteinSetAt: r.target_protein_set_at ?? null,
       ...mapFoodProteins(fi),
       allowedFoods: (r.diet_trial_foods ?? []).map((f) => {
         const ffi = first(f.food_items)
@@ -761,6 +770,10 @@ export async function generateReportForPet(
       .select(
         'id, food_item_id, started_at, target_duration_days, status, completed_at, ended_at, ' +
           'indication, outcome, outcome_notes, stopped_reason, food_label, vet_name, ' +
+          // B-704 migration 053 — the owner's stored trial protein feeds the report's
+          // stored-first naming (§7.4). Selecting it is inert until `generate-report` is
+          // redeployed; that redeploy rides the standing B-494 gate, never on its own.
+          'target_protein, target_protein_set_at, ' +
           `food_items(food_type, format, ${FOOD_PROTEIN_COLS}, brand, product_name), ` +
           // The allowed set (§3.2) — rung 1 of §5.3, and the only reason the report
           // can tell a vet-permitted treat from a contaminant. Soft-deleted rows are
@@ -884,8 +897,8 @@ export async function generateReportForPet(
       .from('medications')
       .select(
         'id, medication_item_id, drug_name, dose_amount, route, doses_per_day, schedule_notes, ' +
-          'indication, prescribed_by, started_at, target_duration_days, status, ended_at, ' +
-          'medication_items(is_prescription, strength)',
+          'indication, prescribed_by, started_at, target_duration_days, target_duration_doses, ' +
+          'status, ended_at, medication_items(is_prescription, strength)',
       )
       .eq('pet_id', petId),
     // Free-fed / meal-fed standing facts (B-040). No lookback: a bowl set long ago
@@ -913,12 +926,24 @@ export async function generateReportForPet(
   // process its entire dose/weight history (report.ts scopes to the window regardless).
   const lookbackMs = Date.parse(lookbackIso)
 
-  const doses = mapDoseRows(rowsOrThrow<DoseRow>(dosesRes, 'medication_administrations'), lookbackMs)
+  // The DB query already returns EVERY dose (medication_administrations can't be .gte-bounded — a
+  // dose's instant lives on its parent event), so `doseRows` is the pet's whole dose history. Map it
+  // TWICE off the one pull: `doses` trimmed to the lookback for the windowed sections, and
+  // `lifetimeDoses` untrimmed for the §4.4 window-ignoring medication-history table (B-140 PR 5).
+  // KNOWN LIMIT (pre-existing, shared with every pull here): the query carries no explicit .limit(),
+  // so a pet with more doses than PostgREST's default max-rows would truncate — which is why the
+  // table's copy says "the medications logged", not "every dose ever", and why it never claims a
+  // count is exhaustive. Realistic reactive-tracking volumes are far under the cap; revisit
+  // (paginate the dose pull) if a chronic-med pet ever nears it.
+  const doseRows = rowsOrThrow<DoseRow>(dosesRes, 'medication_administrations')
+  const doses = mapDoseRows(doseRows, lookbackMs)
+  const lifetimeDoses = mapDoseRows(doseRows)
   // §3.8 orphan-dose gap: resolve names for the medication_items behind the doses so an ad-hoc dose
   // logged with NO regimen still reports by drug name (a daily OTC antihistamine otherwise vanished
-  // from the report). Fetched by the exact item ids present on the doses — the global catalog, the
-  // same RLS the regimen→medication_items join already relies on. Skipped when there are no doses.
-  const doseItemIds = [...new Set(doses.map((d) => d.medicationItemId).filter((v): v is string => v !== null))]
+  // from the report). Keyed off the LIFETIME set (a superset of `doses`) so a course whose only doses
+  // predate the lookback still names its drug in the lifetime table. Same RLS the regimen→
+  // medication_items join relies on; skipped when there are no doses.
+  const doseItemIds = [...new Set(lifetimeDoses.map((d) => d.medicationItemId).filter((v): v is string => v !== null))]
   let medicationItems: ReportMedicationItemInput[] = []
   if (doseItemIds.length > 0) {
     const medItemsRes = await supabase
@@ -938,6 +963,7 @@ export async function generateReportForPet(
     aiAnalyses: mapAiAnalysisRows(rowsOrThrow<AiAnalysisRow>(aiRes, 'event_ai_analysis')),
     weightChecks: mapWeightRows(rowsOrThrow<WeightRow>(weightRes, 'weight_checks'), lookbackMs),
     doses,
+    lifetimeDoses,
     medications: mapMedicationRows(rowsOrThrow<MedicationRow>(medsRes, 'medications')),
     medicationItems,
     dietTrials,

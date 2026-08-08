@@ -7,27 +7,38 @@ import type { VetFilesCardModel } from '../../lib/vetDocumentLibrary';
 
 interface Props {
   model: VetFilesCardModel;
-  /** storagePath → resolved thumbnail uri, for the strip. */
+  /** storagePath → resolved signed-URL thumbnail, for the preview. */
   thumbUris?: Map<string, string>;
   thumbsLoading?: boolean;
   onPress: () => void;
   style?: ViewStyle;
 }
 
-// The pet-profile entry point (G3/D6, mock A1-r2 + A1z). Sits directly beneath the
-// Vet report card as a sibling — same anatomy (title, blurb, one action), because
-// the shipped profile is a stack of full cards and a compact row here would read as
-// a lesser thing than the report it sits under.
+// The pet-profile entry point (G3/D6). Sits directly beneath the Vet report card as
+// a sibling — same anatomy (title, blurb, one action), because the shipped profile
+// is a stack of full cards and a compact row here would read as a lesser thing than
+// the report it sits under.
+//
+// The populated card previews the LATEST document — thumb, name, type, date — in
+// place of the old cover-thumbnail strip (B-712). The strip was tuned for three
+// tiles and a "+3", so at one document it stranded a lone glyph in a wide gutter and
+// read as a failed load; the preview carries the real filing at n=1 and scales with
+// a "+N more". Hierarchy is unchanged: same secondary button, same calm type — the
+// substrate is never louder than the artifact it sits under.
 //
 // Nothing about this card lives on Home (Principle 3: no shelf, no feature menu).
 //
-// Both blurbs come from lib/vetDocumentLibrary — including the D14 honesty line in
-// the populated state, which is doing real work rather than being a disclaimer:
-// two cards about vet-facing paperwork stacked together will be read as one
-// system, and until B-480 ships, a saved document does NOT ride along with the
-// report. Both persona reviews assumed it did.
+// The blurb still carries the D14 honesty line in the populated state, doing real
+// work rather than being a disclaimer: two cards about vet-facing paperwork stacked
+// together read as one system, and until B-480 ships a saved document does NOT ride
+// along with the report. Both persona reviews assumed it did.
 export function VetFilesCard({ model, thumbUris, thumbsLoading, onPress, style }: Props) {
-  const empty = model.documentCount === 0;
+  const { preview } = model;
+  // An untitled document's title already carries its date ("Document — Jul 30"), so
+  // the secondary line shows the page count instead; a named document shows its
+  // date. Either may be absent, and then that half of the meta row just doesn't
+  // render.
+  const subLabel = preview ? (preview.untitled ? preview.pageLabel : preview.dateLabel) : null;
 
   return (
     <Card style={style}>
@@ -37,24 +48,37 @@ export function VetFilesCard({ model, thumbUris, thumbsLoading, onPress, style }
       </View>
       <Text style={styles.blurb}>{model.blurb}</Text>
 
-      {!empty && (
-        // Decorative — the button below carries the action and the count is
-        // already spoken — so the strip is hidden from the a11y tree rather than
-        // announcing three unlabelled tiles.
-        <View style={styles.strip} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
-          {model.stripPaths.map((path) => (
-            <VetDocumentThumb
-              key={path}
-              uri={thumbUris?.get(path) ?? null}
-              loading={thumbsLoading}
-              style={styles.stripTile}
-            />
-          ))}
-          {model.overflowLabel ? (
-            <View style={[styles.stripTile, styles.overflow]}>
-              <Text style={styles.overflowText}>{model.overflowLabel}</Text>
-            </View>
-          ) : null}
+      {preview && (
+        // Decorative relative to the button below — which carries the action, and
+        // whose count is already spoken — so the whole preview is hidden from the
+        // a11y tree rather than announcing an unlabelled thumbnail and a title the
+        // owner reaches by opening the library anyway.
+        <View style={styles.preview} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+          <VetDocumentThumb
+            uri={preview.localUri ? preview.localUri : thumbUris?.get(preview.storagePath) ?? null}
+            isPdf={preview.isPdf}
+            loading={thumbsLoading}
+            style={styles.previewThumb}
+          />
+          <View style={styles.previewMain}>
+            <Text
+              style={[styles.previewTitle, preview.untitled && styles.previewTitleMuted]}
+              numberOfLines={1}
+            >
+              {preview.title}
+            </Text>
+            {(preview.kindLabel || subLabel) ? (
+              <View style={styles.previewMeta}>
+                {preview.kindLabel ? (
+                  <View style={styles.kindChip}>
+                    <Text style={styles.kindText}>{preview.kindLabel}</Text>
+                  </View>
+                ) : null}
+                {subLabel ? <Text style={styles.previewSub}>{subLabel}</Text> : null}
+              </View>
+            ) : null}
+          </View>
+          {model.moreLabel ? <Text style={styles.moreLabel}>{model.moreLabel}</Text> : null}
         </View>
       )}
 
@@ -75,11 +99,13 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: theme.space1,
   },
+  // Token parity with the sibling profile cards (B-553): the Vet report card
+  // directly above uses textMD/weightMedium/colorNeutralDark, and the substrate
+  // must not shout louder than the artifact it sits under.
   title: {
-    fontSize: theme.textLG,
-    fontWeight: theme.weightSemibold,
-    color: theme.colorTextPrimary,
-    letterSpacing: theme.trackingTight,
+    fontSize: theme.textMD,
+    fontWeight: theme.weightMedium,
+    color: theme.colorNeutralDark,
   },
   count: {
     fontSize: theme.textSM,
@@ -91,28 +117,65 @@ const styles = StyleSheet.create({
     color: theme.colorTextSecondary,
     marginTop: 4,
   },
-  strip: {
+  // The latest-document preview: a legible mini-row on an inset surface, so it reads
+  // as a peek into the library rather than as another card action.
+  preview: {
     flexDirection: 'row',
-    gap: theme.space1,
-    marginTop: 11,
-  },
-  // Smaller than the list tile: this is a pulse showing the library isn't empty,
-  // not a browse surface.
-  stripTile: {
-    width: 34,
-    height: 44,
-  },
-  overflow: {
-    borderStyle: 'dashed',
-    borderColor: theme.colorBorderStrong,
-    backgroundColor: 'transparent',
     alignItems: 'center',
-    justifyContent: 'center',
+    gap: 11,
+    marginTop: 11,
+    padding: 9,
+    borderRadius: theme.radiusMedium,
+    backgroundColor: theme.colorSurfaceSubtle,
     borderWidth: 1,
-    borderRadius: theme.radiusSmall,
+    borderColor: theme.colorBorder,
   },
-  overflowText: {
+  previewThumb: {
+    width: 40,
+    height: 50,
+  },
+  previewMain: {
+    flex: 1,
+    minWidth: 0,
+  },
+  previewTitle: {
+    fontSize: theme.textSM,
+    fontWeight: theme.weightMedium,
+    color: theme.colorTextPrimary,
+    letterSpacing: theme.trackingTight,
+  },
+  // Quieter, not disabled: the document is real, it just hasn't been named (D11).
+  previewTitleMuted: {
+    fontWeight: theme.weightRegular,
+    color: theme.colorTextSecondary,
+  },
+  previewMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 3,
+  },
+  // White chip on the inset surface, so the type still reads as a chip.
+  kindChip: {
+    backgroundColor: theme.colorSurface,
+    borderRadius: theme.radiusXS,
+    paddingHorizontal: 5,
+    paddingVertical: 2,
+  },
+  kindText: {
+    fontSize: theme.textMicro,
+    fontWeight: theme.weightSemibold,
+    letterSpacing: theme.trackingWide,
+    textTransform: 'uppercase',
+    color: theme.colorTextSecondary,
+  },
+  previewSub: {
     fontSize: theme.textXS,
+    color: theme.colorTextTertiary,
+  },
+  moreLabel: {
+    fontSize: theme.textXS,
+    fontWeight: theme.weightSemibold,
     color: theme.colorTextTertiary,
   },
   button: {

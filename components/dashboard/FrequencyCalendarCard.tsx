@@ -451,7 +451,7 @@ const styles = StyleSheet.create({
   },
   // Dim a stale month while the next one's buckets load (paging).
   gridLoading: {
-    opacity: 0.4,
+    opacity: theme.opacityDisabled,
   },
   weekRow: {
     flexDirection: 'row',

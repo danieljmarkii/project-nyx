@@ -105,7 +105,12 @@ describe('wipeLocalSession — the shipped SIGNED_OUT teardown', () => {
   it('clears the cached app_config bundle, allowlist UUIDs included', async () => {
     await persistAppConfig({
       values: APP_CONFIG_DEFAULTS,
-      allowlist: { ask_enabled: ['11111111-2222-3333-4444-555555555555'], ask_general_enabled: false },
+      allowlist: {
+        ask_enabled: ['11111111-2222-3333-4444-555555555555'],
+        ask_general_enabled: false,
+        // widget_enabled (B-712) also carries account UUIDs — it must be wiped too.
+        widget_enabled: { enabled: false, allowlist: ['66666666-7777-8888-9999-000000000000'] },
+      },
     });
     expect(await loadCachedAppConfig()).not.toBeNull();
     await wipeLocalSession();

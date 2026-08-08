@@ -64,7 +64,8 @@ import {
 } from './dietTrial';
 import { relativeDayLabel } from './food';
 import { proteinsFromCacheText } from './protein';
-import { loadTrialProteinContext, trialDietNote } from './trialContaminant';
+import { antigenPausedNote, loadTrialProteinContext, trialDietNote } from './trialContaminant';
+import { trialTargetProtein } from './trialProtein';
 import { localDayIndexOf, petPronouns, toLocalDayKey } from './utils';
 import type { TrialCardInput, TrialCardTrial } from './dietTrialCard';
 
@@ -86,6 +87,9 @@ interface TrialRow {
   outcome: string | null;
   indication: string | null;
   food_label: string | null;
+  /** B-704 — the owner-stated trial protein (canonical key or null). Resolved
+   *  stored-first through `trialTargetProtein` into the card/strip identity. */
+  target_protein: string | null;
 }
 
 /** The card's read, against the LOCAL mirror B-417 PR 2 shipped (#453).
@@ -95,9 +99,40 @@ interface TrialRow {
  *  same day PR 2 removed exactly that dependency from the widget. The card needs
  *  four columns the widget's projection deliberately omits (`status`, `ended_at`,
  *  `stopped_reason`, `outcome`), so it is its own query rather than a reuse of
- *  `ACTIVE_DIET_TRIAL_QUERY` — but it keeps that query's two load-bearing shapes:
- *  the `food_label` COALESCE (so archiving the trial food cannot blank the
- *  trial's identity, §3.1) and the `synced DESC` tie-break.
+ *  `ACTIVE_DIET_TRIAL_QUERY` — but it keeps that query's `food_label` COALESCE (so
+ *  archiving the trial food cannot blank the trial's identity, §3.1).
+ *
+ *  ── B-601 — CARD AND REPORT MUST AGREE ON *WHICH* ENDED TRIAL IS "THE" TRIAL ──
+ *
+ *  The eligibility predicate and the tie-break here are aligned with the report's
+ *  `generate-report/trial.selectReportTrial`, because the two reading the SAME
+ *  record and naming DIFFERENT trials is the one-record-two-answers class the
+ *  14/14 parity once prevented — now that the graces legitimately differ (30/90).
+ *  Two shapes changed to close it:
+ *
+ *    • `COALESCE(ended_at, completed_at)`, not `ended_at IS NOT NULL`. The report's
+ *      `trialEndValue` falls back to `completed_at` (B-455 is exactly a row missing
+ *      `ended_at` from a pre-migration-040 write); requiring `ended_at` alone made
+ *      such a trial eligible for the report and invisible to the card.
+ *    • `started_at DESC, id DESC` — the report ranks start-then-id (highest id
+ *      wins) and consults no `synced`. The old `synced DESC` tie-break (borrowed
+ *      from `ACTIVE_DIET_TRIAL_QUERY`, where the unique-active index means it never
+ *      bites) could order two ended trials differently from the report, and the
+ *      bare `t.id` was ASCending — the opposite of the report's `id > best`.
+ *
+ *  What is DELIBERATELY not aligned is the grace WINDOW (30 here vs. the report's
+ *  90 — R5/B-538): that governs WHETHER the card shows a trial, not which one, and
+ *  is a ruled UI-vs-clinical asymmetry. `started_at` is stored as a local day-key
+ *  (`YYYY-MM-DD`) on BOTH sides — server `DATE NOT NULL` (migration 001), local via
+ *  `toLocalDayKey` — so two ended trials that started the same local day hold an
+ *  IDENTICAL `started_at` and both surfaces tie straight to `id DESC`: they agree,
+ *  there is no timestamp-vs-day-index residual (adversarial-reviewer confirmed the
+ *  divergence needs a sub-day `started_at` this schema never stores). Two latent
+ *  risks to watch, neither live: (a) if `started_at` ever stored sub-day precision
+ *  the SQL timestamp order would split from the report's day-index; (b) amendment
+ *  A-2's proposed `paused` status would be EXCLUDED by this query's
+ *  `status IN ('completed','abandoned')` but INCLUDED by `selectReportTrial`'s
+ *  `status !== 'active'` — align the two predicates if A-2 lands.
  *
  *  `indication` IS selected as of PR 6, and the earlier note here said it should
  *  not be. That note was right about the principle and is now wrong about the
@@ -106,9 +141,9 @@ interface TrialRow {
  *  from still binds where it was written — `indication` stays out of the App Group
  *  projection, which crosses a process boundary, persists on disk between sessions
  *  and renders nothing but a day counter. */
-const TRIAL_FOR_CARD_SQL = `
+export const TRIAL_FOR_CARD_SQL = `
   SELECT t.id, t.started_at, t.target_duration_days, t.status,
-         t.ended_at, t.stopped_reason, t.outcome, t.indication,
+         t.ended_at, t.stopped_reason, t.outcome, t.indication, t.target_protein,
          COALESCE(
            NULLIF(TRIM(COALESCE(f.brand, '') || ' ' || COALESCE(f.product_name, '')), ''),
            t.food_label
@@ -117,9 +152,10 @@ const TRIAL_FOR_CARD_SQL = `
     LEFT JOIN food_items_cache f ON f.id = t.food_item_id
    WHERE t.pet_id = ?
      AND (t.status = 'active'
-          OR (t.status IN ('completed', 'abandoned') AND t.ended_at IS NOT NULL
-              AND t.ended_at >= ?))
-   ORDER BY (t.status = 'active') DESC, t.synced DESC, t.started_at DESC, t.id
+          OR (t.status IN ('completed', 'abandoned')
+              AND COALESCE(t.ended_at, t.completed_at) IS NOT NULL
+              AND COALESCE(t.ended_at, t.completed_at) >= ?))
+   ORDER BY (t.status = 'active') DESC, t.started_at DESC, t.id DESC
    LIMIT 1
 `;
 
@@ -319,7 +355,26 @@ export async function loadTrialPredicateFacts(
     }
   }
 
-  return { trial, stoppedForRefusal: row.stopped_reason === 'refused', facts };
+  // B-704 — the trial's identity protein, resolved through the ONE predicate:
+  // stored-first (the owner's confirmed word), derivation fallback (the primary
+  // foods' own designated protein), with provenance. The card and Home strip name
+  // the trial "{Protein} trial" from this; a null resolution falls back to the
+  // food-label naming, unchanged.
+  //
+  // NAMING IS NOT A CLAIM (TG-1/TG-2), so it sits OUTSIDE the predicate-facts gate
+  // above: a null `allowedFoods` (unreadable set) leaves derivation with nothing,
+  // so a stored value still names the trial while derivation simply goes dark —
+  // and a null result names nothing (never "no protein", never an all-clear). It
+  // is deliberately independent of `facts`: an unreadable record silences the
+  // COUNTS, not the trial's name.
+  const primaryFoods = (allowedFoods ?? []).filter((f) => f.role === 'primary_diet');
+  const trialProtein = trialTargetProtein({ target_protein: row.target_protein }, primaryFoods);
+
+  return {
+    trial: { ...trial, trialProtein },
+    stoppedForRefusal: row.stopped_reason === 'refused',
+    facts,
+  };
 }
 
 /** Reads the pet's active trial and everything the card needs to describe it.
@@ -373,10 +428,25 @@ export async function loadDietTrialFacts(args: {
   // wasted SQLite reads on every tick. The cost of this ordering is that the two
   // reads no longer overlap the four predicate reads for a pet that DOES have a
   // trial; they are local reads on a screen that has already awaited four others.
+  // B-597/B-598 — the antigen-arm flag, read straight off the module (like
+  // `allowedSetUnavailable` below, and for the same reason): NOT gated on `readable`,
+  // because a range the app cannot read is not a reason to go quiet about the animal,
+  // and `computeTrialFacts`'s degenerate `base` already sets it false. `facts.range`
+  // being null therefore leaves the arm reported as not-dark, never as an all-clear.
+  const armDark = facts?.antigenArmDark ?? false;
+  const pausedLabels = facts?.antigenAttributionPaused?.map((f) => f.label) ?? [];
+
   const [decline, standingNote] = await Promise.all([
     readIntakeDecline(pet, nowMs),
-    readStandingNote(pet.id, pet.name),
+    readStandingNote(pet.id, pet.name, { antigenArmDark: armDark, pausedLabels }),
   ]);
+  // B-598 — the pause disclosure is derivable from the flag ALONE, so it must
+  // survive the two paths where `readStandingNote` returns null with the arm still
+  // dark: an independent protein-context read failure, and the ctx===null path where
+  // `trialDietNote` is never called. When the note lane DID speak it already carries
+  // the pause (or a higher-precedence contamination finding), so this only fills a
+  // silence — it never overrides a real finding.
+  const resolvedStandingNote = standingNote ?? (armDark ? antigenPausedNote(pausedLabels) : null);
 
   // A NULL RANGE IS NOT A ZERO RECORD. `computeTrialFacts` returns its `base`
   // — `range: null`, `coverage: null`, `exposures` all-zero — on the two paths
@@ -447,6 +517,11 @@ export async function loadDietTrialFacts(args: {
     // Its own input, not a case of the claim gate — see the field's docstring for
     // why wiring it only into `mayStateRecordClean` left it unreachable.
     allowedSetUnavailable: facts?.allowedSetUnavailable ?? false,
+    // B-597 — the structurally identical sibling. Withholds the strip's ratio and,
+    // via `resolvedStandingNote`, carries the membership-gap disclosure the report
+    // has. The CLAIM was already gated on it (`mayClaimAllMatched`); this is the
+    // wiring the loader dropped between the module and the two owner surfaces.
+    antigenArmDark: armDark,
     intakeDeclineHeadline: decline,
     // The history, for the terminal cards — see the field's docstring.
     rangeRefusal: facts?.rangeRefusal ?? null,
@@ -481,7 +556,7 @@ export async function loadDietTrialFacts(args: {
     freeFed: readable?.intakeNotDirectlyObservedNow
       ? { loggedFeedings: readable.exposures.totalFeedings }
       : null,
-    standingNote,
+    standingNote: resolvedStandingNote,
   };
 }
 
@@ -874,16 +949,23 @@ export function declineHeadline(flag: IntakeDeclineFlag, petName: string): strin
 }
 
 /** C2's standing fact, re-sited from B-351 slice 4. A null context renders
- *  nothing at all rather than an all-clear (D10's presence-only rule). */
+ *  nothing at all rather than an all-clear (D10's presence-only rule).
+ *
+ *  `armDark` + `pausedLabels` are the module's antigen-arm flag, passed in so
+ *  `trialDietNote`'s pause branch reads the SAME answer the report does (B-598)
+ *  rather than re-deriving it. This read loads a SEPARATE table (the protein
+ *  context) and can fail independently of the predicate that produced the flag —
+ *  the caller's fallback renders the pause from the flag alone when it does. */
 async function readStandingNote(
   petId: string,
   petName: string,
+  opts: { antigenArmDark: boolean; pausedLabels: readonly string[] },
 ): Promise<{ title: string; body: string } | null> {
   try {
     // force: this screen is where an owner lands after editing a trial food, so
     // it re-reads rather than serving a 5-minute-old target protein.
     const ctx = await loadTrialProteinContext(petId, { force: true });
-    return ctx ? trialDietNote(ctx, petName) : null;
+    return ctx ? trialDietNote(ctx, petName, opts) : null;
   } catch (e) {
     console.error('[DietTrial] standing note read failed:', e);
     return null;

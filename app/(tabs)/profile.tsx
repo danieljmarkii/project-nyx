@@ -20,7 +20,7 @@ import { VET_FILES_ENTRY_ENABLED } from '../../lib/vetFilesEntry';
 import { VET_DOCUMENTS_BUCKET } from '../../lib/vetDocuments';
 import {
   readVetLibrary, buildVetFilesCardModel, VET_DOCUMENT_SIGNED_URL_TTL_SEC,
-  VET_FILES_STRIP_LIMIT, type VetLibraryRow,
+  type VetLibraryRow,
 } from '../../lib/vetDocumentLibrary';
 import { archiveBlockedCopy } from '../../lib/utils';
 import { formatAge } from '../../lib/age';
@@ -39,6 +39,7 @@ import {
 } from '../../components/profile/TrialCompletionSheet';
 import { useDietTrial } from '../../hooks/useDietTrial';
 import { useTrialAllowedSet } from '../../hooks/useTrialAllowedSet';
+import { useWidgetSlotLabel } from '../../hooks/useWidgetSlotLabel';
 import { resolveTrialCard } from '../../lib/dietTrialCard';
 import { extensionDays, nextTargetDays } from '../../lib/dietTrialCompletion';
 import { extendTrial } from '../../lib/dietTrialSetup';
@@ -48,9 +49,17 @@ import { Pet } from '../../store/petStore';
 import {
   MEDICATION_ROUTE_OPTIONS, computeRegimenCompliance, regimenComplianceLine,
   regimenFlagLine, attributeDosesToRegimens, regimenDaysElapsed, doseCourseProgress,
+  mapDoseRowsToAttributable,
+  courseReachedPlannedEnd, courseEndPromptLede,
+  COURSE_END_PROMPT_QUESTION, COURSE_END_PROMPT_HEDGE, COURSE_END_PROMPT_ACTION,
   type AdherenceTally, type RegimenCompliance, type AttributableDose,
-  type DoseCourseProgress,
+  type DoseCourseProgress, type DoseEmbedRow, type PlannedEndState,
 } from '../../lib/medications';
+import { deriveMedicationCourses, type MedicationHistoryRegimen } from '../../lib/medicationHistory';
+import {
+  buildPastCourseRows, type PastCourseRow, type MedicationItemName,
+} from '../../lib/pastMedications';
+import { PastMedicationsSection } from '../../components/profile/PastMedicationsSection';
 
 const PET_PHOTO_BUCKET = 'nyx-pet-photos';
 
@@ -67,6 +76,9 @@ interface RegimenDisplay extends Regimen {
   // set). Carries the "Dose {n} of {target}" line + its bar fraction; when null the
   // card renders the days/ongoing path unchanged.
   doseCourse: DoseCourseProgress | null;
+  // B-719 — has this ACTIVE course reached its planned end (dose count or day span)?
+  // Drives the confirm-in-the-loop "Is this course finished?" prompt on the card.
+  courseEnd: PlannedEndState;
 }
 
 const EMPTY_TALLY = (): AdherenceTally => ({ given: 0, partial: 0, missed: 0, refused: 0, unrated: 0 });
@@ -92,6 +104,16 @@ function buildRegimenDisplay(reg: Regimen, tally: AdherenceTally): RegimenDispla
     // an unparseable start date no longer drops it to a bare count.
     targetDoses: reg.target_duration_doses,
   });
+  // B-618 §6 — a doses course drives the count line + bar off dosesTowardTarget,
+  // independent of the day math. Exactly one of target_duration_days /
+  // target_duration_doses is ever set (DB constraint, migration 049), so this
+  // never competes with the "Day X of Y" path on the same row. The `> 0` guard
+  // (not just `!= null`) means a corrupt/legacy local row with a 0 target — the
+  // local SQLite mirror does not enforce the server CHECK — degrades to the
+  // ongoing "Started …" path instead of rendering "Dose n of 0".
+  const doseCourse = reg.target_duration_doses != null && reg.target_duration_doses > 0
+    ? doseCourseProgress(tally, reg.target_duration_doses)
+    : null;
   return {
     ...reg,
     daysElapsed,
@@ -99,16 +121,17 @@ function buildRegimenDisplay(reg: Regimen, tally: AdherenceTally): RegimenDispla
     compliance,
     complianceLine: regimenComplianceLine(compliance),
     flagLine: regimenFlagLine(tally),
-    // B-618 §6 — a doses course drives the count line + bar off dosesTowardTarget,
-    // independent of the day math. Exactly one of target_duration_days /
-    // target_duration_doses is ever set (DB constraint, migration 049), so this
-    // never competes with the "Day X of Y" path on the same row. The `> 0` guard
-    // (not just `!= null`) means a corrupt/legacy local row with a 0 target — the
-    // local SQLite mirror does not enforce the server CHECK — degrades to the
-    // ongoing "Started …" path instead of rendering "Dose n of 0".
-    doseCourse: reg.target_duration_doses != null && reg.target_duration_doses > 0
-      ? doseCourseProgress(tally, reg.target_duration_doses)
-      : null,
+    doseCourse,
+    // B-719 — the finish-prompt trigger, composed from the two existing course
+    // definitions (doseCourse.atTarget for the dose trigger, daysElapsed vs
+    // target_duration_days for the day trigger). Pure + unit-tested in
+    // lib/medications so the "reached its planned end" read can't drift per surface.
+    courseEnd: courseReachedPlannedEnd({
+      status: reg.status,
+      doseCourse,
+      targetDurationDays: reg.target_duration_days,
+      daysElapsed,
+    }),
   };
 }
 
@@ -165,6 +188,10 @@ function statusLabel(status: string): string {
 export default function ProfileScreen() {
   const { pets, activePet, updatePet } = usePetStore();
   const showMedicationMoment = useMomentStore((s) => s.showMedication);
+  // B-407 — which "Pet N" slot this pet holds in the Home Screen widget picker
+  // (null off-iOS / before the widget index is published), so the profile names
+  // the slot instead of leaving the owner to bind by trial and error.
+  const widgetSlotLabel = useWidgetSlotLabel(activePet?.id);
 
   const [editModalVisible, setEditModalVisible] = useState(false);
   const [conditionModalVisible, setConditionModalVisible] = useState(false);
@@ -180,6 +207,11 @@ export default function ProfileScreen() {
   const [medicationsLoading, setMedicationsLoading] = useState(true);
   const [medicationModalVisible, setMedicationModalVisible] = useState(false);
   const [editingRegimen, setEditingRegimen] = useState<Regimen | undefined>(undefined);
+
+  // B-140 (extended) PR 2 — the "Past medications" section's rows. No loading state:
+  // it is collapsed-by-default reference material, so it simply appears once derived
+  // rather than flashing a spinner (and renders nothing until then / when empty).
+  const [pastRows, setPastRows] = useState<PastCourseRow[]>([]);
 
   // B-417 PR 4 — the trial card reads through one shared loader with the Home
   // strip, so the two surfaces cannot disagree about the same trial. It reads the
@@ -267,10 +299,10 @@ export default function ProfileScreen() {
 
   const [photoUploading, setPhotoUploading] = useState(false);
 
-  // Vet Files card (B-478 VF-2, mock A1-r2 / A1z). Local-first like the library
-  // itself — the read is SQLite, so the card is correct offline and costs no
-  // round-trip. Only the three strip thumbnails touch the network, and only for
-  // documents this device has no local copy of.
+  // Vet Files card (B-478 VF-2; preview redesign B-712). Local-first like the
+  // library itself — the read is SQLite, so the card is correct offline and costs no
+  // round-trip. The card previews only the latest document, so at most one thumbnail
+  // touches the network, and only when that document has no local copy of its own.
   const [vetDocuments, setVetDocuments] = useState<VetLibraryRow[]>([]);
   const [vetThumbs, setVetThumbs] = useState<Map<string, string>>(new Map());
   const [vetThumbsLoading, setVetThumbsLoading] = useState(false);
@@ -280,16 +312,14 @@ export default function ProfileScreen() {
     try {
       const rows = await readVetLibrary(activePet.id);
       setVetDocuments(rows);
-      // Sign only the strip's own paths, and only those without a local file.
-      const stripPaths = rows
-        .slice(0, VET_FILES_STRIP_LIMIT)
-        .filter((r) => !r.localUri)
-        .map((r) => r.storagePath);
-      if (stripPaths.length === 0) { setVetThumbs(new Map()); return; }
+      // Sign only the previewed (latest) document's path, and only when it has no
+      // local file — a device-captured document renders offline from its own copy.
+      const latest = rows[0];
+      if (!latest || latest.localUri) { setVetThumbs(new Map()); return; }
       setVetThumbsLoading(true);
       try {
         setVetThumbs(
-          await getSignedUrls(VET_DOCUMENTS_BUCKET, stripPaths, VET_DOCUMENT_SIGNED_URL_TTL_SEC),
+          await getSignedUrls(VET_DOCUMENTS_BUCKET, [latest.storagePath], VET_DOCUMENT_SIGNED_URL_TTL_SEC),
         );
       } finally {
         setVetThumbsLoading(false);
@@ -389,30 +419,9 @@ export default function ProfileScreen() {
           .eq('pet_id', activePet.id)
           .or(orParts.join(','));
         if (doseError) throw doseError;
-
-        type DoseRow = {
-          medication_id: string | null;
-          medication_item_id: string | null;
-          adherence: string | null;
-          // to-one embed: supabase-js may surface it as an object or a 1-element array
-          events:
-            | { deleted_at: string | null; occurred_at: string }
-            | { deleted_at: string | null; occurred_at: string }[]
-            | null;
-        };
-        doses = ((doseRows as unknown as DoseRow[]) ?? []).map((d) => {
-          const ev = Array.isArray(d.events) ? d.events[0] : d.events;
-          return {
-            medication_id: d.medication_id,
-            medication_item_id: d.medication_item_id,
-            adherence: d.adherence,
-            deleted_at: ev?.deleted_at ?? null,
-            // '' only when the FK'd parent event embed is absent (not reachable with
-            // the non-null events FK); harmless — pass 2 orders it out ('' < any date)
-            // and pass 1 ignores occurred_at entirely.
-            occurred_at: ev?.occurred_at ?? '',
-          };
-        });
+        // Shared embed-shape mapper (lib/medications) — the B-196 handling lives in one
+        // place, read identically here and by loadPastMedications.
+        doses = mapDoseRowsToAttributable(doseRows as unknown as DoseEmbedRow[]);
       }
 
       const tallies = attributeDosesToRegimens(regimens, doses);
@@ -421,6 +430,97 @@ export default function ProfileScreen() {
       console.error('[Profile] load medications failed:', e);
     } finally {
       setMedicationsLoading(false);
+    }
+  }, [activePet?.id]);
+
+  // B-140 (extended) PR 2 — the "Past medications" section. Derives PAST courses from
+  // the pet's WHOLE medication record (every regimen + every dose), not just the active
+  // regimens the Current-medications card reads: a course must survive its own ending,
+  // which is the amnesia this feature exists to cure (spec §1). Reads Supabase like the
+  // sibling Current card; on any failure it degrades to no section — a history read must
+  // never cost the owner the profile tab (the loadVetFiles stance).
+  //
+  // Kept SEPARATE from loadMedications rather than folded into one fetch: that loader
+  // drives a much richer active-only card (compliance %, dose-course bar, flag lines,
+  // "Log a dose") off RegimenDisplay, and re-pointing it at MedicationCourse would be a
+  // risky refactor outside this PR. The overlap is a bounded, per-pet double read on
+  // focus (acceptable); consolidating both surfaces onto one derivation is a later call.
+  const loadPastMedications = useCallback(async () => {
+    if (!activePet) return;
+    try {
+      // Every regimen for the pet — ALL statuses. The `status = 'active'` filter is
+      // exactly the bug this feature undoes, so it is deliberately absent here.
+      const { data: regimenRows, error: regimenError } = await supabase
+        .from('medications')
+        .select(
+          'id, medication_item_id, drug_name, dose_amount, route, doses_per_day, ' +
+          'schedule_notes, started_at, target_duration_days, target_duration_doses, status, ended_at',
+        )
+        .eq('pet_id', activePet.id);
+      if (regimenError) throw regimenError;
+
+      // Coerce doses_per_day (PostgREST serialises NUMERIC as a string) once at the
+      // boundary, matching loadMedications.
+      const regimens: MedicationHistoryRegimen[] =
+        ((regimenRows as unknown as MedicationHistoryRegimen[]) ?? []).map((r) => ({
+          ...r,
+          doses_per_day: r.doses_per_day == null ? null : Number(r.doses_per_day),
+        }));
+
+      // Every dose for the pet, with its parent event's soft-delete + timestamp (a
+      // dose's deletedness rides its event). The FK-disambiguated embed is B-196's fix
+      // (a bare events(...) is ambiguous since migration 023's paired_event_id). The
+      // derivation skips deleted doses; the unattributed ones become the dose-derived
+      // (orphan) courses that are most of the real history (spec D1).
+      //
+      // FORWARD-LOOKING (B-696): this reads ALL of the pet's doses on every focus with no
+      // window. The course COUNT stays small, but the dose volume behind it grows without
+      // bound for a years-long chronic patient — the rundown (§4.3/D3) capped the same
+      // derivation's window for exactly this reason. Fine at current volumes; revisit if
+      // a heavy account makes the per-focus read costly.
+      const { data: doseRows, error: doseError } = await supabase
+        .from('medication_administrations')
+        .select('medication_id, medication_item_id, adherence, events!medication_administrations_event_id_fkey(deleted_at, occurred_at)')
+        .eq('pet_id', activePet.id);
+      if (doseError) throw doseError;
+      const doses = mapDoseRowsToAttributable(doseRows as unknown as DoseEmbedRow[]);
+
+      // OMIT timeZone — the device zone IS the owner's midnight (the on-device rule the
+      // derivation documents); generate-report is the surface that passes a zone.
+      const courses = deriveMedicationCourses({ regimens, doses });
+
+      // Resolve dose-derived (orphan) names from the catalog — a regimen course names
+      // itself. medication_items is globally readable, and .in() parameterises the ids
+      // (no string interpolation, so no injection surface).
+      const orphanIds = [
+        ...new Set(
+          courses
+            .filter((c) => c.source === 'doses' && c.medicationItemId)
+            .map((c) => c.medicationItemId as string),
+        ),
+      ];
+      let itemNames = new Map<string, MedicationItemName>();
+      if (orphanIds.length > 0) {
+        const { data: nameRows, error: nameError } = await supabase
+          .from('medication_items')
+          .select('id, generic_name, brand_name')
+          .in('id', orphanIds);
+        if (nameError) throw nameError;
+        itemNames = new Map(
+          ((nameRows as unknown as { id: string; generic_name: string; brand_name: string | null }[]) ?? [])
+            .map((r) => [r.id, { generic_name: r.generic_name, brand_name: r.brand_name }]),
+        );
+      }
+
+      setPastRows(buildPastCourseRows(courses, itemNames));
+    } catch (e) {
+      // Leave the PRIOR successful result standing (matching the sibling loadMedications,
+      // never loadVetFiles' clear-on-error): a transient failure on a re-focus/after-End
+      // refetch must NOT blank an already-rendered history — with the section hidden at
+      // rows.length === 0, clearing here would make real history read as "never had any",
+      // the exact amnesia this feature exists to cure. Before the first success pastRows
+      // is already [], so a first-load failure still shows no section.
+      console.error('[Profile] load past medications failed:', e);
     }
   }, [activePet?.id]);
 
@@ -439,6 +539,10 @@ export default function ProfileScreen() {
   useFocusEffect(
     useCallback(() => {
       loadMedications();
+      // The Past medications section reconciles on the same focus: ending a course
+      // from the Current card, or editing/removing an old dose, changes what belongs
+      // in the past list.
+      loadPastMedications();
       // The trial card reconciles on focus for the same reason: an owner returns
       // to this tab after logging a meal, and the coverage line is denominated in
       // days that only move forward.
@@ -446,7 +550,7 @@ export default function ProfileScreen() {
       // And the Vet Files card, so returning from the library reflects a document
       // just added or renamed there.
       loadVetFiles();
-    }, [loadMedications, reloadTrial, loadVetFiles]),
+    }, [loadMedications, loadPastMedications, reloadTrial, loadVetFiles]),
   );
 
   async function handlePickPhoto() {
@@ -578,6 +682,9 @@ export default function ProfileScreen() {
       if (error) throw error;
       if (!data || data.length === 0) throw new Error('No row updated (not owned?)');
       setMedications((prev) => prev.filter((m) => m.id !== id));
+      // The just-ended course now belongs in the Past medications section — refresh it
+      // so the row moves down immediately, without waiting for the next tab focus.
+      loadPastMedications();
     } catch (e) {
       console.error('[Profile] end regimen failed:', e);
       Alert.alert('Could not update', 'Something went wrong. Try again.');
@@ -781,6 +888,20 @@ export default function ProfileScreen() {
           </View>
         </Card>
 
+        {/* ── Widget slot (B-407) — a quiet lookup line naming the pet's slot in
+            the Home Screen "Edit Widget" picker, so a multi-pet household can bind
+            the right pet instead of guessing "Pet 1…Pet 6". Rendered only when the
+            pet actually holds a published slot (iOS + published index); absent
+            otherwise, never a placeholder. ── */}
+        {widgetSlotLabel && (
+          <Text
+            style={styles.widgetSlotLine}
+            accessibilityLabel={`In the Home Screen widget picker, ${activePet.name} is ${widgetSlotLabel}.`}
+          >
+            Home Screen widget · {widgetSlotLabel}
+          </Text>
+        )}
+
         {/* ── Weight trend (B-186) — descriptive, neutral; expands on the Weight
             chip above. snapshotKg lets the card show the profile weight before any
             weigh-in is logged, so it never contradicts the Weight chip. ── */}
@@ -855,9 +976,14 @@ export default function ProfileScreen() {
           {medicationsLoading ? (
             <WhorlSpinner size="sm" ground="day" style={styles.sectionLoader} />
           ) : medications.length === 0 ? (
+            // With past history below, "No medications yet" would read as "never had
+            // any" directly over a populated Past list (the between-courses state — a
+            // pet just off its antibiotics). Say "right now" and point down; keep the
+            // forward-looking first-run copy only when there is genuinely no history.
             <Text style={styles.emptyConditionsText}>
-              No medications yet. Add a regimen once and logging each dose
-              becomes a single tap.
+              {pastRows.length > 0
+                ? `No medications right now — ${activePet.name}'s past courses are just below.`
+                : 'No medications yet. Add a regimen once and logging each dose becomes a single tap.'}
             </Text>
           ) : (
             medications.map((reg) => {
@@ -914,7 +1040,52 @@ export default function ProfileScreen() {
                       )}
                     </>
                   )}
-                  <Text style={styles.medComplianceLine}>{reg.complianceLine}</Text>
+                  {/* B-719 — confirm-in-the-loop: an ACTIVE course that has reached its
+                      planned end (dose count or day span) offers a calm finish prompt.
+                      Replaces B-642's inert "vet's call" note under a full dose bar —
+                      the note described the moment but gave no way to act on it, so a
+                      finished course sat under "Current medications" until the owner
+                      found the utility-row End (the PM's own dogfood miss). It never
+                      auto-ends and the copy asserts no completion (D7); the tap reuses
+                      the shipped confirmEndRegimen dialog. The utility-row End stays —
+                      this IS that action, surfaced at the moment the course is done, so
+                      a course can still be ended early too. reg.courseEnd is the one
+                      tested predicate (lib/medications.courseReachedPlannedEnd). */}
+                  {reg.courseEnd.reached && reg.courseEnd.denomination && (
+                    <View style={styles.coursePrompt}>
+                      <Text style={styles.coursePromptText}>
+                        {courseEndPromptLede({
+                          denomination: reg.courseEnd.denomination,
+                          petName: activePet.name,
+                          targetDoses: reg.target_duration_doses,
+                          targetDays: reg.target_duration_days,
+                        })}{' '}
+                        {COURSE_END_PROMPT_QUESTION}
+                      </Text>
+                      {/* B-719 finding ④ — the vet-deferral hedge, restored at B-642's
+                          original quiet register. The app cannot tell a taper / "finish
+                          till the recheck" course from a simple one, so the prompt keeps
+                          a short "your vet's call" beside the question rather than nudging
+                          an abrupt stop. Load-bearing, not polish (adversarial-reviewer). */}
+                      <Text style={styles.coursePromptHedge}>{COURSE_END_PROMPT_HEDGE}</Text>
+                      <TouchableOpacity
+                        style={styles.coursePromptButton}
+                        onPress={() => confirmEndRegimen(reg)}
+                        hitSlop={8}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Mark ${reg.drug_name} as finished`}
+                      >
+                        <Text style={styles.coursePromptButtonText}>{COURSE_END_PROMPT_ACTION}</Text>
+                      </TouchableOpacity>
+                    </View>
+                  )}
+                  {/* B-643: on a FRESH dose course (nothing logged at all) the
+                      zero-state line above already says it — "No doses logged yet"
+                      under it is the same fact twice. Any logged dose (including a
+                      refused one, where count stays 0) brings this line back. */}
+                  {!(reg.doseCourse && reg.doseCourse.fresh) && (
+                    <Text style={styles.medComplianceLine}>{reg.complianceLine}</Text>
+                  )}
                   {reg.flagLine && (
                     <View style={styles.medFlag}>
                       <Text style={styles.medFlagText}>{reg.flagLine}</Text>
@@ -946,6 +1117,15 @@ export default function ProfileScreen() {
             })
           )}
         </Card>
+
+        {/* ── Past medications (B-140 extended, PR 2, mock §02) ──
+            A collapsed-by-default section beside the active cards, answering the
+            vet-chair "what has she been on?" the app has never been able to answer
+            (spec §1). Renders nothing until derived / when there is no past history.
+            Rows are non-tappable in PR 2 — PR 3 builds the past-course detail on
+            app/medication/[id] and lights up the tap then (a tap into today's editable
+            catalog screen would invite editing the wrong data). */}
+        <PastMedicationsSection rows={pastRows} />
 
         {/* ── Diet trial card v2 (B-417 PR 4, §4.2 — PR 3's modal behind it) ──
             Every string comes from `resolveTrialCard`; this screen only decides
@@ -1248,6 +1428,15 @@ const styles = StyleSheet.create({
     color: theme.colorNeutralDark,
   },
 
+  // B-407 — the widget-slot lookup caption. A quiet tertiary footnote to the info
+  // chips (a reference fact, not a daily control), edge-aligned under the card with
+  // a slight inset. Only ever renders when the pet holds a real published slot.
+  widgetSlotLine: {
+    fontSize: theme.textXS,
+    color: theme.colorTextTertiary,
+    paddingHorizontal: theme.space1,
+  },
+
   // ── Section layout (gap for inner rows) ──
   sectionGap: {
     gap: theme.space2,
@@ -1378,6 +1567,47 @@ const styles = StyleSheet.create({
   medComplianceLine: {
     fontSize: theme.textSM,
     color: theme.colorTextSecondary,
+  },
+  // ── B-719 — the confirm-in-the-loop finish prompt (replaces B-642's inert note) ──
+  // The question sits in the card's primary ink at medium weight — a shade more present
+  // than the secondary count/compliance lines around it — so the "reached its end"
+  // moment reads as something to attend to. The accent-light button is the discoverable
+  // affordance the old plain-text note never was; no panel, no fill — the button alone
+  // carries the action, staying calm (Principle 6 / the Calm benchmark), never a loud
+  // "done" banner.
+  coursePrompt: {
+    marginTop: theme.space1,
+    gap: theme.space1,
+    alignItems: 'flex-start',
+  },
+  coursePromptText: {
+    fontSize: theme.textSM,
+    color: theme.colorTextPrimary,
+    fontWeight: theme.weightMedium,
+    lineHeight: theme.lineHeightSM,
+  },
+  // The vet-deferral hedge (B-719 finding ④) — B-642's note register verbatim: the same
+  // quiet textSM/secondary as the compliance line it sits near, so it reads as context,
+  // not the CTA (the button is the CTA), while still restoring the early-stop hedge.
+  coursePromptHedge: {
+    fontSize: theme.textSM,
+    color: theme.colorTextSecondary,
+    lineHeight: theme.lineHeightSM,
+  },
+  coursePromptButton: {
+    backgroundColor: theme.colorAccentLight,
+    borderRadius: theme.radiusSmall,
+    paddingVertical: theme.space1,
+    paddingHorizontal: theme.space2,
+    // 44pt tap-target floor — the same one cardActionTouch documents on this screen,
+    // reached here by height (this is a filled button) rather than by hitSlop.
+    minHeight: 44,
+    justifyContent: 'center',
+  },
+  coursePromptButtonText: {
+    fontSize: theme.textSM,
+    fontWeight: theme.weightSemibold,
+    color: theme.colorAccentInk,
   },
 
   // ── Current medications (rows mirror the conditions list + the diet-trial bar) ──

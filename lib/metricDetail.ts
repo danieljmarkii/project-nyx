@@ -66,6 +66,23 @@ export function symptomLabel(type: string): string {
   return type.charAt(0).toUpperCase() + type.slice(1).replace(/_/g, ' ');
 }
 
+/** B-314 (PM-ruled 2026-08-04): the occurrence-form display variant for SENTENCES —
+ *  the calendar summary + its a11y copy ONLY ("Vomiting on 5 days", "No itching
+ *  logged in June"). Everywhere else (History rows, chips, drill-in subtitles)
+ *  stays on `symptomLabel`'s terse form for cross-surface consistency — this map
+ *  is display-only and must never feed a key, filter, or store. Falls back to
+ *  `symptomLabel` for types without an occurrence form. */
+const SYMPTOM_OCCURRENCE_LABELS: Record<string, string> = {
+  vomit: 'Vomiting',
+  diarrhea: 'Loose stools',
+  itch: 'Itching',
+  // lethargy already reads as an occurrence noun ("Lethargy on 5 days") — no entry.
+};
+
+export function symptomOccurrenceLabel(type: string): string {
+  return SYMPTOM_OCCURRENCE_LABELS[type] ?? symptomLabel(type);
+}
+
 /** One window's raw inputs for the detail screen: the current/prior raw counts (matching
  *  the count card / History timeline) + the daily-count series across the current window. */
 export interface SymptomWindowInput {

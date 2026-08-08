@@ -170,7 +170,7 @@ describe('the Foods-tab trial strip (FR-1)', () => {
   // its primary_diet row; the one permitted extra becomes "and 1 more".
   it('renders the day counter and names the foods on the list', () => {
     expect(buildFoodsTrialStrip(SET, opts, DAY_12)).toEqual({
-      header: 'Diet trial — day 12 of 28',
+      header: 'Diet trial · day 12 of 28',
       line: 'Zignature Kangaroo Formula, and 1 more',
     });
   });
@@ -207,13 +207,26 @@ describe('the Foods-tab trial strip (FR-1)', () => {
   // trial is marking the shared, per-account library.
   it('names the pet only on a multi-pet account', () => {
     expect(buildFoodsTrialStrip(SET, { petName: 'Biscuit', multiPet: true }, DAY_12)?.header)
-      .toBe('Biscuit’s diet trial — day 12 of 28');
+      .toBe('Biscuit’s diet trial · day 12 of 28');
     expect(buildFoodsTrialStrip(SET, { petName: 'Biscuit', multiPet: false }, DAY_12)?.header)
-      .toBe('Diet trial — day 12 of 28');
+      .toBe('Diet trial · day 12 of 28');
     // A multi-pet account whose active pet somehow has no name still gets a
     // truthful strip rather than "’s diet trial".
     expect(buildFoodsTrialStrip(SET, { petName: null, multiPet: true }, DAY_12)?.header)
-      .toBe('Diet trial — day 12 of 28');
+      .toBe('Diet trial · day 12 of 28');
+  });
+
+  // B-706 — the strip renders the "{Protein} trial" identity (the SAME token the
+  // Pet-tab card kicker and the Home strip show via `proteinTrialLabel`), so the
+  // Foods tab does not read "Diet trial" one tap from a card reading "Rabbit
+  // trial". "Diet trial" stays the no-protein fallback (every test above); the
+  // multi-pet possessive lower-cases the identity ("Biscuit’s rabbit trial").
+  it('names the trial by its protein when one resolves (cross-surface parity)', () => {
+    const rabbit = readySet([food()], { ...TRIAL, targetProtein: 'rabbit' });
+    expect(buildFoodsTrialStrip(rabbit, { petName: 'Biscuit', multiPet: false }, DAY_12)?.header)
+      .toBe('Rabbit trial · day 12 of 28');
+    expect(buildFoodsTrialStrip(rabbit, { petName: 'Biscuit', multiPet: true }, DAY_12)?.header)
+      .toBe('Biscuit’s rabbit trial · day 12 of 28');
   });
 
   // §5 edge 7 — one day-math source. Asserted against the function itself, since
@@ -225,13 +238,13 @@ describe('the Foods-tab trial strip (FR-1)', () => {
         at,
       );
       expect(buildFoodsTrialStrip(SET, opts, at)?.header)
-        .toBe(`Diet trial — day ${expected?.dayCounter} of 28`);
+        .toBe(`Diet trial · day ${expected?.dayCounter} of 28`);
     }
   });
 
   it('drops the "of M" rather than printing a target of zero', () => {
     const set = readySet([food()], { ...TRIAL, targetDurationDays: 0 });
-    expect(buildFoodsTrialStrip(set, opts, DAY_12)?.header).toBe('Diet trial — day 12');
+    expect(buildFoodsTrialStrip(set, opts, DAY_12)?.header).toBe('Diet trial · day 12');
   });
 
   it('drops the day clause entirely rather than fabricating a day', () => {
@@ -296,6 +309,38 @@ describe('trialStripFoodsLine (B-627)', () => {
   it('falls back to the first food when there is no primary diet', () => {
     expect(trialStripFoodsLine([treat, chew])).toBe('Real Meat Kangaroo Jerky, and 1 more');
   });
+
+  // ── B-656 — a blank food_label never leads the line ────────────────────────
+  // `food_label` is denormalised from a library row; a blank one used to render
+  // "​, and 2 more" (leading comma) or an empty line.
+  describe('blank-label guard (B-656)', () => {
+    const blankPrimary = food({ label: '', role: 'primary_diet', foodItemId: 'food-blank' });
+    const spacesPrimary = food({ label: '   ', role: 'primary_diet', foodItemId: 'food-spaces' });
+
+    it('skips a blank-label primary diet and leads with the first labelled food', () => {
+      expect(trialStripFoodsLine([blankPrimary, treat, chew]))
+        .toBe('Real Meat Kangaroo Jerky, and 2 more');
+    });
+
+    it('treats a whitespace-only label as blank', () => {
+      expect(trialStripFoodsLine([spacesPrimary, treat]))
+        .toBe('Real Meat Kangaroo Jerky, and 1 more');
+    });
+
+    it('still counts the blank-label food in "and N more" — it is on the list', () => {
+      expect(trialStripFoodsLine([blankPrimary, treat]))
+        .toBe('Real Meat Kangaroo Jerky, and 1 more');
+    });
+
+    it('degrades to the count register when every label is blank', () => {
+      expect(trialStripFoodsLine([blankPrimary])).toBe('1 food on the trial list');
+      expect(trialStripFoodsLine([blankPrimary, spacesPrimary])).toBe('2 foods on the trial list');
+    });
+
+    it('still returns the empty string for an empty list (caller guards it)', () => {
+      expect(trialStripFoodsLine([])).toBe('');
+    });
+  });
 });
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -305,7 +350,7 @@ describe('trialStripFoodsLine (B-627)', () => {
 describe('the food-detail membership row (FR-13)', () => {
   it('states membership as a dated fact', () => {
     expect(trialMembershipLine(SET, ON_LIST_DRY, 'Biscuit', DAY_12))
-      .toBe('On Biscuit’s trial list · since Jul 1');
+      .toBe('On Biscuit’s trial list · since 1 July');
   });
 
   // The mid-trial add's date IS the disclosure on this surface: it is visibly not
@@ -314,7 +359,7 @@ describe('the food-detail membership row (FR-13)', () => {
   // sheet, before the write.
   it('dates a mid-trial add to the day it joined', () => {
     expect(trialMembershipLine(SET, lib('food-jerky', 'Real Meat', 'Kangaroo Jerky'), 'Biscuit', DAY_12))
-      .toBe('On Biscuit’s trial list · since Jul 12');
+      .toBe('On Biscuit’s trial list · since 12 July');
   });
 
   // FR-13, verbatim: for a food not on the list the row is ABSENT. Never

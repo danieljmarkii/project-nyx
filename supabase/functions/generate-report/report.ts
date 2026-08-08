@@ -89,12 +89,27 @@ import {
 import {
   offTrialProteins,
   offTrialProteinsInTrialFood,
-  resolveTargetProtein,
+  trialTargetProtein,
+  trialFoodProteinMismatches,
+  type TrialProteinSource,
 } from '../../../lib/trialProtein.ts'
 // B-568 — the SAME format-label map the app renders from (lib/foodFormat.ts is
 // dependency-free precisely so both runtimes share one copy; a second map here is the
 // B-103 drift class, where a new enum value reaches one surface and not the other).
 import { foodFormatWord } from '../../../lib/foodFormat.ts'
+// B-140 PR 5 — the ONE shared medication-course derivation, read (never re-derived) by
+// the report's lifetime "Medication history" table (§4.4). `lib/medicationHistory.ts` is
+// React-Native-free by construction precisely so `generate-report` imports it directly,
+// the way this file already imports `lib/dietTrial.ts` — so the report's course counts and
+// end registers can never contradict the profile / med-detail / rundown surfaces (H4/H1,
+// the diet-trial §5.3 one-predicate lesson applied to medications). It pulls in only
+// `lib/medications.ts` + `lib/utils.ts`, both already in this bundle.
+import {
+  deriveMedicationCourses,
+  type MedicationHistoryRegimen,
+  type CourseSource,
+} from '../../../lib/medicationHistory.ts'
+import type { AttributableDose } from '../../../lib/medications.ts'
 // The diet-trial answer (B-417 PR 7). `trial.ts` is the seam onto `lib/dietTrial.ts`
 // — the one shared predicate — and imports NOTHING from this file, so the two are a
 // tree rather than a cycle.
@@ -108,7 +123,6 @@ import {
 } from './trial.ts'
 // B-494's flag carries the refusal fact verbatim rather than flattening it, so the
 // band and the trial block on the same page cannot state different numbers.
-import { feedingWasFinished } from '../../../lib/dietTrial.ts'
 import type { TrialDietRefusal, TrialSpecies } from '../../../lib/dietTrial.ts'
 export type {
   TrialBlock,
@@ -374,6 +388,14 @@ export interface ReportMedicationInput {
   prescribedBy: string | null
   startedAt: string // DATE 'YYYY-MM-DD'
   targetDurationDays: number | null
+  /**
+   * B-618 (migration 049) — a DOSE-denominated fixed course ("#28, until gone"). The
+   * CHECK constraint makes this mutually exclusive with `targetDurationDays`, so a regimen
+   * is days- XOR dose-denominated. Read by the §4.4 lifetime table to say "28 doses
+   * planned" vs "14 days". Optional so every pre-B-140-PR-5 fixture keeps compiling; absent
+   * ⇒ treated as null (ongoing / days-denominated), exactly as an unset column would be.
+   */
+  targetDurationDoses?: number | null
   status: string // 'active'|'completed'|'stopped'
   endedAt: string | null // DATE
   isPrescription?: boolean | null // false ⇒ treated as a supplement (concurrent intervention)
@@ -424,6 +446,18 @@ export interface ReportDietTrialInput extends ReportFoodProteinInput {
   vetName: string | null
   foodLabel?: string | null
   primaryProtein?: string | null
+  /**
+   * `diet_trials.target_protein` (migration 053, B-704) — the owner's STORED trial
+   * protein, or null (never set / cleared / "no single protein (hydrolyzed)"). A
+   * canonical key (TG-4). Read STORED-FIRST through `trialTargetProtein`; null falls to
+   * the derivation arm, byte-identical to the pre-PR-5 report. NEVER a permit (TG-1).
+   */
+  targetProtein?: string | null
+  /** `diet_trials.target_protein_set_at` (migration 053) — when the protein was set or
+   *  last changed, or null when `targetProtein` is null. Dates the provenance
+   *  disclosure ("protein confirmed day N" when it falls after day 1, §7.4); it never
+   *  versions the value (TP-3: one value, whole-trial, disclosed not versioned). */
+  targetProteinSetAt?: string | null
   /** What the trial is FOR (migration 040). Renders verbatim to a clinician and
    *  decides whether an antibiotic course is worth naming (§7). */
   indication?: 'skin' | 'gi' | 'other' | null
@@ -496,6 +530,17 @@ export interface ReportInput {
   aiAnalyses: ReportAiAnalysisInput[]
   weightChecks: ReportWeightCheckInput[]
   doses: ReportDoseInput[]
+  /**
+   * B-140 PR 5 — the pet's ENTIRE live dose history, UNTRIMMED by the lookback, for the
+   * window-ignoring lifetime "Medication history" table (§4.4). The DB already pulls every
+   * `medication_administrations` row (index.ts sets no `.gte` — a dose's instant lives on
+   * its parent event, so the lookback is an in-memory trim of `doses` for the windowed
+   * sections); this field carries the un-trimmed set so a course that ended before the
+   * ~180-day window still appears (the vet's "has she ever been on steroids?" question).
+   * Absent ⇒ the table derives over `doses` (older fixtures / callers) — correct but
+   * lookback-bounded, never wrong, just narrower.
+   */
+  lifetimeDoses?: ReportDoseInput[]
   medications: ReportMedicationInput[]
   /**
    * Names/metadata for the medication_items referenced by `doses` — so an ad-hoc dose with no
@@ -1062,6 +1107,34 @@ export type SafetyFlag =
       tier: SymptomWorseningFinding['tier']
       windowDays: number
     }
+  | {
+      /**
+       * B-704 §6 — THE TARGET-VS-LABEL MISMATCH, AS A SAFETY FLAG.
+       *
+       * The owner recorded one trial protein and the trial food's own label names another
+       * (a wrong-primary trial food). Made a flag, not just a disclosure line, for the
+       * B-494 reason its sibling was: the report TEACHES the reader to scan the flag zone,
+       * and the legend advertises "a prescribed diet going uneaten" as a trigger — so a
+       * trial where the pet may have eaten the WRONG protein for the whole window, left out
+       * of the band, reads as a negative result on a fast scan. `vet-report-cold-read`
+       * (2026-08-05) ruled the disclosure-line-only treatment a false-reassurance trap: the
+       * exposure counts (measured against the food's label) look "nearly clean" while, if
+       * the recorded protein is the true antigen, every trial-diet feeding is itself
+       * off-target and the elimination never happened.
+       *
+       * TRIAL-LEVEL, never per-feeding (TG-3) — like chronicity, it is an aggregate standing
+       * fact, not an alarm on any one meal. It NEVER moves a count or a feeding's
+       * classification (TG-1): it names a discrepancy the record cannot resolve and states
+       * which baseline the exposure figures use, so a vet is not misled by them.
+       */
+      kind: 'protein_mismatch'
+      /** The owner's recorded protein (what they believe the trial tests). */
+      recordedProtein: string
+      /** The trial food's own designated primary — what the exposure figures measure against. */
+      foodProtein: string
+      /** Every `primary_diet` label in force — the bag to name. */
+      trialDietLabels: string[]
+    }
 
 export interface SymptomAggregate {
   type: ReportSymptomType
@@ -1312,6 +1385,34 @@ export interface DietSummary {
    * when this is null, because nothing was compared.
    */
   trialTargetProtein: string | null
+  /**
+   * How `trialTargetProtein` was resolved (B-704 §7.4), so the report renders the
+   * provenance a vet needs to weigh it: an OWNER's stated antigen ("owner-confirmed")
+   * reads differently from the app's best guess off the label ("from the trial diet"),
+   * and a mid-trial confirmation is disclosed ("protein confirmed day N").
+   *
+   * NULL exactly when `trialTargetProtein` is null (no protein resolved) — the two
+   * travel together, so a null here is the same silence, never an all-clear (TG-2).
+   * `confirmedDay` is the 1-based trial day the owner set/changed the protein when
+   * `target_protein_set_at` falls AFTER day 1; null for a derived target, an owner set
+   * at/before day 1, or a missing/unparseable set-at.
+   *
+   * OPTIONAL, unlike `trialTargetProtein` above: this is display-only provenance metadata
+   * (no code path keys a decision off it), so it is additive. `buildSnapshot` always sets
+   * it; an older fixture that omits it renders the identity without a provenance word —
+   * the same graceful degradation as a null. `trialTargetProtein` stays required because
+   * the off-trial naming is built on it.
+   */
+  trialProteinProvenance?: { source: TrialProteinSource; confirmedDay: number | null } | null
+  /**
+   * The target-vs-label tension (B-704 §6 / TG-3), when live: the owner stored a
+   * protein and the trial food's own designated primary names a DIFFERENT one. A
+   * TRIAL-LEVEL standing fact, rendered as one disclosure line — NEVER a per-feeding
+   * flag, and it never changes a count or a feeding's classification (TG-1). Null/absent
+   * when there is no tension (derived target, no stored value, or they agree). Optional
+   * for the same reason as `trialProteinProvenance` — additive display metadata.
+   */
+  trialProteinMismatch?: { target: string; foodProtein: string; foodLabel: string | null } | null
   /**
    * The PROTEIN-SET VIEW of the trial this report describes — the half B-351's
    * off-trial marking is built on. Non-null exactly when `ReportSnapshot.trial` is:
@@ -1810,6 +1911,65 @@ export interface UnlinkedMedicationGroup {
   doseDays: string[]
 }
 
+/**
+ * B-140 PR 5 (D2) — one row of the lifetime "Medication history" table (§4.4, mock §05).
+ *
+ * WINDOW-IGNORING by design: derived over the pet's ENTIRE logged record (all regimens +
+ * `lifetimeDoses`), NOT the report window — so a course that ended months before the
+ * window still appears. It sits beside the windowed Appendix D (dose-level detail), never
+ * replaces it: this is the "what has she been on, ever?" overview; Appendix D is the
+ * "how was the current course dosed?" detail.
+ *
+ * These are FACTS; `render.ts` formats the Dates / Course / Doses cells. Two invariants are
+ * STRUCTURAL here so the renderer cannot break them:
+ *   • H1 — `ended` / `endStatus` / `endedDay` come SOLELY from an owner action (a
+ *     completed/stopped regimen). A course that merely went quiet carries `ended: false`
+ *     and a null `endedDay`; there is no field silence can fill, so no code path prints an
+ *     ending the owner never made. `lastDoseDay` carries the honest "last dose" instead.
+ *   • H4 — `dosesLogged` is the derivation's `dosesTowardTarget` (given + partial), the
+ *     same predicate the profile card / med strip / Appendix D count, so no two surfaces
+ *     can disagree on how many doses a course delivered.
+ */
+export interface MedicationHistoryEntry {
+  key: string
+  source: CourseSource
+  /** Clinical name — a regimen's own `drug_name`, or the generic-first `medicationItemName`
+   *  for a dose-derived (orphan) course. Never a guessed name. */
+  drugName: string
+  isActive: boolean
+  // ── H1 — owner-action ending ONLY ──
+  ended: boolean
+  endStatus: 'completed' | 'stopped' | null
+  endedDay: string | null // regimen `ended_at` DATE; null unless `ended`
+  // ── Dates (all 'YYYY-MM-DD' local day keys, or null) ──
+  startedDay: string | null // regimen `started_at` DATE; null on a dose-derived course
+  firstDoseDay: string | null
+  lastDoseDay: string | null
+  singleDay: boolean // exactly one distinct logged dose day (→ a bare "Feb 11" cell)
+  // ── Course description facts (all null on a dose-derived course) ──
+  targetDurationDays: number | null
+  targetDurationDoses: number | null
+  dosesPerDay: number | null
+  scheduleNotes: string | null
+  runDays: number | null // inclusive start→end span, ENDED regimens only (never a countdown)
+  /** target_duration_doses OR dosesPerDay×days — the "of N" for an ended course's count. */
+  plannedDoses: number | null
+  // ── Dose evidence (H4) ──
+  dosesLogged: number // dosesTowardTarget (given + partial)
+}
+
+export interface MedicationHistoryTable {
+  /** Active-first, then most-recent last dose first — the derivation's own order. */
+  entries: MedicationHistoryEntry[]
+  /**
+   * The earliest dated point across all entries (a regimen start or a first dose), for the
+   * "Lifetime of record (since <month year>)" note. Null when nothing is dated. It is
+   * genuinely lifetime: `lifetimeDoses` is untrimmed and regimens are unbounded, so this is
+   * the floor of the actual record, not the lookback.
+   */
+  sinceDay: string | null
+}
+
 export interface ReportSnapshot {
   generatedAt: string
   timezone: string | null
@@ -1839,6 +1999,12 @@ export interface ReportSnapshot {
    * separately on page 1 + Appendix D so nothing logged goes unreported. Empty ⇒ nothing to show.
    */
   unlinkedMedications: UnlinkedMedicationGroup[]
+  /**
+   * B-140 PR 5 (D2) — the window-ignoring lifetime medication table (§4.4), or null when the
+   * pet has no medication record at all (no regimen ever configured, no dose ever logged).
+   * Renders beside Appendix D; every count reads `lib/medicationHistory.ts` (H4).
+   */
+  medicationHistory: MedicationHistoryTable | null
   correlation: CorrelationSummary
   concurrentChanges: ConcurrentChange[]
   proteinTimeline: ProteinTimeline
@@ -2671,6 +2837,9 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     scope,
     tz,
   )
+  // §4.4 (D2) — the LIFETIME medication table, window-ignoring on purpose: derived over the
+  // pet's whole record (all regimens + the untrimmed `lifetimeDoses`), not the scoped window.
+  const medicationHistory = buildMedicationHistory(input, droppedEventIds, tz)
 
   // ── Diet / confounder summary (§3.8) ─────────────────────────────────────────
   // The trial this report DESCRIBES — active, or ended inside the window (B-417 §7).
@@ -2678,13 +2847,109 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
   // report the feature produces: the one sent the morning after the trial finished.
   const reportTrialInput = selectReportTrial(input.dietTrials, scope, tz, TRIAL_ANCHOR_GRACE_DAYS)
 
-  // The trial's target protein, resolved ONCE and threaded into every protein view
-  // below (B-351 slice 5). Null — no active trial, or a trial food with no
-  // designated main protein — disables the off-trial marking entirely: silence,
-  // never an all-clear. Deliberately the owner-designated `primary_protein` and NOT
-  // `proteins[0]`; see resolveTargetProtein for why reading the derived primary
-  // would invert the check on a cleared designation.
-  const trialTargetProtein = reportTrialInput ? resolveTargetProtein(reportTrialInput.primaryProtein) : null
+  // ── B-704 §7.4 — the trial's protein: naming, provenance, and the mismatch ──────
+  //
+  // TWO protein values live here and conflating them produces a self-contradictory
+  // report (the adversarial finding on a stored-first marking baseline):
+  //
+  //   • the EXPOSURE BASELINE (`trialProteinTarget`) — the ONE key every off-trial
+  //     marking and the antigen footnote are measured against. DERIVED-FIRST (the trial
+  //     food's own designated primary), because the antigen COUNTS are closed-world on
+  //     the food list (`sanctionedProteinsOn`, TG-1) and never move for any stored value.
+  //     Marking against a DIFFERENT protein than the counts use is how one Appendix C
+  //     row read "carries nothing the trial diet does not" beside "Duck* — other than the
+  //     trial protein (Rabbit)". One baseline for every exposure surface, so the markings,
+  //     the footnote and the counts can never disagree. The owner's stored value is only a
+  //     FALLBACK — for a THIN trial food whose own primary is unknown, where there is no
+  //     count to contradict (the antigen arm is dark) and the stored value rescues the
+  //     naming (§7.4's "survives thin food data" intent, preserved without the incoherence).
+  //
+  //   • the OWNER'S STORED PROTEIN (`trialProteinResolved`) — what the owner recorded the
+  //     trial as testing. It drives the identity's "owner-confirmed" provenance and, when
+  //     it DISAGREES with the baseline, the `protein_mismatch` safety flag. It never moves
+  //     a count (TG-1) and, on a mismatch, never re-bases a marking — the discrepancy is
+  //     the flag's subject, not a silent re-labelling of the exposure section.
+  //
+  // A null baseline (no trial, or a thin food with no stored value) disables off-trial
+  // marking entirely: silence, never an all-clear (TG-2).
+  const trialProteinResolved: { protein: string | null; source: TrialProteinSource | null } = reportTrialInput
+    ? trialTargetProtein(
+        { target_protein: reportTrialInput.targetProtein ?? null },
+        [{ primaryProtein: reportTrialInput.primaryProtein ?? null }],
+      )
+    : { protein: null, source: null }
+
+  // The trial food's OWN designated primary (derivation arm only — the sanctioned-set
+  // baseline the counts use, and deliberately NOT `proteins[0]`; see the derivation arm's
+  // note on why a cleared designation would invert the check).
+  const derivedTrialTarget = reportTrialInput
+    ? trialTargetProtein(
+        { target_protein: null },
+        [{ primaryProtein: reportTrialInput.primaryProtein ?? null }],
+      ).protein
+    : null
+
+  // THE EXPOSURE BASELINE: derived-first, the stored value only as the thin-food fallback.
+  const trialProteinTarget = derivedTrialTarget ?? trialProteinResolved.protein
+
+  // The mismatch: the owner stored a protein that DISAGREES with the trial food's own
+  // designated primary. Reuses PR 3's `trialFoodProteinMismatches` — THE ONE predicate
+  // for this question (the §5.3 rule; my initial `trialProteinLabelMismatch` was deleted
+  // at the #597 merge as a contradictory duplicate). It is kinship-aware and source-gated:
+  // it fires only when the owner's stored value names a usable source AND differs from the
+  // food's primary at a different animal (so 'poultry' vs 'chicken' — kin — is NOT a
+  // mismatch, and a source-less process word never fires), which is exactly what the setup
+  // sheet's day-0 heads-up uses, so the two surfaces can never disagree. Passing the OWNER's
+  // stored value as the target (not the resolved baseline) is what makes it fire only on an
+  // owner value — a derived target came from the label and cannot disagree with it.
+  const trialProteinMismatchFoods = reportTrialInput
+    ? trialFoodProteinMismatches(reportTrialInput.targetProtein ?? null, [
+        {
+          foodItemId: reportTrialInput.foodItemId ?? 'trial',
+          foodLabel: reportTrialInput.foodLabel ?? '',
+          primaryProtein: reportTrialInput.primaryProtein ?? null,
+        },
+      ])
+    : []
+  // When it fires, the stored value was a usable source, so the stored-first resolution is
+  // 'owner' and `trialProteinResolved.protein` is that word — the protein to NAME in the flag.
+  const trialProteinMismatch =
+    trialProteinMismatchFoods.length > 0 && trialProteinResolved.protein !== null
+      ? {
+          target: trialProteinResolved.protein,
+          foodProtein: trialProteinMismatchFoods[0].foodProtein,
+          foodLabel: reportTrialInput!.foodLabel ?? null,
+        }
+      : null
+
+  // Identity provenance (§7.4): the baseline is "owner-confirmed" ONLY when the owner's
+  // stored value IS the baseline — it defines a thin food's baseline, or corroborates the
+  // derived one. On a mismatch the baseline is the derived food protein and the owner's
+  // (different) value lives in the safety flag, so the identity reads "from the trial diet's
+  // label", never a false "owner-confirmed" over the food's protein.
+  const provenanceSource: TrialProteinSource | null =
+    trialProteinTarget === null
+      ? null
+      : trialProteinResolved.source === 'owner' && trialProteinResolved.protein === trialProteinTarget
+        ? 'owner'
+        : 'derived'
+
+  // `confirmedDay` discloses a mid-trial owner set: the 1-based trial day
+  // `target_protein_set_at` lands on, shown ONLY when the owner value IS the baseline
+  // (provenance 'owner') and it falls after day 1. Same local-day arithmetic the rest of
+  // the report uses (`eventDayNumber`/`dayNumber` over `tz`), so it never drifts from the
+  // block's own day counter.
+  let confirmedDay: number | null = null
+  if (provenanceSource === 'owner' && reportTrialInput && reportTrialInput.targetProteinSetAt) {
+    const setDay = eventDayNumber(reportTrialInput.targetProteinSetAt, tz)
+    const startDay = dayNumber(reportTrialInput.startedAt)
+    if (setDay !== null && startDay !== null) {
+      const d = setDay - startDay + 1
+      if (d >= 2) confirmedDay = d
+    }
+  }
+  const trialProteinProvenance =
+    provenanceSource !== null ? { source: provenanceSource, confirmedDay } : null
 
   /**
    * Build the render-ready protein view for one food.
@@ -2712,12 +2977,18 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     opts?: { isTrialDiet?: boolean },
   ): ProteinSetView {
     const proteins = readProteinSet(food.proteins ?? null, food.primaryProtein ?? null)
+    // EVERY food — the trial diet included — is compared to the SAME `trialProteinTarget`
+    // (the derived-first exposure baseline). The trial food takes the kin-absorbing
+    // `offTrialProteinsInTrialFood` (its own label naming its own source twice is not a
+    // contamination); every other food takes the plain comparison. One baseline, so the
+    // markings can never disagree with the counts (which are computed against the same
+    // derived primary) — the coherence the adversarial pass required on a mismatch.
     return {
       proteins,
       complete: mayClaimCompleteProteinSet(proteins, food.ingredientsNotes ?? null, food.extractionConfidence),
       offTrial: opts?.isTrialDiet
-        ? offTrialProteinsInTrialFood(proteins, trialTargetProtein)
-        : offTrialProteins(proteins, trialTargetProtein),
+        ? offTrialProteinsInTrialFood(proteins, trialProteinTarget)
+        : offTrialProteins(proteins, trialProteinTarget),
     }
   }
 
@@ -2907,7 +3178,9 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     : null
 
   const diet: DietSummary = {
-    trialTargetProtein,
+    trialTargetProtein: trialProteinTarget,
+    trialProteinProvenance,
+    trialProteinMismatch,
     trial,
     freeFed,
     intakeNotDirectlyObserved: freeFed.length > 0,
@@ -3028,6 +3301,27 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
         evidenceEndDate: trialBlock.evidenceEndDate,
       })
     }
+  }
+  // B-704 §6 — the target-vs-label mismatch, promoted to a safety flag so the discrepancy
+  // is STATED in the flag zone the report teaches a vet to scan first, never left silent
+  // (the B-494 rule; `vet-report-cold-read` 2026-08-05). Ordered here — after the intake /
+  // blood / foreign flags, before chronicity / worsening — so a genuine physical-sign flag
+  // still outranks it; what matters for B-494 is presence in the band, not the top slot.
+  // Trial-level, never per-feeding (TG-3); it names a discrepancy and moves no count.
+  // `trialProteinMismatch` is non-null only when an owner value disagrees with the food's
+  // designated primary, which requires a live trial.
+  if (trialProteinMismatch) {
+    safetyFlags.push({
+      kind: 'protein_mismatch',
+      recordedProtein: trialProteinMismatch.target,
+      foodProtein: trialProteinMismatch.foodProtein,
+      trialDietLabels:
+        trialBlock?.trialDietLabels.length
+          ? trialBlock.trialDietLabels
+          : trialProteinMismatch.foodLabel
+            ? [trialProteinMismatch.foodLabel]
+            : [],
+    })
   }
   if (detection.chronicity) {
     const f = detection.chronicity
@@ -3275,16 +3569,19 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
   const ratedMealsInWindow = windowMeals
     .filter((e) => e.meal!.foodType === 'meal' && e.meal!.intakeRating != null)
     .sort((a, b) => b.occurredAt.localeCompare(a.occurredAt) || (a.id < b.id ? 1 : a.id > b.id ? -1 : 0))
-  // B-532 — the second population: the meals that were LEFT UNFINISHED.
+  // B-532/B-500 — the second population: every meal the owner did NOT record as FULLY EATEN.
   //
-  // ON THE APP'S ONE PREDICATE, imported rather than re-derived. `feedingWasFinished` is
-  // `most`/`all`, the same bar `lib/analytics.FINISHED_SCORE`, §4.3's refusal lane and this
-  // file's own `intakeLogRow` emphasis already use — and a second definition here ("!== 'all'")
-  // would have put one "ate most" meal into an otherwise calm report while the row it rendered
-  // was not even bolded. Every rating still reaches the reader: the grouped table above this
-  // one now carries the FULL breakdown, so `most` is counted there; what this list adds is the
-  // per-meal dates for the ratings that are a possible health signal.
-  const unfinishedRated = ratedMealsInWindow.filter((e) => feedingWasFinished(e.meal!.intakeRating) === false)
+  // The threshold is `!== 'all'`, matching page 1's "N of M rated meals FULLY EATEN"
+  // (`finishedMeals` counts `=== 'all'`) and this list's own copy — its lead reads "every
+  // rated meal … the owner did not record as fully eaten" and its caption "meals rated below
+  // 'ate it all'". B-532 filtered on `feedingWasFinished` (`most`/`all`) instead, so an "ate
+  // most" meal was NOT fully eaten on page 1 yet counted as finished here — the one meal page 1
+  // singles out as the "1" in "86 of 87" then had no dated row anywhere, and the list's own
+  // caption promised it (B-500, `vet-report-cold-read`). `most` is a possible-signal rating for
+  // this purpose (page 1 flags it) but not an alarm: `intakeLogRow` still bolds only the
+  // below-`most` ratings, so an "ate most" row is present and dated but plain, not a false
+  // alert. The grouped table above still carries the full breakdown either way.
+  const unfinishedRated = ratedMealsInWindow.filter((e) => e.meal!.intakeRating !== 'all')
   const intakeLogScope: 'intake_flag' | 'unfinished' | null = hasIntakeFlag
     ? 'intake_flag'
     : unfinishedRated.length > 0
@@ -3538,6 +3835,7 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     trial: trialBlock,
     medications,
     unlinkedMedications,
+    medicationHistory,
     correlation,
     concurrentChanges,
     proteinTimeline,
@@ -3795,6 +4093,111 @@ function medicationItemName(item: ReportMedicationItemInput | null): string {
   const b = item.brandName?.trim() || null
   if (g && b && g.toLowerCase() !== b.toLowerCase()) return `${g} (${b})`
   return g || b || 'Unspecified medication'
+}
+
+/**
+ * §4.4 (D2) — assemble the LIFETIME "Medication history" table (mock §05). It reads the pet's
+ * WHOLE record — every regimen + `lifetimeDoses` (the untrimmed dose set) — through the ONE shared
+ * course derivation (`lib/medicationHistory.ts`), so it is window-ignoring by construction and its
+ * counts / end registers can never contradict the app's profile-card, med-detail or rundown surfaces
+ * (H4) nor fabricate an ending from silence (H1). Pure; `render.ts` formats the cells.
+ *
+ * Returns null when the pet has no medication record at all (no regimen ever configured AND no dose
+ * ever logged) — a null section, not an empty table with a fabricated "none" row.
+ */
+function buildMedicationHistory(
+  input: ReportInput,
+  droppedEventIds: Set<string>,
+  tz: string | null,
+): MedicationHistoryTable | null {
+  // The untrimmed dose set (window-ignoring); a caller without it falls back to the lookback-
+  // trimmed `doses` — narrower, never wrong. Then drop any dose whose parent event was collapsed
+  // as a duplicate, exactly as `liveDoses` does. (Medication events never dedup — each gets a
+  // unique key in dedupeEvents — so this is a no-op in practice, but the two dose paths must be
+  // defined identically, §5.11, so a future dedup change can't diverge them.)
+  const sourceDoses = input.lifetimeDoses ?? input.doses
+  const liveDoses = sourceDoses.filter((d) => !droppedEventIds.has(d.eventId))
+
+  // Map into the shared derivation's input shape. A ReportDoseInput becomes an AttributableDose
+  // with `deleted_at: null` — index.ts pulls only non-deleted doses (soft-deleted parents are
+  // dropped in mapDoseRows) and the dedup drop is filtered above, so every dose here is live.
+  const regimens: MedicationHistoryRegimen[] = input.medications.map((m) => ({
+    id: m.id,
+    medication_item_id: m.medicationItemId,
+    drug_name: m.drugName,
+    dose_amount: m.doseAmount,
+    route: m.route,
+    doses_per_day: m.dosesPerDay,
+    schedule_notes: m.scheduleNotes,
+    started_at: m.startedAt,
+    target_duration_days: m.targetDurationDays,
+    target_duration_doses: m.targetDurationDoses ?? null,
+    status: m.status,
+    ended_at: m.endedAt,
+  }))
+  const doses: AttributableDose[] = liveDoses.map((d) => ({
+    medication_id: d.medicationId,
+    medication_item_id: d.medicationItemId,
+    adherence: d.adherence,
+    deleted_at: null,
+    occurred_at: d.occurredAt,
+  }))
+
+  const courses = deriveMedicationCourses({ regimens, doses, timeZone: tz ?? undefined })
+  if (courses.length === 0) return null
+
+  const itemById = new Map((input.medicationItems ?? []).map((i) => [i.id, i]))
+  const regimenById = new Map(input.medications.map((m) => [m.id, m]))
+
+  const entries: MedicationHistoryEntry[] = courses.map((c) => {
+    // H1 — the ending fields are read SOLELY from the derivation's `ended` register (a completed/
+    // stopped owner action). Everything else leaves them false/null; a last-dose date can never
+    // become an ending here or downstream, because the renderer has no ending field to read.
+    const ended = c.end.kind === 'ended'
+    const endStatus = c.end.kind === 'ended' ? c.end.status : null
+    const endedDay = c.end.kind === 'ended' ? c.end.endedAt : null
+    // A regimen names itself (drug_name is NOT NULL); a dose-derived course resolves generic-first
+    // from the catalog. The report keeps its OWN clinical (generic-first) name, never the app's
+    // brand-first one (pastMedications.ts §name-resolution); unresolvable ⇒ "Unspecified medication".
+    const drugName =
+      c.drugName ??
+      medicationItemName(c.medicationItemId ? itemById.get(c.medicationItemId) ?? null : null)
+    const reg = c.regimenId ? regimenById.get(c.regimenId) ?? null : null
+    return {
+      key: c.key,
+      source: c.source,
+      drugName,
+      isActive: c.isActive,
+      ended,
+      endStatus,
+      endedDay,
+      startedDay: c.startedAt,
+      firstDoseDay: c.firstDoseDay,
+      lastDoseDay: c.lastDoseDay,
+      // One distinct logged dose day → a bare "Feb 11" cell (the single-ad-hoc-dose case).
+      singleDay: c.firstDoseDay !== null && c.firstDoseDay === c.lastDoseDay,
+      targetDurationDays: c.targetDurationDays,
+      // The dose-denominated total (B-618) is on the regimen, not the course; days- XOR dose-
+      // denominated by the migration-049 CHECK, so the renderer picks the phrasing off whichever is set.
+      targetDurationDoses: reg?.targetDurationDoses ?? null,
+      dosesPerDay: c.dosesPerDay,
+      scheduleNotes: c.scheduleNotes,
+      runDays: c.runDays,
+      plannedDoses: c.plannedDoses,
+      dosesLogged: c.dosesLogged,
+    }
+  })
+
+  // The "since" floor — the earliest dated point anywhere in the table (a regimen start or a first
+  // dose). A lexical 'YYYY-MM-DD' min IS the chronological min, with no instant parse (B-441-safe).
+  let sinceDay: string | null = null
+  for (const e of entries) {
+    for (const cand of [e.startedDay, e.firstDoseDay]) {
+      if (cand !== null && (sinceDay === null || cand < sinceDay)) sinceDay = cand
+    }
+  }
+
+  return { entries, sinceDay }
 }
 
 /**

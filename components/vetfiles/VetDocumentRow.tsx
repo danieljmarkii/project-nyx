@@ -184,7 +184,7 @@ const styles = StyleSheet.create({
     borderColor: theme.colorBorderStrong,
   },
   kindText: {
-    fontSize: 9,
+    fontSize: theme.textMicro,
     fontWeight: theme.weightSemibold,
     letterSpacing: theme.trackingWide,
     textTransform: 'uppercase',

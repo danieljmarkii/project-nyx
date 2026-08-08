@@ -230,7 +230,7 @@ const styles = StyleSheet.create({
     color: theme.colorAccent,
   },
   saveTextDisabled: {
-    opacity: 0.4,
+    opacity: theme.opacityDisabled,
   },
   form: {
     padding: theme.space3,

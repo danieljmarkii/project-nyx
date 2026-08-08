@@ -54,7 +54,7 @@ import {
   type TrialFacts,
   type VerdictReason,
 } from './dietTrial';
-import { formatCalendarDate, formatTime, toLocalDayKey } from './utils';
+import { formatLongDate, formatTime, toLocalDayKey } from './utils';
 
 // ── Copy this module owns ───────────────────────────────────────────────────
 
@@ -144,7 +144,7 @@ export interface TrialExposureRow {
   key: string;
   /** The food or drug, as the record holds it. */
   label: string;
-  /** "Jul 24, 6:40 PM · not recognised" — the when, and which rung fired. */
+  /** "24 July, 6:40 PM · not recognised" — the when, and which rung fired. */
   meta: string;
   /** `explainVerdict` / `oralRouteCopy`, verbatim. Null only if the module
    *  declines to explain a rung (today: never, for a row that reaches this list) —
@@ -162,7 +162,7 @@ export interface TrialExposureGroup {
 
 export interface TrialExposuresScreenModel {
   title: string;
-  /** "3 of 68 logged feedings · Jul 3 – Jul 25", or null when there is nothing to
+  /** "3 of 68 logged feedings · 3 July – 25 July", or null when there is nothing to
    *  count (the zero rule) or no readable window to name. */
   subtitle: string | null;
   groups: TrialExposureGroup[];
@@ -191,13 +191,13 @@ function rungTag(rung: ClassificationRung, antigens: readonly string[]): string 
   }
 }
 
-/** "Jul 24, 6:40 PM". The LOCAL day and the local time — the owner's own clock is
- *  the one they logged against, and `formatCalendarDate` takes a day key rather
+/** "24 July, 6:40 PM". The LOCAL day and the local time — the owner's own clock is
+ *  the one they logged against, and `formatLongDate` takes a day key rather
  *  than an instant precisely so a bare calendar day can never shift a date. */
 function whenLabel(occurredAt: string): string | null {
   const at = new Date(occurredAt);
   if (Number.isNaN(at.getTime())) return null;
-  const date = formatCalendarDate(toLocalDayKey(at));
+  const date = formatLongDate(toLocalDayKey(at));
   if (date === null) return null;
   return `${date}, ${formatTime(at)}`;
 }
@@ -247,8 +247,8 @@ function doseRow(exposure: OralRouteExposure): TrialExposureRow {
 function windowLabel(facts: TrialFacts): string | null {
   const r = facts.exposureRange;
   if (!r) return null;
-  const from = formatCalendarDate(dayKeyFromIndex(r.startDayIndex));
-  const to = formatCalendarDate(dayKeyFromIndex(r.endDayIndex));
+  const from = formatLongDate(dayKeyFromIndex(r.startDayIndex));
+  const to = formatLongDate(dayKeyFromIndex(r.endDayIndex));
   return from !== null && to !== null ? `${from} – ${to}` : null;
 }
 

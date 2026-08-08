@@ -203,6 +203,22 @@ export default function ForgotPasswordScreen() {
                 <Text style={styles.supportSub}>We usually reply within a day.</Text>
               </TouchableOpacity>
             ) : null}
+            {/* B-653 (PM-ruled 2026-08-04): the track's thesis is "every state has
+                an exit" (FR-9), and Sent was the one state without a direct one —
+                its only way back to login was two taps through the edit-address
+                path. Last in the §5.3 stack and in the muted register, so it can't
+                compete with the email link (the intended forward path). Mirrors
+                the failed state's control. */}
+            <TouchableOpacity
+              onPress={() => router.replace('/(auth)/login')}
+              style={styles.linkRow}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              accessibilityRole="button"
+              accessibilityLabel="Back to log in"
+              testID="forgot-sent-back"
+            >
+              <Text style={styles.linkMuted}>Back to log in</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </SafeAreaView>

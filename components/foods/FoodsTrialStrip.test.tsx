@@ -9,13 +9,13 @@ describe('FoodsTrialStrip', () => {
   // A representative model — the line NAMES the foods (B-627), which is what the
   // builder now produces.
   const MODEL = {
-    header: 'Diet trial — day 12 of 28',
+    header: 'Diet trial · day 12 of 28',
     line: 'Royal Canin Hydrolyzed Protein HP, and 2 more',
   };
 
   it('renders both lines', () => {
     const { getByText } = render(<FoodsTrialStrip model={MODEL} onPress={() => {}} />);
-    expect(getByText('Diet trial — day 12 of 28')).toBeTruthy();
+    expect(getByText('Diet trial · day 12 of 28')).toBeTruthy();
     expect(getByText('Royal Canin Hydrolyzed Protein HP, and 2 more')).toBeTruthy();
   });
 
@@ -38,7 +38,7 @@ describe('FoodsTrialStrip', () => {
   it('announces both facts and what the tap does', () => {
     const { getByLabelText } = render(<FoodsTrialStrip model={MODEL} onPress={() => {}} />);
     expect(
-      getByLabelText('Diet trial — day 12 of 28. Royal Canin Hydrolyzed Protein HP, and 2 more. See the trial list.'),
+      getByLabelText('Diet trial · day 12 of 28. Royal Canin Hydrolyzed Protein HP, and 2 more. See the trial list.'),
     ).toBeTruthy();
   });
 });

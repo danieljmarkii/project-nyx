@@ -5,7 +5,8 @@ import { NyxEvent } from '../../store/eventStore';
 import { EVENT_TYPES, EventTypeKey, SYMPTOM_TYPES } from '../../constants/eventTypes';
 import { EventIcon } from '../event/EventIcon';
 import { theme } from '../../constants/theme';
-import { IntakeChipRow, IntakeRating } from '../log/IntakeChipRow';
+import { IntakeRating } from '../log/IntakeChipRow';
+import { IntakeBadge } from '../log/IntakeBadge';
 import { AdherenceChipRow, DoseAdherence } from '../log/AdherenceChipRow';
 import {
   vehicleLabel, isComboDoseInDoubt, DOSE_IN_DOUBT_TAG,
@@ -167,9 +168,10 @@ export function EventRow({ event, isExpanded, onToggle, onOpen, onEdit, onDelete
             {formatTag ? (
               <Text style={styles.formatTag} numberOfLines={1}>{formatTag}</Text>
             ) : null}
-            {/* Read-only intake badge — IntakeChipRow returns null when value
-                is null, so unrated meals stay visually quiet. */}
-            <IntakeChipRow value={(event.intake_rating ?? null) as IntakeRating | null} />
+            {/* Read-only intake badge (B-035) — a non-chip, two-tier tag: a finished meal
+                reads calm, reduced/declined intake carries the calm attention register.
+                Renders nothing when the rating is null, so unrated meals stay quiet. */}
+            <IntakeBadge rating={(event.intake_rating ?? null) as IntakeRating | null} />
           </View>
         ) : null}
 

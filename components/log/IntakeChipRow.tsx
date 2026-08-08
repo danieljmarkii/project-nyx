@@ -8,7 +8,9 @@ import { FilterChip } from '../ui/FilterChip';
 //      docs/backlog.md B-014
 export type IntakeRating = 'refused' | 'picked' | 'some' | 'most' | 'all';
 
-const OPTIONS: { value: IntakeRating; label: string }[] = [
+// Exported so the read-only IntakeBadge (B-035) draws its display label from the SAME
+// source — the badge and this editable row can't drift to two spellings of one rating.
+export const INTAKE_OPTIONS: { value: IntakeRating; label: string }[] = [
   { value: 'refused', label: 'Refused' },
   { value: 'picked',  label: 'Picked' },
   { value: 'some',    label: 'Some' },
@@ -18,9 +20,10 @@ const OPTIONS: { value: IntakeRating; label: string }[] = [
 
 interface Props {
   value: IntakeRating | null;
-  // Omit to render in read-only mode. In read-only mode, a NULL value
-  // renders nothing (history rows for unrated meals stay clean).
-  onChange?: (next: IntakeRating | null) => void;
+  // This row is the EDITABLE intake surface only. Read-only display (History) is the
+  // dedicated IntakeBadge (B-035) — the old `onChange`-omitted read-only branch that reused
+  // FilterChip lived here and is gone, so a handler is now required.
+  onChange: (next: IntakeRating | null) => void;
   // Optional header label. Pass null/'' to suppress (e.g. inside a toast
   // where vertical budget is tight). Defaults to the locked "later is fine"
   // framing for the inline log surface.
@@ -38,30 +41,6 @@ export function IntakeChipRow({
   size = 'default',
   onDark = false,
 }: Props) {
-  const readOnly = onChange === undefined;
-
-  // Read-only NULL: render nothing. Keeps history rows visually quiet for
-  // legacy/unrated meals.
-  if (readOnly && value === null) return null;
-
-  // Read-only with a rating: single compact chip showing the rating only.
-  // `pointerEvents="none"` lets taps fall through to the parent row (e.g.
-  // History's expand-on-tap), so the badge reads as decoration, not as a
-  // dead touch target on top of the row's actual gesture.
-  if (readOnly) {
-    const opt = OPTIONS.find((o) => o.value === value)!;
-    return (
-      <View style={styles.readOnlyWrap} pointerEvents="none">
-        <FilterChip
-          label={opt.label}
-          active
-          onPress={() => {}}
-          variant={onDark ? 'onDark' : 'default'}
-        />
-      </View>
-    );
-  }
-
   // Editable: 5-chip row. Tap an active chip to clear back to null.
   const showLabel = label !== null && label !== '';
   return (
@@ -75,7 +54,7 @@ export function IntakeChipRow({
         </Text>
       )}
       <View style={styles.row}>
-        {OPTIONS.map((opt) => {
+        {INTAKE_OPTIONS.map((opt) => {
           const active = value === opt.value;
           return (
             <View key={opt.value} style={styles.chipWrap}>
@@ -123,8 +102,5 @@ const styles = StyleSheet.create({
   chipWrap: {
     // FilterChip has 8pt tap inset; this wrapper exists so the row can
     // re-flow cleanly without the gap collapsing.
-  },
-  readOnlyWrap: {
-    flexDirection: 'row',
   },
 });

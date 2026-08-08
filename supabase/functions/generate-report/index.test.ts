@@ -238,13 +238,27 @@ Deno.test('mapMedicationRows: item join supplies strength/is_prescription, doses
     id: 'reg1', medication_item_id: 'item1', drug_name: 'Metronidazole', dose_amount: '250 mg',
     route: 'oral', doses_per_day: '2.00', schedule_notes: '8am & 8pm', indication: 'GI',
     prescribed_by: 'Dr Chen', started_at: '2026-06-01', target_duration_days: 14,
-    status: 'active', ended_at: null,
+    target_duration_doses: null, status: 'active', ended_at: null,
     medication_items: { is_prescription: true, strength: '250 mg' },
   }])
   assert.equal(rows[0].dosesPerDay, 2)
   assert.equal(rows[0].isPrescription, true)
   assert.equal(rows[0].strength, '250 mg')
   assert.equal(rows[0].drugName, 'Metronidazole')
+  assert.equal(rows[0].targetDurationDays, 14)
+  assert.equal(rows[0].targetDurationDoses, null) // days- XOR dose-denominated (migration 049 CHECK)
+})
+
+Deno.test('mapMedicationRows: a dose-denominated regimen carries target_duration_doses (B-618, §4.4)', () => {
+  const rows = mapMedicationRows([{
+    id: 'reg-doses', medication_item_id: 'item1', drug_name: 'Motozol', dose_amount: '50 mg',
+    route: 'oral', doses_per_day: '2', schedule_notes: null, indication: null,
+    prescribed_by: null, started_at: '2026-07-22', target_duration_days: null,
+    target_duration_doses: 28, status: 'active', ended_at: null,
+    medication_items: { is_prescription: true, strength: '50 mg' },
+  }])
+  assert.equal(rows[0].targetDurationDoses, 28)
+  assert.equal(rows[0].targetDurationDays, null)
 })
 
 Deno.test('mapMedicationRows: null item join → null strength/is_prescription, PRN null dosesPerDay', () => {
@@ -252,7 +266,7 @@ Deno.test('mapMedicationRows: null item join → null strength/is_prescription, 
     id: 'reg1', medication_item_id: null, drug_name: 'Probiotic', dose_amount: null,
     route: null, doses_per_day: null, schedule_notes: null, indication: null,
     prescribed_by: null, started_at: '2026-06-01', target_duration_days: null,
-    status: 'active', ended_at: null, medication_items: null,
+    target_duration_doses: null, status: 'active', ended_at: null, medication_items: null,
   }])
   assert.equal(rows[0].dosesPerDay, null)
   assert.equal(rows[0].isPrescription, null)
@@ -282,6 +296,7 @@ Deno.test('mapDietTrialRows: builds "Brand Product" label from food join', () =>
     status: 'active', completed_at: null, ended_at: null, indication: 'skin',
     outcome: null, outcome_notes: null, stopped_reason: null, food_label: 'Royal Canin Hydrolyzed',
     vet_name: 'Dr Chen',
+    target_protein: 'duck', target_protein_set_at: '2026-05-03T10:00:00Z',
     food_items: { food_type: 'meal', format: 'kibble', primary_protein: 'duck', proteins: ['duck'], ingredients_notes: null, ai_extraction_confidence: null, brand: 'Royal Canin', product_name: 'Hydrolyzed' },
     diet_trial_foods: [{
       food_item_id: 'f1', food_label: 'Royal Canin Hydrolyzed', role: 'primary_diet',
@@ -299,6 +314,9 @@ Deno.test('mapDietTrialRows: builds "Brand Product" label from food join', () =>
   assert.equal(rows[0].allowedFoods?.[0].role, 'primary_diet')
   assert.deepEqual(rows[0].allowedFoods?.[0].proteins, ['duck', 'chicken'])
   assert.equal(rows[0].allowedFoods?.[0].brand, 'Royal Canin')
+  // B-704 — the owner's stored trial protein + set-at reach the pure layer (§7.4).
+  assert.equal(rows[0].targetProtein, 'duck')
+  assert.equal(rows[0].targetProteinSetAt, '2026-05-03T10:00:00Z')
 })
 
 Deno.test('mapDietTrialRows: an ABANDONED trial carries ended_at, and food_label survives an archived food (B-455)', () => {
@@ -310,13 +328,18 @@ Deno.test('mapDietTrialRows: an ABANDONED trial carries ended_at, and food_label
     id: 't2', food_item_id: null, started_at: '2026-05-01', target_duration_days: 28,
     status: 'abandoned', completed_at: null, ended_at: '2026-05-19', indication: 'gi',
     outcome: null, outcome_notes: null, stopped_reason: 'refused',
-    food_label: 'Purina HA', vet_name: null, food_items: null, diet_trial_foods: null,
+    food_label: 'Purina HA', vet_name: null,
+    target_protein: null, target_protein_set_at: null,
+    food_items: null, diet_trial_foods: null,
   }])
   assert.equal(rows[0].endedAt, '2026-05-19')
   assert.equal(rows[0].completedAt, null)
   assert.equal(rows[0].foodLabel, 'Purina HA')
   assert.equal(rows[0].stoppedReason, 'refused')
   assert.deepEqual(rows[0].allowedFoods, [])
+  // B-704 — a trial with no stored protein maps null (derivation still runs downstream).
+  assert.equal(rows[0].targetProtein, null)
+  assert.equal(rows[0].targetProteinSetAt, null)
 })
 
 Deno.test('mapFeedingArrangementRows: label + protein from join, method + shared carried', () => {

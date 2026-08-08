@@ -91,6 +91,16 @@ describe('ForgotPasswordScreen — Sent state (D2 neutral)', () => {
     // Back on the form, value intact so the owner can correct it.
     expect(utils.getByTestId('forgot-email').props.value).toBe('jordan@email.com');
   });
+
+  // B-653 (PM-ruled 2026-08-04): every state has an exit (FR-9) — Sent included.
+  it('carries a direct "Back to log in" exit, last in the stack (B-653)', async () => {
+    mockReset.mockResolvedValue({ error: null });
+    const utils = render(<ForgotPasswordScreen />);
+    fireEvent.press(utils.getByTestId('forgot-submit'));
+    await waitFor(() => expect(utils.getByTestId('forgot-sent-back')).toBeTruthy());
+    fireEvent.press(utils.getByTestId('forgot-sent-back'));
+    expect(router.replace).toHaveBeenCalledWith('/(auth)/login');
+  });
 });
 
 describe('ForgotPasswordScreen — request failed (FR-10, §5.6)', () => {

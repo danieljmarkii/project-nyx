@@ -24,6 +24,7 @@ import {
   type ReportEventInput,
   type ReportAiAnalysisInput,
   type ReportMedicationInput,
+  type ReportMedicationItemInput,
   type ReportDoseInput,
 } from './report.ts'
 import type { FoodFormat } from '../generate-signal/detection.ts'
@@ -448,11 +449,17 @@ Deno.test('B-213 — assembleReport threads lastFullMealIso + hoursSinceLastFull
   for (const e of snap.provenance.intakeLog) assert.ok(e.occurredAt && e.intakeRating)
 })
 
-Deno.test('B-213 — no intake flag ⇒ an EMPTY intake log (no meal dump on a calm report)', () => {
-  // Nyx's real dry-run: free-fed, no rated meals ⇒ no intake flag ⇒ no intake appendix.
+Deno.test('B-213/B-500 — no intake flag ⇒ the log itemises the not-fully-eaten meals only, never a full dump', () => {
+  // Nyx's real dry-run: free-fed + three rated tuna meals, one rated "most". No RELATIVE
+  // decline fires, so this is the non-flag population — but the one "most" meal is the "1"
+  // page 1 would count as not fully eaten, so it is dated here (B-500). The point B-213 pins
+  // survives: the two "all" tuna meals and every treat are NOT dumped in — the log holds that
+  // single not-fully-eaten meal and only it.
   const snap = assembleReport(buildNyxInput())
   assert.ok(!snap.safetyFlags.some((f) => f.kind === 'intake_decline'), 'no intake flag on the free-fed pet')
-  assert.equal(snap.provenance.intakeLog.length, 0, 'the intake log stays empty')
+  assert.equal(snap.provenance.intakeLogScope, 'unfinished')
+  assert.equal(snap.provenance.intakeLog.length, 1, 'only the one not-fully-eaten meal, never a dump of every rated meal')
+  assert.equal(snap.provenance.intakeLog[0].intakeRating, 'most')
   assert.equal(snap.provenance.intakeLogHiddenOlder, 0)
 })
 
@@ -833,6 +840,299 @@ Deno.test('§3.8 orphan-dose — an unresolved item name reads "Unspecified medi
   assert.equal(snap.unlinkedMedications.length, 1)
   assert.equal(snap.unlinkedMedications[0].drugName, 'Unspecified medication')
   assert.equal(snap.unlinkedMedications[0].isSupplement, false) // unknown ⇒ never asserted OTC
+})
+
+// ── §4.4 (D2) — the lifetime medication-history table ──────────────────────────
+// The window-ignoring "what has she been on, ever?" table (mock §05), derived over the
+// pet's WHOLE record through `lib/medicationHistory.ts`. These tests pin the FACTS
+// (buildMedicationHistory); render.test.ts pins the clinical copy. now = 2026-08-04.
+
+const MED_NOW = '2026-08-04T12:00:00Z'
+
+// A UTC date-key walker for GENERATING sequential dose dates (not a local-day question —
+// the derivation buckets each instant by tz; the fixtures keep doses at 08:00Z/20:00Z, so
+// under both EST and EDT they fall on the UTC date, no local-midnight straddle — B-514).
+function addDayKey(dayKey: string, n: number): string {
+  return new Date(Date.parse(`${dayKey}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10)
+}
+function courseDoses(
+  regimenId: string | null,
+  itemId: string | null,
+  startDate: string,
+  days: number,
+  perDay: number,
+  adherence: string | null = 'given',
+): ReportDoseInput[] {
+  const out: ReportDoseInput[] = []
+  for (let d = 0; d < days; d++) {
+    const date = addDayKey(startDate, d)
+    for (let k = 0; k < perDay; k++) {
+      out.push({
+        eventId: nextId('dose'),
+        occurredAt: at(date, k === 0 ? '08:00:00' : '20:00:00'),
+        medicationId: regimenId,
+        medicationItemId: itemId,
+        adherence,
+        doseAmount: null,
+        pairedEventId: null,
+      })
+    }
+  }
+  return out
+}
+function orphanDose(itemId: string, date: string, adherence: string | null = 'given'): ReportDoseInput {
+  return { eventId: nextId('dose'), occurredAt: at(date, '13:00:00'), medicationId: null, medicationItemId: itemId, adherence, doseAmount: null, pairedEventId: null }
+}
+// A dose explicitly LINKED to a regimen (medication_id set — the B-153 authoritative path).
+function orphanDoseLinked(regimenId: string, itemId: string | null, date: string, adherence: string | null = 'given'): ReportDoseInput {
+  return { eventId: nextId('dose'), occurredAt: at(date, '10:00:00'), medicationId: regimenId, medicationItemId: itemId, adherence, doseAmount: null, pairedEventId: null }
+}
+
+// The mock §05 canonical record: an active dose-course, an ad-hoc antihistamine, an
+// owner-ended antibiotic, and a single anti-emetic — spanning Feb→Aug, most of it OUTSIDE
+// the 90-day report window (so it exercises "window-ignoring").
+function mockMedRecord(): {
+  medications: ReportMedicationInput[]
+  lifetimeDoses: ReportDoseInput[]
+  medicationItems: ReportMedicationItemInput[]
+} {
+  const medications: ReportMedicationInput[] = [
+    {
+      id: 'reg-motozol', medicationItemId: 'mi-motozol', drugName: 'Motozol', doseAmount: '50 mg', route: 'oral',
+      dosesPerDay: 2, scheduleNotes: null, indication: null, prescribedBy: null,
+      startedAt: '2026-07-22', targetDurationDays: null, targetDurationDoses: 28,
+      status: 'active', endedAt: null, isPrescription: true, strength: '50 mg',
+    },
+    {
+      id: 'reg-metro', medicationItemId: 'mi-metro', drugName: 'Metronidazole', doseAmount: '250 mg', route: 'oral',
+      dosesPerDay: 2, scheduleNotes: null, indication: 'GI', prescribedBy: null,
+      startedAt: '2026-03-03', targetDurationDays: 14, targetDurationDoses: null,
+      status: 'completed', endedAt: '2026-03-16', isPrescription: true, strength: '250 mg',
+    },
+  ]
+  const lifetimeDoses: ReportDoseInput[] = [
+    ...courseDoses('reg-motozol', 'mi-motozol', '2026-07-22', 13, 2), // 26 given, active
+    orphanDose('mi-zyrtec', '2026-06-02'),
+    orphanDose('mi-zyrtec', '2026-06-05'),
+    orphanDose('mi-zyrtec', '2026-06-09'),
+    ...courseDoses('reg-metro', 'mi-metro', '2026-03-03', 13, 2), // 26 given (Mar 3–15)
+    ...courseDoses('reg-metro', 'mi-metro', '2026-03-16', 1, 2, 'missed'), // 2 missed on the last day
+    orphanDose('mi-cerenia', '2026-02-11'),
+  ]
+  const medicationItems: ReportMedicationItemInput[] = [
+    { id: 'mi-zyrtec', genericName: 'Cetirizine HCl', brandName: 'Zyrtec', strength: '5 mg', route: 'oral', isPrescription: false },
+    { id: 'mi-cerenia', genericName: 'Maropitant', brandName: 'Cerenia', strength: '16 mg', route: 'oral', isPrescription: true },
+    { id: 'mi-motozol', genericName: 'Metronidazole', brandName: 'Motozol', strength: '50 mg', route: 'oral', isPrescription: true },
+    { id: 'mi-metro', genericName: 'Metronidazole', brandName: null, strength: '250 mg', route: 'oral', isPrescription: true },
+  ]
+  return { medications, lifetimeDoses, medicationItems }
+}
+
+Deno.test('§4.4 lifetime table — the mock §05 record derives all four courses, active-first', () => {
+  const rec = mockMedRecord()
+  const snap = assembleReport(baseInput({ now: MED_NOW, ...rec, doses: rec.lifetimeDoses }))
+  const mh = snap.medicationHistory
+  assert.ok(mh, 'medicationHistory present')
+  // Active first, then most-recent last dose first.
+  assert.deepEqual(mh!.entries.map((e) => e.drugName), [
+    'Motozol', 'Cetirizine HCl (Zyrtec)', 'Metronidazole', 'Maropitant (Cerenia)',
+  ])
+
+  const motozol = mh!.entries[0]
+  assert.equal(motozol.isActive, true)
+  assert.equal(motozol.ended, false)
+  assert.equal(motozol.dosesLogged, 26)
+  assert.equal(motozol.targetDurationDoses, 28)
+  assert.equal(motozol.targetDurationDays, null)
+  assert.equal(motozol.plannedDoses, 28)
+  assert.equal(motozol.startedDay, '2026-07-22')
+
+  const zyrtec = mh!.entries[1]
+  assert.equal(zyrtec.source, 'doses')
+  assert.equal(zyrtec.ended, false) // H1 — an ad-hoc course never ends
+  assert.equal(zyrtec.dosesLogged, 3)
+  assert.equal(zyrtec.firstDoseDay, '2026-06-02')
+  assert.equal(zyrtec.lastDoseDay, '2026-06-09')
+  assert.equal(zyrtec.singleDay, false)
+
+  const metro = mh!.entries[2]
+  assert.equal(metro.ended, true)
+  assert.equal(metro.endStatus, 'completed')
+  assert.equal(metro.endedDay, '2026-03-16')
+  assert.equal(metro.dosesLogged, 26) // H4 — given only; the 2 missed are not delivered
+  assert.equal(metro.plannedDoses, 28) // 14 days × 2/day
+  assert.equal(metro.targetDurationDays, 14)
+  assert.equal(metro.runDays, 14) // Mar 3 → Mar 16 inclusive
+
+  const cerenia = mh!.entries[3]
+  assert.equal(cerenia.source, 'doses')
+  assert.equal(cerenia.singleDay, true)
+  assert.equal(cerenia.dosesLogged, 1)
+  assert.equal(cerenia.ended, false)
+
+  assert.equal(mh!.sinceDay, '2026-02-11') // earliest dated point
+})
+
+Deno.test('§4.4 lifetime table — reads lifetimeDoses, not the windowed doses (window-ignoring)', () => {
+  const rec = mockMedRecord()
+  const snap = assembleReport(baseInput({
+    now: MED_NOW,
+    medications: rec.medications,
+    medicationItems: rec.medicationItems,
+    doses: [], // the windowed sections see nothing…
+    lifetimeDoses: rec.lifetimeDoses, // …but the lifetime table sees the whole record
+  }))
+  const mh = snap.medicationHistory!
+  assert.equal(mh.entries.length, 4)
+  // The Feb/Mar courses — entirely outside the 90-day window — still appear with their counts.
+  assert.ok(mh.entries.some((e) => e.drugName === 'Metronidazole' && e.dosesLogged === 26 && e.ended))
+  assert.ok(mh.entries.some((e) => e.drugName === 'Maropitant (Cerenia)' && e.dosesLogged === 1))
+  // The windowed orphan section reads `doses` (empty) — so it is empty, proving independence.
+  assert.equal(snap.unlinkedMedications.length, 0)
+})
+
+Deno.test('§4.4 lifetime table — falls back to `doses` when `lifetimeDoses` is absent (older callers)', () => {
+  const snap = assembleReport(baseInput({
+    now: MED_NOW,
+    doses: [orphanDose('mi-z', '2026-07-20')],
+    medicationItems: [{ id: 'mi-z', genericName: 'Cetirizine', brandName: null, strength: null, route: null, isPrescription: false }],
+    // lifetimeDoses intentionally omitted
+  }))
+  assert.equal(snap.medicationHistory!.entries.length, 1)
+  assert.equal(snap.medicationHistory!.entries[0].dosesLogged, 1)
+})
+
+Deno.test('§4.4/H1 — a stale-active regimen (long quiet) is never rendered as ended', () => {
+  // B-422: nothing auto-completes a course, so stale-active is the steady state. A regimen last
+  // dosed 200+ days ago but still `active` must stay ended:false — silence is not an ending.
+  const snap = assembleReport(baseInput({
+    now: MED_NOW,
+    medications: [{
+      id: 'reg-old', medicationItemId: 'mi-old', drugName: 'Gabapentin', doseAmount: null, route: 'oral',
+      dosesPerDay: 1, scheduleNotes: null, indication: null, prescribedBy: null,
+      startedAt: '2026-01-01', targetDurationDays: null, targetDurationDoses: null,
+      status: 'active', endedAt: null, isPrescription: true, strength: null,
+    }],
+    doses: [],
+    lifetimeDoses: [orphanDoseLinked('reg-old', 'mi-old', '2026-01-15')],
+  }))
+  const e = snap.medicationHistory!.entries[0]
+  assert.equal(e.isActive, true)
+  assert.equal(e.ended, false)
+  assert.equal(e.endStatus, null)
+  assert.equal(e.endedDay, null)
+  assert.equal(e.lastDoseDay, '2026-01-15') // the honest "last dose", never an ending
+  assert.equal(e.runDays, null) // no length until the owner ends it
+})
+
+Deno.test('§4.4/H1 — an owner-stopped regimen renders the stopped register, endedDay from the DATE column', () => {
+  const snap = assembleReport(baseInput({
+    now: MED_NOW,
+    medications: [{
+      id: 'reg-stop', medicationItemId: null, drugName: 'Apoquel', doseAmount: null, route: 'oral',
+      dosesPerDay: 2, scheduleNotes: null, indication: 'allergy', prescribedBy: null,
+      startedAt: '2026-06-01', targetDurationDays: 30, targetDurationDoses: null,
+      status: 'stopped', endedAt: '2026-06-10', isPrescription: true, strength: null,
+    }],
+    doses: [],
+    lifetimeDoses: [orphanDoseLinked('reg-stop', null, '2026-06-02')],
+  }))
+  const e = snap.medicationHistory!.entries[0]
+  assert.equal(e.ended, true)
+  assert.equal(e.endStatus, 'stopped')
+  assert.equal(e.endedDay, '2026-06-10')
+})
+
+Deno.test('§4.4/H4 — dosesLogged is dosesTowardTarget (given + partial), never the raw event count', () => {
+  const snap = assembleReport(baseInput({
+    now: MED_NOW,
+    medications: [{
+      id: 'reg-mix', medicationItemId: 'mi-mix', drugName: 'Amoxicillin', doseAmount: null, route: 'oral',
+      dosesPerDay: 2, scheduleNotes: null, indication: null, prescribedBy: null,
+      startedAt: '2026-07-01', targetDurationDays: null, targetDurationDoses: 10,
+      status: 'completed', endedAt: '2026-07-05', isPrescription: true, strength: null,
+    }],
+    doses: [],
+    lifetimeDoses: [
+      orphanDoseLinked('reg-mix', 'mi-mix', '2026-07-01', 'given'),
+      orphanDoseLinked('reg-mix', 'mi-mix', '2026-07-01', 'partial'),
+      orphanDoseLinked('reg-mix', 'mi-mix', '2026-07-02', 'missed'),
+      orphanDoseLinked('reg-mix', 'mi-mix', '2026-07-02', 'refused'),
+      orphanDoseLinked('reg-mix', 'mi-mix', '2026-07-03', null), // unconfirmed
+    ],
+  }))
+  const e = snap.medicationHistory!.entries[0]
+  assert.equal(e.dosesLogged, 2) // 1 given + 1 partial; missed/refused/unconfirmed excluded
+  assert.equal(e.plannedDoses, 10) // target_duration_doses
+})
+
+Deno.test('§4.4 — a dose logged AFTER the recorded end still counts; endedDay/runDays stay the regimen dates', () => {
+  // A dose carrying an explicit regimen link is attributed regardless of the regimen window
+  // (B-153), so an owner who logged one more after marking a course complete adds a real dose past
+  // ended_at. dosesLogged/lastDoseDay stay honest to it; endedDay/runDays are the DATE columns.
+  const snap = assembleReport(baseInput({
+    now: MED_NOW,
+    medications: [{
+      id: 'reg-post', medicationItemId: 'mi-post', drugName: 'Clavamox', doseAmount: null, route: 'oral',
+      dosesPerDay: 1, scheduleNotes: null, indication: null, prescribedBy: null,
+      startedAt: '2026-07-01', targetDurationDays: 5, targetDurationDoses: null,
+      status: 'completed', endedAt: '2026-07-05', isPrescription: true, strength: null,
+    }],
+    doses: [],
+    lifetimeDoses: [
+      ...['2026-07-01', '2026-07-02', '2026-07-03', '2026-07-04', '2026-07-05'].map((d) =>
+        orphanDoseLinked('reg-post', 'mi-post', d)),
+      orphanDoseLinked('reg-post', 'mi-post', '2026-07-08'), // logged after the recorded end
+    ],
+  }))
+  const e = snap.medicationHistory!.entries[0]
+  assert.equal(e.ended, true)
+  assert.equal(e.endedDay, '2026-07-05') // the DATE column — unmoved by the late dose
+  assert.equal(e.lastDoseDay, '2026-07-08') // the dose evidence is honest to the late dose
+  assert.equal(e.dosesLogged, 6) // all six delivered doses counted
+  assert.equal(e.runDays, 5) // start → ended_at, NOT to the late dose
+})
+
+Deno.test('§4.4 — an unresolved orphan drug reads "Unspecified medication" and never ends (H1)', () => {
+  const snap = assembleReport(baseInput({
+    now: MED_NOW,
+    doses: [],
+    lifetimeDoses: [orphanDose('mi-nameless', '2026-07-10')],
+    // medicationItems omitted → the name cannot be resolved
+  }))
+  const e = snap.medicationHistory!.entries[0]
+  assert.equal(e.drugName, 'Unspecified medication')
+  assert.equal(e.ended, false)
+})
+
+Deno.test('§4.4 — a pet with no regimen and no dose has a null medicationHistory (no empty table)', () => {
+  const snap = assembleReport(baseInput({ now: MED_NOW }))
+  assert.equal(snap.medicationHistory, null)
+})
+
+Deno.test('§4.4/H1 — a completed regimen with a NULL ended_at is ended-WITHOUT-a-date (adversarial: never a fabricated end)', () => {
+  // `medications.ended_at` is nullable (migration 020) and the derivation models
+  // `{ kind:'ended', endedAt:null }` — an owner marked the course complete but recorded no date. The
+  // entry must carry endedDay=null so the renderer cannot synthesize an end from the last-dose day.
+  const snap = assembleReport(baseInput({
+    now: MED_NOW,
+    medications: [{
+      id: 'reg-nulldate', medicationItemId: 'mi-x', drugName: 'Metronidazole', doseAmount: null, route: 'oral',
+      dosesPerDay: 2, scheduleNotes: null, indication: null, prescribedBy: null,
+      startedAt: '2026-03-03', targetDurationDays: 14, targetDurationDoses: null,
+      status: 'completed', endedAt: null, isPrescription: true, strength: null,
+    }],
+    doses: [],
+    lifetimeDoses: [
+      orphanDoseLinked('reg-nulldate', 'mi-x', '2026-03-03'),
+      orphanDoseLinked('reg-nulldate', 'mi-x', '2026-06-09'), // a later dose the renderer must NOT read as the end
+    ],
+  }))
+  const e = snap.medicationHistory!.entries[0]
+  assert.equal(e.ended, true) // an owner action (completed)
+  assert.equal(e.endStatus, 'completed')
+  assert.equal(e.endedDay, null) // no end DATE — the renderer must not invent one from the last dose
+  assert.equal(e.lastDoseDay, '2026-06-09') // the dose evidence stays honest
 })
 
 Deno.test('§5.11/§7 boundary-straddle — a duplicate across local midnight keeps the in-window bout + its phenotype', () => {
@@ -2204,6 +2504,166 @@ Deno.test('B-351 — PROPERTY: a trial food is never off-trial against itself, o
   assert.ok(checked > 300, `the cross-product actually ran (${checked} cases)`)
 })
 
+// ── B-704 — the owner's stored trial protein: naming + provenance + mismatch ──────
+//
+// PR 5 threads `diet_trials.target_protein` into the report's stored-first naming.
+// These tests pin the DATA the render reads (identity provenance, the mismatch fact,
+// attribution surviving thin food data) and re-assert TG-5 against the report builder:
+// a protein edit moves the NAMING and never a number.
+
+/** A duck elimination trial, with the owner's stored protein a free parameter. One
+ *  primary-diet allowed food so coverage/exposure numbers are non-trivial. */
+function proteinTrialInput(over: { targetProtein?: string | null; targetProteinSetAt?: string | null; primaryProtein?: string | null } = {}): Partial<ReportInput> {
+  return {
+    dietTrials: [
+      {
+        id: 'dt-p', foodItemId: 'f-trial', startedAt: '2026-05-08', targetDurationDays: 56,
+        status: 'active', completedAt: null, vetName: 'Dr. Chen', foodLabel: 'Novel Duck',
+        primaryProtein: over.primaryProtein === undefined ? 'duck' : over.primaryProtein,
+        proteins: over.primaryProtein === undefined ? ['duck', 'chicken'] : (over.primaryProtein ? [over.primaryProtein] : ['duck', 'chicken']),
+        ingredientsNotes: PANEL_DUCK_CHICKEN,
+        extractionConfidence: { proteins: 0.9 },
+        targetProtein: over.targetProtein ?? null,
+        targetProteinSetAt: over.targetProteinSetAt ?? null,
+        allowedFoods: [
+          {
+            foodItemId: 'f-trial', foodLabel: 'Novel Duck', role: 'primary_diet',
+            allowedFrom: '2026-05-08', allowedUntil: null, primaryProtein: 'duck',
+            brand: 'Brand', productName: 'Novel Duck', proteins: ['duck'],
+            ingredientsNotes: 'Duck, duck meal, brewers rice.', extractionConfidence: { proteins: 0.9 },
+          },
+        ],
+      },
+    ],
+    events: [
+      // The prescribed diet, fed and finished (on-diet).
+      proteinMeal({ occurredAt: at('2026-06-01'), foodItemId: 'f-trial', foodType: 'meal', format: 'dry_kibble', primaryProtein: 'duck', proteins: ['duck'], intakeRating: 'all', ingredientsNotes: 'Duck, duck meal, brewers rice.', extractionConfidence: { proteins: 0.9 } }),
+      // Off-diet chicken treat — a poultry exposure regardless of the target.
+      proteinMeal({ occurredAt: at('2026-06-05'), foodItemId: 'chick-treat', foodType: 'treat', format: 'treat', primaryProtein: 'chicken', proteins: ['chicken'], ingredientsNotes: 'Chicken, chicken meal.', extractionConfidence: { proteins: 0.9 } }),
+      // Off-diet DUCK treat — its off-target naming is EXACTLY what a target edit moves
+      // (duck is on-target for a duck trial, off-target for a rabbit one).
+      proteinMeal({ occurredAt: at('2026-06-07'), foodItemId: 'duck-treat', foodType: 'treat', format: 'treat', primaryProtein: 'duck', proteins: ['duck'], ingredientsNotes: 'Duck, duck meal.', extractionConfidence: { proteins: 0.9 } }),
+      // A human-food scrap — the #1 confounder line.
+      proteinMeal({ occurredAt: at('2026-06-09'), foodItemId: 'scrap', foodType: 'treat', format: 'human_food', primaryProtein: 'beef', proteins: ['beef'] }),
+    ],
+  }
+}
+
+Deno.test('B-704 — a DERIVED target carries source "derived", no confirmed-day', () => {
+  const snap = assembleReport(baseInput(proteinTrialInput({ targetProtein: null })))
+  assert.equal(snap.diet.trialTargetProtein, 'duck', 'derives the trial food primary, exactly as before PR 5')
+  assert.deepEqual(snap.diet.trialProteinProvenance, { source: 'derived', confirmedDay: null })
+  assert.equal(snap.diet.trialProteinMismatch, null, 'a derived target came FROM the label — it cannot disagree with it')
+})
+
+Deno.test('B-704 — an OWNER target that AGREES with the label carries source "owner", no mismatch', () => {
+  const snap = assembleReport(baseInput(proteinTrialInput({ targetProtein: 'duck' })))
+  assert.equal(snap.diet.trialTargetProtein, 'duck')
+  assert.deepEqual(snap.diet.trialProteinProvenance, { source: 'owner', confirmedDay: null })
+  assert.equal(snap.diet.trialProteinMismatch, null, 'owner and label agree — no tension')
+})
+
+Deno.test('B-704 — an OWNER target set AFTER day 1 discloses the confirmed day', () => {
+  // Trial started 2026-05-08; the owner named the protein on 2026-05-15 → day 8.
+  const snap = assembleReport(baseInput(proteinTrialInput({ targetProtein: 'duck', targetProteinSetAt: '2026-05-15T14:00:00Z' })))
+  assert.deepEqual(snap.diet.trialProteinProvenance, { source: 'owner', confirmedDay: 8 })
+})
+
+Deno.test('B-704 — an OWNER target set on day 1 discloses NO day (setup, not a mid-trial change)', () => {
+  const snap = assembleReport(baseInput(proteinTrialInput({ targetProtein: 'duck', targetProteinSetAt: '2026-05-08T09:00:00Z' })))
+  assert.deepEqual(snap.diet.trialProteinProvenance, { source: 'owner', confirmedDay: null }, 'day 1 is setup — no "confirmed day" disclosure')
+})
+
+Deno.test('B-704 §6/TG-3 — an owner target that DISAGREES with the label: baseline stays the food, the owner word is a safety flag', () => {
+  // The wrong-primary trial food, structurally undetectable before this: the owner
+  // recorded RABBIT, the trial diet's label says DUCK.
+  const snap = assembleReport(baseInput(proteinTrialInput({ targetProtein: 'rabbit' })))
+  // The EXPOSURE BASELINE stays the food's own primary (duck) — coherent with the
+  // TG-1-locked counts. Marking against the owner's rabbit here is what made the report
+  // self-contradict (antigen tally against duck, `*` markings against rabbit). The owner's
+  // word does not re-base the exposure section; it becomes a safety flag instead.
+  assert.equal(snap.diet.trialTargetProtein, 'duck', 'the baseline is the food, not the owner word')
+  assert.deepEqual(snap.diet.trialProteinProvenance, { source: 'derived', confirmedDay: null }, 'baseline is label-read, never a false owner-confirmed over the food protein')
+  assert.deepEqual(snap.diet.trialProteinMismatch, { target: 'rabbit', foodProtein: 'duck', foodLabel: 'Novel Duck' })
+  // The mismatch leads the SAFETY BAND (B-494 rule; the cold-read gate).
+  const flag = snap.safetyFlags.find((f) => f.kind === 'protein_mismatch')
+  assert.ok(flag, 'a protein_mismatch safety flag fires')
+  assert.equal(flag!.kind === 'protein_mismatch' && flag.recordedProtein, 'rabbit')
+  assert.equal(flag!.kind === 'protein_mismatch' && flag.foodProtein, 'duck')
+  // The trial food's OWN duck primary is NOT a contaminant against the duck baseline; its
+  // genuine self-listing (chicken) still surfaces.
+  assert.deepEqual(snap.diet.trial!.proteinSet.offTrial, ['chicken'], 'chicken is a real self-contaminant; the duck primary is the diet')
+})
+
+Deno.test('B-704 — a stored target keeps attribution alive when the trial food primary is THIN (derivation goes dark)', () => {
+  // The trial food carries no designated primary (thin data), so derivation returns
+  // null and every off-target naming would go dark. The owner's stored "rabbit" keeps
+  // it alive: a chicken confounder is still named as an off-target exposure.
+  const snap = assembleReport(baseInput(proteinTrialInput({ targetProtein: 'rabbit', primaryProtein: null })))
+  assert.equal(snap.diet.trialTargetProtein, 'rabbit', 'the stored target survives the thin food record')
+  assert.deepEqual(snap.diet.trialProteinProvenance, { source: 'owner', confirmedDay: null })
+  // The chicken treat is named as off-target — "poultry exposure", not a bare "off-diet feeding".
+  const chick = snap.provenance.confounders.find((c) => c.proteinSet.proteins.includes('chicken'))
+  assert.ok(chick, 'the chicken confounder is present')
+  assert.deepEqual(chick!.proteinSet.offTrial, ['chicken'], 'named off-target against the stored rabbit, not dark')
+  // No mismatch — the thin food has no designated primary to disagree with (silence, not a manufactured tension).
+  assert.equal(snap.diet.trialProteinMismatch, null)
+})
+
+Deno.test('B-704 — with NO stored target and a thin food, attribution IS dark — silence, never an all-clear (TG-2)', () => {
+  const snap = assembleReport(baseInput(proteinTrialInput({ targetProtein: null, primaryProtein: null })))
+  assert.equal(snap.diet.trialTargetProtein, null, 'nothing stored, nothing derivable — no target')
+  assert.equal(snap.diet.trialProteinProvenance, null, 'provenance travels with the protein — both null')
+  const chick = snap.provenance.confounders.find((c) => c.proteinSet.proteins.includes('chicken'))
+  assert.deepEqual(chick!.proteinSet.offTrial, [], 'nothing compared — [] is silence, not "clean"')
+})
+
+Deno.test('B-704 TG-5 — editing the stored target never moves a report NUMBER (naming only)', () => {
+  // The tally every trial surface is built on. Snapshot it, edit the target from derived
+  // 'duck' to owner 'rabbit' (the largest possible naming change — a full mismatch), and
+  // re-snapshot: byte-identical. The antigen tally / coverage / exposures come from
+  // computeTrialFacts, which never sees the target; the confounder counts and protein
+  // tallies are target-independent by construction. This re-asserts PR 2's TG-5 one layer
+  // out, against the whole report builder.
+  const numbers = (targetProtein: string | null) => {
+    idSeq = 0 // deterministic event ids, so the two builds' exposure items compare cleanly
+    const s = assembleReport(baseInput(proteinTrialInput({ targetProtein })))
+    return {
+      coverage: s.trial!.coverage,
+      exposures: s.trial!.exposures,
+      antigenTally: s.trial!.antigenTally,
+      mealCompletion: s.diet.mealCompletion,
+      treats: s.diet.treats,
+      humanFood: { count: s.diet.humanFood.count, days: s.diet.humanFood.days },
+      proteinExposureTally: s.provenance.proteinExposureTally,
+      proteinTimelineTotal: s.proteinTimeline.totalFeedings,
+      totalByProtein: s.proteinTimeline.totalByProtein,
+    }
+  }
+  const before = numbers(null) // derived 'duck'
+  const after = numbers('rabbit') // owner overrides to a DIFFERENT protein
+  assert.deepEqual(after, before, 'every count / denominator / coverage figure is byte-identical across the edit')
+
+  // NOT a vacuous test: the same edit genuinely MOVES a rendered fact — but it is the
+  // MISMATCH FLAG, not the exposure markings. The markings stay on the derived baseline
+  // (duck) in BOTH snapshots — that stability IS the coherence fix (the stored value never
+  // re-bases the exposure section on a non-thin food; it only names a discrepancy).
+  idSeq = 0
+  const dSnap = assembleReport(baseInput(proteinTrialInput({ targetProtein: null })))
+  idSeq = 0
+  const rSnap = assembleReport(baseInput(proteinTrialInput({ targetProtein: 'rabbit' })))
+  assert.equal(dSnap.diet.trialTargetProtein, 'duck', 'baseline is the food primary')
+  assert.equal(rSnap.diet.trialTargetProtein, 'duck', 'and the stored rabbit does NOT re-base it (coherence with the counts)')
+  const duckConfd = (s: typeof dSnap) => s.provenance.confounders.find((c) => c.proteinSet.proteins.length === 1 && c.proteinSet.proteins[0] === 'duck')!.proteinSet.offTrial
+  assert.deepEqual(duckConfd(dSnap), [], 'duck is on-target (the diet) in both')
+  assert.deepEqual(duckConfd(rSnap), [], 'still on-target under the stored rabbit — the markings did not move')
+  // What DID move: the mismatch surfaced (null → the discrepancy), as a safety flag.
+  assert.equal(dSnap.diet.trialProteinMismatch, null)
+  assert.deepEqual(rSnap.diet.trialProteinMismatch, { target: 'rabbit', foodProtein: 'duck', foodLabel: 'Novel Duck' })
+  assert.ok(!dSnap.safetyFlags.some((f) => f.kind === 'protein_mismatch'), 'no flag without a mismatch')
+  assert.ok(rSnap.safetyFlags.some((f) => f.kind === 'protein_mismatch'), 'the mismatch flag is the visible effect of the edit')
+})
+
 // ── B-532 — the data layer behind the render-honesty pass ────────────────────────
 
 Deno.test('B-532 — trendHalves are EQUAL over an even window', () => {
@@ -2325,19 +2785,26 @@ Deno.test('B-532 — the intake log itemises unfinished meals with no intake fla
   assert.ok(!snap.provenance.intakeLog.some((e) => e.isLastFullMeal), 'and no anchor is tagged in this population')
 })
 
-Deno.test('B-532 — "ate most" is a FINISHED meal, so a calm record still itemises nothing', () => {
+Deno.test('B-500 — an "ate most" meal is NOT fully eaten, so it is itemised with its date (never only grouped)', () => {
   idSeq = 0
-  // One definition of finished, imported from `lib/dietTrial.feedingWasFinished` — the same
-  // bar §4.3's refusal lane and the appendix's own row emphasis use. A second one here
-  // ("!== all") would have put a single "ate most" meal into an otherwise calm report.
+  // Page 1 counts "fully eaten" as `=== 'all'`, so an "ate most" meal is the "1" in "N of M
+  // fully eaten", and this list's own copy says "meals … the owner did not record as fully
+  // eaten". B-532 filtered the list on `feedingWasFinished` (`most`/`all`) instead, so that one
+  // meal had no dated row anywhere while page 1 singled it out and the caption promised it
+  // (`vet-report-cold-read`, B-500). It is now itemised with its date — plain, not bolded, since
+  // `most` is a possible signal but not an alarm — AND still counted in the grouped breakdown.
   const snap = assembleReport(
     baseInput({
       events: [ratedMealEvent('2026-06-10', '08:00:00', 'all'), ratedMealEvent('2026-06-11', '08:00:00', 'most')],
     }),
   )
-  assert.equal(snap.provenance.intakeLogScope, null)
-  assert.equal(snap.provenance.intakeLog.length, 0)
-  // …and it is NOT lost: the grouped breakdown still counts it.
+  assert.ok(!snap.safetyFlags.some((f) => f.kind === 'intake_decline'), 'no relative decline fires on a calm record')
+  assert.equal(snap.provenance.intakeLogScope, 'unfinished')
+  assert.equal(snap.provenance.intakeLog.length, 1, 'the one not-fully-eaten meal is itemised, and only it')
+  assert.equal(snap.provenance.intakeLog[0].intakeRating, 'most')
+  assert.ok(snap.provenance.intakeLog[0].occurredAt.includes('2026-06-11'), 'and carries its own date, not a food-wide span')
+  assert.ok(!snap.provenance.intakeLog.some((e) => e.isLastFullMeal), 'no anchor is tagged in this population')
+  // …and it is NOT moved out of the grouped breakdown: it appears in both places.
   const item = snap.diet.mealItems.find((i) => i.count === 2)!
   assert.deepEqual(item.intakeBreakdown, [
     { rating: 'all', count: 1 },

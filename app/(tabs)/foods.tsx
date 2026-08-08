@@ -457,6 +457,12 @@ export default function FoodsScreen() {
               onToggle={() => setArchivedExpanded((v) => !v)}
               onRestore={handleRestore}
               restoringIds={restoringIds}
+              // B-630: the trial chip renders inside the RESTORE list only — the
+              // one place an accidentally-archived trial diet needs naming. Same
+              // resolver as the live rows (one membership predicate, D3).
+              trialChipFor={(f) =>
+                trialChipLabel(trialSet, { id: f.id, brand: f.brand, productName: f.product_name })
+              }
             />
           ) : null}
         </ScrollView>
@@ -593,13 +599,14 @@ function FoodGroup({
 // was a mistake. Restore lives on each row (ArchivedFoodRow), reusing PR 2's
 // reversible flip — nothing here erases a meal, so no confirm, just Restore.
 function ArchivedSection({
-  foods, expanded, onToggle, onRestore, restoringIds,
+  foods, expanded, onToggle, onRestore, restoringIds, trialChipFor,
 }: {
   foods: ArchivedFood[];
   expanded: boolean;
   onToggle: () => void;
   onRestore: (f: ArchivedFood) => void;
   restoringIds: Set<string>;
+  trialChipFor: (f: ArchivedFood) => string | null;
 }) {
   const Chevron = expanded ? ChevronDown : ChevronRight;
   return (
@@ -632,6 +639,7 @@ function ArchivedSection({
                   format={f.format}
                   restoring={restoringIds.has(f.id)}
                   onRestore={() => onRestore(f)}
+                  trialChip={trialChipFor(f)}
                 />
               </View>
             ))}

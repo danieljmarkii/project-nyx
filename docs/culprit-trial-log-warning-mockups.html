@@ -1,0 +1,490 @@
+<title>Culprit — Log-time trial-list heads-up</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  /* ============================================================
+     Log-time trial-list heads-up — B-693 (filed as B-686), mock ROUND 1.
+
+     Document chrome is deliberately NOT the app: cool paper tinted
+     toward the brand indigo in light, the app's night tokens in
+     dark. The DEVICE FRAMES stay light in both themes on purpose —
+     they render the app's real light-mode surfaces, and the
+     completion card inside them is the app's real DARK card
+     (theme.colorNeutralDark) exactly as shipped.
+
+     Frame values are the real tokens from constants/theme.ts and
+     the real shipped strings from lib/trialContaminant.ts +
+     lib/trialFoodsScreen.ts, so the build copies rather than
+     approximates.
+     ============================================================ */
+
+  :root {
+    --paper:      #F5F4F9;
+    --paper-2:    #FFFFFF;
+    --ink:        #1B1A2E;
+    --ink-2:      #5F5C7A;
+    --ink-3:      #8B87A8;
+    --rule:       #DEDCE9;
+    --rule-soft:  #E9E7F1;
+    --teal:       #00C2A8;   /* theme.colorAccent */
+    --teal-ink:   #0B7B6C;   /* theme.colorAccentInk */
+    --teal-wash:  #E0FBF7;   /* theme.colorAccentLight */
+    --gold:       #FBBF24;   /* theme.colorMomentGlow */
+
+    /* The app's dark completion card — real tokens, fixed in both themes. */
+    --card-bg:        #0A0A0A;               /* theme.colorNeutralDark */
+    --card-text:      #FFFFFF;               /* theme.colorTextOnDark */
+    --card-subtle:    rgba(255,255,255,0.7); /* theme.colorTextOnDarkSubtle */
+    --card-faint:     rgba(255,255,255,0.55);/* theme.colorTextOnDarkFaint */
+    --card-divider:   rgba(255,255,255,0.15);/* theme.colorDividerOnDark */
+    --card-fill:      rgba(255,255,255,0.06);/* theme.colorFillOnDark */
+
+    --serif: ui-serif, Charter, "Bitstream Charter", "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper:     #13112E;  /* theme.colorBrandNight */
+      --paper-2:   #1D1A42;
+      --ink:       #ECEAF6;
+      --ink-2:     #A6A2CE;
+      --ink-3:     #706BA6;
+      --rule:      rgba(196,190,255,0.20);
+      --rule-soft: rgba(196,190,255,0.11);
+      --teal-ink:  #4FD8C4;
+      --teal-wash: rgba(0,194,168,0.14);
+    }
+  }
+  :root[data-theme="light"] {
+    --paper: #F5F4F9; --paper-2: #FFFFFF; --ink: #1B1A2E; --ink-2: #5F5C7A;
+    --ink-3: #8B87A8; --rule: #DEDCE9; --rule-soft: #E9E7F1;
+    --teal-ink: #0B7B6C; --teal-wash: #E0FBF7;
+  }
+  :root[data-theme="dark"] {
+    --paper: #13112E; --paper-2: #1D1A42; --ink: #ECEAF6; --ink-2: #A6A2CE;
+    --ink-3: #706BA6; --rule: rgba(196,190,255,0.20); --rule-soft: rgba(196,190,255,0.11);
+    --teal-ink: #4FD8C4; --teal-wash: rgba(0,194,168,0.14);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--paper); color: var(--ink);
+    font-family: var(--sans); font-size: 16px; line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 56px 28px 96px; }
+  .col  { max-width: 68ch; }
+
+  .mast { border-bottom: 1px solid var(--rule); padding-bottom: 28px; margin-bottom: 44px; }
+  .eyebrow {
+    font-family: var(--mono); font-size: 11px; letter-spacing: 0.14em;
+    text-transform: uppercase; color: var(--ink-3); margin: 0 0 14px;
+    display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center;
+  }
+  h1 {
+    font-family: var(--serif); font-weight: 600; font-size: clamp(30px, 4.4vw, 44px);
+    line-height: 1.12; letter-spacing: -0.015em; margin: 0 0 14px; text-wrap: balance;
+  }
+  .standfirst { font-size: 17px; color: var(--ink-2); margin: 0; max-width: 62ch; }
+  .standfirst strong { color: var(--ink); font-weight: 600; }
+
+  h2 {
+    font-family: var(--serif); font-weight: 600; font-size: 26px;
+    letter-spacing: -0.01em; margin: 64px 0 6px; text-wrap: balance;
+  }
+  .kicker {
+    font-family: var(--mono); font-size: 11px; letter-spacing: 0.14em;
+    text-transform: uppercase; color: var(--teal-ink); margin: 0 0 4px;
+  }
+  .lede { color: var(--ink-2); margin: 8px 0 28px; max-width: 68ch; }
+  .lede strong { color: var(--ink); }
+
+  /* ── Frame grid ───────────────────────────────────────────── */
+  .frames { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 28px; align-items: start; }
+  .frame  { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+  .frame-tag {
+    font-family: var(--mono); font-size: 11px; letter-spacing: 0.12em;
+    text-transform: uppercase; color: var(--ink-3);
+  }
+  .frame-tag b { color: var(--ink); font-weight: 600; letter-spacing: 0.12em; }
+  .frame-note { font-size: 14px; color: var(--ink-2); margin: 0; }
+  .frame-note strong { color: var(--ink); }
+
+  /* The device screen: the app's light log surface, both themes. */
+  .screen {
+    background: #F4F4F2; border: 1px solid var(--rule); border-radius: 26px;
+    padding: 18px 14px 16px; box-shadow: 0 1px 2px rgba(20,18,40,0.06), 0 12px 32px rgba(20,18,40,0.08);
+    display: flex; flex-direction: column; gap: 12px; min-height: 320px; justify-content: flex-end;
+    position: relative; overflow: hidden;
+  }
+  /* Faint hint of the log screen behind the card so the frame reads as a moment,
+     not a component on a void. */
+  .ghost { opacity: 0.45; display: flex; flex-direction: column; gap: 8px; margin-bottom: auto; }
+  .ghost-title { font-size: 13px; font-weight: 600; color: #6B6B66; }
+  .ghost-row { height: 44px; border-radius: 12px; background: #FFFFFF; border: 1px solid #E6E6E2; }
+
+  /* ── The completion card (real dark tokens) ───────────────── */
+  .card {
+    background: var(--card-bg); border-radius: 20px; padding: 12px 16px;
+    display: flex; flex-direction: column; gap: 8px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.35);
+  }
+  .card-head { display: flex; align-items: center; gap: 12px; }
+  .check {
+    width: 32px; height: 32px; border-radius: 16px; flex: none;
+    background: var(--card-fill); border: 1.5px solid var(--teal);
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 0 10px rgba(251,191,36,0.5);
+  }
+  .check svg { display: block; }
+  .card-titles { flex: 1 1 auto; min-width: 0; }
+  .card-title { font-size: 16px; font-weight: 500; color: var(--card-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .card-sub { font-size: 13px; color: var(--card-subtle); }
+  .card-action { font-size: 15px; font-weight: 500; color: var(--card-text); text-decoration: underline; flex: none; }
+
+  .card-sect { border-top: 1px solid var(--card-divider); padding-top: 8px; display: flex; flex-direction: column; gap: 6px; }
+  .intake-label { font-size: 13px; color: var(--card-subtle); }
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; }
+  .chip {
+    font-size: 12.5px; color: var(--card-subtle); background: var(--card-fill);
+    border: 1px solid var(--card-divider); border-radius: 999px; padding: 5px 11px;
+  }
+
+  .flag-headline { font-size: 13px; font-weight: 600; color: var(--card-text); }
+  .flag-detail { font-size: 13px; line-height: 1.4; color: var(--card-subtle); }
+  .quiet-line { font-size: 13px; color: var(--card-faint); padding-top: 2px; }
+  .quiet-line.add { color: var(--card-subtle); }
+
+  /* Round 2 — the two warning intensities, as inset panels on the dark card. */
+  .flag-panel { border-radius: 12px; padding: 10px 12px; display: flex; flex-direction: column; gap: 4px; }
+  .flag-panel .quiet-line.add { padding-top: 4px; }
+  .flag-panel.attention { background: rgba(251,191,36,0.12); border-left: 3px solid #FBBF24; }
+  .flag-panel.attention .flag-eyebrow { color: #FBBF24; }
+  .flag-panel.danger { background: rgba(244,63,94,0.16); border-left: 3px solid #FB7185; }
+  .flag-panel.danger .flag-eyebrow { color: #FB7185; }
+  .flag-eyebrow {
+    font-family: var(--mono); font-size: 10px; letter-spacing: 0.12em;
+    text-transform: uppercase; font-weight: 600;
+  }
+
+  .silent-callout {
+    align-self: center; margin-top: 4px;
+    font-family: var(--mono); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase;
+    color: #8A8A84;
+  }
+
+  /* ── The add sheet (light surface, real shipped model) ────── */
+  .sheet {
+    background: #FFFFFF; border-radius: 20px 20px 16px 16px; padding: 20px 18px 16px;
+    box-shadow: 0 -8px 32px rgba(0,0,0,0.18); display: flex; flex-direction: column; gap: 14px;
+  }
+  .sheet-grabber { width: 36px; height: 4px; border-radius: 2px; background: #DDDDD8; align-self: center; margin-top: -8px; }
+  .sheet-title { font-size: 18px; font-weight: 600; color: #17171A; letter-spacing: -0.01em; }
+  .sheet-rows { display: flex; flex-direction: column; }
+  .sheet-row { display: flex; justify-content: space-between; gap: 16px; padding: 9px 0; border-top: 1px solid #EFEFEA; font-size: 14px; }
+  .sheet-row dt { color: #77776F; flex: none; }
+  .sheet-row dd { margin: 0; color: #17171A; font-weight: 500; text-align: right; }
+  .sheet-caption { font-size: 13px; color: #77776F; }
+  .sheet-btns { display: flex; gap: 10px; }
+  .btn { flex: 1; text-align: center; border-radius: 14px; padding: 12px 10px; font-size: 15px; font-weight: 600; }
+  .btn.ghosted { background: #F2F2EE; color: #45454A; }
+  .btn.primary { background: #17171A; color: #FFFFFF; }
+
+  /* ── Edge-state tiles ─────────────────────────────────────── */
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; }
+  .tile {
+    background: var(--paper-2); border: 1px solid var(--rule-soft); border-radius: 14px;
+    padding: 14px 16px; display: flex; flex-direction: column; gap: 4px;
+  }
+  .tile h4 { margin: 0; font-size: 14px; font-weight: 600; color: var(--ink); }
+  .tile p { margin: 0; font-size: 13.5px; color: var(--ink-2); }
+  .tile .verdict { font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--teal-ink); }
+
+  /* ── Copy table & decisions ───────────────────────────────── */
+  .copy-block {
+    background: var(--paper-2); border: 1px solid var(--rule-soft); border-radius: 14px;
+    padding: 18px 20px; margin: 20px 0; max-width: 74ch;
+  }
+  .copy-block h4 { margin: 0 0 8px; font-size: 13px; font-family: var(--mono); letter-spacing: 0.12em; text-transform: uppercase; font-weight: 500; color: var(--ink-3); }
+  .copy-block p { margin: 0 0 6px; }
+  .copy-block .s { font-weight: 600; }
+  .never { color: var(--ink-2); font-size: 14px; }
+  .never code { font-family: var(--mono); font-size: 13px; background: var(--rule-soft); border-radius: 5px; padding: 1px 6px; }
+
+  .decision {
+    border-left: 3px solid var(--teal); background: var(--teal-wash);
+    border-radius: 0 12px 12px 0; padding: 14px 18px; margin: 18px 0; max-width: 74ch;
+  }
+  .decision h4 { margin: 0 0 4px; font-size: 15px; }
+  .decision p { margin: 0; font-size: 14.5px; color: var(--ink-2); }
+  .decision p strong { color: var(--ink); }
+
+  .foot { margin-top: 72px; border-top: 1px solid var(--rule); padding-top: 18px; font-size: 13px; color: var(--ink-3); max-width: 74ch; }
+</style>
+
+<div class="wrap">
+  <header class="mast">
+    <p class="eyebrow"><span>Culprit · diet-trial track</span><span>B-693 · mock round 2 · design-locked</span><span>2026-08-04</span></p>
+    <h1>The log-time trial-list heads-up</h1>
+    <p class="standfirst"><strong>Design-locked — every call is ruled (PM, 2026-08-04).</strong> The warning exists
+    ("we have a duty to show that an off-trial food has been logged"); <strong>Variant B ships with the amber
+    "attention" treatment</strong> (§2, left frame — the build authority); the quiet add line opens the shipped
+    confirm sheet; and it renders only while a trial is <strong>genuinely running</strong>. The rose danger frame is
+    kept below as the record of the road not taken. Nothing here blocks, delays, or gates the log.</p>
+  </header>
+
+  <!-- ════════════════════ Section 1 — today ════════════════════ -->
+  <p class="kicker">§1 · What ships today</p>
+  <h2>The gap, and the flag beside it</h2>
+  <p class="lede">Two feedings during Biscuit's duck trial. The <strong>chicken purée</strong> has a read ingredient
+  panel, so the shipped heads-up fires. The <strong>dental treats</strong> were never on the list and never had a
+  panel read — the modal case in a real library — and the card stays silent, while the exposure quietly lands in the
+  trial's off-diet count on the card, the exposures screen, and the vet report.</p>
+
+  <div class="frames">
+    <div class="frame">
+      <p class="frame-tag"><b>Frame 1 — shipped</b> · rung 2, panel read</p>
+      <div class="screen">
+        <div class="ghost"><div class="ghost-title">Log</div><div class="ghost-row"></div><div class="ghost-row"></div></div>
+        <div class="card">
+          <div class="card-head">
+            <div class="check"><svg width="14" height="14" viewBox="0 0 14 14"><path d="M2.5 7.5 L5.5 10.5 L11.5 3.5" fill="none" stroke="#00C2A8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+            <div class="card-titles">
+              <div class="card-title">Logged · Churu chicken purée</div>
+              <div class="card-sub">6:42 PM</div>
+            </div>
+            <div class="card-action">Change time</div>
+          </div>
+          <div class="card-sect">
+            <div class="intake-label">How much did Biscuit eat?</div>
+            <div class="chips"><span class="chip">Refused</span><span class="chip">Picked</span><span class="chip">Some</span><span class="chip">Most</span><span class="chip">All</span></div>
+          </div>
+          <div class="card-sect">
+            <div class="flag-headline">This one has chicken.</div>
+            <div class="flag-detail">Biscuit’s duck trial should skip chicken. The meal’s saved — just worth knowing, and maybe a note for your vet.</div>
+          </div>
+          <div class="card-sect"><div class="quiet-line">+ Add a med given with this</div></div>
+        </div>
+      </div>
+      <p class="frame-note">The shipped B-351 heads-up: a fact about the food's <strong>contents</strong>. Fires once
+      per food per trial, after the save. This frame is unchanged by B-693.</p>
+    </div>
+
+    <div class="frame">
+      <p class="frame-tag"><b>Frame 2 — shipped</b> · rung 3, the gap</p>
+      <div class="screen">
+        <div class="ghost"><div class="ghost-title">Log</div><div class="ghost-row"></div><div class="ghost-row"></div></div>
+        <div class="card">
+          <div class="card-head">
+            <div class="check"><svg width="14" height="14" viewBox="0 0 14 14"><path d="M2.5 7.5 L5.5 10.5 L11.5 3.5" fill="none" stroke="#00C2A8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+            <div class="card-titles">
+              <div class="card-title">Logged · Feline dental treats</div>
+              <div class="card-sub">8:05 PM</div>
+            </div>
+            <div class="card-action">Change time</div>
+          </div>
+          <div class="card-sect">
+            <div class="intake-label">How much did Biscuit eat?</div>
+            <div class="chips"><span class="chip">Refused</span><span class="chip">Picked</span><span class="chip">Some</span><span class="chip">Most</span><span class="chip">All</span></div>
+          </div>
+          <div class="card-sect"><div class="quiet-line">+ Add a med given with this</div></div>
+        </div>
+        <div class="silent-callout">· · · nothing renders · · ·</div>
+      </div>
+      <p class="frame-note">Not on the list, no panel read → <strong>silence at log time</strong>. The feeding still
+      counts as an off-diet exposure everywhere downstream. This is the gap the PM's dogfood found.</p>
+    </div>
+  </div>
+
+  <!-- ════════════════════ Section 2 — the proposal ════════════════════ -->
+  <p class="kicker">§2 · Ruled: Variant B · live: how loud</p>
+  <h2>The warning, at two intensities</h2>
+  <p class="lede">Variant B is ruled — heads-up plus the quiet add line. What's live is the visual register. The PM
+  asked for a danger-style warning; the team's counterweight is real and recorded here rather than argued away:
+  <strong>this would be Culprit's first danger-styled surface</strong> (even the shipped chicken flag and the
+  detail-screen safety notes are calm teal), the record only knows the food is <em>absent from a list</em> — often
+  because the vet okayed it and it was never entered — and red beside an "add it" action reads as an accusation the
+  sheet then walks back. The middle treatment keeps the PM's "duty to show" — tinted, barred, unmissable, clearly a
+  warning — without asserting harm the record can't back. <strong>Rule it by how the frames read.</strong></p>
+
+  <div class="frames">
+    <div class="frame">
+      <p class="frame-tag"><b>B — attention</b> · RULED — ships (PM, 2026-08-04)</p>
+      <div class="screen">
+        <div class="ghost"><div class="ghost-title">Log</div><div class="ghost-row"></div><div class="ghost-row"></div></div>
+        <div class="card">
+          <div class="card-head">
+            <div class="check"><svg width="14" height="14" viewBox="0 0 14 14"><path d="M2.5 7.5 L5.5 10.5 L11.5 3.5" fill="none" stroke="#00C2A8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+            <div class="card-titles">
+              <div class="card-title">Logged · Feline dental treats</div>
+              <div class="card-sub">8:05 PM</div>
+            </div>
+            <div class="card-action">Change time</div>
+          </div>
+          <div class="card-sect">
+            <div class="intake-label">How much did Biscuit eat?</div>
+            <div class="chips"><span class="chip">Refused</span><span class="chip">Picked</span><span class="chip">Some</span><span class="chip">Most</span><span class="chip">All</span></div>
+          </div>
+          <div class="card-sect">
+            <div class="flag-panel attention">
+              <div class="flag-eyebrow">Off the trial list</div>
+              <div class="flag-headline">This one isn’t on Biscuit’s trial list.</div>
+              <div class="flag-detail">The meal’s saved, and it counts in the trial record. If your vet okayed this food, adding it to the list keeps the record straight.</div>
+              <div class="quiet-line add">+ Add to the trial list</div>
+            </div>
+          </div>
+          <div class="card-sect"><div class="quiet-line">+ Add a med given with this</div></div>
+        </div>
+      </div>
+      <p class="frame-note">Amber tint + bar (the moment-glow gold already on this card's check badge). Clearly a
+      warning — it breaks the card's calm stack and can't be read past — but its claim-strength matches the record:
+      <strong>attention, not harm</strong>. Dr. Chen: "warn" is right, "danger" asserts toxicity we haven't
+      established; Designer: red on this dark card is a klaxon over a meal that's already saved.</p>
+    </div>
+
+    <div class="frame">
+      <p class="frame-tag"><b>B — danger</b> · not shipping — kept for the record</p>
+      <div class="screen">
+        <div class="ghost"><div class="ghost-title">Log</div><div class="ghost-row"></div><div class="ghost-row"></div></div>
+        <div class="card">
+          <div class="card-head">
+            <div class="check"><svg width="14" height="14" viewBox="0 0 14 14"><path d="M2.5 7.5 L5.5 10.5 L11.5 3.5" fill="none" stroke="#00C2A8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+            <div class="card-titles">
+              <div class="card-title">Logged · Feline dental treats</div>
+              <div class="card-sub">8:05 PM</div>
+            </div>
+            <div class="card-action">Change time</div>
+          </div>
+          <div class="card-sect">
+            <div class="intake-label">How much did Biscuit eat?</div>
+            <div class="chips"><span class="chip">Refused</span><span class="chip">Picked</span><span class="chip">Some</span><span class="chip">Most</span><span class="chip">All</span></div>
+          </div>
+          <div class="card-sect">
+            <div class="flag-panel danger">
+              <div class="flag-eyebrow">Off the trial list</div>
+              <div class="flag-headline">This one isn’t on Biscuit’s trial list.</div>
+              <div class="flag-detail">The meal’s saved, and it counts in the trial record. If your vet okayed this food, adding it to the list keeps the record straight.</div>
+              <div class="quiet-line add">+ Add to the trial list</div>
+            </div>
+          </div>
+          <div class="card-sect"><div class="quiet-line">+ Add a med given with this</div></div>
+        </div>
+      </div>
+      <p class="frame-note">The rose family (the app's symptom color). Unmissable — and the honest costs, named: the
+      modal off-list food is a benign or vet-permitted treat, so this fires red on innocents; a red panel whose
+      built-in reply is "add it to the list" undercuts its own alarm; and by C2's alarm-fatigue evidence, the more
+      often red is wrong, the less the owner believes it on the day it's right.</p>
+    </div>
+  </div>
+
+  <!-- ════════════════════ Section 3 — the sheet + after ════════════════════ -->
+  <p class="kicker">§3 · The escape hatch, and what happens after</p>
+  <h2>Add to the list, then quiet</h2>
+  <p class="lede">The confirm sheet is <strong>shipped</strong> (B-616 PR 2) and reused verbatim — dated membership,
+  earlier feedings keep their reading, the vet's-call caption. After the heads-up — whether or not the owner adds the
+  food — the <strong>second</strong> log of the same food is quiet: added means it's permitted now; not added means
+  the once-per-food budget is spent and the standing facts live downstream.</p>
+
+  <div class="frames">
+    <div class="frame">
+      <p class="frame-tag"><b>Frame 4 — shipped, reused</b> · the confirm sheet</p>
+      <div class="screen">
+        <div class="ghost"><div class="ghost-title">Log</div><div class="ghost-row"></div><div class="ghost-row"></div></div>
+        <div class="sheet">
+          <div class="sheet-grabber"></div>
+          <div class="sheet-title">Add to Biscuit’s trial list?</div>
+          <dl class="sheet-rows">
+            <div class="sheet-row"><dt>Food</dt><dd>Feline dental treats</dd></div>
+            <div class="sheet-row"><dt>Joins the list</dt><dd>Today, 4 Aug · day 12</dd></div>
+            <div class="sheet-row"><dt>Earlier feedings</dt><dd>Keep the reading they already have</dd></div>
+          </dl>
+          <div class="sheet-caption">Extras are your vet’s call — Culprit just records the dates.</div>
+          <div class="sheet-btns"><div class="btn ghosted">Not now</div><div class="btn primary">Add to the list</div></div>
+        </div>
+      </div>
+      <p class="frame-note">Every string here is live in the app today. Note what the sheet already guarantees: the
+      add is dated from today, and <strong>tonight's feeding — the one that fired the heads-up — keeps its off-list
+      reading</strong>. Adding the food never rewrites history, so the heads-up can't be used to launder an exposure.</p>
+    </div>
+
+    <div class="frame">
+      <p class="frame-tag"><b>Frame 5</b> · the same food, tomorrow</p>
+      <div class="screen">
+        <div class="ghost"><div class="ghost-title">Log</div><div class="ghost-row"></div><div class="ghost-row"></div></div>
+        <div class="card">
+          <div class="card-head">
+            <div class="check"><svg width="14" height="14" viewBox="0 0 14 14"><path d="M2.5 7.5 L5.5 10.5 L11.5 3.5" fill="none" stroke="#00C2A8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+            <div class="card-titles">
+              <div class="card-title">Logged · Feline dental treats</div>
+              <div class="card-sub">7:58 PM</div>
+            </div>
+            <div class="card-action">Change time</div>
+          </div>
+          <div class="card-sect">
+            <div class="intake-label">How much did Biscuit eat?</div>
+            <div class="chips"><span class="chip">Refused</span><span class="chip">Picked</span><span class="chip">Some</span><span class="chip">Most</span><span class="chip">All</span></div>
+          </div>
+          <div class="card-sect"><div class="quiet-line">+ Add a med given with this</div></div>
+        </div>
+        <div class="silent-callout">· · · quiet, by rule · · ·</div>
+      </div>
+      <p class="frame-note">Added → it's permitted, nothing to say. Not added → the once-per-food-per-trial budget is
+      spent; repeats aren't news (the second treat is the same fact), and every feeding still counts in the exposure
+      record regardless. Quiet is never an all-clear.</p>
+    </div>
+  </div>
+
+  <!-- ════════════════════ Section 4 — silence states ════════════════════ -->
+  <p class="kicker">§4 · When it says nothing, and why</p>
+  <h2>The silence states</h2>
+  <p class="lede">Same discipline as the shipped flag: <strong>every uncertainty suppresses; nothing ever
+  reassures.</strong> There is no "this food is fine" state anywhere in this feature.</p>
+  <div class="tiles">
+    <div class="tile"><span class="verdict">no running trial</span><h4>No trial genuinely running</h4><p>PM-ruled this round. And per the B-422 convention, "running" reads <em>isTrialRunning</em> (target + grace), never the raw status column — a trial stale-active since March is quiet here.</p></div>
+    <div class="tile"><span class="verdict">unknown</span><h4>Trial list not loaded yet</h4><p>Fresh install, mid-sync, offline cold start — an unhydrated list must not be read as an empty one.</p></div>
+    <div class="tile"><span class="verdict">out_of_window</span><h4>Feeding outside the trial dates</h4><p>A backfilled meal from before the trial started says nothing about the trial.</p></div>
+    <div class="tile"><span class="verdict">off_diet_protein</span><h4>Panel read, protein conflict</h4><p>The stronger shipped flag fires instead (frame 1). Never both — one heads-up per moment.</p></div>
+    <div class="tile"><span class="verdict">permitted</span><h4>On the list</h4><p>Nothing renders. A permitted food is never praised — absence of a flag is not a verdict (G2).</p></div>
+    <div class="tile"><span class="verdict">ledger spent</span><h4>Already told this trial</h4><p>One heads-up per food per trial, counted in heads-ups given — never in meals fed.</p></div>
+  </div>
+
+  <!-- ════════════════════ Section 5 — copy & decisions ════════════════════ -->
+  <p class="kicker">§5 · The words, and the calls</p>
+  <h2>Register, and what's left to rule</h2>
+
+  <div class="copy-block">
+    <h4>Proposed strings — round 1</h4>
+    <p><span class="s">Headline:</span> This one isn’t on Biscuit’s trial list.</p>
+    <p><span class="s">Detail (B):</span> The meal’s saved, and it counts in the trial record. If your vet okayed this food, adding it to the list keeps the record straight.</p>
+    <p><span class="s">Add line (B):</span> + Add to the trial list</p>
+    <p><span class="s">Detail (A):</span> …you can add it to the list from the food’s page.</p>
+  </div>
+  <p class="never">What it never says, at any coverage, in any state: <code>off-diet</code> · <code>contaminant</code>
+  (nobody read this food's panel — the claim is about the <em>list</em>, never the food's contents) ·
+  <code>no conflicts found</code> · anything that scolds the owner or judges the feeding. The meal is already saved
+  and the copy says so first.</p>
+
+  <div class="decision">
+    <h4>Ruled this round (PM, 2026-08-04)</h4>
+    <p><strong>① The warning exists</strong> — "we have a duty to show that an off-trial food has been logged"; the
+    library's positive-marking-only rule governs standing marks, not the log-time event register.
+    <strong>② Variant B ships</strong> — the quiet add line stays, opening the shipped confirm sheet.
+    <strong>③ Active trial only</strong> — rendered only while a trial is genuinely running (<em>isTrialRunning</em>,
+    per the B-422 convention), which settles B-595 for this flag; the team recommends the same gate for the shipped
+    protein flag in the same PR.</p>
+  </div>
+  <div class="decision">
+    <h4>Ruled — intensity: amber attention (PM, 2026-08-04)</h4>
+    <p><strong>④ The amber "attention" treatment ships</strong> — §2 left frame is the build authority. The PM
+    reviewed the rose danger rendering beside it and took the team's recommendation: the treatment breaks the card's
+    calm stack and cannot be read past (the "duty to show" is honored), while its claim-strength stays matched to
+    what the record knows — list-absence, not harm. The danger frame is retained above as the decision record.</p>
+  </div>
+
+  <p class="foot">B-693 (filed as B-686) · mock round 2 · 2026-08-04 (supersedes round 1's A/B comparison — Variant B is ruled; round-1
+  frames showing Variant A are retired). Frames render real tokens (constants/theme.ts) and shipped strings
+  (lib/trialContaminant.ts, lib/trialFoodsScreen.ts); the only new strings are the §5 proposals. The completion
+  card's dark ground, chip row, med line and check badge are as built. Later rounds re-publish over this page at the
+  same URL.</p>
+</div>

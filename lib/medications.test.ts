@@ -24,6 +24,10 @@ import {
   doseCourseProgress,
   regimenDaysElapsed,
   attributeDosesToRegimens,
+  attributeDoses,
+  mapDoseRowsToAttributable,
+  tallyDoses,
+  emptyTally,
   regimenComplianceLine,
   regimenFlagLine,
   buildRegimenPayload,
@@ -56,6 +60,8 @@ import {
   pairedDoseLinkLabel,
   COMMON_MEDICATIONS,
   commonMedicationsForSpecies,
+  courseReachedPlannedEnd,
+  courseEndPromptLede,
   type CommonMedication,
   type DoseVehicle,
   type LocalMedicationItem,
@@ -949,12 +955,22 @@ describe('dosesTowardTarget — therapy delivered = given + partial (§4, D1)', 
 describe('doseCourseProgress — "Dose {n} of {target}" line + bar (§6, D7)', () => {
   const NO_COMPLETION = /complete|done|finish|stop|✓|✔|check|over\b|ended/i;
 
-  it('zero-state: "Dose 0 of 28" with an empty bar before the first administration', () => {
+  it('fresh zero-state: a designed forward-looking line, empty bar, fresh=true (B-643)', () => {
+    // Nothing logged at all → the Principle-5 empty state, not a countdown label.
+    // The render site keys the compliance-line de-dupe on `fresh`.
     const p = doseCourseProgress(tally(), 28);
-    expect(p.line).toBe('Dose 0 of 28');
+    expect(p.line).toBe('28 doses ahead — log the first when you give it');
     expect(p.count).toBe(0);
     expect(p.barFraction).toBe(0);
     expect(p.pastTarget).toBe(false);
+    expect(p.fresh).toBe(true);
+    expect(p.atTarget).toBe(false);
+  });
+
+  it('fresh zero-state inflects for a single-dose course (B-643)', () => {
+    const p = doseCourseProgress(tally(), 1);
+    expect(p.line).toBe('1 dose ahead — log it when you give it');
+    expect(p.fresh).toBe(true);
   });
 
   it('§8.1 in-range: a given dose reads "Dose 1 of 28"; the bar fraction equals n/target', () => {
@@ -1011,9 +1027,21 @@ describe('doseCourseProgress — "Dose {n} of {target}" line + bar (§6, D7)', (
   it('refused / missed / unrated never move the count line off "Dose 0 of N" (§8.2)', () => {
     // A refused tail can never let a course read as complete — the count is 0, the bar
     // is empty, and the refusals surface through regimenFlagLine, not this line.
+    // NOT fresh (B-643): doses WERE logged, so the plain counter stays — a warm
+    // "log the first when you give it" over a refusal record is one of the four
+    // things the med surfaces must never say (med-strip spec §6).
     const p = doseCourseProgress(tally({ refused: 3, missed: 2, unrated: 1 }), 14);
     expect(p.line).toBe('Dose 0 of 14');
     expect(p.barFraction).toBe(0);
+    expect(p.fresh).toBe(false);
+  });
+
+  it('atTarget flags at and past the target, never before (B-642)', () => {
+    // The render site pairs a full bar with the vet's-call note off this flag.
+    expect(doseCourseProgress(tally({ given: 27 }), 28).atTarget).toBe(false);
+    expect(doseCourseProgress(tally({ given: 28 }), 28).atTarget).toBe(true);
+    expect(doseCourseProgress(tally({ given: 30 }), 28).atTarget).toBe(true);
+    expect(doseCourseProgress(tally({ given: 27, partial: 1 }), 28).atTarget).toBe(true);
   });
 
   it('property: barFraction is always in [0, 1] and the line never emits a completion word', () => {
@@ -2105,5 +2133,309 @@ describe('regimenDaysElapsed (B-441)', () => {
 
     const guessed = computeRegimenCompliance({ dosesPerDay: 2, daysElapsed: 1, tally: tally({ given: 3 }) });
     expect(guessed.percent).toBe(100); // what the guess would have claimed
+  });
+});
+
+// ── B-140 PR 1 — attributeDoses (the full attribution partition) + tallyDoses ─────
+// attributeDoses is the primitive attributeDosesToRegimens now delegates to; it exposes
+// the SAME single decision as three fields so lib/medicationHistory can read orphans and
+// per-regimen doses without a rival attribution. The load-bearing guarantees: the tallies
+// are byte-for-byte what attributeDosesToRegimens always returned, and every live dose is
+// partitioned exactly once across grouped ∪ unattributed (nothing double-counted, nothing
+// dropped).
+describe('attributeDoses — the full partition behind attributeDosesToRegimens (B-140)', () => {
+  const reg = (over: Partial<RegimenWindow> = {}): RegimenWindow => ({
+    id: 'reg-1', medication_item_id: 'item-pred', started_at: '2026-06-10', ended_at: null, ...over,
+  });
+  const dose = (over: Partial<AttributableDose> = {}): AttributableDose => ({
+    medication_id: null, medication_item_id: 'item-pred', adherence: 'given', deleted_at: null,
+    occurred_at: '2026-06-12T08:00:00+00:00', ...over,
+  });
+
+  it('its tallies equal attributeDosesToRegimens byte-for-byte, across mixed scenarios', () => {
+    // The delegation contract: adding grouped/unattributed must not perturb the tally
+    // any existing caller (the profile card, the med strip) already reads.
+    const scenarios: { regs: RegimenWindow[]; doses: AttributableDose[] }[] = [
+      { regs: [reg()], doses: [dose(), dose({ adherence: 'refused' }), dose({ medication_id: 'reg-1' })] },
+      { regs: [reg({ id: 'a', started_at: '2026-06-01', ended_at: '2026-06-10' }), reg({ id: 'b', started_at: '2026-06-11' })],
+        doses: [dose({ occurred_at: '2026-06-12T08:00:00+00:00' }), dose({ occurred_at: '2026-06-05T08:00:00+00:00' })] },
+      { regs: [reg({ medication_item_id: null, id: 'ft' })],
+        doses: [dose({ medication_id: 'ft', medication_item_id: null }), dose({ medication_item_id: null })] },
+      { regs: [], doses: [dose(), dose({ medication_id: 'ghost' })] },
+    ];
+    for (const s of scenarios) {
+      const viaDelegate = attributeDosesToRegimens(s.regs, s.doses);
+      const viaPrimitive = attributeDoses(s.regs, s.doses).tallies;
+      expect([...viaPrimitive.entries()]).toEqual([...viaDelegate.entries()]);
+    }
+  });
+
+  it('partitions every LIVE dose exactly once (grouped ∪ unattributed = live; disjoint)', () => {
+    const doses: AttributableDose[] = [
+      dose({ medication_id: 'reg-1' }),                                   // linked → grouped
+      dose({ medication_item_id: 'item-pred' }),                         // item+window → grouped
+      dose({ medication_item_id: 'item-other' }),                        // no regimen for drug → unattributed
+      dose({ medication_id: null, medication_item_id: null }),           // ad-hoc → unattributed
+      dose({ medication_id: 'ghost' }),                                  // linked to absent regimen → unattributed
+      dose({ deleted_at: '2026-06-12T09:00:00Z' }),                      // soft-deleted → neither
+    ];
+    const { grouped, unattributed } = attributeDoses([reg()], doses);
+    const groupedCount = [...grouped.values()].reduce((n, arr) => n + arr.length, 0);
+    expect(groupedCount).toBe(2);
+    expect(unattributed.length).toBe(3);
+    // 5 live doses, split with none dropped and none counted twice (the deleted one is in neither).
+    expect(groupedCount + unattributed.length).toBe(5);
+  });
+
+  it('surfaces a dose linked to a regimen ABSENT from the set as unattributed, never dropped', () => {
+    // The report's §3.8 stance: nothing logged is silently lost. It counts toward no
+    // tally (no reassignment) but is available to a course-grain reader.
+    const { tallies, unattributed } = attributeDoses([reg({ id: 'active' })], [
+      dose({ medication_id: 'ended-regimen' }),
+    ]);
+    expect(tallies.get('active')).toEqual(emptyTally());
+    expect(unattributed).toHaveLength(1);
+    expect(unattributed[0].medication_id).toBe('ended-regimen');
+  });
+
+  it('grouped holds the actual attributed doses, so first/last can be read from it', () => {
+    const { grouped } = attributeDoses([reg()], [
+      dose({ occurred_at: '2026-06-12T08:00:00Z' }),
+      dose({ occurred_at: '2026-06-14T20:00:00Z' }),
+    ]);
+    const rows = grouped.get('reg-1')!;
+    expect(rows).toHaveLength(2);
+    expect(rows.map((d) => d.occurred_at)).toEqual(['2026-06-12T08:00:00Z', '2026-06-14T20:00:00Z']);
+  });
+});
+
+describe('tallyDoses — shared adherence bucketer (B-140)', () => {
+  it('buckets a bare dose list identically to the attribution pass', () => {
+    const doses = [
+      { adherence: 'given' }, { adherence: 'partial' }, { adherence: 'missed' },
+      { adherence: 'refused' }, { adherence: null }, { adherence: 'given' },
+    ];
+    expect(tallyDoses(doses)).toEqual({ given: 2, partial: 1, missed: 1, refused: 1, unrated: 1 });
+  });
+
+  it('an empty list is an empty tally (never undefined)', () => {
+    expect(tallyDoses([])).toEqual(emptyTally());
+  });
+
+  it('agrees with attributeDoses for the same doses under one regimen (one bucketer)', () => {
+    const doses: AttributableDose[] = [
+      { medication_id: 'r', medication_item_id: 'i', adherence: 'given', deleted_at: null, occurred_at: '2026-06-12T08:00:00Z' },
+      { medication_id: 'r', medication_item_id: 'i', adherence: 'partial', deleted_at: null, occurred_at: '2026-06-12T20:00:00Z' },
+    ];
+    const viaAttribution = attributeDoses(
+      [{ id: 'r', medication_item_id: 'i', started_at: '2026-06-10', ended_at: null }],
+      doses,
+    ).tallies.get('r');
+    expect(tallyDoses(doses)).toEqual(viaAttribution);
+  });
+});
+
+// The shared embed-shape mapper both profile medication loaders read (B-140 PR 2). The
+// B-196 subtlety it exists to own: supabase-js surfaces a to-one embed as EITHER an
+// object OR a 1-element array, and the parent event's soft-delete + timestamp must lift
+// onto the dose either way.
+describe('mapDoseRowsToAttributable — dose embed → AttributableDose', () => {
+  const ev = { deleted_at: null, occurred_at: '2026-03-05T08:00:00Z' };
+
+  it('flattens an OBJECT embed onto the dose', () => {
+    const [d] = mapDoseRowsToAttributable([
+      { medication_id: 'r', medication_item_id: 'i', adherence: 'given', events: ev },
+    ]);
+    expect(d).toEqual({
+      medication_id: 'r', medication_item_id: 'i', adherence: 'given',
+      deleted_at: null, occurred_at: '2026-03-05T08:00:00Z',
+    });
+  });
+
+  it('flattens a 1-ELEMENT ARRAY embed identically (the B-196 shape)', () => {
+    const [d] = mapDoseRowsToAttributable([
+      { medication_id: null, medication_item_id: 'i', adherence: null, events: [ev] },
+    ]);
+    expect(d.occurred_at).toBe('2026-03-05T08:00:00Z');
+    expect(d.deleted_at).toBeNull();
+  });
+
+  it('carries a soft-deleted parent event through (so attribution can skip it)', () => {
+    const [d] = mapDoseRowsToAttributable([
+      { medication_id: 'r', medication_item_id: 'i', adherence: 'given', events: { deleted_at: '2026-03-06T09:00:00Z', occurred_at: '2026-03-06T08:00:00Z' } },
+    ]);
+    expect(d.deleted_at).toBe('2026-03-06T09:00:00Z');
+  });
+
+  it('a missing embed yields occurred_at "" (ordered out, never a throw); null/undefined rows → []', () => {
+    const [d] = mapDoseRowsToAttributable([
+      { medication_id: 'r', medication_item_id: 'i', adherence: 'given', events: null },
+    ]);
+    expect(d.occurred_at).toBe('');
+    expect(d.deleted_at).toBeNull();
+    expect(mapDoseRowsToAttributable(null)).toEqual([]);
+    expect(mapDoseRowsToAttributable(undefined)).toEqual([]);
+  });
+});
+
+describe('courseReachedPlannedEnd (B-719) — the finish-prompt trigger', () => {
+  // Real DoseCourseProgress values, built through the shipped helper so the test
+  // exercises the SAME atTarget definition the card does (never a hand-faked shape).
+  const doseAtTarget = doseCourseProgress(tally({ given: 28 }), 28); // 28/28 → atTarget
+  const doseBelow = doseCourseProgress(tally({ given: 12 }), 28);    // 12/28 → not
+  const doseOne = doseCourseProgress(tally({ given: 1 }), 1);        // 1-dose course, delivered
+  const doseOneEmpty = doseCourseProgress(tally(), 1);              // 1-dose course, nothing given
+
+  describe('dose-denominated trigger', () => {
+    it('reaches its end when therapy delivered meets the dispensed target', () => {
+      expect(courseReachedPlannedEnd({
+        status: 'active', doseCourse: doseAtTarget, targetDurationDays: null, daysElapsed: null,
+      })).toEqual({ reached: true, denomination: 'doses' });
+    });
+
+    it('is not reached below target', () => {
+      expect(courseReachedPlannedEnd({
+        status: 'active', doseCourse: doseBelow, targetDurationDays: null, daysElapsed: null,
+      })).toEqual({ reached: false, denomination: null });
+    });
+
+    it('a 1-dose course is reached the instant its single dose is given (inclusive)', () => {
+      expect(courseReachedPlannedEnd({
+        status: 'active', doseCourse: doseOne, targetDurationDays: null, daysElapsed: null,
+      }).reached).toBe(true);
+      expect(courseReachedPlannedEnd({
+        status: 'active', doseCourse: doseOneEmpty, targetDurationDays: null, daysElapsed: null,
+      }).reached).toBe(false);
+    });
+
+    it('fires when the count is reached with PARTIAL doses (dosesTowardTarget = given + partial)', () => {
+      // adversarial-reviewer B-719 finding ③: the target is reachable WITH partials in the
+      // count, so the trigger must still fire here — and the record-framed lede (not "has had
+      // all N given") is what keeps it from overstating delivery. See courseEndPromptLede tests.
+      const partialsAtTarget = doseCourseProgress(tally({ partial: 30 }), 28);
+      expect(partialsAtTarget.atTarget).toBe(true);
+      expect(courseReachedPlannedEnd({
+        status: 'active', doseCourse: partialsAtTarget, targetDurationDays: null, daysElapsed: null,
+      })).toEqual({ reached: true, denomination: 'doses' });
+    });
+
+    it('never prompts a dose course that is not active (status gate — H1/B-422)', () => {
+      // the real medication_status enum's non-active values (migration 020)
+      for (const status of ['completed', 'stopped']) {
+        expect(courseReachedPlannedEnd({
+          status, doseCourse: doseAtTarget, targetDurationDays: null, daysElapsed: null,
+        }).reached).toBe(false);
+      }
+    });
+  });
+
+  describe('day-denominated trigger (strictly past the span)', () => {
+    it('reaches its end the day AFTER the last prescribed day', () => {
+      expect(courseReachedPlannedEnd({
+        status: 'active', doseCourse: null, targetDurationDays: 14, daysElapsed: 15,
+      })).toEqual({ reached: true, denomination: 'days' });
+    });
+
+    it('is NOT reached on the last day itself (day 14 of 14) — the day is not yet up', () => {
+      expect(courseReachedPlannedEnd({
+        status: 'active', doseCourse: null, targetDurationDays: 14, daysElapsed: 14,
+      })).toEqual({ reached: false, denomination: null });
+    });
+
+    it('is not reached before the last day', () => {
+      expect(courseReachedPlannedEnd({
+        status: 'active', doseCourse: null, targetDurationDays: 14, daysElapsed: 5,
+      }).reached).toBe(false);
+    });
+
+    it('a 1-day course is not finished on its start day, but is the next day (the asymmetry proof)', () => {
+      expect(courseReachedPlannedEnd({
+        status: 'active', doseCourse: null, targetDurationDays: 1, daysElapsed: 1,
+      }).reached).toBe(false);
+      expect(courseReachedPlannedEnd({
+        status: 'active', doseCourse: null, targetDurationDays: 1, daysElapsed: 2,
+      }).reached).toBe(true);
+    });
+
+    it('never guesses an ending from an unparseable start date (daysElapsed null)', () => {
+      expect(courseReachedPlannedEnd({
+        status: 'active', doseCourse: null, targetDurationDays: 14, daysElapsed: null,
+      }).reached).toBe(false);
+    });
+
+    it('never prompts an ended day course (status gate)', () => {
+      expect(courseReachedPlannedEnd({
+        status: 'completed', doseCourse: null, targetDurationDays: 14, daysElapsed: 99,
+      }).reached).toBe(false);
+    });
+
+    it('a corrupt 0/negative day target degrades to no prompt (never "Day n of 0")', () => {
+      expect(courseReachedPlannedEnd({
+        status: 'active', doseCourse: null, targetDurationDays: 0, daysElapsed: 99,
+      }).reached).toBe(false);
+      expect(courseReachedPlannedEnd({
+        status: 'active', doseCourse: null, targetDurationDays: -3, daysElapsed: 99,
+      }).reached).toBe(false);
+    });
+  });
+
+  describe('no defined end / precedence', () => {
+    it('an ongoing / PRN course (no denomination) is never reached, however long it runs', () => {
+      expect(courseReachedPlannedEnd({
+        status: 'active', doseCourse: null, targetDurationDays: null, daysElapsed: 400,
+      })).toEqual({ reached: false, denomination: null });
+    });
+
+    it('the dose denomination wins when a corrupt row carries both, day span not yet past', () => {
+      expect(courseReachedPlannedEnd({
+        status: 'active', doseCourse: doseAtTarget, targetDurationDays: 14, daysElapsed: 2,
+      })).toEqual({ reached: true, denomination: 'doses' });
+    });
+  });
+});
+
+describe('courseEndPromptLede (B-719) — the fact lede', () => {
+  it('the dose lede names the pet and record-frames the count (never a delivery claim)', () => {
+    expect(courseEndPromptLede({
+      denomination: 'doses', petName: 'Nyx', targetDoses: 28, targetDays: null,
+    })).toBe("Nyx's 28 doses are all logged.");
+  });
+
+  it('the dose lede is singular for a 1-dose course', () => {
+    expect(courseEndPromptLede({
+      denomination: 'doses', petName: 'Mochi', targetDoses: 1, targetDays: null,
+    })).toBe("Mochi's dose is logged.");
+  });
+
+  // adversarial-reviewer B-719 finding ③: dosesTowardTarget = given + partial, so a course
+  // reaches its target WITH partials in the count. The lede must state the RECORD ("logged"),
+  // never a delivery claim ("has had all N given"), which would be false when partials made
+  // up the count — and it renders MORE prominently than the flag line that corrects it.
+  it('the dose lede never asserts the pet was GIVEN the doses (partials count toward target)', () => {
+    const lede = courseEndPromptLede({
+      denomination: 'doses', petName: 'Nyx', targetDoses: 28, targetDays: null,
+    });
+    expect(lede).not.toMatch(/has had|took|taken|received|given/i);
+    expect(lede).toMatch(/logged/);
+  });
+
+  it('the day lede speaks only to the calendar (so it stays true when doses were missed)', () => {
+    expect(courseEndPromptLede({
+      denomination: 'days', petName: 'Nyx', targetDoses: null, targetDays: 14,
+    })).toBe('The 14 days for this course are up.');
+  });
+
+  it('the day lede is singular for a 1-day course', () => {
+    expect(courseEndPromptLede({
+      denomination: 'days', petName: 'Nyx', targetDoses: null, targetDays: 1,
+    })).toBe('The day for this course is up.');
+  });
+
+  it('the day lede never names a dose count — no path to implying compliance', () => {
+    const lede = courseEndPromptLede({
+      denomination: 'days', petName: 'Nyx', targetDoses: null, targetDays: 10,
+    });
+    expect(lede).not.toMatch(/dose/i);
+    expect(lede).not.toMatch(/given|taken|missed/i);
   });
 });

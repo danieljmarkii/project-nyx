@@ -81,6 +81,15 @@ export const DIET_TRIAL_SCHEMA_SQL = `
     stopped_reason        TEXT,
     ended_at              TEXT,
     transition_started_at TEXT,
+    -- migration 053 (B-704). target_protein is the owner-stated trial protein,
+    -- a Class-A canonical key (canonicalizeProtein) — NULL = never set / cleared /
+    -- "no single protein (hydrolyzed)". target_protein_set_at is the TIMESTAMPTZ
+    -- provenance stamp as ISO/UTC TEXT (so parseTs compares it on one clock), NULL
+    -- whenever target_protein is NULL. NEVER A PERMIT (TG-1): descriptive naming
+    -- only — diet_trial_foods stays the sole off-diet authority — so it rides the
+    -- normal LWW column update and is resolved stored-first via trialTargetProtein().
+    target_protein        TEXT,
+    target_protein_set_at TEXT,
     created_at            TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at            TEXT NOT NULL DEFAULT (datetime('now')),
     synced                INTEGER NOT NULL DEFAULT 0,
@@ -221,6 +230,9 @@ export interface LocalDietTrial {
   stopped_reason: string | null;
   ended_at: string | null;
   transition_started_at: string | null;
+  // migration 053 (B-704) — the owner-stated trial protein + its provenance stamp.
+  target_protein: string | null;
+  target_protein_set_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -267,6 +279,11 @@ export interface RemoteDietTrialUpsert {
   stopped_reason: string | null;
   ended_at: string | null;
   transition_started_at: string | null;
+  // migration 053 (B-704). set_at forwarded AS-IS — an ISO/UTC string on the wire,
+  // the paired-null contract (set_at null ⇔ protein null) is enforced at the write
+  // path (PR 3), never here.
+  target_protein: string | null;
+  target_protein_set_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -294,6 +311,8 @@ export function dietTrialRowToRemote(row: LocalDietTrial): RemoteDietTrialUpsert
     stopped_reason: row.stopped_reason,
     ended_at: row.ended_at,
     transition_started_at: row.transition_started_at,
+    target_protein: row.target_protein,
+    target_protein_set_at: row.target_protein_set_at,
     created_at: row.created_at,
     updated_at: row.updated_at,
   };

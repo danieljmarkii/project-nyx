@@ -12,10 +12,10 @@ import { PetAvatar } from '../pet/PetAvatar';
 import { PetSwitcherSheet } from '../pet/PetSwitcherSheet';
 import { useEventStore } from '../../store/eventStore';
 import { usePetStore } from '../../store/petStore';
-import { useMomentStore, MEAL_FLAGGED_DURATION_MS } from '../../store/momentStore';
+import { useMomentStore, MEAL_FLAGGED_DURATION_MS, whenMealCardVisible } from '../../store/momentStore';
 import { getRecentFoods, PickerFood } from '../../lib/db';
 import { insertMeal } from '../../lib/meals';
-import { evaluateMealTrialFlag, noteTrialFlagShown } from '../../lib/trialContaminant';
+import { evaluateMealLogTimeFlag, noteTrialFlagShown } from '../../lib/trialContaminant';
 
 export function FAB() {
   const { prependEvent } = useEventStore();
@@ -62,19 +62,27 @@ export function FAB() {
     return () => { cancelled = true; };
   }, [open, activePet]);
 
-  // B-351 slice 4 — resolve the trial-contaminant heads-up and land it on the
-  // card that is already showing. Fire-and-forget by design: the meal is written,
-  // the card is up, and this is strictly additive information. The ledger write
-  // happens ONLY if the patch landed, so the food's one-per-trial budget can never
-  // be spent on a heads-up the owner did not see.
+  // B-351 slice 4 / B-693 — resolve the log-time trial heads-up (contents OR
+  // membership, whichever fires) and land it on the card that is already showing.
+  // Fire-and-forget by design: the meal is written, the card is up, and this is
+  // strictly additive information. One evaluator, one read of the food record
+  // (B-693 single-read composition). The ledger write happens ONLY if the patch
+  // landed, so the food's one-per-trial budget can never be spent on a heads-up the
+  // owner did not see.
   async function applyTrialFlag(
     eventId: string,
     petId: string,
     foodId: string,
     occurredAt: string,
   ) {
-    const flag = await evaluateMealTrialFlag({ petId, foodId, occurredAt });
+    const flag = await evaluateMealLogTimeFlag({ petId, foodId, occurredAt });
     if (!flag) return;
+    // Wait for the card to be on screen before patching. This path reveals
+    // synchronously (no delayMs), so it resolves at once — but the guard is kept
+    // identical to the picker path (app/log.tsx), where the reveal is deferred and
+    // a bare patch would race ahead of it and drop the heads-up. False = superseded
+    // by a newer log → skip the patch and rule 3's spend.
+    if (!(await whenMealCardVisible(eventId))) return;
     if (!patchTrialFlag(eventId, flag)) return;
     rescheduleMoment(MEAL_FLAGGED_DURATION_MS);
     await noteTrialFlagShown(flag);
@@ -138,12 +146,13 @@ export function FAB() {
         foodFormat: food.format,
         intakeRating: null,
       });
-      // B-351 slice 4 — resolve the trial heads-up and patch it onto the card that
-      // is already up. NOT awaited before the card: on a cold trial cache this
-      // makes one network call, and awaiting it here also held the tapped row's
-      // spinner (setLogging(null) is in the finally) for the whole round-trip on
-      // the wedge's fastest path. The ledger write happens only if the patch
-      // lands, so a heads-up the owner never saw can't spend the food's budget.
+      // B-351 slice 4 / B-693 — resolve the trial heads-up and patch it onto the
+      // card. Fire-and-forget (not awaited here) so the tapped row's spinner
+      // (setLogging(null) in the finally) releases immediately on the wedge's
+      // fastest path. applyTrialFlag waits for the card to be on screen before
+      // patching — a no-op here (this path reveals synchronously), but the same
+      // guard the picker path needs. The ledger write happens only once the
+      // heads-up renders, so one the owner never saw can't spend the food's budget.
       void applyTrialFlag(eventId, pet.id, food.id, occurredAtIso);
     } finally {
       setLogging(null);

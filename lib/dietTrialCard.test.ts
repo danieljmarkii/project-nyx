@@ -21,8 +21,10 @@ jest.mock('./feedingArrangements', () => ({
 
 import {
   resolveTrialCard,
+  trialManageLabel,
   resolveTrialStrip,
   planTrialCard,
+  trialIdentityLabel,
   withholdingReasons,
   formatTrialDate,
   trialEndDayIndex,
@@ -413,6 +415,105 @@ describe('state 1 — day one', () => {
   // The state that would render "0 off-diet foods" most confidently.
   it('renders no exposure sentence at all', () => {
     expect(allStrings(model).join(' ')).not.toMatch(/matched/);
+  });
+});
+
+// The polish pass extends B-616 FR-5's "What {pet} can eat" link from states 2/3/6
+// to day_one/free_fed/below_floor — the running states that used to carry no action
+// at all (day 1 most of all, where it removes the header being the only control).
+describe('the "What {pet} can eat" link is offered on every running state', () => {
+  it('day one offers it — the state where it was otherwise the only affordance', () => {
+    const m = resolveTrialCard(activeInput({
+      nowMs: localNoon(2026, 7, 3),
+      coverage: { daysLogged: 0, daysElapsed: 1 },
+      exposures: null,
+    }));
+    expect(m.state).toBe('day_one');
+    expect(m.actions.map((a) => a.id)).toContain('view_allowed_foods');
+  });
+
+  it('below the coverage floor offers it', () => {
+    const m = resolveTrialCard(activeInput({
+      belowCoverageFloor: true,
+      coverage: { daysLogged: 6, daysElapsed: 23 },
+      exposures: { mayStateRecordClean: true, totalFeedings: 9, offDiet: 0 },
+    }));
+    expect(m.state).toBe('below_floor');
+    expect(m.actions.map((a) => a.id)).toContain('view_allowed_foods');
+  });
+
+  it('the free-fed replacement offers it', () => {
+    const m = resolveTrialCard(activeInput({
+      petName: 'Mochi',
+      freeFed: { loggedFeedings: 22 },
+      exposures: { mayStateRecordClean: false, totalFeedings: 22, offDiet: 0 },
+    }));
+    expect(m.state).toBe('free_fed');
+    expect(m.actions.map((a) => a.id)).toContain('view_allowed_foods');
+  });
+});
+
+describe('trialManageLabel — the header affordance, honest per state', () => {
+  const start = { id: 'start_trial' as const, label: 'Start a diet trial', emphasis: 'secondary' as const };
+  const link = { id: 'view_allowed_foods' as const, label: 'What Biscuit can eat', emphasis: 'link' as const };
+
+  it('suppresses when the body already carries a Start CTA (empty + ordinary abandoned)', () => {
+    expect(trialManageLabel({ state: 'no_trial', actions: [start] })).toBeNull();
+    expect(trialManageLabel({ state: 'abandoned', actions: [start] })).toBeNull();
+  });
+
+  it('keeps a "+ Start" on a terminal card whose body has NO Start CTA', () => {
+    // `completed`'s body is "Open vet report" only, so the header is its Start path.
+    expect(trialManageLabel({ state: 'completed', actions: [] })).toBe('+ Start');
+  });
+
+  // "Replace", never "Change": on a running trial the header opens end-and-replace,
+  // and "Change" read as an edit — routing an active (day-1: the ONLY) card to its
+  // own destruction.
+  it('says "Replace" on every running state', () => {
+    for (const s of [
+      'day_one', 'clean', 'exposures', 'below_floor', 'milestone',
+      'overrun', 'intake_decline', 'free_fed', 'trial_refusal',
+    ] as const) {
+      expect(trialManageLabel({ state: s, actions: [link] })).toBe('Replace');
+    }
+  });
+
+  // REGRESSION (`code-reviewer`, 2026-08-06): suppression is keyed on the ACTIONS,
+  // not on `state` — an `abandoned` card whose body offers no way out must keep the
+  // header, or the app's only trial-start entry point is a dead end.
+  it('does NOT suppress an abandoned card whose body has no Start CTA', () => {
+    expect(trialManageLabel({ state: 'abandoned', actions: [] })).toBe('+ Start');
+  });
+});
+
+describe('the trial-start entry point is never stranded (code-reviewer regression)', () => {
+  // Both branches below ship `state: 'abandoned', actions: []`, and this card is the
+  // app's ONLY way to start a trial — so the header must be SHOWN, not suppressed.
+  it('an abandoned trial with a live intake-decline flag keeps a way to start a new trial', () => {
+    const m = resolveTrialCard(activeInput({
+      species: 'cat',
+      petName: 'Mochi',
+      trial: {
+        status: 'abandoned', startedAt: '2026-07-03', endedAt: '2026-07-21',
+        targetDurationDays: 56, foodLabel: FOOD, stoppedReason: 'other',
+      },
+      coverage: { daysLogged: 18, daysElapsed: 19 },
+      exposures: { mayStateRecordClean: true, totalFeedings: 54, offDiet: 0 },
+      intakeDeclineHeadline: 'Mochi has left most of her food for 3 days.',
+    }));
+    expect(m.state).toBe('abandoned');
+    expect(m.actions).toEqual([]); // the decline branch offers no body CTA…
+    expect(trialManageLabel(m)).toBe('+ Start'); // …so the header must not be suppressed
+  });
+
+  it('a trial with an unparseable start date keeps a way to start a new trial', () => {
+    const m = resolveTrialCard(activeInput({
+      trial: { status: 'abandoned', startedAt: 'not-a-date', targetDurationDays: 56, foodLabel: FOOD },
+    }));
+    expect(m.state).toBe('abandoned');
+    expect(m.actions).toEqual([]);
+    expect(trialManageLabel(m)).toBe('+ Start');
   });
 });
 
@@ -1755,6 +1856,9 @@ describe('B-533 PR A — round 8 regressions', () => {
       }],
       ['a free-fed bowl', { freeFed: { loggedFeedings: 41 } }],
       ['an unobserved head', { untrackedDaysBeforeFirstLog: 12 }],
+      // B-597 — the forgotten sibling. The strip stated a plain ratio while the
+      // protein arm was off; the report withholds AND discloses on this.
+      ['a dark antigen arm', { antigenArmDark: true }],
     ];
     // Home has one line and no room for the caveat, the head, or the "meals
     // OFFERED, not eaten" reframing that make the ratio honest on the card. So
@@ -2277,6 +2381,7 @@ describe('the composition layer (B-559)', () => {
     && !input.rangeRefusal
     && !input.freeFed
     && !input.allowedSetUnavailable
+    && !input.antigenArmDark
     && !input.belowCoverageFloor
     && (input.untrackedDaysBeforeFirstLog ?? 0) === 0
   );
@@ -2299,12 +2404,17 @@ describe('the composition layer (B-559)', () => {
       rangeRefusal: REFUSING_RANGE,
       freeFed: { loggedFeedings: 4 },
       allowedSetUnavailable: true,
+      antigenArmDark: true,
       untrackedDaysBeforeFirstLog: 12,
       belowCoverageFloor: true,
     }))).toEqual([
       'intake_decline', 'trial_diet_refusal', 'range_refusal', 'free_fed',
-      'allowed_set_unavailable', 'untracked_head', 'below_floor',
+      'allowed_set_unavailable', 'antigen_arm_dark', 'untracked_head', 'below_floor',
     ]);
+    // B-597 — the dark arm silences the strip on its own, the forgotten-sibling
+    // case: nothing else is withholding, but the protein arm is off.
+    expect(withholdingReasons(activeInput({ antigenArmDark: true })))
+      .toEqual(['antigen_arm_dark']);
     // R1's now-fact is its OWN reason, keyed on the raw input rather than on
     // `liveRefusal`. A record carrying only the now-fact must silence the strip
     // even though `rangeRefusal` is absent — and, in the other direction, a range
@@ -2822,5 +2932,72 @@ describe('B-530 — the register speaks when the trial diet cannot be identified
       .join(' ');
     expect(text).toMatch(/trial-diet feedings/);
     expect(text).not.toMatch(/can’t match these meals/);
+  });
+});
+
+// ── B-704 — the "{Protein} trial" identity naming (TP-4 viewers) ──────────────
+//
+// The card kicker and the Home strip header lead with "{Protein} trial" when a
+// protein resolves (either source), and fall back to the unchanged "Diet trial"
+// otherwise. The food label stays the naming below, so the fallback is today's
+// surface. `trialProtein` is already resolved by the loader — the resolver never
+// re-derives it.
+
+describe('B-704 trialIdentityLabel', () => {
+  const base: TrialCardTrial = {
+    status: 'active',
+    startedAt: '2026-07-03',
+    targetDurationDays: 42,
+  };
+
+  it('names the trial by its protein, capitalized, from either source', () => {
+    expect(trialIdentityLabel({ ...base, trialProtein: { protein: 'rabbit', source: 'owner' } }))
+      .toBe('Rabbit trial');
+    expect(trialIdentityLabel({ ...base, trialProtein: { protein: 'rabbit', source: 'derived' } }))
+      .toBe('Rabbit trial');
+  });
+
+  it('falls back to "Diet trial" when nothing resolves — never a "no protein" claim', () => {
+    expect(trialIdentityLabel({ ...base, trialProtein: { protein: null, source: null } }))
+      .toBe('Diet trial');
+    expect(trialIdentityLabel({ ...base })).toBe('Diet trial');
+    expect(trialIdentityLabel(null)).toBe('Diet trial');
+  });
+});
+
+describe('B-704 card + strip render the protein identity', () => {
+  const withProtein = (over: Partial<TrialCardInput> = {}): TrialCardInput => {
+    const inp = activeInput(over);
+    return { ...inp, trial: { ...inp.trial!, trialProtein: { protein: 'rabbit', source: 'owner' } } };
+  };
+
+  it('the active card kicker leads with the protein', () => {
+    expect(resolveTrialCard(withProtein()).kicker).toBe('Rabbit trial');
+  });
+
+  it('the strip header leads with the protein, then the day suffix', () => {
+    const strip = resolveTrialStrip(withProtein());
+    expect(strip?.header).toBe('Rabbit trial · day 23 of 56');
+  });
+
+  it('the completed kicker keeps the protein identity', () => {
+    const model = resolveTrialCard(withProtein({
+      trial: {
+        status: 'completed', startedAt: '2026-07-03', endedAt: '2026-08-27',
+        targetDurationDays: 56, foodLabel: FOOD, outcome: 'improved',
+        trialProtein: { protein: 'rabbit', source: 'owner' },
+      },
+      nowMs: localNoon(2026, 8, 28),
+    }));
+    expect(model.kicker).toBe('Rabbit trial · finished');
+  });
+
+  it('unchanged fallback — no protein leaves the kicker and header as "Diet trial"', () => {
+    expect(resolveTrialCard(activeInput()).kicker).toBe('Diet trial');
+    expect(resolveTrialStrip(activeInput())?.header).toBe('Diet trial · day 23 of 56');
+  });
+
+  it('the food label is untouched by the naming — it stays the line below', () => {
+    expect(resolveTrialCard(withProtein()).foodLabel).toBe(FOOD);
   });
 });

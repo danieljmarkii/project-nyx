@@ -1,0 +1,917 @@
+<title>Culprit — Signal &amp; Home design exploration</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  /* ============================================================
+     Signal / Home design exploration — B-721 (filed as B-718), mock ROUND 2.
+     Supersedes round 1 (2026-08-06): the PM's 14 on-the-fly
+     reactions are folded in, and the change-over-time question
+     went to a negotiated ruling with Dr. Chen — the Change
+     Contract (§03). Round 1's household frame is dead (cut), its
+     week-grid is dead (de-calendared), and §02 is rebuilt with
+     plain markup after failing to render on the PM's device.
+
+     Document chrome follows the house mock convention; DEVICE
+     FRAMES stay light in both themes — they render the app's
+     shipping light surfaces. Frame values are real tokens from
+     constants/theme.ts.
+     ============================================================ */
+
+  :root {
+    --paper:      #F5F4F9;
+    --paper-2:    #FFFFFF;
+    --ink:        #1B1A2E;
+    --ink-2:      #5F5C7A;
+    --ink-3:      #8B87A8;
+    --rule:       #DEDCE9;
+    --rule-soft:  #E9E7F1;
+    --teal:       #00C2A8;   /* theme.colorAccent */
+    --teal-ink:   #0B7B6C;   /* theme.colorAccentInk */
+    --teal-wash:  #E0FBF7;   /* theme.colorAccentLight */
+    --rose:       #F43F5E;   /* theme.colorEventSymptom */
+    --rose-ink:   #B4123B;
+    --rose-wash:  #FFE4E6;
+    --med:        #5B7A9E;   /* theme.colorEventMedication */
+    --med-wash:   #EAF0F7;
+
+    --serif: ui-serif, Charter, "Bitstream Charter", "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper:     #13112E;
+      --paper-2:   #1D1A42;
+      --ink:       #ECEAF6;
+      --ink-2:     #A6A2CE;
+      --ink-3:     #706BA6;
+      --rule:      rgba(196,190,255,0.20);
+      --rule-soft: rgba(196,190,255,0.11);
+      --teal-ink:  #4FD8C4;
+      --teal-wash: rgba(0,194,168,0.14);
+      --rose-ink:  #FB7185;
+      --rose-wash: rgba(251,113,133,0.14);
+      --med:       #93B0CE;
+      --med-wash:  rgba(91,122,158,0.18);
+    }
+  }
+  :root[data-theme="light"] {
+    --paper: #F5F4F9; --paper-2: #FFFFFF; --ink: #1B1A2E; --ink-2: #5F5C7A;
+    --ink-3: #8B87A8; --rule: #DEDCE9; --rule-soft: #E9E7F1;
+    --teal-ink: #0B7B6C; --teal-wash: #E0FBF7;
+    --rose-ink: #B4123B; --rose-wash: #FFE4E6;
+    --med: #5B7A9E; --med-wash: #EAF0F7;
+  }
+  :root[data-theme="dark"] {
+    --paper: #13112E; --paper-2: #1D1A42; --ink: #ECEAF6; --ink-2: #A6A2CE;
+    --ink-3: #706BA6; --rule: rgba(196,190,255,0.20); --rule-soft: rgba(196,190,255,0.11);
+    --teal-ink: #4FD8C4; --teal-wash: rgba(0,194,168,0.14);
+    --rose-ink: #FB7185; --rose-wash: rgba(251,113,133,0.14);
+    --med: #93B0CE; --med-wash: rgba(91,122,158,0.18);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--paper); color: var(--ink);
+    font-family: var(--sans); font-size: 16px; line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 56px 28px 96px; }
+  .col  { max-width: 68ch; }
+
+  .mast { border-bottom: 1px solid var(--rule); padding-bottom: 28px; margin-bottom: 40px; }
+  .eyebrow {
+    font-family: var(--mono); font-size: 11px; letter-spacing: 0.14em;
+    text-transform: uppercase; color: var(--ink-3); margin: 0 0 14px;
+    display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center;
+  }
+  h1 {
+    font-family: var(--serif); font-weight: 600; font-size: clamp(30px, 4.4vw, 44px);
+    line-height: 1.12; letter-spacing: -0.015em; margin: 0 0 14px; text-wrap: balance;
+  }
+  .standfirst { font-size: 17px; color: var(--ink-2); margin: 0; max-width: 62ch; }
+  .standfirst strong { color: var(--ink); font-weight: 600; }
+  .roundtag {
+    display: inline-flex; align-items: center; gap: 7px;
+    font-family: var(--mono); font-size: 11px; letter-spacing: 0.1em;
+    text-transform: uppercase; font-weight: 600;
+    color: var(--teal-ink); background: var(--teal-wash);
+    border-radius: 999px; padding: 4px 11px;
+  }
+  .roundtag b { font-weight: 700; }
+
+  section { margin-top: 72px; }
+  .sec-head { display: flex; align-items: baseline; gap: 14px; margin-bottom: 8px; border-top: 1px solid var(--rule); padding-top: 18px; }
+  .sec-num { font-family: var(--mono); font-size: 12px; color: var(--ink-3); letter-spacing: 0.08em; flex-shrink: 0; }
+  h2 { font-family: var(--serif); font-weight: 600; font-size: clamp(22px, 2.6vw, 28px); line-height: 1.2; letter-spacing: -0.01em; margin: 0; text-wrap: balance; }
+  h3 { font-weight: 600; font-size: 15px; margin: 32px 0 8px; }
+  p { margin: 0 0 16px; }
+  .col p:last-child { margin-bottom: 0; }
+  em { font-style: italic; color: var(--ink-2); }
+  strong { font-weight: 600; }
+  code { font-family: var(--mono); font-size: 0.855em; background: var(--rule-soft); border-radius: 4px; padding: 1px 5px; }
+  .callout { border-left: 2px solid var(--teal); padding: 2px 0 2px 20px; margin: 24px 0; color: var(--ink-2); font-size: 15.5px; }
+  .callout strong { color: var(--ink); }
+  .callout.warn { border-left-color: var(--rose); }
+
+  /* rulings from round 1 */
+  .ruling {
+    margin: 28px 0 8px; padding: 26px 30px;
+    background: var(--paper-2); border: 1px solid var(--rule); border-radius: 3px;
+  }
+  .ruling .lede { font-family: var(--mono); font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-3); margin: 0 0 16px; }
+  .ruling ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 10px; }
+  .ruling li { font-size: 14.5px; color: var(--ink-2); padding-left: 18px; position: relative; }
+  .ruling li::before { content: "·"; position: absolute; left: 2px; color: var(--teal-ink); font-weight: 700; }
+  .ruling li strong { color: var(--ink); }
+
+  /* tables */
+  .tablewrap { overflow-x: auto; margin: 24px 0; }
+  table.verdicts { border-collapse: collapse; width: 100%; min-width: 640px; font-size: 14px; }
+  table.verdicts th, table.verdicts td { text-align: left; padding: 9px 14px 9px 0; border-bottom: 1px solid var(--rule-soft); vertical-align: top; }
+  table.verdicts th { font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-3); font-weight: 600; }
+  table.verdicts td:first-child { font-weight: 600; white-space: nowrap; }
+  .v-love { color: var(--teal-ink); font-weight: 600; }
+  .v-no   { color: var(--rose-ink); font-weight: 600; }
+  .v-cond { color: var(--ink-2); font-weight: 600; }
+  .mono-chip { font-family: var(--mono); font-size: 12px; background: var(--rule-soft); border-radius: 5px; padding: 1px 7px; white-space: nowrap; }
+
+  /* spine — plain markup, no CSS counters (round-1 §02 failed to render on-device) */
+  ul.spine { margin: 24px 0 0; padding: 0; list-style: none; display: grid; gap: 14px; }
+  ul.spine li { display: flex; gap: 12px; font-size: 15px; color: var(--ink-2); align-items: flex-start; }
+  ul.spine li > span:last-child { flex: 1; }
+  .sid {
+    flex: none; font-family: var(--mono); font-size: 12px; font-weight: 600;
+    color: var(--teal-ink); background: var(--teal-wash); border-radius: 6px;
+    padding: 2px 8px; margin-top: 1px; display: inline-block;
+  }
+  ul.spine li strong { color: var(--ink); }
+
+  /* rung ladder */
+  .ladder { display: grid; gap: 12px; margin: 28px 0 8px; }
+  .rung { background: var(--paper-2); border: 1px solid var(--rule); border-radius: 3px; padding: 20px 24px; display: grid; grid-template-columns: 120px 1fr; gap: 18px; }
+  @media (max-width: 640px) { .rung { grid-template-columns: 1fr; } }
+  .rung .tag { font-family: var(--mono); font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-3); font-weight: 600; line-height: 1.9; }
+  .rung .tag b { display: block; font-family: var(--serif); font-size: 21px; letter-spacing: -0.01em; color: var(--ink); text-transform: none; font-weight: 600; }
+  .rung p { font-size: 14.5px; color: var(--ink-2); margin: 0; }
+  .rung p strong { color: var(--ink); }
+  .cost { font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; margin-top: 8px; color: var(--ink-3); display: block; }
+
+  /* ── Phone frames ─────────────────────────────────────────── */
+  .frames { display: flex; flex-wrap: wrap; gap: 36px 28px; margin-top: 32px; align-items: flex-start; }
+  .frame-slot { width: 316px; max-width: 100%; }
+  .frame-slot.wide { width: 100%; max-width: 720px; }
+  .frame-cap { margin: 14px 2px 0; font-size: 13.5px; color: var(--ink-2); line-height: 1.5; }
+  .frame-cap b { color: var(--ink); font-weight: 600; display: block; margin-bottom: 2px; font-size: 13px; }
+  .frame-cap .fnote { color: var(--ink-3); font-size: 12.5px; }
+
+  .phone {
+    width: 316px; max-width: 100%; background: #F2F2F4; border-radius: 34px;
+    border: 1px solid rgba(27,26,46,0.16); box-shadow: 0 18px 44px rgba(19,17,46,0.16);
+    padding: 12px 12px 20px; color: #1A1A24; font-family: var(--sans);
+  }
+  .notch { width: 96px; height: 22px; background: #0B0B12; border-radius: 12px; margin: 0 auto 10px; }
+  .appbody { display: grid; gap: 12px; }
+
+  .apphead { background: #FFFFFF; border-radius: 18px; padding: 12px 14px 10px; }
+  .apphead .chrome { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+  .brandrow { display: flex; align-items: center; gap: 6px; }
+  .crescent { width: 15px; height: 15px; }
+  .crescent svg { display: block; }
+  .wordmark { font-family: var(--serif); font-weight: 600; font-size: 13.5px; letter-spacing: -0.02em; color: #211E4E; }
+  .avatar { width: 26px; height: 26px; border-radius: 50%; background: linear-gradient(135deg,#C9C5E6,#8B87A8); }
+  .petrow { display: flex; align-items: center; gap: 9px; }
+  .petavatar { width: 32px; height: 32px; border-radius: 50%; background: linear-gradient(135deg,#4A4668,#211E4E); display:flex; align-items:center; justify-content:center; color:#F2EEE4; font-size:13px; font-weight:600; }
+  .petname { font-weight: 600; font-size: 16px; color: #1A1A24; }
+  .petsub { font-size: 10.5px; color: #8B87A8; }
+
+  .acard { background: #FFFFFF; border-radius: 18px; padding: 14px 14px 12px; box-shadow: 0 2px 10px rgba(19,17,46,0.05); }
+  .minicard { background: #FFFFFF; border-radius: 14px; padding: 12px; box-shadow: 0 2px 10px rgba(19,17,46,0.06); border: 1px solid #EFEEF4; }
+  .seclabel { font-size: 10px; font-weight: 600; letter-spacing: 0.13em; text-transform: uppercase; color: #8B87A8; margin-bottom: 8px; }
+  .seclabel.dim { color: #B9B6CC; }
+
+  .irow { display: flex; gap: 9px; padding: 8px 0; }
+  .irow + .irow { border-top: 1px solid #F0EFF5; }
+  .rail { width: 3px; border-radius: 2px; flex-shrink: 0; opacity: 0.85; }
+  .rail.safety { background: #F43F5E; }
+  .rail.insight { background: #00C2A8; }
+  .rail.ghost { background: #DDDBE8; }
+  .ibody { flex: 1; min-width: 0; }
+  .lead { font-family: var(--serif); font-size: 19.5px; line-height: 1.32; letter-spacing: -0.012em; color: #1A1A24; margin: 0 0 6px; }
+  .lead.big { font-size: 21.5px; }
+  .sent { font-size: 13.5px; line-height: 1.45; color: #1A1A24; margin: 0 0 6px; }
+  .sent.ghost { color: #8B87A8; }
+  .meta { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; margin-top: 5px; }
+  .badge { font-size: 9.5px; font-weight: 600; letter-spacing: 0.04em; color: #5F5C7A; background: #F0EFF5; border-radius: 999px; padding: 2px 8px; }
+  .chip-new { font-size: 9.5px; font-weight: 600; letter-spacing: 0.04em; color: #0B7B6C; background: #E0FBF7; border-radius: 999px; padding: 2px 8px; }
+  .chip-pair { font-family: var(--mono); font-size: 10px; font-weight: 600; color: #5F5C7A; background: #F0EFF5; border-radius: 999px; padding: 2px 8px; font-variant-numeric: tabular-nums; }
+  .chip-pair.rise { color: #B4123B; background: #FFE4E6; }
+  .sample { font-size: 10.5px; color: #8B87A8; }
+  .whylink { font-size: 10.5px; font-weight: 600; color: #00C2A8; margin-top: 6px; }
+  .ctxline { font-size: 10.5px; color: #8B87A8; margin-top: 5px; }
+  .ctxline .pill { display:inline-block; width: 7px; height: 7px; border-radius: 2px; background: #5B7A9E; margin-right: 4px; vertical-align: 1px; }
+
+  /* evidence strips */
+  .estrip { margin: 7px 0 2px; }
+  .e-axis { display: flex; justify-content: space-between; font-size: 8.5px; color: #B9B6CC; margin-top: 3px; }
+  .lane { position: relative; height: 22px; background: #FAFAFC; border: 1px solid #F0EFF5; border-radius: 6px; }
+  .lane.ghosted { border-style: dashed; background: transparent; }
+  .lane .band { position: absolute; top: 0; bottom: 0; border-radius: 5px; background: rgba(0,194,168,0.10); border-right: 1px dashed rgba(0,194,168,0.5); }
+  .lane.ghosted .band { background: rgba(0,194,168,0.05); }
+  .dot { position: absolute; top: 50%; width: 7px; height: 7px; border-radius: 50%; transform: translate(-50%,-50%); background: #F43F5E; }
+  .dot.out { background: #C9C5E6; }
+  .dot.hollow { background: transparent; border: 1.5px solid #C9C5E6; }
+
+  .bins { display: flex; align-items: flex-end; gap: 2px; height: 30px; }
+  .bins i { flex: 1; background: #F43F5E; opacity: 0.75; border-radius: 2px 2px 0 0; }
+  .bins i.lo { background: #E9E7F1; opacity: 1; }
+
+  .cmprow { display: grid; grid-template-columns: 76px 1fr 34px; gap: 8px; align-items: center; font-size: 10.5px; color: #5F5C7A; margin-top: 5px; }
+  .cmprow .bar { height: 8px; border-radius: 4px; background: #F0EFF5; position: relative; overflow: hidden; }
+  .cmprow .bar i { position: absolute; inset: 0 auto 0 0; border-radius: 4px; background: #F43F5E; opacity: 0.85; }
+  .cmprow .bar i.calm { background: #00C2A8; }
+  .cmprow .n { text-align: right; font-variant-numeric: tabular-nums; color: #8B87A8; font-size: 10px; }
+
+  .evid { background: #FAFAFC; border: 1px solid #F0EFF5; border-radius: 10px; padding: 9px 10px; margin-top: 8px; }
+  .evid .et { font-size: 9px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: #8B87A8; margin-bottom: 5px; }
+  .evid p { font-size: 11px; line-height: 1.5; color: #5F5C7A; margin: 0 0 6px; }
+  .evid p:last-child { margin: 0; }
+  .evid p.adj { font-style: italic; }
+  .script { list-style: none; padding: 0; margin: 0; }
+  .script li { font-size: 11px; color: #1A1A24; margin: 0 0 3px; }
+
+  .quiet { font-size: 12.5px; color: #5F5C7A; padding: 4px 0 2px; }
+  .footlink { border-top: 1px solid #F0EFF5; margin-top: 8px; padding-top: 8px; font-size: 11.5px; font-weight: 600; color: #00C2A8; }
+  .footlink.dim { color: #7BD8C9; }
+
+  .strip { background: #FFFFFF; border-radius: 18px; padding: 12px 14px; box-shadow: 0 2px 10px rgba(19,17,46,0.05); }
+  .strip .h { display: flex; justify-content: space-between; font-size: 12.5px; font-weight: 600; color: #1A1A24; }
+  .strip .h span:last-child { color: #C9C5E6; }
+  .track { height: 4px; border-radius: 2px; background: #F0F0F0; margin-top: 8px; overflow: hidden; position: relative; }
+  .track i { position: absolute; inset: 0 auto 0 0; background: #00C2A8; border-radius: 2px; }
+  .strip .s { font-size: 10.5px; color: #8B87A8; margin-top: 6px; }
+
+  .todayrow { display: flex; align-items: center; gap: 9px; padding: 6px 0; font-size: 12px; color: #1A1A24; }
+  .todayrow + .todayrow { border-top: 1px solid #F0EFF5; }
+  .evicon { width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 11px; }
+  .evicon.meal { background: #E0FBF7; }
+  .evicon.sym { background: #FFE4E6; }
+  .todayrow .t { margin-left: auto; font-size: 10px; color: #8B87A8; font-variant-numeric: tabular-nums; }
+
+  .banner { background: #FFF7ED; border: 1px solid #FED7AA; border-radius: 14px; padding: 9px 12px; font-size: 11.5px; color: #7C2D12; }
+
+  .ackline { display: flex; align-items: center; gap: 7px; font-size: 11px; color: #0B7B6C; padding: 2px 0 6px; }
+  .ackline .adot { width: 7px; height: 7px; border-radius: 50%; background: #00C2A8; }
+
+  /* alternates row + sequence */
+  .altrow { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-top: 24px; }
+  .altcell { background: var(--paper-2); border: 1px solid var(--rule); border-radius: 3px; padding: 14px; }
+  .altcell .al { font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 10px; font-weight: 600; }
+  .altcell .an { font-size: 12.5px; color: var(--ink-2); margin-top: 10px; line-height: 1.45; }
+  .altcell .appzone { background: #FFFFFF; border: 1px solid #EFEEF4; border-radius: 10px; padding: 10px; color: #1A1A24; }
+
+  .seq { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 16px; margin-top: 24px; }
+  .seqcell { display: grid; gap: 8px; }
+  .seqlab { font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-3); font-weight: 600; }
+
+  .prompts { margin-top: 28px; display: grid; border: 1px solid var(--rule); border-radius: 3px; background: var(--paper-2); }
+  .prompt { display: grid; grid-template-columns: 64px 1fr; gap: 16px; padding: 18px 22px; border-top: 1px solid var(--rule-soft); }
+  .prompt:first-child { border-top: 0; }
+  .prompt .pid { font-family: var(--mono); font-size: 12px; font-weight: 600; color: var(--teal-ink); }
+  .prompt p { margin: 0; font-size: 15px; color: var(--ink-2); }
+  .prompt p strong { color: var(--ink); }
+
+  .provenance { margin-top: 72px; border-top: 1px solid var(--rule); padding-top: 18px; font-size: 13px; color: var(--ink-3); }
+  .provenance code { font-size: 12px; }
+</style>
+
+<div class="wrap">
+
+  <header class="mast">
+    <p class="eyebrow">
+      <span>Culprit</span><span>Signal &amp; Home design exploration</span><span>B-721</span><span>2026-08-07</span>
+      <span class="roundtag"><b>Round 2.1 — FINAL</b>&nbsp;· design-locked 2026-08-07 · supersedes round 1</span>
+    </p>
+    <h1>Round 2: the Change Contract,<br/>selective receipts, and the empty state that earns trust.</h1>
+    <p class="standfirst">
+      Round 1's frames drew the ladder; your 14 reactions redrew it. The big move this round:
+      <strong>change-over-time is in</strong> — Dr. Chen co-designed the version we can live with (§03), built on
+      one idea: <strong>a count pair is time's arrow, not a verdict's.</strong> Also in: receipts now have to earn
+      their place (S10), the rough morning got lighter, the weekly review lost its calendar, the household Home is
+      cut, and the empty state gets drawn like the feature it is. React with R2-1…R2-6 at the end.
+    </p>
+  </header>
+
+  <!-- ══════════════════ 1 · ROUND-1 RULINGS ══════════════════ -->
+  <section>
+    <div class="sec-head"><span class="sec-num">01</span><h2>What round 1 settled</h2></div>
+    <div class="ruling">
+      <p class="lede">PM reactions, 2026-08-07 — recorded as rulings</p>
+      <ul>
+        <li><strong>Change over time ships.</strong> "Both personas said it was their top priority… be consumer centric; work with Dr. Chen to get to a version we can live with." → §03.</li>
+        <li><strong>The dot strip is not the old heatmap.</strong> "Closer almost to a distribution curve — uber uber informative." The distribution <em>shape</em> is the value.</li>
+        <li><strong>Receipts must earn their place.</strong> "Not all cards need receipts. We can use our judgement." → new spine rule S10; also applied to the briefing ("even text can be information carrying — 3a feels dense").</li>
+        <li><strong>Expanded-state data-vis: liked.</strong> The two-sided evidence and the phone-call script stay.</li>
+        <li><strong>The register (2a): liked.</strong> Alternates explored this round; any image that isn't a value-add gets punted.</li>
+        <li><strong>Stacked before/after: "awesome."</strong> Promoted to the house treatment for comparison-shaped findings.</li>
+        <li><strong>Weekly review: de-calendared.</strong> "We typically suck at calendars." The week now composes as sentences + the stacked compare, no grid.</li>
+        <li><strong>Household Home: cut.</strong> "Let's not co-mingle households." Cross-pet stays banner-injection-shaped — kept and embraced.</li>
+        <li><strong>Ships behind a beta flag</strong>, account-gated via the B-712 allowlist primitive (the <code>widget_enabled</code> shape) — build contract, §07.</li>
+        <li><strong>The empty state is a first-class deliverable.</strong> "It's going to take us a moment to create a signal, so the empty state must inspire confidence." → §06.</li>
+      </ul>
+    </div>
+    <div class="col">
+      <p class="callout"><strong>Round-1 §02 didn't render on your phone</strong> — the spine's numbered chips were
+      drawn with CSS counters, which is the likely casualty. This round's spine (§02) uses plain markup that cannot
+      fail. If §02 still misbehaves on your device, say so and I'll chase it as a renderer bug instead.</p>
+    </div>
+  </section>
+
+  <!-- ══════════════════ 2 · THE SPINE (rebuilt) ══════════════════ -->
+  <section>
+    <div class="sec-head"><span class="sec-num">02</span><h2>The spine — now ten rules</h2></div>
+    <div class="col">
+      <p>The standing rules every frame obeys. S5 is rewritten by the Change Contract; S10 is your selective-receipts
+      ruling, generalized.</p>
+      <ul class="spine">
+        <li><span class="sid">S1</span><span><strong>The register drop.</strong> Safety cards stay austere — text, rail, sample line, and (new, §03) at most one count-anchored chip. No evidence graphic on the card face, no motion, no decorative ground. As benign cards get richer, plainness itself signals severity.</span></li>
+        <li><span class="sid">S2</span><span><strong>The control-side rule.</strong> No evidence visual ships numerator-only. If the control margin doesn't fit on the card, the visual moves to the expanded state where it does.</span></li>
+        <li><span class="sid">S3</span><span><strong>No borrowed authority.</strong> No composite scores, contributor bars, meters, or percentages. The sample line is the honest confidence display.</span></li>
+        <li><span class="sid">S4</span><span><strong>No hero numbers.</strong> The sentence stays the headline; counts stay subordinate with their qualifiers attached.</span></li>
+        <li><span class="sid">S5</span><span><strong>Change is counted, never verdicted.</strong> Change renders as a time-ordered count pair with a unit — <code>2 → 5 days</code> — per the Change Contract (§03). No direction words, no ↑/↓, no percentages; the reader computes the direction. Falling pairs render on the insight lane only, density-gated.</span></li>
+        <li><span class="sid">S6</span><span><strong>Quiet is labeled.</strong> A presence-gated surface renders absence as one explicit line, never as silent shortening.</span></li>
+        <li><span class="sid">S7</span><span><strong>The record stays in daylight.</strong> No night grounds on the Signal or any record surface; night remains the working-on-the-pet's-behalf register.</span></li>
+        <li><span class="sid">S8</span><span><strong>Grazer-honest intake visuals.</strong> Day-level, drawn against the pet's own baseline band, never event-level activity.</span></li>
+        <li><span class="sid">S9</span><span><strong>Evidence one gesture away.</strong> Card face = sentence + glance evidence; tap = the mechanism; the safety tap = the phone-call script.</span></li>
+        <li><span class="sid">S10</span><span><strong>A receipt must earn its place.</strong> A strip renders only when its <em>shape</em> says something the sentence can't — clustering, distribution, a compared pair. A finding whose evidence is fully carried by its sample line stays sentence-only. Judgment per finding, not a template.</span></li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ══════════════════ 3 · THE CHANGE CONTRACT ══════════════════ -->
+  <section>
+    <div class="sec-head"><span class="sec-num">03</span><h2>The Change Contract — negotiated with Dr. Chen</h2></div>
+    <div class="col">
+      <p>Your directive: consumer-centric, work with Dr. Chen to a version we can live with. The negotiation closed
+      on one insight: <strong>his own sanctioned sentence — "5 days this week, up from 2" — already <em>is</em>
+      change-over-time.</strong> What he vetoed was the arrow, which asserts direction without magnitude. A
+      time-ordered count pair asserts only the record: <code>2 → 5</code> flattens nothing (2→3 and 2→9 read
+      differently), so it carries <em>more</em> information with <em>less</em> alarm. The "→" between two counts is
+      time's arrow, not a verdict's.</p>
+      <p>Five rules govern every chip: it may only <strong>compress the card's sample line</strong> (no new claim at
+      the glance layer); it renders <strong>counts, never verdicts</strong>; it names <strong>the axis that rose</strong>
+      (days vs episodes); it is <strong>server-computed, one predicate</strong> (the engine compares against the prior
+      cached finding set — the client stays dumb); and every string is <strong>test-asserted</strong> through the same
+      guardrail screens as the rest of the surface, with the full sentence as the a11y label.</p>
+      <p class="callout"><strong>RULED (round 2 → v1.1): the pair-chips are out — the sentence carries the change.</strong>
+      Your CC-2 pick (baseline, "more streamlined") + CC-1's density read resolve the presentation: everything semantic
+      in the table below stands (engine-computed change, count-anchored language, the density gate, the vetoes — all
+      inside Dr. Chen's sanctioned envelope), but it renders <em>in the sentence</em>, where the shipped templates
+      already put it ("up from 2 the week before"). The chip inventory shrinks to two: the existing
+      <code>Early pattern</code> tag and a small <code>New</code> — the one fact a sentence doesn't naturally carry.
+      S10 now governs the meta row too: nothing renders there that duplicates the sentence.</p>
+    </div>
+    <div class="tablewrap">
+      <table class="verdicts">
+        <tr><th>Finding</th><th>Lane</th><th>Change treatment</th><th>Ships</th></tr>
+        <tr><td>Symptom worsening</td><td>Safety</td><td><span class="mono-chip">2 → 5 days</span> / <span class="mono-chip">1 → 4 episodes</span> — the trigger axis</td><td>v1 (payload exists)</td></tr>
+        <tr><td>Intake decline (ongoing)</td><td>Safety</td><td><span class="mono-chip">Day 3</span> — the change is that it's still going</td><td>v1</td></tr>
+        <tr><td>Chronicity</td><td>Safety</td><td><span class="mono-chip">Since March · last 2d ago</span> — duration + recency, never a week-pair</td><td>v1</td></tr>
+        <tr><td>Reflection (fewer / flat)</td><td>Insight</td><td><span class="mono-chip">5 → 2 episodes</span> — density-gated when falling</td><td>v1</td></tr>
+        <tr><td>Correlation</td><td>Insight</td><td>Tier tag is the vocabulary; one-render <span class="mono-chip">Now established</span> transition</td><td>tag v1 · transition v2</td></tr>
+        <tr><td>Timing / time-of-day</td><td>Insight</td><td><span class="mono-chip">New</span> only — fraction-pairs vetoed as unglanceable</td><td>v2 (needs prior-set memory)</td></tr>
+        <tr><td>Photo red flag</td><td>Safety</td><td><strong>None</strong> — n of 1–3 photos; a trend chip there is noise in a trend costume</td><td>—</td></tr>
+        <tr><td>Any type, first appearance</td><td>Both</td><td><span class="mono-chip">New</span> — replaces the pair when prior is zero (<code>0 → 4</code> fakes precision)</td><td>worsening v1 · rest v2</td></tr>
+      </table>
+    </div>
+    <div class="col">
+      <p><strong>Why the safety lane is safe now:</strong> a safety finding can only rise or stop rendering — a falling
+      trend never fires the detector, so resolution is disappearance, and disappearance is silence, not a claim. The
+      lane structure carries the asymmetry that made arrows dangerous. "Resolved" stays vetoed (an all-clear inferred
+      from absence). <strong>The fading problem:</strong> falling pairs are count-anchored, never worded — and during
+      an active diet trial the expanded state appends one sentence: <em>"A quieter week partway through a diet trial
+      isn't the trial's verdict — the full run is what makes it readable."</em> <strong>The density rule:</strong> a
+      falling pair renders only when week-over-week logging density is comparable (falling density flatters, so the
+      flattering render is what gets suppressed); a rising safety pair is never suppressed; the disclosure line lives
+      one tap deep.</p>
+      <p class="callout"><strong>Dr. Chen, to you:</strong> "I gave ground on three things: change states on the safety
+      lane at all, a glyph on safety cards, and a rendered weakening state during a trial. All three are safe because
+      nothing new is claimed anywhere — every chip is a lossless compression of a sentence I had already sanctioned…
+      This is the version I can defend to a colleague reading the card cold." Residual vetoes (small, named): ↑/↓ and
+      slope glyphs, percentages, verdict words, chips on photo flags, week-pairs on chronicity, "Resolved."</p>
+    </div>
+    <div class="frames">
+      <div class="frame-slot">
+        <div class="phone">
+          <div class="notch"></div>
+          <div class="appbody">
+            <div class="acard">
+              <div class="seclabel">Signal</div>
+              <div class="irow">
+                <span class="rail safety"></span>
+                <div class="ibody">
+                  <p class="lead">Nyx's vomiting came on 5 days this week, up from 2 the week before.</p>
+                  <div class="meta"><span class="chip-pair rise">2 → 5 days</span><span class="sample">9 episodes · last 14 days</span></div>
+                  <p class="whylink">Why we're showing this</p>
+                </div>
+              </div>
+              <div class="irow">
+                <span class="rail safety"></span>
+                <div class="ibody">
+                  <p class="sent">Nyx has been vomiting on and off since March — most recently 2 days ago.</p>
+                  <div class="meta"><span class="chip-pair">Since March · last 2d ago</span><span class="sample">14 episodes · 5 of 6 weeks</span></div>
+                </div>
+              </div>
+              <div class="irow">
+                <span class="rail insight"></span>
+                <div class="ibody">
+                  <p class="sent">Vomiting was logged less this week — 2 episodes, 5 the week before.</p>
+                  <div class="meta"><span class="chip-pair">5 → 2 episodes</span><span class="sample">Logging steady, 6 of 7 days</span></div>
+                  <div class="evid">
+                    <div class="et">Counted honestly</div>
+                    <p>Counted from days you logged: 6 this week, 5 last — the drop isn't a logging gap.</p>
+                    <p class="adj">A quieter week partway through a diet trial isn't the trial's verdict — the full run is what makes it readable.</p>
+                  </div>
+                  <p class="whylink">Hide details</p>
+                </div>
+              </div>
+              <div class="footlink dim">See all of Nyx's patterns →</div>
+            </div>
+          </div>
+        </div>
+        <p class="frame-cap"><b>CC-1 — The contract on one card</b>
+        Top: a rising safety pair wears the rose-tinted chip — magnitude and baseline in nine characters, no verdict.
+        Middle: chronicity carries duration + recency, never a week-pair. Bottom: a falling insight pair, expanded to
+        show the density line and the mid-trial adjacency sentence.
+        <span class="fnote">The chip-form sub-call is rendered below (CC-2) — pick from the frames, not the words.</span></p>
+      </div>
+    </div>
+
+    <h3>CC-2 — The chip form, side by side (R2-1's sub-call)</h3>
+    <div class="altrow">
+      <div class="altcell">
+        <div class="al">Baseline — no chip · <span style="color:var(--teal-ink);">ruled — this ships</span></div>
+        <div class="appzone">
+          <div class="irow" style="border-top:0; padding:2px 0;">
+            <span class="rail safety"></span>
+            <div class="ibody">
+              <p class="sent">Nyx's vomiting came on 5 days this week, up from 2 the week before.</p>
+              <div class="meta"><span class="sample">9 episodes · last 14 days</span></div>
+            </div>
+          </div>
+        </div>
+        <p class="an">The sentence already carries the change — the chip question is whether the glance layer repeats it. If neither form below beats this, the honest answer is no chip.</p>
+      </div>
+      <div class="altcell">
+        <div class="al">Form A — <span style="text-transform:none;">2 → 5 days</span> · not adopted</div>
+        <div class="appzone">
+          <div class="irow" style="border-top:0; padding:2px 0;">
+            <span class="rail safety"></span>
+            <div class="ibody">
+              <p class="sent">Nyx's vomiting came on 5 days this week, up from 2 the week before.</p>
+              <div class="meta"><span class="chip-pair rise">2 → 5 days</span><span class="sample">9 episodes · last 14 days</span></div>
+            </div>
+          </div>
+        </div>
+        <p class="an">Nine characters, time-ordered, scans without reading. The arrow is doing time, not judgment — and it survives the color-scan habit Jordan described (rose tint on a rising safety pair).</p>
+      </div>
+      <div class="altcell">
+        <div class="al">Form B — worded pair · not adopted</div>
+        <div class="appzone">
+          <div class="irow" style="border-top:0; padding:2px 0;">
+            <span class="rail safety"></span>
+            <div class="ibody">
+              <p class="sent">Nyx's vomiting came on 5 days this week, up from 2 the week before.</p>
+              <div class="meta"><span class="chip-pair rise">2 last wk · 5 this wk</span><span class="sample">9 episodes · last 14 days</span></div>
+            </div>
+          </div>
+        </div>
+        <p class="an">No glyph at all — but twice the width, and the eye has to read it as a sentence, which the sentence above already is. Wins only if the → still reads as a verdict to you.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════════════ 4 · RECEIPTS, SELECTIVELY ══════════════════ -->
+  <section>
+    <div class="sec-head"><span class="sec-num">04</span><h2>Receipts, selectively — and the alternates</h2></div>
+    <div class="col">
+      <p>Round 1's rung-1 frames stand (the dot strip you read as a distribution curve, the two-sided expanded state,
+      the phone-call script). What changes under S10: <strong>not every finding gets a strip.</strong> The strip earns
+      its place when the shape carries information — clustering, spread, a compared pair. Where the sample line already
+      says everything ("4 of 5 chicken days"), the card stays sentence-only. Below: the three receipt shapes now in the
+      system, and which findings get which — including your ask to explore alternates for the timing evidence.</p>
+    </div>
+    <div class="altrow">
+      <div class="altcell">
+        <div class="al">Shape A — dot lane (round 1)</div>
+        <div class="appzone">
+          <div class="estrip">
+            <div class="lane">
+              <span class="band" style="left:0; width:26%;"></span>
+              <span class="dot" style="left:6%"></span><span class="dot" style="left:11%"></span>
+              <span class="dot" style="left:16%"></span><span class="dot" style="left:20%"></span>
+              <span class="dot" style="left:24%"></span>
+              <span class="dot out" style="left:58%"></span><span class="dot out" style="left:87%"></span>
+            </div>
+            <div class="e-axis"><span>ate</span><span>30m</span><span>2h+</span></div>
+          </div>
+        </div>
+        <p class="an">Every episode is a real, countable mark — the exceptions stay visible. Best when n is small enough to see individual events (≤ ~10). This is the one you read as a distribution.</p>
+      </div>
+      <div class="altcell">
+        <div class="al">Shape B — binned bars · <span style="color:var(--rose-ink);">cut (round-2 ruling)</span></div>
+        <div class="appzone">
+          <div class="estrip">
+            <div class="bins">
+              <i style="height:100%"></i><i style="height:62%"></i><i class="lo" style="height:14%"></i>
+              <i style="height:34%"></i><i class="lo" style="height:14%"></i><i style="height:34%"></i>
+            </div>
+            <div class="e-axis"><span>0–15m</span><span>1h</span><span>2h+</span></div>
+          </div>
+        </div>
+        <p class="an"><strong>Cut:</strong> "chunky, and gives less granular information than Shape A." The large-n fallback is re-ruled: when a dot lane outgrows countable dots, it degrades to <strong>Shape C</strong> (within-window vs outside, as stacked compare) — never to bins.</p>
+      </div>
+      <div class="altcell">
+        <div class="al">Shape C — stacked compare</div>
+        <div class="appzone">
+          <div class="estrip">
+            <div class="cmprow"><span>Before the switch</span><span class="bar"><i style="width:86%"></i></span><span class="n">6</span></div>
+            <div class="cmprow"><span>Since the switch</span><span class="bar"><i style="width:14%"></i></span><span class="n">1</span></div>
+          </div>
+        </div>
+        <p class="an">Your "awesome" — the house treatment for any comparison-shaped finding (trial before/after, week-over-week in expanded states). Both counts printed; nothing to decode.</p>
+      </div>
+    </div>
+    <div class="col">
+      <p class="callout"><strong>RULED (round 2):</strong> Shapes A + C only. Dot lane for timing and time-of-day at
+      v1 sample sizes (the exceptions are the honesty); stacked compare for comparison-shaped findings <em>and</em> as
+      the degradation target when a dot lane outgrows countable dots. Correlation and photo-flag cards stay
+      sentence-only (S10 — their sample lines already carry the whole story).</p>
+    </div>
+  </section>
+
+  <!-- ══════════════════ 5 · THE REGISTER + THE ACK SEQUENCE ══════════════════ -->
+  <section>
+    <div class="sec-head"><span class="sec-num">05</span><h2>The register, and the acknowledgment — now judgeable</h2></div>
+    <div class="col">
+      <p>2a (the one-big-thing lead, receded chrome, med-on-board line) stands as drawn in round 1 — you liked it, and
+      the alternates question is answered by §04's shape table. What you couldn't judge was <strong>2b, the
+      acknowledgment state</strong> — fair, one frozen frame said nothing. Here it is as the sequence it actually is:</p>
+    </div>
+    <div class="seq">
+      <div class="seqcell">
+        <span class="seqlab">1 · You log a vomit — 7:41a</span>
+        <div class="minicard">
+          <div class="seclabel dim">Signal</div>
+          <div class="irow" style="border-top:0; padding-top:2px;">
+            <span class="rail insight"></span>
+            <div class="ibody">
+              <p class="sent">Most of Nyx's vomiting has come within 30 minutes of eating — 5 of the 7 timed episodes this month.</p>
+              <div class="meta"><span class="sample">5 of 7 timed · median 18m</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="seqcell">
+        <span class="seqlab">2 · Back on Home, seconds later</span>
+        <div class="minicard">
+          <div class="seclabel dim">Signal</div>
+          <div class="ackline"><span class="adot"></span> Noted — updating Nyx's picture…</div>
+          <div class="irow" style="border-top:1px solid #F0EFF5; padding-top:8px;">
+            <span class="rail insight"></span>
+            <div class="ibody">
+              <p class="sent">Most of Nyx's vomiting has come within 30 minutes of eating — 5 of the 7 timed episodes this month.</p>
+              <div class="meta"><span class="sample">5 of 7 timed · median 18m</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="seqcell">
+        <span class="seqlab">3 · About a minute later</span>
+        <div class="minicard">
+          <div class="seclabel dim">Signal</div>
+          <div class="irow" style="border-top:0; padding-top:2px;">
+            <span class="rail insight"></span>
+            <div class="ibody">
+              <p class="sent">Most of Nyx's vomiting has come within 30 minutes of eating — 6 of the 8 timed episodes this month.</p>
+              <div class="estrip">
+                <div class="lane">
+                  <span class="band" style="left:0; width:26%;"></span>
+                  <span class="dot" style="left:6%"></span><span class="dot" style="left:11%"></span>
+                  <span class="dot" style="left:16%"></span><span class="dot" style="left:20%"></span>
+                  <span class="dot" style="left:24%"></span><span class="dot" style="left:14%"></span>
+                  <span class="dot out" style="left:58%"></span><span class="dot out" style="left:87%"></span>
+                </div>
+                <div class="e-axis"><span>ate</span><span>30m</span><span>2h+</span></div>
+              </div>
+              <div class="meta"><span class="sample">6 of 8 timed · median 17m</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="col">
+      <p class="frame-cap" style="max-width:none;"><b>2b′ — The acknowledgment, as a sequence</b>
+      The stale findings stay readable throughout (no spinner theater); one quiet line spans the gap between the log and
+      the debounced regeneration; then the count flips 5-of-7 → 6-of-8 and a new dot lands inside the band. Jordan's own
+      words for step 3: "It fit the pattern. It's not chaos, it's a thing with a shape. That's the moment I'm loyal to
+      this app." The design cost is one conditional line; the machinery (debounced regen) already ships. Keep or kill — R2-3.</p>
+    </div>
+  </section>
+
+  <!-- ══════════════════ 6 · THE BRIEFING, LIGHTER + EMPTY STATES ══════════════════ -->
+  <section>
+    <div class="sec-head"><span class="sec-num">06</span><h2>The briefing, lighter — and the empty states</h2></div>
+    <div class="col">
+      <p>Your 3a note — "not all components need to be graphs; even text can be information carrying" — composes with
+      S10: the rough morning keeps its <em>information</em> and loses half its <em>ink</em>. And your standing order on
+      empty states gets frames: the building state must inspire confidence during the days the engine is still earning
+      its first finding.</p>
+    </div>
+    <div class="frames">
+
+      <!-- 3a lighter -->
+      <div class="frame-slot">
+        <div class="phone">
+          <div class="notch"></div>
+          <div class="appbody">
+            <div class="banner">Pixel — vomiting logged overnight. Her Signal has the details →</div>
+            <div class="acard">
+              <div class="seclabel dim">Signal · Mochi</div>
+              <div class="irow" style="border-top:0;">
+                <span class="rail safety"></span>
+                <div class="ibody">
+                  <p class="lead">Mochi refused this morning's meal — the second refusal in two days.</p>
+                  <div class="meta"><span class="chip-pair rise">Day 2</span><span class="sample">2 of the last 4 offered meals</span></div>
+                  <p class="whylink">Why we're showing this</p>
+                </div>
+              </div>
+              <div class="quiet" style="border-top:1px solid #F0EFF5; margin-top:8px; padding-top:9px;">Trial day 19 of 42 · Amoxicillin day 9 of 14 — last dose yesterday evening</div>
+            </div>
+            <div class="acard">
+              <div class="seclabel">Today</div>
+              <div class="todayrow"><span class="evicon sym">✕</span> Meal refused <span class="t">7:12a</span></div>
+              <div class="todayrow"><span class="evicon meal">●</span> Water topped up <span class="t">7:15a</span></div>
+            </div>
+          </div>
+        </div>
+        <p class="frame-cap"><b>3a′ — The rough morning, lighter</b>
+        Same information as round 1's dense frame: the two course strips collapsed into one text line under the Signal
+        (they carried no urgency today — the refusal is the story, and it owns the ink). Progress bars return the day a
+        course crosses something worth seeing. Text carrying information <em>is</em> the design.</p>
+      </div>
+
+      <!-- building day 3 -->
+      <div class="frame-slot">
+        <div class="phone">
+          <div class="notch"></div>
+          <div class="appbody">
+            <div class="acard">
+              <div class="seclabel">Signal</div>
+              <p class="sent" style="margin-bottom:2px;">We're getting to know Nyx. Day 3 — 11 events so far.</p>
+              <p class="sent" style="color:#5F5C7A; font-size:12px;">Patterns usually start appearing within the first week. Here's what we're watching for:</p>
+              <div class="irow" style="border-top:1px solid #F0EFF5;">
+                <span class="rail ghost"></span>
+                <div class="ibody">
+                  <p class="sent ghost">Timing — do symptoms follow meals, and how closely</p>
+                  <div class="estrip">
+                    <div class="lane ghosted">
+                      <span class="band" style="left:0; width:26%;"></span>
+                      <span class="dot hollow" style="left:8%"></span><span class="dot hollow" style="left:15%"></span>
+                      <span class="dot hollow" style="left:21%"></span><span class="dot hollow" style="left:62%"></span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="irow">
+                <span class="rail ghost"></span>
+                <div class="ibody">
+                  <p class="sent ghost">Food connections — what tends to come before a reaction</p>
+                </div>
+              </div>
+              <div class="irow">
+                <span class="rail ghost"></span>
+                <div class="ibody">
+                  <p class="sent ghost">Change — this week against last, counted from your logs</p>
+                  <div class="estrip">
+                    <div class="cmprow"><span style="color:#B9B6CC;">Last week</span><span class="bar"><i class="calm" style="width:40%; opacity:0.25;"></i></span><span class="n">—</span></div>
+                    <div class="cmprow"><span style="color:#B9B6CC;">This week</span><span class="bar"><i class="calm" style="width:65%; opacity:0.25;"></i></span><span class="n">—</span></div>
+                  </div>
+                </div>
+              </div>
+              <div class="quiet" style="border-top:1px solid #F0EFF5; margin-top:8px; padding-top:9px;">If something needs attention sooner, it won't wait for the week.</div>
+            </div>
+          </div>
+        </div>
+        <p class="frame-cap"><b>E1 — Building, day 3</b>
+        The empty state shows the <em>shape</em> of what's coming — ghosted receipts, hollow dots, no fake numbers —
+        plus the day count and an honest floor: safety doesn't wait for the week. Confidence comes from specificity
+        about what's being watched, not from cheerleading.
+        <span class="fnote">Replaces the shipped two-sentence ghost previews; same presence rules, same honesty.</span></p>
+      </div>
+
+      <!-- building day 3, color pass (round 2.1 — PM: "might be nice to work in some color") -->
+      <div class="frame-slot">
+        <div class="phone">
+          <div class="notch"></div>
+          <div class="appbody">
+            <div class="acard">
+              <div class="seclabel">Signal</div>
+              <p class="sent" style="margin-bottom:2px;">We're getting to know Nyx. <span style="color:#0B7B6C; font-weight:600;">Day 3 — 11 events so far.</span></p>
+              <p class="sent" style="color:#5F5C7A; font-size:12px;">Patterns usually start appearing within the first week. Here's what we're watching for:</p>
+              <div class="irow" style="border-top:1px solid #F0EFF5;">
+                <span class="rail" style="background:#00C2A8; opacity:0.35;"></span>
+                <div class="ibody">
+                  <p class="sent ghost">Timing — do symptoms follow meals, and how closely</p>
+                  <div class="estrip">
+                    <div class="lane ghosted" style="border-color:rgba(0,194,168,0.35);">
+                      <span class="band" style="left:0; width:26%; background:rgba(0,194,168,0.12);"></span>
+                      <span class="dot hollow" style="left:8%; border-color:#00C2A8;"></span><span class="dot hollow" style="left:15%; border-color:#00C2A8;"></span>
+                      <span class="dot hollow" style="left:21%; border-color:#00C2A8;"></span><span class="dot hollow" style="left:62%; border-color:#C9C5E6;"></span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="irow">
+                <span class="rail" style="background:#5B7A9E; opacity:0.35;"></span>
+                <div class="ibody">
+                  <p class="sent ghost">Food connections — what tends to come before a reaction</p>
+                </div>
+              </div>
+              <div class="irow">
+                <span class="rail" style="background:#00C2A8; opacity:0.35;"></span>
+                <div class="ibody">
+                  <p class="sent ghost">Change — this week against last, counted from your logs</p>
+                  <div class="estrip">
+                    <div class="cmprow"><span style="color:#B9B6CC;">Last week</span><span class="bar"><i class="calm" style="width:40%; opacity:0.4;"></i></span><span class="n">—</span></div>
+                    <div class="cmprow"><span style="color:#B9B6CC;">This week</span><span class="bar" style="background:rgba(0,194,168,0.08);"><i class="calm" style="width:65%; opacity:0.4;"></i></span><span class="n">—</span></div>
+                  </div>
+                </div>
+              </div>
+              <div class="quiet" style="border-top:1px solid #F0EFF5; margin-top:8px; padding-top:9px;">If something needs attention sooner, it won't wait for the week.</div>
+            </div>
+          </div>
+        </div>
+        <p class="frame-cap"><b>E1-c — The color pass (round 2.1)</b>
+        Your "work in some color," drawn: the ghost rails and receipts take the accent and slate washes at ghost
+        opacity — warmer without pretending to be data. Rose is deliberately absent (no alarm tones on a state that
+        has nothing to report), and the day counter takes the accent ink as the card's one live note.
+        <span class="fnote">E1 vs E1-c is a round-3 pick — or "somewhere between" works as an answer.</span></p>
+      </div>
+
+      <!-- nothing established -->
+      <div class="frame-slot">
+        <div class="phone">
+          <div class="notch"></div>
+          <div class="appbody">
+            <div class="acard">
+              <div class="seclabel">Signal</div>
+              <p class="sent">No established patterns yet. Nothing in the last month of logs has cleared our evidence bar.</p>
+              <p class="sent" style="color:#5F5C7A; font-size:12px;">That isn't an all-clear — keep logging, and the moment something clears it, it'll be here.</p>
+              <div class="quiet" style="border-top:1px solid #F0EFF5; margin-top:8px; padding-top:9px;">Most of the month's meals are logged without a rating — rating a few each week is what lets intake patterns clear the bar.</div>
+              <div class="footlink dim">See all of Nyx's patterns →</div>
+            </div>
+          </div>
+        </div>
+        <p class="frame-cap"><b>E2 — Mature record, nothing established</b>
+        The other empty state: plenty of data, no finding cleared the floor. The copy is the shipped B-284 §9 string;
+        the third line is the coverage diagnostic the engine already computes (B-053) — one specific, calm action,
+        never a nag.</p>
+      </div>
+    </div>
+    <div class="col">
+      <p class="callout"><strong>3b (the quiet day, labeled) is unchanged from round 1</strong> — you loved the stacked
+      before/after and the labeled-quiet line, and both survive exactly as drawn. The stacked compare is now Shape C in
+      §04's table.</p>
+    </div>
+  </section>
+
+  <!-- ══════════════════ 7 · WHAT REMAINS OF THE SWINGS + BUILD CONTRACT ══════════════════ -->
+  <section>
+    <div class="sec-head"><span class="sec-num">07</span><h2>The swings after round 1 — and the build contract</h2></div>
+    <div class="col">
+      <p><strong>Household Home: dead.</strong> Cut per your ruling; cross-pet stays banner-injection-shaped, which you
+      have and like. Sam's attribution honesty survives in the small form — the "2 of 5 unwitnessed" sample-line
+      disclosure needs no household surface and stays a candidate for the requirements doc.</p>
+      <p><strong>Finding evolution: absorbed.</strong> The Change Contract <em>is</em> finding evolution, done honestly —
+      the v2 column (prior-set memory in <code>generate-signal</code>) is its server half. No separate swing remains.</p>
+      <p><strong>The weekly review: de-calendared, still on the table.</strong> The week now composes as the things you
+      already liked — a display-face sentence, the stacked compare, one exception line ("Wednesday's episode came 3
+      hours after dinner — outside the usual pattern"), the trial day count, and a share action. No grid, no pips, no
+      month paging. It's the Sunday text Jordan already sends, composed by the app. Appetite → R2-4.</p>
+    </div>
+    <div class="frames">
+      <div class="frame-slot">
+        <div class="phone">
+          <div class="notch"></div>
+          <div class="appbody">
+            <div class="acard">
+              <div class="seclabel">The week with Mochi</div>
+              <p class="lead">Six clean days, one episode — week 3 of the trial.</p>
+              <div class="estrip">
+                <div class="cmprow"><span>Two weeks ago</span><span class="bar"><i style="width:70%"></i></span><span class="n">5</span></div>
+                <div class="cmprow"><span>Last week</span><span class="bar"><i style="width:28%"></i></span><span class="n">2</span></div>
+                <div class="cmprow"><span>This week</span><span class="bar"><i style="width:14%"></i></span><span class="n">1</span></div>
+              </div>
+              <p class="ctxline" style="margin-top:8px;">Wednesday's episode came 3 hours after dinner — outside the usual pattern. 11 of 14 meals finished. Day 21 of 42 tomorrow.</p>
+              <div class="meta" style="margin-top:8px;"><span class="sample">Counted from days you logged: 7 of 7 this week</span></div>
+              <div class="footlink">Share this week ↗</div>
+            </div>
+          </div>
+        </div>
+        <p class="frame-cap"><b>4a′ — The week, de-calendared</b>
+        Three stacked weeks replace the grid — the treatment you called awesome, doing the calendar's job better. The
+        exception line does what a calendar cell never could: it says <em>why</em> Wednesday mattered.
+        <span class="fnote">Ruled (delegated): parked, <em>first in queue</em> once rungs 1–2 are building — the "I LOVE the bar charts" is on the record, and the stacked-compare treatment ships regardless as Shape C.</span></p>
+      </div>
+    </div>
+    <div class="col">
+      <h3>Build contract additions (your directives, recorded — now FR-FLAG in the spec)</h3>
+      <p><strong>Beta-flagged rollout is a hard requirement (FR-FLAG-1..5, spec §7).</strong> The surface ships dark
+      behind <code>signal_design_v2</code> (the B-712 allowlist shape): no partial leaks, flag-off byte-identical and
+      snapshot-pinned, the seed migration (SR-0) lands before any UI PR, the feature joins the beta shelf at B-712
+      Phase 2 (<code>eligible && optedIn</code>) and <strong>may not GA before it has been available through the
+      shelf</strong> — enablement always flows through the beta workflow. The flag retires only on an explicit PM GA
+      call. Client-only pieces gate client-side; anything with per-cohort server cost would gate server-side too
+      (checked: nothing in rungs 1+2 does).</p>
+      <p><strong>The empty state is an AC, not an afterthought.</strong> E1/E2 (or their round-3 successors) ship with
+      rung 1 — the building state is most owners' first week with the product's centerpiece, and it must inspire the
+      confidence that keeps them logging until the first real finding lands.</p>
+    </div>
+  </section>
+
+  <!-- ══════════════════ 8 · STANDING FROM ROUND 1 ══════════════════ -->
+  <section>
+    <div class="sec-head"><span class="sec-num">08</span><h2>Resolved — the round-1 leftovers (decided under delegation)</h2></div>
+    <div class="col">
+      <p>Per your "if there are high priority items there, brief me; if not, decide for me" — none met the brief bar,
+      so all four went per the standing recommendations (each vetoable): <strong>rung pick = rungs 1+2</strong> (rung 3
+      briefing follows as its own phase; its 3a′ lightening is recorded for that phase) · <strong>spine S1–S10
+      ratified</strong> as this track's standing spec (the S1/S6 Tier-2 <code>design-principles.md</code> wording still
+      comes to you before anything is written) · <strong>D8 paper-closed light</strong>, night variant unbuilt (the
+      B-284 amendment text is likewise flagged for your approval) · <strong>N4/N7 absorbed</strong> —
+      <code>docs/nyx-signal-home-requirements.md</code> is now the canonical spec for this surface. Round 1's frames
+      for rung 1 (1a/1b/1c), 2a, and 3b remain the reference drawings.</p>
+    </div>
+  </section>
+
+  <!-- ══════════════════ 9 · REACT ══════════════════ -->
+  <section>
+    <div class="sec-head"><span class="sec-num">09</span><h2>Ruled — R2-1 … R2-6d (kept for the record)</h2></div>
+    <div class="col">
+      <p class="callout"><strong>All nine ruled 2026-08-07.</strong> Explicit: R2-1 signed <em>as v1.1</em> — the
+      pair-chips out, the sentence carries the change (your CC-2 baseline pick + CC-1 density read) · R2-2 shapes A + C,
+      B cut · R2-5 empty states confirmed, color pass drawn as E1-c. Delegated (per "decide for me," each vetoable):
+      R2-3 ack <strong>kept</strong> · R2-4 week <strong>parked, first in queue post-build</strong> · R2-6a
+      <strong>rungs 1+2</strong> · R2-6b <strong>spine ratified</strong> · R2-6c <strong>D8 paper-closed light</strong> ·
+      R2-6d <strong>N4/N7 absorbed</strong>. Full record: the session doc §9. The briefs below are kept as the decision
+      record; round 3 is the requirements doc, not another mock round.</p>
+    </div>
+    <div class="prompts">
+      <div class="prompt"><span class="pid">R2-1</span><p><strong>Sign the Change Contract? (§03)</strong><br/>
+      <em>Deciding:</em> whether the negotiated ruling — count-pair chips, per-finding table, density rule, residual vetoes — becomes binding spec.<br/>
+      <em>Options:</em> <strong>sign as-is (recommended</strong> — both owners' top ask, in the form Dr. Chen trusts most, mostly buildable v1 from existing payloads<strong>)</strong> · sign with amendments (name them) · reject → back to negotiation. Sub-call: chip form — <strong>pick from the CC-2 frames in §03</strong> (baseline no-chip / Form A, recommended / Form B).<br/>
+      <em>Consequence:</em> unblocks change chips in the rung-1/2 build; the v2 items (timing <code>New</code>, tier transitions) get a small server spec later.</p></div>
+      <div class="prompt"><span class="pid">R2-2</span><p><strong>Receipt-shape assignments (§04)</strong><br/>
+      <em>Deciding:</em> which evidence visual each finding type gets, per S10.<br/>
+      <em>Options:</em> <strong>confirm the table (recommended</strong> — dot lane keeps events countable at v1's small n, your "distribution curve" read; bars take over at large n; stacked compare for comparisons; correlation + photo flags stay sentence-only<strong>)</strong> · swap dot lane → bars everywhere · adjust per finding.<br/>
+      <em>Consequence:</em> locks the renderer-registry design for rung 1.</p></div>
+      <div class="prompt"><span class="pid">R2-3</span><p><strong>The acknowledgment sequence (§05)</strong><br/>
+      <em>Deciding:</em> whether the one quiet "Noted — updating…" line ships between a fresh log and the regenerated Signal.<br/>
+      <em>Options:</em> <strong>keep (recommended</strong> — closes Jordan's "the app didn't see what I just went through" gap; one conditional line, the regen machinery already ships<strong>)</strong> · kill (costs nothing).<br/>
+      <em>Consequence:</em> a small rung-2 line item either way.</p></div>
+      <div class="prompt"><span class="pid">R2-4</span><p><strong>The de-calendared week (§07, 4a′)</strong><br/>
+      <em>Deciding:</em> whether "The week with {pet}" earns its own discovery session now.<br/>
+      <em>Options:</em> <strong>park until rungs 1–2 are building (recommended</strong> — strong retention/share surface, but off the critical path, and its compare treatment ships anyway as Shape C<strong>)</strong> · discovery now · kill.<br/>
+      <em>Consequence:</em> parked = a backlog row, zero build dependency; discovery = its own session (composition rules, refusal-record guardrail, share format).</p></div>
+      <div class="prompt"><span class="pid">R2-5</span><p><strong>The empty states (§06, E1/E2)</strong><br/>
+      <em>Deciding:</em> the design bet for the building state — E1's ghost receipts (the shape of what's coming, hollow dots, no fake numbers, the safety-doesn't-wait line).<br/>
+      <em>Options:</em> <strong>confirm (recommended</strong> — specificity about what's being watched inspires confidence without cheerleading<strong>)</strong> · different direction (describe) · keep today's two-line ghost previews.<br/>
+      <em>Consequence:</em> becomes a rung-1 AC; final copy passes nyx-voice at build.</p></div>
+      <div class="prompt"><span class="pid">R2-6a</span><p><strong>Rung pick</strong><br/>
+      <em>Deciding:</em> how much scope round 3's requirements doc covers.<br/>
+      <em>Options:</em> rung 1 only · <strong>rungs 1+2 (recommended</strong> — 1 is ratified-owed work, 2 is where your "really liking the design" reactions landed; 3 can follow once the card system is real<strong>)</strong> · rungs 1+2+3.<br/>
+      <em>Consequence:</em> sets the requirements scope and the first build session's target.</p></div>
+      <div class="prompt"><span class="pid">R2-6b</span><p><strong>Spine S1–S10 (§02)</strong><br/>
+      <em>Deciding:</em> whether the ten rules become the standing spec for this surface.<br/>
+      <em>Options:</em> <strong>ratify (recommended</strong> — each traces to a named source; S1 + S6 would go to you as Tier-2 <code>design-principles.md</code> wording before writing<strong>)</strong> · ratify minus named rules · edit wording.<br/>
+      <em>Consequence:</em> every future frame and PR on this surface is reviewed against them.</p></div>
+      <div class="prompt"><span class="pid">R2-6c</span><p><strong>D8 paper-close (§08)</strong><br/>
+      <em>Deciding:</em> whether the Signal card's ground closes as light <em>without building</em> the night variant B-284 §7.4 planned to A/B on-device.<br/>
+      <em>Options:</em> <strong>paper-close light (recommended</strong> — both owners, your own note, the PTR night band's on-device failure, and Dr. Chen all point one way; building a dead variant is waste<strong>)</strong> · keep the on-device A/B.<br/>
+      <em>Consequence:</em> a B-284 §7.2/§7.4 spec amendment; the night register stays Landing/loading/night-moment only.</p></div>
+      <div class="prompt"><span class="pid">R2-6d</span><p><strong>N4/N7 absorption (§08)</strong><br/>
+      <em>Deciding:</em> whether this track's requirements doc becomes the one canonical spec for the Signal/Home surface.<br/>
+      <em>Options:</em> <strong>absorb (recommended</strong> — two specs pointing at one surface is how drift ships; N4/N7 narrow to pointers<strong>)</strong> · keep B-284 N4/N7 as separate PRs.<br/>
+      <em>Consequence:</em> absorb = B-284 gets a Tier-2 pointer note and this track owns the surface end to end.</p></div>
+    </div>
+  </section>
+
+  <p class="provenance">
+    Round 2.1 — FINAL · design-locked 2026-08-07 · supersedes round 1 (2026-08-06) — round-1 frames 1a/1b/1c, 2a, 3b remain reference drawings; the household frame, week-grid, pair-chips and Shape B are dead.
+    This page is the design authority for build PRs SR-1–SR-6. Build contract: <code>docs/nyx-signal-home-requirements.md</code> v1.1 (FINALIZED — rungs 1+2, FR-FLAG). The one intentionally-open design pick: E1 vs E1-c intensity, decided on-device at SR-2's QA.
+    Full record incl. interview transcripts, the 14 round-1 reactions, and the Change Contract negotiation:
+    <code>docs/sessions/2026-08-06-signal-home-design-exploration.md</code>.
+    Frames render the shipping light system with real <code>constants/theme.ts</code> values; every round republishes to this same artifact URL.
+  </p>
+
+</div>

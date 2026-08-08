@@ -1,4 +1,4 @@
-import { useMomentStore } from './momentStore';
+import { useMomentStore, whenMealCardVisible } from './momentStore';
 import type { MealPayload, MedicationPayload } from './momentStore';
 
 function mealPayload(over: Partial<Omit<MealPayload, 'kind'>> = {}): Omit<MealPayload, 'kind'> {
@@ -155,7 +155,7 @@ describe('momentStore', () => {
     // past at the unflagged 5s. Applied in the store rather than at each call
     // site, so a future meal-entry path cannot ship a flagged card that does.
     useMomentStore.getState().showMeal(mealPayload({
-      trialFlag: { proteins: ['chicken'], trialProteins: ['duck'], trialId: 't1', foodId: 'f1' },
+      trialFlag: { kind: 'off_diet_protein', proteins: ['chicken'], trialProteins: ['duck'], trialId: 't1', foodId: 'f1' },
     }));
     jest.advanceTimersByTime(5000);
     expect(useMomentStore.getState().visible).toBe(true);
@@ -168,12 +168,46 @@ describe('momentStore', () => {
     // in, so a cold trial-cache lookup never delays the owner's confirmation.
     useMomentStore.getState().showMeal(mealPayload({ eventId: 'e-flag' }));
     const landed = useMomentStore.getState().patchTrialFlag('e-flag', {
-      proteins: ['chicken'], trialProteins: ['duck'], trialId: 't1', foodId: 'f1',
+      kind: 'off_diet_protein', proteins: ['chicken'], trialProteins: ['duck'], trialId: 't1', foodId: 'f1',
     });
     expect(landed).toBe(true);
     const p = useMomentStore.getState().payload;
     if (p?.kind !== 'meal') throw new Error('expected meal payload');
-    expect(p.trialFlag?.proteins).toEqual(['chicken']);
+    if (p.trialFlag?.kind !== 'off_diet_protein') throw new Error('expected a contents flag');
+    expect(p.trialFlag.proteins).toEqual(['chicken']);
+  });
+
+  it('patchTrialFlag lands a MEMBERSHIP flag (B-693) with its trial day-math intact', () => {
+    // The rung-3 flag rides the same store path as the contents one; it carries the
+    // trial's start/target so the card can build the shipped add sheet. The store
+    // must pass the union through verbatim — it holds no opinion about the kind.
+    useMomentStore.getState().showMeal(mealPayload({ eventId: 'e-mem' }));
+    const landed = useMomentStore.getState().patchTrialFlag('e-mem', {
+      kind: 'off_trial_list', trialId: 't1', foodId: 'f1',
+      trialStartedAt: '2026-06-01', trialTargetDurationDays: 84,
+    });
+    expect(landed).toBe(true);
+    const p = useMomentStore.getState().payload;
+    if (p?.kind !== 'meal') throw new Error('expected meal payload');
+    if (p.trialFlag?.kind !== 'off_trial_list') throw new Error('expected a membership flag');
+    expect(p.trialFlag.trialStartedAt).toBe('2026-06-01');
+    expect(p.trialFlag.trialTargetDurationDays).toBe(84);
+  });
+
+  it('holds a MEMBERSHIP-flagged card open the longer window too (B-693)', () => {
+    // The dwell extension keys off the presence of ANY flag, not its kind — a
+    // membership card carries the same two-plus unseen lines the owner cannot get
+    // back, so it must not flash past at the unflagged 5s.
+    useMomentStore.getState().showMeal(mealPayload({
+      trialFlag: {
+        kind: 'off_trial_list', trialId: 't1', foodId: 'f1',
+        trialStartedAt: '2026-06-01', trialTargetDurationDays: 84,
+      },
+    }));
+    jest.advanceTimersByTime(5000);
+    expect(useMomentStore.getState().visible).toBe(true);
+    jest.advanceTimersByTime(2000);
+    expect(useMomentStore.getState().visible).toBe(false);
   });
 
   it('patchTrialFlag REFUSES a late answer for a superseded meal', () => {
@@ -184,7 +218,7 @@ describe('momentStore', () => {
     useMomentStore.getState().showMeal(mealPayload({ eventId: 'e-first' }));
     useMomentStore.getState().showMeal(mealPayload({ eventId: 'e-second' }));
     expect(useMomentStore.getState().patchTrialFlag('e-first', {
-      proteins: ['chicken'], trialProteins: ['duck'], trialId: 't1', foodId: 'f1',
+      kind: 'off_diet_protein', proteins: ['chicken'], trialProteins: ['duck'], trialId: 't1', foodId: 'f1',
     })).toBe(false);
   });
 
@@ -193,7 +227,7 @@ describe('momentStore', () => {
     jest.advanceTimersByTime(5000);
     expect(useMomentStore.getState().visible).toBe(false);
     expect(useMomentStore.getState().patchTrialFlag('e-gone', {
-      proteins: ['chicken'], trialProteins: ['duck'], trialId: 't1', foodId: 'f1',
+      kind: 'off_diet_protein', proteins: ['chicken'], trialProteins: ['duck'], trialId: 't1', foodId: 'f1',
     })).toBe(false);
   });
 
@@ -404,5 +438,72 @@ describe('momentStore', () => {
     expect(payload?.kind).toBe('medication');
     if (payload?.kind !== 'medication') throw new Error('expected medication payload');
     expect(payload.eventId).toBe('m9');
+  });
+});
+
+// ── whenMealCardVisible — the deferred-reveal race the picker path hit ──────────
+//
+// app/log.tsx reveals the meal card behind delayMs (to clear the dismissing /log
+// modal on iOS), then fires the trial-flag evaluation fire-and-forget. Since B-417
+// PR 2 removed that evaluation's network read it resolves in a few ms — BEFORE the
+// reveal — so a bare patchTrialFlag hit a not-yet-visible card, returned false, and
+// the log-time trial warning was silently dropped on the app's main food-logging
+// path. The FAB path reveals synchronously and never saw this. applyTrialFlag now
+// awaits whenMealCardVisible before patching; these lock the helper's contract.
+describe('whenMealCardVisible — closing the picker-path warning drop (B-693)', () => {
+  beforeEach(() => {
+    jest.useFakeTimers();
+    useMomentStore.getState().hide();
+    useMomentStore.setState({ payload: null });
+  });
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  it('reproduces the race: a patch during the delayMs window is dropped', () => {
+    // The store contract (patch a VISIBLE card) is correct — the bug was the caller
+    // patching too early. Pinned so the whenMealCardVisible wait stays load-bearing:
+    // delete the wait and this is exactly what the picker path does to the warning.
+    useMomentStore.getState().showMeal(mealPayload({ eventId: 'e-race' }), { delayMs: 450 });
+    expect(useMomentStore.getState().visible).toBe(false);
+    expect(useMomentStore.getState().patchTrialFlag('e-race', {
+      kind: 'off_diet_protein', proteins: ['chicken'], trialProteins: ['duck'], trialId: 't1', foodId: 'f1',
+    })).toBe(false);
+  });
+
+  it('resolves true the instant a deferred card reveals, so the patch then lands', async () => {
+    useMomentStore.getState().showMeal(mealPayload({ eventId: 'e-defer' }), { delayMs: 450 });
+    const visible = whenMealCardVisible('e-defer');
+    jest.advanceTimersByTime(450);
+    await expect(visible).resolves.toBe(true);
+    // The patch the picker path was dropping now lands on the revealed card.
+    expect(useMomentStore.getState().patchTrialFlag('e-defer', {
+      kind: 'off_trial_list', trialId: 't1', foodId: 'f1',
+      trialStartedAt: '2026-06-01', trialTargetDurationDays: 84,
+    })).toBe(true);
+  });
+
+  it('resolves true immediately when the card is already up (the FAB path)', async () => {
+    // No delayMs → synchronous reveal, so the fire-and-forget eval always patches a
+    // live card. The wait is a no-op here, kept only to keep the two paths identical.
+    useMomentStore.getState().showMeal(mealPayload({ eventId: 'e-now' }));
+    await expect(whenMealCardVisible('e-now')).resolves.toBe(true);
+  });
+
+  it('resolves false when a newer log supersedes the pending card — no hang, no budget spend', async () => {
+    useMomentStore.getState().showMeal(mealPayload({ eventId: 'e-first' }), { delayMs: 450 });
+    const visible = whenMealCardVisible('e-first');
+    // A second log before the first reveals cancels the first card's reveal, so its
+    // heads-up must NOT land — and, because the caller skips noteTrialFlagShown on a
+    // false, that food's one-per-trial budget is not burned on a card nobody saw.
+    useMomentStore.getState().showMeal(mealPayload({ eventId: 'e-second' }));
+    jest.advanceTimersByTime(3000);
+    await expect(visible).resolves.toBe(false);
+  });
+
+  it('resolves false on timeout when the card never appears (bounded, no leaked promise)', async () => {
+    const visible = whenMealCardVisible('e-ghost');
+    jest.advanceTimersByTime(3000);
+    await expect(visible).resolves.toBe(false);
   });
 });

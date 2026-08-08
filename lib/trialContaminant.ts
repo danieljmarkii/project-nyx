@@ -8,6 +8,19 @@
 // that quietly lists chicken by-product meal is the textbook reason a home
 // elimination trial silently fails), caught the moment the data exists.
 //
+// B-693 ADDED A SECOND QUESTION at the same moment: is the food even ON the
+// trial's allowed list? A food that carries no off-trial protein the app can see —
+// because nobody read its panel, which is the MODAL case on a real library — is
+// invisible to the question above, yet feeding off the list is the commonest way a
+// trial is compromised. So the log-time decision now emits ONE of two typed flags:
+// the CONTENTS flag (shape ②, "this has chicken in it", rung 2) or, when that is
+// silent, the MEMBERSHIP flag (shape ③, "this isn't on the trial list", rung 3 — a
+// fact about the LIST, never a claim about contents nobody read). They are
+// mutually exclusive by construction (classifyFeeding returns one verdict), and
+// BOTH are gated on isTrialRunning at the log-time call site (B-595): a
+// stale-active trial interrupts no logs, while the STANDING surfaces (the card
+// note, the food-detail note, the vet report) keep firing off the same context.
+//
 // ── WHERE THIS SITS RELATIVE TO B-417 ────────────────────────────────────────
 // ✅ RE-BASED BY B-417 PR 5 (closes B-438 and B-453). `lib/dietTrial.ts` now owns
 // the predicate — four rungs over the explicit allowed set, the derived protein
@@ -75,13 +88,16 @@
 //    The standing fact remains visible on the food's detail screen, which is where
 //    a standing fact belongs — that is what makes suppressing the repeat safe.
 //
-// 4. THE TARGET PROTEIN COMES FROM THE OWNER'S DESIGNATION, NOT FROM proteins[0].
-//    See resolveTargetProtein below — the one place where the derived-primary
-//    convenience is deliberately not used.
+// 4. THE TARGET PROTEIN IS STORED-FIRST, THEN THE OWNER'S DESIGNATION — NEVER
+//    proteins[0]. `trialTargetProtein` (./trialProtein, B-704 §4) reads the
+//    owner-stated `diet_trials.target_protein` first and falls back to the trial
+//    food's owner-designated primary; its derivation arm is the one place the
+//    derived-primary convenience is deliberately not used.
 //
-// No `diet_trials` schema change (D6, RATIFIED-deferred): v1 keys off the trial
-// food's own designated protein. `nyx-voice` + `clinical-guardrails` govern every
-// string this module builds.
+// B-704 (D6, re-opened + ratified 2026-08-04) added `diet_trials.target_protein`,
+// so the target is now stored-first — but it NEVER permits (TG-1): the allowed set
+// remains the sole off-diet authority and this module's classification is unchanged.
+// `nyx-voice` + `clinical-guardrails` govern every string this module builds.
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getDb } from './db';
 import { foodIntakeKey } from './food';
@@ -95,11 +111,11 @@ import {
   buildTrialContext,
   classifyFeeding,
   contaminationNote,
+  isTrialRunning,
   narrowTrialFoodRole,
   proteinPhrase,
   sanctionedProteinsOn,
   trialContamination,
-  uncharacterizedTrialDietFoodsInRange,
   type AllowedFood,
   type TrialContext,
   type TrialSpec,
@@ -108,9 +124,13 @@ import {
 // vet-report Edge Function can import the SAME implementation — this module's
 // AsyncStorage/supabase/db imports make it unreachable from Deno. Re-exported
 // here so every existing call site and test keeps its import path.
-import { offTrialProteins, resolveTargetProtein, proteinList } from './trialProtein';
+//
+// B-704 §4: `trialTargetProtein` (the stored-first predicate) replaces the direct
+// `resolveTargetProtein` re-export — that function is now trialTargetProtein's
+// internal fallback arm, and a consumer importing it directly is review-blocking.
+import { offTrialProteins, trialTargetProtein, proteinList } from './trialProtein';
 
-export { offTrialProteins, resolveTargetProtein, proteinList } from './trialProtein';
+export { offTrialProteins, trialTargetProtein, proteinList } from './trialProtein';
 
 // ── The pure predicate layer ─────────────────────────────────────────────────
 
@@ -210,8 +230,12 @@ export function trialFoodContaminants(ctx: TrialProteinContext): string[] {
   return [...seen];
 }
 
-/** The heads-up a surface renders. Absence of one is never an all-clear. */
+/** The rung-2 CONTENTS heads-up: this food carries a protein the trial diet does
+ *  not. Absence of one is never an all-clear. A claim about the food's contents,
+ *  which is why it can only fire on a food whose panel was read. */
 export interface TrialContaminantFlag {
+  /** Discriminant of the log-time union (B-693). The contents flag. */
+  kind: 'off_diet_protein';
   /** Off-trial canonical protein keys found in this food, prominence-ordered. */
   proteins: string[];
   /** What the trial diet is built on, for the "…trial should skip X" clause. A
@@ -226,11 +250,55 @@ export interface TrialContaminantFlag {
 }
 
 /**
+ * The rung-3 MEMBERSHIP heads-up (B-693): this food is not on the trial's allowed
+ * list. A fact about the LIST, and NEVER a claim about the food's contents.
+ *
+ * It carries no proteins BY CONSTRUCTION, and that is the point. Rung 3 fires
+ * precisely when the protein arm found nothing to say — the panel was never read,
+ * or every protein it lists is already sanctioned, or the arm was dark — so any
+ * assertion here about what the food contains would be fabricated. Rule 1
+ * (presence-only) forbids it, and making this a distinct TYPE from
+ * TrialContaminantFlag is what stops a consumer routing membership copy through
+ * the contents copy (which names an antigen this flag does not have).
+ */
+export interface TrialMembershipFlag {
+  /** Discriminant of the log-time union (B-693). The list-absence flag. */
+  kind: 'off_trial_list';
+  /** Carried so the displaying surface can spend rule 3's SHARED ledger budget
+   *  (noteTrialFlagShown) — the same trialId/foodId keyspace as the contents
+   *  flag, so a food spoken for once is not news again whichever kind spoke. */
+  trialId: string;
+  foodId: string;
+  /** The trial's day-math, so the surface that displays this flag can build the
+   *  shipped `AddTrialFoodSheet` (mock §3, the "+ Add to the trial list" hatch)
+   *  WITHOUT a second trial read. Carried for the same reason the contents flag
+   *  carries `trialProteins` and both carry `trialId`/`foodId`: the display surface
+   *  needs it, and re-deriving it there would be a second read of a trial the
+   *  evaluator already loaded for the meal's pet — which also removes any risk of
+   *  the card reading the *active* pet's trial when a queue-then-switch made it a
+   *  different pet than the meal's. These are TRIAL-SCHEDULE facts, never
+   *  food-contents ones, so they do not weaken the claim-strength guarantee that a
+   *  membership flag names nothing about what the food contains (§5, mock). */
+  trialStartedAt: string;
+  trialTargetDurationDays: number;
+}
+
+/**
+ * The two mutually-exclusive log-time heads-ups a meal log can raise.
+ *
+ * `classifyFeeding` returns exactly ONE verdict per feeding, so a single feeding
+ * is at most one of these — rung-2 precedence ("off_diet_protein wins, never
+ * both") is STRUCTURAL, not coordinated. The `kind` discriminant lets a surface
+ * pick the right register (contents vs. membership) without inspecting fields.
+ */
+export type LogTimeTrialFlag = TrialContaminantFlag | TrialMembershipFlag;
+
+/**
  * Shape ② — does a food that is NOT on the allowed list carry off-trial proteins?
  *
- * The pure half of the log-time decision, and now a thin CONSUMER of
- * `classifyFeeding`: this module no longer holds an opinion about what off-diet
- * means. Returns null for silence.
+ * The CONTENTS half of the log-time decision (its rung-3 sibling is
+ * `foodMembershipFlag`), and a thin CONSUMER of `classifyFeeding`: this module no
+ * longer holds an opinion about what off-diet means. Returns null for silence.
  *
  * IT FIRES ON RUNG 2 ONLY, and the two exclusions that implies are rules rather
  * than omissions:
@@ -241,10 +309,12 @@ export interface TrialContaminantFlag {
  *     (§6.9). Rung 1 is also how C2 holds for the trial diet itself, and how a
  *     re-photographed bag of the trial diet stays silent (§5.4's key match) —
  *     both used to need their own special case here, and neither does now.
- *   • A RUNG-3 food produces no heads-up either: rule 1 is presence-only, and
- *     "nobody has read this food's ingredients" is not a thing to interrupt a log
- *     with. It is still RECORDED as an exposure by `computeTrialFacts` — the card
- *     and the vet report are where the closed-world count lands.
+ *   • A RUNG-3 food produces no CONTENTS heads-up: rule 1 is presence-only, and
+ *     "nobody has read this food's ingredients" is not a thing to make a contents
+ *     claim about. Since B-693 it is not silent at log time either — the weaker
+ *     MEMBERSHIP heads-up (`foodMembershipFlag`, "not on the trial list") surfaces
+ *     it without asserting contents — and it is RECORDED as an exposure by
+ *     `computeTrialFacts` regardless, where the closed-world count lands.
  */
 export function foodContaminantFlag(
   ctx: TrialProteinContext | null,
@@ -275,7 +345,122 @@ export function foodContaminantFlag(
     proteins: foodProteins,
   });
   if (classification.verdict !== 'off_diet_protein') return null;
-  return { proteins: classification.antigens, trialProteins, trialId: ctx.trialId, foodId };
+  return {
+    kind: 'off_diet_protein',
+    proteins: classification.antigens,
+    trialProteins,
+    trialId: ctx.trialId,
+    foodId,
+  };
+}
+
+/**
+ * Is the allowed set settled enough that "this food is NOT on it" is a real fact
+ * rather than a sync artefact?
+ *
+ * An unhydrated or partially-hydrated set — fresh install, mid-sync, offline cold
+ * start — makes EVERY food look absent, the prescribed diet INCLUDED, so a naive
+ * membership read would fire the log-time heads-up on the one food the owner
+ * cannot stop feeding (C2's alarm-fatigue inversion, arriving via the list rather
+ * than the protein arm). "Settled" here is the SAME condition
+ * `loadTrialProteinContext` uses to decide the context is cacheable — every
+ * `primary_diet` row present AND resolved out of the food cache — so the two can
+ * never disagree. An active trial always has at least one primary diet, so a zero
+ * primary count is itself the unhydrated signal, never an empty-but-loaded set.
+ *
+ * WHAT THIS GUARDS, AND WHAT IT DOES NOT. This closes the HYDRATION route to the
+ * C2 inversion — the whole primary diet not yet loaded. It does NOT close two
+ * other over-fire routes, because they are `matchAllowed` id/exact-key
+ * limitations rather than hydration ones, and they are the SAME over-fire the
+ * rung-2 contents flag already carries (with a stronger, contents claim), not
+ * something B-693 invents:
+ *   • A re-photographed bag of the PRESCRIBED DIET whose freshly-extracted
+ *     brand+product text diverges from the stored allowed-set key (AI-extraction
+ *     variance, or a manual "Duck" vs "Duck Formula"): the §5.4 exact-key guard
+ *     misses, so it falls to rung 3 and membership fires on the trial diet. The
+ *     add-to-list escape hatch self-heals it (one tap adds the new capture), the
+ *     ledger bounds it to once, and it is over-fire not reassurance — but it is a
+ *     real gap. Root cause tracked as B-699 (a shared dedup fix, cross-cutting and
+ *     Deno-shared, deliberately out of this lib-only PR).
+ *   • A vet-PERMITTED food added mid-trial on another device, logged here before
+ *     its `diet_trial_foods` row has synced: the primary is resolved so this
+ *     returns true, but the missing permitted row cannot be detected (we do not
+ *     know how many permitted rows to expect). Transient (TTL + sync), over-fire,
+ *     and identical to the contents flag's own cross-device behaviour.
+ * Both are toward over-firing, never toward the reassurance direction (a genuine
+ * off-list food is never silenced), which is the direction that endangers a pet.
+ */
+export function allowedSetHydrated(ctx: TrialProteinContext): boolean {
+  return ctx.primaryCount > 0 && ctx.primaryResolved === ctx.primaryCount;
+}
+
+/**
+ * Shape ③ — is a food NOT on the trial's allowed list at all (rung 3)?
+ *
+ * The pure half of the log-time MEMBERSHIP decision (B-693), and — exactly like
+ * `foodContaminantFlag` — a thin CONSUMER of `classifyFeeding`, never a second
+ * opinion about what off-diet means (one predicate, §5.3). Returns null for
+ * silence.
+ *
+ * IT FIRES ON RUNG 3 ONLY (`off_diet_unrecognised`), the modal case on a real
+ * library: the food was simply never added to the list, and typically nobody has
+ * read its ingredient panel. The claim it licenses is therefore about the LIST —
+ * "this isn't on the trial list" — and never about the food's contents.
+ *
+ * The exclusions are structural, not omissions:
+ *   • RUNG 2 (`off_diet_protein`) → NULL here: the stronger CONTENTS flag
+ *     (`foodContaminantFlag`) fires instead, and never both. Precedence is
+ *     guaranteed by `classifyFeeding` returning exactly one verdict — a food that
+ *     carries an off-trial protein is classified rung 2 and never reaches rung 3.
+ *   • A PERMITTED food (rung 1) and the trial diet itself → NULL: absence of a
+ *     flag is never a verdict (G2), and a permitted food is never praised.
+ *   • An UNHYDRATED allowed set → NULL (see `allowedSetHydrated`): without it,
+ *     every food — the prescribed diet included — reads as absent mid-sync.
+ *   • OUT OF WINDOW / no identity → NULL: `classifyFeeding` says so.
+ *
+ * `foodProteins` is load-bearing DESPITE the flag carrying none: the array is
+ * what `classifyFeeding` reads to split rung 2 from rung 3, so a food with an
+ * off-trial protein correctly routes to the contents flag rather than here.
+ */
+export function foodMembershipFlag(
+  ctx: TrialProteinContext | null,
+  foodId: string,
+  foodProteins: readonly string[],
+  /** Case-folded brand+product of THIS food, when the caller has it — the same
+   *  rung-1 duplicate-capture guard `foodContaminantFlag` takes (§5.4). */
+  foodKey?: string | null,
+  /** When this food was (or would be) fed. Defaults to now; membership is DATED. */
+  occurredAt?: string,
+): TrialMembershipFlag | null {
+  if (!ctx) return null;
+  // An unhydrated list must not be read as an empty one (mock §4). Silence, never
+  // a membership flag on a food the list simply has not loaded yet.
+  if (!allowedSetHydrated(ctx)) return null;
+  const classification = classifyFeeding(trialContextOf(ctx), {
+    eventId: 'evaluation',
+    occurredAt: occurredAt ?? new Date().toISOString(),
+    foodItemId: foodId,
+    foodKey: foodKey ?? null,
+    label: null,
+    foodType: null,
+    proteins: foodProteins,
+  });
+  // Rung 3 ONLY. `off_diet_protein` → the contents flag fires instead (never
+  // both); `permitted` / `out_of_window` / `unclassifiable` → silence.
+  if (classification.verdict !== 'off_diet_unrecognised') return null;
+  return {
+    kind: 'off_trial_list',
+    trialId: ctx.trialId,
+    foodId,
+    // The schedule the add sheet renders "day N" from — read off the context the
+    // evaluator already loaded, never re-derived at the surface. `targetDurationDays`
+    // is NOT NULL in the DB, so it is always present on the real (loadTrialProteinContext)
+    // path; the `?? 0` is a type-level fallback for a hand-built context, and
+    // getDietTrialProgress still yields a correct day counter at 0 (it computes days
+    // from `startedAt` alone), so the sheet never prints a fabricated day.
+    trialStartedAt: ctx.spec.startedAt,
+    trialTargetDurationDays: ctx.spec.targetDurationDays ?? 0,
+  };
 }
 
 // ── Copy (nyx-voice + clinical-guardrails) ───────────────────────────────────
@@ -311,6 +496,44 @@ export function mealFlagCopy(flag: TrialContaminantFlag, petName: string): {
       `${petName}’s ${proteinPhrase(flag.trialProteins)} trial should skip ` +
       `${proteinList(flag.proteins)}. The meal’s saved — just worth knowing, and ` +
       'maybe a note for your vet.',
+  };
+}
+
+/**
+ * The log-time MEMBERSHIP heads-up (B-693, mock §5, Variant B) — it rides the
+ * meal completion card exactly where the contents flag does, but says something
+ * strictly weaker and strictly honest: this food is not on the trial's list.
+ *
+ * IT TAKES ONLY THE PET NAME, ON PURPOSE. `mealFlagCopy` reads `flag.proteins`
+ * because it names a protein; this one has no contents to name, because rung 3 is
+ * exactly the state where nobody read the panel. Encoding that in the signature —
+ * there is no food-specific field to pass — makes it structurally impossible to
+ * assert what the food contains. The words it must NEVER use ("off-diet",
+ * "contaminant", any negative all-clear) are pinned in the test.
+ *
+ * Past-tense and settled, like `mealFlagCopy`: the meal is already saved, so the
+ * copy reports (and says so first) rather than asking — it is not a gate
+ * (Principle 1). `addLine` is the §3 escape hatch: if the vet okayed the food,
+ * adding it to the list repairs the record instead of scoring the owner (§6.9).
+ * The "+" affordance glyph is NOT baked into the string — the copy layer carries
+ * words, not chrome; PR 2's surface renders `+ ${addLine}` in JSX, the way the
+ * card's existing combo row hardcodes its own "+ Add a med given with this"
+ * literal (there is no shared prepend convention to reuse — just the same glyph
+ * rendered at the call site).
+ */
+export function membershipFlagCopy(petName: string): {
+  eyebrow: string;
+  headline: string;
+  detail: string;
+  addLine: string;
+} {
+  return {
+    eyebrow: 'Off the trial list',
+    headline: `This one isn’t on ${petName}’s trial list.`,
+    detail:
+      'The meal’s saved, and it counts in the trial record. If your vet okayed ' +
+      'this food, adding it to the list keeps the record straight.',
+    addLine: 'Add to the trial list',
   };
 }
 
@@ -372,6 +595,11 @@ export function standingFlagCopy(flag: TrialContaminantFlag, petName: string): {
 export function trialDietNote(
   ctx: TrialProteinContext,
   petName?: string | null,
+  /** `TrialFacts.antigenArmDark` + `antigenAttributionPaused.map(f => f.label)`,
+   *  passed in by the card loader rather than re-derived here (B-598). See branch
+   *  #3 below and `antigenPausedNote` for why the note reads the module's flag
+   *  instead of computing its own. */
+  opts?: { antigenArmDark?: boolean; pausedLabels?: readonly string[] },
 ): { title: string; body: string } | null {
   // B9 — the MOST unknown state must not get the LEAST disclosure. An unknown
   // trial diet silently disables every check in this module, and an earlier cut
@@ -441,45 +669,30 @@ export function trialDietNote(
   // AND permitted extras. Never a per-feeding verdict (C2).
   const note = contaminationNote(trialContamination(trialContextOf(ctx)), petName);
   if (note) return note;
-  // B-529/R7(c) — THE PARTIAL CASE, which the all-dark test above cannot see.
-  // One designated trial food and one undesignated one leaves the sanctioned set
-  // NON-empty, so every branch above stays quiet — while the undesignated food is
-  // dropped from that set and its own proteins fall outside it. `classifyFeeding`
-  // now goes quiet in that state; this is the sentence that stops it being
-  // quieter WITHOUT SAYING SO, which is the whole of B9's lesson: the most
-  // unknown state must not get the least disclosure.
+  // B-529/R7(c) + B-598 — THE PAUSED ANTIGEN ARM, read from the module's flag,
+  // never re-derived here.
   //
-  // AFTER `contaminationNote`, DELIBERATELY. The first cut returned here BEFORE
-  // it, and the adversarial pass executed the cost: an already-computed, still
-  // valid contamination finding about food A ("The trial food also lists
-  // chicken") was deleted from the owner's card because food B was missing a
-  // field. A real finding outranks an explanation of a gap — the gap is still
-  // disclosed on the vet report, which is the surface that carries the tally
-  // this pause affects.
+  // This branch used to compute its OWN `uncharacterizedTrialDietFoodsInRange`
+  // over `[startDayIndex … max(today, startDayIndex)]` — a SECOND definition of
+  // "is the arm dark" living one surface away from the one the vet report reads
+  // (`TrialFacts.antigenArmDark` / `antigenAttributionPaused`). Two answers to one
+  // question, the class B-598 was filed under, and it was wrong two ways the flag
+  // is not:
+  //   • a `primary_diet` MEMBERSHIP GAP darkens the arm with NO row to name, so the
+  //     re-derivation found nothing and returned null while the report rendered the
+  //     unnamed "Antigen check paused" row. The card went silent on a gap the vet
+  //     was shown — the disclosure pass 4 forced onto the report, missing here.
+  //   • its range END was `Date.now()`, so an ENDED trial saw rows in force AFTER
+  //     it ended (over-fire). `antigenArmDark` bounds on the evidence end.
+  // The flag is computed once, feeding-anchored, over the correct window, so the
+  // card now discloses exactly when the report does and names the same foods.
   //
-  // RANGE-anchored, not `today`-anchored: membership is dated, so a trial food
-  // swapped out mid-trial leaves days of missing attribution that a now-check
-  // cannot see, and a disclosure that disappears while its hole remains reads as
-  // though nothing was ever wrong.
-  const trialCtx = trialContextOf(ctx);
-  const todayIndex = localDayIndex(Date.now());
-  const unnamed = uncharacterizedTrialDietFoodsInRange(
-    trialCtx,
-    trialCtx.startDayIndex ?? todayIndex,
-    Math.max(todayIndex, trialCtx.startDayIndex ?? todayIndex),
-  );
-  if (unnamed.length > 0) {
-    const which = unnamed.length === 1 && unnamed[0].label
-      ? `${unnamed[0].label} has`
-      : 'One of the trial foods has';
-    return {
-      title: 'Protein checks are paused for this trial',
-      body:
-        `${which} no protein Culprit recognises as a source, so it can’t tell which ` +
-        'proteins belong to the trial diet and which don’t. Setting a main protein ' +
-        'on that food would turn the checks back on.',
-    };
-  }
+  // AFTER `contaminationNote`, DELIBERATELY (B-529 ④): a real finding about food A
+  // outranks an explanation of a gap caused by food B, and BEFORE the
+  // ingredients-unread note below, preserving the order the re-derivation had.
+  // `antigenPausedNote` is the owner-register mirror of `render.ts`'s row; both
+  // read `antigenAttributionPaused`.
+  if (opts?.antigenArmDark) return antigenPausedNote(opts.pausedLabels ?? []);
   if (!ctx.trialFoodCompleteness.complete) {
     return {
       title: 'The trial food’s ingredients haven’t been read',
@@ -490,6 +703,50 @@ export function trialDietNote(
     };
   }
   return null;
+}
+
+/**
+ * The card's "Antigen check paused" disclosure (B-598) — the owner-surface mirror
+ * of `render.ts`'s report row. Driven by `TrialFacts.antigenArmDark` +
+ * `antigenAttributionPaused` (the labels), the SAME two fields the report reads,
+ * so the two surfaces cannot disagree about whether the arm is dark. That is the
+ * one-record-two-answers class B-598 closes: the card used to re-derive this and
+ * missed the membership gap the report showed.
+ *
+ * TWO VARIANTS, because the arm darkens two ways and only one has a food to name
+ * (matching the report's own split): a `primary_diet` membership gap leaves the
+ * label list empty, so the named sentence would have no subject. An empty
+ * `pausedLabels` is that gap, NEVER "no pause" — the caller gates on the boolean
+ * flag, and reaches this function only when the arm is genuinely dark.
+ */
+export function antigenPausedNote(pausedLabels: readonly string[]): {
+  title: string;
+  body: string;
+} {
+  const title = 'Protein checks are paused for this trial';
+  const named = pausedLabels.filter((l) => l && l.trim().length > 0);
+  if (named.length === 0) {
+    // The membership gap — no diet was on the allowed list for part of the window,
+    // so there is no food to name. "Still counts what was eaten" is the §5.3 fact
+    // the vet report also carries: a dark arm costs ATTRIBUTION, not detection, so
+    // the off-diet count is intact and only the protein names are missing.
+    return {
+      title,
+      body:
+        'For part of this trial there was no diet on the allowed list to check other ' +
+        'foods against, so those proteins couldn’t be compared. Culprit still counts ' +
+        'what was eaten — it just can’t name the proteins for that stretch.',
+    };
+  }
+  const which = named.length === 1 ? `${named[0]} has` : 'Some of the trial foods have';
+  const thatFood = named.length === 1 ? 'that food' : 'those foods';
+  return {
+    title,
+    body:
+      `${which} no protein Culprit recognises as a source, so it can’t tell which ` +
+      `proteins belong to the trial diet and which don’t. Setting a main protein on ` +
+      `${thatFood} would turn the checks back on.`,
+  };
 }
 
 /**
@@ -737,7 +994,16 @@ export async function loadTrialProteinContext(
     trialId: trial.id,
     petId,
     startedAtMs: localMidnightMs(trial.started_at),
-    spec: { id: trial.id, startedAt: trial.started_at, endedAt: trial.ended_at },
+    // `targetDurationDays` is carried so the log-time evaluators can ask
+    // `isTrialRunning` (the B-595 gate). `buildTrialContext` deliberately IGNORES
+    // it — the window bounds on `ended_at` only, never the effective end (see the
+    // long note there). It reaches BELIEF, not the window.
+    spec: {
+      id: trial.id,
+      startedAt: trial.started_at,
+      endedAt: trial.ended_at,
+      targetDurationDays: trial.target_duration_days,
+    },
     allowedFoods,
     trialFoodLabel:
       primaryRows.map((r) => r.food_label).filter(Boolean).join(' + ') || null,
@@ -762,7 +1028,12 @@ export async function loadTrialProteinContext(
   // disable every check for the whole window. Treated like a failed read: answer
   // now, re-ask next time. (`ctx: null` — genuinely no active trial — IS a
   // settled answer and stays cached.)
-  if (primaryRows.length === 0 || resolvedPrimary.length < primaryRows.length) return ctx;
+  //
+  // `allowedSetHydrated` is that exact settled-ness test, and the membership flag
+  // reads the SAME predicate to decide "this food is really not on the list"
+  // rather than "the list just hasn't loaded" — one definition, so the cache and
+  // the flag can never disagree about whether the set is trustworthy.
+  if (!allowedSetHydrated(ctx)) return ctx;
 
   contextCache.set(petId, { atMs: Date.now(), ctx });
   return ctx;
@@ -879,52 +1150,108 @@ export function resetHeadsUpLedgerCache(): void {
 }
 
 /**
- * The full log-time decision, for the meal-entry paths (app/log.tsx and the FAB
+ * The shared spine of the two log-time evaluators (app/log.tsx and the FAB
  * quick-log). Runs AFTER the meal is committed — the log itself is never gated,
  * delayed or made conditional on any of this (Principle 1). Everything it reads
- * is local except the cached trial row, so the cost is sub-millisecond in the
- * warm case.
+ * is local except the cached trial row, so the cost is sub-millisecond warm.
+ * Never throws into the log path.
  *
- * Returns null — silence — for every uncertainty: no trial, no known trial diet,
- * an unread panel, a meal outside the trial window, a permitted food, the trial
- * diet itself, or a repeat feeding. Never throws into the log path.
+ * THE `isTrialRunning` GATE LIVES HERE, AT THE LOG-TIME CALL SITE — B-595, and
+ * deliberately NOT in `loadTrialProteinContext` or the pure predicates. The
+ * shared context still feeds the STANDING surfaces (the card's `trialDietNote`,
+ * the food-detail note, the vet report), which MUST keep firing on a stale-active
+ * trial the owner never ended — B-422's round 3 measured what gating the context
+ * instead cost: the card silently dropped its contamination note and both B9
+ * disclosures from a trial it still displayed. Only the moment-of-log heads-up is
+ * friction Principle 1 says to drop once the trial is genuinely over, so only it
+ * is gated. `foodContaminantFlag`'s OTHER call site — the food-capture add path —
+ * is a different surface and is intentionally left ungated.
  *
- * The window check now lives INSIDE the predicate (`classifyFeeding` returns
- * `out_of_window`), so this no longer carries its own date arithmetic — one
- * definition of "inside the trial", the same one the card and the report use.
+ * Returns null — silence — for every uncertainty: no trial, a trial not genuinely
+ * running, no known trial diet / unhydrated list, an unread panel, a meal outside
+ * the window, a permitted food, the trial diet itself, or a repeat feeding.
+ *
+ * The window check lives INSIDE `classifyFeeding` (verdict `out_of_window`), so
+ * this carries no date arithmetic of its own — one definition of "inside the
+ * trial", the same the card and report use.
  */
-export async function evaluateMealTrialFlag(args: {
-  petId: string;
-  foodId: string;
-  occurredAt: string;
-}): Promise<TrialContaminantFlag | null> {
+async function evaluateLogTimeFlag<T extends { trialId: string; foodId: string }>(
+  args: { petId: string; foodId: string; occurredAt: string },
+  build: (ctx: TrialProteinContext, record: FoodProteinRecord) => T | null,
+): Promise<T | null> {
   try {
     const ctx = await loadTrialProteinContext(args.petId);
     if (!ctx) return null;
 
+    // B-595 / B-693 D3 — active trial only. `isTrialRunning` (target + grace, the
+    // B-422 convention), never the raw `status` column: a trial stale-active since
+    // March says nothing at the moment of a log. The context is already filtered
+    // to `status = 'active'` in SQL, so an absent status here means "the query
+    // established this is the active row", which `isTrialRunning` reads correctly.
+    if (!isTrialRunning(ctx.spec, Date.now())) return null;
+
     const record = await readFoodProteinRecord(args.foodId);
     if (!record) return null;
 
-    const flag = foodContaminantFlag(
-      ctx,
-      args.foodId,
-      record.proteins,
-      record.foodKey,
-      args.occurredAt,
-    );
+    const flag = build(ctx, record);
     if (!flag) return null;
 
-    // Rule 3's READ half only. The WRITE is noteTrialFlagShown, called by the
-    // surface that actually displays it — see that function for why they are
-    // split.
+    // Rule 3's READ half only, and it is SHARED across both flag kinds: a food
+    // already spoken for under this trial is not news again, whichever kind spoke
+    // (a food cannot flip protein↔membership on one classification, and once told
+    // the owner does not need telling twice). The WRITE is `noteTrialFlagShown`,
+    // spent by the surface that actually displays it — see that function for why
+    // they are split.
     if (await hasFlaggedFoodInTrial(ctx.trialId, args.foodId)) return null;
     return flag;
   } catch (e) {
     // A failure here must never surface to the owner or disturb the log — the
     // meal is already saved and the heads-up is strictly additive information.
-    console.warn('[trialContaminant] meal flag evaluation failed:', e);
+    console.warn('[trialContaminant] log-time flag evaluation failed:', e);
     return null;
   }
+}
+
+/**
+ * The log-time trial heads-up for the meal-entry paths (app/log.tsx + the FAB) —
+ * the SINGLE-READ COMPOSITION the PR-1 lib layer set up and PR 2 now consumes.
+ *
+ * Returns exactly ONE of the two mutually-exclusive kinds, or null for silence:
+ * the rung-2 CONTENTS flag ("this has chicken in it") when the food's panel names
+ * an off-trial protein, else the rung-3 MEMBERSHIP flag ("this isn't on the trial
+ * list") when the food simply isn't on the allowed set (the modal case). It
+ * replaces the two single-kind evaluators PR 1 shipped: their split existed only
+ * because the card could not yet render a membership flag, so widening the meal
+ * callers would have spent the ledger budget on an unshowable flag. PR 2 renders
+ * both, so the split is resolved by composing the two PURE predicates here rather
+ * than reading the food record twice.
+ *
+ * ONE CONTEXT READ (TTL-cached) AND ONE FOOD-RECORD READ back the whole decision:
+ * `evaluateLogTimeFlag` loads both once, and `foodContaminantFlag(...) ??
+ * foodMembershipFlag(...)` runs both predicates over that same record. Rung-2
+ * precedence is the `??`: `classifyFeeding` returns one verdict, so a food with an
+ * off-trial protein takes the contents branch and never reaches membership — never
+ * both. The shared `isTrialRunning` gate (B-595) and the shared, kind-agnostic
+ * ledger (rule 3: one heads-up per food per trial, whichever kind spoke) both live
+ * in the spine, so a repeat of the same food stays quiet under either kind.
+ *
+ * THE CALLER MUST SPEND THE BUDGET ONLY AFTER THE FLAG IS ON SCREEN — `patchTrialFlag`
+ * returns true → THEN `noteTrialFlagShown` (see `applyTrialFlag` at both call sites).
+ * Recording before the card is shown re-opens the "a suppressed heads-up consumed the
+ * budget for a heads-up that was never given" defect (rule 3): the read/write split
+ * only holds if the write happens at render time.
+ */
+export function evaluateMealLogTimeFlag(args: {
+  petId: string;
+  foodId: string;
+  occurredAt: string;
+}): Promise<LogTimeTrialFlag | null> {
+  return evaluateLogTimeFlag(
+    args,
+    (ctx, record) =>
+      foodContaminantFlag(ctx, args.foodId, record.proteins, record.foodKey, args.occurredAt) ??
+      foodMembershipFlag(ctx, args.foodId, record.proteins, record.foodKey, args.occurredAt),
+  );
 }
 
 /**
@@ -946,7 +1273,12 @@ export async function evaluateMealTrialFlag(args: {
  * The timeout is gone (the callers no longer await this before showing the card,
  * so there is nothing to race), and the budget is now spent at the only moment we
  * can honestly say a heads-up was given: when it is rendered.
+ *
+ * Takes either log-time flag kind — the ledger is keyed by trial + food and is
+ * kind-agnostic on purpose (rule 3 is one heads-up per food per trial, whichever
+ * kind spoke). Typed structurally so a `TrialContaminantFlag`, a
+ * `TrialMembershipFlag`, or the `LogTimeTrialFlag` union all satisfy it.
  */
-export async function noteTrialFlagShown(flag: TrialContaminantFlag): Promise<void> {
+export async function noteTrialFlagShown(flag: { trialId: string; foodId: string }): Promise<void> {
   await recordFlaggedFoodInTrial(flag.trialId, flag.foodId);
 }

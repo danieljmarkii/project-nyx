@@ -1,0 +1,726 @@
+<title>Culprit — Medication history</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  /* ============================================================
+     Medication history — B-140 extended, mock ROUND 1 (exploratory).
+     NOT design-locked. This round exists to make the 2026-08-04
+     team discussion visualisable: one course model, three tenses,
+     four surfaces. Everything here is a proposal for PM reaction.
+
+     Document chrome follows the house mock system (see
+     culprit-med-strip-mockups.html): cool indigo-biased paper in
+     light, the app's night tokens in dark. The DEVICE FRAMES stay
+     light in both themes on purpose — they render the app's
+     light-mode surfaces, and flipping them would misrepresent
+     what ships. Frame values are the real tokens from
+     constants/theme.ts.
+     ============================================================ */
+
+  :root {
+    /* Document — light */
+    --paper:      #F5F4F9;   /* cool paper, biased toward colorBrandNight */
+    --paper-2:    #FFFFFF;
+    --ink:        #1B1A2E;
+    --ink-2:      #5F5C7A;
+    --ink-3:      #8B87A8;
+    --rule:       #DEDCE9;
+    --rule-soft:  #E9E7F1;
+    --teal:       #00C2A8;   /* theme.colorAccent */
+    --teal-ink:   #0B7B6C;   /* theme.colorAccentInk */
+    --teal-wash:  #E0FBF7;   /* theme.colorAccentLight */
+    --rose:       #F43F5E;   /* theme.colorEventSymptom */
+    --rose-ink:   #B4123B;
+    --rose-wash:  #FFE4E6;
+    --med:        #5B7A9E;   /* theme.colorEventMedication */
+    --med-wash:   #EAF0F7;   /* theme.colorEventMedicationLight */
+
+    --serif: ui-serif, Charter, "Bitstream Charter", "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper:     #13112E;  /* theme.colorBrandNight */
+      --paper-2:   #1D1A42;
+      --ink:       #ECEAF6;
+      --ink-2:     #A6A2CE;
+      --ink-3:     #706BA6;
+      --rule:      rgba(196,190,255,0.20);
+      --rule-soft: rgba(196,190,255,0.11);
+      --teal-ink:  #4FD8C4;
+      --teal-wash: rgba(0,194,168,0.14);
+      --rose-ink:  #FB7185;
+      --rose-wash: rgba(251,113,133,0.14);
+      --med:       #93B0CE;
+      --med-wash:  rgba(91,122,158,0.18);
+    }
+  }
+  :root[data-theme="light"] {
+    --paper: #F5F4F9; --paper-2: #FFFFFF; --ink: #1B1A2E; --ink-2: #5F5C7A;
+    --ink-3: #8B87A8; --rule: #DEDCE9; --rule-soft: #E9E7F1;
+    --teal-ink: #0B7B6C; --teal-wash: #E0FBF7;
+    --rose-ink: #B4123B; --rose-wash: #FFE4E6;
+    --med: #5B7A9E; --med-wash: #EAF0F7;
+  }
+  :root[data-theme="dark"] {
+    --paper: #13112E; --paper-2: #1D1A42; --ink: #ECEAF6; --ink-2: #A6A2CE;
+    --ink-3: #706BA6; --rule: rgba(196,190,255,0.20); --rule-soft: rgba(196,190,255,0.11);
+    --teal-ink: #4FD8C4; --teal-wash: rgba(0,194,168,0.14);
+    --rose-ink: #FB7185; --rose-wash: rgba(251,113,133,0.14);
+    --med: #93B0CE; --med-wash: rgba(91,122,158,0.18);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 16px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 56px 28px 96px; }
+  .col  { max-width: 68ch; }
+
+  /* ── Masthead ─────────────────────────────────────────────── */
+  .mast { border-bottom: 1px solid var(--rule); padding-bottom: 28px; margin-bottom: 40px; }
+  .eyebrow {
+    font-family: var(--mono); font-size: 11px; letter-spacing: 0.14em;
+    text-transform: uppercase; color: var(--ink-3); margin: 0 0 14px;
+    display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center;
+  }
+  h1 {
+    font-family: var(--serif); font-weight: 600; font-size: clamp(30px, 4.4vw, 44px);
+    line-height: 1.12; letter-spacing: -0.015em; margin: 0 0 14px; text-wrap: balance;
+  }
+  .standfirst { font-size: 17px; color: var(--ink-2); margin: 0; max-width: 62ch; }
+  .standfirst strong { color: var(--ink); font-weight: 600; }
+
+  .roundtag {
+    display: inline-flex; align-items: center; gap: 7px;
+    font-family: var(--mono); font-size: 11px; letter-spacing: 0.1em;
+    text-transform: uppercase; font-weight: 600;
+    color: var(--med); background: var(--med-wash);
+    border-radius: 999px; padding: 4px 11px;
+  }
+  .roundtag::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+
+  /* ── Section scaffolding ──────────────────────────────────── */
+  section { margin-top: 72px; }
+  .sec-head { display: flex; align-items: baseline; gap: 14px; margin-bottom: 8px; border-top: 1px solid var(--rule); padding-top: 18px; }
+  .sec-num { font-family: var(--mono); font-size: 12px; color: var(--ink-3); letter-spacing: 0.08em; flex-shrink: 0; }
+  h2 { font-family: var(--serif); font-weight: 600; font-size: clamp(22px, 2.6vw, 28px); line-height: 1.2; letter-spacing: -0.01em; margin: 0; text-wrap: balance; }
+  h3 { font-family: var(--sans); font-weight: 600; font-size: 15px; letter-spacing: 0.005em; margin: 32px 0 8px; }
+  p { margin: 0 0 16px; }
+  .col p:last-child { margin-bottom: 0; }
+  em { font-style: italic; color: var(--ink-2); }
+  strong { font-weight: 600; }
+  code {
+    font-family: var(--mono); font-size: 0.855em;
+    background: var(--rule-soft); border-radius: 4px; padding: 1px 5px;
+  }
+
+  /* ── The ruling block ─────────────────────────────────────── */
+  .ruling {
+    margin: 28px 0 8px; padding: 30px 32px;
+    background: var(--paper-2); border: 1px solid var(--rule);
+    border-radius: 3px;
+  }
+  .ruling .lede { font-family: var(--mono); font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-3); margin: 0 0 18px; }
+  .ruling dl { margin: 0; display: grid; gap: 20px; }
+  .ruling dt {
+    font-family: var(--serif); font-size: clamp(19px, 2.2vw, 24px); font-weight: 600;
+    line-height: 1.3; letter-spacing: -0.008em; margin-bottom: 5px; text-wrap: balance;
+  }
+  .ruling dd { margin: 0; color: var(--ink-2); font-size: 15.5px; }
+  .ruling .vs {
+    display: block; font-family: var(--mono); font-size: 11px; letter-spacing: 0.16em;
+    text-transform: uppercase; color: var(--ink-3); margin: 2px 0 6px;
+  }
+  .forbid { color: var(--rose-ink); font-weight: 600; }
+  .permit { color: var(--teal-ink); font-weight: 600; }
+
+  .callout {
+    border-left: 2px solid var(--teal); padding: 2px 0 2px 20px;
+    margin: 24px 0; color: var(--ink-2); font-size: 15.5px;
+  }
+  .callout strong { color: var(--ink); }
+  .callout.warn { border-left-color: var(--rose); }
+
+  /* ── Surfaces strip ───────────────────────────────────────── */
+  .rulings { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 1px; background: var(--rule); border: 1px solid var(--rule); margin: 26px 0 0; }
+  .rulings > div { background: var(--paper); padding: 18px 20px; }
+  .rulings .k { font-family: var(--mono); font-size: 11px; letter-spacing: 0.12em; color: var(--ink-3); text-transform: uppercase; }
+  .rulings .v { font-family: var(--serif); font-size: 20px; font-weight: 600; margin: 6px 0 5px; letter-spacing: -0.005em; }
+  .rulings .n { font-size: 13.5px; color: var(--ink-2); line-height: 1.45; }
+
+  /* ── Specimen grid ────────────────────────────────────────── */
+  .specimens { display: grid; gap: 1px; background: var(--rule); border: 1px solid var(--rule); margin-top: 30px; }
+  .spec { background: var(--paper); display: grid; grid-template-columns: 372px 1fr; gap: 0; }
+  .spec > .stage { padding: 26px; border-right: 1px solid var(--rule-soft); display: flex; flex-direction: column; gap: 12px; }
+  .spec > .rules { padding: 26px 28px; min-width: 0; }
+  @media (max-width: 860px) {
+    .spec { grid-template-columns: 1fr; }
+    .spec > .stage { border-right: 0; border-bottom: 1px solid var(--rule-soft); }
+  }
+  .spec-id { font-family: var(--mono); font-size: 11px; letter-spacing: 0.12em; color: var(--ink-3); text-transform: uppercase; margin-bottom: 3px; }
+  .spec-name { font-family: var(--serif); font-size: 21px; font-weight: 600; line-height: 1.25; margin: 0 0 12px; letter-spacing: -0.008em; text-wrap: balance; }
+  .rules p { font-size: 14.5px; color: var(--ink-2); margin: 0 0 14px; }
+  .rules p:last-child { margin-bottom: 0; }
+  .tags { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 14px; }
+  .tag {
+    font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.07em; font-weight: 600;
+    padding: 3px 8px; border-radius: 3px; background: var(--rule-soft); color: var(--ink-2);
+    white-space: nowrap;
+  }
+  .tag.no  { background: var(--rose-wash); color: var(--rose-ink); }
+  .tag.yes { background: var(--teal-wash); color: var(--teal-ink); }
+
+  /* ── THE DEVICE FRAME — light in both themes, on purpose ──── */
+  .phone {
+    width: 320px; max-width: 100%;
+    background: #FAFAFA;                 /* theme.colorNeutralLight */
+    border: 1px solid #EAEAEA;           /* theme.colorBorder */
+    border-radius: 24px;                 /* theme.radiusLarge */
+    padding: 14px 12px 18px;
+    color: #0A0A0A;                      /* theme.colorTextPrimary */
+    font-family: var(--sans);
+    color-scheme: light;
+  }
+  .screen-title { font-size: 17px; font-weight: 600; color: #0A0A0A; padding: 2px 4px 10px; letter-spacing: -0.01em; }
+  .screen-sub { font-size: 12px; color: #737373; padding: 0 4px 10px; margin-top: -8px; }
+
+  .card {
+    background: #FFFFFF; border: 1px solid #EAEAEA;
+    border-radius: 16px; padding: 12px 14px; margin-bottom: 8px;
+  }
+  .card-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+  .card-title { font-size: 15px; font-weight: 500; color: #0A0A0A; letter-spacing: -0.003em; }
+  .chev { font-size: 17px; color: #737373; line-height: 1; }
+  .card-line { font-size: 13px; color: #525252; margin-top: 6px; }
+  .card-line.faint { color: #A3A3A3; }
+  .card-line.flag { color: #B4123B; }
+  .track { height: 4px; border-radius: 2px; background: #F0F0F0; overflow: hidden; margin-top: 8px; }
+  .fill  { height: 4px; border-radius: 2px; background: #00C2A8; }
+
+  /* Section header inside a card list (the profile card's group label) */
+  .group-label {
+    font-size: 11px; font-weight: 600; letter-spacing: 0.09em; text-transform: uppercase;
+    color: #A3A3A3; padding: 12px 4px 6px;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .group-label .count { font-weight: 500; letter-spacing: 0; text-transform: none; }
+
+  /* Past-course row — quieter than an active card */
+  .row {
+    background: #FFFFFF; border: 1px solid #EAEAEA; border-radius: 12px;
+    padding: 10px 12px; margin-bottom: 6px;
+    display: flex; align-items: baseline; justify-content: space-between; gap: 8px;
+  }
+  .row .l { min-width: 0; }
+  .row .name { font-size: 14px; font-weight: 500; color: #0A0A0A; }
+  .row .meta { font-size: 12px; color: #737373; margin-top: 2px; }
+  .row .meta.faint { color: #A3A3A3; }
+
+  .pill {
+    font-size: 10.5px; font-weight: 600; letter-spacing: 0.04em;
+    border-radius: 999px; padding: 3px 9px; white-space: nowrap; flex-shrink: 0;
+  }
+  .pill.ended { background: #F0F0F0; color: #737373; }
+  .pill.open  { background: #EAF0F7; color: #3D5875; }   /* med wash / med ink */
+  .pill.active{ background: #E0FBF7; color: #0B7B6C; }
+
+  .ghost {
+    border: 1px dashed #D4D4D4; border-radius: 12px; padding: 10px 12px; margin-bottom: 6px;
+    font-size: 12px; color: #A3A3A3; text-align: center;
+  }
+
+  .caption { font-size: 12px; color: var(--ink-3); font-family: var(--mono); letter-spacing: 0.03em; }
+
+  /* Detail-screen fact list */
+  .facts { margin-top: 4px; }
+  .facts .f { display: flex; justify-content: space-between; gap: 12px; padding: 8px 2px; border-bottom: 1px solid #F0F0F0; }
+  .facts .f:last-child { border-bottom: 0; }
+  .facts .fk { font-size: 12.5px; color: #737373; }
+  .facts .fv { font-size: 12.5px; color: #0A0A0A; font-weight: 500; text-align: right; }
+  .link-row {
+    margin-top: 10px; padding: 10px 12px; border: 1px solid #EAEAEA; border-radius: 12px;
+    font-size: 13px; font-weight: 500; color: #0B7B6C;
+    display: flex; justify-content: space-between; align-items: center;
+  }
+
+  /* ── The report frame — paper, serif, clinical ────────────── */
+  .report {
+    width: 360px; max-width: 100%;
+    background: #FFFFFF; border: 1px solid #E5E3EE; border-radius: 6px;
+    padding: 22px 24px; color: #17161F;
+    font-family: var(--serif); color-scheme: light;
+    box-shadow: 0 1px 3px rgba(27,26,46,0.07);
+  }
+  .report .rp-head { font-family: var(--sans); font-size: 10px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: #8B87A8; margin-bottom: 4px; }
+  .report .rp-title { font-size: 17px; font-weight: 600; letter-spacing: -0.008em; margin-bottom: 2px; }
+  .report .rp-note { font-family: var(--sans); font-size: 10.5px; color: #737373; font-style: italic; margin-bottom: 12px; }
+  .report table { border-collapse: collapse; width: 100%; font-family: var(--sans); font-size: 10.5px; min-width: 0; }
+  .report th { text-align: left; font-size: 8.5px; letter-spacing: 0.1em; text-transform: uppercase; color: #8B87A8; font-weight: 600; padding: 0 8px 5px 0; border-bottom: 1px solid #DEDCE9; }
+  .report td { padding: 6px 8px 6px 0; border-bottom: 1px solid #F0EFF5; vertical-align: top; color: #333140; }
+  .report td:first-child { font-weight: 600; color: #17161F; white-space: nowrap; }
+  .report .rp-foot { font-family: var(--sans); font-size: 9.5px; color: #A3A3A3; margin-top: 10px; }
+
+  /* ── Two-up comparison ────────────────────────────────────── */
+  .compare { display: flex; flex-wrap: wrap; gap: 28px; margin-top: 28px; align-items: flex-start; }
+  .compare figure { margin: 0; display: flex; flex-direction: column; gap: 12px; }
+  .compare figcaption { font-size: 13.5px; color: var(--ink-2); max-width: 320px; }
+  .compare figcaption b { color: var(--ink); font-weight: 600; display: block; margin-bottom: 3px; font-family: var(--mono); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; }
+
+  /* ── Never-say table ──────────────────────────────────────── */
+  .tablewrap { overflow-x: auto; margin-top: 26px; }
+  table.doc { border-collapse: collapse; width: 100%; min-width: 620px; font-size: 14.5px; }
+  .doc th, .doc td { text-align: left; vertical-align: top; padding: 13px 16px 13px 0; border-bottom: 1px solid var(--rule-soft); }
+  .doc th { font-family: var(--mono); font-size: 11px; letter-spacing: 0.11em; text-transform: uppercase; color: var(--ink-3); font-weight: 600; border-bottom-color: var(--rule); padding-top: 0; }
+  .doc td:first-child { font-family: var(--mono); font-size: 12px; color: var(--ink-3); white-space: nowrap; padding-right: 22px; }
+  .doc td.say { color: var(--ink-2); }
+  .never { color: var(--rose-ink); text-decoration: line-through; text-decoration-thickness: 1px; }
+
+  ul.notes { margin: 16px 0 0; padding-left: 0; list-style: none; display: grid; gap: 12px; }
+  ul.notes li { padding-left: 20px; position: relative; color: var(--ink-2); font-size: 15.5px; }
+  ul.notes li::before { content: ""; position: absolute; left: 0; top: 0.62em; width: 7px; height: 1px; background: var(--ink-3); }
+  ul.notes li strong { color: var(--ink); }
+
+  footer { margin-top: 80px; border-top: 1px solid var(--rule); padding-top: 22px; font-size: 13.5px; color: var(--ink-3); }
+  footer a { color: var(--teal-ink); }
+</style>
+
+<div class="wrap">
+
+  <header class="mast">
+    <p class="eyebrow">
+      <span>B-140 · extended</span><span>Round 1</span><span>2026-08-04</span>
+      <span class="roundtag">Exploratory — not locked</span>
+    </p>
+    <h1>Medication history — one course model, three tenses</h1>
+    <p class="standfirst">
+      The vet asks <strong>"what medications has she been on?"</strong> and today the app cannot answer it
+      anywhere. Three shipped surfaces — the profile card, the vet-visit rundown, the report's medication
+      section — all filter to <code>status = 'active'</code>, so the moment a course ends, the app forgets
+      it everywhere except the raw dose stream. This round proposes the shape of the fix across
+      <strong>four surfaces</strong>, for PM reaction. Nothing here is locked.
+    </p>
+  </header>
+
+  <div class="rulings">
+    <div>
+      <div class="k">Surface 1 · Pet profile</div>
+      <div class="v">Past medications</div>
+      <div class="n">The B-140 row, extended: a collapsed section under the active meds, one row per past course, tappable.</div>
+    </div>
+    <div>
+      <div class="k">Surface 2 · Course detail</div>
+      <div class="v">The course screen</div>
+      <div class="n">Course-grain facts over the event-grain evidence — with a route into History's dose list, never instead of it.</div>
+    </div>
+    <div>
+      <div class="k">Surface 3 · Rundown</div>
+      <div class="v">The vet-chair answer</div>
+      <div class="n">A med-history block in the A6 vet-visit rundown — the purpose-built, offline, read-it-out-loud surface.</div>
+    </div>
+    <div>
+      <div class="k">Surface 4 · Vet report</div>
+      <div class="v">Lifetime listing</div>
+      <div class="n">A compact medication-history table that ignores the report window. Tier-2 spec change — flagged, not written.</div>
+    </div>
+  </div>
+
+  <!-- ══ 01 ══════════════════════════════════════════════════ -->
+  <section>
+    <div class="sec-head"><span class="sec-num">01</span><h2>The grain rule</h2></div>
+    <div class="col">
+      <p>
+        History already has a Medication filter — that half of the idea shipped. What it answers is
+        <em>what happened</em>: dose events, one row per tap, newest first. The vet-chair question is a
+        different grain entirely — <em>what has she been on</em> — and scrolling dose events backwards
+        under pressure in an exam room fails the 10-second test badly.
+      </p>
+    </div>
+
+    <div class="ruling">
+      <p class="lede">Two grains, two jobs</p>
+      <dl>
+        <div>
+          <dt>History answers <span class="permit">what happened</span> — the event grain.</dt>
+          <dd>Dose events, timestamps, the evidence layer. It stays exactly as it is; every course-grain claim links back down into it.</dd>
+        </div>
+        <div>
+          <span class="vs">whereas</span>
+          <dt>Medication history answers <span class="permit">what has she been on</span> — the course grain.</dt>
+          <dd>"Metronidazole, fourteen days in March, twenty-six doses logged." A derived summary over the same rows, never a second source of truth.</dd>
+        </div>
+      </dl>
+    </div>
+
+    <div class="col">
+      <div class="callout">
+        <strong>The load-bearing decision: courses are derived from doses, not from regimens.</strong>
+        On the PM's own account there are 2 regimens and 0 with durations — the dominant real shape is
+        ad-hoc doses (B-394's finding). A history view that reads only <code>medications</code> rows
+        renders near-empty for real accounts. This is the same call the med strip already won as its D2:
+        ad-hoc tolerant, everyone gets value. The grouping machinery exists
+        (<code>attributeDosesToRegimens</code>, the report's orphan-dose pass); the build is one shared
+        course-summary derivation in <code>lib/</code> that all four surfaces read.
+      </div>
+    </div>
+  </section>
+
+  <!-- ══ 02 ══════════════════════════════════════════════════ -->
+  <section>
+    <div class="sec-head"><span class="sec-num">02</span><h2>Surface 1 — the profile's Past medications</h2></div>
+    <div class="col">
+      <p>
+        The frames use your actual situation: a cat mid-diet-trial, a Motozol course ending, ad-hoc
+        Zyrtec earlier in the record. Left is today; right is the proposal.
+      </p>
+    </div>
+
+    <div class="compare">
+      <figure>
+        <div class="phone">
+          <div class="screen-title">Medications</div>
+          <div class="card">
+            <div class="card-head"><span class="card-title">Motozol · dose 26 of 28</span><span class="chev">›</span></div>
+            <div class="track"><div class="fill" style="width:93%"></div></div>
+            <div class="card-line">1 of 2 doses logged today</div>
+          </div>
+          <div class="ghost">— nothing else renders —</div>
+        </div>
+        <figcaption><b>Today</b> The card filters <code>status='active'</code>. The metronidazole course
+        from March, the Zyrtec week in June — gone. When Motozol ends, it vanishes too, and the app
+        has amnesia about the one clinical fact a vet always asks for.</figcaption>
+      </figure>
+
+      <figure>
+        <div class="phone">
+          <div class="screen-title">Medications</div>
+          <div class="card">
+            <div class="card-head"><span class="card-title">Motozol · dose 26 of 28</span><span class="chev">›</span></div>
+            <div class="track"><div class="fill" style="width:93%"></div></div>
+            <div class="card-line">1 of 2 doses logged today</div>
+          </div>
+          <div class="group-label"><span>Past medications</span><span class="count">3</span></div>
+          <div class="row">
+            <div class="l">
+              <div class="name">Metronidazole</div>
+              <div class="meta">Mar 3 – Mar 16 · 14 days · 26 doses logged</div>
+            </div>
+            <span class="pill ended">Ended</span>
+          </div>
+          <div class="row">
+            <div class="l">
+              <div class="name">Zyrtec</div>
+              <div class="meta faint">3 doses · Jun 2 – Jun 9 · last dose logged Jun 9</div>
+            </div>
+            <span class="pill open">No end recorded</span>
+          </div>
+          <div class="row">
+            <div class="l">
+              <div class="name">Cerenia</div>
+              <div class="meta faint">1 dose · Feb 11</div>
+            </div>
+            <span class="pill open">No end recorded</span>
+          </div>
+        </div>
+        <figcaption><b>Proposed</b> A collapsed section (shown expanded), newest course first. Explicitly
+        ended regimens say <em>Ended</em>; dose-derived courses say what the record supports — <em>last
+        dose logged Jun 9</em> — and never more.</figcaption>
+      </figure>
+    </div>
+
+    <div class="col">
+      <ul class="notes">
+        <li><strong>Two end registers, and the pill tells them apart.</strong> <em>Ended</em> renders only
+        from an owner action (<code>status IN (completed, stopped)</code>) — a fact someone asserted.
+        A course that simply went quiet gets <em>No end recorded</em> and a last-dose date. The app never
+        promotes silence into an ending.</li>
+        <li><strong>Section collapsed by default.</strong> Past courses are reference material, not daily
+        state — the active cards keep the screen. The count on the label says there is history without
+        spending the space.</li>
+        <li><strong>Ad-hoc courses render.</strong> Zyrtec never had a regimen; it appears because the
+        derivation groups doses by medication item. This is most of the real data.</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ══ 03 ══════════════════════════════════════════════════ -->
+  <section>
+    <div class="sec-head"><span class="sec-num">03</span><h2>Surface 2 — the course detail</h2></div>
+    <div class="col">
+      <p>
+        Tapping a past course opens course-grain facts with the event-grain evidence one tap below.
+        Two frames: an explicitly ended regimen, and a dose-derived course with no regimen at all.
+      </p>
+    </div>
+
+    <div class="specimens">
+      <div class="spec">
+        <div class="stage">
+          <div class="phone">
+            <div class="screen-title">Metronidazole</div>
+            <div class="screen-sub">Past medication</div>
+            <div class="card">
+              <div class="facts">
+                <div class="f"><span class="fk">Course</span><span class="fv">Mar 3 – Mar 16, 2026</span></div>
+                <div class="f"><span class="fk">Length</span><span class="fv">14 days</span></div>
+                <div class="f"><span class="fk">Doses logged</span><span class="fv">26 of 28 planned</span></div>
+                <div class="f"><span class="fk">Schedule</span><span class="fv">2× a day, with food</span></div>
+                <div class="f"><span class="fk">Ended</span><span class="fv">Marked complete Mar 16</span></div>
+              </div>
+            </div>
+            <div class="link-row"><span>All 26 doses in History</span><span class="chev">›</span></div>
+          </div>
+          <p class="caption">course facts above · evidence link below</p>
+        </div>
+        <div class="rules">
+          <div class="spec-id">Frame A</div>
+          <p class="spec-name">An ended regimen — the full fact set</p>
+          <div class="tags"><span class="tag yes">counted facts</span><span class="tag no">no adherence %</span><span class="tag no">no “did it help?”</span></div>
+          <p>
+            <strong>Doses logged, not adherence scored.</strong> "26 of 28 planned" is a counted fact;
+            a percentage or a grade is a verdict about the owner, and the report's adherence narrative
+            (honest about unconfirmed doses) already owns that register for the vet.
+          </p>
+          <p>
+            <strong>No outcome field — deliberately.</strong> Dr. Chen wants "did it help?", but the diet
+            trial's C5 ruling already settled how Culprit answers that: from logged events, never from an
+            owner-scored grade. If response context ever renders here, it is the symptom trend across the
+            course dates — computed, not asked.
+          </p>
+        </div>
+      </div>
+
+      <div class="spec">
+        <div class="stage">
+          <div class="phone">
+            <div class="screen-title">Zyrtec</div>
+            <div class="screen-sub">Past medication</div>
+            <div class="card">
+              <div class="facts">
+                <div class="f"><span class="fk">Doses logged</span><span class="fv">3</span></div>
+                <div class="f"><span class="fk">First dose</span><span class="fv">Jun 2, 2026</span></div>
+                <div class="f"><span class="fk">Last dose logged</span><span class="fv">Jun 9, 2026</span></div>
+                <div class="f"><span class="fk">Course</span><span class="fv">No regimen set up</span></div>
+              </div>
+            </div>
+            <div class="link-row"><span>All 3 doses in History</span><span class="chev">›</span></div>
+          </div>
+          <p class="caption">renders from doses alone — no regimen required</p>
+        </div>
+        <div class="rules">
+          <div class="spec-id">Frame B</div>
+          <p class="spec-name">A dose-derived course — what the record supports, and no more</p>
+          <div class="tags"><span class="tag yes">ad-hoc tolerant</span><span class="tag no">never “Ended” from silence</span></div>
+          <p>
+            No length, no schedule, no end — because none was recorded. The screen states first and last
+            dose and stops. "No regimen set up" is a fact, not a scold; if B-302's promote-to-regimen
+            nudge ever ships, this line is where its doorway would live.
+          </p>
+          <p>
+            <strong>One derivation, four consumers.</strong> Whatever computes this course span is the
+            same <code>lib/</code> function the profile section, the rundown block and the report listing
+            read. The diet-trial track already paid for the lesson: a second, contradictory predicate
+            ships a contradiction.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══ 04 ══════════════════════════════════════════════════ -->
+  <section>
+    <div class="sec-head"><span class="sec-num">04</span><h2>Surface 3 — the vet-chair moment</h2></div>
+    <div class="col">
+      <p>
+        "I'm in the vet office trying to answer what meds she's been on" is not a browsing moment — it
+        is a <em>recall under pressure</em> moment, and the app already built the surface for it: the
+        vet-visit rundown (A6), deterministic and offline. Today its medication block reads active
+        regimens only. The proposal adds the past, in rows written to be read aloud.
+      </p>
+    </div>
+
+    <div class="specimens">
+      <div class="spec">
+        <div class="stage">
+          <div class="phone">
+            <div class="screen-title">Vet-visit rundown</div>
+            <div class="screen-sub">Built from the record · works offline</div>
+            <div class="group-label"><span>Medications — current</span></div>
+            <div class="row">
+              <div class="l">
+                <div class="name">Motozol</div>
+                <div class="meta">2× a day · dose 26 of 28 · last dose this morning</div>
+              </div>
+              <span class="pill active">Active</span>
+            </div>
+            <div class="group-label"><span>Medications — past 12 months</span></div>
+            <div class="row">
+              <div class="l">
+                <div class="name">Metronidazole</div>
+                <div class="meta">Mar 3 – 16 · 14 days · 26 doses logged</div>
+              </div>
+              <span class="pill ended">Ended</span>
+            </div>
+            <div class="row">
+              <div class="l">
+                <div class="name">Zyrtec</div>
+                <div class="meta faint">3 doses · Jun 2 – 9 · no end recorded</div>
+              </div>
+              <span class="pill open">No end recorded</span>
+            </div>
+            <div class="row">
+              <div class="l">
+                <div class="name">Cerenia</div>
+                <div class="meta faint">1 dose · Feb 11</div>
+              </div>
+              <span class="pill open">No end recorded</span>
+            </div>
+          </div>
+          <p class="caption">same derivation as §02 — same rows, vet-chair framing</p>
+        </div>
+        <div class="rules">
+          <div class="spec-id">The rundown block</div>
+          <p class="spec-name">Rows an owner can read out loud, in order</p>
+          <div class="tags"><span class="tag yes">offline</span><span class="tag yes">deterministic</span><span class="tag">12-month window — a call to make</span></div>
+          <p>
+            Every row leads with the drug name and gives dates the owner can say to a person across a
+            desk. Current first, then past, newest first — the order the vet will ask in.
+          </p>
+          <p>
+            <strong>The one open design variable is the window.</strong> "Past 12 months" keeps the list
+            speakable for Sam's chronic cat; the profile section (§02) carries the full lifetime. But a
+            vet intake question is often genuinely lifetime ("has she ever been on steroids?") — the
+            window and its label are a PM/Dr. Chen call, not settled here.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══ 05 ══════════════════════════════════════════════════ -->
+  <section>
+    <div class="sec-head"><span class="sec-num">05</span><h2>Surface 4 — the report's lifetime listing</h2></div>
+    <div class="col">
+      <p>
+        The report's medication machinery mostly exists — Appendix D renders per-drug regimens and an
+        adherence narrative, and the orphan-dose pass surfaces ad-hoc doses. But all of it is scoped to
+        the <strong>report window</strong>: a 30-day report will not say "prednisolone in the spring."
+        The proposal is one compact table that deliberately ignores the window, sitting beside — not
+        replacing — the windowed adherence detail.
+      </p>
+    </div>
+
+    <div class="specimens">
+      <div class="spec">
+        <div class="stage">
+          <div class="report">
+            <div class="rp-head">Section 8 · Diet, feeding &amp; medications</div>
+            <div class="rp-title">Medication history</div>
+            <div class="rp-note">Lifetime of record (since Feb 2026) — includes courses outside this report's window. Dose-level detail for the report window: Appendix D.</div>
+            <table>
+              <thead>
+                <tr><th>Drug</th><th>Dates</th><th>Course</th><th>Doses logged</th></tr>
+              </thead>
+              <tbody>
+                <tr><td>Motozol</td><td>Jul 22 – present</td><td>28 doses planned, 2×/day</td><td>26</td></tr>
+                <tr><td>Zyrtec</td><td>Jun 2 – Jun 9</td><td>No regimen recorded</td><td>3</td></tr>
+                <tr><td>Metronidazole</td><td>Mar 3 – Mar 16</td><td>14 days, 2×/day · ended by owner</td><td>26 of 28</td></tr>
+                <tr><td>Cerenia</td><td>Feb 11</td><td>Single logged dose</td><td>1</td></tr>
+              </tbody>
+            </table>
+            <div class="rp-foot">Dates reflect logged doses; an absent end date means no end was recorded, not that dosing continued.</div>
+          </div>
+          <p class="caption">clinical register · scannable in seconds · no decoration</p>
+        </div>
+        <div class="rules">
+          <div class="spec-id">The report table</div>
+          <p class="spec-name">Lifetime beside the window, each honest about what it is</p>
+          <div class="tags"><span class="tag">tier-2 spec change</span><span class="tag yes">Principle 6</span><span class="tag no">not built this round</span></div>
+          <p>
+            The table leads with the drug and the dates — the two things a vet scans for — and the
+            footnote carries the disclosure that keeps it honest: absence of an end date is absence of a
+            record, not evidence of continuation. The same two-register rule as §02, in clinical prose.
+          </p>
+          <p>
+            <strong>This frame is a proposal for a Tier-2 edit</strong> to
+            <code>nyx-vet-report-requirements.md</code> (§3.8 / Appendix D), flagged for PM approval —
+            the mock does not change the spec. Dr. Chen's lens says lifetime is the standard for referral
+            records; the counter-consideration is report length on a long record, which is why this is
+            one compact table and not a second appendix.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══ 06 ══════════════════════════════════════════════════ -->
+  <section>
+    <div class="sec-head"><span class="sec-num">06</span><h2>What these surfaces may never say</h2></div>
+    <div class="col">
+      <p>
+        Inherited from the med strip's table and the diet trial's stale-active lesson, restated here
+        because every one of them binds a <em>history</em> surface differently than a <em>today</em> surface.
+      </p>
+    </div>
+
+    <div class="tablewrap">
+      <table class="doc">
+        <thead>
+          <tr><th scope="col">Rule</th><th scope="col">Never</th><th scope="col">Instead</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>H1</td>
+            <td><span class="never">Completed</span> — from silence</td>
+            <td class="say">"Last dose logged Jun 9." An ending renders only from an owner action. Nothing auto-completes a course, so stale-active is the steady state — a history view that promotes silence into an ending fabricates a clinical fact.</td>
+          </tr>
+          <tr>
+            <td>H2</td>
+            <td><span class="never">An adherence percentage or grade</span></td>
+            <td class="say">Counted facts — "26 of 28 planned." A percentage judges the owner; the report's adherence narrative (honest about unconfirmed doses) already carries that register for the clinical reader.</td>
+          </tr>
+          <tr>
+            <td>H3</td>
+            <td><span class="never">Did it help? ★★★☆☆</span></td>
+            <td class="say">Nothing — or, someday, the computed symptom trend across the course dates. The C5 ruling stands: outcomes come from logged events, never from an owner-scored grade.</td>
+          </tr>
+          <tr>
+            <td>H4</td>
+            <td><span class="never">A third course predicate</span></td>
+            <td class="say">One shared derivation in <code>lib/</code>, read by all four surfaces. <code>dosesTowardTarget</code> and <code>lib/medStrip</code> are the existing predicates; this feature reads them, it does not rival them.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ══ 07 ══════════════════════════════════════════════════ -->
+  <section>
+    <div class="sec-head"><span class="sec-num">07</span><h2>Open for PM reaction</h2></div>
+    <div class="col">
+      <ul class="notes">
+        <li><strong>D1 — ratify dose-derived courses.</strong> The whole round assumes the med strip's D2 logic extends here: courses derive from doses, regimens enrich when present. Says the team unanimously; needs the PM's word.</li>
+        <li><strong>D2 — lifetime vs windowed on the report.</strong> §05's table ignores the report window on purpose. Dr. Chen argues lifetime is the clinical standard; it is a Tier-2 spec change either way.</li>
+        <li><strong>D3 — the rundown's window.</strong> Past 12 months (speakable) vs lifetime (complete). Could also be both: 12 months shown, "earlier courses" folded.</li>
+        <li><strong>D4 — sequencing.</strong> Fold this into the queued B-394 course-model design session (one model, three tenses: the strip owns <em>now</em>, B-394 owns <em>next</em>, this owns <em>before</em>) — or promote B-140 standalone. The team recommends the fold.</li>
+      </ul>
+    </div>
+  </section>
+
+  <footer>
+    Round 1 · exploratory · 2026-08-04 — drawn from the medication-history team discussion (this
+    session). Extends backlog <code>B-140</code>; pairs with <code>B-394</code> /
+    <code>docs/medication-course-tracking-kickoff.md</code> and the shipped med-strip round
+    (<code>docs/culprit-med-strip-mockups.html</code>). Frames are indicative structure, not
+    pixel-locked; copy is pre-<code>nyx-voice</code>.
+  </footer>
+
+</div>

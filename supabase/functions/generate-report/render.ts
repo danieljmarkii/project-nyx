@@ -57,6 +57,7 @@ import type {
   DietSummary,
   MedicationAdherence,
   UnlinkedMedicationGroup,
+  MedicationHistoryEntry,
   CorrelationSummary,
   ConcurrentChange,
   SymptomLogEntry,
@@ -135,6 +136,13 @@ function fmtDayYear(dayKey: string | null): string {
   if (!dayKey) return '—'
   const p = dayParts(dayKey)
   return p ? `${MONTHS[p.m - 1]} ${p.d}, ${p.y}` : h(dayKey)
+}
+
+/** 'YYYY-MM-DD' → "Mon YYYY" — month + year, for the lifetime-coverage note (§4.4). */
+function fmtMonthYear(dayKey: string | null): string {
+  if (!dayKey) return '—'
+  const p = dayParts(dayKey)
+  return p ? `${MONTHS[p.m - 1]} ${p.y}` : h(dayKey)
 }
 
 /** Inclusive window "Mon D – Mon D, YYYY" (single year) or full both-years form. */
@@ -482,7 +490,17 @@ function proteinPattern(id: string, color: string, texIndex: number): string {
   const ink = 'rgba(20,24,34,.34)'
   let tex = ''
   switch (texIndex % 8) {
-    case 0: tex = ''; break // solid (the dominant baseline protein)
+    // B-444 — case 0 carries a texture too. The caption promises the chart "reads in
+    // black & white", and §5.8 requires every datum be carried by a shape/texture, not
+    // colour. A solid case-0 made the LARGEST protein band a flat fill that a photocopy
+    // or fax could not tell apart from the solid "no recorded protein" band (`ptc-u`) —
+    // both distinguished only by lightness. Solid is now reserved for that no-protein
+    // band alone, so every actual protein band carries a mark and the largest no longer
+    // collides with it. (Both texture and PROTEIN_COLORS cycle mod 8 over an uncapped
+    // protein list, so ≥9 distinct off-diet proteins still repeat a texture+colour pair —
+    // a pre-existing limit of the §5.8 colour-carve that wants a Designer, tracked as
+    // B-685; not this fix's to redesign.)
+    case 0: tex = `<circle cx="4" cy="4" r="1.7" fill="none" stroke="${ink}" stroke-width="1.1"/>`; break // ring (the dominant baseline protein)
     case 1: tex = `<circle cx="4" cy="4" r="1.5" fill="${ink}"/>`; break // dots
     case 2: tex = `<path d="M0 4 H8" stroke="${ink}" stroke-width="1.4"/>`; break // horizontal
     case 3: tex = `<path d="M4 0 V8" stroke="${ink}" stroke-width="1.4"/>`; break // vertical
@@ -1421,6 +1439,21 @@ function safetyFlagRow(f: SafetyFlag, snap: ReportSnapshot): string {
             )} days to ${num(f.currentCount)} in the recent ${num(w)} days.`
       return flagRow('Worsening', `<b>Rising frequency.</b> ${detail}`)
     }
+    case 'protein_mismatch': {
+      // B-704 §6 — the wrong-primary trial food, made a lead safety line rather than a
+      // buried disclosure (`vet-report-cold-read` 2026-08-05). The load-bearing sentence
+      // is the CONSEQUENCE: if the recorded protein is the real antigen, the trial diet
+      // ITSELF is off-target, so the "nearly clean" exposure count is a false-reassurance
+      // read. Trial-level and non-causal; never "wrong food" / "mistake" (§8). It states
+      // which baseline the figures use so a vet is not misled by them, and moves no count.
+      const labels = f.trialDietLabels.length ? h(f.trialDietLabels.join(' / ')) : 'the trial food'
+      const recorded = h(capProtein(f.recordedProtein))
+      const food = h(capProtein(f.foodProtein))
+      return flagRow(
+        'Trial protein',
+        `<b>The recorded trial protein is not the protein on the trial food&rsquo;s label.</b> The owner recorded <b>${recorded}</b> as this trial&rsquo;s protein; ${labels} lists <b>${food}</b> as its main protein. This record cannot resolve which is the elimination antigen. The exposure figures on this report are measured against ${food} (the food&rsquo;s label); <b>if ${recorded} is the intended antigen, every feeding of the trial diet is itself off-target and the elimination cannot be confirmed from this record.</b> Worth confirming the bag against the prescription.`,
+      )
+    }
   }
 }
 
@@ -1553,6 +1586,25 @@ function dietTrialSection(snap: ReportSnapshot): string {
   const labels = t.trialDietLabels.length
     ? t.trialDietLabels.map((l) => h(l)).join(' + ')
     : 'Trial diet (not named)'
+  // B-704 §7.4 — NAME THE PROTEIN. `trialTargetProtein` is the EXPOSURE BASELINE (the
+  // derived-first key every off-trial marking on this page is measured against), so the
+  // identity names the same protein the exposure figures use — the two can never disagree.
+  // When the owner CONFIRMS that protein the provenance says so ("owner-confirmed"); when
+  // it was read off the label it says that instead; and on a MISMATCH the baseline is the
+  // food's own protein (duck), the identity names it as label-read, and the owner's
+  // different word (rabbit) leads the safety band above as a `protein_mismatch` flag —
+  // never a false "owner-confirmed" over the food's protein. No protein resolves
+  // (hydrolyzed / cleared / a thin trial food with no stored value) → the food-label-led
+  // form, never a bare "Elimination diet trial —" with nothing after the dash.
+  const protein = snap.diet.trialTargetProtein
+  const prov = snap.diet.trialProteinProvenance
+  const provWord = !prov
+    ? ''
+    : prov.source === 'owner'
+      ? prov.confirmedDay != null
+        ? `owner-confirmed protein &middot; recorded on day ${num(prov.confirmedDay)}`
+        : 'owner-confirmed protein'
+      : 'protein read from the trial diet&rsquo;s label'
   const identity: string[] = [
     // THE JOIN NEEDS ITS OWN PUNCTUATION (cold read round 10, all four artifacts). The
     // phrase was concatenated straight onto the next clause, and on an ended trial that
@@ -1560,8 +1612,16 @@ function dietTrialSection(snap: ReportSnapshot): string {
     // asserts a 42-day window spanning nineteen days. A later sentence corrects each
     // one, which is why no artifact was blocked by it — and why one delimiter fixes it
     // on all four.
-    `${labels} &middot; ${trialDayPhrase(t, t.targetDurationDays)}.`,
+    protein
+      ? `Elimination diet trial &mdash; <b>${h(capProtein(protein))}</b> &middot; ${trialDayPhrase(t, t.targetDurationDays)}.`
+      : `${labels} &middot; ${trialDayPhrase(t, t.targetDurationDays)}.`,
   ]
+  // The food labels + provenance sub-line, only when the lead named the protein instead
+  // of the labels (else the labels already lead and this would repeat them). The labels
+  // ALWAYS ride this line so they never vanish; the provenance word rides it only when
+  // present (it always is in production — provenance travels with the resolved protein —
+  // but a display-only fixture may omit it, so no dangling delimiter either way).
+  if (protein) identity.push(`${labels}${provWord ? ` &middot; ${provWord}` : ''}.`)
   identity.push(
     t.status === 'active'
       ? `Started ${h(fmtDay(t.startedAt))}.`
@@ -1573,6 +1633,12 @@ function dietTrialSection(snap: ReportSnapshot): string {
   if (t.vetName) identity.push(`Directed by ${h(t.vetName)}.`)
   if (t.stoppedReason) identity.push(`<b>${h(stoppedReasonLine(snap.signalment.name, t.stoppedReason, t))}</b>`)
   rows.push(kv('Trial', identity.join(' ')))
+
+  // B-704 §6 — the target-vs-label tension does NOT render a second disclosure line here.
+  // It leads the SAFETY BAND above (a `protein_mismatch` flag), because a disclosure line
+  // in the trial block was where a vet formed a false-reassurance impression before ever
+  // reaching it (`vet-report-cold-read` 2026-08-05). The antigen-exposure row below carries
+  // a one-clause pointer to that flag so the count is never read out of its context.
 
   // ── §5.1's two facts, over ONE explicit range, never in one sentence ────────
   //
@@ -1770,7 +1836,17 @@ function dietTrialSection(snap: ReportSnapshot): string {
         // biopsy rather than at re-running an interpretable trial. The general
         // disclaimer four lines up cannot carry it, because the reader who lifts this
         // number has already stopped reading prose.
-        `${tally}. Proteins fed ${antigenScope} that the trial diet does not contain, counted on approved and unapproved feedings alike. ${PROTEIN_READ_CAVEAT}`,
+        // B-704 — on a mismatch the tally is measured against the trial food's OWN label
+        // (`snap.diet.trialTargetProtein` = the derived baseline), which is NOT the protein
+        // the owner recorded. A vet who lifts this count must know that, or "Chicken ×3"
+        // reads as a near-clean elimination while, if the recorded protein is the antigen,
+        // every trial-diet feeding is itself off-target. Points at the safety flag rather
+        // than re-arguing it here.
+        `${tally}. Proteins fed ${antigenScope} that the trial diet does not contain, counted on approved and unapproved feedings alike.${
+          snap.diet.trialProteinMismatch
+            ? ` <b>Measured against the trial food&rsquo;s label (${h(capProtein(snap.diet.trialProteinMismatch.foodProtein))}), not the recorded protein (${h(capProtein(snap.diet.trialProteinMismatch.target))}) &mdash; see the trial-protein safety flag.</b>`
+            : ''
+        } ${PROTEIN_READ_CAVEAT}`,
       ),
     )
   }
@@ -2208,18 +2284,40 @@ function weightDuringTrial(snap: ReportSnapshot): string | null {
   if (!first || first <= 0) return null
   const dir = tr.deltaKg < 0 ? 'fell' : tr.deltaKg > 0 ? 'rose' : 'flat'
   if (dir === 'flat') return null
-  // #10b — PRECISION THE INSTRUMENT SUPPORTS. One 0.1 kg tick on a 2.0 kg cat is a
-  // single scale increment, and rendering it bolded as "5.0% of body weight" claims a
-  // resolution the reading does not have — against this function's own docstring. A
-  // delta of one tick is dropped; the rest round to a whole percent.
-  if (Math.abs(tr.deltaKg) < 0.15) return null
-  const pct = Math.round(Math.abs(tr.deltaKg / first) * 100)
-  if (pct < 1) return null
+  // #10b — PRECISION THE INSTRUMENT SUPPORTS, via the shared `weightDeltaPct`: it drops a
+  // sub-0.15 kg delta (one 0.1 kg tick on a 2.0 kg cat is a single scale increment, and
+  // "5.0% of body weight" would claim a resolution the reading does not have) and a sub-1%
+  // result, and rounds to a whole percent. The tile reads the same helper, so the figure
+  // can never differ between two renderings of the same fall.
+  const pct = weightDeltaPct(tr.deltaKg, first)
+  if (pct === null) return null
   return `Weight ${dir} ${num(first.toFixed(1))}&nbsp;&rarr;&nbsp;${num(
     (first + tr.deltaKg).toFixed(1),
   )}&nbsp;kg over ${h(fmtRange(tr.earliestDate, tr.latestDate))} &mdash; <b>about ${num(
     pct,
   )}% of body weight</b> (owner home-scale readings; ${num(tr.readingCount)} weigh-ins).`
+}
+
+/**
+ * The weight change as a percent of body weight — ONE derivation, shared by the trial
+ * sentence (`weightDuringTrial`) and the page-1 At-a-glance weight tile (`weightTile`), so
+ * a Labrador's −0.3 kg and a cat's −0.3 kg can never render the same magnitude on one
+ * surface and a different one on another (B-495; the diet-trial §5.3 one-predicate rule,
+ * applied to weight).
+ *
+ * `firstKg` is the EARLIEST reading of whatever series the caller scoped — the window for
+ * the tile, the trial range for the sentence — and the percent is the change relative to
+ * it. The guardrails are the instrument's, not a clinical threshold: a home scale resolves
+ * ~0.1 kg, so a sub-0.15 kg delta is one tick of noise and yields no percent, and the
+ * figure rounds to a whole number because a decimal would claim a resolution the reading
+ * does not have. The species sets what magnitude reads as notable; this invents no
+ * threshold and states no verdict. Returns null when no honest percent can be stated.
+ */
+function weightDeltaPct(deltaKg: number | null, firstKg: number | null): number | null {
+  if (deltaKg === null || firstKg === null || firstKg <= 0) return null
+  if (Math.abs(deltaKg) < 0.15) return null
+  const pct = Math.round(Math.abs(deltaKg / firstKg) * 100)
+  return pct < 1 ? null : pct
 }
 
 /** "a 56-day" but "an 84-day" — English takes the article from how the number is
@@ -2781,8 +2879,15 @@ function atAGlance(snap: ReportSnapshot): string {
   // that shape the old tiles duplicated the trend headline, showed the misleading "0 of 25 fully
   // eaten" for a free-fed grazer (R2-3), and restated the range box.
   const tiles = snap.diet.trial ? trialTiles(snap) : monitoringTiles(snap)
+  // B-503 — NOT a blanket "counts over the N-day window". The symptom and weight tiles
+  // count over the report window, but the coverage and off-diet tiles count over the
+  // trial's own (narrower) range — §5.1 pins the coverage denominator to the trial's
+  // overlap, deliberately NOT the report window (else a recheck-scoped report reads
+  // "27 / 56"). A single-window heading turned the coverage tile's "43 / 43" into a
+  // 100%-of-46 reading; each tile now names the span it counts over, and the heading
+  // says which tiles depart from the window rather than overriding them with one number.
   const aside = snap.diet.trial
-    ? `counts over the ${num(ag.windowDays)}-day window`
+    ? `over the ${num(ag.windowDays)}-day window &mdash; except coverage &amp; off-diet, over the trial&rsquo;s own range`
     : `symptom trajectory over the window`
   return `
   <div class="sec">
@@ -3025,20 +3130,33 @@ function weightTile(snap: ReportSnapshot): string {
   if (snap.weight.isEmpty) {
     return tile('—', '', `Weight<br/>no weigh-ins yet — a useful trend to log`)
   }
-  if (snap.weight.trend && snap.weight.trend.readingCount >= 2 && snap.weight.trend.deltaKg !== null) {
-    const d = snap.weight.trend.deltaKg
+  const tr = snap.weight.trend
+  if (tr && tr.readingCount >= 2 && tr.deltaKg !== null) {
+    const d = tr.deltaKg
     const sign = d > 0 ? '+' : ''
-    // Descriptive, but NEVER reassuring — a loss is the danger direction (B-186 guardrail).
+    // % OF BODY WEIGHT, ALONGSIDE THE ABSOLUTE (B-495). `-0.3 kg` is species-blind — ~1% on
+    // a Labrador, ~7% on a cat, where on a refusing animal it is the most action-forcing
+    // number on the page and no percentage appeared anywhere in the report. Computed against
+    // the earliest in-window weigh-in by the shared `weightDeltaPct` (the same helper the
+    // trial sentence uses), and stated ONLY when the home scale supports one: a one-tick
+    // wobble leaves `pct` null and the tile falls back to the absolute-only label rather
+    // than manufacturing precision. Descriptive, never reassuring — a loss is the danger
+    // direction (B-186 guardrail), so the percent is never softened by magnitude.
+    const pct = weightDeltaPct(d, tr.seriesKg[0] ?? null)
+    const trend =
+      pct === null
+        ? `home-scale trajectory (descriptive)`
+        : `<b>&asymp;${pct}% of body weight</b> &middot; home-scale (descriptive)`
     return tile(
       `${sign}${d.toFixed(1)}`,
       `<small>&nbsp;kg</small>`,
-      `Weight over ${snap.weight.trend.readingCount} weigh-ins<br/>home-scale trajectory (descriptive)`,
+      `Weight over ${tr.readingCount} weigh-ins<br/>${trend}`,
     )
   }
   // IN-WINDOW readings only (weight.trend). weight.latest may be a stale, out-of-window reading —
   // the Weight block discloses it as "(before this window)", but a bare tile cannot carry that
   // caveat, so a months-old weight would read as current in the 60-second scan (code-review find).
-  const kg = snap.weight.trend?.latestKg ?? null
+  const kg = tr?.latestKg ?? null
   return kg === null
     ? tile('—', '', `Weight<br/>no reading in this window`)
     : tile(`${kg.toFixed(1)}`, `<small>&nbsp;kg</small>`, `Latest weigh-in<br/>single reading — no trend yet`)
@@ -3378,6 +3496,24 @@ function vomitCharacteristics(snap: ReportSnapshot): string {
     p.totalIncidents === 1 ? '' : 's'
   }; ${num(assessed)} ${assessed === 1 ? 'has' : 'have'} a legible AI read${stateDisclosure}.${consistBit} Per-incident detail in appendix&nbsp;A.`
 
+  // COLLAPSE THE EMPTY BLOCK TO A LINE (B-502). With nothing photographed the section said
+  // "no photo" three ways — a lead describing a read that never happened, a chart-shaped grey
+  // "no legible read yet" bar, and a Blood & foreign block repeating it a third time — ~100
+  // words and a quarter page to carry one fact. It collapses to a single note: the denominator
+  // (which already discloses the without-a-photo count, §5.10) plus the caveat, and the heading
+  // drops its "Automated photo analysis" tag, which advertised a feature this instance never used.
+  //
+  // THE "NOT A CLEARANCE" CAVEAT STAYS, WORD FOR WORD (B-494). On the artifact where nothing was
+  // read it is the only thing keeping the section's silence from reading as a negative result:
+  // absence of a photo is not absence of blood. Only the triple repetition of "no photo" goes.
+  if (p.withAnalysis === 0) {
+    return `
+  <div class="sec">
+    <h2>Vomit characteristics</h2>
+    <p class="note">${denom} <b>Not a clearance:</b> a photo cannot exclude bleeding, digested (coffee-ground) blood photographs poorly, and these are AI reads &mdash; if blood or foreign material <b>is</b> seen in any incident, that incident leads the flags for review at the top of the report.</p>
+  </div>`
+  }
+
   // Present-only blood/foreign (§5.9).
   const blood = p.bloodPresent
   const foreign = p.foreignPresent
@@ -3413,20 +3549,11 @@ function vomitCharacteristics(snap: ReportSnapshot): string {
       </div>`
   }
 
-  // NO PHOTO ANYWHERE ⇒ NO CHART FURNITURE (B-532, cold-read secondary). With zero
-  // photographed incidents the section still drew a full-width grey bar reading "no legible
-  // read yet" under a heading promising "Automated photo analysis" — a chart-shaped element
-  // standing in for data that does not exist, and the phrase "yet" implying a read is coming
-  // for incidents that were never photographed. It costs a quarter of a page and gives a
-  // scanner something to mistake for a finding.
-  //
-  // The blood/foreign limitation block is NOT dropped with it. That block is the one carrying
-  // "this is not a clearance", and on the artifact where nothing was read it is the only thing
-  // stopping the section's silence from reading as a negative result (the B-494 rule).
-  const noPhotoAtAll = p.withAnalysis === 0
-  const body = noPhotoAtAll
-    ? `<div class="mixkey">No incident in this window has a photo, so there is no automated read of colour, contents or consistency. ${denom}</div>`
-    : `<div>
+  // The photo-present body (the no-photo case returned above, collapsed to a line). B-532's
+  // no-chart-furniture rule is now structural: with zero legible photos the section never
+  // reaches this bar at all, so there is no grey "no legible read yet" stand-in to mistake
+  // for a finding.
+  const body = `<div>
         <div class="barmix">${mixHtml}</div>
         <div class="mixkey">${keyHtml}<br/>${denom}</div>
       </div>`
@@ -3994,11 +4121,15 @@ function timingLine(c: CorrelationSummary, snap: ReportSnapshot): string {
       e.proteins && e.proteins.length > 1
         ? ` These proteins co-occur in every exposure on record, so the association <b>cannot be attributed to either one individually</b> — separating them would be informative.`
         : ''
+    // B-499 — NO "Detail in appendix C". Appendix C is the off-diet exposure table; it
+    // holds no correlation detail on any report, and is empty on a clean/refused one, so
+    // the pointer dead-ended. The statistical detail — cases, controls, p — is already
+    // inline on this line, which is where a vet reads it; there is nowhere else to send them.
     return `${h(e.protein)} reached the established association threshold for ${h(
       symptomLabel(e.symptomType).toLowerCase(),
     )} over this window (${num(e.caseExposed)}/${num(e.matchedPairs)} exposed cases vs ${num(
       e.controlExposed,
-    )} controls; p&nbsp;=&nbsp;${e.pValue.toFixed(3)}). An association, <b>not a proven cause</b>.${joint} Detail in appendix&nbsp;C.`
+    )} controls; p&nbsp;=&nbsp;${e.pValue.toFixed(3)}). An association, <b>not a proven cause</b>.${joint}`
   }
   const staple = c.stapleProtein
     // "IS OFFERED", NOT "EATS" (cold read round 10). The staple-washout reason is about
@@ -4021,7 +4152,11 @@ function timingLine(c: CorrelationSummary, snap: ReportSnapshot): string {
     .filter(Boolean)
     .join('; ')
   const timingBit = timing ? ` ${timing} — co-occurrence, not cause.` : ''
-  return `<b>No single food/protein reached the established correlation threshold</b> over this window${staple}.${timingBit} Detail in appendix&nbsp;C.`
+  // B-499 — NO "Detail in appendix C" here either: on a null result appendix C carries no
+  // correlation content and on a clean/refused report it is empty, so the pointer led a
+  // vet who followed it to an off-diet table or a blank page. (The negative branch still
+  // owes a denominator/power statement — that is B-489, folded in when either is picked up.)
+  return `<b>No single food/protein reached the established correlation threshold</b> over this window${staple}.${timingBit}`
 }
 
 // ── Footer (per page/section) ────────────────────────────────────────────────────
@@ -4091,10 +4226,15 @@ function lastAppendixLetter(snap: ReportSnapshot): string {
 function appendixDivider(snap: ReportSnapshot): string {
   const eBit = mealsAppendixVisible(snap) ? ' &middot; E — meals &amp; intake' : ''
   const photoBit = hasIncidentPhotos(snap) ? ` &middot; ${photosAppendixLetter(snap)} — incident photos` : ''
+  // The lifetime medication-history table (§4.4) is un-lettered by design (one table, not a second
+  // appendix — D2) but it renders between C and D, so name it in the map where it sits, or a reader
+  // scanning the contents line never learns it exists (cold-read scannability nit).
+  const medHistBit =
+    snap.medicationHistory && snap.medicationHistory.entries.length > 0 ? ' &middot; medication history (lifetime)' : ''
   return `
   <div class="divider">
     <span class="k">End of clinical summary</span>
-    The appendices are the reference record behind every figure on page&nbsp;1: A — event log &middot; B — diet history &middot; C — off-diet exposures &middot; D — medications${eBit}${photoBit} &middot; How to read this report.
+    The appendices are the reference record behind every figure on page&nbsp;1: A — event log &middot; B — diet history &middot; C — off-diet exposures${medHistBit} &middot; D — medications${eBit}${photoBit} &middot; How to read this report.
   </div>`
 }
 
@@ -4327,9 +4467,13 @@ function intakeDetailTable(snap: ReportSnapshot, log: IntakeLogEntry[]): string 
     })
     .join('')
   const hasFull = log.some((e) => e.isLastFullMeal)
-  const noun = unfinishedOnly ? 'unfinished meal' : 'rated meal'
-  // `unfinished` is the app's one predicate (`feedingWasFinished`: `most`/`all` are eaten), so
-  // the rows listed here are exactly the rows this table bolds. Never a second definition.
+  const noun = unfinishedOnly ? 'not-fully-eaten meal' : 'rated meal'
+  // B-500 — this list's population is "not FULLY eaten" (`intakeRating !== 'all'` in report.ts),
+  // matching page 1's "N of M fully eaten" (`finishedMeals === 'all'`) and this table's own copy.
+  // It is deliberately NOT the app's `feedingWasFinished` bar (`most`/`all`), so the rows listed
+  // here are a SUPERSET of the rows this table bolds: `intakeLogRow` still bolds only the
+  // below-`most` ratings, so an "ate most" row is listed (page 1 counts it as not fully eaten) but
+  // rendered plain, since it is not a health signal.
   const hiddenBit =
     hidden > 0
       ? ` ${num(hidden)} earlier ${noun}${hidden === 1 ? '' : 's'} in this window ${
@@ -4358,7 +4502,7 @@ function intakeDetailTable(snap: ReportSnapshot, log: IntakeLogEntry[]): string 
           : 'no fully-eaten meal was recorded in this window, so page&nbsp;1 shows no &ldquo;last full meal&rdquo; and none is tagged here'
       }. Absence of a full meal is not evidence the pet ate nothing — only that no fully-eaten meal was recorded.`
   const lead = unfinishedOnly
-    ? '<b>Meals not finished</b> — every rated meal in this window the owner did not record as fully eaten, most recent first.'
+    ? '<b>Meals not fully eaten</b> — every rated meal in this window the owner did not record as fully eaten, most recent first.'
     : '<b>Recent rated meals</b> — the meals behind the reduced-intake flag on page&nbsp;1, most recent first.'
   return `
   <p class="note lead" style="margin-top:16px">${lead}${hiddenBit}</p>
@@ -4482,6 +4626,7 @@ function appendixBCD(snap: ReportSnapshot): string {
   ${markedB ? offTrialFootnote(snap.diet.trialTargetProtein) : ''}
   ${offDietAppendix(snap)}
   ${!markedB && markedC ? offTrialFootnote(snap.diet.trialTargetProtein) : ''}
+  ${medicationHistoryTable(snap)}
   ${medicationAppendix(snap)}
   ${footer(snap, 'Appendices B–D — diet, exposures & meds')}
 </section>`
@@ -4747,7 +4892,15 @@ function offDietAppendix(snap: ReportSnapshot): string {
       // finding it qualifies — "Antigen exposures in the 31 trial days this report
       // covers: Beef ×1 — proteins fed in the 31 trial days this report covers that…",
       // pushing the number to the middle. The scoping is right; the density was not.
-      `<b>Antigen exposures ${antigenScope}:</b> ${antigens}${unknownBit} — proteins fed in that range that the trial diet does not contain, counted on approved and unapproved feedings alike. A food containing several counts once for each.`,
+      // B-704 — mirror page 1's baseline caveat onto the appendix a vet is sent here to
+      // CHECK the page-1 figure against: on a mismatch this count is measured against the
+      // trial food's label, not the recorded protein, and the un-annotated appendix figure
+      // is the last spot a mismatch count could be lifted out of that context.
+      `<b>Antigen exposures ${antigenScope}:</b> ${antigens}${unknownBit} — proteins fed in that range that the trial diet does not contain, counted on approved and unapproved feedings alike. A food containing several counts once for each.${
+        snap.diet.trialProteinMismatch
+          ? ` Measured against the trial food&rsquo;s label (${h(capProtein(snap.diet.trialProteinMismatch.foodProtein))}), not the recorded protein (${h(capProtein(snap.diet.trialProteinMismatch.target))}).`
+          : ''
+      }`,
     )
   } else if (tally) {
     tallyParts.push(
@@ -4966,8 +5119,18 @@ function dietHistoryAppendix(snap: ReportSnapshot): string {
   const suppBit = supps.length
     ? supps.map((m) => `${h(m.drugName)} (started ${h(fmtDay(m.startedAt))})`).join('; ')
     : NOT_LOGGED
+  // B-499 — "Dates in appendix C" only resolves on a NON-trial report, where appendix C
+  // IS the treats & table-food table and every treat is a dated row. On a trial report
+  // appendix C lists OFF-DIET exposures only, so a PERMITTED treat has no dated row there:
+  // the pointer dead-ended for all but the handful of off-diet treats (64 of 65 on the
+  // reviewed artifact). Under a trial the treats are otherwise accounted for — the
+  // allowed list and the appendix C permitted-extras tally carry their counts — so the
+  // honest form states the count without a cross-reference that cannot resolve.
+  const treatsDatedInAppendixC = !(snap.trial && !snap.trial.allowedSetUnavailable)
   const treatBit = d.treats.count
-    ? `${num(d.treats.count)} this window (${num(d.treats.distinctItems)} distinct). Dates in appendix&nbsp;C.`
+    ? `${num(d.treats.count)} this window (${num(d.treats.distinctItems)} distinct).${
+        treatsDatedInAppendixC ? ' Dates in appendix&nbsp;C.' : ''
+      }`
     : NOT_LOGGED
   // Meals (#7/#8) — the foods the owner logs AS MEALS (e.g. a wet diet). Previously discarded
   // before render, so a substantial part of the diet was invisible. Name the distinct foods here
@@ -5180,6 +5343,116 @@ function doseDatesCell(doseDays: readonly string[]): string {
   return `${h(fmtRange(doseDays[0], doseDays[doseDays.length - 1]))}<br/><span class="rnote">${num(
     doseDays.length,
   )} days with a dose</span>`
+}
+
+// ── §4.4 (D2) — the lifetime "Medication history" table ──────────────────────────────
+// Window-IGNORING, sits directly above Appendix D. Four terse columns a vet scans in
+// seconds (mock §05): Drug · Dates · Course · Doses logged. The snapshot carries the
+// FACTS (buildMedicationHistory); these helpers own only the clinical phrasing.
+
+/**
+ * The Dates cell. H1 lives here in the DATE GRAMMAR (pastMedications.ts's lesson): a closed
+ * "start – end" range renders ONLY when the owner recorded BOTH a start AND an end. Every other
+ * course states its start (or its dose span, for a dose-derived one) with NO closed range — because
+ * a closed range whose right edge is a last-dose day reads as an owner-recorded end that never
+ * happened. The four registers, in order, each self-disambiguated by its Course cell:
+ *   • owner-ended, both dates      → "Mar 3 – Mar 16, 2026"   (Course: "· ended by owner")
+ *   • owner-ended, only an end     → "ended Mar 16, 2026"     (Course: "· ended by owner")
+ *   • owner-ended, NO end date     → "started Mar 3, 2026"    (Course: "· ended by owner") — never a
+ *       fabricated end (endedAt is nullable + the derivation models `{ended, endedAt:null}`).
+ *   • active regimen               → "Jul 22, 2026 – present"
+ *   • dose-derived (orphan)        → the dose span              (Course: "No regimen recorded")
+ *   • a regimen neither active nor owner-ended (paused / an unknown future status) → "started {day}"
+ *       — its Course cell shows a real spec, so a closed dose-span range would read as a FINISHED
+ *       course; state only the start, and the absence of both "– present" and "· ended by owner" is
+ *       the honest "not asserted current, not asserted ended".
+ */
+function medHistoryDates(e: MedicationHistoryEntry): string {
+  if (e.ended) {
+    if (e.startedDay && e.endedDay) return h(fmtRange(e.startedDay, e.endedDay))
+    if (e.endedDay) return `ended ${h(fmtDayYear(e.endedDay))}`
+    if (e.startedDay) return `started ${h(fmtDayYear(e.startedDay))}` // ended, no date — NEVER fabricate one
+    return '&mdash;'
+  }
+  if (e.isActive && e.startedDay) return `${h(fmtDayYear(e.startedDay))} &ndash; present`
+  // A dose-derived (orphan) course: the logged-dose span. A single day is a bare date; a multi-day
+  // span is a range, disambiguated by the "No regimen recorded" Course cell + the note (never a
+  // continuous prescribed course). Orphans always carry doses, so first/last are present.
+  if (e.source === 'doses') {
+    if (e.singleDay && e.lastDoseDay) return h(fmtDayYear(e.lastDoseDay))
+    if (e.firstDoseDay && e.lastDoseDay) return h(fmtRange(e.firstDoseDay, e.lastDoseDay))
+    return h(fmtDayYear(e.lastDoseDay ?? e.firstDoseDay))
+  }
+  // A regimen that is neither active nor owner-ended (paused / an unknown status the derivation
+  // passes through). NEVER a closed range here (its Course cell isn't the orphan tell, so a range
+  // reads as finished). State only the start.
+  if (e.startedDay) return `started ${h(fmtDayYear(e.startedDay))}`
+  if (e.lastDoseDay) return `last dose ${h(fmtDayYear(e.lastDoseDay))}`
+  return '&mdash;'
+}
+
+/**
+ * The Course cell — the regimen's shape, or the dose-derived tell. Days- XOR dose-denominated
+ * (the migration-049 CHECK), so exactly one length phrasing applies; "· ended by owner" is the
+ * H1 marker and appends ONLY from the owner-action register. A dose-derived course is never a
+ * regimen and never ends (H1 by construction): it reads "Single logged dose" / "No regimen recorded".
+ */
+function medHistoryCourse(e: MedicationHistoryEntry): string {
+  if (e.source !== 'regimen') return e.singleDay ? 'Single logged dose' : 'No regimen recorded'
+  // Raw numbers in this descriptive cell (the Appendix-D regimen-cell convention); the
+  // right-aligned Doses-logged column is where num() tabular figures belong.
+  const spec: string[] = []
+  if (e.targetDurationDoses != null) {
+    spec.push(`${e.targetDurationDoses} dose${e.targetDurationDoses === 1 ? '' : 's'} planned`)
+  } else if (e.targetDurationDays != null) {
+    spec.push(`${e.targetDurationDays} day${e.targetDurationDays === 1 ? '' : 's'}`)
+  }
+  if (e.dosesPerDay != null) spec.push(`${e.dosesPerDay}×/day`)
+  let s = spec.join(', ')
+  if (!s) s = 'As needed' // no fixed length AND no daily cadence → PRN
+  if (e.ended) s += ' &middot; ended by owner'
+  return s
+}
+
+/**
+ * The Doses-logged cell. H4: the count is `dosesLogged` (given + partial), never re-summed. "of N
+ * planned" shows ONLY for an ENDED course with a plan it did not exceed — a retrospective delivered-
+ * vs-planned fact; an ACTIVE course shows the bare count (its plan is already in the Course cell, and
+ * "of N" mid-course would read as a countdown — B-618 D7). Over-delivered ⇒ drop the frame (never "30 of 28").
+ */
+function medHistoryDoses(e: MedicationHistoryEntry): string {
+  if (e.ended && e.plannedDoses != null && e.dosesLogged <= e.plannedDoses) {
+    return `${num(e.dosesLogged)} of ${num(e.plannedDoses)}`
+  }
+  return num(e.dosesLogged)
+}
+
+/**
+ * The lifetime table (§4.4, D2). Renders nothing when the pet has no medication record — never an
+ * empty table with a fabricated "none" row (that would be the false-negative the report guards
+ * against elsewhere). The note carries BOTH the coverage AND the H1 disclosure UP FRONT, before the
+ * data — a deliberate refinement of the mock's bottom footnote, per the B-494 rule that a load-
+ * bearing disclosure a reader must apply to the table cannot sit where a skimmer never reaches it.
+ */
+function medicationHistoryTable(snap: ReportSnapshot): string {
+  const mh = snap.medicationHistory
+  if (!mh || mh.entries.length === 0) return ''
+  const rows = mh.entries
+    .map(
+      (e) =>
+        `<tr><td>${h(e.drugName)}</td><td>${medHistoryDates(e)}</td><td>${medHistoryCourse(
+          e,
+        )}</td><td class="c num">${medHistoryDoses(e)}</td></tr>`,
+    )
+    .join('')
+  const since = mh.sinceDay ? ` (since ${h(fmtMonthYear(mh.sinceDay))})` : ''
+  return `
+  <p class="appx-title serif" style="margin-top:22px">Medication history</p>
+  <p class="appx-sub">Lifetime of the record${since} — the medications logged in Culprit, including courses that ended before this report&rsquo;s window; dose-level detail for the report window is in appendix&nbsp;D below. Dates are each course&rsquo;s span: a regimen&rsquo;s own start and end where one was recorded, otherwise the first and last logged dose. A course shown with no end date is one whose end the owner never recorded &mdash; not one still under way. <b>This lists only what the owner entered in Culprit</b> — a medication prescribed or given elsewhere and never logged does not appear here, and its absence is not evidence it was not given.</p>
+  <table>
+    <thead><tr><th>Medication</th><th style="width:118px">Dates</th><th style="width:186px">Course</th><th class="c" style="width:84px">Doses logged</th></tr></thead>
+    <tbody>${rows}</tbody>
+  </table>`
 }
 
 function appendixF(snap: ReportSnapshot): string {

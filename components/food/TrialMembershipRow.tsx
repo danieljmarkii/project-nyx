@@ -43,7 +43,7 @@ export function TrialMembershipRow({ line, addLabel, onAdd }: Props) {
 
   return (
     <View style={styles.block} testID="food-trial-membership">
-      <SectionLabel label="Trial" />
+      <SectionLabel label="Trial" header />
       {line !== null ? (
         <Text style={styles.fact} testID="food-trial-membership-fact">
           {line}

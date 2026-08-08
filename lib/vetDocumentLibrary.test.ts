@@ -25,6 +25,8 @@ import {
   buildKindFilterOptions,
   reconcileKindFilter,
   filterByKind,
+  shouldShowKindLens,
+  isYoungLibrary,
   formatVetDocumentDate,
   defaultVetDocumentTitle,
   VET_DOCUMENT_KIND_LABELS,
@@ -372,7 +374,8 @@ describe('buildVetFilesCardModel', () => {
     expect(model.blurb).toContain('Pixel');
     expect(model.blurb).toContain('camera roll');
     expect(model.actionLabel).toBe('Add the first one');
-    expect(model.stripPaths).toEqual([]);
+    expect(model.preview).toBeNull();
+    expect(model.moreLabel).toBeNull();
     expect(model.countLabel).toBeNull();
   });
 
@@ -385,22 +388,78 @@ describe('buildVetFilesCardModel', () => {
     expect(model.actionLabel).toBe('Open Vet Files');
   });
 
-  it('shows three thumbnails and an overflow badge', () => {
-    const model = buildVetFilesCardModel('Pixel', rowsOfKinds(new Array(6).fill('other')));
-    expect(model.stripPaths).toHaveLength(3);
-    expect(model.overflowLabel).toBe('+3');
-    expect(model.countLabel).toBe('6 documents');
+  // B-712 — the card previews the latest filing, not a strip of covers, so ONE
+  // document renders as itself (a named prescription) instead of a lone tile in a
+  // gutter, and there is no "more".
+  it('previews the single document with no “more” label at one document', () => {
+    const rows = [
+      buildVetLibraryRow(
+        cover({ title: 'Rabbit prescription', kind: 'prescription', storage_path: 'pet-1/d1.jpg' }),
+        NOW,
+      ),
+    ];
+    const model = buildVetFilesCardModel('Pixel', rows);
+    expect(model.preview?.title).toBe('Rabbit prescription');
+    expect(model.preview?.kindLabel).toBe('Prescription');
+    expect(model.preview?.storagePath).toBe('pet-1/d1.jpg');
+    expect(model.moreLabel).toBeNull();
+    expect(model.countLabel).toBe('1 document');
   });
 
-  it('omits the overflow badge when the strip shows everything', () => {
-    const model = buildVetFilesCardModel('Pixel', rowsOfKinds(['other', 'other']));
-    expect(model.stripPaths).toHaveLength(2);
-    expect(model.overflowLabel).toBeNull();
-    expect(model.countLabel).toBe('2 documents');
+  // The preview is the NEWEST document (rows are newest-first), and the rest are a
+  // count — the strip's pulse kept as information, scaled up.
+  it('previews rows[0] and counts the rest as “+N more”', () => {
+    const rows = rowsOfKinds(new Array(5).fill('other'));
+    const model = buildVetFilesCardModel('Pixel', rows);
+    expect(model.preview?.groupId).toBe(rows[0].groupId);
+    expect(model.moreLabel).toBe('+4 more');
+    expect(model.countLabel).toBe('5 documents');
   });
 
-  it('says “document” in the singular', () => {
-    expect(buildVetFilesCardModel('Pixel', rowsOfKinds(['other'])).countLabel).toBe('1 document');
+  // The newest document is usually unnamed (capture asks nothing, D11): the preview
+  // carries the default title and the untitled flag rather than rendering a blank.
+  it('previews an untitled latest document without blanking', () => {
+    const model = buildVetFilesCardModel('Pixel', [buildVetLibraryRow(cover(), NOW)]);
+    expect(model.preview?.untitled).toBe(true);
+    expect(model.preview?.title).toBe('Document — Jul 26');
+  });
+});
+
+// ── 5. The one-document surfaces (B-712) ─────────────────────────────────────
+
+describe('shouldShowKindLens', () => {
+  // A lens that can only offer "All types" is machinery over a set it cannot
+  // change — rendering it over a single-type library is what made the one-document
+  // screen read as scaffolding.
+  it('hides the lens when the library spans fewer than two types', () => {
+    expect(shouldShowKindLens([])).toBe(false);
+    expect(shouldShowKindLens(rowsOfKinds(['lab_result']))).toBe(false);
+    expect(shouldShowKindLens(rowsOfKinds(['other', 'other']))).toBe(false);
+  });
+
+  it('shows the lens once two or more types are present', () => {
+    expect(shouldShowKindLens(rowsOfKinds(['lab_result', 'vaccination']))).toBe(true);
+  });
+
+  // Semantic, not a document count: a five-document library all of one type still
+  // has nothing to filter.
+  it('stays hidden for many documents of a single type', () => {
+    expect(shouldShowKindLens(rowsOfKinds(new Array(5).fill('lab_result')))).toBe(false);
+  });
+});
+
+describe('isYoungLibrary', () => {
+  it('is false when empty — that is the empty state, a different screen', () => {
+    expect(isYoungLibrary([])).toBe(false);
+  });
+
+  it('is true for a one- or two-document library', () => {
+    expect(isYoungLibrary(rowsOfKinds(['other']))).toBe(true);
+    expect(isYoungLibrary(rowsOfKinds(['other', 'lab_result']))).toBe(true);
+  });
+
+  it('retires once the list can stand on its own', () => {
+    expect(isYoungLibrary(rowsOfKinds(['other', 'other', 'other']))).toBe(false);
   });
 });
 

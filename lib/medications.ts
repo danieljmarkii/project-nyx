@@ -18,7 +18,13 @@
 
 // `lib/utils` is itself import-free, so pulling the day-index primitives in keeps
 // this module's plain-jest testability intact (B-441).
-import { localDayIndex, localDayIndexOf } from './utils';
+//
+// The `.ts` extension is deliberate (B-140 PR 1): it makes this module — and now
+// its dose-attribution predicates — importable under Deno, the way `lib/dietTrial.ts`
+// already is, so `lib/medicationHistory.ts` (which reads `attributeDoses` here) and
+// through it `generate-report` can pull this whole chain. Jest/Metro resolve the
+// explicit extension too (`allowImportingTsExtensions`), so no app consumer changes.
+import { localDayIndex, localDayIndexOf } from './utils.ts';
 
 // ── Local schema (mirrors supabase/migrations/020_medication_logging.sql) ─────
 //
@@ -1039,7 +1045,7 @@ export function computeRegimenCompliance(input: RegimenComplianceInput): Regimen
 
   const administeredDoses = tally.given;
   const flaggedDoses = tally.partial + tally.missed + tally.refused;
-  const loggedDoses = administeredDoses + flaggedDoses + tally.unrated;
+  const loggedDoses = totalTally(tally); // === administeredDoses + flaggedDoses + unrated
 
   const safeDays = Math.max(1, Math.floor(daysElapsed));
   const expectedDoses = isDoseDenominated
@@ -1094,6 +1100,16 @@ export function dosesTowardTarget(tally: AdherenceTally): number {
   return tally.given + tally.partial;
 }
 
+// Every logged administration, whatever its adherence — the count of dose EVENTS behind a
+// tally (distinct from dosesTowardTarget, which is delivered = given + partial). The ONE
+// definition of "how many doses were logged"; computeRegimenCompliance.loggedDoses and the
+// med-history doorway gate both read it rather than re-summing the five buckets (the H4 /
+// §5.3 one-predicate rule — a second inline sum is a bucket the next AdherenceTally field
+// would silently miss).
+export function totalTally(tally: AdherenceTally): number {
+  return tally.given + tally.partial + tally.missed + tally.refused + tally.unrated;
+}
+
 // ── B-618 §6 — the profile card's dose-course progress (PR 4) ────────────────────
 // The one place the "Dose {n} of {target}" line + its bar are formatted, so the line
 // and the bar always state the same n (the diet-trial bar lesson: never bind a bar to
@@ -1117,6 +1133,20 @@ export interface DoseCourseProgress {
   line: string;           // "Dose {n} of {target}" | "{t} of {t} doses · {x} more logged"
   barFraction: number;    // min(count / target, 1), in [0, 1] — the bar width
   pastTarget: boolean;    // count > target — extras are being disclosed
+  /** B-643: NOTHING has been logged on this course — not given, not refused, not
+   *  unrated. The line is the designed forward-looking zero state, and the render
+   *  site suppresses the compliance line's "No doses logged yet" (the same fact
+   *  twice on a freshly-added regimen). Deliberately NOT `count === 0`: a course
+   *  of 14 refusals also has count 0, and it keeps the plain "Dose 0 of 14" —
+   *  a warm "log the first" line over a refusal record is one of the four things
+   *  the med surfaces must never say (med-strip spec §6). */
+  fresh: boolean;
+  /** B-642 / B-719: count has reached (or passed) the target, so the bar is full —
+   *  a full bar reads as "done", the early-stop risk D7 addresses. B-642 met it with a
+   *  passive "vet's call" note; B-719 replaces that note with the confirm-in-the-loop
+   *  finish prompt (courseReachedPlannedEnd reads this flag as the DOSE trigger). D7
+   *  still holds: this helper emits no completion or stop word. */
+  atTarget: boolean;
 }
 
 // Callers pass a POSITIVE target (the DB CHECK guarantees `target_duration_doses > 0`,
@@ -1126,11 +1156,141 @@ export interface DoseCourseProgress {
 export function doseCourseProgress(tally: AdherenceTally, target: number): DoseCourseProgress {
   const count = dosesTowardTarget(tally);
   const pastTarget = count > target;
+  const atTarget = count >= target;
+  const fresh =
+    tally.given + tally.partial + tally.missed + tally.refused + tally.unrated === 0;
   const barFraction = target > 0 ? Math.min(count / target, 1) : 0;
+  // The fresh zero state is a designed empty state (Principle 5), not a countdown
+  // label (B-643): forward-looking, names the course, points at the one action the
+  // card already carries. It survives D7's scan — no completion or stop word here.
   const line = pastTarget
     ? `${target} of ${target} ${target === 1 ? 'dose' : 'doses'} · ${count - target} more logged`
-    : `Dose ${count} of ${target}`;
-  return { count, target, line, barFraction, pastTarget };
+    : fresh
+      ? target === 1
+        ? '1 dose ahead — log it when you give it'
+        : `${target} doses ahead — log the first when you give it`
+      : `Dose ${count} of ${target}`;
+  return { count, target, line, barFraction, pastTarget, fresh, atTarget };
+}
+
+// ── B-719 — has an ACTIVE course reached its planned end? ─────────────────────
+// The ONE predicate behind the confirm-in-the-loop finish prompt on the profile
+// "Current medications" card (docs/culprit-med-course-end-mockups.html). A course
+// with a defined end — a dose count OR a day span — reaches it, and the card then
+// offers a calm "Is this course finished?" affordance. It NEVER auto-ends (H1/B-422 —
+// an ending comes only from the owner's End action) and the copy NEVER asserts
+// completion (D7); this predicate only decides WHEN the offer appears.
+//
+// Extracted here — pure, unit-tested, read by buildRegimenDisplay — for the same
+// reason every other course predicate in this module is: a "reached its end" read that
+// drives an owner-facing action must be pinned by a test, never re-derived per surface
+// (the diet-trial §5.3 one-predicate lesson). It COMPOSES the two existing definitions
+// rather than restating them: DoseCourseProgress.atTarget for the dose trigger, and
+// regimenDaysElapsed (passed in as daysElapsed) for the day trigger.
+//
+// THE DOSE-vs-DAY THRESHOLD ASYMMETRY IS DELIBERATE and load-bearing:
+//   • Dose course: reached when count >= target (atTarget, INCLUSIVE). Delivering the
+//     target-th dose completes an N-dose course — a 1-dose course is done the instant
+//     its single dose is given.
+//   • Day course: reached when daysElapsed > target (STRICTLY past). regimenDaysElapsed
+//     counts the start day as day 1, so the full prescribed span has elapsed only AFTER
+//     the last day passes: a 14-day course finishes when day 15 arrives, not on day 14.
+//     A `>=` here would fire "Is this course finished?" on the START day of a 1-day
+//     course (daysElapsed 1) and would make the day lede ("the 14 days are up") FALSE on
+//     day 14 — the day isn't up until it's over. That is why the day trigger is strict
+//     and the dose trigger is not; the 1-day course is the proof the two must differ.
+//
+// A null daysElapsed (unparseable start date, B-441) is NEVER reached — the app must not
+// guess an ending. Only status 'active' is prompted: a 'completed' course has already
+// left the Current list, and no other status is "running toward an end".
+export type CourseEndDenomination = 'doses' | 'days';
+
+export interface PlannedEndState {
+  reached: boolean;
+  // Which trigger fired, for the denomination-specific lede; null when not reached.
+  denomination: CourseEndDenomination | null;
+}
+
+const COURSE_NOT_ENDED: PlannedEndState = { reached: false, denomination: null };
+
+export function courseReachedPlannedEnd(input: {
+  status: string;
+  // reg.doseCourse — non-null iff the course is dose-denominated (target_duration_doses
+  // set); carries atTarget, the one dose-count predicate. Never re-derived here.
+  doseCourse: DoseCourseProgress | null;
+  targetDurationDays: number | null;
+  // regimenDaysElapsed(started_at) — start day = day 1; null when the start did not parse.
+  daysElapsed: number | null;
+}): PlannedEndState {
+  if (input.status !== 'active') return COURSE_NOT_ENDED;
+
+  // Dose-denominated wins outright when present. Exactly one denomination is ever set
+  // (the medications_one_duration_denomination CHECK); were a corrupt local row to carry
+  // both, the dose course is the more specific signal. Reached iff therapy delivered has
+  // met the dispensed target.
+  if (input.doseCourse) {
+    return input.doseCourse.atTarget
+      ? { reached: true, denomination: 'doses' }
+      : COURSE_NOT_ENDED;
+  }
+
+  // Day-denominated: STRICTLY past the planned span (see the asymmetry note above).
+  if (input.targetDurationDays != null && input.targetDurationDays > 0) {
+    return input.daysElapsed != null && input.daysElapsed > input.targetDurationDays
+      ? { reached: true, denomination: 'days' }
+      : COURSE_NOT_ENDED;
+  }
+
+  // Ongoing / PRN — no defined end, so nothing to confirm (mock State 4).
+  return COURSE_NOT_ENDED;
+}
+
+// B-719 — the finish-prompt copy. A short FACT lede per denomination, then the shared
+// question, a vet-deferral hedge, and the action. The lede states the RECORD/CALENDAR
+// fact and never the pet's wellness (clinical-guardrails):
+//   • The DOSE lede says the prescribed doses are all LOGGED — never "has had"/"given".
+//     dosesTowardTarget counts `partial` (§4/D1), so a course reaches its target WITH
+//     partial doses in the count; "has had all N doses" would overstate delivery (worst
+//     case given=0/partial=30/target=28 → "had all 28" when none were fully given), and
+//     the prompt text renders MORE prominently than the flag line that would correct it.
+//     "are all logged" is true regardless of the given/partial split (adversarial-reviewer
+//     B-719, finding ③).
+//   • The DAY lede speaks only to the calendar, so it stays true even when doses were
+//     missed — it must never imply full compliance (the misses show on the flag/compliance
+//     line, never here).
+// nyx-voice: pet by name on the dose lede, specific over generic, no exclamation.
+//
+// THE HEDGE IS LOAD-BEARING, not decoration (adversarial-reviewer B-719, finding ④).
+// B-642's note ("when the course ends is your vet's call") existed to stop a full bar
+// reading as "stop now"; the PM's first call was to drop it as redundant with the dosing
+// schedule. The adversarial pass found the exception that reopens it: on a course the app
+// CANNOT tell apart from a simple one — a prednisolone that must be TAPERED, an antibiotic
+// to "finish till the recheck" — the prescribed span's end is NOT "stop", so an un-hedged
+// "Is this course finished?" nudges an abrupt stop that can harm. So a short vet-deferral
+// is kept beside the question. Exact wording is a PM / Dr. Chen call (session record
+// 2026-08-06); these constants are the one edit point.
+export const COURSE_END_PROMPT_QUESTION = 'Is this course finished?';
+export const COURSE_END_PROMPT_HEDGE = 'Your vet has the final say.';
+export const COURSE_END_PROMPT_ACTION = 'Mark as finished';
+
+export function courseEndPromptLede(params: {
+  denomination: CourseEndDenomination;
+  petName: string;
+  targetDoses: number | null;
+  targetDays: number | null;
+}): string {
+  if (params.denomination === 'doses') {
+    const n = params.targetDoses ?? 0;
+    // "are all logged", never "has had all" — the record framing is true whether the
+    // target was reached with given or partial doses (see the header note, finding ③).
+    return n === 1
+      ? `${params.petName}'s dose is logged.`
+      : `${params.petName}'s ${n} doses are all logged.`;
+  }
+  const d = params.targetDays ?? 0;
+  return d === 1
+    ? 'The day for this course is up.'
+    : `The ${d} days for this course are up.`;
 }
 
 // ── Dose → regimen attribution (compliance counting) ───────────────────────────
@@ -1160,6 +1320,41 @@ export interface AttributableDose {
   occurred_at: string;       // parent event timestamp (window test)
 }
 
+// The PostgREST row shape when a dose is read with its parent event embedded by the
+// DISAMBIGUATED FK — `events!medication_administrations_event_id_fkey(deleted_at,
+// occurred_at)` — for the soft-delete flag + timestamp attribution needs. The FK name
+// is required because migration 023 added a SECOND medication_administrations→events FK
+// (paired_event_id), so a bare `events(...)` embed is ambiguous (PGRST201, B-196).
+export interface DoseEmbedRow {
+  medication_id: string | null;
+  medication_item_id: string | null;
+  adherence: string | null;
+  // supabase-js surfaces a to-one embed as EITHER an object OR a 1-element array.
+  events:
+    | { deleted_at: string | null; occurred_at: string }
+    | { deleted_at: string | null; occurred_at: string }[]
+    | null;
+}
+
+// Map embedded dose rows to `AttributableDose[]`, flattening the object-or-array embed
+// and lifting the parent event's soft-delete + timestamp onto the dose. Shared by every
+// screen that reads doses for attribution (the profile's Current + Past medication
+// loaders) so the embed-shape handling — the exact class of bug B-196 was — lives in ONE
+// place. A missing embed (unreachable with the non-null event_id FK) yields
+// occurred_at = '' (ordered out by attribution, ignored by the tally), never a throw.
+export function mapDoseRowsToAttributable(rows: DoseEmbedRow[] | null | undefined): AttributableDose[] {
+  return (rows ?? []).map((d) => {
+    const ev = Array.isArray(d.events) ? d.events[0] : d.events;
+    return {
+      medication_id: d.medication_id,
+      medication_item_id: d.medication_item_id,
+      adherence: d.adherence,
+      deleted_at: ev?.deleted_at ?? null,
+      occurred_at: ev?.occurred_at ?? '',
+    };
+  });
+}
+
 function bucketAdherence(t: AdherenceTally, adherence: string | null): void {
   switch (adherence) {
     case 'given': t.given++; break;
@@ -1172,6 +1367,18 @@ function bucketAdherence(t: AdherenceTally, adherence: string | null): void {
 
 export function emptyTally(): AdherenceTally {
   return { given: 0, partial: 0, missed: 0, refused: 0, unrated: 0 };
+}
+
+// Bucket a bare list of doses into an AdherenceTally, using the SAME `bucketAdherence`
+// switch the attribution pass uses — so a consumer that already knows which doses
+// belong together (an orphan drug group in lib/medicationHistory) never re-implements
+// the given/partial/missed/refused/unrated bucketing and can never drift from it. The
+// count on top of this stays `dosesTowardTarget` (the one dose-count predicate). Only
+// `adherence` is read, so a caller may pass any dose-shaped rows.
+export function tallyDoses(doses: readonly { adherence: string | null }[]): AdherenceTally {
+  const t = emptyTally();
+  for (const d of doses) bucketAdherence(t, d.adherence);
+  return t;
 }
 
 // Tally each regimen's doses in two passes of precedence:
@@ -1194,23 +1401,64 @@ export function emptyTally(): AdherenceTally {
 //      one-active-regimen-per-drug this is a direct match; if two regimens share a
 //      drug, the most-recently-started in-window one wins, so a dose is never
 //      double-counted. An ad-hoc dose with no item id and no link never matches.
-export function attributeDosesToRegimens(
+// The full result of one attribution pass. `attributeDosesToRegimens` returns only
+// `tallies` (its historical contract, unchanged); `attributeDoses` exposes the whole
+// partition so a course-grain consumer (lib/medicationHistory, B-140) can read the
+// SAME single attribution decision rather than re-deriving a second, drift-prone one
+// (the diet-trial §5.3 "one predicate" lesson — a rival off-diet definition shipped
+// there and had to be re-based). The three fields together partition every NON-deleted
+// dose exactly once:
+//   • tallies      — per-regimen AdherenceTally (id → tally); the count feeds dosesTowardTarget.
+//   • grouped      — the actual attributed doses per regimen (id → doses), so a consumer
+//                    can read a regimen's first/last dose without re-running the match.
+//   • unattributed — every live dose that matched NO regimen: an ad-hoc dose (no drug
+//                    identity), a drug with no in-window regimen, or a dose linked to a
+//                    regimen absent from `regimens`. Surfaced, never dropped — the report's
+//                    §3.8 orphan-dose stance ("nothing logged is silently lost").
+// Soft-deleted doses appear in none of the three (their event is gone).
+export interface DoseAttribution {
+  tallies: Map<string, AdherenceTally>;
+  grouped: Map<string, AttributableDose[]>;
+  unattributed: AttributableDose[];
+}
+
+// The ONE attribution pass. Same two-precedence logic as before (explicit link, then
+// item+window fallback), now also recording which doses landed where. `attributeDoses`
+// is the primitive; `attributeDosesToRegimens` is the thin tally-only accessor every
+// existing caller already uses — its returned Map is byte-for-byte what it always was,
+// because the added `grouped`/`unattributed` bookkeeping never touches `tallies`.
+export function attributeDoses(
   regimens: RegimenWindow[],
   doses: AttributableDose[],
-): Map<string, AdherenceTally> {
+): DoseAttribution {
   const tallies = new Map<string, AdherenceTally>(regimens.map((r) => [r.id, emptyTally()]));
+  const grouped = new Map<string, AttributableDose[]>(regimens.map((r) => [r.id, []]));
+  const unattributed: AttributableDose[] = [];
+
   for (const d of doses) {
     if (d.deleted_at) continue; // soft-deleted dose — its event is gone
 
     // 1. Explicit regimen link wins outright.
     if (d.medication_id) {
       const t = tallies.get(d.medication_id);
-      if (t) bucketAdherence(t, d.adherence);
+      if (t) {
+        bucketAdherence(t, d.adherence);
+        grouped.get(d.medication_id)!.push(d);
+      } else {
+        // Linked to a regimen NOT in this set (an ended one the caller didn't pass, or a
+        // hard-deleted row). It counts toward nothing here (no silent reassignment — the
+        // B-153 test pins that), but it is surfaced as an orphan of its own drug rather
+        // than dropped, so a course-grain reader never loses a logged dose.
+        unattributed.push(d);
+      }
       continue;
     }
 
     // 2. Unlinked dose → match by the same drug, in-window.
-    if (!d.medication_item_id) continue; // ad-hoc dose, no drug identity to match
+    if (!d.medication_item_id) {
+      unattributed.push(d); // ad-hoc dose, no drug identity to match → its own group
+      continue;
+    }
     let best: RegimenWindow | null = null;
     for (const reg of regimens) {
       if (reg.medication_item_id !== d.medication_item_id) continue;
@@ -1218,11 +1466,27 @@ export function attributeDosesToRegimens(
       if (reg.ended_at && d.occurred_at > reg.ended_at) continue; // after it ended
       if (!best || reg.started_at > best.started_at) best = reg;
     }
-    if (!best) continue;
+    if (!best) {
+      unattributed.push(d); // no regimen for this drug in-window → orphan
+      continue;
+    }
     const t = tallies.get(best.id);
-    if (t) bucketAdherence(t, d.adherence);
+    // best.id came from `regimens`, which seeded both maps, so `t` is always present;
+    // the guard mirrors the original and keeps the types honest.
+    if (t) {
+      bucketAdherence(t, d.adherence);
+      grouped.get(best.id)!.push(d);
+    }
   }
-  return tallies;
+
+  return { tallies, grouped, unattributed };
+}
+
+export function attributeDosesToRegimens(
+  regimens: RegimenWindow[],
+  doses: AttributableDose[],
+): Map<string, AdherenceTally> {
+  return attributeDoses(regimens, doses).tallies;
 }
 
 // Headline adherence line for a regimen card. FACTUAL only — counts and a plain

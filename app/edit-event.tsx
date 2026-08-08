@@ -831,7 +831,7 @@ const styles = StyleSheet.create({
     color: theme.colorTextSecondary,
   },
   saveBtn: {},
-  saveBtnDisabled: { opacity: 0.4 },
+  saveBtnDisabled: { opacity: theme.opacityDisabled },
   saveBtnText: {
     fontSize: 16,
     fontWeight: theme.fontWeightMedium,

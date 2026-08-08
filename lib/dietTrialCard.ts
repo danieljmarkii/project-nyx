@@ -97,7 +97,9 @@ import {
   type TrialIntakeRating,
 } from './dietTrial';
 import { milestoneNote, trialDecisionChoices, type TrialOutcome } from './dietTrialCompletion';
-import { localDayIndexOf } from './utils';
+import { type TrialProteinSource } from './trialProtein';
+import { proteinTrialLabel } from './trialProteinPicker';
+import { localDayIndexOf, MONTHS } from './utils';
 import type { TrialIndication } from './dietTrialSetup';
 
 const MS_PER_DAY = 86_400_000;
@@ -145,6 +147,32 @@ export interface TrialCardTrial {
    *  process boundary and renders a day counter. This card renders on the pet's own
    *  profile, next to the pet's own trial diet, in the app. */
   indication?: TrialIndication | null;
+  /** B-704 — the resolved trial protein for the "{Protein} trial" identity naming
+   *  (TP-4 viewers). ALREADY RESOLVED by `loadDietTrialFacts` through the one
+   *  predicate (`trialTargetProtein`, stored-first with derivation fallback), so
+   *  this pure resolver never re-derives it — it has no allowed foods to derive
+   *  from, and a second definition of "the trial's protein" is exactly the §5.3
+   *  failure the predicate exists to prevent. `{ protein: null }` (or omitted) is
+   *  the honest no-naming state and falls the identity back to "Diet trial" — never
+   *  an all-clear (TG-2). */
+  trialProtein?: { protein: string | null; source: TrialProteinSource | null };
+}
+
+/**
+ * The card/strip identity — "{Protein} trial" when a protein resolves (either
+ * source, TP-4), else the unchanged "Diet trial" (B-704 §7.3, §8).
+ *
+ * It is the LEADING token of both the card kicker ("Rabbit trial · finished") and
+ * the strip header ("Rabbit trial · day 12 of 42"); each caller appends its own
+ * lifecycle/day suffix. The food label stays the naming BELOW it, so the
+ * no-protein fallback is the card exactly as it renders today.
+ *
+ * NEVER A CLAIM. A null protein yields the generic "Diet trial" — it never says
+ * "no protein set" and never reads as an all-clear (TG-2); the absence of a name
+ * is not a verdict.
+ */
+export function trialIdentityLabel(trial: TrialCardTrial | null | undefined): string {
+  return proteinTrialLabel(trial?.trialProtein?.protein ?? null);
 }
 
 /** §5.1 coverage: distinct local days with ≥1 logged NON-TREAT feeding, over the
@@ -260,6 +288,22 @@ export interface TrialCardInput {
    * the card went on telling a fully compliant owner "0 matched, 40 did not".
    */
   allowedSetUnavailable?: boolean;
+  /**
+   * `lib/dietTrial.TrialFacts.antigenArmDark` (B-597) — the protein arm is off for
+   * part of the window (a `primary_diet` food with no readable source, a membership
+   * gap with nothing in force, or a suppressed contamination), so the trial's
+   * antigens could not be checked for that stretch.
+   *
+   * ITS STRUCTURALLY IDENTICAL SIBLING IS `allowedSetUnavailable`, and it is here
+   * for the same reason: the report reads `antigenArmDark` (renders "Antigen check
+   * paused" + the §7.2 caveat) and the CLAIM gate already reads it
+   * (`mayClaimAllMatched`), but the CARD LOADER dropped it — so the Home strip
+   * stated a plain coverage ratio while the arm was off, and the card carried no
+   * membership-gap disclosure the report had. THE BOOLEAN, not a food list: on a
+   * membership gap the arm is dark with nothing to name, so gating on a `.length`
+   * would keep the quiet ratio in exactly that state (`withholdingReasons`).
+   */
+  antigenArmDark?: boolean;
   /** §10 S3 — days between the trial's start and the first logged feeding. The
    *  coverage denominator excludes them (days the owner could not have logged are
    *  not a gap in their record), so the card has to SAY so rather than quietly
@@ -440,11 +484,6 @@ const DECISION_ACTION_ID: Record<'extend' | 'complete' | 'stopped_early', TrialC
   stopped_early: 'trial_stopped_early',
 };
 
-const MONTHS = [
-  'January', 'February', 'March', 'April', 'May', 'June',
-  'July', 'August', 'September', 'October', 'November', 'December',
-];
-
 // ── Small pure helpers ───────────────────────────────────────────────────────
 
 /** "3 July". Formatted from the day INDEX rather than via `toLocaleDateString`
@@ -624,6 +663,7 @@ export type TrialCardWithholding =
   | 'range_refusal'
   | 'free_fed'
   | 'allowed_set_unavailable'
+  | 'antigen_arm_dark'
   | 'untracked_head'
   | 'below_floor';
 
@@ -639,6 +679,11 @@ export function withholdingReasons(input: TrialCardInput): TrialCardWithholding[
   if (input.rangeRefusal) reasons.push('range_refusal');
   if (input.freeFed) reasons.push('free_fed');
   if (input.allowedSetUnavailable) reasons.push('allowed_set_unavailable');
+  // B-597 — the dark antigen arm, the forgotten sibling of `allowed_set_unavailable`
+  // above. The report withholds the clean claim AND discloses on this (§7.2 caveat +
+  // "Antigen check paused" row); the strip has one line, so a dark arm is a reason it
+  // cannot state its ratio plainly — a caveat it has nowhere to put.
+  if (input.antigenArmDark) reasons.push('antigen_arm_dark');
   // `!== 0`, NOT `> 0`. The strip's predicate has always been "the head is
   // exactly zero" and its complement is not `> 0` — a negative or `NaN` head is
   // NOT a plain record, and rewriting the comparison the obvious way narrowed
@@ -1093,6 +1138,69 @@ function degenerateStateFor(trial: TrialCardTrial | null): TrialCardState {
       : 'day_one';
 }
 
+/**
+ * The header "manage" affordance's label — or null to hide it entirely.
+ *
+ * SUPPRESSION IS KEYED ON THE BODY'S ACTUAL ACTIONS, NOT ON `state`. The header
+ * is a duplicate only when the body already carries a way to start a trial
+ * (`no_trial`'s "Start a diet trial"; the ordinary `abandoned` card's "Start a new
+ * trial"), so it is suppressed there and ONLY there. Two `abandoned` branches ship
+ * `actions: []` with no body Start CTA — the intake-decline replacement (§5.2, a
+ * pet that has stopped eating) and the degenerate unparseable-start branch — and
+ * this card is the app's ONLY entry point to starting a trial (`profile.tsx`
+ * §1097), so suppressing on `state` alone would strand those cards with zero
+ * controls. (Regression: caught by `code-reviewer`, 2026-08-06.)
+ *
+ * When it IS shown, the verb says what `onManage` opens: on a RUNNING trial the
+ * ordered end-and-replace sheet ("Replace" — never "Change", which read as an EDIT
+ * and routed an active trial, and on `day_one` the card's ONLY control, straight to
+ * its own destruction); on a terminal/degenerate card the start form ("+ Start").
+ */
+export function trialManageLabel(
+  model: Pick<TrialCardModel, 'state' | 'actions'>,
+): string | null {
+  if (model.actions.some((a) => a.id === 'start_trial')) return null;
+  return trialManageVerb(model.state);
+}
+
+function trialManageVerb(state: TrialCardState): string {
+  switch (state) {
+    case 'no_trial':
+    case 'completed':
+    case 'abandoned':
+      return '+ Start';
+    case 'day_one':
+    case 'clean':
+    case 'exposures':
+    case 'below_floor':
+    case 'milestone':
+    case 'overrun':
+    case 'intake_decline':
+    case 'free_fed':
+    case 'trial_refusal':
+      return 'Replace';
+    default: {
+      // Exhaustive: a new TrialCardState fails to compile here rather than
+      // silently inheriting "Replace".
+      const _exhaustive: never = state;
+      return _exhaustive;
+    }
+  }
+}
+
+/** The "What {pet} can eat" reference link. B-616 FR-5 shipped it on the mid-trial
+ *  clean/exposures cards (states 2/3, via the shared body below); the polish pass
+ *  adds it to `day_one` / `free_fed` / `below_floor`, where "what CAN he eat?" is
+ *  just as live (day 1 most of all, when it is otherwise the card's only action).
+ *  Deliberately NOT on the two decision cards — `milestone` (state 5, whose
+ *  choose-the-next-step buttons own it) and `overrun` (state 6, whose one action is
+ *  the milestone prompt) — where a food-list link would dilute the decision. Drawn
+ *  only when the allowed set is hydrated (the handler in profile.tsx is
+ *  conditional), so it degrades to nothing offline. */
+function viewAllowedFoodsAction(petName: string): TrialCardAction {
+  return { id: 'view_allowed_foods', label: `What ${petName} can eat`, emphasis: 'link' };
+}
+
 export function resolveTrialCard(input: TrialCardInput): TrialCardModel {
   const { trial, petName } = input;
 
@@ -1105,9 +1213,9 @@ export function resolveTrialCard(input: TrialCardInput): TrialCardModel {
   if (!ctx) {
     return {
       state: degenerateStateFor(trial),
-      kicker: trial.status === 'abandoned' ? 'Diet trial · stopped early'
-        : trial.status === 'completed' ? 'Diet trial · finished'
-          : 'Diet trial',
+      kicker: trial.status === 'abandoned' ? `${trialIdentityLabel(trial)} · stopped early`
+        : trial.status === 'completed' ? `${trialIdentityLabel(trial)} · finished`
+          : trialIdentityLabel(trial),
       foodLabel: trial.foodLabel ?? null,
       dayLine: null,
       dayLineRole: 'meta',
@@ -1357,7 +1465,9 @@ function activeCard(
   const endIndex = trialEndDayIndex(startIndex, trial.targetDurationDays);
 
   const base = {
-    kicker: 'Diet trial',
+    // B-704 — "{Protein} trial" when a protein resolves, else "Diet trial". The
+    // food label stays the naming below it, so the fallback is today's card.
+    kicker: trialIdentityLabel(input.trial),
     foodLabel: trial.foodLabel ?? null,
     // R2: the ONLY number that becomes a width, and it is day progress.
     progressFraction: progress.fraction,
@@ -1549,7 +1659,7 @@ function activeCard(
       dayLineRole: 'meta',
       windowLine: windowLineFor(endIndex, overrunDays),
       lines,
-      actions: [],
+      actions: [viewAllowedFoodsAction(input.petName)],
     };
   }
 
@@ -1575,7 +1685,7 @@ function activeCard(
       dayLineRole: 'meta',
       windowLine: windowLineFor(endIndex, overrunDays),
       lines,
-      actions: [],
+      actions: [viewAllowedFoodsAction(input.petName)],
     };
   }
 
@@ -1594,7 +1704,7 @@ function activeCard(
       dayLineRole: 'meta',
       windowLine: windowLineFor(endIndex, overrunDays),
       lines: recordRegion(register, input, rc),
-      actions: [],
+      actions: [viewAllowedFoodsAction(input.petName)],
     };
   }
 
@@ -1675,7 +1785,7 @@ function activeCard(
       // owner has just been told a feeding fell outside the diet is exactly when
       // "what CAN he eat?" is the next question, and answering it is the
       // record-and-continue posture rather than a scolding.
-      { id: 'view_allowed_foods', label: `What ${input.petName} can eat`, emphasis: 'link' },
+      viewAllowedFoodsAction(input.petName),
     ],
   };
 }
@@ -2095,7 +2205,7 @@ function completedCard(
   }
   return {
     state: 'completed',
-    kicker: 'Diet trial · finished',
+    kicker: `${trialIdentityLabel(input.trial)} · finished`,
     foodLabel: trial.foodLabel ?? null,
     dayLine: terminalRange(trial, startIndex),
     dayLineRole: 'meta',
@@ -2233,7 +2343,7 @@ function abandonedCard(
   if (register === 'decline') {
     return {
       state: 'abandoned',
-      kicker: 'Diet trial · stopped early',
+      kicker: `${trialIdentityLabel(input.trial)} · stopped early`,
       foodLabel: trial.foodLabel ?? null,
       dayLine: range,
       dayLineRole: 'meta',
@@ -2252,7 +2362,7 @@ function abandonedCard(
     state: 'abandoned',
     // §6.6 — an abandoned trial is a legitimate clinical fact, never a failure
     // state, so the kicker states what happened and judges none of it.
-    kicker: 'Diet trial · stopped early',
+    kicker: `${trialIdentityLabel(input.trial)} · stopped early`,
     foodLabel: trial.foodLabel ?? null,
     dayLine: range,
     dayLineRole: 'meta',
@@ -2290,10 +2400,14 @@ export function resolveTrialStrip(input: TrialCardInput): TrialStripModel | null
   );
   if (!progress || startIndex === null) return null;
 
+  // B-704 — the identity leads, then the day suffix ("Rabbit trial · day 12 of
+  // 42"). Falls back to "Diet trial" when no protein resolves; the food label
+  // stays in the strip's line below, so the fallback is today's strip unchanged.
+  const identity = trialIdentityLabel(trial);
   const overrunDays = progress.dayCounter - progress.targetDays;
   const header = overrunDays > 0
-    ? `Diet trial · day ${progress.dayCounter} — ${overrunDays} ${overrunDays === 1 ? 'day' : 'days'} past`
-    : `Diet trial · day ${progress.dayCounter} of ${progress.targetDays}`;
+    ? `${identity} · day ${progress.dayCounter} — ${overrunDays} ${overrunDays === 1 ? 'day' : 'days'} past`
+    : `${identity} · day ${progress.dayCounter} of ${progress.targetDays}`;
 
   // While an intake-decline flag is live the strip carries the day count and
   // nothing else: SignalZone sits above it and owns the safety card, and a
@@ -2318,17 +2432,17 @@ export function resolveTrialStrip(input: TrialCardInput): TrialStripModel | null
       : `ends ${formatTrialDate(endIndex)}`,
   );
   // THE STRIP IS STRICTER THAN THE CARD, DELIBERATELY — AND ITS RULE IS NOW ONE
-  // SENTENCE: Home states the ratio only when the record carries NONE of the six
+  // SENTENCE: Home states the ratio only when the record carries NONE of the
   // withholding reasons.
   //
   // Home has one line and nowhere to put the can't-match caveat, the untracked
-  // head, or the "offered, not eaten" reframing that make a ratio honest on the
-  // card, so a reason the card can absorb is a reason the strip cannot. Every
-  // round-8/9 strip defect was this conjunction being patched one reason at a
-  // time — for the decline flag, then the head, then the refusal — with the NEXT
-  // reason still rendering. `withholdingReasons` is the list, in one place, that
-  // both surfaces read; a seventh reason cannot be added to one and forgotten on
-  // the other.
+  // head, the antigen-arm pause, or the "offered, not eaten" reframing that make a
+  // ratio honest on the card, so a reason the card can absorb is a reason the strip
+  // cannot. Every round-8/9 strip defect was this conjunction being patched one
+  // reason at a time — for the decline flag, then the head, then the refusal — with
+  // the NEXT reason still rendering. `withholdingReasons` is the list, in one place,
+  // that both surfaces read; a new reason (B-597's `antigen_arm_dark` was the
+  // latest) cannot be added to one and forgotten on the other.
   //
   // An earlier cut of this comment said "the strip states coverage only when the
   // card would state it plainly", which stopped being true the moment round 9's

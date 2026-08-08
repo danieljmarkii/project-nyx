@@ -13,8 +13,12 @@ import { updateEvent, updateMealIntake } from '../../lib/db';
 import { syncPendingEvents, syncPendingMeals } from '../../lib/sync';
 import { formatTime } from '../../lib/utils';
 import { IntakeChipRow, IntakeRating } from '../log/IntakeChipRow';
-import { mealFlagCopy } from '../../lib/trialContaminant';
+import { mealFlagCopy, membershipFlagCopy } from '../../lib/trialContaminant';
 import { foodFormatTag } from '../../lib/food';
+import { AddTrialFoodSheet } from '../profile/AddTrialFoodSheet';
+import { buildAddTrialFoodSheet, ADD_TRIAL_FOOD_ERROR } from '../../lib/trialFoodsScreen';
+import { addTrialFood, foodLabel, type TrialFoodSelection } from '../../lib/dietTrialSetup';
+import type { TrialAllowedSetTrial } from '../../lib/trialAllowedSet';
 
 // Tab bar height from app/(tabs)/_layout.tsx — the card must clear it so it
 // isn't occluded when the user lands back on a tabs screen after a log.
@@ -24,6 +28,25 @@ const TAB_BAR_HEIGHT = Platform.OS === 'ios' ? 80 : 60;
 // confirmed before dismiss. Per the B-014 persona round: snatching it away
 // immediately reads as the system overriding the input.
 const INTAKE_CONFIRM_HOLD_MS = 1500;
+
+// B-693 — everything the shipped AddTrialFoodSheet needs, captured from the
+// membership flag + the meal payload at the moment the owner taps "+ Add to the
+// trial list". Captured into local state (rather than read live off the payload)
+// so a second meal logged mid-add cannot swap the food or pet the sheet is about:
+// the trial's day-math + the meal's pet ride on the flag itself, evaluated for THIS
+// meal's pet (`payload.petId`), so the write lands on the right trial even in the
+// queue-then-switch edge where the active pet has since changed.
+interface AddTarget {
+  /** For `buildAddTrialFoodSheet` — the trial's day-math renders the sheet's
+   *  "Joins the list · day N" line. `endedAt` is null because the flag only fires
+   *  while the trial is running (isTrialRunning), and the sheet ignores it anyway. */
+  trial: TrialAllowedSetTrial;
+  /** The MEAL's pet — the write target, never a re-read active pet. */
+  petId: string;
+  petName: string;
+  /** The food to add (id + denormalized brand/product + type for the role). */
+  food: TrialFoodSelection;
+}
 
 // Root-mounted MEAL completion card — the warmed bottom-card presentation of the
 // completion moment (B-064). Replaces the old standalone post-log toast: a meal
@@ -61,13 +84,23 @@ const INTAKE_CONFIRM_HOLD_MS = 1500;
 //
 // B-351 slice 4 added a fourth BLOCK but not a fourth AFFORDANCE, and the
 // distinction is the whole reason the standing warning above was not tripped: the
-// trial-contaminant heads-up is passive prose with no target, no state and no
-// write. It adds zero taps to every path, including its own — D2 ratified the
-// log-time register as NON-BLOCKING precisely because Principle 1 forbids a
-// decision at the moment of event, so this line reports a fact about a meal that
-// is already saved and asks nothing. It renders only when
-// evaluateMealTrialFlag returned a flag; its absence is never an all-clear, and
-// there is deliberately no "no conflict" state for it to render.
+// trial CONTENTS heads-up ("this has chicken in it") is passive prose with no
+// target, no state and no write. It adds zero taps to every path, including its
+// own — D2 ratified the log-time register as NON-BLOCKING precisely because
+// Principle 1 forbids a decision at the moment of event, so this line reports a
+// fact about a meal that is already saved and asks nothing.
+//
+// B-693 adds the trial MEMBERSHIP heads-up ("this isn't on the trial list") as an
+// amber "attention" inset panel — design-locked to the mock's round-2 amber frame
+// (PM-ruled amber over a rose "danger" rendering: the claim the record can back is
+// list-absence, not harm). Unlike the contents flag it DOES carry one affordance,
+// the quiet "+ Add to the trial list" line, and it is deliberately not a fifth
+// door in the sense the standing warning guards against: it opens the SHIPPED
+// AddTrialFoodSheet (B-616 PR 2) — a soft, dated confirm that never rewrites the
+// feeding that just fired it (the sheet says so). It is still non-blocking; the
+// meal is saved before the panel resolves, and adding is optional. Both kinds
+// render only when evaluateMealLogTimeFlag returned a flag; the absence of either
+// is never an all-clear, and there is deliberately no "no conflict" state.
 export function MealCompletionCard() {
   const { visible, payload, hide, patchOccurredAt, patchIntakeRating, rescheduleHide } = useMomentStore();
   const { patchInToday } = useEventStore();
@@ -84,6 +117,16 @@ export function MealCompletionCard() {
   // can be opened, scrubbed, and cancelled without mutating the card.
   const [draft, setDraft] = useState<Date | null>(null);
   const [saving, setSaving] = useState(false);
+
+  // B-693 — the "+ Add to the trial list" confirm-sheet state. `addTarget` is the
+  // captured food/trial/pet (null when the sheet is closed); `addSaving` blocks the
+  // sheet's buttons during the local write; `addError` renders in-place on a failed
+  // insert (the sheet stays open, never a silent close — a food the owner believes
+  // is on the list but isn't would make the vet report's next off-diet exposure
+  // look like the app's mistake, per the sheet's own contract).
+  const [addTarget, setAddTarget] = useState<AddTarget | null>(null);
+  const [addSaving, setAddSaving] = useState(false);
+  const [addError, setAddError] = useState<string | null>(null);
 
   // Only the meal presentation renders here; the beat is the sibling overlay.
   const isMeal = payload?.kind === 'meal';
@@ -229,7 +272,7 @@ export function MealCompletionCard() {
   const showIntake = payload.foodType === 'meal' || payload.foodType === 'treat';
   const petName = activePet?.name ?? 'your pet';
   // Name the MEAL's pet, not the active one. The flag is already targeted
-  // correctly either way (evaluateMealTrialFlag runs against payload.petId, the
+  // correctly either way (evaluateMealLogTimeFlag runs against payload.petId, the
   // pet captured at log time), but a queue-then-switch would otherwise print
   // another pet's name in a sentence about this pet's trial — and a clinical
   // heads-up naming the wrong animal is worse than no name at all. Falls back to
@@ -237,7 +280,84 @@ export function MealCompletionCard() {
   const mealPetName =
     pets.find((p) => p.id === payload.petId)?.name ?? petName;
   const trialFlag = payload.trialFlag ?? null;
-  const trialFlagCopy = trialFlag ? mealFlagCopy(trialFlag, mealPetName) : null;
+  // Two registers, one per kind (B-693). CONTENTS (rung 2) → the calm passive
+  // prose it has always been; MEMBERSHIP (rung 3) → the amber panel copy + the
+  // "+ Add to the trial list" hatch. mealFlagCopy names a protein, so it may only
+  // be handed a contents flag — the kind check is what keeps that honest.
+  const contentsCopy =
+    trialFlag?.kind === 'off_diet_protein' ? mealFlagCopy(trialFlag, mealPetName) : null;
+  const membershipCopy =
+    trialFlag?.kind === 'off_trial_list' ? membershipFlagCopy(mealPetName) : null;
+
+  // Open the shipped AddTrialFoodSheet for the membership flag's food. Capture
+  // everything the sheet + the write need NOW (see AddTarget), then dismiss the
+  // card — the sheet is fully self-describing, and this mirrors handleAddMed, which
+  // also dismisses the card before handing off. The meal is already saved; a "Not
+  // now" just closes, losing nothing.
+  function handleAddToTrialList() {
+    // `if (!isMeal)` narrows `payload` to the meal payload (the aliased-discriminant
+    // pattern the sibling handlers use); the kind check narrows the flag to the
+    // membership one, so its trial-schedule fields are in scope below.
+    if (!isMeal) return;
+    if (trialFlag?.kind !== 'off_trial_list') return;
+    const brand = payload.foodBrand ?? '';
+    const product_name = payload.foodProductName ?? '';
+    setAddError(null);
+    setAddTarget({
+      trial: {
+        id: trialFlag.trialId,
+        startedAt: trialFlag.trialStartedAt,
+        targetDurationDays: trialFlag.trialTargetDurationDays,
+        endedAt: null,
+      },
+      petId: payload.petId,
+      petName: mealPetName,
+      food: { id: trialFlag.foodId, brand, product_name, food_type: payload.foodType },
+    });
+    hide();
+  }
+
+  async function handleAddConfirm() {
+    if (!addTarget) return;
+    setAddSaving(true);
+    setAddError(null);
+    try {
+      // addTrialFood writes allowed_from = TODAY, which permits the food from today
+      // FORWARD (that function's own design). So EARLIER-DAY feedings keep their
+      // off-list reading — the sheet's "Earlier feedings" row, and the guard against
+      // adding contraband on day 13 to launder twelve prior exposures.
+      //
+      // ⚠️ THE SAME-DAY BOUNDARY IS UNRESOLVED (B-456), and B-693 makes it the
+      // PRIMARY path: membership is day-granular (`membershipOn`, dayIndex >= from),
+      // so the feeding that fired THIS heads-up — logged today, the same local day as
+      // the add — re-classifies as permitted at the next recompute and drops out of
+      // the off-diet count. Whether a vet-okayed add should un-count today's own
+      // triggering feeding, or `allowed_from` should be tomorrow so it stays off-list,
+      // is a clinical/product call (Dr. Chen) on the SHARED write, not a surface fix —
+      // routed, not silently decided. The role is inferred from the food's type; a
+      // mid-trial add is only ever a permitted extra, never a diet-defining row.
+      await addTrialFood({
+        trialId: addTarget.trial.id,
+        petId: addTarget.petId,
+        food: addTarget.food,
+      });
+      setAddTarget(null);
+    } catch (e) {
+      // Never silent: the sheet stays open, says so, and keeps its button live — a
+      // sheet that closed on a failed insert would leave the owner believing a food
+      // is permitted when the record says otherwise.
+      console.error('[meal-card] add to trial list failed:', e);
+      setAddError(ADD_TRIAL_FOOD_ERROR);
+    } finally {
+      setAddSaving(false);
+    }
+  }
+
+  function handleAddCancel() {
+    if (addSaving) return;
+    setAddError(null);
+    setAddTarget(null);
+  }
 
   return (
     <>
@@ -280,20 +400,55 @@ export function MealCompletionCard() {
               />
             </View>
           )}
-          {/* B-351 slice 4 — the Tier-2 trial-contaminant heads-up. Sits below the
-              intake row (the mock's order): the owner's muscle memory for the chips
-              is untouched, and the note is read on the way out rather than in place
-              of the thing they came to do. Non-interactive — accessible as one
-              summary node so a screen reader speaks the fact and its context
-              together instead of two orphan lines. */}
-          {trialFlag && (
+          {/* B-351 slice 4 — the rung-2 CONTENTS heads-up ("this has chicken in
+              it"). Sits below the intake row (the mock's order): the owner's muscle
+              memory for the chips is untouched, and the note is read on the way out
+              rather than in place of the thing they came to do. Non-interactive —
+              accessible as one summary node so a screen reader speaks the fact and
+              its context together instead of two orphan lines. Divider-only, no
+              tint: a contents claim is calm by design (D2's non-blocking register). */}
+          {contentsCopy && (
             <View
               style={styles.flagWrap}
               accessibilityRole="summary"
-              accessibilityLabel={`${trialFlagCopy!.headline} ${trialFlagCopy!.detail}`}
+              accessibilityLabel={`${contentsCopy.headline} ${contentsCopy.detail}`}
             >
-              <Text style={styles.flagHeadline}>{trialFlagCopy!.headline}</Text>
-              <Text style={styles.flagDetail}>{trialFlagCopy!.detail}</Text>
+              <Text style={styles.flagHeadline}>{contentsCopy.headline}</Text>
+              <Text style={styles.flagDetail}>{contentsCopy.detail}</Text>
+            </View>
+          )}
+          {/* B-693 — the rung-3 MEMBERSHIP heads-up ("this isn't on the trial
+              list"), as the amber "attention" inset panel (design-locked mock round
+              2). Tint + left bar break the card's calm stack and can't be read past,
+              but the claim is list-absence, not harm — so the moment gold, never the
+              app's rose symptom red. The text block is one summary node; the "+ Add
+              to the trial list" hatch is a separate button into the shipped confirm
+              sheet. */}
+          {membershipCopy && (
+            <View style={styles.membershipSect}>
+              <View style={styles.membershipPanel}>
+                <View
+                  style={styles.membershipTextBlock}
+                  accessibilityRole="summary"
+                  accessibilityLabel={`${membershipCopy.eyebrow}. ${membershipCopy.headline} ${membershipCopy.detail}`}
+                >
+                  <Text style={styles.membershipEyebrow}>{membershipCopy.eyebrow}</Text>
+                  <Text style={styles.flagHeadline}>{membershipCopy.headline}</Text>
+                  <Text style={styles.flagDetail}>{membershipCopy.detail}</Text>
+                </View>
+                <TouchableOpacity
+                  style={styles.membershipAddRow}
+                  onPress={handleAddToTrialList}
+                  hitSlop={8}
+                  accessibilityRole="button"
+                  accessibilityLabel={membershipCopy.addLine}
+                >
+                  {/* The "+" is chrome rendered at the call site, not baked into the
+                      copy string (membershipFlagCopy carries words only) — the same
+                      way the combo row hardcodes its own "+ Add …" literal below. */}
+                  <Text style={styles.membershipAddText}>+ {membershipCopy.addLine}</Text>
+                </TouchableOpacity>
+              </View>
             </View>
           )}
           {/* B-156 PR B2b — the opt-in combo line (meal/treat only). The quietest line
@@ -360,6 +515,20 @@ export function MealCompletionCard() {
           </View>
         </Pressable>
       </Modal>
+
+      {/* B-693 — the "+ Add to the trial list" hatch's destination: the SHIPPED
+          AddTrialFoodSheet (B-616 PR 2), reused verbatim (mock §3). Its own Modal,
+          so it survives the card's dismiss; rendered off the captured addTarget, so
+          a second meal logged mid-add can never swap the food it is about. */}
+      {addTarget && (
+        <AddTrialFoodSheet
+          model={buildAddTrialFoodSheet(addTarget.petName, foodLabel(addTarget.food), addTarget.trial)}
+          saving={addSaving}
+          error={addError}
+          onConfirm={handleAddConfirm}
+          onCancel={handleAddCancel}
+        />
+      )}
     </>
   );
 }
@@ -466,6 +635,49 @@ const styles = StyleSheet.create({
     lineHeight: theme.textSM * 1.4,
     color: theme.colorTextOnDarkSubtle,
   },
+  // B-693 — the amber "attention" panel for the rung-3 membership heads-up. The
+  // wrapper carries the same top-divider treatment as the sibling blocks so the
+  // card stays one calm stack; the tinted, left-barred panel inside is what makes
+  // THIS one unmissable (mock round 2, PM-ruled amber over a rose "danger"
+  // rendering) — its claim-strength stays list-absence, not harm, which is why it
+  // is the moment gold and not the app's rose symptom red.
+  membershipSect: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: theme.colorDividerOnDark,
+    paddingTop: theme.space1,
+  },
+  membershipPanel: {
+    backgroundColor: theme.colorMomentGlowFillOnDark,
+    borderLeftWidth: 3,
+    borderLeftColor: theme.colorMomentGlow,
+    borderRadius: theme.radiusMedium,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    gap: 4,
+  },
+  membershipTextBlock: {
+    gap: 2,
+  },
+  // The micro-caps eyebrow in the moment gold — "Off the trial list". Names the
+  // register (a fact about the LIST) before the sentence lands.
+  membershipEyebrow: {
+    fontSize: theme.textXS,
+    fontWeight: theme.weightSemibold,
+    color: theme.colorMomentGlow,
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+  },
+  // The add hatch — the quietest line in the panel, still a full 44pt tap target
+  // (the 3am-test floor). Subtle-on-dark, like the combo row it sits above.
+  membershipAddRow: {
+    minHeight: 44,
+    justifyContent: 'center',
+  },
+  membershipAddText: {
+    fontSize: theme.textSM,
+    color: theme.colorTextOnDarkSubtle,
+    fontWeight: theme.weightMedium,
+  },
   // The opt-in combo entry (B-156 PR B2b). ≥44pt tappable (the 3am-test floor) via
   // minHeight; a faint divider so it reads as a separate, optional add-on beneath the
   // intake row, never a peer of the logged act. Deliberately the quietest line.
@@ -524,6 +736,6 @@ const styles = StyleSheet.create({
     fontWeight: theme.weightMedium,
   },
   sheetSaveDisabled: {
-    opacity: 0.4,
+    opacity: theme.opacityDisabled,
   },
 });

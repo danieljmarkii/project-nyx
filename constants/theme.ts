@@ -12,6 +12,8 @@ export const theme = {
   fontDisplay: 'Newsreader',
 
   // ── Type scale (sp) ───────────────────────────────────────────────────────
+  textMicro: 9,  // micro badge/chip text ONLY (uppercase kind chips, the PDF tile badge)
+                 // — below textXS, always uppercase + tracked; not for sentences (B-553)
   textXS: 11,    // zone labels, metadata, badge text
   textSM: 13,    // captions, secondary detail
   textMD: 15,    // body, list items, buttons
@@ -210,6 +212,13 @@ export const theme = {
   // circle and consumes only the glyph tint.
   colorEventMedication: '#5B7A9E',
   colorEventMedicationLight: '#EAF0F7',
+  // Darkened slate-blue for TEXT on colorEventMedicationLight — the twin of
+  // colorAccentInk (on accent-light) and colorEventSymptomInk (on symptom-light).
+  // colorEventMedication (#5B7A9E) is a graphical/glyph tint (~3:1 targets) and only
+  // reaches ~3.9:1 on the #EAF0F7 wash, short of AA for a text label; this ink is
+  // 6.3:1 on that wash, so the med family gets a readable text-on-tint for a pill/
+  // chip (first consumer: the B-140 "No end recorded" past-medication pill).
+  colorEventMedicationInk: '#3D5875',
   colorChartEmpty: '#F0F0F0',
   // The idle mark for an un-logged coverage pip / a trial-day gap dot (widget
   // ground band, round-7 mock) — a mid-grey that reads "nothing here yet" without
@@ -228,6 +237,19 @@ export const theme = {
   colorDestructiveLight: '#FEE2E2',   // red-100 tint — danger-banner fill
   colorDestructiveBorder: '#FCA5A5',  // red-300 — danger-banner hairline
 
+  // ── Attention (amber) — light-surface "heads-up", NOT a danger state ─────────
+  // The Tier-2 register (multi-protein D7): a factual heads-up whose claim-strength
+  // is matched to what the record actually knows — a label tension, not harm — so
+  // it is deliberately amber, never the rose "danger" pair above (the same call the
+  // PM made on B-693's log-time trial-list heads-up, which uses this register on the
+  // dark card via colorMomentGlowFillOnDark). First consumed by the B-704 §6 day-0
+  // trial-protein mismatch heads-up (a light surface, so it needs its own trio).
+  // No icon, no colour-only meaning: the copy carries the fact in words, so the
+  // panel survives a greyscale screenshot. Ink contrast 7.3:1 on the fill (WCAG AA).
+  colorAttentionInk: '#6B4A0E',    // text ink on the wash
+  colorAttentionLight: '#FDF3DC',  // amber-50 wash — panel fill
+  colorAttentionBorder: '#F2DFB3', // amber hairline
+
   // Modal scrim — one value for every bottom-sheet/confirm overlay so stacked
   // surfaces dim identically (switcher sheet, archive confirm; FAB chip next).
   colorScrim: 'rgba(10, 10, 10, 0.35)',
@@ -235,6 +257,14 @@ export const theme = {
   // Completion "moment" — consumed by PR 4 (gold ring in app/log.tsx).
   colorMomentGlow: '#FBBF24',
   colorMomentConfirm: '#00C2A8',
+  // B-693 — the amber "attention" wash behind the log-time trial-list heads-up,
+  // rendered as an inset panel on the DARK completion card. The moment-glow gold at
+  // 0.12 (the same gold already haloing this card's check badge), so the warning
+  // breaks the card's calm stack and can't be read past, while its claim-strength
+  // stays matched to what the record knows — list-absence, not harm (mock round 2,
+  // PM-ruled amber over a rose "danger" rendering). The bar + eyebrow reuse
+  // colorMomentGlow at full strength; only the fill is softened.
+  colorMomentGlowFillOnDark: 'rgba(251, 191, 36, 0.12)',
 
   // ── Spacing — 8pt grid ────────────────────────────────────────────────────
   // Sub-grid micro-gap (2pt): the typographic space between a label and the
@@ -258,6 +288,13 @@ export const theme = {
   radiusMedium: 16,
   radiusLarge: 24,
   radiusFull: 999,
+
+  // ── Opacity ──────────────────────────────────────────────────────────────
+  // The disabled/dimmed treatment — one decision, not a copied literal (B-641).
+  // Applies to a control that exists but can't be used right now (an unfilled
+  // form's save button, a chip mid-write). Not for hierarchy: de-emphasized but
+  // *live* text uses the colorText* scale, never opacity.
+  opacityDisabled: 0.4,
 
   // ── Motion ───────────────────────────────────────────────────────────────
   durationFast: 150,

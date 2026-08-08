@@ -106,6 +106,16 @@ describe('FoodPicker search-results mode', () => {
     expect(getByText('Always available')).toBeTruthy();
   });
 
+  // B-356 (PM-ruled 2026-08-04): one food is not a rotation — Jordan's strict
+  // elimination diet feeds exactly one, so the shelf label degrades to the
+  // neutral, still recency-factual "Recently fed".
+  it('labels a single-food shelf "Recently fed", never "{pet}\'s rotation" (B-356)', async () => {
+    DB.getRecentFoods.mockResolvedValue([ROTATION[0]]);
+    const { findByText, queryByText } = renderPicker();
+    expect(await findByText('Recently fed')).toBeTruthy();
+    expect(queryByText("Nyx's rotation")).toBeNull();
+  });
+
   it('typing a query collapses the picker to just the matches', async () => {
     const { findByText, getByPlaceholderText, getByText, queryByText, queryAllByText } =
       renderPicker();
@@ -155,6 +165,45 @@ describe('FoodPicker search-results mode', () => {
 
     expect(getByText("Nyx's rotation")).toBeTruthy();
     expect(getByText('Snap a new food')).toBeTruthy();
+  });
+});
+
+// B-406 — the treat door lands the picker pre-scoped. `initialScope` seeds the
+// pinned scope chip exactly as if the owner had tapped it, so the library filters
+// to that scope on open. The rotation shelf is deliberately unfiltered (the B-347
+// scope-chip contract), so these tests empty the rotation to isolate the library.
+describe('FoodPicker initialScope (B-406)', () => {
+  const meal = (id: string, product: string): PickerFood => ({
+    id, brand: 'BrandM', product_name: product, format: 'dry_kibble', food_type: 'meal', photo_path: null,
+  });
+  const treat = (id: string, product: string): PickerFood => ({
+    id, brand: 'BrandT', product_name: product, format: 'jerky', food_type: 'treat', photo_path: null,
+  });
+  const LIB: PickerFood[] = [meal('m1', 'Kibble'), treat('t1', 'Jerky')];
+
+  beforeEach(() => {
+    // Empty the rotation so only the (scope-filtered) library renders — the
+    // rotation shelf shows recency regardless of scope, by B-347 design.
+    DB.getRecentFoods.mockResolvedValue([]);
+    DB.getLibraryFoods.mockResolvedValue(LIB as never);
+  });
+
+  it('opens scoped to treats — the treat shows, the meal is filtered out', async () => {
+    const { findByText, queryByText } = render(
+      <FoodPicker petId="p1" petName="Nyx" initialScope="treat"
+        onPickFood={jest.fn()} onAddNew={jest.fn()} />,
+    );
+    expect(await findByText('Jerky')).toBeTruthy();
+    expect(queryByText('Kibble')).toBeNull();
+  });
+
+  it('without initialScope the library shows every food (the control)', async () => {
+    const { findByText, getByText } = render(
+      <FoodPicker petId="p1" petName="Nyx"
+        onPickFood={jest.fn()} onAddNew={jest.fn()} />,
+    );
+    expect(await findByText('Jerky')).toBeTruthy();
+    expect(getByText('Kibble')).toBeTruthy();
   });
 });
 

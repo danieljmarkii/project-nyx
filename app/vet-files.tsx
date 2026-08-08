@@ -12,6 +12,7 @@ import { NameDocumentSheet, DocumentKindSheet } from '../components/vetfiles/Vet
 import { AddDocumentSheet } from '../components/vetfiles/AddDocumentSheet';
 import { DocumentSavedMoment } from '../components/vetfiles/DocumentSavedMoment';
 import { RecentlyDeletedSheet } from '../components/vetfiles/RecentlyDeletedSheet';
+import { VetFilesLowCountNote } from '../components/vetfiles/VetFilesLowCountNote';
 import { usePetStore } from '../store/petStore';
 import { getSignedUrls } from '../lib/storage';
 import { syncPendingVetDocuments } from '../lib/sync';
@@ -30,6 +31,8 @@ import {
   buildKindFilterOptions,
   reconcileKindFilter,
   filterByKind,
+  shouldShowKindLens,
+  isYoungLibrary,
   VET_DOCUMENT_SIGNED_URL_TTL_SEC,
   isSignatureStale,
   type DeletedVetDocumentRow,
@@ -389,7 +392,12 @@ export default function VetFilesScreen() {
   }
 
   const kindOptions = buildKindFilterOptions(rows);
-  const visible = filterByKind(rows, kindFilter);
+  // The lens renders only once the library spans ≥2 types (B-712) — a filter that
+  // can only offer "All types" is machinery over a set of one. When it's hidden any
+  // stale selection is ignored too, so a library that drops back to one type can't
+  // strand the owner on a filtered view with no control to clear it.
+  const showKindLens = shouldShowKindLens(rows);
+  const visible = filterByKind(rows, showKindLens ? kindFilter : null);
   const isEmpty = rows.length === 0;
 
   // ── The saved moment (D2-r2) ────────────────────────────────────────────────
@@ -508,16 +516,19 @@ export default function VetFilesScreen() {
 
           {/* A growable 10-value set behind a pill, per the house lens rule — and
               the pill tints when filtered, so a short list always explains itself
-              from the header alone. */}
-          <View style={styles.lensRow}>
-            <ScopeMenu
-              options={kindOptions}
-              value={kindFilter}
-              onChange={setKindFilter}
-              sheetLabel="Show documents of type"
-              accessibilityPrefix="Document type"
-            />
-          </View>
+              from the header alone. Hidden until the library spans ≥2 types (B-712):
+              a lens that can only offer "All types" is scaffolding, not a control. */}
+          {showKindLens && (
+            <View style={styles.lensRow}>
+              <ScopeMenu
+                options={kindOptions}
+                value={kindFilter}
+                onChange={setKindFilter}
+                sheetLabel="Show documents of type"
+                accessibilityPrefix="Document type"
+              />
+            </View>
+          )}
 
           <View style={styles.list}>
             {visible.map((row) => (
@@ -535,6 +546,12 @@ export default function VetFilesScreen() {
               />
             ))}
           </View>
+
+          {/* The "young library" note (B-712): a one- or two-document library reads
+              as a void on a full screen, so it earns a quiet, forward-looking line
+              and a low-key way to add the next. Not the empty state — there IS a
+              document — and it retires once the list can stand on its own. */}
+          {isYoungLibrary(rows) && <VetFilesLowCountNote onAdd={() => setAddOpen(true)} />}
         </ScrollView>
       )}
 

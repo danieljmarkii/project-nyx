@@ -1,6 +1,12 @@
 # 2026-08-03 — Notification foundation PR 5 (B-661): mock round 2 + the finish pass
 
-**Outcome:** shipped via #<PR> (draft). Branch `claude/notification-foundation-pr5-f4p7cl`. Mock round 2 (the Day Summary + lock-screen frames) published; the three deferred-piece rulings made; the PR 5 copy/safety pass, `pm-feature-review`, and the Dr. Chen read run; the Tier-2 `design-principles.md` §4 carve-out surfaced for PM wording sign-off (not written).
+**Outcome:** shipped via #574. Branch `claude/notification-foundation-pr5-f4p7cl`. Mock round 2 (the Day Summary + lock-screen frames) published; the three deferred-piece rulings made; the PR 5 copy/safety pass, `pm-feature-review`, and the Dr. Chen read run; the Tier-2 `design-principles.md` §4 carve-out surfaced for PM wording sign-off (not written). **On-device verified 2026-08-03 (PM): a fresh native build + opt-in → the 9pm notification fires** (closes the AC-3 fire gap). Merged to `main` after resolving the STATUS.md / backlog.md collision against 33 intervening commits.
+
+## On-device verification (PM, 2026-08-03)
+The PM cut a fresh native build (required — `expo-notifications` is a native module added in PR 1, absent from TestFlight build 35 and the dev client), opted in via Settings → Notifications → Daily summary → Allow, and confirmed the **9pm notification fires**. That closes AC 3's fire path (the notification delivers with the neutral G1 body). The remaining device checks are not-yet-confirmed but non-blocking for the merge: tap → Day Summary render, the zero-log state, OS-revocation reconcile (AC 6), and sign-out cancellation (AC 7) — carried on the on-device checklist.
+
+## Merge reconciliation (at merge)
+`main` advanced 33 commits while this PR was open (Signal/Home uplift B-721, Beta features B-712, Trial protein B-704, Med history B-140). Conflicts were the expected two — `STATUS.md` and `docs/backlog.md` — resolved by taking main's version and re-applying this session's additive edits (the notification-foundation section update; backlog rows B-670–B-674, whose IDs main had not claimed). `app/settings/notifications.tsx` auto-merged cleanly: this session's apostrophe normalization coexists with **B-665** (the post-grant confirmation snackbar), which shipped independently to main via #586 — that PR-3 residual is now closed.
 
 ## Mock round 2 (`docs/culprit-notifications-mockups.html`)
 Re-published over the **round-1 URL** (`af80ad9e-…`, house rule — kept `<title>` + favicon 🔔 stable, named the round inside the page). Added the two PR 4 surfaces:
@@ -35,6 +41,6 @@ See the PR body. Covers the consent flow (states a/b/c + primer + decline-spends
 
 ## Owed / next
 - **B-672** — the midnight day-handoff (PM decision, then a focused PR).
-- **PR 3 residuals** still open: B-665 (post-grant confirmation), B-666 (one-shot-prompt stakes line), B-667 (sheet-chrome consolidation).
+- **PR 3 residuals:** B-666 (one-shot-prompt stakes line) + B-667 (sheet-chrome consolidation) still open; **B-665 (post-grant confirmation) shipped independently via #586.**
 - The **Tier-2 §4 edit** — PM wording sign-off, then write.
 - Part 1 is otherwise complete: PRs 1–5 shipped; consumers (B-288/B-227/B-015/B-543/B-662) unblocked.

@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import type { IntakeRating } from '../components/log/IntakeChipRow';
 import type { DoseAdherence } from '../components/log/AdherenceChipRow';
 import type { DoseVehicle } from '../lib/medications';
-import type { TrialContaminantFlag } from '../lib/trialContaminant';
+import type { LogTimeTrialFlag } from '../lib/trialContaminant';
 
 // The earned completion surface, played after a successful log on any path so
 // the fastest taps get the same closure as the full flow (B-063). One store
@@ -68,15 +68,17 @@ export interface MealPayload {
   // In-flight intake rating. Starts null; updated optimistically via
   // patchIntakeRating when the owner taps a chip.
   intakeRating: IntakeRating | null;
-  // B-351 slice 4 — the Tier-2 trial-contaminant heads-up, resolved by
-  // evaluateMealTrialFlag AFTER the meal was committed and passed in at show
-  // time. Absent/null means nothing to say, which is NEVER an all-clear: the
-  // evaluator returns null for every uncertainty too (offline, unread panel, no
-  // trial), so the card must not — and does not — render any negative form.
-  // Passive by construction: it carries no action, so it does not make the card's
-  // deliberately-narrow affordance budget a line longer (Principle 1 — the log
-  // stays one tap and this never gates it).
-  trialFlag?: TrialContaminantFlag | null;
+  // B-351 slice 4 / B-693 — the Tier-2 log-time trial heads-up, resolved by
+  // evaluateMealLogTimeFlag AFTER the meal was committed and patched in at show
+  // time. One of two kinds (the union): the CONTENTS flag ("this has chicken")
+  // stays passive prose, and the MEMBERSHIP flag ("this isn't on the trial list",
+  // B-693) adds one affordance — the "+ Add to the trial list" line into the
+  // shipped confirm sheet. Absent/null means nothing to say, which is NEVER an
+  // all-clear: the evaluator returns null for every uncertainty too (offline,
+  // unread panel, no trial, stale trial), so the card must not — and does not —
+  // render any negative form. Neither kind ever gates the log (Principle 1 — the
+  // log stays one tap; the meal is already saved before this resolves).
+  trialFlag?: LogTimeTrialFlag | null;
 }
 
 export interface MedicationPayload {
@@ -150,8 +152,9 @@ interface MomentState {
   // nothing about the log path ever waits on it. Guarded by eventId: a second log
   // during the wait replaces the payload, and a late answer for the PREVIOUS meal
   // must not decorate the new one. Returns whether it landed, so the caller only
-  // spends rule 3's one-per-food budget on a heads-up actually rendered.
-  patchTrialFlag: (eventId: string, flag: TrialContaminantFlag) => boolean;
+  // spends rule 3's one-per-food budget on a heads-up actually rendered. Takes
+  // either kind of the log-time union (contents or membership, B-693).
+  patchTrialFlag: (eventId: string, flag: LogTimeTrialFlag) => boolean;
   // Mutates the in-flight MEDICATION card's adherence after a chip tap. Pair with
   // rescheduleHide() for a visible confirmation window. No-op on other payloads.
   patchAdherence: (adherence: DoseAdherence | null) => void;
@@ -182,6 +185,12 @@ export const MEAL_FLAGGED_DURATION_MS = 7000;
 // Medication-card dwell: same rationale as the meal card — interactive (the
 // adherence chip row needs reading + a deliberate tap before auto-dismiss).
 const MEDICATION_DURATION_MS = 5000;
+// How long a fire-and-forget flag evaluation waits for the meal card to actually
+// appear before giving up (see whenMealCardVisible). Sized well above the picker
+// path's ~450ms reveal defer: a card that has not appeared by now was superseded
+// by a newer log, and the wait resolves false so the caller skips the patch — and,
+// with it, rule 3's ledger spend — rather than hang.
+const CARD_REVEAL_WAIT_MS = 3000;
 
 // Module-scoped so a rapid second log cleanly cancels the prior timers rather
 // than racing two hides.
@@ -279,3 +288,59 @@ export const useMomentStore = create<MomentState>((set) => ({
     }, durationMs);
   },
 }));
+
+/**
+ * Resolve once the MEAL card for `eventId` is actually on screen — `true` when it
+ * is (now, or after a deferred reveal), `false` if it was superseded or never
+ * shown within `timeoutMs`.
+ *
+ * WHY THIS EXISTS. `patchTrialFlag` only lands on a card that is already visible —
+ * that is its whole contract, and it is right: a not-yet-revealed or dismissed
+ * card must never be patched, or a heads-up decorates the wrong meal / burns its
+ * one-per-trial ledger budget on something nobody saw. The FAB quick-log reveals
+ * the card SYNCHRONOUSLY, so its fire-and-forget flag evaluation always patches a
+ * live card. The picker path (`app/log.tsx`) defers the reveal behind `delayMs` so
+ * the dismissing `/log` modal doesn't occlude the card on iOS — and since B-417
+ * PR 2 removed the trial context's network read, the evaluation became an all-LOCAL
+ * read that resolves in a few milliseconds, i.e. BEFORE the reveal. A bare patch
+ * then hit an invisible card, returned false, and the log-time trial warning was
+ * silently dropped on the app's main food-logging path (the FAB never saw it,
+ * having no `delayMs`). Callers await this so the patch runs the instant the card
+ * is genuinely visible and never before — immediately on the FAB path, ~450ms
+ * later on the picker path.
+ *
+ * Bounded on purpose: a second log during the wait cancels the first card's reveal
+ * (`present` clears the show timer), and this must then resolve `false` rather than
+ * hang — the caller skips the patch AND `noteTrialFlagShown`, so a warning nobody
+ * saw can't be marked shown. `subscribe` fires on every `set`, so the deferred
+ * `reveal()`'s `set({ visible: true, payload })` wakes it exactly once.
+ */
+export function whenMealCardVisible(
+  eventId: string,
+  timeoutMs = CARD_REVEAL_WAIT_MS,
+): Promise<boolean> {
+  const isUp = (s: MomentState) =>
+    s.visible && s.payload?.kind === 'meal' && s.payload.eventId === eventId;
+  if (isUp(useMomentStore.getState())) return Promise.resolve(true);
+  // Never rejects, by construction: the executor has no throwing operations and
+  // never calls a reject — it only ever resolves true/false. That is the contract
+  // the fire-and-forget callers rely on (they await it without a catch), so keep it.
+  return new Promise((resolve) => {
+    let settled = false;
+    let unsub = () => {};
+    function finish(v: boolean) {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      unsub();
+      resolve(v);
+    }
+    // Scheduled before subscribe so the timeout is armed even if a subscribe
+    // callback were to fire synchronously (zustand's does not, but finish() is
+    // safe either way — it is idempotent and clears whichever fires second).
+    const timer = setTimeout(() => finish(false), timeoutMs);
+    unsub = useMomentStore.subscribe((s) => {
+      if (isUp(s)) finish(true);
+    });
+  });
+}

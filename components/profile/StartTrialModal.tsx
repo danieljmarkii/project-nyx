@@ -27,7 +27,7 @@
 //   'form'    — A, plus B when the disclosure is open.
 //   'picker'  — the multi-select food picker, for the trial diet or the extras.
 //   'done'    — C, the two LOCKED teaching lines. Shown once.
-import { useCallback, useEffect, useState } from 'react';
+import { Fragment, useCallback, useEffect, useState } from 'react';
 import {
   Alert, KeyboardAvoidingView, Modal, Platform, ScrollView,
   StyleSheet, Text, TextInput, TouchableOpacity, View,
@@ -41,12 +41,24 @@ import { ChipGroup } from '../ui/ChipGroup';
 import { PrimaryButton } from '../ui/PrimaryButton';
 import { WhorlSpinner } from '../brand/WhorlSpinner';
 import { FoodPicker } from '../log/FoodPicker';
+import { TrialProteinPicker } from './TrialProteinPicker';
+import { TrialProteinMismatchNote } from './TrialProteinMismatchNote';
 import { PickerFood } from '../../lib/db';
 import { localDayIndexOf, toLocalDayKey } from '../../lib/utils';
+import { trialTargetProtein, trialFoodProteinMismatches } from '../../lib/trialProtein';
+import { proteinSourceBase } from '../../lib/proteinRelation';
+import {
+  INITIAL_TRIAL_PROTEIN_CHOICE, effectiveTrialProteinKey, mismatchHeadsUp,
+  titleProtein, trialProteinToStore,
+  TRIAL_PROTEIN_ROW_LABEL, TRIAL_PROTEIN_SUBLINE_CHOSEN, TRIAL_PROTEIN_SUBLINE_DERIVED,
+  TRIAL_PROTEIN_SUBLINE_EMPTY, TRIAL_PROTEIN_VALUE_HYDROLYZED, TRIAL_PROTEIN_VALUE_UNSET,
+  type TrialProteinChoice,
+} from '../../lib/trialProteinPicker';
 import {
   ALLOWED_SET_HELPER, INDICATION_OPTIONS, START_DATE_LABEL, TRIAL_DIET_HELPER,
   TRIAL_RECORD_DISCLOSURE, canStartTrial, defaultDurationDays, durationHelperLine,
   endActiveTrial, foodLabel, formatTrialEndDate, getActiveTrialForPet,
+  getFoodPrimaryProteins,
   permittedRoleForFood, permittedRoleLabel, secondTrialIntro, startDateHelper,
   startDietTrial, startSheetIntro, stopReasonOptions, describeActiveTrial,
   trialEndDayKey, trialSetupLines,
@@ -75,7 +87,7 @@ interface Props {
   onLogFirstMeal: () => void;
 }
 
-type Step = 'loading' | 'blocked' | 'form' | 'picker' | 'done';
+type Step = 'loading' | 'blocked' | 'form' | 'picker' | 'protein-picker' | 'done';
 type PickerTarget = 'primary' | 'permitted';
 
 function toSelection(food: PickerFood): TrialFoodSelection {
@@ -108,6 +120,13 @@ export function StartTrialModal({
   const [moreOpen, setMoreOpen] = useState(false);
   const [saving, setSaving] = useState(false);
 
+  // ── Trial protein (B-704 §7.1) ────────────────────────────────────────────
+  // The owner's choice (default: derivation stands — the untouched golden path),
+  // the picker's open state, and a per-food cache of the picked foods' OWN main
+  // proteins (the derivation + mismatch source, read from the local cache).
+  const [proteinChoice, setProteinChoice] = useState<TrialProteinChoice>(INITIAL_TRIAL_PROTEIN_CHOICE);
+  const [foodProteins, setFoodProteins] = useState<Record<string, string | null>>({});
+
   const [existing, setExisting] = useState<ActiveTrialSummary | null>(null);
   const [stopReason, setStopReason] = useState<string | null>(null);
   // The end the owner has AGREED to but that has not been committed — see
@@ -131,6 +150,8 @@ export function StartTrialModal({
     setStopReason(null);
     setPendingEnd(null);
     setStartedSummary(null);
+    setProteinChoice(INITIAL_TRIAL_PROTEIN_CHOICE);
+    setFoodProteins({});
   }, []);
 
   // Re-check on every open, against the LOCAL MIRROR — never the network. One
@@ -158,6 +179,22 @@ export function StartTrialModal({
     return () => { cancelled = true; };
   }, [visible, petId]);
 
+  // The picked foods' OWN main proteins, read from the local cache — the source the
+  // "Trial protein" row derives from and the day-0 mismatch reads. Fetched here (not
+  // carried on PickerFood) because the picker grid is a moment-of-event surface that
+  // deliberately shows no protein line (Principle 1); widening PickerFood would carry
+  // protein to a surface that must not render it. A lookup failure degrades to no
+  // derivation (the row's empty state), never a guess.
+  useEffect(() => {
+    const ids = primaryFoods.map((f) => f.id);
+    if (ids.length === 0) return;
+    let cancelled = false;
+    getFoodPrimaryProteins(ids)
+      .then((map) => { if (!cancelled) setFoodProteins((prev) => ({ ...prev, ...map })); })
+      .catch((err) => console.warn('[StartTrialModal] protein lookup failed:', err));
+    return () => { cancelled = true; };
+  }, [primaryFoods]);
+
   // The indication chip sets AND SHOWS the duration default without becoming a
   // third field (§4.1). P-1 provisional, pending Dr. Chen — see the lookup table.
   function pickIndication(next: string | null) {
@@ -180,6 +217,57 @@ export function StartTrialModal({
   // `string | null` return type.
   const startDateDisplay = formatTrialEndDate(startDayKey) ?? startDayKey;
   const canStart = canStartTrial({ primaryFoods, indication });
+
+  // ── Trial protein: derive, resolve, detect the mismatch (B-704 §6/§7.1) ─────
+  // ONE derivation, through the shared predicate (§4 — never resolveTargetProtein
+  // directly). The row PREFILLS from this; the picker highlights the same value.
+  const derived = trialTargetProtein(
+    { target_protein: null },
+    primaryFoods.map((f) => ({ primaryProtein: foodProteins[f.id] ?? null })),
+  );
+  // A source-less process word ('hydrolyzed protein') is what the derived arm returns
+  // for a hydrolyzed diet — it stays plain `canonicalizeProtein` for report
+  // behavior-neutrality (B-705 unifies it under PR 5's cold-read gate). It is NOT a
+  // nameable trial protein: the food list IS the trial (mock frame E). So the setup
+  // surface treats it as "nothing derived" — the row shows the empty optional state,
+  // and (via the same gate) the picker offers no such option and the mismatch stays
+  // silent. One source gate, three surfaces.
+  const derivedKey =
+    derived.protein != null && proteinSourceBase(derived.protein) != null ? derived.protein : null;
+  // The key the ROW shows and the mismatch reads. A `derived` choice resolves to
+  // the (source-gated) derivation; an owner pick to their key; the two escape hatches
+  // to null (no target named → the mismatch goes silent, TG-2).
+  const effectiveProteinKey = effectiveTrialProteinKey(proteinChoice, derivedKey);
+  // The day-0 catch, anchored by food id so each heads-up sits under its own row.
+  const mismatchByFoodId = new Map(
+    trialFoodProteinMismatches(
+      effectiveProteinKey,
+      primaryFoods.map((f) => ({
+        foodItemId: f.id,
+        foodLabel: foodLabel(f),
+        primaryProtein: foodProteins[f.id] ?? null,
+      })),
+    ).map((m) => [m.foodItemId, m] as const),
+  );
+
+  // What the row renders — value + sub-line + whether the value is the dimmed
+  // "Not set" register (E1: the row always renders, empty-but-optional when nothing
+  // is named). Never a bare "Not set" for a chosen escape hatch: "No single protein"
+  // is its own value, and "Not sure" reads as the honest empty set-prompt.
+  const proteinRow = (() => {
+    switch (proteinChoice.kind) {
+      case 'protein':
+        return { value: titleProtein(effectiveProteinKey ?? ''), sub: TRIAL_PROTEIN_SUBLINE_CHOSEN, dim: false };
+      case 'hydrolyzed':
+        return { value: TRIAL_PROTEIN_VALUE_HYDROLYZED, sub: TRIAL_PROTEIN_SUBLINE_CHOSEN, dim: false };
+      case 'unset':
+        return { value: TRIAL_PROTEIN_VALUE_UNSET, sub: TRIAL_PROTEIN_SUBLINE_EMPTY, dim: true };
+      case 'derived':
+        return derivedKey != null
+          ? { value: titleProtein(derivedKey), sub: TRIAL_PROTEIN_SUBLINE_DERIVED, dim: false }
+          : { value: TRIAL_PROTEIN_VALUE_UNSET, sub: TRIAL_PROTEIN_SUBLINE_EMPTY, dim: true };
+    }
+  })();
 
   function toggleFood(food: PickerFood) {
     const selection = toSelection(food);
@@ -235,6 +323,9 @@ export function StartTrialModal({
         targetDurationDays: targetDays,
         startedAt: startDayKey,
         vetName: vetName.trim() || null,
+        // Null on the untouched golden path (derivation stands, read re-derives) and
+        // on both escape hatches; the owner's canonical key on an explicit pick (§5).
+        targetProtein: trialProteinToStore(proteinChoice),
       });
       setStartedSummary({
         food: foodLabel(primaryFoods[0]),
@@ -267,6 +358,16 @@ export function StartTrialModal({
   function handleDone() {
     reset();
     onClose();
+  }
+
+  // The picker reports a tap; the host applies it and returns to the form (setup is
+  // first-set, so there is no correction-confirm — that is PR 4's mid-trial CHANGE
+  // case). Mounted as a STEP that replaces the form, matching the FoodPicker
+  // sub-screen's proven pattern rather than nesting a sheet inside a sheet — the
+  // component itself is a self-contained Modal, so PR 4 can still mount it standalone.
+  function handleProteinSelect(choice: TrialProteinChoice) {
+    setProteinChoice(choice);
+    setStep('form');
   }
 
   // ── Picker sub-screen ─────────────────────────────────────────────────────
@@ -304,6 +405,27 @@ export function StartTrialModal({
           />
         </SafeAreaView>
       </Modal>
+    );
+  }
+
+  // ── Trial protein picker sub-screen (§7.2) ────────────────────────────────
+  // The shared picker, mounted as a step that replaces the form (the FoodPicker
+  // pattern), so no sheet is nested inside a sheet. The component is a standalone
+  // Modal, so PR 4 mounts the same one on the allowed-set screen.
+  if (step === 'protein-picker') {
+    return (
+      <TrialProteinPicker
+        visible={visible}
+        petName={petName}
+        choice={proteinChoice}
+        derivedKey={derivedKey}
+        derivedFoods={primaryFoods.map((f) => ({
+          foodLabel: foodLabel(f),
+          primaryProtein: foodProteins[f.id] ?? null,
+        }))}
+        onSelect={handleProteinSelect}
+        onClose={() => setStep('form')}
+      />
     );
   }
 
@@ -406,7 +528,13 @@ export function StartTrialModal({
               style={styles.quietAction}
               hitSlop={8}
             >
-              <Text style={styles.quietActionText}>Log {petName}’s first meal</Text>
+              {/* "first meal" only holds on a same-day start; R3 made back-dating
+                  the encouraged path, so a day-11 trial's first meal was days ago. */}
+              <Text style={styles.quietActionText}>
+                {(startedSummary?.dayCounter ?? 1) > 1
+                  ? `Log a meal for ${petName}`
+                  : `Log ${petName}’s first meal`}
+              </Text>
             </TouchableOpacity>
           </ScrollView>
         </SafeAreaView>
@@ -439,19 +567,54 @@ export function StartTrialModal({
                   the FIRST also lands on the legacy `diet_trials.food_item_id`
                   so the seven shipped readers keep rendering a name. */}
               <Text style={styles.label}>Trial diet</Text>
-              {primaryFoods.map((f) => (
-                <FoodRow
-                  key={f.id}
-                  title={foodLabel(f)}
-                  onPress={() => openPicker('primary')}
-                  onRemove={() => removeFood('primary', f.id)}
-                />
-              ))}
+              {primaryFoods.map((f) => {
+                const mismatch = mismatchByFoodId.get(f.id);
+                // The heads-up renders INLINE, immediately below its own food row
+                // (§6.1 / §6.6): it shares a viewport with the bag it names, on the
+                // smallest device, without a scroll or a disclosure. `effectiveProteinKey`
+                // is non-null whenever a mismatch exists (the predicate returns [] for a
+                // null target), so the copy always has a target to name.
+                const headsUp =
+                  mismatch && effectiveProteinKey != null
+                    ? mismatchHeadsUp({
+                        foodLabel: mismatch.foodLabel,
+                        foodProtein: mismatch.foodProtein,
+                        petName,
+                        targetProtein: effectiveProteinKey,
+                      })
+                    : null;
+                return (
+                  <Fragment key={f.id}>
+                    <FoodRow
+                      title={foodLabel(f)}
+                      onPress={() => openPicker('primary')}
+                      onRemove={() => removeFood('primary', f.id)}
+                    />
+                    {headsUp ? (
+                      <TrialProteinMismatchNote fact={headsUp.fact} advice={headsUp.advice} />
+                    ) : null}
+                  </Fragment>
+                );
+              })}
               <AddRow
                 label={primaryFoods.length === 0 ? 'Choose the trial diet' : 'Add another trial food'}
                 onPress={() => openPicker('primary')}
               />
               <Text style={styles.help}>{TRIAL_DIET_HELPER}</Text>
+
+              {/* ── Trial protein — a derived CONFIRMATION, not a question (§7.1) ──
+                  Always rendered (TP-1 ruled E1): pre-filled from the picked foods
+                  when derivation yields one, an empty-but-optional set-prompt when
+                  it doesn't. A glance, not a decision — the golden path stays two
+                  answers. Tapping opens the shared picker. */}
+              {primaryFoods.length > 0 ? (
+                <TrialProteinRow
+                  value={proteinRow.value}
+                  sub={proteinRow.sub}
+                  dim={proteinRow.dim}
+                  onPress={() => setStep('protein-picker')}
+                />
+              ) : null}
 
               {/* ── What's it for ───────────────────────────────────────────
                   Three short always-visible options on a hot path → visible
@@ -615,6 +778,37 @@ export function StartTrialModal({
   );
 }
 
+// The derived "Trial protein" row (§7.1, mock frames B/D). Label + value + a
+// provenance/set-prompt sub-line + a chevron; tapping opens the picker. The value
+// dims to the "Not set" register only in the empty state — never for a chosen
+// escape hatch, which carries its own words.
+function TrialProteinRow({
+  value, sub, dim, onPress,
+}: {
+  value: string;
+  sub: string;
+  dim: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <TouchableOpacity
+      testID="trial-protein-row"
+      style={styles.proteinRow}
+      onPress={onPress}
+      activeOpacity={0.7}
+      accessibilityRole="button"
+      accessibilityLabel={`${TRIAL_PROTEIN_ROW_LABEL}: ${value}. ${sub}`}
+    >
+      <View style={styles.flex}>
+        <Text style={styles.proteinRowLabel}>{TRIAL_PROTEIN_ROW_LABEL}</Text>
+        <Text style={[styles.proteinRowValue, dim && styles.proteinRowValueDim]}>{value}</Text>
+        <Text style={styles.proteinRowSub}>{sub}</Text>
+      </View>
+      <ChevronRight size={18} color={theme.colorTextTertiary} />
+    </TouchableOpacity>
+  );
+}
+
 // One chosen food. The row opens the picker (where it can be deselected among the
 // rest); "Remove" is a separate control so a single food can be dropped without a
 // round trip. Both clear the 44pt floor.
@@ -766,6 +960,38 @@ const styles = StyleSheet.create({
     fontSize: theme.textXS,
     color: theme.colorTextTertiary,
     marginTop: 2,
+  },
+  proteinRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.space2,
+    minHeight: 56,
+    paddingHorizontal: theme.space2,
+    paddingVertical: theme.space1,
+    borderWidth: 1,
+    borderColor: theme.colorBorder,
+    borderRadius: theme.radiusSmall,
+    backgroundColor: theme.colorNeutralLight,
+    marginTop: theme.space1,
+  },
+  proteinRowLabel: {
+    fontSize: theme.textXS,
+    color: theme.colorTextTertiary,
+  },
+  proteinRowValue: {
+    fontSize: theme.textMD,
+    fontWeight: theme.weightMedium,
+    color: theme.colorTextPrimary,
+    marginTop: theme.spaceMicro,
+  },
+  proteinRowValueDim: {
+    fontWeight: theme.weightRegular,
+    color: theme.colorTextTertiary,
+  },
+  proteinRowSub: {
+    fontSize: theme.textXS,
+    color: theme.colorTextTertiary,
+    marginTop: theme.spaceMicro,
   },
   removeTouch: {
     minHeight: 44,
