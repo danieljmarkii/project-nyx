@@ -29,6 +29,7 @@ import type {
   SymptomWorseningFinding,
   TimeOfDayClusteringFinding,
 } from './signal';
+import { localDayIndex, localDayIndexOf, trialDayCounter } from './utils';
 
 // A timing finding — the two types whose evidence renders as a receipt (SR-1, §4).
 type TimingFinding = PostprandialTimingFinding | TimeOfDayClusteringFinding;
@@ -205,6 +206,69 @@ export function noPatternIntro(petName: string): string {
 export function staleIntro(petName: string): string {
   return `Not enough recent data to show a pattern. Log today and we'll keep building ${petName}'s picture.`;
 }
+
+// ── SR-2 empty states — E1 (building) + E2 (no_pattern) restyle ────────────────
+// B-721 §6 / §9. These are the flag-on (`signal_design_v2`) copy for the two empty
+// states drawn in the round-2.1 mock. Flag-off keeps the shipped intros above
+// byte-identical (FR-FLAG-2), so both sets coexist rather than one replacing the
+// other. Verbatim-governed: every string below is pinned character-for-character to
+// §9 (E1) / the B-284 §9 "Signal — empty" row (E2) by signalCopy.test.ts — a voice
+// edit here is a spec change, not a code change. Absence is never wellness: E1 keeps
+// the safety-floor line, E2 says "isn't an all-clear" in its own words.
+
+// E1 headline (§9), in two parts so the day-count clause can carry the E1-c accent
+// ink as its own visual span while the whole sentence stays the a11y label. The day
+// counter is the B-421 local-day count from the first logged event; the event count
+// is pluralised (the §9 template writes "{k} events", which renders "1 event" on day
+// one — a correct application of the template, not a copy change). `dayNumber` /
+// `eventCount` are supplied by useSignal from local SQLite.
+export function buildingHeadlineLead(petName: string): string {
+  return `We're getting to know ${petName}.`;
+}
+export function buildingDayCount(dayNumber: number, eventCount: number): string {
+  return `Day ${dayNumber} — ${count(eventCount, 'event', 'events')} so far.`;
+}
+export function buildingHeadline(petName: string, dayNumber: number, eventCount: number): string {
+  return `${buildingHeadlineLead(petName)} ${buildingDayCount(dayNumber, eventCount)}`;
+}
+
+// The building-state "Day N" counter (§9 / §6). ONE day definition — the B-421
+// local-day counter (`lib/utils`), device zone (the owner's own midnight is the
+// client's day boundary), day-1-inclusive via `trialDayCounter` (max(1, …)): a pet
+// logged for the first time today is on "Day 1", never "Day 0". A missing/malformed
+// first-event timestamp falls back to Day 1 rather than guessing (the same
+// null-not-a-guessed-day contract as `localDayIndexOf`). `nowMs` is passed in (never
+// read here) so this stays pure + timezone-pinnable in tests (B-514).
+export function buildingDayNumber(firstEventIso: string | null, nowMs: number): number {
+  if (!firstEventIso) return 1;
+  const firstIdx = localDayIndexOf(firstEventIso);
+  if (firstIdx === null) return 1;
+  return trialDayCounter(firstIdx, localDayIndex(nowMs));
+}
+
+// E1 sub + the three "watching for" rows + the safety floor (§9). The watching-for
+// rows name what the engine is building toward, in the same order as the mock's
+// ghosted receipts (timing → food → change). The floor line is the honesty device:
+// the weekly-pattern framing must never read as "nothing urgent will surface before
+// then" — safety findings don't wait for the week (clinical-guardrails / §6).
+export const BUILDING_SUB =
+  "Patterns usually start appearing within the first week. Here's what we're watching for:";
+export const BUILDING_WATCHING_FOR = [
+  'Timing — do symptoms follow meals, and how closely',
+  'Food connections — what tends to come before a reaction',
+  'Change — this week against last, counted from your logs',
+] as const;
+export const BUILDING_FLOOR = "If something needs attention sooner, it won't wait for the week.";
+
+// E2 — mature record, nothing established. VERBATIM from the shipped B-284 §9
+// "Signal — empty" copy row (`docs/culprit-in-app-brand-requirements.md`). Split
+// across two lines per the round-2.1 mock (primary line + dimmed sub) — the words
+// are identical to §9 either way. "isn't an all-clear" is the load-bearing clause:
+// a heavily-logged record with no finding is never reassured (absence ≠ wellness).
+export const NO_PATTERN_HEADLINE =
+  'No established patterns yet. Nothing in the last month of logs has cleared our evidence bar.';
+export const NO_PATTERN_SUB =
+  "That isn't an all-clear — keep logging, and the moment something clears it, it'll be here.";
 
 // ── Coverage diagnostics (B-053) ──────────────────────────────────────────────
 // On the no_pattern surface, replace the generic noPatternIntro with the TOP
