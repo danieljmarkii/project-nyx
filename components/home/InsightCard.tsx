@@ -13,12 +13,21 @@ import { Badge } from '../ui/Badge';
 import {
   confidenceTag,
   displayProteinName,
+  dotLaneA11yLabel,
+  dotLaneModel,
   evidenceText,
   isJointCandidate,
+  isTimingFinding,
+  phoneScript,
   proteinCluster,
   sampleLine,
+  stackedCompareA11yLabel,
+  timingCompareRows,
+  timingControlDisclosure,
+  timingReceiptDegrades,
 } from '../../lib/signalCopy';
-import type { CachedFinding, InsightType, PriorityClass } from '../../lib/signal';
+import { DotLane, EvidenceBox, PhoneScript, StackedCompare } from './SignalReceipts';
+import type { CachedFinding, InsightType, PriorityClass, SignalFinding } from '../../lib/signal';
 
 // Enable the height animation on Android (off by default there).
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -46,9 +55,13 @@ interface InsightBodyProps {
   // Subsequent findings stay in the body face so the surface reads as one calm
   // headline + supporting rows, never a column of competing serif headlines.
   isLead: boolean;
+  // The Signal/Home design uplift is dark behind `signal_design_v2` (SR-1, B-721).
+  // When false the body renders EXACTLY the shipped surface (byte-identical, FR-FLAG-2);
+  // when true a timing finding gains its card-face evidence strip (§4).
+  designV2: boolean;
 }
 
-function SentenceBody({ cached, isLead }: InsightBodyProps) {
+function SentenceBody({ cached, isLead, designV2 }: InsightBodyProps) {
   const tag = confidenceTag(cached.finding);
   return (
     <View style={styles.body}>
@@ -56,12 +69,71 @@ function SentenceBody({ cached, isLead }: InsightBodyProps) {
       {cached.finding.type === 'food_symptom_correlation' && isJointCandidate(cached.finding) && (
         <LinkedPair proteins={proteinCluster(cached.finding)} />
       )}
+      <CardFaceReceipt finding={cached.finding} designV2={designV2} />
       <View style={styles.metaRow}>
         {tag && <Badge label={tag} variant="muted" />}
         <Text style={styles.sample}>{sampleLine(cached.finding)}</Text>
       </View>
     </View>
   );
+}
+
+// ── Card-face receipt (SR-1, §4) ──────────────────────────────────────────────
+// Between the sentence and the sample line, a timing finding shows its glance
+// evidence: Shape A (dot lane) at v1 sample sizes, degrading to Shape C (within-window
+// vs outside) above the legibility cap — never bins (SD-4). Every other type stays
+// sentence-only (S1 safety faces stay plain; S10 correlation/intake/reflection are
+// already carried by their sample line). Returns null when the flag is off or the type
+// carries no strip, so the flag-off tree is unchanged (FR-FLAG-2).
+function CardFaceReceipt({ finding, designV2 }: { finding: SignalFinding; designV2: boolean }) {
+  if (!designV2 || !isTimingFinding(finding)) return null;
+  if (timingReceiptDegrades(finding)) {
+    return <StackedCompare rows={timingCompareRows(finding)} />;
+  }
+  return <DotLane model={dotLaneModel(finding)} />;
+}
+
+// The card-face receipt's evidence phrased as one sentence, for the card's OWN
+// accessibilityLabel — the strip Views are decorative (a self-label on them is
+// swallowed by the outer Pressable and never reaches VoiceOver; see SignalReceipts).
+// Null when the flag is off or the type carries no card-face strip.
+function cardFaceReceiptA11y(finding: SignalFinding, designV2: boolean): string | null {
+  if (!designV2 || !isTimingFinding(finding)) return null;
+  return timingReceiptDegrades(finding)
+    ? stackedCompareA11yLabel(timingCompareRows(finding))
+    : dotLaneA11yLabel(finding);
+}
+
+// ── Expanded-state evidence (SR-1, §4) ────────────────────────────────────────
+// Additive under the flag, below the unchanged "Why we're showing this" prose. Timing
+// expands draw the two-sided control side + the honest un-timeable remainder (S2/S9);
+// safety expands render the phone-call script — the facts to say on a vet call (§9),
+// sans the active-meds line (that rides SR-4's payload). Correlation and reflection add
+// nothing here in SR-1 (reflection's density-gated compare is SR-5).
+function ExpandedReceipts({ finding, petName }: { finding: SignalFinding; petName: string }) {
+  if (isTimingFinding(finding)) {
+    const disclosure = timingControlDisclosure(finding);
+    const rows = timingReceiptDegrades(finding) ? null : timingCompareRows(finding);
+    // Degraded + everything timeable → the card-face compare already said it all.
+    if (!rows && !disclosure) return null;
+    return (
+      <EvidenceBox title="The other side of the picture">
+        {rows && <StackedCompare rows={rows} />}
+        {disclosure ? (
+          <Text style={[styles.disclosure, rows ? styles.disclosureSpaced : null]}>{disclosure}</Text>
+        ) : null}
+      </EvidenceBox>
+    );
+  }
+  const facts = phoneScript(finding, petName);
+  if (facts) {
+    return (
+      <EvidenceBox title="If you call your clinic, the facts to have ready">
+        <PhoneScript facts={facts} />
+      </EvidenceBox>
+    );
+  }
+  return null;
 }
 
 // The joint-candidate linked pair (B-351 D5, mock §3). Two proteins the engine cannot
@@ -123,9 +195,13 @@ interface Props {
   petName: string;
   // True for the top-ranked row only — gates the display-face headline.
   isLead?: boolean;
+  // Signal/Home design uplift, dark behind `signal_design_v2` (SR-1, B-721). Default
+  // false so every non-uplift caller (and the flag-off path) renders the shipped card
+  // byte-identical; SignalZone resolves the allowlist flag and passes the real value.
+  designV2?: boolean;
 }
 
-export function InsightCard({ cached, petName, isLead = false }: Props) {
+export function InsightCard({ cached, petName, isLead = false, designV2 = false }: Props) {
   const [expanded, setExpanded] = useState(false);
 
   const Body = INSIGHT_RENDERERS[cached.finding.type];
@@ -134,6 +210,13 @@ export function InsightCard({ cached, petName, isLead = false }: Props) {
   if (!Body) return null;
 
   const rail = RAIL_COLOR[cached.finding.priorityClass];
+
+  // The card is one accessible button (the whole row), so its label must carry the
+  // card-face glance evidence too — a self-label on the receipt Views would be swallowed
+  // by this container and never reach VoiceOver (code-review / MedStrip idiom). Flag-off
+  // (or a non-timing type) → null → the label stays exactly the shipped `cached.text`.
+  const receiptA11y = cardFaceReceiptA11y(cached.finding, designV2);
+  const accessibilityLabel = receiptA11y ? `${cached.text}. ${receiptA11y}` : cached.text;
 
   function toggle() {
     LayoutAnimation.configureNext(LayoutAnimation.create(theme.durationMedium, 'easeInEaseOut', 'opacity'));
@@ -147,14 +230,19 @@ export function InsightCard({ cached, petName, isLead = false }: Props) {
       hitSlop={8}
       accessibilityRole="button"
       accessibilityState={{ expanded }}
-      accessibilityLabel={cached.text}
+      accessibilityLabel={accessibilityLabel}
       accessibilityHint="Shows the evidence behind this insight"
       style={styles.row}
     >
       <View style={[styles.rail, { backgroundColor: rail }]} />
       <View style={styles.content}>
-        <Body cached={cached} isLead={isLead} />
-        {expanded && <Text style={styles.evidence}>{evidenceText(cached.finding, petName)}</Text>}
+        <Body cached={cached} isLead={isLead} designV2={designV2} />
+        {expanded && (
+          <>
+            <Text style={styles.evidence}>{evidenceText(cached.finding, petName)}</Text>
+            {designV2 && <ExpandedReceipts finding={cached.finding} petName={petName} />}
+          </>
+        )}
         <Text style={styles.expandHint}>{expanded ? 'Hide details' : "Why we're showing this"}</Text>
       </View>
     </Pressable>
@@ -243,6 +331,15 @@ const styles = StyleSheet.create({
     fontSize: theme.textSM,
     color: theme.colorTextSecondary,
     lineHeight: theme.lineHeightBody,
+  },
+  // The honest un-timeable remainder inside the expanded control-side box (§4).
+  disclosure: {
+    fontSize: theme.textSM,
+    color: theme.colorTextSecondary,
+    lineHeight: theme.lineHeightSM,
+  },
+  disclosureSpaced: {
+    marginTop: theme.space0_5,
   },
   expandHint: {
     marginTop: theme.space1,
