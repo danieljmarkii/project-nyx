@@ -1,5 +1,5 @@
 # Project Nyx — Design Principles
-**Version:** 1.0 | **Status:** Stable | **Last Updated:** 2026-07-24
+**Version:** 1.1 | **Status:** Stable | **Last Updated:** 2026-08-08
 
 ---
 
@@ -83,6 +83,8 @@ One chart. The most clinically relevant metric for this pet right now. Symptom f
 
 **What is not on the home screen:** a log feed, a settings shortcut, a feature menu, an upsell.
 
+_Added 2026-08-07 (Signal/Home uplift B-721, spine rule S1; PM-approved). Within the Signal, richer evidence treatments live on the insight lane only — safety findings keep deliberately plain, text-first cards, so that plainness itself signals severity._
+
 ---
 
 ### 4. The Nudge Is Warm, Not Nagging
@@ -107,6 +109,8 @@ Every empty state — first open, no logs today, no data for this time range —
 - First open: "We're getting to know Luna. Keep logging and patterns start appearing in about a week." Not: "No data yet."
 - No logs today: the Zone 2 nudge, not a blank space
 - Insufficient data for a trend: "A few more days of logs and we'll be able to show you Luna's pattern." Not: a broken chart or a hidden zone
+
+_Added 2026-08-07 (Signal/Home uplift B-721, spine rule S6; PM-approved). A surface that renders cards only when they carry information must label its quiet — one explicit line — never shorten silently._
 
 **The test:** Show the empty state to someone who just downloaded the app. Do they feel excited or deflated?
 
@@ -252,4 +256,5 @@ These are intentionally deferred — answers belong in a future design sprint in
 
 | Version | Date | Summary |
 |---------|------|---------|
+| v1.1 | 2026-08-08 | Two Tier-2 additions from the Signal/Home design uplift (B-721, spec §10 — PM-approved). Principle 3 gains the S1 register-drop rule (richer evidence lives on the insight lane only; safety cards stay deliberately plain so plainness signals severity). Principle 5 gains the S6 quiet-is-labeled rule (a presence-gated surface labels its quiet in one explicit line, never shortens silently). No principle revised; both are additions. |
 | v1.0 | May 2026 | Initial document. Core philosophy, seven design principles, visual language, copy principles, interaction principles. Based on product trio design session May 2026. |

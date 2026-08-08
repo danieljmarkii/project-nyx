@@ -50,7 +50,19 @@ export type AppConfigKey = keyof AppConfigValues;
 // mechanism. It gates the widget's *data* server-side; the owner's local opt-in is a
 // separate Phase-2 gate that never lives here (spec §2 — the two gates stay split so
 // the future Premium swap is one line).
-export const ALLOWLIST_FLAG_KEYS = ['ask_enabled', 'ask_general_enabled', 'widget_enabled'] as const;
+//
+// `signal_design_v2` is the Signal/Home design-uplift rollout flag (B-721,
+// migration 055) — same shape, same fail-closed resolution. Unlike `widget_enabled`
+// it is CLIENT-RENDER-ONLY: it gates only what the client draws (SR-1..SR-6), never
+// server data. The uplift's one server change (SR-4's additive `generate-signal`
+// payload) is computed uniformly for every account and is flag-independent, so there
+// is deliberately no server-side registration of this key (spec §7/§101).
+export const ALLOWLIST_FLAG_KEYS = [
+  'ask_enabled',
+  'ask_general_enabled',
+  'widget_enabled',
+  'signal_design_v2',
+] as const;
 export type AllowlistFlagKey = (typeof ALLOWLIST_FLAG_KEYS)[number];
 
 // Raw, UN-coerced allowlist-flag values (a bool, an { enabled, allowlist } object,
@@ -65,6 +77,7 @@ export const ALLOWLIST_FLAGS_UNSET: AllowlistFlagValues = {
   ask_enabled: undefined,
   ask_general_enabled: undefined,
   widget_enabled: undefined,
+  signal_design_v2: undefined,
 };
 
 // The pure primitive. `userId` is the signed-in caller's uid (null when unknown /

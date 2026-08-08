@@ -320,3 +320,62 @@ describe('widget_enabled — Beta-features eligibility (B-712 PR 1)', () => {
     expect(coerceAllowlistFlags({ ask_enabled: true }).widget_enabled).toBeUndefined();
   });
 });
+
+// ── signal_design_v2 — the Signal/Home design-uplift gate (B-721 SR-0) ───────────
+// SR-0 is schema-only (migration 055 seeds it dark: {"enabled": false, "allowlist":
+// []}); the flag rides the SAME primitive as the Ask + widget keys. The contract to
+// pin here is the same two properties every later UI PR (SR-1..SR-6) depends on:
+// signal_design_v2 is EXTRACTED off an app_config SELECT and it resolves FAIL-CLOSED
+// (off) for both ship-dark cases — the seed unreached (undefined ⇒ fallback) and a
+// signed-out caller against the dark seed. No UI gate is wired in this PR; these are
+// unit facts backing FR-FLAG-2 (byte-identical off) and FR-FLAG-3 (seed first).
+describe('signal_design_v2 — Signal/Home uplift eligibility (B-721 SR-0)', () => {
+  it('is part of the unset baseline (undefined until the row is fetched)', () => {
+    expect(ALLOWLIST_FLAGS_UNSET.signal_design_v2).toBeUndefined();
+  });
+
+  it('extracts raw off an app_config SELECT, alongside the Ask + widget keys', () => {
+    const rows = [
+      { key: 'ask_enabled', value: { enabled: false, allowlist: ['a-uid'] } },
+      { key: 'widget_enabled', value: { enabled: false, allowlist: ['w-uid'] } },
+      { key: 'signal_design_v2', value: { enabled: false, allowlist: ['pm-uid'] } },
+    ];
+    const flags = extractAllowlistFlags(rows);
+    expect(flags.signal_design_v2).toEqual({ enabled: false, allowlist: ['pm-uid'] });
+    // The new key does not disturb the other allowlist keys in the same SELECT.
+    expect(flags.ask_enabled).toEqual({ enabled: false, allowlist: ['a-uid'] });
+    expect(flags.widget_enabled).toEqual({ enabled: false, allowlist: ['w-uid'] });
+  });
+
+  it('resolves fail-closed (off) when unset — seed unreached / row absent (FR-FLAG-2)', () => {
+    // A SELECT without the signal row leaves it undefined; the fallback=false
+    // convention (how every allowlist gate is called) then renders the shipped
+    // surface — flag-off is byte-identical because the gate is simply off.
+    const unset = extractAllowlistFlags([{ key: 'ask_enabled', value: false }]).signal_design_v2;
+    expect(unset).toBeUndefined();
+    expect(resolveAllowlistFlag(unset, 'pm-uid', false)).toBe(false);
+  });
+
+  it('the shipped-dark seed {enabled:false, allowlist:[]} is off for everyone', () => {
+    const darkSeed = { enabled: false, allowlist: [] };
+    expect(resolveAllowlistFlag(darkSeed, 'pm-uid', false)).toBe(false);
+    // …and off signed-out, never leaking to the fallback.
+    expect(resolveAllowlistFlag(darkSeed, null, true)).toBe(false);
+  });
+
+  it('an allow-listed uid resolves on; other + signed-out callers stay off', () => {
+    const gated = { enabled: false, allowlist: ['pm-uid'] };
+    expect(resolveAllowlistFlag(gated, 'pm-uid', false)).toBe(true);
+    expect(resolveAllowlistFlag(gated, 'someone-else', false)).toBe(false);
+    expect(resolveAllowlistFlag(gated, null, false)).toBe(false); // signed out → off
+  });
+
+  it('survives the cache round-trip; a cache lacking it decodes to undefined', () => {
+    const stored = { signal_design_v2: { enabled: false, allowlist: ['pm-uid'] } };
+    expect(coerceAllowlistFlags(stored).signal_design_v2).toEqual({
+      enabled: false,
+      allowlist: ['pm-uid'],
+    });
+    expect(coerceAllowlistFlags({ ask_enabled: true }).signal_design_v2).toBeUndefined();
+  });
+});
