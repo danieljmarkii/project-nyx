@@ -30,6 +30,7 @@ import { useWidgetSnapshots } from '../hooks/useWidgetSnapshots';
 import { useNotificationScheduling } from '../hooks/useNotificationScheduling';
 import { useAppActive } from '../hooks/useAppActive';
 import { initAppConfig, refreshAppConfig } from '../hooks/useAppConfig';
+import { hydrateBetaOptIns } from '../lib/betaFeatures';
 import { MealCompletionCard } from '../components/ui/MealCompletionCard';
 import { MedicationCompletionCard } from '../components/ui/MedicationCompletionCard';
 import { CompletionMoment } from '../components/ui/CompletionMoment';
@@ -73,6 +74,11 @@ export default function RootLayout() {
   const prevActive = useRef(appActive);
   useEffect(() => {
     initAppConfig().catch(() => {});
+    // B-712 PR 3: load the local per-device beta opt-ins (Gate 2, default off) so a
+    // cohort owner who turned the widget on keeps it across relaunches. Until this
+    // resolves every beta reads off — the safe default (the widget shows the neutral
+    // empty door rather than stale real data before opt-in is confirmed).
+    hydrateBetaOptIns().catch(() => {});
   }, []);
   useEffect(() => {
     if (appActive && !prevActive.current) refreshAppConfig().catch(() => {});
@@ -297,6 +303,7 @@ export default function RootLayout() {
         <Stack.Screen name="rundown" />
         <Stack.Screen name="settings" />
         <Stack.Screen name="settings/notifications" />
+        <Stack.Screen name="settings/beta" />
         <Stack.Screen name="settings/feedback" />
         <Stack.Screen name="settings/password" />
       </Stack>

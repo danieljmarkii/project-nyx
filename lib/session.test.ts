@@ -40,6 +40,7 @@ import { readRecoveryRequest, recordRecoveryRequest } from './recoveryMarker';
 import { hasFlaggedFoodInTrial, recordFlaggedFoodInTrial } from './trialContaminant';
 import { armRecoveryGate, useAuthStore } from '../store/authStore';
 import { persistAppConfig, loadCachedAppConfig, APP_CONFIG_DEFAULTS } from './appConfig';
+import { useBetaOptInStore, BETA_OPT_IN_STORAGE_KEY } from './betaFeatures';
 
 const GATE_KEY = 'nyx.recoveryInProgress';
 const t0 = 1_700_000_000_000;
@@ -115,6 +116,20 @@ describe('wipeLocalSession — the shipped SIGNED_OUT teardown', () => {
     expect(await loadCachedAppConfig()).not.toBeNull();
     await wipeLocalSession();
     expect(await loadCachedAppConfig()).toBeNull();
+  });
+
+  // B-712 (Gate 2 / D4). The local beta opt-ins are AsyncStorage-resident device
+  // state; on a shared device the prior owner's choices must not carry to the next
+  // person, and a widget left "on" must fall back to the neutral door.
+  it('clears the beta opt-ins — memory and the persisted key', async () => {
+    useBetaOptInStore.getState().setOptIn('widget_enabled', true);
+    await Promise.resolve(); // let the fire-and-forget write-through flush
+    expect(await AsyncStorage.getItem(BETA_OPT_IN_STORAGE_KEY)).not.toBeNull();
+
+    await wipeLocalSession();
+
+    expect(useBetaOptInStore.getState().optIns).toEqual({});
+    expect(await AsyncStorage.getItem(BETA_OPT_IN_STORAGE_KEY)).toBeNull();
   });
 
   it('never throws when a wipe step fails — teardown always completes', async () => {
