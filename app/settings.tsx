@@ -160,19 +160,37 @@ export default function SettingsScreen() {
         <Card style={styles.accountCard}>
           <View style={styles.identity}>
             <OwnerAvatar email={email} size={44} />
-            <Text style={styles.identityEmail} numberOfLines={1}>
-              {email ?? 'Signed in'}
-            </Text>
+            <View style={styles.identityText}>
+              <Text style={styles.identityEmail} numberOfLines={1}>
+                {email ?? 'Signed in'}
+              </Text>
+              {/* The email-change note lives with its referent — the account
+                  email directly above it — so the card's label+caption pattern
+                  reads correctly, instead of the note stranding under Change
+                  password and being misread as the password path (PM screenshot
+                  2026-08-08; Designer call, superseding PR #607's divider patch).
+                  Support is the honest route in v1: in-app email change is
+                  deferred (B-427), and nyx-voice Pattern 3 bars "coming soon" —
+                  this keeps the §11/B-429 lost-mailbox breadcrumb. Copy verbatim
+                  from spec §5.7. Gated on a real email so it never sits under the
+                  'Signed in' fallback. */}
+              {email ? (
+                <Text style={styles.accountNote}>
+                  To change your account email, contact support.
+                </Text>
+              ) : null}
+            </View>
           </View>
           <View style={styles.accountDivider} />
           {/* §7.1 — the vet report's "Owner:" line reads this name (relocated from
               the Pet tab, §4.3). */}
           <OwnerNameRow />
           <View style={styles.accountDivider} />
-          {/* B-280 PR 3 (§5.7, D4) — retires the "coming soon" note. An inline nav
-              row (not a SettingsRow) so it aligns with this card's padded inline
-              rows (identity / name) rather than sitting at a SettingsRow's deeper
-              inset. */}
+          {/* B-280 PR 3 (§5.7, D4) — the in-app Change-password screen. A pure
+              chevron nav row (not a SettingsRow, to align with this card's padded
+              inline rows) with NO trailing caption — nothing under it can be
+              misread as a support route for the password (Designer call; the
+              email note now lives in the identity block above). */}
           <TouchableOpacity
             style={styles.changePasswordRow}
             onPress={() => router.push('/settings/password')}
@@ -184,14 +202,6 @@ export default function SettingsScreen() {
             <Text style={styles.changePasswordLabel}>Change password</Text>
             <ChevronRight size={18} color={theme.colorTextTertiary} strokeWidth={2} />
           </TouchableOpacity>
-          {/* Email change is a support path, not an undated promise: nyx-voice
-              Pattern 3 bars "coming soon", and keeping one directly under a
-              newly-working row would re-create the half-built signal D4 removed.
-              A real answer, and the current one for an owner who has lost their
-              signup mailbox (spec §5.7 / §11). */}
-          <Text style={styles.accountNote}>
-            To change your account email, contact support.
-          </Text>
         </Card>
 
         {/* ── Preferences ── */}
@@ -342,8 +352,15 @@ const styles = StyleSheet.create({
     gap: theme.space2,
     minHeight: 44,
   },
-  identityEmail: {
+  // The email + its change-via-support caption stack in one column beside the
+  // avatar. This column carries the flex, so the email still ellipsizes and the
+  // caption wraps within the card.
+  identityText: {
     flex: 1,
+    minWidth: 0,
+    gap: theme.spaceMicro,
+  },
+  identityEmail: {
     minWidth: 0,
     fontFamily: theme.fontBody,
     fontSize: theme.textMD,

@@ -130,10 +130,13 @@ const styles = StyleSheet.create({
     fontSize: theme.textMD,
     color: theme.colorAccent,
   },
+  // Tertiary grey so this caption shares one register with the Account card's
+  // other caption (the email-change note) — the two "Your name" / email hints
+  // read as the same tier, not two greys (Designer polish, 2026-08-08).
   hint: {
     fontFamily: theme.fontBody,
     fontSize: theme.textSM,
-    color: theme.colorTextSecondary,
+    color: theme.colorTextTertiary,
     marginBottom: theme.space1,
   },
 });
