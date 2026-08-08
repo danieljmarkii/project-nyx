@@ -1,7 +1,7 @@
 # Signal/Home uplift — SR-1 receipts (B-721)
 
 **Date:** 2026-08-08
-**Shipped via #PENDING** (draft).
+**Shipped via #613** (draft).
 
 ## What this was
 
@@ -84,7 +84,39 @@ system), §11 (ACs). Design authority: `docs/culprit-signal-home-mockups.html`
   Engineer ✓ (registry seam, no new deps, hand-rolled Views, flag pattern reused) —
   Dr. Chen ✓ (no receipt reassures on absence; safety faces stay plain; phone-script
   guardrail-screened) — Data N/A (no new statistics; presentation of existing counts) —
-  QA ✓ (§11). Adversarial + code review run (findings addressed).
+  QA ✓ (§11).
+- **Adversarial review — PASS** on the clinical-guardrail contract. The reviewer swept
+  every load-bearing failure mode with concrete counterexamples and all held: a
+  12-timed/200-total finding discloses "188 episodes weren't near any logged meal"
+  verbatim (nothing dropped); the A→C cap boundary (12 vs 13) keeps an identical split
+  + the remainder; a malformed cache (`rapid>eligible`) clamps to ≥0, never negative; a
+  `more_days` phone script with *falling* episodes reads days and never surfaces a false
+  "up from" direction (the axis-miscount trap held); a wrapped-midnight band keeps every
+  in-window dot inside its two segments. Two LOW findings (below).
+
+## Findings + rulings
+
+- **[LOW, systematic → routed to the SD-6 on-device Designer gate] The postprandial band
+  edge doesn't meet its own "30m" axis label.** `postprandialBands` drew the band to a
+  nominal-120m scale (`window/120` = 0.25 for the only shipped 30m window), while the
+  three axis words render `space-between` so "30m" sits at 0.50. So the dashed edge (the
+  real window boundary) and its label disagree on every postprandial lane — a reader
+  can't locate "30m" on the strip. **This inconsistency is also present in the
+  design-locked round-2.1 mock** (band ~26%, "30m" at mid-lane), so correcting it is a
+  Designer call, not a silent code fix (persona protocol). **Deciding:** how the lane's
+  axis reads. **Options:** (A) draw the band edge at mid-lane so "30m" lands on it (band
+  becomes the left half — *recommended*, makes the label truthful, one-line change); (B)
+  position the "{window}m" label at the true band edge (keeps the narrow band, moves the
+  label); (C) accept the impressionistic-labels reading (no change). **Consequence:** a
+  visual-polish call on a dark-flagged surface; the honest counts are already co-rendered
+  in the sample line + a11y + expanded evidence, so nothing is fabricated either way.
+  Left as-drawn (mock-faithful) pending the on-device gate — LOW, non-blocking.
+- **[LOW, unreachable → accepted] a11y/sample print raw counts while dots clamp.** On a
+  corrupt cache (`rapid>eligible`), `dotLaneA11yLabel` says "20 of 5" while the lane draws
+  5 dots. Unreachable from the engine (`detection.ts` guarantees `rapid ≤ eligible ≤
+  total`), and it deliberately **matches the shipped `sampleLine` convention** (both print
+  raw) — clamping the a11y alone would introduce a *new* a11y-vs-sample disagreement.
+  Neither direction reassures. Accepted as-is.
 
 ## Known / deferred
 
