@@ -24,6 +24,7 @@ import {
 import { flushForSignOut, unsentSignOutWarning } from '../lib/session';
 import { usePetStore } from '../store/petStore';
 import { useAuthStore } from '../store/authStore';
+import { useAllowlistFlag } from '../hooks/useAppConfig';
 
 // "You" — the owner's account & settings home (B-283, spec §4). A doorway from
 // the Home-header avatar (§4.1), NOT a fifth tab: the user actions that used to
@@ -46,6 +47,11 @@ import { useAuthStore } from '../store/authStore';
 export default function SettingsScreen() {
   const email = useAuthStore((s) => s.user?.email);
   const pets = usePetStore((s) => s.pets);
+  // Beta features (B-712 PR 3) — Gate 1: the row exists only for an account eligible
+  // for ≥1 beta. Today that's an OR over one flag; when a second beta lands this
+  // becomes an OR over the registry's keys (spec §2 / §5). A non-eligible owner's
+  // Settings looks exactly as it does today — no row, no hint the program exists.
+  const betaEligible = useAllowlistFlag('widget_enabled');
   const [deleteVisible, setDeleteVisible] = useState(false);
   // B-430 — the pre-sign-out flush is a network round trip; disable the row while
   // it runs so a second tap can't start a parallel drain.
@@ -221,6 +227,20 @@ export default function SettingsScreen() {
             onPress={() => router.push('/settings/notifications')}
             accessibilityHint="Opens your notification settings"
           />
+          {/* Beta features (B-712 PR 3) — rendered ONLY for an eligible account
+              (Gate 1). Points at the self-serve opt-in shelf; the "N on" count
+              (OPEN-2) is deferred to PR 4. `first` when it's the only visible
+              Preferences row so the top hairline stays clean if Notifications ever
+              moves; here Notifications is always present, so it's a normal row. */}
+          {betaEligible && (
+            <SettingsRow
+              label="Beta features"
+              sublabel="Try features early, while we’re still building them"
+              chevron
+              onPress={() => router.push('/settings/beta')}
+              accessibilityHint="Opens the beta features you can switch on"
+            />
+          )}
         </Card>
 
         {/* ── Support ── */}
