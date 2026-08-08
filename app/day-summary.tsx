@@ -19,6 +19,7 @@ import { useDaySummary } from '../hooks/useDaySummary';
 import { useSyncStore } from '../store/syncStore';
 import {
   DAY_SUMMARY_ZERO_LOG,
+  daySummaryEmptyTitle,
   petZeroLogLine,
   type DaySummaryRow,
   type DaySummarySection,
@@ -60,6 +61,19 @@ export default function DaySummaryScreen() {
     useSyncStore.getState().bumpHydrationTick();
   }, []);
 
+  // The zero-log CTA (mock round 2). This screen carries NO logging FAB, so the
+  // designed empty state's own "it takes about ten seconds to add" invitation would
+  // otherwise dead-end. A low-emphasis link (EmptyState renders it as accent text,
+  // never a filled button — it invites, it doesn't demand) opens the quick-log, the
+  // same door TodayZone's empty nudge opens. This is not the §4.2 "second door" the
+  // trial card forbids: on a FAB-less screen with nothing else on it, it is the ONLY
+  // door, not a competing one. Whole-screen zero-log only — a per-pet inline line on
+  // a multi-pet summary stays a plain record fact (a per-pet CTA can't pre-select the
+  // empty pet, and would clutter a populated screen).
+  const logEvent = useCallback(() => {
+    router.push('/log');
+  }, []);
+
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <Header title="Today" leading="back" onLeadingPress={goBack} />
@@ -79,8 +93,13 @@ export default function DaySummaryScreen() {
       ) : state.model.isEmpty ? (
         // Whole-screen (or single-pet) zero-log — a designed feature (Principle 5).
         <EmptyState
-          title={DAY_SUMMARY_ZERO_LOG.title}
+          // Name the pet on a single-pet account (Pattern 1); stay neutral for a
+          // no-pet or multi-pet-all-empty account, which can't pick one name.
+          title={daySummaryEmptyTitle(
+            state.model.petCount === 1 ? state.model.sections[0]?.petName : null,
+          )}
           body={DAY_SUMMARY_ZERO_LOG.body}
+          action={{ label: DAY_SUMMARY_ZERO_LOG.cta, onPress: logEvent }}
           align="fill"
         />
       ) : (
@@ -131,10 +150,12 @@ function EventDoorway({ row, isLast }: { row: DaySummaryRow; isLast: boolean }) 
     router.push({ pathname: '/event/[id]', params: { id: row.id } });
   }, [row.id]);
 
+  // Screen-reader order matches the VISUAL order (title · detail … tag … time), so
+  // a row reads the same way it looks (pm-feature-review) — not title, tag, detail.
   const label =
     `${row.title}` +
-    `${row.formatTag ? `, ${row.formatTag.toLowerCase()}` : ''}` +
     `${row.detail ? `, ${row.detail}` : ''}` +
+    `${row.formatTag ? `, ${row.formatTag.toLowerCase()}` : ''}` +
     `, ${row.time}. Opens details`;
 
   return (

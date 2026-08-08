@@ -2,9 +2,13 @@
 // docs/nyx-notification-foundation-requirements.md §5).
 //
 // The 9pm daily summary's read surface answers exactly ONE question — "what
-// happened in {pet}'s record today" — and every element is a doorway into an
-// existing detail surface (event detail, trial card, med card). No AI, no
-// verdicts, no score (§5.3).
+// happened in {pet}'s record today" — and every row is a doorway into that event's
+// own detail (event/[id]). No AI, no verdicts, no score (§5.3). Dedicated
+// trial/med context strips (§5.1/§5.3) are DEFERRED to a future consumer PR (B-670,
+// ruled at mock round 2): v1 renders the trial-diet meal and each dose as ordinary
+// doorway rows rather than re-hosting the trial card's viability states or the med
+// strip's course state — that would make this a rival Home and render a reading on
+// a surface G3 says must only describe-and-door.
 //
 // This module is the PURE builder, deliberately free of expo-sqlite / supabase /
 // react-native imports — the same pure-core + I/O-shell split the trial card
@@ -193,6 +197,12 @@ export const DAY_SUMMARY_ZERO_LOG = {
   /** Forward-looking, offering the door (Principle 5) without asserting anything
    *  about the pet. Ten seconds is the app's own logging promise, not a nudge. */
   body: 'If something happened, it takes about ten seconds to add.',
+  /** The zero-log CTA label (mock round 2). This screen has no FAB, so the body's
+   *  "…to add" invitation needs a door; the screen wires it to the quick-log. Uses
+   *  the app's own verb ("log"), matching TodayZone's empty nudge. An invitation,
+   *  never a verdict on the absence (G2) — it opens a door, it does not say a log
+   *  was owed. */
+  cta: 'Log an event',
 } as const;
 
 /** A single pet's zero-log line on a MULTI-pet summary (one pet logged today,
@@ -200,4 +210,15 @@ export const DAY_SUMMARY_ZERO_LOG = {
  *  {name}'s day, never an all-clear over the pet. */
 export function petZeroLogLine(petName: string): string {
   return `Nothing in ${petName}’s record today.`;
+}
+
+/** The whole-screen zero-log TITLE. Names the pet on a single-pet account
+ *  (nyx-voice Pattern 1 — the pet's name is what creates the stakes, and the
+ *  9pm zero-log day is the wedge owner's commonest empty state) and stays neutral
+ *  when there is no single pet to name: an account with no pets, or a multi-pet
+ *  account where the whole-screen state cannot pick one. No trailing period — it
+ *  is a title, not the inline `petZeroLogLine` sentence. Same G2 register either
+ *  way: a record fact, never a wellness verdict. */
+export function daySummaryEmptyTitle(petName?: string | null): string {
+  return petName ? `Nothing in ${petName}’s record today` : DAY_SUMMARY_ZERO_LOG.title;
 }

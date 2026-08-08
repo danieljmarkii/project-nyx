@@ -290,30 +290,422 @@
   .footer { margin-top: 72px; padding-top: 24px; border-top: 1px solid var(--rule); color: var(--ink-3); font-size: 13px; }
   .footer b { color: var(--ink-2); }
 
+  /* ============================================================
+     ROUND 2 — PR 4 surfaces: the Day Summary screen + the lock-screen
+     notification. Same device frames + real theme tokens as round 1.
+     ============================================================ */
+
+  /* ── The Day Summary screen ───────────────────────────────── */
+  .ds-date {
+    font-size: 12px; color: var(--f-text-3); font-weight: 600;
+    padding: 2px 2px 0;
+  }
+  .ds-section { display: flex; flex-direction: column; gap: 8px; }
+  .ds-pet { font-size: 17px; font-weight: 600; color: var(--f-text); padding: 0 2px; }
+  .ds-petzero { font-size: 13px; color: var(--f-text-2); line-height: 1.45; padding: 0 2px; }
+
+  .ds-card {
+    background: var(--f-surface);
+    border: 1px solid var(--f-border);
+    border-radius: 16px;
+    overflow: hidden;
+  }
+  .ds-row { display: flex; align-items: center; gap: 10px; padding: 10px 12px; min-height: 56px; }
+  .ds-row + .ds-row { border-top: 1px solid var(--f-border); }
+  .ds-ic {
+    width: 28px; height: 28px; border-radius: 14px; background: var(--f-subtle);
+    display: flex; align-items: center; justify-content: center; flex: 0 0 auto;
+  }
+  .ds-ic svg { width: 16px; height: 16px; fill: none; stroke-width: 1.85; stroke-linecap: round; stroke-linejoin: round; }
+  .ds-tx { flex: 1 1 auto; min-width: 0; display: flex; align-items: baseline; gap: 6px; }
+  .ds-title {
+    font-size: 15px; color: var(--f-text);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex-shrink: 1;
+  }
+  .ds-title .det { color: var(--f-text-2); }
+  .ds-tag {
+    font-size: 10px; letter-spacing: 0.08em; color: var(--f-text-3);
+    font-weight: 600; text-transform: uppercase; flex: 0 0 auto;
+  }
+  .ds-time { font-size: 11px; color: var(--f-text-3); flex: 0 0 auto; }
+  .ds-chev { color: var(--f-text-3); flex: 0 0 auto; display: flex; }
+  .ds-chev svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+  /* Category glyph tints — the SAME mapping the calendar drill-in uses
+     (constants/theme.ts): symptom rose, meal teal, medication slate, other neutral. */
+  .tint-meal  { stroke: #00C2A8; }  /* colorEventMeal */
+  .tint-sym   { stroke: #F43F5E; }  /* colorEventSymptom */
+  .tint-med   { stroke: #5B7A9E; }  /* colorEventMedication */
+  .tint-other { stroke: #525252; }  /* colorTextSecondary */
+
+  /* The zero-log designed empty state (align="fill" — vertically centred). */
+  .ds-empty {
+    flex: 1 1 auto; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; text-align: center;
+    padding: 0 26px; gap: 6px;
+  }
+  .ds-empty .et { font-size: 17px; font-weight: 500; color: var(--f-black); }
+  .ds-empty .eb { font-size: 15px; color: var(--f-text-2); line-height: 1.45; }
+  .ds-empty .ec {
+    margin-top: 10px; min-height: 44px; display: flex; align-items: center;
+    font-size: 15px; font-weight: 500; color: var(--f-accent);   /* accent text link, not a filled button */
+  }
+
+  /* ── The lock-screen notification ─────────────────────────── */
+  .lock {
+    background: linear-gradient(168deg, #2a2550 0%, #16132f 55%, #0d0b22 100%);
+    color: #fff; align-items: center;
+  }
+  .lock .lock-clock { margin-top: 70px; font-size: 76px; font-weight: 300; letter-spacing: -0.02em; line-height: 1; }
+  .lock .lock-date { margin-top: 6px; font-size: 15px; color: rgba(255,255,255,0.82); font-weight: 500; }
+  .notif {
+    position: absolute; left: 12px; right: 12px; bottom: 96px;
+    background: rgba(245,244,250,0.90);
+    -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px);
+    border-radius: 18px; padding: 12px 13px; text-align: left;
+    box-shadow: 0 8px 24px -10px rgba(0,0,0,0.45);
+  }
+  .notif .nh { display: flex; align-items: center; gap: 7px; margin-bottom: 5px; }
+  .notif .nicon { width: 20px; height: 20px; border-radius: 5px; background: var(--f-accent); display: flex; align-items: center; justify-content: center; flex: 0 0 auto; }
+  .notif .nicon svg { width: 13px; height: 13px; stroke: #fff; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .notif .napp { font-size: 11px; letter-spacing: 0.04em; color: #3a3a3a; text-transform: uppercase; font-weight: 700; flex: 1 1 auto; }
+  .notif .nwhen { font-size: 11px; color: #6a6a6a; }
+  .notif .ntitle { font-size: 14px; font-weight: 600; color: #000; }
+  .notif .nbody { font-size: 13.5px; color: #1f1f1f; line-height: 1.35; margin-top: 1px; }
+
+  /* Deferred-piece ruling table (round-2 annotations). */
+  .rulings { width: 100%; border-collapse: collapse; margin: 6px 0 4px; font-size: 13.5px; }
+  .rulings th, .rulings td { text-align: left; vertical-align: top; padding: 8px 10px; border-bottom: 1px solid var(--rule-soft); }
+  .rulings th { color: var(--ink-3); font-family: var(--mono); font-size: 11px; letter-spacing: 0.04em; text-transform: uppercase; font-weight: 600; }
+  .rulings td { color: var(--ink-2); }
+  .rulings td b { color: var(--ink); font-weight: 600; }
+  .verdict { font-family: var(--mono); font-size: 11px; font-weight: 700; white-space: nowrap; }
+  .verdict.in { color: var(--teal-ink); }
+  .verdict.out { color: var(--amber-ink); }
+
   a { color: var(--teal-ink); }
   :focus-visible { outline: 2px solid var(--teal-ink); outline-offset: 2px; border-radius: 4px; }
 </style>
 
 <div class="wrap">
   <header class="mast">
-    <p class="eyebrow">B-661 · Notification Foundation · PR 3 · Round 1</p>
-    <h1>Turning notifications on, honestly</h1>
+    <p class="eyebrow">B-661 · Notification Foundation · PRs 3–4 · Rounds 1–2</p>
+    <h1>Turning notifications on, honestly — and what they open</h1>
     <p class="lede">
-      Part 1 ships one notification — a 9pm daily summary — but first it needs a
-      <strong>consent model that never lies</strong>. Two gates, never conflated: the
-      OS permission (one system prompt per install) and the product opt-in (a
-      per-category toggle, defaulted off). This round locks the
-      <strong>primer sheet</strong> and the settings screen's <strong>three honest
-      states</strong>. The Day Summary screen and the lock-screen notification are PR 4 —
-      Round 2, at this same link.
+      Part 1 ships one notification — a <strong>9pm daily summary</strong>, off by
+      default, one per account across every pet. <strong>Round 2 (new, below)</strong>
+      locks the two PR 4 surfaces: the <strong>lock-screen notification</strong> itself
+      and the <strong>Day Summary screen</strong> it opens, in four states — ordinary,
+      incident, zero-log, and multi-pet. <strong>Round 1 (further down, unchanged)</strong>
+      is the consent model that turns it on: the primer sheet and the settings screen's
+      three honest permission states. The through-line across both is the same — the
+      notification never says what it cannot know, and the screen it opens describes and
+      doors, it never concludes.
     </p>
     <div class="meta">
       <span><b>Category (v1):</b> daily_summary</span>
       <span><b>Fires:</b> 21:00 device-local</span>
       <span><b>Default:</b> off (G6)</span>
-      <span><b>Gates:</b> nyx-voice · clinical-guardrails G4 · Designer</span>
+      <span><b>One notification</b> per account (D3)</span>
+      <span><b>Round 2 gates:</b> clinical-guardrails G1–G3 · nyx-voice · Designer · Dr. Chen</span>
     </div>
   </header>
+
+  <!-- ============================================================ ROUND 2 · LOCK SCREEN -->
+  <section class="section">
+    <h2>Round 2 · The notification, on the lock screen</h2>
+    <p class="sub">
+      This is the whole of what fires at 9pm. iOS runs <b>no JavaScript</b> at
+      local-notification fire time, so the body is <b>static</b> — decided once, when
+      the schedule is set, not when it fires. A body that named the day's contents
+      ("no incidents today") could therefore be computed against a stale record and
+      land as reassurance from a record that has since changed — which
+      <b>clinical-guardrails forbids</b>. So the body speaks to the <em>ritual</em>,
+      never the record, and is never wrong. The truth lives one tap away, on the
+      Day Summary screen (below), which reads live.
+    </p>
+
+    <div class="plate">
+      <div>
+        <p class="frame-label">Lock screen · <b>9:00 pm</b></p>
+        <div class="device">
+          <div class="screen lock">
+            <div class="lock-clock">9:00</div>
+            <div class="lock-date">Sunday, August 2</div>
+            <div class="notif">
+              <div class="nh">
+                <div class="nicon"><svg viewBox="0 0 24 24"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg></div>
+                <div class="napp">Culprit</div>
+                <div class="nwhen">now</div>
+              </div>
+              <div class="ntitle">Today’s summary</div>
+              <div class="nbody">Today’s record is ready to read.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="note-col">
+        <h3>What the body may and may not say</h3>
+        <p>The lock-screen body is the one string in Part&nbsp;1 that is computed early and can’t be corrected at fire time, so it carries the hardest safety rule:</p>
+        <ul class="tight">
+          <li><b>G1 — asserts no record contents.</b> No counts, no “no incidents”, no med names. It says the day is ready to read, which is true on every day.</li>
+          <li><b>D3 — one per account.</b> Three pets never means three pings; the neutral body is also the multi-pet-safe shape.</li>
+          <li><b>Fires whether or not anything was logged.</b> A ritual that skips days teaches the owner the channel is unreliable; the zero-log day is handled by the <em>screen</em>, not by silence.</li>
+        </ul>
+        <div class="chips">
+          <span class="chip teal">static body (G1)</span>
+          <span class="chip">neutral (D3)</span>
+          <span class="chip">tap → Day Summary</span>
+        </div>
+        <div class="callout">
+          <b>Ruling this round (§10.3 — Designer + T&amp;S): the body stays neutral even for a single pet.</b>
+          A pet name on a lock screen is an <em>involuntarily</em>-public exposure we can’t
+          scope to the owner’s iOS preview setting, and the body already asserts nothing
+          (G1) — so naming buys only warmth, bought with the owner’s exposure. The warmth
+          lives where the surface is private (the in-app primer names the pet); the named
+          body is recoverable later as an explicit opt-in (backlog). Designer dissent
+          recorded, not erased.
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================ ROUND 2 · DAY SUMMARY -->
+  <section class="section">
+    <h2>Round 2 · The Day Summary screen — four states</h2>
+    <p class="sub">
+      The surface the notification opens. It answers exactly one question —
+      <em>what happened in {pet}’s record today</em> — and every row is a doorway into
+      the event it names. It is <b>not a rival Home</b>: no AI, no verdict, no score, no
+      logging FAB. Meals carry their intake, doses their adherence, symptoms surface
+      plainly — and the screen <em>describes and doors, it never concludes</em> (G3).
+    </p>
+
+    <!-- Ordinary day -->
+    <div class="plate">
+      <div>
+        <p class="frame-label">State 1 · <b>ordinary day</b></p>
+        <div class="device">
+          <div class="screen">
+            <div class="nav"><div class="chev">‹</div><div class="title">Today</div><div></div></div>
+            <div class="body">
+              <div class="ds-date">Sunday, August 2</div>
+              <div class="ds-card">
+                <div class="ds-row">
+                  <div class="ds-ic"><svg viewBox="0 0 24 24" class="tint-meal"><path d="M4 11h16a8 8 0 0 1-16 0Z"/></svg></div>
+                  <div class="ds-tx"><span class="ds-title">Hill’s z/d<span class="det"> · most eaten</span></span><span class="ds-tag">Dry</span></div>
+                  <span class="ds-time">7:42 AM</span>
+                  <span class="ds-chev"><svg viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg></span>
+                </div>
+                <div class="ds-row">
+                  <div class="ds-ic"><svg viewBox="0 0 24 24" class="tint-med"><path d="m10.5 20.5 10-10a5 5 0 0 0-7-7l-10 10a5 5 0 0 0 7 7Z"/><path d="m8.5 8.5 7 7"/></svg></div>
+                  <div class="ds-tx"><span class="ds-title">Apoquel<span class="det"> · given</span></span></div>
+                  <span class="ds-time">8:05 AM</span>
+                  <span class="ds-chev"><svg viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg></span>
+                </div>
+                <div class="ds-row">
+                  <div class="ds-ic"><svg viewBox="0 0 24 24" class="tint-meal"><path d="M4 11h16a8 8 0 0 1-16 0Z"/></svg></div>
+                  <div class="ds-tx"><span class="ds-title">Dental chew</span></div>
+                  <span class="ds-time">1:20 PM</span>
+                  <span class="ds-chev"><svg viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg></span>
+                </div>
+                <div class="ds-row">
+                  <div class="ds-ic"><svg viewBox="0 0 24 24" class="tint-meal"><path d="M4 11h16a8 8 0 0 1-16 0Z"/></svg></div>
+                  <div class="ds-tx"><span class="ds-title">Hill’s z/d<span class="det"> · all eaten</span></span><span class="ds-tag">Dry</span></div>
+                  <span class="ds-time">6:35 PM</span>
+                  <span class="ds-chev"><svg viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg></span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="note-col">
+        <h3>Doorway rows, earliest-first</h3>
+        <p>The day reads top-to-bottom, the same order and the same labels as the calendar drill-in (one mapper, <code>describeDayEvent</code>, so a food/dose reads identically everywhere). Each row is a tap into its own event detail.</p>
+        <ul class="tight">
+          <li><b>Meals carry intake</b> (“most eaten”), <b>doses carry adherence</b> (“given”) — a null rating shows no qualifier, never an assumed “given”.</li>
+          <li><b>Glyph tint = category</b> — meal teal, medication slate, symptom rose (next frame), everything else neutral.</li>
+          <li>A treat is a meal-typed row named for its food (“Dental chew”), teal like its sibling.</li>
+        </ul>
+        <div class="chips">
+          <span class="chip teal">meals + intake</span>
+          <span class="chip teal">doses + adherence</span>
+          <span class="chip">every row → detail</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Incident day -->
+    <div class="plate">
+      <div>
+        <p class="frame-label">State 2 · <b>incident day</b></p>
+        <div class="device">
+          <div class="screen">
+            <div class="nav"><div class="chev">‹</div><div class="title">Today</div><div></div></div>
+            <div class="body">
+              <div class="ds-date">Sunday, August 2</div>
+              <div class="ds-card">
+                <div class="ds-row">
+                  <div class="ds-ic"><svg viewBox="0 0 24 24" class="tint-meal"><path d="M4 11h16a8 8 0 0 1-16 0Z"/></svg></div>
+                  <div class="ds-tx"><span class="ds-title">Hill’s z/d<span class="det"> · refused</span></span></div>
+                  <span class="ds-time">7:30 AM</span>
+                  <span class="ds-chev"><svg viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg></span>
+                </div>
+                <div class="ds-row">
+                  <div class="ds-ic"><svg viewBox="0 0 24 24" class="tint-sym"><path d="M12 22a7 7 0 0 0 7-7c0-3-3-6.5-7-11-4 4.5-7 8-7 11a7 7 0 0 0 7 7Z"/></svg></div>
+                  <div class="ds-tx"><span class="ds-title">Vomit</span></div>
+                  <span class="ds-time">9:15 AM</span>
+                  <span class="ds-chev"><svg viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg></span>
+                </div>
+                <div class="ds-row">
+                  <div class="ds-ic"><svg viewBox="0 0 24 24" class="tint-med"><path d="m10.5 20.5 10-10a5 5 0 0 0-7-7l-10 10a5 5 0 0 0 7 7Z"/><path d="m8.5 8.5 7 7"/></svg></div>
+                  <div class="ds-tx"><span class="ds-title">Cerenia<span class="det"> · given</span></span></div>
+                  <span class="ds-time">12:00 PM</span>
+                  <span class="ds-chev"><svg viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg></span>
+                </div>
+                <div class="ds-row">
+                  <div class="ds-ic"><svg viewBox="0 0 24 24" class="tint-meal"><path d="M4 11h16a8 8 0 0 1-16 0Z"/></svg></div>
+                  <div class="ds-tx"><span class="ds-title">Hill’s z/d<span class="det"> · some eaten</span></span></div>
+                  <span class="ds-time">6:20 PM</span>
+                  <span class="ds-chev"><svg viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg></span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="note-col">
+        <h3>The concern surfaces — the screen still doesn’t conclude</h3>
+        <p>A vomit sits in the day in its own rose, exactly where it happened, next to the refused breakfast. What the screen <em>doesn’t</em> do is judge it: no “concerning”, no severity, no all-clear over the good rows around it.</p>
+        <ul class="tight">
+          <li><b>G3 — describes and doors.</b> The row is a tap into the event detail, where the single-incident AI read (with its own escalate-never-reassure rules) lives. The summary never re-renders that verdict in miniature.</li>
+          <li><b>A refusal reads “refused”</b> — plainly, never softened to “picky”. Intake is not preference.</li>
+          <li>Nothing here reassures on the good rows: a calm-looking day is a <em>record</em> statement, not a wellness one.</li>
+        </ul>
+        <div class="chips">
+          <span class="chip" style="color:var(--amber-ink);border-color:color-mix(in srgb, var(--amber-ink) 40%, transparent);">symptom surfaces plainly</span>
+          <span class="chip teal">no verdict (G3)</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Zero-log day -->
+    <div class="plate">
+      <div>
+        <p class="frame-label">State 3 · <b>zero-log day</b></p>
+        <div class="device">
+          <div class="screen">
+            <div class="nav"><div class="chev">‹</div><div class="title">Today</div><div></div></div>
+            <div class="ds-empty">
+              <div class="et">Nothing in Biscuit’s record today</div>
+              <div class="eb">If something happened, it takes about ten seconds to add.</div>
+              <div class="ec">Log an event</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="note-col">
+        <h3>A designed state, not a blank — and not an all-clear</h3>
+        <p>The zero-log day is the clinically sensitive one, and its copy is bound by G2: <b>absence is a record fact, never a wellness verdict</b>. No “all quiet”, no “all clear”, no “nothing wrong” — a silent record is not a well pet, and this screen never implies it is (asserted by a test over the copy).</p>
+        <ul class="tight">
+          <li><b>It names the pet</b> on a single-pet account (“Biscuit’s record”) — the wedge owner’s commonest empty state, and the pet’s name is what makes it land (nyx-voice Pattern 1). A no-pet / multi-pet-all-empty screen falls back to “Nothing in the record today”.</li>
+          <li><b>The CTA is new this round.</b> This screen has no FAB, so the body’s “ten seconds to add” invitation would otherwise dead-end. A low-emphasis <em>link</em> (accent text, never a filled button — it invites, it doesn’t demand) opens the quick-log.</li>
+        </ul>
+        <div class="chips">
+          <span class="chip teal">names the pet</span>
+          <span class="chip">record fact (G2)</span>
+          <span class="chip">CTA → quick-log</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Multi-pet -->
+    <div class="plate">
+      <div>
+        <p class="frame-label">State 4 · <b>multi-pet account</b></p>
+        <div class="device">
+          <div class="screen">
+            <div class="nav"><div class="chev">‹</div><div class="title">Today</div><div></div></div>
+            <div class="body">
+              <div class="ds-date">Sunday, August 2</div>
+              <div class="ds-section">
+                <div class="ds-pet">Biscuit</div>
+                <div class="ds-card">
+                  <div class="ds-row">
+                    <div class="ds-ic"><svg viewBox="0 0 24 24" class="tint-meal"><path d="M4 11h16a8 8 0 0 1-16 0Z"/></svg></div>
+                    <div class="ds-tx"><span class="ds-title">Hill’s z/d<span class="det"> · all eaten</span></span><span class="ds-tag">Dry</span></div>
+                    <span class="ds-time">7:40 AM</span>
+                    <span class="ds-chev"><svg viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg></span>
+                  </div>
+                  <div class="ds-row">
+                    <div class="ds-ic"><svg viewBox="0 0 24 24" class="tint-med"><path d="m10.5 20.5 10-10a5 5 0 0 0-7-7l-10 10a5 5 0 0 0 7 7Z"/><path d="m8.5 8.5 7 7"/></svg></div>
+                    <div class="ds-tx"><span class="ds-title">Apoquel<span class="det"> · given</span></span></div>
+                    <span class="ds-time">8:00 AM</span>
+                    <span class="ds-chev"><svg viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg></span>
+                  </div>
+                </div>
+              </div>
+              <div class="ds-section" style="margin-top:14px;">
+                <div class="ds-pet">Mochi</div>
+                <div class="ds-petzero">Nothing in Mochi’s record today.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="note-col">
+        <h3>One screen, sectioned per pet — active first</h3>
+        <p>Because there is <b>one notification per account</b> (D3), the screen it opens carries every pet, sectioned, with the active pet first. The pet heading appears only when there’s more than one pet to disambiguate.</p>
+        <ul class="tight">
+          <li><b>A pet with nothing logged</b> gets the same G2 line, scoped to that pet — “Nothing in Mochi’s record today.” A record fact about <em>Mochi’s</em> day, never an all-clear over Mochi.</li>
+          <li><b>No per-pet CTA</b> — the whole-screen zero-log carries the log door, but a per-pet line can’t pre-select the empty pet, so it stays a plain fact rather than a mis-targeted button.</li>
+        </ul>
+        <div class="chips">
+          <span class="chip">active pet first</span>
+          <span class="chip">per-pet zero-log (G2)</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- The three deferred-piece rulings -->
+    <div style="margin-top:26px;">
+      <h3 style="font-size:19px;letter-spacing:-0.01em;margin:0 0 6px;">Three pieces PR 4 deferred to this round — now ruled</h3>
+      <p class="sub" style="margin-bottom:14px;">PR 4 shipped the design-stable core and deferred three calls to the mock round. All three are ruled here.</p>
+      <table class="rulings">
+        <thead>
+          <tr><th style="width:23%;">Piece</th><th style="width:14%;">Ruling</th><th>Why</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><b>Trial / med context strips</b><br>(§5.1 / §5.3)</td>
+            <td><span class="verdict out">DEFER</span></td>
+            <td>v1 stays <b>doorway-rows-only</b>. The trial-diet meal and each dose already render as rows (the “what happened today” answer). Re-hosting the trial card’s viability states or the med strip’s course/withholding state would make the summary a <b>rival Home</b> (its own §5.3 forbids that), re-open the same-record/two-surfaces/two-answers drift those modules spent nine adversarial rounds closing, and render a <em>reading</em> on a surface G3 says must only describe-and-door. Filed as a future consumer PR (B-670); if ever built, factual day-count only, never a viability/coverage/adherence reading.</td>
+          </tr>
+          <tr>
+            <td><b>Zero-log log CTA</b></td>
+            <td><span class="verdict in">ADD</span></td>
+            <td>Shown in State&nbsp;3. This screen has <b>no FAB</b>, so the body’s invitation needs a door. A low-emphasis link → the quick-log (the same door TodayZone’s empty nudge opens). Not the §4.2 “second door”: on a FAB-less screen with nothing else on it, it is the <em>only</em> door.</td>
+          </tr>
+          <tr>
+            <td><b>Single-pet lock-screen naming</b><br>(§10 #3)</td>
+            <td><span class="verdict out">NEUTRAL</span></td>
+            <td>See the lock-screen callout above. Warm where the surface is private (the primer names the pet), neutral where it’s involuntarily public (the lock-screen body). Recoverable later as an opt-in (B-671); Designer dissent recorded.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ============================================================ ROUND 1 · CONSENT -->
+  <section class="section">
+    <h2 style="border-top:1px solid var(--rule);padding-top:34px;">Round 1 · The consent model that turns it on <span style="font-family:var(--mono);font-size:12px;color:var(--ink-3);font-weight:400;letter-spacing:0.04em;">— unchanged</span></h2>
+    <p class="sub">
+      Everything below shipped in PR 3 and is reproduced here so this one link carries
+      the whole feature. Two gates, never conflated: the OS permission (one system
+      prompt per install) and the product opt-in (a per-category toggle, defaulted off).
+    </p>
+  </section>
 
   <!-- ============================================================ THE PRIMER -->
   <section class="section">
@@ -559,8 +951,8 @@
   </section>
 
   <footer class="footer">
-    <p><b>Round 1 — this URL.</b> Primer (both account shapes) + the settings screen's three honest states + the system prompt in context. All copy is verbatim from the PR 3 build. <em>Revised after pm-feature-review: the reserved "Coming soon" rows are removed (nyx-voice Pattern 3), the intro is state-independent, and the Settings doorway that led here is un-mocked in the same PR. Revised again on PM feedback: the state-(c) banner is now a prominent danger treatment (red tint + hairline + warning glyph), not the earlier quiet-grey note.</em></p>
-    <p><b>Round 2 — next, same URL.</b> PR 4's Day Summary screen (ordinary / incident / zero-log / multi-pet) and the lock-screen notification itself. Re-published over this link so it never goes stale beside a newer one.</p>
-    <p>Gates for PR 3: nyx-voice · clinical-guardrails (G4) · Designer. Spec: <b>docs/nyx-notification-foundation-requirements.md</b> §2, §6, AC 2/6.</p>
+    <p><b>Round 2 — this URL (current).</b> PR 4's lock-screen notification + the Day Summary screen in four states (ordinary / incident / zero-log / multi-pet), plus the three deferred-piece rulings. All copy is verbatim from the PR 4/PR 5 build. Re-published over the round-1 link so it never goes stale beside a newer one (house rule).</p>
+    <p><b>Round 1 — same URL, below (unchanged).</b> The consent model: primer (both account shapes) + the settings screen's three honest states + the system prompt in context. <em>Revised in round 1 after pm-feature-review (reserved "Coming soon" rows removed, state-independent intro, the Settings doorway un-mocked) and on PM feedback (the state-(c) banner is a prominent danger treatment).</em></p>
+    <p>Gates — round 2: clinical-guardrails (G1–G3) · nyx-voice · Designer · Dr. Chen. Round 1: nyx-voice · clinical-guardrails (G4) · Designer. Spec: <b>docs/nyx-notification-foundation-requirements.md</b> §2, §5, §6, §10, AC 2–6.</p>
   </footer>
 </div>

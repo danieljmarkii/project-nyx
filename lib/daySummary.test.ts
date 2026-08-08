@@ -16,6 +16,7 @@ import {
   localDayBoundsIso,
   petZeroLogLine,
   DAY_SUMMARY_ZERO_LOG,
+  daySummaryEmptyTitle,
   type DaySummaryPetInput,
 } from './daySummary';
 
@@ -263,7 +264,10 @@ describe('zero-log copy — G2: record state, never a wellness verdict', () => {
   const strings = [
     DAY_SUMMARY_ZERO_LOG.title,
     DAY_SUMMARY_ZERO_LOG.body,
+    DAY_SUMMARY_ZERO_LOG.cta,
     petZeroLogLine('Biscuit'),
+    daySummaryEmptyTitle('Biscuit'),
+    daySummaryEmptyTitle(null),
   ];
 
   it('contains no reassurance / wellness-verdict language', () => {
@@ -282,5 +286,15 @@ describe('zero-log copy — G2: record state, never a wellness verdict', () => {
   it('names the pet in the per-pet line (a record fact about THIS pet’s day)', () => {
     expect(petZeroLogLine('Biscuit')).toContain('Biscuit');
     expect(petZeroLogLine('Biscuit').toLowerCase()).toContain('record');
+  });
+
+  it('names the pet in the single-pet empty title, stays neutral without one', () => {
+    // Pattern 1 — the single-pet zero-log title names the pet (the wedge owner's
+    // commonest empty state); a no-pet / multi-pet-all-empty screen can't pick one.
+    expect(daySummaryEmptyTitle('Biscuit')).toContain('Biscuit');
+    expect(daySummaryEmptyTitle(null)).toBe(DAY_SUMMARY_ZERO_LOG.title);
+    expect(daySummaryEmptyTitle(undefined)).toBe(DAY_SUMMARY_ZERO_LOG.title);
+    // A title, not the inline sentence — no trailing period.
+    expect(daySummaryEmptyTitle('Biscuit').endsWith('.')).toBe(false);
   });
 });
