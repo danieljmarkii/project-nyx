@@ -135,10 +135,13 @@ export default function BetaFeaturesScreen() {
         ))}
 
         {/* The honesty line (D8 — no telemetry, records untouched). Warm, plain,
-            reversible; the reason the opt-in is safe to try. */}
+            reversible; the reason the opt-in is safe to try. "pulled" (the locked
+            round-1 mock's word), not "switched off" — the intro already owns "switch
+            it back off" for the owner's own control, so reusing it here for OUR
+            retraction double-duties (pm-feature-review). PR 4 owns the final voice pass. */}
         <Text style={styles.note}>
-          Beta features may change, or be switched off while we keep working on them. Turning one on
-          won’t affect your records.
+          Beta features may change, or be pulled while we keep working on them. Turning one on won’t
+          affect your records.
         </Text>
 
         <View style={styles.bottomPad} />

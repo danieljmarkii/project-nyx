@@ -134,7 +134,7 @@ interface BetaOptInState {
   hydrated: boolean;
   /** Flip one beta on/off; persists the whole map write-through. */
   setOptIn: (key: AllowlistFlagKey, on: boolean) => void;
-  /** Replace the map from a hydrate/reset; does NOT re-persist (it just read it). */
+  /** Merge the persisted map UNDER the current in-memory one; marks hydrated. Does NOT re-persist. */
   hydrateFrom: (map: BetaOptInMap) => void;
   /** Clear all opt-ins in memory (sign-out); the AsyncStorage key is removed separately. */
   reset: () => void;
@@ -149,7 +149,16 @@ export const useBetaOptInStore = create<BetaOptInState>((set) => ({
       persistBetaOptIns(optIns);
       return { optIns };
     }),
-  hydrateFrom: (map) => set({ optIns: map, hydrated: true }),
+  hydrateFrom: (map) =>
+    set((state) => ({
+      // The persisted values load UNDER anything already set this session, so a
+      // toggle flipped before this async read resolves is never clobbered by the
+      // stale on-disk value (a warm-start race: eligibility can resolve from the
+      // app_config cache and expose the toggle before one AsyncStorage read
+      // returns). In-memory wins; untouched keys take the persisted value.
+      optIns: { ...map, ...state.optIns },
+      hydrated: true,
+    })),
   reset: () => set({ optIns: {}, hydrated: false }),
 }));
 

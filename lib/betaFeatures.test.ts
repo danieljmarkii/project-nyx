@@ -177,6 +177,22 @@ describe('useBetaOptInStore (Gate 2 / D4)', () => {
     expect(useBetaOptInStore.getState().hydrated).toBe(true);
   });
 
+  it('a toggle set before hydration resolves is NOT clobbered by the stale on-disk value', async () => {
+    // The warm-start race (code-review): eligibility can resolve from cache and
+    // expose the toggle before the one-shot AsyncStorage read returns. Disk holds
+    // the OLD value; the owner flips the NEW one first; hydration must not overwrite it.
+    await AsyncStorage.setItem(
+      BETA_OPT_IN_STORAGE_KEY,
+      serializeBetaOptIns({ widget_enabled: true }), // stale on-disk value
+    );
+    useBetaOptInStore.getState().setOptIn('widget_enabled', false); // fresh intent, mid-flight
+
+    useBetaOptInStore.getState().hydrateFrom({ widget_enabled: true }); // the stale read lands
+
+    expect(useBetaOptInStore.getState().optIns.widget_enabled).toBe(false); // fresh intent wins
+    expect(useBetaOptInStore.getState().hydrated).toBe(true);
+  });
+
   it('clearBetaOptIns wipes memory AND the persisted key (sign-out parity)', async () => {
     useBetaOptInStore.getState().setOptIn('widget_enabled', true);
     await Promise.resolve();
