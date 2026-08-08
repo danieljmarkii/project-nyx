@@ -1,7 +1,7 @@
 # Beta features — the B-713 §4.3 Phase-2 scoping pass (D7–D9)
 
 **Date:** 2026-08-08
-**PR:** shipped via this session's PR (draft — docs-only, no app code, no schema)
+**PR:** shipped via #609 (docs-only, no app code, no schema)
 **Track:** Beta features program (B-712); guardrails (B-713)
 **Type:** Product decision (delegated by the PM). Resolves the §4.3 scoping pass that gated Phase 2 (PR 3).
 
