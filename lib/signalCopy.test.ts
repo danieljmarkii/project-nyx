@@ -1,6 +1,15 @@
 import {
   deriveDisplayState,
   buildingIntro,
+  buildingDayNumber,
+  buildingHeadline,
+  buildingHeadlineLead,
+  buildingDayCount,
+  BUILDING_SUB,
+  BUILDING_WATCHING_FOR,
+  BUILDING_FLOOR,
+  NO_PATTERN_HEADLINE,
+  NO_PATTERN_SUB,
   noPatternIntro,
   staleIntro,
   confidenceTag,
@@ -234,6 +243,90 @@ describe('empty-state intros', () => {
     const s = noPatternIntro('Pixel');
     expect(s.toLowerCase()).toContain('no clear patterns');
     expect(s.toLowerCase()).toContain('yet');
+  });
+});
+
+// ── SR-2 empty states (B-721 §6 / §9) ─────────────────────────────────────────
+describe('buildingDayNumber (B-721 §6 — B-421 day math)', () => {
+  // B-514: both instants are built from LOCAL components at the same time of day, so
+  // the local-day difference is invariant under the CI runner's zone.
+  it('is Day 1 the day the first event is logged (day-1-inclusive floor)', () => {
+    const now = new Date(2026, 6, 10, 12, 0);
+    const first = new Date(2026, 6, 10, 9, 0);
+    expect(buildingDayNumber(first.toISOString(), now.getTime())).toBe(1);
+  });
+  it('counts inclusive local days from the first event', () => {
+    const now = new Date(2026, 6, 10, 12, 0);
+    const first = new Date(2026, 6, 8, 12, 0); // 8, 9, 10 → Day 3
+    expect(buildingDayNumber(first.toISOString(), now.getTime())).toBe(3);
+  });
+  it('never returns 0 or negative even if the first event reads later than now', () => {
+    const now = new Date(2026, 6, 8, 12, 0);
+    const first = new Date(2026, 6, 10, 12, 0);
+    expect(buildingDayNumber(first.toISOString(), now.getTime())).toBe(1);
+  });
+  it('falls back to Day 1 on a missing / malformed first-event stamp (never a guessed day)', () => {
+    const now = new Date(2026, 6, 10, 12, 0).getTime();
+    expect(buildingDayNumber(null, now)).toBe(1);
+    expect(buildingDayNumber('not-a-date', now)).toBe(1);
+  });
+});
+
+describe('E1 headline (§9 verbatim, pluralised)', () => {
+  it('composes the verbatim §9 sentence from its two visual parts', () => {
+    expect(buildingHeadlineLead('Nyx')).toBe("We're getting to know Nyx.");
+    expect(buildingDayCount(3, 11)).toBe('Day 3 — 11 events so far.');
+    expect(buildingHeadline('Nyx', 3, 11)).toBe(
+      "We're getting to know Nyx. Day 3 — 11 events so far.",
+    );
+  });
+  it('pluralises the event count (1 event, not 1 events)', () => {
+    expect(buildingDayCount(1, 1)).toBe('Day 1 — 1 event so far.');
+    expect(buildingDayCount(2, 0)).toBe('Day 2 — 0 events so far.');
+  });
+  it('threads the pet name, never shouts or reassures', () => {
+    const s = buildingHeadline('Pixel', 4, 9);
+    expect(s).toContain('Pixel');
+    expect(s.includes('!')).toBe(false);
+    expect(REASSURANCE_RE.test(s)).toBe(false);
+  });
+});
+
+describe('E1/E2 empty-state copy (§9 verbatim; absence ≠ wellness)', () => {
+  it('E1 sub, watching-for rows and floor are the verbatim §9 strings', () => {
+    expect(BUILDING_SUB).toBe(
+      "Patterns usually start appearing within the first week. Here's what we're watching for:",
+    );
+    expect([...BUILDING_WATCHING_FOR]).toEqual([
+      'Timing — do symptoms follow meals, and how closely',
+      'Food connections — what tends to come before a reaction',
+      'Change — this week against last, counted from your logs',
+    ]);
+    expect(BUILDING_FLOOR).toBe("If something needs attention sooner, it won't wait for the week.");
+  });
+  it('the E1 floor is the safety-honesty line — points at attention, never reassures/shouts', () => {
+    expect(BUILDING_FLOOR.toLowerCase()).toContain('attention');
+    expect(BUILDING_FLOOR.includes('!')).toBe(false);
+    expect(REASSURANCE_RE.test(BUILDING_FLOOR)).toBe(false);
+  });
+  it('every E1 string is guardrail-clean (no exclamation, no reassurance vocabulary)', () => {
+    for (const s of [BUILDING_SUB, ...BUILDING_WATCHING_FOR, BUILDING_FLOOR]) {
+      expect(s.includes('!')).toBe(false);
+      expect(REASSURANCE_RE.test(s)).toBe(false);
+    }
+  });
+  it('E2 is the verbatim shipped B-284 §9 "Signal — empty" copy', () => {
+    expect(NO_PATTERN_HEADLINE).toBe(
+      'No established patterns yet. Nothing in the last month of logs has cleared our evidence bar.',
+    );
+    expect(NO_PATTERN_SUB).toBe(
+      "That isn't an all-clear — keep logging, and the moment something clears it, it'll be here.",
+    );
+  });
+  it('E2 says absence is not wellness — the "isn\'t an all-clear" clause is present, no exclamation', () => {
+    expect(NO_PATTERN_SUB.toLowerCase()).toContain("isn't an all-clear");
+    expect(NO_PATTERN_HEADLINE.includes('!')).toBe(false);
+    expect(NO_PATTERN_SUB.includes('!')).toBe(false);
   });
 });
 
