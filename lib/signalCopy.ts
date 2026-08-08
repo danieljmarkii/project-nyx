@@ -21,13 +21,25 @@ import type {
   IncidentFlagKind,
   IncidentRedFlagFinding,
   IntakeDeclineFinding,
+  PostprandialTimingFinding,
   SignalFinding,
   SignalSymptomType,
   StapleSource,
   SymptomChronicityFinding,
   SymptomWorseningFinding,
+  TimeOfDayClusteringFinding,
 } from './signal';
 import { localDayIndex, localDayIndexOf, trialDayCounter } from './utils';
+
+// A timing finding — the two types whose evidence renders as a receipt (SR-1, §4).
+type TimingFinding = PostprandialTimingFinding | TimeOfDayClusteringFinding;
+
+/** True for the two timing findings — the only types that render a card-face strip
+ *  (§4 assignments). Exported so the renderer can narrow without re-importing the
+ *  concrete types. */
+export function isTimingFinding(finding: SignalFinding): finding is TimingFinding {
+  return finding.type === 'postprandial_timing' || finding.type === 'timeofday_clustering';
+}
 
 export type DisplayState = 'building' | 'no_pattern' | 'stale' | 'live';
 
@@ -554,6 +566,295 @@ export function evidenceText(finding: SignalFinding, petName: string): string {
     `compared with ${count(finding.ratedMealsConsidered, 'recent meal', 'recent meals')}. Eating less can be ` +
     `an early sign something's off, so it's worth keeping an eye on — and a word with your vet if it carries on.`
   );
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Receipts (SR-1, B-721) — pure models for the Signal evidence strips.
+// ══════════════════════════════════════════════════════════════════════════════
+// The design-uplift receipt system (docs/nyx-signal-home-requirements.md §4). Every
+// model below is derived from the finding's EXISTING counts — no new payload, no
+// lib/signal.ts change (§4 Engineering): the dot lane draws one dot per TIMEABLE
+// episode, split by the named window; the compare prints the two counts the sentence
+// subordinates; the phone script restates the facts a vet call needs. The un-timeable
+// remainder is always disclosed, never hidden (S2 control-side, S10 earn-its-place).
+//
+// Only the two timing types render a card-face strip (§4 assignments). Correlation,
+// intake-decline, reflection and every safety card face stay sentence-only (S1/S10)
+// — plainness on the safety face is itself the severity signal (S1). These helpers
+// are pure so the geometry + copy are unit-testable off-device.
+
+// Above this many TIMEABLE episodes, individual dots stop being countable, so the dot
+// lane degrades to the Shape C compare — never to bins (§4 / SD-4). A legibility
+// constant, not a clinical threshold; the A→C degradation is asserted at cap±1.
+export const DOT_LANE_MAX = 12;
+
+/** A single episode mark on the dot lane: horizontal position 0..1 and whether it
+ *  falls inside the named window. Positions are spread evenly WITHIN each zone — the
+ *  honest facts are the in/out SPLIT and the COUNT, not a per-episode offset the
+ *  payload doesn't carry (so the lane never implies a precision it can't back). */
+export interface LaneDot {
+  pos: number;
+  inWindow: boolean;
+}
+/** The named window as a [start,end] fraction of the lane. Two entries when a clock
+ *  band wraps past midnight (e.g. 11pm–3am). */
+export interface LaneBand {
+  start: number;
+  end: number;
+}
+export interface DotLaneModel {
+  dots: LaneDot[];
+  bands: LaneBand[];
+  /** Exactly three evenly-spaced axis words under the lane (§4 "minimal axis words"). */
+  axis: [string, string, string];
+}
+
+function clampCount(n: number, max: number): number {
+  return Math.max(0, Math.min(Math.round(n), Math.round(max)));
+}
+
+// The gaps outside the given bands over [0,1] — the region the out-of-window dots
+// live in. Bands are assumed within [0,1]; overlaps are merged by the sweep.
+function complementIntervals(bands: LaneBand[]): LaneBand[] {
+  const sorted = [...bands].sort((a, b) => a.start - b.start);
+  const gaps: LaneBand[] = [];
+  let cursor = 0;
+  for (const b of sorted) {
+    if (b.start > cursor) gaps.push({ start: cursor, end: b.start });
+    cursor = Math.max(cursor, b.end);
+  }
+  if (cursor < 1) gaps.push({ start: cursor, end: 1 });
+  return gaps;
+}
+
+// Spread n points evenly across the UNION of the given intervals, centred by
+// arc-length so the first/last dots don't hug the edges. Degenerate (zero-width)
+// intervals stack the points at the start rather than dividing by zero.
+function spreadInIntervals(intervals: LaneBand[], n: number): number[] {
+  if (n <= 0) return [];
+  const widths = intervals.map((i) => Math.max(0, i.end - i.start));
+  const total = widths.reduce((a, b) => a + b, 0);
+  const anchor = intervals[0]?.start ?? 0.5;
+  if (total <= 0) return Array.from({ length: n }, () => anchor);
+  const out: number[] = [];
+  for (let i = 0; i < n; i++) {
+    let t = ((i + 0.5) / n) * total; // centred arc-length position
+    for (let k = 0; k < intervals.length; k++) {
+      if (t <= widths[k] || k === intervals.length - 1) {
+        out.push(intervals[k].start + Math.min(t, widths[k]));
+        break;
+      }
+      t -= widths[k];
+    }
+  }
+  return out;
+}
+
+// Postprandial band: the eating-relative window as a fraction of a nominal 2h lane
+// (the axis reads `ate · {window}m · 2h+`). Clamped so a tiny or huge window still
+// draws a legible band.
+function postprandialBands(windowMinutes: number): LaneBand[] {
+  const NOMINAL_MAX_MIN = 120;
+  const end = Math.min(0.5, Math.max(0.12, windowMinutes / NOMINAL_MAX_MIN));
+  return [{ start: 0, end }];
+}
+
+// Time-of-day band: the clock band as a fraction of the 24h lane, split into two
+// segments when it wraps past midnight.
+function timeOfDayBands(startHour: number, windowHours: number): LaneBand[] {
+  const start = ((((startHour % 24) + 24) % 24) / 24);
+  const w = Math.max(0, Math.min(24, windowHours)) / 24;
+  const end = start + w;
+  if (end <= 1) return [{ start, end }];
+  return [
+    { start, end: 1 },
+    { start: 0, end: end - 1 },
+  ];
+}
+
+/** The dot-lane geometry for a timing finding (§4 Shape A). One dot per timeable
+ *  episode: `inCount` inside the named window, the rest (`eligibleCount − inCount`)
+ *  outside but present — the exceptions are the honesty. Dots are returned in
+ *  left-to-right order so the render is stable. */
+export function dotLaneModel(finding: TimingFinding): DotLaneModel {
+  const bands =
+    finding.type === 'postprandial_timing'
+      ? postprandialBands(finding.rapidWindowMinutes)
+      : timeOfDayBands(finding.clusterStartLocalHour, finding.clusterWindowHours);
+  const inCount = clampCount(
+    finding.type === 'postprandial_timing' ? finding.rapidCount : finding.clusterCount,
+    finding.eligibleCount,
+  );
+  const outCount = Math.max(0, clampCount(finding.eligibleCount, finding.eligibleCount) - inCount);
+  const inPos = spreadInIntervals(bands, inCount);
+  const outPos = spreadInIntervals(complementIntervals(bands), outCount);
+  const dots: LaneDot[] = [
+    ...inPos.map((pos) => ({ pos, inWindow: true })),
+    ...outPos.map((pos) => ({ pos, inWindow: false })),
+  ].sort((a, b) => a.pos - b.pos);
+  const axis: [string, string, string] =
+    finding.type === 'postprandial_timing'
+      ? ['ate', `${finding.rapidWindowMinutes}m`, '2h+']
+      : ['12am', '12pm', '12am'];
+  return { dots, bands, axis };
+}
+
+/** True when the timeable-episode count exceeds the legibility cap, so the card-face
+ *  strip degrades from the dot lane to the Shape C compare (§4). */
+export function timingReceiptDegrades(finding: TimingFinding): boolean {
+  return finding.eligibleCount > DOT_LANE_MAX;
+}
+
+// A compact clock range for a compare-row label: 4→8/4 → "4am–8am".
+function hourRangeLabel(startHour: number, windowHours: number): string {
+  const end = (startHour + windowHours) % 24;
+  return `${clockHourLabel(startHour)}–${clockHourLabel(end)}`;
+}
+
+/** A stacked-compare row (§4 Shape C): a label, a printed count, and the tone its bar
+ *  wears. `concern` = the pattern side (rose, the symptom hue used descriptively, as
+ *  the dots are); `muted` = the control side (neutral); `calm` (teal) is reserved for
+ *  a genuine before/after improvement compare — unused in SR-1, built for reuse. */
+export interface CompareRow {
+  label: string;
+  count: number;
+  tone: 'concern' | 'muted' | 'calm';
+}
+
+/** The two-sided compare for a timing finding — the pattern side vs the rest of the
+ *  timeable episodes. Used both as the card-face receipt when the dot lane degrades,
+ *  and as the expanded-state control side (§4). Both counts always printed. */
+export function timingCompareRows(finding: TimingFinding): [CompareRow, CompareRow] {
+  if (finding.type === 'postprandial_timing') {
+    const inn = clampCount(finding.rapidCount, finding.eligibleCount);
+    return [
+      { label: `Within ${finding.rapidWindowMinutes} min of eating`, count: inn, tone: 'concern' },
+      { label: 'Timed, but later', count: Math.max(0, finding.eligibleCount - inn), tone: 'muted' },
+    ];
+  }
+  const inn = clampCount(finding.clusterCount, finding.eligibleCount);
+  return [
+    {
+      label: hourRangeLabel(finding.clusterStartLocalHour, finding.clusterWindowHours),
+      count: inn,
+      tone: 'concern',
+    },
+    { label: 'Other times of day', count: Math.max(0, finding.eligibleCount - inn), tone: 'muted' },
+  ];
+}
+
+/** The honest remainder line for a timing expand: the episodes that couldn't be
+ *  placed against the window at all (§4 "N episodes weren't near any logged meal").
+ *  Null when every episode was timeable (nothing to disclose). */
+export function timingControlDisclosure(finding: TimingFinding): string | null {
+  const untimed = Math.max(0, finding.totalEpisodes - finding.eligibleCount);
+  if (untimed <= 0) return null;
+  return finding.type === 'postprandial_timing'
+    ? `${count(untimed, 'episode', 'episodes')} ${untimed === 1 ? "wasn't" : "weren't"} near any logged meal`
+    : `${count(untimed, 'episode', 'episodes')} didn't have a clear enough time to place`;
+}
+
+/** A full-sentence a11y label for the dot lane (§11 "a11y labels are full sentences").
+ *  Mirrors what the sample line already says, phrased as a sentence for a screen
+ *  reader that lands on the strip. */
+export function dotLaneA11yLabel(finding: TimingFinding): string {
+  if (finding.type === 'postprandial_timing') {
+    return `${finding.rapidCount} of ${count(finding.eligibleCount, 'timed episode', 'timed episodes')} fell within ${finding.rapidWindowMinutes} minutes of eating.`;
+  }
+  return `${finding.clusterCount} of ${count(finding.eligibleCount, 'timed episode', 'timed episodes')} fell ${localHourBand(finding.clusterStartLocalHour, finding.clusterWindowHours)}.`;
+}
+
+/** A full-sentence a11y label for a stacked compare — reads the labelled counts in
+ *  order so a screen reader hears the whole comparison, not two loose numbers. */
+export function stackedCompareA11yLabel(rows: CompareRow[]): string {
+  return rows.map((r) => `${r.label}, ${r.count}`).join('; ') + '.';
+}
+
+// ── The safety phone-call script (§4 / §9) ────────────────────────────────────
+// "Scripts convert, sirens don't" (session doc §1): the safety tap-through carries the
+// facts to say on the phone — symptom, count, span, most recent — derived from the
+// finding's structured fields. SR-1 ships this SANS the active-meds line (that rides
+// SR-4's payload). Recency ("Most recent") renders ONLY where the payload carries it
+// (chronicity, incident_red_flag), never invented. The strings are hand-written and
+// guardrail-clean (asserted in the tests): descriptive facts, never a cause, never a
+// severity verdict, never reassurance.
+
+export interface PhoneScriptFact {
+  label: string;
+  value: string;
+}
+
+// UTC short date for a recency fact ("August 6") — matches onsetMonth's UTC bucketing
+// (the engine days-bucket in UTC), so it stays pinnable in a fixture per B-514.
+function shortDateUTC(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return 'recently';
+  return `${MONTH_NAMES[d.getUTCMonth()]} ${d.getUTCDate()}`;
+}
+
+/** The phone-call script facts for a SAFETY finding, or null for any other type (the
+ *  script renders only on the safety expand). Each fact is one row (§4 phone script);
+ *  the last recency row appears only when the payload carries a "most recent". */
+export function phoneScript(finding: SignalFinding, petName: string): PhoneScriptFact[] | null {
+  if (finding.type === 'symptom_worsening') {
+    const symptom = SYMPTOM_LABEL[finding.symptomType];
+    const thisWeek =
+      finding.trigger === 'more_days'
+        ? `${count(finding.currentDays, 'day', 'days')} with ${symptom}`
+        : `${count(finding.currentCount, 'episode', 'episodes')} on ${count(finding.currentDays, 'day', 'days')}`;
+    const weekBefore =
+      finding.trigger === 'more_days'
+        ? count(finding.priorDays, 'day', 'days')
+        : count(finding.priorCount, 'episode', 'episodes');
+    return [
+      { label: 'Sign', value: symptom },
+      { label: 'This week', value: thisWeek },
+      { label: 'Week before', value: weekBefore },
+      { label: 'Watched over', value: `the last ${finding.windowDays} days` },
+    ];
+  }
+  if (finding.type === 'symptom_chronicity') {
+    const weeks = Math.round(finding.windowDays / 7);
+    return [
+      { label: 'Sign', value: SYMPTOM_LABEL[finding.symptomType] },
+      { label: 'Ongoing since', value: onsetMonth(finding.firstOnsetIso) },
+      {
+        label: 'How often',
+        value: `${count(finding.episodeCount, 'episode', 'episodes')} across ${finding.activeWeeks} of ${weeks} weeks`,
+      },
+      { label: 'Most recent', value: recencyPhrase(finding.daysSinceLastEpisode) },
+    ];
+  }
+  if (finding.type === 'incident_red_flag') {
+    const noun = INCIDENT_NOUN[finding.incidentType];
+    return [
+      { label: 'What a photo showed', value: `${incidentFlagPhrase(finding.flags)} in ${petName}'s ${noun}` },
+      { label: 'From', value: count(finding.flaggedIncidentCount, 'logged photo', 'logged photos') },
+      { label: 'Most recent', value: shortDateUTC(finding.mostRecentFlaggedIso) },
+    ];
+  }
+  if (finding.type === 'intake_decline') {
+    if (finding.trigger === 'refused_normal_food') {
+      const food = truncateFoodLabel(finding.refusedFoodLabel);
+      return [
+        { label: 'Concern', value: 'refused a food normally eaten' },
+        ...(food ? [{ label: 'Food', value: food }] : []),
+        {
+          label: 'Compared with',
+          value:
+            finding.ratedMealsConsidered > 0
+              ? count(finding.ratedMealsConsidered, 'recent meal', 'recent meals')
+              : 'what you usually log',
+        },
+      ];
+    }
+    return [
+      { label: 'Concern', value: 'eating less than usual' },
+      { label: 'How long', value: `${count(finding.daysBelowBaseline, 'day', 'days')} below the usual` },
+      { label: 'Compared with', value: count(finding.ratedMealsConsidered, 'recent meal', 'recent meals') },
+    ];
+  }
+  return null;
 }
 
 // ── Cross-pet safety banner (multi-pet §4, mock A3) ───────────────────────────

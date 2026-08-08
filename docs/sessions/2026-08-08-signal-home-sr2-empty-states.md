@@ -95,9 +95,23 @@ every row carries it; (2) the `isLoading→building` frame could flash "Day 1 �
 the local read landed — the day-count clause is now held back at eventCount 0 (pre-read
 sentinel), pinned by a new test; (3) tightened the `dayNumber`/`eventCount` JSDoc.
 
+## Wrap: SR-1 merge
+
+SR-1 (receipts, #613) landed on `main` while this session was building, so the wrap merged
+`main` in. It conflicted in exactly two places (as predicted): **STATUS.md** (the parallel-track
+block — resolved on meaning, both PRs now shown shipped) and **`SignalZone.tsx`** — SR-1 had
+also added `const designV2 = useAllowlistFlag('signal_design_v2')` and threaded it into
+`LiveStack`/`InsightCard` for the live receipts, while SR-2 added the same resolve + gated the
+empty states. Git auto-merged the render body cleanly (SR-1's `LiveStack designV2={…}` beside
+SR-2's building/no_pattern gating); the two conflicts were the shared import block and the
+destructure/comment. Resolved to **one `designV2`** feeding both paths, my destructure (keeps
+`dayNumber`/`eventCount`), and a combined comment. Full suite green post-merge (211 suites /
+4679 tests), tsc clean — the SR-1 ∥ SR-2 "disjoint" claim held except for these mechanical
+seams, which is the expected shared-file cost.
+
 ## Next
 
-SR-1 (receipts) ∥ SR-3 (register). SR-1 touches `InsightCard` + new receipt files, not
-SignalZone's empty-state branches, so it stays diff-disjoint from this PR (the one shared file
-is STATUS.md at wrap). SR-4 (`generate-signal` additive payload — adversarial-reviewer
-mandatory) can run once SR-1's types merge.
+SR-3 (register) ∥ SR-4 (`generate-signal` additive payload — adversarial-reviewer mandatory),
+now that SR-1 + SR-2 are both on `main`. SR-3 touches SignalZone's lead canvas + receded chrome
++ the acknowledgment state; SR-4 is the server payload (med-on-board + `densityComparable` +
+the falling-comparison gate). Disjoint; the one shared file is STATUS.md at wrap.
