@@ -85,7 +85,15 @@ all-clear" keep absence-≠-wellness; test-pinned no-reassurance) — nyx-voice 
 verbatim, specific) — Engineer ✓ (one B-421 day definition reused; registry/branch seam; no
 new deps; theme tokens only) — QA ✓ (§11 ACs listed pass; flag on/off both covered) — Data
 N/A (no statistics) — adversarial-reviewer N/A (no detection/threshold/AI-read logic; that's
-SR-4's mandatory gate). Diff `code-reviewer` run in-session.
+SR-4's mandatory gate).
+
+**`code-reviewer` verdict: ship-ready** — no correctness bugs, no anti-pattern violations,
+flag-off verifiably byte-identical, copy/day-math checked under all three CI timezones. Raised
+1 CLEANUP + 2 NITs, **all fixed in fast-follow `7bbd185`**: (1) E1 was missing the top hairline
+above the first watching-for row (the `first` prop suppressed a divider the mock draws) — now
+every row carries it; (2) the `isLoading→building` frame could flash "Day 1 — 0 events" before
+the local read landed — the day-count clause is now held back at eventCount 0 (pre-read
+sentinel), pinned by a new test; (3) tightened the `dayNumber`/`eventCount` JSDoc.
 
 ## Next
 
