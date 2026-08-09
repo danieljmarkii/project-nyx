@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-09
 
-**Shipped via #614** (draft). The nyx-voice + pm-feature-review copy/legibility pass over the Beta features shelf (B-712, Phase 2, final PR). Closes the three round-1 open items and folds the product review's cheap legibility fixes. No schema, no new secret, no clinical/statistical logic — reuses the `app_config` allowlist (Gate 1) and the local opt-in store (Gate 2) from PRs 1–3.
+**Shipped via #614** (merged at wrap, at the PM's request). The nyx-voice + pm-feature-review copy/legibility pass over the Beta features shelf (B-712, Phase 2, final PR). Closes the three round-1 open items and folds the product review's cheap legibility fixes. No schema, no new secret, no clinical/statistical logic — reuses the `app_config` allowlist (Gate 1) and the local opt-in store (Gate 2) from PRs 1–3.
 
 ## What shipped
 
@@ -50,8 +50,18 @@ Mid-session, `app/settings.tsx` was reformatted single→double quotes (a whole-
 - Mock `docs/culprit-beta-features-mockups.html` refreshed to the shipped hint copy (+ info glyph), naming call and footer open-items marked resolved; **artifact republished to the same round-1 URL** (mock-what-you-change).
 - `docs/backlog.md` — B-727 / B-728 filed.
 
-## Owed (not blocking this PR's merge)
+## Post-ship: on-device debugging detour + merge
 
-- The **enablement config UPDATE** (add the PM's uid to `widget_enabled.allowlist`) — do it when cutting the build; the client gate is inert on-device until the widget-gate JS is deployed.
+The PM couldn't see the Beta features row on device. Chased it live:
+
+- **Eligibility was never the problem.** Read production `app_config` directly — the PM's uid (`2eeeaef5-753a-467c-8c17-2b9fed40ee34`) is **already in `widget_enabled.allowlist`**, so Gate 1 resolves true. STATUS.md's "enablement still pending" note was stale (corrected this session). The resolver enables on allowlist membership alone (`enabled:false` + uid-in-array; flipping `enabled:true` would enable *everyone*), and the branch code (`ALLOWLIST_FLAG_KEYS`, `extractAllowlistFlags`, `resolveAllowlistFlag`) is correct — verified by reading it.
+- **Actual cause — a runtime mismatch.** The project carries `expo-dev-client` (+ `expo-notifications`, the widget's native extension), so `expo start` runs a **development build**, not Expo Go — the Metro QR is a dev-client URL Expo Go can't open. The PM had been scanning it with Expo Go, so nothing loaded and no logs appeared. Diagnosed from the PM's pasted Metro output ("Using development build" / "Press s │ switch to Expo Go") + `package.json`. The dev-handoff runbook still documents Runtime B as "Expo Go" — stale, and it cost the detour → **B-729** filed.
+- **Resolution:** the PM elected to test on **TestFlight** directly (correct — the home-screen widget needs a native build regardless). A temporary `[beta-debug]` log pushed to `useAllowlistFlag` to instrument the device was **removed before merge** (added `7cf7bde`, removed at wrap).
+
+Merged at the PM's request during this wrap — CI green, branch current with `main`.
+
+## Owed (not blocking this PR)
+
 - The **native opt-in-aware not-live widget door (B-725)** — must ride the next native TestFlight cut with PR 3's gate (can't ride OTA).
-- The **on-device pass** — the four pm-feature-review device-pass items above.
+- The **on-device pass** — the four pm-feature-review device-pass items (needs the TestFlight build).
+- **B-729** — fix the dev-handoff runbook + CLAUDE.md so Runtime B reads "development build," not Expo Go.

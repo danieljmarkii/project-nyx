@@ -91,16 +91,5 @@ export function useAllowlistFlag(key: AllowlistFlagKey): boolean {
     () => currentAllowlist[key],
   );
   const userId = useAuthStore((s) => s.user?.id ?? null);
-  const resolved = resolveAllowlistFlag(raw, userId, false);
-  // TEMP DEBUG (B-712) — REMOVE BEFORE MERGE. Diagnosing why the Beta features row
-  // isn't resolving on the PM's device: one line that tells fetch-miss vs.
-  // wrong-account vs. stale-bundle apart — the raw flag value the client holds, its
-  // type, the signed-in uid, the resolved boolean, and the whole allowlist snapshot.
-  if (key === 'widget_enabled') {
-    console.log(
-      '[beta-debug] widget_enabled →',
-      JSON.stringify({ rawType: typeof raw, raw, userId, resolved, allowlistSnapshot: currentAllowlist }),
-    );
-  }
-  return resolved;
+  return resolveAllowlistFlag(raw, userId, false);
 }
