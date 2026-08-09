@@ -21,7 +21,10 @@ import type {
   IncidentFlagKind,
   IncidentRedFlagFinding,
   IntakeDeclineFinding,
+  MedOnBoardContext,
   PostprandialTimingFinding,
+  ReflectionDensity,
+  ReflectionFinding,
   SignalFinding,
   SignalSymptomType,
   StapleSource,
@@ -447,6 +450,88 @@ export function worseningNewSampleLine(finding: SymptomWorseningFinding): string
     : `${count(finding.currentCount, 'episode', 'episodes')} this week`;
 }
 
+// ── Density-withheld reflection sample line (SR-5, §3.3) ───────────────────────
+// SR-4 withheld the "down from N last week" clause from the reflection SENTENCE when
+// week-over-week logging density fell (`density.comparable === false`). The card-face
+// sample line still carried the same week-pair ("2 episodes this week, 5 last week"),
+// so the face re-asserted the exact comparison the sentence dropped and the expanded
+// state (below) explains it can't trust. The client withholds it here too — the
+// current week's count WITHOUT the incomparable prior — so the whole card face agrees.
+// CLIENT-DERIVED + FLAG-GATED at the call site (like worseningNewSampleLine): flag-off
+// keeps the shipped week-pair, so the shipped surface is byte-identical (FR-FLAG-2).
+
+/** A FALLING reflection whose SR-4 density gate marks the week-over-week comparison
+ *  incomparable (§3.3). A type guard so the sample-line swap at the call site is
+ *  type-safe. Falls false for a flat reflection, an absent density (old cache), or a
+ *  comparable one — every case that keeps the shipped week-pair. */
+export function isReflectionDensityWithheld(finding: SignalFinding): finding is ReflectionFinding {
+  return (
+    finding.type === 'reflection' &&
+    finding.direction === 'improving' &&
+    finding.density?.comparable === false
+  );
+}
+
+/** The sample line for a density-withheld falling reflection — this week's count without
+ *  the "M last week" the gate withholds. Mirrors the shipped reflection sample line minus
+ *  the incomparable prior. */
+export function reflectionWithheldSampleLine(finding: ReflectionFinding): string {
+  return `${count(finding.currentCount, 'episode', 'episodes')} this week`;
+}
+
+// ── Universal banned-vocabulary screen (SR-5, §3.5) ───────────────────────────
+// Mirror of phrasing.ts GLYPH_RE / PERCENT_RE + hasBannedSignalVocabulary — the RN
+// bundle can't import the Deno module, so the universally-banned Signal vocabulary
+// (direction glyphs → S5, percentages → S3) is duplicated here like the banner regexes
+// below. KEEP IN SYNC with phrasing.ts. Screens CLIENT-COMPOSED copy that folds in owner
+// free-text (the med-on-board line's drug name), so a "%" in a real name like
+// "Baytril 2.5%" can never reach a Signal card (B-733).
+const SIGNAL_GLYPH_RE = /[↑↓→←➘➚➔⬆⬇]|->|<-|\bslope\b/i;
+const SIGNAL_PERCENT_RE = /%|\bpercent(?:ages?|iles?)?\b/i;
+export function hasBannedSignalVocabulary(text: string): boolean {
+  const t = text ?? '';
+  return SIGNAL_GLYPH_RE.test(t) || SIGNAL_PERCENT_RE.test(t);
+}
+
+// ── Med-on-board context line (SR-5, §5.4 / §9) ───────────────────────────────
+// The slate-toned context line on a correlation or timing card when a medication course
+// is active in the finding window (SR-4 attaches `medContext`). Stated as a bare fact —
+// never an explanation, never a verdict, no causal adjacency (§5.4).
+//
+// The drug label is OWNER FREE-TEXT carried VERBATIM from generate-signal — a drug name
+// is data, not generated copy, and screening it server-side would corrupt a legitimate
+// name like "Baytril 2.5%" (medContext.ts §resolveDrugLabel documents this). So the
+// COMPOSED line is screened HERE against the universally-banned Signal vocabulary (§3.5):
+// a "%" in a drug name trips the percent screen (B-733). If it trips, the line is DROPPED
+// (null) rather than rendered — the med context is non-essential decoration on a BENIGN
+// (insight-lane) card, so its silence never reassures and never inverts a safety finding
+// (the banner's fail-safe posture). doseCount is pluralised (B-733): the §9 copy hardcodes
+// "doses", but a course can hold exactly one administered dose.
+
+/** The finding's med-on-board context, or undefined for the types SR-4 never decorates
+ *  (only correlation + the two timing findings carry it). */
+export function medContextOf(finding: SignalFinding): MedOnBoardContext | undefined {
+  if (
+    finding.type === 'food_symptom_correlation' ||
+    finding.type === 'postprandial_timing' ||
+    finding.type === 'timeofday_clustering'
+  ) {
+    return finding.medContext;
+  }
+  return undefined;
+}
+
+/** The composed §9 med-on-board line, or null when the finding carries no context, the
+ *  facts are degenerate (blank label / non-positive count — the server guarantees neither,
+ *  but this reads a cache), or the composed sentence trips the guardrail screen (§3.5). */
+export function medContextLine(finding: SignalFinding): string | null {
+  const ctx = medContextOf(finding);
+  const label = ctx?.drugLabel?.trim();
+  if (!ctx || !label || !Number.isFinite(ctx.doseCount) || ctx.doseCount < 1) return null;
+  const line = `During an active ${label} course — ${count(ctx.doseCount, 'dose logged', 'doses logged')}.`;
+  return hasBannedSignalVocabulary(line) ? null : line;
+}
+
 // ── Tap-to-expand evidence (§3.2) ─────────────────────────────────────────────
 // The honest detail behind the card, revealed on tap — how an owner trusts a card
 // enough to act on it. Associational framing on correlations (a pattern in the
@@ -604,6 +689,76 @@ export function evidenceText(finding: SignalFinding, petName: string): string {
     `compared with ${count(finding.ratedMealsConsidered, 'recent meal', 'recent meals')}. Eating less can be ` +
     `an early sign something's off, so it's worth keeping an eye on — and a word with your vet if it carries on.`
   );
+}
+
+// ── Reflection density + trial adjacency (SR-5, §3.3 / §3.4 / §9) ──────────────
+// The FALLING reflection's expanded-state extras, consuming SR-4's `density` payload and
+// the one trial predicate (`isTrialRunning`, lib/dietTrial — resolved by the caller and
+// passed as a boolean, never re-derived here). All EXPANDED-ONLY and FALLING-ONLY
+// (`direction === 'improving'`): a flat reflection gets neither — its "about the same" is
+// not a comparison to withhold (§3.2 — falling only) nor a weakening to caveat (§3.4 —
+// weakening only). The card FACE stays sentence-only (S1/S10); nothing here renders
+// collapsed.
+//
+// Two mutually-exclusive density lines, keyed on the SR-4 gate:
+//   • comparable      → the DISCLOSURE line (§9 verbatim): the day counts that back the
+//     "down from N" the sentence still carries.
+//   • NOT comparable  → the WITHHELD line: the server already dropped "down from N" from
+//     the sentence (and the client dropped it from the sample line); this says why.
+
+/** The expanded density box title — the round-2.1 mock's "Counted honestly" (the design
+ *  authority for this surface; a §9 copy-table addition is flagged for PM). */
+export const DENSITY_BOX_TITLE = 'Counted honestly';
+
+/** The trial adjacency line (§3.4 verbatim) — appended to a FALLING reflection's expanded
+ *  text while a trial is running. Dr. Chen-sanctioned §9 copy; weakening-only, expand-only. */
+export const TRIAL_ADJACENCY =
+  "A quieter week partway through a diet trial isn't the trial's verdict — the full run is what makes it readable.";
+
+/**
+ * The density-WITHHELD line for a not-comparable falling reflection. B-733 / Dr. Chen
+ * reword of the §9 verbatim ("…so we can't tell yet whether there was less to log").
+ *
+ * WHY IT DEVIATES FROM §9: the gate measures "days-with-any-log", NOT symptom-specific
+ * coverage — a week of meals-only logging keeps the day count up while symptom logging
+ * lapses (the adversarial-review residual behind B-733). The §9 line's "whether there was
+ * less to log" reads as if the gate could adjudicate whether the quiet is real, which
+ * over-claims what days-with-any-log can see. This grounds the uncertainty in the actual
+ * measure — fewer LOGGED DAYS can look like fewer episodes — and declines the comparison
+ * rather than promising a later verdict ("yet"). Never reassures (it withholds the
+ * reassuring read); fail-toward-escalation (§3.3). The §9 copy-table edit is a flagged
+ * Tier-2 change awaiting PM approval.
+ */
+export const DENSITY_WITHHELD =
+  "You also logged on fewer days this week, so we're not comparing it with last week — fewer logged days can look like fewer episodes on their own.";
+
+/** The disclosure line for a COMPARABLE falling reflection — §9 verbatim: the logged-day
+ *  counts that back the comparison the sentence carries. */
+export function densityDisclosureLine(density: ReflectionDensity): string {
+  return `Counted from days you logged: ${density.currentLoggingDays} this week, ${density.priorLoggingDays} last.`;
+}
+
+export interface ReflectionExpanded {
+  /** The density line (disclosure when comparable, withheld when not), or null when the
+   *  reflection isn't falling or carries no density payload (an old cached row). */
+  densityLine: string | null;
+  /** The mid-trial adjacency line (§3.4), or null when not falling / no trial running. */
+  trialAdjacency: string | null;
+}
+
+/** The expanded-state extras for a reflection — the density line + the trial adjacency,
+ *  each null when it doesn't apply. Pure; the caller renders them (both null → the caller
+ *  draws no box). `trialRunning` is `isTrialRunning` resolved upstream. */
+export function reflectionExpandedExtras(
+  finding: ReflectionFinding,
+  trialRunning: boolean,
+): ReflectionExpanded {
+  if (finding.direction !== 'improving') {
+    return { densityLine: null, trialAdjacency: null };
+  }
+  const d = finding.density;
+  const densityLine = d ? (d.comparable ? densityDisclosureLine(d) : DENSITY_WITHHELD) : null;
+  return { densityLine, trialAdjacency: trialRunning ? TRIAL_ADJACENCY : null };
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
