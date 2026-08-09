@@ -81,7 +81,8 @@
   .tabbar{position:absolute;left:0;right:0;bottom:0;height:84px;background:#FFFFFF;border-top:1px solid #EAEAEA;display:flex;justify-content:space-around;align-items:flex-start;padding:16px 30px 0}
   .tabbar span{font-size:14px;color:#737373}
   .tabbar span.on{color:#0A0A0A;font-weight:600}
-  .fab{position:absolute;right:22px;bottom:104px;width:58px;height:58px;border-radius:50%;background:#00C2A8;color:#fff;display:flex;align-items:center;justify-content:center;font-size:30px;font-weight:300;box-shadow:0 6px 16px rgba(0,194,168,.4)}
+  .fab{position:absolute;right:22px;bottom:104px;width:58px;height:58px;border-radius:50%;background:#00C2A8;color:#fff;display:flex;align-items:center;justify-content:center;font-size:30px;font-weight:300;box-shadow:0 6px 16px rgba(0,194,168,.4);z-index:7}
+  .homebar{z-index:8}
   .evicon{width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex:0 0 auto}
   .evicon svg{width:16px;height:16px}
   .ev-meal{background:#E0FBF7}.ev-meal svg{fill:#0B7B6C}
@@ -124,8 +125,8 @@
   .trialrule{font-size:11px;color:#737373;border-left:1px dashed #A3A3A3;padding-left:6px;margin-top:6px}
 
   /* menus / sheets */
-  .scrim{position:absolute;inset:0;background:rgba(0,0,0,.42)}
-  .menu{position:absolute;right:22px;bottom:180px;width:312px;background:#FFF;border-radius:20px;box-shadow:0 18px 48px rgba(0,0,0,.28);padding:10px 18px}
+  .scrim{position:absolute;inset:0;background:rgba(0,0,0,.42);z-index:5}
+  .menu{position:absolute;right:22px;bottom:240px;width:312px;background:#FFF;border-radius:20px;box-shadow:0 18px 48px rgba(0,0,0,.28);padding:10px 18px;z-index:6}
   .menu .mh{font-size:11px;letter-spacing:1px;text-transform:uppercase;color:#737373;font-weight:600;padding:10px 0 2px}
   .menu .mi{display:flex;align-items:center;gap:11px;padding:11px 0}
   .menu .mi .lbl{font-size:15px;font-weight:500}
@@ -235,6 +236,44 @@
   .heroC .card .sig-sample{font-size:7.5px;margin-top:3px}
   .heroC .rail-card{padding-left:8px;border-left-width:2.5px}
 
+  /* ── Round 3: the composed final set at judging size (300px ≈ 23% of export) ── */
+  .finalrail{display:flex;gap:32px;overflow-x:auto;padding:8px 2px 22px;align-items:flex-start}
+  .fitem{flex:0 0 auto}
+  .fitem .fmeta{width:300px;margin-top:11px;font-size:12.5px;color:var(--muted);line-height:1.5}
+  .fitem .fmeta b{color:var(--ink)}
+  .optchip{display:inline-block;font-size:10px;letter-spacing:.8px;text-transform:uppercase;color:var(--accent-ink);border:1px solid var(--border);border-radius:99px;padding:2px 9px;background:var(--surface);margin-bottom:8px}
+  .fframe{width:300px;aspect-ratio:1320/2868;border-radius:24px;overflow:hidden;position:relative;box-shadow:0 10px 30px rgba(0,0,0,.16)}
+  .fcapt{position:relative;z-index:2;font-family:"Iowan Old Style","Palatino Linotype",Georgia,serif;text-align:center;margin:0 auto;text-wrap:balance}
+  .d-day .fcapt{color:#211E4E;font-size:17.5px;line-height:1.42;padding:28px 20px 0;max-width:21ch}
+  .fcapt b{font-weight:700}
+  .fphone{position:absolute;left:50%;transform:translateX(-50%);top:122px;z-index:1;width:256px;height:555px}
+  .fphone .phone-scale{transform:scale(.582)}
+  .fframe .phone{border-radius:36px;box-shadow:0 0 0 9px #17171A,0 0 0 10.5px rgba(33,30,78,.16),0 28px 54px rgba(33,30,78,.24)}
+  /* the hero at full size */
+  .heroBig .cmark{position:relative;z-index:2;display:flex;align-items:center;justify-content:center;gap:8px;padding-top:30px;color:#A6A2CE}
+  .heroBig .cmark svg{width:17px;height:17px;fill:#F2EEE4}
+  .heroBig .cmark span{font-family:"Iowan Old Style",Georgia,serif;font-size:15px;letter-spacing:.4px}
+  .heroBig .fcapt{color:#F2EEE4;font-size:25px;line-height:1.32;padding:20px 22px 0;max-width:17ch}
+  .heroBig .float-cards{position:absolute;left:20px;right:20px;top:238px;z-index:1;display:flex;flex-direction:column;gap:14px}
+  .heroBig .card{padding:16px 17px;border-radius:16px;border:none;box-shadow:0 20px 48px rgba(0,0,0,.55)}
+  .heroBig .sig-head{font-size:16.5px;line-height:1.35}
+  .heroBig .sig-body{font-size:13px;line-height:1.5}
+  .heroBig .sig-sample{font-size:10.5px;margin-top:5px}
+  .heroBig .rail-card{padding-left:11px}
+  .heroBig .fnote{position:absolute;bottom:16px;left:0;right:0;z-index:2;text-align:center;font-size:10px;letter-spacing:.6px;color:rgba(242,238,228,.45)}
+  /* the search-card preview */
+  .ascard{max-width:404px;background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:16px}
+  .asrow{display:flex;align-items:center;gap:12px;margin-bottom:13px}
+  .asicon{width:58px;height:58px;border-radius:13px;background:#13112E;display:flex;align-items:center;justify-content:center;position:relative;flex:0 0 auto}
+  .asicon svg{width:27px;height:27px;fill:#F2EEE4}
+  .asicon i{position:absolute;right:12px;top:13px;width:5px;height:5px;border-radius:50%;background:#00C2A8}
+  .asname{font-size:16px;font-weight:600;line-height:1.2}
+  .assub{font-size:12.5px;color:var(--muted);margin-top:2px}
+  .asget{margin-left:auto;background:var(--chip);color:#0A84FF;border-radius:99px;padding:6px 19px;font-weight:700;font-size:14px}
+  .asthumbs{display:flex;gap:8px;justify-content:space-between}
+  .thumb{width:118px;aspect-ratio:1320/2868;border-radius:9px;overflow:hidden;position:relative;flex:0 0 auto}
+  .thumb .tscale{transform:scale(.3933);transform-origin:top left;width:300px}
+
   .notes{font-size:13px;color:var(--muted);max-width:74ch}
   .notes li{margin-bottom:8px}
   .notes b{color:var(--ink);font-weight:600}
@@ -244,15 +283,103 @@
 
 <div class="wrap">
 <header class="page">
-  <span class="roundtag">Store screenshots · Round 2.1 · 2026-08-09 — D-SS1/2/3 ruled</span>
-  <h1>The 6.9″ set, before it exists</h1>
-  <p class="sub">Round 2 adds the <b>design directions</b> — the answer to "take the app, screenshot it, add a title" — built from the 2026-08 research brief (<b>docs/research/2026-08-app-store-creative-landscape.md</b>: 15 live sets examined, Apple's rules verbatim, the A/B case corpus). Each direction below composes the full 1320×2868 export: ground + caption + device as one artwork. The Cooper capture states from round 1 remain the staging spec under every direction.</p>
-  <p class="authority">What the research changed: caption overlays and marketing frames are <b>explicitly permitted</b> (Guideline 2.3.3), the search card (frames 1–3 at thumbnail size) is where ~60% of visitors decide, and the premium register is unoccupied in the pet category — so the designed set is the recommended <em>submission</em> set, with plain captures kept as the fallback floor.</p>
+  <span class="roundtag">Store screenshots · Round 3 · 2026-08-09 — the C template, composed</span>
+  <h1>The 6.9″ set, as it ships</h1>
+  <p class="sub">Round 3 renders the whole ratified set at judging size — the answer to "I don't yet have a feeling for the end result." Template per the D-SS1 ruling: the <b>night hero opens</b> (brand-night ground, the real Signal cards lit), <b>daylight carries</b> (moonlight-paper field, deep-indigo serif captions with a bold lead phrase, one device scale, bottom-cropped bezel). Below it: the search-card preview — the thumbnail view where most people actually decide — then the round-2 direction record and the Cooper capture states.</p>
+  <p class="authority">Captions are placeholder-grade until the joint keyword pass with step 13 — react to the composition and the register; the copy pass comes next. In production every frame is built from real device captures composited into this template, never redrawn UI.</p>
 </header>
 
 <section>
-  <h2>The design directions — RULED 2026-08-09: C wins (D-SS1, PM)</h2>
-  <p class="secnote">Direction C is the template: the night hero opens, the daylight frames carry. D-SS2 (PM-delegated → team): the designed set is the <b>submission</b> set, plain captures the fallback floor. D-SS3 (PM-delegated → team): the vet report holds frame 3. A and B are kept below for the record — do not react to them. Round 3 builds the full C template with the joint caption + keyword pass (step 13).</p>
+  <h2>Round 3 — the set, in upload order</h2>
+  <p class="secnote">Frames 1–5 are the set; the sixth slot's two candidates (the round-3 open call) sit at the end — <b>react to which one earns the slot, or neither</b>. Scroll sideways.</p>
+  <div class="finalrail">
+
+    <div class="fitem">
+      <div class="fframe d-night heroBig" id="fframe-1">
+        <div class="cmark"><svg viewBox="0 0 16 16"><path fill-rule="evenodd" d="M8 1a7 7 0 1 0 6.9 8.2A5.5 5.5 0 1 1 8 1z"/></svg><span>Culprit</span></div>
+        <p class="fcapt">Keep the record. See the patterns.</p>
+        <div class="float-cards">
+          <div class="card"><div class="rail-card rail-safety"><div class="sig-head">Cooper’s meals are coming back less finished.</div><div class="sig-sample">2 days below his usual, from his rated meals</div></div></div>
+          <div class="card"><div class="rail-card rail-insight"><div class="sig-body">Beef may be linked to Cooper’s vomiting — all 3 vomits this trial came within 4 hours of a beef treat.</div><div class="sig-sample">3 of 3 vomits · past 19 days · early pattern</div></div></div>
+        </div>
+        <div class="fnote">Real cards, composited from the Home capture</div>
+      </div>
+      <div class="fmeta"><b>1 · Night hero.</b> The one ground exception, spent on the frame everyone sees. Unmissable in a search grid of cream and confetti.</div>
+    </div>
+
+    <div class="fitem">
+      <div class="fframe d-day" id="fframe-2">
+        <p class="fcapt"><b>Two taps, logged.</b> Yesterday’s food is today’s button.</p>
+        <div class="fphone"><div class="phone-scale"><div class="clone-slot" data-clone="screen-2"></div></div></div>
+      </div>
+      <div class="fmeta"><b>2 · Quick-log.</b> The + menu over Home — confirmation, not entry. (Two-tap claim verifies on-device before export.)</div>
+    </div>
+
+    <div class="fitem">
+      <div class="fframe d-day" id="fframe-3">
+        <p class="fcapt"><b>Built for the clinic.</b> The record, not your memory.</p>
+        <div class="fphone"><div class="phone-scale"><div class="clone-slot" data-clone="screen-4"></div></div></div>
+      </div>
+      <div class="fmeta"><b>3 · Vet report.</b> The clinic payoff closes the search card (D-SS3).</div>
+    </div>
+
+    <div class="fitem">
+      <div class="fframe d-day">
+        <p class="fcapt"><b>A month, made scannable.</b> Meals, symptoms, weight.</p>
+        <div class="fphone"><div class="phone-scale"><div class="clone-slot" data-clone="screen-3"></div></div></div>
+      </div>
+      <div class="fmeta"><b>4 · Patterns.</b> Depth for the explorers.</div>
+    </div>
+
+    <div class="fitem">
+      <div class="fframe d-day">
+        <p class="fcapt"><b>Everything, kept.</b> Even the 2am details.</p>
+        <div class="fphone"><div class="phone-scale"><div class="clone-slot" data-clone="screen-5"></div></div></div>
+      </div>
+      <div class="fmeta"><b>5 · History.</b> The beef treat and its vomit, adjacent — frame 1’s claim as raw record.</div>
+    </div>
+
+    <div class="fitem">
+      <span class="optchip">Frame 6 · Option A — round-3 call</span>
+      <div class="fframe d-day">
+        <p class="fcapt"><b>One calm surface.</b> The Signal leads, every day.</p>
+        <div class="fphone"><div class="phone-scale"><div class="clone-slot" data-clone="screen-1"></div></div></div>
+      </div>
+      <div class="fmeta"><b>6A · The full Home.</b> Shows where the hero’s cards actually live.</div>
+    </div>
+
+    <div class="fitem">
+      <span class="optchip">Frame 6 · Option B — round-3 call</span>
+      <div class="fframe d-day">
+        <p class="fcapt"><b>Trial foods, pinned.</b> Right where you log.</p>
+        <div class="fphone"><div class="phone-scale"><div class="clone-slot" data-clone="screen-6"></div></div></div>
+      </div>
+      <div class="fmeta"><b>6B · Trial-aware picker.</b> The category’s only elimination-list-in-the-log-flow; gated on the seed addendum.</div>
+    </div>
+
+  </div>
+</section>
+
+<section>
+  <h2>The ~60% moment — how it reads in search</h2>
+  <p class="secnote">Most visitors decide here and never open the page: icon, name, subtitle, and frames 1–3 at thumbnail size. This is the squint test the set was designed against — the night hero is a night frame precisely so this row is unmissable.</p>
+  <div class="ascard">
+    <div class="asrow">
+      <div class="asicon"><svg viewBox="0 0 16 16"><path fill-rule="evenodd" d="M8 1a7 7 0 1 0 6.9 8.2A5.5 5.5 0 1 1 8 1z"/></svg><i></i></div>
+      <div><div class="asname">Culprit</div><div class="assub">Pet Health Tracker</div></div>
+      <div class="asget">GET</div>
+    </div>
+    <div class="asthumbs">
+      <div class="thumb"><div class="tscale"><div class="clone-slot" data-clone="fframe-1"></div></div></div>
+      <div class="thumb"><div class="tscale"><div class="clone-slot" data-clone="fframe-2"></div></div></div>
+      <div class="thumb"><div class="tscale"><div class="clone-slot" data-clone="fframe-3"></div></div></div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>The direction record (round 2 — ruled; do not react)</h2>
+  <p class="secnote">Direction C is the template (D-SS1, PM); the designed set is the submission set with plain captures as the floor (D-SS2); the vet report holds frame 3 (D-SS3). A and B are kept only for the record. The composed result lives at the top of this page; the caption + keyword pass rides with step 13.</p>
   <div class="dirgrid">
 
     <div class="dircol">
@@ -606,19 +733,6 @@
 </section>
 
 <section>
-  <h2>Round 1 framed pass — superseded by the round-2 directions above (kept for the record)</h2>
-  <p class="secnote">Round 1’s framing treated captions as an afterthought over a generic night card — exactly the “screenshot plus a title” the research argues against. Kept so the delta is visible; do not react to these frames.</p>
-  <div class="framedgrid">
-    <div class="fcard"><span class="fnum">Frame 1</span><p class="fcap">Patterns between foods and symptoms, surfaced.</p><div class="phone-box small"><div class="phone-scale"><div class="clone-slot" data-clone="screen-1"></div></div></div></div>
-    <div class="fcard"><span class="fnum">Frame 2</span><p class="fcap">Log a meal in two taps.</p><div class="phone-box small"><div class="phone-scale"><div class="clone-slot" data-clone="screen-2"></div></div></div></div>
-    <div class="fcard"><span class="fnum">Frame 3</span><p class="fcap">A month of meals, symptoms, and weight — together.</p><div class="phone-box small"><div class="phone-scale"><div class="clone-slot" data-clone="screen-3"></div></div></div></div>
-    <div class="fcard"><span class="fnum">Frame 4</span><p class="fcap">Hand your vet the record, not your memory.</p><div class="phone-box small"><div class="phone-scale"><div class="clone-slot" data-clone="screen-4"></div></div></div></div>
-    <div class="fcard"><span class="fnum">Frame 5</span><p class="fcap">Everything you log, kept — even the 2am details.</p><div class="phone-box small"><div class="phone-scale"><div class="clone-slot" data-clone="screen-5"></div></div></div></div>
-    <div class="fcard"><span class="fnum">Frame 6</span><p class="fcap">Trial foods, pinned where you log.</p><div class="phone-box small"><div class="phone-scale"><div class="clone-slot" data-clone="screen-6"></div></div></div></div>
-  </div>
-</section>
-
-<section>
   <h2>What this mock cannot settle</h2>
   <ul class="notes">
     <li><b>Signal card copy.</b> The two card sentences approximate the deployed phrasing layer’s register (hedged, specific, no alarm). The live cards are whatever <b>generate-signal</b> emits on the seeded data — the capture is the truth, this mock is the layout.</li>
@@ -629,18 +743,28 @@
 </section>
 
 <footer>
-  Round 2 — republished 2026-08-09 over the round-1 URL. Companion docs: <b>docs/store-screenshot-plan.md</b> (the capture spec) + <b>docs/research/2026-08-app-store-creative-landscape.md</b> (the evidence behind the directions). Phone interiors and direction grounds are literal brand tokens by design and do not adapt to this page’s dark mode — they are the artwork, not the page.
+  Round 3 — republished 2026-08-09 over the same URL. Companion docs: <b>docs/store-screenshot-plan.md</b> (the capture spec + rulings) + <b>docs/research/2026-08-app-store-creative-landscape.md</b> (the evidence). The round-1 framed pass was removed this round — git history keeps it. Frame grounds and phone interiors are literal brand tokens by design and do not adapt to this page’s dark mode — they are the artwork, not the page. Typefaces are system stand-ins for Geist/Newsreader; production uses the real faces.
 </footer>
 </div>
 
 <script>
-  document.querySelectorAll('.clone-slot').forEach(function(slot){
-    var src = document.getElementById(slot.dataset.clone);
-    if(!src) return;
-    var c = src.cloneNode(true);
-    c.removeAttribute('id');
-    c.querySelectorAll('[id]').forEach(function(n){ n.removeAttribute('id'); });
-    c.querySelectorAll('.clone-slot').forEach(function(n){ n.classList.remove('clone-slot'); });
-    slot.appendChild(c);
-  });
+  /* Dependency-resolving clone fill: a slot whose source still contains unfilled
+     slots waits for the next pass, so composed frames can be cloned into thumbs
+     regardless of document order. */
+  (function fill(){
+    var progress = false;
+    document.querySelectorAll('.clone-slot:not(.filled)').forEach(function(slot){
+      var src = document.getElementById(slot.dataset.clone);
+      if(!src){ slot.classList.add('filled'); return; }
+      if(src.querySelector('.clone-slot:not(.filled)')) return;
+      var c = src.cloneNode(true);
+      c.removeAttribute('id');
+      c.querySelectorAll('[id]').forEach(function(n){ n.removeAttribute('id'); });
+      c.querySelectorAll('.clone-slot').forEach(function(n){ n.classList.remove('clone-slot'); });
+      slot.appendChild(c);
+      slot.classList.add('filled');
+      progress = true;
+    });
+    if(progress && document.querySelector('.clone-slot:not(.filled)')) fill();
+  })();
 </script>

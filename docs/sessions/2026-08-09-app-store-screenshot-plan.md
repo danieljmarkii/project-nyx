@@ -65,6 +65,16 @@ from the Home capture, never redrawn), tracker row 12 + STATUS updated, mock sta
 frame 6 vs nowhere) — a round-3 template-session call. Next: the C-template build + joint
 caption/keyword pass, paired with step 13.
 
+**Round 3 (same session, PM-requested — "I still don't have a feeling for the end
+result"):** the mock now leads with the full composed set at judging size — night hero +
+four daylight frames + BOTH frame-6 candidates (full Home vs trial picker) side by side as
+the open call — plus a **search-card preview** (icon/name/subtitle + frames 1–3 at
+thumbnail size, the ~60% decision moment). Round-1's framed pass deleted from the page (git
+history keeps it). Composition verified by actual headless-Chromium renders before
+republishing (hero line-break + frame-4 caption-clip fixed; the frame-2 scrim confirmed
+rendering by pixel value, not by eye). Captions remain placeholder-grade pending the joint
+step-13 keyword pass.
+
 ## Decisions taken (provisional, non-PM-blocking)
 
 - **Flags stay off for the demo account** (no Ask pill, no `signal_design_v2`) — screenshots
