@@ -2,7 +2,7 @@ import { ComponentType } from 'react';
 import { ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
-import { FlaskConical, Info, LayoutGrid } from 'lucide-react-native';
+import { FlaskConical, Info, LayoutGrid, Sparkles } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
 import { Card, Header } from '../../components/ui';
 import { useAllowlistFlag } from '../../hooks/useAppConfig';
@@ -57,6 +57,11 @@ function presentationFor(key: AllowlistFlagKey): { Icon: IconComponent; onHint?:
         onHint:
           'It’s on. If it isn’t on your home screen yet, touch and hold an empty area, tap +, then find Culprit and add it.',
       };
+    case 'signal_design_v2':
+      // No on-state hint: the redesign takes effect on Home the moment it's on —
+      // there's nothing for the owner to place or do (unlike the widget). A distinct
+      // glyph just helps the two betas read apart on the shelf.
+      return { Icon: Sparkles };
     default:
       return { Icon: FlaskConical };
   }
