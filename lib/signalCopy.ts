@@ -440,7 +440,7 @@ export function isNewWorsening(finding: SignalFinding): finding is SymptomWorsen
 // expanded evidence now would split it from the still-"after none" card sentence, and
 // `evidenceText` is shared flag-off/on so an ungated edit would break FR-FLAG-2. The
 // redundancy is dark behind the flag until then; when SR-4 lands, the card a11y label
-// must also carry the `New` fact the chip holds (B-725).
+// must also carry the `New` fact the chip holds (B-727).
 export function worseningNewSampleLine(finding: SymptomWorseningFinding): string {
   return finding.trigger === 'more_days'
     ? `${count(finding.currentDays, 'day', 'days')} this week`
