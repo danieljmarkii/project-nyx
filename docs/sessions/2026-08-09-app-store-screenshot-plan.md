@@ -28,6 +28,13 @@
 
 Tracker row 12 → 🔵 Plan ready; B-269 row updated; step 12 body now points at the plan.
 
+**Mock round 1 (same session, PM-requested):** `docs/culprit-store-screenshot-mockups.html`,
+published as artifact 📸 — the six frames hand-drawn at iPhone-16-Pro-Max logical size on the
+Cooper demo states (theme tokens verbatim; Geist/Newsreader approximated by system faces),
+plus the caption-framed polish variants on the brand-night ground. The page names its own
+limits: Signal/report copy approximates the deployed phrasing/render layers; the capture is
+the truth, the mock is the layout.
+
 ## Decisions taken (provisional, non-PM-blocking)
 
 - **Flags stay off for the demo account** (no Ask pill, no `signal_design_v2`) — screenshots

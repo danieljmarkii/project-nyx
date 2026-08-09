@@ -3,6 +3,7 @@
 **Created:** 2026-08-09 · **Owner:** PM captures on-device; this doc is the shot list + caption copy
 **Guide:** [`docs/app-store-submission-guide.md`](./app-store-submission-guide.md) step 12 · **Backlog:** B-269 · **Demo account:** [`docs/nyx-demo-account-requirements.md`](./nyx-demo-account-requirements.md) (B-271 — the capture prerequisite)
 **Status:** 🌱 Plan ready. Capture is gated on guide step 11 (the Cooper demo seed) — every frame below is staged on that account.
+**Mock:** [`docs/culprit-store-screenshot-mockups.html`](./culprit-store-screenshot-mockups.html) (round 1, artifact 📸) — a pre-capture visualization of the six frames, plain + caption-framed. The mock illustrates; this plan and the shipped app are the authority.
 
 ---
 
