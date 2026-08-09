@@ -2,7 +2,7 @@
 
 **Version:** v2 · **Created:** 2026-07-11 · **Last Updated:** 2026-08-09 · **Owner:** PM, with Data Scientist / Trust & Safety / Dr. Chen / Designer / QA lenses
 **Backlog:** B-271 · **Guide:** [`docs/app-store-submission-guide.md`](./app-store-submission-guide.md) step 11 · **Register:** [`docs/app-store-readiness.md`](./app-store-readiness.md) Tier 2
-**Status:** v1 decisions **D1–D7 ratified 2026-07-11 (#336)**. This **v2 (2026-08-09)** refreshes the plan to the app as actually shipped — the diet-trial lifecycle went from a zero-row table to a full feature, `food_items` went per-account, and a dozen new surfaces exist. The **v2 deltas (D5 inversion, D8–D10, the tiered scope menu)** await PM ratification before PR 1. The seed script (PR 1) and reviewer notes (PR 2) are **not yet built**.
+**Status:** v1 decisions **D1–D7 ratified 2026-07-11 (#336)**. This **v2 (2026-08-09)** refreshes the plan to the app as actually shipped — the diet-trial lifecycle went from a zero-row table to a full feature, `food_items` went per-account, and a dozen new surfaces exist. The **v2 deltas (D5 inversion, D8–D10, the tiered scope menu)** await PM ratification before PR 1. §12 now carries the detailed **PR-by-PR + live-execution plan**. The seed (PR 1) and reviewer notes (PR 2) are **not yet built**.
 
 ---
 
@@ -206,19 +206,56 @@ Detectors read recent windows (intake = 14d, worsening = 7d, chronicity = 56d, d
 
 ---
 
-## 12. Build plan (phases → PR / PM actions)
+## 12. Build plan — PR-by-PR + live-execution runbook
 
-The work is a small committed-code part + a PM-gated live-execution part. The account-creation dependency (B-152) is now essentially cleared — email confirmation is ON and SMTP is live/verified — so the live-seed phase is unblocked once the account exists.
+The work is **two committed-code PRs** + a **PM-gated live-execution runbook**. Note what it is *not*: **a data seed, not a migration.** Nothing goes in `supabase/migrations/`; the seed writes rows to existing tables and is run with the service role via the Supabase MCP `execute_sql`, never `apply_migration`. The account-creation dependency (B-152) is cleared (email confirmation ON, SMTP verified), so the only gate on the live phase is the account existing.
 
-| Phase | Type | What |
-|---|---|---|
-| **A — Story design** | ✅ this doc (v2) | Pet, event sequence, findings validated against real thresholds; now against the shipped diet-trial schema. |
-| **B — Seed script** | **[PR]** | `scripts/seed-demo-account.sql` (parameterized, idempotent, date-relative) writing the **real lifecycle** — own `food_items`, `diet_trials` + dated `diet_trial_foods` + `target_protein`, the event sequence — + a dry-run validation (or a `detection.ts` unit-style check) proving ① and ② fire **and** that the off-diet beef is flagged while the venison staple washes out, **before** touching a live account. `adversarial-reviewer` mandatory on the "staple washes out / never reassures" property. |
-| **C — Reviewer notes** | **[PR]** | `docs/app-review-notes.md` per §7 (nyx-voice, Culprit-branded). Can ride Phase B's PR or its own. |
-| **D — Live seed + generate** | **[PM + Claude]** | PM creates the account via real signup + a pet (email confirm ON), hands over the email. Claude runs the seed via Supabase MCP, POSTs `generate-signal`, runs `analyze-vomit` on the photo'd vomit (Tier 2). |
-| **E — Verify** | **[Mixed]** | Confirm ① and/or ② fire (`ai_signals.findings` non-empty); the diet-trial card + Trend compliance render on-device from the mirror; vet report renders; Timeline/Patterns leave empty states; `vet-report-cold-read` on the rendered report. Re-seed + re-generate right before Submit. |
+**At a glance:** PR 1 (seed + validation) → PR 2 (reviewer notes) → live runbook (steps 1–6). Phase A (story design) is done — it's this doc.
 
-**Dependencies:** **needs** a created account (B-152 email-confirm ON — **done**, SMTP verified); **benefits from** a TestFlight build (step 10) + B-054 hydration (done) + the B-417 mirror (done); **unblocked by** B-272 (ASC record, done). Feeds step 12 (screenshots are taken on this account). **Residual PM dashboard item that touches the reviewer:** auth email templates still say "Nyx" (hardening audit §B7) — a reviewer creating their own account would see it; not a demo-account blocker but same submission window.
+### 12.1 The one implementation decision that shapes PR 1 — single source of truth (resolves S4)
+
+The whole point of this plan is that the Signal fires **honestly and verifiably** (§3.3). A seed whose validation drifts from what it actually writes would defeat that. So PR 1's structure is a real choice:
+
+- **Recommended — one declarative story module.** A pure-data TypeScript module (`scripts/demo/demoStory.ts` — no I/O, no runtime-specific imports) is the single source of truth for the story: the pet, the demo's own `food_items`, the `diet_trials` + dated `diet_trial_foods` + `target_protein`, and the date-relative event/meal/weight/stool sequence — parameterized by `(userId, timezone, now)`. Three consumers import the *same* module: the SQL emitter, the Deno detection test, and the jest off-diet test. Drift is impossible by construction.
+- **Lighter — pure `.sql` + a parallel fixture.** A hand-written `scripts/seed-demo-account.sql` plus a separate detection fixture. Simpler to eyeball, but the two can silently diverge — exactly the failure mode §3.3 exists to prevent. If chosen, add a guard test that diffs the two shapes.
+
+**Recommendation: the declarative module** — it's what makes the adversarial gate meaningful. The cross-runtime wrinkle (detection is Deno; `lib/dietTrial.ts` is jest) is handled by keeping the module pure-data so both runtimes import it; PR 1 owns picking a location both test roots reach.
+
+### 12.2 Committed-code PRs
+
+**PR 1 — Demo story + seed emitter + honest-firing validation** · `[PR]` · **adversarial-mandatory**
+- **Goal:** produce the Tier-1 seed *and* prove, before any live account is touched, that it fires the two findings honestly.
+- **Deliverables:** `scripts/demo/demoStory.ts` (the declarative story, parameterized + date-relative); `scripts/demo/emitSeedSql.ts` (renders it → idempotent, `pet_id`-scoped SQL, children cleared before parents); a **Deno** validation under `supabase/functions/generate-signal/` that runs the story through `detection.ts` and asserts **① beef↔vomit fires (Early)**, **② `intake_decline` (`consecutive_low`) fires**, and **the venison staple washes out**; a **jest** validation that `lib/dietTrial.ts` flags each beef feeding off-diet and the venison in-set.
+- **Gates:** `adversarial-reviewer` **mandatory** — must state the counterexample it tried against "staple washes out / never reassures on absence" and why it held (the DoD adversarial line; this is the nearest-preceding-meal class of bug the gate exists to catch) + `code-reviewer`. No `nyx-voice` (no owner-facing copy).
+- **AC:** both validations pass in CI; the emitter is **idempotent** (re-emit → one clean copy) and **date-relative** (findings stay in-window for any `now`); the seed references only the demo user's own `food_items` (D5); it is not a migration.
+- **Depends on:** nothing external — runs entirely offline against the engine. **This is why PR 1 can be built now**, in parallel with the consultant's Tier 2/3 call.
+
+**PR 2 — Reviewer notes** · `[PR]` · can ride PR 1 or ship standalone
+- **Goal:** the doc the PM pastes into App Store Connect.
+- **Deliverables:** `docs/app-review-notes.md` per §7 — what Culprit is, where to look, the "not a diagnosis / never reassures" framing (Guideline 1.4.1), the camera + notification permission notes, the out-of-scope list, and **placeholder credentials only** (D4).
+- **Gates:** `nyx-voice` + `clinical-guardrails` (no reassuring phrasing).
+- **AC:** Culprit-branded; no real credentials; nyx-voice-clean.
+
+### 12.3 Live-execution runbook (PM-gated — not PRs)
+
+Runs once the account exists; the seed steps re-run before Submit (§8).
+
+1. **[PM] Create the demo account** via the real signup flow (email confirmation ON) and create Cooper through onboarding, so `onboarding_completed_at` is set and the reviewer lands in a finished account. Set the credentials (email convention + password → **only in ASC**, D4) and hand Claude the demo email.
+2. **[Claude] Resolve the demo `user_id` / `pet_id`** (`execute_sql` lookup by email), then **run the emitted seed** scoped to that `pet_id` via the Supabase MCP (service role). Re-run is safe (idempotent).
+3. **[Claude/PM] Tier-2 photo + AI read:** upload one vomit image to the event-attachments bucket, insert the `event_attachments` row, and produce the `analyze-vomit` read on it (`analyze-vomit` is `verify_jwt=true`, so this runs under the demo user's session — Claude with the demo password, or the PM logs one vomit-with-photo in-app, which triggers the read naturally). The read must not reassure.
+4. **[Claude] POST `generate-signal`** for the demo pet (D3) so the Home Signal cache is populated (not "still building").
+5. **[Mixed] Verify (Phase E):** `ai_signals.findings` non-empty (① and/or ②); the diet-trial card + Trend compliance render on-device from the mirror; the vet report renders over a real range; `vet-report-cold-read` → CLINIC-READY; Timeline/Patterns populated; the Tier-3 surfaces show their designed empty/neutral states. Spot-check on the reviewer's install.
+6. **[Claude] Re-seed + re-`generate-signal` right before Submit** (and again if review slips) so the recent-window findings and the 24h Signal cache are fresh.
+
+### 12.4 Prerequisites & dependencies
+- **Cleared:** B-152 (email confirm ON, SMTP verified) · B-054 hydration · B-417 trial mirror · B-272 (ASC record).
+- **PM dashboard item in the same submission window (not a demo blocker, but a reviewer sees it):** auth email templates still say "Nyx" (hardening audit §B7) — rename before a reviewer creates their own account. Also delete the `+smtp1` test user (STATUS housekeeping).
+- **Feeds:** submission-guide step 12 (store screenshots are captured on this account).
+
+### 12.5 Sequencing & parallelism
+- **PR 1 is unblocked now** and independent of the consultant's Tier 2/3 decision — Tier 1 is the floor regardless. Build it in parallel with the consultant review.
+- **PR 2** can be written any time (no code dependency).
+- The **live runbook** waits only on the PM creating the account; everything before it is offline.
 
 ---
 
