@@ -2,7 +2,7 @@
 
 _Track ID: filed as B-718; renumbered to **B-721** at the 2026-08-07 wrap (B-718 was taken on `main` first by the Vet Files round-3 row)._
 
-**Version:** 1.1 (**FINALIZED** — build-ready for rungs 1+2) · **Date:** 2026-08-07 (finalized same day; v1.1 adds FR-FLAG) · **Owner:** Sr. Product Designer, ratified by PM through mock rounds 1–2.1
+**Version:** 1.2 (**FINALIZED** — build-ready for rungs 1+2; v1.2 folds in the SR-6 copy/safety rulings) · **Date:** 2026-08-09 (v1.2 — SR-6, PM-vetoable: B-728 §2 S1 `New`-chip carve + §11 AC clarification; §5.5 SR-5 med-line/density rendering contract for B-733. v1.1 2026-08-07 adds FR-FLAG) · **Owner:** Sr. Product Designer, ratified by PM through mock rounds 1–2.1
 **Provenance:** `docs/sessions/2026-08-06-signal-home-design-exploration.md` (interviews, research, the team review, the Change Contract negotiation, every PM ruling) + `docs/culprit-signal-home-mockups.html` (round 2.1, the design authority — artifact 🌒, same-URL across rounds).
 **This doc is the canonical spec for the Signal/Home surface** (R2-6d absorption ruling): B-284's N4/N7 narrow to pointers here (Tier-2 edit pending, §10). It composes with — never modifies — `docs/nyx-ai-signal-requirements.md` (the engine/spec substrate; its §3.2/§11f per-type-presentation mandate is what rung 1 finally executes).
 
@@ -33,7 +33,7 @@ Every decision below is PM-ruled (mock rounds 1–2.1, 2026-08-06/07) or PM-dele
 
 ## 2. The spine — S1–S10 (ratified; binding on every PR here)
 
-1. **The register drop.** Safety cards stay austere — text, rail, sample line; no evidence graphic on the card face, no motion, no decorative ground. As benign cards get richer, plainness itself signals severity.
+1. **The register drop.** Safety cards stay austere — text, rail, sample line, and at most one meta-row chip: the `New` novelty tag (§3.2), which is a text flag, not an evidence visual. No evidence strip or graphic on the card face, no motion, no decorative ground. As benign cards get richer, plainness itself signals severity. _(B-728 carve, SR-6 2026-08-09 — PM-vetoable: the `New` chip is the one element a safety face may add, added for the worsening safety card SR-3 shipped; the mock's S1 "count-anchored chip" wording predates the v1.1 pair-chip cut, so the surviving chip is novelty-anchored, not count-anchored. Plainness still signals severity — a novelty tag is not the evidence graphic S1 bars.)_
 2. **The control-side rule.** No evidence visual ships numerator-only. If the control margin doesn't fit on the card, the visual moves to the expanded state where it does.
 3. **No borrowed authority.** No composite scores, contributor bars, meters, or percentages. The sample line is the honest confidence display.
 4. **No hero numbers.** The sentence stays the headline; counts stay subordinate with their qualifiers attached.
@@ -79,6 +79,12 @@ Negotiated with Dr. Chen under the PM's consumer-centric directive (full negotia
 **5.2 Receded chrome.** Section label + footer doorway drop one step (tertiary → the dimmer tier used in the mocks); hairlines unchanged. Token-level change only.
 **5.3 The acknowledgment state.** Between a fresh event log and the debounced regeneration settling, the Signal card shows one quiet line above the (still readable) findings: **"Noted — updating {pet}'s picture…"** No spinner, no skeleton, findings never blank. Clears when the regen cache lands (the existing `signalFindingsSignature` change) or on a bounded timeout (fail-quiet to the prior state; never an error surface). Copy is nyx-voice-locked (§9).
 **5.4 The med-on-board context line.** On correlation + timing cards when a medication course is active in the finding window: one slate-toned line — **"During an active {drug} course — {n} doses logged."** Stated as fact, never as explanation; no verdict adjacency. **Server:** the payload gains the med-on-board facts (drug label, dose count) computed from data `generate-signal` already reads for its confounder pass — **no new queries of substance, no detection change**; additive payload fields only. Ships with `densityComparable` in the same function update (SR-4), deployed per the edge-deploy runbook with the standard verification.
+
+**5.5 SR-5 rendering contract for the med line + density copy (B-733, ruled by the SR-6 copy/safety pass 2026-08-09 — PM/Dr. Chen vetoable).** The server (SR-4) supplies facts; SR-5 composes the §9 sentences and MUST handle three things the server deliberately does not:
+- **Plural.** `doseCount` can be 1, so the med line pluralizes: `count(n, 'dose', 'doses')` — never "1 doses". §9's row is written `{n} dose[s]` for this reason.
+- **Screen the composed line, then fail-quiet.** A drug label is owner free-text passed verbatim (a name is data, not copy — never mutate it). The client runs the **composed** med line through `hasBannedSignalVocabulary` (exported from `phrasing.ts`); a `%` in a name like "Baytril 2.5%" trips the §3.5 percent screen, so on failure SR-5 **omits the med line** (fail-quiet). The line is pure context (§5.4), so dropping it loses nothing safety-relevant — the same fail-safe-drop the cross-pet banner uses (`validateBannerPhrasing`). Never render an unscreened composed line; never strip the `%` from the name.
+- **Scope the density-withheld line to what the gate sees.** The gate fires on days-with-**any**-log density; the §9 line must not imply it has verified symptom-coverage (it can't see a symptom-only logging lapse — B-733 item 3 / B-732). The line ties its uncertainty to the log-day measure it actually has ("fewer log-days ⇒ a lower count may be fewer logs, not fewer episodes"), paired with the disclosure line's printed denominators. **Final wording is Dr. Chen's call at SR-5 build** — do not ship the vaguer "less to log" phrasing without his sign-off. This is a copy-precision refinement, not a safety inversion: even in the gate's blind spot the reflection renders a bare count + its standing "not a verdict on how {pet} is doing" disclaimer and is guardrail-screened against reassurance vocabulary, so it never asserts wellness (§9 / clinical-guardrails).
+- **`{n} = 1` note.** A single logged dose in the 60-day window still renders "During an active {drug} course — 1 dose logged." Accepted (present tense + "logged" keeps it honest — states what was logged, not adherence), but flagged for the SR-5 build: if "an active course" over-reads at n=1, that is a threshold call for the PM (adjacent to B-732), not a copy fix.
 
 ## 6. The empty states (rung-1 ACs, not polish)
 
@@ -141,7 +147,7 @@ SR-1/SR-2 are disjoint and parallel-safe (separate sessions/branches; the one co
 ## 11. Acceptance criteria (QA-enforced per PR; verified flag-on AND flag-off)
 
 - FR-FLAG-1..3 hold on every PR: no surface in this track renders outside `signal_design_v2`; flag-off is byte-identical (snapshot-pinned); SR-0 applied before any UI merge. FR-FLAG-4's composition is test-asserted when the B-712 shelf lands.
-- Every receipt obeys S2 (control side present at the layer it fits) and S10 (no strip duplicating its sentence); safety card faces carry no strip/graphic (S1, snapshot-pinned).
+- Every receipt obeys S2 (control side present at the layer it fits) and S10 (no strip duplicating its sentence); safety card faces carry no evidence strip/graphic (S1, snapshot-pinned) — the `New` meta chip (§3.2) is a text novelty tag, not a strip/graphic, and is the one element a safety face may add (B-728).
 - A→C degradation fires at the cap; dots never overlap illegibly (fixture at cap±1).
 - Change clauses present in every change-capable template (test-pinned); no banned vocabulary (regex screens); a11y labels are full sentences.
 - The falling-comparison density gate: withholds when incomparable, never withholds a rising safety comparison (property-style fixtures both directions).
