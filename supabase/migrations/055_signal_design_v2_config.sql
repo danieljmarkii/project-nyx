@@ -1,0 +1,82 @@
+-- ============================================================
+-- signal_design_v2 — seed the Signal/Home design-uplift rollout flag
+-- (Signal/Home design uplift / B-721, PR SR-0)
+-- See: docs/nyx-signal-home-requirements.md §7 (FR-FLAG-1..5, the flag +
+--      rollout requirement), §8 (the SR-0..SR-6 PR plan), and §0 SD-8/SD-10
+--      (ships dark behind this flag; enablement flows through the beta workflow).
+-- ============================================================
+-- The Signal/Home uplift (receipts, the register, the empty states) ships DARK
+-- behind one allowlist flag so every client PR (SR-1..SR-6) lands invisible and
+-- the redesign can bake on a hand-picked cohort before it reaches anyone else.
+-- This migration seeds that single eligibility flag. It is the SR-0 gate the whole
+-- track queues behind — FR-FLAG-3: SR-0 merges and is applied live BEFORE any UI
+-- PR merges.
+--
+--   signal_design_v2   Eligibility for the redesigned Signal/Home surface.
+--                      Resolved client-side by resolveAllowlistFlag
+--                      (lib/appConfig.ts) against the caller's uid. Flag-off =>
+--                      the shipped Signal surface renders byte-identical
+--                      (FR-FLAG-2); flag-on => the uplift renders. No partial
+--                      adoption — a screen renders one surface or the other,
+--                      never a mix (FR-FLAG-1).
+--
+-- CLIENT-RENDER-ONLY (spec §7, the "Beta-shelf composition" paragraph) — the ONE
+-- difference from widget_enabled
+-- (054): this flag gates only what the CLIENT draws. Unlike the widget (whose
+-- flag gates server-computed data) and unlike Ask (whose flag gates an Edge
+-- Function), the uplift's one server change — SR-4's additive `generate-signal`
+-- payload fields (med-on-board facts + `densityComparable`) — is computed
+-- UNIFORMLY for every account and is flag-independent: old clients ignore the new
+-- fields, and the density gate only ever WITHHOLDS a comparison (safe in both
+-- worlds — Dr. Chen's fail-toward-escalation direction). So there is deliberately
+-- NO server-side registration of this key (supabase/functions/_shared/flags.ts is
+-- a generic resolver and needs no per-key entry); the client gate is sound under
+-- the widget precedent (the B-712 "server-cost betas gate server-side" rule is
+-- checked in §7 and does not bite here).
+--
+-- THE ALLOWLIST SHAPE (spec §7, B-712 / §0 D2): reuses the experimental-flag
+-- primitive seeded for Ask (037) and the widget (054) verbatim —
+--   {"enabled": bool, "allowlist": ["<user-uuid>", …]}
+-- Resolution (already implemented, client-side): enabled=true => on for everyone;
+-- else on iff the caller's uid is in allowlist; malformed/absent => fail CLOSED
+-- (off). No new mechanism, no new table, no new column, no new policy — app_config
+-- already exists (030) with its read-only-to-authenticated RLS, which this row
+-- inherits unchanged.
+--
+-- SHIP-DARK (FR-FLAG, default nobody): {"enabled": false, "allowlist": []} means
+-- the uplift is eligible for no one. Creating this row changes nothing an owner can
+-- see. Cohort enablement is a later, recorded config UPDATE (an app_config write,
+-- PM action — the same as the widget's), never a deploy side effect, and
+-- deliberately NOT baked into this seed — the 037/054 lesson: a re-applied seed
+-- must never reset a live allowlist. Retirement is a removal PR on an explicit PM
+-- GA call (FR-FLAG-5), never silent.
+--
+-- Scope: this PR is the SEED HALF only (one app_config row), isolated per the
+-- CLAUDE.md migration-isolation rule. The two-line client registration in
+-- lib/appConfig.ts (ALLOWLIST_FLAG_KEYS + ALLOWLIST_FLAGS_UNSET, + its unit tests)
+-- rides this same PR — it is not schema, but the seed is inert without it (the flag
+-- can't even be read: extractAllowlistFlags picks only known keys, and
+-- useAllowlistFlag is typed to the registered union) and it touches no other
+-- feature (same pattern as 054 PR 1).
+--
+-- Migration Safety Pre-flight:
+--   Destructive:  n  (purely additive — 1 new seed row in an existing table;
+--                     no column, type, table, row, or policy is dropped,
+--                     renamed, retyped, or altered.)
+--   Rollback:     DELETE FROM app_config WHERE key = 'signal_design_v2';
+--   Backfill:     N/A — one brand-new config row; no existing data is read or
+--                 written.
+--   Affected tables: app_config (INSERT only). Row-count sanity check before
+--                 applying:
+--                   SELECT key FROM app_config WHERE key = 'signal_design_v2';
+--                   -- expect: 0 rows (the key does not exist yet)
+-- ============================================================
+
+-- ON CONFLICT DO NOTHING makes the seed idempotent AND safe: if this migration is
+-- ever re-applied after the flag has been flipped/allowlisted in prod, it
+-- preserves the live value rather than resetting it to the shipped-dark seed.
+-- (Same discipline as the 030/037/054 seeds.)
+
+INSERT INTO app_config (key, value) VALUES
+  ('signal_design_v2', '{"enabled": false, "allowlist": []}'::jsonb)
+ON CONFLICT (key) DO NOTHING;

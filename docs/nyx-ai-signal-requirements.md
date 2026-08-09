@@ -2,7 +2,7 @@
 
 **Status:** FINALIZED (rev 6) — all PM decisions resolved; build-ready
 **Owner build step:** Step 10 (AI Signal Edge Function)
-**Created:** 2026-05-30 · **Revised:** 2026-05-30 (rev 6, per PM review)
+**Created:** 2026-05-30 · **Revised:** 2026-05-30 (rev 6, per PM review) · **Amended:** 2026-08-08 (§11f marked resolved by `docs/nyx-signal-home-requirements.md`, B-721)
 **Supersedes:** the hardwired empty-state placeholder in `components/home/SignalZone.tsx`
 
 > Output of the 2026-05-30 product-team design session + PM review (revs 2–6). Read
@@ -15,7 +15,7 @@
    **§7 table adopted as v1 defaults, pressure-tested against the PM's real logging for cat Nyx**; (c)
    visible-card cap → **start ~3–4, with a high-priority override** (never withhold a safety insight
    to honor the cap — folded into §3.2 + Principle 3); (d) Principle 3 → **approved + canonical docs
-   updated**; (f) per-type presentation → design-phase task; (g) weak *clinical* pull surface →
+   updated**; (f) per-type presentation → **resolved 2026-08-07 by `docs/nyx-signal-home-requirements.md`** (was a design-phase task); (g) weak *clinical* pull surface →
    **punted to backlog B-046**, while v1 stays open to weak *benign* preference insights on the home.
 
 ### What changed in rev 5 (PM review)
@@ -419,9 +419,11 @@ per card; confidence tag is a short calm label.
 
 ## 11. Decisions (finalized 2026-05-30) + remaining design-phase items
 
-All PM-facing open decisions are now **resolved**. Two items below remain as
-*design-phase tasks* (b, f) — they don't block build start; they're tuned/decided
-during the build, not before it.
+All PM-facing open decisions are now **resolved**. One item below remains a
+*design-phase task* (b — threshold tuning against live data); item (f) (per-type
+presentation) was **resolved 2026-08-07** by `docs/nyx-signal-home-requirements.md`
+(see below). Neither blocks build start; they're tuned/decided during the build,
+not before it.
 
 - **(a) Tap-to-expand evidence — DECIDED: in v1.** Each card is tappable to reveal the
   evidence behind it (§3.2). PM stretched for it in v1; the engine already carries the
@@ -437,12 +439,16 @@ during the build, not before it.
 - **(d) Principle 3 revision (§3.1) — DECIDED: APPROVED.** Canonical Principle 3 updated in
   CLAUDE.md and `design-principles.md` 2026-05-30.
 - **(e) Build timing — DECIDED:** land this spec, build in a dedicated session (B-045).
-- **(f) Per-type card presentation (§3.2) — design-phase task** (not a now-decision). Led by the
-  Designer + Data Scientist; **Dr. Chen** consulted (does a format — esp. a graph — read as
-  clinically useful vs alarming?) and **Jordan + Sam** consulted (is each card legible and worth
-  returning for?). Decides which types render as sentence vs stat vs graph + the shared visual
-  language that keeps mixed formats reading as one calm surface. Resolved in the design pass at/before
-  build Step 3. _All home-insight design work consults this full set, not the Designer alone._
+- **(f) Per-type card presentation (§3.2) — RESOLVED 2026-08-07 by `docs/nyx-signal-home-requirements.md`**
+  (was a design-phase task; not a now-decision at rev 6). The Signal/Home design uplift (B-721) ran the
+  design pass this item reserved — Designer-led, with Dr. Chen (does a format read clinically useful vs
+  alarming?) and Jordan + Sam (is each card legible and worth returning for?) all consulted through mock
+  rounds 1–2.1. Its ratified output is the **S10-judged receipt system** (spec §4): which finding types
+  render as sentence vs stat/receipt (Shapes A dot-lane + C stacked-compare, degrading A→C at the
+  legibility cap) and the shared visual language that keeps mixed formats reading as one calm surface —
+  built per-type into the `INSIGHT_RENDERERS` seam this spec's §3.2/§11f called for. That spec is now
+  canonical for the Signal/Home surface; this substrate is unchanged (composes, never modified).
+  _All home-insight design work consults this full set, not the Designer alone._
 - **(g) Weak *clinical*-correlation opt-in pull surface (§6) — DECIDED: punt + backlog.** Not v1.
   Logged as its own backlog item (B-046) for a future "patterns we're watching" opt-in explore
   view (off by default, never on the home, never concern-framed). **v1 explicitly stays open to weak
