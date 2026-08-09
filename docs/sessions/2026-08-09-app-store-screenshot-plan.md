@@ -1,7 +1,7 @@
 # App Store screenshot plan (B-269, guide step 12)
 
 **Date:** 2026-08-09
-**PR:** shipped via #613 (draft)
+**PR:** shipped via #619 (draft)
 **Track:** App Store submission runway · guide step 12 · `docs/app-store-submission-guide.md`
 
 ## What shipped
