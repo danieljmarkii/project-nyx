@@ -28,6 +28,7 @@ import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-
 import {
   detectSignals,
   detectCoverage,
+  computeReflectionDensity,
   doseToMedicationWindow,
   DEFAULT_CONFIG,
   CORRELATION_SYMPTOM_TYPES,
@@ -45,7 +46,18 @@ import {
   type OccurredAtConfidence,
   type IncidentAnalysisInput,
   type DetectionInput,
+  type ReflectionDensity,
+  type MedOnBoardContext,
 } from './detection.ts'
+// SR-4 (B-721 §5.4) — the medication-on-board payload decoration. Pure, offline-tested
+// (medContext.test.ts); attaches the additive med context + carries the density onto the
+// findings AFTER detection, so the engine's output is untouched.
+import {
+  computeMedOnBoard,
+  decorateFinding,
+  resolveDrugLabel,
+  type MedDoseFact,
+} from './medContext.ts'
 // B-422's effective end, from the ONE module that owns it. Imported across the
 // function boundary exactly as `./protein.ts` already re-exports `lib/protein.ts`
 // — a second copy of `start + target + grace` living here is the failure mode.
@@ -351,21 +363,32 @@ function mapArrangementRows(rows: ArrangementRow[]): FeedingArrangement[] {
 // Both run with the caller's JWT, so medications_owner / medication_administrations_owner
 // RLS scope them to the owner's pets — no service role, like every other read here.
 
-interface RegimenRow {
+export interface RegimenRow {
+  // SR-4 (§5.4): `id` + `drug_name` are read so an administered dose linked to this regimen
+  // can be named ("{drug} course"). drug_name is NOT NULL on the regimen (migration 020),
+  // the reliable owner-facing label; both are inert to the confounder pass.
+  id: string
+  drug_name: string
   medication_item_id: string | null
   started_at: string | null // DATE; parses to that day's UTC midnight = start-of-day (correct span start)
   ended_at: string | null // DATE; the drug is on board through the WHOLE day → end-of-day-inclusive below
 }
 
+type MedItemJoin = { generic_name: string | null; brand_name: string | null }
 type MedAdminJoin = {
+  // SR-4 (§5.4): `medication_id` links the dose to its regimen (→ drug_name); the nested
+  // `medication_items` names an ad-hoc / regimen-unlinked dose (brand, else generic). Both
+  // are label sources for the med-on-board context, inert to the confounder pass.
+  medication_id: string | null
   medication_item_id: string | null
+  medication_items: MedItemJoin | MedItemJoin[] | null
   adherence: string | null
   // B-156 PR C1: the meal/treat event this dose rode inside (a pill in a Delectable), or null
   // for a standalone dose. Migration 023; nullable FK → events(id). Used to (a) attribute the
   // vehicle food to the drug and (b) reconcile an in-doubt combo dose's on-board status (B-174).
   paired_event_id: string | null
 }
-interface MedDoseEventRow {
+export interface MedDoseEventRow {
   occurred_at: string
   medication_administrations: MedAdminJoin | MedAdminJoin[] | null
 }
@@ -414,6 +437,49 @@ function mapMedicationWindows(
     if (w) windows.push(w)
   }
   return windows
+}
+
+// SR-4 (§5.4) — the administered, NAMEABLE dose facts for the med-on-board context, built
+// from the SAME regimen + dose rows the confounder pass reads. It reuses doseToMedicationWindow
+// as the on-board filter, so a fact here is EXACTLY a dose the engine treats as on-board
+// (missed / refused / the B-174 in-doubt combo dose all dropped identically — one definition,
+// never a second). Each surviving dose is named regimen-first (medication_id → the regimen's
+// NOT-NULL drug_name), else by its library item (brand, else generic). A dose that names
+// neither is EXCLUDED (it cannot fill "{drug}" — never a blank or guessed name). Empty ⇒
+// computeMedOnBoard returns null ⇒ no context line, byte-identical to pre-SR-4.
+export function mapMedDoseFacts(
+  regimens: RegimenRow[],
+  doseEvents: MedDoseEventRow[],
+  mealIntakeById: Map<string, IntakeRating | null>,
+): MedDoseFact[] {
+  const drugNameByRegimenId = new Map<string, string>()
+  for (const r of regimens) {
+    if (r.id && r.drug_name) drugNameByRegimenId.set(r.id, r.drug_name)
+  }
+  const facts: MedDoseFact[] = []
+  for (const e of doseEvents) {
+    const admin = first(e.medication_administrations)
+    if (!admin) continue
+    const pairedVehicleIntake = admin.paired_event_id
+      ? (mealIntakeById.get(admin.paired_event_id) ?? null)
+      : null
+    const onBoard = doseToMedicationWindow({
+      medicationItemId: admin.medication_item_id,
+      occurredAt: e.occurred_at,
+      adherence: admin.adherence,
+      pairedVehicleIntake,
+    })
+    if (!onBoard) continue // not administered / not on board — never named as a logged dose
+    const item = first(admin.medication_items)
+    const label = resolveDrugLabel(
+      admin.medication_id ? drugNameByRegimenId.get(admin.medication_id) : undefined,
+      item?.generic_name,
+      item?.brand_name,
+    )
+    if (!label) continue // unnameable — excluded from the context
+    facts.push({ occurredAt: e.occurred_at, drugLabel: label })
+  }
+  return facts
 }
 
 // `pairedEventIds` = the set of meal/treat event ids that are the VEHICLE for a live (non-soft-
@@ -715,14 +781,16 @@ const handler = async (req: Request): Promise<Response> => {
       // completed course is a valid historical confounder, and the [from,until] overlap with
       // the bounded symptom set is resolved inside detection. Status is irrelevant to the
       // span — started_at + ended_at fully define it (active → null end → through now).
-      supabase.from('medications').select('medication_item_id, started_at, ended_at').eq('pet_id', petId),
+      supabase.from('medications').select('id, drug_name, medication_item_id, started_at, ended_at').eq('pet_id', petId),
       // Administered medication dose events (B-117 PR 9) — point exposures at occurred_at, the
       // dominant signal today since logged doses are regimen-unlinked (B-135). Same shape as the
       // meals join; soft-deleted + out-of-lookback rows excluded here (the engine's contract).
       // missed/refused doses are filtered in mapMedicationWindows (doseToMedicationWindow).
       supabase
         .from('events')
-        .select('occurred_at, medication_administrations(medication_item_id, adherence, paired_event_id)')
+        .select(
+          'occurred_at, medication_administrations(medication_id, medication_item_id, adherence, paired_event_id, medication_items(generic_name, brand_name))',
+        )
         .eq('pet_id', petId)
         .eq('event_type', 'medication')
         .is('deleted_at', null)
@@ -809,11 +877,11 @@ const handler = async (req: Request): Promise<Response> => {
       )
     // B-117 PR 9 (§8): medication confounder windows — regimen spans + administered dose points.
     // Empty (no meds logged) ⇒ detectCorrelations behaves exactly as before.
-    const medicationWindows = mapMedicationWindows(
-      (regimensRes.data ?? []) as RegimenRow[],
-      doseRows,
-      mealIntakeById,
-    )
+    const regimenRows = (regimensRes.data ?? []) as RegimenRow[]
+    const medicationWindows = mapMedicationWindows(regimenRows, doseRows, mealIntakeById)
+    // SR-4 (§5.4): the med-on-board context's dose facts — administered, nameable doses from
+    // the SAME rows above. Purely additive; nothing here feeds detection.
+    const medDoseFacts = mapMedDoseFacts(regimenRows, doseRows, mealIntakeById)
     // B-340: per-incident visual red-flag inputs (vomit blood / foreign material), derived
     // downstream from the owner-editable structured fields. Empty ⇒ the red-flag lane is silent.
     const incidentAnalyses = mapIncidentAnalyses(
@@ -836,11 +904,25 @@ const handler = async (req: Request): Promise<Response> => {
     // 3. Curate — cap the insight tail; safety findings always kept.
     const curated = curateFindings(ranked)
 
+    // 3b. Decorate (SR-4, B-721 §5.4 + §3.3) — attach the additive payload to the curated
+    //     findings BEFORE phrasing, so templateReflection sees the falling-comparison density
+    //     gate and each cached finding carries medContext for the client (SR-5). Both facts are
+    //     computed POST-detection from data already in hand: the density from the same events
+    //     the reflection detector reads, the med context from the same medication rows the
+    //     confounder pass reads. `ranked` is untouched — nothing here changes what fires or how
+    //     it ranks (§11 AC). A null density / medContext leaves the finding unchanged.
+    const reflectionDensity: ReflectionDensity | null = computeReflectionDensity(input, DEFAULT_CONFIG)
+    const medOnBoard: MedOnBoardContext | null = computeMedOnBoard(nowMs, medDoseFacts)
+    const decorated = curated.map((r) => ({
+      rank: r.rank,
+      finding: decorateFinding(r.finding, reflectionDensity, medOnBoard),
+    }))
+
     // 4. Phrase — one sentence per finding, in parallel, each falling back to
     //    its template independently. The set is never blank because the LLM
     //    failed (§2): a failed call yields the template, not a dropped card.
     const cachedFindings: CachedFinding[] = await Promise.all(
-      curated.map(async (r) => ({
+      decorated.map(async (r) => ({
         rank: r.rank,
         text: await phraseFinding(r.finding, petName, phrasingEnabled),
         finding: r.finding,
