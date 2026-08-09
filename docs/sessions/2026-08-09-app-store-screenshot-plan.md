@@ -86,6 +86,19 @@ annotation + pinned fragment). All three render-verified in headless Chromium be
 publishing. **D-SS4 open** (concept or hybrid); round 5 applies the winner to all six frames
 and rebuilds the search-card preview. Plan §0.5 + tracker updated.
 
+**D-SS4 RULED + Round 5 (same session):** the PM returned to the round-3 direction — the
+bezel-free concepts are closed (kept in the mock as record) — with three enrichment asks,
+all applied and render-verified: **(1)** the hero's insight card carries the **B-721
+dot-lane receipt** (S1 respected: the safety card stays plain); **(2)** the report frame
+gains a **by-day chart**, trial start anchored — flagged as a `generate-report` renderer
+change → **B-730** (rides the B-494-held redeploy; until then frame 3 shows the deployed
+render); **(3)** Cooper renders with a **species-matched illustrated avatar** (production
+path: upload the asset as his pet photo — no product change). §2's flags-off rule gained
+the one D-SS4 carve-out: `signal_design_v2` ON for the demo account, consistently for
+capture and review, once the SR track is presentable — else the hero falls back to plain
+cards. Still open: the frame-6 A/B (full Home vs trial picker) and the step-13 caption/
+keyword pass.
+
 ## Decisions taken (provisional, non-PM-blocking)
 
 - **Flags stay off for the demo account** (no Ask pill, no `signal_design_v2`) — screenshots
