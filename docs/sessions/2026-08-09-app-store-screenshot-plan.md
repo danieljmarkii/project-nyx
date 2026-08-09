@@ -96,8 +96,12 @@ render); **(3)** Cooper renders with a **species-matched illustrated avatar** (p
 path: upload the asset as his pet photo — no product change). §2's flags-off rule gained
 the one D-SS4 carve-out: `signal_design_v2` ON for the demo account, consistently for
 capture and review, once the SR track is presentable — else the hero falls back to plain
-cards. Still open: the frame-6 A/B (full Home vs trial picker) and the step-13 caption/
-keyword pass.
+cards. **Frame 6 RULED same day: 6A — the full Home** (picker candidate dropped; no extra
+capture, it's the hero's photograph composed in the day template; the §2.5 seed addendum
+stands for the TrialStrip protein name + the reviewer's own log-flow walk). **With that,
+every design decision on the screenshot track is closed.** Remaining is production:
+the step-13 caption/keyword pass, B-730 + `signal_design_v2` presentability for the
+enriched frames, the export pipeline, and capture (gated on step 11).
 
 ## Decisions taken (provisional, non-PM-blocking)
 

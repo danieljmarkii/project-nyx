@@ -18,7 +18,7 @@ The research reframed §0's posture: **caption overlays and marketing frames are
 
 **D-SS3 — Order. RULED: vet report promoted to frame 3 (PM-delegated to the team; team took its recommendation).** The search card now shows the whole wedge loop — the Signal (night hero), the 10-second log, the clinic payoff. Patterns moves to 4, History to 5. §3 reordered accordingly.
 
-**One build-time consequence of C, flagged not ruled:** the night hero absorbs frame 1's Signal job, so the **full Home screen** no longer has a dedicated frame in the search card. Where it lands (frame 6 alongside/instead of the trial-aware picker, or nowhere) is a template-session call — the *capture* list is unchanged either way, because the hero is composited from the Home capture's Signal cards.
+**One build-time consequence of C — RULED 2026-08-09: frame 6 = the full Home (6A).** The night hero absorbs frame 1's Signal job and the full Home takes the explorer-tail slot; the trial-picker candidate is dropped. The capture list is unchanged — the hero and frame 6 are the same photograph, composed differently.
 
 **R3-1 (PM reaction to the composed round-3 set, 2026-08-09): SENT BACK.** *"I'm liking the copy… it's still app on a background."* What stands: the copy, D-SS2 (designed set ships), D-SS3 (order), the capture states, and C's night-opens sequencing as default. What's re-opened: the **frame treatment** — the caption-over-bezel template is the category's safe pattern and the brief is to exceed it. **D-SS4 (open — PM):** pick the bezel-free concept from mock round 4, each built from real UI fragments at poster scale (2.3.3 satisfied by content, not by a phone border):
 - **(1) The evidence, blown up** — real cards/rows full-bleed as the composition; History as a ribbon with the treat→vomit pair threaded in teal. Closest to the ruled world.
@@ -26,7 +26,7 @@ The research reframed §0's posture: **caption overlays and marketing frames are
 - **(3) The specimen** — clinical editorial: one giant Newsreader numeral (the honest stat, never a grade), a teal rule, small-caps annotation, one real fragment pinned beneath. Quietest and most premium.
 Hybrids are legitimate calls (e.g. 2's hero + 1's interiors). Round 5 applies the winner to all six frames and rebuilds the search-card preview. The bezel template remains the documented fallback above the plain-capture floor.
 
-**D-SS4 — RULED 2026-08-09 (PM): return to the round-3 bezel template, enriched.** The bezel-free concepts are closed (recorded in the mock). Round 5 applies the three asks: **(1)** the hero's insight card carries the **B-721 dot-lane receipt** (the new Signal dashboard's shape A; S1 respected — the safety card stays plain, plainness is the severity signal); **(2)** the report frame gains a **by-day symptom chart**, trial start anchored; **(3)** Cooper renders with a **species-matched illustrated avatar**. Still open: the frame-6 A/B (full Home vs trial picker).
+**D-SS4 — RULED 2026-08-09 (PM): return to the round-3 bezel template, enriched.** The bezel-free concepts are closed (recorded in the mock). Round 5 applies the three asks: **(1)** the hero's insight card carries the **B-721 dot-lane receipt** (the new Signal dashboard's shape A; S1 respected — the safety card stays plain, plainness is the severity signal); **(2)** the report frame gains a **by-day symptom chart**, trial start anchored; **(3)** Cooper renders with a **species-matched illustrated avatar**. **Frame 6 RULED 2026-08-09: 6A — the full Home** (the trial-picker frame is dropped from the set). Every design decision on this track is now closed; what remains is production (captions with step 13, B-730, v2 presentability, export, capture).
 
 **Two product dependencies created by the ruling (flagged, never silently absorbed):**
 - **`signal_design_v2` on the demo account.** The receipt-rich cards are the SR-track design, so §2.3's flags-off rule is **amended for this one flag**: it goes ON for the demo account — consistently for capture AND review — once the SR track deems the v2 surface presentable. If it isn't presentable by capture time, the hero falls back to plain cards (the hero is composited from the Home capture, so the receipt cannot outrun the product).
@@ -67,7 +67,7 @@ All frames are captured **signed into the demo account** (Cooper — the diet-tr
 3. **Feature flags stay OFF for the demo account** — no `ask_enabled`, no `widget_enabled` — with **one D-SS4 carve-out: `signal_design_v2` goes ON** (consistently for capture AND review — never one without the other) once the SR track deems the v2 Signal presentable, because the ruled hero shows the dot-lane receipt. If v2 isn't presentable by capture time, capture flag-off and the hero falls back to plain cards. Rationale unchanged for the rest: flags fail closed for every real new user, and screenshots must match what the reviewer sees on the same account (2.3 consistency). The Home header stays wordmark + avatar only (no Ask pill) — correct, not a gap.
 3a. **Cooper's pet photo = the illustrated avatar.** The species-matched illustration (mock round 5) is produced as an asset and uploaded as Cooper's pet photo during step 11 phase D — that is the whole production path; no product change.
 4. **Single pet** (no header chevron), **no medications seeded** (D7) — so no MedStrip on Home; expected, no hole.
-5. **Seed addendum flagged to the B-271 seed-script session:** the demo spec (§3, written 2026-07-11) predates migration 040 — it seeds a `diet_trials` row but never mentions **`diet_trial_foods` membership rows**. Without the venison staple marked on the trial list, the picker's "ON THE TRIAL LIST" zone (frame 6) won't render and the trial strip's protein naming may fall back to plain "Diet trial." The seed script should add the membership row for the venison food. *(Flagged in this session's summary; the seed PR owns the fix.)*
+5. **Seed addendum flagged to the B-271 seed-script session:** the demo spec (§3, written 2026-07-11) predates migration 040 — it seeds a `diet_trials` row but never mentions **`diet_trial_foods` membership rows**. The picker frame is no longer in the shot list (6A ruling), but the addendum stands: without the venison membership row, the **TrialStrip's protein name** ("Venison trial", visible in frames 2 and 6) may fall back to plain "Diet trial," and the reviewer's own walk through the meal log loses the pinned trial zone. The seed script should add the membership row. *(The seed PR owns the fix.)*
 
 ---
 
@@ -80,7 +80,7 @@ All frames are captured **signed into the demo account** (Cooper — the diet-tr
 | 3 | Vet report | `/report` | The clinical payoff — hand the record to your vet (D-SS3) |
 | 4 | Patterns | `/insights` | The month made scannable |
 | 5 | History | History tab | Everything kept, filterable, honest |
-| 6 | *(optional)* Trial-aware picker and/or full Home | `/log?type=meal` · Home tab | Explorer tail — exact content is a round-3 call (§0.5) |
+| 6 | Full Home | Home tab (the frame-1 raw capture, day template) | One calm surface — where the hero's cards live (ruled 6A) |
 
 ### Frame 1 — the night hero, fed by the Home capture (the wedge; leads search results)
 
@@ -113,10 +113,11 @@ All frames are captured **signed into the demo account** (Cooper — the diet-tr
 - **State:** History tab, **default scopes** (All types · All time — pills quiet/untinted, which is the honest default per the filter invariants). Scroll positioned so the **D-3 beef treat row and its vomit row** sit mid-frame — the contraband-then-symptom pair quietly retells frame 1's correlation — with a mix of Meal / Vomit / Stool / Weight rows and at least one confidence tag visible (the seed varies `occurred_at_confidence` for exactly this realism).
 - **Avoid:** the "Load more" footer as the dominant bottom element; any expanded row (View/Edit/Remove buttons read as debug-ish in a still).
 
-### Frame 6 (optional) — the trial-aware food picker
+### Frame 6 — the full Home (ruled 6A, 2026-08-09)
 
-- **State:** "What did Cooper eat?" with the **"ON THE TRIAL LIST"** pinned zone showing the venison staple above the rest of the library. No other pet tracker renders a vet's elimination-diet list inside the meal log — it's the wedge again, from the logging side.
-- **Gated on** the §2.5 seed addendum (`diet_trial_foods` membership). If frame 2 fell back to the food picker, this slot takes the FAB menu instead. Five frames is a complete set — skip this one freely rather than delay.
+- **State:** the same Home capture that feeds the hero (frame 1's §"night hero" staging notes apply verbatim), composed in the day template: live Signal with the receipt-bearing insight card, TrialStrip, Today row, Cooper's illustrated avatar in the header. The explorer's payoff — where the hero's floating cards actually live.
+- **No extra capture:** this frame and the hero are the same photograph; only the composition differs.
+- The trial-aware picker frame is **dropped from the set** (the ruled alternative). The §2.5 seed addendum stays flagged regardless — see the updated note there.
 
 ---
 
