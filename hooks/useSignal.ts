@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { useFocusEffect } from 'expo-router';
 import { getDb } from '../lib/db';
 import { usePetStore } from '../store/petStore';
@@ -62,13 +62,6 @@ export interface SignalState {
 // from stale (gone quiet) when there are no findings. 48h mirrors the Edge
 // Function's own split and the feline intake-decline concern window.
 const RECENT_ACTIVITY_MS = 48 * 60 * 60 * 1000;
-
-// B-721 SR-3 (§5.3) — the ceiling on the acknowledgment line's lifetime. The regen's
-// own settle clears the flag in the normal case (debounce ~5s + a regen call); this is
-// the belt-and-suspenders bound for a hung/stalled invoke that never resolves, so the
-// line fails quiet to the prior state rather than persisting forever. Comfortably
-// exceeds a slow-but-live regen; a legitimately slower one just lands without the line.
-const ACK_MAX_MS = 15 * 1000;
 
 // "Substantial history" floor (B-051): a pet with this much logged history that
 // still has no findings gets the honest "no clear patterns yet" copy rather than
@@ -213,18 +206,11 @@ export function useSignal(): SignalState {
   const seenSignature = useSignalMarkStore((s) => (petId ? s.seenSignatures[petId] : undefined));
   const hasUnseenSignal = hasUnseenFinding(displayState, findings, seenSignature);
 
-  // B-721 SR-3 (§5.3) — the acknowledgment flag is owned by the regen lifecycle
-  // (raised in triggerSignalRegenDebounced, cleared when the regen settles), so the
-  // hook only READS it. Keyed by the active pet, so a background pet's regen never
-  // shows an ack on this pet's zone. The safety ceiling below bounds a hung regen.
+  // B-721 SR-3 (§5.3) — the acknowledgment flag is owned entirely by the regen lifecycle
+  // (raised in triggerSignalRegenDebounced, cleared when the LATEST log's regen settles,
+  // with a fail-quiet ceiling there for a hung regen), so the hook only READS it. Keyed
+  // by the active pet, so a background pet's regen never shows an ack on this pet's zone.
   const acknowledging = useSyncStore((s) => (petId ? s.signalAcknowledging[petId] ?? false : false));
-  useEffect(() => {
-    if (!petId || !acknowledging) return;
-    const timer = setTimeout(() => {
-      useSyncStore.getState().setSignalAcknowledging(petId, false);
-    }, ACK_MAX_MS);
-    return () => clearTimeout(timer);
-  }, [petId, acknowledging]);
   // Closes over THIS render's petId + findings — always the pair the render-time
   // reset above guarantees are consistent, so a caller can never accidentally
   // re-pair a stale findings array with the wrong pet's id (see the comment above).

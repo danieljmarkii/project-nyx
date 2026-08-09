@@ -164,23 +164,7 @@ describe('useSignal — acknowledgment (SR-3 §5.3)', () => {
     await waitFor(() => expect(result.current.isLoading).toBe(false));
     expect(result.current.acknowledging).toBe(false);
   });
-
-  it('the safety ceiling force-clears a stranded ack (a hung regen never leaves the line up)', async () => {
-    jest.useFakeTimers();
-    useSyncStore.setState({ signalAcknowledging: { 'pet-a': true } });
-    mockedReadCache.mockResolvedValue(null);
-    const { unmount } = renderHook(() => useSignal());
-    // Flush the focus effect's pending microtasks (the cache read) so its state updates
-    // are act-wrapped; the safety effect already armed on mount (the flag was up).
-    await act(async () => {});
-    expect(useSyncStore.getState().signalAcknowledging['pet-a']).toBe(true);
-    // Past ACK_MAX_MS (15s) → the safety effect force-clears the flag (fail-quiet). Async
-    // act so the resulting store re-render's passive effect flushes inside act.
-    await act(async () => {
-      jest.advanceTimersByTime(20_000);
-    });
-    expect(useSyncStore.getState().signalAcknowledging['pet-a']).toBe(false);
-    unmount();
-    jest.useRealTimers();
-  });
+  // The ack's lifecycle (raise / clear-on-settle / generation guard / fail-quiet ceiling)
+  // is owned by triggerSignalRegenDebounced and tested in lib/signal.test.ts — the hook
+  // only READS the flag, which the two tests above cover.
 });

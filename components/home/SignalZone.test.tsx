@@ -19,6 +19,7 @@ jest.mock('../../hooks/useAppConfig', () => ({
 }));
 
 import { render } from '@testing-library/react-native';
+import { AccessibilityInfo, Platform } from 'react-native';
 import { SignalZone } from './SignalZone';
 import { theme } from '../../constants/theme';
 import type { SignalState } from '../../hooks/useSignal';
@@ -223,6 +224,22 @@ describe('SignalZone — SR-3 acknowledgment line (§5.3)', () => {
     // E1 renders intact (the empty state is never blanked by the ack machinery).
     expect(view.getByText(BUILDING_SUB)).toBeTruthy();
   });
+
+  it('announces the ack to VoiceOver on iOS when it appears (accessibilityLiveRegion is Android-only)', () => {
+    const prevOS = Platform.OS;
+    Platform.OS = 'ios';
+    const announce = jest
+      .spyOn(AccessibilityInfo, 'announceForAccessibility')
+      .mockImplementation(() => {});
+    mockUseAllowlistFlag.mockReturnValue(true);
+    mockUseSignal.mockReturnValue(
+      signalState({ displayState: 'live', findings: [liveFinding], acknowledging: true }),
+    );
+    render(<SignalZone />);
+    expect(announce).toHaveBeenCalledWith(ackUpdatingCopy('Nyx'));
+    announce.mockRestore();
+    Platform.OS = prevOS;
+  });
 });
 
 describe('SignalZone — SR-3 receded chrome (§5.2)', () => {
@@ -243,11 +260,14 @@ describe('SignalZone — SR-3 receded chrome (§5.2)', () => {
     expect(render(<SignalZone />).getByText('Signal')).toHaveStyle({ color: theme.colorTextSecondary });
   });
 
-  it('recedes the footer doorway to the softer teal flag-on, keeps full accent flag-off', () => {
+  it('recedes the footer doorway to the tertiary tier flag-on, keeps full accent flag-off (AA-safe recede)', () => {
+    // The mock dims the footer to a lighter teal, but that fails AA on white (~1.6:1) —
+    // so the doorway recedes to the same grey tier as the label (≥4.5:1), never below the
+    // shipped accent footer. Flag-off is unchanged.
     mockUseAllowlistFlag.mockReturnValue(true);
     mockUseSignal.mockReturnValue(signalState({ displayState: 'live', findings: [liveFinding] }));
     expect(render(<SignalZone />).getByText(/See all of Nyx's patterns/)).toHaveStyle({
-      color: theme.colorAccentSoft,
+      color: theme.colorTextTertiary,
     });
     mockUseAllowlistFlag.mockReturnValue(false);
     mockUseSignal.mockReturnValue(signalState({ displayState: 'live', findings: [liveFinding] }));

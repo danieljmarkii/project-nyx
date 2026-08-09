@@ -434,9 +434,13 @@ export function isNewWorsening(finding: SignalFinding): finding is SymptomWorsen
 // carry the novelty). priorCount === 0 ⇒ priorDays === 0 ⇒ the trigger is more_episodes
 // (a flat-count more_days arm needs priorCount ≥ the episode floor), but we branch on
 // the axis defensively so an unexpected shape can never print the "0 last week" this
-// exists to drop. NOTE (SR-4): the SERVER sentence still says "after none last week"
-// until SR-4's template audit strips it — that redundancy is dark behind the flag and
-// closed there; when it is, the a11y label must carry the `New` fact the chip holds.
+// exists to drop. NOTE (SR-4): two OTHER surfaces still say "after none" for this finding
+// — the SERVER card sentence, and the client `evidenceText` worsening branch below (this
+// file). SR-4's template audit retires that phrasing in BOTH together: retiring only the
+// expanded evidence now would split it from the still-"after none" card sentence, and
+// `evidenceText` is shared flag-off/on so an ungated edit would break FR-FLAG-2. The
+// redundancy is dark behind the flag until then; when SR-4 lands, the card a11y label
+// must also carry the `New` fact the chip holds (B-725).
 export function worseningNewSampleLine(finding: SymptomWorseningFinding): string {
   return finding.trigger === 'more_days'
     ? `${count(finding.currentDays, 'day', 'days')} this week`

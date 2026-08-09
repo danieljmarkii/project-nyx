@@ -1,5 +1,5 @@
 import { useEffect, type ReactNode } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { AccessibilityInfo, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import { theme } from '../../constants/theme';
 import { Card } from '../ui/Card';
@@ -66,6 +66,21 @@ export function SignalZone() {
   // chrome, and the style prop stays a single reference so the snapshot is byte-identical.
   const labelReceded = designV2 && state === 'live';
 
+  // The acknowledgment line shows above the live findings while a fresh log's regen is in
+  // flight (§5.3). Computed once — the render and the iOS announce below read the same value.
+  const showAck = designV2 && acknowledging && state === 'live';
+
+  // `accessibilityLiveRegion` (on AckLine) is Android-only; announce imperatively on iOS
+  // (Nyx ships iOS-first) so VoiceOver reads the "updating…" line when it appears — the
+  // same gap + fix TextField.tsx documents for its error text. Fires on the transition to
+  // showing, not every render; no "cleared" announcement (there is no "done" copy — the
+  // findings just refresh, and re-announcing on clear would be noise).
+  useEffect(() => {
+    if (showAck && Platform.OS === 'ios') {
+      AccessibilityInfo.announceForAccessibility(ackUpdatingCopy(petName));
+    }
+  }, [showAck, petName]);
+
   // The CulpritMark pulse contract (B-284 §3): "flips false when the Signal zone
   // is viewed (screen focus with the zone on-screen)". This card is always on-
   // screen whenever Home is focused (it isn't behind a scroll gate), so marking
@@ -101,7 +116,7 @@ export function SignalZone() {
           reassurance (E1), so an "updating…" line there would just double it. Clears when the
           regen settles (useSignal reads the lifecycle flag) or the safety ceiling fires —
           fail-quiet, never an error surface. Flag-off never renders it. */}
-      {designV2 && acknowledging && state === 'live' ? <AckLine petName={petName} /> : null}
+      {showAck ? <AckLine petName={petName} /> : null}
 
       {state === 'live' ? (
         <LiveStack findings={findings} petName={petName} designV2={designV2} />
@@ -133,9 +148,9 @@ export function SignalZone() {
         accessibilityLabel={`See all of ${petName}'s patterns`}
         style={styles.patternsLink}
       >
-        {/* SR-3 (§5.2) — the footer doorway recedes to a dimmer teal across every flag-on
-            state so it never competes with the content; still teal (the interactive tone),
-            just quieter. Single style reference when off, so the shipped snapshot holds. */}
+        {/* SR-3 (§5.2) — the footer doorway recedes (to the label's tertiary tier) across
+            every flag-on state so it never competes with the content. Single style
+            reference when off, so the shipped snapshot holds. */}
         <Text
           style={
             designV2 ? [styles.patternsLinkText, styles.patternsLinkTextReceded] : styles.patternsLinkText
@@ -440,10 +455,15 @@ const styles = StyleSheet.create({
     fontWeight: theme.weightMedium,
     color: theme.colorAccent,
   },
-  // SR-3 receded chrome (§5.2) — the doorway drops to the softer teal so it recedes
-  // without leaving the interactive tone (teal stays the tappable colour).
+  // SR-3 receded chrome (§5.2) — the doorway drops to the SAME tertiary tier as the
+  // label. The mock dims it to a lighter teal, but a lighter teal on white fails AA
+  // (≈1.6:1) — worse than the shipped accent footer — and there is no teal that both
+  // recedes AND clears AA on white. So the doorway recedes as the label does (grey,
+  // ≥4.5:1), extending the team's label-contrast override of the mock to the footer.
+  // pm-feature-review flagged the teal path as the sole-doorway AA failure; teal is the
+  // interactive FILL colour, not a link requirement, and the whole row is a button.
   patternsLinkTextReceded: {
-    color: theme.colorAccentSoft,
+    color: theme.colorTextTertiary,
   },
   // SR-3 acknowledgment line (§5.3) — the teal dot + the "Noted — updating …" line, sat
   // above the findings with a little breathing room below.
