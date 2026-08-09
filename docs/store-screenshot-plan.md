@@ -1,8 +1,8 @@
 # App Store Screenshots — Capture Plan (B-269 · guide step 12)
 
-**Created:** 2026-08-09 · **Last Updated:** 2026-08-09 (wrap — all design decisions closed) · **Owner:** PM captures on-device; this doc is the shot list + design contract
+**Created:** 2026-08-09 · **Last Updated:** 2026-08-09 (export pipeline built — #625) · **Owner:** PM captures on-device; this doc is the shot list + design contract
 **Guide:** [`docs/app-store-submission-guide.md`](./app-store-submission-guide.md) step 12 · **Backlog:** B-269 · **Demo account:** [`docs/nyx-demo-account-requirements.md`](./nyx-demo-account-requirements.md) (B-271 — the capture prerequisite)
-**Status:** 🌱 **Design COMPLETE — every D-SS call ruled (§0.5).** Remaining is production: captions finalized with step 13's listing, the export pipeline (`scripts/store-screenshots/`, to build), B-742 + `signal_design_v2` presentability for the enriched frames, then capture — gated on step 11.
+**Status:** 🌱 **Design COMPLETE — every D-SS call ruled (§0.5). Export pipeline BUILT (#625): `scripts/store-screenshots/`** (round-5 template at true 1320×2868, real Geist/Newsreader, `--draft` + capture modes; see its README for the capture workflow + `hero-crops.json`). Remaining is production: captions finalized with step 13's listing (edits only the template's `FRAMES` strings), B-742 + `signal_design_v2` presentability for the enriched frames, then capture — gated on step 11.
 **Mock:** [`docs/culprit-store-screenshot-mockups.html`](./culprit-store-screenshot-mockups.html) (round 5 — the design authority, artifact 📸): the final six-frame set, the search-card preview, and the closed round-2/round-4 exploration records.
 **Research:** [`docs/research/2026-08-app-store-creative-landscape.md`](./research/2026-08-app-store-creative-landscape.md) (2026-08-09) — 15 live sets examined, Apple's rules verbatim, the A/B case corpus. §0.5's decisions are built on it.
 
