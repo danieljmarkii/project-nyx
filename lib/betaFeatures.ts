@@ -54,8 +54,8 @@ export const BETA_REGISTRY: BetaFeature[] = [
   {
     key: 'widget_enabled',
     title: 'Home screen widget',
-    // nyx-voice draft (PR 4 owns the final voice pass). Warm, concrete, no
-    // exclamation; names what it does, not that it's "new".
+    // nyx-voice (PR 4 voice pass): warm and concrete, no exclamation, and specific
+    // — "today’s log", "what’s coming up" — rather than selling that it’s "new".
     blurb:
       'See today’s log and what’s coming up from your home screen, without opening Culprit.',
     owner: 'Widget track / Eng',

@@ -29,7 +29,7 @@
 | 10 | Cut the production build + built-artifact verification | Mixed | — | ⬜ Not started |
 | 11 | Seed the App Review demo account + reviewer notes | Mixed | B-271 | 🔵 Spec'd 2026-07-11 — build-ready spec `docs/nyx-demo-account-requirements.md`; D1–D7 ratified; PR 1 (seed script) next |
 | 12 | Screenshots | PM | B-269 | ⬜ Not started |
-| 13 | Listing copy + age rating | Mixed | B-269 | ⬜ Not started |
+| 13 | Listing copy + age rating | Mixed | B-269 | 🟡 **Copy drafted 2026-08-09 → `docs/store-listing-copy.md`** (subtitle, promotional text, description, keywords — all char-verified in-limit; clinically honest per 1.4.1, no diagnosis/reassurance claim). **Awaiting PM review + one decision:** keep the ASC-locked subtitle "Track symptoms, find triggers" vs. adopt "Diet trials & symptom diary" (recommended, carries the diet-trial wedge). Age-rating answer pre-written (→ 4+). Age-rating questionnaire itself is still a PM-in-ASC action. |
 | 14 | App Privacy nutrition label | Mixed | B-268 | 🔵 **Answer sheet ready — `docs/app-privacy-answers.md` (2026-08-09).** Audited from real code/schema: **6** data types collected (Email, Name, Photos or Videos, Other User Content, User ID, Product Interaction), **all** Linked / **none** Tracking / **all** App Functionality; matches the privacy policy (no mismatch). PM half remaining: transcribe §7 into ASC + ratify the §5.2 usage-metering call. |
 | 15 | Assemble the submission + submit | PM | — | ⬜ Not started |
 | 16 | During review: monitoring + rejection playbook | Reference | — | — |

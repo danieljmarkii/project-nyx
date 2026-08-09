@@ -28,6 +28,7 @@ import {
   localHourBand,
   templateForFinding,
   validatePhrasing,
+  hasBannedSignalVocabulary,
   curateFindings,
   buildBuildingText,
   SYMPTOM_LABEL,
@@ -928,4 +929,159 @@ Deno.test('templateForFinding — dispatches by type', () => {
   assert.ok(/we could time/.test(templateForFinding(postprandial(), 'Nyx')))
   assert.ok(/between 4am and 8am/.test(templateForFinding(timeofday(), 'Nyx')))
   assert.ok(/call to your vet/i.test(templateForFinding(incidentRedFlag(), 'Nyx')))
+})
+
+// ── SR-4 (B-721 §3.3): the falling-comparison density gate in templateReflection ──
+// The card-face half of the gate. A FALLING reflection states "down from N last week"
+// ONLY when density is comparable; when it fell, the comparison is WITHHELD (the client
+// discloses why). The gate can only ever REMOVE a comparison — an ABSENT density renders
+// exactly as before SR-4, so it is safe flag-on and flag-off.
+
+Deno.test('templateReflection — falling + density comparable STILL reads "down from N"', () => {
+  const t = templateReflection(
+    reflection({ direction: 'improving', currentCount: 2, priorCount: 5, density: { comparable: true, currentLoggingDays: 6, priorLoggingDays: 6 } }),
+    'Nyx',
+  )
+  assert.ok(/down from 5 last week/i.test(t))
+  assert.ok(validatePhrasing(t, reflection({ direction: 'improving' })))
+})
+
+Deno.test('templateReflection — falling + density NOT comparable WITHHOLDS the comparison', () => {
+  const t = templateReflection(
+    reflection({ direction: 'improving', currentCount: 2, priorCount: 5, density: { comparable: false, currentLoggingDays: 3, priorLoggingDays: 6 } }),
+    'Nyx',
+  )
+  assert.equal(/down from/i.test(t), false, 'the reassuring fall is withheld')
+  assert.equal(/last week|week before/i.test(t), false, 'no week-pair comparison at all')
+  assert.ok(t.includes('2'), 'this week\'s count is still stated')
+  assert.ok(t.includes('vomiting'))
+  assert.equal(REASSURE.test(t), false)
+  assert.equal(CAUSAL.test(t), false)
+  assert.ok(validatePhrasing(t, reflection({ direction: 'improving' })), 'the withheld sentence still validates')
+})
+
+Deno.test('templateReflection — ABSENT density renders the comparison byte-identically to pre-SR-4', () => {
+  const before = "We've logged 2 episodes of vomiting for Nyx this week, down from 5 last week."
+  const t = templateReflection(reflection({ direction: 'improving', currentCount: 2, priorCount: 5 }), 'Nyx')
+  assert.equal(t, before, 'no density field ⇒ the shipped sentence, unchanged')
+})
+
+Deno.test('templateReflection — the density gate NEVER touches a flat reflection (§3.2 falling only)', () => {
+  const t = templateReflection(
+    reflection({ direction: 'flat', currentCount: 4, priorCount: 4, density: { comparable: false, currentLoggingDays: 3, priorLoggingDays: 7 } }),
+    'Nyx',
+  )
+  assert.ok(/about the same as last week/i.test(t), 'a flat reflection is not a reassuring fall — never gated')
+})
+
+// ── SR-4 (§3.1): the change-clause template audit ────────────────────────────────
+// Every CHANGE-CAPABLE template carries its change as a count-anchored, time-ordered
+// clause (never a glyph, never a verdict word), test-pinned per template.
+
+Deno.test('change-clause audit — a falling reflection is count-anchored and time-ordered (this week → last week)', () => {
+  const t = templateReflection(reflection({ direction: 'improving', currentCount: 2, priorCount: 5 }), 'Nyx')
+  assert.ok(t.includes('2') && t.includes('5'), 'both counts present')
+  assert.ok(t.indexOf('this week') < t.indexOf('last week'), 'time-ordered: current before prior')
+  assert.equal(hasBannedSignalVocabulary(t), false)
+})
+
+Deno.test('change-clause audit — a flat reflection carries the comparison in words', () => {
+  const t = templateReflection(reflection({ direction: 'flat', currentCount: 4, priorCount: 4 }), 'Nyx')
+  assert.ok(t.includes('4') && /about the same as last week/i.test(t))
+  assert.equal(hasBannedSignalVocabulary(t), false)
+})
+
+Deno.test('change-clause audit — every worsening (tier × trigger) carries a counted, time-ordered prior clause', () => {
+  const tiers: WorseningTier[] = ['firm', 'standard', 'soft']
+  const triggers: WorseningTrigger[] = ['more_episodes', 'more_days']
+  const priorClause = /up from \d+ (last week|the week before)|after none last week|up from \d+ last week/i
+  for (const tier of tiers) {
+    for (const trigger of triggers) {
+      for (const priorCount of [0, 2]) {
+        const t = templateWorsening(
+          worsening({ tier, trigger, currentCount: 4, priorCount, currentDays: tier === 'firm' ? 5 : 2, priorDays: 1, windowDays: 7 }),
+          'Nyx',
+        )
+        assert.ok(priorClause.test(t), `[${tier}/${trigger}/prior=${priorCount}] carries a prior clause: ${t}`)
+        assert.equal(hasBannedSignalVocabulary(t), false, `no banned vocab: ${t}`)
+        assert.equal(t.includes('!'), false)
+      }
+    }
+  }
+})
+
+Deno.test('change-clause audit — intake-decline carries its duration ("the last N days"), its change form', () => {
+  const t = templateIntakeDecline(intakeDecline({ trigger: 'consecutive_low', daysBelowBaseline: 3 }), 'Nyx')
+  assert.ok(/the last three days/i.test(t))
+  assert.equal(hasBannedSignalVocabulary(t), false)
+})
+
+Deno.test('change-clause audit — chronicity carries span + count, NEVER a week-pair framing (§3.2)', () => {
+  const t = templateChronicity(chronicity(), 'Nyx')
+  assert.ok(/of the last \d+ weeks/i.test(t), 'active-weeks-of-window denominator')
+  assert.ok(/since \w+/i.test(t), 'a "since {month}" onset anchor')
+  assert.equal(/last week|the week before|up from/i.test(t), false, 'never a week-over-week pair')
+  assert.equal(hasBannedSignalVocabulary(t), false)
+})
+
+// ── SR-4 (§3.5): guardrail regex coverage — glyphs, percentages, on every type ────
+
+Deno.test('hasBannedSignalVocabulary — catches direction glyphs, arrows, "slope" and percentages', () => {
+  for (const bad of ['vomiting ↑ this week', 'itching ↓', 'a → b', 'up 40%', '40 percent more', 'a rising slope', 'trend -> worse']) {
+    assert.equal(hasBannedSignalVocabulary(bad), true, `should flag: ${bad}`)
+  }
+  for (const ok of [
+    "We've logged 2 episodes of vomiting for Nyx this week, down from 5 last week.",
+    'During an active Apoquel course — 12 doses logged.',
+    "Nyx has had vomiting on 5 of the last 7 days, up from 2 the week before — worth booking a vet visit soon.",
+  ]) {
+    assert.equal(hasBannedSignalVocabulary(ok), false, `should pass: ${ok}`)
+  }
+})
+
+Deno.test('validatePhrasing — rejects a direction glyph or a percentage on EVERY finding type', () => {
+  const findings: Finding[] = [
+    correlation(), intakeDecline(), reflection(), worsening(), chronicity(), postprandial(), timeofday(), incidentRedFlag(),
+  ]
+  for (const f of findings) {
+    assert.equal(validatePhrasing('Symptoms are ↑ this week for the pet.', f), false, `${f.type}: glyph rejected`)
+    assert.equal(validatePhrasing('Episodes rose 25% versus the prior week for the pet.', f), false, `${f.type}: percent rejected`)
+  }
+})
+
+// ── SR-4 (§3.5 / §9): the NEW owner-facing copy passes every guardrail screen ─────
+
+Deno.test('guardrail coverage — the med-on-board line (§9) is clean of every banned screen', () => {
+  // Client-rendered (SR-5) from SR-4's facts; pinned here as a forward guarantee.
+  const line = 'During an active Apoquel course — 12 doses logged.'
+  assert.equal(hasBannedSignalVocabulary(line), false, 'no glyph, no percentage')
+  assert.equal(line.includes('!'), false)
+  assert.equal(REASSURE.test(line), false, 'context, never reassurance')
+  assert.equal(DISMISSIVE.test(line), false)
+  assert.equal(CAUSAL.test(line), false, 'stated as fact, never as explanation (§5.4)')
+})
+
+Deno.test('guardrail coverage — the density-withheld reflection sentence is a valid, clean reflection', () => {
+  const t = templateReflection(
+    reflection({ direction: 'improving', currentCount: 2, priorCount: 5, density: { comparable: false, currentLoggingDays: 3, priorLoggingDays: 7 } }),
+    'Nyx',
+  )
+  assert.ok(validatePhrasing(t, reflection({ direction: 'improving' })))
+  assert.equal(hasBannedSignalVocabulary(t), false)
+})
+
+Deno.test('every template — no banned glyph/percentage vocabulary, any type (full sweep)', () => {
+  const findings: Finding[] = [
+    correlation(), correlation({ tier: 'established', matchedPairs: 6 }),
+    correlation({ jointCandidate: true, proteins: ['chicken', 'duck'], protein: 'chicken and duck', jointGuidance: 'feed_apart' }),
+    intakeDecline(), intakeDecline({ trigger: 'refused_normal_food', refusedFoodLabel: 'the turkey' }),
+    reflection({ direction: 'flat' }), reflection({ direction: 'improving' }),
+    worsening({ tier: 'firm', trigger: 'more_days' }), chronicity(),
+    postprandial(), timeofday(), incidentRedFlag(), incidentRedFlag({ flags: ['blood', 'foreign_material'] }),
+  ]
+  for (const f of findings) {
+    const t = templateForFinding(f, 'Nyx')
+    assert.equal(hasBannedSignalVocabulary(t), false, `banned vocab in ${f.type}: ${t}`)
+    assert.ok(validatePhrasing(t, f), `${f.type} template must pass its own validation: ${t}`)
+  }
 })

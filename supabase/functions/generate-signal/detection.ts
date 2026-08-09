@@ -550,6 +550,44 @@ interface FindingBase {
 }
 
 /**
+ * SR-4 additive payload (B-721, `docs/nyx-signal-home-requirements.md` §5.4) — the
+ * medication-on-board CONTEXT for a correlation / timing card: "During an active {drug}
+ * course — {n} doses logged." A CONTEXTUAL fact, never an explanation and never a
+ * verdict (§5.4: "Stated as fact … no verdict adjacency"). Computed POST-detection in
+ * the I/O shell (index.ts) from the same medication data the confounder pass already
+ * reads (`computeMedOnBoard`, medContext.ts) and attached to the finding; it is NEVER
+ * read by any detector and cannot change what fires or how it ranks. Optional: a finding
+ * cached before SR-4, or one with no active course in-window, simply carries no field.
+ */
+export interface MedOnBoardContext {
+  /** Owner-facing drug name — the regimen's `drug_name` (preferred), else the library brand/generic. */
+  drugLabel: string
+  /** Administered on-board doses of this drug in the context window (missed/refused/in-doubt excluded, matching the confounder pass). ≥1. */
+  doseCount: number
+}
+
+/**
+ * SR-4 additive payload (B-721 §3.3) — the week-over-week LOGGING-DENSITY comparison that
+ * gates a FALLING reflection's comparison clause. "days-with-any-log" per window; the
+ * asymmetric gate (§3.3) withholds a falling reflection's "down from N last week" when
+ * density is NOT comparable (fail-toward-escalation: a quieter-looking week may just be a
+ * less-logged one). A RISING safety comparison is never gated — reflection is flat/falling
+ * only, and worsening (④) is a different finding this never touches. Computed post-detection
+ * (`computeReflectionDensity`) and attached to the reflection finding; carries the raw day
+ * counts so the client (SR-5) can render the expanded disclosure line. Optional: absent ⇒
+ * the template renders exactly as before SR-4 (byte-identical), so old cached findings and
+ * the flag-off path are unaffected.
+ */
+export interface ReflectionDensity {
+  /** Whether the two weeks' logging density is comparable enough to trust a falling comparison (§3.3). */
+  comparable: boolean
+  /** Distinct UTC days carrying ANY logged event in the CURRENT window ("{a} this week"). */
+  currentLoggingDays: number
+  /** Distinct UTC days carrying ANY logged event in the PRIOR window ("{b} last"). */
+  priorLoggingDays: number
+}
+
+/**
  * Food/protein → symptom association, from a SYMPTOM-ANCHORED case-crossover (B-050):
  * the unit is the symptom episode ("case"), compared against a time-of-day-matched
  * control window from a symptom-free day for the same pet. ASSOCIATIONAL ONLY — there
@@ -643,6 +681,12 @@ export interface CorrelationFinding extends FindingBase {
   attributionFloor: AttributionConfidence
   /** Hard marker for the phrasing layer + reviewers: never emit causal copy. */
   associationalOnly: true
+  /**
+   * SR-4 (B-721 §5.4) — medication-on-board context, attached POST-detection (never read
+   * by the engine). Present only when a nameable drug had ≥1 administered dose in the
+   * context window; absent otherwise. See MedOnBoardContext.
+   */
+  medContext?: MedOnBoardContext
 }
 
 export type IntakeDeclineTrigger = 'consecutive_low' | 'refused_normal_food'
@@ -709,6 +753,12 @@ export interface ReflectionFinding extends FindingBase {
   direction: ReflectionDirection
   /** Length of each comparison window, in days (the period: 7 = week-over-week). */
   windowDays: number
+  /**
+   * SR-4 (B-721 §3.3) — week-over-week logging-density comparison, attached POST-detection
+   * (never read by the engine). Gates the FALLING comparison clause in templateReflection.
+   * Absent ⇒ the template renders exactly as before SR-4. See ReflectionDensity.
+   */
+  density?: ReflectionDensity
 }
 
 /** Which arm of the worsening predicate fired — drives copy (§ B-045 / detector ④). */
@@ -864,6 +914,12 @@ export interface PostprandialTimingFinding extends FindingBase {
   associationalOnly: true
   /** The analysis window in days (bounds the denominator to the current era of the pet's life). */
   windowDays: number
+  /**
+   * SR-4 (B-721 §5.4) — medication-on-board context, attached POST-detection (never read
+   * by the engine). Present only when a nameable drug had ≥1 administered dose in the
+   * context window; absent otherwise. See MedOnBoardContext.
+   */
+  medContext?: MedOnBoardContext
 }
 
 /**
@@ -906,6 +962,12 @@ export interface TimeOfDayClusteringFinding extends FindingBase {
   associationalOnly: true
   /** The analysis window in days (bounds the denominator to the current era of the pet's life). */
   windowDays: number
+  /**
+   * SR-4 (B-721 §5.4) — medication-on-board context, attached POST-detection (never read
+   * by the engine). Present only when a nameable drug had ≥1 administered dose in the
+   * context window; absent otherwise. See MedOnBoardContext.
+   */
+  medContext?: MedOnBoardContext
 }
 
 /** Which visible red flag a per-incident analysis carries (B-340). Present-only, derived from the
@@ -2698,6 +2760,26 @@ interface WindowedStats {
 }
 
 /**
+ * Distinct UTC calendar days carrying ANY logged event (symptom or meal) whose instant
+ * falls in [startMs, endMs). The coarse "was the app used at all" density measure — ONE
+ * source, shared by ③/④'s logging-eligibility floor (computeWindowedStats) and the SR-4
+ * density-comparability gate (computeReflectionDensity, B-721 §3.3), so the two can never
+ * drift on what "a logged day" means. UTC day-bucketing matches the rest of this module.
+ */
+function loggingDaysInWindow(input: DetectionInput, startMs: number, endMs: number): number {
+  const days = new Set<number>()
+  for (const s of input.symptomEvents) {
+    const ms = Date.parse(s.occurredAt)
+    if (Number.isFinite(ms) && ms >= startMs && ms < endMs) days.add(Math.floor(ms / MS_PER_DAY))
+  }
+  for (const m of input.mealEvents) {
+    const ms = Date.parse(m.occurredAt)
+    if (Number.isFinite(ms) && ms >= startMs && ms < endMs) days.add(Math.floor(ms / MS_PER_DAY))
+  }
+  return days.size
+}
+
+/**
  * Compute the week-over-week per-symptom stats + logging-eligibility used by ③ and ④.
  * ONE source for the windowing and the logging floor, so the reflection gate and the
  * worsening detector can never disagree about which window an event falls in or whether
@@ -2721,21 +2803,9 @@ function computeWindowedStats(input: DetectionInput, config: DetectionConfig): W
   const currentStart = nowMs - windowMs
   const priorStart = nowMs - 2 * windowMs
 
-  const allEventMs = [
-    ...input.symptomEvents.map((s) => Date.parse(s.occurredAt)),
-    ...input.mealEvents.map((m) => Date.parse(m.occurredAt)),
-  ].filter((ms) => Number.isFinite(ms))
-
-  const loggingDays = (start: number, end: number): number => {
-    const days = new Set<number>()
-    for (const ms of allEventMs) {
-      if (ms >= start && ms < end) days.add(Math.floor(ms / MS_PER_DAY))
-    }
-    return days.size
-  }
   const loggingEligible =
-    loggingDays(currentStart, nowMs) >= cfg.minLoggingDaysPerWindow &&
-    loggingDays(priorStart, currentStart) >= cfg.minLoggingDaysPerWindow
+    loggingDaysInWindow(input, currentStart, nowMs) >= cfg.minLoggingDaysPerWindow &&
+    loggingDaysInWindow(input, priorStart, currentStart) >= cfg.minLoggingDaysPerWindow
 
   const stats: SymptomStat[] = []
   for (const symptomType of CORRELATION_SYMPTOM_TYPES) {
@@ -2841,6 +2911,62 @@ export function detectReflections(
     return b.priorCount - b.currentCount - (a.priorCount - a.currentCount)
   })
   return [candidates[0]]
+}
+
+/**
+ * SR-4 (B-721 §3.3) — the falling-comparison density threshold. A FALLING reflection's
+ * week-over-week comparison ("down from N last week") is trustworthy only when this week
+ * was logged with COMPARABLE density to last week — otherwise a quieter-looking week may
+ * just be a less-logged one. `comparable` is true when the current window's logged-days
+ * count is at least this fraction of the prior window's. Asymmetric on purpose (§3.3):
+ *   • density ROSE or held (current ≥ prior)  → always comparable (the fall is real).
+ *   • density FELL below this fraction         → NOT comparable → the comparison is
+ *     WITHHELD (templateReflection drops the clause; the client discloses why). That is
+ *     the fail-toward-escalation direction: we never manufacture a reassuring "down from
+ *     N" out of a week we simply logged less. It never touches a RISING safety comparison
+ *     (worsening ④ is a different finding), and never adds a comparison — it only removes
+ *     one, so it is safe flag-on AND flag-off (§7).
+ *
+ * 0.7 chosen against the small [3,7] logged-days range a reflection can occupy (both
+ * windows clear `minLoggingDaysPerWindow=3`): a single-day drop (7→6, 6→5, 5→4, 4→3 …)
+ * stays comparable, while a proportional drop of ≳30% (7→4, 6→4, 6→3, 5→3 …) withholds.
+ * A named, adversarial-review-gated constant, tunable on real data — not a re-decision.
+ */
+export const DENSITY_COMPARABLE_MIN_RATIO = 0.7
+
+/**
+ * SR-4 (B-721 §3.3) — compute the week-over-week logging-density comparison for the
+ * reflection surface. PURE and side-effect-free; reuses the EXACT window boundaries and
+ * logged-day definition ③/④ use (`config.reflection.windowDays`, `loggingDaysInWindow`),
+ * so "this week / last week" means the same thing here as in the detector. It reads only
+ * the events already in `input` — no new data — and is attached to the reflection finding
+ * POST-detection (index.ts), so it changes nothing about what fires or how it ranks.
+ * Returns null only when `input.now` is unparseable (mirrors computeWindowedStats).
+ *
+ * The measure is "days-with-any-log" (§3.3's chosen definition), inheriting the same
+ * meals-can-mask-a-symptom-gap residual computeWindowedStats documents; this gate is an
+ * ADDITIONAL protection on the falling comparison, layered on top of the detector's own
+ * symptom-day-spread guard, never a replacement for it.
+ */
+export function computeReflectionDensity(
+  input: DetectionInput,
+  config: DetectionConfig = DEFAULT_CONFIG,
+): ReflectionDensity | null {
+  const cfg = config.reflection
+  const nowMs = Date.parse(input.now)
+  if (!Number.isFinite(nowMs)) return null
+  const windowMs = cfg.windowDays * MS_PER_DAY
+  const currentStart = nowMs - windowMs
+  const priorStart = nowMs - 2 * windowMs
+  const currentLoggingDays = loggingDaysInWindow(input, currentStart, nowMs)
+  const priorLoggingDays = loggingDaysInWindow(input, priorStart, currentStart)
+  // priorLoggingDays === 0 ⇒ density did not FALL (it could only have risen), so the
+  // comparison is not an artifact of less logging → comparable, and no divide-by-zero.
+  const comparable =
+    priorLoggingDays === 0
+      ? true
+      : currentLoggingDays >= priorLoggingDays * DENSITY_COMPARABLE_MIN_RATIO
+  return { comparable, currentLoggingDays, priorLoggingDays }
 }
 
 // ── Detector ④: symptom-frequency worsening (the deterministic worsening lane) ──

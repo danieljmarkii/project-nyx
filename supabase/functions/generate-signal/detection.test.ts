@@ -14,6 +14,8 @@ import {
   detectCorrelations,
   detectIntakeDecline,
   detectReflections,
+  computeReflectionDensity,
+  DENSITY_COMPARABLE_MIN_RATIO,
   detectWorsening,
   detectChronicity,
   detectPostprandialTiming,
@@ -4262,4 +4264,110 @@ Deno.test('computeHumanFoodProvenance — degenerate windowDays (≤0, fractiona
   const frac = computeHumanFoodProvenance(input({ mealEvents: [humanFoodMeal(28), humanFoodMeal(20)] }), fracCfg) as HumanFoodProvenance
   assert.equal(frac.windowDays, 5)
   assert.deepEqual(frac.humanFoodDayKeys, ['2026-05-28'], 'May 28 in a floored-5-day window; May 20 out')
+})
+
+// ── SR-4 (B-721 §3.3): computeReflectionDensity — the falling-comparison density gate ──
+// The engine-side half of the gate: "days-with-any-log" per week + the comparability
+// verdict. Adversarial focus — the verdict may NEVER be false-when-density-rose (that
+// would withhold a comparison the data supports), and must be false when this week was
+// materially less-logged (fail-toward-escalation: withhold the reassuring fall). Windows
+// (windowDays 7): current = [NOW−7d, NOW) = [May23 12:00, May30 12:00); prior = [NOW−14d,
+// NOW−7d). Meals at hour 8 on days 24–29 sit cleanly in current; days 17–22 in prior.
+// `count` consecutive day numbers from `start` (e.g. daysN(24, 3) → [24, 25, 26]).
+const daysN = (start: number, count: number): number[] =>
+  Array.from({ length: count }, (_, i) => start + i)
+const densityInput = (currentDays: number[], priorDays: number[]): DetectionInput =>
+  input({
+    mealEvents: [...currentDays, ...priorDays].map((d) => meal({ occurredAt: at(d, 8) })),
+  })
+
+Deno.test('computeReflectionDensity — the threshold constant is pinned (a change must be deliberate)', () => {
+  assert.equal(DENSITY_COMPARABLE_MIN_RATIO, 0.7)
+})
+
+Deno.test('computeReflectionDensity — counts distinct logged days per week, unparseable now → null', () => {
+  const d = computeReflectionDensity(densityInput([24, 25, 26], [17, 18, 19, 20]))
+  assert.ok(d)
+  assert.equal(d!.currentLoggingDays, 3)
+  assert.equal(d!.priorLoggingDays, 4)
+  assert.equal(computeReflectionDensity(input({ now: 'not-a-date' })), null)
+})
+
+Deno.test('computeReflectionDensity — density ROSE or held is ALWAYS comparable (never withholds a supported fall)', () => {
+  // current ≥ prior across the whole [3,7] range — comparable must be true every time.
+  for (const [cur, pri] of [[3, 3], [4, 3], [5, 3], [7, 3], [4, 4], [6, 5], [7, 6], [7, 7]] as const) {
+    const d = computeReflectionDensity(densityInput(daysN(24, cur), daysN(17, pri)))!
+    assert.equal(d.comparable, true, `current ${cur} ≥ prior ${pri} must be comparable`)
+  }
+})
+
+Deno.test('computeReflectionDensity — a mild fall (single day, ≥70%) stays comparable', () => {
+  for (const [cur, pri] of [[6, 7], [5, 7], [5, 6], [3, 4], [4, 5]] as const) {
+    const d = computeReflectionDensity(densityInput(daysN(24, cur), daysN(17, pri)))!
+    assert.equal(d.comparable, true, `${cur}/${pri} = ${(cur / pri).toFixed(2)} ≥ 0.7 → comparable`)
+  }
+})
+
+Deno.test('computeReflectionDensity — a material fall (<70% of last week) WITHHOLDS the comparison', () => {
+  for (const [cur, pri] of [[4, 6], [3, 6], [4, 7], [3, 7], [3, 5]] as const) {
+    const d = computeReflectionDensity(densityInput(daysN(24, cur), daysN(17, pri)))!
+    assert.equal(d.comparable, false, `${cur}/${pri} = ${(cur / pri).toFixed(2)} < 0.7 → withhold`)
+  }
+})
+
+Deno.test('computeReflectionDensity — the 0.7 boundary is exact (7→5 comparable, 7→4 withheld)', () => {
+  assert.equal(computeReflectionDensity(densityInput(daysN(24, 5), daysN(17, 7)))!.comparable, true) // 5 ≥ 4.9
+  assert.equal(computeReflectionDensity(densityInput(daysN(24, 4), daysN(17, 7)))!.comparable, false) // 4 < 4.9
+})
+
+Deno.test('computeReflectionDensity — zero prior logging days can only have risen → comparable (no divide-by-zero)', () => {
+  const d = computeReflectionDensity(densityInput([24, 25, 26], []))!
+  assert.equal(d.priorLoggingDays, 0)
+  assert.equal(d.comparable, true)
+})
+
+Deno.test('computeReflectionDensity — window boundary matches the reflection detector (NOW−7d), not the calendar', () => {
+  // A meal at May23 08:00 is BEFORE currentStart (May23 12:00) → it lands in the PRIOR week,
+  // not the current one — proving the window is now-anchored, the same boundary ③/④ use.
+  const early = computeReflectionDensity(input({ mealEvents: [meal({ occurredAt: at(23, 8) })] }))!
+  assert.equal(early.currentLoggingDays, 0, 'May23 08:00 is before the current window start')
+  assert.equal(early.priorLoggingDays, 1, 'it falls in the prior window instead')
+  const late = computeReflectionDensity(input({ mealEvents: [meal({ occurredAt: at(23, 13) })] }))!
+  assert.equal(late.currentLoggingDays, 1, 'May23 13:00 is after the current window start')
+})
+
+Deno.test('computeReflectionDensity — symptom events count toward density too (any-log, not meal-only)', () => {
+  const d = computeReflectionDensity(
+    input({ symptomEvents: [24, 25].map((day) => symptom('vomit', at(day, 8))), mealEvents: [meal({ occurredAt: at(26, 8) })] }),
+  )!
+  assert.equal(d.currentLoggingDays, 3, 'two symptom-days + one meal-day = three logged days')
+})
+
+// SR-4 (§11) — the "no detection/ranking/threshold delta" guarantee, asserted on the diff:
+// the DETECTORS return pure findings; the additive `density` / `medContext` fields are
+// attached ONLY by decorateFinding (post-detection), never by the engine. If a detector
+// ever started emitting them, this fails — the exact regression the AC guards against.
+Deno.test('SR-4 — detectors never emit the additive payload fields (decoration is strictly post-hoc)', () => {
+  const reflFindings = detectReflections(
+    input({
+      symptomEvents: [
+        symptom('vomit', at(24, 8)), symptom('vomit', at(26, 8)), symptom('vomit', at(28, 8)),
+        symptom('vomit', at(17, 8)), symptom('vomit', at(19, 8)), symptom('vomit', at(21, 8)),
+      ],
+    }),
+  )
+  assert.equal(reflFindings.length, 1)
+  assert.equal('density' in reflFindings[0], false, 'the reflection detector adds no density')
+
+  const corrFindings = detectCorrelations(
+    input({
+      mealEvents: [
+        ...[1, 3, 5, 7, 9, 11, 13].map((d) => setMeal(d, ['salmon'], 9, 'high')),
+        ...[2, 4, 6, 8, 10, 12].map((d) => setMeal(d, ['beef'], 9, 'high')),
+      ],
+      symptomEvents: [2, 4, 6, 8, 10, 12].map((d) => symptom('vomit', at(d, 15))),
+    }),
+  )
+  assert.ok(corrFindings.length >= 1, 'the correlation setup yields a finding')
+  for (const f of corrFindings) assert.equal('medContext' in f, false, 'the correlation detector adds no medContext')
 })

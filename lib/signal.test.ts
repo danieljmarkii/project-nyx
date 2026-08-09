@@ -1,4 +1,10 @@
-import { readSignalsAndRefresh, regenerateSignal, isSignalCacheStale, type SignalCacheRow } from './signal';
+import {
+  readSignalsAndRefresh,
+  regenerateSignal,
+  triggerSignalRegenDebounced,
+  isSignalCacheStale,
+  type SignalCacheRow,
+} from './signal';
 import { supabase } from './supabase';
 import { syncPendingEvents, syncPendingMeals } from './sync';
 import { useSyncStore } from '../store/syncStore';
@@ -162,5 +168,87 @@ describe('regenerateSignal — signalTick on success (B-150 reactive refresh)', 
     const { error } = await regenerateSignal('A');
     expect(error).toBe('boom');
     expect(useSyncStore.getState().signalTick).toBe(0);
+  });
+});
+
+describe('triggerSignalRegenDebounced — acknowledgment flag (SR-3 §5.3)', () => {
+  beforeEach(() => {
+    jest.useFakeTimers();
+    useSyncStore.setState({ signalAcknowledging: {} });
+    mockedInvoke.mockResolvedValue({ error: null });
+  });
+  afterEach(() => {
+    jest.clearAllTimers();
+    jest.useRealTimers();
+  });
+
+  it('raises the ack the moment a log schedules a regen, before the debounce fires', () => {
+    triggerSignalRegenDebounced('pet-a', 5000);
+    expect(useSyncStore.getState().signalAcknowledging['pet-a']).toBe(true);
+    // Per-pet — a background pet is never acked by this pet's log.
+    expect(useSyncStore.getState().signalAcknowledging['pet-b']).toBeUndefined();
+  });
+
+  it('clears the ack when the debounced regen settles (the picture landed)', async () => {
+    triggerSignalRegenDebounced('pet-a', 5000);
+    expect(useSyncStore.getState().signalAcknowledging['pet-a']).toBe(true);
+    await jest.advanceTimersByTimeAsync(5000);
+    expect(useSyncStore.getState().signalAcknowledging['pet-a']).toBe(false);
+  });
+
+  it('clears the ack even when the regen FAILS (fail-quiet — never stranded up)', async () => {
+    mockedInvoke.mockResolvedValue({ error: { message: 'boom' } });
+    triggerSignalRegenDebounced('pet-a', 5000);
+    expect(useSyncStore.getState().signalAcknowledging['pet-a']).toBe(true);
+    await jest.advanceTimersByTimeAsync(5000);
+    expect(useSyncStore.getState().signalAcknowledging['pet-a']).toBe(false);
+  });
+
+  it('a rapid second log keeps the ack up (debounce resets; only the final regen clears it)', async () => {
+    triggerSignalRegenDebounced('pet-a', 5000);
+    await jest.advanceTimersByTimeAsync(3000); // partway through the first debounce
+    triggerSignalRegenDebounced('pet-a', 5000); // second log resets the timer
+    expect(useSyncStore.getState().signalAcknowledging['pet-a']).toBe(true);
+    await jest.advanceTimersByTimeAsync(3000); // first timer would have fired here — it was cleared
+    expect(useSyncStore.getState().signalAcknowledging['pet-a']).toBe(true);
+    await jest.advanceTimersByTimeAsync(2000); // the second debounce fires + settles
+    expect(useSyncStore.getState().signalAcknowledging['pet-a']).toBe(false);
+  });
+
+  it('a SUPERSEDED overlapping regen does not clear a newer log\'s ack (generation guard)', async () => {
+    // The race code-reviewer found: log A's debounce fires (its timer is deleted), then a
+    // new log B arrives while A's regen network call is still in flight — clearTimeout
+    // can't cancel it, so two regens run. A (the superseded call) settling first must NOT
+    // clear the flag that now belongs to B.
+    let resolveA!: (v: { error: null }) => void;
+    mockedInvoke.mockReturnValueOnce(new Promise((r) => (resolveA = r))); // A's invoke hangs
+    mockedInvoke.mockResolvedValue({ error: null }); // B's invoke resolves
+
+    triggerSignalRegenDebounced('pet-a', 5000); // log A → generation 1
+    await jest.advanceTimersByTimeAsync(5000); // A's debounce fires; regen A now in flight
+    expect(useSyncStore.getState().signalAcknowledging['pet-a']).toBe(true);
+
+    triggerSignalRegenDebounced('pet-a', 5000); // log B → generation 2 (A's timer already gone)
+
+    resolveA({ error: null }); // A settles FIRST
+    await jest.advanceTimersByTimeAsync(0); // flush A's .finally — its generation (1) is stale
+    expect(useSyncStore.getState().signalAcknowledging['pet-a']).toBe(true); // held for B
+
+    await jest.advanceTimersByTimeAsync(5000); // B's debounce fires + settles → clears
+    expect(useSyncStore.getState().signalAcknowledging['pet-a']).toBe(false);
+  });
+
+  it('the fail-quiet ceiling clears a hung regen, and each log renews it', async () => {
+    mockedInvoke.mockReturnValue(new Promise(() => {})); // every regen hangs (never settles)
+    triggerSignalRegenDebounced('pet-a', 5000); // ceiling at 5000 + 10000 = 15000
+    await jest.advanceTimersByTimeAsync(5000); // debounce fires; regen hangs
+    expect(useSyncStore.getState().signalAcknowledging['pet-a']).toBe(true);
+
+    triggerSignalRegenDebounced('pet-a', 5000); // renews the ceiling (→ ~t=20000)
+    await jest.advanceTimersByTimeAsync(11_000); // t=16000, PAST the first ceiling (15000)
+    expect(useSyncStore.getState().signalAcknowledging['pet-a']).toBe(true); // renewed, still up
+
+    await jest.advanceTimersByTimeAsync(5000); // t=21000, past the renewed ceiling → fail-quiet
+    expect(useSyncStore.getState().signalAcknowledging['pet-a']).toBe(false);
   });
 });

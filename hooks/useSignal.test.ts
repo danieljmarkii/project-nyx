@@ -1,6 +1,7 @@
 import { act, renderHook, waitFor } from '@testing-library/react-native';
 import { useSignal } from './useSignal';
 import { usePetStore } from '../store/petStore';
+import { useSyncStore } from '../store/syncStore';
 import { useSignalMarkStore } from '../store/signalMarkStore';
 import { readSignalCache, isSignalCacheStale, regenerateSignal } from '../lib/signal';
 import type { CachedFinding } from '../lib/signal';
@@ -137,4 +138,33 @@ describe('useSignal — pet-switch multi-pet safety', () => {
     expect(useSignalMarkStore.getState().seenSignatures['pet-a']).toBe('0:intake_decline');
     expect(result.current.hasUnseenSignal).toBe(false);
   });
+});
+
+describe('useSignal — acknowledgment (SR-3 §5.3)', () => {
+  // Reset BEFORE each test (not after): an afterEach store write lands while the just-
+  // rendered hook is still mounted (RNTL cleanup runs after), re-rendering it outside act.
+  beforeEach(() => {
+    useSyncStore.setState({ signalAcknowledging: {} });
+  });
+
+  it("reflects the ACTIVE pet's ack flag — a background pet's ack never shows on this zone", async () => {
+    useSyncStore.setState({ signalAcknowledging: { 'pet-a': true, 'pet-b': true } });
+    mockedReadCache.mockResolvedValue(null);
+    const { result } = renderHook(() => useSignal());
+    // Active is PET_A; PET_B's flag is irrelevant to this pet's zone.
+    await waitFor(() => expect(result.current.acknowledging).toBe(true));
+    // Drain the focus effect fully so no state update lands after the test.
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+  });
+
+  it('is false when the active pet has nothing in flight', async () => {
+    useSyncStore.setState({ signalAcknowledging: { 'pet-b': true } });
+    mockedReadCache.mockResolvedValue(null);
+    const { result } = renderHook(() => useSignal());
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.acknowledging).toBe(false);
+  });
+  // The ack's lifecycle (raise / clear-on-settle / generation guard / fail-quiet ceiling)
+  // is owned by triggerSignalRegenDebounced and tested in lib/signal.test.ts — the hook
+  // only READS the flag, which the two tests above cover.
 });
