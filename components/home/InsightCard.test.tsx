@@ -225,3 +225,48 @@ describe('InsightCard — SR-1 flag gating (signal_design_v2)', () => {
     expect(view.queryByText("2 episodes weren't near any logged meal")).toBeTruthy();
   });
 });
+
+// ── SR-3 (B-721) — the register: `New`-for-worsening + secondary compression ──────
+describe('InsightCard — SR-3 New-for-worsening chip (§3.2)', () => {
+  it('renders the New chip for a zero-prior worsening only when the flag is on', () => {
+    const c = anyCached(worsening({ priorCount: 0, currentCount: 4, trigger: 'more_episodes' }));
+    expect(render(<InsightCard cached={c} petName="Nyx" designV2={false} />).queryByText('New')).toBeNull();
+    expect(render(<InsightCard cached={c} petName="Nyx" designV2 />).queryByText('New')).toBeTruthy();
+  });
+
+  it('shows no New chip for a worsening with a real prior week (a trend, not a first appearance)', () => {
+    const c = anyCached(worsening({ priorCount: 2 }));
+    expect(render(<InsightCard cached={c} petName="Nyx" designV2 />).queryByText('New')).toBeNull();
+  });
+
+  it('drops the "0 last week" pair from the sample line when the chip carries the novelty (S10)', () => {
+    const c = anyCached(worsening({ priorCount: 0, currentCount: 4, trigger: 'more_episodes' }));
+    const on = render(<InsightCard cached={c} petName="Nyx" designV2 />);
+    expect(on.queryByText('4 episodes this week')).toBeTruthy();
+    expect(on.queryByText(/0 last week/)).toBeNull();
+    // Flag-off keeps the shipped pair line (and shows no chip) — byte-identical surface.
+    const off = render(<InsightCard cached={c} petName="Nyx" designV2={false} />);
+    expect(off.queryByText('4 episodes this week, 0 last week')).toBeTruthy();
+  });
+
+  it('flag-OFF is byte-identical for a zero-prior worsening too (FR-FLAG-2)', () => {
+    const c = anyCached(worsening({ priorCount: 0 }));
+    expect(structureOf(<InsightCard cached={c} petName="Nyx" designV2={false} />)).toBe(
+      structureOf(<InsightCard cached={c} petName="Nyx" />),
+    );
+  });
+});
+
+describe('InsightCard — SR-3 secondary compression (§5.1)', () => {
+  it('compact tightens the row; default/flag-off renders the shipped rhythm byte-identical', () => {
+    const c = anyCached(worsening());
+    // compact defaults false → identical to no prop (the flag-off / lead path).
+    expect(structureOf(<InsightCard cached={c} petName="Nyx" designV2 compact={false} />)).toBe(
+      structureOf(<InsightCard cached={c} petName="Nyx" designV2 />),
+    );
+    // compact true → a DIFFERENT (tighter) structure — the register's secondary rhythm.
+    expect(structureOf(<InsightCard cached={c} petName="Nyx" designV2 compact />)).not.toBe(
+      structureOf(<InsightCard cached={c} petName="Nyx" designV2 />),
+    );
+  });
+});

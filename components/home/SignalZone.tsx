@@ -1,5 +1,5 @@
 import { useEffect, type ReactNode } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { AccessibilityInfo, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import { theme } from '../../constants/theme';
 import { Card } from '../ui/Card';
@@ -14,6 +14,7 @@ import {
   BUILDING_WATCHING_FOR,
   NO_PATTERN_HEADLINE,
   NO_PATTERN_SUB,
+  ackUpdatingCopy,
   buildingDayCount,
   buildingHeadline,
   buildingHeadlineLead,
@@ -32,20 +33,53 @@ const PREVIEW_INSIGHTS = [
 ];
 
 export function SignalZone() {
-  const { findings, coverage, displayState, petName, isLoading, dayNumber, eventCount, markSeen } =
-    useSignal();
+  const {
+    findings,
+    coverage,
+    displayState,
+    petName,
+    isLoading,
+    dayNumber,
+    eventCount,
+    acknowledging,
+    markSeen,
+  } = useSignal();
 
   // Signal/Home design uplift (B-721) — dark behind the allowlist flag, resolved once
   // here and threaded down so the whole zone reads one eligibility (fail-closed to the
   // shipped surface for everyone else). SR-1 gates the live receipts (via LiveStack →
-  // InsightCard); SR-2 gates the empty states (E1 building / E2 no_pattern) below.
-  // Flag-off renders the shipped surface byte-identical (FR-FLAG-2); `stale` is
+  // InsightCard); SR-2 gates the empty states (E1 building / E2 no_pattern) below; SR-3
+  // gates the register (receded chrome + secondary compression) and the acknowledgment
+  // line. Flag-off renders the shipped surface byte-identical (FR-FLAG-2); `stale` is
   // untouched on both paths. `dayNumber` / `eventCount` feed the E1 headline.
   const designV2 = useAllowlistFlag('signal_design_v2');
 
   // While the first cache read is in flight, hold the warm building state rather
   // than letting the empty findings flash 'stale' for a frame.
   const state = isLoading && findings.length === 0 ? 'building' : displayState;
+
+  // SR-3 receded chrome (§5.2) — the section label drops a tier in the LIVE register
+  // only, where the lead's canvas should dominate. The empty states keep the label
+  // prominent (it orients the owner while the engine is still learning — the round-2.1
+  // mock keeps E1/E2's label at full weight). The footer doorway recedes across every
+  // flag-on state (below). Both are token-only and gated: flag-off renders the shipped
+  // chrome, and the style prop stays a single reference so the snapshot is byte-identical.
+  const labelReceded = designV2 && state === 'live';
+
+  // The acknowledgment line shows above the live findings while a fresh log's regen is in
+  // flight (§5.3). Computed once — the render and the iOS announce below read the same value.
+  const showAck = designV2 && acknowledging && state === 'live';
+
+  // `accessibilityLiveRegion` (on AckLine) is Android-only; announce imperatively on iOS
+  // (Nyx ships iOS-first) so VoiceOver reads the "updating…" line when it appears — the
+  // same gap + fix TextField.tsx documents for its error text. Fires on the transition to
+  // showing, not every render; no "cleared" announcement (there is no "done" copy — the
+  // findings just refresh, and re-announcing on clear would be noise).
+  useEffect(() => {
+    if (showAck && Platform.OS === 'ios') {
+      AccessibilityInfo.announceForAccessibility(ackUpdatingCopy(petName));
+    }
+  }, [showAck, petName]);
 
   // The CulpritMark pulse contract (B-284 §3): "flips false when the Signal zone
   // is viewed (screen focus with the zone on-screen)". This card is always on-
@@ -68,7 +102,22 @@ export function SignalZone() {
     // stack of insight rows (PM-decided: rows + dividers, not separate cards, so
     // it reads as one calm intelligence surface, never a dashboard dump — §3.1).
     <Card elevated>
-      <SectionLabel label="Signal" header style={styles.label} />
+      {/* The style prop stays a SINGLE reference when the chrome isn't receded, so the
+          shipped snapshot is byte-identical (an inline [style, false] array would drift it). */}
+      <SectionLabel
+        label="Signal"
+        header
+        style={labelReceded ? [styles.label, styles.labelReceded] : styles.label}
+      />
+
+      {/* SR-3 acknowledgment line (§5.3) — one quiet line ABOVE the still-readable FINDINGS
+          while a fresh log's regen is in flight (never a spinner, never blanks the findings).
+          Scoped to the live register: the empty states carry their own "getting to know you"
+          reassurance (E1), so an "updating…" line there would just double it. Clears when the
+          regen settles (useSignal reads the lifecycle flag) or the safety ceiling fires —
+          fail-quiet, never an error surface. Flag-off never renders it. */}
+      {showAck ? <AckLine petName={petName} /> : null}
+
       {state === 'live' ? (
         <LiveStack findings={findings} petName={petName} designV2={designV2} />
       ) : state === 'stale' ? (
@@ -99,9 +148,31 @@ export function SignalZone() {
         accessibilityLabel={`See all of ${petName}'s patterns`}
         style={styles.patternsLink}
       >
-        <Text style={styles.patternsLinkText}>See all of {petName}'s patterns →</Text>
+        {/* SR-3 (§5.2) — the footer doorway recedes (to the label's tertiary tier) across
+            every flag-on state so it never competes with the content. Single style
+            reference when off, so the shipped snapshot holds. */}
+        <Text
+          style={
+            designV2 ? [styles.patternsLinkText, styles.patternsLinkTextReceded] : styles.patternsLinkText
+          }
+        >
+          See all of {petName}'s patterns →
+        </Text>
       </Pressable>
     </Card>
+  );
+}
+
+// SR-3 acknowledgment line (§5.3 / §9) — a small teal dot + the nyx-voice-locked
+// "Noted — updating {pet}'s picture…". A polite live region so VoiceOver announces it
+// when it appears and clears; the dot is decorative (a View, no label). Renders only
+// behind the flag while a regen is in flight (gated at the call site).
+function AckLine({ petName }: { petName: string }) {
+  return (
+    <View style={styles.ackLine} accessibilityLiveRegion="polite">
+      <View style={styles.ackDot} />
+      <Text style={styles.ackText}>{ackUpdatingCopy(petName)}</Text>
+    </View>
   );
 }
 
@@ -147,7 +218,16 @@ function LiveStack({
       {ordered.map((f, i) => (
         <View key={`${f.finding.type}-${f.rank}`}>
           {i > 0 && <Divider style={styles.rowDivider} />}
-          <InsightCard cached={f} petName={petName} isLead={i === 0} designV2={designV2} />
+          {/* SR-3 register (§5.1) — the lead (rank 0) keeps the enlarged canvas; secondary
+              rows compress into a tighter rhythm. Gated on the flag: off, `compact` is
+              false and every row renders the shipped padding. */}
+          <InsightCard
+            cached={f}
+            petName={petName}
+            isLead={i === 0}
+            designV2={designV2}
+            compact={designV2 && i > 0}
+          />
         </View>
       ))}
     </View>
@@ -357,6 +437,12 @@ const styles = StyleSheet.create({
   label: {
     marginBottom: theme.space2,
   },
+  // SR-3 receded chrome (§5.2) — the section label drops one tier (secondary → tertiary)
+  // in the live register. Tertiary, not disabled: a disabled-tier heading fails AA
+  // contrast; tertiary keeps it (≥4.5:1) while still reading as receded.
+  labelReceded: {
+    color: theme.colorTextTertiary,
+  },
   // §8 quiet doorway into the dashboard — a hairline-separated footer link.
   patternsLink: {
     borderTopWidth: 1,
@@ -368,6 +454,35 @@ const styles = StyleSheet.create({
     fontSize: theme.textSM,
     fontWeight: theme.weightMedium,
     color: theme.colorAccent,
+  },
+  // SR-3 receded chrome (§5.2) — the doorway drops to the SAME tertiary tier as the
+  // label. The mock dims it to a lighter teal, but a lighter teal on white fails AA
+  // (≈1.6:1) — worse than the shipped accent footer — and there is no teal that both
+  // recedes AND clears AA on white. So the doorway recedes as the label does (grey,
+  // ≥4.5:1), extending the team's label-contrast override of the mock to the footer.
+  // pm-feature-review flagged the teal path as the sole-doorway AA failure; teal is the
+  // interactive FILL colour, not a link requirement, and the whole row is a button.
+  patternsLinkTextReceded: {
+    color: theme.colorTextTertiary,
+  },
+  // SR-3 acknowledgment line (§5.3) — the teal dot + the "Noted — updating …" line, sat
+  // above the findings with a little breathing room below.
+  ackLine: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.space1,
+    paddingBottom: theme.space1,
+  },
+  ackDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
+    backgroundColor: theme.colorAccent,
+  },
+  ackText: {
+    fontSize: theme.textXS,
+    color: theme.colorAccentInk,
+    lineHeight: theme.lineHeightXS,
   },
   intro: {
     fontSize: theme.textMD,

@@ -17,6 +17,7 @@ import {
   dotLaneModel,
   evidenceText,
   isJointCandidate,
+  isNewWorsening,
   isTimingFinding,
   phoneScript,
   proteinCluster,
@@ -25,6 +26,7 @@ import {
   timingCompareRows,
   timingControlDisclosure,
   timingReceiptDegrades,
+  worseningNewSampleLine,
 } from '../../lib/signalCopy';
 import { DotLane, EvidenceBox, PhoneScript, StackedCompare } from './SignalReceipts';
 import type { CachedFinding, InsightType, PriorityClass, SignalFinding } from '../../lib/signal';
@@ -63,6 +65,17 @@ interface InsightBodyProps {
 
 function SentenceBody({ cached, isLead, designV2 }: InsightBodyProps) {
   const tag = confidenceTag(cached.finding);
+  // Client-derived `New` for a worsening finding whose prior week held zero episodes
+  // (§3.2 / Change Contract v1.1): the chip carries the novelty, and the sample line
+  // drops the "N this week, 0 last week" pair the chip replaces — one carrier, not two
+  // (S10). Dark behind the flag; the other `New` cases (timing / first-appearance for
+  // other types) are v2, needing generate-signal prior-set memory. The guard is inlined
+  // in the sample ternary so TS narrows `cached.finding` to the worsening shape there.
+  const showNew = designV2 && isNewWorsening(cached.finding);
+  const sample =
+    designV2 && isNewWorsening(cached.finding)
+      ? worseningNewSampleLine(cached.finding)
+      : sampleLine(cached.finding);
   return (
     <View style={styles.body}>
       <Text style={[styles.sentence, isLead && styles.sentenceLead]}>{cached.text}</Text>
@@ -71,9 +84,22 @@ function SentenceBody({ cached, isLead, designV2 }: InsightBodyProps) {
       )}
       <CardFaceReceipt finding={cached.finding} designV2={designV2} />
       <View style={styles.metaRow}>
+        {showNew && <NewChip />}
         {tag && <Badge label={tag} variant="muted" />}
-        <Text style={styles.sample}>{sampleLine(cached.finding)}</Text>
+        <Text style={styles.sample}>{sample}</Text>
       </View>
+    </View>
+  );
+}
+
+// The `New`-for-worsening chip (§3.2 / SR-3). Accent-ink on the accent wash — a tinted
+// sibling of the confidence Badge, deliberately NOT rose: novelty is not alarm, so a
+// "this is new" cue carries no safety tone. Sized to the meta row's other chips (textXS)
+// so mixed chips read level. Renders only when the flag is on (gated at the call site).
+function NewChip() {
+  return (
+    <View style={styles.newChip}>
+      <Text style={styles.newChipText}>New</Text>
     </View>
   );
 }
@@ -199,9 +225,21 @@ interface Props {
   // false so every non-uplift caller (and the flag-off path) renders the shipped card
   // byte-identical; SignalZone resolves the allowlist flag and passes the real value.
   designV2?: boolean;
+  // B-721 SR-3 (§5.1) — the register compresses secondary (non-lead) findings into a
+  // tighter vertical rhythm so the lead's canvas dominates. Set by SignalZone for the
+  // register's secondary rows; default false, so every other caller and the flag-off
+  // path render the shipped padding byte-identical (FR-FLAG-2). minHeight 44 is untouched,
+  // so the tap target is preserved — only the surrounding breathing room tightens.
+  compact?: boolean;
 }
 
-export function InsightCard({ cached, petName, isLead = false, designV2 = false }: Props) {
+export function InsightCard({
+  cached,
+  petName,
+  isLead = false,
+  designV2 = false,
+  compact = false,
+}: Props) {
   const [expanded, setExpanded] = useState(false);
 
   const Body = INSIGHT_RENDERERS[cached.finding.type];
@@ -232,7 +270,9 @@ export function InsightCard({ cached, petName, isLead = false, designV2 = false 
       accessibilityState={{ expanded }}
       accessibilityLabel={accessibilityLabel}
       accessibilityHint="Shows the evidence behind this insight"
-      style={styles.row}
+      // Single style reference when not compact, so the shipped card stays byte-identical
+      // (an inline [style, false] array drifts the snapshot — FR-FLAG-2).
+      style={compact ? [styles.row, styles.rowCompact] : styles.row}
     >
       <View style={[styles.rail, { backgroundColor: rail }]} />
       <View style={styles.content}>
@@ -255,6 +295,11 @@ const styles = StyleSheet.create({
     gap: theme.space2,
     minHeight: 44,
     paddingVertical: theme.space2,
+  },
+  // The register's tighter rhythm for secondary rows (§5.1). Overrides paddingVertical
+  // only; minHeight 44 and the gap are untouched, so the tap target holds.
+  rowCompact: {
+    paddingVertical: theme.space1,
   },
   rail: {
     width: 3,
@@ -325,6 +370,20 @@ const styles = StyleSheet.create({
   sample: {
     fontSize: theme.textXS,
     color: theme.colorTextTertiary,
+  },
+  // The `New`-for-worsening chip (§3.2). A pill (radiusFull, per the mock) sized like the
+  // confidence Badge but accent-tinted: accent-ink text on the accent wash.
+  newChip: {
+    paddingHorizontal: theme.space1,
+    paddingVertical: theme.spaceMicro,
+    borderRadius: theme.radiusFull,
+    backgroundColor: theme.colorAccentLight,
+    alignSelf: 'flex-start',
+  },
+  newChipText: {
+    fontSize: theme.textXS,
+    fontWeight: theme.weightSemibold,
+    color: theme.colorAccentInk,
   },
   evidence: {
     marginTop: theme.space1,
