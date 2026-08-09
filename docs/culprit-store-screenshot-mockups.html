@@ -274,6 +274,66 @@
   .thumb{width:118px;aspect-ratio:1320/2868;border-radius:9px;overflow:hidden;position:relative;flex:0 0 auto}
   .thumb .tscale{transform:scale(.3933);transform-origin:top left;width:300px}
 
+  /* ── Round 4: bezel-free concepts — the frame is built FROM app material ── */
+  .conceptrow{display:flex;gap:30px;flex-wrap:wrap;align-items:flex-start;margin-bottom:46px}
+  .cinfo{flex:1 1 230px;max-width:300px}
+  .cinfo .dirname{font-weight:600;font-size:15px}
+  .cinfo .dirsrc{font-size:11.5px;color:var(--accent-ink);letter-spacing:.4px;text-transform:uppercase;margin:3px 0 8px}
+  .cinfo .dirnote{font-size:12.5px;color:var(--muted);line-height:1.55}
+  .cinfo .dirnote b{color:var(--ink)}
+  .cframes{display:flex;gap:22px;flex-wrap:wrap}
+  .cframe{width:250px;aspect-ratio:1320/2868;border-radius:22px;overflow:hidden;position:relative;flex:0 0 auto;box-shadow:0 10px 30px rgba(0,0,0,.17)}
+  .cframe .fcapt{font-size:16.5px}
+  .cframe.d-day .fcapt{padding:24px 18px 0;max-width:19ch}
+  .cframe .cmicro{position:absolute;bottom:8px;left:0;right:0;z-index:6;text-align:center;font-size:8.5px;letter-spacing:.9px;text-transform:uppercase;color:rgba(255,255,255,.5)}
+  .cframe.d-day .cmicro{color:rgba(33,30,78,.4)}
+  .cframe.d-night .fcapt{color:#F2EEE4;padding:18px 16px 0;max-width:16ch}
+  /* C1 — evidence blown up */
+  .bigcards{position:absolute;left:-24px;right:-24px;top:170px;display:flex;flex-direction:column;gap:14px;z-index:1}
+  .bigcards .card{padding:16px 44px;border-radius:16px;border:none;box-shadow:0 18px 44px rgba(0,0,0,.5)}
+  .bigcards .sig-head{font-size:16px;line-height:1.35}
+  .bigcards .sig-body{font-size:12.5px;line-height:1.5}
+  .bigcards .sig-sample{font-size:10px;margin-top:4px}
+  .zoomchip{position:absolute;z-index:3;background:#FFF;border-radius:14px;padding:9px 13px;box-shadow:0 14px 34px rgba(0,0,0,.45);font-size:11.5px;font-weight:600;color:#0A0A0A;display:flex;align-items:center;gap:7px}
+  .zoomchip i{width:8px;height:8px;border-radius:50%;background:#F43F5E;flex:0 0 auto}
+  .ribbon{position:absolute;left:-18px;right:-18px;top:158px;background:#FFF;box-shadow:0 16px 40px rgba(33,30,78,.18);padding:4px 26px;z-index:1}
+  .ribbon .row{padding:13px 0;border-bottom:1px solid #F5F5F5}
+  .ribbon .row .grow{min-width:0}
+  .ribbon .row .lbl{font-size:15px}
+  .ribbon .row .sub{font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .ribbon .row .when{font-size:11px}
+  .ribbon .row.hot{background:linear-gradient(90deg,#FFF8F9,#FFF);margin:0 -26px;padding-left:26px;padding-right:26px}
+  .thread{position:absolute;z-index:2;pointer-events:none}
+  /* C2 — constellation */
+  .starfield{position:absolute;inset:0;pointer-events:none;z-index:0}
+  .starfield i{position:absolute;width:2px;height:2px;border-radius:50%;background:rgba(255,255,255,.5)}
+  .constellation{position:relative;z-index:1;display:block;margin:6px auto 0}
+  .nightcard{position:absolute;left:16px;right:16px;bottom:-26px;z-index:2}
+  .nightcard .card{padding:15px 16px;border-radius:15px;border:none;box-shadow:0 0 44px rgba(242,238,228,.14),0 18px 44px rgba(0,0,0,.6)}
+  .nightcard .sig-body{font-size:12.5px;line-height:1.5}
+  .nightcard .sig-sample{font-size:10px;margin-top:4px}
+  .floatrows{position:absolute;left:18px;right:18px;top:150px;z-index:1;display:flex;flex-direction:column;gap:12px}
+  .floatrows .card{padding:12px 15px;border-radius:14px;border:none;box-shadow:0 14px 36px rgba(0,0,0,.55)}
+  .floatrows .row{padding:2px 0}
+  .floatrows .row .grow{min-width:0}
+  .floatrows .row .lbl{font-size:14px}
+  .floatrows .row .sub{font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .floatrows .row .when{font-size:11px}
+  /* C3 — specimen / dossier */
+  .bignum{position:relative;z-index:1;font-family:"Iowan Old Style","Palatino Linotype",Georgia,serif;color:#211E4E;text-align:center;font-size:78px;line-height:1;margin-top:60px;letter-spacing:-2px}
+  .bignum small{display:block;font-size:10.5px;letter-spacing:1.6px;text-transform:uppercase;color:#737373;margin-top:12px;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;font-weight:600}
+  .specrule{width:44px;height:2px;background:#00C2A8;margin:20px auto 0}
+  .speccard{position:absolute;left:18px;right:18px;bottom:44px;z-index:1}
+  .speccard .card{border:none;box-shadow:0 16px 40px rgba(33,30,78,.2);padding:15px 16px}
+  .speccard .sig-body{font-size:12.5px;line-height:1.5}
+  .speccard .sig-sample{font-size:10px;margin-top:4px}
+  .specsheet{position:absolute;left:16px;right:16px;bottom:40px;z-index:1;background:#FFF;border-radius:14px;box-shadow:0 16px 40px rgba(33,30,78,.2);padding:16px 17px}
+  .specsheet .sec{font-size:9.5px;letter-spacing:1px;text-transform:uppercase;color:#737373;font-weight:700;margin-bottom:4px}
+  .specsheet table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
+  .specsheet td{padding:7px 0;border-top:1px solid #F0F0EE;font-size:12px;vertical-align:top}
+  .specsheet td:last-child{text-align:right;color:#262626}
+  .specsheet tr.hot td{background:#FFF8F9;color:#9F1239}
+
   .notes{font-size:13px;color:var(--muted);max-width:74ch}
   .notes li{margin-bottom:8px}
   .notes b{color:var(--ink);font-weight:600}
@@ -283,15 +343,114 @@
 
 <div class="wrap">
 <header class="page">
-  <span class="roundtag">Store screenshots · Round 3 · 2026-08-09 — the C template, composed</span>
-  <h1>The 6.9″ set, as it ships</h1>
-  <p class="sub">Round 3 renders the whole ratified set at judging size — the answer to "I don't yet have a feeling for the end result." Template per the D-SS1 ruling: the <b>night hero opens</b> (brand-night ground, the real Signal cards lit), <b>daylight carries</b> (moonlight-paper field, deep-indigo serif captions with a bold lead phrase, one device scale, bottom-cropped bezel). Below it: the search-card preview — the thumbnail view where most people actually decide — then the round-2 direction record and the Cooper capture states.</p>
-  <p class="authority">Captions are placeholder-grade until the joint keyword pass with step 13 — react to the composition and the register; the copy pass comes next. In production every frame is built from real device captures composited into this template, never redrawn UI.</p>
+  <span class="roundtag">Store screenshots · Round 4 · 2026-08-09 — bezel-free concepts</span>
+  <h1>The 6.9″ set, past "app on a background"</h1>
+  <p class="sub">Round 3 was sent back (<b>R3-1</b>): the copy holds, but a caption over a phone on a colored field is the category's safe pattern, and the brief is to <b>nail</b> it. Round 4 breaks the device frame: each concept below builds the screenshot <em>out of the app's own material</em> — cards, rows, receipts, and numbers at poster scale — with no bezel anywhere. Every fragment is real UI (Guideline 2.3.3 satisfied by content, not by a phone-shaped border), and the ruled copy is unchanged.</p>
+  <p class="authority">Each concept shows frame 1 (the hero) and frame 5 (History — the hardest frame to make interesting, so the concept that survives it survives anywhere). Pick a concept, or name a hybrid (e.g. 2's hero + 1's interiors) — round 5 applies the winner to all six frames. The trade being spent, named honestly: a full-screen-in-bezel is the literal "this is the real product" proof; going bezel-free buys distinctiveness and pays for it with that proof, which the fragments' pixel-realism has to earn back.</p>
 </header>
 
 <section>
-  <h2>Round 3 — the set, in upload order</h2>
-  <p class="secnote">Frames 1–5 are the set; the sixth slot's two candidates (the round-3 open call) sit at the end — <b>react to which one earns the slot, or neither</b>. Scroll sideways.</p>
+  <h2>Round 4 — three concepts (D-SS4, open)</h2>
+
+  <div class="conceptrow">
+    <div class="cinfo">
+      <div class="dirname">1 — The evidence, blown up</div>
+      <div class="dirsrc">UI as material</div>
+      <div class="dirnote">The app's real components at poster scale, bleeding off the frame edges — the Signal cards huge on the night, History as a full-width ribbon on the paper, one magnified detail chip per frame (the zoom move, done quiet). <b>Closest to the ruled template's world</b>, but the composition is the card, not a phone holding it. Keeps night-opens-day-carries exactly.</div>
+    </div>
+    <div class="cframes">
+      <div class="cframe d-night">
+        <p class="fcapt">Keep the record. See the patterns.</p>
+        <div class="bigcards">
+          <div class="card"><div class="rail-card rail-safety"><div class="sig-head">Cooper’s meals are coming back less finished.</div><div class="sig-sample">2 days below his usual, from his rated meals</div></div></div>
+          <div class="card"><div class="rail-card rail-insight"><div class="sig-body">Beef may be linked to Cooper’s vomiting — all 3 vomits this trial came within 4 hours of a beef treat.</div><div class="sig-sample">3 of 3 vomits · past 19 days · early pattern</div></div></div>
+        </div>
+        <div class="zoomchip" style="left:16px;bottom:64px"><i></i>3 of 3 · within 4 h</div>
+        <div class="cmicro">Frame 1 · real Signal cards, no bezel</div>
+      </div>
+      <div class="cframe d-day">
+        <p class="fcapt"><b>Everything, kept.</b> Even the 2am details.</p>
+        <div class="ribbon">
+          <div class="row"><span class="evicon ev-meal"><svg viewBox="0 0 16 16"><path d="M2 7h12a6 6 0 0 1-12 0z"/></svg></span><div class="grow"><div class="lbl">Meal</div><div class="sub">Venison &amp; sweet potato · <span class="tag">Dry</span></div></div><div class="when">Aug 9, 7:15 AM</div></div>
+          <div class="row hot"><span class="evicon ev-sym"><svg viewBox="0 0 16 16"><path d="M8 2C8 2 4 7 4 10a4 4 0 0 0 8 0C12 7 8 2 8 2z"/></svg></span><div class="grow"><div class="lbl">Vomit <span class="tag">Estimated</span></div><div class="sub">Photo attached</div></div><div class="when">Aug 6, 3:40 PM</div></div>
+          <div class="row hot"><span class="evicon ev-meal"><svg viewBox="0 0 16 16"><path d="M2 7h12a6 6 0 0 1-12 0z"/></svg></span><div class="grow"><div class="lbl">Meal</div><div class="sub">Beef training treats · <span class="tag">Treat</span></div></div><div class="when">Aug 6, 12:10 PM</div></div>
+          <div class="row" style="border-bottom:none"><span class="evicon ev-weight"><svg viewBox="0 0 16 16"><rect x="2" y="7" width="12" height="3" rx="1.5"/><path d="M8 3l2.5 3h-5z"/></svg></span><div class="grow"><div class="lbl">Weight</div><div class="sub">27.1 lb</div></div><div class="when">Aug 3, 9:12 AM</div></div>
+        </div>
+        <svg class="thread" style="right:4px;top:228px" width="24" height="96" viewBox="0 0 24 96"><path d="M16 12 C 27 34, 27 62, 16 84" fill="none" stroke="#00C2A8" stroke-width="2.5" stroke-linecap="round"/><circle cx="16" cy="12" r="4" fill="#00C2A8"/><circle cx="16" cy="84" r="4" fill="#00C2A8"/></svg>
+        <div class="cmicro">Frame 5 · the pair, threaded</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="conceptrow">
+    <div class="cinfo">
+      <div class="dirname">2 — The constellation</div>
+      <div class="dirsrc">The brand world, literal</div>
+      <div class="dirnote">The whole set lives in the night. The evidence itself becomes the sky: the dot-lane receipt (a ratified product shape) drawn as a constellation — three beef treats, three vomits, the hairlines between them — with one real card glowing beneath like a lit window. The Moon &amp; Signal icon expanded into a world nothing in the category could mistake for anyone else. <b>Amends the C ruling</b> (night everywhere, not just frame 1) and spends the most "real product" proof — the interiors must carry real rows to stay honest.</div>
+    </div>
+    <div class="cframes">
+      <div class="cframe d-night">
+        <div class="starfield"><i style="left:12%;top:8%"></i><i style="left:78%;top:6%;width:1.5px;height:1.5px"></i><i style="left:88%;top:22%"></i><i style="left:8%;top:30%;width:1.5px;height:1.5px"></i><i style="left:64%;top:12%"></i><i style="left:30%;top:5%;width:1.5px;height:1.5px"></i><i style="left:92%;top:44%;width:1.5px;height:1.5px"></i><i style="left:5%;top:52%"></i></div>
+        <div class="cmark" style="position:relative;z-index:1;display:flex;align-items:center;justify-content:center;gap:6px;padding-top:18px;color:#A6A2CE"><svg viewBox="0 0 16 16" style="width:13px;height:13px;fill:#F2EEE4"><path fill-rule="evenodd" d="M8 1a7 7 0 1 0 6.9 8.2A5.5 5.5 0 1 1 8 1z"/></svg><span style="font-family:'Iowan Old Style',Georgia,serif;font-size:12px">Culprit</span></div>
+        <p class="fcapt">Keep the record. See the patterns.</p>
+        <svg class="constellation" style="margin-top:26px" width="210" height="180" viewBox="0 0 210 180">
+          <g stroke="rgba(196,190,255,.35)" stroke-width="1"><line x1="30" y1="150" x2="58" y2="52"/><line x1="105" y1="142" x2="118" y2="38"/><line x1="180" y1="150" x2="166" y2="60"/><line x1="30" y1="150" x2="105" y2="142"/><line x1="105" y1="142" x2="180" y2="150"/></g>
+          <g fill="#00C2A8"><circle cx="30" cy="150" r="5"/><circle cx="105" cy="142" r="5"/><circle cx="180" cy="150" r="5"/></g>
+          <g fill="#FB7185"><circle cx="58" cy="52" r="6.5"/><circle cx="118" cy="38" r="6.5"/><circle cx="166" cy="60" r="6.5"/></g>
+          <g font-family="-apple-system,sans-serif" font-size="8.5" fill="#706BA6"><text x="22" y="168">beef</text><text x="97" y="160">beef</text><text x="172" y="168">beef</text><text x="44" y="40">vomit · 3:40</text><text x="104" y="26">vomit · 1:55</text><text x="152" y="48">vomit · 4:10</text></g>
+        </svg>
+        <div class="nightcard"><div class="card"><div class="rail-card rail-insight"><div class="sig-body">Beef may be linked to Cooper’s vomiting — all 3 vomits this trial came within 4 hours of a beef treat.</div><div class="sig-sample">3 of 3 vomits · past 19 days · early pattern</div></div></div></div>
+        <div class="cmicro">Frame 1 · the dot-lane receipt, as sky</div>
+      </div>
+      <div class="cframe d-night">
+        <p class="fcapt"><b style="font-weight:400">Everything, kept.</b> Even the 2am details.</p>
+        <div class="floatrows">
+          <div class="card"><div class="row"><span class="evicon ev-meal"><svg viewBox="0 0 16 16"><path d="M2 7h12a6 6 0 0 1-12 0z"/></svg></span><div class="grow"><div class="lbl">Meal</div><div class="sub">Venison &amp; sweet potato · Dry</div></div><div class="when">7:15 AM</div></div></div>
+          <div class="card"><div class="row"><span class="evicon ev-sym"><svg viewBox="0 0 16 16"><path d="M8 2C8 2 4 7 4 10a4 4 0 0 0 8 0C12 7 8 2 8 2z"/></svg></span><div class="grow"><div class="lbl">Vomit <span class="tag">Estimated</span></div><div class="sub">Photo attached</div></div><div class="when">3:40 PM</div></div></div>
+          <div class="card"><div class="row"><span class="evicon ev-meal"><svg viewBox="0 0 16 16"><path d="M2 7h12a6 6 0 0 1-12 0z"/></svg></span><div class="grow"><div class="lbl">Meal</div><div class="sub">Beef training treats · Treat</div></div><div class="when">12:10 PM</div></div></div>
+        </div>
+        <svg class="thread" style="left:10px;top:236px" width="18" height="170" viewBox="0 0 18 170"><path d="M9 8 C -2 60, -2 110, 9 162" fill="none" stroke="rgba(0,194,168,.8)" stroke-width="2" stroke-linecap="round"/><circle cx="9" cy="8" r="3.5" fill="#00C2A8"/><circle cx="9" cy="162" r="3.5" fill="#00C2A8"/></svg>
+        <div class="cmicro">Frame 5 · real rows, floating lit</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="conceptrow">
+    <div class="cinfo">
+      <div class="dirname">3 — The specimen</div>
+      <div class="dirsrc">Clinical editorial</div>
+      <div class="dirnote">Each frame is a page from a beautiful dossier: one enormous Newsreader number — the honest stat, never a grade — a thin teal rule, a small-caps annotation, and one real UI fragment pinned beneath like a specimen. Whoop's number-per-frame move in Culprit's register; the "clinical-grade instrument" positioning made visual. <b>Quietest and most premium; the least "look at the app"</b> — the hero could open on night with a moonlight numeral to keep the C sequencing.</div>
+    </div>
+    <div class="cframes">
+      <div class="cframe d-day">
+        <p class="fcapt">Keep the record. See the patterns.</p>
+        <div class="bignum">3 of 3<small>vomits within 4 hours of a beef treat</small></div>
+        <div class="specrule"></div>
+        <div class="speccard"><div class="card"><div class="rail-card rail-insight"><div class="sig-body">Beef may be linked to Cooper’s vomiting — all 3 vomits this trial came within 4 hours of a beef treat.</div><div class="sig-sample">3 of 3 vomits · past 19 days · early pattern</div></div></div></div>
+        <div class="cmicro">Frame 1 · the stat, then its source card</div>
+      </div>
+      <div class="cframe d-day">
+        <p class="fcapt"><b>Everything, kept.</b> Even the 2am details.</p>
+        <div class="bignum" style="font-size:64px;margin-top:44px">46<small>events in 19 days — meals, symptoms, weight</small></div>
+        <div class="specrule"></div>
+        <div class="specsheet">
+          <div class="sec">Event summary · Jul 22 – Aug 9</div>
+          <table>
+            <tr class="hot"><td>Vomiting</td><td>3 — each within 4 h of a beef treat</td></tr>
+            <tr><td>Meals logged</td><td>41 · 86% finished</td></tr>
+            <tr><td>Weight</td><td>27.4 → 27.1 lb (2 checks)</td></tr>
+          </table>
+        </div>
+        <div class="cmicro">Frame 5 · the record as a sheet</div>
+      </div>
+    </div>
+  </div>
+
+</section>
+
+<section>
+  <h2>Round 3 — the bezel template (sent back by R3-1; kept for the record — the copy survives)</h2>
+  <p class="secnote">Frames 1–5 were the ruled C template; the sixth slot's two candidates sit at the end. Kept so the delta from round 4 is visible — <b>do not react to the treatment</b>; the captions here are the ones the PM kept.</p>
   <div class="finalrail">
 
     <div class="fitem">
@@ -362,7 +521,7 @@
 
 <section>
   <h2>The ~60% moment — how it reads in search</h2>
-  <p class="secnote">Most visitors decide here and never open the page: icon, name, subtitle, and frames 1–3 at thumbnail size. This is the squint test the set was designed against — the night hero is a night frame precisely so this row is unmissable.</p>
+  <p class="secnote">Most visitors decide here and never open the page: icon, name, subtitle, and frames 1–3 at thumbnail size. Currently showing the sent-back round-3 thumbs — round 5 rebuilds this row with the winning concept, and every concept above must survive this squint test.</p>
   <div class="ascard">
     <div class="asrow">
       <div class="asicon"><svg viewBox="0 0 16 16"><path fill-rule="evenodd" d="M8 1a7 7 0 1 0 6.9 8.2A5.5 5.5 0 1 1 8 1z"/></svg><i></i></div>
@@ -743,7 +902,7 @@
 </section>
 
 <footer>
-  Round 3 — republished 2026-08-09 over the same URL. Companion docs: <b>docs/store-screenshot-plan.md</b> (the capture spec + rulings) + <b>docs/research/2026-08-app-store-creative-landscape.md</b> (the evidence). The round-1 framed pass was removed this round — git history keeps it. Frame grounds and phone interiors are literal brand tokens by design and do not adapt to this page’s dark mode — they are the artwork, not the page. Typefaces are system stand-ins for Geist/Newsreader; production uses the real faces.
+  Round 4 — republished 2026-08-09 over the same URL. Companion docs: <b>docs/store-screenshot-plan.md</b> (the capture spec + rulings) + <b>docs/research/2026-08-app-store-creative-landscape.md</b> (the evidence). The round-1 framed pass was removed this round — git history keeps it. Frame grounds and phone interiors are literal brand tokens by design and do not adapt to this page’s dark mode — they are the artwork, not the page. Typefaces are system stand-ins for Geist/Newsreader; production uses the real faces.
 </footer>
 </div>
 

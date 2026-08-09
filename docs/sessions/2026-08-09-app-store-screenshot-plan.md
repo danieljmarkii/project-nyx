@@ -75,6 +75,17 @@ republishing (hero line-break + frame-4 caption-clip fixed; the frame-2 scrim co
 rendering by pixel value, not by eye). Captions remain placeholder-grade pending the joint
 step-13 keyword pass.
 
+**R3-1 + Round 4 (same session):** the PM sent the composed round-3 set back — *"I'm liking
+the copy… it's still app on a background"* — keeping copy/order/posture and re-opening the
+frame treatment. Round 4 (same artifact URL) renders three **bezel-free** concepts, each
+shown as frames 1 and 5, all built from real UI fragments at poster scale: **(1) the
+evidence, blown up** (full-bleed cards; History as a ribbon with the treat→vomit pair
+threaded), **(2) the constellation** (the dot-lane receipt as night sky over one glowing
+real card; amends C's ground split), **(3) the specimen** (giant honest numeral + rule +
+annotation + pinned fragment). All three render-verified in headless Chromium before
+publishing. **D-SS4 open** (concept or hybrid); round 5 applies the winner to all six frames
+and rebuilds the search-card preview. Plan §0.5 + tracker updated.
+
 ## Decisions taken (provisional, non-PM-blocking)
 
 - **Flags stay off for the demo account** (no Ask pill, no `signal_design_v2`) — screenshots
