@@ -25,6 +25,16 @@ const MS_PER_DAY = 86_400_000
  * broader correlation lookback (180d) down to the recent, clinically-relevant "on a course
  * now" period the present-tense copy ("During an active … course") describes. ONE window
  * per regeneration, so every correlation/timing card agrees on the context it carries.
+ *
+ * ACCEPTED LIMITATION (adversarial review 2026-08-09, residual 2 — PM/Dr. Chen to ratify):
+ * the window is anchored at NOW, not at the finding's own evidence span. Timing cards (⑤/⑥,
+ * 60d) align by construction; a CORRELATION built from episodes older than 60d (its lookback
+ * reaches 180d) can carry a med line for a course that never overlapped its episodes. The
+ * present tense keeps it HONEST (it states the pet is on an active course now — context, not
+ * a claim the drug touched the pattern), and it never reassures or attributes cause, so this
+ * is a precision limit, not a safety inversion. A finding-scoped window would need the
+ * correlation's evidence dates threaded onto the finding — a detection-layer change SR-4
+ * deliberately avoids. Registered as a decision brief for the PM.
  */
 export const MED_CONTEXT_WINDOW_DAYS = 60
 
@@ -49,6 +59,12 @@ export interface MedDoseFact {
  * name. Returns null when nothing names it (a bare ad-hoc dose linked to neither) — such a
  * dose cannot fill the "{drug}" slot, so it is excluded from the context, never rendered
  * as a blank or a guessed name.
+ *
+ * SR-5 NOTE: the label is owner free-text passed VERBATIM (a drug name is data, not generated
+ * copy — screening it here would corrupt a legitimate name like "Baytril 2.5%"). When the
+ * client composes the §9 line it must (a) run the composed sentence through the guardrail
+ * screen — a "%" in a drug name would trip `hasBannedSignalVocabulary` — and (b) pluralize
+ * "{n} dose(s) logged" (the §9 copy hardcodes plural; doseCount can be 1). Flagged for SR-5.
  */
 export function resolveDrugLabel(
   regimenDrugName: string | null | undefined,
@@ -73,6 +89,14 @@ export function resolveDrugLabel(
  * in-window. The singular "{drug}" (§5.4) is the most-dosed drug; ties break toward the
  * most-recently-dosed (the more "current" course). doseCount is always ≥1 when non-null, so
  * the client's "{n} doses logged" never reads "0 doses". PURE — no I/O, no detector.
+ *
+ * ACCEPTED LIMITATION (adversarial review 2026-08-09, residual 3 — PM/Dr. Chen to ratify):
+ * the pick is IDENTITY-AGNOSTIC (most-dosed), matching the confounder pass, because there is
+ * no curated drug→side-effect data in v1. On a pet with two active courses this can name the
+ * higher-frequency-but-less-symptom-relevant one (a skin drug on a vomiting card) and omit
+ * the other. It never exonerates the food and never reassures — it is which single CONTEXT
+ * line to show, not a safety claim. A symptom-aware pick (or naming all courses) is a product
+ * call; registered as a decision brief for the PM.
  */
 export function computeMedOnBoard(
   nowMs: number,
