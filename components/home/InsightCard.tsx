@@ -11,20 +11,27 @@ import {
 import { theme } from '../../constants/theme';
 import { Badge } from '../ui/Badge';
 import {
+  DENSITY_BOX_TITLE,
   confidenceTag,
   displayProteinName,
   dotLaneA11yLabel,
   dotLaneModel,
   evidenceText,
   isJointCandidate,
+  isNewWorsening,
+  isReflectionDensityWithheld,
   isTimingFinding,
+  medContextLine,
   phoneScript,
   proteinCluster,
+  reflectionExpandedExtras,
+  reflectionWithheldSampleLine,
   sampleLine,
   stackedCompareA11yLabel,
   timingCompareRows,
   timingControlDisclosure,
   timingReceiptDegrades,
+  worseningNewSampleLine,
 } from '../../lib/signalCopy';
 import { DotLane, EvidenceBox, PhoneScript, StackedCompare } from './SignalReceipts';
 import type { CachedFinding, InsightType, PriorityClass, SignalFinding } from '../../lib/signal';
@@ -62,18 +69,67 @@ interface InsightBodyProps {
 }
 
 function SentenceBody({ cached, isLead, designV2 }: InsightBodyProps) {
-  const tag = confidenceTag(cached.finding);
+  const finding = cached.finding;
+  const tag = confidenceTag(finding);
+  // Client-derived `New` for a worsening finding whose prior week held zero episodes
+  // (§3.2 / Change Contract v1.1): the chip carries the novelty, and the sample line
+  // drops the "N this week, 0 last week" pair the chip replaces — one carrier, not two
+  // (S10). Dark behind the flag; the other `New` cases (timing / first-appearance for
+  // other types) are v2, needing generate-signal prior-set memory.
+  const showNew = designV2 && isNewWorsening(finding);
+  // The card-face sample line, with the two flag-on client swaps folded in — each S10
+  // (the face never re-asserts a comparison another element already owns): a `New`
+  // worsening drops its "0 last week" pair (the chip carries it), and a density-withheld
+  // falling reflection drops its incomparable "M last week" (§3.3 — SR-4 withheld it from
+  // the sentence, so the face must not put it back, or the expanded "we're not comparing"
+  // line contradicts the card). The guards are inlined so TS narrows `finding` per branch.
+  // Flag-off → the shipped sample line, byte-identical (FR-FLAG-2).
+  const sample =
+    designV2 && isNewWorsening(finding)
+      ? worseningNewSampleLine(finding)
+      : designV2 && isReflectionDensityWithheld(finding)
+        ? reflectionWithheldSampleLine(finding)
+        : sampleLine(finding);
   return (
     <View style={styles.body}>
       <Text style={[styles.sentence, isLead && styles.sentenceLead]}>{cached.text}</Text>
-      {cached.finding.type === 'food_symptom_correlation' && isJointCandidate(cached.finding) && (
-        <LinkedPair proteins={proteinCluster(cached.finding)} />
+      {finding.type === 'food_symptom_correlation' && isJointCandidate(finding) && (
+        <LinkedPair proteins={proteinCluster(finding)} />
       )}
-      <CardFaceReceipt finding={cached.finding} designV2={designV2} />
+      <CardFaceReceipt finding={finding} designV2={designV2} />
+      {/* SR-5 (§5.4) — the medication-on-board context line on correlation + timing cards,
+          when a course is active in the finding window. Flag-gated; returns null off the
+          flag, for other types, and when the composed line trips the guardrail screen. */}
+      {designV2 ? <MedContextLine finding={finding} /> : null}
       <View style={styles.metaRow}>
+        {showNew && <NewChip />}
         {tag && <Badge label={tag} variant="muted" />}
-        <Text style={styles.sample}>{sampleLine(cached.finding)}</Text>
+        <Text style={styles.sample}>{sample}</Text>
       </View>
+    </View>
+  );
+}
+
+// ── Med-on-board context line (SR-5, §5.4) ────────────────────────────────────
+// A quiet slate-toned line under the sentence/receipt: "During an active {drug} course —
+// {n} doses logged." Context stated as fact, never a verdict (§5.4). Renders null for a
+// type that carries no context, and — via medContextLine — when the composed line trips
+// the guardrail screen (a "%" in the owner's drug name, B-733); the med context is
+// non-essential decoration on a benign card, so dropping it is fail-quiet, never a gap.
+function MedContextLine({ finding }: { finding: SignalFinding }) {
+  const line = medContextLine(finding);
+  if (!line) return null;
+  return <Text style={styles.medContext}>{line}</Text>;
+}
+
+// The `New`-for-worsening chip (§3.2 / SR-3). Accent-ink on the accent wash — a tinted
+// sibling of the confidence Badge, deliberately NOT rose: novelty is not alarm, so a
+// "this is new" cue carries no safety tone. Sized to the meta row's other chips (textXS)
+// so mixed chips read level. Renders only when the flag is on (gated at the call site).
+function NewChip() {
+  return (
+    <View style={styles.newChip}>
+      <Text style={styles.newChipText}>New</Text>
     </View>
   );
 }
@@ -104,13 +160,21 @@ function cardFaceReceiptA11y(finding: SignalFinding, designV2: boolean): string 
     : dotLaneA11yLabel(finding);
 }
 
-// ── Expanded-state evidence (SR-1, §4) ────────────────────────────────────────
+// ── Expanded-state evidence (SR-1 + SR-5, §4 / §3.3 / §3.4) ───────────────────
 // Additive under the flag, below the unchanged "Why we're showing this" prose. Timing
 // expands draw the two-sided control side + the honest un-timeable remainder (S2/S9);
-// safety expands render the phone-call script — the facts to say on a vet call (§9),
-// sans the active-meds line (that rides SR-4's payload). Correlation and reflection add
-// nothing here in SR-1 (reflection's density-gated compare is SR-5).
-function ExpandedReceipts({ finding, petName }: { finding: SignalFinding; petName: string }) {
+// safety expands render the phone-call script — the facts to say on a vet call (§9). A
+// FALLING reflection (SR-5) draws its density disclosure/withheld line + the mid-trial
+// adjacency. Correlation still adds nothing here (its sample line carries it — S10).
+function ExpandedReceipts({
+  finding,
+  petName,
+  trialRunning,
+}: {
+  finding: SignalFinding;
+  petName: string;
+  trialRunning: boolean;
+}) {
   if (isTimingFinding(finding)) {
     const disclosure = timingControlDisclosure(finding);
     const rows = timingReceiptDegrades(finding) ? null : timingCompareRows(finding);
@@ -121,6 +185,24 @@ function ExpandedReceipts({ finding, petName }: { finding: SignalFinding; petNam
         {rows && <StackedCompare rows={rows} />}
         {disclosure ? (
           <Text style={[styles.disclosure, rows ? styles.disclosureSpaced : null]}>{disclosure}</Text>
+        ) : null}
+      </EvidenceBox>
+    );
+  }
+  // Reflection (SR-5, §3.3 / §3.4) — the density disclosure/withheld line + the mid-trial
+  // adjacency, each rendered only when it applies (both null → no box, e.g. a flat
+  // reflection or an old cached row with no density and no trial). Falling-only and
+  // expanded-only; the card face stays sentence-only (S1/S10).
+  if (finding.type === 'reflection') {
+    const { densityLine, trialAdjacency } = reflectionExpandedExtras(finding, trialRunning);
+    if (!densityLine && !trialAdjacency) return null;
+    return (
+      <EvidenceBox title={DENSITY_BOX_TITLE}>
+        {densityLine ? <Text style={styles.disclosure}>{densityLine}</Text> : null}
+        {trialAdjacency ? (
+          <Text style={[styles.trialAdjacency, densityLine ? styles.disclosureSpaced : null]}>
+            {trialAdjacency}
+          </Text>
         ) : null}
       </EvidenceBox>
     );
@@ -199,9 +281,27 @@ interface Props {
   // false so every non-uplift caller (and the flag-off path) renders the shipped card
   // byte-identical; SignalZone resolves the allowlist flag and passes the real value.
   designV2?: boolean;
+  // B-721 SR-3 (§5.1) — the register compresses secondary (non-lead) findings into a
+  // tighter vertical rhythm so the lead's canvas dominates. Set by SignalZone for the
+  // register's secondary rows; default false, so every other caller and the flag-off
+  // path render the shipped padding byte-identical (FR-FLAG-2). minHeight 44 is untouched,
+  // so the tap target is preserved — only the surrounding breathing room tightens.
+  compact?: boolean;
+  // B-721 SR-5 (§3.4) — whether a diet trial is running for this pet (`isTrialRunning`,
+  // resolved once by SignalZone). Gates ONLY the falling reflection's mid-trial adjacency
+  // line in the expanded state; default false, so every non-Home caller and the flag-off
+  // path are unaffected (the adjacency is also inside the flag-gated ExpandedReceipts).
+  trialRunning?: boolean;
 }
 
-export function InsightCard({ cached, petName, isLead = false, designV2 = false }: Props) {
+export function InsightCard({
+  cached,
+  petName,
+  isLead = false,
+  designV2 = false,
+  compact = false,
+  trialRunning = false,
+}: Props) {
   const [expanded, setExpanded] = useState(false);
 
   const Body = INSIGHT_RENDERERS[cached.finding.type];
@@ -212,11 +312,15 @@ export function InsightCard({ cached, petName, isLead = false, designV2 = false 
   const rail = RAIL_COLOR[cached.finding.priorityClass];
 
   // The card is one accessible button (the whole row), so its label must carry the
-  // card-face glance evidence too — a self-label on the receipt Views would be swallowed
-  // by this container and never reach VoiceOver (code-review / MedStrip idiom). Flag-off
-  // (or a non-timing type) → null → the label stays exactly the shipped `cached.text`.
+  // card-face glance evidence too — a self-label on the receipt Views (or the med line)
+  // would be swallowed by this container and never reach VoiceOver (code-review / MedStrip
+  // idiom). Flag-off (or a non-timing type) → null → the label stays exactly the shipped
+  // `cached.text`. SR-5: the med-on-board line folds in after the receipt when present, so
+  // VoiceOver hears the same card-face context a sighted owner reads.
   const receiptA11y = cardFaceReceiptA11y(cached.finding, designV2);
-  const accessibilityLabel = receiptA11y ? `${cached.text}. ${receiptA11y}` : cached.text;
+  const medLine = designV2 ? medContextLine(cached.finding) : null;
+  let accessibilityLabel = receiptA11y ? `${cached.text}. ${receiptA11y}` : cached.text;
+  if (medLine) accessibilityLabel = `${accessibilityLabel}. ${medLine}`;
 
   function toggle() {
     LayoutAnimation.configureNext(LayoutAnimation.create(theme.durationMedium, 'easeInEaseOut', 'opacity'));
@@ -232,7 +336,9 @@ export function InsightCard({ cached, petName, isLead = false, designV2 = false 
       accessibilityState={{ expanded }}
       accessibilityLabel={accessibilityLabel}
       accessibilityHint="Shows the evidence behind this insight"
-      style={styles.row}
+      // Single style reference when not compact, so the shipped card stays byte-identical
+      // (an inline [style, false] array drifts the snapshot — FR-FLAG-2).
+      style={compact ? [styles.row, styles.rowCompact] : styles.row}
     >
       <View style={[styles.rail, { backgroundColor: rail }]} />
       <View style={styles.content}>
@@ -240,7 +346,9 @@ export function InsightCard({ cached, petName, isLead = false, designV2 = false 
         {expanded && (
           <>
             <Text style={styles.evidence}>{evidenceText(cached.finding, petName)}</Text>
-            {designV2 && <ExpandedReceipts finding={cached.finding} petName={petName} />}
+            {designV2 && (
+              <ExpandedReceipts finding={cached.finding} petName={petName} trialRunning={trialRunning} />
+            )}
           </>
         )}
         <Text style={styles.expandHint}>{expanded ? 'Hide details' : "Why we're showing this"}</Text>
@@ -255,6 +363,11 @@ const styles = StyleSheet.create({
     gap: theme.space2,
     minHeight: 44,
     paddingVertical: theme.space2,
+  },
+  // The register's tighter rhythm for secondary rows (§5.1). Overrides paddingVertical
+  // only; minHeight 44 and the gap are untouched, so the tap target holds.
+  rowCompact: {
+    paddingVertical: theme.space1,
   },
   rail: {
     width: 3,
@@ -326,13 +439,28 @@ const styles = StyleSheet.create({
     fontSize: theme.textXS,
     color: theme.colorTextTertiary,
   },
+  // The `New`-for-worsening chip (§3.2). A pill (radiusFull, per the mock) sized like the
+  // confidence Badge but accent-tinted: accent-ink text on the accent wash.
+  newChip: {
+    paddingHorizontal: theme.space1,
+    paddingVertical: theme.spaceMicro,
+    borderRadius: theme.radiusFull,
+    backgroundColor: theme.colorAccentLight,
+    alignSelf: 'flex-start',
+  },
+  newChipText: {
+    fontSize: theme.textXS,
+    fontWeight: theme.weightSemibold,
+    color: theme.colorAccentInk,
+  },
   evidence: {
     marginTop: theme.space1,
     fontSize: theme.textSM,
     color: theme.colorTextSecondary,
     lineHeight: theme.lineHeightBody,
   },
-  // The honest un-timeable remainder inside the expanded control-side box (§4).
+  // The honest un-timeable remainder inside the expanded control-side box (§4), and the
+  // reflection density disclosure/withheld line inside its "Counted honestly" box (§3.3).
   disclosure: {
     fontSize: theme.textSM,
     color: theme.colorTextSecondary,
@@ -340,6 +468,23 @@ const styles = StyleSheet.create({
   },
   disclosureSpaced: {
     marginTop: theme.space0_5,
+  },
+  // The mid-trial adjacency line (§3.4) — italic, marking it as an interpretive aside
+  // (the mock's `.adj`), set below the density line when both render.
+  trialAdjacency: {
+    fontSize: theme.textSM,
+    color: theme.colorTextSecondary,
+    lineHeight: theme.lineHeightSM,
+    fontStyle: 'italic',
+  },
+  // The med-on-board context line (§5.4) — a quiet, slate-toned line under the sentence/
+  // receipt. colorEventMedicationInk is the readable slate TEXT ink (colorEventMedication
+  // is a ~3:1 glyph tint that fails AA as body text); textSM keeps it subordinate to the
+  // sentence. Spaced from its neighbours by the body's own `gap`, like the receipt.
+  medContext: {
+    fontSize: theme.textSM,
+    color: theme.colorEventMedicationInk,
+    lineHeight: theme.lineHeightSM,
   },
   expandHint: {
     marginTop: theme.space1,

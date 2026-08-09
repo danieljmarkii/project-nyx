@@ -12,6 +12,17 @@ import {
   NO_PATTERN_SUB,
   noPatternIntro,
   staleIntro,
+  ackUpdatingCopy,
+  isNewWorsening,
+  worseningNewSampleLine,
+  isReflectionDensityWithheld,
+  reflectionWithheldSampleLine,
+  hasBannedSignalVocabulary,
+  medContextLine,
+  densityDisclosureLine,
+  reflectionExpandedExtras,
+  DENSITY_WITHHELD,
+  TRIAL_ADJACENCY,
   confidenceTag,
   sampleLine,
   evidenceText,
@@ -381,6 +392,209 @@ describe('sampleLine', () => {
     expect(s).toBe('4 episodes this week, 5 last week');
     expect(CAUSAL_RE.test(s)).toBe(false);
     expect(REASSURANCE_RE.test(s)).toBe(false);
+  });
+});
+
+describe('ackUpdatingCopy (SR-3 §5.3 / §9) — the post-log acknowledgment line', () => {
+  it('is the verbatim §9 string with the pet name and a single ellipsis, no exclamation', () => {
+    expect(ackUpdatingCopy('Nyx')).toBe("Noted — updating Nyx's picture…");
+    expect(ackUpdatingCopy('Mochi')).toBe("Noted — updating Mochi's picture…");
+  });
+  it('is guardrail-clean (no exclamation, no reassurance/causal vocabulary — absence ≠ wellness)', () => {
+    for (const name of ['Nyx', 'Mochi', 'Pixel']) {
+      const s = ackUpdatingCopy(name);
+      expect(s.includes('!')).toBe(false);
+      expect(REASSURANCE_RE.test(s)).toBe(false);
+      expect(CAUSAL_RE.test(s)).toBe(false);
+    }
+  });
+});
+
+describe('isNewWorsening + worseningNewSampleLine (SR-3 §3.2 — client-derived New)', () => {
+  it('is New only when a worsening finding had zero prior episodes', () => {
+    expect(isNewWorsening(worsening({ priorCount: 0 }))).toBe(true);
+    expect(isNewWorsening(worsening({ priorCount: 2 }))).toBe(false);
+    expect(isNewWorsening(worsening({ priorCount: 1 }))).toBe(false);
+  });
+  it('is never New for a non-worsening finding (the other New cases are v2)', () => {
+    // reflection carries a priorCount of 0 too, but the New chip is worsening-only in v1.
+    expect(isNewWorsening(reflection({ priorCount: 0 }))).toBe(false);
+    expect(isNewWorsening(correlation())).toBe(false);
+    expect(isNewWorsening(intakeDecline())).toBe(false);
+  });
+  it('the New sample line states the current count only — never the "0 last week" pair it replaces', () => {
+    // more_episodes arm (the shape priorCount === 0 actually produces).
+    const s = worseningNewSampleLine(worsening({ priorCount: 0, currentCount: 4, trigger: 'more_episodes' }));
+    expect(s).toBe('4 episodes this week');
+    expect(s).not.toContain('last week');
+    expect(s).not.toContain('0');
+  });
+  it('states the count on the axis that rose (days for the more_days arm), singularised', () => {
+    expect(
+      worseningNewSampleLine(worsening({ priorCount: 0, currentDays: 5, trigger: 'more_days' })),
+    ).toBe('5 days this week');
+    expect(
+      worseningNewSampleLine(worsening({ priorCount: 0, currentCount: 1, trigger: 'more_episodes' })),
+    ).toBe('1 episode this week');
+  });
+  it('the New sample line is guardrail-clean (no exclamation / reassurance / causal)', () => {
+    const s = worseningNewSampleLine(worsening({ priorCount: 0 }));
+    expect(s.includes('!')).toBe(false);
+    expect(REASSURANCE_RE.test(s)).toBe(false);
+    expect(CAUSAL_RE.test(s)).toBe(false);
+  });
+});
+
+// ── SR-5 (B-721) — med-on-board line, density expand, trial adjacency ──────────
+describe('hasBannedSignalVocabulary (SR-5, §3.5 — the client screen mirror)', () => {
+  it('flags a percentage or a direction glyph; passes clean prose', () => {
+    expect(hasBannedSignalVocabulary('Baytril 2.5%')).toBe(true);
+    expect(hasBannedSignalVocabulary('up 40 percent')).toBe(true);
+    expect(hasBannedSignalVocabulary('vomiting ↑ this week')).toBe(true);
+    expect(hasBannedSignalVocabulary('5 -> 2 episodes')).toBe(true);
+    expect(hasBannedSignalVocabulary('During an active Apoquel course — 3 doses logged.')).toBe(false);
+  });
+});
+
+describe('medContextLine (SR-5, §5.4 / §9 — the med-on-board context line)', () => {
+  it('composes the §9 line on a correlation carrying medContext', () => {
+    expect(medContextLine(correlation({ medContext: { drugLabel: 'Apoquel', doseCount: 3 } }))).toBe(
+      'During an active Apoquel course — 3 doses logged.',
+    );
+  });
+  it('renders on both timing types too (§5.4)', () => {
+    const ctx = { drugLabel: 'Metronidazole', doseCount: 4 };
+    expect(medContextLine(postprandial({ medContext: ctx }))).toBe(
+      'During an active Metronidazole course — 4 doses logged.',
+    );
+    expect(medContextLine(timeofday({ medContext: ctx }))).toBe(
+      'During an active Metronidazole course — 4 doses logged.',
+    );
+  });
+  it('pluralises the dose count (B-733 — doseCount can be 1)', () => {
+    expect(medContextLine(correlation({ medContext: { drugLabel: 'Apoquel', doseCount: 1 } }))).toBe(
+      'During an active Apoquel course — 1 dose logged.',
+    );
+    expect(medContextLine(correlation({ medContext: { drugLabel: 'Apoquel', doseCount: 2 } }))).toBe(
+      'During an active Apoquel course — 2 doses logged.',
+    );
+  });
+  it('drops the line (null) when a "%" in the drug name trips the guardrail (B-733)', () => {
+    // "Baytril 2.5%" is a legitimate owner drug name carried verbatim; the composed line
+    // trips the percent screen (S3), so it is dropped rather than shipped with a "%".
+    expect(medContextLine(correlation({ medContext: { drugLabel: 'Baytril 2.5%', doseCount: 2 } }))).toBeNull();
+  });
+  it('returns null for a type that never carries med context', () => {
+    for (const f of [reflection(), worsening(), intakeDecline(), chronicity(), incidentRedFlag()]) {
+      expect(medContextLine(f)).toBeNull();
+    }
+  });
+  it('returns null when the finding carries no medContext (old cache / no active course)', () => {
+    expect(medContextLine(correlation())).toBeNull();
+    expect(medContextLine(postprandial())).toBeNull();
+  });
+  it('defends a degenerate cached fact (blank label / non-positive count) rather than render a gap', () => {
+    expect(medContextLine(correlation({ medContext: { drugLabel: '   ', doseCount: 3 } }))).toBeNull();
+    expect(medContextLine(correlation({ medContext: { drugLabel: 'Apoquel', doseCount: 0 } }))).toBeNull();
+  });
+  it('the composed line is a bare fact — guardrail-clean, never a verdict (§5.4)', () => {
+    const s = medContextLine(correlation({ medContext: { drugLabel: 'Apoquel', doseCount: 3 } }))!;
+    expect(s.includes('!')).toBe(false);
+    expect(REASSURANCE_RE.test(s)).toBe(false);
+    expect(CAUSAL_RE.test(s)).toBe(false);
+    expect(hasBannedSignalVocabulary(s)).toBe(false);
+  });
+});
+
+describe('reflection sample-line gating (SR-5, §3.3)', () => {
+  it('isReflectionDensityWithheld is true only for a falling reflection with density.comparable === false', () => {
+    expect(
+      isReflectionDensityWithheld(
+        reflection({ direction: 'improving', density: { comparable: false, currentLoggingDays: 2, priorLoggingDays: 6 } }),
+      ),
+    ).toBe(true);
+    // comparable → keep the shipped pair
+    expect(
+      isReflectionDensityWithheld(
+        reflection({ direction: 'improving', density: { comparable: true, currentLoggingDays: 6, priorLoggingDays: 6 } }),
+      ),
+    ).toBe(false);
+    // flat → not gated (§3.2 falling only)
+    expect(
+      isReflectionDensityWithheld(
+        reflection({ direction: 'flat', density: { comparable: false, currentLoggingDays: 2, priorLoggingDays: 6 } }),
+      ),
+    ).toBe(false);
+    // no density (old cache) → keep the pair; wrong type → false
+    expect(isReflectionDensityWithheld(reflection({ direction: 'improving' }))).toBe(false);
+    expect(isReflectionDensityWithheld(worsening())).toBe(false);
+  });
+  it('reflectionWithheldSampleLine drops the incomparable prior, pluralised', () => {
+    expect(reflectionWithheldSampleLine(reflection({ currentCount: 2 }))).toBe('2 episodes this week');
+    expect(reflectionWithheldSampleLine(reflection({ currentCount: 1 }))).toBe('1 episode this week');
+  });
+});
+
+describe('reflection density + trial adjacency (SR-5, §3.3 / §3.4 / §9)', () => {
+  it('the disclosure line is §9 verbatim with the logged-day counts', () => {
+    expect(densityDisclosureLine({ comparable: true, currentLoggingDays: 6, priorLoggingDays: 5 })).toBe(
+      'Counted from days you logged: 6 this week, 5 last.',
+    );
+  });
+  it('the trial adjacency line is the §9 verbatim string', () => {
+    expect(TRIAL_ADJACENCY).toBe(
+      "A quieter week partway through a diet trial isn't the trial's verdict — the full run is what makes it readable.",
+    );
+  });
+  it('comparable falling → the disclosure line, no withheld line', () => {
+    const x = reflectionExpandedExtras(
+      reflection({ direction: 'improving', density: { comparable: true, currentLoggingDays: 6, priorLoggingDays: 5 } }),
+      false,
+    );
+    expect(x.densityLine).toBe('Counted from days you logged: 6 this week, 5 last.');
+    expect(x.trialAdjacency).toBeNull();
+  });
+  it('NOT-comparable falling → the withheld line', () => {
+    const x = reflectionExpandedExtras(
+      reflection({ direction: 'improving', density: { comparable: false, currentLoggingDays: 2, priorLoggingDays: 6 } }),
+      false,
+    );
+    expect(x.densityLine).toBe(DENSITY_WITHHELD);
+  });
+  it('a flat reflection gets neither density nor adjacency even with a trial running (§3.2/§3.4)', () => {
+    const x = reflectionExpandedExtras(
+      reflection({ direction: 'flat', density: { comparable: false, currentLoggingDays: 2, priorLoggingDays: 6 } }),
+      true,
+    );
+    expect(x.densityLine).toBeNull();
+    expect(x.trialAdjacency).toBeNull();
+  });
+  it('the adjacency appends only when a trial is running (falling)', () => {
+    expect(reflectionExpandedExtras(reflection({ direction: 'improving' }), true).trialAdjacency).toBe(TRIAL_ADJACENCY);
+    expect(reflectionExpandedExtras(reflection({ direction: 'improving' }), false).trialAdjacency).toBeNull();
+  });
+  it('an old cached falling reflection (no density) still gets the adjacency, but no density line', () => {
+    const x = reflectionExpandedExtras(reflection({ direction: 'improving' }), true);
+    expect(x.densityLine).toBeNull();
+    expect(x.trialAdjacency).toBe(TRIAL_ADJACENCY);
+  });
+  it('the withheld line is Dr. Chen-clean: never reassures, no causal/glyph/%, and grounds itself in LOGGED DAYS (B-733)', () => {
+    expect(DENSITY_WITHHELD.includes('!')).toBe(false);
+    expect(REASSURANCE_RE.test(DENSITY_WITHHELD)).toBe(false);
+    expect(CAUSAL_RE.test(DENSITY_WITHHELD)).toBe(false);
+    expect(hasBannedSignalVocabulary(DENSITY_WITHHELD)).toBe(false);
+    // The B-733 fix: the uncertainty is grounded in the actual measure (days-with-any-log),
+    // not symptom coverage — so it names "logged days", never "less to log".
+    expect(DENSITY_WITHHELD.toLowerCase()).toContain('logged days');
+    expect(DENSITY_WITHHELD).not.toContain('less to log');
+  });
+  it('the disclosure + adjacency are guardrail-clean', () => {
+    const disclosure = densityDisclosureLine({ comparable: true, currentLoggingDays: 6, priorLoggingDays: 5 });
+    for (const s of [disclosure, TRIAL_ADJACENCY]) {
+      expect(s.includes('!')).toBe(false);
+      expect(REASSURANCE_RE.test(s)).toBe(false);
+      expect(hasBannedSignalVocabulary(s)).toBe(false);
+    }
   });
 });
 

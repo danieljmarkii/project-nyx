@@ -53,8 +53,9 @@ three composed-frame design directions (A night instrument / B daylight record /
 opens-day-carries, C recommended); plan §0.5 added with open PM calls **D-SS1** (direction),
 **D-SS2** (designed set as the submission set — recommended — vs plain-capture floor),
 **D-SS3** (vet report promoted to frame 3); §5 captions demoted to placeholder-grade pending
-a joint caption+keyword pass with step 13. Backlog: **B-727** (post-launch PPO test),
-**B-728** (vet-referral CPP), **B-729** (StoreKit review prompt) — all Later, evidence-linked.
+a joint caption+keyword pass with step 13. Backlog: **B-739** (post-launch PPO test),
+**B-740** (vet-referral CPP), **B-741** (StoreKit review prompt) — all Later, evidence-linked
+(filed in-session as B-727–729; renumbered at wrap, IDs taken on `main` by SR/Beta siblings).
 
 **RULINGS (same day):** D-SS1 = **C** (PM). D-SS2 = **(a) designed set ships as the
 submission set**, D-SS3 = **report at frame 3** (both PM-delegated to the team; team took
@@ -91,7 +92,7 @@ bezel-free concepts are closed (kept in the mock as record) — with three enric
 all applied and render-verified: **(1)** the hero's insight card carries the **B-721
 dot-lane receipt** (S1 respected: the safety card stays plain); **(2)** the report frame
 gains a **by-day chart**, trial start anchored — flagged as a `generate-report` renderer
-change → **B-730** (rides the B-494-held redeploy; until then frame 3 shows the deployed
+change → **B-742** (filed as B-730, renumbered at wrap; rides the B-494-held redeploy; until then frame 3 shows the deployed
 render); **(3)** Cooper renders with a **species-matched illustrated avatar** (production
 path: upload the asset as his pet photo — no product change). §2's flags-off rule gained
 the one D-SS4 carve-out: `signal_design_v2` ON for the demo account, consistently for
@@ -100,7 +101,7 @@ cards. **Frame 6 RULED same day: 6A — the full Home** (picker candidate droppe
 capture, it's the hero's photograph composed in the day template; the §2.5 seed addendum
 stands for the TrialStrip protein name + the reviewer's own log-flow walk). **With that,
 every design decision on the screenshot track is closed.** Remaining is production:
-the step-13 caption/keyword pass, B-730 + `signal_design_v2` presentability for the
+the step-13 caption/keyword pass, B-742 + `signal_design_v2` presentability for the
 enriched frames, the export pipeline, and capture (gated on step 11).
 
 ## Decisions taken (provisional, non-PM-blocking)

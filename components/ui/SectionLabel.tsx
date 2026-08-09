@@ -1,9 +1,11 @@
-import { Text, TextStyle, StyleSheet } from 'react-native';
+import { Text, TextStyle, StyleProp, StyleSheet } from 'react-native';
 import { theme } from '../../constants/theme';
 
 interface Props {
   label: string;
-  style?: TextStyle;
+  // StyleProp so callers can pass a conditional [base, override] array (the component
+  // already flattens it into its own [styles.label, style] array at render time).
+  style?: StyleProp<TextStyle>;
   /**
    * Announce as a VoiceOver heading (B-637). Opt-in, because this component
    * serves two jobs with different semantics: a label over a list/zone SECTION

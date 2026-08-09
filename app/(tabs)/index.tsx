@@ -17,6 +17,7 @@ import { TodayZone } from '../../components/home/TodayZone';
 import { TrendZone } from '../../components/home/TrendZone';
 import { useDietTrial } from '../../hooks/useDietTrial';
 import { resolveTrialStrip } from '../../lib/dietTrialCard';
+import { isTrialRunning } from '../../lib/dietTrial';
 import { useMedStrips } from '../../hooks/useMedStrips';
 import { resolveMedStrips } from '../../lib/medStrip';
 
@@ -37,6 +38,11 @@ export default function HomeScreen() {
   // Same loader as the Pet-tab card, so the two surfaces cannot disagree about
   // the same trial (B-417 PR 4).
   const { input: trialInput } = useDietTrial();
+  // B-721 SR-5 (§3.4) — is a trial running for the active pet? Computed here from the
+  // trial input Home already loads (no second read) and passed to SignalZone, where a
+  // falling reflection's expanded state appends the mid-trial adjacency line. `isTrialRunning`
+  // is the one trial predicate (lib/dietTrial), read on the trial's own clock (`nowMs`).
+  const trialRunning = trialInput?.trial ? isTrialRunning(trialInput.trial, trialInput.nowMs) : false;
   // The medication strip's input (B-614 PR M2) — resolved inline below, exactly
   // like the trial strip, so the resolver call and the placement stay on-screen.
   const { input: medInput } = useMedStrips();
@@ -105,7 +111,7 @@ export default function HomeScreen() {
               belongs to a DIFFERENT pet; renders nothing for single-pet households
               or when no other pet has a cached safety finding. */}
           <CrossPetSafetyBanner />
-          <SignalZone />
+          <SignalZone trialRunning={trialRunning} />
           {/* B-417 §4.2 — a running trial gets a compact strip here, BELOW Signal
               and ABOVE Today. Deliberate: Principle 3 says safety insights always
               lead, and a trial is context, not an insight. `resolveTrialStrip`

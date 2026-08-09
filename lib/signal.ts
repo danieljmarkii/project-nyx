@@ -52,6 +52,39 @@ export type WorseningTier = 'firm' | 'standard' | 'soft';
 // a symptom recurring for ≥3 weeks always points at the vet (§4.6).
 export type ChronicityTier = 'standard' | 'firm';
 
+// ── SR-4 additive payload facts (B-721) ───────────────────────────────────────
+// The two decoration facts generate-signal attaches POST-detection (SR-4, #615) and
+// the client consumes in SR-5. Both are OPTIONAL on the mirror for the same reason the
+// slice-6 protein cluster is: `ai_signals.findings` is a cache with a 24h TTL, so after
+// SR-4 deploys the client still reads rows written by the PREVIOUS deployment, which
+// carry neither field. Every consumer must render byte-identically when they're absent
+// (which is also the flag-off contract, FR-FLAG-2). Source of truth: detection.ts
+// MedOnBoardContext / ReflectionDensity — keep in sync.
+
+// Medication-on-board context (§5.4) — a nameable drug with ≥1 administered dose in the
+// finding's context window. Attached to correlation + timing findings only; the client
+// composes the §9 line ("During an active {drug} course — {n} doses logged.") around it.
+export interface MedOnBoardContext {
+  /** Owner-facing drug name (regimen drug_name preferred, else library brand/generic). Non-empty, VERBATIM owner text. */
+  drugLabel: string;
+  /** Administered on-board doses of this drug in the context window (missed/refused excluded). ≥1. */
+  doseCount: number;
+}
+
+// Reflection logging-density comparison (§3.3) — the week-over-week "days-with-any-log"
+// counts + whether they are comparable enough to trust a FALLING reflection's
+// comparison. When `comparable` is false the server already withheld the "down from N"
+// clause from the sentence (templateReflection); the client discloses WHY in the expand.
+// Attached to reflection findings only.
+export interface ReflectionDensity {
+  /** Whether the two weeks' logging density is comparable enough to trust a falling comparison (§3.3). */
+  comparable: boolean;
+  /** Distinct UTC days carrying ANY logged event in the CURRENT window ("{a} this week"). */
+  currentLoggingDays: number;
+  /** Distinct UTC days carrying ANY logged event in the PRIOR window ("{b} last"). */
+  priorLoggingDays: number;
+}
+
 export interface CorrelationFinding {
   type: 'food_symptom_correlation';
   priorityClass: 'insight';
@@ -82,6 +115,8 @@ export interface CorrelationFinding {
   matchedPairs: number;
   symptomEventCount: number;
   correlationWindowHours: number;
+  /** SR-4 (§5.4) — medication on board in the context window; absent otherwise (old cache / no course). */
+  medContext?: MedOnBoardContext;
 }
 
 // Per-incident visual red flag (B-340) — the SAFETY-class lane that elevates a blood /
@@ -127,6 +162,8 @@ export interface ReflectionFinding {
   priorCount: number;
   direction: ReflectionDirection;
   windowDays: number;
+  /** SR-4 (§3.3) — week-over-week logging density; absent otherwise (old cache / unparseable now). */
+  density?: ReflectionDensity;
 }
 
 // Symptom-frequency worsening (④) — the SAFETY-class counterpart to reflection: a
@@ -188,6 +225,8 @@ export interface PostprandialTimingFinding {
   medianMinutesSinceFeeding: number;
   feedingFormsInEvidence: string[];
   windowDays: number;
+  /** SR-4 (§5.4) — medication on board in the context window; absent otherwise (old cache / no course). */
+  medContext?: MedOnBoardContext;
 }
 
 // Time-of-day clustering (⑥, B-079) — a descriptive count of witnessed vomiting episodes
@@ -214,6 +253,8 @@ export interface TimeOfDayClusteringFinding {
   totalEpisodes: number;
   timezone: string;
   windowDays: number;
+  /** SR-4 (§5.4) — medication on board in the context window; absent otherwise (old cache / no course). */
+  medContext?: MedOnBoardContext;
 }
 
 export type SignalFinding =
@@ -396,16 +437,64 @@ export async function readSignalsAndRefresh(
 // one sitting) into a single regen, so we don't fan out phrasing calls or race
 // several generate-signal invocations. Per-pet timer; fire-and-forget.
 const REGEN_DEBOUNCE_MS = 5000;
+
+// B-721 SR-3 (§5.3) — the acknowledgment line's ceiling PAST the debounced regen:
+// fail-quiet if the regen hangs, so "Noted — updating …" never strands. Renewed on each
+// log (below), so a sustained burst can't clip it before the final regen lands.
+// Comfortably over a live regen; a legitimately slower one just lands without the line.
+const ACK_REGEN_BUDGET_MS = 10000;
+
 const regenTimers = new Map<string, ReturnType<typeof setTimeout>>();
+const ackCeilingTimers = new Map<string, ReturnType<typeof setTimeout>>();
+// Monotonic per-pet generation so an EARLIER regen still in flight can't clear the ack
+// that belongs to a NEWER log. The race it closes: a debounce fires and immediately
+// deletes its timer, then a new log arrives before that regen's network call has resolved
+// — clearTimeout can't cancel an in-flight call, so two regens run concurrently and the
+// first to SETTLE would otherwise clear the flag while the latest is still pending.
+const regenGeneration = new Map<string, number>();
 
 export function triggerSignalRegenDebounced(petId: string, delayMs = REGEN_DEBOUNCE_MS): void {
   const existing = regenTimers.get(petId);
   if (existing) clearTimeout(existing);
+  const existingCeiling = ackCeilingTimers.get(petId);
+  if (existingCeiling) clearTimeout(existingCeiling); // renew the ceiling on each log
+
+  // B-721 SR-3 (§5.3) — raise the acknowledgment flag the moment a fresh log schedules a
+  // regen, so the Home Signal can show the quiet "Noted — updating …" line. The LATEST
+  // log's regen clears it (the generation guard in .finally below — success OR failure,
+  // fail-quiet, never an error surface). The setter no-ops when already up, so a burst is
+  // idempotent at the store.
+  const generation = (regenGeneration.get(petId) ?? 0) + 1;
+  regenGeneration.set(petId, generation);
+  useSyncStore.getState().setSignalAcknowledging(petId, true);
+
+  ackCeilingTimers.set(
+    petId,
+    setTimeout(() => {
+      ackCeilingTimers.delete(petId);
+      useSyncStore.getState().setSignalAcknowledging(petId, false);
+    }, delayMs + ACK_REGEN_BUDGET_MS),
+  );
+
   regenTimers.set(
     petId,
     setTimeout(() => {
       regenTimers.delete(petId);
-      regenerateSignal(petId).catch(() => {});
+      // regenerateSignal never rejects (it catches internally), but keep the .catch so a
+      // future contract change can't strand the ack line up.
+      regenerateSignal(petId)
+        .catch(() => {})
+        .finally(() => {
+          // Only the latest log's regen clears the ack — a superseded earlier call that
+          // happens to settle first leaves the line up for the newer one still in flight.
+          if (regenGeneration.get(petId) !== generation) return;
+          const ceiling = ackCeilingTimers.get(petId);
+          if (ceiling) {
+            clearTimeout(ceiling);
+            ackCeilingTimers.delete(petId);
+          }
+          useSyncStore.getState().setSignalAcknowledging(petId, false);
+        });
     }, delayMs),
   );
 }

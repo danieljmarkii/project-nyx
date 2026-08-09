@@ -54,8 +54,8 @@ export const BETA_REGISTRY: BetaFeature[] = [
   {
     key: 'widget_enabled',
     title: 'Home screen widget',
-    // nyx-voice draft (PR 4 owns the final voice pass). Warm, concrete, no
-    // exclamation; names what it does, not that it's "new".
+    // nyx-voice (PR 4 voice pass): warm and concrete, no exclamation, and specific
+    // — "today’s log", "what’s coming up" — rather than selling that it’s "new".
     blurb:
       'See today’s log and what’s coming up from your home screen, without opening Culprit.',
     owner: 'Widget track / Eng',
@@ -65,6 +65,28 @@ export const BETA_REGISTRY: BetaFeature[] = [
     reviewBy: '2026-11-08',
     // Client-only publish (spec §4.2 / D6): the widget reads the owner's own local
     // record and writes nothing server-side, so no server gate is owed.
+    serverCost: false,
+  },
+  {
+    // Signal/Home design uplift (B-721) — joins the shelf per FR-FLAG-4 (the spec's
+    // "beta-shelf before GA" clause): the render gate composes eligibility × this
+    // opt-in in SignalZone (eligible && optedIn), so being in the cohort no longer
+    // turns the redesign on by itself.
+    key: 'signal_design_v2',
+    title: 'Signal redesign',
+    // nyx-voice: concrete about what actually changes (the tap-through evidence and
+    // the week-over-week read), warm, no exclamation, and it doesn't sell that it's
+    // "new" — it names what the owner will notice.
+    blurb:
+      'A clearer Signal on Home — the evidence behind each insight, one tap away, and a plain read of how this week compares with last.',
+    owner: 'Signal/Home uplift (B-721) / Design',
+    addedDate: '2026-08-09',
+    // ~1 quarter out — a forcing date for the graduate/kill/extend call, not a timer.
+    reviewBy: '2026-11-09',
+    // Client-render-only: SR-4's payload is computed uniformly for every account (not
+    // per-cohort), so no server resource is spent per opt-in — no server gate is owed
+    // (spec §7; the B-712 "server-cost betas gate server-side" rule is checked and
+    // does not bite).
     serverCost: false,
   },
 ];
