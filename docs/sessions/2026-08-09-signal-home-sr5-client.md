@@ -1,6 +1,6 @@
 # Signal/Home uplift SR-5 (B-721) — client consumption of SR-4's payload
 
-**Date:** 2026-08-09 · **Branch:** `claude/sr5-signal-home-client-8oacta` · **PR:** _(draft, opened this session)_
+**Date:** 2026-08-09 · **Branch:** `claude/sr5-signal-home-client-8oacta` · **PR:** shipped via #621 (draft)
 
 The client half of SR-4. `generate-signal` already attaches the additive payload (med-on-board facts + `density`); SR-5 renders the §9 copy around it, all dark behind `signal_design_v2` and byte-identical flag-off. Zero server changes. Folds in **B-733** (the three SR-5 copy flags from SR-4's adversarial pass).
 
