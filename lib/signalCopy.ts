@@ -270,6 +270,15 @@ export const NO_PATTERN_HEADLINE =
 export const NO_PATTERN_SUB =
   "That isn't an all-clear — keep logging, and the moment something clears it, it'll be here.";
 
+// The post-log acknowledgment line (B-721 SR-3, §5.3 / §9). Shown ABOVE the still-
+// readable findings between a fresh event log and the debounced regeneration settling —
+// never a spinner, never blanking the findings. nyx-voice: no exclamation, second-person
+// owner / third-person pet, a single ellipsis. Kept as a helper (not an inline literal)
+// so it's screened by the same voice/guardrail tests as the rest of the surface.
+export function ackUpdatingCopy(petName: string): string {
+  return `Noted — updating ${petName}'s picture…`;
+}
+
 // ── Coverage diagnostics (B-053) ──────────────────────────────────────────────
 // On the no_pattern surface, replace the generic noPatternIntro with the TOP
 // coverage diagnostic's one-line WHY there's no signal yet + at most one safe
@@ -407,6 +416,31 @@ export function sampleLine(finding: SignalFinding): string {
     'recent meal',
     'recent meals',
   )}`;
+}
+
+// ── `New`-for-worsening (B-721 SR-3, §3.2 / Change Contract v1.1) ──────────────
+// A worsening finding whose prior week held zero episodes is NEW, not a trend: the
+// count pair "N this week, 0 last week" fakes precision (0 → 4 is not a 2× rise, it's
+// a first appearance), so the meta row wears a small `New` chip instead. CLIENT-
+// DERIVABLE — the one v1 case of the `New` chip (timing/first-appearance for other
+// types is v2, needing generate-signal prior-set memory). A type guard so the sample-
+// line swap at the call site is type-safe.
+export function isNewWorsening(finding: SignalFinding): finding is SymptomWorseningFinding {
+  return finding.type === 'symptom_worsening' && finding.priorCount === 0;
+}
+
+// The sample line for a `New` worsening — the current axis count WITHOUT the "0 last
+// week" pair the `New` chip replaces (§3.2, S10: the chip and the line must not both
+// carry the novelty). priorCount === 0 ⇒ priorDays === 0 ⇒ the trigger is more_episodes
+// (a flat-count more_days arm needs priorCount ≥ the episode floor), but we branch on
+// the axis defensively so an unexpected shape can never print the "0 last week" this
+// exists to drop. NOTE (SR-4): the SERVER sentence still says "after none last week"
+// until SR-4's template audit strips it — that redundancy is dark behind the flag and
+// closed there; when it is, the a11y label must carry the `New` fact the chip holds.
+export function worseningNewSampleLine(finding: SymptomWorseningFinding): string {
+  return finding.trigger === 'more_days'
+    ? `${count(finding.currentDays, 'day', 'days')} this week`
+    : `${count(finding.currentCount, 'episode', 'episodes')} this week`;
 }
 
 // ── Tap-to-expand evidence (§3.2) ─────────────────────────────────────────────

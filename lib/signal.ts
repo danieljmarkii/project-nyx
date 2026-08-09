@@ -401,11 +401,24 @@ const regenTimers = new Map<string, ReturnType<typeof setTimeout>>();
 export function triggerSignalRegenDebounced(petId: string, delayMs = REGEN_DEBOUNCE_MS): void {
   const existing = regenTimers.get(petId);
   if (existing) clearTimeout(existing);
+  // B-721 SR-3 (§5.3) — raise the acknowledgment flag the moment a fresh log schedules
+  // a regen, so the Home Signal can show the quiet "Noted — updating …" line. It is
+  // cleared when THIS regen settles below (success OR failure — fail-quiet, never an
+  // error surface). Idempotent across a burst of rapid logs (the setter no-ops when the
+  // flag is already up); the final debounced regen's settle is what clears it.
+  useSyncStore.getState().setSignalAcknowledging(petId, true);
   regenTimers.set(
     petId,
     setTimeout(() => {
       regenTimers.delete(petId);
-      regenerateSignal(petId).catch(() => {});
+      // regenerateSignal never rejects (it catches internally), but keep the .catch so a
+      // future contract change can't strand the ack line up. The .finally clears it
+      // whether the regen succeeded (fresh findings landed) or failed (fail-quiet).
+      regenerateSignal(petId)
+        .catch(() => {})
+        .finally(() => {
+          useSyncStore.getState().setSignalAcknowledging(petId, false);
+        });
     }, delayMs),
   );
 }
