@@ -191,7 +191,10 @@ describe('InsightCard — SR-1 flag gating (signal_design_v2)', () => {
     );
   });
 
-  it('reflection stays sentence-only even flag-ON (the density-gated compare is SR-5)', () => {
+  it('reflection card FACE stays sentence-only flag-ON (density treatment is expand-only, SR-5)', () => {
+    // A reflection with no density payload renders byte-identically flag-on: the SR-5
+    // density disclosure/withheld + trial adjacency live only in the EXPAND (S1/S10), and
+    // the sample-line gating fires only on density.comparable === false (absent here).
     const c = anyCached(reflection());
     expect(structureOf(<InsightCard cached={c} petName="Nyx" designV2 />)).toBe(
       structureOf(<InsightCard cached={c} petName="Nyx" designV2={false} />),
@@ -267,6 +270,149 @@ describe('InsightCard — SR-3 secondary compression (§5.1)', () => {
     // compact true → a DIFFERENT (tighter) structure — the register's secondary rhythm.
     expect(structureOf(<InsightCard cached={c} petName="Nyx" designV2 compact />)).not.toBe(
       structureOf(<InsightCard cached={c} petName="Nyx" designV2 />),
+    );
+  });
+});
+
+// ── SR-5 (B-721) — the client consumption of SR-4's payload ───────────────────
+describe('InsightCard — SR-5 med-on-board line (§5.4)', () => {
+  const withMed = (over: Partial<CorrelationFinding> = {}) =>
+    correlation({ medContext: { drugLabel: 'Apoquel', doseCount: 3 }, ...over });
+
+  it('renders the med line on a correlation carrying medContext, only when the flag is on', () => {
+    const c = anyCached(withMed());
+    const line = 'During an active Apoquel course — 3 doses logged.';
+    expect(render(<InsightCard cached={c} petName="Nyx" designV2={false} />).queryByText(line)).toBeNull();
+    expect(render(<InsightCard cached={c} petName="Nyx" designV2 />).queryByText(line)).toBeTruthy();
+  });
+
+  it('renders on a timing card too (§5.4)', () => {
+    const c = anyCached(postprandial({ medContext: { drugLabel: 'Metronidazole', doseCount: 4 } }));
+    expect(
+      render(<InsightCard cached={c} petName="Nyx" designV2 />).queryByText(
+        'During an active Metronidazole course — 4 doses logged.',
+      ),
+    ).toBeTruthy();
+  });
+
+  it('pluralises a single dose (B-733 — doseCount can be 1)', () => {
+    const c = anyCached(correlation({ medContext: { drugLabel: 'Apoquel', doseCount: 1 } }));
+    expect(
+      render(<InsightCard cached={c} petName="Nyx" designV2 />).queryByText(
+        'During an active Apoquel course — 1 dose logged.',
+      ),
+    ).toBeTruthy();
+  });
+
+  it('drops the line entirely when a "%" in the drug name trips the guardrail (B-733)', () => {
+    const c = anyCached(correlation({ medContext: { drugLabel: 'Baytril 2.5%', doseCount: 2 } }));
+    const on = render(<InsightCard cached={c} petName="Nyx" designV2 />);
+    // Fail-quiet: no partial line, no "%", no bare drug name — the whole line is dropped.
+    expect(on.queryByText(/Baytril/)).toBeNull();
+    expect(on.queryByText(/active .* course/)).toBeNull();
+  });
+
+  it('folds the med line into the card a11y label (flag-on) so VoiceOver hears it', () => {
+    const c = anyCached(withMed(), 'Chicken tends to precede vomiting.');
+    expect(
+      render(<InsightCard cached={c} petName="Nyx" designV2 />).queryByLabelText(
+        /During an active Apoquel course — 3 doses logged\./,
+        { exact: false },
+      ),
+    ).toBeTruthy();
+    expect(
+      render(<InsightCard cached={c} petName="Nyx" designV2={false} />).queryByLabelText(/Apoquel/, {
+        exact: false,
+      }),
+    ).toBeNull();
+  });
+
+  it('shows no med line on a reflection or a safety card (only correlation + timing carry it)', () => {
+    const refl = anyCached(reflection());
+    const safety = anyCached(worsening());
+    expect(render(<InsightCard cached={refl} petName="Nyx" designV2 />).queryByText(/active .* course/)).toBeNull();
+    expect(render(<InsightCard cached={safety} petName="Nyx" designV2 />).queryByText(/active .* course/)).toBeNull();
+  });
+
+  it('flag-OFF is byte-identical for a correlation carrying medContext (FR-FLAG-2)', () => {
+    const c = anyCached(withMed());
+    expect(structureOf(<InsightCard cached={c} petName="Nyx" designV2={false} />)).toBe(
+      structureOf(<InsightCard cached={c} petName="Nyx" />),
+    );
+  });
+});
+
+describe('InsightCard — SR-5 reflection density + trial adjacency (§3.3 / §3.4)', () => {
+  const comparable = { comparable: true, currentLoggingDays: 6, priorLoggingDays: 5 } as const;
+  const incomparable = { comparable: false, currentLoggingDays: 2, priorLoggingDays: 6 } as const;
+  const falling = (over: Partial<ReflectionFinding> = {}) =>
+    reflection({ direction: 'improving', currentCount: 2, priorCount: 5, ...over });
+
+  it('the expand shows the disclosure line for a COMPARABLE falling reflection', () => {
+    const view = render(<InsightCard cached={anyCached(falling({ density: comparable }))} petName="Nyx" designV2 />);
+    fireEvent.press(view.getByRole('button'));
+    expect(view.queryByText('Counted honestly')).toBeTruthy();
+    expect(view.queryByText('Counted from days you logged: 6 this week, 5 last.')).toBeTruthy();
+  });
+
+  it('the expand shows the WITHHELD line for a NOT-comparable falling reflection, and the FACE drops the pair', () => {
+    const view = render(<InsightCard cached={anyCached(falling({ density: incomparable }))} petName="Nyx" designV2 />);
+    // Card FACE: the sample line withholds the incomparable "5 last week" (§3.3 coherence).
+    expect(view.queryByText('2 episodes this week')).toBeTruthy();
+    expect(view.queryByText(/5 last week/)).toBeNull();
+    // Expand: the reworded withheld line, grounded in logged days (B-733).
+    fireEvent.press(view.getByRole('button'));
+    expect(view.queryByText(/fewer logged days can look like fewer episodes/)).toBeTruthy();
+  });
+
+  it('flag-OFF keeps the shipped sample-line pair for the same not-comparable reflection (FR-FLAG-2)', () => {
+    const view = render(<InsightCard cached={anyCached(falling({ density: incomparable }))} petName="Nyx" designV2={false} />);
+    expect(view.queryByText('2 episodes this week, 5 last week')).toBeTruthy();
+  });
+
+  it('appends the trial adjacency in the expand when a trial is running (falling)', () => {
+    const view = render(
+      <InsightCard cached={anyCached(falling({ density: comparable }))} petName="Nyx" designV2 trialRunning />,
+    );
+    fireEvent.press(view.getByRole('button'));
+    expect(view.queryByText(/isn't the trial's verdict — the full run is what makes it readable/)).toBeTruthy();
+  });
+
+  it('renders BOTH the withheld line and the trial adjacency in one box when density fell during a trial', () => {
+    // The real combined case (falling reflection + fallen density + active trial): one
+    // "Counted honestly" box carries the withheld density line AND the mid-trial adjacency,
+    // while the card face still withholds the incomparable pair.
+    const view = render(
+      <InsightCard cached={anyCached(falling({ density: incomparable }))} petName="Nyx" designV2 trialRunning />,
+    );
+    fireEvent.press(view.getByRole('button'));
+    expect(view.queryByText('Counted honestly')).toBeTruthy();
+    expect(view.queryByText(/fewer logged days can look like fewer episodes/)).toBeTruthy();
+    expect(view.queryByText(/isn't the trial's verdict/)).toBeTruthy();
+    expect(view.queryByText('2 episodes this week')).toBeTruthy();
+    expect(view.queryByText(/5 last week/)).toBeNull();
+  });
+
+  it('shows NO adjacency for a FLAT reflection even with a trial running', () => {
+    const flat = anyCached(reflection({ direction: 'flat', currentCount: 4, priorCount: 4, density: comparable }));
+    const view = render(<InsightCard cached={flat} petName="Nyx" designV2 trialRunning />);
+    fireEvent.press(view.getByRole('button'));
+    expect(view.queryByText(/isn't the trial's verdict/)).toBeNull();
+    expect(view.queryByText('Counted honestly')).toBeNull();
+  });
+
+  it('an old cached falling reflection (no density) still gets the adjacency when a trial runs', () => {
+    const view = render(<InsightCard cached={anyCached(falling())} petName="Nyx" designV2 trialRunning />);
+    fireEvent.press(view.getByRole('button'));
+    expect(view.queryByText(/isn't the trial's verdict/)).toBeTruthy();
+    // …but no density line (nothing to disclose).
+    expect(view.queryByText(/Counted from days you logged/)).toBeNull();
+  });
+
+  it('flag-OFF is byte-identical for a reflection carrying density (FR-FLAG-2)', () => {
+    const c = anyCached(falling({ density: incomparable }));
+    expect(structureOf(<InsightCard cached={c} petName="Nyx" designV2={false} />)).toBe(
+      structureOf(<InsightCard cached={c} petName="Nyx" />),
     );
   });
 });

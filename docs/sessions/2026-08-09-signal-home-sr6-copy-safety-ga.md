@@ -6,7 +6,9 @@ The terminal rung of the Signal/Home uplift. SR-6 runs the final `nyx-voice` + `
 
 Spec: `docs/nyx-signal-home-requirements.md` v1.2 (§2 spine, §3 Change Contract, §4 receipts, §9 verbatim copy, §7 FR-FLAG, §11 ACs). Design authority: `docs/culprit-signal-home-mockups.html` (round 2.1, design-locked).
 
-**Headline: HOLD GA. The SR-1/2/3 client surface is coherent, tested, and byte-identical-off — ready for a small allowlist dogfood — but the track is not GA-ready: SR-5 is unbuilt, SR-4 is built-but-not-deployed, and the SR-6 reviews found two blocking E1 issues plus the standing FR-FLAG-4 shelf gate.** Full gate list in §"GA recommendation" below.
+**Headline: HOLD GA. The client surface (SR-1..SR-5) is coherent, tested, and byte-identical-off — ready for a small allowlist dogfood — but the track is not GA-ready: SR-4 is built-but-not-deployed (so SR-5's med/density/trial render nothing in prod yet), and the SR-6 reviews found two blocking E1 issues plus the standing FR-FLAG-4 shelf gate.** Full gate list in §"GA recommendation" below.
+
+> **Mid-session reconciliation — SR-5 landed (#621).** This doc was drafted while SR-5 was still unbuilt; a sibling session shipped it to `main` mid-session. SR-5 is the full client consumption of the SR-4 payload (med-on-board line, density expand, trial adjacency) and **closes B-733** by implementing exactly the §5.5 rulings below (plural, `%`-screen fail-quiet, Dr. Chen-reworded withheld line). So the **client is now fully built (SR-1..SR-5)** and the "SR-5 unbuilt" gate is **cleared** — the activating gate is now the **SR-4 deploy** (SR-5's features are inert in prod until it lands). Two things SR-5 handed to SR-6, both folded in below: (1) **two §9 Tier-2 copy edits** (the reworded withheld line + the `Counted honestly` box header) — reviewed here (voice + guardrail PASS) and written into spec §9; (2) one **S10 item** — the comparable-reflection sample line double-states the sentence's pair (→ **B-738**). References to "SR-5 unbuilt" below are the as-drafted record; read them through this note.
 
 ---
 
@@ -16,9 +18,9 @@ SR-6 was written to be "the final pass after everything ships." It is not that, 
 
 - **SR-0/1/2/3 shipped** (#610/#613/#612/#616) — flag seed, receipts, empty states, register. All dark behind `signal_design_v2` (default nobody), flag-off byte-identical (snapshot-pinned).
 - **SR-4 shipped as code but is NOT deployed live** (#615) — the `generate-signal` additive payload (`densityComparable`, `medContext`) is built + verified but the Edge Function redeploy is Codespace/token-gated ("Inert until SR-5"). So in production the payload carries **neither** new field, and the reflection cards render exactly as pre-B-721.
-- **SR-5 is not built** — no PR, no branch (verified against the open-PR list). `InsightCard.tsx:138` states it plainly: *"reflection's density-gated compare is SR-5."* The med-on-board line (§5.4), the density-withheld/disclosure copy (§3.3), and the trial-adjacency line (§3.4) exist **only in spec §9** — nowhere in client code.
+- **SR-5** — was unbuilt when this doc was drafted; **it landed on `main` mid-session as #621** (see the reconciliation note above). It renders the med-on-board line (§5.4), the density expand (§3.3), and the trial adjacency (§3.4), all dark behind the flag and byte-identical-off. **But it is inert in prod until the SR-4 deploy** — the payload it consumes (`medContext`/`density`) is only produced by the deployed function, so on today's undeployed prod the SR-5 paths render nothing.
 
-This shapes the whole SR-6 output: the copy pass covers **the shipped strings (SR-1/2/3/4) AND the spec'd SR-5 strings (§9 verbatim)** so SR-5 ships pre-blessed; the GA recommendation gates honestly on the missing pieces.
+This shaped the SR-6 output: the copy pass covers **the shipped strings (SR-1..SR-5) AND the server SR-4 templates + spec §9**; the GA recommendation gates honestly on the deploy + the E1 issues.
 
 ---
 
@@ -28,7 +30,7 @@ Every owner-facing string the track ships or spec's was read against both skills
 
 **Result: the strings are voice-clean and guardrail-clean.** No exclamation marks, first-person-pet/second-person-owner throughout, plain-language over jargon, specific-over-generic, and — the load-bearing one — **nothing reads absence as wellness**. E2 says "That isn't an all-clear" verbatim; the E1 floor line ("If something needs attention sooner, it won't wait for the week") is the safety-doesn't-wait honesty device; the density gate withholds a reassuring fall rather than softening it; every safety template routes to the vet and never reassures. The server `validatePhrasing` screens are comprehensive — `hasBannedSignalVocabulary` (glyphs `↑↓→←/->/<-/slope`, percentages) fires on **every** finding type, plus per-type reassurance/dismissive/causal/mechanism/food-naming screens.
 
-**Ruling on the SR-5 strings (§9) — closes B-733.** The composed med line and density copy render in SR-5; the copy pass ruled the three open items and wrote the rulings into **spec §5.5** (PM/Dr. Chen-vetoable):
+**Ruling on the SR-5 strings (§9) — B-733, shipped by #621.** SR-5 implemented exactly these rulings (now spec §5.5, the as-built contract); the copy pass reviewed the shipped strings and wrote the **two §9 verbatim edits SR-5 flagged for SR-6** — the Dr. Chen-reworded withheld line (*"…so we're not comparing it with last week — fewer logged days can look like fewer episodes on their own"*, which grounds the uncertainty in logged days and resolves B-733 item 3) and the `Counted honestly` box header — into spec §9 (both PASS voice + guardrail; PM-vetoable). The three ruled items:
 1. **Plural** — `doseCount` can be 1, so the med line pluralizes (`count(n,'dose','doses')`), never "1 doses". §9's row now reads `{n} dose[s]`.
 2. **Screen the composed line, then fail-quiet** — a drug label is owner free-text passed verbatim (a name is data, never mutate it). SR-5 runs the *composed* line through `hasBannedSignalVocabulary` (a `%` in a name like "Baytril 2.5%" trips the §3.5 percent screen) and **omits the med line on failure** — the same fail-safe-drop the cross-pet banner uses. The med line is pure context, so dropping it loses nothing safety-relevant.
 3. **Scope the density-withheld line to the log-day measure the gate sees** — the gate fires on days-with-**any**-log density and cannot see a symptom-only logging lapse (meals keep any-log density up while symptom logging falls — B-733 item 3 / B-732). The line must not imply verified symptom-coverage; it ties uncertainty to log-days ("fewer log-days ⇒ a lower count may be fewer logs, not fewer episodes"), paired with the disclosure line's printed denominators. **Final wording is Dr. Chen's call at SR-5 build — do not ship the vaguer "less to log" phrasing without his sign-off.** This is copy-precision, not a safety inversion: even in the gate's blind spot the reflection renders a bare count + its "not a verdict on how {pet} is doing" disclaimer and is guardrail-screened against reassurance vocabulary, so it never asserts wellness.
@@ -58,6 +60,8 @@ S10: *a strip or meta-row element renders only when it carries something the sen
 **Safety card faces carry no strip/graphic** — `CardFaceReceipt` returns null for every non-timing type, and all four safety types are non-timing. Snapshot-pinned (`InsightCard.test.tsx`).
 
 **The one tracked live S10 exception (→ B-727, gates the deploy).** SR-4 *deliberately kept* the server card sentence's "…after none last week" clause for a worsening-after-zero finding (its retirement is deferred to B-727, which also composes `New` into the a11y label so a screen-reader user doesn't lose the novelty). So on the **live flag-on** surface, until B-727 lands with the SR-4 deploy, a worsening-after-zero card shows the novelty in **both** the sentence ("after none last week") **and** the `New` chip — the S10 anti-pattern, transiently. It is dark (flag off in prod) and self-documented (`signalCopy.ts:437`). Confirmed independently by the SR-6 `pm-feature-review`.
+
+**One S10 refinement SR-5 punted to this audit (→ B-738).** For a *comparable* (not-withheld) falling reflection, the card sentence carries the full pair ("2 episodes this week, down from 5 last week") **and** the sample line restates it ("2 episodes this week, 5 last week") — the sample line carries nothing the sentence doesn't. SR-5 (#621, "Not in scope") named this and left it here: the round-2.1 mock's fix is a **density-quality** sample line ("Logging steady, 6 of 7 days") that carries the coverage the sentence lacks instead of re-printing the count — and SR-4 already computes the facts (`density.currentLoggingDays`/`priorLoggingDays` ride the payload). A bigger redesign than SR-5's scope, so deferred; not a safety issue (a descriptive count, guardrail-screened) — S10 polish. Filed B-738.
 
 **S1 spec reconciliation — closes B-728.** The audit confirms the *code* is S1-clean (safety faces carry no evidence graphic; the `New` chip is a text novelty tag). But spec §2 S1 read "text, rail, sample line; no evidence graphic" without acknowledging the `New` chip §3.2 puts on the worsening *safety* card — so an auditor reading §2 alone would flag the shipped chip as an S1 violation. Written this session (PM-vetoable): §2 S1 + §11 AC now carve the `New` novelty tag as the one meta chip a safety face may add (a text flag, not a graphic), and correct the mock's stale "count-anchored chip" wording (the surviving chip is novelty-anchored — the pair-chips it described were cut in v1.1).
 
@@ -136,23 +140,23 @@ Flag-off pass (byte-identical, FR-FLAG-2):
 
 **Deciding:** whether `signal_design_v2` is ready to flip on, and at what scope.
 
-**Recommendation: HOLD GA; enable a small allowlist DOGFOOD now (the PM's own device) to run the on-device checks.** The SR-1/2/3 client surface is coherent, all 218 signal-surface tests + 7 byte-identical-off snapshots pass, and it holds Pets > $ cleanly (free intelligence, safety leads, no upsell). But GA is gated on real work that isn't done:
+**Recommendation: HOLD GA; enable a small allowlist DOGFOOD now (the PM's own device) to run the on-device checks.** The client surface is now **fully built (SR-1..SR-5 — #613/#612/#616/#615/#621)**, all signal-surface tests + byte-identical-off snapshots pass, and it holds Pets > $ cleanly (free intelligence, safety leads, no upsell). But GA is gated on real work that isn't done:
 
 **GA gates (must clear before flipping on for all users):**
-1. **SR-5 unbuilt** — the med-on-board line (§5.4), density-withheld/disclosure copy (§3.3), and trial adjacency (§3.4) render nowhere. The spine is incomplete without them.
-2. **SR-4 not deployed live** — the payload SR-5 consumes (`densityComparable`, `medContext`) is inert in prod. Deploy is Codespace/`SUPABASE_ACCESS_TOKEN`-gated (`scripts/deploy-edge.sh generate-signal --deploy`); generate-signal is **not** under the B-494 report hold.
-3. **B-727** — retire "after none" across the server sentence + client `evidenceText` + compose `New` into the a11y label, **landed with the SR-4 deploy** (the a11y gap opens the instant SR-4 ships). This also closes the one live S10 exception.
-4. **B-734 (blocking)** — the E1 load-flash over mature/live pets (+ the pet-switch `localCtx` staleness). A real regression the uplift introduced; fix before GA.
-5. **B-735** — the E1 "Day N vs first week" dissonance for sparse loggers (Sam). A PM copy/threshold decision.
-6. **Register attention bet + dot-lane legibility** — the `pm-feature-review` marked these INSUFFICIENT on a static read; they need the on-device pass (which is exactly what the dogfood phase is for), plus the still-open E1-vs-E1-c intensity pick (SD-6).
-7. **FR-FLAG-4 beta-shelf composition** — the feature may not GA before it is available through the B-712 beta shelf. Not done yet (see the plan below).
-8. **B-733** — SR-5 implements the §5.5 rulings (item-3 wording is Dr. Chen's at build).
-9. **B-732** — the two med-line targeting limitations (window-at-now vs finding-span; identity-agnostic drug pick) want a PM/Dr. Chen accept-or-refine before the med line is live.
-10. **B-728** — this session's §2 S1 / §11 AC carve is written but PM-vetoable; ratify or veto.
+1. **The SR-4 deploy — the activating gate.** SR-5 is built (#621), but its med/density/trial features render nothing in prod until `generate-signal` ships the `medContext`/`density` payload — the deploy is what turns SR-5 on. Deploy is Codespace/`SUPABASE_ACCESS_TOKEN`-gated (`scripts/deploy-edge.sh generate-signal --deploy`); generate-signal is **not** under the B-494 report hold. (So "SR-5 unbuilt" is no longer a gate — the deploy is.)
+2. **B-727** — retire "after none" across the server sentence + client `evidenceText` + compose `New` into the a11y label, **landed with the SR-4 deploy** (the a11y gap opens the instant SR-4 ships). This also closes the one live S10 exception.
+3. **B-734 (blocking)** — the E1 load-flash over mature/live pets (+ the pet-switch `localCtx` staleness). A real regression the uplift introduced; fix before GA.
+4. **B-735** — the E1 "Day N vs first week" dissonance for sparse loggers (Sam). A PM copy/threshold decision.
+5. **Register attention bet + dot-lane legibility** — the `pm-feature-review` marked these INSUFFICIENT on a static read; they need the on-device pass (which is exactly what the dogfood phase is for), plus the still-open E1-vs-E1-c intensity pick (SD-6).
+6. **FR-FLAG-4 beta-shelf composition** — the feature may not GA before it is available through the B-712 beta shelf. Not done yet (see the plan below).
+7. **B-732** — the two med-line targeting limitations (window-at-now vs finding-span; identity-agnostic drug pick) want a PM/Dr. Chen accept-or-refine before the med line is live.
+8. **B-728** — this session's §2 S1 / §11 AC carve is written but PM-vetoable; ratify or veto.
+
+_Cleared / done since drafting:_ **SR-5** shipped (#621); **B-733** is closed by it (the §5.5 rulings + the two §9 copy edits, folded in above). _Non-blocking:_ **B-738** (the comparable-reflection sample-line S10 refinement) is polish, deferred, not a GA gate.
 
 **Options:**
-- **A (recommended): HOLD GA, dogfood on now.** Allowlist the PM's device, run the QA script's device checks (B-734 severity, register attention, lane legibility, E1-vs-E1-c), decide B-735, and queue SR-5 + the SR-4 deploy + B-727 as the next build. Low risk — byte-identical-off for everyone else; the dogfood is where the open on-device questions get answered.
-- **B: HOLD both GA and dogfood** until SR-5 + SR-4-deploy land, then dogfood the complete surface. Cleaner read of the finished feature, but forgoes early feedback on the big SR-1/2/3 changes and leaves the on-device questions open longer.
+- **A (recommended): HOLD GA, dogfood on now.** Allowlist the PM's device, run the QA script's device checks (B-734 severity, register attention, lane legibility, E1-vs-E1-c), decide B-735, and queue the SR-4 deploy + B-727 as the next build (SR-5 is already built, #621). Low risk — byte-identical-off for everyone else; the dogfood is where the open on-device questions get answered.
+- **B: HOLD both GA and dogfood** until the SR-4 deploy lands (SR-5 is already built), then dogfood the complete, activated surface. Cleaner read of the finished feature, but forgoes early feedback on the SR-1..SR-5 client changes and leaves the on-device questions open longer.
 - **C: GA now.** Not recommended — ships an incomplete spine, an undeployed payload, a live S10 redundancy, and the E1 flash to all users.
 
 **Consequence:** A unblocks on-device evaluation and sequences the remaining build (SR-5 ∥ the SR-4 deploy + B-727, then the E1 fixes) without exposing an incomplete surface to GA. The FR-FLAG-4 shelf-join and FR-FLAG-5 retirement follow the PM's eventual GA call.
@@ -184,7 +188,7 @@ Both paths stay test-covered until the removal PR merges.
 ## Definition of Done
 
 - [x] Acceptance criteria (§11) reviewed against the shipped surface; the flag-on QA script above enforces them on-device. FR-FLAG-1/2/3 hold (no-leak surface = 2 client files + registry + migration; 7 byte-identical-off snapshots green).
-- [x] `nyx-voice` + `clinical-guardrails` pass over every string (client SR-1/2/3, server SR-4, spec-§9 SR-5) — **PASS**; SR-5 copy ruled into spec §5.5.
+- [x] `nyx-voice` + `clinical-guardrails` pass over every string (client SR-1..SR-5 incl. #621, server SR-4, spec §9) — **PASS**; SR-5 copy ruled into §5.5 + the two §9 edits (reworded withheld line, `Counted honestly` header) reviewed and written into §9.
 - [x] S10 assignment audit — every element earns its place; safety faces carry no strip/graphic (snapshot-pinned); one tracked live exception (B-727).
 - [x] `pm-feature-review` re-run (Jordan/Sam) — relayed; 2 blocking E1 findings (B-734/B-735) + non-blocking (B-736/B-737) filed.
 - [x] Types/tests: 218 signal-surface jest tests + 7 snapshots green locally (`SignalZone`/`InsightCard`/`SignalReceipts`/`signalCopy`/`betaFeatures`). Deno unavailable locally; SR-4's 398 deno tests are CI-gated. **No app code changed this session** (docs/review only) — `tests: N/A, no code diff` (Engineer sign-off: SR-6 is the review rung, §8 "Server? no").
@@ -198,17 +202,17 @@ Both paths stay test-covered until the removal PR merges.
 - [ ] **Ratify or veto B-728** (the §2 S1 / §11 AC `New`-chip carve — written this session, PM-vetoable).
 - [ ] **Decide B-735** (E1 "Day N vs first week" — Day-N variant copy vs days-only substantial-history gate).
 - [ ] **Accept-or-refine B-732** (med-line window-at-now + drug-pick limitations) before the med line goes live.
-- [ ] **When ready to build:** SR-5 (∥) + the SR-4 deploy (`scripts/deploy-edge.sh generate-signal --deploy` from the Codespace) + B-727 land together; then B-734/B-735.
+- [ ] **When ready to build:** the SR-4 deploy (`scripts/deploy-edge.sh generate-signal --deploy` from the Codespace) + B-727 land together — this **activates the already-built SR-5** (#621); then B-734/B-735.
 - [ ] **Before GA:** the FR-FLAG-4 shelf-join PR (registry row + gate swap).
 
 ## Next Session Kickoff
 
 **Recommended first prompt:**
-> Build SR-5 of the Signal/Home uplift (B-721) — client consumption of the SR-4 payload: the med-on-board line (§5.4), the density-withheld/disclosure expanded copy (§3.3), and the trial-adjacency line (§3.4). Implement per the §5.5 rendering contract (plural `count(n,'dose','doses')`; screen the composed med line with `hasBannedSignalVocabulary` → fail-quiet drop; scope the density-withheld line to log-days, final wording to Dr. Chen). Land B-727 in the same effort (retire "after none" across the server sentence + client `evidenceText` + compose `New` into the a11y label) and deploy generate-signal (SR-4). Read `docs/nyx-signal-home-requirements.md` §3.3/§3.4/§5.4/§5.5/§9.
+> Deploy the SR-4 `generate-signal` payload (B-721) and land B-727 together — the pair that activates the already-built SR-5 client (#621). Run `scripts/deploy-edge.sh generate-signal --deploy` from the Codespace (verify per the edge-deploy runbook; generate-signal is not under the B-494 hold), and in the same effort retire "after none" across the server card sentence (`generate-signal/phrasing.ts`) + client `evidenceText` (`lib/signalCopy.ts`) + compose `New` into the worsening card's a11y label, with a pinning test — the a11y gap opens the instant SR-4 ships. Read `docs/nyx-signal-home-requirements.md` §5.5/§9 and the B-727 backlog row first.
 
 **Alternate prompts:**
 - Fix the E1 load-flash (B-734) — don't force the heavy building state during the network cache read; clear `localCtx` on pet switch. `code-reviewer` on the cache-is-a-network-read depth.
 - Resolve B-735 (PM decision needed first): the E1 "Day N vs first week" copy/threshold call.
 - FR-FLAG-4 shelf-join (small): add the `signal_design_v2` `BETA_REGISTRY` row + swap the SignalZone gate to `&& useBetaOptIn`.
 
-**Parallel / efficiencies:** SR-5 (∥ the SR-4 deploy + B-727) and the B-734 E1 fix touch mostly disjoint code (SR-5 = `InsightCard`/`signalCopy` render paths; B-734 = `useSignal`/`SignalZone` load-sequence) and can run as separate branches — the one collision is STATUS.md at wrap. B-735 gates on a PM decision (not ready-to-run). The FR-FLAG-4 shelf-join is independent and can ride any of them.
+**Parallel / efficiencies:** the SR-4 deploy + B-727 (server sentence + `signalCopy` a11y) and the B-734 E1 fix (`useSignal`/`SignalZone` load-sequence) touch mostly disjoint code and can run as separate branches — the one collision is STATUS.md at wrap. B-735 gates on a PM decision (not ready-to-run). The FR-FLAG-4 shelf-join (`lib/betaFeatures.ts` + the `SignalZone` gate) is independent and can ride any of them.

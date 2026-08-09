@@ -52,6 +52,39 @@ export type WorseningTier = 'firm' | 'standard' | 'soft';
 // a symptom recurring for ≥3 weeks always points at the vet (§4.6).
 export type ChronicityTier = 'standard' | 'firm';
 
+// ── SR-4 additive payload facts (B-721) ───────────────────────────────────────
+// The two decoration facts generate-signal attaches POST-detection (SR-4, #615) and
+// the client consumes in SR-5. Both are OPTIONAL on the mirror for the same reason the
+// slice-6 protein cluster is: `ai_signals.findings` is a cache with a 24h TTL, so after
+// SR-4 deploys the client still reads rows written by the PREVIOUS deployment, which
+// carry neither field. Every consumer must render byte-identically when they're absent
+// (which is also the flag-off contract, FR-FLAG-2). Source of truth: detection.ts
+// MedOnBoardContext / ReflectionDensity — keep in sync.
+
+// Medication-on-board context (§5.4) — a nameable drug with ≥1 administered dose in the
+// finding's context window. Attached to correlation + timing findings only; the client
+// composes the §9 line ("During an active {drug} course — {n} doses logged.") around it.
+export interface MedOnBoardContext {
+  /** Owner-facing drug name (regimen drug_name preferred, else library brand/generic). Non-empty, VERBATIM owner text. */
+  drugLabel: string;
+  /** Administered on-board doses of this drug in the context window (missed/refused excluded). ≥1. */
+  doseCount: number;
+}
+
+// Reflection logging-density comparison (§3.3) — the week-over-week "days-with-any-log"
+// counts + whether they are comparable enough to trust a FALLING reflection's
+// comparison. When `comparable` is false the server already withheld the "down from N"
+// clause from the sentence (templateReflection); the client discloses WHY in the expand.
+// Attached to reflection findings only.
+export interface ReflectionDensity {
+  /** Whether the two weeks' logging density is comparable enough to trust a falling comparison (§3.3). */
+  comparable: boolean;
+  /** Distinct UTC days carrying ANY logged event in the CURRENT window ("{a} this week"). */
+  currentLoggingDays: number;
+  /** Distinct UTC days carrying ANY logged event in the PRIOR window ("{b} last"). */
+  priorLoggingDays: number;
+}
+
 export interface CorrelationFinding {
   type: 'food_symptom_correlation';
   priorityClass: 'insight';
@@ -82,6 +115,8 @@ export interface CorrelationFinding {
   matchedPairs: number;
   symptomEventCount: number;
   correlationWindowHours: number;
+  /** SR-4 (§5.4) — medication on board in the context window; absent otherwise (old cache / no course). */
+  medContext?: MedOnBoardContext;
 }
 
 // Per-incident visual red flag (B-340) — the SAFETY-class lane that elevates a blood /
@@ -127,6 +162,8 @@ export interface ReflectionFinding {
   priorCount: number;
   direction: ReflectionDirection;
   windowDays: number;
+  /** SR-4 (§3.3) — week-over-week logging density; absent otherwise (old cache / unparseable now). */
+  density?: ReflectionDensity;
 }
 
 // Symptom-frequency worsening (④) — the SAFETY-class counterpart to reflection: a
@@ -188,6 +225,8 @@ export interface PostprandialTimingFinding {
   medianMinutesSinceFeeding: number;
   feedingFormsInEvidence: string[];
   windowDays: number;
+  /** SR-4 (§5.4) — medication on board in the context window; absent otherwise (old cache / no course). */
+  medContext?: MedOnBoardContext;
 }
 
 // Time-of-day clustering (⑥, B-079) — a descriptive count of witnessed vomiting episodes
@@ -214,6 +253,8 @@ export interface TimeOfDayClusteringFinding {
   totalEpisodes: number;
   timezone: string;
   windowDays: number;
+  /** SR-4 (§5.4) — medication on board in the context window; absent otherwise (old cache / no course). */
+  medContext?: MedOnBoardContext;
 }
 
 export type SignalFinding =
