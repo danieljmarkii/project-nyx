@@ -378,6 +378,21 @@ describe('InsightCard — SR-5 reflection density + trial adjacency (§3.3 / §3
     expect(view.queryByText(/isn't the trial's verdict — the full run is what makes it readable/)).toBeTruthy();
   });
 
+  it('renders BOTH the withheld line and the trial adjacency in one box when density fell during a trial', () => {
+    // The real combined case (falling reflection + fallen density + active trial): one
+    // "Counted honestly" box carries the withheld density line AND the mid-trial adjacency,
+    // while the card face still withholds the incomparable pair.
+    const view = render(
+      <InsightCard cached={anyCached(falling({ density: incomparable }))} petName="Nyx" designV2 trialRunning />,
+    );
+    fireEvent.press(view.getByRole('button'));
+    expect(view.queryByText('Counted honestly')).toBeTruthy();
+    expect(view.queryByText(/fewer logged days can look like fewer episodes/)).toBeTruthy();
+    expect(view.queryByText(/isn't the trial's verdict/)).toBeTruthy();
+    expect(view.queryByText('2 episodes this week')).toBeTruthy();
+    expect(view.queryByText(/5 last week/)).toBeNull();
+  });
+
   it('shows NO adjacency for a FLAT reflection even with a trial running', () => {
     const flat = anyCached(reflection({ direction: 'flat', currentCount: 4, priorCount: 4, density: comparable }));
     const view = render(<InsightCard cached={flat} petName="Nyx" designV2 trialRunning />);
