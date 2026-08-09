@@ -1,7 +1,7 @@
 # App Privacy nutrition label — the transcribe-ready answer sheet (B-268, guide step 14)
 
 **Date:** 2026-08-09
-**Shipped via #NNN** (draft PR — App Store submission guide step 14; docs-only)
+**Shipped via #618** (App Store submission guide step 14; docs-only)
 
 ## What this session did
 
