@@ -253,6 +253,7 @@ You need three URLs by the end (anchors/pages on the site): `getculprit.app/supp
 - Plain screenshots pass review fine; framed/annotated marketing shots can come later — don't let polish block submission.
 - First two screenshots are what shows in search results — lead with the Signal (the differentiator), not the login screen.
 - Clean status bar: full battery, strong signal, 9:41 if you care (Simulator: `xcrun simctl status_bar` overrides).
+- **Upload via Media Manager, not the version page's default box.** ASC slots are exact-match on dimensions, and the version page can surface the legacy **6.5″ Display** box (accepts only 1284×2778 / 1242×2688 — it rejected our to-spec 1320×2868 files, 2026-08-09). Click **View All Sizes in Media Manager** → iPhone **6.9″ Display** → drop the 1320×2868 set there; smaller sizes derive automatically. Fallback if no 6.9″ slot exists for the record: `node scripts/store-screenshots/render.js --size 1284x2778` produces a native 6.5″-slot set.
 
 **Confirm with:** `Guide step 12 complete: N screenshots uploaded.`
 

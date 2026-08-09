@@ -36,11 +36,16 @@
   @font-face{font-family:'Newsreader';font-weight:700;src:url('../../node_modules/@expo-google-fonts/newsreader/700Bold/Newsreader_700Bold.ttf') format('truetype')}
 
   *{box-sizing:border-box}
-  body{margin:0;width:1320px;height:2868px;overflow:hidden;background:#F2EEE4}
-  #stage{width:300px;height:651.8182px;transform:scale(4.4);transform-origin:0 0}
+  /* body/stage/frame sizes are set by build() from the ?w=&h= params —
+     default 1320×2868 (6.9″), or e.g. 1284×2778 for a native 6.5″-slot set.
+     The stage always lays out 300 mock units wide (scale = w/300); a smaller
+     slot's slightly taller aspect crops ~3 mock units off the bottom bleed,
+     which the phone's deliberate overhang absorbs. */
+  body{margin:0;overflow:hidden;background:#F2EEE4}
+  #stage{width:300px;transform-origin:0 0}
 
   /* ── The frame (grounds + caption) — mock .fframe, radius/shadow dropped ── */
-  .fframe{position:relative;width:300px;height:651.8182px;overflow:hidden}
+  .fframe{position:relative;width:300px;overflow:hidden}
   .d-day{background:#F2EEE4}
   .d-night{background:#13112E}
   .d-night::before{content:"";position:absolute;inset:-30% -20% auto;height:60%;background:radial-gradient(ellipse at 50% 0%,#221C56 0%,transparent 65%);pointer-events:none}
@@ -358,8 +363,17 @@ function heroHTML(mode, q){
   const mode = q.get('mode') || 'draft';
   const f = FRAMES[n];
   if (!f) { document.body.textContent = 'Unknown frame: ' + n; return; }
+  // Export geometry (defaults = the 6.9″ ASC spec)
+  const W = +(q.get('w') || 1320), H = +(q.get('h') || 2868);
+  const scale = W / 300, stageH = H / scale;
+  document.body.style.width = W + 'px';
+  document.body.style.height = H + 'px';
+  const stage = document.getElementById('stage');
+  stage.style.height = stageH + 'px';
+  stage.style.transform = 'scale(' + scale + ')';
   const el = document.createElement('div');
   el.className = 'fframe ' + (f.ground === 'night' ? 'd-night' : 'd-day') + (n === 1 ? ' heroBig' : '');
+  el.style.height = stageH + 'px';
   if (n === 1) {
     el.innerHTML = heroHTML(mode, q);
   } else {

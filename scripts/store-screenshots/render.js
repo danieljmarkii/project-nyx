@@ -17,6 +17,15 @@
  *                                   capture (captures/hero-crops.json — see
  *                                   README.md for how to measure the rects)
  *   --only 1,3                      render a subset
+ *   --size 1284x2778                export size override (default 1320×2868,
+ *                                   the 6.9″ slot). ASC slots are exact-match
+ *                                   on dimensions: the 6.9″ slot takes
+ *                                   1320×2868 / 1290×2796; the legacy 6.5″
+ *                                   slot takes ONLY 1284×2778 / 1242×2688 —
+ *                                   a 6.9″ file dropped there is rejected
+ *                                   (learned live, 2026-08-09: the version
+ *                                   page can surface the 6.5″ box; the 6.9″
+ *                                   slot lives in Media Manager).
  *
  * Zero npm dependencies on purpose: this must run in a cloud session or the
  * PM's Codespace with nothing but Node + a Chromium binary.
@@ -51,10 +60,15 @@ const FRAMES = [
   { n: 6, slug: 'home', capture: 'home.png' },
 ];
 
-const EXPORT_W = 1320;
-const EXPORT_H = 2868;
-// Accepted capture inputs for the 6.9″ slot (plan §1). Output is always
-// 1320×2868 regardless — captures are composited into the frame.
+// Export size — overridable via --size. Every entry is a real ASC slot size;
+// anything else renders but warns (ASC slots are exact-match).
+const DEFAULT_SIZE = [1320, 2868]; // 6.9″ portrait
+const KNOWN_ASC_SIZES = [
+  [1320, 2868], [1290, 2796], [1260, 2736], // 6.9″ slot
+  [1284, 2778], [1242, 2688],               // legacy 6.5″ slot
+];
+// Accepted capture inputs (plan §1) — capture size is independent of export
+// size; captures are composited into the frame at whatever export size runs.
 const CAPTURE_SIZES = [[1320, 2868], [1290, 2796]];
 
 function fail(msg) {
@@ -204,20 +218,20 @@ function encodePNG(w, h, rgb) {
 /* ── Viewport calibration: measure how much shorter the layout viewport is
    than --window-size on THIS Chromium build, using a position:fixed marker
    that by definition fills exactly the viewport. ── */
-function calibrateViewportOffset(chromium, tmpDir) {
+function calibrateViewportOffset(chromium, tmpDir, [w, h]) {
   const marker = 'data:text/html,' + encodeURIComponent(
     '<!doctype html><style>body{margin:0;background:#00FF00}i{position:fixed;inset:0;background:#F00}</style><i></i>'
   );
-  const probeH = EXPORT_H + 200;
+  const probeH = h + 200;
   const tmp = path.join(tmpDir, 'calibrate.png');
-  const img = decodePNG(chromiumScreenshot(chromium, marker, tmp, EXPORT_W, probeH));
+  const img = decodePNG(chromiumScreenshot(chromium, marker, tmp, w, probeH));
   let viewportH = 0;
   for (let y = 0; y < img.height; y++) {
     const i = (y * img.width + (img.width >> 1)) * 3;
     if (img.rgb[i] > 200 && img.rgb[i + 1] < 100) viewportH = y + 1;
   }
   fs.unlinkSync(tmp);
-  if (viewportH < EXPORT_H / 2) fail(`Viewport calibration failed (marker measured ${viewportH}px)`);
+  if (viewportH < h / 2) fail(`Viewport calibration failed (marker measured ${viewportH}px)`);
   const offset = probeH - viewportH;
   if (offset < 0 || offset > 200) fail(`Viewport calibration implausible: offset ${offset}px`);
   return offset;
@@ -272,8 +286,8 @@ function loadHeroCrops(homeInfo) {
 }
 
 /* ── Render one frame ── */
-function renderFrame(chromium, frame, mode, outDir, viewportOffset, heroExtras) {
-  const params = new URLSearchParams({ frame: String(frame.n), mode });
+function renderFrame(chromium, frame, mode, outDir, viewportOffset, heroExtras, [w, h]) {
+  const params = new URLSearchParams({ frame: String(frame.n), mode, w: String(w), h: String(h) });
   if (mode === 'capture') {
     params.set('img', 'captures/' + frame.capture);
     if (frame.n === 1) {
@@ -283,12 +297,12 @@ function renderFrame(chromium, frame, mode, outDir, viewportOffset, heroExtras) 
   }
   const url = 'file://' + path.join(DIR, 'template.html') + '?' + params.toString();
   const outFile = path.join(outDir, `frame-0${frame.n}-${frame.slug}.png`);
-  const shot = chromiumScreenshot(chromium, url, outFile, EXPORT_W, EXPORT_H + viewportOffset);
+  const shot = chromiumScreenshot(chromium, url, outFile, w, h + viewportOffset);
   const img = decodePNG(shot);
-  if (img.width !== EXPORT_W || img.height < EXPORT_H) {
-    fail(`frame ${frame.n} rendered ${img.width}×${img.height}, expected ≥ ${EXPORT_W}×${EXPORT_H}`);
+  if (img.width !== w || img.height < h) {
+    fail(`frame ${frame.n} rendered ${img.width}×${img.height}, expected ≥ ${w}×${h}`);
   }
-  const buf = encodePNG(EXPORT_W, EXPORT_H, img.rgb.subarray(0, EXPORT_H * EXPORT_W * 3));
+  const buf = encodePNG(w, h, img.rgb.subarray(0, h * w * 3));
   fs.writeFileSync(outFile, buf);
   return { outFile, bytes: buf.length };
 }
@@ -305,8 +319,21 @@ function renderFrame(chromium, frame, mode, outDir, viewportOffset, heroExtras) 
     if (!only.length) fail('--only needs frame numbers, e.g. --only 1,3');
   }
 
+  const sizeArg = args.find((a) => a.startsWith('--size'));
+  let size = DEFAULT_SIZE;
+  if (sizeArg) {
+    const v = sizeArg.includes('=') ? sizeArg.split('=')[1] : args[args.indexOf(sizeArg) + 1];
+    const m = /^(\d+)x(\d+)$/.exec(v || '');
+    if (!m) fail('--size needs WxH, e.g. --size 1284x2778');
+    size = [+m[1], +m[2]];
+    if (!KNOWN_ASC_SIZES.some(([w, h]) => w === size[0] && h === size[1])) {
+      console.warn(`⚠ ${size[0]}×${size[1]} is not a known ASC slot size — ASC slots are exact-match and will reject it.`);
+    }
+  }
+
   const mode = draft ? 'draft' : 'capture';
-  const outDir = path.join(DIR, 'out', mode);
+  const isDefaultSize = size[0] === DEFAULT_SIZE[0] && size[1] === DEFAULT_SIZE[1];
+  const outDir = path.join(DIR, 'out', mode + (isDefaultSize ? '' : `-${size[0]}x${size[1]}`));
   fs.mkdirSync(outDir, { recursive: true });
 
   const frames = FRAMES.filter((f) => !only || only.includes(f.n));
@@ -322,11 +349,11 @@ function renderFrame(chromium, frame, mode, outDir, viewportOffset, heroExtras) 
   }
 
   const chromium = findChromium();
-  const viewportOffset = calibrateViewportOffset(chromium, outDir);
-  console.log(`Rendering ${frames.length} frame(s) in ${mode} mode via ${chromium} (viewport offset ${viewportOffset}px)\n`);
+  const viewportOffset = calibrateViewportOffset(chromium, outDir, size);
+  console.log(`Rendering ${frames.length} frame(s) in ${mode} mode at ${size[0]}×${size[1]} via ${chromium} (viewport offset ${viewportOffset}px)\n`);
   for (const f of frames) {
-    const { outFile, bytes } = renderFrame(chromium, f, mode, outDir, viewportOffset, heroExtras);
-    console.log(`  ✓ ${path.relative(DIR, outFile)}  ${EXPORT_W}×${EXPORT_H} RGB  ${(bytes / 1024).toFixed(0)} KB`);
+    const { outFile, bytes } = renderFrame(chromium, f, mode, outDir, viewportOffset, heroExtras, size);
+    console.log(`  ✓ ${path.relative(DIR, outFile)}  ${size[0]}×${size[1]} RGB  ${(bytes / 1024).toFixed(0)} KB`);
   }
   console.log(`\nDone → ${path.relative(process.cwd(), outDir)}`);
   if (mode === 'draft') {

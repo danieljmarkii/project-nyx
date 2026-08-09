@@ -62,6 +62,15 @@ and the plan's §0 rule 2 wants real (demo) data.
 `--only 2,3` renders a subset (e.g. re-render frame 3 after the B-742 report
 chart lands and that screen is recaptured).
 
+`--size 1284x2778` renders the set at another ASC slot size (output lands in
+`out/<mode>-<WxH>/`). **ASC slots are exact-match on dimensions** — learned
+live on the first upload attempt (2026-08-09): the version page surfaced the
+legacy **6.5″ Display** box, which accepts ONLY 1284×2778 / 1242×2688 and
+rejects 6.9″ files. The 6.9″ slot (1320×2868 / 1290×2796) lives behind **View
+All Sizes in Media Manager** — upload there and smaller sizes derive
+automatically. Prefer the default 6.9″ set + Media Manager; use `--size
+1284x2778` only if the record genuinely offers no 6.9″ slot.
+
 ## What the renderer guarantees
 
 - Exactly **1320 × 2868**, color type 2 (truecolor RGB — Apple rejects alpha).
