@@ -1,6 +1,6 @@
 # Signal/Home uplift SR-6 (B-721) — copy/safety pass, S10 audit, GA gate
 
-**Date:** 2026-08-09 · **PR:** shipped via #__PR__ (draft) · **Server:** none (docs/review only)
+**Date:** 2026-08-09 · **PR:** shipped via #620 (draft) · **Server:** none (docs/review only)
 
 The terminal rung of the Signal/Home uplift. SR-6 runs the final `nyx-voice` + `clinical-guardrails` pass over every string the track ships, the S10 assignment audit, a re-run of `pm-feature-review` as Jordan/Sam, the flag-on on-device QA script, closes the two open doc items (B-728, B-733), and produces the **GA recommendation** to the PM.
 
