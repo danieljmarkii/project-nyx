@@ -35,6 +35,27 @@ plus the caption-framed polish variants on the brand-night ground. The page name
 limits: Signal/report copy approximates the deployed phrasing/render layers; the capture is
 the truth, the mock is the layout.
 
+## Round 2 (same session) — research + design directions
+
+The PM rejected round 1's framing ("take the app, screenshot it, add a title") and asked for
+(1) real design research and (2) submission-consultant guidance. Two parallel research passes
+produced **`docs/research/2026-08-app-store-creative-landscape.md`** (🧊 frozen): 15 live US
+screenshot sets examined via Apple's CDN (Oura/Whoop/Calm/Headspace/AllTrails/Flo/Clue/
+Duolingo/Notion/Things/Fabulous + 4 pet apps), the pattern taxonomy, the A/B case corpus
+with confidence grades, and Apple's rules verbatim. Headlines: the search card is the real
+listing (~60% decide without scrolling); caption overlays are explicitly permitted (2.3.3);
+fictional data is required (2.3.9 — Cooper complies by construction); the premium register is
+unoccupied in the pet category; every observed set matches ground darkness to its own UI
+theme.
+
+Consequences shipped this round: mock **round 2** republished to the same artifact URL with
+three composed-frame design directions (A night instrument / B daylight record / C night-
+opens-day-carries, C recommended); plan §0.5 added with open PM calls **D-SS1** (direction),
+**D-SS2** (designed set as the submission set — recommended — vs plain-capture floor),
+**D-SS3** (vet report promoted to frame 3); §5 captions demoted to placeholder-grade pending
+a joint caption+keyword pass with step 13. Backlog: **B-727** (post-launch PPO test),
+**B-728** (vet-referral CPP), **B-729** (StoreKit review prompt) — all Later, evidence-linked.
+
 ## Decisions taken (provisional, non-PM-blocking)
 
 - **Flags stay off for the demo account** (no Ask pill, no `signal_design_v2`) — screenshots

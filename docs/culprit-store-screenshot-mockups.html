@@ -198,6 +198,43 @@
   .fcard .phone-box{margin:0 auto}
   .fcard .phone{border-radius:34px;box-shadow:0 0 0 3px rgba(242,238,228,.14),0 18px 44px rgba(0,0,0,.5)}
 
+  /* ── Round 2: design-direction comps — each .dframe is the full 1320×2868
+       export at ~0.18 scale: ground + caption + device composed as one artwork.
+       Grounds are literal brand tokens on purpose (the artwork is single-world). ── */
+  .dirgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(258px,1fr));gap:26px;align-items:start}
+  .dircol .dirname{font-weight:600;font-size:15px;margin-bottom:2px}
+  .dircol .dirsrc{font-size:12px;color:var(--accent-ink);letter-spacing:.4px;text-transform:uppercase;margin-bottom:6px}
+  .dircol .dirnote{font-size:12.5px;color:var(--muted);line-height:1.5;margin-bottom:14px}
+  .dircol .dirnote b{color:var(--ink)}
+  .dframes{display:flex;gap:14px}
+  .dframe{width:122px;aspect-ratio:1320/2868;border-radius:14px;overflow:hidden;position:relative;flex:0 0 auto;box-shadow:0 4px 14px rgba(0,0,0,.16)}
+  .dframe.wide{width:240px;border-radius:20px}
+  .d-night{background:var(--night)}
+  .d-night::before{content:"";position:absolute;inset:-30% -20% auto;height:60%;background:radial-gradient(ellipse at 50% 0%,#221C56 0%,transparent 65%);pointer-events:none}
+  .d-day{background:#F2EEE4}
+  .dcap{position:relative;z-index:2;font-family:"Iowan Old Style","Palatino Linotype",Georgia,serif;text-align:center;margin:0 auto;text-wrap:balance}
+  .dframe .dcap{font-size:9.5px;line-height:1.35;padding:10px 8px 8px;max-width:16ch}
+  .dframe.wide .dcap{font-size:18px;padding:22px 14px 14px;max-width:18ch}
+  .d-night .dcap{color:#F2EEE4}
+  .d-day .dcap{color:#211E4E}
+  .d-day .dcap b{font-weight:700}
+  .dphone{position:absolute;left:50%;transform:translateX(-50%) scale(var(--ds,.245));transform-origin:top center;top:var(--dtop,58px);z-index:1}
+  .dframe.wide .dphone{--ds:.49;--dtop:110px}
+  .d-night .dphone .phone{box-shadow:0 0 0 2px rgba(242,238,228,.16),0 0 54px rgba(242,238,228,.10),0 14px 38px rgba(0,0,0,.55);border-radius:26px}
+  .d-day .dphone .phone{box-shadow:0 0 0 1.5px rgba(33,30,78,.14),0 12px 30px rgba(33,30,78,.14);border-radius:26px}
+  .dmicro{position:absolute;bottom:6px;left:0;right:0;z-index:2;text-align:center;font-size:8px;letter-spacing:.8px;text-transform:uppercase;color:rgba(255,255,255,.55)}
+  /* C hero — night brand frame with real floating Signal cards */
+  .heroC .cmark{position:relative;z-index:2;display:flex;align-items:center;justify-content:center;gap:5px;padding-top:14px;color:#A6A2CE}
+  .heroC .cmark svg{width:12px;height:12px;fill:#F2EEE4}
+  .heroC .cmark span{font-family:"Iowan Old Style",Georgia,serif;font-size:10px;letter-spacing:.5px}
+  .heroC .dcap{font-size:12px;padding:12px 10px 10px;max-width:15ch}
+  .heroC .float-cards{position:absolute;left:10px;right:10px;top:112px;z-index:1;display:flex;flex-direction:column;gap:8px}
+  .heroC .card{padding:10px 11px;border-radius:12px;border:none;box-shadow:0 10px 26px rgba(0,0,0,.5)}
+  .heroC .card .sig-head{font-size:11px;line-height:1.35}
+  .heroC .card .sig-body{font-size:9px;line-height:1.45}
+  .heroC .card .sig-sample{font-size:7.5px;margin-top:3px}
+  .heroC .rail-card{padding-left:8px;border-left-width:2.5px}
+
   .notes{font-size:13px;color:var(--muted);max-width:74ch}
   .notes li{margin-bottom:8px}
   .notes b{color:var(--ink);font-weight:600}
@@ -207,15 +244,79 @@
 
 <div class="wrap">
 <header class="page">
-  <span class="roundtag">Store screenshots · Round 1 · 2026-08-09</span>
+  <span class="roundtag">Store screenshots · Round 2 · 2026-08-09</span>
   <h1>The 6.9″ set, before it exists</h1>
-  <p class="sub">A pre-capture visualization of <b>docs/store-screenshot-plan.md</b> — the five frames (plus the optional sixth) drawn on the Cooper demo-account states, so you can judge the set as a sequence before step 11 seeds the account. These are hand-drawn mocks, <b>not captures</b>: the shipped app on the demo account is the authority, and Signal/summary sentences here approximate the deployed phrasing layer.</p>
-  <p class="authority">Plain captures are what ship — the framed, captioned pass at the bottom is the optional later polish and never gates submission.</p>
+  <p class="sub">Round 2 adds the <b>design directions</b> — the answer to "take the app, screenshot it, add a title" — built from the 2026-08 research brief (<b>docs/research/2026-08-app-store-creative-landscape.md</b>: 15 live sets examined, Apple's rules verbatim, the A/B case corpus). Each direction below composes the full 1320×2868 export: ground + caption + device as one artwork. The Cooper capture states from round 1 remain the staging spec under every direction.</p>
+  <p class="authority">What the research changed: caption overlays and marketing frames are <b>explicitly permitted</b> (Guideline 2.3.3), the search card (frames 1–3 at thumbnail size) is where ~60% of visitors decide, and the premium register is unoccupied in the pet category — so the designed set is the recommended <em>submission</em> set, with plain captures kept as the fallback floor.</p>
 </header>
 
 <section>
-  <h2>The set, in upload order (plain captures — what ships)</h2>
-  <p class="secnote">First two frames are the App Store search-result real estate. Scroll sideways to walk the sequence the way a browser will.</p>
+  <h2>Round 2 — three design directions (PM call D-SS1)</h2>
+  <p class="secnote">Each direction shown as frame 1 (Signal) and frame 3 (vet report — promoted into the search card per D-SS3). Captions held constant from round 1 so the visual treatment is the only variable. Every observed premium set keeps one ground, one caption position, one device scale across all frames — whichever direction wins is applied as an invariant template.</p>
+  <div class="dirgrid">
+
+    <div class="dircol">
+      <div class="dirname">A — Night instrument</div>
+      <div class="dirsrc">The Oura register</div>
+      <div class="dirnote">One brand-night field on every frame; thin moonlight serif captions; the day UI glows like a lit screen at 2am — the wedge moment itself. <b>Risk:</b> every observed set matches ground darkness to the app's own UI theme, and ours is daylight — the lit-window story must carry it, or it reads pasted.</div>
+      <div class="dframes">
+        <div class="dframe d-night">
+          <p class="dcap">Patterns between foods and symptoms, surfaced.</p>
+          <div class="dphone"><div class="clone-slot" data-clone="screen-1"></div></div>
+          <div class="dmicro">Frame 1 · Signal</div>
+        </div>
+        <div class="dframe d-night">
+          <p class="dcap">Hand your vet the record, not your memory.</p>
+          <div class="dphone"><div class="clone-slot" data-clone="screen-4"></div></div>
+          <div class="dmicro">Frame 3 · Vet report</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="dircol">
+      <div class="dirname">B — Daylight record</div>
+      <div class="dirsrc">The AllTrails / Things register</div>
+      <div class="dirnote">The moonlight-paper token as the field; deep-indigo serif captions with a <b>bold lead phrase</b>; the day UI merges with the ground the way Oura's dark UI merges with black. Honest to what the product looks like every day. <b>Risk:</b> quieter in a search grid next to Chewy's confetti — distinctiveness rides on restraint alone.</div>
+      <div class="dframes">
+        <div class="dframe d-day">
+          <p class="dcap"><b>The pattern, surfaced.</b> From your own logs.</p>
+          <div class="dphone"><div class="clone-slot" data-clone="screen-1"></div></div>
+        </div>
+        <div class="dframe d-day">
+          <p class="dcap"><b>Built for the clinic.</b> The record, not your memory.</p>
+          <div class="dphone"><div class="clone-slot" data-clone="screen-4"></div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="dircol">
+      <div class="dirname">C — Night opens, day carries <span style="color:var(--accent-ink);font-size:11px;letter-spacing:.6px">· RECOMMENDED</span></div>
+      <div class="dirsrc">The bookend move, inverted</div>
+      <div class="dirnote">Frame 1 is a night brand hero — crescent, one sentence, the real Signal cards floating lit (app-in-use, so 2.3.3 is satisfied with margin) — unmissable in a search grid of cream and confetti. Frames 2+ carry Direction B's daylight template, so ground matches UI everywhere the product is shown. The one ground exception is the one every premium set allows itself.</div>
+      <div class="dframes">
+        <div class="dframe d-night heroC">
+          <div class="cmark"><svg viewBox="0 0 16 16"><path fill-rule="evenodd" d="M8 1a7 7 0 1 0 6.9 8.2A5.5 5.5 0 1 1 8 1z"/></svg><span>Culprit</span></div>
+          <p class="dcap">Keep the record. See the patterns.</p>
+          <div class="float-cards">
+            <div class="card"><div class="rail-card rail-safety"><div class="sig-head">Cooper’s meals are coming back less finished.</div><div class="sig-sample">2 days below his usual, from his rated meals</div></div></div>
+            <div class="card"><div class="rail-card rail-insight"><div class="sig-body">Beef may be linked to Cooper’s vomiting — all 3 vomits this trial came within 4 hours of a beef treat.</div><div class="sig-sample">3 of 3 vomits · past 19 days · early pattern</div></div></div>
+          </div>
+          <div class="dmicro">Frame 1 · Night hero</div>
+        </div>
+        <div class="dframe d-day">
+          <p class="dcap"><b>Built for the clinic.</b> The record, not your memory.</p>
+          <div class="dphone"><div class="clone-slot" data-clone="screen-4"></div></div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+  <p class="secnote" style="margin-top:20px">Copy note: these captions are placeholders held over from round 1 — the winning direction gets a dedicated caption pass coordinated with the listing (step 13), since caption text is reportedly OCR-indexed as a reinforcing search signal. One line already rejected by the honesty bar during this round: <i>“Find the culprit”</i> as a hero caption — the brand pun promises an outcome the correlation engine deliberately never asserts.</p>
+</section>
+
+<section>
+  <h2>The capture states (round 1) — valid under every direction</h2>
+  <p class="secnote">The direction changes the frame around the capture, not the capture: these Cooper demo states are what gets photographed regardless of D-SS1, and they remain the plain-capture fallback floor. Proposed order change (D-SS3): the vet report moves to frame 3, Patterns to 4, so the search card shows the whole wedge loop — the Signal, the 10-second log, the clinic payoff.</p>
   <div class="rail">
 
     <!-- ─────────── Frame 1 · Home / live Signal ─────────── -->
@@ -505,8 +606,8 @@
 </section>
 
 <section>
-  <h2>The framed pass (optional captions — later polish, never the gate)</h2>
-  <p class="secnote">The §5 caption copy over the brand-night ground. Baked into the image at export — Apple has no caption field. Every line already ran through nyx-voice and the Guideline 1.4.1 bar; if the wording shifts when the listing (step 13) is drafted, update the plan’s table first, then re-export.</p>
+  <h2>Round 1 framed pass — superseded by the round-2 directions above (kept for the record)</h2>
+  <p class="secnote">Round 1’s framing treated captions as an afterthought over a generic night card — exactly the “screenshot plus a title” the research argues against. Kept so the delta is visible; do not react to these frames.</p>
   <div class="framedgrid">
     <div class="fcard"><span class="fnum">Frame 1</span><p class="fcap">Patterns between foods and symptoms, surfaced.</p><div class="phone-box small"><div class="phone-scale"><div class="clone-slot" data-clone="screen-1"></div></div></div></div>
     <div class="fcard"><span class="fnum">Frame 2</span><p class="fcap">Log a meal in two taps.</p><div class="phone-box small"><div class="phone-scale"><div class="clone-slot" data-clone="screen-2"></div></div></div></div>
@@ -528,7 +629,7 @@
 </section>
 
 <footer>
-  Round 1 — published 2026-08-09, alongside <b>docs/store-screenshot-plan.md</b> (the plan is the authority; this page is the visualization). Later rounds re-publish to this same artifact URL. Frames render Culprit’s daylight palette by design and do not adapt to this page’s dark mode — they are the app, not the page.
+  Round 2 — republished 2026-08-09 over the round-1 URL. Companion docs: <b>docs/store-screenshot-plan.md</b> (the capture spec) + <b>docs/research/2026-08-app-store-creative-landscape.md</b> (the evidence behind the directions). Phone interiors and direction grounds are literal brand tokens by design and do not adapt to this page’s dark mode — they are the artwork, not the page.
 </footer>
 </div>
 

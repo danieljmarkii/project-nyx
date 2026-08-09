@@ -3,7 +3,31 @@
 **Created:** 2026-08-09 · **Owner:** PM captures on-device; this doc is the shot list + caption copy
 **Guide:** [`docs/app-store-submission-guide.md`](./app-store-submission-guide.md) step 12 · **Backlog:** B-269 · **Demo account:** [`docs/nyx-demo-account-requirements.md`](./nyx-demo-account-requirements.md) (B-271 — the capture prerequisite)
 **Status:** 🌱 Plan ready. Capture is gated on guide step 11 (the Cooper demo seed) — every frame below is staged on that account.
-**Mock:** [`docs/culprit-store-screenshot-mockups.html`](./culprit-store-screenshot-mockups.html) (round 1, artifact 📸) — a pre-capture visualization of the six frames, plain + caption-framed. The mock illustrates; this plan and the shipped app are the authority.
+**Mock:** [`docs/culprit-store-screenshot-mockups.html`](./culprit-store-screenshot-mockups.html) (round 2, artifact 📸) — round 2 renders the three design directions side by side; round 1's capture states remain the staging spec beneath them.
+**Research:** [`docs/research/2026-08-app-store-creative-landscape.md`](./research/2026-08-app-store-creative-landscape.md) (2026-08-09) — 15 live sets examined, Apple's rules verbatim, the A/B case corpus. §0.5's decisions are built on it.
+
+---
+
+## 0.5 Round 2 — the design directions (PM calls D-SS1–D-SS3, open)
+
+The research reframed §0's posture: **caption overlays and marketing frames are explicitly permitted** (Guideline 2.3.3 — "may also include text and image overlays"), the search card (frames 1–3 at thumbnail size) is where ~60% of visitors decide, every published A/B winner moved toward short benefit captions on composed frames, and the premium register is **unoccupied in the pet category**. Plain captures remain the fallback floor — but the recommended submission set is now a designed one. Three PM calls:
+
+**D-SS1 — Visual direction.**
+- **Deciding:** the frame template every screenshot is composed in (ground, caption treatment, device treatment).
+- **Options:** **(A) Night instrument** — brand-night field on every frame, moonlight serif captions, day UI glowing (the Oura register; risk: every observed premium set matches ground darkness to the app's own UI theme, and ours is daylight). **(B) Daylight record** — moonlight-paper field, indigo bold-lead-phrase captions, UI merges with ground (honest, quieter in the search grid). **(C) Night opens, day carries — recommended (Designer):** frame 1 = night brand hero with the real Signal cards floating lit (2.3.3-satisfying, unmissable next to the category's cream and confetti); frames 2+ = B's daylight template. The single ground exception every premium set allows itself.
+- **Consequence:** unblocks the template build + caption pass (round 3); A or C also decides whether the night hero is the one frame that needs bespoke production.
+
+**D-SS2 — Submission posture.**
+- **Deciding:** whether the designed set is the *submission* set or a post-launch upgrade.
+- **Options:** **(a) Designed set ships — recommended (both lenses):** capture is already gated on step 11, so the template gets built in the waiting time; production = render captures into an HTML template and export at 1320×2868 (a small follow-up session). **(b) Plain captures ship, designed set follows via a later metadata update** — the original §0 posture; costs nothing but launches into the category's weakest creative moment with our strongest differentiator invisible in search.
+- **Consequence:** (a) adds one template-build session before upload, zero schedule risk while step 11 is open; PPO can't run pre-launch either way (the launch page is a judgment call), so (a) is also the only way the launch page benefits from any of this research.
+
+**D-SS3 — Order.**
+- **Deciding:** which frames occupy the 3-slot search card.
+- **Options:** **Promote the vet report to frame 3 — recommended:** Signal → quick-log → vet report is the whole wedge loop (the pattern, the 10-second habit, the clinic payoff); Patterns moves to 4, History 5. **Or keep round 1's order** (Patterns at 3, report at 4) — depth before payoff.
+- **Consequence:** reorders §3 and the mock; no other change.
+
+Two compliance facts now on the record here: screenshots must use **fictional data** (2.3.9) — the Cooper demo account satisfies this by construction — and at least one **Dark Mode screenshot** is Apple's own recommendation *if the app supports one* (Culprit's record surface is deliberately daylight-only, so this does not apply; noted so nobody "fixes" it).
 
 ---
 
@@ -124,6 +148,8 @@ All frames are captured **signed into the demo account** (Cooper — the diet-tr
 | "Peace of mind for pet parents" | Reassurance + the pet-brand register nyx-voice rejects. |
 
 **Reconciliation flag:** `docs/store-listing-copy.md` does not exist yet — step 13 hasn't run — so these captions were drafted standalone against the shared bar rather than matched to a listing. **When step 13 drafts the listing, cross-check vocabulary** (if the subtitle says "patterns," captions shouldn't switch to "insights") and update this table if the listing lands on different framing. Captions were *not* inferred from an unwritten doc.
+
+**Round-2 addendum:** caption text is reportedly OCR-indexed by App Store search as a *reinforcing* ranking signal (Appfigures 2025, observational — see the research brief §4), so the winning direction's caption pass should be written **with** step 13's keyword set, not merely reconciled after. The table above is now placeholder-grade pending that joint pass. One line pre-rejected for that pass: *"Find the culprit"* — the brand pun reads as an outcome promise the correlation engine deliberately never makes.
 
 ---
 
