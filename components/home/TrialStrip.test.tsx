@@ -89,7 +89,9 @@ describe('TrialStrip', () => {
       join(__dirname, '..', '..', 'app', '(tabs)', 'index.tsx'),
       'utf8',
     );
-    const signal = home.indexOf('<SignalZone />');
+    // `<SignalZone` (not `<SignalZone />`) — SR-5 passes it a `trialRunning` prop, so the
+    // element is no longer self-closing on one token; the layout-order assertion is unchanged.
+    const signal = home.indexOf('<SignalZone');
     const strip = home.indexOf('<TrialStrip');
     const today = home.indexOf('<TodayZone />');
     // Assert the anchors exist first — `-1 < -1 < -1` would otherwise pass.

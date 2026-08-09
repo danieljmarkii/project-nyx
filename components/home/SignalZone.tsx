@@ -32,7 +32,15 @@ const PREVIEW_INSIGHTS = [
   'Itching tends to follow meals containing chicken. No reaction logged after salmon.',
 ];
 
-export function SignalZone() {
+interface SignalZoneProps {
+  // B-721 SR-5 (§3.4) — whether a diet trial is running for the active pet (`isTrialRunning`,
+  // computed by Home from the useDietTrial load it already does, so this zone adds no second
+  // read). Threaded to the falling reflection's expanded state for the mid-trial adjacency
+  // line; default false, so every non-Home caller and the flag-off path are unaffected.
+  trialRunning?: boolean;
+}
+
+export function SignalZone({ trialRunning = false }: SignalZoneProps = {}) {
   const {
     findings,
     coverage,
@@ -119,7 +127,7 @@ export function SignalZone() {
       {showAck ? <AckLine petName={petName} /> : null}
 
       {state === 'live' ? (
-        <LiveStack findings={findings} petName={petName} designV2={designV2} />
+        <LiveStack findings={findings} petName={petName} designV2={designV2} trialRunning={trialRunning} />
       ) : state === 'stale' ? (
         <Text style={styles.intro}>{staleIntro(petName)}</Text>
       ) : state === 'no_pattern' ? (
@@ -207,10 +215,12 @@ function LiveStack({
   findings,
   petName,
   designV2,
+  trialRunning,
 }: {
   findings: CachedFinding[];
   petName: string;
   designV2: boolean;
+  trialRunning: boolean;
 }) {
   const ordered = [...findings].sort((a, b) => a.rank - b.rank);
   return (
@@ -220,13 +230,15 @@ function LiveStack({
           {i > 0 && <Divider style={styles.rowDivider} />}
           {/* SR-3 register (§5.1) — the lead (rank 0) keeps the enlarged canvas; secondary
               rows compress into a tighter rhythm. Gated on the flag: off, `compact` is
-              false and every row renders the shipped padding. */}
+              false and every row renders the shipped padding. SR-5 (§3.4) threads
+              trialRunning for the falling reflection's mid-trial adjacency line. */}
           <InsightCard
             cached={f}
             petName={petName}
             isLead={i === 0}
             designV2={designV2}
             compact={designV2 && i > 0}
+            trialRunning={trialRunning}
           />
         </View>
       ))}
