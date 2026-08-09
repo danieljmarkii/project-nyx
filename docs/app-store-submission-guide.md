@@ -28,7 +28,7 @@
 | 9 | Flip email confirmation ON + verify the signup path | Mixed | B-152 (part 2) | 🟡 **Most of the way.** Claude half ✅ (#436 — B-401 label/route + `lib/authErrors.ts` mapping every auth failure). Confirmation ON ✅ and **the send path is proven** (step 4). Server-side signup + delivery verified 2026-07-25 via curl. **Remaining:** ① click the emailed link to complete the loop (watch where it lands → **B-432**); ② the in-app device pass (needs a dev-client build — Expo Go no longer works since the widget targets landed); ③ the two RLS dashboard checks (confirm-email + email-enumeration protection, auth rate limits); ④ the auth email templates still say "Nyx" (audit §B7). |
 | 10 | Cut the production build + built-artifact verification | Mixed | — | ⬜ Not started |
 | 11 | Seed the App Review demo account + reviewer notes | Mixed | B-271 | 🔵 Spec'd 2026-07-11 — build-ready spec `docs/nyx-demo-account-requirements.md`; D1–D7 ratified; PR 1 (seed script) next |
-| 12 | Screenshots | PM | B-269 | ⬜ Not started |
+| 12 | Screenshots | PM | B-269 | 🔵 Plan ready 2026-08-09 — `docs/store-screenshot-plan.md` (ordered 5-frame 6.9″ shot list + optional 6th, exact demo states, pre-cleared caption copy). Capture is PM-on-device, gated on step 11 (demo seed) |
 | 13 | Listing copy + age rating | Mixed | B-269 | ⬜ Not started |
 | 14 | App Privacy nutrition label | Mixed | B-268 | ⬜ Not started |
 | 15 | Assemble the submission + submit | PM | — | ⬜ Not started |
@@ -241,6 +241,8 @@ You need three URLs by the end (anchors/pages on the site): `getculprit.app/supp
 ### Step 12 — Screenshots **[PM]** (B-269)
 
 **Summary:** One 6.9-inch iPhone screenshot set is required (smaller sizes scale down automatically since 2024; iPad is out per step 5). Take them on the demo account — it's exactly the "app full of life" state screenshots need.
+
+**➡ The full capture plan lives in [`docs/store-screenshot-plan.md`](./store-screenshot-plan.md) (2026-08-09):** the ordered shot list with the exact demo-account state per frame, the do-not-capture states (the Signal's ghost-preview building state chief among them), and pre-cleared caption copy for the later framed pass. The steps below are the short version.
 
 **How:**
 1. Device or Simulator sized to a 6.9" iPhone (iPhone 16 Pro Max class → **1320 × 2868 px** portrait). Spec: <https://developer.apple.com/help/app-store-connect/reference/screenshot-specifications/>
