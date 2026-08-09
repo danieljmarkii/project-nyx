@@ -25,6 +25,7 @@ import { flushForSignOut, unsentSignOutWarning } from '../lib/session';
 import { usePetStore } from '../store/petStore';
 import { useAuthStore } from '../store/authStore';
 import { useAllowlistFlag } from '../hooks/useAppConfig';
+import { useBetaOptIn } from '../lib/betaFeatures';
 
 // "You" — the owner's account & settings home (B-283, spec §4). A doorway from
 // the Home-header avatar (§4.1), NOT a fifth tab: the user actions that used to
@@ -52,6 +53,15 @@ export default function SettingsScreen() {
   // becomes an OR over the registry's keys (spec §2 / §5). A non-eligible owner's
   // Settings looks exactly as it does today — no row, no hint the program exists.
   const betaEligible = useAllowlistFlag('widget_enabled');
+  // OPEN-2 (resolved PR 4) — the quiet "N on" count on the row: betas that are
+  // eligible (Gate 1) AND opted in (Gate 2). One beta in v1, so it reads directly
+  // alongside betaEligible above rather than looping the registry; when a second
+  // beta lands, both this and betaEligible fold into a count/OR over the registry
+  // keys (the same fold-point the betaEligible comment names). It never counts a
+  // beta opted-in-but-no-longer-eligible (a killed flag) — the widget path has
+  // already stopped publishing for that account, so the row must not claim it's on.
+  const widgetOptedIn = useBetaOptIn('widget_enabled');
+  const activeBetaCount = betaEligible && widgetOptedIn ? 1 : 0;
   const [deleteVisible, setDeleteVisible] = useState(false);
   // B-430 — the pre-sign-out flush is a network round trip; disable the row while
   // it runs so a second tap can't start a parallel drain.
@@ -227,17 +237,29 @@ export default function SettingsScreen() {
             onPress={() => router.push('/settings/notifications')}
             accessibilityHint="Opens your notification settings"
           />
-          {/* Beta features (B-712 PR 3) — rendered ONLY for an eligible account
-              (Gate 1). Points at the self-serve opt-in shelf; the "N on" count
-              (OPEN-2) is deferred to PR 4. `first` when it's the only visible
-              Preferences row so the top hairline stays clean if Notifications ever
-              moves; here Notifications is always present, so it's a normal row. */}
+          {/* Beta features (B-712) — rendered ONLY for an eligible account (Gate 1).
+              Points at the self-serve opt-in shelf. The "N on" count (OPEN-2,
+              resolved PR 4) is a quiet trailing note shown only when ≥1 beta is
+              eligible AND opted in — hidden at 0 so an eligible owner who's turned
+              nothing on sees a clean doorway, not a deadening "0 on" (Principle 5).
+              Notifications is always present above, so this is a normal (non-`first`)
+              row. */}
           {betaEligible && (
             <SettingsRow
               label="Beta features"
               sublabel="Try features early, while we’re still building them"
               chevron
+              trailing={
+                activeBetaCount > 0 ? (
+                  <Text style={styles.betaCount}>{activeBetaCount} on</Text>
+                ) : undefined
+              }
               onPress={() => router.push('/settings/beta')}
+              // Fold the count into the label so a screen reader hears "Beta
+              // features, 1 on", not just the trailing decorative Text.
+              accessibilityLabel={
+                activeBetaCount > 0 ? `Beta features, ${activeBetaCount} on` : undefined
+              }
               accessibilityHint="Opens the beta features you can switch on"
             />
           )}
@@ -407,6 +429,15 @@ const styles = StyleSheet.create({
     fontSize: theme.textSM,
     color: theme.colorTextTertiary,
     lineHeight: theme.lineHeightSM,
+  },
+
+  // ── Beta "N on" count (trailing note on the Preferences row) ──
+  // Accent ink echoes the Beta pill's "active" register (mock's teal trail-note),
+  // reading as a live-state cue rather than another muted nav label.
+  betaCount: {
+    fontFamily: theme.fontBody,
+    fontSize: theme.textSM,
+    color: theme.colorAccentInk,
   },
 
   // ── Medical disclaimer ──
