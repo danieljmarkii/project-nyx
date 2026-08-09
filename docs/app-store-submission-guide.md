@@ -30,7 +30,7 @@
 | 11 | Seed the App Review demo account + reviewer notes | Mixed | B-271 | 🔵 Spec'd 2026-07-11 — build-ready spec `docs/nyx-demo-account-requirements.md`; D1–D7 ratified; PR 1 (seed script) next |
 | 12 | Screenshots | PM | B-269 | ⬜ Not started |
 | 13 | Listing copy + age rating | Mixed | B-269 | 🟡 **Copy drafted 2026-08-09 → `docs/store-listing-copy.md`** (subtitle, promotional text, description, keywords — all char-verified in-limit; clinically honest per 1.4.1, no diagnosis/reassurance claim). **Awaiting PM review + one decision:** keep the ASC-locked subtitle "Track symptoms, find triggers" vs. adopt "Diet trials & symptom diary" (recommended, carries the diet-trial wedge). Age-rating answer pre-written (→ 4+). Age-rating questionnaire itself is still a PM-in-ASC action. |
-| 14 | App Privacy nutrition label | Mixed | B-268 | ⬜ Not started |
+| 14 | App Privacy nutrition label | Mixed | B-268 | 🔵 **Answer sheet ready — `docs/app-privacy-answers.md` (2026-08-09).** Audited from real code/schema: **6** data types collected (Email, Name, Photos or Videos, Other User Content, User ID, Product Interaction), **all** Linked / **none** Tracking / **all** App Functionality; matches the privacy policy (no mismatch). PM half remaining: transcribe §7 into ASC + ratify the §5.2 usage-metering call. |
 | 15 | Assemble the submission + submit | PM | — | ⬜ Not started |
 | 16 | During review: monitoring + rejection playbook | Reference | — | — |
 
@@ -273,6 +273,8 @@ You need three URLs by the end (anchors/pages on the site): `getculprit.app/supp
 ### Step 14 — App Privacy nutrition label **[Mixed]** (B-268)
 
 **Summary:** The mandatory data-collection questionnaire in App Store Connect — distinct from the privacy-policy document, and it must **match** it (mismatches are a rejection/re-review trigger). Claude produces an exact answer sheet from the real data flows; you transcribe it.
+
+**✅ Answer sheet produced 2026-08-09 — `docs/app-privacy-answers.md`.** Built from a code/schema audit (not intent): 6 collected data types, all *Linked to You / not Tracking / App Functionality*; the finished label shows **Data Linked to You** only, **Data Used to Track You** empty. §6 traces every answer to a privacy-policy section (no v1 mismatch). Transcribe from its **§7 click-path**. Two things for the PM in that doc's §9: (1) ratify the one judgment call — disclosing the `ai_usage` fair-use counter as *Usage Data → Product Interaction* (recommended, to stay in sync with the policy's "Usage metering" paragraph); (2) the policy's two remaining `[...]` placeholders (operator legal name, email-provider name) don't affect any label answer but must be filled before the hosted policy is final (guide step 3 / B-229).
 
 **Reference:** <https://developer.apple.com/app-store/app-privacy-details/>
 
