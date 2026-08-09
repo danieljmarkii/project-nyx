@@ -118,6 +118,20 @@ export function templateReflection(f: ReflectionFinding, petName: string): strin
   const symptom = SYMPTOM_LABEL[f.symptomType]
   const noun = f.currentCount === 1 ? 'episode' : 'episodes'
   if (f.direction === 'improving') {
+    // SR-4 falling-comparison density gate (B-721 §3.3). A FALLING reflection states its
+    // week-over-week comparison ONLY when this week was logged with density comparable to
+    // last week. When density FELL (`density.comparable === false`), the "down from N last
+    // week" clause is WITHHELD — a quieter-looking week may just be a less-logged one, and
+    // minting a reassuring fall out of that is exactly the false reassurance §3.3 forbids
+    // (fail-toward-escalation: withhold, never soften). The client (SR-5) says why in the
+    // expanded state. The gate fires ONLY on an explicit `comparable === false`, so an
+    // ABSENT `density` (an old cached finding, or a null compute) renders the comparison
+    // exactly as before SR-4 — the gate can only ever REMOVE a comparison, never add one,
+    // which is why it is safe flag-on AND flag-off (§7). Only the FALLING arm is gated: a
+    // flat "about the same" is not a reassuring claim of improvement (§3.2 — falling only).
+    if (f.density?.comparable === false) {
+      return `We've logged ${f.currentCount} ${noun} of ${symptom} for ${petName} this week.`
+    }
     return `We've logged ${f.currentCount} ${noun} of ${symptom} for ${petName} this week, down from ${f.priorCount} last week.`
   }
   return `We've logged ${f.currentCount} ${noun} of ${symptom} for ${petName} this week — about the same as last week.`
@@ -325,11 +339,28 @@ const MECHANISM_RE =
 // attribution. "eating" is a timing reference, not a food, so it is not screened.
 const FOOD_NAMING_RE =
   /\b(chicken|beef|turkey|lamb|duck|salmon|tuna|whitefish|fish|pork|rabbit|venison|bison|kibble|treats?|dry food|wet food|protein)\b/i
+// SR-4 (B-721 §3.5, spine S3/S5) — UNIVERSALLY banned Signal vocabulary, screened on EVERY
+// finding type. Change lives in the phrased, counted sentence, never a direction glyph
+// (S5), and the sample line is the honest confidence display, never a percentage or
+// composite score (S3). No Signal template emits either; this screen holds the line against
+// any model-phrased drift (correlation / intake) and pins the templates against regressions.
+const GLYPH_RE = /[↑↓→←➘➚➔⬆⬇]|->|<-|\bslope\b/i
+const PERCENT_RE = /%|\bpercent(?:ages?|iles?)?\b/i
+
+/** True when `text` carries any universally-banned Signal vocabulary (glyphs / percentages,
+ *  §3.5). Exported so the SR-4 guardrail-coverage tests can screen the med-on-board line and
+ *  the density-withheld sentence — copy that isn't itself a finding sentence — with the same
+ *  screen validatePhrasing applies. */
+export function hasBannedSignalVocabulary(text: string): boolean {
+  const t = text ?? ''
+  return GLYPH_RE.test(t) || PERCENT_RE.test(t)
+}
 
 export function validatePhrasing(text: string, finding: Finding): boolean {
   const t = text?.trim() ?? ''
   if (t.length < 8 || t.length > 320) return false
   if (t.includes('!')) return false // nyx-voice Pattern 4 — no manufactured enthusiasm
+  if (hasBannedSignalVocabulary(t)) return false // §3.5 — no glyphs, no percentages, any type
   if (finding.priorityClass === 'safety') {
     // Never reassure on a safety flag; never reframe a decline as fussiness.
     if (REASSURANCE_RE.test(t) || DISMISSIVE_RE.test(t)) return false

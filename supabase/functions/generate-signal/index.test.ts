@@ -15,8 +15,12 @@ import {
   resolveFlagValue,
   resolveCaps,
   computeResetsAt,
+  mapMedDoseFacts,
   type FunctionCaps,
+  type RegimenRow,
+  type MedDoseEventRow,
 } from './index.ts'
+import type { IntakeRating } from './detection.ts'
 
 // generate-signal free caps: 12/pet/day, 240/pet/month (§4.4).
 const SIGNAL_CAPS: FunctionCaps = { daily: 12, monthly: 240 }
@@ -92,4 +96,108 @@ Deno.test('B-422 — isTrialRunning is the gate generate-signal reads, and it re
     isTrialRunning({ startedAt: '2026-01-01', targetDurationDays: 0 }, Date.parse('2027-01-01T12:00:00Z')),
     true,
   )
+})
+
+// ── SR-4 (§5.4): mapMedDoseFacts — the administered + nameable dose glue ──────────
+// Adversarial: a fact is emitted ONLY for a dose that was actually ON BOARD (the
+// confounder pass's own filter, doseToMedicationWindow — missed / refused / the B-174
+// in-doubt combo dose dropped) AND actually NAMEABLE (regimen drug_name, else library
+// brand/generic). Everything else is excluded, so the med-on-board count can never
+// include a non-administration or an unnameable drug.
+
+const ISO = '2026-05-20T09:00:00.000Z'
+
+const regimen = (over: Partial<RegimenRow> = {}): RegimenRow => ({
+  id: 'reg-1',
+  drug_name: 'Apoquel',
+  medication_item_id: null,
+  started_at: '2026-05-01',
+  ended_at: null,
+  ...over,
+})
+
+const doseEvent = (
+  occurred_at: string,
+  opts: {
+    adherence?: string | null
+    medication_id?: string | null
+    medication_item_id?: string | null
+    brand?: string | null
+    generic?: string | null
+    paired_event_id?: string | null
+  } = {},
+): MedDoseEventRow => ({
+  occurred_at,
+  medication_administrations: {
+    medication_id: opts.medication_id ?? null,
+    medication_item_id: opts.medication_item_id ?? null,
+    medication_items:
+      opts.brand !== undefined || opts.generic !== undefined
+        ? { generic_name: opts.generic ?? null, brand_name: opts.brand ?? null }
+        : null,
+    // Preserve an EXPLICIT null adherence (the B-174 in-doubt case); only default when
+    // the caller omits it — `?? 'given'` would wrongly coerce a deliberate null.
+    adherence: ('adherence' in opts ? opts.adherence : 'given') as string | null,
+    paired_event_id: opts.paired_event_id ?? null,
+  },
+})
+
+const noIntake = new Map<string, IntakeRating | null>()
+
+Deno.test('mapMedDoseFacts — an administered regimen-linked dose is named by the regimen drug_name', () => {
+  const facts = mapMedDoseFacts([regimen()], [doseEvent(ISO, { medication_id: 'reg-1', adherence: 'given' })], noIntake)
+  assertEquals(facts, [{ occurredAt: ISO, drugLabel: 'Apoquel' }])
+})
+
+Deno.test('mapMedDoseFacts — missed / refused doses are NEVER counted (not on board)', () => {
+  const facts = mapMedDoseFacts(
+    [regimen()],
+    [
+      doseEvent(ISO, { medication_id: 'reg-1', adherence: 'missed' }),
+      doseEvent(ISO, { medication_id: 'reg-1', adherence: 'refused' }),
+    ],
+    noIntake,
+  )
+  assertEquals(facts, [])
+})
+
+Deno.test('mapMedDoseFacts — the B-174 in-doubt combo dose (null adherence + refused vehicle) is dropped', () => {
+  const mealIntake = new Map<string, IntakeRating | null>([['meal-1', 'refused']])
+  const facts = mapMedDoseFacts(
+    [regimen()],
+    [doseEvent(ISO, { medication_id: 'reg-1', adherence: null, paired_event_id: 'meal-1' })],
+    mealIntake,
+  )
+  assertEquals(facts, [], 'the carrier was refused → the drug was not delivered → not on board')
+})
+
+Deno.test('mapMedDoseFacts — a standalone null-adherence dose defaults to administered (counted)', () => {
+  const facts = mapMedDoseFacts([regimen()], [doseEvent(ISO, { medication_id: 'reg-1', adherence: null })], noIntake)
+  assertEquals(facts.length, 1)
+})
+
+Deno.test('mapMedDoseFacts — a partial dose is on board (counted)', () => {
+  const facts = mapMedDoseFacts([regimen()], [doseEvent(ISO, { medication_id: 'reg-1', adherence: 'partial' })], noIntake)
+  assertEquals(facts.length, 1)
+})
+
+Deno.test('mapMedDoseFacts — an ad-hoc dose (no regimen link) is named by the library item', () => {
+  const facts = mapMedDoseFacts(
+    [],
+    [doseEvent(ISO, { medication_item_id: 'item-1', brand: 'Apoquel', generic: 'oclacitinib', adherence: 'given' })],
+    noIntake,
+  )
+  assertEquals(facts, [{ occurredAt: ISO, drugLabel: 'Apoquel' }])
+})
+
+Deno.test('mapMedDoseFacts — an unnameable dose (no regimen, no library) is excluded', () => {
+  assertEquals(mapMedDoseFacts([], [doseEvent(ISO, { adherence: 'given' })], noIntake), [])
+})
+
+Deno.test('mapMedDoseFacts — a dose whose regimen is absent from the set and has no library item is excluded', () => {
+  assertEquals(mapMedDoseFacts([], [doseEvent(ISO, { medication_id: 'reg-x', adherence: 'given' })], noIntake), [])
+})
+
+Deno.test('mapMedDoseFacts — no doses → no facts', () => {
+  assertEquals(mapMedDoseFacts([regimen()], [], noIntake), [])
 })
