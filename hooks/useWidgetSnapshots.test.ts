@@ -53,6 +53,15 @@ jest.mock('../store/authStore', () => ({
   },
 }));
 
+// Gate 2 (PR 3): the local widget opt-in. Mocked as a controllable module-level
+// value so the eligible×opted-in matrix runs without the real Zustand/AsyncStorage
+// store. Default TRUE so the eligible tests below reach the real-data path (the gate
+// is `eligible && optedIn`); the opted-OUT branch flips it.
+let mockWidgetOptedIn = true;
+jest.mock('../lib/betaFeatures', () => ({
+  useBetaOptIn: () => mockWidgetOptedIn,
+}));
+
 import { act, renderHook } from '@testing-library/react-native';
 import { buildWidgetPublishProps, useWidgetSnapshots, type WidgetPublishDeps } from './useWidgetSnapshots';
 import { WIDGET_PROPS_SCHEMA_VERSION, type CulpritWidgetProps } from '../lib/widgetProps';
@@ -115,8 +124,8 @@ function fakeDeps(over: Partial<WidgetPublishDeps> = {}) {
   return { deps, calls };
 }
 
-describe('buildWidgetPublishProps — the B-712 eligibility gate (spec §2 / §4.1)', () => {
-  it('eligible → publishes the real per-pet snapshot, never clears', async () => {
+describe('buildWidgetPublishProps — the B-712 widget gate (live = eligible && opted in, spec §2 / §4.1)', () => {
+  it('live → publishes the real per-pet snapshot, never clears', async () => {
     const { deps, calls } = fakeDeps();
     const props = await buildWidgetPublishProps(true, deps);
 
@@ -130,7 +139,7 @@ describe('buildWidgetPublishProps — the B-712 eligibility gate (spec §2 / §4
     expect(props.pets.slot1.active).toBe(true);
   });
 
-  it('not eligible → clears the snapshot files and publishes signed-in-EMPTY', async () => {
+  it('not live → clears the snapshot files and publishes signed-in-EMPTY', async () => {
     const { deps, calls } = fakeDeps();
     const props = await buildWidgetPublishProps(false, deps);
 
@@ -187,6 +196,7 @@ describe('useWidgetSnapshots — the flag flows through and re-publishes on a fl
     captured = null;
     mockSession = { user: { id: USER_ID } }; // truthy → the effect runs
     mockUserId = USER_ID;
+    mockWidgetOptedIn = true; // default opted-in; the opted-out test flips it
     mockedPublishSnapshots.mockClear();
     mockedClearData.mockClear();
     mockedPublishPass.mockReset().mockImplementation(
@@ -249,5 +259,20 @@ describe('useWidgetSnapshots — the flag flows through and re-publishes on a fl
     expect(mockedPublishSnapshots).not.toHaveBeenCalled();
     expect(captured?.signedIn).toBe(true);
     expect(captured?.pets).toEqual({});
+  });
+
+  it('ELIGIBLE but NOT opted in → neutral empty (the Phase-2 transition: opt-in defaults off)', async () => {
+    // The account IS in the allowlist, but Gate 2 is off — the exact state a cohort
+    // owner lands in when Phase 2 ships (their Phase-1 widget goes neutral until they
+    // re-enable it once on the beta page). Real data must be withheld.
+    mockWidgetOptedIn = false;
+    setEligibility([USER_ID]);
+    renderHook(() => useWidgetSnapshots());
+    await flushPublish();
+
+    expect(mockedPublishSnapshots).not.toHaveBeenCalled(); // real data withheld
+    expect(mockedClearData).toHaveBeenCalled(); // snapshot files dropped
+    expect(captured?.signedIn).toBe(true); // never the "Sign in" door
+    expect(captured?.pets).toEqual({}); // the neutral "No pet in this slot yet" door
   });
 });

@@ -19,10 +19,13 @@ jest.mock('../../hooks/useAppConfig', () => ({
 }));
 
 import { render } from '@testing-library/react-native';
+import { AccessibilityInfo, Platform } from 'react-native';
 import { SignalZone } from './SignalZone';
+import { theme } from '../../constants/theme';
 import type { SignalState } from '../../hooks/useSignal';
-import type { CoverageDiagnostic } from '../../lib/signal';
+import type { CachedFinding, CoverageDiagnostic } from '../../lib/signal';
 import {
+  ackUpdatingCopy,
   buildingIntro,
   noPatternIntro,
   buildingHeadline,
@@ -32,6 +35,21 @@ import {
   NO_PATTERN_HEADLINE,
   NO_PATTERN_SUB,
 } from '../../lib/signalCopy';
+
+// A minimal live finding so the register (live state) renders a stack.
+const liveFinding: CachedFinding = {
+  rank: 0,
+  text: 'A live finding sentence.',
+  finding: {
+    type: 'intake_decline',
+    priorityClass: 'safety',
+    trigger: 'consecutive_low',
+    species: 'cat',
+    daysBelowBaseline: 2,
+    refusedFoodLabel: null,
+    ratedMealsConsidered: 9,
+  },
+};
 
 function signalState(over: Partial<SignalState> = {}): SignalState {
   return {
@@ -44,6 +62,7 @@ function signalState(over: Partial<SignalState> = {}): SignalState {
     hasUnseenSignal: false,
     dayNumber: 3,
     eventCount: 11,
+    acknowledging: false,
     markSeen: jest.fn(),
     ...over,
   };
@@ -85,6 +104,19 @@ describe('SignalZone — flag OFF (shipped surface byte-identical, FR-FLAG-2)', 
     expect(getByText(noPatternIntro('Nyx'))).toBeTruthy();
     expect(queryByText(NO_PATTERN_HEADLINE)).toBeNull();
     expect(queryByText(NO_PATTERN_SUB)).toBeNull();
+    expect(toJSON()).toMatchSnapshot();
+  });
+
+  it('the live register renders the shipped chrome byte-identical — no ack, full-accent footer, prominent label (FR-FLAG-2, SR-3)', () => {
+    // Even mid-regen (acknowledging true), flag-off shows none of SR-3's register: no ack
+    // line, the footer at full accent, the label at its shipped secondary tone.
+    mockUseSignal.mockReturnValue(
+      signalState({ displayState: 'live', findings: [liveFinding], acknowledging: true }),
+    );
+    const { getByText, queryByText, toJSON } = render(<SignalZone />);
+    expect(queryByText(ackUpdatingCopy('Nyx'))).toBeNull();
+    expect(getByText('Signal')).toHaveStyle({ color: theme.colorTextSecondary });
+    expect(getByText(/See all of Nyx's patterns/)).toHaveStyle({ color: theme.colorAccent });
     expect(toJSON()).toMatchSnapshot();
   });
 });
@@ -151,5 +183,96 @@ describe('SignalZone — flag ON (E1/E2 restyle, FR-FLAG-1 no mix)', () => {
     const { getByText } = render(<SignalZone />);
     expect(getByText(NO_PATTERN_HEADLINE)).toBeTruthy();
     expect(getByText(NO_PATTERN_SUB)).toBeTruthy();
+  });
+});
+
+// ── SR-3 (B-721) — the register: acknowledgment line + receded chrome ─────────────
+describe('SignalZone — SR-3 acknowledgment line (§5.3)', () => {
+  it('shows the "Noted — updating …" line only when the flag is on AND a regen is in flight', () => {
+    // Flag ON + acknowledging → the line renders above the still-readable findings.
+    mockUseAllowlistFlag.mockReturnValue(true);
+    mockUseSignal.mockReturnValue(
+      signalState({ displayState: 'live', findings: [liveFinding], acknowledging: true }),
+    );
+    const on = render(<SignalZone />);
+    expect(on.getByText(ackUpdatingCopy('Nyx'))).toBeTruthy();
+    // The findings stay readable throughout (never blanked / replaced by a spinner).
+    expect(on.getByText('A live finding sentence.')).toBeTruthy();
+  });
+
+  it('never renders the ack line when the flag is off, even mid-regen (FR-FLAG-2)', () => {
+    mockUseAllowlistFlag.mockReturnValue(false);
+    mockUseSignal.mockReturnValue(
+      signalState({ displayState: 'live', findings: [liveFinding], acknowledging: true }),
+    );
+    expect(render(<SignalZone />).queryByText(ackUpdatingCopy('Nyx'))).toBeNull();
+  });
+
+  it('does not render the ack line when nothing is in flight (flag on, not acknowledging)', () => {
+    mockUseAllowlistFlag.mockReturnValue(true);
+    mockUseSignal.mockReturnValue(
+      signalState({ displayState: 'live', findings: [liveFinding], acknowledging: false }),
+    );
+    expect(render(<SignalZone />).queryByText(ackUpdatingCopy('Nyx'))).toBeNull();
+  });
+
+  it('is scoped to the live register — no ack over the E1 building state (E1 owns that reassurance)', () => {
+    mockUseAllowlistFlag.mockReturnValue(true);
+    mockUseSignal.mockReturnValue(signalState({ displayState: 'building', acknowledging: true }));
+    const view = render(<SignalZone />);
+    expect(view.queryByText(ackUpdatingCopy('Nyx'))).toBeNull();
+    // E1 renders intact (the empty state is never blanked by the ack machinery).
+    expect(view.getByText(BUILDING_SUB)).toBeTruthy();
+  });
+
+  it('announces the ack to VoiceOver on iOS when it appears (accessibilityLiveRegion is Android-only)', () => {
+    const prevOS = Platform.OS;
+    Platform.OS = 'ios';
+    const announce = jest
+      .spyOn(AccessibilityInfo, 'announceForAccessibility')
+      .mockImplementation(() => {});
+    mockUseAllowlistFlag.mockReturnValue(true);
+    mockUseSignal.mockReturnValue(
+      signalState({ displayState: 'live', findings: [liveFinding], acknowledging: true }),
+    );
+    render(<SignalZone />);
+    expect(announce).toHaveBeenCalledWith(ackUpdatingCopy('Nyx'));
+    announce.mockRestore();
+    Platform.OS = prevOS;
+  });
+});
+
+describe('SignalZone — SR-3 receded chrome (§5.2)', () => {
+  it('drops the section label a tier in the live register, flag on', () => {
+    mockUseAllowlistFlag.mockReturnValue(true);
+    mockUseSignal.mockReturnValue(signalState({ displayState: 'live', findings: [liveFinding] }));
+    expect(render(<SignalZone />).getByText('Signal')).toHaveStyle({ color: theme.colorTextTertiary });
+  });
+
+  it('keeps the label prominent flag-off (byte-identical) and in the empty states', () => {
+    // Flag off, live: the shipped secondary tone.
+    mockUseAllowlistFlag.mockReturnValue(false);
+    mockUseSignal.mockReturnValue(signalState({ displayState: 'live', findings: [liveFinding] }));
+    expect(render(<SignalZone />).getByText('Signal')).toHaveStyle({ color: theme.colorTextSecondary });
+    // Flag on, building (E1): the label stays prominent (only the live register recedes it).
+    mockUseAllowlistFlag.mockReturnValue(true);
+    mockUseSignal.mockReturnValue(signalState({ displayState: 'building' }));
+    expect(render(<SignalZone />).getByText('Signal')).toHaveStyle({ color: theme.colorTextSecondary });
+  });
+
+  it('recedes the footer doorway to the tertiary tier flag-on, keeps full accent flag-off (AA-safe recede)', () => {
+    // The mock dims the footer to a lighter teal, but that fails AA on white (~1.6:1) —
+    // so the doorway recedes to the same grey tier as the label (≥4.5:1), never below the
+    // shipped accent footer. Flag-off is unchanged.
+    mockUseAllowlistFlag.mockReturnValue(true);
+    mockUseSignal.mockReturnValue(signalState({ displayState: 'live', findings: [liveFinding] }));
+    expect(render(<SignalZone />).getByText(/See all of Nyx's patterns/)).toHaveStyle({
+      color: theme.colorTextTertiary,
+    });
+    mockUseAllowlistFlag.mockReturnValue(false);
+    mockUseSignal.mockReturnValue(signalState({ displayState: 'live', findings: [liveFinding] }));
+    expect(render(<SignalZone />).getByText(/See all of Nyx's patterns/)).toHaveStyle({
+      color: theme.colorAccent,
+    });
   });
 });

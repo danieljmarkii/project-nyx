@@ -42,6 +42,12 @@ export interface SignalState {
    * — which is why BuildingStateV2 holds the day-count clause back at eventCount 0. */
   dayNumber: number;
   eventCount: number;
+  /** B-721 SR-3 (§5.3) — true while a fresh log's debounced regen is in flight for the
+   * active pet (raised at log time in triggerSignalRegenDebounced, cleared when that
+   * regen settles). Drives the Home Signal's quiet "Noted — updating {pet}'s picture…"
+   * acknowledgment line above the still-readable findings; read only on the flag-on
+   * surface (the flag-off Signal ignores it, so it's invisible there — FR-FLAG-2). */
+  acknowledging: boolean;
   /** Marks THIS pet's current finding set as seen (spec §3 — "flips false when
    * the Signal zone is viewed"). Bound to this hook instance's own petId +
    * findings — always a consistent pair by construction, so callers never have
@@ -199,6 +205,12 @@ export function useSignal(): SignalState {
   );
   const seenSignature = useSignalMarkStore((s) => (petId ? s.seenSignatures[petId] : undefined));
   const hasUnseenSignal = hasUnseenFinding(displayState, findings, seenSignature);
+
+  // B-721 SR-3 (§5.3) — the acknowledgment flag is owned entirely by the regen lifecycle
+  // (raised in triggerSignalRegenDebounced, cleared when the LATEST log's regen settles,
+  // with a fail-quiet ceiling there for a hung regen), so the hook only READS it. Keyed
+  // by the active pet, so a background pet's regen never shows an ack on this pet's zone.
+  const acknowledging = useSyncStore((s) => (petId ? s.signalAcknowledging[petId] ?? false : false));
   // Closes over THIS render's petId + findings — always the pair the render-time
   // reset above guarantees are consistent, so a caller can never accidentally
   // re-pair a stale findings array with the wrong pet's id (see the comment above).
@@ -221,6 +233,7 @@ export function useSignal(): SignalState {
     hasUnseenSignal,
     dayNumber: localCtx.dayNumber,
     eventCount: localCtx.eventCount,
+    acknowledging,
     markSeen,
   };
 }

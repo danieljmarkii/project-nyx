@@ -39,11 +39,11 @@ Every load-bearing claim survived a concrete counterexample:
 - **Detection output unchanged** across the decorate pass; the `loggingDaysInWindow` refactor is byte-identical under 20k-input fuzz.
 
 Three residuals it flagged as **conscious-acceptance / PM decision briefs** (all spec-faithful, none a regression or reassurance-inversion), documented in code and filed:
-1. **Any-log density blind spot** — the gate holds its invariant but "days-with-any-log" can't see a *symptom-only* logging lapse (meals kept density up while symptom logging fell), the most common real gap; the §9 withheld-copy "less to log" then over-claims coverage. → the copy fix is **B-726** (SR-5 / Dr. Chen).
-2. **Med window ≠ finding window** — the 60d window is anchored at `now`, so an old correlation can carry a med line for a course that never overlapped its episodes (present tense keeps it honest). → **B-725**.
-3. **Most-dosed pick is identity-agnostic** — a skin drug can be named on a vomit card and a GI drug omitted (no drug→side-effect data in v1). → **B-725**.
+1. **Any-log density blind spot** — the gate holds its invariant but "days-with-any-log" can't see a *symptom-only* logging lapse (meals kept density up while symptom logging fell), the most common real gap; the §9 withheld-copy "less to log" then over-claims coverage. → the copy fix is **B-733** (SR-5 / Dr. Chen).
+2. **Med window ≠ finding window** — the 60d window is anchored at `now`, so an old correlation can carry a med line for a course that never overlapped its episodes (present tense keeps it honest). → **B-732**.
+3. **Most-dosed pick is identity-agnostic** — a skin drug can be named on a vomit card and a GI drug omitted (no drug→side-effect data in v1). → **B-732**.
 
-Two SR-5 client-copy flags → **B-726**: screen the *composed* med line for a `%`-in-drug-name (e.g. "Baytril 2.5%" trips the guardrail); pluralize "{n} dose(s) logged" (doseCount can be 1).
+Two SR-5 client-copy flags → **B-733**: screen the *composed* med line for a `%`-in-drug-name (e.g. "Baytril 2.5%" trips the guardrail); pluralize "{n} dose(s) logged" (doseCount can be 1).
 
 **DoD adversarial line:** Biostatistician/Data Scientist — tried an attention-bias week (meals daily, symptoms under-logged) → the gate correctly *cannot make the card more reassuring*, only ever withholds ✓ (but the any-log signal misses a symptom-only lapse — documented residual, PM/Dr. Chen accept); enumerated `[3..8]²` → comparable never false on a rise ✓; 20k-fuzz → `loggingEligible` byte-identical post-refactor ✓; mixed missed/refused/B-174 doses → count only on-board (3 of 6), always ≥1 ✓; med line names most-dosed course + windows at `now` — honest context, no reassurance/causation, flagged for PM ✓.
 
@@ -57,5 +57,8 @@ Deploy command (Codespace, token set): `bash scripts/deploy-edge.sh generate-sig
 
 ## Follow-ups filed
 
-- **B-725** — Signal med-on-board line: accept or refine the two targeting limits (window-vs-finding-span, identity-agnostic drug pick). `Later`, PM-optional.
-- **B-726** — SR-5 copy pass for SR-4's new strings (screen the composed med line for `%`; pluralize dose count; reword the density-withheld line so it doesn't over-claim symptom coverage). `Next`, gates SR-5.
+_(Both renumbered from B-725/B-726 at the merge from `main` — the Beta PR 3 rows took those IDs first; provenance notes are on the backlog rows.)_
+
+- **B-732** — Signal med-on-board line: accept or refine the two targeting limits (window-vs-finding-span, identity-agnostic drug pick). `Later`, PM-optional.
+- **B-733** — SR-5 copy pass for SR-4's new strings (screen the composed med line for `%`; pluralize dose count; reword the density-withheld line so it doesn't over-claim symptom coverage). `Next`, gates SR-5.
+- Not touched here, but adjacent: **B-727** (retire the worsening "after none" clause across server + client + a11y, with the a11y `New` label landing first) — SR-4 deliberately left the clause intact so the a11y ordering holds.

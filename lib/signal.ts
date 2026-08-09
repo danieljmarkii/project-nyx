@@ -396,16 +396,64 @@ export async function readSignalsAndRefresh(
 // one sitting) into a single regen, so we don't fan out phrasing calls or race
 // several generate-signal invocations. Per-pet timer; fire-and-forget.
 const REGEN_DEBOUNCE_MS = 5000;
+
+// B-721 SR-3 (§5.3) — the acknowledgment line's ceiling PAST the debounced regen:
+// fail-quiet if the regen hangs, so "Noted — updating …" never strands. Renewed on each
+// log (below), so a sustained burst can't clip it before the final regen lands.
+// Comfortably over a live regen; a legitimately slower one just lands without the line.
+const ACK_REGEN_BUDGET_MS = 10000;
+
 const regenTimers = new Map<string, ReturnType<typeof setTimeout>>();
+const ackCeilingTimers = new Map<string, ReturnType<typeof setTimeout>>();
+// Monotonic per-pet generation so an EARLIER regen still in flight can't clear the ack
+// that belongs to a NEWER log. The race it closes: a debounce fires and immediately
+// deletes its timer, then a new log arrives before that regen's network call has resolved
+// — clearTimeout can't cancel an in-flight call, so two regens run concurrently and the
+// first to SETTLE would otherwise clear the flag while the latest is still pending.
+const regenGeneration = new Map<string, number>();
 
 export function triggerSignalRegenDebounced(petId: string, delayMs = REGEN_DEBOUNCE_MS): void {
   const existing = regenTimers.get(petId);
   if (existing) clearTimeout(existing);
+  const existingCeiling = ackCeilingTimers.get(petId);
+  if (existingCeiling) clearTimeout(existingCeiling); // renew the ceiling on each log
+
+  // B-721 SR-3 (§5.3) — raise the acknowledgment flag the moment a fresh log schedules a
+  // regen, so the Home Signal can show the quiet "Noted — updating …" line. The LATEST
+  // log's regen clears it (the generation guard in .finally below — success OR failure,
+  // fail-quiet, never an error surface). The setter no-ops when already up, so a burst is
+  // idempotent at the store.
+  const generation = (regenGeneration.get(petId) ?? 0) + 1;
+  regenGeneration.set(petId, generation);
+  useSyncStore.getState().setSignalAcknowledging(petId, true);
+
+  ackCeilingTimers.set(
+    petId,
+    setTimeout(() => {
+      ackCeilingTimers.delete(petId);
+      useSyncStore.getState().setSignalAcknowledging(petId, false);
+    }, delayMs + ACK_REGEN_BUDGET_MS),
+  );
+
   regenTimers.set(
     petId,
     setTimeout(() => {
       regenTimers.delete(petId);
-      regenerateSignal(petId).catch(() => {});
+      // regenerateSignal never rejects (it catches internally), but keep the .catch so a
+      // future contract change can't strand the ack line up.
+      regenerateSignal(petId)
+        .catch(() => {})
+        .finally(() => {
+          // Only the latest log's regen clears the ack — a superseded earlier call that
+          // happens to settle first leaves the line up for the newer one still in flight.
+          if (regenGeneration.get(petId) !== generation) return;
+          const ceiling = ackCeilingTimers.get(petId);
+          if (ceiling) {
+            clearTimeout(ceiling);
+            ackCeilingTimers.delete(petId);
+          }
+          useSyncStore.getState().setSignalAcknowledging(petId, false);
+        });
     }, delayMs),
   );
 }
