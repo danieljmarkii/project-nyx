@@ -2,7 +2,7 @@ import { ComponentType } from 'react';
 import { ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
-import { FlaskConical, LayoutGrid, Plus } from 'lucide-react-native';
+import { FlaskConical, Info, LayoutGrid } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
 import { Card, Header } from '../../components/ui';
 import { useAllowlistFlag } from '../../hooks/useAppConfig';
@@ -46,11 +46,16 @@ function presentationFor(key: AllowlistFlagKey): { Icon: IconComponent; onHint?:
     case 'widget_enabled':
       // The hint only makes sense on the widget: iOS makes the OWNER add a widget
       // from the home screen — the app can't place it — so the instruction is
-      // useful exactly once, in the on state.
+      // useful exactly once, in the on state. Framed conditionally ("if it isn’t on
+      // your home screen yet") so it never reads as a to-do to an owner who has
+      // already added it: the switch is on either way, and the steps are for the
+      // owner who hasn’t placed it yet. Carried to a PLACED widget ("find Culprit and
+      // add it"), not left at the gallery search, so a first-timer isn't stranded
+      // (pm-feature-review, nyx-voice PR 4 pass).
       return {
         Icon: LayoutGrid,
         onHint:
-          'It’s on. To add it, touch and hold your home screen, tap +, then search for Culprit.',
+          'It’s on. If it isn’t on your home screen yet, touch and hold an empty area, tap +, then find Culprit and add it.',
       };
     default:
       return { Icon: FlaskConical };
@@ -90,17 +95,24 @@ function BetaFeatureCard({ feature }: { feature: BetaFeature }) {
           onValueChange={(next) => setOptIn(feature.key, next)}
           trackColor={{ true: theme.colorAccent, false: theme.colorBorderStrong }}
           ios_backgroundColor={theme.colorBorderStrong}
-          accessibilityLabel={feature.title}
+          // Fold "beta" into the control's own label so a screen-reader user toggling
+          // it hears "Home screen widget, beta" — the pill is a separate Text, and the
+          // switch shouldn't rely on adjacency to say what kind of feature it gates.
+          accessibilityLabel={`${feature.title}, beta`}
         />
       </View>
 
       <Text style={styles.blurb}>{feature.blurb}</Text>
 
       {/* On-state instructional hint — the one moment the instruction is useful.
-          Off state shows nothing (no dead affordance, Principle 5). */}
+          Off state shows nothing (no dead affordance, Principle 5). The leading glyph
+          is an INFO mark, not a "+": a plus in an accent tile reads as a tappable
+          "add" affordance on a row whose whole job is "go do this yourself", and this
+          View is non-interactive (pm-feature-review). The "+" step stays in the text,
+          where it names the real iOS button. */}
       {optedIn && onHint ? (
         <View style={styles.hint}>
-          <Plus size={15} color={theme.colorAccentInk} strokeWidth={2} />
+          <Info size={15} color={theme.colorAccentInk} strokeWidth={2} />
           <Text style={styles.hintText}>{onHint}</Text>
         </View>
       ) : null}
@@ -138,9 +150,9 @@ export default function BetaFeaturesScreen() {
             reversible; the reason the opt-in is safe to try. "pulled" (the locked
             round-1 mock's word), not "switched off" — the intro already owns "switch
             it back off" for the owner's own control, so reusing it here for OUR
-            retraction double-duties (pm-feature-review). PR 4 owns the final voice pass. */}
+            retraction would double-duty the same phrase (nyx-voice PR 4 pass). */}
         <Text style={styles.note}>
-          Beta features may change, or be pulled while we keep working on them. Turning one on won’t
+          Beta features may change or be pulled while we keep working on them. Turning one on won’t
           affect your records.
         </Text>
 
