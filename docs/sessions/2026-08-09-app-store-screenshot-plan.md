@@ -56,6 +56,15 @@ opens-day-carries, C recommended); plan §0.5 added with open PM calls **D-SS1**
 a joint caption+keyword pass with step 13. Backlog: **B-727** (post-launch PPO test),
 **B-728** (vet-referral CPP), **B-729** (StoreKit review prompt) — all Later, evidence-linked.
 
+**RULINGS (same day):** D-SS1 = **C** (PM). D-SS2 = **(a) designed set ships as the
+submission set**, D-SS3 = **report at frame 3** (both PM-delegated to the team; team took
+its recommendations). Applied: plan §0/§0.5/§3/§5 rewritten in ruled form (search card =
+night hero · quick-log · vet report; Patterns 4, History 5; frame 1's hero is composited
+from the Home capture, never redrawn), tracker row 12 + STATUS updated, mock stamped round
+2.1. One consequence flagged not ruled: where the full Home screen appears (explorer-tail
+frame 6 vs nowhere) — a round-3 template-session call. Next: the C-template build + joint
+caption/keyword pass, paired with step 13.
+
 ## Decisions taken (provisional, non-PM-blocking)
 
 - **Flags stay off for the demo account** (no Ask pill, no `signal_design_v2`) — screenshots
