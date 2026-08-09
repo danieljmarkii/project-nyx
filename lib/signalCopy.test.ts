@@ -12,6 +12,9 @@ import {
   NO_PATTERN_SUB,
   noPatternIntro,
   staleIntro,
+  ackUpdatingCopy,
+  isNewWorsening,
+  worseningNewSampleLine,
   confidenceTag,
   sampleLine,
   evidenceText,
@@ -381,6 +384,56 @@ describe('sampleLine', () => {
     expect(s).toBe('4 episodes this week, 5 last week');
     expect(CAUSAL_RE.test(s)).toBe(false);
     expect(REASSURANCE_RE.test(s)).toBe(false);
+  });
+});
+
+describe('ackUpdatingCopy (SR-3 §5.3 / §9) — the post-log acknowledgment line', () => {
+  it('is the verbatim §9 string with the pet name and a single ellipsis, no exclamation', () => {
+    expect(ackUpdatingCopy('Nyx')).toBe("Noted — updating Nyx's picture…");
+    expect(ackUpdatingCopy('Mochi')).toBe("Noted — updating Mochi's picture…");
+  });
+  it('is guardrail-clean (no exclamation, no reassurance/causal vocabulary — absence ≠ wellness)', () => {
+    for (const name of ['Nyx', 'Mochi', 'Pixel']) {
+      const s = ackUpdatingCopy(name);
+      expect(s.includes('!')).toBe(false);
+      expect(REASSURANCE_RE.test(s)).toBe(false);
+      expect(CAUSAL_RE.test(s)).toBe(false);
+    }
+  });
+});
+
+describe('isNewWorsening + worseningNewSampleLine (SR-3 §3.2 — client-derived New)', () => {
+  it('is New only when a worsening finding had zero prior episodes', () => {
+    expect(isNewWorsening(worsening({ priorCount: 0 }))).toBe(true);
+    expect(isNewWorsening(worsening({ priorCount: 2 }))).toBe(false);
+    expect(isNewWorsening(worsening({ priorCount: 1 }))).toBe(false);
+  });
+  it('is never New for a non-worsening finding (the other New cases are v2)', () => {
+    // reflection carries a priorCount of 0 too, but the New chip is worsening-only in v1.
+    expect(isNewWorsening(reflection({ priorCount: 0 }))).toBe(false);
+    expect(isNewWorsening(correlation())).toBe(false);
+    expect(isNewWorsening(intakeDecline())).toBe(false);
+  });
+  it('the New sample line states the current count only — never the "0 last week" pair it replaces', () => {
+    // more_episodes arm (the shape priorCount === 0 actually produces).
+    const s = worseningNewSampleLine(worsening({ priorCount: 0, currentCount: 4, trigger: 'more_episodes' }));
+    expect(s).toBe('4 episodes this week');
+    expect(s).not.toContain('last week');
+    expect(s).not.toContain('0');
+  });
+  it('states the count on the axis that rose (days for the more_days arm), singularised', () => {
+    expect(
+      worseningNewSampleLine(worsening({ priorCount: 0, currentDays: 5, trigger: 'more_days' })),
+    ).toBe('5 days this week');
+    expect(
+      worseningNewSampleLine(worsening({ priorCount: 0, currentCount: 1, trigger: 'more_episodes' })),
+    ).toBe('1 episode this week');
+  });
+  it('the New sample line is guardrail-clean (no exclamation / reassurance / causal)', () => {
+    const s = worseningNewSampleLine(worsening({ priorCount: 0 }));
+    expect(s.includes('!')).toBe(false);
+    expect(REASSURANCE_RE.test(s)).toBe(false);
+    expect(CAUSAL_RE.test(s)).toBe(false);
   });
 });
 

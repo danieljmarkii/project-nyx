@@ -24,8 +24,8 @@
 
 Three review findings were routed to the backlog rather than built (proportionate — v1 is one beta, reachable only via an eligibility-gated row):
 
-- **B-727** (Next) — designed zero-card shelf empty state for the mid-session eligibility-loss race (all cards self-gate away → intro promises an action with no card to act on).
-- **B-728** (Later) — platform-guard the iOS-only hint copy (or assert an iOS-only cohort).
+- **B-729** (Next) — designed zero-card shelf empty state for the mid-session eligibility-loss race (all cards self-gate away → intro promises an action with no card to act on). _(Filed as B-727; renumbered to B-729 at the merge from `main` — #616 took B-727/B-728.)_
+- **B-730** (Later) — platform-guard the iOS-only hint copy (or assert an iOS-only cohort).
 - The off-toggle / kill-path widget-door finding **maps to the existing B-725** (the not-live widget door) — no duplicate row added.
 
 ## Reviews / gates
@@ -48,14 +48,14 @@ Mid-session, `app/settings.tsx` was reformatted single→double quotes (a whole-
 
 - Spec `docs/nyx-beta-features-requirements.md` §0 (OPEN-1/OPEN-2 rows) + §8 marked resolved; `Last Updated` → 2026-08-09.
 - Mock `docs/culprit-beta-features-mockups.html` refreshed to the shipped hint copy (+ info glyph), naming call and footer open-items marked resolved; **artifact republished to the same round-1 URL** (mock-what-you-change).
-- `docs/backlog.md` — B-727 / B-728 filed.
+- `docs/backlog.md` — B-729 / B-730 filed (originally B-727/B-728; renumbered at the merge from `main`).
 
 ## Post-ship: on-device debugging detour + merge
 
 The PM couldn't see the Beta features row on device. Chased it live:
 
 - **Eligibility was never the problem.** Read production `app_config` directly — the PM's uid (`2eeeaef5-753a-467c-8c17-2b9fed40ee34`) is **already in `widget_enabled.allowlist`**, so Gate 1 resolves true. STATUS.md's "enablement still pending" note was stale (corrected this session). The resolver enables on allowlist membership alone (`enabled:false` + uid-in-array; flipping `enabled:true` would enable *everyone*), and the branch code (`ALLOWLIST_FLAG_KEYS`, `extractAllowlistFlags`, `resolveAllowlistFlag`) is correct — verified by reading it.
-- **Actual cause — a runtime mismatch.** The project carries `expo-dev-client` (+ `expo-notifications`, the widget's native extension), so `expo start` runs a **development build**, not Expo Go — the Metro QR is a dev-client URL Expo Go can't open. The PM had been scanning it with Expo Go, so nothing loaded and no logs appeared. Diagnosed from the PM's pasted Metro output ("Using development build" / "Press s │ switch to Expo Go") + `package.json`. The dev-handoff runbook still documents Runtime B as "Expo Go" — stale, and it cost the detour → **B-729** filed.
+- **Actual cause — a runtime mismatch.** The project carries `expo-dev-client` (+ `expo-notifications`, the widget's native extension), so `expo start` runs a **development build**, not Expo Go — the Metro QR is a dev-client URL Expo Go can't open. The PM had been scanning it with Expo Go, so nothing loaded and no logs appeared. Diagnosed from the PM's pasted Metro output ("Using development build" / "Press s │ switch to Expo Go") + `package.json`. The dev-handoff runbook still documents Runtime B as "Expo Go" — stale, and it cost the detour → **B-731** filed.
 - **Resolution:** the PM elected to test on **TestFlight** directly (correct — the home-screen widget needs a native build regardless). A temporary `[beta-debug]` log pushed to `useAllowlistFlag` to instrument the device was **removed before merge** (added `7cf7bde`, removed at wrap).
 
 Merged at the PM's request during this wrap — CI green, branch current with `main`.
@@ -64,4 +64,4 @@ Merged at the PM's request during this wrap — CI green, branch current with `m
 
 - The **native opt-in-aware not-live widget door (B-725)** — must ride the next native TestFlight cut with PR 3's gate (can't ride OTA).
 - The **on-device pass** — the four pm-feature-review device-pass items (needs the TestFlight build).
-- **B-729** — fix the dev-handoff runbook + CLAUDE.md so Runtime B reads "development build," not Expo Go.
+- **B-731** — fix the dev-handoff runbook + CLAUDE.md so Runtime B reads "development build," not Expo Go.

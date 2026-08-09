@@ -8,6 +8,7 @@ const INITIAL = {
   coldStartHydrating: false,
   hydrationTick: 0,
   signalTick: 0,
+  signalAcknowledging: {},
 };
 
 describe('syncStore', () => {
@@ -68,5 +69,24 @@ describe('syncStore', () => {
     expect(useSyncStore.getState().signalTick).toBe(2);
     // Orthogonal ticks — a signal regen must not read as a sync cycle (or vice versa).
     expect(useSyncStore.getState().hydrationTick).toBe(0);
+  });
+
+  it('setSignalAcknowledging sets/clears the flag per pet (SR-3 §5.3)', () => {
+    useSyncStore.getState().setSignalAcknowledging('pet-a', true);
+    expect(useSyncStore.getState().signalAcknowledging['pet-a']).toBe(true);
+    // Per-pet — one pet's ack never touches another's (no cross-pet leak on the zone).
+    expect(useSyncStore.getState().signalAcknowledging['pet-b']).toBeUndefined();
+    useSyncStore.getState().setSignalAcknowledging('pet-b', true);
+    useSyncStore.getState().setSignalAcknowledging('pet-a', false);
+    expect(useSyncStore.getState().signalAcknowledging['pet-a']).toBe(false);
+    expect(useSyncStore.getState().signalAcknowledging['pet-b']).toBe(true);
+  });
+
+  it('setSignalAcknowledging no-ops when already at the target (no wasted re-render on a log burst)', () => {
+    useSyncStore.getState().setSignalAcknowledging('pet-a', true);
+    const ref = useSyncStore.getState().signalAcknowledging;
+    // Re-raising an already-up flag returns the SAME object (zustand skips the notify).
+    useSyncStore.getState().setSignalAcknowledging('pet-a', true);
+    expect(useSyncStore.getState().signalAcknowledging).toBe(ref);
   });
 });

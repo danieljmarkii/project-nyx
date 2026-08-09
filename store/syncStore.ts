@@ -33,6 +33,17 @@ interface SyncState {
   // finding until the next Home re-focus. A monotonic counter so an effect deps on it.
   signalTick: number;
   bumpSignalTick: () => void;
+
+  // B-721 SR-3 (§5.3) — the post-log acknowledgment flag, per pet. Raised the moment a
+  // fresh log schedules a debounced Signal regen (triggerSignalRegenDebounced) and
+  // cleared when THAT regen settles (success OR failure — fail-quiet). The Home Signal
+  // reads it (via useSignal) to show the quiet "Noted — updating {pet}'s picture…" line
+  // above the still-readable findings. Owned by the regen lifecycle, not the render:
+  // so a regen that lands while the owner is still on the log screen clears the flag
+  // before they ever see it (no false "updating" on return). A pure render cue — the
+  // flag-off Signal surface never reads it, so raising it is invisible there (FR-FLAG-2).
+  signalAcknowledging: Record<string, boolean>;
+  setSignalAcknowledging: (petId: string, value: boolean) => void;
 }
 
 export const useSyncStore = create<SyncState>((set) => ({
@@ -50,4 +61,13 @@ export const useSyncStore = create<SyncState>((set) => ({
 
   signalTick: 0,
   bumpSignalTick: () => set((s) => ({ signalTick: s.signalTick + 1 })),
+
+  signalAcknowledging: {},
+  setSignalAcknowledging: (petId, value) =>
+    set((s) => {
+      // No-op if already at the target — avoids a pointless store write (and the
+      // re-render it would trigger) when a burst of logs re-raises an already-set flag.
+      if ((s.signalAcknowledging[petId] ?? false) === value) return s;
+      return { signalAcknowledging: { ...s.signalAcknowledging, [petId]: value } };
+    }),
 }));
