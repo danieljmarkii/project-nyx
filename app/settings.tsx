@@ -57,9 +57,11 @@ export default function SettingsScreen() {
   // eligible (Gate 1) AND opted in (Gate 2). One beta in v1, so it reads directly
   // alongside betaEligible above rather than looping the registry; when a second
   // beta lands, both this and betaEligible fold into a count/OR over the registry
-  // keys (the same fold-point the betaEligible comment names). It never counts a
-  // beta opted-in-but-no-longer-eligible (a killed flag) — the widget path has
-  // already stopped publishing for that account, so the row must not claim it's on.
+  // keys (the same fold-point the betaEligible comment names) — and that fold reads
+  // each store in bulk ONCE, then reduces in plain JS: a per-entry hook call inside a
+  // BETA_REGISTRY.map() would violate rules-of-hooks, so don't reach for that shape.
+  // It never counts a beta opted-in-but-no-longer-eligible (a killed flag) — the
+  // widget path has already stopped publishing for that account, so it isn't "on".
   const widgetOptedIn = useBetaOptIn('widget_enabled');
   const activeBetaCount = betaEligible && widgetOptedIn ? 1 : 0;
   const [deleteVisible, setDeleteVisible] = useState(false);
