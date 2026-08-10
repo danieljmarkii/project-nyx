@@ -2,7 +2,7 @@
 
 **Version:** v2 · **Created:** 2026-07-11 · **Last Updated:** 2026-08-09 · **Owner:** PM, with Data Scientist / Trust & Safety / Dr. Chen / Designer / QA lenses
 **Backlog:** B-271 · **Guide:** [`docs/app-store-submission-guide.md`](./app-store-submission-guide.md) step 11 · **Register:** [`docs/app-store-readiness.md`](./app-store-readiness.md) Tier 2
-**Status:** v1 decisions **D1–D7 ratified 2026-07-11 (#336)**. This **v2 (2026-08-09)** refreshes the plan to the app as actually shipped — the diet-trial lifecycle went from a zero-row table to a full feature, `food_items` went per-account, and a dozen new surfaces exist. The **v2 deltas (D5 inversion, D8–D10, the tiered scope menu)** await PM ratification before PR 1. §12 now carries the detailed **PR-by-PR + live-execution plan**. The seed (PR 1) and reviewer notes (PR 2) are **not yet built**.
+**Status:** **FINALIZED & build-ready — 2026-08-09.** v1 decisions D1–D7 ratified 2026-07-11 (#336); the **v2 deltas (D5 inversion, D8–D10, the tiered scope menu) ratified 2026-08-09**. v2 refreshes the plan to the app as actually shipped (the diet-trial lifecycle is now a full feature, `food_items` is per-account, a dozen new surfaces exist), and §12 carries the detailed **PR-by-PR + live-execution plan**. Next work: the seed (PR 1) and reviewer notes (PR 2) — **not yet built**. The one open item is **non-blocking**: the App Store consultant sets the Tier 2/3 line (§3.5); Tier 1 (the floor) is fixed regardless, so PR 1 is unblocked.
 
 ---
 
@@ -45,7 +45,7 @@ The hard part — and the reason this needs a spec rather than "insert some rows
 | **D6** | **Seed 1–2 real event photos**; leave live camera as the reviewer's own demo (pointed at in the notes). | Timeline looks alive without shipping a fake camera flow; one photo also feeds the per-incident vomit read (D7). |
 | **D7** | **Include the per-incident vomit AI read** (run `analyze-vomit` on one photo'd vomit event). **Skip** the medication/adherence thread for v1 review. | (a) is another visible "intelligence" moment for cheap; (b) is scope the reviewer doesn't need. **v2:** now governed by the D8 tier menu — the vomit read is Tier 2, medication is Tier 3. |
 
-**v2 (proposed 2026-08-09 — awaiting PM ratification):**
+**v2 (ratified 2026-08-09):**
 
 | # | Decision | Rationale |
 |---|---|---|
