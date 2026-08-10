@@ -58,3 +58,8 @@ supabase/.temp/
 
 # Adversarial-reviewer scratch probes (never committed)
 components/**/__adv*.test.tsx
+
+# Store screenshot pipeline (B-269): rendered frames + on-device captures
+# (captures carry demo-account content; renders are reproducible from source)
+scripts/store-screenshots/out/
+scripts/store-screenshots/captures/

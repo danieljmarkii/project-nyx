@@ -46,11 +46,18 @@ describe('BETA_REGISTRY', () => {
     expect(new Set(keys).size).toBe(keys.length);
   });
 
-  it('ships the widget as the only v1 beta, client-only (no server cost)', () => {
+  it('ships the widget + the Signal redesign as the v1 betas, both client-only (no server cost)', () => {
     const widget = BETA_REGISTRY.find((b) => b.key === 'widget_enabled');
     expect(widget).toBeDefined();
     expect((widget as BetaFeature).serverCost).toBe(false);
-    expect(BETA_REGISTRY).toHaveLength(1);
+
+    // B-721 joined the shelf (FR-FLAG-4). Client-render-only: SR-4's payload is
+    // computed uniformly for every account (not per-cohort), so no server gate is owed.
+    const signal = BETA_REGISTRY.find((b) => b.key === 'signal_design_v2');
+    expect(signal).toBeDefined();
+    expect((signal as BetaFeature).serverCost).toBe(false);
+
+    expect(BETA_REGISTRY).toHaveLength(2);
   });
 });
 

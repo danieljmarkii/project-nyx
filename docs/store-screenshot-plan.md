@@ -1,0 +1,179 @@
+# App Store Screenshots — Capture Plan (B-269 · guide step 12)
+
+**Created:** 2026-08-09 · **Last Updated:** 2026-08-09 (export pipeline built — #625) · **Owner:** PM captures on-device; this doc is the shot list + design contract
+**Guide:** [`docs/app-store-submission-guide.md`](./app-store-submission-guide.md) step 12 · **Backlog:** B-269 · **Demo account:** [`docs/nyx-demo-account-requirements.md`](./nyx-demo-account-requirements.md) (B-271 — the capture prerequisite)
+**Status:** 🌱 **Design COMPLETE — every D-SS call ruled (§0.5). Export pipeline BUILT (#625): `scripts/store-screenshots/`** (round-5 template at true 1320×2868, real Geist/Newsreader, `--draft` + capture modes; see its README for the capture workflow + `hero-crops.json`). Remaining is production: captions finalized with step 13's listing (edits only the template's `FRAMES` strings), B-742 + `signal_design_v2` presentability for the enriched frames, then capture — gated on step 11.
+**Mock:** [`docs/culprit-store-screenshot-mockups.html`](./culprit-store-screenshot-mockups.html) (round 5 — the design authority, artifact 📸): the final six-frame set, the search-card preview, and the closed round-2/round-4 exploration records.
+**Research:** [`docs/research/2026-08-app-store-creative-landscape.md`](./research/2026-08-app-store-creative-landscape.md) (2026-08-09) — 15 live sets examined, Apple's rules verbatim, the A/B case corpus. §0.5's decisions are built on it.
+
+---
+
+## 0.5 Round 2 — the design directions (D-SS1–D-SS3, ALL RULED 2026-08-09)
+
+The research reframed §0's posture: **caption overlays and marketing frames are explicitly permitted** (Guideline 2.3.3 — "may also include text and image overlays"), the search card (frames 1–3 at thumbnail size) is where ~60% of visitors decide, every published A/B winner moved toward short benefit captions on composed frames, and the premium register is **unoccupied in the pet category**. The three calls and their rulings:
+
+**D-SS1 — Visual direction. RULED: (C) Night opens, day carries (PM, 2026-08-09).** Frame 1 = the night brand hero — brand-night ground, crescent + one sentence, the **real** Signal cards floating lit (2.3.3-satisfying app-in-use; produced by compositing the cards out of the Home capture, never redrawn) — unmissable next to the category's cream and confetti. Frames 2+ = the daylight template: moonlight-paper field, deep-indigo serif captions with a bold lead phrase, day UI merging with the ground. The single ground exception every premium set allows itself; ground matches UI everywhere the product is shown. *(Rejected: A full-night — light-UI-on-dark-field across the whole set, which no observed set commits; B full-daylight — surrenders the search-grid distinctiveness the empty register offers.)*
+
+**D-SS2 — Submission posture. RULED: (a) the designed set ships as the submission set (PM-delegated to the team; team took its recommendation).** Capture is gated on step 11 anyway, so the template gets built in the waiting time; production = render captures into the HTML template, export at 1320×2868. Plain captures remain the fallback **floor** (§0.1) — polish never delays submission. PPO can't run pre-launch, so this is also the only way the launch page benefits from the research.
+
+**D-SS3 — Order. RULED: vet report promoted to frame 3 (PM-delegated to the team; team took its recommendation).** The search card now shows the whole wedge loop — the Signal (night hero), the 10-second log, the clinic payoff. Patterns moves to 4, History to 5. §3 reordered accordingly.
+
+**One build-time consequence of C — RULED 2026-08-09: frame 6 = the full Home (6A).** The night hero absorbs frame 1's Signal job and the full Home takes the explorer-tail slot; the trial-picker candidate is dropped. The capture list is unchanged — the hero and frame 6 are the same photograph, composed differently.
+
+**R3-1 (PM reaction to the composed round-3 set, 2026-08-09): SENT BACK.** *"I'm liking the copy… it's still app on a background."* What stands: the copy, D-SS2 (designed set ships), D-SS3 (order), the capture states, and C's night-opens sequencing as default. What's re-opened: the **frame treatment** — the caption-over-bezel template is the category's safe pattern and the brief is to exceed it. **D-SS4 (open — PM):** pick the bezel-free concept from mock round 4, each built from real UI fragments at poster scale (2.3.3 satisfied by content, not by a phone border):
+- **(1) The evidence, blown up** — real cards/rows full-bleed as the composition; History as a ribbon with the treat→vomit pair threaded in teal. Closest to the ruled world.
+- **(2) The constellation** — the whole set in the night; the dot-lane receipt drawn as sky (beef dots, vomit stars, hairlines) over one glowing real card. Most distinctive; amends C's ground split (night everywhere) and spends the most "real product" proof.
+- **(3) The specimen** — clinical editorial: one giant Newsreader numeral (the honest stat, never a grade), a teal rule, small-caps annotation, one real fragment pinned beneath. Quietest and most premium.
+Hybrids are legitimate calls (e.g. 2's hero + 1's interiors). Round 5 applies the winner to all six frames and rebuilds the search-card preview. The bezel template remains the documented fallback above the plain-capture floor.
+
+**D-SS4 — RULED 2026-08-09 (PM): return to the round-3 bezel template, enriched.** The bezel-free concepts are closed (recorded in the mock). Round 5 applies the three asks: **(1)** the hero's insight card carries the **B-721 dot-lane receipt** (the new Signal dashboard's shape A; S1 respected — the safety card stays plain, plainness is the severity signal); **(2)** the report frame gains a **by-day symptom chart**, trial start anchored; **(3)** Cooper renders with a **species-matched illustrated avatar**. **Frame 6 RULED 2026-08-09: 6A — the full Home** (the trial-picker frame is dropped from the set). Every design decision on this track is now closed; what remains is production (captions with step 13, B-742, v2 presentability, export, capture).
+
+**Two product dependencies created by the ruling (flagged, never silently absorbed):**
+- **`signal_design_v2` on the demo account.** The receipt-rich cards are the SR-track design, so §2.3's flags-off rule is **amended for this one flag**: it goes ON for the demo account — consistently for capture AND review — once the SR track deems the v2 surface presentable. If it isn't presentable by capture time, the hero falls back to plain cards (the hero is composited from the Home capture, so the receipt cannot outrun the product).
+- **The in-report chart is a `generate-report` renderer change → B-742** _(filed as B-730; renumbered at wrap — the ID was taken on `main`)_, riding the B-494-held redeploy (never its own deploy, per the standing rule). Until B-742 ships, frame 3 must show the report exactly as the deployed function renders it; the enriched frame 3 is recaptured when it lands.
+- The avatar needs **no product change**: the illustration is produced as an asset and uploaded as Cooper's pet photo during step 11 phase D (added to §2's prerequisites).
+
+Two compliance facts now on the record here: screenshots must use **fictional data** (2.3.9) — the Cooper demo account satisfies this by construction — and at least one **Dark Mode screenshot** is Apple's own recommendation *if the app supports one* (Culprit's record surface is deliberately daylight-only, so this does not apply; noted so nobody "fixes" it).
+
+---
+
+## 0. The two rules that shape everything below
+
+1. **The designed set is the submission set (D-SS2, ruled 2026-08-09 — PM-delegated, team).** Frames are composed per the direction-C template (§0.5): captures rendered into the ground + caption artwork and exported at 1320×2868. The never-block rule survives as the **floor**: plain captures pass review (2.3.3), so if the template isn't ready when everything else is, upload the plain set and ship — polish must never delay submission.
+2. **Every frame is the real app on real (demo) data.** Guideline 2.3 requires screenshots to show the app in use — and our own Signal "building" state renders two hardcoded ghost preview sentences that *read as fake data* in a still image. So no empty states, no skeletons, no mocked anything: the Cooper seed exists precisely to make every surface honestly alive. The reviewer's demo account and the screenshots should show the *same* app — see §2's flag rule.
+
+---
+
+## 1. The required set — format facts
+
+- **One set required: 6.9-inch iPhone, portrait.** Accepted pixel sizes for that slot: **1320 × 2868** (iPhone 16/17 Pro Max class) or **1290 × 2796** (6.7″ class — also accepted in the 6.9″ slot). Smaller device sizes scale down automatically; no iPad set (`supportsTablet: false`, shipped 2026-07-24). Spec: <https://developer.apple.com/help/app-store-connect/reference/screenshot-specifications/>
+- **Capture device:** if your iPhone is a Pro Max (6.9″) its native screenshots are already 1320 × 2868 — just screenshot normally. A 6.7″ device's native 1290 × 2796 is also directly accepted. Anything smaller → use the iOS Simulator with a dev-client build (Expo Go no longer runs the app since the widget targets landed):
+  ```bash
+  xcrun simctl status_bar booted override --time 9:41 --batteryState charged --batteryLevel 100 --cellularBars 4 --wifiBars 3
+  xcrun simctl io booted screenshot frame-01-home-signal.png
+  ```
+- **Up to 10 slots; we ship 5 (+1 optional).** The first 2–3 are what search results show — the Signal leads, per the guide.
+- PNG or JPEG, no transparency. Portrait only for this set.
+- **Status-bar hygiene (on-device):** full battery, strong signal, Do Not Disturb on (no banner can photobomb a frame), no red badge clutter. Light mode (the record surface is daylight by decision — B-284 D8).
+
+---
+
+## 2. Prerequisites — the exact account state
+
+All frames are captured **signed into the demo account** (Cooper — the diet-trial dog, B-271 D1). Before the capture session:
+
+1. **Guide step 11 phases D–E are done:** account created, seed run, and **`generate-signal` re-run within 24 h of capture** (the Signal is a server cache with a 24 h TTL — a stale cache shows the "not enough recent data" state, which is a do-not-capture state).
+2. **Re-seed the same day if the seed is more than a day or two old.** The intake-dip finding reads the last 2 days; the script is date-relative for exactly this reason (demo spec §8). Ideal: re-seed + re-generate the morning of the capture session.
+3. **Feature flags stay OFF for the demo account** — no `ask_enabled`, no `widget_enabled` — with **one D-SS4 carve-out: `signal_design_v2` goes ON** (consistently for capture AND review — never one without the other) once the SR track deems the v2 Signal presentable, because the ruled hero shows the dot-lane receipt. If v2 isn't presentable by capture time, capture flag-off and the hero falls back to plain cards. Rationale unchanged for the rest: flags fail closed for every real new user, and screenshots must match what the reviewer sees on the same account (2.3 consistency). The Home header stays wordmark + avatar only (no Ask pill) — correct, not a gap.
+3a. **Cooper's pet photo = the illustrated avatar.** The species-matched illustration (mock round 5) is produced as an asset and uploaded as Cooper's pet photo during step 11 phase D — that is the whole production path; no product change.
+4. **Single pet** (no header chevron), **no medications seeded** (D7) — so no MedStrip on Home; expected, no hole.
+5. **Seed addendum flagged to the B-271 seed-script session:** the demo spec (§3, written 2026-07-11) predates migration 040 — it seeds a `diet_trials` row but never mentions **`diet_trial_foods` membership rows**. The picker frame is no longer in the shot list (6A ruling), but the addendum stands: without the venison membership row, the **TrialStrip's protein name** ("Venison trial", visible in frames 2 and 6) may fall back to plain "Diet trial," and the reviewer's own walk through the meal log loses the pinned trial zone. The seed script should add the membership row. *(The seed PR owns the fix.)*
+
+---
+
+## 3. The shot list (upload in this order)
+
+| # | Frame | Surface / route | One-line story |
+|---|---|---|---|
+| 1 | Night hero — the live Signal | composited from the Home capture (D-SS1 C) | The wedge on the brand night: the real cards, lit |
+| 2 | Quick-log | `+` FAB menu (alt: food picker) | The 2-tap habit — confirmation, not data entry |
+| 3 | Vet report | `/report` | The clinical payoff — hand the record to your vet (D-SS3) |
+| 4 | Patterns | `/insights` | The month made scannable |
+| 5 | History | History tab | Everything kept, filterable, honest |
+| 6 | Full Home | Home tab (the frame-1 raw capture, day template) | One calm surface — where the hero's cards live (ruled 6A) |
+
+### Frame 1 — the night hero, fed by the Home capture (the wedge; leads search results)
+
+**Under D-SS1 (C) the uploaded frame 1 is the composed night hero, and this Home capture is its raw material** — the Signal cards are composited out of it, never redrawn. Everything below about staging the capture is unchanged; the capture itself is also the candidate for an explorer-tail frame 6 (round-3 call).
+
+- **State:** Signal zone in the **live** state with both seeded findings: ② `intake_decline` ("Cooper's eating less than usual" family — a *safety* card) and ① the beef↔vomiting `food_symptom_correlation` (Early tier, "may be linked" phrasing). **Expect the safety card to rank first** — safety leads by design (Principle 3); don't fight the ordering, it *is* the product. Below the Signal: the **TrialStrip** ("Venison trial · day N of 42" + the accent progress bar). Note: the strip's "ends …" line is suppressed while an intake-decline flag is live — expected, don't chase it. Day math is day-1-inclusive (B-421), so `started_at` 18 days ago renders **day 19** of 42.
+- **Stage:** open Home fresh, let everything settle (no Trend skeleton, no pull-to-refresh band mid-frame). Both Signal cards must be fully in-frame; if the TrialStrip falls below the fold, the two cards win — the trial story is retold in frames 4 and 6.
+- **Verify in-frame:** uppercase SIGNAL eyebrow, both cards with their priority rails, "Why we're showing this" hint visible on at least one card, no ghost preview sentences anywhere.
+
+### Frame 2 — Quick-log (the 2-tap habit)
+
+- **State:** the **`+` FAB menu open** over Home: "Recent foods" header with the seeded venison rows, then "Log food" / "Vomit" / "Loose stool" / "More events". This *is* the two-tap habit rendered: `+`, then the food you fed yesterday.
+- **Stage:** capture with recent foods populated (the seed guarantees this). If the overlay menu reads cluttered against the dimmed Home at capture time, **fall back to the food picker** ("What did Cooper eat?" — search field, All/Meals/Treats/Wet/Dry chips, the tile library) and give frame 6's slot to the FAB menu instead — the two frames are swappable.
+- **Avoid:** the free-feeding "Still accurate?" freshness prompt if one is pending — confirm it before capturing so the zone shows its quiet state.
+
+### Frame 3 — Vet report (the clinical payoff; closes the search card per D-SS3)
+
+- **State:** `/report` after generation completes: "Report range" chips, the resolved range line — expected **"Active diet trial · <dates>"** (no vet visit is seeded, so the trial is the default basis; it literally names the wedge) — the server-rendered report visible in the WebView (patient header + the top of the record), and the bottom bar: **"Send to vet"** + "Creates a PDF you can email, message, or AirDrop to your vet."
+- **Stage:** open, wait out the full-screen "Building Cooper's report…" moment, don't touch the range (the "Updating…" pill is a do-not-capture state). Scroll the WebView so the report's top — the part a vet scans first — is what shows.
+- **Note:** the frame captures whatever the *deployed* `generate-report` renders (the redeploy is deliberately held behind B-494). Step 11's own AC already requires a CLINIC-READY cold read on this rendered report; if the B-494 redeploy lands before submission, re-verify and recapture this one frame.
+
+### Frame 4 — Patterns (the month, scannable)
+
+- **State:** `/insights` fully loaded on Cooper: the **Summary** card leading, then the **Vomit** metric card ("Last 30 days", the count, delta line, sparkline), and the top of the **Calendar** card. The seed's 3 vomits + ~40 meals + 2 weights make every card render with a coloured verdict where one is allowed (≥2 samples).
+- **Stage:** enter via the Signal footer ("See all of Cooper's patterns →"), wait out the three skeleton cards, capture the top of the scroll. The Summary card renders from the same `generate-signal` run as the Home capture — if it's missing, re-run the function before concluding anything is broken.
+- **Verify in-frame:** "Patterns" title, Summary eyebrow + body whose numbers match the cards below it.
+
+### Frame 5 — History (everything, kept)
+
+- **State:** History tab, **default scopes** (All types · All time — pills quiet/untinted, which is the honest default per the filter invariants). Scroll positioned so the **D-3 beef treat row and its vomit row** sit mid-frame — the contraband-then-symptom pair quietly retells frame 1's correlation — with a mix of Meal / Vomit / Stool / Weight rows and at least one confidence tag visible (the seed varies `occurred_at_confidence` for exactly this realism).
+- **Avoid:** the "Load more" footer as the dominant bottom element; any expanded row (View/Edit/Remove buttons read as debug-ish in a still).
+
+### Frame 6 — the full Home (ruled 6A, 2026-08-09)
+
+- **State:** the same Home capture that feeds the hero (frame 1's §"night hero" staging notes apply verbatim), composed in the day template: live Signal with the receipt-bearing insight card, TrialStrip, Today row, Cooper's illustrated avatar in the header. The explorer's payoff — where the hero's floating cards actually live.
+- **No extra capture:** this frame and the hero are the same photograph; only the composition differs.
+- The trial-aware picker frame is **dropped from the set** (the ruled alternative). The §2.5 seed addendum stays flagged regardless — see the updated note there.
+
+---
+
+## 4. Do-not-capture list (states that read unfinished or fake)
+
+- Signal **"building"** state — the two ghosted preview insights are hardcoded example sentences; in a still image they are indistinguishable from fabricated data. This is the single worst possible frame 1.
+- Any **skeleton** (Trend's gray bar, Patterns' three gray cards), the report's full-screen **"Building…"** moment, or the **"Updating…"** pill.
+- **Error or retry states**, the free-feeding **"Still accurate?"** prompt, an **expanded History row**, the pull-to-refresh band.
+- **Settings** anywhere in the set — the legal rows can render "Coming soon" and the Beta shelf invites questions. No frame needs it.
+- Anything with a **notification banner, personal account email, or non-demo data** visible (T&S: demo-pet data only).
+
+---
+
+## 5. Captions — optional overlay copy (the polish pass, never the gate)
+
+**Mechanics:** Apple has no caption field — captions are text baked into the uploaded image, which means a framing pass (canvas + device frame + overlay). That pass is explicitly **post-submission polish**. The copy below is pre-cleared so the pass is paste-ready whenever it happens.
+
+**The bar every line was run against** — nyx-voice (calm, sentence case, no exclamation marks, specific over generic) plus the same Guideline 1.4.1 honesty bar as the listing: no diagnosis claim, no reassurance claim, no outcome guarantee, no endorsement we don't hold. A caption may describe what the app *does* (surface patterns, keep the record, build a report); it may never assert what the owner should *conclude* (pet is fine, cause found, problems caught).
+
+| # | Caption | Why it clears the bar |
+|---|---|---|
+| 1 | Patterns between foods and symptoms, surfaced. | "Between" is associational, not causal — mirrors the in-app "may be linked" hedge. |
+| 2 | Log a meal in two taps. | Mechanically verifiable — **confirm the recent-food path is literally two taps on-device before using; fallback: "Log a meal in seconds."** |
+| 3 | Hand your vet the record, not your memory. | The record is the artifact; no claim the report diagnoses or replaces the vet. |
+| 4 | A month of meals, symptoms, and weight — together. | Describes the rendered surface; no interpretation claimed. |
+| 5 | Everything you log, kept — even the 2am details. | True by construction (soft deletes, auto-timestamps); "2am" is the wedge moment, not a boast. |
+| 6 | Trial foods, pinned where you log. | Plain feature description. |
+
+**Rejected lines, kept so step 13 inherits the reasoning:**
+
+| Rejected | Why |
+|---|---|
+| "Find what's making your pet sick" | Diagnosis/causal claim — the engine surfaces hedged associations, never verdicts (1.4.1 + clinical-guardrails). |
+| "Know your pet is okay" / "Peace of mind" | Reassurance on absence — the n=1 invariant binds marketing copy too. Absence of a flag is never wellness. |
+| "Catch problems before they start" | Detection-reliability + outcome guarantee. |
+| "Vet-approved" / "Built with vets" | An endorsement we don't hold. |
+| "Never miss a dose!" | Exclamation mark; "never miss" guarantee; med-reminder implication the product deliberately avoids (notification spec G4). |
+| "Peace of mind for pet parents" | Reassurance + the pet-brand register nyx-voice rejects. |
+
+**Reconciliation flag:** `docs/store-listing-copy.md` does not exist yet — step 13 hasn't run — so these captions were drafted standalone against the shared bar rather than matched to a listing. **When step 13 drafts the listing, cross-check vocabulary** (if the subtitle says "patterns," captions shouldn't switch to "insights") and update this table if the listing lands on different framing. Captions were *not* inferred from an unwritten doc.
+
+**Round-2 addendum:** caption text is reportedly OCR-indexed by App Store search as a *reinforcing* ranking signal (Appfigures 2025, observational — see the research brief §4), so the winning direction's caption pass should be written **with** step 13's keyword set, not merely reconciled after. The table above is now placeholder-grade pending that joint pass. One line pre-rejected for that pass: *"Find the culprit"* — the brand pun reads as an outcome promise the correlation engine deliberately never makes.
+
+---
+
+## 6. Upload + confirm
+
+1. App Store Connect → the app → the 1.0 version's **App Store** tab → iPhone 6.9″ display → drag the frames in §3 order (file names `frame-01-…` through `frame-05/06-…` keep the order honest).
+2. First 2–3 = search-result real estate; confirm frame 1 is the Signal, not a login screen.
+3. Confirm with: **`Guide step 12 complete: N screenshots uploaded.`** — that message updates the tracker, B-269, and STATUS.md.
+
+## 7. QA checklist for the captured set
+
+- [ ] 4–6 portrait frames at 1320 × 2868 (or 1290 × 2796), PNG/JPEG, no alpha
+- [ ] Every frame from the live demo account; no empty/building/skeleton/error state visible in any frame
+- [ ] Frame 1 shows ≥1 live Signal card with the safety card leading, and zero ghost-preview sentences
+- [ ] No mockups, no composited UI, no fabricated states (Guideline 2.3) — captures only
+- [ ] No personal data, notification banners, or non-demo content in any frame
+- [ ] If captions are used: every line appears verbatim in §5's approved table (or has been re-run through nyx-voice + the 1.4.1 bar)

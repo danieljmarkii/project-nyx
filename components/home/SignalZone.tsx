@@ -8,6 +8,7 @@ import { SectionLabel } from '../ui/SectionLabel';
 import { InsightCard } from './InsightCard';
 import { useSignal } from '../../hooks/useSignal';
 import { useAllowlistFlag } from '../../hooks/useAppConfig';
+import { useBetaOptIn } from '../../lib/betaFeatures';
 import {
   BUILDING_FLOOR,
   BUILDING_SUB,
@@ -53,14 +54,23 @@ export function SignalZone({ trialRunning = false }: SignalZoneProps = {}) {
     markSeen,
   } = useSignal();
 
-  // Signal/Home design uplift (B-721) — dark behind the allowlist flag, resolved once
-  // here and threaded down so the whole zone reads one eligibility (fail-closed to the
-  // shipped surface for everyone else). SR-1 gates the live receipts (via LiveStack →
+  // Signal/Home design uplift (B-721) — behind `signal_design_v2`, resolved once here
+  // and threaded down so the whole zone reads one flag (fail-closed to the shipped
+  // surface for everyone else). SR-1 gates the live receipts (via LiveStack →
   // InsightCard); SR-2 gates the empty states (E1 building / E2 no_pattern) below; SR-3
   // gates the register (receded chrome + secondary compression) and the acknowledgment
   // line. Flag-off renders the shipped surface byte-identical (FR-FLAG-2); `stale` is
   // untouched on both paths. `dayNumber` / `eventCount` feed the E1 headline.
-  const designV2 = useAllowlistFlag('signal_design_v2');
+  //
+  // FR-FLAG-4 (the beta-shelf composition): enablement flows through the beta workflow,
+  // never eligibility alone — `eligible && optedIn`, the B-712 two-gate rule (never
+  // conflated). Being in the cohort (the `app_config` allowlist) makes the "Signal
+  // redesign" card VISIBLE on app/settings/beta; the owner's local opt-in (default off,
+  // wiped on sign-out) is what turns it ON. Both hooks are called unconditionally (Rules
+  // of Hooks — no short-circuit), then combined; this mirrors BetaFeatureCard.
+  const eligible = useAllowlistFlag('signal_design_v2');
+  const optedIn = useBetaOptIn('signal_design_v2');
+  const designV2 = eligible && optedIn;
 
   // While the first cache read is in flight, hold the warm building state rather
   // than letting the empty findings flash 'stale' for a frame.

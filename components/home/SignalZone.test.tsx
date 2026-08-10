@@ -18,6 +18,14 @@ jest.mock('../../hooks/useAppConfig', () => ({
   useAllowlistFlag: (key: string) => mockUseAllowlistFlag(key),
 }));
 
+// FR-FLAG-4 — the render gate is `eligible && optedIn` (the B-712 two-gate rule), so the
+// beta opt-in is mocked too. It defaults ON in beforeEach so the flag-ON tests exercise
+// the uplift; the two-gate test flips it off to prove eligibility alone never enables it.
+const mockUseBetaOptIn = jest.fn();
+jest.mock('../../lib/betaFeatures', () => ({
+  useBetaOptIn: (key: string) => mockUseBetaOptIn(key),
+}));
+
 import { render } from '@testing-library/react-native';
 import { AccessibilityInfo, Platform } from 'react-native';
 import { SignalZone } from './SignalZone';
@@ -82,6 +90,9 @@ const EM_DASH = '—';
 beforeEach(() => {
   jest.clearAllMocks();
   mockUseAllowlistFlag.mockReturnValue(false);
+  // Default opted-in, so the flag-ON describe's `eligible && optedIn` resolves on the
+  // allowlist alone (as it did before FR-FLAG-4). The two-gate test overrides this.
+  mockUseBetaOptIn.mockReturnValue(true);
 });
 
 describe('SignalZone — flag OFF (shipped surface byte-identical, FR-FLAG-2)', () => {
@@ -128,6 +139,17 @@ describe('SignalZone — flag ON (E1/E2 restyle, FR-FLAG-1 no mix)', () => {
     mockUseSignal.mockReturnValue(signalState({ displayState: 'building' }));
     render(<SignalZone />);
     expect(mockUseAllowlistFlag).toHaveBeenCalledWith('signal_design_v2');
+  });
+
+  it('also requires the beta opt-in — eligible but opted-OUT renders the shipped surface (FR-FLAG-4 two-gate)', () => {
+    // Eligible (allowlist true from beforeEach) but the owner hasn't opted in on the
+    // beta shelf → the redesign stays off; Home shows the shipped building surface.
+    mockUseBetaOptIn.mockReturnValue(false);
+    mockUseSignal.mockReturnValue(signalState({ displayState: 'building' }));
+    const { getByText, queryByText } = render(<SignalZone />);
+    expect(mockUseBetaOptIn).toHaveBeenCalledWith('signal_design_v2');
+    expect(getByText(buildingIntro('Nyx'))).toBeTruthy(); // shipped E1, not the restyle
+    expect(queryByText(BUILDING_FLOOR)).toBeNull(); // no leak of the new E1
   });
 
   it('E1 building: headline + watching-for rows + safety floor, none of the shipped copy', () => {

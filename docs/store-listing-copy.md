@@ -125,7 +125,7 @@ This copy is read by App Review against **Guideline 1.4.1 (Physical harm)** and 
 | **Points to the vet, including emergencies** | Explicit disclaimer paragraph + emergency instruction ("contact your vet or a local emergency clinic right away"). |
 | **Voice (nyx-voice)** | No exclamation marks; specific over generic (two taps, 8–12 weeks, 3–6 hours, chicken); warm-not-cute; plain language, no unexplained jargon. |
 
-**Age-rating answer (for the PM, in ASC):** answer the **medical/treatment-information** question as *"the app provides informational pet-health tracking, not medical treatment or diagnosis."* Expected outcome **4+** (guide step 13). This description is written to be consistent with that answer — if the age-rating answer and the description disagree, that mismatch is a rejection trigger.
+**Age-rating answer (for the PM, in ASC): ✅ Entered 2026-08-09 → rated 4+** (full answer record: `docs/app-store-age-rating.md`). The **medical/treatment-information** question was answered *"the app provides informational pet-health tracking, not medical treatment or diagnosis."* This description is written to be consistent with that answer — if the age-rating answer and the description disagree, that mismatch is a rejection trigger.
 
 ---
 
