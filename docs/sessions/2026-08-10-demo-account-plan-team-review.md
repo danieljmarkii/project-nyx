@@ -1,6 +1,6 @@
 # Demo-account plan (B-271 v2) — convened specialist-panel review
 
-**Date:** 2026-08-10 · **Outcome:** shipped via #TBD (draft)
+**Date:** 2026-08-10 · **Outcome:** shipped via #626
 
 ## What happened
 
