@@ -297,7 +297,7 @@ function trialUpserts(story: DemoStory): string[] {
   const allowed = story.allowedFoods.map((a) =>
     upsert(
       'diet_trial_foods',
-      ['id', 'diet_trial_id', 'pet_id', 'food_item_id', 'role', 'food_label', 'allowed_from'],
+      ['id', 'diet_trial_id', 'pet_id', 'food_item_id', 'role', 'food_label', 'allowed_from', 'deleted_at'],
       [
         uuidLit(a.id),
         uuidLit(t.id),
@@ -306,8 +306,13 @@ function trialUpserts(story: DemoStory): string[] {
         `${lit(a.role)}::diet_trial_food_role`,
         lit(a.foodLabel),
         dateSql(a.allowedFromDayOffset),
+        'NULL',
       ],
-      ['diet_trial_id', 'pet_id', 'food_item_id', 'role', 'food_label', 'allowed_from', 'updated_at'],
+      // `deleted_at` is in the update set so a re-seed REVIVES a soft-deleted
+      // allowed-food row back to NULL — the only diet-trial table with a
+      // `deleted_at`, and the one row the "venison washes out" story depends on, so
+      // "re-seed heals everything" (R-7/§8) must hold even after a soft delete.
+      ['diet_trial_id', 'pet_id', 'food_item_id', 'role', 'food_label', 'allowed_from', 'deleted_at', 'updated_at'],
     ),
   );
 

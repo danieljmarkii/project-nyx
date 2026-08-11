@@ -24,6 +24,7 @@ import {
 } from '../../lib/dietTrial';
 import { foodIntakeKey } from '../../lib/food';
 import { buildDemoStory, materializeDate, materializeInstantIso } from './demoStory';
+import { uuidV5 } from './uuidv5';
 import { emitSeedSqlForParams, DEMO_EMAIL } from './emitSeedSql';
 
 const PARAMS = {
@@ -89,6 +90,45 @@ function factsInput(readOffsetDays = 0): TrialFactsInput {
     timeZone: TZ,
   };
 }
+
+describe('uuidV5 — the hand-rolled crypto matches RFC 4122 v5 (golden vectors)', () => {
+  // The seed's row ids are `uuidV5(slotKey, petId)`. uuidv5.ts implements SHA-1 by
+  // hand (the `uuid` package won't resolve in the Deno --cached-only graph, and has
+  // no bundled types), so this is its ONLY regression net: any drift from RFC 4122
+  // v5 changes every seeded id, silently orphaning previously-synced rows on a
+  // re-seed. These expected values were GENERATED ONCE from `uuid@7.0.3`'s v5() and
+  // frozen here — including the well-known nil-namespace empty-name vector
+  // (e129f27c-…) — so the test pins the output without a runtime `uuid` dependency.
+  // [namespace, name, expected].
+  const VECTORS: ReadonlyArray<readonly [string, string, string]> = [
+    [PARAMS.petId, 'food-venison', '8800c716-de1d-5d9e-ab1b-e3504d4e8666'],
+    [PARAMS.petId, 'food-beef', '66228a65-e208-5c86-847f-5e3498a711b1'],
+    [PARAMS.petId, 'trial', '27a00220-01a4-50e5-92bf-457f3e4be5c8'],
+    [PARAMS.petId, 'trial-food-venison', '37f0339f-0a40-5c0f-bc58-3cc5df8458ba'],
+    [PARAMS.petId, 'event:meal-venison-d-16-am', '01ab78c7-a02e-5443-949c-c9eda7f6241e'],
+    [PARAMS.petId, 'meal:treat-beef-d-3', '82045a58-02c4-5bd2-bf14-49d5dc826602'],
+    [PARAMS.petId, 'attachment:vomit-d-3', '6e2b21dc-84d5-5b61-ab56-fbf7a36dd071'],
+    [PARAMS.petId, "Cooper's Venison LID", 'a3a57f49-b79c-54bb-ae3b-66c1d7534cea'], // apostrophe
+    [PARAMS.petId, '', 'ebee6950-a528-5f23-9c6f-8f6adebbd11e'], // empty name
+    [PARAMS.petId, '日本語🐕', '749c0c05-760e-5863-a37c-a65c026c71e2'], // multibyte + surrogate pair
+    ['6ba7b810-9dad-11d1-80b4-00c04fd430c8', 'food-venison', 'a2d13618-1d63-5c00-9584-15b7cf65bb61'], // DNS ns
+    ['00000000-0000-0000-0000-000000000000', '', 'e129f27c-5103-5c5c-844b-cdf0a15e160d'], // known nil-ns vector
+  ];
+
+  it('produces the exact v5 UUID for every golden vector', () => {
+    for (const [ns, name, expected] of VECTORS) {
+      const mine = uuidV5(name, ns);
+      expect(mine).toBe(expected);
+      // version 5 + RFC 4122 variant bits.
+      expect(mine).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+    }
+  });
+
+  it('is deterministic and rejects a non-UUID namespace', () => {
+    expect(uuidV5('food-venison', PARAMS.petId)).toBe(uuidV5('food-venison', PARAMS.petId));
+    expect(() => uuidV5('x', 'not-a-uuid')).toThrow(/UUID/);
+  });
+});
 
 describe('demo story — off-diet facts (lib/dietTrial)', () => {
   const facts = computeTrialFacts(factsInput());

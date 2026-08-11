@@ -214,6 +214,17 @@ const TRIAL_TARGET_DURATION_DAYS = 42;
  * beef day is adjacent to another vomit day (control-arm contamination kills ①).
  */
 const BEEF_EXPOSURE_DAYS = [-16, -12, -8, -3];
+/**
+ * Per-vomit occurred-at confidence (§5 realism — some witnessed, some discovered).
+ * D-3 stays `witnessed` (it carries the photo). Inert to the two committed findings
+ * (①–④ ignore confidence) and keeps the timing lanes ⑤/⑥ silent (≥3/≥5 witnessed).
+ */
+const VOMIT_CONFIDENCE = new Map<number, OccurredAtConfidenceValue>([
+  [-16, 'estimated'],
+  [-12, 'witnessed'],
+  [-8, 'estimated'],
+  [-3, 'witnessed'],
+]);
 /** The dip days: today's and yesterday's UTC dates (§3.2 — UTC-anchored by rule). */
 const DIP_DAYS = [-1, 0];
 const WEIGHT_DAYS = [-20, -6];
@@ -352,7 +363,11 @@ export function buildDemoStory(params: DemoStoryParams): DemoStory {
       slotKey: vomitSlot,
       kind: 'vomit',
       time: { dayOffset: d, ...VOMIT_TIME },
-      occurredAtConfidence: 'witnessed',
+      // §5 asks for a realistic mix (some witnessed, some discovered). A vomit is
+      // often found later, so alternate — the photographed D-3 vomit stays
+      // 'witnessed'. This is inert to ①/② (detectors ①–④ ignore confidence) and
+      // keeps ⑤/⑥ suppressed (they need ≥3/≥5 WITNESSED onsets; this leaves 2).
+      occurredAtConfidence: VOMIT_CONFIDENCE.get(d) ?? 'witnessed',
       severity: 2,
     };
     if (d === PHOTO_VOMIT_DAY) {

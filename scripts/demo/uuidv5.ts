@@ -9,9 +9,10 @@
 // shared deterministic-id helper cannot depend on it. Web Crypto's SHA-1 exists
 // in both runtimes but is ASYNC (`crypto.subtle.digest`), and the story module
 // needs a pure, synchronous `id = uuidV5(slotKey, petId)` it can compute inline.
-// So SHA-1 is implemented here in portable JS. It is verified byte-for-byte
-// against the `uuid` package in scripts/demo/demoStory.test.ts (the golden
-// vectors), which is what keeps this correct despite being hand-rolled.
+// So SHA-1 is implemented here in portable JS. It is verified against RFC 4122 v5
+// golden vectors (frozen from `uuid@7.0.3`, including the well-known nil-namespace
+// vector) in scripts/demo/demoStory.test.ts, which is what keeps this correct
+// despite being hand-rolled.
 //
 // The seed's row ids are `uuidV5(storySlotKey, demoPetId)`: the demo pet id is
 // the namespace, the story-slot key (e.g. 'meal-venison-D-16-am') the name. Same
