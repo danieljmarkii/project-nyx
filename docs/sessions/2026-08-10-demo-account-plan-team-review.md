@@ -48,3 +48,7 @@ With DB-3 ratified, the **v2.1 amendments were applied in this session** (Tier-2
 - `docs/backlog.md` — +B-743, +B-744.
 - `STATUS.md` — B-271 section updated (rulings recorded; PM to-do reshaped to account creation).
 - No app code, no schema.
+
+## Wrap (2026-08-11)
+
+**Runbook step 1 done:** the PM created `support@getculprit.app` and onboarded Cooper the same day. Backlog B-271 status head rewritten to current; #626 marked ready and squash-merged at the PM's request. Next: PR 1 (the seed) per the amended spec §12.2.
