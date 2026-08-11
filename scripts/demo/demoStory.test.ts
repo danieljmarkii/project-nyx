@@ -77,8 +77,17 @@ function feedings(): TrialFeeding[] {
       };
     });
 }
-function factsInput(): TrialFactsInput {
-  return { trial: trialSpec(), allowedFoods: allowedFoods(), feedings: feedings(), nowMs: SEED_MS, timeZone: TZ };
+const DAY_MS = 86_400_000;
+// Rows are FIXED at seed time (feedings/trial materialized at SEED_MS); only `now`
+// advances, modelling a report/card generated `readOffsetDays` after the seed ran.
+function factsInput(readOffsetDays = 0): TrialFactsInput {
+  return {
+    trial: trialSpec(),
+    allowedFoods: allowedFoods(),
+    feedings: feedings(),
+    nowMs: SEED_MS + readOffsetDays * DAY_MS,
+    timeZone: TZ,
+  };
 }
 
 describe('demo story — off-diet facts (lib/dietTrial)', () => {
@@ -109,13 +118,32 @@ describe('demo story — off-diet facts (lib/dietTrial)', () => {
     }
   });
 
-  it('keeps trialDietRefusal null — the dip does not read as a refusing patient (B-494 hold)', () => {
-    // The 4 not-finished dip feedings are a ~0.14 share of the 14-day venison
-    // recency window (2 finished meals/day), well under REFUSAL_SHARE (0.5), so the
-    // trial-viability refusal fact never fires — the story is a mild dip, not a
-    // refusal, and does not walk into the held generate-report refusal band.
+  it('keeps trialDietRefusal null at seed time — the dip is not a refusing patient (B-494 hold)', () => {
+    // At seed time the 4 not-finished dip feedings are a ~0.14 share of the 14-day
+    // venison recency window (2 finished meals/day), well under REFUSAL_SHARE (0.5),
+    // so the trial-viability refusal fact does not fire — the story is a mild dip,
+    // not a refusal, and does not walk into the held generate-report refusal band.
     expect(facts.trialDietRefusal).toBeNull();
     expect(facts.rangeRefusal).toBeNull();
+  });
+
+  it('keeps trialDietRefusal null for the whole ≤9-day freshness window, then decays into a FALSE refusal (adversarial finding)', () => {
+    // The adversarial gate broke the single-instant assertion above: as `now`
+    // advances WITHOUT a re-seed, the FINISHED baseline venison meals age out of the
+    // 14-day refusal-recency window while the recent-edge dip (which ② needs on the
+    // two most-recent days) stays — so the not-finished SHARE climbs past
+    // REFUSAL_SHARE purely from the shrinking denominator, and computeTrialFacts
+    // surfaces a FALSE "this diet isn't being eaten" card on the live trial card.
+    // This is intrinsic (② requires the recent dip), so the only lever is FRESHNESS.
+    // Pin the real boundary, exactly as the ② midnight singularity is pinned:
+    //   • null across the whole window the ≤9-day cadence ceiling guarantees, and
+    //   • the measured first-flip at +10d — the number that JUSTIFIES that ceiling.
+    for (let d = 0; d <= 9; d++) {
+      expect(computeTrialFacts(factsInput(d)).trialDietRefusal).toBeNull();
+    }
+    // +10d: the false refusal appears (share 0.5) — this is WHY §8's re-seed cadence
+    // must carry a hard ≤9-day ceiling even during "In Review" (flagged to the PM).
+    expect(computeTrialFacts(factsInput(10)).trialDietRefusal).not.toBeNull();
   });
 });
 
@@ -167,6 +195,20 @@ describe('demo story — emitted SQL safety guarantees', () => {
     expect(sql).not.toContain("Cooper''s");
   });
 
+  it('refuses a value that would break out of the dollar-quoting (rls-privacy residual)', () => {
+    // The `timezone` is the one operator-supplied value reaching `lit()`. A value
+    // containing the FULL tag, or merely ENDING in the partial tag (the closing
+    // wrapper supplies the trailing `$`), must be refused — not silently emitted.
+    expect(() => emitSeedSqlForParams({ ...PARAMS, timezone: 'x$demolit$; DROP TABLE food_items;--' })).toThrow(
+      /dollar-quote tag/,
+    );
+    expect(() => emitSeedSqlForParams({ ...PARAMS, timezone: '; DROP TABLE food_items; SELECT $demolit' })).toThrow(
+      /dollar-quote tag/,
+    );
+    // A malformed uuid is refused before any SQL is built.
+    expect(() => emitSeedSqlForParams({ ...PARAMS, petId: "x'; DROP TABLE food_items;--" })).toThrow(/UUID/);
+  });
+
   it('is a data seed, not a migration (no DDL)', () => {
     expect(sql).not.toMatch(/\bCREATE\s+TABLE\b/i);
     expect(sql).not.toMatch(/\bALTER\s+TABLE\b/i);
@@ -202,6 +244,18 @@ describe('demo story — deterministic ids (re-seed leaves the same rows, §8/§
   it('anchors the two dip meals to now() with the ≤ now − 5 min clamp (§3.2)', () => {
     const clamps = sqlClampCount(emitSeedSqlForParams(PARAMS));
     expect(clamps).toBe(4); // two dip days × two meals
+  });
+
+  it('references only foods the assertion prelude self-checks (rls-privacy residual #2)', () => {
+    // The prelude's food-ownership self-check covers `story.foods` ids. Every food a
+    // seeded row references — the allowed set and every meal — must be in that set,
+    // or a future profile could reference a food the self-check never validated.
+    const checkedIds = new Set(story.foods.map((f) => f.id));
+    for (const a of story.allowedFoods) expect(checkedIds.has(a.foodId)).toBe(true);
+    for (const e of story.events) {
+      if (e.meal) expect(checkedIds.has(e.meal.foodId)).toBe(true);
+    }
+    expect(story.trial.primaryFoodId && checkedIds.has(story.trial.primaryFoodId)).toBe(true);
   });
 });
 

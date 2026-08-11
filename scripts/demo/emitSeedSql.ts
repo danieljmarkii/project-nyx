@@ -74,11 +74,16 @@ function uuidLit(v: string): string {
 /**
  * A dollar-quoted string literal. Dollar-quoting means the apostrophe in
  * "Cooper's Venison LID" needs no escaping — it appears verbatim between the
- * tags. Guard: refuse a value that itself contains the tag, so it can never break
- * out (there is no such value in this story, but a future label edit is checked).
+ * tags. Guard: refuse a value containing `$<tag>` (the tag WITHOUT its trailing
+ * `$`), so it can never break out. Checking the full `$<tag>$` would miss a value
+ * that merely ENDS in `$<tag>`: the closing wrapper then supplies the trailing
+ * `$`, forming `$<tag>$` and closing the literal early (rls-privacy-reviewer,
+ * B-271 PR 1). `$` is the tag's only delimiter, so the `$<tag>`-substring check
+ * covers the full-tag and the partial-suffix cases at once; no real label
+ * contains it (there is no such value in this story, but a future edit is checked).
  */
 function lit(v: string): string {
-  if (v.includes(`$${LIT_TAG}$`)) {
+  if (v.includes(`$${LIT_TAG}`)) {
     throw new Error(`emitSeedSql: value collides with the dollar-quote tag: ${JSON.stringify(v)}`);
   }
   return `$${LIT_TAG}$${v}$${LIT_TAG}$`;

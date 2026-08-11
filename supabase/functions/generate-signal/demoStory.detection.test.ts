@@ -18,8 +18,10 @@
 //
 //   • ACROSS ALL 24 UTC SEED-HOURS — the test that would have caught R-3, where a
 //     locally-anchored dip run at an early UTC hour produced no ② at all.
-//   • SURVIVAL at +24h/+48h/+96h — ① is durable (180-day lookback, no now-
-//     dependence) while ② DECAYS at the next UTC midnight. That asymmetry is the
+//   • SURVIVAL at +24h/+48h/+96h — ① is durable (its matched-pair arithmetic is
+//     now-INDEPENDENT — the pure engine has no lookback bound of its own; the
+//     180-day window is the index.ts query's, and +96h is well inside it) while ②
+//     DECAYS at the next UTC midnight. That asymmetry is the
 //     measured justification for §8's standing re-seed cadence, not folklore.
 //   • THE UTC-MIDNIGHT SINGULARITY — ② physically cannot fire at exactly
 //     00:00:00 UTC (no elapsed time on today's UTC date for a past meal), so the
@@ -199,7 +201,7 @@ Deno.test('demo story — the UTC-midnight singularity: ② cannot fire at 00:00
   // is pinned here, not hidden. ① is now-independent and fires regardless.
   const s = analyze(UTC_MIDNIGHT);
   assert.equal(s.intakeTrigger, null, '② is silent exactly at UTC midnight (the singularity)');
-  assert.ok(s.beef, '① fires even at the singularity (180-day lookback, no now-dependence)');
+  assert.ok(s.beef, '① fires even at the singularity (now-independent matched-pair arithmetic)');
   assert.equal(s.beef!.tier, 'early');
 });
 
