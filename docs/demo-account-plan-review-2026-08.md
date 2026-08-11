@@ -110,7 +110,14 @@ Rule applied: *seed exactly what a reviewer meets on the golden path in the firs
 
 ---
 
-## 4. Decision briefs (PM)
+## 4. Decision briefs (PM) — **ALL RULED 2026-08-11 (Step 0 ratified)**
+
+> **DB-1 → (A):** `signal_design_v2` **OFF everywhere** for submission #1; D9 stands; plain-cards hero; enriched hero = v1.1 recapture. Reconciled in both docs.
+> **DB-2 → (B):** **no second demo account** — the notes carry a deletion heads-up and the runbook carries the resurrection protocol. (For the record: the risk this brief covered is *reviewer*-initiated deletion of the primary account mid-review, not our own deletion QA — the ruling stands with the protocol as the mitigation.)
+> **DB-3 → (A):** the §6 amendment batch ratified; applied as spec v2.1 (2026-08-11, same PR #626).
+> **DB-4 → ruled with one recalibration:** email = **`support@getculprit.app`** (PM's pick — verified free of existing auth users; exact-match assertion guard; already-routed inbox). The proposed password was **declined as-proposed**: it was a dictionary-pattern credential on an account whose email is *public* (it's the listed support address), and having been typed into a session it was burned under the tightened D4 regardless. The PM mints a strong-but-typeable password **directly in ASC** (two unrelated words + digits + a symbol; no `l/1/I`/`O/0`), never in any session.
+
+*(Original briefs below, kept as presented.)*
 
 **DB-1 — `signal_design_v2` on the demo account: D9 vs. the screenshot plan's D-SS4 carve-out.**
 - **Deciding:** which ratified text governs the flag when SR deems v2 presentable before capture — they currently contradict (R-5).
@@ -172,7 +179,7 @@ PR 1 (with the v2.1 amendments) is the only gate on the live phase and is **full
 
 ---
 
-## 6. Proposed spec amendments — `nyx-demo-account-requirements.md` v2 → v2.1 (Tier 2 — awaiting PM approval via DB-3)
+## 6. Proposed spec amendments — `nyx-demo-account-requirements.md` v2 → v2.1 — **RATIFIED (DB-3 A) & APPLIED 2026-08-11** (same PR; item 15's DB-1 sentence landed per ruling A; the §7/§12.3 items adjusted for DB-2 B — deletion heads-up + resurrection protocol instead of a second credential set)
 
 1. **§3.2 → explicit event table** (times/counts/ratings/proteins; **4–5 beef exposures**, none on control-adjacent days; dip days = UTC-date(now)/−1, ratings `some`+`picked` against a predominantly-`all` baseline; benign-photo condition) ⟵ R-3/R-4/R-9.
 2. **§3.2 "why two findings" inverted:** ① is the durable finding (180d lookback); ② is fragile (UTC-dated, expires at next UTC midnight) and is why the cadence exists ⟵ R-3.

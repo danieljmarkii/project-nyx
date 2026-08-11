@@ -34,9 +34,17 @@ Full record + findings + the refined plan: **`docs/demo-account-plan-review-2026
 
 The two-PR shape survives. PR 1 (story module + emitter + validations) is still fully offline and unblocked the moment DB-3 lands — now with deterministic-id upserts, the assertion prelude, the 24-UTC-hour sweep validation, drift-tolerance assertions, and `rls-privacy-reviewer` added to its gates. PR 2 (reviewer notes) is rebuilt around the consultant's scripted golden path, no "clinical-grade" in reviewer-facing text, the negatives block, and the second-credentials deletion note. The runbook becomes v2: PM-in-app photo (password never enters a session), demo-JWT-or-PM-opens-Home for the regen, credential smoke test, account freeze rule, standing 24–48h re-seed cadence, in-app-only teardown.
 
+## Step 0 ratified (2026-08-11, same session continued)
+
+The PM ruled all four briefs: **DB-1 (A)** — `signal_design_v2` OFF everywhere for submission #1 (D9 governs; the screenshot plan's D-SS4 carve-out superseded for round 1, plain-cards hero; enriched hero + B-742 chart become v1.1 recaptures). **DB-2 (B)** — no second demo account; the notes carry a deletion heads-up and the runbook a resurrection protocol. **DB-3 (A)** — the amendment batch ratified. **DB-4** — demo email = `support@getculprit.app` (the PM's pick; verified free of any existing auth user via a live `auth.users` read; exact-match assertion guard; the address routes to the PM's inbox already). **One recalibration:** the chat-proposed password was declined — a dictionary-pattern credential on a *public* email address, and burned the moment it was typed into a session (the tightened D4). The PM mints a strong-but-typeable password directly in ASC.
+
+With DB-3 ratified, the **v2.1 amendments were applied in this session** (Tier-2 edits now PM-confirmed): the spec's §0/§2/§3/§4/§5/§7/§8/§9/§11/§12/§13/§14 all updated (executable event table with 4 beef exposures, UTC-anchored dip days, `'manual'` extraction status, deterministic-id upsert + assertion prelude, runbook v2 with auth named per step, the rebuilt reviewer-notes outline, the replaced AC set, S1–S5 resolved); `store-screenshot-plan.md` reconciled (DB-1 sentence in §0.5 + §2; the stale §2.5 seed addendum struck as resolved); the review doc's §4/§6 annotated with the rulings.
+
 ## Files
 
-- `docs/demo-account-plan-review-2026-08.md` — new (the panel record + refined plan).
+- `docs/demo-account-plan-review-2026-08.md` — new (the panel record + refined plan); §4/§6 annotated with the Step-0 rulings.
+- `docs/nyx-demo-account-requirements.md` — **v2 → v2.1 applied** (PM-ratified via DB-3).
+- `docs/store-screenshot-plan.md` — DB-1 reconciliation + stale-addendum cleanup.
 - `docs/backlog.md` — +B-743, +B-744.
-- `STATUS.md` — B-271 section updated (review recorded; PM to-do reshaped; consultant item closed).
-- No app code, no schema, no spec edits (Tier 2 — the v2.1 amendments await DB-3).
+- `STATUS.md` — B-271 section updated (rulings recorded; PM to-do reshaped to account creation).
+- No app code, no schema.
