@@ -37,6 +37,15 @@
 - **B-745** (Now) — the track row; blocks on R1–R3.
 - **B-746** (Later) — commission the custom event-type icon family; the README's standing "replace Lucide everywhere" flag had never been filed as a row (gap found this session). B-410's doctrine noted: the widget's abstract geometry does not adopt the family.
 
+## Round 2 (same session) — rulings + the array
+
+PM reacted to round 1 in-session: **R1 = C** (grouped compact grid), **R2 = BatteryLow**, and a new ruling **R4 — the photo-first entry is removed** (everyone starts from the event; audit confirmed zero capability loss — `renderPhotoAttachRow()` inside the detail steps is untouched, and `attachmentUri` had no source other than the grid tile, so the "which event is this for?" banner path retires as dead code). R3 was superseded by the round-2 ask: **the array** — three ambition rungs.
+
+Round 2 republished over the same artifact URL:
+- **§02 GI glyphs, honestly** (answers the PM's "not sure why we're getting fancy" point): the droplet/circle abstractions were the deliberate clinical-calm call, but they fail the iconography rule's own "no metaphor that requires explanation" test. Proposed: two **custom line-drawn glyphs** (faceless poop swirl for stool, splat-over-puddle for vomit — 1.75 stroke, house style, drawn in-house via react-native-svg which already ships under Lucide). This quietly starts B-746 with its two hardest glyphs. The emoji-rhyme caveat is stated in the mock; fallback = round 1's abstractions. **G1 open.**
+- **§03 The array:** Rung 1 "C, settled" (the ruled build spec — one UI PR) · Rung 2 "The sheet" (bottom-sheet presentation over the current screen + stool split tile that deletes the sub-step + quiet record context lines — effectively B-007's destination half) · Rung 3 "The dial" (press-and-hold FAB fans a thumb-reachable arc; absorbs B-007; prototype-behind-a-flag track, with Rung 1 as the a11y/reduced-motion fallback).
+- **§05 briefs:** **A1** (rec: Rung 1 now, Rung 2 as the B-007 session) + **G1** (rec: adopt the customs).
+
 ## Deliberately not touched
 
 B-007 (FAB experience revamp — the parent seam), B-201 (Weight promotion into the FAB), B-139 (Medication FAB entry): all remain open exactly as they were; the mock's scope fence says nothing here forecloses them. No code changed this session.

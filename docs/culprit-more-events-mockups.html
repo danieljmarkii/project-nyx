@@ -2,18 +2,17 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <style>
   /* ============================================================
-     The log event picker ("More events" → Log for {pet}) — ROUND 1.
-     Exploratory: three shapes side by side + glyph decisions.
+     The log event picker ("More events" → Log for {pet}) — ROUND 2.
+     Supersedes round 1's A/B/C comparison: C is ruled (R1), along
+     with BatteryLow (R2) and the removal of the photo-first entry
+     (R4). Round 2 = the honest GI-glyph exploration + THE ARRAY:
+     three ambition rungs (C-settled / the sheet / the dial).
 
-     Document chrome is deliberately NOT the app: cool paper biased
-     toward the brand indigo in light, the real night tokens in dark.
-     THE DEVICE FRAMES STAY LIGHT IN BOTH THEMES ON PURPOSE — the
-     event picker is a capture surface, and capture surfaces live in
-     the daylight register (brand spec §1.2); flipping the frames
-     would misrepresent what ships.
+     Document chrome is deliberately NOT the app. THE DEVICE FRAMES
+     STAY LIGHT IN BOTH THEMES ON PURPOSE — capture surfaces live in
+     the daylight register (brand spec §1.2).
 
-     Frame values are the real tokens from constants/theme.ts, so
-     the build copies rather than approximates.
+     Frame values are the real tokens from constants/theme.ts.
      ============================================================ */
 
   :root {
@@ -121,12 +120,6 @@
   ul.notes li::before { content: ""; position: absolute; left: 0; top: 0.62em; width: 7px; height: 1px; background: var(--ink-3); }
   ul.notes li strong { color: var(--ink); }
 
-  .tablewrap { overflow-x: auto; margin-top: 26px; }
-  table { border-collapse: collapse; width: 100%; min-width: 620px; font-size: 14.5px; }
-  th, td { text-align: left; vertical-align: top; padding: 13px 16px 13px 0; border-bottom: 1px solid var(--rule-soft); }
-  th { font-family: var(--mono); font-size: 11px; letter-spacing: 0.11em; text-transform: uppercase; color: var(--ink-3); font-weight: 600; border-bottom-color: var(--rule); padding-top: 0; }
-  td:first-child { font-family: var(--mono); font-size: 12px; color: var(--ink-3); white-space: nowrap; padding-right: 22px; }
-
   .compare { display: flex; flex-wrap: wrap; gap: 28px; margin-top: 28px; align-items: flex-start; }
   .compare figure { margin: 0; display: flex; flex-direction: column; gap: 12px; }
   .compare figcaption { font-size: 13.5px; color: var(--ink-2); max-width: 320px; line-height: 1.5; }
@@ -138,14 +131,9 @@
   /* ── THE DEVICE FRAME — light in both themes, on purpose ──── */
   .phone {
     width: 320px; max-width: 100%;
-    background: #FFFFFF;                 /* theme.colorSurface — the screen's real ground */
-    border: 1px solid #EAEAEA;
-    border-radius: 24px;
-    padding: 0 0 18px;
-    color: #0A0A0A;
-    font-family: var(--sans);
-    color-scheme: light;
-    overflow: hidden;
+    background: #FFFFFF; border: 1px solid #EAEAEA; border-radius: 24px;
+    padding: 0 0 18px; color: #0A0A0A; font-family: var(--sans);
+    color-scheme: light; overflow: hidden; position: relative;
   }
   .p-head {
     display: flex; align-items: center; justify-content: space-between;
@@ -156,71 +144,76 @@
 
   svg.i { flex-shrink: 0; }
 
-  /* Current-state grid (faithful) */
-  .g0 { display: flex; flex-wrap: wrap; gap: 16px; padding: 16px; justify-content: space-between; }
-  .g0 .tile {
-    width: 47%; aspect-ratio: 1.3; background: #FAFAFA; border-radius: 16px;
-    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
-  }
-  .g0 .tile span { font-size: 15px; font-weight: 500; color: #0A0A0A; }
-  .g0 .tile.dashed { background: #FFFFFF; border: 1px dashed #EAEAEA; }
-
-  /* Shared: tinted icon circle (the Today-row language) */
   .circ { border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
-  .circ.neutral { background: #F5F5F5; }   /* colorSurfaceSubtle */
-  .circ.rose    { background: #FFE4E6; }   /* colorEventSymptomLight */
-  .circ.teal    { background: #E0FBF7; }   /* colorEventMealLight */
-  .circ.slate   { background: #EAF0F7; }   /* colorEventMedicationLight */
+  .circ.neutral { background: #F5F5F5; }
+  .circ.rose    { background: #FFE4E6; }
+  .circ.teal    { background: #E0FBF7; }
+  .circ.slate   { background: #EAF0F7; }
 
-  /* Option A — refined vertical-tile grid */
-  .gA { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 16px; }
-  .gA .tile {
-    background: #FFFFFF; border: 1px solid #EAEAEA; border-radius: 16px;
-    padding: 16px 8px 14px; display: flex; flex-direction: column; align-items: center; gap: 8px;
-  }
-  .gA .circ { width: 44px; height: 44px; }
-  .gA .lbl { font-size: 15px; font-weight: 500; color: #0A0A0A; line-height: 1.2; }
-  .gA .hint { font-size: 11px; color: #737373; line-height: 1.2; text-align: center; }
-
-  /* Option B — compact button grid (horizontal tiles) */
-  .gB { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 16px; }
-  .gB .tile {
-    background: #FFFFFF; border: 1px solid #EAEAEA; border-radius: 16px;
-    padding: 12px; display: flex; align-items: center; gap: 10px; min-height: 62px;
-  }
-  .gB .circ { width: 36px; height: 36px; }
-  .gB .txt { min-width: 0; }
-  .gB .lbl { font-size: 14px; font-weight: 500; color: #0A0A0A; line-height: 1.15; }
-  .gB .hint { font-size: 10.5px; color: #737373; line-height: 1.25; margin-top: 2px; }
-
-  /* Option C — grouped sections */
+  /* Grouped compact tiles (the ruled C shape) */
   .gC { padding: 12px 16px 0; }
   .gC .eyebrow-s {
     font-size: 11px; font-weight: 500; color: #525252; text-transform: uppercase;
     letter-spacing: 0.6px; margin: 10px 0 8px;
   }
   .gC .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-
-  /* Attach-photo utility row (options A/B/C) */
-  .photo-row {
-    margin: 6px 16px 0; border: 1px dashed #D4D4D4; border-radius: 16px;
-    padding: 12px 14px; display: flex; align-items: center; gap: 10px; background: #FFFFFF;
+  .tileB {
+    background: #FFFFFF; border: 1px solid #EAEAEA; border-radius: 16px;
+    padding: 12px; display: flex; align-items: center; gap: 10px; min-height: 62px;
   }
-  .photo-row .lbl { font-size: 14px; font-weight: 500; color: #525252; }
-  .photo-row .hint { font-size: 10.5px; color: #737373; margin-top: 1px; }
+  .tileB .lbl { font-size: 14px; font-weight: 500; color: #0A0A0A; line-height: 1.15; }
+  .tileB .hint { font-size: 10.5px; color: #737373; line-height: 1.25; margin-top: 2px; }
+  .tileB .ctx { font-size: 10.5px; color: #A3A3A3; line-height: 1.25; margin-top: 2px; }
+
+  /* Split tile (stool — the sheet rung) */
+  .split { grid-column: span 2; background: #FFFFFF; border: 1px solid #EAEAEA; border-radius: 16px; padding: 12px; display: flex; align-items: center; gap: 10px; min-height: 62px; }
+  .split .seg { margin-left: auto; display: flex; gap: 6px; }
+  .split .seg span {
+    font-size: 12px; font-weight: 500; color: #0A0A0A; border: 1px solid #EAEAEA;
+    border-radius: 999px; padding: 7px 14px;
+  }
+
+  /* Sheet presentation (rung 2) */
+  .sheet-bg { background: #FAFAFA; padding: 12px 12px 0; }
+  .dim { position: absolute; inset: 0; background: rgba(10,10,10,0.35); border-radius: 24px; z-index: 1; }
+  .sheet {
+    position: relative; z-index: 2; margin-top: 64px; background: #FFFFFF;
+    border-radius: 24px 24px 0 0; border: 1px solid #EAEAEA; border-bottom: 0;
+    padding-bottom: 16px; box-shadow: 0 -6px 24px rgba(0,0,0,0.10);
+  }
+  .grab { width: 36px; height: 4px; border-radius: 2px; background: #D4D4D4; margin: 10px auto 2px; }
+  .sheet .p-head { border-bottom: 0; padding: 8px 20px 0; }
+
+  /* Home stand-in zones (behind sheet / dial) */
+  .zone {
+    background: #F0F0F0; border-radius: 16px; color: #A3A3A3;
+    font-size: 10.5px; letter-spacing: 0.09em; text-transform: uppercase;
+    display: flex; align-items: center; justify-content: center; font-weight: 600;
+    margin-bottom: 8px;
+  }
+
+  /* The dial (rung 3) */
+  .dial-stage { position: relative; height: 480px; background: #FFFFFF; }
+  .dial-node { position: absolute; display: flex; align-items: center; gap: 7px; z-index: 3; }
+  .dial-node .nlbl { font-size: 11.5px; font-weight: 500; color: #0A0A0A; background: rgba(255,255,255,0.92); border-radius: 999px; padding: 2px 8px; border: 1px solid #EAEAEA; }
+  .dial-node.rtl { flex-direction: row-reverse; }
+  .fab56 {
+    position: absolute; right: 20px; bottom: 24px; width: 56px; height: 56px;
+    border-radius: 28px; background: #0A0A0A; z-index: 4;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .dial-hint { position: absolute; left: 0; right: 0; bottom: 92px; text-align: center; font-size: 11px; color: #737373; z-index: 3; }
 
   /* Glyph specimen strip */
-  .glyphs { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 1px; background: var(--rule); border: 1px solid var(--rule); margin-top: 26px; }
+  .glyphs { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 1px; background: var(--rule); border: 1px solid var(--rule); margin-top: 26px; }
   .glyphs > div { background: var(--paper); padding: 18px 16px; text-align: center; }
-  .glyphs .stage-l { background: #FFFFFF; color-scheme: light; border-radius: 10px; padding: 14px 0; display: flex; justify-content: center; gap: 14px; align-items: center; }
+  .glyphs .stage-l { background: #FFFFFF; color-scheme: light; border-radius: 10px; padding: 14px 8px; display: flex; justify-content: center; gap: 16px; align-items: center; flex-wrap: wrap; }
   .glyphs .gname { font-family: var(--mono); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); margin-top: 10px; }
   .glyphs .gnote { font-size: 12.5px; color: var(--ink-2); margin-top: 4px; line-height: 1.4; }
   .glyphs .verdict { font-family: var(--mono); font-size: 10.5px; font-weight: 600; letter-spacing: 0.07em; border-radius: 3px; padding: 2px 7px; display: inline-block; margin-top: 8px; }
   .glyphs .keep { background: var(--teal-wash); color: var(--teal-ink); }
-  .glyphs .swap { background: var(--rose-wash); color: var(--rose-ink); }
   .glyphs .open { background: var(--rule-soft); color: var(--ink-2); }
 
-  /* Decision briefs */
   .brief { background: var(--paper-2); border: 1px solid var(--rule); border-radius: 3px; padding: 24px 28px; margin-top: 24px; }
   .brief .bid { font-family: var(--mono); font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 8px; }
   .brief .bq { font-family: var(--serif); font-size: clamp(18px, 2vw, 22px); font-weight: 600; line-height: 1.3; margin-bottom: 12px; text-wrap: balance; }
@@ -234,199 +227,133 @@
 
   <header class="mast">
     <p class="eyebrow">
-      <span>FAB → More events</span><span>Round 1</span><span>2026-08-12</span>
-      <span class="round-chip">Exploratory — R1–R3 open</span>
+      <span>B-745 · FAB → More events</span><span>Round 2</span><span>2026-08-12</span>
+      <span class="round-chip">C ruled — the array open (A1 · G1)</span>
     </p>
-    <h1>The event picker, brought into the system</h1>
+    <h1>C settled, then the array</h1>
     <p class="standfirst">
-      The "Log for {pet}" type grid is the oldest un-touched surface in the app — built at Step 4,
-      before the category colour language, the shared header, the tinted icon circles, and the rebrand
-      existed. Every surface around it moved on; this one didn't. <strong>Round 1 puts three shapes side
-      by side and settles the glyph problems.</strong> Nothing here changes the flow — same steps, same
-      writes, same sub-steps — this is the skin and the legibility of one screen.
+      Round 1's comparison is decided: <strong>C (grouped compact grid)</strong> is the shape,
+      <strong>BatteryLow</strong> is the lethargy glyph, and the <strong>photo-first entry is removed</strong> —
+      every log starts from the event itself. Round 2 does two things the reactions asked for:
+      an honest pass at the GI glyphs ("not sure why we're getting fancy here"), and
+      <strong>the array — three ambition rungs</strong>: C as ruled, an achievable stretch, and the
+      designer's swing at the fences. <em>Round 1's A/B frames are superseded; if you bookmarked this
+      URL earlier, this page is the live round.</em>
     </p>
   </header>
 
   <!-- ================================================================ -->
   <section>
-    <div class="sec-head"><span class="sec-num">01</span><h2>Why it reads as janky — the audit</h2></div>
-    <div class="col">
-      <p>Five findings, each traceable to the screen pre-dating a system that now exists:</p>
-      <ul class="notes">
-        <li><strong>The tiles don't look tappable.</strong> <code>#FAFAFA</code> tiles on a <code>#FFFFFF</code>
-          ground with no border — a 1.02:1 contrast. The primary affordance of the screen is nearly
-          invisible, which is most of the "janky" feeling. Every button-like surface shipped since
-          (completion cards, stool choice, paywall tiles) carries a border or a real fill.</li>
-        <li><strong>Monochrome glyphs in a colour-coded app.</strong> Every icon renders in flat secondary
-          grey. Today rows, History, and the calendar drill-in all carry the category language — rose
-          wash for symptoms, teal for meals, slate for medication, each glyph tinted in its category
-          colour inside a 32px circle. The picker is the only event surface still colour-blind.</li>
-        <li><strong>Three glyphs have aged badly.</strong> Stool's bare outline <em>Circle</em> reads as an
-          image that failed to load. Lethargy's <em>Moon</em> now collides with the Culprit brand
-          crescent — post-rebrand it reads as a brand mark, not a symptom. "Other"'s <em>Plus</em>
-          collides with the FAB, the FAB menu's add rows, and sits one tile from "Attach photo" —
-          two adjacent "add something" metaphors for different actions.</li>
-        <li><strong>Off-system construction.</strong> Hand-rolled header with text-glyph <code>✕</code>/<code>←</code>
-          and 8pt hitSlop — it pre-dates the shared <code>Header</code> (B-075) every other pushed/modal
-          screen migrated to (12pt hitSlop, real Lucide glyphs, one bar). Label styles use a
-          <code>fontSize: 15</code> literal and <code>colorNeutralDark</code> instead of the
-          <code>textMD</code>/<code>colorTextPrimary</code> tokens. The grid uses a pre-gap-era
-          <code>width: '47%'</code> + <code>space-between</code> hack.</li>
-        <li><strong>Layout without hierarchy.</strong> Nine cells: eight event types at equal weight plus
-          the "Attach photo" action as the ninth. Its dashed border is a <em>documented</em> design-system
-          exception ("intentionally reads as additive / not real yet") — the intent is right, but as the
-          orphan cell of a 2-col grid it reads as a broken tile, not a different kind of thing. Tall airy
-          tiles (aspect 1.3) mean the grid scrolls on smaller phones while each tile carries 24px of
-          content. No hints where labels are clinical ("Lethargy").</li>
-      </ul>
-      <p style="margin-top:20px;">One deliberate <em>non</em>-finding: the flow itself is right. One tap picks a type, sub-steps
-      (stool kind, food, medication, weight) do their jobs, the attachment banner works. This is a
-      re-skin of one step, not a flow redesign.</p>
+    <div class="sec-head"><span class="sec-num">01</span><h2>Rulings recorded from round 1</h2></div>
+    <div class="rulings">
+      <div>
+        <div class="k">R1 · Shape</div>
+        <div class="v">C — grouped grid</div>
+        <div class="n">Compact tiles under Symptoms / Food &amp; care / Body &amp; more eyebrows. The small,
+        scannable picker is the point. C is now the floor of every rung below.</div>
+      </div>
+      <div>
+        <div class="k">R2 · Lethargy</div>
+        <div class="v">BatteryLow</div>
+        <div class="n">"Low energy" with no explanation needed; the Moon retires to being the brand
+        crescent only. One-line swap in <code>eventTypes.ts</code>, picked up everywhere.</div>
+      </div>
+      <div>
+        <div class="k">R4 · Photo entry</div>
+        <div class="v">Removed</div>
+        <div class="n">Everyone starts from the event. Zero capability lost — photos still attach inside
+        every event flow (the existing photo row in the detail steps). The "which event is this for?"
+        banner path retires with it. §04 has the audit.</div>
+      </div>
+      <div>
+        <div class="k">R3 · Scope</div>
+        <div class="v">Superseded by A1</div>
+        <div class="n">"Ship now vs. wait" is now "which rung ships first" — the §05 brief. The glyph
+        question got its own call (G1) because the reaction re-opened it honestly.</div>
+      </div>
     </div>
   </section>
 
   <!-- ================================================================ -->
   <section>
-    <div class="sec-head"><span class="sec-num">02</span><h2>What can't change</h2></div>
-    <div class="rulings">
+    <div class="sec-head"><span class="sec-num">02</span><h2>The GI glyphs, honestly</h2></div>
+    <div class="col">
+      <p>The reaction was right to poke here, and it deserves a straight answer. The droplet/circle
+      abstractions were a deliberate MVP-era call — the code comment says they were chosen for
+      "visual distinctness + clinical calm over literal fidelity" when the emoji (🤢 💩) were swept out.
+      But the calm came at the cost of legibility: <strong>nobody can tell what a bare circle is</strong>, and a
+      droplet for vomit is exactly the "metaphor that requires explanation" the iconography rule bans.
+      That's the definition of getting fancy.</p>
+      <p>The fix isn't returning to emoji — it's <strong>literal subjects drawn in the house line style</strong>:
+      1.75px stroke, rounded caps, monochrome or category-tinted. What made the poop emoji feel wrong
+      for a clinical tool was the cartoon face and the brown fill, not the shape. A line-drawn swirl
+      with no face, tinted rose at 20px in a wash circle, reads like a pictogram on a vet chart, not a
+      text message. These two would be the first <em>custom</em> glyphs in the product — drawn in-house as
+      two small SVG paths (react-native-svg is already under Lucide), which quietly starts the B-746
+      icon family with its two hardest cases instead of waiting on a commission.</p>
+    </div>
+    <div class="glyphs">
       <div>
-        <div class="k">Design principles — quick-log</div>
-        <div class="v">Large tap targets, never a list</div>
-        <div class="n">The principles doc pins it: "Event types visible as large tap targets, not a list."
-        A plain table-list shape is out before it starts; every option below keeps 2-up buttons at 44pt+.</div>
+        <div class="stage-l">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#A3A3A3" stroke-width="1.75"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="1.5" fill="#A3A3A3"/></svg>
+          <span style="color:#D4D4D4;">→</span>
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#0A0A0A" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3c2 .7 2.9 2.4 2.2 4.1c1.8.2 3.1 1.5 3.1 3.1c0 .8-.3 1.6-.9 2.1c1.5.4 2.6 1.6 2.6 3.1c0 1.9-1.7 3.4-3.9 3.4H8.9c-2.2 0-3.9-1.5-3.9-3.4c0-1.5 1.1-2.7 2.6-3.1c-.6-.5-.9-1.3-.9-2.1c0-1.6 1.3-2.9 3.1-3.1C9.1 5.4 10 3.7 12 3Z"/></svg>
+          <span class="circ rose" style="width:36px;height:36px;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#F43F5E" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3c2 .7 2.9 2.4 2.2 4.1c1.8.2 3.1 1.5 3.1 3.1c0 .8-.3 1.6-.9 2.1c1.5.4 2.6 1.6 2.6 3.1c0 1.9-1.7 3.4-3.9 3.4H8.9c-2.2 0-3.9-1.5-3.9-3.4c0-1.5 1.1-2.7 2.6-3.1c-.6-.5-.9-1.3-.9-2.1c0-1.6 1.3-2.9 3.1-3.1C9.1 5.4 10 3.7 12 3Z"/></svg></span>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#0A0A0A" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3c2 .7 2.9 2.4 2.2 4.1c1.8.2 3.1 1.5 3.1 3.1c0 .8-.3 1.6-.9 2.1c1.5.4 2.6 1.6 2.6 3.1c0 1.9-1.7 3.4-3.9 3.4H8.9c-2.2 0-3.9-1.5-3.9-3.4c0-1.5 1.1-2.7 2.6-3.1c-.6-.5-.9-1.3-.9-2.1c0-1.6 1.3-2.9 3.1-3.1C9.1 5.4 10 3.7 12 3Z"/></svg>
+        </div>
+        <div class="gname">Stool: the line-drawn swirl (custom)</div>
+        <div class="gnote">Shown against round 1's CircleDot, then tinted in the wash circle, then at 16px
+        (the History-row size). Literal, faceless, calm — and unmistakable at every size.</div>
+        <span class="verdict open">G1 — PM call</span>
       </div>
       <div>
-        <div class="k">Brand register</div>
-        <div class="v">Daylight, always</div>
-        <div class="n">Capture surfaces stay in the light register (in-app brand spec §1.2). No night
-        ground here — the night moments are for the app working on the pet's behalf, not for logging.</div>
+        <div class="stage-l">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#A3A3A3" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22a7 7 0 0 0 7-7c0-2-1-3.9-3-5.5s-3.5-4-4-6.5c-.5 2.5-2 4.9-4 6.5C6 11.1 5 13 5 15a7 7 0 0 0 7 7z"/></svg>
+          <span style="color:#D4D4D4;">→</span>
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#0A0A0A" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.5c-1.3 1.7-2.1 2.9-2.1 4.1a2.1 2.1 0 0 0 4.2 0c0-1.2-.8-2.4-2.1-4.1Z"/><path d="M6.8 8.2c-.8 1-1.3 1.8-1.3 2.5a1.3 1.3 0 0 0 2.6 0c0-.7-.5-1.5-1.3-2.5Z"/><path d="M17.2 8.2c-.8 1-1.3 1.8-1.3 2.5a1.3 1.3 0 0 0 2.6 0c0-.7-.5-1.5-1.3-2.5Z"/><path d="M12 14c-4.1 0-7.5 1.3-7.5 3s3.4 3 7.5 3s7.5-1.3 7.5-3s-3.4-3-7.5-3Z"/></svg>
+          <span class="circ rose" style="width:36px;height:36px;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#F43F5E" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.5c-1.3 1.7-2.1 2.9-2.1 4.1a2.1 2.1 0 0 0 4.2 0c0-1.2-.8-2.4-2.1-4.1Z"/><path d="M6.8 8.2c-.8 1-1.3 1.8-1.3 2.5a1.3 1.3 0 0 0 2.6 0c0-.7-.5-1.5-1.3-2.5Z"/><path d="M17.2 8.2c-.8 1-1.3 1.8-1.3 2.5a1.3 1.3 0 0 0 2.6 0c0-.7-.5-1.5-1.3-2.5Z"/><path d="M12 14c-4.1 0-7.5 1.3-7.5 3s3.4 3 7.5 3s7.5-1.3 7.5-3s-3.4-3-7.5-3Z"/></svg></span>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#0A0A0A" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.5c-1.3 1.7-2.1 2.9-2.1 4.1a2.1 2.1 0 0 0 4.2 0c0-1.2-.8-2.4-2.1-4.1Z"/><path d="M6.8 8.2c-.8 1-1.3 1.8-1.3 2.5a1.3 1.3 0 0 0 2.6 0c0-.7-.5-1.5-1.3-2.5Z"/><path d="M17.2 8.2c-.8 1-1.3 1.8-1.3 2.5a1.3 1.3 0 0 0 2.6 0c0-.7-.5-1.5-1.3-2.5Z"/><path d="M12 14c-4.1 0-7.5 1.3-7.5 3s3.4 3 7.5 3s7.5-1.3 7.5-3s-3.4-3-7.5-3Z"/></svg>
+        </div>
+        <div class="gname">Vomit: the splat (custom)</div>
+        <div class="gnote">Falling drops over a puddle — "something came up and landed," no anatomy, no
+        cartoon. Replaces the droplet that read as water/rain. Same three renders.</div>
+        <span class="verdict open">G1 — PM call</span>
       </div>
       <div>
-        <div class="k">Category colour ≠ verdict</div>
-        <div class="v">Identity tints only</div>
-        <div class="n">Rose = symptom identity, teal = food, slate = medication — the shipped Today-row
-        language. A rose circle on the Vomit tile is a category, not an alarm; no amber, no severity.</div>
-      </div>
-      <div>
-        <div class="k">Engineering</div>
-        <div class="v">One render path, no new deps</div>
-        <div class="n">Glyphs keep resolving through <code>EVENT_TYPES</code> → <code>EventIcon</code> —
-        one point of change, ready for the custom icon family when it's commissioned. Lucide swaps only.</div>
-      </div>
-      <div>
-        <div class="k">Precedent — B-113</div>
-        <div class="v">2-up tiles, already ruled</div>
-        <div class="n">The sibling food picker litigated tiles-vs-rows and the PM kept the 2-up grid
-        (Option C: harmonize structure, not layout). Every option below honors it. A horizontal
-        scroller is banned outright for a closed option set (filter-UX spec).</div>
+        <div class="stage-l">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#0A0A0A" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect width="16" height="10" x="2" y="7" rx="2" ry="2"/><line x1="22" x2="22" y1="11" y2="13"/><line x1="6" x2="6" y1="11" y2="13"/></svg>
+          <span class="circ rose" style="width:36px;height:36px;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#F43F5E" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect width="16" height="10" x="2" y="7" rx="2" ry="2"/><line x1="22" x2="22" y1="11" y2="13"/><line x1="6" x2="6" y1="11" y2="13"/></svg></span>
+        </div>
+        <div class="gname">Lethargy: BatteryLow — ruled</div>
+        <div class="gnote">R2 closed. Loose stool keeps Droplets for now; if the splat ships, its sibling
+        gets drawn in the same pass so the GI family speaks one language.</div>
+        <span class="verdict keep">Ruled (R2)</span>
       </div>
     </div>
     <div class="col">
       <div class="callout">
-        <strong>Scope fence:</strong> this round redesigns the <em>destination</em> screen only. The FAB
-        menu itself has its own standing revamp row (B-007, bottom-sheet direction) and two open
-        membership questions (B-201 Weight, B-139 Medication promotion into the FAB) — none of them are
-        answered here, and nothing here forecloses them. Whatever the FAB becomes, it will keep landing
-        on this screen.
+        <strong>The one honest caveat:</strong> a line-drawn swirl is still recognizably "the poop shape" —
+        that's the whole point — so it will always rhyme with the emoji. The distance from the text-message
+        register comes from the stroke style, the absence of a face, and the clinical tint system around
+        it. If that rhyme still feels wrong on the frames below, G1's fallback is round 1's abstractions
+        (CircleDot + Droplet), which are systemically fine — just quieter than they are legible.
       </div>
     </div>
   </section>
 
   <!-- ================================================================ -->
   <section>
-    <div class="sec-head"><span class="sec-num">03</span><h2>Three shapes, side by side</h2></div>
+    <div class="sec-head"><span class="sec-num">03</span><h2>The array — three rungs of ambition</h2></div>
     <div class="col">
-      <p>All three keep the same order owners already know (Meal → Vomit → Stool → Lethargy →
-      Itch → Medication → Weight → Other), pull "Attach photo" out of the grid into a dashed
-      utility row — an action, styled as one — and adopt the tinted-circle glyph language.
-      They differ in density and structure.</p>
+      <p>Same contents on every rung: eight event types, grouped, symptoms first, photo entry gone,
+      custom GI glyphs shown throughout (G1 pending). The rungs differ in how much of the surrounding
+      <em>experience</em> they rebuild — and each rung contains the one below it, so nothing is wasted by
+      starting low.</p>
     </div>
 
     <div class="compare">
 
-      <!-- CURRENT -->
-      <figure>
-        <div class="phone">
-          <div class="p-head">
-            <div class="p-title">Log for Nyx</div>
-            <div class="p-x"><svg class="i" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></div>
-          </div>
-          <div class="g0">
-            <div class="tile"><svg class="i" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#525252" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m16 2-2.3 2.3a3 3 0 0 0 0 4.2l1.8 1.8a3 3 0 0 0 4.2 0L22 8"/><path d="M15 15 3.3 3.3a4.2 4.2 0 0 0 0 6l7.3 7.3c.7.7 2 .7 2.8 0L15 15Zm0 0 7 7"/><path d="m2.1 21.8 6.4-6.3"/><path d="m19 5-7 7"/></svg><span>Meal</span></div>
-            <div class="tile"><svg class="i" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#525252" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22a7 7 0 0 0 7-7c0-2-1-3.9-3-5.5s-3.5-4-4-6.5c-.5 2.5-2 4.9-4 6.5C6 11.1 5 13 5 15a7 7 0 0 0 7 7z"/></svg><span>Vomit</span></div>
-            <div class="tile"><svg class="i" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#525252" stroke-width="1.75"><circle cx="12" cy="12" r="10"/></svg><span>Stool</span></div>
-            <div class="tile"><svg class="i" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#525252" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg><span>Lethargy</span></div>
-            <div class="tile"><svg class="i" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#525252" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="4" r="2"/><circle cx="18" cy="8" r="2"/><circle cx="20" cy="16" r="2"/><path d="M9 10a5 5 0 0 1 5 5v3.5a3.5 3.5 0 0 1-6.84 1.045Q6.52 17.48 4.46 16.84A3.5 3.5 0 0 1 5.5 10Z"/></svg><span>Itch/Scratch</span></div>
-            <div class="tile"><svg class="i" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#525252" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m10.5 20.5 10-10a4.95 4.95 0 1 0-7-7l-10 10a4.95 4.95 0 1 0 7 7Z"/><path d="m8.5 8.5 7 7"/></svg><span>Medication</span></div>
-            <div class="tile"><svg class="i" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#525252" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m16 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="m2 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="M7 21h10"/><path d="M12 3v18"/><path d="M3 7h2c2 0 5-1 7-2 2 1 5 2 7 2h2"/></svg><span>Weight</span></div>
-            <div class="tile"><svg class="i" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#525252" stroke-width="1.75" stroke-linecap="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg><span>Other</span></div>
-            <div class="tile dashed"><svg class="i" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#525252" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg><span>Attach photo</span></div>
-          </div>
-        </div>
-        <figcaption><b>Current — as shipped</b>
-        Faithful recreation. Borderless #FAFAFA tiles on white, flat grey glyphs, the bare-circle
-        stool, the brand-crescent lethargy, an action tile orphaned in the grid. Scrolls on smaller
-        phones.</figcaption>
-      </figure>
-
-      <!-- OPTION A -->
-      <figure>
-        <div class="phone">
-          <div class="p-head">
-            <div class="p-title">Log for Nyx</div>
-            <div class="p-x"><svg class="i" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></div>
-          </div>
-          <div class="gA">
-            <div class="tile"><span class="circ teal" style="width:44px;height:44px;"><svg class="i" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#00C2A8" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m16 2-2.3 2.3a3 3 0 0 0 0 4.2l1.8 1.8a3 3 0 0 0 4.2 0L22 8"/><path d="M15 15 3.3 3.3a4.2 4.2 0 0 0 0 6l7.3 7.3c.7.7 2 .7 2.8 0L15 15Zm0 0 7 7"/><path d="m2.1 21.8 6.4-6.3"/><path d="m19 5-7 7"/></svg></span><span class="lbl">Meal</span></div>
-            <div class="tile"><span class="circ rose" style="width:44px;height:44px;"><svg class="i" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#F43F5E" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22a7 7 0 0 0 7-7c0-2-1-3.9-3-5.5s-3.5-4-4-6.5c-.5 2.5-2 4.9-4 6.5C6 11.1 5 13 5 15a7 7 0 0 0 7 7z"/></svg></span><span class="lbl">Vomit</span></div>
-            <div class="tile"><span class="circ rose" style="width:44px;height:44px;"><svg class="i" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#F43F5E" stroke-width="1.75"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="1.5" fill="#F43F5E"/></svg></span><span class="lbl">Stool</span><span class="hint">Normal or loose</span></div>
-            <div class="tile"><span class="circ rose" style="width:44px;height:44px;"><svg class="i" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#F43F5E" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect width="16" height="10" x="2" y="7" rx="2" ry="2"/><line x1="22" x2="22" y1="11" y2="13"/><line x1="6" x2="6" y1="11" y2="13"/></svg></span><span class="lbl">Lethargy</span><span class="hint">Low energy, sleepy</span></div>
-            <div class="tile"><span class="circ rose" style="width:44px;height:44px;"><svg class="i" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#F43F5E" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="4" r="2"/><circle cx="18" cy="8" r="2"/><circle cx="20" cy="16" r="2"/><path d="M9 10a5 5 0 0 1 5 5v3.5a3.5 3.5 0 0 1-6.84 1.045Q6.52 17.48 4.46 16.84A3.5 3.5 0 0 1 5.5 10Z"/></svg></span><span class="lbl">Itch/Scratch</span></div>
-            <div class="tile"><span class="circ slate" style="width:44px;height:44px;"><svg class="i" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#5B7A9E" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m10.5 20.5 10-10a4.95 4.95 0 1 0-7-7l-10 10a4.95 4.95 0 1 0 7 7Z"/><path d="m8.5 8.5 7 7"/></svg></span><span class="lbl">Medication</span></div>
-            <div class="tile"><span class="circ neutral" style="width:44px;height:44px;"><svg class="i" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#525252" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m16 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="m2 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="M7 21h10"/><path d="M12 3v18"/><path d="M3 7h2c2 0 5-1 7-2 2 1 5 2 7 2h2"/></svg></span><span class="lbl">Weight</span></div>
-            <div class="tile"><span class="circ neutral" style="width:44px;height:44px;"><svg class="i" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#525252" stroke-width="1.75"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg></span><span class="lbl">Other</span></div>
-          </div>
-          <div class="photo-row">
-            <svg class="i" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#525252" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg>
-            <div><div class="lbl">Start from a photo</div><div class="hint">Attach it now, pick the event after</div></div>
-          </div>
-        </div>
-        <figcaption><b>Option A — Refined grid</b>
-        The current shape, brought into the system: bordered white tiles that read as buttons,
-        44px tinted circles carrying the Today-row category language, hints where a label needs one,
-        the photo action pulled into its own dashed utility row. Tallest of the three; still
-        borderline-scrolls on an SE.</figcaption>
-      </figure>
-
-      <!-- OPTION B -->
-      <figure>
-        <div class="phone">
-          <div class="p-head">
-            <div class="p-title">Log for Nyx</div>
-            <div class="p-x"><svg class="i" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></div>
-          </div>
-          <div class="gB">
-            <div class="tile"><span class="circ teal" style="width:36px;height:36px;"><svg class="i" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#00C2A8" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m16 2-2.3 2.3a3 3 0 0 0 0 4.2l1.8 1.8a3 3 0 0 0 4.2 0L22 8"/><path d="M15 15 3.3 3.3a4.2 4.2 0 0 0 0 6l7.3 7.3c.7.7 2 .7 2.8 0L15 15Zm0 0 7 7"/><path d="m2.1 21.8 6.4-6.3"/><path d="m19 5-7 7"/></svg></span><div class="txt"><div class="lbl">Meal</div></div></div>
-            <div class="tile"><span class="circ rose" style="width:36px;height:36px;"><svg class="i" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#F43F5E" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22a7 7 0 0 0 7-7c0-2-1-3.9-3-5.5s-3.5-4-4-6.5c-.5 2.5-2 4.9-4 6.5C6 11.1 5 13 5 15a7 7 0 0 0 7 7z"/></svg></span><div class="txt"><div class="lbl">Vomit</div></div></div>
-            <div class="tile"><span class="circ rose" style="width:36px;height:36px;"><svg class="i" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#F43F5E" stroke-width="1.75"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="1.5" fill="#F43F5E"/></svg></span><div class="txt"><div class="lbl">Stool</div><div class="hint">Normal or loose</div></div></div>
-            <div class="tile"><span class="circ rose" style="width:36px;height:36px;"><svg class="i" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#F43F5E" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect width="16" height="10" x="2" y="7" rx="2" ry="2"/><line x1="22" x2="22" y1="11" y2="13"/><line x1="6" x2="6" y1="11" y2="13"/></svg></span><div class="txt"><div class="lbl">Lethargy</div><div class="hint">Low energy</div></div></div>
-            <div class="tile"><span class="circ rose" style="width:36px;height:36px;"><svg class="i" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#F43F5E" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="4" r="2"/><circle cx="18" cy="8" r="2"/><circle cx="20" cy="16" r="2"/><path d="M9 10a5 5 0 0 1 5 5v3.5a3.5 3.5 0 0 1-6.84 1.045Q6.52 17.48 4.46 16.84A3.5 3.5 0 0 1 5.5 10Z"/></svg></span><div class="txt"><div class="lbl">Itch/Scratch</div></div></div>
-            <div class="tile"><span class="circ slate" style="width:36px;height:36px;"><svg class="i" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#5B7A9E" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m10.5 20.5 10-10a4.95 4.95 0 1 0-7-7l-10 10a4.95 4.95 0 1 0 7 7Z"/><path d="m8.5 8.5 7 7"/></svg></span><div class="txt"><div class="lbl">Medication</div></div></div>
-            <div class="tile"><span class="circ neutral" style="width:36px;height:36px;"><svg class="i" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#525252" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m16 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="m2 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="M7 21h10"/><path d="M12 3v18"/><path d="M3 7h2c2 0 5-1 7-2 2 1 5 2 7 2h2"/></svg></span><div class="txt"><div class="lbl">Weight</div></div></div>
-            <div class="tile"><span class="circ neutral" style="width:36px;height:36px;"><svg class="i" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#525252" stroke-width="1.75"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg></span><div class="txt"><div class="lbl">Other</div></div></div>
-          </div>
-          <div class="photo-row">
-            <svg class="i" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#525252" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg>
-            <div><div class="lbl">Start from a photo</div><div class="hint">Attach it now, pick the event after</div></div>
-          </div>
-        </div>
-        <figcaption><b>Option B — Compact button grid <span class="rec">· team recommendation</span></b>
-        Horizontal tiles, 2-up, ~62pt tall: everything above the fold on every phone we ship to, no
-        scroll, targets still half-screen-width. The whole type set is one glance — which is the
-        entire job of this screen. Hints ride under the label without stretching the grid.</figcaption>
-      </figure>
-
-      <!-- OPTION C -->
+      <!-- RUNG 1: C SETTLED -->
       <figure>
         <div class="phone">
           <div class="p-head">
@@ -436,200 +363,182 @@
           <div class="gC">
             <div class="eyebrow-s">Symptoms</div>
             <div class="row2">
-              <div class="gB tile" style="padding:12px;display:flex;align-items:center;gap:10px;background:#FFF;border:1px solid #EAEAEA;border-radius:16px;min-height:62px;"><span class="circ rose" style="width:36px;height:36px;"><svg class="i" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#F43F5E" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22a7 7 0 0 0 7-7c0-2-1-3.9-3-5.5s-3.5-4-4-6.5c-.5 2.5-2 4.9-4 6.5C6 11.1 5 13 5 15a7 7 0 0 0 7 7z"/></svg></span><div class="txt"><div class="lbl" style="font-size:14px;font-weight:500;">Vomit</div></div></div>
-              <div style="padding:12px;display:flex;align-items:center;gap:10px;background:#FFF;border:1px solid #EAEAEA;border-radius:16px;min-height:62px;"><span class="circ rose" style="width:36px;height:36px;"><svg class="i" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#F43F5E" stroke-width="1.75"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="1.5" fill="#F43F5E"/></svg></span><div class="txt"><div style="font-size:14px;font-weight:500;">Stool</div></div></div>
-              <div style="padding:12px;display:flex;align-items:center;gap:10px;background:#FFF;border:1px solid #EAEAEA;border-radius:16px;min-height:62px;"><span class="circ rose" style="width:36px;height:36px;"><svg class="i" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#F43F5E" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect width="16" height="10" x="2" y="7" rx="2" ry="2"/><line x1="22" x2="22" y1="11" y2="13"/><line x1="6" x2="6" y1="11" y2="13"/></svg></span><div class="txt"><div style="font-size:14px;font-weight:500;">Lethargy</div></div></div>
-              <div style="padding:12px;display:flex;align-items:center;gap:10px;background:#FFF;border:1px solid #EAEAEA;border-radius:16px;min-height:62px;"><span class="circ rose" style="width:36px;height:36px;"><svg class="i" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#F43F5E" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="4" r="2"/><circle cx="18" cy="8" r="2"/><circle cx="20" cy="16" r="2"/><path d="M9 10a5 5 0 0 1 5 5v3.5a3.5 3.5 0 0 1-6.84 1.045Q6.52 17.48 4.46 16.84A3.5 3.5 0 0 1 5.5 10Z"/></svg></span><div class="txt"><div style="font-size:14px;font-weight:500;">Itch/Scratch</div></div></div>
+              <div class="tileB"><span class="circ rose" style="width:36px;height:36px;"><svg class="i" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#F43F5E" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.5c-1.3 1.7-2.1 2.9-2.1 4.1a2.1 2.1 0 0 0 4.2 0c0-1.2-.8-2.4-2.1-4.1Z"/><path d="M6.8 8.2c-.8 1-1.3 1.8-1.3 2.5a1.3 1.3 0 0 0 2.6 0c0-.7-.5-1.5-1.3-2.5Z"/><path d="M17.2 8.2c-.8 1-1.3 1.8-1.3 2.5a1.3 1.3 0 0 0 2.6 0c0-.7-.5-1.5-1.3-2.5Z"/><path d="M12 14c-4.1 0-7.5 1.3-7.5 3s3.4 3 7.5 3s7.5-1.3 7.5-3s-3.4-3-7.5-3Z"/></svg></span><div><div class="lbl">Vomit</div></div></div>
+              <div class="tileB"><span class="circ rose" style="width:36px;height:36px;"><svg class="i" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#F43F5E" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3c2 .7 2.9 2.4 2.2 4.1c1.8.2 3.1 1.5 3.1 3.1c0 .8-.3 1.6-.9 2.1c1.5.4 2.6 1.6 2.6 3.1c0 1.9-1.7 3.4-3.9 3.4H8.9c-2.2 0-3.9-1.5-3.9-3.4c0-1.5 1.1-2.7 2.6-3.1c-.6-.5-.9-1.3-.9-2.1c0-1.6 1.3-2.9 3.1-3.1C9.1 5.4 10 3.7 12 3Z"/></svg></span><div><div class="lbl">Stool</div><div class="hint">Normal or loose</div></div></div>
+              <div class="tileB"><span class="circ rose" style="width:36px;height:36px;"><svg class="i" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#F43F5E" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect width="16" height="10" x="2" y="7" rx="2" ry="2"/><line x1="22" x2="22" y1="11" y2="13"/><line x1="6" x2="6" y1="11" y2="13"/></svg></span><div><div class="lbl">Lethargy</div><div class="hint">Low energy</div></div></div>
+              <div class="tileB"><span class="circ rose" style="width:36px;height:36px;"><svg class="i" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#F43F5E" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="4" r="2"/><circle cx="18" cy="8" r="2"/><circle cx="20" cy="16" r="2"/><path d="M9 10a5 5 0 0 1 5 5v3.5a3.5 3.5 0 0 1-6.84 1.045Q6.52 17.48 4.46 16.84A3.5 3.5 0 0 1 5.5 10Z"/></svg></span><div><div class="lbl">Itch/Scratch</div></div></div>
             </div>
             <div class="eyebrow-s">Food &amp; care</div>
             <div class="row2">
-              <div style="padding:12px;display:flex;align-items:center;gap:10px;background:#FFF;border:1px solid #EAEAEA;border-radius:16px;min-height:62px;"><span class="circ teal" style="width:36px;height:36px;"><svg class="i" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#00C2A8" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m16 2-2.3 2.3a3 3 0 0 0 0 4.2l1.8 1.8a3 3 0 0 0 4.2 0L22 8"/><path d="M15 15 3.3 3.3a4.2 4.2 0 0 0 0 6l7.3 7.3c.7.7 2 .7 2.8 0L15 15Zm0 0 7 7"/><path d="m2.1 21.8 6.4-6.3"/><path d="m19 5-7 7"/></svg></span><div class="txt"><div style="font-size:14px;font-weight:500;">Meal</div></div></div>
-              <div style="padding:12px;display:flex;align-items:center;gap:10px;background:#FFF;border:1px solid #EAEAEA;border-radius:16px;min-height:62px;"><span class="circ slate" style="width:36px;height:36px;"><svg class="i" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#5B7A9E" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m10.5 20.5 10-10a4.95 4.95 0 1 0-7-7l-10 10a4.95 4.95 0 1 0 7 7Z"/><path d="m8.5 8.5 7 7"/></svg></span><div class="txt"><div style="font-size:14px;font-weight:500;">Medication</div></div></div>
+              <div class="tileB"><span class="circ teal" style="width:36px;height:36px;"><svg class="i" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#00C2A8" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m16 2-2.3 2.3a3 3 0 0 0 0 4.2l1.8 1.8a3 3 0 0 0 4.2 0L22 8"/><path d="M15 15 3.3 3.3a4.2 4.2 0 0 0 0 6l7.3 7.3c.7.7 2 .7 2.8 0L15 15Zm0 0 7 7"/><path d="m2.1 21.8 6.4-6.3"/><path d="m19 5-7 7"/></svg></span><div><div class="lbl">Meal</div></div></div>
+              <div class="tileB"><span class="circ slate" style="width:36px;height:36px;"><svg class="i" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#5B7A9E" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m10.5 20.5 10-10a4.95 4.95 0 1 0-7-7l-10 10a4.95 4.95 0 1 0 7 7Z"/><path d="m8.5 8.5 7 7"/></svg></span><div><div class="lbl">Medication</div></div></div>
             </div>
             <div class="eyebrow-s">Body &amp; more</div>
             <div class="row2">
-              <div style="padding:12px;display:flex;align-items:center;gap:10px;background:#FFF;border:1px solid #EAEAEA;border-radius:16px;min-height:62px;"><span class="circ neutral" style="width:36px;height:36px;"><svg class="i" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#525252" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m16 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="m2 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="M7 21h10"/><path d="M12 3v18"/><path d="M3 7h2c2 0 5-1 7-2 2 1 5 2 7 2h2"/></svg></span><div class="txt"><div style="font-size:14px;font-weight:500;">Weight</div></div></div>
-              <div style="padding:12px;display:flex;align-items:center;gap:10px;background:#FFF;border:1px solid #EAEAEA;border-radius:16px;min-height:62px;"><span class="circ neutral" style="width:36px;height:36px;"><svg class="i" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#525252" stroke-width="1.75"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg></span><div class="txt"><div style="font-size:14px;font-weight:500;">Other</div></div></div>
+              <div class="tileB"><span class="circ neutral" style="width:36px;height:36px;"><svg class="i" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#525252" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m16 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="m2 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="M7 21h10"/><path d="M12 3v18"/><path d="M3 7h2c2 0 5-1 7-2 2 1 5 2 7 2h2"/></svg></span><div><div class="lbl">Weight</div></div></div>
+              <div class="tileB"><span class="circ neutral" style="width:36px;height:36px;"><svg class="i" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#525252" stroke-width="1.75"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg></span><div><div class="lbl">Other</div></div></div>
             </div>
           </div>
-          <div class="photo-row" style="margin-top:12px;">
-            <svg class="i" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#525252" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg>
-            <div><div class="lbl">Start from a photo</div><div class="hint">Attach it now, pick the event after</div></div>
+        </div>
+        <figcaption><b>Rung 1 — C, settled <span class="rec">· ships first regardless</span></b>
+        Exactly what was ruled, with the reactions applied: grouped, symptoms first, BatteryLow,
+        custom GI glyphs (G1 pending), no photo row. One UI PR, no flow change, no new deps.
+        This frame is the build spec.</figcaption>
+      </figure>
+
+      <!-- RUNG 2: THE SHEET -->
+      <figure>
+        <div class="phone">
+          <div class="sheet-bg">
+            <div class="zone" style="height:56px;">Home — signal</div>
+            <div class="zone" style="height:40px;">Today</div>
+          </div>
+          <div class="dim"></div>
+          <div class="sheet">
+            <div class="grab"></div>
+            <div class="p-head">
+              <div class="p-title">Log for Nyx <span style="color:#737373;font-size:13px;font-weight:400;">▾</span></div>
+            </div>
+            <div class="gC">
+              <div class="eyebrow-s">Symptoms</div>
+              <div class="row2">
+                <div class="tileB"><span class="circ rose" style="width:36px;height:36px;"><svg class="i" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#F43F5E" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.5c-1.3 1.7-2.1 2.9-2.1 4.1a2.1 2.1 0 0 0 4.2 0c0-1.2-.8-2.4-2.1-4.1Z"/><path d="M6.8 8.2c-.8 1-1.3 1.8-1.3 2.5a1.3 1.3 0 0 0 2.6 0c0-.7-.5-1.5-1.3-2.5Z"/><path d="M17.2 8.2c-.8 1-1.3 1.8-1.3 2.5a1.3 1.3 0 0 0 2.6 0c0-.7-.5-1.5-1.3-2.5Z"/><path d="M12 14c-4.1 0-7.5 1.3-7.5 3s3.4 3 7.5 3s7.5-1.3 7.5-3s-3.4-3-7.5-3Z"/></svg></span><div><div class="lbl">Vomit</div><div class="ctx">Last logged Tue</div></div></div>
+                <div class="tileB"><span class="circ rose" style="width:36px;height:36px;"><svg class="i" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#F43F5E" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect width="16" height="10" x="2" y="7" rx="2" ry="2"/><line x1="22" x2="22" y1="11" y2="13"/><line x1="6" x2="6" y1="11" y2="13"/></svg></span><div><div class="lbl">Lethargy</div><div class="ctx">Low energy</div></div></div>
+                <div class="split">
+                  <span class="circ rose" style="width:36px;height:36px;"><svg class="i" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#F43F5E" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3c2 .7 2.9 2.4 2.2 4.1c1.8.2 3.1 1.5 3.1 3.1c0 .8-.3 1.6-.9 2.1c1.5.4 2.6 1.6 2.6 3.1c0 1.9-1.7 3.4-3.9 3.4H8.9c-2.2 0-3.9-1.5-3.9-3.4c0-1.5 1.1-2.7 2.6-3.1c-.6-.5-.9-1.3-.9-2.1c0-1.6 1.3-2.9 3.1-3.1C9.1 5.4 10 3.7 12 3Z"/></svg></span>
+                  <div class="lbl">Stool</div>
+                  <div class="seg"><span>Normal</span><span>Loose</span></div>
+                </div>
+                <div class="tileB" style="grid-column: span 2;"><span class="circ rose" style="width:36px;height:36px;"><svg class="i" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#F43F5E" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="4" r="2"/><circle cx="18" cy="8" r="2"/><circle cx="20" cy="16" r="2"/><path d="M9 10a5 5 0 0 1 5 5v3.5a3.5 3.5 0 0 1-6.84 1.045Q6.52 17.48 4.46 16.84A3.5 3.5 0 0 1 5.5 10Z"/></svg></span><div><div class="lbl">Itch/Scratch</div></div></div>
+              </div>
+              <div class="eyebrow-s">Food &amp; care</div>
+              <div class="row2">
+                <div class="tileB"><span class="circ teal" style="width:36px;height:36px;"><svg class="i" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#00C2A8" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m16 2-2.3 2.3a3 3 0 0 0 0 4.2l1.8 1.8a3 3 0 0 0 4.2 0L22 8"/><path d="M15 15 3.3 3.3a4.2 4.2 0 0 0 0 6l7.3 7.3c.7.7 2 .7 2.8 0L15 15Zm0 0 7 7"/><path d="m2.1 21.8 6.4-6.3"/><path d="m19 5-7 7"/></svg></span><div><div class="lbl">Meal</div></div></div>
+                <div class="tileB"><span class="circ slate" style="width:36px;height:36px;"><svg class="i" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#5B7A9E" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m10.5 20.5 10-10a4.95 4.95 0 1 0-7-7l-10 10a4.95 4.95 0 1 0 7 7Z"/><path d="m8.5 8.5 7 7"/></svg></span><div><div class="lbl">Medication</div><div class="ctx">Amoxicillin · day 5</div></div></div>
+              </div>
+              <div class="eyebrow-s">Body &amp; more</div>
+              <div class="row2">
+                <div class="tileB"><span class="circ neutral" style="width:36px;height:36px;"><svg class="i" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#525252" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m16 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="m2 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="M7 21h10"/><path d="M12 3v18"/><path d="M3 7h2c2 0 5-1 7-2 2 1 5 2 7 2h2"/></svg></span><div><div class="lbl">Weight</div></div></div>
+                <div class="tileB"><span class="circ neutral" style="width:36px;height:36px;"><svg class="i" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#525252" stroke-width="1.75"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg></span><div><div class="lbl">Other</div></div></div>
+              </div>
+            </div>
           </div>
         </div>
-        <figcaption><b>Option C — Grouped grid</b>
-        Option B's tiles under section eyebrows (Symptoms / Food &amp; care / Body &amp; more), symptoms
-        first — the 3am-vomit cluster leads. Costs vertical space and re-orders the set owners know;
-        structure the 8-item set may not need yet. Reads best if the type set keeps growing
-        (skin, scratch are waiting in the schema).</figcaption>
+        <figcaption><b>Rung 2 — The sheet · achievable stretch</b>
+        The same picker rises as a bottom sheet over the screen you're on — Home stays visible,
+        the log feels like a beat, not a place. Three real upgrades ride it: the <strong>stool split tile</strong>
+        (Normal/Loose inline — deletes a whole sub-step from the 10-second path), a pet-switcher on the
+        title (multi-pet only), and <strong>quiet record context</strong> on tiles that have some ("Last logged Tue",
+        "day 5") — factual lines from data the app already holds, never a judgment. Aligns with B-007's
+        ruled bottom-sheet direction for the FAB, so this rung is really "do B-007's destination half."</figcaption>
+      </figure>
+
+      <!-- RUNG 3: THE DIAL -->
+      <figure>
+        <div class="phone">
+          <div class="dial-stage">
+            <div style="padding: 12px 12px 0;">
+              <div class="zone" style="height:52px;">Home — signal</div>
+              <div class="zone" style="height:36px;">Today</div>
+              <div class="zone" style="height:36px;">Trend</div>
+            </div>
+            <div class="dim" style="border-radius:0;"></div>
+
+            <div class="dial-node rtl" style="right: 24px; bottom: 210px;"><span class="circ rose" style="width:44px;height:44px;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#F43F5E" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.5c-1.3 1.7-2.1 2.9-2.1 4.1a2.1 2.1 0 0 0 4.2 0c0-1.2-.8-2.4-2.1-4.1Z"/><path d="M6.8 8.2c-.8 1-1.3 1.8-1.3 2.5a1.3 1.3 0 0 0 2.6 0c0-.7-.5-1.5-1.3-2.5Z"/><path d="M17.2 8.2c-.8 1-1.3 1.8-1.3 2.5a1.3 1.3 0 0 0 2.6 0c0-.7-.5-1.5-1.3-2.5Z"/><path d="M12 14c-4.1 0-7.5 1.3-7.5 3s3.4 3 7.5 3s7.5-1.3 7.5-3s-3.4-3-7.5-3Z"/></svg></span><span class="nlbl">Vomit</span></div>
+            <div class="dial-node rtl" style="right: 66px; bottom: 168px;"><span class="circ rose" style="width:44px;height:44px;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#F43F5E" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3c2 .7 2.9 2.4 2.2 4.1c1.8.2 3.1 1.5 3.1 3.1c0 .8-.3 1.6-.9 2.1c1.5.4 2.6 1.6 2.6 3.1c0 1.9-1.7 3.4-3.9 3.4H8.9c-2.2 0-3.9-1.5-3.9-3.4c0-1.5 1.1-2.7 2.6-3.1c-.6-.5-.9-1.3-.9-2.1c0-1.6 1.3-2.9 3.1-3.1C9.1 5.4 10 3.7 12 3Z"/></svg></span><span class="nlbl">Stool</span></div>
+            <div class="dial-node rtl" style="right: 108px; bottom: 126px;"><span class="circ teal" style="width:44px;height:44px;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#00C2A8" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m16 2-2.3 2.3a3 3 0 0 0 0 4.2l1.8 1.8a3 3 0 0 0 4.2 0L22 8"/><path d="M15 15 3.3 3.3a4.2 4.2 0 0 0 0 6l7.3 7.3c.7.7 2 .7 2.8 0L15 15Zm0 0 7 7"/><path d="m2.1 21.8 6.4-6.3"/><path d="m19 5-7 7"/></svg></span><span class="nlbl">Meal</span></div>
+            <div class="dial-node rtl" style="right: 24px; bottom: 300px;"><span class="circ rose" style="width:38px;height:38px;"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#F43F5E" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect width="16" height="10" x="2" y="7" rx="2" ry="2"/><line x1="22" x2="22" y1="11" y2="13"/><line x1="6" x2="6" y1="11" y2="13"/></svg></span><span class="nlbl">Lethargy</span></div>
+            <div class="dial-node rtl" style="right: 96px; bottom: 262px;"><span class="circ rose" style="width:38px;height:38px;"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#F43F5E" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="4" r="2"/><circle cx="18" cy="8" r="2"/><circle cx="20" cy="16" r="2"/><path d="M9 10a5 5 0 0 1 5 5v3.5a3.5 3.5 0 0 1-6.84 1.045Q6.52 17.48 4.46 16.84A3.5 3.5 0 0 1 5.5 10Z"/></svg></span><span class="nlbl">Itch</span></div>
+            <div class="dial-node rtl" style="right: 156px; bottom: 216px;"><span class="circ slate" style="width:38px;height:38px;"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#5B7A9E" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m10.5 20.5 10-10a4.95 4.95 0 1 0-7-7l-10 10a4.95 4.95 0 1 0 7 7Z"/><path d="m8.5 8.5 7 7"/></svg></span><span class="nlbl">Meds</span></div>
+            <div class="dial-node rtl" style="right: 186px; bottom: 156px;"><span class="circ neutral" style="width:38px;height:38px;"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#525252" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m16 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="m2 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="M7 21h10"/><path d="M12 3v18"/><path d="M3 7h2c2 0 5-1 7-2 2 1 5 2 7 2h2"/></svg></span><span class="nlbl">Weight</span></div>
+            <div class="dial-node rtl" style="right: 196px; bottom: 96px;"><span class="circ neutral" style="width:38px;height:38px;"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#525252" stroke-width="1.75"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg></span><span class="nlbl">Other</span></div>
+
+            <div class="dial-hint">slide to an event · release to start it</div>
+            <div class="fab56"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg></div>
+          </div>
+        </div>
+        <figcaption><b>Rung 3 — The dial · the fences</b>
+        Press-and-hold the FAB and the event types fan out as a thumb-reachable arc — slide, release,
+        you're in that event's flow. One continuous one-handed gesture; the urgent cluster sits closest
+        to the thumb. This is Principle 1 taken literally: zero taps between "something happened" and
+        the event. Honest costs: it <em>absorbs B-007</em> (the FAB menu and this picker become one surface),
+        it's a gesture custom-build with real a11y work (VoiceOver/reduced-motion fall back to Rung 1's
+        sheet), and discoverability needs care. A prototype-behind-a-flag track, not a PR.</figcaption>
       </figure>
 
     </div>
-
-    <div class="col">
-      <div class="callout">
-        <strong>Why symptoms don't lead in A and B:</strong> the FAB menu already fast-paths the two
-        urgent symptoms (Vomit, Loose stool) one level up. By the time an owner is on this screen
-        they're logging deliberately, not in a panic — so familiarity (the shipped order) beats
-        re-ranking. Option C shows the counter-argument rendered, so the call is made on frames,
-        not prose.
-      </div>
-    </div>
   </section>
 
   <!-- ================================================================ -->
   <section>
-    <div class="sec-head"><span class="sec-num">04</span><h2>Glyph decisions</h2></div>
-    <div class="col">
-      <p>All swaps stay inside Lucide (no new dependency, no custom family yet) and land in
-      <code>constants/eventTypes.ts</code>, so every surface that renders an event glyph — Today rows,
-      History, calendar, the widget's stand-ins — picks them up in the same PR. Exact icon names to be
-      verified against the installed <code>lucide-react-native</code> version at build time.</p>
-    </div>
-    <div class="glyphs">
-      <div>
-        <div class="stage-l">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#A3A3A3" stroke-width="1.75"><circle cx="12" cy="12" r="10"/></svg>
-          <span style="color:#D4D4D4;">→</span>
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#0A0A0A" stroke-width="1.75"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="1.5" fill="#0A0A0A"/></svg>
-        </div>
-        <div class="gname">Stool: Circle → CircleDot</div>
-        <div class="gnote">The bare outline reads as a failed image. The dot gives it substance — still calm, still abstract.</div>
-        <span class="verdict swap">Swap</span>
-      </div>
-      <div>
-        <div class="stage-l">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#A3A3A3" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>
-          <span style="color:#D4D4D4;">→</span>
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#0A0A0A" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect width="16" height="10" x="2" y="7" rx="2" ry="2"/><line x1="22" x2="22" y1="11" y2="13"/><line x1="6" x2="6" y1="11" y2="13"/></svg>
-          <span style="color:#D4D4D4;">/</span>
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#0A0A0A" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4v16"/><path d="M2 8h18a2 2 0 0 1 2 2v10"/><path d="M2 17h20"/><path d="M6 8v9"/></svg>
-        </div>
-        <div class="gname">Lethargy: Moon → BatteryLow / Bed</div>
-        <div class="gnote">Moon is now the brand crescent — a symptom can't wear the logo. BatteryLow says "low energy" without explanation; Bed says "sleepy" but risks reading as normal rest. R2 decides.</div>
-        <span class="verdict open">R2 — PM call</span>
-      </div>
-      <div>
-        <div class="stage-l">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#A3A3A3" stroke-width="1.75" stroke-linecap="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
-          <span style="color:#D4D4D4;">→</span>
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#0A0A0A" stroke-width="1.75"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>
-        </div>
-        <div class="gname">Other: Plus → Ellipsis</div>
-        <div class="gnote">Plus means "add/create" everywhere else in the app (FAB, add-food, add-med). "Other" is a category, not an add — the ellipsis is the universal "more".</div>
-        <span class="verdict swap">Swap</span>
-      </div>
-      <div>
-        <div class="stage-l">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#0A0A0A" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="4" r="2"/><circle cx="18" cy="8" r="2"/><circle cx="20" cy="16" r="2"/><path d="M9 10a5 5 0 0 1 5 5v3.5a3.5 3.5 0 0 1-6.84 1.045Q6.52 17.48 4.46 16.84A3.5 3.5 0 0 1 5.5 10Z"/></svg>
-        </div>
-        <div class="gname">Itch: PawPrint stays</div>
-        <div class="gnote">Genuinely hard in a generic set — every alternative (hand, waves, bug) is worse or clinically loaded. First in line for the custom icon family.</div>
-        <span class="verdict keep">Keep — flagged</span>
-      </div>
-      <div>
-        <div class="stage-l">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#0A0A0A" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m16 2-2.3 2.3a3 3 0 0 0 0 4.2l1.8 1.8a3 3 0 0 0 4.2 0L22 8"/><path d="M15 15 3.3 3.3a4.2 4.2 0 0 0 0 6l7.3 7.3c.7.7 2 .7 2.8 0L15 15Zm0 0 7 7"/><path d="m2.1 21.8 6.4-6.3"/><path d="m19 5-7 7"/></svg>
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#0A0A0A" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22a7 7 0 0 0 7-7c0-2-1-3.9-3-5.5s-3.5-4-4-6.5c-.5 2.5-2 4.9-4 6.5C6 11.1 5 13 5 15a7 7 0 0 0 7 7z"/></svg>
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#0A0A0A" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m10.5 20.5 10-10a4.95 4.95 0 1 0-7-7l-10 10a4.95 4.95 0 1 0 7 7Z"/><path d="m8.5 8.5 7 7"/></svg>
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#0A0A0A" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m16 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="m2 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="M7 21h10"/><path d="M12 3v18"/><path d="M3 7h2c2 0 5-1 7-2 2 1 5 2 7 2h2"/></svg>
-        </div>
-        <div class="gname">Meal · Vomit · Medication · Weight</div>
-        <div class="gnote">UtensilsCrossed, Droplet, Pill, Scale all hold up — tinted and circled they stop reading as placeholder. Droplets (loose stool) also stays, in the sub-step and FAB.</div>
-        <span class="verdict keep">Keep</span>
-      </div>
-    </div>
-  </section>
-
-  <!-- ================================================================ -->
-  <section>
-    <div class="sec-head"><span class="sec-num">05</span><h2>System repairs that ride along, whatever the shape</h2></div>
+    <div class="sec-head"><span class="sec-num">04</span><h2>What removing the photo entry costs — the audit</h2></div>
     <div class="col">
       <ul class="notes">
-        <li><strong>Shared <code>Header</code> migration.</strong> All five hand-rolled headers in
-          <code>app/log.tsx</code> (type / food / medication / stool-type / simple) move to the B-075
-          <code>Header</code> — <code>leading="close"</code> on the type step, <code>leading="back"</code>
-          with step-aware <code>onLeadingPress</code> on the rest. Kills the text-glyph ✕/← and the
-          under-spec 8pt hitSlop in one move.</li>
-        <li><strong>Token cleanup.</strong> <code>fontSize: 15</code> → <code>theme.textMD</code>;
-          <code>colorNeutralDark</code> → <code>colorTextPrimary</code>; the <code>width:'47%'</code>
-          hack → a real gap grid. No new literals.</li>
-        <li><strong>The stool sub-step inherits the language.</strong> Normal / Loose choice cards restyle
-          to the chosen tile shape — tinted circles (neutral CircleDot / rose Droplets), same borders,
-          same type — so step 2 doesn't feel like a different app than step 1.</li>
-        <li><strong>The attachment banner stays.</strong> Photo-attached entry keeps its banner and hides
-          the photo utility row, exactly as today. The utility row keeps the dashed border — the
-          documented "additive / not real yet" exception survives, it just stops being a grid cell.</li>
-        <li><strong>The grid extracts to <code>components/log/</code>.</strong> The type step currently
-          lives inline in the 1,681-line <code>app/log.tsx</code>; house rule says quick-log components
-          belong in <code>components/log/</code>. The redesign lands as <code>EventTypePicker</code>
-          there, which is also what makes the stool sub-step reuse free.</li>
-        <li><strong>Docs rider.</strong> The design-system README still claims event icons are emoji and
-          "no icon font is loaded" — stale since design-system PR 3 shipped Lucide. The build PR corrects
-          it in passing.</li>
-        <li><strong>No flow changes.</strong> Same routes, same sub-steps, same writes, same
-          <code>EVENT_TYPES</code> filter for diarrhea. The diff is styles + glyph refs + the Header
-          swap; nothing feeds detection, reports, or sync.</li>
+        <li><strong>Nothing is lost from capture.</strong> Photos attach inside every event flow today (the
+          photo row in the detail steps) — that row is untouched. The grid tile only offered photo-<em>first</em>
+          ordering: pick the image, then answer "which event is this for?". That ordering dies; the
+          capability doesn't.</li>
+        <li><strong>Dead code retires with it:</strong> the attachment banner on the type step, the
+          <code>attachmentUri</code>-before-type state, and the dashed tile. The design-system README's
+          dashed-border exception gets a Tier-2 cleanup note (the exception's one consumer is gone).</li>
+        <li><strong>Vomit/stool AI reads are unaffected</strong> — they trigger off photos attached in the
+          event flow, which is where owners were attaching them anyway.</li>
+        <li><strong>One watch item for the on-device pass:</strong> if any owner habitually started from the
+          camera roll (photo taken at the scene, logged later), their path is now event-first + attach
+          inside — same taps, reversed order. Worth one line in the release QA script, nothing more.</li>
       </ul>
     </div>
   </section>
 
   <!-- ================================================================ -->
   <section>
-    <div class="sec-head"><span class="sec-num">06</span><h2>React — three calls close round 1</h2></div>
+    <div class="sec-head"><span class="sec-num">05</span><h2>React — two calls close round 2</h2></div>
 
     <div class="brief">
-      <div class="bid">R1 · Shape</div>
-      <div class="bq">Which shape ships — A, B, or C?</div>
+      <div class="bid">A1 · The rung</div>
+      <div class="bq">How far up the array do we build?</div>
       <dl>
         <dt>Deciding</dt>
-        <dd>The layout of the type step (and the tile component the stool sub-step inherits).</dd>
+        <dd>What the build track for this surface is — one PR, two, or a prototype track.</dd>
         <dt>Options</dt>
-        <dd><span class="rec">B — compact button grid (recommended):</span> the whole set above the fold on every device, targets stay large, hints fit. The screen's one job is "see every option at a glance" — B is the only shape that does it on an SE.
-        · A — refined vertical grid: prettiest tiles, but borderline scroll on small phones.
-        · C — grouped: structure the 8-item set doesn't need yet; revisit when skin/scratch join.</dd>
+        <dd><span class="rec">Rung 1 now, Rung 2 as the B-007 session (recommended):</span> ship the ruled
+        C as one UI PR immediately; the sheet is genuinely B-007's destination half and deserves that
+        row's own session (it changes presentation, adds the split tile + context reads). Nothing in
+        Rung 1 is thrown away — the sheet lifts the same grid component.
+        · Jump straight to Rung 2: one bigger PR, couples this fix to B-007 scoping.
+        · Rung 3 now: not recommended as a build — if it excites, fund it as a flagged prototype
+        alongside Rung 1.</dd>
         <dt>Consequence</dt>
-        <dd>Locks round 2 (single-frame polish + edge states) and the build PR's component shape. Any shape is one UI PR, no schema, no flow change.</dd>
+        <dd>Rung-1-now = the build PR starts on this branch immediately after G1. The sheet/dial
+        decisions then live on the B-007 row, which this round has effectively pre-mocked.</dd>
       </dl>
     </div>
 
     <div class="brief">
-      <div class="bid">R2 · Lethargy glyph</div>
-      <div class="bq">Moon is the brand crescent now — what replaces it?</div>
+      <div class="bid">G1 · The GI glyphs</div>
+      <div class="bq">Custom line-drawn swirl + splat, or round 1's quiet abstractions?</div>
       <dl>
         <dt>Deciding</dt>
-        <dd>The lethargy glyph everywhere it renders (picker, Today, History, calendar, widget stand-ins).</dd>
+        <dd>Stool + vomit glyphs everywhere event glyphs render (picker, Today, History, calendar).</dd>
         <dt>Options</dt>
-        <dd><span class="rec">BatteryLow (recommended):</span> "low energy" with no explanation needed; Dr. Chen's read — it frames lethargy as a deficit state, which is clinically the right register.
-        · Bed: warmer, but "asleep" can read as normal rest — under-alarming for a symptom.
-        · Keep Moon: accepts a symptom wearing the brand mark; cheapest, and defensible until the custom family lands.</dd>
+        <dd><span class="rec">Adopt the customs (recommended):</span> literal, legible at 16px, faceless
+        and line-drawn so they hold the clinical register; quietly starts the B-746 family with its two
+        hardest glyphs, in-house, no commission.
+        · Keep the abstractions (CircleDot + Droplet): systemically fine, zero drawing risk — but the
+        legibility complaint that started this session stays half-answered.</dd>
         <dt>Consequence</dt>
-        <dd>One-line swap in <code>eventTypes.ts</code>; if Moon stays, the collision is accepted and logged for the icon-family commission instead.</dd>
-      </dl>
-    </div>
-
-    <div class="brief">
-      <div class="bid">R3 · Scope</div>
-      <div class="bq">Restyle now, or fold into the custom icon-family track?</div>
-      <dl>
-        <dt>Deciding</dt>
-        <dd>Whether this ships as one UI PR now (Lucide swaps only) or waits on commissioning the product icon family.</dd>
-        <dt>Options</dt>
-        <dd><span class="rec">Ship now (recommended):</span> the jank is layout + colour + three glyph choices, not icon craft; everything routes through <code>EventIcon</code>, so the family swap later is unchanged in cost.
-        · Wait for the family: couples a one-PR fix to an unscoped commission.</dd>
-        <dt>Consequence</dt>
-        <dd>Ship-now = round 2 mock → single build PR on this branch. Wait = this doc parks until the icon commission is scoped.</dd>
+        <dd>Adopting = two small custom SVG components behind <code>EventIcon</code> (loose stool's
+        sibling drawn in the same pass); B-746 narrows to the remaining six glyphs. Either way, one PR.</dd>
       </dl>
     </div>
 
   </section>
 
   <footer>
-    Source of truth: <code>docs/culprit-more-events-mockups.html</code> (this file, committed on the
-    <code>claude/fab-more-events-redesign</code> branch). Round 2 re-publishes over this same artifact URL —
-    if you're reading a bookmarked link, the round named in the masthead is the live one. Frame values
-    are copied from <code>constants/theme.ts</code>; glyphs are Lucide path approximations for mock
-    purposes only.
+    Source of truth: <code>docs/culprit-more-events-mockups.html</code>, round 2 (supersedes round 1's
+    A/B/C comparison — C ruled, R2/R4 recorded). Same artifact URL as round 1 by convention. Frame
+    values are copied from <code>constants/theme.ts</code>; Lucide glyphs are path approximations; the
+    swirl/splat customs are mock drafts the build refines.
   </footer>
 
 </div>
