@@ -1,0 +1,495 @@
+<title>Culprit — Trial Ledger</title>
+<style>
+  /* Token system inherited from culprit-signal-home-mockups.html so the two docs
+     read as siblings. Page chrome follows the viewer's theme; PHONE FRAMES are
+     deliberately fixed to the app's daylight ground (S7 — the record stays in
+     daylight), so their colors are literals, not tokens. */
+  :root {
+    --paper:     #F5F4F9;
+    --paper-2:   #FFFFFF;
+    --ink:       #1B1A2E;
+    --ink-2:     #5F5C7A;
+    --ink-3:     #8B87A8;
+    --rule:      #DEDCE9;
+    --rule-soft: #E9E7F1;
+    --teal:      #00C2A8;
+    --teal-ink:  #0B7B6C;
+    --teal-wash: #E0FBF7;
+    --rose:      #F43F5E;
+    --rose-ink:  #B4123B;
+    --rose-wash: #FFE4E6;
+    --med:       #5B7A9E;
+    --med-wash:  #EAF0F7;
+    --serif: ui-serif, Charter, "Bitstream Charter", "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper: #13112E; --paper-2: #1D1A42; --ink: #ECEAF6; --ink-2: #A6A2CE;
+      --ink-3: #706BA6; --rule: rgba(196,190,255,0.20); --rule-soft: rgba(196,190,255,0.11);
+      --teal-ink: #4FD8C4; --teal-wash: rgba(0,194,168,0.14);
+      --rose-ink: #FB7185; --rose-wash: rgba(251,113,133,0.14);
+      --med: #93B0CE; --med-wash: rgba(91,122,158,0.18);
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #13112E; --paper-2: #1D1A42; --ink: #ECEAF6; --ink-2: #A6A2CE;
+    --ink-3: #706BA6; --rule: rgba(196,190,255,0.20); --rule-soft: rgba(196,190,255,0.11);
+    --teal-ink: #4FD8C4; --teal-wash: rgba(0,194,168,0.14);
+    --rose-ink: #FB7185; --rose-wash: rgba(251,113,133,0.14);
+    --med: #93B0CE; --med-wash: rgba(91,122,158,0.18);
+  }
+
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font-family: var(--sans); font-size: 16px; line-height: 1.55; -webkit-font-smoothing: antialiased; }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 56px 28px 96px; }
+  .col { max-width: 68ch; }
+  .mast { border-bottom: 1px solid var(--rule); padding-bottom: 28px; margin-bottom: 40px; }
+  .eyebrow { font-family: var(--mono); font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-3); margin: 0 0 14px; display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; }
+  h1 { font-family: var(--serif); font-weight: 600; font-size: clamp(30px, 4.4vw, 44px); line-height: 1.12; letter-spacing: -0.015em; margin: 0 0 14px; text-wrap: balance; }
+  .standfirst { font-size: 17px; color: var(--ink-2); margin: 0; max-width: 62ch; }
+  .standfirst strong { color: var(--ink); font-weight: 600; }
+  .roundtag { display: inline-flex; align-items: center; gap: 7px; font-family: var(--mono); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; font-weight: 600; color: var(--teal-ink); background: var(--teal-wash); border-radius: 999px; padding: 4px 11px; }
+  section { margin-top: 72px; }
+  .sec-head { display: flex; align-items: baseline; gap: 14px; margin-bottom: 8px; border-top: 1px solid var(--rule); padding-top: 18px; }
+  .sec-num { font-family: var(--mono); font-size: 12px; color: var(--ink-3); letter-spacing: 0.08em; flex-shrink: 0; }
+  h2 { font-family: var(--serif); font-weight: 600; font-size: clamp(22px, 2.6vw, 28px); line-height: 1.2; letter-spacing: -0.01em; margin: 0; text-wrap: balance; }
+  h3 { font-weight: 600; font-size: 15px; margin: 32px 0 8px; }
+  p { margin: 0 0 16px; }
+  .col p:last-child { margin-bottom: 0; }
+  em { font-style: italic; color: var(--ink-2); }
+  strong { font-weight: 600; }
+  code { font-family: var(--mono); font-size: 0.855em; background: var(--rule-soft); border-radius: 4px; padding: 1px 5px; }
+  .callout { border-left: 2px solid var(--teal); padding: 2px 0 2px 20px; margin: 24px 0; color: var(--ink-2); font-size: 15.5px; }
+  .callout strong { color: var(--ink); }
+  .callout.warn { border-left-color: var(--rose); }
+  .badge { font-family: var(--mono); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; font-weight: 700; border-radius: 5px; padding: 2px 7px; vertical-align: 2px; margin-left: 8px; }
+  .badge.rec { color: var(--teal-ink); background: var(--teal-wash); }
+  .badge.veto { color: var(--rose-ink); background: var(--rose-wash); }
+
+  ul.spine { margin: 24px 0 0; padding: 0; list-style: none; display: grid; gap: 14px; }
+  ul.spine li { display: flex; gap: 12px; font-size: 15px; color: var(--ink-2); align-items: flex-start; }
+  ul.spine li > span:last-child { flex: 1; }
+  .sid { flex: none; font-family: var(--mono); font-size: 12px; font-weight: 600; color: var(--teal-ink); background: var(--teal-wash); border-radius: 6px; padding: 2px 8px; margin-top: 1px; display: inline-block; }
+  ul.spine li strong { color: var(--ink); }
+
+  .brief { margin: 22px 0; padding: 22px 26px; background: var(--paper-2); border: 1px solid var(--rule); border-radius: 3px; font-size: 14.5px; color: var(--ink-2); }
+  .brief b.d { font-family: var(--mono); font-size: 12px; color: var(--teal-ink); letter-spacing: 0.06em; }
+  .brief strong { color: var(--ink); }
+
+  /* ── Phone frames — fixed daylight, deliberately ─────────────── */
+  .frames { display: flex; flex-wrap: wrap; gap: 28px; margin: 28px 0 8px; align-items: flex-start; }
+  .frame { width: 336px; max-width: 100%; }
+  .phone { background: #F2F1F7; border: 1px solid #DEDCE9; border-radius: 30px; padding: 16px 14px; box-shadow: 0 1px 2px rgba(27,26,46,0.06); }
+  .phone, .phone * { color: #1B1A2E; }
+  .ph-nav { font-size: 12px; color: #5F5C7A; margin: 2px 4px 10px; display: flex; justify-content: space-between; }
+  .caption { font-size: 13.5px; color: var(--ink-2); margin-top: 12px; line-height: 1.5; }
+  .caption b { color: var(--ink); }
+  .card { background: #FFFFFF; border: 1px solid #E9E7F1; border-radius: 16px; padding: 14px 16px; margin-bottom: 12px; }
+  .kicker { font-size: 10px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: #5F5C7A; display: flex; justify-content: space-between; align-items: center; }
+  .kicker .act { color: #0B7B6C; letter-spacing: 0.04em; text-transform: none; font-size: 12px; font-weight: 600; }
+  .food { font-size: 16px; font-weight: 600; color: #23213A; margin-top: 3px; }
+  .dayline { font-size: 12.5px; color: #5F5C7A; margin-top: 2px; }
+  .windowline { font-size: 12.5px; color: #5F5C7A; margin-bottom: 6px; }
+  .bar { height: 5px; border-radius: 3px; background: #E9E7F1; overflow: hidden; margin: 8px 0 10px; }
+  .bar i { display: block; height: 5px; border-radius: 3px; background: #00C2A8; }
+  .fact { font-size: 13px; color: #4A4763; margin-top: 6px; line-height: 1.45; }
+  .qual { font-size: 11px; color: #8B87A8; margin-top: 6px; line-height: 1.5; }
+  .fwd { font-size: 13px; color: #23213A; margin-top: 8px; }
+  .serifline { font-family: var(--serif); font-size: 18px; line-height: 1.3; letter-spacing: -0.2px; color: #23213A; margin: 4px 0 2px; }
+  .chev { color: #8B87A8; }
+
+  /* The ledger — the one new chart form. Fill-state + shape encode the three
+     day-states (one chromatic mark, two neutrals — not a hue-cycled series);
+     the legend is always printed; every mark is tappable to its day. */
+  .lane { display: flex; gap: 5px; align-items: center; }
+  .lane .wk { font-family: var(--mono); font-size: 9px; color: #8B87A8; width: 30px; flex: none; }
+  .d { width: 17px; height: 17px; border-radius: 6px; flex: none; }
+  .d-meal { background: #0D9488; }
+  .d-exp  { background: #413E5E; position: relative; }
+  .d-exp::after { content: ""; position: absolute; inset: 5.5px; border-radius: 50%; background: #FFFFFF; }
+  .d-gap  { border: 1.5px solid #C9C6DA; background: transparent; }
+  .d-ghost{ border: 1.5px dashed #C9C6DA; background: transparent; }
+  .ledger { display: grid; gap: 6px; margin: 8px 0 2px; }
+  .legend { font-size: 10.5px; color: #8B87A8; margin-top: 9px; display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; }
+  .legend .d { width: 11px; height: 11px; border-radius: 4px; }
+  .legend .d-exp::after { inset: 3.5px; }
+  .dowrow { display: flex; gap: 5px; margin-bottom: 2px; }
+  .dowrow span { width: 17px; text-align: center; font-family: var(--mono); font-size: 8.5px; color: #B4B1C9; flex: none; }
+  .dowrow .wk { width: 30px; flex: none; }
+
+  .sect-label { font-size: 10px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: #8B87A8; margin: 2px 0 6px; }
+  .rrow { display: flex; justify-content: space-between; gap: 10px; font-size: 13px; color: #4A4763; padding: 7px 0; border-top: 1px solid #F0EFF6; }
+  .rrow:first-of-type { border-top: 0; }
+  .rrow .when { color: #8B87A8; flex: none; font-size: 12px; }
+  .door { display: flex; justify-content: space-between; font-size: 13.5px; font-weight: 600; color: #23213A; padding: 10px 0 2px; }
+  .door small { display: block; font-weight: 400; font-size: 11.5px; color: #8B87A8; margin-top: 1px; }
+  .medline { font-size: 12px; color: #5B7A9E; margin-top: 8px; }
+  .adj { font-size: 11.5px; color: #8B87A8; font-style: italic; margin-top: 8px; line-height: 1.5; }
+
+  /* recheck sheet */
+  .q { font-size: 10px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: #8B87A8; margin-top: 12px; }
+  .a { font-size: 13.5px; color: #23213A; margin-top: 2px; line-height: 1.45; }
+  .a small { display: block; font-size: 11px; color: #8B87A8; margin-top: 1px; }
+  .a.ghost { color: #B4B1C9; }
+  .btn { display: block; text-align: center; background: #23213A; color: #FFFFFF; border-radius: 12px; font-size: 13.5px; font-weight: 600; padding: 11px; margin-top: 14px; }
+  .btn.ghosted { background: #FFFFFF; color: #23213A; border: 1px solid #DEDCE9; }
+
+  /* safety register */
+  .flagblk { background: #FFF1F2; border: 1px solid #FECDD3; border-radius: 12px; padding: 12px 14px; margin-top: 10px; }
+  .flagblk .h { font-size: 14px; font-weight: 600; color: #23213A; line-height: 1.4; }
+  .flagblk .b { font-size: 13px; color: #23213A; margin-top: 4px; line-height: 1.45; }
+
+  .verdicts { border-collapse: collapse; width: 100%; min-width: 640px; font-size: 14px; }
+  .verdicts th, .verdicts td { text-align: left; padding: 9px 14px 9px 0; border-bottom: 1px solid var(--rule-soft); vertical-align: top; }
+  .verdicts th { font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-3); font-weight: 600; }
+  .verdicts td:first-child { font-weight: 600; white-space: nowrap; }
+  .tablewrap { overflow-x: auto; margin: 24px 0; }
+</style>
+
+<div class="wrap">
+
+<header class="mast">
+  <p class="eyebrow"><span class="roundtag"><b>ROUND 1</b> · 2026-08-12</span> <span>B-745 · diet-trial surface uplift</span> <span>sibling of the B-721 signal mocks</span></p>
+  <h1>The trial ledger</h1>
+  <p class="standfirst">The Signal got receipts, a register, and a phone-call script — and two cards down, <strong>the wedge feature</strong> renders a header, a 4px bar, and one line. This round proposes the same treatment for the diet trial: <strong>a ledger</strong> (the paper diary grid, digitized), <strong>a trial room</strong> (one tap in), and <strong>“For the recheck”</strong> (the trial’s answer to “what to tell your vet”). Nothing here changes the engine, the predicates, or a single ratified state — it renders what <code>TrialFacts</code> already computes.</p>
+</header>
+
+<section>
+  <div class="sec-head"><span class="sec-num">§ 00</span><h2>Where this stands</h2></div>
+  <div class="col">
+    <p><strong>This deck proposes; it supersedes nothing yet.</strong> <code>nyx-diet-trial-mockups.html</code> rounds 1–5 remain the design authority for the card’s eleven states and the lifecycle screens — this track adds <em>hosts and evidence around</em> that card, not changes to it. The full reasoning, persona exercises, and research live in <code>docs/sessions/2026-08-12-diet-trial-signal-uplift-exploration.md</code>.</p>
+    <p class="callout"><strong>The one-sentence case.</strong> The resolver knows eleven states, six withholding reasons, itemized exposures with reasons, and refusal facts in two windows — and Home shows almost none of it. <strong>The underwhelm is not missing data; it is unrendered data.</strong></p>
+  </div>
+</section>
+
+<section>
+  <div class="sec-head"><span class="sec-num">§ 01</span><h2>What the human elimination-diet world taught us</h2></div>
+  <div class="col">
+    <p>A research pass this session cataloged mySymptoms, Monash FODMAP, Bearable, Cara Care, Bowelle, Spoonful, Fig, Selectivor, myIBS and others. Three findings shape every frame below:</p>
+    <p><strong>1 · Nobody renders logging density as a first-class series.</strong> Every human overlay chart silently assumes the diary is complete, because the patient is the logger. Our owner is a third-party observer — so the C5 ruling (density disclosed beside any symptom statement) isn’t a caveat we owe, it’s <em>the category’s first honest version of this chart</em>. The ledger makes it ambient.</p>
+    <p><strong>2 · The market leader discovered our S2 rule, then undermined it.</strong> mySymptoms renders every suspicion as two adjacent bars — strength <em>and</em> amount of evidence — then wraps them in a ranked “Top Suspects” list that reads as an indictment, with the correlation≠cause caveat in the manual. <strong>The screen wins</strong> — which is why every qualifier below is inline, never a legend.</p>
+    <p><strong>3 · The deepest blue ocean is one phase further out.</strong> Monash’s scheduled reintroduction challenge (one food, three days, a per-day dose ladder, outcome feeding the food guide) is proven human tooling for a step that is standard veterinary protocol — and no pet app has any surface for it. Out of this round’s scope; flagged as the roadmap note in §08.</p>
+  </div>
+</section>
+
+<section>
+  <div class="sec-head"><span class="sec-num">§ 02</span><h2>Home — how much ledger lives on the strip <span class="badge rec">D-T1 · pick a frame</span></h2></div>
+  <div class="col">
+    <p>The strip’s ratified placement holds in every option: below Signal, above Today — a trial is context, not an insight, and safety always leads. What varies is how much evidence rides the glance. <em>Mochi (Jordan’s dog) · rabbit-protein GI trial · day 24 of 42.</em></p>
+  </div>
+  <div class="frames">
+    <div class="frame">
+      <div class="phone">
+        <div class="ph-nav"><span>‹ Home</span><span>today</span></div>
+        <div class="card">
+          <div class="kicker"><span>Rabbit trial · day 24 of 42</span><span class="chev">›</span></div>
+          <div class="bar"><i style="width:57%"></i></div>
+          <div class="fact">Meals logged on 22 of 24 days.</div>
+        </div>
+      </div>
+      <p class="caption"><b>02a — as shipped.</b> Header, day bar, one line. Correct, ruled, and the thing the mandate calls underwhelming.</p>
+    </div>
+    <div class="frame">
+      <div class="phone">
+        <div class="ph-nav"><span>‹ Home</span><span>today</span></div>
+        <div class="card">
+          <div class="kicker"><span>Rabbit trial · day 24 of 42</span><span class="chev">›</span></div>
+          <div class="bar"><i style="width:57%"></i></div>
+          <div class="dowrow"><span class="wk"></span><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span><span>S</span></div>
+          <div class="lane"><span class="wk">wk 4</span><span class="d d-meal"></span><span class="d d-meal"></span><span class="d d-exp"></span><span class="d d-ghost"></span><span class="d d-ghost"></span><span class="d d-ghost"></span><span class="d d-ghost"></span></div>
+          <div class="fact">Meals logged on 22 of 24 days.</div>
+        </div>
+      </div>
+      <p class="caption"><b>02b — the strip earns one receipt.</b> <span class="badge rec">RECOMMENDED</span> The current week as seven day-marks: filled = meal day, ringed ink = a day with an off-diet feeding recorded, dashed = still to come. Glance evidence within the ratified hierarchy; the full ledger lives one tap in (S9). A strip-component change only.</p>
+    </div>
+    <div class="frame">
+      <div class="phone">
+        <div class="ph-nav"><span>‹ Home</span><span>today</span></div>
+        <div class="card">
+          <div class="kicker"><span>Rabbit trial · day 24 of 42</span><span class="chev">›</span></div>
+          <div class="bar"><i style="width:57%"></i></div>
+          <div class="ledger">
+            <div class="lane"><span class="wk">wk 1</span><span class="d d-meal"></span><span class="d d-meal"></span><span class="d d-meal"></span><span class="d d-meal"></span><span class="d d-gap"></span><span class="d d-meal"></span><span class="d d-meal"></span></div>
+            <div class="lane"><span class="wk">wk 2</span><span class="d d-meal"></span><span class="d d-meal"></span><span class="d d-meal"></span><span class="d d-meal"></span><span class="d d-meal"></span><span class="d d-meal"></span><span class="d d-meal"></span></div>
+            <div class="lane"><span class="wk">wk 3</span><span class="d d-meal"></span><span class="d d-exp"></span><span class="d d-meal"></span><span class="d d-meal"></span><span class="d d-gap"></span><span class="d d-meal"></span><span class="d d-meal"></span></div>
+            <div class="lane"><span class="wk">wk 4</span><span class="d d-meal"></span><span class="d d-meal"></span><span class="d d-exp"></span><span class="d d-ghost"></span><span class="d d-ghost"></span><span class="d d-ghost"></span><span class="d d-ghost"></span></div>
+          </div>
+          <div class="fact">Meals logged on 22 of 24 days.</div>
+        </div>
+      </div>
+      <p class="caption"><b>02c — the whole ledger on Home.</b> The honest cost: a card this rich sits directly under the Signal zone and competes with the safety register above it — the S1 mechanism (plainness signals severity) only works if richness is rationed. Drawn so the trade is visible, not to be talked out of.</p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="sec-head"><span class="sec-num">§ 03</span><h2>The trial room <span class="badge rec">D-T2</span></h2></div>
+  <div class="col">
+    <p>Tapping the strip currently lands on the Pet tab. Proposal: a dedicated read-only screen — <code>/trial</code>, the shape <code>/rundown</code> and <code>/day-summary</code> established. <strong>The shipped card v2 renders at the top, unchanged</strong> — same component, same resolver, every ratified state and register preserved by construction — and the evidence sections stack beneath it.</p>
+  </div>
+  <div class="frames">
+    <div class="frame">
+      <div class="phone">
+        <div class="ph-nav"><span>‹ Home</span><span>Mochi’s trial</span></div>
+        <div class="card">
+          <div class="kicker"><span>Rabbit trial</span><span class="act">Replace</span></div>
+          <div class="food">Royal Canin Selected Protein PR</div>
+          <div class="dayline">Day 24 of 42</div>
+          <div class="windowline">Ends 30 August</div>
+          <div class="bar"><i style="width:57%"></i></div>
+          <div class="fact">Meals logged on 22 of 24 days.</div>
+          <div class="fact">63 feedings in total — 61 matched, 2 did not. The 2 are what’s been logged, not a total.</div>
+          <div class="qual">Culprit only sees what’s logged — flavoured liquids and tablets, other households and foraging aren’t visible here.</div>
+          <div class="medline">During an active omeprazole course — 12 doses logged.</div>
+        </div>
+        <div class="card">
+          <div class="sect-label">The record</div>
+          <div class="dowrow"><span class="wk"></span><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span><span>S</span></div>
+          <div class="ledger">
+            <div class="lane"><span class="wk">wk 1</span><span class="d d-meal"></span><span class="d d-meal"></span><span class="d d-meal"></span><span class="d d-meal"></span><span class="d d-gap"></span><span class="d d-meal"></span><span class="d d-meal"></span></div>
+            <div class="lane"><span class="wk">wk 2</span><span class="d d-meal"></span><span class="d d-meal"></span><span class="d d-meal"></span><span class="d d-meal"></span><span class="d d-meal"></span><span class="d d-meal"></span><span class="d d-meal"></span></div>
+            <div class="lane"><span class="wk">wk 3</span><span class="d d-meal"></span><span class="d d-exp"></span><span class="d d-meal"></span><span class="d d-meal"></span><span class="d d-gap"></span><span class="d d-meal"></span><span class="d d-meal"></span></div>
+            <div class="lane"><span class="wk">wk 4</span><span class="d d-meal"></span><span class="d d-meal"></span><span class="d d-exp"></span><span class="d d-ghost"></span><span class="d d-ghost"></span><span class="d d-ghost"></span><span class="d d-ghost"></span></div>
+          </div>
+          <div class="legend"><span class="d d-meal"></span> meal day <span class="d d-exp"></span> off-diet feeding recorded <span class="d d-gap"></span> no meals logged</div>
+        </div>
+        <div class="card">
+          <div class="sect-label">Outside the trial list — 2 logged</div>
+          <div class="rrow"><span>Dental chew — not recognised as trial food</span><span class="when">Tue 4 Aug ›</span></div>
+          <div class="rrow"><span>Trail-mix treat — lists chicken</span><span class="when">Wed 12 Aug ›</span></div>
+          <div class="fwd">Keep going with the trial diet. Your vet will want to see this at the recheck.</div>
+        </div>
+        <div class="card">
+          <div class="sect-label">What the symptoms did</div>
+          <div class="rrow"><span>Wk 3 · 2 loose-stool events</span><span class="when">logged 6 of 7 days</span></div>
+          <div class="rrow"><span>Wk 4 · 1 loose-stool event so far</span><span class="when">logged 3 of 3 days</span></div>
+          <div class="adj">A quieter week partway through a diet trial isn’t the trial’s verdict — the full run is what makes it readable.</div>
+        </div>
+        <div class="card">
+          <div class="door"><span>For the recheck<small>When your vet asks, the record answers.</small></span><span class="chev">›</span></div>
+        </div>
+        <div class="card">
+          <div class="door"><span>What Mochi can eat</span><span class="chev">›</span></div>
+          <div class="door"><span>Open vet report</span><span class="chev">›</span></div>
+        </div>
+      </div>
+      <p class="caption"><b>03 — the room.</b> Card v2 verbatim at top (with the §5.4-grammar med-context line); then the ledger (weeks stacked, older weeks collapse behind a count past ~6); the exposure receipt (each row tappable to <em>which rung fired</em> — the Fig steal, already spec’d §5.3 — into the shipped B-616 exposures screen); weekly symptom counts with density printed on every row; the recheck door; the existing doors. Every section is a read of an existing predicate output — no server change anywhere in this deck.</p>
+    </div>
+    <div class="frame">
+      <p class="caption" style="margin-top:0"><b>Why the ledger is the right chart, in four constraints it satisfies at once:</b></p>
+      <ul class="spine">
+        <li><span class="sid">C5</span><span><strong>Density is ambient, not appended.</strong> A gap renders as a hollow mark — the “counted from days you logged” disclosure made visible, which no human app ships (§01).</span></li>
+        <li><span class="sid">§6.9</span><span><strong>It cannot blend.</strong> A grid physically has no way to collapse coverage and exposures into one number — the paper diary’s structural honesty, kept.</span></li>
+        <li><span class="sid">§5.1</span><span><strong>Two facts, two captions.</strong> Marks are <em>coverage</em> days (<code>coveredDayIndices</code>, non-treat meals) and wear the LOCKED coverage sentence; symptom-row density is <em>days with any log</em> — different day sets, never captioned as each other.</span></li>
+        <li><span class="sid">B-592</span><span><strong>The window explains itself.</strong> Rows stop at the target end while the day counter keeps counting — the overrun pair gets its missing sentence by geometry.</span></li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="sec-head"><span class="sec-num">§ 04</span><h2>“For the recheck” — the aha <span class="badge rec">D-T5</span></h2></div>
+  <div class="col">
+    <p>The Signal’s phone-call script is for an unscheduled call. A diet trial has a <em>scheduled judgment day</em> — the recheck — and its questions are printed protocol (the Zoetis recheck checklist; 53% of owners can’t name the diet they’re feeding). The sheet answers the vet’s checklist before it’s asked, from facts the app already holds. One sheet, two registers: the calm prep register below, and — when a safety state is live — the phone-script register beside it.</p>
+  </div>
+  <div class="frames">
+    <div class="frame">
+      <div class="phone">
+        <div class="ph-nav"><span>‹ Mochi’s trial</span><span></span></div>
+        <div class="card">
+          <div class="sect-label">For the recheck</div>
+          <div class="serifline">When your vet asks, the record answers.</div>
+          <div class="q">What’s she eating, and how long?</div>
+          <div class="a">Royal Canin Selected Protein PR (rabbit) — day 24 of 42, started 20 July.</div>
+          <div class="q">Anything else by mouth?</div>
+          <div class="a">2 feedings outside the trial list, logged and dated ›<small>What’s been logged, not a total.</small></div>
+          <div class="q">Is she eating it?</div>
+          <div class="a">33 of 35 rated meals finished.</div>
+          <div class="q">What did the symptoms do?</div>
+          <div class="a">Loose stool — 2 events in week 3, 1 so far in week 4.<small>Counted from days you logged: 6 of 7, then 3 of 3.</small></div>
+          <div class="q">What else is she on?</div>
+          <div class="a">Omeprazole — 12 doses logged during the trial.</div>
+          <div class="q">Weight?</div>
+          <div class="a">9.8 kg on 20 July, 9.9 kg on 8 August — 2 weigh-ins.</div>
+          <div class="btn">Open vet report</div>
+        </div>
+      </div>
+      <p class="caption"><b>04a — the prep register.</b> Question-shaped labels, count-anchored answers, every denominator printed, qualifiers inline. The sheet <em>states, never concludes</em> — no “improving,” no “clean” — and it ends at the report door, because the report is the artifact and this is the waiting-room version. Jordan: <em>“the exam room is where I go blank — this is the moment I’d screenshot.”</em></p>
+    </div>
+    <div class="frame">
+      <div class="phone">
+        <div class="ph-nav"><span>‹ Pixel’s trial</span><span></span></div>
+        <div class="card">
+          <div class="sect-label">If you call the clinic</div>
+          <div class="serifline">The facts to have ready.</div>
+          <div class="q">What’s happening</div>
+          <div class="a">9 of 11 rated meals not finished since Friday.</div>
+          <div class="q">The diet</div>
+          <div class="a">Hill’s z/d — day 9 of 42, started 4 August.</div>
+          <div class="q">Last finished meal</div>
+          <div class="a">Monday evening.</div>
+          <div class="q">Weight</div>
+          <div class="a">4.6 kg on 4 August — 1 weigh-in on record.</div>
+          <div class="q">Also on</div>
+          <div class="a">No medication doses logged during the trial.</div>
+          <div class="btn ghosted">Open vet report</div>
+        </div>
+      </div>
+      <p class="caption"><b>04b — the same sheet, safety-live.</b> When the refusal register (or intake decline) is live, the header flips to the Signal’s ratified phone-script register and the safety fact leads. The judgment that something is wrong comes from the shipped register, never from this sheet — it reorders, it does not diagnose. Facts-only, no receipts, no color: <b>S1 inherited.</b></p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="sec-head"><span class="sec-num">§ 05</span><h2>Mid-trial symptoms — the genuine conflict <span class="badge rec">D-T3 · pick a frame</span></h2></div>
+  <div class="col">
+    <p><strong>Jordan:</strong> “is it working?” is the question I actually have at week four. <strong>Dr. Chen:</strong> a mid-trial delta is a verdict invitation on a confounded curve — a concurrent steroid or a treated ear infection produces the identical improvement. Both frames drawn; the second exists to make the veto’s reason visible.</p>
+  </div>
+  <div class="frames">
+    <div class="frame">
+      <div class="phone">
+        <div class="card">
+          <div class="sect-label">What the symptoms did</div>
+          <div class="rrow"><span>Wk 2 · 3 loose-stool events</span><span class="when">logged 7 of 7 days</span></div>
+          <div class="rrow"><span>Wk 3 · 2 loose-stool events</span><span class="when">logged 6 of 7 days</span></div>
+          <div class="rrow"><span>Wk 4 · 1 loose-stool event so far</span><span class="when">logged 3 of 3 days</span></div>
+          <div class="adj">A quieter week partway through a diet trial isn’t the trial’s verdict — the full run is what makes it readable.</div>
+        </div>
+      </div>
+      <p class="caption"><b>05a — counts with density, no comparison framing.</b> <span class="badge rec">RECOMMENDED</span> Per-week event counts (bars would add nothing at n≤3 — the count is the mark), density printed on every row, the §3.4 adjacency sentence standing wherever this renders mid-trial (the criticalist’s condition, accepted into the spine). Report parity: this is the C5 pairing the cold-read called <em>“the single best thing on the page,”</em> in count form.</p>
+    </div>
+    <div class="frame">
+      <div class="phone">
+        <div class="card" style="border-color:#FECDD3">
+          <div class="sect-label">Before the trial · during</div>
+          <div class="rrow"><span>Loose stool</span><span class="when">9 before · 6 during</span></div>
+          <div class="rrow"><span>Vomiting</span><span class="when">3 before · 1 during</span></div>
+        </div>
+      </div>
+      <p class="caption"><b>05b — the before/during compare, mid-trial.</b> <span class="badge veto">EXPECTED VETO</span> This exact shape is <em>ratified at completion</em> (§4.3 leads with it) — mid-trial it hands the owner the verdict question at week three, when stopping early is the modal failure. Drawn so the ruling is made on frames, not words. If the PM wants it anyway, it needs a fresh Dr. Chen ruling this session does not have.</p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="sec-head"><span class="sec-num">§ 06</span><h2>The hard states — where the design proves itself</h2></div>
+  <div class="col">
+    <p>The signal redesign’s deepest rule transfers whole: <strong>as benign surfaces get richer, safety faces stay plain — plainness is the severity signal.</strong> And the states most likely to ship broken are the ones that must not look like a downgrade of the pretty one.</p>
+  </div>
+  <div class="frames">
+    <div class="frame">
+      <div class="phone">
+        <div class="ph-nav"><span>‹ Home</span><span>Pixel’s trial</span></div>
+        <div class="card">
+          <div class="kicker"><span>Diet trial · day 9 of 42</span></div>
+          <div class="flagblk">
+            <div class="h">The trial diet is mostly going unfinished.</div>
+            <div class="b">9 of 11 rated meals since Friday weren’t eaten. A cat avoiding food is worth a call today — other trial diets exist, and your clinic can help switch her.</div>
+            <div class="b">Veterinary trial diets are often guaranteed — ask your clinic about swapping the bag.</div>
+          </div>
+          <div class="fact" style="margin-top:10px">2 feedings outside the trial list, logged and dated.</div>
+        </div>
+      </div>
+      <p class="caption"><b>06a — refusal, the replacement register (Sam’s frame).</b> No ledger on the face, no receipt, no color but the one tinted block the design lock already draws. The floor line still renders (never withhold the floor). The guarantee line is the research’s cleanest Pets &gt; $ steal — it attacks the number-one feline abandonment reason at zero cost, and it asks, never promises. In the room, this leads and the record sections render unchanged below it: a flag never deletes the record.</p>
+    </div>
+    <div class="frame">
+      <div class="phone">
+        <div class="ph-nav"><span>‹ Home</span><span>Pixel’s trial</span></div>
+        <div class="card">
+          <div class="kicker"><span>Diet trial · day 12 of 42</span></div>
+          <div class="food">Hill’s z/d</div>
+          <div class="bar"><i style="width:29%"></i></div>
+          <div class="fact">Pixel’s bowl stays topped up through the day, so meals aren’t logged one by one.</div>
+          <div class="fact">14 feedings logged alongside the bowl.</div>
+        </div>
+      </div>
+      <p class="caption"><b>06b — free-fed (the grazer).</b> No ledger at all — day-marks don’t apply to a free-choice bowl, and eight rows of hollow dots would tell Sam the app wasn’t built for cats. The arrangement line leads, the logged count renders bare, nothing implies failure. The §5.6 rules (ratio replaced, claim gated) hold untouched.</p>
+    </div>
+    <div class="frame">
+      <div class="phone">
+        <div class="ph-nav"><span>‹ Home</span><span>Mochi’s trial</span></div>
+        <div class="card">
+          <div class="sect-label">The record</div>
+          <div class="dowrow"><span class="wk"></span><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span><span>S</span></div>
+          <div class="ledger">
+            <div class="lane"><span class="wk">wk 1</span><span class="d d-meal"></span><span class="d d-ghost"></span><span class="d d-ghost"></span><span class="d d-ghost"></span><span class="d d-ghost"></span><span class="d d-ghost"></span><span class="d d-ghost"></span></div>
+          </div>
+          <div class="legend"><span class="d d-meal"></span> meal day <span class="d d-ghost"></span> still to come</div>
+          <div class="fwd">Day 1 — the ledger fills as you log. By the recheck it’s the record your vet reads.</div>
+        </div>
+        <div class="card">
+          <div class="sect-label">For the recheck</div>
+          <div class="q">Anything else by mouth?</div>
+          <div class="a ghost">— fills in as you log</div>
+          <div class="q">What did the symptoms do?</div>
+          <div class="a ghost">— fills in as you log</div>
+        </div>
+      </div>
+      <p class="caption"><b>06c — day one, the ghost ledger (E1’s analog).</b> Hollow dashed marks and dash-answers — never fake numbers. The reason to log is visible from day 1: the sheet the vet will read is already on screen, empty and waiting. This is the empty-state-as-feature principle doing retention work.</p>
+    </div>
+    <div class="frame">
+      <div class="phone">
+        <div class="ph-nav"><span>‹ Home</span><span>Mochi’s trial</span></div>
+        <div class="card">
+          <div class="sect-label">The record</div>
+          <div class="ledger">
+            <div class="lane"><span class="wk">wk 3</span><span class="d d-meal"></span><span class="d d-gap"></span><span class="d d-gap"></span><span class="d d-gap"></span><span class="d d-meal"></span><span class="d d-meal"></span><span class="d d-meal"></span></div>
+          </div>
+          <div class="fact">Meals logged on 20 of 24 days.</div>
+          <div class="fwd">A gap is just a gap — the record picks up where you do.</div>
+        </div>
+      </div>
+      <p class="caption"><b>06d — the gap week.</b> Jordan’s binding constraint from round 4 holds: the owner logging least is the one closest to quitting, and this card hands them facts and a forward line, never a scold. Hollow marks are TR-3’s honest absence; no streak broke, because there is no streak.</p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="sec-head"><span class="sec-num">§ 07</span><h2>The spine — TR-1..8, proposed as binding</h2></div>
+  <ul class="spine">
+    <li><span class="sid">TR-1</span><span><strong>The ledger is a record, never a scoreboard.</strong> No percentage, grade, streak, or blended metric in any form (D2/§6.9 restated).</span></li>
+    <li><span class="sid">TR-2</span><span><strong>An exposure mark is ink, never rose.</strong> Rose belongs to the animal (safety registers), never to the record — a slip is a recorded fact, not a moral color.</span></li>
+    <li><span class="sid">TR-3</span><span><strong>A gap renders as a gap</strong> — hollow, honest, unshamed.</span></li>
+    <li><span class="sid">TR-4</span><span><strong>Safety faces stay plain</strong> (S1 inherited): replacements gain no receipts; in the room they lead, and the record renders unchanged below — a flag never deletes the record.</span></li>
+    <li><span class="sid">TR-5</span><span><strong>Mid-trial change never verdicts:</strong> no before/during comparison until completion; the adjacency sentence accompanies weekly counts wherever they render; density is inseparable from any symptom count.</span></li>
+    <li><span class="sid">TR-6</span><span><strong>The sheet states with denominators and ends at the report.</strong> Prep, never a second report, never triage — a live safety state flips its register; existing safety lanes are pointed to, not duplicated.</span></li>
+    <li><span class="sid">TR-7</span><span><strong>One predicate, painted.</strong> Every mark derives from <code>TrialFacts</code> arrays verbatim; coverage days and any-log days are different sets, never captioned as each other.</span></li>
+    <li><span class="sid">TR-8</span><span><strong>Belief vs evidence, inherited.</strong> The ledger spans the coverage window; the receipt itemizes the evidence window; nothing re-derives either.</span></li>
+  </ul>
+</section>
+
+<section>
+  <div class="sec-head"><span class="sec-num">§ 08</span><h2>Decisions <span class="badge rec">5 briefs + 1 roadmap note</span></h2></div>
+  <div class="brief"><b class="d">D-T1 · the Home surface.</b> <strong>Deciding:</strong> what the strip becomes (frames 02a/b/c). <strong>Options:</strong> keep 02a · <strong>02b strip + week lane (recommended — glance evidence inside the ratified hierarchy)</strong> · 02c full ledger on Home. <strong>Consequence:</strong> 02b is a strip-component change; 02c renegotiates §4.2’s compact-strip ruling and the Principle-3 adjacency.</div>
+  <div class="brief"><b class="d">D-T2 · the tap-through.</b> <strong>Deciding:</strong> where the strip lands (frame 03). <strong>Options:</strong> <strong>the <code>/trial</code> room (recommended — card unchanged at top; read-only; no new write paths)</strong> · keep routing to the profile card (T3 then has no home and the uplift shrinks to the strip). <strong>Consequence:</strong> renegotiates the round-3 “tap opens the Pet tab” ruling; the profile card stays either way.</div>
+  <div class="brief"><b class="d">D-T3 · mid-trial symptoms.</b> <strong>Deciding:</strong> what the room says before completion (05a/05b). <strong>Options:</strong> nothing mid-trial · <strong>05a counts + density + adjacency (recommended — report parity, Dr. Chen-constrained)</strong> · 05b before/during compare (expected clinical veto, drawn to show why). <strong>Consequence:</strong> 05a reuses the completion sheet’s computation; 05b needs a fresh clinical ruling.</div>
+  <div class="brief"><b class="d">D-T4 · the flag.</b> <strong>Deciding:</strong> the rollout gate. <strong>Options:</strong> <strong>own <code>trial_design_v2</code> allowlist flag, FR-FLAG-1..5 inherited verbatim (recommended — GAs independently of the signal uplift)</strong> · ride <code>signal_design_v2</code>. <strong>Consequence:</strong> own flag = one seed-migration PR (the B-712 shape); riding couples two GA calls.</div>
+  <div class="brief"><b class="d">D-T5 · “For the recheck” scope.</b> <strong>Deciding:</strong> whether the sheet ships in this track’s v1 (frames 04a/b). <strong>Options:</strong> <strong>v1 full (recommended — it is the aha, and every line is an existing fact)</strong> · v1 facts-only (no ghosts, no register flip) · defer. <strong>Consequence:</strong> deferring reduces the track to a re-render and forfeits the section the mandate asked for.</div>
+  <div class="brief"><b class="d">D-T6 · roadmap, not this track.</b> The reintroduction/challenge phase (Monash’s scheduled challenge unit, vet-configured doses, counts-not-verdicts endpoint) is the deepest unclaimed water the research found — standard veterinary protocol, proven human tooling, zero pet competitors. Its own discovery + Dr. Chen convening when the PM wants it; recorded on B-745’s row.</div>
+</section>
+
+<section>
+  <div class="sec-head"><span class="sec-num">§ 09</span><h2>Held constant — not proposed, not negotiable here</h2></div>
+  <div class="col">
+    <p>No engine, predicate, threshold, or schema change · the eleven states and the register/disclosure table untouched · G2 (no negative claim, ever) · the exposure count as a floor with its inline qualifier · no percentage, grade, streak, score, or blended metric anywhere · no exposure↔symptom visual linking (flare lag is 1–14 days; the nearest-meal join is the bug this repo already shipped once) · no “top suspects” ranking inside a trial · rose reserved for the animal · the record stays in daylight (S7) · the milestone, completion sheet, and start modal as designed in rounds 4–5 · logging stays the FAB’s job (no second door; the room is read-only).</p>
+  </div>
+</section>
+
+<section>
+  <div class="sec-head"><span class="sec-num">§ 10</span><h2>React</h2></div>
+  <div class="col">
+    <p class="callout"><strong>Fastest useful reaction:</strong> rule the five briefs in §08 (each has a recommendation — “go with the recommendations” is a complete answer), then walk §02 and §05 and pick from the frames. Everything else in this deck survives any combination of those rulings.</p>
+    <p><strong>R1-1</strong> — D-T1: 02a, 02b, or 02c?<br>
+    <strong>R1-2</strong> — D-T2: does the strip earn its own room?<br>
+    <strong>R1-3</strong> — D-T5: the recheck sheet — v1 full, facts-only, or defer? And does the 04b register flip read right?<br>
+    <strong>R1-4</strong> — D-T3: 05a or nothing? (05b is drawn to be vetoed — say so if you want it anyway.)<br>
+    <strong>R1-5</strong> — D-T4: own flag or ride the signal’s?<br>
+    <strong>R1-6</strong> — The ledger’s marks: does ringed-ink read as “recorded fact” rather than “bad day”? (TR-2 is the rule it expresses.)<br>
+    <strong>R1-7</strong> — S10 pass: anything here a receipt that doesn’t earn its place? Name it and it dies happily.<br>
+    <strong>R1-8</strong> — D-T6: appetite for the challenge-phase discovery, and when?</p>
+  </div>
+</section>
+
+</div>
