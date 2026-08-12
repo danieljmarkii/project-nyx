@@ -1,0 +1,548 @@
+<title>Culprit — Onboarding &amp; the first week</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  /* ============================================================
+     Onboarding & new-user experience — B-745, mock ROUND 1 (LOW-FI).
+     Ideation record: docs/sessions/2026-08-12-onboarding-nux-ideation.md
+     Evidence brief:  docs/research/2026-08-onboarding-activation-landscape.md
+
+     Round 1 is deliberately lower fidelity (PM's ask): real copy,
+     honest structure, minimal decoration. Frames marked LO-FI use
+     dashed placeholders where a later round would render real
+     components. Document chrome follows the house mock convention;
+     DEVICE FRAMES stay light in both themes (they render the app's
+     shipping light surfaces); the two night frames paint their own
+     night ground explicitly. Frame values echo constants/theme.ts.
+     ============================================================ */
+
+  :root {
+    --paper:      #F5F4F9;
+    --paper-2:    #FFFFFF;
+    --ink:        #1B1A2E;
+    --ink-2:      #5F5C7A;
+    --ink-3:      #8B87A8;
+    --rule:       #DEDCE9;
+    --rule-soft:  #E9E7F1;
+    --teal:       #00C2A8;   /* theme.colorAccent */
+    --teal-ink:   #0B7B6C;   /* theme.colorAccentInk */
+    --teal-wash:  #E0FBF7;   /* theme.colorAccentLight */
+    --rose:       #F43F5E;
+    --rose-ink:   #B4123B;
+    --rose-wash:  #FFE4E6;
+    --night:      #13112E;
+    --serif: ui-serif, Charter, "Bitstream Charter", "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper:     #13112E;
+      --paper-2:   #1D1A42;
+      --ink:       #ECEAF6;
+      --ink-2:     #A6A2CE;
+      --ink-3:     #706BA6;
+      --rule:      rgba(196,190,255,0.20);
+      --rule-soft: rgba(196,190,255,0.11);
+      --teal-ink:  #4FD8C4;
+      --teal-wash: rgba(0,194,168,0.14);
+      --rose-ink:  #FB7185;
+      --rose-wash: rgba(251,113,133,0.14);
+    }
+  }
+  :root[data-theme="light"] {
+    --paper: #F5F4F9; --paper-2: #FFFFFF; --ink: #1B1A2E; --ink-2: #5F5C7A;
+    --ink-3: #8B87A8; --rule: #DEDCE9; --rule-soft: #E9E7F1;
+    --teal-ink: #0B7B6C; --teal-wash: #E0FBF7; --rose-ink: #B4123B; --rose-wash: #FFE4E6;
+  }
+  :root[data-theme="dark"] {
+    --paper: #13112E; --paper-2: #1D1A42; --ink: #ECEAF6; --ink-2: #A6A2CE;
+    --ink-3: #706BA6; --rule: rgba(196,190,255,0.20); --rule-soft: rgba(196,190,255,0.11);
+    --teal-ink: #4FD8C4; --teal-wash: rgba(0,194,168,0.14);
+    --rose-ink: #FB7185; --rose-wash: rgba(251,113,133,0.14);
+  }
+
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font-family: var(--sans); font-size: 16px; line-height: 1.55; -webkit-font-smoothing: antialiased; }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 56px 28px 96px; }
+  .col  { max-width: 68ch; }
+  .mast { border-bottom: 1px solid var(--rule); padding-bottom: 28px; margin-bottom: 40px; }
+  .eyebrow { font-family: var(--mono); font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-3); margin: 0 0 14px; display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; }
+  h1 { font-family: var(--serif); font-weight: 600; font-size: clamp(30px, 4.4vw, 44px); line-height: 1.12; letter-spacing: -0.015em; margin: 0 0 14px; text-wrap: balance; }
+  .standfirst { font-size: 17px; color: var(--ink-2); margin: 0; max-width: 62ch; }
+  .standfirst strong { color: var(--ink); font-weight: 600; }
+  .roundtag { display: inline-flex; align-items: center; gap: 7px; font-family: var(--mono); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; font-weight: 600; color: var(--teal-ink); background: var(--teal-wash); border-radius: 999px; padding: 4px 11px; }
+
+  section { margin-top: 72px; }
+  .sec-head { display: flex; align-items: baseline; gap: 14px; margin-bottom: 8px; border-top: 1px solid var(--rule); padding-top: 18px; }
+  .sec-num { font-family: var(--mono); font-size: 12px; color: var(--ink-3); letter-spacing: 0.08em; flex-shrink: 0; }
+  h2 { font-family: var(--serif); font-weight: 600; font-size: clamp(22px, 2.6vw, 28px); line-height: 1.2; margin: 0; text-wrap: balance; }
+  h3 { font-weight: 600; font-size: 15px; margin: 32px 0 8px; }
+  p { margin: 0 0 16px; }
+  code { font-family: var(--mono); font-size: 0.855em; background: var(--rule-soft); border-radius: 4px; padding: 1px 5px; }
+  .callout { border-left: 2px solid var(--teal); padding: 2px 0 2px 20px; margin: 24px 0; color: var(--ink-2); font-size: 15.5px; }
+  .callout strong { color: var(--ink); }
+  .callout.warn { border-left-color: var(--rose); }
+
+  /* spine — plain markup (house rule: no CSS counters) */
+  ul.spine { margin: 24px 0 0; padding: 0; list-style: none; display: grid; gap: 14px; }
+  ul.spine li { display: flex; gap: 12px; font-size: 15px; color: var(--ink-2); align-items: flex-start; }
+  ul.spine li > span:last-child { flex: 1; }
+  .sid { flex: none; font-family: var(--mono); font-size: 12px; font-weight: 600; color: var(--teal-ink); background: var(--teal-wash); border-radius: 6px; padding: 2px 8px; margin-top: 1px; }
+  ul.spine li strong { color: var(--ink); }
+
+  /* flow ribbon */
+  .ribbon { display: flex; flex-wrap: wrap; gap: 8px; margin: 24px 0 6px; align-items: stretch; }
+  .step { background: var(--paper-2); border: 1px solid var(--rule); border-radius: 10px; padding: 8px 12px; font-size: 12.5px; color: var(--ink-2); max-width: 150px; }
+  .step b { display: block; color: var(--ink); font-size: 12.5px; }
+  .step .n { font-family: var(--mono); font-size: 9.5px; color: var(--ink-3); letter-spacing: 0.08em; }
+  .step.dark { background: var(--night); border-color: var(--night); color: #A6A2CE; }
+  .step.dark b { color: #ECEAF6; }
+  .step.dead { border-style: dashed; opacity: 0.6; }
+  .step.gap { border-color: var(--rose-ink); }
+  .step.gap b { color: var(--rose-ink); }
+  .ribnote { font-size: 13px; color: var(--ink-3); margin-top: 8px; }
+
+  /* frames */
+  .frames { display: flex; flex-wrap: wrap; gap: 36px 28px; margin-top: 32px; align-items: flex-start; }
+  .frame-slot { width: 300px; max-width: 100%; }
+  .frame-cap { margin: 14px 2px 0; font-size: 13.5px; color: var(--ink-2); line-height: 1.5; }
+  .frame-cap b { color: var(--ink); font-weight: 600; display: block; margin-bottom: 2px; font-size: 13px; }
+  .frame-cap .fnote { color: var(--ink-3); font-size: 12.5px; }
+  .lofi { font-family: var(--mono); font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-3); border: 1px dashed var(--rule); border-radius: 999px; padding: 2px 8px; display: inline-block; margin-bottom: 8px; }
+
+  .phone { width: 300px; max-width: 100%; background: #F2F2F4; border-radius: 30px; border: 1px solid rgba(27,26,46,0.16); box-shadow: 0 14px 34px rgba(19,17,46,0.13); padding: 11px 11px 18px; color: #1A1A24; font-family: var(--sans); }
+  .phone.night { background: #13112E; border-color: rgba(255,255,255,0.14); }
+  .notch { width: 88px; height: 20px; background: #0B0B12; border-radius: 11px; margin: 0 auto 10px; }
+  .appbody { display: grid; gap: 10px; }
+
+  /* onboarding step surface (light) */
+  .ob { background: #FFFFFF; border-radius: 16px; padding: 18px 16px; min-height: 380px; display: flex; flex-direction: column; }
+  .ob .prog { display: flex; gap: 4px; margin-bottom: 18px; }
+  .ob .prog i { height: 3px; border-radius: 2px; flex: 1; background: #EDECF3; }
+  .ob .prog i.on { background: #00C2A8; }
+  .obtitle { font-family: var(--serif); font-size: 22px; line-height: 1.25; letter-spacing: -0.012em; margin: 0 0 6px; color: #1A1A24; }
+  .obsub { font-size: 12.5px; color: #5F5C7A; line-height: 1.5; margin: 0 0 14px; }
+  .optcard { border: 1px solid #E4E2EE; border-radius: 12px; padding: 12px; font-size: 13.5px; font-weight: 600; color: #1A1A24; margin-bottom: 8px; background: #FFFFFF; }
+  .optcard small { display: block; font-weight: 400; font-size: 11.5px; color: #8B87A8; margin-top: 2px; }
+  .optcard.sel { border-color: #00C2A8; background: #F4FDFB; }
+  .optcard.q { border-style: dashed; }
+  .obspacer { flex: 1; min-height: 10px; }
+  .obcta { background: #1A1A24; color: #FFFFFF; border-radius: 12px; text-align: center; padding: 12px; font-size: 14px; font-weight: 600; }
+  .obcta.teal { background: #00C2A8; color: #06322C; }
+  .obcta.ghost { background: transparent; color: #5F5C7A; font-weight: 500; padding: 10px; font-size: 13px; }
+  .skiprow { text-align: center; font-size: 12.5px; color: #8B87A8; padding: 8px 0 0; }
+
+  /* home cards inside frames */
+  .acard { background: #FFFFFF; border-radius: 16px; padding: 13px 13px 11px; box-shadow: 0 2px 10px rgba(19,17,46,0.05); }
+  .seclabel { font-size: 9.5px; font-weight: 600; letter-spacing: 0.13em; text-transform: uppercase; color: #8B87A8; margin-bottom: 7px; }
+  .lead { font-family: var(--serif); font-size: 18px; line-height: 1.32; letter-spacing: -0.01em; color: #1A1A24; margin: 0 0 5px; }
+  .daycount { font-family: var(--mono); font-size: 10.5px; color: #8B87A8; margin: 0 0 8px; }
+  .arcline { font-size: 12px; line-height: 1.5; color: #5F5C7A; margin: 0 0 8px; }
+  .arcline b { color: #1A1A24; font-weight: 600; }
+  .actionrow { display: flex; align-items: center; gap: 8px; border: 1px solid #C9F1E9; background: #F4FDFB; border-radius: 10px; padding: 9px 11px; font-size: 12.5px; font-weight: 600; color: #0B7B6C; }
+  .actionrow .arr { margin-left: auto; color: #00C2A8; }
+  .wrow { display: flex; gap: 8px; padding: 7px 0; border-top: 1px solid #F0EFF5; font-size: 11px; color: #8B87A8; align-items: center; }
+  .wrail { width: 3px; height: 22px; border-radius: 2px; background: #DDDBE8; flex-shrink: 0; }
+  .wdash { margin-left: auto; font-family: var(--mono); font-size: 10px; color: #C9C5E6; letter-spacing: 0.15em; }
+  .floorline { border-top: 1px solid #F0EFF5; margin-top: 7px; padding-top: 7px; font-size: 10.5px; color: #8B87A8; }
+  .nudge { font-size: 12.5px; color: #5F5C7A; }
+  .nudge .arr { color: #00C2A8; font-weight: 600; }
+  .stripcard { background: #FFFFFF; border-radius: 14px; padding: 10px 12px; box-shadow: 0 2px 8px rgba(19,17,46,0.05); font-size: 11.5px; color: #5F5C7A; }
+  .stripcard b { color: #1A1A24; font-size: 12px; }
+  .tabs { display: flex; justify-content: space-around; background: #FFFFFF; border-radius: 14px; padding: 8px 4px 6px; font-size: 9px; color: #B9B6CC; font-weight: 600; }
+  .tabs span.on { color: #1A1A24; }
+  .example { border: 1.5px dashed #C9C5E6; background: #FBFBFD; border-radius: 12px; padding: 10px 11px; }
+  .exchip { display: inline-block; font-size: 8.5px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: #6D68A8; background: #EEEDF7; border-radius: 999px; padding: 2px 7px; margin-bottom: 6px; }
+  .exline { font-family: var(--serif); font-size: 14px; line-height: 1.35; color: #4A4668; margin: 0 0 4px; }
+  .exnote { font-size: 10px; color: #8B87A8; }
+
+  /* report snippet */
+  .doc { background: #FFFFFF; border: 1px solid var(--rule); border-radius: 6px; padding: 18px 20px; max-width: 460px; font-size: 12px; color: #3A3752; box-shadow: 0 6px 18px rgba(19,17,46,0.07); }
+  .doc .dh { font-family: var(--serif); font-size: 15px; color: #1A1A24; margin: 0 0 8px; }
+  .doc .drow { display: flex; gap: 10px; padding: 4px 0; border-top: 1px solid #F0EFF5; }
+  .doc .drow span:first-child { width: 150px; flex-shrink: 0; color: #8B87A8; }
+  .doc .new { background: #F4FDFB; margin: 0 -8px; padding: 4px 8px; border-radius: 6px; border-top: none; }
+  .doc .new span:first-child { color: #0B7B6C; }
+
+  /* react briefs */
+  .brief { margin: 26px 0; padding: 22px 26px; background: var(--paper-2); border: 1px solid var(--rule); border-radius: 3px; }
+  .brief .bh { display: flex; gap: 12px; align-items: baseline; margin-bottom: 10px; }
+  .brief .bid { font-family: var(--mono); font-size: 12px; font-weight: 700; color: var(--teal-ink); }
+  .brief .bq { font-weight: 600; font-size: 15.5px; color: var(--ink); }
+  .brief dl { margin: 0; display: grid; gap: 8px; font-size: 14px; color: var(--ink-2); }
+  .brief dt { font-family: var(--mono); font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-3); margin-top: 6px; }
+  .brief dd { margin: 0; }
+  .brief .rec { color: var(--teal-ink); font-weight: 600; }
+  .brief .dis { color: var(--rose-ink); }
+
+  .night-hero { background: linear-gradient(180deg, #191646 0%, #13112E 60%); border-radius: 16px; min-height: 380px; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 18px 16px; text-align: center; }
+  .moon { width: 84px; height: 84px; border-radius: 50%; background: radial-gradient(circle at 62% 38%, #F2EEE4 58%, #E4DFCF 100%); position: relative; margin-bottom: 10px; box-shadow: 0 0 44px rgba(242,238,228,0.18); }
+  .moon::after { content: ""; position: absolute; left: -6%; top: -4%; width: 74%; height: 74%; border-radius: 50%; background: #191646; }
+  .nh-word { font-family: var(--serif); font-size: 22px; color: #F2EEE4; margin: 0 0 8px; }
+  .nh-sub { font-size: 12px; color: #A6A2CE; line-height: 1.5; margin: 0 0 16px; max-width: 220px; }
+  .nh-cta { background: #00C2A8; color: #06322C; border-radius: 12px; padding: 11px 0; width: 100%; font-size: 13.5px; font-weight: 700; }
+  .nh-ghost { color: #ECEAF6; font-size: 12.5px; padding: 10px 0 0; }
+</style>
+
+<div class="wrap">
+  <header class="mast">
+    <p class="eyebrow">
+      <span class="roundtag"><b>Round 1</b> · low-fi · 2026-08-12</span>
+      <span>Track B-745 · onboarding &amp; the first week</span>
+      <span>Record: docs/sessions/2026-08-12-onboarding-nux-ideation.md</span>
+    </p>
+    <h1>Onboarding &amp; the first week</h1>
+    <p class="standfirst">B-251 built a clean funnel to an empty room. The constitution still says <strong>"onboarding is complete when Jordan logs their first event"</strong> — the built flow ends two screens earlier, the app never asks why the owner came, and the wedge feature is four taps deep on the fourth tab. Three nested options below, from a zero-schema copy fix to the full wedge concierge. Frames are deliberately low-fi: judge the shape and the words, not the polish.</p>
+  </header>
+
+  <!-- ================================================================ -->
+  <section>
+    <div class="sec-head"><span class="sec-num">01</span><h2>Where we start — the shipped flow, annotated</h2></div>
+    <div class="col">
+      <p>The current path from cold install to Home. Nothing here is broken; what's missing is any acknowledgment of the owner's <em>job</em>.</p>
+    </div>
+    <div class="ribbon">
+      <div class="step dark"><span class="n">0</span><b>Landing</b>"…answers, not guesses." · previews behind "See how it works"</div>
+      <div class="step"><span class="n">1</span><b>Create account</b>first · last · email · password</div>
+      <div class="step"><span class="n">2</span><b>Disclaimer</b>"never gives the all-clear" + checkbox</div>
+      <div class="step"><span class="n">3–7</span><b>Pet setup</b>type · name · breed · gender · age (3 of 5 skippable)</div>
+      <div class="step dead"><span class="n">8</span><b>Paywall</b>dark in prod (flag off since 07-24)</div>
+      <div class="step"><span class="n">9</span><b>All set</b>"Go to {pet}'s home"</div>
+      <div class="step gap"><span class="n">→</span><b>Empty Home</b>three zones of "not yet"</div>
+    </div>
+    <p class="ribnote">Never asked: why you're here · what she eats · when the recheck is · whether anyone else lives at home. The Landing promises "answers, not guesses" — then the flow never asks the question.</p>
+
+    <div class="frames">
+      <div class="frame-slot">
+        <div class="phone"><div class="notch"></div><div class="appbody">
+          <div class="acard">
+            <div class="seclabel">Signal</div>
+            <p class="lead">We're getting to know Mochi.</p>
+            <p class="daycount">Day 1 — 0 events so far.</p>
+            <div class="wrow"><div class="wrail"></div>Timing — do symptoms follow meals<span class="wdash">– – –</span></div>
+            <div class="wrow"><div class="wrail"></div>Food connections — what comes before<span class="wdash">– – –</span></div>
+            <div class="wrow"><div class="wrail"></div>Change — this week against last<span class="wdash">– – –</span></div>
+            <div class="floorline">If something needs attention sooner, it won't wait for the week.</div>
+          </div>
+          <div class="acard"><div class="seclabel">Today</div><p class="nudge">Nothing logged yet — how's Mochi doing? <span class="arr">→</span></p></div>
+          <div class="acard"><div class="seclabel">Trend</div><p class="nudge">A few more days of logs and we'll be able to show Mochi's pattern.</p></div>
+          <div class="tabs"><span class="on">Home</span><span>History</span><span>Foods</span><span>Pet</span></div>
+        </div></div>
+        <p class="frame-cap"><b>Day zero today (v2 E1, GA-held)</b>Honest, calm — and passive. It says what it's watching; it never says what to <em>do</em>. The production flag-off copy is worse: "patterns start to surface in a few days" (not signable against the real floors).<span class="fnote"><br />Every card is a "not yet." The only actor is the + button, off-screen.</span></p>
+      </div>
+      <div class="frame-slot">
+        <div class="phone"><div class="notch"></div><div class="appbody">
+          <div class="ob" style="min-height:300px">
+            <p class="obtitle" style="font-size:18px">Log food</p>
+            <div class="actionrow">📷&nbsp; Snap a new food <span class="arr">›</span></div>
+            <p class="obsub" style="margin-top:12px">No foods yet. Snap one above.</p>
+            <div class="obspacer"></div>
+          </div>
+        </div></div>
+        <p class="frame-cap"><b>The first meal, 9pm, day zero</b>The photo-first capture behind this CTA is the best first-run machinery in the app — one photo reads the label, saves the food, logs the meal. Nothing anywhere points at it. <span class="fnote">Jordan: "The best moment in your app is hidden behind the moment I'm most likely to bail."</span></p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================================================================ -->
+  <section>
+    <div class="sec-head"><span class="sec-num">02</span><h2>The spine — rules every option obeys</h2></div>
+    <div class="col">
+      <p>Proposed as this track's ratifiable core (R-2). S1 resolves B-251's still-open D13 by <em>extending the flow</em> to the constitution's finish line rather than softening the constitution.</p>
+    </div>
+    <ul class="spine">
+      <li><span class="sid">S1</span><span><strong>The finish line is the first log.</strong> Onboarding is designed toward the first logged event; the flow's last beat hands the owner into it.</span></li>
+      <li><span class="sid">S2</span><span><strong>Ask the job before decorating the room.</strong> One optional, one-tap mission question shapes the first week. Never typed, always skippable, changeable later.</span></li>
+      <li><span class="sid">S3</span><span><strong>Guaranteed value leads.</strong> The arc builds toward the clinic-ready record and report (guaranteed); the Signal is conditional upside, never a promised verdict. <em>(Dr. Chen: "Promise the record, not the revelation.")</em></span></li>
+      <li><span class="sid">S4</span><span><strong>Honest floors, honest arc.</strong> Stage copy derives from the engine's real constants — capability framing ("timing patterns need about two weeks of meals"), never invented timelines. Kills "in a few days."</span></li>
+      <li><span class="sid">S5</span><span><strong>Teach one behavior.</strong> The one instruction the first week repeats: log everything she eats, <em>including what you wish you hadn't fed.</em> Completeness over precision.</span></li>
+      <li><span class="sid">S6</span><span><strong>No new furniture.</strong> The arc lives in Home's existing grammar — the building state, Today, the strips, the done screen. No checklist card, no tour, no coach marks.</span></li>
+      <li><span class="sid">S7</span><span><strong>Examples are labeled fiction.</strong> A named example pet, modeling good logging, pattern-shaped not food-accusatory, visually distinct from the pet's own cards.</span></li>
+      <li><span class="sid">S8</span><span><strong>A mission never gates.</strong> Every capability reachable on every mission and on skip; the mission only re-orders and re-words.</span></li>
+    </ul>
+  </section>
+
+  <!-- ================================================================ -->
+  <section>
+    <div class="sec-head"><span class="sec-num">03</span><h2>Option 1 — "Say it, then show it"</h2></div>
+    <div class="col">
+      <p><strong>Zero schema, zero new screens.</strong> Two moves: the done screen hands into the first log instead of the empty home, and the building state grows a stage-aware line + one action row, keyed to the real day/event counts the client already has. This is the floor — everything in it survives into Options 2 and 3.</p>
+    </div>
+    <div class="frames">
+      <div class="frame-slot">
+        <div class="phone"><div class="notch"></div><div class="appbody"><div class="ob">
+          <div class="obspacer"></div>
+          <div style="width:56px;height:56px;border-radius:50%;background:#E0FBF7;margin:0 auto 14px;display:flex;align-items:center;justify-content:center;color:#00C2A8;font-size:26px;">✓</div>
+          <p class="obtitle" style="text-align:center">You're all set.</p>
+          <p class="obsub" style="text-align:center">Say hi to Mochi — her home is ready.</p>
+          <div class="obspacer"></div>
+          <div class="obcta">Log Mochi's first meal</div>
+          <p class="skiprow">Take a look around first</p>
+          <p class="skiprow" style="font-size:11px;color:#B9B6CC">Her usual food, a treat, anything — about ten seconds.</p>
+        </div></div></div>
+        <p class="frame-cap"><b>1a — The finish line moves (S1)</b>Same warm terminus; the primary action is now the first log (→ the snap-first capture). "Go home first" stays one tap away — a door, not a wall.<span class="fnote"><br />Replaces: "Go to Mochi's home."</span></p>
+      </div>
+      <div class="frame-slot">
+        <div class="phone"><div class="notch"></div><div class="appbody">
+          <div class="acard">
+            <div class="seclabel">Signal</div>
+            <p class="lead">We're getting to know Mochi.</p>
+            <p class="daycount">Day 1 — nothing logged yet.</p>
+            <p class="arcline"><b>Start with her usual food.</b> Snap the bag once and every meal after it is one tap.</p>
+            <div class="actionrow">📷&nbsp; Snap Mochi's food <span class="arr">›</span></div>
+            <div class="wrow" style="margin-top:8px"><div class="wrail"></div>Timing — do symptoms follow meals<span class="wdash">– – –</span></div>
+            <div class="wrow"><div class="wrail"></div>Food connections<span class="wdash">– – –</span></div>
+            <div class="floorline">If something needs attention sooner, it won't wait for the week.</div>
+          </div>
+          <div class="acard"><div class="seclabel">Today</div><p class="nudge">Nothing logged yet — how's Mochi doing? <span class="arr">→</span></p></div>
+          <div class="tabs"><span class="on">Home</span><span>History</span><span>Foods</span><span>Pet</span></div>
+        </div></div>
+        <p class="frame-cap"><b>1b — Day 0: the building state gains an actor</b>E1 keeps its honesty and its ghost receipts; it gains one instruction and one action row pointing at the snap-first capture. No new furniture (S6) — this is the same card, finally saying what to do.</p>
+      </div>
+      <div class="frame-slot">
+        <div class="phone"><div class="notch"></div><div class="appbody">
+          <div class="acard">
+            <div class="seclabel">Signal</div>
+            <p class="lead">We're getting to know Mochi.</p>
+            <p class="daycount">Day 4 — 11 events so far.</p>
+            <p class="arcline">A complete record is what makes patterns readable — <b>log everything she eats, including what you wish you hadn't fed.</b> Timing patterns need about two weeks of consistent meals.</p>
+            <div class="wrow"><div class="wrail"></div>Timing — do symptoms follow meals<span class="wdash">– – –</span></div>
+            <div class="wrow"><div class="wrail"></div>Food connections<span class="wdash">– – –</span></div>
+            <div class="floorline">Safety flags are already on — they don't wait for the week.</div>
+          </div>
+          <div class="acard"><div class="seclabel">Today</div><p class="nudge">2 meals · 1 treat logged</p></div>
+          <div class="acard"><div class="seclabel">Trend</div><p class="nudge">Food logged 4 of 4 days</p></div>
+          <div class="tabs"><span class="on">Home</span><span>History</span><span>Foods</span><span>Pet</span></div>
+        </div></div>
+        <p class="frame-cap"><b>1c — Day 4: the S5 beat</b>The counts are real; the stage line teaches the one behavior (S5) and states the floor honestly (S4). No fake receipts, no countdown, no streak.</p>
+      </div>
+      <div class="frame-slot">
+        <div class="phone"><div class="notch"></div><div class="appbody">
+          <div class="acard">
+            <div class="seclabel">Signal</div>
+            <p class="lead">Mochi's record is taking shape.</p>
+            <p class="daycount">Day 12 — 41 events.</p>
+            <p class="arcline"><b>Her report is ready whenever you need it</b> — twelve days of meals and symptoms a vet can scan in a minute. First timing read becomes possible this week if her logs stay steady.</p>
+            <div class="actionrow" style="border-color:#E4E2EE;background:#FAFAFC;color:#5F5C7A">Preview Mochi's report <span class="arr" style="color:#8B87A8">›</span></div>
+            <div class="floorline">A quiet record is counted, not concluded — no news here is never an all-clear.</div>
+          </div>
+          <div class="acard"><div class="seclabel">Today</div><p class="nudge">1 meal logged</p></div>
+          <div class="tabs"><span class="on">Home</span><span>History</span><span>Foods</span><span>Pet</span></div>
+        </div></div>
+        <p class="frame-cap"><b>1d — Day 12: the S3 pivot</b>The arc's destination is the <em>report</em> (guaranteed), with the Signal as conditional upside ("becomes possible", never "is coming"). The last line keeps clinical-guardrails: quiet ≠ clear.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================================================================ -->
+  <section>
+    <div class="sec-head"><span class="sec-num">04</span><h2>Option 2 — "The mission"</h2></div>
+    <div class="col">
+      <p><strong>+1 screen, one schema column, one report line.</strong> The flow finally asks the question the Landing promises to answer. The answer re-words the first week (it never gates — S8), picks the day-0 lead, and lands on the vet report header as "reason for monitoring."</p>
+    </div>
+    <div class="frames">
+      <div class="frame-slot">
+        <div class="phone"><div class="notch"></div><div class="appbody"><div class="ob">
+          <div class="prog"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i></i></div>
+          <p class="obtitle">What brings you two here?</p>
+          <p class="obsub">This shapes Mochi's first week — change it anytime.</p>
+          <div class="optcard sel">Our vet asked us to track something<small>a diet trial, symptoms to watch, a recheck coming up</small></div>
+          <div class="optcard">Something seems off — I want a record</div>
+          <div class="optcard">I want to know what she actually eats</div>
+          <div class="optcard">Just keeping good records</div>
+          <div class="obspacer"></div>
+          <div class="obcta teal">Continue</div>
+          <p class="skiprow">Skip for now</p>
+        </div></div></div>
+        <p class="frame-cap"><b>2a — The mission screen (S2)</b>One tap, four options, skippable. Option 1 branches once more ("what did the vet ask? — diet trial / watch symptoms / both") on the next screen for trial users only. <span class="fnote">R-3 carries the open calls: does this earn a screen at all, and does Sam's "what she actually eats" stay a first-class option (drawn here) or fold into "good records"?</span></p>
+      </div>
+      <div class="frame-slot">
+        <div class="phone"><div class="notch"></div><div class="appbody">
+          <div class="acard">
+            <div class="seclabel">Signal</div>
+            <p class="lead">We're getting to know Mochi.</p>
+            <p class="daycount">Day 1 — nothing logged yet.</p>
+            <p class="arcline"><b>You said the vet gave you a tracking job.</b> Set the trial up while the instructions are still in your pocket — then every meal is one tap against it.</p>
+            <div class="actionrow">Set up Mochi's diet trial <span class="arr">›</span></div>
+            <div class="wrow" style="margin-top:8px"><div class="wrail"></div>Timing — do symptoms follow meals<span class="wdash">– – –</span></div>
+            <div class="floorline">If something needs attention sooner, it won't wait for the week.</div>
+          </div>
+          <div class="acard"><div class="seclabel">Today</div><p class="nudge">Nothing logged yet — how's Mochi doing? <span class="arr">→</span></p></div>
+          <div class="tabs"><span class="on">Home</span><span>History</span><span>Foods</span><span>Pet</span></div>
+        </div></div>
+        <p class="frame-cap"><b>2b — Day 0, trial-led</b>The mission picks the day-0 action: the trial setup surfaces on Home instead of hiding behind the Pet tab. (The full guided version of this handoff is Option 3.)</p>
+      </div>
+      <div class="frame-slot">
+        <div class="phone"><div class="notch"></div><div class="appbody">
+          <div class="acard">
+            <div class="seclabel">Signal</div>
+            <p class="lead">We're getting to know Pixel.</p>
+            <p class="daycount">Day 1 — nothing logged yet.</p>
+            <p class="arcline"><b>You want to know what she actually eats.</b> Snap what you're offering today — the eaten and the rejected both count.</p>
+            <div class="actionrow">📷&nbsp; Snap Pixel's food <span class="arr">›</span></div>
+            <div class="wrow" style="margin-top:8px"><div class="wrail"></div>Food connections — what she finishes vs leaves<span class="wdash">– – –</span></div>
+            <div class="floorline">If her eating genuinely drops, that won't wait for the week either.</div>
+          </div>
+          <div class="acard"><div class="seclabel">Today</div><p class="nudge">Nothing logged yet — how's Pixel doing? <span class="arr">→</span></p></div>
+          <div class="tabs"><span class="on">Home</span><span>History</span><span>Foods</span><span>Pet</span></div>
+        </div></div>
+        <p class="frame-cap"><b>2c — Day 0, food-led (Sam)</b>Same card, different mission: the watch-list leads with what she finishes vs leaves, and "rejected counts too" makes offered-≠-consumed a first-class log from day one — not failure.</p>
+      </div>
+      <div class="frame-slot" style="width:100%;max-width:480px">
+        <div class="doc">
+          <p class="dh">Culprit — Health record · Mochi (canine, 4y)</p>
+          <div class="drow new"><span>Reason for monitoring</span><span>Elimination diet trial — owner reports vet-directed · started 12 Aug 2026</span></div>
+          <div class="drow"><span>Range</span><span>12 Aug – 23 Sep 2026 (42 days)</span></div>
+          <div class="drow"><span>Diet trial</span><span>Day 12 of 56 · 0 off-trial exposures itemised below</span></div>
+        </div>
+        <p class="frame-cap"><b>2d — Where the mission lands clinically</b>One header line on the report: the record now names the question it answers. Attribution is the owner's report ("owner reports vet-directed"), never an asserted directive — Dr. Chen's wording rule.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================================================================ -->
+  <section>
+    <div class="sec-head"><span class="sec-num">05</span><h2>Option 3 — "One photo, four outcomes"</h2></div>
+    <div class="col">
+      <p><strong>The wedge concierge.</strong> For the diet-trial mission, the last beat of onboarding is snapping the food the vet handed you. That one photo: seeds the library (Principle 2 restored) · logs meal #1 (S1's finish line) · becomes the trial's allowed list · pre-fills the trial sheet. The recheck date, if given, makes the report the visible finish line all week.</p>
+      <p class="callout"><strong>Eng constraint that shaped this:</strong> the trial's allowed set needs a food to exist, so the sequence is fixed — snap first, then the pre-filled trial sheet. One flow, no dead ends, everything editable.</p>
+    </div>
+    <div class="frames">
+      <div class="frame-slot">
+        <div class="phone"><div class="notch"></div><div class="appbody"><div class="ob">
+          <div class="prog"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i></div>
+          <p class="obtitle">Snap the diet food once.</p>
+          <p class="obsub">One photo does the setup — the label seeds Mochi's library and the trial's allowed list, and logs tonight's meal if she's eaten.</p>
+          <div style="border:1.5px dashed #C9C5E6;border-radius:14px;flex:1;display:flex;align-items:center;justify-content:center;color:#8B87A8;font-size:34px;">📷</div>
+          <div class="obspacer" style="flex:0 0 12px"></div>
+          <div class="obcta teal">Open the camera</div>
+          <p class="skiprow">I'll do this later</p>
+        </div></div></div>
+        <p class="frame-cap"><b>3a — The snap (LO-FI)</b>Reuses the shipped photo-first capture end to end. Skipping is honest: the day-0 home (1b/2b) re-offers the same action, so nothing is lost.</p>
+      </div>
+      <div class="frame-slot">
+        <div class="phone"><div class="notch"></div><div class="appbody"><div class="ob">
+          <p class="obtitle" style="font-size:19px">Mochi's trial, ready to start</p>
+          <div class="stripcard" style="box-shadow:none;border:1px solid #E4E2EE;margin-bottom:8px"><b>Trial diet</b><br />Royal Canin Hydrolyzed Protein — from your photo</div>
+          <div class="stripcard" style="box-shadow:none;border:1px solid #E4E2EE;margin-bottom:8px"><b>Starts</b> Today &nbsp;·&nbsp; <b>Length</b> 8 weeks<br /><span style="font-size:10.5px;color:#8B87A8">A common length for skin trials — use whatever your vet said.</span></div>
+          <div class="stripcard" style="box-shadow:none;border:1px solid #E4E2EE;margin-bottom:8px"><b>Recheck</b> (optional)<br /><span style="font-size:10.5px;color:#8B87A8">When do you see the vet next? The report builds toward it.</span></div>
+          <div class="obspacer"></div>
+          <div class="obcta teal">Start the trial</div>
+          <p class="skiprow">Not yet — just save her food</p>
+        </div></div></div>
+        <p class="frame-cap"><b>3b — The pre-filled trial sheet (LO-FI)</b>Everything derived is editable and labeled as a default, never an instruction ("use whatever your vet said"). Reuses the shipped StartTrialModal machinery — this is a re-skin of an existing surface, not a new one.</p>
+      </div>
+      <div class="frame-slot">
+        <div class="phone"><div class="notch"></div><div class="appbody">
+          <div class="stripcard"><b>Hydrolyzed protein trial — day 3 of 56</b><br />No off-trial foods logged as of today's meals</div>
+          <div class="acard">
+            <div class="seclabel">Signal</div>
+            <p class="lead">Three days down.</p>
+            <p class="daycount">Day 3 — 9 events · recheck Sep 6.</p>
+            <p class="arcline">Every meal you log is a line in the recheck report. <b>Treats and slip-ups count double</b> — they're the difference between "she was on the diet" and proof.</p>
+            <div class="wrow"><div class="wrail"></div>Timing — do symptoms follow meals<span class="wdash">– – –</span></div>
+            <div class="floorline">If something needs attention sooner, it won't wait for the recheck.</div>
+          </div>
+          <div class="acard"><div class="seclabel">Today</div><p class="nudge">2 meals logged — one tap each, now her food is saved</p></div>
+          <div class="tabs"><span class="on">Home</span><span>History</span><span>Foods</span><span>Pet</span></div>
+        </div></div>
+        <p class="frame-cap"><b>3c — Week 1, wedge activated</b>The trial strip exists from day 1 (today it appears only if the owner finds the Pet tab). The recheck date gives the arc its S3 destination. <span class="fnote">Copy note: "No off-trial foods logged as of today's meals" is the shipped G2-safe register — positive about the record, never a clean-bill.</span></p>
+      </div>
+      <div class="frame-slot">
+        <div class="phone"><div class="notch"></div><div class="appbody">
+          <div class="acard">
+            <div class="seclabel">Signal</div>
+            <p class="lead">We're getting to know Pixel.</p>
+            <p class="daycount">Day 2 — 5 events so far.</p>
+            <div class="example">
+              <span class="exchip">An example — not Pixel</span>
+              <p class="exline">Ruby's vomiting clustered within two hours of meals — 4 of her 5 timed episodes.</p>
+              <p class="exnote">The kind of pattern steady logging makes visible. Ruby is a made-up cat.</p>
+            </div>
+            <div class="floorline" style="margin-top:8px">Patterns like this need about two weeks of meals — safety flags don't wait.</div>
+          </div>
+          <div class="acard"><div class="seclabel">Today</div><p class="nudge">1 meal · 1 water logged</p></div>
+          <div class="tabs"><span class="on">Home</span><span>History</span><span>Foods</span><span>Pet</span></div>
+        </div></div>
+        <p class="frame-cap"><b>3d — The labeled example (S7) — R-4's subject</b>Fiction named twice, pattern-shaped (timing, not a food accusation), visually distinct (dashed, muted, no rail). Dr. Chen signs this form only; Sam's caution stands: an example that looks like a diagnosis teaches watching-for-vomit instead of logging.</p>
+      </div>
+      <div class="frame-slot">
+        <div class="phone"><div class="notch"></div><div class="appbody"><div class="ob">
+          <div class="prog"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i></i></div>
+          <p class="obtitle">Anyone else at home?</p>
+          <p class="obsub">Two pets sharing bowls is normal life — Culprit keeps their records separate.</p>
+          <div class="optcard">＋ &nbsp;Add another pet<small>name and species — the rest can wait</small></div>
+          <div class="obspacer"></div>
+          <div class="obcta">Just Pixel for now</div>
+        </div></div></div>
+        <p class="frame-cap"><b>3e — The second-pet moment (Sam)</b>One tap, name + species only, right after pet setup. Sam: "Asking me to pick one cat on day 0 is asking me to lie a little." Today the only path is a closing line on the done screen.</p>
+      </div>
+    </div>
+    <div class="col">
+      <p class="callout"><strong>Also inside Option 3, not drawn this round:</strong> the day-2/3 in-app moment offering the nightly 9pm day-close (B-661's shipped primer flow, surfaced contextually — never an OS prompt in onboarding, D11 holds); the eating-style question for cat households (meals / grazes / mix — Sam's top copy ask, feeds day-level intake framing); and the research's <strong>backfill invitation</strong> (Flo pattern: "add anything you remember from the last couple of weeks — roughly is fine" — seeds the timeline and shortens the Signal floor, but collides with timestamp-honesty and Dr. Chen's back-dating concern, so it needs its own design pass). All three get frames in round 2 if the direction survives.</p>
+    </div>
+  </section>
+
+  <!-- ================================================================ -->
+  <section>
+    <div class="sec-head"><span class="sec-num">06</span><h2>React — the decisions this round needs</h2></div>
+
+    <div class="brief">
+      <div class="bh"><span class="bid">R-1</span><span class="bq">How far up the ladder — and what ships before submission?</span></div>
+      <dl>
+        <dt>Deciding</dt><dd>The track's target shape, and the pre-submission slice.</dd>
+        <dt>Options</dt><dd><span class="rec">Recommended: commit to Option 3 as the destination; build 1 → 2 → 3; ship Option 1 before submission</span> (zero schema, copy + one CTA + one action row — small, and it fixes the honesty debt reviewers and real users both hit). Alternatives: Option 1 only (fastest, leaves the wedge buried) · straight to 3 (largest pre-submission risk).</dd>
+        <dt>Consequence</dt><dd>Ruling this starts the requirements doc + PR plan; Option 1's slice can land this week either way.</dd>
+      </dl>
+    </div>
+
+    <div class="brief">
+      <div class="bh"><span class="bid">R-2</span><span class="bq">Ratify the spine S1–S8?</span></div>
+      <dl>
+        <dt>Deciding</dt><dd>The track's standing rules — S1 formally resolves B-251's open D13 (constitution kept, flow extended); S3 re-anchors all first-week copy on the report, not the Signal.</dd>
+        <dt>Options</dt><dd><span class="rec">Recommended: ratify all eight</span> — each traces to a named lens; none contradicts shipped law. Flag individual rules to renegotiate.</dd>
+        <dt>Consequence</dt><dd>S1/S3 become Tier-2 design-principles edits (proposed wording ships in the requirements doc, per protocol — not written until you approve).</dd>
+      </dl>
+    </div>
+
+    <div class="brief">
+      <div class="bh"><span class="bid">R-3</span><span class="bq">Does the mission earn a screen — and which options does it list?</span></div>
+      <dl>
+        <dt>Deciding</dt><dd>Whether 2a exists, where it sits, and whether Sam's "what she actually eats" is first-class (drawn) or folds into "good records."</dd>
+        <dt>Options</dt><dd><span class="rec">Recommended: yes, one screen, after pet setup, four options + Sam's as drawn in 2a</span> — the wedge user's intent is the product's reason, and one tap is the whole cost. <span class="dis">Designer dissent stands:</span> B-251's ratified bar was "every screen is a drop-off"; the lighter alternative is folding one question into the done screen.</dd>
+        <dt>Consequence</dt><dd>Yes → the schema column + report-header line get spec'd; no → Option 2 collapses into Option 1's copy variants.</dd>
+      </dl>
+    </div>
+
+    <div class="brief">
+      <div class="bh"><span class="bid">R-4</span><span class="bq">The labeled example card — in or out?</span></div>
+      <dl>
+        <dt>Deciding</dt><dd>Whether 3d ships (under S7's four rules) in the building state for non-trial missions.</dd>
+        <dt>Options</dt><dd><span class="rec">Recommended: in, exactly as constrained</span> — it answers "what am I working toward" without fake data. Out is defensible: Sam's anchoring worry (watching-for-vomit instead of logging) is real; Dr. Chen accepts the drawn form only.</dd>
+        <dt>Consequence</dt><dd>In → it becomes an SR-2/E1 extension AC; out → the ghost receipts stay the only forward-looking element.</dd>
+      </dl>
+    </div>
+
+    <div class="brief">
+      <div class="bh"><span class="bid">R-5</span><span class="bq">Ambient arc only, or test a checklist card too?</span></div>
+      <dl>
+        <dt>Deciding</dt><dd>Whether setup progress ever renders as a discrete checklist (the dominant activation pattern elsewhere) or stays inside the zones' own words (S6).</dd>
+        <dt>Options</dt><dd><span class="rec">Recommended: ambient only (S6 stands)</span> — Jordan reads checklists as homework, Sam reads "Add Juniper" as being graded; the arc's action rows do the same work in-place. Middle path from the research: checklist <em>mechanics</em> wearing care-plan language ("Mochi's first week: …"), never "Complete your setup (2/5)" — worth a round-2 frame if you want to see it. Alternative: a dismissible checklist behind the beta shelf as an experiment.</dd>
+        <dt>Consequence</dt><dd>Ambient → no new Home component; care-plan card or checklist → its own design pass (+ a B-712 shelf row if experimental).</dd>
+      </dl>
+    </div>
+
+    <div class="brief">
+      <div class="bh"><span class="bid">R-6</span><span class="bq">Which side of the signal_design_v2 flag does the first-mile Home work ship on?</span></div>
+      <dl>
+        <dt>Deciding</dt><dd>Option 1's building-state changes extend SR-2's E1 (v2, GA-held behind the flag) — do they also patch the flag-off production copy real users see at submission?</dd>
+        <dt>Options</dt><dd><span class="rec">Recommended: both</span> — build properly on E1, and separately replace the one unsignable flag-off sentence ("patterns start to surface in a few days") with the S4-honest line; tiny diff, submission users see it. Alternative: v2-only (cleaner, invisible until Signal GA).</dd>
+        <dt>Consequence</dt><dd>Both → one extra small PR; v2-only → this track inherits B-734/B-735 as gates.</dd>
+      </dl>
+    </div>
+  </section>
+
+  <footer style="margin-top:72px;border-top:1px solid var(--rule);padding-top:18px;font-size:12.5px;color:var(--ink-3)">
+    Round 1 · low-fi · 2026-08-12 · Track B-745 — Onboarding &amp; the new-user experience. Companion record: <code>docs/sessions/2026-08-12-onboarding-nux-ideation.md</code> · Evidence: <code>docs/research/2026-08-onboarding-activation-landscape.md</code>. Later rounds re-publish over this artifact URL (house convention).
+  </footer>
+</div>
