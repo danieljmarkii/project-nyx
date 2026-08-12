@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-12
 
-**Shipped via #TBD** (docs-only: mock round 1 + backlog rows + this record + STATUS). PM kicked off a research/redesign session on the FAB → "More events" destination — the "Log for {pet}" event-type grid in `app/log.tsx` — with the read that its icons and buttons are janky and likely drifted from the design system. Both reads were right, and measurably so.
+**Shipped via #629** (docs-only: mock round 1 + backlog rows + this record + STATUS). PM kicked off a research/redesign session on the FAB → "More events" destination — the "Log for {pet}" event-type grid in `app/log.tsx` — with the read that its icons and buttons are janky and likely drifted from the design system. Both reads were right, and measurably so.
 
 ## What the research found
 
