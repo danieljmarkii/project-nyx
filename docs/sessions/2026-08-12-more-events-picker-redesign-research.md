@@ -56,6 +56,17 @@ Round 3 republished over the same artifact URL:
 - **§04 Rung 3 v2 — "the capture bar":** the dial's replacement, grounded in named best-of-class precedent — Linear's Cmd-K three layers (suggested → browsable → typed), Fantastical's parse-confirm, Things' quick-entry sheet. Record-derived suggestion chips (B-614 confirmability gate; pull-only so no Principle-4 issue), the compressed type row, and natural-language capture ("threw up after breakfast" → structured event, confirmed before write, never a silent guess). Parsing deterministic-first; any LLM assist explicitly an AI-boundary D2-class call, not assumed.
 - **§05 briefs:** **G1b** (vomit glyph — rec V2), **A2** (rung-2 v2 as the committed B-007-destination track — rec yes), **A3** (capture bar — rec park as north star until Rung 2 ships).
 
+## Round 4 (same session) — the convergence
+
+PM ruled on round 3: **G1b = V1 splat** (PM call over the team's V2 lean — recorded); the one-surface log flow piqued interest but its stage 2 read as a black form — the convergence directive: **round 3's Rung-2 flow wearing Rung 3's UX design and colours, explicitly not its predictive engine**. A3 recorded as parked-north-star by implication (its visual language is absorbed; the suggestion/parse layers wait — flagged as assumed, PM can override).
+
+Round 4 (same URL) is the convergence candidate, one confirm from design-locked:
+- **The register argument that makes the redesign principled:** stage 2 is not a form — by the time it renders the app can fully describe the row it's about to write, so it's a *confirmation*, and the app's shipped confirmation register is teal (`colorAccentLight` wash + `colorAccentInk` ink — the completion cards, the B-614 one-tap). The capture bar's parse-preview pill was that register applied to capture; stage 2 now speaks it natively.
+- **The summary pill is the save:** a live sentence ("Vomit · today at 5:33 PM") in the teal wash with a small dark Log-it pill (the FAB's echo — the one dark element left). Saw it / Found it selects in teal, not black; photo/note are light pills (photo keeps the documented dashed "additive" treatment); flipping to Found it changes the pill's register to the B-448 window-confidence wording ("found — sometime since this morning").
+- **Three frames:** the picker sheet · the Saw-it confirm · the Found-it confirm.
+- **§04 build plan — three PRs, value at each:** PR 1 = the new picker in today's presentation (glyphs + grid extraction + Header migration + token cleanup + README correction) · PR 2 = the sheet (split stool, pet switcher — B-007's destination half, that row to be annotated not duplicated) · PR 3 = the one-surface confirm (step-machine rework + full voice/guardrails copy pass).
+- **§05:** one call left — **F1** (confirm → design-locked, PR 1 starts).
+
 ## Deliberately not touched
 
 B-007 (FAB experience revamp — the parent seam), B-201 (Weight promotion into the FAB), B-139 (Medication FAB entry): all remain open exactly as they were; the mock's scope fence says nothing here forecloses them. No code changed this session.
