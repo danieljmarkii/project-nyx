@@ -1,7 +1,7 @@
 # More events / log-picker redesign — PR 0: the `log_picker_v2` flag, dark (B-745)
 
 **Date:** 2026-08-13
-**Shipped via #TBD** (draft).
+**Shipped via #632.**
 
 ## What this was
 
