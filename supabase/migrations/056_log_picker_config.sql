@@ -1,0 +1,83 @@
+-- ============================================================
+-- log_picker_v2 — seed the More-events / log-picker redesign rollout flag
+-- (More Events / Log Event Picker redesign / B-745, PR 0)
+-- See: docs/nyx-more-events-picker-requirements.md §2 (the flag — the B-712
+--      two-gate shape) and §4 (the PR 0..3 plan; FL-1..FL-4).
+-- ============================================================
+-- The log-picker redesign (the grouped tinted grid, the bottom sheet, the
+-- one-surface confirm) ships DARK behind one allowlist flag so every client PR
+-- (PR 1..3) lands invisible and the redesign can bake on a hand-picked cohort
+-- before it reaches anyone else. This migration seeds that single eligibility
+-- flag. It is the PR-0 gate the whole track queues behind — FL-2 (seed-first):
+-- the seed + client registration + shelf row land BEFORE any consumer.
+--
+--   log_picker_v2   Eligibility for the redesigned log-event picker. Resolved
+--                   client-side by resolveAllowlistFlag (lib/appConfig.ts)
+--                   against the caller's uid. Flag-off => today's shipped type
+--                   grid renders byte-identical (FL-1); flag-on + opted-in =>
+--                   the redesign renders. No partial adoption — the flag
+--                   switches the whole experience at one seam (FL-3), and the
+--                   old picker survives until a GA call (FL-4).
+--
+-- CLIENT-RENDER-ONLY (spec §2 — "zero server component"): like signal_design_v2
+-- (055), this flag gates only what the CLIENT draws, and unlike the widget (whose
+-- flag gates server-computed data) or Ask (whose flag gates an Edge Function) the
+-- redesign is presentation-and-step-structure only — same event writes, same sync
+-- paths, no server change at all (spec §1). So there is deliberately NO
+-- server-side registration of this key (supabase/functions/_shared/flags.ts is a
+-- generic resolver and needs no per-key entry), and the beta's serverCost is
+-- false — the B-712 "server-cost betas must gate server-side" rule is checked
+-- (spec §2) and does not bite here.
+--
+-- THE ALLOWLIST SHAPE (spec §2, B-712): reuses the experimental-flag primitive
+-- seeded for Ask (037), the widget (054) and the Signal uplift (055) verbatim —
+--   {"enabled": bool, "allowlist": ["<user-uuid>", …]}
+-- Resolution (already implemented, client-side): enabled=true => on for everyone;
+-- else on iff the caller's uid is in allowlist; malformed/absent => fail CLOSED
+-- (off). No new mechanism, no new table, no new column, no new policy — app_config
+-- already exists (030) with its read-only-to-authenticated RLS, which this row
+-- inherits unchanged.
+--
+-- SHIP-DARK (FL-1, default nobody): {"enabled": false, "allowlist": []} means the
+-- redesign is eligible for no one. Creating this row changes nothing an owner can
+-- see. Cohort enablement is a later, recorded config UPDATE (an app_config write,
+-- PM action — the same as the widget's / the Signal uplift's), never a deploy side
+-- effect, and deliberately NOT baked into this seed — the 037/054/055 lesson: a
+-- re-applied seed must never reset a live allowlist. Retirement is a removal PR on
+-- an explicit PM GA call (FL-4), never silent.
+--
+-- Scope: this PR seeds one app_config row (the schema half), isolated per the
+-- CLAUDE.md migration-isolation rule. Riding the SAME PR: the client registration
+-- in lib/appConfig.ts (ALLOWLIST_FLAG_KEYS + ALLOWLIST_FLAGS_UNSET) AND the
+-- BETA_REGISTRY row + shelf card (lib/betaFeatures.ts, app/settings/beta.tsx).
+-- NOTE this WIDENS the 054/055 seed-PR scope, it does not match it: those seeds were
+-- lib/appConfig.ts-only and their shelf cards landed in a SEPARATE later PR (widget
+-- PR 3; signal FR-FLAG-4, #622). The widening is this spec's own call (FL-2: "the
+-- flag seed + client registration + shelf row land before any consumer (PR 0)"), and
+-- it is safe regardless: none of it is schema, the seed is inert without the
+-- registration (the flag can't even be read — extractAllowlistFlags picks only known
+-- keys, useAllowlistFlag is typed to the registered union), and the shelf card is
+-- itself inert — it self-gates on eligibility, which is false for every account under
+-- the dark seed. Nothing CONSUMES the flag yet (§4 PR 0).
+--
+-- Migration Safety Pre-flight:
+--   Destructive:  n  (purely additive — 1 new seed row in an existing table;
+--                     no column, type, table, row, or policy is dropped,
+--                     renamed, retyped, or altered.)
+--   Rollback:     DELETE FROM app_config WHERE key = 'log_picker_v2';
+--   Backfill:     N/A — one brand-new config row; no existing data is read or
+--                 written.
+--   Affected tables: app_config (INSERT only). Row-count sanity check before
+--                 applying:
+--                   SELECT key FROM app_config WHERE key = 'log_picker_v2';
+--                   -- expect: 0 rows (the key does not exist yet)
+-- ============================================================
+
+-- ON CONFLICT DO NOTHING makes the seed idempotent AND safe: if this migration is
+-- ever re-applied after the flag has been flipped/allowlisted in prod, it
+-- preserves the live value rather than resetting it to the shipped-dark seed.
+-- (Same discipline as the 030/037/054/055 seeds.)
+
+INSERT INTO app_config (key, value) VALUES
+  ('log_picker_v2', '{"enabled": false, "allowlist": []}'::jsonb)
+ON CONFLICT (key) DO NOTHING;

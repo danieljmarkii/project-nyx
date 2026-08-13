@@ -46,7 +46,7 @@ describe('BETA_REGISTRY', () => {
     expect(new Set(keys).size).toBe(keys.length);
   });
 
-  it('ships the widget + the Signal redesign as the v1 betas, both client-only (no server cost)', () => {
+  it('ships the widget, the Signal redesign + the log-picker redesign as the v1 betas, all client-only (no server cost)', () => {
     const widget = BETA_REGISTRY.find((b) => b.key === 'widget_enabled');
     expect(widget).toBeDefined();
     expect((widget as BetaFeature).serverCost).toBe(false);
@@ -57,7 +57,14 @@ describe('BETA_REGISTRY', () => {
     expect(signal).toBeDefined();
     expect((signal as BetaFeature).serverCost).toBe(false);
 
-    expect(BETA_REGISTRY).toHaveLength(2);
+    // B-745 joined the shelf (FL-2). Zero server component — the redesign is
+    // presentation/step-structure only (same event writes, same sync paths), so no
+    // server gate is owed.
+    const logPicker = BETA_REGISTRY.find((b) => b.key === 'log_picker_v2');
+    expect(logPicker).toBeDefined();
+    expect((logPicker as BetaFeature).serverCost).toBe(false);
+
+    expect(BETA_REGISTRY).toHaveLength(3);
   });
 });
 

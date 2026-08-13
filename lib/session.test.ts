@@ -113,6 +113,8 @@ describe('wipeLocalSession — the shipped SIGNED_OUT teardown', () => {
         widget_enabled: { enabled: false, allowlist: ['66666666-7777-8888-9999-000000000000'] },
         // signal_design_v2 (B-721) is the same allowlist shape — account UUIDs wiped too.
         signal_design_v2: { enabled: false, allowlist: ['aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'] },
+        // log_picker_v2 (B-745) is the same allowlist shape — account UUIDs wiped too.
+        log_picker_v2: { enabled: false, allowlist: ['bbbbbbbb-cccc-dddd-eeee-ffffffffffff'] },
       },
     });
     expect(await loadCachedAppConfig()).not.toBeNull();

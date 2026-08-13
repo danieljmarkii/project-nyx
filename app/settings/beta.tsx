@@ -2,7 +2,7 @@ import { ComponentType } from 'react';
 import { ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
-import { FlaskConical, Info, LayoutGrid, Sparkles } from 'lucide-react-native';
+import { FlaskConical, Info, LayoutGrid, Sparkles, SquarePen } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
 import { Card, Header } from '../../components/ui';
 import { useAllowlistFlag } from '../../hooks/useAppConfig';
@@ -62,6 +62,12 @@ function presentationFor(key: AllowlistFlagKey): { Icon: IconComponent; onHint?:
       // there's nothing for the owner to place or do (unlike the widget). A distinct
       // glyph just helps the two betas read apart on the shelf.
       return { Icon: Sparkles };
+    case 'log_picker_v2':
+      // No on-state hint: like the Signal redesign, the new log picker takes effect
+      // the moment it's on — the owner reaches it by tapping the FAB, nothing to
+      // place or do. A distinct "log an entry" glyph helps it read apart from the
+      // widget (grid) and Signal (sparkles) cards on the shelf.
+      return { Icon: SquarePen };
     default:
       return { Icon: FlaskConical };
   }
