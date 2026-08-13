@@ -89,6 +89,28 @@ export const BETA_REGISTRY: BetaFeature[] = [
     // does not bite).
     serverCost: false,
   },
+  {
+    // More-events / log-picker redesign (B-745) — joins the shelf per FL-2 (the
+    // spec's "seed + shelf row land before any consumer" clause): PR 0 registers
+    // the flag and the shelf card dark; PRs 1..3 render the redesign behind
+    // `live = eligible && optedIn`, so being in the cohort no longer turns the new
+    // picker on by itself.
+    key: 'log_picker_v2',
+    title: 'Log screen redesign',
+    // nyx-voice: concrete about what the owner will notice (types grouped so they're
+    // easy to find; simple events finish without a second screen), warm, no
+    // exclamation, and it doesn't sell that it's "new".
+    blurb:
+      'A clearer way to log an event — the types grouped so what you need is easy to find, and simple ones finish without opening another screen.',
+    owner: 'Log-picker redesign (B-745) / Design',
+    addedDate: '2026-08-13',
+    // ~1 quarter out — a forcing date for the graduate/kill/extend call, not a timer.
+    reviewBy: '2026-11-13',
+    // Zero server component (spec §1/§2): the redesign is presentation + step
+    // structure only — same event writes, same sync paths — so no server resource is
+    // spent per opt-in and no server gate is owed.
+    serverCost: false,
+  },
 ];
 
 // ── The opt-in store (Gate 2 / D4) ────────────────────────────────────────────

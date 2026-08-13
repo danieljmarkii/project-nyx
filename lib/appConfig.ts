@@ -57,11 +57,18 @@ export type AppConfigKey = keyof AppConfigValues;
 // server data. The uplift's one server change (SR-4's additive `generate-signal`
 // payload) is computed uniformly for every account and is flag-independent, so there
 // is deliberately no server-side registration of this key (spec §7).
+//
+// `log_picker_v2` is the More-events / log-picker redesign rollout flag (B-745,
+// migration 056) — same shape, same fail-closed resolution. Client-render-only like
+// `signal_design_v2`, and more so: the redesign is presentation/step-structure only
+// (same event writes, same sync paths, zero server component — spec §1/§2), so there
+// is no server-side registration of this key either.
 export const ALLOWLIST_FLAG_KEYS = [
   'ask_enabled',
   'ask_general_enabled',
   'widget_enabled',
   'signal_design_v2',
+  'log_picker_v2',
 ] as const;
 export type AllowlistFlagKey = (typeof ALLOWLIST_FLAG_KEYS)[number];
 
@@ -78,6 +85,7 @@ export const ALLOWLIST_FLAGS_UNSET: AllowlistFlagValues = {
   ask_general_enabled: undefined,
   widget_enabled: undefined,
   signal_design_v2: undefined,
+  log_picker_v2: undefined,
 };
 
 // The pure primitive. `userId` is the signed-in caller's uid (null when unknown /
