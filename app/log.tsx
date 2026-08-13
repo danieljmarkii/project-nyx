@@ -225,7 +225,11 @@ export default function LogModal() {
     if (config.hasFood) setStep('food');
     else if (type === 'medication') setStep('medication');
     else if (type === 'weight_check') { seedWeightPrefill(); setStep('weight'); }
-    else if (type === 'stool_normal') setStep('stool-type');
+    // B-745 PR 2 — the flag-on grouped grid SPLITS Stool inline (its Normal/Loose
+    // segments emit stool_normal / diarrhea directly), so only the flag-off flat
+    // grid's single Stool tile still opens the Normal/Loose sub-step. diarrhea never
+    // reaches here from the flat grid (it's filtered out), so it falls to 'simple'.
+    else if (type === 'stool_normal' && !pickerV2) setStep('stool-type');
     else setStep('simple');
   }
 

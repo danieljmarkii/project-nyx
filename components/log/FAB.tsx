@@ -10,6 +10,9 @@ import { WhorlSpinner } from '../brand/WhorlSpinner';
 import { EventIcon } from '../event/EventIcon';
 import { PetAvatar } from '../pet/PetAvatar';
 import { PetSwitcherSheet } from '../pet/PetSwitcherSheet';
+import { EventTypeSheet } from './EventTypeSheet';
+import { useAllowlistFlag } from '../../hooks/useAppConfig';
+import { useBetaOptIn } from '../../lib/betaFeatures';
 import { useEventStore } from '../../store/eventStore';
 import { usePetStore } from '../../store/petStore';
 import { useMomentStore, MEAL_FLAGGED_DURATION_MS, whenMealCardVisible } from '../../store/momentStore';
@@ -26,9 +29,19 @@ export function FAB() {
 
   const [open, setOpen] = useState(false);
   const [switcherVisible, setSwitcherVisible] = useState(false);
+  const [eventSheetVisible, setEventSheetVisible] = useState(false);
   const [recentFoods, setRecentFoods] = useState<PickerFood[]>([]);
   const [logging, setLogging] = useState<string | null>(null);
   const fabAnim = useRef(new Animated.Value(0)).current;
+
+  // B-745 PR 2 — the More-events destination is the new bottom sheet when
+  // log_picker_v2 is live (the B-712 two-gate beta shape: server allowlist ×
+  // local opt-in, both hooks called unconditionally then combined). Flag-off keeps
+  // the shipped full-screen push, byte-identical (FL-1). Only the "More events"
+  // destination is gated; the quick-food and Vomit/Loose-stool taps are unchanged.
+  const pickerEligible = useAllowlistFlag('log_picker_v2');
+  const pickerOptedIn = useBetaOptIn('log_picker_v2');
+  const pickerV2 = pickerEligible && pickerOptedIn;
 
   const openMenu = useCallback(() => {
     setOpen(true);
@@ -277,14 +290,20 @@ export function FAB() {
 
             <View style={styles.divider} />
 
-            {/* More events → the full type grid. The photo-first "Attach photo"
+            {/* More events → the type grid. Flag-on (B-745 PR 2) this rises as a
+                bottom sheet over the current tab; flag-off it pushes the shipped
+                full-screen picker, byte-identical. The photo-first "Attach photo"
                 entry it used to carry was retired in B-745 PR 1 (R4: every log
                 starts from the event; photos still attach inside each event flow),
                 as was the older "Log with photo" row before it — both were
                 redundant second pathways to this one destination. */}
             <TouchableOpacity
               style={styles.menuAction}
-              onPress={() => { closeMenu(); router.push('/log'); }}
+              onPress={() => {
+                closeMenu();
+                if (pickerV2) setEventSheetVisible(true);
+                else router.push('/log');
+              }}
               activeOpacity={0.7}
             >
               <View style={styles.menuActionIcon}>
@@ -311,6 +330,14 @@ export function FAB() {
       <PetSwitcherSheet
         visible={switcherVisible}
         onClose={() => setSwitcherVisible(false)}
+      />
+
+      {/* B-745 PR 2 — the More-events destination as a bottom sheet (flag-on). Always
+          mounted with the FAB so it renders over whichever tab is active; inert until
+          setEventSheetVisible(true). Owns its own pet switcher internally. */}
+      <EventTypeSheet
+        visible={eventSheetVisible}
+        onClose={() => setEventSheetVisible(false)}
       />
     </>
   );
