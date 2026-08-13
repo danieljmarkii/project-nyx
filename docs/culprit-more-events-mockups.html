@@ -1,0 +1,571 @@
+<title>Culprit — Log event picker</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  /* ============================================================
+     The log event picker ("More events" → Log for {pet}) — ROUND 4,
+     THE CONVERGENCE. Supersedes rounds 1–3. G1b is ruled (V1 splat,
+     PM call). The converged design = the one-surface log flow
+     (round 3's Rung 2) wearing the capture bar's visual language
+     (round 3's Rung 3): tinted circles, light pills, the teal
+     confirm register — no black form. On PM confirm, this page is
+     design-locked and the build plan (§04) starts.
+
+     Document chrome is deliberately NOT the app. THE DEVICE FRAMES
+     STAY LIGHT IN BOTH THEMES ON PURPOSE — capture surfaces live in
+     the daylight register (brand spec §1.2).
+
+     Frame values are the real tokens from constants/theme.ts.
+     ============================================================ */
+
+  :root {
+    --paper:      #F5F4F9;
+    --paper-2:    #FFFFFF;
+    --ink:        #1B1A2E;
+    --ink-2:      #5F5C7A;
+    --ink-3:      #8B87A8;
+    --rule:       #DEDCE9;
+    --rule-soft:  #E9E7F1;
+    --teal:       #00C2A8;   /* theme.colorAccent */
+    --teal-ink:   #0B7B6C;   /* theme.colorAccentInk */
+    --teal-wash:  #E0FBF7;   /* theme.colorAccentLight */
+    --rose:       #F43F5E;   /* theme.colorEventSymptom */
+    --rose-ink:   #B4123B;
+    --rose-wash:  #FFE4E6;   /* theme.colorEventSymptomLight */
+    --med:        #5B7A9E;   /* theme.colorEventMedication */
+    --med-wash:   #EAF0F7;   /* theme.colorEventMedicationLight */
+
+    --serif: ui-serif, Charter, "Bitstream Charter", "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper:     #13112E;  /* theme.colorBrandNight */
+      --paper-2:   #1D1A42;
+      --ink:       #ECEAF6;  /* theme.colorTextOnNight */
+      --ink-2:     #A6A2CE;  /* theme.colorTextOnNightMuted */
+      --ink-3:     #706BA6;  /* theme.colorTextOnNightFaint */
+      --rule:      rgba(196,190,255,0.20);
+      --rule-soft: rgba(196,190,255,0.11);
+      --teal-ink:  #4FD8C4;
+      --teal-wash: rgba(0,194,168,0.14);
+      --rose-ink:  #FB7185;  /* theme.colorEventSymptomOnNight */
+      --rose-wash: rgba(251,113,133,0.14);
+      --med:       #93B0CE;
+      --med-wash:  rgba(91,122,158,0.18);
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #13112E; --paper-2: #1D1A42; --ink: #ECEAF6; --ink-2: #A6A2CE;
+    --ink-3: #706BA6; --rule: rgba(196,190,255,0.20); --rule-soft: rgba(196,190,255,0.11);
+    --teal-ink: #4FD8C4; --teal-wash: rgba(0,194,168,0.14);
+    --rose-ink: #FB7185; --rose-wash: rgba(251,113,133,0.14);
+    --med: #93B0CE; --med-wash: rgba(91,122,158,0.18);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--paper); color: var(--ink);
+    font-family: var(--sans); font-size: 16px; line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 56px 28px 96px; }
+  .col  { max-width: 68ch; }
+
+  .mast { border-bottom: 1px solid var(--rule); padding-bottom: 28px; margin-bottom: 40px; }
+  .eyebrow {
+    font-family: var(--mono); font-size: 11px; letter-spacing: 0.14em;
+    text-transform: uppercase; color: var(--ink-3); margin: 0 0 14px;
+    display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center;
+  }
+  .round-chip {
+    display: inline-flex; align-items: center; gap: 7px;
+    font-family: var(--mono); font-size: 11px; letter-spacing: 0.1em;
+    text-transform: uppercase; font-weight: 600;
+    color: var(--teal-ink); background: var(--teal-wash);
+    border-radius: 999px; padding: 4px 11px;
+  }
+  .round-chip::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+  h1 {
+    font-family: var(--serif); font-weight: 600; font-size: clamp(30px, 4.4vw, 44px);
+    line-height: 1.12; letter-spacing: -0.015em; margin: 0 0 14px; text-wrap: balance;
+  }
+  .standfirst { font-size: 17px; color: var(--ink-2); margin: 0; max-width: 62ch; }
+  .standfirst strong { color: var(--ink); font-weight: 600; }
+
+  section { margin-top: 72px; }
+  .sec-head { display: flex; align-items: baseline; gap: 14px; margin-bottom: 8px; border-top: 1px solid var(--rule); padding-top: 18px; }
+  .sec-num { font-family: var(--mono); font-size: 12px; color: var(--ink-3); letter-spacing: 0.08em; flex-shrink: 0; }
+  h2 { font-family: var(--serif); font-weight: 600; font-size: clamp(22px, 2.6vw, 28px); line-height: 1.2; letter-spacing: -0.01em; margin: 0; text-wrap: balance; }
+  p { margin: 0 0 16px; }
+  .col p:last-child { margin-bottom: 0; }
+  em { font-style: italic; color: var(--ink-2); }
+  strong { font-weight: 600; }
+  code { font-family: var(--mono); font-size: 0.855em; background: var(--rule-soft); border-radius: 4px; padding: 1px 5px; }
+
+  .callout {
+    border-left: 2px solid var(--teal); padding: 2px 0 2px 20px;
+    margin: 24px 0; color: var(--ink-2); font-size: 15.5px;
+  }
+  .callout strong { color: var(--ink); }
+
+  .rulings { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 1px; background: var(--rule); border: 1px solid var(--rule); margin: 26px 0 0; }
+  .rulings > div { background: var(--paper); padding: 18px 20px; }
+  .rulings .k { font-family: var(--mono); font-size: 11px; letter-spacing: 0.12em; color: var(--ink-3); text-transform: uppercase; }
+  .rulings .v { font-family: var(--serif); font-size: 20px; font-weight: 600; margin: 6px 0 5px; }
+  .rulings .n { font-size: 13.5px; color: var(--ink-2); line-height: 1.45; }
+
+  ul.notes { margin: 16px 0 0; padding-left: 0; list-style: none; display: grid; gap: 12px; }
+  ul.notes li { padding-left: 20px; position: relative; color: var(--ink-2); font-size: 15.5px; }
+  ul.notes li::before { content: ""; position: absolute; left: 0; top: 0.62em; width: 7px; height: 1px; background: var(--ink-3); }
+  ul.notes li strong { color: var(--ink); }
+
+  .compare { display: flex; flex-wrap: wrap; gap: 28px; margin-top: 28px; align-items: flex-start; }
+  .compare figure { margin: 0; display: flex; flex-direction: column; gap: 12px; }
+  .compare figcaption { font-size: 13.5px; color: var(--ink-2); max-width: 320px; line-height: 1.5; }
+  .compare figcaption b { color: var(--ink); font-weight: 600; display: block; margin-bottom: 3px; font-family: var(--mono); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; }
+
+  footer { margin-top: 80px; border-top: 1px solid var(--rule); padding-top: 22px; font-size: 13.5px; color: var(--ink-3); }
+
+  /* ── THE DEVICE FRAME — light in both themes, on purpose ──── */
+  .phone {
+    width: 320px; max-width: 100%;
+    background: #FFFFFF; border: 1px solid #EAEAEA; border-radius: 24px;
+    padding: 0 0 18px; color: #0A0A0A; font-family: var(--sans);
+    color-scheme: light; overflow: hidden; position: relative;
+  }
+  .p-head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 16px 24px; border-bottom: 1px solid #EAEAEA;
+  }
+  .p-title { font-size: 17px; font-weight: 600; color: #0A0A0A; }
+  .p-x { color: #525252; display: flex; }
+
+  svg.i { flex-shrink: 0; }
+
+  .circ { border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .circ.neutral { background: #F5F5F5; }
+  .circ.rose    { background: #FFE4E6; }
+  .circ.teal    { background: #E0FBF7; }
+  .circ.slate   { background: #EAF0F7; }
+
+  .gC { padding: 12px 16px 0; }
+  .gC .eyebrow-s {
+    font-size: 11px; font-weight: 500; color: #525252; text-transform: uppercase;
+    letter-spacing: 0.6px; margin: 10px 0 8px;
+  }
+  .gC .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .tileB {
+    background: #FFFFFF; border: 1px solid #EAEAEA; border-radius: 16px;
+    padding: 12px; display: flex; align-items: center; gap: 10px; min-height: 62px;
+  }
+  .tileB .lbl { font-size: 14px; font-weight: 500; color: #0A0A0A; line-height: 1.15; }
+
+  .split { grid-column: span 2; background: #FFFFFF; border: 1px solid #EAEAEA; border-radius: 16px; padding: 12px; display: flex; align-items: center; gap: 10px; min-height: 62px; }
+  .split .seg { margin-left: auto; display: flex; gap: 6px; }
+  .split .seg span {
+    font-size: 12px; font-weight: 500; color: #0A0A0A; border: 1px solid #EAEAEA;
+    border-radius: 999px; padding: 7px 14px;
+  }
+
+  /* Sheet presentation */
+  .sheet-bg { background: #FAFAFA; padding: 12px 12px 0; }
+  .dim { position: absolute; inset: 0; background: rgba(10,10,10,0.35); border-radius: 24px; z-index: 1; }
+  .sheet {
+    position: relative; z-index: 2; margin-top: 56px; background: #FFFFFF;
+    border-radius: 24px 24px 0 0; border: 1px solid #EAEAEA; border-bottom: 0;
+    padding-bottom: 16px; box-shadow: 0 -6px 24px rgba(0,0,0,0.10);
+  }
+  .grab { width: 36px; height: 4px; border-radius: 2px; background: #D4D4D4; margin: 10px auto 2px; }
+  .sheet .p-head { border-bottom: 0; padding: 8px 20px 0; }
+
+  .zone {
+    background: #F0F0F0; border-radius: 16px; color: #A3A3A3;
+    font-size: 10.5px; letter-spacing: 0.09em; text-transform: uppercase;
+    display: flex; align-items: center; justify-content: center; font-weight: 600;
+    margin-bottom: 8px;
+  }
+
+  /* ── Stage 2, converged: light pills + teal confirm register ── */
+  .row-pill {
+    display: flex; align-items: center; gap: 10px;
+    border: 1px solid #EAEAEA; border-radius: 16px; padding: 11px 12px;
+    margin: 0 0 8px; background: #FFFFFF;
+  }
+  .row-pill.dashed { border-style: dashed; border-color: #D4D4D4; }
+  .row-pill .rl { font-size: 13.5px; color: #0A0A0A; }
+  .row-pill .rl .sub { font-size: 11px; color: #737373; margin-top: 1px; }
+  .row-pill .tr { margin-left: auto; font-size: 12.5px; color: #0B7B6C; font-weight: 500; }
+  .row-pill .tr.quiet { color: #737373; font-weight: 400; }
+
+  .chiprow { display: flex; gap: 6px; margin-left: auto; }
+  .chiprow span {
+    font-size: 12px; font-weight: 500; border: 1px solid #EAEAEA;
+    border-radius: 999px; padding: 6px 12px; color: #0A0A0A; background: #FFFFFF;
+  }
+  .chiprow span.on { background: #E0FBF7; color: #0B7B6C; border-color: #B5EFE5; }
+
+  .sum-pill {
+    margin: 10px 0 0; background: #E0FBF7; border: 1px solid #B5EFE5; border-radius: 16px;
+    padding: 12px 12px 12px 14px; display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  }
+  .sum-pill .pp { font-size: 13.5px; color: #0B7B6C; font-weight: 500; line-height: 1.35; }
+  .sum-pill .go { background: #0A0A0A; color: #FFF; font-size: 12.5px; font-weight: 600; border-radius: 999px; padding: 8px 16px; white-space: nowrap; }
+
+  /* Glyph mini-strip */
+  .glyphs { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 1px; background: var(--rule); border: 1px solid var(--rule); margin-top: 26px; }
+  .glyphs > div { background: var(--paper); padding: 18px 16px; text-align: center; }
+  .glyphs .stage-l { background: #FFFFFF; color-scheme: light; border-radius: 10px; padding: 14px 8px; display: flex; justify-content: center; gap: 16px; align-items: center; flex-wrap: wrap; }
+  .glyphs .gname { font-family: var(--mono); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); margin-top: 10px; }
+  .glyphs .gnote { font-size: 12.5px; color: var(--ink-2); margin-top: 4px; line-height: 1.4; }
+  .glyphs .verdict { font-family: var(--mono); font-size: 10.5px; font-weight: 600; letter-spacing: 0.07em; border-radius: 3px; padding: 2px 7px; display: inline-block; margin-top: 8px; }
+  .glyphs .keep { background: var(--teal-wash); color: var(--teal-ink); }
+
+  .brief { background: var(--paper-2); border: 1px solid var(--rule); border-radius: 3px; padding: 24px 28px; margin-top: 24px; }
+  .brief .bid { font-family: var(--mono); font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 8px; }
+  .brief .bq { font-family: var(--serif); font-size: clamp(18px, 2vw, 22px); font-weight: 600; line-height: 1.3; margin-bottom: 12px; text-wrap: balance; }
+  .brief dl { margin: 0; font-size: 14.5px; color: var(--ink-2); display: grid; gap: 8px; }
+  .brief dt { font-family: var(--mono); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-3); }
+  .brief dd { margin: 0 0 6px; }
+  .brief .rec { color: var(--teal-ink); font-weight: 600; }
+
+  /* Build-plan table */
+  .tablewrap { overflow-x: auto; margin-top: 26px; }
+  table { border-collapse: collapse; width: 100%; min-width: 620px; font-size: 14.5px; }
+  th, td { text-align: left; vertical-align: top; padding: 13px 16px 13px 0; border-bottom: 1px solid var(--rule-soft); }
+  th { font-family: var(--mono); font-size: 11px; letter-spacing: 0.11em; text-transform: uppercase; color: var(--ink-3); font-weight: 600; border-bottom-color: var(--rule); padding-top: 0; }
+  td:first-child { font-family: var(--mono); font-size: 12px; color: var(--ink-3); white-space: nowrap; padding-right: 22px; }
+</style>
+
+<div class="wrap">
+
+  <header class="mast">
+    <p class="eyebrow">
+      <span>B-745 · FAB → More events</span><span>Round 4 — convergence</span><span>2026-08-13</span>
+      <span class="round-chip">Design-locked — F1 confirmed</span>
+    </p>
+    <h1>One surface, in daylight colours</h1>
+    <p class="standfirst">
+      The converged design: <strong>round 3's one-surface flow wearing round 3's capture-bar skin.</strong>
+      The splat is ruled in (G1b). Stage 2 sheds the black form — tinted circles, light pills, and the
+      app's shipped <strong>teal confirm register</strong> carry it instead, with the capture bar's parse-preview
+      pill reborn as the save affordance: a live summary sentence with <em>Log it</em> on it. The predictive
+      engine stays parked; only its clothes came over. <em>This page supersedes rounds 1–3 at this URL.
+      On F1 confirm it is the design-locked build spec.</em>
+    </p>
+  </header>
+
+  <!-- ================================================================ -->
+  <section>
+    <div class="sec-head"><span class="sec-num">01</span><h2>Rulings — everything but one is closed</h2></div>
+    <div class="rulings">
+      <div>
+        <div class="k">G1b · Vomit glyph</div>
+        <div class="v">V1 — the splat</div>
+        <div class="n">PM call over the team's V2 lean, recorded. Rendered throughout this round; the
+        flecks stay at 16px. Loose stool's sibling gets drawn in the same pass, same language.</div>
+      </div>
+      <div>
+        <div class="k">A2 · The flow</div>
+        <div class="v">One-surface log — converged</div>
+        <div class="n">A simple event completes inside the sheet; Home never leaves. Redesign directive
+        applied: the capture bar's UX design and colours, not its predictive engine.</div>
+      </div>
+      <div>
+        <div class="k">A3 · Capture bar engine</div>
+        <div class="v">Parked — north star</div>
+        <div class="n">Its visual language is absorbed here; the suggestion/parse layers wait as the
+        recorded north star (assumed from the directive — say the word to fund a prototype instead).</div>
+      </div>
+      <div>
+        <div class="k">Everything prior</div>
+        <div class="v">Standing</div>
+        <div class="n">C groups (R1) · BatteryLow (R2) · photo-first entry removed (R4) · stool swirl
+        adopted (G1a) · dial withdrawn. All rendered below.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================================================================ -->
+  <section>
+    <div class="sec-head"><span class="sec-num">02</span><h2>Why the redesign is principled, not just prettier</h2></div>
+    <div class="col">
+      <p>Round 3's stage 2 was drawn as a <em>form</em> — sober rows, black-filled chips, a black Save bar.
+      The reaction ("I hate the black design") points at something the system already knows:
+      <strong>stage 2 isn't a form, it's a confirmation.</strong> By the time it renders, the app can fully
+      describe the row it's about to write — type, pet, time, confidence. The B-614 ruling drew exactly
+      this line: <em>a control that opens a form is a second door; a control that writes a row the app
+      could already describe is a confirmation.</em> And the app's shipped confirmation register is the
+      teal one — <code>colorAccentLight</code> wash + <code>colorAccentInk</code> text, the language of the
+      completion cards and the med strip's one-tap. So the capture bar's parse-preview pill was never
+      just a nice visual: it was the confirm register applied to capture. Stage 2 now speaks it
+      natively:</p>
+      <ul class="notes">
+        <li><strong>The summary pill is the save.</strong> A live sentence — "Vomit · today at 5:33 PM" —
+          in the teal wash, with <em>Log it</em> on it. Adjust a chip and the sentence updates; what you
+          read is exactly what gets written. The only dark element left is the small Log-it pill,
+          mirroring the FAB — the one "commit" mark on a light surface.</li>
+        <li><strong>Chips select in teal, not black.</strong> Saw it / Found it selected state = teal wash +
+          teal ink, the ChipGroup selection language, not a black fill.</li>
+        <li><strong>Rows become light pills.</strong> Photo and note are bordered pills (photo keeps the
+          dashed "additive" treatment — the documented exception, now on the surface it always meant).</li>
+        <li><strong>The summary is confidence-honest.</strong> Flip to "Found it" and the sentence changes
+          register: "found — sometime since this morning." The B-448 time-confidence model, spoken in
+          the pill instead of hidden in a picker.</li>
+      </ul>
+    </div>
+    <div class="glyphs">
+      <div>
+        <div class="stage-l">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#0A0A0A" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5c1 0 1.6.9 2.4 1.2.9.3 2-.2 2.6.5.6.7.1 1.7.5 2.6.4.9 1.5 1.3 1.5 2.2 0 .9-1.1 1.4-1.4 2.2-.3.9.3 1.9-.4 2.6-.7.7-1.7.3-2.6.6-.8.3-1.4 1.1-2.4 1.1s-1.6-.8-2.4-1.1c-.9-.3-2 .1-2.6-.6-.7-.7-.1-1.7-.4-2.6-.3-.8-1.4-1.3-1.4-2.2 0-.9 1.1-1.3 1.5-2.2.4-.9-.1-1.9.5-2.6.6-.7 1.7-.2 2.6-.5.8-.3 1.4-1.2 2.4-1.2Z"/><path d="M20.5 4.5v.01"/><path d="M4 4.8v.01"/></svg>
+          <span class="circ rose" style="width:36px;height:36px;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#F43F5E" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5c1 0 1.6.9 2.4 1.2.9.3 2-.2 2.6.5.6.7.1 1.7.5 2.6.4.9 1.5 1.3 1.5 2.2 0 .9-1.1 1.4-1.4 2.2-.3.9.3 1.9-.4 2.6-.7.7-1.7.3-2.6.6-.8.3-1.4 1.1-2.4 1.1s-1.6-.8-2.4-1.1c-.9-.3-2 .1-2.6-.6-.7-.7-.1-1.7-.4-2.6-.3-.8-1.4-1.3-1.4-2.2 0-.9 1.1-1.3 1.5-2.2.4-.9-.1-1.9.5-2.6.6-.7 1.7-.2 2.6-.5.8-.3 1.4-1.2 2.4-1.2Z"/><path d="M20.5 4.5v.01"/><path d="M4 4.8v.01"/></svg></span>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#0A0A0A" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5c1 0 1.6.9 2.4 1.2.9.3 2-.2 2.6.5.6.7.1 1.7.5 2.6.4.9 1.5 1.3 1.5 2.2 0 .9-1.1 1.4-1.4 2.2-.3.9.3 1.9-.4 2.6-.7.7-1.7.3-2.6.6-.8.3-1.4 1.1-2.4 1.1s-1.6-.8-2.4-1.1c-.9-.3-2 .1-2.6-.6-.7-.7-.1-1.7-.4-2.6-.3-.8-1.4-1.3-1.4-2.2 0-.9 1.1-1.3 1.5-2.2.4-.9-.1-1.9.5-2.6.6-.7 1.7-.2 2.6-.5.8-.3 1.4-1.2 2.4-1.2Z"/><path d="M20.5 4.5v.01"/><path d="M4 4.8v.01"/></svg>
+        </div>
+        <div class="gname">Vomit — the splat, ruled</div>
+        <div class="gnote">Plain · tinted · 16px. Ships beside the swirl in the same custom-glyph PR.</div>
+        <span class="verdict keep">Ruled (G1b)</span>
+      </div>
+      <div>
+        <div class="stage-l">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#0A0A0A" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3c2 .7 2.9 2.4 2.2 4.1c1.8.2 3.1 1.5 3.1 3.1c0 .8-.3 1.6-.9 2.1c1.5.4 2.6 1.6 2.6 3.1c0 1.9-1.7 3.4-3.9 3.4H8.9c-2.2 0-3.9-1.5-3.9-3.4c0-1.5 1.1-2.7 2.6-3.1c-.6-.5-.9-1.3-.9-2.1c0-1.6 1.3-2.9 3.1-3.1C9.1 5.4 10 3.7 12 3Z"/></svg>
+          <span class="circ rose" style="width:36px;height:36px;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#F43F5E" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3c2 .7 2.9 2.4 2.2 4.1c1.8.2 3.1 1.5 3.1 3.1c0 .8-.3 1.6-.9 2.1c1.5.4 2.6 1.6 2.6 3.1c0 1.9-1.7 3.4-3.9 3.4H8.9c-2.2 0-3.9-1.5-3.9-3.4c0-1.5 1.1-2.7 2.6-3.1c-.6-.5-.9-1.3-.9-2.1c0-1.6 1.3-2.9 3.1-3.1C9.1 5.4 10 3.7 12 3Z"/></svg></span>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#0A0A0A" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3c2 .7 2.9 2.4 2.2 4.1c1.8.2 3.1 1.5 3.1 3.1c0 .8-.3 1.6-.9 2.1c1.5.4 2.6 1.6 2.6 3.1c0 1.9-1.7 3.4-3.9 3.4H8.9c-2.2 0-3.9-1.5-3.9-3.4c0-1.5 1.1-2.7 2.6-3.1c-.6-.5-.9-1.3-.9-2.1c0-1.6 1.3-2.9 3.1-3.1C9.1 5.4 10 3.7 12 3Z"/></svg>
+        </div>
+        <div class="gname">Stool — the swirl, ruled</div>
+        <div class="gnote">Adopted in round 3 (G1a). The GI family finally names its subjects.</div>
+        <span class="verdict keep">Ruled (G1a)</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================================================================ -->
+  <section>
+    <div class="sec-head"><span class="sec-num">03</span><h2>The converged design — three states</h2></div>
+
+    <div class="compare">
+
+      <!-- STAGE 1 -->
+      <figure>
+        <div class="phone">
+          <div class="sheet-bg">
+            <div class="zone" style="height:56px;">Home — signal</div>
+            <div class="zone" style="height:40px;">Today</div>
+          </div>
+          <div class="dim"></div>
+          <div class="sheet">
+            <div class="grab"></div>
+            <div class="p-head">
+              <div class="p-title">Log for Nyx <span style="color:#737373;font-size:13px;font-weight:400;">▾</span></div>
+            </div>
+            <div class="gC">
+              <div class="eyebrow-s">Symptoms</div>
+              <div class="row2">
+                <div class="tileB"><span class="circ rose" style="width:36px;height:36px;"><svg class="i" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#F43F5E" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5c1 0 1.6.9 2.4 1.2.9.3 2-.2 2.6.5.6.7.1 1.7.5 2.6.4.9 1.5 1.3 1.5 2.2 0 .9-1.1 1.4-1.4 2.2-.3.9.3 1.9-.4 2.6-.7.7-1.7.3-2.6.6-.8.3-1.4 1.1-2.4 1.1s-1.6-.8-2.4-1.1c-.9-.3-2 .1-2.6-.6-.7-.7-.1-1.7-.4-2.6-.3-.8-1.4-1.3-1.4-2.2 0-.9 1.1-1.3 1.5-2.2.4-.9-.1-1.9.5-2.6.6-.7 1.7-.2 2.6-.5.8-.3 1.4-1.2 2.4-1.2Z"/><path d="M20.5 4.5v.01"/><path d="M4 4.8v.01"/></svg></span><div><div class="lbl">Vomit</div></div></div>
+                <div class="tileB"><span class="circ rose" style="width:36px;height:36px;"><svg class="i" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#F43F5E" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect width="16" height="10" x="2" y="7" rx="2" ry="2"/><line x1="22" x2="22" y1="11" y2="13"/><line x1="6" x2="6" y1="11" y2="13"/></svg></span><div><div class="lbl">Lethargy</div></div></div>
+                <div class="split">
+                  <span class="circ rose" style="width:36px;height:36px;"><svg class="i" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#F43F5E" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3c2 .7 2.9 2.4 2.2 4.1c1.8.2 3.1 1.5 3.1 3.1c0 .8-.3 1.6-.9 2.1c1.5.4 2.6 1.6 2.6 3.1c0 1.9-1.7 3.4-3.9 3.4H8.9c-2.2 0-3.9-1.5-3.9-3.4c0-1.5 1.1-2.7 2.6-3.1c-.6-.5-.9-1.3-.9-2.1c0-1.6 1.3-2.9 3.1-3.1C9.1 5.4 10 3.7 12 3Z"/></svg></span>
+                  <div class="lbl">Stool</div>
+                  <div class="seg"><span>Normal</span><span>Loose</span></div>
+                </div>
+                <div class="tileB" style="grid-column: span 2;"><span class="circ rose" style="width:36px;height:36px;"><svg class="i" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#F43F5E" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="4" r="2"/><circle cx="18" cy="8" r="2"/><circle cx="20" cy="16" r="2"/><path d="M9 10a5 5 0 0 1 5 5v3.5a3.5 3.5 0 0 1-6.84 1.045Q6.52 17.48 4.46 16.84A3.5 3.5 0 0 1 5.5 10Z"/></svg></span><div><div class="lbl">Itch/Scratch</div></div></div>
+              </div>
+              <div class="eyebrow-s">Food &amp; care</div>
+              <div class="row2">
+                <div class="tileB"><span class="circ teal" style="width:36px;height:36px;"><svg class="i" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#00C2A8" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m16 2-2.3 2.3a3 3 0 0 0 0 4.2l1.8 1.8a3 3 0 0 0 4.2 0L22 8"/><path d="M15 15 3.3 3.3a4.2 4.2 0 0 0 0 6l7.3 7.3c.7.7 2 .7 2.8 0L15 15Zm0 0 7 7"/><path d="m2.1 21.8 6.4-6.3"/><path d="m19 5-7 7"/></svg></span><div><div class="lbl">Meal</div></div></div>
+                <div class="tileB"><span class="circ slate" style="width:36px;height:36px;"><svg class="i" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#5B7A9E" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m10.5 20.5 10-10a4.95 4.95 0 1 0-7-7l-10 10a4.95 4.95 0 1 0 7 7Z"/><path d="m8.5 8.5 7 7"/></svg></span><div><div class="lbl">Medication</div></div></div>
+              </div>
+              <div class="eyebrow-s">Body &amp; more</div>
+              <div class="row2">
+                <div class="tileB"><span class="circ neutral" style="width:36px;height:36px;"><svg class="i" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#525252" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m16 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="m2 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="M7 21h10"/><path d="M12 3v18"/><path d="M3 7h2c2 0 5-1 7-2 2 1 5 2 7 2h2"/></svg></span><div><div class="lbl">Weight</div></div></div>
+                <div class="tileB"><span class="circ neutral" style="width:36px;height:36px;"><svg class="i" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#525252" stroke-width="1.75"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg></span><div><div class="lbl">Other</div></div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <figcaption><b>1 · The picker</b>
+        The confirmed grid as a sheet over Home: C groups, split stool (the sub-step deleted), splat
+        and swirl in place, pet switcher on the title. Meal, Medication, and Weight still route to
+        their own screens; symptoms and Other never leave the sheet.</figcaption>
+      </figure>
+
+      <!-- STAGE 2 — SAW IT -->
+      <figure>
+        <div class="phone">
+          <div class="sheet-bg">
+            <div class="zone" style="height:56px;">Home — signal</div>
+            <div class="zone" style="height:40px;">Today</div>
+            <div class="zone" style="height:40px;">Trend</div>
+          </div>
+          <div class="dim"></div>
+          <div class="sheet">
+            <div class="grab"></div>
+            <div class="p-head">
+              <div class="p-title" style="display:flex;align-items:center;gap:9px;">
+                <span class="circ rose" style="width:30px;height:30px;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#F43F5E" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5c1 0 1.6.9 2.4 1.2.9.3 2-.2 2.6.5.6.7.1 1.7.5 2.6.4.9 1.5 1.3 1.5 2.2 0 .9-1.1 1.4-1.4 2.2-.3.9.3 1.9-.4 2.6-.7.7-1.7.3-2.6.6-.8.3-1.4 1.1-2.4 1.1s-1.6-.8-2.4-1.1c-.9-.3-2 .1-2.6-.6-.7-.7-.1-1.7-.4-2.6-.3-.8-1.4-1.3-1.4-2.2 0-.9 1.1-1.3 1.5-2.2.4-.9-.1-1.9.5-2.6.6-.7 1.7-.2 2.6-.5.8-.3 1.4-1.2 2.4-1.2Z"/></svg></span>
+                Vomit — Nyx
+              </div>
+              <div class="p-x"><svg class="i" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg></div>
+            </div>
+            <div style="padding: 10px 20px 0;">
+              <div class="row-pill">
+                <span class="circ neutral" style="width:30px;height:30px;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#525252" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span>
+                <div class="rl">Today · 5:33 PM<div class="sub">Change time</div></div>
+                <div class="chiprow"><span class="on">Saw it</span><span>Found it</span></div>
+              </div>
+              <div class="row-pill dashed">
+                <span class="circ neutral" style="width:30px;height:30px;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#525252" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg></span>
+                <div class="rl">Add a photo<div class="sub">Optional — I can read it for signs</div></div>
+              </div>
+              <div class="row-pill">
+                <span class="circ neutral" style="width:30px;height:30px;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#525252" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></span>
+                <div class="rl" style="color:#A3A3A3;">Add a note (optional)</div>
+              </div>
+              <div class="sum-pill">
+                <span class="pp">Vomit · today at 5:33 PM</span>
+                <span class="go">Log it</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <figcaption><b>2 · The confirm — Saw it</b>
+        No form, no black surfaces: light pills with tinted circles, the ChipGroup teal selection, and
+        the summary pill as the save — a live sentence in the confirm register with the one dark
+        Log-it mark (the FAB's echo). What the pill says is exactly what gets written.</figcaption>
+      </figure>
+
+      <!-- STAGE 2 — FOUND IT -->
+      <figure>
+        <div class="phone">
+          <div class="sheet-bg">
+            <div class="zone" style="height:56px;">Home — signal</div>
+            <div class="zone" style="height:40px;">Today</div>
+            <div class="zone" style="height:40px;">Trend</div>
+          </div>
+          <div class="dim"></div>
+          <div class="sheet">
+            <div class="grab"></div>
+            <div class="p-head">
+              <div class="p-title" style="display:flex;align-items:center;gap:9px;">
+                <span class="circ rose" style="width:30px;height:30px;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#F43F5E" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5c1 0 1.6.9 2.4 1.2.9.3 2-.2 2.6.5.6.7.1 1.7.5 2.6.4.9 1.5 1.3 1.5 2.2 0 .9-1.1 1.4-1.4 2.2-.3.9.3 1.9-.4 2.6-.7.7-1.7.3-2.6.6-.8.3-1.4 1.1-2.4 1.1s-1.6-.8-2.4-1.1c-.9-.3-2 .1-2.6-.6-.7-.7-.1-1.7-.4-2.6-.3-.8-1.4-1.3-1.4-2.2 0-.9 1.1-1.3 1.5-2.2.4-.9-.1-1.9.5-2.6.6-.7 1.7-.2 2.6-.5.8-.3 1.4-1.2 2.4-1.2Z"/></svg></span>
+                Vomit — Nyx
+              </div>
+              <div class="p-x"><svg class="i" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg></div>
+            </div>
+            <div style="padding: 10px 20px 0;">
+              <div class="row-pill">
+                <span class="circ neutral" style="width:30px;height:30px;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#525252" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span>
+                <div class="rl">Sometime since this morning<div class="sub">Adjust window</div></div>
+                <div class="chiprow"><span>Saw it</span><span class="on">Found it</span></div>
+              </div>
+              <div class="row-pill dashed">
+                <span class="circ neutral" style="width:30px;height:30px;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#525252" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg></span>
+                <div class="rl">Add a photo<div class="sub">Optional — I can read it for signs</div></div>
+              </div>
+              <div class="row-pill">
+                <span class="circ neutral" style="width:30px;height:30px;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#525252" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></span>
+                <div class="rl" style="color:#A3A3A3;">Add a note (optional)</div>
+              </div>
+              <div class="sum-pill">
+                <span class="pp">Vomit · found — sometime since this morning</span>
+                <span class="go">Log it</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <figcaption><b>3 · The confirm — Found it</b>
+        Flip one chip and the whole surface stays honest: the time row becomes a window, and the
+        summary pill changes register — "found — sometime since this morning." The B-448 confidence
+        model, spoken where the owner is already looking. Nothing else moves.</figcaption>
+      </figure>
+
+    </div>
+
+    <div class="col">
+      <div class="callout">
+        <strong>One voice note, pre-cleared with the copy rules:</strong> the photo row's sub-line ("I can
+        read it for signs") uses the app's first person and stops at capability — it promises a read,
+        never reassurance. The final copy pass (build PR 3) runs <code>nyx-voice</code> +
+        <code>clinical-guardrails</code> over every string here; the pill's "found —" phrasing is drafted
+        to match the shipped History wording for window-confidence events.
+      </div>
+    </div>
+  </section>
+
+  <!-- ================================================================ -->
+  <section>
+    <div class="sec-head"><span class="sec-num">04</span><h2>The build plan — three PRs, value ships at each</h2></div>
+    <div class="tablewrap">
+      <table>
+        <tr><th>PR</th><th>Ships</th><th>Contains</th></tr>
+        <tr>
+          <td>PR 1</td>
+          <td>The new picker, today's presentation</td>
+          <td>Custom glyphs (splat + swirl + loose-stool sibling) behind <code>EventIcon</code> ·
+          BatteryLow + Ellipsis swaps · the grouped tile grid extracted to
+          <code>components/log/EventTypePicker</code> · photo-first entry removed · shared
+          <code>Header</code> migration + token cleanup across all five log headers · design-system
+          README icon-section correction. Immediate visible win; zero flow change.</td>
+        </tr>
+        <tr>
+          <td>PR 2</td>
+          <td>The sheet</td>
+          <td>Bottom-sheet presentation over the current tab · split stool tile (sub-step deleted) ·
+          pet switcher on the title. This is B-007's destination half — the B-007 row is updated to
+          point here rather than duplicating.</td>
+        </tr>
+        <tr>
+          <td>PR 3</td>
+          <td>The one-surface confirm</td>
+          <td>The step machine reworked so simple events complete in-sheet: the pill rows, the teal
+          chips, the live summary-pill save, the completion moment landing in place. Full
+          <code>nyx-voice</code> + <code>clinical-guardrails</code> copy pass. Meal/med/weight routing
+          untouched.</td>
+        </tr>
+      </table>
+    </div>
+    <div class="col">
+      <p style="margin-top:18px;">Each PR leaves the app shippable and better than the last; nothing
+      waits on the whole. The B-010/B-448 time model, every write path, and the AI-read photo trigger
+      are consumed as-is — this track touches presentation and step structure, never data semantics.</p>
+    </div>
+  </section>
+
+  <!-- ================================================================ -->
+  <section>
+    <div class="sec-head"><span class="sec-num">05</span><h2>React — the one call that locks it</h2></div>
+
+    <div class="brief">
+      <div class="bid">F1 · The convergence — CONFIRMED 2026-08-13</div>
+      <div class="bq">Design-locked, with three riders. This page is the design authority.</div>
+      <dl>
+        <dt>AC-CHIP</dt>
+        <dd>The Saw it / Found it chips <strong>never wrap</strong> — the mock's own render flaw is the build
+        requirement. Fixed-intrinsic-width chips; on narrow widths the pair drops below the label as a
+        whole row. Verified at 320pt + max accessibility font.</dd>
+        <dt>AC-FOUND</dt>
+        <dd>Found it carries its <strong>full state set</strong> in-sheet: open-ended and bounded window modes
+        (the B-010/B-448 model), adjust-window opens inside the sheet, and the summary pill re-renders
+        per state at History-parity wording.</dd>
+        <dt>Beta gate</dt>
+        <dd>The whole redesign ships dark behind <code>log_picker_v2</code> — the B-712 two-gate shape
+        (allowlist eligibility + a Beta features shelf card, opt-in default off). Flag-off is
+        byte-identical to today's picker, snapshot-pinned; the old grid survives until a GA call
+        retires it.</dd>
+        <dt>Build contract</dt>
+        <dd><code>docs/nyx-more-events-picker-requirements.md</code> v1.0 — decision record, the flag
+        spec, ACs, the PR 0–3 plan, and the QA spine.</dd>
+      </dl>
+    </div>
+
+  </section>
+
+  <footer>
+    Source of truth: <code>docs/culprit-more-events-mockups.html</code>, round 4 — the convergence,
+    <strong>design-locked 2026-08-13 (F1)</strong>; supersedes rounds 1–3, same artifact URL throughout.
+    Build contract: <code>docs/nyx-more-events-picker-requirements.md</code>. Frame values are copied
+    from <code>constants/theme.ts</code>; the splat/swirl customs are mock drafts the build refines at
+    24px master size.
+  </footer>
+
+</div>
