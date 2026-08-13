@@ -242,8 +242,8 @@
 
   <header class="mast">
     <p class="eyebrow">
-      <span>B-745 · FAB → More events</span><span>Round 4 — convergence</span><span>2026-08-12</span>
-      <span class="round-chip">One call left: confirm F1 → design-locked</span>
+      <span>B-745 · FAB → More events</span><span>Round 4 — convergence</span><span>2026-08-13</span>
+      <span class="round-chip">Design-locked — F1 confirmed</span>
     </p>
     <h1>One surface, in daylight colours</h1>
     <p class="standfirst">
@@ -536,29 +536,36 @@
     <div class="sec-head"><span class="sec-num">05</span><h2>React — the one call that locks it</h2></div>
 
     <div class="brief">
-      <div class="bid">F1 · The convergence</div>
-      <div class="bq">Is this the design — lock it and start PR 1?</div>
+      <div class="bid">F1 · The convergence — CONFIRMED 2026-08-13</div>
+      <div class="bq">Design-locked, with three riders. This page is the design authority.</div>
       <dl>
-        <dt>Deciding</dt>
-        <dd>Design-lock for the whole track. Everything else is already ruled (splat, swirl,
-        BatteryLow, C groups, no photo entry, the one-surface flow, the daylight confirm register).</dd>
-        <dt>Options</dt>
-        <dd><span class="rec">Confirm (recommended)</span> — this page becomes the design authority;
-        PR 1 starts immediately, PRs 2–3 follow on the same spec.
-        · Adjust — name the frame and what moves; one more targeted republish.</dd>
-        <dt>Consequence</dt>
-        <dd>On confirm: B-745 flips to build; B-007's row is annotated (its destination half lives
-        here); A3's capture-bar layers stay the recorded north star for a future discovery session.</dd>
+        <dt>AC-CHIP</dt>
+        <dd>The Saw it / Found it chips <strong>never wrap</strong> — the mock's own render flaw is the build
+        requirement. Fixed-intrinsic-width chips; on narrow widths the pair drops below the label as a
+        whole row. Verified at 320pt + max accessibility font.</dd>
+        <dt>AC-FOUND</dt>
+        <dd>Found it carries its <strong>full state set</strong> in-sheet: open-ended and bounded window modes
+        (the B-010/B-448 model), adjust-window opens inside the sheet, and the summary pill re-renders
+        per state at History-parity wording.</dd>
+        <dt>Beta gate</dt>
+        <dd>The whole redesign ships dark behind <code>log_picker_v2</code> — the B-712 two-gate shape
+        (allowlist eligibility + a Beta features shelf card, opt-in default off). Flag-off is
+        byte-identical to today's picker, snapshot-pinned; the old grid survives until a GA call
+        retires it.</dd>
+        <dt>Build contract</dt>
+        <dd><code>docs/nyx-more-events-picker-requirements.md</code> v1.0 — decision record, the flag
+        spec, ACs, the PR 0–3 plan, and the QA spine.</dd>
       </dl>
     </div>
 
   </section>
 
   <footer>
-    Source of truth: <code>docs/culprit-more-events-mockups.html</code>, round 4 — the convergence
-    (supersedes rounds 1–3; same artifact URL throughout). On F1 confirm this page is design-locked.
-    Frame values are copied from <code>constants/theme.ts</code>; the splat/swirl customs are mock drafts
-    the build refines at 24px master size.
+    Source of truth: <code>docs/culprit-more-events-mockups.html</code>, round 4 — the convergence,
+    <strong>design-locked 2026-08-13 (F1)</strong>; supersedes rounds 1–3, same artifact URL throughout.
+    Build contract: <code>docs/nyx-more-events-picker-requirements.md</code>. Frame values are copied
+    from <code>constants/theme.ts</code>; the splat/swirl customs are mock drafts the build refines at
+    24px master size.
   </footer>
 
 </div>

@@ -67,6 +67,16 @@ Round 4 (same URL) is the convergence candidate, one confirm from design-locked:
 - **§04 build plan — three PRs, value at each:** PR 1 = the new picker in today's presentation (glyphs + grid extraction + Header migration + token cleanup + README correction) · PR 2 = the sheet (split stool, pet switcher — B-007's destination half, that row to be annotated not duplicated) · PR 3 = the one-surface confirm (step-machine rework + full voice/guardrails copy pass).
 - **§05:** one call left — **F1** (confirm → design-locked, PR 1 starts).
 
+## Round 4 close-out (2026-08-13) — F1 CONFIRMED, requirements solidified
+
+PM confirmed the convergence with three riders, all now binding in **`docs/nyx-more-events-picker-requirements.md` v1.0** (the build contract; the round-4 mock is the design authority, stamped design-locked at the same URL):
+
+1. **AC-CHIP** — the Saw it / Found it chips never wrap (the mock's own render flaw made a build requirement): fixed-intrinsic-width chips; the pair drops below the label as a whole row on narrow widths; verified at 320pt + max accessibility font.
+2. **AC-FOUND** — Found it carries its full state set in-sheet: open-ended + bounded window modes (the existing B-010/B-448 model, no new semantics), adjust-window opens inside the sheet, summary pill re-renders per state at History-parity wording.
+3. **Beta gate** — the whole redesign ships dark behind **`log_picker_v2`**, the B-712 two-gate shape (allowlist eligibility + a Beta features shelf card, opt-in default off, sign-out wipe; `serverCost: false` — zero server component). Flag-off byte-identical, snapshot-pinned every PR; the old picker survives until a GA call retires it (FL-1..4).
+
+Build plan finalized as **PRs 0–3** (flag seed → picker-in-place → sheet → one-surface confirm; §4 of the spec). B-007's row annotated: its destination half now lives in B-745 PRs 2–3; B-007 narrows to the FAB menu itself. CLAUDE.md Read-These row added for the new spec (Tier 1, inline). A3's capture-bar predictive layers remain the recorded north star.
+
 ## Deliberately not touched
 
 B-007 (FAB experience revamp — the parent seam), B-201 (Weight promotion into the FAB), B-139 (Medication FAB entry): all remain open exactly as they were; the mock's scope fence says nothing here forecloses them. No code changed this session.
