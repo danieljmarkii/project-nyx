@@ -1,15 +1,26 @@
-import { UtensilsCrossed, Droplet, Circle, Scale, CircleHelp } from 'lucide-react-native';
+import { UtensilsCrossed, BatteryLow, Scale, Ellipsis, PawPrint, Pill, CircleHelp } from 'lucide-react-native';
 import { iconForType } from './EventIcon';
+import { VomitGlyph, StoolFormedGlyph, StoolLooseGlyph } from './eventGlyphs';
 import { EVENT_TYPES, EventTypeKey } from '../../constants/eventTypes';
 
 // Pure (render-free) coverage of the type→glyph resolver. The render path is a
-// trivial pass-through to a Lucide component, so we test the only branch that
-// carries logic: the unknown-type fallback.
+// trivial pass-through to the glyph component, so we test the only branch that
+// carries logic: the unknown-type fallback — plus the exact B-745 mapping, so a
+// glyph can never silently drift from the type it names.
 describe('iconForType', () => {
-  it('maps a known event type to its Lucide glyph', () => {
+  it('maps a known event type to its glyph', () => {
+    // B-745 — the first three custom-family glyphs replace the weakest Lucide
+    // literal matches (Droplet/Circle/Droplets); the rest stay Lucide substitutes.
     expect(iconForType('meal')).toBe(UtensilsCrossed);
-    expect(iconForType('vomit')).toBe(Droplet);
-    expect(iconForType('stool_normal')).toBe(Circle);
+    expect(iconForType('vomit')).toBe(VomitGlyph);
+    expect(iconForType('stool_normal')).toBe(StoolFormedGlyph);
+    expect(iconForType('diarrhea')).toBe(StoolLooseGlyph);
+    expect(iconForType('itch')).toBe(PawPrint);
+    expect(iconForType('medication')).toBe(Pill);
+    // lethargy = BatteryLow (Moon retired to the brand crescent, R2); other =
+    // Ellipsis (Plus is reserved for add/create).
+    expect(iconForType('lethargy')).toBe(BatteryLow);
+    expect(iconForType('other')).toBe(Ellipsis);
     // weight_check graduated from UI-unexposed to a real quick-log type (B-186).
     expect(iconForType('weight_check')).toBe(Scale);
   });
@@ -26,8 +37,8 @@ describe('iconForType', () => {
   });
 
   it('does NOT fall back to the stool_normal glyph (the collision guard)', () => {
-    // Circle is the real glyph for stool_normal; an unknown type must not
-    // render an identical Circle and masquerade as a stool.
+    // StoolFormedGlyph is the real glyph for stool_normal; an unknown type must not
+    // render the same swirl and masquerade as a stool.
     expect(iconForType('bogus_type')).not.toBe(iconForType('stool_normal'));
   });
 });

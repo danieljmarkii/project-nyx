@@ -132,11 +132,11 @@ nag ("how's Luna doing?" not "log today!").
 
 ### Emoji
 
-Used pragmatically but **only as event-type glyphs** (🍽 🤢 💩 😴 🐾 ➕),
-treated as iconography placeholders. They are *never* used in body copy,
-notifications, marketing copy, or celebrations. See `constants/eventTypes.ts`
-for the canonical set. These should ideally be replaced with a custom icon
-set on a future design pass — see Iconography.
+**Never used in-product.** The event glyphs that once used emoji
+(🍽 🤢 💩 😴 🐾 ➕) were retired for stroke icons in design-system PR 3 (see
+Iconography), so emoji now appear nowhere — not in event glyphs, body copy,
+notifications, marketing copy, or celebrations. `constants/eventTypes.ts` is the
+canonical event-glyph set, now stroke icons.
 
 ---
 
@@ -304,19 +304,31 @@ The trend chart is the most data-dense surface in the product. Rules:
 
 ## Iconography
 
-Nyx does **not** ship a real icon library yet. The current state of icons in
-the codebase:
+Nyx ships **Lucide** (`lucide-react-native`) as its loaded substitute icon set,
+and the first glyphs of a real custom family have begun to replace it. The
+current state of icons in the codebase:
 
-- **Event type icons are emoji.** 🍽 (meal), 🤢 (vomit), 💩 (stool / diarrhea), 😴 (lethargy), 🐾 (itch), ➕ (other). These are stand-ins acknowledged in code comments ("emoji carry the event identity at MVP — replace with custom set post-MVP").
-- **No icon font is loaded** (no Lucide, Heroicons, Phosphor, SF Symbols set).
-- **UI affordances are text glyphs:** `←` (back), `✕` (close), `→` (next/nudge), `↓` / `↑` (trend direction), `✓` (completion). These read as universal, language-agnostic, and are styled as type — they inherit color and weight.
+- **Event type icons are stroke glyphs, no longer emoji.** The MVP emoji
+  (🍽 🤢 💩 😴 🐾 ➕) were retired for Lucide stroke icons in design-system PR 3,
+  and B-745 PR 1 shipped the first three glyphs of the custom Culprit family —
+  the vomit splat, the formed-stool swirl, and its loose sibling
+  (`components/event/eventGlyphs.tsx`). Every render site reads one component
+  (`components/event/EventIcon.tsx`), so `constants/eventTypes.ts` is the single
+  point of change; the remaining ~six glyphs are commissioned as **B-746**.
+- **Lucide IS loaded** (`lucide-react-native`) and used app-wide for the event
+  types not yet in the custom family (meal, lethargy→BatteryLow, itch, medication,
+  weight, other→Ellipsis) and for UI affordances (see below).
+- **UI affordances are migrating from text glyphs to Lucide.** The shared
+  `Header` (B-075) draws back/close as Lucide `ChevronLeft` / `X`; other text
+  glyphs (`→` next/nudge, `↓` / `↑` trend direction, `✓` completion) still read
+  as universal, language-agnostic type that inherits color and weight.
 - **The FAB icon is two `<View>` rectangles** forming a `+` — drawn in code, not an icon font. It rotates `45deg` to become an `×` when the menu opens.
 - **App icon** (in `assets/icon.png`) is the Expo placeholder (three concentric rings on a grid). **There is no real wordmark or logo.** This is flagged below.
 
 ### Substitution: when you need a real icon
 
-When designing a *new* surface for Nyx that needs more iconography than the
-emoji set covers (e.g. settings rows, profile fields, vet-portal nav), use
+For any type NOT yet covered by the custom family (settings rows, profile
+fields, vet-portal nav, and the event types past the first three), use
 **[Lucide](https://lucide.dev/)** as the substitute set:
 
 - Stroke-based, 1.5–2px stroke weight, slightly rounded line caps — matches
@@ -327,8 +339,9 @@ emoji set covers (e.g. settings rows, profile fields, vet-portal nav), use
 - Size: 16, 20, or 24px. Match the `--nyx-text-*` of adjacent copy.
 
 > ⚠️ **Substitution flag.** Lucide is *not* the Nyx product icon set — it's
-> a stand-in chosen for stroke weight and roundness consistency. When the
-> Nyx team commissions a custom icon family, replace Lucide everywhere.
+> a stand-in chosen for stroke weight and roundness consistency. The custom
+> family has begun replacing it (B-745 shipped the first three glyphs; B-746
+> commissions the rest); swap the `EVENT_TYPES` refs as each lands.
 
 ### Brand mark
 

@@ -1,11 +1,17 @@
-import { useState } from 'react';
+import { ComponentType, useState } from 'react';
 import {
   Modal, Pressable, ScrollView, StyleSheet, Text, TouchableOpacity, View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Check, ChevronDown, type LucideIcon } from 'lucide-react-native';
+import { Check, ChevronDown } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
 import { SectionLabel } from './SectionLabel';
+
+// Any identity glyph the sheet can render before a label — a Lucide icon OR a
+// custom family glyph (B-745). Both take the icon kit's size/color/strokeWidth, so
+// this generic shape keeps ScopeMenu decoupled from either icon source (it stays a
+// ui/ primitive with no feature-domain import).
+type GlyphComponent = ComponentType<{ size?: number; color?: string; strokeWidth?: number }>;
 
 // The pill + bottom-sheet single-select scope control. This is the generalized
 // form of the History date-scope pattern: a closed, mutually-exclusive choice
@@ -26,7 +32,7 @@ export interface ScopeMenuOption {
   label: string;
   // Optional identity glyph rendered before the label in the sheet. When any
   // option carries one, icon-less siblings get an empty slot so labels align.
-  icon?: LucideIcon;
+  icon?: GlyphComponent;
 }
 
 interface Props {
