@@ -46,14 +46,19 @@
 -- re-applied seed must never reset a live allowlist. Retirement is a removal PR on
 -- an explicit PM GA call (FL-4), never silent.
 --
--- Scope: this PR is the SEED HALF only (one app_config row), isolated per the
--- CLAUDE.md migration-isolation rule. The client registration in lib/appConfig.ts
--- (ALLOWLIST_FLAG_KEYS + ALLOWLIST_FLAGS_UNSET) + the BETA_REGISTRY row / shelf
--- card (lib/betaFeatures.ts, app/settings/beta.tsx) ride this same PR — none of it
--- is schema, but the seed is inert without the registration (the flag can't even
--- be read: extractAllowlistFlags picks only known keys, and useAllowlistFlag is
--- typed to the registered union) and it touches no other feature (same pattern as
--- 054/055 PR 1 / SR-0). Nothing CONSUMES the flag yet (§4 PR 0).
+-- Scope: this PR seeds one app_config row (the schema half), isolated per the
+-- CLAUDE.md migration-isolation rule. Riding the SAME PR: the client registration
+-- in lib/appConfig.ts (ALLOWLIST_FLAG_KEYS + ALLOWLIST_FLAGS_UNSET) AND the
+-- BETA_REGISTRY row + shelf card (lib/betaFeatures.ts, app/settings/beta.tsx).
+-- NOTE this WIDENS the 054/055 seed-PR scope, it does not match it: those seeds were
+-- lib/appConfig.ts-only and their shelf cards landed in a SEPARATE later PR (widget
+-- PR 3; signal FR-FLAG-4, #622). The widening is this spec's own call (FL-2: "the
+-- flag seed + client registration + shelf row land before any consumer (PR 0)"), and
+-- it is safe regardless: none of it is schema, the seed is inert without the
+-- registration (the flag can't even be read — extractAllowlistFlags picks only known
+-- keys, useAllowlistFlag is typed to the registered union), and the shelf card is
+-- itself inert — it self-gates on eligibility, which is false for every account under
+-- the dark seed. Nothing CONSUMES the flag yet (§4 PR 0).
 --
 -- Migration Safety Pre-flight:
 --   Destructive:  n  (purely additive — 1 new seed row in an existing table;
