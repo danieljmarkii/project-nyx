@@ -277,10 +277,11 @@ export function FAB() {
 
             <View style={styles.divider} />
 
-            {/* More events → the full type grid (which itself carries the
-                photo-first "Attach photo" entry). The old "Log with photo" row
-                was removed: it landed on this same type grid, just with a photo
-                pre-attached — a redundant second pathway to one destination. */}
+            {/* More events → the full type grid. The photo-first "Attach photo"
+                entry it used to carry was retired in B-745 PR 1 (R4: every log
+                starts from the event; photos still attach inside each event flow),
+                as was the older "Log with photo" row before it — both were
+                redundant second pathways to this one destination. */}
             <TouchableOpacity
               style={styles.menuAction}
               onPress={() => { closeMenu(); router.push('/log'); }}

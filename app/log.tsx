@@ -16,13 +16,16 @@ import { ComboDoseConfirmSheet } from '../components/log/ComboDoseConfirmSheet';
 import { TimeConfidenceField, TimeMode, FoundMode } from '../components/log/TimeConfidenceField';
 import { resolveTimeModeChange, resolveFoundModeChange, sourceAfterPointEdit, DEFAULT_WINDOW_SPAN_MS } from '../lib/eventTimeEdit';
 import { EventIcon } from '../components/event/EventIcon';
+import { EventTypePicker } from '../components/log/EventTypePicker';
+import { Header } from '../components/ui/Header';
 import { EVENT_TYPES, EventTypeKey, SYMPTOM_TYPES } from '../constants/eventTypes';
 import { usePetStore } from '../store/petStore';
 import { useWidgetPetLink } from '../hooks/useWidgetPetLink';
 import { useSubmitGuard } from '../hooks/useSubmitGuard';
 import { useAuthStore } from '../store/authStore';
 import { useEventStore } from '../store/eventStore';
-import { useAttachmentStore } from '../store/attachmentStore';
+import { useAllowlistFlag } from '../hooks/useAppConfig';
+import { useBetaOptIn } from '../lib/betaFeatures';
 import { useMomentStore, MEAL_FLAGGED_DURATION_MS, whenMealCardVisible } from '../store/momentStore';
 import { getDb, getActiveRegimenForDrug, getMealForEvent, updateDoseAdherence, PickerFood, PickerMedication } from '../lib/db';
 import { supabase } from '../lib/supabase';
@@ -61,7 +64,15 @@ export default function LogModal() {
   const { activePet, pets } = usePetStore();
   const { user } = useAuthStore();
   const { prependEvent } = useEventStore();
-  const { pendingAttachment, setPendingAttachment } = useAttachmentStore();
+  // B-745 — the More-events redesign is dark behind `log_picker_v2` (the B-712
+  // two-gate beta shape): server allowlist eligibility × the local opt-in, never one
+  // alone (both hooks called unconditionally — Rules of Hooks — then combined, like
+  // SignalZone). Flag-off renders the shipped flat grid byte-identical (FL-1); only
+  // the grouped-grid PRESENTATION is gated. The rest of PR 1 (the glyph family, the
+  // shared Header, photo-first removal) is systemic and lands on both paths.
+  const pickerEligible = useAllowlistFlag('log_picker_v2');
+  const pickerOptedIn = useBetaOptIn('log_picker_v2');
+  const pickerV2 = pickerEligible && pickerOptedIn;
   const showMoment = useMomentStore((s) => s.show);
   const showMealMoment = useMomentStore((s) => s.showMeal);
   const patchTrialFlag = useMomentStore((s) => s.patchTrialFlag);
@@ -176,19 +187,12 @@ export default function LogModal() {
   // if the owner toggles back to "Saw it happen".
   const [estimatedAt, setEstimatedAt] = useState<Date>(() => new Date());
 
-  // Consume pending attachment from the FAB photo flow
-  useEffect(() => {
-    if (pendingAttachment) {
-      setAttachmentUri(pendingAttachment.localUri);
-      setAttachmentTakenAt(pendingAttachment.takenAt);
-      const trustedIso = trustedPastExifIso(pendingAttachment.takenAt);
-      if (trustedIso) {
-        setOccurredAt(new Date(trustedIso));
-        setOccurredAtSource('exif');
-      }
-      setPendingAttachment(null);
-    }
-  }, []);
+  // B-745 R4 — photo-first entry retired: every log starts from the event. Nothing
+  // writes `pendingAttachment` anymore (the FAB no longer offers a photo-first door),
+  // so the mount-time consumer, the type-step "photo is attached" banner, and the
+  // dashed photo tile all retired here as dead code. Photos still attach INSIDE every
+  // event flow (renderPhotoAttachRow on the symptom/simple steps; the photo row on
+  // PR 3's confirm) — the capability audit stayed clean, only the entry point went.
 
   // Skip type selection when a type is pre-selected via route param (e.g. FAB
   // "Log food" → meal, or the Vomit / Loose stool quick taps → vomit / diarrhea)
@@ -1008,44 +1012,12 @@ export default function LogModal() {
   if (step === 'type') {
     return (
       <SafeAreaView style={styles.container}>
-        <View style={styles.header}>
-          <Text style={styles.headerTitle}>Log for {petName}</Text>
-          <TouchableOpacity onPress={() => router.back()} style={styles.closeBtn} hitSlop={8}>
-            <Text style={styles.closeBtnText}>✕</Text>
-          </TouchableOpacity>
-        </View>
-        {attachmentUri && (
-          <View style={styles.attachmentBanner}>
-            <Image source={{ uri: attachmentUri }} style={styles.bannerThumb} resizeMode="cover" />
-            <Text style={styles.bannerText}>{petName}'s photo is attached — which event is this for?</Text>
-          </View>
-        )}
-        <ScrollView contentContainerStyle={styles.typeGrid} showsVerticalScrollIndicator={false}>
-          {(Object.entries(EVENT_TYPES) as [EventTypeKey, typeof EVENT_TYPES[EventTypeKey]][])
-            // diarrhea is accessible via the stool-type sub-step; hide it from the top-level grid
-            .filter(([key]) => key !== 'diarrhea')
-            .map(([key, config]) => (
-            <TouchableOpacity
-              key={key}
-              style={styles.typeCard}
-              onPress={() => handleTypeSelect(key)}
-              activeOpacity={0.7}
-            >
-              <EventIcon type={key} size={24} />
-              <Text style={styles.typeLabel}>{key === 'stool_normal' ? 'Stool' : config.label}</Text>
-            </TouchableOpacity>
-          ))}
-          {!attachmentUri && (
-            <TouchableOpacity
-              style={[styles.typeCard, styles.typeCardPhoto]}
-              onPress={handlePickPhoto}
-              activeOpacity={0.7}
-            >
-              <Camera size={24} color={theme.colorTextSecondary} strokeWidth={1.75} />
-              <Text style={styles.typeLabel}>Attach photo</Text>
-            </TouchableOpacity>
-          )}
-        </ScrollView>
+        <Header
+          title={`Log for ${petName}`}
+          leading="close"
+          onLeadingPress={() => router.back()}
+        />
+        <EventTypePicker grouped={pickerV2} onSelectType={handleTypeSelect} />
       </SafeAreaView>
     );
   }
@@ -1055,13 +1027,7 @@ export default function LogModal() {
   if (step === 'food') {
     return (
       <SafeAreaView style={styles.container}>
-        <View style={styles.header}>
-          <TouchableOpacity onPress={handleBack} style={styles.backBtn} hitSlop={8}>
-            <Text style={styles.backBtnText}>←</Text>
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>What did {petName} eat?</Text>
-          <View style={styles.headerSpacer} />
-        </View>
+        <Header title={`What did ${petName} eat?`} leading="back" onLeadingPress={handleBack} />
         {activePet && (
           <FoodPicker
             petId={activePet.id}
@@ -1101,13 +1067,7 @@ export default function LogModal() {
     const pickerPetId = isComboMode && pairedPetId ? pairedPetId : activePet?.id;
     return (
       <SafeAreaView style={styles.container}>
-        <View style={styles.header}>
-          <TouchableOpacity onPress={handleBack} style={styles.backBtn} hitSlop={8}>
-            <Text style={styles.backBtnText}>←</Text>
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>What did {headerPetName} take?</Text>
-          <View style={styles.headerSpacer} />
-        </View>
+        <Header title={`What did ${headerPetName} take?`} leading="back" onLeadingPress={handleBack} />
         {isComboMode && (
           <View style={styles.comboBanner}>
             <Text style={styles.comboBannerText}>
@@ -1152,13 +1112,7 @@ export default function LogModal() {
   if (step === 'stool-type') {
     return (
       <SafeAreaView style={styles.container}>
-        <View style={styles.header}>
-          <TouchableOpacity onPress={handleBack} style={styles.backBtn} hitSlop={8}>
-            <Text style={styles.backBtnText}>←</Text>
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>What kind of stool?</Text>
-          <View style={styles.headerSpacer} />
-        </View>
+        <Header title="What kind of stool?" leading="back" onLeadingPress={handleBack} />
         <View style={styles.stoolChoiceContainer}>
           <TouchableOpacity
             style={styles.stoolChoiceBtn}
@@ -1194,13 +1148,7 @@ export default function LogModal() {
     const canConfirmWeight = parseWeightLbsToKg(weightLbsStr) != null;
     return (
       <SafeAreaView style={styles.container}>
-        <View style={styles.header}>
-          <TouchableOpacity onPress={handleBack} style={styles.backBtn} hitSlop={8}>
-            <Text style={styles.backBtnText}>←</Text>
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>What does {petName} weigh?</Text>
-          <View style={styles.headerSpacer} />
-        </View>
+        <Header title={`What does ${petName} weigh?`} leading="back" onLeadingPress={handleBack} />
         <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <ScrollView contentContainerStyle={styles.simpleScroll} keyboardShouldPersistTaps="handled">
             <View style={styles.weightInputRow}>
@@ -1252,13 +1200,7 @@ export default function LogModal() {
     const canConfirm = severity !== null;
     return (
       <SafeAreaView style={styles.container}>
-        <View style={styles.header}>
-          <TouchableOpacity onPress={handleBack} style={styles.backBtn} hitSlop={8}>
-            <Text style={styles.backBtnText}>←</Text>
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>{eventLabel}</Text>
-          <View style={styles.headerSpacer} />
-        </View>
+        <Header title={eventLabel} leading="back" onLeadingPress={handleBack} />
         <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <ScrollView contentContainerStyle={styles.symptomScroll} keyboardShouldPersistTaps="handled">
             {renderPhotoAttachRow()}
@@ -1324,13 +1266,7 @@ export default function LogModal() {
     const eventLabel = selectedType ? EVENT_TYPES[selectedType].label : '';
     return (
       <SafeAreaView style={styles.container}>
-        <View style={styles.header}>
-          <TouchableOpacity onPress={handleBack} style={styles.backBtn} hitSlop={8}>
-            <Text style={styles.backBtnText}>←</Text>
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>{eventLabel}</Text>
-          <View style={styles.headerSpacer} />
-        </View>
+        <Header title={eventLabel} leading="back" onLeadingPress={handleBack} />
         <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <ScrollView contentContainerStyle={styles.simpleScroll} keyboardShouldPersistTaps="handled">
             {renderPhotoAttachRow()}
@@ -1372,63 +1308,9 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colorSurface,
   },
 
-  // ── Header ──
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: theme.space3,
-    paddingVertical: theme.space2,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.colorBorder,
-  },
-  headerTitle: {
-    flex: 1,
-    fontSize: 17,
-    fontWeight: theme.fontWeightMedium,
-    color: theme.colorNeutralDark,
-    textAlign: 'center',
-  },
-  closeBtn: {
-    width: 32,
-    alignItems: 'flex-end',
-  },
-  closeBtnText: {
-    fontSize: 18,
-    color: theme.colorTextSecondary,
-  },
-  backBtn: {
-    width: 32,
-  },
-  backBtnText: {
-    fontSize: 22,
-    color: theme.colorNeutralDark,
-  },
-  headerSpacer: {
-    width: 32,
-  },
-
-  // ── Type grid ──
-  typeGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    padding: theme.space2,
-    gap: theme.space2,
-    justifyContent: 'space-between',
-  },
-  typeCard: {
-    width: '47%',
-    aspectRatio: 1.3,
-    backgroundColor: theme.colorNeutralLight,
-    borderRadius: theme.radiusMedium,
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: theme.space1,
-  },
-  typeLabel: {
-    fontSize: 15,
-    fontWeight: theme.fontWeightMedium,
-    color: theme.colorNeutralDark,
-  },
+  // The log's five step headers now use the shared Header (B-075); their
+  // hand-rolled bar + the flat type grid moved out (to Header + EventTypePicker),
+  // so those styles retired with B-745 PR 1.
 
   // ── Notes input ──
   notesInput: {
@@ -1595,38 +1477,9 @@ const styles = StyleSheet.create({
     color: theme.colorTextSecondary,
     flex: 1,
   },
-  // Attachment banner shown at top of type-selection when photo pre-attached
-  attachmentBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: theme.space2,
-    paddingHorizontal: theme.space3,
-    paddingVertical: theme.space2,
-    backgroundColor: theme.colorNeutralLight,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.colorBorder,
-  },
-  bannerThumb: {
-    width: 44,
-    height: 44,
-    borderRadius: theme.radiusSmall,
-  },
-  bannerText: {
-    fontSize: 14,
-    color: theme.colorTextSecondary,
-    flex: 1,
-    lineHeight: theme.lineHeightBody,
-  },
-  // Photo card in the type grid
-  typeCardPhoto: {
-    borderWidth: 1,
-    borderColor: theme.colorBorder,
-    borderStyle: 'dashed',
-    backgroundColor: theme.colorSurface,
-  },
   // ── Combo context banner (B-156 PR B2b) ──
-  // Mirrors attachmentBanner: a tinted strip above the medication picker naming the
-  // pet + food this dose is being logged together with. accentLight signals "linked".
+  // A tinted strip above the medication picker naming the pet + food this dose is
+  // being logged together with. accentLight signals "linked".
   comboBanner: {
     flexDirection: 'row',
     alignItems: 'center',

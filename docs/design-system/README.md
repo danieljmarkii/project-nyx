@@ -117,7 +117,7 @@ These were flagged in v1.1 and remain unresolved in v1.2 — surface them with t
 
 1. **Logo / wordmark.** `_system/assets/icon.png` is still the Expo placeholder. The system proposes "Nyx" in Newsreader 28–40px as an interim wordmark; commission a real mark before any public surface ships.
 2. **Web fonts.** The codebase ships `System` for body and display. The design system substitutes Geist + Newsreader for web. If the product team commits to web-specific faces, swap the `@import` in `_system/colors_and_type.css`.
-3. **Event icons.** Emoji (🍽 🤢 💩 😴 🐾 ➕) are MVP placeholders. A custom 6–8 icon family would dramatically improve clinical credibility — especially on the vet report.
+3. **Event icons.** _Substantially resolved — a family is underway._ The MVP emoji (🍽 🤢 💩 😴 🐾 ➕) were retired for Lucide stroke icons in design-system PR 3, and the first three glyphs of the real Culprit family — the vomit splat, the formed-stool swirl, and its loose sibling — shipped in B-745 PR 1 (`components/event/eventGlyphs.tsx`). The remaining six are commissioned as **B-746**. Every render site reads through one component (`components/event/EventIcon.tsx`), so `constants/eventTypes.ts` stays the single point of change as the family completes — and the family's clinical-credibility win (especially on the vet report) is now landing, not aspirational.
 4. **Vet portal visual language.** Deferred to its own design pass; this system covers the consumer (owner-facing) app only.
 5. **Dark mode.** Not specified. The principles imply it ("One dominant neutral — dark or light depending on theme") but tokens have not been derived.
 
