@@ -58,18 +58,28 @@ describe('EventTypePicker — flag-on (grouped grid)', () => {
     expect(getByText('Body & more')).toBeTruthy();
   });
 
-  it('keeps the same flow: a grouped tile routes exactly like the flat grid', () => {
+  it('splits Stool inline (Normal → stool_normal, Loose → diarrhea) and keeps every other route', () => {
     const onSelectType = jest.fn();
     const { getByText } = render(<EventTypePicker grouped onSelectType={onSelectType} />);
-    // Stool is one tile that still opens its sub-step (the split-inline tile is PR 2).
-    fireEvent.press(getByText('Stool'));
+    // PR 2 deletes the Normal/Loose sub-step: the split tile's two segments route
+    // straight to the two event types (the same routes the sub-step used).
+    fireEvent.press(getByText('Normal'));
     expect(onSelectType).toHaveBeenLastCalledWith<[EventTypeKey]>('stool_normal');
+    fireEvent.press(getByText('Loose'));
+    expect(onSelectType).toHaveBeenLastCalledWith<[EventTypeKey]>('diarrhea');
+    // A regular tile still routes by its own key.
     fireEvent.press(getByText('Meal'));
     expect(onSelectType).toHaveBeenLastCalledWith<[EventTypeKey]>('meal');
+    fireEvent.press(getByText('Vomit'));
+    expect(onSelectType).toHaveBeenLastCalledWith<[EventTypeKey]>('vomit');
   });
 
-  it('does not surface diarrhea at the top level (reached via Stool sub-step)', () => {
-    const { queryByText } = render(<EventTypePicker grouped onSelectType={jest.fn()} />);
+  it('surfaces the loose-stool route as the split "Loose" segment, never a top-level "Loose stool" tile', () => {
+    const { queryByText, getByText } = render(<EventTypePicker grouped onSelectType={jest.fn()} />);
+    // The short "Loose" segment lives on the split tile…
+    expect(getByText('Loose')).toBeTruthy();
+    // …but diarrhea's full EVENT_TYPES label is never a top-level tile (the flat
+    // grid filters it out; the grouped grid names it "Loose" on the split tile).
     expect(queryByText('Loose stool')).toBeNull();
   });
 
@@ -97,13 +107,16 @@ describe('EventTypePicker — flag-on (grouped grid)', () => {
     const foodCare = within(getByTestId('event-group-Food & care'));
     const bodyMore = within(getByTestId('event-group-Body & more'));
 
-    ['Vomit', 'Lethargy', 'Stool', 'Itch/Scratch'].forEach((l) =>
+    // Stool's split segments live inside the Symptoms group alongside the tiles.
+    ['Vomit', 'Lethargy', 'Stool', 'Itch/Scratch', 'Normal', 'Loose'].forEach((l) =>
       expect(symptoms.getByText(l)).toBeTruthy());
     ['Meal', 'Medication'].forEach((l) => expect(foodCare.getByText(l)).toBeTruthy());
     ['Weight', 'Other'].forEach((l) => expect(bodyMore.getByText(l)).toBeTruthy());
 
-    // …and not cross-contaminated: Meal is not a symptom, Vomit is not food & care.
+    // …and not cross-contaminated: Meal is not a symptom, Vomit is not food & care,
+    // and the stool split segments stay in Symptoms.
     expect(symptoms.queryByText('Meal')).toBeNull();
     expect(foodCare.queryByText('Vomit')).toBeNull();
+    expect(foodCare.queryByText('Loose')).toBeNull();
   });
 });
