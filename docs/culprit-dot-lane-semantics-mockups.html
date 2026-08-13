@@ -182,6 +182,9 @@
   .axisL span { position: absolute; top: 0; font-size: 10px; color: var(--axis); transform: translateX(-50%); font-variant-numeric: tabular-nums; white-space: nowrap; }
   .axisL span.l0 { transform: none; }
   .axisL span.l100 { transform: translateX(-100%); }
+  .axisL span::before { content: ""; position: absolute; top: -6px; left: 50%; width: 1px; height: 4px; background: var(--hair-strong); transform: translateX(-50%); }
+  .axisL span.l0::before { left: 0; transform: none; }
+  .axisL span.l100::before { left: auto; right: 0; transform: none; }
 
   /* B — the grouped split (no time axis) */
   .split { display: flex; align-items: stretch; gap: 10px; }
@@ -309,7 +312,7 @@
             <div class="ibody">
               <p class="sent">7 of the 10 vomiting episodes we could time for Nyx happened within 30 minutes of eating, including the last two — a timing pattern worth mentioning to your vet.</p>
               <div class="estrip">
-                <div class="lane tall" data-kind="A"><div class="band" style="width:25%"></div></div>
+                <div class="lane tall" data-kind="A"><div class="band" style="width:60%"></div></div>
                 <div class="axisL" data-axis="A"></div>
               </div>
               <p class="remainder">Median 9 min · 4 more weren't near a logged meal</p>
@@ -318,7 +321,7 @@
             </div>
           </div>
         </div>
-        <p class="note"><b>Each dot at its real minutes-after-eating.</b> The tight cluster around 9 min — invisible in C — <i>is</i> the finding. Costs a payload field (<code>minutesSince[]</code>) + a §9.2 copy pass so the finer detail can't be over-read as mechanism. Owner-logged times are approximate; jitter deconflicts near-ties.</p>
+        <p class="note"><b>Each dot at its real minutes-after-eating</b>, on a scale that gives the first 30 minutes room — so the cluster around 9 min (invisible in C) reads as the finding it is. The honest axis also fixes C's mislabel: 30m is the window edge, and the label sits on it. Costs a <code>minutesSince[]</code> payload field + a §9.2 copy pass so the finer detail isn't read as mechanism; owner-logged times are approximate, so dots stay soft and jittered, never hair-precise.</p>
       </div>
 
       <!-- B -->
@@ -363,7 +366,7 @@
   <!-- ── Aligned geometry ─────────────────────────────────────────────── -->
   <section class="sec">
     <h2>Geometry, aligned</h2>
-    <p class="subhead">The three lanes at equal width, 30-min boundary lined up — so the only thing you're comparing is where the dots sit.</p>
+    <p class="subhead">The three lanes at equal width — showing how each spends it. C spreads the window evenly; A expands the first 30 minutes (its boundary sits at 60%, not 25%) so the real cluster reads; B drops the axis entirely.</p>
     <div class="aligned">
       <div class="arow">
         <div class="lbl"><span class="kk" style="background:#9A96B4">C</span><b>Even spread</b>what ships</div>
@@ -371,7 +374,7 @@
       </div>
       <div class="arow">
         <div class="lbl"><span class="kk" style="background:var(--symptom)">A</span><b>Real times</b>true minutes</div>
-        <div><div class="lane tall" data-kind="A"><div class="band" style="width:25%"></div></div></div>
+        <div><div class="lane tall" data-kind="A"><div class="band" style="width:60%"></div></div></div>
       </div>
       <div class="arow">
         <div class="lbl"><span class="kk" style="background:var(--accent)">B</span><b>Honest split</b>no axis</div>
@@ -386,7 +389,7 @@
           </div>
         </div>
       </div>
-      <p class="align-note">In C the 7 rapid dots fill the window as even ticks; in A they pile up in the first ~10 minutes and leave a gap before the<span class="gd"></span>boundary. That pile-up is the clinically interesting shape C throws away.</p>
+      <p class="align-note">C spreads the 7 rapid dots as even ticks across the window; A gives the first half-hour room and lets them pile up where they really fall — around 9 min — then compresses the sparse tail. That early shape is the granularity C throws away.</p>
     </div>
   </section>
 
@@ -401,19 +404,19 @@
         <div class="vrow"><span class="vk">Distribution?</span><span class="vv">Macro split only</span></div>
         <div class="vrow"><span class="vk">Payload</span><span class="vv">No change</span></div>
         <div class="vrow"><span class="vk">Clinical risk</span><span class="vv">Low</span></div>
-        <div class="vrow"><span class="vk">Verdict</span><span class="vv warn">Weakest — form promises timing it doesn't carry</span></div>
+        <div class="vrow"><span class="vk">Verdict</span><span class="vv warn">Off the table — its "30m" label lies; A's honest scale is the fix</span></div>
       </div>
       <div class="vcard a">
         <h3>A · Plot real times</h3>
-        <p class="vsub">Data Scientist leans here</p>
+        <p class="vsub">PM lean · Data Scientist + Jordan</p>
         <div class="vrow"><span class="vk">Distribution?</span><span class="vv good">Yes — literally</span></div>
         <div class="vrow"><span class="vk">Payload</span><span class="vv">+ <code style="font-size:11px">minutesSince[]</code></span></div>
-        <div class="vrow"><span class="vk">Clinical risk</span><span class="vv">Needs §9.2 copy pass</span></div>
-        <div class="vrow"><span class="vk">Verdict</span><span class="vv">Most informative — small real eng + a review</span></div>
+        <div class="vrow"><span class="vk">Who objects</span><span class="vv warn">Sam (grazers) · Dr. Chen (§9.2)</span></div>
+        <div class="vrow"><span class="vk">Verdict</span><span class="vv">Ship it — once the noisy case is gated + copy stays anamnesis</span></div>
       </div>
       <div class="vcard b">
         <h3>B · Honest split</h3>
-        <p class="vsub">Designer leans here</p>
+        <p class="vsub">Designer + Sam · the safe floor</p>
         <div class="vrow"><span class="vk">Distribution?</span><span class="vv">No — an honest count</span></div>
         <div class="vrow"><span class="vk">Payload</span><span class="vv">No change</span></div>
         <div class="vrow"><span class="vk">Clinical risk</span><span class="vv good">None — nothing to over-read</span></div>
@@ -422,14 +425,14 @@
     </div>
 
     <div class="callout">
-      <b>The call splits on one question: is the distribution the value?</b> Your original read of this receipt — "closer almost to a distribution curve, uber uber informative" — is the case for <b>A</b>: we own the payload, the per-episode times exist, and withholding them is the anti-viz move. If the goal is just to stop over-promising, <b>B</b> keeps the countable dots you like and drops the fake axis for nothing. <b>C</b> is the one option this whole page argues against.
-      <span class="tension"><b>The tension to weigh (Data Scientist ⚔ Dr. Chen):</b> A is the only option that shows the ~9-min pile-up — and the only one that can invite a timing over-read the evidence can't support (§9.2: timing is anamnesis, not a regurgitation-vs-vomiting differentiator). B sidesteps both.</span>
+      <b>Where it stands: leaning A.</b> The distribution is real information for the clean case — a dog on discrete meals with witnessed vomits (Jordan's Mochi) — where the ~9-min cluster is signal the sentence can't carry. The one persona who <i>opposes</i> A is <b>Sam</b>: for a grazing, multi-cat home "minutes since eating" can be noise, and A is the option that makes a shaky finding look most authoritative. That's a gate, not a veto — A ships once all three conditions below hold.
+      <span class="tension"><b>The three conditions for A:</b> (1) <b>gate the noisy case</b> — where timing is unreliable (free-fed / grazing active, uncertain attribution) fall back to B's split, never a confident cluster; (2) <b>honest precision</b> — soft, jittered dots on the expanded early scale, never implied minute-accuracy; (3) <b>anamnesis copy</b> — "a timing pattern to show your vet," never cause, mechanism, or eating-speed (§9.2).</span>
     </div>
   </section>
 
   <footer>
     Exploratory decision-aid mock — <b>not</b> a ratified SR round. The design authority for this surface stays <code>docs/culprit-signal-home-mockups.html</code>.
-    Rendering <b>C</b> reproduces <code>lib/signalCopy.ts</code> → <code>spreadInIntervals()</code> / <code>postprandialBands(30)</code> exactly (the shipped geometry); <b>A</b> and <b>B</b> are proposals drawn on the same finding. Colours + card chrome mirror <code>constants/theme.ts</code>. · 2026-08-13
+    Rendering <b>C</b> reproduces <code>lib/signalCopy.ts</code> → <code>spreadInIntervals()</code> / <code>postprandialBands(30)</code> exactly (the shipped geometry); <b>A</b> (expanded-early scale) and <b>B</b> are proposals on the same finding. Updated after the Jordan/Sam owner sync — PM leaning A with the three conditions above. Colours + card chrome mirror <code>constants/theme.ts</code>. · 2026-08-13
   </footer>
 
 </div>
@@ -461,8 +464,17 @@
     C_OUT.forEach(function (p) { addDot(lane, p * 100, true, 0); });
   }
 
-  // ── A: real minutes on a 0–120 lane, hand-tuned beeswarm y-offsets ───────
-  var MAXMIN = 120;
+  // ── A: real minutes, EXPANDED-EARLY scale ────────────────────────────────
+  // The first 30 min gets 60% of the lane so the informative cluster is legible;
+  // 30–120 min compresses into the right 40%. A deliberate non-linear scale —
+  // honest ticks at true minute values keep it readable — because the granularity
+  // that matters lives in the first half hour. Also fixes C's "30m floats at
+  // mid-lane" bug: here 30m is the window edge at 60% and its axis label sits on it.
+  var EARLY_MIN = 30, EARLY_FRAC = 0.60, MAXMIN = 120;
+  function posOf(min) {
+    if (min <= EARLY_MIN) return (min / EARLY_MIN) * EARLY_FRAC;
+    return EARLY_FRAC + ((Math.min(min, MAXMIN) - EARLY_MIN) / (MAXMIN - EARLY_MIN)) * (1 - EARLY_FRAC);
+  }
   var A_DOTS = [
     { m: 4,  dy: 0 },  { m: 6,  dy: -6 }, { m: 7,  dy: 6 },  { m: 9,  dy: 0 },
     { m: 11, dy: -6 }, { m: 18, dy: 0 },  { m: 28, dy: 0 },                     // rapid (rose)
@@ -471,20 +483,23 @@
   var A_MEDIAN = 9;
 
   function fillA(lane) {
-    A_DOTS.forEach(function (d) { addDot(lane, (d.m / MAXMIN) * 100, d.m > 30, d.dy); });
+    var band = lane.querySelector('.band');
+    if (band) band.style.width = (EARLY_FRAC * 100) + '%';   // the 30-min window = 0–60%
+    A_DOTS.forEach(function (d) { addDot(lane, posOf(d.m) * 100, d.m > 30, d.dy); });
     var med = document.createElement('div');
     med.className = 'median';
-    med.style.left = ((A_MEDIAN / MAXMIN) * 100) + '%';
+    med.style.left = (posOf(A_MEDIAN) * 100) + '%';
     lane.appendChild(med);
   }
 
-  // Honest linear axis for A — ticks at true fractions (30m sits at 25%, not mid-lane)
+  // Honest ticks — real minute values at their true (non-linear) positions. The
+  // labels bunching after 30m is the visible tell that the tail is compressed.
   var A_AXIS = [
-    { pct: 0,   label: 'ate',   cls: 'l0' },
-    { pct: 25,  label: '30m',   cls: '' },
-    { pct: 50,  label: '1h',    cls: '' },
-    { pct: 75,  label: '1h 30', cls: '' },
-    { pct: 100, label: '2h',    cls: 'l100' }
+    { pct: 0,    label: 'ate', cls: 'l0' },
+    { pct: 30,   label: '15m', cls: '' },
+    { pct: 60,   label: '30m', cls: '' },
+    { pct: 73.3, label: '1h',  cls: '' },
+    { pct: 100,  label: '2h',  cls: 'l100' }
   ];
   function fillAxisA(el) {
     A_AXIS.forEach(function (t) {
