@@ -42,11 +42,21 @@ Parallel track (not Step 10). B-745 PR 3 — the last PR in the design-locked pl
 
 - New: `lib/simpleEvent.test.ts` (event row shape, photo attach + AI trigger for exactly vomit/stool, best-effort photo never fails the event, sync/regen), `lib/logCopy.test.ts` (History parity + the no-"since this morning" assertion + no-`!`), `components/log/SimpleEventConfirm.test.tsx` (AC-CHIP contract, AC-FOUND states + write args, the photo-read-promise gating, double-submit guard), plus `buildTimeFields` cases in `lib/eventTimeEdit.test.ts`.
 - Updated: `components/log/EventTypeSheet.test.tsx` (symptom/Other/stool confirm in place; meal/med/weight route out; back→grid; logged→beat→close; calm vs celebrate tone).
-- Full suite: **218 suites / 4839 tests green; 11 snapshots green; `tsc --noEmit` clean.** (No ESLint in the toolchain — typecheck + jest are the gates. Edge Functions untouched — no deno changes.)
+- Full suite (final, incl. the review-fix commit): **218 suites / 4841 tests green; 11 snapshots green; `tsc --noEmit` clean.** (No ESLint in the toolchain — typecheck + jest are the gates. Edge Functions untouched — no deno changes.)
+
+## Code review (satisfies the DoD review line)
+
+Ran the `code-reviewer` subagent on the diff. It confirmed the risky areas clean — the `insertSimpleEvent` INSERT is column-for-column identical to the old inline write, the photo "read it for signs" promise matches the real vomit/stool AI-trigger predicate exactly (a genuine clinical-guardrails check, not just a copy nit), `attachPhotoBestEffort` never lets a photo/sync failure throw past a committed event, and flag-off touches none of the refactored logic. No `adversarial-reviewer` pass needed (a straight event INSERT + UI orchestration; no detection/correlation/escalation logic). Three findings, all addressed in commit `48fc5fd`:
+
+1. **Submit guard** — the summary-pill guard was a `useState` flag (only disables after React commits, so a fast double-tap in the async gap could write twice); swapped to the hardened `useSubmitGuard` ref latch (B-336), the same primitive the picker tiles use.
+2. **Tap targets** — the "Found it by" / "From" / "To" window fields were ~30–36pt (short value + `hitSlop:8`); made each the whole `field` row (`minHeight:44`), clearing the 44pt floor.
+3. **Dismiss race** — dismissing the sheet mid-submit could flip a hidden sheet to a stale `done` beat; `handleLogged` now no-ops behind a `visibleRef`.
 
 ## Follow-ups filed
 
 - **B-750** — route the FAB quick symptom taps into the in-sheet confirm on flag-on (the entry-point inconsistency above). Pairs with **B-749** (unify the secondary bare-`/log` doors onto the sheet).
+- **B-751** — `app/log.tsx` `handleBack` doesn't reset attachment/notes state → a stale photo can attach to the wrong non-meal incident (pre-existing; surfaced by the review).
+- **B-752** — prune the dead `symptom` step + `SEVERITY_CONFIG` from `app/log.tsx` (pre-existing dead code; `hasSeverity` is false for every type).
 
 ## Outcome
 
