@@ -81,13 +81,16 @@ function TileGlyph({ type }: { type: EventTypeKey }) {
 // inlined. The glyph + label name the subject (not tappable — identity, not a
 // verdict); the two segments are the tap targets. "Normal" → stool_normal, "Loose"
 // → diarrhea, the exact two routes the sub-step used, so no data semantics change
-// (§1). Each segment carries hitSlop so its compact pill still clears the 44pt
-// 3am-stumbling floor.
-const SEG_HIT = { top: 8, bottom: 8, left: 6, right: 6 };
+// (§1). VERTICAL hitSlop only: content height (paddingVertical + ~13px text) + 16pt
+// vertical slop clears the 44pt floor, and each pill already exceeds 44pt wide — so
+// no horizontal slop, which would otherwise overlap the two segments' hit regions
+// across the small gap between them (Normal vs Loose is a clinical distinction, so
+// the hit boundary must be unambiguous).
+const SEG_HIT = { top: 8, bottom: 8 };
 
 function StoolSplitTile({ onSelectType }: { onSelectType: (type: EventTypeKey) => void }) {
   return (
-    <View style={[styles.groupTile, styles.splitTile]}>
+    <View style={[styles.groupTile, styles.groupTileFull]}>
       <TileGlyph type="stool_normal" />
       <Text style={styles.groupTileLabel} numberOfLines={1}>
         {pickerLabel('stool_normal')}
@@ -118,6 +121,28 @@ function StoolSplitTile({ onSelectType }: { onSelectType: (type: EventTypeKey) =
   );
 }
 
+// Which regular (non-split) tiles must span the full row. Half-width tiles pair
+// 2-up, but the full-width split tile breaks the row — so tiles are balanced PER
+// CONTIGUOUS RUN on either side of the split, not group-wide: a run with an odd
+// count promotes its LAST tile to full width so it never strands a half-tile with
+// dead space beside it. (A single group-wide odd/even count would mis-balance a
+// group whose split tile doesn't fall after an even prefix — e.g. a future
+// ['vomit', 'stool_normal', 'lethargy', 'itch'] regroup.)
+function fullWidthRegularKeys(keys: EventTypeKey[]): Set<EventTypeKey> {
+  const full = new Set<EventTypeKey>();
+  let run: EventTypeKey[] = [];
+  const flush = () => {
+    if (run.length % 2 === 1) full.add(run[run.length - 1]);
+    run = [];
+  };
+  for (const key of keys) {
+    if (key === 'stool_normal') { flush(); continue; } // the split tile is its own full row
+    run.push(key);
+  }
+  flush();
+  return full;
+}
+
 // The grouped grid body — the three category groups, no ScrollView of its own so a
 // host can bound its own scroll (the full-screen picker in log.tsx and the bottom
 // sheet each wrap this in a ScrollView). Exported for EventTypeSheet.
@@ -125,15 +150,7 @@ export function GroupedEventGrid({ onSelectType }: { onSelectType: (type: EventT
   return (
     <View style={styles.groupedContent}>
       {PICKER_GROUPS.map((group) => {
-        // Regular (non-split) tiles pair 2-up. A group with an ODD number of them
-        // would leave the last tile alone at half-width beside the full-width split
-        // row (the mock's Symptoms case: Vomit + Lethargy pair, Stool spans, Itch is
-        // left over) — so the last regular tile spans full-width to fill the row
-        // instead of stranding a gap. Derived from the group, not hardcoded per key,
-        // so a regroup keeps balancing itself.
-        const regularKeys = group.keys.filter((key) => key !== 'stool_normal');
-        const lastRegular = regularKeys[regularKeys.length - 1];
-        const oddRegular = regularKeys.length % 2 === 1;
+        const fullWidthKeys = fullWidthRegularKeys(group.keys);
         return (
           <View key={group.label} style={styles.group} testID={`event-group-${group.label}`}>
             <SectionLabel label={group.label} header style={styles.groupLabel} />
@@ -142,7 +159,7 @@ export function GroupedEventGrid({ onSelectType }: { onSelectType: (type: EventT
                 if (key === 'stool_normal') {
                   return <StoolSplitTile key={key} onSelectType={onSelectType} />;
                 }
-                const fullWidth = oddRegular && key === lastRegular;
+                const fullWidth = fullWidthKeys.has(key);
                 return (
                   <TouchableOpacity
                     key={key}
@@ -254,14 +271,10 @@ const styles = StyleSheet.create({
     borderColor: theme.colorBorder,
     borderRadius: theme.radiusMedium,
   },
-  // A tile that fills the whole row (the split Stool row, and the odd last regular
-  // tile that would otherwise strand a gap beside it).
+  // A tile that fills the whole row: the split Stool row (its Normal/Loose segments
+  // are pushed right by the flex-1 label between glyph and segments), and the odd
+  // last regular tile that would otherwise strand a gap beside it.
   groupTileFull: {
-    width: '100%',
-  },
-  // The split Stool tile: full width, with the Normal/Loose segments pushed to the
-  // right by the flex-1 label between glyph and segments.
-  splitTile: {
     width: '100%',
   },
   splitSeg: {

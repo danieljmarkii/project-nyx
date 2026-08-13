@@ -55,7 +55,15 @@ export function EventTypeSheet({ visible, onClose }: Props) {
     <>
       <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
         <View style={styles.backdrop}>
-          <Pressable style={styles.scrim} onPress={onClose} accessibilityLabel="Close" />
+          {/* Drop the sheet's own scrim while the nested switcher is up: on Android a
+              scrim-dismiss tap on the switcher can bleed through to this full-screen
+              Pressable and close the sheet underneath it. The FAB guards its backdrop
+              the same way for the same PetSwitcherSheet-over-a-trigger shape
+              (FAB.tsx `{open && !switcherVisible && …}`). The switcher's own scrim
+              carries the dim while it's up, so the surface stays visually continuous. */}
+          {!switcherVisible && (
+            <Pressable style={styles.scrim} onPress={onClose} accessibilityLabel="Close" />
+          )}
           <View style={[styles.sheet, { paddingBottom: insets.bottom + theme.space2 }]}>
             <View style={styles.grabber} />
             <TouchableOpacity

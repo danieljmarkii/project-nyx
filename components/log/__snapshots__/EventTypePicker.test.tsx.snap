@@ -1952,8 +1952,6 @@ exports[`EventTypePicker — flag-on (grouped grid) renders the grouped grid 1`]
                 hitSlop={
                   {
                     "bottom": 8,
-                    "left": 6,
-                    "right": 6,
                     "top": 8,
                   }
                 }
@@ -2014,8 +2012,6 @@ exports[`EventTypePicker — flag-on (grouped grid) renders the grouped grid 1`]
                 hitSlop={
                   {
                     "bottom": 8,
-                    "left": 6,
-                    "right": 6,
                     "top": 8,
                   }
                 }
