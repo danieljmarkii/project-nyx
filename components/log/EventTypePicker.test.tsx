@@ -1,6 +1,6 @@
 import { render, fireEvent, within } from '@testing-library/react-native';
 import { EventTypePicker } from './EventTypePicker';
-import { EventTypeKey } from '../../constants/eventTypes';
+import { EVENT_TYPES, EventTypeKey } from '../../constants/eventTypes';
 
 // EventTypePicker is a pure props component (no store/hook), which is exactly what
 // lets the flag-off grid be snapshot-pinned directly (FL-1: flag-off renders
@@ -71,6 +71,22 @@ describe('EventTypePicker — flag-on (grouped grid)', () => {
   it('does not surface diarrhea at the top level (reached via Stool sub-step)', () => {
     const { queryByText } = render(<EventTypePicker grouped onSelectType={jest.fn()} />);
     expect(queryByText('Loose stool')).toBeNull();
+  });
+
+  it('surfaces every top-level type exactly once (no type silently vanishes)', () => {
+    // Completeness guard, derived from EVENT_TYPES rather than a hand-list: the flat
+    // grid iterates EVENT_TYPES directly, but the grouped grid is a hand-maintained
+    // PICKER_GROUPS. A future type that gets a CATEGORY_TINT (compile-checked) but is
+    // forgotten in PICKER_GROUPS would show in flat and silently disappear here — so
+    // assert each non-diarrhea label renders exactly once (getByText throws on 0 OR >1,
+    // so this catches both a missing type and one placed in two groups).
+    const { getByText } = render(<EventTypePicker grouped onSelectType={jest.fn()} />);
+    (Object.keys(EVENT_TYPES) as EventTypeKey[])
+      .filter((key) => key !== 'diarrhea')
+      .forEach((key) => {
+        const label = key === 'stool_normal' ? 'Stool' : EVENT_TYPES[key].label;
+        expect(getByText(label)).toBeTruthy();
+      });
   });
 
   it('places each type in its category group (tint follows the group)', () => {
