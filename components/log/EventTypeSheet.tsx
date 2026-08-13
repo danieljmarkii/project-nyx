@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   Modal, Pressable, ScrollView, StyleSheet, Text, TouchableOpacity, View,
 } from 'react-native';
@@ -58,10 +58,17 @@ export function EventTypeSheet({ visible, onClose }: Props) {
   const [confirm, setConfirm] = useState<{ type: EventTypeKey; petId: string; petName: string } | null>(null);
   const [beatTone, setBeatTone] = useState<MomentTone>('calm');
 
+  // Liveness: SimpleEventConfirm's write is async, so the owner can dismiss the sheet
+  // (backdrop / Android back) while it's in flight. This ref lets handleLogged no-op
+  // if that happened, so a write that resolves AFTER a dismiss can't flip a hidden
+  // sheet to a stale 'done' beat that would then flash on the next open.
+  const visibleRef = useRef(visible);
+
   // Every open starts at the grid. Reset when the sheet is dismissed (by any path —
   // backdrop, the completion beat's onClose, or the FAB) so a reopen never resurfaces
   // a stale confirm/beat.
   useEffect(() => {
+    visibleRef.current = visible;
     if (!visible) { setStage('grid'); setConfirm(null); }
   }, [visible]);
 
@@ -85,6 +92,10 @@ export function EventTypeSheet({ visible, onClose }: Props) {
   }
 
   function handleLogged() {
+    // If the sheet was dismissed while the write was in flight, don't resurface — the
+    // event is written and will appear on Home; showing a beat on a hidden/reopened
+    // sheet would be a stale flash (the reset effect already returned it to the grid).
+    if (!visibleRef.current) return;
     // Tone: never a festive beat over a symptom (Principle 4 / clinical-guardrails) —
     // the four symptom types get 'calm'; stool_normal and Other get 'celebrate'.
     const tone: MomentTone = confirm && SYMPTOM_TYPES.has(confirm.type) ? 'calm' : 'celebrate';

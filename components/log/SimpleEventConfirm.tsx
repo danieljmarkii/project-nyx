@@ -16,6 +16,7 @@ import {
 import type { TimeMode, FoundMode } from './TimeConfidenceField';
 import { summarizeSimpleEvent, confirmTimeRowLabel } from '../../lib/logCopy';
 import { insertSimpleEvent } from '../../lib/simpleEvent';
+import { useSubmitGuard } from '../../hooks/useSubmitGuard';
 import { useEventStore } from '../../store/eventStore';
 import { formatTime, exifDateToISO, trustedPastExifIso, formatExifAttribution } from '../../lib/utils';
 
@@ -62,6 +63,11 @@ const PHOTO_READ_TYPES: ReadonlySet<EventTypeKey> = new Set(['vomit', 'diarrhea'
 
 export function SimpleEventConfirm({ type, petId, petName, onBack, onLogged }: Props) {
   const prependEvent = useEventStore((s) => s.prependEvent);
+  // The summary pill IS the write, so it needs the SAME hardened ref-latch guard the
+  // picker tiles use (B-336) — a `useState` flag only disables after React commits,
+  // so a fast double-tap in the async gap would run the write (and the AI read) twice.
+  // The ref latches synchronously on the first tap.
+  const guardSubmit = useSubmitGuard();
 
   const typeLabel = EVENT_TYPES[type].label;
   const rose = ROSE_FAMILY.has(type);
@@ -189,8 +195,11 @@ export function SimpleEventConfirm({ type, petId, petName, onBack, onLogged }: P
     setPhoto({ uri: asset.uri, takenAt, width: asset.width, height: asset.height });
   }
 
-  async function handleLogIt() {
-    if (submitting) return; // double-submit guard: the pill is the write (B-336 shape)
+  // Returns whether an event was COMMITTED — the useSubmitGuard contract (B-336):
+  // true keeps the guard latched (the sheet is transitioning to the beat, so no later
+  // tap may write again); false releases it (the write failed, the owner is still on
+  // the confirm looking at the alert, so the pill must work again).
+  async function handleLogIt(): Promise<boolean> {
     setSubmitting(true);
     try {
       const res = await insertSimpleEvent({
@@ -225,10 +234,12 @@ export function SimpleEventConfirm({ type, petId, petName, onBack, onLogged }: P
         updated_at: res.now,
       });
       onLogged({ eventId: res.eventId, occurredAtIso: res.occurredAtIso });
+      return true;
     } catch (e) {
       console.error('[SimpleEventConfirm] log failed:', e);
       Alert.alert("Couldn't save that", 'Something went wrong. Please try again.');
       setSubmitting(false); // keep the confirm live for a retry
+      return false;
     }
   }
 
@@ -315,12 +326,15 @@ export function SimpleEventConfirm({ type, petId, petName, onBack, onLogged }: P
 
             {foundMode === 'before' && (
               <>
-                <View style={styles.field}>
+                <TouchableOpacity
+                  style={styles.field}
+                  onPress={() => setOpenPicker(openPicker === 'latest' ? null : 'latest')}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Found it by ${formatTime(foundLatest)} — change`}
+                >
                   <Text style={styles.fieldLabel}>Found it by</Text>
-                  <TouchableOpacity onPress={() => setOpenPicker(openPicker === 'latest' ? null : 'latest')} hitSlop={8}>
-                    <Text style={styles.fieldValue}>{formatTime(foundLatest)}</Text>
-                  </TouchableOpacity>
-                </View>
+                  <Text style={styles.fieldValue}>{formatTime(foundLatest)}</Text>
+                </TouchableOpacity>
                 {openPicker === 'latest' && (
                   <DateTimePicker
                     value={foundLatest} mode="datetime" display={pickerDisplay} maximumDate={new Date()}
@@ -333,12 +347,15 @@ export function SimpleEventConfirm({ type, petId, petName, onBack, onLogged }: P
 
             {foundMode === 'between' && (
               <>
-                <View style={styles.field}>
+                <TouchableOpacity
+                  style={styles.field}
+                  onPress={() => setOpenPicker(openPicker === 'earliest' ? null : 'earliest')}
+                  accessibilityRole="button"
+                  accessibilityLabel={`From ${earliest ? formatTime(earliest) : 'set time'} — change`}
+                >
                   <Text style={styles.fieldLabel}>From</Text>
-                  <TouchableOpacity onPress={() => setOpenPicker(openPicker === 'earliest' ? null : 'earliest')} hitSlop={8}>
-                    <Text style={styles.fieldValue}>{earliest ? formatTime(earliest) : 'Set time'}</Text>
-                  </TouchableOpacity>
-                </View>
+                  <Text style={styles.fieldValue}>{earliest ? formatTime(earliest) : 'Set time'}</Text>
+                </TouchableOpacity>
                 {openPicker === 'earliest' && (
                   <DateTimePicker
                     value={earliest ?? foundLatest} mode="datetime" display={pickerDisplay} maximumDate={foundLatest}
@@ -346,12 +363,15 @@ export function SimpleEventConfirm({ type, petId, petName, onBack, onLogged }: P
                     onChange={(_e, d) => { if (Platform.OS === 'android') setOpenPicker(null); if (d) setEarliest(d); }}
                   />
                 )}
-                <View style={styles.field}>
+                <TouchableOpacity
+                  style={styles.field}
+                  onPress={() => setOpenPicker(openPicker === 'latest' ? null : 'latest')}
+                  accessibilityRole="button"
+                  accessibilityLabel={`To ${formatTime(foundLatest)} — change`}
+                >
                   <Text style={styles.fieldLabel}>To</Text>
-                  <TouchableOpacity onPress={() => setOpenPicker(openPicker === 'latest' ? null : 'latest')} hitSlop={8}>
-                    <Text style={styles.fieldValue}>{formatTime(foundLatest)}</Text>
-                  </TouchableOpacity>
-                </View>
+                  <Text style={styles.fieldValue}>{formatTime(foundLatest)}</Text>
+                </TouchableOpacity>
                 {openPicker === 'latest' && (
                   <DateTimePicker
                     value={foundLatest} mode="datetime" display={pickerDisplay} maximumDate={new Date()}
@@ -408,7 +428,7 @@ export function SimpleEventConfirm({ type, petId, petName, onBack, onLogged }: P
             exactly what gets written. */}
         <TouchableOpacity
           style={styles.summaryPill}
-          onPress={handleLogIt}
+          onPress={() => void guardSubmit(handleLogIt)}
           activeOpacity={0.85}
           disabled={submitting}
           accessibilityRole="button"
