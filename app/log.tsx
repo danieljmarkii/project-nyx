@@ -14,7 +14,8 @@ import { parseFoodScope } from '../lib/food';
 import { MedicationPicker } from '../components/log/MedicationPicker';
 import { ComboDoseConfirmSheet } from '../components/log/ComboDoseConfirmSheet';
 import { TimeConfidenceField, TimeMode, FoundMode } from '../components/log/TimeConfidenceField';
-import { resolveTimeModeChange, resolveFoundModeChange, sourceAfterPointEdit, DEFAULT_WINDOW_SPAN_MS } from '../lib/eventTimeEdit';
+import { resolveTimeModeChange, resolveFoundModeChange, sourceAfterPointEdit, DEFAULT_WINDOW_SPAN_MS, buildTimeFields as deriveTimeFields } from '../lib/eventTimeEdit';
+import { insertSimpleEvent } from '../lib/simpleEvent';
 import { EventIcon } from '../components/event/EventIcon';
 import { EventTypePicker } from '../components/log/EventTypePicker';
 import { Header } from '../components/ui/Header';
@@ -27,18 +28,19 @@ import { useEventStore } from '../store/eventStore';
 import { useAllowlistFlag } from '../hooks/useAppConfig';
 import { useBetaOptIn } from '../lib/betaFeatures';
 import { useMomentStore, MEAL_FLAGGED_DURATION_MS, whenMealCardVisible } from '../store/momentStore';
-import { getDb, getActiveRegimenForDrug, getMealForEvent, updateDoseAdherence, PickerFood, PickerMedication } from '../lib/db';
+import { getActiveRegimenForDrug, getMealForEvent, updateDoseAdherence, PickerFood, PickerMedication } from '../lib/db';
 import { supabase } from '../lib/supabase';
-import { syncPendingEvents, syncPendingMeals, syncPendingMedicationAdministrations } from '../lib/sync';
+import { syncPendingMedicationAdministrations } from '../lib/sync';
 import { insertMeal } from '../lib/meals';
 import { insertMedicationDose } from '../lib/medicationDose';
 import { insertWeightCheck, getLatestWeightKg, parseWeightLbsToKg, kgToLbs } from '../lib/weight';
 import { inferDoseVehicleFromFoodType, initialComboDoseAdherence, isVehicleNotFinished, drugDisplayName, type DoseAdherence } from '../lib/medications';
-import { uploadPhoto, compressForUpload, persistCapture } from '../lib/storage';
-import { triggerVomitAnalysis, triggerStoolAnalysis } from '../lib/analysis';
-import { triggerSignalRegenDebounced } from '../lib/signal';
+// The simple-event write side-effects (event row + photo + its AI read + sync +
+// regen) now live in lib/simpleEvent (imported near the eventTimeEdit import
+// above), shared with the in-sheet confirm — so log.tsx no longer imports the
+// storage / analysis / signal / sync-event helpers directly for this path.
 import { evaluateMealLogTimeFlag, noteTrialFlagShown } from '../lib/trialContaminant';
-import { uuid, exifDateToISO, trustedPastExifIso, formatExifAttribution, formatTime, deriveOccurredAt, OccurredConfidence } from '../lib/utils';
+import { exifDateToISO, trustedPastExifIso, formatExifAttribution, formatTime, OccurredConfidence } from '../lib/utils';
 
 type Step = 'type' | 'food' | 'medication' | 'symptom' | 'simple' | 'stool-type' | 'weight';
 
@@ -728,7 +730,6 @@ export default function LogModal() {
     const tf = override?.timeFields ?? buildTimeFields();
     const effectiveOccurredAt = tf.occurredAt;
     const effectiveSource = tf.source;
-    const db = getDb();
     const isMeal = selectedType === 'meal' && !!foodId;
     let eventId: string;
     let now: string;
@@ -751,19 +752,28 @@ export default function LogModal() {
         eventId = res.eventId;
         now = res.now;
       } else {
-        eventId = uuid();
-        now = new Date().toISOString();
-        await db.runAsync(
-          `INSERT INTO events
-             (id, pet_id, event_type, occurred_at, severity, notes, source, occurred_at_source,
-              occurred_at_confidence, occurred_at_earliest, occurred_at_latest,
-              created_at, updated_at, synced)
-           VALUES (?, ?, ?, ?, ?, ?, 'manual', ?, ?, ?, ?, ?, ?, 0)`,
-          [eventId, pet.id, selectedType!, effectiveOccurredAt.toISOString(),
-           severity ?? null, notes.trim() || null, effectiveSource,
-           tf.confidence, tf.earliest ? tf.earliest.toISOString() : null,
-           tf.latest ? tf.latest.toISOString() : null, now, now]
-        );
+        // The simple (symptom / stool / Other) write — shared with the in-sheet
+        // confirm (components/log/SimpleEventConfirm) via lib/simpleEvent so the two
+        // entry points can't drift to different rows. insertSimpleEvent owns the
+        // event row, the optional photo attachment + its per-incident AI read
+        // (vomit/stool), the sync push and the Signal regen; prependEvent + the
+        // completion beat stay here (per-surface UI concerns).
+        const res = await insertSimpleEvent({
+          petId: pet.id,
+          eventType: selectedType!,
+          confidence: tf.confidence,
+          occurredAt: effectiveOccurredAt,
+          earliest: tf.earliest,
+          latest: tf.latest,
+          source: effectiveSource,
+          notes: notes.trim() || null,
+          severity: severity ?? null,
+          attachment: attachmentUri
+            ? { uri: attachmentUri, takenAt: attachmentTakenAt, width: attachmentDims?.width, height: attachmentDims?.height }
+            : null,
+        });
+        eventId = res.eventId;
+        now = res.now;
       }
     } catch (e) {
       console.error('[log] event write failed:', e);
@@ -794,54 +804,9 @@ export default function LogModal() {
       quantity: foodId ? 'unknown' : null,
     });
 
-    // Save and upload photo attachment if present
-    if (attachmentUri) {
-      const attId = uuid();
-      const storagePath = `${pet.id}/${eventId}/${attId}.jpg`;
-      // B-104 — persist the capture off the OS cache directory (reclaimed under
-      // storage pressure) into the app-owned document directory, and store THAT
-      // as local_uri so it survives. Compression/upload below still read the
-      // original capture; both point at identical bytes.
-      const localUri = persistCapture(attachmentUri, `${attId}.jpg`);
-      await db.runAsync(
-        `INSERT INTO event_attachments
-           (id, event_id, pet_id, local_uri, storage_path, mime_type, taken_at, synced, created_at)
-         VALUES (?, ?, ?, ?, ?, 'image/jpeg', ?, 0, ?)`,
-        [attId, eventId, pet.id, localUri, storagePath, attachmentTakenAt ?? null, now]
-      );
-      const isVomit = selectedType === 'vomit';
-      // Both stool event_type values (formed + loose) carry a photographed read.
-      const isStool = selectedType === 'stool_normal' || selectedType === 'diarrhea';
-      // Compress before upload (longest edge ≤1600px, JPEG q75) so the file
-      // stays well under Claude's 5 MB image cap and bounds storage. Runs in an
-      // async block so it doesn't delay the completion animation below.
-      (async () => {
-        try {
-          const uploadUri = await compressForUpload(
-            attachmentUri, attachmentDims?.width, attachmentDims?.height,
-          );
-          await uploadPhoto('nyx-event-attachments', storagePath, uploadUri);
-          const { error: attErr } = await supabase.from('event_attachments').upsert({
-            id: attId, event_id: eventId, pet_id: pet.id,
-            storage_path: storagePath, mime_type: 'image/jpeg', taken_at: attachmentTakenAt,
-          }, { onConflict: 'id' });
-          // Only mark synced + analyze if the row actually landed. supabase-js
-          // returns errors rather than throwing, so an ignored error here is
-          // what previously left rows flagged synced but absent from Supabase.
-          // On failure leave synced=0 so the queue retries; the lazy detail-open
-          // trigger will analyze once the row is up.
-          if (attErr) { console.warn('[log] event_attachment upsert failed:', attErr.message); return; }
-          await db.runAsync('UPDATE event_attachments SET synced = 1 WHERE id = ?', [attId]);
-          // B-027: cache-on-log. The photo + attachment row are now in Supabase,
-          // so the analyze-vomit / analyze-stool function can read them.
-          // Fire-and-forget. B-247: stool gets the same cache-on-log path.
-          if (isVomit) triggerVomitAnalysis(eventId).catch(() => {});
-          else if (isStool) triggerStoolAnalysis(eventId).catch(() => {});
-        } catch (e) {
-          console.error('[log] photo upload failed:', e);
-        }
-      })();
-    }
+    // The photo attachment + its per-incident AI read now live in
+    // insertSimpleEvent (non-meal path). Meals never carry a photo — the food step
+    // has no attach affordance — so nothing photo-related belongs on the meal path.
 
     // Dismiss the modal, then play the earned completion moment at the root
     // layer. Meals are the exception: their confirmation is the meal completion
@@ -850,10 +815,9 @@ export default function LogModal() {
     // so firing both would double the surface (B-064 unifies meals into a single
     // warm surface).
     router.back();
-    // Non-meal events still push + regen here; insertMeal already did both for
-    // the meal branch (§2 freshness — a new event may change the cached insight
-    // set; debounced so a meal + the symptom logged after it collapse into one
-    // regen). Fire-and-forget — home re-reads cache on focus.
+    // Non-meal events play the terminal beat here; the sync push + Signal regen
+    // that used to live here now belong to insertSimpleEvent (so the in-sheet
+    // confirm gets them too), and insertMeal already owns both for the meal branch.
     if (!isMeal) {
       // Tone-aware: symptom logs get a calm confirm (never a festive gold beat
       // over a worrying event); routine logs get the warm-gold celebrate moment.
@@ -861,10 +825,6 @@ export default function LogModal() {
       // delayMs clears the dismissing modal so the root overlay isn't briefly
       // occluded on iOS (same reason the meal toast is deferred).
       showMoment({ tone }, { delayMs: 300 });
-      syncPendingEvents()
-        .then(() => syncPendingMeals())
-        .catch(console.error);
-      triggerSignalRegenDebounced(pet.id);
     }
     // petId is the pet the event was actually written for (read at write time) —
     // the meal card carries it so its "+ gave a med with this" combo can bind the
@@ -957,24 +917,15 @@ export default function LogModal() {
 
   // Derive the stored time fields from the affordance the owner touched.
   // occurred_at is always a single point so every existing reader keeps
-  // working; confidence + window bounds carry the uncertainty (B-010).
+  // working; confidence + window bounds carry the uncertainty (B-010). The
+  // reduction itself lives in lib/eventTimeEdit (deriveTimeFields) so this screen
+  // and the in-sheet confirm (B-745 PR 3) can't derive a different row from the
+  // same control state.
   function buildTimeFields(): TimeFields {
-    if (timeMode === 'saw') {
-      return { confidence: 'witnessed', occurredAt, earliest: null, latest: null, source: occurredAtSource };
-    }
-    if (foundMode === 'around') {
-      return { confidence: 'estimated', occurredAt: estimatedAt, earliest: null, latest: null, source: 'manual' };
-    }
-    // 'before' (open-ended) or 'between' (bounded) -> window
-    const e = foundMode === 'between' ? earliest : null;
-    const l = foundLatest;
-    return {
-      confidence: 'window',
-      occurredAt: deriveOccurredAt({ confidence: 'window', point: occurredAt, earliest: e, latest: l }),
-      earliest: e,
-      latest: l,
-      source: 'manual',
-    };
+    return deriveTimeFields({
+      timeMode, foundMode, point: occurredAt, pointSource: occurredAtSource,
+      estimatedAt, earliest, latest: foundLatest,
+    });
   }
 
   function renderTimeRow() {

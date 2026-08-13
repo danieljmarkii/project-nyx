@@ -1,17 +1,43 @@
-// EventTypeSheet is the flag-on "More events" destination — the grouped picker as a
-// bottom sheet that routes into the EXISTING /log sub-flows (presentation only). The
-// core behaviour to pin is the routing: each tile hands off to /log?type=, the split
-// Stool segments route to the two event types the deleted sub-step used, and the
-// sheet closes on select. The nested PetSwitcherSheet is stubbed at its data edges.
+// EventTypeSheet is the flag-on "More events" destination. B-745 PR 3 makes it a
+// three-stage flow: the grouped grid → an in-sheet confirm for simple events
+// (symptom / stool / Other) → the completion beat, and it still ROUTES OUT to the
+// dedicated screens for Meal / Medication / Weight. This test pins that orchestration
+// (which tap confirms in place vs. routes, and back/logged stage transitions); the
+// confirm's own internals live in SimpleEventConfirm.test, so it's stubbed here.
 
 jest.mock('expo-router', () => ({ router: { push: jest.fn() } }));
 jest.mock('react-native-safe-area-context', () => ({
   useSafeAreaInsets: () => ({ top: 0, right: 0, bottom: 0, left: 0 }),
 }));
-// PetSwitcherSheet (nested) reaches supabase + storage at its edges; stub both so the
-// test stays about the sheet, not the switcher's data reads.
+// PetSwitcherSheet (nested) reaches supabase + storage at its edges; stub both.
 jest.mock('../../lib/supabase', () => ({ supabase: {} }));
 jest.mock('../../lib/storage', () => ({ getPublicUrl: () => null }));
+
+// Stub the confirm + beat so this test is about the SHEET's routing/stages, not the
+// confirm form (tested in SimpleEventConfirm.test) or the beat animation.
+jest.mock('./SimpleEventConfirm', () => {
+  const { Text } = require('react-native');
+  return {
+    SimpleEventConfirm: ({ type, petName, onBack, onLogged }: any) => (
+      <>
+        <Text>{`confirm:${type}:${petName}`}</Text>
+        <Text onPress={onBack}>stub-back</Text>
+        <Text onPress={onLogged}>stub-logged</Text>
+      </>
+    ),
+  };
+});
+jest.mock('./SheetLogBeat', () => {
+  const { Text } = require('react-native');
+  return {
+    SheetLogBeat: ({ tone, onDone }: any) => (
+      <>
+        <Text>{`beat:${tone}`}</Text>
+        <Text onPress={onDone}>stub-done</Text>
+      </>
+    ),
+  };
+});
 
 import { render, fireEvent } from '@testing-library/react-native';
 import { router } from 'expo-router';
@@ -37,33 +63,73 @@ describe('EventTypeSheet', () => {
     expect(getByText('Log for Nyx')).toBeTruthy();
   });
 
-  it('routes a symptom tile into the existing sub-flow and closes the sheet', () => {
+  it('a symptom tile confirms IN PLACE — no navigation, sheet stays open', () => {
     const onClose = jest.fn();
     const { getByText } = render(<EventTypeSheet visible onClose={onClose} />);
     fireEvent.press(getByText('Vomit'));
-    expect(onClose).toHaveBeenCalledTimes(1);
-    expect(router.push).toHaveBeenCalledWith('/log?type=vomit');
+    expect(getByText('confirm:vomit:Nyx')).toBeTruthy();
+    expect(router.push).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
   });
 
-  it('routes the split Stool segments to stool_normal / diarrhea (the deleted sub-step, inlined)', () => {
+  it('Other confirms in place', () => {
     const { getByText } = render(<EventTypeSheet visible onClose={jest.fn()} />);
-    fireEvent.press(getByText('Normal'));
-    expect(router.push).toHaveBeenLastCalledWith('/log?type=stool_normal');
-    fireEvent.press(getByText('Loose'));
-    expect(router.push).toHaveBeenLastCalledWith('/log?type=diarrhea');
+    fireEvent.press(getByText('Other'));
+    expect(getByText('confirm:other:Nyx')).toBeTruthy();
+    expect(router.push).not.toHaveBeenCalled();
   });
 
-  it('routes Meal and Weight to their own sub-flows', () => {
-    const { getByText } = render(<EventTypeSheet visible onClose={jest.fn()} />);
+  it('the split Stool segments confirm in place as stool_normal / diarrhea', () => {
+    const a = render(<EventTypeSheet visible onClose={jest.fn()} />);
+    fireEvent.press(a.getByText('Normal'));
+    expect(a.getByText('confirm:stool_normal:Nyx')).toBeTruthy();
+    a.unmount();
+
+    const b = render(<EventTypeSheet visible onClose={jest.fn()} />);
+    fireEvent.press(b.getByText('Loose'));
+    expect(b.getByText('confirm:diarrhea:Nyx')).toBeTruthy();
+    expect(router.push).not.toHaveBeenCalled();
+  });
+
+  it('Meal / Medication / Weight still route to their own sub-flows and close', () => {
+    const onClose = jest.fn();
+    const { getByText } = render(<EventTypeSheet visible onClose={onClose} />);
     fireEvent.press(getByText('Meal'));
     expect(router.push).toHaveBeenLastCalledWith('/log?type=meal');
+    fireEvent.press(getByText('Medication'));
+    expect(router.push).toHaveBeenLastCalledWith('/log?type=medication');
     fireEvent.press(getByText('Weight'));
     expect(router.push).toHaveBeenLastCalledWith('/log?type=weight_check');
+    expect(onClose).toHaveBeenCalledTimes(3);
+  });
+
+  it('back from the confirm returns to the grid', () => {
+    const { getByText, queryByText } = render(<EventTypeSheet visible onClose={jest.fn()} />);
+    fireEvent.press(getByText('Vomit'));
+    expect(queryByText('Log for Nyx')).toBeNull(); // grid title hidden in confirm
+    fireEvent.press(getByText('stub-back'));
+    expect(getByText('Log for Nyx')).toBeTruthy();  // back at the grid
+  });
+
+  it('logging a symptom plays the calm beat, then closes on beat-done', () => {
+    const onClose = jest.fn();
+    const { getByText } = render(<EventTypeSheet visible onClose={onClose} />);
+    fireEvent.press(getByText('Vomit'));
+    fireEvent.press(getByText('stub-logged'));
+    expect(getByText('beat:calm')).toBeTruthy();     // symptom → calm, never celebrate
+    fireEvent.press(getByText('stub-done'));
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('logging Other plays the celebrate beat (not a symptom)', () => {
+    const { getByText } = render(<EventTypeSheet visible onClose={jest.fn()} />);
+    fireEvent.press(getByText('Other'));
+    fireEvent.press(getByText('stub-logged'));
+    expect(getByText('beat:celebrate')).toBeTruthy();
   });
 
   it('shows the pet-switcher affordance only for multi-pet households', () => {
     const single = render(<EventTypeSheet visible onClose={jest.fn()} />);
-    // Single pet: the title is a plain, non-interactive heading (no switch label).
     expect(single.queryByLabelText('Log for Nyx — switch pet')).toBeNull();
     single.unmount();
 

@@ -29,6 +29,7 @@
 // screens remembering to agree.
 
 import type { FoundMode, TimeMode } from '../components/log/TimeConfidenceField';
+import { deriveOccurredAt, type OccurredConfidence } from './utils';
 
 /** How far back to open a fresh "between" window's lower edge. */
 export const DEFAULT_WINDOW_SPAN_MS = 2 * 60 * 60 * 1000;
@@ -143,6 +144,64 @@ export function reconstructTimeControl(stored: {
   }
   // NULL — unclassified. Neither segment selected (B-527): show the absence.
   return { mode: null, foundMode: null, earliest: null, latest: null };
+}
+
+// ── Deriving the stored B-010 fields from the control's state ─────────────────
+//
+// The Saw-it / Found-it control holds a small state machine (timeMode, foundMode,
+// the point, its source, the estimate, and the window edges). What actually gets
+// written is three columns: occurred_at (a single point every reader keys off),
+// confidence, and the two window bounds. This is the one place that reduction
+// lives, so app/log.tsx's full-screen simple step and components/log/
+// SimpleEventConfirm's in-sheet confirm (B-745 PR 3) can never derive a different
+// row from the same control state. Pure, so it's pinned by a test.
+//
+//   saw            -> witnessed at the point (source preserved: 'now'/'exif'/'manual')
+//   found + around -> estimated at the estimate (an owner guess, so source 'manual')
+//   found + before -> window, latest edge only (open-ended; "found by {latest}")
+//   found + between -> window, both edges
+//
+// occurred_at for a window is the LATEST edge (deriveOccurredAt) — a real value the
+// owner entered, never an invented midpoint. The window bounds remain the source of
+// truth; surfaces render the window (describeOccurredAt), not this point.
+export interface BuiltTimeFields {
+  confidence: OccurredConfidence;
+  occurredAt: Date;
+  earliest: Date | null;
+  latest: Date | null;
+  source: 'manual' | 'exif' | 'now';
+}
+
+export function buildTimeFields(input: {
+  timeMode: TimeMode;
+  foundMode: FoundMode;
+  /** The witnessed / point time. */
+  point: Date;
+  /** Provenance of `point` (kept only for the witnessed path). */
+  pointSource: 'manual' | 'exif' | 'now';
+  /** The "around a time" estimate — distinct from `point` so a guess never leaks. */
+  estimatedAt: Date;
+  earliest: Date | null;
+  /** The window's discovery / latest edge. */
+  latest: Date;
+}): BuiltTimeFields {
+  const { timeMode, foundMode, point, pointSource, estimatedAt, earliest, latest } = input;
+  if (timeMode === 'saw') {
+    return { confidence: 'witnessed', occurredAt: point, earliest: null, latest: null, source: pointSource };
+  }
+  if (foundMode === 'around') {
+    return { confidence: 'estimated', occurredAt: estimatedAt, earliest: null, latest: null, source: 'manual' };
+  }
+  // 'before' (open-ended) or 'between' (bounded) -> window.
+  const e = foundMode === 'between' ? earliest : null;
+  const l = latest;
+  return {
+    confidence: 'window',
+    occurredAt: deriveOccurredAt({ confidence: 'window', point, earliest: e, latest: l }),
+    earliest: e,
+    latest: l,
+    source: 'manual',
+  };
 }
 
 // ── Provenance after a point-time edit (B-525) ───────────────────────────────
