@@ -11,6 +11,7 @@ import {
   resolveFoundModeChange,
   reconstructTimeControl,
   sourceAfterPointEdit,
+  buildTimeFields,
   DEFAULT_WINDOW_SPAN_MS,
 } from './eventTimeEdit';
 
@@ -245,5 +246,54 @@ describe('resolveFoundModeChange', () => {
 
   it('exposes the default span as a constant both screens share', () => {
     expect(DEFAULT_WINDOW_SPAN_MS).toBe(2 * 60 * 60 * 1000);
+  });
+});
+
+// The one derivation shared by the full-screen simple step and the in-sheet
+// confirm (B-745 PR 3) — occurred_at is always the single point every reader keys
+// off; confidence + bounds carry the uncertainty. Pinned here so the two entry
+// points can't derive different rows from the same control state.
+describe('buildTimeFields', () => {
+  const point = new Date(2026, 7, 13, 17, 33);
+  const estimatedAt = new Date(2026, 7, 13, 12, 0);
+  const earliest = new Date(2026, 7, 13, 14, 0);
+  const latest = new Date(2026, 7, 13, 17, 33);
+
+  it('saw → witnessed at the point, source preserved, no bounds', () => {
+    expect(buildTimeFields({
+      timeMode: 'saw', foundMode: 'before', point, pointSource: 'exif',
+      estimatedAt, earliest: null, latest,
+    })).toEqual({ confidence: 'witnessed', occurredAt: point, earliest: null, latest: null, source: 'exif' });
+  });
+
+  it('found + before → open-ended window, latest edge only, source manual', () => {
+    const tf = buildTimeFields({
+      timeMode: 'found', foundMode: 'before', point, pointSource: 'now',
+      estimatedAt, earliest: null, latest,
+    });
+    expect(tf.confidence).toBe('window');
+    expect(tf.earliest).toBeNull();          // open-ended: no lower bound
+    expect(tf.latest).toBe(latest);
+    expect(tf.occurredAt).toBe(latest);      // derived point = latest edge
+    expect(tf.source).toBe('manual');
+  });
+
+  it('found + between → bounded window with both edges', () => {
+    const tf = buildTimeFields({
+      timeMode: 'found', foundMode: 'between', point, pointSource: 'now',
+      estimatedAt, earliest, latest,
+    });
+    expect(tf.confidence).toBe('window');
+    expect(tf.earliest).toBe(earliest);
+    expect(tf.latest).toBe(latest);
+    expect(tf.occurredAt).toBe(latest);
+  });
+
+  it('found + around → estimated at the estimate, no bounds (full-screen path only)', () => {
+    const tf = buildTimeFields({
+      timeMode: 'found', foundMode: 'around', point, pointSource: 'now',
+      estimatedAt, earliest, latest,
+    });
+    expect(tf).toEqual({ confidence: 'estimated', occurredAt: estimatedAt, earliest: null, latest: null, source: 'manual' });
   });
 });
