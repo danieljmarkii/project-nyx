@@ -50,4 +50,4 @@ Parallel track (not Step 10). B-745 PR 3 — the last PR in the design-locked pl
 
 ## Outcome
 
-Shipped via #<PR>. B-745's three build PRs are complete; the track's remaining item is the **GA call** (FL-4: a removal PR deletes the flag, the old grid, and the shelf row) — a PM decision, not a build step.
+Shipped via #635. B-745's three build PRs are complete; the track's remaining item is the **GA call** (FL-4: a removal PR deletes the flag, the old grid, and the shelf row) — a PM decision, not a build step.
