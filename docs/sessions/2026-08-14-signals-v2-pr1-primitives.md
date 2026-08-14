@@ -23,7 +23,12 @@ Step 10 evolution — **Signals v2 (B-755), PR 1 of 10.** The one-predicate foun
 - **`classifyEpisodeTiming` prepares its feedings itself** (runs `timedEligibleFeedings` internally) so a caller cannot forget the NULL-tolerant feeding filter; `classifyEpisodeSet` prepares once and loops the prepared core, keeping the batch path O(episodes × feedings) without re-preparing.
 
 ## Persona Flags Raised
-None (a persona conflict). Sign-off: **Engineer ✓** (dependency-free / one-predicate / Deno-safe / floors-stay-in-detectors) — the §7 gate for PR 1. Designer / Data / Dr. Chen **N/A** (no UI, no owner copy, no clinical claim surfaced — the primitive computes facts; the flag-gated surfaces are PRs 5–7). Ran `adversarial-reviewer` (statistics + ⑤-parity) and `code-reviewer` (house rules + Deno-safety) on the diff beyond the formal gate; findings to be folded into #639 if any.
+None (a persona conflict). Sign-off: **Engineer ✓** (dependency-free / one-predicate / Deno-safe / floors-stay-in-detectors) — the §7 gate for PR 1. Designer / Data / Dr. Chen **N/A** (no UI, no owner copy, no clinical claim surfaced — the primitive computes facts; the flag-gated surfaces are PRs 5–7).
+
+**`adversarial-reviewer` + `code-reviewer` both ran (beyond the formal gate) and CONVERGED on one real fix-before-merge bug — caught and fixed in `fa9a8d6`:**
+- **Biostatistician:** fuzzed `mealTiming` vs shipped ⑤ over 50k records + every exact boundary → parity holds ✓; validated the C-test vs a BigInt exact minlike p-value (err 1.4e-13), symmetry, asymmetric monotonicity, lgamma, p-never-surfaces ✓; **but** a non-finite/`undefined` count (missing-map-key path) → `rateContrast` returned `gate:true` (fabricated comparison) and `count:Infinity` hung the loop — the count normalization was missing the finiteness guard the exposure path had ✗ → **fixed** (symmetric guard in `rateContrast`/`conditionalBinomialTwoSidedP`/`rateOf`; regression tests added).
+- **Verdicts:** `mealTiming.ts` **PASS**; `rateContrast.ts` was **FAIL (narrow)** on the degenerate-count contract, now **closed**.
+- Folded in two non-blocking items: the `mealTiming` non-finite-`onsetMs` guard (code-review NIT) and a source-scan test structurally enforcing §3's "p-values never surface". Two PR-2 forward notes captured in `mealTiming` docstrings (collapse-then-window; pre-filter inverted free-fed spans).
 
 ## Open Questions Surfaced
 None new. Consumes the ruled `longGapHours` = 6h (§0 D10, CUL-16). Does not touch the still-open **D2** (absence-shaped trial sentence, Dr. Chen) — that governs PR 3's copy, not this primitive.
