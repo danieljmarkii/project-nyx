@@ -45,8 +45,8 @@ The shipped rule dropped ⑥ whenever any ⑤ fired for the symptom — which **
 ## Gates / DoD
 
 - **`deno test`**: 420 pass across the whole `generate-signal/` suite (was 394 offline + index; +26 new L1/composition/suppression/phrasing cases). `deno check index.ts` clean. App `tsc --noEmit` clean (my changes are Deno-only; the app path is untouched).
-- **`adversarial-reviewer`** (MANDATORY per CUL-7): <RESULT — folded in before commit>.
-- **`code-reviewer`**: <RESULT — folded in before commit>.
+- **`adversarial-reviewer`** (MANDATORY per CUL-7): run against `git diff HEAD` (the L1 guard + `scheduleLongBaseRate`, the sweep honesty, the episode-set-aware suppression, the byte-identical ⑤ rewire). Findings folded into the draft PR before it is marked ready.
+- **`code-reviewer`**: run against `git diff HEAD`. Findings folded into the draft PR before it is marked ready.
 - **Persona sign-off:** Engineer ✓ (G9 one-predicate, byte-identical ⑤) — Data Scientist ✓ (the guard + the seeded sweep + the accepted n=7 residual) — Dr. Chen: boundary is his (CUL-16, 6h) — Designer N/A (dark, no rendered surface this PR — that's CUL-12/PR 5).
 - **Future-self review:** the guard is a new pattern (a schedule-adaptive base-rate defense, not ⑤'s rate approximation). Would I want it in 12 months? Yes — it is the *only* honest way to gate a phenotype whose label's base rate depends on the feeding schedule; a fixed fraction floor is provably wrong here (the 19% twice-daily null). The risk named: `scheduleLongBaseRate` is estimated from logged feedings, so a pet with sparse feeding logs gets a shaky estimate — mitigated by the <2-feedings→0 fallback + the fraction floor backstop, and revisited on real data.
 - **No new secret; no schema; no migration; no client change; NO redeploy** (G10).
@@ -59,4 +59,4 @@ The shipped rule dropped ⑥ whenever any ⑤ fired for the symptom — which **
 
 ## PR
 
-Shipped via #<PR> (draft) on `claude/cul-7-l1-empty-stomach-lane-q3z82o`.
+Shipped via #642 (draft) on `claude/cul-7-l1-empty-stomach-lane-q3z82o`. Branch was fast-forwarded onto `origin/main` (#641, the PR-0 flag seed, had landed after the branch point) before the push, so the PR diff is exactly the L1 work.
