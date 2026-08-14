@@ -898,6 +898,126 @@ export function timingReceiptDegrades(finding: TimingFinding): boolean {
   return finding.eligibleCount > DOT_LANE_MAX;
 }
 
+// ══ Real-time distribution (Option A) — docs/nyx-postprandial-receipt-requirements.md ══
+// The postprandial receipt's DEFAULT state plots each timeable episode at its TRUE
+// minutes-after-eating, on an expanded-early scale so the clinically-relevant first
+// half-hour is legible (D2). Pure + unit-tested; the renderer (PR 2) consumes it only
+// when the detector ships `eligibleMinutes[]` (§5). Absent ⇒ the even-spread `dotLaneModel`
+// fallback above, byte-identical to today. A confident cluster never renders on unreliable
+// timing — the gate (`timingUnreliable`) routes those to the split (§2/§6).
+
+// Expanded-early scale (§3): the first EARLY_MIN minutes take EARLY_FRAC of the lane; the
+// rest of the nominal window compresses into the tail.
+export const POSTPRANDIAL_EARLY_MIN = 30;
+export const POSTPRANDIAL_EARLY_FRAC = 0.6;
+export const POSTPRANDIAL_MAX_MIN = 120;
+
+/** Fraction 0..1 along the lane for a minutes-since-feeding value, on the expanded-early
+ *  scale. Clamped to [0, POSTPRANDIAL_MAX_MIN] (a late outlier pins to the lane end, never
+ *  overflows). Monotonic non-decreasing, so left-to-right order === time order. */
+export function postprandialPos(minutes: number): number {
+  const m = Math.max(0, Math.min(minutes, POSTPRANDIAL_MAX_MIN));
+  if (m <= POSTPRANDIAL_EARLY_MIN) return (m / POSTPRANDIAL_EARLY_MIN) * POSTPRANDIAL_EARLY_FRAC;
+  return (
+    POSTPRANDIAL_EARLY_FRAC +
+    ((m - POSTPRANDIAL_EARLY_MIN) / (POSTPRANDIAL_MAX_MIN - POSTPRANDIAL_EARLY_MIN)) *
+      (1 - POSTPRANDIAL_EARLY_FRAC)
+  );
+}
+
+/** A single plotted episode: its lane fraction, whether it fell in the rapid window, and a
+ *  deterministic vertical jitter ROW (0 centred, negative up, positive down) so near-ties
+ *  don't overprint. Row → px is the renderer's call; the row keeps the geometry testable. */
+export interface DistributionDot {
+  pos: number;
+  inWindow: boolean;
+  jitterRow: number;
+}
+export interface DistributionAxisTick {
+  pos: number;
+  label: string;
+}
+export interface PostprandialDistributionModel {
+  /** Left-to-right, ascending time. Length === eligibleCount. */
+  dots: DistributionDot[];
+  /** The rapid window as [0, bandEnd] fraction; the dashed edge is the boundary. */
+  bandEnd: number;
+  /** Median rapid timing as a lane fraction, or null when unknown. */
+  medianPos: number | null;
+  axis: DistributionAxisTick[];
+}
+
+// Minimum x-gap (lane fraction) before two dots are treated as colliding — about one 8px dot
+// on a ~280px lane. A near-tie bumps to the next jitter row rather than overprinting.
+const DIST_COLLISION_GAP = 0.03;
+
+// Deterministic beeswarm rows for ASCENDING positions: greedily place each dot in the lowest
+// row whose last dot is ≥ gap away, then map row index 0,1,2,3,4… to signed offsets
+// 0,−1,+1,−2,+2… (alternating around the centre line). No RNG — tests can pin it.
+function assignJitterRows(sortedPositions: number[]): number[] {
+  const lastXByRow: number[] = [];
+  return sortedPositions.map((x) => {
+    let row = 0;
+    while (lastXByRow[row] !== undefined && x - lastXByRow[row] < DIST_COLLISION_GAP) row++;
+    lastXByRow[row] = x;
+    return row === 0 ? 0 : row % 2 === 1 ? -Math.ceil(row / 2) : Math.ceil(row / 2);
+  });
+}
+
+// The honest positioned axis — real minute values at their true (non-linear) positions, so
+// "30m" sits on the window edge (postprandialPos(30) === EARLY_FRAC), fixing the shipped
+// mid-lane mislabel. Coupled to the shipped 30-min rapid bucket; revisit if it goes per-finding.
+const POSTPRANDIAL_AXIS: DistributionAxisTick[] = [
+  { pos: 0, label: 'ate' },
+  { pos: postprandialPos(15), label: '15m' },
+  { pos: postprandialPos(30), label: '30m' },
+  { pos: postprandialPos(60), label: '1h' },
+  { pos: postprandialPos(120), label: '2h' },
+];
+
+/** True when the finding carries real per-episode timings (§5 payload shipped) — so the
+ *  distribution state is renderable. Absent ⇒ the even-spread `dotLaneModel` fallback. */
+export function hasRealTimings(finding: PostprandialTimingFinding): boolean {
+  return Array.isArray(finding.eligibleMinutes) && finding.eligibleMinutes.length > 0;
+}
+
+/** The gate (§2/§7): render the honest split instead of a confident cluster when the detector
+ *  could not stand behind the timing. FAIL-SAFE — real timings present but reliability unknown
+ *  (undefined) counts as unreliable; only an explicit `timingReliable === true` clears the gate,
+ *  so an un-vetted finding never defaults into the cluster. False when no real timings exist (the
+ *  fallback path owns that case). */
+export function timingUnreliable(finding: PostprandialTimingFinding): boolean {
+  return hasRealTimings(finding) && finding.timingReliable !== true;
+}
+
+/** The distribution-state geometry (§3): one dot per timed-eligible episode at its true
+ *  minutes-after-eating on the expanded-early scale, split in/out of the rapid window, with
+ *  deterministic jitter, the median tick and the honest axis. Reads `eligibleMinutes`; callers
+ *  gate on `hasRealTimings` (and `timingUnreliable`) before rendering this. */
+export function postprandialDistributionModel(
+  finding: PostprandialTimingFinding,
+): PostprandialDistributionModel {
+  const minutes = (finding.eligibleMinutes ?? [])
+    .map((m) => Math.max(0, Math.min(m, POSTPRANDIAL_MAX_MIN)))
+    .sort((a, b) => a - b);
+  const positions = minutes.map(postprandialPos);
+  const rows = assignJitterRows(positions);
+  const dots: DistributionDot[] = minutes.map((m, i) => ({
+    pos: positions[i],
+    inWindow: m <= finding.rapidWindowMinutes,
+    jitterRow: rows[i],
+  }));
+  const medianPos = Number.isFinite(finding.medianMinutesSinceFeeding)
+    ? postprandialPos(finding.medianMinutesSinceFeeding)
+    : null;
+  return {
+    dots,
+    bandEnd: postprandialPos(finding.rapidWindowMinutes),
+    medianPos,
+    axis: POSTPRANDIAL_AXIS,
+  };
+}
+
 // A compact clock range for a compare-row label: 4→8/4 → "4am–8am".
 function hourRangeLabel(startHour: number, windowHours: number): string {
   const end = (startHour + windowHours) % 24;
