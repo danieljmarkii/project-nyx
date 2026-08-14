@@ -63,7 +63,8 @@ food→vomit correlation (F8).
   escalate as investigate-threshold, never diagnosis-probability; BVS is
   weak-evidence diagnosis-of-exclusion and the live cat's retained-food photos
   contradict it anyway (the more escalation-worthy read); hair never de-escalates
-  (Cannon); cough ≥4wk is chronic and vet-worthy alone, the hairball
+  (Cannon); chronic cough in a cat is never-normal (no veterinary numeric
+  threshold exists — verification pass), the hairball
   misattribution is the canonical error, and cough/vomit streams
   cross-contaminate; GI trials expect response in 10–14d but week-3 non-response
   only ever indicts *this diet* (≥3-trials consensus; Raditic's 3-of-4 OTC
