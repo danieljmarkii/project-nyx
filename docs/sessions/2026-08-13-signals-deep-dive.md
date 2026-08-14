@@ -175,6 +175,28 @@ landed pre-merge; the brief carries a §0 revision note):
 - **Backlog:** B-753 (video capture/analysis, two rungs), B-754 (intentional
   synthetic-data validation corpus) filed from PM musings.
 
+## Mock round 1 reactions + the requirements doc (same session, 2026-08-14)
+
+The PM reacted to mock round 1 in-thread; rulings recorded on the mock page
+(republished, same URL) and encoded in **`docs/nyx-signals-v2-requirements.md`
+v0.9 (draft for PM ratification)** — the B-755 build contract:
+
+- **R-1 = A2** (one combined timing card; A1's two-card form dead; A3's
+  expanded mechanics ride A2's expand — team interpretation, vetoable).
+- **R-2 stays open** as the D2 Dr. Chen gate (count-rows unconditional;
+  sentence form gated).
+- **R-3**: Signal-resident confirmed by the PM; trial card also carries the
+  standing line (team, vetoable).
+- **R-4 ratified** (photo compositions; placement uncontested).
+- **R-5: the PM overruled the team** — "watching, with real counts" is a
+  SYSTEM, generalized per-lane; register worries became build constraints
+  (G8), not deferral reasons.
+- **R-6 (deferred → team)**: extension not rewrite; own `signals_v2` flag.
+- **New standing principle (D7/G6)**: nothing calibrated to Nyx's n=1
+  record — PM directive against over-generalizing from one cat.
+- Fact-check pass folded in earlier the same day (9/6/0); backlog rows
+  **B-755** (signals-v2 track, Now) + **B-756** (taxonomy track, Next) filed.
+
 ## Next Session Kickoff
 
 **Recommended first prompt:**
