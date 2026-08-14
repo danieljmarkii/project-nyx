@@ -99,13 +99,13 @@ longGapHours: 6,
 
 ---
 
-## §6 — Spec edits (Signals v2 requirements) — ✅ APPLIED to the Linear project description 2026-08-14
+## §6 — Spec edits (Signals v2 requirements) — ✅ APPLIED to the canonical repo spec + the Linear mirror (2026-08-14)
 
-Owned-call resolution; recorded here, in the CUL-16 comment, and **applied to the canonical spec** (the Linear project description — the only live copy today; see the divergence guard below):
+Owned-call resolution; recorded here, in the CUL-16 comment, and **applied to the canonical spec** — both `docs/nyx-signals-v2-requirements.md` (which landed on `main` via PR #637 while this PR was open, and is merged in here) and its Linear project-description mirror:
 
 - **§0 decision record** — added **D10**: `longGapHours` phenotype boundary = **6h** (Dr. Chen, CUL-16; PM deferred). Anchored to feline solid-phase gastric emptying; specificity over sensitivity for a physiology-asserting band; the sweep locks floors *at* 6h and never moves the boundary (G6). ✅
 - **§2 L1** — `longGapHours` "candidate 4–6h" → **6h** (ruled, CUL-16), with the anchor inline. ✅
-- **§4.1** — the compare row `≤30 min / in between / 4h+` → `≤30 min / in between 30 min–6h / 6h+`. ✅
+- **§4.1** — the face compare row `≤30 min / in between / 4h+` → `≤30 min / in between 30 min–6h / 6h+`, **and** the expand's dot-lane axis `ate · 30m · 2h · 4h+` → `ate · 30m · 2h · 6h+`. ✅
 - **§8 open questions** — #2 marked **RESOLVED 2026-08-14 → 6h**. ✅
 
-> **Divergence guard.** The spec header names `docs/nyx-signals-v2-requirements.md` as canonical ("the repo file wins on divergence"), but that file is **not yet in `main`** — it's in the unmerged PR #637, so today the Linear project description is the only live copy and is where these edits landed. **When PR #637 merges, carry these same four edits into `docs/nyx-signals-v2-requirements.md`** — otherwise the "repo file wins" rule would silently revert the ruling back to "candidate 4–6h" / `4h+` / open-OQ.
+> **Divergence guard — resolved.** PR #637 (which brought the canonical `docs/nyx-signals-v2-requirements.md` onto `main`) merged while this PR was open; this PR merges `main` in and applies the same edits to that file, so the repo spec and the Linear mirror agree — both carry 6h. The repo file is canonical per its own header ("this file stays canonical; on any material edit here, update the Linear description in the same session"), which this session did.
