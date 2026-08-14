@@ -20,7 +20,7 @@ import {
   detectChronicity,
   detectPostprandialTiming,
   detectEmptyStomachTiming,
-  binomialUpperTailProbability,
+  poissonBinomialUpperTailProbability,
   detectTimeOfDayClustering,
   detectIncidentRedFlags,
   deriveIncidentFlags,
@@ -3011,48 +3011,87 @@ Deno.test('detectEmptyStomachTiming — no timezone → L1 still fires (clock ev
   assert.equal(f[0].clockCount, undefined)
 })
 
-Deno.test('binomialUpperTailProbability — matches textbook values, endpoints, and monotonicity (L1 base-rate gate)', () => {
+Deno.test('poissonBinomialUpperTailProbability — reduces to the binomial for equal p, matches textbook values, endpoints, monotonicity, and the heterogeneous break (L1 base-rate gate)', () => {
   const approx = (a: number, b: number, msg: string) => assert.ok(Math.abs(a - b) < 1e-9, `${msg}: ${a} vs ${b}`)
+  // A reference one-sample binomial upper tail, computed independently of the DP under test.
+  const binomUpper = (k: number, n: number, p: number): number => {
+    if (k <= 0) return 1
+    if (k > n) return 0
+    let choose = 1
+    let tail = 0
+    for (let i = 0; i < k; i++) choose = (choose * (n - i)) / (i + 1) // C(n, k)
+    for (let i = k; i <= n; i++) {
+      tail += choose * Math.pow(p, i) * Math.pow(1 - p, n - i)
+      choose = (choose * (n - i)) / (i + 1) // C(n, i) → C(n, i+1)
+    }
+    return tail
+  }
+  const rep = (p: number, n: number) => Array(n).fill(p)
   // Endpoints.
-  assert.equal(binomialUpperTailProbability(0, 10, 0.3), 1, 'P(X≥0) = 1')
-  assert.equal(binomialUpperTailProbability(11, 10, 0.3), 0, 'P(X>n) = 0')
-  assert.equal(binomialUpperTailProbability(1, 10, 0), 0, 'p=0 → all mass at 0, P(X≥1)=0')
-  assert.equal(binomialUpperTailProbability(10, 10, 1), 1, 'p=1 → all mass at n')
-  // Exact textbook values.
-  approx(binomialUpperTailProbability(6, 6, 0.5), 1 / 64, 'P(X≥6 | 6, 0.5)') // 0.015625
-  approx(binomialUpperTailProbability(12, 12, 0.75), Math.pow(0.75, 12), 'P(X≥12 | 12, 0.75)') // ~0.0317
-  approx(binomialUpperTailProbability(7, 8, 0.5), 9 / 256, 'P(X≥7 | 8, 0.5)') // 0.035 — the twice-daily 7/8 golden
-  // A whole-tail sum equals 1 (X≥0), and P(X≥k) is non-increasing in k.
-  approx(binomialUpperTailProbability(0, 8, 0.4), 1, 'full lower endpoint is 1')
+  assert.equal(poissonBinomialUpperTailProbability(rep(0.3, 10), 0), 1, 'P(X≥0) = 1')
+  assert.equal(poissonBinomialUpperTailProbability(rep(0.3, 10), 11), 0, 'P(X>n) = 0')
+  assert.equal(poissonBinomialUpperTailProbability(rep(0, 10), 1), 0, 'all p=0 → all mass at 0, P(X≥1)=0')
+  assert.equal(poissonBinomialUpperTailProbability(rep(1, 10), 10), 1, 'all p=1 → all mass at n')
+  assert.equal(poissonBinomialUpperTailProbability([], 0), 1, 'empty set: P(X≥0)=1')
+  // REDUCES TO THE BINOMIAL when every pᵢ is equal (the property the round-3 rework must preserve).
+  for (const [p, n] of [[0.25, 8], [0.5, 8], [0.6, 10], [0.75, 12]] as const) {
+    for (let k = 0; k <= n; k++) {
+      approx(poissonBinomialUpperTailProbability(rep(p, n), k), binomUpper(k, n, p), `PB==binom p=${p} n=${n} k=${k}`)
+    }
+  }
+  // Exact textbook values (equal-p specializations kept as named goldens).
+  approx(poissonBinomialUpperTailProbability(rep(0.5, 6), 6), 1 / 64, 'P(X≥6 | 6×0.5)') // 0.015625
+  approx(poissonBinomialUpperTailProbability(rep(0.75, 12), 12), Math.pow(0.75, 12), 'P(X≥12 | 12×0.75)') // ~0.0317
+  approx(poissonBinomialUpperTailProbability(rep(0.5, 8), 7), 9 / 256, 'P(X≥7 | 8×0.5)') // 0.035 — twice-daily 7/8 golden
+  // HETEROGENEOUS: a hand-computable two-value case. Six p=0.5 + one p=1 ⇒ X = 1 + Binom(6,0.5),
+  // so P(X≥7) = P(Binom(6,0.5)≥6) = 1/64, and P(X≥4) = P(Binom(6,0.5)≥3) = 42/64.
+  approx(poissonBinomialUpperTailProbability([...rep(0.5, 6), 1], 7), 1 / 64, 'mixed 6×0.5+1: P(X≥7)')
+  approx(poissonBinomialUpperTailProbability([...rep(0.5, 6), 1], 4), 42 / 64, 'mixed 6×0.5+1: P(X≥4)')
+  // THE ROUND-2 REVIEW BREAK, pinned: six once-daily episodes (p=0.75) + one old thrice-daily one
+  // (p=0.25), SIX of the seven long. A single windowed base rate, dragged toward the sparse regime by
+  // the outlier, would treat these as one low rate and fire; the per-episode PB keeps each episode's own
+  // schedule — P(X≥6) ≈ 0.267, well above alpha, so the guard does NOT fire. (At the extreme all-seven-
+  // long it is 0.75⁶·0.25 ≈ 0.0445, right at the boundary — the fraction floor + minLongGapEpisodes
+  // still leave that to the seeded sweep, which is why the mixed-history sweep below is the real lock.)
+  approx(poissonBinomialUpperTailProbability([...rep(0.75, 6), 0.25], 6), 0.266967773437500, 'mixed 6×0.75+0.25: P(X≥6)')
+  assert.ok(
+    poissonBinomialUpperTailProbability([...rep(0.75, 6), 0.25], 6) > 0.05,
+    '6-of-7 long under 6×0.75 + 0.25 is NOT distinctive under the per-episode PB (the old windowed guard fired here)',
+  )
+  // A whole-tail sum equals 1 (X≥0), and P(X≥k) is non-increasing in k under heterogeneous p.
+  const mixed = [0.2, 0.4, 0.5, 0.6, 0.75, 0.8, 0.9, 0.3]
+  approx(poissonBinomialUpperTailProbability(mixed, 0), 1, 'full lower endpoint is 1')
   let prev = 1
-  for (let k = 0; k <= 8; k++) {
-    const p = binomialUpperTailProbability(k, 8, 0.4)
+  for (let k = 0; k <= mixed.length; k++) {
+    const p = poissonBinomialUpperTailProbability(mixed, k)
     assert.ok(p <= prev + 1e-12, `monotone non-increasing at k=${k}`)
     prev = p
   }
   // The once-daily reality the gate encodes: at base 0.75, an 8/8 long run is NOT significant (~0.10),
   // a 12/12 run IS (~0.032) — which is why once-daily needs more evidence than thrice-daily.
-  assert.ok(binomialUpperTailProbability(8, 8, 0.75) > 0.05, 'once-daily 8/8 is not distinctive')
-  assert.ok(binomialUpperTailProbability(12, 12, 0.75) < 0.05, 'once-daily 12/12 is')
+  assert.ok(poissonBinomialUpperTailProbability(rep(0.75, 8), 8) > 0.05, 'once-daily 8/8 is not distinctive')
+  assert.ok(poissonBinomialUpperTailProbability(rep(0.75, 12), 12) < 0.05, 'once-daily 12/12 is')
 })
 
 // ── L1 §PROPERTY SWEEP + §RECALL (Signals v2 / CUL-7 — the REQUIRED CI calibration gate) ────────
 //
-// The seeded falsification that the guard (a base rate estimated over the EPISODE-SPAN window + a
-// one-sample EXACT BINOMIAL upper-tail test at baseRateAlpha) keeps the CHANCE fire rate ≪5% on NULL
-// models AND still fires on true positives. The ≥6h bucket has a large schedule-dependent base rate
-// (~0.5 twice-daily, ~0.75 once-daily), so a fraction floor alone cannot separate signal from
-// schedule — the base-rate test is what does it. Two CUL-7 reviews broke the earlier multiplicative
-// guard, and BOTH breaks are now regression-locked here:
+// The seeded falsification that the guard (a PER-EPISODE local long base rate + a POISSON-BINOMIAL
+// upper-tail test at baseRateAlpha) keeps the CHANCE fire rate ≪5% on NULL models AND still fires on
+// true positives. The ≥6h bucket has a large schedule-dependent base rate (~0.5 twice-daily, ~0.75
+// once-daily), so a fraction floor alone cannot separate signal from schedule — the base-rate test is
+// what does it. THREE CUL-7 reviews broke earlier guards, and all three breaks are regression-locked
+// here:
 //   • NON-STATIONARY schedules (a real feeding change, or logging fatigue where only the AM feed is
-//     logged recently) fired the old guard at ~81% on pure noise — because it read the base rate off
-//     the dense historical regime. The windowed base rate fixes it; the regime-change + logging-fatigue
-//     nulls below assert it.
-//   • The old ratio guard was UNSATISFIABLE above base ~0.588, so a once-daily-fed cat (the classic
-//     empty-stomach case) could not fire even at 100% long. The §RECALL test asserts the once-daily
-//     true positive now fires.
-// Deterministic (seeded). The exact binomial self-calibrates the null to ≤ baseRateAlpha at any base
-// rate, so the per-n ceilings are uniform (no intrinsic-residual carve-out is needed any more).
+//     logged recently) fired the FIRST (multiplicative) guard at ~81% on pure noise — because it read
+//     one base rate off the dense historical regime. The regime-change + logging-fatigue nulls assert it.
+//   • The first ratio guard was UNSATISFIABLE above base ~0.588, so a once-daily-fed cat (the classic
+//     empty-stomach case) could not fire even at 100% long. The §RECALL test asserts it now fires.
+//   • A single windowed base rate + a one-sample binomial (the SECOND guard) fired 24–40% once ONE OLD
+//     OUTLIER episode dragged the window's base rate off the recent regime — a chronic vomiter always
+//     has such an outlier. The MIXED-HISTORY null below (recent noise cluster + an old outlier episode,
+//     swept across outlier positions) is that regression lock; per-episode rates fix it by construction.
+// Deterministic (seeded). The Poisson-binomial self-calibrates the null to ≤ baseRateAlpha at any MIX of
+// schedules, so the per-n ceilings are uniform (no intrinsic-residual carve-out is needed).
 
 const L1_HOUR = 3_600_000
 const L1_DAY = 86_400_000
@@ -3082,8 +3121,16 @@ function scheduleMeals(scheduleHours: number[], recentHours?: number[], recentDa
   return meals
 }
 /** n witnessed vomits on distinct days at uniform-random times (or Poisson inter-arrival). `recentOnly`
- *  confines them to the last 14 days — the regime the non-stationary nulls' recent schedule governs. */
-function randomNullVomits(rng: () => number, n: number, poisson: boolean, recentOnly = false): SymptomEvent[] {
+ *  confines them to the last 14 days — the regime the non-stationary nulls' recent schedule governs.
+ *  `outlierDay` (optional) appends ONE extra old vomit at that day-offset — the round-2 break's shape:
+ *  a recent noise cluster plus a single old eligible episode sitting in a DIFFERENT feeding regime. */
+function randomNullVomits(
+  rng: () => number,
+  n: number,
+  poisson: boolean,
+  recentOnly = false,
+  outlierDay?: number,
+): SymptomEvent[] {
   const out: SymptomEvent[] = []
   const span = recentOnly ? 14 : 50
   if (poisson) {
@@ -3103,21 +3150,33 @@ function randomNullVomits(rng: () => number, n: number, poisson: boolean, recent
       out.push(wVomitIso(new Date(L1_NOW_MS - d * L1_DAY - Math.floor(rng() * L1_DAY)).toISOString()))
     }
   }
+  if (outlierDay != null) {
+    out.push(wVomitIso(new Date(L1_NOW_MS - outlierDay * L1_DAY - Math.floor(rng() * L1_DAY)).toISOString()))
+  }
   return out
 }
 
 Deno.test('detectEmptyStomachTiming — §PROPERTY SWEEP: random onsets fire ≪5% on stationary AND non-stationary null schedules', () => {
-  const NULLS: { name: string; meals: MealEvent[]; poisson: boolean; recentOnly: boolean }[] = [
+  const NULLS: { name: string; meals: MealEvent[]; poisson: boolean; recentOnly: boolean; outlierDay?: number }[] = [
     { name: 'once-daily(base~0.75)', meals: scheduleMeals([8]), poisson: false, recentOnly: false },
     { name: 'twice-daily(base~0.5)', meals: scheduleMeals([8, 20]), poisson: false, recentOnly: false },
     { name: 'thrice-daily(base~0.25)', meals: scheduleMeals([7, 15, 23]), poisson: false, recentOnly: false },
     { name: 'grazing(8/day)', meals: scheduleMeals([0, 3, 6, 9, 12, 15, 18, 21]), poisson: false, recentOnly: false },
     { name: 'twice-daily-poisson', meals: scheduleMeals([8, 20]), poisson: true, recentOnly: false },
-    // NON-STATIONARY (the old guard fired ~81% here) — recent vomits against a recently-changed schedule.
+    // NON-STATIONARY (the FIRST guard fired ~81% here) — recent vomits against a recently-changed schedule.
     { name: 'regime 3x->1x recent', meals: scheduleMeals([7, 15, 23], [8]), poisson: false, recentOnly: true },
     { name: 'regime 2x->1x recent', meals: scheduleMeals([8, 20], [8]), poisson: false, recentOnly: true },
     // Logging fatigue: fed 2x/day but only the 08:00 feed is logged in the recent regime.
     { name: 'logging-fatigue', meals: scheduleMeals([8, 20], [8]), poisson: false, recentOnly: true },
+    // MIXED-HISTORY (the round-2 break: the SECOND guard fired 24–40% here) — a recent once-daily noise
+    // cluster PLUS a single old episode sitting in the thrice-daily regime. A single windowed base rate
+    // is dragged off the recent regime by the outlier; the per-episode PB keeps each episode's own rate.
+    // Swept across outlier positions because the break's severity was position-dependent for the old guard.
+    { name: 'mixed-history outlier@30', meals: scheduleMeals([7, 15, 23], [8]), poisson: false, recentOnly: true, outlierDay: 30 },
+    { name: 'mixed-history outlier@45', meals: scheduleMeals([7, 15, 23], [8]), poisson: false, recentOnly: true, outlierDay: 45 },
+    { name: 'mixed-history outlier@58', meals: scheduleMeals([7, 15, 23], [8]), poisson: false, recentOnly: true, outlierDay: 58 },
+    // Regime 2x->1x with an old outlier — the same break at a smaller regime jump.
+    { name: 'mixed-history 2x->1x outlier@45', meals: scheduleMeals([8, 20], [8]), poisson: false, recentOnly: true, outlierDay: 45 },
   ]
   // The exact binomial self-calibrates the null to ≤ baseRateAlpha (0.05); measured pooled ~0–2% and
   // every per-n slice well under alpha. Ceilings carry margin for the seeded 1500-trial estimate.
@@ -3125,13 +3184,15 @@ Deno.test('detectEmptyStomachTiming — §PROPERTY SWEEP: random onsets fire ≪
   const PER_N_CEIL = 0.05
   const TRIALS = 1500
   for (const nm of NULLS) {
-    const rng = mulberry32(0x5eed ^ (nm.poisson ? 0x111 : 0) ^ (nm.recentOnly ? 0x222 : 0) ^ (nm.name.length * 71))
+    const rng = mulberry32(
+      0x5eed ^ (nm.poisson ? 0x111 : 0) ^ (nm.recentOnly ? 0x222 : 0) ^ ((nm.outlierDay ?? 0) * 0x333) ^ (nm.name.length * 71),
+    )
     let fires = 0
     let total = 0
     for (let n = 6; n <= 10; n++) {
       let perFires = 0
       for (let t = 0; t < TRIALS; t++) {
-        if (detectEmptyStomachTiming(input({ symptomEvents: randomNullVomits(rng, n, nm.poisson, nm.recentOnly), mealEvents: nm.meals })).length > 0) {
+        if (detectEmptyStomachTiming(input({ symptomEvents: randomNullVomits(rng, n, nm.poisson, nm.recentOnly, nm.outlierDay), mealEvents: nm.meals })).length > 0) {
           perFires++
         }
       }

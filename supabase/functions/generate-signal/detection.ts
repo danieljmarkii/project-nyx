@@ -971,9 +971,10 @@ export interface PostprandialTimingFinding extends FindingBase {
  * The base-rate defense is the ⑤ grazing-guard's MIRROR (see detectEmptyStomachTiming): a cat fed
  * twice daily is ≥6h post-meal ~half the day, a once-daily cat ~three-quarters — so a fixed
  * fraction floor cannot separate a real pattern from the schedule's chance rate. The empty-stomach
- * guard requires the observed long count to clear a multiple of the schedule's OWN long base rate,
+ * guard gives each episode its OWN local long base rate and asks the Poisson-binomial upper tail
+ * whether the observed long count exceeds what those per-episode schedules would produce by chance,
  * so a once/twice-daily feeder whose vomits merely match its schedule stays silent (the property
- * sweep at 6h locks both the fraction floor and the guard ratio — CUL-7).
+ * sweep at 6h locks the fraction floor and this guard — CUL-7).
  */
 export interface EmptyStomachTimingFinding extends FindingBase {
   type: 'empty_stomach_timing'
@@ -1536,19 +1537,23 @@ export interface DetectionConfig {
     minLongGapEpisodes: number
     /** Minimum timed-eligible episodes (the DENOMINATOR); shared value with ⑤'s minEligibleEpisodes. */
     minEligibleEpisodes: number
-    /** Minimum long/eligible fraction — a crude schedule-independent backstop, below the binomial gate. */
+    /** Minimum long/eligible fraction — a crude schedule-independent backstop, below the Poisson-binomial gate. */
     minLongGapFraction: number
     /**
      * The empty-stomach GUARD's significance level (the base-rate defense). The ≥ longGapHours bucket
      * has a large SCHEDULE-DEPENDENT chance base rate — a twice-daily feeder is empty-stomach ~half the
      * day, once-daily ~three-quarters — so a fixed fraction floor cannot separate signal from a meal-fed
-     * null (unlike ⑤, where the grazer is the confound). L1 fires only when the observed long count is
-     * more than the schedule's OWN long base rate would produce by chance: a one-sample EXACT BINOMIAL
-     * upper-tail test P(X ≥ longCount | Binomial(eligible, scheduleLongBaseRate)) < baseRateAlpha. The
-     * exact test self-calibrates the null fire rate to ≤ this alpha at ANY base rate (so no per-schedule
-     * tuning), and — unlike the earlier multiplicative ratio — can still fire at a high base rate given
-     * enough disproportionate evidence. Locked by the property sweep at 6h (null false-positive AND
-     * true-positive recall). See DEFAULT_CONFIG.emptyStomach for the anchor + measured rates.
+     * null (unlike ⑤, where the grazer is the confound). L1 gives each eligible episode its OWN local
+     * long base rate (the long fraction of the actual feeding interval it sits in) and fires only when
+     * the observed long count exceeds what those per-episode schedules would produce by chance: a
+     * POISSON-BINOMIAL upper-tail test P(X ≥ longCount | ⨁ Bernoulli(pᵢ)) < baseRateAlpha. Per-episode
+     * rates make the null robust to a chronic vomiter's multi-regime history — a single base rate over
+     * any window is dragged off the recent regime by one old outlier episode and fires on noise (the
+     * round-2 review break). The exact test self-calibrates the null fire rate to ≤ this alpha at ANY mix
+     * of schedules (so no per-schedule tuning), still fires at a high base rate given enough
+     * disproportionate evidence, and reduces exactly to the one-sample binomial when every pᵢ is equal.
+     * Locked by the property sweep at 6h (null false-positive AND true-positive recall). See
+     * DEFAULT_CONFIG.emptyStomach for the anchor + measured rates.
      */
     baseRateAlpha: number
     /** ≥1 long episode must fall within this many days, so a stale cluster doesn't lead (⑤'s recencyDays mirror). */
@@ -1783,23 +1788,34 @@ export const DEFAULT_CONFIG: DetectionConfig = {
     // ≥6h bucket has a large, SCHEDULE-DEPENDENT chance base rate — ~0.5 of the day for a twice-daily
     // feeder, ~0.75 for a once-daily one (a solid meal clears in <6h, so most of a long inter-meal gap
     // is "empty stomach" by the clock). A fixed fraction floor cannot separate signal from schedule
-    // here, and two CUL-7 reviews broke the earlier multiplicative-ratio guard: it fired on
-    // NON-STATIONARY schedules (a base rate estimated over the wrong window), and it was mathematically
-    // UNSATISFIABLE above base ~0.588 (every once-daily-fed cat — the classic empty-stomach case —
-    // could not fire even at 100% long). The guard is now (1) a base rate estimated over the window the
-    // EPISODES occupy (episode-span, not the whole 60 days — so it tracks the recent regime / logging
-    // density), and (2) a one-sample EXACT BINOMIAL upper-tail test at `baseRateAlpha`, which
-    // self-calibrates the null to ≤ alpha at ANY base rate and still fires at a high base rate given
-    // enough disproportionate evidence. Measured pooled n=6..10 fire rates (deno seeded sweep,
-    // detection.test.ts §PROPERTY SWEEP, 1.5k trials/n): stationary nulls once 0.0% / twice ~1.7% /
-    // thrice ~1.6% / grazing 0.0% / Poisson ~0.8%; the NON-STATIONARY regime-change (3x→1x recent)
-    // ~0.8% and logging-fatigue ~1.1% — the SAME inputs fired the old ratio guard at ~81%; and the
-    // §RECALL goldens (once-daily 12/12, thrice-daily 7/10, twice-daily 7/8) all FIRE, including the
-    // once-daily case the old guard could never fire. Tune on real data, not a re-decision.
-    minLongGapEpisodes: 3, // the numerator floor — never fire on 2 episodes even if binomially significant.
+    // here, and THREE CUL-7 reviews broke earlier guards, each teaching the next:
+    //   (1) a multiplicative `longCount ≥ ratio × eligible × wholeWindowBaseRate` — fired ~81% on a
+    //       NON-STATIONARY schedule (base read off the dense historical regime, applied to recent
+    //       episodes) AND was UNSATISFIABLE above base ~0.588 (a once-daily-fed cat, the classic
+    //       empty-stomach case, could not fire even at 100% long);
+    //   (2) a single base rate over the window the EPISODES occupy + a one-sample exact binomial —
+    //       fired 24–40% once a SINGLE OLD OUTLIER episode dragged the span-start across a regime
+    //       change, so the one pooled base rate was estimated off the wrong (dense) history again.
+    // The lesson both taught: a chronic vomiter's episodes span multiple feeding regimes, so NO single
+    // base rate over ANY window survives. The guard is now PER-EPISODE: each eligible episode gets its
+    // OWN local long-gap base rate `localLongBaseRate` (the fraction of its own actual inter-feeding
+    // gap — nearest preceding→following feed, capped at the 24h lookback — that lies beyond 6h), and
+    // the test is a POISSON-BINOMIAL upper tail `P(X ≥ longCount | ⨁ Bernoulli(pᵢ)) < baseRateAlpha`
+    // over those heterogeneous pᵢ. This self-calibrates the null to ≤ alpha under ANY mix of schedules
+    // in the history (an old dense-regime episode carries its own high pᵢ and cannot deflate a recent
+    // sparse one), still fires at a high base rate given enough disproportionate evidence, and reduces
+    // EXACTLY to the one-sample binomial when every pᵢ is equal. Measured pooled n=6..9 fire rates
+    // (deno seeded sweep, detection.test.ts §PROPERTY SWEEP, 4k trials/n): stationary nulls once 0.0% /
+    // twice ~1.7% / thrice ~1.6% / grazing 0.0% / Poisson ~0.8%; the round-2 break — a MIXED-HISTORY
+    // null (recent noise cluster + ≥1 old outlier episode, once-daily-recent/thrice-daily-old) — drops
+    // from 24–40% to ~2% at EVERY outlier position (day 25/30/40/50/58), and regime-change +
+    // logging-fatigue with an outlier hold at ~1.8%; the §RECALL goldens (once-daily 12/12, thrice-
+    // daily 7/10, twice-daily 7/8) all FIRE, including the once-daily case the (1) guard never could.
+    // Tune on real data, not a re-decision.
+    minLongGapEpisodes: 3, // the numerator floor — never fire on 2 episodes even if significant under the tail test.
     minEligibleEpisodes: 6, // SHARED with ⑤ (postprandial.minEligibleEpisodes) — the same denominator floor.
-    minLongGapFraction: 0.6, // a crude schedule-independent BACKSTOP below the binomial gate (low-base-rate cats).
-    baseRateAlpha: 0.05, // sweep-locked — the exact-binomial significance level (recall fires, nulls ≪5%).
+    minLongGapFraction: 0.6, // a crude schedule-independent BACKSTOP below the Poisson-binomial gate (low-base-rate cats).
+    baseRateAlpha: 0.05, // sweep-locked — the Poisson-binomial upper-tail significance level (recall fires, nulls ≪5%).
     recencyDays: 14,
     // The empty-stomach BAND BOUNDARY: minimum hours since the last eligible feeding for a symptom
     // episode to count as "empty stomach" (the L1 numerator; the A2 card's "6h+" band; the reference
@@ -3666,8 +3682,11 @@ interface TimingScan {
   dist: ReturnType<typeof classifyEpisodeSet>
   /** All in-window vomit episodes (any confidence) — the "of N total, M could be timed" context. */
   totalEpisodes: number
-  /** Time-eligible feeding instants (ms) in-window — the feeding rate/gap base for both guards. */
+  /** Time-eligible feeding instants (ms) in-window — the feeding RATE base for ⑤'s grazing guard. */
   inWindowFeedings: number[]
+  /** ALL time-eligible feeding instants (ms), sorted — for L1's PER-EPISODE local base rate (an episode
+   *  near the window start may have its nearest feed just before windowStart). */
+  allFeedings: number[]
   nowMs: number
 }
 
@@ -3715,11 +3734,10 @@ function scanVomitTiming(input: DetectionInput, config: DetectionConfig): Timing
     timingConfig,
   )
 
-  const inWindowFeedings = timedEligibleFeedings(feedings)
-    .filter((f) => f.ms >= windowStart && f.ms <= nowMs)
-    .map((f) => f.ms)
+  const allFeedings = timedEligibleFeedings(feedings).map((f) => f.ms) // sorted ascending
+  const inWindowFeedings = allFeedings.filter((ms) => ms >= windowStart && ms <= nowMs)
 
-  return { dist, totalEpisodes: inWindowEpisodes.length, inWindowFeedings, nowMs }
+  return { dist, totalEpisodes: inWindowEpisodes.length, inWindowFeedings, allFeedings, nowMs }
 }
 
 export function detectPostprandialTiming(
@@ -3982,75 +4000,93 @@ export function detectTimeOfDayClustering(
 // (the CUL-7 brief's ⑥ analogy — "raise the fraction floor" — is necessary but not sufficient: no
 // fixed floor beats the once-daily 0.75 null without also killing every realistic golden). This is
 // the OPPOSITE confound to ⑤ (there the grazer inflates the rapid band; here the sparse feeder
-// inflates the long band). The empty-stomach GUARD requires the observed long count to clear a
-// multiple of the schedule's OWN long base rate (expectedLong = eligible × scheduleLongBaseRate), so
-// a once/twice-daily feeder whose vomits just match its schedule stays silent, while a cat whose
-// vomits are DISPROPORTIONATELY empty-stomach fires. The seeded property sweep at 6h locks both the
-// fraction floor AND the guard ratio against uniform-random / Poisson / grazing null models.
+// inflates the long band). The empty-stomach GUARD gives each eligible episode its OWN local long
+// base rate (`localLongBaseRate` — the long fraction of the actual feeding interval that episode sits
+// in) and asks the Poisson-binomial upper tail whether the observed long count exceeds what those
+// per-episode schedules would produce by chance. A once/twice-daily feeder whose vomits just match its
+// schedule stays silent; a cat whose vomits are DISPROPORTIONATELY empty-stomach fires. Per-episode is
+// load-bearing, not incidental: a chronic vomiter's episodes span multiple feeding regimes, so a
+// SINGLE base rate over any window is dragged off the recent regime by one old outlier episode and
+// fires on noise (the round-2 review break). The seeded property sweep at 6h locks the floors AND this
+// guard against uniform-random / Poisson / grazing AND mixed-history-with-outlier null models.
 
 /** L1 runs on vomit only, exactly like ⑤ (the empty-stomach phenotype is a vomiting phenotype). */
 const EMPTY_STOMACH_SYMPTOM_TYPE: SymptomType = 'vomit'
 
 /**
- * The schedule's OWN long-band base rate — the fraction of "eligible time" (time whose nearest
- * preceding feeding is within the 24h lookback) that is ≥ longGapHours since that feeding. This is
- * the chance rate a randomly-timed vomit lands in the empty-stomach band GIVEN the feeding schedule:
- * ~0.5 twice-daily, ~0.75 once-daily, ~0.25 thrice-daily, ~0 for a grazer. Computed from consecutive
- * in-window feeding gaps, each capped at the lookback (past 24h an instant is "no preceding feeding" —
- * ineligible, never long). Returns 0 when there are <2 in-window feedings to estimate from: the guard
- * then defers to the fraction floor (the degenerate single-feeding cluster, where a high long fraction
- * after one feeding IS a real empty-stomach record, not schedule noise). PURE.
+ * The PER-EPISODE local long base rate — for a symptom episode at `onsetMs`, the fraction of its OWN
+ * feeding interval [nearest preceding feed, nearest following feed] (capped at the lookback) that is
+ * ≥ longGapHours since the preceding feed. This is the chance a randomly-timed vomit in the feeding
+ * regime THIS episode experienced lands in the empty-stomach band: ~0.5 inside a twice-daily (12h)
+ * interval, ~0.75 inside a once-daily (24h) one, ~0.25 inside a thrice-daily (8h) one, ~0 inside a
+ * grazing (short) one.
+ *
+ * WHY PER-EPISODE, not one base rate over a window (the round-2 review break): a chronic vomiter's
+ * eligible episodes can span MULTIPLE feeding regimes (a schedule that got sparser, or logging that
+ * did), and a single global base rate — however the window is chosen — is dragged off the recent
+ * regime by a single old outlier episode, firing on noise. Giving each episode the base rate of the
+ * interval IT sits in makes the null robust to any number of outliers by construction: an old
+ * thrice-daily episode carries ~0.25, a recent once-daily one ~0.75, and the Poisson-binomial test
+ * below combines them exactly — no single p is imposed on a two-regime process.
+ *
+ * `sortedFeedings` are ALL time-eligible feeding instants (ascending). An open trailing interval (no
+ * following feed) is treated as a full lookback window — the conservative high base rate. Returns 0
+ * only when no preceding feed exists (an episode that could not have been classified long anyway). PURE.
  */
-function scheduleLongBaseRate(
-  inWindowFeedings: readonly number[],
+function localLongBaseRate(
+  onsetMs: number,
+  sortedFeedings: readonly number[],
   longGapHours: number,
   lookbackHours: number,
 ): number {
-  if (inWindowFeedings.length < 2) return 0
-  const sorted = [...inWindowFeedings].sort((a, b) => a - b)
   const longMs = longGapHours * MS_PER_HOUR
   const lookbackMs = lookbackHours * MS_PER_HOUR
-  let longTime = 0
-  let eligibleTime = 0
-  for (let i = 1; i < sorted.length; i++) {
-    const elig = Math.min(sorted[i] - sorted[i - 1], lookbackMs) // eligible portion of this interval
-    eligibleTime += elig
-    longTime += Math.max(0, elig - longMs) // the ≥ longGapHours tail of the interval
+  let prev = -Infinity
+  let next = Infinity
+  for (const f of sortedFeedings) {
+    if (f <= onsetMs) prev = f
+    else {
+      next = f
+      break
+    }
   }
-  return eligibleTime > 0 ? longTime / eligibleTime : 0
+  if (!Number.isFinite(prev)) return 0 // no preceding feed → this episode can't be "long"
+  const intervalLen = Math.min(next - prev, lookbackMs) // open trailing interval → the lookback cap
+  return intervalLen > 0 ? Math.max(0, intervalLen - longMs) / intervalLen : 0
 }
 
 /**
- * One-sample exact binomial UPPER-TAIL probability: P(X ≥ k | X ~ Binomial(n, p)) (Signals v2 /
- * CUL-7). This is L1's base-rate gate — "is the observed long count MORE than the schedule's own
- * base rate would produce by chance?". It replaces the earlier multiplicative `ratio × expected`
- * guard, which two independent reviews broke: that guard fired on non-stationary schedules (a
- * mis-estimated base rate) AND was mathematically UNSATISFIABLE for any pet whose base rate ≥
- * 1/ratio (every once-daily-fed cat, base ~0.75 — the classic empty-stomach presentation — could
- * not fire even at 100% long). The exact test fixes both: it self-calibrates the null fire rate to
- * ≤ alpha for ANY base rate (so no per-schedule tuning), and it CAN fire at high base rate given
- * enough disproportionate evidence (a once-daily cat needs more all-long episodes to clear 0.75
- * than a thrice-daily cat needs to clear 0.25 — which is the honest bar).
+ * Poisson-binomial UPPER-TAIL probability: P(X ≥ k) where X = Σ Bernoulli(pᵢ), the pᵢ independent but
+ * NOT identical (Signals v2 / CUL-7). This is L1's base-rate gate — "is the observed long count MORE
+ * than the per-episode feeding schedules would produce by chance?" — and the exact generalization of
+ * a one-sample binomial to heterogeneous per-trial probabilities (identical pᵢ reduce it to the
+ * binomial). It replaced, in turn, a multiplicative ratio guard (unsatisfiable for once-daily cats)
+ * and a single-p exact binomial against a windowed base rate (defeated by an old outlier episode
+ * dragging the one base rate off the recent regime — round 2). With each episode carrying its OWN
+ * local base rate, no outlier can distort the others, and the test self-calibrates the null to ≤ alpha
+ * at any mix of regimes.
  *
- * Computed with the stable pmf recurrence pmf(i+1) = pmf(i)·(n−i)/(i+1)·p/(1−p) from pmf(0) =
- * (1−p)^n; every pmf(i) ∈ [0,1] so there is no overflow at the episode counts a 60-day record
- * produces (n ≤ a few dozen). p is a base rate in [0, ~0.75) here (a schedule's long fraction can
- * never reach 1 — the first `longGapHours` after every meal is non-long), so 1−p is bounded away
- * from 0; the p≤0 / p≥1 / k≤0 / k>n endpoints are handled explicitly. PURE.
+ * Computed with the exact DP convolution pmf ← pmf ⊛ Bernoulli(pᵢ): pmf'[j] = pmf[j]·(1−pᵢ) +
+ * pmf[j−1]·pᵢ. O(n²) at the episode counts a 60-day record produces (n ≤ a few dozen); every pmf entry
+ * ∈ [0,1] so there is no overflow. pᵢ are clamped to [0,1] defensively. PURE.
  */
-export function binomialUpperTailProbability(k: number, n: number, p: number): number {
-  if (!Number.isFinite(k) || !Number.isFinite(n) || !Number.isFinite(p)) return 1
+export function poissonBinomialUpperTailProbability(probs: readonly number[], k: number): number {
+  const n = probs.length
+  if (!Number.isFinite(k)) return 1
   if (k <= 0) return 1 // P(X ≥ 0) = 1
   if (k > n) return 0 // impossible outcome
-  if (p <= 0) return 0 // all mass at X=0, and k ≥ 1 here
-  if (p >= 1) return 1 // all mass at X=n ≥ k
-  let pmf = Math.pow(1 - p, n) // pmf(0)
-  let tail = 0
-  const ratio = p / (1 - p)
-  for (let i = 0; i <= n; i++) {
-    if (i >= k) tail += pmf
-    if (i < n) pmf = (pmf * (n - i) * ratio) / (i + 1)
+  let pmf = [1] // P(X = 0) = 1 over zero episodes
+  for (const raw of probs) {
+    const p = Math.min(1, Math.max(0, Number.isFinite(raw) ? raw : 0))
+    const next = new Array<number>(pmf.length + 1).fill(0)
+    for (let j = 0; j < pmf.length; j++) {
+      next[j] += pmf[j] * (1 - p)
+      next[j + 1] += pmf[j] * p
+    }
+    pmf = next
   }
+  let tail = 0
+  for (let j = k; j <= n; j++) tail += pmf[j]
   return Math.min(1, tail)
 }
 
@@ -4061,7 +4097,7 @@ export function detectEmptyStomachTiming(
   const cfg = config.emptyStomach
   const scan = scanVomitTiming(input, config)
   if (!scan) return []
-  const { dist, totalEpisodes, inWindowFeedings, nowMs } = scan
+  const { dist, totalEpisodes, allFeedings, nowMs } = scan
   const recencyMs = cfg.recencyDays * MS_PER_DAY
 
   const eligibleCount = dist.eligibleCount
@@ -4076,30 +4112,24 @@ export function detectEmptyStomachTiming(
   // Recency: a stale cluster must not lead today's surface.
   if (!longEpisodes.some((e) => nowMs - e.onsetMs <= recencyMs)) return []
 
-  // The EMPTY-STOMACH GUARD — the observed long count must be MORE than the schedule's OWN long base
-  // rate would produce by chance (a once/twice-daily feeder is ≥6h post-meal much of the day, so a
-  // fixed fraction floor cannot separate signal from schedule). Two pieces, both from the CUL-7
-  // review:
-  //   1. The base rate is estimated over the window the ELIGIBLE EPISODES actually occupy (their
-  //      earliest onset, minus the feeding lookback, to now), NOT the whole 60 days. A non-stationary
-  //      schedule — a real feeding change, or logging fatigue where only the AM feed is logged
-  //      recently — otherwise reads its base rate off the dense historical regime while the recent
-  //      episodes experience the sparse recent one, and random recent vomits fire on noise. Windowing
-  //      to the episode span keeps the base rate consistent with the SAME logs that classified the
-  //      episodes (sparse logs ⇒ higher apparent base rate ⇒ a stricter bar — self-correcting).
-  //   2. The test is a one-sample EXACT BINOMIAL upper tail, not a multiplicative ratio. The ratio
-  //      guard was unsatisfiable above base ~0.588 (every once-daily cat), and it under-/over-fired
-  //      on a mis-estimated base rate; the exact test self-calibrates the null to ≤ alpha at any base
-  //      rate and can still fire at a high base rate given enough disproportionate evidence.
-  const eligibleOnsets = dist.eligible.map((e) => e.onsetMs)
-  const spanStart =
-    Math.min(...eligibleOnsets) - config.postprandial.feedingLookbackHours * MS_PER_HOUR
-  const baseRate = scheduleLongBaseRate(
-    inWindowFeedings.filter((ms) => ms >= spanStart),
-    cfg.longGapHours,
-    config.postprandial.feedingLookbackHours,
+  // The EMPTY-STOMACH GUARD — the observed long count must be MORE than the feeding schedule would
+  // produce by chance (a once/twice-daily feeder is ≥6h post-meal much of the day, so a fixed fraction
+  // floor cannot separate signal from schedule). Each eligible episode carries its OWN local long base
+  // rate (the long fraction of the feeding interval IT sits in), and the Poisson-binomial upper tail
+  // tests whether `longCount` exceeds what those per-episode rates predict. This is the round-2 fix: a
+  // single base rate over ANY window is dragged off the recent regime by one old outlier episode
+  // (which a chronic vomiter always has), firing on noise; per-episode rates are robust to any number
+  // of outliers by construction, and the exact test still fires at a high base rate given enough
+  // disproportionate evidence (a once-daily cat needs more all-long episodes than a thrice-daily one).
+  const nullProbs = dist.eligible.map((e) =>
+    localLongBaseRate(
+      e.onsetMs,
+      allFeedings,
+      cfg.longGapHours,
+      config.postprandial.feedingLookbackHours,
+    ),
   )
-  if (binomialUpperTailProbability(longCount, eligibleCount, baseRate) >= cfg.baseRateAlpha) {
+  if (poissonBinomialUpperTailProbability(nullProbs, longCount) >= cfg.baseRateAlpha) {
     return []
   }
 
