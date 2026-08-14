@@ -133,6 +133,36 @@ ratifies candidates.
   falsification framing (six traps documented, not shipped around) — Designer
   N/A — Engineer ✓ (no code).
 
+## PM read + corrections (same session, 2026-08-14)
+
+The PM read the brief same-session and the reply reshaped it (all revisions
+landed pre-merge; the brief carries a §0 revision note):
+
+- **Cooper is a demo account** (App-Store review data). F4 re-scoped to a
+  synthetic illustration + the by-construction onboarding argument; F5 re-run
+  Nyx-only. §9's demo-data bullet gained teeth (the brief itself fell into the
+  trap it warned about; caught on first PM read).
+- **The F5 re-run overturned v1's "flat" trial read** — prompted by the PM's
+  lived observation. Corrected picture: empty-stomach phenotype 7→0 (longest
+  gap in record, p≈0.07 suggestive), pooled rate 2.8→1.5/wk (p≈0.17, not yet
+  bankable), treats 80%→4.5% of feedings, real meals 1.8→4.5/day, rapid
+  phenotype persisting. The live chronicity card and the owner's lived sense
+  disagree because the engine pools what the record separates — now the
+  strongest on-file argument for C1+C3.
+- **PM rulings on the candidate space:** C1 ratified ("let's do it");
+  C2 ratified and broadened (holistic event-type taxonomy study, restarting
+  the logging-capture discovery thread); C4 ratified (photo-AI fields into the
+  engine) + scope-stretch to evaluate regurgitation-vs-vomit *descriptor*
+  surfacing (label stays with the vet per §4); C3 re-evaluate post-Cooper
+  (the Nyx-only re-run is that re-evaluation — back to the PM); C5/C7
+  explained in chat, pending; C6 agreed with capture-friction concern.
+- **New directives:** everything ships behind a beta feature flag (B-712
+  shape); the requirements phase must cover **presentation/data-vis** (Signal
+  cards + the Patterns surface), not just detection; process = research →
+  requirements → mockups, no build yet.
+- **Backlog:** B-753 (video capture/analysis, two rungs), B-754 (intentional
+  synthetic-data validation corpus) filed from PM musings.
+
 ## Next Session Kickoff
 
 **Recommended first prompt:**
