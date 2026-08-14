@@ -1,0 +1,525 @@
+<title>Barf-Timing Dots</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  /* ─────────────────────────────────────────────────────────────────────────
+     Dot-lane semantics — a decision-aid mock (exploratory, not a ratified round).
+     Design authority for the Signal surface stays docs/culprit-signal-home-mockups.html.
+     Colours + card chrome mirror constants/theme.ts + the design-authority mock so the
+     three renderings read as the real app. Geometry for "C" reproduces
+     lib/signalCopy.ts spreadInIntervals() exactly; A + B are the proposals.
+     ───────────────────────────────────────────────────────────────────────── */
+
+  /* Light palette on bare :root — the un-stamped (system) default resolves here. */
+  :root {
+    --ground: #F4F3FA;      /* indigo-biased off-white — chosen, not pure grey */
+    --ground-2: #ECEAF4;
+    --card: #FFFFFF;
+    --ink: #1A1A24;         /* warm near-black (the mock's signal ink) */
+    --ink-2: #4B4866;       /* indigo-biased secondary */
+    --ink-3: #8B87A8;       /* lavender-grey label/caption */
+    --hair: #EAE8F1;
+    --hair-strong: #DDDBE8;
+    --accent: #00C2A8;      /* teal — the one interactive accent */
+    --accent-ink: #0B7B6C;  /* teal text on a pale-teal wash */
+    --band: #E0FBF7;        /* colorAccentLight — the 30-min window wash */
+    --band-edge: rgba(0,194,168,0.55);
+    --symptom: #F43F5E;     /* colorEventSymptom — the in-window dot */
+    --symptom-ink: #9F1239;
+    --symptom-wash: #FFF1F3;
+    --out: #A3A3A3;         /* colorTextDisabled — the timed-but-later dot */
+    --lane: #FAFAFA;        /* colorNeutralLight */
+    --lane-border: #EAEAEA; /* colorBorder */
+    --axis: #8B87A8;
+    --tag-bg: #F0EFF5;
+    --tag-ink: #5F5C7A;
+    --shadow: 0 2px 10px rgba(19,17,46,0.05);
+    --shadow-lift: 0 8px 24px rgba(19,17,46,0.09);
+  }
+
+  /* Dark: redefine ONLY tokens. Guarded so an explicit light choice beats a dark OS. */
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #0C0A20;
+      --ground-2: #14112C;
+      --card: #191539;        /* night-elevated card */
+      --ink: #ECEAF6;         /* colorTextOnNight */
+      --ink-2: #A6A2CE;       /* colorTextOnNightMuted */
+      --ink-3: #706BA6;       /* colorTextOnNightFaint */
+      --hair: rgba(196,190,255,0.14);
+      --hair-strong: rgba(196,190,255,0.20);
+      --accent: #00C2A8;
+      --accent-ink: #7FE8DA;
+      --band: rgba(0,194,168,0.14);
+      --band-edge: rgba(0,194,168,0.6);
+      --symptom: #FB7185;     /* colorEventSymptomOnNight */
+      --symptom-ink: #FDA4AF;
+      --symptom-wash: rgba(251,113,133,0.10);
+      --out: #706BA6;         /* muted lavender out-dot on night */
+      --lane: rgba(255,255,255,0.04);
+      --lane-border: rgba(196,190,255,0.16);
+      --axis: #706BA6;
+      --tag-bg: rgba(196,190,255,0.10);
+      --tag-ink: #A6A2CE;
+      --shadow: 0 2px 12px rgba(0,0,0,0.4);
+      --shadow-lift: 0 10px 30px rgba(0,0,0,0.5);
+    }
+  }
+  /* Explicit dark choice wins in the other direction too. */
+  :root[data-theme="dark"] {
+    --ground: #0C0A20; --ground-2: #14112C; --card: #191539;
+    --ink: #ECEAF6; --ink-2: #A6A2CE; --ink-3: #706BA6;
+    --hair: rgba(196,190,255,0.14); --hair-strong: rgba(196,190,255,0.20);
+    --accent: #00C2A8; --accent-ink: #7FE8DA;
+    --band: rgba(0,194,168,0.14); --band-edge: rgba(0,194,168,0.6);
+    --symptom: #FB7185; --symptom-ink: #FDA4AF; --symptom-wash: rgba(251,113,133,0.10);
+    --out: #706BA6; --lane: rgba(255,255,255,0.04); --lane-border: rgba(196,190,255,0.16);
+    --axis: #706BA6; --tag-bg: rgba(196,190,255,0.10); --tag-ink: #A6A2CE;
+    --shadow: 0 2px 12px rgba(0,0,0,0.4); --shadow-lift: 0 10px 30px rgba(0,0,0,0.5);
+  }
+
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  .serif { font-family: Georgia, "Iowan Old Style", "Times New Roman", serif; }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 40px 20px 72px; }
+
+  /* ── Hero ─────────────────────────────────────────────────────────────── */
+  .eyebrow {
+    font-size: 11px; font-weight: 600; letter-spacing: 0.16em; text-transform: uppercase;
+    color: var(--accent-ink); margin: 0 0 14px;
+  }
+  h1 {
+    font-size: clamp(30px, 6vw, 46px); line-height: 1.08; letter-spacing: -0.02em;
+    margin: 0 0 16px; font-weight: 500; text-wrap: balance; color: var(--ink);
+  }
+  .standfirst {
+    font-size: clamp(15px, 2.2vw, 17.5px); color: var(--ink-2); max-width: 62ch; margin: 0;
+  }
+  .standfirst b { color: var(--ink); font-weight: 600; }
+
+  /* ── Shared data strip ────────────────────────────────────────────────── */
+  .databar {
+    margin: 30px 0 0; padding: 16px 18px; border-radius: 14px;
+    background: var(--ground-2); border: 1px solid var(--hair);
+    display: flex; flex-wrap: wrap; gap: 8px 22px; align-items: baseline;
+  }
+  .databar .lead { font-size: 12px; font-weight: 600; letter-spacing: 0.02em; color: var(--ink); }
+  .databar .item { font-size: 12.5px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+  .databar .item b { color: var(--ink); font-weight: 600; }
+  .databar .dotk { display: inline-block; width: 8px; height: 8px; border-radius: 50%; vertical-align: 1px; margin-right: 5px; }
+  .databar .dotk.in { background: var(--symptom); }
+  .databar .dotk.out { background: var(--out); }
+
+  /* ── Section headings ─────────────────────────────────────────────────── */
+  .sec { margin-top: 48px; }
+  .sec > h2 {
+    font-size: 13px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase;
+    color: var(--ink-3); margin: 0 0 4px;
+  }
+  .sec > .subhead { font-size: 15px; color: var(--ink-2); margin: 0 0 20px; max-width: 64ch; }
+
+  /* ── The three Signal cards ───────────────────────────────────────────── */
+  .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+  @media (max-width: 860px) { .grid3 { grid-template-columns: 1fr; gap: 22px; } }
+
+  .col { display: flex; flex-direction: column; gap: 12px; }
+  .optag { display: flex; align-items: center; gap: 8px; }
+  .optag .k {
+    font-size: 11px; font-weight: 700; letter-spacing: 0.03em; padding: 3px 9px; border-radius: 999px;
+    color: #fff; font-variant-numeric: tabular-nums;
+  }
+  .k.c { background: #9A96B4; }
+  .k.a { background: var(--symptom); }
+  .k.b { background: var(--accent); }
+  .optag .name { font-size: 13.5px; font-weight: 600; color: var(--ink); }
+  .optag .name span { color: var(--ink-3); font-weight: 500; }
+
+  /* The Signal card itself — mirrors the design-authority .acard / .irow */
+  .card {
+    background: var(--card); border-radius: 18px; padding: 15px 15px 13px;
+    box-shadow: var(--shadow); border: 1px solid transparent;
+  }
+  .seclabel { font-size: 10px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 10px; }
+  .irow { display: flex; gap: 11px; }
+  .rail { width: 3px; border-radius: 2px; flex-shrink: 0; background: var(--accent); opacity: 0.9; }
+  .ibody { flex: 1; min-width: 0; }
+  .sent { font-size: 14px; line-height: 1.46; color: var(--ink); margin: 0 0 9px; }
+  .sample { font-size: 11px; color: var(--ink-3); font-variant-numeric: tabular-nums; margin-top: 9px; }
+  .whylink { font-size: 11px; font-weight: 600; color: var(--accent); margin-top: 7px; }
+
+  /* ── The receipt lane ─────────────────────────────────────────────────── */
+  .estrip { margin: 4px 0 2px; }
+  .lane {
+    position: relative; height: 30px; background: var(--lane);
+    border: 1px solid var(--lane-border); border-radius: 5px;
+  }
+  .lane.tall { height: 38px; }
+  .band {
+    position: absolute; top: 0; bottom: 0; left: 0; border-radius: 4px 0 0 4px;
+    background: var(--band); border-right: 1px dashed var(--band-edge);
+  }
+  .dot {
+    position: absolute; top: 50%; width: 7px; height: 7px; border-radius: 50%;
+    transform: translate(-50%, -50%); background: var(--symptom);
+  }
+  .dot.out { background: var(--out); }
+  .median { position: absolute; top: 6px; bottom: 6px; width: 1.5px; background: var(--symptom); opacity: 0.75; }
+  .median::after {
+    content: ""; position: absolute; top: -3px; left: 50%; width: 5px; height: 5px;
+    transform: translateX(-50%) rotate(45deg); background: var(--symptom);
+  }
+  /* App-faithful 3-word axis (ate / 30m / 2h+ via space-between) — used by C */
+  .axis3 { display: flex; justify-content: space-between; font-size: 10px; color: var(--axis); margin-top: 5px; font-variant-numeric: tabular-nums; }
+  /* Honest linear axis — used by A; ticks positioned by true fraction */
+  .axisL { position: relative; height: 14px; margin-top: 5px; }
+  .axisL span { position: absolute; top: 0; font-size: 10px; color: var(--axis); transform: translateX(-50%); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .axisL span.l0 { transform: none; }
+  .axisL span.l100 { transform: translateX(-100%); }
+  .axisL span::before { content: ""; position: absolute; top: -6px; left: 50%; width: 1px; height: 4px; background: var(--hair-strong); transform: translateX(-50%); }
+  .axisL span.l0::before { left: 0; transform: none; }
+  .axisL span.l100::before { left: auto; right: 0; transform: none; }
+
+  /* B — the grouped split (no time axis) */
+  .split { display: flex; align-items: stretch; gap: 10px; }
+  .cell { flex: 1; border-radius: 8px; padding: 8px 10px 9px; border: 1px solid var(--hair); }
+  .cell.in { background: var(--band); border-color: var(--band-edge); }
+  .cell.late { background: transparent; }
+  .cell .swarm { display: flex; flex-wrap: wrap; gap: 4px; min-height: 18px; align-content: flex-start; }
+  .cell .sd { width: 7px; height: 7px; border-radius: 50%; background: var(--symptom); }
+  .cell.late .sd { background: var(--out); }
+  .cell .cn { display: flex; align-items: baseline; gap: 6px; margin-top: 7px; }
+  .cell .cn b { font-size: 19px; font-weight: 700; color: var(--ink); font-variant-numeric: tabular-nums; line-height: 1; }
+  .cell.in .cn b { color: var(--symptom-ink); }
+  .cell .cn small { font-size: 10.5px; color: var(--ink-2); }
+
+  .remainder { font-size: 10.5px; color: var(--ink-3); margin-top: 7px; font-variant-numeric: tabular-nums; }
+
+  /* Under-card note */
+  .note { font-size: 12.5px; line-height: 1.5; color: var(--ink-2); padding: 0 2px; }
+  .note b { color: var(--ink); font-weight: 600; }
+
+  /* ── Aligned geometry strip ───────────────────────────────────────────── */
+  .aligned { background: var(--card); border-radius: 16px; padding: 20px 20px 14px; box-shadow: var(--shadow); }
+  .arow { display: grid; grid-template-columns: 128px 1fr; gap: 16px; align-items: center; padding: 13px 0; }
+  .arow + .arow { border-top: 1px solid var(--hair); }
+  .arow .lbl { font-size: 12px; color: var(--ink-2); }
+  .arow .lbl b { display: block; font-size: 13px; color: var(--ink); font-weight: 600; margin-bottom: 1px; }
+  .arow .lbl .kk { display: inline-block; font-size: 10px; font-weight: 700; color:#fff; border-radius: 999px; padding: 1px 7px; margin-bottom: 5px; }
+  .align-note { font-size: 11.5px; color: var(--ink-3); margin: 8px 2px 0; }
+  .align-note .gd { display:inline-block; width:1px; height:9px; background: var(--band-edge); vertical-align:-1px; margin:0 3px; }
+
+  /* ── Decision block ───────────────────────────────────────────────────── */
+  .verdicts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  @media (max-width: 860px) { .verdicts { grid-template-columns: 1fr; } }
+  .vcard { background: var(--card); border-radius: 14px; padding: 16px 16px 15px; box-shadow: var(--shadow); border-top: 3px solid var(--edge, var(--hair-strong)); }
+  .vcard.c { --edge: #9A96B4; }
+  .vcard.a { --edge: var(--symptom); }
+  .vcard.b { --edge: var(--accent); }
+  .vcard h3 { margin: 0 0 3px; font-size: 15px; font-weight: 600; color: var(--ink); }
+  .vcard .vsub { font-size: 11px; color: var(--ink-3); margin: 0 0 11px; text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600; }
+  .vrow { display: flex; gap: 8px; font-size: 12px; padding: 4px 0; border-top: 1px solid var(--hair); }
+  .vrow:first-of-type { border-top: 0; }
+  .vrow .vk { color: var(--ink-3); flex: 0 0 84px; }
+  .vrow .vv { color: var(--ink); flex: 1; }
+  .vrow .vv.warn { color: var(--symptom-ink); }
+  .vrow .vv.good { color: var(--accent-ink); }
+
+  .callout {
+    margin-top: 20px; padding: 16px 18px; border-radius: 14px;
+    background: var(--ground-2); border: 1px solid var(--hair); border-left: 3px solid var(--accent);
+    font-size: 13.5px; line-height: 1.55; color: var(--ink-2);
+  }
+  .callout b { color: var(--ink); }
+  .callout .tension { display: block; margin-top: 8px; font-size: 12.5px; color: var(--ink-3); }
+
+  footer { margin-top: 44px; padding-top: 18px; border-top: 1px solid var(--hair); font-size: 11.5px; line-height: 1.6; color: var(--ink-3); }
+  footer code { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 11px; color: var(--ink-2); }
+
+  .legend { display: flex; gap: 16px; flex-wrap: wrap; font-size: 11.5px; color: var(--ink-2); margin: 6px 2px 0; }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .legend i { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+  .legend i.in { background: var(--symptom); }
+  .legend i.out { background: var(--out); }
+  .legend i.win { background: var(--band); border: 1px dashed var(--band-edge); border-radius: 2px; width: 12px; }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .col, .aligned, .vcard { animation: rise 0.5s ease-out both; }
+    .col:nth-child(2) { animation-delay: 0.06s; }
+    .col:nth-child(3) { animation-delay: 0.12s; }
+    @keyframes rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+  }
+</style>
+
+<div class="wrap">
+
+  <header>
+    <p class="eyebrow">Culprit · Signal — barf-timing receipt</p>
+    <h1 class="serif">What should the dots&nbsp;mean?</h1>
+    <p class="standfirst">The post-prandial timing receipt draws one dot per timeable vomiting episode. Today their left-to-right position is <b>even spacing by index</b>, not real timing — so the strip looks like a distribution it isn't plotting. Same ten episodes, three honest ways to draw them.</p>
+  </header>
+
+  <div class="databar">
+    <span class="lead">The finding, fixed across all three:</span>
+    <span class="item"><b>10</b> timeable episodes</span>
+    <span class="item"><span class="dotk in"></span><b>7</b> within 30 min — at 4, 6, 7, 9, 11, 18, 28 min</span>
+    <span class="item"><span class="dotk out"></span><b>3</b> later — at 44, 79, 108 min</span>
+    <span class="item"><b>4</b> more couldn't be timed</span>
+  </div>
+
+  <!-- ── The three cards ──────────────────────────────────────────────── -->
+  <section class="sec">
+    <h2>In the card</h2>
+    <p class="subhead">Each is a real Signal card — identical rail, sentence and sample line. Only the receipt strip changes.</p>
+
+    <div class="grid3">
+
+      <!-- C -->
+      <div class="col">
+        <div class="optag"><span class="k c">C</span><span class="name">Ships today <span>· even spread</span></span></div>
+        <div class="card">
+          <div class="seclabel">Signal</div>
+          <div class="irow">
+            <div class="rail"></div>
+            <div class="ibody">
+              <p class="sent">7 of the 10 vomiting episodes we could time for Nyx happened within 30 minutes of eating, including the last two — a timing pattern worth mentioning to your vet.</p>
+              <div class="estrip">
+                <div class="lane" data-kind="C"><div class="band" style="width:25%"></div></div>
+                <div class="axis3"><span>ate</span><span>30m</span><span>2h+</span></div>
+              </div>
+              <p class="remainder">4 more weren't near a logged meal</p>
+              <p class="sample">7 of 10 timed episodes within 30 min of eating</p>
+              <p class="whylink">Why we're showing this</p>
+            </div>
+          </div>
+        </div>
+        <p class="note"><b>Reads as a timeline</b> — but the 7 dots are spaced evenly across the window by index, and the 3 later dots land at a mechanical ⅜ · ⅝ · ⅞. Honest about the <i>split</i>; quietly misleading about <i>position</i>. The "30m" label even sits at mid-lane while the real boundary is at ¼.</p>
+      </div>
+
+      <!-- A -->
+      <div class="col">
+        <div class="optag"><span class="k a">A</span><span class="name">Plot the real times <span>· distribution</span></span></div>
+        <div class="card">
+          <div class="seclabel">Signal</div>
+          <div class="irow">
+            <div class="rail"></div>
+            <div class="ibody">
+              <p class="sent">7 of the 10 vomiting episodes we could time for Nyx happened within 30 minutes of eating, including the last two — a timing pattern worth mentioning to your vet.</p>
+              <div class="estrip">
+                <div class="lane tall" data-kind="A"><div class="band" style="width:60%"></div></div>
+                <div class="axisL" data-axis="A"></div>
+              </div>
+              <p class="remainder">Median 9 min · 4 more weren't near a logged meal</p>
+              <p class="sample">7 of 10 timed episodes within 30 min of eating</p>
+              <p class="whylink">Why we're showing this</p>
+            </div>
+          </div>
+        </div>
+        <p class="note"><b>Each dot at its real minutes-after-eating</b>, on a scale that gives the first 30 minutes room — so the cluster around 9 min (invisible in C) reads as the finding it is. The honest axis also fixes C's mislabel: 30m is the window edge, and the label sits on it. Costs a <code>minutesSince[]</code> payload field + a §9.2 copy pass so the finer detail isn't read as mechanism; owner-logged times are approximate, so dots stay soft and jittered, never hair-precise.</p>
+      </div>
+
+      <!-- B -->
+      <div class="col">
+        <div class="optag"><span class="k b">B</span><span class="name">Honest split <span>· no time axis</span></span></div>
+        <div class="card">
+          <div class="seclabel">Signal</div>
+          <div class="irow">
+            <div class="rail"></div>
+            <div class="ibody">
+              <p class="sent">7 of the 10 vomiting episodes we could time for Nyx happened within 30 minutes of eating, including the last two — a timing pattern worth mentioning to your vet.</p>
+              <div class="estrip">
+                <div class="split">
+                  <div class="cell in">
+                    <div class="swarm"><i class="sd"></i><i class="sd"></i><i class="sd"></i><i class="sd"></i><i class="sd"></i><i class="sd"></i><i class="sd"></i></div>
+                    <div class="cn"><b>7</b><small>within 30 min of eating</small></div>
+                  </div>
+                  <div class="cell late">
+                    <div class="swarm"><i class="sd"></i><i class="sd"></i><i class="sd"></i></div>
+                    <div class="cn"><b>3</b><small>timed, but later</small></div>
+                  </div>
+                </div>
+              </div>
+              <p class="remainder">4 more weren't near a logged meal</p>
+              <p class="sample">7 of 10 timed episodes within 30 min of eating</p>
+              <p class="whylink">Why we're showing this</p>
+            </div>
+          </div>
+        </div>
+        <p class="note"><b>Two counts, every episode still a countable mark</b> — but nothing pretends to be a timeline, so there's no false precision to over-read. A pure front-end restyle: zero payload change. Drops the promise instead of half-keeping it.</p>
+      </div>
+
+    </div>
+
+    <div class="legend">
+      <span><i class="in"></i> within 30 min (rapid)</span>
+      <span><i class="out"></i> timed, but later</span>
+      <span><i class="win"></i> the 30-min window</span>
+    </div>
+  </section>
+
+  <!-- ── Aligned geometry ─────────────────────────────────────────────── -->
+  <section class="sec">
+    <h2>Geometry, aligned</h2>
+    <p class="subhead">The three lanes at equal width — showing how each spends it. C spreads the window evenly; A expands the first 30 minutes (its boundary sits at 60%, not 25%) so the real cluster reads; B drops the axis entirely.</p>
+    <div class="aligned">
+      <div class="arow">
+        <div class="lbl"><span class="kk" style="background:#9A96B4">C</span><b>Even spread</b>what ships</div>
+        <div><div class="lane" data-kind="C"><div class="band" style="width:25%"></div></div></div>
+      </div>
+      <div class="arow">
+        <div class="lbl"><span class="kk" style="background:var(--symptom)">A</span><b>Real times</b>true minutes</div>
+        <div><div class="lane tall" data-kind="A"><div class="band" style="width:60%"></div></div></div>
+      </div>
+      <div class="arow">
+        <div class="lbl"><span class="kk" style="background:var(--accent)">B</span><b>Honest split</b>no axis</div>
+        <div>
+          <div class="split">
+            <div class="cell in" style="flex:0 0 25%">
+              <div class="swarm"><i class="sd"></i><i class="sd"></i><i class="sd"></i><i class="sd"></i><i class="sd"></i><i class="sd"></i><i class="sd"></i></div>
+            </div>
+            <div class="cell late">
+              <div class="swarm"><i class="sd"></i><i class="sd"></i><i class="sd"></i></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p class="align-note">C spreads the 7 rapid dots as even ticks across the window; A gives the first half-hour room and lets them pile up where they really fall — around 9 min — then compresses the sparse tail. That early shape is the granularity C throws away.</p>
+    </div>
+  </section>
+
+  <!-- ── Decision ─────────────────────────────────────────────────────── -->
+  <section class="sec">
+    <h2>Which should it be?</h2>
+    <p class="subhead">Bins are off the table — Shape B (binned bars) was cut in round 2 as "chunky, less granular." That leaves three.</p>
+    <div class="verdicts">
+      <div class="vcard c">
+        <h3>C · Leave as-is</h3>
+        <p class="vsub">Status quo</p>
+        <div class="vrow"><span class="vk">Distribution?</span><span class="vv">Macro split only</span></div>
+        <div class="vrow"><span class="vk">Payload</span><span class="vv">No change</span></div>
+        <div class="vrow"><span class="vk">Clinical risk</span><span class="vv">Low</span></div>
+        <div class="vrow"><span class="vk">Verdict</span><span class="vv warn">Off the table — its "30m" label lies; A's honest scale is the fix</span></div>
+      </div>
+      <div class="vcard a">
+        <h3>A · Plot real times</h3>
+        <p class="vsub">PM lean · Data Scientist + Jordan</p>
+        <div class="vrow"><span class="vk">Distribution?</span><span class="vv good">Yes — literally</span></div>
+        <div class="vrow"><span class="vk">Payload</span><span class="vv">+ <code style="font-size:11px">minutesSince[]</code></span></div>
+        <div class="vrow"><span class="vk">Who objects</span><span class="vv warn">Sam (grazers) · Dr. Chen (§9.2)</span></div>
+        <div class="vrow"><span class="vk">Verdict</span><span class="vv">Ship it — once the noisy case is gated + copy stays anamnesis</span></div>
+      </div>
+      <div class="vcard b">
+        <h3>B · Honest split</h3>
+        <p class="vsub">Designer + Sam · the safe floor</p>
+        <div class="vrow"><span class="vk">Distribution?</span><span class="vv">No — an honest count</span></div>
+        <div class="vrow"><span class="vk">Payload</span><span class="vv">No change</span></div>
+        <div class="vrow"><span class="vk">Clinical risk</span><span class="vv good">None — nothing to over-read</span></div>
+        <div class="vrow"><span class="vk">Verdict</span><span class="vv">Cheapest + honest — a front-end restyle</span></div>
+      </div>
+    </div>
+
+    <div class="callout">
+      <b>Where it stands: leaning A.</b> The distribution is real information for the clean case — a dog on discrete meals with witnessed vomits (Jordan's Mochi) — where the ~9-min cluster is signal the sentence can't carry. The one persona who <i>opposes</i> A is <b>Sam</b>: for a grazing, multi-cat home "minutes since eating" can be noise, and A is the option that makes a shaky finding look most authoritative. That's a gate, not a veto — A ships once all three conditions below hold.
+      <span class="tension"><b>The three conditions for A:</b> (1) <b>gate the noisy case</b> — where timing is unreliable (free-fed / grazing active, uncertain attribution) fall back to B's split, never a confident cluster; (2) <b>honest precision</b> — soft, jittered dots on the expanded early scale, never implied minute-accuracy; (3) <b>anamnesis copy</b> — "a timing pattern to show your vet," never cause, mechanism, or eating-speed (§9.2).</span>
+    </div>
+  </section>
+
+  <footer>
+    Exploratory decision-aid mock — <b>not</b> a ratified SR round. The design authority for this surface stays <code>docs/culprit-signal-home-mockups.html</code>.
+    Rendering <b>C</b> reproduces <code>lib/signalCopy.ts</code> → <code>spreadInIntervals()</code> / <code>postprandialBands(30)</code> exactly (the shipped geometry); <b>A</b> (expanded-early scale) and <b>B</b> are proposals on the same finding. Updated after the Jordan/Sam owner sync — PM leaning A with the three conditions above. Colours + card chrome mirror <code>constants/theme.ts</code>. · 2026-08-13
+  </footer>
+
+</div>
+
+<script>
+  // ── C: reproduce lib/signalCopy.ts spreadInIntervals() verbatim ──────────
+  function spreadInIntervals(intervals, n) {
+    if (n <= 0) return [];
+    const widths = intervals.map(i => Math.max(0, i.end - i.start));
+    const total = widths.reduce((a, b) => a + b, 0);
+    const anchor = intervals[0] ? intervals[0].start : 0.5;
+    if (total <= 0) return Array.from({ length: n }, () => anchor);
+    const out = [];
+    for (let i = 0; i < n; i++) {
+      let t = ((i + 0.5) / n) * total;
+      for (let k = 0; k < intervals.length; k++) {
+        if (t <= widths[k] || k === intervals.length - 1) { out.push(intervals[k].start + Math.min(t, widths[k])); break; }
+        t -= widths[k];
+      }
+    }
+    return out;
+  }
+  var BAND_END = 30 / 120; // postprandialBands(30) => 0.25
+  var C_IN = spreadInIntervals([{ start: 0, end: BAND_END }], 7);            // 7 rapid
+  var C_OUT = spreadInIntervals([{ start: BAND_END, end: 1 }], 3);           // 3 later
+
+  function fillC(lane) {
+    C_IN.forEach(function (p) { addDot(lane, p * 100, false, 0); });
+    C_OUT.forEach(function (p) { addDot(lane, p * 100, true, 0); });
+  }
+
+  // ── A: real minutes, EXPANDED-EARLY scale ────────────────────────────────
+  // The first 30 min gets 60% of the lane so the informative cluster is legible;
+  // 30–120 min compresses into the right 40%. A deliberate non-linear scale —
+  // honest ticks at true minute values keep it readable — because the granularity
+  // that matters lives in the first half hour. Also fixes C's "30m floats at
+  // mid-lane" bug: here 30m is the window edge at 60% and its axis label sits on it.
+  var EARLY_MIN = 30, EARLY_FRAC = 0.60, MAXMIN = 120;
+  function posOf(min) {
+    if (min <= EARLY_MIN) return (min / EARLY_MIN) * EARLY_FRAC;
+    return EARLY_FRAC + ((Math.min(min, MAXMIN) - EARLY_MIN) / (MAXMIN - EARLY_MIN)) * (1 - EARLY_FRAC);
+  }
+  var A_DOTS = [
+    { m: 4,  dy: 0 },  { m: 6,  dy: -6 }, { m: 7,  dy: 6 },  { m: 9,  dy: 0 },
+    { m: 11, dy: -6 }, { m: 18, dy: 0 },  { m: 28, dy: 0 },                     // rapid (rose)
+    { m: 44, dy: 0 },  { m: 79, dy: 0 },  { m: 108, dy: 0 }                     // later (grey)
+  ];
+  var A_MEDIAN = 9;
+
+  function fillA(lane) {
+    var band = lane.querySelector('.band');
+    if (band) band.style.width = (EARLY_FRAC * 100) + '%';   // the 30-min window = 0–60%
+    A_DOTS.forEach(function (d) { addDot(lane, posOf(d.m) * 100, d.m > 30, d.dy); });
+    var med = document.createElement('div');
+    med.className = 'median';
+    med.style.left = (posOf(A_MEDIAN) * 100) + '%';
+    lane.appendChild(med);
+  }
+
+  // Honest ticks — real minute values at their true (non-linear) positions. The
+  // labels bunching after 30m is the visible tell that the tail is compressed.
+  var A_AXIS = [
+    { pct: 0,    label: 'ate', cls: 'l0' },
+    { pct: 30,   label: '15m', cls: '' },
+    { pct: 60,   label: '30m', cls: '' },
+    { pct: 73.3, label: '1h',  cls: '' },
+    { pct: 100,  label: '2h',  cls: 'l100' }
+  ];
+  function fillAxisA(el) {
+    A_AXIS.forEach(function (t) {
+      var s = document.createElement('span');
+      s.className = t.cls;
+      s.style.left = t.pct + '%';
+      s.textContent = t.label;
+      el.appendChild(s);
+    });
+  }
+
+  function addDot(lane, leftPct, isOut, dyPx) {
+    var d = document.createElement('div');
+    d.className = 'dot' + (isOut ? ' out' : '');
+    d.style.left = leftPct + '%';
+    if (dyPx) d.style.top = 'calc(50% + ' + dyPx + 'px)';
+    lane.appendChild(d);
+  }
+
+  document.querySelectorAll('.lane[data-kind="C"]').forEach(fillC);
+  document.querySelectorAll('.lane[data-kind="A"]').forEach(fillA);
+  document.querySelectorAll('.axisL[data-axis="A"]').forEach(fillAxisA);
+</script>

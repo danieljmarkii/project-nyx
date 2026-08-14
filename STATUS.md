@@ -298,6 +298,10 @@ Nearest live PM gates, none of which block code already in flight:
 
 ## Open PM Action Items
 
+**Post-prandial timing receipt (Option A, B-753, #636) — one validation task gates the meaningful build**
+- [ ] **Scope the `timingReliable` gate predicate with the Data Scientist + Dr. Chen (B-754).** PR 1 (geometry core) shipped fail-safe — an un-vetted finding renders the honest split, never a confident cluster — but the "when is timing unreliable for this pet?" predicate is the load-bearing call (grazing / free-fed / shared-bowl attribution), and the receipt's trustworthiness for a grazing cat (Sam) hinges on it. Needs an `adversarial-reviewer` pass. Gates PR 3/PR 4; **PR 2 (renderer) can proceed in parallel** (it needs only the boolean).
+- [ ] **Confirm the `generate-signal` deploy state before the payload PR (PR 3).** The client ships first (fallback-safe); `eligibleMinutes[]`/`timingReliable` emit + redeploy is PR 3.
+
 **Medication course-end prompt (B-719, #600) — one copy call; the rest is device QA**
 - [ ] **Confirm the finish-prompt hedge wording (④).** The card now offers "Is this course finished?" with a restored vet-deferral hedge — *"Your vet has the final say."* — the safe default the adversarial pass required after it found a bare question nudges an abrupt stop on a taper (e.g. a prednisolone entered as a fixed course) the app can't distinguish from a simple one. Options: keep it (recommended), go fuller (mock variant B's full deferral), or drop the hedge and accept the taper risk (needs explicit sign-off). One-line change either way.
 - [ ] **On-device QA of the finish prompt** (Manual QA in `docs/sessions/2026-08-06-b719-medication-course-end-prompt.md` / PR #600): a dose course at target and a day course past its span show the prompt; "Mark as finished" moves the course to Past ("Ended"); an ongoing/PRN course and a mid-course regimen show no prompt.
