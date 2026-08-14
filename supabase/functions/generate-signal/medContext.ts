@@ -153,6 +153,10 @@ export function decorateFinding(
   if (
     finding.type === 'food_symptom_correlation' ||
     finding.type === 'postprandial_timing' ||
+    // Signals v2 (CUL-7) — L1 (empty-stomach) + the merged timing_story are timing cards too, so a
+    // med-on-board context line applies to them exactly as it does to ⑤/⑥ (§5.4).
+    finding.type === 'empty_stomach_timing' ||
+    finding.type === 'timing_story' ||
     finding.type === 'timeofday_clustering'
   ) {
     return medContext ? { ...finding, medContext } : finding
