@@ -416,3 +416,34 @@ describe('InsightCard — SR-5 reflection density + trial adjacency (§3.3 / §3
     );
   });
 });
+
+describe('InsightCard — G10: the renderer registry safely ignores an unknown finding type', () => {
+  // The precondition for every Signals v2 server lane's "no deploy" merge
+  // (docs/nyx-signals-v2-requirements.md §5 / G10 — the B-182 lesson): `generate-signal`
+  // is redeployed with a NEW finding/payload type ONLY after the client that renders-or-
+  // safely-ignores it has merged. The safe-ignore is `INSIGHT_RENDERERS` having no entry
+  // for the type → the `if (!Body) return null` guard. A cached row written by a newer
+  // server deployment (or a lane merged ahead of its renderer) must SKIP its card, never
+  // crash the whole Signal surface. This pins that contract: a refactor that drops the
+  // guard, makes an unknown type throw, or reaches a copy helper before the guard fails CI.
+  const unknownFinding = {
+    // A real Signals v2 composed type (§2 L1) this client build has no renderer for yet.
+    type: 'timing_story',
+    priorityClass: 'insight',
+  } as unknown as CachedFinding['finding'];
+
+  it('renders nothing (null) for a finding type with no registered renderer — both branches', () => {
+    const c: CachedFinding = {
+      rank: 0,
+      text: 'A future lane this client build cannot yet draw.',
+      finding: unknownFinding,
+    };
+    expect(render(<InsightCard cached={c} petName="Nyx" />).toJSON()).toBeNull();
+    // The design-v2 path returns before its receipt/med helpers too — neither branch throws.
+    expect(render(<InsightCard cached={c} petName="Nyx" designV2 />).toJSON()).toBeNull();
+  });
+
+  it('POSITIVE CONTROL: a known finding type still renders (the guard is not "null for everything")', () => {
+    expect(render(<InsightCard cached={cached(correlation())} petName="Nyx" />).toJSON()).not.toBeNull();
+  });
+});
