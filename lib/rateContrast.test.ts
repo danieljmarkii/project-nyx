@@ -10,6 +10,8 @@
 // exported FOR THESE TESTS ONLY. It never reaches a surface; `rateContrast` returns
 // a boolean gate, and that is the only thing a renderer is handed.
 
+import { readdirSync, readFileSync } from 'fs';
+import { join } from 'path';
 import {
   DEFAULT_RATE_CONTRAST_ALPHA,
   conditionalBinomialTwoSidedP,
@@ -137,6 +139,35 @@ describe('rateContrast — PROPERTY: degenerate windows never manufacture a comp
     expect(conditionalBinomialTwoSidedP(5, 5, 10, Number.NaN)).toBe(1);
   });
 
+  it('a NON-FINITE COUNT never fabricates a gate (adversarial: NaN → false gate)', () => {
+    // Regression: a NaN count once slipped past the exposure-only guard, made n NaN so the
+    // p-value loop never ran, returned p=0, and GATED TRUE on garbage. It must fail safe.
+    const nan = rateContrast({ count: Number.NaN, exposure: 28 }, { count: 3, exposure: 28 });
+    expect(nan.gate).toBe(false);
+    expect(nan.direction).toBe('equal');
+    expect(nan.rateA).toBeNull();
+    // The realistic reachability path: a missing map key → `undefined` count.
+    const missingKey = rateContrast(
+      { count: undefined as unknown as number, exposure: 28 },
+      { count: 3, exposure: 28 },
+    );
+    expect(missingKey.gate).toBe(false);
+    expect(missingKey.rateA).toBeNull();
+    // The internal statistic guards it too (defense in depth).
+    expect(conditionalBinomialTwoSidedP(Number.NaN, 3, 28, 28)).toBe(1);
+  });
+
+  it('an INFINITE COUNT returns promptly and never gates (adversarial: no unbounded loop)', () => {
+    // Regression: `Math.floor(Infinity)=Infinity` made `for (k=0; k<=n; k++)` never
+    // terminate — a synchronous hang inside the Deno isolate. The jest timeout is the
+    // hang tripwire; the assertions pin the safe answer.
+    const inf = rateContrast({ count: Number.POSITIVE_INFINITY, exposure: 10 }, { count: 5, exposure: 40 });
+    expect(inf.gate).toBe(false);
+    expect(inf.direction).toBe('equal');
+    expect(inf.rateA).toBeNull();
+    expect(conditionalBinomialTwoSidedP(Number.POSITIVE_INFINITY, 2, 1, 1)).toBe(1);
+  }, 2000);
+
   it('a pathologically lopsided exposure ratio yields a finite p-value, never NaN', () => {
     // p₀ = 1/(1+1e18) rounds toward a float endpoint; the endpoint pmf terms must
     // stay finite (the 0×-Infinity guard in logPmf). All events in the huge window is
@@ -198,5 +229,36 @@ describe('rateContrast — the render gate (what a surface actually asks)', () =
     const frac = rateContrast({ count: 2.9, exposure: 28 }, { count: 3.9, exposure: 28 });
     const whole = rateContrast({ count: 2, exposure: 28 }, { count: 3, exposure: 28 });
     expect(frac.gate).toBe(whole.gate);
+  });
+});
+
+describe('rateContrast — the internal p-value never leaks to a surface (§3 hard rule)', () => {
+  // The spec's one hard rule (§3): "p-values never surface anywhere, owner- or vet-facing."
+  // `conditionalBinomialTwoSidedP` is exported ONLY so these property tests can assert on
+  // the statistic; a docstring cannot stop a future component importing it and rendering
+  // `p.toFixed(3)`. This scan enforces the rule STRUCTURALLY (the hydration.test.ts idiom):
+  // the identifier may appear in exactly two files — the module and this test — nowhere else.
+  const IDENT = 'conditionalBinomialTwoSidedP';
+  const SOURCE_DIRS = ['lib', 'store', 'hooks', 'app', 'components', 'supabase/functions'];
+  const ALLOWED = ['/lib/rateContrast.ts', '/lib/rateContrast.test.ts'];
+
+  const referencingFiles: string[] = [];
+  const walk = (dir: string): void => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const full = join(dir, entry.name);
+      if (entry.isDirectory()) {
+        walk(full);
+      } else if (/\.tsx?$/.test(entry.name) && readFileSync(full, 'utf8').includes(IDENT)) {
+        referencingFiles.push(full);
+      }
+    }
+  };
+  for (const dir of SOURCE_DIRS) walk(join(__dirname, '..', dir));
+
+  it('is referenced only by rateContrast.ts and its own test — never by a rendering surface', () => {
+    const disallowed = referencingFiles.filter((f) => !ALLOWED.some((a) => f.endsWith(a)));
+    expect(disallowed).toEqual([]);
+    // Positive control: the scan really ran and found the module (not a vacuous empty walk).
+    expect(referencingFiles.some((f) => f.endsWith('/lib/rateContrast.ts'))).toBe(true);
   });
 });

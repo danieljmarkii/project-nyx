@@ -286,6 +286,13 @@ export function nearestPrecedingFeeding(
   timedFeedings: readonly TimedFeeding[],
   config: MealTimingConfig = DEFAULT_MEAL_TIMING_CONFIG,
 ): TimedFeeding | null {
+  // A non-finite onset must find NO feeding. Without this, `f.ms > NaN` and
+  // `NaN - f.ms > lookback` are both false, so EVERY candidate passes and the latest
+  // feeding is returned — the episode then classifies as `{eligible:true,
+  // minutesSinceFeeding:NaN, band:'mid'}`, a garbage timing that reads as real. ⑤
+  // never hits this (it filters `Number.isFinite(e.ms)` upstream), but this primitive
+  // is also called from the client Patterns path, which has no such upstream filter.
+  if (!Number.isFinite(onsetMs)) return null;
   const lookbackMs = config.feedingLookbackHours * MS_PER_HOUR;
   let best: TimedFeeding | null = null;
   for (const f of timedFeedings) {
@@ -302,7 +309,12 @@ export function nearestPrecedingFeeding(
 /** A `free_choice` feeding arrangement, already parsed to instants. `untilMs` may
  *  be +Infinity for a still-open bowl. Parsing of arrangement rows (dropping garbage
  *  spans) stays with the caller — `detection.ts` has `classifyArrangements`; the
- *  client parses its own — because that is I/O, not timing math. */
+ *  client parses its own — because that is I/O, not timing math.
+ *
+ *  ⚠️ VALID SPANS ONLY (`untilMs > fromMs`). `isFreeFedNear` does not filter an
+ *  INVERTED span, and an inverted one can read as overlapping and wrongly mark an
+ *  episode `free_fed`. ⑤ never hits this because `classifyArrangements` drops
+ *  `untilMs <= fromMs`; PR 2 and the client Patterns path must pre-filter the same way. */
 export interface FreeFedSpan {
   fromMs: number;
   untilMs: number;
@@ -320,6 +332,10 @@ export function isFreeFedNear(
   freeFedSpans: readonly FreeFedSpan[],
   config: MealTimingConfig = DEFAULT_MEAL_TIMING_CONFIG,
 ): boolean {
+  // A non-finite onset has no window to test — answer false (not free-fed) so the
+  // episode falls to `nearestPrecedingFeeding`, which excludes it. Never let a NaN
+  // onset silently pass the overlap test.
+  if (!Number.isFinite(onsetMs)) return false;
   const lookbackStart = onsetMs - config.feedingLookbackHours * MS_PER_HOUR;
   return freeFedSpans.some((s) => s.fromMs <= onsetMs && lookbackStart < s.untilMs);
 }
@@ -443,6 +459,14 @@ export interface IneligibleEpisode {
  * Pass COLLAPSED episodes (run `collapseEpisodes` first): "episode set" means one
  * entry per bout, so that a re-logged bout is not counted three times here. The
  * feedings may be raw; they are prepared once.
+ *
+ * ⚠️ PR-2 WIRING (⑤ drop-in) — COLLAPSE ON THE FULL LIST, THEN WINDOW. This module
+ * does NO windowing; ⑤ collapses on the full event list and only then filters to the
+ * 60-day window. The two orders differ: two witnessed onsets 2h apart that straddle
+ * the window boundary collapse to ONE pre-window episode under ⑤ (→ 0 in-window) but
+ * to one in-window episode if the caller window-filters first (→ 1). The caller must
+ * `collapseEpisodes` over the unbounded list, then window the result before passing it
+ * here — never the reverse.
  */
 export interface TimingDistribution {
   eligible: EligibleEpisodeTiming[];

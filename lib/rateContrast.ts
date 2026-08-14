@@ -107,8 +107,21 @@ export function rateContrast(
 
   const t1 = a.exposure;
   const t2 = b.exposure;
-  // Degenerate: a window with no (or nonsensical) exposure has no rate.
-  if (!(t1 > 0) || !(t2 > 0) || !Number.isFinite(t1) || !Number.isFinite(t2)) {
+  // Degenerate, all failing toward gate:false — a garbage input must never license a
+  // comparison sentence (G1/G2). Two kinds: an exposure that cannot define a rate
+  // (≤0 / non-finite), and a NON-FINITE COUNT (NaN / Infinity). The count guard is
+  // load-bearing, not defensive: a NaN count slips past an exposure-only check, makes
+  // `n` NaN so the p-value loop `k <= NaN` never runs, and returns p=0 → a FALSE gate;
+  // an Infinity count makes `Math.floor(Infinity)` = Infinity and the loop `k <= Infinity`
+  // never terminates → an Edge Function hang. Both are caught here.
+  if (
+    !(t1 > 0) ||
+    !(t2 > 0) ||
+    !Number.isFinite(t1) ||
+    !Number.isFinite(t2) ||
+    !Number.isFinite(a.count) ||
+    !Number.isFinite(b.count)
+  ) {
     return { gate: false, direction: 'equal', rateA: rateOf(a), rateB: rateOf(b) };
   }
 
@@ -155,6 +168,11 @@ export function conditionalBinomialTwoSidedP(
   t2: number,
 ): number {
   if (!(t1 > 0) || !(t2 > 0) || !Number.isFinite(t1) || !Number.isFinite(t2)) return 1;
+  // A non-finite count must return BEFORE `Math.floor` — `Math.floor(NaN)=NaN` makes
+  // the loop `k <= NaN` never run (returns p=0, a false gate), and `Math.floor(Infinity)
+  // =Infinity` makes `k <= Infinity` never terminate (a hang inside the Deno isolate).
+  // `n === 0` cannot catch either (NaN===0 and Infinity===0 are both false).
+  if (!Number.isFinite(x1) || !Number.isFinite(x2)) return 1;
   const a = Math.max(0, Math.floor(x1));
   const b = Math.max(0, Math.floor(x2));
   const n = a + b;
@@ -219,8 +237,10 @@ function lgamma(x: number): number {
   return 0.5 * Math.log(2 * Math.PI) + (xm + 0.5) * Math.log(t) - t + Math.log(aSum);
 }
 
-/** Per-exposure rate, or null when exposure ≤ 0 / non-finite. */
+/** Per-exposure rate, or null when exposure ≤ 0 / non-finite or the count is non-finite
+ *  (a NaN/Infinity count has no honest rate — report null, never `NaN`). */
 function rateOf(w: RateWindow): number | null {
   if (!(w.exposure > 0) || !Number.isFinite(w.exposure)) return null;
+  if (!Number.isFinite(w.count)) return null;
   return Math.max(0, Math.floor(w.count)) / w.exposure;
 }

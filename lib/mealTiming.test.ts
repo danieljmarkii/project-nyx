@@ -273,6 +273,16 @@ describe('mealTiming — classifyEpisodeTiming (the one predicate + gate ORDER)'
     const r = classifyEpisodeTiming({ onsetMs: at(6.5 * HOUR), confidence: 'witnessed' }, feedings, noBowls);
     expect(r).toMatchObject({ eligible: true, minutesSinceFeeding: 390, band: 'long' });
   });
+
+  it('a NON-FINITE onset never classifies as eligible with a NaN band (adversarial NIT)', () => {
+    // Regression: a NaN onset once passed every nearest-preceding comparison and returned
+    // {eligible:true, minutesSinceFeeding:NaN, band:'mid'}. It must be ineligible instead.
+    const r = classifyEpisodeTiming({ onsetMs: Number.NaN, confidence: 'witnessed' }, feedings, noBowls);
+    expect(r.eligible).toBe(false);
+    // The helpers reject it directly too (belt-and-suspenders for direct callers).
+    expect(nearestPrecedingFeeding(Number.NaN, timedEligibleFeedings(feedings))).toBeNull();
+    expect(isFreeFedNear(Number.NaN, [{ fromMs: at(-HOUR), untilMs: at(HOUR) }])).toBe(false);
+  });
 });
 
 describe('mealTiming — classifyEpisodeSet (the distribution the surfaces read)', () => {
