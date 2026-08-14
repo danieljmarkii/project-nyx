@@ -149,13 +149,24 @@ landed pre-merge; the brief carries a §0 revision note):
   phenotype persisting. The live chronicity card and the owner's lived sense
   disagree because the engine pools what the record separates — now the
   strongest on-file argument for C1+C3.
-- **PM rulings on the candidate space:** C1 ratified ("let's do it");
-  C2 ratified and broadened (holistic event-type taxonomy study, restarting
-  the logging-capture discovery thread); C4 ratified (photo-AI fields into the
-  engine) + scope-stretch to evaluate regurgitation-vs-vomit *descriptor*
-  surfacing (label stays with the vet per §4); C3 re-evaluate post-Cooper
-  (the Nyx-only re-run is that re-evaluation — back to the PM); C5/C7
-  explained in chat, pending; C6 agreed with capture-friction concern.
+- **PM rulings on the candidate space (completed over two replies, final
+  2026-08-14):** **C1 ratified** ("let's do it"); **C2 ratified and broadened**
+  (holistic event-type taxonomy study, restarting the logging-capture
+  discovery thread); **C3 ratified — Keep** (ruled via decision brief after
+  the Nyx-only re-run became its evidence; goes in the requirements doc next
+  to C1); **C4 ratified** (photo-AI fields into the engine) + scope-stretch to
+  evaluate regurgitation-vs-vomit *descriptor* surfacing (label stays with the
+  vet per §4); **C5 aligned** (floors stay; sub-floor honesty carries into
+  requirements); **C6 in**, shaped by the capture-friction concern;
+  **C7 DEMOTED by PM pushback** — the PM's counter ("it's med on board,
+  right?") holds: a med is also a marker of concurrent illness, which route
+  doesn't change, so the identity-agnostic conservative rule stays; what
+  survives is a disclosure/copy question ("another treatment was active these
+  weeks" vs silent muting) for Dr. Chen inside the requirements pass, with
+  both counterexamples recorded. **C8** uncontested (rides the requirements
+  doc). **New F1-extension directive:** the timing-decomposition concept
+  generalizes per-type with per-type windows (stool = transit-window +
+  consistency-over-time + post-meal urgency; capture-gated for cats).
 - **New directives:** everything ships behind a beta feature flag (B-712
   shape); the requirements phase must cover **presentation/data-vis** (Signal
   cards + the Patterns surface), not just detection; process = research →
