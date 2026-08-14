@@ -172,7 +172,7 @@ landed pre-merge; the brief carries a §0 revision note):
   shape); the requirements phase must cover **presentation/data-vis** (Signal
   cards + the Patterns surface), not just detection; process = research →
   requirements → mockups, no build yet.
-- **Backlog:** B-753 (video capture/analysis, two rungs), B-754 (intentional
+- **Backlog:** B-757 (video capture/analysis, two rungs; filed as B-753, renumbered at wrap), B-758 (intentional
   synthetic-data validation corpus) filed from PM musings.
 
 ## Mock round 1 reactions + the requirements doc (same session, 2026-08-14)
