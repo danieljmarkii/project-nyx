@@ -441,3 +441,69 @@ describe('log_picker_v2 — log-picker redesign eligibility (B-745 PR 0)', () =>
     expect(coerceAllowlistFlags({ ask_enabled: true }).log_picker_v2).toBeUndefined();
   });
 });
+
+// ── signals_v2 — the Signals-v2 ("the record, decomposed") gate (B-755 PR 0) ──────
+// PR 0 is schema-only for consumption (migration 057 seeds it dark: {"enabled":
+// false, "allowlist": []}); nothing renders behind it until the client PRs. The flag
+// rides the SAME primitive as the Ask + widget + signal + log-picker keys, and — like
+// signal_design_v2 — resolves FAIL-CLOSED so an old/flag-off client renders the shipped
+// surfaces byte-identical. It is its OWN flag, not signal_design_v2 (spec §0 D6): a
+// separate kill-switch for WHAT the engine says vs HOW cards render. The contract to
+// pin here is the two properties every later PR depends on: signals_v2 is EXTRACTED off
+// an app_config SELECT and it resolves off for both ship-dark cases — the seed unreached
+// (undefined ⇒ fallback) and a signed-out caller against the dark seed. These are unit
+// facts backing §5 "byte-identical off" + "seed first".
+describe('signals_v2 — Signals-v2 eligibility (B-755 PR 0)', () => {
+  it('is part of the unset baseline (undefined until the row is fetched)', () => {
+    expect(ALLOWLIST_FLAGS_UNSET.signals_v2).toBeUndefined();
+  });
+
+  it('extracts raw off an app_config SELECT, alongside the other allowlist keys', () => {
+    const rows = [
+      { key: 'ask_enabled', value: { enabled: false, allowlist: ['a-uid'] } },
+      { key: 'widget_enabled', value: { enabled: false, allowlist: ['w-uid'] } },
+      { key: 'signal_design_v2', value: { enabled: false, allowlist: ['s-uid'] } },
+      { key: 'log_picker_v2', value: { enabled: false, allowlist: ['l-uid'] } },
+      { key: 'signals_v2', value: { enabled: false, allowlist: ['pm-uid'] } },
+    ];
+    const flags = extractAllowlistFlags(rows);
+    expect(flags.signals_v2).toEqual({ enabled: false, allowlist: ['pm-uid'] });
+    // The new key does not disturb the other allowlist keys in the same SELECT.
+    expect(flags.ask_enabled).toEqual({ enabled: false, allowlist: ['a-uid'] });
+    expect(flags.widget_enabled).toEqual({ enabled: false, allowlist: ['w-uid'] });
+    expect(flags.signal_design_v2).toEqual({ enabled: false, allowlist: ['s-uid'] });
+    expect(flags.log_picker_v2).toEqual({ enabled: false, allowlist: ['l-uid'] });
+  });
+
+  it('resolves fail-closed (off) when unset — seed unreached / row absent', () => {
+    // A SELECT without the signals_v2 row leaves it undefined; the fallback=false
+    // convention (how every allowlist gate is called) then renders the shipped
+    // surfaces — flag-off is byte-identical because the gate is simply off.
+    const unset = extractAllowlistFlags([{ key: 'ask_enabled', value: false }]).signals_v2;
+    expect(unset).toBeUndefined();
+    expect(resolveAllowlistFlag(unset, 'pm-uid', false)).toBe(false);
+  });
+
+  it('the shipped-dark seed {enabled:false, allowlist:[]} is off for everyone', () => {
+    const darkSeed = { enabled: false, allowlist: [] };
+    expect(resolveAllowlistFlag(darkSeed, 'pm-uid', false)).toBe(false);
+    // …and off signed-out, never leaking to the fallback.
+    expect(resolveAllowlistFlag(darkSeed, null, true)).toBe(false);
+  });
+
+  it('an allow-listed uid resolves on; other + signed-out callers stay off', () => {
+    const gated = { enabled: false, allowlist: ['pm-uid'] };
+    expect(resolveAllowlistFlag(gated, 'pm-uid', false)).toBe(true);
+    expect(resolveAllowlistFlag(gated, 'someone-else', false)).toBe(false);
+    expect(resolveAllowlistFlag(gated, null, false)).toBe(false); // signed out → off
+  });
+
+  it('survives the cache round-trip; a cache lacking it decodes to undefined', () => {
+    const stored = { signals_v2: { enabled: false, allowlist: ['pm-uid'] } };
+    expect(coerceAllowlistFlags(stored).signals_v2).toEqual({
+      enabled: false,
+      allowlist: ['pm-uid'],
+    });
+    expect(coerceAllowlistFlags({ ask_enabled: true }).signals_v2).toBeUndefined();
+  });
+});
