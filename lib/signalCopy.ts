@@ -992,12 +992,17 @@ export function timingUnreliable(finding: PostprandialTimingFinding): boolean {
 
 /** The distribution-state geometry (§3): one dot per timed-eligible episode at its true
  *  minutes-after-eating on the expanded-early scale, split in/out of the rapid window, with
- *  deterministic jitter, the median tick and the honest axis. Reads `eligibleMinutes`; callers
- *  gate on `hasRealTimings` (and `timingUnreliable`) before rendering this. */
+ *  deterministic jitter, the median tick and the honest axis. Reads `eligibleMinutes`. Callers
+ *  select this state per the §2 ordering — only when `hasRealTimings` AND not `timingUnreliable`
+ *  (→ split) AND not `timingReceiptDegrades` (→ compare). */
 export function postprandialDistributionModel(
   finding: PostprandialTimingFinding,
 ): PostprandialDistributionModel {
+  // Drop any non-finite entry defensively (a malformed cache row degrades to fewer dots
+  // rather than a NaN position — matching the median guard below); clamp to the lane, then
+  // sort so left-to-right === time order.
   const minutes = (finding.eligibleMinutes ?? [])
+    .filter((m) => Number.isFinite(m))
     .map((m) => Math.max(0, Math.min(m, POSTPRANDIAL_MAX_MIN)))
     .sort((a, b) => a - b);
   const positions = minutes.map(postprandialPos);

@@ -1637,6 +1637,33 @@ describe('postprandial real-time distribution (Option A) — geometry + gate', (
       const at30 = m.axis.find((t) => t.label === '30m');
       expect(at30?.pos).toBeCloseTo(m.bandEnd, 6);
     });
+
+    it('holds the model invariants across a swept corpus (§10)', () => {
+      // A hand-built corpus (house convention, not a fuzzer) covering empties, boundaries,
+      // ties, clamps and the non-finite guard. Invariants: one dot per FINITE minute, ascending
+      // order, every pos ∈ [0,1], and the in/out split matches minutes ≤ the window.
+      const corpus: number[][] = [
+        [], [0], [30], [120], [0, 30, 120],
+        [5, 5, 5, 5], [29, 30, 31], [8, 9, 10, 11, 12],
+        [4, 6, 7, 9, 11, 18, 28, 44, 79, 108],
+        [200, -5, 60, 15], [10, NaN, 20, Infinity],
+      ];
+      for (const mins of corpus) {
+        const m = postprandialDistributionModel(
+          postprandial({ eligibleMinutes: mins, rapidWindowMinutes: 30 }),
+        );
+        const finite = mins.filter((x) => Number.isFinite(x));
+        expect(m.dots).toHaveLength(finite.length); // non-finite entries dropped
+        const xs = m.dots.map((d) => d.pos);
+        expect(xs).toEqual([...xs].sort((a, b) => a - b)); // ascending
+        for (const d of m.dots) {
+          expect(d.pos).toBeGreaterThanOrEqual(0);
+          expect(d.pos).toBeLessThanOrEqual(1);
+        }
+        const expectedIn = finite.filter((x) => Math.max(0, Math.min(x, 120)) <= 30).length;
+        expect(m.dots.filter((d) => d.inWindow)).toHaveLength(expectedIn);
+      }
+    });
   });
 
   describe('gate + fallback predicates', () => {
