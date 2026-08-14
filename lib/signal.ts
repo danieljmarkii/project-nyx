@@ -227,6 +227,16 @@ export interface PostprandialTimingFinding {
   windowDays: number;
   /** SR-4 (§5.4) — medication on board in the context window; absent otherwise (old cache / no course). */
   medContext?: MedOnBoardContext;
+  /** Real-time distribution (Option A — docs/nyx-postprandial-receipt-requirements.md §5).
+   *  Every timed-eligible episode's minutes-since-nearest-feeding (in- and out-of-window), so the
+   *  client can plot the true distribution instead of an even-spread. Length === eligibleCount.
+   *  Additive-optional (the medContext pattern above): absent on a row cached before the payload
+   *  shipped ⇒ the even-spread `dotLaneModel` fallback renders, byte-identical to today. */
+  eligibleMinutes?: number[];
+  /** The detector's judgment that "minutes since feeding" is meaningful for this pet/window (§7).
+   *  false/undefined ⇒ the gated split (fail-safe: only an explicit `true` clears the gate). Ships
+   *  together with `eligibleMinutes`; its exact predicate is validation-gated (§7). */
+  timingReliable?: boolean;
 }
 
 // Time-of-day clustering (⑥, B-079) — a descriptive count of witnessed vomiting episodes

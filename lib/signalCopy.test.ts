@@ -36,6 +36,10 @@ import {
   signalFindingsSignature,
   hasUnseenFinding,
   dotLaneModel,
+  postprandialPos,
+  postprandialDistributionModel,
+  hasRealTimings,
+  timingUnreliable,
   timingReceiptDegrades,
   timingCompareRows,
   timingControlDisclosure,
@@ -1553,6 +1557,138 @@ describe('isTimingFinding', () => {
     expect(isTimingFinding(worsening())).toBe(false);
     expect(isTimingFinding(reflection())).toBe(false);
     expect(isTimingFinding(intakeDecline())).toBe(false);
+  });
+});
+
+describe('postprandial real-time distribution (Option A) — geometry + gate', () => {
+  // Expanded-early scale: the first 30 min → 0–60% of the lane; 30–120 min → 60–100%.
+  describe('postprandialPos', () => {
+    it('anchors ate=0, the 30-min edge at 60%, and 2h at the lane end', () => {
+      expect(postprandialPos(0)).toBeCloseTo(0, 6);
+      expect(postprandialPos(30)).toBeCloseTo(0.6, 6);
+      expect(postprandialPos(120)).toBeCloseTo(1, 6);
+    });
+    it('gives the first half-hour more room than a linear scale would', () => {
+      // 15 min is ⅛ of the nominal 2h window but sits at 30% of the lane.
+      expect(postprandialPos(15)).toBeCloseTo(0.3, 6);
+      expect(postprandialPos(15)).toBeGreaterThan(15 / 120);
+    });
+    it('is monotonic and clamps beyond 2h / below 0 to the lane ends', () => {
+      expect(postprandialPos(60)).toBeGreaterThan(postprandialPos(30));
+      expect(postprandialPos(200)).toBe(postprandialPos(120));
+      expect(postprandialPos(-5)).toBe(0);
+    });
+  });
+
+  describe('postprandialDistributionModel', () => {
+    // 8 and 9 min collide on x (Δ < 1.5 min); 3 within the window, 2 outside; median 9.
+    const finding = postprandial({
+      rapidCount: 3,
+      eligibleCount: 5,
+      rapidWindowMinutes: 30,
+      medianMinutesSinceFeeding: 9,
+      eligibleMinutes: [44, 9, 8, 108, 22], // unsorted on purpose
+    });
+
+    it('plots one dot per eligible minute, in ascending time order', () => {
+      const m = postprandialDistributionModel(finding);
+      expect(m.dots).toHaveLength(5);
+      const xs = m.dots.map((d) => d.pos);
+      expect(xs).toEqual([...xs].sort((a, b) => a - b));
+    });
+    it('positions each dot at its true minute on the expanded scale', () => {
+      const m = postprandialDistributionModel(finding);
+      // sorted minutes: 8, 9, 22, 44, 108
+      expect(m.dots[0].pos).toBeCloseTo(postprandialPos(8), 6);
+      expect(m.dots[4].pos).toBeCloseTo(postprandialPos(108), 6);
+    });
+    it('splits in/out of the rapid window by the real minute, matching rapidCount', () => {
+      const m = postprandialDistributionModel(finding);
+      expect(m.dots.filter((d) => d.inWindow)).toHaveLength(3); // 8, 9, 22 ≤ 30
+      expect(m.dots.filter((d) => !d.inWindow)).toHaveLength(2); // 44, 108
+    });
+    it('the band edge tracks the rapid window (30 min → 60%)', () => {
+      expect(postprandialDistributionModel(finding).bandEnd).toBeCloseTo(0.6, 6);
+    });
+    it('places the median tick at the real median minute', () => {
+      expect(postprandialDistributionModel(finding).medianPos).toBeCloseTo(postprandialPos(9), 6);
+    });
+    it('jitters near-ties off the centre line, deterministically', () => {
+      const m = postprandialDistributionModel(finding);
+      expect(m.dots[0].jitterRow).toBe(0); // 8 min, first placed
+      expect(m.dots[1].jitterRow).not.toBe(0); // 9 min collides → bumped off centre
+      // Same input → identical rows (no RNG).
+      const again = postprandialDistributionModel(finding);
+      expect(again.dots.map((d) => d.jitterRow)).toEqual(m.dots.map((d) => d.jitterRow));
+    });
+    it('keeps every dot within the lane; a far outlier clamps to the end', () => {
+      const m = postprandialDistributionModel(
+        postprandial({ eligibleMinutes: [1, 300], eligibleCount: 2, rapidCount: 1 }),
+      );
+      for (const d of m.dots) {
+        expect(d.pos).toBeGreaterThanOrEqual(0);
+        expect(d.pos).toBeLessThanOrEqual(1);
+      }
+      expect(m.dots[1].pos).toBe(1); // 300 min clamps to 2h
+    });
+    it('renders honest axis ticks with 30m on the window edge', () => {
+      const m = postprandialDistributionModel(finding);
+      expect(m.axis.map((t) => t.label)).toEqual(['ate', '15m', '30m', '1h', '2h']);
+      const at30 = m.axis.find((t) => t.label === '30m');
+      expect(at30?.pos).toBeCloseTo(m.bandEnd, 6);
+    });
+
+    it('holds the model invariants across a swept corpus (§10)', () => {
+      // A hand-built corpus (house convention, not a fuzzer) covering empties, boundaries,
+      // ties, clamps and the non-finite guard. Invariants: one dot per FINITE minute, ascending
+      // order, every pos ∈ [0,1], and the in/out split matches minutes ≤ the window.
+      const corpus: number[][] = [
+        [], [0], [30], [120], [0, 30, 120],
+        [5, 5, 5, 5], [29, 30, 31], [8, 9, 10, 11, 12],
+        [4, 6, 7, 9, 11, 18, 28, 44, 79, 108],
+        [200, -5, 60, 15], [10, NaN, 20, Infinity],
+      ];
+      for (const mins of corpus) {
+        const m = postprandialDistributionModel(
+          postprandial({ eligibleMinutes: mins, rapidWindowMinutes: 30 }),
+        );
+        const finite = mins.filter((x) => Number.isFinite(x));
+        expect(m.dots).toHaveLength(finite.length); // non-finite entries dropped
+        const xs = m.dots.map((d) => d.pos);
+        expect(xs).toEqual([...xs].sort((a, b) => a - b)); // ascending
+        for (const d of m.dots) {
+          expect(d.pos).toBeGreaterThanOrEqual(0);
+          expect(d.pos).toBeLessThanOrEqual(1);
+        }
+        const expectedIn = finite.filter((x) => Math.max(0, Math.min(x, 120)) <= 30).length;
+        expect(m.dots.filter((d) => d.inWindow)).toHaveLength(expectedIn);
+      }
+    });
+  });
+
+  describe('gate + fallback predicates', () => {
+    it('hasRealTimings is true only when eligibleMinutes is present and non-empty', () => {
+      expect(hasRealTimings(postprandial())).toBe(false); // no field → fallback
+      expect(hasRealTimings(postprandial({ eligibleMinutes: [] }))).toBe(false);
+      expect(hasRealTimings(postprandial({ eligibleMinutes: [5] }))).toBe(true);
+    });
+    it('timingUnreliable is false without real timings (the fallback owns that case)', () => {
+      expect(timingUnreliable(postprandial())).toBe(false);
+      expect(timingUnreliable(postprandial({ timingReliable: false }))).toBe(false); // no minutes yet
+    });
+    it('with real timings, only an explicit timingReliable===true clears the gate', () => {
+      expect(timingUnreliable(postprandial({ eligibleMinutes: [5, 40], timingReliable: true }))).toBe(false);
+      expect(timingUnreliable(postprandial({ eligibleMinutes: [5, 40], timingReliable: false }))).toBe(true);
+      // Fail-safe: real timings but reliability unknown → gated (never default into the cluster).
+      expect(timingUnreliable(postprandial({ eligibleMinutes: [5, 40] }))).toBe(true);
+    });
+  });
+
+  it('fallback: a finding without real timings still renders the shipped even-spread model', () => {
+    // dotLaneModel is unchanged for the absent-payload case (byte-identical to today).
+    const m = dotLaneModel(postprandial({ rapidCount: 4, eligibleCount: 9 }));
+    expect(m.dots).toHaveLength(9);
+    expect(m.dots.filter((d) => d.inWindow)).toHaveLength(4);
   });
 });
 
