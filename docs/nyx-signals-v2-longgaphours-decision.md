@@ -1,5 +1,5 @@
 # `longGapHours` — the empty-stomach phenotype boundary (4h vs 6h)
-**Status:** ✅ RULED — **6h** · **Decider:** Dr. Alex Chen (owned clinical calibration, spec §2 L1 / G6) · **Last Updated:** 2026-08-14
+**Status:** ✅ RULED — **6h** · **Decider:** Dr. Alex Chen (owned clinical calibration, spec §2 L1 / G6) · **PM ratified 2026-08-14** (deferred to Dr. Chen) · **Last Updated:** 2026-08-14
 **Issue:** CUL-16 (decision brief) · **Blocks:** CUL-7 (PR 2 — L1 empty-stomach lane) floor lock · **Spec:** Signals v2 (B-755) §2 L1, §4.1, §8 OQ#2
 
 ---
@@ -99,11 +99,13 @@ longGapHours: 6,
 
 ---
 
-## §6 — Proposed spec edits (Signals v2 requirements, Linear project description)
+## §6 — Spec edits (Signals v2 requirements) — ✅ APPLIED to the Linear project description 2026-08-14
 
-Owned-call resolution; recorded here and in the CUL-16 comment. Fold into the canonical spec (`docs/nyx-signals-v2-requirements.md` when it lands in-repo, mirrored to the Linear project description):
+Owned-call resolution; recorded here, in the CUL-16 comment, and **applied to the canonical spec** (the Linear project description — the only live copy today; see the divergence guard below):
 
-- **§0 decision record** — add: *"`longGapHours` = **6h** (Dr. Chen, CUL-16). Boundary anchored to feline solid-phase gastric emptying; specificity over sensitivity for a physiology-asserting band; floors sweep at 6h."*
-- **§2 L1** — change *"`longGapHours` … (candidate 4–6h …)"* → *"`longGapHours` = **6h** (ruled, CUL-16 — anchor beside the constant)."*
-- **§4.1** — change the compare-row label *"`4h+`"* → *"`6h+`"*; `in between` = 30 min – 6h.
-- **§8 open questions** — mark **#2 resolved (6h, 2026-08-14)**.
+- **§0 decision record** — added **D10**: `longGapHours` phenotype boundary = **6h** (Dr. Chen, CUL-16; PM deferred). Anchored to feline solid-phase gastric emptying; specificity over sensitivity for a physiology-asserting band; the sweep locks floors *at* 6h and never moves the boundary (G6). ✅
+- **§2 L1** — `longGapHours` "candidate 4–6h" → **6h** (ruled, CUL-16), with the anchor inline. ✅
+- **§4.1** — the compare row `≤30 min / in between / 4h+` → `≤30 min / in between 30 min–6h / 6h+`. ✅
+- **§8 open questions** — #2 marked **RESOLVED 2026-08-14 → 6h**. ✅
+
+> **Divergence guard.** The spec header names `docs/nyx-signals-v2-requirements.md` as canonical ("the repo file wins on divergence"), but that file is **not yet in `main`** — it's in the unmerged PR #637, so today the Linear project description is the only live copy and is where these edits landed. **When PR #637 merges, carry these same four edits into `docs/nyx-signals-v2-requirements.md`** — otherwise the "repo file wins" rule would silently revert the ruling back to "candidate 4–6h" / `4h+` / open-OQ.
