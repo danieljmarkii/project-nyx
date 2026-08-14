@@ -1,0 +1,426 @@
+<title>Barf-Timing Receipt</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  /* ─────────────────────────────────────────────────────────────────────────
+     Post-prandial timing receipt — Option A, build-ready design lock.
+     The chosen direction from docs/culprit-dot-lane-semantics-mockups.html (the
+     decision record). Real per-episode times, expanded-early scale, soft/jittered
+     dots, the gated fallback for noisy cases, anamnesis copy. Colours + card chrome
+     mirror constants/theme.ts. Geometry uses the same expanded-early posOf() the
+     app would ship.
+     ───────────────────────────────────────────────────────────────────────── */
+
+  :root {
+    --ground: #F4F3FA; --ground-2: #ECEAF4; --card: #FFFFFF;
+    --ink: #1A1A24; --ink-2: #4B4866; --ink-3: #8B87A8;
+    --hair: #EAE8F1; --hair-strong: #DDDBE8;
+    --accent: #00C2A8; --accent-ink: #0B7B6C;
+    --band: #E0FBF7; --band-edge: rgba(0,194,168,0.55);
+    --symptom: #F43F5E; --symptom-ink: #9F1239; --symptom-wash: #FFF1F3;
+    --symptom-halo: rgba(244,63,94,0.14);
+    --out: #A3A3A3; --out-halo: rgba(163,163,163,0.16);
+    --lane: #FAFAFA; --lane-border: #EAEAEA; --axis: #8B87A8;
+    --amber-ink: #6B4A0E; --amber-wash: #FDF3DC; --amber-edge: #F2DFB3;
+    --tag-bg: #F0EFF5; --tag-ink: #5F5C7A;
+    --shadow: 0 2px 10px rgba(19,17,46,0.05);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #0C0A20; --ground-2: #14112C; --card: #191539;
+      --ink: #ECEAF6; --ink-2: #A6A2CE; --ink-3: #706BA6;
+      --hair: rgba(196,190,255,0.14); --hair-strong: rgba(196,190,255,0.20);
+      --accent: #00C2A8; --accent-ink: #7FE8DA;
+      --band: rgba(0,194,168,0.14); --band-edge: rgba(0,194,168,0.6);
+      --symptom: #FB7185; --symptom-ink: #FDA4AF; --symptom-wash: rgba(251,113,133,0.10);
+      --symptom-halo: rgba(251,113,133,0.20);
+      --out: #706BA6; --out-halo: rgba(112,107,166,0.24);
+      --lane: rgba(255,255,255,0.04); --lane-border: rgba(196,190,255,0.16); --axis: #706BA6;
+      --amber-ink: #F2D48A; --amber-wash: rgba(251,191,36,0.10); --amber-edge: rgba(251,191,36,0.28);
+      --tag-bg: rgba(196,190,255,0.10); --tag-ink: #A6A2CE;
+      --shadow: 0 2px 12px rgba(0,0,0,0.4);
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground: #0C0A20; --ground-2: #14112C; --card: #191539;
+    --ink: #ECEAF6; --ink-2: #A6A2CE; --ink-3: #706BA6;
+    --hair: rgba(196,190,255,0.14); --hair-strong: rgba(196,190,255,0.20);
+    --accent: #00C2A8; --accent-ink: #7FE8DA;
+    --band: rgba(0,194,168,0.14); --band-edge: rgba(0,194,168,0.6);
+    --symptom: #FB7185; --symptom-ink: #FDA4AF; --symptom-wash: rgba(251,113,133,0.10);
+    --symptom-halo: rgba(251,113,133,0.20);
+    --out: #706BA6; --out-halo: rgba(112,107,166,0.24);
+    --lane: rgba(255,255,255,0.04); --lane-border: rgba(196,190,255,0.16); --axis: #706BA6;
+    --amber-ink: #F2D48A; --amber-wash: rgba(251,191,36,0.10); --amber-edge: rgba(251,191,36,0.28);
+    --tag-bg: rgba(196,190,255,0.10); --tag-ink: #A6A2CE;
+    --shadow: 0 2px 12px rgba(0,0,0,0.4);
+  }
+
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0; background: var(--ground); color: var(--ink);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    line-height: 1.5; -webkit-font-smoothing: antialiased;
+  }
+  .serif { font-family: Georgia, "Iowan Old Style", "Times New Roman", serif; }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 40px 20px 72px; }
+
+  .eyebrow { font-size: 11px; font-weight: 600; letter-spacing: 0.16em; text-transform: uppercase; color: var(--accent-ink); margin: 0 0 14px; }
+  h1 { font-size: clamp(30px, 6vw, 44px); line-height: 1.09; letter-spacing: -0.02em; margin: 0 0 16px; font-weight: 500; text-wrap: balance; }
+  .standfirst { font-size: clamp(15px, 2.2vw, 17px); color: var(--ink-2); max-width: 64ch; margin: 0; }
+  .standfirst b { color: var(--ink); font-weight: 600; }
+
+  .locks { margin: 26px 0 0; padding: 16px 18px; border-radius: 14px; background: var(--ground-2); border: 1px solid var(--hair); }
+  .locks .lh { font-size: 11px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-3); margin: 0 0 10px; }
+  .locks ul { margin: 0; padding: 0; list-style: none; display: grid; grid-template-columns: 1fr 1fr; gap: 7px 22px; }
+  @media (max-width: 720px) { .locks ul { grid-template-columns: 1fr; } }
+  .locks li { font-size: 13px; color: var(--ink-2); padding-left: 18px; position: relative; }
+  .locks li::before { content: ""; position: absolute; left: 2px; top: 8px; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
+  .locks li b { color: var(--ink); font-weight: 600; }
+
+  .sec { margin-top: 52px; }
+  .sec > h2 { font-size: 13px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-3); margin: 0 0 4px; }
+  .sec > .subhead { font-size: 15px; color: var(--ink-2); margin: 0 0 22px; max-width: 66ch; }
+
+  .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; align-items: start; }
+  @media (max-width: 900px) { .grid3 { grid-template-columns: 1fr; gap: 22px; } }
+  .col { display: flex; flex-direction: column; gap: 12px; }
+  .optag { display: flex; align-items: center; gap: 8px; }
+  .optag .k { font-size: 10.5px; font-weight: 700; letter-spacing: 0.04em; padding: 3px 9px; border-radius: 999px; color: #fff; }
+  .k.clean { background: var(--accent); }
+  .k.gated { background: #B8860B; }
+  .k.many { background: #9A96B4; }
+  .optag .name { font-size: 13px; font-weight: 600; color: var(--ink); }
+  .optag .name span { color: var(--ink-3); font-weight: 500; }
+
+  .card { background: var(--card); border-radius: 18px; padding: 15px 15px 13px; box-shadow: var(--shadow); }
+  .seclabel { font-size: 10px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 10px; }
+  .irow { display: flex; gap: 11px; }
+  .rail { width: 3px; border-radius: 2px; flex-shrink: 0; background: var(--accent); opacity: 0.9; }
+  .ibody { flex: 1; min-width: 0; }
+  .sent { font-size: 14px; line-height: 1.46; color: var(--ink); margin: 0 0 9px; }
+  .sample { font-size: 11px; color: var(--ink-3); font-variant-numeric: tabular-nums; margin-top: 9px; }
+  .whylink { font-size: 11px; font-weight: 600; color: var(--accent); margin-top: 7px; }
+  .remainder { font-size: 10.5px; color: var(--ink-3); margin-top: 7px; font-variant-numeric: tabular-nums; }
+
+  /* Lane + dots */
+  .estrip { margin: 4px 0 2px; }
+  .lane { position: relative; height: 34px; background: var(--lane); border: 1px solid var(--lane-border); border-radius: 5px; }
+  .lane.big { height: 52px; border-radius: 7px; }
+  .band { position: absolute; top: 0; bottom: 0; left: 0; border-radius: 4px 0 0 4px; background: var(--band); border-right: 1px dashed var(--band-edge); }
+  .dot { position: absolute; top: 50%; width: 8px; height: 8px; border-radius: 50%; transform: translate(-50%, -50%); background: var(--symptom); box-shadow: 0 0 0 3px var(--symptom-halo); }
+  .dot.out { background: var(--out); box-shadow: 0 0 0 3px var(--out-halo); }
+  .median { position: absolute; top: 7px; bottom: 7px; width: 1.5px; background: var(--symptom); opacity: 0.7; }
+  .median::after { content: ""; position: absolute; top: -3px; left: 50%; width: 5px; height: 5px; transform: translateX(-50%) rotate(45deg); background: var(--symptom); }
+  .axisL { position: relative; height: 15px; margin-top: 6px; }
+  .axisL span { position: absolute; top: 0; font-size: 10px; color: var(--axis); transform: translateX(-50%); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .axisL span.l0 { transform: none; }
+  .axisL span.l100 { transform: translateX(-100%); }
+  .axisL span::before { content: ""; position: absolute; top: -7px; left: 50%; width: 1px; height: 5px; background: var(--hair-strong); transform: translateX(-50%); }
+  .axisL span.l0::before { left: 0; transform: none; }
+  .axisL span.l100::before { left: auto; right: 0; transform: none; }
+
+  /* Gated → split */
+  .split { display: flex; align-items: stretch; gap: 10px; }
+  .cell { flex: 1; border-radius: 8px; padding: 8px 10px 9px; border: 1px solid var(--hair); }
+  .cell.in { background: var(--band); border-color: var(--band-edge); }
+  .cell .swarm { display: flex; flex-wrap: wrap; gap: 4px; min-height: 18px; align-content: flex-start; }
+  .cell .sd { width: 8px; height: 8px; border-radius: 50%; background: var(--symptom); }
+  .cell.late .sd { background: var(--out); }
+  .cell .cn { display: flex; align-items: baseline; gap: 6px; margin-top: 7px; }
+  .cell .cn b { font-size: 19px; font-weight: 700; color: var(--ink); font-variant-numeric: tabular-nums; line-height: 1; }
+  .cell.in .cn b { color: var(--symptom-ink); }
+  .cell .cn small { font-size: 10.5px; color: var(--ink-2); }
+  .grazenote { margin-top: 9px; font-size: 10.5px; line-height: 1.45; color: var(--amber-ink); background: var(--amber-wash); border: 1px solid var(--amber-edge); border-radius: 8px; padding: 6px 9px; }
+
+  /* Compare (high-N degrade) */
+  .cmprow { display: grid; grid-template-columns: 116px 1fr 26px; gap: 8px; align-items: center; margin-top: 7px; }
+  .cmprow .cl { font-size: 11px; color: var(--ink-2); }
+  .cmprow .bar { height: 9px; border-radius: 4px; background: var(--lane); border: 1px solid var(--lane-border); position: relative; overflow: hidden; }
+  .cmprow .bar i { position: absolute; inset: 0 auto 0 0; border-radius: 4px; }
+  .cmprow .bar i.in { background: var(--symptom); }
+  .cmprow .bar i.late { background: var(--out); }
+  .cmprow .cc { text-align: right; font-size: 11px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+
+  .note { font-size: 12.5px; line-height: 1.5; color: var(--ink-2); padding: 0 2px; }
+  .note b { color: var(--ink); font-weight: 600; }
+
+  /* Annotated close-up */
+  .closeup { background: var(--card); border-radius: 16px; padding: 26px 24px 22px; box-shadow: var(--shadow); }
+  .closeup .laneWrap { max-width: 640px; margin: 0 auto; }
+  .anno { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px 26px; margin-top: 26px; }
+  @media (max-width: 720px) { .anno { grid-template-columns: 1fr; } }
+  .anno .a { display: flex; gap: 10px; }
+  .anno .a .mk { flex: 0 0 auto; width: 22px; height: 22px; border-radius: 6px; background: var(--ground-2); display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; color: var(--accent-ink); }
+  .anno .a .tx { font-size: 12.5px; line-height: 1.45; color: var(--ink-2); }
+  .anno .a .tx b { color: var(--ink); font-weight: 600; }
+
+  /* Evidence panel */
+  .evid { background: var(--card); border-radius: 16px; padding: 16px 18px; box-shadow: var(--shadow); max-width: 560px; }
+  .evid .et { font-size: 9.5px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 8px; }
+  .evid p { font-size: 13.5px; line-height: 1.55; color: var(--ink); margin: 0; }
+  .evid .flag { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--hair); font-size: 11.5px; color: var(--accent-ink); font-weight: 600; }
+
+  /* Spec + guardrails */
+  .spec { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 820px) { .spec { grid-template-columns: 1fr; } }
+  .scard { background: var(--card); border-radius: 14px; padding: 16px 17px; box-shadow: var(--shadow); }
+  .scard.warn { border-left: 3px solid #B8860B; }
+  .scard.open { border-left: 3px solid var(--symptom); }
+  .scard h3 { margin: 0 0 10px; font-size: 13px; font-weight: 600; color: var(--ink); }
+  .scard .row { display: flex; gap: 9px; font-size: 12.5px; padding: 5px 0; border-top: 1px solid var(--hair); line-height: 1.4; }
+  .scard .row:first-of-type { border-top: 0; }
+  .scard .row .rk { color: var(--ink-3); flex: 0 0 96px; }
+  .scard .row .rv { color: var(--ink); flex: 1; }
+  .scard .row .rv code { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 11px; color: var(--accent-ink); }
+
+  .legend { display: flex; gap: 16px; flex-wrap: wrap; font-size: 11.5px; color: var(--ink-2); margin: 14px 2px 0; }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .legend i { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+  .legend i.in { background: var(--symptom); }
+  .legend i.out { background: var(--out); }
+  .legend i.win { background: var(--band); border: 1px dashed var(--band-edge); border-radius: 2px; width: 13px; }
+
+  footer { margin-top: 46px; padding-top: 18px; border-top: 1px solid var(--hair); font-size: 11.5px; line-height: 1.6; color: var(--ink-3); }
+  footer code { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 11px; color: var(--ink-2); }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .col, .closeup, .evid, .scard { animation: rise 0.5s ease-out both; }
+    .col:nth-child(2) { animation-delay: 0.05s; }
+    .col:nth-child(3) { animation-delay: 0.1s; }
+    @keyframes rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+  }
+</style>
+
+<div class="wrap">
+
+  <header>
+    <p class="eyebrow">Culprit · Signal — barf-timing receipt · build-ready</p>
+    <h1 class="serif">The receipt, drawn at real&nbsp;time</h1>
+    <p class="standfirst">Option A, locked. Each dot sits at the episode's true minutes-after-eating, on a scale that gives the first half-hour room — so the cluster the vet cares about is the thing you see. Below: the confident case, the two states that keep it honest, the tap-through, and the rules to build to.</p>
+  </header>
+
+  <div class="locks">
+    <p class="lh">What this locks</p>
+    <ul>
+      <li><b>Real times</b> — one dot per timeable episode at its true minutes-after-eating</li>
+      <li><b>Expanded-early scale</b> — first 30 min = 60% of the lane; 30m label on the window edge</li>
+      <li><b>Soft &amp; jittered dots</b> — honest about ± a few minutes; never hair-precise</li>
+      <li><b>Gate the noisy case</b> — grazing / uncertain timing falls back to the split</li>
+      <li><b>Degrade above 12</b> — too many to count individually → the stacked compare</li>
+      <li><b>Anamnesis copy</b> — shows timing, never a cause, mechanism, or eating-speed</li>
+    </ul>
+  </div>
+
+  <!-- ── The three states ─────────────────────────────────────────────── -->
+  <section class="sec">
+    <h2>The three states</h2>
+    <p class="subhead">One receipt, three renderings the engine chooses between — by how trustworthy the timing is, and how many episodes there are. The default is the distribution; the other two are how it stays honest.</p>
+
+    <div class="grid3">
+
+      <!-- Clean -->
+      <div class="col">
+        <div class="optag"><span class="k clean">DEFAULT</span><span class="name">Confident distribution <span>· clean timing</span></span></div>
+        <div class="card">
+          <div class="seclabel">Signal</div>
+          <div class="irow">
+            <div class="rail"></div>
+            <div class="ibody">
+              <p class="sent">7 of the 10 vomiting episodes we could time for Nyx happened within 30 minutes of eating, including the last two — a timing pattern worth mentioning to your vet.</p>
+              <div class="estrip">
+                <div class="lane" data-kind="A"><div class="band"></div></div>
+                <div class="axisL" data-axis="A"></div>
+              </div>
+              <p class="remainder">Typically about 9 min · 4 more weren't near a logged meal</p>
+              <p class="sample">7 of 10 timed episodes within 30 min of eating</p>
+              <p class="whylink">Why we're showing this</p>
+            </div>
+          </div>
+        </div>
+        <p class="note"><b>Discrete meals, witnessed episodes.</b> The dots pile up where they really fall — around 9 min — which is new information the sentence can't carry. This is the state the whole design is for.</p>
+      </div>
+
+      <!-- Gated -->
+      <div class="col">
+        <div class="optag"><span class="k gated">GATED</span><span class="name">Honest split <span>· timing unreliable</span></span></div>
+        <div class="card">
+          <div class="seclabel">Signal</div>
+          <div class="irow">
+            <div class="rail"></div>
+            <div class="ibody">
+              <p class="sent">7 of Pixel's 10 recent vomiting episodes came within 30 minutes of eating — but Pixel grazes, so the exact timing is hard to read. Still worth mentioning to your vet.</p>
+              <div class="estrip">
+                <div class="split">
+                  <div class="cell in">
+                    <div class="swarm"><i class="sd"></i><i class="sd"></i><i class="sd"></i><i class="sd"></i><i class="sd"></i><i class="sd"></i><i class="sd"></i></div>
+                    <div class="cn"><b>7</b><small>within 30 min</small></div>
+                  </div>
+                  <div class="cell late">
+                    <div class="swarm"><i class="sd"></i><i class="sd"></i><i class="sd"></i></div>
+                    <div class="cn"><b>3</b><small>later</small></div>
+                  </div>
+                </div>
+                <p class="grazenote">Shown as a split, not a timeline — with grazing, "minutes since eating" isn't reliable enough to place each one.</p>
+              </div>
+              <p class="sample">7 of 10 timed episodes within 30 min of eating</p>
+              <p class="whylink">Why we're showing this</p>
+            </div>
+          </div>
+        </div>
+        <p class="note"><b>Grazing or uncertain attribution.</b> The counts still show — non-reassuring, points to the vet — but the app refuses to draw a precise cluster on timing it can't stand behind. This is the state that protects Sam.</p>
+      </div>
+
+      <!-- Many -->
+      <div class="col">
+        <div class="optag"><span class="k many">12+</span><span class="name">Stacked compare <span>· too many to count</span></span></div>
+        <div class="card">
+          <div class="seclabel">Signal</div>
+          <div class="irow">
+            <div class="rail"></div>
+            <div class="ibody">
+              <p class="sent">13 of the 18 vomiting episodes we could time for Nyx happened within 30 minutes of eating — a timing pattern worth mentioning to your vet.</p>
+              <div class="estrip">
+                <div class="cmprow"><span class="cl">Within 30 min</span><span class="bar"><i class="in" style="width:100%"></i></span><span class="cc">13</span></div>
+                <div class="cmprow"><span class="cl">Timed, but later</span><span class="bar"><i class="late" style="width:38.5%"></i></span><span class="cc">5</span></div>
+              </div>
+              <p class="sample">13 of 18 timed episodes within 30 min of eating</p>
+              <p class="whylink">Why we're showing this</p>
+            </div>
+          </div>
+        </div>
+        <p class="note"><b>Above ~12 timeable episodes</b> individual dots stop being countable, so the lane becomes the two-count compare (the existing <code>DOT_LANE_MAX</code> rule). No new shape — the same split, scaled up.</p>
+      </div>
+
+    </div>
+
+    <div class="legend">
+      <span><i class="in"></i> within 30 min (rapid)</span>
+      <span><i class="out"></i> timed, but later</span>
+      <span><i class="win"></i> the 30-min window</span>
+    </div>
+  </section>
+
+  <!-- ── Close-up ─────────────────────────────────────────────────────── -->
+  <section class="sec">
+    <h2>The distribution, up close</h2>
+    <p class="subhead">The default state at full size, with the design rules called out. Every position is a real minute; the scale just spends its width where the finding lives.</p>
+    <div class="closeup">
+      <div class="laneWrap">
+        <div class="lane big" data-kind="A"><div class="band"></div></div>
+        <div class="axisL" data-axis="A"></div>
+      </div>
+      <div class="anno">
+        <div class="a"><span class="mk">1</span><span class="tx"><b>Expanded early window.</b> The first 30 min takes 60% of the lane, so a cluster at 4–11 min is legible instead of crushed into a sliver.</span></div>
+        <div class="a"><span class="mk">2</span><span class="tx"><b>Honest boundary.</b> The dashed edge is 30 min, and the "30m" label sits on it — fixing the shipped card's label floating at mid-lane.</span></div>
+        <div class="a"><span class="mk">3</span><span class="tx"><b>Soft, jittered dots.</b> A faint halo + vertical jitter say "real, but ± a few minutes" — the plot never implies clock-precision the logs don't have.</span></div>
+        <div class="a"><span class="mk">4</span><span class="tx"><b>Median tick + compressed tail.</b> The rose tick marks the typical timing (~9 min); later episodes stay visible but compress into the right 40%.</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Evidence ─────────────────────────────────────────────────────── -->
+  <section class="sec">
+    <h2>Tap to expand — the evidence</h2>
+    <p class="subhead">What opens under the card. Timing only: the honest denominator, the typical minutes, and the vet ask. Never a cause, a mechanism, or an eating-speed read (§9.2).</p>
+    <div class="evid">
+      <p class="et">Why we're showing this</p>
+      <p>Of Nyx's 14 episodes of vomiting in the last 30 days, 10 could be timed against a recent feeding — and 7 of those happened within 30 minutes of eating (typically about 9 minutes). This is a timing pattern in your logs, not a diagnosis — worth mentioning to your vet.</p>
+      <p class="flag">4 episodes weren't near a logged meal, so we couldn't time them.</p>
+    </div>
+  </section>
+
+  <!-- ── Build rules ──────────────────────────────────────────────────── -->
+  <section class="sec">
+    <h2>Rules to build to</h2>
+    <p class="subhead">The design contract the requirements will formalize — geometry, the state machine, and the guardrails that keep A honest.</p>
+    <div class="spec">
+
+      <div class="scard">
+        <h3>Geometry</h3>
+        <div class="row"><span class="rk">Scale</span><span class="rv">Expanded-early: <code>0–30 min → 0–60%</code>, <code>30–120 min → 60–100%</code>. Honest ticks at true minute values.</span></div>
+        <div class="row"><span class="rk">Dots</span><span class="rv">One per timeable episode; 8px; soft halo + vertical jitter for near-ties; rose in-window, grey later.</span></div>
+        <div class="row"><span class="rk">Median</span><span class="rv">Rose tick at the median rapid minute; label lives in the meta line, not on the lane.</span></div>
+        <div class="row"><span class="rk">Untimed</span><span class="rv">Never plotted; disclosed in words ("N weren't near a logged meal").</span></div>
+      </div>
+
+      <div class="scard">
+        <h3>State machine</h3>
+        <div class="row"><span class="rk">Default</span><span class="rv">Timing reliable &amp; ≤12 timeable → the distribution.</span></div>
+        <div class="row"><span class="rk">Gated</span><span class="rv">Timing unreliable (grazing / free-fed active / uncertain attribution) → the split + honesty line. Never a cluster.</span></div>
+        <div class="row"><span class="rk">12+</span><span class="rv">More than 12 timeable → the stacked compare (<code>DOT_LANE_MAX</code>).</span></div>
+        <div class="row"><span class="rk">Precedence</span><span class="rv">Gate wins over count: a noisy 20-episode finding is a split, not a compare.</span></div>
+      </div>
+
+      <div class="scard warn">
+        <h3>Guardrails</h3>
+        <div class="row"><span class="rk">Copy</span><span class="rv">Anamnesis only — timing, never cause / mechanism / eating-speed (§9.2 validatePhrasing).</span></div>
+        <div class="row"><span class="rk">Never</span><span class="rv">No precise cluster on unreliable timing; no reassurance on the gated card; absence never = wellness.</span></div>
+        <div class="row"><span class="rk">Payload</span><span class="rv">Adds <code>minutesSince[]</code> as an additive-optional mirror field (the SR-4 <code>medContext</code> pattern); old cache renders the split.</span></div>
+      </div>
+
+      <div class="scard open">
+        <h3>Open — before / with build</h3>
+        <div class="row"><span class="rk">Validation</span><span class="rv">Data Scientist + Dr. Chen: does the detector reliably know when timing is noisy? The gate is only as good as that signal.</span></div>
+        <div class="row"><span class="rk">Reliable-def</span><span class="rv">Lock the exact predicate for "timing unreliable" (what counts as grazing / uncertain) — drives the gate.</span></div>
+        <div class="row"><span class="rk">Old cache</span><span class="rv">Confirm the flag-off / pre-deploy fallback is the split, byte-identical to today until <code>minutesSince[]</code> lands.</span></div>
+      </div>
+
+    </div>
+  </section>
+
+  <footer>
+    Build-ready design lock for the post-prandial timing receipt (Option A) — the chosen direction from <code>docs/culprit-dot-lane-semantics-mockups.html</code> (the decision record, which stays as the option comparison). On approval this drives the requirements + build. The distribution's geometry uses the same expanded-early <code>posOf()</code> the app would ship; colours + card chrome mirror <code>constants/theme.ts</code>. · 2026-08-13
+  </footer>
+
+</div>
+
+<script>
+  // Expanded-early scale — the geometry the app would ship.
+  var EARLY_MIN = 30, EARLY_FRAC = 0.60, MAXMIN = 120;
+  function posOf(min) {
+    if (min <= EARLY_MIN) return (min / EARLY_MIN) * EARLY_FRAC;
+    return EARLY_FRAC + ((Math.min(min, MAXMIN) - EARLY_MIN) / (MAXMIN - EARLY_MIN)) * (1 - EARLY_FRAC);
+  }
+  // The finding: 7 rapid (real minutes) + 3 later; hand-tuned vertical jitter for near-ties.
+  var A_DOTS = [
+    { m: 4,  dy: 0 },  { m: 6,  dy: -6 }, { m: 7,  dy: 6 },  { m: 9,  dy: 0 },
+    { m: 11, dy: -6 }, { m: 18, dy: 0 },  { m: 28, dy: 0 },
+    { m: 44, dy: 0 },  { m: 79, dy: 0 },  { m: 108, dy: 0 }
+  ];
+  var A_MEDIAN = 9;
+  var A_AXIS = [
+    { pct: 0,    label: 'ate', cls: 'l0' },
+    { pct: 30,   label: '15m', cls: '' },
+    { pct: 60,   label: '30m', cls: '' },
+    { pct: 73.3, label: '1h',  cls: '' },
+    { pct: 100,  label: '2h',  cls: 'l100' }
+  ];
+
+  function fillA(lane) {
+    var band = lane.querySelector('.band');
+    if (band) band.style.width = (EARLY_FRAC * 100) + '%';
+    A_DOTS.forEach(function (d) {
+      var el = document.createElement('div');
+      el.className = 'dot' + (d.m > 30 ? ' out' : '');
+      el.style.left = (posOf(d.m) * 100) + '%';
+      if (d.dy) el.style.top = 'calc(50% + ' + d.dy + 'px)';
+      lane.appendChild(el);
+    });
+    var med = document.createElement('div');
+    med.className = 'median';
+    med.style.left = (posOf(A_MEDIAN) * 100) + '%';
+    lane.appendChild(med);
+  }
+  function fillAxisA(el) {
+    A_AXIS.forEach(function (t) {
+      var s = document.createElement('span');
+      s.className = t.cls;
+      s.style.left = t.pct + '%';
+      s.textContent = t.label;
+      el.appendChild(s);
+    });
+  }
+  document.querySelectorAll('.lane[data-kind="A"]').forEach(fillA);
+  document.querySelectorAll('.axisL[data-axis="A"]').forEach(fillAxisA);
+</script>
