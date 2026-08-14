@@ -20,6 +20,7 @@ import {
   detectChronicity,
   detectPostprandialTiming,
   detectEmptyStomachTiming,
+  binomialUpperTailProbability,
   detectTimeOfDayClustering,
   detectIncidentRedFlags,
   deriveIncidentFlags,
@@ -3010,29 +3011,68 @@ Deno.test('detectEmptyStomachTiming — no timezone → L1 still fires (clock ev
   assert.equal(f[0].clockCount, undefined)
 })
 
-// ── L1 §PROPERTY SWEEP (Signals v2 / CUL-7 — the REQUIRED CI calibration gate) ────────
+Deno.test('binomialUpperTailProbability — matches textbook values, endpoints, and monotonicity (L1 base-rate gate)', () => {
+  const approx = (a: number, b: number, msg: string) => assert.ok(Math.abs(a - b) < 1e-9, `${msg}: ${a} vs ${b}`)
+  // Endpoints.
+  assert.equal(binomialUpperTailProbability(0, 10, 0.3), 1, 'P(X≥0) = 1')
+  assert.equal(binomialUpperTailProbability(11, 10, 0.3), 0, 'P(X>n) = 0')
+  assert.equal(binomialUpperTailProbability(1, 10, 0), 0, 'p=0 → all mass at 0, P(X≥1)=0')
+  assert.equal(binomialUpperTailProbability(10, 10, 1), 1, 'p=1 → all mass at n')
+  // Exact textbook values.
+  approx(binomialUpperTailProbability(6, 6, 0.5), 1 / 64, 'P(X≥6 | 6, 0.5)') // 0.015625
+  approx(binomialUpperTailProbability(12, 12, 0.75), Math.pow(0.75, 12), 'P(X≥12 | 12, 0.75)') // ~0.0317
+  approx(binomialUpperTailProbability(7, 8, 0.5), 9 / 256, 'P(X≥7 | 8, 0.5)') // 0.035 — the twice-daily 7/8 golden
+  // A whole-tail sum equals 1 (X≥0), and P(X≥k) is non-increasing in k.
+  approx(binomialUpperTailProbability(0, 8, 0.4), 1, 'full lower endpoint is 1')
+  let prev = 1
+  for (let k = 0; k <= 8; k++) {
+    const p = binomialUpperTailProbability(k, 8, 0.4)
+    assert.ok(p <= prev + 1e-12, `monotone non-increasing at k=${k}`)
+    prev = p
+  }
+  // The once-daily reality the gate encodes: at base 0.75, an 8/8 long run is NOT significant (~0.10),
+  // a 12/12 run IS (~0.032) — which is why once-daily needs more evidence than thrice-daily.
+  assert.ok(binomialUpperTailProbability(8, 8, 0.75) > 0.05, 'once-daily 8/8 is not distinctive')
+  assert.ok(binomialUpperTailProbability(12, 12, 0.75) < 0.05, 'once-daily 12/12 is')
+})
+
+// ── L1 §PROPERTY SWEEP + §RECALL (Signals v2 / CUL-7 — the REQUIRED CI calibration gate) ────────
 //
-// The seeded falsification that the LOCKED floors (minLongGapFraction 0.6, minObservedToExpectedRatio
-// 1.7) keep the CHANCE fire rate ≪5% on NULL models — random onsets against a fixed feeding schedule,
-// with NO real empty-stomach pattern. The ≥6h bucket has a large schedule-dependent base rate (~0.5
-// twice-daily, ~0.75 once-daily), so this gate is what proves the GUARD (not just the fraction floor)
-// collapses the meal-fed nulls. Deterministic (seeded). The twice-daily n=7 slice is the tracked
-// intrinsic residual (~5.5%; the p=0.5 combinatorial floor, ⑥'s n=8 analog) — its ceiling is
-// deliberately above 5%, exactly as ⑥'s n=8 is.
+// The seeded falsification that the guard (a base rate estimated over the EPISODE-SPAN window + a
+// one-sample EXACT BINOMIAL upper-tail test at baseRateAlpha) keeps the CHANCE fire rate ≪5% on NULL
+// models AND still fires on true positives. The ≥6h bucket has a large schedule-dependent base rate
+// (~0.5 twice-daily, ~0.75 once-daily), so a fraction floor alone cannot separate signal from
+// schedule — the base-rate test is what does it. Two CUL-7 reviews broke the earlier multiplicative
+// guard, and BOTH breaks are now regression-locked here:
+//   • NON-STATIONARY schedules (a real feeding change, or logging fatigue where only the AM feed is
+//     logged recently) fired the old guard at ~81% on pure noise — because it read the base rate off
+//     the dense historical regime. The windowed base rate fixes it; the regime-change + logging-fatigue
+//     nulls below assert it.
+//   • The old ratio guard was UNSATISFIABLE above base ~0.588, so a once-daily-fed cat (the classic
+//     empty-stomach case) could not fire even at 100% long. The §RECALL test asserts the once-daily
+//     true positive now fires.
+// Deterministic (seeded). The exact binomial self-calibrates the null to ≤ baseRateAlpha at any base
+// rate, so the per-n ceilings are uniform (no intrinsic-residual carve-out is needed any more).
 
 const L1_HOUR = 3_600_000
 const L1_DAY = 86_400_000
 const L1_NOW_MS = Date.parse(NOW)
 
-/** Feed on `scheduleHours` (UTC hours-of-day) every day across the 60-day window. Base rate is
- *  timezone-independent (L1 does not use tz to fire), so UTC feeding hours are the honest schedule. */
-function scheduleMeals(scheduleHours: number[]): MealEvent[] {
+/** Feed on `scheduleHours` (UTC hours-of-day) every day across the 60-day window (stationary). Base
+ *  rate is timezone-independent (L1 does not use tz to fire), so UTC feeding hours are the honest
+ *  schedule. `recentHours` (optional) replaces the schedule for the recent `recentDays` days — a
+ *  NON-STATIONARY regime change. */
+function scheduleMeals(scheduleHours: number[], recentHours?: number[], recentDays = 14): MealEvent[] {
   const meals: MealEvent[] = []
   for (let d = 1; d <= 60; d++) {
-    for (const h of scheduleHours) {
+    const hrs = recentHours && d < recentDays ? recentHours : scheduleHours
+    for (const h of hrs) {
+      // NOW is at 12:00, so anchor `h` to that day's MIDNIGHT (−(12−h)h) — a clock hour, matching
+      // longAtHour below. (The nulls only depend on inter-meal GAPS, so the phase never mattered
+      // there; the recall fixtures place vomits at specific clock hours and do depend on it.)
       meals.push(
         meal({
-          occurredAt: new Date(L1_NOW_MS - d * L1_DAY + h * L1_HOUR).toISOString(),
+          occurredAt: new Date(L1_NOW_MS - d * L1_DAY - (12 - h) * L1_HOUR).toISOString(),
           foodType: 'meal',
           primaryProtein: 'x',
         }),
@@ -3041,9 +3081,11 @@ function scheduleMeals(scheduleHours: number[]): MealEvent[] {
   }
   return meals
 }
-/** n witnessed vomits on distinct recent days at uniform-random times (or Poisson inter-arrival). */
-function randomNullVomits(rng: () => number, n: number, poisson: boolean): SymptomEvent[] {
+/** n witnessed vomits on distinct days at uniform-random times (or Poisson inter-arrival). `recentOnly`
+ *  confines them to the last 14 days — the regime the non-stationary nulls' recent schedule governs. */
+function randomNullVomits(rng: () => number, n: number, poisson: boolean, recentOnly = false): SymptomEvent[] {
   const out: SymptomEvent[] = []
+  const span = recentOnly ? 14 : 50
   if (poisson) {
     let t = L1_NOW_MS - 55 * L1_DAY
     const meanGap = (50 * L1_DAY) / (n + 2)
@@ -3052,11 +3094,11 @@ function randomNullVomits(rng: () => number, n: number, poisson: boolean): Sympt
       if (t < L1_NOW_MS) out.push(wVomitIso(new Date(t).toISOString()))
     }
     while (out.length < n) {
-      out.push(wVomitIso(new Date(L1_NOW_MS - (1 + Math.floor(rng() * 50)) * L1_DAY - Math.floor(rng() * L1_DAY)).toISOString()))
+      out.push(wVomitIso(new Date(L1_NOW_MS - (1 + Math.floor(rng() * span)) * L1_DAY - Math.floor(rng() * L1_DAY)).toISOString()))
     }
   } else {
     const days = new Set<number>()
-    while (days.size < n) days.add(1 + Math.floor(rng() * 50))
+    while (days.size < n) days.add(1 + Math.floor(rng() * span))
     for (const d of days) {
       out.push(wVomitIso(new Date(L1_NOW_MS - d * L1_DAY - Math.floor(rng() * L1_DAY)).toISOString()))
     }
@@ -3064,36 +3106,91 @@ function randomNullVomits(rng: () => number, n: number, poisson: boolean): Sympt
   return out
 }
 
-Deno.test('detectEmptyStomachTiming — §PROPERTY SWEEP: random onsets on fixed feeding schedules fire ≪5% (uniform / Poisson / grazing)', () => {
-  const NULLS: { name: string; sched: number[]; poisson: boolean; pooledCeil: number; perNCeil: number }[] = [
-    { name: 'once-daily(base~0.75)', sched: [8], poisson: false, pooledCeil: 0.02, perNCeil: 0.03 },
-    { name: 'twice-daily(base~0.5)', sched: [8, 20], poisson: false, pooledCeil: 0.045, perNCeil: 0.08 },
-    { name: 'thrice-daily(base~0.25)', sched: [7, 15, 23], poisson: false, pooledCeil: 0.03, perNCeil: 0.05 },
-    { name: 'grazing(8/day)', sched: [0, 3, 6, 9, 12, 15, 18, 21], poisson: false, pooledCeil: 0.01, perNCeil: 0.02 },
-    { name: 'twice-daily-poisson', sched: [8, 20], poisson: true, pooledCeil: 0.03, perNCeil: 0.05 },
+Deno.test('detectEmptyStomachTiming — §PROPERTY SWEEP: random onsets fire ≪5% on stationary AND non-stationary null schedules', () => {
+  const NULLS: { name: string; meals: MealEvent[]; poisson: boolean; recentOnly: boolean }[] = [
+    { name: 'once-daily(base~0.75)', meals: scheduleMeals([8]), poisson: false, recentOnly: false },
+    { name: 'twice-daily(base~0.5)', meals: scheduleMeals([8, 20]), poisson: false, recentOnly: false },
+    { name: 'thrice-daily(base~0.25)', meals: scheduleMeals([7, 15, 23]), poisson: false, recentOnly: false },
+    { name: 'grazing(8/day)', meals: scheduleMeals([0, 3, 6, 9, 12, 15, 18, 21]), poisson: false, recentOnly: false },
+    { name: 'twice-daily-poisson', meals: scheduleMeals([8, 20]), poisson: true, recentOnly: false },
+    // NON-STATIONARY (the old guard fired ~81% here) — recent vomits against a recently-changed schedule.
+    { name: 'regime 3x->1x recent', meals: scheduleMeals([7, 15, 23], [8]), poisson: false, recentOnly: true },
+    { name: 'regime 2x->1x recent', meals: scheduleMeals([8, 20], [8]), poisson: false, recentOnly: true },
+    // Logging fatigue: fed 2x/day but only the 08:00 feed is logged in the recent regime.
+    { name: 'logging-fatigue', meals: scheduleMeals([8, 20], [8]), poisson: false, recentOnly: true },
   ]
+  // The exact binomial self-calibrates the null to ≤ baseRateAlpha (0.05); measured pooled ~0–2% and
+  // every per-n slice well under alpha. Ceilings carry margin for the seeded 1500-trial estimate.
+  const POOLED_CEIL = 0.035
+  const PER_N_CEIL = 0.05
   const TRIALS = 1500
   for (const nm of NULLS) {
-    const meals = scheduleMeals(nm.sched)
-    const rng = mulberry32(0x5eed ^ (nm.poisson ? 0x111 : 0) ^ (nm.name.length * 71))
+    const rng = mulberry32(0x5eed ^ (nm.poisson ? 0x111 : 0) ^ (nm.recentOnly ? 0x222 : 0) ^ (nm.name.length * 71))
     let fires = 0
     let total = 0
     for (let n = 6; n <= 10; n++) {
       let perFires = 0
       for (let t = 0; t < TRIALS; t++) {
-        if (detectEmptyStomachTiming(input({ symptomEvents: randomNullVomits(rng, n, nm.poisson), mealEvents: meals })).length > 0) {
+        if (detectEmptyStomachTiming(input({ symptomEvents: randomNullVomits(rng, n, nm.poisson, nm.recentOnly), mealEvents: nm.meals })).length > 0) {
           perFires++
         }
       }
       const r = perFires / TRIALS
       fires += perFires
       total += TRIALS
-      assert.ok(r < nm.perNCeil, `${nm.name} n=${n} fire rate ${(r * 100).toFixed(2)}% exceeded its tracked ceiling ${nm.perNCeil * 100}%`)
+      assert.ok(r < PER_N_CEIL, `${nm.name} n=${n} fire rate ${(r * 100).toFixed(2)}% exceeded the ${PER_N_CEIL * 100}% per-n ceiling`)
     }
     const pooled = fires / total
     console.log(`L1 null-model ${nm.name}: pooled ${(pooled * 100).toFixed(2)}% (${fires}/${total})`)
-    assert.ok(pooled < nm.pooledCeil, `${nm.name} pooled fire rate ${(pooled * 100).toFixed(2)}% must be < ${nm.pooledCeil * 100}%`)
+    assert.ok(pooled < POOLED_CEIL, `${nm.name} pooled fire rate ${(pooled * 100).toFixed(2)}% must be < ${POOLED_CEIL * 100}%`)
   }
+})
+
+// A witnessed vomit at UTC `hour` on the (2+i)-th most recent day — distinct days, so nothing collapses.
+function longAtHour(hour: number, i: number): SymptomEvent {
+  return wVomitIso(new Date(L1_NOW_MS - (2 + i) * L1_DAY - (12 - hour) * L1_HOUR).toISOString())
+}
+
+Deno.test('detectEmptyStomachTiming — §RECALL: true-positive empty-stomach cats FIRE, including the once-daily case the old guard could never fire', () => {
+  // ONCE-DAILY (base ~0.75): fed only at 08:00; 12 vomits at 05:00 (21h after the previous feed → long).
+  // The earlier multiplicative guard's threshold exceeded the episode count for any base ≥ ~0.588, so
+  // this could not fire at ANY long fraction; the exact binomial fires it (P(X≥12|12,0.75) ≈ 0.032).
+  const onceMeals = scheduleMeals([8])
+  const onceVomits = Array.from({ length: 12 }, (_v, i) => longAtHour(5, i))
+  const onceFires = detectEmptyStomachTiming(input({ symptomEvents: onceVomits, mealEvents: onceMeals }))
+  assert.equal(onceFires.length, 1, 'a once-daily cat with 12 empty-stomach vomits fires')
+  assert.equal(onceFires[0].longCount, 12)
+
+  // THRICE-DAILY (base ~0.25): fed 07:00/15:00/23:00; 7 long at 06:00 (7h after 23:00 → long) + 3 mid.
+  const thriceMeals = scheduleMeals([7, 15, 23])
+  const thriceVomits = [
+    ...Array.from({ length: 7 }, (_v, i) => longAtHour(6, i)),
+    ...Array.from({ length: 3 }, (_v, i) => longAtHour(9, 7 + i)), // 09:00 → 2h after 07:00 → mid
+  ]
+  const thriceFires = detectEmptyStomachTiming(input({ symptomEvents: thriceVomits, mealEvents: thriceMeals }))
+  assert.equal(thriceFires.length, 1, 'a thrice-daily cat with 7 of 10 empty-stomach fires')
+  assert.equal(thriceFires[0].longCount, 7)
+})
+
+Deno.test('detectTimeOfDayClustering — §7#4d (Signals v2 / CUL-7, review finding ③): ⑥ is suppressed when its cluster IS L1\'s long episodes', () => {
+  // A once-daily-fed cat whose 12 empty-stomach vomits all land at the SAME clock (05:00 UTC → NY
+  // 01:00): L1 fires (12/12 long) AND ⑥ clusters at 01:00 on the SAME episodes. L1 already carries that
+  // clock band as evidence (clockBand), so a standalone ⑥ duplicates it — the D1 "duplicate cards" gap.
+  // The suppression now measures overlap against the WHOLE timing lane (⑤-rapid ∪ L1-long), so ⑥ drops.
+  const meals = scheduleMeals([8])
+  const symptomEvents = Array.from({ length: 12 }, (_v, i) => longAtHour(5, i))
+  assert.equal(detectEmptyStomachTiming(input({ symptomEvents, mealEvents: meals })).length, 1, 'L1 fires standalone')
+  assert.equal(
+    detectTimeOfDayClustering(input({ symptomEvents, mealEvents: meals, timezone: NY })).length,
+    1,
+    '⑥ fires standalone (before composition)',
+  )
+  const ranked = detectSignals(input({ symptomEvents, mealEvents: meals, timezone: NY }))
+  assert.ok(ranked.some((r) => r.finding.type === 'empty_stomach_timing'), 'L1 survives')
+  assert.ok(
+    !ranked.some((r) => r.finding.type === 'timeofday_clustering'),
+    '⑥ suppressed — it duplicates L1\'s clock band (overlap with the long episodes = 1.0)',
+  )
 })
 
 // ── timing_story composition (Signals v2 / CUL-7 — the ⑤ + L1 merge) ─────────────────

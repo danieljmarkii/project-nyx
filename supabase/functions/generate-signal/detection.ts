@@ -1536,18 +1536,21 @@ export interface DetectionConfig {
     minLongGapEpisodes: number
     /** Minimum timed-eligible episodes (the DENOMINATOR); shared value with ⑤'s minEligibleEpisodes. */
     minEligibleEpisodes: number
-    /** Minimum long/eligible fraction — the crude schedule-independent floor (⑤'s minRapidFraction mirror). */
+    /** Minimum long/eligible fraction — a crude schedule-independent backstop, below the binomial gate. */
     minLongGapFraction: number
     /**
-     * The empty-stomach GUARD ratio (⑤'s minObservedToExpectedRatio mirror, but base-rate-aware in
-     * the OTHER direction). A cat fed twice daily is ≥ longGapHours post-meal ~half the day, once
-     * daily ~three-quarters, so the ≥6h bucket has a large SCHEDULE-DEPENDENT chance base rate and a
-     * fixed fraction floor cannot separate signal from a meal-fed null (unlike ⑤, where the grazer is
-     * the confound). Observed long must clear this multiple of the schedule's OWN long base rate
-     * (expectedLong = eligible × scheduleLongBaseRate), so a once/twice-daily feeder whose vomits
-     * merely match its schedule stays silent. Locked by the property sweep at 6h.
+     * The empty-stomach GUARD's significance level (the base-rate defense). The ≥ longGapHours bucket
+     * has a large SCHEDULE-DEPENDENT chance base rate — a twice-daily feeder is empty-stomach ~half the
+     * day, once-daily ~three-quarters — so a fixed fraction floor cannot separate signal from a meal-fed
+     * null (unlike ⑤, where the grazer is the confound). L1 fires only when the observed long count is
+     * more than the schedule's OWN long base rate would produce by chance: a one-sample EXACT BINOMIAL
+     * upper-tail test P(X ≥ longCount | Binomial(eligible, scheduleLongBaseRate)) < baseRateAlpha. The
+     * exact test self-calibrates the null fire rate to ≤ this alpha at ANY base rate (so no per-schedule
+     * tuning), and — unlike the earlier multiplicative ratio — can still fire at a high base rate given
+     * enough disproportionate evidence. Locked by the property sweep at 6h (null false-positive AND
+     * true-positive recall). See DEFAULT_CONFIG.emptyStomach for the anchor + measured rates.
      */
-    minObservedToExpectedRatio: number
+    baseRateAlpha: number
     /** ≥1 long episode must fall within this many days, so a stale cluster doesn't lead (⑤'s recencyDays mirror). */
     recencyDays: number
     /** The empty-stomach band boundary in HOURS — the phenotype definition (§0 D10 / CUL-16). */
@@ -1775,30 +1778,28 @@ export const DEFAULT_CONFIG: DetectionConfig = {
   // by physiology; the floors are set by the seeded property sweep AT that boundary (G6: nothing
   // is tuned to make any record fire or not fire).
   emptyStomach: {
-    // ── Floors LOCKED by the seeded property sweep at 6h (uniform-random / Poisson / grazing null
-    // models; detection.test.ts "L1 §PROPERTY SWEEP"). The empty-stomach ≥6h bucket has a large,
-    // SCHEDULE-DEPENDENT chance base rate — ~0.5 of the day for a twice-daily feeder, ~0.75 for a
-    // once-daily one (a solid meal clears in <6h, so most of a long inter-meal gap is "empty
-    // stomach" by the clock). The ⑥ analogy the CUL-7 brief drew (raise the fraction floor) is
-    // NECESSARY BUT NOT SUFFICIENT: a fixed fraction floor high enough to beat the once-daily 0.75
-    // null (~0.9) would kill every realistic golden, and NO fixed fraction floor separates the
-    // twice-daily 0.5 null at small n (the sweep confirmed: at frac 0.5/0.6 the twice-daily null
-    // fires ~19% until the guard is added). So the sweep locks a modest fraction floor AND the
-    // schedule-adaptive GUARD (minObservedToExpectedRatio) below — the ⑤ grazing-guard's mirror,
-    // which is what actually collapses the meal-fed nulls. Measured pooled n=6..10 fire rates at
-    // frac 0.6 / ratio 1.7 (deno sweep, 8k trials/n): twice-daily 0.5 null ~2.5%, once-daily 0.75
-    // null ~0.0% (guard threshold > eligible → impossible), thrice-daily ~1.6%, grazing 0.0%,
-    // Poisson(twice) ~1.1%; the golden (7 of 8 empty-stomach) still fires. ACCEPTED RESIDUAL: the
-    // twice-daily n=7 slice alone is ~5.5% — an INTRINSIC combinatorial residual at a base rate of
-    // exactly 0.5 (P(Binom(7,0.5) ≥ 6) ≈ 6.25%), the same shape as ⑥'s n=8 residual; it cannot be
-    // tuned out without a threshold that also kills the golden. Accepted for v1: the card is
-    // DESCRIPTIVE (never reassures, routes to the vet), so its worst case is a mildly-noisy
-    // empty-stomach card, never a false all-clear. The property test asserts the pooled rate AND
-    // tracks the per-n slice so a regression is caught. Tune on real data, not a re-decision.
-    minLongGapEpisodes: 3, // confirmed by the sweep — the numerator floor; the guard scales past it.
+    // ── Floors LOCKED by the seeded property sweep at 6h (detection.test.ts "L1 §PROPERTY SWEEP"),
+    // which asserts BOTH null-model false-positive rates AND true-positive recall. The empty-stomach
+    // ≥6h bucket has a large, SCHEDULE-DEPENDENT chance base rate — ~0.5 of the day for a twice-daily
+    // feeder, ~0.75 for a once-daily one (a solid meal clears in <6h, so most of a long inter-meal gap
+    // is "empty stomach" by the clock). A fixed fraction floor cannot separate signal from schedule
+    // here, and two CUL-7 reviews broke the earlier multiplicative-ratio guard: it fired on
+    // NON-STATIONARY schedules (a base rate estimated over the wrong window), and it was mathematically
+    // UNSATISFIABLE above base ~0.588 (every once-daily-fed cat — the classic empty-stomach case —
+    // could not fire even at 100% long). The guard is now (1) a base rate estimated over the window the
+    // EPISODES occupy (episode-span, not the whole 60 days — so it tracks the recent regime / logging
+    // density), and (2) a one-sample EXACT BINOMIAL upper-tail test at `baseRateAlpha`, which
+    // self-calibrates the null to ≤ alpha at ANY base rate and still fires at a high base rate given
+    // enough disproportionate evidence. Measured pooled n=6..10 fire rates (deno seeded sweep,
+    // detection.test.ts §PROPERTY SWEEP, 1.5k trials/n): stationary nulls once 0.0% / twice ~1.7% /
+    // thrice ~1.6% / grazing 0.0% / Poisson ~0.8%; the NON-STATIONARY regime-change (3x→1x recent)
+    // ~0.8% and logging-fatigue ~1.1% — the SAME inputs fired the old ratio guard at ~81%; and the
+    // §RECALL goldens (once-daily 12/12, thrice-daily 7/10, twice-daily 7/8) all FIRE, including the
+    // once-daily case the old guard could never fire. Tune on real data, not a re-decision.
+    minLongGapEpisodes: 3, // the numerator floor — never fire on 2 episodes even if binomially significant.
     minEligibleEpisodes: 6, // SHARED with ⑤ (postprandial.minEligibleEpisodes) — the same denominator floor.
-    minLongGapFraction: 0.6, // sweep-locked (raised from the provisional 0.25; the guard does the rest).
-    minObservedToExpectedRatio: 1.7, // sweep-locked — the schedule-adaptive base-rate defense (see above).
+    minLongGapFraction: 0.6, // a crude schedule-independent BACKSTOP below the binomial gate (low-base-rate cats).
+    baseRateAlpha: 0.05, // sweep-locked — the exact-binomial significance level (recall fires, nulls ≪5%).
     recencyDays: 14,
     // The empty-stomach BAND BOUNDARY: minimum hours since the last eligible feeding for a symptom
     // episode to count as "empty stomach" (the L1 numerator; the A2 card's "6h+" band; the reference
@@ -4019,6 +4020,40 @@ function scheduleLongBaseRate(
   return eligibleTime > 0 ? longTime / eligibleTime : 0
 }
 
+/**
+ * One-sample exact binomial UPPER-TAIL probability: P(X ≥ k | X ~ Binomial(n, p)) (Signals v2 /
+ * CUL-7). This is L1's base-rate gate — "is the observed long count MORE than the schedule's own
+ * base rate would produce by chance?". It replaces the earlier multiplicative `ratio × expected`
+ * guard, which two independent reviews broke: that guard fired on non-stationary schedules (a
+ * mis-estimated base rate) AND was mathematically UNSATISFIABLE for any pet whose base rate ≥
+ * 1/ratio (every once-daily-fed cat, base ~0.75 — the classic empty-stomach presentation — could
+ * not fire even at 100% long). The exact test fixes both: it self-calibrates the null fire rate to
+ * ≤ alpha for ANY base rate (so no per-schedule tuning), and it CAN fire at high base rate given
+ * enough disproportionate evidence (a once-daily cat needs more all-long episodes to clear 0.75
+ * than a thrice-daily cat needs to clear 0.25 — which is the honest bar).
+ *
+ * Computed with the stable pmf recurrence pmf(i+1) = pmf(i)·(n−i)/(i+1)·p/(1−p) from pmf(0) =
+ * (1−p)^n; every pmf(i) ∈ [0,1] so there is no overflow at the episode counts a 60-day record
+ * produces (n ≤ a few dozen). p is a base rate in [0, ~0.75) here (a schedule's long fraction can
+ * never reach 1 — the first `longGapHours` after every meal is non-long), so 1−p is bounded away
+ * from 0; the p≤0 / p≥1 / k≤0 / k>n endpoints are handled explicitly. PURE.
+ */
+export function binomialUpperTailProbability(k: number, n: number, p: number): number {
+  if (!Number.isFinite(k) || !Number.isFinite(n) || !Number.isFinite(p)) return 1
+  if (k <= 0) return 1 // P(X ≥ 0) = 1
+  if (k > n) return 0 // impossible outcome
+  if (p <= 0) return 0 // all mass at X=0, and k ≥ 1 here
+  if (p >= 1) return 1 // all mass at X=n ≥ k
+  let pmf = Math.pow(1 - p, n) // pmf(0)
+  let tail = 0
+  const ratio = p / (1 - p)
+  for (let i = 0; i <= n; i++) {
+    if (i >= k) tail += pmf
+    if (i < n) pmf = (pmf * (n - i) * ratio) / (i + 1)
+  }
+  return Math.min(1, tail)
+}
+
 export function detectEmptyStomachTiming(
   input: DetectionInput,
   config: DetectionConfig = DEFAULT_CONFIG,
@@ -4041,17 +4076,30 @@ export function detectEmptyStomachTiming(
   // Recency: a stale cluster must not lead today's surface.
   if (!longEpisodes.some((e) => nowMs - e.onsetMs <= recencyMs)) return []
 
-  // The EMPTY-STOMACH GUARD (⑤'s grazing-guard mirror, base-rate-aware) — observed long must clear a
-  // multiple of the schedule's own long base rate, so a once/twice-daily feeder whose vomits merely
-  // match its schedule's chance rate cannot trip an empty-stomach card. At baseRate 0 (grazer / <2
-  // feedings) it collapses to the minLongGapEpisodes floor and the fraction floor governs.
+  // The EMPTY-STOMACH GUARD — the observed long count must be MORE than the schedule's OWN long base
+  // rate would produce by chance (a once/twice-daily feeder is ≥6h post-meal much of the day, so a
+  // fixed fraction floor cannot separate signal from schedule). Two pieces, both from the CUL-7
+  // review:
+  //   1. The base rate is estimated over the window the ELIGIBLE EPISODES actually occupy (their
+  //      earliest onset, minus the feeding lookback, to now), NOT the whole 60 days. A non-stationary
+  //      schedule — a real feeding change, or logging fatigue where only the AM feed is logged
+  //      recently — otherwise reads its base rate off the dense historical regime while the recent
+  //      episodes experience the sparse recent one, and random recent vomits fire on noise. Windowing
+  //      to the episode span keeps the base rate consistent with the SAME logs that classified the
+  //      episodes (sparse logs ⇒ higher apparent base rate ⇒ a stricter bar — self-correcting).
+  //   2. The test is a one-sample EXACT BINOMIAL upper tail, not a multiplicative ratio. The ratio
+  //      guard was unsatisfiable above base ~0.588 (every once-daily cat), and it under-/over-fired
+  //      on a mis-estimated base rate; the exact test self-calibrates the null to ≤ alpha at any base
+  //      rate and can still fire at a high base rate given enough disproportionate evidence.
+  const eligibleOnsets = dist.eligible.map((e) => e.onsetMs)
+  const spanStart =
+    Math.min(...eligibleOnsets) - config.postprandial.feedingLookbackHours * MS_PER_HOUR
   const baseRate = scheduleLongBaseRate(
-    inWindowFeedings,
+    inWindowFeedings.filter((ms) => ms >= spanStart),
     cfg.longGapHours,
     config.postprandial.feedingLookbackHours,
   )
-  const expectedLong = eligibleCount * baseRate
-  if (longCount < Math.max(cfg.minLongGapEpisodes, cfg.minObservedToExpectedRatio * expectedLong)) {
+  if (binomialUpperTailProbability(longCount, eligibleCount, baseRate) >= cfg.baseRateAlpha) {
     return []
   }
 
@@ -4936,54 +4984,62 @@ export function rankFindings(findings: Finding[], ctx: PetContext): RankedFindin
 /**
  * §4.4 / §6 curation — ⑤ (postprandial timing) suppresses same-symptom ⑥ (time-of-day clustering).
  *
- * SIGNALS v2 (B-755 / CUL-7) — now EPISODE-SET-AWARE. The shipped rule dropped ⑥ whenever ANY ⑤
- * fired for the symptom, on the assumption that a clock cluster merely RESTATES ⑤'s meal-adjacency.
- * The deep-dive F1 mechanism showed that assumption is false when the clusters are DIFFERENT episodes:
- * a cat that vomits rapid-after-dinner (⑤) AND, separately, empty-stomach at 5am (⑥ clusters at 5am)
- * had its empty-stomach clock finding HIDDEN by the blanket rule — the exact pattern ⑥ exists to
- * surface. So ⑤ now suppresses ⑥ only when ≥ `suppressionOverlapFraction` of ⑥'s CLUSTER episodes are
- * also ⑤'s meal-adjacent (rapid) episodes — i.e. ⑥ genuinely restates ⑤. Below that, the clock cluster
- * is a broader / different pattern and ⑥ survives. Onsets match by exact ms because ⑤ and ⑥ collapse
- * the SAME vomit list with the SAME 3h gap (one collapse algorithm). Owned + adversarial-gated.
+ * SIGNALS v2 (B-755 / CUL-7) — now EPISODE-SET-AWARE, over the WHOLE TIMING LANE (⑤ + L1). The shipped
+ * rule dropped ⑥ whenever ANY ⑤ fired for the symptom, on the assumption that a clock cluster merely
+ * RESTATES ⑤'s meal-adjacency. The deep-dive F1 mechanism showed that assumption is false when the
+ * clusters are DIFFERENT episodes: a cat that vomits rapid-after-dinner (⑤) AND, separately,
+ * empty-stomach at 5am (⑥ clusters at 5am) had its empty-stomach clock finding HIDDEN by the blanket
+ * rule — the exact pattern ⑥ exists to surface. So ⑥ is now suppressed only when ≥
+ * `suppressionOverlapFraction` of its CLUSTER episodes are also in the timing lane's episode set —
+ * ⑤'s meal-adjacent (rapid) episodes OR L1's empty-stomach (long) episodes. Both belong: ⑤ already
+ * states the meal-adjacency, and L1 (and the merged timing_story) already carries the long episodes'
+ * clock band (`clockBand`), so a ⑥ on those same long episodes duplicates it (the CUL-7 review's
+ * finding ③, a D1 "duplicate cards" gap). Below the threshold, ⑥'s cluster is a DIFFERENT pattern
+ * (mid-band or otherwise un-surfaced episodes) and ⑥ survives. Onsets match by exact ms because ⑤/⑥
+ * collapse the SAME vomit list with the SAME 3h gap (one collapse algorithm). Owned + adversarial-gated.
  *
- * FALLBACK — a ⑤ or ⑥ finding without its onset set (a pre-v2 cached finding, or a synthetic test
- * finding) reverts that symptom to the shipped UNCONDITIONAL suppression, so behaviour never changes
- * silently for an un-instrumented finding. Lives in the composition layer (each detector stays pure);
- * runs BEFORE composeTimingStory (which consumes ⑤) so ⑤'s onsets are still present here.
+ * FALLBACK — a ⑤ finding without its onset set (a pre-v2 cached finding, or a synthetic test finding)
+ * reverts that symptom to the shipped UNCONDITIONAL suppression, so behaviour never changes silently
+ * for an un-instrumented finding. Lives in the composition layer (each detector stays pure); runs
+ * BEFORE composeTimingStory (which consumes ⑤ + L1) so their onsets are still present here.
  */
 function suppressTimeOfDayWhenPostprandial(
   findings: Finding[],
   config: DetectionConfig,
 ): Finding[] {
-  // Per symptom: the union of ⑤'s rapid onset instants, or `null` if any ⑤ for that symptom lacks
-  // its onset set (→ the un-instrumented fallback: unconditional suppression for that symptom).
-  const rapidOnsetsBySymptom = new Map<SymptomType, Set<number> | null>()
-  for (const f of findings) {
-    if (f.type !== 'postprandial_timing') continue
-    if (rapidOnsetsBySymptom.get(f.symptomType) === null) continue // already un-instrumented
-    if (!f.rapidEpisodeOnsets) {
-      rapidOnsetsBySymptom.set(f.symptomType, null)
-      continue
+  // Per symptom: the union of the TIMING LANE's episode instants — ⑤'s rapid (meal-adjacent) onsets
+  // AND L1's long (empty-stomach) onsets. `null` marks a symptom whose ⑤ lacks its onset set (→ the
+  // un-instrumented fallback: unconditional suppression).
+  const laneOnsetsBySymptom = new Map<SymptomType, Set<number> | null>()
+  const addOnsets = (sym: SymptomType, onsets: number[] | undefined) => {
+    if (laneOnsetsBySymptom.get(sym) === null) return // already un-instrumented — stays that way
+    if (!onsets) {
+      laneOnsetsBySymptom.set(sym, null)
+      return
     }
-    const set = rapidOnsetsBySymptom.get(f.symptomType) ?? new Set<number>()
-    for (const ms of f.rapidEpisodeOnsets) set.add(ms)
-    rapidOnsetsBySymptom.set(f.symptomType, set)
+    const set = laneOnsetsBySymptom.get(sym) ?? new Set<number>()
+    for (const ms of onsets) set.add(ms)
+    laneOnsetsBySymptom.set(sym, set)
   }
-  if (rapidOnsetsBySymptom.size === 0) return findings
+  for (const f of findings) {
+    if (f.type === 'postprandial_timing') addOnsets(f.symptomType, f.rapidEpisodeOnsets)
+    else if (f.type === 'empty_stomach_timing') addOnsets(f.symptomType, f.longEpisodeOnsets)
+  }
+  if (laneOnsetsBySymptom.size === 0) return findings
 
   const threshold = config.timeofday.suppressionOverlapFraction
   return findings.filter((f) => {
     if (f.type !== 'timeofday_clustering') return true
-    if (!rapidOnsetsBySymptom.has(f.symptomType)) return true // no same-symptom ⑤ → keep ⑥
-    const rapidSet = rapidOnsetsBySymptom.get(f.symptomType)!
-    // Un-instrumented either side → the shipped unconditional suppression (drop ⑥).
-    if (rapidSet === null || !f.clusterEpisodeOnsets || f.clusterEpisodeOnsets.length === 0) {
+    if (!laneOnsetsBySymptom.has(f.symptomType)) return true // no timing-lane finding → keep ⑥
+    const laneSet = laneOnsetsBySymptom.get(f.symptomType)!
+    // Un-instrumented ⑤, or a ⑥ with no cluster onsets → the shipped unconditional suppression.
+    if (laneSet === null || !f.clusterEpisodeOnsets || f.clusterEpisodeOnsets.length === 0) {
       return false
     }
     let overlap = 0
-    for (const ms of f.clusterEpisodeOnsets) if (rapidSet.has(ms)) overlap++
-    // Suppress ⑥ only when its cluster IS (mostly) ⑤'s meal-adjacent set — else it is a different
-    // (empty-stomach / broader) clock pattern and survives.
+    for (const ms of f.clusterEpisodeOnsets) if (laneSet.has(ms)) overlap++
+    // Suppress ⑥ only when its cluster IS (mostly) the timing lane's episode set — else it is a
+    // different (mid-band / un-surfaced) clock pattern and survives.
     return overlap / f.clusterEpisodeOnsets.length < threshold
   })
 }
@@ -5096,6 +5152,34 @@ function suppressWorseningWhenChronic(findings: Finding[]): Finding[] {
 }
 
 /**
+ * Signals v2 (CUL-7 review finding ②) — the internal onset arrays (`rapidEpisodeOnsets` /
+ * `longEpisodeOnsets` / `clusterEpisodeOnsets`) exist ONLY to feed the episode-set-aware suppression.
+ * Strip them once the suppression has run, so they never reach the phrasing / cache / HTTP layer: a
+ * future redeploy must not start bloating every live ⑤/⑥ card with raw per-episode timestamps the
+ * client ignores. Returns new findings; never mutates.
+ */
+function stripInternalOnsets(findings: Finding[]): Finding[] {
+  return findings.map((f) => {
+    if (f.type === 'postprandial_timing' && f.rapidEpisodeOnsets !== undefined) {
+      const copy = { ...f }
+      delete copy.rapidEpisodeOnsets
+      return copy
+    }
+    if (f.type === 'empty_stomach_timing' && f.longEpisodeOnsets !== undefined) {
+      const copy = { ...f }
+      delete copy.longEpisodeOnsets
+      return copy
+    }
+    if (f.type === 'timeofday_clustering' && f.clusterEpisodeOnsets !== undefined) {
+      const copy = { ...f }
+      delete copy.clusterEpisodeOnsets
+      return copy
+    }
+    return f
+  })
+}
+
+/**
  * Top-level entry point. Runs every registered detector, composes and ranks the
  * results (§5). An empty array means no finding cleared its floor — the caller
  * renders the building/stale state (§3.3); it is NOT an all-clear (§9).
@@ -5109,11 +5193,14 @@ export function detectSignals(
     findings.push(...detector.detect(input, config))
   }
   // Composition before ranking. ORDER MATTERS for the timing lane (Signals v2 / CUL-7):
-  //   1. suppressTimeOfDayWhenPostprandial — ⑤ suppresses ⑥ per symptom (§4.4/§6), now
-  //      episode-set-aware; it READS ⑤, so it must run BEFORE the merge consumes ⑤.
+  //   1. suppressTimeOfDayWhenPostprandial — ⑤/L1 suppress a redundant same-symptom ⑥ (§4.4/§6),
+  //      episode-set-aware; it READS the ⑤/L1 onset sets, so it must run BEFORE the merge/strip.
   //   2. composeTimingStory — merge a same-symptom ⑤ + L1 pair into one timing_story card.
-  //   3. suppressWorseningWhenChronic — ⑦ suppresses same-symptom ④ with firm-tier inheritance
+  //   3. stripInternalOnsets — drop the composition-only onset arrays before caching (finding ②).
+  //   4. suppressWorseningWhenChronic — ⑦ suppresses same-symptom ④ with firm-tier inheritance
   //      (§4.5/§5); disjoint type pair from the timing lane, so its position is free.
-  const composed = composeTimingStory(suppressTimeOfDayWhenPostprandial(findings, config))
+  const composed = stripInternalOnsets(
+    composeTimingStory(suppressTimeOfDayWhenPostprandial(findings, config)),
+  )
   return rankFindings(suppressWorseningWhenChronic(composed), input.pet)
 }

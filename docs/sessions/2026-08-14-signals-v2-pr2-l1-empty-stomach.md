@@ -18,21 +18,31 @@ CUL-7's unblock note (and the ⑥ analogy) steered toward "raise `minLongGapFrac
 
 - The empty-stomach ≥6h bucket has a **large, schedule-dependent chance base rate** — ~0.5 of the day for a twice-daily feeder, ~0.75 for a once-daily one (a solid meal clears in <6h, so most of a long inter-meal gap is "empty stomach" by the clock). This is the **opposite** confound to ⑤ (there the grazer inflates the rapid band; here the sparse feeder inflates the long band).
 - At `minLongGapFraction` 0.5/0.6 with no guard, the **twice-daily null fires ~19%**, and no fixed fraction floor separates it at small n without a threshold (~0.9) that also kills every realistic golden.
-- So L1 carries the **⑤ grazing-guard's mirror**: `longCount ≥ minObservedToExpectedRatio × expectedLong`, where `expectedLong = eligibleCount × scheduleLongBaseRate(...)` and `scheduleLongBaseRate` integrates the ≥6h tail over the actual consecutive in-window feeding gaps (~0.5 twice-daily, ~0.75 once-daily, ~0.25 thrice-daily, ~0 grazing). This makes the bar **schedule-adaptive**: a once/twice-daily feeder whose vomits merely match its schedule stays silent; a cat whose vomits are disproportionately empty-stomach fires. (This is G6-faithful — the constant is set by the sweep against null models, never to make any record fire.)
+- The first cut used the **⑤ grazing-guard's mirror** — a multiplicative `longCount ≥ ratio × eligible × scheduleLongBaseRate`. **Both reviewers broke it** (see "Review round 1" below), so the shipped guard is the corrected version:
 
-### The sweep (at 6h — the boundary is physiology, the floors are the sweep)
+### The guard — corrected after review round 1 (windowed base rate + exact binomial)
 
-Locked `minLongGapFraction = 0.6`, `minObservedToExpectedRatio = 1.7`. Measured pooled n=6..10 null-model fire rates (deno seeded sweep, asserted in CI):
+Two independent reviews (adversarial FAIL, code-review fix-before-merge) broke the multiplicative guard from one root cause — a ratio against a whole-window base rate is the wrong statistical shape:
 
-| null model | pooled fire rate |
-|---|---|
-| once-daily (base ~0.75) | 0.00% (guard threshold > eligible → impossible) |
-| twice-daily (base ~0.5) | 2.72% |
-| thrice-daily (base ~0.25) | 1.96% |
-| grazing (8/day) | 0.00% |
-| Poisson (twice-daily) | 1.16% |
+- **Adversarial (false positives):** `scheduleLongBaseRate` was estimated over the whole 60 days but applied to *recent* episodes, so a **non-stationary** schedule (fed 3×/day → 1×/day recently, or logging fatigue where only the AM feed is logged) read its base rate off the dense historical regime and fired on pure noise — measured **~81%** on the regime-change null.
+- **Code review (false negatives):** the multiplicative threshold `1.7 × base × eligible` **exceeds `eligible` for any base ≥ ~0.588**, so a **once-daily-fed cat** (base ~0.75 — the *classic* empty-stomach presentation) could not fire even at 100% long. No test exercised a once-daily true positive, so it shipped green.
 
-**Accepted residual:** the twice-daily **n=7 slice alone is ~5.5%** — an intrinsic combinatorial floor at a base rate of exactly 0.5 (P(Binom(7,0.5) ≥ 6) ≈ 6.25%), the same shape as ⑥'s n=8 residual. It cannot be tuned out without a threshold that also kills the golden. Accepted for v1: the card is descriptive (never reassures, routes to the vet), so its worst case is a mildly-noisy empty-stomach card, never a false all-clear. The property test asserts the pooled rate **and** tracks the per-n slice with a ceiling above 5% (so a regression is caught, the residual is visible — ⑥'s pattern). `minLongGapEpisodes 3` confirmed to hold.
+The corrected guard: **(1)** the base rate is estimated over the window the **eligible episodes occupy** (earliest onset − lookback → now), so it tracks the recent regime / logging density — self-correcting, because the *same* sparse logs both classify the episodes and set the base rate; **(2)** the test is a one-sample **exact binomial upper tail** `P(X ≥ longCount | Binomial(eligible, baseRate)) < baseRateAlpha`, which self-calibrates the null to ≤ alpha at *any* base rate and *can* fire at a high base rate given enough disproportionate evidence. `baseRateAlpha = 0.05` (sweep-locked). Config swap: `minObservedToExpectedRatio` → `baseRateAlpha`.
+
+### The re-sweep (false-positive AND recall, both asserted in CI)
+
+Measured pooled n=6..10 fire rates (deno seeded sweep, 1.5k trials/n):
+
+| null model | old ratio guard | reworked (binomial) |
+|---|---|---|
+| once-daily (base ~0.75) | 0.00% | 0.00% |
+| twice-daily (base ~0.5) | 2.72% | ~1.7% |
+| thrice-daily (base ~0.25) | 1.96% | ~1.6% |
+| grazing / Poisson | 0.0% / 1.16% | 0.0% / ~0.8% |
+| **regime-change 3×→1× recent** | **~81%** | **~0.8%** |
+| regime 2×→1× recent / logging-fatigue | (untested) | ~1.1% / ~1.1% |
+
+And a new **§RECALL** test asserts the true positives fire: once-daily 12/12 **fires** (the case the old guard could *never* fire), thrice-daily 7/10 fires, twice-daily 7/8 fires. The exact binomial self-calibrates, so there is **no accepted per-n residual** any more (the old twice-daily n=7 ~5.5% carve-out is gone — the binomial is exact). A direct `binomialUpperTailProbability` unit test pins the core against textbook values.
 
 ## The suppression behaviour change (the point of the PR)
 
@@ -42,13 +52,21 @@ The shipped rule dropped ⑥ whenever any ⑤ fired for the symptom — which **
 - **§7#4b (new):** a true schedule-fed vomiter (8 vomits, all rapid, all at 8am) — ⑥ **is** suppressed (overlap 1.0), the case the rule was always meant for.
 - **§7#4c (new — the rescue):** ⑤ fires on 6pm rapid episodes, a disjoint clock cluster sits at 6am — ⑥ **survives** (overlap 0), the empty-stomach pattern the blanket rule used to hide.
 
+## Review round 1 — both reviewers ran, both broke the guard, all findings addressed
+
+- **Guard (adversarial ① + code review):** reworked to windowed base rate + exact binomial (above). ✅
+- **Finding ③ (adversarial):** a surviving ⑥ could duplicate `timing_story.long.clockBand` when its cluster is L1's *long* episodes (the suppression only measured overlap vs ⑤-*rapid*). Fixed: the suppression now measures overlap against the **whole timing lane (⑤-rapid ∪ L1-long)** — test §7#4d. ✅
+- **Finding ② (code review):** the internal onset arrays (`rapidEpisodeOnsets` / `longEpisodeOnsets` / `clusterEpisodeOnsets`) reached the cached payload. Fixed: a `stripInternalOnsets` pass drops them after the suppression runs, before caching — a redeploy never bloats live ⑤/⑥ cards. ✅
+- **Finding ④ (adversarial, accepted):** the ⑤ same-millisecond feeding-tie carries a different evidence *form* (`feedingFormsInEvidence`) than shipped ⑤ — evidence-only, needs an exact-ms collision, the shared predicate is now canonical (G9). Documented, no code change.
+- Code review also **verified clean:** the ⑤ rewrite is byte-identical, G9 holds (⑥'s `toConfidenceEpisodes` is symptom-episode collapse, not meal-timing — out of scope), no B-514 timezone issue, constants carry G6 anchors.
+
 ## Gates / DoD
 
-- **`deno test`**: 420 pass across the whole `generate-signal/` suite (was 394 offline + index; +26 new L1/composition/suppression/phrasing cases). `deno check index.ts` clean. App `tsc --noEmit` clean (my changes are Deno-only; the app path is untouched).
-- **`adversarial-reviewer`** (MANDATORY per CUL-7): run against `git diff HEAD` (the L1 guard + `scheduleLongBaseRate`, the sweep honesty, the episode-set-aware suppression, the byte-identical ⑤ rewire). Findings folded into the draft PR before it is marked ready.
-- **`code-reviewer`**: run against `git diff HEAD`. Findings folded into the draft PR before it is marked ready.
-- **Persona sign-off:** Engineer ✓ (G9 one-predicate, byte-identical ⑤) — Data Scientist ✓ (the guard + the seeded sweep + the accepted n=7 residual) — Dr. Chen: boundary is his (CUL-16, 6h) — Designer N/A (dark, no rendered surface this PR — that's CUL-12/PR 5).
-- **Future-self review:** the guard is a new pattern (a schedule-adaptive base-rate defense, not ⑤'s rate approximation). Would I want it in 12 months? Yes — it is the *only* honest way to gate a phenotype whose label's base rate depends on the feeding schedule; a fixed fraction floor is provably wrong here (the 19% twice-daily null). The risk named: `scheduleLongBaseRate` is estimated from logged feedings, so a pet with sparse feeding logs gets a shaky estimate — mitigated by the <2-feedings→0 fallback + the fraction floor backstop, and revisited on real data.
+- **`deno test`**: **423 pass** across the whole `generate-signal/` suite (cached-only, CI-exact). `deno check index.ts` clean. App `tsc --noEmit` clean (my changes are Deno-only; the app path is untouched).
+- **`adversarial-reviewer`** (MANDATORY per CUL-7): round 1 = **FAIL** (findings ①–④). Reworked and **re-run** on the binomial guard + windowed base rate with the non-stationary + once-daily counterexamples as the opening falsification.
+- **`code-reviewer`**: round 1 = **fix-before-merge** (guard unsatisfiability + payload strip). Both fixed; the clean-verified items confirmed.
+- **Persona sign-off:** Engineer ✓ (G9 one-predicate, byte-identical ⑤) — Data Scientist ✓ (the windowed base rate + exact binomial + the re-sweep's FP-and-recall assertions + the binomial unit test) — Dr. Chen: boundary is his (CUL-16, 6h); `baseRateAlpha` is a tunable he can set, flagged — Designer N/A (dark, no rendered surface this PR — that's CUL-12/PR 5).
+- **Future-self review:** the exact-binomial base-rate test is a new pattern. Would I want it in 12 months? Yes — it is the honest gate for a phenotype whose label's base rate depends on the feeding schedule, and it self-calibrates so it needs no per-schedule tuning. The residual risk named: `baseRateAlpha` sets sensitivity and is a clinical knob (once-daily needs ~12 all-long to fire, so the once-daily *typical* case is really ⑥'s clock lane, which the episode-set-aware suppression now keeps) — flagged for Dr. Chen.
 - **No new secret; no schema; no migration; no client change; NO redeploy** (G10).
 
 ## Notes / follow-ups
