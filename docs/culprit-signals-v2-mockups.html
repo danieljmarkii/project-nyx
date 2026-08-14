@@ -1,0 +1,609 @@
+<!-- Culprit — Signals v2 mock round 1 (B-756 track pending; follows the 2026-08 signals deep-dive PM triage).
+     House rules: this committed file is the source of truth; the published Artifact is how the PM views it.
+     Round N+1 re-publishes over the SAME artifact URL. Round is named INSIDE the page, not in the title.
+     Visual language cloned from docs/culprit-signal-home-mockups.html (round 2.1 — the Signal design authority).
+     Nothing here supersedes B-721; every frame composes with its spine (S1–S10, Change Contract v1.1, Shapes A+C). -->
+<title>Culprit Signals v2 Mocks</title>
+<style>
+  :root {
+    --paper:      #F5F4F9;
+    --paper-2:    #FFFFFF;
+    --ink:        #1B1A2E;
+    --ink-2:      #5F5C7A;
+    --ink-3:      #8B87A8;
+    --rule:       #DEDCE9;
+    --rule-soft:  #E9E7F1;
+    --teal:       #00C2A8;
+    --teal-ink:   #0B7B6C;
+    --teal-wash:  #E0FBF7;
+    --rose:       #F43F5E;
+    --rose-ink:   #B4123B;
+    --rose-wash:  #FFE4E6;
+    --med:        #5B7A9E;
+    --med-wash:   #EAF0F7;
+    --serif: ui-serif, Charter, "Bitstream Charter", "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper:     #13112E;
+      --paper-2:   #1D1A42;
+      --ink:       #ECEAF6;
+      --ink-2:     #A6A2CE;
+      --ink-3:     #706BA6;
+      --rule:      rgba(196,190,255,0.20);
+      --rule-soft: rgba(196,190,255,0.11);
+      --teal-ink:  #4FD8C4;
+      --teal-wash: rgba(0,194,168,0.14);
+      --rose-ink:  #FB7185;
+      --rose-wash: rgba(251,113,133,0.14);
+      --med:       #93B0CE;
+      --med-wash:  rgba(91,122,158,0.18);
+    }
+  }
+  :root[data-theme="light"] {
+    --paper: #F5F4F9; --paper-2: #FFFFFF; --ink: #1B1A2E; --ink-2: #5F5C7A;
+    --ink-3: #8B87A8; --rule: #DEDCE9; --rule-soft: #E9E7F1;
+    --teal-ink: #0B7B6C; --teal-wash: #E0FBF7;
+    --rose-ink: #B4123B; --rose-wash: #FFE4E6;
+    --med: #5B7A9E; --med-wash: #EAF0F7;
+  }
+  :root[data-theme="dark"] {
+    --paper: #13112E; --paper-2: #1D1A42; --ink: #ECEAF6; --ink-2: #A6A2CE;
+    --ink-3: #706BA6; --rule: rgba(196,190,255,0.20); --rule-soft: rgba(196,190,255,0.11);
+    --teal-ink: #4FD8C4; --teal-wash: rgba(0,194,168,0.14);
+    --rose-ink: #FB7185; --rose-wash: rgba(251,113,133,0.14);
+    --med: #93B0CE; --med-wash: rgba(91,122,158,0.18);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--paper); color: var(--ink);
+    font-family: var(--sans); font-size: 16px; line-height: 1.55;
+  }
+  .wrap { max-width: 1060px; margin: 0 auto; padding: 48px 28px 120px; }
+
+  .mast { border-bottom: 1px solid var(--rule); padding-bottom: 28px; margin-bottom: 40px; }
+  .eyebrow {
+    font-family: var(--mono); font-size: 11px; letter-spacing: 0.14em;
+    text-transform: uppercase; color: var(--ink-3); margin: 0 0 14px;
+  }
+  h1 {
+    font-family: var(--serif); font-weight: 600; font-size: clamp(30px, 4.4vw, 44px);
+    line-height: 1.08; letter-spacing: -0.015em; margin: 0 0 14px; text-wrap: balance;
+  }
+  .standfirst { font-size: 17px; color: var(--ink-2); margin: 0 0 18px; max-width: 62ch; }
+  .standfirst strong { color: var(--ink); font-weight: 600; }
+  .roundtag {
+    display: inline-block; font-family: var(--mono); font-size: 11px; letter-spacing: 0.1em;
+    text-transform: uppercase; font-weight: 600;
+    color: var(--teal-ink); background: var(--teal-wash);
+    border-radius: 999px; padding: 4px 11px;
+  }
+  .roundtag b { font-weight: 700; }
+
+  section { margin-top: 72px; }
+  .sec-head { display: flex; align-items: baseline; gap: 14px; margin-bottom: 8px; border-top: 1px solid var(--rule); padding-top: 18px; }
+  .sec-num { font-family: var(--mono); font-size: 12px; color: var(--ink-3); letter-spacing: 0.08em; flex-shrink: 0; }
+  h2 { font-family: var(--serif); font-weight: 600; font-size: clamp(22px, 2.6vw, 28px); line-height: 1.2; letter-spacing: -0.01em; margin: 0; text-wrap: balance; }
+  h3 { font-weight: 600; font-size: 15px; margin: 32px 0 8px; }
+  p { margin: 0 0 16px; }
+  em { font-style: italic; color: var(--ink-2); }
+  strong { font-weight: 600; }
+  code { font-family: var(--mono); font-size: 0.855em; background: var(--rule-soft); border-radius: 4px; padding: 1px 5px; }
+  .callout { border-left: 2px solid var(--teal); padding: 2px 0 2px 20px; margin: 24px 0; color: var(--ink-2); font-size: 15.5px; max-width: 72ch; }
+  .callout strong { color: var(--ink); }
+  .callout.warn { border-left-color: var(--rose); }
+
+  .tablewrap { overflow-x: auto; margin: 24px 0; }
+  table.verdicts { border-collapse: collapse; width: 100%; min-width: 560px; font-size: 14px; }
+  table.verdicts th, table.verdicts td { text-align: left; padding: 9px 14px 9px 0; border-bottom: 1px solid var(--rule-soft); vertical-align: top; }
+  table.verdicts th { font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-3); font-weight: 600; }
+  table.verdicts td:first-child { font-weight: 600; white-space: nowrap; }
+  table.verdicts td.num { font-variant-numeric: tabular-nums; }
+
+  .ruling {
+    margin: 28px 0 8px; padding: 26px 30px;
+    background: var(--paper-2); border: 1px solid var(--rule); border-radius: 3px;
+  }
+  .ruling .lede { font-family: var(--mono); font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-3); margin: 0 0 16px; }
+  .ruling ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 10px; }
+  .ruling li { font-size: 14.5px; color: var(--ink-2); padding-left: 18px; position: relative; }
+  .ruling li::before { content: "·"; position: absolute; left: 2px; color: var(--teal-ink); font-weight: 700; }
+  .ruling li strong { color: var(--ink); }
+
+  /* React briefs */
+  .rq { margin: 26px 0 0; padding: 22px 26px; background: var(--paper-2); border: 1px solid var(--rule); border-radius: 3px; }
+  .rq .rid { font-family: var(--mono); font-size: 12px; font-weight: 700; color: var(--teal-ink); background: var(--teal-wash); border-radius: 6px; padding: 2px 9px; display: inline-block; margin-bottom: 10px; }
+  .rq p { font-size: 14.5px; color: var(--ink-2); margin: 0 0 8px; }
+  .rq p:last-child { margin: 0; }
+  .rq strong { color: var(--ink); }
+
+  /* Phone frames */
+  .frames { display: flex; flex-wrap: wrap; gap: 36px 28px; margin-top: 32px; align-items: flex-start; }
+  .frame-slot { width: 316px; max-width: 100%; }
+  .frame-slot.wide { width: 100%; max-width: 720px; }
+  .frame-cap { margin: 14px 2px 0; font-size: 13.5px; color: var(--ink-2); line-height: 1.5; }
+  .frame-cap b { color: var(--ink); font-weight: 600; display: block; margin-bottom: 2px; font-size: 13px; }
+  .frame-cap .fnote { color: var(--ink-3); font-size: 12.5px; }
+
+  .phone {
+    width: 316px; max-width: 100%; background: #F2F2F4; border-radius: 34px;
+    border: 1px solid rgba(27,26,46,0.16); box-shadow: 0 18px 44px rgba(19,17,46,0.16);
+    padding: 12px 12px 20px; color: #1A1A24; font-family: var(--sans);
+  }
+  .phone.wide { width: 100%; }
+  .notch { width: 96px; height: 22px; background: #0B0B12; border-radius: 12px; margin: 0 auto 10px; }
+  .appbody { display: grid; gap: 12px; }
+
+  .acard { background: #FFFFFF; border-radius: 18px; padding: 14px 14px 12px; box-shadow: 0 2px 10px rgba(19,17,46,0.05); }
+  .seclabel { font-size: 10px; font-weight: 600; letter-spacing: 0.13em; text-transform: uppercase; color: #8B87A8; margin-bottom: 8px; }
+
+  .irow { display: flex; gap: 9px; padding: 8px 0; }
+  .irow + .irow { border-top: 1px solid #F0EFF5; }
+  .rail { width: 3px; border-radius: 2px; flex-shrink: 0; opacity: 0.85; }
+  .rail.safety { background: #F43F5E; }
+  .rail.insight { background: #00C2A8; }
+  .rail.ghost { background: #DDDBE8; }
+  .ibody { flex: 1; min-width: 0; }
+  .lead { font-family: var(--serif); font-size: 19.5px; line-height: 1.32; letter-spacing: -0.012em; color: #1A1A24; margin: 0 0 6px; }
+  .sent { font-size: 13.5px; line-height: 1.45; color: #1A1A24; margin: 0 0 6px; }
+  .sent.ghost { color: #8B87A8; }
+  .meta { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; margin-top: 5px; }
+  .badge { font-size: 9.5px; font-weight: 600; letter-spacing: 0.04em; color: #5F5C7A; background: #F0EFF5; border-radius: 999px; padding: 2px 8px; }
+  .chip-new { font-size: 9.5px; font-weight: 600; letter-spacing: 0.04em; color: #0B7B6C; background: #E0FBF7; border-radius: 999px; padding: 2px 8px; }
+  .sample { font-size: 10.5px; color: #8B87A8; }
+  .whylink { font-size: 10.5px; font-weight: 600; color: #00C2A8; margin-top: 6px; }
+  .ctxline { font-size: 10.5px; color: #8B87A8; margin-top: 5px; }
+  .ctxline .pill { display: inline-block; width: 7px; height: 7px; border-radius: 2px; background: #5B7A9E; margin-right: 4px; vertical-align: 1px; }
+
+  /* evidence strips */
+  .estrip { margin: 7px 0 2px; }
+  .e-axis { display: flex; justify-content: space-between; font-size: 8.5px; color: #B9B6CC; margin-top: 3px; }
+  .lane { position: relative; height: 22px; background: #FAFAFC; border: 1px solid #F0EFF5; border-radius: 6px; }
+  .lane.ghosted { border-style: dashed; background: transparent; }
+  .lane .band { position: absolute; top: 0; bottom: 0; border-radius: 5px; background: rgba(0,194,168,0.10); border-right: 1px dashed rgba(0,194,168,0.5); }
+  .lane .band.rt { border-right: none; border-left: 1px dashed rgba(0,194,168,0.5); }
+  .dot { position: absolute; top: 50%; width: 7px; height: 7px; border-radius: 50%; transform: translate(-50%,-50%); background: #F43F5E; }
+  .dot.out { background: #C9C5E6; }
+  .dot.hollow { background: transparent; border: 1.5px solid #C9C5E6; }
+
+  .cmprow { display: grid; grid-template-columns: 96px 1fr 44px; gap: 8px; align-items: center; font-size: 10.5px; color: #5F5C7A; margin-top: 5px; }
+  .cmprow .bar { height: 8px; border-radius: 4px; background: #F0EFF5; position: relative; overflow: hidden; }
+  .cmprow .bar i { position: absolute; inset: 0 auto 0 0; border-radius: 4px; background: #F43F5E; opacity: 0.85; }
+  .cmprow .bar i.calm { background: #00C2A8; }
+  .cmprow .bar i.zero { background: transparent; }
+  .cmprow .n { text-align: right; font-variant-numeric: tabular-nums; color: #8B87A8; font-size: 10px; }
+
+  .evid { background: #FAFAFC; border: 1px solid #F0EFF5; border-radius: 10px; padding: 9px 10px; margin-top: 8px; }
+  .evid .et { font-size: 9px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: #8B87A8; margin-bottom: 5px; }
+  .evid p { font-size: 11px; line-height: 1.5; color: #5F5C7A; margin: 0 0 6px; }
+  .evid p:last-child { margin: 0; }
+  .evid p.adj { font-style: italic; }
+
+  .footlink { border-top: 1px solid #F0EFF5; margin-top: 8px; padding-top: 8px; font-size: 11.5px; font-weight: 600; color: #00C2A8; }
+
+  /* trial strip (schematic of the shipped trial card) */
+  .strip { background: #FFFFFF; border-radius: 18px; padding: 12px 14px; box-shadow: 0 2px 10px rgba(19,17,46,0.05); }
+  .strip .h { display: flex; justify-content: space-between; font-size: 12.5px; font-weight: 600; color: #1A1A24; }
+  .strip .h span:last-child { color: #C9C5E6; font-variant-numeric: tabular-nums; font-weight: 600; font-size: 11px; }
+  .track { height: 4px; border-radius: 2px; background: #F0F0F0; margin-top: 8px; overflow: hidden; position: relative; }
+  .track i { position: absolute; inset: 0 auto 0 0; background: #00C2A8; border-radius: 2px; }
+  .strip .s { font-size: 10.5px; color: #8B87A8; margin-top: 6px; }
+  .strip .s.ink { color: #1A1A24; }
+
+  footer { margin-top: 96px; border-top: 1px solid var(--rule); padding-top: 18px; font-size: 13px; color: var(--ink-3); }
+</style>
+
+<div class="wrap">
+<div class="mast">
+  <p class="eyebrow">Culprit · Signals v2 · Design exploration</p>
+  <h1>The record, decomposed</h1>
+  <p class="standfirst">Mock <strong>round 1</strong> for the post-deep-dive signal capabilities the PM ratified on 2026-08-14: the <strong>empty-stomach timing lane</strong> (C1), the <strong>trial-response read</strong> (C3), the <strong>photographed-record compositions</strong> (C4), the <strong>sub-floor register</strong> (C5), and their <strong>Patterns-surface</strong> homes. Every frame composes with the Signal/Home round-2.1 system (B-721 — Shapes A+C, the Change Contract, S1–S10); nothing here supersedes it. Counts are Nyx's real record as of Aug 14; figures marked ~ are representative pending the build's exact computation.</p>
+  <span class="roundtag"><b>Round 1</b> · directions, not designs — react coarse, not pixel-fine</span>
+</div>
+
+<!-- ============================================================ -->
+<section>
+  <div class="sec-head"><span class="sec-num">§01</span><h2>The data these frames stand on</h2></div>
+  <p>One cat, one live elimination trial, and a record that separates cleanly when you ask each vomit <em>how long since she last ate</em>. The trial era re-run (Nyx-only, 2026-08-14) is the story every frame below renders a piece of:</p>
+  <div class="tablewrap"><table class="verdicts">
+    <tr><th></th><th>Pre-trial · 7 weeks</th><th>Trial era · first 20 days</th></tr>
+    <tr><td>All vomiting episodes</td><td class="num">20 (≈2.8/wk)</td><td class="num">4 (≈1.5/wk)</td></tr>
+    <tr><td>Right after eating (≤30 min)</td><td class="num">8</td><td class="num">4 — every one ≤5 min</td></tr>
+    <tr><td>Empty-stomach (4h+ since food)</td><td class="num">7 · mostly 2–8 am</td><td class="num"><strong>0</strong> — longest gap in the record</td></tr>
+    <tr><td>Treat share of logged feedings</td><td class="num">80%</td><td class="num">4.5%</td></tr>
+    <tr><td>Proper meals per day</td><td class="num">1.8</td><td class="num">4.5</td></tr>
+  </table></div>
+  <div class="callout"><strong>The design problem in one sentence:</strong> today's surface shows a pooled chronicity card ("18 episodes across 6 of 8 weeks — worth booking a vet visit") while the decomposed record shows one phenotype stopped, treats collapsed, and meals doubled. The owner's lived sense and the surface disagree because the engine pools what the record separates. These mocks are the un-pooling.</div>
+  <div class="ruling">
+    <p class="lede">Standing constraints every frame obeys (from B-721 + the guardrails)</p>
+    <ul>
+      <li><strong>Safety faces stay plain</strong> (S1) — the chronicity card keeps its text-only face; everything richer here is insight-class.</li>
+      <li><strong>Change lives in the sentence</strong>, count-anchored and time-ordered — no ↑/↓, no percentages, no verdict words (better/worse/working).</li>
+      <li><strong>No numerator-only visuals</strong> (S2); both sides of every compare are printed; a receipt renders only when it carries what the sentence can't (S10).</li>
+      <li><strong>Never reassure on absence</strong> — every "none logged" is record-anchored, carries its window, and sits beside what continued.</li>
+      <li><strong>No attribution</strong> — three things changed at trial start; the cards state counts and context, the vet interprets. RTM honesty lives in expanded states.</li>
+    </ul>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<section>
+  <div class="sec-head"><span class="sec-num">§02</span><h2>Direction A — the timing story (C1)</h2></div>
+  <p>The empty-stomach lane is ⑤'s mirror: same eligible-episode machinery, the lane read from the other end. Three ways to put it on the Signal. Frames A1/A2 are drawn <em>as the surface would have read on Jul 20</em>, when both phenotypes were live.</p>
+
+  <div class="frames">
+    <!-- A1: two cards -->
+    <div class="frame-slot">
+      <div class="phone"><div class="notch"></div><div class="appbody">
+        <div class="acard">
+          <div class="seclabel">Signal</div>
+          <div class="irow">
+            <div class="rail insight"></div>
+            <div class="ibody">
+              <p class="lead">7 of the 20 vomiting episodes we could time came within 30 minutes of eating — including the last two.</p>
+              <div class="estrip">
+                <div class="lane">
+                  <div class="band" style="left:0; width:26%;"></div>
+                  <span class="dot" style="left:4%"></span><span class="dot" style="left:8%"></span><span class="dot" style="left:12%"></span><span class="dot" style="left:6%; top:32%"></span><span class="dot" style="left:10%; top:68%"></span><span class="dot" style="left:19%"></span><span class="dot" style="left:23%"></span>
+                  <span class="dot out" style="left:44%"></span><span class="dot out" style="left:52%"></span><span class="dot out" style="left:60%; top:34%"></span><span class="dot out" style="left:57%; top:66%"></span><span class="dot out" style="left:72%"></span><span class="dot out" style="left:80%"></span><span class="dot out" style="left:88%"></span><span class="dot out" style="left:84%; top:33%"></span><span class="dot out" style="left:92%; top:64%"></span><span class="dot out" style="left:76%; top:66%"></span><span class="dot out" style="left:96%"></span><span class="dot out" style="left:68%"></span><span class="dot out" style="left:48%; top:66%"></span>
+                </div>
+                <div class="e-axis"><span>ate</span><span>30m</span><span>2h</span><span>4h+</span></div>
+              </div>
+              <div class="meta"><span class="badge">Timing pattern</span><span class="sample">20 timed of 26 episodes · 60 days</span></div>
+              <div class="whylink">Why we're showing this</div>
+            </div>
+          </div>
+          <div class="irow">
+            <div class="rail insight"></div>
+            <div class="ibody">
+              <p class="sent">7 other timed episodes came 4 or more hours after her last meal — 6 of them between 2 and 8 am, before anyone was up.</p>
+              <div class="estrip">
+                <div class="lane">
+                  <div class="band rt" style="right:0; width:30%;"></div>
+                  <span class="dot out" style="left:5%"></span><span class="dot out" style="left:9%"></span><span class="dot out" style="left:13%"></span><span class="dot out" style="left:7%; top:66%"></span><span class="dot out" style="left:20%"></span><span class="dot out" style="left:24%"></span><span class="dot out" style="left:11%; top:33%"></span><span class="dot out" style="left:45%"></span><span class="dot out" style="left:53%"></span><span class="dot out" style="left:58%; top:66%"></span><span class="dot out" style="left:49%; top:34%"></span><span class="dot out" style="left:62%"></span><span class="dot out" style="left:41%; top:62%"></span>
+                  <span class="dot" style="left:74%"></span><span class="dot" style="left:79%; top:34%"></span><span class="dot" style="left:84%"></span><span class="dot" style="left:89%; top:66%"></span><span class="dot" style="left:93%"></span><span class="dot" style="left:81%; top:64%"></span><span class="dot" style="left:97%; top:38%"></span>
+                </div>
+                <div class="e-axis"><span>ate</span><span>1h</span><span>4h</span><span>8h+</span></div>
+              </div>
+              <div class="meta"><span class="chip-new">New</span><span class="badge">Timing pattern</span><span class="sample">7 of 20 timed · 60 days</span></div>
+            </div>
+          </div>
+          <div class="footlink">See all of {pet}'s patterns →</div>
+        </div>
+      </div></div>
+      <p class="frame-cap"><b>A1 — Two cards, one lane each</b> The shipped ⑤ card plus its mirror. Each lane keeps one job; the second card's band sits at the far end (4h+). Cost: two cards saying "timing" in a zone capped for curation.<span class="fnote"> Drawn as of Jul 20.</span></p>
+    </div>
+
+    <!-- A2: one combined -->
+    <div class="frame-slot">
+      <div class="phone"><div class="notch"></div><div class="appbody">
+        <div class="acard">
+          <div class="seclabel">Signal</div>
+          <div class="irow">
+            <div class="rail insight"></div>
+            <div class="ibody">
+              <p class="lead">Her vomiting keeps two kinds of time: 7 episodes within 30 minutes of eating, and 7 more at 4-plus hours — most of those before breakfast.</p>
+              <div class="cmprow"><span>Within 30 min</span><div class="bar"><i style="width:35%"></i></div><span class="n">7</span></div>
+              <div class="cmprow"><span>4h+ after food</span><div class="bar"><i style="width:35%"></i></div><span class="n">7</span></div>
+              <div class="cmprow"><span>In between</span><div class="bar"><i style="width:30%"></i></div><span class="n">6</span></div>
+              <div class="meta"><span class="badge">Timing pattern</span><span class="sample">20 timed of 26 episodes · 60 days</span></div>
+              <div class="whylink">Why we're showing this</div>
+            </div>
+          </div>
+          <div class="footlink">See all of {pet}'s patterns →</div>
+        </div>
+      </div></div>
+      <p class="frame-cap"><b>A2 — One combined timing card</b> A single card owns the whole timing story as a Shape-C compare; the lanes move to the expanded state. One slot spent, but the headline has to carry two phenomena in one sentence.<span class="fnote"> Drawn as of Jul 20.</span></p>
+    </div>
+
+    <!-- A3: expanded -->
+    <div class="frame-slot">
+      <div class="phone"><div class="notch"></div><div class="appbody">
+        <div class="acard">
+          <div class="seclabel">Signal · expanded</div>
+          <div class="irow">
+            <div class="rail insight"></div>
+            <div class="ibody">
+              <p class="sent">7 timed episodes came 4 or more hours after her last meal — 6 of them between 2 and 8 am.</p>
+              <div class="evid">
+                <p class="et">When they happen · by clock</p>
+                <div class="lane">
+                  <div class="band" style="left:8%; width:25%;"></div>
+                  <span class="dot" style="left:11%"></span><span class="dot" style="left:15%; top:34%"></span><span class="dot" style="left:19%"></span><span class="dot" style="left:24%; top:66%"></span><span class="dot" style="left:28%"></span><span class="dot" style="left:31%; top:38%"></span>
+                  <span class="dot out" style="left:56%"></span>
+                </div>
+                <div class="e-axis"><span>12am</span><span>6am</span><span>12pm</span><span>6pm</span></div>
+              </div>
+              <div class="evid">
+                <p class="et">The other side of it</p>
+                <p>Mornings with a meal logged before 8 am and no episode after: 41 of 47.</p>
+                <p>Episodes that weren't near any logged meal: 3 — we can't time those.</p>
+              </div>
+              <div class="ctxline"><span class="pill"></span>During an active Motozol course — 24 doses logged.</div>
+              <div class="evid">
+                <p class="et">For your vet</p>
+                <p>Early-morning vomiting on an empty stomach is a specific, useful detail — mention the timing and the 6-of-7 clustering, and that photos are attached to most of these.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div></div>
+      <p class="frame-cap"><b>A3 — The clock lives in the expanded state</b> The suppression fix as design: instead of a separate time-of-day card competing with ⑤, the 2–8 am clustering becomes the empty-stomach card's tap-through evidence — with the control side (S2) and the shipped med-context line (§5.4).</p>
+    </div>
+  </div>
+
+  <div class="callout"><strong>The engine change all three frames assume:</strong> ⑤'s firing stops suppressing the clock finding when the two are built from <em>different episodes</em> (episode-set-aware suppression). A3 goes further: the clock pattern stops being a card at all and becomes the empty-stomach lane's evidence layer — one timing story per phenotype, not one per statistic.</div>
+</section>
+
+<!-- ============================================================ -->
+<section>
+  <div class="sec-head"><span class="sec-num">§03</span><h2>Direction B — the trial through its record (C3)</h2></div>
+  <p>The wedge question — <em>is this trial doing anything?</em> — answered the only way the guardrails allow: counts beside the day count, never a verdict. Frames drawn as of today (trial day 20 of 56).</p>
+
+  <div class="frames">
+    <!-- B1 rate compare -->
+    <div class="frame-slot">
+      <div class="phone"><div class="notch"></div><div class="appbody">
+        <div class="acard">
+          <div class="seclabel">Signal</div>
+          <div class="irow">
+            <div class="rail insight"></div>
+            <div class="ibody">
+              <p class="lead">In the trial's first 20 days we've logged 4 vomiting episodes; the three weeks before it had 7.</p>
+              <div class="cmprow"><span>Trial · 20 days</span><div class="bar"><i style="width:29%"></i></div><span class="n">4</span></div>
+              <div class="cmprow"><span>3 wks before</span><div class="bar"><i style="width:50%"></i></div><span class="n">7</span></div>
+              <div class="meta"><span class="badge">Day 20 of 56</span><span class="sample">Counted from days you logged</span></div>
+              <div class="whylink">Why we're showing this</div>
+            </div>
+          </div>
+          <div class="footlink">See all of {pet}'s patterns →</div>
+        </div>
+      </div></div>
+      <p class="frame-cap"><b>B1 — The plain rate compare</b> Shape C, sentence-first, time-ordered, day-count chip. The smallest honest version of the lane.</p>
+    </div>
+
+    <!-- B2 phenotype split hero -->
+    <div class="frame-slot">
+      <div class="phone"><div class="notch"></div><div class="appbody">
+        <div class="acard">
+          <div class="seclabel">Signal</div>
+          <div class="irow">
+            <div class="rail insight"></div>
+            <div class="ibody">
+              <p class="lead">No early-morning, empty-stomach episodes logged in the trial's 20 days — the longest such stretch in her record. The right-after-eating kind has continued: 4 so far.</p>
+              <div class="cmprow"><span>Empty-stomach</span><div class="bar"><i class="zero"></i></div><span class="n">0 · was 7</span></div>
+              <div class="cmprow"><span>After eating</span><div class="bar"><i style="width:29%"></i></div><span class="n">4 · was 8</span></div>
+              <div class="meta"><span class="chip-new">New</span><span class="badge">Day 20 of 56</span><span class="sample">vs the 7 weeks before</span></div>
+              <div class="whylink">Why we're showing this</div>
+            </div>
+          </div>
+          <div class="footlink">See all of {pet}'s patterns →</div>
+        </div>
+      </div></div>
+      <p class="frame-cap"><b>B2 — The phenotype split (the hero frame)</b> The sentence the pooled surface can't say. "No … logged" is record-anchored with its window stated and what-continued beside it — but it is an absence-shaped sentence, and whether it survives the G2/Dr. Chen screen is R-2, the round's hardest question.</p>
+    </div>
+
+    <!-- B3 trial-card resident + honesty expand -->
+    <div class="frame-slot">
+      <div class="phone"><div class="notch"></div><div class="appbody">
+        <div class="strip">
+          <div class="h"><span>Elimination trial · rabbit</span><span>Day 20 / 56</span></div>
+          <div class="track"><i style="width:36%"></i></div>
+          <p class="s ink">Episodes during the trial: 4 in 20 days · the three weeks before: 7.</p>
+          <p class="s">2 off-trial foods logged · coverage steady</p>
+        </div>
+        <div class="acard">
+          <div class="evid">
+            <p class="et">Reading this stretch honestly · expanded</p>
+            <p>Three things changed at once when the trial started — the new food, far fewer treats, more and steadier meals. A calmer stretch can't yet say which one mattered, and calm stretches also happen on their own.</p>
+            <p class="adj">A quieter week partway through a diet trial isn't the trial's verdict — the full run is what makes it readable.</p>
+            <p>Worth bringing to the vet either way: the early-morning episodes stopped; the right-after-eating ones didn't.</p>
+          </div>
+        </div>
+      </div></div>
+      <p class="frame-cap"><b>B3 — Trial-card-resident, honesty in the expand</b> The same content as one line inside the shipped trial card (top), with the RTM/confound honesty living in the tap-through (bottom). The §3.4 adjacency line reused verbatim. Question R-3: which surface owns this — Signal, trial card, or both with one of them as the door.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<section>
+  <div class="sec-head"><span class="sec-num">§04</span><h2>Direction C — the photographed record, composed (C4)</h2></div>
+  <p>31 of her 36 episodes carry a completed photo read with structured fields the engine never touches. Composition, not new capture: joining what the photo said to when it happened. Descriptors, never labels — the regurgitation-vs-vomiting <em>call</em> stays with the vet.</p>
+
+  <div class="frames">
+    <div class="frame-slot">
+      <div class="phone"><div class="notch"></div><div class="appbody">
+        <div class="acard">
+          <div class="seclabel">Signal · expanded — empty-stomach card</div>
+          <div class="irow">
+            <div class="rail insight"></div>
+            <div class="ibody">
+              <p class="sent">In ~6 of the 7 photographed episodes that came 4+ hours after eating, the photo still showed partly digested food.</p>
+              <div class="evid">
+                <p class="et">Why that's worth a mention</p>
+                <p>Food still recognizable hours after a meal is a specific observation about how her stomach is emptying — the kind of detail that changes what a vet checks first.</p>
+              </div>
+              <div class="evid">
+                <p class="et">Also in the photos · whole record</p>
+                <p>Hair appeared in ~9 of 31 photographed episodes.</p>
+                <p>Bile was flagged in ~5 — mostly the early-morning ones.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="acard">
+          <div class="seclabel">Report · appendix line (for R-4 context)</div>
+          <div class="irow">
+            <div class="rail ghost"></div>
+            <div class="ibody">
+              <p class="sent" style="font-size:11.5px">Rapid post-meal episodes (≤30 min, n=14): photographed content predominantly undigested food; no retching noted in owner logs. Features consistent with — <em>determination deferred to examining veterinarian.</em></p>
+            </div>
+          </div>
+        </div>
+      </div></div>
+      <p class="frame-cap"><b>C1 — Content × timing, two registers</b> Owner-facing (top): composed counts inside the timing card's expand, each with its plain-language "why it matters." Vet-facing (bottom): the descriptor bundle the regurgitation question needs, with the label explicitly left to the clinician. ~ figures are representative; the build computes exact ones.</p>
+    </div>
+  </div>
+
+  <div class="callout warn"><strong>What this direction never does:</strong> "hair in the photo" never softens anything (frequent hairballs in a shorthair are themselves a vet-worthy pattern, not an explanation) — no card here ever renders hair as reassurance. And no owner-facing surface prints "regurgitation" as a conclusion; the descriptors travel, the diagnosis doesn't.</div>
+</section>
+
+<!-- ============================================================ -->
+<section>
+  <div class="sec-head"><span class="sec-num">§05</span><h2>Direction D — the sub-floor weeks (C5)</h2></div>
+  <p>Every new account spends its first weeks below every detector's floor. The floors stay (ratified) — these frames give the below-the-floor state an honest voice. Drawn for Nyx <em>as if her record were 12 days old.</em></p>
+
+  <div class="frames">
+    <!-- D1 progress rows -->
+    <div class="frame-slot">
+      <div class="phone"><div class="notch"></div><div class="appbody">
+        <div class="acard">
+          <div class="seclabel">Signal</div>
+          <div class="irow">
+            <div class="rail ghost"></div>
+            <div class="ibody">
+              <p class="sent">We're getting to know {pet}. Day 12 — 31 events so far. Here's what we're watching:</p>
+              <div class="estrip">
+                <div class="lane ghosted">
+                  <div class="band" style="left:0; width:26%;"></div>
+                  <span class="dot" style="left:6%"></span><span class="dot" style="left:12%"></span>
+                  <span class="dot out" style="left:55%"></span><span class="dot out" style="left:78%"></span>
+                  <span class="dot hollow" style="left:30%"></span><span class="dot hollow" style="left:42%"></span>
+                </div>
+                <div class="e-axis"><span>ate</span><span>30m</span><span>2h</span><span>4h+</span></div>
+              </div>
+              <p class="sent ghost" style="font-size:11px">Timing — 4 of the 6 timed episodes a pattern needs. Hollow dots are the ones still to come.</p>
+              <p class="sent ghost" style="font-size:11px">Change — needs 2 full weeks of logging to compare. This is week 2.</p>
+              <p class="sent ghost" style="font-size:11px">If something needs attention sooner, it won't wait for the week.</p>
+            </div>
+          </div>
+        </div>
+      </div></div>
+      <p class="frame-cap"><b>D1 — Watching, with real counts</b> The E1 ghost language grown up: real dots for real episodes, hollow dots for the remainder to each floor. Transparent — but is a fill-the-dots visual a promise, or pressure to log? That's R-5.</p>
+    </div>
+
+    <!-- D2 gap sentence -->
+    <div class="frame-slot">
+      <div class="phone"><div class="notch"></div><div class="appbody">
+        <div class="acard">
+          <div class="seclabel">Signal</div>
+          <div class="irow">
+            <div class="rail ghost"></div>
+            <div class="ibody">
+              <p class="sent">We're getting to know {pet}. Day 12 — 31 events so far.</p>
+              <p class="sent" style="margin-top:4px">One thing worth holding onto while patterns build: the gaps between vomiting episodes have been 6 days, then 3, then 2.</p>
+              <div class="meta"><span class="badge">Early — too few to call a pattern</span></div>
+              <p class="sent ghost" style="font-size:11px; margin-top:6px">If something needs attention sooner, it won't wait for the week.</p>
+            </div>
+          </div>
+        </div>
+      </div></div>
+      <p class="frame-cap"><b>D2 — The gap sentence</b> The lowest-floor honest statistic there is (meaningful from 3–4 episodes), stated as plain counts, surfacing only when gaps <em>shorten</em> — never the reassuring direction. No progress visual, no promise; the building state stays quiet otherwise.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<section>
+  <div class="sec-head"><span class="sec-num">§06</span><h2>Direction E — the Patterns surface</h2></div>
+  <p>Signal stays curated — a few cards, safety first. Patterns (<code>app/insights</code>, the tier-2 dashboard) is where the full decomposition can live at density: the whole timing distribution, the trial split, every episode a real dot. Two additions to the existing dashboard grid.</p>
+
+  <div class="frames">
+    <div class="frame-slot wide">
+      <div class="phone wide"><div class="notch"></div><div class="appbody">
+        <div class="acard">
+          <div class="seclabel">Patterns · Vomiting — timing</div>
+          <p class="sent">Every episode we could time, by how long after eating it came. 33 timed of 36 logged · full record.</p>
+          <div class="estrip">
+            <div class="lane" style="height:34px">
+              <div class="band" style="left:0; width:20%;"></div>
+              <div class="band rt" style="right:0; width:24%; background: rgba(91,122,158,0.10); border-left-color: rgba(91,122,158,0.5);"></div>
+              <span class="dot" style="left:2%; top:30%"></span><span class="dot" style="left:3.5%; top:60%"></span><span class="dot" style="left:5%; top:42%"></span><span class="dot" style="left:6.5%; top:70%"></span><span class="dot" style="left:8%; top:30%"></span><span class="dot" style="left:9.5%; top:55%"></span><span class="dot" style="left:11%; top:38%"></span><span class="dot" style="left:12.5%; top:66%"></span><span class="dot" style="left:14%; top:45%"></span><span class="dot" style="left:5.5%; top:22%"></span><span class="dot" style="left:9%; top:78%"></span><span class="dot" style="left:13%; top:25%"></span><span class="dot" style="left:16%; top:52%"></span><span class="dot" style="left:18%; top:35%"></span>
+              <span class="dot out" style="left:30%; top:40%"></span><span class="dot out" style="left:34%; top:62%"></span><span class="dot out" style="left:39%; top:33%"></span><span class="dot out" style="left:44%; top:58%"></span><span class="dot out" style="left:48%; top:40%"></span><span class="dot out" style="left:52%; top:65%"></span><span class="dot out" style="left:57%; top:36%"></span><span class="dot out" style="left:61%; top:55%"></span><span class="dot out" style="left:66%; top:44%"></span>
+              <span class="dot" style="left:79%; top:34%; background:#5B7A9E"></span><span class="dot" style="left:82%; top:60%; background:#5B7A9E"></span><span class="dot" style="left:85%; top:40%; background:#5B7A9E"></span><span class="dot" style="left:88%; top:64%; background:#5B7A9E"></span><span class="dot" style="left:91%; top:34%; background:#5B7A9E"></span><span class="dot" style="left:94%; top:56%; background:#5B7A9E"></span><span class="dot" style="left:97%; top:42%; background:#5B7A9E"></span><span class="dot" style="left:83%; top:22%; background:#5B7A9E"></span><span class="dot" style="left:90%; top:78%; background:#5B7A9E"></span><span class="dot" style="left:96%; top:70%; background:#5B7A9E"></span>
+            </div>
+            <div class="e-axis"><span>ate</span><span>30m</span><span>1h</span><span>2h</span><span>4h</span><span>8h+</span></div>
+          </div>
+          <div class="cmprow"><span style="color:#B4123B">■ ≤30 min</span><div class="bar"><i style="width:42%"></i></div><span class="n">14</span></div>
+          <div class="cmprow"><span>■ in between</span><div class="bar"><i style="width:27%; background:#C9C5E6"></i></div><span class="n">9</span></div>
+          <div class="cmprow"><span style="color:#5B7A9E">■ 4h+ · early am</span><div class="bar"><i style="width:30%; background:#5B7A9E"></i></div><span class="n">10</span></div>
+          <p class="sent ghost" style="font-size:10.5px; margin-top:6px">3 more episodes had no meal logged within 24h — shown nowhere rather than guessed.</p>
+        </div>
+        <div class="acard">
+          <div class="seclabel">Patterns · The trial so far</div>
+          <p class="sent">Day 20 of 56 · rabbit. Counted from days you logged, against the seven weeks before.</p>
+          <div class="cmprow"><span>Empty-stomach</span><div class="bar"><i class="zero"></i></div><span class="n">0 · was 7</span></div>
+          <div class="cmprow"><span>After eating</span><div class="bar"><i style="width:26%"></i></div><span class="n">4 · was 8</span></div>
+          <div class="cmprow"><span>Treat share</span><div class="bar"><i class="calm" style="width:5%"></i></div><span class="n">4.5% · was 80%</span></div>
+          <div class="cmprow"><span>Meals / day</span><div class="bar"><i class="calm" style="width:70%"></i></div><span class="n">4.5 · was 1.8</span></div>
+          <p class="sent ghost" style="font-size:10.5px; margin-top:6px">Three things changed at once — this panel shows what, not why.</p>
+        </div>
+      </div></div>
+      <p class="frame-cap"><b>E1 — The timing distribution + the trial panel</b> The full decomposition at Patterns density: every timed episode a real dot (rose = rapid, slate = the empty-stomach/early-am cluster), untimed episodes disclosed rather than imputed; and the trial panel that composes symptom counts with the diet-structure changes the engine already knows. Tapping either opens the metric detail view.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<section>
+  <div class="sec-head"><span class="sec-num">§07</span><h2>Ship notes — what rides, what stays out</h2></div>
+  <div class="ruling">
+    <p class="lede">Standing decisions these mocks assume (from the triage + B-721)</p>
+    <ul>
+      <li><strong>Everything ships dark behind a beta flag</strong>, B-712 two-gate shape (eligibility allowlist × owner opt-in via the beta shelf), byte-identical off. Whether it rides <code>signal_design_v2</code> or mints its own <code>signals_v2</code> flag is R-6.</li>
+      <li><strong>The chronicity safety card is untouched</strong> — plain face, same copy; nothing in this round redesigns a safety surface (S1).</li>
+      <li><strong>New engine lanes carry the full ritual</strong>: property-tested noise floors before ship (the ⑥/⑦ calibration lesson), adversarial review, Dr. Chen sign-off on every new sentence form.</li>
+      <li><strong>Numbers in frames are real</strong> (Nyx, Aug 14) except ~ marked; the requirements doc pins exact computations, not these captions.</li>
+    </ul>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<section>
+  <div class="sec-head"><span class="sec-num">§08</span><h2>React — the round-1 decisions</h2></div>
+  <p>Coarse reactions are the right altitude for round 1: kill directions, don't polish frames. Each brief is answerable on its own.</p>
+
+  <div class="rq"><span class="rid">R-1</span>
+    <p><strong>Deciding:</strong> how the timing story lives on the Signal — A1 (two cards, one lane each), A2 (one combined compare card), or A3's shape (one card per phenotype, clock + control evidence in the expand).</p>
+    <p><strong>Team lean: A3's shape</strong> — one timing story per phenotype respects the zone's curation cap, and the clock reads better as evidence than as a rival card. A1 spends two slots on one theme; A2's headline has to carry two phenomena at once.</p>
+    <p><strong>Consequence:</strong> sets the empty-stomach lane's card contract and closes the ⑤/⑥ suppression question as a design fact (the clock becomes evidence, not a card).</p>
+  </div>
+
+  <div class="rq"><span class="rid">R-2</span>
+    <p><strong>Deciding:</strong> whether B2's sentence — "No early-morning, empty-stomach episodes logged in the trial's 20 days … the right-after-eating kind has continued" — survives the guardrails, or the phenotype split must always render count-positive (B1's form with per-phenotype rows).</p>
+    <p><strong>The tension, honestly:</strong> it's the most clinically useful sentence the record supports, it's record-anchored with its window and its counterweight — and it is absence-shaped, which G2 exists to police. <strong>Dr. Chen's screen is the gate, not this round.</strong> Options: (a) allow with the exact anchoring shown; (b) require the "0 · was 7" row form only, sentence stays count-positive; (c) vet-report only.</p>
+    <p><strong>Consequence:</strong> (a) unlocks the hero frame on Home; (b) keeps the fact but blunts the lead; (c) defers the wedge's best sentence to the artifact vets read.</p>
+  </div>
+
+  <div class="rq"><span class="rid">R-3</span>
+    <p><strong>Deciding:</strong> which surface owns the trial-response read — a Signal card (B1/B2), the trial card (B3), or both with one as the door.</p>
+    <p><strong>Team lean: both, split by register</strong> — the trial card carries the standing one-line count (it's the trial's home, and the §4.2 rule is satisfied: nothing here opens a form), the Signal carries it only when something changed worth surfacing (the B2 moment). Duplication is the risk to police.</p>
+    <p><strong>Consequence:</strong> shapes C3's payload (standing fact vs event-driven finding) and which PRs touch which components.</p>
+  </div>
+
+  <div class="rq"><span class="rid">R-4</span>
+    <p><strong>Deciding:</strong> C4's owner-facing register — do composed photo facts (retained food, hair counts, bile) render in the timing cards' expanded states (as mocked), on their own insight card, or stay vet-report-only.</p>
+    <p><strong>Team lean: expanded-states + report</strong>, no standalone card — the compositions are evidence about a timing story, not their own headline (S10: a receipt must earn its place).</p>
+    <p><strong>Consequence:</strong> keeps C4 client-light (renderer additions only) and pushes its richest form into the report, where the regurgitation descriptors matter most.</p>
+  </div>
+
+  <div class="rq"><span class="rid">R-5</span>
+    <p><strong>Deciding:</strong> the sub-floor register — D1 (real progress toward each floor, hollow-dot lanes), D2 (the gap sentence only, no progress visuals), both, or neither.</p>
+    <p><strong>Team lean: D2 now, D1 to a copy/Designer round</strong> — the gap sentence is honest at 3 episodes and escalation-shaped by construction; D1's fill-the-dots transparency is genuinely novel but flirts with logging pressure and "a card is coming" promise, which is a register question, not a data one.</p>
+    <p><strong>Consequence:</strong> D2 slots into the E1/E2 empty-state work (B-721 SR-2 adjacency); D1 waits for its own round rather than blocking this one.</p>
+  </div>
+
+  <div class="rq"><span class="rid">R-6</span>
+    <p><strong>Deciding:</strong> the flag — mint <code>signals_v2</code> (own beta-shelf row, own GA call) or ride <code>signal_design_v2</code> (one shelf entry, one GA).</p>
+    <p><strong>Team lean: own flag</strong> — this track changes <em>what the engine says</em> (new lanes, new sentences, a server deploy), not just how cards render; a separate kill-switch and a separate GA call keep the design uplift's rollout unhostaged. Cost: two shelf rows about the Signal.</p>
+    <p><strong>Consequence:</strong> its own seed migration PR (the SR-0 pattern) and its own on/off QA matrix; the requirements doc writes FR-FLAG clauses accordingly.</p>
+  </div>
+</section>
+
+<footer>
+  Culprit · Signals v2 · mock round 1 — 2026-08-14. Source of truth: <code>docs/culprit-signals-v2-mockups.html</code> (this file). Composes with the Signal/Home round-2.1 system (B-721); supersedes nothing. Counts: Nyx's live record as of Aug 14 except ~ marked representative. Round 2 re-publishes to this same artifact URL.
+</footer>
+</div>
