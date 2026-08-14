@@ -3,7 +3,7 @@
 **Date:** 2026-08-14
 **Track:** Signals v2 (B-755) · Milestone 1 (Foundations — flag, primitives, phenotype ruling)
 **Issue:** CUL-16 — Decision brief: `longGapHours` 4h vs 6h (Dr. Chen). **Blocks:** CUL-7 (PR 2 floor lock).
-**Outcome:** RULED **6h**. Decision brief committed; ruling posted to CUL-16 + unblock note to CUL-7. Docs-only, no code/schema.
+**Outcome:** RULED **6h** (PM deferred to Dr. Chen → ratified 2026-08-14); shipped via #638. Brief committed; ruling posted to CUL-16 + unblock note to CUL-7; the §0/§2/§4.1/§8 spec edits applied to both the canonical repo spec and its Linear mirror. Docs-only, no code/schema.
 
 ---
 
@@ -29,4 +29,4 @@ Dr. Chen ✓ (owned calibration — anchored to gastric-emptying literature; tri
 
 - **CUL-7 (PR 2):** run the seeded null-model sweep at 6h; lock `minLongGapFraction` (likely > provisional 0.25) + confirm `minLongGapEpisodes`. Lift the §5 anchor comment into `DEFAULT_CONFIG`.
 - **CUL-12 (PR 5) / mock round 2:** A2 third band → `6h+`; `in between` = 30 min – 6h.
-- **Spec (Linear §0/§2/§4.1/§8):** apply the §6 proposed edits (owned-call resolution — flagged for PM awareness/veto per the persona model; the ruling stands and unblocks CUL-7).
+- **Spec edits — DONE.** PM ratified (deferred to Dr. Chen); the §0 (new D10) / §2 L1 / §4.1 (face **and** the expand's dot-lane axis) / §8 Q2 edits were applied to **both** the Linear project description and the canonical `docs/nyx-signals-v2-requirements.md` (v1.0 → v1.1). The twist worth recording: **PR #637 landed the canonical repo spec on `main` mid-wrap** — exactly the divergence the decision doc's guard had flagged as a future trap — so this branch merged `main` in and re-applied the edits to the repo file too. Repo spec and Linear mirror now agree, both 6h.
