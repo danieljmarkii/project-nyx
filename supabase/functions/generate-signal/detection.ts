@@ -4009,6 +4009,27 @@ export function detectTimeOfDayClustering(
 // SINGLE base rate over any window is dragged off the recent regime by one old outlier episode and
 // fires on noise (the round-2 review break). The seeded property sweep at 6h locks the floors AND this
 // guard against uniform-random / Poisson / grazing AND mixed-history-with-outlier null models.
+//
+// WHAT THE GUARD PROVES, AND WHAT IT DOES NOT (adversarial review round 3 — PASS, ~250k seeded trials +
+// a by-hand proof that `localLongBaseRate` is the EXACT per-episode P(long | onset uniform in its
+// eligible interval), so no uniform-null false positive above α is constructible). The guard rules out
+// exactly ONE confound: the feeding-schedule base rate under uniform-time vomiting. Three named limits
+// ride ABOVE this module and are NOT guard-math bugs — do not try to "fix" them here:
+//   1. CIRCADIAN vs SCHEDULE (the headline — a Dr. Chen card-copy gate, tracked for CUL-12/PR 5). A cat
+//      whose vomiting clusters at a clock hour deep in the long band (a 6pm vomit is 10h past an 8am
+//      feed) fires — correctly, because those vomits genuinely ARE ≥6h post-meal. The guard proves
+//      "clustered in the long band beyond schedule chance", NOT "caused by an empty stomach". The card
+//      must never read as "feed her more often will fix it" — this template already names TIMING ONLY
+//      ("a timing pattern worth mentioning to your vet"), carries the clock band as EVIDENCE, and sets
+//      `associationalOnly: true`; the CARD renderer must preserve that and add no causal framing.
+//   2. LOGGING-GAP INVERSION (a general meal-timing limit, shared with ⑤; a vet-report framing note).
+//      An UNLOGGED discrete meal turns genuinely post-prandial vomits into "empty-stomach". Only
+//      declared free-fed bowls are excluded; an unlogged meal is invisible to ANY schedule-base-rate
+//      guard ("didn't log ≠ didn't eat"). Not fixable inside the guard.
+//   3. ONCE-DAILY SENSITIVITY FLOOR (safe direction — silence, never false reassurance). At base ~0.75
+//      the exact test needs ~11 all-long episodes to speak, so the phenotype L1 is named for is HARDEST
+//      to confirm on a once-daily schedule; the typical once-daily bilious case is really ⑥'s clock lane,
+//      which the episode-set-aware suppression now keeps. A real limit, in the safe direction.
 
 /** L1 runs on vomit only, exactly like ⑤ (the empty-stomach phenotype is a vomiting phenotype). */
 const EMPTY_STOMACH_SYMPTOM_TYPE: SymptomType = 'vomit'
@@ -4077,7 +4098,12 @@ export function poissonBinomialUpperTailProbability(probs: readonly number[], k:
   if (k > n) return 0 // impossible outcome
   let pmf = [1] // P(X = 0) = 1 over zero episodes
   for (const raw of probs) {
-    const p = Math.min(1, Math.max(0, Number.isFinite(raw) ? raw : 0))
+    // A non-finite pᵢ maps to 1, NOT 0 — the CONSERVATIVE direction for a false-positive-averse guard.
+    // A garbage rate that deflated the expected count (→0) would INFLATE the surprise and could
+    // manufacture a fire; mapping it to 1 (this episode is certainly long by chance) maximally raises
+    // E[X], so it can only ever make the guard HARDER to fire. Unreachable today — `localLongBaseRate`
+    // provably returns a finite value in [0, 0.75] — but the default must fail safe, not surprising.
+    const p = Math.min(1, Math.max(0, Number.isFinite(raw) ? raw : 1))
     const next = new Array<number>(pmf.length + 1).fill(0)
     for (let j = 0; j < pmf.length; j++) {
       next[j] += pmf[j] * (1 - p)

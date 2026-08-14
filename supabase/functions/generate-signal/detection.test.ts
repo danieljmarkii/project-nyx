@@ -3033,6 +3033,13 @@ Deno.test('poissonBinomialUpperTailProbability — reduces to the binomial for e
   assert.equal(poissonBinomialUpperTailProbability(rep(0, 10), 1), 0, 'all p=0 → all mass at 0, P(X≥1)=0')
   assert.equal(poissonBinomialUpperTailProbability(rep(1, 10), 10), 1, 'all p=1 → all mass at n')
   assert.equal(poissonBinomialUpperTailProbability([], 0), 1, 'empty set: P(X≥0)=1')
+  // A non-finite pᵢ maps to 1 (fail-safe / conservative), NEVER 0 — a garbage rate must not deflate the
+  // expected count and manufacture a fire (adversarial review round 3, finding #4).
+  assert.equal(
+    poissonBinomialUpperTailProbability([NaN, Infinity, 0.5], 2),
+    poissonBinomialUpperTailProbability([1, 1, 0.5], 2),
+    'non-finite p → 1 (fail-safe), not 0',
+  )
   // REDUCES TO THE BINOMIAL when every pᵢ is equal (the property the round-3 rework must preserve).
   for (const [p, n] of [[0.25, 8], [0.5, 8], [0.6, 10], [0.75, 12]] as const) {
     for (let k = 0; k <= n; k++) {
@@ -3156,13 +3163,19 @@ function randomNullVomits(
   return out
 }
 
-Deno.test('detectEmptyStomachTiming — §PROPERTY SWEEP: random onsets fire ≪5% on stationary AND non-stationary null schedules', () => {
-  const NULLS: { name: string; meals: MealEvent[]; poisson: boolean; recentOnly: boolean; outlierDay?: number }[] = [
-    { name: 'once-daily(base~0.75)', meals: scheduleMeals([8]), poisson: false, recentOnly: false },
-    { name: 'twice-daily(base~0.5)', meals: scheduleMeals([8, 20]), poisson: false, recentOnly: false },
-    { name: 'thrice-daily(base~0.25)', meals: scheduleMeals([7, 15, 23]), poisson: false, recentOnly: false },
-    { name: 'grazing(8/day)', meals: scheduleMeals([0, 3, 6, 9, 12, 15, 18, 21]), poisson: false, recentOnly: false },
-    { name: 'twice-daily-poisson', meals: scheduleMeals([8, 20]), poisson: true, recentOnly: false },
+Deno.test('detectEmptyStomachTiming — §PROPERTY SWEEP: random onsets fire ≤ α on stationary, non-stationary AND mixed-history null schedules (exact-test calibration to n=14)', () => {
+  // `maxN` — stationary schedules sweep to n=14 (the high-n CALIBRATION concern: an EXACT test's null
+  // fire rate legitimately RISES toward α as n grows — adversarial review round 3, finding #3, measured
+  // a ~4.67% peak at twice-daily n=13, never past α through n=20 — so asserting past n=10 keeps a
+  // future high-n regression from landing silently above the tested band). The `recentOnly`/mixed
+  // models stay at n≤10: their `span=14` distinct-day draw degenerates as n→14, and their remit is
+  // FP-ROBUSTNESS (the outlier/regime break), fully exercised at n=6..10.
+  const NULLS: { name: string; meals: MealEvent[]; poisson: boolean; recentOnly: boolean; outlierDay?: number; maxN?: number }[] = [
+    { name: 'once-daily(base~0.75)', meals: scheduleMeals([8]), poisson: false, recentOnly: false, maxN: 14 },
+    { name: 'twice-daily(base~0.5)', meals: scheduleMeals([8, 20]), poisson: false, recentOnly: false, maxN: 14 },
+    { name: 'thrice-daily(base~0.25)', meals: scheduleMeals([7, 15, 23]), poisson: false, recentOnly: false, maxN: 14 },
+    { name: 'grazing(8/day)', meals: scheduleMeals([0, 3, 6, 9, 12, 15, 18, 21]), poisson: false, recentOnly: false, maxN: 14 },
+    { name: 'twice-daily-poisson', meals: scheduleMeals([8, 20]), poisson: true, recentOnly: false, maxN: 14 },
     // NON-STATIONARY (the FIRST guard fired ~81% here) — recent vomits against a recently-changed schedule.
     { name: 'regime 3x->1x recent', meals: scheduleMeals([7, 15, 23], [8]), poisson: false, recentOnly: true },
     { name: 'regime 2x->1x recent', meals: scheduleMeals([8, 20], [8]), poisson: false, recentOnly: true },
@@ -3178,18 +3191,21 @@ Deno.test('detectEmptyStomachTiming — §PROPERTY SWEEP: random onsets fire ≪
     // Regime 2x->1x with an old outlier — the same break at a smaller regime jump.
     { name: 'mixed-history 2x->1x outlier@45', meals: scheduleMeals([8, 20], [8]), poisson: false, recentOnly: true, outlierDay: 45 },
   ]
-  // The exact binomial self-calibrates the null to ≤ baseRateAlpha (0.05); measured pooled ~0–2% and
-  // every per-n slice well under alpha. Ceilings carry margin for the seeded 1500-trial estimate.
+  // The Poisson-binomial is EXACT, so the null fire rate is calibrated to ≈ α (0.05), NOT ≪ α — being
+  // well under α at small n is discreteness, not extra conservatism (finding #3). PER_N_CEIL is α plus
+  // headroom for the seeded estimate (the peak true rate is ~4.67% at n=13); POOLED stays low because
+  // the low-n cells dominate. Deterministic (seeded), so a passing run stays passing.
   const POOLED_CEIL = 0.035
-  const PER_N_CEIL = 0.05
-  const TRIALS = 1500
+  const PER_N_CEIL = 0.065
+  const TRIALS = 2000
   for (const nm of NULLS) {
     const rng = mulberry32(
       0x5eed ^ (nm.poisson ? 0x111 : 0) ^ (nm.recentOnly ? 0x222 : 0) ^ ((nm.outlierDay ?? 0) * 0x333) ^ (nm.name.length * 71),
     )
     let fires = 0
     let total = 0
-    for (let n = 6; n <= 10; n++) {
+    let worstN = 0
+    for (let n = 6; n <= (nm.maxN ?? 10); n++) {
       let perFires = 0
       for (let t = 0; t < TRIALS; t++) {
         if (detectEmptyStomachTiming(input({ symptomEvents: randomNullVomits(rng, n, nm.poisson, nm.recentOnly, nm.outlierDay), mealEvents: nm.meals })).length > 0) {
@@ -3199,10 +3215,11 @@ Deno.test('detectEmptyStomachTiming — §PROPERTY SWEEP: random onsets fire ≪
       const r = perFires / TRIALS
       fires += perFires
       total += TRIALS
+      worstN = Math.max(worstN, r)
       assert.ok(r < PER_N_CEIL, `${nm.name} n=${n} fire rate ${(r * 100).toFixed(2)}% exceeded the ${PER_N_CEIL * 100}% per-n ceiling`)
     }
     const pooled = fires / total
-    console.log(`L1 null-model ${nm.name}: pooled ${(pooled * 100).toFixed(2)}% (${fires}/${total})`)
+    console.log(`L1 null-model ${nm.name}: pooled ${(pooled * 100).toFixed(2)}% (worst-n ${(worstN * 100).toFixed(2)}%, ${fires}/${total})`)
     assert.ok(pooled < POOLED_CEIL, `${nm.name} pooled fire rate ${(pooled * 100).toFixed(2)}% must be < ${POOLED_CEIL * 100}%`)
   }
 })
