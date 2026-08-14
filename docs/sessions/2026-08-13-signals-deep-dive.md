@@ -197,6 +197,21 @@ v0.9 (draft for PM ratification)** — the B-755 build contract:
 - Fact-check pass folded in earlier the same day (9/6/0); backlog rows
   **B-755** (signals-v2 track, Now) + **B-756** (taxonomy track, Next) filed.
 
+## Ratification + the Linear migration (same session, 2026-08-14)
+
+The PM ratified v0.9 → **v1.0** ("This reads right to me") and directed a
+workflow change: this track runs **Linear-first**. Done same-session:
+project **"Signals v2 — the record, decomposed"** created on team
+**Culprit** (the PM renamed the team from Project-Nyx mid-flight — PR 0's
+identifier migrated PRO-5 → CUL-5), the full spec mirrored into the project
+description (repo file canonical, mirror-on-edit rule written into the doc
+header), PR #637 + the mock artifact attached as project resources, and
+**15 issues** filed: CUL-5…CUL-15 = PRs 0–10 wired with blocking relations
+(PR 1 gates the lanes; lanes gate their surfaces; PR 10 gates on all
+clients), CUL-16/17 the two Dr. Chen decision briefs, CUL-18 mock round 2,
+CUL-19 the B-494-gated report deploy. One save_issue call was
+permission-denied mid-batch and resumed on the PM's confirmation.
+
 ## Next Session Kickoff
 
 **Recommended first prompt:**

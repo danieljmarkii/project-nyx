@@ -1,5 +1,6 @@
 # Culprit — Signals v2 Requirements (B-755)
-**Version:** 0.9 — draft for PM ratification | **Date:** 2026-08-14
+**Version:** 1.0 — **PM-ratified 2026-08-14** ("This reads right to me") | **Date:** 2026-08-14
+**Tracking (PM directive, 2026-08-14 — Linear-first workflow trial for this track):** Linear project [Signals v2 — the record, decomposed](https://linear.app/projectnyx/project/signals-v2-the-record-decomposed-cc4a253098a1) (team Culprit): CUL-5…CUL-15 = PRs 0–10 with blocking relations; CUL-16/CUL-17 the Dr. Chen decision briefs (§8.1/§8.2); CUL-18 mock round 2; CUL-19 the B-494-gated report deploy. The project description mirrors this doc; **this file stays canonical** — on any material edit here, update the Linear description in the same session.
 **Evidence base:** `docs/research/2026-08-signals-deep-dive.md` (verified 2026-08-14: 9 confirmed / 6 nuanced / 0 refuted) · mock round 1 `docs/culprit-signals-v2-mockups.html` (+ artifact) · the C2 taxonomy study (agent brief, session record 2026-08-13) · PM triage + mock reactions 2026-08-14.
 **Sibling tracks:** B-721 Signal/Home design uplift (this track composes with it, supersedes nothing); B-756 event-type taxonomy (its own doc — the cough lane here is gated on its cough type); B-494 (gates `generate-report` redeploys — the report-side additions here queue behind that chain, never their own).
 
