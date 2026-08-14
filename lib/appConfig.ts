@@ -63,12 +63,25 @@ export type AppConfigKey = keyof AppConfigValues;
 // `signal_design_v2`, and more so: the redesign is presentation/step-structure only
 // (same event writes, same sync paths, zero server component — spec §1/§2), so there
 // is no server-side registration of this key either.
+//
+// `signals_v2` is the Signals-v2 ("the record, decomposed") rollout flag (B-755,
+// migration 057) — same shape, same fail-closed resolution. It is its OWN flag, NOT
+// riding `signal_design_v2` (spec §0 D6): that flag gates HOW the Signal cards render,
+// this one gates WHAT the engine says (new lanes L1..L4 + an eventual `generate-signal`
+// redeploy) — a separate kill-switch with a separate GA call. But the gating is
+// CLIENT-RENDER-ONLY all the same: the new server lanes are computed uniformly for
+// every account and are flag-independent (an old/flag-off client ignores the additive
+// payload; the deterministic escalation is never gated), so there is no per-cohort
+// server cost and deliberately no server-side registration of this key (spec §5). The
+// engine's redeploy discipline is a separate deploy gate (G10), not something this
+// flag enforces.
 export const ALLOWLIST_FLAG_KEYS = [
   'ask_enabled',
   'ask_general_enabled',
   'widget_enabled',
   'signal_design_v2',
   'log_picker_v2',
+  'signals_v2',
 ] as const;
 export type AllowlistFlagKey = (typeof ALLOWLIST_FLAG_KEYS)[number];
 
@@ -86,6 +99,7 @@ export const ALLOWLIST_FLAGS_UNSET: AllowlistFlagValues = {
   widget_enabled: undefined,
   signal_design_v2: undefined,
   log_picker_v2: undefined,
+  signals_v2: undefined,
 };
 
 // The pure primitive. `userId` is the signed-in caller's uid (null when unknown /

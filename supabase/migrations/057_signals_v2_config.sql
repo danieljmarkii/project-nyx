@@ -1,0 +1,90 @@
+-- ============================================================
+-- signals_v2 — seed the Signals-v2 (the record, decomposed) rollout flag
+-- (Signals v2 / B-755, PR 0)
+-- See: docs/nyx-signals-v2-requirements.md §5 (the flag + the five FR-clauses),
+--      §7 (the PR 0..10 plan), §0 D6 (own flag, not riding signal_design_v2) and
+--      §6 G10 (the deploy gate).
+-- ============================================================
+-- Signals v2 adds four engine lanes (L1..L4 — empty-stomach timing, the
+-- trial-response lane, photo-record composition, the gap-shortening sub-floor lane)
+-- plus the A2 timing card, the trial surfaces, the watching system and two Patterns
+-- panels. Every user-facing part of it ships DARK behind one allowlist flag so every
+-- client PR (PRs 1..9) lands invisible and the new surfaces can bake on a hand-picked
+-- cohort before they reach anyone else. This migration seeds that single eligibility
+-- flag. It is the PR-0 gate the whole track queues behind — §5 "seed first": the
+-- seed + client registration land BEFORE any consumer.
+--
+--   signals_v2   Eligibility for the Signals-v2 surfaces. Resolved client-side by
+--                resolveAllowlistFlag (lib/appConfig.ts) against the caller's uid.
+--                Flag-off => the shipped Signal/Patterns surfaces render
+--                byte-identical (§5 "byte-identical off"); flag-on => the new lanes'
+--                cards, receipts and Patterns panels render. No leak — every
+--                user-facing change gates on eligibility (§5 "no leak").
+--
+-- CLIENT-RENDER-ONLY, and its OWN flag (§0 D6): signals_v2 is deliberately NOT
+-- signal_design_v2 (055). That flag gates HOW the Signal cards render (B-721's
+-- receipts/register uplift); this one gates WHAT the engine SAYS (new finding/payload
+-- types + an eventual `generate-signal` redeploy) — so it is a separate kill-switch
+-- with a separate GA call, and the cost (one extra beta-shelf row about the Signal)
+-- is accepted. But the GATING ARCHITECTURE is the same as 055's: the server lanes are
+-- computed UNIFORMLY for every account and are flag-independent (an old/flag-off
+-- client ignores the new payload fields; the deterministic escalation is never
+-- gated), so there is no per-cohort server cost. The CLIENT signals_v2 gate decides
+-- only whether the new surfaces are drawn. Consequently there is deliberately NO
+-- server-side registration of this key (supabase/functions/_shared/flags.ts is a
+-- generic resolver and needs no per-key entry), the beta's serverCost is false, and
+-- the B-712 "server-cost betas must gate server-side" rule is checked (§5) and does
+-- not bite here (the widget precedent). The engine's redeploy discipline is a
+-- SEPARATE gate — G10: `generate-signal` is redeployed with a new finding/payload
+-- type only after the client PR that renders-or-safely-ignores it merges — not
+-- something this flag enforces.
+--
+-- THE ALLOWLIST SHAPE (§5, B-712 / B-721): reuses the experimental-flag primitive
+-- seeded for Ask (037), the widget (054), the Signal uplift (055) and the log picker
+-- (056) verbatim —
+--   {"enabled": bool, "allowlist": ["<user-uuid>", …]}
+-- Resolution (already implemented, client-side): enabled=true => on for everyone;
+-- else on iff the caller's uid is in allowlist; malformed/absent => fail CLOSED
+-- (off). No new mechanism, no new table, no new column, no new policy — app_config
+-- already exists (030) with its read-only-to-authenticated RLS, which this row
+-- inherits unchanged.
+--
+-- SHIP-DARK (§5 "seed first", default nobody): {"enabled": false, "allowlist": []}
+-- means Signals v2 is eligible for no one. Creating this row changes nothing an owner
+-- can see. Cohort enablement is a later, recorded config UPDATE (an app_config write,
+-- PM action — the same as the widget's / the Signal uplift's), never a deploy side
+-- effect, and deliberately NOT baked into this seed — the 037/054/055/056 lesson: a
+-- re-applied seed must never reset a live allowlist. Retirement is a removal PR on an
+-- explicit PM GA call (§5 "retire by GA call only"), never silent.
+--
+-- Scope: this PR is the SEED HALF only (one app_config row), isolated per the
+-- CLAUDE.md migration-isolation rule. The two-line client registration in
+-- lib/appConfig.ts (ALLOWLIST_FLAG_KEYS + ALLOWLIST_FLAGS_UNSET, + its unit tests)
+-- rides this same PR — it is not schema, but the seed is inert without it (the flag
+-- can't even be read: extractAllowlistFlags picks only known keys, and
+-- useAllowlistFlag is typed to the registered union) and it touches no other feature
+-- (same pattern as 054/055 PR 1). The beta-shelf row is deferred to PR 10 (§7),
+-- matching the 054/055 seed-PR scope — NOT widened like 056. Nothing CONSUMES the
+-- flag yet (§7 PR 0).
+--
+-- Migration Safety Pre-flight:
+--   Destructive:  n  (purely additive — 1 new seed row in an existing table;
+--                     no column, type, table, row, or policy is dropped,
+--                     renamed, retyped, or altered.)
+--   Rollback:     DELETE FROM app_config WHERE key = 'signals_v2';
+--   Backfill:     N/A — one brand-new config row; no existing data is read or
+--                 written.
+--   Affected tables: app_config (INSERT only). Row-count sanity check before
+--                 applying:
+--                   SELECT key FROM app_config WHERE key = 'signals_v2';
+--                   -- expect: 0 rows (the key does not exist yet)
+-- ============================================================
+
+-- ON CONFLICT DO NOTHING makes the seed idempotent AND safe: if this migration is
+-- ever re-applied after the flag has been flipped/allowlisted in prod, it
+-- preserves the live value rather than resetting it to the shipped-dark seed.
+-- (Same discipline as the 030/037/054/055/056 seeds.)
+
+INSERT INTO app_config (key, value) VALUES
+  ('signals_v2', '{"enabled": false, "allowlist": []}'::jsonb)
+ON CONFLICT (key) DO NOTHING;
