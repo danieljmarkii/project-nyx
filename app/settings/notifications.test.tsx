@@ -6,6 +6,8 @@ import {
   readCategoryEnabled,
   applyCategoryPreference,
   reconcileFromPreferences,
+  readUsePetName,
+  applyUsePetName,
 } from '../../lib/notificationSettings';
 
 // Pins the un-mocked notifications screen's load-bearing consent wiring (B-661
@@ -32,10 +34,14 @@ jest.mock('react-native-safe-area-context', () => {
   const { View } = require('react-native');
   return { SafeAreaView: View, useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }) };
 });
-// A single active pet → the primer copy names it (single-pet warmth path).
+// The active-pet list, mutable so a test can flip single ↔ multi-pet (DR-6). Reset
+// to a single pet ("Biscuit") in beforeEach — the single-pet warmth path is the
+// default the existing primer tests rely on. The `mock` prefix is what lets the
+// jest.mock factory reference it (babel out-of-scope-variable exemption).
+let mockPets: { id: string; name: string }[] = [{ id: 'p1', name: 'Biscuit' }];
 jest.mock('../../store/petStore', () => ({
   usePetStore: (sel: (s: { pets: { id: string; name: string }[] }) => unknown) =>
-    sel({ pets: [{ id: 'p1', name: 'Biscuit' }] }),
+    sel({ pets: mockPets }),
 }));
 // Off the native SVG/animation path — the loader is not what this test pins.
 jest.mock('../../components/brand/WhorlSpinner', () => ({ WhorlSpinner: () => null }));
@@ -50,18 +56,25 @@ jest.mock('../../lib/notificationSettings', () => ({
   readCategoryEnabled: jest.fn(),
   applyCategoryPreference: jest.fn(),
   reconcileFromPreferences: jest.fn(),
+  readUsePetName: jest.fn(),
+  applyUsePetName: jest.fn(),
 }));
 
 const mockEnsure = ensurePermission as jest.Mock;
 const mockRead = readCategoryEnabled as jest.Mock;
 const mockApply = applyCategoryPreference as jest.Mock;
 const mockReconcile = reconcileFromPreferences as jest.Mock;
+const mockReadUsePetName = readUsePetName as jest.Mock;
+const mockApplyUsePetName = applyUsePetName as jest.Mock;
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockPets = [{ id: 'p1', name: 'Biscuit' }]; // default: single pet
   mockRead.mockResolvedValue(false);
   mockApply.mockResolvedValue(undefined);
   mockReconcile.mockResolvedValue(undefined);
+  mockReadUsePetName.mockResolvedValue(false);
+  mockApplyUsePetName.mockResolvedValue(undefined);
 });
 
 afterEach(() => {
@@ -72,7 +85,7 @@ afterEach(() => {
 // banner) before interacting.
 async function renderReady() {
   const utils = render(<NotificationsScreen />);
-  await waitFor(() => utils.getByRole('switch'));
+  await waitFor(() => utils.getByLabelText('Daily summary'));
   return utils;
 }
 
@@ -81,7 +94,7 @@ describe('state (a) undetermined — never asked', () => {
 
   it('toggling on opens the primer and does NOT fire the system prompt yet', async () => {
     const utils = await renderReady();
-    fireEvent(utils.getByRole('switch'), 'valueChange', true);
+    fireEvent(utils.getByLabelText('Daily summary'), 'valueChange', true);
     // Primer is up (names the single pet), and the OS prompt has NOT been spent.
     await waitFor(() => utils.getByText(/Biscuit.s day, gathered up/));
     expect(mockEnsure).toHaveBeenCalledTimes(1); // only the focus read…
@@ -90,7 +103,7 @@ describe('state (a) undetermined — never asked', () => {
 
   it('declining the primer spends nothing (AC 2)', async () => {
     const utils = await renderReady();
-    fireEvent(utils.getByRole('switch'), 'valueChange', true);
+    fireEvent(utils.getByLabelText('Daily summary'), 'valueChange', true);
     fireEvent.press(await utils.findByRole('button', { name: 'Not now' }));
     // The one prompt was never requested, and no preference was written.
     expect(mockEnsure).not.toHaveBeenCalledWith(true);
@@ -101,7 +114,7 @@ describe('state (a) undetermined — never asked', () => {
     mockEnsure.mockResolvedValueOnce('undetermined'); // focus read
     mockEnsure.mockResolvedValueOnce('granted'); // the primer's requested prompt
     const utils = await renderReady();
-    fireEvent(utils.getByRole('switch'), 'valueChange', true);
+    fireEvent(utils.getByLabelText('Daily summary'), 'valueChange', true);
     fireEvent.press(await utils.findByRole('button', { name: 'Turn on' }));
     await waitFor(() => expect(mockEnsure).toHaveBeenCalledWith(true));
     expect(mockApply).toHaveBeenCalledWith('daily_summary', true);
@@ -111,7 +124,7 @@ describe('state (a) undetermined — never asked', () => {
     mockEnsure.mockResolvedValueOnce('undetermined'); // focus read
     mockEnsure.mockResolvedValueOnce('denied'); // the prompt came back denied
     const utils = await renderReady();
-    fireEvent(utils.getByRole('switch'), 'valueChange', true);
+    fireEvent(utils.getByLabelText('Daily summary'), 'valueChange', true);
     fireEvent.press(await utils.findByRole('button', { name: 'Turn on' }));
     // No on-while-denied lie: the opt-in is NOT written, and the inert door appears.
     await waitFor(() => utils.getByText(/Notifications are off for Culprit/));
@@ -134,12 +147,14 @@ describe('4th state — pref synced on, but this device never granted', () => {
     const utils = await renderReady();
     // Reflects "not active on this device", not the synced pref — so a stray tap
     // fires the ENABLE path, never a silent account-wide disable.
-    expect(utils.getByRole('switch').props.value).toBe(false);
+    expect(utils.getByLabelText('Daily summary').props.value).toBe(false);
   });
 
   it('tapping it walks the primer (enable), never applyCategoryPreference(false)', async () => {
     const utils = await renderReady();
-    fireEvent(utils.getByRole('switch'), 'valueChange', true);
+    // getByLabelText('Daily summary') disambiguates from the DR-6 pet-name switch;
+    // the primer hero copy is DR-4's registry-driven lead.
+    fireEvent(utils.getByLabelText('Daily summary'), 'valueChange', true);
     await waitFor(() => utils.getByText(/Biscuit.s day, gathered up/)); // the primer, not a disable
     expect(mockApply).not.toHaveBeenCalled();
   });
@@ -150,7 +165,7 @@ describe('state (b) granted', () => {
 
   it('toggling on enables directly, with no primer and no prompt', async () => {
     const utils = await renderReady();
-    fireEvent(utils.getByRole('switch'), 'valueChange', true);
+    fireEvent(utils.getByLabelText('Daily summary'), 'valueChange', true);
     await waitFor(() => expect(mockApply).toHaveBeenCalledWith('daily_summary', true));
     // Already granted → the primer never appears and the prompt is never re-fired.
     expect(utils.queryByRole('button', { name: 'Turn on' })).toBeNull();
@@ -160,7 +175,7 @@ describe('state (b) granted', () => {
   it('toggling off disables the category', async () => {
     mockRead.mockResolvedValue(true); // starts enabled
     const utils = await renderReady();
-    fireEvent(utils.getByRole('switch'), 'valueChange', false);
+    fireEvent(utils.getByLabelText('Daily summary'), 'valueChange', false);
     await waitFor(() => expect(mockApply).toHaveBeenCalledWith('daily_summary', false));
   });
 });
@@ -182,11 +197,74 @@ describe('state (c) OS-denied', () => {
   it('keeps the switch inert (disabled + off) regardless of the stored pref', async () => {
     mockRead.mockResolvedValue(true); // pref is on underneath; permission trumps
     const utils = await renderReady();
-    const sw = utils.getByRole('switch');
+    const sw = utils.getByLabelText('Daily summary');
     expect(sw.props.value).toBe(false);
     expect(sw.props.disabled).toBe(true);
     // Alert is never surfaced just for being in the denied state.
     const alertSpy = jest.spyOn(Alert, 'alert');
     expect(alertSpy).not.toHaveBeenCalled();
+  });
+});
+
+// ── DR-6 — the warmth opt-in row ─────────────────────────────────────────────
+// Single-pet only, revealed only once the Daily summary is genuinely on (granted +
+// enabled). The name label is the unique query handle; the daily switch is queried
+// by its own "Daily summary" label above.
+const petNameLabel = 'Use Biscuit’s name in notifications';
+
+describe('DR-6 pet-name opt-in row', () => {
+  it('is HIDDEN while the summary is off (nothing to name yet)', async () => {
+    mockEnsure.mockResolvedValue('granted');
+    mockRead.mockResolvedValue(false); // summary off
+    const utils = await renderReady();
+    expect(utils.queryByLabelText(petNameLabel)).toBeNull();
+  });
+
+  it('SHOWS once the summary is on for a single pet, reflecting the stored opt-in', async () => {
+    mockEnsure.mockResolvedValue('granted');
+    mockRead.mockResolvedValue(true); // summary on
+    mockReadUsePetName.mockResolvedValue(true); // opted in
+    const utils = await renderReady();
+    const row = await utils.findByLabelText(petNameLabel);
+    expect(row.props.value).toBe(true);
+  });
+
+  it('is HIDDEN on a MULTI-pet account even with the summary on (neutral by construction)', async () => {
+    mockPets = [{ id: 'p1', name: 'Biscuit' }, { id: 'p2', name: 'Gus' }];
+    mockEnsure.mockResolvedValue('granted');
+    mockRead.mockResolvedValue(true); // summary on
+    mockReadUsePetName.mockResolvedValue(true);
+    const utils = await renderReady();
+    expect(utils.queryByLabelText(petNameLabel)).toBeNull();
+    // …and the daily switch is the only one on screen.
+    expect(utils.queryByLabelText('Use Gus’s name in notifications')).toBeNull();
+  });
+
+  it('is HIDDEN in the OS-denied state (the summary is inert, so is its sub-option)', async () => {
+    mockEnsure.mockResolvedValue('denied');
+    mockRead.mockResolvedValue(true); // pref on underneath; permission trumps
+    mockReadUsePetName.mockResolvedValue(true);
+    const utils = await renderReady();
+    expect(utils.queryByLabelText(petNameLabel)).toBeNull();
+  });
+
+  it('toggling it on writes the opt-in through applyUsePetName (DR-6)', async () => {
+    mockEnsure.mockResolvedValue('granted');
+    mockRead.mockResolvedValue(true); // summary on
+    mockReadUsePetName.mockResolvedValue(false); // starts neutral
+    const utils = await renderReady();
+    const row = await utils.findByLabelText(petNameLabel);
+    fireEvent(row, 'valueChange', true);
+    await waitFor(() => expect(mockApplyUsePetName).toHaveBeenCalledWith(true));
+  });
+
+  it('toggling it off writes applyUsePetName(false)', async () => {
+    mockEnsure.mockResolvedValue('granted');
+    mockRead.mockResolvedValue(true);
+    mockReadUsePetName.mockResolvedValue(true); // starts named
+    const utils = await renderReady();
+    const row = await utils.findByLabelText(petNameLabel);
+    fireEvent(row, 'valueChange', false);
+    await waitFor(() => expect(mockApplyUsePetName).toHaveBeenCalledWith(false));
   });
 });

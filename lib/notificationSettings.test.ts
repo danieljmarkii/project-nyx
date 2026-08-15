@@ -16,26 +16,47 @@ jest.mock('./sync', () => ({ syncPendingNotificationPreferences: jest.fn() }));
 jest.mock('./db', () => ({ getDb: jest.fn() }));
 jest.mock('./notifications', () => ({
   reconcileSchedules: jest.fn(),
+  // A recognizable stand-in for the real pure resolver (covered in
+  // notifications.test.ts) so we can assert reconcileFromPreferences threads the
+  // right (usePetName × petName) content without importing expo-notifications.
+  resolveDailySummaryContent: jest.fn(
+    (opts: { usePetName: boolean; petName: string | null }) =>
+      opts.usePetName && opts.petName
+        ? { title: `named:${opts.petName}`, body: `named-body:${opts.petName}` }
+        : { title: 'neutral', body: 'neutral-body' },
+  ),
   ALL_NOTIFICATION_CATEGORIES: ['daily_summary'],
+}));
+// The pet store the reconcile reads to resolve the single-pet name (DR-6). Default:
+// no pets → neutral. Individual tests override getState for the single-pet path.
+jest.mock('../store/petStore', () => ({
+  usePetStore: { getState: jest.fn(() => ({ pets: [] as { id: string; name: string }[] })) },
 }));
 
 import {
   CATEGORY_PREFERENCE_READ_SQL,
   CATEGORY_PREFERENCE_UPDATE_SQL,
   CATEGORY_PREFERENCE_INSERT_SQL,
+  USE_PET_NAME_UPDATE_SQL,
+  USE_PET_NAME_INSERT_SQL,
   setCategoryEnabled,
   applyCategoryPreference,
   reconcileFromPreferences,
   readCategoryEnabled,
+  readUsePetName,
+  setUsePetName,
+  applyUsePetName,
 } from './notificationSettings';
 import { NOTIFICATION_SCHEMA_SQL } from './notificationPreferences';
 import { getDb } from './db';
 import { reconcileSchedules } from './notifications';
 import { syncPendingNotificationPreferences } from './sync';
+import { usePetStore } from '../store/petStore';
 
 const mockGetDb = getDb as jest.Mock;
 const mockReconcile = reconcileSchedules as jest.Mock;
 const mockPush = syncPendingNotificationPreferences as jest.Mock;
+const mockGetState = (usePetStore as unknown as { getState: jest.Mock }).getState;
 
 // node:sqlite is Node ≥ 22 core; require() keeps it off the babel/jest-expo path
 // (the loader trick lib/notificationPreferences.test.ts uses).
@@ -232,6 +253,7 @@ describe('readCategoryEnabled / applyCategoryPreference / reconcileFromPreferenc
     jest.clearAllMocks();
     mockPush.mockResolvedValue(undefined);
     mockReconcile.mockResolvedValue({ toSchedule: [], toCancel: [] });
+    mockGetState.mockReturnValue({ pets: [] }); // default: no single pet → neutral
   });
 
   it('readCategoryEnabled coerces the SQLite integer to a boolean', async () => {
@@ -251,15 +273,131 @@ describe('readCategoryEnabled / applyCategoryPreference / reconcileFromPreferenc
     expect(mockReconcile).toHaveBeenCalledTimes(1); // then reconciled
   });
 
-  it('reconcileFromPreferences passes only enabled categories as desired', async () => {
+  it('reconcileFromPreferences passes only enabled categories as desired (with content)', async () => {
     mockGetDb.mockReturnValue(fakeDb({ id: 'x', enabled: 1 })); // daily_summary on
     await reconcileFromPreferences();
-    expect(mockReconcile).toHaveBeenCalledWith(['daily_summary']);
+    expect(mockReconcile).toHaveBeenCalledWith(['daily_summary'], expect.anything());
   });
 
   it('reconcileFromPreferences passes an empty desired set when nothing is enabled', async () => {
     mockGetDb.mockReturnValue(fakeDb(null)); // nothing on
     await reconcileFromPreferences();
-    expect(mockReconcile).toHaveBeenCalledWith([]);
+    expect(mockReconcile).toHaveBeenCalledWith([], expect.anything());
+  });
+
+  it('threads the NAMED daily-summary content on a single-pet opted-in account (DR-6)', async () => {
+    // use_pet_name = 1 on the read row, and exactly one pet in the store.
+    mockGetDb.mockReturnValue(fakeDb({ id: 'x', enabled: 1, use_pet_name: 1 }));
+    mockGetState.mockReturnValue({ pets: [{ id: 'p1', name: 'Biscuit' }] });
+    await reconcileFromPreferences();
+    expect(mockReconcile).toHaveBeenCalledWith(['daily_summary'], {
+      daily_summary: { title: 'named:Biscuit', body: 'named-body:Biscuit' },
+    });
+  });
+
+  it('stays neutral for a MULTI-pet account even when opted in (by construction)', async () => {
+    mockGetDb.mockReturnValue(fakeDb({ id: 'x', enabled: 1, use_pet_name: 1 }));
+    mockGetState.mockReturnValue({ pets: [{ id: 'p1', name: 'Biscuit' }, { id: 'p2', name: 'Gus' }] });
+    await reconcileFromPreferences();
+    expect(mockReconcile).toHaveBeenCalledWith(['daily_summary'], {
+      daily_summary: { title: 'neutral', body: 'neutral-body' },
+    });
+  });
+
+  it('stays neutral for a single pet when the opt-in is OFF', async () => {
+    mockGetDb.mockReturnValue(fakeDb({ id: 'x', enabled: 1, use_pet_name: 0 }));
+    mockGetState.mockReturnValue({ pets: [{ id: 'p1', name: 'Biscuit' }] });
+    await reconcileFromPreferences();
+    expect(mockReconcile).toHaveBeenCalledWith(['daily_summary'], {
+      daily_summary: { title: 'neutral', body: 'neutral-body' },
+    });
+  });
+});
+
+// ── The warmth opt-in write path (DR-6) as its SQL runs against real SQLite ───
+describe('USE_PET_NAME SQL — writes only use_pet_name, preserving enabled', () => {
+  it('UPDATE flips use_pet_name and re-queues, leaving enabled untouched', () => {
+    const db = freshDb();
+    // A previously-synced, ENABLED daily_summary row that later hit a sync error.
+    seed(db, { id: 'pref-1', enabled: 1, synced: 1, sync_error: 'stale-error' });
+    db.prepare(USE_PET_NAME_UPDATE_SQL).run(1, '2026-08-15T21:00:00.000Z', 'pref-1');
+    const row = db
+      .prepare('SELECT enabled, use_pet_name, updated_at, synced, sync_attempts, sync_error FROM notification_preferences WHERE id = ?')
+      .get('pref-1') as Row;
+    expect(row).toEqual({
+      enabled: 1, // PRESERVED — the name pref never touches the summary's on-state
+      use_pet_name: 1,
+      updated_at: '2026-08-15T21:00:00.000Z',
+      synced: 0, // re-queued for push
+      sync_attempts: 0,
+      sync_error: null, // quarantine cleared (B-398 contract)
+    });
+  });
+
+  it('INSERT creates the daily_summary row with the name pref and enabled = 0 (G6)', () => {
+    const db = freshDb();
+    db.prepare(USE_PET_NAME_INSERT_SQL).run(
+      'pref-1', 1, '2026-08-15T09:00:00.000Z', '2026-08-15T09:00:00.000Z',
+    );
+    const row = db
+      .prepare('SELECT category, enabled, use_pet_name, pet_id, synced, sync_error FROM notification_preferences')
+      .get() as Row;
+    expect(row).toEqual({
+      category: 'daily_summary',
+      enabled: 0, // storing a name pref must never turn the summary on
+      use_pet_name: 1,
+      pet_id: null, // account-wide (the v1 shape)
+      synced: 0,
+      sync_error: null,
+    });
+  });
+});
+
+describe('readUsePetName / setUsePetName / applyUsePetName (DR-6 orchestration)', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockPush.mockResolvedValue(undefined);
+    mockReconcile.mockResolvedValue({ toSchedule: [], toCancel: [] });
+    mockGetState.mockReturnValue({ pets: [] });
+  });
+
+  it('readUsePetName coerces the SQLite integer to a boolean, absent = off', async () => {
+    mockGetDb.mockReturnValue(fakeDb({ id: 'x', use_pet_name: 1 }));
+    expect(await readUsePetName()).toBe(true);
+    mockGetDb.mockReturnValue(fakeDb({ id: 'x', use_pet_name: 0 }));
+    expect(await readUsePetName()).toBe(false);
+    mockGetDb.mockReturnValue(fakeDb(null)); // no row = neutral (G6)
+    expect(await readUsePetName()).toBe(false);
+  });
+
+  it('setUsePetName UPDATEs the found row (no duplicate) and threads its id last, then pushes', async () => {
+    const db = fakeDb({ id: 'existing-1', enabled: 1, use_pet_name: 0 });
+    mockGetDb.mockReturnValue(db);
+    await setUsePetName(true);
+    const [sql, params] = db.runAsync.mock.calls[0];
+    expect(sql).toContain('UPDATE notification_preferences');
+    // params: [use_pet_name, updated_at, id]
+    expect(params[0]).toBe(1);
+    expect(params[2]).toBe('existing-1');
+    expect(mockPush).toHaveBeenCalledTimes(1);
+  });
+
+  it('setUsePetName INSERTs a daily_summary row when none exists (defensive get-or-create)', async () => {
+    const db = fakeDb(null);
+    mockGetDb.mockReturnValue(db);
+    await setUsePetName(true);
+    const [sql, params] = db.runAsync.mock.calls[0];
+    expect(sql).toContain('INSERT INTO notification_preferences');
+    // params: [uuid, use_pet_name, created_at, updated_at]
+    expect(params[1]).toBe(1);
+    expect(mockPush).toHaveBeenCalledTimes(1);
+  });
+
+  it('applyUsePetName persists the opt-in THEN reconciles (refreshing the schedule body)', async () => {
+    const db = fakeDb({ id: 'x', enabled: 1, use_pet_name: 0 });
+    mockGetDb.mockReturnValue(db);
+    await applyUsePetName(true);
+    expect(db.runAsync).toHaveBeenCalled(); // wrote the pref
+    expect(mockReconcile).toHaveBeenCalledTimes(1); // then reconciled
   });
 });

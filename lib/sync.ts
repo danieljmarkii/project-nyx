@@ -1465,10 +1465,11 @@ interface RemoteDietTrialFood {
 }
 interface RemoteNotificationPreference {
   // user_id is NOT pulled — the mirror is single-account and stores no owner (the
-  // push mapper stamps it from the session). enabled is a Postgres boolean →
-  // JS boolean; fire_local_time is WALL-CLOCK 'HH:MM', not a timestamp (B-661 §4).
+  // push mapper stamps it from the session). enabled + use_pet_name are Postgres
+  // booleans → JS booleans; fire_local_time is WALL-CLOCK 'HH:MM', not a timestamp
+  // (B-661 §4). use_pet_name is the DR-6 warmth opt-in (migration 058).
   id: string; pet_id: string | null; category: string;
-  enabled: boolean; fire_local_time: string;
+  enabled: boolean; use_pet_name: boolean; fire_local_time: string;
   created_at: string; updated_at: string;
 }
 
@@ -2087,7 +2088,7 @@ async function hydrateNotificationPreferences(db: Db, stale: () => boolean): Pro
   const floor = watermarkQueryFloor(since);
   const rows = await fetchAllRows<RemoteNotificationPreference>(
     'notification_preferences',
-    'id, pet_id, category, enabled, fire_local_time, created_at, updated_at',
+    'id, pet_id, category, enabled, use_pet_name, fire_local_time, created_at, updated_at',
     floor ? { column: 'updated_at', value: floor } : null,
   );
   if (!rows || rows.length === 0) return;
@@ -2099,18 +2100,20 @@ async function hydrateNotificationPreferences(db: Db, stale: () => boolean): Pro
   if (stale()) return; // FR-9: signed out during the fetch — don't write to a wiped store.
   for (const p of toWrite) {
     // created_at is immutable and appears in the column list for the INSERT branch
-    // only (the hydrateMeals asymmetry, not B-057 drift). enabled coerces
-    // boolean → 0/1. fire_local_time rides as-is — wall-clock text, never parsed.
+    // only (the hydrateMeals asymmetry, not B-057 drift). enabled + use_pet_name (the
+    // DR-6 warmth opt-in) coerce boolean → 0/1. fire_local_time rides as-is — wall-
+    // clock text, never parsed.
     await db.runAsync(
       `INSERT INTO notification_preferences
-        (id, pet_id, category, enabled, fire_local_time, created_at, updated_at, synced, sync_error)
-       VALUES (?,?,?,?,?,?,?,1,NULL)
+        (id, pet_id, category, enabled, use_pet_name, fire_local_time, created_at, updated_at, synced, sync_error)
+       VALUES (?,?,?,?,?,?,?,?,1,NULL)
        ON CONFLICT(id) DO UPDATE SET
          pet_id=excluded.pet_id, category=excluded.category, enabled=excluded.enabled,
+         use_pet_name=excluded.use_pet_name,
          fire_local_time=excluded.fire_local_time, updated_at=excluded.updated_at,
          synced=1, sync_error=NULL
        WHERE notification_preferences.synced = 1`,
-      [p.id, p.pet_id ?? null, p.category, p.enabled ? 1 : 0,
+      [p.id, p.pet_id ?? null, p.category, p.enabled ? 1 : 0, p.use_pet_name ? 1 : 0,
        p.fire_local_time ?? '21:00', p.created_at, p.updated_at],
     );
   }

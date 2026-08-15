@@ -15,6 +15,8 @@ import {
   readCategoryEnabled,
   applyCategoryPreference,
   reconcileFromPreferences,
+  readUsePetName,
+  applyUsePetName,
 } from '../../lib/notificationSettings';
 import { usePetStore } from '../../store/petStore';
 import { useSnackbarStore } from '../../store/snackbarStore';
@@ -53,6 +55,9 @@ export default function NotificationsScreen() {
   const [busy, setBusy] = useState(false); // a direct toggle write in flight
   const [primerVisible, setPrimerVisible] = useState(false);
   const [requesting, setRequesting] = useState(false); // the OS prompt in flight
+  // DR-6 — the warmth opt-in (single-pet only; account-wide pref).
+  const [usePetName, setUsePetName] = useState(false);
+  const [petNameBusy, setPetNameBusy] = useState(false);
 
   const denied = permission === 'denied';
   const settingsAppName = Platform.OS === 'ios' ? 'iOS Settings' : 'Settings';
@@ -77,24 +82,27 @@ export default function NotificationsScreen() {
       let cancelled = false;
       (async () => {
         try {
-          const [perm, on] = await Promise.all([
+          const [perm, on, named] = await Promise.all([
             ensurePermission(false), // status read only — NEVER fires the prompt
             readCategoryEnabled('daily_summary'),
+            readUsePetName(), // DR-6 — the warmth opt-in
           ]);
           if (cancelled) return;
           setPermission(perm);
           setEnabled(on);
+          setUsePetName(named);
           reconcileFromPreferences().catch((e) =>
             console.warn('[notifications] focus reconcile failed:', e),
           );
         } catch (e) {
           console.warn('[notifications] permission/pref read failed:', e);
           if (!cancelled) {
-            // Fail to the interactive state — and reset enabled too, so a transient
-            // read failure can't leave a stale enabled=true from a prior session
-            // (code-reviewer: the catch reset permission but not enabled).
+            // Fail to the interactive state — and reset enabled/usePetName too, so a
+            // transient read failure can't leave a stale enabled=true from a prior
+            // session (code-reviewer: the catch reset permission but not enabled).
             setPermission('undetermined');
             setEnabled(false);
+            setUsePetName(false);
           }
         }
       })();
@@ -148,6 +156,24 @@ export default function NotificationsScreen() {
     // switch on so the sheet doesn't rise over a switch that snapped back to off.
     setEnabled(true);
     setPrimerVisible(true);
+  }
+
+  // The warmth opt-in toggle (DR-6). No OS permission is involved — the row only
+  // shows once the summary is already on — so this writes straight through and
+  // reconciles, which refreshes the live 9pm schedule's body to the named (or
+  // neutral) copy. Optimistic, with a revert on a failed write.
+  async function handleTogglePetName(next: boolean) {
+    setUsePetName(next); // optimistic
+    setPetNameBusy(true);
+    try {
+      await applyUsePetName(next);
+    } catch (e) {
+      console.error('[notifications] pet-name opt-in write failed:', e);
+      setUsePetName(!next); // revert — the write didn't land
+      Alert.alert('Couldn’t update', 'Try again in a moment.');
+    } finally {
+      setPetNameBusy(false);
+    }
   }
 
   // "Turn on" in the primer → the ONE system prompt. Only a granted result persists
@@ -204,6 +230,16 @@ export default function NotificationsScreen() {
   }
 
   const loading = permission === null;
+
+  // The Daily summary is genuinely live on THIS device (permission granted + pref
+  // on) — the settled on-state, not the optimistic primer window. The warmth opt-in
+  // only makes sense once a summary exists to name, so its row is revealed only then.
+  const dailySummaryOn = permission === 'granted' && enabled;
+  // DR-6: single-pet accounts only. A multi-pet (or nameless) account has no single
+  // name to put on the body, so it never sees the row and stays neutral BY
+  // CONSTRUCTION — primerPetName is already null for it, and reconcile enforces the
+  // same guard server-of-the-schedule-side.
+  const showPetNameRow = primerPetName != null && dailySummaryOn;
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -273,6 +309,28 @@ export default function NotificationsScreen() {
               )
             }
           />
+
+          {/* DR-6 — the warmth opt-in, revealed under Daily summary once it's on and
+              only on a single-pet account. Default off: putting a pet's name on a
+              lock screen is an involuntarily-public tradeoff, so the sublabel names
+              it plainly and the choice is the owner's explicit, informed one (T&S).
+              Off keeps the neutral, name-free body. */}
+          {showPetNameRow && (
+            <SettingsRow
+              label={`Use ${primerPetName}’s name in notifications`}
+              sublabel={`Shows their name on the lock screen at 9pm. Off keeps the summary neutral.`}
+              trailing={
+                <Switch
+                  value={usePetName}
+                  onValueChange={handleTogglePetName}
+                  disabled={petNameBusy}
+                  trackColor={{ true: theme.colorAccent, false: theme.colorBorderStrong }}
+                  ios_backgroundColor={theme.colorBorderStrong}
+                  accessibilityLabel={`Use ${primerPetName}’s name in notifications`}
+                />
+              }
+            />
+          )}
         </Card>
 
         {/* The lock-screen privacy promise, RELOCATED here from the primer (DR-4,

@@ -44,15 +44,25 @@ function insertPref(db: ReturnType<typeof freshDb>, overrides: Record<string, st
 }
 
 describe('NOTIFICATION_SCHEMA_SQL — production local DDL', () => {
-  it('round-trips a preference, defaulting to off / 9pm / unsynced / no error (G6)', () => {
+  it('round-trips a preference, defaulting to off / neutral / 9pm / unsynced / no error (G6)', () => {
     const db = freshDb();
     insertPref(db);
     const p = db.prepare('SELECT * FROM notification_preferences WHERE id = ?').get('pref-1') as Row;
     expect(p.enabled).toBe(0);          // G6 — everything defaults OFF
+    expect(p.use_pet_name).toBe(0);     // DR-6 — neutral by default (T&S; involuntary-public)
     expect(p.fire_local_time).toBe('21:00'); // the fixed v1 time
     expect(p.pet_id).toBeNull();        // account-wide (the v1 shape)
     expect(p.synced).toBe(0);           // queued for push
     expect(p.sync_error).toBeNull();    // nothing has failed yet
+    db.close();
+  });
+
+  it('stores use_pet_name as an INTEGER 0/1 (the DR-6 warmth opt-in)', () => {
+    const db = freshDb();
+    insertPref(db, { id: 'named', use_pet_name: '1' });
+    const p = db.prepare('SELECT use_pet_name FROM notification_preferences WHERE id = ?').get('named') as Row;
+    expect(p.use_pet_name).toBe(1);
+    expect(typeof p.use_pet_name).toBe('number');
     db.close();
   });
 
@@ -85,7 +95,7 @@ describe('NOTIFICATION_SCHEMA_SQL — production local DDL', () => {
     // The columns the push SELECT * reads back, and the sync round trip carries.
     expect(columns).toEqual(
       expect.arrayContaining([
-        'id', 'pet_id', 'category', 'enabled', 'fire_local_time',
+        'id', 'pet_id', 'category', 'enabled', 'use_pet_name', 'fire_local_time',
         'created_at', 'updated_at', 'synced', 'sync_attempts', 'sync_error',
       ]),
     );
@@ -149,6 +159,7 @@ describe('notificationPreferenceRowToRemote', () => {
     pet_id: null,
     category: 'daily_summary',
     enabled: 0,
+    use_pet_name: 0,
     fire_local_time: '21:00',
     created_at: '2026-08-02T00:00:00.000Z',
     updated_at: '2026-08-02T00:00:00.000Z',
@@ -159,10 +170,15 @@ describe('notificationPreferenceRowToRemote', () => {
     // forever and nothing else in the stack would notice.
     expect(Object.keys(notificationPreferenceRowToRemote(base, 'user-abc')).sort()).toEqual(
       [
-        'id', 'user_id', 'pet_id', 'category', 'enabled', 'fire_local_time',
-        'created_at', 'updated_at',
+        'id', 'user_id', 'pet_id', 'category', 'enabled', 'use_pet_name',
+        'fire_local_time', 'created_at', 'updated_at',
       ].sort(),
     );
+  });
+
+  it('coerces the INTEGER use_pet_name to a real boolean for the server column (DR-6)', () => {
+    expect(notificationPreferenceRowToRemote({ ...base, use_pet_name: 1 }, 'u').use_pet_name).toBe(true);
+    expect(notificationPreferenceRowToRemote({ ...base, use_pet_name: 0 }, 'u').use_pet_name).toBe(false);
   });
 
   it('stamps user_id from the caller (the mirror stores no owner; RLS requires it)', () => {
