@@ -14,13 +14,22 @@ import type { TimelineRow } from './db';
 import {
   buildDaySummary,
   buildAnchoredDaySummary,
+  buildLeadLine,
+  buildCountChips,
+  buildTrialStrip,
+  buildForwardLine,
+  buildRecapMedStrips,
   localDayBoundsIso,
   resolveDaySummaryAnchorMs,
   petZeroLogLine,
   DAY_SUMMARY_ZERO_LOG,
   daySummaryEmptyTitle,
   type DaySummaryPetInput,
+  type DaySummaryRow,
 } from './daySummary';
+import { trialIdentityLabel, type TrialCardTrial } from './dietTrialCard';
+import type { TrialExposureItem } from './dietTrial';
+import type { MedStripInput, MedStripModel } from './medStrip';
 
 // Minimal TimelineRow factory — only the columns the builder + describeDayEvent
 // read need real values; everything else defaults to the null a non-matching join
@@ -218,7 +227,17 @@ describe('buildDaySummary — multi-pet sections (§5.3)', () => {
 
   it('treats an account with no pets as the (vacuous) empty state, never a crash', () => {
     const model = buildDaySummary({ pets: [], nowMs, timeZone: tz });
-    expect(model).toEqual({ sections: [], isEmpty: true, petCount: 0 });
+    // The rich single-pet fields default off on an empty/multi-pet model (DR-1 §2).
+    expect(model).toEqual({
+      sections: [],
+      isEmpty: true,
+      petCount: 0,
+      lead: null,
+      chips: [],
+      trialStrip: null,
+      medStrips: [],
+      forward: null,
+    });
   });
 
   it('never shows another pet’s row under this pet (defense-in-depth pet scope)', () => {
@@ -439,5 +458,420 @@ describe('zero-log copy — G2: record state, never a wellness verdict', () => {
     expect(daySummaryEmptyTitle(undefined)).toBe(DAY_SUMMARY_ZERO_LOG.title);
     // A title, not the inline sentence — no trailing period.
     expect(daySummaryEmptyTitle('Biscuit').endsWith('.')).toBe(false);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// The rich single-pet recap (DR-1 §2 — C0 lead, C2 chips, C3 trial strip,
+// C4 med strips, C5 forward line). The lead-line PRECEDENCE and the G2 register
+// are the load-bearing, provable-without-a-DB parts.
+// ═══════════════════════════════════════════════════════════════════════════
+
+// A DaySummaryRow fixture (the describeDayEvent shape + id + sub-line).
+function dsr(
+  over: Partial<DaySummaryRow> & {
+    id: string;
+    category: DaySummaryRow['category'];
+    eventType: string;
+  },
+): DaySummaryRow {
+  return {
+    title: 'Event',
+    formatTag: null,
+    detail: null,
+    time: '9:00 AM',
+    timeMs: 0,
+    subline: null,
+    ...over,
+  } as DaySummaryRow;
+}
+
+// A running-trial RecapTrialFacts literal (structural — the internal type is
+// consumed by the exported builders).
+const tf = (over?: Partial<{ name: string; dayCounter: number; targetDays: number }>) => ({
+  name: 'Whitefish trial',
+  dayCounter: 12,
+  targetDays: 28,
+  ...over,
+});
+
+describe('buildLeadLine (C0) — fixed precedence: symptom → trial → counts', () => {
+  it('a single symptom leads, named, with its time', () => {
+    const rows = [
+      dsr({ id: 'm1', category: 'meal', eventType: 'meal', time: '7:30 AM' }),
+      dsr({ id: 'v1', category: 'symptom', eventType: 'vomit', time: '9:15 AM' }),
+    ];
+    expect(buildLeadLine(rows, 'Biscuit', null)).toBe(
+      'One vomit in Biscuit’s record today — 9:15 AM.',
+    );
+  });
+
+  it('multiple of one symptom drop the time and pluralise', () => {
+    const rows = [
+      dsr({ id: 'v1', category: 'symptom', eventType: 'vomit', time: '9:15 AM' }),
+      dsr({ id: 'v2', category: 'symptom', eventType: 'vomit', time: '2:00 PM' }),
+    ];
+    expect(buildLeadLine(rows, 'Biscuit', null)).toBe('Two vomits in Biscuit’s record today.');
+  });
+
+  it('multiple symptom types read in GI-first order', () => {
+    const rows = [
+      dsr({ id: 's1', category: 'symptom', eventType: 'diarrhea' }),
+      dsr({ id: 'v1', category: 'symptom', eventType: 'vomit' }),
+      dsr({ id: 'v2', category: 'symptom', eventType: 'vomit' }),
+    ];
+    expect(buildLeadLine(rows, 'Mochi', null)).toBe(
+      'Two vomits and one loose stool in Mochi’s record today.',
+    );
+  });
+
+  it('a symptom OUTRANKS a running trial (precedence, not additive)', () => {
+    const rows = [
+      dsr({ id: 'm1', category: 'meal', eventType: 'meal' }),
+      dsr({ id: 'v1', category: 'symptom', eventType: 'vomit', time: '9:15 AM' }),
+    ];
+    // trial passed but the symptom still leads.
+    expect(buildLeadLine(rows, 'Biscuit', tf())).toBe(
+      'One vomit in Biscuit’s record today — 9:15 AM.',
+    );
+  });
+
+  it('with no symptom, a running trial anchors the day on its day + meal count', () => {
+    const rows = [
+      dsr({ id: 'm1', category: 'meal', eventType: 'meal' }),
+      dsr({ id: 'm2', category: 'meal', eventType: 'meal' }),
+      dsr({ id: 't1', category: 'meal', eventType: 'meal' }),
+      dsr({ id: 'd1', category: 'medication', eventType: 'medication' }),
+    ];
+    expect(buildLeadLine(rows, 'Biscuit', tf())).toBe(
+      'Day 12 of the Whitefish trial — three meals in Biscuit’s record.',
+    );
+  });
+
+  it('the trial lead drops the meal clause when no meal was logged', () => {
+    const rows = [dsr({ id: 'd1', category: 'medication', eventType: 'medication' })];
+    expect(buildLeadLine(rows, 'Biscuit', tf())).toBe('Day 12 of the Whitefish trial.');
+  });
+
+  it('with no symptom and no trial, the day’s counts lead', () => {
+    const rows = [
+      dsr({ id: 'm1', category: 'meal', eventType: 'meal' }),
+      dsr({ id: 'm2', category: 'meal', eventType: 'meal' }),
+      dsr({ id: 'm3', category: 'meal', eventType: 'meal' }),
+      dsr({ id: 'd1', category: 'medication', eventType: 'medication' }),
+    ];
+    expect(buildLeadLine(rows, 'Biscuit', null)).toBe(
+      'Three meals and one dose in Biscuit’s record today.',
+    );
+  });
+
+  it('an empty row set yields no lead (the screen renders the zero-log state)', () => {
+    expect(buildLeadLine([], 'Biscuit', null)).toBeNull();
+  });
+
+  // Intake-is-not-preference at the headline: a refused bowl (detail === 'refused')
+  // is surfaced in the lead, never buried as an ordinary "meal" (PROVISIONAL — flagged
+  // for clinical-guardrails / Dr. Chen).
+  describe('refusal surfacing (the wedge’s bad day)', () => {
+    const refused = (id: string) => dsr({ id, category: 'meal', eventType: 'meal', detail: 'refused' });
+    const eaten = (id: string) => dsr({ id, category: 'meal', eventType: 'meal', detail: 'all eaten' });
+
+    it('a FULL-refusal trial day names the refusal, never reads as a fed day', () => {
+      const rows = [refused('m1'), refused('m2'), refused('m3')];
+      expect(buildLeadLine(rows, 'Biscuit', tf())).toBe(
+        'Day 12 of the Whitefish trial — three meals in Biscuit’s record, all refused.',
+      );
+    });
+
+    it('a partial-refusal trial day names how many were refused', () => {
+      const rows = [refused('m1'), refused('m2'), eaten('m3')];
+      expect(buildLeadLine(rows, 'Biscuit', tf())).toBe(
+        'Day 12 of the Whitefish trial — three meals in Biscuit’s record, two refused.',
+      );
+    });
+
+    it('surfaces refusal in the counts tier too (no trial)', () => {
+      const rows = [refused('m1'), refused('m2'), dsr({ id: 'd1', category: 'medication', eventType: 'medication' })];
+      expect(buildLeadLine(rows, 'Biscuit', null)).toBe(
+        'Two meals and one dose in Biscuit’s record today, all refused.',
+      );
+    });
+
+    it('an all-eaten day adds NO clause (the mock frame-1 lead is unchanged)', () => {
+      const rows = [eaten('m1'), eaten('m2'), eaten('m3')];
+      expect(buildLeadLine(rows, 'Biscuit', tf())).toBe(
+        'Day 12 of the Whitefish trial — three meals in Biscuit’s record.',
+      );
+    });
+  });
+});
+
+describe('buildCountChips (C2) — per-category, symptom-toned, never totalled', () => {
+  it('names each symptom, then meals, then doses — symptoms lead', () => {
+    const rows = [
+      dsr({ id: 'm1', category: 'meal', eventType: 'meal' }),
+      dsr({ id: 'm2', category: 'meal', eventType: 'meal' }),
+      dsr({ id: 'v1', category: 'symptom', eventType: 'vomit' }),
+      dsr({ id: 'd1', category: 'medication', eventType: 'medication' }),
+    ];
+    const chips = buildCountChips(rows);
+    expect(chips).toEqual([
+      { key: 'vomit', label: '1 vomit', tone: 'symptom' },
+      { key: 'meal', label: '2 meals', tone: 'neutral' },
+      { key: 'medication', label: '1 dose', tone: 'neutral' },
+    ]);
+  });
+
+  it('never emits a grand-total chip', () => {
+    const rows = [
+      dsr({ id: 'm1', category: 'meal', eventType: 'meal' }),
+      dsr({ id: 'v1', category: 'symptom', eventType: 'vomit' }),
+    ];
+    const labels = buildCountChips(rows).map((c) => c.label);
+    expect(labels).not.toContain('2 events');
+    expect(labels.some((l) => /total/i.test(l))).toBe(false);
+  });
+});
+
+describe('buildTrialStrip (C3) — day-position + floor meal count, no ratio', () => {
+  it('renders Day N of M · K trial-diet meals', () => {
+    expect(buildTrialStrip(tf(), 2)).toEqual({
+      title: 'Whitefish trial',
+      fact: 'Day 12 of 28 · 2 trial-diet meals logged today',
+    });
+  });
+
+  it('singularises one meal, and states zero honestly (a floor, never a verdict)', () => {
+    expect(buildTrialStrip(tf(), 1).fact).toBe('Day 12 of 28 · 1 trial-diet meal logged today');
+    expect(buildTrialStrip(tf(), 0).fact).toBe('Day 12 of 28 · 0 trial-diet meals logged today');
+  });
+
+  it('past target reads as an overrun, not "day 30 of 28"', () => {
+    expect(buildTrialStrip(tf({ dayCounter: 30, targetDays: 28 }), 1).fact).toBe(
+      'Day 30 — 2 days past · 1 trial-diet meal logged today',
+    );
+  });
+});
+
+describe('buildForwardLine (C5) — a real tomorrow-fact only', () => {
+  it('names tomorrow’s within-target trial day', () => {
+    expect(buildForwardLine(tf())).toBe('Tomorrow is day 13 of the trial.');
+  });
+
+  it('is absent at or past the target (never a manufactured day M+1)', () => {
+    expect(buildForwardLine(tf({ dayCounter: 28, targetDays: 28 }))).toBeNull();
+    expect(buildForwardLine(tf({ dayCounter: 30, targetDays: 28 }))).toBeNull();
+  });
+
+  it('is absent with no running trial', () => {
+    expect(buildForwardLine(null)).toBeNull();
+  });
+});
+
+describe('buildRecapMedStrips (C4) — inherits resolveMedStrips, drops the write', () => {
+  function mkMed(over: Partial<MedStripModel> & { key: string }): MedStripModel {
+    return {
+      drugName: 'Amoxicillin',
+      header: 'Amoxicillin · day 5 of 14',
+      progressFraction: null,
+      line: '2 of 2 doses logged today',
+      collapsed: false,
+      withholding: [],
+      confirm: null,
+      ...over,
+    } as MedStripModel;
+  }
+
+  it('maps the model header/line onto a flat strip', () => {
+    expect(buildRecapMedStrips([mkMed({ key: 'a' })])).toEqual([
+      {
+        key: 'a',
+        title: 'Amoxicillin · day 5 of 14',
+        fact: '2 of 2 doses logged today',
+        isConcern: false,
+      },
+    ]);
+  });
+
+  it('flags a withholding fact as concern (never a cheery line over a refusal)', () => {
+    const [strip] = buildRecapMedStrips([
+      mkMed({ key: 'a', line: 'Yesterday’s dose refused', withholding: ['refused_dose'] as never }),
+    ]);
+    expect(strip.isConcern).toBe(true);
+  });
+
+  it('a collapsed course carries its fact in the header, no second line', () => {
+    const [strip] = buildRecapMedStrips([
+      mkMed({ key: 'a', header: 'Amoxicillin · 2 doses logged today', line: null, collapsed: true }),
+    ]);
+    expect(strip.fact).toBeNull();
+    expect(strip.isConcern).toBe(false);
+  });
+});
+
+describe('buildDaySummary — the rich single-pet recap end-to-end (§2)', () => {
+  const nowMs = Date.parse('2026-08-15T12:00:00Z'); // Aug 15 → trial day 12
+  const tz = 'UTC';
+
+  function mkTrial(over?: Partial<TrialCardTrial>): TrialCardTrial {
+    return {
+      status: 'active',
+      startedAt: '2026-08-04', // day 1 → Aug 15 is day 12
+      targetDurationDays: 28,
+      trialProtein: { protein: 'whitefish', source: null },
+      ...over,
+    } as TrialCardTrial;
+  }
+  function mkItem(eventId: string, occurredAt: string, verdict: string, role: string | null): TrialExposureItem {
+    return { eventId, occurredAt, label: null, classification: { verdict, role } } as unknown as TrialExposureItem;
+  }
+  const meal = (id: string, occurred_at: string, over?: Partial<TimelineRow>) =>
+    mkRow({ id, occurred_at, event_type: 'meal', food_type: 'meal', food_product_name: 'Whitefish', ...over });
+
+  // The mock's trial-day frame: 2 prescribed-diet meals + a treat + a dose.
+  const trialDayPet = (): DaySummaryPetInput => ({
+    pet: { id: 'pet-1', name: 'Biscuit', species: 'dog' },
+    rows: [
+      meal('m1', '2026-08-15T07:42:00Z'),
+      mkRow({ id: 'd1', occurred_at: '2026-08-15T08:05:00Z', event_type: 'medication', drug_generic_name: 'Apoquel', adherence: 'given' }),
+      mkRow({ id: 't1', occurred_at: '2026-08-15T13:20:00Z', event_type: 'meal', food_type: 'treat' }),
+      meal('m2', '2026-08-15T18:35:00Z'),
+    ],
+    trial: mkTrial(),
+    trialItems: [
+      mkItem('m1', '2026-08-15T07:42:00Z', 'permitted', 'primary_diet'),
+      mkItem('m2', '2026-08-15T18:35:00Z', 'permitted', 'primary_diet'),
+      mkItem('t1', '2026-08-15T13:20:00Z', 'permitted', 'permitted_treat'), // permitted, NOT the diet
+      mkItem('m0', '2026-08-14T07:00:00Z', 'permitted', 'primary_diet'), // yesterday → excluded
+    ],
+  });
+
+  it('marks only TODAY’s prescribed-diet meals "Trial diet" (positive marking, D2)', () => {
+    const { sections } = buildDaySummary({ pets: [trialDayPet()], nowMs, timeZone: tz });
+    const byId = Object.fromEntries(sections[0].rows.map((r) => [r.id, r.subline]));
+    expect(byId).toEqual({ m1: 'Trial diet', m2: 'Trial diet', t1: null, d1: null });
+  });
+
+  it('the strip count EQUALS the number of "Trial diet" rows (one fact, two renders)', () => {
+    const model = buildDaySummary({ pets: [trialDayPet()], nowMs, timeZone: tz });
+    const marked = model.sections[0].rows.filter((r) => r.subline === 'Trial diet').length;
+    expect(marked).toBe(2);
+    expect(model.trialStrip).toEqual({
+      title: trialIdentityLabel(mkTrial()),
+      fact: 'Day 12 of 28 · 2 trial-diet meals logged today',
+    });
+  });
+
+  it('composes the lead, chips and forward line from the same day', () => {
+    const model = buildDaySummary({ pets: [trialDayPet()], nowMs, timeZone: tz });
+    expect(model.lead).toBe('Day 12 of the Whitefish trial — three meals in Biscuit’s record.');
+    expect(model.chips).toEqual([
+      { key: 'meal', label: '3 meals', tone: 'neutral' },
+      { key: 'medication', label: '1 dose', tone: 'neutral' },
+    ]);
+    expect(model.forward).toBe('Tomorrow is day 13 of the trial.');
+  });
+
+  it('a symptom day leads with the symptom and carries no trial strip/forward', () => {
+    const pet1: DaySummaryPetInput = {
+      pet: { id: 'pet-1', name: 'Biscuit', species: 'dog' },
+      rows: [
+        meal('m1', '2026-08-15T07:30:00Z', { intake_rating: 'refused' }),
+        mkRow({ id: 'v1', occurred_at: '2026-08-15T09:15:00Z', event_type: 'vomit' }),
+        meal('m2', '2026-08-15T18:20:00Z', { intake_rating: 'some' }),
+      ],
+      // no trial
+    };
+    const model = buildDaySummary({ pets: [pet1], nowMs, timeZone: tz });
+    // The appended time comes from describeDayEvent, which formats in the DEVICE zone
+    // (B-514) — so assert the STRUCTURE here, not a runner-zone-dependent clock value.
+    // The exact single-symptom format is pinned by the buildLeadLine unit test above.
+    expect(model.lead).toMatch(/^One vomit in Biscuit’s record today — .+\.$/);
+    expect(model.chips[0]).toEqual({ key: 'vomit', label: '1 vomit', tone: 'symptom' });
+    expect(model.trialStrip).toBeNull();
+    expect(model.forward).toBeNull();
+    expect(model.sections[0].rows.every((r) => r.subline === null)).toBe(true);
+  });
+
+  it('a NON-running trial (completed) mints no strip, forward, or sub-lines', () => {
+    const p = trialDayPet();
+    p.trial = mkTrial({ status: 'completed', endedAt: '2026-08-10' });
+    const model = buildDaySummary({ pets: [p], nowMs, timeZone: tz });
+    expect(model.trialStrip).toBeNull();
+    expect(model.forward).toBeNull();
+    expect(model.sections[0].rows.every((r) => r.subline === null)).toBe(true);
+  });
+
+  it('multi-pet renders plain per-pet spines — no lead/chips/strips/forward/sub-lines', () => {
+    const a = trialDayPet(); // even carrying trial data…
+    const b: DaySummaryPetInput = { pet: { id: 'pet-2', name: 'Mochi', species: 'cat' }, rows: [] };
+    const model = buildDaySummary({ pets: [a, b], nowMs, timeZone: tz });
+    expect(model.petCount).toBe(2);
+    expect(model.lead).toBeNull();
+    expect(model.chips).toEqual([]);
+    expect(model.trialStrip).toBeNull();
+    expect(model.medStrips).toEqual([]);
+    expect(model.forward).toBeNull();
+    // …the sub-lines stay off the multi-pet path (mock §2).
+    expect(model.sections[0].rows.every((r) => r.subline === null)).toBe(true);
+    expect(model.sections[1].isZeroLog).toBe(true);
+  });
+
+  it('the med strip day-math uses the RENDERED day, not the medInput’s baked nowMs', () => {
+    // The med input is loaded against a wide window and carries a load-time nowMs; the
+    // builder overrides it with the rendered day (the B-672 anchor). Bake a STALE, later
+    // nowMs (Aug 20 → course day 17, past its 14-day target) and render an earlier day
+    // (Aug 15 → day 12): the strip must read the rendered day, never the stale one.
+    const medInput = {
+      petId: 'pet-1',
+      regimens: [
+        {
+          id: 'reg',
+          medication_item_id: 'amox',
+          drug_name: 'Amoxicillin',
+          dose_amount: '250 mg',
+          doses_per_day: 2,
+          started_at: '2026-08-04',
+          target_duration_days: 14,
+        },
+      ],
+      doses: [],
+      items: { amox: { generic_name: 'Amoxicillin', brand_name: null } },
+      nowMs: Date.parse('2026-08-20T12:00:00Z'), // STALE — would render "day 17 … past"
+      timeZone: 'UTC',
+    } as MedStripInput;
+    const petInput: DaySummaryPetInput = {
+      pet: { id: 'pet-1', name: 'Biscuit', species: 'dog' },
+      rows: [meal('m1', '2026-08-15T08:00:00Z')],
+      medInput,
+    };
+    const model = buildDaySummary({ pets: [petInput], nowMs, timeZone: tz });
+    expect(model.medStrips).toHaveLength(1);
+    expect(model.medStrips[0].title).toContain('day 12 of 14');
+  });
+
+  it('G2 / Change-Contract: no surface string is a verdict, arrow or percentage', () => {
+    const model = buildDaySummary({ pets: [trialDayPet()], nowMs, timeZone: tz });
+    const strings = [
+      model.lead,
+      model.forward,
+      model.trialStrip?.fact,
+      model.trialStrip?.title,
+      ...model.chips.map((c) => c.label),
+      ...model.sections[0].rows.map((r) => r.subline),
+    ].filter((s): s is string => typeof s === 'string');
+
+    // No reassurance / wellness verdict (clinical-guardrails G2), no comparison verdicts.
+    const BANNED = [
+      'all clear', 'all quiet', 'all good', 'healthy', 'looks good', 'looking good',
+      'no concerns', 'nothing wrong', 'doing great', 'improving', 'improved',
+      'getting better', 'worse', 'worsening', 'normal', 'great',
+    ];
+    for (const s of strings) {
+      const lower = s.toLowerCase();
+      for (const bad of BANNED) expect(lower).not.toContain(bad);
+      // The Change-Contract grammar: no arrows, no percentages, no exclamation.
+      expect(s).not.toMatch(/[↑↓→%!]/);
+    }
   });
 });
