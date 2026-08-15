@@ -4808,11 +4808,11 @@ Deno.test('computeReflectionDensity — symptom events count toward density too 
   assert.equal(d.currentLoggingDays, 3, 'two symptom-days + one meal-day = three logged days')
 })
 
-// SR-4 (§11) — the "no detection/ranking/threshold delta" guarantee, asserted on the diff:
-// the DETECTORS return pure findings; the additive `density` / `medContext` fields are
-// attached ONLY by decorateFinding (post-detection), never by the engine. If a detector
+// SR-4 (§11) + L3 (CUL-9 §7) — the "no detection/ranking/threshold delta" guarantee, asserted on the
+// diff: the DETECTORS return pure findings; the additive `density` / `medContext` / `photoComposition`
+// fields are attached ONLY by decorateFinding (post-detection), never by the engine. If a detector
 // ever started emitting them, this fails — the exact regression the AC guards against.
-Deno.test('SR-4 — detectors never emit the additive payload fields (decoration is strictly post-hoc)', () => {
+Deno.test('SR-4 + L3 — detectors never emit the additive payload fields (decoration is strictly post-hoc)', () => {
   const reflFindings = detectReflections(
     input({
       symptomEvents: [
@@ -4835,4 +4835,21 @@ Deno.test('SR-4 — detectors never emit the additive payload fields (decoration
   )
   assert.ok(corrFindings.length >= 1, 'the correlation setup yields a finding')
   for (const f of corrFindings) assert.equal('medContext' in f, false, 'the correlation detector adds no medContext')
+
+  // L3 (CUL-9): the vomit timing detectors emit NO photoComposition — it is decorateFinding's alone.
+  const ppFindings = detectPostprandialTiming(input(ppGolden()))
+  assert.equal(ppFindings.length, 1)
+  assert.equal('photoComposition' in ppFindings[0], false, 'the postprandial detector adds no photoComposition')
+  const esFindings = detectEmptyStomachTiming(
+    input({
+      symptomEvents: [
+        midVomit(17),
+        longVomit(18), longVomit(19), longVomit(20), longVomit(21), longVomit(22), longVomit(23), longVomit(24),
+      ],
+      mealEvents: twiceDailyMeals(10, 27),
+      timezone: NY,
+    }),
+  )
+  assert.equal(esFindings.length, 1)
+  assert.equal('photoComposition' in esFindings[0], false, 'the empty-stomach detector adds no photoComposition')
 })

@@ -611,6 +611,70 @@ export interface ReflectionDensity {
 }
 
 /**
+ * L3 photo-record composition (Signals v2 / B-755 / CUL-9) — ONE evidence field: a numerator
+ * ("yes" reads) over its OWN "reads that answered this question" denominator (§2 L3). The
+ * denominator is NEVER the raw episode count — it is the photographed-and-analyzed episodes
+ * whose read gave a yes-or-no on THIS specific marker (tristate discipline: `unsure`/`no`/absent
+ * are out of the numerator, and `unsure`/absent are out of the denominator too). Both counts ride
+ * to the client (CUL-12 / PR 5), which renders "seen in {count} of {denominator} photographed
+ * episodes"; the count and denominator travel together so no fraction is ever quoted over a
+ * denominator that includes reads which could not answer.
+ */
+export interface PhotoCompositionField {
+  /**
+   * The numerator — photographed-and-analyzed episodes whose completed read AFFIRMS the marker
+   * (`yes`). PRESENT-ONLY across the whole L3 payload: a field is attached ONLY when this is ≥1,
+   * so a zero is SILENCE, never "0 of N" (G4 — photo facts never reassure; a hair count of zero is
+   * unrepresentable by construction, the same structural guarantee incident_red_flag makes).
+   */
+  count: number
+  /**
+   * The "reads that answered this question" denominator — photographed-and-analyzed episodes whose
+   * read returned a definite yes OR no on this marker (§2 L3). ALWAYS ≥ `count` (a `yes` is itself
+   * an answered read), and ≥1 whenever the field is attached. `unsure`/illegible/absent reads are
+   * excluded from BOTH, so the fraction is honest about what the camera could actually resolve.
+   */
+  denominator: number
+}
+
+/**
+ * L3 photo-record composition context (Signals v2 / B-755 / CUL-9, §2 L3) — additive EVIDENCE on a
+ * vomit timing finding, NOT a finding type and never a fire gate. Computed POST-detection in the I/O
+ * shell (index.ts → computePhotoComposition, photoComposition.ts) from the SAME `event_ai_analysis`
+ * rows the red-flag lane reads (status `completed` only), attached by `decorateFinding`; NEVER read
+ * by any detector, so it cannot change what fires or how it ranks. Every field is PRESENT-ONLY
+ * (attached only when its `count` ≥ 1), so an absent field is silence and the flag-off / pre-L3 /
+ * no-photo paths are byte-identical. The vet interprets — descriptors travel, the label never does
+ * (§2 L3): there is deliberately no "empty stomach" / "bilious" / "regurgitation" verdict here, only
+ * counted, denominatored sightings.
+ */
+export interface PhotoComposition {
+  /**
+   * Recognizable/partially-digested food in the LONG band — episodes ≥ `longGapHours` post-meal
+   * (the finding's own long-episode set) whose completed read shows `undigested_food` or
+   * `partially_digested_food`. Food still recognizable long after eating is the notable fact; the
+   * denominator is the photographed long-band episodes that answered the food question. Present only
+   * on findings that HAVE a long band (empty_stomach_timing / timing_story) — ⑤'s rapid-only card
+   * carries no long onsets, so this is absent there.
+   */
+  retainedFood?: PhotoCompositionField
+  /**
+   * Hair in the completed vomit reads. HAIR NEVER REASSURES (G4 — Cannon: frequent hairballs are
+   * themselves a disease marker, his "regularly" = ≥2/year), which is exactly why the whole L3
+   * payload is present-only: a hair field appears only when hair was actually seen, so nothing here
+   * can ever read as "no hairballs, all clear". Owner-facing copy (client, CUL-12) is regex-screened.
+   */
+  hair?: PhotoCompositionField
+  /**
+   * Bile in the completed vomit reads, keyed on the AUTHORITATIVE `bile_present` tristate (migration
+   * 013 keeps bile out of the bulk `contents` matrix precisely so the two can't drift), with a
+   * `contents`-listed bile sighting folded in as a present-wins yes. An empty-stomach marker carried
+   * as a descriptor, never the "bilious" label (that is the vet's inference — MECHANISM_RE bars it).
+   */
+  bile?: PhotoCompositionField
+}
+
+/**
  * Food/protein → symptom association, from a SYMPTOM-ANCHORED case-crossover (B-050):
  * the unit is the symptom episode ("case"), compared against a time-of-day-matched
  * control window from a symptom-free day for the same pet. ASSOCIATIONAL ONLY — there
@@ -951,6 +1015,12 @@ export interface PostprandialTimingFinding extends FindingBase {
    * context window; absent otherwise. See MedOnBoardContext.
    */
   medContext?: MedOnBoardContext
+  /**
+   * L3 (Signals v2 / B-755 / CUL-9 §2 L3) — photo-record composition EVIDENCE, attached
+   * POST-detection (never read by the engine). Present-only; on ⑤ it carries hair/bile over the
+   * window's photographed vomits (no `retainedFood`: the rapid card has no long band). See PhotoComposition.
+   */
+  photoComposition?: PhotoComposition
 }
 
 /**
@@ -1013,6 +1083,13 @@ export interface EmptyStomachTimingFinding extends FindingBase {
   windowDays: number
   /** SR-4 (B-721 §5.4) — medication-on-board context, attached POST-detection (never read by the engine). */
   medContext?: MedOnBoardContext
+  /**
+   * L3 (Signals v2 / B-755 / CUL-9 §2 L3) — photo-record composition EVIDENCE, attached
+   * POST-detection (never read by the engine). Present-only; `retainedFood` joins over
+   * `longEpisodeOnsets` (this finding's long band), plus hair/bile over the window's photographed
+   * vomits. See PhotoComposition.
+   */
+  photoComposition?: PhotoComposition
 }
 
 /**
@@ -1059,11 +1136,24 @@ export interface TimingStoryFinding extends FindingBase {
     feedingFormsInEvidence: string[]
     clockBand?: { startLocalHour: number; windowHours: number }
     clockCount?: number
+    /**
+     * L3 (Signals v2 / B-755 / CUL-9) — the long episodes' onset instants (ms), copied verbatim from
+     * the merged L1 finding's `longEpisodeOnsets`. The retained-food join key: composePhotoComposition
+     * matches these onsets to completed vomit reads to count recognizable food in the long band. Optional
+     * so a pre-L3 / synthetic story finding without it simply yields no `retainedFood`.
+     */
+    longEpisodeOnsets?: number[]
   }
   /** Hard marker for the phrasing layer + reviewers: timing/association only, never causal, never mechanism. */
   associationalOnly: true
   /** SR-4 (B-721 §5.4) — medication-on-board context, attached POST-detection (never read by the engine). */
   medContext?: MedOnBoardContext
+  /**
+   * L3 (Signals v2 / B-755 / CUL-9 §2 L3) — photo-record composition EVIDENCE, attached POST-detection
+   * (never read by the engine). Present-only; `retainedFood` joins over `long.longEpisodeOnsets`, plus
+   * hair/bile over the window's photographed vomits. See PhotoComposition.
+   */
+  photoComposition?: PhotoComposition
 }
 
 /**
@@ -1120,6 +1210,13 @@ export interface TimeOfDayClusteringFinding extends FindingBase {
    * context window; absent otherwise. See MedOnBoardContext.
    */
   medContext?: MedOnBoardContext
+  /**
+   * L3 (Signals v2 / B-755 / CUL-9 §2 L3) — photo-record composition EVIDENCE, attached
+   * POST-detection (never read by the engine). Present-only; carries hair/bile over the window's
+   * photographed vomits (no `retainedFood`: ⑥ is a clock finding with no long band). Its clinical
+   * value is the early-morning bilious case, exactly where a bile descriptor helps. See PhotoComposition.
+   */
+  photoComposition?: PhotoComposition
 }
 
 /** Which visible red flag a per-incident analysis carries (B-340). Present-only, derived from the
@@ -5148,6 +5245,9 @@ function composeTimingStory(findings: Finding[]): Finding[] {
         feedingFormsInEvidence: es.feedingFormsInEvidence,
         clockBand: es.clockBand,
         clockCount: es.clockCount,
+        // L3 (CUL-9): carry L1's long onsets into the merged story so photo composition can join
+        // retained food to the long band on the timing_story card exactly as it does on a lone L1.
+        longEpisodeOnsets: es.longEpisodeOnsets,
       },
       associationalOnly: true,
     })

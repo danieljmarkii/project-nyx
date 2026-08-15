@@ -48,6 +48,7 @@ import {
   type DetectionInput,
   type ReflectionDensity,
   type MedOnBoardContext,
+  type PhotoComposition,
 } from './detection.ts'
 // SR-4 (B-721 §5.4) — the medication-on-board payload decoration. Pure, offline-tested
 // (medContext.test.ts); attaches the additive med context + carries the density onto the
@@ -58,6 +59,10 @@ import {
   resolveDrugLabel,
   type MedDoseFact,
 } from './medContext.ts'
+// L3 (Signals v2 / CUL-9 §2 L3) — photo-record composition evidence decoration. Pure, offline-tested
+// (photoComposition.test.ts); attaches retained-food/hair/bile counts (present-only, tristate) onto
+// the vomit timing findings AFTER detection, so the engine's output is untouched.
+import { computePhotoComposition, type PhotoAnalysisInput } from './photoComposition.ts'
 // B-422's effective end, from the ONE module that owns it. Imported across the
 // function boundary exactly as `./protein.ts` already re-exports `lib/protein.ts`
 // — a second copy of `start + target + grace` living here is the failure mode.
@@ -538,9 +543,12 @@ type IncidentEventJoin = { occurred_at: string } | { occurred_at: string }[] | n
 interface IncidentAnalysisRow {
   event_id: string
   incident_type: string
+  status: string // async pipeline state — L3 (CUL-9) reads only 'completed'; the red-flag lane ignores it
   blood_present: string | null // vomit blood (vomit_blood)
   stool_blood_present: string | null // stool blood (stool_tristate, migration 034) — B-364
   foreign_material_present: string | null // shared across families (013)
+  contents: string[] | null // vomit_content[] — L3 hair/retained-food (CUL-9); null on non-vomit / illegible
+  bile_present: string | null // vomit_tristate — L3 bile (CUL-9); the authoritative bile field (013)
   events: IncidentEventJoin
 }
 
@@ -556,6 +564,29 @@ function mapIncidentAnalyses(rows: IncidentAnalysisRow[]): IncidentAnalysisInput
       bloodPresent: r.blood_present, // read only for the vomit family
       stoolBloodPresent: r.stool_blood_present, // read only for the stool family (B-364)
       foreignMaterialPresent: r.foreign_material_present,
+    })
+  }
+  return out
+}
+
+/**
+ * L3 (CUL-9) — project the SAME event_ai_analysis rows into the photo-composition input. Separate
+ * from mapIncidentAnalyses so the red-flag lane's projection stays clean (blood/foreign only); this
+ * one carries the completed/vomit gate's raw material (status + contents + the authoritative bile
+ * field) and the parsed occurred ms. computePhotoComposition applies the completed/vomit filter, so
+ * this maps every row; a row with no joined event is skipped defensively (occurredMs would be NaN).
+ */
+function mapPhotoAnalyses(rows: IncidentAnalysisRow[]): PhotoAnalysisInput[] {
+  const out: PhotoAnalysisInput[] = []
+  for (const r of rows) {
+    const ev = first(r.events)
+    if (!ev?.occurred_at) continue
+    out.push({
+      occurredMs: Date.parse(ev.occurred_at),
+      status: r.status,
+      incidentType: r.incident_type,
+      contents: r.contents,
+      bilePresent: r.bile_present,
     })
   }
   return out
@@ -804,12 +835,14 @@ const handler = async (req: Request): Promise<Response> => {
       // fields from event_ai_analysis for this pet's analysed incidents, INNER-joined to events so a
       // soft-deleted or out-of-lookback incident is excluded (the engine's contract) and we get
       // occurred_at. incident_type IN (vomit, stool_normal, diarrhea) scopes to the analysed families
-      // (itch/scratch/… carry no red-flag lane). No status filter — the engine derives the flag from
-      // the structured fields (override-aware), never the cached visual_flags. Empty ⇒ silent.
+      // (itch/scratch/… carry no red-flag lane). No status filter — the red-flag lane derives the flag
+      // from the structured fields (override-aware), never the cached visual_flags. `status`,
+      // `contents` + `bile_present` are added for L3 photo composition (CUL-9), which reads the same
+      // rows but filters to completed VOMIT reads itself (computePhotoComposition). Empty ⇒ silent.
       supabase
         .from('event_ai_analysis')
         .select(
-          'event_id, incident_type, blood_present, stool_blood_present, foreign_material_present, events!inner(occurred_at)',
+          'event_id, incident_type, status, blood_present, stool_blood_present, foreign_material_present, contents, bile_present, events!inner(occurred_at)',
         )
         .eq('pet_id', petId)
         .in('incident_type', [...RED_FLAG_INCIDENT_TYPES])
@@ -889,9 +922,11 @@ const handler = async (req: Request): Promise<Response> => {
     const medDoseFacts = mapMedDoseFacts(regimenRows, doseRows, mealIntakeById)
     // B-340: per-incident visual red-flag inputs (vomit blood / foreign material), derived
     // downstream from the owner-editable structured fields. Empty ⇒ the red-flag lane is silent.
-    const incidentAnalyses = mapIncidentAnalyses(
-      (incidentAnalysesRes.data ?? []) as IncidentAnalysisRow[],
-    )
+    const incidentAnalysisRows = (incidentAnalysesRes.data ?? []) as IncidentAnalysisRow[]
+    const incidentAnalyses = mapIncidentAnalyses(incidentAnalysisRows)
+    // L3 (CUL-9): the photo-composition projection of the same rows — completed VOMIT reads only
+    // (the filter lives in computePhotoComposition). Empty ⇒ no timing card carries composition.
+    const photoAnalyses = mapPhotoAnalyses(incidentAnalysisRows)
 
     // 2. Detect — the pure engine ranks already-true findings (safety leads).
     const input: DetectionInput = {
@@ -918,10 +953,20 @@ const handler = async (req: Request): Promise<Response> => {
     //     it ranks (§11 AC). A null density / medContext leaves the finding unchanged.
     const reflectionDensity: ReflectionDensity | null = computeReflectionDensity(input, DEFAULT_CONFIG)
     const medOnBoard: MedOnBoardContext | null = computeMedOnBoard(nowMs, medDoseFacts)
-    const decorated = curated.map((r) => ({
-      rank: r.rank,
-      finding: decorateFinding(r.finding, reflectionDensity, medOnBoard),
-    }))
+    const decorated = curated.map((r) => {
+      // L3 (CUL-9): photo composition is PER-FINDING (each vomit timing finding has its own window +
+      // long-episode set), unlike the once-per-regen density/medContext, so it is computed here inside
+      // the map. Null for every non-timing finding and whenever no marker was seen (present-only).
+      const photoComposition: PhotoComposition | null = computePhotoComposition(
+        r.finding,
+        photoAnalyses,
+        nowMs,
+      )
+      return {
+        rank: r.rank,
+        finding: decorateFinding(r.finding, reflectionDensity, medOnBoard, photoComposition),
+      }
+    })
 
     // 4. Phrase — one sentence per finding, in parallel, each falling back to
     //    its template independently. The set is never blank because the LLM

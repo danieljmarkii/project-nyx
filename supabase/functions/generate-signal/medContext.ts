@@ -14,7 +14,7 @@
 // never an explanation and never a verdict (§5.4); this module supplies the facts only —
 // the client (SR-5) renders the §9 sentence.
 
-import type { Finding, MedOnBoardContext, ReflectionDensity } from './detection.ts'
+import type { Finding, MedOnBoardContext, PhotoComposition, ReflectionDensity } from './detection.ts'
 
 const MS_PER_DAY = 86_400_000
 
@@ -135,31 +135,43 @@ export function computeMedOnBoard(
 }
 
 /**
- * Attach the SR-4 additive payload to a detected finding, returning a NEW finding (never
- * mutating the detector's output). Reflection ← density (§3.3); correlation + timing ←
- * medContext (§5.4). Every other finding type is returned unchanged, and a null density /
- * medContext leaves the field absent — so the template and the client behave exactly as
- * they did before SR-4 (byte-identical). This is the ONLY place the additive fields are
- * written; detectors never set them.
+ * Attach the additive payloads to a detected finding, returning a NEW finding (never mutating the
+ * detector's output). Reflection ← density (SR-4 §3.3); correlation + timing ← medContext (SR-4
+ * §5.4); the VOMIT TIMING findings ← photoComposition (L3, Signals v2 / CUL-9 §2 L3). Every other
+ * finding type is returned unchanged, and a null density / medContext / photoComposition leaves that
+ * field absent — so the template and the client behave exactly as before (byte-identical). This is
+ * the ONLY place the additive fields are written; detectors never set them.
+ *
+ * medContext and density are computed ONCE per regeneration (one drug window, one density pair) and
+ * passed in; photoComposition is per-finding (each timing finding has its own window + long onsets),
+ * so the caller computes it per finding and passes the result here.
  */
 export function decorateFinding(
   finding: Finding,
   density: ReflectionDensity | null,
   medContext: MedOnBoardContext | null,
+  photoComposition: PhotoComposition | null = null,
 ): Finding {
   if (finding.type === 'reflection') {
     return density ? { ...finding, density } : finding
   }
+  // Correlation ← medContext only. A food↔symptom association carries no photo composition (photo
+  // contents describe a vomit, not the food link), so it is handled apart from the timing findings.
+  if (finding.type === 'food_symptom_correlation') {
+    return medContext ? { ...finding, medContext } : finding
+  }
+  // The four VOMIT TIMING findings ← medContext (SR-4 §5.4) + photoComposition (L3, CUL-9). Both are
+  // additive + present-only; a null leaves the field absent (byte-identical to before). ⑤ and the
+  // merged timing_story get the med line exactly as ⑤/⑥ do; L1/timing_story additionally carry
+  // retained-food, and all four carry hair/bile.
   if (
-    finding.type === 'food_symptom_correlation' ||
     finding.type === 'postprandial_timing' ||
-    // Signals v2 (CUL-7) — L1 (empty-stomach) + the merged timing_story are timing cards too, so a
-    // med-on-board context line applies to them exactly as it does to ⑤/⑥ (§5.4).
     finding.type === 'empty_stomach_timing' ||
     finding.type === 'timing_story' ||
     finding.type === 'timeofday_clustering'
   ) {
-    return medContext ? { ...finding, medContext } : finding
+    const withMed = medContext ? { ...finding, medContext } : finding
+    return photoComposition ? { ...withMed, photoComposition } : withMed
   }
   return finding
 }
