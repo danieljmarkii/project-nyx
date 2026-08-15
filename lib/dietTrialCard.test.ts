@@ -1534,6 +1534,43 @@ describe('resolveTrialStrip — the standing line wiring (CUL-13)', () => {
     expect(strip.trialResponseLine).toBeNull();
     expect(strip.line).toBeNull();
   });
+
+  // The day-1 diet-refusal cat (adversarial-reviewer, B-766/B-775 session): a uniform-from-day-1
+  // refusal never trips the RELATIVE intake-decline detector, so `intakeDeclineHeadline` is null while
+  // `trialDietRefusal` IS live — the strip must NOT render a reassuring "Vomiting: 0 · was 20" beside a
+  // refusing cat (the B-494 anorexic-cat case, one layer out; §5.2 reassuring-summary composition).
+  it('is suppressed on a live trial-diet refusal, even when the intake-decline flag is null', () => {
+    const strip = resolveTrialStrip(activeInput({
+      trialResponse: counts({ trialCount: 0, baselineCount: 20 }),
+      trialDietRefusal: REFUSING_NOW,
+      intakeDeclineHeadline: null,
+    }))!;
+    expect(strip.trialResponseLine).toBeNull();
+  });
+
+  it('is suppressed on a whole-range refusal history too', () => {
+    const strip = resolveTrialStrip(activeInput({
+      trialResponse: counts({ trialCount: 0, baselineCount: 20 }),
+      rangeRefusal: REFUSING_RANGE,
+    }))!;
+    expect(strip.trialResponseLine).toBeNull();
+  });
+
+  // Scoped to the NOT-EATING reasons: a broken off-diet comparator or a free-fed arrangement does not
+  // make the VOMIT count dishonest, so it must not drop an otherwise-valid vomiting finding (over-
+  // suppression would lose a real safety-relevant count on the wedge surface — Sam's grazing cat).
+  it('is NOT suppressed by a comparator-only withholding reason (free-fed / allowed-set-unavailable)', () => {
+    const freeFed = resolveTrialStrip(activeInput({
+      trialResponse: counts(),
+      freeFed: { loggedFeedings: 22 },
+    }))!;
+    expect(freeFed.trialResponseLine).not.toBeNull();
+    const noComparator = resolveTrialStrip(activeInput({
+      trialResponse: counts(),
+      allowedSetUnavailable: true,
+    }))!;
+    expect(noComparator.trialResponseLine).not.toBeNull();
+  });
 });
 
 // ── The card half of the B-533 adversarial regressions ──────────────────────

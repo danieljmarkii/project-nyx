@@ -2546,14 +2546,32 @@ export function resolveTrialStrip(input: TrialCardInput): TrialStripModel | null
     parts.push(`${stripOffDiet} outside the trial diet`);
   }
 
+  // The standing vomit-count line is a REASSURING record summary (a falling count reads as
+  // improvement), so §5.2 forbids it beside a record that says the animal ISN'T EATING — the same
+  // composition the `intakeDeclineHeadline` early-return above already blocks, but that early-return
+  // only covers RELATIVE intake decline. The adversarial-reviewer (B-766/B-775 session) surfaced the
+  // hole: a diet-trial cat REFUSING the prescribed diet from day 1 has a uniformly-low intake, so the
+  // relative-decline detector never fires and `intakeDeclineHeadline` is null — yet a live
+  // `trialDietRefusal` IS on record. Without this gate the strip renders "Vomiting: 0 · was 20, a
+  // longer stretch" under a starving cat (the canonical B-494 anorexic-cat case, one layer out), and
+  // B-775's "a longer stretch" clause amplifies the false magnitude. The vomit line joins the SAME
+  // withholding discipline the coverage line uses (`withholdingReasons`), but scoped to the NOT-EATING
+  // reasons only: a broken off-diet comparator, a free-fed arrangement, or a thin record does NOT make
+  // the vomit count dishonest, so those must not drop an otherwise-valid vomiting finding.
+  const animalNotEating =
+    !!input.intakeDeclineHeadline || !!input.trialDietRefusal || !!input.rangeRefusal;
   return {
     header,
     line: parts.length > 0 ? parts.join(' · ') : null,
     progressFraction: progress.fraction,
     // CUL-13 — the standing vomit-count line, a SECOND line below the coverage line. Null unless
     // `signals_v2` is on (the loader only computes `input.trialResponse` then), so the strip is
-    // byte-identical off the flag. Its own render rule (comparison vs trial-so-far vs nothing) lives
-    // in `trialResponseStandingLine`, so this call site stays a plain pass-through.
-    trialResponseLine: input.trialResponse ? trialResponseStandingLine(input.trialResponse) : null,
+    // byte-identical off the flag. Withheld on a not-eating record (above) so it never reassures over a
+    // refusing/anorexic cat; its own render rule (comparison vs trial-so-far vs nothing) lives in
+    // `trialResponseStandingLine`.
+    trialResponseLine:
+      input.trialResponse && !animalNotEating
+        ? trialResponseStandingLine(input.trialResponse)
+        : null,
   };
 }
