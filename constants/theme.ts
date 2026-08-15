@@ -161,6 +161,13 @@ export const theme = {
   colorTextOnNightMuted: '#A6A2CE',           // secondary text on night grounds (7.6:1)
   colorTextOnNightFaint: '#706BA6',           // metadata/sample lines — large/secondary only (3.8:1)
   colorMoonlight: '#F2EEE4',                  // crescent fill + display headlines on night (15.8:1)
+  // Lightened decorative teal for small-caps labels/eyebrows on night grounds (the
+  // recap's "Evening summary" eyebrow, DR-4). NOT the interactive accent: colorAccent
+  // stays reserved for tappable/live elements (the accent rule above), so a decorative
+  // teal label uses this "world colour" instead — lightened from #00C2A8 the same way
+  // colorEventMedicationOnNight is lightened from its day tint, so it reads luminous on
+  // the dark indigo. On colorBrandNight #13112E: 10.42:1 (AAA).
+  colorMoonlitTeal: '#4FD8C4',
   colorBorderOnNight: 'rgba(196,190,255,0.16)', // hairlines/dividers on night grounds
   colorAuroraViolet: '#221C56',               // hero radial glow stop 1
   colorAuroraIndigo: '#191449',               // hero radial glow stop 2

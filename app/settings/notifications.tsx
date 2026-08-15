@@ -228,7 +228,7 @@ export default function NotificationsScreen() {
                 ("turn them back on") presumed the first; "allow it … then comes to
                 life" reads true for a switch that was never live either. */}
             <Text style={styles.deniedBody}>
-              Culprit can’t send them until you allow it in {settingsAppName} — then this switch comes to life.
+              Culprit can’t send them until you allow notifications in {settingsAppName} — then this switch comes to life.
             </Text>
             <TouchableOpacity
               onPress={openOsSettings}
@@ -280,7 +280,8 @@ export default function NotificationsScreen() {
             the pitch. Shown where the live feature is (states a/b), not over the
             denied banner. */}
         {!loading && !denied && (
-          <Text style={styles.privacyNote}>
+          // Same tertiary register as the intro line (reused, not duplicated).
+          <Text style={styles.intro}>
             On your lock screen, the notification only says the day’s ready to read — never what’s in the record.
           </Text>
         )}
@@ -360,18 +361,9 @@ const styles = StyleSheet.create({
     color: theme.colorDestructive,
   },
 
-  // ── Intro framing (states a/b) ──
+  // ── Intro framing (states a/b) + the relocated lock-screen privacy note (DR-4),
+  //    which shares this exact tertiary register ──
   intro: {
-    fontFamily: theme.fontBody,
-    fontSize: theme.textSM,
-    color: theme.colorTextTertiary,
-    lineHeight: theme.lineHeightSM,
-    paddingHorizontal: theme.space1,
-  },
-
-  // ── Relocated lock-screen privacy promise (DR-4) ──
-  // A quiet footnote to the Daily summary row; same tertiary register as the intro.
-  privacyNote: {
     fontFamily: theme.fontBody,
     fontSize: theme.textSM,
     color: theme.colorTextTertiary,

@@ -1,8 +1,8 @@
 import {
-  Modal, StyleSheet, Text, TouchableOpacity, View,
+  Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { theme } from '../../constants/theme';
+import { theme, shadows } from '../../constants/theme';
 import { PrimaryButton } from '../ui';
 import {
   NOTIFICATION_CATEGORIES,
@@ -85,14 +85,22 @@ export function NotificationPrimer({
       onRequestClose={onDismiss}
     >
       <View style={styles.screen}>
-        <View
-          style={[
+        {/* A ScrollView, not a plain View: the CTAs are pinned to the bottom by the
+            flex spacer at normal sizes (contentContainerStyle grows to fill), but at
+            the largest Dynamic Type — or a future category with longer copy — the
+            content scrolls instead of pushing "Not now" past the bottom edge. A
+            consent screen must never make declining unreachable. */}
+        <ScrollView
+          style={styles.scroll}
+          contentContainerStyle={[
             styles.content,
             {
               paddingTop: insets.top + theme.space3,
               paddingBottom: insets.bottom + theme.space2,
             },
           ]}
+          showsVerticalScrollIndicator={false}
+          bounces={false}
         >
           {/* Hero: the night miniature. A generic warm day — never the owner's
               data — so the primer renders before a single log exists. */}
@@ -144,7 +152,7 @@ export function NotificationPrimer({
           >
             <Text style={styles.notNow}>Not now</Text>
           </TouchableOpacity>
-        </View>
+        </ScrollView>
       </View>
     </Modal>
   );
@@ -158,8 +166,14 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: theme.colorNeutralLight,
   },
-  content: {
+  scroll: {
     flex: 1,
+  },
+  // contentContainerStyle: flexGrow (not flex) so it fills the viewport when the
+  // content is short — the spacer then pins the CTAs to the bottom — and grows past
+  // it (scrolling) when the content is tall.
+  content: {
+    flexGrow: 1,
     paddingHorizontal: theme.space3,
   },
 
@@ -169,11 +183,15 @@ const styles = StyleSheet.create({
     borderRadius: theme.radiusMedium,
     padding: theme.space2,
     marginTop: theme.space2,
+    // A soft lift so the night miniature reads as floating on the daylight ground.
+    ...shadows.md,
   },
   heroLabel: {
     fontSize: theme.textXS,
     fontFamily: theme.fontBodySemibold,
-    color: theme.colorAccent,
+    // The decorative night-eyebrow teal — NOT the interactive colorAccent (the
+    // accent rule reserves that for tappable/live elements).
+    color: theme.colorMoonlitTeal,
     textTransform: 'uppercase',
     letterSpacing: theme.trackingWidest,
     marginBottom: theme.space1,
@@ -188,7 +206,7 @@ const styles = StyleSheet.create({
   // The mini-spine — dots on a connecting thread. A static preview of the day
   // spine; DR-1 owns the real, data-driven component.
   spine: {
-    marginTop: 4,
+    marginTop: theme.space0_5,
   },
   spineRow: {
     flexDirection: 'row',
