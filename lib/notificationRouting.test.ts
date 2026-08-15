@@ -17,7 +17,7 @@ jest.mock('expo-notifications', () => ({
   AndroidImportance: { DEFAULT: 3 },
 }));
 
-import { notificationRouteDecision, routeDedup } from './notificationRouting';
+import { notificationRouteDecision, routeDedup, normalizeFireInstant } from './notificationRouting';
 
 // ── notificationRouteDecision (the tap auth gate) ────────────────────────────
 describe('notificationRouteDecision', () => {
@@ -100,5 +100,43 @@ describe('routeDedup', () => {
     // regression this guards against).
     const postAuth = routeDedup({ ...delivery, routeTo: '/day-summary', prevSig: preAuth.sig });
     expect(postAuth.route).toBe(true);
+  });
+});
+
+// ── normalizeFireInstant (B-672 — the fire-day anchor's instant) ─────────────
+// The unit trap: expo serializes Notification.date in SECONDS on iOS and
+// MILLISECONDS on Android. Read raw, an iOS delivery would resolve to a 1970 day and
+// clamp to today on every tap — the anchor would silently never fire on the
+// iOS-first build. This normalizer is what makes the delivery instant usable.
+describe('normalizeFireInstant', () => {
+  // A real recent whole-second delivery: iOS gives seconds, Android gives ms.
+  const ms = Date.parse('2026-08-01T21:00:00Z');
+  const secs = ms / 1000; // exact — the instant is on a whole second
+
+  it('keeps an Android millisecond delivery as-is', () => {
+    expect(normalizeFireInstant(ms)).toBe(ms);
+  });
+
+  it('promotes an iOS second delivery to milliseconds (same wall-clock instant)', () => {
+    // The bug this exists to kill: read raw, `secs` (~1.79e9) is 1970-01-21 in ms.
+    expect(normalizeFireInstant(secs)).toBe(secs * 1000);
+    // …and that lands on the SAME day the ms form does.
+    expect(normalizeFireInstant(secs)).toBe(ms - (ms % 1000));
+  });
+
+  it('parses a stringified value (route params arrive as strings)', () => {
+    expect(normalizeFireInstant(String(ms))).toBe(ms);
+    expect(normalizeFireInstant(String(secs))).toBe(secs * 1000);
+  });
+
+  it('rounds an iOS fractional-second Double to integer ms', () => {
+    // timeIntervalSince1970 is a Double — sub-second precision must not leak through.
+    expect(normalizeFireInstant(secs + 0.5)).toBe(secs * 1000 + 500);
+  });
+
+  it('returns null for a missing / non-positive / unparseable value (→ no anchor)', () => {
+    for (const bad of [null, undefined, 0, -5, NaN, Infinity, 'not-a-number', '']) {
+      expect(normalizeFireInstant(bad as never)).toBeNull();
+    }
   });
 });

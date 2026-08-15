@@ -185,6 +185,73 @@ export function localDayBoundsIso(nowMs: number): { after: string; before: strin
   return { after: start.toISOString(), before: end.toISOString() };
 }
 
+// ── The fire-day anchor (B-672) ──────────────────────────────────────────────
+//
+// The Day Summary is opened from the 9pm notification, which fires FOR a given day.
+// This decides which day the screen renders "today" as: the day the notification
+// fired for, so a Saturday-evening notification tapped after midnight still opens
+// Saturday's record (not an empty Sunday) — the false-empty the summary exists to
+// avoid. `firedForMs` is the notification's delivery instant, threaded from the tap
+// (lib/notificationRouting `normalizeFireInstant` → the screen's `firedAt` param).
+//
+// THE CLAMP: the fired-for day is honoured only while it is TODAY or YESTERDAY (its
+// B-421 local-day index is `todayIndex` or `todayIndex - 1`). An older instant — a
+// stale, un-dismissed notification tapped days later — falls back to `nowMs`, so the
+// tap opens today rather than a days-old summary. A future instant (a bad clock or
+// payload) falls back too, defensively. With no fired-for instant (the screen opened
+// outside a notification tap) the result is `nowMs` — today, exactly as before B-672.
+//
+// This resolves the DAY only; the EMPTY-fired-day fallback lives in
+// `buildAnchoredDaySummary` below, because it needs the day's rows to decide.
+export function resolveDaySummaryAnchorMs(input: {
+  firedForMs: number | null | undefined;
+  nowMs: number;
+  /** IANA zone to bucket the day in. OMIT on-device (device zone = owner's midnight,
+   *  B-421); tests pin it explicitly rather than against the runner's clock (B-514). */
+  timeZone?: string;
+}): number {
+  const { firedForMs, nowMs, timeZone } = input;
+  if (firedForMs == null || !Number.isFinite(firedForMs)) return nowMs;
+  const todayIndex = localDayIndex(nowMs, timeZone);
+  const firedIndex = localDayIndex(firedForMs, timeZone);
+  return firedIndex === todayIndex || firedIndex === todayIndex - 1 ? firedForMs : nowMs;
+}
+
+/**
+ * Build the summary for the anchored day, applying BOTH the staleness clamp
+ * (`resolveDaySummaryAnchorMs`) AND the empty-fired-day fallback (DR-0 R-4 refinement,
+ * PM-ruled 2026-08-15).
+ *
+ * THE FALLBACK: anchoring to the fired-for day is right when that day holds the record
+ * an after-midnight tap would otherwise lose (B-672). But when the fired-for day is a
+ * PAST day (an age-1 tap) that is itself EMPTY, it has no record to protect — and
+ * anchoring to it would hide a symptom the owner logged after midnight behind
+ * "Nothing in {pet}'s record today", the very false-empty the anchor exists to
+ * prevent, mirrored. So an empty past fired-for day yields to today. A fired-for day
+ * WITH rows still wins (B-672 preserved); an empty state now only ever renders for the
+ * actual today, so its "today" copy is always honest.
+ *
+ * Pure. `pets` must carry rows spanning the fired-for day THROUGH today (the loader
+ * fetches that window) so the fallback re-clips to today without a second read —
+ * `buildDaySummary` clips per `nowMs`, so a superset is fine. Returns the model and
+ * `renderedMs`, the instant actually rendered (the date header names this day).
+ */
+export function buildAnchoredDaySummary(input: {
+  pets: DaySummaryPetInput[];
+  firedForMs: number | null | undefined;
+  nowMs: number;
+  timeZone?: string;
+}): { model: DaySummaryModel; renderedMs: number } {
+  const { pets, firedForMs, nowMs, timeZone } = input;
+  const anchorMs = resolveDaySummaryAnchorMs({ firedForMs, nowMs, timeZone });
+  const anchored = buildDaySummary({ pets, nowMs: anchorMs, timeZone });
+  const anchoredToPastDay = localDayIndex(anchorMs, timeZone) !== localDayIndex(nowMs, timeZone);
+  if (anchored.isEmpty && anchoredToPastDay) {
+    return { model: buildDaySummary({ pets, nowMs, timeZone }), renderedMs: nowMs };
+  }
+  return { model: anchored, renderedMs: anchorMs };
+}
+
 // ── Zero-log copy (Principle 5 + G2 — owned here, asserted by the test) ──────
 //
 // nyx-voice + clinical-guardrails both gate these at the copy pass (PR 5); this is
