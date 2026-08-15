@@ -33,6 +33,7 @@ import { syncPendingDietTrials, syncPendingDietTrialFoods } from './sync';
 import { useSyncStore } from '../store/syncStore';
 import { uuid, toLocalDayKey, dayKeyToLocalDate } from './utils';
 import { getDietTrialProgress } from './analytics';
+import { surfaceOfferForValueMoment } from './dailyRecapOffer';
 
 /** Every trial write below ends with this — B-534's Home-strip half.
  *
@@ -963,6 +964,13 @@ export async function startDietTrial(input: StartTrialInput): Promise<string> {
   });
 
   notifyTrialChanged();
+
+  // DR-3 (§4): starting a trial is a value moment — re-surface the Daily Recap offer
+  // once, ever. Fire-and-forget in the write path (the notifyTrialChanged precedent),
+  // so the next surface to start a trial need not know the offer exists. Internally
+  // best-effort and a no-op if the moment is already spent (or the owner is opted in
+  // / OS-denied — the offer's own gates decide whether the banner ever shows).
+  void surfaceOfferForValueMoment('trial');
 
   // Parent before children on the wire too — a child whose parent has not landed
   // FK-fails with a 23503, which PR 2 classifies NON-terminal, so it would simply

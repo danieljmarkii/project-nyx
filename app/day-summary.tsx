@@ -28,7 +28,11 @@ import { WhorlSpinner } from '../components/brand/WhorlSpinner';
 import { DaySpine } from '../components/recap/DaySpine';
 import { CountChips } from '../components/recap/CountChips';
 import { RecapStrip } from '../components/recap/RecapStrip';
+import { DailyRecapOffer } from '../components/recap/DailyRecapOffer';
+import { NotificationPrimer } from '../components/notifications/NotificationPrimer';
 import { useDaySummary } from '../hooks/useDaySummary';
+import { useDailyRecapOffer } from '../hooks/useDailyRecapOffer';
+import { isNotificationArrival } from '../lib/dailyRecapOffer';
 import { useSyncStore } from '../store/syncStore';
 import {
   DAY_SUMMARY_ZERO_LOG,
@@ -61,8 +65,16 @@ function parseFiredAt(raw: string | string[] | undefined): number | null {
 export default function DaySummaryScreen() {
   // B-672: a tapped 9pm notification carries the instant it FIRED as `firedAt` (ms),
   // so the screen anchors "today" to the fired-for day instead of the wall clock.
-  const { firedAt } = useLocalSearchParams<{ firedAt?: string }>();
+  const { firedAt, source } = useLocalSearchParams<{ firedAt?: string; source?: string }>();
   const state = useDaySummary(parseFiredAt(firedAt));
+
+  // The in-context offer (DR-3, §4): shown ONLY on an IN-APP arrival. A notification
+  // tap carries `source: 'notification'` (and usually `firedAt`), which the offer
+  // must never pitch over — so classify the arrival and hand it to the hook, which
+  // owns the eligibility read, the primer, and the primer-gated enable flow.
+  const offer = useDailyRecapOffer({
+    arrival: isNotificationArrival({ firedAt, source }) ? 'notification' : 'in_app',
+  });
 
   // Light status-bar glyphs while this dark screen is focused; restore on blur so no
   // light glyphs strand on the next light screen (the onboarding-paywall pattern).
@@ -126,8 +138,27 @@ export default function DaySummaryScreen() {
               <PetSpineSection key={section.petId} section={section} />
             ))
           )}
+
+          {/* The in-context offer (§4), at the foot of the day where the value is
+              visible. Renders only in the ready-with-content states — never over the
+              designed zero-log/error states, and never on a notification-tap arrival
+              (the hook gates all of that). */}
+          {offer.show ? (
+            <DailyRecapOffer onTurnOn={offer.onTurnOn} onNotNow={offer.onNotNow} />
+          ) : null}
         </ScrollView>
       )}
+
+      {/* Primer-gated, always (§4): the banner's "Turn on" opens THIS, never the OS
+          prompt directly. Reads its copy from the daily_summary registry descriptor
+          (DR-4), warmed with the single pet's name. */}
+      <NotificationPrimer
+        visible={offer.primerVisible}
+        petName={offer.primerPetName}
+        onConfirm={offer.onPrimerConfirm}
+        onDismiss={offer.onPrimerDismiss}
+        requesting={offer.requesting}
+      />
     </SafeAreaView>
   );
 }

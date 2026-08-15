@@ -28,6 +28,22 @@ jest.mock('expo-router', () => {
 
 const mockState = jest.fn();
 jest.mock('../hooks/useDaySummary', () => ({ useDaySummary: () => mockState() }));
+// The in-context offer (DR-3) is stubbed off for the four-state wiring tests (its
+// own wiring is pinned in day-summary.offer.test.tsx). Mocking the hook + the primer
+// also keeps this file off the expo-notifications import chain both pull in.
+jest.mock('../hooks/useDailyRecapOffer', () => ({
+  useDailyRecapOffer: () => ({
+    show: false,
+    primerVisible: false,
+    requesting: false,
+    primerPetName: null,
+    onTurnOn: jest.fn(),
+    onNotNow: jest.fn(),
+    onPrimerConfirm: jest.fn(),
+    onPrimerDismiss: jest.fn(),
+  }),
+}));
+jest.mock('../components/notifications/NotificationPrimer', () => ({ NotificationPrimer: () => null }));
 const mockBump = jest.fn();
 jest.mock('../store/syncStore', () => ({
   useSyncStore: { getState: () => ({ bumpHydrationTick: mockBump }) },

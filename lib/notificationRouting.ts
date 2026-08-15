@@ -128,3 +128,21 @@ export function normalizeFireInstant(
   // way: iOS timeIntervalSince1970 is a fractional-second Double.
   return n < FIRE_INSTANT_MS_THRESHOLD ? Math.round(n * 1000) : Math.round(n);
 }
+
+// ── The tap's route params (the DR-3 arrival marker — spec §4) ────────────────
+//
+// PURE, and tested here rather than inline in the listener, because it carries a
+// NAMED GATE: `source: 'notification'` marks the arrival as a notification tap so
+// the in-context Daily Recap offer (`isNotificationArrival` in lib/dailyRecapOffer)
+// never shows over it. It is UNCONDITIONAL — carried even when the fire instant did
+// not normalize into `firedAt` (where `firedAt` alone would be absent and the screen
+// would misread the tap as an in-app visit, re-opening the gate). A future edit to
+// this shape fails a unit test rather than silently reopening the offer on taps.
+// `firedAt` (B-672's fire-day anchor) rides along only when present.
+export function notificationRouteParams(
+  firedAtMs: number | null,
+): { source: 'notification'; firedAt?: string } {
+  return firedAtMs != null
+    ? { source: 'notification', firedAt: String(firedAtMs) }
+    : { source: 'notification' };
+}

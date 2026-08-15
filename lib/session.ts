@@ -8,6 +8,7 @@ import { useOnboardingDraftStore } from '../store/onboardingDraftStore';
 import { clearTrialContextCache, clearTrialHeadsUpLedger } from './trialContaminant';
 import { clearCachedAppConfig } from './appConfig';
 import { clearBetaOptIns } from './betaFeatures';
+import { clearDailyRecapOffer } from './dailyRecapOffer';
 import { cancelAllScheduledNotifications, clearNotificationInteractions } from './notifications';
 
 /**
@@ -179,4 +180,10 @@ export async function wipeLocalSession(): Promise<void> {
   // shipped defaults until the first authenticated fetch, exactly as a fresh
   // install does.
   await clearCachedAppConfig();
+  // DR-3 (§4) — the Daily Recap offer markers (the 30-day "Not now" quiet + the two
+  // once-ever value-moment flags), AsyncStorage-resident like the ledgers above.
+  // Account-adjacent device state: the prior owner's "already offered / quieted for
+  // 30 days" must not carry to the next person on a shared device, or a fresh account
+  // never sees the banner it should. Same FR-9 parity rule as the clears above.
+  await clearDailyRecapOffer();
 }
