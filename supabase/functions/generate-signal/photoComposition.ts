@@ -206,15 +206,16 @@ function timingTarget(finding: Finding): { windowDays: number; longOnsets: numbe
  *
  * Pipeline:
  *   1. Gate the finding — only ⑤ / L1 / timing_story carry composition (else null).
- *   2. Keep the COMPLETED VOMIT reads with a finite occurred ms inside the finding's OWN window
- *      (nowMs − windowDays … nowMs). The analyses query pulls a wider lookback (180d) than the timing
- *      window (60d), so this re-windows to the finding's era; window-then-collapse can differ from the
- *      engine's collapse-then-window by at most one boundary-straddling bout — negligible for a
- *      present-only evidence count, and always the under-counting (safe) direction.
- *   3. Collapse present-wins into 3h episodes (safe-direction dedup).
- *   4. hair / bile — over EVERY episode (general vomit composition on any timing card).
+ *   2. Keep the COMPLETED VOMIT reads with a finite, non-future occurred ms; COLLAPSE them present-wins
+ *      into 3h episodes; THEN window each episode by its onset to the finding's OWN windowDays. That is
+ *      the engine's own order (collapseEpisodes over the full list, then the windowDays filter — see
+ *      lib/mealTiming's PR-2 wiring note), so a bout straddling the window edge is decided ONCE by its
+ *      onset, exactly as the timing detectors decide it, instead of being split at the boundary. The
+ *      analyses query pulls a wider lookback (180d) than the timing window (60d); collapsing over that
+ *      wider set only ever merges same-bout re-logs, never invents an episode.
+ *   3. hair / bile — over EVERY windowed episode (general vomit composition on any timing card).
  *      retainedFood — over the LONG-band episodes only (any member ms ∈ the finding's long onsets).
- *   5. Present-only: attach a field only when its count ≥ 1. All three absent ⇒ null (byte-identical
+ *   4. Present-only: attach a field only when its count ≥ 1. All three absent ⇒ null (byte-identical
  *      to the pre-L3 / no-photo / flag-off path).
  *
  * PURE — no I/O, no detector, no mutation of the finding.
@@ -229,17 +230,19 @@ export function computePhotoComposition(
   if (!Number.isFinite(nowMs)) return null
 
   const windowStart = nowMs - target.windowDays * MS_PER_DAY
-  const inWindow = analyses.filter(
+  const vomitReads = analyses.filter(
     (a) =>
       a.status === 'completed' &&
       a.incidentType === 'vomit' &&
       Number.isFinite(a.occurredMs) &&
-      a.occurredMs >= windowStart &&
-      a.occurredMs <= nowMs,
+      a.occurredMs <= nowMs, // a future-dated read is garbage — never let it seed or join an episode
   )
-  if (inWindow.length === 0) return null
+  if (vomitReads.length === 0) return null
 
-  const episodes = collapseComposition(inWindow)
+  // Collapse-then-window, matching the engine (see step 2): decide each bout's window membership by its
+  // ONSET, so a boundary-straddling bout is counted the same way the timing detectors count it.
+  const episodes = collapseComposition(vomitReads).filter((e) => e.onsetMs >= windowStart)
+  if (episodes.length === 0) return null
 
   // Long-band episodes: any member read shares an onset ms with the finding's long-episode set. The
   // onset is the same event on both sides (events.occurred_at → both the timing onset and the read's

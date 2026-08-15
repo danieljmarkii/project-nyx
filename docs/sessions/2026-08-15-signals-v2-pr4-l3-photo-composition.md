@@ -110,7 +110,13 @@ is preserved: the onsets still never reach phrasing/cache/HTTP. Two regression t
   regression-locked; DoD counterexample: a lone empty-stomach cat, 2 long episodes photographed with
   partially-digested food, run through the real `detectSignals`→strip→decorate pipeline → retained food
   was dead because the strip deleted the onsets first; now renders `{2 of 2}` and the onsets still strip
-  before cache) · `code-reviewer` re-dispatched after the fix (the first run was lost to a container
-  restart); outcome folded in before the PR leaves draft.
+  before cache) · `code-reviewer` **SHIP-READY** (independently traced the strip relocation — no cache
+  leak, order-safe, no other `detectSignals` caller relies on it [checked `generate-report`], immutable
+  `timing_story` strip; re-ran 444/432/1279 green). Its 3 non-blocking items handled: the doc typo
+  (`composePhotoComposition`→`computePhotoComposition`) fixed; the window docstring over-claim resolved
+  by switching to **collapse-then-window** (the engine's own order — a boundary bout is decided once by
+  its onset, matching the detectors, so there is no window-order discrepancy to caveat); the shared
+  `readFlags`/`classifyVomitContents` predicate duplication → **B-759** (Later; the "one predicate"
+  doctrine, non-blocking since the two return different shapes).
 
 ## Shipped via the CUL-9 draft PR (Signals v2 PR 4)

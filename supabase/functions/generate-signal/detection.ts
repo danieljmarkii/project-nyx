@@ -1138,7 +1138,7 @@ export interface TimingStoryFinding extends FindingBase {
     clockCount?: number
     /**
      * L3 (Signals v2 / B-755 / CUL-9) — the long episodes' onset instants (ms), copied verbatim from
-     * the merged L1 finding's `longEpisodeOnsets`. The retained-food join key: composePhotoComposition
+     * the merged L1 finding's `longEpisodeOnsets`. The retained-food join key: computePhotoComposition
      * matches these onsets to completed vomit reads to count recognizable food in the long band. Optional
      * so a pre-L3 / synthetic story finding without it simply yields no `retainedFood`.
      */
