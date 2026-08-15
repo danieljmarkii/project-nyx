@@ -84,6 +84,42 @@ describe('TrialStrip', () => {
     expect(tree.queryByText(/compliance/i)).toBeNull();
   });
 
+  // Signals v2 (CUL-13, §4.2) — the standing vomit-count line, a second line below the coverage line.
+  const trialResponseCounts = {
+    trialDayNumber: 23,
+    trialCount: 4,
+    baselineCount: 20,
+    trialLoggedDays: 18,
+    baselineLoggedDays: 40,
+    baselineWindowDays: 49,
+  };
+
+  it('renders the standing vomit-count line when signals_v2 supplied trialResponse (a second line)', () => {
+    const tree = render(<TrialStrip model={resolveTrialStrip(input({ trialResponse: trialResponseCounts }))} />);
+    // Both lines present: the coverage line AND the vomit-count line.
+    expect(tree.getByText(/meals logged on 22 of 23 days/)).toBeTruthy();
+    expect(tree.getByText("Vomiting: 4 in the trial's 23 days · 20 in the 7 weeks before.")).toBeTruthy();
+  });
+
+  it('renders NO standing line when the flag is off (no trialResponse) — byte-identical strip', () => {
+    const tree = render(<TrialStrip model={resolveTrialStrip(input())} />);
+    expect(tree.queryByText(/^Vomiting:/)).toBeNull();
+  });
+
+  it('folds the standing line into the strip a11y label (present), leaves it verbatim when absent', () => {
+    const withLine = render(
+      <TrialStrip model={resolveTrialStrip(input({ trialResponse: trialResponseCounts }))} onPress={jest.fn()} />,
+    );
+    expect(withLine.getByTestId('trial-strip').props.accessibilityLabel).toBe(
+      "Diet trial · day 23 of 56. Vomiting: 4 in the trial's 23 days · 20 in the 7 weeks before. Open the diet trial.",
+    );
+    // Flag-off: unchanged from the shipped label (asserted verbatim in the tap test above too).
+    const without = render(<TrialStrip model={resolveTrialStrip(input())} onPress={jest.fn()} />);
+    expect(without.getByTestId('trial-strip').props.accessibilityLabel).toBe(
+      'Diet trial · day 23 of 56. Open the diet trial.',
+    );
+  });
+
   it('sits below SignalZone and above TodayZone on Home', () => {
     const home = readFileSync(
       join(__dirname, '..', '..', 'app', '(tabs)', 'index.tsx'),

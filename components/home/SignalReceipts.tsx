@@ -79,8 +79,12 @@ export function DotLane({ model }: { model: DotLaneModel }) {
 // Pressable — `accessible={false}` makes that explicit.
 export function StackedCompare({ rows }: { rows: CompareRow[] }) {
   // Bars are PROPORTION only (§4 — no axis): the longest count fills the track, the
-  // rest scale against it. Guard the all-zero case so the divisor is never 0.
-  const max = Math.max(1, ...rows.map((r) => r.count));
+  // rest scale against it. A two-sided row (CUL-13 trial: "4 · was 8") scales its bar
+  // against the max of BOTH its counts across all rows, so a REDUCTION reads as a shorter
+  // bar than baseline. `flatMap` includes a row's baseline only when it has one, so a
+  // single-count (timing/⑤/⑥) row set produces the identical max as before — byte-identical.
+  // Guard the all-zero case so the divisor is never 0.
+  const max = Math.max(1, ...rows.flatMap((r) => (r.baseline != null ? [r.count, r.baseline] : [r.count])));
   return (
     <View style={styles.compare} accessible={false}>
       {rows.map((r, i) => (
@@ -91,7 +95,17 @@ export function StackedCompare({ rows }: { rows: CompareRow[] }) {
           <View style={styles.cmpTrack}>
             <View style={[styles.cmpFill, { backgroundColor: TONE_FILL[r.tone], width: `${(r.count / max) * 100}%` }]} />
           </View>
-          <Text style={styles.cmpCount}>{r.count}</Text>
+          {r.baseline != null ? (
+            // Two-sided "N · was M" (G2 — the unconditional safe form; a zero is "0 · was 7", never
+            // an inverted absence claim). The trial count leads (emphasised); "· was M" is the
+            // quieter baseline. Wider cell than the single-count form, so both numbers fit.
+            <Text style={styles.cmpCountTwoSided}>
+              <Text style={styles.cmpCountLead}>{r.count}</Text>
+              {` · was ${r.baseline}`}
+            </Text>
+          ) : (
+            <Text style={styles.cmpCount}>{r.count}</Text>
+          )}
         </View>
       ))}
     </View>
@@ -211,6 +225,21 @@ const styles = StyleSheet.create({
     fontSize: theme.textXS,
     color: theme.colorTextTertiary,
     fontVariant: ['tabular-nums'],
+  },
+  // The two-sided "N · was M" count cell (CUL-13) — wider than the single-count cell so both
+  // numbers fit; right-aligned like its sibling. `flexShrink: 0` keeps it from collapsing (the
+  // track flexes instead). The baseline half rides the tertiary tone; the trial count leads.
+  cmpCountTwoSided: {
+    flexShrink: 0,
+    minWidth: 64,
+    textAlign: 'right',
+    fontSize: theme.textXS,
+    color: theme.colorTextTertiary,
+    fontVariant: ['tabular-nums'],
+  },
+  cmpCountLead: {
+    color: theme.colorTextSecondary,
+    fontWeight: theme.weightSemibold,
   },
   // Expanded box + phone script ───────────────────────────────────────────────
   evid: {

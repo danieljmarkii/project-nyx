@@ -23,6 +23,7 @@ import {
   resolveTrialCard,
   trialManageLabel,
   resolveTrialStrip,
+  trialResponseStandingLine,
   planTrialCard,
   trialIdentityLabel,
   withholdingReasons,
@@ -38,6 +39,7 @@ import {
   type TrialCardState,
 } from './dietTrialCard';
 import { getDietTrialProgress } from './analytics';
+import type { TrialResponseCounts } from './trialResponseCounts';
 
 const MS_PER_DAY = 86_400_000;
 
@@ -1413,6 +1415,83 @@ describe('the Home strip', () => {
     }))!;
     expect(strip.line).toBeNull();
     expect(strip.header).toBe('Diet trial · day 23 of 56');
+  });
+});
+
+// ── The standing vomit-count line (Signals v2 / CUL-13, §4.2) ────────────────
+const counts = (over: Partial<TrialResponseCounts> = {}): TrialResponseCounts => ({
+  trialDayNumber: 20,
+  trialCount: 4,
+  baselineCount: 20,
+  trialLoggedDays: 18,
+  baselineLoggedDays: 40,
+  baselineWindowDays: 49,
+  ...over,
+});
+
+describe('trialResponseStandingLine (CUL-13)', () => {
+  it('renders the two-sided comparison when both windows clear the logged-days floor (mock B1)', () => {
+    expect(trialResponseStandingLine(counts())).toBe(
+      "Vomiting: 4 in the trial's 20 days · 20 in the 7 weeks before.",
+    );
+  });
+
+  it('shows a two-sided zero without inverting it (the wedge fewer case)', () => {
+    expect(trialResponseStandingLine(counts({ trialCount: 0, baselineCount: 7 }))).toBe(
+      "Vomiting: 0 in the trial's 20 days · 7 in the 7 weeks before.",
+    );
+  });
+
+  it('drops the baseline clause below the floor (trial-so-far only — the config comment)', () => {
+    // A baseline too thin to compare → trial count only; the trial count is never gated away.
+    expect(trialResponseStandingLine(counts({ baselineLoggedDays: 3, trialCount: 2 }))).toBe(
+      "Vomiting: 2 in the trial's 20 days.",
+    );
+    // A too-new trial (its own window under-logged) also drops to trial-so-far.
+    expect(trialResponseStandingLine(counts({ trialLoggedDays: 3, trialDayNumber: 4, trialCount: 2 }))).toBe(
+      "Vomiting: 2 in the trial's 4 days.",
+    );
+  });
+
+  it('renders nothing when there is no vomiting to describe (never a proactive "0")', () => {
+    // Full comparison but no vomiting either window → no line (not "0 · 0").
+    expect(trialResponseStandingLine(counts({ trialCount: 0, baselineCount: 0 }))).toBeNull();
+    // Below the floor with no trial vomiting → no line (nothing to report yet).
+    expect(trialResponseStandingLine(counts({ baselineLoggedDays: 2, trialCount: 0 }))).toBeNull();
+  });
+
+  it('pluralises days and weeks', () => {
+    expect(trialResponseStandingLine(counts({ trialDayNumber: 1, trialCount: 1, baselineLoggedDays: 2 }))).toBe(
+      "Vomiting: 1 in the trial's 1 day.",
+    );
+    expect(trialResponseStandingLine(counts({ baselineWindowDays: 7, baselineCount: 3 }))).toBe(
+      "Vomiting: 4 in the trial's 20 days · 3 in the 1 week before.",
+    );
+  });
+
+  it('carries no percentage or verdict', () => {
+    const line = trialResponseStandingLine(counts()) ?? '';
+    expect(line).not.toMatch(/%|working|improv|clean|better|worse/i);
+  });
+});
+
+describe('resolveTrialStrip — the standing line wiring (CUL-13)', () => {
+  it('maps input.trialResponse into the strip model as a second line', () => {
+    const strip = resolveTrialStrip(activeInput({ trialResponse: counts() }))!;
+    expect(strip.trialResponseLine).toBe("Vomiting: 4 in the trial's 20 days · 20 in the 7 weeks before.");
+  });
+
+  it('is null when the flag is off (no input.trialResponse) — byte-identical strip', () => {
+    expect(resolveTrialStrip(activeInput())!.trialResponseLine).toBeNull();
+  });
+
+  it('is suppressed while an intake-decline flag is live (never a count beside a safety flag)', () => {
+    const strip = resolveTrialStrip(activeInput({
+      trialResponse: counts(),
+      intakeDeclineHeadline: 'Mochi has left most of her food for 3 days.',
+    }))!;
+    expect(strip.trialResponseLine).toBeNull();
+    expect(strip.line).toBeNull();
   });
 });
 

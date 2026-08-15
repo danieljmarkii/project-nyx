@@ -64,6 +64,11 @@ import {
 } from './dietTrial';
 import { relativeDayLabel } from './food';
 import { proteinsFromCacheText } from './protein';
+import {
+  computeTrialResponseCounts,
+  TRIAL_RESPONSE_COUNTS_DEFAULTS,
+  type TrialResponseCounts,
+} from './trialResponseCounts';
 import { antigenPausedNote, loadTrialProteinContext, trialDietNote } from './trialContaminant';
 import { trialTargetProtein } from './trialProtein';
 import { localDayIndexOf, petPronouns, toLocalDayKey } from './utils';
@@ -395,6 +400,10 @@ export async function loadDietTrialFacts(args: {
   pet: DietTrialFactsPet;
   otherPetNames?: string[];
   nowMs?: number;
+  /** Signals v2 (CUL-13) — when true, compute the strip's standing vomit-count line from local data.
+   *  Off (default) the extra read is skipped entirely and `trialResponse` stays absent, so the strip
+   *  is byte-identical (§5 / FR-FLAG-2). The caller (`useDietTrial`) resolves the two-gate flag. */
+  signalsV2?: boolean;
 }): Promise<TrialCardInput> {
   const { pet } = args;
   const nowMs = args.nowMs ?? Date.now();
@@ -436,9 +445,15 @@ export async function loadDietTrialFacts(args: {
   const armDark = facts?.antigenArmDark ?? false;
   const pausedLabels = facts?.antigenAttributionPaused?.map((f) => f.label) ?? [];
 
-  const [decline, standingNote] = await Promise.all([
+  const [decline, standingNote, trialResponse] = await Promise.all([
     readIntakeDecline(pet, nowMs),
     readStandingNote(pet.id, pet.name, { antigenArmDark: armDark, pausedLabels }),
+    // CUL-13 — the standing vomit-count line's LOCAL counts, only when the flag is on AND the trial
+    // is running (an ended trial's strip shows its terminal card, not a live count). Gated so the
+    // flag-off / ended-trial paths skip the read entirely. Overlaps the two lanes above.
+    (args.signalsV2 ?? false) && trial.status === 'active'
+      ? readTrialResponseCounts(pet.id, trial, nowMs)
+      : Promise.resolve(null),
   ]);
   // B-598 — the pause disclosure is derivable from the flag ALONE, so it must
   // survive the two paths where `readStandingNote` returns null with the arm still
@@ -535,6 +550,9 @@ export async function loadDietTrialFacts(args: {
     rangeRefusalSpansEpisodes: facts?.rangeRefusalSpansEpisodes ?? false,
     // R1b — the rated share, which is what makes the register above reachable.
     intakeRating: facts?.intakeRating ?? null,
+    // CUL-13 — the strip's standing vomit-count line source (null off the flag / ended trial /
+    // unreadable). `resolveTrialStrip` turns it into the line; the loader only reads it.
+    trialResponse,
     // §5.6 free-fed. BOTH halves now come off the module: the trigger is its
     // `intakeNotDirectlyObserved` (the same flag `mayClaimAllMatched` keys on, so
     // the state and the withheld claim can never disagree), and the count is its
@@ -968,6 +986,54 @@ async function readStandingNote(
     return ctx ? trialDietNote(ctx, petName, opts) : null;
   } catch (e) {
     console.error('[DietTrial] standing note read failed:', e);
+    return null;
+  }
+}
+
+/**
+ * Signals v2 (CUL-13, §4.2) — the LOCAL vomit counts behind the Home strip's standing line. Read
+ * ONLY when `signals_v2` is on (the caller gates), so the flag-off strip pays for nothing and is
+ * byte-identical. One read over the padded [baseline start, now] window: vomit-event onsets (for the
+ * trial/baseline counts) and every logged event's instant (for the logged-days data-sufficiency the
+ * line's form keys on) — `computeTrialResponseCounts` collapses + windows them exactly as
+ * `detectTrialResponse` does (the §5.3 one-record-one-answer discipline; parity-tested).
+ *
+ * The lower bound pads a local day past `start − baselineDays` (like `windowFromISO`) so a
+ * baseline-morning event at a positive UTC offset is not missed; the predicate windows precisely by
+ * local day index, so over-fetching a day is free. No `timeZone` — the device zone IS the owner's
+ * midnight (B-421), the same frame the strip's day counter uses, so the two can't drift. Fails soft
+ * to null (no line), never throwing — a symptom-count read is not worth blanking the whole strip.
+ */
+async function readTrialResponseCounts(
+  petId: string,
+  trial: TrialCardTrial,
+  nowMs: number,
+): Promise<TrialResponseCounts | null> {
+  try {
+    const lowerBound = new Date(
+      `${shiftDayKey(startKeyOf(trial.startedAt), -(TRIAL_RESPONSE_COUNTS_DEFAULTS.baselineDays + 1))}T00:00:00Z`,
+    ).toISOString();
+    const rows = await getDb().getAllAsync<{ event_type: string; occurred_at: string }>(
+      `SELECT event_type, occurred_at FROM events
+        WHERE pet_id = ? AND deleted_at IS NULL AND occurred_at >= ?`,
+      [petId, lowerBound],
+    );
+    const loggedEventMs: number[] = [];
+    const vomitOnsetsMs: number[] = [];
+    for (const r of rows) {
+      const ms = Date.parse(r.occurred_at);
+      if (!Number.isFinite(ms)) continue;
+      loggedEventMs.push(ms);
+      if (r.event_type === 'vomit') vomitOnsetsMs.push(ms);
+    }
+    return computeTrialResponseCounts({
+      vomitOnsetsMs,
+      loggedEventMs,
+      trialStartedAt: trial.startedAt,
+      nowMs,
+    });
+  } catch (e) {
+    console.error('[DietTrial] trial-response counts read failed:', e);
     return null;
   }
 }

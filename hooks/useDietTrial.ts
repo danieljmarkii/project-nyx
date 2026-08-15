@@ -8,6 +8,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { loadDietTrialFacts } from '../lib/dietTrialFacts';
 import type { TrialCardInput } from '../lib/dietTrialCard';
+import { useBetaOptIn } from '../lib/betaFeatures';
+import { useAllowlistFlag } from './useAppConfig';
 import { usePetStore } from '../store/petStore';
 import { useSyncStore } from '../store/syncStore';
 
@@ -20,6 +22,11 @@ export function useDietTrial(): {
   // Recompute after a sync cycle hydrates new events, the same trigger the Trend
   // zone uses — a meal logged on another device changes the coverage line here.
   const hydrationTick = useSyncStore((s) => s.hydrationTick);
+  // Signals v2 (CUL-13) — the standing vomit-count line rides `signals_v2` (its own flag, D6), the
+  // two-gate beta shape (eligible && optedIn — never conflated), exactly as SignalZone resolves it.
+  // Both hooks called unconditionally (Rules of Hooks), then combined; off, the loader skips the
+  // extra read and the strip is byte-identical. A change flips the effect below (it's a dep).
+  const signalsV2 = useAllowlistFlag('signals_v2') && useBetaOptIn('signals_v2');
   const [input, setInput] = useState<TrialCardInput | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [tick, setTick] = useState(0);
@@ -48,6 +55,7 @@ export function useDietTrial(): {
     loadDietTrialFacts({
       pet: { id: petId, name: petName, species, sex },
       otherPetNames: otherKey === '' ? [] : otherKey.split('|'),
+      signalsV2,
     })
       .then((next) => { if (!cancelled) setInput(next); })
       .catch((e) => {
@@ -58,7 +66,7 @@ export function useDietTrial(): {
       .finally(() => { if (!cancelled) setIsLoading(false); });
 
     return () => { cancelled = true; };
-  }, [petId, petName, species, sex, otherKey, hydrationTick, tick]);
+  }, [petId, petName, species, sex, otherKey, hydrationTick, tick, signalsV2]);
 
   return { input, isLoading, reload };
 }
