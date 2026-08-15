@@ -2,7 +2,9 @@
 
 **Date:** 2026-08-15
 
-Shipped via **#651** (draft). First PR of the Daily Recap track (B-760); DR-0, the foundational plumbing that DR-1 (CUL-23, the screen + four states) and DR-7 (CUL-27, finish pass) build on.
+Shipped via **#651** (draft). First PR of the Daily Recap chunk (B-762; the spec `docs/nyx-daily-recap-requirements.md` landed on `main` via #645 mid-session and was merged in); DR-0, the foundational plumbing that DR-1 (CUL-23, the screen + four states) and DR-7 (CUL-27, finish pass) build on.
+
+Verified against the spec after it landed: the build matches **§1** (routing passes the instant through → `buildDaySummary` `nowMs` → clamp; header names the rendered day), **§8 AC #1** (12:40am → fired-for day; ≥2-day-old → today; header names the rendered day), the **§7 DR-0 row** (gates: `code-reviewer`, B-514 fixtures, non-UTC CI), and the **R-4 ruling** — which rules the anchor "per the standing recommendation," i.e. the B-672 backlog row's delivery-instant shape, exactly what was built.
 
 ## The bug
 
@@ -20,13 +22,13 @@ Thread the instant the notification **fired** through the tap route, and anchor 
 
 ## Decisions
 
-- **Delivery instant, not a schedule-time payload field.** The Linear issue phrases the payload as carrying the fire-day "computed at schedule time," but a repeating expo `DAILY` trigger's `content.data` is scheduled once and is static — it cannot carry a per-fire day. The authoritative B-672 backlog row (line 720) prescribes carrying the **delivery instant** as a tap param, which is what shipped. Baking a schedule-time day would be strictly worse than useless: it would be the schedule-creation day, so every tap past day 2 would clamp and the anchor would never help.
+- **Delivery instant, not a schedule-time payload field.** Both the Linear issue and spec §1 phrase the payload as carrying the fire-day "computed at schedule time," but a repeating expo `DAILY` trigger's `content.data` is scheduled once and is static — it cannot carry a per-fire day, and baking the schedule-creation day would make every tap past day 2 clamp (the anchor would never help). The spec's own **R-4 ruling resolves this**: it rules the anchor "per the standing recommendation," which is the B-672 backlog row's **delivery-instant** shape — and the §1 clamp requirement only functions with a per-fire instant. So the delivery instant is the coherent reading, and it is what shipped.
 - **The clamp resolves the B-672 PM decision** (fire-date-vs-accept): anchor to the delivered day, clamp when the fired-for day is >1 local day old — so the cross-midnight case is fixed without a stale 3-day-old tap opening a 3-day-old summary.
 - **Never widens a false-empty** (clinical-guardrails, checked deliberately): the un-anchored path is unchanged; the anchored path only ever moves the render to a day the record itself holds (today/yesterday); the stale path lands on today; and even a normalization miss fails safe to today. B-672 strictly *reduces* false-empties.
 
-## Deferred to DR-1 (CUL-23)
+## The empty-state copy (a spec decision, confirmed — not a gap)
 
-When the anchored day is *yesterday and itself empty*, the empty-state copy still reads "Nothing in {pet}'s record **today**." DR-1 owns the four states (including the empty-state copy), so the day-aware empty copy was left there rather than partially reworked here. Benign — the empty state only renders when the anchored day had no logs, so there is nothing to "lose"; the header (the DR-0-scoped surface) does name the rendered day.
+When the anchored day is *yesterday and itself empty*, the zero-log copy still reads "Nothing in {pet}'s record **today**." This is intentional: spec **§2 keeps the zero-log copy "verbatim from shipped v1,"** so DR-0 leaves it untouched by design (and DR-1 rebuilds the four states on the night ground with that same verbatim copy). Benign either way — the empty state only renders when the anchored day had no logs, so there is nothing to "lose"; and the header (the DR-0-scoped surface, §1) does name the rendered day. Flagged as a minor observation to the PM, but the spec has ruled the copy stays verbatim, so no action.
 
 ## Tests & gates
 
