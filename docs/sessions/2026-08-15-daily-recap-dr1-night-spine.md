@@ -5,7 +5,7 @@
 Built the centrepiece of the Daily Recap track (B-762): `app/day-summary.tsx` rebuilt
 from a light doorway-list into the always-night "day spine" recap, with the pure models,
 the shared night node-tint constants, and the four state frames from the design lock
-(`docs/culprit-daily-recap-mockups.html` §2). Shipped via **#<PR> (draft)**. Blocked-by
+(`docs/culprit-daily-recap-mockups.html` §2). Shipped via **#656 (draft)**. Blocked-by
 CUL-20 (the fire-day anchor) landed first (#651), so DR-1 was unblocked at session start.
 
 ## What shipped
