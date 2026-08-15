@@ -131,13 +131,18 @@ export const BETA_REGISTRY: BetaFeature[] = [
     addedDate: '2026-08-15',
     // ~1 quarter out — a forcing date for the graduate/kill/extend call, not a timer.
     reviewBy: '2026-11-15',
-    // serverCost:false is load-bearing here (spec §5): the new engine lanes are computed
-    // UNIFORMLY for every account inside generate-signal — not per-cohort — so no server
-    // resource is spent per opt-in, and the client render gate is sound under the widget
-    // precedent. The flag gates CLIENT RENDERING of finding types old clients already drop
-    // (the G10 unknown-type contract); it does not gate the server work. So no server-side
-    // eligibility gate is owed, and betaFeatures.test.ts's serverCost⇒server-gate rule stays
-    // vacuous by design.
+    // serverCost:false — but the ORIGINAL justification ("the lanes compute UNIFORMLY for every
+    // account, so nothing gates server-side") was FALSIFIED by B-777: composed uniformly, the engine
+    // MUTATES shipped findings (⑤ swallowed into timing_story, ⑥ suppressed via L1's onsets), so the
+    // redeploy was not byte-identical for flag-off accounts. The fix (B-777) now gates the v2 lanes +
+    // composition on `signals_v2` ELIGIBILITY inside generate-signal (index.ts readGateConfig →
+    // resolveAllowlistFlag), so a non-eligible account runs the pre-v2 engine. serverCost stays false
+    // because the lanes add no METERED/scaling resource — no LLM, no extra DB read, no external call,
+    // just deterministic CPU over the events/meals/trial already fetched for the shipped detectors; the
+    // eligibility gate exists for byte-identical OUTPUT, not to meter a resource. Re-characterizing this
+    // as serverCost:true (and thus into B-713's Phase-2 server-cost scope) is a PM call — the B-777
+    // decision brief. Until then it stays false and betaFeatures.test.ts's serverCost⇒server-gate rule
+    // stays vacuous (all four betas false), even though `signals_v2` now DOES appear in an Edge Function.
     serverCost: false,
   },
 ];

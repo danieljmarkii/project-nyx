@@ -210,6 +210,24 @@ describe('mealTiming — nearestPrecedingFeeding', () => {
     ];
     expect(nearestPrecedingFeeding(at(6 * HOUR), unsorted)).toEqual({ ms: at(5 * HOUR), form: 'lunch' });
   });
+
+  it('B-788 — same-ms tie keeps the FIRST feeding in input order (a KNOWN divergence from the v27 ⑤ engine, which kept the last)', () => {
+    // Two feedings at the IDENTICAL instant, different forms. This function keeps the FIRST in
+    // iteration order (strict `f.ms > best.ms`, mealTiming.ts:302 — a later equal-ms never overwrites).
+    // The deployed v27 inline `nearestPreceding` overwrote on every qualifier, so it kept the LAST.
+    // The B-777 adversarial fuzz surfaced this: on a same-ms tie it flips ⑤'s `feedingFormsInEvidence`
+    // (evidence-form label only — no band, count, rank, or firing decision moves — but the label rides
+    // into the vet report, so ⑤ is NOT strictly byte-identical vs v27 here). Pinned so the tie-break
+    // can't drift again silently while B-788 is open (aligning this SHARED predicate to v27's
+    // last-of-equal-ms also moves the client Patterns render + the report → a Data/T&S call). If B-788
+    // restores v27's behaviour, this expectation becomes `form: 'FormB'`.
+    const onset = at(6 * HOUR);
+    const tie = [
+      { ms: at(5 * HOUR), form: 'FormA' },
+      { ms: at(5 * HOUR), form: 'FormB' },
+    ];
+    expect(nearestPrecedingFeeding(onset, tie)).toEqual({ ms: at(5 * HOUR), form: 'FormA' });
+  });
 });
 
 describe('mealTiming — isFreeFedNear', () => {

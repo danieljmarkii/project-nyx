@@ -4034,8 +4034,16 @@ export function detectChronicity(
 // `lib/mealTiming.ts` (the one meal-relative timing predicate, G9) in PR 1 and are called via
 // `classifyEpisodeSet` in `scanVomitTiming` below. ⑤ and L1 (empty-stomach) both read that ONE
 // distribution, so their bands, denominators and eligibility can never drift (§3, the §5.3
-// diet-trial lesson pre-empted). The rewrite is behaviour-preserving — the gate order, boundary
-// inclusivity and NULL-tolerant-feeding / strict-witnessed-onset asymmetry match ⑤ as shipped.
+// diet-trial lesson pre-empted). The rewrite is behaviour-preserving IN EVERY OWNER-FACING FIELD —
+// the gate order, boundary inclusivity and NULL-tolerant-feeding / strict-witnessed-onset asymmetry
+// match ⑤ as shipped — with ONE audited exception (B-788): the equal-ms nearest-feeding TIE-BREAK
+// flipped. v27's inline `nearestPreceding` overwrote on every qualifier (LAST of two same-ms feedings
+// won); `lib/mealTiming.ts:nearestPrecedingFeeding` uses strict `f.ms > best.ms` (FIRST wins). This
+// changes ONLY `feedingFormsInEvidence` under same-timestamp feedings — no band, count, rank, or
+// firing decision moves, and the ⑤ card template omits the form — but the label rides into the vet
+// report, so it is NOT strictly byte-identical there. Ungated (⑤ is a shipped detector, not a v2
+// lane), so B-777's flag-off gate does not touch it; the fix (align the shared predicate ↔ client +
+// report) is the B-788 Data/T&S call.
 
 /** A symptom episode reduced to its onset time + the onset event's timestamp confidence. */
 interface ConfidenceEpisode {
@@ -6013,6 +6021,32 @@ function suppressTimeOfDayWhenPostprandial(
 }
 
 /**
+ * B-777 — the PRE-v2 (deployed v27) unconditional ⑤→⑥ suppression, restored verbatim as the
+ * flag-off byte-identical path. `detectSignals` runs THIS (not the episode-set-aware version above)
+ * for any account NOT eligible for `signals_v2`, so the redeploy changes NOTHING a non-eligible
+ * account sees: a ⑥ whose symptom already has a ⑤ is dropped unconditionally, exactly as v27 does.
+ *
+ * Why a separate function rather than "the episode-set-aware one with no L1 findings present": the
+ * two DIFFER even without L1. The aware version keeps a ⑥ whose clock cluster does NOT overlap ⑤'s
+ * meal-adjacent episodes (a different, un-surfaced pattern); v27 dropped it regardless. That
+ * divergence IS the leak — the whole point of B-777 is that an engine redeploy must not move a
+ * flag-off account's cards, and reverting the suppression rule is half of that (the other half is
+ * skipping the v2 lanes + composeTimingStory). This is a byte-for-byte copy of the function git
+ * shows at 0c0e20d~1, kept nameable so the guarantee is auditable against that commit.
+ */
+function suppressTimeOfDayWhenPostprandialLegacy(findings: Finding[]): Finding[] {
+  const postprandialTypes = new Set(
+    findings
+      .filter((f): f is PostprandialTimingFinding => f.type === 'postprandial_timing')
+      .map((f) => f.symptomType),
+  )
+  if (postprandialTypes.size === 0) return findings
+  return findings.filter(
+    (f) => !(f.type === 'timeofday_clustering' && postprandialTypes.has(f.symptomType)),
+  )
+}
+
+/**
  * Signals v2 (B-755 / CUL-7 — D1/A2) — merge a same-symptom ⑤ (postprandial) + L1 (empty-stomach)
  * pair into ONE `timing_story` card. The two phenotypes are two readings of the SAME timing
  * distribution (`scanVomitTiming`), so one card carries both bands rather than two cards saying
@@ -6163,16 +6197,43 @@ export function stripInternalOnsets(findings: Finding[]): Finding[] {
 }
 
 /**
+ * B-777 — the Signals v2 (B-755) DETECTOR outputs, gated as ONE unit on `signals_v2` eligibility.
+ * A non-eligible account never has these emitted, so the composition below has nothing new to merge
+ * or suppress on and its output is byte-identical to the pre-track (v27) engine. `timing_story` is
+ * NOT here — it is composition-only (composeTimingStory), and it never forms when L1 is absent.
+ * The set is the authority on "what is a v2 lane"; adding a future lane means adding it here too
+ * (else it leaks to flag-off accounts — the exact regression this gate exists to prevent).
+ */
+const SIGNALS_V2_DETECTOR_TYPES: ReadonlySet<InsightType> = new Set<InsightType>([
+  'empty_stomach_timing', // L1
+  'trial_response', // L2
+  'gap_shortening', // L4
+])
+
+/**
  * Top-level entry point. Runs every registered detector, composes and ranks the
  * results (§5). An empty array means no finding cleared its floor — the caller
  * renders the building/stale state (§3.3); it is NOT an all-clear (§9).
+ *
+ * `signalsV2Eligible` (B-777) gates the ENTIRE Signals v2 surface of the engine — the L1/L2/L4 lane
+ * emission, the `timing_story` merge, AND the episode-set-aware ⑤/L1→⑥ suppression. It defaults to
+ * `false` so the gate FAILS CLOSED: a caller that forgets it (or a future call site) gets the
+ * pre-v2, byte-identical output — v2 can only ever leak by an explicit `true`. The production shell
+ * (index.ts) resolves it from the `signals_v2` app_config allowlist against the JWT uid (the same
+ * primitive the client's Gate 1 uses), so the server and the client agree on who is eligible and the
+ * redeploy is a no-op for everyone else (spec §5 "byte-identical off"; the closeout's G10/deploy FAIL).
  */
 export function detectSignals(
   input: DetectionInput,
   config: DetectionConfig = DEFAULT_CONFIG,
+  signalsV2Eligible = false,
 ): RankedFinding[] {
   const findings: Finding[] = []
   for (const detector of DETECTOR_REGISTRY) {
+    // Skip the v2 lanes entirely for a non-eligible account — the emission gate (half of B-777; the
+    // other half is the composition branch below). A lane that never fires can never displace a
+    // shipped card via the visible-card cap, and can never reach a flag-off client as a dropped type.
+    if (!signalsV2Eligible && SIGNALS_V2_DETECTOR_TYPES.has(detector.type)) continue
     findings.push(...detector.detect(input, config))
   }
   // Composition before ranking. ORDER MATTERS for the timing lane (Signals v2 / CUL-7):
@@ -6190,6 +6251,13 @@ export function detectSignals(
   // never reach the phrasing / cache / HTTP layer (finding ②). Keeping the strip inside here would
   // delete the onsets before the shell ever sees them — the exact bug that left retained food dead on
   // the lone empty_stomach card.
-  const composed = composeTimingStory(suppressTimeOfDayWhenPostprandial(findings, config))
+  // B-777 — the timing-lane composition is v2 and gates as one unit. Eligible: the episode-set-aware
+  // ⑤/L1→⑥ suppression then the ⑤+L1→timing_story merge (both read the v2 lanes emitted above).
+  // Non-eligible: the pre-v2 UNCONDITIONAL suppression and NO merge, so ⑤ survives as itself and ⑥
+  // follows the v27 rule — byte-identical to the deployed engine. suppressWorseningWhenChronic is
+  // NOT v2 (⑦ is B-182, a separately deploy-cleared track), so it runs on both paths unchanged.
+  const composed = signalsV2Eligible
+    ? composeTimingStory(suppressTimeOfDayWhenPostprandial(findings, config))
+    : suppressTimeOfDayWhenPostprandialLegacy(findings)
   return rankFindings(suppressWorseningWhenChronic(composed), input.pet)
 }
