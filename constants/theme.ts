@@ -149,10 +149,25 @@ export const theme = {
   //   colorEventSymptomOnNight   6.80:1  (AA / AAA-large)
   //   colorTextOnNightFaint      3.79:1  (AA-large ONLY — hence large/secondary use)
   colorEventSymptomOnNight: '#FB7185',        // safety rail/tag on night grounds (6.8:1)
+  // Night-ground sibling of colorEventMedication (the slate-blue med tint), for the
+  // med node on the day-spine and the med strip on night grounds (daily-recap
+  // DR-1/DR-4). Lightened from the #5B7A9E day tint so it holds on the dark indigo.
+  // Graphical (dot/glyph) use is the primary role, but it clears AA as text too —
+  // verified, not asserted, on both night grounds:
+  //   on colorBrandNight #13112E          7.91:1  (AAA)
+  //   on colorBrandNightElevated #251F57  6.43:1  (AA / AAA-large)
+  colorEventMedicationOnNight: '#93ADCB',
   colorTextOnNight: '#ECEAF6',                // primary text on night grounds (15.4:1)
   colorTextOnNightMuted: '#A6A2CE',           // secondary text on night grounds (7.6:1)
   colorTextOnNightFaint: '#706BA6',           // metadata/sample lines — large/secondary only (3.8:1)
   colorMoonlight: '#F2EEE4',                  // crescent fill + display headlines on night (15.8:1)
+  // Lightened decorative teal for small-caps labels/eyebrows on night grounds (the
+  // recap's "Evening summary" eyebrow, DR-4). NOT the interactive accent: colorAccent
+  // stays reserved for tappable/live elements (the accent rule above), so a decorative
+  // teal label uses this "world colour" instead — lightened from #00C2A8 the same way
+  // colorEventMedicationOnNight is lightened from its day tint, so it reads luminous on
+  // the dark indigo. On colorBrandNight #13112E: 10.42:1 (AAA).
+  colorMoonlitTeal: '#4FD8C4',
   colorBorderOnNight: 'rgba(196,190,255,0.16)', // hairlines/dividers on night grounds
   colorAuroraViolet: '#221C56',               // hero radial glow stop 1
   colorAuroraIndigo: '#191449',               // hero radial glow stop 2

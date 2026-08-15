@@ -98,13 +98,13 @@ The DoD falsification standard: every guardrail demonstrated with a concrete cou
 | G9 one predicate | Look for a second meal-timing derivation | **HELD** — ⑤'s inline logic deleted, ⑤+L1+client all read `classifyEpisodeSet`/`lib/mealTiming`. (Minor note: the gap lane's collapse uses server `toEpisodeOnsets` vs client `collapseEpisodes` — documented identical, a latent drift point, not a break.) |
 | G10 flag-off drops new types | Feed a new-engine output to a flag-off renderer | **FAIL — see below.** The registry null-guard prevents a *crash*, but "safely drop" is necessary-not-sufficient: the composition **mutates existing findings**, so flag-off output is not byte-identical. |
 
-**The deploy-blocking finding (filed B-774, Now):** the composition layer changes what flag-off accounts see, because `signals_v2` gates only the client while the engine runs uniformly:
+**The deploy-blocking finding (filed B-777, Now):** the composition layer changes what flag-off accounts see, because `signals_v2` gates only the client while the engine runs uniformly:
 1. **⑤ `postprandial_timing` vanishes on ⑤+L1 co-fire** — `composeTimingStory` (`detection.ts:6071`) removes both sources, emits `timing_story`, which the flag-off client drops (`SignalZone.tsx:303`). The co-fire is the *designed* A2 case, so it hits the target users.
 2. **⑥ newly suppressed for the empty-stomach cat** — `suppressTimeOfDayWhenPostprandial` (`detection.ts:5994`) now unions L1's long onsets, so L1-fires-⑤-silent suppresses ⑥ with no L1 replacement flag-off → the clock card vanishes, toward silence (the *wrong* direction).
 3. **Reflection card + summary clause displaced** by the 4-insight `VISIBLE_CARD_CAP` when `trial_response` (band 1) is added.
 4. Client edges from the same root: the blank `live` stack when only-v2 findings (`SignalZone.tsx:299`, an acknowledged "accepted edge until PR 10"); `gap_shortening` unhandled by `isSignalsV2Finding` + no renderer (stray divider, flag-on too).
 
-Root cause: the composition assumes the v2 cards render in the displaced cards' place, but the gate is client-only; a ⑥ removed server-side can't be reconstructed client-side. **The redeploy would regress the live Signal for the entire base at deploy time (flag default nobody).** Not patchable within a copy-pass PR — needs a dedicated server-side fix + its own adversarial re-pass (options in B-774). No CI test currently feeds new-engine output to a flag-off renderer; that cross-deploy byte-identical test is part of the fix.
+Root cause: the composition assumes the v2 cards render in the displaced cards' place, but the gate is client-only; a ⑥ removed server-side can't be reconstructed client-side. **The redeploy would regress the live Signal for the entire base at deploy time (flag default nobody).** Not patchable within a copy-pass PR — needs a dedicated server-side fix + its own adversarial re-pass (options in B-777). No CI test currently feeds new-engine output to a flag-off renderer; that cross-deploy byte-identical test is part of the fix.
 
 ### pm-feature-review re-run — SHIP-SHAPED except the trial card (NEEDS-WORK)
 
@@ -120,7 +120,7 @@ What *is* ready: the copy/safety pass and S10 audit are clean; the beta-shelf ro
 
 **Blockers, ordered (each a decision brief):**
 
-1. **The redeploy would regress the live Signal for everyone (B-774) — deploy blocker.**
+1. **The redeploy would regress the live Signal for everyone (B-777) — deploy blocker.**
    - *Deciding:* how to make the engine's composition byte-identical for flag-off accounts before the single deploy.
    - *Options:* **(A, recommended)** gate the v2 composition (`composeTimingStory` + the L1-aware suppression + the v2 lane emission) server-side on the `signals_v2` **eligibility** allowlist — non-eligible accounts get byte-identical output; cost: the engine becomes per-cohort, so `serverCost` is effectively true and the beta-row rationale is revisited. **(B)** keep composition additive server-side (don't remove ⑤/⑥) and de-dup client-side flag-on — preserves `serverCost:false` but moves the merge to the client. **(C)** deploy simultaneously with GA (no flag-off accounts exist) — abandons the dark/beta rollout FR-FLAG mandates.
    - *Consequence:* whichever wins is a dedicated server PR with its own `adversarial-reviewer` re-pass + a new cross-deploy flag-off byte-identical test. The deploy waits on it. (A) is the smallest change that preserves the ratified rollout; it needs the PM to accept the serverCost re-characterisation.
@@ -137,7 +137,7 @@ What *is* ready: the copy/safety pass and S10 audit are clean; the beta-shelf ro
 
 4. **Watching-copy GA-gaters already filed Now:** B-768 (improving-pet Timing-row frame + "timed episodes" jargon), B-769 (gap row under the "still needs" umbrella + the shrinking-is-accelerating legibility nuance). Both "resolve before PR 10 flips the flag."
 
-**The path to GA:** fix B-774 (server PR + adversarial re-pass) → rule B-766 + the three §3 server-template calls → **one** `generate-signal` deploy from the Codespace (`scripts/deploy-edge.sh generate-signal --deploy`, verified per runbook — bundle `a64c38d2…`, rebuilt after the above land) → allowlist a dogfood cohort via the beta shelf ("Deeper signals") → run the flag-on QA script on-device → clear B-768/769 → **then** the explicit GA ruling retires the flag (FR-FLAG-5).
+**The path to GA:** fix B-777 (server PR + adversarial re-pass) → rule B-766 + the three §3 server-template calls → **one** `generate-signal` deploy from the Codespace (`scripts/deploy-edge.sh generate-signal --deploy`, verified per runbook — bundle `a64c38d2…`, rebuilt after the above land) → allowlist a dogfood cohort via the beta shelf ("Deeper signals") → run the flag-on QA script on-device → clear B-768/769 → **then** the explicit GA ruling retires the flag (FR-FLAG-5).
 
 **Non-blocking / deliberately deferred:** D2 absence-shaped trial *sentence* (count-rows ship; sentence is a future additive upgrade — CUL-17); `runLength` 4-vs-5 (4 is the shipped recommended default; ≤1 constant); B-760/761 (A2 base-rate counterbalance + dense lane); B-772/773 (watching-lane coverage). None block GA.
 
@@ -147,16 +147,16 @@ What *is* ready: the copy/safety pass and S10 audit are clean; the beta-shelf ro
 - [x] **S10 receipt-assignment audit** — clean; all four new finding types are `insight`-class (safety faces stay plain, S1 untouched); each receipt carries distribution/compared-pairs the sentence can't. One A2 near-dup flagged to the "two kinds of time" lead call (non-blocking).
 - [x] **Beta-shelf row** — `signals_v2` "Deeper signals" added, `serverCost: false` with rationale; `betaFeatures.test.ts` updated (15/15); a distinct glyph; tsc clean; 1016 client tests green (1001 track + 15 beta).
 - [x] **Flag-on QA script** — written (above); honest about the deploy + data prerequisites.
-- [x] **Adversarial G1–G10 falsification** (track-level AC) — run; G1–G9 held with stated counterexamples; **G10 + deploy FAIL → B-774 (deploy blocker).**
+- [x] **Adversarial G1–G10 falsification** (track-level AC) — run; G1–G9 held with stated counterexamples; **G10 + deploy FAIL → B-777 (deploy blocker).**
 - [x] **`pm-feature-review` re-run** — run; four flows SHIP-SHAPED, trial card NEEDS-WORK (**B-766**).
-- [x] **Deploy bundle** — built + verified (498 deno tests pass; sha `a64c38d2…`); **execution held** (B-774 blocker + Codespace-token requirement for a 159 KB function).
+- [x] **Deploy bundle** — built + verified (498 deno tests pass; sha `a64c38d2…`); **execution held** (B-777 blocker + Codespace-token requirement for a 159 KB function).
 - [x] **GA recommendation** — HOLD, with the ordered path (above).
-- **Persona sign-off:** Data/Adversarial ✓ (G1–G9 held; G10 FAIL surfaced) — Designer/PM-review ✓ (4 flows ship-shaped; trial card held) — Dr. Chen — pending on the three §3 server-template calls — Eng ✓ (bundle verified; B-774 architecture call surfaced) — QA ✓ (flag-on script + the ACs). 
+- **Persona sign-off:** Data/Adversarial ✓ (G1–G9 held; G10 FAIL surfaced) — Designer/PM-review ✓ (4 flows ship-shaped; trial card held) — Dr. Chen — pending on the three §3 server-template calls — Eng ✓ (bundle verified; B-777 architecture call surfaced) — QA ✓ (flag-on script + the ACs). 
 - **Adversarial review (mandatory):** stated counterexamples per guardrail above; the falsification *caught the deploy-safety regression the build conversation was too close to see* — exactly the DoD's purpose.
 - **Tests:** N/A for the beta-row copy beyond `betaFeatures.test.ts` (updated); no other code changed. tsc clean; server suite green (498 deno via the bundle step).
 
 ## Documentation updates
 
-- **`docs/backlog.md`** — filed **B-774** (deploy-blocking flag-off byte-identical violation, Now), **B-775** (trial pooled magnitude over-read, Next), **B-776** (band-label consistency, Later); augmented **B-769** with the gap-row legibility nuance.
-- **STATUS.md** — updated inline (PR 10 shipped; the GA/deploy HOLD + B-774 recorded).
-- **Spec (`docs/nyx-signals-v2-requirements.md`)** — a proposed §5 amendment is flagged for PM approval: the "server additions computed uniformly / client gate sound / `serverCost:false`" premise is **falsified by the composition layer** (B-774); the resolution (option A/B/C) rewrites §5's rollout model. Not written unilaterally — awaits the B-774 ruling.
+- **`docs/backlog.md`** — filed **B-777** (deploy-blocking flag-off byte-identical violation, Now), **B-775** (trial pooled magnitude over-read, Next), **B-776** (band-label consistency, Later); augmented **B-769** with the gap-row legibility nuance.
+- **STATUS.md** — updated inline (PR 10 shipped; the GA/deploy HOLD + B-777 recorded).
+- **Spec (`docs/nyx-signals-v2-requirements.md`)** — a proposed §5 amendment is flagged for PM approval: the "server additions computed uniformly / client gate sound / `serverCost:false`" premise is **falsified by the composition layer** (B-777); the resolution (option A/B/C) rewrites §5's rollout model. Not written unilaterally — awaits the B-777 ruling.
