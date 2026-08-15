@@ -12,6 +12,8 @@ import { theme } from '../../constants/theme';
 import { Badge } from '../ui/Badge';
 import {
   DENSITY_BOX_TITLE,
+  DOT_LANE_MAX,
+  TIMING_STORY_BADGE,
   confidenceTag,
   displayProteinName,
   dotLaneA11yLabel,
@@ -21,8 +23,10 @@ import {
   isNewWorsening,
   isReflectionDensityWithheld,
   isTimingFinding,
+  isTimingStory,
   medContextLine,
   phoneScript,
+  photoCompositionLines,
   proteinCluster,
   reflectionExpandedExtras,
   reflectionWithheldSampleLine,
@@ -31,6 +35,12 @@ import {
   timingCompareRows,
   timingControlDisclosure,
   timingReceiptDegrades,
+  timingStoryBandRows,
+  timingStoryClockLaneModel,
+  timingStoryControlDisclosure,
+  timingStoryMealLaneModel,
+  timingStorySampleLine,
+  timingStoryVetLine,
   worseningNewSampleLine,
 } from '../../lib/signalCopy';
 import { DotLane, EvidenceBox, PhoneScript, StackedCompare } from './SignalReceipts';
@@ -105,6 +115,32 @@ function SentenceBody({ cached, isLead, designV2 }: InsightBodyProps) {
         {showNew && <NewChip />}
         {tag && <Badge label={tag} variant="muted" />}
         <Text style={styles.sample}>{sample}</Text>
+      </View>
+    </View>
+  );
+}
+
+// ── The A2 combined timing card (Signals v2 / B-755 / CUL-12) ─────────────────
+// The timing_story card (both phenotypes) + the lone empty_stomach_timing card. Face:
+// the server-phrased lead sentence (both phenotypes count-anchored), the three-band
+// Shape-C compare (≤30m / in between / 6h+, every count printed — S2), and a meta row
+// (a 'Timing pattern' badge + the "N timed of M episodes · D days" sample line). The med
+// line, the per-phenotype lanes, the L3 lines and the for-your-vet relay live in the
+// expand (TimingStoryExpanded). Reached ONLY when `signals_v2` is on (InsightCard gates
+// before the registry Body runs), so a non-eligible account renders nothing for these
+// types — byte-identical to before the type existed (FR-FLAG-2 / the G10 contract).
+function TimingStoryBody({ cached, isLead }: InsightBodyProps) {
+  const finding = cached.finding;
+  // Registry-keyed + gated in InsightCard, so this is always a story type; the guard
+  // narrows the union for the copy helpers (and is a defensive null for an impossible call).
+  if (!isTimingStory(finding)) return null;
+  return (
+    <View style={styles.body}>
+      <Text style={[styles.sentence, isLead && styles.sentenceLead]}>{cached.text}</Text>
+      <StackedCompare rows={timingStoryBandRows(finding)} />
+      <View style={styles.metaRow}>
+        <Badge label={TIMING_STORY_BADGE} variant="muted" />
+        <Text style={styles.sample}>{timingStorySampleLine(finding)}</Text>
       </View>
     </View>
   );
@@ -218,6 +254,74 @@ function ExpandedReceipts({
   return null;
 }
 
+// ── The A2 expanded state (A3's mechanics — Signals v2 / CUL-12, §4.1) ─────────
+// Below the "Why we're showing this" prose: the per-phenotype dot lanes (a meal-relative
+// lane + the early-morning clock lane where one exists), the honest un-timeable remainder
+// (S2), the §5.4 med-on-board line, the L3 photographed-content lines (present-only, never
+// reassuring — G4), and a plain for-your-vet relay (descriptors, never labels). Rendered
+// only for a story finding behind `signals_v2` (gated at the call site).
+function TimingStoryExpanded({ finding }: { finding: SignalFinding }) {
+  if (!isTimingStory(finding)) return null;
+  // Cap the dot lanes at the shared legibility limit (DOT_LANE_MAX): above it, individual dots
+  // stop being countable in a single 22px row, so a chronic/heavily-logged patient — the exact
+  // target user — would see a blob. Degrade by OMITTING the dense lane (its geometry has no
+  // per-episode times to jitter, and the face's three-band compare + the for-your-vet line
+  // already carry the split + the clustering in legible form). This mirrors the shipped
+  // timingReceiptDegrades cap; a taller jittered lane is a Patterns-surface treatment (PR 9).
+  const mealModel = timingStoryMealLaneModel(finding);
+  const clockModel = timingStoryClockLaneModel(finding);
+  const showMeal = mealModel.dots.length <= DOT_LANE_MAX;
+  const showClock = clockModel != null && clockModel.dots.length <= DOT_LANE_MAX;
+  const control = timingStoryControlDisclosure(finding);
+  const medLine = medContextLine(finding);
+  const photoLines = photoCompositionLines(finding);
+  return (
+    <>
+      {showMeal || showClock ? (
+        <EvidenceBox title="When they happen">
+          {showMeal ? (
+            <>
+              <Text style={styles.laneCaption}>After eating</Text>
+              <DotLane model={mealModel} />
+            </>
+          ) : null}
+          {showClock && clockModel ? (
+            <>
+              <Text style={[styles.laneCaption, showMeal ? styles.laneCaptionSpaced : null]}>By clock</Text>
+              <DotLane model={clockModel} />
+            </>
+          ) : null}
+        </EvidenceBox>
+      ) : null}
+      {/* The un-timeable remainder (S2). Titled for what it ACTUALLY holds — a coverage
+          caveat — not "the other side of it", which would promise the base-rate counterbalance
+          the mock drew ("mornings with a meal and no episode: N of M"). That richer two-sided
+          control needs an engine payload field CUL-7 doesn't emit yet (backlog / pm-review),
+          so the honest title here is the episodes we couldn't place. */}
+      {control ? (
+        <EvidenceBox title="What we couldn't time">
+          <Text style={styles.disclosure}>{control}</Text>
+        </EvidenceBox>
+      ) : null}
+      {/* §5.4 med-on-board context — a bare fact line, never a verdict; dropped fail-quiet
+          when the composed line trips the guardrail screen (a "%" in the drug name — B-733). */}
+      {medLine ? <Text style={styles.medContext}>{medLine}</Text> : null}
+      {photoLines.length > 0 ? (
+        <EvidenceBox title="What the photos showed">
+          {photoLines.map((line, i) => (
+            <Text key={i} style={[styles.disclosure, i > 0 ? styles.disclosureSpaced : null]}>
+              {line}
+            </Text>
+          ))}
+        </EvidenceBox>
+      ) : null}
+      <EvidenceBox title="For your vet">
+        <Text style={styles.disclosure}>{timingStoryVetLine(finding)}</Text>
+      </EvidenceBox>
+    </>
+  );
+}
+
 // The joint-candidate linked pair (B-351 D5, mock §3). Two proteins the engine cannot
 // separate, shown as linked chips with a three-word note — NOT a wrapping text pill,
 // which is what an earlier draft used and what the mock review rejected.
@@ -247,7 +351,7 @@ function LinkedPair({ proteins }: { proteins: string[] }) {
   );
 }
 
-const INSIGHT_RENDERERS: Record<InsightType, (p: InsightBodyProps) => ReactElement> = {
+const INSIGHT_RENDERERS: Record<InsightType, (p: InsightBodyProps) => ReactElement | null> = {
   food_symptom_correlation: SentenceBody,
   intake_decline: SentenceBody,
   // Reflection (③, B-051) — a descriptive count, rendered as a calm sentence like
@@ -270,6 +374,12 @@ const INSIGHT_RENDERERS: Record<InsightType, (p: InsightBodyProps) => ReactEleme
   // Time-of-day clustering (⑥, B-079) — a descriptive clock-band count, also a calm
   // sentence on the 'insight' rail; no confidence tag (it shows its sample size).
   timeofday_clustering: SentenceBody,
+  // Signals v2 (B-755 / CUL-12) — the A2 combined timing card and its lone empty-stomach
+  // sibling. Their own face (three-band compare) + expand; rendered ONLY behind `signals_v2`
+  // (InsightCard returns null for them when the flag is off, so a non-eligible account's
+  // cache row is skipped — byte-identical to before the type existed).
+  empty_stomach_timing: TimingStoryBody,
+  timing_story: TimingStoryBody,
 };
 
 interface Props {
@@ -292,6 +402,12 @@ interface Props {
   // line in the expanded state; default false, so every non-Home caller and the flag-off
   // path are unaffected (the adjacency is also inside the flag-gated ExpandedReceipts).
   trialRunning?: boolean;
+  // Signals v2 (B-755 / CUL-12) — the A2 timing-story cards render ONLY behind `signals_v2`
+  // (its OWN flag, not signal_design_v2 — spec §0 D6). Default false so a non-eligible
+  // account (and the flag-off path) renders nothing for a timing_story / empty_stomach_timing
+  // cache row — byte-identical to before the type existed (FR-FLAG-2 / the G10 contract).
+  // Independent of designV2: the A2 card composes with the SR-1 register but does not require it.
+  signalsV2?: boolean;
 }
 
 export function InsightCard({
@@ -301,6 +417,7 @@ export function InsightCard({
   designV2 = false,
   compact = false,
   trialRunning = false,
+  signalsV2 = false,
 }: Props) {
   const [expanded, setExpanded] = useState(false);
 
@@ -308,6 +425,13 @@ export function InsightCard({
   // Unknown future type with no registered renderer: skip the card rather than
   // crash the whole surface (forward-compatible with new detectors).
   if (!Body) return null;
+
+  // A Signals-v2 timing-story type on an account without the flag: render nothing (the
+  // server computes these uniformly for everyone — §5 — so a non-eligible cache DOES carry
+  // them; the client gate is what keeps them dark). Placed after the registry lookup so the
+  // flag-off tree is byte-identical to when these types had no renderer at all.
+  const isStory = isTimingStory(cached.finding);
+  if (isStory && !signalsV2) return null;
 
   const rail = RAIL_COLOR[cached.finding.priorityClass];
 
@@ -317,10 +441,20 @@ export function InsightCard({
   // idiom). Flag-off (or a non-timing type) → null → the label stays exactly the shipped
   // `cached.text`. SR-5: the med-on-board line folds in after the receipt when present, so
   // VoiceOver hears the same card-face context a sighted owner reads.
-  const receiptA11y = cardFaceReceiptA11y(cached.finding, designV2);
-  const medLine = designV2 ? medContextLine(cached.finding) : null;
+  //
+  // The A2 story card folds its three-band compare into the label instead; its med line is
+  // in the EXPAND, not the face, so it is not part of the collapsed label (unlike the ⑤/⑥
+  // face med line below).
+  let receiptA11y: string | null = null;
+  let faceMedLine: string | null = null;
+  if (signalsV2 && isTimingStory(cached.finding)) {
+    receiptA11y = stackedCompareA11yLabel(timingStoryBandRows(cached.finding));
+  } else {
+    receiptA11y = cardFaceReceiptA11y(cached.finding, designV2);
+    faceMedLine = designV2 ? medContextLine(cached.finding) : null;
+  }
   let accessibilityLabel = receiptA11y ? `${cached.text}. ${receiptA11y}` : cached.text;
-  if (medLine) accessibilityLabel = `${accessibilityLabel}. ${medLine}`;
+  if (faceMedLine) accessibilityLabel = `${accessibilityLabel}. ${faceMedLine}`;
 
   function toggle() {
     LayoutAnimation.configureNext(LayoutAnimation.create(theme.durationMedium, 'easeInEaseOut', 'opacity'));
@@ -346,9 +480,15 @@ export function InsightCard({
         {expanded && (
           <>
             <Text style={styles.evidence}>{evidenceText(cached.finding, petName)}</Text>
-            {designV2 && (
+            {/* A2 story card (signals_v2) → its own expanded receipts (lanes, control side,
+                med line, L3, for-your-vet); otherwise the SR-1 (signal_design_v2) receipts.
+                The two flags are independent, but a finding is only ever one shape, so this
+                is an either/or, never both. */}
+            {signalsV2 && isStory ? (
+              <TimingStoryExpanded finding={cached.finding} />
+            ) : designV2 ? (
               <ExpandedReceipts finding={cached.finding} petName={petName} trialRunning={trialRunning} />
-            )}
+            ) : null}
           </>
         )}
         <Text style={styles.expandHint}>{expanded ? 'Hide details' : "Why we're showing this"}</Text>
@@ -465,6 +605,17 @@ const styles = StyleSheet.create({
     fontSize: theme.textSM,
     color: theme.colorTextSecondary,
     lineHeight: theme.lineHeightSM,
+  },
+  // The A2 expand's per-lane caption ("After eating" / "By clock") above each dot lane
+  // (CUL-12). A micro-label in the tertiary tier, so the lanes read as two views of the
+  // same evidence box rather than two separate widgets.
+  laneCaption: {
+    fontSize: theme.textXS,
+    color: theme.colorTextTertiary,
+    marginBottom: theme.spaceMicro,
+  },
+  laneCaptionSpaced: {
+    marginTop: theme.space1,
   },
   disclosureSpaced: {
     marginTop: theme.space0_5,

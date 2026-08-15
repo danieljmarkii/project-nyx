@@ -298,3 +298,71 @@ describe('SignalZone — SR-3 receded chrome (§5.2)', () => {
     });
   });
 });
+
+// ── CUL-12 (Signals v2) — the LiveStack signals_v2 filter ─────────────────────
+// SignalZone owns two net-new pieces of logic this PR adds: the `signals_v2` two-gate
+// resolution and the LiveStack filter that drops timing-story findings when the flag is
+// off (the server computes them uniformly, so a non-eligible cache DOES carry them — §5).
+// These pin that the filter keeps the divider/lead rhythm correct, and DOCUMENT the known
+// edge the PR comment names (an only-story cache reads 'live' with an empty stack until
+// PR 10's flag-off QA closes it) so a future redeploy can't ship it silently.
+describe('SignalZone — CUL-12 signals_v2 LiveStack filter', () => {
+  const storyFinding: CachedFinding = {
+    rank: 1,
+    text: 'Her vomiting keeps two kinds of time.',
+    finding: {
+      type: 'timing_story',
+      priorityClass: 'insight',
+      symptomType: 'vomit',
+      bandCounts: { rapid: 7, mid: 6, long: 7 },
+      eligibleCount: 20,
+      totalEpisodes: 26,
+      rapidWindowMinutes: 30,
+      longGapHours: 6,
+      windowDays: 60,
+      rapid: { count: 7, medianMinutesSinceFeeding: 12, lastTwoEligible: true, feedingFormsInEvidence: [] },
+      long: {
+        count: 7,
+        medianHoursSinceFeeding: 9,
+        lastTwoEligible: false,
+        feedingFormsInEvidence: [],
+        clockBand: { startLocalHour: 2, windowHours: 6 },
+        clockCount: 6,
+      },
+    },
+  };
+
+  it('drops story findings from the stack when signals_v2 is OFF, keeps the other findings', () => {
+    mockUseAllowlistFlag.mockReturnValue(false); // signals_v2 (and signal_design_v2) off
+    mockUseSignal.mockReturnValue(
+      signalState({ displayState: 'live', findings: [liveFinding, storyFinding] }),
+    );
+    const view = render(<SignalZone />);
+    // The A2 face (its "Timing pattern" badge) is not rendered…
+    expect(view.queryByText('Timing pattern')).toBeNull();
+    // …but the non-story finding still renders — no stray gap in its place.
+    expect(view.queryByText('A live finding sentence.')).toBeTruthy();
+  });
+
+  it('renders the A2 story card in the stack when signals_v2 is ON', () => {
+    mockUseAllowlistFlag.mockImplementation((key: string) => key === 'signals_v2');
+    mockUseSignal.mockReturnValue(
+      signalState({ displayState: 'live', findings: [liveFinding, storyFinding] }),
+    );
+    const view = render(<SignalZone />);
+    expect(view.queryByText('Timing pattern')).toBeTruthy();
+    expect(view.queryByText('A live finding sentence.')).toBeTruthy();
+  });
+
+  it('KNOWN EDGE (until PR 10): an only-story cache with the flag off reads live but renders no cards', () => {
+    // Documented, not desired: displayState is derived upstream (useSignal) from the FULL set,
+    // so a live state with an empty visible stack is possible. Pinned so PR 10's flag-off QA
+    // closes it deliberately rather than a redeploy shipping the blank card silently.
+    mockUseAllowlistFlag.mockReturnValue(false);
+    mockUseSignal.mockReturnValue(signalState({ displayState: 'live', findings: [storyFinding] }));
+    const view = render(<SignalZone />);
+    expect(view.queryByText('Timing pattern')).toBeNull();
+    // The zone frame is still present (the footer doorway renders in every state).
+    expect(view.queryByText(/See all of Nyx's patterns/)).toBeTruthy();
+  });
+});

@@ -47,12 +47,23 @@ import {
   stackedCompareA11yLabel,
   phoneScript,
   isTimingFinding,
+  isTimingStory,
+  medContextOf,
+  TIMING_STORY_BADGE,
+  timingStoryBandRows,
+  timingStorySampleLine,
+  timingStoryMealLaneModel,
+  timingStoryClockLaneModel,
+  timingStoryControlDisclosure,
+  photoCompositionLines,
+  timingStoryVetLine,
   DOT_LANE_MAX,
   type BannerSafetyFinding,
 } from './signalCopy';
 import type {
   CachedFinding,
   CorrelationFinding,
+  EmptyStomachTimingFinding,
   IncidentRedFlagFinding,
   IntakeDeclineFinding,
   ReflectionFinding,
@@ -60,6 +71,7 @@ import type {
   SymptomChronicityFinding,
   PostprandialTimingFinding,
   TimeOfDayClusteringFinding,
+  TimingStoryFinding,
   RateMealsDiagnostic,
   StapleWashoutDiagnostic,
   MealTypeCollapseDiagnostic,
@@ -171,6 +183,47 @@ const timeofday = (over: Partial<TimeOfDayClusteringFinding> = {}): TimeOfDayClu
   ...over,
 });
 
+// Signals v2 (CUL-12) — the A2 combined timing card + its lone empty-stomach sibling.
+const timingStory = (over: Partial<TimingStoryFinding> = {}): TimingStoryFinding => ({
+  type: 'timing_story',
+  priorityClass: 'insight',
+  symptomType: 'vomit',
+  bandCounts: { rapid: 7, mid: 6, long: 7 },
+  eligibleCount: 20,
+  totalEpisodes: 26,
+  rapidWindowMinutes: 30,
+  longGapHours: 6,
+  windowDays: 60,
+  rapid: { count: 7, medianMinutesSinceFeeding: 12, lastTwoEligible: true, feedingFormsInEvidence: ['dry treat'] },
+  long: {
+    count: 7,
+    medianHoursSinceFeeding: 9,
+    lastTwoEligible: false,
+    feedingFormsInEvidence: ['wet food'],
+    clockBand: { startLocalHour: 2, windowHours: 6 },
+    clockCount: 6,
+  },
+  ...over,
+});
+
+const emptyStomach = (over: Partial<EmptyStomachTimingFinding> = {}): EmptyStomachTimingFinding => ({
+  type: 'empty_stomach_timing',
+  priorityClass: 'insight',
+  symptomType: 'vomit',
+  longCount: 7,
+  eligibleCount: 12,
+  bandCounts: { rapid: 2, mid: 3, long: 7 },
+  totalEpisodes: 15,
+  longGapHours: 6,
+  lastTwoEligibleLong: true,
+  medianHoursSinceFeeding: 9,
+  feedingFormsInEvidence: ['wet food'],
+  clockBand: { startLocalHour: 2, windowHours: 6 },
+  clockCount: 6,
+  windowDays: 60,
+  ...over,
+});
+
 const cached = (
   finding:
     | CorrelationFinding
@@ -180,7 +233,9 @@ const cached = (
     | SymptomWorseningFinding
     | SymptomChronicityFinding
     | PostprandialTimingFinding
-    | TimeOfDayClusteringFinding,
+    | TimeOfDayClusteringFinding
+    | EmptyStomachTimingFinding
+    | TimingStoryFinding,
   rank = 0,
 ): CachedFinding => ({
   rank,
@@ -1232,6 +1287,252 @@ describe('time-of-day clustering (⑥, B-079) — client copy', () => {
 
   it('ranks as a cap-subject insight, never on the safety rail', () => {
     expect(timeofday().priorityClass).toBe('insight');
+  });
+});
+
+// ── The A2 combined timing card (Signals v2 / B-755 / CUL-12) ──────────────────
+describe('A2 timing card — isTimingStory guard', () => {
+  it('is true for timing_story + empty_stomach_timing, false for the ⑤/⑥ lanes and others', () => {
+    expect(isTimingStory(timingStory())).toBe(true);
+    expect(isTimingStory(emptyStomach())).toBe(true);
+    expect(isTimingStory(postprandial())).toBe(false);
+    expect(isTimingStory(timeofday())).toBe(false);
+    expect(isTimingStory(correlation())).toBe(false);
+    expect(isTimingStory(reflection())).toBe(false);
+    // Distinct from isTimingFinding: the A2 types are NOT the SR-1 ⑤/⑥ receipt path.
+    expect(isTimingFinding(timingStory())).toBe(false);
+    expect(isTimingFinding(emptyStomach())).toBe(false);
+  });
+});
+
+describe('A2 timing card — the three-band face (S2, time-ordered)', () => {
+  it('bandRows are time-ordered ≤rapid / in between / ≥long, every label anchored, each count printed', () => {
+    const rows = timingStoryBandRows(timingStory({ bandCounts: { rapid: 7, mid: 6, long: 7 } }));
+    expect(rows).toHaveLength(3);
+    expect(rows[0]).toMatchObject({ label: 'Within 30 min of eating', count: 7, tone: 'concern' });
+    // The middle band is anchored to its boundaries, never a bare "In between" to infer.
+    expect(rows[1]).toMatchObject({ label: '30 min–6h after eating', count: 6, tone: 'muted' });
+    expect(rows[2]).toMatchObject({ label: '6h+ after eating', count: 7, tone: 'concern' });
+  });
+
+  it('the combined story tones BOTH phenotype ends concern; a lone empty-stomach card tones ONLY the long band', () => {
+    // On timing_story ⑤ + L1 both fired → rapid + long are patterns.
+    expect(timingStoryBandRows(timingStory()).map((r) => r.tone)).toEqual(['concern', 'muted', 'concern']);
+    // On a lone empty_stomach card ⑤ did NOT fire → the rapid band is muted, only long is concern
+    // (matching the meal lane's paled rapid dots + the lead — a rose rapid here would over-assert).
+    expect(timingStoryBandRows(emptyStomach()).map((r) => r.tone)).toEqual(['muted', 'muted', 'concern']);
+    // Every band prints a count — even a zero band renders as "0", never omitted (S2).
+    expect(timingStoryBandRows(emptyStomach({ bandCounts: { rapid: 0, mid: 0, long: 7 } })).map((r) => r.count)).toEqual([0, 0, 7]);
+  });
+
+  it('the long-band label reflects the payload boundary (6h — §0 D10), not a hardcoded 4h', () => {
+    expect(timingStoryBandRows(timingStory({ longGapHours: 6 }))[2].label).toBe('6h+ after eating');
+  });
+
+  it('the sample line is "N timed of M episodes · D days", honest denominator up front', () => {
+    expect(timingStorySampleLine(timingStory({ eligibleCount: 20, totalEpisodes: 26, windowDays: 60 }))).toBe(
+      '20 timed of 26 episodes · 60 days',
+    );
+    expect(timingStorySampleLine(emptyStomach({ eligibleCount: 12, totalEpisodes: 15, windowDays: 60 }))).toBe(
+      '12 timed of 15 episodes · 60 days',
+    );
+  });
+
+  it('carries a plain category badge, never a confidence tag', () => {
+    expect(TIMING_STORY_BADGE).toBe('Timing pattern');
+    expect(confidenceTag(timingStory())).toBeNull();
+    expect(confidenceTag(emptyStomach())).toBeNull();
+  });
+});
+
+describe('A2 timing card — the meal-relative dot lane (Shape A)', () => {
+  it('plots one dot per timed-eligible episode, across the three bands', () => {
+    const model = timingStoryMealLaneModel(timingStory({ bandCounts: { rapid: 7, mid: 6, long: 7 }, eligibleCount: 20 }));
+    expect(model.dots).toHaveLength(20);
+    expect(model.axis).toEqual(['ate', '30m', '2h', '6h+']);
+  });
+
+  it("highlights BOTH phenotype bands for the combined story (rapid + long dots are 'in')", () => {
+    const model = timingStoryMealLaneModel(timingStory({ bandCounts: { rapid: 7, mid: 6, long: 7 }, eligibleCount: 20 }));
+    expect(model.bands).toHaveLength(2); // rapid + long
+    // rapid (7) + long (7) are the pattern; the middle (6) rides pale.
+    expect(model.dots.filter((d) => d.inWindow)).toHaveLength(14);
+    expect(model.dots.filter((d) => !d.inWindow)).toHaveLength(6);
+  });
+
+  it('a lone empty-stomach card highlights ONLY the long band (its rapid dots ride pale)', () => {
+    const model = timingStoryMealLaneModel(emptyStomach({ bandCounts: { rapid: 2, mid: 3, long: 7 }, eligibleCount: 12 }));
+    expect(model.bands).toHaveLength(1); // long only
+    expect(model.dots.filter((d) => d.inWindow)).toHaveLength(7); // long
+    expect(model.dots.filter((d) => !d.inWindow)).toHaveLength(5); // rapid + mid, pale
+  });
+
+  it('the long axis tick reflects the payload boundary', () => {
+    expect(timingStoryMealLaneModel(emptyStomach({ longGapHours: 6 })).axis[3]).toBe('6h+');
+  });
+});
+
+describe('A2 timing card — the early-morning clock lane', () => {
+  it('is null when the finding carries no clock band (no valid timezone — never guessed)', () => {
+    expect(timingStoryClockLaneModel(emptyStomach({ clockBand: undefined, clockCount: undefined }))).toBeNull();
+    const noClock = timingStory({
+      long: { count: 7, medianHoursSinceFeeding: 9, lastTwoEligible: false, feedingFormsInEvidence: [] },
+    });
+    expect(timingStoryClockLaneModel(noClock)).toBeNull();
+  });
+
+  it('plots the LONG episodes by clock, the concentration band highlighted', () => {
+    const model = timingStoryClockLaneModel(emptyStomach({ longCount: 7, clockBand: { startLocalHour: 2, windowHours: 6 }, clockCount: 6 }));
+    expect(model).not.toBeNull();
+    expect(model!.dots).toHaveLength(7); // longCount
+    expect(model!.dots.filter((d) => d.inWindow)).toHaveLength(6); // clockCount
+    expect(model!.axis).toEqual(['12am', '6am', '12pm', '6pm']);
+  });
+
+  it('reads the clock evidence from `.long` on a timing_story (normalized accessor)', () => {
+    const model = timingStoryClockLaneModel(timingStory());
+    expect(model).not.toBeNull();
+    expect(model!.dots).toHaveLength(7);
+    expect(model!.dots.filter((d) => d.inWindow)).toHaveLength(6);
+  });
+});
+
+describe('A2 timing card — the control side + L3 composition (S2, G4)', () => {
+  it('discloses the un-timeable remainder, null when every episode was timeable', () => {
+    expect(timingStoryControlDisclosure(timingStory({ totalEpisodes: 26, eligibleCount: 20 }))).toContain(
+      "6 episodes weren't near any logged meal",
+    );
+    expect(timingStoryControlDisclosure(emptyStomach({ totalEpisodes: 12, eligibleCount: 12 }))).toBeNull();
+    expect(timingStoryControlDisclosure(emptyStomach({ totalEpisodes: 13, eligibleCount: 12 }))).toContain(
+      "1 episode wasn't near any logged meal",
+    );
+  });
+
+  it('photo lines are present-only with their own "reads that answered" denominators — no field ⇒ empty', () => {
+    expect(photoCompositionLines(timingStory({ photoComposition: undefined }))).toEqual([]);
+    const lines = photoCompositionLines(
+      timingStory({
+        photoComposition: {
+          retainedFood: { count: 4, denominator: 6 },
+          hair: { count: 2, denominator: 8 },
+          bile: { count: 3, denominator: 5 },
+        },
+      }),
+    );
+    expect(lines).toHaveLength(3);
+    expect(lines[0]).toBe('Recognizable food 6h+ after eating: 4 of 6 photos we could read.');
+    expect(lines[1]).toBe('Hair: 2 of 8 photos we could read.');
+    expect(lines[2]).toBe('Bile: 3 of 5 photos we could read.');
+  });
+
+  it('a present-only payload can never render "0 of N" — hair never reassures (G4)', () => {
+    const onlyHair = photoCompositionLines(timingStory({ photoComposition: { hair: { count: 1, denominator: 9 } } }));
+    expect(onlyHair).toEqual(['Hair: 1 of 9 photos we could read.']);
+    expect(onlyHair.join(' ')).not.toMatch(/\b0 of\b/);
+  });
+
+  it('DEFENDS the cache: a malformed count-0 (or count>denominator) field renders NOTHING, never "0 of N" (G4)', () => {
+    // The server attaches a field only when count ≥ 1, but this reads a cache — a corrupt/stale/
+    // regressed row must not become reassurance-on-absence. The guard drops it fail-quiet.
+    expect(
+      photoCompositionLines(timingStory({ photoComposition: { hair: { count: 0, denominator: 9 } } })),
+    ).toEqual([]);
+    // A nonsensical "3 of 2" is dropped too (denominator < count).
+    expect(
+      photoCompositionLines(timingStory({ photoComposition: { bile: { count: 3, denominator: 2 } } })),
+    ).toEqual([]);
+    // A mixed payload keeps only the valid field, drops the zero one — no "0 of N" leaks.
+    const mixed = photoCompositionLines(
+      timingStory({ photoComposition: { hair: { count: 0, denominator: 4 }, bile: { count: 2, denominator: 5 } } }),
+    );
+    expect(mixed).toEqual(['Bile: 2 of 5 photos we could read.']);
+    expect(mixed.join(' ')).not.toMatch(/\b0 of\b/);
+  });
+
+  it('singularizes a one-photo denominator', () => {
+    const lines = photoCompositionLines(timingStory({ photoComposition: { bile: { count: 1, denominator: 1 } } }));
+    expect(lines[0]).toBe('Bile: 1 of 1 photo we could read.');
+  });
+});
+
+describe('A2 timing card — the for-your-vet relay (descriptors, never labels)', () => {
+  it('LEADS with the early-morning clustering (the fact the face has not shown), + photo attachment when present', () => {
+    const line = timingStoryVetLine(
+      emptyStomach({ longCount: 7, clockCount: 6, clockBand: { startLocalHour: 2, windowHours: 6 }, photoComposition: { hair: { count: 2, denominator: 5 } } }),
+    );
+    expect(line).toContain('The early-morning timing is worth flagging to your vet');
+    expect(line).toContain('6 of the 7 episodes 6h+ after eating fell between 2am and 8am');
+    expect(line).toContain('Photos are attached to some of these.');
+  });
+
+  it('with no clock band, the relay ask is the content — no re-count, no photo tail without photos', () => {
+    const line = timingStoryVetLine(emptyStomach({ longCount: 7, clockBand: undefined, clockCount: undefined, photoComposition: undefined }));
+    expect(line).toBe('The timing here — how long after eating these come — is the useful detail to mention to your vet.');
+    // It does NOT reprint the band count (pm-feature-review S10) and adds no photo tail.
+    expect(line).not.toMatch(/\b7 episodes\b/);
+    expect(line).not.toContain('Photos are attached');
+  });
+});
+
+describe('A2 timing card — evidenceText + guardrails (timing only, never a mechanism)', () => {
+  it('timing_story evidence carries both phenotypes over the ONE denominator, points to the vet', () => {
+    const s = evidenceText(timingStory({ totalEpisodes: 26, eligibleCount: 20, rapid: { count: 7, medianMinutesSinceFeeding: 12, lastTwoEligible: true, feedingFormsInEvidence: [] }, long: { count: 7, medianHoursSinceFeeding: 9, lastTwoEligible: false, feedingFormsInEvidence: [] } }), 'Nyx');
+    expect(s).toContain('26 episodes');
+    expect(s).toContain('20 could be timed');
+    expect(s).toContain('7 came within 30 minutes of eating');
+    expect(s).toContain('7 came 6 or more hours after');
+    expect(s).toMatch(/vet/i);
+  });
+
+  it('empty_stomach evidence shows the long-gap count + the median hours, points to the vet', () => {
+    const s = evidenceText(emptyStomach({ totalEpisodes: 15, eligibleCount: 12, longCount: 7, medianHoursSinceFeeding: 9 }), 'Nyx');
+    expect(s).toContain('15 episodes');
+    expect(s).toContain('12 could be timed');
+    expect(s).toContain('7 of those came 6 or more hours after eating');
+    expect(s).toContain('about 9 hours');
+    expect(s).toMatch(/vet/i);
+  });
+
+  it('EVERY composed A2 string names timing only — no syndrome/mechanism, food, cause, reassurance, or "!"', () => {
+    // The whole surface's copy, swept against the same bars the server enforces (§2 L1:
+    // 'empty stomach'/'bilious' are the vet's inference, never owner copy — MECHANISM_RE).
+    const strings: string[] = [
+      ...timingStoryBandRows(timingStory()).map((r) => r.label),
+      timingStorySampleLine(timingStory()),
+      timingStoryControlDisclosure(timingStory()) ?? '',
+      timingStoryVetLine(timingStory({ photoComposition: { hair: { count: 1, denominator: 3 } } })),
+      timingStoryVetLine(emptyStomach({ clockBand: undefined, clockCount: undefined })),
+      evidenceText(timingStory(), 'Nyx'),
+      evidenceText(emptyStomach(), 'Nyx'),
+      ...photoCompositionLines(timingStory({ photoComposition: { retainedFood: { count: 2, denominator: 4 }, hair: { count: 1, denominator: 3 }, bile: { count: 1, denominator: 2 } } })),
+      TIMING_STORY_BADGE,
+    ];
+    for (const s of strings) {
+      expect(MECHANISM_RE.test(s)).toBe(false);
+      expect(FOOD_RE.test(s)).toBe(false);
+      expect(CAUSAL_RE.test(s)).toBe(false);
+      expect(REASSURANCE_RE.test(s)).toBe(false);
+      expect(s.includes('!')).toBe(false);
+      expect(hasBannedSignalVocabulary(s)).toBe(false); // no glyphs, no percentages (S3/S5)
+    }
+  });
+});
+
+describe('A2 timing card — plumbing', () => {
+  it('medContextOf reads the med line off both A2 types', () => {
+    expect(medContextOf(timingStory({ medContext: { drugLabel: 'Metronidazole', doseCount: 4 } }))).toMatchObject({
+      drugLabel: 'Metronidazole',
+      doseCount: 4,
+    });
+    expect(medContextOf(emptyStomach({ medContext: { drugLabel: 'Cerenia', doseCount: 2 } }))).toMatchObject({
+      drugLabel: 'Cerenia',
+    });
+    expect(medContextOf(timingStory())).toBeUndefined();
+  });
+
+  it('the A2 types rank as cap-subject insights, never on the safety rail', () => {
+    expect(timingStory().priorityClass).toBe('insight');
+    expect(emptyStomach().priorityClass).toBe('insight');
   });
 });
 
