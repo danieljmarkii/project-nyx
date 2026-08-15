@@ -62,7 +62,7 @@ The standing line deliberately does NOT gate on the C-test or density (it's the 
 - **PR 10 (CUL-15)** carries the single gated `generate-signal` redeploy + the flag-on QA + the beta-shelf row. Until then this is dark for everyone.
 - **Follow-up:** rewire `detectTrialResponse` onto `lib/trialResponseCounts.ts` (true one-predicate) in a server PR — parity-pinned until then.
 - The Signal trial card only surfaces when `changedMaterially` (PR 3's trigger); under the still-open **PR-3 fewer-direction decision** (escalate-only vs ship-the-fewer, Dr. Chen/PM), Nyx's improving trial may mint no Signal card at all — the standing strip line + Patterns (PR 9) carry the story regardless. The client renders whatever the server emits, so this PR is direction-agnostic.
-- Backlog filed: B-762 (face reconciliation, Now), B-763 (strip/card dedup on firing days, Next), B-764 (MORE-direction confound copy + §2 L2 amendment, Next), B-765 (mock §04 re-render, Next).
+- Backlog filed: **B-766** (face reconciliation, Now — filed as B-762, renumbered at wrap: `main` took B-762 first via #645), **B-767** (strip/card dedup on firing days, Next — filed as B-763, renumbered: #645 took B-763), B-764 (MORE-direction confound copy + §2 L2 amendment, Next), B-765 (mock §04 re-render, Next).
 
 ## PR
 Shipped via **#650** (draft) on `claude/cul-13-trial-surfaces-signal-hs8w3d`.
