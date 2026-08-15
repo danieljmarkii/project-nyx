@@ -20,6 +20,12 @@ jest.mock('react-native-safe-area-context', () => {
 });
 jest.mock('../../lib/db', () => ({ getDb: () => ({}) }));
 jest.mock('../../lib/feedingArrangements', () => ({ getActiveArrangementsForPet: jest.fn() }));
+// The Signals v2 panels (B-755 PR 9) gate on useAllowlistFlag('signals_v2'). Mocked OFF
+// here — which is the byte-identical-off assertion: with the flag off, this whole suite's
+// existing expectations must be unchanged and neither v2 panel renders. useAppConfig also
+// drags lib/supabase's fail-fast env check into the import graph, so this stub keeps the
+// suite off that edge. The flag-ON render + navigation is covered in signalsV2Panels.test.tsx.
+jest.mock('../../hooks/useAppConfig', () => ({ useAllowlistFlag: () => false }));
 // The AI summary (PR 4) is cache-only network I/O via useSummary → lib/summary → supabase.
 // Mock the hook so this screen-wiring test stays on the local-SQLite card path (the summary's
 // own logic is tested in lib/summaryCopy.test.ts + supabase/functions/.../summary.test.ts).
@@ -152,6 +158,9 @@ describe('PatternsScreen', () => {
     // B-310 rebrand — and names the symptom in its summary line instead of its header).
     expect(getAllByText('Vomit').length).toBeGreaterThanOrEqual(1);
     expect(getByText('Calendar')).toBeTruthy();
+    // Byte-identical off (B-755 §5): with `signals_v2` off, neither v2 panel renders.
+    expect(queryByText('The trial so far')).toBeNull();
+    expect(queryByText('Vomiting, timed from meals')).toBeNull();
     // The health-trajectory weight card is wired into the ready branch — with no readings
     // it renders its forward-looking logging nudge + action (never reassures).
     expect(getByText(/no weigh-ins logged yet/i)).toBeTruthy();

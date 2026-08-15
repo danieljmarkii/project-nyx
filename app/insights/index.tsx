@@ -47,6 +47,11 @@ import { WeightCard } from '../../components/dashboard/WeightCard';
 import { AiSummaryCard } from '../../components/dashboard/AiSummaryCard';
 import { DashboardEmptyState } from '../../components/dashboard/DashboardEmptyState';
 import { useSummary } from '../../hooks/useSummary';
+import { useAllowlistFlag } from '../../hooks/useAppConfig';
+import { getTimingPanel, type TimingPanelModel } from '../../lib/patternsTiming';
+import { getTrialPanel, type TrialSoFarModel } from '../../lib/patternsTrial';
+import { TimingPanelCard } from '../../components/dashboard/TimingPanelCard';
+import { TrialSoFarCard } from '../../components/dashboard/TrialSoFarCard';
 
 // The "Patterns" dashboard (B-023 PR 3/4) — tier 2 of the intelligence ladder (§2): the
 // full story on demand. Summary-led layout (§7): the AI summary (AiSummaryCard, cache-only,
@@ -76,6 +81,15 @@ export default function PatternsScreen() {
   // The AI summary (§7) is cache-only, on the Signal's regen cadence — its own hook so the
   // cards' local-SQLite load and the summary's network read stay independent.
   const { summary } = useSummary();
+
+  // Signals v2 (B-755 PR 9, CUL-11) — the two additive Patterns panels (Timing + The
+  // trial so far), dark behind `signals_v2`. Render-only + fail-closed: when the flag is
+  // off, `signalsV2` is false, the panel effect below no-ops, the models stay null, and
+  // nothing new renders — the dashboard is byte-identical to today (§5 / G10).
+  const signalsV2 = useAllowlistFlag('signals_v2');
+  const [timingModel, setTimingModel] = useState<TimingPanelModel | null>(null);
+  const [trialModel, setTrialModel] = useState<TrialSoFarModel | null>(null);
+  const panelLoadIdRef = useRef(0);
 
   // Scroll-to for the summary's grounding affordance ("Based on the cards below ↓"): a real,
   // honest "take me to the evidence" action without faking card→detail navigation (B-093).
@@ -172,6 +186,37 @@ export default function PatternsScreen() {
     }, [activePet?.id, load]),
   );
 
+  // The v2 panels load on their own (independent of the seeded-card read above), so a
+  // slow local aggregate never blocks them and vice versa. They are ADDITIVE context:
+  // on a read failure they simply don't render — never a whole-screen error — and the
+  // monotonic id drops a superseded pet's result after a switch (the same race guard).
+  const loadPanels = useCallback(async (petId: string) => {
+    const myId = ++panelLoadIdRef.current;
+    try {
+      const [timing, trial] = await Promise.all([getTimingPanel(petId), getTrialPanel(petId)]);
+      if (panelLoadIdRef.current !== myId) return;
+      setTimingModel(timing);
+      setTrialModel(trial);
+    } catch (e) {
+      if (panelLoadIdRef.current !== myId) return;
+      console.error('[patterns] v2 panels load failed:', e);
+      setTimingModel(null);
+      setTrialModel(null);
+    }
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      // Flag off (or no pet): clear any prior models and load nothing — byte-identical off.
+      if (!activePet || !signalsV2) {
+        setTimingModel(null);
+        setTrialModel(null);
+        return;
+      }
+      loadPanels(activePet.id);
+    }, [activePet?.id, signalsV2, loadPanels]),
+  );
+
   return (
     <SafeAreaView style={styles.container} edges={['left', 'right', 'bottom']}>
       {/* Arrow-only back button — the default label inherits the tab group's route
@@ -229,6 +274,19 @@ export default function PatternsScreen() {
                     needed by the frequency calendar (paging + drill-in fetch). */}
                 {cards.map((card) => renderCard(card, activePet.id, activePet.name))}
               </View>
+              {/* Signals v2 panels (dark behind `signals_v2`) — additive, below the
+                  seeded cards. Each renders only when the flag is on AND its model has
+                  data (a pet with no vomiting / no trial simply shows neither). */}
+              {signalsV2 && timingModel != null && (
+                <TimingPanelCard
+                  model={timingModel}
+                  petName={activePet.name}
+                  onPress={() => router.push('/insights/timing')}
+                />
+              )}
+              {signalsV2 && trialModel != null && (
+                <TrialSoFarCard model={trialModel} onPress={() => router.push('/insights/trial')} />
+              )}
             </>
           )}
           <View style={styles.bottomPad} />
