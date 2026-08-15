@@ -50,6 +50,12 @@ Four reactions, four answers, all on the same artifact URL: **(1)** "State 1 is 
 
 Five accumulated rounds made the page illegible to its own reader ("I'm losing what's a legacy mock and what's a mock we're proposing right now"). Fix, applied structurally: **`docs/culprit-daily-recap-mockups.html`** (new artifact 🌙) is the **current-proposal page** — the whole daily-recap proposal and nothing else (the 9pm moment · the night spine screen in four states, zero-log redrawn onto night · TodayZone v2 + the offer · the primer · a decided/open box); frames **replace in place** on revision, git is the history. The rounds page becomes the **deliberation archive** (banner + link at top, same URL 🔔). Convention amended in CLAUDE.md (Tier 1): split current-from-archive the moment a reaction round confuses current with legacy. Spec's design-authority pointer updated.
 
+## Reaction wave 3 → BUILD-READY (PM, same session)
+
+Rulings: **c2** ("The day, read back to you.") · **primer stripped clean** (the notification chip + fine-print block killed — the timeline miniature carries the whole pitch; the one consent-honesty line folded into the body; the privacy promise relocated to notification-settings copy) · **TodayZone v2 confirmed** · **"all other decisions are small — take point"** → taken: always-night, the fire-day anchor + clamp (B-672), the pet-name opt-in ships (B-671), and the **brand register-rule amendment written** (`culprit-in-app-brand-requirements.md` §1.2 — the recap qualifies as the app's work *presented back*; working/capture surfaces stay light).
+
+Deliverables: **`docs/nyx-daily-recap-requirements.md` v1.0 BUILD-READY** (decision record R-1…R-9 all closed; §7 = DR-0…DR-7) · the 🌙 mock updated to match (c2, clean primer; decided/open box now shows the chunk fully decided) · **Linear-first: project "The Daily Recap"** (team Culprit) with CUL-20…CUL-27 and blocking relations (DR-0→DR-1→{DR-2,DR-3}; DR-5→DR-6; all→DR-7; DR-4 parallel-safe), spec mirrored in the project description, repo file canonical. Umbrella v2 spec remains open only for the D-5 portfolio slate reaction.
+
 ## Owed / next
 
 - **The six rulings (D-1…D-6)** — everything downstream queues on them.
