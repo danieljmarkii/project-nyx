@@ -64,10 +64,12 @@ describe('BETA_REGISTRY', () => {
     expect(logPicker).toBeDefined();
     expect((logPicker as BetaFeature).serverCost).toBe(false);
 
-    // B-755 joined the shelf (spec §5, FR-FLAG-4). serverCost:false is load-bearing:
-    // the new engine lanes compute UNIFORMLY for every account inside generate-signal
-    // (not per-cohort), so no server resource is spent per opt-in and the client render
-    // gate is sound under the widget precedent — no server-side eligibility gate is owed.
+    // B-755 joined the shelf (spec §5, FR-FLAG-4). serverCost stays false, but the "compute
+    // UNIFORMLY / no server gate" premise was retired by B-777: post-fix, generate-signal gates the
+    // v2 lanes + composition on `signals_v2` eligibility server-side (so a non-eligible account's
+    // output is byte-identical). It stays false because the lanes spend no metered resource (no
+    // LLM/DB/external — CPU over already-fetched data); the gate is for byte-identical output, not
+    // metering. serverCost:true (→ B-713 Phase-2 scope) is a PM re-characterization call (B-777).
     const signalsV2 = BETA_REGISTRY.find((b) => b.key === 'signals_v2');
     expect(signalsV2).toBeDefined();
     expect((signalsV2 as BetaFeature).serverCost).toBe(false);

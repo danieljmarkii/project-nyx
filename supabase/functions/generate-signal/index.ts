@@ -68,6 +68,11 @@ import { computePhotoComposition, type PhotoAnalysisInput } from './photoComposi
 // function boundary exactly as `./protein.ts` already re-exports `lib/protein.ts`
 // — a second copy of `start + target + grace` living here is the failure mode.
 import { isTrialRunning } from '../../../lib/dietTrial.ts'
+// B-777 — the SERVER half of the experimental-flag allowlist primitive (behaviourally identical to
+// the client's resolveAllowlistFlag in lib/appConfig.ts). Resolves `signals_v2` eligibility here so
+// the engine's v2 lanes/composition are gated per-account — a redeploy stays byte-identical for
+// every non-eligible account (spec §5; the closeout's G10/deploy blocker).
+import { resolveAllowlistFlag } from '../_shared/flags.ts'
 import {
   templateForFinding,
   validatePhrasing,
@@ -620,6 +625,10 @@ function mapPhotoAnalyses(rows: IncidentAnalysisRow[]): PhotoAnalysisInput[] {
 const CAPS: FunctionCaps = { daily: 12, monthly: 240 }
 const FUNCTION_KEY = 'generate_signal'
 const FLAG_KEY = 'ai_signal_phrasing_enabled'
+// B-777 — the Signals v2 (B-755) eligibility allowlist key (app_config, seeded dark by migration
+// 057). Read alongside the gate config and resolved against the JWT uid; fail-closed (off) so an
+// unreadable/absent row keeps the engine on its pre-v2, byte-identical path.
+const SIGNALS_V2_FLAG_KEY = 'signals_v2'
 
 export interface FunctionCaps { daily: number; monthly: number }
 
@@ -669,22 +678,28 @@ export function computeResetsAt(cap: 'daily' | 'monthly', nowMs: number): string
   return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1)).toISOString()
 }
 
+// B-777 — `userId` is the JWT-verified caller uid (§4.6), needed to resolve the `signals_v2`
+// allowlist. The phrasing flag + caps fail OPEN (degrade to templates / default caps — a read
+// failure must not silence the Signal), but `signalsV2Eligible` fails CLOSED (off): an unreadable
+// config must never leak the v2 lanes to the whole base, so the engine stays byte-identical.
 async function readGateConfig(
   client: SupabaseClient,
-): Promise<{ flagEnabled: boolean; caps: FunctionCaps }> {
+  userId: string,
+): Promise<{ flagEnabled: boolean; caps: FunctionCaps; signalsV2Eligible: boolean }> {
   try {
     const { data, error } = await client
       .from('app_config')
       .select('key, value')
-      .in('key', [FLAG_KEY, 'ai_caps'])
-    if (error || !data) return { flagEnabled: true, caps: CAPS }
+      .in('key', [FLAG_KEY, 'ai_caps', SIGNALS_V2_FLAG_KEY])
+    if (error || !data) return { flagEnabled: true, caps: CAPS, signalsV2Eligible: false }
     const byKey = new Map(data.map((r) => [(r as { key: string }).key, (r as { value: unknown }).value]))
     return {
       flagEnabled: resolveFlagValue(byKey.get(FLAG_KEY), true),
       caps: resolveCaps(byKey.get('ai_caps'), FUNCTION_KEY, CAPS),
+      signalsV2Eligible: resolveAllowlistFlag(byKey.get(SIGNALS_V2_FLAG_KEY), userId, false),
     }
   } catch {
-    return { flagEnabled: true, caps: CAPS }
+    return { flagEnabled: true, caps: CAPS, signalsV2Eligible: false }
   }
 }
 
@@ -752,7 +767,7 @@ const handler = async (req: Request): Promise<Response> => {
     //     its cached signal (no UI state ships — invisible by design). Checked BEFORE
     //     the expensive detection pipeline. The phrasing flag does NOT gate the
     //     function; it only forces template phrasing below.
-    const { flagEnabled: phrasingEnabled, caps } = await readGateConfig(supabase)
+    const { flagEnabled: phrasingEnabled, caps, signalsV2Eligible } = await readGateConfig(supabase, user.id)
     const counts = await recordUsage(supabase, petId)
     const gate = resolveGateState(true, counts, caps) // flagEnabled=true: cap-only
     if (!gate.allow && gate.reason === 'cap_reached') {
@@ -958,7 +973,10 @@ const handler = async (req: Request): Promise<Response> => {
       timezone,
       now: new Date(nowMs).toISOString(),
     }
-    const ranked = detectSignals(input, DEFAULT_CONFIG)
+    // B-777 — pass the resolved `signals_v2` eligibility so the v2 lanes + timing-lane composition
+    // only run for an allow-listed account; every other account gets the pre-v2, byte-identical
+    // engine output and the redeploy moves no one's cards.
+    const ranked = detectSignals(input, DEFAULT_CONFIG, signalsV2Eligible)
 
     // 3. Curate — cap the insight tail; safety findings always kept.
     const curated = curateFindings(ranked)
@@ -978,11 +996,14 @@ const handler = async (req: Request): Promise<Response> => {
       // the map. It reads the finding's `longEpisodeOnsets` for the retained-food join, which is why
       // detectSignals leaves the onsets in place (see its note) and the strip happens just below. Null
       // for every non-timing finding and whenever no marker was seen (present-only).
-      const photoComposition: PhotoComposition | null = computePhotoComposition(
-        r.finding,
-        photoAnalyses,
-        nowMs,
-      )
+      //
+      // B-777 — L3 is itself a Signals v2 lane, and it decorates the SHIPPED ⑤/⑥ cards too (hair/bile,
+      // not just the v2 long band — see timingTarget). Gate it on eligibility so a non-eligible
+      // account's ⑤/⑥ carry NO new photoComposition field: the cached finding stays byte-identical to
+      // the v27 shape, not merely a field a flag-off client happens to ignore.
+      const photoComposition: PhotoComposition | null = signalsV2Eligible
+        ? computePhotoComposition(r.finding, photoAnalyses, nowMs)
+        : null
       return {
         rank: r.rank,
         finding: decorateFinding(r.finding, reflectionDensity, medOnBoard, photoComposition),
