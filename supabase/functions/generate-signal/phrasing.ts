@@ -322,7 +322,9 @@ export function templateTrialResponse(f: TrialResponseFinding, petName: string):
   const dayNoun = f.trialDayNumber === 1 ? 'day' : 'days'
   const baselineWeeks = Math.max(1, Math.round(f.baselineWindowDays / 7))
   const weekNoun = baselineWeeks === 1 ? 'week' : 'weeks'
-  return `We've logged ${f.pooledTrialCount} symptom ${trialNoun} for ${petName} in the ${f.trialDayNumber} ${dayNoun} since the trial began, compared with ${f.pooledBaselineCount} across the ${baselineWeeks} ${weekNoun} before it — worth reviewing with your vet.`
+  // Names vomiting specifically — the burden is VOMIT-only (the round-2 masking fix), so "symptom
+  // episodes" would over-claim a whole-body read the count does not support.
+  return `We've logged ${f.pooledTrialCount} ${trialNoun} of vomiting for ${petName} in the ${f.trialDayNumber} ${dayNoun} since the trial began, compared with ${f.pooledBaselineCount} across the ${baselineWeeks} ${weekNoun} before it — worth reviewing with your vet.`
 }
 
 export function templateForFinding(finding: Finding, petName: string): string {

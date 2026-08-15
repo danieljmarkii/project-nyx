@@ -243,37 +243,41 @@ Deno.test('detectTrialResponse — the WEDGE-USER regression (adversarial round 
   assert.equal(f.length, 0, 'a stationary rate under asymmetric logging must not read as improvement')
 })
 
-Deno.test('detectTrialResponse — the CROSS-SYMPTOM masking regression (adversarial round 1 #2): a pooled fall may not hide a rising component', () => {
+Deno.test('detectTrialResponse — the CROSS-SYMPTOM masking regression (adversarial round 2): vomit-only pooling can never let a faller mask a rising vomit', () => {
   const itch = (d: number): SymptomEvent => ({ id: nextId(), type: 'itch' as SymptomType, occurredAt: dayAt(d, 14) })
-  // Daily meals BOTH windows (comparable density), so ONLY the masking guard is under test. Itch resolves
-  // (33 → 0) while vomiting quadruples (2 → 8); pooled 35 → 8 would gate a reassuring "fewer" — but the
-  // per-type guard sees vomit rise beyond chance and withholds the card.
+  // The round-2 break: an itch that resolves (40 → 0) hiding a vomiting that ROSE (1 → 4), pooled across
+  // all types, rendered a reassuring "fewer" over a worsening patient. Vomit-only pooling makes it
+  // impossible by construction — the itch is not in the burden at all, and the vomit RISE can only ever
+  // fire the MORE direction, never a fewer.
   const masking = detectTrialResponse(
     trialInput({
       mealEvents: mealsAcross(77, 0),
       symptomEvents: [
-        ...Array.from({ length: 33 }, (_, i) => itch(30 + i)), // 33 itch days across the baseline
+        ...Array.from({ length: 40 }, (_, i) => itch(30 + i)), // 40 itch days across the baseline — resolve to 0
         ...spreadVomits(2, 60, 45), // baseline vomit 2
-        ...spreadVomits(8, 26, 2), // trial vomit 8 — QUADRUPLED
+        ...spreadVomits(8, 26, 2), // trial vomit 8 — ROSE
       ],
     }),
   )
-  assert.equal(masking.length, 0, 'a pooled fewer must not render over a component symptom that rose')
+  // Whatever fires, it must NOT be a reassuring "fewer" (the vomit burden rose 2→8).
+  assert.ok(
+    masking.length === 0 || masking[0].comparisonDirection === 'more_during_trial',
+    'a resolving itch may never turn a rising vomit burden into a fewer card',
+  )
 
-  // Positive control — same itch resolution, but vomiting stays FLAT (2 → 2): no component rose, so the
-  // genuine pooled fall fires. Proves the guard is specific, not a blanket suppressor of every fewer card.
-  const genuine = detectTrialResponse(
+  // And an itch resolution with FLAT vomiting fires nothing — L2 is silent on the derm axis in v1
+  // (the safe direction), rather than reading the itch drop as a trial-response "fewer."
+  const dermOnly = detectTrialResponse(
     trialInput({
       mealEvents: mealsAcross(77, 0),
       symptomEvents: [
-        ...Array.from({ length: 33 }, (_, i) => itch(30 + i)),
-        ...spreadVomits(2, 60, 45),
-        ...spreadVomits(2, 20, 6),
+        ...Array.from({ length: 40 }, (_, i) => itch(30 + i)), // itch 40 → 0
+        ...spreadVomits(2, 60, 45), // vomit 2
+        ...spreadVomits(2, 20, 6), // vomit 2 — flat
       ],
     }),
   )
-  assert.equal(genuine.length, 1, 'a genuine pooled fall with no component rise still fires')
-  assert.equal(genuine[0].comparisonDirection, 'fewer_during_trial')
+  assert.equal(dermOnly.length, 0, 'a flat vomit burden yields no L2 card — the itch axis is out of scope in v1')
 })
 
 Deno.test('detectTrialResponse — B-517 regression (both reviews #tz): a boundary event is placed by the OWNER\'s local day, not UTC midnight', () => {
@@ -513,21 +517,23 @@ Deno.test('detectTrialResponse — §RECALL: a genuine drop and a genuine rise b
   assert.equal(rise[0].comparisonDirection, 'more_during_trial')
 })
 
-// Pooled counts EVERY tracked symptom type (indication-blind — a diet trial can be GI or derm).
-Deno.test('detectTrialResponse — pooled burden counts every tracked symptom type, not just vomit', () => {
+// The pooled burden is VOMIT-ONLY (the round-2 cross-symptom masking fix) — a co-tracked itch is NOT
+// counted, so it can never mask or manufacture a vomit trend.
+Deno.test('detectTrialResponse — pooled burden is vomit-only; a co-tracked itch is excluded', () => {
   const itch = (d: number): SymptomEvent => ({ id: nextId(), type: 'itch' as SymptomType, occurredAt: dayAt(d, 14) })
   const f = detectTrialResponse(
     trialInput({
       mealEvents: mealsAcross(77, 0),
-      // baseline: 8 itch + 6 vomit = 14; trial: 1 itch. A derm trial's itch burden is in the pooled compare.
+      // baseline: 12 vomit + 8 itch; trial: 1 vomit + 5 itch. Only the vomit episodes enter the burden.
       symptomEvents: [
+        ...spreadVomits(12, 74, 30),
         ...[70, 66, 62, 58, 54, 50, 46, 42].map(itch),
-        ...spreadVomits(6, 72, 40),
-        itch(8),
+        vomit(10),
+        ...[9, 7, 5, 3, 1].map(itch),
       ],
     }),
   )
   assert.equal(f.length, 1)
-  assert.equal(f[0].pooledBaselineCount, 14, 'itch + vomit episodes both counted in the baseline burden')
-  assert.equal(f[0].pooledTrialCount, 1)
+  assert.equal(f[0].pooledBaselineCount, 12, 'only the 12 baseline VOMIT episodes count — the 8 itch are excluded')
+  assert.equal(f[0].pooledTrialCount, 1, 'only the 1 trial VOMIT episode counts — the 5 itch are excluded')
 })

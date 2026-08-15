@@ -915,7 +915,7 @@ Deno.test('templateTrialResponse — count-anchored + time-ordered, verdict-free
     trialResponse({ pooledTrialCount: 1, pooledBaselineCount: 12, trialDayNumber: 29, baselineWindowDays: 49 }),
     'Nyx',
   )
-  assert.ok(/\b1 symptom episode\b/.test(t), 'the trial-era count, singular')
+  assert.ok(/\b1 episode of vomiting\b/.test(t), 'the trial-era count, singular, names vomiting')
   assert.ok(/\b12\b/.test(t), 'the baseline count')
   assert.ok(/29 days since the trial began/.test(t), 'time-ordered on the trial day-count')
   assert.ok(/before it/.test(t), 'the baseline sits earlier in time')
@@ -931,10 +931,10 @@ Deno.test('templateTrialResponse — count-anchored + time-ordered, verdict-free
 
 Deno.test('templateTrialResponse — pluralizes the trial-era count + never says "day 1 days"', () => {
   const many = templateTrialResponse(trialResponse({ pooledTrialCount: 5 }), 'Nyx')
-  assert.ok(/\b5 symptom episodes\b/.test(many), 'plural for >1')
+  assert.ok(/\b5 episodes of vomiting\b/.test(many), 'plural for >1')
   // A zero-count trial (the wedge's cleanest case) still reads grammatically.
   const zero = templateTrialResponse(trialResponse({ pooledTrialCount: 0 }), 'Nyx')
-  assert.ok(/\b0 symptom episodes\b/.test(zero))
+  assert.ok(/\b0 episodes of vomiting\b/.test(zero))
   assert.ok(validatePhrasing(zero, trialResponse({ pooledTrialCount: 0 })))
 })
 
@@ -968,7 +968,7 @@ Deno.test('validatePhrasing — a bare, honest count comparison PASSES on a tria
   const f = trialResponse()
   assert.ok(
     validatePhrasing(
-      "We've logged 1 symptom episode for Nyx in the 29 days since the trial began, compared with 12 across the 7 weeks before it — worth reviewing with your vet.",
+      "We've logged 1 episode of vomiting for Nyx in the 29 days since the trial began, compared with 12 across the 7 weeks before it — worth reviewing with your vet.",
       f,
     ),
   )

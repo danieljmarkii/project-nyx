@@ -1153,9 +1153,10 @@ export interface TrialResponseFinding extends FindingBase {
   baselineLoggedDays: number
   /** The baseline window's requested span in days (the config `baselineDays`) — evidence/vet copy. */
   baselineWindowDays: number
-  /** Pooled symptom-episode burden across ALL tracked types (re-logs collapsed) in the trial era. */
+  /** VOMIT-episode burden (re-logs collapsed) in the trial era. Vomit-only — the round-2 cross-symptom
+   *  masking fix; a derm/diarrhoea trial yields no L2 card in v1 (silence, the safe direction). */
   pooledTrialCount: number
-  /** Pooled symptom-episode burden across ALL tracked types (re-logs collapsed) in the baseline. */
+  /** VOMIT-episode burden (re-logs collapsed) in the baseline window. */
   pooledBaselineCount: number
   /**
    * Per-phenotype VOMIT-TIMING counts (via `lib/mealTiming`, G9), trial-era vs baseline — the A2
@@ -4413,41 +4414,41 @@ export function detectEmptyStomachTiming(
 // this detector's EMISSION IS the trigger — a `trial_response` finding exists exactly when the card
 // should surface. The definition, adversarial-reviewed here:
 //
-//   changedMaterially = pooledContrast.gate AND
-//                       (moreDuringTrial OR (fewerDuringTrial AND densityComparable AND !someTypeRose))
+//   changedMaterially = pooledContrast.gate AND (moreDuringTrial OR (fewerDuringTrial AND densityComparable))
 //
-//   • `pooledContrast.gate` — the `lib/rateContrast` C-test over the POOLED symptom-episode counts
-//     (all tracked types, re-logs collapsed) with logged-days exposure clears alpha. The exact test
-//     is small-n-quiet BY CONSTRUCTION (0-vs-2 never gates), which is the noise defense; the
-//     §PROPERTY SWEEP asserts a stationary null trial (identical underlying rate in both windows)
-//     fires ≪ alpha. ONE trigger test — not pooled + per-phenotype — deliberately: three triggering
-//     C-tests would be a multiple-comparison the never-over-claim surface can't afford, and the
-//     phenotype rows are CONTEXT the card shows once it fires, never an independent trigger.
-//   • the MORE-during-trial rate (the escalation direction) always surfaces once the pooled gate
-//     clears. The FEWER-during-trial rate carries TWO never-reassure guards, both learned from the
-//     adversarial round-1 FAIL:
-//       – `densityComparable` (§3.3, the B-721 rule reused but made SYMMETRIC over logging FRACTIONS):
-//         a quieter-looking trial may just be a less-logged one. The round-1 break was that the
-//         one-directional gate only caught a trial logged LESS than its baseline, while the wedge
-//         user's real pattern is the MIRROR — sporadic pre-trial logging, diligent trial logging —
-//         which inflates the baseline rate (a symptom-only day IS a logged day) and mints a false
-//         fewer 24–94% of the time. Requiring the two windows' logging fractions within-ratio in BOTH
-//         directions closes it (measured: that regime's false-fewer drops to ~0).
-//       – `!someTypeRose`: the pooled burden is indication-blind, so a pooled fall can MASK a rising
-//         component (itch 33→0 hiding vomit 2→8). The fewer card is withheld if any single tracked
-//         type rose beyond chance (its own C-test gates `a_higher`).
-//     Withholding the fewer card is always the safe direction; the raw counts still show on the
-//     standing line, and a genuine component rise is independently led by ④/⑦.
+//   • `pooledContrast.gate` — the `lib/rateContrast` C-test over the VOMIT-episode counts (re-logs
+//     collapsed) with logged-days exposure clears alpha. The exact test is small-n-quiet BY
+//     CONSTRUCTION (0-vs-2 never gates), which is the noise defense; the §PROPERTY SWEEP asserts a
+//     stationary null trial (identical underlying rate in both windows) fires ≪ alpha. The burden is
+//     VOMIT-ONLY, not all tracked types — the adversarial round-2 FAIL: pooling every symptom type let
+//     a falling one MASK a rising one (itch 40→0 hiding vomit 1→4), and a per-type "did anything rise"
+//     guard could not close a low-count rise (below its own C-test; ④/⑦ have floors leaving a
+//     3–5-episode dead zone). Vomit-only removes the cross-symptom subtraction by construction and
+//     matches the phenotype rows + the D2 mock. Cost, FLAGGED for PM/Dr. Chen: L2 is silent on a derm-
+//     or diarrhoea-led trial in v1 (silence, the safe direction; multi-indication = registered follow-up).
+//   • the MORE-during-trial rate (escalation) always surfaces once the pooled gate clears. The
+//     FEWER-during-trial rate carries the never-reassure `densityComparable` guard (§3.3, the B-721
+//     rule reused but made SYMMETRIC over logging FRACTIONS): a quieter-looking trial may just be a
+//     less-logged one. The round-1 break was a one-directional gate that only caught a trial logged
+//     LESS than its baseline, while the wedge user's real pattern is the MIRROR — sporadic pre-trial
+//     logging, diligent trial logging — which inflates the baseline rate (a symptom-only day IS a
+//     logged day) and minted a false fewer 24–94% of the time. Requiring the two windows' logging
+//     fractions within-ratio in BOTH directions closes it (measured: that regime's false-fewer → ~0).
+//     Withholding the fewer is always the safe direction; the raw counts still show on the standing line.
 //
-// NAMED LIMITS (documented, not defects):
-//   • a PHENOTYPE-ONLY shift with a flat pooled burden (empty-stomach 7→0 while post-prandial 1→8)
-//     does not clear the pooled gate, so L2 stays quiet — but that emergent phenotype is exactly what
-//     ⑤/L1 fire on separately, so it is re-homed, not lost. Silence, the safe direction.
-//   • the density gate is a coarse "was the app used comparably" backstop over days-with-ANY-log, so
-//     it cannot see a symptom-logging gap hidden behind full meal-logging when the two windows'
-//     fractions happen to match (the residual `computeReflectionDensity` documents). It layers on the
-//     C-test, never replaces it; the residual sits near alpha (a mildly-noisy fewer over a stationary
-//     trial), never the 24–94% break, and never a verdict — the standing counts + the RTM expand hold.
+// NAMED LIMITS (documented; the second is FLAGGED for PM/Dr. Chen — a viability call, not a code defect):
+//   • a PHENOTYPE-ONLY shift with a flat vomit burden (empty-stomach 7→0 while post-prandial 1→8) does
+//     not clear the pooled gate, so L2 stays quiet — but that emergent phenotype is exactly what ⑤/L1
+//     fire on separately, so it is re-homed, not lost. Silence, the safe direction.
+//   • SYMPTOM-LOGGING ATTRITION behind sustained meal-logging is the deep limit of the FEWER direction,
+//     and it is NOT near alpha: if an owner logs vomits diligently early in the trial and tapers later
+//     while still confirming meals, the trial vomit count under-counts and a false fewer renders
+//     ~14–35% of the time at realistic attrition (adversarial round 2). The density gate is blind to it
+//     (meals keep the any-log fraction high), and no detector can distinguish "stopped logging vomits"
+//     from "vomits stopped" — the app-wide "didn't log ≠ didn't happen" limit, here on the reassuring
+//     side. The structural mitigations are the never-verdict/count-anchored copy, the RTM expand, and
+//     the standing raw counts; whether that is enough to ship the FEWER direction (vs. escalate-only in
+//     v1) is a Dr. Chen/PM call — the decision brief rides this PR, and the lane stays dark (G10) until.
 //
 // ── WHAT IT NEVER DOES ───────────────────────────────────────────────────────
 //
@@ -4458,8 +4459,9 @@ export function detectEmptyStomachTiming(
 // three-things-changed confound (diet, treats, meals) is DISCLOSED as structure counts, never
 // resolved. Below floor / no material change ⇒ SILENCE (never "the trial isn't doing anything").
 
-// The symptom type L2 decomposes into timing phenotypes (rapid/long) — vomit only, mirroring ⑤/L1,
-// because "minutes since eating" is a vomiting question (the pooled burden below counts EVERY type).
+// The symptom L2 measures — VOMIT, for BOTH the pooled burden and the timing phenotypes (rapid/long),
+// mirroring ⑤/L1. "Minutes since eating" is a vomiting question, and pooling only vomit is what closes
+// the round-2 cross-symptom masking (see the trigger header). A multi-indication lane is follow-up.
 const TRIAL_TIMING_SYMPTOM_TYPE: SymptomType = 'vomit'
 
 /** `target_duration_days` → the "of M" length, or null. The ONLY authority on trial length: the
@@ -4549,35 +4551,33 @@ export function detectTrialResponse(
   if (trialLoggedDays < cfg.minLoggingDaysPerWindow) return []
   if (baselineLoggedDays < cfg.minLoggingDaysPerWindow) return []
 
-  // Per-symptom-type episode counts in each window. Collapse each tracked type's FULL history ONCE (the
-  // re-log guard), then place each onset by local day index into whichever window it falls in — the
-  // collapse-then-window contract, run once (not once per window). Kept PER-TYPE (not summed in the
-  // loop) so the fewer-direction masking guard below can see a single type rising; the pooled burden is
-  // the sum. Indication-blind: a diet trial can be for GI or derm, so every tracked type counts.
-  const trialByType = new Map<SymptomType, number>()
-  const baselineByType = new Map<SymptomType, number>()
-  for (const symptomType of CORRELATION_SYMPTOM_TYPES) {
-    const onsets = toEpisodeOnsets(
-      input.symptomEvents
-        .filter((s) => s.type === symptomType)
-        .map((s) => Date.parse(s.occurredAt))
-        .filter((ms) => Number.isFinite(ms)),
-      config.symptomEpisodeGapHours,
-    )
-    let t = 0
-    let b = 0
-    for (const ms of onsets) {
-      const di = dayIndexOf(ms)
-      if (inTrialEra(di)) t++
-      else if (inBaseline(di)) b++
-    }
-    trialByType.set(symptomType, t)
-    baselineByType.set(symptomType, b)
-  }
+  // The pooled burden is VOMIT episodes only (collapse-then-window: collapse the full vomit list ONCE
+  // with the re-log guard, then place each onset by local day index).
+  //
+  // ⚠️ VOMIT-ONLY, and it is a safety decision, not a scope shortcut — the adversarial round-2 FAIL.
+  // Pooling every tracked symptom type into one burden number lets a FALLING type MASK a RISING one: an
+  // itch that resolved (40→0) hiding a vomiting that rose (1→4) rendered a reassuring "fewer" over a
+  // patient getting sicker, and a per-type "did anything rise" guard could not close it (a low-count
+  // rise is below its own C-test, and ④/⑦ have floors that leave a 3–5-episode dead zone). Vomit-only
+  // removes the cross-symptom subtraction BY CONSTRUCTION and matches the surface's own scope — the
+  // phenotype rows below and the D2 mock ("Empty-stomach 0 · was 7") are already vomiting. The cost,
+  // taken knowingly and FLAGGED for PM/Dr. Chen (a decision brief rides this PR): L2 says nothing about a
+  // derm- or diarrhoea-led trial in v1 — which is SILENCE, the safe direction, never a false read. A
+  // multi-indication trial-response (per-axis, never cross-axis subtraction) is registered follow-up.
+  const vomitOnsets = toEpisodeOnsets(
+    input.symptomEvents
+      .filter((s) => s.type === TRIAL_TIMING_SYMPTOM_TYPE)
+      .map((s) => Date.parse(s.occurredAt))
+      .filter((ms) => Number.isFinite(ms)),
+    config.symptomEpisodeGapHours,
+  )
   let pooledTrialCount = 0
   let pooledBaselineCount = 0
-  for (const v of trialByType.values()) pooledTrialCount += v
-  for (const v of baselineByType.values()) pooledBaselineCount += v
+  for (const ms of vomitOnsets) {
+    const di = dayIndexOf(ms)
+    if (inTrialEra(di)) pooledTrialCount++
+    else if (inBaseline(di)) pooledBaselineCount++
+  }
 
   // The pooled render-gate — `lib/rateContrast` (the C-test; p never surfaces, §3). a = trial,
   // b = baseline, so `a_higher` = a higher per-logged-day rate DURING the trial (escalation).
@@ -4613,28 +4613,13 @@ export function detectTrialResponse(
   const hiFraction = Math.max(trialLoggingFraction, baselineLoggingFraction)
   const densityComparable = hiFraction <= 0 ? true : loFraction >= hiFraction * DENSITY_COMPARABLE_MIN_RATIO
 
-  // Cross-symptom masking guard (adversarial round-1, finding #2). The pooled burden is
-  // INDICATION-BLIND (it sums every tracked type), so a pooled FALL can mask a component RISE — an itch
-  // that resolved (33→0) hiding a vomiting that quadrupled (2→8), rendering a reassuring "fewer" over a
-  // worsening GI patient. So the fewer direction additionally requires that NO single tracked type rose
-  // beyond chance: each type's own C-test must not gate in the `a_higher` (rose-during-trial) direction.
-  // Per-type false positives here only SUPPRESS the fewer card (the safe, never-reassure direction), and
-  // a genuine component rise is independently caught by ④/⑦, which lead the surface.
-  const someTypeRose = CORRELATION_SYMPTOM_TYPES.some((symptomType) => {
-    const c = rateContrast(
-      { count: trialByType.get(symptomType) ?? 0, exposure: trialLoggedDays },
-      { count: baselineByType.get(symptomType) ?? 0, exposure: baselineLoggedDays },
-      { alpha: cfg.contrastAlpha },
-    )
-    return c.gate && c.direction === 'a_higher'
-  })
-
-  // THE §8.5 TRIGGER. See the header: a material pooled change that fails toward escalation. The
-  // fewer direction carries the two never-reassure guards (comparable logging density; no masked
-  // component rise); the more direction — escalation — carries neither.
+  // THE §8.5 TRIGGER. See the header: a material vomit-burden change that fails toward escalation. The
+  // MORE direction (escalation) surfaces once the pooled gate clears; the FEWER direction additionally
+  // requires comparable logging density (the never-reassure guard — a quieter-looking trial may just be
+  // a less-logged one). Cross-symptom masking is closed BY CONSTRUCTION (vomit-only, above), so there is
+  // no per-type guard here.
   const changedMaterially =
-    pooledContrast.gate &&
-    (moreDuringTrial || (fewerDuringTrial && densityComparable && !someTypeRose))
+    pooledContrast.gate && (moreDuringTrial || (fewerDuringTrial && densityComparable))
   if (!changedMaterially) return []
 
   // Per-phenotype VOMIT-TIMING counts (via `lib/mealTiming`, G9) — the A2 count rows (context, not a
