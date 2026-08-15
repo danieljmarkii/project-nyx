@@ -289,6 +289,79 @@ export const NO_PATTERN_HEADLINE =
 export const NO_PATTERN_SUB =
   "That isn't an all-clear — keep logging, and the moment something clears it, it'll be here.";
 
+// ── Signals v2 watching system (B-755 / CUL-14, §4.4 / D5 / G8) ────────────────
+// R-5 ("watching, with real counts") ratified as a SYSTEM: the empty state grows a
+// per-lane row that states what the lane HAS and what its math REQUIRES, in real
+// counts computed client-side from local data through lib/mealTiming (G9). These are
+// the strings the mock round-2 §05 frame renders (the Designer copy round, R2-7);
+// signalWatching.test.ts pins each one and sweeps them against the G8 register:
+// transparency, never solicitation — no imperative ("log more"), no streak/unlock/
+// reward language, no promise a card is coming (the count IS the progress; it carries
+// no promise). The rows compose INTO B-721's E1/E2 (content, not a frame — §4.4); the
+// safety-floor line is BUILDING_FLOOR, verbatim and unconditional wherever the rows
+// render — the weekly-cadence framing must never read as "nothing urgent surfaces
+// before then" (absence ≠ wellness; clinical-guardrails / §6).
+
+/** The intro above the watching rows (§05 mock, verbatim). Rendered only when ≥1 row
+ *  qualifies. It states what is happening and never asks for anything (G8): "what each
+ *  pattern still needs" is a fact about the computation, not a request to log more. */
+export const WATCHING_SUB = "Here's what we're watching, and what each pattern still needs:";
+
+/** Timing lane — "N of the M timed episodes a pattern needs." A fact about the math:
+ *  how many meal-timeable episodes the timing lanes (⑤/L1) require before a pattern can
+ *  be read. Never a promise a card is coming (G8) — it names what the computation needs,
+ *  not what the pet will turn out to have. `need` is the shared minEligibleEpisodes floor
+ *  (§2 L1), passed in so the copy names the same number the gate uses. */
+export function watchingTimingRow(have: number, need: number): string {
+  return `Timing — ${have} of the ${need} timed episodes a pattern needs.`;
+}
+
+/** Change lane — the week-over-week comparison needs two full weeks of span to run.
+ *  States the requirement and the current week; never "log more" (G8) — a description
+ *  of where the math stands, not a nudge. `weeksNeeded` drives both this copy and the
+ *  gate (§4.4) so the stated need can't drift from the enforced one; the mock renders 2. */
+export function watchingChangeRow(currentWeek: number, weeksNeeded: number): string {
+  return `Change, week to week — needs ${weeksNeeded} full weeks of logging to compare. This is week ${currentWeek}.`;
+}
+
+/** Gap lane (escalate-only, G5) — the recent inter-episode gaps for a symptom, stated
+ *  plainly ("6 days, then 3, then 2"). A TRUE fact about the record: a descriptive count
+ *  in time order, never a verdict (G1), never a cause (G3), never a mechanism. The row
+ *  renders only on a SHORTENING run, so no reassuring "settling"/"improving" is ever
+ *  reachable (a lengthening or steady sequence renders nothing — absence ≠ wellness). */
+export function watchingGapRow(symptomLabel: string, gapSequence: string): string {
+  return `Gaps between ${symptomLabel} episodes — ${gapSequence}.`;
+}
+
+// "6 days, then 3, then 2" (unit stated once when uniform) or "3 days, then 18 hours,
+// then 9 hours" (each unit stated when the run crosses the day/hour boundary — an honest
+// big shortening). The client mirror of generate-signal/phrasing.ts's formatGapSequence,
+// re-stated here because that file is Deno-only (the watching gap row has no server
+// counterpart — the server emits the gap_shortening FINDING only at the ≥4-gap firing
+// floor, while this is the ≥3-gap sub-floor watching row). Kept byte-for-byte identical
+// so that, once the L4 finding deploys (PR 10), the two never disagree about the same
+// gaps. ROUND ONCE (min 1h), then bucket off the rounded value — bucketing off raw hours
+// would let a gap in [23.5, 24) read "24 hours" yet bucket as 'hour', rendering flat-or-
+// backwards prose (the server's code-review finding, mirrored).
+function formatGapUnit(hours: number): { value: number; unit: 'day' | 'hour' } {
+  const wholeHours = Math.max(1, Math.round(hours));
+  return wholeHours >= 24
+    ? { value: Math.round(wholeHours / 24), unit: 'day' }
+    : { value: wholeHours, unit: 'hour' };
+}
+
+export function formatWatchingGapSequence(hoursSeq: readonly number[]): string {
+  const parts = hoursSeq.map(formatGapUnit);
+  if (parts.length === 0) return '';
+  const uniform = parts.every((p) => p.unit === parts[0].unit);
+  if (uniform) {
+    const [head, ...rest] = parts;
+    const first = `${head.value} ${head.unit}${head.value === 1 ? '' : 's'}`;
+    return [first, ...rest.map((p) => String(p.value))].join(', then ');
+  }
+  return parts.map((p) => `${p.value} ${p.unit}${p.value === 1 ? '' : 's'}`).join(', then ');
+}
+
 // The post-log acknowledgment line (B-721 SR-3, §5.3 / §9). Shown ABOVE the still-
 // readable findings between a fresh event log and the debounced regeneration settling —
 // never a spinner, never blanking the findings. nyx-voice: no exclamation, second-person
