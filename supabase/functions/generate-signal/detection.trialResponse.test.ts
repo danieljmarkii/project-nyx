@@ -228,6 +228,86 @@ Deno.test('detectTrialResponse — density withholds a fewer card when the trial
   assert.equal(sparse.length, 0, 'an under-logged trial withholds the fewer card (density gate)')
 })
 
+Deno.test('detectTrialResponse — the WEDGE-USER regression (adversarial round 1 #1): a sparse-baseline → diligent-trial logging transition does NOT mint a false fewer', () => {
+  // The break the density gate exists to close, and the one a one-directional gate missed: the reactive
+  // owner logs sporadically BEFORE the diagnosis (symptom days only, no meals) and diligently DURING the
+  // trial (daily meals). The true per-CALENDAR-day symptom rate is IDENTICAL — the pet is not improving —
+  // but a symptom-only baseline day pins the per-logged-day rate near 1.0, so the C-test gates a "fewer."
+  // The SYMMETRIC density gate (baseline logged far less intensely than the trial) withholds it.
+  const baselineVomits = spreadVomits(18, 74, 30, 12) // 18 symptom days over the 49-day baseline (~0.37/day)
+  const trialMeals = mealsAcross(28, 0, 9) // diligent daily logging during the trial
+  const trialVomits = spreadVomits(8, 26, 2, 12) // ~0.38/day — the SAME true rate, not fewer
+  const f = detectTrialResponse(
+    trialInput({ mealEvents: trialMeals, symptomEvents: [...baselineVomits, ...trialVomits] }),
+  )
+  assert.equal(f.length, 0, 'a stationary rate under asymmetric logging must not read as improvement')
+})
+
+Deno.test('detectTrialResponse — the CROSS-SYMPTOM masking regression (adversarial round 1 #2): a pooled fall may not hide a rising component', () => {
+  const itch = (d: number): SymptomEvent => ({ id: nextId(), type: 'itch' as SymptomType, occurredAt: dayAt(d, 14) })
+  // Daily meals BOTH windows (comparable density), so ONLY the masking guard is under test. Itch resolves
+  // (33 → 0) while vomiting quadruples (2 → 8); pooled 35 → 8 would gate a reassuring "fewer" — but the
+  // per-type guard sees vomit rise beyond chance and withholds the card.
+  const masking = detectTrialResponse(
+    trialInput({
+      mealEvents: mealsAcross(77, 0),
+      symptomEvents: [
+        ...Array.from({ length: 33 }, (_, i) => itch(30 + i)), // 33 itch days across the baseline
+        ...spreadVomits(2, 60, 45), // baseline vomit 2
+        ...spreadVomits(8, 26, 2), // trial vomit 8 — QUADRUPLED
+      ],
+    }),
+  )
+  assert.equal(masking.length, 0, 'a pooled fewer must not render over a component symptom that rose')
+
+  // Positive control — same itch resolution, but vomiting stays FLAT (2 → 2): no component rose, so the
+  // genuine pooled fall fires. Proves the guard is specific, not a blanket suppressor of every fewer card.
+  const genuine = detectTrialResponse(
+    trialInput({
+      mealEvents: mealsAcross(77, 0),
+      symptomEvents: [
+        ...Array.from({ length: 33 }, (_, i) => itch(30 + i)),
+        ...spreadVomits(2, 60, 45),
+        ...spreadVomits(2, 20, 6),
+      ],
+    }),
+  )
+  assert.equal(genuine.length, 1, 'a genuine pooled fall with no component rise still fires')
+  assert.equal(genuine[0].comparisonDirection, 'fewer_during_trial')
+})
+
+Deno.test('detectTrialResponse — B-517 regression (both reviews #tz): a boundary event is placed by the OWNER\'s local day, not UTC midnight', () => {
+  const tz = 'America/Los_Angeles' // UTC−7 in summer — a boundary near UTC midnight files a full day off
+  const commonMeals = mealsAcross(77, 0, 12) // daily noon-UTC meals = one per LA calendar day (noon UTC = 5am LA)
+  const baselineVomits = spreadVomits(12, 74, 30, 12)
+  const trialVomit = [vomit(10, 12)]
+  const without = detectTrialResponse(
+    trialInput({ timezone: tz, mealEvents: commonMeals, symptomEvents: [...baselineVomits, ...trialVomit] }),
+  )
+  assert.equal(without.length, 1)
+  const { pooledBaselineCount: baseBefore, pooledTrialCount: trialBefore } = without[0]
+
+  // A vomit at LA-local 23:00 the evening BEFORE the trial's start date — unambiguously baseline by the
+  // owner's wall clock. Its UTC instant (start-date 06:00Z) sits on the START date in UTC, so a
+  // UTC-midnight boundary misfiles it into the trial; the local-day frame keeps it in baseline.
+  const laStartMidnightMs = Date.parse(dateStr(28) + 'T00:00:00-07:00')
+  const boundaryVomit: SymptomEvent = {
+    id: nextId(),
+    type: 'vomit',
+    occurredAt: new Date(laStartMidnightMs - 3_600_000).toISOString(),
+  }
+  const withBoundary = detectTrialResponse(
+    trialInput({
+      timezone: tz,
+      mealEvents: commonMeals,
+      symptomEvents: [...baselineVomits, ...trialVomit, boundaryVomit],
+    }),
+  )
+  assert.equal(withBoundary.length, 1)
+  assert.equal(withBoundary[0].pooledBaselineCount, baseBefore + 1, "the evening-before-start vomit is BASELINE on the owner's clock")
+  assert.equal(withBoundary[0].pooledTrialCount, trialBefore, 'and is NOT counted in the trial era')
+})
+
 Deno.test('detectTrialResponse — a MORE-during-trial change fires even when the trial was logged less intensely (never gated)', () => {
   // Sparse trial logging (~21 of 61 days), but MORE vomits despite fewer logged days — the escalation
   // direction is never density-gated (a worsening under sparser logging is a stronger signal, not a weaker one).
@@ -311,26 +391,26 @@ Deno.test('detectTrialResponse — per-phenotype (rapid/long) counts split corre
 // ── Diet-structure context rows (treat share, meals/day) ─────────────────────
 
 Deno.test('detectTrialResponse — diet-structure deltas (treat share, meals/day) computed per window', () => {
-  // Trial: meals on days 1..14 (14) + treats on days 1,2 (2). Baseline: meals days 30..43 (14) +
-  // treats days 30..37 (8). Vomits placed on meal days so logged-days = 14 each.
-  const trialMeals = mealsAcross(14, 1)
+  // Daily meals BOTH windows (so logging intensity is comparable — the symmetric density gate passes),
+  // plus extra treats: trial 2 (days 1,2), baseline 8 (days 30..37), on days that already have a meal so
+  // logged-days = one meal/day. Vomits (baseline 14, trial 1) fire the fewer card; meals = logged-days.
   const trialTreats = [treatOn(1), treatOn(2)]
-  const baselineMeals = mealsAcross(43, 30)
   const baselineTreats = [30, 31, 32, 33, 34, 35, 36, 37].map((d) => treatOn(d))
-  const symptomEvents = [...spreadVomits(14, 43, 30), vomit(5)] // baseline 14, trial 1
+  const symptomEvents = [...spreadVomits(14, 74, 30), vomit(5)] // baseline 14, trial 1
   const f = detectTrialResponse(
     trialInput({
-      mealEvents: [...trialMeals, ...trialTreats, ...baselineMeals, ...baselineTreats],
+      mealEvents: [...mealsAcross(77, 0), ...trialTreats, ...baselineTreats],
       symptomEvents,
     }),
   )
   assert.equal(f.length, 1)
   const t = f[0]
   const near = (a: number | null, b: number) => a !== null && Math.abs(a - b) < 1e-6
-  assert.ok(near(t.treatShare.trial, 2 / 16), `trial treat share ${t.treatShare.trial} ≈ 0.125`)
-  assert.ok(near(t.treatShare.baseline, 8 / 22), `baseline treat share ${t.treatShare.baseline} ≈ 0.364`)
-  assert.ok(near(t.mealsPerDay.trial, 14 / t.trialLoggedDays), 'trial meals/day = meals ÷ logged days')
-  assert.ok(near(t.mealsPerDay.baseline, 14 / t.baselineLoggedDays), 'baseline meals/day = meals ÷ logged days')
+  // Daily meals ⇒ meals = logged-days, so treat share = treats ÷ (logged-days + treats).
+  assert.ok(near(t.treatShare.trial, 2 / (t.trialLoggedDays + 2)), `trial treat share ${t.treatShare.trial}`)
+  assert.ok(near(t.treatShare.baseline, 8 / (t.baselineLoggedDays + 8)), `baseline treat share ${t.treatShare.baseline}`)
+  assert.ok(near(t.mealsPerDay.trial, 1), 'trial meals/day ≈ 1 (a meal every logged day)')
+  assert.ok(near(t.mealsPerDay.baseline, 1), 'baseline meals/day ≈ 1 (a meal every logged day)')
 })
 
 // ── Ranking + pipeline integration ───────────────────────────────────────────
@@ -381,6 +461,36 @@ Deno.test('detectTrialResponse — §PROPERTY SWEEP: a stationary null trial fir
   }
   const rate = fires / TRIALS
   assert.ok(rate < 0.08, `stationary null fire rate ${(rate * 100).toFixed(2)}% must be < 8% (α-bounded)`)
+})
+
+Deno.test('detectTrialResponse — §PROPERTY SWEEP: the sparse-baseline / dense-trial null (round-1 break) mints a false fewer ≪ α across rates + start days', () => {
+  // The adversarial round-1 break at scale: the true per-CALENDAR-day symptom rate is IDENTICAL in both
+  // windows, the baseline is logged symptom-only (no meals) and the trial is logged daily. This regime
+  // fired a false `fewer_during_trial` 24–94% of the time under the one-directional gate; the symmetric
+  // gate must hold it ≪ α. Swept across start days (the break WORSENED with trial length) and rates.
+  const rng = mulberry32(0x5eed)
+  const TRIALS = 3000
+  let falseFewers = 0
+  for (let i = 0; i < TRIALS; i++) {
+    const startD = 28 + Math.floor(rng() * 28) // day 29..56 — longer trials had more C-test power to break
+    const lambda = 0.1 + rng() * 0.25 // per-CALENDAR-day symptom rate, IDENTICAL in both windows (the null)
+    const symptomEvents: SymptomEvent[] = []
+    const mealEvents: MealEvent[] = []
+    for (let d = startD; d >= 0; d--) mealEvents.push(mealOn(d, 9)) // trial: diligent daily logging
+    // baseline: NO meals — symptom-only logged days (the rate-inflating regime)
+    for (let d = startD + 49; d > startD; d--) if (rng() < lambda) symptomEvents.push(vomit(d, 12))
+    for (let d = startD; d >= 0; d--) if (rng() < lambda) symptomEvents.push(vomit(d, 12))
+    const f = detectTrialResponse(
+      trialInput({
+        dietTrial: { startedAt: dateStr(startD), targetDurationDays: 200 },
+        symptomEvents,
+        mealEvents,
+      }),
+    )
+    if (f.length > 0 && f[0].comparisonDirection === 'fewer_during_trial') falseFewers++
+  }
+  const rate = falseFewers / TRIALS
+  assert.ok(rate < 0.03, `sparse-baseline false-fewer rate ${(rate * 100).toFixed(2)}% must be < 3% (round-1 break was 24–94%)`)
 })
 
 Deno.test('detectTrialResponse — §RECALL: a genuine drop and a genuine rise both fire (the test is not merely conservative)', () => {
