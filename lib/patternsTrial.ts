@@ -212,8 +212,37 @@ export function trialContextLine(model: TrialSoFarModel): string {
 
 export { timingBandLabel };
 
+/**
+ * Which phenotype form the surface renders — the branch that stops a just-started or
+ * a dermatologic (indication-blind, §2 L2) trial from showing a wall of "— 0" rows
+ * that reads as an all-clear (absence ≠ wellness; the pm-feature-review's blocking
+ * catch). Three states, each the safe rendering of its record:
+ *   • `rows`         — ≥1 timeable episode: the band counts (the real distribution).
+ *   • `none_timeable` — episodes logged but none placeable against a meal: an honest
+ *                       line that DISCLOSES the episodes (never hides burden), no zero rows.
+ *   • `empty`        — no vomiting logged in the trial window at all: the caller drops
+ *                       the whole phenotype section. NO absence sentence is rendered —
+ *                       "no vomiting during the trial" is exactly the reassurance-on-
+ *                       absence the diet-trial G2 lesson forbids; omission is not a claim.
+ */
+export type TrialPhenotypeState = 'rows' | 'none_timeable' | 'empty';
+
+export function trialPhenotypeState(p: TrialPhenotypeFacts): TrialPhenotypeState {
+  if (p.totalCount === 0) return 'empty';
+  if (p.timeableCount === 0) return 'none_timeable';
+  return 'rows';
+}
+
+/** The `none_timeable` line — DISCLOSES the logged episodes (surfaces burden), then
+ *  states none could be timed. Never "no vomiting" (there was), never reassuring. */
+export function trialNoneTimeableLine(p: TrialPhenotypeFacts): string {
+  const eps = p.totalCount === 1 ? 'episode' : 'episodes';
+  return `${p.totalCount} vomiting ${eps} logged during the trial — none could be timed against a meal.`;
+}
+
 /** The phenotype denominator: "N timed of M vomiting episodes". Both numbers, always
- *  (§9). "0 timed of 0" is rendered by the caller's empty branch, never here. */
+ *  (§9). Only rendered in the `rows` state — the `empty`/`none_timeable` states have
+ *  their own copy, so this never prints "0 timed of 0". */
 export function trialPhenotypeSampleLine(p: TrialPhenotypeFacts): string {
   const eps = p.totalCount === 1 ? 'episode' : 'episodes';
   return `${p.timeableCount} timed of ${p.totalCount} vomiting ${eps} during the trial`;
@@ -228,10 +257,14 @@ export function trialPhenotypeUntimedLine(p: TrialPhenotypeFacts): string | null
     : `${p.untimedCount} more episodes couldn't be timed against a meal.`;
 }
 
-/** The treat-share row value, e.g. "7% of feedings" — or the honest no-data form. */
+/** The treat-share row value, e.g. "7% of meals & treats" — or the honest no-data form.
+ *  Names the ACTUAL denominator (classifiable = meal + treat feedings), never the
+ *  misleading "of feedings": `other`/unclassified feedings are excluded from the share,
+ *  so quoting it over "feedings" would misstate it (the adversarial-reviewer's
+ *  denominator-transparency catch; §9). */
 export function trialTreatShareValue(s: TrialStructureFacts): string {
-  if (s.treatShare === null) return 'no feedings logged';
-  return `${Math.round(s.treatShare * 100)}% of feedings`;
+  if (s.treatShare === null) return 'no meals or treats logged';
+  return `${Math.round(s.treatShare * 100)}% of meals & treats`;
 }
 
 /** The meals-per-day row value, e.g. "2.1 per day" — or the honest no-data form. */

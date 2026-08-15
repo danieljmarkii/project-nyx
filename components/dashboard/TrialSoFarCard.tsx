@@ -4,8 +4,10 @@ import { theme, shadows } from '../../constants/theme';
 import {
   trialPanelTitle,
   trialContextLine,
+  trialPhenotypeState,
   trialPhenotypeSampleLine,
   trialPhenotypeUntimedLine,
+  trialNoneTimeableLine,
   trialTreatShareValue,
   trialMealsPerDayValue,
   trialHonestyLine,
@@ -27,14 +29,34 @@ interface Props {
 }
 
 export function TrialSoFarCard({ model, onPress }: Props) {
+  const phenotypeState = trialPhenotypeState(model.phenotype);
   const untimed = trialPhenotypeUntimedLine(model.phenotype);
+
+  // VoiceOver hears the whole card as one label, so fold the phenotype counts / disclosure
+  // + the diet-structure into it — otherwise a screen-reader user never hears the
+  // safety-relevant "none could be timed" or the per-band counts.
+  const phenotypeA11y =
+    phenotypeState === 'rows'
+      ? `Vomiting timing: ${model.phenotype.bandRows
+          .map((r) => `${timingBandLabel(r.band, model.config)}, ${r.count}`)
+          .join('; ')}. ${trialPhenotypeSampleLine(model.phenotype)}${untimed ? `. ${untimed}` : ''}`
+      : phenotypeState === 'none_timeable'
+        ? trialNoneTimeableLine(model.phenotype)
+        : '';
+  const a11yLabel = [
+    `${trialPanelTitle()}: ${trialContextLine(model)}`,
+    phenotypeA11y,
+    `Treats ${trialTreatShareValue(model.structure)}. Meals ${trialMealsPerDayValue(model.structure)}`,
+  ]
+    .filter(Boolean)
+    .join('. ');
 
   return (
     <Pressable
       onPress={onPress}
       hitSlop={8}
       accessibilityRole="button"
-      accessibilityLabel={`${trialPanelTitle()}: ${trialContextLine(model)}`}
+      accessibilityLabel={a11yLabel}
       accessibilityHint="Opens the trial-so-far detail"
       style={({ pressed }) => [styles.card, pressed && styles.pressed]}
     >
@@ -44,18 +66,31 @@ export function TrialSoFarCard({ model, onPress }: Props) {
       </View>
       <Text style={styles.context}>{trialContextLine(model)}</Text>
 
-      {/* Phenotype rows — vomit timing during the trial (context counts, no verdict). */}
-      <Text style={styles.sectionLabel}>Vomiting timing</Text>
-      <View style={styles.rows}>
-        {model.phenotype.bandRows.map((row) => (
-          <View key={row.band} style={styles.row}>
-            <Text style={styles.rowLabel}>{timingBandLabel(row.band, model.config)}</Text>
-            <Text style={styles.rowValue}>{row.count}</Text>
-          </View>
-        ))}
-      </View>
-      <Text style={styles.sample}>{trialPhenotypeSampleLine(model.phenotype)}</Text>
-      {untimed != null && <Text style={styles.sample}>{untimed}</Text>}
+      {/* Phenotype — vomit timing during the trial (context counts, no verdict). The
+          section is DROPPED when no vomiting was logged in-window (`empty`), never a
+          wall of "— 0" rows that reads as an all-clear; an episodes-but-untimeable
+          record gets an honest disclosure line instead of zero rows. */}
+      {phenotypeState !== 'empty' && (
+        <>
+          <Text style={styles.sectionLabel}>Vomiting timing</Text>
+          {phenotypeState === 'rows' ? (
+            <>
+              <View style={styles.rows}>
+                {model.phenotype.bandRows.map((row) => (
+                  <View key={row.band} style={styles.row}>
+                    <Text style={styles.rowLabel}>{timingBandLabel(row.band, model.config)}</Text>
+                    <Text style={styles.rowValue}>{row.count}</Text>
+                  </View>
+                ))}
+              </View>
+              <Text style={styles.sample}>{trialPhenotypeSampleLine(model.phenotype)}</Text>
+              {untimed != null && <Text style={styles.sample}>{untimed}</Text>}
+            </>
+          ) : (
+            <Text style={styles.noneTimeable}>{trialNoneTimeableLine(model.phenotype)}</Text>
+          )}
+        </>
+      )}
 
       {/* Diet-structure rows — the observable half of the confound (treat share, meals/day). */}
       <Text style={styles.sectionLabel}>Diet during the trial</Text>
@@ -134,10 +169,18 @@ const styles = StyleSheet.create({
     fontWeight: theme.weightMedium,
     color: theme.colorTextPrimary,
   },
+  // The denominator + disclosure lines carry safety weight (they are why a count can't
+  // be misread), so they are legible body text — not fine-print tertiary (the
+  // pm-feature-review's hierarchy note).
   sample: {
-    fontSize: theme.textXS,
-    color: theme.colorTextTertiary,
-    lineHeight: theme.lineHeightXS,
+    fontSize: theme.textSM,
+    color: theme.colorTextSecondary,
+    lineHeight: theme.lineHeightSM,
+  },
+  noneTimeable: {
+    fontSize: theme.textSM,
+    color: theme.colorTextSecondary,
+    lineHeight: theme.lineHeightSM,
   },
   honesty: {
     fontSize: theme.textXS,

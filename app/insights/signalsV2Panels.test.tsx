@@ -137,6 +137,25 @@ describe('PatternsScreen — Signals v2 panels (flag on)', () => {
     expect(router.push).toHaveBeenCalledWith('/insights/trial');
   });
 
+  it('a trial with no logged vomiting drops the phenotype section — no "0 timed of 0" wall', async () => {
+    const emptyPhenotype = buildTrialSoFar({
+      progress: { dayCounter: 3, targetDays: 56 },
+      exposureRange: { startDayIndex: 100, endDayIndex: 130 },
+      foodLabel: 'Royal Canin HP',
+      vomitOnsets: [], // just-started trial, nothing logged yet
+      feedings: [{ ms: 101 * MS_PER_DAY + 8 * 3_600_000, confidence: 'witnessed', form: 'Kibble', foodType: 'meal' }],
+      freeFedSpans: [],
+      dayIndexOf: (m) => Math.floor(m / MS_PER_DAY),
+    });
+    (getTrialPanel as jest.Mock).mockResolvedValue(emptyPhenotype);
+    const { getByText, queryByText } = render(<PatternsScreen />);
+    await waitFor(() => expect(getByText('The trial so far')).toBeTruthy());
+    // The panel exists (diet-structure still shown) but NOT the vomiting-timing zero-wall.
+    expect(queryByText('Vomiting timing')).toBeNull();
+    expect(queryByText(/0 timed of 0/)).toBeNull();
+    expect(getByText('Diet during the trial')).toBeTruthy();
+  });
+
   it('a pet with no vomiting and no trial shows neither panel (models null)', async () => {
     (getTimingPanel as jest.Mock).mockResolvedValue(null);
     (getTrialPanel as jest.Mock).mockResolvedValue(null);

@@ -83,16 +83,19 @@ export default function TimingDetailRoute() {
         </View>
       ) : model == null ? (
         <View style={styles.centered}>
-          <Text style={styles.stateText}>No vomiting has been logged for {petName} yet.</Text>
+          <Text style={styles.stateText}>
+            No vomiting has been logged for {petName} yet — this fills in as episodes are logged.
+          </Text>
         </View>
       ) : (
         <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
           <View style={styles.card}>
             <Text style={styles.title}>Vomiting, timed from meals</Text>
-            <Text style={styles.lead}>{timingPanelLead(petName)}</Text>
 
             {model.eligibleCount > 0 ? (
               <>
+                {/* The lead explains the dots — only shown when there are dots. */}
+                <Text style={styles.lead}>{timingPanelLead(petName)}</Text>
                 <TimingDistribution model={model} />
                 <View style={styles.bandRows}>
                   {model.bandRows.map((row) => {

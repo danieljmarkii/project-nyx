@@ -30,12 +30,21 @@ export function TimingPanelCard({ model, petName, onPress }: Props) {
   const hasTimeable = model.eligibleCount > 0;
   const untimed = timingUntimedLine(model);
 
+  // Fold the counts + the untimed disclosure into the card's single VoiceOver label —
+  // a screen-reader user must still hear the safety-relevant "N couldn't be timed", not
+  // just the title + denominator.
+  const a11yLabel = hasTimeable
+    ? `${timingPanelTitle()}: ${timingSampleLine(model)}. ${model.bandRows
+        .map((r) => `${timingBandLabel(r.band, model.config)}, ${r.count}`)
+        .join('; ')}${untimed ? `. ${untimed}` : ''}`
+    : `${timingPanelTitle()}: ${timingNoneTimeableLine(petName, model.totalCount)}`;
+
   return (
     <Pressable
       onPress={onPress}
       hitSlop={8}
       accessibilityRole="button"
-      accessibilityLabel={`${timingPanelTitle()}: ${timingSampleLine(model)}`}
+      accessibilityLabel={a11yLabel}
       accessibilityHint="Opens the full timing distribution"
       style={({ pressed }) => [styles.card, pressed && styles.pressed]}
     >
@@ -43,10 +52,11 @@ export function TimingPanelCard({ model, petName, onPress }: Props) {
         <Text style={styles.title}>{timingPanelTitle()}</Text>
         <ChevronRight size={18} color={theme.colorTextDisabled} />
       </View>
-      <Text style={styles.lead}>{timingPanelLead(petName)}</Text>
 
       {hasTimeable ? (
         <>
+          {/* The lead explains the dots, so it only shows when there are dots. */}
+          <Text style={styles.lead}>{timingPanelLead(petName)}</Text>
           <TimingDistribution model={model} />
           <View style={styles.bandRows}>
             {model.bandRows.map((row) => (
@@ -56,6 +66,10 @@ export function TimingPanelCard({ model, petName, onPress }: Props) {
               </View>
             ))}
           </View>
+          {/* The denominator + untimed disclosure are the safety lines (they are why the
+              dots can't be over-read), so they are legible body text — not fine-print.
+              This is what keeps a mostly-untimed record (a grazing cat's "2 timed of 40")
+              from being under-read at a glance. */}
           <Text style={styles.sample}>{timingSampleLine(model)}</Text>
           {untimed != null && <Text style={styles.untimed}>{untimed}</Text>}
         </>
@@ -115,13 +129,14 @@ const styles = StyleSheet.create({
     fontVariant: ['tabular-nums'],
   },
   sample: {
-    fontSize: theme.textXS,
-    color: theme.colorTextTertiary,
+    fontSize: theme.textSM,
+    color: theme.colorTextSecondary,
+    lineHeight: theme.lineHeightSM,
   },
   untimed: {
-    fontSize: theme.textXS,
-    color: theme.colorTextTertiary,
-    lineHeight: theme.lineHeightXS,
+    fontSize: theme.textSM,
+    color: theme.colorTextSecondary,
+    lineHeight: theme.lineHeightSM,
   },
   noneTimeable: {
     fontSize: theme.textSM,

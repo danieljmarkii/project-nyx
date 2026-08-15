@@ -55,11 +55,18 @@ export const TIMING_SYMPTOM_TYPE = 'vomit';
 
 // ── Render geometry (presentation only — NOT timing math) ─────────────────────
 //
-// The shared-band axis reads `ate · 30m · 1h · 2h · 4h · 8h+` (spec §4.5). Positions
-// are a LINEAR head over the rapid window followed by a LOG₂ (doubling) tail out to the
-// lane cap, so the clinically-legible first half-hour is readable AND the long
-// empty-stomach tail (6h+) still fits on one lane. Monotonic non-decreasing, so
-// left-to-right order === time order (property-tested).
+// The shared-band axis reads `ate · 30m · 1h · 2h · 4h · 8h+` — the exact grid the
+// CUL-11 issue specifies for this panel (§4.5 asks for "the shared-band axis" without
+// fixing its ticks; the issue fixes them). It is deliberately WIDER than the A2 timing
+// card's compact `ate · 30m · 2h · 6h+` (spec §4.1): that card is a two-phenotype
+// COMPARE, this panel is a full-record DISTRIBUTION, so it needs the long tail spread
+// as real positions rather than collapsed into one `6h+` bucket. The 6h long-band
+// boundary is carried by the shaded tail (`longBandStart`), not a tick. Positions are a
+// LINEAR head over the rapid window then a LOG₂ (doubling) tail to the lane cap, so the
+// clinically-legible first half-hour is readable AND the long tail still fits on one
+// lane. Monotonic non-decreasing → left-to-right order === time order (property-tested).
+// (Reconciling the two timing surfaces onto one axis is a round-2 mock / PM call — the
+// pm-feature-review flagged it; recorded in the session doc's decision briefs.)
 
 /** The lane's right edge in minutes — 8h. Anchored to "one octave past 4h, with
  *  headroom past the 6h long-band boundary (`longGapHours`)", NOT to Nyx's record
@@ -389,7 +396,7 @@ export function timingBandLabel(band: TimingBand, config: MealTimingConfig): str
     case 'rapid':
       return `Within ${rapid} min of eating`;
     case 'mid':
-      return `${rapid} min to ${longH}h after`;
+      return `${rapid} min to ${longH}h after eating`;
     case 'long':
       return `${longH}h or more after eating`;
   }

@@ -12,7 +12,9 @@ import {
   trialContextLine,
   trialHonestyLine,
   trialMealsPerDayValue,
+  trialNoneTimeableLine,
   trialPhenotypeSampleLine,
+  trialPhenotypeState,
   trialPhenotypeUntimedLine,
   trialTreatShareValue,
   type TrialSoFarModel,
@@ -60,6 +62,7 @@ export default function TrialDetailRoute() {
     }, [activePet?.id, load]),
   );
 
+  const phenotypeState = model ? trialPhenotypeState(model.phenotype) : null;
   const untimed = model ? trialPhenotypeUntimedLine(model.phenotype) : null;
 
   return (
@@ -91,23 +94,35 @@ export default function TrialDetailRoute() {
             <Text style={styles.title}>The trial so far</Text>
             <Text style={styles.context}>{trialContextLine(model)}</Text>
 
-            <Text style={styles.sectionLabel}>Vomiting timing</Text>
-            <View style={styles.rows}>
-              {model.phenotype.bandRows.map((row) => {
-                const median = timingBandMedianLabel(row.medianMinutes);
-                return (
-                  <View key={row.band} style={styles.row}>
-                    <View style={styles.rowLabelCol}>
-                      <Text style={styles.rowLabel}>{timingBandLabel(row.band, model.config)}</Text>
-                      {row.count > 0 && median != null && <Text style={styles.rowSub}>{median}</Text>}
+            {/* Dropped when no vomiting was logged in-window (never a zero-wall all-clear);
+                an episodes-but-untimeable record discloses the episodes instead. */}
+            {phenotypeState !== 'empty' && (
+              <>
+                <Text style={styles.sectionLabel}>Vomiting timing</Text>
+                {phenotypeState === 'rows' ? (
+                  <>
+                    <View style={styles.rows}>
+                      {model.phenotype.bandRows.map((row) => {
+                        const median = timingBandMedianLabel(row.medianMinutes);
+                        return (
+                          <View key={row.band} style={styles.row}>
+                            <View style={styles.rowLabelCol}>
+                              <Text style={styles.rowLabel}>{timingBandLabel(row.band, model.config)}</Text>
+                              {row.count > 0 && median != null && <Text style={styles.rowSub}>{median}</Text>}
+                            </View>
+                            <Text style={styles.rowValue}>{row.count}</Text>
+                          </View>
+                        );
+                      })}
                     </View>
-                    <Text style={styles.rowValue}>{row.count}</Text>
-                  </View>
-                );
-              })}
-            </View>
-            <Text style={styles.sample}>{trialPhenotypeSampleLine(model.phenotype)}</Text>
-            {untimed != null && <Text style={styles.sample}>{untimed}</Text>}
+                    <Text style={styles.sample}>{trialPhenotypeSampleLine(model.phenotype)}</Text>
+                    {untimed != null && <Text style={styles.sample}>{untimed}</Text>}
+                  </>
+                ) : (
+                  <Text style={styles.sample}>{trialNoneTimeableLine(model.phenotype)}</Text>
+                )}
+              </>
+            )}
 
             <Text style={styles.sectionLabel}>Diet during the trial</Text>
             <View style={styles.rows}>

@@ -15,8 +15,10 @@ jest.mock('./feedingArrangements', () => ({
 import {
   buildTrialSoFar,
   trialContextLine,
+  trialPhenotypeState,
   trialPhenotypeSampleLine,
   trialPhenotypeUntimedLine,
+  trialNoneTimeableLine,
   trialTreatShareValue,
   trialMealsPerDayValue,
   trialHonestyLine,
@@ -110,6 +112,44 @@ describe('buildTrialSoFar — phenotype rows through lib/mealTiming, windowed on
   });
 });
 
+describe('the phenotype thin-states — no reassuring wall of zeros (pm-feature blocking fix)', () => {
+  it('a trial with no in-window vomiting is `empty` — the caller drops the section, no absence claim', () => {
+    // A just-started trial (day 1) with feedings but no vomiting logged in-window.
+    const m = buildTrialSoFar(
+      scenario({
+        vomitOnsets: [{ ms: at(90, 8, 15), confidence: 'witnessed' }], // pre-window only
+      }),
+    )!;
+    expect(m.phenotype.totalCount).toBe(0);
+    expect(trialPhenotypeState(m.phenotype)).toBe('empty');
+    // The diet-structure still computed — the panel is not empty, only the phenotype block.
+    expect(m.structure.classifiableFeedings).toBeGreaterThan(0);
+  });
+
+  it('a trial with vomiting logged but none timeable is `none_timeable` — discloses burden, no zero rows', () => {
+    const m = buildTrialSoFar(
+      scenario({
+        // Two in-window episodes, both discovered (not witnessed) → untimeable.
+        vomitOnsets: [
+          { ms: at(112, 3), confidence: 'estimated' },
+          { ms: at(118, 6), confidence: 'window' },
+        ],
+      }),
+    )!;
+    expect(m.phenotype.totalCount).toBe(2);
+    expect(m.phenotype.timeableCount).toBe(0);
+    expect(trialPhenotypeState(m.phenotype)).toBe('none_timeable');
+    const line = trialNoneTimeableLine(m.phenotype);
+    expect(line).toMatch(/2 vomiting episodes logged during the trial/); // surfaces burden
+    expect(line).not.toMatch(/no vomiting|none logged|all clear|fine/i); // never reassures
+  });
+
+  it('a trial with timeable episodes is `rows`', () => {
+    const m = buildTrialSoFar(scenario())!;
+    expect(trialPhenotypeState(m.phenotype)).toBe('rows');
+  });
+});
+
 describe('copy — count-anchored, never verdicted (§2 L2 / §6)', () => {
   it('band labels are the same timing-only words the Timing panel uses (G9)', () => {
     const cfg = DEFAULT_MEAL_TIMING_CONFIG;
@@ -125,9 +165,9 @@ describe('copy — count-anchored, never verdicted (§2 L2 / §6)', () => {
 
   it('diet-structure values render honestly (percent / one-decimal rate) and the no-data forms', () => {
     const m = buildTrialSoFar(scenario())!;
-    expect(trialTreatShareValue(m.structure)).toBe('40% of feedings');
+    expect(trialTreatShareValue(m.structure)).toBe('40% of meals & treats');
     expect(trialMealsPerDayValue(m.structure)).toBe('0.6 per day');
-    expect(trialTreatShareValue({ treatShare: null, mealsPerDay: null, loggedDays: 0, classifiableFeedings: 0 })).toBe('no feedings logged');
+    expect(trialTreatShareValue({ treatShare: null, mealsPerDay: null, loggedDays: 0, classifiableFeedings: 0 })).toBe('no meals or treats logged');
     expect(trialMealsPerDayValue({ treatShare: null, mealsPerDay: null, loggedDays: 0, classifiableFeedings: 0 })).toBe('no days logged');
   });
 

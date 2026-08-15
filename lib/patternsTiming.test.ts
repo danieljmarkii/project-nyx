@@ -179,7 +179,11 @@ describe('copy — nyx-voice + the §6 guardrail spine', () => {
 
   it('band labels are timing-only: no mechanism, no syndrome, no verdict', () => {
     const labels = (['rapid', 'mid', 'long'] as const).map((b) => timingBandLabel(b, cfg));
-    expect(labels).toEqual(['Within 30 min of eating', '30 min to 6h after', '6h or more after eating']);
+    expect(labels).toEqual([
+      'Within 30 min of eating',
+      '30 min to 6h after eating',
+      '6h or more after eating',
+    ]);
     for (const s of labels) {
       expect(s.toLowerCase()).not.toMatch(/empty stomach|bilious|picky|preference|working|clear/);
       expect(s).not.toContain('!');
