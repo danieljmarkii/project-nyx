@@ -306,6 +306,12 @@ Nearest live PM gates, none of which block code already in flight:
 
 ## Open PM Action Items
 
+**Signals v2 redeploy gates (B-755, PR #662) — four provisional rulings + one new blocker gate the single `generate-signal` deploy**
+- [ ] **Sign off (or override) the four gate rulings** — full decision briefs in `docs/sessions/2026-08-15-signals-v2-redeploy-gates.md`: B-766 (three-band footing, Designer/PM), B-775 (matched-unit magnitude, Dr. Chen), the "two kinds of time" lead (Designer/PM — a screenshot call), and FEWER = ship-as-merged (Dr. Chen; adversarial-confirmed, escalate-only the one-line alternative). Shipped provisionally; the mock §03/§04 (same artifact URL) renders them.
+- [ ] **B-789 — resolve the day-1-refusal Signal-card blocker before the deploy.** The strip half is fixed (#662); the CARD half needs B-494's refusal safety card leading + the trial card outranked/suppressed under a live refusal (B-494 family).
+- [ ] **Run the `generate-signal` deploy from the Codespace** once the above clear: `scripts/deploy-edge.sh generate-signal --deploy` (bundle sha `8ea97632…`, 164 KB > MCP-inline ceiling, no cloud token); verify per the runbook. NOT under the B-494 report hold.
+- [ ] **File the backlog changes in Linear** (backlog froze mid-session, #663): B-766/B-775 → Ruled (provisional), B-765 → Done, B-789 → new (Now). Recorded in full in the session doc; the Linear entry is yours to create (team Culprit).
+
 **Post-prandial timing receipt (Option A, B-753, #636) — one validation task gates the meaningful build**
 - [ ] **Scope the `timingReliable` gate predicate with the Data Scientist + Dr. Chen (B-754).** PR 1 (geometry core) shipped fail-safe — an un-vetted finding renders the honest split, never a confident cluster — but the "when is timing unreliable for this pet?" predicate is the load-bearing call (grazing / free-fed / shared-bowl attribution), and the receipt's trustworthiness for a grazing cat (Sam) hinges on it. Needs an `adversarial-reviewer` pass. Gates PR 3/PR 4; **PR 2 (renderer) can proceed in parallel** (it needs only the boolean).
 - [ ] **Confirm the `generate-signal` deploy state before the payload PR (PR 3).** The client ships first (fallback-safe); `eligibleMinutes[]`/`timingReliable` emit + redeploy is PR 3.

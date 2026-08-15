@@ -1,6 +1,6 @@
 # Signals v2 (B-755) — the four remaining `generate-signal` redeploy gates, settled
 
-**Date:** 2026-08-15 · **branch** `claude/signals-v2-redeploy-gates-55hdnj` · **shipped via #<PR>** (draft)
+**Date:** 2026-08-15 · **branch** `claude/signals-v2-redeploy-gates-55hdnj` · **shipped via #662**
 
 Clears the last gates on the single gated `generate-signal` redeploy for Signals v2, after B-777 (the flag-off byte-identical fix) landed via #659. Four calls, all touching `phrasing.ts` / `detection.ts` / the trial-card client, settled together so the redeploy stays **one** bundle rebuild. Read `docs/sessions/2026-08-15-signals-v2-pr10-closeout.md` §3 + the B-766/B-775 backlog rows for the tee-up.
 
