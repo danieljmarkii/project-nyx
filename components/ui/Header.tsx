@@ -34,15 +34,19 @@ interface HeaderProps {
   left?: ReactNode;
   // Arbitrary trailing content (e.g. a "Save" text button).
   right?: ReactNode;
+  // Night register (B-762 / CUL-23) — the brand-night nav bar for the always-night
+  // Daily Recap: brand-night ground, borderless, on-night text/glyphs. Additive and
+  // defaulted off, so every existing (light) call site is byte-identical.
+  night?: boolean;
 }
 
 // 24–26px glyphs + 12pt hitSlop ⇒ ~48–50pt tap target, clears the 44pt
 // 3am-stumbling minimum without inflating the visual size.
 const HIT = { top: 12, bottom: 12, left: 12, right: 12 };
 
-export function Header({ title, leading = 'none', onLeadingPress, left, right }: HeaderProps) {
+export function Header({ title, leading = 'none', onLeadingPress, left, right, night }: HeaderProps) {
   return (
-    <View style={styles.bar}>
+    <View style={[styles.bar, night && styles.barNight]}>
       <View style={styles.side}>
         {left !== undefined ? (
           left
@@ -54,9 +58,9 @@ export function Header({ title, leading = 'none', onLeadingPress, left, right }:
             accessibilityLabel={leading === 'back' ? 'Back' : 'Close'}
           >
             {leading === 'back' ? (
-              <ChevronLeft size={26} color={theme.colorTextPrimary} />
+              <ChevronLeft size={26} color={night ? theme.colorTextOnNight : theme.colorTextPrimary} />
             ) : (
-              <X size={24} color={theme.colorTextSecondary} />
+              <X size={24} color={night ? theme.colorTextOnNightMuted : theme.colorTextSecondary} />
             )}
           </TouchableOpacity>
         ) : null}
@@ -65,7 +69,7 @@ export function Header({ title, leading = 'none', onLeadingPress, left, right }:
       {/* Equal-width sides (below) guarantee the flex title sits truly centered
           regardless of which slots are filled. */}
       {title ? (
-        <Text style={styles.title} numberOfLines={1}>
+        <Text style={[styles.title, night && styles.titleNight]} numberOfLines={1}>
           {title}
         </Text>
       ) : (
@@ -88,6 +92,15 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colorSurface,
     borderBottomWidth: 1,
     borderBottomColor: theme.colorBorder,
+  },
+  // Night register: brand-night ground, borderless (the mock's `.nav` has a
+  // transparent bottom rule on night).
+  barNight: {
+    backgroundColor: theme.colorBrandNight,
+    borderBottomColor: 'transparent',
+  },
+  titleNight: {
+    color: theme.colorTextOnNight,
   },
   side: {
     width: SIDE,

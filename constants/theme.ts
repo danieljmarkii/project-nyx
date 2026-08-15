@@ -149,6 +149,17 @@ export const theme = {
   //   colorEventSymptomOnNight   6.80:1  (AA / AAA-large)
   //   colorTextOnNightFaint      3.79:1  (AA-large ONLY — hence large/secondary use)
   colorEventSymptomOnNight: '#FB7185',        // safety rail/tag on night grounds (6.8:1)
+  // The night-ground sibling of colorEventMedication (#5B7A9E), minted for the
+  // Daily Recap's night register (DR-1 / CUL-23): the slate med dot on the day
+  // spine and DR-2's horizontal lane. The shipped #5B7A9E is tuned for LIGHT
+  // grounds (~4.45:1 on white) and reads muddy on #13112E; #93ADCB is the lighter
+  // slate that keeps the med category's own hue family (not teal, not rose, not
+  // the brand indigo reserved for world/ground) legible on night. As a graphical
+  // glyph the target is the 3:1 non-text minimum; it clears AA *text* on both
+  // night grounds with room to spare — verified, not asserted:
+  //   colorEventMedicationOnNight  7.91:1 on colorBrandNight #13112E
+  //                                6.43:1 on colorBrandNightElevated #251F57
+  colorEventMedicationOnNight: '#93ADCB',     // med-category dot on night grounds (7.9:1 / 6.4:1)
   colorTextOnNight: '#ECEAF6',                // primary text on night grounds (15.4:1)
   colorTextOnNightMuted: '#A6A2CE',           // secondary text on night grounds (7.6:1)
   colorTextOnNightFaint: '#706BA6',           // metadata/sample lines — large/secondary only (3.8:1)

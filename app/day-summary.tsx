@@ -1,45 +1,46 @@
-// The Day Summary screen (B-661 PR 4 — see docs/nyx-notification-foundation-
-// requirements.md §5.3). The surface the 9pm notification opens.
+// The Daily Recap screen (B-762 / CUL-23, DR-1 — see docs/nyx-daily-recap-
+// requirements.md §2). The night-register surface the 9pm notification opens.
 //
-// It answers exactly ONE question — "what happened in {pet}'s record today" — and
-// every row is a doorway into the existing event detail. It is NOT a rival Home:
-// no AI, no verdicts, no score, no logging FAB. Multi-pet accounts get one screen,
-// sectioned per pet, active pet first. The zero-log day is a DESIGNED state, and
-// its copy is G2-bound — a record fact, never an all-clear over the pet.
+// It answers exactly ONE question — "what happened in {pet}'s record today" — as a
+// TIMELINE: the day spine (the event list rendered as a thread of doorways), led by a
+// count-anchored serif line, count chips, and — for a single-pet account — the trial
+// and med course strips + a forward line. Everything on it is a RECORD FACT or a
+// DOORWAY (R-3): no AI, no verdict, no score, no severity, no reassurance, and no
+// write path (this screen has no FAB and the strips carry no one-tap confirm).
+//
+// ALWAYS-NIGHT (R-1). No time-of-day branching — the recap reads on the brand night
+// ground whenever it is opened. The status bar flips to light while the screen is
+// focused and restores on blur (the paywall pattern), so a dark ground never strands
+// dark status-bar glyphs.
+//
+// The zero-log day is a DESIGNED state (Principle 5) and its copy is G2-bound — a
+// record fact, never an all-clear over the pet. A failed read renders an error +
+// retry, NEVER a false "nothing logged".
 import { useCallback } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { router, useLocalSearchParams } from 'expo-router';
-import { ChevronRight } from 'lucide-react-native';
+import { router, useLocalSearchParams, useFocusEffect } from 'expo-router';
+import { setStatusBarStyle } from 'expo-status-bar';
+import { UtensilsCrossed, Pill } from 'lucide-react-native';
 import { theme } from '../constants/theme';
-import { Header, EmptyState, PrimaryButton } from '../components/ui';
+import { Header } from '../components/ui';
 import { WhorlSpinner } from '../components/brand/WhorlSpinner';
-import { EventIcon } from '../components/event/EventIcon';
+import { DaySpine } from '../components/recap/DaySpine';
+import { CountChips } from '../components/recap/CountChips';
+import { RecapStrip } from '../components/recap/RecapStrip';
 import { useDaySummary } from '../hooks/useDaySummary';
 import { useSyncStore } from '../store/syncStore';
 import {
   DAY_SUMMARY_ZERO_LOG,
   daySummaryEmptyTitle,
   petZeroLogLine,
-  type DaySummaryRow,
+  type DaySummaryModel,
   type DaySummarySection,
 } from '../lib/daySummary';
-import type { EventTintCategory } from '../lib/dayEvents';
-
-// Category glyph tint — the SAME mapping the calendar day drill-in uses
-// (DayEventsSheet / B-311), so a symptom/meal/dose reads in its own hue on both
-// surfaces: symptom rose, meal teal, medication slate, everything else neutral.
-const CATEGORY_TINT: Record<EventTintCategory, string> = {
-  symptom: theme.colorEventSymptom,
-  meal: theme.colorEventMeal,
-  medication: theme.colorEventMedication,
-  other: theme.colorTextSecondary,
-};
 
 function dayLabel(anchorMs: number): string {
-  // "Sunday, August 2" — names the RENDERED day (B-672). The screen anchors to the
-  // notification's fired-for day, so this must read that instant, not the wall clock:
-  // a Saturday summary tapped after midnight shows Saturday's date, not Sunday's.
+  // "Saturday, August 15" — names the RENDERED day (B-672). The screen anchors to the
+  // notification's fired-for day, so this reads that instant, not the wall clock.
   return new Date(anchorMs).toLocaleDateString(undefined, {
     weekday: 'long',
     month: 'long',
@@ -48,8 +49,8 @@ function dayLabel(anchorMs: number): string {
 }
 
 /** Parse the `firedAt` tap param — the notification's fire instant (ms, already
- *  normalized by `normalizeFireInstant`). Absent/garbage → null → the hook renders
- *  today (the pre-B-672 default). */
+ *  normalized). Absent/garbage → null → the hook renders today (the pre-B-672
+ *  default). */
 function parseFiredAt(raw: string | string[] | undefined): number | null {
   const s = Array.isArray(raw) ? raw[0] : raw;
   if (typeof s !== 'string') return null;
@@ -63,241 +64,260 @@ export default function DaySummaryScreen() {
   const { firedAt } = useLocalSearchParams<{ firedAt?: string }>();
   const state = useDaySummary(parseFiredAt(firedAt));
 
-  // Cold-start from a notification tap can push this screen onto a fresh stack with
-  // nothing behind it — fall back to Home rather than a dead back button.
+  // Light status-bar glyphs while this dark screen is focused; restore on blur so no
+  // light glyphs strand on the next light screen (the onboarding-paywall pattern).
+  useFocusEffect(
+    useCallback(() => {
+      setStatusBarStyle('light');
+      return () => setStatusBarStyle('auto');
+    }, []),
+  );
+
+  // Cold-start from a notification tap can push this onto a fresh stack with nothing
+  // behind it — fall back to Home rather than a dead back button.
   const goBack = useCallback(() => {
     if (router.canGoBack()) router.back();
     else router.replace('/(tabs)');
   }, []);
 
+  // The hook re-reads on every hydration tick; bumping it is the retry.
   const retry = useCallback(() => {
-    // The hook re-reads on every hydration tick; bumping it is the retry.
     useSyncStore.getState().bumpHydrationTick();
   }, []);
 
-  // The zero-log CTA (mock round 2). This screen carries NO logging FAB, so the
-  // designed empty state's own "it takes about ten seconds to add" invitation would
-  // otherwise dead-end. A low-emphasis link (EmptyState renders it as accent text,
-  // never a filled button — it invites, it doesn't demand) opens the quick-log, the
-  // same door TodayZone's empty nudge opens. This is not the §4.2 "second door" the
-  // trial card forbids: on a FAB-less screen with nothing else on it, it is the ONLY
-  // door, not a competing one. Whole-screen zero-log only — a per-pet inline line on
-  // a multi-pet summary stays a plain record fact (a per-pet CTA can't pre-select the
-  // empty pet, and would clutter a populated screen).
-  const logEvent = useCallback(() => {
-    router.push('/log');
-  }, []);
+  // The zero-log CTA + the strips' doorways. This screen has NO FAB, so the empty
+  // state's own invitation needs a door (the quick-log), and the strips door to the
+  // Pet tab's cards (which own every trial/med reading) — the same targets the Home
+  // strips use. None of these is the §4.2 "second door": the recap writes nothing.
+  const logEvent = useCallback(() => router.push('/log'), []);
+  const openProfile = useCallback(() => router.push('/(tabs)/profile'), []);
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      <Header title="Today" leading="back" onLeadingPress={goBack} />
+      <Header title="Today" leading="back" night onLeadingPress={goBack} />
 
       {state.status === 'loading' ? (
         <View style={styles.centre}>
-          <WhorlSpinner size="md" ground="day" />
+          <WhorlSpinner size="md" ground="night" />
         </View>
       ) : state.status === 'error' ? (
-        // A failed read is NEVER rendered as "nothing logged" — that reads as a
-        // false all-clear (§11 #2 / clinical-guardrails). Offer a retry.
-        <View style={styles.errorBox}>
-          <Text style={styles.errorTitle}>Couldn’t load today’s record</Text>
-          <Text style={styles.errorBody}>Check your connection and try again.</Text>
-          <PrimaryButton label="Try again" onPress={retry} variant="secondary" />
-        </View>
+        // A failed read is NEVER rendered as "nothing logged" — that reads as a false
+        // all-clear (clinical-guardrails). Offer a retry.
+        <NightError onRetry={retry} />
       ) : state.model.isEmpty ? (
         // Whole-screen (or single-pet) zero-log — a designed feature (Principle 5).
-        <EmptyState
+        <NightEmpty
           // Name the pet on a single-pet account (Pattern 1); stay neutral for a
           // no-pet or multi-pet-all-empty account, which can't pick one name.
           title={daySummaryEmptyTitle(
             state.model.petCount === 1 ? state.model.sections[0]?.petName : null,
           )}
-          body={DAY_SUMMARY_ZERO_LOG.body}
-          action={{ label: DAY_SUMMARY_ZERO_LOG.cta, onPress: logEvent }}
-          align="fill"
+          onLog={logEvent}
         />
       ) : (
         <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
           <Text style={styles.dateLabel}>{dayLabel(state.anchorMs)}</Text>
-          {state.model.sections.map((section) => (
-            <PetSection
-              key={section.petId}
-              section={section}
-              // A single-pet account needs no pet heading — the page already names
-              // the day and there is no second pet to disambiguate from.
-              showHeading={state.model.petCount > 1}
-            />
-          ))}
+          {state.model.petCount === 1 ? (
+            <SinglePetRecap model={state.model} onOpenTrial={openProfile} onOpenMed={openProfile} />
+          ) : (
+            // Multi-pet: one screen, sectioned per pet, active first — plain per-pet
+            // spines (the lead/chips/strips are the single-pet experience, mock §2).
+            state.model.sections.map((section) => (
+              <PetSpineSection key={section.petId} section={section} />
+            ))
+          )}
         </ScrollView>
       )}
     </SafeAreaView>
   );
 }
 
-function PetSection({
-  section,
-  showHeading,
+/** The single-pet rich recap (mock §2, frames 1–2): lead → chips → spine → trial
+ *  strip → med strips → forward line. Each rich block renders only when its model is
+ *  present. */
+function SinglePetRecap({
+  model,
+  onOpenTrial,
+  onOpenMed,
 }: {
-  section: DaySummarySection;
-  showHeading: boolean;
+  model: DaySummaryModel;
+  onOpenTrial: () => void;
+  onOpenMed: () => void;
 }) {
+  const section = model.sections[0];
   return (
-    <View style={styles.section}>
-      {showHeading && <Text style={styles.petHeading}>{section.petName}</Text>}
+    <View style={styles.recap}>
+      {model.lead ? <Text style={styles.lead}>{model.lead}</Text> : null}
+      <CountChips chips={model.chips} />
+      <DaySpine rows={section.rows} />
+
+      {model.trialStrip ? (
+        <RecapStrip
+          glyph={UtensilsCrossed}
+          tint={theme.colorAccent}
+          title={model.trialStrip.title}
+          fact={model.trialStrip.fact}
+          onPress={onOpenTrial}
+          accessibilityLabel={`${model.trialStrip.title}. ${model.trialStrip.fact}. Open the diet trial.`}
+        />
+      ) : null}
+
+      {model.medStrips.map((med) => (
+        <RecapStrip
+          key={med.key}
+          glyph={Pill}
+          tint={theme.colorEventMedicationOnNight}
+          title={med.title}
+          fact={med.fact}
+          isConcern={med.isConcern}
+          onPress={onOpenMed}
+          accessibilityLabel={`${med.title}${med.fact ? `. ${med.fact}` : ''}. Open medications.`}
+        />
+      ))}
+
+      {model.forward ? <Text style={styles.forward}>{model.forward}</Text> : null}
+    </View>
+  );
+}
+
+/** One pet's section on a multi-pet summary: a heading + its spine, or the per-pet
+ *  zero-log line (same G2 register — a record fact about this pet's day). */
+function PetSpineSection({ section }: { section: DaySummarySection }) {
+  return (
+    <View style={styles.petSection}>
+      <Text style={styles.petHeading}>{section.petName}</Text>
       {section.isZeroLog ? (
-        // Per-pet zero-log line (multi-pet: one pet logged, this one didn't). Same
-        // G2 register as the full state — a record fact about this pet's day.
         <Text style={styles.petZeroLog}>{petZeroLogLine(section.petName)}</Text>
       ) : (
-        <View style={styles.rows}>
-          {section.rows.map((row, i) => (
-            <EventDoorway key={row.id} row={row} isLast={i === section.rows.length - 1} />
-          ))}
-        </View>
+        <DaySpine rows={section.rows} />
       )}
     </View>
   );
 }
 
-function EventDoorway({ row, isLast }: { row: DaySummaryRow; isLast: boolean }) {
-  const open = useCallback(() => {
-    router.push({ pathname: '/event/[id]', params: { id: row.id } });
-  }, [row.id]);
-
-  // Screen-reader order matches the VISUAL order (title · detail … tag … time), so
-  // a row reads the same way it looks (pm-feature-review) — not title, tag, detail.
-  const label =
-    `${row.title}` +
-    `${row.detail ? `, ${row.detail}` : ''}` +
-    `${row.formatTag ? `, ${row.formatTag.toLowerCase()}` : ''}` +
-    `, ${row.time}. Opens details`;
-
+/** The night zero-log state (mock §2, frame 3). Serif title in moonlight, muted body,
+ *  a low-emphasis accent link (never a filled button) as the screen's only door. */
+function NightEmpty({ title, onLog }: { title: string; onLog: () => void }) {
   return (
-    <Pressable
-      style={({ pressed }) => [styles.row, isLast && styles.rowLast, pressed && styles.rowPressed]}
-      onPress={open}
-      accessibilityRole="button"
-      accessibilityLabel={label}
-    >
-      <View style={styles.rowIcon}>
-        <EventIcon type={row.eventType} size={16} color={CATEGORY_TINT[row.category]} />
-      </View>
-      <View style={styles.rowText}>
-        <Text style={styles.rowTitle} numberOfLines={1}>
-          {row.title}
-          {row.detail ? <Text style={styles.rowDetail}> · {row.detail}</Text> : null}
-        </Text>
-        {/* B-568 — the wet/dry variant, a sibling of the truncating title so it
-            survives a long prescription product name. */}
-        {row.formatTag ? (
-          <Text style={styles.rowFormatTag} numberOfLines={1}>
-            {row.formatTag}
-          </Text>
-        ) : null}
-      </View>
-      <Text style={styles.rowTime}>{row.time}</Text>
-      <ChevronRight size={16} color={theme.colorTextTertiary} strokeWidth={2} />
-    </Pressable>
+    <View style={styles.empty}>
+      <Text style={styles.emptyTitle}>{title}</Text>
+      <Text style={styles.emptyBody}>{DAY_SUMMARY_ZERO_LOG.body}</Text>
+      <Pressable onPress={onLog} accessibilityRole="button" hitSlop={8} style={styles.emptyCtaWrap}>
+        <Text style={styles.emptyCta}>{DAY_SUMMARY_ZERO_LOG.cta}</Text>
+      </Pressable>
+    </View>
+  );
+}
+
+/** The night error state — a message + a retry, never a false "nothing logged". */
+function NightError({ onRetry }: { onRetry: () => void }) {
+  return (
+    <View style={styles.errorBox}>
+      <Text style={styles.errorTitle}>Couldn’t load today’s record</Text>
+      <Text style={styles.errorBody}>Check your connection and try again.</Text>
+      <Pressable onPress={onRetry} accessibilityRole="button" hitSlop={8} style={styles.retryWrap}>
+        <Text style={styles.retry}>Try again</Text>
+      </Pressable>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: theme.colorNeutralLight },
+  container: { flex: 1, backgroundColor: theme.colorBrandNight },
   centre: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   scroll: { padding: theme.space3, gap: theme.space3, paddingBottom: theme.space6 },
 
-  // Error state — a message + a retry, never a false "nothing logged".
+  dateLabel: {
+    fontSize: theme.textXS,
+    color: theme.colorTextOnNightMuted,
+    fontWeight: theme.weightSemibold,
+  },
+
+  // The single-pet rich stack. Its own gap is tighter than the scroll's section gap,
+  // so the lead/chips/spine/strips read as one composed screen.
+  recap: { gap: theme.space2 },
+  // C0 — the serif lead, in moonlight (the night display colour, 15.8:1).
+  lead: {
+    fontFamily: theme.fontDisplay,
+    fontSize: theme.textLG,
+    lineHeight: theme.lineHeightBody,
+    color: theme.colorMoonlight,
+    letterSpacing: theme.trackingTight,
+  },
+  // C5 — the closing forward line.
+  forward: {
+    fontSize: theme.textSM,
+    color: theme.colorTextOnNightMuted,
+  },
+
+  petSection: { gap: theme.space2 },
+  petHeading: {
+    fontSize: theme.textLG,
+    fontWeight: theme.weightSemibold,
+    color: theme.colorTextOnNight,
+  },
+  petZeroLog: {
+    fontSize: theme.textSM,
+    color: theme.colorTextOnNightMuted,
+    lineHeight: theme.lineHeightSM,
+  },
+
+  // Zero-log (align="fill" — vertically centred, the mock's `.night-empty`).
+  empty: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: theme.space4,
+    gap: theme.space0_5 + theme.spaceMicro, // 6
+  },
+  emptyTitle: {
+    fontFamily: theme.fontDisplay,
+    fontSize: theme.textLG,
+    color: theme.colorMoonlight,
+    textAlign: 'center',
+  },
+  emptyBody: {
+    fontSize: theme.textSM,
+    color: theme.colorTextOnNightMuted,
+    lineHeight: theme.lineHeightBody,
+    textAlign: 'center',
+  },
+  emptyCtaWrap: {
+    marginTop: theme.space0_5,
+    minHeight: 44,
+    justifyContent: 'center',
+  },
+  // Accent text link, never a filled button — it invites, it doesn't demand (G2: it
+  // opens a door, it does not say a log was owed).
+  emptyCta: {
+    fontSize: theme.textMD,
+    fontWeight: theme.weightMedium,
+    color: theme.colorAccent,
+  },
+
   errorBox: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: theme.space2,
+    gap: theme.space1,
     paddingHorizontal: theme.space4,
   },
   errorTitle: {
     fontSize: theme.textLG,
     fontWeight: theme.weightSemibold,
-    color: theme.colorTextPrimary,
+    color: theme.colorTextOnNight,
     textAlign: 'center',
   },
   errorBody: {
     fontSize: theme.textSM,
-    color: theme.colorTextSecondary,
+    color: theme.colorTextOnNightMuted,
     textAlign: 'center',
     marginBottom: theme.space1,
   },
-
-  dateLabel: {
-    fontSize: theme.textSM,
-    color: theme.colorTextTertiary,
-    fontWeight: theme.weightMedium,
-  },
-
-  section: { gap: theme.space2 },
-  petHeading: {
-    fontSize: theme.textLG,
-    fontWeight: theme.weightSemibold,
-    color: theme.colorTextPrimary,
-  },
-  petZeroLog: {
-    fontSize: theme.textSM,
-    color: theme.colorTextSecondary,
-    lineHeight: theme.lineHeightBody,
-  },
-
-  // A card of doorway rows, one hairline between them (the History / drill-in look).
-  rows: {
-    backgroundColor: theme.colorSurface,
-    borderRadius: theme.radiusMedium,
-    borderWidth: 1,
-    borderColor: theme.colorBorder,
-    overflow: 'hidden',
-  },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: theme.space2,
-    paddingVertical: theme.space2,
-    paddingHorizontal: theme.space2,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.colorBorder,
-    minHeight: 56, // clears the 44pt tap target comfortably
-  },
-  rowLast: { borderBottomWidth: 0 },
-  rowPressed: { backgroundColor: theme.colorSurfaceSubtle },
-  rowIcon: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: theme.colorSurfaceSubtle,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  rowText: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: theme.space1,
-  },
-  rowTitle: {
+  retryWrap: { minHeight: 44, justifyContent: 'center' },
+  retry: {
     fontSize: theme.textMD,
-    color: theme.colorTextPrimary,
-    // flexShrink (not flex:1) so the title yields to the variant tag and the pair
-    // hugs left rather than spanning to the timestamp.
-    flexShrink: 1,
-  },
-  rowDetail: { color: theme.colorTextSecondary },
-  // Matches the EventRow / drill-in tag register so the timeline surfaces name a
-  // food identically. flexShrink:0 — the title truncates, never the variant.
-  rowFormatTag: {
-    fontSize: theme.textXS,
-    color: theme.colorTextTertiary,
-    letterSpacing: theme.trackingWide,
     fontWeight: theme.weightMedium,
-    flexShrink: 0,
-  },
-  rowTime: {
-    fontSize: theme.textXS,
-    color: theme.colorTextTertiary,
+    color: theme.colorAccent,
   },
 });

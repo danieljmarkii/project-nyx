@@ -21,6 +21,8 @@ import {
   type DaySummaryModel,
   type DaySummaryPetInput,
 } from '../lib/daySummary';
+import { loadTrialPredicateFacts } from '../lib/dietTrialFacts';
+import { loadMedStripInput } from '../lib/medStripFacts';
 import { usePetStore, orderPetsActiveFirst, type Pet } from '../store/petStore';
 import { useSyncStore } from '../store/syncStore';
 
@@ -78,6 +80,47 @@ export function useDaySummary(firedForMs?: number | null): DaySummaryState {
           })),
         );
         if (cancelled) return;
+
+        // The rich single-pet recap inputs. ONE trial read: `loadTrialPredicateFacts`
+        // returns BOTH the protein-named trial (`{ ...trial, trialProtein }`, its own
+        // return) AND `facts.exposures.items` (the classified feedings for the today
+        // count + the "Trial diet" sub-lines), so `loadDietTrialFacts` — which merely
+        // wraps it and re-flattens the same facts — is not needed here (dropping it
+        // also drops the two loaders reading the same predicate twice per tick). Plus
+        // the med-strip input. Loaded ONLY for a single-pet account WITH rows: the
+        // multi-pet frames render plain spines (mock §2), and a zero-log day renders
+        // the empty state, so its rich block would be built and thrown away — skip the
+        // reads. Each read is DEFENSIVE — a failure degrades that pet to "no strip /
+        // no sub-lines" rather than blanking the recap; the error state is reserved
+        // for a failed ROW read (below).
+        //
+        // The reads take `nowMs` (real now) for the WIDEST data window — feedings span
+        // the whole trial, doses look back far enough to cover the anchored day. The
+        // builder then computes every day-dependent fact against the RENDERED day, so a
+        // stale after-midnight tap that anchors to yesterday reads yesterday's trial
+        // day, meal count AND med course — never today's on a yesterday-dated screen.
+        if (perPet.length === 1 && perPet[0].rows.length > 0) {
+          const p = ordered[0];
+          const factsPet = { id: p.id, name: p.name, species: p.species, sex: p.sex };
+          const [trialFacts, medInput] = await Promise.all([
+            loadTrialPredicateFacts(factsPet, nowMs).catch((e) => {
+              console.error('[DaySummary] trial facts load failed:', e);
+              return null;
+            }),
+            loadMedStripInput({ id: p.id, species: p.species }, nowMs).catch((e) => {
+              console.error('[DaySummary] med strip load failed:', e);
+              return null;
+            }),
+          ]);
+          if (cancelled) return;
+          perPet[0] = {
+            ...perPet[0],
+            trial: trialFacts?.trial ?? null,
+            trialItems: trialFacts?.facts?.exposures.items ?? null,
+            medInput,
+          };
+        }
+
         // Applies the staleness clamp AND the empty-fired-day fallback; `renderedMs` is
         // the day actually shown (the date header names it).
         const { model, renderedMs } = buildAnchoredDaySummary({ pets: perPet, firedForMs, nowMs });
