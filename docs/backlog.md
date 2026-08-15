@@ -25,6 +25,14 @@ A running list of items intentionally deferred from the current build sequence. 
 
 ---
 
+## Migration to Linear (started 2026-08-15)
+
+The backlog is moving to Linear (team **Culprit**, `linear.app/projectnyx`) — this file grew past being a usable "where are we" answer, and Linear gives real filtering instead of `grep`. **All 47 `Now`-priority open/in-progress rows as of 2026-08-15 have been ported as Linear issues** (CUL-28 through CUL-74), tagged with the `Legacy` label and carrying a `_Migrated from docs/backlog.md (B-NNN)_` footer for traceability. Rows already belonging to an active build-track project (Signals v2, Daily Recap) went into that project; everything else went into a new **Legacy Backlog** project.
+
+**This file is not yet frozen** — `Next` and `Later` rows below have not been migrated and this file stays authoritative for them until a follow-up pass ports them too. Once fully migrated, this file will be frozen as the historical record and new backlog items will be filed directly in Linear (see the Backlog Protocol in `CLAUDE.md`, updated the same day). Do not assume a `Now` row here is current — check Linear first; this file may lag a since-updated Linear issue for anything already ported.
+
+---
+
 ## Open
 
 | ID | Title | Why | Priority | Added | Blocks | Status |
