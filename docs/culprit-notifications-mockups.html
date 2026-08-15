@@ -467,9 +467,9 @@
   .preview-promise b { color: var(--f-text); }
 
   /* ── Full-screen primer variant ── */
-  .fsp { flex: 1 1 auto; display:flex; flex-direction:column; padding: 26px 22px 22px; }
+  .fsp { flex: 1 1 auto; display:flex; flex-direction:column; padding: 18px 18px 16px; }
   .fsp .bell { width: 54px; height: 54px; margin-bottom: 16px; }
-  .fsp .f-title { font-family: var(--serif); font-size: 24px; line-height: 1.15; color: var(--f-text); margin-bottom: 8px; }
+  .fsp .f-title { font-family: var(--serif); font-size: 22px; line-height: 1.15; color: var(--f-text); margin-bottom: 7px; }
   .fsp .f-body { font-size: 14px; color: var(--f-text-2); line-height: 1.5; }
   .fsp .spacer { flex: 1 1 auto; }
 
@@ -484,6 +484,31 @@
   .pairs .mini-lock { margin-top: 0; }
 
   .verdict.pm { color: var(--ink-3); }
+  .verdict.ruled { color: var(--teal-ink); }
+
+  /* ============================================================
+     ROUND 4 — the primer re-pitched in the ValuePreview grammar:
+     hero = a miniature of the (ruled) night Day Summary.
+     ============================================================ */
+  .vpm { background:#13112E; border-radius:16px; padding:12px; box-shadow: 0 12px 26px -14px rgba(19,17,46,0.55); }
+  .vpm-label { font-size:9.5px; letter-spacing:0.12em; text-transform:uppercase; color:#4FD8C4; font-weight:700; margin-bottom:6px; }
+  .vpm-date { font-size:10px; color:#8983B8; font-weight:600; margin-bottom:3px; }
+  .vpm-lead { font-family: var(--serif); font-size:13.5px; line-height:1.3; color:#F2EEE4; margin-bottom:7px; }
+  .vpm-arc { position:relative; height:22px; }
+  .vpm-track { position:absolute; left:0; right:0; top:9px; height:2px; border-radius:2px; background:rgba(196,190,255,0.16); }
+  .vpm-dot { position:absolute; top:5px; width:9px; height:9px; border-radius:999px; border:2px solid #13112E; }
+  .vpm-row { display:flex; align-items:center; gap:6px; background:#251F57; border:1px solid rgba(196,190,255,0.16); border-radius:10px; padding:6px 8px; margin-top:5px; font-size:11px; color:#ECEAF6; white-space:nowrap; }
+  .vpm-row span:first-child { overflow:hidden; text-overflow:ellipsis; min-width:0; flex-shrink:1; }
+  .vpm-row .d { color:#A6A2CE; flex-shrink:0; }
+  .vpm-row .t { margin-left:auto; font-size:9.5px; color:#8983B8; flex:0 0 auto; }
+  .fsp .fine { font-size:10.5px; color: var(--f-text-3); line-height:1.4; margin-top:8px; }
+  .fsp .btn-primary { margin-top:12px; padding:12px; }
+  .fsp .btn-text { padding:8px; margin-top:2px; }
+  .mini-lock.compact { padding:7px; margin-top:10px; }
+  .mini-lock.compact .notif { padding:8px 10px; border-radius:12px; }
+  .mini-lock.compact .ntitle { font-size:12.5px; }
+  .mini-lock.compact .nbody { font-size:12px; }
+  .mini-lock.compact .cap { margin-top:5px; font-size:9.5px; }
 
   a { color: var(--teal-ink); }
   :focus-visible { outline: 2px solid var(--teal-ink); outline-offset: 2px; border-radius: 4px; }
@@ -491,32 +516,163 @@
 
 <div class="wrap">
   <header class="mast">
-    <p class="eyebrow">Notifications v2 planning · Round 3 (new) · Rounds 1–2 preserved below</p>
+    <p class="eyebrow">Notifications v2 planning · Round 4 (new) · Round 3 reacted · Rounds 1–2 preserved below</p>
     <h1>Turning notifications on, honestly — and what they open</h1>
     <p class="lede">
-      Part 1 shipped and fires on-device. <strong>Round 3 (new, top)</strong> is the v2
-      planning round: the <strong>adoption doors</strong> that take the daily summary
-      out of hiding, a <strong>primer v2</strong> built around a live preview that
-      doubles as a privacy promise, the <strong>Day Summary redesign candidates</strong>
-      side by side (enriched daylight vs. the night register — with the shipped v1 kept
-      below as the third option), and <strong>lock-screen concepts for the next
-      notification types</strong>. Every open call is collected in the decision table at
-      the end of round 3. Evidence base:
-      <strong>docs/research/2026-08-notification-ux-landscape.md</strong>; requirements:
-      <strong>docs/nyx-notifications-v2-requirements.md</strong> (§0 D-1…D-6, open).
-      Rounds 2 and 1 are preserved further down — they remain the shipped v1 record.
+      Part 1 shipped and fires on-device. <strong>Round 4 (new, top)</strong> answers the
+      PM's round-3 reactions: the <strong>primer re-pitched</strong> in the Landing's
+      ValuePreview grammar — value-forward, full-screen, the night Day Summary as the
+      hero, privacy demoted to fine print — with the <strong>c1 vs c2 copy pick open</strong>.
+      <strong>Round 3 (below, reacted)</strong> carries the rulings in place:
+      <strong>D-3 RULED — the night register</strong> is the Day Summary's register;
+      D-5 re-opened into a portfolio iteration (milestones parked, vet-visit data-gapped,
+      B-288 elevated); the decision table shows live state. Rounds 2 and 1 remain the
+      shipped-v1 record further down. Requirements:
+      <strong>docs/nyx-notifications-v2-requirements.md</strong> (v0.91).
     </p>
     <div class="meta">
-      <span><b>Round 3 decisions:</b> D-1…D-6 (open — table at end of round 3)</span>
+      <span><b>Ruled:</b> D-3 · night register (2026-08-15)</span>
+      <span><b>Open:</b> D-1 · D-4 · D-6 · the c1/c2 pick · the D-5 iteration</span>
       <span><b>Default:</b> off (G6, unchanged)</span>
-      <span><b>Safety spine:</b> G1–G6 carried verbatim</span>
       <span><b>Rounds 1–2:</b> shipped v1, below</span>
     </div>
   </header>
 
+  <!-- ============================================================ ROUND 4 · PRIMER RE-PITCH -->
+  <section class="section">
+    <h2><span class="roundtag">Round 4 · new</span>&nbsp; The primer, re-pitched — the pitch is the ritual</h2>
+    <p class="sub">
+      <b>PM reaction to round 3 (2026-08-15):</b> the privacy-led headline is out — <em>"the
+      pitch is about staying on top of your pet's day / health"</em> — with a lean toward the
+      full-screen container and a pointer at the onboarding learn-more designs. The Designer's
+      re-pitch steals exactly that grammar (<code>ValuePreview</code>, B-251 PR 5): pitch a
+      feature by showing <b>a miniature of the real surface it opens</b> — which, since D-3 was
+      ruled this morning, is the <b>night Day Summary</b>. The hero is now the destination; the
+      real-notification preview drops to a secondary chip; the privacy promise <b>demotes to
+      fine print, kept</b> (T&amp;S) beside the B-666 one-shot line. One full-screen primer
+      serves every invocation. Two copy directions below — <b>the open pick</b>.
+    </p>
+
+    <!-- c1: the closeness pitch -->
+    <div class="plate">
+      <div>
+        <p class="frame-label">D-2 · round 4 · <b>c1 — the closeness pitch</b></p>
+        <div class="device">
+          <div class="screen">
+            <div class="fsp">
+              <div class="vpm">
+                <div class="vpm-label">Evening summary</div>
+                <div class="vpm-date">Saturday, August 15</div>
+                <div class="vpm-lead">Day 12 of the Whitefish trial — three meals in Biscuit’s record.</div>
+                <div class="vpm-arc">
+                  <div class="vpm-track"></div>
+                  <div class="vpm-dot" style="left:9%;background:#00C2A8;"></div>
+                  <div class="vpm-dot" style="left:13%;background:#93ADCB;"></div>
+                  <div class="vpm-dot" style="left:42%;background:#00C2A8;"></div>
+                  <div class="vpm-dot" style="left:70%;background:#00C2A8;"></div>
+                </div>
+                <div class="vpm-row"><span>Whitefish &amp; potato</span><span class="d">· all eaten</span><span class="t">7:42 AM</span></div>
+                <div class="vpm-row"><span>Apoquel</span><span class="d">· given</span><span class="t">8:05 AM</span></div>
+              </div>
+              <div class="f-title" style="margin-top:14px;">Stay close to Biscuit’s day.</div>
+              <div class="f-body">One calm notification each evening, around 9 — when the day’s record is ready to read.</div>
+              <div class="mini-lock compact">
+                <div class="notif">
+                  <div class="nh">
+                    <div class="nicon"><svg viewBox="0 0 24 24"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg></div>
+                    <div class="napp">Culprit</div>
+                    <div class="nwhen">9:00 PM</div>
+                  </div>
+                  <div class="ntitle">Today’s summary</div>
+                  <div class="nbody">Today’s record is ready to read.</div>
+                </div>
+              </div>
+              <div class="fine">That’s the whole notification — nothing about Biscuit’s health shows on your lock screen. Your phone will ask once; you can change it any time in iOS Settings.</div>
+              <div class="spacer"></div>
+              <div class="btn-primary">Turn on</div>
+              <div class="btn-text">Not now</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="note-col">
+        <h3>The ValuePreview grammar, applied</h3>
+        <p>The Landing’s learn-more pages pitch each feature the same way: a <b>miniature of the real surface</b> in real tokens, a display-face headline, one calm subline. The primer becomes the fourth member of that family — and because D-3 ruled the night register, the miniature <em>is</em> the dark evening surface, doing the "designed ritual" work before a word of copy is read.</p>
+        <ul class="tight">
+          <li><b>The hero is what you get,</b> not what we send — the notification itself is now the small honest chip below the pitch.</li>
+          <li><b>Privacy demoted, kept:</b> one fine-print line under the chip carries the promise and the B-666 one-shot stakes, together.</li>
+          <li><b>One primer, every invocation</b> — settings toggle, the A2 offer, future categories (each swaps the hero + cadence line via the registry’s primer descriptor).</li>
+        </ul>
+        <div class="chips">
+          <span class="chip teal">hero = the destination</span>
+          <span class="chip teal">ValuePreview grammar</span>
+          <span class="chip">privacy → fine print</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- c2: the read-back pitch -->
+    <div class="plate">
+      <div>
+        <p class="frame-label">D-2 · round 4 · <b>c2 — the read-back pitch</b></p>
+        <div class="device">
+          <div class="screen">
+            <div class="fsp">
+              <div class="vpm">
+                <div class="vpm-label">Evening summary</div>
+                <div class="vpm-date">Saturday, August 15</div>
+                <div class="vpm-lead">Day 12 of the Whitefish trial — three meals in Biscuit’s record.</div>
+                <div class="vpm-arc">
+                  <div class="vpm-track"></div>
+                  <div class="vpm-dot" style="left:9%;background:#00C2A8;"></div>
+                  <div class="vpm-dot" style="left:13%;background:#93ADCB;"></div>
+                  <div class="vpm-dot" style="left:42%;background:#00C2A8;"></div>
+                  <div class="vpm-dot" style="left:70%;background:#00C2A8;"></div>
+                </div>
+                <div class="vpm-row"><span>Whitefish &amp; potato</span><span class="d">· all eaten</span><span class="t">7:42 AM</span></div>
+                <div class="vpm-row"><span>Apoquel</span><span class="d">· given</span><span class="t">8:05 AM</span></div>
+              </div>
+              <div class="f-title" style="margin-top:14px;">The day, read back to you.</div>
+              <div class="f-body">Culprit gathers what you logged — meals, doses, anything that happened — and lets you know when the day is ready.</div>
+              <div class="mini-lock compact">
+                <div class="notif">
+                  <div class="nh">
+                    <div class="nicon"><svg viewBox="0 0 24 24"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg></div>
+                    <div class="napp">Culprit</div>
+                    <div class="nwhen">9:00 PM</div>
+                  </div>
+                  <div class="ntitle">Today’s summary</div>
+                  <div class="nbody">Today’s record is ready to read.</div>
+                </div>
+              </div>
+              <div class="fine">That’s the whole notification — nothing about Biscuit’s health shows on your lock screen. Your phone will ask once; you can change it any time in iOS Settings.</div>
+              <div class="spacer"></div>
+              <div class="btn-primary">Turn on</div>
+              <div class="btn-text">Not now</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="note-col">
+        <h3>Same layout — the pick is the voice</h3>
+        <p><b>c1</b> pitches the owner’s closeness to the day; <b>c2</b> pitches the app’s work on the owner’s behalf (the read-back). Both are value-forward per the reaction; both stay G4-clean (retrospective, no reminder implication) and promise nothing the record can’t deliver.</p>
+        <ul class="tight">
+          <li>Designer’s lean: <b>c1</b> — it puts the pet, not the app, in the headline (nyx-voice Pattern 1), and "stay close" is the wedge owner’s actual motive.</li>
+          <li>Multi-pet accounts swap the name for the neutral form ("Stay close to the day") — same rule the old sheet used.</li>
+          <li>Final strings gate at <code>nyx-voice</code> + <code>clinical-guardrails</code> in the primer PR, as ever.</li>
+        </ul>
+        <div class="chips">
+          <span class="chip teal">c1 = Designer lean</span>
+          <span class="chip">G4-clean, both</span>
+          <span class="chip">PM pick requested</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
   <!-- ============================================================ ROUND 3 · ADOPTION -->
   <section class="section">
-    <h2><span class="roundtag">Round 3 · new</span>&nbsp; Out of beta — the adoption doors</h2>
+    <h2><span class="roundtag">Round 3</span>&nbsp; Out of beta — the adoption doors</h2>
     <p class="sub">
       Notifications were never behind a beta flag — what makes them <em>feel</em> beta is
       that the only path to the Day Summary is opting in via Settings and tapping the
@@ -553,8 +709,8 @@
         </div>
       </div>
       <div class="note-col">
-        <h3>Retarget the door TodayZone already has</h3>
-        <p>TodayZone’s header-right door today opens <em>History filtered to today</em>. The recommendation is to <b>retarget it</b> to the Day Summary, relabeled <b>Full day ›</b> — one door, richer destination. TodayZone answers “today” capped; the summary is today, uncapped and arc-shaped; History stays one tab away for the filter/edit jobs.</p>
+        <h3>No new UI — the “see all” tap Home already has, pointed somewhere better</h3>
+        <p>Home’s Today section already has a small tappable affordance in its header — today it opens <em>History pre-filtered to today</em>. A1 adds nothing to Home: it <b>points that existing tap at the (night) Day Summary instead</b>, relabeled <b>Full day ›</b>. One door, better destination — and with D-3 ruled, the destination is now a visibly different <em>kind</em> of surface than History’s editable list, which is what makes the single retargeted door clean.</p>
         <div class="alt-inline">
           <div class="al">The alternative (drawn, not recommended)</div>
           <div class="hz-label" style="margin-bottom:6px;"><span class="l" style="color:var(--ink-3);">Today</span><span class="door" style="color:var(--ink-3);">See all ›</span></div>
@@ -619,7 +775,8 @@
 
   <!-- ============================================================ ROUND 3 · PRIMER V2 -->
   <section class="section">
-    <h2><span class="roundtag">Round 3 · new</span>&nbsp; Primer v2 — the preview is the privacy promise</h2>
+    <h2><span class="roundtag">Round 3</span>&nbsp; Primer v2 — the preview is the privacy promise</h2>
+    <p class="stale-note">Superseded by round 4 (above), 2026-08-15: the PM rejected the privacy-led pitch as the headline ("the pitch is staying on top of your pet's day / health") and leaned full-screen — round 4 re-pitches in the ValuePreview grammar with privacy demoted to fine print. These frames remain the record of the rejected direction.</p>
     <p class="sub">
       The research’s one proven primer move is a rendered preview of the actual
       notification. Ours is better than honest — because the body is static (G1), the
@@ -726,7 +883,7 @@
 
   <!-- ============================================================ ROUND 3 · DAY SUMMARY V2 -->
   <section class="section">
-    <h2><span class="roundtag">Round 3 · new</span>&nbsp; The Day Summary, redesigned — three candidates side by side</h2>
+    <h2><span class="roundtag">Round 3</span>&nbsp; The Day Summary, redesigned — three candidates side by side</h2>
     <p class="sub">
       The 9pm tap is the app’s one designed evening ritual, and today it lands on a bare
       list. The redesign contract that keeps this buildable without re-litigating G3:
@@ -869,7 +1026,7 @@
     <!-- D-3b: night register -->
     <div class="plate">
       <div>
-        <p class="frame-label">D-3b · <b>the night register</b> — same content, PM call</p>
+        <p class="frame-label">D-3b · <b>the night register</b> — RULED IN, 2026-08-15 ✓</p>
         <div class="device">
           <div class="screen night">
             <div class="nav"><div class="chev">‹</div><div class="title">Today</div><div></div></div>
@@ -916,7 +1073,8 @@
         </div>
       </div>
       <div class="note-col">
-        <h3>The evening ritual, in the brand’s own night</h3>
+        <h3>The evening ritual, in the brand’s own night — <span style="color:var(--teal-ink);">ruled in (PM, 2026-08-15)</span></h3>
+        <p style="border-left:3px solid var(--teal-ink); padding:8px 12px; background:var(--paper-2); border-radius:0 10px 10px 0;"><b>"It’s going to be dark — let’s not blind someone as they’re opening the notification. We’re going with the evening ritual/night register."</b> Consequences: the brand Tier-2 amendment is drafted (spec §10 #3, awaiting wording approval); a med-slate night sibling token; night AA pass at build. Team lean, cheap to veto: <b>always-night</b> — one identity whether reached at 9pm or 10am.</p>
         <p>Identical content to D-3a on the real night tokens (<code>colorBrandNight</code> / <code>-Elevated</code> / <code>colorTextOnNight</code> / <code>colorMoonlight</code> for the lead). A 9pm tap landing on a dark, calm surface is the strongest “designed ritual” signal available — and it costs zero safety rules.</p>
         <ul class="tight">
           <li><b>The genuine tension (why this is a PM call, not a style pick):</b> the brand register rule reserves night grounds for surfaces <em>working on the pet’s behalf</em> (Landing, loading, the night moment) — and the theme file’s own comment says so. A record surface in night ink is a deliberate <b>brand amendment</b> (Tier-2 edit), same family as the Signal card’s D8 “closed light” ruling.</li>
@@ -936,7 +1094,7 @@
 
   <!-- ============================================================ ROUND 3 · PORTFOLIO -->
   <section class="section">
-    <h2><span class="roundtag">Round 3 · new</span>&nbsp; The next notifications — lock-screen concepts</h2>
+    <h2><span class="roundtag">Round 3</span>&nbsp; The next notifications — lock-screen concepts</h2>
     <p class="sub">
       Concept frames for the D-5 ruling — copy locks at each track’s own
       <code>nyx-voice</code> + <code>clinical-guardrails</code> pass, not here. Every
@@ -1088,7 +1246,7 @@
 
   <!-- ============================================================ ROUND 3 · DECISIONS -->
   <section class="section">
-    <h2><span class="roundtag">Round 3 · new</span>&nbsp; The decision table — six rulings requested</h2>
+    <h2><span class="roundtag">Round 3</span>&nbsp; The decision table — six rulings requested</h2>
     <p class="sub" style="margin-bottom:14px;">Mirrors <b>docs/nyx-notifications-v2-requirements.md §0</b>. Each row is rulable from this page alone; a different ruling edits its workstream, nothing else.</p>
     <table class="rulings">
       <thead>
@@ -1103,15 +1261,15 @@
         </tr>
         <tr>
           <td><b>D-2</b> · primer shape</td>
-          <td><span class="verdict in">Sheet, sharpened</span></td>
-          <td>The preview-as-privacy-promise does the work; full-screen is onboarding ceremony our two-tap flow doesn’t need. Resolves B-666 inside the caption.</td>
-          <td><span class="verdict pm">RULE HERE</span></td>
+          <td><span class="verdict out">SENT BACK → ROUND 4</span></td>
+          <td>PM 2026-08-15: privacy-led pitch rejected as the headline; full-screen preferred; steal the onboarding learn-more (ValuePreview) language. Round 4 (top of page) re-pitches — <b>the open pick is c1 vs c2 copy</b>. Privacy + B-666 stakes ride the fine print.</td>
+          <td><span class="verdict pm">PICK C1 / C2</span></td>
         </tr>
         <tr>
           <td><b>D-3</b> · Day Summary depth</td>
-          <td><span class="verdict in">(a) enriched daylight</span></td>
-          <td>Everything added is a record fact or a doorway, so G3/B-670 hold. (b) night is drawn and genuinely tempting — but it needs a brand Tier-2 amendment (night = “working on the pet’s behalf” today), so it’s its own deliberate call, not a style pick.</td>
-          <td><span class="verdict pm">RULE HERE</span></td>
+          <td><span class="verdict ruled">RULED · (b) NIGHT ✓</span></td>
+          <td>PM 2026-08-15: “It’s going to be dark — let’s not blind someone as they’re opening the notification. We’re going with the evening ritual/night register.” Enriched facts-only content on the night ground. Brand Tier-2 amendment drafted (spec §10 #3, wording approval pending); always-night is the team lean.</td>
+          <td><span class="verdict ruled">RULED 2026-08-15</span></td>
         </tr>
         <tr>
           <td><b>D-4</b> · midnight handoff (B-672)</td>
@@ -1121,9 +1279,9 @@
         </tr>
         <tr>
           <td><b>D-5</b> · types #2 / #3</td>
-          <td><span class="verdict in">Milestones → vet-visit</span></td>
-          <td>Milestones serve the wedge with zero schema; the vet-visit reminder needs an upcoming-visit fact first (<code>vet_visits</code> is past-tense). B-288 opens in parallel as its own track. The weekly digest is the research’s #1 and waits only for its surface — pulling it forward is a legitimate ruling that also pulls the Signals-v2 weekly-review queue item.</td>
-          <td><span class="verdict pm">RULE HERE</span></td>
+          <td><span class="verdict out">RE-OPENED → ITERATING</span></td>
+          <td>PM 2026-08-15: “none of these are truly calling my name.” Milestones parked to backlog (fires once; the widget counts the trial down — B-761 → Later); vet-visit data-gap PM-confirmed; <b>B-288 elevated (“genuinely interesting”)</b>. The iteration (spec §5.5) folds in the PM’s two seeds — learned feeding windows (→ B-288’s learned-window arm, capture-ask framing, never “missed”) and the Signal doorbell (safety-lane-only, once-per-finding, background-fetch delivery spike) — plus the team’s additions and a second, focused competitive sweep.</td>
+          <td><span class="verdict pm">ITERATION → REACT NEXT</span></td>
         </tr>
         <tr>
           <td><b>D-6</b> · warmth bundle (B-671)</td>
@@ -1684,7 +1842,8 @@
   </section>
 
   <footer class="footer">
-    <p><b>Round 3 — this URL (current, top).</b> The notifications-v2 planning round: adoption doors (A1/A2), primer v2 (D-2 side by side), the Day Summary redesign candidates (D-3a daylight / D-3b night / D-3c = the shipped v1 below), the portfolio concepts (milestones / vet-visit / B-288 / the D-6 warmth pair), and the six-ruling decision table. Copy on round-3 frames is <em>proposed</em> — it locks at each PR’s own nyx-voice + clinical-guardrails pass. Evidence: <b>docs/research/2026-08-notification-ux-landscape.md</b>; requirements: <b>docs/nyx-notifications-v2-requirements.md</b>.</p>
+    <p><b>Round 4 — this URL (current, top).</b> The primer re-pitch after the PM's round-3 reactions: full-screen, ValuePreview grammar, the night-Day-Summary miniature as hero, privacy + B-666 stakes in the fine print; c1 (closeness) vs c2 (read-back) copy directions drawn — the open pick. Round-3 ruling annotations applied in place (D-3 ruled night; D-5 re-opened; D-2 sent back → this round).</p>
+    <p><b>Round 3 — same URL, below (reacted).</b> The notifications-v2 planning round: adoption doors (A1/A2), primer v2 (D-2 side by side), the Day Summary redesign candidates (D-3a daylight / D-3b night / D-3c = the shipped v1 below), the portfolio concepts (milestones / vet-visit / B-288 / the D-6 warmth pair), and the six-ruling decision table. Copy on round-3 frames is <em>proposed</em> — it locks at each PR’s own nyx-voice + clinical-guardrails pass. Evidence: <b>docs/research/2026-08-notification-ux-landscape.md</b>; requirements: <b>docs/nyx-notifications-v2-requirements.md</b>.</p>
     <p><b>Round 2 — same URL, below.</b> PR 4's lock-screen notification + the Day Summary screen in four states (ordinary / incident / zero-log / multi-pet), plus the three deferred-piece rulings. All copy is verbatim from the PR 4/PR 5 build — the shipped v1 record, and D-3c in round 3’s decision table.</p>
     <p><b>Round 1 — same URL, further below (unchanged).</b> The consent model: primer (both account shapes) + the settings screen's three honest states + the system prompt in context.</p>
     <p>Gates — round 3: Designer · clinical-guardrails (advisory on frames; binding at build) · the research brief. Round 2: clinical-guardrails (G1–G3) · nyx-voice · Designer · Dr. Chen. Round 1: nyx-voice · clinical-guardrails (G4) · Designer. Specs: <b>docs/nyx-notification-foundation-requirements.md</b> (Part 1) · <b>docs/nyx-notifications-v2-requirements.md</b> (v2, §0 open).</p>
