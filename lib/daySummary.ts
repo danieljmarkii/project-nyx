@@ -420,9 +420,15 @@ function resolveRecapTrialFacts(
   };
 }
 
+/** The minimal per-event shape `buildCountChips` reads — category + type only. A full
+ *  `DaySummaryRow` satisfies it (the recap screen's path), and DR-2's Home lane maps
+ *  raw events to it, so Home's count line and the recap's C2 chips are ONE counting
+ *  source and can never disagree. */
+export type CountableEvent = Pick<DaySummaryRow, 'category' | 'eventType'>;
+
 /** C2 — the count chips, symptoms first (each named + rose-toned), then meals,
  *  doses and any other category. Digit-anchored; never a total. */
-export function buildCountChips(rows: readonly DaySummaryRow[]): DayCountChip[] {
+export function buildCountChips(rows: readonly CountableEvent[]): DayCountChip[] {
   const symptomCounts = new Map<string, number>();
   const otherCounts = new Map<string, number>();
   let meals = 0;
