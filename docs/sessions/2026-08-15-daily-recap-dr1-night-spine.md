@@ -34,9 +34,10 @@ CUL-20 (the fire-day anchor) landed first (#651), so DR-1 was unblocked at sessi
   can't drift), `DaySpine.tsx` (the timeline-as-list — time labels, category-tinted nodes
   on a thread, every node → `/event/[id]`), `RecapStrip.tsx` (the flat night doorway for
   C3/C4), `CountChips.tsx`.
-- **`hooks/useDaySummary.ts`** — loads the rich single-pet inputs (`loadDietTrialFacts` +
-  `loadTrialPredicateFacts` + `loadMedStripInput`) defensively (a rich-load failure degrades
-  to no-strip, never blanks the recap — the error state is reserved for a failed ROW read).
+- **`hooks/useDaySummary.ts`** — loads the rich single-pet inputs (one `loadTrialPredicateFacts`,
+  which returns both the protein-named trial and the classified feedings, + `loadMedStripInput`)
+  defensively (a rich-load failure degrades to no-strip, never blanks the recap — the error state
+  is reserved for a failed ROW read).
 - **`components/ui/Header.tsx`** — additive `night` prop (brand-night, borderless,
   on-night glyphs); every existing light call site is byte-identical.
 - **Tests** — `lib/daySummary.test.ts` (+34 cases: lead precedence, chips, strip, forward,
@@ -50,7 +51,7 @@ CUL-20 (the fire-day anchor) landed first (#651), so DR-1 was unblocked at sessi
   strips/forward/"Trial diet" sub-lines are the SINGLE-pet experience; a multi-pet account
   renders plain per-pet spines. This matches the ratified mock's four frames but withholds
   the wedge content from every two-pet owner — surfaced as a **PM decision brief** (below;
-  execution filed B-770).
+  execution filed B-780).
 - **The trial-diet count is OFFERED feedings, not eaten** — spec §2.5 mandates "predicates
   only", and `classifyFeeding` deliberately does not read intake ("a bowl put down and
   refused is a day the owner kept the record"). So the count includes refused trial-diet
@@ -63,9 +64,9 @@ CUL-20 (the fire-day anchor) landed first (#651), so DR-1 was unblocked at sessi
   trial day would headline "three meals in Biscuit's record"). Added `mealRefusalClause`: the
   lead names refused bowls (`, all refused` / `, two refused`), keeping the all-eaten day
   byte-identical to the mock. Errs toward surfacing the concern; flagged for clinical-guardrails
-  / Dr. Chen / PM copy ratification + a mock frame (the chips half is B-769).
+  / Dr. Chen / PM copy ratification + a mock frame (the chips half is B-779).
 - **Strips are doorways only** — no confirm button, no progress bar (R-3). They door to the
-  Pet tab (matching the Home strips); a deep-link to the specific card is B-771.
+  Pet tab (matching the Home strips); a deep-link to the specific card is B-781.
 
 ## Gates
 
@@ -111,21 +112,21 @@ CUL-20 (the fire-day anchor) landed first (#651), so DR-1 was unblocked at sessi
    two-pet wedge owner loses their trial dog's recap surface at a hard cliff; (B, recommended)
    render the per-pet strip + sub-lines per section (the whole-screen lead/chips stay single-pet)
    — it's the wedge content and it's unambiguous per-pet. *Consequence:* (B) is a spec §2
-   states-clause edit + a new mock frame + un-gating the hook's per-pet rich load (B-770); (A)
+   states-clause edit + a new mock frame + un-gating the hook's per-pet rich load (B-780); (A)
    ships as-is and documents the single-pet-only wedge as a knowing tradeoff.
 2. **Refusal in the lead/chips — ratify the provisional clause.** *Deciding:* the exact copy +
    whether the chips also surface refusal. *Options:* (A, shipped provisionally) lead appends
    `, all refused` / `, N refused`, chips unchanged; (B) also break refusal into the chips
    (needs a model call — a distinct chip vs a tone, without conflating category with intake);
    (C) revert to offered-count-only + rely on per-row `· refused`. *Recommendation:* keep (A)
-   as the safe interim, route the chips (B-769) + a mock refusal-day frame to Dr. Chen/nyx-voice.
+   as the safe interim, route the chips (B-779) + a mock refusal-day frame to Dr. Chen/nyx-voice.
    *Consequence:* the clinical gate signs the copy; a mock frame lands in the next round.
 
 ## Follow-ups filed
 
-B-768 ("Photo attached" sub-line — the timeline query carries no attachment flag) · B-769
-(refusal-aware chips) · B-770 (multi-pet per-pet strip + sub-lines, gated on decision 1) ·
-B-771 (strips deep-link to the specific card) · B-772 (WET/DRY format tag on the spine).
+B-778 ("Photo attached" sub-line — the timeline query carries no attachment flag) · B-779
+(refusal-aware chips) · B-780 (multi-pet per-pet strip + sub-lines, gated on decision 1) ·
+B-781 (strips deep-link to the specific card) · B-782 (WET/DRY format tag on the spine).
 
 ## Next
 

@@ -26,6 +26,14 @@ jest.mock('../../lib/betaFeatures', () => ({
   useBetaOptIn: (key: string) => mockUseBetaOptIn(key),
 }));
 
+// CUL-14 — the watching-rows hook is mocked (it does a local SQLite read on focus; here we
+// drive its output directly). Default [] so every pre-existing test renders as before and
+// the watching block is inert unless a test opts into rows AND signals_v2.
+const mockUseWatchingRows = jest.fn();
+jest.mock('../../hooks/useWatchingRows', () => ({
+  useWatchingRows: (enabled: boolean, dayNumber: number) => mockUseWatchingRows(enabled, dayNumber),
+}));
+
 import { render } from '@testing-library/react-native';
 import { AccessibilityInfo, Platform } from 'react-native';
 import { SignalZone } from './SignalZone';
@@ -42,7 +50,12 @@ import {
   BUILDING_FLOOR,
   NO_PATTERN_HEADLINE,
   NO_PATTERN_SUB,
+  WATCHING_SUB,
+  watchingTimingRow,
+  watchingChangeRow,
+  watchingGapRow,
 } from '../../lib/signalCopy';
+import type { WatchingRow } from '../../lib/signalWatching';
 
 // A minimal live finding so the register (live state) renders a stack.
 const liveFinding: CachedFinding = {
@@ -93,6 +106,9 @@ beforeEach(() => {
   // Default opted-in, so the flag-ON describe's `eligible && optedIn` resolves on the
   // allowlist alone (as it did before FR-FLAG-4). The two-gate test overrides this.
   mockUseBetaOptIn.mockReturnValue(true);
+  // CUL-14 default: no watching rows, so the watching block never renders unless a test
+  // opts in. Keeps every pre-existing E1/E2 assertion (and its snapshot) unchanged.
+  mockUseWatchingRows.mockReturnValue([]);
 });
 
 describe('SignalZone — flag OFF (shipped surface byte-identical, FR-FLAG-2)', () => {
@@ -205,6 +221,107 @@ describe('SignalZone — flag ON (E1/E2 restyle, FR-FLAG-1 no mix)', () => {
     const { getByText } = render(<SignalZone />);
     expect(getByText(NO_PATTERN_HEADLINE)).toBeTruthy();
     expect(getByText(NO_PATTERN_SUB)).toBeTruthy();
+  });
+});
+
+// ── CUL-14 — the watching system (per-lane rows with real counts, §4.4 / D5) ──────
+describe('SignalZone — CUL-14 watching system (signals_v2)', () => {
+  // The three mock §05 rows for Nyx-at-12-days (representative). buildWatchingRows +
+  // every count/gap predicate is unit-tested in lib/signalWatching.test.ts; here the hook
+  // is mocked so the wiring + composition + flag gates are what's exercised.
+  const timingRow: WatchingRow = { key: 'timing', text: watchingTimingRow(4, 6) };
+  const changeRow: WatchingRow = { key: 'change', text: watchingChangeRow(2, 2) };
+  const gapRow: WatchingRow = { key: 'gap', text: watchingGapRow('vomiting', '6 days, then 3, then 2') };
+  const allRows = [timingRow, changeRow, gapRow];
+
+  // signals_v2 eligible (+ opted-in by default); the design_v2 frame is chosen per-test.
+  function enableSignalsV2(designV2: boolean) {
+    mockUseAllowlistFlag.mockImplementation(
+      (key: string) => key === 'signals_v2' || (designV2 && key === 'signal_design_v2'),
+    );
+  }
+
+  it('flag OFF (signals_v2 off): the block never renders, even if the hook returns rows (FR-FLAG-2 defense-in-depth)', () => {
+    // allowlist false for everything (default) → signalsV2 false. Even with the hook
+    // returning rows, the component-level `signalsV2 &&` gate suppresses the block.
+    mockUseWatchingRows.mockReturnValue(allRows);
+    mockUseSignal.mockReturnValue(signalState({ displayState: 'building' }));
+    const { queryByText } = render(<SignalZone />);
+    expect(queryByText(WATCHING_SUB)).toBeNull();
+    expect(queryByText(timingRow.text)).toBeNull();
+    expect(queryByText('What the signal looks like:')).toBeTruthy(); // shipped surface intact
+  });
+
+  it('E1 (shipped frame): the real-count rows replace the ghost previews; the lead + floor stay', () => {
+    enableSignalsV2(false); // signals_v2 on, signal_design_v2 OFF → shipped frame
+    mockUseWatchingRows.mockReturnValue([timingRow, changeRow]);
+    mockUseSignal.mockReturnValue(signalState({ displayState: 'building' }));
+    const { getByText, queryByText } = render(<SignalZone />);
+
+    expect(getByText(buildingIntro('Nyx'))).toBeTruthy(); // the shipped lead stays
+    expect(queryByText('What the signal looks like:')).toBeNull(); // ghost previews replaced
+    expect(getByText(WATCHING_SUB)).toBeTruthy();
+    expect(getByText(timingRow.text)).toBeTruthy();
+    expect(getByText(changeRow.text)).toBeTruthy();
+    expect(getByText(BUILDING_FLOOR)).toBeTruthy(); // the verbatim safety floor travels with the block
+  });
+
+  it('E1 (design_v2 frame): the rows replace the ghost watching-for list; the floor renders exactly once', () => {
+    enableSignalsV2(true); // both flags on → B-721 E1 frame
+    mockUseWatchingRows.mockReturnValue(allRows);
+    mockUseSignal.mockReturnValue(signalState({ displayState: 'building', dayNumber: 12, eventCount: 31 }));
+    const { getByText, getByLabelText, queryByText, getAllByText } = render(<SignalZone />);
+
+    expect(getByLabelText(buildingHeadline('Nyx', 12, 31))).toBeTruthy(); // headline stays
+    expect(queryByText(BUILDING_SUB)).toBeNull(); // ghost sub replaced
+    for (const row of BUILDING_WATCHING_FOR) expect(queryByText(row)).toBeNull(); // ghost list replaced
+    expect(getByText(WATCHING_SUB)).toBeTruthy();
+    for (const r of allRows) expect(getByText(r.text)).toBeTruthy();
+    expect(getAllByText(BUILDING_FLOOR)).toHaveLength(1); // no duplicate floor
+  });
+
+  it('the gap row is escalate-only — it renders only when the hook supplies it', () => {
+    enableSignalsV2(false);
+    mockUseWatchingRows.mockReturnValue([timingRow, changeRow]); // no gap row
+    mockUseSignal.mockReturnValue(signalState({ displayState: 'building' }));
+    expect(render(<SignalZone />).queryByText(/Gaps between/)).toBeNull();
+  });
+
+  it('E2 no_pattern: the watching rows compose in additively beside the §9 copy + coverage', () => {
+    enableSignalsV2(true);
+    mockUseWatchingRows.mockReturnValue([gapRow]); // mature record: only the gap lane escalates
+    mockUseSignal.mockReturnValue(signalState({ displayState: 'no_pattern', coverage: [rateMeals] }));
+    const { getByText } = render(<SignalZone />);
+    expect(getByText(NO_PATTERN_HEADLINE)).toBeTruthy(); // E2 copy intact
+    expect(getByText(/Nyx's meals aren't rated often enough/)).toBeTruthy(); // coverage intact
+    expect(getByText(gapRow.text)).toBeTruthy(); // gap row added under them
+    expect(getByText(BUILDING_FLOOR)).toBeTruthy();
+  });
+
+  it('flags are independent: signals_v2 ON while signal_design_v2 OFF renders rows in the SHIPPED frame', () => {
+    enableSignalsV2(false);
+    mockUseWatchingRows.mockReturnValue([timingRow]);
+    mockUseSignal.mockReturnValue(signalState({ displayState: 'building' }));
+    const { getByText, queryByText } = render(<SignalZone />);
+    expect(getByText(buildingIntro('Nyx'))).toBeTruthy(); // shipped chrome
+    expect(getByText(timingRow.text)).toBeTruthy();
+    expect(queryByText(BUILDING_SUB)).toBeNull(); // no B-721 E1 restyle copy leaks
+  });
+
+  it('no qualifying row (hook returns []): the frame renders its normal content, no empty block', () => {
+    enableSignalsV2(false);
+    mockUseWatchingRows.mockReturnValue([]);
+    mockUseSignal.mockReturnValue(signalState({ displayState: 'building' }));
+    const { getByText, queryByText } = render(<SignalZone />);
+    expect(queryByText(WATCHING_SUB)).toBeNull(); // no sub with no rows
+    expect(getByText('What the signal looks like:')).toBeTruthy(); // shipped previews intact
+  });
+
+  it('gates the hook on an empty state — enabled is false in the live register (no watching read)', () => {
+    enableSignalsV2(false);
+    mockUseSignal.mockReturnValue(signalState({ displayState: 'live', findings: [liveFinding] }));
+    render(<SignalZone />);
+    expect(mockUseWatchingRows.mock.calls.at(-1)?.[0]).toBe(false);
   });
 });
 

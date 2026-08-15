@@ -111,6 +111,35 @@ export const BETA_REGISTRY: BetaFeature[] = [
     // spent per opt-in and no server gate is owed.
     serverCost: false,
   },
+  {
+    // Signals v2 — "the record, decomposed" (B-755) — joins the shelf per FR-FLAG-4
+    // (spec §5's "beta-shelf before GA" clause): the render gate composes eligibility ×
+    // this opt-in in SignalZone/InsightCard (`eligible && optedIn`, via isSignalsV2Finding),
+    // so being in the cohort no longer surfaces the new lanes by itself. Distinct from
+    // `signal_design_v2` (the visual redesign) — this one changes WHAT the engine detects
+    // (the new timing / trial-response / watching lanes), which is why it carries its own
+    // flag + its own GA call (spec §0 D6, "two beta-shelf rows about the Signal" accepted).
+    key: 'signals_v2',
+    title: 'Deeper signals',
+    // nyx-voice: concrete about what the owner will notice (meal-timing patterns, the
+    // trial's counts, what's still being gathered), warm, no exclamation, count-anchored
+    // and never a verdict ("compare", not "working"/"improving") — matching the copy/safety
+    // contract the lanes themselves ship under (spec §6).
+    blurb:
+      'A closer read of your logs — how symptoms line up with the timing of meals, how a diet trial’s counts compare with before, and what each pattern still needs before it surfaces.',
+    owner: 'Signals v2 (B-755) / Data + Design',
+    addedDate: '2026-08-15',
+    // ~1 quarter out — a forcing date for the graduate/kill/extend call, not a timer.
+    reviewBy: '2026-11-15',
+    // serverCost:false is load-bearing here (spec §5): the new engine lanes are computed
+    // UNIFORMLY for every account inside generate-signal — not per-cohort — so no server
+    // resource is spent per opt-in, and the client render gate is sound under the widget
+    // precedent. The flag gates CLIENT RENDERING of finding types old clients already drop
+    // (the G10 unknown-type contract); it does not gate the server work. So no server-side
+    // eligibility gate is owed, and betaFeatures.test.ts's serverCost⇒server-gate rule stays
+    // vacuous by design.
+    serverCost: false,
+  },
 ];
 
 // ── The opt-in store (Gate 2 / D4) ────────────────────────────────────────────

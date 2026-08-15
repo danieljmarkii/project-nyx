@@ -216,7 +216,11 @@ export interface TimingPanelModel {
   config: MealTimingConfig;
 }
 
-function median(values: number[]): number | null {
+/** Median of a numeric list, or null when empty. Exported so the ONE client-side median
+ *  serves both this panel and `lib/signalWatching.ts`'s gap ratio gate — the server's
+ *  `detection.ts` keeps its own (a separate Deno runtime), but two client copies is exactly
+ *  the drift this track's one-predicate discipline pre-empts (code-reviewer, CUL-14). */
+export function median(values: number[]): number | null {
   if (values.length === 0) return null;
   const sorted = [...values].sort((a, b) => a - b);
   const mid = Math.floor(sorted.length / 2);

@@ -9,7 +9,7 @@ import { theme } from '../../constants/theme';
 import { Card, Header } from '../../components/ui';
 import { SettingsRow } from '../../components/settings/SettingsRow';
 import { WhorlSpinner } from '../../components/brand/WhorlSpinner';
-import { NotificationPrimerSheet } from '../../components/notifications/NotificationPrimerSheet';
+import { NotificationPrimer } from '../../components/notifications/NotificationPrimer';
 import { ensurePermission, type NotificationPermission } from '../../lib/notifications';
 import {
   readCategoryEnabled,
@@ -222,8 +222,13 @@ export default function NotificationsScreen() {
               <AlertTriangle size={20} color={theme.colorDestructive} strokeWidth={2} />
               <Text style={styles.deniedTitle}>Notifications are off for Culprit</Text>
             </View>
+            {/* Honest for BOTH owners this state covers (B-666, DR-4): the one who
+                granted then revoked in Settings, AND the fresh decliner who tapped
+                "Don't Allow" on the prompt and never opened Settings. The old copy
+                ("turn them back on") presumed the first; "allow it … then comes to
+                life" reads true for a switch that was never live either. */}
             <Text style={styles.deniedBody}>
-              Turn them back on in {settingsAppName} and this switch comes back to life.
+              Culprit can’t send them until you allow notifications in {settingsAppName} — then this switch comes to life.
             </Text>
             <TouchableOpacity
               onPress={openOsSettings}
@@ -270,6 +275,17 @@ export default function NotificationsScreen() {
           />
         </Card>
 
+        {/* The lock-screen privacy promise, RELOCATED here from the primer (DR-4,
+            spec §5): stated where an owner examines the feature, no longer part of
+            the pitch. Shown where the live feature is (states a/b), not over the
+            denied banner. */}
+        {!loading && !denied && (
+          // Same tertiary register as the intro line (reused, not duplicated).
+          <Text style={styles.intro}>
+            On your lock screen, the notification only says the day’s ready to read — never what’s in the record.
+          </Text>
+        )}
+
         {/* No reserved "Coming soon" rows: on a now-live surface those are the
             un-designed placeholder nyx-voice Pattern 3 + Principle 5 forbid, and
             two dead toggles beside a working one. Future categories (B-288's
@@ -279,7 +295,7 @@ export default function NotificationsScreen() {
         <View style={styles.bottomPad} />
       </ScrollView>
 
-      <NotificationPrimerSheet
+      <NotificationPrimer
         visible={primerVisible}
         petName={primerPetName}
         onConfirm={handlePrimerConfirm}
@@ -345,7 +361,8 @@ const styles = StyleSheet.create({
     color: theme.colorDestructive,
   },
 
-  // ── Intro framing (states a/b) ──
+  // ── Intro framing (states a/b) + the relocated lock-screen privacy note (DR-4),
+  //    which shares this exact tertiary register ──
   intro: {
     fontFamily: theme.fontBody,
     fontSize: theme.textSM,
