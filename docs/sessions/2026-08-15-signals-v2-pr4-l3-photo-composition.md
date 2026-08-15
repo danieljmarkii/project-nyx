@@ -119,4 +119,4 @@ is preserved: the onsets still never reach phrasing/cache/HTTP. Two regression t
   `readFlags`/`classifyVomitContents` predicate duplication → **B-759** (Later; the "one predicate"
   doctrine, non-blocking since the two return different shapes).
 
-## Shipped via the CUL-9 draft PR (Signals v2 PR 4)
+## Shipped via #643 (CUL-9, Signals v2 PR 4)
