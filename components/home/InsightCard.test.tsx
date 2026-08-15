@@ -12,13 +12,15 @@
 import { type ReactElement } from 'react';
 import { fireEvent, render } from '@testing-library/react-native';
 import { InsightCard } from './InsightCard';
-import { dotLaneA11yLabel } from '../../lib/signalCopy';
+import { dotLaneA11yLabel, stackedCompareA11yLabel, timingStoryBandRows } from '../../lib/signalCopy';
 import type {
   CachedFinding,
   CorrelationFinding,
+  EmptyStomachTimingFinding,
   PostprandialTimingFinding,
   ReflectionFinding,
   SymptomWorseningFinding,
+  TimingStoryFinding,
 } from '../../lib/signal';
 
 const correlation = (over: Partial<CorrelationFinding> = {}): CorrelationFinding => ({
@@ -130,6 +132,47 @@ const reflection = (over: Partial<ReflectionFinding> = {}): ReflectionFinding =>
   priorCount: 5,
   direction: 'improving',
   windowDays: 7,
+  ...over,
+});
+
+// Signals v2 (CUL-12) — the A2 combined timing card + its lone empty-stomach sibling.
+const timingStory = (over: Partial<TimingStoryFinding> = {}): TimingStoryFinding => ({
+  type: 'timing_story',
+  priorityClass: 'insight',
+  symptomType: 'vomit',
+  bandCounts: { rapid: 7, mid: 6, long: 7 },
+  eligibleCount: 20,
+  totalEpisodes: 26,
+  rapidWindowMinutes: 30,
+  longGapHours: 6,
+  windowDays: 60,
+  rapid: { count: 7, medianMinutesSinceFeeding: 12, lastTwoEligible: true, feedingFormsInEvidence: [] },
+  long: {
+    count: 7,
+    medianHoursSinceFeeding: 9,
+    lastTwoEligible: false,
+    feedingFormsInEvidence: [],
+    clockBand: { startLocalHour: 2, windowHours: 6 },
+    clockCount: 6,
+  },
+  ...over,
+});
+
+const emptyStomach = (over: Partial<EmptyStomachTimingFinding> = {}): EmptyStomachTimingFinding => ({
+  type: 'empty_stomach_timing',
+  priorityClass: 'insight',
+  symptomType: 'vomit',
+  longCount: 7,
+  eligibleCount: 12,
+  bandCounts: { rapid: 2, mid: 3, long: 7 },
+  totalEpisodes: 15,
+  longGapHours: 6,
+  lastTwoEligibleLong: true,
+  medianHoursSinceFeeding: 9,
+  feedingFormsInEvidence: [],
+  clockBand: { startLocalHour: 2, windowHours: 6 },
+  clockCount: 6,
+  windowDays: 60,
   ...over,
 });
 
@@ -417,6 +460,100 @@ describe('InsightCard — SR-5 reflection density + trial adjacency (§3.3 / §3
   });
 });
 
+// ── CUL-12 (Signals v2) — the A2 timing card, dark behind signals_v2 ─────────────
+// The A2 card rides its OWN flag (signals_v2, not signal_design_v2 — spec §0 D6). The
+// load-bearing invariant is the same FR-FLAG-2 / G10 one: with the flag OFF, a
+// timing_story / empty_stomach_timing cache row renders NOTHING (byte-identical to before
+// the type had a renderer — the server computes these uniformly, so a non-eligible cache
+// DOES carry them). Flag-ON draws the three-band face + the A2 expand.
+describe('InsightCard — CUL-12 A2 timing card flag gating (signals_v2)', () => {
+  it('renders NOTHING for a story type when the flag is off — both types, and even with designV2 on', () => {
+    for (const finding of [timingStory(), emptyStomach()]) {
+      const c = anyCached(finding, 'Her vomiting keeps two kinds of time.');
+      // signals_v2 defaults false → null (the whole card, no stray rail/divider).
+      expect(render(<InsightCard cached={c} petName="Nyx" />).toJSON()).toBeNull();
+      // designV2 is a DIFFERENT flag — it does not turn the A2 card on.
+      expect(render(<InsightCard cached={c} petName="Nyx" designV2 />).toJSON()).toBeNull();
+    }
+  });
+
+  it('draws the three-band face (each count printed — S2), badge + sample, when the flag is on', () => {
+    const c = anyCached(timingStory(), 'Her vomiting keeps two kinds of time.');
+    const view = render(<InsightCard cached={c} petName="Nyx" signalsV2 />);
+    expect(view.queryByText('Her vomiting keeps two kinds of time.')).toBeTruthy();
+    // The three time-ordered bands, labelled.
+    expect(view.queryByText('Within 30 min of eating')).toBeTruthy();
+    expect(view.queryByText('In between')).toBeTruthy();
+    expect(view.queryByText('6h+ since eating')).toBeTruthy();
+    // The meta row: badge + honest-denominator sample.
+    expect(view.queryByText('Timing pattern')).toBeTruthy();
+    expect(view.queryByText('20 timed of 26 episodes · 60 days')).toBeTruthy();
+  });
+
+  it('renders the A2 card on signals_v2 ALONE — it does not require signal_design_v2', () => {
+    const c = anyCached(timingStory());
+    // designV2 omitted (false), signalsV2 on → the card still fully renders.
+    expect(render(<InsightCard cached={c} petName="Nyx" signalsV2 />).queryByText('Timing pattern')).toBeTruthy();
+  });
+
+  it("folds the three-band compare into the card's OWN a11y label (the strip Views are decorative)", () => {
+    const finding = timingStory();
+    const c = anyCached(finding, 'Her vomiting keeps two kinds of time.');
+    const label = stackedCompareA11yLabel(timingStoryBandRows(finding));
+    // Off → the label is just the sentence (no card at all, in fact).
+    expect(render(<InsightCard cached={c} petName="Nyx" />).queryByLabelText(label, { exact: false })).toBeNull();
+    // On → the compare sentence is contained in the composite card label.
+    expect(render(<InsightCard cached={c} petName="Nyx" signalsV2 />).queryByLabelText(label, { exact: false })).toBeTruthy();
+  });
+
+  it('the expand draws the lanes, the control side, and the for-your-vet relay', () => {
+    const c = anyCached(timingStory());
+    const view = render(<InsightCard cached={c} petName="Nyx" signalsV2 />);
+    fireEvent.press(view.getByRole('button'));
+    // The two per-phenotype lanes.
+    expect(view.queryByText('When they happen')).toBeTruthy();
+    expect(view.queryByText('After eating')).toBeTruthy();
+    expect(view.queryByText('By clock')).toBeTruthy();
+    // The honest un-timeable remainder (S2).
+    expect(view.queryByText('The other side of it')).toBeTruthy();
+    expect(view.queryByText("6 episodes weren't near any logged meal — we can't time those.")).toBeTruthy();
+    // The for-your-vet relay (descriptors, never labels).
+    expect(view.queryByText('For your vet')).toBeTruthy();
+  });
+
+  it('the expand renders the §5.4 med line + the L3 photo lines when the payload carries them', () => {
+    const c = anyCached(
+      timingStory({
+        medContext: { drugLabel: 'Metronidazole', doseCount: 4 },
+        photoComposition: { retainedFood: { count: 3, denominator: 5 }, hair: { count: 2, denominator: 6 } },
+      }),
+    );
+    const view = render(<InsightCard cached={c} petName="Nyx" signalsV2 />);
+    fireEvent.press(view.getByRole('button'));
+    expect(view.queryByText('During an active Metronidazole course — 4 doses logged.')).toBeTruthy();
+    expect(view.queryByText('What the photos showed')).toBeTruthy();
+    expect(view.queryByText('Recognizable food 6h+ after eating: 3 of 5 photos we could read.')).toBeTruthy();
+    expect(view.queryByText('Hair: 2 of 6 photos we could read.')).toBeTruthy();
+  });
+
+  it('a lone empty-stomach card renders its own face + expand (no rapid phenotype)', () => {
+    const c = anyCached(emptyStomach(), '7 of the 12 episodes we could time came 6 or more hours after eating.');
+    const view = render(<InsightCard cached={c} petName="Nyx" signalsV2 />);
+    expect(view.queryByText('Timing pattern')).toBeTruthy();
+    expect(view.queryByText('12 timed of 15 episodes · 60 days')).toBeTruthy();
+    fireEvent.press(view.getByRole('button'));
+    expect(view.queryByText('By clock')).toBeTruthy();
+  });
+
+  it('a story card with no clock band draws the meal lane but no clock lane', () => {
+    const noClock = emptyStomach({ clockBand: undefined, clockCount: undefined });
+    const view = render(<InsightCard cached={anyCached(noClock)} petName="Nyx" signalsV2 />);
+    fireEvent.press(view.getByRole('button'));
+    expect(view.queryByText('After eating')).toBeTruthy();
+    expect(view.queryByText('By clock')).toBeNull();
+  });
+});
+
 describe('InsightCard — G10: the renderer registry safely ignores an unknown finding type', () => {
   // The precondition for every Signals v2 server lane's "no deploy" merge
   // (docs/nyx-signals-v2-requirements.md §5 / G10 — the B-182 lesson): `generate-signal`
@@ -427,8 +564,9 @@ describe('InsightCard — G10: the renderer registry safely ignores an unknown f
   // crash the whole Signal surface. This pins that contract: a refactor that drops the
   // guard, makes an unknown type throw, or reaches a copy helper before the guard fails CI.
   const unknownFinding = {
-    // A real Signals v2 composed type (§2 L1) this client build has no renderer for yet.
-    type: 'timing_story',
+    // A real Signals v2 lane (§2 L4, CUL-14) this client build has no renderer for yet —
+    // timing_story is now rendered (CUL-12), so this uses the still-unrendered gap lane.
+    type: 'gap_shortening',
     priorityClass: 'insight',
   } as unknown as CachedFinding['finding'];
 

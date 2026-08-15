@@ -21,6 +21,7 @@ import {
   buildingHeadlineLead,
   buildingIntro,
   coverageCopy,
+  isTimingStory,
   noPatternIntro,
   staleIntro,
 } from '../../lib/signalCopy';
@@ -71,6 +72,18 @@ export function SignalZone({ trialRunning = false }: SignalZoneProps = {}) {
   const eligible = useAllowlistFlag('signal_design_v2');
   const optedIn = useBetaOptIn('signal_design_v2');
   const designV2 = eligible && optedIn;
+
+  // Signals v2 (B-755 / CUL-12) — the A2 timing-story cards ride their OWN flag `signals_v2`
+  // (not signal_design_v2 — spec §0 D6: this track changes WHAT the engine says, not just how
+  // cards render, so a separate kill-switch + GA call). Same two-gate resolution (eligible &&
+  // optedIn — never conflated); fail-closed to nothing for everyone else. Both hooks are called
+  // unconditionally (Rules of Hooks — no short-circuit), then combined, mirroring designV2 above.
+  // Threaded to InsightCard, which renders a timing_story / empty_stomach_timing finding only
+  // when it is on (and nothing for those types when off — byte-identical). The beta-shelf opt-in
+  // row is PR 10; until then this is dark for everyone (optedIn is false with no shelf to flip).
+  const signalsV2Eligible = useAllowlistFlag('signals_v2');
+  const signalsV2OptedIn = useBetaOptIn('signals_v2');
+  const signalsV2 = signalsV2Eligible && signalsV2OptedIn;
 
   // While the first cache read is in flight, hold the warm building state rather
   // than letting the empty findings flash 'stale' for a frame.
@@ -137,7 +150,13 @@ export function SignalZone({ trialRunning = false }: SignalZoneProps = {}) {
       {showAck ? <AckLine petName={petName} /> : null}
 
       {state === 'live' ? (
-        <LiveStack findings={findings} petName={petName} designV2={designV2} trialRunning={trialRunning} />
+        <LiveStack
+          findings={findings}
+          petName={petName}
+          designV2={designV2}
+          signalsV2={signalsV2}
+          trialRunning={trialRunning}
+        />
       ) : state === 'stale' ? (
         <Text style={styles.intro}>{staleIntro(petName)}</Text>
       ) : state === 'no_pattern' ? (
@@ -225,14 +244,27 @@ function LiveStack({
   findings,
   petName,
   designV2,
+  signalsV2,
   trialRunning,
 }: {
   findings: CachedFinding[];
   petName: string;
   designV2: boolean;
+  signalsV2: boolean;
   trialRunning: boolean;
 }) {
-  const ordered = [...findings].sort((a, b) => a.rank - b.rank);
+  // Drop the Signals-v2 timing-story types when the flag is off: the server computes them
+  // uniformly for every account (spec §5), so a non-eligible cache DOES carry them, and the
+  // client gate is what keeps them dark. Filtering HERE (not just relying on InsightCard's
+  // null) keeps the divider rhythm and the lead/compact indexing correct — a null card would
+  // otherwise leave a stray divider and shift the true first row off `isLead`. A no-op until
+  // the PR-10 redeploy (no cache carries these types before then), so the shipped surface is
+  // byte-identical. NOTE: displayState/hasUnseen upstream still count the full set (a
+  // non-eligible account whose ONLY findings are story types would read 'live' with an empty
+  // stack) — an accepted edge until PR 10's flag-off QA, where the full-surface gate is set.
+  const ordered = [...findings]
+    .filter((f) => signalsV2 || !isTimingStory(f.finding))
+    .sort((a, b) => a.rank - b.rank);
   return (
     <View>
       {ordered.map((f, i) => (
@@ -241,12 +273,14 @@ function LiveStack({
           {/* SR-3 register (§5.1) — the lead (rank 0) keeps the enlarged canvas; secondary
               rows compress into a tighter rhythm. Gated on the flag: off, `compact` is
               false and every row renders the shipped padding. SR-5 (§3.4) threads
-              trialRunning for the falling reflection's mid-trial adjacency line. */}
+              trialRunning for the falling reflection's mid-trial adjacency line. CUL-12
+              threads signalsV2 for the A2 timing-story cards (its own flag — spec §0 D6). */}
           <InsightCard
             cached={f}
             petName={petName}
             isLead={i === 0}
             designV2={designV2}
+            signalsV2={signalsV2}
             compact={designV2 && i > 0}
             trialRunning={trialRunning}
           />

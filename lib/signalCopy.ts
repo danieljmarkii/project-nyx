@@ -17,11 +17,13 @@ import type {
   CachedFinding,
   CorrelationFinding,
   CoverageDiagnostic,
+  EmptyStomachTimingFinding,
   IncidentCategory,
   IncidentFlagKind,
   IncidentRedFlagFinding,
   IntakeDeclineFinding,
   MedOnBoardContext,
+  PhotoComposition,
   PostprandialTimingFinding,
   ReflectionDensity,
   ReflectionFinding,
@@ -31,6 +33,7 @@ import type {
   SymptomChronicityFinding,
   SymptomWorseningFinding,
   TimeOfDayClusteringFinding,
+  TimingStoryFinding,
 } from './signal';
 import { localDayIndex, localDayIndexOf, trialDayCounter } from './utils';
 
@@ -42,6 +45,18 @@ type TimingFinding = PostprandialTimingFinding | TimeOfDayClusteringFinding;
  *  concrete types. */
 export function isTimingFinding(finding: SignalFinding): finding is TimingFinding {
   return finding.type === 'postprandial_timing' || finding.type === 'timeofday_clustering';
+}
+
+// The two Signals-v2 timing-story types (CUL-12) — the A2 combined card and its lone
+// empty-stomach sibling. Distinct from isTimingFinding above: those (⑤/⑥) render the
+// shipped SR-1 receipt; these render the dedicated A2 face + expand (three-band compare,
+// per-phenotype lanes, L3 composition), gated on `signals_v2`. Kept separate so the
+// SR-1 (signal_design_v2) path is untouched.
+type TimingStoryLike = TimingStoryFinding | EmptyStomachTimingFinding;
+
+/** True for the A2 timing card and its lone empty-stomach sibling (CUL-12). */
+export function isTimingStory(finding: SignalFinding): finding is TimingStoryLike {
+  return finding.type === 'timing_story' || finding.type === 'empty_stomach_timing';
 }
 
 export type DisplayState = 'building' | 'no_pattern' | 'stale' | 'live';
@@ -409,6 +424,11 @@ export function sampleLine(finding: SignalFinding): string {
     // The honest denominator: clustered over the episodes we could place on the clock.
     return `${finding.clusterCount} of ${count(finding.eligibleCount, 'timed episode', 'timed episodes')} ${localHourBand(finding.clusterStartLocalHour, finding.clusterWindowHours)}`;
   }
+  if (finding.type === 'empty_stomach_timing' || finding.type === 'timing_story') {
+    // The A2 timing card's meta sample (CUL-12). TimingStoryBody renders this via
+    // timingStorySampleLine directly; this branch keeps sampleLine total over the union.
+    return timingStorySampleLine(finding);
+  }
   if (finding.trigger === 'refused_normal_food') {
     return finding.ratedMealsConsidered > 0
       ? `Compared with ${count(finding.ratedMealsConsidered, 'recent meal', 'recent meals')}`
@@ -514,7 +534,9 @@ export function medContextOf(finding: SignalFinding): MedOnBoardContext | undefi
   if (
     finding.type === 'food_symptom_correlation' ||
     finding.type === 'postprandial_timing' ||
-    finding.type === 'timeofday_clustering'
+    finding.type === 'timeofday_clustering' ||
+    finding.type === 'empty_stomach_timing' ||
+    finding.type === 'timing_story'
   ) {
     return finding.medContext;
   }
@@ -664,6 +686,33 @@ export function evidenceText(finding: SignalFinding, petName: string): string {
       `logs, not a diagnosis — worth mentioning to your vet.`
     );
   }
+  if (finding.type === 'empty_stomach_timing') {
+    // Tap-to-expand evidence (L1, CUL-7/CUL-12): the honest denominator + the actual observed
+    // long-gap timing (the median hours). TIMING ONLY — the band, never the syndrome ('empty
+    // stomach'/'bilious' — MECHANISM_RE), never a food/cause, never a feeding-schedule
+    // suggestion (G3). Never inverted: a below-floor result never reached here.
+    const symptom = SYMPTOM_LABEL[finding.symptomType];
+    return (
+      `Of ${petName}'s ${count(finding.totalEpisodes, 'episode', 'episodes')} of ${symptom} in the last ` +
+      `${finding.windowDays} days, ${finding.eligibleCount} could be timed against a recent meal — and ` +
+      `${finding.longCount} of those came ${finding.longGapHours} or more hours after eating (typically about ` +
+      `${finding.medianHoursSinceFeeding} hours). This is a timing pattern in your logs, not a diagnosis — ` +
+      `worth mentioning to your vet.`
+    );
+  }
+  if (finding.type === 'timing_story') {
+    // Tap-to-expand evidence (the A2 combined card, CUL-12): both phenotypes count-anchored
+    // over the ONE shared eligible denominator. TIMING ONLY, same guardrail class as its parts
+    // — no syndrome, no food/cause, no management advice.
+    const symptom = SYMPTOM_LABEL[finding.symptomType];
+    return (
+      `Of ${petName}'s ${count(finding.totalEpisodes, 'episode', 'episodes')} of ${symptom} in the last ` +
+      `${finding.windowDays} days, ${finding.eligibleCount} could be timed against a recent meal. ` +
+      `${finding.rapid.count} came within ${finding.rapidWindowMinutes} minutes of eating; ${finding.long.count} ` +
+      `came ${finding.longGapHours} or more hours after. This is a timing pattern in your logs, not a diagnosis ` +
+      `— worth mentioning to your vet.`
+    );
+  }
   if (finding.type === 'timeofday_clustering') {
     // Tap-to-expand evidence (§4): the honest denominator ("of N total, M had a clear time")
     // + the clock band in plain words. Timing ONLY — no cause/mechanism (§4.5). The IANA zone
@@ -798,8 +847,10 @@ export interface LaneBand {
 export interface DotLaneModel {
   dots: LaneDot[];
   bands: LaneBand[];
-  /** Exactly three evenly-spaced axis words under the lane (§4 "minimal axis words"). */
-  axis: [string, string, string];
+  /** Evenly-spaced axis words under the lane (§4 "minimal axis words"). The ⑤/⑥ lanes use
+   *  three; the A2 combined lane uses four (`ate · 30m · 2h · 6h+`). A 3-tuple is a valid
+   *  string[], so relaxing this from a fixed tuple is backward-compatible with dotLaneModel. */
+  axis: string[];
 }
 
 function clampCount(n: number, max: number): number {
@@ -1087,6 +1138,161 @@ export function dotLaneA11yLabel(finding: TimingFinding): string {
 export function stackedCompareA11yLabel(rows: CompareRow[]): string {
   return rows.map((r) => `${r.label}, ${r.count}`).join('; ') + '.';
 }
+
+// ══ The A2 combined timing card (Signals v2 / B-755 / CUL-12, D1) ══════════════
+// The timing_story card (both phenotypes) and the lone empty_stomach_timing card share
+// this face + expand: a THREE-band Shape-C compare (≤30m / in between / 6h+, every count
+// printed — S2, never a numerator-only visual), and an expand carrying per-phenotype dot
+// lanes, the early-morning clock lane, the honest un-timeable remainder, the §5.4 med
+// line, the L3 photographed-content lines, and a plain for-your-vet relay. Every string
+// here is TIMING-ONLY: it names the band, never the syndrome ('empty stomach'/'bilious'
+// are the vet's inference — the server bars them with MECHANISM_RE, and these hand-
+// written strings stay clean by the same rule), never a food/form, never a cause, never a
+// management suggestion (G1/G3). A below-floor phenotype is a small count in a band, never
+// an inverted "no empty-stomach vomiting" claim (G2 — the counts are two-sided).
+
+/** The A2 card's badge — a plain category tag, sibling to the correlation 'Early pattern'. */
+export const TIMING_STORY_BADGE = 'Timing pattern';
+
+// Normalized reads of the fields that sit in different places on the two shapes:
+// timing_story nests the long/clock evidence under `.long`; empty_stomach_timing carries
+// it at the top level. One accessor set so nothing downstream branches on the type again.
+function longCountOf(f: TimingStoryLike): number {
+  return f.type === 'timing_story' ? f.long.count : f.longCount;
+}
+function clockOf(
+  f: TimingStoryLike,
+): { band?: { startLocalHour: number; windowHours: number }; count?: number } {
+  return f.type === 'timing_story'
+    ? { band: f.long.clockBand, count: f.long.clockCount }
+    : { band: f.clockBand, count: f.clockCount };
+}
+// ⑤'s config is a fixed 30 min; timing_story carries it, empty_stomach_timing doesn't (its
+// meal lane treats the rapid boundary as a schematic axis tick, never a highlighted band).
+function rapidBoundaryMinutes(f: TimingStoryLike): number {
+  return f.type === 'timing_story' ? f.rapidWindowMinutes : 30;
+}
+
+/** The A2 meta sample line: "{eligible} timed of {total} episodes · {window} days" (the
+ *  mock's meta row) — the honest denominator up front: how many of all the episodes could
+ *  be placed against a meal at all. */
+export function timingStorySampleLine(f: TimingStoryLike): string {
+  return `${f.eligibleCount} timed of ${count(f.totalEpisodes, 'episode', 'episodes')} · ${f.windowDays} days`;
+}
+
+/** The A2 face — the three-band Shape-C compare over the shared eligible denominator, each
+ *  count printed (S2). TIME-ORDERED (§4.1): ≤rapid / in between / ≥long. The two phenotype
+ *  ends wear the pattern hue (concern); the middle is muted — the shape says "two kinds of
+ *  time", which is the finding. */
+export function timingStoryBandRows(f: TimingStoryLike): [CompareRow, CompareRow, CompareRow] {
+  const mins = rapidBoundaryMinutes(f);
+  return [
+    { label: `Within ${mins} min of eating`, count: f.bandCounts.rapid, tone: 'concern' },
+    { label: 'In between', count: f.bandCounts.mid, tone: 'muted' },
+    { label: `${f.longGapHours}h+ since eating`, count: f.bandCounts.long, tone: 'concern' },
+  ];
+}
+
+// The meal-relative lane's three zones as [start,end] fractions. Equal-ish thirds with the
+// two phenotype ends as the highlightable bands; the middle is the in-between gap. The
+// positions are schematic (the payload carries band COUNTS, not per-episode times), so the
+// zones are legibility-sized, not time-proportional — the axis words label them.
+const MEAL_LANE_ZONES = {
+  rapid: { start: 0, end: 0.3 },
+  mid: { start: 0.3, end: 0.7 },
+  long: { start: 0.7, end: 1 },
+} as const;
+
+/** The A2 meal-relative dot lane (Shape A) — every timed-eligible episode placed in its
+ *  band on an `ate · 30m · 2h · 6h+` axis. For the combined story BOTH phenotype bands
+ *  (rapid + long) are highlighted; a lone empty-stomach card highlights only the long band
+ *  (its rapid dots ride pale — present, but not this card's pattern). Positions are the
+ *  honest even-spread WITHIN each zone (the dotLaneModel discipline — the split and the
+ *  count are the facts, not a per-episode offset the payload can't back). */
+export function timingStoryMealLaneModel(f: TimingStoryLike): DotLaneModel {
+  const rapidIn = f.type === 'timing_story'; // a lone empty-stomach card's rapid band is not the pattern
+  const zones: { zone: LaneBand; n: number; inWindow: boolean }[] = [
+    { zone: MEAL_LANE_ZONES.rapid, n: f.bandCounts.rapid, inWindow: rapidIn },
+    { zone: MEAL_LANE_ZONES.mid, n: f.bandCounts.mid, inWindow: false },
+    { zone: MEAL_LANE_ZONES.long, n: f.bandCounts.long, inWindow: true },
+  ];
+  const dots: LaneDot[] = zones
+    .flatMap(({ zone, n, inWindow }) =>
+      spreadInIntervals([zone], clampCount(n, f.eligibleCount)).map((pos) => ({ pos, inWindow })),
+    )
+    .sort((a, b) => a.pos - b.pos);
+  const bands: LaneBand[] = rapidIn
+    ? [MEAL_LANE_ZONES.rapid, MEAL_LANE_ZONES.long]
+    : [MEAL_LANE_ZONES.long];
+  return { dots, bands, axis: ['ate', `${rapidBoundaryMinutes(f)}m`, '2h', `${f.longGapHours}h+`] };
+}
+
+/** The A2 early-morning clock lane (Shape A) — the LONG episodes placed by time of day,
+ *  the concentration band highlighted (§2 L1: no separate clock card; the 2–8am fact is the
+ *  empty-stomach card's evidence). Null when the finding carries no clock band (no valid
+ *  timezone was available — never guessed, §4.2). */
+export function timingStoryClockLaneModel(f: TimingStoryLike): DotLaneModel | null {
+  const { band, count: inBand } = clockOf(f);
+  if (!band || inBand == null) return null;
+  const total = longCountOf(f);
+  const bands = timeOfDayBands(band.startLocalHour, band.windowHours);
+  const inCount = clampCount(inBand, total);
+  const outCount = Math.max(0, clampCount(total, total) - inCount);
+  const dots: LaneDot[] = [
+    ...spreadInIntervals(bands, inCount).map((pos) => ({ pos, inWindow: true })),
+    ...spreadInIntervals(complementIntervals(bands), outCount).map((pos) => ({ pos, inWindow: false })),
+  ].sort((a, b) => a.pos - b.pos);
+  return { dots, bands, axis: ['12am', '6am', '12pm', '6pm'] };
+}
+
+/** The honest un-timeable remainder (S2) — episodes we couldn't place against a meal at
+ *  all. Null when every in-window episode was timeable (nothing to disclose). */
+export function timingStoryControlDisclosure(f: TimingStoryLike): string | null {
+  const untimed = Math.max(0, f.totalEpisodes - f.eligibleCount);
+  if (untimed <= 0) return null;
+  return `${count(untimed, 'episode', 'episodes')} ${untimed === 1 ? "wasn't" : "weren't"} near any logged meal — we can't time those.`;
+}
+
+/** L3 photographed-content lines (CUL-9 §2 L3) — present-only descriptors, each over its
+ *  OWN "reads that answered" denominator. Every line is a plain sighting count; NONE
+ *  reassures — a field is present only when its count ≥ 1, so "0 of N" is structurally
+ *  impossible (G4, and most of all for hair: frequent hairballs are themselves a disease
+ *  marker). No mechanism word, no determination — the descriptor travels, the label never
+ *  does (the vet reads it). Empty when the finding carries no photo composition. */
+export function photoCompositionLines(f: TimingStoryLike): string[] {
+  const pc: PhotoComposition | undefined = f.photoComposition;
+  if (!pc) return [];
+  const reads = (n: number) => count(n, 'photo we could read', 'photos we could read');
+  const lines: string[] = [];
+  // Retained food is the LONG-band marker — food still recognizable long after eating is
+  // the notable fact, so the line names the band it belongs to.
+  if (pc.retainedFood) {
+    lines.push(`Recognizable food ${f.longGapHours}h+ after eating: ${pc.retainedFood.count} of ${reads(pc.retainedFood.denominator)}.`);
+  }
+  if (pc.hair) lines.push(`Hair: ${pc.hair.count} of ${reads(pc.hair.denominator)}.`);
+  if (pc.bile) lines.push(`Bile: ${pc.bile.count} of ${reads(pc.bile.denominator)}.`);
+  return lines;
+}
+
+/** The for-your-vet relay (§4.1 — descriptors, never labels): one plain sentence the owner
+ *  can say to the vet. Names the timing descriptors + the early-morning clustering + photo
+ *  attachment; NO mechanism word, NO syndrome — the timing itself is the useful detail. */
+export function timingStoryVetLine(f: TimingStoryLike): string {
+  const longN = longCountOf(f);
+  const { band, count: inBand } = clockOf(f);
+  const photoTail = f.photoComposition ? ', and photos are attached to some of these' : '';
+  if (band && inBand != null) {
+    return `${inBand} of the ${longN} ${longN === 1 ? 'episode' : 'episodes'} that came ${f.longGapHours}h+ after eating fell ${localHourBand(band.startLocalHour, band.windowHours)} — the timing itself is the useful detail to mention${photoTail}.`;
+  }
+  return `${count(longN, 'episode', 'episodes')} came ${f.longGapHours}h+ after eating — the timing itself is the useful detail to mention${photoTail}.`;
+}
+
+// The A2 card's OWN accessibilityLabel folds the three-band compare (the face receipt) via
+// stackedCompareA11yLabel(timingStoryBandRows(...)), exactly as the ⑤/⑥ card folds its
+// dot-lane sentence — the receipt Views are decorative (swallowed by the outer Pressable, per
+// the InsightCard idiom). The expand's lanes carry no separate a11y label for the same reason
+// the shipped SR-1 expand receipts don't: they sit inside that same Pressable, so their meaning
+// rides the readable expand Text (control/vet/L3), never a swallowed self-label.
 
 // ── The safety phone-call script (§4 / §9) ────────────────────────────────────
 // "Scripts convert, sirens don't" (session doc §1): the safety tap-through carries the

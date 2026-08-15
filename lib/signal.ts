@@ -32,7 +32,13 @@ export type InsightType =
   | 'symptom_chronicity'
   | 'postprandial_timing'
   | 'timeofday_clustering'
-  | 'incident_red_flag';
+  | 'incident_red_flag'
+  // Signals v2 (B-755) — the decomposed timing lanes. `empty_stomach_timing` is L1's lone
+  // card (CUL-7); `timing_story` is the merged ⑤+L1 A2 card (CUL-12). Both render only behind
+  // `signals_v2` (client-render gate); a build with `signals_v2` off renders nothing for them,
+  // byte-identical to before this type existed (the G10 unknown-type contract).
+  | 'empty_stomach_timing'
+  | 'timing_story';
 export type PriorityClass = 'safety' | 'insight';
 export type EvidenceTier = 'early' | 'established';
 export type SignalSymptomType = 'vomit' | 'diarrhea' | 'itch' | 'scratch' | 'skin_reaction';
@@ -267,6 +273,120 @@ export interface TimeOfDayClusteringFinding {
   medContext?: MedOnBoardContext;
 }
 
+// ── L3 photo-record composition (Signals v2 / B-755 / CUL-9 §2 L3) ────────────
+// Additive photographed-content EVIDENCE decorated onto a vomit timing finding
+// POST-detection (never a finding type, never a fire gate). PRESENT-ONLY by
+// construction: a field is attached ONLY when its `count` ≥ 1, so a zero is
+// SILENCE, never "0 of N" — hair especially never reassures (G4). Each field's
+// `denominator` is "reads that answered this question" (yes|no), never the raw
+// episode count. Mirror of detection.ts PhotoComposition / PhotoCompositionField
+// (rendered fields); OPTIONAL on the finding for the cache-tolerance reason the
+// medContext block above documents (an old cached row carries neither).
+export interface PhotoCompositionField {
+  /** Photographed-and-analyzed episodes whose completed read AFFIRMS the marker (`yes`). ≥1 when present. */
+  count: number;
+  /** Reads that returned a definite yes OR no on this marker. Always ≥ count, ≥1 when the field is present. */
+  denominator: number;
+}
+export interface PhotoComposition {
+  /** Recognizable/partially-digested food in the LONG band (empty_stomach_timing / timing_story only). */
+  retainedFood?: PhotoCompositionField;
+  /** Hair in the completed vomit reads. NEVER reassures (G4) — present-only, regex-screened in copy. */
+  hair?: PhotoCompositionField;
+  /** Bile in the completed vomit reads (the authoritative bile field, migration 013). */
+  bile?: PhotoCompositionField;
+}
+
+// Empty-stomach timing (L1, Signals v2 / B-755 / CUL-7 — the ⑤ mirror). The LONE
+// empty-stomach card: of the vomiting episodes we could time, how many happened
+// ≥ `longGapHours` (6h — §0 D10) after the last feeding. ASSOCIATIONAL/anamnesis
+// ONLY, exactly like ⑤: owner copy names the TIMING BAND, never the syndrome
+// ('empty stomach'/'bilious' are the vet's inference — MECHANISM_RE), never a
+// food/form, never a feeding-schedule suggestion (G3). A below-floor result is
+// SILENCE, never inverted. Mirror of detection.ts EmptyStomachTimingFinding
+// (rendered fields); the server-only `associationalOnly` / `longEpisodeOnsets`
+// markers are omitted (the ⑤/⑥ mirror convention — carry only what renders).
+// Renders only behind `signals_v2` (CUL-12); no confidence tag (it shows its
+// sample size). Ranks with the timing lane.
+export interface EmptyStomachTimingFinding {
+  type: 'empty_stomach_timing';
+  priorityClass: 'insight';
+  symptomType: SignalSymptomType;
+  /** Eligible episodes ≥ longGapHours after the last feeding (the numerator). */
+  longCount: number;
+  /** The honest denominator: timed-eligible episodes (the SAME set ⑤ counts). */
+  eligibleCount: number;
+  /** The three-band split over the eligible denominator (rapid ≤30m / mid / long ≥6h) — the A2 face. */
+  bandCounts: { rapid: number; mid: number; long: number };
+  /** All in-window vomit episodes (any confidence) — "of N total, M could be timed". */
+  totalEpisodes: number;
+  /** The empty-stomach band boundary in HOURS (6; feline gastric-emptying anchor, §0 D10). */
+  longGapHours: number;
+  /** The two most-recent eligible episodes are both long — powers recency salience. */
+  lastTwoEligibleLong: boolean;
+  /** Median HOURS-since-feeding across the long episodes — the actual observed timing (evidence). */
+  medianHoursSinceFeeding: number;
+  /** Forms of the feedings before the long episodes — vet-report parity ONLY, never the claim (§9.1). */
+  feedingFormsInEvidence: string[];
+  /** Clock concentration of the LONG episodes (evidence — the 2–8am fact renders in the expand). Absent
+   *  when no valid timezone was available; NEVER a fire gate. Paired with clockCount or both absent. */
+  clockBand?: { startLocalHour: number; windowHours: number };
+  /** Count of long episodes in `clockBand` (of `longCount`). */
+  clockCount?: number;
+  /** The analysis window in days (bounds the denominator to the pet's current era). */
+  windowDays: number;
+  /** SR-4 (§5.4) — medication on board in the context window; absent otherwise (old cache / no course). */
+  medContext?: MedOnBoardContext;
+  /** L3 (CUL-9 §2 L3) — photographed-content evidence; absent otherwise (old cache / no photos). */
+  photoComposition?: PhotoComposition;
+}
+
+// The combined timing card (A2 — Signals v2 / B-755 / CUL-7 / CUL-12, D1). A
+// COMPOSITION-ONLY finding: emitted server-side when BOTH ⑤ (postprandial) AND L1
+// (empty-stomach) fire for the SAME symptom, so one card face carries both
+// phenotypes rather than two cards saying overlapping things. A lone ⑤ stays
+// `postprandial_timing`; a lone L1 stays `empty_stomach_timing`. Same guardrail
+// class as its parts: timing only, no syndrome name, no food-naming, no advice.
+// Mirror of detection.ts TimingStoryFinding (rendered fields). Renders only behind
+// `signals_v2` (CUL-12).
+export interface TimingStoryFinding {
+  type: 'timing_story';
+  priorityClass: 'insight';
+  symptomType: SignalSymptomType;
+  /** The three-band split over the shared eligible denominator (the A2 Shape-C compare face). */
+  bandCounts: { rapid: number; mid: number; long: number };
+  /** The honest shared denominator: timed-eligible episodes (⑤ and L1 measure the identical set). */
+  eligibleCount: number;
+  /** All in-window vomit episodes (any confidence) — "of N total, M could be timed". */
+  totalEpisodes: number;
+  /** The rapid bucket boundary in minutes (30; from ⑤'s config). */
+  rapidWindowMinutes: number;
+  /** The empty-stomach band boundary in hours (6; from L1's config). */
+  longGapHours: number;
+  /** The analysis window in days (⑤ and L1 share it). */
+  windowDays: number;
+  /** ⑤'s phenotype evidence — always present in a timing_story (the merge only fires when ⑤ did). */
+  rapid: {
+    count: number;
+    medianMinutesSinceFeeding: number;
+    lastTwoEligible: boolean;
+    feedingFormsInEvidence: string[];
+  };
+  /** L1's phenotype evidence — always present in a timing_story (the merge only fires when L1 did). */
+  long: {
+    count: number;
+    medianHoursSinceFeeding: number;
+    lastTwoEligible: boolean;
+    feedingFormsInEvidence: string[];
+    clockBand?: { startLocalHour: number; windowHours: number };
+    clockCount?: number;
+  };
+  /** SR-4 (§5.4) — medication on board in the context window; absent otherwise (old cache / no course). */
+  medContext?: MedOnBoardContext;
+  /** L3 (CUL-9 §2 L3) — photographed-content evidence; absent otherwise (old cache / no photos). */
+  photoComposition?: PhotoComposition;
+}
+
 export type SignalFinding =
   | CorrelationFinding
   | IncidentRedFlagFinding
@@ -275,7 +395,9 @@ export type SignalFinding =
   | SymptomWorseningFinding
   | SymptomChronicityFinding
   | PostprandialTimingFinding
-  | TimeOfDayClusteringFinding;
+  | TimeOfDayClusteringFinding
+  | EmptyStomachTimingFinding
+  | TimingStoryFinding;
 
 export interface CachedFinding {
   rank: number;
