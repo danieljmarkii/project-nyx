@@ -26,6 +26,7 @@ import {
   deriveIncidentFlags,
   detectSignals,
   detectCoverage,
+  stripInternalOnsets,
   doseToMedicationWindow,
   rankCoverageDiagnostics,
   rankFindings,
@@ -63,6 +64,7 @@ import {
   type MealTypeCollapseDiagnostic,
   type HumanFoodProvenance,
 } from './detection.ts'
+import { computePhotoComposition, type PhotoAnalysisInput } from './photoComposition.ts'
 
 // ── Fixture helpers ───────────────────────────────────────────────────────────
 
@@ -4808,11 +4810,11 @@ Deno.test('computeReflectionDensity — symptom events count toward density too 
   assert.equal(d.currentLoggingDays, 3, 'two symptom-days + one meal-day = three logged days')
 })
 
-// SR-4 (§11) — the "no detection/ranking/threshold delta" guarantee, asserted on the diff:
-// the DETECTORS return pure findings; the additive `density` / `medContext` fields are
-// attached ONLY by decorateFinding (post-detection), never by the engine. If a detector
+// SR-4 (§11) + L3 (CUL-9 §7) — the "no detection/ranking/threshold delta" guarantee, asserted on the
+// diff: the DETECTORS return pure findings; the additive `density` / `medContext` / `photoComposition`
+// fields are attached ONLY by decorateFinding (post-detection), never by the engine. If a detector
 // ever started emitting them, this fails — the exact regression the AC guards against.
-Deno.test('SR-4 — detectors never emit the additive payload fields (decoration is strictly post-hoc)', () => {
+Deno.test('SR-4 + L3 — detectors never emit the additive payload fields (decoration is strictly post-hoc)', () => {
   const reflFindings = detectReflections(
     input({
       symptomEvents: [
@@ -4835,4 +4837,87 @@ Deno.test('SR-4 — detectors never emit the additive payload fields (decoration
   )
   assert.ok(corrFindings.length >= 1, 'the correlation setup yields a finding')
   for (const f of corrFindings) assert.equal('medContext' in f, false, 'the correlation detector adds no medContext')
+
+  // L3 (CUL-9): the vomit timing detectors emit NO photoComposition — it is decorateFinding's alone.
+  const ppFindings = detectPostprandialTiming(input(ppGolden()))
+  assert.equal(ppFindings.length, 1)
+  assert.equal('photoComposition' in ppFindings[0], false, 'the postprandial detector adds no photoComposition')
+  const esFindings = detectEmptyStomachTiming(
+    input({
+      symptomEvents: [
+        midVomit(17),
+        longVomit(18), longVomit(19), longVomit(20), longVomit(21), longVomit(22), longVomit(23), longVomit(24),
+      ],
+      mealEvents: twiceDailyMeals(10, 27),
+      timezone: NY,
+    }),
+  )
+  assert.equal(esFindings.length, 1)
+  assert.equal('photoComposition' in esFindings[0], false, 'the empty-stomach detector adds no photoComposition')
+})
+
+// L3 (CUL-9) — the PIPELINE SEAM the adversarial review found dead. On the LONE empty-stomach card
+// (L1 fires, no ⑤, so no timing_story merge), retained food must still render — it is the phenotype
+// L3 exists for. It broke because stripInternalOnsets used to delete `longEpisodeOnsets` INSIDE
+// detectSignals, before the shell's L3 join could read them; the fix moves the strip to index.ts
+// after decoration, so the onsets survive detectSignals's return. This test crosses the exact seam
+// (detectSignals → computePhotoComposition → stripInternalOnsets) that index.ts runs — the unit tests
+// hand-build findings with onsets and so bypassed it.
+Deno.test('L3 seam — retained food renders on the LONE empty_stomach card (onsets survive detectSignals for the join, then strip)', () => {
+  const ranked = detectSignals(
+    input({
+      symptomEvents: [
+        midVomit(17),
+        longVomit(18), longVomit(19), longVomit(20), longVomit(21), longVomit(22), longVomit(23), longVomit(24),
+      ],
+      mealEvents: twiceDailyMeals(10, 27),
+      timezone: NY,
+    }),
+  )
+  const es = ranked.map((r) => r.finding).find((f) => f.type === 'empty_stomach_timing')
+  assert.ok(es && es.type === 'empty_stomach_timing', 'a lone empty_stomach_timing card fires (no ⑤ merge)')
+  // The fix: the onsets SURVIVE detectSignals so the shell's L3 join can read them.
+  assert.ok(
+    es.longEpisodeOnsets && es.longEpisodeOnsets.length >= 2,
+    'longEpisodeOnsets survive detectSignals for L3 (they used to be stripped here)',
+  )
+
+  // Photograph two of the long episodes with recognizable food, at their exact onsets.
+  const [o1, o2] = es.longEpisodeOnsets!
+  const analyses: PhotoAnalysisInput[] = [
+    { occurredMs: o1, status: 'completed', incidentType: 'vomit', contents: ['partially_digested_food'], bilePresent: 'no' },
+    { occurredMs: o2, status: 'completed', incidentType: 'vomit', contents: ['undigested_food'], bilePresent: 'no' },
+  ]
+  const pc = computePhotoComposition(es, analyses, NOW_MS)
+  assert.ok(pc?.retainedFood, 'retained food renders on the lone empty_stomach card (the bug: it was dead in prod)')
+  assert.equal(pc!.retainedFood!.count, 2, 'both photographed long episodes show food')
+  assert.equal(pc!.retainedFood!.denominator, 2)
+
+  // …and the strip (index.ts's final decoration step) still removes the onsets so they never cache.
+  const stripped = stripInternalOnsets([es])[0]
+  assert.equal('longEpisodeOnsets' in stripped, false, 'the onsets are stripped before the phrasing/cache/HTTP layer')
+})
+
+// L3 (CUL-9) — the pair-hazard: composeTimingStory copies L1's onsets onto a merged card's `long`
+// block for the join, and the base-type strip branches never see a timing_story, so those onsets
+// would ride to the cache uncaught. stripInternalOnsets must reach into `long` and remove them —
+// without mutating the input.
+Deno.test('stripInternalOnsets (CUL-9) — strips a merged timing_story\'s long.longEpisodeOnsets, immutably', () => {
+  const story: TimingStoryFinding = {
+    type: 'timing_story',
+    priorityClass: 'insight',
+    symptomType: 'vomit',
+    bandCounts: { rapid: 2, mid: 2, long: 4 },
+    eligibleCount: 8,
+    totalEpisodes: 10,
+    rapidWindowMinutes: 30,
+    longGapHours: 6,
+    windowDays: 60,
+    rapid: { count: 2, medianMinutesSinceFeeding: 15, lastTwoEligible: false, feedingFormsInEvidence: [] },
+    long: { count: 4, medianHoursSinceFeeding: 9, lastTwoEligible: true, feedingFormsInEvidence: [], longEpisodeOnsets: [111, 222] },
+    associationalOnly: true,
+  }
+  const stripped = stripInternalOnsets([story])[0] as TimingStoryFinding
+  assert.equal('longEpisodeOnsets' in stripped.long, false, 'the merged story\'s long onsets are stripped')
+  assert.deepEqual(story.long.longEpisodeOnsets, [111, 222], 'the input is not mutated (the strip clones `long`)')
 })
