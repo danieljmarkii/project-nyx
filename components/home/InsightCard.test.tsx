@@ -609,9 +609,12 @@ describe('InsightCard — G10: the renderer registry safely ignores an unknown f
   // crash the whole Signal surface. This pins that contract: a refactor that drops the
   // guard, makes an unknown type throw, or reaches a copy helper before the guard fails CI.
   const unknownFinding = {
-    // A real Signals v2 lane (§2 L4, CUL-14) this client build has no renderer for yet —
-    // timing_story is now rendered (CUL-12), so this uses the still-unrendered gap lane.
-    type: 'gap_shortening',
+    // A synthetic type with no registered renderer — deliberately NOT a real lane name. The
+    // G10 contract under test is "registry lookup fails → null", not any particular name, so a
+    // sentinel keeps this pinned no matter which real lanes gain client renderers (timing_story
+    // did in CUL-12; gap_shortening is a real server type as of CUL-10 and gets its watching row
+    // later). A real name here would break this test the day that lane starts rendering.
+    type: '__unrendered_future_lane__',
     priorityClass: 'insight',
   } as unknown as CachedFinding['finding'];
 

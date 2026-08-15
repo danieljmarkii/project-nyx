@@ -25,6 +25,7 @@ import {
   templateEmptyStomachTiming,
   templateTimingStory,
   templateTrialResponse,
+  templateGapShortening,
   templateTimeOfDayClustering,
   templateIncidentRedFlag,
   clockHourLabel,
@@ -51,6 +52,7 @@ import type {
   EmptyStomachTimingFinding,
   TimingStoryFinding,
   TrialResponseFinding,
+  GapShorteningFinding,
   TimeOfDayClusteringFinding,
   IncidentRedFlagFinding,
   IncidentFlagKind,
@@ -220,6 +222,20 @@ const trialResponse = (over: Partial<TrialResponseFinding> = {}): TrialResponseF
   densityComparable: true,
   associationalOnly: true,
   trialWindowDays: 29,
+  ...over,
+})
+
+const gapShortening = (over: Partial<GapShorteningFinding> = {}): GapShorteningFinding => ({
+  type: 'gap_shortening',
+  priorityClass: 'insight',
+  symptomType: 'vomit',
+  recentGapsHours: [20 * 24, 12 * 24, 6 * 24, 3 * 24],
+  medianGapHours: 9 * 24,
+  latestGapHours: 3 * 24,
+  gapCount: 4,
+  episodeCount: 5,
+  lastOnsetIso: '2026-08-15T11:00:00.000Z',
+  associationalOnly: true,
   ...over,
 })
 
@@ -974,6 +990,63 @@ Deno.test('validatePhrasing — a bare, honest count comparison PASSES on a tria
   )
 })
 
+// ── templateGapShortening (L4 — the sub-floor gap-shortening lane, Signals v2 / CUL-10) ─────
+//
+// The D2 mock's form: state the recent inter-episode gaps as PLAIN COUNTS in time order and let the
+// numbers speak. Escalate-only, so no reassuring "settling"; no verdict ("worsening"), no cause, no
+// mechanism, no food. A watching row, so the closer is understated.
+
+Deno.test('templateGapShortening — plain count sequence, uniform DAYS compressed like the D2 mock', () => {
+  const t = templateGapShortening(gapShortening(), 'Nyx')
+  // "6 days, then 3, then 2" style: unit stated once when uniform.
+  assert.ok(/gaps between vomiting episodes/i.test(t), 'names the symptom + gaps')
+  assert.ok(/20 days, then 12, then 6, then 3/.test(t), `uniform-day compression: "${t}"`)
+  assert.equal(t.includes('!'), false)
+  assert.ok(validatePhrasing(t, gapShortening()), 'own template passes its own validation')
+})
+
+Deno.test('templateGapShortening — sub-day gaps render as HOURS (never a dishonest "0 days")', () => {
+  // A run crossing the day/hour boundary: 3d → 2d → 18h → 9h. Each unit stated when the run is mixed.
+  const t = templateGapShortening(
+    gapShortening({ recentGapsHours: [3 * 24, 2 * 24, 18, 9], medianGapHours: 2 * 24, latestGapHours: 9 }),
+    'Nyx',
+  )
+  assert.ok(/18 hours/.test(t), `carries the hour unit: "${t}"`)
+  assert.ok(/9 hours/.test(t))
+  assert.equal(/\b0 days?\b/.test(t), false, 'never rounds a sub-day gap to "0 days"')
+  assert.ok(validatePhrasing(t, gapShortening()))
+})
+
+Deno.test('templateGapShortening — the loose-stool label reads plainly (nyx-voice), still guardrail-clean', () => {
+  const t = templateGapShortening(gapShortening({ symptomType: 'diarrhea' }), 'Nyx')
+  assert.ok(/loose stool episodes/i.test(t), 'the enum "diarrhea" never surfaces')
+  assert.ok(validatePhrasing(t, gapShortening({ symptomType: 'diarrhea' })))
+})
+
+Deno.test('templateGapShortening — NEVER a verdict/reassurance/cause (escalate-only copy)', () => {
+  const t = templateGapShortening(gapShortening(), 'Nyx')
+  // The escalate-only lane must never label the trend "worsening" nor reassure it is "settling".
+  assert.equal(/\b(worse|worsen\w*|worsening|deteriorat\w*|getting worse)\b/i.test(t), false)
+  assert.equal(/\b(settl\w*|improv\w*|better|calming|easing)\b/i.test(t), false)
+  assert.equal(REASSURE.test(t), false)
+  assert.equal(CAUSAL.test(t), false)
+  assert.equal(FOOD.test(t), false)
+})
+
+Deno.test('validatePhrasing — rejects a VERDICT / cause / reassurance injected onto a gap_shortening finding', () => {
+  const f = gapShortening()
+  for (const bad of [
+    'The gaps between vomiting episodes are getting worse — 20 days, then 12, then 6, then 3.', // verdict
+    'Her vomiting is worsening: 20 days, then 12, then 6, then 3 days.', // verdict
+    'The gaps are shortening because of the new food.', // cause
+    'The shorter gaps are likely due to a chicken intolerance.', // cause + food
+    'Good news — the pattern is settling and she seems fine now.', // reassurance (escalate-only forbids)
+    'This is improving now that the gaps are closing.', // reassurance/verdict
+  ]) {
+    assert.equal(validatePhrasing(bad, f), false, `gap_shortening should reject: ${bad}`)
+  }
+})
+
 // ── templateTimeOfDayClustering (⑥ — descriptive clock clustering, B-079) ─────────
 
 Deno.test('clockHourLabel — plain 12-hour labels across the day, incl. midnight/noon and wrap', () => {
@@ -1230,7 +1303,7 @@ Deno.test('hasBannedSignalVocabulary — catches direction glyphs, arrows, "slop
 
 Deno.test('validatePhrasing — rejects a direction glyph or a percentage on EVERY finding type', () => {
   const findings: Finding[] = [
-    correlation(), intakeDecline(), reflection(), worsening(), chronicity(), postprandial(), emptyStomach(), timingStory(), timeofday(), incidentRedFlag(),
+    correlation(), intakeDecline(), reflection(), worsening(), chronicity(), postprandial(), emptyStomach(), timingStory(), trialResponse(), gapShortening(), timeofday(), incidentRedFlag(),
   ]
   for (const f of findings) {
     assert.equal(validatePhrasing('Symptoms are ↑ this week for the pet.', f), false, `${f.type}: glyph rejected`)
@@ -1267,7 +1340,9 @@ Deno.test('every template — no banned glyph/percentage vocabulary, any type (f
     reflection({ direction: 'flat' }), reflection({ direction: 'improving' }),
     worsening({ tier: 'firm', trigger: 'more_days' }), chronicity(),
     postprandial(), emptyStomach(), emptyStomach({ lastTwoEligibleLong: false }),
-    timingStory(), timeofday(), incidentRedFlag(), incidentRedFlag({ flags: ['blood', 'foreign_material'] }),
+    timingStory(), trialResponse(), gapShortening(),
+    gapShortening({ symptomType: 'diarrhea', recentGapsHours: [72, 48, 18, 9], medianGapHours: 48, latestGapHours: 9 }),
+    timeofday(), incidentRedFlag(), incidentRedFlag({ flags: ['blood', 'foreign_material'] }),
   ]
   for (const f of findings) {
     const t = templateForFinding(f, 'Nyx')

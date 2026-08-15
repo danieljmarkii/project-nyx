@@ -147,6 +147,10 @@ async function phraseFinding(finding: Finding, petName: string, phrasingEnabled 
     // deterministically (never the LLM) so the model can never slide into a verdict ("working"/
     // "improving") the phrasing contract forbids. The template is guardrail-clean by construction.
     finding.type === 'trial_response' ||
+    // Signals v2 (CUL-10) — the gap-shortening lane is a plain count of inter-episode gaps; phrased
+    // deterministically (never the LLM) so the model can never add a verdict ("worsening") or a
+    // reassuring "settling" to what is, by construction, an escalate-only observation. Template-clean.
+    finding.type === 'gap_shortening' ||
     finding.type === 'timeofday_clustering' ||
     // B-340 — a SAFETY finding naming what a photo VISIBLY showed, routed to the vet. Template-only
     // (no LLM) is itself a structural never-reassure guarantee, matching the other safety templates.
