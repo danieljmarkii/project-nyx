@@ -47,6 +47,13 @@ const input = (over: Partial<DetectionInput> = {}): DetectionInput => ({
   ...over,
 })
 
+// B-777 — the Signals v2 lanes + timing-lane composition run ONLY for a `signals_v2`-eligible account;
+// detectSignals gates them behind its third arg, which defaults to false (fail-closed). The tests
+// below that exercise the FLAG-ON path call through this helper (eligible=true); every OTHER bare
+// detectSignals(input(...)) call in this file keeps the default and thereby asserts the flag-OFF,
+// byte-identical output for the shipped detectors (spec §5 "byte-identical off"; B-777).
+const detectSignalsEligible = (i: DetectionInput) => detectSignals(i, DEFAULT_CONFIG, true)
+
 /** Onsets ending `endHoursAgo` before now, walking BACKWARD by the given gaps (oldest gap first).
  *  So `gapsDays=[20,12,6,3]` places 5 episodes whose consecutive gaps are 20d, 12d, 6d, 3d and whose
  *  LAST episode is `endHoursAgo` before now. Default 1h so the recency guard passes. */
@@ -225,7 +232,7 @@ Deno.test('detectGapShortening — an unparseable `now` ⇒ silent', () => {
 Deno.test('detectGapShortening — flows through detectSignals and ranks BELOW everything else (the quietest band)', () => {
   // detectSignals returns RankedFinding[] (already ranked). Force a co-present louder finding by adding
   // an unrelated symptom stream so we can assert gap_shortening ranks last.
-  const ranked = detectSignals(input({ symptomEvents: eventsAt(onsetsFromGapDays([20, 12, 6, 3])) }))
+  const ranked = detectSignalsEligible(input({ symptomEvents: eventsAt(onsetsFromGapDays([20, 12, 6, 3])) }))
   const gap = ranked.find((r) => r.finding.type === 'gap_shortening')
   assert.ok(gap, 'gap_shortening present in detectSignals output')
   // Every other finding (if any) outranks it (lower rank number = higher priority).
@@ -236,6 +243,17 @@ Deno.test('detectGapShortening — flows through detectSignals and ranks BELOW e
   const findings = [gap!.finding]
   const reRanked = rankFindings(findings, cat)
   assert.equal(reRanked[0].finding.type, 'gap_shortening')
+})
+
+Deno.test('detectGapShortening — B-777 flag-off: the lane is gated off (byte-identical to the deployed engine)', () => {
+  // The SAME shortening-run fixture. Flag-ON emits gap_shortening (escalate-only). Flag-OFF the lane is
+  // never emitted, so a non-eligible account's Signal carries no v2 finding — the redeploy adds nothing.
+  const events = eventsAt(onsetsFromGapDays([20, 12, 6, 3]))
+  const on = detectSignalsEligible(input({ symptomEvents: events }))
+  assert.ok(on.some((r) => r.finding.type === 'gap_shortening'), 'flag-ON emits gap_shortening')
+
+  const off = detectSignals(input({ symptomEvents: events })) // eligible defaults false
+  assert.ok(!off.some((r) => r.finding.type === 'gap_shortening'), 'flag-OFF emits no gap_shortening')
 })
 
 Deno.test('detectGapShortening — the golden fires and phrases GUARDRAIL-CLEAN (template + validatePhrasing)', () => {
