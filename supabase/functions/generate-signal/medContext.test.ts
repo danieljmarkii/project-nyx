@@ -16,6 +16,7 @@ import type {
   ReflectionFinding,
   PostprandialTimingFinding,
   TimeOfDayClusteringFinding,
+  TrialResponseFinding,
   IntakeDeclineFinding,
   SymptomWorseningFinding,
   SymptomChronicityFinding,
@@ -80,6 +81,29 @@ const postprandial = (over: Partial<PostprandialTimingFinding> = {}): Postprandi
   feedingFormsInEvidence: ['dry treat'],
   associationalOnly: true,
   windowDays: 60,
+  ...over,
+})
+
+const trialResponse = (over: Partial<TrialResponseFinding> = {}): TrialResponseFinding => ({
+  type: 'trial_response',
+  priorityClass: 'insight',
+  trialDayNumber: 29,
+  targetDurationDays: 84,
+  trialLoggedDays: 27,
+  baselineLoggedDays: 44,
+  baselineWindowDays: 49,
+  pooledTrialCount: 1,
+  pooledBaselineCount: 12,
+  rapid: { trial: 0, baseline: 4 },
+  long: { trial: 0, baseline: 5 },
+  rapidWindowMinutes: 30,
+  longGapHours: 6,
+  treatShare: { trial: 0.1, baseline: 0.3 },
+  mealsPerDay: { trial: 1, baseline: 1 },
+  comparisonDirection: 'fewer_during_trial',
+  densityComparable: true,
+  associationalOnly: true,
+  trialWindowDays: 29,
   ...over,
 })
 
@@ -251,8 +275,10 @@ Deno.test('decorateFinding — a reflection with null density is returned unchan
   assert.equal('density' in out, false, 'absent, not undefined — byte-identical to pre-SR-4')
 })
 
-Deno.test('decorateFinding — correlation + timing findings get medContext, never density', () => {
-  for (const f of [correlation(), postprandial(), timeofday()]) {
+Deno.test('decorateFinding — correlation + timing + trial-response findings get medContext, never density', () => {
+  // CUL-8: the trial-response lane carries a med-on-board line too — a drug on board during the trial
+  // is exactly the concurrent confound the three-things-changed honesty cares about (§5.4, context-as-fact).
+  for (const f of [correlation(), postprandial(), timeofday(), trialResponse()]) {
     const out = decorateFinding(f, DENSITY, MED) as CorrelationFinding
     assert.deepEqual(out.medContext, MED, `${f.type} carries the med context`)
     assert.equal('density' in out, false, `${f.type} never carries density`)

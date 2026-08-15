@@ -24,6 +24,7 @@ import {
   templatePostprandialTiming,
   templateEmptyStomachTiming,
   templateTimingStory,
+  templateTrialResponse,
   templateTimeOfDayClustering,
   templateIncidentRedFlag,
   clockHourLabel,
@@ -49,6 +50,7 @@ import type {
   PostprandialTimingFinding,
   EmptyStomachTimingFinding,
   TimingStoryFinding,
+  TrialResponseFinding,
   TimeOfDayClusteringFinding,
   IncidentRedFlagFinding,
   IncidentFlagKind,
@@ -195,6 +197,29 @@ const timingStory = (over: Partial<TimingStoryFinding> = {}): TimingStoryFinding
     clockCount: 4,
   },
   associationalOnly: true,
+  ...over,
+})
+
+const trialResponse = (over: Partial<TrialResponseFinding> = {}): TrialResponseFinding => ({
+  type: 'trial_response',
+  priorityClass: 'insight',
+  trialDayNumber: 29,
+  targetDurationDays: 84,
+  trialLoggedDays: 27,
+  baselineLoggedDays: 44,
+  baselineWindowDays: 49,
+  pooledTrialCount: 1,
+  pooledBaselineCount: 12,
+  rapid: { trial: 0, baseline: 4 },
+  long: { trial: 0, baseline: 5 },
+  rapidWindowMinutes: 30,
+  longGapHours: 6,
+  treatShare: { trial: 0.1, baseline: 0.3 },
+  mealsPerDay: { trial: 1, baseline: 1 },
+  comparisonDirection: 'fewer_during_trial',
+  densityComparable: true,
+  associationalOnly: true,
+  trialWindowDays: 29,
   ...over,
 })
 
@@ -879,6 +904,76 @@ Deno.test('validatePhrasing — rejects the SYNDROME name on an empty-stomach / 
   }
 })
 
+// ── templateTrialResponse (L2 — the trial-response wedge, Signals v2 / CUL-8) ─────
+//
+// The phrasing contract Dr. Chen ratifies: COUNT-ANCHORED, TIME-ORDERED, NEVER VERDICTED. The one-line
+// server sentence states both pooled counts in time order and routes to the vet — no "working"/
+// "helping"/"improvement"/"ruled out"/"clean", no cause, no food name, no assessment-point verdict.
+
+Deno.test('templateTrialResponse — count-anchored + time-ordered, verdict-free, points to the vet', () => {
+  const t = templateTrialResponse(
+    trialResponse({ pooledTrialCount: 1, pooledBaselineCount: 12, trialDayNumber: 29, baselineWindowDays: 49 }),
+    'Nyx',
+  )
+  assert.ok(/\b1 episode of vomiting\b/.test(t), 'the trial-era count, singular, names vomiting')
+  assert.ok(/\b12\b/.test(t), 'the baseline count')
+  assert.ok(/29 days since the trial began/.test(t), 'time-ordered on the trial day-count')
+  assert.ok(/before it/.test(t), 'the baseline sits earlier in time')
+  assert.ok(/vet/.test(t), 'points to the vet')
+  assert.equal(t.includes('!'), false)
+  // NEVER a verdict: none of the banned vocabulary, in either direction.
+  assert.equal(/\b(working|helping|improvement|improving|better|worse|ruled out|clean|resolved|effective)\b/i.test(t), false)
+  assert.equal(REASSURE.test(t), false)
+  assert.equal(CAUSAL.test(t), false)
+  assert.equal(FOOD.test(t), false)
+  assert.ok(validatePhrasing(t, trialResponse()), 'own template passes its own validation')
+})
+
+Deno.test('templateTrialResponse — pluralizes the trial-era count + never says "day 1 days"', () => {
+  const many = templateTrialResponse(trialResponse({ pooledTrialCount: 5 }), 'Nyx')
+  assert.ok(/\b5 episodes of vomiting\b/.test(many), 'plural for >1')
+  // A zero-count trial (the wedge's cleanest case) still reads grammatically.
+  const zero = templateTrialResponse(trialResponse({ pooledTrialCount: 0 }), 'Nyx')
+  assert.ok(/\b0 episodes of vomiting\b/.test(zero))
+  assert.ok(validatePhrasing(zero, trialResponse({ pooledTrialCount: 0 })))
+})
+
+Deno.test('templateTrialResponse — the MORE direction is still verdict-free (no "worse"/"worsening")', () => {
+  const t = templateTrialResponse(
+    trialResponse({ comparisonDirection: 'more_during_trial', pooledTrialCount: 12, pooledBaselineCount: 1, densityComparable: false }),
+    'Nyx',
+  )
+  // Direction-neutral copy: the reader sees 12 > 1; the sentence never labels it.
+  assert.equal(/\b(worse|worsening|worsened|deteriorat)/i.test(t), false)
+  assert.ok(validatePhrasing(t, trialResponse({ comparisonDirection: 'more_during_trial' })))
+})
+
+Deno.test('validatePhrasing — rejects a VERDICT on the trial (the model may not say the trial is "working"/"clean"/"ruled out")', () => {
+  const f = trialResponse()
+  for (const bad of [
+    'The trial is clearly working — far fewer episodes now.',
+    'This elimination diet is helping and things are improving.',
+    "We've ruled out a food sensitivity based on the drop.",
+    'Her record looks clean during the trial.',
+    'She is much better and on the mend since the diet started.',
+    'The new food caused the improvement.', // cause + verdict
+    'Chicken is clearly the culprit that resolved on the trial diet.', // food + verdict
+    'She seems fine now that the trial started.', // reassurance
+  ]) {
+    assert.equal(validatePhrasing(bad, f), false, `trial_response should reject: ${bad}`)
+  }
+})
+
+Deno.test('validatePhrasing — a bare, honest count comparison PASSES on a trial_response finding', () => {
+  const f = trialResponse()
+  assert.ok(
+    validatePhrasing(
+      "We've logged 1 episode of vomiting for Nyx in the 29 days since the trial began, compared with 12 across the 7 weeks before it — worth reviewing with your vet.",
+      f,
+    ),
+  )
+})
+
 // ── templateTimeOfDayClustering (⑥ — descriptive clock clustering, B-079) ─────────
 
 Deno.test('clockHourLabel — plain 12-hour labels across the day, incl. midnight/noon and wrap', () => {
@@ -1020,6 +1115,7 @@ Deno.test('templateForFinding — dispatches by type', () => {
   assert.ok(/word with your vet/i.test(templateForFinding(worsening(), 'Nyx')))
   assert.ok(/keeps recurring over weeks/i.test(templateForFinding(chronicity(), 'Nyx')))
   assert.ok(/we could time/.test(templateForFinding(postprandial(), 'Nyx')))
+  assert.ok(/since the trial began/.test(templateForFinding(trialResponse(), 'Nyx')))
   assert.ok(/between 4am and 8am/.test(templateForFinding(timeofday(), 'Nyx')))
   assert.ok(/call to your vet/i.test(templateForFinding(incidentRedFlag(), 'Nyx')))
 })

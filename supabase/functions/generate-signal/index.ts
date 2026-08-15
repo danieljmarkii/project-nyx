@@ -143,6 +143,10 @@ async function phraseFinding(finding: Finding, petName: string, phrasingEnabled 
     // 'bilious' mechanism the template forbids).
     finding.type === 'empty_stomach_timing' ||
     finding.type === 'timing_story' ||
+    // Signals v2 (CUL-8) — the trial-response lane is a count-anchored comparison; phrased
+    // deterministically (never the LLM) so the model can never slide into a verdict ("working"/
+    // "improving") the phrasing contract forbids. The template is guardrail-clean by construction.
+    finding.type === 'trial_response' ||
     finding.type === 'timeofday_clustering' ||
     // B-340 — a SAFETY finding naming what a photo VISIBLY showed, routed to the vet. Template-only
     // (no LLM) is itself a structural never-reassure guarantee, matching the other safety templates.
@@ -937,6 +941,16 @@ const handler = async (req: Request): Promise<Response> => {
       feedingArrangements,
       medicationWindows,
       incidentAnalyses,
+      // Signals v2 (CUL-8) — the active trial for the L2 trial-response lane. The SAME row
+      // `dietTrialActive` is derived from (id/started_at/target_duration_days), passed through so the
+      // lane can place its trial-era-vs-baseline windows and count "day N of M". The detector
+      // re-checks `isTrialRunning` itself (the one predicate) — passing the row when it exists, and
+      // letting the lane gate, keeps the trial-active flag and the lane on ONE definition. Absent
+      // (no active trial) ⇒ the lane is silent, byte-identical to pre-CUL-8. NO redeploy (G10):
+      // `trial_response` is inert until PR 10's gated redeploy behind the client `signals_v2` flag.
+      dietTrial: trialRow
+        ? { startedAt: trialRow.started_at, targetDurationDays: trialRow.target_duration_days }
+        : undefined,
       timezone,
       now: new Date(nowMs).toISOString(),
     }
