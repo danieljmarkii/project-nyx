@@ -155,9 +155,12 @@ export function decorateFinding(
   if (finding.type === 'reflection') {
     return density ? { ...finding, density } : finding
   }
-  // Correlation ← medContext only. A food↔symptom association carries no photo composition (photo
-  // contents describe a vomit, not the food link), so it is handled apart from the timing findings.
-  if (finding.type === 'food_symptom_correlation') {
+  // Correlation + the trial-response lane ← medContext ONLY, never photoComposition. A food↔symptom
+  // association carries no photo composition (contents describe a vomit, not the food link); the
+  // trial-response burden (CUL-8) likewise takes the med-on-board line — a drug on board during the
+  // trial is exactly the three-things-changed confound (context stated as fact, never a verdict, §5.4)
+  // — but it has no per-episode long-onset shape for the L3 retained-food join, so no photoComposition.
+  if (finding.type === 'food_symptom_correlation' || finding.type === 'trial_response') {
     return medContext ? { ...finding, medContext } : finding
   }
   // The four VOMIT TIMING findings ← medContext (SR-4 §5.4) + photoComposition (L3, CUL-9). Both are

@@ -24,6 +24,8 @@ import {
   templatePostprandialTiming,
   templateEmptyStomachTiming,
   templateTimingStory,
+  templateTrialResponse,
+  templateGapShortening,
   templateTimeOfDayClustering,
   templateIncidentRedFlag,
   clockHourLabel,
@@ -49,6 +51,8 @@ import type {
   PostprandialTimingFinding,
   EmptyStomachTimingFinding,
   TimingStoryFinding,
+  TrialResponseFinding,
+  GapShorteningFinding,
   TimeOfDayClusteringFinding,
   IncidentRedFlagFinding,
   IncidentFlagKind,
@@ -194,6 +198,43 @@ const timingStory = (over: Partial<TimingStoryFinding> = {}): TimingStoryFinding
     clockBand: { startLocalHour: 4, windowHours: 4 },
     clockCount: 4,
   },
+  associationalOnly: true,
+  ...over,
+})
+
+const trialResponse = (over: Partial<TrialResponseFinding> = {}): TrialResponseFinding => ({
+  type: 'trial_response',
+  priorityClass: 'insight',
+  trialDayNumber: 29,
+  targetDurationDays: 84,
+  trialLoggedDays: 27,
+  baselineLoggedDays: 44,
+  baselineWindowDays: 49,
+  pooledTrialCount: 1,
+  pooledBaselineCount: 12,
+  rapid: { trial: 0, baseline: 4 },
+  long: { trial: 0, baseline: 5 },
+  rapidWindowMinutes: 30,
+  longGapHours: 6,
+  treatShare: { trial: 0.1, baseline: 0.3 },
+  mealsPerDay: { trial: 1, baseline: 1 },
+  comparisonDirection: 'fewer_during_trial',
+  densityComparable: true,
+  associationalOnly: true,
+  trialWindowDays: 29,
+  ...over,
+})
+
+const gapShortening = (over: Partial<GapShorteningFinding> = {}): GapShorteningFinding => ({
+  type: 'gap_shortening',
+  priorityClass: 'insight',
+  symptomType: 'vomit',
+  recentGapsHours: [20 * 24, 12 * 24, 6 * 24, 3 * 24],
+  medianGapHours: 9 * 24,
+  latestGapHours: 3 * 24,
+  gapCount: 4,
+  episodeCount: 5,
+  lastOnsetIso: '2026-08-15T11:00:00.000Z',
   associationalOnly: true,
   ...over,
 })
@@ -879,6 +920,133 @@ Deno.test('validatePhrasing — rejects the SYNDROME name on an empty-stomach / 
   }
 })
 
+// ── templateTrialResponse (L2 — the trial-response wedge, Signals v2 / CUL-8) ─────
+//
+// The phrasing contract Dr. Chen ratifies: COUNT-ANCHORED, TIME-ORDERED, NEVER VERDICTED. The one-line
+// server sentence states both pooled counts in time order and routes to the vet — no "working"/
+// "helping"/"improvement"/"ruled out"/"clean", no cause, no food name, no assessment-point verdict.
+
+Deno.test('templateTrialResponse — count-anchored + time-ordered, verdict-free, points to the vet', () => {
+  const t = templateTrialResponse(
+    trialResponse({ pooledTrialCount: 1, pooledBaselineCount: 12, trialDayNumber: 29, baselineWindowDays: 49 }),
+    'Nyx',
+  )
+  assert.ok(/\b1 episode of vomiting\b/.test(t), 'the trial-era count, singular, names vomiting')
+  assert.ok(/\b12\b/.test(t), 'the baseline count')
+  assert.ok(/29 days since the trial began/.test(t), 'time-ordered on the trial day-count')
+  assert.ok(/before it/.test(t), 'the baseline sits earlier in time')
+  assert.ok(/vet/.test(t), 'points to the vet')
+  assert.equal(t.includes('!'), false)
+  // NEVER a verdict: none of the banned vocabulary, in either direction.
+  assert.equal(/\b(working|helping|improvement|improving|better|worse|ruled out|clean|resolved|effective)\b/i.test(t), false)
+  assert.equal(REASSURE.test(t), false)
+  assert.equal(CAUSAL.test(t), false)
+  assert.equal(FOOD.test(t), false)
+  assert.ok(validatePhrasing(t, trialResponse()), 'own template passes its own validation')
+})
+
+Deno.test('templateTrialResponse — pluralizes the trial-era count + never says "day 1 days"', () => {
+  const many = templateTrialResponse(trialResponse({ pooledTrialCount: 5 }), 'Nyx')
+  assert.ok(/\b5 episodes of vomiting\b/.test(many), 'plural for >1')
+  // A zero-count trial (the wedge's cleanest case) still reads grammatically.
+  const zero = templateTrialResponse(trialResponse({ pooledTrialCount: 0 }), 'Nyx')
+  assert.ok(/\b0 episodes of vomiting\b/.test(zero))
+  assert.ok(validatePhrasing(zero, trialResponse({ pooledTrialCount: 0 })))
+})
+
+Deno.test('templateTrialResponse — the MORE direction is still verdict-free (no "worse"/"worsening")', () => {
+  const t = templateTrialResponse(
+    trialResponse({ comparisonDirection: 'more_during_trial', pooledTrialCount: 12, pooledBaselineCount: 1, densityComparable: false }),
+    'Nyx',
+  )
+  // Direction-neutral copy: the reader sees 12 > 1; the sentence never labels it.
+  assert.equal(/\b(worse|worsening|worsened|deteriorat)/i.test(t), false)
+  assert.ok(validatePhrasing(t, trialResponse({ comparisonDirection: 'more_during_trial' })))
+})
+
+Deno.test('validatePhrasing — rejects a VERDICT on the trial (the model may not say the trial is "working"/"clean"/"ruled out")', () => {
+  const f = trialResponse()
+  for (const bad of [
+    'The trial is clearly working — far fewer episodes now.',
+    'This elimination diet is helping and things are improving.',
+    "We've ruled out a food sensitivity based on the drop.",
+    'Her record looks clean during the trial.',
+    'She is much better and on the mend since the diet started.',
+    'The new food caused the improvement.', // cause + verdict
+    'Chicken is clearly the culprit that resolved on the trial diet.', // food + verdict
+    'She seems fine now that the trial started.', // reassurance
+  ]) {
+    assert.equal(validatePhrasing(bad, f), false, `trial_response should reject: ${bad}`)
+  }
+})
+
+Deno.test('validatePhrasing — a bare, honest count comparison PASSES on a trial_response finding', () => {
+  const f = trialResponse()
+  assert.ok(
+    validatePhrasing(
+      "We've logged 1 episode of vomiting for Nyx in the 29 days since the trial began, compared with 12 across the 7 weeks before it — worth reviewing with your vet.",
+      f,
+    ),
+  )
+})
+
+// ── templateGapShortening (L4 — the sub-floor gap-shortening lane, Signals v2 / CUL-10) ─────
+//
+// The D2 mock's form: state the recent inter-episode gaps as PLAIN COUNTS in time order and let the
+// numbers speak. Escalate-only, so no reassuring "settling"; no verdict ("worsening"), no cause, no
+// mechanism, no food. A watching row, so the closer is understated.
+
+Deno.test('templateGapShortening — plain count sequence, uniform DAYS compressed like the D2 mock', () => {
+  const t = templateGapShortening(gapShortening(), 'Nyx')
+  // "6 days, then 3, then 2" style: unit stated once when uniform.
+  assert.ok(/gaps between vomiting episodes/i.test(t), 'names the symptom + gaps')
+  assert.ok(/20 days, then 12, then 6, then 3/.test(t), `uniform-day compression: "${t}"`)
+  assert.equal(t.includes('!'), false)
+  assert.ok(validatePhrasing(t, gapShortening()), 'own template passes its own validation')
+})
+
+Deno.test('templateGapShortening — sub-day gaps render as HOURS (never a dishonest "0 days")', () => {
+  // A run crossing the day/hour boundary: 3d → 2d → 18h → 9h. Each unit stated when the run is mixed.
+  const t = templateGapShortening(
+    gapShortening({ recentGapsHours: [3 * 24, 2 * 24, 18, 9], medianGapHours: 2 * 24, latestGapHours: 9 }),
+    'Nyx',
+  )
+  assert.ok(/18 hours/.test(t), `carries the hour unit: "${t}"`)
+  assert.ok(/9 hours/.test(t))
+  assert.equal(/\b0 days?\b/.test(t), false, 'never rounds a sub-day gap to "0 days"')
+  assert.ok(validatePhrasing(t, gapShortening()))
+})
+
+Deno.test('templateGapShortening — the loose-stool label reads plainly (nyx-voice), still guardrail-clean', () => {
+  const t = templateGapShortening(gapShortening({ symptomType: 'diarrhea' }), 'Nyx')
+  assert.ok(/loose stool episodes/i.test(t), 'the enum "diarrhea" never surfaces')
+  assert.ok(validatePhrasing(t, gapShortening({ symptomType: 'diarrhea' })))
+})
+
+Deno.test('templateGapShortening — NEVER a verdict/reassurance/cause (escalate-only copy)', () => {
+  const t = templateGapShortening(gapShortening(), 'Nyx')
+  // The escalate-only lane must never label the trend "worsening" nor reassure it is "settling".
+  assert.equal(/\b(worse|worsen\w*|worsening|deteriorat\w*|getting worse)\b/i.test(t), false)
+  assert.equal(/\b(settl\w*|improv\w*|better|calming|easing)\b/i.test(t), false)
+  assert.equal(REASSURE.test(t), false)
+  assert.equal(CAUSAL.test(t), false)
+  assert.equal(FOOD.test(t), false)
+})
+
+Deno.test('validatePhrasing — rejects a VERDICT / cause / reassurance injected onto a gap_shortening finding', () => {
+  const f = gapShortening()
+  for (const bad of [
+    'The gaps between vomiting episodes are getting worse — 20 days, then 12, then 6, then 3.', // verdict
+    'Her vomiting is worsening: 20 days, then 12, then 6, then 3 days.', // verdict
+    'The gaps are shortening because of the new food.', // cause
+    'The shorter gaps are likely due to a chicken intolerance.', // cause + food
+    'Good news — the pattern is settling and she seems fine now.', // reassurance (escalate-only forbids)
+    'This is improving now that the gaps are closing.', // reassurance/verdict
+  ]) {
+    assert.equal(validatePhrasing(bad, f), false, `gap_shortening should reject: ${bad}`)
+  }
+})
+
 // ── templateTimeOfDayClustering (⑥ — descriptive clock clustering, B-079) ─────────
 
 Deno.test('clockHourLabel — plain 12-hour labels across the day, incl. midnight/noon and wrap', () => {
@@ -1020,6 +1188,7 @@ Deno.test('templateForFinding — dispatches by type', () => {
   assert.ok(/word with your vet/i.test(templateForFinding(worsening(), 'Nyx')))
   assert.ok(/keeps recurring over weeks/i.test(templateForFinding(chronicity(), 'Nyx')))
   assert.ok(/we could time/.test(templateForFinding(postprandial(), 'Nyx')))
+  assert.ok(/since the trial began/.test(templateForFinding(trialResponse(), 'Nyx')))
   assert.ok(/between 4am and 8am/.test(templateForFinding(timeofday(), 'Nyx')))
   assert.ok(/call to your vet/i.test(templateForFinding(incidentRedFlag(), 'Nyx')))
 })
@@ -1134,7 +1303,7 @@ Deno.test('hasBannedSignalVocabulary — catches direction glyphs, arrows, "slop
 
 Deno.test('validatePhrasing — rejects a direction glyph or a percentage on EVERY finding type', () => {
   const findings: Finding[] = [
-    correlation(), intakeDecline(), reflection(), worsening(), chronicity(), postprandial(), emptyStomach(), timingStory(), timeofday(), incidentRedFlag(),
+    correlation(), intakeDecline(), reflection(), worsening(), chronicity(), postprandial(), emptyStomach(), timingStory(), trialResponse(), gapShortening(), timeofday(), incidentRedFlag(),
   ]
   for (const f of findings) {
     assert.equal(validatePhrasing('Symptoms are ↑ this week for the pet.', f), false, `${f.type}: glyph rejected`)
@@ -1171,7 +1340,9 @@ Deno.test('every template — no banned glyph/percentage vocabulary, any type (f
     reflection({ direction: 'flat' }), reflection({ direction: 'improving' }),
     worsening({ tier: 'firm', trigger: 'more_days' }), chronicity(),
     postprandial(), emptyStomach(), emptyStomach({ lastTwoEligibleLong: false }),
-    timingStory(), timeofday(), incidentRedFlag(), incidentRedFlag({ flags: ['blood', 'foreign_material'] }),
+    timingStory(), trialResponse(), gapShortening(),
+    gapShortening({ symptomType: 'diarrhea', recentGapsHours: [72, 48, 18, 9], medianGapHours: 48, latestGapHours: 9 }),
+    timeofday(), incidentRedFlag(), incidentRedFlag({ flags: ['blood', 'foreign_material'] }),
   ]
   for (const f of findings) {
     const t = templateForFinding(f, 'Nyx')

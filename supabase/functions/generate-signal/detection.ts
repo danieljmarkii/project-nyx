@@ -75,6 +75,22 @@ import {
   type FreeFedSpan,
   type MealTimingConfig,
 } from '../../../lib/mealTiming.ts'
+// The ONE diet-trial "is it running today" predicate (Signals v2 / CUL-8; L2 §2). Imported
+// across the function boundary exactly as `index.ts` already imports it — the B-422 effective
+// end lives in ONE module, and L2's gate is that predicate, never a re-derivation from dates
+// (spec §2 L2, G9). `localDayIndex`/`localDayIndexOf` are the same day-boundary helpers the
+// trial card counts "day N of M" with (B-421), so L2's day-count cannot drift from the card's.
+import { isTrialRunning } from '../../../lib/dietTrial.ts'
+// `trialDayCounter` is the ONE "day N of M" formula (B-449) — re-spelling `max(1, end - start + 1)`
+// here is the drift the guard test forbids elsewhere. `localDayIndex*` are the tz-aware day-boundary
+// helpers the trial card counts with (B-421); L2 windows in day-INDEX space (never `index * MS_PER_DAY`,
+// which is UTC midnight of the date — the owner's local midnight only at UTC, the B-517 inversion).
+import { localDayIndex, localDayIndexOf, trialDayCounter } from '../../../lib/utils.ts'
+// The two-window rate-contrast render-gate (Signals v2 / CUL-6; §3). L2's comparison SENTENCE
+// is licensed only when this C-test gate passes over the pooled counts (with logged-days
+// exposure) — the "counts always render; a comparison sentence only when the gate passes"
+// discipline (§2 L2). p-values never surface (§3); this returns a boolean gate + direction.
+import { rateContrast } from '../../../lib/rateContrast.ts'
 
 // ── Domain types ──────────────────────────────────────────────────────────────
 
@@ -538,8 +554,37 @@ export interface DetectionInput {
    * caller passes only rows whose analyzed event is non-soft-deleted and within the lookback.
    */
   incidentAnalyses?: IncidentAnalysisInput[]
+  /**
+   * The pet's ACTIVE diet trial (Signals v2 / CUL-8, L2) — the ONLY input the trial-response
+   * lane reads beyond events/meals. Carries just what L2 needs to place its two windows and
+   * count the day: the trial's `startedAt`, its `targetDurationDays` (the ONLY authority on
+   * length — never derived, per the diet-trial spec), and optionally `status`/`endedAt` so the
+   * one predicate `isTrialRunning` can withdraw the lane from a terminal trial. Optional —
+   * absent ⇒ `detectTrialResponse` is SILENT (byte-identical to pre-CUL-8; detectors ①–⑧ ignore
+   * this field entirely). CONTRACT: the caller passes the single active row (the same one it
+   * derives `pet.dietTrialActive` from) or omits the field; L2 re-checks `isTrialRunning` itself.
+   */
+  dietTrial?: DietTrialInput
   /** Reference "now" (ISO-8601 UTC), injected so detection is deterministic and testable. */
   now: string
+}
+
+/**
+ * The active diet trial as the trial-response lane (L2) sees it — a plain-data projection of the
+ * `diet_trials` row, carrying only the window + day-count inputs. `isTrialRunning` (the one B-422
+ * predicate) gates the lane on it, so a trial past its effective end withdraws the lane rather
+ * than comparing a stale window. `targetDurationDays` is the ONLY authority on the trial's length
+ * (the "day N of M" M); it is never derived from the elapsed days.
+ */
+export interface DietTrialInput {
+  /** 'YYYY-MM-DD' (the DATE column) or ISO — day 1 of exclusive feeding (§5.1). */
+  startedAt: string
+  /** The trial's prescribed length (the "of M" in "day N of M"). Null/absent ⇒ no target shown. */
+  targetDurationDays?: number | null
+  /** Optional; a terminal status withdraws the lane. Absent ⇒ the caller's query established active. */
+  status?: string | null
+  /** Optional owner-authored early end; honoured by `isTrialRunning` (ends the lane earlier). */
+  endedAt?: string | null
 }
 
 // ── Finding types (§4/§5) ───────────────────────────────────────────────────
@@ -558,6 +603,16 @@ export type InsightType =
   // Signals v2 changes are inert until PR 10 redeploys (G10) behind the `signals_v2` client flag.
   | 'empty_stomach_timing'
   | 'timing_story'
+  // Signals v2 (B-755 / CUL-8): the trial-response lane (L2, the wedge). A trial-era-vs-baseline
+  // count comparison over logged-days denominators — pooled symptom burden + per-phenotype vomit
+  // timing + diet-structure context. Emitted ONLY when the pooled contrast "changed materially"
+  // (§8.5 trigger, adversarial-reviewed). Dark: inert until PR 10's gated redeploy (G10).
+  | 'trial_response'
+  // Signals v2 (B-755 / CUL-10): the L4 gap-shortening lane — inter-episode gaps per symptom type,
+  // fired ONLY on a shortening run (escalate-only; lengthening renders nothing, G5). Surfaces as a
+  // QUIET watching/insight row (the D2 frame), never a full card. Dark: inert until PR 10's gated
+  // redeploy (G10) — the shipped client renders an unknown finding type as null (the PR-1 pin).
+  | 'gap_shortening'
   | 'timeofday_clustering'
   | 'incident_red_flag'
 
@@ -1157,6 +1212,144 @@ export interface TimingStoryFinding extends FindingBase {
 }
 
 /**
+ * The trial-response lane (Signals v2 / B-755 / CUL-8 — L2, the wedge). The reactive owner sent
+ * home with an elimination diet is the highest-intent user, and this lane is the record answering
+ * "what has the trial done to the symptoms?" — but ONLY ever as COUNTS the vet interprets, never a
+ * verdict (G1). Gated on `isTrialRunning` (the one B-422 predicate, never a re-derivation) and
+ * emitted ONLY when the pooled contrast "changed materially" (see `detectTrialResponse` — the §8.5
+ * trigger the client's event-driven Signal card keys off; the standing trial-card line, PR 6, shows
+ * counts regardless and reads local data).
+ *
+ * EVERYTHING is count-anchored over LOGGED-DAYS denominators (C5): a bowl refused is a day the owner
+ * kept the record, so a rate is per logged day, never per calendar day. Two windows: the trial era
+ * [start, now] and a `baselineDays` window immediately before it (candidate 49d, capped at available
+ * history by the logged-days denominator itself). NEVER verdicted: no "working"/"helping"/
+ * "improvement"/"ruled out"/"clean" — the diet-response-≠-proof rule (Guilford 2001's
+ * improved-without-relapse arm) and the three-things-changed-at-once confound (RTM) are the vet's to
+ * weigh, disclosed verbatim in the client expand (PR 6). Indication-blind: the engine cannot know GI
+ * vs dermatologic intent, so there is NEVER an assessment-point verdict — the day-count sits beside
+ * the counts and says nothing about whether it is "time to judge".
+ */
+export interface TrialResponseFinding extends FindingBase {
+  type: 'trial_response'
+  priorityClass: 'insight'
+  /**
+   * Day N of the trial (1-based; day 1 = start day, §5.1). Clamped ≥1. Rendered "day N" or, with a
+   * target, "day N of M". Computed from the SAME local-day helpers the trial card counts with
+   * (`localDayIndex`/`localDayIndexOf`, B-421), so the Signal card and the Pet-tab card can't drift.
+   */
+  trialDayNumber: number
+  /** The trial's prescribed length M ("day N of M") — `target_duration_days`, the ONLY length
+   *  authority (never the elapsed days). Null when unset ⇒ the card renders "day N", no "of M". */
+  targetDurationDays: number | null
+  /** Distinct logged days in the trial-era window (the C5 denominator for its rates). */
+  trialLoggedDays: number
+  /** Distinct logged days in the baseline window (the C5 denominator for its rates). */
+  baselineLoggedDays: number
+  /** The baseline window's requested span in days (the config `baselineDays`) — evidence/vet copy. */
+  baselineWindowDays: number
+  /** VOMIT-episode burden (re-logs collapsed) in the trial era. Vomit-only — the round-2 cross-symptom
+   *  masking fix; a derm/diarrhoea trial yields no L2 card in v1 (silence, the safe direction). */
+  pooledTrialCount: number
+  /** VOMIT-episode burden (re-logs collapsed) in the baseline window. */
+  pooledBaselineCount: number
+  /**
+   * Per-phenotype VOMIT-TIMING counts (via `lib/mealTiming`, G9), trial-era vs baseline — the A2
+   * "count rows" (D2: "Empty-stomach 0 · was 7" — count-form, always safe). `rapid` = ≤30 min after
+   * eating (post-prandial), `long` = ≥`longGapHours` after eating (empty-stomach). These are CONTEXT
+   * rows shown when the card fires; they do NOT independently trigger it (see `detectTrialResponse`).
+   */
+  rapid: { trial: number; baseline: number }
+  long: { trial: number; baseline: number }
+  /** The post-prandial band boundary in minutes (30) — the `rapid` row label. */
+  rapidWindowMinutes: number
+  /** The empty-stomach band boundary in hours (6) — the `long` row label. */
+  longGapHours: number
+  /**
+   * Diet-structure deltas (§2 L2 — "context rows"), the observable half of the three-things-changed
+   * confound (RTM): `treatShare` = treat-type feedings ÷ classifiable (meal+treat) feedings; null
+   * when nothing is classifiable. `mealsPerDay` = meal-type feedings ÷ logged days; null when the
+   * window has no logged days. Never a verdict — the vet weighs whether structure or diet mattered.
+   */
+  treatShare: { trial: number | null; baseline: number | null }
+  mealsPerDay: { trial: number | null; baseline: number | null }
+  /**
+   * The pooled comparison direction, present because the card only fires on a material pooled change:
+   * `more_during_trial` (the trial-era rate is higher — the escalation direction, always surfaced) or
+   * `fewer_during_trial` (lower — surfaced ONLY when logging density is comparable, see below). The
+   * server sentence is direction-NEUTRAL (it states both counts in time order, never "more"/"fewer" —
+   * a verdict-free form); this field is structured context for the client (PR 6).
+   */
+  comparisonDirection: 'more_during_trial' | 'fewer_during_trial'
+  /**
+   * Whether the two windows were logged with comparable INTENSITY (§3.3, the B-721 rule reused, made
+   * SYMMETRIC over logging FRACTIONS — logged days ÷ window span, not raw counts, since the windows are
+   * unequal length; see `detectTrialResponse`). It gates the fewer-during-trial direction only (a
+   * quieter-looking trial may just be a less-logged one — OR the baseline was the sparse one, which
+   * inflates its rate and mints a false fewer, the adversarial round-1 break); the more-during-trial
+   * direction is never gated (fail toward escalation). Carried so the client can disclose "we logged
+   * less often this stretch" (PR 6). Absent from any finding cached before the symmetric-gate fix.
+   */
+  densityComparable: boolean
+  /** Hard marker for the phrasing layer + reviewers: association/counts only, never causal, never a verdict. */
+  associationalOnly: true
+  /** The analysis window used for the pooled/phenotype counts, in days (trial-era span) — evidence. */
+  trialWindowDays: number
+  /** SR-4 (B-721 §5.4) — medication-on-board context, attached POST-detection (never read by the engine). */
+  medContext?: MedOnBoardContext
+}
+
+/**
+ * The gap-shortening lane (Signals v2 / B-755 / CUL-10 — L4, the sub-floor lane). Of the tools in the
+ * signals deep-dive (§3), the g-chart on inter-event gaps is the ONLY one that speaks at the
+ * 4-episodes-in-2-weeks scale (§2 F4) — where ⑤/⑥/⑦/④/③/① are all correctly silent by their own
+ * floors — so this is the lane for the sub-floor state that is every new account's first weeks by
+ * construction. It monitors the GAPS BETWEEN a symptom's episodes (3h-collapsed) and fires ONLY when
+ * they are SHORTENING (a rising episode rate): the plain, escalation-shaped statistic "the gaps between
+ * vomiting episodes have been 6 days, then 3, then 2" (the D2 mock).
+ *
+ * ESCALATE-ONLY BY CONSTRUCTION (G5): a LENGTHENING or flat sequence renders NOTHING, EVER — absence is
+ * not wellness and a widening gap is never reassurance (a pet can stop logging, or a disease can wax and
+ * wane; RTM). There is deliberately no "gaps are lengthening / settling" finding, the same structural
+ * never-reassure guarantee ⑦'s silence-on-a-settled-course makes.
+ *
+ * A QUIET WATCHING ROW, not a full card (§2 L4, D5): it surfaces as the D2 quiet insight row while
+ * real-world behavior is still being observed, ranked at the engine's LOWEST band so it only leads when
+ * nothing louder exists (which is exactly the sub-floor state it is built for). Counts always travel
+ * (`recentGapsHours` + the median) so the owner reads the actual gaps and judges — the row shows a TRUE
+ * fact about the record, never a verdict. NO attribution, NO cause, NO management advice (G1/G3).
+ */
+export interface GapShorteningFinding extends FindingBase {
+  type: 'gap_shortening'
+  priorityClass: 'insight'
+  /** Which symptom's inter-episode gaps shortened. One finding per run; at most one emitted (the
+   *  strongest shortening — see detectGapShortening), so the quiet surface stays calm. */
+  symptomType: SymptomType
+  /**
+   * The monotone-decreasing run that fired, oldest→newest, in HOURS (the raw gaps between consecutive
+   * collapsed episode onsets). Length === `runLength` (config; 4). The phrasing renders it as the D2
+   * sentence, choosing days/hours per gap ("6 days, then 3, then 2"); hours are carried (not pre-
+   * rounded to days) so a sub-day gap never renders as a dishonest "0 days".
+   */
+  recentGapsHours: number[]
+  /** The record's MEDIAN inter-episode gap (all in-window gaps of this type), in hours — the baseline
+   *  the ratio test measured against, carried as evidence for the expand ("typical gap ≈ N days"). */
+  medianGapHours: number
+  /** The latest (shortest) gap, in hours — `recentGapsHours[last]`, surfaced explicitly for the ratio
+   *  transparency (`latestGapHours ≤ gapShorteningRatio × medianGapHours` is why the lane fired). */
+  latestGapHours: number
+  /** Total inter-episode gaps in the record window (≥ runLength) — the "how much history" denominator. */
+  gapCount: number
+  /** Collapsed episodes of this symptom in the window (=== gapCount + 1) — the D2 sample denominator. */
+  episodeCount: number
+  /** ISO-8601 UTC of the most-recent episode onset (the end of the run) — powers "as recently as …"
+   *  evidence and lets a consumer see the run is current (the recency guard already enforced it). */
+  lastOnsetIso: string
+  /** Hard marker for the phrasing layer + reviewers: a descriptive count of gaps, never causal, never a verdict. */
+  associationalOnly: true
+}
+
+/**
  * Time-of-day clustering (⑥, B-079 — descriptive lane Phase 2). A purely DESCRIPTIVE
  * count: of the witnessed vomiting episodes we can place on the clock, how many fall in
  * one `clusterWindowHours` band of the pet's LOCAL day. No model — each onset's local
@@ -1318,6 +1511,8 @@ export type Finding =
   | PostprandialTimingFinding
   | EmptyStomachTimingFinding
   | TimingStoryFinding
+  | TrialResponseFinding
+  | GapShorteningFinding
   | TimeOfDayClusteringFinding
   | IncidentRedFlagFinding
 
@@ -1658,6 +1853,34 @@ export interface DetectionConfig {
     /** The empty-stomach band boundary in HOURS — the phenotype definition (§0 D10 / CUL-16). */
     longGapHours: number
   }
+  // Signals v2 (B-755 / CUL-8) — the trial-response lane (L2). All counts are over LOGGED-DAYS
+  // denominators (C5); the comparison SENTENCE rides `lib/rateContrast`'s C-test gate (p never
+  // surfaces) with the shared density-comparability rule (`DENSITY_COMPARABLE_MIN_RATIO`).
+  trialResponse: {
+    /**
+     * The baseline window length in days — the pre-trial stretch L2 compares the trial era against.
+     * 49d (7 weeks): long enough to cover both timing phenotypes' cadence, short enough to be the
+     * same season of the pet's life (§2 L2). Anchored to that reasoning, NOT to any record (G6); the
+     * logged-days denominator caps it at available history on its own, so a pet with a short
+     * pre-trial history simply gets a shorter comparable baseline (or, below the floor, no card).
+     */
+    baselineDays: number
+    /**
+     * Each window must carry at least this many DISTINCT LOGGED DAYS before a rate comparison is
+     * honest — the guard against a garbage baseline (3 vomits on the one pre-trial day the app was
+     * opened would otherwise out-rate a fully-logged trial and manufacture a "fewer during the
+     * trial" contrast). A trial too new, or with too little pre-history, simply shows no card yet
+     * (the §4.4 watching state owns that "needs N logged days" framing). Load-bearing, adversarial-gated.
+     */
+    minLoggingDaysPerWindow: number
+    /**
+     * The `lib/rateContrast` render-gate significance level for the pooled comparison. The C-test is
+     * small-n-quiet BY CONSTRUCTION (0-vs-2 never gates), so this is the only knob and it is the
+     * conventional two-sided 0.05; the property sweep asserts a NULL trial (same underlying rate both
+     * windows) fires below the ceiling. The p-value never surfaces (§3) — only the boolean gate.
+     */
+    contrastAlpha: number
+  }
   timeofday: {
     /** §4.3: below this many witnessed/timeable episodes, any "cluster" is a coin run. Matches ⑤. */
     minEligibleEpisodes: number
@@ -1771,6 +1994,62 @@ export interface DetectionConfig {
   humanFood: {
     /** Analysis window in days (trailing UTC calendar days from `now`), matching ⑤/⑥. */
     windowDays: number
+  }
+  // Signals v2 (B-755 / CUL-10) — the L4 gap-shortening lane (§2 L4). Inter-episode gaps per
+  // symptom type (3h-collapsed); the sub-floor lane that speaks where every other lane is silent
+  // (deep-dive §2 F4, §3 — the g-chart method on inter-event gaps). Escalate-only BY CONSTRUCTION:
+  // it fires only on SHORTENING; a lengthening (or flat) sequence renders NOTHING, ever (G5 —
+  // absence ≠ wellness; RTM). Every constant is a null-model sweep result or a g-chart anchor,
+  // NEVER tuned to Nyx's record (G6).
+  gapShortening: {
+    /**
+     * Absolute floor: the lane is inert below this many inter-episode gaps (this many + 1 collapsed
+     * episodes). 3 gaps / 4 episodes is the g-chart anchor (deep-dive §3 — the method is "informative
+     * from ~3–5 gaps") and the LOWEST data floor in the engine, which is the whole point: L4 exists to
+     * speak in the sub-floor state (§2 F4) where ⑤/⑥ (6 eligible), ⑦ (6 episodes) and ④/③ (3-in-7d)
+     * are all silent. It is the WATCHING-row floor (§4.4, PR 7's client row "watching N gaps"); the
+     * FIRING quiet-insight row additionally needs a `runLength` monotone run, which the sweep set
+     * ABOVE this (see `runLength`) — so a 3-gap record is watched, not claimed-over. NEVER Nyx's record.
+     */
+    minGaps: number
+    /**
+     * The number of most-recent gaps that must be STRICTLY monotonically decreasing for the lane to
+     * fire — the "shortening run". THE SWEEP SET THIS, NOT INTUITION (§9, the ⑥ calibration lesson):
+     * the spec's provisional `3` fires ~16.7% by CHANCE on any null (3 i.i.d. gaps are strictly
+     * decreasing 1/3! = 1/6 of the time — the monotone-runs-by-chance trap the ticket names), the same
+     * class of miss as ⑥'s naive floors firing ~21.6% on uniform noise. A run of `4` drops the
+     * by-chance rate to 1/4! = 1/24 ≈ 4.2%, and with the ratio gate the measured null fire rate lands
+     * ~2% on CONSTANT-RATE nulls, matching ⑥'s calibrated-up standard. Cost, taken knowingly: the
+     * FIRING floor is effectively 4 gaps / 5 episodes; a 3-gap record is WATCHED (the §4.4 row) but
+     * never fired on — the honest reading of "the sweep sets the floor" over the g-chart anchor. NEVER
+     * chosen to make Nyx's record fire (G6): it is the smallest run whose by-chance rate clears the
+     * property test. DISCLOSED RESIDUAL (adversarial, CUL-10): on an AUTOCORRELATED waxing/waning rate
+     * the residual is ~5–6% (not ≪5%) — the §PROPERTY SWEEP carries that null and asserts it as an
+     * ⑥-style accepted cost; runLength=5 drops it under 2% at a 6-episode floor (the Dr. Chen 4-vs-5 brief).
+     */
+    runLength: number
+    /**
+     * The latest gap must be ≤ this × the record's MEDIAN gap to fire — "meaningfully shorter than the
+     * pet's typical gap", the g-chart lower-control-limit analog. 0.5 = "at most half the typical gap".
+     * Anchored to the g-chart "a gap in the lower tail signals a rate increase" concept and kept loose
+     * enough to catch a moderate real shortening, NOT to any record (G6); the null false-positive rate
+     * is held by `runLength` (the monotone run), not by squeezing this — a ratio strict enough to hold
+     * the FPR alone (~0.17) would miss every moderate acceleration. The §PROPERTY SWEEP measures the
+     * joint (monotone-run ∧ this-ratio) null rate; the §RECALL test asserts real shortening runs clear it.
+     */
+    gapShorteningRatio: number
+    /**
+     * Staleness / reversal guard: the OPEN interval (now − last onset) must be ≤ this × the latest
+     * (shortest) gap, else the accelerating run has not CONTINUED and the quiet row would misrepresent
+     * the present as if the pattern were live. Catches both a run that happened long ago (open interval
+     * ≫ latest) and a run immediately followed by a long quiet stretch (the trend reversed) — the
+     * g-chart's own logic (an in-progress gap longer than the recent short gaps is the rate dropping).
+     * 2× gives stochastic headroom while still filtering a clear reversal. ESCALATE-SAFE: it only ever
+     * SUPPRESSES a fire (never mints one, never reassures), so it cannot manufacture a signal — it
+     * keeps the lane honest about currency. Not an FPR knob (the sweep places nulls at `now`, so this
+     * never fires them); a §RECALL case pins that a stale/reversed run does NOT fire.
+     */
+    recencyGraceFactor: number
   }
 }
 
@@ -1930,6 +2209,23 @@ export const DEFAULT_CONFIG: DetectionConfig = {
     // tuning knob. The property sweep locks the FLOORS at this boundary; it never moves it.
     longGapHours: 6,
   },
+  // Signals v2 (B-755 / CUL-8) — the trial-response lane (L2). The baseline span is a product/
+  // clinical judgment (a season of the pet's life, both phenotypes' cadence — §2 L2), NOT tuned to
+  // any record (G6). The logged-days floor is the garbage-baseline guard, and `contrastAlpha` is the
+  // one statistical knob; the property sweep locks the null false-positive rate at these values.
+  trialResponse: {
+    // 49 days = 7 weeks. Covers both the ~daily post-prandial and the ~few-times-a-week empty-stomach
+    // cadence, while staying inside the pet's current era. Capped at history by the logged-days
+    // denominator — a pet with 12 days of pre-trial logs gets a 12-logged-day baseline, no more.
+    baselineDays: 49,
+    // 7 logged days per window: enough that a per-logged-day rate means something, and enough that a
+    // one-or-two-day baseline can't out-rate the trial and mint a false contrast. Below it → no card;
+    // the trial-so-far counts still show on the standing Pet-tab line (PR 6), which reads local data.
+    minLoggingDaysPerWindow: 7,
+    // Conventional two-sided 0.05; the exact test is small-n-quiet by construction, so this is the
+    // only sensitivity knob. The §PROPERTY SWEEP asserts a stationary null trial fires ≪ this.
+    contrastAlpha: 0.05,
+  },
   // B-079 detector ⑥ (time-of-day clustering) floors (§4.3).
   //
   // CALIBRATION NOTE (B-079 build, flagged for PM ratification of the §4.3 doc table): the
@@ -2007,6 +2303,30 @@ export const DEFAULT_CONFIG: DetectionConfig = {
   // real data, not a re-decision.
   humanFood: {
     windowDays: 60,
+  },
+  // Signals v2 (B-755 / CUL-10) — the L4 gap-shortening lane. `runLength` is a SWEEP RESULT, not a
+  // preference (§9 / the ⑥ CALIBRATION NOTE above is the precedent): the spec's provisional monotone-3
+  // fires ~16.7% by chance on any null, so it was calibrated UP to a 4-gap run — measured null FPR ~2%
+  // on constant-rate nulls, an ⑥-style DISCLOSED ~5–6% on autocorrelated waxing/waning nulls (§PROPERTY
+  // SWEEP; the adversarial-review residual, named not hidden). Every value is a null-model result or a
+  // g-chart anchor, never Nyx's record (G6).
+  gapShortening: {
+    // 3 gaps / 4 episodes — the g-chart anchor (deep-dive §3) and the lowest data floor in the engine;
+    // the WATCHING-row floor. A 3-gap record is watched (§4.4), not fired on (firing needs runLength).
+    minGaps: 3,
+    // 4, the SWEEP's answer to the monotone-runs-by-chance trap (monotone-3 ≈ 16.7% by luck → 4.2% at
+    // a 4-run; ~2% with the ratio gate on constant-rate nulls, a disclosed ~5–6% on autocorrelated ones).
+    // The firing floor is therefore 4 gaps / 5 episodes — still the engine's lowest, and squarely in the
+    // g-chart's "informative from 3–5 gaps" band. (runLength=5 would drop the autocorrelated residual
+    // under 2% at a 6-episode floor — the Dr. Chen 4-vs-5 decision brief; kept at 4 for the sub-floor mission.)
+    runLength: 4,
+    // At most half the record's median gap — "meaningfully shorter than typical", the g-chart
+    // lower-limit analog. Loose by design (the FPR is held by runLength, not this); the §RECALL test
+    // asserts a real shortening clears it and the §PROPERTY SWEEP measures the joint null rate.
+    gapShorteningRatio: 0.5,
+    // 2× the latest (shortest) gap — the open interval past which the accelerating run has not
+    // continued and the row would misstate the present. Escalate-safe (only ever suppresses a fire).
+    recencyGraceFactor: 2,
   },
 }
 
@@ -4311,6 +4631,473 @@ export function detectEmptyStomachTiming(
   ]
 }
 
+// ── Detector L2: trial-response (Signals v2 / B-755 / CUL-8 — the wedge) ──────
+//
+// The reactive owner on a vet-directed elimination diet is the highest-intent user, and this lane
+// is the record answering "what has the trial done to the symptoms?" — but ONLY as COUNTS the vet
+// interprets (G1: no attribution, ever, not to the diet, not to a food, not to a med). It compares
+// two windows over LOGGED-DAYS denominators (C5): the trial era [start, now] and a `baselineDays`
+// window immediately before it. It emits at most ONE finding, and does so ONLY when the pooled
+// comparison "changed materially" — the §8.5 trigger below.
+//
+// ── THE "CHANGED MATERIALLY" TRIGGER (§8.5 — the definition this PR owns) ─────
+//
+// The Signal trial card is EVENT-DRIVEN (D3): it surfaces on Home when something changed, while the
+// standing Pet-tab trial-card line (PR 6, local data) shows the trial-so-far counts regardless. So
+// this detector's EMISSION IS the trigger — a `trial_response` finding exists exactly when the card
+// should surface. The definition, adversarial-reviewed here:
+//
+//   changedMaterially = pooledContrast.gate AND (moreDuringTrial OR (fewerDuringTrial AND densityComparable))
+//
+//   • `pooledContrast.gate` — the `lib/rateContrast` C-test over the VOMIT-episode counts (re-logs
+//     collapsed) with logged-days exposure clears alpha. The exact test is small-n-quiet BY
+//     CONSTRUCTION (0-vs-2 never gates), which is the noise defense; the §PROPERTY SWEEP asserts a
+//     stationary null trial (identical underlying rate in both windows) fires ≪ alpha. The burden is
+//     VOMIT-ONLY, not all tracked types — the adversarial round-2 FAIL: pooling every symptom type let
+//     a falling one MASK a rising one (itch 40→0 hiding vomit 1→4), and a per-type "did anything rise"
+//     guard could not close a low-count rise (below its own C-test; ④/⑦ have floors leaving a
+//     3–5-episode dead zone). Vomit-only removes the cross-symptom subtraction by construction and
+//     matches the phenotype rows + the D2 mock. Cost, FLAGGED for PM/Dr. Chen: L2 is silent on a derm-
+//     or diarrhoea-led trial in v1 (silence, the safe direction; multi-indication = registered follow-up).
+//   • the MORE-during-trial rate (escalation) always surfaces once the pooled gate clears. The
+//     FEWER-during-trial rate carries the never-reassure `densityComparable` guard (§3.3, the B-721
+//     rule reused but made SYMMETRIC over logging FRACTIONS): a quieter-looking trial may just be a
+//     less-logged one. The round-1 break was a one-directional gate that only caught a trial logged
+//     LESS than its baseline, while the wedge user's real pattern is the MIRROR — sporadic pre-trial
+//     logging, diligent trial logging — which inflates the baseline rate (a symptom-only day IS a
+//     logged day) and minted a false fewer 24–94% of the time. Requiring the two windows' logging
+//     fractions within-ratio in BOTH directions closes it (measured: that regime's false-fewer → ~0).
+//     Withholding the fewer is always the safe direction; the raw counts still show on the standing line.
+//
+// NAMED LIMITS (documented; the second is FLAGGED for PM/Dr. Chen — a viability call, not a code defect):
+//   • a PHENOTYPE-ONLY shift with a flat vomit burden (empty-stomach 7→0 while post-prandial 1→8) does
+//     not clear the pooled gate, so L2 stays quiet — but that emergent phenotype is exactly what ⑤/L1
+//     fire on separately, so it is re-homed, not lost. Silence, the safe direction.
+//   • SYMPTOM-LOGGING ATTRITION behind sustained meal-logging is the deep limit of the FEWER direction,
+//     and it is NOT near alpha: if an owner logs vomits diligently early in the trial and tapers later
+//     while still confirming meals, the trial vomit count under-counts and a false fewer renders
+//     ~14–35% of the time at realistic attrition (adversarial round 2). The density gate is blind to it
+//     (meals keep the any-log fraction high), and no detector can distinguish "stopped logging vomits"
+//     from "vomits stopped" — the app-wide "didn't log ≠ didn't happen" limit, here on the reassuring
+//     side. The structural mitigations are the never-verdict/count-anchored copy, the RTM expand, and
+//     the standing raw counts; whether that is enough to ship the FEWER direction (vs. escalate-only in
+//     v1) is a Dr. Chen/PM call — the decision brief rides this PR, and the lane stays dark (G10) until.
+//
+// ── WHAT IT NEVER DOES ───────────────────────────────────────────────────────
+//
+// No verdict, ever: the phrasing contract bans "working"/"helping"/"improvement"/"ruled out"/"clean"
+// (Guilford 2001 — diet response alone is not proof of food sensitivity; RTM — a calm stretch happens
+// on its own). Indication-blind: the engine cannot know GI vs dermatologic intent, so the day-count
+// sits beside the counts and NEVER implies an assessment point. The trial diet is never named; the
+// three-things-changed confound (diet, treats, meals) is DISCLOSED as structure counts, never
+// resolved. Below floor / no material change ⇒ SILENCE (never "the trial isn't doing anything").
+
+// The symptom L2 measures — VOMIT, for BOTH the pooled burden and the timing phenotypes (rapid/long),
+// mirroring ⑤/L1. "Minutes since eating" is a vomiting question, and pooling only vomit is what closes
+// the round-2 cross-symptom masking (see the trigger header). A multi-indication lane is follow-up.
+const TRIAL_TIMING_SYMPTOM_TYPE: SymptomType = 'vomit'
+
+/** `target_duration_days` → the "of M" length, or null. The ONLY authority on trial length: the
+ *  elapsed days never stand in for it (a trial reads "day 40" whether the target is 42 or unset). A
+ *  0/negative/non-finite target has no M — the card renders "day N" with no "of M". */
+function normalizeTrialTarget(raw: number | null | undefined): number | null {
+  const n = Math.floor(Number(raw ?? 0))
+  return Number.isFinite(n) && n > 0 ? n : null
+}
+
+export function detectTrialResponse(
+  input: DetectionInput,
+  config: DetectionConfig = DEFAULT_CONFIG,
+): TrialResponseFinding[] {
+  const cfg = config.trialResponse
+  const trial = input.dietTrial
+  const nowMs = Date.parse(input.now)
+  if (!trial || !Number.isFinite(nowMs)) return []
+
+  // GATE — the one B-422 predicate, never a re-derivation (§2 L2, G9). A trial past its effective
+  // end (or terminal / owner-ended) withdraws the lane rather than comparing a stale window.
+  if (
+    !isTrialRunning(
+      {
+        startedAt: trial.startedAt,
+        targetDurationDays: trial.targetDurationDays,
+        status: trial.status,
+        endedAt: trial.endedAt,
+      },
+      nowMs,
+      input.timezone,
+    )
+  ) {
+    return []
+  }
+
+  // Windows in LOCAL-DAY-INDEX space (B-514/B-517) — the ONE correct frame, and the same one the trial
+  // card counts "day N of M" in. Every event is placed by `localDayIndex(ms, tz)` and compared
+  // index-to-index; the boundary is NEVER reconstituted as `startIndex * MS_PER_DAY`, which is UTC
+  // midnight of the start DATE and equals the owner's local midnight only at UTC — for any other zone it
+  // drifts the trial/baseline boundary by the offset (±14h), misfiling a boundary-morning event into the
+  // wrong window (the exact inversion `lib/utils.dayKeyFromIndex` warns about, and the adversarial + code
+  // reviews both flagged on round 1). An unparseable start means we cannot place the trial — silence.
+  const startIndex = localDayIndexOf(trial.startedAt, input.timezone)
+  if (startIndex === null) return []
+  const todayIndex = localDayIndex(nowMs, input.timezone)
+  const baselineStartIndex = startIndex - cfg.baselineDays
+  // day 1 = start day (§5.1), via the ONE shared counter (B-449) — never re-spelled here.
+  const trialDayNumber = trialDayCounter(startIndex, todayIndex)
+
+  // Local-day index of an instant on the owner's clock (memoized — `localDayIndex` runs Intl per call
+  // when a zone is set, and every event is placed several times below). Null only for a non-finite ms.
+  const dayIdxCache = new Map<number, number | null>()
+  const dayIndexOf = (ms: number): number | null => {
+    if (!Number.isFinite(ms)) return null
+    const hit = dayIdxCache.get(ms)
+    if (hit !== undefined) return hit
+    const di = localDayIndex(ms, input.timezone)
+    dayIdxCache.set(ms, di)
+    return di
+  }
+  const inTrialEra = (di: number | null): boolean =>
+    di !== null && di >= startIndex && di <= todayIndex
+  const inBaseline = (di: number | null): boolean =>
+    di !== null && di >= baselineStartIndex && di < startIndex
+
+  // C5 denominators — distinct LOGGED local days per window (a refused bowl is a logged day). The
+  // baseline is capped at available history HERE, by the denominator itself: no logs before the pet's
+  // earliest event ⇒ those days simply don't count.
+  const loggedDaysIn = (pred: (di: number | null) => boolean): number => {
+    const days = new Set<number>()
+    for (const s of input.symptomEvents) {
+      const di = dayIndexOf(Date.parse(s.occurredAt))
+      if (pred(di)) days.add(di as number)
+    }
+    for (const m of input.mealEvents) {
+      const di = dayIndexOf(Date.parse(m.occurredAt))
+      if (pred(di)) days.add(di as number)
+    }
+    return days.size
+  }
+  const trialLoggedDays = loggedDaysIn(inTrialEra)
+  const baselineLoggedDays = loggedDaysIn(inBaseline)
+  // The garbage-baseline / too-new-trial guard: below the floor a per-logged-day rate is not honest
+  // (3 vomits on the one pre-trial day the app was opened must never out-rate a fully-logged trial).
+  // Silence, not a card — the §4.4 watching state owns the "needs N logged days" framing (PR 6/7).
+  if (trialLoggedDays < cfg.minLoggingDaysPerWindow) return []
+  if (baselineLoggedDays < cfg.minLoggingDaysPerWindow) return []
+
+  // The pooled burden is VOMIT episodes only (collapse-then-window: collapse the full vomit list ONCE
+  // with the re-log guard, then place each onset by local day index).
+  //
+  // ⚠️ VOMIT-ONLY, and it is a safety decision, not a scope shortcut — the adversarial round-2 FAIL.
+  // Pooling every tracked symptom type into one burden number lets a FALLING type MASK a RISING one: an
+  // itch that resolved (40→0) hiding a vomiting that rose (1→4) rendered a reassuring "fewer" over a
+  // patient getting sicker, and a per-type "did anything rise" guard could not close it (a low-count
+  // rise is below its own C-test, and ④/⑦ have floors that leave a 3–5-episode dead zone). Vomit-only
+  // removes the cross-symptom subtraction BY CONSTRUCTION and matches the surface's own scope — the
+  // phenotype rows below and the D2 mock ("Empty-stomach 0 · was 7") are already vomiting. The cost,
+  // taken knowingly and FLAGGED for PM/Dr. Chen (a decision brief rides this PR): L2 says nothing about a
+  // derm- or diarrhoea-led trial in v1 — which is SILENCE, the safe direction, never a false read. A
+  // multi-indication trial-response (per-axis, never cross-axis subtraction) is registered follow-up.
+  const vomitOnsets = toEpisodeOnsets(
+    input.symptomEvents
+      .filter((s) => s.type === TRIAL_TIMING_SYMPTOM_TYPE)
+      .map((s) => Date.parse(s.occurredAt))
+      .filter((ms) => Number.isFinite(ms)),
+    config.symptomEpisodeGapHours,
+  )
+  let pooledTrialCount = 0
+  let pooledBaselineCount = 0
+  for (const ms of vomitOnsets) {
+    const di = dayIndexOf(ms)
+    if (inTrialEra(di)) pooledTrialCount++
+    else if (inBaseline(di)) pooledBaselineCount++
+  }
+
+  // The pooled render-gate — `lib/rateContrast` (the C-test; p never surfaces, §3). a = trial,
+  // b = baseline, so `a_higher` = a higher per-logged-day rate DURING the trial (escalation).
+  const pooledContrast = rateContrast(
+    { count: pooledTrialCount, exposure: trialLoggedDays },
+    { count: pooledBaselineCount, exposure: baselineLoggedDays },
+    { alpha: cfg.contrastAlpha },
+  )
+  const moreDuringTrial = pooledContrast.direction === 'a_higher'
+  const fewerDuringTrial = pooledContrast.direction === 'b_higher'
+
+  // Density comparability (§3.3, "both directions fail toward escalation") — SYMMETRIC, over LOGGING
+  // FRACTIONS (logged days ÷ window span), not raw counts.
+  //
+  // Two reasons it is neither a raw-count ratio nor one-directional. (a) The windows are DIFFERENT
+  // LENGTHS (the trial era grows; the baseline is a fixed 49d span), so a raw-count `trialLoggedDays ≥
+  // baselineLoggedDays × 0.7` would fail every young trial purely for being shorter — the fraction
+  // normalizes that. (b) The adversarial ROUND-1 BREAK: a one-directional gate (withhold only when the
+  // TRIAL is under-logged) misses the wedge user's actual pattern, which is the MIRROR — sporadic,
+  // symptom-concentrated logging BEFORE the trial, diligent daily logging DURING it. A symptom-only day
+  // IS a logged day, so a sparse baseline's per-logged-day rate inflates toward 1.0, and a false "fewer
+  // during the trial" is minted from a logging artifact (measured 24–94% of the time in that regime).
+  // Requiring the two fractions to be within `DENSITY_COMPARABLE_MIN_RATIO` of EACH OTHER — in BOTH
+  // directions — withholds the fewer comparison whenever EITHER window was logged less intensely, the
+  // never-reassure direction; the raw counts still show on the standing line. (This coarse "was the app
+  // used comparably" backstop still carries the days-with-any-log residual `computeReflectionDensity`
+  // documents — a meal-only day can mask a symptom-logging gap when the two fractions happen to match —
+  // so it layers on the C-test, never replaces it.)
+  const trialWindowDays = Math.max(1, trialDayNumber)
+  const trialLoggingFraction = trialLoggedDays / trialWindowDays
+  const baselineLoggingFraction = baselineLoggedDays / cfg.baselineDays
+  const loFraction = Math.min(trialLoggingFraction, baselineLoggingFraction)
+  const hiFraction = Math.max(trialLoggingFraction, baselineLoggingFraction)
+  const densityComparable = hiFraction <= 0 ? true : loFraction >= hiFraction * DENSITY_COMPARABLE_MIN_RATIO
+
+  // THE §8.5 TRIGGER. See the header: a material vomit-burden change that fails toward escalation. The
+  // MORE direction (escalation) surfaces once the pooled gate clears; the FEWER direction additionally
+  // requires comparable logging density (the never-reassure guard — a quieter-looking trial may just be
+  // a less-logged one). Cross-symptom masking is closed BY CONSTRUCTION (vomit-only, above), so there is
+  // no per-type guard here.
+  const changedMaterially =
+    pooledContrast.gate && (moreDuringTrial || (fewerDuringTrial && densityComparable))
+  if (!changedMaterially) return []
+
+  // Per-phenotype VOMIT-TIMING counts (via `lib/mealTiming`, G9) — the A2 count rows (context, not a
+  // trigger). Collapse vomit episodes on the FULL list, classify each through the ONE predicate,
+  // then split the eligible episodes by window + band (collapse-then-window).
+  const feedings: FeedingInput[] = input.mealEvents.map((m) => ({
+    ms: Date.parse(m.occurredAt),
+    confidence: m.occurredAtConfidence ?? null,
+    form: m.foodLabel ?? m.foodType ?? null,
+  }))
+  const freeFedSpans: FreeFedSpan[] = classifyArrangements(input.feedingArrangements ?? []).map(
+    (s) => ({ fromMs: s.fromMs, untilMs: s.untilMs }),
+  )
+  const vomitEvents = input.symptomEvents
+    .filter((s) => s.type === TRIAL_TIMING_SYMPTOM_TYPE)
+    .map((s) => ({ ms: Date.parse(s.occurredAt), confidence: s.occurredAtConfidence ?? null }))
+    .filter((e) => Number.isFinite(e.ms))
+  const collapsedVomit = collapseEpisodes(vomitEvents, config.symptomEpisodeGapHours)
+  const dist = classifyEpisodeSet(
+    collapsedVomit.map((e) => ({ onsetMs: e.ms, confidence: e.confidence })),
+    feedings,
+    freeFedSpans,
+    timingConfigFor(config),
+  )
+  const bandInWindow = (band: 'rapid' | 'long', pred: (di: number | null) => boolean): number =>
+    dist.eligible.filter((e) => e.band === band && pred(dayIndexOf(e.onsetMs))).length
+
+  // Diet-structure deltas (§2 L2 — context rows, the observable half of the RTM confound). Never a
+  // verdict: `treatShare` over classifiable feedings, `mealsPerDay` over logged days. Placed by the
+  // SAME local-day predicates as everything else (B-517).
+  const dietStructureInWindow = (
+    pred: (di: number | null) => boolean,
+    loggedDays: number,
+  ): { treatShare: number | null; mealsPerDay: number | null } => {
+    let meals = 0
+    let treats = 0
+    for (const m of input.mealEvents) {
+      if (!pred(dayIndexOf(Date.parse(m.occurredAt)))) continue
+      if (m.foodType === 'meal') meals++
+      else if (m.foodType === 'treat') treats++
+    }
+    const classifiable = meals + treats
+    return {
+      treatShare: classifiable > 0 ? treats / classifiable : null,
+      mealsPerDay: loggedDays > 0 ? meals / loggedDays : null,
+    }
+  }
+  const trialStruct = dietStructureInWindow(inTrialEra, trialLoggedDays)
+  const baselineStruct = dietStructureInWindow(inBaseline, baselineLoggedDays)
+
+  return [
+    {
+      type: 'trial_response',
+      priorityClass: 'insight',
+      trialDayNumber,
+      targetDurationDays: normalizeTrialTarget(trial.targetDurationDays),
+      trialLoggedDays,
+      baselineLoggedDays,
+      baselineWindowDays: cfg.baselineDays,
+      pooledTrialCount,
+      pooledBaselineCount,
+      rapid: {
+        trial: bandInWindow('rapid', inTrialEra),
+        baseline: bandInWindow('rapid', inBaseline),
+      },
+      long: {
+        trial: bandInWindow('long', inTrialEra),
+        baseline: bandInWindow('long', inBaseline),
+      },
+      rapidWindowMinutes: config.postprandial.rapidWindowMinutes,
+      longGapHours: config.emptyStomach.longGapHours,
+      treatShare: { trial: trialStruct.treatShare, baseline: baselineStruct.treatShare },
+      mealsPerDay: { trial: trialStruct.mealsPerDay, baseline: baselineStruct.mealsPerDay },
+      // moreDuringTrial || fewerDuringTrial is guaranteed here: changedMaterially excludes the
+      // 'equal' direction (gate ⇒ a rate difference; the direction gate requires one of the two).
+      comparisonDirection: moreDuringTrial ? 'more_during_trial' : 'fewer_during_trial',
+      densityComparable,
+      associationalOnly: true,
+      trialWindowDays,
+    },
+  ]
+}
+
+// ── Detector L4: gap-shortening (Signals v2 / B-755 / CUL-10 — the sub-floor lane) ──────
+//
+// The g-chart on inter-event gaps (deep-dive §3) is the ONE tool in the signals sweep that speaks at
+// the 4-episodes-in-2-weeks scale (§2 F4) — the sub-floor state that is every new account's first weeks
+// by construction. This lane monitors the GAPS BETWEEN a symptom's 3h-collapsed episodes and fires ONLY
+// on a SHORTENING run (a rising episode rate), rendered as the plain D2 sentence "the gaps between
+// vomiting episodes have been 6 days, then 3, then 2."
+//
+// ── ESCALATE-ONLY BY CONSTRUCTION (G5) ───────────────────────────────────────
+//
+// A LENGTHENING or flat run is not strictly decreasing, so it falls through to SILENCE — there is no
+// "gaps are widening / settling" finding, EVER. Absence is not wellness (a widening gap can be a pet
+// that stopped logging or a disease waxing and waning; RTM), so the never-reassure direction is closed
+// structurally, the same guarantee ⑦ makes by going silent on a settled course rather than saying so.
+//
+// ── THE MONOTONE-RUNS-BY-CHANCE TRAP, AND WHY runLength IS A SWEEP RESULT (§9) ─
+//
+// The spec's PROVISIONAL fire condition was "the last 3 gaps monotonically decreasing AND latest ≤
+// ratio × median". But 3 i.i.d. gaps are strictly decreasing 1/3! = 1/6 ≈ 16.7% of the time BY LUCK, so
+// monotone-3 alone fires ~1-in-6 on ANY null — the exact class of miss ⑥ hit (its naive floors fired
+// ~21.6% on uniform noise; see the DEFAULT_CONFIG ⑥ CALIBRATION NOTE). Per the ticket ("the sweep sets
+// the floor, not intuition; the ⑥ calibration lesson"), the §PROPERTY SWEEP calibrated the run UP: a
+// run of `runLength` = 4 drops the by-chance rate to 1/4! ≈ 4.2%, and with the ratio gate the measured
+// null fire rate lands ~2% on CONSTANT-RATE nulls. The cost, taken knowingly: the FIRING floor is
+// effectively 4 gaps / 5 episodes; a 3-gap record (the `minGaps` g-chart anchor) is WATCHED (the §4.4
+// client row, PR 7) but never fired on — the honest reading of the floor. The ratio is held LOOSE (0.5,
+// "half the typical gap") because the FPR is controlled by the run length, not by a strict ratio that
+// would miss every moderate real acceleration; none of these is tuned to Nyx (G6).
+//
+// THE DISCLOSED RESIDUAL (adversarial review, CUL-10): on an AUTOCORRELATED, waxing/waning rate (a rate
+// that wanders WITHOUT a trend — the hazard this lane's own G5 comment names), the last-4-monotone rate
+// exceeds the iid 1/24, because a wandering rate spends real time drifting down (RTM) and that down-wander
+// reads as "accelerating". At runLength=4 the null fire rate there is ~4.5–5.8% (worst at an extreme ~80×
+// rate swing), NOT ≪5% — the §PROPERTY SWEEP now carries an autocorrelated null and asserts this as an
+// ⑥-STYLE ACCEPTED RESIDUAL rather than omitting the null that produces it. It is accepted, not hidden,
+// because L4 is a quiet band-4 escalate-only row whose counts always show and whose output — a TRUE "the
+// gaps shortened", never a verdict, never a cause — is, on a genuinely waxing/waning disease, a flare
+// worth a quiet note. runLength=5 pulls this residual under 2% but raises the firing floor to 6 episodes
+// (⑦-chronicity's own floor), eroding the sub-floor mission — the 4-vs-5 call is a Dr. Chen decision brief.
+//
+// ── WHAT IT NEVER DOES ───────────────────────────────────────────────────────
+//
+// No attribution (G1), no syndrome name, no management advice (G3) — it states the gaps and routes
+// nothing. It emits at most ONE quiet row (the strongest shortening), ranked at the engine's LOWEST
+// band, so it only leads when nothing louder exists — which is the sub-floor state it is built for.
+
+/** Strictly monotonically DECREASING? (each element < its predecessor). The escalate-only test: a flat
+ *  step (equal gaps) is NOT shortening, so `<` (not `<=`) is load-bearing. Caller guarantees length ≥ 2. */
+function isStrictlyDecreasing(xs: readonly number[]): boolean {
+  for (let i = 1; i < xs.length; i++) {
+    if (!(xs[i] < xs[i - 1])) return false
+  }
+  return true
+}
+
+/** One symptom type's gap-shortening evidence, pre-selection. */
+interface GapShorteningStat {
+  symptomType: SymptomType
+  recentGapsHours: number[]
+  medianGapHours: number
+  latestGapHours: number
+  gapCount: number
+  episodeCount: number
+  lastOnsetMs: number
+}
+
+export function detectGapShortening(
+  input: DetectionInput,
+  config: DetectionConfig = DEFAULT_CONFIG,
+): GapShorteningFinding[] {
+  const cfg = config.gapShortening
+  const nowMs = Date.parse(input.now)
+  if (!Number.isFinite(nowMs)) return []
+  // A run needs ≥2 gaps to "decrease"; guard a mis-set config so we never read past the array.
+  const runLength = Math.max(2, Math.floor(cfg.runLength))
+
+  const candidates: GapShorteningStat[] = []
+  for (const symptomType of CORRELATION_SYMPTOM_TYPES) {
+    const msList = input.symptomEvents
+      .filter((s) => s.type === symptomType)
+      .map((s) => Date.parse(s.occurredAt))
+      .filter((ms) => Number.isFinite(ms))
+    // 3h episode collapse (the shared re-log guard, G9) → onset times sorted ascending. The input is
+    // already LOOKBACK-windowed by the caller (index.ts, 180d), so "the record" = the current era.
+    const onsets = toEpisodeOnsets(msList, config.symptomEpisodeGapHours)
+    const gapCount = onsets.length - 1
+    // Both floors: the g-chart data floor (minGaps) AND enough gaps to check the run (runLength). By
+    // config minGaps ≤ runLength, so runLength binds; both are asserted so neither can be skipped.
+    if (gapCount < cfg.minGaps || gapCount < runLength) continue
+
+    // Inter-episode gaps in HOURS. onsets are strictly ascending and the collapse guarantees each pair
+    // is > symptomEpisodeGapHours apart, so every gap > 0 and the median is never 0.
+    const gapsHours: number[] = []
+    for (let i = 1; i < onsets.length; i++) {
+      gapsHours.push((onsets[i] - onsets[i - 1]) / MS_PER_HOUR)
+    }
+
+    // (1) SHORTENING — the last `runLength` gaps STRICTLY decreasing. A flat/lengthening run fails here
+    // and falls through to SILENCE (G5, escalate-only).
+    const recent = gapsHours.slice(-runLength)
+    if (!isStrictlyDecreasing(recent)) continue
+
+    // (2) MEANINGFULLY SHORTER — the latest (shortest) gap ≤ ratio × the record's MEDIAN gap. Reuses
+    // the shared `median` helper (G9-in-spirit — one median implementation; the collapse guarantees a
+    // non-empty gaps list here, so its empty→0 return is unreachable).
+    const latestGapHours = gapsHours[gapsHours.length - 1]
+    const medianGapHours = median(gapsHours)
+    if (!(medianGapHours > 0)) continue // defensive; unreachable given the collapse guarantee
+    if (!(latestGapHours <= cfg.gapShorteningRatio * medianGapHours)) continue
+
+    // (3) STILL CURRENT — escalate-safe staleness/reversal guard: the OPEN interval since the last
+    // episode has not already outrun the latest short gap (× the grace factor). A run that happened
+    // long ago, or one immediately followed by a long quiet stretch (the trend reversed), is suppressed
+    // — the accelerating claim would misstate the present. This only ever SUPPRESSES; it never mints a
+    // fire and never reassures, so it cannot manufacture a signal.
+    const lastOnsetMs = onsets[onsets.length - 1]
+    const openIntervalHours = (nowMs - lastOnsetMs) / MS_PER_HOUR
+    if (openIntervalHours > cfg.recencyGraceFactor * latestGapHours) continue
+
+    candidates.push({
+      symptomType,
+      recentGapsHours: recent,
+      medianGapHours,
+      latestGapHours,
+      gapCount,
+      episodeCount: onsets.length,
+      lastOnsetMs,
+    })
+  }
+  if (candidates.length === 0) return []
+
+  // At most ONE quiet row — the STRONGEST shortening (smallest latest/median ratio = most accelerated),
+  // then the most RECENT episode, then symptom-type order. Calm surface over completeness (⑦'s "one card
+  // only"), and this lane is the quietest of all — deterministic so a re-run never reorders.
+  candidates.sort((a, b) => {
+    const ra = a.latestGapHours / a.medianGapHours
+    const rb = b.latestGapHours / b.medianGapHours
+    if (ra !== rb) return ra - rb
+    if (a.lastOnsetMs !== b.lastOnsetMs) return b.lastOnsetMs - a.lastOnsetMs
+    return (
+      CORRELATION_SYMPTOM_TYPES.indexOf(a.symptomType) -
+      CORRELATION_SYMPTOM_TYPES.indexOf(b.symptomType)
+    )
+  })
+
+  const s = candidates[0]
+  return [
+    {
+      type: 'gap_shortening',
+      priorityClass: 'insight',
+      symptomType: s.symptomType,
+      recentGapsHours: s.recentGapsHours,
+      medianGapHours: s.medianGapHours,
+      latestGapHours: s.latestGapHours,
+      gapCount: s.gapCount,
+      episodeCount: s.episodeCount,
+      lastOnsetIso: new Date(s.lastOnsetMs).toISOString(),
+      associationalOnly: true,
+    },
+  ]
+}
+
 // ── Coverage diagnostics (B-053) ────────────────────────────────────────────
 //
 // "Why is there still no signal?" — the structured, ranked subset of silent-
@@ -5010,6 +5797,17 @@ export const DETECTOR_REGISTRY: Detector[] = [
   // detectors stay separate and separately tested. DARK: Signals v2 output is inert until PR 10's
   // gated redeploy (G10) — the shipped client renders an unknown finding type as null (PR-1 pin).
   { type: 'empty_stomach_timing', detect: detectEmptyStomachTiming },
+  // Detector L2 (Signals v2 / B-755 / CUL-8 — the trial-response wedge). Emits at most ONE
+  // `trial_response` finding, and ONLY when the pooled trial-era-vs-baseline contrast changed
+  // materially (the §8.5 trigger, in detectTrialResponse). Silent for any pet not on a running
+  // trial (the `isTrialRunning` gate). DARK: inert until PR 10's gated redeploy (G10) — the shipped
+  // client renders an unknown finding type as null (the PR-1 pin).
+  { type: 'trial_response', detect: detectTrialResponse },
+  // Detector L4 (Signals v2 / B-755 / CUL-10 — the sub-floor gap-shortening lane). Emits at most ONE
+  // `gap_shortening` finding, and ONLY on a strictly-shortening inter-episode run (escalate-only, G5 —
+  // a lengthening/flat sequence is silent). The quietest lane, ranked last. DARK: inert until PR 10's
+  // gated redeploy (G10) — the shipped client renders an unknown finding type as null (the PR-1 pin).
+  { type: 'gap_shortening', detect: detectGapShortening },
   { type: 'timeofday_clustering', detect: detectTimeOfDayClustering },
   { type: 'reflection', detect: detectReflections },
   // Detector — per-incident visual red flag (B-340). SAFETY class; reads the NEW
@@ -5033,9 +5831,22 @@ export const DETECTOR_REGISTRY: Detector[] = [
 //   3  reflection (③, B-051) — the gentlest "presence" layer; ALWAYS below every
 //      safety finding AND below every correlation, never the lead of a data-rich
 //      pet that has a real correlation to show.
+//   4  gap_shortening (L4, CUL-10) — the sub-floor watching/quiet row; the engine's
+//      quietest, ranked below even reflection so it leads only when nothing else exists.
 function priorityBand(finding: Finding, ctx: PetContext): number {
   if (finding.priorityClass === 'safety') return 0 // incident_red_flag, intake_decline, symptom_chronicity, symptom_worsening
+  // The gap-shortening lane (L4, CUL-10) is the QUIETEST insight — a sub-floor watching row shown while
+  // real-world behavior is still being observed (§2 L4, D5). It ranks BELOW even reflection so it only
+  // ever leads when nothing louder exists, which is exactly the sub-floor state it is built for. Band 4
+  // is the engine's lowest; nothing is dropped for it (§3 only protects safety), and in a data-rich pet
+  // a louder card outranks it by construction.
+  if (finding.type === 'gap_shortening') return 4
   if (finding.type === 'reflection') return 3
+  // The trial-response lane (L2, CUL-8) is the CONTEXT-LEAD insight for a diet-trial pet — it is the
+  // wedge feedback, and it only ever EXISTS for a running trial (the isTrialRunning gate), so band 1
+  // is correct by construction (never reached for a non-trial pet). It leads correlation within the
+  // band via INSIGHT_TYPE_ORDER: the trial's own answer sits above the mechanism that might explain it.
+  if (finding.type === 'trial_response') return 1
   // Correlation is the context-lead insight for a diet-trial pet (Jordan's stack, §8).
   if (finding.type === 'food_symptom_correlation' && ctx.dietTrialActive) return 1
   return 2 // correlations (non-trial) + postprandial_timing (⑤) + timeofday_clustering (⑥)
@@ -5048,6 +5859,10 @@ const TIER_ORDER: Record<EvidenceTier, number> = { established: 0, early: 1 }
 // since they are mutually exclusive per symptom after composition), then ⑥, then diet-structure.
 // Reflection (③) is band 3, so it never reaches this comparator. Unlisted types tie.
 const INSIGHT_TYPE_ORDER: Record<string, number> = {
+  // trial_response (L2, CUL-8) leads its band: on a diet-trial pet it and correlation are both band
+  // 1, and the trial's own answer ("what has the trial done?") sits above the mechanism that might
+  // explain it (correlation). Non-trial bands never see it (the isTrialRunning gate).
+  trial_response: -1,
   food_symptom_correlation: 0,
   postprandial_timing: 1,
   empty_stomach_timing: 1,

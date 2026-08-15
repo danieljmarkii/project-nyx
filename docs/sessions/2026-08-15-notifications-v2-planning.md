@@ -1,6 +1,6 @@
 # 2026-08-15 — Notifications v2 planning: research, team convening, requirements + mock round 3
 
-**Outcome:** shipped via the session PR (branch `claude/notification-system-improvements-ex196q`). No app code. Deliverables: the best-of-breed research brief, `docs/nyx-notifications-v2-requirements.md` v0.9 (§0 D-1…D-6 **open** — the PM rulings gate the build), mock round 3 re-published over the same artifact URL (`af80ad9e-…`), backlog rows B-760/B-761 + six row annotations. PM kickoff: "get up to speed on notifications, convene the team, research best-of-breed, take it out of beta, build an awesome pre-permission screen, make the landing screen a retention lever, find notification types #2/#3, mock and lock requirements."
+**Outcome:** shipped via #645. No app code. Deliverables: the best-of-breed research brief, `docs/nyx-notifications-v2-requirements.md` v0.9 (§0 D-1…D-6 **open** — the PM rulings gate the build), mock round 3 re-published over the same artifact URL (`af80ad9e-…`), backlog rows B-760/B-761 + six row annotations. PM kickoff: "get up to speed on notifications, convene the team, research best-of-breed, take it out of beta, build an awesome pre-permission screen, make the landing screen a retention lever, find notification types #2/#3, mock and lock requirements."
 
 ## State established first (reading, not assuming)
 
@@ -63,3 +63,7 @@ Deliverables: **`docs/nyx-daily-recap-requirements.md` v1.0 BUILD-READY** (decis
 - If D-3b: draft the brand Tier-2 amendment before V2-PR-2.
 - **B-288 scoping doc** (own session): budget number, category-action + background-response spike, reconciliation card, Sam's day-close variant.
 - Part 1 on-device checklist (tap-routing / OS-revocation reconcile / sign-out cancellation) — closes before "out of beta" is declared.
+
+## Renumber note (at wrap)
+
+The track/milestone rows were filed in this record as **B-760/B-761**; at the wrap merge, `main` had already taken both IDs (Signals-v2 A2 rows, first-lands-keeps per B-435) — they are **B-762 (the track) and B-763 (trial milestones)** everywhere current. This record keeps the as-filed IDs per the append-only convention; the backlog rows carry the provenance notes.

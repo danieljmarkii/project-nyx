@@ -25,6 +25,8 @@ import type {
   PostprandialTimingFinding,
   EmptyStomachTimingFinding,
   TimingStoryFinding,
+  TrialResponseFinding,
+  GapShorteningFinding,
   TimeOfDayClusteringFinding,
   IncidentRedFlagFinding,
   IncidentFlagKind,
@@ -305,6 +307,68 @@ export function templateTimingStory(f: TimingStoryFinding, petName: string): str
   return `Of the ${f.eligibleCount} ${symptom} episodes we could time for ${petName}, ${f.rapid.count} happened within ${f.rapidWindowMinutes} minutes of eating and ${f.long.count} happened ${f.longGapHours} or more hours after — a timing pattern worth mentioning to your vet.`
 }
 
+export function templateTrialResponse(f: TrialResponseFinding, petName: string): string {
+  // The trial-response lane (Signals v2 / CUL-8 — L2, the wedge) — template-only (no LLM, like
+  // ③/④/⑤/⑥/⑦). The phrasing contract Dr. Chen ratifies (spec §2 L2): COUNT-ANCHORED, TIME-ORDERED,
+  // NEVER VERDICTED. It states the two pooled counts in time order (during the trial / before it) and
+  // routes to the vet — it NEVER says "working"/"helping"/"improvement"/"ruled out"/"clean", never
+  // "better"/"worse", never names the diet or a food (G1: no attribution). It is deliberately
+  // DIRECTION-NEUTRAL: the reader sees which count is higher; the copy asserts no judgment about it
+  // (Guilford 2001 — diet response alone is not proof; RTM — a calm stretch happens on its own; the
+  // three-things-changed confound is the vet's to weigh, disclosed in the client expand, PR 6).
+  // Indication-blind: the day-count is context, NEVER an assessment-point verdict. The card only
+  // exists when the pooled contrast changed materially (detectTrialResponse), so a comparison is
+  // always licensed here; the counts-only state is the standing Pet-tab line (PR 6), not this card.
+  const trialNoun = f.pooledTrialCount === 1 ? 'episode' : 'episodes'
+  const dayNoun = f.trialDayNumber === 1 ? 'day' : 'days'
+  const baselineWeeks = Math.max(1, Math.round(f.baselineWindowDays / 7))
+  const weekNoun = baselineWeeks === 1 ? 'week' : 'weeks'
+  // Names vomiting specifically — the burden is VOMIT-only (the round-2 masking fix), so "symptom
+  // episodes" would over-claim a whole-body read the count does not support.
+  return `We've logged ${f.pooledTrialCount} ${trialNoun} of vomiting for ${petName} in the ${f.trialDayNumber} ${dayNoun} since the trial began, compared with ${f.pooledBaselineCount} across the ${baselineWeeks} ${weekNoun} before it — worth reviewing with your vet.`
+}
+
+/** Render one inter-episode gap (hours) as a friendly value + unit. ≥24h → whole days, else whole
+ *  hours — so a sub-day gap never reads as a dishonest "0 days". ROUND ONCE, THEN bucket off the
+ *  rounded value: bucketing off the raw hours would let a gap in [23.5, 24) fall in the 'hour' bucket
+ *  yet round up to display "24 hours", so a genuinely-shortening pair (30h → 23.6h) could render
+ *  "1 day, then 24 hours" — flat-or-backwards prose that undercuts the one thing this row states
+ *  honestly (code-review finding). Rounding to whole units can still make two genuinely-distinct gaps
+ *  display equal (a residual cosmetic limit; the exact gaps ride in the payload for the client, CUL-12+). */
+function formatGapUnit(hours: number): { value: number; unit: 'day' | 'hour' } {
+  const wholeHours = Math.max(1, Math.round(hours))
+  return wholeHours >= 24
+    ? { value: Math.round(wholeHours / 24), unit: 'day' }
+    : { value: wholeHours, unit: 'hour' }
+}
+
+/** "6 days, then 3, then 2" (unit stated once when uniform) or "3 days, then 18 hours, then 9 hours"
+ *  (each unit stated when the run crosses the day/hour boundary — an honest big shortening). */
+function formatGapSequence(hoursSeq: readonly number[]): string {
+  const parts = hoursSeq.map(formatGapUnit)
+  const uniform = parts.every((p) => p.unit === parts[0].unit)
+  if (uniform) {
+    const [head, ...rest] = parts
+    const first = `${head.value} ${head.unit}${head.value === 1 ? '' : 's'}`
+    return [first, ...rest.map((p) => String(p.value))].join(', then ')
+  }
+  return parts.map((p) => `${p.value} ${p.unit}${p.value === 1 ? '' : 's'}`).join(', then ')
+}
+
+export function templateGapShortening(f: GapShorteningFinding, petName: string): string {
+  // The gap-shortening lane (Signals v2 / CUL-10 — L4, the sub-floor lane) — template-only (no LLM,
+  // like ③/④/⑤/⑥/⑦), itself a structural never-reassure guarantee. The D2 mock's form: state the
+  // recent inter-episode gaps as PLAIN COUNTS in time order and let the numbers speak — no verdict
+  // word ("worsening"/"worse"/"getting worse"), no cause (G1), no mechanism, no syndrome name (G3),
+  // and — because the lane fires ONLY on shortening — no reassuring "settling"/"improving" is ever
+  // reachable (G5, escalate-only). The closer is understated (a WATCHING row, not a full card): it
+  // flags the pattern without alarming and without an imperative to log more (G8 register). The exact
+  // gaps ride in the payload for the client; this fallback rounds to whole days/hours.
+  const symptom = SYMPTOM_LABEL[f.symptomType]
+  const sequence = formatGapSequence(f.recentGapsHours)
+  return `For ${petName}, the gaps between ${symptom} episodes have been ${sequence} — a pattern worth keeping an eye on.`
+}
+
 export function templateForFinding(finding: Finding, petName: string): string {
   switch (finding.type) {
     case 'food_symptom_correlation':
@@ -323,6 +387,10 @@ export function templateForFinding(finding: Finding, petName: string): string {
       return templateEmptyStomachTiming(finding, petName)
     case 'timing_story':
       return templateTimingStory(finding, petName)
+    case 'trial_response':
+      return templateTrialResponse(finding, petName)
+    case 'gap_shortening':
+      return templateGapShortening(finding, petName)
     case 'timeofday_clustering':
       return templateTimeOfDayClustering(finding, petName)
     case 'incident_red_flag':
@@ -365,6 +433,18 @@ const MECHANISM_RE =
 // attribution. "eating" is a timing reference, not a food, so it is not screened.
 const FOOD_NAMING_RE =
   /\b(chicken|beef|turkey|lamb|duck|salmon|tuna|whitefish|fish|pork|rabbit|venison|bison|kibble|treats?|dry food|wet food|protein)\b/i
+// The trial-response lane (CUL-8) is a COUNT COMPARISON, never a verdict on the trial. This screen
+// bars the verdict vocabulary the phrasing contract names verbatim — "working"/"helping"/
+// "improvement"/"ruled out"/"clean" — plus its obvious kin (better/worse, resolved, cleared, cured,
+// fixed, effective, responding, on the mend). The domain rule behind the ban: diet response alone is
+// not proof of food sensitivity (Guilford 2001's improved-without-relapse arm), and a calm stretch
+// happens on its own (regression to the mean) — so the engine states counts and lets the vet judge,
+// and NEVER judges for them. Screened in addition to CAUSAL/MECHANISM/FOOD/REASSURANCE.
+// REUSED by the gap-shortening lane (CUL-10): its "worse"/"worsen*" arm is exactly the verdict L4's
+// escalate-only copy must never state over a shortening run (the numbers state the pattern, the copy
+// never labels it) — so this trial-named screen does double duty; keep the vocabulary superset-safe for both.
+const TRIAL_VERDICT_RE =
+  /\b(works?|worked|working|helps?|helped|helping|helpful|improv\w+|better|worse|worsen\w*|resolv\w+|clear(?:ed|ing|s)?|clean|cured?|curing|cures|fixe[ds]|fixing|success\w*|fail\w+|respond\w+|effective|ineffective|on the mend|turn(?:ed|ing) a corner)\b|\brule[ds]?\s+out\b/i
 // SR-4 (B-721 §3.5, spine S3/S5) — UNIVERSALLY banned Signal vocabulary, screened on EVERY
 // finding type. Change lives in the phrased, counted sentence, never a direction glyph
 // (S5), and the sample line is the honest confidence display, never a percentage or
@@ -455,6 +535,45 @@ export function validatePhrasing(text: string, finding: Finding): boolean {
     // never in this loop, but if that ever changes this screen holds all three lines (parity with
     // ⑤/⑦'s screens — defense-in-depth even for a currently-dormant path).
     if (CAUSAL_RE.test(t) || MECHANISM_RE.test(t) || FOOD_NAMING_RE.test(t)) return false
+  }
+  if (finding.type === 'trial_response') {
+    // The trial-response lane (CUL-8) is a COUNT-ANCHORED comparison the vet interprets — never a
+    // verdict. Beyond the universal glyph/percent screen it may not: assert a CAUSE (G1 — no
+    // attribution to the diet, a food, or a med), imply a MECHANISM, name a FOOD/protein/form,
+    // REASSURE, or VERDICT the trial ("working"/"helping"/"improvement"/"ruled out"/"clean" and kin).
+    // It is 'insight' class, so the safety-branch reassurance screen does NOT run for it — the
+    // REASSURANCE_RE test here is what holds that line. Template-only (index.ts) so the model is never
+    // in this loop, but the screen holds all five lines if that ever changes.
+    if (
+      CAUSAL_RE.test(t) ||
+      MECHANISM_RE.test(t) ||
+      FOOD_NAMING_RE.test(t) ||
+      REASSURANCE_RE.test(t) ||
+      TRIAL_VERDICT_RE.test(t)
+    ) {
+      return false
+    }
+  }
+  if (finding.type === 'gap_shortening') {
+    // The gap-shortening lane (CUL-10) is a descriptive count of INTER-EPISODE GAPS routed as a quiet
+    // watching row. It is 'insight' class, so the safety-branch reassurance screen does NOT run for it —
+    // the REASSURANCE_RE test here is what holds the never-reassure line, which matters doubly because
+    // the lane is escalate-only (a "settling"/"improving" sentence must never appear, and firing only on
+    // SHORTENING makes it structurally unreachable — this screen is the defense-in-depth). It also may
+    // not assert a CAUSE (G1 — the shortening is attributed to nothing), imply a MECHANISM, name a
+    // FOOD/protein/form, or VERDICT the trend as clinical worsening (TRIAL_VERDICT_RE covers "worse"/
+    // "worsening"/"worsened" and kin — the numbers state the pattern; the copy never judges it G3).
+    // Template-only (index.ts) so the model is never in this loop; the screen holds all five lines
+    // if that ever changes.
+    if (
+      CAUSAL_RE.test(t) ||
+      MECHANISM_RE.test(t) ||
+      FOOD_NAMING_RE.test(t) ||
+      REASSURANCE_RE.test(t) ||
+      TRIAL_VERDICT_RE.test(t)
+    ) {
+      return false
+    }
   }
   return true
 }
@@ -597,6 +716,37 @@ export function phrasingPayload(finding: Finding, petName: string): Record<strin
       window_minutes: finding.rapidWindowMinutes,
       long_gap_hours: finding.longGapHours,
       relationship: 'associational_timing', // two timing patterns we are noting — NOT a cause, NOT a mechanism
+    }
+  }
+  if (finding.type === 'trial_response') {
+    // Signals v2 (CUL-8) — template-only (index.ts), so never actually sent to the model; kept for
+    // shape-parity. Carries the COUNTS + day-count ONLY — there is deliberately NO verdict/direction
+    // field asking the model to judge the trial (the reader sees which count is higher; the copy
+    // never says). relationship is a descriptive count comparison, never a cause and never a verdict.
+    return {
+      insight_type: 'trial_response',
+      pet_name: petName,
+      trial_day_number: finding.trialDayNumber,
+      target_duration_days: finding.targetDurationDays,
+      pooled_trial_count: finding.pooledTrialCount,
+      pooled_baseline_count: finding.pooledBaselineCount,
+      baseline_window_days: finding.baselineWindowDays,
+      relationship: 'descriptive_count', // a count comparison we are noting — NOT a cause, NOT a verdict
+    }
+  }
+  if (finding.type === 'gap_shortening') {
+    // Signals v2 (CUL-10) — template-only (index.ts), so never actually sent to the model; kept for
+    // shape-parity, and explicit so it never falls through to the intake_decline default below. Carries
+    // the GAPS + median ONLY — no verdict/direction field asking the model to judge the trend (the
+    // numbers state the shortening; the copy never says "worsening"). Descriptive count, never a cause.
+    return {
+      insight_type: 'gap_shortening',
+      pet_name: petName,
+      symptom: SYMPTOM_LABEL[finding.symptomType],
+      recent_gaps_hours: finding.recentGapsHours,
+      median_gap_hours: finding.medianGapHours,
+      episode_count: finding.episodeCount,
+      relationship: 'descriptive_count', // inter-episode gaps we are noting — NOT a cause, NOT a verdict
     }
   }
   if (finding.type === 'incident_red_flag') {
