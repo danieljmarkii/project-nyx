@@ -149,6 +149,14 @@ export const theme = {
   //   colorEventSymptomOnNight   6.80:1  (AA / AAA-large)
   //   colorTextOnNightFaint      3.79:1  (AA-large ONLY — hence large/secondary use)
   colorEventSymptomOnNight: '#FB7185',        // safety rail/tag on night grounds (6.8:1)
+  // Night-ground sibling of colorEventMedication (the slate-blue med tint), for the
+  // med node on the day-spine and the med strip on night grounds (daily-recap
+  // DR-1/DR-4). Lightened from the #5B7A9E day tint so it holds on the dark indigo.
+  // Graphical (dot/glyph) use is the primary role, but it clears AA as text too —
+  // verified, not asserted, on both night grounds:
+  //   on colorBrandNight #13112E          7.91:1  (AAA)
+  //   on colorBrandNightElevated #251F57  6.43:1  (AA / AAA-large)
+  colorEventMedicationOnNight: '#93ADCB',
   colorTextOnNight: '#ECEAF6',                // primary text on night grounds (15.4:1)
   colorTextOnNightMuted: '#A6A2CE',           // secondary text on night grounds (7.6:1)
   colorTextOnNightFaint: '#706BA6',           // metadata/sample lines — large/secondary only (3.8:1)
