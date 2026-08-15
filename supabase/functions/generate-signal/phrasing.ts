@@ -26,6 +26,7 @@ import type {
   EmptyStomachTimingFinding,
   TimingStoryFinding,
   TrialResponseFinding,
+  GapShorteningFinding,
   TimeOfDayClusteringFinding,
   IncidentRedFlagFinding,
   IncidentFlagKind,
@@ -327,6 +328,42 @@ export function templateTrialResponse(f: TrialResponseFinding, petName: string):
   return `We've logged ${f.pooledTrialCount} ${trialNoun} of vomiting for ${petName} in the ${f.trialDayNumber} ${dayNoun} since the trial began, compared with ${f.pooledBaselineCount} across the ${baselineWeeks} ${weekNoun} before it — worth reviewing with your vet.`
 }
 
+/** Render one inter-episode gap (hours) as a friendly value + unit. ≥24h → whole days, else whole
+ *  hours — so a sub-day gap never reads as a dishonest "0 days". Rounding can make two genuinely-
+ *  distinct gaps display equal (a cosmetic limit of the fallback; the exact gaps ride in the payload
+ *  for the client, CUL-12+, and the closer states the direction the numbers may round away). */
+function formatGapUnit(hours: number): { value: number; unit: 'day' | 'hour' } {
+  if (hours >= 24) return { value: Math.max(1, Math.round(hours / 24)), unit: 'day' }
+  return { value: Math.max(1, Math.round(hours)), unit: 'hour' }
+}
+
+/** "6 days, then 3, then 2" (unit stated once when uniform) or "3 days, then 18 hours, then 9 hours"
+ *  (each unit stated when the run crosses the day/hour boundary — an honest big shortening). */
+function formatGapSequence(hoursSeq: readonly number[]): string {
+  const parts = hoursSeq.map(formatGapUnit)
+  const uniform = parts.every((p) => p.unit === parts[0].unit)
+  if (uniform) {
+    const [head, ...rest] = parts
+    const first = `${head.value} ${head.unit}${head.value === 1 ? '' : 's'}`
+    return [first, ...rest.map((p) => String(p.value))].join(', then ')
+  }
+  return parts.map((p) => `${p.value} ${p.unit}${p.value === 1 ? '' : 's'}`).join(', then ')
+}
+
+export function templateGapShortening(f: GapShorteningFinding, petName: string): string {
+  // The gap-shortening lane (Signals v2 / CUL-10 — L4, the sub-floor lane) — template-only (no LLM,
+  // like ③/④/⑤/⑥/⑦), itself a structural never-reassure guarantee. The D2 mock's form: state the
+  // recent inter-episode gaps as PLAIN COUNTS in time order and let the numbers speak — no verdict
+  // word ("worsening"/"worse"/"getting worse"), no cause (G1), no mechanism, no syndrome name (G3),
+  // and — because the lane fires ONLY on shortening — no reassuring "settling"/"improving" is ever
+  // reachable (G5, escalate-only). The closer is understated (a WATCHING row, not a full card): it
+  // flags the pattern without alarming and without an imperative to log more (G8 register). The exact
+  // gaps ride in the payload for the client; this fallback rounds to whole days/hours.
+  const symptom = SYMPTOM_LABEL[f.symptomType]
+  const sequence = formatGapSequence(f.recentGapsHours)
+  return `For ${petName}, the gaps between ${symptom} episodes have been ${sequence} — a pattern worth keeping an eye on.`
+}
+
 export function templateForFinding(finding: Finding, petName: string): string {
   switch (finding.type) {
     case 'food_symptom_correlation':
@@ -347,6 +384,8 @@ export function templateForFinding(finding: Finding, petName: string): string {
       return templateTimingStory(finding, petName)
     case 'trial_response':
       return templateTrialResponse(finding, petName)
+    case 'gap_shortening':
+      return templateGapShortening(finding, petName)
     case 'timeofday_clustering':
       return templateTimeOfDayClustering(finding, petName)
     case 'incident_red_flag':
@@ -497,6 +536,27 @@ export function validatePhrasing(text: string, finding: Finding): boolean {
     // It is 'insight' class, so the safety-branch reassurance screen does NOT run for it — the
     // REASSURANCE_RE test here is what holds that line. Template-only (index.ts) so the model is never
     // in this loop, but the screen holds all five lines if that ever changes.
+    if (
+      CAUSAL_RE.test(t) ||
+      MECHANISM_RE.test(t) ||
+      FOOD_NAMING_RE.test(t) ||
+      REASSURANCE_RE.test(t) ||
+      TRIAL_VERDICT_RE.test(t)
+    ) {
+      return false
+    }
+  }
+  if (finding.type === 'gap_shortening') {
+    // The gap-shortening lane (CUL-10) is a descriptive count of INTER-EPISODE GAPS routed as a quiet
+    // watching row. It is 'insight' class, so the safety-branch reassurance screen does NOT run for it —
+    // the REASSURANCE_RE test here is what holds the never-reassure line, which matters doubly because
+    // the lane is escalate-only (a "settling"/"improving" sentence must never appear, and firing only on
+    // SHORTENING makes it structurally unreachable — this screen is the defense-in-depth). It also may
+    // not assert a CAUSE (G1 — the shortening is attributed to nothing), imply a MECHANISM, name a
+    // FOOD/protein/form, or VERDICT the trend as clinical worsening (TRIAL_VERDICT_RE covers "worse"/
+    // "worsening"/"worsened" and kin — the numbers state the pattern; the copy never judges it G3).
+    // Template-only (index.ts) so the model is never in this loop; the screen holds all five lines
+    // if that ever changes.
     if (
       CAUSAL_RE.test(t) ||
       MECHANISM_RE.test(t) ||
@@ -664,6 +724,21 @@ export function phrasingPayload(finding: Finding, petName: string): Record<strin
       pooled_baseline_count: finding.pooledBaselineCount,
       baseline_window_days: finding.baselineWindowDays,
       relationship: 'descriptive_count', // a count comparison we are noting — NOT a cause, NOT a verdict
+    }
+  }
+  if (finding.type === 'gap_shortening') {
+    // Signals v2 (CUL-10) — template-only (index.ts), so never actually sent to the model; kept for
+    // shape-parity, and explicit so it never falls through to the intake_decline default below. Carries
+    // the GAPS + median ONLY — no verdict/direction field asking the model to judge the trend (the
+    // numbers state the shortening; the copy never says "worsening"). Descriptive count, never a cause.
+    return {
+      insight_type: 'gap_shortening',
+      pet_name: petName,
+      symptom: SYMPTOM_LABEL[finding.symptomType],
+      recent_gaps_hours: finding.recentGapsHours,
+      median_gap_hours: finding.medianGapHours,
+      episode_count: finding.episodeCount,
+      relationship: 'descriptive_count', // inter-episode gaps we are noting — NOT a cause, NOT a verdict
     }
   }
   if (finding.type === 'incident_red_flag') {

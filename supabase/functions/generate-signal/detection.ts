@@ -608,6 +608,11 @@ export type InsightType =
   // timing + diet-structure context. Emitted ONLY when the pooled contrast "changed materially"
   // (§8.5 trigger, adversarial-reviewed). Dark: inert until PR 10's gated redeploy (G10).
   | 'trial_response'
+  // Signals v2 (B-755 / CUL-10): the L4 gap-shortening lane — inter-episode gaps per symptom type,
+  // fired ONLY on a shortening run (escalate-only; lengthening renders nothing, G5). Surfaces as a
+  // QUIET watching/insight row (the D2 frame), never a full card. Dark: inert until PR 10's gated
+  // redeploy (G10) — the shipped client renders an unknown finding type as null (the PR-1 pin).
+  | 'gap_shortening'
   | 'timeofday_clustering'
   | 'incident_red_flag'
 
@@ -1295,6 +1300,56 @@ export interface TrialResponseFinding extends FindingBase {
 }
 
 /**
+ * The gap-shortening lane (Signals v2 / B-755 / CUL-10 — L4, the sub-floor lane). Of the tools in the
+ * signals deep-dive (§3), the g-chart on inter-event gaps is the ONLY one that speaks at the
+ * 4-episodes-in-2-weeks scale (§2 F4) — where ⑤/⑥/⑦/④/③/① are all correctly silent by their own
+ * floors — so this is the lane for the sub-floor state that is every new account's first weeks by
+ * construction. It monitors the GAPS BETWEEN a symptom's episodes (3h-collapsed) and fires ONLY when
+ * they are SHORTENING (a rising episode rate): the plain, escalation-shaped statistic "the gaps between
+ * vomiting episodes have been 6 days, then 3, then 2" (the D2 mock).
+ *
+ * ESCALATE-ONLY BY CONSTRUCTION (G5): a LENGTHENING or flat sequence renders NOTHING, EVER — absence is
+ * not wellness and a widening gap is never reassurance (a pet can stop logging, or a disease can wax and
+ * wane; RTM). There is deliberately no "gaps are lengthening / settling" finding, the same structural
+ * never-reassure guarantee ⑦'s silence-on-a-settled-course makes.
+ *
+ * A QUIET WATCHING ROW, not a full card (§2 L4, D5): it surfaces as the D2 quiet insight row while
+ * real-world behavior is still being observed, ranked at the engine's LOWEST band so it only leads when
+ * nothing louder exists (which is exactly the sub-floor state it is built for). Counts always travel
+ * (`recentGapsHours` + the median) so the owner reads the actual gaps and judges — the row shows a TRUE
+ * fact about the record, never a verdict. NO attribution, NO cause, NO management advice (G1/G3).
+ */
+export interface GapShorteningFinding extends FindingBase {
+  type: 'gap_shortening'
+  priorityClass: 'insight'
+  /** Which symptom's inter-episode gaps shortened. One finding per run; at most one emitted (the
+   *  strongest shortening — see detectGapShortening), so the quiet surface stays calm. */
+  symptomType: SymptomType
+  /**
+   * The monotone-decreasing run that fired, oldest→newest, in HOURS (the raw gaps between consecutive
+   * collapsed episode onsets). Length === `runLength` (config; 4). The phrasing renders it as the D2
+   * sentence, choosing days/hours per gap ("6 days, then 3, then 2"); hours are carried (not pre-
+   * rounded to days) so a sub-day gap never renders as a dishonest "0 days".
+   */
+  recentGapsHours: number[]
+  /** The record's MEDIAN inter-episode gap (all in-window gaps of this type), in hours — the baseline
+   *  the ratio test measured against, carried as evidence for the expand ("typical gap ≈ N days"). */
+  medianGapHours: number
+  /** The latest (shortest) gap, in hours — `recentGapsHours[last]`, surfaced explicitly for the ratio
+   *  transparency (`latestGapHours ≤ gapShorteningRatio × medianGapHours` is why the lane fired). */
+  latestGapHours: number
+  /** Total inter-episode gaps in the record window (≥ runLength) — the "how much history" denominator. */
+  gapCount: number
+  /** Collapsed episodes of this symptom in the window (=== gapCount + 1) — the D2 sample denominator. */
+  episodeCount: number
+  /** ISO-8601 UTC of the most-recent episode onset (the end of the run) — powers "as recently as …"
+   *  evidence and lets a consumer see the run is current (the recency guard already enforced it). */
+  lastOnsetIso: string
+  /** Hard marker for the phrasing layer + reviewers: a descriptive count of gaps, never causal, never a verdict. */
+  associationalOnly: true
+}
+
+/**
  * Time-of-day clustering (⑥, B-079 — descriptive lane Phase 2). A purely DESCRIPTIVE
  * count: of the witnessed vomiting episodes we can place on the clock, how many fall in
  * one `clusterWindowHours` band of the pet's LOCAL day. No model — each onset's local
@@ -1457,6 +1512,7 @@ export type Finding =
   | EmptyStomachTimingFinding
   | TimingStoryFinding
   | TrialResponseFinding
+  | GapShorteningFinding
   | TimeOfDayClusteringFinding
   | IncidentRedFlagFinding
 
@@ -1939,6 +1995,60 @@ export interface DetectionConfig {
     /** Analysis window in days (trailing UTC calendar days from `now`), matching ⑤/⑥. */
     windowDays: number
   }
+  // Signals v2 (B-755 / CUL-10) — the L4 gap-shortening lane (§2 L4). Inter-episode gaps per
+  // symptom type (3h-collapsed); the sub-floor lane that speaks where every other lane is silent
+  // (deep-dive §2 F4, §3 — the g-chart method on inter-event gaps). Escalate-only BY CONSTRUCTION:
+  // it fires only on SHORTENING; a lengthening (or flat) sequence renders NOTHING, ever (G5 —
+  // absence ≠ wellness; RTM). Every constant is a null-model sweep result or a g-chart anchor,
+  // NEVER tuned to Nyx's record (G6).
+  gapShortening: {
+    /**
+     * Absolute floor: the lane is inert below this many inter-episode gaps (this many + 1 collapsed
+     * episodes). 3 gaps / 4 episodes is the g-chart anchor (deep-dive §3 — the method is "informative
+     * from ~3–5 gaps") and the LOWEST data floor in the engine, which is the whole point: L4 exists to
+     * speak in the sub-floor state (§2 F4) where ⑤/⑥ (6 eligible), ⑦ (6 episodes) and ④/③ (3-in-7d)
+     * are all silent. It is the WATCHING-row floor (§4.4, PR 7's client row "watching N gaps"); the
+     * FIRING quiet-insight row additionally needs a `runLength` monotone run, which the sweep set
+     * ABOVE this (see `runLength`) — so a 3-gap record is watched, not claimed-over. NEVER Nyx's record.
+     */
+    minGaps: number
+    /**
+     * The number of most-recent gaps that must be STRICTLY monotonically decreasing for the lane to
+     * fire — the "shortening run". THE SWEEP SET THIS, NOT INTUITION (§9, the ⑥ calibration lesson):
+     * the spec's provisional `3` fires ~16.7% by CHANCE on any null (3 i.i.d. gaps are strictly
+     * decreasing 1/3! = 1/6 of the time — the monotone-runs-by-chance trap the ticket names), the same
+     * class of miss as ⑥'s naive floors firing ~21.6% on uniform noise. A run of `4` drops the
+     * by-chance rate to 1/4! = 1/24 ≈ 4.2%, and with the ratio gate the measured null fire rate lands
+     * ≪5% (the §PROPERTY SWEEP asserts it), matching ⑥'s calibrated-up standard. Cost, taken
+     * knowingly: the FIRING floor is effectively 4 gaps / 5 episodes; a 3-gap record is WATCHED (the
+     * §4.4 row) but never fired on — the honest reading of "the sweep sets the floor" over the g-chart
+     * anchor. NEVER chosen to make Nyx's record fire (G6): it is the smallest run whose by-chance rate
+     * clears the property test.
+     */
+    runLength: number
+    /**
+     * The latest gap must be ≤ this × the record's MEDIAN gap to fire — "meaningfully shorter than the
+     * pet's typical gap", the g-chart lower-control-limit analog. 0.5 = "at most half the typical gap".
+     * Anchored to the g-chart "a gap in the lower tail signals a rate increase" concept and kept loose
+     * enough to catch a moderate real shortening, NOT to any record (G6); the null false-positive rate
+     * is held by `runLength` (the monotone run), not by squeezing this — a ratio strict enough to hold
+     * the FPR alone (~0.17) would miss every moderate acceleration. The §PROPERTY SWEEP measures the
+     * joint (monotone-run ∧ this-ratio) null rate; the §RECALL test asserts real shortening runs clear it.
+     */
+    gapShorteningRatio: number
+    /**
+     * Staleness / reversal guard: the OPEN interval (now − last onset) must be ≤ this × the latest
+     * (shortest) gap, else the accelerating run has not CONTINUED and the quiet row would misrepresent
+     * the present as if the pattern were live. Catches both a run that happened long ago (open interval
+     * ≫ latest) and a run immediately followed by a long quiet stretch (the trend reversed) — the
+     * g-chart's own logic (an in-progress gap longer than the recent short gaps is the rate dropping).
+     * 2× gives stochastic headroom while still filtering a clear reversal. ESCALATE-SAFE: it only ever
+     * SUPPRESSES a fire (never mints one, never reassures), so it cannot manufacture a signal — it
+     * keeps the lane honest about currency. Not an FPR knob (the sweep places nulls at `now`, so this
+     * never fires them); a §RECALL case pins that a stale/reversed run does NOT fire.
+     */
+    recencyGraceFactor: number
+  }
 }
 
 /** §7 table, adopted as the v1 starting defaults (PM 2026-05-30); tune on real data, not a re-decision. */
@@ -2191,6 +2301,27 @@ export const DEFAULT_CONFIG: DetectionConfig = {
   // real data, not a re-decision.
   humanFood: {
     windowDays: 60,
+  },
+  // Signals v2 (B-755 / CUL-10) — the L4 gap-shortening lane. `runLength` is a SWEEP RESULT, not a
+  // preference (§9 / the ⑥ CALIBRATION NOTE above is the precedent): the spec's provisional monotone-3
+  // fires ~16.7% by chance on any null, so it was calibrated UP to a 4-gap run, whose measured null
+  // fire rate lands ≪5% (§PROPERTY SWEEP). Every value is a null-model result or a g-chart anchor,
+  // never Nyx's record (G6).
+  gapShortening: {
+    // 3 gaps / 4 episodes — the g-chart anchor (deep-dive §3) and the lowest data floor in the engine;
+    // the WATCHING-row floor. A 3-gap record is watched (§4.4), not fired on (firing needs runLength).
+    minGaps: 3,
+    // 4, the SWEEP's answer to the monotone-runs-by-chance trap (monotone-3 ≈ 16.7% by luck → 4.2% at
+    // a 4-run, ≪5% with the ratio gate). The firing floor is therefore 4 gaps / 5 episodes — still the
+    // engine's lowest, and squarely in the g-chart's "informative from 3–5 gaps" band.
+    runLength: 4,
+    // At most half the record's median gap — "meaningfully shorter than typical", the g-chart
+    // lower-limit analog. Loose by design (the FPR is held by runLength, not this); the §RECALL test
+    // asserts a real shortening clears it and the §PROPERTY SWEEP measures the joint null rate.
+    gapShorteningRatio: 0.5,
+    // 2× the latest (shortest) gap — the open interval past which the accelerating run has not
+    // continued and the row would misstate the present. Escalate-safe (only ever suppresses a fire).
+    recencyGraceFactor: 2,
   },
 }
 
@@ -4800,6 +4931,162 @@ export function detectTrialResponse(
   ]
 }
 
+// ── Detector L4: gap-shortening (Signals v2 / B-755 / CUL-10 — the sub-floor lane) ──────
+//
+// The g-chart on inter-event gaps (deep-dive §3) is the ONE tool in the signals sweep that speaks at
+// the 4-episodes-in-2-weeks scale (§2 F4) — the sub-floor state that is every new account's first weeks
+// by construction. This lane monitors the GAPS BETWEEN a symptom's 3h-collapsed episodes and fires ONLY
+// on a SHORTENING run (a rising episode rate), rendered as the plain D2 sentence "the gaps between
+// vomiting episodes have been 6 days, then 3, then 2."
+//
+// ── ESCALATE-ONLY BY CONSTRUCTION (G5) ───────────────────────────────────────
+//
+// A LENGTHENING or flat run is not strictly decreasing, so it falls through to SILENCE — there is no
+// "gaps are widening / settling" finding, EVER. Absence is not wellness (a widening gap can be a pet
+// that stopped logging or a disease waxing and waning; RTM), so the never-reassure direction is closed
+// structurally, the same guarantee ⑦ makes by going silent on a settled course rather than saying so.
+//
+// ── THE MONOTONE-RUNS-BY-CHANCE TRAP, AND WHY runLength IS A SWEEP RESULT (§9) ─
+//
+// The spec's PROVISIONAL fire condition was "the last 3 gaps monotonically decreasing AND latest ≤
+// ratio × median". But 3 i.i.d. gaps are strictly decreasing 1/3! = 1/6 ≈ 16.7% of the time BY LUCK, so
+// monotone-3 alone fires ~1-in-6 on ANY null — the exact class of miss ⑥ hit (its naive floors fired
+// ~21.6% on uniform noise; see the DEFAULT_CONFIG ⑥ CALIBRATION NOTE). Per the ticket ("the sweep sets
+// the floor, not intuition; the ⑥ calibration lesson"), the §PROPERTY SWEEP calibrated the run UP: a
+// run of `runLength` = 4 drops the by-chance rate to 1/4! ≈ 4.2%, and with the ratio gate the measured
+// null fire rate lands ≪5% (the sweep asserts per-null ceilings in CI). The cost, taken knowingly: the
+// FIRING floor is effectively 4 gaps / 5 episodes; a 3-gap record (the `minGaps` g-chart anchor) is
+// WATCHED (the §4.4 client row, PR 7) but never fired on — the honest reading of the floor. The ratio is
+// held LOOSE (0.5, "half the typical gap") because the FPR is controlled by the run length, not by a
+// strict ratio that would miss every moderate real acceleration; none of these is tuned to Nyx (G6).
+//
+// ── WHAT IT NEVER DOES ───────────────────────────────────────────────────────
+//
+// No attribution (G1), no syndrome name, no management advice (G3) — it states the gaps and routes
+// nothing. It emits at most ONE quiet row (the strongest shortening), ranked at the engine's LOWEST
+// band, so it only leads when nothing louder exists — which is the sub-floor state it is built for.
+
+/** Strictly monotonically DECREASING? (each element < its predecessor). The escalate-only test: a flat
+ *  step (equal gaps) is NOT shortening, so `<` (not `<=`) is load-bearing. Caller guarantees length ≥ 2. */
+function isStrictlyDecreasing(xs: readonly number[]): boolean {
+  for (let i = 1; i < xs.length; i++) {
+    if (!(xs[i] < xs[i - 1])) return false
+  }
+  return true
+}
+
+/** Median of a NON-EMPTY numeric list (sorted copy; mean of the two middles for even length). */
+function medianOfGaps(xs: readonly number[]): number {
+  const s = [...xs].sort((a, b) => a - b)
+  const mid = Math.floor(s.length / 2)
+  return s.length % 2 === 0 ? (s[mid - 1] + s[mid]) / 2 : s[mid]
+}
+
+/** One symptom type's gap-shortening evidence, pre-selection. */
+interface GapShorteningStat {
+  symptomType: SymptomType
+  recentGapsHours: number[]
+  medianGapHours: number
+  latestGapHours: number
+  gapCount: number
+  episodeCount: number
+  lastOnsetMs: number
+}
+
+export function detectGapShortening(
+  input: DetectionInput,
+  config: DetectionConfig = DEFAULT_CONFIG,
+): GapShorteningFinding[] {
+  const cfg = config.gapShortening
+  const nowMs = Date.parse(input.now)
+  if (!Number.isFinite(nowMs)) return []
+  // A run needs ≥2 gaps to "decrease"; guard a mis-set config so we never read past the array.
+  const runLength = Math.max(2, Math.floor(cfg.runLength))
+
+  const candidates: GapShorteningStat[] = []
+  for (const symptomType of CORRELATION_SYMPTOM_TYPES) {
+    const msList = input.symptomEvents
+      .filter((s) => s.type === symptomType)
+      .map((s) => Date.parse(s.occurredAt))
+      .filter((ms) => Number.isFinite(ms))
+    // 3h episode collapse (the shared re-log guard, G9) → onset times sorted ascending. The input is
+    // already LOOKBACK-windowed by the caller (index.ts, 180d), so "the record" = the current era.
+    const onsets = toEpisodeOnsets(msList, config.symptomEpisodeGapHours)
+    const gapCount = onsets.length - 1
+    // Both floors: the g-chart data floor (minGaps) AND enough gaps to check the run (runLength). By
+    // config minGaps ≤ runLength, so runLength binds; both are asserted so neither can be skipped.
+    if (gapCount < cfg.minGaps || gapCount < runLength) continue
+
+    // Inter-episode gaps in HOURS. onsets are strictly ascending and the collapse guarantees each pair
+    // is > symptomEpisodeGapHours apart, so every gap > 0 and the median is never 0.
+    const gapsHours: number[] = []
+    for (let i = 1; i < onsets.length; i++) {
+      gapsHours.push((onsets[i] - onsets[i - 1]) / MS_PER_HOUR)
+    }
+
+    // (1) SHORTENING — the last `runLength` gaps STRICTLY decreasing. A flat/lengthening run fails here
+    // and falls through to SILENCE (G5, escalate-only).
+    const recent = gapsHours.slice(-runLength)
+    if (!isStrictlyDecreasing(recent)) continue
+
+    // (2) MEANINGFULLY SHORTER — the latest (shortest) gap ≤ ratio × the record's MEDIAN gap.
+    const latestGapHours = gapsHours[gapsHours.length - 1]
+    const medianGapHours = medianOfGaps(gapsHours)
+    if (!(medianGapHours > 0)) continue // defensive; unreachable given the collapse guarantee
+    if (!(latestGapHours <= cfg.gapShorteningRatio * medianGapHours)) continue
+
+    // (3) STILL CURRENT — escalate-safe staleness/reversal guard: the OPEN interval since the last
+    // episode has not already outrun the latest short gap (× the grace factor). A run that happened
+    // long ago, or one immediately followed by a long quiet stretch (the trend reversed), is suppressed
+    // — the accelerating claim would misstate the present. This only ever SUPPRESSES; it never mints a
+    // fire and never reassures, so it cannot manufacture a signal.
+    const lastOnsetMs = onsets[onsets.length - 1]
+    const openIntervalHours = (nowMs - lastOnsetMs) / MS_PER_HOUR
+    if (openIntervalHours > cfg.recencyGraceFactor * latestGapHours) continue
+
+    candidates.push({
+      symptomType,
+      recentGapsHours: recent,
+      medianGapHours,
+      latestGapHours,
+      gapCount,
+      episodeCount: onsets.length,
+      lastOnsetMs,
+    })
+  }
+  if (candidates.length === 0) return []
+
+  // At most ONE quiet row — the STRONGEST shortening (smallest latest/median ratio = most accelerated),
+  // then the most RECENT episode, then symptom-type order. Calm surface over completeness (⑦'s "one card
+  // only"), and this lane is the quietest of all — deterministic so a re-run never reorders.
+  candidates.sort((a, b) => {
+    const ra = a.latestGapHours / a.medianGapHours
+    const rb = b.latestGapHours / b.medianGapHours
+    if (ra !== rb) return ra - rb
+    if (a.lastOnsetMs !== b.lastOnsetMs) return b.lastOnsetMs - a.lastOnsetMs
+    return (
+      CORRELATION_SYMPTOM_TYPES.indexOf(a.symptomType) -
+      CORRELATION_SYMPTOM_TYPES.indexOf(b.symptomType)
+    )
+  })
+
+  const s = candidates[0]
+  return [
+    {
+      type: 'gap_shortening',
+      priorityClass: 'insight',
+      symptomType: s.symptomType,
+      recentGapsHours: s.recentGapsHours,
+      medianGapHours: s.medianGapHours,
+      latestGapHours: s.latestGapHours,
+      gapCount: s.gapCount,
+      episodeCount: s.episodeCount,
+      lastOnsetIso: new Date(s.lastOnsetMs).toISOString(),
+      associationalOnly: true,
+    },
+  ]
+}
+
 // ── Coverage diagnostics (B-053) ────────────────────────────────────────────
 //
 // "Why is there still no signal?" — the structured, ranked subset of silent-
@@ -5505,6 +5792,11 @@ export const DETECTOR_REGISTRY: Detector[] = [
   // trial (the `isTrialRunning` gate). DARK: inert until PR 10's gated redeploy (G10) — the shipped
   // client renders an unknown finding type as null (the PR-1 pin).
   { type: 'trial_response', detect: detectTrialResponse },
+  // Detector L4 (Signals v2 / B-755 / CUL-10 — the sub-floor gap-shortening lane). Emits at most ONE
+  // `gap_shortening` finding, and ONLY on a strictly-shortening inter-episode run (escalate-only, G5 —
+  // a lengthening/flat sequence is silent). The quietest lane, ranked last. DARK: inert until PR 10's
+  // gated redeploy (G10) — the shipped client renders an unknown finding type as null (the PR-1 pin).
+  { type: 'gap_shortening', detect: detectGapShortening },
   { type: 'timeofday_clustering', detect: detectTimeOfDayClustering },
   { type: 'reflection', detect: detectReflections },
   // Detector — per-incident visual red flag (B-340). SAFETY class; reads the NEW
@@ -5528,8 +5820,16 @@ export const DETECTOR_REGISTRY: Detector[] = [
 //   3  reflection (③, B-051) — the gentlest "presence" layer; ALWAYS below every
 //      safety finding AND below every correlation, never the lead of a data-rich
 //      pet that has a real correlation to show.
+//   4  gap_shortening (L4, CUL-10) — the sub-floor watching/quiet row; the engine's
+//      quietest, ranked below even reflection so it leads only when nothing else exists.
 function priorityBand(finding: Finding, ctx: PetContext): number {
   if (finding.priorityClass === 'safety') return 0 // incident_red_flag, intake_decline, symptom_chronicity, symptom_worsening
+  // The gap-shortening lane (L4, CUL-10) is the QUIETEST insight — a sub-floor watching row shown while
+  // real-world behavior is still being observed (§2 L4, D5). It ranks BELOW even reflection so it only
+  // ever leads when nothing louder exists, which is exactly the sub-floor state it is built for. Band 4
+  // is the engine's lowest; nothing is dropped for it (§3 only protects safety), and in a data-rich pet
+  // a louder card outranks it by construction.
+  if (finding.type === 'gap_shortening') return 4
   if (finding.type === 'reflection') return 3
   // The trial-response lane (L2, CUL-8) is the CONTEXT-LEAD insight for a diet-trial pet — it is the
   // wedge feedback, and it only ever EXISTS for a running trial (the isTrialRunning gate), so band 1
