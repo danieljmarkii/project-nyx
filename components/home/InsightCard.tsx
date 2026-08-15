@@ -12,6 +12,7 @@ import { theme } from '../../constants/theme';
 import { Badge } from '../ui/Badge';
 import {
   DENSITY_BOX_TITLE,
+  DOT_LANE_MAX,
   TIMING_STORY_BADGE,
   confidenceTag,
   displayProteinName,
@@ -261,22 +262,37 @@ function ExpandedReceipts({
 // only for a story finding behind `signals_v2` (gated at the call site).
 function TimingStoryExpanded({ finding }: { finding: SignalFinding }) {
   if (!isTimingStory(finding)) return null;
-  const clockLane = timingStoryClockLaneModel(finding);
+  // Cap the dot lanes at the shared legibility limit (DOT_LANE_MAX): above it, individual dots
+  // stop being countable in a single 22px row, so a chronic/heavily-logged patient — the exact
+  // target user — would see a blob. Degrade by OMITTING the dense lane (its geometry has no
+  // per-episode times to jitter, and the face's three-band compare + the for-your-vet line
+  // already carry the split + the clustering in legible form). This mirrors the shipped
+  // timingReceiptDegrades cap; a taller jittered lane is a Patterns-surface treatment (PR 9).
+  const mealModel = timingStoryMealLaneModel(finding);
+  const clockModel = timingStoryClockLaneModel(finding);
+  const showMeal = mealModel.dots.length <= DOT_LANE_MAX;
+  const showClock = clockModel != null && clockModel.dots.length <= DOT_LANE_MAX;
   const control = timingStoryControlDisclosure(finding);
   const medLine = medContextLine(finding);
   const photoLines = photoCompositionLines(finding);
   return (
     <>
-      <EvidenceBox title="When they happen">
-        <Text style={styles.laneCaption}>After eating</Text>
-        <DotLane model={timingStoryMealLaneModel(finding)} />
-        {clockLane ? (
-          <>
-            <Text style={[styles.laneCaption, styles.laneCaptionSpaced]}>By clock</Text>
-            <DotLane model={clockLane} />
-          </>
-        ) : null}
-      </EvidenceBox>
+      {showMeal || showClock ? (
+        <EvidenceBox title="When they happen">
+          {showMeal ? (
+            <>
+              <Text style={styles.laneCaption}>After eating</Text>
+              <DotLane model={mealModel} />
+            </>
+          ) : null}
+          {showClock && clockModel ? (
+            <>
+              <Text style={[styles.laneCaption, showMeal ? styles.laneCaptionSpaced : null]}>By clock</Text>
+              <DotLane model={clockModel} />
+            </>
+          ) : null}
+        </EvidenceBox>
+      ) : null}
       {/* The un-timeable remainder (S2). Titled for what it ACTUALLY holds — a coverage
           caveat — not "the other side of it", which would promise the base-rate counterbalance
           the mock drew ("mornings with a meal and no episode: N of M"). That richer two-sided

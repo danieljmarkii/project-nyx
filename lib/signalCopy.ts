@@ -1215,6 +1215,11 @@ const MEAL_LANE_ZONES = {
  *  honest even-spread WITHIN each zone (the dotLaneModel discipline — the split and the
  *  count are the facts, not a per-episode offset the payload can't back). */
 export function timingStoryMealLaneModel(f: TimingStoryLike): DotLaneModel {
+  // Unlike dotLaneModel's binary in/out split (where `out` is derived by subtraction), the A2
+  // meal lane is a TERNARY split — rapid/mid/long are three independent payload counts — so each
+  // is clamped to eligibleCount independently; a well-formed payload has them partition the
+  // eligible set (dots.length === eligibleCount), and a malformed one degrades safely (the
+  // renderer's DOT_LANE_MAX gate below reads dots.length, so an over-count simply hides the lane).
   const rapidIn = f.type === 'timing_story'; // a lone empty-stomach card's rapid band is not the pattern
   const zones: { zone: LaneBand; n: number; inWindow: boolean }[] = [
     { zone: MEAL_LANE_ZONES.rapid, n: f.bandCounts.rapid, inWindow: rapidIn },
@@ -1268,14 +1273,21 @@ export function photoCompositionLines(f: TimingStoryLike): string[] {
   const pc: PhotoComposition | undefined = f.photoComposition;
   if (!pc) return [];
   const reads = (n: number) => count(n, 'photo we could read', 'photos we could read');
+  // Defend the present-only contract at the READ, exactly as medContextLine guards doseCount:
+  // the server attaches a field only when count ≥ 1 (photoComposition.ts field()), but this reads
+  // a CACHE, and a malformed/stale/regressed row with count 0 must NEVER render "Hair: 0 of N" —
+  // the reassurance-on-absence G4 forbids outright (hair most of all: a hairball count of zero is
+  // never an all-clear). `denominator ≥ count ≥ 1` also blocks a nonsensical "3 of 2". The guard
+  // narrows each field, so no non-null assertions.
   const lines: string[] = [];
-  // Retained food is the LONG-band marker — food still recognizable long after eating is
-  // the notable fact, so the line names the band it belongs to.
-  if (pc.retainedFood) {
-    lines.push(`Recognizable food ${f.longGapHours}h+ after eating: ${pc.retainedFood.count} of ${reads(pc.retainedFood.denominator)}.`);
+  const { retainedFood: rf, hair: hr, bile: bl } = pc;
+  // Retained food is the LONG-band marker — food still recognizable long after eating is the
+  // notable fact, so the line names the band it belongs to.
+  if (rf && rf.count >= 1 && rf.denominator >= rf.count) {
+    lines.push(`Recognizable food ${f.longGapHours}h+ after eating: ${rf.count} of ${reads(rf.denominator)}.`);
   }
-  if (pc.hair) lines.push(`Hair: ${pc.hair.count} of ${reads(pc.hair.denominator)}.`);
-  if (pc.bile) lines.push(`Bile: ${pc.bile.count} of ${reads(pc.bile.denominator)}.`);
+  if (hr && hr.count >= 1 && hr.denominator >= hr.count) lines.push(`Hair: ${hr.count} of ${reads(hr.denominator)}.`);
+  if (bl && bl.count >= 1 && bl.denominator >= bl.count) lines.push(`Bile: ${bl.count} of ${reads(bl.denominator)}.`);
   return lines;
 }
 
@@ -1288,8 +1300,7 @@ export function timingStoryVetLine(f: TimingStoryLike): string {
   const { band, count: inBand } = clockOf(f);
   const photoTail = f.photoComposition ? ' Photos are attached to some of these.' : '';
   if (band && inBand != null) {
-    const longN = longCountOf(f);
-    return `The early-morning timing is worth flagging to your vet — ${inBand} of the ${longN} ${longN === 1 ? 'episode' : 'episodes'} ${f.longGapHours}h+ after eating fell ${localHourBand(band.startLocalHour, band.windowHours)}.${photoTail}`;
+    return `The early-morning timing is worth flagging to your vet — ${inBand} of the ${count(longCountOf(f), 'episode', 'episodes')} ${f.longGapHours}h+ after eating fell ${localHourBand(band.startLocalHour, band.windowHours)}.${photoTail}`;
   }
   return `The timing here — how long after eating these come — is the useful detail to mention to your vet.${photoTail}`;
 }

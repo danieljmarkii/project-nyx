@@ -1426,11 +1426,27 @@ describe('A2 timing card — the control side + L3 composition (S2, G4)', () => 
   });
 
   it('a present-only payload can never render "0 of N" — hair never reassures (G4)', () => {
-    // The field is attached only when count ≥ 1 (server guarantee), so the client simply
-    // never receives a zero; there is no code path that prints "0 of N".
     const onlyHair = photoCompositionLines(timingStory({ photoComposition: { hair: { count: 1, denominator: 9 } } }));
     expect(onlyHair).toEqual(['Hair: 1 of 9 photos we could read.']);
     expect(onlyHair.join(' ')).not.toMatch(/\b0 of\b/);
+  });
+
+  it('DEFENDS the cache: a malformed count-0 (or count>denominator) field renders NOTHING, never "0 of N" (G4)', () => {
+    // The server attaches a field only when count ≥ 1, but this reads a cache — a corrupt/stale/
+    // regressed row must not become reassurance-on-absence. The guard drops it fail-quiet.
+    expect(
+      photoCompositionLines(timingStory({ photoComposition: { hair: { count: 0, denominator: 9 } } })),
+    ).toEqual([]);
+    // A nonsensical "3 of 2" is dropped too (denominator < count).
+    expect(
+      photoCompositionLines(timingStory({ photoComposition: { bile: { count: 3, denominator: 2 } } })),
+    ).toEqual([]);
+    // A mixed payload keeps only the valid field, drops the zero one — no "0 of N" leaks.
+    const mixed = photoCompositionLines(
+      timingStory({ photoComposition: { hair: { count: 0, denominator: 4 }, bile: { count: 2, denominator: 5 } } }),
+    );
+    expect(mixed).toEqual(['Bile: 2 of 5 photos we could read.']);
+    expect(mixed.join(' ')).not.toMatch(/\b0 of\b/);
   });
 
   it('singularizes a one-photo denominator', () => {

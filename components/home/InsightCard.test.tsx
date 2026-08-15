@@ -507,7 +507,15 @@ describe('InsightCard — CUL-12 A2 timing card flag gating (signals_v2)', () =>
   });
 
   it('the expand draws the lanes, the control side, and the for-your-vet relay', () => {
-    const c = anyCached(timingStory());
+    // A small-n fixture (eligibleCount ≤ DOT_LANE_MAX) so both dot lanes render.
+    const c = anyCached(
+      timingStory({
+        bandCounts: { rapid: 4, mid: 3, long: 3 },
+        eligibleCount: 10,
+        totalEpisodes: 16,
+        long: { count: 3, medianHoursSinceFeeding: 9, lastTwoEligible: false, feedingFormsInEvidence: [], clockBand: { startLocalHour: 2, windowHours: 6 }, clockCount: 2 },
+      }),
+    );
     const view = render(<InsightCard cached={c} petName="Nyx" signalsV2 />);
     fireEvent.press(view.getByRole('button'));
     // The two per-phenotype lanes.
@@ -551,6 +559,43 @@ describe('InsightCard — CUL-12 A2 timing card flag gating (signals_v2)', () =>
     fireEvent.press(view.getByRole('button'));
     expect(view.queryByText('After eating')).toBeTruthy();
     expect(view.queryByText('By clock')).toBeNull();
+  });
+
+  it('omits a dot lane above the legibility cap — a chronic patient never sees a 40-dot blob', () => {
+    // eligibleCount 40 > DOT_LANE_MAX (12): the meal lane would blob, so it is omitted (the face
+    // three-band compare still carries the split). The clock lane (7 long episodes) still fits.
+    const dense = timingStory({
+      bandCounts: { rapid: 14, mid: 12, long: 14 },
+      eligibleCount: 40,
+      totalEpisodes: 44,
+      long: { count: 7, medianHoursSinceFeeding: 9, lastTwoEligible: false, feedingFormsInEvidence: [], clockBand: { startLocalHour: 2, windowHours: 6 }, clockCount: 6 },
+    });
+    const view = render(<InsightCard cached={anyCached(dense)} petName="Nyx" signalsV2 />);
+    // Face still shows the compare (each band still legible as a proportional bar).
+    expect(view.queryByText('Within 30 min of eating')).toBeTruthy();
+    fireEvent.press(view.getByRole('button'));
+    expect(view.queryByText('After eating')).toBeNull(); // meal lane omitted (40 > cap)
+    expect(view.queryByText('By clock')).toBeTruthy(); // clock lane kept (7 ≤ cap)
+    // The clustering fact survives in text even where the lane is dropped — the for-your-vet relay.
+    expect(view.queryByText(/early-morning timing is worth flagging/)).toBeTruthy();
+  });
+
+  it('drops the "When they happen" box entirely when BOTH lanes exceed the cap', () => {
+    // Both eligibleCount and longCount over the cap → no lanes → no box; the rest of the expand
+    // (control, for-your-vet) still renders, so the tap-through is never empty.
+    const veryDense = timingStory({
+      bandCounts: { rapid: 20, mid: 10, long: 20 },
+      eligibleCount: 50,
+      totalEpisodes: 52,
+      long: { count: 20, medianHoursSinceFeeding: 9, lastTwoEligible: false, feedingFormsInEvidence: [], clockBand: { startLocalHour: 2, windowHours: 6 }, clockCount: 15 },
+    });
+    const view = render(<InsightCard cached={anyCached(veryDense)} petName="Nyx" signalsV2 />);
+    fireEvent.press(view.getByRole('button'));
+    expect(view.queryByText('When they happen')).toBeNull();
+    expect(view.queryByText('After eating')).toBeNull();
+    expect(view.queryByText('By clock')).toBeNull();
+    // The for-your-vet relay still carries the clustering in words.
+    expect(view.queryByText(/early-morning timing is worth flagging/)).toBeTruthy();
   });
 });
 
