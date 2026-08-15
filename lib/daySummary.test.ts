@@ -13,6 +13,7 @@ jest.mock('./supabase', () => ({ supabase: { from: jest.fn() } }));
 import type { TimelineRow } from './db';
 import {
   buildDaySummary,
+  buildAnchoredDaySummary,
   localDayBoundsIso,
   resolveDaySummaryAnchorMs,
   petZeroLogLine,
@@ -306,6 +307,93 @@ describe('resolveDaySummaryAnchorMs — the fire-day anchor + staleness clamp (B
 
     const nowAge2 = new Date(2026, 7, 3, 8, 0).getTime(); //    Mon morning local
     expect(resolveDaySummaryAnchorMs({ firedForMs, nowMs: nowAge2 })).toBe(nowAge2);
+  });
+});
+
+describe('buildAnchoredDaySummary — anchor + empty-fired-day fallback (B-672 / R-4)', () => {
+  // UTC-pinned (explicit timeZone + Z instants). The tap window: a Sat 9pm
+  // notification tapped at 12:40am Sunday (age 1). Rows span BOTH days (the loader
+  // fetches the fired-for-day-through-today window), so the fallback can re-clip.
+  const firedForMs = Date.parse('2026-08-01T21:00:00Z'); // Sat 9pm — the fired-for day
+  const nowMs = Date.parse('2026-08-02T00:40:00Z'); //      Sun 12:40am — age 1
+  const satRow = mkRow({ id: 'sat', occurred_at: '2026-08-01T18:00:00Z' });
+  const sunRow = mkRow({ id: 'sun', occurred_at: '2026-08-02T00:05:00Z' }); // logged after midnight
+  const tz = 'UTC';
+
+  it('renders the fired-for day when it HAS rows (B-672 — the whole point)', () => {
+    const { model, renderedMs } = buildAnchoredDaySummary({
+      pets: [pet('pet-1', 'Biscuit', [satRow, sunRow])],
+      firedForMs,
+      nowMs,
+      timeZone: tz,
+    });
+    // Saturday has a row → it wins; Sunday's row is correctly not on Saturday's summary.
+    expect(renderedMs).toBe(firedForMs);
+    expect(model.sections[0].rows.map((r) => r.id)).toEqual(['sat']);
+    expect(model.isEmpty).toBe(false);
+  });
+
+  it('falls back to TODAY when the fired-for day is empty but today has a fresh log (finding #1)', () => {
+    // Saturday empty; the owner logged a symptom at 12:05am Sunday. Anchoring to the
+    // empty Saturday would hide it behind "nothing in the record" — so today wins.
+    const { model, renderedMs } = buildAnchoredDaySummary({
+      pets: [pet('pet-1', 'Biscuit', [sunRow])],
+      firedForMs,
+      nowMs,
+      timeZone: tz,
+    });
+    expect(renderedMs).toBe(nowMs);
+    expect(model.sections[0].rows.map((r) => r.id)).toEqual(['sun']);
+    expect(model.isEmpty).toBe(false);
+  });
+
+  it('renders TODAY (empty) when both days are empty — the empty state names today honestly', () => {
+    const { model, renderedMs } = buildAnchoredDaySummary({
+      pets: [pet('pet-1', 'Biscuit', [])],
+      firedForMs,
+      nowMs,
+      timeZone: tz,
+    });
+    // The fallback lands on today, so the "…record today" copy is accurate.
+    expect(renderedMs).toBe(nowMs);
+    expect(model.isEmpty).toBe(true);
+  });
+
+  it('a same-day (age-0) tap renders today; no fallback path', () => {
+    const sameDayFire = Date.parse('2026-08-02T21:00:00Z'); // Sun 9pm
+    const sameDayNow = Date.parse('2026-08-02T21:05:00Z'); //  Sun 9:05pm
+    const { model, renderedMs } = buildAnchoredDaySummary({
+      pets: [pet('pet-1', 'Biscuit', [sunRow])],
+      firedForMs: sameDayFire,
+      nowMs: sameDayNow,
+      timeZone: tz,
+    });
+    expect(renderedMs).toBe(sameDayFire);
+    expect(model.sections[0].rows.map((r) => r.id)).toEqual(['sun']);
+  });
+
+  it('no fired-for instant → today (pre-B-672 default), even with an empty today', () => {
+    const { renderedMs } = buildAnchoredDaySummary({
+      pets: [pet('pet-1', 'Biscuit', [])],
+      firedForMs: null,
+      nowMs,
+      timeZone: tz,
+    });
+    // No anchor → nowMs; not treated as an "empty past day", so no fallback churn.
+    expect(renderedMs).toBe(nowMs);
+  });
+
+  it('a ≥2-day-old tap renders today, never the stale day (even if the stale day had rows)', () => {
+    const staleFire = Date.parse('2026-07-31T21:00:00Z'); // Fri — 2 days before Sunday
+    const friRow = mkRow({ id: 'fri', occurred_at: '2026-07-31T18:00:00Z' });
+    const { model, renderedMs } = buildAnchoredDaySummary({
+      pets: [pet('pet-1', 'Biscuit', [friRow, sunRow])],
+      firedForMs: staleFire,
+      nowMs, // Sunday
+      timeZone: tz,
+    });
+    expect(renderedMs).toBe(nowMs);
+    expect(model.sections[0].rows.map((r) => r.id)).toEqual(['sun']);
   });
 });
 
