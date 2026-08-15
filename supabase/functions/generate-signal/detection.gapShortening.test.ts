@@ -183,13 +183,32 @@ Deno.test('detectGapShortening — gaps are per symptom type; unrelated other-ty
   assert.equal(out[0].symptomType, 'vomit')
 })
 
-Deno.test('detectGapShortening — at most ONE finding; the STRONGEST shortening (smallest latest/median) wins', () => {
-  // Vomit shortens moderately; itch shortens harder (latest is a far smaller fraction of its median).
-  const vomit = eventsAt(onsetsFromGapDays([20, 16, 12, 8]), 'vomit') // latest/median ≈ 8/14 ≈ 0.57 → won't even fire the ratio
-  const itch = eventsAt(onsetsFromGapDays([30, 18, 9, 2]), 'itch') // latest/median = 2/13.5 ≈ 0.15 → strong
+Deno.test('detectGapShortening — at most ONE finding; the sort picks the STRONGEST shortening (both types fire)', () => {
+  // BOTH clear every gate — so the winner is chosen by the comparator, not by elimination.
+  const vomit = eventsAt(onsetsFromGapDays([20, 12, 6, 3]), 'vomit') // ratio = 3 / median(9) ≈ 0.33
+  const itch = eventsAt(onsetsFromGapDays([30, 18, 9, 2]), 'itch') // ratio = 2 / median(13.5) ≈ 0.15 (stronger)
+  // Prove both independently fire before combining, so this test can't silently regress to elimination.
+  assert.equal(detectGapShortening(input({ symptomEvents: vomit })).length, 1)
+  assert.equal(detectGapShortening(input({ symptomEvents: itch })).length, 1)
   const out = detectGapShortening(input({ symptomEvents: [...vomit, ...itch] }))
   assert.equal(out.length, 1)
-  assert.equal(out[0].symptomType, 'itch')
+  assert.equal(out[0].symptomType, 'itch') // smaller latest/median ⇒ stronger ⇒ wins the sort
+})
+
+Deno.test('detectGapShortening — sort tie-breaks: equal ratio → more RECENT wins, then symptom-type order', () => {
+  // Two types with the SAME gaps (same ratio) but different last-episode recency → the more recent wins.
+  const vomitRecent = eventsAt(onsetsFromGapDays([20, 12, 6, 3], 1), 'vomit') // ends 1h ago
+  const diarrheaOlder = eventsAt(onsetsFromGapDays([20, 12, 6, 3], 25), 'diarrhea') // ends 25h ago (still within 2×3d)
+  const byRecency = detectGapShortening(input({ symptomEvents: [...diarrheaOlder, ...vomitRecent] }))
+  assert.equal(byRecency.length, 1)
+  assert.equal(byRecency[0].symptomType, 'vomit')
+  // Identical gaps AND identical last-onset instant → CORRELATION_SYMPTOM_TYPES order breaks the tie
+  // (vomit is index 0, skin_reaction index 4), deterministically, so a re-run never reorders.
+  const vomitTie = eventsAt(onsetsFromGapDays([20, 12, 6, 3], 1), 'vomit')
+  const skinTie = eventsAt(onsetsFromGapDays([20, 12, 6, 3], 1), 'skin_reaction')
+  const byOrder = detectGapShortening(input({ symptomEvents: [...skinTie, ...vomitTie] }))
+  assert.equal(byOrder.length, 1)
+  assert.equal(byOrder[0].symptomType, 'vomit')
 })
 
 // ── Deterministic guards ───────────────────────────────────────────────────────
@@ -278,23 +297,29 @@ const NULLS: { name: string; gen: NullGen }[] = [
 const SWEEP_NS = [5, 6, 8, 12, 20] // 5 episodes = 4 gaps = the firing floor; below it never fires.
 const TRIALS = 2000
 
-function sweepFireRate(config: DetectionConfig, seedSalt: number): { pooled: number; worst: number; worstLabel: string } {
+function sweepFireRate(
+  config: DetectionConfig,
+  seedSalt: number,
+  nulls: { name: string; gen: NullGen }[] = NULLS,
+  ns: number[] = SWEEP_NS,
+  trials = TRIALS,
+): { pooled: number; worst: number; worstLabel: string } {
   let fires = 0
   let total = 0
   let worst = 0
   let worstLabel = ''
-  for (const nm of NULLS) {
-    for (const n of SWEEP_NS) {
+  for (const nm of nulls) {
+    for (const n of ns) {
       const rng = mulberry32(0x9e37 ^ seedSalt ^ (n * 17) ^ (nm.name.length * 71))
       let cellFires = 0
-      for (let t = 0; t < TRIALS; t++) {
+      for (let t = 0; t < trials; t++) {
         if (detectGapShortening(input({ symptomEvents: eventsAt(nm.gen(rng, n)) }), config).length > 0) {
           cellFires++
         }
       }
       fires += cellFires
-      total += TRIALS
-      const rate = cellFires / TRIALS
+      total += trials
+      const rate = cellFires / trials
       if (rate > worst) {
         worst = rate
         worstLabel = `${nm.name} n=${n}`
@@ -304,17 +329,102 @@ function sweepFireRate(config: DetectionConfig, seedSalt: number): { pooled: num
   return { pooled: fires / total, worst, worstLabel }
 }
 
-Deno.test('detectGapShortening — §PROPERTY SWEEP: the SHIPPED config fires ≪5% on every constant-rate null', () => {
+Deno.test('detectGapShortening — §PROPERTY SWEEP: the SHIPPED config fires ≪5% on every CONSTANT-RATE null', () => {
+  // SCOPED to constant-rate / iid-renewal nulls (the class above). Measured (scratch, 4000 trials):
+  // pooled ~1.99%, worst ~3.55% (heavy-tailed lognormal). This is NOT the whole story — AUTOCORRELATED
+  // waxing/waning nulls fire higher, an accepted residual asserted separately in the next test (the
+  // ⑥ CALIBRATION NOTE discipline: name the residual, do not omit the null that produces it).
   const { pooled, worst, worstLabel } = sweepFireRate(DEFAULT_CONFIG, 0x4)
-  // Measured (scratch, 4000 trials): pooled ~1.99%, worst ~3.55%. Ceilings carry seed/estimator headroom.
-  assert.ok(pooled < 0.03, `pooled null fire rate ${(100 * pooled).toFixed(2)}% must be < 3% (got worst ${(100 * worst).toFixed(2)}% @ ${worstLabel})`)
-  assert.ok(worst < 0.05, `worst-cell null fire rate ${(100 * worst).toFixed(2)}% @ ${worstLabel} must be < 5%`)
+  assert.ok(pooled < 0.03, `pooled constant-rate null fire rate ${(100 * pooled).toFixed(2)}% must be < 3% (worst ${(100 * worst).toFixed(2)}% @ ${worstLabel})`)
+  assert.ok(worst < 0.05, `worst-cell constant-rate null fire rate ${(100 * worst).toFixed(2)}% @ ${worstLabel} must be < 5%`)
+})
+
+// ── VARIABLE-RATE (autocorrelated waxing/waning) nulls — the adversarial finding, DISCLOSED ──────────
+//
+// The adversarial review (CUL-10) broke the original "≪5% on every null" claim: the constant-rate sweep
+// above OMITTED the one null class the lane's own docstring names as its hazard — a rate that WANDERS
+// (waxes and wanes) WITHOUT a trend. Autocorrelation lets the last-`runLength` gaps be monotone MORE
+// often than the iid 1/24, because a wandering rate spends real time drifting down (then reverting), and
+// that down-wander reads as "accelerating" (the RTM the lane guards against). Two natural mechanisms:
+//   • a Cox process with an AR(1) log-rate (mean-reverting, zero trend);
+//   • a 2-state flare/quiet Markov rate (the most literal waxing/waning model).
+// Measured (scratch, 40k trials): the shipped runLength=4 fires ~4.3–5.8% here (worst ~5.8% at an extreme
+// 80× rate swing; moderate swings ~4.5–5.1%). runLength=5 pulls ALL of these under 2%, but at a 6-episode
+// firing floor that erodes the sub-floor mission (⑦-chronicity's own floor) — the 4-vs-5 tradeoff is a
+// Dr. Chen/PM DECISION BRIEF (session doc + PR). This test DISCLOSES the residual as an ⑥-style accepted
+// cost (⑥ accepts a comparable residual on its own worst null): L4 is a quiet band-4 escalate-only row
+// whose counts always show and whose output — a TRUE "the gaps shortened", never a verdict, never a
+// cause — is, on a genuinely waxing/waning disease, a flare worth a quiet note, not a false alarm.
+const coxAR1: NullGen = (r, n) => {
+  // AR(1) log mean-gap, stationary sd = 2.2 (≈80× peak-to-trough swing), phi = 0.8. Base mean 5d.
+  let x = 2.2 * randn(r)
+  const phi = 0.8
+  const sigma = 2.2 * Math.sqrt(1 - phi * phi)
+  const gaps: number[] = []
+  for (let i = 0; i < n - 1; i++) {
+    x = phi * x + sigma * randn(r)
+    gaps.push(-Math.log(1 - r()) * 5 * 24 * Math.exp(x) * HOUR)
+  }
+  return backwardOnsetsFromGaps(gaps)
+}
+const coxAR1Moderate: NullGen = (r, n) => {
+  // A milder, more typical swing (sd 1.8 ≈ 36×, phi 0.7).
+  let x = 1.8 * randn(r)
+  const phi = 0.7
+  const sigma = 1.8 * Math.sqrt(1 - phi * phi)
+  const gaps: number[] = []
+  for (let i = 0; i < n - 1; i++) {
+    x = phi * x + sigma * randn(r)
+    gaps.push(-Math.log(1 - r()) * 5 * 24 * Math.exp(x) * HOUR)
+  }
+  return backwardOnsetsFromGaps(gaps)
+}
+const markovFlareQuiet: NullGen = (r, n) => {
+  // 2-state flare(1d)/quiet(40d) rate, sticky (stay 0.8) — the literal waxing/waning model.
+  let flare = r() < 0.5
+  const gaps: number[] = []
+  for (let i = 0; i < n - 1; i++) {
+    if (r() > 0.8) flare = !flare
+    gaps.push(-Math.log(1 - r()) * (flare ? 1 : 40) * 24 * HOUR)
+  }
+  return backwardOnsetsFromGaps(gaps)
+}
+/** Onsets ending 1h before now, walking BACK by explicit gaps (the variable-rate generators build gaps directly). */
+function backwardOnsetsFromGaps(gaps: number[]): number[] {
+  const onsets = [SWEEP_NOW - HOUR]
+  for (let i = gaps.length - 1; i >= 0; i--) onsets.unshift(onsets[0] - gaps[i])
+  return onsets
+}
+const VARIABLE_NULLS: { name: string; gen: NullGen }[] = [
+  { name: 'cox-AR1-80x', gen: coxAR1 },
+  { name: 'cox-AR1-36x', gen: coxAR1Moderate },
+  { name: 'markov-flare-quiet', gen: markovFlareQuiet },
+]
+
+Deno.test('detectGapShortening — §PROPERTY SWEEP (variable-rate): autocorrelated waxing/waning nulls fire at a DISCLOSED, ⑥-style accepted residual (~5–6%, above the constant-rate class)', () => {
+  // 4000 trials/cell (a ~5–6% rate needs more than the constant-rate 2000 to be non-flaky at a tight
+  // ceiling). The ceiling is HONEST: it names ~5–6% as the accepted residual for this null class — the
+  // opposite of hiding it. It still guards a regression (a change that pushed this to ~10% would fail).
+  const { pooled, worst, worstLabel } = sweepFireRate(DEFAULT_CONFIG, 0x7, VARIABLE_NULLS, [8, 12, 16], 4000)
+  // The value this class carries is knowingly higher than the constant-rate class; assert it is REAL
+  // (the worst null actually reaches the residual band, so this test can't rot into a no-op) and BOUNDED.
+  assert.ok(worst > 0.04, `sanity: the variable-rate worst (${(100 * worst).toFixed(2)}% @ ${worstLabel}) should reach the residual band`)
+  assert.ok(worst < 0.07, `variable-rate worst-cell fire rate ${(100 * worst).toFixed(2)}% @ ${worstLabel} must stay < 7% (the disclosed residual; a regression past this fails)`)
+  assert.ok(pooled < 0.065, `variable-rate pooled fire rate ${(100 * pooled).toFixed(2)}% must stay < 6.5%`)
+})
+
+Deno.test('detectGapShortening — §PROPERTY SWEEP: runLength=5 pulls the variable-rate residual back under 2% (the Dr. Chen 4-vs-5 lever)', () => {
+  // Documents the one-line alternative the decision brief offers: runLength=5 (6-episode firing floor)
+  // drops the by-chance base 1/24→1/120 and the autocorrelated worst under 2% — at the sub-floor-mission
+  // cost. Encoded so the tradeoff is a measured fact, not a claim.
+  const { worst } = sweepFireRate(cfg({ runLength: 5 }), 0x8, VARIABLE_NULLS, [8, 12, 16], 4000)
+  assert.ok(worst < 0.025, `runLength=5 variable-rate worst ${(100 * worst).toFixed(2)}% should be < 2.5%`)
 })
 
 Deno.test('detectGapShortening — §PROPERTY SWEEP calibration lock: runLength=3 BLOWS the ceiling (why the sweep set it to 4)', () => {
   // The monotone-runs-by-chance trap made concrete: the spec's PROVISIONAL monotone-3 fires far above
-  // the 5% bar on pure null models. This assertion is the guard against a future dev silently lowering
-  // the run back to 3 (the ⑥ CALIBRATION NOTE lesson, encoded as a test).
+  // the 5% bar even on CONSTANT-RATE nulls. This assertion is the guard against a future dev silently
+  // lowering the run back to 3 (the ⑥ CALIBRATION NOTE lesson, encoded as a test).
   const { pooled } = sweepFireRate(cfg({ runLength: 3, minGaps: 3 }), 0x3)
   assert.ok(pooled > 0.05, `monotone-3 pooled fire rate ${(100 * pooled).toFixed(2)}% should exceed 5% (the trap)`)
 })

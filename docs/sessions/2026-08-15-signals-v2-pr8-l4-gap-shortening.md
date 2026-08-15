@@ -34,13 +34,34 @@ The **recency guard** (`now − lastOnset ≤ 2 × latestGap`) suppresses a stal
 
 ## Reviews — adversarial (MANDATORY) + code review
 
-Both launched on the working-tree diff. **`adversarial-reviewer` (MANDATORY)** was asked to break the calibration specifically — to find a null model that pushes the FPR past 5% at runLength=4, to attack the escalate-only guarantee, the recency guard, and the median-coupling at the 4-gap floor — running the deno sweep itself. **`code-reviewer`** covers general health + house rules. Outcomes + any fixes are recorded here in a follow-up commit before the PR leaves draft (the initial commit lands the lane; fixes ride on top, the L2 pattern). Pre-review self-falsification (scratch, 5000 trials): heavy-tailed lognormal (σ up to 1.5), bimodal, drifting-random-walk-rate and gamma nulls all fire **< 3.72%** at the shipped config — the heavy-tailed worst case is now folded into the committed §PROPERTY SWEEP.
+**`adversarial-reviewer` returned FAIL (medium — a calibration-disclosure gap, not a dangerous detector); resolved in-session.** It ran the deno sweep itself and confirmed the structure is sound — escalate-only/G5 (strict `<`, no lengthening branch, template-only + `validatePhrasing`), the recency guard (ratio + guard jointly force recency, no flicker), the n=5 floor (the conservative end), episode collapse, per-type isolation, and at-most-one selection **all HELD**. It also confirmed a genuine strength: because the fire check reads only the **last** `runLength` gaps (not a sliding scan), the by-chance base is a fixed 1/24 regardless of n — flat to n=1000, so it avoids ⑥'s scan-statistic trap; constant-rate + iid heavy-tail nulls hold at ~3–4% up to any n.
+
+**The break** — and it's a real one — is that my sweep tested only **constant-rate** nulls, omitting the one class the ticket named ("a slowly-drifting rate") and the lane's own docstring names as its hazard ("wax and wane"). On an **autocorrelated / waxing-waning** rate (a rate that wanders *without* a trend), the last-4-monotone rate exceeds the iid 1/24 because the down-wander reads as acceleration (the RTM the lane guards against). Reproduced independently in-session (40k trials): an AR(1) log-rate Cox process at an extreme ~80× swing fires **~5.8%**, moderate Cox/Markov flare-quiet ~4.5–5.5% — so the original "≪5% on **every** null / worst ~3.55%" claim was the constant-rate worst, not the true worst.
+
+**Resolution — the reviewer's own preferred option (a): keep runLength=4, add the omitted null, and DISCLOSE the residual honestly (the ⑥ discipline: name the residual, don't hide the null that produces it), NOT runLength=5.** Rationale: the lane's entire purpose is the sub-floor state, and runLength=5 raises the firing floor to 6 episodes — ⑦-chronicity's own floor — which erodes that mission; meanwhile the ~5.8% is on an *extreme* swing, it's a quiet band-4 escalate-only row whose counts always show, and its output (a TRUE "the gaps shortened", never a verdict/cause) is, on a genuinely waxing/waning disease, a flare worth a quiet note rather than a false alarm. Applied:
+- Added a **variable-rate null class** (AR(1) Cox 80× + 36×, 2-state flare/quiet Markov) to the committed §PROPERTY SWEEP, asserting the residual **< 7% worst / < 6.5% pooled** with a *sanity floor* (worst > 4%, so the test can't rot into a no-op) — an honest, regression-guarding ceiling, not a hidden one.
+- Encoded the **runLength=5 lever** as a measured fact (a test asserting it pulls the variable-rate residual < 2.5%).
+- Rewrote every over-claiming docstring (detector header, `runLength` config, `DEFAULT_CONFIG`) to disclose the residual + point at the decision brief.
+- **Surfaced the 4-vs-5 call to Dr. Chen/PM as a decision brief** (below), proceeding with 4 provisionally — the lane is dark (G10), so there is no production exposure while it's ruled.
+
+**`code-reviewer` returned no correctness bugs** (independently ran `deno check` + the 492-test suite green); 4 non-blocking findings, all applied this session:
+1. **[cleanup]** `medianOfGaps` duplicated the existing `median()` ~900 lines up in the same file → deleted, reuse `median()`.
+2. **[real copy bug]** `formatGapUnit` bucketed day/hour off the *raw* hours but rounded independently, so a gap in [23.5, 24)h could render "24 hours" — a genuinely-shortening pair could read flat/backwards → round once, then bucket off the rounded value.
+3. **[cleanup]** the "strongest shortening wins" test didn't exercise the comparator (the loser failed the ratio gate outright) → rewrote so both types fire, plus a dedicated recency + type-order tie-break test.
+4. **[nit]** noted `TRIAL_VERDICT_RE`'s reuse by L4 at its declaration site.
+It also folded `trial_response`/`gap_shortening` into the two universal guardrail sweeps that previously omitted them.
+
+### Dr. Chen / PM decision brief — L4 gap run length: 4 or 5?
+- **Deciding:** whether the shortening run must be 4 gaps (5-episode firing floor) or 5 gaps (6-episode floor).
+- **Options:** **(A, recommended) runLength=4** — preserves the sub-floor mission (fires below ⑦-chronicity's 6-episode floor, where the lane is *meant* to speak), at a disclosed ~5–6% null FPR on autocorrelated waxing/waning rates (an ⑥-style accepted residual for a quiet, escalate-only, counts-shown row whose "false positive" is a true flare note); **(B) runLength=5** — a clean <2% on *all* nulls, but the 6-episode floor sits at ⑦'s own, eroding the reason L4 exists (a one-line change). Do **not** tighten `recencyGraceFactor` (the adversarial pass showed the guard is already load-bearing; tightening worsens over-suppression).
+- **Consequence:** (A) ships the lane at its intended sensitivity with the residual documented + test-asserted; (B) trades the sub-floor mission for a cleaner FPR. Either way the lane stays **dark (G10)** until PR 10, so the ruling changes at most one constant before the gated redeploy.
 
 ## Gates / DoD
 
-- **`deno test`**: full `generate-signal/` suite **492 pass** (+18 L4 detector incl. the §PROPERTY SWEEP + calibration-lock + §RECALL + the structural invariant, +6 phrasing). `deno check` clean. App `tsc --noEmit` clean.
-- **§PROPERTY SWEEP** (the required adversarial calibration gate): shipped config fires < 3% pooled / < 5% worst-cell on every constant-rate null (Poisson/exponential at several rates, uniform onsets, periodic+jitter); the calibration-lock asserts runLength=3 exceeds 5% (the trap). §RECALL: genuine 4-gap shortening runs fire; staleness suppressed.
+- **`deno test`**: full `generate-signal/` suite green (**495 pass**; +21 L4 detector incl. two §PROPERTY SWEEP classes + the runLength=5 lever + the calibration-lock + §RECALL + the structural invariant + the tie-break tests, +6 phrasing). `deno check` clean. App `tsc --noEmit` clean.
+- **§PROPERTY SWEEP** (the required adversarial calibration gate, now TWO classes): (1) constant-rate/iid nulls (Poisson at several rates, uniform, periodic+jitter, heavy-tailed lognormal) < 3% pooled / < 5% worst-cell; (2) **autocorrelated waxing/waning nulls** (AR(1) Cox 80×/36×, 2-state flare/quiet Markov) asserted as a **disclosed ⑥-style residual** < 7% worst / < 6.5% pooled, with a sanity floor so it can't rot; plus the calibration-lock (runLength=3 exceeds 5%) and the runLength=5 lever (variable-rate < 2.5%). §RECALL: genuine 4-gap shortening runs fire; staleness suppressed.
 - **Two invariants** (structural, always true when a finding emits): `recentGapsHours` strictly decreasing; `latest ≤ ratio × median`; `gapCount == episodeCount − 1`.
+- **Adversarial review (MANDATORY): FAIL → resolved** (the variable-rate calibration-disclosure gap; option (a) disclose-and-accept, with the 4-vs-5 call surfaced as a Dr. Chen decision brief). **Code review: no correctness bugs; 4 findings applied.**
 - **No new secret; no schema; no migration; no client change; NO redeploy** (G10 — inert until PR 10's gated redeploy behind `signals_v2`).
 
 ## Notes / follow-ups
@@ -50,4 +71,4 @@ Both launched on the working-tree diff. **`adversarial-reviewer` (MANDATORY)** w
 
 ## PR
 
-Shipped via **#<n>** (draft) on `claude/cul-10-l4-gap-shortening-k1bxh2`.
+Shipped via **#647** (draft) on `claude/cul-10-l4-gap-shortening-k1bxh2`.

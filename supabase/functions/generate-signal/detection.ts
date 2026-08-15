@@ -2019,11 +2019,13 @@ export interface DetectionConfig {
      * decreasing 1/3! = 1/6 of the time — the monotone-runs-by-chance trap the ticket names), the same
      * class of miss as ⑥'s naive floors firing ~21.6% on uniform noise. A run of `4` drops the
      * by-chance rate to 1/4! = 1/24 ≈ 4.2%, and with the ratio gate the measured null fire rate lands
-     * ≪5% (the §PROPERTY SWEEP asserts it), matching ⑥'s calibrated-up standard. Cost, taken
-     * knowingly: the FIRING floor is effectively 4 gaps / 5 episodes; a 3-gap record is WATCHED (the
-     * §4.4 row) but never fired on — the honest reading of "the sweep sets the floor" over the g-chart
-     * anchor. NEVER chosen to make Nyx's record fire (G6): it is the smallest run whose by-chance rate
-     * clears the property test.
+     * ~2% on CONSTANT-RATE nulls, matching ⑥'s calibrated-up standard. Cost, taken knowingly: the
+     * FIRING floor is effectively 4 gaps / 5 episodes; a 3-gap record is WATCHED (the §4.4 row) but
+     * never fired on — the honest reading of "the sweep sets the floor" over the g-chart anchor. NEVER
+     * chosen to make Nyx's record fire (G6): it is the smallest run whose by-chance rate clears the
+     * property test. DISCLOSED RESIDUAL (adversarial, CUL-10): on an AUTOCORRELATED waxing/waning rate
+     * the residual is ~5–6% (not ≪5%) — the §PROPERTY SWEEP carries that null and asserts it as an
+     * ⑥-style accepted cost; runLength=5 drops it under 2% at a 6-episode floor (the Dr. Chen 4-vs-5 brief).
      */
     runLength: number
     /**
@@ -2304,16 +2306,19 @@ export const DEFAULT_CONFIG: DetectionConfig = {
   },
   // Signals v2 (B-755 / CUL-10) — the L4 gap-shortening lane. `runLength` is a SWEEP RESULT, not a
   // preference (§9 / the ⑥ CALIBRATION NOTE above is the precedent): the spec's provisional monotone-3
-  // fires ~16.7% by chance on any null, so it was calibrated UP to a 4-gap run, whose measured null
-  // fire rate lands ≪5% (§PROPERTY SWEEP). Every value is a null-model result or a g-chart anchor,
-  // never Nyx's record (G6).
+  // fires ~16.7% by chance on any null, so it was calibrated UP to a 4-gap run — measured null FPR ~2%
+  // on constant-rate nulls, an ⑥-style DISCLOSED ~5–6% on autocorrelated waxing/waning nulls (§PROPERTY
+  // SWEEP; the adversarial-review residual, named not hidden). Every value is a null-model result or a
+  // g-chart anchor, never Nyx's record (G6).
   gapShortening: {
     // 3 gaps / 4 episodes — the g-chart anchor (deep-dive §3) and the lowest data floor in the engine;
     // the WATCHING-row floor. A 3-gap record is watched (§4.4), not fired on (firing needs runLength).
     minGaps: 3,
     // 4, the SWEEP's answer to the monotone-runs-by-chance trap (monotone-3 ≈ 16.7% by luck → 4.2% at
-    // a 4-run, ≪5% with the ratio gate). The firing floor is therefore 4 gaps / 5 episodes — still the
-    // engine's lowest, and squarely in the g-chart's "informative from 3–5 gaps" band.
+    // a 4-run; ~2% with the ratio gate on constant-rate nulls, a disclosed ~5–6% on autocorrelated ones).
+    // The firing floor is therefore 4 gaps / 5 episodes — still the engine's lowest, and squarely in the
+    // g-chart's "informative from 3–5 gaps" band. (runLength=5 would drop the autocorrelated residual
+    // under 2% at a 6-episode floor — the Dr. Chen 4-vs-5 decision brief; kept at 4 for the sub-floor mission.)
     runLength: 4,
     // At most half the record's median gap — "meaningfully shorter than typical", the g-chart
     // lower-limit analog. Loose by design (the FPR is held by runLength, not this); the §RECALL test
@@ -4954,11 +4959,22 @@ export function detectTrialResponse(
 // ~21.6% on uniform noise; see the DEFAULT_CONFIG ⑥ CALIBRATION NOTE). Per the ticket ("the sweep sets
 // the floor, not intuition; the ⑥ calibration lesson"), the §PROPERTY SWEEP calibrated the run UP: a
 // run of `runLength` = 4 drops the by-chance rate to 1/4! ≈ 4.2%, and with the ratio gate the measured
-// null fire rate lands ≪5% (the sweep asserts per-null ceilings in CI). The cost, taken knowingly: the
-// FIRING floor is effectively 4 gaps / 5 episodes; a 3-gap record (the `minGaps` g-chart anchor) is
-// WATCHED (the §4.4 client row, PR 7) but never fired on — the honest reading of the floor. The ratio is
-// held LOOSE (0.5, "half the typical gap") because the FPR is controlled by the run length, not by a
-// strict ratio that would miss every moderate real acceleration; none of these is tuned to Nyx (G6).
+// null fire rate lands ~2% on CONSTANT-RATE nulls. The cost, taken knowingly: the FIRING floor is
+// effectively 4 gaps / 5 episodes; a 3-gap record (the `minGaps` g-chart anchor) is WATCHED (the §4.4
+// client row, PR 7) but never fired on — the honest reading of the floor. The ratio is held LOOSE (0.5,
+// "half the typical gap") because the FPR is controlled by the run length, not by a strict ratio that
+// would miss every moderate real acceleration; none of these is tuned to Nyx (G6).
+//
+// THE DISCLOSED RESIDUAL (adversarial review, CUL-10): on an AUTOCORRELATED, waxing/waning rate (a rate
+// that wanders WITHOUT a trend — the hazard this lane's own G5 comment names), the last-4-monotone rate
+// exceeds the iid 1/24, because a wandering rate spends real time drifting down (RTM) and that down-wander
+// reads as "accelerating". At runLength=4 the null fire rate there is ~4.5–5.8% (worst at an extreme ~80×
+// rate swing), NOT ≪5% — the §PROPERTY SWEEP now carries an autocorrelated null and asserts this as an
+// ⑥-STYLE ACCEPTED RESIDUAL rather than omitting the null that produces it. It is accepted, not hidden,
+// because L4 is a quiet band-4 escalate-only row whose counts always show and whose output — a TRUE "the
+// gaps shortened", never a verdict, never a cause — is, on a genuinely waxing/waning disease, a flare
+// worth a quiet note. runLength=5 pulls this residual under 2% but raises the firing floor to 6 episodes
+// (⑦-chronicity's own floor), eroding the sub-floor mission — the 4-vs-5 call is a Dr. Chen decision brief.
 //
 // ── WHAT IT NEVER DOES ───────────────────────────────────────────────────────
 //
@@ -4973,13 +4989,6 @@ function isStrictlyDecreasing(xs: readonly number[]): boolean {
     if (!(xs[i] < xs[i - 1])) return false
   }
   return true
-}
-
-/** Median of a NON-EMPTY numeric list (sorted copy; mean of the two middles for even length). */
-function medianOfGaps(xs: readonly number[]): number {
-  const s = [...xs].sort((a, b) => a - b)
-  const mid = Math.floor(s.length / 2)
-  return s.length % 2 === 0 ? (s[mid - 1] + s[mid]) / 2 : s[mid]
 }
 
 /** One symptom type's gap-shortening evidence, pre-selection. */
@@ -5029,9 +5038,11 @@ export function detectGapShortening(
     const recent = gapsHours.slice(-runLength)
     if (!isStrictlyDecreasing(recent)) continue
 
-    // (2) MEANINGFULLY SHORTER — the latest (shortest) gap ≤ ratio × the record's MEDIAN gap.
+    // (2) MEANINGFULLY SHORTER — the latest (shortest) gap ≤ ratio × the record's MEDIAN gap. Reuses
+    // the shared `median` helper (G9-in-spirit — one median implementation; the collapse guarantees a
+    // non-empty gaps list here, so its empty→0 return is unreachable).
     const latestGapHours = gapsHours[gapsHours.length - 1]
-    const medianGapHours = medianOfGaps(gapsHours)
+    const medianGapHours = median(gapsHours)
     if (!(medianGapHours > 0)) continue // defensive; unreachable given the collapse guarantee
     if (!(latestGapHours <= cfg.gapShorteningRatio * medianGapHours)) continue
 

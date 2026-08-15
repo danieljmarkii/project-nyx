@@ -329,12 +329,17 @@ export function templateTrialResponse(f: TrialResponseFinding, petName: string):
 }
 
 /** Render one inter-episode gap (hours) as a friendly value + unit. ≥24h → whole days, else whole
- *  hours — so a sub-day gap never reads as a dishonest "0 days". Rounding can make two genuinely-
- *  distinct gaps display equal (a cosmetic limit of the fallback; the exact gaps ride in the payload
- *  for the client, CUL-12+, and the closer states the direction the numbers may round away). */
+ *  hours — so a sub-day gap never reads as a dishonest "0 days". ROUND ONCE, THEN bucket off the
+ *  rounded value: bucketing off the raw hours would let a gap in [23.5, 24) fall in the 'hour' bucket
+ *  yet round up to display "24 hours", so a genuinely-shortening pair (30h → 23.6h) could render
+ *  "1 day, then 24 hours" — flat-or-backwards prose that undercuts the one thing this row states
+ *  honestly (code-review finding). Rounding to whole units can still make two genuinely-distinct gaps
+ *  display equal (a residual cosmetic limit; the exact gaps ride in the payload for the client, CUL-12+). */
 function formatGapUnit(hours: number): { value: number; unit: 'day' | 'hour' } {
-  if (hours >= 24) return { value: Math.max(1, Math.round(hours / 24)), unit: 'day' }
-  return { value: Math.max(1, Math.round(hours)), unit: 'hour' }
+  const wholeHours = Math.max(1, Math.round(hours))
+  return wholeHours >= 24
+    ? { value: Math.round(wholeHours / 24), unit: 'day' }
+    : { value: wholeHours, unit: 'hour' }
 }
 
 /** "6 days, then 3, then 2" (unit stated once when uniform) or "3 days, then 18 hours, then 9 hours"
@@ -435,6 +440,9 @@ const FOOD_NAMING_RE =
 // not proof of food sensitivity (Guilford 2001's improved-without-relapse arm), and a calm stretch
 // happens on its own (regression to the mean) — so the engine states counts and lets the vet judge,
 // and NEVER judges for them. Screened in addition to CAUSAL/MECHANISM/FOOD/REASSURANCE.
+// REUSED by the gap-shortening lane (CUL-10): its "worse"/"worsen*" arm is exactly the verdict L4's
+// escalate-only copy must never state over a shortening run (the numbers state the pattern, the copy
+// never labels it) — so this trial-named screen does double duty; keep the vocabulary superset-safe for both.
 const TRIAL_VERDICT_RE =
   /\b(works?|worked|working|helps?|helped|helping|helpful|improv\w+|better|worse|worsen\w*|resolv\w+|clear(?:ed|ing|s)?|clean|cured?|curing|cures|fixe[ds]|fixing|success\w*|fail\w+|respond\w+|effective|ineffective|on the mend|turn(?:ed|ing) a corner)\b|\brule[ds]?\s+out\b/i
 // SR-4 (B-721 §3.5, spine S3/S5) — UNIVERSALLY banned Signal vocabulary, screened on EVERY
