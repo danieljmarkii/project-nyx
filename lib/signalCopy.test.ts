@@ -8,6 +8,11 @@ import {
   BUILDING_SUB,
   BUILDING_WATCHING_FOR,
   BUILDING_FLOOR,
+  WATCHING_SUB,
+  watchingTimingRow,
+  watchingChangeRow,
+  watchingGapRow,
+  formatWatchingGapSequence,
   NO_PATTERN_HEADLINE,
   NO_PATTERN_SUB,
   noPatternIntro,
@@ -415,6 +420,36 @@ describe('E1/E2 empty-state copy (§9 verbatim; absence ≠ wellness)', () => {
     expect(NO_PATTERN_SUB.toLowerCase()).toContain("isn't an all-clear");
     expect(NO_PATTERN_HEADLINE.includes('!')).toBe(false);
     expect(NO_PATTERN_SUB.includes('!')).toBe(false);
+  });
+});
+
+// CUL-14 — the watching-system copy (§4.4 / G8). The verbatim mock §05 strings live here
+// with the rest of the empty-state copy; the full G8 register sweep + the gate logic are
+// in signalWatching.test.ts (co-located with buildWatchingRows).
+describe('watching-system copy (§4.4 / G8 verbatim; transparency, never solicitation)', () => {
+  it('the sub + the three per-lane rows are the verbatim mock §05 strings', () => {
+    expect(WATCHING_SUB).toBe("Here's what we're watching, and what each pattern still needs:");
+    expect(watchingTimingRow(4, 6)).toBe('Timing — 4 of the 6 timed episodes a pattern needs.');
+    expect(watchingChangeRow(2, 2)).toBe(
+      'Change, week to week — needs 2 full weeks of logging to compare. This is week 2.',
+    );
+    expect(watchingGapRow('vomiting', '6 days, then 3, then 2')).toBe(
+      'Gaps between vomiting episodes — 6 days, then 3, then 2.',
+    );
+  });
+  it('every watching string is guardrail-clean (no exclamation, no reassurance vocabulary)', () => {
+    for (const s of [
+      WATCHING_SUB,
+      watchingTimingRow(1, 6),
+      watchingChangeRow(1, 2),
+      watchingGapRow('vomiting', formatWatchingGapSequence([6 * 24, 3 * 24, 2 * 24])),
+    ]) {
+      expect(s.includes('!')).toBe(false);
+      expect(REASSURANCE_RE.test(s)).toBe(false);
+    }
+  });
+  it('the gap sequence formatter matches the mock ("6 days, then 3, then 2")', () => {
+    expect(formatWatchingGapSequence([6 * 24, 3 * 24, 2 * 24])).toBe('6 days, then 3, then 2');
   });
 });
 
