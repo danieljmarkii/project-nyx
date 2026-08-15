@@ -52,6 +52,7 @@ import { getIntakeDecline, type IntakeDeclineFlag } from './analytics';
 import { getDb } from './db';
 import {
   computeTrialFacts,
+  isTrialRunning,
   mayStateRecordClean,
   narrowTrialFoodRole,
   trialFoodKey,
@@ -449,9 +450,21 @@ export async function loadDietTrialFacts(args: {
     readIntakeDecline(pet, nowMs),
     readStandingNote(pet.id, pet.name, { antigenArmDark: armDark, pausedLabels }),
     // CUL-13 — the standing vomit-count line's LOCAL counts, only when the flag is on AND the trial
-    // is running (an ended trial's strip shows its terminal card, not a live count). Gated so the
-    // flag-off / ended-trial paths skip the read entirely. Overlaps the two lanes above.
-    (args.signalsV2 ?? false) && trial.status === 'active'
+    // is RUNNING. Gated on `isTrialRunning` (the one B-422 staleness predicate, G9), not `status`,
+    // so a stale-active trial past its effective end shows no live vomit comparison here — matching
+    // `detectTrialResponse` (isTrialRunning-gated), so the strip line and the Signal card go quiet on
+    // the same trials rather than the strip lingering after the card. Flag-off / ended / stale paths
+    // skip the read entirely. Overlaps the two lanes above.
+    (args.signalsV2 ?? false) &&
+    isTrialRunning(
+      {
+        startedAt: trial.startedAt,
+        targetDurationDays: trial.targetDurationDays,
+        status: trial.status,
+        endedAt: trial.endedAt,
+      },
+      nowMs,
+    )
       ? readTrialResponseCounts(pet.id, trial, nowMs)
       : Promise.resolve(null),
   ]);
@@ -1004,6 +1017,18 @@ async function readStandingNote(
  * midnight (B-421), the same frame the strip's day counter uses, so the two can't drift. Fails soft
  * to null (no line), never throwing — a symptom-count read is not worth blanking the whole strip.
  */
+/**
+ * The event types that count as a "logged day" — the SAME set `detectTrialResponse`'s `loggedDaysIn`
+ * reads (`CORRELATION_SYMPTOM_TYPES` ∪ 'meal'), NOT every event type. Read at the SQL layer so a
+ * medication/weight/note-only day never pads the density denominator: the detector measures
+ * observational coverage (did the owner log symptoms or meals?), and a client that counted every event
+ * would cross the `minLoggingDaysPerWindow` floor — and read `densityComparable` — off a different,
+ * looser denominator than the server, breaking the parity the standing line depends on
+ * (adversarial-reviewer + code-reviewer, CUL-13). Kept in sync with detection.ts's
+ * `CORRELATION_SYMPTOM_TYPES`; the vomit count itself is filtered from these rows.
+ */
+const TRIAL_RESPONSE_LOGGED_DAY_TYPES = ['vomit', 'diarrhea', 'itch', 'scratch', 'skin_reaction', 'meal'] as const;
+
 async function readTrialResponseCounts(
   petId: string,
   trial: TrialCardTrial,
@@ -1013,10 +1038,12 @@ async function readTrialResponseCounts(
     const lowerBound = new Date(
       `${shiftDayKey(startKeyOf(trial.startedAt), -(TRIAL_RESPONSE_COUNTS_DEFAULTS.baselineDays + 1))}T00:00:00Z`,
     ).toISOString();
+    const placeholders = TRIAL_RESPONSE_LOGGED_DAY_TYPES.map(() => '?').join(', ');
     const rows = await getDb().getAllAsync<{ event_type: string; occurred_at: string }>(
       `SELECT event_type, occurred_at FROM events
-        WHERE pet_id = ? AND deleted_at IS NULL AND occurred_at >= ?`,
-      [petId, lowerBound],
+        WHERE pet_id = ? AND deleted_at IS NULL AND occurred_at >= ?
+          AND event_type IN (${placeholders})`,
+      [petId, lowerBound, ...TRIAL_RESPONSE_LOGGED_DAY_TYPES],
     );
     const loggedEventMs: number[] = [];
     const vomitOnsetsMs: number[] = [];

@@ -2420,12 +2420,32 @@ export interface TrialStripModel {
  * stretch (which would edge toward reassurance-on-absence). Two-sided, count-anchored, NEVER a verdict
  * (G1/G2). The floor is the SAME constant the detector gates on, so the two surfaces agree on "enough
  * to compare".
+ *
+ * ── THE DENSITY GUARD (adversarial-reviewer, CUL-13) — the never-reassure fix ──────────────────────
+ *
+ * The baseline clause is ALSO withheld when the comparison reads as a REDUCTION but the two windows
+ * were NOT logged with comparable intensity (`densityComparable` false). This is the guard
+ * `detectTrialResponse` puts on its fewer direction, and it MUST be here too: without it, a chronic
+ * vomiter whose owner keeps one-tap meal-confirming (keeping the trial's logged-day count up) but
+ * stops logging vomits mid-trial would see "Vomiting: 0 in the trial's 20 days · 20 in the 7 weeks
+ * before" — a prominent false "it stopped", on the always-visible wedge strip, that the card
+ * deliberately refuses (a quieter-looking trial may just be a less-logged one). Withheld ⇒ the line
+ * drops to the trial-so-far form, which returns null for `trialCount === 0`, so the dangerous line
+ * vanishes. The MORE direction is never gated (a rise always surfaces — escalation is the safe
+ * direction), matching the detector's asymmetry. The residual the guard can't remove (comparable
+ * density but symptom-logging attrition) is the app-wide didn't-log≠didn't-happen limit and the OPEN
+ * PR-3 fewer-direction decision — the standing line now inherits whatever the card's posture becomes.
  */
 export function trialResponseStandingLine(counts: TrialResponseCounts): string | null {
   const floor = TRIAL_RESPONSE_COUNTS_DEFAULTS.minLoggingDaysPerWindow;
   const days = counts.trialDayNumber === 1 ? 'day' : 'days';
+  // A reduction on non-comparable logging is the reassurance-risk case — withhold the baseline clause
+  // (drop to trial-so-far). A flat/increase (the escalation direction) is never withheld.
+  const reduction = counts.trialCount < counts.baselineCount;
   const showComparison =
-    counts.trialLoggedDays >= floor && counts.baselineLoggedDays >= floor;
+    counts.trialLoggedDays >= floor &&
+    counts.baselineLoggedDays >= floor &&
+    (counts.densityComparable || !reduction);
   if (showComparison) {
     if (counts.trialCount + counts.baselineCount === 0) return null;
     const weeks = Math.max(1, Math.round(counts.baselineWindowDays / 7));

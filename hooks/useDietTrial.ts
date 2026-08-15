@@ -24,9 +24,14 @@ export function useDietTrial(): {
   const hydrationTick = useSyncStore((s) => s.hydrationTick);
   // Signals v2 (CUL-13) — the standing vomit-count line rides `signals_v2` (its own flag, D6), the
   // two-gate beta shape (eligible && optedIn — never conflated), exactly as SignalZone resolves it.
-  // Both hooks called unconditionally (Rules of Hooks), then combined; off, the loader skips the
-  // extra read and the strip is byte-identical. A change flips the effect below (it's a dep).
-  const signalsV2 = useAllowlistFlag('signals_v2') && useBetaOptIn('signals_v2');
+  // Both hooks are called UNCONDITIONALLY as separate statements, then combined — never
+  // `useAllowlistFlag(...) && useBetaOptIn(...)`, which short-circuits the second hook on a cold mount
+  // (the allowlist starts false until config resolves) and then calls it for the first time on a later
+  // render → a Rules-of-Hooks count change / crash. Off, the loader skips the extra read and the strip
+  // is byte-identical. A change flips the effect below (it's a dep).
+  const signalsV2Eligible = useAllowlistFlag('signals_v2');
+  const signalsV2OptedIn = useBetaOptIn('signals_v2');
+  const signalsV2 = signalsV2Eligible && signalsV2OptedIn;
   const [input, setInput] = useState<TrialCardInput | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [tick, setTick] = useState(0);

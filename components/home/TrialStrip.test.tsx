@@ -92,6 +92,7 @@ describe('TrialStrip', () => {
     trialLoggedDays: 18,
     baselineLoggedDays: 40,
     baselineWindowDays: 49,
+    densityComparable: true,
   };
 
   it('renders the standing vomit-count line when signals_v2 supplied trialResponse (a second line)', () => {

@@ -1426,6 +1426,7 @@ const counts = (over: Partial<TrialResponseCounts> = {}): TrialResponseCounts =>
   trialLoggedDays: 18,
   baselineLoggedDays: 40,
   baselineWindowDays: 49,
+  densityComparable: true,
   ...over,
 });
 
@@ -1472,6 +1473,35 @@ describe('trialResponseStandingLine (CUL-13)', () => {
   it('carries no percentage or verdict', () => {
     const line = trialResponseStandingLine(counts()) ?? '';
     expect(line).not.toMatch(/%|working|improv|clean|better|worse/i);
+  });
+
+  // THE DENSITY GUARD (adversarial-reviewer, CUL-13) — the never-reassure fix. A reduction on
+  // non-comparable logging must NOT show the reassuring baseline; a rise (escalation) always may.
+  it('withholds the reassuring reduction when logging density is not comparable', () => {
+    // The wedge-attrition case: 0 vomits logged during the trial vs 20 before, but the trial was
+    // logged far less intensely than the baseline (densityComparable false). The dangerous
+    // "0 · was 20" must NOT render — it drops to trial-so-far, which returns null for trialCount 0.
+    expect(
+      trialResponseStandingLine(counts({ trialCount: 0, baselineCount: 20, densityComparable: false })),
+    ).toBeNull();
+    // A non-zero reduction on non-comparable logging still withholds the baseline clause (trial-so-far).
+    expect(
+      trialResponseStandingLine(counts({ trialCount: 3, baselineCount: 20, densityComparable: false })),
+    ).toBe("Vomiting: 3 in the trial's 20 days.");
+  });
+
+  it('still shows a RISE on non-comparable logging (escalation is never withheld)', () => {
+    // more-during-trial: 8 vs 2. Not a reduction, so the density guard does not apply — the full
+    // comparison shows even when densityComparable is false (matching the detector's asymmetry).
+    expect(
+      trialResponseStandingLine(counts({ trialCount: 8, baselineCount: 2, densityComparable: false })),
+    ).toBe("Vomiting: 8 in the trial's 20 days · 2 in the 7 weeks before.");
+  });
+
+  it('shows the reduction when density IS comparable (the genuine improving trial)', () => {
+    expect(
+      trialResponseStandingLine(counts({ trialCount: 4, baselineCount: 20, densityComparable: true })),
+    ).toBe("Vomiting: 4 in the trial's 20 days · 20 in the 7 weeks before.");
   });
 });
 

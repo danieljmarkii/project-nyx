@@ -575,6 +575,10 @@ function assertParity(input: DetectionInput, label: string) {
   assert.equal(counts!.trialDayNumber, finding.trialDayNumber, `${label}: day-number parity`)
   assert.equal(counts!.trialLoggedDays, finding.trialLoggedDays, `${label}: trial logged-days parity`)
   assert.equal(counts!.baselineLoggedDays, finding.baselineLoggedDays, `${label}: baseline logged-days parity`)
+  // The density guard the standing line reuses must agree with the detector's — computed off the SAME
+  // symptom+meal logged-days denominator (that is why `loggedEventMs` above is symptom ∪ meal, the
+  // production shape too, not every event type — the adversarial/code-review drift finding).
+  assert.equal(counts!.densityComparable, finding.densityComparable, `${label}: densityComparable parity`)
 }
 
 Deno.test('parity — a fewer-during-trial trial: standing-line counts === detector counts', () => {

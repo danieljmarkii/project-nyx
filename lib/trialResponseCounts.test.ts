@@ -134,7 +134,41 @@ describe('computeTrialResponseCounts — degenerate inputs', () => {
       trialLoggedDays: 0,
       baselineLoggedDays: 0,
       baselineWindowDays: 49,
+      densityComparable: true, // no logging either window → nothing to compare → comparable (vacuous)
     });
+  });
+});
+
+describe('computeTrialResponseCounts — densityComparable (the never-reassure guard)', () => {
+  // Comparable when the two windows' logging FRACTIONS are within 0.7 of each other; NOT when one
+  // window was logged far more intensely. Fractions = logged days ÷ window span (trial span = day
+  // number; baseline span = 49). Meal events on every day keep the fraction high; symptom-only sparse
+  // logging drops it.
+  const mealsEvery = (fromD: number, toD: number, tz = 'UTC'): number[] => {
+    const out: number[] = [];
+    for (let d = fromD; d <= toD; d++) out.push(at(2026, 6, 1) + (d - 1) * D); // one per trial day
+    return out;
+  };
+  it('flags a densely-logged trial against a sparsely-logged baseline as NOT comparable', () => {
+    // Trial: a logged event every one of the 20 trial days → fraction ~1.0. Baseline: only 8 logged
+    // days over 49 → fraction ~0.16. 0.16 < 0.7 × 1.0 → not comparable.
+    const trialDaily = mealsEvery(1, 20);
+    const baselineSparse = [
+      at(2026, 5, 20), at(2026, 5, 18), at(2026, 5, 16), at(2026, 5, 14),
+      at(2026, 5, 12), at(2026, 5, 10), at(2026, 5, 8), at(2026, 5, 6),
+    ];
+    const r = computeTrialResponseCounts(base({ loggedEventMs: [...trialDaily, ...baselineSparse] }));
+    expect(r!.trialLoggedDays).toBe(20);
+    expect(r!.baselineLoggedDays).toBe(8);
+    expect(r!.densityComparable).toBe(false);
+  });
+  it('flags two comparably-logged windows as comparable', () => {
+    // Both windows logged on ~every day → fractions ~1.0 and ~0.6 (49-day baseline all logged is 1.0).
+    const trialDaily = mealsEvery(1, 20);
+    const baselineDaily: number[] = [];
+    for (let d = 1; d <= 49; d++) baselineDaily.push(at(2026, 6, 1) - d * D);
+    const r = computeTrialResponseCounts(base({ loggedEventMs: [...trialDaily, ...baselineDaily] }));
+    expect(r!.densityComparable).toBe(true);
   });
 });
 
@@ -178,6 +212,7 @@ describe('computeTrialResponseCounts — properties', () => {
       baselineDays: 49,
       minLoggingDaysPerWindow: 7,
       episodeGapHours: 3,
+      densityComparableMinRatio: 0.7,
     });
   });
 });

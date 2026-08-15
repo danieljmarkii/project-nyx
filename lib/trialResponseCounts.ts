@@ -13,16 +13,26 @@
 //
 // The strip sits DIRECTLY BELOW the Signal trial card on Home. Both name the same pooled
 // vomit-episode counts (this line locally; the card's server lead sentence from the cached
-// finding), so if the two counting algorithms drift, the two surfaces show DIFFERENT numbers for
-// the same trial on the same screen — the §5.3 diet-trial "one-record-two-answers" failure, one
-// layer out. So the windowing/collapse here is a faithful reproduction of `detectTrialResponse`'s
-// (detection.ts): LOCAL-DAY-INDEX windows (B-514/B-517 — never a reconstituted UTC boundary),
-// `lib/mealTiming.collapseEpisodes` for the 3h re-log collapse (the SAME predicate the detector's
-// `toEpisodeOnsets` is, G9), collapse-then-window, and the SAME `baselineDays` (49). A parity test
-// in the generate-signal suite pins the shown counts to the detector's emitted counts so a future
+// finding). So the windowing/collapse/gating here is a faithful reproduction of
+// `detectTrialResponse`'s (detection.ts): LOCAL-DAY-INDEX windows (B-514/B-517 — never a
+// reconstituted UTC boundary), `lib/mealTiming.collapseEpisodes` for the 3h re-log collapse (the
+// SAME predicate the detector's `toEpisodeOnsets` is, G9), collapse-then-window, the SAME
+// `baselineDays` (49), the SAME symptom+meal logged-days denominator, and the SAME symmetric
+// `densityComparable` rule (`DENSITY_COMPARABLE_MIN_RATIO`). A parity test in the generate-signal
+// suite pins the shown counts AND `densityComparable` to the detector's emitted values so a future
 // drift fails CI; rewiring `detectTrialResponse` itself onto this predicate is a registered
 // server-PR follow-up (its window predicates are reused across the phenotype/structure blocks, so a
 // clean extract is a larger refactor than PR 6's client charter).
+//
+// WHAT THE PARITY TEST DOES AND DOESN'T GUARANTEE (adversarial-reviewer, CUL-13): it pins
+// ALGORITHMIC parity — same input ⇒ same output — so the two surfaces agree when computed over the
+// SAME record. It does NOT pin RUNTIME freshness: the strip reads LIVE local SQLite while the card's
+// lead is a CACHED server sentence (the whole Signal surface is cache-only, §2), so a vomit logged
+// between `generate-signal` runs makes the strip read one higher than the card until the debounced
+// regen refreshes the cache (`triggerSignalRegenDebounced`, ~5s). That transient is the Signal
+// architecture's inherent property, not unique to this surface, and is closed by the regen — it is
+// NOT what §5.3 is about (which is two DEFINITIONS disagreeing, the thing this shared predicate + the
+// density guard below prevent).
 //
 // Pure + dependency-free (Deno-portable — imported by the parity test as well as the client), TZ-
 // honest (B-421: on-device the device zone IS the owner's midnight, so `timeZone` is omitted).
@@ -44,12 +54,18 @@ export interface TrialResponseCountsConfig {
   minLoggingDaysPerWindow: number;
   /** The re-log collapse gap in hours (3) — a re-logged bout is one episode (`toEpisodeOnsets`). */
   episodeGapHours: number;
+  /** The symmetric logging-density floor (0.7) — `DENSITY_COMPARABLE_MIN_RATIO` in detection.ts. The
+   *  two windows' logging FRACTIONS (logged days ÷ window span) must be within this ratio of each
+   *  other for a REDUCTION to be trustworthy; the standing line withholds the reassuring "fewer"
+   *  comparison when they are not (the never-reassure guard the card already has — §3.3). */
+  densityComparableMinRatio: number;
 }
 
 export const TRIAL_RESPONSE_COUNTS_DEFAULTS: TrialResponseCountsConfig = {
   baselineDays: 49,
   minLoggingDaysPerWindow: 7,
   episodeGapHours: 3,
+  densityComparableMinRatio: 0.7,
 };
 
 export interface TrialResponseCountsInput {
@@ -80,6 +96,11 @@ export interface TrialResponseCounts {
   baselineLoggedDays: number;
   /** The baseline window's span in days (= config.baselineDays) — the "N weeks before" label source. */
   baselineWindowDays: number;
+  /** Whether the two windows were logged with comparable INTENSITY (§3.3 — the SAME symmetric
+   *  fraction rule `detectTrialResponse` gates its fewer direction on). False ⇒ a quieter-looking
+   *  trial may just be a less-logged one, so the standing line must NOT show the reassuring reduction
+   *  (`trialResponseStandingLine`). Matches the detector's emitted `densityComparable` (parity-pinned). */
+  densityComparable: boolean;
 }
 
 /**
@@ -130,13 +151,29 @@ export function computeTrialResponseCounts(
     }
     return days.size;
   };
+  const trialLoggedDays = loggedDaysIn(inTrialEra);
+  const baselineLoggedDays = loggedDaysIn(inBaseline);
+
+  // Density comparability (§3.3), the SAME symmetric rule `detectTrialResponse` gates its fewer
+  // direction on: the two windows' logging FRACTIONS (logged days ÷ window span) within-ratio of each
+  // other, in BOTH directions. Over logging FRACTIONS, not raw counts, because the windows are
+  // unequal length (the trial era grows; the baseline is a fixed span). The trial window span is the
+  // day-count (clamped ≥1); the baseline span is the configured `baselineDays`.
+  const trialWindowDays = Math.max(1, trialDayNumber);
+  const trialLoggingFraction = trialLoggedDays / trialWindowDays;
+  const baselineLoggingFraction = baselineLoggedDays / config.baselineDays;
+  const loFraction = Math.min(trialLoggingFraction, baselineLoggingFraction);
+  const hiFraction = Math.max(trialLoggingFraction, baselineLoggingFraction);
+  const densityComparable =
+    hiFraction <= 0 ? true : loFraction >= hiFraction * config.densityComparableMinRatio;
 
   return {
     trialDayNumber,
     trialCount,
     baselineCount,
-    trialLoggedDays: loggedDaysIn(inTrialEra),
-    baselineLoggedDays: loggedDaysIn(inBaseline),
+    trialLoggedDays,
+    baselineLoggedDays,
     baselineWindowDays: config.baselineDays,
+    densityComparable,
   };
 }

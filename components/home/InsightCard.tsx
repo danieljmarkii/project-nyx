@@ -192,12 +192,22 @@ function TrialResponseExpanded({ finding }: { finding: SignalFinding }) {
   if (!isTrialResponse(finding)) return null;
   const dietStructure = trialResponseDietStructureLine(finding);
   const medLine = medContextLine(finding);
+  // The RTM/confound honesty is fewer-SPECIFIC WORDING ("A calmer stretch…", "A quieter week…"), and
+  // the card fires on more-during-trial too (escalation — the direction that ships if the PM picks
+  // escalate-only). "Calmer/quieter" contradicts a rising record, so the box renders ONLY on a fewer
+  // card. The MORE-direction confound copy is an OPEN Dr. Chen / nyx-voice call (spec §2 L2 ratified
+  // only the fewer strings, verbatim, no MORE variant); until it lands, a more card omits this box —
+  // the direction-neutral "What else changed" (diet structure) below still shows, and the lead already
+  // routes to the vet. (code-reviewer / Dr. Chen, CUL-13.)
+  const showRtm = finding.comparisonDirection === 'fewer_during_trial';
   return (
     <>
-      <EvidenceBox title="Reading this stretch honestly">
-        <Text style={styles.disclosure}>{TRIAL_RTM_CONFOUND}</Text>
-        <Text style={[styles.trialAdjacency, styles.disclosureSpaced]}>{TRIAL_ADJACENCY}</Text>
-      </EvidenceBox>
+      {showRtm ? (
+        <EvidenceBox title="Reading this stretch honestly">
+          <Text style={styles.disclosure}>{TRIAL_RTM_CONFOUND}</Text>
+          <Text style={[styles.trialAdjacency, styles.disclosureSpaced]}>{TRIAL_ADJACENCY}</Text>
+        </EvidenceBox>
+      ) : null}
       <EvidenceBox title="What else changed">
         {dietStructure ? <Text style={styles.disclosure}>{dietStructure}</Text> : null}
         <Text style={[styles.disclosure, dietStructure ? styles.disclosureSpaced : null]}>

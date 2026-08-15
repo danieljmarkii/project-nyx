@@ -706,6 +706,22 @@ describe('InsightCard — CUL-13 trial card flag gating (signals_v2)', () => {
     fireEvent.press(view.getByRole('button'));
     expect(view.queryByText(/read the counts as a rough comparison/)).toBeTruthy();
   });
+
+  it('omits the fewer-specific "calmer/quieter" RTM box on a more-during-trial card, keeps "What else changed"', () => {
+    // The RTM/adjacency wording ("A calmer stretch…", "A quieter week…") contradicts a rising record,
+    // so it renders only on a fewer card. The direction-neutral diet-structure box still shows.
+    const c = anyCached(
+      trialResponse({ comparisonDirection: 'more_during_trial', rapid: { trial: 8, baseline: 2 }, long: { trial: 2, baseline: 1 } }),
+      'A more sentence.',
+    );
+    const view = render(<InsightCard cached={c} petName="Nyx" signalsV2 />);
+    fireEvent.press(view.getByRole('button'));
+    expect(view.queryByText('Reading this stretch honestly')).toBeNull();
+    expect(view.queryByText(/Three things changed at once/)).toBeNull();
+    expect(view.queryByText(/isn't the trial's verdict/)).toBeNull();
+    // Direction-neutral confound context still renders.
+    expect(view.queryByText('What else changed')).toBeTruthy();
+  });
 });
 
 describe('InsightCard — G10: the renderer registry safely ignores an unknown finding type', () => {

@@ -739,7 +739,7 @@ export function evidenceText(finding: SignalFinding, petName: string): string {
     // trial (the RTM/confound box + the §3.4 adjacency below carry the "can't say why yet" honesty);
     // NO attribution (G1), NO syndrome (G3). The pooled counts + day-count are in the lead sentence,
     // so this adds the framing rather than repeating them.
-    const weeks = Math.max(1, Math.round(finding.baselineWindowDays / 7));
+    const weeks = baselineWeeksOf(finding);
     return (
       `These are counts from the days you logged — during the trial, and in the ` +
       `${weeks === 1 ? 'week' : `${weeks} weeks`} before it. A change like this is worth reviewing with your ` +
