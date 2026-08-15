@@ -53,4 +53,4 @@ The standing line deliberately does NOT gate on the C-test or density (it's the 
 - The Signal trial card only surfaces when `changedMaterially` (PR 3's trigger); under the still-open **PR-3 fewer-direction decision** (escalate-only vs ship-the-fewer, Dr. Chen/PM), Nyx's improving trial may mint no Signal card at all — the standing strip line + Patterns (PR 9) carry the story regardless. The client renders whatever the server emits, so this PR is direction-agnostic.
 
 ## PR
-Shipped via **#<PR>** (draft) on `claude/cul-13-trial-surfaces-signal-hs8w3d`.
+Shipped via **#650** (draft) on `claude/cul-13-trial-surfaces-signal-hs8w3d`.
