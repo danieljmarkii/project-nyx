@@ -58,6 +58,14 @@ import {
   photoCompositionLines,
   timingStoryVetLine,
   DOT_LANE_MAX,
+  isTrialResponse,
+  isSignalsV2Finding,
+  TRIAL_RTM_CONFOUND,
+  trialResponseCompareRows,
+  trialResponseDayBadge,
+  trialResponseSampleLine,
+  trialResponseDensityLine,
+  trialResponseDietStructureLine,
   type BannerSafetyFinding,
 } from './signalCopy';
 import type {
@@ -72,6 +80,7 @@ import type {
   PostprandialTimingFinding,
   TimeOfDayClusteringFinding,
   TimingStoryFinding,
+  TrialResponseFinding,
   RateMealsDiagnostic,
   StapleWashoutDiagnostic,
   MealTypeCollapseDiagnostic,
@@ -2202,5 +2211,136 @@ describe('phoneScript — the safety phone-call facts (§4/§9)', () => {
       expect(blob).not.toMatch(CAUSAL_RE);
       expect(blob).not.toContain('!');
     }
+  });
+});
+
+// ── The trial card copy (L2 — the wedge; CUL-13, §4.2) ──────────────────────────────────────────────
+const trialResponse = (over: Partial<TrialResponseFinding> = {}): TrialResponseFinding => ({
+  type: 'trial_response',
+  priorityClass: 'insight',
+  trialDayNumber: 20,
+  targetDurationDays: 56,
+  trialLoggedDays: 18,
+  baselineLoggedDays: 40,
+  baselineWindowDays: 49,
+  pooledTrialCount: 4,
+  pooledBaselineCount: 20,
+  rapid: { trial: 4, baseline: 8 },
+  long: { trial: 0, baseline: 7 },
+  rapidWindowMinutes: 30,
+  longGapHours: 6,
+  treatShare: { trial: 0.1, baseline: 0.8 },
+  mealsPerDay: { trial: 4, baseline: 2 },
+  comparisonDirection: 'fewer_during_trial',
+  densityComparable: true,
+  trialWindowDays: 20,
+  ...over,
+});
+
+describe('trial card — type guards (CUL-13)', () => {
+  it('isTrialResponse narrows only the trial finding; isSignalsV2Finding covers it + the timing pair', () => {
+    expect(isTrialResponse(trialResponse())).toBe(true);
+    expect(isTrialResponse(correlation())).toBe(false);
+    expect(isSignalsV2Finding(trialResponse())).toBe(true);
+    expect(isSignalsV2Finding(correlation())).toBe(false);
+  });
+});
+
+describe('trialResponseCompareRows (CUL-13 — the two-sided count rows)', () => {
+  it('is time-ordered (rapid then long), mechanism-free, two-sided, present-tone by trial count', () => {
+    const rows = trialResponseCompareRows(trialResponse());
+    expect(rows.map((r) => r.label)).toEqual(['Within 30 min of eating', '6h+ after eating']);
+    // No mechanism word ("empty stomach"/"bilious") — same labels as the A2 timing card.
+    for (const r of rows) expect(r.label.toLowerCase()).not.toContain('empty stomach');
+    // Two-sided: count = trial, baseline carried for the "· was M" render.
+    expect(rows[0]).toMatchObject({ count: 4, baseline: 8, tone: 'concern' }); // present → symptom hue
+    expect(rows[1]).toMatchObject({ count: 0, baseline: 7, tone: 'muted' }); // zero-during-trial → muted
+  });
+
+  it('a phenotype still present during the trial wears the concern hue; a zero rides muted', () => {
+    const rows = trialResponseCompareRows(trialResponse({ rapid: { trial: 2, baseline: 2 }, long: { trial: 3, baseline: 1 } }));
+    expect(rows.every((r) => r.tone === 'concern')).toBe(true); // both non-zero → both present
+  });
+});
+
+describe('trialResponseDayBadge / trialResponseSampleLine (CUL-13 — the meta row)', () => {
+  it('reads "Day N of M" with a target, "Day N" without', () => {
+    expect(trialResponseDayBadge(trialResponse())).toBe('Day 20 of 56');
+    expect(trialResponseDayBadge(trialResponse({ targetDurationDays: null }))).toBe('Day 20');
+  });
+  it('the sample line discloses the logged-days denominator in one glance', () => {
+    expect(trialResponseSampleLine(trialResponse())).toBe('counted from days you logged');
+  });
+});
+
+describe('trialResponseDensityLine (CUL-13 — the C5 denominator disclosure)', () => {
+  it('names both logged-day denominators, pluralised, with the baseline weeks', () => {
+    expect(trialResponseDensityLine(trialResponse())).toBe(
+      'Counted from the days you logged — 18 days during the trial, 40 in the 7 weeks before.',
+    );
+    expect(trialResponseDensityLine(trialResponse({ trialLoggedDays: 1 }))).toContain('1 day during the trial');
+  });
+  it('adds the uneven-logging caveat only when densityComparable is false (a more card)', () => {
+    expect(trialResponseDensityLine(trialResponse())).not.toContain('rough comparison');
+    expect(trialResponseDensityLine(trialResponse({ densityComparable: false }))).toContain(
+      'read the counts as a rough comparison',
+    );
+    // Absent on an old cache (undefined) ⇒ treated as comparable (no caveat).
+    expect(trialResponseDensityLine(trialResponse({ densityComparable: undefined }))).not.toContain('rough comparison');
+  });
+});
+
+describe('trialResponseDietStructureLine (CUL-13 — diet structure in words, no "%")', () => {
+  it('renders treat-share in coarse words + meals/day as a rate, never a percentage', () => {
+    const line = trialResponseDietStructureLine(trialResponse());
+    expect(line).toBe('Treats went from most of the feedings to a few. Meals a day went from about 2 to about 4.');
+    expect(line).not.toContain('%');
+  });
+  it('renders only the clauses that meaningfully changed', () => {
+    // Treats unchanged bucket, meals changed → only the meals clause.
+    const onlyMeals = trialResponseDietStructureLine(
+      trialResponse({ treatShare: { trial: 0.8, baseline: 0.82 }, mealsPerDay: { trial: 4, baseline: 2 } }),
+    );
+    expect(onlyMeals).toBe('Meals a day went from about 2 to about 4.');
+    // Nothing changed → null (no noisy "stayed the same").
+    expect(
+      trialResponseDietStructureLine(trialResponse({ treatShare: { trial: 0.8, baseline: 0.82 }, mealsPerDay: { trial: 2, baseline: 2 } })),
+    ).toBeNull();
+  });
+  it('renders null when a window carries no classifiable structure', () => {
+    expect(
+      trialResponseDietStructureLine(trialResponse({ treatShare: { trial: null, baseline: null }, mealsPerDay: { trial: null, baseline: null } })),
+    ).toBeNull();
+  });
+});
+
+describe('trial card copy — guardrails (CUL-13)', () => {
+  const TRIAL_VERDICT_RE = /\b(working|helping|improv|resolv|cleared|cured|fixed|better|worse|ruled out|clean)\b/i;
+  it('the RTM/confound block is verbatim, count-neutral, and carries no verdict', () => {
+    expect(TRIAL_RTM_CONFOUND).toContain('Three things changed at once when the trial started');
+    expect(TRIAL_RTM_CONFOUND).not.toMatch(TRIAL_VERDICT_RE);
+    expect(TRIAL_RTM_CONFOUND).not.toContain('!');
+  });
+  it('no trial-card string carries a verdict, a "%", or an exclamation', () => {
+    const strings = [
+      ...trialResponseCompareRows(trialResponse()).map((r) => r.label),
+      trialResponseDayBadge(trialResponse()),
+      trialResponseSampleLine(trialResponse()),
+      trialResponseDensityLine(trialResponse()),
+      trialResponseDensityLine(trialResponse({ densityComparable: false })),
+      trialResponseDietStructureLine(trialResponse()) ?? '',
+      TRIAL_RTM_CONFOUND,
+      evidenceText(trialResponse(), 'Nyx'),
+      sampleLine(trialResponse()),
+    ];
+    for (const s of strings) {
+      expect(s).not.toMatch(TRIAL_VERDICT_RE);
+      expect(s).not.toContain('%');
+      expect(s).not.toContain('!');
+    }
+  });
+  it('sampleLine + evidenceText stay total over the union for trial_response', () => {
+    expect(sampleLine(trialResponse())).toBe('counted from days you logged');
+    expect(evidenceText(trialResponse(), 'Nyx')).toContain('never a verdict on the trial');
   });
 });

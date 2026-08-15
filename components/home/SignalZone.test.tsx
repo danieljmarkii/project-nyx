@@ -365,4 +365,44 @@ describe('SignalZone — CUL-12 signals_v2 LiveStack filter', () => {
     // The zone frame is still present (the footer doorway renders in every state).
     expect(view.queryByText(/See all of Nyx's patterns/)).toBeTruthy();
   });
+
+  // CUL-13 — the trial card rides the SAME `signals_v2` gate via the shared isSignalsV2Finding filter.
+  const trialFinding: CachedFinding = {
+    rank: 1,
+    text: 'A trial sentence about vomiting counts.',
+    finding: {
+      type: 'trial_response',
+      priorityClass: 'insight',
+      trialDayNumber: 20,
+      targetDurationDays: 56,
+      trialLoggedDays: 18,
+      baselineLoggedDays: 40,
+      baselineWindowDays: 49,
+      pooledTrialCount: 4,
+      pooledBaselineCount: 20,
+      rapid: { trial: 4, baseline: 8 },
+      long: { trial: 0, baseline: 7 },
+      rapidWindowMinutes: 30,
+      longGapHours: 6,
+      treatShare: { trial: 0.1, baseline: 0.8 },
+      mealsPerDay: { trial: 4, baseline: 2 },
+      comparisonDirection: 'fewer_during_trial',
+      densityComparable: true,
+      trialWindowDays: 20,
+    },
+  };
+
+  it('drops the trial card flag-off, keeps the other findings; renders it flag-on', () => {
+    mockUseAllowlistFlag.mockReturnValue(false);
+    mockUseSignal.mockReturnValue(signalState({ displayState: 'live', findings: [liveFinding, trialFinding] }));
+    const off = render(<SignalZone />);
+    expect(off.queryByText('Day 20 of 56')).toBeNull();
+    expect(off.queryByText('A live finding sentence.')).toBeTruthy();
+
+    mockUseAllowlistFlag.mockImplementation((key: string) => key === 'signals_v2');
+    mockUseSignal.mockReturnValue(signalState({ displayState: 'live', findings: [liveFinding, trialFinding] }));
+    const on = render(<SignalZone />);
+    expect(on.queryByText('Day 20 of 56')).toBeTruthy();
+    expect(on.queryByText('A live finding sentence.')).toBeTruthy();
+  });
 });

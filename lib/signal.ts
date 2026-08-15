@@ -34,11 +34,13 @@ export type InsightType =
   | 'timeofday_clustering'
   | 'incident_red_flag'
   // Signals v2 (B-755) — the decomposed timing lanes. `empty_stomach_timing` is L1's lone
-  // card (CUL-7); `timing_story` is the merged ⑤+L1 A2 card (CUL-12). Both render only behind
-  // `signals_v2` (client-render gate); a build with `signals_v2` off renders nothing for them,
-  // byte-identical to before this type existed (the G10 unknown-type contract).
+  // card (CUL-7); `timing_story` is the merged ⑤+L1 A2 card (CUL-12); `trial_response` is the
+  // event-driven trial card (L2, CUL-8/CUL-13). All render only behind `signals_v2` (client-render
+  // gate); a build with `signals_v2` off renders nothing for them, byte-identical to before this
+  // type existed (the G10 unknown-type contract).
   | 'empty_stomach_timing'
-  | 'timing_story';
+  | 'timing_story'
+  | 'trial_response';
 export type PriorityClass = 'safety' | 'insight';
 export type EvidenceTier = 'early' | 'established';
 export type SignalSymptomType = 'vomit' | 'diarrhea' | 'itch' | 'scratch' | 'skin_reaction';
@@ -387,6 +389,62 @@ export interface TimingStoryFinding {
   photoComposition?: PhotoComposition;
 }
 
+// The event-driven trial card (L2 — the wedge; Signals v2 / B-755 / CUL-8 / CUL-13, D3). Surfaces
+// on Home ONLY when the pooled trial-era-vs-baseline vomit contrast "changed materially"
+// (detectTrialResponse's emission IS the trigger); the standing Pet-tab strip line shows the
+// trial-so-far counts regardless, from local data (lib/trialResponseCounts). The card is
+// COUNT-ANCHORED / TIME-ORDERED / NEVER VERDICTED (Guilford 2001 — diet response ≠ proof; RTM): the
+// server lead sentence (cached.text) states the two pooled counts in time order and routes to the
+// vet; the client renders per-phenotype count rows (rapid ≤30m / long ≥6h, each two-sided
+// "N · was M" — G2), a day-count badge, and an expand carrying the three-things-changed-at-once
+// confound honesty verbatim + the §3.4 adjacency line + the logged-days density disclosure. NO
+// attribution (G1), NO syndrome name / management advice (G3). The D2 absence-shaped SENTENCE lead
+// is NOT here — it ships only on Dr. Chen's sign-off (open); the count-row form is unconditional.
+// Mirror of detection.ts TrialResponseFinding (rendered fields); renders only behind `signals_v2`.
+export interface TrialResponseFinding {
+  type: 'trial_response';
+  priorityClass: 'insight';
+  /** Day N of the trial (1-based) — the badge "Day N" / "Day N of M". */
+  trialDayNumber: number;
+  /** The trial's prescribed length M ("day N of M"); null when unset ⇒ "day N", no "of M". */
+  targetDurationDays: number | null;
+  /** Distinct logged days in the trial era — the C5 denominator, disclosed in the expand. */
+  trialLoggedDays: number;
+  /** Distinct logged days in the baseline window — the C5 denominator, disclosed in the expand. */
+  baselineLoggedDays: number;
+  /** The baseline window's span in days (49) — the "N weeks before" the density line names. */
+  baselineWindowDays: number;
+  /** Pooled VOMIT-episode burden in the trial era (the lead sentence already carries it). */
+  pooledTrialCount: number;
+  /** Pooled VOMIT-episode burden in the baseline window. */
+  pooledBaselineCount: number;
+  /** Per-phenotype VOMIT-TIMING counts, trial vs baseline — the A2 count rows ("4 · was 8").
+   *  `rapid` = ≤rapidWindowMinutes after eating; `long` = ≥longGapHours after eating. */
+  rapid: { trial: number; baseline: number };
+  long: { trial: number; baseline: number };
+  /** The rapid band boundary in minutes (30) — the rapid row label. */
+  rapidWindowMinutes: number;
+  /** The empty-stomach band boundary in hours (6) — the long row label. */
+  longGapHours: number;
+  /** Diet-structure deltas (§2 L2 context — the observable half of the RTM confound). `treatShare`
+   *  = treat feedings ÷ classifiable feedings (0..1), null when nothing classifiable; `mealsPerDay`
+   *  = meal feedings ÷ logged days, null when the window has no logged days. Rendered in WORDS in
+   *  the expand (no "%" on a Signal card — B-733 SIGNAL_PERCENT_RE), never a verdict. */
+  treatShare: { trial: number | null; baseline: number | null };
+  mealsPerDay: { trial: number | null; baseline: number | null };
+  /** The pooled direction the finding fired on. The copy is direction-NEUTRAL (the reader sees which
+   *  count is higher); carried for the client's own context, never rendered as "more"/"fewer". */
+  comparisonDirection: 'more_during_trial' | 'fewer_during_trial';
+  /** Whether the two windows were logged with comparable INTENSITY (§3.3). Gates the fewer direction
+   *  server-side; the client discloses "we logged less often this stretch" when false. Absent on a
+   *  finding cached before the symmetric-gate fix (old cache) — treat undefined as comparable. */
+  densityComparable?: boolean;
+  /** The trial-era span in days — evidence parity with the report. */
+  trialWindowDays: number;
+  /** SR-4 (§5.4) — medication on board in the context window; absent otherwise (old cache / no course). */
+  medContext?: MedOnBoardContext;
+}
+
 export type SignalFinding =
   | CorrelationFinding
   | IncidentRedFlagFinding
@@ -397,7 +455,8 @@ export type SignalFinding =
   | PostprandialTimingFinding
   | TimeOfDayClusteringFinding
   | EmptyStomachTimingFinding
-  | TimingStoryFinding;
+  | TimingStoryFinding
+  | TrialResponseFinding;
 
 export interface CachedFinding {
   rank: number;

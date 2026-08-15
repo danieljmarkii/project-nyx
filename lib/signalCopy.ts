@@ -34,6 +34,7 @@ import type {
   SymptomWorseningFinding,
   TimeOfDayClusteringFinding,
   TimingStoryFinding,
+  TrialResponseFinding,
 } from './signal';
 import { localDayIndex, localDayIndexOf, trialDayCounter } from './utils';
 
@@ -429,6 +430,11 @@ export function sampleLine(finding: SignalFinding): string {
     // timingStorySampleLine directly; this branch keeps sampleLine total over the union.
     return timingStorySampleLine(finding);
   }
+  if (finding.type === 'trial_response') {
+    // The trial card's meta sample (CUL-13). TrialResponseBody renders this via
+    // trialResponseSampleLine directly; this branch keeps sampleLine total over the union.
+    return trialResponseSampleLine(finding);
+  }
   if (finding.trigger === 'refused_normal_food') {
     return finding.ratedMealsConsidered > 0
       ? `Compared with ${count(finding.ratedMealsConsidered, 'recent meal', 'recent meals')}`
@@ -536,7 +542,8 @@ export function medContextOf(finding: SignalFinding): MedOnBoardContext | undefi
     finding.type === 'postprandial_timing' ||
     finding.type === 'timeofday_clustering' ||
     finding.type === 'empty_stomach_timing' ||
-    finding.type === 'timing_story'
+    finding.type === 'timing_story' ||
+    finding.type === 'trial_response'
   ) {
     return finding.medContext;
   }
@@ -724,6 +731,19 @@ export function evidenceText(finding: SignalFinding, petName: string): string {
       `${finding.windowDays} days, ${finding.eligibleCount} had a clear enough time to place in the day — and ` +
       `${finding.clusterCount} of those happened ${band}. This is a timing pattern in your logs, not a ` +
       `diagnosis — worth mentioning to your vet.`
+    );
+  }
+  if (finding.type === 'trial_response') {
+    // The trial card's "why we're showing this" (L2, CUL-13): frames the honest DENOMINATOR (counts
+    // from logged days, both stretches) and routes to the vet. COUNT-ANCHORED, NEVER a verdict on the
+    // trial (the RTM/confound box + the §3.4 adjacency below carry the "can't say why yet" honesty);
+    // NO attribution (G1), NO syndrome (G3). The pooled counts + day-count are in the lead sentence,
+    // so this adds the framing rather than repeating them.
+    const weeks = baselineWeeksOf(finding);
+    return (
+      `These are counts from the days you logged — during the trial, and in the ` +
+      `${weeks === 1 ? 'week' : `${weeks} weeks`} before it. A change like this is worth reviewing with your ` +
+      `vet. It's a read of your logs, never a verdict on the trial.`
     );
   }
   if (finding.trigger === 'refused_normal_food') {
@@ -1088,6 +1108,12 @@ export interface CompareRow {
   label: string;
   count: number;
   tone: 'concern' | 'muted' | 'calm';
+  /** OPTIONAL two-sided "N · was M" form (CUL-13 trial rows). When set, the count renders as
+   *  "{count} · was {baseline}" and the bar scales against the max of BOTH counts across all rows,
+   *  so a reduction reads as a shorter bar. Absent on every timing/⑤/⑥ row → the shipped single-count
+   *  render, byte-identical (the flag-off / pre-CUL-13 contract). Never a verdict — G2's two-sided
+   *  count is always safe (a zero is "0 · was 7", never an inverted "no empty-stomach vomiting"). */
+  baseline?: number;
 }
 
 /** The two-sided compare for a timing finding — the pattern side vs the rest of the
@@ -1134,9 +1160,11 @@ export function dotLaneA11yLabel(finding: TimingFinding): string {
 }
 
 /** A full-sentence a11y label for a stacked compare — reads the labelled counts in
- *  order so a screen reader hears the whole comparison, not two loose numbers. */
+ *  order so a screen reader hears the whole comparison, not two loose numbers. A two-sided
+ *  row (CUL-13 trial) reads "…, 4, was 8" so the screen reader hears both counts; a single-
+ *  count row is unchanged (byte-identical for every timing/⑤/⑥ caller). */
 export function stackedCompareA11yLabel(rows: CompareRow[]): string {
-  return rows.map((r) => `${r.label}, ${r.count}`).join('; ') + '.';
+  return rows.map((r) => (r.baseline != null ? `${r.label}, ${r.count}, was ${r.baseline}` : `${r.label}, ${r.count}`)).join('; ') + '.';
 }
 
 // ══ The A2 combined timing card (Signals v2 / B-755 / CUL-12, D1) ══════════════
@@ -1311,6 +1339,140 @@ export function timingStoryVetLine(f: TimingStoryLike): string {
 // the InsightCard idiom). The expand's lanes carry no separate a11y label for the same reason
 // the shipped SR-1 expand receipts don't: they sit inside that same Pressable, so their meaning
 // rides the readable expand Text (control/vet/L3), never a swallowed self-label.
+
+// ── The trial-response card (L2 — the wedge; Signals v2 / B-755 / CUL-13, §4.2) ────────────────
+// The event-driven Signal trial card's client-composed pieces around the server lead sentence
+// (`cached.text` — the pooled count comparison, direction-neutral): the two per-phenotype count
+// rows, the day-count badge, the sample line, and the expand (RTM/confound verbatim + the §3.4
+// adjacency + the logged-days density disclosure + the diet-structure context in words). Every
+// string is guardrail-clean by construction: COUNT-ANCHORED, NEVER VERDICTED (no "working"/
+// "improving"/"cleared"), NO attribution (G1), NO syndrome/mechanism (G3), and — being a Signal
+// card — NO "%" (B-733). The D2 absence-shaped SENTENCE lead is NOT here (open, Dr. Chen gate); the
+// count-row form below is the unconditional one (G2).
+
+/** True for the trial-response finding — its own renderer + expand (CUL-13). */
+export function isTrialResponse(finding: SignalFinding): finding is TrialResponseFinding {
+  return finding.type === 'trial_response';
+}
+
+/** True for EVERY Signals-v2 finding type that renders only behind `signals_v2` — the timing-story
+ *  pair (CUL-12) and the trial card (CUL-13). One predicate for the client-render gate, used by both
+ *  InsightCard (skip the card when the flag is off) and SignalZone (drop the row so the divider
+ *  rhythm + lead indexing stay correct). Flag-off ⇒ the shipped surface is byte-identical (§5 /
+ *  FR-FLAG-2 / the G10 unknown-type contract): the server computes these uniformly for everyone, so a
+ *  non-eligible cache DOES carry them, and this gate is what keeps them dark. */
+export function isSignalsV2Finding(finding: SignalFinding): boolean {
+  return isTimingStory(finding) || isTrialResponse(finding);
+}
+
+/** The §2 L2 RTM/confound honesty block — VERBATIM from the spec (mock B3). Three things changed at
+ *  once, so a calm stretch can't yet attribute (Guilford 2001 / regression-to-the-mean). The one
+ *  string; the client renders it above the §3.4 adjacency line in the expand. */
+export const TRIAL_RTM_CONFOUND =
+  "Three things changed at once when the trial started — the new food, far fewer treats, more and steadier meals. A calmer stretch can't yet say which one mattered, and calm stretches also happen on their own.";
+
+/** The A2 count rows for the trial card — per-phenotype, TIME-ORDERED (rapid ≤30m, then long ≥6h),
+ *  each two-sided ("4 · was 8" via `CompareRow.baseline`; a zero renders "0 · was 7", never an
+ *  inverted absence claim — G2). Labels are the SAME mechanism-free band labels the A2 timing card
+ *  uses (`timingStoryBandRows`), so the two surfaces name the phenotypes identically and no owner
+ *  copy ever says "empty stomach" (MECHANISM_RE). A phenotype PRESENT during the trial (trial count
+ *  ≥ 1) wears the symptom hue used descriptively (the timing card's "a pattern wears the hue" rule);
+ *  a phenotype at zero rides muted (an empty bar) — the "· was N" text carries the two-sided fact. */
+export function trialResponseCompareRows(f: TrialResponseFinding): [CompareRow, CompareRow] {
+  return [
+    {
+      label: `Within ${f.rapidWindowMinutes} min of eating`,
+      count: f.rapid.trial,
+      baseline: f.rapid.baseline,
+      tone: f.rapid.trial >= 1 ? 'concern' : 'muted',
+    },
+    {
+      label: `${f.longGapHours}h+ after eating`,
+      count: f.long.trial,
+      baseline: f.long.baseline,
+      tone: f.long.trial >= 1 ? 'concern' : 'muted',
+    },
+  ];
+}
+
+/** The day-count badge — "Day N of M" (target set) or "Day N" (unset). `target_duration_days` is the
+ *  ONLY authority on trial length (never the elapsed days), matching the strip's own header. */
+export function trialResponseDayBadge(f: TrialResponseFinding): string {
+  return f.targetDurationDays != null
+    ? `Day ${f.trialDayNumber} of ${f.targetDurationDays}`
+    : `Day ${f.trialDayNumber}`;
+}
+
+/** The meta sample line — the C5 denominator disclosure in one glance ("counted from days you
+ *  logged"), so the face never implies a per-calendar-day rate. */
+export function trialResponseSampleLine(_f: TrialResponseFinding): string {
+  return 'counted from days you logged';
+}
+
+/** Whole weeks the baseline window spans (49d → 7), for the "N weeks before" copy. Matches the
+ *  server template's `Math.max(1, Math.round(baselineWindowDays / 7))`. */
+function baselineWeeksOf(f: TrialResponseFinding): number {
+  return Math.max(1, Math.round(f.baselineWindowDays / 7));
+}
+
+/** The logged-days density disclosure (§4.2) — the C5 denominators named, plus the honest caveat
+ *  when the two stretches were NOT logged with comparable intensity (a MORE card can fire on uneven
+ *  logging; the fewer direction is already gated server-side, §3.3). `densityComparable` absent on an
+ *  old cache ⇒ treated as comparable (no caveat), matching the server's pre-gate behaviour. */
+export function trialResponseDensityLine(f: TrialResponseFinding): string {
+  const weeks = baselineWeeksOf(f);
+  const base = `Counted from the days you logged — ${count(f.trialLoggedDays, 'day', 'days')} during the trial, ${f.baselineLoggedDays} in the ${weeks === 1 ? 'week' : `${weeks} weeks`} before.`;
+  if (f.densityComparable === false) {
+    return `${base} One stretch was logged more often than the other, so read the counts as a rough comparison.`;
+  }
+  return base;
+}
+
+// Coarse WORDS for a treat SHARE fraction (§4.2 — a Signal card carries no "%", B-733). Presentation
+// buckets, NOT statistical thresholds (so no G6 clinical anchor): they turn a 0..1 share into the
+// plain word an owner would use. Boundaries chosen to read naturally across the range; the diet-
+// structure line only renders when two shares land in DIFFERENT buckets, so a boundary wobble can
+// never flip a "no change" into a spurious "changed".
+function treatShareWord(x: number): string {
+  if (x <= 0) return 'none';
+  if (x < 0.15) return 'a few';
+  if (x < 0.4) return 'some';
+  if (x < 0.6) return 'about half';
+  if (x < 0.85) return 'most';
+  return 'nearly all';
+}
+
+/** The diet-structure "what else changed" context (§2 L2 — the observable half of the RTM confound),
+ *  in WORDS (no "%" on a Signal card, B-733) and NEVER a verdict (the RTM block already says a change
+ *  "can't yet say which one mattered"). Two independent clauses: the treat SHARE (coarse words) and
+ *  the MEALS-PER-DAY rate ("from about 2 to about 4"), each rendered only when both windows carry the
+ *  value AND the values are meaningfully different (so an unchanged structure renders nothing, not a
+ *  noisy "stayed the same"). Null when neither clause applies — the expand then shows no structure
+ *  line, only the density disclosure. */
+export function trialResponseDietStructureLine(f: TrialResponseFinding): string | null {
+  const clauses: string[] = [];
+
+  const { trial: treatT, baseline: treatB } = f.treatShare;
+  if (treatT != null && treatB != null) {
+    const wt = treatShareWord(treatT);
+    const wb = treatShareWord(treatB);
+    if (wt !== wb) clauses.push(`Treats went from ${wb} of the feedings to ${wt}.`);
+  }
+
+  const { trial: mealsT, baseline: mealsB } = f.mealsPerDay;
+  if (mealsT != null && mealsB != null) {
+    const rt = Math.round(mealsT);
+    const rb = Math.round(mealsB);
+    if (rt !== rb) clauses.push(`Meals a day went from about ${rb} to about ${rt}.`);
+  }
+
+  return clauses.length > 0 ? clauses.join(' ') : null;
+}
+
+/** The trial card's OWN accessibilityLabel folds the two count rows via
+ *  `stackedCompareA11yLabel(trialResponseCompareRows(...))`, exactly as the ⑤/⑥/A2 cards fold their
+ *  receipts (the outer Pressable swallows a self-label on the strip Views). The day badge is carried
+ *  in the label too so VoiceOver hears the same day-count a sighted owner reads. */
 
 // ── The safety phone-call script (§4 / §9) ────────────────────────────────────
 // "Scripts convert, sirens don't" (session doc §1): the safety tap-through carries the

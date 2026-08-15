@@ -101,6 +101,7 @@ import { type TrialProteinSource } from './trialProtein';
 import { proteinTrialLabel } from './trialProteinPicker';
 import { localDayIndexOf, MONTHS } from './utils';
 import type { TrialIndication } from './dietTrialSetup';
+import { TRIAL_RESPONSE_COUNTS_DEFAULTS, type TrialResponseCounts } from './trialResponseCounts';
 
 const MS_PER_DAY = 86_400_000;
 
@@ -326,6 +327,15 @@ export interface TrialCardInput {
    *  rests on, rendered where the owner can see it is wrong. Quiet metadata, not
    *  a safety card; re-sited here for the same reason as `standingNote`. */
   standingMeta?: string | null;
+  /**
+   * Signals v2 (B-755 / CUL-13, §4.2) — the standing one-line VOMIT count for the Home strip,
+   * computed from LOCAL data (`lib/trialResponseCounts`), always present while a trial runs. Present
+   * ONLY when `signals_v2` is on (the loader skips the read when off — so `resolveTrialStrip` renders
+   * no extra line and the strip is byte-identical). It is a DESCRIPTION of the record, not a control
+   * (§4.2's second-door rule is intact — nothing here opens a form); the un-gated raw-count sibling of
+   * the event-driven Signal trial card. Null when off / not computed → no line.
+   */
+  trialResponse?: TrialResponseCounts | null;
 }
 
 // ── Output model ─────────────────────────────────────────────────────────────
@@ -2384,6 +2394,66 @@ export interface TrialStripModel {
   line: string | null;
   /** R2 again: `getDietTrialProgress().fraction`, nothing else. */
   progressFraction: number;
+  /**
+   * Signals v2 (B-755 / CUL-13, §4.2) — the standing one-line vomit count, a SECOND line below
+   * `line`: "Vomiting: 4 in the trial's 20 days · 20 in the 7 weeks before." (the B1 mock form). Null
+   * when `signals_v2` is off (no `input.trialResponse` computed → byte-identical strip), when a safety
+   * flag suppresses the strip's lines, or when there is no vomiting on record to describe. A
+   * DESCRIPTION, never a control (§4.2 second-door rule intact).
+   */
+  trialResponseLine: string | null;
+}
+
+/**
+ * The standing trial-card line copy (CUL-13, §4.2) — the un-gated raw-count sibling of the
+ * event-driven Signal trial card. Two forms, chosen by how much the two windows were logged:
+ *
+ *   • COMPARISON (both windows ≥ `minLoggingDaysPerWindow` logged days — enough to compare honestly):
+ *     "Vomiting: {t} in the trial's {N} days · {b} in the {W} weeks before." (the mock B1 form).
+ *   • TRIAL-SO-FAR (below that floor — a too-new trial or a baseline too thin to compare): drops the
+ *     baseline clause to "Vomiting: {t} in the trial's {N} days." The config comment on the detector's
+ *     `minLoggingDaysPerWindow` names this exactly ("the trial-so-far counts still show on the
+ *     standing Pet-tab line"). The trial count is NEVER gated away — raw counts always show.
+ *
+ * Returns null when there is nothing to describe — a two-sided all-zero (no vomiting either window) or
+ * a below-floor zero-trial record — so the strip never proactively says "0 vomits" over a quiet
+ * stretch (which would edge toward reassurance-on-absence). Two-sided, count-anchored, NEVER a verdict
+ * (G1/G2). The floor is the SAME constant the detector gates on, so the two surfaces agree on "enough
+ * to compare".
+ *
+ * ── THE DENSITY GUARD (adversarial-reviewer, CUL-13) — the never-reassure fix ──────────────────────
+ *
+ * The baseline clause is ALSO withheld when the comparison reads as a REDUCTION but the two windows
+ * were NOT logged with comparable intensity (`densityComparable` false). This is the guard
+ * `detectTrialResponse` puts on its fewer direction, and it MUST be here too: without it, a chronic
+ * vomiter whose owner keeps one-tap meal-confirming (keeping the trial's logged-day count up) but
+ * stops logging vomits mid-trial would see "Vomiting: 0 in the trial's 20 days · 20 in the 7 weeks
+ * before" — a prominent false "it stopped", on the always-visible wedge strip, that the card
+ * deliberately refuses (a quieter-looking trial may just be a less-logged one). Withheld ⇒ the line
+ * drops to the trial-so-far form, which returns null for `trialCount === 0`, so the dangerous line
+ * vanishes. The MORE direction is never gated (a rise always surfaces — escalation is the safe
+ * direction), matching the detector's asymmetry. The residual the guard can't remove (comparable
+ * density but symptom-logging attrition) is the app-wide didn't-log≠didn't-happen limit and the OPEN
+ * PR-3 fewer-direction decision — the standing line now inherits whatever the card's posture becomes.
+ */
+export function trialResponseStandingLine(counts: TrialResponseCounts): string | null {
+  const floor = TRIAL_RESPONSE_COUNTS_DEFAULTS.minLoggingDaysPerWindow;
+  const days = counts.trialDayNumber === 1 ? 'day' : 'days';
+  // A reduction on non-comparable logging is the reassurance-risk case — withhold the baseline clause
+  // (drop to trial-so-far). A flat/increase (the escalation direction) is never withheld.
+  const reduction = counts.trialCount < counts.baselineCount;
+  const showComparison =
+    counts.trialLoggedDays >= floor &&
+    counts.baselineLoggedDays >= floor &&
+    (counts.densityComparable || !reduction);
+  if (showComparison) {
+    if (counts.trialCount + counts.baselineCount === 0) return null;
+    const weeks = Math.max(1, Math.round(counts.baselineWindowDays / 7));
+    const weekNoun = weeks === 1 ? 'week' : 'weeks';
+    return `Vomiting: ${counts.trialCount} in the trial's ${counts.trialDayNumber} ${days} · ${counts.baselineCount} in the ${weeks} ${weekNoun} before.`;
+  }
+  if (counts.trialCount === 0) return null;
+  return `Vomiting: ${counts.trialCount} in the trial's ${counts.trialDayNumber} ${days}.`;
 }
 
 /** Renders ONLY while a trial is active (§4.2) — Home gains nothing when there
@@ -2420,7 +2490,10 @@ export function resolveTrialStrip(input: TrialCardInput): TrialStripModel | null
   // the trial were proceeding normally. Silence on Home, the register one tap
   // away; never a reassuring summary of a trial the record says isn't running.
   if (input.intakeDeclineHeadline) {
-    return { header, line: null, progressFraction: progress.fraction };
+    // A live safety flag suppresses the strip's record lines — the vomit-count line included (CUL-13):
+    // a two-sided count next to "the pet stopped eating" is exactly the reassuring-summary composition
+    // this branch exists to withhold. Header only; the record is one tap away on the Pet tab.
+    return { header, line: null, progressFraction: progress.fraction, trialResponseLine: null };
   }
 
   const parts: string[] = [];
@@ -2471,5 +2544,10 @@ export function resolveTrialStrip(input: TrialCardInput): TrialStripModel | null
     header,
     line: parts.length > 0 ? parts.join(' · ') : null,
     progressFraction: progress.fraction,
+    // CUL-13 — the standing vomit-count line, a SECOND line below the coverage line. Null unless
+    // `signals_v2` is on (the loader only computes `input.trialResponse` then), so the strip is
+    // byte-identical off the flag. Its own render rule (comparison vs trial-so-far vs nothing) lives
+    // in `trialResponseStandingLine`, so this call site stays a plain pass-through.
+    trialResponseLine: input.trialResponse ? trialResponseStandingLine(input.trialResponse) : null,
   };
 }

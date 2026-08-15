@@ -12,7 +12,12 @@
 import { type ReactElement } from 'react';
 import { fireEvent, render } from '@testing-library/react-native';
 import { InsightCard } from './InsightCard';
-import { dotLaneA11yLabel, stackedCompareA11yLabel, timingStoryBandRows } from '../../lib/signalCopy';
+import {
+  dotLaneA11yLabel,
+  stackedCompareA11yLabel,
+  timingStoryBandRows,
+  trialResponseCompareRows,
+} from '../../lib/signalCopy';
 import type {
   CachedFinding,
   CorrelationFinding,
@@ -21,6 +26,7 @@ import type {
   ReflectionFinding,
   SymptomWorseningFinding,
   TimingStoryFinding,
+  TrialResponseFinding,
 } from '../../lib/signal';
 
 const correlation = (over: Partial<CorrelationFinding> = {}): CorrelationFinding => ({
@@ -173,6 +179,30 @@ const emptyStomach = (over: Partial<EmptyStomachTimingFinding> = {}): EmptyStoma
   clockBand: { startLocalHour: 2, windowHours: 6 },
   clockCount: 6,
   windowDays: 60,
+  ...over,
+});
+
+// Signals v2 (CUL-13) — the event-driven trial card (Nyx's fewer case: after-eating 4 · was 8;
+// empty-stomach 0 · was 7; pooled 4 · 20).
+const trialResponse = (over: Partial<TrialResponseFinding> = {}): TrialResponseFinding => ({
+  type: 'trial_response',
+  priorityClass: 'insight',
+  trialDayNumber: 20,
+  targetDurationDays: 56,
+  trialLoggedDays: 18,
+  baselineLoggedDays: 40,
+  baselineWindowDays: 49,
+  pooledTrialCount: 4,
+  pooledBaselineCount: 20,
+  rapid: { trial: 4, baseline: 8 },
+  long: { trial: 0, baseline: 7 },
+  rapidWindowMinutes: 30,
+  longGapHours: 6,
+  treatShare: { trial: 0.1, baseline: 0.8 },
+  mealsPerDay: { trial: 4, baseline: 2 },
+  comparisonDirection: 'fewer_during_trial',
+  densityComparable: true,
+  trialWindowDays: 20,
   ...over,
 });
 
@@ -596,6 +626,101 @@ describe('InsightCard — CUL-12 A2 timing card flag gating (signals_v2)', () =>
     expect(view.queryByText('By clock')).toBeNull();
     // The for-your-vet relay still carries the clustering in words.
     expect(view.queryByText(/early-morning timing is worth flagging/)).toBeTruthy();
+  });
+});
+
+// The trial card (CUL-13) rides the SAME `signals_v2` flag as the A2 card (D6). Same FR-FLAG-2 / G10
+// invariant: OFF → a trial_response cache row renders NOTHING (byte-identical to before the type had a
+// renderer); ON → the server lead + the two two-sided count rows + the day badge, and an expand with
+// the RTM/confound honesty + adjacency + density + diet-structure.
+describe('InsightCard — CUL-13 trial card flag gating (signals_v2)', () => {
+  const LEAD =
+    "We've logged 4 episodes of vomiting for Nyx in the 20 days since the trial began, compared with 20 across the 7 weeks before it — worth reviewing with your vet.";
+
+  it('renders NOTHING for a trial_response row when the flag is off — even with designV2 on', () => {
+    const c = anyCached(trialResponse(), LEAD);
+    expect(render(<InsightCard cached={c} petName="Nyx" />).toJSON()).toBeNull();
+    expect(render(<InsightCard cached={c} petName="Nyx" designV2 />).toJSON()).toBeNull();
+  });
+
+  it('flag-off is byte-identical (snapshot-pinned) — a trial_response row is skipped entirely', () => {
+    const c = anyCached(trialResponse(), LEAD);
+    expect(render(<InsightCard cached={c} petName="Nyx" designV2={false} />).toJSON()).toMatchSnapshot(
+      'flag-off trial_response (null)',
+    );
+  });
+
+  it('draws the server lead + the two two-sided count rows + the day badge + sample when on', () => {
+    const c = anyCached(trialResponse(), LEAD);
+    const view = render(<InsightCard cached={c} petName="Nyx" signalsV2 />);
+    expect(view.queryByText(LEAD)).toBeTruthy();
+    // Time-ordered rows: rapid first, then long. Labels are the mechanism-free band labels (never
+    // "empty stomach"), identical to the A2 timing card.
+    expect(view.queryByText('Within 30 min of eating')).toBeTruthy();
+    expect(view.queryByText('6h+ after eating')).toBeTruthy();
+    // Two-sided counts ("4 · was 8", "0 · was 7") — G2. The lead + baseline render in one Text node,
+    // so match the fragment.
+    expect(view.queryByText('was 8', { exact: false })).toBeTruthy();
+    expect(view.queryByText('was 7', { exact: false })).toBeTruthy();
+    // Meta row: the day badge + the C5 sample line.
+    expect(view.queryByText('Day 20 of 56')).toBeTruthy();
+    expect(view.queryByText('counted from days you logged')).toBeTruthy();
+  });
+
+  it('renders on signals_v2 ALONE (does not require signal_design_v2)', () => {
+    const c = anyCached(trialResponse(), LEAD);
+    expect(render(<InsightCard cached={c} petName="Nyx" signalsV2 />).queryByText('Day 20 of 56')).toBeTruthy();
+  });
+
+  it("folds the count rows + day badge into the card's OWN a11y label", () => {
+    const finding = trialResponse();
+    const c = anyCached(finding, LEAD);
+    const rows = stackedCompareA11yLabel(trialResponseCompareRows(finding));
+    expect(render(<InsightCard cached={c} petName="Nyx" />).queryByLabelText(rows, { exact: false })).toBeNull();
+    const on = render(<InsightCard cached={c} petName="Nyx" signalsV2 />);
+    expect(on.queryByLabelText(rows, { exact: false })).toBeTruthy();
+    expect(on.queryByLabelText('Day 20 of 56', { exact: false })).toBeTruthy();
+  });
+
+  it('the expand draws the RTM/confound honesty, the §3.4 adjacency, and the density + diet-structure', () => {
+    const c = anyCached(trialResponse(), LEAD);
+    const view = render(<InsightCard cached={c} petName="Nyx" signalsV2 />);
+    fireEvent.press(view.getByRole('button'));
+    expect(view.queryByText('Reading this stretch honestly')).toBeTruthy();
+    expect(view.queryByText(/Three things changed at once when the trial started/)).toBeTruthy();
+    expect(view.queryByText(/isn't the trial's verdict/)).toBeTruthy();
+    expect(view.queryByText('What else changed')).toBeTruthy();
+    // Diet-structure in WORDS (no "%"): treat share (most → a few) + meals/day (2 → 4).
+    expect(view.queryByText(/Treats went from most of the feedings to a few/)).toBeTruthy();
+    expect(view.queryByText(/Meals a day went from about 2 to about 4/)).toBeTruthy();
+    // Density disclosure names the logged-days denominators.
+    expect(view.queryByText(/Counted from the days you logged — 18 days during the trial, 40 in the 7 weeks before/)).toBeTruthy();
+  });
+
+  it('discloses uneven logging when densityComparable is false (a more-during-trial card)', () => {
+    const c = anyCached(
+      trialResponse({ comparisonDirection: 'more_during_trial', densityComparable: false, rapid: { trial: 8, baseline: 2 }, long: { trial: 2, baseline: 1 } }),
+      'A more sentence.',
+    );
+    const view = render(<InsightCard cached={c} petName="Nyx" signalsV2 />);
+    fireEvent.press(view.getByRole('button'));
+    expect(view.queryByText(/read the counts as a rough comparison/)).toBeTruthy();
+  });
+
+  it('omits the fewer-specific "calmer/quieter" RTM box on a more-during-trial card, keeps "What else changed"', () => {
+    // The RTM/adjacency wording ("A calmer stretch…", "A quieter week…") contradicts a rising record,
+    // so it renders only on a fewer card. The direction-neutral diet-structure box still shows.
+    const c = anyCached(
+      trialResponse({ comparisonDirection: 'more_during_trial', rapid: { trial: 8, baseline: 2 }, long: { trial: 2, baseline: 1 } }),
+      'A more sentence.',
+    );
+    const view = render(<InsightCard cached={c} petName="Nyx" signalsV2 />);
+    fireEvent.press(view.getByRole('button'));
+    expect(view.queryByText('Reading this stretch honestly')).toBeNull();
+    expect(view.queryByText(/Three things changed at once/)).toBeNull();
+    expect(view.queryByText(/isn't the trial's verdict/)).toBeNull();
+    // Direction-neutral confound context still renders.
+    expect(view.queryByText('What else changed')).toBeTruthy();
   });
 });
 

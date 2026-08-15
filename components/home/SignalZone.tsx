@@ -21,7 +21,7 @@ import {
   buildingHeadlineLead,
   buildingIntro,
   coverageCopy,
-  isTimingStory,
+  isSignalsV2Finding,
   noPatternIntro,
   staleIntro,
 } from '../../lib/signalCopy';
@@ -253,17 +253,17 @@ function LiveStack({
   signalsV2: boolean;
   trialRunning: boolean;
 }) {
-  // Drop the Signals-v2 timing-story types when the flag is off: the server computes them
-  // uniformly for every account (spec §5), so a non-eligible cache DOES carry them, and the
-  // client gate is what keeps them dark. Filtering HERE (not just relying on InsightCard's
-  // null) keeps the divider rhythm and the lead/compact indexing correct — a null card would
-  // otherwise leave a stray divider and shift the true first row off `isLead`. A no-op until
+  // Drop the Signals-v2 types (the timing-story pair CUL-12 + the trial card CUL-13) when the flag
+  // is off: the server computes them uniformly for every account (spec §5), so a non-eligible cache
+  // DOES carry them, and the client gate is what keeps them dark. Filtering HERE (not just relying on
+  // InsightCard's null) keeps the divider rhythm and the lead/compact indexing correct — a null card
+  // would otherwise leave a stray divider and shift the true first row off `isLead`. A no-op until
   // the PR-10 redeploy (no cache carries these types before then), so the shipped surface is
-  // byte-identical. NOTE: displayState/hasUnseen upstream still count the full set (a
-  // non-eligible account whose ONLY findings are story types would read 'live' with an empty
-  // stack) — an accepted edge until PR 10's flag-off QA, where the full-surface gate is set.
+  // byte-identical. NOTE: displayState/hasUnseen upstream still count the full set (a non-eligible
+  // account whose ONLY findings are Signals-v2 types would read 'live' with an empty stack) — an
+  // accepted edge until PR 10's flag-off QA, where the full-surface gate is set.
   const ordered = [...findings]
-    .filter((f) => signalsV2 || !isTimingStory(f.finding))
+    .filter((f) => signalsV2 || !isSignalsV2Finding(f.finding))
     .sort((a, b) => a.rank - b.rank);
   return (
     <View>
