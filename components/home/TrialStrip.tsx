@@ -31,7 +31,14 @@ export function TrialStrip({ model, onPress }: Props) {
     <Pressable
       onPress={onPress ?? (() => router.push('/(tabs)/profile'))}
       accessibilityRole="button"
-      accessibilityLabel={`${model.header}. Open the diet trial.`}
+      // The Pressable's explicit label overrides its children for VoiceOver, so the standing
+      // vomit-count line (CUL-13) is folded in when present — otherwise a screen-reader owner would
+      // miss it. Null off the flag ⇒ the label is byte-identical to the shipped strip.
+      accessibilityLabel={
+        model.trialResponseLine
+          ? `${model.header}. ${model.trialResponseLine} Open the diet trial.`
+          : `${model.header}. Open the diet trial.`
+      }
       testID="trial-strip"
     >
       <Card>
@@ -50,6 +57,14 @@ export function TrialStrip({ model, onPress }: Props) {
         </View>
 
         {model.line !== null && <Text style={styles.line}>{model.line}</Text>}
+
+        {/* Signals v2 (CUL-13, §4.2) — the standing vomit-count line, a second line below the
+            coverage line. Null unless `signals_v2` is on (the loader gates the compute), so the
+            flag-off strip renders byte-identical. A DESCRIPTION of the record, not a control — the
+            whole Pressable still opens the Pet tab; nothing here opens a form (§4.2 second-door rule). */}
+        {model.trialResponseLine !== null && (
+          <Text style={styles.trialResponseLine}>{model.trialResponseLine}</Text>
+        )}
       </Card>
     </Pressable>
   );
@@ -86,5 +101,12 @@ const styles = StyleSheet.create({
     fontSize: theme.textSM,
     color: theme.colorTextSecondary,
     marginTop: theme.space1,
+  },
+  // The standing vomit-count line (CUL-13). A quieter tier than the coverage line — it's context on
+  // the trial's symptom record, not the trial's own status — so it rides the tertiary tone.
+  trialResponseLine: {
+    fontSize: theme.textSM,
+    color: theme.colorTextTertiary,
+    marginTop: theme.spaceMicro,
   },
 });

@@ -23,6 +23,8 @@ import {
   type OccurredAtConfidence,
   type PetContext,
 } from './detection.ts'
+// §5.3 parity (CUL-13): the client standing-line predicate, pinned to the detector's counts below.
+import { computeTrialResponseCounts } from '../../../lib/trialResponseCounts.ts'
 
 // ── Fixture helpers ───────────────────────────────────────────────────────────
 
@@ -536,4 +538,86 @@ Deno.test('detectTrialResponse — pooled burden is vomit-only; a co-tracked itc
   assert.equal(f.length, 1)
   assert.equal(f[0].pooledBaselineCount, 12, 'only the 12 baseline VOMIT episodes count — the 8 itch are excluded')
   assert.equal(f[0].pooledTrialCount, 1, 'only the 1 trial VOMIT episode counts — the 5 itch are excluded')
+})
+
+// ── §5.3 PARITY: the client standing-line predicate matches the detector's counts (CUL-13) ──────────
+//
+// The Home strip's standing vomit-count line reads local data through `lib/trialResponseCounts`, and
+// it sits directly below the Signal trial card whose pooled counts come from THIS detector. If the two
+// counting algorithms drift, the two surfaces print different numbers for the same trial on the same
+// screen — the §5.3 "one-record-two-answers" failure, one layer out. This pins the SHOWN counts
+// (pooled trial/baseline + the day number) AND the logged-days, feeding the shared predicate the same
+// symptom+meal instants the detector's `loggedDaysIn` reads, so a future windowing/collapse change to
+// one side fails here. (The import is at the top of the file with the others.)
+
+/** Run both sides on the SAME input and assert the shared predicate reproduces the detector's counts. */
+function assertParity(input: DetectionInput, label: string) {
+  const f = detectTrialResponse(input)
+  assert.equal(f.length, 1, `${label}: the detector fires (parity is only checkable when it emits)`)
+  const finding = f[0]
+  const counts = computeTrialResponseCounts({
+    // Vomit-only onsets, exactly as `detectTrialResponse` filters them.
+    vomitOnsetsMs: input.symptomEvents
+      .filter((s) => s.type === 'vomit')
+      .map((s) => Date.parse(s.occurredAt)),
+    // The detector's logged-days set is symptomEvents ∪ mealEvents — feed the same so loggedDays pin.
+    loggedEventMs: [
+      ...input.symptomEvents.map((s) => Date.parse(s.occurredAt)),
+      ...input.mealEvents.map((m) => Date.parse(m.occurredAt)),
+    ],
+    trialStartedAt: input.dietTrial!.startedAt,
+    nowMs: Date.parse(input.now),
+    timeZone: input.timezone,
+  })
+  assert.ok(counts, `${label}: the shared predicate places the trial`)
+  assert.equal(counts!.trialCount, finding.pooledTrialCount, `${label}: trial count parity`)
+  assert.equal(counts!.baselineCount, finding.pooledBaselineCount, `${label}: baseline count parity`)
+  assert.equal(counts!.trialDayNumber, finding.trialDayNumber, `${label}: day-number parity`)
+  assert.equal(counts!.trialLoggedDays, finding.trialLoggedDays, `${label}: trial logged-days parity`)
+  assert.equal(counts!.baselineLoggedDays, finding.baselineLoggedDays, `${label}: baseline logged-days parity`)
+  // The density guard the standing line reuses must agree with the detector's — computed off the SAME
+  // symptom+meal logged-days denominator (that is why `loggedEventMs` above is symptom ∪ meal, the
+  // production shape too, not every event type — the adversarial/code-review drift finding).
+  assert.equal(counts!.densityComparable, finding.densityComparable, `${label}: densityComparable parity`)
+}
+
+Deno.test('parity — a fewer-during-trial trial: standing-line counts === detector counts', () => {
+  assertParity(
+    trialInput({
+      mealEvents: mealsAcross(77, 0),
+      symptomEvents: [...spreadVomits(12, 74, 30), vomit(10)],
+    }),
+    'fewer',
+  )
+})
+
+Deno.test('parity — a more-during-trial trial: standing-line counts === detector counts', () => {
+  assertParity(
+    trialInput({
+      mealEvents: mealsAcross(77, 0),
+      symptomEvents: [...spreadVomits(10, 24, 1), vomit(60)],
+    }),
+    'more',
+  )
+})
+
+Deno.test('parity — a re-logged bout collapses identically on both sides', () => {
+  // A firing fewer case (baseline 12 vs trial 1) whose baseline contains a re-logged bout (three logs
+  // within 3h → ONE episode), so collapse-then-window runs on both sides. The shared predicate reuses
+  // lib/mealTiming.collapseEpisodes, the detector its toEpisodeOnsets (the same algorithm) — this pins
+  // that they stay the same: if either stopped collapsing, the baseline count would differ (12 vs 14)
+  // AND the two sides would diverge, failing the parity below.
+  assertParity(
+    trialInput({
+      mealEvents: mealsAcross(77, 0),
+      symptomEvents: [
+        ...spreadVomits(11, 74, 30),
+        vomit(50, 8),
+        vomit(50, 9),
+        vomit(50, 10), // a re-logged bout deep in the baseline → one episode after collapse
+        vomit(10), // the single trial-era episode
+      ],
+    }),
+    're-log-collapse',
+  )
 })

@@ -14,6 +14,8 @@ import {
   DENSITY_BOX_TITLE,
   DOT_LANE_MAX,
   TIMING_STORY_BADGE,
+  TRIAL_ADJACENCY,
+  TRIAL_RTM_CONFOUND,
   confidenceTag,
   displayProteinName,
   dotLaneA11yLabel,
@@ -22,8 +24,10 @@ import {
   isJointCandidate,
   isNewWorsening,
   isReflectionDensityWithheld,
+  isSignalsV2Finding,
   isTimingFinding,
   isTimingStory,
+  isTrialResponse,
   medContextLine,
   phoneScript,
   photoCompositionLines,
@@ -41,6 +45,11 @@ import {
   timingStoryMealLaneModel,
   timingStorySampleLine,
   timingStoryVetLine,
+  trialResponseCompareRows,
+  trialResponseDayBadge,
+  trialResponseDensityLine,
+  trialResponseDietStructureLine,
+  trialResponseSampleLine,
   worseningNewSampleLine,
 } from '../../lib/signalCopy';
 import { DotLane, EvidenceBox, PhoneScript, StackedCompare } from './SignalReceipts';
@@ -143,6 +152,72 @@ function TimingStoryBody({ cached, isLead }: InsightBodyProps) {
         <Text style={styles.sample}>{timingStorySampleLine(finding)}</Text>
       </View>
     </View>
+  );
+}
+
+// ── The trial-response card (L2 — the wedge; Signals v2 / B-755 / CUL-13) ──────
+// The event-driven Signal trial card. Face: the server-phrased lead sentence (cached.text — the
+// pooled count comparison, direction-neutral) + the two per-phenotype count rows (rapid ≤30m / long
+// ≥6h, each two-sided "4 · was 8" — G2) + a meta row (the "Day N of M" badge + the "counted from days
+// you logged" sample line). The RTM/confound honesty, the §3.4 adjacency, the density disclosure and
+// the diet-structure context live in the expand (TrialResponseExpanded). Reached ONLY when
+// `signals_v2` is on (InsightCard gates before the registry Body runs) — byte-identical to before the
+// type existed when off (the G10 contract). The D2 absence-shaped SENTENCE lead is NOT here (open,
+// Dr. Chen gate); the count-row form is the unconditional one.
+function TrialResponseBody({ cached, isLead }: InsightBodyProps) {
+  const finding = cached.finding;
+  // Registry-keyed + gated in InsightCard, so this is always a trial_response; the guard narrows the
+  // union for the copy helpers (and is a defensive null for an impossible call).
+  if (!isTrialResponse(finding)) return null;
+  return (
+    <View style={styles.body}>
+      <Text style={[styles.sentence, isLead && styles.sentenceLead]}>{cached.text}</Text>
+      <StackedCompare rows={trialResponseCompareRows(finding)} />
+      <View style={styles.metaRow}>
+        <Badge label={trialResponseDayBadge(finding)} variant="muted" />
+        <Text style={styles.sample}>{trialResponseSampleLine(finding)}</Text>
+      </View>
+    </View>
+  );
+}
+
+// ── The trial-response expanded state (CUL-13, §4.2) ───────────────────────────
+// Below the "Why we're showing this" prose: the RTM/confound honesty block verbatim + the §3.4
+// adjacency line (both about a running trial — the finding only ever exists for one, so neither is
+// gated on trialRunning), then the "what else changed" box with the diet-structure context in words
+// (no "%", B-733) + the logged-days density disclosure. The §5.4 med-on-board line trails when a
+// course is active. Every string count-anchored / never-verdicted (G1/G3). Rendered only for a
+// trial_response finding behind `signals_v2` (gated at the call site).
+function TrialResponseExpanded({ finding }: { finding: SignalFinding }) {
+  if (!isTrialResponse(finding)) return null;
+  const dietStructure = trialResponseDietStructureLine(finding);
+  const medLine = medContextLine(finding);
+  // The RTM/confound honesty is fewer-SPECIFIC WORDING ("A calmer stretch…", "A quieter week…"), and
+  // the card fires on more-during-trial too (escalation — the direction that ships if the PM picks
+  // escalate-only). "Calmer/quieter" contradicts a rising record, so the box renders ONLY on a fewer
+  // card. The MORE-direction confound copy is an OPEN Dr. Chen / nyx-voice call (spec §2 L2 ratified
+  // only the fewer strings, verbatim, no MORE variant); until it lands, a more card omits this box —
+  // the direction-neutral "What else changed" (diet structure) below still shows, and the lead already
+  // routes to the vet. (code-reviewer / Dr. Chen, CUL-13.)
+  const showRtm = finding.comparisonDirection === 'fewer_during_trial';
+  return (
+    <>
+      {showRtm ? (
+        <EvidenceBox title="Reading this stretch honestly">
+          <Text style={styles.disclosure}>{TRIAL_RTM_CONFOUND}</Text>
+          <Text style={[styles.trialAdjacency, styles.disclosureSpaced]}>{TRIAL_ADJACENCY}</Text>
+        </EvidenceBox>
+      ) : null}
+      <EvidenceBox title="What else changed">
+        {dietStructure ? <Text style={styles.disclosure}>{dietStructure}</Text> : null}
+        <Text style={[styles.disclosure, dietStructure ? styles.disclosureSpaced : null]}>
+          {trialResponseDensityLine(finding)}
+        </Text>
+      </EvidenceBox>
+      {/* §5.4 med-on-board context — a bare fact line, never a verdict; dropped fail-quiet when the
+          composed line trips the guardrail screen (a "%" in the drug name — B-733). */}
+      {medLine ? <Text style={styles.medContext}>{medLine}</Text> : null}
+    </>
   );
 }
 
@@ -380,6 +455,10 @@ const INSIGHT_RENDERERS: Record<InsightType, (p: InsightBodyProps) => ReactEleme
   // cache row is skipped — byte-identical to before the type existed).
   empty_stomach_timing: TimingStoryBody,
   timing_story: TimingStoryBody,
+  // Signals v2 (B-755 / CUL-13) — the event-driven trial card (L2, the wedge). Its own face
+  // (server lead + two two-sided count rows + day badge) + expand; rendered ONLY behind
+  // `signals_v2` (InsightCard returns null for it when the flag is off — byte-identical).
+  trial_response: TrialResponseBody,
 };
 
 interface Props {
@@ -426,12 +505,13 @@ export function InsightCard({
   // crash the whole surface (forward-compatible with new detectors).
   if (!Body) return null;
 
-  // A Signals-v2 timing-story type on an account without the flag: render nothing (the
-  // server computes these uniformly for everyone — §5 — so a non-eligible cache DOES carry
-  // them; the client gate is what keeps them dark). Placed after the registry lookup so the
-  // flag-off tree is byte-identical to when these types had no renderer at all.
+  // A Signals-v2 type (timing story CUL-12, or the trial card CUL-13) on an account without the
+  // flag: render nothing (the server computes these uniformly for everyone — §5 — so a non-eligible
+  // cache DOES carry them; the client gate is what keeps them dark). Placed after the registry
+  // lookup so the flag-off tree is byte-identical to when these types had no renderer at all.
   const isStory = isTimingStory(cached.finding);
-  if (isStory && !signalsV2) return null;
+  const isTrial = isTrialResponse(cached.finding);
+  if (isSignalsV2Finding(cached.finding) && !signalsV2) return null;
 
   const rail = RAIL_COLOR[cached.finding.priorityClass];
 
@@ -449,6 +529,10 @@ export function InsightCard({
   let faceMedLine: string | null = null;
   if (signalsV2 && isTimingStory(cached.finding)) {
     receiptA11y = stackedCompareA11yLabel(timingStoryBandRows(cached.finding));
+  } else if (signalsV2 && isTrialResponse(cached.finding)) {
+    // The trial card folds its two count rows + the day badge into the label; its med line is in the
+    // EXPAND, not the face (unlike the ⑤/⑥ face med line), so it's not part of the collapsed label.
+    receiptA11y = `${stackedCompareA11yLabel(trialResponseCompareRows(cached.finding))} ${trialResponseDayBadge(cached.finding)}.`;
   } else {
     receiptA11y = cardFaceReceiptA11y(cached.finding, designV2);
     faceMedLine = designV2 ? medContextLine(cached.finding) : null;
@@ -480,12 +564,14 @@ export function InsightCard({
         {expanded && (
           <>
             <Text style={styles.evidence}>{evidenceText(cached.finding, petName)}</Text>
-            {/* A2 story card (signals_v2) → its own expanded receipts (lanes, control side,
-                med line, L3, for-your-vet); otherwise the SR-1 (signal_design_v2) receipts.
-                The two flags are independent, but a finding is only ever one shape, so this
-                is an either/or, never both. */}
+            {/* A signals_v2 card → its own expanded receipts: the A2 story card's lanes/control/L3,
+                or the trial card's RTM-confound + density + diet-structure. Otherwise the SR-1
+                (signal_design_v2) receipts. The flags are independent, but a finding is only ever one
+                shape, so this is an either/or chain, never two at once. */}
             {signalsV2 && isStory ? (
               <TimingStoryExpanded finding={cached.finding} />
+            ) : signalsV2 && isTrial ? (
+              <TrialResponseExpanded finding={cached.finding} />
             ) : designV2 ? (
               <ExpandedReceipts finding={cached.finding} petName={petName} trialRunning={trialRunning} />
             ) : null}

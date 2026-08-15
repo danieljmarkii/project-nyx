@@ -1,5 +1,7 @@
 // Jest Snapshot v1, https://goo.gl/fbAQLP
 
+exports[`InsightCard — CUL-13 trial card flag gating (signals_v2) flag-off is byte-identical (snapshot-pinned) — a trial_response row is skipped entirely: flag-off trial_response (null) 1`] = `null`;
+
 exports[`InsightCard — SR-1 flag gating (signal_design_v2) flag-OFF is byte-identical to the shipped default, and snapshot-pinned (FR-FLAG-2): flag-off food_symptom_correlation 1`] = `
 <View
   accessibilityHint="Shows the evidence behind this insight"
