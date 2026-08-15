@@ -124,7 +124,16 @@ export function TodayZone() {
  *  counts the recap's C2 chips render (`buildCountChips`), laid out as one factual
  *  clause: the leading number of each segment is bolded (the mock's `<b>2</b> meals`),
  *  segments join with " · ", and the clause closes with "logged". Digit-anchored and
- *  never totalled into a score (Principle 3). */
+ *  never totalled into a score (Principle 3).
+ *
+ *  Register note: a symptom count renders in the SAME neutral digit as meals/doses here.
+ *  The shared `DayCountChip.tone` (which the night recap paints rose) is deliberately NOT
+ *  applied on Home — the lane's rose dot above already carries the symptom colour, the
+ *  count line stays a calm factual summary, and a legible rose TEXT token on the light
+ *  ground (the dot's #F43F5E fails AA as 13px text) is a Designer/AA call. This is
+ *  REGISTER only: the counts are byte-identical to the recap's (the invariant the shared
+ *  builder guarantees — same numbers, same nouns). Rose-vs-neutral is surfaced for PM
+ *  ratification (CUL-25 pm-review D1); flipping it is a one-line change. */
 function CountLine({ counts }: { counts: DayCountChip[] }) {
   return (
     <Text style={styles.counts}>
