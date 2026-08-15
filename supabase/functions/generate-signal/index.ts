@@ -28,6 +28,7 @@ import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-
 import {
   detectSignals,
   detectCoverage,
+  stripInternalOnsets,
   computeReflectionDensity,
   doseToMedicationWindow,
   DEFAULT_CONFIG,
@@ -953,10 +954,12 @@ const handler = async (req: Request): Promise<Response> => {
     //     it ranks (§11 AC). A null density / medContext leaves the finding unchanged.
     const reflectionDensity: ReflectionDensity | null = computeReflectionDensity(input, DEFAULT_CONFIG)
     const medOnBoard: MedOnBoardContext | null = computeMedOnBoard(nowMs, medDoseFacts)
-    const decorated = curated.map((r) => {
+    const decoratedWithOnsets = curated.map((r) => {
       // L3 (CUL-9): photo composition is PER-FINDING (each vomit timing finding has its own window +
       // long-episode set), unlike the once-per-regen density/medContext, so it is computed here inside
-      // the map. Null for every non-timing finding and whenever no marker was seen (present-only).
+      // the map. It reads the finding's `longEpisodeOnsets` for the retained-food join, which is why
+      // detectSignals leaves the onsets in place (see its note) and the strip happens just below. Null
+      // for every non-timing finding and whenever no marker was seen (present-only).
       const photoComposition: PhotoComposition | null = computePhotoComposition(
         r.finding,
         photoAnalyses,
@@ -967,6 +970,13 @@ const handler = async (req: Request): Promise<Response> => {
         finding: decorateFinding(r.finding, reflectionDensity, medOnBoard, photoComposition),
       }
     })
+    // Strip the internal onset arrays now that BOTH consumers have run — the episode-set-aware
+    // suppression (inside detectSignals) and L3's retained-food join (just above). This is
+    // detectSignals's old final step, relocated here (CUL-9) because L3 needs the onsets alive through
+    // decoration; it keeps the raw per-episode timestamps out of the phrasing / cache / HTTP layer
+    // (CUL-7 finding ②), including the copy that rides on a merged timing_story's `long` block.
+    const strippedFindings = stripInternalOnsets(decoratedWithOnsets.map((r) => r.finding))
+    const decorated = decoratedWithOnsets.map((r, i) => ({ rank: r.rank, finding: strippedFindings[i] }))
 
     // 4. Phrase — one sentence per finding, in parallel, each falling back to
     //    its template independently. The set is never blank because the LLM

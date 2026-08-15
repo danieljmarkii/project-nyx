@@ -5308,13 +5308,17 @@ function suppressWorseningWhenChronic(findings: Finding[]): Finding[] {
 }
 
 /**
- * Signals v2 (CUL-7 review finding ②) — the internal onset arrays (`rapidEpisodeOnsets` /
- * `longEpisodeOnsets` / `clusterEpisodeOnsets`) exist ONLY to feed the episode-set-aware suppression.
- * Strip them once the suppression has run, so they never reach the phrasing / cache / HTTP layer: a
- * future redeploy must not start bloating every live ⑤/⑥ card with raw per-episode timestamps the
- * client ignores. Returns new findings; never mutates.
+ * Signals v2 (CUL-7 review finding ②; extended by CUL-9) — the internal onset arrays
+ * (`rapidEpisodeOnsets` / `longEpisodeOnsets` / `clusterEpisodeOnsets`, and the copy L1's onsets ride
+ * on inside a merged `timing_story` at `long.longEpisodeOnsets`) exist ONLY to feed two post-detection
+ * consumers: the episode-set-aware suppression (inside `detectSignals`) and L3's retained-food join
+ * (`computePhotoComposition`, in the I/O shell). Strip them once BOTH have run, so they never reach
+ * the phrasing / cache / HTTP layer — a live card must not carry raw per-episode timestamps the client
+ * ignores. Because L3 runs in the shell AFTER `detectSignals` returns, this strip is now the shell's
+ * final decoration step (index.ts), not `detectSignals`'s — see the note there. Returns new findings
+ * (never mutates), so the strip of `timing_story` also clones its nested `long` object.
  */
-function stripInternalOnsets(findings: Finding[]): Finding[] {
+export function stripInternalOnsets(findings: Finding[]): Finding[] {
   return findings.map((f) => {
     if (f.type === 'postprandial_timing' && f.rapidEpisodeOnsets !== undefined) {
       const copy = { ...f }
@@ -5330,6 +5334,14 @@ function stripInternalOnsets(findings: Finding[]): Finding[] {
       const copy = { ...f }
       delete copy.clusterEpisodeOnsets
       return copy
+    }
+    // CUL-9: composeTimingStory copies L1's onsets onto the merged card's `long` block for L3's join —
+    // strip them too (the base-type branches above never see a timing_story). Clone `long` so the
+    // returned finding shares no mutable state with the input.
+    if (f.type === 'timing_story' && f.long.longEpisodeOnsets !== undefined) {
+      const long = { ...f.long }
+      delete long.longEpisodeOnsets
+      return { ...f, long }
     }
     return f
   })
@@ -5350,13 +5362,19 @@ export function detectSignals(
   }
   // Composition before ranking. ORDER MATTERS for the timing lane (Signals v2 / CUL-7):
   //   1. suppressTimeOfDayWhenPostprandial — ⑤/L1 suppress a redundant same-symptom ⑥ (§4.4/§6),
-  //      episode-set-aware; it READS the ⑤/L1 onset sets, so it must run BEFORE the merge/strip.
-  //   2. composeTimingStory — merge a same-symptom ⑤ + L1 pair into one timing_story card.
-  //   3. stripInternalOnsets — drop the composition-only onset arrays before caching (finding ②).
-  //   4. suppressWorseningWhenChronic — ⑦ suppresses same-symptom ④ with firm-tier inheritance
+  //      episode-set-aware; it READS the ⑤/L1 onset sets, so it must run BEFORE the merge.
+  //   2. composeTimingStory — merge a same-symptom ⑤ + L1 pair into one timing_story card, copying
+  //      L1's long onsets onto the merged card's `long` block for L3's retained-food join.
+  //   3. suppressWorseningWhenChronic — ⑦ suppresses same-symptom ④ with firm-tier inheritance
   //      (§4.5/§5); disjoint type pair from the timing lane, so its position is free.
-  const composed = stripInternalOnsets(
-    composeTimingStory(suppressTimeOfDayWhenPostprandial(findings, config)),
-  )
+  //
+  // The internal onset arrays are NOT stripped here (CUL-9). They must survive `detectSignals`'s
+  // return so the I/O shell's L3 decoration (computePhotoComposition) can join retained food to the
+  // long band — a second post-detection consumer beyond the suppression above. `index.ts` calls
+  // `stripInternalOnsets` as its final decoration step, once BOTH consumers have run, so they still
+  // never reach the phrasing / cache / HTTP layer (finding ②). Keeping the strip inside here would
+  // delete the onsets before the shell ever sees them — the exact bug that left retained food dead on
+  // the lone empty_stomach card.
+  const composed = composeTimingStory(suppressTimeOfDayWhenPostprandial(findings, config))
   return rankFindings(suppressWorseningWhenChronic(composed), input.pet)
 }

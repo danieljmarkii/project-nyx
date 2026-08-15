@@ -68,6 +68,32 @@ state + effort, determination deferred to the vet). It is **specced**, not built
   be built in full until that capture exists — another reason it stays spec-only. No `report.ts`
   change in this PR.
 
+## Review finding → fix (the seam the strip cut)
+
+`adversarial-reviewer` returned **FAIL on one behaviour** (every reassurance/tristate/present-only/
+collapse/window probe HELD — no reassurance inversion, so not the blocking class; a correctness +
+test-coverage defect): **retained food was dead on the lone empty-stomach card in production.**
+`stripInternalOnsets` ran *inside* `detectSignals` and deleted `empty_stomach_timing.longEpisodeOnsets`
+before the shell's L3 join could read them — so on the pure empty-stomach cat (L1 fires, no ⑤, no
+`timing_story` merge — exactly the phenotype L3 exists for), `retainedFood` never rendered. It failed
+*safe* (silence, not "no retained food"), but the spec's first-named L3 field was green in CI and dead
+in prod, and no test crossed the `detectSignals → decorate → strip` seam (the pipeline test checked
+type only; the retained-food unit tests hand-built findings, bypassing the strip). The reviewer also
+caught the **pair-hazard I introduced**: `composeTimingStory` copies L1's onsets to the merged card's
+`long` block, and the strip's base-type branches never saw a `timing_story`, so those onsets rode to
+the cache uncaught.
+
+**Fix (correct layering):** the onset arrays feed TWO post-detection consumers — the episode-set-aware
+suppression (inside `detectSignals`) and L3's retained-food join (in the I/O shell). So the strip is no
+longer `detectSignals`'s last step; it is the **shell's final decoration step** (`index.ts`), run once
+BOTH consumers have read the onsets. `stripInternalOnsets` is exported + extended to also strip
+`timing_story.long.longEpisodeOnsets` (immutably — it clones `long`). Cache hygiene (CUL-7 finding ②)
+is preserved: the onsets still never reach phrasing/cache/HTTP. Two regression tests added:
+- **the seam** — a lone empty-stomach card through the real `detectSignals` pipeline renders
+  `retainedFood {2 of 2}`, and the strip then removes the onsets;
+- **the pair-hazard** — `stripInternalOnsets` removes a merged `timing_story`'s `long.longEpisodeOnsets`
+  without mutating the input.
+
 ## Tests / gates
 
 - `photoComposition.test.ts` — 19 tests: present-only/never-reassure (all-"no" reads → null; hair
@@ -75,12 +101,16 @@ state + effort, determination deferred to the vet). It is **specced**, not built
   join (⑤/⑥ carry none; `timing_story.long.longEpisodeOnsets` path), present-wins collapse (safe
   direction — an illegible sibling never buries a hair sighting), the 60d window filter, the
   completed-vomit-only source filter, non-timing findings → null, and the `decorateFinding` wiring.
-- `detection.test.ts` — extended the SR-4 diff-scoped test → **SR-4 + L3**: the ⑤ and L1 detectors
-  emit no `photoComposition` (decoration is strictly post-hoc).
-- Full edge suite CI-mode (`--lock --cached-only`): **1277 passed, 0 failed**; `deno cache --lock`
+- `detection.test.ts` — the SR-4 diff-scoped test extended → **SR-4 + L3** (detectors emit no
+  `photoComposition`); **+2 seam/pair-hazard regression tests** (above).
+- Full edge suite CI-mode (`--lock --cached-only`): **1279 passed, 0 failed**; `deno cache --lock`
   clean (no lockfile change — no new dependency). App side untouched (all changes under
   `supabase/functions/generate-signal/`; `tsconfig.json` excludes that path, jest ignores it).
-- Gates: `clinical-guardrails` ✓ (self-verified above) · `adversarial-reviewer` + `code-reviewer`
-  dispatched against the diff this session (outcomes folded in before the PR leaves draft).
+- Gates: `clinical-guardrails` ✓ (self-verified above) · `adversarial-reviewer` ✓ (FAIL → fixed +
+  regression-locked; DoD counterexample: a lone empty-stomach cat, 2 long episodes photographed with
+  partially-digested food, run through the real `detectSignals`→strip→decorate pipeline → retained food
+  was dead because the strip deleted the onsets first; now renders `{2 of 2}` and the onsets still strip
+  before cache) · `code-reviewer` re-dispatched after the fix (the first run was lost to a container
+  restart); outcome folded in before the PR leaves draft.
 
 ## Shipped via the CUL-9 draft PR (Signals v2 PR 4)
