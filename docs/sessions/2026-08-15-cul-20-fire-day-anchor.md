@@ -38,7 +38,7 @@ The `code-reviewer` gate returned **needs-work** with two CONFIRMED findings. Th
 
 - `lib/daySummary.test.ts` — the clamp boundary (no-instant → now; age 0 → fired-for; **12:40am tap → yesterday**; **2-day-old tap → today**; future → now; non-finite → now; a device-path cross-midnight case from local components) **and** `buildAnchoredDaySummary` (fired-for-has-rows → fired-for [B-672]; **fired-for empty + fresh today log → today** [finding #1]; both empty → today; age-0 → today; no-instant → today; ≥2-day-old → today, never the stale day). B-514-honest.
 - `lib/notificationRouting.test.ts` — `normalizeFireInstant` (Android ms kept, iOS seconds promoted, stringified params, fractional-second rounding, garbage → null). `routeDedup`'s existing tests untouched.
-- `tsc --noEmit` clean; full jest suite green (224 suites / 5011 tests — includes the #645/#649 code merged from `main`); the two touched suites green under Pacific/Kiritimati (UTC+14), Pacific/Chatham (UTC+12:45), Pacific/Honolulu (UTC−10).
+- `tsc --noEmit` clean; full jest suite green (225 suites / 5065 tests — includes the #645/#649/#650 code merged from `main`); the two touched suites green under Pacific/Kiritimati (UTC+14), Pacific/Chatham (UTC+12:45), Pacific/Honolulu (UTC−10).
 - Gate: `code-reviewer` (needs-work → both findings resolved above; re-review not re-run — finding #1's fix is pure and unit-tested, finding #2 needed no code change).
 
 ## Persona sign-off
