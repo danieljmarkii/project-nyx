@@ -1,0 +1,275 @@
+// The Signals v2 watching system (B-755 / CUL-14 — the D5-ratified per-lane rows).
+// Spec: docs/nyx-signals-v2-requirements.md §4.4 (the watching system), §2 L1/L4 (the
+// lanes it reports on), §3 + G9 (the one meal-relative timing predicate), G6 (every
+// constant carries its anchor), G8 (the register — transparency, never solicitation).
+//
+// ── WHAT THIS IS ─────────────────────────────────────────────────────────────
+//
+// R-5 (mock round 1): "watching, with real counts" ratified as a SYSTEM. The Signal
+// empty state grows a per-lane row that states what a lane HAS and what its math
+// REQUIRES — "Timing — 4 of the 6 timed episodes a pattern needs", "Change, week to
+// week — needs 2 full weeks of logging to compare. This is week 2", and the escalate-
+// only gap row. The counts are REAL, computed here from local data, so a young account
+// sees its own progress toward the first pattern instead of an abstract "we're watching
+// for…" placeholder.
+//
+// ── WHY IT IS CLIENT-COMPUTED (and why that is not a G9 violation) ────────────
+//
+// These rows render in the EMPTY state (building / no_pattern) — by definition the
+// state BELOW every server floor, where `generate-signal` has emitted no finding. So
+// the counts cannot come from a cached finding; they are read from local SQLite at
+// render time. That is the same shape as PR 6's standing trial line (`lib/trialResponse
+// Counts.ts`) and PR 9's Patterns panels (`lib/patternsTiming.ts`): a READER, not a
+// second engine. All meal-relative timing math runs through `lib/mealTiming.ts` (G9);
+// this module contributes only the floors-vs-have gating and the ordering. The local
+// reads are SHARED with `lib/patternsTiming.ts` (`readVomitOnsets` / `readFeedingRows` /
+// `readFreeFedSpans`) — one local-event source, never a second reader that could drift.
+//
+// ── THE GAP ROW: WATCHING FLOOR ≠ FIRING FLOOR ───────────────────────────────
+//
+// L4 (`detectGapShortening`, detection.ts) fires a `gap_shortening` FINDING at the
+// firing floor: a `runLength` (4) strictly-decreasing run + the ratio + recency gates,
+// property-swept to ~2% null FPR. That finding, when it fires, puts the surface into
+// `live` (not empty), so it never coexists with these rows. This module renders the
+// SUB-FLOOR watching row at L4's documented WATCHING floor — `minGaps` (3 gaps / 4
+// episodes), the g-chart anchor the config comment reserves for "PR 7's client row" —
+// escalate-only (renders only on a shortening run) with the same recency guard. It has
+// NO server counterpart, so there is nothing to drift from; the constants are mirrored
+// here with their anchors and never tuned to any record (G6).
+
+import { getDb } from './db';
+import {
+  collapseEpisodes,
+  classifyEpisodeSet,
+  DEFAULT_MEAL_TIMING_CONFIG,
+  type FeedingInput,
+  type FreeFedSpan,
+  type OnsetConfidence,
+} from './mealTiming';
+import { readVomitOnsets, readFeedingRows, readFreeFedSpans } from './patternsTiming';
+import {
+  formatWatchingGapSequence,
+  watchingChangeRow,
+  watchingGapRow,
+  watchingTimingRow,
+} from './signalCopy';
+
+const MS_PER_HOUR = 3_600_000;
+const MS_PER_DAY = 86_400_000;
+
+// ── Floors (mirrored from the engine, each with its anchor — G6) ──────────────
+
+/** The timing lanes' shared eligible-episode floor — `minEligibleEpisodes` in
+ *  detection.ts's DEFAULT_CONFIG (⑤ / L1). SIX, science-anchored ("below this any
+ *  cluster is a coin run"), NOT Nyx's record. The watching row names this exact number
+ *  ("N of the 6 …"), so it is mirrored here rather than re-picked; a change to the
+ *  engine's floor is a deliberate two-file edit. */
+export const WATCHING_TIMING_NEED = 6;
+
+/** The analysis window the timing lanes count eligible episodes over — 60 days, the
+ *  engine's `analysisWindowDays`. The watching count uses the SAME window so "N of 6"
+ *  is honest: a mature but sparse vomiter whose only timeable episodes are >60 days old
+ *  reads 0, never a misleading "almost there". Collapse-then-window (the lib/mealTiming
+ *  contract): collapse the full vomit list, then keep in-window onsets. */
+export const WATCHING_TIMING_WINDOW_DAYS = 60;
+
+/** The week-over-week comparison (④ and the trial contrast) needs two full weeks of
+ *  span before a this-week-vs-last-week compare is defined. Drives BOTH the copy and the
+ *  gate so the stated requirement can't drift from the enforced one. A calendar fact
+ *  about the comparison, not a record-tuned number (G6). */
+export const WATCHING_CHANGE_WEEKS_NEEDED = 2;
+
+/** The gap lane's WATCHING floor — `minGaps` in detection.ts (3 gaps / 4 collapsed
+ *  episodes, the g-chart's lowest informative point). The config comment names this
+ *  "PR 7's client row" explicitly: a 3-gap record is WATCHED here, never fired on (the
+ *  finding needs the higher `runLength` run). NEVER Nyx's record (G6). */
+export const WATCHING_GAP_MIN_GAPS = 3;
+
+/** Staleness / reversal guard, mirrored from L4's `recencyGraceFactor` (2×): the open
+ *  interval (now − last onset) must be ≤ this × the latest (shortest) gap, else the
+ *  accelerating run has not CONTINUED and the row would misrepresent an old shortening
+ *  as current. ESCALATE-SAFE by construction — it only ever SUPPRESSES the row, never
+ *  mints one, so it cannot manufacture a signal or reassure. */
+export const WATCHING_GAP_RECENCY_GRACE_FACTOR = 2;
+
+/** The gap lane's symptom in v1 — vomiting, matching the timing surfaces
+ *  (`TIMING_SYMPTOM_TYPE`) and the mock §05. The label is the server's `SYMPTOM_LABEL.vomit`
+ *  ('vomiting'), kept in sync so the row reads identically to the eventual finding. The
+ *  server L4 lane (`detectGapShortening`) fires over the full `CORRELATION_SYMPTOM_TYPES`
+ *  set; extending this client watching row to the same set (diarrhea / itch / …) is a clean
+ *  follow-up — v1 scopes to the dominant symptom the mock and the timing row both speak to,
+ *  rather than widening the surface under the copy round. */
+export const WATCHING_GAP_SYMPTOM_LABEL = 'vomiting';
+
+// ── The row model ─────────────────────────────────────────────────────────────
+
+/** One watching row: which lane it speaks for, and its verbatim, count-anchored copy.
+ *  `key` is stable for React list keys + test targeting; `text` is the swept string. */
+export interface WatchingRow {
+  key: 'timing' | 'change' | 'gap';
+  text: string;
+}
+
+/** The facts the pure builder gates on — produced by the local read (`getWatchingRows`)
+ *  and hand-buildable in tests. `gapSequenceHours` is the recent shortening run (already
+ *  detected + recency-checked), or null when the gap lane has nothing to escalate. */
+export interface WatchingFacts {
+  /** Timeable vomit episodes in the 60-day window (the honest "have"). */
+  timedEligibleCount: number;
+  /** The B-421 local-day count from the pet's first logged event (day-1-inclusive). */
+  dayNumber: number;
+  /** The recent inter-episode gaps (hours, oldest→newest) of a shortening run, or null. */
+  gapSequenceHours: number[] | null;
+}
+
+/**
+ * PURE: the facts → the ordered watching rows (mock §05 order: timing → change → gap).
+ * Each row self-gates on "below its floor / has something to escalate", so a lane whose
+ * math can already run contributes nothing (the row is a "still needs" statement — G8).
+ * Returns [] when no lane qualifies, so the caller renders no watching block at all
+ * rather than an empty "here's what we're watching" with no rows under it.
+ */
+export function buildWatchingRows(facts: WatchingFacts): WatchingRow[] {
+  const rows: WatchingRow[] = [];
+
+  // Timing — at least one timeable episode to build on, but still short of the floor.
+  // A pet with zero timeable episodes gets no timing row (there is no timing question to
+  // pose for a pet the lane can't yet see), and a pet already at the floor gets none
+  // (the lane can run — nothing is "still needed").
+  if (facts.timedEligibleCount >= 1 && facts.timedEligibleCount < WATCHING_TIMING_NEED) {
+    rows.push({ key: 'timing', text: watchingTimingRow(facts.timedEligibleCount, WATCHING_TIMING_NEED) });
+  }
+
+  // Change — fewer than two full weeks of span, so a week-over-week compare can't run yet.
+  const fullWeeks = Math.floor(facts.dayNumber / 7);
+  if (fullWeeks < WATCHING_CHANGE_WEEKS_NEEDED) {
+    const currentWeek = Math.max(1, Math.ceil(facts.dayNumber / 7));
+    rows.push({ key: 'change', text: watchingChangeRow(currentWeek, WATCHING_CHANGE_WEEKS_NEEDED) });
+  }
+
+  // Gap — escalate-only: renders only when `detectWatchingGapShortening` returned a
+  // shortening run (G5). Absence / lengthening / staleness all yield null upstream and
+  // no row here — a widening gap is never reassurance.
+  if (facts.gapSequenceHours && facts.gapSequenceHours.length > 0) {
+    rows.push({
+      key: 'gap',
+      text: watchingGapRow(WATCHING_GAP_SYMPTOM_LABEL, formatWatchingGapSequence(facts.gapSequenceHours)),
+    });
+  }
+
+  return rows;
+}
+
+// ── The pure computations (the reads feed these; tests exercise them directly) ─
+
+interface OnsetRow {
+  ms: number;
+  confidence: OnsetConfidence | null;
+}
+
+/**
+ * PURE: timeable vomit episodes in the 60-day window — the timing lanes' honest "have".
+ * Collapse the FULL vomit list into episodes (the lib/mealTiming re-log guard), THEN
+ * keep the in-window onsets (collapse-then-window — never the reverse), THEN classify
+ * each against all feedings + free-fed spans through the one predicate (G9). The count
+ * is `eligibleCount` — episodes that could actually be placed against a meal, the same
+ * set ⑤/L1 count toward their floor.
+ */
+export function windowedTimedEligibleCount(
+  vomitOnsets: readonly OnsetRow[],
+  feedings: readonly FeedingInput[],
+  freeFedSpans: readonly FreeFedSpan[],
+  nowMs: number,
+  windowDays: number = WATCHING_TIMING_WINDOW_DAYS,
+): number {
+  const episodes = collapseEpisodes(
+    vomitOnsets.filter((e) => Number.isFinite(e.ms)),
+    DEFAULT_MEAL_TIMING_CONFIG.episodeGapHours,
+  );
+  const cutoff = nowMs - windowDays * MS_PER_DAY;
+  const windowed = episodes.filter((e) => e.ms >= cutoff && e.ms <= nowMs);
+  const dist = classifyEpisodeSet(
+    windowed.map((e) => ({ onsetMs: e.ms, confidence: e.confidence })),
+    feedings,
+    freeFedSpans,
+  );
+  return dist.eligibleCount;
+}
+
+/**
+ * PURE: the escalate-only gap watching detector. Collapse the full vomit list, take the
+ * inter-episode gaps, and return the most-recent `minGaps` of them ONLY when they form a
+ * strictly-decreasing (shortening) run that is still current. Returns null otherwise —
+ * fewer than 3 gaps, a non-shortening tail, or a stale/reversed run.
+ *
+ * Escalate-only (G5): a strictly-decreasing test can never fire on a lengthening or flat
+ * sequence, so no reassuring "settling" is reachable; the recency guard only ever
+ * suppresses, never mints. This is the WATCHING floor (3 gaps) — deliberately below L4's
+ * firing floor (`runLength` 4), which the deployed server finding owns.
+ */
+export function detectWatchingGapShortening(
+  vomitOnsets: readonly OnsetRow[],
+  nowMs: number,
+): number[] | null {
+  const episodes = collapseEpisodes(
+    vomitOnsets.filter((e) => Number.isFinite(e.ms)),
+    DEFAULT_MEAL_TIMING_CONFIG.episodeGapHours,
+  );
+  // Need ≥ minGaps gaps ⇒ ≥ minGaps + 1 collapsed episodes.
+  if (episodes.length < WATCHING_GAP_MIN_GAPS + 1) return null;
+
+  // collapseEpisodes returns onsets ascending by ms; the gaps are consecutive diffs.
+  const onsets = episodes.map((e) => e.ms);
+  const gaps: number[] = [];
+  for (let i = 1; i < onsets.length; i++) gaps.push((onsets[i] - onsets[i - 1]) / MS_PER_HOUR);
+
+  const recent = gaps.slice(-WATCHING_GAP_MIN_GAPS);
+  // Strictly decreasing — the shortening run. Any non-decrease disqualifies (escalate-only).
+  for (let i = 1; i < recent.length; i++) {
+    if (!(recent[i] < recent[i - 1])) return null;
+  }
+
+  // Recency guard: the run must still be live (the current open interval no longer than
+  // the grace factor × the latest, shortest gap). A run followed by a long quiet stretch
+  // is the rate dropping — never surfaced as if it were accelerating now.
+  const latestGap = recent[recent.length - 1];
+  const lastOnset = onsets[onsets.length - 1];
+  const openIntervalHours = (nowMs - lastOnset) / MS_PER_HOUR;
+  if (openIntervalHours > WATCHING_GAP_RECENCY_GRACE_FACTOR * latestGap) return null;
+
+  return recent;
+}
+
+// ── The DB read layer (thin — reads SQLite via the shared patternsTiming reads) ─
+
+/**
+ * The watching rows for a pet, computed from local data. Reads the SAME three local
+ * sources as the Patterns Timing panel (one source, no second reader), derives the
+ * timing count + the escalate-only gap run, and hands them to `buildWatchingRows` with
+ * the caller's `dayNumber` (from useSignal's local-day read — not re-read here). Returns
+ * [] on any read failure — a fail-quiet empty set never fabricates a row.
+ *
+ * `nowMs` is passed in (never read here) so the 60-day window and the gap recency guard
+ * stay pure and timezone-pinnable in tests (B-514).
+ */
+export async function getWatchingRows(
+  petId: string,
+  dayNumber: number,
+  nowMs: number,
+): Promise<WatchingRow[]> {
+  try {
+    // Touch the DB up front so a missing/unopened DB fails into the catch (fail-quiet),
+    // rather than throwing from inside an already-resolved Promise.all leg.
+    getDb();
+    const [vomitOnsets, feedings, freeFedSpans] = await Promise.all([
+      readVomitOnsets(petId),
+      readFeedingRows(petId),
+      readFreeFedSpans(petId),
+    ]);
+    const timedEligibleCount = windowedTimedEligibleCount(vomitOnsets, feedings, freeFedSpans, nowMs);
+    const gapSequenceHours = detectWatchingGapShortening(vomitOnsets, nowMs);
+    return buildWatchingRows({ timedEligibleCount, dayNumber, gapSequenceHours });
+  } catch {
+    return [];
+  }
+}

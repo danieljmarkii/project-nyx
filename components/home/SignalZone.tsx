@@ -7,6 +7,7 @@ import { Divider } from '../ui/Divider';
 import { SectionLabel } from '../ui/SectionLabel';
 import { InsightCard } from './InsightCard';
 import { useSignal } from '../../hooks/useSignal';
+import { useWatchingRows } from '../../hooks/useWatchingRows';
 import { useAllowlistFlag } from '../../hooks/useAppConfig';
 import { useBetaOptIn } from '../../lib/betaFeatures';
 import {
@@ -15,6 +16,7 @@ import {
   BUILDING_WATCHING_FOR,
   NO_PATTERN_HEADLINE,
   NO_PATTERN_SUB,
+  WATCHING_SUB,
   ackUpdatingCopy,
   buildingDayCount,
   buildingHeadline,
@@ -26,6 +28,7 @@ import {
   staleIntro,
 } from '../../lib/signalCopy';
 import type { CachedFinding, CoverageDiagnostic } from '../../lib/signal';
+import type { WatchingRow } from '../../lib/signalWatching';
 
 // Ghosted "what insights look like" previews — kept in the building state so the
 // empty moment teaches what's coming (Principle 5: empty states are features).
@@ -88,6 +91,16 @@ export function SignalZone({ trialRunning = false }: SignalZoneProps = {}) {
   // While the first cache read is in flight, hold the warm building state rather
   // than letting the empty findings flash 'stale' for a frame.
   const state = isLoading && findings.length === 0 ? 'building' : displayState;
+
+  // Signals v2 (B-755 / CUL-14) — the watching system (§4.4 / D5). Per-lane rows with
+  // REAL partial counts, rendered inside whichever empty-state frame is live. Gated on
+  // signals_v2 AND an empty state (building / no_pattern): in `live` there is a real
+  // finding to show and in `stale` too little to say, so the rows never apply there. The
+  // hook reads local data ONLY when enabled, so flag-off / live / stale do zero extra
+  // work and stay byte-identical. `dayNumber` is shared with the E1 headline so the
+  // Change row's week count and the "Day N" headline always agree (one day definition).
+  const watchingEnabled = signalsV2 && (state === 'building' || state === 'no_pattern');
+  const watching = useWatchingRows(watchingEnabled, dayNumber);
 
   // SR-3 receded chrome (§5.2) — the section label drops a tier in the LIVE register
   // only, where the lead's canvas should dominate. The empty states keep the label
@@ -164,15 +177,23 @@ export function SignalZone({ trialRunning = false }: SignalZoneProps = {}) {
         // previews (the owner has logged enough to know the surface). B-053: when
         // the engine knows WHY there's no signal yet, surface the top coverage
         // diagnostic's one-line why + ≤1 safe action instead of the generic line.
+        // CUL-14: the watching rows compose in additively (the gap row can still
+        // escalate on a mature record); dark + a no-op when signals_v2 is off.
         designV2 ? (
-          <NoPatternStateV2 petName={petName} coverage={coverage} />
+          <NoPatternStateV2 petName={petName} coverage={coverage} watching={watching} signalsV2={signalsV2} />
         ) : (
-          <NoPatternState petName={petName} coverage={coverage} />
+          <NoPatternState petName={petName} coverage={coverage} watching={watching} signalsV2={signalsV2} />
         )
       ) : designV2 ? (
-        <BuildingStateV2 petName={petName} dayNumber={dayNumber} eventCount={eventCount} />
+        <BuildingStateV2
+          petName={petName}
+          dayNumber={dayNumber}
+          eventCount={eventCount}
+          watching={watching}
+          signalsV2={signalsV2}
+        />
       ) : (
-        <BuildingState petName={petName} />
+        <BuildingState petName={petName} watching={watching} signalsV2={signalsV2} />
       )}
 
       {/* §8 doorway into the Patterns dashboard — a quiet footer affordance, present in
@@ -219,19 +240,35 @@ function AckLine({ petName }: { petName: string }) {
 function NoPatternState({
   petName,
   coverage,
+  watching,
+  signalsV2,
 }: {
   petName: string;
   coverage: CoverageDiagnostic[];
+  watching: WatchingRow[];
+  signalsV2: boolean;
 }) {
+  // CUL-14 — the watching rows compose in additively on the mature record (only the
+  // escalate-only gap row is likely to qualify here; the count floors are usually met).
+  // Flag-off (or no qualifying row) is byte-identical: the no-coverage branch keeps its
+  // bare <Text> via the early return, and the coverage branch adds a null-rendering slot.
+  const showWatching = signalsV2 && watching.length > 0;
   const top = coverage[0];
   if (!top) {
-    return <Text style={styles.intro}>{noPatternIntro(petName)}</Text>;
+    if (!showWatching) return <Text style={styles.intro}>{noPatternIntro(petName)}</Text>;
+    return (
+      <View>
+        <Text style={styles.intro}>{noPatternIntro(petName)}</Text>
+        <WatchingBlock rows={watching} />
+      </View>
+    );
   }
   const { why, action } = coverageCopy(top, petName);
   return (
     <View>
       <Text style={styles.intro}>{why}</Text>
       {action ? <Text style={styles.coverageAction}>{action}</Text> : null}
+      {showWatching ? <WatchingBlock rows={watching} /> : null}
     </View>
   );
 }
@@ -290,19 +327,36 @@ function LiveStack({
   );
 }
 
-function BuildingState({ petName }: { petName: string }) {
+function BuildingState({
+  petName,
+  watching,
+  signalsV2,
+}: {
+  petName: string;
+  watching: WatchingRow[];
+  signalsV2: boolean;
+}) {
+  // CUL-14 — when signals_v2 is on and a lane has something to report, the real-count
+  // watching rows take the place of the ghosted "What the signal looks like" previews
+  // (the concrete version of the same "here's what's coming" idea). The lead intro
+  // stays. Flag-off (or no qualifying row) renders the shipped previews byte-identical.
+  const showWatching = signalsV2 && watching.length > 0;
   return (
     <>
       <Text style={styles.intro}>{buildingIntro(petName)}</Text>
-      <View style={styles.previews}>
-        <Text style={styles.previewsHeader}>What the signal looks like:</Text>
-        {PREVIEW_INSIGHTS.map((text, i) => (
-          <View key={i} style={styles.previewRow}>
-            <View style={styles.previewAccentBar} />
-            <Text style={styles.previewText}>{text}</Text>
-          </View>
-        ))}
-      </View>
+      {showWatching ? (
+        <WatchingBlock rows={watching} />
+      ) : (
+        <View style={styles.previews}>
+          <Text style={styles.previewsHeader}>What the signal looks like:</Text>
+          {PREVIEW_INSIGHTS.map((text, i) => (
+            <View key={i} style={styles.previewRow}>
+              <View style={styles.previewAccentBar} />
+              <Text style={styles.previewText}>{text}</Text>
+            </View>
+          ))}
+        </View>
+      )}
     </>
   );
 }
@@ -343,11 +397,21 @@ function BuildingStateV2({
   petName,
   dayNumber,
   eventCount,
+  watching,
+  signalsV2,
 }: {
   petName: string;
   dayNumber: number;
   eventCount: number;
+  watching: WatchingRow[];
+  signalsV2: boolean;
 }) {
+  // CUL-14 — when signals_v2 is on and a lane qualifies, the real-count watching rows
+  // replace the abstract "what we're watching for" ghost list (their concrete form) while
+  // the headline stays. The WatchingBlock carries its OWN sub + safety floor, so the
+  // else-branch (the shipped B-721 E1) still owns BUILDING_SUB / BUILDING_FLOOR — no
+  // doubling. Flag-off (or no qualifying row) renders the ghost list byte-identical.
+  const showWatching = signalsV2 && watching.length > 0;
   return (
     <View>
       {/* eventCount 0 ⇒ the pre-read sentinel (a real building pet always has ≥1 recent
@@ -368,23 +432,30 @@ function BuildingStateV2({
           </Text>
         ) : null}
       </Text>
-      <Text style={styles.v2Sub}>{BUILDING_SUB}</Text>
 
-      {/* The three things the engine is building toward, in the mock's order
-          (timing → food → change), each with a ghost preview of its future receipt.
-          Every row carries a top hairline — the first one separates the list from the
-          sub-line above (matching the mock's three-divider rhythm). */}
-      <WatchingForRow text={BUILDING_WATCHING_FOR[0]} railColor={GHOST.rails[0]}>
-        <GhostLane />
-      </WatchingForRow>
-      <WatchingForRow text={BUILDING_WATCHING_FOR[1]} railColor={GHOST.rails[1]} />
-      <WatchingForRow text={BUILDING_WATCHING_FOR[2]} railColor={GHOST.rails[2]}>
-        <GhostCompare />
-      </WatchingForRow>
+      {showWatching ? (
+        <WatchingBlock rows={watching} />
+      ) : (
+        <>
+          <Text style={styles.v2Sub}>{BUILDING_SUB}</Text>
 
-      {/* The safety floor — the weekly-pattern framing must never read as "nothing
-          urgent surfaces before then". Absence is never wellness (§6). */}
-      <Text style={styles.v2Floor}>{BUILDING_FLOOR}</Text>
+          {/* The three things the engine is building toward, in the mock's order
+              (timing → food → change), each with a ghost preview of its future receipt.
+              Every row carries a top hairline — the first one separates the list from the
+              sub-line above (matching the mock's three-divider rhythm). */}
+          <WatchingForRow text={BUILDING_WATCHING_FOR[0]} railColor={GHOST.rails[0]}>
+            <GhostLane />
+          </WatchingForRow>
+          <WatchingForRow text={BUILDING_WATCHING_FOR[1]} railColor={GHOST.rails[1]} />
+          <WatchingForRow text={BUILDING_WATCHING_FOR[2]} railColor={GHOST.rails[2]}>
+            <GhostCompare />
+          </WatchingForRow>
+
+          {/* The safety floor — the weekly-pattern framing must never read as "nothing
+              urgent surfaces before then". Absence is never wellness (§6). */}
+          <Text style={styles.v2Floor}>{BUILDING_FLOOR}</Text>
+        </>
+      )}
     </View>
   );
 }
@@ -472,7 +543,20 @@ function GhostCompare() {
 // dimmed sub), then the top B-053 coverage diagnostic as the one calm corrective
 // (shipped behavior, restyled). No coverage diagnostic → the §9 copy stands alone.
 // The sub line is load-bearing: "isn't an all-clear" — absence is never wellness.
-function NoPatternStateV2({ petName, coverage }: { petName: string; coverage: CoverageDiagnostic[] }) {
+function NoPatternStateV2({
+  petName,
+  coverage,
+  watching,
+  signalsV2,
+}: {
+  petName: string;
+  coverage: CoverageDiagnostic[];
+  watching: WatchingRow[];
+  signalsV2: boolean;
+}) {
+  // CUL-14 — additive watching rows (see NoPatternState). Flag-off renders the slot as
+  // null, so the shipped E2 tree is byte-identical.
+  const showWatching = signalsV2 && watching.length > 0;
   const top = coverage[0];
   const cov = top ? coverageCopy(top, petName) : null;
   return (
@@ -485,6 +569,33 @@ function NoPatternStateV2({ petName, coverage }: { petName: string; coverage: Co
           {cov.action ? <Text style={styles.v2QuietAction}>{cov.action}</Text> : null}
         </View>
       ) : null}
+      {showWatching ? <WatchingBlock rows={watching} /> : null}
+    </View>
+  );
+}
+
+// ── CUL-14 the watching block (§4.4 / D5 / G8) ────────────────────────────────
+// The per-lane real-count rows, rendered as ONE unit wherever the watching system
+// composes into an empty-state frame (shipped E1/E2 or B-721's). It carries its own sub
+// line and the verbatim safety-floor line, so a frame that shows it hands over its whole
+// "what we're watching" middle to this block. PLAIN count-in-words rows — deliberately NO
+// progress bar / dot-fill visual: R-5 ratified the count form precisely because it
+// carries the "N of 6" progress WITHOUT a fill-the-dots visual's implied "a card is
+// coming" (G8 — the count is the progress; it carries no promise). The rows are already
+// ordered + gated (buildWatchingRows); the floor line is unconditional (absence ≠
+// wellness — the weekly cadence must never read as "nothing urgent surfaces before then").
+function WatchingBlock({ rows }: { rows: WatchingRow[] }) {
+  return (
+    <View>
+      <Text style={styles.watchingSub}>{WATCHING_SUB}</Text>
+      <View style={styles.watchingRows}>
+        {rows.map((r) => (
+          <Text key={r.key} style={styles.watchingRow}>
+            {r.text}
+          </Text>
+        ))}
+      </View>
+      <Text style={styles.watchingFloor}>{BUILDING_FLOOR}</Text>
     </View>
   );
 }
@@ -722,6 +833,40 @@ const styles = StyleSheet.create({
   },
   // The E1 safety-floor line — same hairline-set-off treatment as E2's quiet block.
   v2Floor: {
+    borderTopWidth: 1,
+    borderTopColor: theme.colorBorder,
+    marginTop: theme.space2,
+    paddingTop: theme.space1,
+    fontSize: theme.textSM,
+    color: theme.colorTextSecondary,
+    lineHeight: theme.lineHeightSM,
+  },
+
+  // ── CUL-14 watching block (§4.4) — the sub, the real-count rows, the floor line ──
+  // The intro above the rows: what we're watching, secondary weight (it orients; the
+  // rows carry the facts). Matches the v2Sub tier so the block reads as one register in
+  // the design_v2 frame and calm-but-present in the shipped one.
+  watchingSub: {
+    fontSize: theme.textSM,
+    color: theme.colorTextSecondary,
+    lineHeight: theme.lineHeightSM,
+    marginBottom: theme.space1,
+  },
+  // The rows sit as a quiet list — small gaps, no rails/dots/bars (R-5: count-in-words,
+  // never a fill-the-dots visual that reads as a game / a promise a card is coming).
+  watchingRows: {
+    gap: theme.spaceMicro,
+  },
+  // One row: the primary-ink fact ("Timing — 4 of the 6 …"), body line-height so a
+  // wrapped row stays legible. No color/severity coding — every row is the same calm ink.
+  watchingRow: {
+    fontSize: theme.textSM,
+    color: theme.colorTextPrimary,
+    lineHeight: theme.lineHeightBody,
+  },
+  // The block's own safety-floor line — the same hairline-set-off treatment as v2Floor,
+  // owned here so the block carries the floor into the shipped frame too (which has none).
+  watchingFloor: {
     borderTopWidth: 1,
     borderTopColor: theme.colorBorder,
     marginTop: theme.space2,
