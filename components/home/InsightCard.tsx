@@ -277,8 +277,13 @@ function TimingStoryExpanded({ finding }: { finding: SignalFinding }) {
           </>
         ) : null}
       </EvidenceBox>
+      {/* The un-timeable remainder (S2). Titled for what it ACTUALLY holds — a coverage
+          caveat — not "the other side of it", which would promise the base-rate counterbalance
+          the mock drew ("mornings with a meal and no episode: N of M"). That richer two-sided
+          control needs an engine payload field CUL-7 doesn't emit yet (backlog / pm-review),
+          so the honest title here is the episodes we couldn't place. */}
       {control ? (
-        <EvidenceBox title="The other side of it">
+        <EvidenceBox title="What we couldn't time">
           <Text style={styles.disclosure}>{control}</Text>
         </EvidenceBox>
       ) : null}

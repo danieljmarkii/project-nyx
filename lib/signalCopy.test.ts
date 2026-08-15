@@ -1306,24 +1306,27 @@ describe('A2 timing card — isTimingStory guard', () => {
 });
 
 describe('A2 timing card — the three-band face (S2, time-ordered)', () => {
-  it('bandRows are time-ordered ≤rapid / in between / ≥long, each count printed', () => {
+  it('bandRows are time-ordered ≤rapid / in between / ≥long, every label anchored, each count printed', () => {
     const rows = timingStoryBandRows(timingStory({ bandCounts: { rapid: 7, mid: 6, long: 7 } }));
     expect(rows).toHaveLength(3);
     expect(rows[0]).toMatchObject({ label: 'Within 30 min of eating', count: 7, tone: 'concern' });
-    expect(rows[1]).toMatchObject({ label: 'In between', count: 6, tone: 'muted' });
-    expect(rows[2]).toMatchObject({ label: '6h+ since eating', count: 7, tone: 'concern' });
+    // The middle band is anchored to its boundaries, never a bare "In between" to infer.
+    expect(rows[1]).toMatchObject({ label: '30 min–6h after eating', count: 6, tone: 'muted' });
+    expect(rows[2]).toMatchObject({ label: '6h+ after eating', count: 7, tone: 'concern' });
   });
 
-  it('the two phenotype ends wear the pattern hue, the middle is muted (never numerator-only — S2)', () => {
-    const rows = timingStoryBandRows(emptyStomach());
+  it('the combined story tones BOTH phenotype ends concern; a lone empty-stomach card tones ONLY the long band', () => {
+    // On timing_story ⑤ + L1 both fired → rapid + long are patterns.
+    expect(timingStoryBandRows(timingStory()).map((r) => r.tone)).toEqual(['concern', 'muted', 'concern']);
+    // On a lone empty_stomach card ⑤ did NOT fire → the rapid band is muted, only long is concern
+    // (matching the meal lane's paled rapid dots + the lead — a rose rapid here would over-assert).
+    expect(timingStoryBandRows(emptyStomach()).map((r) => r.tone)).toEqual(['muted', 'muted', 'concern']);
     // Every band prints a count — even a zero band renders as "0", never omitted (S2).
-    const zeroBanded = timingStoryBandRows(emptyStomach({ bandCounts: { rapid: 0, mid: 0, long: 7 } }));
-    expect(zeroBanded.map((r) => r.count)).toEqual([0, 0, 7]);
-    expect(rows.map((r) => r.tone)).toEqual(['concern', 'muted', 'concern']);
+    expect(timingStoryBandRows(emptyStomach({ bandCounts: { rapid: 0, mid: 0, long: 7 } })).map((r) => r.count)).toEqual([0, 0, 7]);
   });
 
   it('the long-band label reflects the payload boundary (6h — §0 D10), not a hardcoded 4h', () => {
-    expect(timingStoryBandRows(timingStory({ longGapHours: 6 }))[2].label).toBe('6h+ since eating');
+    expect(timingStoryBandRows(timingStory({ longGapHours: 6 }))[2].label).toBe('6h+ after eating');
   });
 
   it('the sample line is "N timed of M episodes · D days", honest denominator up front', () => {
@@ -1437,18 +1440,21 @@ describe('A2 timing card — the control side + L3 composition (S2, G4)', () => 
 });
 
 describe('A2 timing card — the for-your-vet relay (descriptors, never labels)', () => {
-  it('names the early-morning clustering + the long-gap count, and photo attachment when present', () => {
+  it('LEADS with the early-morning clustering (the fact the face has not shown), + photo attachment when present', () => {
     const line = timingStoryVetLine(
       emptyStomach({ longCount: 7, clockCount: 6, clockBand: { startLocalHour: 2, windowHours: 6 }, photoComposition: { hair: { count: 2, denominator: 5 } } }),
     );
-    expect(line).toContain('6 of the 7 episodes that came 6h+ after eating fell between 2am and 8am');
-    expect(line).toContain('photos are attached to some of these');
+    expect(line).toContain('The early-morning timing is worth flagging to your vet');
+    expect(line).toContain('6 of the 7 episodes 6h+ after eating fell between 2am and 8am');
+    expect(line).toContain('Photos are attached to some of these.');
   });
 
-  it('falls back to the plain long-gap count when there is no clock band, no photo tail without photos', () => {
+  it('with no clock band, the relay ask is the content — no re-count, no photo tail without photos', () => {
     const line = timingStoryVetLine(emptyStomach({ longCount: 7, clockBand: undefined, clockCount: undefined, photoComposition: undefined }));
-    expect(line).toContain('7 episodes came 6h+ after eating');
-    expect(line).not.toContain('photos are attached');
+    expect(line).toBe('The timing here — how long after eating these come — is the useful detail to mention to your vet.');
+    // It does NOT reprint the band count (pm-feature-review S10) and adds no photo tail.
+    expect(line).not.toMatch(/\b7 episodes\b/);
+    expect(line).not.toContain('Photos are attached');
   });
 });
 

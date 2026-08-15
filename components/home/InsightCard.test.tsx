@@ -481,10 +481,10 @@ describe('InsightCard — CUL-12 A2 timing card flag gating (signals_v2)', () =>
     const c = anyCached(timingStory(), 'Her vomiting keeps two kinds of time.');
     const view = render(<InsightCard cached={c} petName="Nyx" signalsV2 />);
     expect(view.queryByText('Her vomiting keeps two kinds of time.')).toBeTruthy();
-    // The three time-ordered bands, labelled.
+    // The three time-ordered bands, each label anchored to its boundary.
     expect(view.queryByText('Within 30 min of eating')).toBeTruthy();
-    expect(view.queryByText('In between')).toBeTruthy();
-    expect(view.queryByText('6h+ since eating')).toBeTruthy();
+    expect(view.queryByText('30 min–6h after eating')).toBeTruthy();
+    expect(view.queryByText('6h+ after eating')).toBeTruthy();
     // The meta row: badge + honest-denominator sample.
     expect(view.queryByText('Timing pattern')).toBeTruthy();
     expect(view.queryByText('20 timed of 26 episodes · 60 days')).toBeTruthy();
@@ -514,8 +514,8 @@ describe('InsightCard — CUL-12 A2 timing card flag gating (signals_v2)', () =>
     expect(view.queryByText('When they happen')).toBeTruthy();
     expect(view.queryByText('After eating')).toBeTruthy();
     expect(view.queryByText('By clock')).toBeTruthy();
-    // The honest un-timeable remainder (S2).
-    expect(view.queryByText('The other side of it')).toBeTruthy();
+    // The honest un-timeable remainder (S2), titled for what it holds (not a base-rate promise).
+    expect(view.queryByText("What we couldn't time")).toBeTruthy();
     expect(view.queryByText("6 episodes weren't near any logged meal — we can't time those.")).toBeTruthy();
     // The for-your-vet relay (descriptors, never labels).
     expect(view.queryByText('For your vet')).toBeTruthy();

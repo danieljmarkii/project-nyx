@@ -1181,15 +1181,20 @@ export function timingStorySampleLine(f: TimingStoryLike): string {
 }
 
 /** The A2 face — the three-band Shape-C compare over the shared eligible denominator, each
- *  count printed (S2). TIME-ORDERED (§4.1): ≤rapid / in between / ≥long. The two phenotype
- *  ends wear the pattern hue (concern); the middle is muted — the shape says "two kinds of
- *  time", which is the finding. */
+ *  count printed (S2). TIME-ORDERED (§4.1): ≤rapid / in between / ≥long, every label anchored
+ *  to its boundary so the middle band never has to be inferred (pm-feature-review). The band
+ *  that is a PATTERN wears the symptom hue (concern); the rest are muted. On the combined story
+ *  BOTH ends are patterns (⑤ + L1 both fired); on a LONE empty-stomach card ⑤ did NOT fire, so
+ *  its rapid band rides muted — matching the meal lane's paled rapid dots and the lead, which
+ *  names only the long phenotype (a rose rapid band there would assert a pattern the card never
+ *  found). Only the long band is ever unconditionally concern. */
 export function timingStoryBandRows(f: TimingStoryLike): [CompareRow, CompareRow, CompareRow] {
   const mins = rapidBoundaryMinutes(f);
+  const rapidTone: CompareRow['tone'] = f.type === 'timing_story' ? 'concern' : 'muted';
   return [
-    { label: `Within ${mins} min of eating`, count: f.bandCounts.rapid, tone: 'concern' },
-    { label: 'In between', count: f.bandCounts.mid, tone: 'muted' },
-    { label: `${f.longGapHours}h+ since eating`, count: f.bandCounts.long, tone: 'concern' },
+    { label: `Within ${mins} min of eating`, count: f.bandCounts.rapid, tone: rapidTone },
+    { label: `${mins} min–${f.longGapHours}h after eating`, count: f.bandCounts.mid, tone: 'muted' },
+    { label: `${f.longGapHours}h+ after eating`, count: f.bandCounts.long, tone: 'concern' },
   ];
 }
 
@@ -1274,17 +1279,19 @@ export function photoCompositionLines(f: TimingStoryLike): string[] {
   return lines;
 }
 
-/** The for-your-vet relay (§4.1 — descriptors, never labels): one plain sentence the owner
- *  can say to the vet. Names the timing descriptors + the early-morning clustering + photo
- *  attachment; NO mechanism word, NO syndrome — the timing itself is the useful detail. */
+/** The for-your-vet relay (§4.1 — descriptors, never labels): one plain sentence the owner can
+ *  say to the vet. It LEADS with the fact the face hasn't already shown — the early-morning
+ *  clustering — rather than reprinting the band counts a fourth time (pm-feature-review S10). No
+ *  mechanism word, no syndrome — the timing itself is the useful detail. With no clock cluster to
+ *  add, the relay ask itself is the content (never a re-count). */
 export function timingStoryVetLine(f: TimingStoryLike): string {
-  const longN = longCountOf(f);
   const { band, count: inBand } = clockOf(f);
-  const photoTail = f.photoComposition ? ', and photos are attached to some of these' : '';
+  const photoTail = f.photoComposition ? ' Photos are attached to some of these.' : '';
   if (band && inBand != null) {
-    return `${inBand} of the ${longN} ${longN === 1 ? 'episode' : 'episodes'} that came ${f.longGapHours}h+ after eating fell ${localHourBand(band.startLocalHour, band.windowHours)} — the timing itself is the useful detail to mention${photoTail}.`;
+    const longN = longCountOf(f);
+    return `The early-morning timing is worth flagging to your vet — ${inBand} of the ${longN} ${longN === 1 ? 'episode' : 'episodes'} ${f.longGapHours}h+ after eating fell ${localHourBand(band.startLocalHour, band.windowHours)}.${photoTail}`;
   }
-  return `${count(longN, 'episode', 'episodes')} came ${f.longGapHours}h+ after eating — the timing itself is the useful detail to mention${photoTail}.`;
+  return `The timing here — how long after eating these come — is the useful detail to mention to your vet.${photoTail}`;
 }
 
 // The A2 card's OWN accessibilityLabel folds the three-band compare (the face receipt) via
