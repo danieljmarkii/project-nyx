@@ -419,8 +419,14 @@ export interface TrialResponseFinding {
   /** Pooled VOMIT-episode burden in the baseline window. */
   pooledBaselineCount: number;
   /** Per-phenotype VOMIT-TIMING counts, trial vs baseline — the A2 count rows ("4 · was 8").
-   *  `rapid` = ≤rapidWindowMinutes after eating; `long` = ≥longGapHours after eating. */
+   *  `rapid` = ≤rapidWindowMinutes after eating; `mid` = the 30 min–longGapHours middle band;
+   *  `long` = ≥longGapHours after eating. B-766: rapid + mid + long PARTITION the timed-eligible
+   *  episodes (the ones we could place against a meal), so `pooled − (rapid + mid + long)` per window
+   *  is the un-timeable remainder — the fields that let the card FOOT with the pooled lead. `mid` is
+   *  absent on a finding cached before B-766 (old cache) — treat undefined as 0 (the pre-B-766 face,
+   *  never a crash). */
   rapid: { trial: number; baseline: number };
+  mid?: { trial: number; baseline: number };
   long: { trial: number; baseline: number };
   /** The rapid band boundary in minutes (30) — the rapid row label. */
   rapidWindowMinutes: number;

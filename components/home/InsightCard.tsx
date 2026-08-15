@@ -50,6 +50,7 @@ import {
   trialResponseDensityLine,
   trialResponseDietStructureLine,
   trialResponseSampleLine,
+  trialResponseTimedReconciliationLine,
   worseningNewSampleLine,
 } from '../../lib/signalCopy';
 import { DotLane, EvidenceBox, PhoneScript, StackedCompare } from './SignalReceipts';
@@ -169,10 +170,15 @@ function TrialResponseBody({ cached, isLead }: InsightBodyProps) {
   // Registry-keyed + gated in InsightCard, so this is always a trial_response; the guard narrows the
   // union for the copy helpers (and is a defensive null for an impossible call).
   if (!isTrialResponse(finding)) return null;
+  // B-766 — the un-timeable reconciliation line renders BELOW the three band rows and ABOVE the meta
+  // row, only when the timed bands don't already sum to the pooled lead (else null). It is what makes
+  // the face foot: three bands (the timed episodes) + this remainder = the pooled count in the lead.
+  const reconciliation = trialResponseTimedReconciliationLine(finding);
   return (
     <View style={styles.body}>
       <Text style={[styles.sentence, isLead && styles.sentenceLead]}>{cached.text}</Text>
       <StackedCompare rows={trialResponseCompareRows(finding)} />
+      {reconciliation ? <Text style={styles.sample}>{reconciliation}</Text> : null}
       <View style={styles.metaRow}>
         <Badge label={trialResponseDayBadge(finding)} variant="muted" />
         <Text style={styles.sample}>{trialResponseSampleLine(finding)}</Text>
@@ -530,9 +536,11 @@ export function InsightCard({
   if (signalsV2 && isTimingStory(cached.finding)) {
     receiptA11y = stackedCompareA11yLabel(timingStoryBandRows(cached.finding));
   } else if (signalsV2 && isTrialResponse(cached.finding)) {
-    // The trial card folds its two count rows + the day badge into the label; its med line is in the
-    // EXPAND, not the face (unlike the ⑤/⑥ face med line), so it's not part of the collapsed label.
-    receiptA11y = `${stackedCompareA11yLabel(trialResponseCompareRows(cached.finding))} ${trialResponseDayBadge(cached.finding)}.`;
+    // The trial card folds its band count rows, the B-766 un-timeable reconciliation (when present),
+    // and the day badge into the label; its med line is in the EXPAND, not the face (unlike the ⑤/⑥
+    // face med line), so it's not part of the collapsed label. VoiceOver hears the face foot too.
+    const recon = trialResponseTimedReconciliationLine(cached.finding);
+    receiptA11y = `${stackedCompareA11yLabel(trialResponseCompareRows(cached.finding))}${recon ? ` ${recon}` : ''} ${trialResponseDayBadge(cached.finding)}.`;
   } else {
     receiptA11y = cardFaceReceiptA11y(cached.finding, designV2);
     faceMedLine = designV2 ? medContextLine(cached.finding) : null;

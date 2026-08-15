@@ -67,6 +67,7 @@ import {
   isSignalsV2Finding,
   TRIAL_RTM_CONFOUND,
   trialResponseCompareRows,
+  trialResponseTimedReconciliationLine,
   trialResponseDayBadge,
   trialResponseSampleLine,
   trialResponseDensityLine,
@@ -2261,6 +2262,7 @@ const trialResponse = (over: Partial<TrialResponseFinding> = {}): TrialResponseF
   pooledTrialCount: 4,
   pooledBaselineCount: 20,
   rapid: { trial: 4, baseline: 8 },
+  mid: { trial: 0, baseline: 3 },
   long: { trial: 0, baseline: 7 },
   rapidWindowMinutes: 30,
   longGapHours: 6,
@@ -2281,20 +2283,55 @@ describe('trial card — type guards (CUL-13)', () => {
   });
 });
 
-describe('trialResponseCompareRows (CUL-13 — the two-sided count rows)', () => {
-  it('is time-ordered (rapid then long), mechanism-free, two-sided, present-tone by trial count', () => {
+describe('trialResponseCompareRows (CUL-13 / B-766 — the two-sided count rows)', () => {
+  it('is THREE bands, time-ordered (rapid / mid / long), mechanism-free, two-sided, present-tone by trial count', () => {
     const rows = trialResponseCompareRows(trialResponse());
-    expect(rows.map((r) => r.label)).toEqual(['Within 30 min of eating', '6h+ after eating']);
-    // No mechanism word ("empty stomach"/"bilious") — same labels as the A2 timing card.
+    // B-766: three bands that partition the timed episodes, same labels as the A2 timing card.
+    expect(rows.map((r) => r.label)).toEqual([
+      'Within 30 min of eating',
+      '30 min–6h after eating',
+      '6h+ after eating',
+    ]);
+    // No mechanism word ("empty stomach"/"bilious") on any band.
     for (const r of rows) expect(r.label.toLowerCase()).not.toContain('empty stomach');
     // Two-sided: count = trial, baseline carried for the "· was M" render.
-    expect(rows[0]).toMatchObject({ count: 4, baseline: 8, tone: 'concern' }); // present → symptom hue
-    expect(rows[1]).toMatchObject({ count: 0, baseline: 7, tone: 'muted' }); // zero-during-trial → muted
+    expect(rows[0]).toMatchObject({ count: 4, baseline: 8, tone: 'concern' }); // rapid present → symptom hue
+    expect(rows[1]).toMatchObject({ count: 0, baseline: 3, tone: 'muted' }); // the in-between band always muted
+    expect(rows[2]).toMatchObject({ count: 0, baseline: 7, tone: 'muted' }); // long zero-during-trial → muted
   });
 
-  it('a phenotype still present during the trial wears the concern hue; a zero rides muted', () => {
-    const rows = trialResponseCompareRows(trialResponse({ rapid: { trial: 2, baseline: 2 }, long: { trial: 3, baseline: 1 } }));
-    expect(rows.every((r) => r.tone === 'concern')).toBe(true); // both non-zero → both present
+  it('a phenotype still present during the trial wears the concern hue; the mid band always rides muted', () => {
+    const rows = trialResponseCompareRows(
+      trialResponse({ rapid: { trial: 2, baseline: 2 }, mid: { trial: 1, baseline: 1 }, long: { trial: 3, baseline: 1 } }),
+    );
+    expect(rows[0].tone).toBe('concern'); // rapid present
+    expect(rows[1].tone).toBe('muted'); // the in-between band is never a highlighted phenotype
+    expect(rows[2].tone).toBe('concern'); // long present
+  });
+
+  it('B-766: an OLD cache (no `mid`) renders the pre-B-766 two-row form — never a crash', () => {
+    const rows = trialResponseCompareRows(trialResponse({ mid: undefined }));
+    expect(rows.map((r) => r.label)).toEqual(['Within 30 min of eating', '6h+ after eating']);
+  });
+});
+
+describe('trialResponseTimedReconciliationLine (B-766 — the face foots with the pooled lead)', () => {
+  it('discloses the un-timeable remainder so bands + remainder = the pooled lead', () => {
+    // base: pooled 4/20; timed = 4/(8+3+7=18); so 0 un-timeable in the trial, 2 before.
+    expect(trialResponseTimedReconciliationLine(trialResponse())).toBe(
+      'Timed to a meal: 4 of 4 in the trial · 18 of 20 before.',
+    );
+  });
+
+  it('is null when every episode was timeable in both windows (nothing to reconcile)', () => {
+    // pooled 4/18 exactly equals the timed sum (4 and 8+3+7) → the three bands already sum to the lead.
+    expect(
+      trialResponseTimedReconciliationLine(trialResponse({ pooledBaselineCount: 18 })),
+    ).toBeNull();
+  });
+
+  it('is null for an OLD cache (no `mid`) — the pre-B-766 face makes no partition claim', () => {
+    expect(trialResponseTimedReconciliationLine(trialResponse({ mid: undefined }))).toBeNull();
   });
 });
 
@@ -2359,6 +2396,7 @@ describe('trial card copy — guardrails (CUL-13)', () => {
   it('no trial-card string carries a verdict, a "%", or an exclamation', () => {
     const strings = [
       ...trialResponseCompareRows(trialResponse()).map((r) => r.label),
+      trialResponseTimedReconciliationLine(trialResponse()) ?? '',
       trialResponseDayBadge(trialResponse()),
       trialResponseSampleLine(trialResponse()),
       trialResponseDensityLine(trialResponse()),

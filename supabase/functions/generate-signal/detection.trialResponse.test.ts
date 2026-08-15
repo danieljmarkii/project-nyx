@@ -178,6 +178,22 @@ Deno.test('detectTrialResponse — fires on a material fewer-during-trial change
   assert.equal(t.targetDurationDays, 84)
   assert.equal(t.associationalOnly, true)
   assert.ok(t.trialLoggedDays >= 7 && t.baselineLoggedDays >= 7, 'both windows clear the logged-days floor')
+  // B-766 — the three timing bands are emitted and PARTITION the timed-eligible episodes, so the
+  // client's un-timeable remainder (`pooled − (rapid + mid + long)`) is always ≥ 0 and the trial card
+  // FOOTS with the pooled lead. The invariant the whole reconciliation depends on.
+  assert.ok(typeof t.mid.trial === 'number' && typeof t.mid.baseline === 'number', 'the mid band is emitted')
+  assert.ok(
+    t.rapid.trial + t.mid.trial + t.long.trial <= t.pooledTrialCount,
+    'timed bands never exceed the pooled trial count',
+  )
+  assert.ok(
+    t.rapid.baseline + t.mid.baseline + t.long.baseline <= t.pooledBaselineCount,
+    'timed bands never exceed the pooled baseline count',
+  )
+  for (const band of [t.rapid, t.mid, t.long]) {
+    assert.ok(Number.isInteger(band.trial) && band.trial >= 0)
+    assert.ok(Number.isInteger(band.baseline) && band.baseline >= 0)
+  }
 })
 
 Deno.test('detectTrialResponse — fires on a material MORE-during-trial change (worsening escalates)', () => {

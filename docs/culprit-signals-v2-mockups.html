@@ -239,6 +239,7 @@
   <h1>The record, decomposed</h1>
   <p class="standfirst">Mock <strong>round 2</strong>: the round-1 directions the PM ruled on 2026-08-14, now drawn <strong>at build fidelity</strong> — real copy, real geometry, the deviations the shipped spec forced. <strong>PR 5 (the A2 timing card) is built and merged</strong> (<code>#646</code>), so §02's frames are the card <em>as it renders</em>, not a sketch; §03 puts the three open calls its <code>pm-feature-review</code> surfaced side by side. The trial surfaces (§04, PR 6) and the watching system (§05, PR 7) are still Backlog — those frames are their Designer gates, drawn from the shipped detectors' payloads. Where a decision's options differ visually, they're rendered next to each other (the mock-what-you-change rule). <strong>A1 is dead</strong> (R-1). Counts are Nyx's real record; <span style="white-space:nowrap">~ marked</span> figures are representative pending the build's exact computation.</p>
   <span class="roundtag"><b>Round 2</b> · build fidelity — the ruled directions, as they render</span>
+    <span class="roundtag" style="background:var(--rose-wash);color:var(--rose-ink);"><b>PR-10 update · 2026-08-15</b> · redeploy gates settled — §03 two-kinds lead, §04 trial card (B-766 footing, B-775 magnitude, B-765 labels), FEWER = ship-as-merged</span>
 </div>
 
 <div class="ruling dead">
@@ -422,11 +423,11 @@
       <p class="optnote">Accurate, guardrail-clean, ships today. But the card's central insight — she clusters at <em>both</em> extremes — is carried by the coloring, not the words.</p>
     </div>
     <div class="optcol">
-      <p class="optlabel"><span class="tag alt">Restore</span> · the round-1 framing (PR 10)</p>
+      <p class="optlabel"><span class="tag built" style="background:var(--teal-wash);color:var(--teal-ink);">Ruled · PR 10 · ships</span> · the shape, in words (S10-clean)</p>
       <div class="minicard">
-        <p class="lead" style="margin-bottom:0">Nyx's vomiting keeps two kinds of time: 7 episodes within 30 minutes of eating, and 7 more 6 or more hours after — most of those before breakfast.</p>
+        <p class="lead" style="margin-bottom:0">Nyx's vomiting keeps two kinds of time — some soon after eating, and some a long time after, 5 of them between 4am and 8am — a timing pattern worth mentioning to your vet.</p>
       </div>
-      <p class="optnote">Names the bimodal shape in words. A <strong>server-template</strong> change (<code>templateTimingStory</code>), so it rides PR 10 (CUL-15) with the redeploy — PM-vetoable, guardrail-rescreened.</p>
+      <p class="optnote">Names the bimodal shape in words — the card's central insight, which the coloring alone carried before. <strong>The band counts are gone from the sentence</strong>: the three-band receipt on the face already prints ≤30m / mid / 6h+, so restating them here would violate S10 (a receipt earns its place by carrying what the sentence can't, and vice versa). The sentence instead carries the one fact the count receipt <em>can't</em> show — the early-morning clock cluster of the long-gap episodes. A <strong>server-template</strong> change (<code>templateTimingStory</code>), riding the PR-10 redeploy; guardrail-rescreened (timing only, no syndrome word). PM/Designer-vetoable on the exact wording.</p>
     </div>
   </div>
 </section>
@@ -444,7 +445,7 @@
           <div class="h"><span>Rabbit trial · day 20 of 56</span><span class="chev">›</span></div>
           <div class="track"><i style="width:36%"></i></div>
           <p class="s">rabbit · ends Sep 12 · meals logged on 18 of 20 days</p>
-          <p class="s new"><span class="newpill">PR 6</span>Vomiting: 4 in the trial's 20 days · 20 in the 7 weeks before.</p>
+          <p class="s new"><span class="newpill">PR 10</span>Vomiting: 4 in the trial's 20 days · 20 in the 49 days before, a longer stretch.</p>
         </div>
       </div></div>
       <p class="frame-cap"><b>The standing trial-card line (D3, team half)</b> One line added to the shipped <code>TrialStrip</code> — always present (local data), a <em>description</em>, not a control (the §4.2 second-door rule is intact: nothing here opens a form). This is the surface the wedge owner sees daily. <span class="fnote">Header + first line are today's strip, verbatim.</span></p>
@@ -458,9 +459,11 @@
           <div class="irow">
             <div class="rail insight"></div>
             <div class="ibody">
-              <p class="lead">We've logged 4 episodes of vomiting for Nyx in the 20 days since the trial began, compared with 20 across the 7 weeks before it — worth reviewing with your vet.</p>
-              <div class="cmprow"><span>Empty-stomach (6h+)</span><div class="bar"><i class="zero"></i></div><span class="n"><b>0</b> · was 7</span></div>
-              <div class="cmprow"><span>After eating (≤30m)</span><div class="bar"><i class="concern" style="width:50%"></i></div><span class="n"><b>4</b> · was 8</span></div>
+              <p class="lead">We've logged 4 episodes of vomiting for Nyx in the trial's 20 days, compared with 20 in the 49 days before it, a longer stretch — worth reviewing with your vet.</p>
+              <div class="cmprow"><span>Within 30 min of eating</span><div class="bar"><i class="concern" style="width:50%"></i></div><span class="n"><b>4</b> · was 8</span></div>
+              <div class="cmprow"><span>30 min–6h after eating</span><div class="bar"><i class="zero"></i></div><span class="n"><b>0</b> · was 3</span></div>
+              <div class="cmprow"><span>6h+ after eating</span><div class="bar"><i class="zero"></i></div><span class="n"><b>0</b> · was 7</span></div>
+              <p class="sample" style="margin-top:6px;">Timed to a meal: 4 of 4 in the trial · 18 of 20 before.</p>
               <div class="meta"><span class="badge">Day 20 of 56</span><span class="sample">counted from days you logged</span></div>
               <div class="whylink">Why we're showing this</div>
             </div>
@@ -484,7 +487,7 @@
           </div>
         </div>
       </div></div>
-      <p class="frame-cap"><b>The Signal trial card (D3, PM half) — count-row form</b> Face = the pooled compare (in the server sentence) + per-phenotype count rows; the zeros are two-sided ("0 · was 7"), never an inverted "no empty-stomach vomiting" claim. Expand = the RTM/confound block verbatim + the §3.4 adjacency line + diet-structure context in words (no "%", B-733).</p>
+      <p class="frame-cap"><b>The Signal trial card (D3, PM half) — count-row form <span style="color:var(--teal-ink);">· updated PR 10 (B-766 / B-775 / B-765)</span></b> Face = the pooled compare (in the server sentence) + the count rows. <strong>Three fixes landed here (PR 10):</strong> <strong>(B-766)</strong> the rows are now the <em>three</em>-band partition (≤30m / mid / 6h+) — the same partition the A2 timing card draws — plus a "Timed to a meal: 4 of 4 · 18 of 20 before" reconciliation, so the rows + the un-timeable remainder <em>foot</em> with the 4-vs-20 in the lead (before, two rows summed to 15, not 20 — "the numbers don't add up" on the wedge's trust surface); <strong>(B-775)</strong> both windows now in the same unit (days) + "a longer stretch", so 4-vs-20 over unequal windows can't be read as a ~5× fall when the rate roughly halved; <strong>(B-765)</strong> the rows now carry the shipped mechanism-free, time-ordered labels ("Within 30 min", not "Empty-stomach"). Zeros stay two-sided ("0 · was 7"), never an inverted absence claim (G2). Expand = the RTM/confound block verbatim + the §3.4 adjacency line + diet-structure context in words (no "%", B-733).</p>
     </div>
 
     <!-- D2 fork: the sentence upgrade -->
@@ -496,8 +499,10 @@
             <div class="rail insight"></div>
             <div class="ibody">
               <p class="lead">No early-morning, empty-stomach episodes logged in the trial's 20 days — the longest such stretch in her record. The right-after-eating kind has continued: 4 so far.</p>
-              <div class="cmprow"><span>Empty-stomach (6h+)</span><div class="bar"><i class="zero"></i></div><span class="n"><b>0</b> · was 7</span></div>
-              <div class="cmprow"><span>After eating (≤30m)</span><div class="bar"><i class="concern" style="width:50%"></i></div><span class="n"><b>4</b> · was 8</span></div>
+              <div class="cmprow"><span>Within 30 min of eating</span><div class="bar"><i class="concern" style="width:50%"></i></div><span class="n"><b>4</b> · was 8</span></div>
+              <div class="cmprow"><span>30 min–6h after eating</span><div class="bar"><i class="zero"></i></div><span class="n"><b>0</b> · was 3</span></div>
+              <div class="cmprow"><span>6h+ after eating</span><div class="bar"><i class="zero"></i></div><span class="n"><b>0</b> · was 7</span></div>
+              <p class="sample" style="margin-top:6px;">Timed to a meal: 4 of 4 in the trial · 18 of 20 before.</p>
               <div class="meta"><span class="chip-new">New</span><span class="badge">Day 20 of 56</span></div>
               <div class="whylink">Why we're showing this</div>
             </div>
@@ -509,6 +514,8 @@
   </div>
 
   <div class="callout amber"><strong>The interlock the PM should see before ruling any of the three:</strong> the Signal trial card is <em>event-driven</em> — it only surfaces when the lane fires (<code>detectTrialResponse</code>). Nyx's trial is a <strong>fewer-during-trial</strong> case, and PR 3's open question is whether the fewer direction ships at all. So: <strong>(a)</strong> if the PM takes the engineering lean — <em>escalate-only v1</em> — then Nyx's improving trial mints <em>no</em> Signal card; the standing strip line (left) and the Patterns panel carry the story, and the Signal stays quiet until vomiting <em>rises</em>. <strong>(b)</strong> The D2 hero sentence (right) can therefore only ever appear if <em>both</em> D2 = allow <em>and</em> the fewer direction ships. Two yeses, or the hero frame never renders. The count rows and the standing line survive either way.</div>
+
+  <div class="callout"><strong>RULED (PR 10, provisional — Dr. Chen sign-off owed): Option A — the fewer direction ships, density-gated as merged.</strong> The one non-obvious fact that decided it: under <em>escalate-only</em>, the reduction is <strong>not</strong> withheld from the product — it still renders on the standing strip line (left) and the Patterns panel, per the interlock above. And the event-driven card is the <em>only</em> trial surface that carries the RTM/confound honesty expand ("a calmer stretch can't yet say which one mattered… calm stretches also happen on their own"). So escalate-only would remove the app's <em>most-careful</em> reduction surface while leaving the ~14–35% attrition residual on the <em>less</em>-careful strip — a small safety gain at a large wedge cost. The card is a multi-sample cross-incident read (which the never-reassure rule permits to reassure only if careful), it never verdicts, and it routes to the vet. <strong>Escalate-only stays a documented one-line switch</strong> (<code>changedMaterially = gate &amp;&amp; moreDuringTrial</code>) if Dr. Chen weights the event-driven prominence higher. No code change either way for the shipped default.</div>
 
   <div class="ruling">
     <p class="lede">Why the fewer direction is genuinely hard (PR 3 adversarial rounds — the input to R2-5)</p>
@@ -655,6 +662,6 @@
 </section>
 
 <footer>
-  Culprit · Signals v2 · mock round 2 — 2026-08-15. Source of truth: <code>docs/culprit-signals-v2-mockups.html</code> (this file). Composes with the Signal/Home round-2.1 system (B-721); supersedes nothing. A1 is dead (R-1) and not re-drawn. §02 is the as-built PR 5 card (<code>#646</code>); §04–§05 are the PR 6 / PR 7 Designer gates. Counts: Nyx's live record; <span style="white-space:nowrap">~ marked</span> representative. Re-published over round 1's artifact URL.
+  Culprit · Signals v2 · mock round 2 — 2026-08-15 (PR-10 update same day). Source of truth: <code>docs/culprit-signals-v2-mockups.html</code> (this file). Composes with the Signal/Home round-2.1 system (B-721); supersedes nothing. A1 is dead (R-1) and not re-drawn. §02 is the as-built PR 5 card (<code>#646</code>); §04–§05 are the PR 6 / PR 7 Designer gates. §03 lead + §04 trial card carry the <strong>PR-10 redeploy-gate rulings</strong> (two-kinds lead, B-766 three-band footing + reconciliation, B-775 matched-unit magnitude, B-765 mechanism-free labels, FEWER = ship-as-merged) — provisional, PM/Dr. Chen sign-off owed. Counts: Nyx's live record; <span style="white-space:nowrap">~ marked</span> representative. Re-published over round 1's artifact URL.
 </footer>
 </div>

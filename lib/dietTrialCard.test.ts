@@ -1431,15 +1431,17 @@ const counts = (over: Partial<TrialResponseCounts> = {}): TrialResponseCounts =>
 });
 
 describe('trialResponseStandingLine (CUL-13)', () => {
-  it('renders the two-sided comparison when both windows clear the logged-days floor (mock B1)', () => {
+  it('renders the two-sided comparison when both windows clear the logged-days floor (mock B1 + B-775 matched units)', () => {
+    // B-775: both windows in the SAME unit (days), + "a longer stretch" when the baseline covers ≥1.5×
+    // the trial era, so "4 vs 20" can't be read as a like-for-like ratio over unequal windows.
     expect(trialResponseStandingLine(counts())).toBe(
-      "Vomiting: 4 in the trial's 20 days · 20 in the 7 weeks before.",
+      "Vomiting: 4 in the trial's 20 days · 20 in the 49 days before, a longer stretch.",
     );
   });
 
   it('shows a two-sided zero without inverting it (the wedge fewer case)', () => {
     expect(trialResponseStandingLine(counts({ trialCount: 0, baselineCount: 7 }))).toBe(
-      "Vomiting: 0 in the trial's 20 days · 7 in the 7 weeks before.",
+      "Vomiting: 0 in the trial's 20 days · 7 in the 49 days before, a longer stretch.",
     );
   });
 
@@ -1461,12 +1463,21 @@ describe('trialResponseStandingLine (CUL-13)', () => {
     expect(trialResponseStandingLine(counts({ baselineLoggedDays: 2, trialCount: 0 }))).toBeNull();
   });
 
-  it('pluralises days and weeks', () => {
+  it('pluralises days (both windows in days — B-775)', () => {
     expect(trialResponseStandingLine(counts({ trialDayNumber: 1, trialCount: 1, baselineLoggedDays: 2 }))).toBe(
       "Vomiting: 1 in the trial's 1 day.",
     );
+    // A short baseline window (7 days) is NOT ≥1.5× the 20-day trial, so no "longer stretch" cue.
     expect(trialResponseStandingLine(counts({ baselineWindowDays: 7, baselineCount: 3 }))).toBe(
-      "Vomiting: 4 in the trial's 20 days · 3 in the 1 week before.",
+      "Vomiting: 4 in the trial's 20 days · 3 in the 7 days before.",
+    );
+  });
+
+  it('B-775 — no "longer stretch" cue once the trial era is not the shorter window (safe direction)', () => {
+    // trial 40 days vs a 49-day baseline: 49 < 40×1.5, so the windows are comparable enough — no cue,
+    // and a falling count over the (longer) trial window under-states the drop, the safe direction.
+    expect(trialResponseStandingLine(counts({ trialDayNumber: 40, trialCount: 4, baselineCount: 20 }))).toBe(
+      "Vomiting: 4 in the trial's 40 days · 20 in the 49 days before.",
     );
   });
 
@@ -1495,20 +1506,20 @@ describe('trialResponseStandingLine (CUL-13)', () => {
     // comparison shows even when densityComparable is false (matching the detector's asymmetry).
     expect(
       trialResponseStandingLine(counts({ trialCount: 8, baselineCount: 2, densityComparable: false })),
-    ).toBe("Vomiting: 8 in the trial's 20 days · 2 in the 7 weeks before.");
+    ).toBe("Vomiting: 8 in the trial's 20 days · 2 in the 49 days before, a longer stretch.");
   });
 
   it('shows the reduction when density IS comparable (the genuine improving trial)', () => {
     expect(
       trialResponseStandingLine(counts({ trialCount: 4, baselineCount: 20, densityComparable: true })),
-    ).toBe("Vomiting: 4 in the trial's 20 days · 20 in the 7 weeks before.");
+    ).toBe("Vomiting: 4 in the trial's 20 days · 20 in the 49 days before, a longer stretch.");
   });
 });
 
 describe('resolveTrialStrip — the standing line wiring (CUL-13)', () => {
   it('maps input.trialResponse into the strip model as a second line', () => {
     const strip = resolveTrialStrip(activeInput({ trialResponse: counts() }))!;
-    expect(strip.trialResponseLine).toBe("Vomiting: 4 in the trial's 20 days · 20 in the 7 weeks before.");
+    expect(strip.trialResponseLine).toBe("Vomiting: 4 in the trial's 20 days · 20 in the 49 days before, a longer stretch.");
   });
 
   it('is null when the flag is off (no input.trialResponse) — byte-identical strip', () => {

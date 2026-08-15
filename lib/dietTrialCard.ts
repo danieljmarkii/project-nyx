@@ -2448,9 +2448,15 @@ export function trialResponseStandingLine(counts: TrialResponseCounts): string |
     (counts.densityComparable || !reduction);
   if (showComparison) {
     if (counts.trialCount + counts.baselineCount === 0) return null;
-    const weeks = Math.max(1, Math.round(counts.baselineWindowDays / 7));
-    const weekNoun = weeks === 1 ? 'week' : 'weeks';
-    return `Vomiting: ${counts.trialCount} in the trial's ${counts.trialDayNumber} ${days} · ${counts.baselineCount} in the ${weeks} ${weekNoun} before.`;
+    // B-775 — both windows in the SAME unit (days, not "7 weeks") + a "longer stretch" cue when the
+    // baseline covers materially more time, so the count pair can't be read as a like-for-like ratio (a
+    // falling count over the shorter recent window over-states the drop — the reassuring-direction error,
+    // clinical-guardrails / intake-is-not-preference). Presentation-only; mirrors the Signal card's
+    // server lead (`templateTrialResponse`), so the strip and the card scale the same.
+    const baselineDays = counts.baselineWindowDays;
+    const baselineDayNoun = baselineDays === 1 ? 'day' : 'days';
+    const lengthCue = baselineDays >= counts.trialDayNumber * 1.5 ? ', a longer stretch' : '';
+    return `Vomiting: ${counts.trialCount} in the trial's ${counts.trialDayNumber} ${days} · ${counts.baselineCount} in the ${baselineDays} ${baselineDayNoun} before${lengthCue}.`;
   }
   if (counts.trialCount === 0) return null;
   return `Vomiting: ${counts.trialCount} in the trial's ${counts.trialDayNumber} ${days}.`;
