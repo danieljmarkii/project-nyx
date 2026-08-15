@@ -213,6 +213,7 @@ const trialResponse = (over: Partial<TrialResponseFinding> = {}): TrialResponseF
   pooledTrialCount: 1,
   pooledBaselineCount: 12,
   rapid: { trial: 0, baseline: 4 },
+  mid: { trial: 0, baseline: 2 },
   long: { trial: 0, baseline: 5 },
   rapidWindowMinutes: 30,
   longGapHours: 6,
@@ -893,14 +894,30 @@ Deno.test('templateEmptyStomachTiming — drops "the last two" when they were no
   assert.ok(validatePhrasing(t, emptyStomach({ lastTwoEligibleLong: false })))
 })
 
-Deno.test('templateTimingStory — carries BOTH phenotypes count-anchored over one denominator', () => {
+Deno.test('templateTimingStory — names the bimodal SHAPE in words (B-755 two-kinds), never reprints the band counts (S10)', () => {
+  // The override's `long` carries no clockBand → the shape sentence with no clock clause.
   const t = templateTimingStory(
     timingStory({ eligibleCount: 12, rapid: { count: 4, medianMinutesSinceFeeding: 18, lastTwoEligible: true, feedingFormsInEvidence: [] }, long: { count: 5, medianHoursSinceFeeding: 9, lastTwoEligible: false, feedingFormsInEvidence: [] } }),
     'Nyx',
   )
-  assert.ok(/4 happened within 30 minutes of eating/.test(t), 'the rapid clause')
-  assert.ok(/5 happened 6 or more hours after/.test(t), 'the long clause')
-  assert.ok(/\b12\b/.test(t), 'one shared eligible denominator')
+  assert.ok(/two kinds of time/.test(t), 'names the bimodal shape')
+  assert.ok(/soon after eating/.test(t), 'the rapid phenotype, in words')
+  assert.ok(/a long time after/.test(t), 'the long phenotype, in words')
+  // S10: the three-band receipt on the card face carries the counts; the sentence must NOT reprint
+  // them (a receipt earns its place by saying what the sentence can't, and vice versa).
+  assert.equal(/4 .*within/.test(t), false, 'no rapid count reprinted')
+  assert.equal(/5 .* hours after/.test(t), false, 'no long count reprinted')
+  assert.equal(MECHANISM.test(t), false)
+  assert.ok(validatePhrasing(t, timingStory()))
+})
+
+Deno.test('templateTimingStory — adds the clock cluster of the long episodes (the fact the band receipt CANNOT show, S10)', () => {
+  // The base fixture carries long.clockBand (4–8am) + clockCount — the early-morning cluster, which is
+  // the one clinically-useful fact the three-band count receipt cannot render, so the sentence carries it.
+  const t = templateTimingStory(timingStory(), 'Nyx')
+  assert.ok(/two kinds of time/.test(t))
+  assert.ok(/of them/.test(t), 'names how many of the long episodes fell in the clock band')
+  assert.ok(/\d(am|pm)/.test(t), 'a clock band, never a syndrome name')
   assert.equal(MECHANISM.test(t), false)
   assert.ok(validatePhrasing(t, timingStory()))
 })
@@ -933,8 +950,11 @@ Deno.test('templateTrialResponse — count-anchored + time-ordered, verdict-free
   )
   assert.ok(/\b1 episode of vomiting\b/.test(t), 'the trial-era count, singular, names vomiting')
   assert.ok(/\b12\b/.test(t), 'the baseline count')
-  assert.ok(/29 days since the trial began/.test(t), 'time-ordered on the trial day-count')
-  assert.ok(/before it/.test(t), 'the baseline sits earlier in time')
+  assert.ok(/in the trial's 29 days/.test(t), 'time-ordered on the trial day-count')
+  // B-775: both windows in the SAME unit (days), + "a longer stretch" when the baseline is materially
+  // longer (49d ≥ 1.5× the 29d trial), so "1 vs 12" can't be read as a like-for-like ratio.
+  assert.ok(/in the 49 days before it/.test(t), 'the baseline in DAYS, not weeks — matched unit')
+  assert.ok(/a longer stretch/.test(t), 'the length cue when the baseline covers more time')
   assert.ok(/vet/.test(t), 'points to the vet')
   assert.equal(t.includes('!'), false)
   // NEVER a verdict: none of the banned vocabulary, in either direction.
@@ -1188,7 +1208,7 @@ Deno.test('templateForFinding — dispatches by type', () => {
   assert.ok(/word with your vet/i.test(templateForFinding(worsening(), 'Nyx')))
   assert.ok(/keeps recurring over weeks/i.test(templateForFinding(chronicity(), 'Nyx')))
   assert.ok(/we could time/.test(templateForFinding(postprandial(), 'Nyx')))
-  assert.ok(/since the trial began/.test(templateForFinding(trialResponse(), 'Nyx')))
+  assert.ok(/in the trial's/.test(templateForFinding(trialResponse(), 'Nyx')))
   assert.ok(/between 4am and 8am/.test(templateForFinding(timeofday(), 'Nyx')))
   assert.ok(/call to your vet/i.test(templateForFinding(incidentRedFlag(), 'Nyx')))
 })

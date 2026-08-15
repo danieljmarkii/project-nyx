@@ -1444,28 +1444,67 @@ export function isSignalsV2Finding(finding: SignalFinding): boolean {
 export const TRIAL_RTM_CONFOUND =
   "Three things changed at once when the trial started — the new food, far fewer treats, more and steadier meals. A calmer stretch can't yet say which one mattered, and calm stretches also happen on their own.";
 
-/** The A2 count rows for the trial card — per-phenotype, TIME-ORDERED (rapid ≤30m, then long ≥6h),
- *  each two-sided ("4 · was 8" via `CompareRow.baseline`; a zero renders "0 · was 7", never an
- *  inverted absence claim — G2). Labels are the SAME mechanism-free band labels the A2 timing card
- *  uses (`timingStoryBandRows`), so the two surfaces name the phenotypes identically and no owner
- *  copy ever says "empty stomach" (MECHANISM_RE). A phenotype PRESENT during the trial (trial count
- *  ≥ 1) wears the symptom hue used descriptively (the timing card's "a pattern wears the hue" rule);
- *  a phenotype at zero rides muted (an empty bar) — the "· was N" text carries the two-sided fact. */
-export function trialResponseCompareRows(f: TrialResponseFinding): [CompareRow, CompareRow] {
+/** The A2 count rows for the trial card — per-phenotype, TIME-ORDERED, each two-sided ("4 · was 8"
+ *  via `CompareRow.baseline`; a zero renders "0 · was 7", never an inverted absence claim — G2).
+ *  Labels are the SAME mechanism-free band labels the A2 timing card uses (`timingStoryBandRows`), so
+ *  the two surfaces name the phenotypes identically and no owner copy ever says "empty stomach"
+ *  (MECHANISM_RE). A phenotype PRESENT during the trial (trial count ≥ 1) wears the symptom hue used
+ *  descriptively (the timing card's "a pattern wears the hue" rule); a phenotype at zero, and the
+ *  in-between band, ride muted — the "· was N" text carries the two-sided fact.
+ *
+ *  B-766 — THREE bands (rapid ≤30m / mid 30m–6h / long ≥6h), the same partition the sibling A2 card
+ *  draws. Before this the card showed only rapid + long, so the two rows summed to LESS than the
+ *  pooled lead ("4 in the trial · 20 before" with rows "0 · 7" + "4 · 8" = 15, not 20) — the mid band
+ *  and the un-timeable episodes were dropped with no disclosure, and "the numbers don't add up" is how
+ *  a reactive owner stops trusting the numbers on the wedge's trust surface. The three bands now
+ *  partition the TIMED-eligible episodes; `trialResponseTimedReconciliationLine` discloses the
+ *  un-timeable remainder so rows + remainder = the pooled lead. `mid` absent (a cache written before
+ *  B-766) ⇒ the pre-B-766 two-row form, byte-identical — never a crash, and the reconciliation line is
+ *  null there too. */
+export function trialResponseCompareRows(f: TrialResponseFinding): CompareRow[] {
+  const rapidRow: CompareRow = {
+    label: `Within ${f.rapidWindowMinutes} min of eating`,
+    count: f.rapid.trial,
+    baseline: f.rapid.baseline,
+    tone: f.rapid.trial >= 1 ? 'concern' : 'muted',
+  };
+  const longRow: CompareRow = {
+    label: `${f.longGapHours}h+ after eating`,
+    count: f.long.trial,
+    baseline: f.long.baseline,
+    tone: f.long.trial >= 1 ? 'concern' : 'muted',
+  };
+  if (!f.mid) return [rapidRow, longRow]; // old cache — the pre-B-766 two-row face
   return [
+    rapidRow,
     {
-      label: `Within ${f.rapidWindowMinutes} min of eating`,
-      count: f.rapid.trial,
-      baseline: f.rapid.baseline,
-      tone: f.rapid.trial >= 1 ? 'concern' : 'muted',
+      label: `${f.rapidWindowMinutes} min–${f.longGapHours}h after eating`,
+      count: f.mid.trial,
+      baseline: f.mid.baseline,
+      tone: 'muted',
     },
-    {
-      label: `${f.longGapHours}h+ after eating`,
-      count: f.long.trial,
-      baseline: f.long.baseline,
-      tone: f.long.trial >= 1 ? 'concern' : 'muted',
-    },
+    longRow,
   ];
+}
+
+/** B-766 — the un-timeable reconciliation line, so the trial card's count rows FOOT with the pooled
+ *  lead. The three bands partition the episodes we could time to a meal; the lead counts EVERY
+ *  vomiting episode. `pooled − (rapid + mid + long)` per window is the remainder that had no recent
+ *  meal to place it against. This line names the timed-of-pooled split for both windows so the reader
+ *  reconciles the (smaller) row sum with the (larger) lead — the same honesty the A2 card carries in
+ *  its "N timed of M episodes" sample line. Null when there is nothing to reconcile: the pre-B-766
+ *  cache (no `mid`, so no partition claim) or every episode was timeable in both windows (the rows
+ *  already sum to the lead). Each fraction is WITHIN one window ("15 of 20 before"), never a cross-
+ *  window magnitude, so the B-775 unequal-window read does not apply here. Count-anchored, never a
+ *  verdict, never a mechanism word (G1/G3). */
+export function trialResponseTimedReconciliationLine(f: TrialResponseFinding): string | null {
+  if (!f.mid) return null;
+  const timedTrial = f.rapid.trial + f.mid.trial + f.long.trial;
+  const timedBaseline = f.rapid.baseline + f.mid.baseline + f.long.baseline;
+  const untimeableTrial = Math.max(0, f.pooledTrialCount - timedTrial);
+  const untimeableBaseline = Math.max(0, f.pooledBaselineCount - timedBaseline);
+  if (untimeableTrial === 0 && untimeableBaseline === 0) return null;
+  return `Timed to a meal: ${timedTrial} of ${f.pooledTrialCount} in the trial · ${timedBaseline} of ${f.pooledBaselineCount} before.`;
 }
 
 /** The day-count badge — "Day N of M" (target set) or "Day N" (unset). `target_duration_days` is the

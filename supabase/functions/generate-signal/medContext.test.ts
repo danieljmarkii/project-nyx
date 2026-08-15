@@ -95,6 +95,7 @@ const trialResponse = (over: Partial<TrialResponseFinding> = {}): TrialResponseF
   pooledTrialCount: 1,
   pooledBaselineCount: 12,
   rapid: { trial: 0, baseline: 4 },
+  mid: { trial: 0, baseline: 2 },
   long: { trial: 0, baseline: 5 },
   rapidWindowMinutes: 30,
   longGapHours: 6,

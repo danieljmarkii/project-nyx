@@ -1256,10 +1256,19 @@ export interface TrialResponseFinding extends FindingBase {
   /**
    * Per-phenotype VOMIT-TIMING counts (via `lib/mealTiming`, G9), trial-era vs baseline — the A2
    * "count rows" (D2: "Empty-stomach 0 · was 7" — count-form, always safe). `rapid` = ≤30 min after
-   * eating (post-prandial), `long` = ≥`longGapHours` after eating (empty-stomach). These are CONTEXT
-   * rows shown when the card fires; they do NOT independently trigger it (see `detectTrialResponse`).
+   * eating (post-prandial), `mid` = the 30 min–`longGapHours` middle band, `long` = ≥`longGapHours`
+   * after eating (empty-stomach). These are CONTEXT rows shown when the card fires; they do NOT
+   * independently trigger it (see `detectTrialResponse`).
+   *
+   * B-766 — the three bands PARTITION the timed-eligible episodes (rapid + mid + long = the episodes
+   * we could place against a recent meal), exactly as the A2 timing card's `bandCounts` do. The client
+   * reconciles them to the pooled lead: `pooled − (rapid + mid + long)` per window is the un-timeable
+   * remainder (no recent meal to place the episode against), disclosed so the face FOOTS with the
+   * pooled count in the lead (before this field the card showed only rapid + long, so the two rows
+   * could not sum to the pooled lead — "the numbers didn't add up" on the wedge's trust surface).
    */
   rapid: { trial: number; baseline: number }
+  mid: { trial: number; baseline: number }
   long: { trial: number; baseline: number }
   /** The post-prandial band boundary in minutes (30) — the `rapid` row label. */
   rapidWindowMinutes: number
@@ -4885,8 +4894,10 @@ export function detectTrialResponse(
     freeFedSpans,
     timingConfigFor(config),
   )
-  const bandInWindow = (band: 'rapid' | 'long', pred: (di: number | null) => boolean): number =>
-    dist.eligible.filter((e) => e.band === band && pred(dayIndexOf(e.onsetMs))).length
+  const bandInWindow = (
+    band: 'rapid' | 'mid' | 'long',
+    pred: (di: number | null) => boolean,
+  ): number => dist.eligible.filter((e) => e.band === band && pred(dayIndexOf(e.onsetMs))).length
 
   // Diet-structure deltas (§2 L2 — context rows, the observable half of the RTM confound). Never a
   // verdict: `treatShare` over classifiable feedings, `mealsPerDay` over logged days. Placed by the
@@ -4925,6 +4936,10 @@ export function detectTrialResponse(
       rapid: {
         trial: bandInWindow('rapid', inTrialEra),
         baseline: bandInWindow('rapid', inBaseline),
+      },
+      mid: {
+        trial: bandInWindow('mid', inTrialEra),
+        baseline: bandInWindow('mid', inBaseline),
       },
       long: {
         trial: bandInWindow('long', inTrialEra),

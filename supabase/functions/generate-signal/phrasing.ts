@@ -300,11 +300,23 @@ export function templateEmptyStomachTiming(f: EmptyStomachTimingFinding, petName
 
 export function templateTimingStory(f: TimingStoryFinding, petName: string): string {
   // The combined timing card (Signals v2 / CUL-7 — a same-symptom ⑤ + L1 merge) — template-only.
-  // Carries BOTH phenotypes count-anchored over the ONE eligible denominator; same guardrail class
-  // as its parts (timing only, no mechanism/food/cause/suggestion). The two clauses are the A2
-  // Shape-C compare in words.
+  //
+  // B-755 / CUL-15 "two kinds of time" (PR 10, PM/Designer-vetoable): the lead names the BIMODAL SHAPE
+  // in words — the card's central insight is that she clusters at BOTH extremes, and that fact was
+  // carried only by the receipt's coloring before, not the sentence. It is deliberately NOT a reprint
+  // of the band counts: the three-band Shape-C receipt on the card face already prints ≤30m / mid / 6h+,
+  // so restating those counts here would violate S10 (a receipt earns its place by carrying what the
+  // sentence can't, and vice versa — the sentence must not duplicate the receipt). The one fact the
+  // band receipt CANNOT show, and which this sentence therefore carries, is the CLOCK concentration of
+  // the long-gap episodes (L1's `clockBand` — the early-morning cluster that is the clinically useful
+  // "not-meal-adjacent" signal). Same guardrail class as its parts: timing only, never a mechanism or
+  // syndrome word (G3 — a clock band, never "empty stomach"/"bilious"), never causal, never a verdict.
   const symptom = SYMPTOM_LABEL[f.symptomType]
-  return `Of the ${f.eligibleCount} ${symptom} episodes we could time for ${petName}, ${f.rapid.count} happened within ${f.rapidWindowMinutes} minutes of eating and ${f.long.count} happened ${f.longGapHours} or more hours after — a timing pattern worth mentioning to your vet.`
+  const clock =
+    f.long.clockBand && (f.long.clockCount ?? 0) >= 2
+      ? `, ${f.long.clockCount} of them ${localHourBand(f.long.clockBand.startLocalHour, f.long.clockBand.windowHours)}`
+      : ''
+  return `${petName}'s ${symptom} keeps two kinds of time — some soon after eating, and some a long time after${clock} — a timing pattern worth mentioning to your vet.`
 }
 
 export function templateTrialResponse(f: TrialResponseFinding, petName: string): string {
@@ -320,12 +332,26 @@ export function templateTrialResponse(f: TrialResponseFinding, petName: string):
   // exists when the pooled contrast changed materially (detectTrialResponse), so a comparison is
   // always licensed here; the counts-only state is the standing Pet-tab line (PR 6), not this card.
   const trialNoun = f.pooledTrialCount === 1 ? 'episode' : 'episodes'
-  const dayNoun = f.trialDayNumber === 1 ? 'day' : 'days'
-  const baselineWeeks = Math.max(1, Math.round(f.baselineWindowDays / 7))
-  const weekNoun = baselineWeeks === 1 ? 'week' : 'weeks'
-  // Names vomiting specifically — the burden is VOMIT-only (the round-2 masking fix), so "symptom
+  const trialDays = f.trialDayNumber
+  const baselineDays = f.baselineWindowDays
+  const trialDayNoun = trialDays === 1 ? 'day' : 'days'
+  const baselineDayNoun = baselineDays === 1 ? 'day' : 'days'
+  // B-775 — the two windows are UNEQUAL (the trial era grows; the baseline is a fixed 49-day span), so a
+  // bare "4 vs 20" read as a like-for-like pair looks like a ~5× fall when the underlying per-day rate
+  // roughly halved. That error is ALWAYS in the reassuring direction when the count falls (a falling
+  // count over the shorter recent window against a longer baseline over-states the improvement —
+  // clinical-guardrails / intake-is-not-preference). Two fixes, both kept inside the direction-neutral
+  // contract (no rate, no "down"/"fewer", the reader still computes the direction): (1) BOTH windows in
+  // the SAME unit — days, not "7 weeks" — so the length gap is legible in the numbers themselves; and
+  // (2) when the baseline covers materially more time (≥1.5× the trial era — a presentation threshold,
+  // not a clinical one), a plain "a longer stretch" clause so the count pair can't be read as
+  // like-for-like. Once the trial era is the LONGER window the falling count UNDER-states improvement
+  // (the safe direction), so no clause. The C-test render-gate is unchanged — it already handles the
+  // unequal exposure with its window-length offset; this fix is presentation-only. NEVER verdicted
+  // ("worth reviewing", never "working"/"better"); vomit-only (the round-2 masking fix), so "symptom
   // episodes" would over-claim a whole-body read the count does not support.
-  return `We've logged ${f.pooledTrialCount} ${trialNoun} of vomiting for ${petName} in the ${f.trialDayNumber} ${dayNoun} since the trial began, compared with ${f.pooledBaselineCount} across the ${baselineWeeks} ${weekNoun} before it — worth reviewing with your vet.`
+  const lengthCue = baselineDays >= trialDays * 1.5 ? ', a longer stretch' : ''
+  return `We've logged ${f.pooledTrialCount} ${trialNoun} of vomiting for ${petName} in the trial's ${trialDays} ${trialDayNoun}, compared with ${f.pooledBaselineCount} in the ${baselineDays} ${baselineDayNoun} before it${lengthCue} — worth reviewing with your vet.`
 }
 
 /** Render one inter-episode gap (hours) as a friendly value + unit. ≥24h → whole days, else whole

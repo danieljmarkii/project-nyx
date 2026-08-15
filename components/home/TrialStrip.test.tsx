@@ -99,7 +99,7 @@ describe('TrialStrip', () => {
     const tree = render(<TrialStrip model={resolveTrialStrip(input({ trialResponse: trialResponseCounts }))} />);
     // Both lines present: the coverage line AND the vomit-count line.
     expect(tree.getByText(/meals logged on 22 of 23 days/)).toBeTruthy();
-    expect(tree.getByText("Vomiting: 4 in the trial's 23 days · 20 in the 7 weeks before.")).toBeTruthy();
+    expect(tree.getByText("Vomiting: 4 in the trial's 23 days · 20 in the 49 days before, a longer stretch.")).toBeTruthy();
   });
 
   it('renders NO standing line when the flag is off (no trialResponse) — byte-identical strip', () => {
@@ -112,7 +112,7 @@ describe('TrialStrip', () => {
       <TrialStrip model={resolveTrialStrip(input({ trialResponse: trialResponseCounts }))} onPress={jest.fn()} />,
     );
     expect(withLine.getByTestId('trial-strip').props.accessibilityLabel).toBe(
-      "Diet trial · day 23 of 56. Vomiting: 4 in the trial's 23 days · 20 in the 7 weeks before. Open the diet trial.",
+      "Diet trial · day 23 of 56. Vomiting: 4 in the trial's 23 days · 20 in the 49 days before, a longer stretch. Open the diet trial.",
     );
     // Flag-off: unchanged from the shipped label (asserted verbatim in the tap test above too).
     const without = render(<TrialStrip model={resolveTrialStrip(input())} onPress={jest.fn()} />);
