@@ -10,8 +10,9 @@
 // never banner → prompt). The enable flow mirrors app/settings/notifications.tsx's
 // handlePrimerConfirm exactly, so the two surfaces that open this primer behave
 // identically.
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { Alert } from 'react-native';
+import { useFocusEffect } from 'expo-router';
 import { ensurePermission } from '../lib/notifications';
 import {
   readCategoryEnabled,
@@ -51,52 +52,62 @@ export function useDailyRecapOffer(opts: { arrival: OfferArrival }): DailyRecapO
   const primerPetName = pets.length === 1 ? pets[0].name : null;
 
   const [eligible, setEligible] = useState(false);
-  const [dismissed, setDismissed] = useState(false); // hidden after Not now / a grant
   const [primerVisible, setPrimerVisible] = useState(false);
   const [requesting, setRequesting] = useState(false);
 
-  // The eligibility read. A notification-tap arrival is never eligible (§4), so skip
-  // the OS/pref reads entirely for it. Fails CLOSED — an uncertain read shows nothing.
-  useEffect(() => {
-    if (arrival !== 'in_app') return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const [permission, categoryEnabled, offerState] = await Promise.all([
-          ensurePermission(false), // status read only — NEVER fires the prompt
-          readCategoryEnabled('daily_summary'),
-          readOfferState(),
-        ]);
-        if (cancelled) return;
-        setEligible(
-          shouldOfferDailyRecap({
-            arrival,
-            categoryEnabled,
-            permission,
-            quietUntilMs: offerState.quietUntilMs ?? null,
-            nowMs: Date.now(),
-          }),
-        );
-      } catch (e) {
-        console.warn('[dailyRecapOffer] eligibility read failed:', e);
-        if (!cancelled) setEligible(false); // fail closed
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [arrival]);
+  // The eligibility read, ON FOCUS (not just mount) — the settings screen's on-focus
+  // reconcile pattern. The recap screen stays mounted underneath a strip's push to
+  // the Pet tab, so a `daily_summary` toggled in Settings (or a value moment lifting
+  // the quiet) while away must re-read on return rather than show a stale banner.
+  // Eligibility is the SOLE authority for `show` — a "Not now" / a grant sets it
+  // false directly (below), so a re-focus can re-surface a genuinely-eligible offer
+  // (a value moment fired mid-session) without a sticky dismiss overriding it.
+  //
+  // A notification-tap arrival is never eligible (§4), so skip the OS/pref reads
+  // entirely for it. Fails CLOSED — an uncertain read shows nothing.
+  useFocusEffect(
+    useCallback(() => {
+      if (arrival !== 'in_app') return;
+      let cancelled = false;
+      (async () => {
+        try {
+          const [permission, categoryEnabled, offerState] = await Promise.all([
+            ensurePermission(false), // status read only — NEVER fires the prompt
+            readCategoryEnabled('daily_summary'),
+            readOfferState(),
+          ]);
+          if (cancelled) return;
+          setEligible(
+            shouldOfferDailyRecap({
+              arrival,
+              categoryEnabled,
+              permission,
+              quietUntilMs: offerState.quietUntilMs ?? null,
+              nowMs: Date.now(),
+            }),
+          );
+        } catch (e) {
+          console.warn('[dailyRecapOffer] eligibility read failed:', e);
+          if (!cancelled) setEligible(false); // fail closed
+        }
+      })();
+      return () => {
+        cancelled = true;
+      };
+    }, [arrival]),
+  );
 
-  const show = eligible && !dismissed;
+  const show = eligible;
 
   // Banner "Turn on" — opens the primer ONLY. The OS prompt is never fired here (the
   // consent-path invariant); it is spent only if the owner confirms in the primer.
   const onTurnOn = useCallback(() => setPrimerVisible(true), []);
 
-  // Banner "Not now" — quiets 30 days and hides. Optimistic: hide immediately, then
-  // persist. A failed write re-shows next visit (the safe direction).
+  // Banner "Not now" — quiets 30 days and hides. Optimistic: hide immediately
+  // (setEligible(false)), then persist. A failed write re-shows next focus (the safe
+  // direction); a successful one re-reads as quieted on the next focus anyway.
   const onNotNow = useCallback(() => {
-    setDismissed(true);
+    setEligible(false);
     quietDailyRecapOffer().catch((e) =>
       console.warn('[dailyRecapOffer] quiet write failed:', e),
     );
@@ -118,7 +129,7 @@ export function useDailyRecapOffer(opts: { arrival: OfferArrival }): DailyRecapO
       const result = await ensurePermission(true);
       if (result === 'granted') {
         await applyCategoryPreference('daily_summary', true);
-        setDismissed(true); // enabled → the offer's job is done
+        setEligible(false); // enabled → the offer's job is done
         // Close the loop (B-665): the same confirmation the settings toggle shows,
         // so the grant's first proof isn't a silent wait for 9pm. Delay lets the
         // primer dismiss first (the store's own pattern). Asserts nothing about the

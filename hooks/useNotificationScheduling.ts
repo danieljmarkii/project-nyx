@@ -32,6 +32,7 @@ import {
   notificationRouteDecision,
   routeDedup,
   normalizeFireInstant,
+  notificationRouteParams,
 } from '../lib/notificationRouting';
 
 export function useNotificationScheduling(): void {
@@ -88,20 +89,13 @@ export function useNotificationScheduling(): void {
     // validated against the registry's known routes (SAFE_NOTIFICATION_ROUTES), so
     // it is a real Href; the cast only bridges the opaque-string → typed-route gap.
     //
-    // `source: 'notification'` marks this a tap arrival so the in-context DR-3 offer
-    // never pitches the notification to someone who just tapped one (spec §4). It is
-    // carried UNCONDITIONALLY — even when firedAtMs is null (a delivery instant that
-    // did not normalize), where `firedAt` alone would be absent and the screen would
-    // misread the tap as an in-app visit. The dedup above still keys on the RAW
-    // delivery time; this param is read only by the offer's arrival classifier.
+    // `notificationRouteParams` builds the params in the PURE, tested layer — it
+    // always carries `source: 'notification'` (the DR-3 named gate: a tap arrival must
+    // never show the in-context offer, even when firedAtMs is null) and `firedAt`
+    // (B-672's anchor) when present. The dedup above still keys on the RAW delivery
+    // time; these params are read by the screen's anchor + the offer's classifier.
     router.push(
-      {
-        pathname: decision.routeTo,
-        params:
-          firedAtMs != null
-            ? { firedAt: String(firedAtMs), source: 'notification' }
-            : { source: 'notification' },
-      } as never,
+      { pathname: decision.routeTo, params: notificationRouteParams(firedAtMs) } as never,
     );
   }, []);
 

@@ -17,7 +17,12 @@ jest.mock('expo-notifications', () => ({
   AndroidImportance: { DEFAULT: 3 },
 }));
 
-import { notificationRouteDecision, routeDedup, normalizeFireInstant } from './notificationRouting';
+import {
+  notificationRouteDecision,
+  routeDedup,
+  normalizeFireInstant,
+  notificationRouteParams,
+} from './notificationRouting';
 
 // ── notificationRouteDecision (the tap auth gate) ────────────────────────────
 describe('notificationRouteDecision', () => {
@@ -138,5 +143,26 @@ describe('normalizeFireInstant', () => {
     for (const bad of [null, undefined, 0, -5, NaN, Infinity, 'not-a-number', '']) {
       expect(normalizeFireInstant(bad as never)).toBeNull();
     }
+  });
+});
+
+// ── notificationRouteParams (the DR-3 arrival marker — spec §4, a NAMED GATE) ──
+//
+// `source: 'notification'` must ride EVERY tap so the in-context offer never shows
+// over a notification-tap arrival — including the branch where the fire instant did
+// not normalize (firedAt absent). Pinning it here is what keeps a future edit to the
+// tap params from silently reopening the offer on taps.
+describe('notificationRouteParams', () => {
+  it('carries source:notification AND firedAt when the fire instant is present', () => {
+    expect(notificationRouteParams(1_700_000_000_000)).toEqual({
+      source: 'notification',
+      firedAt: '1700000000000',
+    });
+  });
+
+  it('carries source:notification even when the fire instant is absent (the belt)', () => {
+    // The load-bearing case: no firedAt to fall back on, yet the arrival is still a
+    // tap — so `source` alone must mark it, or the offer would show over it.
+    expect(notificationRouteParams(null)).toEqual({ source: 'notification' });
   });
 });
