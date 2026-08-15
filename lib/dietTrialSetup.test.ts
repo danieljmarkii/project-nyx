@@ -42,6 +42,13 @@ jest.mock('./utils', () => {
   return { ...actual, uuid: () => `id-${++mockIdSeq}` };
 });
 
+// DR-3: startDietTrial fires the trial value moment (re-surfaces the Daily Recap
+// offer once, ever). Mocked so the wiring is assertable without touching AsyncStorage.
+const mockSurfaceOffer = jest.fn().mockResolvedValue(undefined);
+jest.mock('./dailyRecapOffer', () => ({
+  surfaceOfferForValueMoment: (m: string) => mockSurfaceOffer(m),
+}));
+
 import {
   addTrialFood, buildTrialRows, canStartTrial, defaultDurationDays, describeActiveTrial,
   durationHelperLine, endActiveTrial, foodLabel, formatTrialEndDate,
@@ -517,6 +524,15 @@ describe('every trial write bumps the hydration tick (B-534)', () => {
     const before = tick();
     await startDietTrial(input());
     expect(tick()).toBe(before + 1);
+  });
+
+  // DR-3 (§4): starting a trial re-surfaces the Daily Recap offer for its value
+  // moment. The once-ever / lift-quiet logic is tested in dailyRecapOffer.test.ts;
+  // this pins that the write path actually fires it (the notifyTrialChanged rationale
+  // — a future caller won't know to).
+  it('startDietTrial re-surfaces the Daily Recap offer (trial value moment)', async () => {
+    await startDietTrial(input());
+    expect(mockSurfaceOffer).toHaveBeenCalledWith('trial');
   });
 
   it('endActiveTrial notifies', async () => {

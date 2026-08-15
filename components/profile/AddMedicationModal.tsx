@@ -32,6 +32,7 @@ import {
 import { MedicationNameChips } from '../medication/MedicationNameChips';
 import { ChipGroup } from '../ui/ChipGroup';
 import { usePetStore } from '../../store/petStore';
+import { surfaceOfferForValueMoment } from '../../lib/dailyRecapOffer';
 
 // The regimen row the card lists and this modal edits. A subset of `medications` —
 // the columns the "Current medications" card and this form touch.
@@ -283,6 +284,11 @@ export function AddMedicationModal({
           .select()
           .maybeSingle();
         if (error) throw error;
+        // DR-3 (§4): starting a med course is a value moment — re-surface the Daily
+        // Recap offer once, ever. Fire-and-forget; best-effort + a no-op if already
+        // spent (or the owner is opted in / OS-denied). Only on a NEW regimen — the
+        // isEditing branch above is not a course start.
+        void surfaceOfferForValueMoment('med_course');
         onClose();
         if (data) onAdded(coerceRegimen(data as Regimen));
       }

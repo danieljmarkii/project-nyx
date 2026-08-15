@@ -41,6 +41,7 @@ import { hasFlaggedFoodInTrial, recordFlaggedFoodInTrial } from './trialContamin
 import { armRecoveryGate, useAuthStore } from '../store/authStore';
 import { persistAppConfig, loadCachedAppConfig, APP_CONFIG_DEFAULTS } from './appConfig';
 import { useBetaOptInStore, BETA_OPT_IN_STORAGE_KEY } from './betaFeatures';
+import { quietDailyRecapOffer, readOfferState } from './dailyRecapOffer';
 
 const GATE_KEY = 'nyx.recoveryInProgress';
 const t0 = 1_700_000_000_000;
@@ -136,6 +137,18 @@ describe('wipeLocalSession — the shipped SIGNED_OUT teardown', () => {
 
     expect(useBetaOptInStore.getState().optIns).toEqual({});
     expect(await AsyncStorage.getItem(BETA_OPT_IN_STORAGE_KEY)).toBeNull();
+  });
+
+  // DR-3 (§4). The Daily Recap offer markers (the 30-day "Not now" quiet + the two
+  // once-ever value-moment flags) live in AsyncStorage, outside the SQLite
+  // clearLocalData wipes. On a shared device the prior owner's "already offered /
+  // quieted" state must not carry to the next person, or a fresh account never sees
+  // the banner it should.
+  it('clears the Daily Recap offer markers — account state outside SQLite', async () => {
+    await quietDailyRecapOffer();
+    expect((await readOfferState()).quietUntilMs).toBeDefined();
+    await wipeLocalSession();
+    expect(await readOfferState()).toEqual({});
   });
 
   it('never throws when a wipe step fails — teardown always completes', async () => {
