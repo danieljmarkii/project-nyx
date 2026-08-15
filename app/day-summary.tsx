@@ -9,7 +9,7 @@
 import { useCallback } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { ChevronRight } from 'lucide-react-native';
 import { theme } from '../constants/theme';
 import { Header, EmptyState, PrimaryButton } from '../components/ui';
@@ -36,18 +36,32 @@ const CATEGORY_TINT: Record<EventTintCategory, string> = {
   other: theme.colorTextSecondary,
 };
 
-function todayLabel(): string {
-  // "Sunday, August 2" — orientation only; the screen always shows the local
-  // today, so a live read of the wall clock is honest here.
-  return new Date().toLocaleDateString(undefined, {
+function dayLabel(anchorMs: number): string {
+  // "Sunday, August 2" — names the RENDERED day (B-672). The screen anchors to the
+  // notification's fired-for day, so this must read that instant, not the wall clock:
+  // a Saturday summary tapped after midnight shows Saturday's date, not Sunday's.
+  return new Date(anchorMs).toLocaleDateString(undefined, {
     weekday: 'long',
     month: 'long',
     day: 'numeric',
   });
 }
 
+/** Parse the `firedAt` tap param — the notification's fire instant (ms, already
+ *  normalized by `normalizeFireInstant`). Absent/garbage → null → the hook renders
+ *  today (the pre-B-672 default). */
+function parseFiredAt(raw: string | string[] | undefined): number | null {
+  const s = Array.isArray(raw) ? raw[0] : raw;
+  if (typeof s !== 'string') return null;
+  const n = Number(s);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
 export default function DaySummaryScreen() {
-  const state = useDaySummary();
+  // B-672: a tapped 9pm notification carries the instant it FIRED as `firedAt` (ms),
+  // so the screen anchors "today" to the fired-for day instead of the wall clock.
+  const { firedAt } = useLocalSearchParams<{ firedAt?: string }>();
+  const state = useDaySummary(parseFiredAt(firedAt));
 
   // Cold-start from a notification tap can push this screen onto a fresh stack with
   // nothing behind it — fall back to Home rather than a dead back button.
@@ -104,7 +118,7 @@ export default function DaySummaryScreen() {
         />
       ) : (
         <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
-          <Text style={styles.dateLabel}>{todayLabel()}</Text>
+          <Text style={styles.dateLabel}>{dayLabel(state.anchorMs)}</Text>
           {state.model.sections.map((section) => (
             <PetSection
               key={section.petId}

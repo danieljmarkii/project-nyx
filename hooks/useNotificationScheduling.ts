@@ -28,7 +28,11 @@ import { recordCategoryInteraction } from '../lib/notifications';
 // function, driven here on foreground and by the settings screen on focus. PR 4
 // owns only the tap-routing decision (lib/notificationRouting).
 import { reconcileFromPreferences } from '../lib/notificationSettings';
-import { notificationRouteDecision, routeDedup } from '../lib/notificationRouting';
+import {
+  notificationRouteDecision,
+  routeDedup,
+  normalizeFireInstant,
+} from '../lib/notificationRouting';
 
 export function useNotificationScheduling(): void {
   const appActive = useAppActive();
@@ -73,10 +77,21 @@ export function useNotificationScheduling(): void {
     });
     routedSigRef.current = sig;
     if (!route || !decision.routeTo) return;
+    // B-672: carry the instant the notification FIRED (its OS delivery time,
+    // normalized across the iOS-seconds / Android-ms split) so the Day Summary
+    // anchors "today" to the fired-for day rather than the wall clock at tap time —
+    // a Saturday summary tapped after midnight opens Saturday, not an empty Sunday.
+    // Threaded as a `firedAt` param the screen reads; the dedup above still keys on
+    // the RAW delivery time, unchanged.
+    const firedAtMs = normalizeFireInstant(resp.notification?.date);
     // `routeTo` is a runtime string that notificationRouteDecision has already
     // validated against the registry's known routes (SAFE_NOTIFICATION_ROUTES), so
     // it is a real Href; the cast only bridges the opaque-string → typed-route gap.
-    router.push(decision.routeTo as never);
+    router.push(
+      (firedAtMs != null
+        ? { pathname: decision.routeTo, params: { firedAt: String(firedAtMs) } }
+        : decision.routeTo) as never,
+    );
   }, []);
 
   // Warm taps (app already running).

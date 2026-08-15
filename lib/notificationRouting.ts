@@ -87,3 +87,44 @@ export function routeDedup(input: {
   if (sig === input.prevSig) return { route: false, sig: input.prevSig };
   return { route: true, sig };
 }
+
+// ── The fire instant (B-672 — the Day Summary fire-day anchor) ────────────────
+//
+// A tapped daily-summary notification opens /day-summary, which renders "today".
+// But the 9pm notification fires FOR a given day, and an owner who taps the
+// still-present notification after midnight (late at night, or over Sunday
+// breakfast) would otherwise land on the new, near-empty day — a Saturday they
+// diligently logged reading "Nothing in {pet}'s record today", the exact false-empty
+// the summary works to avoid. The fix carries the instant the notification FIRED
+// through to the screen, which anchors its day to that (with a staleness clamp —
+// resolveDaySummaryAnchorMs in lib/daySummary.ts). This is the "carry the delivery
+// instant in the tap payload" B-672 prescribes.
+//
+// The fire instant is the OS DELIVERY time (`response.notification.date`): the
+// daily summary is a repeating DAILY trigger, so its content.data is scheduled ONCE
+// and is static — it cannot carry a per-fire day. The timestamp the OS stamps on
+// each delivery is the honest per-fire identity.
+//
+// THE UNIT TRAP (why this is not a bare pass-through): expo-notifications serializes
+// `Notification.date` in SECONDS on iOS (`UNNotification.date` →
+// `timeIntervalSince1970`, NotificationRecords.swift:441) but MILLISECONDS on
+// Android (`Date.getTime()`, NotificationSerializer.java:52), and nothing in the JS
+// layer reconciles them. Read raw, an iOS delivery (~1.7e9) resolves to a 1970 day
+// and clamps to today on EVERY tap — the anchor would silently never fire on the
+// iOS-first build. So a seconds-scale value is promoted to ms. The 1e12 threshold
+// splits the two cleanly: any real recent instant is ~1.7e9 s / ~1.7e12 ms, and
+// 1e12 ms is the year 2001 — below any ms epoch this app will ever see, above any
+// seconds epoch it could. Returns null for a missing/garbage value (→ no anchor →
+// the screen defaults to today, the pre-B-672 behaviour).
+
+const FIRE_INSTANT_MS_THRESHOLD = 1e12;
+
+export function normalizeFireInstant(
+  rawDate: number | string | null | undefined,
+): number | null {
+  const n = typeof rawDate === 'string' ? Number(rawDate) : rawDate;
+  if (typeof n !== 'number' || !Number.isFinite(n) || n <= 0) return null;
+  // Seconds-scale (iOS) → promote to ms; ms-scale (Android) → keep. Round either
+  // way: iOS timeIntervalSince1970 is a fractional-second Double.
+  return n < FIRE_INSTANT_MS_THRESHOLD ? Math.round(n * 1000) : Math.round(n);
+}
