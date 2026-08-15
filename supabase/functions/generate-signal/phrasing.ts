@@ -23,6 +23,8 @@ import type {
   SymptomWorseningFinding,
   SymptomChronicityFinding,
   PostprandialTimingFinding,
+  EmptyStomachTimingFinding,
+  TimingStoryFinding,
   TimeOfDayClusteringFinding,
   IncidentRedFlagFinding,
   IncidentFlagKind,
@@ -283,6 +285,26 @@ export function templateTimeOfDayClustering(f: TimeOfDayClusteringFinding, petNa
   return `${f.clusterCount} of ${petName}'s ${f.eligibleCount} timed ${symptom} episodes happened ${band} — a timing pattern worth mentioning to your vet.`
 }
 
+export function templateEmptyStomachTiming(f: EmptyStomachTimingFinding, petName: string): string {
+  // Detector L1 (Signals v2 / CUL-7 — the ⑤ mirror) — template-only (no LLM, like ③/④/⑤/⑥). Names
+  // TIMING ONLY: "N or more hours after eating" is a timing reference, never the syndrome
+  // ('bilious'/'empty stomach' — banned by MECHANISM_RE), never a food/form (§9.1), never a cause,
+  // never a feeding-schedule SUGGESTION (G3). Honest denominator: "we could time" (the eligible
+  // count). Below-floor never reaches here (the engine stays silent).
+  const symptom = SYMPTOM_LABEL[f.symptomType]
+  const lastTwo = f.lastTwoEligibleLong ? ', including the last two' : ''
+  return `${f.longCount} of the ${f.eligibleCount} ${symptom} episodes we could time for ${petName} happened ${f.longGapHours} or more hours after eating${lastTwo} — a timing pattern worth mentioning to your vet.`
+}
+
+export function templateTimingStory(f: TimingStoryFinding, petName: string): string {
+  // The combined timing card (Signals v2 / CUL-7 — a same-symptom ⑤ + L1 merge) — template-only.
+  // Carries BOTH phenotypes count-anchored over the ONE eligible denominator; same guardrail class
+  // as its parts (timing only, no mechanism/food/cause/suggestion). The two clauses are the A2
+  // Shape-C compare in words.
+  const symptom = SYMPTOM_LABEL[f.symptomType]
+  return `Of the ${f.eligibleCount} ${symptom} episodes we could time for ${petName}, ${f.rapid.count} happened within ${f.rapidWindowMinutes} minutes of eating and ${f.long.count} happened ${f.longGapHours} or more hours after — a timing pattern worth mentioning to your vet.`
+}
+
 export function templateForFinding(finding: Finding, petName: string): string {
   switch (finding.type) {
     case 'food_symptom_correlation':
@@ -297,6 +319,10 @@ export function templateForFinding(finding: Finding, petName: string): string {
       return templateChronicity(finding, petName)
     case 'postprandial_timing':
       return templatePostprandialTiming(finding, petName)
+    case 'empty_stomach_timing':
+      return templateEmptyStomachTiming(finding, petName)
+    case 'timing_story':
+      return templateTimingStory(finding, petName)
     case 'timeofday_clustering':
       return templateTimeOfDayClustering(finding, petName)
     case 'incident_red_flag':
@@ -398,6 +424,16 @@ export function validatePhrasing(text: string, finding: Finding): boolean {
     // name a food/protein/form (§9.1), or reassure (a below-floor result is silence,
     // never "not meal-related"). Template-only (index.ts) so the model is never in this
     // loop — but if that ever changes, this screen holds all four lines.
+    if (CAUSAL_RE.test(t) || MECHANISM_RE.test(t) || FOOD_NAMING_RE.test(t) || REASSURANCE_RE.test(t)) {
+      return false
+    }
+  }
+  if (finding.type === 'empty_stomach_timing' || finding.type === 'timing_story') {
+    // Signals v2 (CUL-7) — L1 (empty-stomach) and the merged timing_story are descriptive TIMING
+    // counts, the same guardrail class as ⑤. Crucially, MECHANISM_RE bars 'empty stomach' / 'bilious':
+    // the lane names the TIMING BAND ("6 or more hours after eating"), never the syndrome the vet
+    // infers from it. No cause, no food/form (§9.1), no reassurance (below-floor is silence).
+    // Template-only, but the screen holds all four lines if the model is ever in this loop.
     if (CAUSAL_RE.test(t) || MECHANISM_RE.test(t) || FOOD_NAMING_RE.test(t) || REASSURANCE_RE.test(t)) {
       return false
     }
@@ -533,6 +569,34 @@ export function phrasingPayload(finding: Finding, petName: string): Record<strin
       cluster_start_local_hour: finding.clusterStartLocalHour,
       cluster_window_hours: finding.clusterWindowHours,
       relationship: 'associational_timing', // a clock pattern we are noting — NOT a cause, NOT a mechanism
+    }
+  }
+  if (finding.type === 'empty_stomach_timing') {
+    // Signals v2 (CUL-7). Template-only, so never sent to the model; kept for shape-parity. Carries
+    // TIMING ONLY (no food form — forms ride feedingFormsInEvidence into the vet report, §9.1).
+    return {
+      insight_type: 'empty_stomach_timing',
+      pet_name: petName,
+      symptom: SYMPTOM_LABEL[finding.symptomType],
+      long_count: finding.longCount,
+      eligible_count: finding.eligibleCount,
+      long_gap_hours: finding.longGapHours,
+      including_last_two: finding.lastTwoEligibleLong,
+      relationship: 'associational_timing', // a timing pattern we are noting — NOT a cause, NOT a mechanism
+    }
+  }
+  if (finding.type === 'timing_story') {
+    // Signals v2 (CUL-7) — the merged ⑤ + L1 card. Template-only; both phenotypes' counts, timing only.
+    return {
+      insight_type: 'timing_story',
+      pet_name: petName,
+      symptom: SYMPTOM_LABEL[finding.symptomType],
+      rapid_count: finding.rapid.count,
+      long_count: finding.long.count,
+      eligible_count: finding.eligibleCount,
+      window_minutes: finding.rapidWindowMinutes,
+      long_gap_hours: finding.longGapHours,
+      relationship: 'associational_timing', // two timing patterns we are noting — NOT a cause, NOT a mechanism
     }
   }
   if (finding.type === 'incident_red_flag') {

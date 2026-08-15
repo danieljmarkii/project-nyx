@@ -19,6 +19,8 @@ import {
   detectWorsening,
   detectChronicity,
   detectPostprandialTiming,
+  detectEmptyStomachTiming,
+  poissonBinomialUpperTailProbability,
   detectTimeOfDayClustering,
   detectIncidentRedFlags,
   deriveIncidentFlags,
@@ -40,6 +42,8 @@ import {
   type SymptomWorseningFinding,
   type SymptomChronicityFinding,
   type PostprandialTimingFinding,
+  type EmptyStomachTimingFinding,
+  type TimingStoryFinding,
   type TimeOfDayClusteringFinding,
   type IncidentRedFlagFinding,
   type IncidentAnalysisInput,
@@ -2760,26 +2764,76 @@ Deno.test('detectTimeOfDayClustering — a re-logged bout (3 rows in 2h) collaps
   assert.equal(findings[0].totalEpisodes, 6)
 })
 
-Deno.test('detectTimeOfDayClustering — §7#4: ⑤ fires for the symptom → ⑥ suppressed (via detectSignals composition)', () => {
-  // The ⑤ golden (a schedule-fed post-prandial vomiter) clusters by clock trivially — all
-  // onsets at UTC 12:00 → local 8. So ⑥ WOULD fire standalone; the §4.4 mutual exclusion
-  // (⑤ wins) drops it in detectSignals.
+Deno.test('detectTimeOfDayClustering — §7#4 (Signals v2 / CUL-7): ⑥ SURVIVES when its cluster is mostly DIFFERENT episodes than ⑤ (partial overlap below the threshold)', () => {
+  // The ⑤ golden: 12 vomits all at UTC 12:00 → NY 8am, but only the LAST 4 are rapid (a feeding 20
+  // min before); the other 8 are 5h post-meal (mid). So ⑥ clusters ALL 12 at 8am, while ⑤ fires on
+  // only 4 of them → overlap 4/12 = 0.33, BELOW suppressionOverlapFraction (0.5). Under the shipped
+  // blanket rule this dropped ⑥ entirely; the episode-set-aware rule (deep-dive F1) keeps it, because
+  // the 8am clock pattern is broader than the 4 meal-adjacent episodes — the exact over-suppression
+  // the fix exists to stop. BOTH cards surface.
   const { symptomEvents, mealEvents } = ppGolden()
-  // Standalone, ⑥ fires (proving the suppression — not absence — explains the result).
   assert.equal(
     detectTimeOfDayClustering(input({ symptomEvents, mealEvents, timezone: NY })).length,
     1,
-    '⑥ fires standalone on the clustered post-prandial pattern',
+    '⑥ fires standalone on the clustered pattern',
   )
   const ranked = detectSignals(input({ symptomEvents, mealEvents, timezone: NY }))
+  assert.ok(ranked.some((r) => r.finding.type === 'postprandial_timing'), '⑤ fires')
   assert.ok(
-    ranked.some((r) => r.finding.type === 'postprandial_timing'),
-    '⑤ fires',
+    ranked.some((r) => r.finding.type === 'timeofday_clustering'),
+    '⑥ SURVIVES — its cluster is only 33% ⑤-rapid, below the 0.5 overlap threshold',
   )
+})
+
+Deno.test('detectTimeOfDayClustering — §7#4b (Signals v2 / CUL-7): ⑥ IS suppressed when its cluster IS ⑤ (full overlap ≥ threshold)', () => {
+  // A TRUE schedule-fed post-prandial vomiter: 8 vomits, each 20 min after the ONLY feeding of the
+  // day, ALL at UTC 12:00 → NY 8am. So ⑤'s rapid set == ⑥'s 8am cluster (overlap 8/8 = 1.0). ⑥ is
+  // genuinely restating ⑤'s meal-adjacency, so the episode-set-aware rule still drops it — the
+  // suppression the fix PRESERVES for the case it was always meant for.
+  const symptomEvents: SymptomEvent[] = []
+  const mealEvents: MealEvent[] = []
+  for (let i = 0; i < 8; i++) {
+    const day = 18 + i
+    symptomEvents.push(wVomit(day, 12, 0)) // UTC 12:00 → NY 8am
+    mealEvents.push(feeding(day, 11, 40)) // 20 min before → rapid; the only feeding that day
+  }
+  assert.equal(
+    detectTimeOfDayClustering(input({ symptomEvents, mealEvents, timezone: NY })).length,
+    1,
+    '⑥ fires standalone',
+  )
+  const ranked = detectSignals(input({ symptomEvents, mealEvents, timezone: NY }))
+  assert.ok(ranked.some((r) => r.finding.type === 'postprandial_timing'), '⑤ fires')
   assert.ok(
     !ranked.some((r) => r.finding.type === 'timeofday_clustering'),
-    '⑥ is suppressed because ⑤ fired for vomit (§4.4)',
+    '⑥ suppressed — its cluster is 100% ⑤-rapid (it restates ⑤)',
   )
+})
+
+Deno.test('detectTimeOfDayClustering — §7#4c (Signals v2 / CUL-7): the RESCUE — a disjoint clock cluster survives a co-firing ⑤ on other episodes', () => {
+  // The case the shipped rule broke: ⑤ fires on rapid-after-dinner episodes (NY 6pm), while a
+  // SEPARATE clock cluster of non-meal-adjacent episodes sits at NY 6am. The two episode sets are
+  // disjoint (overlap 0), so ⑥'s 6am finding is NOT restating ⑤ and must survive — the empty-stomach
+  // clock pattern the blanket rule used to hide whenever any ⑤ fired.
+  const symptomEvents: SymptomEvent[] = []
+  const mealEvents: MealEvent[] = []
+  // 8 mid vomits at NY 6am (UTC 10:00), each 3h after a UTC 07:00 feeding → mid (not rapid, not long).
+  for (let i = 0; i < 8; i++) {
+    const day = 15 + i
+    symptomEvents.push(wVomit(day, 10, 0))
+    mealEvents.push(feeding(day, 7, 0))
+  }
+  // 3 rapid vomits at NY 6pm (UTC 22:00), each 20 min after a UTC 21:40 feeding → ⑤'s rapid set.
+  for (let i = 0; i < 3; i++) {
+    const day = 24 + i
+    symptomEvents.push(wVomit(day, 22, 0))
+    mealEvents.push(feeding(day, 21, 40))
+  }
+  const ranked = detectSignals(input({ symptomEvents, mealEvents, timezone: NY }))
+  assert.ok(ranked.some((r) => r.finding.type === 'postprandial_timing'), '⑤ fires on the 6pm rapid episodes')
+  const tod = ranked.find((r) => r.finding.type === 'timeofday_clustering')
+  assert.ok(tod, '⑥ SURVIVES — its 6am cluster is disjoint from ⑤ (0% overlap)')
+  assert.equal((tod!.finding as TimeOfDayClusteringFinding).clusterStartLocalHour, 6, 'the surviving cluster is the 6am one')
 })
 
 Deno.test('detectTimeOfDayClustering — ⑥ surfaces via detectSignals when ⑤ does NOT fire (no meals → no post-prandial)', () => {
@@ -2854,6 +2908,417 @@ function mulberry32(seed: number): () => number {
     return ((x ^ (x >>> 14)) >>> 0) / 4294967296
   }
 }
+
+// ── Detector L1: empty-stomach timing (Signals v2 / B-755 / CUL-7 — the ⑤ mirror) ─────
+//
+// Fixtures build a TWICE-DAILY-fed cat (the adversarial schedule): feedings at 02:00 and 14:00 UTC
+// each day → 12h inter-meal gaps, so the schedule's ≥6h "empty stomach" base rate is exactly 0.5.
+// A vomit at 13:00 is 11h after the 02:00 feeding (the 14:00 one is later) → LONG; a vomit at 05:00
+// is 3h after the 02:00 feeding → MID. The guard requires the long count to clear 1.7× the
+// schedule's expected long count, so a twice-daily cat must be DISPROPORTIONATELY empty-stomach.
+
+function twiceDailyMeals(fromDay: number, toDay: number): MealEvent[] {
+  const meals: MealEvent[] = []
+  for (let d = fromDay; d <= toDay; d++) {
+    meals.push(feeding(d, 2, 0))
+    meals.push(feeding(d, 14, 0))
+  }
+  return meals
+}
+const longVomit = (day: number): SymptomEvent => wVomit(day, 13, 0) // 11h after 02:00 → LONG
+const midVomit = (day: number): SymptomEvent => wVomit(day, 5, 0) // 3h after 02:00 → MID
+
+Deno.test('detectEmptyStomachTiming — golden: 7 long of 8 timed on a twice-daily cat → fires with exact counts + clock evidence', () => {
+  const symptomEvents = [
+    midVomit(17), // earliest eligible episode is MID, so the last two eligible are both LONG
+    longVomit(18), longVomit(19), longVomit(20), longVomit(21), longVomit(22), longVomit(23), longVomit(24),
+  ]
+  const mealEvents = twiceDailyMeals(10, 27)
+  const findings = detectEmptyStomachTiming(input({ symptomEvents, mealEvents, timezone: NY }))
+  assert.equal(findings.length, 1)
+  const f = findings[0]
+  assert.equal(f.longCount, 7)
+  assert.equal(f.eligibleCount, 8)
+  assert.deepEqual(f.bandCounts, { rapid: 0, mid: 1, long: 7 })
+  assert.equal(f.totalEpisodes, 8)
+  assert.equal(f.longGapHours, 6)
+  assert.equal(f.medianHoursSinceFeeding, 11, 'the observed median gap — 13:00 minus 02:00')
+  assert.equal(f.lastTwoEligibleLong, true, 'the two most-recent eligible episodes are both long')
+  assert.equal(f.symptomType, 'vomit')
+  assert.equal(f.priorityClass, 'insight')
+  assert.equal(f.associationalOnly, true)
+  // Clock composition (§2 L1 — EVIDENCE, not a fire gate): the 7 long episodes at 13:00 UTC → 9am NY.
+  assert.equal(f.clockCount, 7)
+  assert.equal(f.clockBand?.startLocalHour, 9)
+  assert.equal(f.clockBand?.windowHours, 4)
+})
+
+Deno.test('detectEmptyStomachTiming — the eligible-denominator floor: 5 long episodes is too few, 6 fires', () => {
+  const meals = twiceDailyMeals(10, 27)
+  const five = [longVomit(19), longVomit(20), longVomit(21), longVomit(22), longVomit(23)]
+  assert.equal(detectEmptyStomachTiming(input({ symptomEvents: five, mealEvents: meals })).length, 0)
+  const six = [...five, longVomit(18)]
+  assert.equal(detectEmptyStomachTiming(input({ symptomEvents: six, mealEvents: meals })).length, 1)
+})
+
+Deno.test('detectEmptyStomachTiming — the EMPTY-STOMACH GUARD: a twice-daily cat whose long fraction only matches its schedule stays silent (8 long of 12 clears the fraction floor, not the guard)', () => {
+  // eligible 12, long 8 → fraction 0.67 ≥ 0.6 (clears the fraction floor), BUT expectedLong =
+  // 12 × 0.5 = 6 and the guard threshold is 1.7 × 6 = 10.2, so 8 < 10.2 → SILENT. A twice-daily
+  // feeder is ≥6h post-meal ~half the day, so 8 of 12 is barely above chance — not a real pattern.
+  const meals = twiceDailyMeals(5, 27)
+  const symptomEvents = [
+    longVomit(8), longVomit(10), longVomit(12), longVomit(14), longVomit(16), longVomit(18), longVomit(20), longVomit(22),
+    midVomit(9), midVomit(11), midVomit(13), midVomit(15),
+  ]
+  assert.equal(detectEmptyStomachTiming(input({ symptomEvents, mealEvents: meals })).length, 0)
+})
+
+Deno.test('detectEmptyStomachTiming — a DISCOVERED long-looking onset is excluded from numerator AND denominator (counted in totalEpisodes)', () => {
+  const meals = twiceDailyMeals(10, 27)
+  const witnessed = [longVomit(18), longVomit(19), longVomit(20), longVomit(21), longVomit(22), longVomit(23)]
+  // 3 extra long-LOOKING episodes, but DISCOVERED — a found vomit can never be "11h after eating".
+  const discovered = [cVomit(15, 13, 'estimated'), cVomit(16, 13, 'window'), cVomit(17, 13, null)]
+  const f = detectEmptyStomachTiming(input({ symptomEvents: [...witnessed, ...discovered], mealEvents: meals }))
+  assert.equal(f.length, 1)
+  assert.equal(f[0].longCount, 6, 'discovered onsets excluded from the numerator')
+  assert.equal(f[0].eligibleCount, 6, 'and from the denominator')
+  assert.equal(f[0].totalEpisodes, 9, 'but counted in the of-N-total honesty context')
+})
+
+Deno.test('detectEmptyStomachTiming — episodes under an active free_choice bowl are ineligible (free-feeding exclusion)', () => {
+  const meals = twiceDailyMeals(10, 27)
+  const symptomEvents = [longVomit(18), longVomit(19), longVomit(20), longVomit(21), longVomit(22), longVomit(23)]
+  const f = detectEmptyStomachTiming(
+    input({ symptomEvents, mealEvents: meals, feedingArrangements: [arrangement('x', '2026-05-01', null, 'high')] }),
+  )
+  assert.equal(f.length, 0)
+})
+
+Deno.test('detectEmptyStomachTiming — the recency floor: long episodes all >14 days old stay silent', () => {
+  // 6 long episodes on May 1..6 — above the eligible floor and disproportionate, but all >14 days
+  // before NOW (May 30). Recency suppresses.
+  const meals = twiceDailyMeals(1, 27)
+  const symptomEvents = [longVomit(1), longVomit(2), longVomit(3), longVomit(4), longVomit(5), longVomit(6)]
+  assert.equal(detectEmptyStomachTiming(input({ symptomEvents, mealEvents: meals })).length, 0)
+})
+
+Deno.test('detectEmptyStomachTiming — no timezone → L1 still fires (clock evidence absent, never a fire gate)', () => {
+  const symptomEvents = [midVomit(17), longVomit(18), longVomit(19), longVomit(20), longVomit(21), longVomit(22), longVomit(23), longVomit(24)]
+  const meals = twiceDailyMeals(10, 27)
+  const f = detectEmptyStomachTiming(input({ symptomEvents, mealEvents: meals })) // NO timezone
+  assert.equal(f.length, 1, 'fires on the fraction regardless of the clock')
+  assert.equal(f[0].clockBand, undefined)
+  assert.equal(f[0].clockCount, undefined)
+})
+
+Deno.test('poissonBinomialUpperTailProbability — reduces to the binomial for equal p, matches textbook values, endpoints, monotonicity, and the heterogeneous break (L1 base-rate gate)', () => {
+  const approx = (a: number, b: number, msg: string) => assert.ok(Math.abs(a - b) < 1e-9, `${msg}: ${a} vs ${b}`)
+  // A reference one-sample binomial upper tail, computed independently of the DP under test.
+  const binomUpper = (k: number, n: number, p: number): number => {
+    if (k <= 0) return 1
+    if (k > n) return 0
+    let choose = 1
+    let tail = 0
+    for (let i = 0; i < k; i++) choose = (choose * (n - i)) / (i + 1) // C(n, k)
+    for (let i = k; i <= n; i++) {
+      tail += choose * Math.pow(p, i) * Math.pow(1 - p, n - i)
+      choose = (choose * (n - i)) / (i + 1) // C(n, i) → C(n, i+1)
+    }
+    return tail
+  }
+  const rep = (p: number, n: number) => Array(n).fill(p)
+  // Endpoints.
+  assert.equal(poissonBinomialUpperTailProbability(rep(0.3, 10), 0), 1, 'P(X≥0) = 1')
+  assert.equal(poissonBinomialUpperTailProbability(rep(0.3, 10), 11), 0, 'P(X>n) = 0')
+  assert.equal(poissonBinomialUpperTailProbability(rep(0, 10), 1), 0, 'all p=0 → all mass at 0, P(X≥1)=0')
+  assert.equal(poissonBinomialUpperTailProbability(rep(1, 10), 10), 1, 'all p=1 → all mass at n')
+  assert.equal(poissonBinomialUpperTailProbability([], 0), 1, 'empty set: P(X≥0)=1')
+  // A non-finite pᵢ maps to 1 (fail-safe / conservative), NEVER 0 — a garbage rate must not deflate the
+  // expected count and manufacture a fire (adversarial review round 3, finding #4).
+  assert.equal(
+    poissonBinomialUpperTailProbability([NaN, Infinity, 0.5], 2),
+    poissonBinomialUpperTailProbability([1, 1, 0.5], 2),
+    'non-finite p → 1 (fail-safe), not 0',
+  )
+  // REDUCES TO THE BINOMIAL when every pᵢ is equal (the property the round-3 rework must preserve).
+  for (const [p, n] of [[0.25, 8], [0.5, 8], [0.6, 10], [0.75, 12]] as const) {
+    for (let k = 0; k <= n; k++) {
+      approx(poissonBinomialUpperTailProbability(rep(p, n), k), binomUpper(k, n, p), `PB==binom p=${p} n=${n} k=${k}`)
+    }
+  }
+  // Exact textbook values (equal-p specializations kept as named goldens).
+  approx(poissonBinomialUpperTailProbability(rep(0.5, 6), 6), 1 / 64, 'P(X≥6 | 6×0.5)') // 0.015625
+  approx(poissonBinomialUpperTailProbability(rep(0.75, 12), 12), Math.pow(0.75, 12), 'P(X≥12 | 12×0.75)') // ~0.0317
+  approx(poissonBinomialUpperTailProbability(rep(0.5, 8), 7), 9 / 256, 'P(X≥7 | 8×0.5)') // 0.035 — twice-daily 7/8 golden
+  // HETEROGENEOUS: a hand-computable two-value case. Six p=0.5 + one p=1 ⇒ X = 1 + Binom(6,0.5),
+  // so P(X≥7) = P(Binom(6,0.5)≥6) = 1/64, and P(X≥4) = P(Binom(6,0.5)≥3) = 42/64.
+  approx(poissonBinomialUpperTailProbability([...rep(0.5, 6), 1], 7), 1 / 64, 'mixed 6×0.5+1: P(X≥7)')
+  approx(poissonBinomialUpperTailProbability([...rep(0.5, 6), 1], 4), 42 / 64, 'mixed 6×0.5+1: P(X≥4)')
+  // THE ROUND-2 REVIEW BREAK, pinned: six once-daily episodes (p=0.75) + one old thrice-daily one
+  // (p=0.25), SIX of the seven long. A single windowed base rate, dragged toward the sparse regime by
+  // the outlier, would treat these as one low rate and fire; the per-episode PB keeps each episode's own
+  // schedule — P(X≥6) ≈ 0.267, well above alpha, so the guard does NOT fire. (At the extreme all-seven-
+  // long it is 0.75⁶·0.25 ≈ 0.0445, right at the boundary — the fraction floor + minLongGapEpisodes
+  // still leave that to the seeded sweep, which is why the mixed-history sweep below is the real lock.)
+  approx(poissonBinomialUpperTailProbability([...rep(0.75, 6), 0.25], 6), 0.266967773437500, 'mixed 6×0.75+0.25: P(X≥6)')
+  assert.ok(
+    poissonBinomialUpperTailProbability([...rep(0.75, 6), 0.25], 6) > 0.05,
+    '6-of-7 long under 6×0.75 + 0.25 is NOT distinctive under the per-episode PB (the old windowed guard fired here)',
+  )
+  // A whole-tail sum equals 1 (X≥0), and P(X≥k) is non-increasing in k under heterogeneous p.
+  const mixed = [0.2, 0.4, 0.5, 0.6, 0.75, 0.8, 0.9, 0.3]
+  approx(poissonBinomialUpperTailProbability(mixed, 0), 1, 'full lower endpoint is 1')
+  let prev = 1
+  for (let k = 0; k <= mixed.length; k++) {
+    const p = poissonBinomialUpperTailProbability(mixed, k)
+    assert.ok(p <= prev + 1e-12, `monotone non-increasing at k=${k}`)
+    prev = p
+  }
+  // The once-daily reality the gate encodes: at base 0.75, an 8/8 long run is NOT significant (~0.10),
+  // a 12/12 run IS (~0.032) — which is why once-daily needs more evidence than thrice-daily.
+  assert.ok(poissonBinomialUpperTailProbability(rep(0.75, 8), 8) > 0.05, 'once-daily 8/8 is not distinctive')
+  assert.ok(poissonBinomialUpperTailProbability(rep(0.75, 12), 12) < 0.05, 'once-daily 12/12 is')
+})
+
+// ── L1 §PROPERTY SWEEP + §RECALL (Signals v2 / CUL-7 — the REQUIRED CI calibration gate) ────────
+//
+// The seeded falsification that the guard (a PER-EPISODE local long base rate + a POISSON-BINOMIAL
+// upper-tail test at baseRateAlpha) keeps the CHANCE fire rate ≪5% on NULL models AND still fires on
+// true positives. The ≥6h bucket has a large schedule-dependent base rate (~0.5 twice-daily, ~0.75
+// once-daily), so a fraction floor alone cannot separate signal from schedule — the base-rate test is
+// what does it. THREE CUL-7 reviews broke earlier guards, and all three breaks are regression-locked
+// here:
+//   • NON-STATIONARY schedules (a real feeding change, or logging fatigue where only the AM feed is
+//     logged recently) fired the FIRST (multiplicative) guard at ~81% on pure noise — because it read
+//     one base rate off the dense historical regime. The regime-change + logging-fatigue nulls assert it.
+//   • The first ratio guard was UNSATISFIABLE above base ~0.588, so a once-daily-fed cat (the classic
+//     empty-stomach case) could not fire even at 100% long. The §RECALL test asserts it now fires.
+//   • A single windowed base rate + a one-sample binomial (the SECOND guard) fired 24–40% once ONE OLD
+//     OUTLIER episode dragged the window's base rate off the recent regime — a chronic vomiter always
+//     has such an outlier. The MIXED-HISTORY null below (recent noise cluster + an old outlier episode,
+//     swept across outlier positions) is that regression lock; per-episode rates fix it by construction.
+// Deterministic (seeded). The Poisson-binomial self-calibrates the null to ≤ baseRateAlpha at any MIX of
+// schedules, so the per-n ceilings are uniform (no intrinsic-residual carve-out is needed).
+
+const L1_HOUR = 3_600_000
+const L1_DAY = 86_400_000
+const L1_NOW_MS = Date.parse(NOW)
+
+/** Feed on `scheduleHours` (UTC hours-of-day) every day across the 60-day window (stationary). Base
+ *  rate is timezone-independent (L1 does not use tz to fire), so UTC feeding hours are the honest
+ *  schedule. `recentHours` (optional) replaces the schedule for the recent `recentDays` days — a
+ *  NON-STATIONARY regime change. */
+function scheduleMeals(scheduleHours: number[], recentHours?: number[], recentDays = 14): MealEvent[] {
+  const meals: MealEvent[] = []
+  for (let d = 1; d <= 60; d++) {
+    const hrs = recentHours && d < recentDays ? recentHours : scheduleHours
+    for (const h of hrs) {
+      // NOW is at 12:00, so anchor `h` to that day's MIDNIGHT (−(12−h)h) — a clock hour, matching
+      // longAtHour below. (The nulls only depend on inter-meal GAPS, so the phase never mattered
+      // there; the recall fixtures place vomits at specific clock hours and do depend on it.)
+      meals.push(
+        meal({
+          occurredAt: new Date(L1_NOW_MS - d * L1_DAY - (12 - h) * L1_HOUR).toISOString(),
+          foodType: 'meal',
+          primaryProtein: 'x',
+        }),
+      )
+    }
+  }
+  return meals
+}
+/** n witnessed vomits on distinct days at uniform-random times (or Poisson inter-arrival). `recentOnly`
+ *  confines them to the last 14 days — the regime the non-stationary nulls' recent schedule governs.
+ *  `outlierDay` (optional) appends ONE extra old vomit at that day-offset — the round-2 break's shape:
+ *  a recent noise cluster plus a single old eligible episode sitting in a DIFFERENT feeding regime. */
+function randomNullVomits(
+  rng: () => number,
+  n: number,
+  poisson: boolean,
+  recentOnly = false,
+  outlierDay?: number,
+): SymptomEvent[] {
+  const out: SymptomEvent[] = []
+  const span = recentOnly ? 14 : 50
+  if (poisson) {
+    let t = L1_NOW_MS - 55 * L1_DAY
+    const meanGap = (50 * L1_DAY) / (n + 2)
+    while (out.length < n && t < L1_NOW_MS) {
+      t += -Math.log(1 - rng()) * meanGap
+      if (t < L1_NOW_MS) out.push(wVomitIso(new Date(t).toISOString()))
+    }
+    while (out.length < n) {
+      out.push(wVomitIso(new Date(L1_NOW_MS - (1 + Math.floor(rng() * span)) * L1_DAY - Math.floor(rng() * L1_DAY)).toISOString()))
+    }
+  } else {
+    const days = new Set<number>()
+    while (days.size < n) days.add(1 + Math.floor(rng() * span))
+    for (const d of days) {
+      out.push(wVomitIso(new Date(L1_NOW_MS - d * L1_DAY - Math.floor(rng() * L1_DAY)).toISOString()))
+    }
+  }
+  if (outlierDay != null) {
+    out.push(wVomitIso(new Date(L1_NOW_MS - outlierDay * L1_DAY - Math.floor(rng() * L1_DAY)).toISOString()))
+  }
+  return out
+}
+
+Deno.test('detectEmptyStomachTiming — §PROPERTY SWEEP: random onsets fire ≤ α on stationary, non-stationary AND mixed-history null schedules (exact-test calibration to n=14)', () => {
+  // `maxN` — stationary schedules sweep to n=14 (the high-n CALIBRATION concern: an EXACT test's null
+  // fire rate legitimately RISES toward α as n grows — adversarial review round 3, finding #3, measured
+  // a ~4.67% peak at twice-daily n=13, never past α through n=20 — so asserting past n=10 keeps a
+  // future high-n regression from landing silently above the tested band). The `recentOnly`/mixed
+  // models stay at n≤10: their `span=14` distinct-day draw degenerates as n→14, and their remit is
+  // FP-ROBUSTNESS (the outlier/regime break), fully exercised at n=6..10.
+  const NULLS: { name: string; meals: MealEvent[]; poisson: boolean; recentOnly: boolean; outlierDay?: number; maxN?: number }[] = [
+    { name: 'once-daily(base~0.75)', meals: scheduleMeals([8]), poisson: false, recentOnly: false, maxN: 14 },
+    { name: 'twice-daily(base~0.5)', meals: scheduleMeals([8, 20]), poisson: false, recentOnly: false, maxN: 14 },
+    { name: 'thrice-daily(base~0.25)', meals: scheduleMeals([7, 15, 23]), poisson: false, recentOnly: false, maxN: 14 },
+    { name: 'grazing(8/day)', meals: scheduleMeals([0, 3, 6, 9, 12, 15, 18, 21]), poisson: false, recentOnly: false, maxN: 14 },
+    { name: 'twice-daily-poisson', meals: scheduleMeals([8, 20]), poisson: true, recentOnly: false, maxN: 14 },
+    // NON-STATIONARY (the FIRST guard fired ~81% here) — recent vomits against a recently-changed schedule.
+    { name: 'regime 3x->1x recent', meals: scheduleMeals([7, 15, 23], [8]), poisson: false, recentOnly: true },
+    { name: 'regime 2x->1x recent', meals: scheduleMeals([8, 20], [8]), poisson: false, recentOnly: true },
+    // Logging fatigue: fed 2x/day but only the 08:00 feed is logged in the recent regime.
+    { name: 'logging-fatigue', meals: scheduleMeals([8, 20], [8]), poisson: false, recentOnly: true },
+    // MIXED-HISTORY (the round-2 break: the SECOND guard fired 24–40% here) — a recent once-daily noise
+    // cluster PLUS a single old episode sitting in the thrice-daily regime. A single windowed base rate
+    // is dragged off the recent regime by the outlier; the per-episode PB keeps each episode's own rate.
+    // Swept across outlier positions because the break's severity was position-dependent for the old guard.
+    { name: 'mixed-history outlier@30', meals: scheduleMeals([7, 15, 23], [8]), poisson: false, recentOnly: true, outlierDay: 30 },
+    { name: 'mixed-history outlier@45', meals: scheduleMeals([7, 15, 23], [8]), poisson: false, recentOnly: true, outlierDay: 45 },
+    { name: 'mixed-history outlier@58', meals: scheduleMeals([7, 15, 23], [8]), poisson: false, recentOnly: true, outlierDay: 58 },
+    // Regime 2x->1x with an old outlier — the same break at a smaller regime jump.
+    { name: 'mixed-history 2x->1x outlier@45', meals: scheduleMeals([8, 20], [8]), poisson: false, recentOnly: true, outlierDay: 45 },
+  ]
+  // The Poisson-binomial is EXACT, so the null fire rate is calibrated to ≈ α (0.05), NOT ≪ α — being
+  // well under α at small n is discreteness, not extra conservatism (finding #3). PER_N_CEIL is α plus
+  // headroom for the seeded estimate (the peak true rate is ~4.67% at n=13); POOLED stays low because
+  // the low-n cells dominate. Deterministic (seeded), so a passing run stays passing.
+  const POOLED_CEIL = 0.035
+  const PER_N_CEIL = 0.065
+  const TRIALS = 2000
+  for (const nm of NULLS) {
+    const rng = mulberry32(
+      0x5eed ^ (nm.poisson ? 0x111 : 0) ^ (nm.recentOnly ? 0x222 : 0) ^ ((nm.outlierDay ?? 0) * 0x333) ^ (nm.name.length * 71),
+    )
+    let fires = 0
+    let total = 0
+    let worstN = 0
+    for (let n = 6; n <= (nm.maxN ?? 10); n++) {
+      let perFires = 0
+      for (let t = 0; t < TRIALS; t++) {
+        if (detectEmptyStomachTiming(input({ symptomEvents: randomNullVomits(rng, n, nm.poisson, nm.recentOnly, nm.outlierDay), mealEvents: nm.meals })).length > 0) {
+          perFires++
+        }
+      }
+      const r = perFires / TRIALS
+      fires += perFires
+      total += TRIALS
+      worstN = Math.max(worstN, r)
+      assert.ok(r < PER_N_CEIL, `${nm.name} n=${n} fire rate ${(r * 100).toFixed(2)}% exceeded the ${PER_N_CEIL * 100}% per-n ceiling`)
+    }
+    const pooled = fires / total
+    console.log(`L1 null-model ${nm.name}: pooled ${(pooled * 100).toFixed(2)}% (worst-n ${(worstN * 100).toFixed(2)}%, ${fires}/${total})`)
+    assert.ok(pooled < POOLED_CEIL, `${nm.name} pooled fire rate ${(pooled * 100).toFixed(2)}% must be < ${POOLED_CEIL * 100}%`)
+  }
+})
+
+// A witnessed vomit at UTC `hour` on the (2+i)-th most recent day — distinct days, so nothing collapses.
+function longAtHour(hour: number, i: number): SymptomEvent {
+  return wVomitIso(new Date(L1_NOW_MS - (2 + i) * L1_DAY - (12 - hour) * L1_HOUR).toISOString())
+}
+
+Deno.test('detectEmptyStomachTiming — §RECALL: true-positive empty-stomach cats FIRE, including the once-daily case the old guard could never fire', () => {
+  // ONCE-DAILY (base ~0.75): fed only at 08:00; 12 vomits at 05:00 (21h after the previous feed → long).
+  // The earlier multiplicative guard's threshold exceeded the episode count for any base ≥ ~0.588, so
+  // this could not fire at ANY long fraction; the exact binomial fires it (P(X≥12|12,0.75) ≈ 0.032).
+  const onceMeals = scheduleMeals([8])
+  const onceVomits = Array.from({ length: 12 }, (_v, i) => longAtHour(5, i))
+  const onceFires = detectEmptyStomachTiming(input({ symptomEvents: onceVomits, mealEvents: onceMeals }))
+  assert.equal(onceFires.length, 1, 'a once-daily cat with 12 empty-stomach vomits fires')
+  assert.equal(onceFires[0].longCount, 12)
+
+  // THRICE-DAILY (base ~0.25): fed 07:00/15:00/23:00; 7 long at 06:00 (7h after 23:00 → long) + 3 mid.
+  const thriceMeals = scheduleMeals([7, 15, 23])
+  const thriceVomits = [
+    ...Array.from({ length: 7 }, (_v, i) => longAtHour(6, i)),
+    ...Array.from({ length: 3 }, (_v, i) => longAtHour(9, 7 + i)), // 09:00 → 2h after 07:00 → mid
+  ]
+  const thriceFires = detectEmptyStomachTiming(input({ symptomEvents: thriceVomits, mealEvents: thriceMeals }))
+  assert.equal(thriceFires.length, 1, 'a thrice-daily cat with 7 of 10 empty-stomach fires')
+  assert.equal(thriceFires[0].longCount, 7)
+})
+
+Deno.test('detectTimeOfDayClustering — §7#4d (Signals v2 / CUL-7, review finding ③): ⑥ is suppressed when its cluster IS L1\'s long episodes', () => {
+  // A once-daily-fed cat whose 12 empty-stomach vomits all land at the SAME clock (05:00 UTC → NY
+  // 01:00): L1 fires (12/12 long) AND ⑥ clusters at 01:00 on the SAME episodes. L1 already carries that
+  // clock band as evidence (clockBand), so a standalone ⑥ duplicates it — the D1 "duplicate cards" gap.
+  // The suppression now measures overlap against the WHOLE timing lane (⑤-rapid ∪ L1-long), so ⑥ drops.
+  const meals = scheduleMeals([8])
+  const symptomEvents = Array.from({ length: 12 }, (_v, i) => longAtHour(5, i))
+  assert.equal(detectEmptyStomachTiming(input({ symptomEvents, mealEvents: meals })).length, 1, 'L1 fires standalone')
+  assert.equal(
+    detectTimeOfDayClustering(input({ symptomEvents, mealEvents: meals, timezone: NY })).length,
+    1,
+    '⑥ fires standalone (before composition)',
+  )
+  const ranked = detectSignals(input({ symptomEvents, mealEvents: meals, timezone: NY }))
+  assert.ok(ranked.some((r) => r.finding.type === 'empty_stomach_timing'), 'L1 survives')
+  assert.ok(
+    !ranked.some((r) => r.finding.type === 'timeofday_clustering'),
+    '⑥ suppressed — it duplicates L1\'s clock band (overlap with the long episodes = 1.0)',
+  )
+})
+
+// ── timing_story composition (Signals v2 / CUL-7 — the ⑤ + L1 merge) ─────────────────
+
+Deno.test('detectSignals — timing_story: same-symptom ⑤ AND L1 both fire → ONE merged card carrying both phenotypes', () => {
+  // A cat fed thrice daily (01:00 / 09:00 / 17:00 → 8h gaps, long base rate ~0.25) with BOTH
+  // phenotypes: rapid-after-eating episodes AND empty-stomach episodes, on distinct days. The lower
+  // base rate leaves room for ⑤ (needs ≥25% rapid) and L1 (needs ≥60% long + the guard) to co-fire.
+  const meals: MealEvent[] = []
+  for (let d = 5; d <= 27; d++) {
+    meals.push(feeding(d, 1, 0))
+    meals.push(feeding(d, 9, 0))
+    meals.push(feeding(d, 17, 0))
+  }
+  // On this schedule (feedings 01:00 / 09:00 / 17:00): 09:20 is 20 min after 09:00 → RAPID; 08:00 is
+  // 7h after 01:00 (the 09:00 feeding is later) → LONG; 04:00 is 3h after 01:00 → MID. Distinct days,
+  // so nothing collapses.
+  const symptomEvents = [
+    wVomit(15, 9, 20), wVomit(16, 9, 20), wVomit(17, 9, 20), // RAPID
+    wVomit(18, 8, 0), wVomit(19, 8, 0), wVomit(20, 8, 0), wVomit(21, 8, 0), wVomit(22, 8, 0), wVomit(23, 8, 0), // LONG
+    wVomit(24, 4, 0), // MID
+  ]
+  const ranked = detectSignals(input({ symptomEvents, mealEvents: meals, timezone: NY }))
+  const story = ranked.find((r) => r.finding.type === 'timing_story')
+  assert.ok(story, 'a merged timing_story surfaces')
+  const f = story!.finding as TimingStoryFinding
+  assert.equal(f.rapid.count, 3, 'the rapid phenotype')
+  assert.equal(f.long.count, 6, 'the empty-stomach phenotype')
+  assert.equal(f.eligibleCount, 10, 'ONE shared eligible denominator')
+  assert.deepEqual(f.bandCounts, { rapid: 3, mid: 1, long: 6 })
+  assert.equal(f.rapidWindowMinutes, 30)
+  assert.equal(f.longGapHours, 6)
+  // The lone parts are GONE — only the merged card remains for the symptom.
+  assert.ok(!ranked.some((r) => r.finding.type === 'postprandial_timing'), '⑤ was merged, not duplicated')
+  assert.ok(!ranked.some((r) => r.finding.type === 'empty_stomach_timing'), 'L1 was merged, not duplicated')
+})
+
+Deno.test('detectSignals — a lone ⑤ (no empty-stomach episodes) stays postprandial_timing, never a timing_story', () => {
+  const { symptomEvents, mealEvents } = ppGolden() // 4 rapid + 8 mid, 0 long → only ⑤ fires
+  const ranked = detectSignals(input({ symptomEvents, mealEvents }))
+  assert.ok(ranked.some((r) => r.finding.type === 'postprandial_timing'), '⑤ stays itself')
+  assert.ok(!ranked.some((r) => r.finding.type === 'timing_story'), 'no merge without L1')
+})
+
+Deno.test('detectSignals — a lone L1 (no rapid episodes) stays empty_stomach_timing, never a timing_story', () => {
+  const symptomEvents = [midVomit(17), longVomit(18), longVomit(19), longVomit(20), longVomit(21), longVomit(22), longVomit(23), longVomit(24)]
+  const ranked = detectSignals(input({ symptomEvents, mealEvents: twiceDailyMeals(10, 27) }))
+  assert.ok(ranked.some((r) => r.finding.type === 'empty_stomach_timing'), 'L1 stays itself')
+  assert.ok(!ranked.some((r) => r.finding.type === 'timing_story'), 'no merge without ⑤')
+})
 
 // ── Composition & ranking (§5) ───────────────────────────────────────────────
 

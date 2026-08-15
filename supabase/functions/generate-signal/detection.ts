@@ -59,6 +59,22 @@
 // and is unit-testable in isolation.
 
 import { canonicalizeProtein, readProteinSet } from './protein.ts'
+// The ONE meal-relative timing predicate (Signals v2 / B-755 PR 1, CUL-6; G9). Detectors
+// ⑤ (postprandial) and L1 (empty-stomach) BOTH classify their episode set through this
+// module — there is exactly one implementation of "how long since she last ate", server
+// and client alike (§3). PR 2 (CUL-7) is the lift-and-call the module was built for: ⑤'s
+// former inline `classifyTimedFeedings` / `nearestPreceding` / `freeFedNear` / rapid-band
+// test are all gone, replaced by `classifyEpisodeSet` here. A `.ts` extension is mandatory —
+// Deno will not resolve an extensionless specifier (the esbuild bundler inlines it, per
+// generate-signal/protein.ts's precedent).
+import {
+  classifyEpisodeSet,
+  collapseEpisodes,
+  timedEligibleFeedings,
+  type FeedingInput,
+  type FreeFedSpan,
+  type MealTimingConfig,
+} from '../../../lib/mealTiming.ts'
 
 // ── Domain types ──────────────────────────────────────────────────────────────
 
@@ -535,6 +551,13 @@ export type InsightType =
   | 'symptom_worsening'
   | 'symptom_chronicity'
   | 'postprandial_timing'
+  // Signals v2 (B-755 / CUL-7): the empty-stomach ≥6h lane (L1, the ⑤ mirror) and the
+  // composition-only `timing_story` that merges same-symptom ⑤ + L1 into one A2 card face.
+  // `empty_stomach_timing` is a DETECTOR output (registered like ⑤); `timing_story` is emitted
+  // ONLY by composeTimingStory (never a detector, never in DETECTOR_REGISTRY). Both are dark:
+  // Signals v2 changes are inert until PR 10 redeploys (G10) behind the `signals_v2` client flag.
+  | 'empty_stomach_timing'
+  | 'timing_story'
   | 'timeofday_clustering'
   | 'incident_red_flag'
 
@@ -915,10 +938,131 @@ export interface PostprandialTimingFinding extends FindingBase {
   /** The analysis window in days (bounds the denominator to the current era of the pet's life). */
   windowDays: number
   /**
+   * Signals v2 (B-755 / CUL-7) — the onset instants (ms) of the RAPID episodes ⑤ fired on.
+   * Read ONLY by the composition layer's episode-set-aware ⑤-suppresses-⑥ rule
+   * (suppressTimeOfDayWhenPostprandial): ⑤ suppresses a clock finding only when ⑥'s cluster
+   * episodes ARE these meal-adjacent ones (deep-dive F1). Optional so a pre-v2 finding (or a
+   * synthetic test finding) without it falls back to the shipped unconditional suppression.
+   */
+  rapidEpisodeOnsets?: number[]
+  /**
    * SR-4 (B-721 §5.4) — medication-on-board context, attached POST-detection (never read
    * by the engine). Present only when a nameable drug had ≥1 administered dose in the
    * context window; absent otherwise. See MedOnBoardContext.
    */
+  medContext?: MedOnBoardContext
+}
+
+/**
+ * Empty-stomach timing (L1, Signals v2 / B-755 / CUL-7 — the ⑤ mirror). The COMPLEMENT of ⑤:
+ * of the vomiting episodes we could TIME (the identical eligibility ladder — witnessed onset,
+ * a timed-eligible feeding in the 24h lookback, not free-fed), how many happened ≥ `longGapHours`
+ * (6h — §0 D10, feline gastric-emptying anchor) AFTER the last feeding. Where ⑤ isolates the
+ * mechanical post-prandial band (≤30 min), L1 isolates the long-fast band — the phenotype behind
+ * early-morning bile/foam vomiting. Same denominator as ⑤ (`classifyEpisodeSet`, G9), so the two
+ * lanes are two readings of ONE timing distribution and merge cleanly into `timing_story`.
+ *
+ * ASSOCIATIONAL / anamnesis ONLY, exactly like ⑤: owner copy names the TIMING BAND, never the
+ * syndrome ('BVS'/'bilious'/'empty stomach' are the vet's inference — banned by MECHANISM_RE),
+ * never a food/form (§9.1 — forms ride `feedingFormsInEvidence`), never a bedtime-snack /
+ * feeding-schedule SUGGESTION (G3 — the lane reports, the vet manages). Never inverted: a
+ * below-floor result is SILENCE, never "her vomiting isn't empty-stomach".
+ *
+ * The base-rate defense is the ⑤ grazing-guard's MIRROR (see detectEmptyStomachTiming): a cat fed
+ * twice daily is ≥6h post-meal ~half the day, a once-daily cat ~three-quarters — so a fixed
+ * fraction floor cannot separate a real pattern from the schedule's chance rate. The empty-stomach
+ * guard gives each episode its OWN local long base rate and asks the Poisson-binomial upper tail
+ * whether the observed long count exceeds what those per-episode schedules would produce by chance,
+ * so a once/twice-daily feeder whose vomits merely match its schedule stays silent (the property
+ * sweep at 6h locks the fraction floor and this guard — CUL-7).
+ */
+export interface EmptyStomachTimingFinding extends FindingBase {
+  type: 'empty_stomach_timing'
+  priorityClass: 'insight'
+  symptomType: SymptomType
+  /** Eligible episodes whose nearest preceding feeding was ≥ longGapHours before onset (the numerator). */
+  longCount: number
+  /** The honest denominator: timed-eligible episodes — the SAME set ⑤ counts (shared `minEligibleEpisodes`). */
+  eligibleCount: number
+  /** The full three-band split over the eligible denominator (rapid ≤30m / mid / long ≥6h) — the A2 face. */
+  bandCounts: { rapid: number; mid: number; long: number }
+  /** All in-window vomit episodes (any confidence) — so evidence can say "of N total, M could be timed". */
+  totalEpisodes: number
+  /** The empty-stomach band boundary in HOURS (6; feline gastric-emptying anchor, §0 D10). */
+  longGapHours: number
+  /** The two most-recent eligible episodes are BOTH long — powers recency salience, ⑤'s `lastTwoEligibleRapid` mirror. */
+  lastTwoEligibleLong: boolean
+  /** Median HOURS-since-feeding across the long episodes — the actual observed timing (evidence + vet report). */
+  medianHoursSinceFeeding: number
+  /** Forms of the feedings before the long episodes — EVIDENCE/vet-report ONLY, never the claim (§9.1). */
+  feedingFormsInEvidence: string[]
+  /**
+   * Clock concentration of the LONG episodes, computed as EVIDENCE (§2 L1: "no separate clock
+   * card" — the 2–8am fact renders in the A2 expand). Reuses ⑥'s circular scan over the long
+   * episodes' local hours. Absent when no valid timezone is available (never guess UTC — §4.2);
+   * NEVER a fire gate (L1 fires on the fraction regardless of the clock).
+   */
+  clockBand?: { startLocalHour: number; windowHours: number }
+  /** Count of long episodes in `clockBand` (of `longCount`); paired with clockBand or both absent. */
+  clockCount?: number
+  /** The onset instants (ms) of the LONG episodes — the composition/evidence counterpart of ⑤'s rapidEpisodeOnsets. */
+  longEpisodeOnsets?: number[]
+  /** Hard marker for the phrasing layer + reviewers: timing/association only, never causal, never mechanism. */
+  associationalOnly: true
+  /** The analysis window in days (bounds the denominator to the current era of the pet's life). */
+  windowDays: number
+  /** SR-4 (B-721 §5.4) — medication-on-board context, attached POST-detection (never read by the engine). */
+  medContext?: MedOnBoardContext
+}
+
+/**
+ * The combined timing card (Signals v2 / B-755 / CUL-7 — D1/A2). A COMPOSITION-ONLY finding:
+ * emitted by composeTimingStory when BOTH ⑤ (postprandial) AND L1 (empty-stomach) fire for the
+ * SAME symptom — the two phenotypes are two readings of one timing distribution, so one card face
+ * carries both rather than two cards saying overlapping things (D1: "duplicate cards… duplicate
+ * information"). A lone ⑤ stays `postprandial_timing`; a lone L1 stays `empty_stomach_timing`;
+ * only the co-firing pair merges. Detectors stay separate and separately tested — ONLY the
+ * presentation payload merges (§2 L1).
+ *
+ * Carries the shared three-band counts (the A2 Shape-C compare: ≤30 min / in between / 6h+) plus a
+ * per-phenotype evidence block for each lane that fired. Same guardrail class as its parts:
+ * associational/timing only, no syndrome name, no food-naming, no management advice.
+ */
+export interface TimingStoryFinding extends FindingBase {
+  type: 'timing_story'
+  priorityClass: 'insight'
+  symptomType: SymptomType
+  /** The three-band split over the shared eligible denominator (the A2 Shape-C compare face). */
+  bandCounts: { rapid: number; mid: number; long: number }
+  /** The honest shared denominator: timed-eligible episodes (⑤ and L1 measure the identical set). */
+  eligibleCount: number
+  /** All in-window vomit episodes (any confidence) — "of N total, M could be timed". */
+  totalEpisodes: number
+  /** The rapid bucket boundary in minutes (30; from ⑤'s config). */
+  rapidWindowMinutes: number
+  /** The empty-stomach band boundary in hours (6; from L1's config). */
+  longGapHours: number
+  /** The analysis window in days (⑤ and L1 share it, so the merged card has one window). */
+  windowDays: number
+  /** ⑤'s phenotype evidence — always present in a timing_story (the merge only fires when ⑤ did). */
+  rapid: {
+    count: number
+    medianMinutesSinceFeeding: number
+    lastTwoEligible: boolean
+    feedingFormsInEvidence: string[]
+  }
+  /** L1's phenotype evidence — always present in a timing_story (the merge only fires when L1 did). */
+  long: {
+    count: number
+    medianHoursSinceFeeding: number
+    lastTwoEligible: boolean
+    feedingFormsInEvidence: string[]
+    clockBand?: { startLocalHour: number; windowHours: number }
+    clockCount?: number
+  }
+  /** Hard marker for the phrasing layer + reviewers: timing/association only, never causal, never mechanism. */
+  associationalOnly: true
+  /** SR-4 (B-721 §5.4) — medication-on-board context, attached POST-detection (never read by the engine). */
   medContext?: MedOnBoardContext
 }
 
@@ -962,6 +1106,14 @@ export interface TimeOfDayClusteringFinding extends FindingBase {
   associationalOnly: true
   /** The analysis window in days (bounds the denominator to the current era of the pet's life). */
   windowDays: number
+  /**
+   * Signals v2 (B-755 / CUL-7) — the onset instants (ms) of the episodes in the winning clock
+   * band. Read ONLY by the episode-set-aware ⑤-suppresses-⑥ rule: ⑥ is suppressed only when this
+   * cluster is (mostly) ⑤'s meal-adjacent episode set (deep-dive F1 — the shipped rule wrongly
+   * assumed every clock cluster restates meal-adjacency). Optional so a pre-v2 / synthetic finding
+   * without it falls back to the shipped unconditional suppression.
+   */
+  clusterEpisodeOnsets?: number[]
   /**
    * SR-4 (B-721 §5.4) — medication-on-board context, attached POST-detection (never read
    * by the engine). Present only when a nameable drug had ≥1 administered dose in the
@@ -1067,6 +1219,8 @@ export type Finding =
   | SymptomWorseningFinding
   | SymptomChronicityFinding
   | PostprandialTimingFinding
+  | EmptyStomachTimingFinding
+  | TimingStoryFinding
   | TimeOfDayClusteringFinding
   | IncidentRedFlagFinding
 
@@ -1372,6 +1526,41 @@ export interface DetectionConfig {
     /** §3.3: analysis window in days, bounding the denominator to the current era. */
     windowDays: number
   }
+  // Signals v2 (B-755 / CUL-7) — detector L1 (empty-stomach timing) floors. L1 is the ⑤ MIRROR:
+  // it shares ⑤'s eligibility ladder + denominator (minEligibleEpisodes) and reads the SAME timing
+  // distribution (`classifyEpisodeSet`, G9), so it carries only the long-band-specific floors here.
+  // `longGapHours` (the phenotype boundary) is science-anchored (§0 D10 / CUL-16); the fraction floor
+  // and the empty-stomach guard ratio are locked by the seeded property sweep at 6h (uniform / Poisson
+  // / grazing null models). See DEFAULT_CONFIG.emptyStomach for the anchors.
+  emptyStomach: {
+    /** Minimum LONG episodes (≥ longGapHours since eating) before a pattern is worth stating (⑤'s minRapidEpisodes mirror). */
+    minLongGapEpisodes: number
+    /** Minimum timed-eligible episodes (the DENOMINATOR); shared value with ⑤'s minEligibleEpisodes. */
+    minEligibleEpisodes: number
+    /** Minimum long/eligible fraction — a crude schedule-independent backstop, below the Poisson-binomial gate. */
+    minLongGapFraction: number
+    /**
+     * The empty-stomach GUARD's significance level (the base-rate defense). The ≥ longGapHours bucket
+     * has a large SCHEDULE-DEPENDENT chance base rate — a twice-daily feeder is empty-stomach ~half the
+     * day, once-daily ~three-quarters — so a fixed fraction floor cannot separate signal from a meal-fed
+     * null (unlike ⑤, where the grazer is the confound). L1 gives each eligible episode its OWN local
+     * long base rate (the long fraction of the actual feeding interval it sits in) and fires only when
+     * the observed long count exceeds what those per-episode schedules would produce by chance: a
+     * POISSON-BINOMIAL upper-tail test P(X ≥ longCount | ⨁ Bernoulli(pᵢ)) < baseRateAlpha. Per-episode
+     * rates make the null robust to a chronic vomiter's multi-regime history — a single base rate over
+     * any window is dragged off the recent regime by one old outlier episode and fires on noise (the
+     * round-2 review break). The exact test self-calibrates the null fire rate to ≤ this alpha at ANY mix
+     * of schedules (so no per-schedule tuning), still fires at a high base rate given enough
+     * disproportionate evidence, and reduces exactly to the one-sample binomial when every pᵢ is equal.
+     * Locked by the property sweep at 6h (null false-positive AND true-positive recall). See
+     * DEFAULT_CONFIG.emptyStomach for the anchor + measured rates.
+     */
+    baseRateAlpha: number
+    /** ≥1 long episode must fall within this many days, so a stale cluster doesn't lead (⑤'s recencyDays mirror). */
+    recencyDays: number
+    /** The empty-stomach band boundary in HOURS — the phenotype definition (§0 D10 / CUL-16). */
+    longGapHours: number
+  }
   timeofday: {
     /** §4.3: below this many witnessed/timeable episodes, any "cluster" is a coin run. Matches ⑤. */
     minEligibleEpisodes: number
@@ -1392,6 +1581,15 @@ export interface DetectionConfig {
     clusterWindowHours: number
     /** §4.3: analysis window in days, bounding the denominator to the current era (same as ⑤). */
     windowDays: number
+    /**
+     * Signals v2 (B-755 / CUL-7) — the episode-set-aware ⑤-suppresses-⑥ threshold. ⑤ suppresses a
+     * same-symptom ⑥ clock finding ONLY when this fraction of ⑥'s cluster episodes are also ⑤'s
+     * meal-adjacent (rapid) episodes — i.e. ⑥ is genuinely restating ⑤ (deep-dive F1). Below it, the
+     * clock cluster is a DIFFERENT (broader / empty-stomach) pattern and ⑥ survives — the whole point
+     * of the fix. Owned + adversarial-gated. Absent onset sets on either finding ⇒ the shipped
+     * unconditional suppression (behaviour-parity for pre-v2 findings).
+     */
+    suppressionOverlapFraction: number
   }
   incidentRedFlag: {
     /**
@@ -1581,6 +1779,60 @@ export const DEFAULT_CONFIG: DetectionConfig = {
     feedingLookbackHours: 24,
     windowDays: 60,
   },
+  // Signals v2 (B-755 / CUL-7) — detector L1 (empty-stomach timing) floors. The boundary is set
+  // by physiology; the floors are set by the seeded property sweep AT that boundary (G6: nothing
+  // is tuned to make any record fire or not fire).
+  emptyStomach: {
+    // ── Floors LOCKED by the seeded property sweep at 6h (detection.test.ts "L1 §PROPERTY SWEEP"),
+    // which asserts BOTH null-model false-positive rates AND true-positive recall. The empty-stomach
+    // ≥6h bucket has a large, SCHEDULE-DEPENDENT chance base rate — ~0.5 of the day for a twice-daily
+    // feeder, ~0.75 for a once-daily one (a solid meal clears in <6h, so most of a long inter-meal gap
+    // is "empty stomach" by the clock). A fixed fraction floor cannot separate signal from schedule
+    // here, and THREE CUL-7 reviews broke earlier guards, each teaching the next:
+    //   (1) a multiplicative `longCount ≥ ratio × eligible × wholeWindowBaseRate` — fired ~81% on a
+    //       NON-STATIONARY schedule (base read off the dense historical regime, applied to recent
+    //       episodes) AND was UNSATISFIABLE above base ~0.588 (a once-daily-fed cat, the classic
+    //       empty-stomach case, could not fire even at 100% long);
+    //   (2) a single base rate over the window the EPISODES occupy + a one-sample exact binomial —
+    //       fired 24–40% once a SINGLE OLD OUTLIER episode dragged the span-start across a regime
+    //       change, so the one pooled base rate was estimated off the wrong (dense) history again.
+    // The lesson both taught: a chronic vomiter's episodes span multiple feeding regimes, so NO single
+    // base rate over ANY window survives. The guard is now PER-EPISODE: each eligible episode gets its
+    // OWN local long-gap base rate `localLongBaseRate` (the fraction of its own actual inter-feeding
+    // gap — nearest preceding→following feed, capped at the 24h lookback — that lies beyond 6h), and
+    // the test is a POISSON-BINOMIAL upper tail `P(X ≥ longCount | ⨁ Bernoulli(pᵢ)) < baseRateAlpha`
+    // over those heterogeneous pᵢ. This self-calibrates the null to ≤ alpha under ANY mix of schedules
+    // in the history (an old dense-regime episode carries its own high pᵢ and cannot deflate a recent
+    // sparse one), still fires at a high base rate given enough disproportionate evidence, and reduces
+    // EXACTLY to the one-sample binomial when every pᵢ is equal. Measured pooled n=6..9 fire rates
+    // (deno seeded sweep, detection.test.ts §PROPERTY SWEEP, 4k trials/n): stationary nulls once 0.0% /
+    // twice ~1.7% / thrice ~1.6% / grazing 0.0% / Poisson ~0.8%; the round-2 break — a MIXED-HISTORY
+    // null (recent noise cluster + ≥1 old outlier episode, once-daily-recent/thrice-daily-old) — drops
+    // from 24–40% to ~2% at EVERY outlier position (day 25/30/40/50/58), and regime-change +
+    // logging-fatigue with an outlier hold at ~1.8%; the §RECALL goldens (once-daily 12/12, thrice-
+    // daily 7/10, twice-daily 7/8) all FIRE, including the once-daily case the (1) guard never could.
+    // Tune on real data, not a re-decision.
+    minLongGapEpisodes: 3, // the numerator floor — never fire on 2 episodes even if significant under the tail test.
+    minEligibleEpisodes: 6, // SHARED with ⑤ (postprandial.minEligibleEpisodes) — the same denominator floor.
+    minLongGapFraction: 0.6, // a crude schedule-independent BACKSTOP below the Poisson-binomial gate (low-base-rate cats).
+    baseRateAlpha: 0.05, // sweep-locked — the Poisson-binomial upper-tail significance level (recall fires, nulls ≪5%).
+    recencyDays: 14,
+    // The empty-stomach BAND BOUNDARY: minimum hours since the last eligible feeding for a symptom
+    // episode to count as "empty stomach" (the L1 numerator; the A2 card's "6h+" band; the reference
+    // gap for L3's retained-food join).
+    // ANCHOR (G6 — feline gastric-emptying literature, NOT tuned to any record): solid-phase
+    // half-emptying median ~5.5h (range 3.5–12.8h; PubMed 10791934), 75% emptied ~4.8h (PubMed
+    // 9563617); baseline motility variable, some healthy cats >5h (JAVMA 2022). At 4h a solid
+    // meal is still ≳half in the stomach, so "empty" is not defensible; 6h is past half-emptying
+    // for nearly all cats and clears the slow-motility baseline, while staying conservative vs.
+    // the canonical 12h+ empty-stomach (bile/foam) fast. Ruled 6h by Dr. Chen (CUL-16) for
+    // SPECIFICITY: this label asserts physiology (unlike ⑥'s neutral clock band), so a
+    // contaminated numerator mislabels a still-full stomach as empty and fights the L3 photo
+    // join; the specificity cost is a BOUNDED miss (borderline episodes render in the "in
+    // between" band, never dropped). Change only via a re-sweep — a phenotype definition, not a
+    // tuning knob. The property sweep locks the FLOORS at this boundary; it never moves it.
+    longGapHours: 6,
+  },
   // B-079 detector ⑥ (time-of-day clustering) floors (§4.3).
   //
   // CALIBRATION NOTE (B-079 build, flagged for PM ratification of the §4.3 doc table): the
@@ -1612,6 +1864,13 @@ export const DEFAULT_CONFIG: DetectionConfig = {
     minClusterFraction: 0.6,
     clusterWindowHours: 4,
     windowDays: 60,
+    // Signals v2 (B-755 / CUL-7) — ⑤ suppresses a same-symptom ⑥ ONLY when ≥ this fraction of ⑥'s
+    // cluster episodes are also ⑤'s meal-adjacent (rapid) ones. 0.5 = "a majority of the clock
+    // cluster IS the post-prandial episode set" — i.e. ⑥ is genuinely restating ⑤, not describing a
+    // different (empty-stomach / broader) clock pattern. Owned + adversarial-gated. Safe direction is
+    // toward KEEPING ⑥ (the fix exists to stop the shipped rule hiding an empty-stomach clock finding
+    // whenever any ⑤ fires — deep-dive F1), so the threshold is a majority, not a small overlap.
+    suppressionOverlapFraction: 0.5,
   },
   // B-340 per-incident visual red-flag lane. windowDays 14 = "the last two weeks": recent
   // enough that a photographed blood / foreign-material flag still warrants leading Home, short
@@ -3353,29 +3612,13 @@ export function detectChronicity(
 // claim deliberately does not do (§9 decision 1). Episode collapsing reuses the engine's
 // 3h gap (toEpisodes…), so a re-logged bout is one episode, never an inflated count.
 
-/** A feeding reduced to the fields ⑤ needs: time + an evidence-only form label. */
-interface TimedFeeding {
-  ms: number
-  /** foodLabel ?? foodType — EVIDENCE/vet-report only (§9.1), never the owner claim. */
-  form: string | null
-}
-
-/**
- * Timed-eligible feedings (§2): confidence 'witnessed' OR null/absent (meals are
- * inherently witnessed; legacy NULL carries the same semantics). 'estimated'/'window'
- * are excluded — a feeding whose time is a guess can't anchor a minutes-since claim.
- * ANY foodType (treats are exactly the relevant feedings — §3.2). Sorted ascending.
- */
-function classifyTimedFeedings(mealEvents: MealEvent[]): TimedFeeding[] {
-  return mealEvents
-    .filter((m) => {
-      const c = m.occurredAtConfidence ?? null
-      return c === null || c === 'witnessed'
-    })
-    .map((m) => ({ ms: Date.parse(m.occurredAt), form: m.foodLabel ?? m.foodType ?? null }))
-    .filter((f) => Number.isFinite(f.ms))
-    .sort((a, b) => a.ms - b.ms)
-}
+// NOTE (Signals v2 / CUL-7): ⑤'s former inline `TimedFeeding` + `classifyTimedFeedings` +
+// `nearestPreceding` + `freeFedNear` + the rapid-band test are GONE — they moved to
+// `lib/mealTiming.ts` (the one meal-relative timing predicate, G9) in PR 1 and are called via
+// `classifyEpisodeSet` in `scanVomitTiming` below. ⑤ and L1 (empty-stomach) both read that ONE
+// distribution, so their bands, denominators and eligibility can never drift (§3, the §5.3
+// diet-trial lesson pre-empted). The rewrite is behaviour-preserving — the gate order, boundary
+// inclusivity and NULL-tolerant-feeding / strict-witnessed-onset asymmetry match ⑤ as shipped.
 
 /** A symptom episode reduced to its onset time + the onset event's timestamp confidence. */
 interface ConfidenceEpisode {
@@ -3414,86 +3657,104 @@ function median(values: number[]): number {
   return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid]
 }
 
-/** ⑤ runs on vomit only — see the SCOPE note above. */
+/** ⑤ and L1 run on vomit only — see the SCOPE note above (and L1's mirror below). */
 const POSTPRANDIAL_SYMPTOM_TYPE: SymptomType = 'vomit'
-const MS_PER_MINUTE = 60_000
+
+/**
+ * The ONE `MealTimingConfig` both ⑤ (rapid) and L1 (long) classify with, so their band splits
+ * are coherent and `timing_story` can merge them (§3, G9). The rapid boundary + lookback come
+ * from ⑤'s config (`postprandial`, the origin lane); the long boundary comes from L1's config
+ * (`emptyStomach`). `episodeGapHours` is carried for completeness — `classifyEpisodeSet` does no
+ * collapse itself (the caller collapses first, per the module's window-then-classify contract).
+ */
+function timingConfigFor(config: DetectionConfig): MealTimingConfig {
+  return {
+    rapidWindowMinutes: config.postprandial.rapidWindowMinutes,
+    longGapHours: config.emptyStomach.longGapHours,
+    feedingLookbackHours: config.postprandial.feedingLookbackHours,
+    episodeGapHours: config.symptomEpisodeGapHours,
+  }
+}
+
+/** The shared vomit-timing scan ⑤ and L1 both read — ONE distribution over ONE eligible set. */
+interface TimingScan {
+  /** The banded eligible episodes + bandCounts (rapid/mid/long) over the eligible denominator. */
+  dist: ReturnType<typeof classifyEpisodeSet>
+  /** All in-window vomit episodes (any confidence) — the "of N total, M could be timed" context. */
+  totalEpisodes: number
+  /** Time-eligible feeding instants (ms) in-window — the feeding RATE base for ⑤'s grazing guard. */
+  inWindowFeedings: number[]
+  /** ALL time-eligible feeding instants (ms), sorted — for L1's PER-EPISODE local base rate (an episode
+   *  near the window start may have its nearest feed just before windowStart). */
+  allFeedings: number[]
+  nowMs: number
+}
+
+/**
+ * Run the shared eligibility ladder over the pet's vomit episodes (Signals v2 / CUL-7). Collapses
+ * on the FULL vomit list, THEN windows (the `lib/mealTiming.ts` contract — collapse-then-window,
+ * never the reverse), then classifies every in-window episode through `classifyEpisodeSet` (the
+ * one predicate, G9). Returns null only when `now` is unparseable. ⑤ reads `dist.bandCounts.rapid`,
+ * L1 reads `dist.bandCounts.long`; both share `dist.eligibleCount` and `totalEpisodes`, so the
+ * denominators can never disagree.
+ */
+function scanVomitTiming(input: DetectionInput, config: DetectionConfig): TimingScan | null {
+  const nowMs = Date.parse(input.now)
+  if (!Number.isFinite(nowMs)) return null
+  // ⑤ and L1 share the analysis window (⑤'s `windowDays`), so the merged card has one window.
+  const windowStart = nowMs - config.postprandial.windowDays * MS_PER_DAY
+  const timingConfig = timingConfigFor(config)
+
+  // Feedings: DB rows → FeedingInput (parse the instant; carry the evidence-only form). The
+  // NULL-tolerant witnessed filter + sort live in `lib/mealTiming.ts` (`classifyEpisodeSet`
+  // prepares them once), so a caller can't forget it and anchor a claim on an estimated feeding.
+  const feedings: FeedingInput[] = input.mealEvents.map((m) => ({
+    ms: Date.parse(m.occurredAt),
+    confidence: m.occurredAtConfidence ?? null,
+    form: m.foodLabel ?? m.foodType ?? null,
+  }))
+  // Free-fed standing facts (B-040): a bowl available in the preceding window makes
+  // "minutes since last logged feeding" fiction. classifyArrangements parses + drops garbage/
+  // inverted spans (untilMs > fromMs), satisfying isFreeFedNear's valid-span precondition.
+  const freeFedSpans: FreeFedSpan[] = classifyArrangements(input.feedingArrangements ?? []).map(
+    (s) => ({ fromMs: s.fromMs, untilMs: s.untilMs }),
+  )
+
+  const vomitEvents = input.symptomEvents
+    .filter((s) => s.type === POSTPRANDIAL_SYMPTOM_TYPE)
+    .map((s) => ({ ms: Date.parse(s.occurredAt), confidence: s.occurredAtConfidence ?? null }))
+    .filter((e) => Number.isFinite(e.ms))
+  const collapsed = collapseEpisodes(vomitEvents, config.symptomEpisodeGapHours)
+  const inWindowEpisodes = collapsed.filter((e) => e.ms >= windowStart && e.ms <= nowMs)
+
+  const dist = classifyEpisodeSet(
+    inWindowEpisodes.map((e) => ({ onsetMs: e.ms, confidence: e.confidence })),
+    feedings,
+    freeFedSpans,
+    timingConfig,
+  )
+
+  const allFeedings = timedEligibleFeedings(feedings).map((f) => f.ms) // sorted ascending
+  const inWindowFeedings = allFeedings.filter((ms) => ms >= windowStart && ms <= nowMs)
+
+  return { dist, totalEpisodes: inWindowEpisodes.length, inWindowFeedings, allFeedings, nowMs }
+}
 
 export function detectPostprandialTiming(
   input: DetectionInput,
   config: DetectionConfig = DEFAULT_CONFIG,
 ): PostprandialTimingFinding[] {
   const cfg = config.postprandial
-  const nowMs = Date.parse(input.now)
-  if (!Number.isFinite(nowMs)) return []
-
-  const windowMs = cfg.windowDays * MS_PER_DAY
-  const windowStart = nowMs - windowMs
-  const feedingLookbackMs = cfg.feedingLookbackHours * MS_PER_HOUR
+  const scan = scanVomitTiming(input, config)
+  if (!scan) return []
+  const { dist, totalEpisodes, inWindowFeedings, nowMs } = scan
   const recencyMs = cfg.recencyDays * MS_PER_DAY
 
-  const feedings = classifyTimedFeedings(input.mealEvents)
-  // Free-fed standing facts (B-040): if a bowl was available any time in the preceding
-  // window, time-since-feeding is fiction → the episode is ineligible. classifyArrangements
-  // parses + drops garbage spans; the protein is irrelevant here (any active bowl excludes).
-  const standing = classifyArrangements(input.feedingArrangements ?? [])
-
-  const vomitEvents = input.symptomEvents
-    .filter((s) => s.type === POSTPRANDIAL_SYMPTOM_TYPE)
-    .map((s) => ({ ms: Date.parse(s.occurredAt), confidence: s.occurredAtConfidence ?? null }))
-    .filter((e) => Number.isFinite(e.ms))
-  const episodes = toConfidenceEpisodes(vomitEvents, config.symptomEpisodeGapHours)
-
-  // totalEpisodes = ALL in-window vomit episodes (any confidence) — the honesty context
-  // "of N total, M could be timed". Eligibility narrows from here.
-  const inWindow = episodes.filter((e) => e.onsetMs >= windowStart && e.onsetMs <= nowMs)
-  const totalEpisodes = inWindow.length
-
-  // The nearest preceding timed-eligible feeding within the lookback window (or null).
-  // Feedings are sorted ascending, so the last one at/under the anchor and inside the
-  // lookback is the nearest preceding.
-  const nearestPreceding = (onsetMs: number): TimedFeeding | null => {
-    let best: TimedFeeding | null = null
-    for (const f of feedings) {
-      if (f.ms > onsetMs) break
-      if (onsetMs - f.ms > feedingLookbackMs) continue
-      best = f
-    }
-    return best
-  }
-
-  // A free_choice bowl active any time in [onset - lookback, onset] makes "minutes since
-  // last logged feeding" untrustworthy → the episode is ineligible.
-  const freeFedNear = (onsetMs: number): boolean => {
-    const lookbackStart = onsetMs - feedingLookbackMs
-    return standing.some((s) => s.fromMs <= onsetMs && lookbackStart < s.untilMs)
-  }
-
-  interface EligibleEpisode {
-    onsetMs: number
-    minutesSince: number
-    rapid: boolean
-    form: string | null
-  }
-  const eligible: EligibleEpisode[] = []
-  for (const e of inWindow) {
-    if (e.confidence !== 'witnessed') continue // strict witnessed gate (B-010, §2)
-    if (freeFedNear(e.onsetMs)) continue // free-feeding exclusion (B-040, §2)
-    const feeding = nearestPreceding(e.onsetMs)
-    if (!feeding) continue // no timed feeding in the preceding window → time-since undefined
-    const minutesSince = (e.onsetMs - feeding.ms) / MS_PER_MINUTE
-    eligible.push({
-      onsetMs: e.onsetMs,
-      minutesSince,
-      rapid: minutesSince <= cfg.rapidWindowMinutes,
-      form: feeding.form,
-    })
-  }
-
-  const eligibleCount = eligible.length
+  const eligibleCount = dist.eligibleCount
   // Denominator floor (adversarial-review fix, B-078/B-081): "N of M" needs a real M.
   // Also guards the fraction division below (minEligibleEpisodes ≥ 1).
   if (eligibleCount < cfg.minEligibleEpisodes) return []
-  const rapidEpisodes = eligible.filter((e) => e.rapid)
+  const rapidEpisodes = dist.eligible.filter((e) => e.band === 'rapid')
   const rapidCount = rapidEpisodes.length
 
   // Floors (§3.3) — ALL must pass. Below-floor is SILENCE, never an inverted "not
@@ -3505,8 +3766,7 @@ export function detectPostprandialTiming(
 
   // The GRAZING GUARD (§3.3) — observed rapid must clear 2× the chance-expected count.
   // feedingRatePerDay = timed-eligible feedings ÷ distinct days carrying one (in-window).
-  const inWindowFeedings = feedings.filter((f) => f.ms >= windowStart && f.ms <= nowMs)
-  const feedingDays = new Set(inWindowFeedings.map((f) => Math.floor(f.ms / MS_PER_DAY))).size
+  const feedingDays = new Set(inWindowFeedings.map((ms) => Math.floor(ms / MS_PER_DAY))).size
   const feedingRatePerDay = feedingDays > 0 ? inWindowFeedings.length / feedingDays : 0
   const expectedRapid =
     eligibleCount * Math.min(1, (feedingRatePerDay * cfg.rapidWindowMinutes) / 1440)
@@ -3515,12 +3775,14 @@ export function detectPostprandialTiming(
   }
 
   // Payload. "Including the last two" = the two most-recent ELIGIBLE episodes are both rapid.
-  const byOnsetDesc = [...eligible].sort((a, b) => b.onsetMs - a.onsetMs)
+  const byOnsetDesc = [...dist.eligible].sort((a, b) => b.onsetMs - a.onsetMs)
   const lastTwoEligibleRapid =
-    byOnsetDesc.length >= 2 && byOnsetDesc[0].rapid && byOnsetDesc[1].rapid
-  const medianMinutesSinceFeeding = Math.round(median(rapidEpisodes.map((e) => e.minutesSince)))
+    byOnsetDesc.length >= 2 && byOnsetDesc[0].band === 'rapid' && byOnsetDesc[1].band === 'rapid'
+  const medianMinutesSinceFeeding = Math.round(
+    median(rapidEpisodes.map((e) => e.minutesSinceFeeding)),
+  )
   const feedingFormsInEvidence = Array.from(
-    new Set(rapidEpisodes.map((e) => e.form).filter((f): f is string => f != null)),
+    new Set(rapidEpisodes.map((e) => e.feedingForm).filter((f): f is string => f != null)),
   )
 
   return [
@@ -3535,6 +3797,8 @@ export function detectPostprandialTiming(
       lastTwoEligibleRapid,
       medianMinutesSinceFeeding,
       feedingFormsInEvidence,
+      // Signals v2 (CUL-7) — the rapid onset instants feed the episode-set-aware ⑤-suppresses-⑥ rule.
+      rapidEpisodeOnsets: rapidEpisodes.map((e) => e.onsetMs),
       associationalOnly: true,
       windowDays: cfg.windowDays,
     },
@@ -3602,6 +3866,41 @@ function localHourOfDay(ms: number, timezone: string): number | null {
   }
 }
 
+/** The winning clock band over a set of pet-local hours (0–23) — ⑥'s max-count sliding-window
+ *  scan, extracted so BOTH ⑥ and L1's clock-composition evidence use the ONE scan (Signals v2 /
+ *  CUL-7). Slides a `windowHours`-wide window over the 24h circle in 1h steps (24 wrap-around
+ *  positions), takes the max-count band, and — among equal-count windows — prefers one whose START
+ *  hour is OCCUPIED, then the earliest such start (the B-079 tie-break: tightens the band's leading
+ *  edge onto where episodes actually begin). Returns null for an empty input. Deterministic; the
+ *  fire DECISION depends only on `count`, so the tie-break never changes whether ⑥ fires. */
+function clockConcentration(
+  localHours: readonly number[],
+  windowHours: number,
+): { startLocalHour: number; count: number } | null {
+  if (localHours.length === 0) return null
+  const counts = new Array<number>(24).fill(0)
+  for (const h of localHours) counts[h]++
+  let bestStart = 0
+  let bestCount = -1
+  let bestStartOccupied = false
+  for (let start = 0; start < 24; start++) {
+    let c = 0
+    for (let k = 0; k < windowHours; k++) c += counts[(start + k) % 24]
+    const startOccupied = counts[start] > 0
+    if (c > bestCount || (c === bestCount && startOccupied && !bestStartOccupied)) {
+      bestCount = c
+      bestStart = start
+      bestStartOccupied = startOccupied
+    }
+  }
+  return { startLocalHour: bestStart, count: bestCount }
+}
+
+/** Is a local hour inside the wrap-around band [startLocalHour, startLocalHour + windowHours)? */
+function isInClockBand(localHour: number, startLocalHour: number, windowHours: number): boolean {
+  return ((localHour - startLocalHour + 24) % 24) < windowHours
+}
+
 export function detectTimeOfDayClustering(
   input: DetectionInput,
   config: DetectionConfig = DEFAULT_CONFIG,
@@ -3631,43 +3930,32 @@ export function detectTimeOfDayClustering(
   const totalEpisodes = inWindow.length
 
   // Witnessed-eligible only (§2): a discovered onset's time is a guess; it can't be placed
-  // on the clock. (estimated/window/NULL excluded from numerator AND denominator.)
-  const localHours: number[] = []
+  // on the clock. (estimated/window/NULL excluded from numerator AND denominator.) Signals v2
+  // (CUL-7): keep each onset paired with its local hour so the winning band's episode SET can be
+  // emitted for the episode-set-aware ⑤-suppresses-⑥ rule.
+  const timed: { onsetMs: number; localHour: number }[] = []
   for (const e of inWindow) {
     if (e.confidence !== 'witnessed') continue
     const h = localHourOfDay(e.onsetMs, tz)
     if (h === null) continue // a single un-convertible instant is dropped, not guessed
-    localHours.push(h)
+    timed.push({ onsetMs: e.onsetMs, localHour: h })
   }
 
-  const eligibleCount = localHours.length
+  const eligibleCount = timed.length
   // Denominator floor (§4.3): below this, any "cluster" is a coin run. Also guards the
   // fraction division below (minEligibleEpisodes ≥ 1).
   if (eligibleCount < cfg.minEligibleEpisodes) return []
 
-  // Bucket by local hour, then slide a clusterWindowHours-wide window over the 24h clock
-  // (24 wrap-around positions) and take the max-count band. Tie-break (adversarial review,
-  // B-079): among equal-count windows, prefer one whose START hour is OCCUPIED, then the
-  // earliest such start. Without this, an all-at-7am cluster would report "between 4am and
-  // 8am" (the earliest window containing hour 7) — honest but loose; the occupied-start rule
-  // tightens the band's leading edge onto where episodes actually begin ("7am" / "5am"),
-  // which reads truer in the vet conversation. Fully deterministic; the fire DECISION is
-  // unaffected (only the reported band start moves), so the property-test fire rate is identical.
-  const counts = new Array<number>(24).fill(0)
-  for (const h of localHours) counts[h]++
-  let bestStart = 0
-  let bestCount = -1
-  let bestStartOccupied = false
-  for (let start = 0; start < 24; start++) {
-    let c = 0
-    for (let k = 0; k < cfg.clusterWindowHours; k++) c += counts[(start + k) % 24]
-    const startOccupied = counts[start] > 0
-    if (c > bestCount || (c === bestCount && startOccupied && !bestStartOccupied)) {
-      bestCount = c
-      bestStart = start
-      bestStartOccupied = startOccupied
-    }
-  }
+  // Slide a clusterWindowHours-wide window over the 24h clock and take the max-count band (the
+  // shared `clockConcentration` scan — same B-079 occupied-start tie-break as before; the fire
+  // decision depends only on `count`, so the extraction is byte-identical). Non-null here because
+  // eligibleCount ≥ minEligibleEpisodes ≥ 1.
+  const scan = clockConcentration(
+    timed.map((t) => t.localHour),
+    cfg.clusterWindowHours,
+  )!
+  const bestStart = scan.startLocalHour
+  const bestCount = scan.count
 
   // Floors (§4.3) — ALL must pass. Below-floor is SILENCE, never an inverted "no particular
   // time of day" claim (the §3.5 never-inverted rule, inherited).
@@ -3687,6 +3975,241 @@ export function detectTimeOfDayClustering(
       timezone: tz,
       associationalOnly: true,
       windowDays: cfg.windowDays,
+      // Signals v2 (CUL-7) — the onsets in the winning band, for the episode-set-aware suppression.
+      clusterEpisodeOnsets: timed
+        .filter((t) => isInClockBand(t.localHour, bestStart, cfg.clusterWindowHours))
+        .map((t) => t.onsetMs),
+    },
+  ]
+}
+
+// ── Detector L1: empty-stomach timing (Signals v2 / B-755 / CUL-7 — the ⑤ mirror) ────
+//
+// The COMPLEMENT of ⑤. Same eligibility ladder, same denominator, same ONE timing distribution
+// (`scanVomitTiming`, G9); where ⑤ counts the RAPID band (≤30 min after eating), L1 counts the LONG
+// band (≥ longGapHours = 6h after eating) — the timing phenotype behind early-morning bile/foam
+// vomiting. Purely DESCRIPTIVE / anamnesis, exactly like ⑤: owner copy names the TIMING BAND, never
+// the syndrome ('BVS'/'bilious'/'empty stomach' are the vet's inference — banned by MECHANISM_RE),
+// never a food/form (§9.1), never a bedtime-snack / feeding-schedule SUGGESTION (G3). Below-floor is
+// SILENCE, never an inverted "not empty-stomach". VOMIT only, exactly like ⑤ and ⑥.
+//
+// THE BASE-RATE PROBLEM, and why the guard is not optional (the ⑤ grazing-guard's MIRROR):
+// the empty-stomach ≥6h bucket has a large, SCHEDULE-DEPENDENT chance base rate. A cat fed twice
+// daily is ≥6h post-meal ~half the day; once daily, ~three-quarters. So a fixed fraction floor
+// cannot separate a real empty-stomach pattern from a meal-fed cat whose vomits are merely random
+// (the CUL-7 brief's ⑥ analogy — "raise the fraction floor" — is necessary but not sufficient: no
+// fixed floor beats the once-daily 0.75 null without also killing every realistic golden). This is
+// the OPPOSITE confound to ⑤ (there the grazer inflates the rapid band; here the sparse feeder
+// inflates the long band). The empty-stomach GUARD gives each eligible episode its OWN local long
+// base rate (`localLongBaseRate` — the long fraction of the actual feeding interval that episode sits
+// in) and asks the Poisson-binomial upper tail whether the observed long count exceeds what those
+// per-episode schedules would produce by chance. A once/twice-daily feeder whose vomits just match its
+// schedule stays silent; a cat whose vomits are DISPROPORTIONATELY empty-stomach fires. Per-episode is
+// load-bearing, not incidental: a chronic vomiter's episodes span multiple feeding regimes, so a
+// SINGLE base rate over any window is dragged off the recent regime by one old outlier episode and
+// fires on noise (the round-2 review break). The seeded property sweep at 6h locks the floors AND this
+// guard against uniform-random / Poisson / grazing AND mixed-history-with-outlier null models.
+//
+// WHAT THE GUARD PROVES, AND WHAT IT DOES NOT (adversarial review round 3 — PASS, ~250k seeded trials +
+// a by-hand proof that `localLongBaseRate` is the EXACT per-episode P(long | onset uniform in its
+// eligible interval), so no uniform-null false positive above α is constructible). The guard rules out
+// exactly ONE confound: the feeding-schedule base rate under uniform-time vomiting. Three named limits
+// ride ABOVE this module and are NOT guard-math bugs — do not try to "fix" them here:
+//   1. CIRCADIAN vs SCHEDULE (the headline — a Dr. Chen card-copy gate, tracked for CUL-12/PR 5). A cat
+//      whose vomiting clusters at a clock hour deep in the long band (a 6pm vomit is 10h past an 8am
+//      feed) fires — correctly, because those vomits genuinely ARE ≥6h post-meal. The guard proves
+//      "clustered in the long band beyond schedule chance", NOT "caused by an empty stomach". The card
+//      must never read as "feed her more often will fix it" — this template already names TIMING ONLY
+//      ("a timing pattern worth mentioning to your vet"), carries the clock band as EVIDENCE, and sets
+//      `associationalOnly: true`; the CARD renderer must preserve that and add no causal framing.
+//   2. LOGGING-GAP INVERSION (a general meal-timing limit, shared with ⑤; a vet-report framing note).
+//      An UNLOGGED discrete meal turns genuinely post-prandial vomits into "empty-stomach". Only
+//      declared free-fed bowls are excluded; an unlogged meal is invisible to ANY schedule-base-rate
+//      guard ("didn't log ≠ didn't eat"). Not fixable inside the guard.
+//   3. ONCE-DAILY SENSITIVITY FLOOR (safe direction — silence, never false reassurance). At base ~0.75
+//      the exact test needs ~11 all-long episodes to speak, so the phenotype L1 is named for is HARDEST
+//      to confirm on a once-daily schedule; the typical once-daily bilious case is really ⑥'s clock lane,
+//      which the episode-set-aware suppression now keeps. A real limit, in the safe direction.
+
+/** L1 runs on vomit only, exactly like ⑤ (the empty-stomach phenotype is a vomiting phenotype). */
+const EMPTY_STOMACH_SYMPTOM_TYPE: SymptomType = 'vomit'
+
+/**
+ * The PER-EPISODE local long base rate — for a symptom episode at `onsetMs`, the fraction of its OWN
+ * feeding interval [nearest preceding feed, nearest following feed] (capped at the lookback) that is
+ * ≥ longGapHours since the preceding feed. This is the chance a randomly-timed vomit in the feeding
+ * regime THIS episode experienced lands in the empty-stomach band: ~0.5 inside a twice-daily (12h)
+ * interval, ~0.75 inside a once-daily (24h) one, ~0.25 inside a thrice-daily (8h) one, ~0 inside a
+ * grazing (short) one.
+ *
+ * WHY PER-EPISODE, not one base rate over a window (the round-2 review break): a chronic vomiter's
+ * eligible episodes can span MULTIPLE feeding regimes (a schedule that got sparser, or logging that
+ * did), and a single global base rate — however the window is chosen — is dragged off the recent
+ * regime by a single old outlier episode, firing on noise. Giving each episode the base rate of the
+ * interval IT sits in makes the null robust to any number of outliers by construction: an old
+ * thrice-daily episode carries ~0.25, a recent once-daily one ~0.75, and the Poisson-binomial test
+ * below combines them exactly — no single p is imposed on a two-regime process.
+ *
+ * `sortedFeedings` are ALL time-eligible feeding instants (ascending). An open trailing interval (no
+ * following feed) is treated as a full lookback window — the conservative high base rate. Returns 0
+ * only when no preceding feed exists (an episode that could not have been classified long anyway). PURE.
+ */
+function localLongBaseRate(
+  onsetMs: number,
+  sortedFeedings: readonly number[],
+  longGapHours: number,
+  lookbackHours: number,
+): number {
+  const longMs = longGapHours * MS_PER_HOUR
+  const lookbackMs = lookbackHours * MS_PER_HOUR
+  let prev = -Infinity
+  let next = Infinity
+  for (const f of sortedFeedings) {
+    if (f <= onsetMs) prev = f
+    else {
+      next = f
+      break
+    }
+  }
+  if (!Number.isFinite(prev)) return 0 // no preceding feed → this episode can't be "long"
+  const intervalLen = Math.min(next - prev, lookbackMs) // open trailing interval → the lookback cap
+  return intervalLen > 0 ? Math.max(0, intervalLen - longMs) / intervalLen : 0
+}
+
+/**
+ * Poisson-binomial UPPER-TAIL probability: P(X ≥ k) where X = Σ Bernoulli(pᵢ), the pᵢ independent but
+ * NOT identical (Signals v2 / CUL-7). This is L1's base-rate gate — "is the observed long count MORE
+ * than the per-episode feeding schedules would produce by chance?" — and the exact generalization of
+ * a one-sample binomial to heterogeneous per-trial probabilities (identical pᵢ reduce it to the
+ * binomial). It replaced, in turn, a multiplicative ratio guard (unsatisfiable for once-daily cats)
+ * and a single-p exact binomial against a windowed base rate (defeated by an old outlier episode
+ * dragging the one base rate off the recent regime — round 2). With each episode carrying its OWN
+ * local base rate, no outlier can distort the others, and the test self-calibrates the null to ≤ alpha
+ * at any mix of regimes.
+ *
+ * Computed with the exact DP convolution pmf ← pmf ⊛ Bernoulli(pᵢ): pmf'[j] = pmf[j]·(1−pᵢ) +
+ * pmf[j−1]·pᵢ. O(n²) at the episode counts a 60-day record produces (n ≤ a few dozen); every pmf entry
+ * ∈ [0,1] so there is no overflow. pᵢ are clamped to [0,1] defensively. PURE.
+ */
+export function poissonBinomialUpperTailProbability(probs: readonly number[], k: number): number {
+  const n = probs.length
+  if (!Number.isFinite(k)) return 1
+  if (k <= 0) return 1 // P(X ≥ 0) = 1
+  if (k > n) return 0 // impossible outcome
+  let pmf = [1] // P(X = 0) = 1 over zero episodes
+  for (const raw of probs) {
+    // A non-finite pᵢ maps to 1, NOT 0 — the CONSERVATIVE direction for a false-positive-averse guard.
+    // A garbage rate that deflated the expected count (→0) would INFLATE the surprise and could
+    // manufacture a fire; mapping it to 1 (this episode is certainly long by chance) maximally raises
+    // E[X], so it can only ever make the guard HARDER to fire. Unreachable today — `localLongBaseRate`
+    // provably returns a finite value in [0, 0.75] — but the default must fail safe, not surprising.
+    const p = Math.min(1, Math.max(0, Number.isFinite(raw) ? raw : 1))
+    const next = new Array<number>(pmf.length + 1).fill(0)
+    for (let j = 0; j < pmf.length; j++) {
+      next[j] += pmf[j] * (1 - p)
+      next[j + 1] += pmf[j] * p
+    }
+    pmf = next
+  }
+  let tail = 0
+  for (let j = k; j <= n; j++) tail += pmf[j]
+  return Math.min(1, tail)
+}
+
+export function detectEmptyStomachTiming(
+  input: DetectionInput,
+  config: DetectionConfig = DEFAULT_CONFIG,
+): EmptyStomachTimingFinding[] {
+  const cfg = config.emptyStomach
+  const scan = scanVomitTiming(input, config)
+  if (!scan) return []
+  const { dist, totalEpisodes, allFeedings, nowMs } = scan
+  const recencyMs = cfg.recencyDays * MS_PER_DAY
+
+  const eligibleCount = dist.eligibleCount
+  // Denominator floor — shared with ⑤; "N of M" needs a real M, and it guards the fraction below.
+  if (eligibleCount < cfg.minEligibleEpisodes) return []
+  const longEpisodes = dist.eligible.filter((e) => e.band === 'long')
+  const longCount = longEpisodes.length
+
+  // Floors — ALL must pass. Below-floor is SILENCE, never an inverted "not empty-stomach".
+  if (longCount < cfg.minLongGapEpisodes) return []
+  if (longCount / eligibleCount < cfg.minLongGapFraction) return []
+  // Recency: a stale cluster must not lead today's surface.
+  if (!longEpisodes.some((e) => nowMs - e.onsetMs <= recencyMs)) return []
+
+  // The EMPTY-STOMACH GUARD — the observed long count must be MORE than the feeding schedule would
+  // produce by chance (a once/twice-daily feeder is ≥6h post-meal much of the day, so a fixed fraction
+  // floor cannot separate signal from schedule). Each eligible episode carries its OWN local long base
+  // rate (the long fraction of the feeding interval IT sits in), and the Poisson-binomial upper tail
+  // tests whether `longCount` exceeds what those per-episode rates predict. This is the round-2 fix: a
+  // single base rate over ANY window is dragged off the recent regime by one old outlier episode
+  // (which a chronic vomiter always has), firing on noise; per-episode rates are robust to any number
+  // of outliers by construction, and the exact test still fires at a high base rate given enough
+  // disproportionate evidence (a once-daily cat needs more all-long episodes than a thrice-daily one).
+  const nullProbs = dist.eligible.map((e) =>
+    localLongBaseRate(
+      e.onsetMs,
+      allFeedings,
+      cfg.longGapHours,
+      config.postprandial.feedingLookbackHours,
+    ),
+  )
+  if (poissonBinomialUpperTailProbability(nullProbs, longCount) >= cfg.baseRateAlpha) {
+    return []
+  }
+
+  // Payload. lastTwoEligibleLong = the two most-recent ELIGIBLE episodes are both long (⑤ mirror).
+  const byOnsetDesc = [...dist.eligible].sort((a, b) => b.onsetMs - a.onsetMs)
+  const lastTwoEligibleLong =
+    byOnsetDesc.length >= 2 && byOnsetDesc[0].band === 'long' && byOnsetDesc[1].band === 'long'
+  const medianHoursSinceFeeding =
+    Math.round((median(longEpisodes.map((e) => e.minutesSinceFeeding)) / 60) * 10) / 10
+  const feedingFormsInEvidence = Array.from(
+    new Set(longEpisodes.map((e) => e.feedingForm).filter((f): f is string => f != null)),
+  )
+
+  // Clock composition (§2 L1) — the clock concentration of the LONG episodes, carried as EVIDENCE
+  // (no separate clock card; the 2–8am fact renders in the A2 expand). NEVER a fire gate: L1 fires on
+  // the long fraction regardless of the clock, and the band is absent when no valid timezone is
+  // available (never guess UTC — §4.2), so a pet with no zone still gets a full L1 card, minus this
+  // one evidence row.
+  let clockBand: { startLocalHour: number; windowHours: number } | undefined
+  let clockCount: number | undefined
+  const tz = input.timezone
+  if (tz && localHourOfDay(nowMs, tz) !== null) {
+    const longLocalHours = longEpisodes
+      .map((e) => localHourOfDay(e.onsetMs, tz))
+      .filter((h): h is number => h !== null)
+    const clock = clockConcentration(longLocalHours, config.timeofday.clusterWindowHours)
+    if (clock) {
+      clockBand = {
+        startLocalHour: clock.startLocalHour,
+        windowHours: config.timeofday.clusterWindowHours,
+      }
+      clockCount = clock.count
+    }
+  }
+
+  return [
+    {
+      type: 'empty_stomach_timing',
+      priorityClass: 'insight',
+      symptomType: EMPTY_STOMACH_SYMPTOM_TYPE,
+      longCount,
+      eligibleCount,
+      bandCounts: dist.bandCounts,
+      totalEpisodes,
+      longGapHours: cfg.longGapHours,
+      lastTwoEligibleLong,
+      medianHoursSinceFeeding,
+      feedingFormsInEvidence,
+      clockBand,
+      clockCount,
+      // Signals v2 (CUL-7) — the long onset instants, the composition/evidence counterpart of ⑤'s.
+      longEpisodeOnsets: longEpisodes.map((e) => e.onsetMs),
+      associationalOnly: true,
+      windowDays: config.postprandial.windowDays,
     },
   ]
 }
@@ -4385,6 +4908,11 @@ export const DETECTOR_REGISTRY: Detector[] = [
   // NOT redeploy generate-signal until the PR3 copy layer + client land.
   { type: 'symptom_chronicity', detect: detectChronicity },
   { type: 'postprandial_timing', detect: detectPostprandialTiming },
+  // Detector L1 (Signals v2 / B-755 / CUL-7 — the empty-stomach ≥6h mirror of ⑤). A same-symptom
+  // ⑤ + L1 pair is merged into ONE `timing_story` card at the composition layer (composeTimingStory);
+  // detectors stay separate and separately tested. DARK: Signals v2 output is inert until PR 10's
+  // gated redeploy (G10) — the shipped client renders an unknown finding type as null (PR-1 pin).
+  { type: 'empty_stomach_timing', detect: detectEmptyStomachTiming },
   { type: 'timeofday_clustering', detect: detectTimeOfDayClustering },
   { type: 'reflection', detect: detectReflections },
   // Detector — per-incident visual red flag (B-340). SAFETY class; reads the NEW
@@ -4419,11 +4947,14 @@ function priorityBand(finding: Finding, ctx: PetContext): number {
 const TIER_ORDER: Record<EvidenceTier, number> = { established: 0, early: 1 }
 
 // Within-band ordering for the band-2 insight stack (§6, descriptive-signals spec):
-// correlations lead, then the descriptive lane (⑤ → ⑥ → diet-structure as they land).
+// correlations lead, then the timing lane (⑤ / L1 / the merged timing_story — all rank the same,
+// since they are mutually exclusive per symptom after composition), then ⑥, then diet-structure.
 // Reflection (③) is band 3, so it never reaches this comparator. Unlisted types tie.
 const INSIGHT_TYPE_ORDER: Record<string, number> = {
   food_symptom_correlation: 0,
   postprandial_timing: 1,
+  empty_stomach_timing: 1,
+  timing_story: 1,
   timeofday_clustering: 2,
 }
 
@@ -4507,25 +5038,129 @@ export function rankFindings(findings: Finding[], ctx: PetContext): RankedFindin
 }
 
 /**
- * §4.4 / §6 curation — ⑤ (postprandial timing) and ⑥ (time-of-day clustering) are
- * MUTUALLY EXCLUSIVE per symptom type, and ⑤ wins. A schedule-fed post-prandial vomiter
- * clusters by clock trivially, so ⑥ would merely re-state ⑤'s pattern as a clock pattern;
- * ⑥'s clinical value is highest exactly when episodes are NOT meal-adjacent (the
- * empty-stomach early-morning case). So drop any ⑥ finding whose symptom type already has
- * a ⑤ finding. This lives in the COMPOSITION layer (not inside the detector) so each
- * detector stays pure and independently unit-testable, matching §6's "curation" framing.
- * It runs before ranking; a symptom with no ⑤ finding keeps its ⑥ card untouched.
+ * §4.4 / §6 curation — ⑤ (postprandial timing) suppresses same-symptom ⑥ (time-of-day clustering).
+ *
+ * SIGNALS v2 (B-755 / CUL-7) — now EPISODE-SET-AWARE, over the WHOLE TIMING LANE (⑤ + L1). The shipped
+ * rule dropped ⑥ whenever ANY ⑤ fired for the symptom, on the assumption that a clock cluster merely
+ * RESTATES ⑤'s meal-adjacency. The deep-dive F1 mechanism showed that assumption is false when the
+ * clusters are DIFFERENT episodes: a cat that vomits rapid-after-dinner (⑤) AND, separately,
+ * empty-stomach at 5am (⑥ clusters at 5am) had its empty-stomach clock finding HIDDEN by the blanket
+ * rule — the exact pattern ⑥ exists to surface. So ⑥ is now suppressed only when ≥
+ * `suppressionOverlapFraction` of its CLUSTER episodes are also in the timing lane's episode set —
+ * ⑤'s meal-adjacent (rapid) episodes OR L1's empty-stomach (long) episodes. Both belong: ⑤ already
+ * states the meal-adjacency, and L1 (and the merged timing_story) already carries the long episodes'
+ * clock band (`clockBand`), so a ⑥ on those same long episodes duplicates it (the CUL-7 review's
+ * finding ③, a D1 "duplicate cards" gap). Below the threshold, ⑥'s cluster is a DIFFERENT pattern
+ * (mid-band or otherwise un-surfaced episodes) and ⑥ survives. Onsets match by exact ms because ⑤/⑥
+ * collapse the SAME vomit list with the SAME 3h gap (one collapse algorithm). Owned + adversarial-gated.
+ *
+ * FALLBACK — a ⑤ finding without its onset set (a pre-v2 cached finding, or a synthetic test finding)
+ * reverts that symptom to the shipped UNCONDITIONAL suppression, so behaviour never changes silently
+ * for an un-instrumented finding. Lives in the composition layer (each detector stays pure); runs
+ * BEFORE composeTimingStory (which consumes ⑤ + L1) so their onsets are still present here.
  */
-function suppressTimeOfDayWhenPostprandial(findings: Finding[]): Finding[] {
-  const postprandialTypes = new Set(
-    findings
-      .filter((f): f is PostprandialTimingFinding => f.type === 'postprandial_timing')
-      .map((f) => f.symptomType),
+function suppressTimeOfDayWhenPostprandial(
+  findings: Finding[],
+  config: DetectionConfig,
+): Finding[] {
+  // Per symptom: the union of the TIMING LANE's episode instants — ⑤'s rapid (meal-adjacent) onsets
+  // AND L1's long (empty-stomach) onsets. `null` marks a symptom whose ⑤ lacks its onset set (→ the
+  // un-instrumented fallback: unconditional suppression).
+  const laneOnsetsBySymptom = new Map<SymptomType, Set<number> | null>()
+  const addOnsets = (sym: SymptomType, onsets: number[] | undefined) => {
+    if (laneOnsetsBySymptom.get(sym) === null) return // already un-instrumented — stays that way
+    if (!onsets) {
+      laneOnsetsBySymptom.set(sym, null)
+      return
+    }
+    const set = laneOnsetsBySymptom.get(sym) ?? new Set<number>()
+    for (const ms of onsets) set.add(ms)
+    laneOnsetsBySymptom.set(sym, set)
+  }
+  for (const f of findings) {
+    if (f.type === 'postprandial_timing') addOnsets(f.symptomType, f.rapidEpisodeOnsets)
+    else if (f.type === 'empty_stomach_timing') addOnsets(f.symptomType, f.longEpisodeOnsets)
+  }
+  if (laneOnsetsBySymptom.size === 0) return findings
+
+  const threshold = config.timeofday.suppressionOverlapFraction
+  return findings.filter((f) => {
+    if (f.type !== 'timeofday_clustering') return true
+    if (!laneOnsetsBySymptom.has(f.symptomType)) return true // no timing-lane finding → keep ⑥
+    const laneSet = laneOnsetsBySymptom.get(f.symptomType)!
+    // Un-instrumented ⑤, or a ⑥ with no cluster onsets → the shipped unconditional suppression.
+    if (laneSet === null || !f.clusterEpisodeOnsets || f.clusterEpisodeOnsets.length === 0) {
+      return false
+    }
+    let overlap = 0
+    for (const ms of f.clusterEpisodeOnsets) if (laneSet.has(ms)) overlap++
+    // Suppress ⑥ only when its cluster IS (mostly) the timing lane's episode set — else it is a
+    // different (mid-band / un-surfaced) clock pattern and survives.
+    return overlap / f.clusterEpisodeOnsets.length < threshold
+  })
+}
+
+/**
+ * Signals v2 (B-755 / CUL-7 — D1/A2) — merge a same-symptom ⑤ (postprandial) + L1 (empty-stomach)
+ * pair into ONE `timing_story` card. The two phenotypes are two readings of the SAME timing
+ * distribution (`scanVomitTiming`), so one card carries both bands rather than two cards saying
+ * overlapping things. ONLY the co-firing pair merges: a lone ⑤ stays `postprandial_timing`, a lone L1
+ * stays `empty_stomach_timing`. Detectors stay separate and separately tested — only the presentation
+ * payload merges. L1 carries the shared three-band split (`bandCounts`) and shares ⑤'s eligible
+ * denominator by construction (both read `dist`), so the merged face is internally consistent. Runs
+ * in the composition layer AFTER the suppression (which reads ⑤), BEFORE ranking.
+ */
+function composeTimingStory(findings: Finding[]): Finding[] {
+  const ppBySymptom = new Map<SymptomType, PostprandialTimingFinding>()
+  const esBySymptom = new Map<SymptomType, EmptyStomachTimingFinding>()
+  for (const f of findings) {
+    if (f.type === 'postprandial_timing') ppBySymptom.set(f.symptomType, f)
+    else if (f.type === 'empty_stomach_timing') esBySymptom.set(f.symptomType, f)
+  }
+  const merged = new Set<SymptomType>()
+  const stories: TimingStoryFinding[] = []
+  for (const [symptom, pp] of ppBySymptom) {
+    const es = esBySymptom.get(symptom)
+    if (!es) continue // lone ⑤ — no merge
+    merged.add(symptom)
+    stories.push({
+      type: 'timing_story',
+      priorityClass: 'insight',
+      symptomType: symptom,
+      // ⑤ and L1 measure the identical distribution; L1 carries the full three-band split and the
+      // shared eligible denominator, so the merged face reads them from one place (no re-derivation).
+      bandCounts: es.bandCounts,
+      eligibleCount: es.eligibleCount,
+      totalEpisodes: es.totalEpisodes,
+      rapidWindowMinutes: pp.rapidWindowMinutes,
+      longGapHours: es.longGapHours,
+      windowDays: es.windowDays,
+      rapid: {
+        count: pp.rapidCount,
+        medianMinutesSinceFeeding: pp.medianMinutesSinceFeeding,
+        lastTwoEligible: pp.lastTwoEligibleRapid,
+        feedingFormsInEvidence: pp.feedingFormsInEvidence,
+      },
+      long: {
+        count: es.longCount,
+        medianHoursSinceFeeding: es.medianHoursSinceFeeding,
+        lastTwoEligible: es.lastTwoEligibleLong,
+        feedingFormsInEvidence: es.feedingFormsInEvidence,
+        clockBand: es.clockBand,
+        clockCount: es.clockCount,
+      },
+      associationalOnly: true,
+    })
+  }
+  if (merged.size === 0) return findings
+  const kept = findings.filter(
+    (f) =>
+      !(
+        (f.type === 'postprandial_timing' || f.type === 'empty_stomach_timing') &&
+        merged.has(f.symptomType)
+      ),
   )
-  if (postprandialTypes.size === 0) return findings
-  return findings.filter(
-    (f) => !(f.type === 'timeofday_clustering' && postprandialTypes.has(f.symptomType)),
-  )
+  return [...kept, ...stories]
 }
 
 /**
@@ -4573,6 +5208,34 @@ function suppressWorseningWhenChronic(findings: Finding[]): Finding[] {
 }
 
 /**
+ * Signals v2 (CUL-7 review finding ②) — the internal onset arrays (`rapidEpisodeOnsets` /
+ * `longEpisodeOnsets` / `clusterEpisodeOnsets`) exist ONLY to feed the episode-set-aware suppression.
+ * Strip them once the suppression has run, so they never reach the phrasing / cache / HTTP layer: a
+ * future redeploy must not start bloating every live ⑤/⑥ card with raw per-episode timestamps the
+ * client ignores. Returns new findings; never mutates.
+ */
+function stripInternalOnsets(findings: Finding[]): Finding[] {
+  return findings.map((f) => {
+    if (f.type === 'postprandial_timing' && f.rapidEpisodeOnsets !== undefined) {
+      const copy = { ...f }
+      delete copy.rapidEpisodeOnsets
+      return copy
+    }
+    if (f.type === 'empty_stomach_timing' && f.longEpisodeOnsets !== undefined) {
+      const copy = { ...f }
+      delete copy.longEpisodeOnsets
+      return copy
+    }
+    if (f.type === 'timeofday_clustering' && f.clusterEpisodeOnsets !== undefined) {
+      const copy = { ...f }
+      delete copy.clusterEpisodeOnsets
+      return copy
+    }
+    return f
+  })
+}
+
+/**
  * Top-level entry point. Runs every registered detector, composes and ranks the
  * results (§5). An empty array means no finding cleared its floor — the caller
  * renders the building/stale state (§3.3); it is NOT an all-clear (§9).
@@ -4585,11 +5248,15 @@ export function detectSignals(
   for (const detector of DETECTOR_REGISTRY) {
     findings.push(...detector.detect(input, config))
   }
-  // Composition / mutual exclusion before ranking: ⑤ suppresses ⑥ per symptom (§4.4/§6),
-  // and ⑦ suppresses same-symptom ④ with firm-tier inheritance (§4.5/§5). Independent
-  // passes (disjoint type pairs), so order does not matter.
-  return rankFindings(
-    suppressWorseningWhenChronic(suppressTimeOfDayWhenPostprandial(findings)),
-    input.pet,
+  // Composition before ranking. ORDER MATTERS for the timing lane (Signals v2 / CUL-7):
+  //   1. suppressTimeOfDayWhenPostprandial — ⑤/L1 suppress a redundant same-symptom ⑥ (§4.4/§6),
+  //      episode-set-aware; it READS the ⑤/L1 onset sets, so it must run BEFORE the merge/strip.
+  //   2. composeTimingStory — merge a same-symptom ⑤ + L1 pair into one timing_story card.
+  //   3. stripInternalOnsets — drop the composition-only onset arrays before caching (finding ②).
+  //   4. suppressWorseningWhenChronic — ⑦ suppresses same-symptom ④ with firm-tier inheritance
+  //      (§4.5/§5); disjoint type pair from the timing lane, so its position is free.
+  const composed = stripInternalOnsets(
+    composeTimingStory(suppressTimeOfDayWhenPostprandial(findings, config)),
   )
+  return rankFindings(suppressWorseningWhenChronic(composed), input.pet)
 }

@@ -132,6 +132,11 @@ async function phraseFinding(finding: Finding, petName: string, phrasingEnabled 
     finding.type === 'symptom_worsening' ||
     finding.type === 'symptom_chronicity' ||
     finding.type === 'postprandial_timing' ||
+    // Signals v2 (CUL-7) — L1 (empty-stomach) + the merged timing_story are descriptive timing
+    // counts, phrased deterministically like ⑤/⑥ (the model would drift toward the 'empty stomach'/
+    // 'bilious' mechanism the template forbids).
+    finding.type === 'empty_stomach_timing' ||
+    finding.type === 'timing_story' ||
     finding.type === 'timeofday_clustering' ||
     // B-340 — a SAFETY finding naming what a photo VISIBLY showed, routed to the vet. Template-only
     // (no LLM) is itself a structural never-reassure guarantee, matching the other safety templates.

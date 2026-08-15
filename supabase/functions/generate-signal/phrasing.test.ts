@@ -22,6 +22,8 @@ import {
   templateWorsening,
   templateChronicity,
   templatePostprandialTiming,
+  templateEmptyStomachTiming,
+  templateTimingStory,
   templateTimeOfDayClustering,
   templateIncidentRedFlag,
   clockHourLabel,
@@ -45,6 +47,8 @@ import type {
   SymptomChronicityFinding,
   ChronicityTier,
   PostprandialTimingFinding,
+  EmptyStomachTimingFinding,
+  TimingStoryFinding,
   TimeOfDayClusteringFinding,
   IncidentRedFlagFinding,
   IncidentFlagKind,
@@ -148,6 +152,49 @@ const postprandial = (over: Partial<PostprandialTimingFinding> = {}): Postprandi
   feedingFormsInEvidence: ['dry treat'],
   associationalOnly: true,
   windowDays: 60,
+  ...over,
+})
+
+const emptyStomach = (over: Partial<EmptyStomachTimingFinding> = {}): EmptyStomachTimingFinding => ({
+  type: 'empty_stomach_timing',
+  priorityClass: 'insight',
+  symptomType: 'vomit',
+  longCount: 5,
+  eligibleCount: 8,
+  bandCounts: { rapid: 1, mid: 2, long: 5 },
+  totalEpisodes: 9,
+  longGapHours: 6,
+  lastTwoEligibleLong: true,
+  medianHoursSinceFeeding: 9.5,
+  feedingFormsInEvidence: ['kibble'],
+  clockBand: { startLocalHour: 4, windowHours: 4 },
+  clockCount: 4,
+  longEpisodeOnsets: [],
+  associationalOnly: true,
+  windowDays: 60,
+  ...over,
+})
+
+const timingStory = (over: Partial<TimingStoryFinding> = {}): TimingStoryFinding => ({
+  type: 'timing_story',
+  priorityClass: 'insight',
+  symptomType: 'vomit',
+  bandCounts: { rapid: 4, mid: 3, long: 5 },
+  eligibleCount: 12,
+  totalEpisodes: 14,
+  rapidWindowMinutes: 30,
+  longGapHours: 6,
+  windowDays: 60,
+  rapid: { count: 4, medianMinutesSinceFeeding: 18, lastTwoEligible: true, feedingFormsInEvidence: ['dry treat'] },
+  long: {
+    count: 5,
+    medianHoursSinceFeeding: 9.5,
+    lastTwoEligible: false,
+    feedingFormsInEvidence: ['kibble'],
+    clockBand: { startLocalHour: 4, windowHours: 4 },
+    clockCount: 4,
+  },
+  associationalOnly: true,
   ...over,
 })
 
@@ -786,6 +833,52 @@ Deno.test('validatePhrasing — accepts a plain timing-only postprandial sentenc
   )
 })
 
+// ── templateEmptyStomachTiming + templateTimingStory (L1 / merge — Signals v2 / CUL-7) ─────
+
+Deno.test('templateEmptyStomachTiming — states the honest denominator, names the TIMING BAND (never "empty stomach"), points to the vet', () => {
+  const t = templateEmptyStomachTiming(emptyStomach({ longCount: 5, eligibleCount: 8, longGapHours: 6 }), 'Nyx')
+  assert.ok(/\b5 of the 8\b/.test(t), 'honest N-of-M denominator')
+  assert.ok(/6 or more hours after eating/.test(t), 'names the timing band by the gap')
+  assert.ok(/vet/.test(t), 'points to the vet')
+  assert.equal(MECHANISM.test(t), false, 'never "empty stomach" / "bilious" — MECHANISM_RE would trip the template')
+  assert.equal(FOOD.test(t), false)
+  assert.equal(t.includes('!'), false)
+  assert.ok(validatePhrasing(t, emptyStomach()), 'own template passes its own validation')
+})
+
+Deno.test('templateEmptyStomachTiming — drops "the last two" when they were not both long', () => {
+  const t = templateEmptyStomachTiming(emptyStomach({ lastTwoEligibleLong: false }), 'Nyx')
+  assert.equal(/including the last two/.test(t), false)
+  assert.ok(validatePhrasing(t, emptyStomach({ lastTwoEligibleLong: false })))
+})
+
+Deno.test('templateTimingStory — carries BOTH phenotypes count-anchored over one denominator', () => {
+  const t = templateTimingStory(
+    timingStory({ eligibleCount: 12, rapid: { count: 4, medianMinutesSinceFeeding: 18, lastTwoEligible: true, feedingFormsInEvidence: [] }, long: { count: 5, medianHoursSinceFeeding: 9, lastTwoEligible: false, feedingFormsInEvidence: [] } }),
+    'Nyx',
+  )
+  assert.ok(/4 happened within 30 minutes of eating/.test(t), 'the rapid clause')
+  assert.ok(/5 happened 6 or more hours after/.test(t), 'the long clause')
+  assert.ok(/\b12\b/.test(t), 'one shared eligible denominator')
+  assert.equal(MECHANISM.test(t), false)
+  assert.ok(validatePhrasing(t, timingStory()))
+})
+
+Deno.test('validatePhrasing — rejects the SYNDROME name on an empty-stomach / timing_story finding (names the band, not the diagnosis)', () => {
+  // The whole point of the 6h band is that it is the vet's job to call it "bilious"/"empty stomach";
+  // owner copy names the timing only. These must be rejected on both L1 and the merged card.
+  for (const f of [emptyStomach(), timingStory()]) {
+    for (const bad of [
+      'These look like classic empty stomach vomiting episodes.',
+      "This is bilious vomiting from an empty stomach overnight.",
+      'The long gap is caused by feeding her only once a day.',
+      '5 of 8 happened long after eating her kibble.',
+    ]) {
+      assert.equal(validatePhrasing(bad, f), false, `${f.type} should reject: ${bad}`)
+    }
+  }
+})
+
 // ── templateTimeOfDayClustering (⑥ — descriptive clock clustering, B-079) ─────────
 
 Deno.test('clockHourLabel — plain 12-hour labels across the day, incl. midnight/noon and wrap', () => {
@@ -1041,7 +1134,7 @@ Deno.test('hasBannedSignalVocabulary — catches direction glyphs, arrows, "slop
 
 Deno.test('validatePhrasing — rejects a direction glyph or a percentage on EVERY finding type', () => {
   const findings: Finding[] = [
-    correlation(), intakeDecline(), reflection(), worsening(), chronicity(), postprandial(), timeofday(), incidentRedFlag(),
+    correlation(), intakeDecline(), reflection(), worsening(), chronicity(), postprandial(), emptyStomach(), timingStory(), timeofday(), incidentRedFlag(),
   ]
   for (const f of findings) {
     assert.equal(validatePhrasing('Symptoms are ↑ this week for the pet.', f), false, `${f.type}: glyph rejected`)
@@ -1077,7 +1170,8 @@ Deno.test('every template — no banned glyph/percentage vocabulary, any type (f
     intakeDecline(), intakeDecline({ trigger: 'refused_normal_food', refusedFoodLabel: 'the turkey' }),
     reflection({ direction: 'flat' }), reflection({ direction: 'improving' }),
     worsening({ tier: 'firm', trigger: 'more_days' }), chronicity(),
-    postprandial(), timeofday(), incidentRedFlag(), incidentRedFlag({ flags: ['blood', 'foreign_material'] }),
+    postprandial(), emptyStomach(), emptyStomach({ lastTwoEligibleLong: false }),
+    timingStory(), timeofday(), incidentRedFlag(), incidentRedFlag({ flags: ['blood', 'foreign_material'] }),
   ]
   for (const f of findings) {
     const t = templateForFinding(f, 'Nyx')
