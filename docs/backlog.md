@@ -25,6 +25,16 @@ A running list of items intentionally deferred from the current build sequence. 
 
 ---
 
+## FROZEN — migrated to Linear (2026-08-15)
+
+**This file is frozen as of 2026-08-15 and is no longer the source of truth.** Every open/in-progress row (all `Now`/`Next`/`Later` priorities, 487 rows) has been ported to Linear (team **Culprit**, `linear.app/projectnyx`) as issues CUL-28 through CUL-514, tagged with the `Legacy` label and carrying a `_Migrated from docs/backlog.md (B-NNN)_` footer for traceability. Verified 487/487 — no rows lost, no duplicates. Rows already belonging to an active build-track project (Signals v2, Daily Recap) went into that project; everything else went into the new **Legacy Backlog** project.
+
+**New backlog items go to Linear, not this file** — see the Backlog Protocol in `CLAUDE.md`. This file stays in git as the historical record (session context, superseded IDs, the full pre-migration narrative on rows with long build trails).
+
+**Known gap — 10 rows were NOT migrated** because their markdown is malformed in this file (missing table cells, not just an escaping issue) and porting them automatically risked corrupting the data: **B-128, B-137, B-218, B-267, B-351, B-441, B-466, B-555, B-616, B-618.** These still need manual review — either fix the row in this file and port it by hand, or confirm it's genuinely superseded/dead and skip it. Note two of these IDs (B-616, B-618) are reused: the well-formed B-616 and B-618 rows elsewhere in this file *did* migrate successfully (as CUL-63 and a Legacy Backlog issue respectively) — it's specifically the malformed duplicate-content lines carrying those same numbers that were skipped.
+
+---
+
 ## Open
 
 | ID | Title | Why | Priority | Added | Blocks | Status |
