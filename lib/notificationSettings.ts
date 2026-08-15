@@ -28,9 +28,11 @@ import { uuid } from './utils';
 import { syncPendingNotificationPreferences } from './sync';
 import {
   reconcileSchedules,
+  resolveDailySummaryContent,
   ALL_NOTIFICATION_CATEGORIES,
   type NotificationCategory,
 } from './notifications';
+import { usePetStore } from '../store/petStore';
 
 // ── The split-brain-safe read (§4 mirror header, "CARRY-FORWARD FOR PR 3") ──────
 //
@@ -43,7 +45,7 @@ import {
 // ACTIVE_DIET_TRIAL_QUERY uses for the same split-brain. v1 only ever writes
 // account-wide rows, so `pet_id IS NULL` is the whole read surface.
 export const CATEGORY_PREFERENCE_READ_SQL =
-  `SELECT id, enabled FROM notification_preferences
+  `SELECT id, enabled, use_pet_name FROM notification_preferences
      WHERE category = ? AND pet_id IS NULL
      ORDER BY synced DESC, updated_at DESC, id
      LIMIT 1`;
@@ -72,9 +74,34 @@ export const CATEGORY_PREFERENCE_INSERT_SQL =
      (id, pet_id, category, enabled, fire_local_time, created_at, updated_at)
    VALUES (?, NULL, ?, ?, '21:00', ?, ?)`;
 
+// ── The warmth opt-in write (DR-6) ───────────────────────────────────────────
+//
+// use_pet_name lives on the SAME account-wide daily_summary row as `enabled`, so
+// its write must touch ONLY use_pet_name and never clobber the enabled state (and
+// vice versa — setCategoryEnabled's UPDATE leaves use_pet_name alone). Both bump
+// updated_at and re-queue for the LWW push; a near-simultaneous cross-device edit
+// of the two columns resolves whole-row last-write-wins, the app's documented sync
+// model (no merge logic). The UPDATE clears the B-398 quarantine trio on one line,
+// exactly like CATEGORY_PREFERENCE_UPDATE_SQL, so the source-scan is satisfied.
+export const USE_PET_NAME_UPDATE_SQL =
+  `UPDATE notification_preferences
+     SET use_pet_name = ?, updated_at = ?, synced = 0, sync_attempts = 0, sync_error = NULL
+   WHERE id = ?`;
+
+// Get-or-create fallback: create the daily_summary row when the pet-name pref is
+// set before the summary was ever toggled (defensive — the UI only shows the row
+// once the summary is on, so the row normally already exists). enabled = 0 so
+// storing the name pref never turns the summary on as a side effect (G6).
+export const USE_PET_NAME_INSERT_SQL =
+  `INSERT INTO notification_preferences
+     (id, pet_id, category, enabled, use_pet_name, fire_local_time, created_at, updated_at)
+   VALUES (?, NULL, 'daily_summary', 0, ?, '21:00', ?, ?)`;
+
 export interface LocalCategoryPreferenceRow {
   id: string;
   enabled: number;
+  /** The warmth opt-in (DR-6) — SQLite INTEGER 0/1; absent/0 = neutral. */
+  use_pet_name?: number;
 }
 
 /** Is this account-wide category currently opted in (product opt-in — the PR 2
@@ -167,14 +194,78 @@ export async function applyCategoryPreference(
   await reconcileFromPreferences();
 }
 
+/** Is the warmth opt-in on (DR-6)? Reads the account-wide daily_summary row via the
+ *  same split-brain-safe read as the enabled flag; absent/0 = neutral (G6). */
+export async function readUsePetName(): Promise<boolean> {
+  const db = getDb();
+  const row = await db.getFirstAsync<LocalCategoryPreferenceRow>(
+    CATEGORY_PREFERENCE_READ_SQL,
+    ['daily_summary'],
+  );
+  return !!row && !!row.use_pet_name;
+}
+
+/**
+ * Persist the warmth opt-in on the account-wide daily_summary row, get-or-create so
+ * a same-device toggle never creates a duplicate. Writes ONLY use_pet_name — the
+ * enabled state and every other column are preserved. Fire-and-forget the sync push,
+ * exactly like setCategoryEnabled. This writes the PREFERENCE only; the schedule's
+ * body is refreshed separately (applyUsePetName → reconcileFromPreferences).
+ */
+export async function setUsePetName(usePetName: boolean): Promise<void> {
+  const db = getDb();
+  const now = new Date().toISOString();
+  const existing = await db.getFirstAsync<LocalCategoryPreferenceRow>(
+    CATEGORY_PREFERENCE_READ_SQL,
+    ['daily_summary'],
+  );
+  if (existing) {
+    await db.runAsync(USE_PET_NAME_UPDATE_SQL, [usePetName ? 1 : 0, now, existing.id]);
+  } else {
+    await db.runAsync(USE_PET_NAME_INSERT_SQL, [uuid(), usePetName ? 1 : 0, now, now]);
+  }
+  pushPreferences();
+}
+
+/**
+ * Apply the warmth opt-in end to end: persist it, then reconcile so the live 9pm
+ * schedule's body picks up (or drops) the pet's name immediately (DR-6). The
+ * reconcile resolves the current single-pet name itself, so this needs no pet arg.
+ */
+export async function applyUsePetName(usePetName: boolean): Promise<void> {
+  await setUsePetName(usePetName);
+  await reconcileFromPreferences();
+}
+
+/** The one pet's name to warm the daily-summary body, or null for a multi-pet or
+ *  no-pet (or nameless) account — the "multi-pet stays neutral by construction"
+ *  guard (DR-6), enforced here as well as in the settings UI. Reads the pet store
+ *  directly so any reconcile path — the settings screen today, app-foreground later
+ *  — carries the current name after a rename or a pet add/remove, no caller thread. */
+function resolveSinglePetName(): string | null {
+  const pets = usePetStore.getState().pets;
+  return pets.length === 1 ? pets[0].name : null;
+}
+
 /**
  * Reconcile live OS schedules against the stored preferences + current permission.
  * The settings screen calls this on focus so a permission the owner revoked in iOS
  * Settings (then returned from) has its now-orphaned schedule cancelled — AC 6 —
- * without waiting for PR 4's app-foreground reconcile. Pure delegation to the
- * primitive; the desired set is the persisted prefs.
+ * without waiting for PR 4's app-foreground reconcile.
+ *
+ * DR-6: it also resolves the daily-summary CONTENT (the pet-name opt-in × the single
+ * pet's name) and passes it to reconcileSchedules, which refreshes a kept schedule's
+ * body when the opt-in state has changed. Resolving the name here (not at the call
+ * site) is what makes "reconcile carries it" true from every trigger.
  */
 export async function reconcileFromPreferences(): Promise<void> {
   const desired = await readEnabledCategories();
-  await reconcileSchedules(desired);
+  const usePetName = await readUsePetName();
+  const content = {
+    daily_summary: resolveDailySummaryContent({
+      usePetName,
+      petName: resolveSinglePetName(),
+    }),
+  };
+  await reconcileSchedules(desired, content);
 }

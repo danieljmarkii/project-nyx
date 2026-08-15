@@ -162,6 +162,54 @@ function isNotificationCategory(value: string): value is NotificationCategory {
   return value in NOTIFICATION_CATEGORIES;
 }
 
+// ── Dynamic notification content (DR-6 — the pet-name opt-in) ─────────────────
+//
+// The registry's title/body are the STATIC, neutral default (G1-safe — they speak
+// to the ritual, never the record). DR-6 lets a SINGLE-PET owner opt into a warmer
+// body that names the pet — title "Biscuit's day", body "Biscuit's day is ready to
+// read." It is still static-at-schedule-time and still G1-safe (a name is not a
+// record assertion), and it is still one notification per account (D3); the naming
+// is the whole change. The content is resolved at schedule time — the pet name and
+// the use_pet_name pref are both known then — and re-resolved on every content-aware
+// reconcile, so a rename or a second pet propagates (see reconcileSchedules).
+
+export interface NotificationContent {
+  readonly title: string;
+  readonly body: string;
+}
+
+/**
+ * The daily-summary notification content for the current opt-in state. Returns the
+ * NAMED content only when the owner opted in AND there is exactly one pet to name
+ * (a non-empty `petName`); otherwise the neutral registry default. The single-pet
+ * guard lives here as well as at the call site (the caller passes `petName = null`
+ * for a multi-pet or nameless account), so "multi-pet stays neutral" holds by
+ * construction at the reconcile layer, not only in the UI.
+ *
+ * Pure — no I/O. nyx-voice: no "!", warm, specific, names the pet (Pattern 1).
+ */
+export function resolveDailySummaryContent(opts: {
+  usePetName: boolean;
+  petName: string | null | undefined;
+}): NotificationContent {
+  const name = opts.petName?.trim();
+  if (opts.usePetName && name) {
+    return { title: `${name}’s day`, body: `${name}’s day is ready to read.` };
+  }
+  const cfg = NOTIFICATION_CATEGORIES.daily_summary;
+  return { title: cfg.title, body: cfg.body };
+}
+
+/** A stable signature of resolved content, used by reconcile to detect that a live
+ *  schedule's copy has drifted from what the current opt-in state wants (a pet
+ *  renamed, the opt-in toggled, a second pet added → neutral). JSON-encoded (not a
+ *  raw separator) so distinct (title, body) pairs never collide AND it stays a
+ *  printable, control-char-free string that round-trips safely through the OS
+ *  notification `data` payload it is stamped into (a NUL could be truncated there). */
+export function contentSignature(content: NotificationContent): string {
+  return JSON.stringify({ t: content.title, b: content.body });
+}
+
 // ── Scheduled-notification identifiers ───────────────────────────────────────
 //
 // Each category owns ONE deterministic identifier. That makes cancel a direct
@@ -349,6 +397,33 @@ export async function getScheduledCategories(): Promise<NotificationCategory[]> 
 }
 
 /**
+ * Live scheduled categories WITH the content signature stamped in `data.contentSig`
+ * — the extra fact reconcile needs to detect copy drift on a kept schedule (DR-6).
+ * A schedule created before DR-6 (or by any path that didn't stamp it) reports
+ * `contentSig = null`, which reads as "unknown" and forces one refresh to the
+ * current content. Never throws — degrades to [] like getScheduledCategories.
+ */
+export async function getScheduledCategoryState(): Promise<
+  { category: NotificationCategory; contentSig: string | null }[]
+> {
+  try {
+    const requests = await Notifications.getAllScheduledNotificationsAsync();
+    const out: { category: NotificationCategory; contentSig: string | null }[] = [];
+    for (const r of requests) {
+      const c = categoryFromIdentifier(r.identifier);
+      if (!c) continue;
+      const data = r.content?.data as { contentSig?: unknown } | undefined;
+      const sig = data?.contentSig;
+      out.push({ category: c, contentSig: typeof sig === 'string' ? sig : null });
+    }
+    return out;
+  } catch (e) {
+    console.warn('[notifications] scheduled-notification state read failed:', e);
+    return [];
+  }
+}
+
+/**
  * Schedule a category's daily notification, idempotently. Enforces the per-account
  * budget (§3, D1): if the OTHER already-scheduled categories plus this one would
  * exceed the budget, it refuses and schedules nothing. Returns whether a schedule
@@ -360,14 +435,23 @@ export async function getScheduledCategories(): Promise<NotificationCategory[]> 
  * it fails safe; but a future direct caller (e.g. PR 3's toggle-on handler) must
  * go through reconcileSchedules or confirm permission itself, never schedule blind.
  *
- * The notification CONTENT is read from the registry (`cfg.title` / `cfg.body`),
- * which PR 4 populated with the real, G1-safe copy — a STATIC body that never
+ * The notification CONTENT is the registry's static, G1-safe copy (`cfg.title` /
+ * `cfg.body`) UNLESS an explicit `content` override is supplied (DR-6's pet-name
+ * opt-in). Either way it is a STATIC body computed at schedule time that never
  * asserts record contents (iOS runs no JS at fire time, so a content-bearing body
  * is computed early and can misstate the record). See NotificationCategoryConfig.
+ * The resolved content is fingerprinted into `data.contentSig` so reconcile can tell
+ * a kept schedule's copy has drifted from the current opt-in state.
  */
-export async function scheduleCategory(category: NotificationCategory): Promise<boolean> {
+export async function scheduleCategory(
+  category: NotificationCategory,
+  content?: NotificationContent,
+): Promise<boolean> {
   const cfg = NOTIFICATION_CATEGORIES[category];
   if (!cfg) return false;
+  // The override (DR-6's named body) or the registry's neutral default. Both are
+  // static-at-schedule-time and G1-safe.
+  const effective: NotificationContent = content ?? { title: cfg.title, body: cfg.body };
   try {
     const others = (await getScheduledCategories()).filter((c) => c !== category);
     if (wouldExceedBudget(category, others)) {
@@ -383,9 +467,11 @@ export async function scheduleCategory(category: NotificationCategory): Promise<
     await Notifications.scheduleNotificationAsync({
       identifier: scheduleIdentifier(category),
       content: {
-        title: cfg.title,
-        body: cfg.body,
-        data: { category, route: cfg.route },
+        title: effective.title,
+        body: effective.body,
+        // contentSig lets a later reconcile detect that this kept schedule's copy
+        // no longer matches the current opt-in state (DR-6) and refresh it.
+        data: { category, route: cfg.route, contentSig: contentSignature(effective) },
       },
       trigger: {
         type: Notifications.SchedulableTriggerInputTypes.DAILY,
@@ -416,19 +502,45 @@ export async function cancelCategory(category: NotificationCategory): Promise<vo
  * permission (§3). Reads permission and the live schedule from the OS; `desired`
  * is passed IN — Part 1 has no preferences store (PR 2 supplies it, PR 4 wires
  * this to app-foreground). Returns the actions taken so a caller/test can assert.
+ *
+ * `content` (DR-6): per-category resolved copy (the pet-name opt-in). computeReconcile
+ * keeps an already-live category without inspecting its copy, so this is where a KEPT
+ * schedule whose desired content has drifted — a pet renamed, the opt-in toggled, a
+ * second pet added → back to neutral — is rescheduled. Only when a content override
+ * is supplied AND permission is granted; the refresh is idempotent and is skipped
+ * when the live signature already matches, so a matching schedule is never needlessly
+ * torn down. Callers that pass no content keep the pre-DR-6 presence-only behaviour.
  */
 export async function reconcileSchedules(
   desired: readonly NotificationCategory[],
+  content?: Partial<Record<NotificationCategory, NotificationContent>>,
 ): Promise<ReconcileActions> {
   const permission = await ensurePermission(false);
-  const scheduled = await getScheduledCategories();
+  const live = await getScheduledCategoryState();
+  const scheduled = live.map((l) => l.category);
   const actions = computeReconcileActions({
     desired,
     permissionGranted: permission === 'granted',
     scheduled,
   });
   for (const c of actions.toCancel) await cancelCategory(c);
-  for (const c of actions.toSchedule) await scheduleCategory(c);
+  for (const c of actions.toSchedule) await scheduleCategory(c, content?.[c]);
+
+  // Content-drift refresh (DR-6). A category kept by computeReconcileActions (live +
+  // still desired) is not in toSchedule, so its copy would never update without this.
+  if (content && permission === 'granted') {
+    const justScheduled = new Set(actions.toSchedule);
+    const liveSig = new Map(live.map((l) => [l.category, l.contentSig] as const));
+    for (const c of desired) {
+      if (justScheduled.has(c)) continue; // already (re)scheduled above with fresh copy
+      if (!liveSig.has(c)) continue; // not live (cancelled, or budget-refused) — nothing to refresh
+      const want = content[c];
+      if (!want) continue;
+      if (liveSig.get(c) !== contentSignature(want)) {
+        await scheduleCategory(c, want); // idempotent cancel+reschedule with the current copy
+      }
+    }
+  }
   return actions;
 }
 

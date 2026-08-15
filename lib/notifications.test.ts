@@ -30,6 +30,7 @@ import {
   computeReconcileActions,
   ensurePermission,
   getScheduledCategories,
+  getScheduledCategoryState,
   scheduleCategory,
   cancelCategory,
   reconcileSchedules,
@@ -37,6 +38,8 @@ import {
   readCategoryInteractions,
   recordCategoryInteraction,
   clearNotificationInteractions,
+  resolveDailySummaryContent,
+  contentSignature,
   type NotificationCategory,
 } from './notifications';
 
@@ -88,6 +91,59 @@ describe('NOTIFICATION_CATEGORIES (v1 registers exactly daily_summary)', () => {
     }
     expect(`${c.title}${c.body}`).not.toContain('!');
     expect(c.body.trim().length).toBeGreaterThan(0);
+  });
+});
+
+// ── The pet-name opt-in content resolver (DR-6) ──────────────────────────────
+describe('resolveDailySummaryContent', () => {
+  const neutral = {
+    title: NOTIFICATION_CATEGORIES.daily_summary.title,
+    body: NOTIFICATION_CATEGORIES.daily_summary.body,
+  };
+
+  it('returns the NAMED body when opted in with a single pet name', () => {
+    const c = resolveDailySummaryContent({ usePetName: true, petName: 'Biscuit' });
+    expect(c.title).toBe('Biscuit’s day');
+    expect(c.body).toBe('Biscuit’s day is ready to read.');
+  });
+
+  it('stays neutral when the opt-in is off, even with a name (default = neutral)', () => {
+    expect(resolveDailySummaryContent({ usePetName: false, petName: 'Biscuit' })).toEqual(neutral);
+  });
+
+  it('stays neutral when there is no single pet to name (multi-pet by construction)', () => {
+    // The caller passes petName = null for a multi-pet or nameless account.
+    expect(resolveDailySummaryContent({ usePetName: true, petName: null })).toEqual(neutral);
+    expect(resolveDailySummaryContent({ usePetName: true, petName: undefined })).toEqual(neutral);
+  });
+
+  it('treats a blank / whitespace name as no name (neutral, never a stray possessive)', () => {
+    expect(resolveDailySummaryContent({ usePetName: true, petName: '   ' })).toEqual(neutral);
+  });
+
+  it('trims surrounding whitespace from the name', () => {
+    expect(resolveDailySummaryContent({ usePetName: true, petName: '  Gus  ' }).title).toBe('Gus’s day');
+  });
+
+  it('the named body is G1-safe and nyx-voice-clean (no record assertion, no "!")', () => {
+    const c = resolveDailySummaryContent({ usePetName: true, petName: 'Biscuit' });
+    const text = `${c.title} ${c.body}`.toLowerCase();
+    for (const banned of ['incident', 'symptom', 'vomit', 'nothing', 'all clear', 'medication']) {
+      expect(text).not.toContain(banned);
+    }
+    expect(`${c.title}${c.body}`).not.toContain('!');
+  });
+});
+
+describe('contentSignature', () => {
+  it('distinguishes distinct copy and cannot collide across the title/body seam', () => {
+    const a = contentSignature({ title: 'A', body: 'B C' });
+    const b = contentSignature({ title: 'A B', body: 'C' });
+    expect(a).not.toBe(b); // the JSON encoding prevents the "A B C" seam collision
+    // Parses back to the exact copy — a printable JSON string that round-trips
+    // safely through the OS notification payload (no raw control-char separator).
+    expect(JSON.parse(a)).toEqual({ t: 'A', b: 'B C' });
+    expect(contentSignature({ title: 'A', body: 'B' })).toBe(contentSignature({ title: 'A', body: 'B' }));
   });
 });
 
@@ -239,6 +295,35 @@ describe('getScheduledCategories', () => {
   });
 });
 
+// ── getScheduledCategoryState (the content-drift read, DR-6) ──────────────────
+describe('getScheduledCategoryState', () => {
+  it('surfaces each category with its stamped contentSig', async () => {
+    getAllScheduledNotificationsAsync.mockResolvedValue([
+      { identifier: scheduleIdentifier('daily_summary'), content: { data: { contentSig: 'sig-x' } } },
+    ]);
+    expect(await getScheduledCategoryState()).toEqual([
+      { category: 'daily_summary', contentSig: 'sig-x' },
+    ]);
+  });
+
+  it('reports contentSig = null for a schedule stamped before DR-6 (no sig in data)', async () => {
+    getAllScheduledNotificationsAsync.mockResolvedValue([
+      { identifier: scheduleIdentifier('daily_summary'), content: { data: {} } },
+    ]);
+    expect(await getScheduledCategoryState()).toEqual([
+      { category: 'daily_summary', contentSig: null },
+    ]);
+  });
+
+  it('ignores foreign schedules and degrades to [] on a native read failure', async () => {
+    getAllScheduledNotificationsAsync.mockResolvedValue([{ identifier: 'someone.elses.notif' }]);
+    expect(await getScheduledCategoryState()).toEqual([]);
+    jest.spyOn(console, 'warn').mockImplementation(() => {});
+    getAllScheduledNotificationsAsync.mockRejectedValue(new Error('native gone'));
+    expect(await getScheduledCategoryState()).toEqual([]);
+  });
+});
+
 // ── scheduleCategory / cancelCategory (I/O) ──────────────────────────────────
 describe('scheduleCategory', () => {
   it('schedules a daily 21:00 trigger under the category identifier', async () => {
@@ -251,6 +336,26 @@ describe('scheduleCategory', () => {
     // The scheduled body is the registry's G1-safe copy, not the retired placeholder.
     expect(req.content.title).toBe(NOTIFICATION_CATEGORIES.daily_summary.title);
     expect(req.content.body).toBe(NOTIFICATION_CATEGORIES.daily_summary.body);
+  });
+
+  it('stamps a contentSig for the default copy (so reconcile can detect drift)', async () => {
+    await scheduleCategory('daily_summary');
+    const req = scheduleNotificationAsync.mock.calls[0][0];
+    expect(req.content.data.contentSig).toBe(
+      contentSignature({
+        title: NOTIFICATION_CATEGORIES.daily_summary.title,
+        body: NOTIFICATION_CATEGORIES.daily_summary.body,
+      }),
+    );
+  });
+
+  it('schedules an explicit content override (DR-6 named body) and stamps its sig', async () => {
+    const content = { title: 'Biscuit’s day', body: 'Biscuit’s day is ready to read.' };
+    await scheduleCategory('daily_summary', content);
+    const req = scheduleNotificationAsync.mock.calls[0][0];
+    expect(req.content.title).toBe(content.title);
+    expect(req.content.body).toBe(content.body);
+    expect(req.content.data.contentSig).toBe(contentSignature(content));
   });
 
   it('is idempotent — cancels any existing schedule before re-adding (no duplicate)', async () => {
@@ -303,6 +408,77 @@ describe('reconcileSchedules', () => {
       scheduleIdentifier('daily_summary'),
     );
     expect(scheduleNotificationAsync).not.toHaveBeenCalled();
+  });
+
+  it('schedules a brand-new category with the supplied content override (DR-6)', async () => {
+    getPermissionsAsync.mockResolvedValue({ granted: true, canAskAgain: false });
+    getAllScheduledNotificationsAsync.mockResolvedValue([]);
+    const named = { title: 'Biscuit’s day', body: 'Biscuit’s day is ready to read.' };
+    await reconcileSchedules(['daily_summary'], { daily_summary: named });
+    expect(scheduleNotificationAsync).toHaveBeenCalledTimes(1);
+    expect(scheduleNotificationAsync.mock.calls[0][0].content.body).toBe(named.body);
+  });
+
+  // ── Content-drift refresh: the crux of DR-6's "reconcile carries it" ──
+  describe('content-drift refresh on a KEPT schedule', () => {
+    const named = { title: 'Biscuit’s day', body: 'Biscuit’s day is ready to read.' };
+    const neutral = {
+      title: NOTIFICATION_CATEGORIES.daily_summary.title,
+      body: NOTIFICATION_CATEGORIES.daily_summary.body,
+    };
+
+    beforeEach(() => getPermissionsAsync.mockResolvedValue({ granted: true, canAskAgain: false }));
+
+    it('reschedules when the live copy no longer matches the desired copy', async () => {
+      // Live schedule carries the NEUTRAL sig; the owner just opted into the name.
+      getAllScheduledNotificationsAsync.mockResolvedValue([
+        {
+          identifier: scheduleIdentifier('daily_summary'),
+          content: { data: { contentSig: contentSignature(neutral) } },
+        },
+      ]);
+      const actions = await reconcileSchedules(['daily_summary'], { daily_summary: named });
+      // computeReconcileActions keeps it (present + desired), so the refresh is what
+      // reschedules — with the named body.
+      expect(actions).toEqual({ toSchedule: [], toCancel: [] });
+      expect(scheduleNotificationAsync).toHaveBeenCalledTimes(1);
+      expect(scheduleNotificationAsync.mock.calls[0][0].content.body).toBe(named.body);
+    });
+
+    it('does NOT reschedule when the live copy already matches (no needless churn)', async () => {
+      getAllScheduledNotificationsAsync.mockResolvedValue([
+        {
+          identifier: scheduleIdentifier('daily_summary'),
+          content: { data: { contentSig: contentSignature(named) } },
+        },
+      ]);
+      await reconcileSchedules(['daily_summary'], { daily_summary: named });
+      expect(scheduleNotificationAsync).not.toHaveBeenCalled();
+    });
+
+    it('refreshes a pre-DR-6 schedule (null sig) once to stamp the current copy', async () => {
+      getAllScheduledNotificationsAsync.mockResolvedValue([
+        { identifier: scheduleIdentifier('daily_summary'), content: { data: {} } },
+      ]);
+      await reconcileSchedules(['daily_summary'], { daily_summary: neutral });
+      expect(scheduleNotificationAsync).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not refresh copy while permission is denied (nothing may be scheduled)', async () => {
+      getPermissionsAsync.mockResolvedValue({ granted: false, canAskAgain: false });
+      getAllScheduledNotificationsAsync.mockResolvedValue([
+        {
+          identifier: scheduleIdentifier('daily_summary'),
+          content: { data: { contentSig: contentSignature(neutral) } },
+        },
+      ]);
+      await reconcileSchedules(['daily_summary'], { daily_summary: named });
+      // Permission gone → the orphan is cancelled, never rescheduled with new copy.
+      expect(scheduleNotificationAsync).not.toHaveBeenCalled();
+      expect(cancelScheduledNotificationAsync).toHaveBeenCalledWith(
+        scheduleIdentifier('daily_summary'),
+      );
+    });
   });
 });
 

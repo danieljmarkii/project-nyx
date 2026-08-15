@@ -84,6 +84,15 @@ export const NOTIFICATION_SCHEMA_SQL = `
     category        TEXT NOT NULL,
     -- SQLite INTEGER 0/1; the mapper coerces to a real boolean for the server.
     enabled         INTEGER NOT NULL DEFAULT 0,
+    -- The warmth opt-in (migration 058 / Daily Recap §6, DR-6). INTEGER 0/1 like
+    -- enabled, coerced BOOLEAN<->INTEGER by the mapper. DEFAULT 0 mirrors the
+    -- server's NOT NULL DEFAULT false: NEUTRAL is the T&S-mandated default (a pet's
+    -- name on a lock screen is an involuntary-public tradeoff, so it is the owner's
+    -- explicit opt-in) and G6 (everything defaults off). Meaningful only on the
+    -- account-wide daily_summary row (pet_id NULL, the v1 shape); INERT WARMTH — it
+    -- changes only the daily-summary notification's title/body text, never delivery,
+    -- routing, or which pets a notification concerns.
+    use_pet_name    INTEGER NOT NULL DEFAULT 0,
     -- WALL-CLOCK 'HH:MM' — NOT a timestamp. Never parseTs it, never compare it to
     -- created_at/updated_at (see the module header + migration 050).
     fire_local_time TEXT NOT NULL DEFAULT '21:00',
@@ -127,6 +136,9 @@ export interface LocalNotificationPreference {
   pet_id: string | null;
   category: string;
   enabled: number;
+  /** The warmth opt-in — SQLite INTEGER 0/1, coerced to boolean by the mapper.
+   *  Meaningful only on the account-wide daily_summary row (DR-6). */
+  use_pet_name: number;
   /** Wall-clock 'HH:MM' — see the header. */
   fire_local_time: string;
   created_at: string;
@@ -149,6 +161,8 @@ export interface RemoteNotificationPreferenceUpsert {
   pet_id: string | null;
   category: string;
   enabled: boolean;
+  /** The warmth opt-in as a real boolean for the server column (DR-6). */
+  use_pet_name: boolean;
   fire_local_time: string;
   created_at: string;
   updated_at: string;
@@ -172,6 +186,8 @@ export function notificationPreferenceRowToRemote(
     category: row.category,
     // INTEGER 0/1 → boolean for the server column.
     enabled: Boolean(row.enabled),
+    // The warmth opt-in, same 0/1 → boolean coercion (DR-6).
+    use_pet_name: Boolean(row.use_pet_name),
     fire_local_time: row.fire_local_time,
     created_at: row.created_at,
     updated_at: row.updated_at,

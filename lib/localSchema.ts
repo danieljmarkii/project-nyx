@@ -365,6 +365,17 @@ export const COLUMN_UPGRADES: readonly ColumnUpgrade[] = [
   // TEXT locally like every other timestamp column in the diet-trial mirror.
   { table: 'diet_trials', column: 'target_protein', type: 'TEXT' },
   { table: 'diet_trials', column: 'target_protein_set_at', type: 'TEXT' },
+  // B-671 / Daily Recap DR-6 — the pet-name warmth opt-in. `notification_preferences`
+  // shipped in B-661 PR 2 (migration 050) WITHOUT this column, so on any device that
+  // already has the table CREATE TABLE IF NOT EXISTS (NOTIFICATION_SCHEMA_SQL) is a
+  // no-op and cannot add it — only this can. NOT NULL DEFAULT 0 is a CONSTANT default
+  // (SQLite allows it on ADD COLUMN) and a true backfill: every pre-DR-6 row predates
+  // the opt-in, so 0 = neutral is the honest value (mirrors migration 058's server
+  // DEFAULT false). Load-bearing beyond the new feature: CATEGORY_PREFERENCE_READ_SQL
+  // now SELECTs use_pet_name and backs the *already-shipped* Daily Summary toggle, so
+  // without this add every read/write on the notifications screen throws
+  // "no such column" on an upgrading device.
+  { table: 'notification_preferences', column: 'use_pet_name', type: 'INTEGER NOT NULL DEFAULT 0' },
   // B-398 — the quarantine pair, on every queue table. Generated from SYNC_QUEUES
   // rather than typed out twelve times, so the set that gets the columns and the
   // set the badge counts are provably the same set.
