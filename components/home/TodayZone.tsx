@@ -6,9 +6,11 @@ import { Card } from '../ui/Card';
 import { SectionLabel } from '../ui/SectionLabel';
 import { EVENT_TYPES, EventTypeKey, SYMPTOM_TYPES } from '../../constants/eventTypes';
 import { EventIcon } from '../event/EventIcon';
+import { DayLane } from '../recap/DayLane';
 import { formatDrugLabel } from '../../lib/medications';
 import { foodFormatTag } from '../../lib/food';
 import { NyxEvent } from '../../store/eventStore';
+import { buildTodayLane, type DayCountChip } from '../../lib/todayLane';
 import { useEvents } from '../../hooks/useEvents';
 import { usePetStore } from '../../store/petStore';
 
@@ -19,10 +21,12 @@ function formatEventTime(iso: string): string {
   return new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 }
 
-// §8 doorway — open History filtered to today (clearable). The `ts` nonce makes the
-// filter re-apply even when the History tab is already mounted; History reads `date`.
-function openHistoryToday() {
-  router.push({ pathname: '/(tabs)/history', params: { date: 'today', ts: String(Date.now()) } });
+// The zone's single doorway — the full-day recap (/day-summary). Replaces the old
+// openHistoryToday header shortcut (DR-2 §3): History is its own tab, one tab away. Both
+// the band's "Full day ›" and the capped-rows strip lead here — one destination, the full
+// day, whose spine rows each open their own event.
+function openFullDay() {
+  router.push('/day-summary');
 }
 
 export function TodayZone() {
@@ -42,23 +46,43 @@ export function TodayZone() {
     [todayEvents, localTodayStart],
   );
 
+  // The recap band — the day lane's dots + the honest count line — from the SAME pure
+  // builder the night recap reads (buildTodayLane → buildCountChips), so Home's glance
+  // and the evening read can never state the day differently.
+  const lane = useMemo(
+    () =>
+      buildTodayLane(
+        eventsToday.map(e => ({ id: e.id, event_type: e.event_type, occurred_at: e.occurred_at })),
+      ),
+    [eventsToday],
+  );
+
   const shown = eventsToday.slice(0, MAX_SHOWN);
   const remaining = eventsToday.length - MAX_SHOWN;
   const isEmpty = eventsToday.length === 0;
 
   return (
     <Card>
-      <View style={styles.headerRow}>
-        <SectionLabel label="Today" header />
+      {/* The recap band replaces TodayZone's old header (R-5 / §3): the label, the compact
+          day lane, an honest count line, and "Full day ›" into the full-day recap. No new
+          card, no badge, no verdict — the Signal still leads Home (Principle 3). */}
+      <View style={styles.bandTop}>
+        <SectionLabel label="Today so far" header />
         <TouchableOpacity
-          onPress={openHistoryToday}
+          onPress={openFullDay}
           hitSlop={8}
           accessibilityRole="button"
-          accessibilityLabel="See today in history"
+          accessibilityLabel="Open the full day"
         >
-          <Text style={styles.historyLink}>History ›</Text>
+          <Text style={styles.door}>Full day ›</Text>
         </TouchableOpacity>
       </View>
+
+      {/* Zero-log: the lane renders empty (an honest 6a→12a track with no dots) beside the
+          existing empty nudge — nothing manufactured. */}
+      <DayLane dots={lane.dots} />
+
+      {lane.counts.length > 0 && <CountLine counts={lane.counts} />}
 
       {isEmpty ? (
         <TouchableOpacity
@@ -72,10 +96,9 @@ export function TodayZone() {
           <Text style={styles.nudgeArrow}>→</Text>
         </TouchableOpacity>
       ) : (
-        <TouchableOpacity
-          onPress={openHistoryToday}
-          activeOpacity={0.92}
-        >
+        // The capped rows continue beneath, unchanged — now leading to the same full-day
+        // recap as the band (one door), not the retired History-today shortcut.
+        <TouchableOpacity testID="today-strip" onPress={openFullDay} activeOpacity={0.92} style={styles.stripWrap}>
           <View style={styles.strip}>
             {shown.map((event, i) => (
               <EventStripRow
@@ -94,6 +117,41 @@ export function TodayZone() {
         </TouchableOpacity>
       )}
     </Card>
+  );
+}
+
+/** The band's honest count line — "2 meals · 1 dose logged". The SAME per-category
+ *  counts the recap's C2 chips render (`buildCountChips`), laid out as one factual
+ *  clause: the leading number of each segment is bolded (the mock's `<b>2</b> meals`),
+ *  segments join with " · ", and the clause closes with "logged". Digit-anchored and
+ *  never totalled into a score (Principle 3).
+ *
+ *  Register note: a symptom count renders in the SAME neutral digit as meals/doses here.
+ *  The shared `DayCountChip.tone` (which the night recap paints rose) is deliberately NOT
+ *  applied on Home — the lane's rose dot above already carries the symptom colour, the
+ *  count line stays a calm factual summary, and a legible rose TEXT token on the light
+ *  ground (the dot's #F43F5E fails AA as 13px text) is a Designer/AA call. This is
+ *  REGISTER only: the counts are byte-identical to the recap's (the invariant the shared
+ *  builder guarantees — same numbers, same nouns). Rose-vs-neutral is surfaced for PM
+ *  ratification (CUL-25 pm-review D1); flipping it is a one-line change. */
+function CountLine({ counts }: { counts: DayCountChip[] }) {
+  return (
+    <Text testID="today-count-line" style={styles.counts}>
+      {counts.map((c, i) => {
+        // Split "2 meals" → bold "2" + muted " meals" (the split CountChips uses too).
+        const sp = c.label.indexOf(' ');
+        const head = sp === -1 ? c.label : c.label.slice(0, sp);
+        const tail = sp === -1 ? '' : c.label.slice(sp);
+        return (
+          <Text key={c.key}>
+            {i > 0 ? ' · ' : ''}
+            <Text style={styles.countNum}>{head}</Text>
+            {tail}
+          </Text>
+        );
+      })}
+      {' logged'}
+    </Text>
   );
 }
 
@@ -167,23 +225,40 @@ function EventStripRow({ event, showBorder }: { event: NyxEvent; showBorder: boo
 }
 
 const styles = StyleSheet.create({
-  headerRow: {
+  // The band's top row — label + the "Full day ›" door. No marginBottom: the lane's own
+  // marginTop sets the gap below.
+  bandTop: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: theme.space1,
   },
-  historyLink: {
+  door: {
     fontSize: theme.textSM,
     fontWeight: theme.weightMedium,
     color: theme.colorAccent,
     // Padding + the hitSlop={8} on the touchable clear the 44pt tap-target floor.
     paddingVertical: theme.space1,
   },
+  // The honest count line, beneath the lane. Muted clause, bold digits.
+  counts: {
+    fontSize: theme.textSM,
+    color: theme.colorTextSecondary,
+    lineHeight: theme.lineHeightSM,
+    marginTop: theme.space0_5 + theme.spaceMicro, // 6
+  },
+  countNum: {
+    fontWeight: theme.weightSemibold,
+    color: theme.colorTextPrimary,
+  },
+  // Separates the capped rows from the band above them.
+  stripWrap: {
+    marginTop: theme.space2,
+  },
   nudgeRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    marginTop: theme.space1,
     paddingVertical: theme.space1,
   },
   nudge: {

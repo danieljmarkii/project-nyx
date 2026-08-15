@@ -41,3 +41,11 @@ export const NODE_TINT_NIGHT: Record<EventTintCategory, string> = {
   medication: theme.colorEventMedicationOnNight,
   other: theme.colorTextOnNightMuted,
 };
+
+// The node's GEOMETRY, shared for the same reason as the tints: the vertical day spine
+// (DR-1) and DR-2's horizontal Home lane both import these, so a node is the same-sized
+// ground-ringed bead at both sizes and the two renderings cannot drift (§2 "shares its
+// dot/tint constants so the two sizes cannot drift"). Both are the border-box width in
+// RN, so the ring is drawn INSIDE the size (a dot reads as `NODE_DOT_SIZE` across).
+export const NODE_DOT_SIZE = 11;
+export const NODE_DOT_RING = 2;
