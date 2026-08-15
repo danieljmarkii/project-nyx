@@ -318,7 +318,7 @@ export default function NotificationsScreen() {
           {showPetNameRow && (
             <SettingsRow
               label={`Use ${primerPetName}’s name in notifications`}
-              sublabel={`Shows their name on the lock screen at 9pm. Off keeps the summary neutral.`}
+              sublabel="Shows their name on the lock screen at 9pm. Off keeps the summary neutral."
               trailing={
                 <Switch
                   value={usePetName}

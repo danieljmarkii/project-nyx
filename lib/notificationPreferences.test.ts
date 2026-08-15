@@ -17,6 +17,7 @@ import {
   notificationPreferenceRowToRemote,
   type LocalNotificationPreference,
 } from './notificationPreferences';
+import { COLUMN_UPGRADES } from './localSchema';
 
 // node:sqlite is Node ≥ 22 core; require() keeps it off the babel/jest-expo path
 // (same loader trick as lib/dietTrialMirror.test.ts).
@@ -127,6 +128,55 @@ describe('NOTIFICATION_SCHEMA_SQL — production local DDL', () => {
     const p = db.prepare('SELECT pet_id, synced FROM notification_preferences WHERE id = ?').get('p') as Row;
     expect(p.pet_id).toBe('no-such-pet');
     expect(p.synced).toBe(0);
+    db.close();
+  });
+});
+
+// The upgrade path (DR-6) — CREATE TABLE IF NOT EXISTS can't add a column to a
+// table that already exists (migration 050 shipped notification_preferences long
+// before use_pet_name), so an already-installed device gets the column only via
+// COLUMN_UPGRADES. Without it, CATEGORY_PREFERENCE_READ_SQL's SELECT of use_pet_name
+// throws on every read/write of the (already-shipped) Daily Summary toggle.
+describe('use_pet_name upgrade path (pre-058 devices)', () => {
+  it('COLUMN_UPGRADES carries the notification_preferences.use_pet_name add', () => {
+    const entry = COLUMN_UPGRADES.find(
+      (u) => u.table === 'notification_preferences' && u.column === 'use_pet_name',
+    );
+    expect(entry).toBeDefined();
+    // Constant default (SQLite allows it on ADD COLUMN) — 0 = neutral, mirroring
+    // migration 058's server DEFAULT false.
+    expect(entry?.type).toBe('INTEGER NOT NULL DEFAULT 0');
+  });
+
+  it('applying it to a PRE-058 table adds the column (default 0) and unblocks the read', () => {
+    const db = new DatabaseSync(':memory:');
+    // The pre-DR-6 shape — migration 050's notification_preferences WITHOUT
+    // use_pet_name (what an upgrading device actually holds).
+    db.exec(`CREATE TABLE notification_preferences (
+      id TEXT PRIMARY KEY, pet_id TEXT, category TEXT NOT NULL,
+      enabled INTEGER NOT NULL DEFAULT 0, fire_local_time TEXT NOT NULL DEFAULT '21:00',
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      synced INTEGER NOT NULL DEFAULT 0, sync_attempts INTEGER NOT NULL DEFAULT 0, sync_error TEXT
+    );`);
+    db.exec(
+      `INSERT INTO notification_preferences (id, category, enabled) VALUES ('old', 'daily_summary', 1)`,
+    );
+    // The regression the upgrade prevents: the DR-6 read throws before the column exists.
+    expect(() =>
+      db.prepare('SELECT use_pet_name FROM notification_preferences').get(),
+    ).toThrow(/use_pet_name/);
+
+    const entry = COLUMN_UPGRADES.find(
+      (u) => u.table === 'notification_preferences' && u.column === 'use_pet_name',
+    )!;
+    db.exec(`ALTER TABLE notification_preferences ADD COLUMN ${entry.column} ${entry.type}`);
+
+    const row = db
+      .prepare('SELECT enabled, use_pet_name FROM notification_preferences WHERE id = ?')
+      .get('old') as Row;
+    expect(row.enabled).toBe(1); // the pre-existing Daily Summary toggle survives untouched
+    expect(row.use_pet_name).toBe(0); // backfilled neutral — the honest pre-opt-in value
     db.close();
   });
 });
