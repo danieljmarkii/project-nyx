@@ -12,7 +12,7 @@
 // line beside it, so the whole lane is hidden from the screen reader — the count line and
 // the rows carry the meaning.
 import { memo } from 'react';
-import { Platform, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 import { theme } from '../../constants/theme';
 import type { LaneDot } from '../../lib/todayLane';
 import { NODE_TINT_DAY, NODE_DOT_SIZE, NODE_DOT_RING } from './nodeTints';
@@ -28,7 +28,10 @@ function DayLaneImpl({ dots }: { dots: LaneDot[] }) {
     <View
       style={styles.lane}
       // The dots + axis are decorative-adjacent; the count line is the accessible summary.
-      accessibilityElementsHidden={Platform.OS === 'ios'}
+      // (Bare `accessibilityElementsHidden` — iOS-only — + `no-hide-descendants` for
+      // Android is the codebase idiom for a decorative subtree; matches Skeleton /
+      // PullToRefreshSky / NightGround.)
+      accessibilityElementsHidden
       importantForAccessibility="no-hide-descendants"
     >
       <View style={styles.plot}>

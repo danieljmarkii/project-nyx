@@ -82,6 +82,22 @@ describe('buildTodayLane', () => {
     expect(model.dots[0].category).toBe('other');
   });
 
+  it('orders the "other" count chips by time regardless of input order (recap parity)', () => {
+    // `stool_normal` + `weight_check` both bucket to "other" (no fixed order list), so
+    // their chip order is ENCOUNTER order. Home feeds events latest-first (its DB query
+    // is `ORDER BY occurred_at DESC`); the count line must still list them in the same
+    // earliest-first order the night recap counts in — so the two surfaces never disagree.
+    const stoolEarly = { id: 's', event_type: 'stool_normal', occurred_at: at(8) };
+    const weighLate = { id: 'w', event_type: 'weight_check', occurred_at: at(17) };
+    const latestFirst = buildTodayLane([weighLate, stoolEarly]);
+    const earliestFirst = buildTodayLane([stoolEarly, weighLate]);
+    // Earliest-first output whichever way the caller ordered the input.
+    expect(latestFirst.counts.map((c) => c.key)).toEqual(['stool_normal', 'weight_check']);
+    expect(latestFirst.counts).toEqual(earliestFirst.counts);
+    // …and the dots agree with the counts (same sorted source).
+    expect(latestFirst.dots.map((d) => d.key)).toEqual(['s', 'w']);
+  });
+
   it('is empty on a zero-log day — no dots, no count line', () => {
     const model = buildTodayLane([]);
     expect(model.dots).toEqual([]);

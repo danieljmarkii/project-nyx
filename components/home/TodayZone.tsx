@@ -98,7 +98,7 @@ export function TodayZone() {
       ) : (
         // The capped rows continue beneath, unchanged — now leading to the same full-day
         // recap as the band (one door), not the retired History-today shortcut.
-        <TouchableOpacity onPress={openFullDay} activeOpacity={0.92} style={styles.stripWrap}>
+        <TouchableOpacity testID="today-strip" onPress={openFullDay} activeOpacity={0.92} style={styles.stripWrap}>
           <View style={styles.strip}>
             {shown.map((event, i) => (
               <EventStripRow
@@ -136,7 +136,7 @@ export function TodayZone() {
  *  ratification (CUL-25 pm-review D1); flipping it is a one-line change. */
 function CountLine({ counts }: { counts: DayCountChip[] }) {
   return (
-    <Text style={styles.counts}>
+    <Text testID="today-count-line" style={styles.counts}>
       {counts.map((c, i) => {
         // Split "2 meals" → bold "2" + muted " meals" (the split CountChips uses too).
         const sp = c.label.indexOf(' ');

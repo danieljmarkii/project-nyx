@@ -80,18 +80,24 @@ export function laneEventPosition(occurredAt: string): number {
  * events to the local day; this only positions and counts them.
  */
 export function buildTodayLane(events: readonly LaneEvent[]): TodayLaneModel {
-  const dots: LaneDot[] = [...events]
-    // Earliest-first, matching the spine's reading order. A bad timestamp sorts as 0.
-    .sort((a, b) => (Date.parse(a.occurred_at) || 0) - (Date.parse(b.occurred_at) || 0))
-    .map((e) => ({
-      key: e.id,
-      category: eventTintCategory(e.event_type),
-      position: laneEventPosition(e.occurred_at),
-    }));
+  // Sort ONCE, earliest-first, and derive BOTH outputs from the same array. The dots
+  // read left-to-right; the count line must too — `buildCountChips` orders its `other`
+  // bucket (weight, normal stool — no fixed order list) and any unlisted-symptom tail by
+  // ENCOUNTER order, so counting the caller's array (Home's DB gives latest-first) would
+  // order those chips differently from the night recap, which counts its earliest-first
+  // `section.rows`. Same earliest-first source ⇒ the two surfaces list the day
+  // identically, which is the whole point of sharing `buildCountChips`.
+  const sorted = [...events].sort(
+    (a, b) => (Date.parse(a.occurred_at) || 0) - (Date.parse(b.occurred_at) || 0),
+  );
 
-  // The count line is buildCountChips over the SAME events — one counting source with
-  // the recap's C2, so the two surfaces state the day's inventory identically.
-  const countable: CountableEvent[] = events.map((e) => ({
+  const dots: LaneDot[] = sorted.map((e) => ({
+    key: e.id,
+    category: eventTintCategory(e.event_type),
+    position: laneEventPosition(e.occurred_at),
+  }));
+
+  const countable: CountableEvent[] = sorted.map((e) => ({
     category: eventTintCategory(e.event_type),
     eventType: e.event_type,
   }));
