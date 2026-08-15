@@ -1,6 +1,6 @@
 # Signals v2 PR 10 (CUL-15) — copy/safety pass, flag-on QA, the single gated redeploy, beta-shelf row, GA rec
 
-**Date:** 2026-08-15
+**Date:** 2026-08-15 · **shipped via #655** (draft)
 
 The track close-out (spec §7 PR 10). Blocked-by CUL-10/11/12/13/14 (PRs 5–9) — **all shipped** (#646–#652). This is the last PR of the Signals v2 track (B-755): the consolidated `nyx-voice` + `clinical-guardrails` copy/safety pass over every string the track added, the S10 receipt-assignment audit, the `pm-feature-review` re-run, the `signals_v2` beta-shelf row, the full flag-on on-device QA script, the **single gated `generate-signal` redeploy** (prepared + handed off — see §Deploy), and the GA recommendation to the PM.
 
