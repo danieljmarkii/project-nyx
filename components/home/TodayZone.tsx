@@ -235,7 +235,12 @@ const styles = StyleSheet.create({
   door: {
     fontSize: theme.textSM,
     fontWeight: theme.weightMedium,
-    color: theme.colorAccent,
+    // accent-INK, not colorAccent: this is ~13px accent TEXT on the white Card, where
+    // bright #00C2A8 is only 2.26:1 (fails AA). colorAccentInk (#0B7B6C) is 5.17:1 and
+    // is the design-lock's `--f-accent-ink` for the band door + the app convention for
+    // accent text on light. The recap's OWN night links keep colorAccent — teal passes
+    // on the dark ground (8:1) — this is a light-ground-only fix (CUL-27 AA pass).
+    color: theme.colorAccentInk,
     // Padding + the hitSlop={8} on the touchable clear the 44pt tap-target floor.
     paddingVertical: theme.space1,
   },
@@ -341,7 +346,9 @@ const styles = StyleSheet.create({
   },
   moreLink: {
     fontSize: theme.textSM,
-    color: theme.colorAccent,
+    // accent-INK for the same AA reason as `door` — accent text on the white Card
+    // (CUL-27: colorAccent is 2.26:1 here, colorAccentInk 5.17:1).
+    color: theme.colorAccentInk,
     fontWeight: theme.weightMedium,
     paddingTop: 10,
     borderTopWidth: 1,

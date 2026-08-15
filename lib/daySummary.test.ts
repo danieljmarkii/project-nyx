@@ -30,6 +30,7 @@ import {
 import { trialIdentityLabel, type TrialCardTrial } from './dietTrialCard';
 import type { TrialExposureItem } from './dietTrial';
 import type { MedStripInput, MedStripModel } from './medStrip';
+import { EVENT_TYPES, SYMPTOM_TYPES, type EventTypeKey } from '../constants/eventTypes';
 
 // Minimal TimelineRow factory — only the columns the builder + describeDayEvent
 // read need real values; everything else defaults to the null a non-matching join
@@ -606,6 +607,43 @@ describe('buildLeadLine (C0) — fixed precedence: symptom → trial → counts'
   });
 });
 
+describe('C0 symptom-set coverage — the recap must not wash a clinical symptom (CUL-27)', () => {
+  // The lead line's tier-1 precedence asks "is this a symptom?" via eventTintCategory →
+  // SYMPTOM_TYPES. The rest of the clinical stack (generate-report REPORT_SYMPTOM_TYPES,
+  // generate-signal CORRELATION_SYMPTOM_TYPES, hooks/useTrend) counts a BROADER set that
+  // also includes `scratch` + `skin_reaction` — the canonical food-allergy outcomes. If
+  // one of those becomes loggable (added to EVENT_TYPES / the quick-log) WITHOUT being
+  // added to SYMPTOM_TYPES, its day washes to a neutral "one event" lead instead of
+  // leading as a symptom — reassurance-by-omission, the exact failure C0 precedence
+  // exists to prevent (adversarial-reviewer, CUL-27). They are UN-loggable today (absent
+  // from EVENT_TYPES, so this holds), which is why this is a build-time TRIPWIRE, not a
+  // live bug: it fails the moment either type is exposed but not classified as a symptom.
+  const CLINICAL_SYMPTOM_TYPES = [
+    'vomit', 'diarrhea', 'itch', 'scratch', 'skin_reaction', 'lethargy',
+  ] as const;
+
+  it('every clinical symptom that is loggable today is classified as a symptom', () => {
+    for (const t of CLINICAL_SYMPTOM_TYPES) {
+      if (t in EVENT_TYPES) {
+        // Loggable (in the picker) ⇒ MUST be a recap symptom, or its day washes to
+        // a neutral lead. Fails if someone removes a live symptom from SYMPTOM_TYPES
+        // or exposes scratch/skin_reaction without classifying it.
+        expect(SYMPTOM_TYPES.has(t as EventTypeKey)).toBe(true);
+      }
+    }
+  });
+
+  it('names the reconciliation debt for the currently un-loggable clinical symptoms', () => {
+    // Documents the known gap: scratch/skin_reaction are clinical symptoms the report
+    // counts but the picker does not yet expose. When they are exposed, the guard above
+    // turns red — the fix (add to SYMPTOM_TYPES + SYMPTOM_NOUN/CHIP_ORDER) rides that
+    // picker work (backlog), not this finish pass. This assertion just pins the premise
+    // so the tripwire's reasoning can't silently rot.
+    const unloggable = CLINICAL_SYMPTOM_TYPES.filter((t) => !(t in EVENT_TYPES));
+    expect(unloggable).toEqual(['scratch', 'skin_reaction']);
+  });
+});
+
 describe('buildCountChips (C2) — per-category, symptom-toned, never totalled', () => {
   it('names each symptom, then meals, then doses — symptoms lead', () => {
     const rows = [
@@ -851,15 +889,54 @@ describe('buildDaySummary — the rich single-pet recap end-to-end (§2)', () =>
   });
 
   it('G2 / Change-Contract: no surface string is a verdict, arrow or percentage', () => {
-    const model = buildDaySummary({ pets: [trialDayPet()], nowMs, timeZone: tz });
-    const strings = [
-      model.lead,
-      model.forward,
-      model.trialStrip?.fact,
-      model.trialStrip?.title,
-      ...model.chips.map((c) => c.label),
-      ...model.sections[0].rows.map((r) => r.subline),
-    ].filter((s): s is string => typeof s === 'string');
+    // The guarantee is over the SPACE the recap can render, not one all-eaten example
+    // (CUL-27 adversarial: the old test was single-fixture and skipped model.medStrips).
+    // Cover the all-eaten trial day (the full model), a full-refusal trial day + a
+    // partial-refusal counts day (mealRefusalClause), a multi-symptom day, and the
+    // med-strip builder incl. a withholding (concern) fact — the strings the old test
+    // excluded.
+    const refusedMeal = (id: string) => dsr({ id, category: 'meal', eventType: 'meal', detail: 'refused' });
+    const eatenMeal = (id: string) => dsr({ id, category: 'meal', eventType: 'meal', detail: 'all eaten' });
+    const symptomRow = (id: string, eventType: string) =>
+      dsr({ id, category: 'symptom', eventType, detail: null, time: '8:00 AM' });
+
+    const strings: (string | null | undefined)[] = [];
+
+    // 1 — the all-eaten trial day: the whole model, INCLUDING medStrips (empty here, but
+    // the med-strip strings are added explicitly below so the scan covers them).
+    const trialModel = buildDaySummary({ pets: [trialDayPet()], nowMs, timeZone: tz });
+    strings.push(
+      trialModel.lead,
+      trialModel.forward,
+      trialModel.trialStrip?.fact,
+      trialModel.trialStrip?.title,
+      ...trialModel.chips.map((c) => c.label),
+      ...trialModel.sections[0].rows.map((r) => r.subline),
+      ...trialModel.medStrips.flatMap((m) => [m.title, m.fact]),
+    );
+
+    // 2 — lead lines exercising the refusal clause + the multi-symptom tier.
+    strings.push(
+      buildLeadLine([refusedMeal('m1'), refusedMeal('m2'), refusedMeal('m3')], 'Biscuit', tf()), // "all refused"
+      buildLeadLine([eatenMeal('m1'), refusedMeal('m2')], 'Biscuit', null), // "one refused"
+      buildLeadLine(
+        [symptomRow('s1', 'vomit'), symptomRow('s2', 'diarrhea'), symptomRow('s3', 'lethargy')],
+        'Biscuit',
+        null,
+      ),
+    );
+
+    // 3 — the med-strip builder directly, incl. a withholding fact painted as concern
+    // (the strings the old test omitted entirely).
+    const medStrips = buildRecapMedStrips([
+      { key: 'a', header: 'Amoxicillin · day 5 of 14', line: 'Dose 5 of 14 logged today', withholding: [], collapsed: false },
+      { key: 'b', header: 'Gabapentin · 2 doses logged today', line: null, withholding: [], collapsed: true },
+      { key: 'c', header: 'Insulin', line: 'Yesterday’s dose refused', withholding: ['refused_dose'], collapsed: false },
+    ] as unknown as MedStripModel[]);
+    strings.push(...medStrips.flatMap((m) => [m.title, m.fact]));
+
+    const present = strings.filter((s): s is string => typeof s === 'string');
+    expect(present.length).toBeGreaterThan(12); // a fixture silently emptying must fail loud
 
     // No reassurance / wellness verdict (clinical-guardrails G2), no comparison verdicts.
     const BANNED = [
@@ -867,7 +944,7 @@ describe('buildDaySummary — the rich single-pet recap end-to-end (§2)', () =>
       'no concerns', 'nothing wrong', 'doing great', 'improving', 'improved',
       'getting better', 'worse', 'worsening', 'normal', 'great',
     ];
-    for (const s of strings) {
+    for (const s of present) {
       const lower = s.toLowerCase();
       for (const bad of BANNED) expect(lower).not.toContain(bad);
       // The Change-Contract grammar: no arrows, no percentages, no exclamation.

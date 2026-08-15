@@ -455,25 +455,26 @@ Claude Code cannot edit this directly. Flag when it needs updating in the sessio
 
 ## Backlog Protocol
 
-The backlog lives at `docs/backlog.md`. It is the destination for anything that would otherwise be said as "let's log that for the future" — out-of-scope features, deferred refactors, pre-prod requirements, decisions deferred past the current phase.
+**The backlog is migrating to Linear (started 2026-08-15).** `docs/backlog.md` grew past being a usable "where are we" answer (453 KB, session-start scans reduced to `grep`) — Linear gives real filtering/priority/status instead. Team **Culprit** at `linear.app/projectnyx`. Two active build-track projects already exist there (**Signals v2 — the record, decomposed**, **The Daily Recap**) using `CUL-NNN` issues; a new **Legacy Backlog** project holds everything else. All 47 `Now`-priority backlog.md rows as of 2026-08-15 were ported (CUL-28–74, tagged `Legacy`, footer traces back to the original `B-NNN`). `Next`/`Later` rows have **not yet** been migrated — `docs/backlog.md` stays authoritative for those until a follow-up pass. Once fully migrated, `docs/backlog.md` freezes as the historical record.
 
-**When to add a row:** any time you're about to say "we should do X later," "noted for future," "deferring this," or the PM says any of those phrases. Write the row immediately, in-session, before continuing the conversation. Do not batch-add at session end and do not wait for PM approval — adding a backlog row is reversible and cheap; losing the item is not.
+**New items go to Linear, not the markdown file, effective now:**
 
-**Row format** (see `docs/backlog.md` for the live table):
+**When to file an issue:** any time you're about to say "we should do X later," "noted for future," or the PM says any of those phrases. File it immediately, in-session, before continuing the conversation — via the Linear MCP tools (`mcp__Linear__save_issue`). Do not batch-file at session end and do not wait for PM approval — filing an issue is reversible and cheap; losing the item is not.
+
+**Issue shape:**
 
 | Field | Notes |
 |---|---|
-| ID | Sequential `B-NNN`. Never reuse. |
-| Title | Short, scannable. |
-| Why | One line. Enough context that future-you can re-evaluate without re-deriving. |
-| Priority | `Now` / `Next` / `Later` (see file for definitions) |
-| Added | ISO date |
-| Blocks | The build step, phase, or condition that should trigger this. `—` if none. |
-| Status | `Open` until done. When closing, leave the row and mark `Done — <date>` with resolving PR/session. |
+| Title | Short, scannable. Keep any legacy `B-NNN` reference in the title only if the item extends/supersedes an already-migrated row. |
+| Description | Lead with **Why:** one paragraph, enough context that future-you can re-evaluate without re-deriving. Add **Blocks:** the build step, phase, or condition that should trigger this — `—` if none. |
+| Priority | Map `Now`→Urgent/High, `Next`→Medium, `Later`→Low (Linear's native field, no separate label needed). |
+| Project | The active build-track project if the item extends one (Signals v2, Daily Recap, or a future track); **Legacy Backlog** — or a new project, PM's call — otherwise. |
+| Team | `Culprit` |
+| State | `Todo` for new items; `In Progress` / `Done` only for items filed retroactively about already-started work. |
 
-**`view backlog` command:** when the PM types `view backlog`, `show backlog`, `what's in the backlog`, or any natural-language equivalent, read `docs/backlog.md` and present it grouped by priority. Surface anything whose **Blocks** column matches the Current Phase at the top. Do not invoke this proactively at every session start — only on request, or when a session-start scan reveals a backlog item that blocks the Current Phase.
+**`view backlog` command:** when the PM types `view backlog`, `show backlog`, `what's in the backlog`, or any natural-language equivalent, use the Linear MCP `list_issues` tool (team `Culprit`) and present grouped by priority, surfacing anything whose description names the Current Phase at the top. For the not-yet-migrated `Next`/`Later` rows, also check `docs/backlog.md`. Do not invoke this proactively at every session start — only on request, or when a scan reveals an item that blocks the Current Phase.
 
-**Distinction from Open Questions:** Open Questions are *unresolved decisions* that need PM input to unblock work. Backlog items are *resolved deferrals* — we know what to do, just not now. If an item needs a decision, it goes in Open Questions; if it needs execution at a later time, it goes in the backlog.
+**Distinction from Open Questions:** Open Questions are *unresolved decisions* that need PM input to unblock work — these stay in this file's Open Questions table, not Linear. Backlog items are *resolved deferrals* — we know what to do, just not now. If an item needs a decision, it goes in Open Questions; if it needs execution at a later time, it goes in Linear.
 
 ---
 
