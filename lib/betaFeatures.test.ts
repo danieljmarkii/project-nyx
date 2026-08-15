@@ -46,7 +46,7 @@ describe('BETA_REGISTRY', () => {
     expect(new Set(keys).size).toBe(keys.length);
   });
 
-  it('ships the widget, the Signal redesign + the log-picker redesign as the v1 betas, all client-only (no server cost)', () => {
+  it('ships the widget, the Signal redesign, the log-picker redesign + Signals v2 as the v1 betas, all client-only (no server cost)', () => {
     const widget = BETA_REGISTRY.find((b) => b.key === 'widget_enabled');
     expect(widget).toBeDefined();
     expect((widget as BetaFeature).serverCost).toBe(false);
@@ -64,7 +64,15 @@ describe('BETA_REGISTRY', () => {
     expect(logPicker).toBeDefined();
     expect((logPicker as BetaFeature).serverCost).toBe(false);
 
-    expect(BETA_REGISTRY).toHaveLength(3);
+    // B-755 joined the shelf (spec §5, FR-FLAG-4). serverCost:false is load-bearing:
+    // the new engine lanes compute UNIFORMLY for every account inside generate-signal
+    // (not per-cohort), so no server resource is spent per opt-in and the client render
+    // gate is sound under the widget precedent — no server-side eligibility gate is owed.
+    const signalsV2 = BETA_REGISTRY.find((b) => b.key === 'signals_v2');
+    expect(signalsV2).toBeDefined();
+    expect((signalsV2 as BetaFeature).serverCost).toBe(false);
+
+    expect(BETA_REGISTRY).toHaveLength(4);
   });
 });
 

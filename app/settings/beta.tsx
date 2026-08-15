@@ -2,7 +2,7 @@ import { ComponentType } from 'react';
 import { ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
-import { FlaskConical, Info, LayoutGrid, Sparkles, SquarePen } from 'lucide-react-native';
+import { Activity, FlaskConical, Info, LayoutGrid, Sparkles, SquarePen } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
 import { Card, Header } from '../../components/ui';
 import { useAllowlistFlag } from '../../hooks/useAppConfig';
@@ -68,6 +68,12 @@ function presentationFor(key: AllowlistFlagKey): { Icon: IconComponent; onHint?:
       // place or do. A distinct "log an entry" glyph helps it read apart from the
       // widget (grid) and Signal (sparkles) cards on the shelf.
       return { Icon: SquarePen };
+    case 'signals_v2':
+      // No on-state hint: the deeper lanes take effect on Home the moment they're on —
+      // nothing for the owner to place or do. A pulse/activity glyph reads as "detection"
+      // and stays distinct from signal_design_v2's sparkles (the visual redesign) — the
+      // two Signal betas the shelf deliberately carries (spec D6) read apart at a glance.
+      return { Icon: Activity };
     default:
       return { Icon: FlaskConical };
   }

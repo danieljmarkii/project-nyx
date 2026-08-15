@@ -54,5 +54,5 @@ Two lower-severity notes from the review, deliberately **not** changed here (rec
 
 - **B-671** (the opt-in setting) — **Done via #657** (the DR-6 feature); DR-5 migration shipped #653.
 - **B-762** (Daily Recap umbrella) — DR-0 (#651) + DR-4 (#654) + DR-5 (#653) + **DR-6 (#657)** shipped; remaining: DR-1 (screen), DR-2 (TodayZone v2), DR-3 (offer), DR-7 (finish).
-- **B-775** (filed) — a build-time guard that every column in a local schema constant is either in its `CREATE TABLE` or in `COLUMN_UPGRADES` (the class the review-catch bug fell through).
-- **B-776** (filed) — optionally wire the pet-edit / pet-create save to refresh the named body immediately rather than on the next reconcile tick.
+- **B-783** (filed as B-775, renumbered) — a build-time guard that every column in a local schema constant is either in its `CREATE TABLE` or in `COLUMN_UPGRADES` (the class the review-catch bug fell through).
+- **B-784** (filed as B-776, renumbered) — optionally wire the pet-edit / pet-create save to refresh the named body immediately rather than on the next reconcile tick.
