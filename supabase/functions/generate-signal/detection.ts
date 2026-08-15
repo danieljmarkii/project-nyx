@@ -75,6 +75,18 @@ import {
   type FreeFedSpan,
   type MealTimingConfig,
 } from '../../../lib/mealTiming.ts'
+// The ONE diet-trial "is it running today" predicate (Signals v2 / CUL-8; L2 §2). Imported
+// across the function boundary exactly as `index.ts` already imports it — the B-422 effective
+// end lives in ONE module, and L2's gate is that predicate, never a re-derivation from dates
+// (spec §2 L2, G9). `localDayIndex`/`localDayIndexOf` are the same day-boundary helpers the
+// trial card counts "day N of M" with (B-421), so L2's day-count cannot drift from the card's.
+import { isTrialRunning } from '../../../lib/dietTrial.ts'
+import { localDayIndex, localDayIndexOf } from '../../../lib/utils.ts'
+// The two-window rate-contrast render-gate (Signals v2 / CUL-6; §3). L2's comparison SENTENCE
+// is licensed only when this C-test gate passes over the pooled counts (with logged-days
+// exposure) — the "counts always render; a comparison sentence only when the gate passes"
+// discipline (§2 L2). p-values never surface (§3); this returns a boolean gate + direction.
+import { rateContrast } from '../../../lib/rateContrast.ts'
 
 // ── Domain types ──────────────────────────────────────────────────────────────
 
@@ -538,8 +550,37 @@ export interface DetectionInput {
    * caller passes only rows whose analyzed event is non-soft-deleted and within the lookback.
    */
   incidentAnalyses?: IncidentAnalysisInput[]
+  /**
+   * The pet's ACTIVE diet trial (Signals v2 / CUL-8, L2) — the ONLY input the trial-response
+   * lane reads beyond events/meals. Carries just what L2 needs to place its two windows and
+   * count the day: the trial's `startedAt`, its `targetDurationDays` (the ONLY authority on
+   * length — never derived, per the diet-trial spec), and optionally `status`/`endedAt` so the
+   * one predicate `isTrialRunning` can withdraw the lane from a terminal trial. Optional —
+   * absent ⇒ `detectTrialResponse` is SILENT (byte-identical to pre-CUL-8; detectors ①–⑧ ignore
+   * this field entirely). CONTRACT: the caller passes the single active row (the same one it
+   * derives `pet.dietTrialActive` from) or omits the field; L2 re-checks `isTrialRunning` itself.
+   */
+  dietTrial?: DietTrialInput
   /** Reference "now" (ISO-8601 UTC), injected so detection is deterministic and testable. */
   now: string
+}
+
+/**
+ * The active diet trial as the trial-response lane (L2) sees it — a plain-data projection of the
+ * `diet_trials` row, carrying only the window + day-count inputs. `isTrialRunning` (the one B-422
+ * predicate) gates the lane on it, so a trial past its effective end withdraws the lane rather
+ * than comparing a stale window. `targetDurationDays` is the ONLY authority on the trial's length
+ * (the "day N of M" M); it is never derived from the elapsed days.
+ */
+export interface DietTrialInput {
+  /** 'YYYY-MM-DD' (the DATE column) or ISO — day 1 of exclusive feeding (§5.1). */
+  startedAt: string
+  /** The trial's prescribed length (the "of M" in "day N of M"). Null/absent ⇒ no target shown. */
+  targetDurationDays?: number | null
+  /** Optional; a terminal status withdraws the lane. Absent ⇒ the caller's query established active. */
+  status?: string | null
+  /** Optional owner-authored early end; honoured by `isTrialRunning` (ends the lane earlier). */
+  endedAt?: string | null
 }
 
 // ── Finding types (§4/§5) ───────────────────────────────────────────────────
@@ -558,6 +599,11 @@ export type InsightType =
   // Signals v2 changes are inert until PR 10 redeploys (G10) behind the `signals_v2` client flag.
   | 'empty_stomach_timing'
   | 'timing_story'
+  // Signals v2 (B-755 / CUL-8): the trial-response lane (L2, the wedge). A trial-era-vs-baseline
+  // count comparison over logged-days denominators — pooled symptom burden + per-phenotype vomit
+  // timing + diet-structure context. Emitted ONLY when the pooled contrast "changed materially"
+  // (§8.5 trigger, adversarial-reviewed). Dark: inert until PR 10's gated redeploy (G10).
+  | 'trial_response'
   | 'timeofday_clustering'
   | 'incident_red_flag'
 
@@ -1067,6 +1113,92 @@ export interface TimingStoryFinding extends FindingBase {
 }
 
 /**
+ * The trial-response lane (Signals v2 / B-755 / CUL-8 — L2, the wedge). The reactive owner sent
+ * home with an elimination diet is the highest-intent user, and this lane is the record answering
+ * "what has the trial done to the symptoms?" — but ONLY ever as COUNTS the vet interprets, never a
+ * verdict (G1). Gated on `isTrialRunning` (the one B-422 predicate, never a re-derivation) and
+ * emitted ONLY when the pooled contrast "changed materially" (see `detectTrialResponse` — the §8.5
+ * trigger the client's event-driven Signal card keys off; the standing trial-card line, PR 6, shows
+ * counts regardless and reads local data).
+ *
+ * EVERYTHING is count-anchored over LOGGED-DAYS denominators (C5): a bowl refused is a day the owner
+ * kept the record, so a rate is per logged day, never per calendar day. Two windows: the trial era
+ * [start, now] and a `baselineDays` window immediately before it (candidate 49d, capped at available
+ * history by the logged-days denominator itself). NEVER verdicted: no "working"/"helping"/
+ * "improvement"/"ruled out"/"clean" — the diet-response-≠-proof rule (Guilford 2001's
+ * improved-without-relapse arm) and the three-things-changed-at-once confound (RTM) are the vet's to
+ * weigh, disclosed verbatim in the client expand (PR 6). Indication-blind: the engine cannot know GI
+ * vs dermatologic intent, so there is NEVER an assessment-point verdict — the day-count sits beside
+ * the counts and says nothing about whether it is "time to judge".
+ */
+export interface TrialResponseFinding extends FindingBase {
+  type: 'trial_response'
+  priorityClass: 'insight'
+  /**
+   * Day N of the trial (1-based; day 1 = start day, §5.1). Clamped ≥1. Rendered "day N" or, with a
+   * target, "day N of M". Computed from the SAME local-day helpers the trial card counts with
+   * (`localDayIndex`/`localDayIndexOf`, B-421), so the Signal card and the Pet-tab card can't drift.
+   */
+  trialDayNumber: number
+  /** The trial's prescribed length M ("day N of M") — `target_duration_days`, the ONLY length
+   *  authority (never the elapsed days). Null when unset ⇒ the card renders "day N", no "of M". */
+  targetDurationDays: number | null
+  /** Distinct logged days in the trial-era window (the C5 denominator for its rates). */
+  trialLoggedDays: number
+  /** Distinct logged days in the baseline window (the C5 denominator for its rates). */
+  baselineLoggedDays: number
+  /** The baseline window's requested span in days (the config `baselineDays`) — evidence/vet copy. */
+  baselineWindowDays: number
+  /** Pooled symptom-episode burden across ALL tracked types (re-logs collapsed) in the trial era. */
+  pooledTrialCount: number
+  /** Pooled symptom-episode burden across ALL tracked types (re-logs collapsed) in the baseline. */
+  pooledBaselineCount: number
+  /**
+   * Per-phenotype VOMIT-TIMING counts (via `lib/mealTiming`, G9), trial-era vs baseline — the A2
+   * "count rows" (D2: "Empty-stomach 0 · was 7" — count-form, always safe). `rapid` = ≤30 min after
+   * eating (post-prandial), `long` = ≥`longGapHours` after eating (empty-stomach). These are CONTEXT
+   * rows shown when the card fires; they do NOT independently trigger it (see `detectTrialResponse`).
+   */
+  rapid: { trial: number; baseline: number }
+  long: { trial: number; baseline: number }
+  /** The post-prandial band boundary in minutes (30) — the `rapid` row label. */
+  rapidWindowMinutes: number
+  /** The empty-stomach band boundary in hours (6) — the `long` row label. */
+  longGapHours: number
+  /**
+   * Diet-structure deltas (§2 L2 — "context rows"), the observable half of the three-things-changed
+   * confound (RTM): `treatShare` = treat-type feedings ÷ classifiable (meal+treat) feedings; null
+   * when nothing is classifiable. `mealsPerDay` = meal-type feedings ÷ logged days; null when the
+   * window has no logged days. Never a verdict — the vet weighs whether structure or diet mattered.
+   */
+  treatShare: { trial: number | null; baseline: number | null }
+  mealsPerDay: { trial: number | null; baseline: number | null }
+  /**
+   * The pooled comparison direction, present because the card only fires on a material pooled change:
+   * `more_during_trial` (the trial-era rate is higher — the escalation direction, always surfaced) or
+   * `fewer_during_trial` (lower — surfaced ONLY when logging density is comparable, see below). The
+   * server sentence is direction-NEUTRAL (it states both counts in time order, never "more"/"fewer" —
+   * a verdict-free form); this field is structured context for the client (PR 6).
+   */
+  comparisonDirection: 'more_during_trial' | 'fewer_during_trial'
+  /**
+   * Whether the two windows were logged with comparable INTENSITY (§3.3, the B-721 rule reused, but
+   * over unequal-length windows so it compares logging FRACTIONS — logged days ÷ window span — not
+   * raw counts; see `detectTrialResponse`). It GATES the fewer-during-trial direction only (a
+   * quieter-looking trial may just be a less-logged one — never mint a reassuring fall out of that);
+   * the more-during-trial direction is never gated (fail toward escalation). Carried so the client
+   * can disclose "we logged less often this stretch" (PR 6).
+   */
+  densityComparable: boolean
+  /** Hard marker for the phrasing layer + reviewers: association/counts only, never causal, never a verdict. */
+  associationalOnly: true
+  /** The analysis window used for the pooled/phenotype counts, in days (trial-era span) — evidence. */
+  trialWindowDays: number
+  /** SR-4 (B-721 §5.4) — medication-on-board context, attached POST-detection (never read by the engine). */
+  medContext?: MedOnBoardContext
+}
+
+/**
  * Time-of-day clustering (⑥, B-079 — descriptive lane Phase 2). A purely DESCRIPTIVE
  * count: of the witnessed vomiting episodes we can place on the clock, how many fall in
  * one `clusterWindowHours` band of the pet's LOCAL day. No model — each onset's local
@@ -1221,6 +1353,7 @@ export type Finding =
   | PostprandialTimingFinding
   | EmptyStomachTimingFinding
   | TimingStoryFinding
+  | TrialResponseFinding
   | TimeOfDayClusteringFinding
   | IncidentRedFlagFinding
 
@@ -1561,6 +1694,34 @@ export interface DetectionConfig {
     /** The empty-stomach band boundary in HOURS — the phenotype definition (§0 D10 / CUL-16). */
     longGapHours: number
   }
+  // Signals v2 (B-755 / CUL-8) — the trial-response lane (L2). All counts are over LOGGED-DAYS
+  // denominators (C5); the comparison SENTENCE rides `lib/rateContrast`'s C-test gate (p never
+  // surfaces) with the shared density-comparability rule (`DENSITY_COMPARABLE_MIN_RATIO`).
+  trialResponse: {
+    /**
+     * The baseline window length in days — the pre-trial stretch L2 compares the trial era against.
+     * 49d (7 weeks): long enough to cover both timing phenotypes' cadence, short enough to be the
+     * same season of the pet's life (§2 L2). Anchored to that reasoning, NOT to any record (G6); the
+     * logged-days denominator caps it at available history on its own, so a pet with a short
+     * pre-trial history simply gets a shorter comparable baseline (or, below the floor, no card).
+     */
+    baselineDays: number
+    /**
+     * Each window must carry at least this many DISTINCT LOGGED DAYS before a rate comparison is
+     * honest — the guard against a garbage baseline (3 vomits on the one pre-trial day the app was
+     * opened would otherwise out-rate a fully-logged trial and manufacture a "fewer during the
+     * trial" contrast). A trial too new, or with too little pre-history, simply shows no card yet
+     * (the §4.4 watching state owns that "needs N logged days" framing). Load-bearing, adversarial-gated.
+     */
+    minLoggingDaysPerWindow: number
+    /**
+     * The `lib/rateContrast` render-gate significance level for the pooled comparison. The C-test is
+     * small-n-quiet BY CONSTRUCTION (0-vs-2 never gates), so this is the only knob and it is the
+     * conventional two-sided 0.05; the property sweep asserts a NULL trial (same underlying rate both
+     * windows) fires below the ceiling. The p-value never surfaces (§3) — only the boolean gate.
+     */
+    contrastAlpha: number
+  }
   timeofday: {
     /** §4.3: below this many witnessed/timeable episodes, any "cluster" is a coin run. Matches ⑤. */
     minEligibleEpisodes: number
@@ -1832,6 +1993,23 @@ export const DEFAULT_CONFIG: DetectionConfig = {
     // between" band, never dropped). Change only via a re-sweep — a phenotype definition, not a
     // tuning knob. The property sweep locks the FLOORS at this boundary; it never moves it.
     longGapHours: 6,
+  },
+  // Signals v2 (B-755 / CUL-8) — the trial-response lane (L2). The baseline span is a product/
+  // clinical judgment (a season of the pet's life, both phenotypes' cadence — §2 L2), NOT tuned to
+  // any record (G6). The logged-days floor is the garbage-baseline guard, and `contrastAlpha` is the
+  // one statistical knob; the property sweep locks the null false-positive rate at these values.
+  trialResponse: {
+    // 49 days = 7 weeks. Covers both the ~daily post-prandial and the ~few-times-a-week empty-stomach
+    // cadence, while staying inside the pet's current era. Capped at history by the logged-days
+    // denominator — a pet with 12 days of pre-trial logs gets a 12-logged-day baseline, no more.
+    baselineDays: 49,
+    // 7 logged days per window: enough that a per-logged-day rate means something, and enough that a
+    // one-or-two-day baseline can't out-rate the trial and mint a false contrast. Below it → no card;
+    // the trial-so-far counts still show on the standing Pet-tab line (PR 6), which reads local data.
+    minLoggingDaysPerWindow: 7,
+    // Conventional two-sided 0.05; the exact test is small-n-quiet by construction, so this is the
+    // only sensitivity knob. The §PROPERTY SWEEP asserts a stationary null trial fires ≪ this.
+    contrastAlpha: 0.05,
   },
   // B-079 detector ⑥ (time-of-day clustering) floors (§4.3).
   //
@@ -4214,6 +4392,249 @@ export function detectEmptyStomachTiming(
   ]
 }
 
+// ── Detector L2: trial-response (Signals v2 / B-755 / CUL-8 — the wedge) ──────
+//
+// The reactive owner on a vet-directed elimination diet is the highest-intent user, and this lane
+// is the record answering "what has the trial done to the symptoms?" — but ONLY as COUNTS the vet
+// interprets (G1: no attribution, ever, not to the diet, not to a food, not to a med). It compares
+// two windows over LOGGED-DAYS denominators (C5): the trial era [start, now] and a `baselineDays`
+// window immediately before it. It emits at most ONE finding, and does so ONLY when the pooled
+// comparison "changed materially" — the §8.5 trigger below.
+//
+// ── THE "CHANGED MATERIALLY" TRIGGER (§8.5 — the definition this PR owns) ─────
+//
+// The Signal trial card is EVENT-DRIVEN (D3): it surfaces on Home when something changed, while the
+// standing Pet-tab trial-card line (PR 6, local data) shows the trial-so-far counts regardless. So
+// this detector's EMISSION IS the trigger — a `trial_response` finding exists exactly when the card
+// should surface. The definition, adversarial-reviewed here:
+//
+//   changedMaterially = pooledContrast.gate AND (moreDuringTrial OR (fewerDuringTrial AND densityComparable))
+//
+//   • `pooledContrast.gate` — the `lib/rateContrast` C-test over the POOLED symptom-episode counts
+//     (all tracked types, re-logs collapsed) with logged-days exposure clears alpha. The exact test
+//     is small-n-quiet BY CONSTRUCTION (0-vs-2 never gates), which is the noise defense; the
+//     §PROPERTY SWEEP asserts a stationary null trial (identical underlying rate in both windows)
+//     fires ≪ alpha. ONE test — not pooled + per-phenotype — deliberately: three C-tests would be a
+//     multiple-comparison the never-over-claim surface can't afford, and the phenotype rows are
+//     CONTEXT the card shows once it fires, never an independent trigger.
+//   • the direction gate is the B-721 §3.3 density rule reused, "both directions fail toward
+//     escalation": a MORE-during-trial rate (the escalation direction) always surfaces; a
+//     FEWER-during-trial rate surfaces ONLY when logging density is comparable — a quieter-looking
+//     trial may just be a less-logged one, and a Home card that reads as improvement must not be
+//     minted from a logging gap. Withholding the fewer card is the safe (never-reassure) direction;
+//     the raw counts still show on the standing line.
+//
+// NAMED LIMIT (documented, not a defect): a PHENOTYPE-ONLY shift with a flat pooled burden (empty-
+// stomach 7→0 while post-prandial 1→8) does not clear the pooled gate, so L2 stays quiet — but the
+// emergent post-prandial phenotype is exactly what detectors ⑤/L1 fire on separately, so the shift
+// is not lost, only re-homed to the lane that can speak to it without a trial baseline. Silence, the
+// safe direction.
+//
+// ── WHAT IT NEVER DOES ───────────────────────────────────────────────────────
+//
+// No verdict, ever: the phrasing contract bans "working"/"helping"/"improvement"/"ruled out"/"clean"
+// (Guilford 2001 — diet response alone is not proof of food sensitivity; RTM — a calm stretch happens
+// on its own). Indication-blind: the engine cannot know GI vs dermatologic intent, so the day-count
+// sits beside the counts and NEVER implies an assessment point. The trial diet is never named; the
+// three-things-changed confound (diet, treats, meals) is DISCLOSED as structure counts, never
+// resolved. Below floor / no material change ⇒ SILENCE (never "the trial isn't doing anything").
+
+// The symptom type L2 decomposes into timing phenotypes (rapid/long) — vomit only, mirroring ⑤/L1,
+// because "minutes since eating" is a vomiting question (the pooled burden below counts EVERY type).
+const TRIAL_TIMING_SYMPTOM_TYPE: SymptomType = 'vomit'
+
+/** `target_duration_days` → the "of M" length, or null. The ONLY authority on trial length: the
+ *  elapsed days never stand in for it (a trial reads "day 40" whether the target is 42 or unset). A
+ *  0/negative/non-finite target has no M — the card renders "day N" with no "of M". */
+function normalizeTrialTarget(raw: number | null | undefined): number | null {
+  const n = Math.floor(Number(raw ?? 0))
+  return Number.isFinite(n) && n > 0 ? n : null
+}
+
+export function detectTrialResponse(
+  input: DetectionInput,
+  config: DetectionConfig = DEFAULT_CONFIG,
+): TrialResponseFinding[] {
+  const cfg = config.trialResponse
+  const trial = input.dietTrial
+  const nowMs = Date.parse(input.now)
+  if (!trial || !Number.isFinite(nowMs)) return []
+
+  // GATE — the one B-422 predicate, never a re-derivation (§2 L2, G9). A trial past its effective
+  // end (or terminal / owner-ended) withdraws the lane rather than comparing a stale window.
+  if (
+    !isTrialRunning(
+      {
+        startedAt: trial.startedAt,
+        targetDurationDays: trial.targetDurationDays,
+        status: trial.status,
+        endedAt: trial.endedAt,
+      },
+      nowMs,
+      input.timezone,
+    )
+  ) {
+    return []
+  }
+
+  // Windows, on the SAME local-day boundaries the trial card counts with (B-421) so the day-count
+  // and the Pet-tab card can't drift. An unparseable start means we cannot place the trial in time —
+  // silence, never a guessed window.
+  const startIndex = localDayIndexOf(trial.startedAt, input.timezone)
+  if (startIndex === null) return []
+  const todayIndex = localDayIndex(nowMs, input.timezone)
+  const trialStartMs = startIndex * MS_PER_DAY
+  const baselineStartMs = (startIndex - cfg.baselineDays) * MS_PER_DAY
+  // day 1 = start day (§5.1); clamp ≥1 so a clock skew that puts "now" before the start never
+  // renders "day 0 of M".
+  const trialDayNumber = Math.max(1, todayIndex - startIndex + 1)
+
+  // C5 denominators — distinct LOGGED days per window (a refused bowl is a logged day). The
+  // baseline is capped at available history HERE, by the denominator itself: no logs before the
+  // pet's earliest event ⇒ those days simply don't count.
+  const trialLoggedDays = loggingDaysInWindow(input, trialStartMs, nowMs)
+  const baselineLoggedDays = loggingDaysInWindow(input, baselineStartMs, trialStartMs)
+  // The garbage-baseline / too-new-trial guard: below the floor a per-logged-day rate is not honest
+  // (3 vomits on the one pre-trial day the app was opened must never out-rate a fully-logged trial).
+  // Silence, not a card — the §4.4 watching state owns the "needs N logged days" framing (PR 6/7).
+  if (trialLoggedDays < cfg.minLoggingDaysPerWindow) return []
+  if (baselineLoggedDays < cfg.minLoggingDaysPerWindow) return []
+
+  // Pooled symptom-episode burden across ALL tracked types (re-logs collapsed per type on the FULL
+  // list, THEN windowed — the collapse-then-window contract). Indication-blind: a diet trial can be
+  // for GI or derm, so the pooled compare counts every tracked symptom, not just vomit.
+  const pooledInWindow = (startMs: number, endMs: number): number => {
+    let total = 0
+    for (const symptomType of CORRELATION_SYMPTOM_TYPES) {
+      const msList = input.symptomEvents
+        .filter((s) => s.type === symptomType)
+        .map((s) => Date.parse(s.occurredAt))
+        .filter((ms) => Number.isFinite(ms))
+      const onsets = toEpisodeOnsets(msList, config.symptomEpisodeGapHours)
+      total += onsets.filter((ms) => ms >= startMs && ms < endMs).length
+    }
+    return total
+  }
+  const pooledTrialCount = pooledInWindow(trialStartMs, nowMs)
+  const pooledBaselineCount = pooledInWindow(baselineStartMs, trialStartMs)
+
+  // The pooled render-gate — `lib/rateContrast` (the C-test; p never surfaces, §3). a = trial,
+  // b = baseline, so `a_higher` = a higher per-logged-day rate DURING the trial (escalation).
+  const pooledContrast = rateContrast(
+    { count: pooledTrialCount, exposure: trialLoggedDays },
+    { count: pooledBaselineCount, exposure: baselineLoggedDays },
+    { alpha: cfg.contrastAlpha },
+  )
+  const moreDuringTrial = pooledContrast.direction === 'a_higher'
+  const fewerDuringTrial = pooledContrast.direction === 'b_higher'
+
+  // Density comparability (§3.3, the B-721 rule reused — one ratio, `DENSITY_COMPARABLE_MIN_RATIO`).
+  //
+  // ⚠️ NOT a raw logged-day COUNT ratio — the two windows are DIFFERENT LENGTHS (the trial era grows
+  // day by day; the baseline is a fixed 49-day span), so a young trial with PERFECT daily logging
+  // would fail a raw-count `trialLoggedDays ≥ baselineLoggedDays × 0.7` purely because it is shorter,
+  // silently suppressing every early-trial fewer-comparison. B-721's rule compares EQUAL windows
+  // (week over week), so there count-ratio == intensity-ratio; here it does not. What the gate must
+  // ask is whether the owner LOGGED AS INTENSELY during the trial as before it, so it compares the
+  // LOGGING FRACTION (logged days ÷ window span) of each window. (The C-test above already normalizes
+  // the symptom rate for exposure; this coarse "was the app used comparably" backstop guards the
+  // days-with-any-log residual computeReflectionDensity documents — a meal-only day can mask a
+  // symptom-logging gap.) A zero/absent baseline intensity ⇒ comparable (no fall to be an artifact of).
+  const trialWindowDays = Math.max(1, trialDayNumber)
+  const trialLoggingFraction = trialLoggedDays / trialWindowDays
+  const baselineLoggingFraction = baselineLoggedDays / cfg.baselineDays
+  const densityComparable =
+    baselineLoggingFraction <= 0
+      ? true
+      : trialLoggingFraction >= baselineLoggingFraction * DENSITY_COMPARABLE_MIN_RATIO
+
+  // THE §8.5 TRIGGER. See the header: a material pooled change that fails toward escalation.
+  const changedMaterially =
+    pooledContrast.gate && (moreDuringTrial || (fewerDuringTrial && densityComparable))
+  if (!changedMaterially) return []
+
+  // Per-phenotype VOMIT-TIMING counts (via `lib/mealTiming`, G9) — the A2 count rows (context, not a
+  // trigger). Collapse vomit episodes on the FULL list, classify each through the ONE predicate,
+  // then split the eligible episodes by window + band (collapse-then-window).
+  const feedings: FeedingInput[] = input.mealEvents.map((m) => ({
+    ms: Date.parse(m.occurredAt),
+    confidence: m.occurredAtConfidence ?? null,
+    form: m.foodLabel ?? m.foodType ?? null,
+  }))
+  const freeFedSpans: FreeFedSpan[] = classifyArrangements(input.feedingArrangements ?? []).map(
+    (s) => ({ fromMs: s.fromMs, untilMs: s.untilMs }),
+  )
+  const vomitEvents = input.symptomEvents
+    .filter((s) => s.type === TRIAL_TIMING_SYMPTOM_TYPE)
+    .map((s) => ({ ms: Date.parse(s.occurredAt), confidence: s.occurredAtConfidence ?? null }))
+    .filter((e) => Number.isFinite(e.ms))
+  const collapsedVomit = collapseEpisodes(vomitEvents, config.symptomEpisodeGapHours)
+  const dist = classifyEpisodeSet(
+    collapsedVomit.map((e) => ({ onsetMs: e.ms, confidence: e.confidence })),
+    feedings,
+    freeFedSpans,
+    timingConfigFor(config),
+  )
+  const bandInWindow = (band: 'rapid' | 'long', startMs: number, endMs: number): number =>
+    dist.eligible.filter((e) => e.band === band && e.onsetMs >= startMs && e.onsetMs < endMs).length
+
+  // Diet-structure deltas (§2 L2 — context rows, the observable half of the RTM confound). Never a
+  // verdict: `treatShare` over classifiable feedings, `mealsPerDay` over logged days.
+  const dietStructureInWindow = (
+    startMs: number,
+    endMs: number,
+    loggedDays: number,
+  ): { treatShare: number | null; mealsPerDay: number | null } => {
+    let meals = 0
+    let treats = 0
+    for (const m of input.mealEvents) {
+      const ms = Date.parse(m.occurredAt)
+      if (!Number.isFinite(ms) || ms < startMs || ms >= endMs) continue
+      if (m.foodType === 'meal') meals++
+      else if (m.foodType === 'treat') treats++
+    }
+    const classifiable = meals + treats
+    return {
+      treatShare: classifiable > 0 ? treats / classifiable : null,
+      mealsPerDay: loggedDays > 0 ? meals / loggedDays : null,
+    }
+  }
+  const trialStruct = dietStructureInWindow(trialStartMs, nowMs, trialLoggedDays)
+  const baselineStruct = dietStructureInWindow(baselineStartMs, trialStartMs, baselineLoggedDays)
+
+  return [
+    {
+      type: 'trial_response',
+      priorityClass: 'insight',
+      trialDayNumber,
+      targetDurationDays: normalizeTrialTarget(trial.targetDurationDays),
+      trialLoggedDays,
+      baselineLoggedDays,
+      baselineWindowDays: cfg.baselineDays,
+      pooledTrialCount,
+      pooledBaselineCount,
+      rapid: {
+        trial: bandInWindow('rapid', trialStartMs, nowMs),
+        baseline: bandInWindow('rapid', baselineStartMs, trialStartMs),
+      },
+      long: {
+        trial: bandInWindow('long', trialStartMs, nowMs),
+        baseline: bandInWindow('long', baselineStartMs, trialStartMs),
+      },
+      rapidWindowMinutes: config.postprandial.rapidWindowMinutes,
+      longGapHours: config.emptyStomach.longGapHours,
+      treatShare: { trial: trialStruct.treatShare, baseline: baselineStruct.treatShare },
+      mealsPerDay: { trial: trialStruct.mealsPerDay, baseline: baselineStruct.mealsPerDay },
+      // moreDuringTrial || fewerDuringTrial is guaranteed here: changedMaterially excludes the
+      // 'equal' direction (gate ⇒ a rate difference; the direction gate requires one of the two).
+      comparisonDirection: moreDuringTrial ? 'more_during_trial' : 'fewer_during_trial',
+      densityComparable,
+      associationalOnly: true,
+      trialWindowDays,
+    },
+  ]
+}
+
 // ── Coverage diagnostics (B-053) ────────────────────────────────────────────
 //
 // "Why is there still no signal?" — the structured, ranked subset of silent-
@@ -4913,6 +5334,12 @@ export const DETECTOR_REGISTRY: Detector[] = [
   // detectors stay separate and separately tested. DARK: Signals v2 output is inert until PR 10's
   // gated redeploy (G10) — the shipped client renders an unknown finding type as null (PR-1 pin).
   { type: 'empty_stomach_timing', detect: detectEmptyStomachTiming },
+  // Detector L2 (Signals v2 / B-755 / CUL-8 — the trial-response wedge). Emits at most ONE
+  // `trial_response` finding, and ONLY when the pooled trial-era-vs-baseline contrast changed
+  // materially (the §8.5 trigger, in detectTrialResponse). Silent for any pet not on a running
+  // trial (the `isTrialRunning` gate). DARK: inert until PR 10's gated redeploy (G10) — the shipped
+  // client renders an unknown finding type as null (the PR-1 pin).
+  { type: 'trial_response', detect: detectTrialResponse },
   { type: 'timeofday_clustering', detect: detectTimeOfDayClustering },
   { type: 'reflection', detect: detectReflections },
   // Detector — per-incident visual red flag (B-340). SAFETY class; reads the NEW
@@ -4939,6 +5366,11 @@ export const DETECTOR_REGISTRY: Detector[] = [
 function priorityBand(finding: Finding, ctx: PetContext): number {
   if (finding.priorityClass === 'safety') return 0 // incident_red_flag, intake_decline, symptom_chronicity, symptom_worsening
   if (finding.type === 'reflection') return 3
+  // The trial-response lane (L2, CUL-8) is the CONTEXT-LEAD insight for a diet-trial pet — it is the
+  // wedge feedback, and it only ever EXISTS for a running trial (the isTrialRunning gate), so band 1
+  // is correct by construction (never reached for a non-trial pet). It leads correlation within the
+  // band via INSIGHT_TYPE_ORDER: the trial's own answer sits above the mechanism that might explain it.
+  if (finding.type === 'trial_response') return 1
   // Correlation is the context-lead insight for a diet-trial pet (Jordan's stack, §8).
   if (finding.type === 'food_symptom_correlation' && ctx.dietTrialActive) return 1
   return 2 // correlations (non-trial) + postprandial_timing (⑤) + timeofday_clustering (⑥)
@@ -4951,6 +5383,10 @@ const TIER_ORDER: Record<EvidenceTier, number> = { established: 0, early: 1 }
 // since they are mutually exclusive per symptom after composition), then ⑥, then diet-structure.
 // Reflection (③) is band 3, so it never reaches this comparator. Unlisted types tie.
 const INSIGHT_TYPE_ORDER: Record<string, number> = {
+  // trial_response (L2, CUL-8) leads its band: on a diet-trial pet it and correlation are both band
+  // 1, and the trial's own answer ("what has the trial done?") sits above the mechanism that might
+  // explain it (correlation). Non-trial bands never see it (the isTrialRunning gate).
+  trial_response: -1,
   food_symptom_correlation: 0,
   postprandial_timing: 1,
   empty_stomach_timing: 1,

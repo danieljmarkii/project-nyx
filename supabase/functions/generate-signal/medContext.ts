@@ -157,6 +157,10 @@ export function decorateFinding(
     // med-on-board context line applies to them exactly as it does to ⑤/⑥ (§5.4).
     finding.type === 'empty_stomach_timing' ||
     finding.type === 'timing_story' ||
+    // Signals v2 (CUL-8) — the trial-response lane carries a med-on-board line too: a drug on board
+    // during the trial is exactly the kind of concurrent confound the three-things-changed honesty
+    // cares about (context stated as fact, never a verdict — §5.4). Additive; never read by a detector.
+    finding.type === 'trial_response' ||
     finding.type === 'timeofday_clustering'
   ) {
     return medContext ? { ...finding, medContext } : finding

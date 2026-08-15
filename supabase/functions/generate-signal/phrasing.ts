@@ -25,6 +25,7 @@ import type {
   PostprandialTimingFinding,
   EmptyStomachTimingFinding,
   TimingStoryFinding,
+  TrialResponseFinding,
   TimeOfDayClusteringFinding,
   IncidentRedFlagFinding,
   IncidentFlagKind,
@@ -305,6 +306,25 @@ export function templateTimingStory(f: TimingStoryFinding, petName: string): str
   return `Of the ${f.eligibleCount} ${symptom} episodes we could time for ${petName}, ${f.rapid.count} happened within ${f.rapidWindowMinutes} minutes of eating and ${f.long.count} happened ${f.longGapHours} or more hours after — a timing pattern worth mentioning to your vet.`
 }
 
+export function templateTrialResponse(f: TrialResponseFinding, petName: string): string {
+  // The trial-response lane (Signals v2 / CUL-8 — L2, the wedge) — template-only (no LLM, like
+  // ③/④/⑤/⑥/⑦). The phrasing contract Dr. Chen ratifies (spec §2 L2): COUNT-ANCHORED, TIME-ORDERED,
+  // NEVER VERDICTED. It states the two pooled counts in time order (during the trial / before it) and
+  // routes to the vet — it NEVER says "working"/"helping"/"improvement"/"ruled out"/"clean", never
+  // "better"/"worse", never names the diet or a food (G1: no attribution). It is deliberately
+  // DIRECTION-NEUTRAL: the reader sees which count is higher; the copy asserts no judgment about it
+  // (Guilford 2001 — diet response alone is not proof; RTM — a calm stretch happens on its own; the
+  // three-things-changed confound is the vet's to weigh, disclosed in the client expand, PR 6).
+  // Indication-blind: the day-count is context, NEVER an assessment-point verdict. The card only
+  // exists when the pooled contrast changed materially (detectTrialResponse), so a comparison is
+  // always licensed here; the counts-only state is the standing Pet-tab line (PR 6), not this card.
+  const trialNoun = f.pooledTrialCount === 1 ? 'episode' : 'episodes'
+  const dayNoun = f.trialDayNumber === 1 ? 'day' : 'days'
+  const baselineWeeks = Math.max(1, Math.round(f.baselineWindowDays / 7))
+  const weekNoun = baselineWeeks === 1 ? 'week' : 'weeks'
+  return `We've logged ${f.pooledTrialCount} symptom ${trialNoun} for ${petName} in the ${f.trialDayNumber} ${dayNoun} since the trial began, compared with ${f.pooledBaselineCount} across the ${baselineWeeks} ${weekNoun} before it — worth reviewing with your vet.`
+}
+
 export function templateForFinding(finding: Finding, petName: string): string {
   switch (finding.type) {
     case 'food_symptom_correlation':
@@ -323,6 +343,8 @@ export function templateForFinding(finding: Finding, petName: string): string {
       return templateEmptyStomachTiming(finding, petName)
     case 'timing_story':
       return templateTimingStory(finding, petName)
+    case 'trial_response':
+      return templateTrialResponse(finding, petName)
     case 'timeofday_clustering':
       return templateTimeOfDayClustering(finding, petName)
     case 'incident_red_flag':
@@ -365,6 +387,15 @@ const MECHANISM_RE =
 // attribution. "eating" is a timing reference, not a food, so it is not screened.
 const FOOD_NAMING_RE =
   /\b(chicken|beef|turkey|lamb|duck|salmon|tuna|whitefish|fish|pork|rabbit|venison|bison|kibble|treats?|dry food|wet food|protein)\b/i
+// The trial-response lane (CUL-8) is a COUNT COMPARISON, never a verdict on the trial. This screen
+// bars the verdict vocabulary the phrasing contract names verbatim — "working"/"helping"/
+// "improvement"/"ruled out"/"clean" — plus its obvious kin (better/worse, resolved, cleared, cured,
+// fixed, effective, responding, on the mend). The domain rule behind the ban: diet response alone is
+// not proof of food sensitivity (Guilford 2001's improved-without-relapse arm), and a calm stretch
+// happens on its own (regression to the mean) — so the engine states counts and lets the vet judge,
+// and NEVER judges for them. Screened in addition to CAUSAL/MECHANISM/FOOD/REASSURANCE.
+const TRIAL_VERDICT_RE =
+  /\b(works?|worked|working|helps?|helped|helping|helpful|improv\w+|better|worse|worsen\w*|resolv\w+|clear(?:ed|ing|s)?|clean|cured?|curing|cures|fixe[ds]|fixing|success\w*|fail\w+|respond\w+|effective|ineffective|on the mend|turn(?:ed|ing) a corner)\b|\brule[ds]?\s+out\b/i
 // SR-4 (B-721 §3.5, spine S3/S5) — UNIVERSALLY banned Signal vocabulary, screened on EVERY
 // finding type. Change lives in the phrased, counted sentence, never a direction glyph
 // (S5), and the sample line is the honest confidence display, never a percentage or
@@ -455,6 +486,24 @@ export function validatePhrasing(text: string, finding: Finding): boolean {
     // never in this loop, but if that ever changes this screen holds all three lines (parity with
     // ⑤/⑦'s screens — defense-in-depth even for a currently-dormant path).
     if (CAUSAL_RE.test(t) || MECHANISM_RE.test(t) || FOOD_NAMING_RE.test(t)) return false
+  }
+  if (finding.type === 'trial_response') {
+    // The trial-response lane (CUL-8) is a COUNT-ANCHORED comparison the vet interprets — never a
+    // verdict. Beyond the universal glyph/percent screen it may not: assert a CAUSE (G1 — no
+    // attribution to the diet, a food, or a med), imply a MECHANISM, name a FOOD/protein/form,
+    // REASSURE, or VERDICT the trial ("working"/"helping"/"improvement"/"ruled out"/"clean" and kin).
+    // It is 'insight' class, so the safety-branch reassurance screen does NOT run for it — the
+    // REASSURANCE_RE test here is what holds that line. Template-only (index.ts) so the model is never
+    // in this loop, but the screen holds all five lines if that ever changes.
+    if (
+      CAUSAL_RE.test(t) ||
+      MECHANISM_RE.test(t) ||
+      FOOD_NAMING_RE.test(t) ||
+      REASSURANCE_RE.test(t) ||
+      TRIAL_VERDICT_RE.test(t)
+    ) {
+      return false
+    }
   }
   return true
 }
@@ -597,6 +646,22 @@ export function phrasingPayload(finding: Finding, petName: string): Record<strin
       window_minutes: finding.rapidWindowMinutes,
       long_gap_hours: finding.longGapHours,
       relationship: 'associational_timing', // two timing patterns we are noting — NOT a cause, NOT a mechanism
+    }
+  }
+  if (finding.type === 'trial_response') {
+    // Signals v2 (CUL-8) — template-only (index.ts), so never actually sent to the model; kept for
+    // shape-parity. Carries the COUNTS + day-count ONLY — there is deliberately NO verdict/direction
+    // field asking the model to judge the trial (the reader sees which count is higher; the copy
+    // never says). relationship is a descriptive count comparison, never a cause and never a verdict.
+    return {
+      insight_type: 'trial_response',
+      pet_name: petName,
+      trial_day_number: finding.trialDayNumber,
+      target_duration_days: finding.targetDurationDays,
+      pooled_trial_count: finding.pooledTrialCount,
+      pooled_baseline_count: finding.pooledBaselineCount,
+      baseline_window_days: finding.baselineWindowDays,
+      relationship: 'descriptive_count', // a count comparison we are noting — NOT a cause, NOT a verdict
     }
   }
   if (finding.type === 'incident_red_flag') {
