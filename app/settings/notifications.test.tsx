@@ -39,7 +39,13 @@ jest.mock('../../store/petStore', () => ({
 }));
 // Off the native SVG/animation path — the loader is not what this test pins.
 jest.mock('../../components/brand/WhorlSpinner', () => ({ WhorlSpinner: () => null }));
-jest.mock('../../lib/notifications', () => ({ ensurePermission: jest.fn() }));
+// The primer now reads its copy from the category registry (DR-4), so the mock must
+// expose the real NOTIFICATION_CATEGORIES (descriptor + copy) alongside the stubbed
+// permission I/O the test drives.
+jest.mock('../../lib/notifications', () => ({
+  ensurePermission: jest.fn(),
+  NOTIFICATION_CATEGORIES: jest.requireActual('../../lib/notifications').NOTIFICATION_CATEGORIES,
+}));
 jest.mock('../../lib/notificationSettings', () => ({
   readCategoryEnabled: jest.fn(),
   applyCategoryPreference: jest.fn(),
@@ -77,7 +83,7 @@ describe('state (a) undetermined — never asked', () => {
     const utils = await renderReady();
     fireEvent(utils.getByRole('switch'), 'valueChange', true);
     // Primer is up (names the single pet), and the OS prompt has NOT been spent.
-    await waitFor(() => utils.getByText(/A recap of Biscuit/));
+    await waitFor(() => utils.getByText(/Biscuit.s day, gathered up/));
     expect(mockEnsure).toHaveBeenCalledTimes(1); // only the focus read…
     expect(mockEnsure).toHaveBeenCalledWith(false); // …and it was request=false
   });
@@ -134,7 +140,7 @@ describe('4th state — pref synced on, but this device never granted', () => {
   it('tapping it walks the primer (enable), never applyCategoryPreference(false)', async () => {
     const utils = await renderReady();
     fireEvent(utils.getByRole('switch'), 'valueChange', true);
-    await waitFor(() => utils.getByText(/A recap of Biscuit/)); // the primer, not a disable
+    await waitFor(() => utils.getByText(/Biscuit.s day, gathered up/)); // the primer, not a disable
     expect(mockApply).not.toHaveBeenCalled();
   });
 });

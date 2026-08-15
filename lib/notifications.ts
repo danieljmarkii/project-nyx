@@ -36,6 +36,51 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export type NotificationCategory = 'daily_summary';
 
+// ── The per-category primer descriptor (daily-recap DR-4, spec §5) ────────────
+//
+// The full-screen primer (components/notifications/NotificationPrimer.tsx) is the
+// ONE surface shown between an owner's explicit "turn this on" and the single OS
+// permission prompt — reached from the settings toggle, the in-context offer
+// (DR-3), and any future category. Every string it renders lives HERE, per
+// category, so the primer component stays copy-free and a new category ships its
+// pitch by adding a descriptor rather than branching the component.
+//
+// SAFETY (clinical-guardrails G4): the copy is strictly RETROSPECTIVE — a look
+// BACK at what the owner already logged. The hero mini-spine shows COMPLETED events
+// and the body says "the day's record is ready to read"; nothing here implies a
+// reminder, medication or otherwise (Part 1 ships none).
+//
+// The hero is a GENERIC warm day — never the owner's data — so the primer renders
+// before a single log exists. `heroLead` is the only pet-name-dependent string: a
+// single-pet account warms it with the name; a multi-pet / nameless account stays
+// neutral (D3 — one notification per account across all pets).
+
+/** One illustrative node in the primer hero's mini-spine. Static and generic —
+ *  never the owner's record. `kind` maps to a night-ground category tint in the
+ *  component, so the descriptor itself stays theme-free. */
+export interface NotificationPrimerNode {
+  readonly kind: 'meal' | 'medication' | 'symptom';
+  readonly title: string;
+  /** Intake/adherence detail beside the title (e.g. "all eaten", "given"). */
+  readonly detail?: string;
+  /** Illustrative device-local-styled time label (e.g. "7:42 AM"). */
+  readonly time: string;
+}
+
+export interface NotificationPrimerDescriptor {
+  /** The teal micro-label above the mini-lead (e.g. "Evening summary"). */
+  readonly heroLabel: string;
+  /** The serif mini-lead. petName warms it; null → the neutral, account-wide form. */
+  readonly heroLead: (petName: string | null) => string;
+  /** The c2 headline (R-7). */
+  readonly headline: string;
+  /** The one body paragraph: the cadence plus the surviving one-shot-consent
+   *  honesty line (B-666). Neutral — no pet name, no claim about the record. */
+  readonly body: string;
+  /** The generic warm-day mini-spine that carries the whole pitch. */
+  readonly miniSpine: readonly NotificationPrimerNode[];
+}
+
 export interface NotificationCategoryConfig {
   readonly id: NotificationCategory;
   /** Android notification channel id. Channel = category (§2). */
@@ -60,6 +105,9 @@ export interface NotificationCategoryConfig {
    * never wrong. The Day Summary SCREEN (opened on tap) renders live truth.
    */
   readonly body: string;
+  /** The full-screen primer's per-category copy (daily-recap DR-4, spec §5). The
+   *  pre-permission pitch — see NotificationPrimerDescriptor. */
+  readonly primer: NotificationPrimerDescriptor;
 }
 
 export const NOTIFICATION_CATEGORIES: Readonly<
@@ -83,6 +131,27 @@ export const NOTIFICATION_CATEGORIES: Readonly<
     // open Designer + T&S question (spec §10 #3). Neutral until that mock-round call.
     title: 'Today’s summary',
     body: 'Today’s record is ready to read.',
+    // The pre-permission primer's copy (DR-4). Strictly retrospective (G4): the
+    // hero is a generic warm day of COMPLETED events, and the body speaks to the
+    // ritual, never a reminder. The one surviving consent-honesty line ("Your
+    // phone will ask once — change it any time") is B-666's resolution — the OS
+    // dialog never arrives as a surprise, without a separate fine-print block.
+    primer: {
+      heroLabel: 'Evening summary',
+      heroLead: (petName) =>
+        petName ? `${petName}’s day, gathered up.` : 'The day, gathered up.',
+      headline: 'The day, read back to you.',
+      body:
+        'One calm notification each evening, when the day’s record is ready to ' +
+        'read. Your phone will ask once — change it any time.',
+      // A warm generic day: two meals and a logged dose, no symptoms. Never the
+      // owner's data — the primer renders before a single log exists.
+      miniSpine: [
+        { kind: 'meal', title: 'Breakfast', detail: 'all eaten', time: '7:42 AM' },
+        { kind: 'medication', title: 'Apoquel', detail: 'given', time: '8:05 AM' },
+        { kind: 'meal', title: 'Dinner', detail: 'most eaten', time: '6:35 PM' },
+      ],
+    },
   },
 };
 
