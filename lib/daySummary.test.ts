@@ -14,6 +14,7 @@ import type { TimelineRow } from './db';
 import {
   buildDaySummary,
   localDayBoundsIso,
+  resolveDaySummaryAnchorMs,
   petZeroLogLine,
   DAY_SUMMARY_ZERO_LOG,
   daySummaryEmptyTitle,
@@ -251,6 +252,60 @@ describe('localDayBoundsIso (device-zone prefetch bounds)', () => {
     const { after, before } = localDayBoundsIso(now.getTime());
     expect(after).toBe(new Date(2026, 7, 31, 0, 0).toISOString());
     expect(before).toBe(new Date(2026, 8, 1, 0, 0).toISOString());
+  });
+});
+
+describe('resolveDaySummaryAnchorMs — the fire-day anchor + staleness clamp (B-672)', () => {
+  // B-514-honest: UTC-pinned assertions pass an explicit `timeZone` with `Z`
+  // instants; the device-path cases build instants from LOCAL components with no
+  // zone, so the local-DAY difference the clamp reads is invariant under any CI zone.
+
+  it('falls back to now when there is no fired-for instant (pre-B-672 default)', () => {
+    const nowMs = Date.parse('2026-08-02T12:00:00Z');
+    expect(resolveDaySummaryAnchorMs({ firedForMs: null, nowMs, timeZone: 'UTC' })).toBe(nowMs);
+    expect(resolveDaySummaryAnchorMs({ firedForMs: undefined, nowMs, timeZone: 'UTC' })).toBe(nowMs);
+  });
+
+  it('keeps a same-day tap on the fired-for day (age 0)', () => {
+    const firedForMs = Date.parse('2026-08-01T21:00:00Z'); // 9pm fire
+    const nowMs = Date.parse('2026-08-01T21:05:00Z'); //      tapped 5 min later
+    expect(resolveDaySummaryAnchorMs({ firedForMs, nowMs, timeZone: 'UTC' })).toBe(firedForMs);
+  });
+
+  it('the 12:40am tap opens YESTERDAY, the fired-for day (age 1 — the wedge case)', () => {
+    // A 9pm Saturday notification tapped at 12:40am Sunday must open Saturday's
+    // record, not a near-empty Sunday (the "the app lost my logs" false-empty).
+    const firedForMs = Date.parse('2026-08-01T21:00:00Z'); // Sat 9pm
+    const nowMs = Date.parse('2026-08-02T00:40:00Z'); //      Sun 12:40am
+    expect(resolveDaySummaryAnchorMs({ firedForMs, nowMs, timeZone: 'UTC' })).toBe(firedForMs);
+  });
+
+  it('a 2-day-old tap clamps to TODAY, not a days-old summary (age 2)', () => {
+    const firedForMs = Date.parse('2026-08-01T21:00:00Z'); // Sat 9pm
+    const nowMs = Date.parse('2026-08-03T08:00:00Z'); //      Mon morning
+    expect(resolveDaySummaryAnchorMs({ firedForMs, nowMs, timeZone: 'UTC' })).toBe(nowMs);
+  });
+
+  it('clamps a future fired-for instant to now (defensive — bad clock/payload)', () => {
+    const nowMs = Date.parse('2026-08-01T21:00:00Z');
+    const firedForMs = Date.parse('2026-08-02T21:00:00Z'); // tomorrow
+    expect(resolveDaySummaryAnchorMs({ firedForMs, nowMs, timeZone: 'UTC' })).toBe(nowMs);
+  });
+
+  it('falls back to now for a non-finite fired-for instant', () => {
+    const nowMs = Date.parse('2026-08-02T12:00:00Z');
+    expect(resolveDaySummaryAnchorMs({ firedForMs: NaN, nowMs, timeZone: 'UTC' })).toBe(nowMs);
+  });
+
+  it('anchors cross-midnight on the DEVICE path too (local components, no timeZone)', () => {
+    // The production path: device zone IS the owner's midnight. Both instants are
+    // built from local components, so the assertion holds under UTC+14 / UTC−10 CI.
+    const firedForMs = new Date(2026, 7, 1, 21, 0).getTime(); // Sat 9pm local
+    const nowAge1 = new Date(2026, 7, 2, 0, 40).getTime(); //   Sun 12:40am local
+    expect(resolveDaySummaryAnchorMs({ firedForMs, nowMs: nowAge1 })).toBe(firedForMs);
+
+    const nowAge2 = new Date(2026, 7, 3, 8, 0).getTime(); //    Mon morning local
+    expect(resolveDaySummaryAnchorMs({ firedForMs, nowMs: nowAge2 })).toBe(nowAge2);
   });
 });
 

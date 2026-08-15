@@ -185,6 +185,39 @@ export function localDayBoundsIso(nowMs: number): { after: string; before: strin
   return { after: start.toISOString(), before: end.toISOString() };
 }
 
+// ── The fire-day anchor (B-672) ──────────────────────────────────────────────
+//
+// The Day Summary is opened from the 9pm notification, which fires FOR a given day.
+// This decides which day the screen renders "today" as: the day the notification
+// fired for, so a Saturday-evening notification tapped after midnight still opens
+// Saturday's record (not an empty Sunday) — the false-empty the summary exists to
+// avoid. `firedForMs` is the notification's delivery instant, threaded from the tap
+// (lib/notificationRouting `normalizeFireInstant` → the screen's `firedAt` param).
+//
+// THE CLAMP: the fired-for day is honoured only while it is TODAY or YESTERDAY (its
+// B-421 local-day index is `todayIndex` or `todayIndex - 1`). An older instant — a
+// stale, un-dismissed notification tapped days later — falls back to `nowMs`, so the
+// tap opens today rather than a days-old summary. A future instant (a bad clock or
+// payload) falls back too, defensively. With no fired-for instant (the screen opened
+// outside a notification tap) the result is `nowMs` — today, exactly as before B-672.
+//
+// Never widens a false-empty: the un-anchored path is unchanged, the anchored path
+// only ever moves the render to a day the record itself holds (today or yesterday),
+// and the stale path lands on today rather than a misleading old day.
+export function resolveDaySummaryAnchorMs(input: {
+  firedForMs: number | null | undefined;
+  nowMs: number;
+  /** IANA zone to bucket the day in. OMIT on-device (device zone = owner's midnight,
+   *  B-421); tests pin it explicitly rather than against the runner's clock (B-514). */
+  timeZone?: string;
+}): number {
+  const { firedForMs, nowMs, timeZone } = input;
+  if (firedForMs == null || !Number.isFinite(firedForMs)) return nowMs;
+  const todayIndex = localDayIndex(nowMs, timeZone);
+  const firedIndex = localDayIndex(firedForMs, timeZone);
+  return firedIndex === todayIndex || firedIndex === todayIndex - 1 ? firedForMs : nowMs;
+}
+
 // ── Zero-log copy (Principle 5 + G2 — owned here, asserted by the test) ──────
 //
 // nyx-voice + clinical-guardrails both gate these at the copy pass (PR 5); this is

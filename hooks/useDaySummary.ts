@@ -17,6 +17,7 @@ import { getTimeline } from '../lib/db';
 import {
   buildDaySummary,
   localDayBoundsIso,
+  resolveDaySummaryAnchorMs,
   type DaySummaryModel,
   type DaySummaryPetInput,
 } from '../lib/daySummary';
@@ -29,10 +30,16 @@ const DAY_ROW_LIMIT = 500;
 
 export type DaySummaryState =
   | { status: 'loading'; model: null }
-  | { status: 'ready'; model: DaySummaryModel }
+  | { status: 'ready'; model: DaySummaryModel; anchorMs: number }
   | { status: 'error'; model: null };
 
-export function useDaySummary(): DaySummaryState {
+/**
+ * @param firedForMs The instant the opening notification FIRED (its delivery time,
+ *   ms), when this screen was reached by a notification tap (B-672). The summary
+ *   anchors "today" to that day — clamped to now when it is stale (see
+ *   `resolveDaySummaryAnchorMs`). Omit / null when opened outside a tap → today.
+ */
+export function useDaySummary(firedForMs?: number | null): DaySummaryState {
   const pets = usePetStore((s) => s.pets);
   const activePetId = usePetStore((s) => s.activePet?.id ?? null);
   const hydrationTick = useSyncStore((s) => s.hydrationTick);
@@ -45,10 +52,12 @@ export function useDaySummary(): DaySummaryState {
     (async () => {
       try {
         // Bake the instant once, so both the SQL prefetch bound and the builder's
-        // local-day clip measure "today" from the same moment (the accepted
-        // load-time snapshot behaviour of useDietTrial / useMedStrips).
-        const nowMs = Date.now();
-        const { after, before } = localDayBoundsIso(nowMs);
+        // local-day clip measure the rendered day from the same moment (the accepted
+        // load-time snapshot behaviour of useDietTrial / useMedStrips). B-672: that
+        // moment is the notification's fired-for day when opened from a tap (clamped
+        // to now if stale), otherwise now.
+        const anchorMs = resolveDaySummaryAnchorMs({ firedForMs, nowMs: Date.now() });
+        const { after, before } = localDayBoundsIso(anchorMs);
         // Active pet first (§5.3). A generic {id} helper, so the Pet[] passes through.
         const ordered = orderPetsActiveFirst(pets, activePetId);
 
@@ -61,7 +70,11 @@ export function useDaySummary(): DaySummaryState {
           })),
         );
         if (cancelled) return;
-        setState({ status: 'ready', model: buildDaySummary({ pets: perPet, nowMs }) });
+        setState({
+          status: 'ready',
+          model: buildDaySummary({ pets: perPet, nowMs: anchorMs }),
+          anchorMs,
+        });
       } catch (e) {
         // Honest degradation: a failed read shows the error state, NEVER an empty
         // "nothing logged today" (a silent read failure read as a false all-clear —
@@ -74,7 +87,7 @@ export function useDaySummary(): DaySummaryState {
     return () => {
       cancelled = true;
     };
-  }, [pets, activePetId, hydrationTick]);
+  }, [pets, activePetId, hydrationTick, firedForMs]);
 
   return state;
 }
