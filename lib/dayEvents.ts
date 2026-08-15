@@ -42,6 +42,22 @@ const ADHERENCE_PHRASE: Record<string, string> = {
  *  category → theme colour. 'other' (weight, etc.) reads neutral. */
 export type EventTintCategory = 'symptom' | 'meal' | 'medication' | 'other';
 
+/** An event_type → its tint category. The ONE source shared by `describeDayEvent`
+ *  (the spine / drill-in rows) and DR-2's Home lane (`lib/todayLane.ts`), so a
+ *  meal/dose/symptom is categorised — and therefore tinted (`NODE_TINT_*`) and counted
+ *  — identically wherever it is drawn. The symptom set is the closed `SYMPTOM_TYPES`;
+ *  meal and medication are their own types; everything else (weight, note, …) is
+ *  'other'. */
+export function eventTintCategory(eventType: string): EventTintCategory {
+  return SYMPTOM_TYPES.has(eventType as EventTypeKey)
+    ? 'symptom'
+    : eventType === 'meal'
+      ? 'meal'
+      : eventType === 'medication'
+        ? 'medication'
+        : 'other';
+}
+
 export interface DayEventDisplay {
   /** Raw event_type for the EventIcon glyph. */
   eventType: string;
@@ -72,13 +88,7 @@ function foodLabelOf(row: TimelineRow): string | null {
 export function describeDayEvent(row: TimelineRow): DayEventDisplay {
   const type = row.event_type;
   const config = EVENT_TYPES[type as EventTypeKey];
-  const category: EventTintCategory = SYMPTOM_TYPES.has(type as EventTypeKey)
-    ? 'symptom'
-    : type === 'meal'
-      ? 'meal'
-      : type === 'medication'
-        ? 'medication'
-        : 'other';
+  const category: EventTintCategory = eventTintCategory(type);
   const timeMs = Date.parse(row.occurred_at);
   const time = describeOccurredAt({
     confidence: row.occurred_at_confidence as never,

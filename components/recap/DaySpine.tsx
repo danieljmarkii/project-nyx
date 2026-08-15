@@ -24,13 +24,15 @@ import { router } from 'expo-router';
 import { ChevronRight } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
 import type { DaySummaryRow } from '../../lib/daySummary';
-import { NODE_TINT_NIGHT } from './nodeTints';
+import { NODE_TINT_NIGHT, NODE_DOT_SIZE, NODE_DOT_RING } from './nodeTints';
 
 // Geometry — the rail column that carries the dot + thread, and where the dot's
-// centre sits from the row top (so the thread segments and the title line up).
+// centre sits from the row top (so the thread segments and the title line up). The dot
+// SIZE + ring come from the shared node constants so the spine and DR-2's Home lane
+// draw the same bead (nodeTints.ts).
 const TIME_W = 56;
 const RAIL_W = 18;
-const DOT = 11;
+const DOT = NODE_DOT_SIZE;
 const LINE_W = 2;
 const DOT_TOP = 3; // marginTop lifting the dot to the title's first line
 const DOT_CENTER_Y = DOT_TOP + DOT / 2;
@@ -160,7 +162,7 @@ const styles = StyleSheet.create({
     width: DOT,
     height: DOT,
     borderRadius: DOT / 2,
-    borderWidth: 2,
+    borderWidth: NODE_DOT_RING,
     // The ground-coloured ring makes the node read as a bead cutting the thread.
     borderColor: theme.colorBrandNight,
     zIndex: 1,
