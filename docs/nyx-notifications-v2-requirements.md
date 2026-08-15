@@ -1,7 +1,9 @@
 # Nyx Notifications v2 — Out of Beta, the Evening Surface, and the Portfolio
 **Version:** 0.92 — reaction wave 2 folded in (PM, 2026-08-15): **the day spine** replaces the lane-plus-rows rendering (C1, §4); **TodayZone v2** replaces the retarget-only A1 (new UI explicitly welcomed — §2); the primer goes **picture-forward** (mini-spine hero, §3); the **Signal envelope drawn with its firing model** (§5.5, mock round 5). Prior wave: D-3 RULED (night register); D-5 re-opened (slate in §5.5). Open: D-1 remnants (A2/A2b confirm), D-4, D-6, the c1/c2 pick, the slate reaction. | **Date:** 2026-08-15 | **Status:** Requirements in reaction; mock rounds 3–5 published (same artifact URL); no build until §0 closes.
 
-**Read with:** `docs/nyx-notification-foundation-requirements.md` (Part 1 — the shipped foundation this builds on; its §0 D1–D4 rulings and §6 G1–G6 spine carry forward verbatim), `docs/culprit-notifications-mockups.html` (rounds 1–3), `docs/research/2026-08-notification-ux-landscape.md` (the best-of-breed evidence, this session), `docs/logging-capture-discovery.md` §6-A (B-288's shape). Backlog: B-661 (shipped Part 1), B-666, B-670, B-671, B-672, B-673, B-674 (this track resolves or promotes each), B-288, B-662, B-015, B-543, B-227 (the consumers).
+**Design authority:** **`docs/culprit-daily-recap-mockups.html`** — the current-proposal page (frames replace in place; the PM reads THIS). `docs/culprit-notifications-mockups.html` is the deliberation ARCHIVE (rounds 1–5, rulings annotated in place) — consult it for why, never for what ships.
+
+**Read with:** `docs/nyx-notification-foundation-requirements.md` (Part 1 — the shipped foundation this builds on; its §0 D1–D4 rulings and §6 G1–G6 spine carry forward verbatim), `docs/research/2026-08-notification-ux-landscape.md` + `docs/research/2026-08-notification-type-portfolios.md` (the evidence), `docs/logging-capture-discovery.md` §6-A (B-288's shape). Backlog: B-661 (shipped Part 1), B-666, B-670, B-671, B-672, B-673, B-674 (this track resolves or promotes each), B-288, B-662, B-015, B-543, B-227 (the consumers).
 
 ---
 

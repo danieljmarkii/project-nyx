@@ -1,0 +1,1080 @@
+<title>Culprit — The Daily Recap</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  /* ============================================================
+     THE DAILY RECAP — the current proposal, and only the current
+     proposal. This page carries NO history: superseded frames are
+     REPLACED in place on each revision (git is the archive; the
+     deliberation record lives on the "Notifications & consent"
+     rounds page). Same design system + real theme tokens as the
+     rest of the track's mocks.
+     ============================================================ */
+
+:root {
+    /* Document — light */
+    --paper:     #F5F4F9;   /* cool paper, biased toward the brand indigo */
+    --paper-2:   #FFFFFF;
+    --ink:       #1B1A2E;
+    --ink-2:     #5F5C7A;
+    --ink-3:     #8B87A8;
+    --rule:      #DEDCE9;
+    --rule-soft: #E9E7F1;
+    --teal-ink:  #0B7B6C;   /* theme.colorAccentInk — teal that passes as text */
+    --teal-wash: #E0FBF7;   /* theme.colorAccentLight */
+    --amber-ink: #9A6A00;   /* the "attention, not alarm" note ink */
+
+    --serif: ui-serif, Charter, "Bitstream Charter", "Iowan Old Style", Georgia, serif;
+    --sans:  -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --mono:  ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+
+    /* The device-frame palette — FIXED light tokens (constants/theme.ts),
+       identical in both document themes. */
+    --f-neutral:   #FAFAFA;  /* colorNeutralLight — screen ground */
+    --f-surface:   #FFFFFF;  /* colorSurface — cards */
+    --f-subtle:    #F5F5F5;  /* colorSurfaceSubtle — the denied note fill */
+    --f-text:      #0A0A0A;  /* colorTextPrimary */
+    --f-text-2:    #525252;  /* colorTextSecondary */
+    --f-text-3:    #737373;  /* colorTextTertiary */
+    --f-text-dis:  #A3A3A3;  /* colorTextDisabled — "Coming soon" */
+    --f-border:    #EAEAEA;  /* colorBorder */
+    --f-border-st: #D4D4D4;  /* colorBorderStrong — switch-off track */
+    --f-accent:    #00C2A8;  /* colorAccent — switch-on track */
+    --f-accent-l:  #E0FBF7;  /* colorAccentLight */
+    --f-accent-ink:#0B7B6C;  /* colorAccentInk — the "Open Settings" action */
+    --f-black:     #0A0A0A;  /* colorNeutralDark — primary button */
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper:     #13112E;
+      --paper-2:   #1D1A42;
+      --ink:       #ECEAF6;
+      --ink-2:     #A6A2CE;
+      --ink-3:     #706BA6;
+      --rule:      rgba(196,190,255,0.20);
+      --rule-soft: rgba(196,190,255,0.11);
+      --teal-ink:  #4FD8C4;
+      --teal-wash: rgba(0,194,168,0.14);
+      --amber-ink: #E4B25C;
+    }
+  }
+  :root[data-theme="light"] {
+    --paper: #F5F4F9; --paper-2: #FFFFFF; --ink: #1B1A2E; --ink-2: #5F5C7A;
+    --ink-3: #8B87A8; --rule: #DEDCE9; --rule-soft: #E9E7F1;
+    --teal-ink: #0B7B6C; --teal-wash: #E0FBF7; --amber-ink: #9A6A00;
+  }
+  :root[data-theme="dark"] {
+    --paper: #13112E; --paper-2: #1D1A42; --ink: #ECEAF6; --ink-2: #A6A2CE;
+    --ink-3: #706BA6; --rule: rgba(196,190,255,0.20); --rule-soft: rgba(196,190,255,0.11);
+    --teal-ink: #4FD8C4; --teal-wash: rgba(0,194,168,0.14); --amber-ink: #E4B25C;
+  }
+
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 16px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 52px 26px 108px; }
+
+  /* ── Masthead ─────────────────────────────────────────────── */
+  .mast { border-bottom: 1px solid var(--rule); padding-bottom: 26px; margin-bottom: 8px; }
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--teal-ink);
+    margin: 0 0 14px;
+  }
+  h1 {
+    font-family: var(--serif);
+    font-weight: 600;
+    font-size: clamp(30px, 5vw, 46px);
+    line-height: 1.08;
+    letter-spacing: -0.015em;
+    text-wrap: balance;
+    margin: 0 0 16px;
+  }
+  .lede { max-width: 65ch; color: var(--ink-2); font-size: 17px; margin: 0; }
+  .lede strong { color: var(--ink); font-weight: 600; }
+
+  .meta {
+    display: flex; flex-wrap: wrap; gap: 10px 18px;
+    margin-top: 22px; font-family: var(--mono); font-size: 12px; color: var(--ink-3);
+  }
+  .meta b { color: var(--ink-2); font-weight: 600; }
+
+  /* ── Section headers ──────────────────────────────────────── */
+  .section { margin-top: 64px; }
+  .section > h2 {
+    font-family: var(--serif);
+    font-weight: 600;
+    font-size: 26px;
+    letter-spacing: -0.01em;
+    margin: 0 0 6px;
+  }
+  .section > .sub { color: var(--ink-2); max-width: 68ch; margin: 0 0 30px; }
+
+  /* ── Plate: device + annotation ───────────────────────────── */
+  .plate {
+    display: grid;
+    grid-template-columns: 320px 1fr;
+    gap: 40px;
+    align-items: start;
+    padding: 30px 0;
+    border-top: 1px solid var(--rule-soft);
+  }
+  .plate:first-of-type { border-top: none; }
+  @media (max-width: 760px) {
+    .plate { grid-template-columns: 1fr; gap: 26px; justify-items: center; }
+    .note-col { justify-self: stretch; }
+  }
+
+  .frame-label {
+    font-family: var(--mono); font-size: 11px; letter-spacing: 0.08em;
+    text-transform: uppercase; color: var(--ink-3); margin: 0 0 12px; text-align: center;
+  }
+  .frame-label b { color: var(--teal-ink); font-weight: 600; }
+
+  /* ── The device ───────────────────────────────────────────── */
+  .device {
+    width: 300px;
+    border-radius: 42px;
+    background: #E7E5EE;
+    padding: 9px;
+    box-shadow: 0 1px 0 rgba(255,255,255,0.6) inset, 0 22px 44px -20px rgba(20,16,46,0.5);
+    margin: 0 auto;
+  }
+  :root[data-theme="dark"] .device { background: #2A2752; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .device { background: #2A2752; } }
+
+  .screen {
+    position: relative;
+    border-radius: 34px;
+    overflow: hidden;
+    background: var(--f-neutral);
+    height: 604px;
+    display: flex;
+    flex-direction: column;
+    font-size: 15px;
+    color: var(--f-text);
+  }
+
+  /* nav bar */
+  .nav {
+    height: 50px; flex: 0 0 auto;
+    display: grid; grid-template-columns: 44px 1fr 44px; align-items: center;
+    background: var(--f-neutral);
+    border-bottom: 1px solid transparent;
+  }
+  .nav .chev { font-size: 22px; color: var(--f-text); text-align: center; line-height: 1; }
+  .nav .title { text-align: center; font-weight: 600; font-size: 16px; }
+
+  .body {
+    flex: 1 1 auto; overflow: hidden;
+    padding: 18px 16px; display: flex; flex-direction: column; gap: 14px;
+  }
+
+  .intro-line {
+    font-size: 12.5px; color: var(--f-text-3); line-height: 1.45; padding: 0 6px;
+  }
+
+  /* cards + rows (SettingsRow) */
+  .card {
+    background: var(--f-surface);
+    border-radius: 16px;
+    box-shadow: 0 1px 2px rgba(20,16,46,0.05);
+    overflow: hidden;
+  }
+  .row {
+    display: flex; align-items: center; gap: 14px;
+    padding: 12px 14px; min-height: 56px;
+  }
+  .row + .row { border-top: 1px solid var(--f-border); }
+  .row .lead { flex: 1 1 auto; min-width: 0; }
+  .row .r-label { font-size: 15px; color: var(--f-text); }
+  .row .r-label.dis { color: var(--f-text-dis); }
+  .row .r-sub { font-size: 12.5px; color: var(--f-text-3); margin-top: 2px; line-height: 1.35; }
+  .coming { font-size: 12.5px; color: var(--f-text-dis); white-space: nowrap; }
+
+  /* iOS switch */
+  .sw { width: 51px; height: 31px; border-radius: 999px; position: relative; flex: 0 0 auto; background: var(--f-border-st); transition: background .15s; }
+  .sw::after { content: ""; position: absolute; top: 2px; left: 2px; width: 27px; height: 27px; border-radius: 999px; background: #fff; box-shadow: 0 2px 4px rgba(0,0,0,0.28); transition: transform .15s; }
+  .sw.on { background: var(--f-accent); }
+  .sw.on::after { transform: translateX(20px); }
+  .sw.dis { opacity: 0.45; }
+
+  /* denied — the DANGER banner (PM: the quiet fill was too subtle) */
+  .denied {
+    background: #FEE2E2;          /* theme.colorDestructiveLight */
+    border: 1px solid #FCA5A5;    /* theme.colorDestructiveBorder */
+    border-radius: 16px;
+    padding: 14px;
+  }
+  .denied .d-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+  .denied .d-head svg { width: 20px; height: 20px; stroke: #DC2626; fill: none; flex: 0 0 auto; }
+  .denied .d-title { font-size: 15px; font-weight: 600; color: var(--f-text); }
+  .denied .d-text { font-size: 13px; color: var(--f-text-2); line-height: 1.45; }
+  .denied .d-action {
+    display: inline-block; margin-top: 10px; font-size: 13px; font-weight: 500;
+    color: #DC2626; border: 1px solid #DC2626; border-radius: 8px; padding: 8px 14px;
+  }
+
+  /* scrim + primer sheet */
+  .scrim { position: absolute; inset: 0; background: rgba(10,10,10,0.35); }
+  .sheet {
+    position: absolute; left: 0; right: 0; bottom: 0;
+    background: var(--f-surface);
+    border-radius: 24px 24px 0 0;
+    padding: 12px 24px 26px;
+    display: flex; flex-direction: column;
+  }
+  .grabber { width: 36px; height: 4px; border-radius: 999px; background: var(--f-border-st); align-self: center; margin-bottom: 16px; }
+  .bell { width: 48px; height: 48px; border-radius: 999px; background: var(--f-accent-l); display: flex; align-items: center; justify-content: center; margin-bottom: 14px; }
+  .bell svg { width: 22px; height: 22px; stroke: var(--f-accent-ink); }
+  .sheet .s-title { font-family: var(--serif); font-size: 21px; line-height: 1.15; color: var(--f-text); margin-bottom: 8px; }
+  .sheet .s-body { font-size: 14px; color: var(--f-text-2); line-height: 1.5; }
+  .sheet .s-note { font-size: 12.5px; color: var(--f-text-3); line-height: 1.4; margin-top: 15px; }
+  .btn-primary { margin-top: 22px; background: var(--f-black); color: #fff; text-align: center; font-size: 15px; font-weight: 500; padding: 15px; border-radius: 16px; }
+  .btn-text { text-align: center; font-size: 15px; color: var(--f-text-2); padding: 13px; margin-top: 4px; }
+
+  /* system permission dialog (iOS-style) */
+  .sysdlg { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
+  .sysdlg .card2 { width: 240px; background: #F2F2F2E6; backdrop-filter: blur(8px); border-radius: 14px; overflow: hidden; text-align: center; box-shadow: 0 20px 50px -12px rgba(0,0,0,0.5); }
+  .sysdlg .h { padding: 18px 16px 6px; font-weight: 600; font-size: 15px; color: #000; }
+  .sysdlg .p { padding: 0 16px 16px; font-size: 12px; color: #333; line-height: 1.4; }
+  .sysdlg .acts { display: grid; grid-template-columns: 1fr 1fr; border-top: 1px solid #C6C6C8; }
+  .sysdlg .acts > div { padding: 11px; font-size: 14px; color: #0A84FF; }
+  .sysdlg .acts > div:first-child { border-right: 1px solid #C6C6C8; }
+  .sysdlg .acts .bold { font-weight: 600; }
+
+  /* ── Annotation column ────────────────────────────────────── */
+  .note-col { padding-top: 4px; max-width: 60ch; }
+  .note-col h3 { font-size: 17px; margin: 0 0 8px; letter-spacing: -0.01em; }
+  .note-col p { margin: 0 0 12px; color: var(--ink-2); font-size: 14.5px; }
+  .note-col p strong { color: var(--ink); font-weight: 600; }
+  .chips { display: flex; flex-wrap: wrap; gap: 7px; margin: 4px 0 16px; }
+  .chip {
+    font-family: var(--mono); font-size: 11px; letter-spacing: 0.02em;
+    padding: 4px 9px; border-radius: 999px; border: 1px solid var(--rule);
+    color: var(--ink-2); background: var(--paper-2);
+  }
+  .chip.teal { color: var(--teal-ink); border-color: color-mix(in srgb, var(--teal-ink) 40%, transparent); background: var(--teal-wash); }
+  ul.tight { margin: 0 0 12px; padding-left: 18px; color: var(--ink-2); font-size: 14.5px; }
+  ul.tight li { margin: 5px 0; }
+  ul.tight b { color: var(--ink); font-weight: 600; }
+
+  /* callout */
+  .callout {
+    margin-top: 14px; border-left: 3px solid var(--teal-ink);
+    padding: 12px 16px; background: var(--paper-2); border-radius: 0 12px 12px 0;
+    font-size: 14px; color: var(--ink-2);
+  }
+  .callout b { color: var(--ink); }
+
+  .footer { margin-top: 72px; padding-top: 24px; border-top: 1px solid var(--rule); color: var(--ink-3); font-size: 13px; }
+  .footer b { color: var(--ink-2); }
+
+  /* ============================================================
+     ROUND 2 — PR 4 surfaces: the Day Summary screen + the lock-screen
+     notification. Same device frames + real theme tokens as round 1.
+     ============================================================ */
+
+  /* ── The Day Summary screen ───────────────────────────────── */
+  .ds-date {
+    font-size: 12px; color: var(--f-text-3); font-weight: 600;
+    padding: 2px 2px 0;
+  }
+  .ds-section { display: flex; flex-direction: column; gap: 8px; }
+  .ds-pet { font-size: 17px; font-weight: 600; color: var(--f-text); padding: 0 2px; }
+  .ds-petzero { font-size: 13px; color: var(--f-text-2); line-height: 1.45; padding: 0 2px; }
+
+  .ds-card {
+    background: var(--f-surface);
+    border: 1px solid var(--f-border);
+    border-radius: 16px;
+    overflow: hidden;
+  }
+  .ds-row { display: flex; align-items: center; gap: 10px; padding: 10px 12px; min-height: 56px; }
+  .ds-row + .ds-row { border-top: 1px solid var(--f-border); }
+  .ds-ic {
+    width: 28px; height: 28px; border-radius: 14px; background: var(--f-subtle);
+    display: flex; align-items: center; justify-content: center; flex: 0 0 auto;
+  }
+  .ds-ic svg { width: 16px; height: 16px; fill: none; stroke-width: 1.85; stroke-linecap: round; stroke-linejoin: round; }
+  .ds-tx { flex: 1 1 auto; min-width: 0; display: flex; align-items: baseline; gap: 6px; }
+  .ds-title {
+    font-size: 15px; color: var(--f-text);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex-shrink: 1;
+  }
+  .ds-title .det { color: var(--f-text-2); }
+  .ds-tag {
+    font-size: 10px; letter-spacing: 0.08em; color: var(--f-text-3);
+    font-weight: 600; text-transform: uppercase; flex: 0 0 auto;
+  }
+  .ds-time { font-size: 11px; color: var(--f-text-3); flex: 0 0 auto; }
+  .ds-chev { color: var(--f-text-3); flex: 0 0 auto; display: flex; }
+  .ds-chev svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+  /* Category glyph tints — the SAME mapping the calendar drill-in uses
+     (constants/theme.ts): symptom rose, meal teal, medication slate, other neutral. */
+  .tint-meal  { stroke: #00C2A8; }  /* colorEventMeal */
+  .tint-sym   { stroke: #F43F5E; }  /* colorEventSymptom */
+  .tint-med   { stroke: #5B7A9E; }  /* colorEventMedication */
+  .tint-other { stroke: #525252; }  /* colorTextSecondary */
+
+  /* The zero-log designed empty state (align="fill" — vertically centred). */
+  .ds-empty {
+    flex: 1 1 auto; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; text-align: center;
+    padding: 0 26px; gap: 6px;
+  }
+  .ds-empty .et { font-size: 17px; font-weight: 500; color: var(--f-black); }
+  .ds-empty .eb { font-size: 15px; color: var(--f-text-2); line-height: 1.45; }
+  .ds-empty .ec {
+    margin-top: 10px; min-height: 44px; display: flex; align-items: center;
+    font-size: 15px; font-weight: 500; color: var(--f-accent);   /* accent text link, not a filled button */
+  }
+
+  /* ── The lock-screen notification ─────────────────────────── */
+  .lock {
+    background: linear-gradient(168deg, #2a2550 0%, #16132f 55%, #0d0b22 100%);
+    color: #fff; align-items: center;
+  }
+  .lock .lock-clock { margin-top: 70px; font-size: 76px; font-weight: 300; letter-spacing: -0.02em; line-height: 1; }
+  .lock .lock-date { margin-top: 6px; font-size: 15px; color: rgba(255,255,255,0.82); font-weight: 500; }
+  .notif {
+    position: absolute; left: 12px; right: 12px; bottom: 96px;
+    background: rgba(245,244,250,0.90);
+    -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px);
+    border-radius: 18px; padding: 12px 13px; text-align: left;
+    box-shadow: 0 8px 24px -10px rgba(0,0,0,0.45);
+  }
+  .notif .nh { display: flex; align-items: center; gap: 7px; margin-bottom: 5px; }
+  .notif .nicon { width: 20px; height: 20px; border-radius: 5px; background: var(--f-accent); display: flex; align-items: center; justify-content: center; flex: 0 0 auto; }
+  .notif .nicon svg { width: 13px; height: 13px; stroke: #fff; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .notif .napp { font-size: 11px; letter-spacing: 0.04em; color: #3a3a3a; text-transform: uppercase; font-weight: 700; flex: 1 1 auto; }
+  .notif .nwhen { font-size: 11px; color: #6a6a6a; }
+  .notif .ntitle { font-size: 14px; font-weight: 600; color: #000; }
+  .notif .nbody { font-size: 13.5px; color: #1f1f1f; line-height: 1.35; margin-top: 1px; }
+
+  /* Deferred-piece ruling table (round-2 annotations). */
+  .rulings { width: 100%; border-collapse: collapse; margin: 6px 0 4px; font-size: 13.5px; }
+  .rulings th, .rulings td { text-align: left; vertical-align: top; padding: 8px 10px; border-bottom: 1px solid var(--rule-soft); }
+  .rulings th { color: var(--ink-3); font-family: var(--mono); font-size: 11px; letter-spacing: 0.04em; text-transform: uppercase; font-weight: 600; }
+  .rulings td { color: var(--ink-2); }
+  .rulings td b { color: var(--ink); font-weight: 600; }
+  .verdict { font-family: var(--mono); font-size: 11px; font-weight: 700; white-space: nowrap; }
+  .verdict.in { color: var(--teal-ink); }
+  .verdict.out { color: var(--amber-ink); }
+
+  /* ============================================================
+     ROUND 3 — Notifications v2 planning: the adoption doors, primer v2,
+     the Day Summary redesign candidates, the portfolio concepts.
+     ============================================================ */
+
+  .roundtag {
+    display:inline-block; font-family: var(--mono); font-size: 11px; font-weight: 700;
+    letter-spacing: 0.08em; color: var(--teal-ink); vertical-align: 4px;
+    border: 1px solid color-mix(in srgb, var(--teal-ink) 40%, transparent);
+    background: var(--teal-wash); border-radius: 999px; padding: 3px 10px;
+  }
+  .stale-note { font-family: var(--mono); font-size: 12px; color: var(--amber-ink); margin: -18px 0 24px; }
+
+  /* Screen-scoped palette vars — light defaults; .night overrides with the REAL
+     night tokens from constants/theme.ts (colorBrandNight / -Elevated /
+     colorTextOnNight / -Muted / colorBorderOnNight / colorEventSymptomOnNight). */
+  .screen { --s-ground: var(--f-neutral); --s-card: var(--f-surface); --s-border: var(--f-border);
+            --s-text: var(--f-text); --s-text2: var(--f-text-2); --s-text3: var(--f-text-3);
+            --s-sym: #F43F5E; }
+  .screen.night { --s-ground:#13112E; --s-card:#251F57; --s-border:rgba(196,190,255,0.16);
+            --s-text:#ECEAF6; --s-text2:#A6A2CE; --s-text3:#8983B8; --s-sym:#FB7185;
+            background:#13112E; color:#ECEAF6; }
+  .screen.night .nav { background:#13112E; }
+  .screen.night .nav .chev, .screen.night .nav .title { color:#ECEAF6; }
+
+  /* ── Day Summary v2 components (day + night via --s-*) ── */
+  .ds2-lead { font-family: var(--serif); font-size: 19px; line-height: 1.32; color: var(--s-text); letter-spacing: -0.01em; padding: 0 2px; }
+  .screen.night .ds2-lead { color: #F2EEE4; } /* colorMoonlight for display text on night */
+  .ds2-date { font-size: 12px; color: var(--s-text3); font-weight: 600; padding: 2px 2px 0; }
+  .arc { position: relative; height: 46px; margin: 0 2px; }
+  .arc-track { position:absolute; left:0; right:0; top:19px; height:2px; border-radius:2px; background: var(--s-border); }
+  .arc-dot { position:absolute; top:14px; width:12px; height:12px; border-radius:999px; border:2px solid var(--s-ground); }
+  .arc-dot.m { background:#00C2A8; } .arc-dot.d { background:#5B7A9E; } .arc-dot.s { background:var(--s-sym); }
+  .screen.night .arc-dot.d { background:#93ADCB; } /* med slate needs a night sibling token — build note */
+  .arc-times { position:absolute; left:0; right:0; top:32px; display:flex; justify-content:space-between; font-family: var(--mono); font-size:10px; letter-spacing:0.04em; color:var(--s-text3); }
+  .fchips { display:flex; gap:6px; flex-wrap:wrap; padding: 0 2px; }
+  .fchip { font-size: 11.5px; font-weight:600; padding: 4px 9px; border-radius: 999px; background: var(--s-card); border: 1px solid var(--s-border); color: var(--s-text2); }
+  .fchip b { color: var(--s-text); font-weight: 700; }
+  .fchip.sym { color: var(--s-sym); border-color: color-mix(in srgb, var(--s-sym) 45%, transparent); }
+  .fchip.sym b { color: var(--s-sym); }
+  .strip { display:flex; align-items:center; gap:10px; background: var(--s-card); border:1px solid var(--s-border); border-radius: 14px; padding: 11px 12px; }
+  .strip .s-ic { width:26px; height:26px; border-radius:13px; background: color-mix(in srgb, #00C2A8 14%, transparent); display:flex; align-items:center; justify-content:center; flex:0 0 auto; }
+  .strip .s-ic svg { width:14px; height:14px; stroke:#00C2A8; fill:none; stroke-width:1.9; stroke-linecap:round; stroke-linejoin:round; }
+  .strip .s-tx { flex:1 1 auto; min-width:0; }
+  .strip .s-t { font-size: 13.5px; font-weight: 600; color: var(--s-text); }
+  .strip .s-s { font-size: 12px; color: var(--s-text2); margin-top:1px; }
+  .strip .s-chev { color: var(--s-text3); font-size: 16px; line-height: 1; }
+  .ds2-card { background: var(--s-card); border:1px solid var(--s-border); border-radius:16px; overflow:hidden; }
+  .ds2-row { display:flex; align-items:center; gap:10px; padding: 9px 12px; min-height: 48px; }
+  .ds2-row + .ds2-row { border-top:1px solid var(--s-border); }
+  .ds2-row .ic { width:26px;height:26px;border-radius:13px;background: color-mix(in srgb, var(--s-text) 7%, transparent); display:flex;align-items:center;justify-content:center;flex:0 0 auto; }
+  .ds2-row .ic svg { width:15px;height:15px;fill:none;stroke-width:1.85;stroke-linecap:round;stroke-linejoin:round; }
+  .ds2-row .tx { flex:1 1 auto; min-width:0; font-size:14px; color:var(--s-text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .ds2-row .tx .det { color: var(--s-text2); }
+  .ds2-row .tm { font-size:11px; color: var(--s-text3); flex:0 0 auto; }
+  .ds2-row .ch { color: var(--s-text3); font-size:15px; line-height: 1; }
+  .fwd { font-size: 13px; color: var(--s-text2); padding: 2px 2px 0; }
+  .fwd b { color: var(--s-text); font-weight: 600; }
+
+  /* ── TodayZone doorway (Home crop) ── */
+  .hz-label { display:flex; align-items:baseline; justify-content:space-between; padding: 0 2px; }
+  .hz-label .l { font-size: 12px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--f-text-3); }
+  .hz-label .door { font-size: 13px; font-weight: 600; color: var(--f-accent-ink); }
+  .ghost-card { background: var(--f-surface); border: 1px solid var(--f-border); border-radius: 16px; padding: 14px; opacity: 0.45; }
+  .ghost-card .g1 { height: 10px; width: 40%; border-radius: 5px; background: var(--f-border-st); margin-bottom: 8px; }
+  .ghost-card .g2 { height: 8px; width: 85%; border-radius: 4px; background: var(--f-border); }
+  .alt-inline { border: 1px dashed var(--rule); border-radius: 12px; padding: 10px 12px; margin: 10px 0 14px; background: var(--paper-2); }
+  .alt-inline .al { font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 6px; }
+
+  /* ── A2 offer banner ── */
+  .offer { background: var(--f-accent-l); border: 1px solid color-mix(in srgb, #00C2A8 30%, transparent); border-radius: 14px; padding: 12px; }
+  .offer .o-t { font-size: 13px; color: var(--f-text); line-height: 1.4; }
+  .offer .o-acts { display:flex; gap:16px; margin-top:8px; align-items:center; }
+  .offer .o-on { font-size: 13.5px; font-weight: 600; color: var(--f-accent-ink); }
+  .offer .o-no { font-size: 13px; color: var(--f-text-3); }
+
+  /* ── The in-primer lock-screen preview chip ── */
+  .mini-lock { background: linear-gradient(168deg, #2a2550 0%, #16132f 70%); border-radius: 14px; padding: 10px; margin-top: 14px; }
+  .mini-lock .notif { position: static; box-shadow: none; padding: 10px 11px; border-radius: 14px; }
+  .mini-lock .cap { font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.05em; color: rgba(255,255,255,0.66); text-align:center; margin-top:7px; }
+  .preview-promise { font-size: 12.5px; color: var(--f-text-2); line-height: 1.45; margin-top: 9px; }
+  .preview-promise b { color: var(--f-text); }
+
+  /* ── Full-screen primer variant ── */
+  .fsp { flex: 1 1 auto; display:flex; flex-direction:column; padding: 18px 18px 16px; }
+  .fsp .bell { width: 54px; height: 54px; margin-bottom: 16px; }
+  .fsp .f-title { font-family: var(--serif); font-size: 22px; line-height: 1.15; color: var(--f-text); margin-bottom: 7px; }
+  .fsp .f-body { font-size: 14px; color: var(--f-text-2); line-height: 1.5; }
+  .fsp .spacer { flex: 1 1 auto; }
+
+  /* ── Expanded notification with action buttons ── */
+  .notif-stack { position:absolute; left:12px; right:12px; bottom:72px; display:flex; flex-direction:column; gap:8px; }
+  .notif-stack .notif { position:static; }
+  .nact { display:flex; flex-direction:column; gap:6px; }
+  .nact .a { background: rgba(245,244,250,0.82); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); border-radius: 12px; padding: 11px; text-align:center; font-size: 14px; font-weight: 500; color: #1d1d1f; }
+
+  /* Paired mini-locks (D-6 warmth comparison) */
+  .pairs { display:grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 16px; margin-top: 8px; }
+  .pairs .mini-lock { margin-top: 0; }
+
+  .verdict.pm { color: var(--ink-3); }
+  .verdict.ruled { color: var(--teal-ink); }
+
+  /* ============================================================
+     ROUND 5 — the day spine (the timeline IS the list), the Home
+     recap band, the picture-forward primer, the Signal envelope.
+     ============================================================ */
+
+  /* The day spine — a vertical timeline whose nodes ARE the doorway rows. */
+  .spine { position:relative; }
+  .spine-row { display:flex; align-items:flex-start; gap:10px; padding: 0 0 16px; position:relative; }
+  .spine-row:last-child { padding-bottom: 2px; }
+  .spine-row::before { content:""; position:absolute; left: 67px; top: 0; bottom: 0; width: 2px; background: var(--s-border); }
+  .spine-row:first-child::before { top: 7px; }
+  .spine-row:last-child::before { height: 7px; }
+  .spine-time { width: 52px; flex:0 0 auto; font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.02em; color: var(--s-text3); text-align:right; padding-top: 3px; }
+  .spine-node { width: 12px; flex:0 0 auto; display:flex; justify-content:center; padding-top: 2px; }
+  .spine-dot { width: 11px; height: 11px; border-radius: 999px; border: 2px solid var(--s-ground); z-index: 1; }
+  .spine-dot.m { background:#00C2A8; } .spine-dot.d { background:#5B7A9E; } .spine-dot.s { background: var(--s-sym); }
+  .screen.night .spine-dot.d { background:#93ADCB; }
+  .spine-body { flex:1 1 auto; min-width:0; margin-top: -1px; }
+  .spine-title { font-size: 13.5px; color: var(--s-text); white-space: nowrap; overflow:hidden; text-overflow: ellipsis; }
+  .spine-title .det { color: var(--s-text2); }
+  .spine-sub { font-size: 10.5px; color: var(--s-text3); margin-top: 1px; }
+  .spine-chev { color: var(--s-text3); font-size: 14px; flex: 0 0 auto; padding-top: 1px; }
+
+  /* The Home recap band (A1 v2 — new UI welcomed). */
+  .hband { background: var(--f-surface); border: 1px solid var(--f-border); border-radius: 16px; padding: 12px 14px; box-shadow: 0 1px 2px rgba(20,16,46,0.05); }
+  .hband-top { display:flex; align-items:baseline; justify-content:space-between; }
+  .hband-title { font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--f-text-3); }
+  .hband-door { font-size: 13px; font-weight: 600; color: var(--f-accent-ink); }
+  .hband-counts { font-size: 12.5px; color: var(--f-text-2); margin-top: 7px; }
+  .hband-counts b { color: var(--f-text); font-weight: 600; }
+
+  /* The primer hero's mini-spine (round 5 — "more picture, fewer words"). */
+  .ms-row { display:flex; align-items:center; gap:9px; padding: 5px 0; position: relative; }
+  .ms-row::before { content:""; position:absolute; left: 5px; top: -7px; bottom: -7px; width: 2px; background: rgba(196,190,255,0.20); }
+  .ms-row:first-child::before { top: 50%; }
+  .ms-row:last-child::before { bottom: 50%; }
+  .ms-dot { width: 12px; height: 12px; border-radius: 999px; border: 2.5px solid #13112E; flex: 0 0 auto; z-index: 1; }
+  .ms-tx { font-size: 11.5px; color: #ECEAF6; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ms-tx .d { color: #A6A2CE; }
+  .ms-time { margin-left: auto; font-size: 9px; color: #8983B8; flex: 0 0 auto; }
+
+  /* Firing-model mini-table (Signal envelope annotation). */
+  .firing { width:100%; border-collapse: collapse; font-size: 13px; margin: 4px 0 12px; }
+  .firing td { padding: 6px 10px 6px 0; border-bottom: 1px solid var(--rule-soft); color: var(--ink-2); vertical-align: top; }
+  .firing td:first-child { font-family: var(--mono); font-size: 11px; letter-spacing: 0.03em; text-transform: uppercase; color: var(--ink-3); white-space: nowrap; padding-right: 14px; }
+  .firing td b { color: var(--ink); }
+
+  /* ============================================================
+     ROUND 4 — the primer re-pitched in the ValuePreview grammar:
+     hero = a miniature of the (ruled) night Day Summary.
+     ============================================================ */
+  .vpm { background:#13112E; border-radius:16px; padding:12px; box-shadow: 0 12px 26px -14px rgba(19,17,46,0.55); }
+  .vpm-label { font-size:9.5px; letter-spacing:0.12em; text-transform:uppercase; color:#4FD8C4; font-weight:700; margin-bottom:6px; }
+  .vpm-date { font-size:10px; color:#8983B8; font-weight:600; margin-bottom:3px; }
+  .vpm-lead { font-family: var(--serif); font-size:13.5px; line-height:1.3; color:#F2EEE4; margin-bottom:7px; }
+  .vpm-arc { position:relative; height:22px; }
+  .vpm-track { position:absolute; left:0; right:0; top:9px; height:2px; border-radius:2px; background:rgba(196,190,255,0.16); }
+  .vpm-dot { position:absolute; top:5px; width:9px; height:9px; border-radius:999px; border:2px solid #13112E; }
+  .vpm-row { display:flex; align-items:center; gap:6px; background:#251F57; border:1px solid rgba(196,190,255,0.16); border-radius:10px; padding:6px 8px; margin-top:5px; font-size:11px; color:#ECEAF6; white-space:nowrap; }
+  .vpm-row span:first-child { overflow:hidden; text-overflow:ellipsis; min-width:0; flex-shrink:1; }
+  .vpm-row .d { color:#A6A2CE; flex-shrink:0; }
+  .vpm-row .t { margin-left:auto; font-size:9.5px; color:#8983B8; flex:0 0 auto; }
+  .fsp .fine { font-size:10.5px; color: var(--f-text-3); line-height:1.4; margin-top:8px; }
+  .fsp .btn-primary { margin-top:12px; padding:12px; }
+  .fsp .btn-text { padding:8px; margin-top:2px; }
+  .mini-lock.compact { padding:7px; margin-top:10px; }
+  .mini-lock.compact .notif { padding:8px 10px; border-radius:12px; }
+  .mini-lock.compact .ntitle { font-size:12.5px; }
+  .mini-lock.compact .nbody { font-size:12px; }
+  .mini-lock.compact .cap { margin-top:5px; font-size:9.5px; }
+
+    a { color: var(--teal-ink); }
+  :focus-visible { outline: 2px solid var(--teal-ink); outline-offset: 2px; border-radius: 4px; }
+
+  /* Night zero-log empty state */
+  .night-empty { flex:1 1 auto; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; padding: 0 26px; gap: 7px; }
+  .night-empty .et { font-family: var(--serif); font-size: 18px; color: #F2EEE4; }
+  .night-empty .eb { font-size: 14px; color: #A6A2CE; line-height: 1.5; }
+  .night-empty .ec { margin-top: 8px; min-height: 44px; display:flex; align-items:center; font-size: 14.5px; font-weight: 500; color: #00C2A8; }
+
+  /* Night pet-section heading (multi-pet) */
+  .night-pet { font-size: 16px; font-weight: 600; color: #ECEAF6; padding: 0 2px; }
+  .night-petzero { font-size: 12.5px; color: #A6A2CE; line-height: 1.45; padding: 0 2px; }
+
+  /* Offer banner, night ground */
+  .offer-night { background:#251F57; border:1px solid color-mix(in srgb, #00C2A8 45%, transparent); border-radius: 14px; padding: 12px; }
+  .offer-night .o-t { font-size: 12.5px; color:#ECEAF6; line-height: 1.45; }
+  .offer-night .o-acts { display:flex; gap:16px; margin-top:8px; align-items:center; }
+  .offer-night .o-on { font-size: 13px; font-weight:600; color:#4FD8C4; }
+  .offer-night .o-no { font-size: 12.5px; color:#8983B8; }
+
+  /* Decided / open table */
+  .state-cols { display:grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 22px; margin-top: 8px; }
+  .state-box { background: var(--paper-2); border: 1px solid var(--rule); border-radius: 14px; padding: 16px 18px; }
+  .state-box h3 { margin: 0 0 10px; font-size: 15px; letter-spacing: -0.01em; }
+  .state-box ul { margin: 0; padding-left: 18px; color: var(--ink-2); font-size: 14px; }
+  .state-box li { margin: 6px 0; }
+  .state-box li b { color: var(--ink); }
+  .state-box.decided h3 { color: var(--teal-ink); }
+  .state-box.open h3 { color: var(--amber-ink); }
+</style>
+<div class="wrap">
+  <header class="mast">
+    <p class="eyebrow">The current proposal · replaces in place on revision · history lives in git + the rounds archive</p>
+    <h1>The Daily Recap</h1>
+    <p class="lede">
+      One calm notification at 9pm; a <strong>night-register screen</strong> that reads the
+      day back as a <strong>timeline</strong>; a Home doorway that makes it findable; a
+      primer that shows what you get before the one permission ask. This page is the
+      <strong>whole current proposal and nothing else</strong> — every frame here is what
+      we are proposing to build right now. When a frame changes, it is replaced here, not
+      stacked. The deliberation record (rounds 1–5, rulings in place) stays on the
+      <em>Notifications &amp; consent</em> archive page.
+    </p>
+    <div class="meta">
+      <span><b>Register:</b> night (PM-ruled 2026-08-15)</span>
+      <span><b>Contract:</b> record facts + doorways only — no verdicts, no scores, no AI</span>
+      <span><b>Default:</b> off · one notification per account · 9pm local</span>
+      <span><b>Spec:</b> docs/nyx-notifications-v2-requirements.md</span>
+    </div>
+  </header>
+
+  <!-- ============================================================ 1 · THE MOMENT -->
+  <section class="section">
+    <h2>1 · The moment — 9pm, the lock screen</h2>
+    <p class="sub">
+      Shipped and unchanged. The body is static (iOS runs no code at fire time), so it
+      speaks to the ritual and never the record — it can’t be wrong, and it never leaks
+      a word of health onto an involuntarily-public surface.
+    </p>
+    <div class="plate">
+      <div>
+        <p class="frame-label">Lock screen · <b>9:00 pm</b> · shipped v1, unchanged</p>
+        <div class="device">
+          <div class="screen lock">
+            <div class="lock-clock">9:00</div>
+            <div class="lock-date">Saturday, August 15</div>
+            <div class="notif">
+              <div class="nh">
+                <div class="nicon"><svg viewBox="0 0 24 24"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg></div>
+                <div class="napp">Culprit</div>
+                <div class="nwhen">now</div>
+              </div>
+              <div class="ntitle">Today’s summary</div>
+              <div class="nbody">Today’s record is ready to read.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="note-col">
+        <h3>What tapping it does</h3>
+        <p>Opens the recap screen <b>for the day the notification fired for</b> — a 9pm banner tapped at 12:40am opens the day you logged, not an empty new one; a stale multi-day-old tap clamps to today. (The midnight-anchor ruling, D-4, is recommended and awaiting sign-off.)</p>
+        <ul class="tight">
+          <li><b>Fires every evening</b> the category is on, logged day or not — a ritual that skips days teaches the owner the channel is unreliable; the zero-log day is handled by the screen.</li>
+          <li><b>Neutral body by default</b> — “Biscuit’s day is ready to read” exists only behind an explicit opt-in (D-6, open).</li>
+        </ul>
+        <div class="chips">
+          <span class="chip teal">static, safe body</span>
+          <span class="chip">one per account</span>
+          <span class="chip">tap → the recap</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================ 2 · THE SCREEN -->
+  <section class="section">
+    <h2>2 · The screen — the day as a timeline, in the brand’s night</h2>
+    <p class="sub">
+      The recap renders on the <b>night ground</b> (ruled: “let’s not blind someone as
+      they’re opening the notification”) and the <b>timeline is the event list</b> — time
+      on the left, a category-tinted node on the thread, the event and its
+      intake/adherence beside it. Every node is a doorway into its event. The contract
+      that keeps this buildable: <b>everything on the screen is a record fact or a
+      doorway</b> — no verdicts, no severity, no reassurance, ever.
+    </p>
+
+    <!-- Trial day -->
+    <div class="plate">
+      <div>
+        <p class="frame-label">State · <b>ordinary day, mid-trial</b></p>
+        <div class="device">
+          <div class="screen night">
+            <div class="nav"><div class="chev">‹</div><div class="title">Today</div><div></div></div>
+            <div class="body" style="gap:12px;">
+              <div class="ds2-date">Saturday, August 15</div>
+              <div class="ds2-lead">Day 12 of the Whitefish trial — three meals in Biscuit’s record.</div>
+              <div class="fchips">
+                <span class="fchip"><b>3</b> meals</span>
+                <span class="fchip"><b>1</b> dose</span>
+              </div>
+              <div class="spine" style="margin-top:4px;">
+                <div class="spine-row">
+                  <div class="spine-time">7:42 AM</div>
+                  <div class="spine-node"><div class="spine-dot m"></div></div>
+                  <div class="spine-body">
+                    <div class="spine-title">Whitefish diet<span class="det"> · all eaten</span></div>
+                    <div class="spine-sub">Trial diet</div>
+                  </div>
+                  <div class="spine-chev">›</div>
+                </div>
+                <div class="spine-row">
+                  <div class="spine-time">8:05 AM</div>
+                  <div class="spine-node"><div class="spine-dot d"></div></div>
+                  <div class="spine-body">
+                    <div class="spine-title">Apoquel<span class="det"> · given</span></div>
+                  </div>
+                  <div class="spine-chev">›</div>
+                </div>
+                <div class="spine-row">
+                  <div class="spine-time">1:20 PM</div>
+                  <div class="spine-node"><div class="spine-dot m"></div></div>
+                  <div class="spine-body">
+                    <div class="spine-title">Dental chew</div>
+                  </div>
+                  <div class="spine-chev">›</div>
+                </div>
+                <div class="spine-row">
+                  <div class="spine-time">6:35 PM</div>
+                  <div class="spine-node"><div class="spine-dot m"></div></div>
+                  <div class="spine-body">
+                    <div class="spine-title">Whitefish<span class="det"> · most eaten</span></div>
+                    <div class="spine-sub">Trial diet</div>
+                  </div>
+                  <div class="spine-chev">›</div>
+                </div>
+              </div>
+              <div class="strip">
+                <div class="s-ic"><svg viewBox="0 0 24 24"><path d="M4 11h16a8 8 0 0 1-16 0Z"/></svg></div>
+                <div class="s-tx"><div class="s-t">Whitefish trial</div><div class="s-s">Day 12 of 28 · 2 trial-diet meals logged today</div></div>
+                <div class="s-chev">›</div>
+              </div>
+              <div class="fwd">Tomorrow is <b>day 13</b> of the trial.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="note-col">
+        <h3>Top to bottom</h3>
+        <ul class="tight">
+          <li><b>The lead line</b> — one count-anchored sentence, picked by fixed precedence: symptoms first, then trial facts, then counts. Curation by precedence, never a verdict.</li>
+          <li><b>Count chips</b> — the day’s inventory, tinted by category, never totalled into a score.</li>
+          <li><b>The spine</b> — the day itself. Gaps between nodes are real gaps; “Trial diet” on a meal is a record fact.</li>
+          <li><b>The trial strip</b> — day-position + today’s count from the existing trial predicates, dooring to the full trial card (which owns every viability reading).</li>
+          <li><b>The forward line</b> — only when a real tomorrow-fact exists; never manufactured.</li>
+        </ul>
+        <div class="chips">
+          <span class="chip teal">facts + doorways only</span>
+          <span class="chip teal">night register (ruled)</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Incident day -->
+    <div class="plate">
+      <div>
+        <p class="frame-label">State · <b>incident day</b></p>
+        <div class="device">
+          <div class="screen night">
+            <div class="nav"><div class="chev">‹</div><div class="title">Today</div><div></div></div>
+            <div class="body" style="gap:12px;">
+              <div class="ds2-date">Saturday, August 15</div>
+              <div class="ds2-lead">One vomit in Biscuit’s record today — 9:15 AM.</div>
+              <div class="fchips">
+                <span class="fchip sym"><b>1</b> vomit</span>
+                <span class="fchip"><b>2</b> meals</span>
+                <span class="fchip"><b>1</b> dose</span>
+              </div>
+              <div class="spine" style="margin-top:4px;">
+                <div class="spine-row">
+                  <div class="spine-time">7:30 AM</div>
+                  <div class="spine-node"><div class="spine-dot m"></div></div>
+                  <div class="spine-body">
+                    <div class="spine-title">Hill’s z/d<span class="det"> · refused</span></div>
+                  </div>
+                  <div class="spine-chev">›</div>
+                </div>
+                <div class="spine-row">
+                  <div class="spine-time">9:15 AM</div>
+                  <div class="spine-node"><div class="spine-dot s"></div></div>
+                  <div class="spine-body">
+                    <div class="spine-title">Vomit</div>
+                    <div class="spine-sub">Photo attached</div>
+                  </div>
+                  <div class="spine-chev">›</div>
+                </div>
+                <div class="spine-row">
+                  <div class="spine-time">12:00 PM</div>
+                  <div class="spine-node"><div class="spine-dot d"></div></div>
+                  <div class="spine-body">
+                    <div class="spine-title">Cerenia<span class="det"> · given</span></div>
+                  </div>
+                  <div class="spine-chev">›</div>
+                </div>
+                <div class="spine-row">
+                  <div class="spine-time">6:20 PM</div>
+                  <div class="spine-node"><div class="spine-dot m"></div></div>
+                  <div class="spine-body">
+                    <div class="spine-title">Hill’s z/d<span class="det"> · some eaten</span></div>
+                  </div>
+                  <div class="spine-chev">›</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="note-col">
+        <h3>Sequence, not verdict</h3>
+        <p>The refused breakfast two hours above the vomit is visible <em>as sequence</em> — the timeline does what a flat list can’t, and still says nothing the record doesn’t. The concern gets the lead line and its rose node; the judgment lives in the event’s own AI read, one tap away.</p>
+        <ul class="tight">
+          <li>A refusal reads <b>refused</b> — never “picky.” Intake is not preference.</li>
+          <li>No all-clear over the calm evening rows; no severity anywhere on this surface.</li>
+          <li>The forward line is absent — no real tomorrow-fact exists on this day.</li>
+        </ul>
+        <div class="chips">
+          <span class="chip" style="color:var(--amber-ink);border-color:color-mix(in srgb, var(--amber-ink) 40%, transparent);">symptom leads, factually</span>
+          <span class="chip teal">no verdicts</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Zero-log -->
+    <div class="plate">
+      <div>
+        <p class="frame-label">State · <b>zero-log day</b></p>
+        <div class="device">
+          <div class="screen night">
+            <div class="nav"><div class="chev">‹</div><div class="title">Today</div><div></div></div>
+            <div class="night-empty">
+              <div class="et">Nothing in Biscuit’s record today</div>
+              <div class="eb">If something happened, it takes about ten seconds to add.</div>
+              <div class="ec">Log an event</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="note-col">
+        <h3>The state you liked — carried onto the night ground</h3>
+        <p>Copy unchanged from the shipped v1: absence is a <b>record fact, never a wellness verdict</b> — no “all quiet,” no “all clear.” The low-emphasis link is the screen’s only door (it has no logging FAB), opening the quick-log.</p>
+        <ul class="tight">
+          <li>Names the pet on a single-pet account; neutral otherwise.</li>
+          <li>A failed read renders an error + retry — never a false “nothing logged.”</li>
+        </ul>
+        <div class="chips">
+          <span class="chip teal">record fact, never all-clear</span>
+          <span class="chip">CTA → quick-log</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Multi-pet -->
+    <div class="plate">
+      <div>
+        <p class="frame-label">State · <b>multi-pet account</b></p>
+        <div class="device">
+          <div class="screen night">
+            <div class="nav"><div class="chev">‹</div><div class="title">Today</div><div></div></div>
+            <div class="body" style="gap:12px;">
+              <div class="ds2-date">Saturday, August 15</div>
+              <div class="night-pet">Biscuit</div>
+              <div class="spine">
+                <div class="spine-row">
+                  <div class="spine-time">7:40 AM</div>
+                  <div class="spine-node"><div class="spine-dot m"></div></div>
+                  <div class="spine-body">
+                    <div class="spine-title">Hill’s z/d<span class="det"> · all eaten</span></div>
+                  </div>
+                  <div class="spine-chev">›</div>
+                </div>
+                <div class="spine-row">
+                  <div class="spine-time">8:00 AM</div>
+                  <div class="spine-node"><div class="spine-dot d"></div></div>
+                  <div class="spine-body">
+                    <div class="spine-title">Apoquel<span class="det"> · given</span></div>
+                  </div>
+                  <div class="spine-chev">›</div>
+                </div>
+              </div>
+              <div class="night-pet" style="margin-top:8px;">Mochi</div>
+              <div class="night-petzero">Nothing in Mochi’s record today.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="note-col">
+        <h3>One screen, sectioned per pet — active first</h3>
+        <p>One notification per account means the screen it opens carries every pet. Each pet gets its own spine; a pet with nothing logged gets the same record-fact line, scoped to that pet.</p>
+        <div class="chips">
+          <span class="chip">active pet first</span>
+          <span class="chip teal">per-pet record facts</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================ 3 · FOUND FROM HOME -->
+  <section class="section">
+    <h2>3 · Found from Home — TodayZone v2 and the in-context offer</h2>
+    <p class="sub">
+      Today the recap is reachable only by tapping the 9pm notification. The proposal
+      gives it a real Home presence — <b>TodayZone evolves</b> (it keeps its job; the
+      recap lends it a face) — and makes the opt-in offer at the one moment the owner is
+      already looking at the thing the notification delivers.
+    </p>
+
+    <!-- TodayZone v2 -->
+    <div class="plate">
+      <div>
+        <p class="frame-label">Home · <b>TodayZone v2</b> (cropped; Signal card above, dimmed)</p>
+        <div class="device">
+          <div class="screen">
+            <div class="body" style="padding-top:24px;">
+              <div class="ghost-card"><div class="g1"></div><div class="g2"></div></div>
+              <div class="hband">
+                <div class="hband-top">
+                  <span class="hband-title">Today so far</span>
+                  <span class="hband-door">Full day ›</span>
+                </div>
+                <div class="arc" style="height:34px;margin:6px 0 0;">
+                  <div class="arc-track" style="top:14px;"></div>
+                  <div class="arc-dot m" style="left:9%;top:9px;"></div>
+                  <div class="arc-dot d" style="left:12%;top:9px;"></div>
+                  <div class="arc-dot m" style="left:41%;top:9px;"></div>
+                  <div class="arc-times" style="top:26px;"><span>6a</span><span>noon</span><span>6p</span><span>12a</span></div>
+                </div>
+                <div class="hband-counts"><b>2</b> meals · <b>1</b> dose logged</div>
+              </div>
+              <div class="ds-card" style="opacity:0.85;">
+                <div class="ds-row">
+                  <div class="ds-ic"><svg viewBox="0 0 24 24" class="tint-meal"><path d="M4 11h16a8 8 0 0 1-16 0Z"/></svg></div>
+                  <div class="ds-tx"><span class="ds-title">Hill’s z/d<span class="det"> · all eaten</span></span></div>
+                  <span class="ds-time">7:42 AM</span>
+                </div>
+                <div class="ds-row">
+                  <div class="ds-ic"><svg viewBox="0 0 24 24" class="tint-med"><path d="m10.5 20.5 10-10a5 5 0 0 0-7-7l-10 10a5 5 0 0 0 7 7Z"/><path d="m8.5 8.5 7 7"/></svg></div>
+                  <div class="ds-tx"><span class="ds-title">Apoquel<span class="det"> · given</span></span></div>
+                  <span class="ds-time">8:05 AM</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="note-col">
+        <h3>The zone keeps its job; the recap lends it a face</h3>
+        <p>The band replaces TodayZone’s plain header: the compact day lane (the spine’s horizontal cousin — same dots, same tints), an honest count line, and <b>Full day ›</b> into the night surface. The capped rows continue beneath, exactly as today.</p>
+        <ul class="tight">
+          <li><b>Principle 3 held:</b> the Signal still leads Home — this is one zone evolving, not a new card. Facts and a door; no verdicts, no badge.</li>
+          <li>Home’s glance and the evening read share one visual language, at two sizes.</li>
+          <li>Zero-log: the lane renders empty beside TodayZone’s existing empty nudge.</li>
+        </ul>
+        <div class="chips">
+          <span class="chip teal">one zone, richer</span>
+          <span class="chip teal">Signal still leads</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Offer -->
+    <div class="plate">
+      <div>
+        <p class="frame-label">In-app visit, opted out · <b>the offer</b></p>
+        <div class="device">
+          <div class="screen night">
+            <div class="nav"><div class="chev">‹</div><div class="title">Today</div><div></div></div>
+            <div class="body" style="gap:12px;">
+              <div class="ds2-date">Saturday, August 15</div>
+              <div class="spine">
+                <div class="spine-row">
+                  <div class="spine-time">7:42 AM</div>
+                  <div class="spine-node"><div class="spine-dot m"></div></div>
+                  <div class="spine-body">
+                    <div class="spine-title">Hill’s z/d<span class="det"> · all eaten</span></div>
+                  </div>
+                  <div class="spine-chev">›</div>
+                </div>
+                <div class="spine-row">
+                  <div class="spine-time">8:05 AM</div>
+                  <div class="spine-node"><div class="spine-dot d"></div></div>
+                  <div class="spine-body">
+                    <div class="spine-title">Apoquel<span class="det"> · given</span></div>
+                  </div>
+                  <div class="spine-chev">›</div>
+                </div>
+              </div>
+              <div class="offer-night">
+                <div class="o-t">Culprit can let you know each evening when the day’s record is ready.</div>
+                <div class="o-acts"><span class="o-on">Turn on</span><span class="o-no">Not now</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="note-col">
+        <h3>The ask happens where the value is visible</h3>
+        <ul class="tight">
+          <li>Shows only on an <b>in-app</b> visit while the recap notification is off and OS permission isn’t denied; <b>Turn on</b> opens the primer — never the system prompt directly.</li>
+          <li><b>Not now costs nothing</b> and quiets the banner for 30 days; it re-surfaces once at the next real value moment (starting a trial or a med course).</li>
+          <li>No launch prompt, no onboarding prompt — ever.</li>
+        </ul>
+        <div class="chips">
+          <span class="chip teal">moment of intent</span>
+          <span class="chip">primer-gated, always</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================ 4 · TURNING IT ON -->
+  <section class="section">
+    <h2>4 · Turning it on — the primer before the one permission ask</h2>
+    <p class="sub">
+      Full-screen, in the Landing’s learn-more grammar: the <b>timeline miniature does the
+      pitching</b>, one sentence carries the cadence, the honest notification chip shows
+      exactly what will arrive, and the fine print holds the privacy promise + the
+      one-shot note. Declining spends nothing.
+    </p>
+    <div class="plate">
+      <div>
+        <p class="frame-label">The primer · <b>c1 headline</b> (c2 takes the identical layout)</p>
+        <div class="device">
+          <div class="screen">
+            <div class="fsp">
+              <div class="vpm">
+                <div class="vpm-label">Evening summary</div>
+                <div class="vpm-lead">Biscuit’s day, gathered up.</div>
+                <div style="margin-top:6px;">
+                  <div class="ms-row"><div class="ms-dot" style="background:#00C2A8;"></div><div class="ms-tx">Breakfast<span class="d"> · all eaten</span></div><div class="ms-time">7:42 AM</div></div>
+                  <div class="ms-row"><div class="ms-dot" style="background:#93ADCB;"></div><div class="ms-tx">Apoquel<span class="d"> · given</span></div><div class="ms-time">8:05 AM</div></div>
+                  <div class="ms-row"><div class="ms-dot" style="background:#00C2A8;"></div><div class="ms-tx">Dinner<span class="d"> · most eaten</span></div><div class="ms-time">6:35 PM</div></div>
+                </div>
+              </div>
+              <div class="f-title" style="margin-top:14px;">Stay close to Biscuit’s day.</div>
+              <div class="f-body">One calm notification each evening, when the day’s record is ready to read.</div>
+              <div class="mini-lock compact">
+                <div class="notif">
+                  <div class="nh">
+                    <div class="nicon"><svg viewBox="0 0 24 24"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg></div>
+                    <div class="napp">Culprit</div>
+                    <div class="nwhen">9:00 PM</div>
+                  </div>
+                  <div class="ntitle">Today’s summary</div>
+                  <div class="nbody">Today’s record is ready to read.</div>
+                </div>
+              </div>
+              <div class="fine">That’s the whole notification — nothing about Biscuit’s health shows on your lock screen. Your phone will ask once; change it any time in iOS Settings.</div>
+              <div class="spacer"></div>
+              <div class="btn-primary">Turn on</div>
+              <div class="btn-text">Not now</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="note-col">
+        <h3>One primer, every invocation</h3>
+        <p>Settings toggle, the in-context offer, and future notification categories all open this surface (each category swaps the hero + cadence line via its registry descriptor).</p>
+        <ul class="tight">
+          <li><b>The mini shows a warm generic day</b>, not the owner’s data — the primer renders before any logs exist.</li>
+          <li><b>Open pick:</b> the headline — <b>c1</b> “Stay close to Biscuit’s day.” (Designer lean) vs <b>c2</b> “The day, read back to you.”</li>
+          <li>“Not now” spends nothing; an OS-level deny is recovered only via the Settings deep-link, honestly worded.</li>
+        </ul>
+        <div class="chips">
+          <span class="chip teal">the chart does the pitching</span>
+          <span class="chip">c1/c2 pick open</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================ 5 · DECIDED / OPEN -->
+  <section class="section">
+    <h2>5 · Where this stands</h2>
+    <div class="state-cols">
+      <div class="state-box decided">
+        <h3>Decided</h3>
+        <ul>
+          <li><b>Night register</b> — PM-ruled 2026-08-15 (“the evening ritual/night register”).</li>
+          <li><b>The spine treatment</b> — the timeline is the list (this page’s frames).</li>
+          <li><b>The contract</b> — record facts + doorways only; no verdicts, scores, AI, or reassurance; zero-log/error states carry from v1.</li>
+          <li><b>Off by default · one per account · 9pm local · primer-gated consent</b> — all shipped v1 rules, unchanged.</li>
+        </ul>
+      </div>
+      <div class="state-box open">
+        <h3>Open — needs the PM</h3>
+        <ul>
+          <li><b>Confirm TodayZone v2 + the offer as drawn</b> (the adoption pieces).</li>
+          <li><b>c1 vs c2</b> primer headline.</li>
+          <li><b>The midnight anchor</b> (fire-day + one-day clamp — recommended).</li>
+          <li><b>Pet-name opt-in</b> for the notification body.</li>
+          <li><b>The brand amendment wording</b> for night-on-a-record-surface (drafted, spec §10 #3) + the always-night lean.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <footer class="footer">
+    <p><b>This page = the current proposal only.</b> Frames are replaced in place when the proposal changes — no rounds accumulate here. The deliberation record (rounds 1–5, reactions and rulings annotated in place) lives on the <em>Culprit — Notifications &amp; consent</em> archive page; the build contract is <b>docs/nyx-notifications-v2-requirements.md</b>. All copy is proposed — final strings gate at each PR’s nyx-voice + clinical-guardrails pass.</p>
+  </footer>
+</div>
