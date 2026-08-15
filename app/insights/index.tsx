@@ -48,6 +48,7 @@ import { AiSummaryCard } from '../../components/dashboard/AiSummaryCard';
 import { DashboardEmptyState } from '../../components/dashboard/DashboardEmptyState';
 import { useSummary } from '../../hooks/useSummary';
 import { useAllowlistFlag } from '../../hooks/useAppConfig';
+import { useBetaOptIn } from '../../lib/betaFeatures';
 import { getTimingPanel, type TimingPanelModel } from '../../lib/patternsTiming';
 import { getTrialPanel, type TrialSoFarModel } from '../../lib/patternsTrial';
 import { TimingPanelCard } from '../../components/dashboard/TimingPanelCard';
@@ -83,13 +84,24 @@ export default function PatternsScreen() {
   const { summary } = useSummary();
 
   // Signals v2 (B-755 PR 9, CUL-11) — the two additive Patterns panels (Timing + The
-  // trial so far), dark behind `signals_v2`. Render-only + fail-closed: when the flag is
-  // off, `signalsV2` is false, the panel effect below no-ops, the models stay null, and
-  // nothing new renders — the dashboard is byte-identical to today (§5 / G10).
-  const signalsV2 = useAllowlistFlag('signals_v2');
+  // trial so far), dark behind `signals_v2`. TWO gates, never conflated (§5 / the B-712
+  // beta shape, mirroring SignalZone): server allowlist eligibility AND a local beta
+  // opt-in. Both hooks called unconditionally (Rules of Hooks — no `&&` short-circuit on
+  // the hook calls), then combined. `signals_v2` is not in the beta registry until PR 10
+  // ships its shelf row, so `optedIn` is false for everyone today → dark for everyone,
+  // even an account on the server allowlist. Render-only + fail-closed: flag off ⇒ the
+  // panel effect no-ops, models stay null, nothing new renders (byte-identical / G10).
+  const signalsV2Eligible = useAllowlistFlag('signals_v2');
+  const signalsV2OptedIn = useBetaOptIn('signals_v2');
+  const signalsV2 = signalsV2Eligible && signalsV2OptedIn;
   const [timingModel, setTimingModel] = useState<TimingPanelModel | null>(null);
   const [trialModel, setTrialModel] = useState<TrialSoFarModel | null>(null);
   const panelLoadIdRef = useRef(0);
+  // Tracks which pet the panel models belong to, so a pet switch drops the prior pet's
+  // panels IMMEDIATELY rather than rendering them under the new pet's name until the
+  // (unwindowed, full-record) reads land — the multi-pet stale-render trap the calendar
+  // guards with a keyed remount (code-reviewer #2).
+  const panelPetRef = useRef<string | null>(null);
 
   // Scroll-to for the summary's grounding affordance ("Based on the cards below ↓"): a real,
   // honest "take me to the evidence" action without faking card→detail navigation (B-093).
@@ -192,15 +204,23 @@ export default function PatternsScreen() {
   // monotonic id drops a superseded pet's result after a switch (the same race guard).
   const loadPanels = useCallback(async (petId: string) => {
     const myId = ++panelLoadIdRef.current;
-    try {
-      const [timing, trial] = await Promise.all([getTimingPanel(petId), getTrialPanel(petId)]);
-      if (panelLoadIdRef.current !== myId) return;
-      setTimingModel(timing);
-      setTrialModel(trial);
-    } catch (e) {
-      if (panelLoadIdRef.current !== myId) return;
-      console.error('[patterns] v2 panels load failed:', e);
+    // `allSettled`, not `all`: the two panels are independently additive, so a trial-read
+    // fault must not blank an already-good timing read (and vice versa). (The two loaders
+    // each re-run the three local reads — 6 full-record scans, not 3 — so that the
+    // standalone detail routes stay self-sufficient; acceptable for a dark beta surface.)
+    const [timingRes, trialRes] = await Promise.allSettled([
+      getTimingPanel(petId),
+      getTrialPanel(petId),
+    ]);
+    if (panelLoadIdRef.current !== myId) return; // superseded by a newer pet/focus
+    if (timingRes.status === 'fulfilled') setTimingModel(timingRes.value);
+    else {
+      console.error('[patterns] timing panel load failed:', timingRes.reason);
       setTimingModel(null);
+    }
+    if (trialRes.status === 'fulfilled') setTrialModel(trialRes.value);
+    else {
+      console.error('[patterns] trial panel load failed:', trialRes.reason);
       setTrialModel(null);
     }
   }, []);
@@ -211,7 +231,15 @@ export default function PatternsScreen() {
       if (!activePet || !signalsV2) {
         setTimingModel(null);
         setTrialModel(null);
+        panelPetRef.current = null;
         return;
+      }
+      // Pet changed since the models were loaded → drop the prior pet's panels now, so
+      // they can never render under the new pet's name while the new read is in flight.
+      if (panelPetRef.current !== activePet.id) {
+        setTimingModel(null);
+        setTrialModel(null);
+        panelPetRef.current = activePet.id;
       }
       loadPanels(activePet.id);
     }, [activePet?.id, signalsV2, loadPanels]),

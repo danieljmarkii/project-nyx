@@ -53,6 +53,19 @@ const MS_PER_DAY = 86_400_000;
 // addition (deep-dive C2 / B-756), deliberately not smuggled in here.
 export const TIMING_SYMPTOM_TYPE = 'vomit';
 
+// The client mirror of `generate-signal`'s CORRELATION_SYMPTOM_TYPES (detection.ts) —
+// the symptom set that, with feedings, defines a "logged day" (a refused-bowl or a
+// symptom day counts even with no feeding). Redeclared here (not imported — the server
+// file is Deno-only) so the trial panel's `loggedDays` denominator matches the engine's
+// `loggedDaysIn` exactly rather than drifting to a feeding-only count (code-reviewer #3).
+export const CORRELATION_SYMPTOM_TYPES = [
+  'vomit',
+  'diarrhea',
+  'itch',
+  'scratch',
+  'skin_reaction',
+] as const;
+
 // ── Render geometry (presentation only — NOT timing math) ─────────────────────
 //
 // The shared-band axis reads `ate · 30m · 1h · 2h · 4h · 8h+` — the exact grid the
@@ -316,6 +329,21 @@ export async function readVomitOnsets(
       confidence: (r.occurred_at_confidence as OnsetConfidence | null) ?? null,
     }))
     .filter((r) => Number.isFinite(r.ms));
+}
+
+/** Instants (ms) of the pet's correlation-symptom events (any confidence), soft-deletes
+ *  excluded — the symptom half of the trial panel's "logged day" denominator, matching
+ *  the engine's `loggedDaysIn`. Days only; the timing distribution reads vomit onsets
+ *  with confidence separately (`readVomitOnsets`). */
+export async function readCorrelationSymptomMs(petId: string): Promise<number[]> {
+  const db = getDb();
+  const placeholders = CORRELATION_SYMPTOM_TYPES.map(() => '?').join(',');
+  const rows = await db.getAllAsync<{ occurred_at: string }>(
+    `SELECT occurred_at FROM events
+     WHERE pet_id = ? AND deleted_at IS NULL AND event_type IN (${placeholders})`,
+    [petId, ...CORRELATION_SYMPTOM_TYPES],
+  );
+  return rows.map((r) => Date.parse(r.occurred_at)).filter((ms) => Number.isFinite(ms));
 }
 
 /** All logged feedings (meals + treats) for the pet, with confidence, food_type, and

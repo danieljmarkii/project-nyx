@@ -1,0 +1,418 @@
+<title>Timing &amp; Trial Panels</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  /* Deliberate single-theme: these are DAYLIGHT record surfaces (Signals v2 D8 —
+     "the record surface stays in daylight"), so the mock commits to the app's light
+     canvas and paints every colour explicitly, holding on either host ground. Tokens
+     mirror constants/theme.ts verbatim (the project system wins). */
+  :root {
+    --ground: #FAFAFA;
+    --surface: #FFFFFF;
+    --surface-subtle: #F5F5F5;
+    --ink: #0A0A0A;
+    --ink-2: #525252;
+    --ink-3: #737373;
+    --ink-disabled: #A3A3A3;
+    --accent: #00C2A8;
+    --accent-ink: #0B7B6C;
+    --accent-light: #E0FBF7;
+    --rose: #F43F5E;
+    --border: #EAEAEA;
+    --border-strong: #D4D4D4;
+    --band: rgba(234, 234, 234, 0.6);
+    --shadow: 0 1px 2px rgba(10, 10, 10, 0.04), 0 4px 16px rgba(10, 10, 10, 0.06);
+    --page-ink: #0A0A0A;
+    --page-ink-2: #525252;
+    --page-ground: #F0EFEC;
+    --page-panel: #FBFBFA;
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    background: var(--page-ground);
+    color: var(--page-ink);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 40px 24px 80px; }
+
+  header.masthead { max-width: 720px; margin: 0 auto 8px; }
+  .eyebrow {
+    font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase;
+    color: var(--accent-ink); font-weight: 600; margin: 0 0 10px;
+  }
+  h1.title {
+    font-size: clamp(28px, 4vw, 38px); line-height: 1.1; margin: 0 0 14px;
+    letter-spacing: -0.02em; text-wrap: balance; font-weight: 680;
+  }
+  .lede { font-size: 16px; color: var(--page-ink-2); margin: 0 0 18px; max-width: 62ch; }
+  .meta-row { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 8px; }
+  .tag {
+    font-size: 12px; padding: 4px 10px; border-radius: 999px;
+    background: var(--page-panel); border: 1px solid var(--border);
+    color: var(--page-ink-2); white-space: nowrap;
+  }
+  .tag b { color: var(--page-ink); font-weight: 600; }
+  .note-band {
+    margin: 26px auto 8px; max-width: 720px; padding: 14px 18px;
+    background: var(--page-panel); border: 1px solid var(--border);
+    border-left: 3px solid var(--accent); border-radius: 10px;
+    font-size: 14px; color: var(--page-ink-2);
+  }
+  .note-band b { color: var(--page-ink); }
+
+  /* Section grouping */
+  .section-head { max-width: 720px; margin: 48px auto 6px; }
+  .section-head h2 {
+    font-size: 20px; margin: 0 0 4px; letter-spacing: -0.01em; font-weight: 660;
+  }
+  .section-head p { margin: 0; font-size: 14px; color: var(--page-ink-2); }
+
+  /* Gallery */
+  .gallery {
+    display: grid; gap: 28px 24px; margin-top: 24px;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    align-items: start;
+  }
+  figure.frame { margin: 0; display: flex; flex-direction: column; gap: 12px; }
+  .canvas {
+    background: var(--ground); border: 1px solid var(--border); border-radius: 20px;
+    padding: 16px; box-shadow: var(--shadow);
+  }
+  figcaption { padding: 0 2px; }
+  .cap-title { font-size: 14px; font-weight: 640; color: var(--page-ink); margin: 0 0 3px; }
+  .cap-body { font-size: 13px; color: var(--page-ink-2); margin: 0; }
+  .cap-body .fix {
+    display: inline-block; margin-top: 6px; font-size: 12px; color: var(--accent-ink);
+    background: var(--accent-light); border-radius: 6px; padding: 2px 7px;
+  }
+
+  /* ── The app card (daylight surface) ─────────────────────────────── */
+  .card {
+    background: var(--surface); border-radius: 16px; padding: 20px;
+    box-shadow: var(--shadow); display: flex; flex-direction: column; gap: 14px;
+  }
+  .card.tight { gap: 8px; }
+  .card-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .card-title { font-size: 15px; font-weight: 640; color: var(--ink); margin: 0; }
+  .chev { color: var(--ink-disabled); flex: none; }
+  .lead { font-size: 13px; color: var(--ink-2); margin: 0; line-height: 1.45; }
+  .context { font-size: 13px; color: var(--ink-2); margin: 0; }
+
+  /* Dot lane */
+  .lane-wrap { display: flex; flex-direction: column; gap: 4px; }
+  .lane {
+    position: relative; height: 72px; border-radius: 8px;
+    background: var(--surface-subtle); overflow: hidden;
+  }
+  .lane .band { position: absolute; top: 0; bottom: 0; background: var(--band); }
+  .lane .dot {
+    position: absolute; width: 7px; height: 7px; border-radius: 50%;
+    background: var(--rose);
+  }
+  .axis { display: flex; justify-content: space-between; }
+  .axis span { font-size: 11px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+
+  /* Band count rows */
+  .rows { display: flex; flex-direction: column; gap: 8px; }
+  .rows.tight { gap: 5px; }
+  .row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .row-label { font-size: 13px; color: var(--ink-2); }
+  .row-label .sub { display: block; font-size: 11px; color: var(--ink-3); margin-top: 1px; }
+  .row-count {
+    font-size: 15px; font-weight: 640; color: var(--ink); font-variant-numeric: tabular-nums;
+  }
+  .row-val { font-size: 13px; font-weight: 500; color: var(--ink); }
+
+  /* the safety lines — legible body text, NOT fine print (the prominence fix) */
+  .sample { font-size: 13px; color: var(--ink-2); margin: 0; line-height: 1.45; }
+  .section-label {
+    font-size: 11px; font-weight: 500; letter-spacing: 0.06em; text-transform: uppercase;
+    color: var(--ink-3); margin: 4px 0 0;
+  }
+  .honesty { font-size: 12px; color: var(--ink-3); margin: 6px 0 0; line-height: 1.5; }
+  .divider { height: 1px; background: var(--border); margin: 2px 0; border: 0; }
+
+  footer.foot {
+    max-width: 720px; margin: 56px auto 0; padding-top: 20px;
+    border-top: 1px solid var(--border); font-size: 13px; color: var(--page-ink-2);
+  }
+  footer.foot code {
+    background: var(--page-panel); border: 1px solid var(--border); border-radius: 5px;
+    padding: 1px 5px; font-size: 12px;
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .canvas { transition: none; }
+  }
+</style>
+
+<div class="wrap">
+  <header class="masthead">
+    <p class="eyebrow">Signals v2 · the record, decomposed</p>
+    <h1 class="title">Timing &amp; Trial Panels</h1>
+    <p class="lede">
+      Two additive panels on the Patterns dashboard, dark behind the <b>signals_v2</b> flag
+      (spec §4.5). The <b>Timing</b> panel decomposes the whole record's vomiting against meals;
+      <b>The trial so far</b> shows the trial-era phenotype and diet structure. Both compute
+      client-side through <code style="font-size:13px">lib/mealTiming.ts</code> only (G9). Daylight
+      ground throughout. Dot lanes below use the real <code style="font-size:13px">patternsTimingPos</code>
+      geometry — the positions are honest, not sketched.
+    </p>
+    <div class="meta-row">
+      <span class="tag"><b>PR 9</b> · CUL-11</span>
+      <span class="tag">flag-off byte-identical</span>
+      <span class="tag">adversarial ✓ core sound</span>
+      <span class="tag">feeds mock round 2 · CUL-18</span>
+    </div>
+  </header>
+
+  <div class="note-band">
+    <b>What review changed.</b> The pm-feature and adversarial passes converged on one blocker —
+    the trial panel used to render a wall of “— 0” rows for a just-started or zero-vomiting trial,
+    reading as an all-clear. The <b>empty</b> and <b>none-timeable</b> frames below are the fix:
+    absence is never claimed, burden is disclosed, and the denominator lines are promoted out of
+    fine print so a mostly-untimed record can’t be under-read.
+  </div>
+
+  <!-- ── TIMING ──────────────────────────────────────────────────── -->
+  <div class="section-head">
+    <h2>The Timing panel</h2>
+    <p>Every timeable episode is a real dot on the shared-band axis; the three band counts sit
+      beneath, and untimed episodes are disclosed as a count — never imputed onto the lane.</p>
+  </div>
+
+  <div class="gallery">
+    <!-- Timing — populated -->
+    <figure class="frame">
+      <div class="canvas">
+        <div class="card">
+          <div class="card-head">
+            <p class="card-title">Vomiting, timed from meals</p>
+            <span class="chev">›</span>
+          </div>
+          <p class="lead">Each dot is one of Juniper's vomiting episodes, placed by how long after
+            the last meal it happened.</p>
+          <div class="lane-wrap">
+            <div class="lane" data-lane='{"mins":[12,18,25,45,90,150,380,410],"untimed":5}'></div>
+            <div class="axis"><span>ate</span><span>30m</span><span>1h</span><span>2h</span><span>4h</span><span>8h+</span></div>
+          </div>
+          <div class="rows">
+            <div class="row"><span class="row-label">Within 30 min of eating</span><span class="row-count">3</span></div>
+            <div class="row"><span class="row-label">30 min to 6h after eating</span><span class="row-count">3</span></div>
+            <div class="row"><span class="row-label">6h or more after eating</span><span class="row-count">2</span></div>
+          </div>
+          <p class="sample">8 timed of 13 episodes · whole record</p>
+          <p class="sample">5 episodes couldn't be timed against a meal — they aren't on the lane.</p>
+        </div>
+      </div>
+      <figcaption>
+        <p class="cap-title">Populated — the full-record distribution</p>
+        <p class="cap-body">Rapid, mid and long episodes as real dots; the two grey washes mark the
+          rapid head and the 6h+ tail (region grouping, not a verdict colour).</p>
+      </figcaption>
+    </figure>
+
+    <!-- Timing — grazing cat under-read -->
+    <figure class="frame">
+      <div class="canvas">
+        <div class="card">
+          <div class="card-head">
+            <p class="card-title">Vomiting, timed from meals</p>
+            <span class="chev">›</span>
+          </div>
+          <p class="lead">Each dot is one of Sesame's vomiting episodes, placed by how long after
+            the last meal it happened.</p>
+          <div class="lane-wrap">
+            <div class="lane" data-lane='{"mins":[15,22],"untimed":38}'></div>
+            <div class="axis"><span>ate</span><span>30m</span><span>1h</span><span>2h</span><span>4h</span><span>8h+</span></div>
+          </div>
+          <div class="rows">
+            <div class="row"><span class="row-label">Within 30 min of eating</span><span class="row-count">2</span></div>
+            <div class="row"><span class="row-label">30 min to 6h after eating</span><span class="row-count">0</span></div>
+            <div class="row"><span class="row-label">6h or more after eating</span><span class="row-count">0</span></div>
+          </div>
+          <p class="sample">2 timed of 40 episodes · whole record</p>
+          <p class="sample">38 episodes couldn't be timed against a meal — they aren't on the lane.</p>
+        </div>
+      </div>
+      <figcaption>
+        <p class="cap-title">The grazing cat — burden can't hide</p>
+        <p class="cap-body">Free-fed / discovered episodes are un-timeable, so the lane is sparse — but
+          “2 timed of 40” and the untimed disclosure are legible body text, not fine print.</p>
+        <p class="cap-body"><span class="fix">fix · prominence</span></p>
+      </figcaption>
+    </figure>
+
+    <!-- Timing — none-timeable -->
+    <figure class="frame">
+      <div class="canvas">
+        <div class="card">
+          <div class="card-head">
+            <p class="card-title">Vomiting, timed from meals</p>
+            <span class="chev">›</span>
+          </div>
+          <p class="sample">None of Sesame's 6 logged vomiting episodes could be timed against a meal
+            yet — each was discovered later, near a free-fed bowl, or with no meal logged in the day
+            before.</p>
+        </div>
+      </div>
+      <figcaption>
+        <p class="cap-title">None-timeable — an honest state, not an all-clear</p>
+        <p class="cap-body">Episodes exist but none can be placed; the “Each dot is…” lead is suppressed
+          because no lane is drawn. Never reassures.</p>
+        <p class="cap-body"><span class="fix">fix · lead suppressed when no dots</span></p>
+      </figcaption>
+    </figure>
+  </div>
+
+  <!-- ── TRIAL ───────────────────────────────────────────────────── -->
+  <div class="section-head">
+    <h2>The trial so far</h2>
+    <p>Per-phenotype vomit-timing rows + diet-structure rows (treat share, meals/day), windowed on
+      the trial's evidence bound. The “shows what, not why” line closes every state.</p>
+  </div>
+
+  <div class="gallery">
+    <!-- Trial — rows -->
+    <figure class="frame">
+      <div class="canvas">
+        <div class="card tight">
+          <div class="card-head">
+            <p class="card-title">The trial so far</p>
+            <span class="chev">›</span>
+          </div>
+          <p class="context">Royal Canin HP · Day 25 of 31</p>
+          <p class="section-label">Vomiting timing</p>
+          <div class="rows tight">
+            <div class="row"><span class="row-label">Within 30 min of eating</span><span class="row-count">1</span></div>
+            <div class="row"><span class="row-label">30 min to 6h after eating</span><span class="row-count">1</span></div>
+            <div class="row"><span class="row-label">6h or more after eating</span><span class="row-count">1</span></div>
+          </div>
+          <p class="sample">3 timed of 4 vomiting episodes during the trial</p>
+          <p class="sample">1 more episode couldn't be timed against a meal.</p>
+          <p class="section-label">Diet during the trial</p>
+          <div class="rows tight">
+            <div class="row"><span class="row-label">Treats</span><span class="row-val">40% of meals &amp; treats</span></div>
+            <div class="row"><span class="row-label">Meals</span><span class="row-val">2.1 per day</span></div>
+          </div>
+          <p class="honesty">This shows what the record holds during the trial, not why it changed —
+            a calmer or busier stretch can happen on its own. Your vet reads the why.</p>
+        </div>
+      </div>
+      <figcaption>
+        <p class="cap-title">Rows — a trial with timed vomiting</p>
+        <p class="cap-body">Count-anchored, no verdict. “40% of meals &amp; treats” names the real
+          denominator, not the misleading “of feedings”.</p>
+        <p class="cap-body"><span class="fix">fix · denominator honesty</span></p>
+      </figcaption>
+    </figure>
+
+    <!-- Trial — empty -->
+    <figure class="frame">
+      <div class="canvas">
+        <div class="card tight">
+          <div class="card-head">
+            <p class="card-title">The trial so far</p>
+            <span class="chev">›</span>
+          </div>
+          <p class="context">Royal Canin HP · Day 3 of 56</p>
+          <p class="section-label">Diet during the trial</p>
+          <div class="rows tight">
+            <div class="row"><span class="row-label">Treats</span><span class="row-val">12% of meals &amp; treats</span></div>
+            <div class="row"><span class="row-label">Meals</span><span class="row-val">2.0 per day</span></div>
+          </div>
+          <p class="honesty">This shows what the record holds during the trial, not why it changed —
+            a calmer or busier stretch can happen on its own. Your vet reads the why.</p>
+        </div>
+      </div>
+      <figcaption>
+        <p class="cap-title">Empty — a just-started (or dermatologic) trial</p>
+        <p class="cap-body">No vomiting logged in-window, so the whole “Vomiting timing” section is
+          <b>dropped</b> — never “— 0 · — 0 · — 0” that reads as a clean bill. Omission claims nothing.</p>
+        <p class="cap-body"><span class="fix">fix · blocking · no zero-wall</span></p>
+      </figcaption>
+    </figure>
+
+    <!-- Trial — none-timeable -->
+    <figure class="frame">
+      <div class="canvas">
+        <div class="card tight">
+          <div class="card-head">
+            <p class="card-title">The trial so far</p>
+            <span class="chev">›</span>
+          </div>
+          <p class="context">Royal Canin HP · Day 18 of 42</p>
+          <p class="section-label">Vomiting timing</p>
+          <p class="sample">2 vomiting episodes logged during the trial — none could be timed against a meal.</p>
+          <p class="section-label">Diet during the trial</p>
+          <div class="rows tight">
+            <div class="row"><span class="row-label">Treats</span><span class="row-val">8% of meals &amp; treats</span></div>
+            <div class="row"><span class="row-label">Meals</span><span class="row-val">1.8 per day</span></div>
+          </div>
+          <p class="honesty">This shows what the record holds during the trial, not why it changed —
+            a calmer or busier stretch can happen on its own. Your vet reads the why.</p>
+        </div>
+      </div>
+      <figcaption>
+        <p class="cap-title">None-timeable — discloses burden, never zeroes it</p>
+        <p class="cap-body">Vomiting happened but couldn't be placed against a meal; the line surfaces
+          the two episodes rather than showing zero rows.</p>
+        <p class="cap-body"><span class="fix">fix · discloses, no zero rows</span></p>
+      </figcaption>
+    </figure>
+  </div>
+
+  <footer class="foot">
+    <p><b>Open for the PM / Designer.</b> One cross-surface call the pm-feature-review raised:
+      this panel's axis <code>ate · 30m · 1h · 2h · 4h · 8h+</code> (the CUL-11 spec grid, sized for a
+      full-record distribution) is wider than the A2 timing card's <code>ate · 30m · 2h · 6h+</code>.
+      Reconciling the two timing surfaces onto one shared axis is a round-2 mock item (CUL-18).
+      Whole-record scope (vs the dashboard's 30-day cards) is the other open call.</p>
+  </footer>
+</div>
+
+<script>
+  // The real geometry: linear over [0, rapid=30] → [0, 0.2], then log2 to the 8h cap.
+  // Mirrors lib/patternsTiming.patternsTimingPos so the dots are honest, not sketched.
+  var EARLY = 30, MAXM = 480, EARLY_FRAC = 0.2;
+  function pos(m) {
+    m = Math.max(0, Math.min(m, MAXM));
+    if (m <= EARLY) return (m / EARLY) * EARLY_FRAC;
+    return EARLY_FRAC + (Math.log2(m / EARLY) / Math.log2(MAXM / EARLY)) * (1 - EARLY_FRAC);
+  }
+  var GAP = 0.028, DOT = 7;
+  // deterministic beeswarm rows: 0, -1, +1, -2, +2 …
+  function jitterRows(sorted) {
+    var lastX = [];
+    return sorted.map(function (x) {
+      var r = 0;
+      while (lastX[r] !== undefined && x - lastX[r] < GAP) r++;
+      lastX[r] = x;
+      return r === 0 ? 0 : r % 2 === 1 ? -Math.ceil(r / 2) : Math.ceil(r / 2);
+    });
+  }
+  document.querySelectorAll('.lane[data-lane]').forEach(function (lane) {
+    var data = JSON.parse(lane.getAttribute('data-lane'));
+    var W = lane.clientWidth, H = lane.clientHeight, cy = H / 2, ROW = 10;
+    // bands: rapid head [0, pos(30)] and long tail [pos(360), 1]
+    [[0, pos(30)], [pos(360), 1]].forEach(function (b) {
+      var el = document.createElement('div');
+      el.className = 'band';
+      el.style.left = (b[0] * W) + 'px';
+      el.style.width = ((b[1] - b[0]) * W) + 'px';
+      lane.appendChild(el);
+    });
+    var positions = data.mins.map(pos).sort(function (a, c) { return a - c; });
+    var rows = jitterRows(positions);
+    positions.forEach(function (p, i) {
+      var row = Math.max(-3, Math.min(3, rows[i]));
+      var d = document.createElement('div');
+      d.className = 'dot';
+      d.style.left = Math.min(W - DOT, Math.max(0, p * W - DOT / 2)) + 'px';
+      d.style.top = (cy + row * ROW - DOT / 2) + 'px';
+      lane.appendChild(d);
+    });
+  });
+</script>

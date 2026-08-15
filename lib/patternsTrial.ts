@@ -45,6 +45,7 @@ import {
   type TimingBand,
 } from './mealTiming';
 import {
+  readCorrelationSymptomMs,
   readFeedingRows,
   readFreeFedSpans,
   readVomitOnsets,
@@ -100,6 +101,11 @@ export interface TrialSoFarInput {
   vomitOnsets: { ms: number; confidence: OnsetConfidence | null }[];
   feedings: FeedingRow[];
   freeFedSpans: FreeFedSpan[];
+  /** Instants of ALL correlation-symptom events (vomit + diarrhea + itch + scratch +
+   *  skin_reaction), any confidence — the symptom half of the `loggedDays` denominator,
+   *  so it matches the engine's `loggedDaysIn` (feeding OR symptom day) rather than a
+   *  feeding-only count. */
+  symptomEventMs: number[];
   /** Injected so tests pin the day mapping and the prod path passes the device-zone
    *  `localDayIndex` — the SAME basis `exposureRange`'s indices are on. */
   dayIndexOf: (ms: number) => number | null;
@@ -146,9 +152,11 @@ export function buildTrialSoFar(input: TrialSoFarInput): TrialSoFarModel | null 
     };
   };
 
-  // Diet-structure (§2 L2 context rows). Mirrors the engine's `dietStructureInWindow`:
-  // treatShare over classifiable feedings, mealsPerDay over distinct logged days. A
-  // context row, never a verdict.
+  // Diet-structure (§2 L2 context rows). Mirrors the engine's `dietStructureInWindow` +
+  // `loggedDaysIn`: treatShare over classifiable (meal+treat) feedings; mealsPerDay over
+  // distinct LOGGED days — a day with a feeding OR a correlation-symptom event (a refused
+  // bowl is a logged day), NOT feeding-only, so the panel and the engine compute the same
+  // rate for the same window (code-reviewer #3). A context row, never a verdict.
   let meals = 0;
   let treats = 0;
   const loggedDaySet = new Set<number>();
@@ -158,6 +166,11 @@ export function buildTrialSoFar(input: TrialSoFarInput): TrialSoFarModel | null 
     if (di !== null) loggedDaySet.add(di);
     if (f.foodType === 'meal') meals++;
     else if (f.foodType === 'treat') treats++;
+  }
+  for (const ms of input.symptomEventMs) {
+    if (!inWindow(ms)) continue;
+    const di = input.dayIndexOf(ms);
+    if (di !== null) loggedDaySet.add(di);
   }
   const classifiable = meals + treats;
   const loggedDays = loggedDaySet.size;
@@ -288,8 +301,11 @@ export function trialHonestyLine(): string {
  * day-math path, and the timing inputs via the shared Patterns reads.
  */
 export async function getTrialPanel(petId: string): Promise<TrialSoFarModel | null> {
-  const pet = usePetStore.getState().pets.find((p) => p.id === petId) ?? usePetStore.getState().activePet;
-  if (!pet || pet.id !== petId) return null;
+  // The pet may have been removed between the caller's focus and this read; a missing
+  // row simply yields no panel. (`pets`/`activePet` are kept consistent in one atomic
+  // store `set`, so reading from `pets` needs no `activePet` fallback.)
+  const pet = usePetStore.getState().pets.find((p) => p.id === petId);
+  if (!pet) return null;
 
   const nowMs = Date.now();
   const core = await loadTrialPredicateFacts(
@@ -307,10 +323,11 @@ export async function getTrialPanel(petId: string): Promise<TrialSoFarModel | nu
   );
   if (!progress) return null;
 
-  const [vomitOnsets, feedings, freeFedSpans] = await Promise.all([
+  const [vomitOnsets, feedings, freeFedSpans, symptomEventMs] = await Promise.all([
     readVomitOnsets(petId),
     readFeedingRows(petId),
     readFreeFedSpans(petId),
+    readCorrelationSymptomMs(petId),
   ]);
 
   return buildTrialSoFar({
@@ -320,6 +337,7 @@ export async function getTrialPanel(petId: string): Promise<TrialSoFarModel | nu
     vomitOnsets,
     feedings,
     freeFedSpans,
+    symptomEventMs,
     dayIndexOf: (ms) => localDayIndex(ms),
   });
 }

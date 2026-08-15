@@ -26,6 +26,9 @@ jest.mock('../../lib/feedingArrangements', () => ({ getActiveArrangementsForPet:
 // drags lib/supabase's fail-fast env check into the import graph, so this stub keeps the
 // suite off that edge. The flag-ON render + navigation is covered in signalsV2Panels.test.tsx.
 jest.mock('../../hooks/useAppConfig', () => ({ useAllowlistFlag: () => false }));
+// The v2 panels resolve `eligible && optedIn`; useBetaOptIn (lib/betaFeatures) also pulls
+// lib/appConfig → lib/supabase's env check. Stub it OFF — the second half of the flag-off proof.
+jest.mock('../../lib/betaFeatures', () => ({ useBetaOptIn: () => false }));
 // The AI summary (PR 4) is cache-only network I/O via useSummary → lib/summary → supabase.
 // Mock the hook so this screen-wiring test stays on the local-SQLite card path (the summary's
 // own logic is tested in lib/summaryCopy.test.ts + supabase/functions/.../summary.test.ts).

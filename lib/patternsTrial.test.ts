@@ -51,16 +51,22 @@ function scenario(overrides: Partial<TrialSoFarInput> = {}): TrialSoFarInput {
     { ms: at(120, 11), confidence: 'witnessed' as const }, // 2h mid, in window
     { ms: at(125, 10), confidence: 'estimated' as const }, // untimed (not witnessed), in window
   ];
-  return {
+  const merged: TrialSoFarInput = {
     progress: { dayCounter: 25, targetDays: 31 },
     exposureRange: { startDayIndex: 100, endDayIndex: 130 },
     foodLabel: 'Royal Canin HP',
     vomitOnsets,
     feedings,
     freeFedSpans: [] as FreeFedSpan[],
+    symptomEventMs: [],
     dayIndexOf,
     ...overrides,
   };
+  // Vomit IS a correlation symptom, so unless a test sets symptomEventMs explicitly, the
+  // logged-day denominator sees the (possibly-overridden) vomit days — keeping the
+  // fixture self-consistent with the engine's feeding-OR-symptom "logged day".
+  if (!('symptomEventMs' in overrides)) merged.symptomEventMs = merged.vomitOnsets.map((v) => v.ms);
+  return merged;
 }
 
 describe('buildTrialSoFar — phenotype rows through lib/mealTiming, windowed on the evidence bound', () => {
@@ -76,14 +82,16 @@ describe('buildTrialSoFar — phenotype rows through lib/mealTiming, windowed on
     expect(rapid.medianMinutes).toBe(20);
   });
 
-  it('diet-structure: treat share over classifiable feedings, meals per logged day', () => {
+  it('diet-structure: treat share over classifiable feedings, meals per logged day (feeding OR symptom)', () => {
     const m = buildTrialSoFar(scenario())!;
     // In window: meals {105,110,120}=3, treats {106,107}=2 → 2/5 = 40%.
     expect(m.structure.treatShare).toBeCloseTo(0.4, 10);
     expect(m.structure.classifiableFeedings).toBe(5);
-    // Logged days in window: {105,106,107,110,120} = 5; meals 3 → 0.6/day.
-    expect(m.structure.loggedDays).toBe(5);
-    expect(m.structure.mealsPerDay).toBeCloseTo(0.6, 10);
+    // Logged days = feeding days {105,106,107,110,120} ∪ in-window vomit days
+    // {105,111,120,125} = {105,106,107,110,111,120,125} = 7 (the engine's loggedDaysIn:
+    // a symptom-only day counts). meals 3 → 3/7 per day.
+    expect(m.structure.loggedDays).toBe(7);
+    expect(m.structure.mealsPerDay).toBeCloseTo(3 / 7, 10);
   });
 
   it('collapse-then-window: a bout straddling the window start collapses to its (pre-window) onset', () => {
@@ -166,7 +174,7 @@ describe('copy — count-anchored, never verdicted (§2 L2 / §6)', () => {
   it('diet-structure values render honestly (percent / one-decimal rate) and the no-data forms', () => {
     const m = buildTrialSoFar(scenario())!;
     expect(trialTreatShareValue(m.structure)).toBe('40% of meals & treats');
-    expect(trialMealsPerDayValue(m.structure)).toBe('0.6 per day');
+    expect(trialMealsPerDayValue(m.structure)).toBe('0.4 per day'); // 3/7 → 0.4
     expect(trialTreatShareValue({ treatShare: null, mealsPerDay: null, loggedDays: 0, classifiableFeedings: 0 })).toBe('no meals or treats logged');
     expect(trialMealsPerDayValue({ treatShare: null, mealsPerDay: null, loggedDays: 0, classifiableFeedings: 0 })).toBe('no days logged');
   });
