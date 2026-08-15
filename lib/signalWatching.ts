@@ -32,10 +32,13 @@
 // property-swept to ~2% null FPR. That finding, when it fires, puts the surface into
 // `live` (not empty), so it never coexists with these rows. This module renders the
 // SUB-FLOOR watching row at L4's documented WATCHING floor — `minGaps` (3 gaps / 4
-// episodes), the g-chart anchor the config comment reserves for "PR 7's client row" —
-// escalate-only (renders only on a shortening run) with the same recency guard. It has
-// NO server counterpart, so there is nothing to drift from; the constants are mirrored
-// here with their anchors and never tuned to any record (G6).
+// episodes), the g-chart anchor the config comment reserves for "PR 7's client row". The
+// row is otherwise SERVER-FAITHFUL (G9): the same 180-day era window, the same strict-
+// decrease (escalate-only, G5), the same "meaningfully shorter than the median" ratio gate
+// (without which a trivial `[50,49,48]` renders a flat-looking "2 days, then 2, then 2" —
+// the adversarial-review 5a finding), and the same recency guard. The ONLY difference from
+// the finding is `minGaps` 3 vs `runLength` 4 — the sub-floor sensitivity the row exists
+// for. Constants mirrored with their anchors, never tuned to any record (G6).
 
 import { getDb } from './db';
 import {
@@ -46,7 +49,7 @@ import {
   type FreeFedSpan,
   type OnsetConfidence,
 } from './mealTiming';
-import { readVomitOnsets, readFeedingRows, readFreeFedSpans } from './patternsTiming';
+import { median, readVomitOnsets, readFeedingRows, readFreeFedSpans } from './patternsTiming';
 import {
   formatWatchingGapSequence,
   watchingChangeRow,
@@ -81,9 +84,28 @@ export const WATCHING_CHANGE_WEEKS_NEEDED = 2;
 
 /** The gap lane's WATCHING floor — `minGaps` in detection.ts (3 gaps / 4 collapsed
  *  episodes, the g-chart's lowest informative point). The config comment names this
- *  "PR 7's client row" explicitly: a 3-gap record is WATCHED here, never fired on (the
- *  finding needs the higher `runLength` run). NEVER Nyx's record (G6). */
+ *  "PR 7's client row" explicitly: a 3-gap record is WATCHED here, never fired on by the
+ *  server finding (which needs the higher `runLength` run). This is the ONLY parameter by
+ *  which the watching row differs from the server's `detectGapShortening` — every other
+ *  gate below is server-faithful (G9). NEVER Nyx's record (G6). */
 export const WATCHING_GAP_MIN_GAPS = 3;
+
+/** "Meaningfully shorter than typical" gate, mirrored from L4's `gapShorteningRatio`
+ *  (0.5): the latest (shortest) gap must be ≤ this × the record's MEDIAN gap. Without it,
+ *  ANY strictly-decreasing run fires — including a trivial `[50h, 49h, 48h]`, which rounds
+ *  to a flat-looking "2 days, then 2, then 2" and communicates non-change under a row
+ *  whose whole purpose is to disclose an acceleration (the adversarial-review 5a finding).
+ *  The median is over ALL in-window gaps (the pet's typical spacing), so an early 4-episode
+ *  record whose 3 gaps ARE the whole record only fires on a pronounced shortening — which
+ *  is the noise-suppression both reviewers asked for. Server-faithful (detection.ts). */
+export const WATCHING_GAP_SHORTENING_RATIO = 0.5;
+
+/** The gap lane's era, mirrored from the engine's 180-day symptom lookback (`index.ts`
+ *  windows all symptom events to 180d before `detectGapShortening` collapses them). The
+ *  watching row applies the SAME window so client + server agree on "the current era" — an
+ *  unbounded local read could assemble a run spanning >180 days the server would never
+ *  form (adversarial-review finding 7). Window-then-collapse, matching the server. */
+export const WATCHING_GAP_WINDOW_DAYS = 180;
 
 /** Staleness / reversal guard, mirrored from L4's `recencyGraceFactor` (2×): the open
  *  interval (now − last onset) must be ≤ this × the latest (shortest) gap, else the
@@ -197,24 +219,32 @@ export function windowedTimedEligibleCount(
 }
 
 /**
- * PURE: the escalate-only gap watching detector. Collapse the full vomit list, take the
- * inter-episode gaps, and return the most-recent `minGaps` of them ONLY when they form a
- * strictly-decreasing (shortening) run that is still current. Returns null otherwise —
- * fewer than 3 gaps, a non-shortening tail, or a stale/reversed run.
+ * PURE: the escalate-only gap watching detector — the server's `detectGapShortening` at
+ * the WATCHING floor (`minGaps` 3 gaps instead of the finding's `runLength` 4; every other
+ * gate is server-faithful, G9). Returns the recent shortening run (hours) or null.
  *
- * Escalate-only (G5): a strictly-decreasing test can never fire on a lengthening or flat
- * sequence, so no reassuring "settling" is reachable; the recency guard only ever
- * suppresses, never mints. This is the WATCHING floor (3 gaps) — deliberately below L4's
- * firing floor (`runLength` 4), which the deployed server finding owns.
+ * The three gates, in order (all mirror detection.ts):
+ *   (1) SHORTENING — the last `minGaps` gaps STRICTLY decreasing. A flat/lengthening run
+ *       fails here → SILENCE (G5, escalate-only; no reassuring "settling" is ever reachable).
+ *   (2) MEANINGFULLY SHORTER — the latest (shortest) gap ≤ `ratio` × the record's MEDIAN
+ *       gap. Without it a trivial `[50,49,48]` fires and renders a flat-looking "2 days,
+ *       then 2, then 2" (adversarial 5a). The median is over ALL in-window gaps.
+ *   (3) STILL CURRENT — the open interval (now − last onset) ≤ `graceFactor` × the latest
+ *       gap, so a stale/reversed run is never surfaced as if it were accelerating now.
+ *
+ * The onsets are windowed to the engine's 180-day era first (window-then-collapse, as the
+ * server does) so client + server agree on "the record" (adversarial 7).
  */
 export function detectWatchingGapShortening(
   vomitOnsets: readonly OnsetRow[],
   nowMs: number,
 ): number[] | null {
-  const episodes = collapseEpisodes(
-    vomitOnsets.filter((e) => Number.isFinite(e.ms)),
-    DEFAULT_MEAL_TIMING_CONFIG.episodeGapHours,
-  );
+  // Window to the 180-day era, then collapse (the server's order — the engine 180d-windows
+  // symptom events upstream, then collapses). An unbounded read could assemble a run
+  // spanning >180d the server would never form.
+  const cutoff = nowMs - WATCHING_GAP_WINDOW_DAYS * MS_PER_DAY;
+  const windowed = vomitOnsets.filter((e) => Number.isFinite(e.ms) && e.ms >= cutoff && e.ms <= nowMs);
+  const episodes = collapseEpisodes(windowed, DEFAULT_MEAL_TIMING_CONFIG.episodeGapHours);
   // Need ≥ minGaps gaps ⇒ ≥ minGaps + 1 collapsed episodes.
   if (episodes.length < WATCHING_GAP_MIN_GAPS + 1) return null;
 
@@ -223,16 +253,21 @@ export function detectWatchingGapShortening(
   const gaps: number[] = [];
   for (let i = 1; i < onsets.length; i++) gaps.push((onsets[i] - onsets[i - 1]) / MS_PER_HOUR);
 
+  // (1) Strictly decreasing — the shortening run. Any non-decrease disqualifies.
   const recent = gaps.slice(-WATCHING_GAP_MIN_GAPS);
-  // Strictly decreasing — the shortening run. Any non-decrease disqualifies (escalate-only).
   for (let i = 1; i < recent.length; i++) {
     if (!(recent[i] < recent[i - 1])) return null;
   }
 
-  // Recency guard: the run must still be live (the current open interval no longer than
-  // the grace factor × the latest, shortest gap). A run followed by a long quiet stretch
-  // is the rate dropping — never surfaced as if it were accelerating now.
+  // (2) Meaningfully shorter than typical — latest ≤ ratio × the median of ALL windowed
+  // gaps. The collapse guarantees every gap > 3h, so `gaps` is non-empty (median non-null)
+  // and > 0 here; the guards are defensive.
   const latestGap = recent[recent.length - 1];
+  const medianGap = median(gaps);
+  if (medianGap === null || !(medianGap > 0)) return null;
+  if (!(latestGap <= WATCHING_GAP_SHORTENING_RATIO * medianGap)) return null;
+
+  // (3) Recency guard: the run must still be live (open interval ≤ graceFactor × latest gap).
   const lastOnset = onsets[onsets.length - 1];
   const openIntervalHours = (nowMs - lastOnset) / MS_PER_HOUR;
   if (openIntervalHours > WATCHING_GAP_RECENCY_GRACE_FACTOR * latestGap) return null;

@@ -212,65 +212,172 @@ describe('windowedTimedEligibleCount', () => {
 });
 
 // ── detectWatchingGapShortening — the escalate-only sub-floor gap detector ─────────
-describe('detectWatchingGapShortening (escalate-only, G5)', () => {
+// Server-faithful (G9): strict-decrease (G5) + the ratio gate (latest ≤ 0.5× median of ALL
+// windowed gaps) + the recency guard, at the 3-gap WATCHING floor + the 180-day era window.
+describe('detectWatchingGapShortening (escalate-only, G5; ratio-gated, server-faithful)', () => {
   const w = (ms: number) => ({ ms, confidence: 'witnessed' as OnsetConfidence });
-  // A shortening 3-gap run (6d, 3d, 2d) ending 24h before now (well within the 2× recency
-  // grace of the latest 48h gap). Onsets oldest→newest.
-  const shorteningOnsets = () => {
-    const e4 = NOW - 24 * HOUR;
-    const e3 = e4 - 48 * HOUR;
-    const e2 = e3 - 72 * HOUR;
-    const e1 = e2 - 144 * HOUR;
-    return [w(e1), w(e2), w(e3), w(e4)];
-  };
+  // Build ascending onsets from a gaps-in-hours sequence (oldest→newest), the last onset
+  // `sinceLastHours` before now.
+  function onsetsFromGaps(gapsHours: number[], sinceLastHours: number): { ms: number; confidence: OnsetConfidence }[] {
+    const ms = [NOW - sinceLastHours * HOUR];
+    for (let i = gapsHours.length - 1; i >= 0; i--) ms.unshift(ms[0] - gapsHours[i] * HOUR);
+    return ms.map(w);
+  }
+  // A pet who typically goes ~10 days, then a shortening tail 6d → 3d → 2d, last 1 day ago.
+  // recent = [144,72,48]; median over all 5 gaps = 144h; latest 48 ≤ 0.5×144 = 72 → fires.
+  const meaningfulRun = () => onsetsFromGaps([240, 240, 144, 72, 48], 24);
 
-  it('returns the recent gaps (hours) on a strictly-shortening, current run', () => {
-    expect(detectWatchingGapShortening(shorteningOnsets(), NOW)).toEqual([144, 72, 48]);
+  it('returns the recent gaps on a meaningful (ratio-passing), current, shortening run', () => {
+    expect(detectWatchingGapShortening(meaningfulRun(), NOW)).toEqual([144, 72, 48]);
   });
 
   it('null on fewer than 3 gaps (needs ≥4 collapsed episodes — the g-chart watching floor)', () => {
-    const three = shorteningOnsets().slice(1); // 3 episodes → 2 gaps
-    expect(detectWatchingGapShortening(three, NOW)).toBeNull();
+    expect(detectWatchingGapShortening(onsetsFromGaps([144, 72, 48], 24).slice(1), NOW)).toBeNull(); // 2 gaps
   });
 
   it('null on a lengthening run (absence ≠ wellness — a widening gap never surfaces)', () => {
-    const e1 = NOW - 30 * DAY;
-    const onsets = [w(e1), w(e1 + 24 * HOUR), w(e1 + 24 * HOUR + 72 * HOUR), w(e1 + 24 * HOUR + 72 * HOUR + 144 * HOUR)];
-    expect(detectWatchingGapShortening(onsets, NOW)).toBeNull(); // gaps 24 < 72 < 144 → increasing
+    expect(detectWatchingGapShortening(onsetsFromGaps([24, 72, 144], 24), NOW)).toBeNull(); // increasing
   });
 
   it('null on a flat run (steady gaps are not shortening)', () => {
-    const e1 = NOW - 20 * DAY;
-    const onsets = [w(e1), w(e1 + 72 * HOUR), w(e1 + 144 * HOUR), w(e1 + 216 * HOUR)]; // all 72h gaps
-    expect(detectWatchingGapShortening(onsets, NOW)).toBeNull();
+    expect(detectWatchingGapShortening(onsetsFromGaps([72, 72, 72], 24), NOW)).toBeNull();
+  });
+
+  it('null on a TRIVIAL flat-looking shortening [50,49,48] — the ratio gate (adversarial 5a)', () => {
+    // Strictly decreasing in raw terms, but latest 48 > 0.5 × median(49) — so it would round
+    // to a misleading "2 days, then 2, then 2". The ratio gate suppresses it.
+    expect(detectWatchingGapShortening(onsetsFromGaps([50, 49, 48], 24), NOW)).toBeNull();
+  });
+
+  it('null on a 3-gap-only moderate shortening [144,72,48] — not meaningfully shorter than its own median', () => {
+    // The mock example as a pet's ONLY 3 gaps: median 72, latest 48 > 36 → a 4-episode record
+    // isn't strong enough evidence of acceleration to flag (the noise suppression both reviews asked for).
+    expect(detectWatchingGapShortening(onsetsFromGaps([144, 72, 48], 24), NOW)).toBeNull();
   });
 
   it('null when the run is stale/reversed (open interval ≫ 2× the latest gap — recency guard)', () => {
-    // Same shortening shape, but the last episode is 200h back (> 2×48h) → the accelerating
-    // run has not continued; never surfaced as if it were live.
-    const staleNow = NOW;
-    const e4 = staleNow - 200 * HOUR;
-    const e3 = e4 - 48 * HOUR;
-    const e2 = e3 - 72 * HOUR;
-    const e1 = e2 - 144 * HOUR;
-    expect(detectWatchingGapShortening([w(e1), w(e2), w(e3), w(e4)], staleNow)).toBeNull();
+    // The meaningful run, but the last episode is 200h back (> 2×48h) → not surfaced as live.
+    expect(detectWatchingGapShortening(onsetsFromGaps([240, 240, 144, 72, 48], 200), NOW)).toBeNull();
   });
 
   it('uses the most-recent 3 gaps when the record has more (a longer tail is fine)', () => {
-    // 5 episodes → 4 gaps [10d, 6d, 3d, 2d]; the last 3 (6d,3d,2d) are the shortening run.
-    const e5 = NOW - 24 * HOUR;
-    const e4 = e5 - 48 * HOUR;
-    const e3 = e4 - 72 * HOUR;
-    const e2 = e3 - 144 * HOUR;
-    const e1 = e2 - 240 * HOUR;
-    expect(detectWatchingGapShortening([w(e1), w(e2), w(e3), w(e4), w(e5)], NOW)).toEqual([144, 72, 48]);
+    // 6 gaps; the last 3 (6d,3d,2d) are the shortening run reported.
+    expect(detectWatchingGapShortening(onsetsFromGaps([300, 240, 240, 144, 72, 48], 24), NOW)).toEqual([144, 72, 48]);
+  });
+
+  it('windows to the 180-day era — an onset >180d ago is excluded and never joins the run (adversarial 7)', () => {
+    // The meaningful run within 180d, plus one onset 200 days ago. If the window failed, that
+    // old onset would prepend a ~160-day gap and perturb the median; windowed out, the result
+    // is identical to the run alone.
+    const withAncient = [w(NOW - 200 * DAY), ...meaningfulRun()];
+    expect(detectWatchingGapShortening(withAncient, NOW)).toEqual([144, 72, 48]);
   });
 
   it('collapses re-logs before measuring gaps (a double-tap does not mint a fake 0h gap)', () => {
-    // The shortening run, with the newest episode double-logged 30 min apart → still one
-    // episode, so the recent gaps are unchanged (no spurious tiny gap from the re-log).
-    const base = shorteningOnsets();
-    const doubled = [...base, w(base[base.length - 1].ms + 30 * 60_000)];
+    const base = meaningfulRun();
+    const doubled = [...base, w(base[base.length - 1].ms + 30 * 60_000)]; // 30-min re-log of the newest
     expect(detectWatchingGapShortening(doubled, NOW)).toEqual([144, 72, 48]);
+  });
+});
+
+// ── Property sweep — the escalate-only gap detector's null-model fire rate ─────────
+// "The sweep sets the floor, not intuition" (the track's ⑥/PR-8 discipline). The row sits
+// at the 3-gap WATCHING floor, so it fires on SOME chance shortenings by construction — but
+// the ratio gate + recency guard hold that residual low. We MEASURE it on seeded null models
+// (deterministic PRNG — no Math.random, which jest/Deno both forbid in this codebase's pure
+// modules) and assert a DISCLOSED ceiling + a sanity FLOOR, so the test cannot rot into a
+// no-op that would hide a future FPR regression (a re-drop of the ratio gate would spike the
+// rate from ~3% toward the naive ~17%). This mirrors — and inherits — PR 8's server-side
+// sweep of the same logic; the client mirror having the same measured residual is the point.
+describe('detectWatchingGapShortening — null-model property sweep', () => {
+  function mulberry32(seed: number): () => number {
+    let a = seed >>> 0;
+    return () => {
+      a |= 0;
+      a = (a + 0x6d2b79f5) | 0;
+      let t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+  const TRIALS = 3000;
+  // Build `eps` onsets whose inter-episode gaps + trailing open interval come from `gapH`
+  // (called per gap, so a stateful generator models autocorrelation), ending at NOW − open.
+  function fireRate(seed: number, eps: number, gapH: (rng: () => number) => number): number {
+    const rng = mulberry32(seed);
+    let fires = 0;
+    for (let t = 0; t < TRIALS; t++) {
+      const gaps: number[] = [];
+      for (let i = 0; i < eps - 1; i++) gaps.push(gapH(rng));
+      const ms = [NOW - gapH(rng) * HOUR]; // the open interval, same law (memorylessness)
+      for (let i = gaps.length - 1; i >= 0; i--) ms.unshift(ms[0] - gaps[i] * HOUR);
+      const onsets = ms.map((m) => ({ ms: m, confidence: 'witnessed' as OnsetConfidence }));
+      if (detectWatchingGapShortening(onsets, NOW) !== null) fires++;
+    }
+    return fires / TRIALS;
+  }
+  const expo = (meanH: number) => (rng: () => number) => -Math.log(1 - rng()) * meanH;
+
+  it('constant-rate (Poisson) + uniform nulls stay single-digit (ratio-gated): pooled < 5%, worst < 6%', () => {
+    const rates: number[] = [];
+    // Constant-rate Poisson at several mean gaps × episode counts.
+    for (const meanDays of [5, 10, 20]) {
+      for (const eps of [4, 5, 6, 8]) {
+        rates.push(fireRate(1300 + meanDays * 10 + eps, eps, expo(meanDays * 24)));
+      }
+    }
+    // Uniform-random onsets over a 60-day span (a different null shape).
+    for (const eps of [4, 5, 6, 8]) {
+      const rng = mulberry32(900 + eps);
+      let fires = 0;
+      for (let t = 0; t < TRIALS; t++) {
+        const onsets = Array.from({ length: eps }, () => ({
+          ms: NOW - rng() * 60 * DAY,
+          confidence: 'witnessed' as OnsetConfidence,
+        }));
+        if (detectWatchingGapShortening(onsets, NOW) !== null) fires++;
+      }
+      rates.push(fires / TRIALS);
+    }
+    const pooled = rates.reduce((a, b) => a + b, 0) / rates.length;
+    const worst = Math.max(...rates);
+    expect(pooled).toBeLessThan(0.05);
+    expect(worst).toBeLessThan(0.06);
+  });
+
+  it('has a sanity FLOOR — the escalate-only row DOES fire on chance shortenings (so the test cannot rot to a no-op)', () => {
+    // If a future edit silently disabled firing (or the ratio gate turned it inert), this
+    // fails — the disclosed residual is a feature of a sub-floor watching row, not a bug.
+    const pooled =
+      (fireRate(1310, 5, expo(10 * 24)) + fireRate(1320, 6, expo(10 * 24)) + fireRate(1330, 8, expo(20 * 24))) / 3;
+    expect(pooled).toBeGreaterThan(0.012);
+  });
+
+  it('autocorrelated (waxing/waning) nulls: the disclosed higher residual stays bounded (< 8%)', () => {
+    // A 2-state flare/quiet Markov rate — the class PR 8 disclosed as its higher residual
+    // (a down-drift reads as acceleration; the RTM the lane guards against). Still bounded.
+    function markov(seed: number, eps: number): number {
+      const rng = mulberry32(seed);
+      const QUIET = 20 * 24;
+      const FLARE = 2 * 24;
+      const P = 0.35;
+      let fires = 0;
+      for (let t = 0; t < TRIALS; t++) {
+        let flare = rng() < 0.5;
+        const draw = (): number => {
+          if (rng() < P) flare = !flare;
+          return -Math.log(1 - rng()) * (flare ? FLARE : QUIET);
+        };
+        const gaps: number[] = [];
+        for (let i = 0; i < eps - 1; i++) gaps.push(draw());
+        const ms = [NOW - draw() * HOUR];
+        for (let i = gaps.length - 1; i >= 0; i--) ms.unshift(ms[0] - gaps[i] * HOUR);
+        const onsets = ms.map((m) => ({ ms: m, confidence: 'witnessed' as OnsetConfidence }));
+        if (detectWatchingGapShortening(onsets, NOW) !== null) fires++;
+      }
+      return fires / TRIALS;
+    }
+    const worst = Math.max(markov(7005, 5), markov(7006, 6), markov(7008, 8));
+    expect(worst).toBeLessThan(0.08);
   });
 });
