@@ -1,0 +1,104 @@
+-- ============================================================
+-- Migration 058: notification_preferences.use_pet_name
+-- — the warmth opt-in: may the pet's name appear in the notification
+--   body, or does the body stay neutral (B-671 / R-8, Daily Recap DR-5)
+--
+-- Spec: docs/nyx-daily-recap-requirements.md §6 (the warmth opt-in),
+--       §0 R-8 (ships this chunk; single-pet only; neutral is the default).
+-- Foundation: 050_notification_preferences.sql (the table + its four
+--       load-bearing choices), 051_notification_preferences_pet_scope.sql.
+-- Consumer: DR-6 / CUL-24 (the settings row + scheduled-body swap +
+--       sign-out wipe/reconcile). This PR ships ONLY the column.
+-- ============================================================
+--
+-- WHAT THIS IS. One column on the existing notification_preferences table:
+--
+--   use_pet_name  BOOLEAN NOT NULL DEFAULT false
+--
+-- Nothing else changes: no index, no policy, no trigger, no grant, no
+-- constraint, no existing column touched. It is the additive half of §6,
+-- deliberately split from its feature (DR-6) per the schema-isolation rule.
+--
+-- WHY A COLUMN ON THIS TABLE (not a new table, not a column elsewhere).
+-- The opt-in modifies the DAILY-SUMMARY NOTIFICATION'S BODY — "Biscuit's day
+-- is ready to read." instead of the neutral line — so it belongs on the row an
+-- owner already toggles that summary on. In v1 that is the single ACCOUNT-WIDE
+-- daily_summary row (pet_id NULL — the entire v1 write shape, 050 §4), so the
+-- flag is naturally account-scoped, consistent with D3 (one notification per
+-- account across all pets) and G6 (every category defaults off). It rides the
+-- same RLS, the same local mirror, and the same last-write-wins sync the row
+-- already has — no new machinery.
+--
+-- WHY NOT NULL DEFAULT false, AND WHY THAT IS THE CORRECT DEFAULT.
+--   • false = NEUTRAL is the T&S-mandated default (§6: "default stays
+--     neutral"). Putting a pet's name on a lock screen is an involuntary-public
+--     tradeoff, so it must be the owner's EXPLICIT opt-in, never on by default.
+--     false also satisfies G6 (everything notification-related defaults off).
+--   • Unlike 053's target_protein (NULLABLE, because NULL carried three product
+--     meanings there), here false is an affirmative, unambiguous default — "not
+--     opted in" — so there is no NULL tri-state to model. NOT NULL keeps every
+--     reader (DR-6, and Part 2's server push) free of a null branch.
+--   • The constant DEFAULT is O(1) in PG 11+ (no table rewrite); the 1 existing
+--     row (verified this session, below) takes false — the honest value, since
+--     no owner has opted in and DR-6 is the feature that will let them. The
+--     DEFAULT *is* the backfill, which is why "Backfill: N/A" is honest here.
+--
+-- WHAT THE DB DELIBERATELY DOES NOT ENFORCE (client rules, by design).
+--   • SINGLE-PET-ONLY is a DR-6 CLIENT rule, not a DB constraint. The column
+--     may hold true on any account; DR-6 only ever SHOWS the settings row, and
+--     only ever RENDERS a named body, when exactly one pet exists — multi-pet
+--     accounts never see the row and stay neutral by construction (§6). Encoding
+--     "single-pet" in the schema would bake a fluid account fact (pet count) into
+--     a constraint; the naming decision lives at read time, where it belongs.
+--   • use_pet_name is INERT WARMTH: it changes only body TEXT. It never gates
+--     delivery, never changes WHICH pets a notification concerns, and is not a
+--     permit of any kind. Every scheduling / clamp / routing path is
+--     byte-identical for both values.
+--
+-- RLS / PRIVACY (T&S). No change at the migration layer. One boolean column on
+-- an existing account-scoped table whose policies (050 §3) are unchanged and
+-- already cover every column by user_id — a new column is readable/writable
+-- exactly when its row is, adding no new reader, grant, index or surface, and
+-- riding the existing auth.users ON DELETE CASCADE. The value is a boolean
+-- preference, not health data, a photo, or free text. The §6 T&S GATE (the
+-- involuntary-public tradeoff) lands at DR-6, where a name actually reaches a
+-- notification body; this migration's contribution to that gate is precisely the
+-- default-false that keeps the neutral body the default.
+--
+-- ------------------------------------------------------------
+-- Migration Safety Pre-flight
+-- ------------------------------------------------------------
+--   Destructive y/n:  n. Purely additive — one BOOLEAN NOT NULL DEFAULT false
+--                     column. Drops, renames, retypes or alters no existing
+--                     column, constraint, index, policy, trigger or row. ADD
+--                     COLUMN with a constant default is O(1) in PG 11+ (no table
+--                     rewrite), so the existing row is untouched and takes false.
+--   Affected tables:  public.notification_preferences (1 live row at apply time
+--                     — verified this session:
+--                       SELECT count(*) FROM notification_preferences;  -> 1
+--                     Row count does not gate this migration: the column is
+--                     NOT NULL with a constant DEFAULT, so every existing row is
+--                     validly filled by the default and no value is validated
+--                     against existing data. Optional confirm it is not already
+--                     present:
+--                       SELECT column_name FROM information_schema.columns
+--                        WHERE table_schema='public'
+--                          AND table_name='notification_preferences'
+--                          AND column_name='use_pet_name';
+--                       -- expect 0 rows.)
+--   Backfill:         N/A. The constant DEFAULT false fills the 1 existing row,
+--                     which is the honest value (no owner has opted in; neutral
+--                     is the default). No script, no upgrade path writes a value.
+--   Rollback plan:    reversible, one statement:
+--                       ALTER TABLE public.notification_preferences
+--                         DROP COLUMN IF EXISTS use_pet_name;
+--                     Loses only owner opt-ins entered after DR-6 ships; every
+--                     notification, preference row and toggle survives untouched
+--                     (the value is inert body warmth, never a permit).
+-- ============================================================
+
+ALTER TABLE public.notification_preferences
+  ADD COLUMN IF NOT EXISTS use_pet_name BOOLEAN NOT NULL DEFAULT false;
+
+COMMENT ON COLUMN public.notification_preferences.use_pet_name IS
+  'B-671 / Daily Recap §6 (R-8): the warmth opt-in — when true, the daily-summary notification body/title use the pet''s name ("Biscuit''s day is ready to read." / "Biscuit''s day"); when false, the body stays neutral. Default false = NEUTRAL is the T&S-mandated default (a name on a lock screen is an involuntary-public tradeoff, so it is the owner''s explicit opt-in, never on by default; also G6 defaults-off). Account-scoped: lives on the account-wide daily_summary row (pet_id NULL, the v1 shape). SINGLE-PET-ONLY is a DR-6 client rule, not a DB constraint — the column may hold true on any account; DR-6 only shows the settings row and renders a named body when exactly one pet exists (multi-pet stays neutral by construction). Inert warmth: changes only body text, never delivery/routing/scope. Consumed by DR-6 (CUL-24); wipe/reconcile carried there.';
