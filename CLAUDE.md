@@ -37,7 +37,7 @@ If a referenced document does not exist yet, stop and flag it to the PM. Do not 
 | `docs/food-library-redesign-requirements.md` | Any session touching food entry, the meal log flow, the food library/picker, or AI-driven extraction of food data. Output of the May 2026 photo-library research session. |
 | `docs/nyx-onboarding-requirements.md` | Any session touching onboarding, sign-up / auth, account creation, or the pet-setup flow. Build-ready spec for the app-store-readiness onboarding revamp (B-251). |
 | `docs/nyx-competitive-landscape-v1_0.md` | 🧊 _FROZEN — superseded by `docs/nyx-competitive-landscape-refresh-2026-06.md` (read that instead)._ When evaluating feature positioning or vet-facing strategy. |
-| `docs/backlog.md` | When the PM asks to `view backlog` / `show backlog` — **that** is the whole-file read. The session-start scan is **not**: it wants the handful of rows whose **Blocks** column matches the Current Phase, so `grep` for them (`grep -n "^| B-.*Step 10" docs/backlog.md`, or the phase/track you're on) instead of reading 453 KB — one row per line makes the file grep-shaped by construction. Reading it whole at every kickoff costs more than most sessions' actual work. See the Backlog Protocol section below. |
+| `docs/backlog.md` | 🧊 _FROZEN historical record (migration complete, 2026-08-15) — NOT the source of truth._ All 487 rows are in **Linear** (team **Culprit**); new items, priority, and status now live there. `view backlog` queries Linear (`list_issues`, team `Culprit`), and `/kickoff` queries Linear for phase-blockers — **neither greps this file** anymore. Read `docs/backlog.md` only to recover the pre-migration context of an already-ported `B-NNN` row (its `Legacy`-labelled issue footer traces back to it). See the Backlog Protocol section below. |
 | `docs/research/README.md` | When making product decisions in a domain a prior research brief covers (feeding behavior, symptom correlation windows, etc.). The README indexes all briefs; read the relevant brief directly before designing in that domain. |
 | `docs/culprit-rename-requirements.md` | Any session executing the Nyx → Culprit name rebrand (B-274) or touching a user-facing brand string. The string-level what-changes — the brand-vs-pet-name-vs-infra split that keeps it from being a search-and-replace. Pairs with `docs/culprit-icon-brand-direction.md` (the icon/visual half, B-275) for the combined "name + icon" brand pass. |
 | `docs/culprit-in-app-brand-requirements.md` | Any session building the in-app brand-alignment PRs (N1–N7: night tokens, `CulpritMark`, the Landing hero, the Whorl loading system + night moment, the Signal card ground, calendar v3, the Home briefing) or touching any night-ground surface. Build-ready spec distilled from the four `docs/brand/` review rounds (B-284); carries the carve rule, the register rule, the no-metaphor rule, verbatim copy, and the two open gates (D8 on-device ground call; D9 Tier-2 §3 edit). |
@@ -95,7 +95,7 @@ Disagreement is information. Surface it. Never resolve a persona conflict silent
 | **Pet Owner — Jordan** | Diet-trial dog owner; "can I do this in under 10 seconds while my dog is being weird?" |
 | **Pet Owner (cat) — Sam** | Grazing / picky-eater cat owner; fussy-vs-sick ambiguity; the food-preference target user. |
 | **Sr. QA Associate** | Acceptance-criteria enforcement, edge cases, regression awareness. |
-| **Product Owner / Backlog Steward** | Keeps `docs/backlog.md` honest and well-ordered (distinct from PM, who owns decisions). |
+| **Product Owner / Backlog Steward** | Keeps the Linear backlog (team Culprit) honest and well-ordered (distinct from PM, who owns decisions). |
 | **Trust & Safety / Privacy** | Data rights, deletion / export, platform compliance, health-photo handling. |
 
 ### The seven design principles — no PM confirmation required to enforce
@@ -219,6 +219,7 @@ Single source of truth for every secret the project uses. Update this table inli
 
 **PR descriptions must include:**
 - What changed and why (not just what — the why is the important part)
+- The `CUL-NNN` Linear issue(s) this advances — reference each in the PR **title or description** (e.g. `Fixes CUL-183`, or a bare `CUL-183`) so Linear's native GitHub integration auto-links the PR and moves the issue's status. See the merge→Linear-status rule below.
 - Which build step or sub-step this advances
 - Any schema changes made
 - Any open questions this raises or resolves
@@ -240,6 +241,13 @@ Single source of truth for every secret the project uses. Update this table inli
 - **Never poll on an interval shorter than ~90 minutes.** An hourly cadence lands past the prompt-cache TTL, so every wake re-sends the session's entire context at full price to learn nothing.
 
 Measured before this rule existed: **102 check-ins in three weeks; 3 of 11 on the 2026-07-24 overnight did any work, and all three were base-drift repair** (merging `main` after a sibling PR landed, resolving the `STATUS.md` conflict). That is the *only* thing this mechanism has ever earned — so the real fix was removing the drift, not scheduling cleanup for it. See `docs/sessions/README.md`.
+
+**Merge → Linear status — reference `CUL-NNN` in every PR (instituted 2026-08-16).** Linear (team Culprit) owns issue status, and the native GitHub↔Linear integration moves an issue Todo/Backlog → In Progress → Done automatically **when a PR references it** — verified: CUL-15 auto-linked PR #655 and transitioned in lockstep with the merge. So:
+
+- Put the issue identifier (`CUL-NNN`, or a closing magic word like `Fixes CUL-NNN`) in **every PR's title or description**. One PR advancing several issues names all of them, so they all move together.
+- Where the session controls the branch name, prefer Linear's suggested `gitBranchName` (e.g. `danieljmarkii/cul-NNN-…`, on the issue) so the link fires off the branch too. **Agent sessions run on a fixed `claude/<slug>` branch that does not reference the issue** — for those, the PR-body reference is the only trigger, so never assume the branch alone linked it.
+- **Backstop when auto-link didn't fire:** `/wrap` explicitly sets each touched issue's status and attaches the PR via the Linear MCP (`save_issue` state + `create_attachment`). See `/wrap` Step 4.
+- **Do not build a custom GitHub Action for this** — it would duplicate the native integration and fight it on status writes.
 
 **Migration Safety Pre-flight.** Any PR containing a schema migration must include, in the PR description:
 - **Rollback plan** — exact reversal steps (e.g. `DROP COLUMN X`, `DROP TABLE Y`) or `Irreversible — back up first` if not.
@@ -266,7 +274,7 @@ Before asking the three questions, surface the canonical state from **`STATUS.md
 
 Then read the relevant docs for the confirmed build step before writing any code.
 
-**Shortcut:** run `/kickoff` to auto-generate this orientation — it reads `STATUS.md`, surfaces any backlog item that blocks the current Phase, and proposes a concrete first task. It's the mirror of `/wrap`.
+**Shortcut:** run `/kickoff` to auto-generate this orientation — it reads `STATUS.md`, queries Linear (team Culprit) for any issue that blocks the current Phase, and proposes a concrete first task. It's the mirror of `/wrap`.
 
 ### Presenting decisions to the PM — decision briefs (instituted 2026-08-07, PM directive)
 
@@ -430,9 +438,14 @@ Project Brief (Claude.ai) — [Flag if the brief in project instructions needs u
 
 ## Documentation Update Protocol
 
-Three tiers. Different rules for each. (For "log this for the future" items, see the **Backlog Protocol** section below — those go in `docs/backlog.md`, not in any of these tiers.)
+Three tiers. Different rules for each. (For "log this for the future" items, see the **Backlog Protocol** section below — those are filed in **Linear** (team Culprit), not in any of these tiers.)
 
-**State-file hygiene — the volatile files must net out, not only grow (instituted 2026-07-19 retro).** `STATUS.md`, `docs/backlog.md`, and the Open PM Action Items / Open Questions lists are *working state*, not archives — `docs/sessions/`, git history and PR bodies are the archive. (`docs/sessions/` is the one deliberately append-only exception: one file per session, never edited, never pruned, outside every size budget. It is the archive, so it is exempt from the rule that governs the working state.) Every prepend is paid for by a delete: completed items are **removed** (not left checked forever), resolved/aged rows are archived, and the backlog's "keep the row, mark Done" convention means *keep it until the periodic archive sweep*, not *keep it for all time*. Enforced at `/wrap` (STATUS.md size budgets — prune while you prepend) and audited at the periodic retro (`docs/personas.md` § Periodic Process Retro, check #4). The signal that a file needs pruning: reading it costs more than the work it describes.
+**Docs & research source of truth — read-path → git; work-path → Linear (instituted 2026-08-16).** Two homes, one test. **Build-critical artifacts a coding session must `Read` to build correctly** — the specs (`nyx-*-requirements.md`, `nyx-technical-spec`), the schema (`supabase/migrations/`, `nyx-schema`), the design principles, and the frozen research briefs (`docs/research/`) — **stay in `docs/`**: the agent reads them at session start, and they're grep-able, diff-able, and PR-reviewed alongside the code that implements them. **Linear (team Culprit) is the plan-and-work surface** — status, priority, the per-issue trail, and net-new planning / deliberation / tracking docs are born there. The single test for any artifact: **does a coding session need to `Read` this file to build correctly? Yes → git. No → Linear.**
+
+- **Standing convention for every build-track project:** link its canonical spec as a Linear project **Resource**, with a one-line "*canonical copy is in the repo; the repo file wins on divergence*" note (already the de-facto pattern on Signals v2 / The Daily Recap — now formal). Linear points at the spec; it never holds a second copy of it.
+- **Only `docs/backlog.md` is deprecated** as a source of truth (frozen, migrated to Linear 2026-08-15). The specs, schema, and research briefs are **not** deprecated — they remain canonical in git. Moving the backlog to Linear did not move the docs.
+
+**State-file hygiene — the volatile files must net out, not only grow (instituted 2026-07-19 retro).** `STATUS.md`, the Open PM Action Items / Open Questions lists, and the Linear board are *working state*, not archives — `docs/sessions/`, git history and PR bodies are the archive (`docs/backlog.md` is now frozen — an archive itself, no longer working state). (`docs/sessions/` is the one deliberately append-only exception: one file per session, never edited, never pruned, outside every size budget. It is the archive, so it is exempt from the rule that governs the working state.) Every prepend is paid for by a delete: completed items are **removed** (not left checked forever) and resolved/aged entries are archived. (The Linear board nets out natively — a `Done` issue drops off the active board on its own — so the manual prune-while-you-prepend rule now governs `STATUS.md` and the Open-lists.) Enforced at `/wrap` (STATUS.md size budgets — prune while you prepend) and audited at the periodic retro (`docs/personas.md` § Periodic Process Retro, check #4). The signal that a file needs pruning: reading it costs more than the work it describes.
 
 **Doc versioning — living vs. frozen (instituted 2026-07-19 retro).** *Living references* (`nyx-technical-spec`, `nyx-schema`, `nyx-design-principles`, the `*-requirements.md` specs) carry their version in the **header** and bump the `Last Updated` date on any material edit — never bake the version into the *filename* (a filename version never gets bumped; that is exactly why the `*-v1_0` docs froze). *Frozen point-in-time artifacts* (research dossiers, dated `docs/research/` briefs, strategy records, competitive snapshots) are **not** version-bumped — a date stamp is honest, and editing them in place destroys the "what we knew when" record. The Read-These table tags each foundational doc 🌱 living / 🧊 frozen so a session knows which ones are supposed to track reality.
 
@@ -455,7 +468,7 @@ Claude Code cannot edit this directly. Flag when it needs updating in the sessio
 
 ## Backlog Protocol
 
-**The backlog is migrating to Linear (started 2026-08-15).** `docs/backlog.md` grew past being a usable "where are we" answer (453 KB, session-start scans reduced to `grep`) — Linear gives real filtering/priority/status instead. Team **Culprit** at `linear.app/projectnyx`. Two active build-track projects already exist there (**Signals v2 — the record, decomposed**, **The Daily Recap**) using `CUL-NNN` issues; a new **Legacy Backlog** project holds everything else. All 47 `Now`-priority backlog.md rows as of 2026-08-15 were ported (CUL-28–74, tagged `Legacy`, footer traces back to the original `B-NNN`). `Next`/`Later` rows have **not yet** been migrated — `docs/backlog.md` stays authoritative for those until a follow-up pass. Once fully migrated, `docs/backlog.md` freezes as the historical record.
+**The backlog lives in Linear (migration complete, 2026-08-15).** `docs/backlog.md` grew past being a usable "where are we" answer (453 KB, session-start scans reduced to `grep`) — Linear gives real filtering/priority/status instead. **Linear (team Culprit, `linear.app/projectnyx`) is the source of truth for all backlog items; `docs/backlog.md` is now a frozen historical record.** All 487 open/in-progress rows were ported to issues `CUL-28`–`CUL-514` (verified 487/487, no rows lost, no duplicates), each tagged `Legacy` with a `_Migrated from docs/backlog.md (B-NNN)_` footer that traces it back to its original row. Rows already belonging to an active build-track project (**Signals v2 — the record, decomposed**, **The Daily Recap**) went into that project; everything else went into the **Legacy Backlog** project. **Do not add rows to `docs/backlog.md` — it is frozen. File new items in Linear** (below).
 
 **New items go to Linear, not the markdown file, effective now:**
 
@@ -472,9 +485,17 @@ Claude Code cannot edit this directly. Flag when it needs updating in the sessio
 | Team | `Culprit` |
 | State | `Todo` for new items; `In Progress` / `Done` only for items filed retroactively about already-started work. |
 
-**`view backlog` command:** when the PM types `view backlog`, `show backlog`, `what's in the backlog`, or any natural-language equivalent, use the Linear MCP `list_issues` tool (team `Culprit`) and present grouped by priority, surfacing anything whose description names the Current Phase at the top. For the not-yet-migrated `Next`/`Later` rows, also check `docs/backlog.md`. Do not invoke this proactively at every session start — only on request, or when a scan reveals an item that blocks the Current Phase.
+**`view backlog` command:** when the PM types `view backlog`, `show backlog`, `what's in the backlog`, or any natural-language equivalent, use the Linear MCP `list_issues` tool (team `Culprit`) and present grouped by priority, surfacing anything whose description names the Current Phase at the top. Linear is the whole answer — **do not also read `docs/backlog.md`** (frozen; it only holds the pre-migration history of already-ported rows). Do not invoke this proactively at every session start — only on request, or when a scan reveals an item that blocks the Current Phase.
 
 **Distinction from Open Questions:** Open Questions are *unresolved decisions* that need PM input to unblock work — these stay in this file's Open Questions table, not Linear. Backlog items are *resolved deferrals* — we know what to do, just not now. If an item needs a decision, it goes in Open Questions; if it needs execution at a later time, it goes in Linear.
+
+**Working the issues in Linear — the per-issue trail (instituted 2026-08-16).** Now that the backlog lives in Linear, the decisions and scope changes that used to land only in `docs/sessions/` and backlog rows should also live **on the issue** — where the work is tracked and where the next session looks first. The convention for any session (or persona) building against a `CUL-NNN`:
+
+- **Scope change discovered mid-build** (the feature turns out bigger / smaller / different than the issue says) → **update the issue description** with `save_issue` (use its `patch` for a surgical edit) so the issue keeps describing the real work. Don't leave the description stale while the truth sits in a comment.
+- **Decisions, persona conflicts, and review findings** (a Conflict-Protocol call, an `adversarial-reviewer` / `pm-feature-review` / `rls-privacy-reviewer` verdict, a resolved Open Question that bears on this issue) → **post an issue comment** with `save_comment`. This is the deliberation trail, and it belongs where the work is.
+- **Genuinely new scope** (a real deferral, not a change to this issue) → **file a new Linear issue** (`save_issue`, team Culprit, `Todo`) — never a `docs/backlog.md` row, never silently folded into an unrelated issue. (Same "when to file" rule as above, restated for the build loop.)
+- **Attribute lightly.** An agent-authored comment names the lens and session behind it — e.g. `— Data Scientist lens, session 2026-08-16-<slug>` — so a human skimming the issue knows who "said" it.
+- **`docs/sessions/` stays.** This is *additive and per-issue*, not a replacement: `docs/sessions/` remains the **cross-issue narrative** (what the whole session did, across every issue it touched); the issue comments are the **per-issue** slice. `/wrap` Step 4 is where both get written.
 
 ---
 
@@ -527,7 +548,7 @@ If the answer to either question is uncertain, it needs more work before it ship
 
 ## Version History
 
-Most recent three versions only. Older entries archived at `docs/CLAUDE-md-history.md`. The three "Future Work / Ideas" items added to CLAUDE.md in v1.15 (detail-screen pattern for History events, Food Library as a top-level nav item, smarter library deletes) have moved to `docs/backlog.md` as B-003/B-004/B-005 — that file is now the single home for deferred items.
+Most recent three versions only. Older entries archived at `docs/CLAUDE-md-history.md`. The three "Future Work / Ideas" items added to CLAUDE.md in v1.15 (detail-screen pattern for History events, Food Library as a top-level nav item, smarter library deletes) have moved to `docs/backlog.md` as B-003/B-004/B-005 (since migrated to Linear with the rest of the backlog — deferred items now live in Linear, team Culprit; `docs/backlog.md` is frozen).
 
 | Version | Date | Summary |
 |---|---|---|

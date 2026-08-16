@@ -5,10 +5,10 @@ Point-in-time evidence captures that inform Nyx product decisions. Each brief is
 ## How research briefs differ from `/docs/` artifacts
 
 - **`/docs/nyx-*-v*.md`** — canonical, versioned product artifacts (spec, schema, design principles). Edited under the Tier-2 protocol in `CLAUDE.md`.
-- **`/docs/backlog.md`** — resolved deferrals. Things we know to do later.
+- **Linear (team Culprit)** — resolved deferrals: things we know to do later. (`docs/backlog.md` is frozen — migrated to Linear 2026-08-15; see CLAUDE.md § Backlog Protocol.)
 - **`/docs/research/`** (this folder) — *evidence*, not decisions. Briefs document what was known at the time so future product calls can be made from a shared base.
 
-A brief should not contain product recommendations. Those belong in the canonical specs or backlog. Briefs answer "what does the evidence say?"; specs answer "what are we going to do about it?"
+A brief should not contain product recommendations. Those belong in the canonical specs or Linear (team Culprit). Briefs answer "what does the evidence say?"; specs answer "what are we going to do about it?"
 
 ## Naming convention
 

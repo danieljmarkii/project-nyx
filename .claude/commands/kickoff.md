@@ -1,5 +1,5 @@
 ---
-description: Start-of-session brief — read STATUS.md + any backlog item blocking the current phase and produce a clean "where we are / what's first" summary. The mirror image of /wrap.
+description: Start-of-session brief — read STATUS.md + query Linear for any issue blocking the current phase and produce a clean "where we are / what's first" summary. The mirror image of /wrap.
 ---
 
 # /kickoff — Start-of-session brief
@@ -10,7 +10,12 @@ Produce a tight, skimmable orientation so a returning session (or the PM) can st
 
 1. **Read `STATUS.md`** (repo root) — the canonical "where are we?": Current Phase, Parallel Track, Blocking Open Questions, Open PM Action Items, Runtime in Use. This is the high-churn state file; CLAUDE.md is the stable manual and usually doesn't need re-reading at kickoff. Then read the **2–3 most recent session records** for what actually shipped last: `ls docs/sessions/ | sort -r | head -3`, and read those files. (`STATUS.md` deliberately carries no session list — see `docs/sessions/README.md`.)
 
-2. **Grep `docs/backlog.md`** — don't read it whole. It's ~453 KB (one row per line, so it's grep-shaped by construction) and a kickoff needs a handful of rows, not all 427: search the **Blocks** column for the current Phase and for anything marked `| Now |`. Surface those — they may pre-empt the obvious next step. The whole-file read is for `view backlog`, not for this. (For a fuller reconcile, the `backlog-groomer` skill is the procedure.)
+2. **Query Linear for what's in flight and what blocks the current Phase** (team **Culprit**, `linear.app/projectnyx`) — `docs/backlog.md` is frozen, so don't grep it; the answer lives in Linear. Use the Linear MCP `list_issues` (not the whole team — a kickoff needs a handful of issues):
+   - **In-flight:** `state: "In Progress"` (and `"In Review"`) on team Culprit — what's actively landing, possibly from a sibling session.
+   - **Phase-relevant:** issues whose **project** is the current build-track (e.g. *Signals v2 — the record, decomposed*, *The Daily Recap*) or whose title/description names the current Phase — pass `project`, or `query` the Phase name. These may pre-empt the obvious next step.
+   - **High-priority ready work:** `Todo` issues at `priority` Urgent/High — the Linear equivalent of the old `| Now |` scan (Now → Urgent/High).
+
+   (For a fuller reconcile, the `backlog-groomer` skill is the on-demand Linear-hygiene procedure.)
 
 3. **Check for blocking Open Questions** (CLAUDE.md § Open Questions → Open, cross-referenced from STATUS.md) that gate the current Phase. If one is blocking and unanswered, the recommended first action is "resolve open question X," not "build."
 

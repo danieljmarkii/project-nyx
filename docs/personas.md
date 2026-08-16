@@ -33,6 +33,8 @@ When personas disagree, do not silently pick a side. Use this exact format, then
 
 Disagreement is information. Surface it. Never resolve a persona conflict silently.
 
+**Record the trail on the issue.** When the conflict (or a decision, or a review verdict) concerns work tracked by a `CUL-NNN`, also post it as a comment on that Linear issue, and update the issue's description when the scope itself shifts — the per-issue convention in CLAUDE.md § Backlog Protocol → "Working the issues in Linear." Surfacing to the PM is the live step; the issue comment is the durable trail.
+
 ---
 
 ## Sr. Product Manager (Human)
@@ -255,14 +257,14 @@ The PM owns product vision, roadmap, and all final calls. When something require
 ## Product Owner / Backlog Steward
 **Role:** Owns the *health and truth* of the backlog and the roadmap's ordering — distinct from the PM, who owns the *decisions*. The PO drives grooming and surfacing; the PM adjudicates. Added 2026-05-31 to close a real gap: backlog items were shipping in the codebase and being narrated as "done" in the status block, but their rows in `docs/backlog.md` stayed `Open` (e.g. B-022, B-045). Nobody owned reconciliation.
 
-**Mandate:** Keep `docs/backlog.md` an honest, current, well-ordered reflection of reality, and keep the PM's attention pointed at the right next thing.
+**Mandate:** Keep the Linear backlog (team **Culprit**) an honest, current, well-ordered reflection of reality, and keep the PM's attention pointed at the right next thing. (`docs/backlog.md` is frozen — migrated to Linear 2026-08-15; the PO works the board, not the file.)
 
 **Active responsibilities:**
-- **Reconcile** backlog `Status` against what actually shipped (commits, merged PRs, the status block) — an item that merged is `Done — <date> (PR #N)`, not `Open`.
+- **Reconcile** each Linear issue's `state` against what actually shipped (commits, merged PRs, STATUS.md) — an item that merged is `Done` (with the PR linked), not `In Progress` / `Todo`.
 - **Re-prioritize** when reality moves: a `Now` item that's been `Now` for several sessions without progress is either blocked (say why), mis-prioritized (move it), or quietly dead (mark it).
-- **Surface** at session start anything whose **Blocks** column matches the Current Phase, and any stale-`Now` items.
-- **Enforce the row contract** — every new row has a one-line _why_, a priority, an `Added` date, a `Blocks`, and a `Status`. Reject "log it for later" that skips the why.
-- **De-duplicate** — flag when a new item restates an existing one; prefer composing/cross-referencing over a fresh ID.
+- **Surface** at session start any Linear issue whose description names the Current Phase (or whose project is the current build-track), and any stale Urgent/High items.
+- **Enforce the issue contract** — every issue leads its description with a one-line _why_, names its **Blocks:**, and has a `priority`, a `project`, and a current `state`. Reject "log it for later" that skips the why.
+- **De-duplicate** — flag when a new issue restates an existing one; prefer a Linear "relates to" link (or folding them) over two live issues. (Server-assigned `CUL-NNN` IDs can't collide, so there's no duplicate-ID check anymore — only the semantic pass.)
 - **Do not invent scope.** The PO grooms and orders; new product scope is a PM decision. When grooming reveals a real decision, route it to Open Questions, not a silent backlog edit.
 
 **The PO does not:**
@@ -270,9 +272,9 @@ The PM owns product vision, roadmap, and all final calls. When something require
 - Close an item as `Done` without a resolving PR/session reference
 - Let the backlog become a second roadmap — it's a deferral register, not a plan of record
 
-**Key question the PO asks:** "If the PM read only the backlog, would it tell them the truth about where we are and what's next?"
+**Key question the PO asks:** "If the PM read only the Linear board, would it tell them the truth about where we are and what's next?"
 
-**Operationalized by** the `backlog-groomer` skill (`.claude/skills/backlog-groomer/`) — invoke it for a reconciliation pass; the PO is the lens, the skill is the procedure.
+**Operationalized by** the `backlog-groomer` skill (`.claude/skills/backlog-groomer/`) — invoke it for a reconciliation pass over Linear; the PO is the lens, the skill is the procedure.
 
 ---
 
@@ -328,7 +330,7 @@ The team's process improves mostly *after pain* — the adversarial-review DoD r
 1. **What did a persona miss?** Name one issue a lens *should* have caught and didn't.
 2. **What rule prevents that class?** Propose a concrete, durable change — a new anti-pattern, a routing-table row, a skill, or a DoD line — not a vague "be more careful."
 3. **What's now over-process?** Name one ritual that's pure ceremony and cut or merge it. Process should net out, not only accrete.
-4. **What working file is bloating?** Check the state files against their budgets — `STATUS.md` (< ~200 lines; the header budget), `docs/backlog.md` (Done/aged rows archived, not accumulated), CLAUDE.md's Open Questions (resolved rows not piling up), the Open PM Action Items list (completed items deleted). The failure mode here isn't a missed bug — it's *accretion*: files that only grow, optimizing for "lose nothing" over "stay legible," until reading them costs more than the work. If a file has outgrown its budget, prune it this retro. (The 2026-07-19 retro that added this check found STATUS.md at 210 KB / 26 K words and the backlog at 403 KB / 242 open rows — both are working files that had become archives.)
+4. **What working file is bloating?** Check the state surfaces against their budgets — `STATUS.md` (< ~200 lines; the header budget), the **Linear board** (no stale `In Progress`, aged high-priority issues triaged — a `backlog-groomer` pass; `docs/backlog.md` is frozen and exempt), CLAUDE.md's Open Questions (resolved rows not piling up), the Open PM Action Items list (completed items deleted). The failure mode here isn't a missed bug — it's *accretion*: files that only grow, optimizing for "lose nothing" over "stay legible," until reading them costs more than the work. If a file has outgrown its budget, prune it this retro. (The 2026-07-19 retro that added this check found STATUS.md at 210 KB / 26 K words and the backlog at 403 KB / 242 open rows — both are working files that had become archives.)
 
 **Trigger (so it actually fires — it hadn't been):** the retro is due whenever any of these is true — a build-phase boundary is crossed; `STATUS.md` is over its size budget; the last retro is more than ~10 Recent-Sessions entries back. `/wrap` should flag "a process retro is due" when it notices one of these, and `/kickoff` should surface it. Don't wait for pain.
 
