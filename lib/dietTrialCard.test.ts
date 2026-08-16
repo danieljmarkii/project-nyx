@@ -27,6 +27,7 @@ import {
   planTrialCard,
   trialIdentityLabel,
   withholdingReasons,
+  isAnimalNotEating,
   formatTrialDate,
   trialEndDayIndex,
   BLIND_SPOT_QUALIFIER,
@@ -1570,6 +1571,71 @@ describe('resolveTrialStrip — the standing line wiring (CUL-13)', () => {
       allowedSetUnavailable: true,
     }))!;
     expect(noComparator.trialResponseLine).not.toBeNull();
+  });
+});
+
+// ── B-789 — the shared NOT-EATING predicate (strip vomit line + Signal card) ──
+//
+// `isAnimalNotEating` is the one predicate the Home strip's standing vomit line and
+// the event-driven Signal trial_response card both suppress on (§5.2). These pin
+// that it fires on exactly the not-eating reasons and NOT on the comparator/thin
+// ones, so the two surfaces can never disagree about the same refusal — and, in
+// particular, that the day-1 diet-refusal cat (whom the relative-decline detector
+// is blind to) is caught here.
+describe('isAnimalNotEating (B-789) — the shared not-eating predicate', () => {
+  it('is false on a plain running trial (no withholding reason)', () => {
+    expect(isAnimalNotEating(activeInput())).toBe(false);
+  });
+
+  it('fires on a relative intake decline', () => {
+    expect(
+      isAnimalNotEating(activeInput({ intakeDeclineHeadline: 'Biscuit has left most of his food for 2 days.' })),
+    ).toBe(true);
+  });
+
+  // The whole point of the lane: a day-1 refusal never trips the relative detector, so
+  // `intakeDeclineHeadline` is null while `trialDietRefusal` is live. The predicate must
+  // still catch it (the B-494 anorexic-cat case, one layer out).
+  it('fires on a live trial-diet refusal even with no intake-decline flag', () => {
+    expect(
+      isAnimalNotEating(activeInput({ trialDietRefusal: REFUSING_NOW, intakeDeclineHeadline: null })),
+    ).toBe(true);
+  });
+
+  it('fires on a whole-range refusal history', () => {
+    expect(isAnimalNotEating(activeInput({ rangeRefusal: REFUSING_RANGE }))).toBe(true);
+  });
+
+  // Scoped to the not-eating subset: a broken off-diet comparator, a free-fed bowl, a dark
+  // antigen arm, an untracked head, or a thin record does NOT make a vomit count dishonest,
+  // so none of them may suppress an otherwise-valid vomiting finding (over-suppression would
+  // lose a real safety-relevant count on the wedge surface — Sam's grazing cat).
+  it('does NOT fire on comparator-only / thin-record withholding reasons', () => {
+    expect(isAnimalNotEating(activeInput({ freeFed: { loggedFeedings: 22 } }))).toBe(false);
+    expect(isAnimalNotEating(activeInput({ allowedSetUnavailable: true }))).toBe(false);
+    expect(isAnimalNotEating(activeInput({ antigenArmDark: true }))).toBe(false);
+    expect(isAnimalNotEating(activeInput({ untrackedDaysBeforeFirstLog: 12 }))).toBe(false);
+    expect(isAnimalNotEating(activeInput({ belowCoverageFloor: true }))).toBe(false);
+  });
+
+  // The consistency guarantee stated as a test: the predicate is exactly the not-eating
+  // subset of the shared `withholdingReasons` list, so a reason added to that list is
+  // classified here rather than silently ignored by one surface.
+  it('agrees with the not-eating subset of withholdingReasons', () => {
+    const notEating = new Set(['intake_decline', 'trial_diet_refusal', 'range_refusal']);
+    for (const over of [
+      {},
+      { intakeDeclineHeadline: 'x' },
+      { trialDietRefusal: REFUSING_NOW },
+      { rangeRefusal: REFUSING_RANGE },
+      { freeFed: { loggedFeedings: 5 } },
+      { allowedSetUnavailable: true },
+      { belowCoverageFloor: true },
+    ] as Array<Partial<TrialCardInput>>) {
+      const input = activeInput(over);
+      const expected = withholdingReasons(input).some((r) => notEating.has(r));
+      expect(isAnimalNotEating(input)).toBe(expected);
+    }
   });
 });
 

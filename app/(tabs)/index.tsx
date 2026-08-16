@@ -16,7 +16,7 @@ import { MedStrip } from '../../components/home/MedStrip';
 import { TodayZone } from '../../components/home/TodayZone';
 import { TrendZone } from '../../components/home/TrendZone';
 import { useDietTrial } from '../../hooks/useDietTrial';
-import { resolveTrialStrip } from '../../lib/dietTrialCard';
+import { resolveTrialStrip, isAnimalNotEating } from '../../lib/dietTrialCard';
 import { isTrialRunning } from '../../lib/dietTrial';
 import { useMedStrips } from '../../hooks/useMedStrips';
 import { resolveMedStrips } from '../../lib/medStrip';
@@ -43,6 +43,15 @@ export default function HomeScreen() {
   // falling reflection's expanded state appends the mid-trial adjacency line. `isTrialRunning`
   // is the one trial predicate (lib/dietTrial), read on the trial's own clock (`nowMs`).
   const trialRunning = trialInput?.trial ? isTrialRunning(trialInput.trial, trialInput.nowMs) : false;
+  // B-789 (§5.2) — suppress the event-driven Signal trial_response card whenever the active pet's
+  // record carries a NOT-EATING concern (a live intake decline or a diet refusal). The card fires
+  // from the server `trial_response` finding, which is blind to the refusal: a diet-trial cat
+  // refusing the prescribed diet from day 1 has uniform-low intake, so the relative-decline detector
+  // never fires and no safety card leads — yet a reassuring "0 vomiting · was 20" would render over a
+  // starving cat. Computed from the SAME `trialInput` the strip below withholds its vomit line on
+  // (`isAnimalNotEating`), so the card and the strip can never disagree about the same refusal — the
+  // exact split the strip fix closed. No second read; null trialInput ⇒ false (no trial ⇒ no card).
+  const suppressTrialResponse = trialInput ? isAnimalNotEating(trialInput) : false;
   // The medication strip's input (B-614 PR M2) — resolved inline below, exactly
   // like the trial strip, so the resolver call and the placement stay on-screen.
   const { input: medInput } = useMedStrips();
@@ -111,7 +120,7 @@ export default function HomeScreen() {
               belongs to a DIFFERENT pet; renders nothing for single-pet households
               or when no other pet has a cached safety finding. */}
           <CrossPetSafetyBanner />
-          <SignalZone trialRunning={trialRunning} />
+          <SignalZone trialRunning={trialRunning} suppressTrialResponse={suppressTrialResponse} />
           {/* B-417 §4.2 — a running trial gets a compact strip here, BELOW Signal
               and ABOVE Today. Deliberate: Principle 3 says safety insights always
               lead, and a trial is context, not an insight. `resolveTrialStrip`

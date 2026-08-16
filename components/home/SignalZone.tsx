@@ -24,6 +24,7 @@ import {
   buildingIntro,
   coverageCopy,
   isSignalsV2Finding,
+  isTrialResponse,
   noPatternIntro,
   staleIntro,
 } from '../../lib/signalCopy';
@@ -43,9 +44,22 @@ interface SignalZoneProps {
   // read). Threaded to the falling reflection's expanded state for the mid-trial adjacency
   // line; default false, so every non-Home caller and the flag-off path are unaffected.
   trialRunning?: boolean;
+  // B-789 (§5.2) — drop the event-driven trial_response card when the active pet's record
+  // carries a NOT-EATING concern (a live intake decline or a diet refusal). The card fires
+  // from the server `trial_response` finding, which is blind to the refusal — the day-1
+  // diet-refusal cat has uniform-low intake, so the relative-decline detector never fires
+  // and no safety card leads, yet a reassuring "0 vomiting · was 20" would render over a
+  // starving cat (the B-494 anorexic-cat case). Home computes this from the SAME `trialInput`
+  // the strip withholds its vomit line on (`isAnimalNotEating`), so the card and the strip
+  // can never disagree. Default false: every non-Home caller and the flag-off path are
+  // unaffected.
+  suppressTrialResponse?: boolean;
 }
 
-export function SignalZone({ trialRunning = false }: SignalZoneProps = {}) {
+export function SignalZone({
+  trialRunning = false,
+  suppressTrialResponse = false,
+}: SignalZoneProps = {}) {
   const {
     findings,
     coverage,
@@ -169,6 +183,7 @@ export function SignalZone({ trialRunning = false }: SignalZoneProps = {}) {
           designV2={designV2}
           signalsV2={signalsV2}
           trialRunning={trialRunning}
+          suppressTrialResponse={suppressTrialResponse}
         />
       ) : state === 'stale' ? (
         <Text style={styles.intro}>{staleIntro(petName)}</Text>
@@ -283,12 +298,14 @@ function LiveStack({
   designV2,
   signalsV2,
   trialRunning,
+  suppressTrialResponse,
 }: {
   findings: CachedFinding[];
   petName: string;
   designV2: boolean;
   signalsV2: boolean;
   trialRunning: boolean;
+  suppressTrialResponse: boolean;
 }) {
   // Drop the Signals-v2 types (the timing-story pair CUL-12 + the trial card CUL-13) when the flag
   // is off: the server computes them uniformly for every account (spec §5), so a non-eligible cache
@@ -299,8 +316,18 @@ function LiveStack({
   // byte-identical. NOTE: displayState/hasUnseen upstream still count the full set (a non-eligible
   // account whose ONLY findings are Signals-v2 types would read 'live' with an empty stack) — an
   // accepted edge until PR 10's flag-off QA, where the full-surface gate is set.
+  //
+  // B-789 (§5.2) — then drop the reassuring trial_response card when the record shows the animal
+  // isn't eating (`suppressTrialResponse`, computed by Home from the same `trialInput` the strip
+  // withholds its vomit line on). SUPPRESSION, NOT REORDER: §5.2 forbids a reassuring summary next
+  // to a refusal even BELOW the safety card, so ranking it down is insufficient — the card must not
+  // render at all. The server emits `trial_response` blind to the refusal (the day-1-refusal cat the
+  // relative-decline lane can't see), and the client is already this card's visibility gate (the
+  // signals_v2 filter above), so this is one more condition on the gate that already governs it. The
+  // finding stays in the cache; nothing consumes it but this stack.
   const ordered = [...findings]
     .filter((f) => signalsV2 || !isSignalsV2Finding(f.finding))
+    .filter((f) => !(suppressTrialResponse && isTrialResponse(f.finding)))
     .sort((a, b) => a.rank - b.rank);
   return (
     <View>
