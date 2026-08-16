@@ -276,6 +276,18 @@ Then read the relevant docs for the confirmed build step before writing any code
 
 **Shortcut:** run `/kickoff` to auto-generate this orientation — it reads `STATUS.md`, queries Linear (team Culprit) for any issue that blocks the current Phase, and proposes a concrete first task. It's the mirror of `/wrap`.
 
+### Starting from a Linear issue (instituted 2026-08-16, CUL-528)
+
+Most sessions now begin by pasting an issue from Linear (team Culprit) via its **"copy as prompt"** action. The workspace's coding-tool prompt template (Linear → Settings → Code & reviews) is a deliberately **thin router** — a *work-path* config a session never `Read`s (per the read-path→git / work-path→Linear rule); it front-loads the launch ritual and defers every rule back to this manual. The durable rules live here. The ritual is **orient → name the mode → close out**:
+
+1. **Orient** as `/kickoff` does, but scoped to *this* issue — read `STATUS.md` and the "Read These Before Writing Any Code" docs for the surface it touches; don't switch to a different task. The issue's **description and its comments** are the spec; newest comment wins on conflict.
+2. **Name the mode** — infer it (a `Feature`/`Fix` or `Research`/`Spec` label is a hint when present, but issues are largely unlabeled, so don't depend on one):
+   - **BUILD** (feature / fix / migration / tooling) → deliver **code + a draft PR**. For anything non-trivial, **post a short plan (files touched + approach) and wait for a go-ahead before coding** — skip the plan only for genuinely mechanical fixes. **Anything touching RLS, Storage, deletion, or export is never "mechanical"**: always plan first and run the `rls-privacy-reviewer`.
+   - **DISCOVERY** (research / investigation / a spec / a design-mock / a decision) → deliver a **recommendation or brief for the PM, posted to the issue** — not merged code, and never start building the thing you were asked to evaluate. Open a draft PR only if the deliverable is itself a committed file (a doc or mock).
+3. **Close out** — BUILD with `/wrap`; DISCOVERY with an outcome comment on the issue (+ a `docs/sessions/` record if substantial). Either way the PR **must reference `CUL-NNN`** — the agent's `claude/<slug>` branch won't (§ Git Workflow → "Merge → Linear status") — it's one PR per session, and **out-of-scope work you discover → file a new `CUL` issue**, never folded in.
+
+The one net-new win is the BUILD **plan-gate** (plan before code — the field's most consistently-cited game-changer); the rest reinforces existing conventions at the moment they're most-skipped. Keep the template a router, not a rulebook: a bloated preamble stacked on an already-large auto-loaded context gets ignored, not obeyed. Product-team-verified worth-it 2026-08-16 (Eng / PO / QA / Data / T&S — qualified GO; full record in the session doc + CUL-528).
+
 ### Presenting decisions to the PM — decision briefs (instituted 2026-08-07, PM directive)
 
 Whenever a PM decision is requested — an Open Questions row, a mock round's reaction prompts (R-x), a decision gate in a session summary, or an escalated persona conflict — present each decision as a **decision brief**, not a bare question:
