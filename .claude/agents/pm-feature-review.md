@@ -80,8 +80,8 @@ Organize every finding the way the PM triages a QA pass, highest-impact first wi
 ### ❓ PM decisions (only you can call these)
 - <the question, with enough context to answer without scrolling back>
 
-### 📋 Backlog candidates (ready for docs/backlog.md)
-- <Title> — <Why, one line> — <Now / Next / Later>
+### 📋 Backlog candidates (ready for Linear — Culprit)
+- <Title> — <Why, one line> — <priority: Urgent / High / Medium / Low>
 
 ### Verdict (per flow)
 - <flow> — SHIP-SHAPED | NEEDS-WORK (blocking: …) | INSUFFICIENT (need: <screenshot/device check>)
