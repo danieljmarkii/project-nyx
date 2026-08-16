@@ -19,31 +19,34 @@ Decision brief presented before building; PM chose the client mechanism. The rea
 ## What shipped (code — client only)
 
 - **`isAnimalNotEating(input)`** (`lib/dietTrialCard.ts`) — extracted the strip's inline `animalNotEating` into one exported predicate, defined as the NOT-EATING subset (`intake_decline | trial_diet_refusal | range_refusal`) of the shared `withholdingReasons` list both surfaces already read. Scoped to EXCLUDE comparator/thin reasons (`free_fed`, `allowed_set_unavailable`, `antigen_arm_dark`, `untracked_head`, `below_floor`) — those don't make a vomit count dishonest, so they must not drop a valid vomiting finding (Sam's grazing cat). `resolveTrialStrip` now calls it (byte-identical — snapshot-pinned).
-- **`app/(tabs)/index.tsx`** — Home computes `suppressTrialResponse = trialInput ? isAnimalNotEating(trialInput) : false` from the `trialInput` it already loads (no second read), and passes it to `SignalZone` beside `trialRunning`.
-- **`components/home/SignalZone.tsx`** — `LiveStack` drops any `trial_response` finding when `suppressTrialResponse` (a second `.filter` beside the existing `isSignalsV2Finding` one). Genuine suppression, not reorder: the card does not render at all. The finding stays in the cache; nothing consumes it but this stack.
-- **Tests:** `lib/dietTrialCard.test.ts` (+6 — `isAnimalNotEating` fires on each not-eating reason incl. the day-1 refusal with `intakeDeclineHeadline` null, NOT on comparator/thin reasons, and agrees with the `withholdingReasons` not-eating subset); `components/home/SignalZone.test.tsx` (+4 — the card drops under `suppressTrialResponse` even with `signals_v2` ON, renders when false/default, and the co-finding is untouched).
+- **`hooks/useDietTrial.ts`** — exposes `inputIsForActivePet` (fail-closed round-1 fix). `input` is retained across a pet switch and a failed reload (so the strip never flashes empty), so a non-null `input` is not proof it belongs to the active pet; `loadedPetId` (set only when a load resolves) makes the freshness explicit.
+- **`app/(tabs)/index.tsx`** — Home computes `suppressTrialResponse` from the `trialInput` it already loads (no second read), **failing closed** on stale/unloaded facts: `trialFactsFresh && trialInput ? isAnimalNotEating(trialInput) : !trialFactsFresh`. Passed to `SignalZone` beside `trialRunning`.
+- **`components/home/SignalZone.tsx`** — `LiveStack` drops a `trial_response` finding when `suppressTrialResponse` **and the direction is `fewer_during_trial`** (the reassuring direction only — round-1 fix). Genuine suppression, not reorder: the card does not render at all. The `more_during_trial` escalation card survives (a concern to keep). The finding stays in the cache; nothing consumes it but this stack.
+- **Tests:** `lib/dietTrialCard.test.ts` (+6 — `isAnimalNotEating` fires on each not-eating reason incl. the day-1 refusal with `intakeDeclineHeadline` null, NOT on comparator/thin reasons, and agrees with the `withholdingReasons` not-eating subset); `components/home/SignalZone.test.tsx` (+5 — the `fewer` card drops under `suppressTrialResponse` even with `signals_v2` ON, renders when false/default, the co-finding is untouched, and the `more` escalation card survives); `hooks/useDietTrial.test.ts` (+2 — `inputIsForActivePet` false during the cold load and the switch window, true when fresh).
 
-`suppressTrialResponse` defaults false: every non-Home caller (there are none but Home) and the flag-off path are unaffected.
+`suppressTrialResponse` defaults false at the `SignalZone` prop: every non-Home caller (there are none but Home) and the flag-off path are unaffected.
 
-## Precondition (a) — verified
+## Precondition (a) — verified (with a correction)
 
-The gate-2 finding required confirming B-494's refusal safety card fires/leads for a day-1 refusal, so suppression doesn't leave silence. Verified two ways:
+The gate-2 finding required confirming B-494's refusal safety card fires/leads for a day-1 refusal, so the record still knows the cat is in trouble:
 
 - **The vet report (B-494, `generate-report`)** fires the `trial_diet_refusal` safety flag for the refusal shapes — including the **owner-declared, no-ratings-at-all** give-up case — and it *leads* (sorts with the intake family, above chronicity). Ran the report's B-494 tests: **3/3 green** (`generate-report/trial.test.ts --filter B-494`).
-- **On Home itself**, the trial STRIP resolves a day-1 refusal to state `trial_refusal` — a safety `flag` register — via `liveRefusal` (`stateFor`, `dietTrialCard.ts`). So suppressing the reassuring card does not leave Home silent on the refusal: the strip below the Signal zone surfaces it.
+- **Correction (adversarial finding 7):** my first draft claimed the Home *strip* resolves a day-1 refusal to a `trial_refusal` safety state. It does **not** — `resolveTrialStrip` never calls `liveRefusal`/the card state machine (those drive the **Pet-tab card**), and on Home the strip stays quiet on the refusal by design ("Silence on Home, the register one tap away"). So with the reassuring card suppressed, **Home does not itself escalate** on the refuser; the refusal is surfaced on the **Pet-tab card + the vet report**. That is defensible for B-789's scope (its job is to remove the *reassurance*; a Home *escalation* for the day-1 refuser is B-494's open scope, not this ticket) — the safe direction is silence over reassurance — but the record was corrected so no one over-claims Home coverage.
 
 ## Reviews
 
-- **`adversarial-reviewer` (DoD-mandatory) — <TBD: verdict + counterexamples>.**
-- **Skills consulted:** `clinical-guardrails` (§5.2 reassuring-summary composition; intake-is-not-preference — a refusal routes toward a health flag, never softened; the suppression fails toward *withholding* reassurance), `nyx-voice` (no new owner-facing strings — pure suppression).
+- **`adversarial-reviewer` (DoD-mandatory) — round 1 FAIL → fixed; round 2 <TBD>.**
+  - **Round 1 FAIL, 3 findings, all addressed:** (1+2, HIGH) the fail-open default let the reassuring card render over a not-eating cat during the cold-load/switch race — fixed by the `inputIsForActivePet` fail-closed gate; (3, MEDIUM) the direction-blind drop also hid the `more_during_trial` escalation — fixed by gating on `fewer_during_trial`; (4, MEDIUM) the empty-'live'-stack sole-finding edge — the documented CUL-12 edge, safe-direction, mitigated by the direction fix, filed as **CUL-527**. It also corrected precondition (a) (finding 7, above).
+  - **Round 2 (re-review of the fixes):** <TBD>.
+- **Skills consulted:** `clinical-guardrails` (§5.2 reassuring-summary composition; intake-is-not-preference — a refusal routes toward a health flag, never softened; the suppression fails toward *withholding* reassurance, and the round-1 fix hardened that under load), `nyx-voice` (no new owner-facing strings — pure suppression).
 
 ## DoD
 
-- [ ] **Types** — `tsc --noEmit` clean.
-- [ ] **Tests** — full jest green; the strip snapshot unchanged (byte-identical refactor). No Edge Function / deno change (client-only).
-- [ ] **Anti-patterns** — theme-token-only (no style change); one shared predicate (no third refusal definition); suppression not reorder (§5.2).
-- [ ] **Adversarial review** — run on the chosen mechanism.
-- **Persona sign-off:** Data/Adversarial — <TBD> · Dr. Chen ✓ (the never-reassure asymmetry: the card is withheld, never a reassuring claim minted; precondition (a) keeps the refusal surfaced) · Designer ✓ (no visual change; the card simply doesn't render) · Engineer ✓ (one predicate, no second read, no bundle) · QA ✓ (suites green).
+- [x] **Types** — `tsc --noEmit` clean.
+- [x] **Tests** — full jest 237 suites / 5276 green; the strip snapshot unchanged (byte-identical refactor). No Edge Function / deno change (client-only).
+- [x] **Anti-patterns** — theme-token-only (no style change); one shared predicate (no third refusal definition); suppression not reorder (§5.2); fail-closed under uncertainty (never-reassure).
+- [ ] **Adversarial review** — round 1 run (FAIL → fixed); round 2 pending on the fixes.
+- **Persona sign-off:** Data/Adversarial — round 1 FAIL fixed, round 2 pending · Dr. Chen ✓ (the never-reassure asymmetry: the card is withheld, never a reassuring claim minted, and now under load too; escalations are kept) · Designer ✓ (no visual change; the card simply doesn't render) · Engineer ✓ (one predicate, no second read, no bundle; fail-closed freshness) · QA ✓ (suites green).
 
 ## Documentation updates
 

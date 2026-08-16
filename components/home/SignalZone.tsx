@@ -331,11 +331,11 @@ function LiveStack({
   // it would lose the only card carrying the rise in the ④/⑦ dead zone — the never-reassure direction).
   // So gate on the direction, not on `isTrialResponse` alone.
   //
-  // Residual (finding 4, filed): when a suppressed `fewer` card is the SOLE finding, `displayState`
+  // Residual (finding 4 → CUL-527): when a suppressed `fewer` card is the SOLE finding, `displayState`
   // (derived upstream over the full set) still reads 'live' and this stack renders empty — the exact
   // CUL-12 edge documented above, now reachable for an eligible not-eating pet. Safe direction (no
   // reassurance), and the escalation case is closed by the direction gate; the displayState fix rides
-  // the shared CUL-12 follow-up. The finding stays in the cache; nothing consumes it but this stack.
+  // the shared CUL-12 follow-up (CUL-527). The finding stays in the cache; nothing consumes it but this stack.
   const ordered = [...findings]
     .filter((f) => signalsV2 || !isSignalsV2Finding(f.finding))
     .filter(
