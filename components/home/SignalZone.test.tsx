@@ -39,7 +39,7 @@ import { AccessibilityInfo, Platform } from 'react-native';
 import { SignalZone } from './SignalZone';
 import { theme } from '../../constants/theme';
 import type { SignalState } from '../../hooks/useSignal';
-import type { CachedFinding, CoverageDiagnostic } from '../../lib/signal';
+import type { CachedFinding, CoverageDiagnostic, TrialResponseFinding } from '../../lib/signal';
 import {
   ackUpdatingCopy,
   buildingIntro,
@@ -521,5 +521,76 @@ describe('SignalZone — CUL-12 signals_v2 LiveStack filter', () => {
     const on = render(<SignalZone />);
     expect(on.queryByText('Day 20 of 56')).toBeTruthy();
     expect(on.queryByText('A live finding sentence.')).toBeTruthy();
+  });
+
+  // ── B-789 (§5.2) — the not-eating suppression of the reassuring trial_response card ──
+  // Home passes `suppressTrialResponse` (computed from the same `trialInput` the strip
+  // withholds its vomit line on, `isAnimalNotEating`) so a reassuring "0 vomiting · was 20"
+  // never renders over a day-1 diet-refusal cat the relative-decline lane can't see. This is
+  // SUPPRESSION, not reorder: the card must not render at all, even below a safety card.
+  describe('B-789 suppression on a not-eating record', () => {
+    it('drops the trial card when suppressTrialResponse is set, even with signals_v2 ON; keeps the other findings', () => {
+      mockUseAllowlistFlag.mockImplementation((key: string) => key === 'signals_v2');
+      mockUseSignal.mockReturnValue(
+        signalState({ displayState: 'live', findings: [liveFinding, trialFinding] }),
+      );
+      const view = render(<SignalZone suppressTrialResponse />);
+      // The trial card is gone (its "Day 20 of 56" face is not rendered)…
+      expect(view.queryByText('Day 20 of 56')).toBeNull();
+      // …but the co-finding still renders — no stray gap where the card was.
+      expect(view.queryByText('A live finding sentence.')).toBeTruthy();
+    });
+
+    it('renders the trial card when suppressTrialResponse is false (the eating trial, signals_v2 ON)', () => {
+      mockUseAllowlistFlag.mockImplementation((key: string) => key === 'signals_v2');
+      mockUseSignal.mockReturnValue(
+        signalState({ displayState: 'live', findings: [liveFinding, trialFinding] }),
+      );
+      const view = render(<SignalZone suppressTrialResponse={false} />);
+      expect(view.queryByText('Day 20 of 56')).toBeTruthy();
+      expect(view.queryByText('A live finding sentence.')).toBeTruthy();
+    });
+
+    it('defaults to not suppressing — a non-Home caller (no prop) renders the card flag-on', () => {
+      mockUseAllowlistFlag.mockImplementation((key: string) => key === 'signals_v2');
+      mockUseSignal.mockReturnValue(
+        signalState({ displayState: 'live', findings: [liveFinding, trialFinding] }),
+      );
+      expect(render(<SignalZone />).queryByText('Day 20 of 56')).toBeTruthy();
+    });
+
+    it('suppression is scoped to the trial card — a non-trial finding is untouched when set', () => {
+      // The predicate drops ONLY trial_response; the intake_decline safety card (which is
+      // exactly what leads over an eating-decline record) must still render.
+      mockUseAllowlistFlag.mockImplementation((key: string) => key === 'signals_v2');
+      mockUseSignal.mockReturnValue(
+        signalState({ displayState: 'live', findings: [liveFinding, trialFinding] }),
+      );
+      const view = render(<SignalZone suppressTrialResponse />);
+      expect(view.queryByText('A live finding sentence.')).toBeTruthy();
+      expect(view.queryByText('Day 20 of 56')).toBeNull();
+    });
+
+    // Direction-aware (adversarial-reviewer): only the REASSURING `fewer_during_trial` card is the
+    // §5.2 hazard. A `more_during_trial` card is a vomiting ESCALATION during the trial — on a
+    // not-eating cat that is a concern to KEEP, not a reassurance to hide. It must survive the
+    // suppression (dropping it would lose the only card carrying the rise in the ④/⑦ dead zone).
+    it('keeps a more_during_trial ESCALATION card even when suppressTrialResponse is set', () => {
+      const moreFinding: TrialResponseFinding = {
+        ...(trialFinding.finding as TrialResponseFinding),
+        comparisonDirection: 'more_during_trial',
+        pooledTrialCount: 8,
+        pooledBaselineCount: 2,
+      };
+      const moreTrialFinding: CachedFinding = { ...trialFinding, finding: moreFinding };
+      mockUseAllowlistFlag.mockImplementation((key: string) => key === 'signals_v2');
+      mockUseSignal.mockReturnValue(
+        signalState({ displayState: 'live', findings: [liveFinding, moreTrialFinding] }),
+      );
+      const view = render(<SignalZone suppressTrialResponse />);
+      // The escalation card renders (its "Day 20 of 56" face is present — no fewer card to confuse it)…
+      expect(view.queryByText('Day 20 of 56')).toBeTruthy();
+      expect(view.queryByText('A live finding sentence.')).toBeTruthy();
+    });
   });
 });

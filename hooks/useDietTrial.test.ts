@@ -108,6 +108,42 @@ describe('useDietTrial', () => {
     expect(mockedLoad).not.toHaveBeenCalled();
   });
 
+  // B-789 — the fail-closed freshness signal. `input` is retained across a switch and a failed
+  // reload (so the strip never flashes empty), so a consumer that must suppress a reassuring card
+  // over a not-eating cat cannot trust a non-null `input`; `inputIsForActivePet` is the flag it
+  // reads instead.
+  it('B-789 — inputIsForActivePet is false until the active pet’s facts load, then true', async () => {
+    const { result } = renderHook(() => useDietTrial());
+    // Before the async load resolves, the retained input is null and reported not-for-active-pet.
+    expect(result.current.inputIsForActivePet).toBe(false);
+    await waitFor(() => expect(result.current.input).toBe(FACTS_A));
+    expect(result.current.inputIsForActivePet).toBe(true);
+  });
+
+  it('B-789 — inputIsForActivePet goes false across a pet switch until the new pet’s facts load', async () => {
+    const PET2 = { ...PET, id: 'pet-2', name: 'Mochi' } as const;
+    mockedLoad.mockReset();
+    // Gate the second load so the switch window is observable: input retained (FACTS_A), but stale.
+    let resolveB: (v: unknown) => void = () => {};
+    mockedLoad
+      .mockResolvedValueOnce(FACTS_A)
+      .mockImplementationOnce(() => new Promise((r) => { resolveB = r; }));
+
+    const { result } = renderHook(() => useDietTrial());
+    await waitFor(() => expect(result.current.inputIsForActivePet).toBe(true));
+
+    // Switch pets — the hook holds the OLD input while the new load is in flight, but the flag must
+    // report it stale so the B-789 consumer fails closed (never a reassuring card over the new pet).
+    act(() => usePetStore.setState({ pets: [PET2], activePet: PET2 }));
+    await waitFor(() => expect(result.current.inputIsForActivePet).toBe(false));
+    expect(result.current.input).toBe(FACTS_A); // retained (no empty flash), but reported stale
+
+    // Once the new pet’s facts land, it is fresh again.
+    act(() => resolveB(FACTS_B));
+    await waitFor(() => expect(result.current.input).toBe(FACTS_B));
+    expect(result.current.inputIsForActivePet).toBe(true);
+  });
+
   // A total read failure must LEAVE THE PREVIOUS INPUT IN PLACE rather than flash an
   // empty state — the hook's own comment: "never a claim, in either direction".
   it('keeps the last-good input on a read failure and logs, never flashing empty', async () => {

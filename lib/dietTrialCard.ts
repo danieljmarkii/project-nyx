@@ -710,6 +710,43 @@ export function withholdingReasons(input: TrialCardInput): TrialCardWithholding[
 }
 
 /**
+ * The NOT-EATING subset of `withholdingReasons` — the reasons that make a
+ * REASSURING record summary (a falling vomit count) dishonest BESIDE them, as
+ * opposed to the reasons that only make a COVERAGE ratio unstatable. The line is
+ * "does this reason mean the animal isn't eating?": an intake decline or a diet
+ * refusal does; a broken off-diet comparator (`allowed_set_unavailable`), a
+ * free-fed bowl (`free_fed`), a dark antigen arm, an untracked head, or a thin
+ * record (`below_floor`) does NOT — a vomit count stays honest next to any of
+ * those, and dropping it there would lose a real safety-relevant count on the
+ * wedge surface (Sam's grazing cat).
+ */
+const NOT_EATING_WITHHOLDING: readonly TrialCardWithholding[] = [
+  'intake_decline',
+  'trial_diet_refusal',
+  'range_refusal',
+];
+
+/**
+ * Does the record carry a NOT-EATING safety concern — a live intake decline or a
+ * diet refusal — that forbids a reassuring vomit-count summary beside it (§5.2)?
+ *
+ * ONE PREDICATE, TWO CONSUMERS. The Home trial strip's standing vomit line
+ * (`resolveTrialStrip`) and the event-driven Signal trial card (B-789, dropped in
+ * `SignalZone`'s LiveStack) both suppress on THIS, so the two surfaces can never
+ * disagree about the same refusal — the card reassuring "0 vomiting · was 20"
+ * while the strip withholds the identical line was the exact split B-789 closed.
+ * It reads the SAME `withholdingReasons` list both surfaces already share (scoped
+ * to the not-eating subset above), so a reason cannot be added to one surface and
+ * forgotten on the other. `trial_diet_refusal` / `range_refusal` are keyed on the
+ * raw refusal facts, not on `liveRefusal`'s stand-down (see `withholdingReasons`),
+ * so the same day-1-refusal cat the relative-decline detector is blind to is
+ * caught here.
+ */
+export function isAnimalNotEating(input: TrialCardInput): boolean {
+  return withholdingReasons(input).some((r) => NOT_EATING_WITHHOLDING.includes(r));
+}
+
+/**
  * R1 — MAY THE LIVE REFUSAL REGISTER SPEAK, AND FROM WHICH FACT?
  *
  * The now-fact speaks for itself. `trialDietRefusal` is recency-bounded and
@@ -2554,12 +2591,11 @@ export function resolveTrialStrip(input: TrialCardInput): TrialStripModel | null
   // relative-decline detector never fires and `intakeDeclineHeadline` is null — yet a live
   // `trialDietRefusal` IS on record. Without this gate the strip renders "Vomiting: 0 · was 20, a
   // longer stretch" under a starving cat (the canonical B-494 anorexic-cat case, one layer out), and
-  // B-775's "a longer stretch" clause amplifies the false magnitude. The vomit line joins the SAME
-  // withholding discipline the coverage line uses (`withholdingReasons`), but scoped to the NOT-EATING
-  // reasons only: a broken off-diet comparator, a free-fed arrangement, or a thin record does NOT make
-  // the vomit count dishonest, so those must not drop an otherwise-valid vomiting finding.
-  const animalNotEating =
-    !!input.intakeDeclineHeadline || !!input.trialDietRefusal || !!input.rangeRefusal;
+  // B-775's "a longer stretch" clause amplifies the false magnitude. `isAnimalNotEating` is the SAME
+  // predicate the B-789 Signal card suppresses on (one definition, two surfaces), scoped to the
+  // NOT-EATING reasons only: a broken off-diet comparator, a free-fed arrangement, or a thin record
+  // does NOT make the vomit count dishonest, so those must not drop an otherwise-valid vomiting finding.
+  const animalNotEating = isAnimalNotEating(input);
   return {
     header,
     line: parts.length > 0 ? parts.join(' · ') : null,
