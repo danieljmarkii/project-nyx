@@ -36,8 +36,8 @@ export default function HomeScreen() {
   const scrollRef = useRef<ScrollView>(null);
   const [refreshing, setRefreshing] = useState(false);
   // Same loader as the Pet-tab card, so the two surfaces cannot disagree about
-  // the same trial (B-417 PR 4).
-  const { input: trialInput } = useDietTrial();
+  // the same trial (B-417 PR 4). `inputIsForActivePet` fails closed for B-789 below.
+  const { input: trialInput, inputIsForActivePet: trialFactsFresh } = useDietTrial();
   // B-721 SR-5 (§3.4) — is a trial running for the active pet? Computed here from the
   // trial input Home already loads (no second read) and passed to SignalZone, where a
   // falling reflection's expanded state appends the mid-trial adjacency line. `isTrialRunning`
@@ -49,9 +49,18 @@ export default function HomeScreen() {
   // refusing the prescribed diet from day 1 has uniform-low intake, so the relative-decline detector
   // never fires and no safety card leads — yet a reassuring "0 vomiting · was 20" would render over a
   // starving cat. Computed from the SAME `trialInput` the strip below withholds its vomit line on
-  // (`isAnimalNotEating`), so the card and the strip can never disagree about the same refusal — the
-  // exact split the strip fix closed. No second read; null trialInput ⇒ false (no trial ⇒ no card).
-  const suppressTrialResponse = trialInput ? isAnimalNotEating(trialInput) : false;
+  // (`isAnimalNotEating`), so the card and the strip can never disagree about the same refusal.
+  //
+  // FAIL CLOSED on stale/unloaded facts (adversarial-reviewer): `useDietTrial` loads async and is
+  // heavier than the Signal-cache read, and it RETAINS the previous pet's `trialInput` across a
+  // switch — so a non-null `trialInput` is not proof it belongs to the pet the Signal is for, and a
+  // plain `trialInput ? … : false` let the reassuring card render before the facts landed (cold
+  // start) or over the wrong pet (a switch). Absence of a refusal fact during a load is NOT evidence
+  // of eating (n=1 never reassures), so suppress until the facts are confirmed for the active pet
+  // (`inputIsForActivePet`). That flag stays true across a same-pet sync, so this never flickers the
+  // card on a routine refresh.
+  const suppressTrialResponse =
+    trialFactsFresh && trialInput ? isAnimalNotEating(trialInput) : !trialFactsFresh;
   // The medication strip's input (B-614 PR M2) — resolved inline below, exactly
   // like the trial strip, so the resolver call and the placement stay on-screen.
   const { input: medInput } = useMedStrips();

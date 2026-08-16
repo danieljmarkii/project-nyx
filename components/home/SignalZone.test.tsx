@@ -39,7 +39,7 @@ import { AccessibilityInfo, Platform } from 'react-native';
 import { SignalZone } from './SignalZone';
 import { theme } from '../../constants/theme';
 import type { SignalState } from '../../hooks/useSignal';
-import type { CachedFinding, CoverageDiagnostic } from '../../lib/signal';
+import type { CachedFinding, CoverageDiagnostic, TrialResponseFinding } from '../../lib/signal';
 import {
   ackUpdatingCopy,
   buildingIntro,
@@ -569,6 +569,28 @@ describe('SignalZone — CUL-12 signals_v2 LiveStack filter', () => {
       const view = render(<SignalZone suppressTrialResponse />);
       expect(view.queryByText('A live finding sentence.')).toBeTruthy();
       expect(view.queryByText('Day 20 of 56')).toBeNull();
+    });
+
+    // Direction-aware (adversarial-reviewer): only the REASSURING `fewer_during_trial` card is the
+    // §5.2 hazard. A `more_during_trial` card is a vomiting ESCALATION during the trial — on a
+    // not-eating cat that is a concern to KEEP, not a reassurance to hide. It must survive the
+    // suppression (dropping it would lose the only card carrying the rise in the ④/⑦ dead zone).
+    it('keeps a more_during_trial ESCALATION card even when suppressTrialResponse is set', () => {
+      const moreFinding: TrialResponseFinding = {
+        ...(trialFinding.finding as TrialResponseFinding),
+        comparisonDirection: 'more_during_trial',
+        pooledTrialCount: 8,
+        pooledBaselineCount: 2,
+      };
+      const moreTrialFinding: CachedFinding = { ...trialFinding, finding: moreFinding };
+      mockUseAllowlistFlag.mockImplementation((key: string) => key === 'signals_v2');
+      mockUseSignal.mockReturnValue(
+        signalState({ displayState: 'live', findings: [liveFinding, moreTrialFinding] }),
+      );
+      const view = render(<SignalZone suppressTrialResponse />);
+      // The escalation card renders (its "Day 20 of 56" face is present — no fewer card to confuse it)…
+      expect(view.queryByText('Day 20 of 56')).toBeTruthy();
+      expect(view.queryByText('A live finding sentence.')).toBeTruthy();
     });
   });
 });

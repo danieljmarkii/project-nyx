@@ -17,6 +17,7 @@ export function useDietTrial(): {
   input: TrialCardInput | null;
   isLoading: boolean;
   reload: () => void;
+  inputIsForActivePet: boolean;
 } {
   const { activePet, pets } = usePetStore();
   // Recompute after a sync cycle hydrates new events, the same trigger the Trend
@@ -33,6 +34,11 @@ export function useDietTrial(): {
   const signalsV2OptedIn = useBetaOptIn('signals_v2');
   const signalsV2 = signalsV2Eligible && signalsV2OptedIn;
   const [input, setInput] = useState<TrialCardInput | null>(null);
+  // B-789 — the petId `input` was last loaded FOR. `input` is deliberately retained across a
+  // pet switch and a failed reload (so the strip never flashes empty), so a non-null `input` is
+  // not proof it belongs to the active pet; this is. Set only when a load resolves (batched with
+  // `setInput`, so the two never disagree), null before the first load and after a no-pet clear.
+  const [loadedPetId, setLoadedPetId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [tick, setTick] = useState(0);
 
@@ -51,6 +57,7 @@ export function useDietTrial(): {
   useEffect(() => {
     if (!petId || !petName || !species) {
       setInput(null);
+      setLoadedPetId(null);
       setIsLoading(false);
       return;
     }
@@ -62,10 +69,14 @@ export function useDietTrial(): {
       otherPetNames: otherKey === '' ? [] : otherKey.split('|'),
       signalsV2,
     })
-      .then((next) => { if (!cancelled) setInput(next); })
+      .then((next) => { if (!cancelled) { setInput(next); setLoadedPetId(petId); } })
       .catch((e) => {
         // A total read failure leaves the previous input in place rather than
-        // flashing an empty state — never a claim, in either direction.
+        // flashing an empty state — never a claim, in either direction. `loadedPetId`
+        // is likewise left as-is, so `inputIsForActivePet` reflects what `input` still
+        // holds: on a cold-load error it stays null (⇒ a fail-closed consumer suppresses),
+        // and on a same-pet reload error it stays this pet (⇒ the last-good input is
+        // treated as current, matching the retained value above).
         console.error('[DietTrial] load failed:', e);
       })
       .finally(() => { if (!cancelled) setIsLoading(false); });
@@ -73,5 +84,15 @@ export function useDietTrial(): {
     return () => { cancelled = true; };
   }, [petId, petName, species, sex, otherKey, hydrationTick, tick, signalsV2]);
 
-  return { input, isLoading, reload };
+  return {
+    input,
+    isLoading,
+    reload,
+    // B-789 — is `input` loaded for the CURRENTLY active pet? False during the cold load, the
+    // whole pet-switch window (this hook holds the previous pet's `input` until the new load
+    // resolves, while `useSignal` resets its findings synchronously), and after a cold-load
+    // error — exactly the windows where a fail-closed consumer must not trust `input`. A same-pet
+    // hydration reload keeps `loadedPetId === petId`, so it stays true across a routine sync.
+    inputIsForActivePet: loadedPetId !== null && loadedPetId === petId,
+  };
 }

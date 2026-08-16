@@ -317,17 +317,35 @@ function LiveStack({
   // account whose ONLY findings are Signals-v2 types would read 'live' with an empty stack) — an
   // accepted edge until PR 10's flag-off QA, where the full-surface gate is set.
   //
-  // B-789 (§5.2) — then drop the reassuring trial_response card when the record shows the animal
-  // isn't eating (`suppressTrialResponse`, computed by Home from the same `trialInput` the strip
-  // withholds its vomit line on). SUPPRESSION, NOT REORDER: §5.2 forbids a reassuring summary next
-  // to a refusal even BELOW the safety card, so ranking it down is insufficient — the card must not
-  // render at all. The server emits `trial_response` blind to the refusal (the day-1-refusal cat the
-  // relative-decline lane can't see), and the client is already this card's visibility gate (the
-  // signals_v2 filter above), so this is one more condition on the gate that already governs it. The
-  // finding stays in the cache; nothing consumes it but this stack.
+  // B-789 (§5.2) — then drop the trial_response card when the record shows the animal isn't eating
+  // (`suppressTrialResponse`, computed by Home from the same `trialInput` the strip withholds its
+  // vomit line on). SUPPRESSION, NOT REORDER: §5.2 forbids a reassuring summary next to a refusal
+  // even BELOW the safety card, so ranking it down is insufficient — the card must not render at all.
+  // The server emits `trial_response` blind to the refusal (the day-1-refusal cat the relative-decline
+  // lane can't see), and the client is already this card's visibility gate (the signals_v2 filter
+  // above), so this is one more condition on the gate that already governs it.
+  //
+  // DIRECTION-AWARE (adversarial-reviewer): only the REASSURING `fewer_during_trial` card is the
+  // §5.2 hazard. `detectTrialResponse` also emits `more_during_trial` — a vomiting ESCALATION during
+  // the trial — and on a not-eating cat that is a concern to KEEP, not a reassurance to hide (dropping
+  // it would lose the only card carrying the rise in the ④/⑦ dead zone — the never-reassure direction).
+  // So gate on the direction, not on `isTrialResponse` alone.
+  //
+  // Residual (finding 4, filed): when a suppressed `fewer` card is the SOLE finding, `displayState`
+  // (derived upstream over the full set) still reads 'live' and this stack renders empty — the exact
+  // CUL-12 edge documented above, now reachable for an eligible not-eating pet. Safe direction (no
+  // reassurance), and the escalation case is closed by the direction gate; the displayState fix rides
+  // the shared CUL-12 follow-up. The finding stays in the cache; nothing consumes it but this stack.
   const ordered = [...findings]
     .filter((f) => signalsV2 || !isSignalsV2Finding(f.finding))
-    .filter((f) => !(suppressTrialResponse && isTrialResponse(f.finding)))
+    .filter(
+      (f) =>
+        !(
+          suppressTrialResponse &&
+          isTrialResponse(f.finding) &&
+          f.finding.comparisonDirection === 'fewer_during_trial'
+        ),
+    )
     .sort((a, b) => a.rank - b.rank);
   return (
     <View>
