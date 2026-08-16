@@ -61,6 +61,16 @@ export default function HomeScreen() {
   // card on a routine refresh.
   const suppressTrialResponse =
     trialFactsFresh && trialInput ? isAnimalNotEating(trialInput) : !trialFactsFresh;
+  // B-789 — the trial strip's standing vomit line (CUL-13) is the SAME reassuring summary the card
+  // carries, and `resolveTrialStrip` reads the retained `trialInput` directly, so across a pet switch it
+  // can lag onto the previous (eating) pet's count over a now-active refuser. Withhold that ONE line
+  // until the active pet's facts are confirmed (the same fail-closed rule as the card), so the strip and
+  // the card can never disagree about the same refusal — not even during the switch window. The rest of
+  // the strip is untouched, and a fresh input passes through unchanged, so the steady state is
+  // byte-identical (`resolveTrialStrip` already withholds this line on a not-eating record).
+  const rawTrialStrip = trialInput ? resolveTrialStrip(trialInput) : null;
+  const trialStripModel =
+    rawTrialStrip && !trialFactsFresh ? { ...rawTrialStrip, trialResponseLine: null } : rawTrialStrip;
   // The medication strip's input (B-614 PR M2) — resolved inline below, exactly
   // like the trial strip, so the resolver call and the placement stay on-screen.
   const { input: medInput } = useMedStrips();
@@ -135,7 +145,7 @@ export default function HomeScreen() {
               lead, and a trial is context, not an insight. `resolveTrialStrip`
               returns null unless a trial is ACTIVE, so Home gains nothing when
               there isn't one. */}
-          <TrialStrip model={trialInput ? resolveTrialStrip(trialInput) : null} />
+          <TrialStrip model={trialStripModel} />
           {/* B-614 §8/D9 — one compact strip PER active/recent medication, BELOW
               the trial strip and ABOVE Today. The trial is the wedge's primary
               object (8–12 weeks); a 14-day course is the shorter-lived guest. A
