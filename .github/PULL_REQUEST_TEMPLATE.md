@@ -1,6 +1,9 @@
 ## What changed and why
 <!-- The "why" is the important part. What problem does this solve or what step does it advance? -->
 
+## Linear issue(s)
+<!-- Reference each CUL-NNN this PR advances (e.g. "Fixes CUL-183", or a bare "CUL-183") so the GitHub↔Linear integration auto-links the PR and moves the issue's status on merge. Team Culprit. -->
+
 ## Build step
 <!-- Which step/sub-step in the build sequence does this advance? -->
 Step — 

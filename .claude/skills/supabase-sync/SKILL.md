@@ -215,7 +215,7 @@ The same shape is in `vet_visit_attachments` (lines 28–46) and in `event_ai_an
 
 These are gaps between what the skill claims and what the code currently does. They are intentionally left open for PM decision rather than silently "fixed" in this skill.
 
-1. **The session-freshness check (Pattern 4) is inconsistent across sync writers.** `syncPendingMeals` (`lib/sync.ts:8`), `syncPendingEvents` (`:101`), and `ensureEventAttachmentsSynced` (`:244`) all do it. `syncPendingVetVisits` (`:155`) and `syncPendingAttachments` (`:209`) do **not**. The asymmetry is likely accidental (vet-visits and the generic attachment sweep are older code paths). Cheap fix: lift the check into a tiny helper and call it at the top of every writer. Worth a one-line backlog row.
+1. **The session-freshness check (Pattern 4) is inconsistent across sync writers.** `syncPendingMeals` (`lib/sync.ts:8`), `syncPendingEvents` (`:101`), and `ensureEventAttachmentsSynced` (`:244`) all do it. `syncPendingVetVisits` (`:155`) and `syncPendingAttachments` (`:209`) do **not**. The asymmetry is likely accidental (vet-visits and the generic attachment sweep are older code paths). Cheap fix: lift the check into a tiny helper and call it at the top of every writer. Worth a one-line Linear issue (team Culprit).
 
 2. **The recovery path (`ensureEventAttachmentsSynced`) exists only for event attachments.** If vet visit attachments ever need the same backfill (and given migration 003 was never applied to the live DB, the symmetric bug class exists), there is no equivalent. Add `ensureVetVisitAttachmentsSynced` when/if it's needed; or generalize into `ensureAttachmentsSyncedForParent(table, parentColumn, parentId)`.
 

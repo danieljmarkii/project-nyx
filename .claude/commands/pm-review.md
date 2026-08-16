@@ -17,7 +17,7 @@ Use it when a feature (or a cluster of PRs) is built and you want the "would a r
 3. **Relay its structured output** to the PM (the broken / works-but-confusing / design-gaps / missing / PM-decisions / backlog taxonomy + per-flow verdict). Don't re-litigate its findings; surface them.
 
 4. **Offer to act on the tail:**
-   - File the **📋 backlog candidates** into `docs/backlog.md` (per the Backlog Protocol — capture immediately, don't batch).
+   - File the **📋 backlog candidates** into **Linear** (team Culprit, via `save_issue`) — per the Backlog Protocol, capture immediately, don't batch.
    - Add the **❓ PM decisions** to the Open Questions table.
    - Tee up the **🐞 broken** items for a fixes branch (or hand to `/code-review` for correctness depth).
 

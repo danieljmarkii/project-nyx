@@ -95,7 +95,7 @@ Stay in Expo managed workflow for the MVP. Do not eject unless a required native
 │   ├── nyx-research-v1_0.md                # Market / clinical / persona research dossier
 │   ├── nyx-competitive-landscape-v1_0.md   # Competitor + strategic-gap analysis
 │   ├── personas.md                         # Full personas + subagent/skill model
-│   ├── backlog.md                          # Deferred items (B-NNN)
+│   ├── backlog.md                          # FROZEN historical record — deferred items now in Linear (team Culprit)
 │   ├── *-requirements.md                   # Per-feature build specs
 │   └── research/                           # Append-only evidence briefs + README index
 └── supabase/

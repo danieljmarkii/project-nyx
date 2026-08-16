@@ -192,7 +192,7 @@ Plain cause, a concrete recovery (replace the photo), and the honest health back
 
 Gaps between what this skill asserts and what the code currently enforces. Left open for PM decision rather than silently "fixed."
 
-1. **The voice rules are tested only on the AI read path.** Pattern 4's no-`!` assertion and Pattern 6's no-reassure regex live in `analyze-vomit/index.test.ts`. No equivalent guard exists for the home-zone strings, empty states, or alerts — they hold to voice by authorship, not by test. A lightweight option: a copy lint/test that scans rendered string literals in `components/` for `!` and the reassurance vocabulary. Worth a backlog row if copy drift becomes real; not obviously worth the maintenance now.
+1. **The voice rules are tested only on the AI read path.** Pattern 4's no-`!` assertion and Pattern 6's no-reassure regex live in `analyze-vomit/index.test.ts`. No equivalent guard exists for the home-zone strings, empty states, or alerts — they hold to voice by authorship, not by test. A lightweight option: a copy lint/test that scans rendered string literals in `components/` for `!` and the reassurance vocabulary. Worth a Linear issue (team Culprit) if copy drift becomes real; not obviously worth the maintenance now.
 
 2. **Model-emitted `read_text` is unguarded for voice, not just for reassurance.** `clinical-guardrails` Ambiguity #1 already flags that the model's own `read_text` isn't regex-checked for reassurance. The same gap applies to *voice*: the model could emit an exclamation mark or a jargon term ("emesis") in the clean-photo path, and nothing catches it before display. If a post-call check is added for reassurance, fold the `!` and jargon checks into the same pass.
 

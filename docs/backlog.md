@@ -1,5 +1,7 @@
 # Project Nyx — Backlog
 
+> ⚠️ **FROZEN (2026-08-15) — this file is a historical record, not a live process.** The intro below describes how the backlog worked *before* the migration to Linear. **New items now go to Linear (team Culprit), never here** — see the "FROZEN — migrated to Linear" banner further down, and CLAUDE.md § Backlog Protocol.
+
 A running list of items intentionally deferred from the current build sequence. This is the destination for anything that would otherwise be said as "let's log that for the future."
 
 **Access:** PM can type `view backlog`, `show backlog`, or any natural-language equivalent in a session — Claude reads this file and presents it grouped by priority, surfacing anything that blocks the current build phase first.
