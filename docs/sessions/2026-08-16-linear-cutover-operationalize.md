@@ -38,3 +38,19 @@ This PR is the first to run the workflow it establishes. Observed live: PR #664'
 ## Residuals (out of scope this session — tracked in the Linear project)
 
 From #663, still open in the project: the Legacy Backlog subsystem-split, the priority-mapping spot-check, and 10 malformed rows unmigrated (B-128, B-137, B-218, B-267, B-351, B-441, B-466, B-555, B-616, B-618).
+
+## Follow-up — post-cutover sweep (CUL-526)
+
+After the seven planned issues the PM asked for a second sweep: *is there anything else that needs to change from the Linear move?* Ran a breadth `Explore` agent over the whole repo + a targeted tooling pass. Found and fixed seven surfaces the plan didn't scope (filed as **CUL-526**, rides #664):
+
+- **`.github/PULL_REQUEST_TEMPLATE.md`** — added a `## Linear issue(s)` section. The highest-leverage miss: the merge→status convention (CUL-519) had no home at the point of PR creation.
+- **`docs/vc-financial-projections-PROMPT.md`** — a *pending* (unspent) kickoff prompt whose "must-read `docs/backlog.md`" would have misdirected the next session to paste it. (The `vet-report-discovery-PROMPT` is spent — its output exists — so left alone.)
+- **`docs/research/README.md`** — the research folder's live conventions index → Linear + frozen note.
+- **`.claude/skills/nyx-voice` + `supabase-sync`** — "worth a backlog row" → "a Linear issue."
+- **`docs/nyx-technical-spec-v1_0.md`** — file-tree entry annotated frozen.
+- **`docs/backlog.md`** — a one-line FROZEN top pointer above the old preamble (PM-approved: fixes the top-down read order — a reader met stale process before the line-28 banner).
+- **`docs/app-store-readiness.md`** — header reconciled; the moot "migrate rows up in the next slim pass" housekeeping struck.
+
+**PM rulings (2026-08-16, decision briefs):** frozen `backlog.md` → *add a one-line top pointer*; the low-value tail → *fix `app-store-readiness` only*, leaving the 3 spec-header `Tracks:`/`Backlog:` links + 2 spec-body priority claims (traceable via the `Legacy` label; re-keying 5 specs is high-noise). Scattered `B-NNN` provenance in code comments + the CLAUDE.md/STATUS.md bodies stays (historical).
+
+**Verified clean:** `ci.yml`, `.githooks`, `.claude/settings.json`, hooks, the four review agents, `clinical-guardrails`, `scripts/`, STATUS.md structure.
