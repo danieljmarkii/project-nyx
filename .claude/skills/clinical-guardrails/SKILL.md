@@ -299,14 +299,43 @@ const escalatingFlags = union(derived, modelVisualFlags.filter(isEscalating))
 
 ---
 
+## PATTERN 10: Model Free-Text Fields Surface Only on a Self-Escalated worth_a_call (Two-Layer Gate)
+
+**Provenance:** CUL-152 / B-179 (2026-08-17), extending B-060. Applies to EVERY owner-facing free-text string the vision model emits — today `read_text` and `description`; a future incident type's equivalents inherit it. Resolves Ambiguities #1 and #2 below.
+
+**RULE:** The model's free-text fields reach the owner ONLY when the model ITSELF escalated (its own `worth_a_call`) AND the FINAL, post-floor recommendation is a non-contextual, readable `worth_a_call`. Every other path — `monitor`, `not_enough_to_say`, a floor-forced *contextual* escalation, a floor *downgrade* of the model's `worth_a_call`, an unreadable photo — gets a deterministic template (`read_text`) or `null` (`description`), never the model's words. This is Pattern 1 (never reassure on absence) made structural for free text. A regex denylist/strip was tried and rejected (~86% miss — B-060): the guarantee is structural, not lexical.
+
+**Two layers, both required (one alone leaks):**
+- **Layer 1 — parse (`parseAnalysisToolResult`):** null the field unless the model's OWN recommendation is `worth_a_call`. Closes "model recorded blood / set a visual flag but self-selected `monitor` with a soft read" — the floor forces `worth_a_call`, but the model's monitor-era prose must not ride it.
+- **Layer 2 — post-floor (shared pipeline):** `selectReadText` (`read_text`) and `selectDescription` (`description`) re-gate on the FINAL recommendation. Closes "model self-escalated but the floor DOWNGRADED to `not_enough_to_say`" (e.g. `appears_to_show_subject=false`), where Layer 1 alone leaves reassuring prose on a calm card. *(A parse-only description gate shipping without Layer 2 was a real leak caught by adversarial review — the exact reason both layers are mandatory.)*
+
+**CANONICAL EXAMPLE** (`_shared/incident-analysis.ts` `selectDescription`, applied post-floor in `runIncidentAnalysis`; the Layer-1 gate lives in each descriptor's `parseAnalysisToolResult`):
+
+```ts
+// post-floor: mutate `analysis` so the description COLUMN and ai_raw_payload land the null TOGETHER
+analysis.description = selectDescription({
+  modelDescription: analysis.description,  // already Layer-1-gated (null unless the model self-escalated)
+  recommendation, contextualFlags, photoUnreadable,
+})
+// selectDescription returns the description ONLY when:
+//   contextualFlags.length === 0 && !photoUnreadable && recommendation === 'worth_a_call'
+// read_text gets the identical post-floor condition inside selectReadText.
+```
+
+**CONSISTENCY COROLLARY (owner-edit diff, Pattern 7):** gate where the value lands in BOTH the stored column and `ai_raw_payload`, so `extract*EditableFromPayload`'s baseline never diverges from the column (no spurious "Edited"). An owner-authored field (written via a different path) is NEVER gated.
+
+**ANTI-PATTERN:** gating a model free-text field on only ONE layer — parse-only leaks on a floor downgrade; post-floor-only leaks when a flag forces `worth_a_call` over the model's monitor-era prose. Every model free-text field must pass through both.
+
+---
+
 ## Ambiguities Flagged
 
-These are gaps between what the skill claims and what the code currently enforces. They are intentionally left open for PM decision rather than silently "fixed" in this skill.
+These are gaps between what the skill claims and what the code currently enforces. #1, #2 and #4 have since been **RESOLVED** (see inline); remaining open items are left for PM decision rather than silently "fixed" in this skill.
 
-1. **Model-emitted `read_text` is not regex-tested.** Pattern 8 covers the *templated* contextual read text and the photo-unreadable fallback. The clean-photo-no-flags path uses the model's own `read_text` field, which is guarded only by the system prompt (Pattern 4) — not by a parser assertion. If the model emits "Mochi looks fine" in the `read_text` field, nothing catches it before display. A defensible defence would be a post-call regex check on the model's `read_text` against the same reassurance vocabulary used in the test. Flagged as a B-028-adjacent follow-up.
+1. **Model-emitted `read_text` is not regex-tested.** — **RESOLVED (B-060 + CUL-152).** `read_text` is guarded STRUCTURALLY, not by regex: the descriptor's parse nulls it unless the model self-escalated, and `selectReadText` surfaces it only on a non-contextual, readable, final `worth_a_call`. See **Pattern 10**. (A denylist was tried and rejected — ~86% miss.)
 
-2. **`description` field is guarded by prompt only.** Same shape as #1 but for the structured `description` field. Likely lower risk (it's positional/factual by prompt) but worth a one-line assertion.
+2. **`description` field is guarded by prompt only.** — **RESOLVED (CUL-152 / B-179, 2026-08-17).** `description` now gets the identical two-layer gate as `read_text` (parse + the post-floor `selectDescription`). See **Pattern 10**. The original "worth a one-line assertion" under-scoped it: adversarial review showed a parse-only gate still leaks on a floor downgrade, so both layers are required.
 
-3. **`VomitAnalysisSection.tsx` carries the no-reassure rule as a comment (`:11–13`).** The component never renders an all-clear UI element — but that's enforced by the absence of a `looks_normal` enum value (Pattern 1), not by any test in the component itself. Acceptable as long as Pattern 1 holds.
+3. **`VomitAnalysisSection.tsx` carries the no-reassure rule as a comment (`:11–13`).** The component never renders an all-clear UI element — but that's enforced by the absence of a `looks_normal` enum value (Pattern 1), not by any test in the component itself. Acceptable as long as Pattern 1 holds. _(Still open — accepted.)_
 
-4. **No cross-incident-type abstraction yet.** The function is hard-coded for `event_type = 'vomit'`. Generalising to siblings (stool, skin, eye) will need to factor out the patterns above — the natural shape is an `incident_type` parameter on a shared library + per-type schema/prompt/flag-computation modules. This skill assumes that refactor happens with the second incident type, not before (per the "earn the right to abstract" rule).
+4. **No cross-incident-type abstraction yet.** — **RESOLVED (B-247 PR 2 / D2, 2026-07-16).** The pipeline is now the shared `_shared/incident-analysis.ts`, parameterized by an `IncidentDescriptor` (analyze-vomit + analyze-stool live on it). The patterns above are framework-owned there; a descriptor controls which findings become flags, never what flags do — it cannot weaken the safety contract.
