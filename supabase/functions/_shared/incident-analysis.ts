@@ -123,9 +123,11 @@ export function applyEscalationFloor(params: {
 // readable ones lack, so a 'monitor' verdict — and its structured observations, e.g.
 // "Blood: none visible" from a partial view — would be a reassurance-on-absence
 // (clinical-guardrails Pattern 1). The caller then collapses to the fully-unread
-// shape (not_enough_to_say + null structured fields). An escalation the readable
-// photos DID surface (worth_a_call — a visual flag, the model's own call, or a fired
-// contextual flag) is NEVER collapsed: presence always escalates (Pattern 2).
+// shape (not_enough_to_say + null structured fields). Any escalation already reached
+// (worth_a_call — from a visual flag the photos surfaced, the model's own call, or a
+// contextual flag computed from the record) is NEVER collapsed: presence always
+// escalates (Pattern 2). The caller relies on the floor running FIRST, so every such
+// escalation is already `worth_a_call` before this guard inspects the verdict.
 // usable === 0 is the fully-unreadable case (photoUnreadable), handled separately,
 // not here. Pure + exported so this count boundary is unit-tested rather than
 // asserted inline in the un-tested pipeline.
@@ -516,8 +518,10 @@ export interface IncidentDescriptor<TAnalysis extends IncidentAnalysisBase, TFla
   // their own reassurance-word regex test (Pattern 8) — not inherited.
   copy: IncidentCopy<TFlag>
   // Per-type structured column values for the full-upsert write path (incl.
-  // ai_raw_payload + ai_confidence). Called with null when no model ran — all
-  // per-type columns must then be null (nothing to preserve on a fresh row).
+  // ai_raw_payload + ai_confidence). Called with null when no model result stands —
+  // either no model ran (no photo / fully-unreadable) OR a real result was discarded
+  // by the B-203 partial-read collapse — in which case all per-type columns must be
+  // null (nothing to preserve, and nothing partial-view to carry onto the report).
   buildStructuredValues(analysis: TAnalysis | null): Record<string, unknown>
 }
 
@@ -844,9 +848,10 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
     //     carry that onto the card and the vet report. Collapse to the fully-unread
     //     shape — drop the analysis so the structured observations vanish (step 9's
     //     buildStructuredValues(null)) and the verdict + read become the honest
-    //     not_enough_to_say. An escalation we DID see (worth_a_call — a visual flag,
-    //     the model's own call, or a fired contextual flag) is always kept: presence
-    //     escalates (the floor's whole purpose).
+    //     not_enough_to_say. Any escalation already reached (worth_a_call — a visual
+    //     flag the photos surfaced, the model's own call, or a contextual flag
+    //     computed from the record) is always kept: the floor at step 7 runs FIRST, so
+    //     presence has already escalated before this guard inspects the verdict.
     if (shouldCollapsePartialRead({ usableCount: usableReadCount, totalCount: photoPaths.length, recommendation })) {
       analysis = null
       visualFlags = []
