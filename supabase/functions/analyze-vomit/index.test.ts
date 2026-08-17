@@ -251,6 +251,88 @@ Deno.test('parseAnalysisToolResult — appears_to_show_vomit defaults false', ()
   assertStrictEquals(r.contents, null)
 })
 
+// ── CUL-152 / B-179: the model's TWO free-text fields (description + read_text) reach
+// the owner ONLY on the model's OWN worth_a_call. On monitor / not_enough_to_say — and
+// on a floor-forced escalation the model did not self-call — both are nulled at parse,
+// so the n=1 reassurance-on-absence vector never reaches the detail screen / ask / the
+// Step 9 report. The structured clinical rows carry the facts instead. ──
+
+Deno.test('parseAnalysisToolResult — monitor: model description AND read_text suppressed at parse (CUL-152)', () => {
+  const r = parseAnalysisToolResult(makeToolUse({
+    appears_to_show_vomit: true,
+    colour: 'yellow',
+    contents: ['foam'],
+    consistency: 'foamy',
+    blood_present: 'none_visible',
+    foreign_material_present: 'no',
+    description: 'Looks like a totally normal hairball, nothing concerning.', // the description leak vector
+    recommendation: 'monitor',
+    read_text: 'Mochi looks fine — nothing to worry about here.',              // the B-060 read_text vector
+  }))!
+  assertStrictEquals(r.recommendation, 'monitor')
+  assertStrictEquals(r.description, null) // free-text prose suppressed on a benign read
+  assertStrictEquals(r.read_text, null)
+  // The structured clinical facts still land — they, not the prose, carry the record.
+  assertStrictEquals(r.colour, 'yellow')
+  assertEquals(r.contents, ['foam'])
+})
+
+Deno.test('parseAnalysisToolResult — not_enough_to_say: free-text fields suppressed', () => {
+  const r = parseAnalysisToolResult(makeToolUse({
+    appears_to_show_vomit: false,
+    description: 'Hard to tell, but nothing looks alarming.',
+    recommendation: 'not_enough_to_say',
+    read_text: 'Probably fine.',
+  }))!
+  assertStrictEquals(r.description, null)
+  assertStrictEquals(r.read_text, null)
+})
+
+Deno.test("parseAnalysisToolResult — worth_a_call: the model's OWN escalation read + description are preserved (surface on presence)", () => {
+  const r = parseAnalysisToolResult(makeToolUse({
+    appears_to_show_vomit: true,
+    blood_present: 'fresh_red',
+    visual_flags: ['blood'],
+    description: 'There are streaks of what looks like fresh blood in the vomit.',
+    recommendation: 'worth_a_call',
+    read_text: 'I can see what looks like blood. That is worth a call to your vet.',
+  }))!
+  assertStrictEquals(r.description, 'There are streaks of what looks like fresh blood in the vomit.')
+  assertStrictEquals(r.read_text, 'I can see what looks like blood. That is worth a call to your vet.')
+})
+
+Deno.test('parseAnalysisToolResult — model sets a visual flag but self-selects monitor: soft read + description suppressed, floor escalates deterministically (CUL-152)', () => {
+  // The case selectReadText alone missed: a model flags blood in visual_flags yet
+  // under-calls the recommendation with a soft, benign read + description. Both
+  // free-text fields are nulled at parse, so the forced worth_a_call surfaces the
+  // deterministic flag-named read — never the model's soft line.
+  const r = parseAnalysisToolResult(makeToolUse({
+    appears_to_show_vomit: true,
+    blood_present: 'coffee_ground',
+    visual_flags: ['blood'],
+    recommendation: 'monitor', // under-called
+    description: 'Just a small amount of dark foam, looks normal for after a meal.',
+    read_text: 'Nothing to worry about, this looks pretty typical.',
+  }))!
+  assertStrictEquals(r.description, null)
+  assertStrictEquals(r.read_text, null)
+  assertEquals(r.visual_flags, ['blood'])
+  const rec = applyEscalationFloor({
+    modelRecommendation: r.recommendation,
+    appearsToShowVomit: r.appears_to_show_vomit,
+    hasPhoto: true,
+    visualFlags: r.visual_flags,
+    contextualFlags: [],
+  })
+  assertStrictEquals(rec, 'worth_a_call')
+  const read = selectReadText({
+    petName: 'Mochi', recommendation: rec, contextualFlags: [],
+    visualFlags: r.visual_flags, modelReadText: r.read_text, photoUnreadable: false, hasPhoto: true,
+  })
+  assertEquals(read.toLowerCase().includes('blood'), true)     // names the present concern
+  assertEquals(/\b(worry|normal|typical|fine)\b/i.test(read), false) // never the soft model line
+})
+
 // ── computeContextualFlags ────────────────────────────────────────────────────
 
 const baseCtx = (over: Partial<ContextInput>): ContextInput => ({

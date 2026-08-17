@@ -300,6 +300,62 @@ Deno.test('parseAnalysisToolResult — no double-count when the model sets both 
   assertEquals(r.visual_flags, ['blood']) // union, not append — exactly one entry
 })
 
+// ── CUL-152 / B-179: the free-text `description` gets the SAME model-self-escalated
+// gate read_text already has — it is owner-facing (detail / ask / Step 9 report) and
+// the same n=1 reassurance-on-absence vector, one field over. ──
+
+Deno.test('parseAnalysisToolResult — monitor: model description is suppressed at parse (CUL-152)', () => {
+  const r = parseAnalysisToolResult(makeToolUse({
+    appears_to_show_stool: true,
+    consistency: 'type_4_smooth_soft',
+    colour: 'brown',
+    blood_present: 'no',
+    mucus_present: 'no',
+    foreign_material_present: 'no',
+    description: 'A normal, healthy-looking stool — nothing concerning here.', // the leak vector
+    recommendation: 'monitor',
+    read_text: 'Cooper looks fine.',
+  }))!
+  assertStrictEquals(r.recommendation, 'monitor')
+  assertStrictEquals(r.description, null) // prose suppressed on a benign read
+  assertStrictEquals(r.read_text, null)
+  // structured clinical facts still land — they, not the prose, carry the record
+  assertStrictEquals(r.consistency, 'type_4_smooth_soft')
+  assertStrictEquals(r.colour, 'brown')
+})
+
+Deno.test("parseAnalysisToolResult — worth_a_call: the model's OWN description is preserved (surfaces on escalation)", () => {
+  const r = parseAnalysisToolResult(makeToolUse({
+    appears_to_show_stool: true,
+    blood_present: 'yes',
+    blood_type: 'fresh_red',
+    visual_flags: ['blood'],
+    description: 'There are visible streaks of fresh red blood on the surface.',
+    recommendation: 'worth_a_call',
+    read_text: 'I can see what looks like blood. That is worth a call to your vet.',
+  }))!
+  assertStrictEquals(r.description, 'There are visible streaks of fresh red blood on the surface.')
+  assertStrictEquals(r.read_text, 'I can see what looks like blood. That is worth a call to your vet.')
+})
+
+Deno.test('parseAnalysisToolResult — derived escalation (model omits flag, says monitor): description suppressed too (CUL-152)', () => {
+  // Companion to the read_text derivation test above: when the model records blood but
+  // omits the visual flag AND under-calls to monitor, the floor escalates on the derived
+  // flag — but the model's monitor-era description must NOT surface on that escalation.
+  const r = parseAnalysisToolResult(makeToolUse({
+    appears_to_show_stool: true,
+    blood_present: 'yes',
+    blood_type: 'fresh_red',
+    visual_flags: [],
+    recommendation: 'monitor',
+    description: 'A soft stool with a little colour, looks unremarkable.', // must NOT surface
+    read_text: 'Nothing concerning here.',
+  }))!
+  assertEquals(r.visual_flags, ['blood']) // derived → floor will escalate
+  assertStrictEquals(r.description, null)  // model's non-escalation prose suppressed
+  assertStrictEquals(r.read_text, null)
+})
+
 // ── computeContextualFlags ────────────────────────────────────────────────────
 
 const baseCtx = (over: Partial<StoolContextInput>): StoolContextInput => ({

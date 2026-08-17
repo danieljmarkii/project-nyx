@@ -288,9 +288,18 @@ export function parseAnalysisToolResult(response: ClaudeResponse): StoolAnalysis
   // deterministic visualFlagFallback names the concern instead. Without this, a
   // derived-blood escalation could pair a "Worth a call" banner with a soft/benign
   // model read (a reassurance leak on an escalation). B-060 safe direction.
-  const readText = modelRecommendation === 'worth_a_call' && typeof input.read_text === 'string'
-    ? input.read_text
-    : null
+  //
+  // The SAME gate applies to the free-text `description` (CUL-152 / B-179): it too is
+  // owner-facing (the detail screen's "What's visible", the `ask` surface, and once
+  // Step 9 renders it the vet report) and is the n=1 reassurance-on-absence vector,
+  // one field over — a "looks like a totally normal stool, nothing concerning" on a
+  // benign read. Unlike read_text it has no deterministic fallback; on a
+  // non-self-escalation the structured clinical rows carry the facts, so it is simply
+  // nulled. Gating both at PARSE lands the null in the column AND ai_raw_payload, so
+  // the owner-edit diff (extractStoolEditableFromPayload) stays consistent.
+  const modelSelfEscalated = modelRecommendation === 'worth_a_call'
+  const readText = modelSelfEscalated && typeof input.read_text === 'string' ? input.read_text : null
+  const description = modelSelfEscalated && typeof input.description === 'string' ? input.description : null
 
   return {
     appears_to_show_stool: appears,
@@ -301,8 +310,10 @@ export function parseAnalysisToolResult(response: ClaudeResponse): StoolAnalysis
     blood_type: bloodPresent === 'yes' ? sanitizeEnum(input.blood_type, BLOOD_TYPES) : null,
     mucus_present: sanitizeEnum(input.mucus_present, TRISTATE),
     foreign_material_present: foreignPresent,
+    // foreign_material_note is NOT gated: it is populated only when foreign material
+    // is present (an escalating finding), so it names a present concern, never absence.
     foreign_material_note: typeof input.foreign_material_note === 'string' ? input.foreign_material_note : null,
-    description: typeof input.description === 'string' ? input.description : null,
+    description,
     visual_flags: visualFlags,
     recommendation,
     read_text: readText,
