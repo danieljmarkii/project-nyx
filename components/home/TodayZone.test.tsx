@@ -61,6 +61,33 @@ describe('TodayZone v2 — the recap band', () => {
     expect(router.push).toHaveBeenLastCalledWith('/day-summary');
   });
 
+  it('renders the overflow count as a quiet caption, not a second CTA (CUL-529)', () => {
+    // 5 events today, 3 shown → a "2 more events today" footnote. The old accent
+    // link-with-arrow is gone: "Full day ›" is the one door; the overflow line no longer
+    // carries an arrow (nothing else on the non-empty band renders "→").
+    mockUseEvents.mockReturnValue({
+      todayEvents: [
+        ev('m1', 'meal'), ev('m2', 'meal'), ev('m3', 'meal'),
+        ev('m4', 'meal'), ev('m5', 'meal'),
+      ],
+    });
+    const t = render(<TodayZone />);
+
+    expect(t.getByText('2 more events today')).toBeTruthy();
+    expect(t.queryByText(/→/)).toBeNull();
+    // Still the single door — the caption lives inside the strip, which routes to the recap.
+    expect(t.getByText('Full day ›')).toBeTruthy();
+  });
+
+  it('renders no overflow caption when the day fits within the cap (≤3 events)', () => {
+    mockUseEvents.mockReturnValue({
+      todayEvents: [ev('m1', 'meal'), ev('m2', 'meal'), ev('d1', 'medication')],
+    });
+    const t = render(<TodayZone />);
+
+    expect(t.queryByText(/more event/)).toBeNull();
+  });
+
   it('zero-log: renders the empty nudge (no count line) and routes it to the quick-log', () => {
     mockUseEvents.mockReturnValue({ todayEvents: [] });
     const t = render(<TodayZone />);

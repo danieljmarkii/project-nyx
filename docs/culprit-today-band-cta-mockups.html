@@ -1,0 +1,394 @@
+<title>Today band — one door</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  /* ── Page chrome tokens (theme-aware) ─────────────────────────────────────
+     The neutral is biased a hair toward the app's teal so it reads chosen, not
+     defaulted. The phone-frame tokens below are FIXED — they are the app's real
+     pixels, and must look the same on either host theme. */
+  :root {
+    --page-bg:    #F1F4F3;
+    --panel-bg:   #FFFFFF;
+    --fg:         #14201E;
+    --muted:      #55635F;
+    --faint:      #84938F;
+    --hairline:   rgba(16, 32, 28, 0.10);
+    --accent:     #0B7B6C;
+    --accent-2:   #00A78F;
+    --amber:      #9A5B00;   /* the "attention / redundant" marker — outside the app's semantic set */
+    --amber-bg:   #FBEFD8;
+    --amber-line: #E9C88A;
+    --shadow:     0 1px 2px rgba(16,32,28,.06), 0 12px 32px rgba(16,32,28,.10);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --page-bg:  #0E1513;
+      --panel-bg: #141D1B;
+      --fg:       #E7EEEC;
+      --muted:    #9DAAA6;
+      --faint:    #6E7C78;
+      --hairline: rgba(210, 236, 230, 0.12);
+      --accent:   #34D6BE;
+      --accent-2: #00C2A8;
+      --amber:    #E7B75F;
+      --amber-bg: #2A2113;
+      --amber-line: #4A3A17;
+      --shadow:   0 1px 2px rgba(0,0,0,.4), 0 16px 40px rgba(0,0,0,.5);
+    }
+  }
+  :root[data-theme="dark"] {
+    --page-bg:  #0E1513;
+    --panel-bg: #141D1B;
+    --fg:       #E7EEEC;
+    --muted:    #9DAAA6;
+    --faint:    #6E7C78;
+    --hairline: rgba(210, 236, 230, 0.12);
+    --accent:   #34D6BE;
+    --accent-2: #00C2A8;
+    --amber:    #E7B75F;
+    --amber-bg: #2A2113;
+    --amber-line: #4A3A17;
+    --shadow:   0 1px 2px rgba(0,0,0,.4), 0 16px 40px rgba(0,0,0,.5);
+  }
+
+  /* ── App tokens — FIXED, the real product palette (constants/theme.ts) ───── */
+  :root {
+    --app-ground:  #FAFAFA;   /* colorNeutralLight — the Home ground */
+    --app-card:    #FFFFFF;   /* colorSurface */
+    --app-fg:      #0A0A0A;   /* colorTextPrimary */
+    --app-fg2:     #525252;   /* colorTextSecondary */
+    --app-fg3:     #737373;   /* colorTextTertiary */
+    --app-ink:     #0B7B6C;   /* colorAccentInk — accent TEXT on white (AA) */
+    --app-border:  #EAEAEA;   /* colorBorder */
+    --meal:        #00C2A8;  --meal-l:    #E0FBF7;
+    --med:         #5B7A9E;  --med-l:     #EAF0F7;
+    --symptom:     #F43F5E;  --symptom-l: #FFE4E6;
+  }
+
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    background: var(--page-bg);
+    color: var(--fg);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: clamp(28px, 5vw, 64px) clamp(18px, 4vw, 40px) 72px; }
+
+  /* ── Masthead ───────────────────────────────────────────────────────────── */
+  .eyebrow {
+    font-size: 12px; font-weight: 600; letter-spacing: .14em; text-transform: uppercase;
+    color: var(--accent); margin: 0 0 14px;
+  }
+  h1 {
+    font-size: clamp(30px, 5.4vw, 50px); line-height: 1.02; letter-spacing: -.02em;
+    font-weight: 680; margin: 0 0 16px; text-wrap: balance;
+  }
+  .dek { font-size: clamp(16px, 2.2vw, 19px); color: var(--muted); max-width: 62ch; margin: 0 0 22px; text-wrap: pretty; }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px 10px; align-items: center; margin: 0; padding: 0; list-style: none; }
+  .meta li {
+    font-size: 12.5px; color: var(--muted);
+    border: 1px solid var(--hairline); border-radius: 999px; padding: 4px 11px;
+    background: color-mix(in srgb, var(--panel-bg) 60%, transparent);
+  }
+  .meta li b { color: var(--fg); font-weight: 600; }
+  .meta a { color: var(--accent); text-decoration: none; }
+  .meta a:hover { text-decoration: underline; }
+
+  /* ── Frames ─────────────────────────────────────────────────────────────── */
+  .frames {
+    margin: clamp(30px, 5vw, 52px) 0 0;
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: clamp(16px, 2.4vw, 26px);
+    align-items: start;
+  }
+  @media (max-width: 800px) { .frames { grid-template-columns: 1fr; max-width: 380px; margin-inline: auto; } }
+
+  figure.frame { margin: 0; display: flex; flex-direction: column; gap: 14px; }
+  .tag-row { display: flex; align-items: center; gap: 8px; min-height: 24px; flex-wrap: wrap; }
+  .tag {
+    font-size: 11.5px; font-weight: 650; letter-spacing: .02em;
+    padding: 3px 9px; border-radius: 6px; border: 1px solid var(--hairline); color: var(--muted);
+    background: color-mix(in srgb, var(--panel-bg) 55%, transparent);
+  }
+  .tag.now  { color: var(--amber); background: var(--amber-bg); border-color: var(--amber-line); }
+  .tag.rec  { color: #fff; background: var(--accent-2); border-color: transparent; }
+  :root[data-theme="dark"] .tag.rec, :root:not([data-theme="light"]) .tag.rec { color: #062b25; }
+  .tag.alt  { }
+
+  /* The phone: a slab of the Home ground with the TodayZone card on it. */
+  .phone {
+    background: var(--app-ground);
+    border-radius: 22px;
+    padding: 16px 14px;
+    box-shadow: var(--shadow);
+    border: 1px solid var(--hairline);
+  }
+  .frame.is-rec .phone { outline: 2px solid var(--accent-2); outline-offset: 3px; }
+
+  /* The TodayZone Card (white, on the ground). */
+  .card {
+    background: var(--app-card);
+    border-radius: 16px;
+    padding: 15px 15px 14px;
+    box-shadow: 0 1px 2px rgba(10,10,10,.05), 0 1px 10px rgba(10,10,10,.04);
+  }
+
+  .band-top { display: flex; align-items: center; justify-content: space-between; }
+  .band-label { font-size: 11px; font-weight: 600; letter-spacing: .085em; text-transform: uppercase; color: var(--app-fg2); }
+  .door { font-size: 13px; font-weight: 500; color: var(--app-ink); white-space: nowrap; }
+
+  /* The compact day lane — dots at real times on a 6a→12a track. */
+  .lane { position: relative; height: 22px; margin: 12px 2px 2px; }
+  .lane .track { position: absolute; left: 0; right: 0; top: 50%; height: 2px; transform: translateY(-50%); background: var(--app-border); border-radius: 2px; }
+  .lane .dot { position: absolute; top: 50%; width: 9px; height: 9px; border-radius: 50%; transform: translate(-50%, -50%); box-shadow: 0 0 0 2.5px var(--app-card); }
+  .dot.meal { background: var(--meal); }
+  .dot.med  { background: var(--med); }
+  .dot.symp { background: var(--symptom); }
+
+  .count { font-size: 13px; color: var(--app-fg2); line-height: 1.38; margin-top: 8px; }
+  .count b { color: var(--app-fg); font-weight: 600; }
+
+  /* Event rows. */
+  .rows { margin-top: 10px; }
+  .row { display: flex; align-items: center; gap: 10px; padding: 9px 0; }
+  .row + .row { border-top: 1px solid var(--app-border); }
+  .ic { width: 30px; height: 30px; border-radius: 50%; flex: none; display: grid; place-items: center; }
+  .ic.meal { background: var(--meal-l); }
+  .ic.med  { background: var(--med-l); }
+  .ic svg { display: block; }
+  .rmeta { flex: 1; min-width: 0; }
+  .rlabel { font-size: 15px; font-weight: 500; color: var(--app-fg); }
+  .rsub { font-size: 13px; color: var(--app-fg2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rtime { font-size: 13px; color: var(--app-fg2); white-space: nowrap; }
+
+  /* The overflow line, in its three treatments. */
+  .overflow { padding-top: 10px; margin-top: 2px; border-top: 1px solid var(--app-border); }
+  .overflow.link    { font-size: 13px; font-weight: 500; color: var(--app-ink); }   /* NOW: a second door */
+  .overflow.caption { font-size: 13px; color: var(--app-fg3); }                      /* A: a quiet footnote */
+
+  /* Annotation badges pinned to the doors. */
+  .mark {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 16px; height: 16px; border-radius: 50%; font-size: 10.5px; font-weight: 700;
+    background: var(--amber); color: #fff; margin-left: 7px; vertical-align: middle;
+  }
+  :root:not([data-theme="light"]) .mark, :root[data-theme="dark"] .mark { color: #1a1206; }
+
+  figcaption { font-size: 13.5px; color: var(--muted); line-height: 1.5; }
+  figcaption .h { display: block; color: var(--fg); font-weight: 650; margin-bottom: 3px; font-size: 14px; }
+  figcaption .keep { color: var(--accent); font-weight: 600; }
+  figcaption .cost { color: var(--amber); font-weight: 600; }
+
+  /* ── The call ───────────────────────────────────────────────────────────── */
+  .call {
+    margin-top: clamp(34px, 5vw, 56px);
+    background: var(--panel-bg); border: 1px solid var(--hairline); border-radius: 18px;
+    padding: clamp(22px, 3.4vw, 34px); box-shadow: var(--shadow);
+  }
+  .call h2 { font-size: 13px; letter-spacing: .12em; text-transform: uppercase; color: var(--accent); margin: 0 0 18px; font-weight: 650; }
+  .brief { display: grid; gap: 16px; }
+  .brief .line { display: grid; grid-template-columns: 130px 1fr; gap: 6px 20px; align-items: start; }
+  @media (max-width: 560px) { .brief .line { grid-template-columns: 1fr; gap: 3px; } }
+  .brief .k { font-size: 12.5px; font-weight: 650; letter-spacing: .04em; text-transform: uppercase; color: var(--faint); padding-top: 2px; }
+  .brief .v { font-size: 15.5px; color: var(--fg); }
+  .brief .v b { font-weight: 650; }
+  .brief .v .pill { display: inline-block; font-size: 12px; font-weight: 650; color: #062b25; background: var(--accent-2); border-radius: 5px; padding: 1px 7px; margin-right: 6px; vertical-align: 1px; }
+  :root:not([data-theme="light"]) .brief .v .pill, :root[data-theme="dark"] .brief .v .pill { color: #062b25; }
+  .brief .v .muted { color: var(--muted); }
+
+  footer { margin-top: 34px; font-size: 12.5px; color: var(--faint); line-height: 1.6; }
+  footer b { color: var(--muted); font-weight: 600; }
+
+  @media (prefers-reduced-motion: no-preference) {
+    figure.frame { animation: rise .5s cubic-bezier(.2,.7,.2,1) both; }
+    figure.frame:nth-child(2) { animation-delay: .07s; }
+    figure.frame:nth-child(3) { animation-delay: .14s; }
+    @keyframes rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+  }
+</style>
+
+<div class="wrap">
+  <header class="masthead">
+    <p class="eyebrow">Culprit · The Daily Recap · design decision</p>
+    <h1>Today band — one door</h1>
+    <p class="dek">
+      The Home “Today” band has two ways into the full-day recap, and they land on the same screen:
+      the <b>Full&nbsp;day&nbsp;›</b> door up top, and a <b>N&nbsp;more&nbsp;events&nbsp;today&nbsp;→</b> link at the
+      bottom of the capped rows. Both read as “the door to the full day.” Pick which one survives — and what
+      happens to the count the second one was carrying.
+    </p>
+    <ul class="meta">
+      <li><b>CUL-529</b></li>
+      <li>TodayZone v2 · DR-2</li>
+      <li>Surface · <b>components/home/TodayZone.tsx</b></li>
+      <li>One destination · /day-summary</li>
+      <li>From the TestFlight review, 2026-08-17</li>
+    </ul>
+  </header>
+
+  <section class="frames" aria-label="Three treatments of the Today band, side by side">
+
+    <!-- ── NOW (shipped) ─────────────────────────────────────────────────── -->
+    <figure class="frame">
+      <div class="tag-row"><span class="tag now">Now · shipped</span><span class="tag">two doors</span></div>
+      <div class="phone">
+        <div class="card">
+          <div class="band-top">
+            <span class="band-label">Today so far</span>
+            <span class="door">Full day ›<span class="mark" aria-label="door one">1</span></span>
+          </div>
+          <div class="lane" aria-hidden="true">
+            <div class="track"></div>
+            <span class="dot meal" style="left:11.5%"></span>
+            <span class="dot med"  style="left:14%"></span>
+            <span class="dot meal" style="left:36%"></span>
+            <span class="dot meal" style="left:67%"></span>
+            <span class="dot symp" style="left:81%"></span>
+          </div>
+          <div class="count"><b>3</b> meals · <b>1</b> dose · <b>1</b> symptom logged</div>
+          <div class="rows">
+            <div class="row">
+              <span class="ic meal"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#00C2A8" stroke-width="1.5"><path d="M2.5 6.5a5.5 5 0 0 0 11 0Z"/><path d="M8 6.5V2.5"/></svg></span>
+              <span class="rmeta"><div class="rlabel">Meal</div><div class="rsub">Chicken &amp; rice</div></span>
+              <span class="rtime">8:04 AM</span>
+            </div>
+            <div class="row">
+              <span class="ic med"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#5B7A9E" stroke-width="1.5"><rect x="2.5" y="5" width="11" height="6" rx="3"/><path d="M8 5v6"/></svg></span>
+              <span class="rmeta"><div class="rlabel">Dose</div><div class="rsub">Amoxicillin</div></span>
+              <span class="rtime">8:10 AM</span>
+            </div>
+            <div class="row">
+              <span class="ic meal"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#00C2A8" stroke-width="1.5"><path d="M2.5 6.5a5.5 5 0 0 0 11 0Z"/><path d="M8 6.5V2.5"/></svg></span>
+              <span class="rmeta"><div class="rlabel">Meal</div><div class="rsub">Hill’s i/d</div></span>
+              <span class="rtime">12:30 PM</span>
+            </div>
+          </div>
+          <div class="overflow link">2 more events today →<span class="mark" aria-label="door two">2</span></div>
+        </div>
+      </div>
+      <figcaption>
+        <span class="h">Two doors, same room</span>
+        <b>①</b> and <b>②</b> are both accent-coloured, arrow-suffixed, and open <b>/day-summary</b>.
+        Stacked in one card, they read as competing primary CTAs — the redundancy the PM flagged.
+      </figcaption>
+    </figure>
+
+    <!-- ── OPTION A — DEMOTE (recommended) ───────────────────────────────── -->
+    <figure class="frame is-rec">
+      <div class="tag-row"><span class="tag rec">Option A · demote</span><span class="tag">recommended · building</span></div>
+      <div class="phone">
+        <div class="card">
+          <div class="band-top">
+            <span class="band-label">Today so far</span>
+            <span class="door">Full day ›</span>
+          </div>
+          <div class="lane" aria-hidden="true">
+            <div class="track"></div>
+            <span class="dot meal" style="left:11.5%"></span>
+            <span class="dot med"  style="left:14%"></span>
+            <span class="dot meal" style="left:36%"></span>
+            <span class="dot meal" style="left:67%"></span>
+            <span class="dot symp" style="left:81%"></span>
+          </div>
+          <div class="count"><b>3</b> meals · <b>1</b> dose · <b>1</b> symptom logged</div>
+          <div class="rows">
+            <div class="row">
+              <span class="ic meal"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#00C2A8" stroke-width="1.5"><path d="M2.5 6.5a5.5 5 0 0 0 11 0Z"/><path d="M8 6.5V2.5"/></svg></span>
+              <span class="rmeta"><div class="rlabel">Meal</div><div class="rsub">Chicken &amp; rice</div></span>
+              <span class="rtime">8:04 AM</span>
+            </div>
+            <div class="row">
+              <span class="ic med"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#5B7A9E" stroke-width="1.5"><rect x="2.5" y="5" width="11" height="6" rx="3"/><path d="M8 5v6"/></svg></span>
+              <span class="rmeta"><div class="rlabel">Dose</div><div class="rsub">Amoxicillin</div></span>
+              <span class="rtime">8:10 AM</span>
+            </div>
+            <div class="row">
+              <span class="ic meal"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#00C2A8" stroke-width="1.5"><path d="M2.5 6.5a5.5 5 0 0 0 11 0Z"/><path d="M8 6.5V2.5"/></svg></span>
+              <span class="rmeta"><div class="rlabel">Meal</div><div class="rsub">Hill’s i/d</div></span>
+              <span class="rtime">12:30 PM</span>
+            </div>
+          </div>
+          <div class="overflow caption">2 more events today</div>
+        </div>
+      </div>
+      <figcaption>
+        <span class="h">One door, keep the honesty</span>
+        <span class="keep">Full&nbsp;day&nbsp;›</span> is the sole door. The overflow line loses its arrow + accent
+        and drops to a muted footnote — <span class="keep">it still tells you how many rows are below the cap</span>,
+        which the category count line doesn’t. The strip stays tappable (unchanged, B-787).
+      </figcaption>
+    </figure>
+
+    <!-- ── OPTION B — DELETE ─────────────────────────────────────────────── -->
+    <figure class="frame">
+      <div class="tag-row"><span class="tag alt">Option B · delete</span><span class="tag">the blunt cut</span></div>
+      <div class="phone">
+        <div class="card">
+          <div class="band-top">
+            <span class="band-label">Today so far</span>
+            <span class="door">Full day ›</span>
+          </div>
+          <div class="lane" aria-hidden="true">
+            <div class="track"></div>
+            <span class="dot meal" style="left:11.5%"></span>
+            <span class="dot med"  style="left:14%"></span>
+            <span class="dot meal" style="left:36%"></span>
+            <span class="dot meal" style="left:67%"></span>
+            <span class="dot symp" style="left:81%"></span>
+          </div>
+          <div class="count"><b>3</b> meals · <b>1</b> dose · <b>1</b> symptom logged</div>
+          <div class="rows">
+            <div class="row">
+              <span class="ic meal"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#00C2A8" stroke-width="1.5"><path d="M2.5 6.5a5.5 5 0 0 0 11 0Z"/><path d="M8 6.5V2.5"/></svg></span>
+              <span class="rmeta"><div class="rlabel">Meal</div><div class="rsub">Chicken &amp; rice</div></span>
+              <span class="rtime">8:04 AM</span>
+            </div>
+            <div class="row">
+              <span class="ic med"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#5B7A9E" stroke-width="1.5"><rect x="2.5" y="5" width="11" height="6" rx="3"/><path d="M8 5v6"/></svg></span>
+              <span class="rmeta"><div class="rlabel">Dose</div><div class="rsub">Amoxicillin</div></span>
+              <span class="rtime">8:10 AM</span>
+            </div>
+            <div class="row">
+              <span class="ic meal"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#00C2A8" stroke-width="1.5"><path d="M2.5 6.5a5.5 5 0 0 0 11 0Z"/><path d="M8 6.5V2.5"/></svg></span>
+              <span class="rmeta"><div class="rlabel">Meal</div><div class="rsub">Hill’s i/d</div></span>
+              <span class="rtime">12:30 PM</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <figcaption>
+        <span class="h">One door, count gone</span>
+        The overflow line is removed outright. Cleanest, and exactly the PM’s first instinct —
+        but <span class="cost">nothing states there are 2 more</span> below the three rows; the owner infers it by
+        adding up the count line. The lane’s five dots still hint at the volume.
+      </figcaption>
+    </figure>
+
+  </section>
+
+  <section class="call" aria-label="The decision">
+    <h2>The call</h2>
+    <div class="brief">
+      <div class="line">
+        <div class="k">Deciding</div>
+        <div class="v">What happens to <b>N more events today →</b>, given <b>Full day ›</b> stays the one primary CTA.</div>
+      </div>
+      <div class="line">
+        <div class="k">Recommendation</div>
+        <div class="v"><span class="pill">Option A</span> Demote to a quiet caption. It removes the second <i>door</i> — the actual redundancy — while keeping the one thing the line honestly carries: how many events sit below the 3-row cap. The count line reports category totals (“3 meals · 1 dose”), not what’s hidden, so a blunt delete costs a sliver of honesty for owners like Sam who log many small meals a day.</div>
+      </div>
+      <div class="line">
+        <div class="k">Consequence</div>
+        <div class="v"><span class="muted">Either way, <b>Full&nbsp;day&nbsp;›</b> becomes the sole door and the card reads as one CTA. <b>A</b> is built and on the branch; flipping to <b>B</b> is a one-line change (delete the caption) if you’d rather have the blunt cut.</span></div>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <b>Note.</b> These frames are a faithful render of the real component, not screenshots — colours and sizes come straight from
+    <b>constants/theme.ts</b> (light Home ground #FAFAFA, white card, accent-ink door). The example day is 5 events (3 shown, 2 over the cap).
+    The always-night surface is the <b>full-day recap</b> you tap into (/day-summary), which is unchanged here.
+  </footer>
+</div>
