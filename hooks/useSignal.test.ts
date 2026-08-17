@@ -1,9 +1,14 @@
 import { act, renderHook, waitFor } from '@testing-library/react-native';
-import { useSignal } from './useSignal';
+import { useSignal, useCrossPetSafetyBanner } from './useSignal';
 import { usePetStore } from '../store/petStore';
 import { useSyncStore } from '../store/syncStore';
 import { useSignalMarkStore } from '../store/signalMarkStore';
-import { readSignalCache, isSignalCacheStale, regenerateSignal } from '../lib/signal';
+import {
+  readSignalCache,
+  isSignalCacheStale,
+  regenerateSignal,
+  readSignalsAndRefresh,
+} from '../lib/signal';
 import type { CachedFinding } from '../lib/signal';
 
 // Multi-pet safety regression (code-reviewed on B-284 PR N2): a naive "read
@@ -40,6 +45,7 @@ jest.mock('../lib/signal', () => ({
 const mockedReadCache = readSignalCache as jest.Mock;
 const mockedIsStale = isSignalCacheStale as jest.Mock;
 const mockedRegenerate = regenerateSignal as jest.Mock;
+const mockedRefresh = readSignalsAndRefresh as jest.Mock;
 
 const finding: CachedFinding = {
   rank: 0,
@@ -167,4 +173,62 @@ describe('useSignal — acknowledgment (SR-3 §5.3)', () => {
   // The ack's lifecycle (raise / clear-on-settle / generation guard / fail-quiet ceiling)
   // is owned by triggerSignalRegenDebounced and tested in lib/signal.test.ts — the hook
   // only READS the flag, which the two tests above cover.
+});
+
+describe('useCrossPetSafetyBanner — switch-settle self-banner (B-151)', () => {
+  // #203 adversarial-review gap (a): tapping the banner switches the active pet while
+  // STAYING on Home (no blur/refocus), so whether the newly-active pet's banner-about-
+  // itself clears rests entirely on useFocusEffect re-running when the callback identity
+  // changes on the still-focused screen. The hook keys its useCallback on
+  // [activePetId, otherPetsKey, signalTick], so a switch mints a new callback → the
+  // effect re-runs → `others` is recomputed WITHOUT the now-active pet → no self-banner.
+  //
+  // The expo-router mock at the top of this file models that exact contract (run while
+  // focused, re-run when the memoized callback changes) with useEffect(cb, [cb]); these
+  // tests therefore pin the load-bearing part the review flagged — the hook's dep-keying.
+  // Drop `activePetId` from the deps and both tests fail (the self-banner would persist).
+  beforeEach(() => {
+    // readSignalsAndRefresh is a bare jest.fn() (see the ../lib/signal mock); give it a
+    // per-pet cache so the real selectCrossPetSafetyFinding/bannerCopy path runs.
+    mockedRefresh.mockReset();
+  });
+
+  it("clears the banner when you tap it to switch to that pet — its finding belongs in its own Signal, never a self-banner", async () => {
+    // Active pet A; only pet B has a safety finding → A's Home shows a banner ABOUT B.
+    mockedRefresh.mockImplementation(async (ids: string[]) => {
+      const m = new Map<string, CachedFinding[]>();
+      for (const id of ids) m.set(id, id === PET_B.id ? [finding] : []);
+      return m;
+    });
+
+    const { result } = renderHook(() => useCrossPetSafetyBanner());
+    await waitFor(() => expect(result.current?.petId).toBe(PET_B.id));
+
+    // The banner's onPress calls selectPet(banner.petId); model that same active-pet
+    // transition. B is now the active pet, so its finding is its OWN Signal's concern.
+    act(() => {
+      usePetStore.getState().selectPet(PET_B.id);
+    });
+    await waitFor(() => expect(result.current).toBeNull());
+  });
+
+  it('re-runs the selection on the still-focused screen — a switch surfaces the now-non-active pet, proving the effect fired on the activePetId dep', async () => {
+    // Both pets have a safety finding. Active A → the ONE banner is about B (A's own
+    // finding stays in A's Signal). Switch to B → the effect must re-run and re-select
+    // A, not merely blank out B. This is the "on-focused-dep behavior" gap (a) names:
+    // if the effect did NOT re-run on the switch, the banner would stay stuck on B.
+    mockedRefresh.mockImplementation(async (ids: string[]) => {
+      const m = new Map<string, CachedFinding[]>();
+      for (const id of ids) m.set(id, [finding]);
+      return m;
+    });
+
+    const { result } = renderHook(() => useCrossPetSafetyBanner());
+    await waitFor(() => expect(result.current?.petId).toBe(PET_B.id));
+
+    act(() => {
+      usePetStore.getState().selectPet(PET_B.id);
+    });
+    await waitFor(() => expect(result.current?.petId).toBe(PET_A.id));
+  });
 });

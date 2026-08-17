@@ -135,3 +135,54 @@ describe('usePet gate wiring', () => {
     warn.mockRestore();
   });
 });
+
+describe('usePet — cross-pet banner archived-exclusion (B-151)', () => {
+  // #203 adversarial-review gap (b): the cross-pet safety banner (multi-pet §4)
+  // treats EVERY pet in petStore.pets as banner-eligible — useCrossPetSafetyBanner
+  // filters out only the ACTIVE pet, never an archived one. The single thing keeping
+  // an archived pet out of that list is THIS loader's is_active=true filter, which
+  // petStore's own INVARIANT comment leans on explicitly ("Every loader filters
+  // is_active = true (usePet) ... an archived pet leaking in here would wrongly raise
+  // a banner"). The exclusion held, but rested on that filter + a prose comment with
+  // ZERO test — one unfiltered setPets would surface an archived pet's stale cached
+  // safety finding as a banner. Pin the filter so dropping it fails here loudly.
+  //
+  // (The Archived-pets restore screen re-loads with the same is_active=true filter
+  // before its own setPets — the other server-data path into the list — so the two
+  // callers agree; this guards the primary loader the review named.)
+  it('queries pets with is_active=true, so an archived pet never enters the banner-eligible list', async () => {
+    const petsEqCalls: Array<[string, unknown]> = [];
+    mockedFrom.mockImplementation((table: string) => {
+      if (table === 'user_profiles') {
+        return {
+          select: () => ({
+            eq: () => ({
+              maybeSingle: () =>
+                Promise.resolve({
+                  data: { onboarding_completed_at: '2026-07-06T00:00:00Z' },
+                  error: null,
+                }),
+            }),
+          }),
+        };
+      }
+      // pets — a self-returning fluent chain that records every .eq(col, val) so the
+      // is_active filter is observable (the shared mockReads helper uses anonymous
+      // .eq() stubs and can't see the arguments).
+      const chain: Record<string, unknown> = {
+        eq: jest.fn((col: string, val: unknown) => {
+          petsEqCalls.push([col, val]);
+          return chain;
+        }),
+        order: jest.fn().mockResolvedValue({ data: [PET], error: null }),
+      };
+      return { select: jest.fn(() => chain) };
+    });
+
+    renderHook(() => usePet());
+    // The loader hydrated the active list …
+    await waitFor(() => expect(setPets).toHaveBeenCalledWith([PET], null));
+    // … and it did so through the is_active=true filter, not an unfiltered read.
+    expect(petsEqCalls).toContainEqual(['is_active', true]);
+  });
+});
