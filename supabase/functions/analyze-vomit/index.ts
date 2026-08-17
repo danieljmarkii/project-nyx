@@ -59,6 +59,7 @@ export {
   resolveGateState,
   resolveFlagValue,
   resolveCaps,
+  selectDescription,
 } from '../_shared/incident-analysis.ts'
 export type { FunctionCaps, GateState, AnalysisWriteBack } from '../_shared/incident-analysis.ts'
 

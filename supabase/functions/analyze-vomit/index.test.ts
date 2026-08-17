@@ -15,6 +15,7 @@ import {
   applyEscalationFloor,
   buildContextualReadText,
   selectReadText,
+  selectDescription,
   buildAnalysisWriteBack,
   STRUCTURED_FIELD_KEYS,
   detectImageMediaType,
@@ -331,6 +332,58 @@ Deno.test('parseAnalysisToolResult — model sets a visual flag but self-selects
   })
   assertEquals(read.toLowerCase().includes('blood'), true)     // names the present concern
   assertEquals(/\b(worry|normal|typical|fine)\b/i.test(read), false) // never the soft model line
+})
+
+// ── selectDescription: the POST-FLOOR gate that gives `description` the same
+// guarantee read_text gets from selectReadText (CUL-152 / B-179). ──
+
+Deno.test('selectDescription — surfaces the model description on a non-contextual, readable worth_a_call', () => {
+  assertStrictEquals(
+    selectDescription({ modelDescription: 'Streaks of what looks like blood.', recommendation: 'worth_a_call', contextualFlags: [], photoUnreadable: false }),
+    'Streaks of what looks like blood.',
+  )
+})
+
+Deno.test('selectDescription — null on monitor / not_enough_to_say (the reassurance-on-absence paths)', () => {
+  const d = 'Looks like a totally normal hairball, nothing concerning.'
+  assertStrictEquals(selectDescription({ modelDescription: d, recommendation: 'monitor', contextualFlags: [], photoUnreadable: false }), null)
+  assertStrictEquals(selectDescription({ modelDescription: d, recommendation: 'not_enough_to_say', contextualFlags: [], photoUnreadable: false }), null)
+})
+
+Deno.test('selectDescription — null when a contextual flag drove the escalation (model prose is not the reason) or the photo was unreadable', () => {
+  assertStrictEquals(selectDescription({ modelDescription: 'looks normal', recommendation: 'worth_a_call', contextualFlags: ['repeated_vomiting'], photoUnreadable: false }), null)
+  assertStrictEquals(selectDescription({ modelDescription: 'anything', recommendation: 'worth_a_call', contextualFlags: [], photoUnreadable: true }), null)
+})
+
+Deno.test('CUL-152 pipeline gate — model self-escalates but the floor DOWNGRADES: description nulled (the adversarial break, closed)', () => {
+  // Model returns worth_a_call on a photo it ALSO says is not the subject, with a
+  // reassuring description. Parse preserves the description (the model self-escalated) —
+  // so the parse gate alone is NOT enough — but the floor downgrades to not_enough_to_say
+  // (appears=false, no flags), so the post-floor selectDescription must null it, or the
+  // reassuring prose renders on a "Not enough to say yet" card.
+  const r = parseAnalysisToolResult(makeToolUse({
+    appears_to_show_vomit: false,
+    recommendation: 'worth_a_call',
+    visual_flags: [],
+    description: 'This looks like a perfectly normal, healthy hairball — nothing at all to worry about.',
+    read_text: 'Nothing at all to worry about.',
+  }))!
+  assertStrictEquals(r.description, 'This looks like a perfectly normal, healthy hairball — nothing at all to worry about.') // parse kept it
+  const rec = applyEscalationFloor({
+    modelRecommendation: r.recommendation,
+    appearsToShowVomit: r.appears_to_show_vomit,
+    hasPhoto: true,
+    visualFlags: r.visual_flags,
+    contextualFlags: [],
+  })
+  assertStrictEquals(rec, 'not_enough_to_say') // the floor downgraded it
+  assertStrictEquals(
+    selectDescription({ modelDescription: r.description, recommendation: rec, contextualFlags: [], photoUnreadable: false }),
+    null, // the post-floor gate nulls the reassuring description
+  )
+  // read_text is separately safe on this path — selectReadText re-gates on the post-floor rec.
+  const read = selectReadText({ petName: 'Mochi', recommendation: rec, contextualFlags: [], visualFlags: [], modelReadText: r.read_text, photoUnreadable: false, hasPhoto: true })
+  assertEquals(read.includes('not much I can read'), true)
 })
 
 // ── computeContextualFlags ────────────────────────────────────────────────────
