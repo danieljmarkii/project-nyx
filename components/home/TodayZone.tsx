@@ -96,8 +96,9 @@ export function TodayZone() {
           <Text style={styles.nudgeArrow}>→</Text>
         </TouchableOpacity>
       ) : (
-        // The capped rows continue beneath, unchanged — now leading to the same full-day
-        // recap as the band (one door), not the retired History-today shortcut.
+        // The capped rows continue beneath, leading to the same full-day recap as the band.
+        // The band's "Full day ›" is the ONE door (CUL-529); the strip stays a silent door
+        // (the pre-DR-2 behaviour, its affordance tracked separately as B-787/CUL-514).
         <TouchableOpacity testID="today-strip" onPress={openFullDay} activeOpacity={0.92} style={styles.stripWrap}>
           <View style={styles.strip}>
             {shown.map((event, i) => (
@@ -109,9 +110,14 @@ export function TodayZone() {
             ))}
           </View>
 
+          {/* The overflow line is a quiet caption, NOT a second CTA (CUL-529). It used to be
+              an accent link-with-arrow that read as a rival door to the same /day-summary the
+              band's "Full day ›" already opens. Demoted to a muted footnote it keeps the one
+              honest thing it carries — how many events sit below the 3-row cap — which the
+              count line does not (that reports category totals, not what's hidden). */}
           {remaining > 0 && (
-            <Text style={styles.moreLink}>
-              {remaining} more event{remaining !== 1 ? 's' : ''} today →
+            <Text style={styles.moreCaption}>
+              {remaining} more event{remaining !== 1 ? 's' : ''} today
             </Text>
           )}
         </TouchableOpacity>
@@ -344,12 +350,14 @@ const styles = StyleSheet.create({
     fontSize: theme.textSM,
     color: theme.colorTextSecondary,
   },
-  moreLink: {
+  // The overflow caption — a quiet footnote under the capped rows, not a CTA (CUL-529).
+  // Tertiary gray (not accent) + no arrow + regular weight, so it reads as a disclosure of
+  // what's below the cap rather than a second door beside "Full day ›". #737373 on the white
+  // Card is ~4.7:1 — passes AA for this 13px text. The top border keeps the "shown rows |
+  // note about the rest" separation the old link had.
+  moreCaption: {
     fontSize: theme.textSM,
-    // accent-INK for the same AA reason as `door` — accent text on the white Card
-    // (CUL-27: colorAccent is 2.26:1 here, colorAccentInk 5.17:1).
-    color: theme.colorAccentInk,
-    fontWeight: theme.weightMedium,
+    color: theme.colorTextTertiary,
     paddingTop: 10,
     borderTopWidth: 1,
     borderTopColor: theme.colorBorder,
