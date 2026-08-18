@@ -73,6 +73,10 @@ import { isTrialRunning } from '../../../lib/dietTrial.ts'
 // the engine's v2 lanes/composition are gated per-account — a redeploy stays byte-identical for
 // every non-eligible account (spec §5; the closeout's G10/deploy blocker).
 import { resolveAllowlistFlag } from '../_shared/flags.ts'
+// Abort the Claude phrasing/summary calls after a bounded timeout (CUL-258). Both
+// callers already fall back to the deterministic template on any throw, so a timeout
+// degrades safely — it just stops a hung upstream from holding the function open.
+import { fetchWithTimeout } from '../_shared/http.ts'
 import {
   templateForFinding,
   validatePhrasing,
@@ -180,7 +184,7 @@ async function phraseFinding(finding: Finding, petName: string, phrasingEnabled 
     return fallback
   }
   try {
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
+    const res = await fetchWithTimeout('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -251,7 +255,7 @@ async function phraseSummaryText(packet: SummaryFactPacket, phrasingEnabled = tr
     return { ...base, text: template, source: 'template' }
   }
   try {
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
+    const res = await fetchWithTimeout('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

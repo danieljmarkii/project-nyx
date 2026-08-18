@@ -34,6 +34,10 @@
 
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { resolveAllowlistFlagFromRows } from '../_shared/flags.ts'
+// Abort each Claude tool-loop call after a bounded timeout (CUL-258). Per-call, so a
+// single hung iteration can't hold the function open; the loop stays bounded by
+// MAX_TOOL_ITERATIONS.
+import { fetchWithTimeout } from '../_shared/http.ts'
 import { resolveIanaZone } from '../../../lib/utils.ts'
 import { projectCachedRead } from './tools.ts'
 import type {
@@ -220,7 +224,7 @@ async function runAskLoop(
   for (let iter = 0; iter < MAX_TOOL_ITERATIONS; iter++) {
     let res: Response
     try {
-      res = await fetch('https://api.anthropic.com/v1/messages', {
+      res = await fetchWithTimeout('https://api.anthropic.com/v1/messages', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
         body: JSON.stringify({
