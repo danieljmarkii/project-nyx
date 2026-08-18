@@ -194,6 +194,35 @@ export function selectReadText<TFlag extends string>(
   return copy.noFlag(petName, hasPhoto)
 }
 
+// ── Description selection (CUL-152 / B-179 — the SECOND owner-facing free-text field) ──
+// The model emits two free-text strings: read_text (selected above) and `description`.
+// read_text is gated TWICE — the descriptor's parse nulls it unless the model itself
+// self-escalated, and selectReadText above only surfaces it on a non-contextual, readable
+// FINAL worth_a_call. `description` is a structured column written straight from the parse,
+// so it bypasses selectReadText and needs its own POST-FLOOR gate to get the same guarantee.
+// This is that gate: the model's description surfaces ONLY under the same condition
+// selectReadText surfaces read_text (a non-contextual, readable, final worth_a_call), else
+// null. The caller passes the PARSE-gated description (already null unless the model itself
+// self-escalated), so the combined guarantee matches read_text exactly: description surfaces
+// iff (the model self-escalated) AND (the final read is a non-contextual, readable
+// worth_a_call). Pure + exported so the never-reassure guarantee on description is
+// unit-tested, not asserted by a comment. Without this second gate a model that returns
+// worth_a_call on a photo it also says is not the subject (floor DOWNGRADES to
+// not_enough_to_say) would surface a reassuring description on a "Not enough to say" card —
+// reassurance-on-a-non-escalation, the exact Pattern-1 miss (adversarial review, this PR).
+export function selectDescription(params: {
+  modelDescription: string | null
+  recommendation: Recommendation
+  contextualFlags: string[]
+  photoUnreadable: boolean
+}): string | null {
+  const maySurface =
+    params.contextualFlags.length === 0 &&
+    !params.photoUnreadable &&
+    params.recommendation === 'worth_a_call'
+  return maySurface ? params.modelDescription : null
+}
+
 // ── Write-back decision (Pattern 7 — the never-clobber guard, B-028) ──────────
 // The n=1 read + flags always refresh (so the deterministic floor can
 // re-escalate on worsening context); the structured CLINICAL fields are the
@@ -473,6 +502,9 @@ export interface IncidentAnalysisBase {
   visual_flags: string[]
   recommendation: Recommendation
   read_text: string | null
+  // The model's OTHER owner-facing free-text field. The pipeline post-floor-gates it
+  // (selectDescription) exactly as read_text is gated, so both live in the base (CUL-152).
+  description: string | null
 }
 
 export interface IncidentDescriptor<TAnalysis extends IncidentAnalysisBase, TFlag extends string> {
@@ -872,6 +904,22 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
       photoUnreadable,
       hasPhoto,
     })
+
+    // 8b. Post-floor gate on the model's free-text `description` (CUL-152 / B-179 — see
+    // selectDescription). read_text is re-gated post-floor by selectReadText above;
+    // `description` is a structured column written straight from the parse, so it needs
+    // this second gate to inherit the same never-reassure guarantee. Mutating analysis
+    // nulls BOTH the description column AND ai_raw_payload (= analysis) together, so the
+    // owner-edit diff baseline (extract*EditableFromPayload) stays consistent (Pattern 7).
+    // Closes the model-self-escalated-but-floor-downgraded leak the parse gate alone missed.
+    if (analysis) {
+      analysis.description = selectDescription({
+        modelDescription: analysis.description,
+        recommendation,
+        contextualFlags,
+        photoUnreadable,
+      })
+    }
 
     const status = recommendation === 'not_enough_to_say' ? 'uncertain' : 'completed'
 

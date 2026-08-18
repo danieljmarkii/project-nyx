@@ -59,6 +59,7 @@ export {
   resolveGateState,
   resolveFlagValue,
   resolveCaps,
+  selectDescription,
 } from '../_shared/incident-analysis.ts'
 export type { FunctionCaps, GateState, AnalysisWriteBack } from '../_shared/incident-analysis.ts'
 
@@ -222,7 +223,28 @@ export function parseAnalysisToolResult(response: ClaudeResponse): VomitAnalysis
   const appears = input.appears_to_show_vomit === true
   const contents = sanitizeEnumArray(input.contents, CONTENTS)
   const visualFlags = sanitizeEnumArray(input.visual_flags, VISUAL_FLAGS)
-  const recommendation = (sanitizeEnum(input.recommendation, RECOMMENDATIONS) ?? 'not_enough_to_say') as Recommendation
+  const modelRecommendation = sanitizeEnum(input.recommendation, RECOMMENDATIONS) as Recommendation | null
+  const recommendation = (modelRecommendation ?? 'not_enough_to_say') as Recommendation
+
+  // B-060 / clinical-guardrails Ambiguity #2 (CUL-152 / B-179): the model emits TWO
+  // free-text fields — read_text AND description — and both reach the owner (the
+  // detail screen's "What's visible", the `ask` surface, and once Step 9 renders it
+  // the vet report). Both are therefore the n=1 reassurance-on-absence vector: a
+  // "looks like a totally normal hairball, nothing concerning" surfacing on a benign
+  // read. So surface EITHER only when the model ITSELF escalated (its own
+  // worth_a_call — a present-concern read, the safe "escalate on presence"
+  // direction). On monitor / not_enough_to_say — and on a floor-forced escalation the
+  // model did NOT self-call (a contextual flag) — the model wrote its prose for a
+  // non-escalation, so null both here; the deterministic template (read_text, via
+  // selectReadText) and the structured clinical rows (description) carry the facts
+  // instead. Gating at PARSE lands the null in BOTH the column and ai_raw_payload, so
+  // the owner-edit diff (extractEditableFromPayload) stays consistent and every
+  // downstream consumer is safe by construction. Mirrors analyze-stool's read_text
+  // guard exactly; a strip/post-filter denylist was tried and rejected (too leaky —
+  // adversarial review 2026-06-24), so the guarantee is structural, not lexical.
+  const modelSelfEscalated = modelRecommendation === 'worth_a_call'
+  const readText = modelSelfEscalated && typeof input.read_text === 'string' ? input.read_text : null
+  const description = modelSelfEscalated && typeof input.description === 'string' ? input.description : null
 
   return {
     appears_to_show_vomit: appears,
@@ -232,11 +254,13 @@ export function parseAnalysisToolResult(response: ClaudeResponse): VomitAnalysis
     blood_present: sanitizeEnum(input.blood_present, BLOOD),
     bile_present: sanitizeEnum(input.bile_present, TRISTATE),
     foreign_material_present: sanitizeEnum(input.foreign_material_present, TRISTATE),
+    // foreign_material_note is NOT gated: it is populated only when foreign material
+    // is present (an escalating finding), so it names a present concern, never absence.
     foreign_material_note: typeof input.foreign_material_note === 'string' ? input.foreign_material_note : null,
-    description: typeof input.description === 'string' ? input.description : null,
+    description,
     visual_flags: visualFlags,
     recommendation,
-    read_text: typeof input.read_text === 'string' ? input.read_text : null,
+    read_text: readText,
     confidence: input.confidence && typeof input.confidence === 'object' ? input.confidence : null,
   }
 }
@@ -326,21 +350,23 @@ function buildNoFlagReadText(petName: string, hasPhoto: boolean): string {
   return `${lead} If you're worried about ${p}, your vet is the best call.`
 }
 
-// ── B-060: the n=1 read never reassures on the ABSENCE of a red flag ───────────
+// ── B-060 + CUL-152/B-179: the n=1 free text never reassures on the ABSENCE of a red flag ─
 // Dr. Chen / clinical-guardrails Pattern 1: a single sample may ESCALATE on the
 // presence of a visible flag, never reassure on its absence (absence ≠ wellness —
-// the foam-cat hepatic-lipidosis miss). The model's free-text read_text is the only
-// owner-facing string a template doesn't produce, so the guarantee is STRUCTURAL, not
-// lexical: the model's words reach the owner ONLY when the recommendation is the
-// worth_a_call escalation (a visual flag it raised, or its own worth_a_call —
-// either way the read NAMES a present concern, the safe "escalate on presence"
-// direction). On the monitor / no-flag path — the
-// reassurance-on-absence risk — the read is a deterministic template, never the
-// model's words. (A regex denylist was tried and rejected: it can't enumerate the
-// open vocabulary of "the model asserted wellness" — it missed ~86% of plausible
-// phrasings while nuking legitimate concern reads; adversarial review 2026-06-24.)
-// The selection ORDER enforcing this lives in the shared module's selectReadText;
-// these templates are the vomit-specific copy it selects among.
+// the foam-cat hepatic-lipidosis miss). The model emits TWO free-text owner-facing
+// strings — read_text AND description — and both are the reassurance-on-absence
+// vector. The guarantee is STRUCTURAL, not lexical, in two layers:
+//   (1) parseAnalysisToolResult nulls BOTH fields unless the model ITSELF escalated
+//       (modelRecommendation === 'worth_a_call' — a present-concern read, the safe
+//       direction). This is the whole guard for description, and it also closes a case
+//       selectReadText alone missed: a model that sets a visual flag but self-selects
+//       monitor with a soft read (CUL-152 / B-179).
+//   (2) selectReadText's ORDER (shared module) then makes read_text a deterministic
+//       template on every non-self-escalation path (monitor, contextual escalation,
+//       unreadable), never the model's words — these templates are the vomit copy.
+// (A regex denylist was tried and rejected: it can't enumerate the open vocabulary of
+// "the model asserted wellness" — ~86% miss while nuking legitimate concern reads;
+// adversarial review 2026-06-24.)
 
 // monitor: a clear photo with no visible/contextual flag. One sample is never an
 // all-clear, so this acknowledges the limit and stays forward-looking — it does NOT
