@@ -78,11 +78,13 @@ function SpineRow({
     else router.push({ pathname: '/event/[id]', params: { id: row.id } });
   }, [onPressRow, row.id]);
 
-  // Screen-reader order matches the visual order (title · detail … sub-line … time),
-  // so the row reads the way it looks.
+  // Screen-reader order matches the visual order (title · detail · format-tag …
+  // sub-line … time), so the row reads the way it looks. The tag is lowercased so it
+  // is spoken as a word ("dry") rather than spelled out.
   const a11yLabel =
     `${row.title}` +
     `${row.detail ? `, ${row.detail}` : ''}` +
+    `${row.formatTag ? `, ${row.formatTag.toLowerCase()}` : ''}` +
     `${row.subline ? `, ${row.subline}` : ''}` +
     `, ${row.time}. Opens details`;
 
@@ -108,10 +110,19 @@ function SpineRow({
       </View>
 
       <View style={styles.body}>
-        <Text style={styles.title} numberOfLines={1}>
-          {row.title}
-          {row.detail ? <Text style={styles.detail}> · {row.detail}</Text> : null}
-        </Text>
+        <View style={styles.titleLine}>
+          <Text style={styles.title} numberOfLines={1}>
+            {row.title}
+            {row.detail ? <Text style={styles.detail}> · {row.detail}</Text> : null}
+          </Text>
+          {/* B-568 — the wet/dry variant, a sibling of the truncating title (never
+              appended to it) so it survives a long prescription product name. Matches
+              the drill-in (DayEventsSheet) / History (EventRow) register: one mapper,
+              all surfaces name a food identically. */}
+          {row.formatTag ? (
+            <Text style={styles.formatTag} numberOfLines={1}>{row.formatTag}</Text>
+          ) : null}
+        </View>
         {row.subline ? <Text style={styles.sub}>{row.subline}</Text> : null}
       </View>
 
@@ -169,11 +180,32 @@ const styles = StyleSheet.create({
   },
 
   body: { flex: 1, minWidth: 0 },
+  // Line 1 — the title (truncating) and the format tag (holding its width) as one
+  // row, so the NAME absorbs the clip and the disambiguating tag always survives.
+  titleLine: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.space1,
+  },
   title: {
     fontSize: theme.textSM,
     color: theme.colorTextOnNight,
+    // flexShrink:1 (RN's default is 0) so the title yields to the format tag beside it.
+    flexShrink: 1,
   },
   detail: { color: theme.colorTextOnNightMuted },
+  // B-568 — the wet/dry variant tag. Same tracked-uppercase register as the drill-in
+  // (DayEventsSheet) / History (EventRow), so a food is named identically across the
+  // three timeline surfaces. Muted (7.6:1), NOT faint — it is small INFORMATIONAL text
+  // (it tells two identical-looking rows apart), so it must clear night AA like the
+  // time and sub-line. flexShrink:0 holds its width so the title is what truncates.
+  formatTag: {
+    fontSize: theme.textXS,
+    color: theme.colorTextOnNightMuted,
+    letterSpacing: theme.trackingWide,
+    fontWeight: theme.weightMedium,
+    flexShrink: 0,
+  },
   sub: {
     fontSize: theme.textXS,
     // Muted (7.6:1) — "Trial diet" is informational small text, so it clears AA.
