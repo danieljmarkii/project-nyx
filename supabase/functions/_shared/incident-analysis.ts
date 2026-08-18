@@ -45,6 +45,7 @@
 // unmodified is the regression proof for the extraction (PR 2 AC).
 
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { fetchWithTimeout } from './http.ts'
 
 export type { SupabaseClient }
 
@@ -568,7 +569,7 @@ async function runVisionCall<TAnalysis extends IncidentAnalysisBase, TFlag exten
     source: { type: 'base64' as const, media_type: img.mediaType, data: img.data },
   }))
 
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
+  const res = await fetchWithTimeout('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

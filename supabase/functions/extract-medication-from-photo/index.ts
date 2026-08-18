@@ -36,6 +36,9 @@
 
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { encodeBase64 } from 'https://deno.land/std@0.224.0/encoding/base64.ts'
+// Abort the Claude vision call after a bounded timeout (CUL-258) — an unbounded
+// fetch lets a hung upstream hold the function open to Supabase's ceiling.
+import { fetchWithTimeout } from '../_shared/http.ts'
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
@@ -284,7 +287,7 @@ async function blobToImagePart(blob: Blob): Promise<ImagePart> {
 }
 
 async function runVisionCall(image: ImagePart): Promise<MedicationExtraction | null> {
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
+  const res = await fetchWithTimeout('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

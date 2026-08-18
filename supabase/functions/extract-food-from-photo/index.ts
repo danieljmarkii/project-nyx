@@ -25,6 +25,9 @@ import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-
 // (scripts/deploy-edge.sh), so the deployed artifact stays self-contained.
 // ⚠️ Do not rename or move lib/protein.ts without updating this path.
 import { deriveProteinSet } from '../../../lib/protein.ts'
+// Abort the Claude vision call after a bounded timeout (CUL-258) — an unbounded
+// fetch lets a hung upstream hold the function open to Supabase's ceiling.
+import { fetchWithTimeout } from '../_shared/http.ts'
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
@@ -669,7 +672,7 @@ const handler = async (req: Request): Promise<Response> => {
       },
     }))
 
-    const claudeRes = await fetch('https://api.anthropic.com/v1/messages', {
+    const claudeRes = await fetchWithTimeout('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
