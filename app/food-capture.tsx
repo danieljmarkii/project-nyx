@@ -37,6 +37,7 @@ import { uploadPhoto, compressForUpload } from '../lib/storage';
 import { uuid, exifDateToISO, trustedPastExifIso, formatExifAttribution } from '../lib/utils';
 import { seedPickerProteins, pickerProteinsToSet, pickerProteinWrite, proteinsToCacheText } from '../lib/protein';
 import { foodIntakeKey } from '../lib/food';
+import { sourceAfterPointEdit } from '../lib/eventTimeEdit';
 import { ProteinDisclosure, proteinSummaryLine } from '../components/food/ProteinDisclosure';
 import { TrialContaminantSheet } from '../components/food/TrialContaminantSheet';
 import {
@@ -199,7 +200,7 @@ export default function FoodCaptureScreen() {
   // Meal-time override on the confirm screen. Initialised lazily on entry to
   // the confirm step — see runUploadAndExtract. Provenance is 'exif' when the
   // front photo had DateTimeOriginal, 'now' otherwise, and flips to 'manual'
-  // the moment the user opens the time editor.
+  // when the owner actually changes it in the time editor (sourceAfterPointEdit).
   const [mealOccurredAt, setMealOccurredAt] = useState<Date>(() => new Date());
   const [mealOccurredAtSource, setMealOccurredAtSource] = useState<'exif' | 'now' | 'manual'>('now');
   const [showMealTimePicker, setShowMealTimePicker] = useState(false);
@@ -947,11 +948,17 @@ export default function FoodCaptureScreen() {
                   onChange={(_e, date) => {
                     if (Platform.OS === 'android') setShowMealTimePicker(false);
                     if (!date) return;
-                    // Provenance flips only on an actual value change so a peek-tap
-                    // doesn't silently drop the EXIF attribution.
-                    if (mealOccurredAtSource === 'exif' && date.getTime() !== mealOccurredAt.getTime()) {
-                      setMealOccurredAtSource('manual');
-                    }
+                    // Provenance flips to 'manual' on an actual value change from any
+                    // non-manual source ('exif' or 'now'); a peek-tap that changes
+                    // nothing preserves it, so an EXIF attribution is never silently
+                    // dropped. This shares the one rule with app/log.tsx and
+                    // app/edit-event.tsx via sourceAfterPointEdit — before B-525 this
+                    // screen only handled 'exif', so a 'now'-seeded meal whose time the
+                    // owner corrected was mislabelled 'now' (an owner backfill reading
+                    // as a witnessed-now log to the vet report + correlation engine).
+                    setMealOccurredAtSource(
+                      sourceAfterPointEdit(mealOccurredAtSource, date.getTime() !== mealOccurredAt.getTime()),
+                    );
                     setMealOccurredAt(date);
                   }}
                 />
