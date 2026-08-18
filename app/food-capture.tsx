@@ -951,11 +951,13 @@ export default function FoodCaptureScreen() {
                     // Provenance flips to 'manual' on an actual value change from any
                     // non-manual source ('exif' or 'now'); a peek-tap that changes
                     // nothing preserves it, so an EXIF attribution is never silently
-                    // dropped. This shares the one rule with app/log.tsx and
-                    // app/edit-event.tsx via sourceAfterPointEdit — before B-525 this
-                    // screen only handled 'exif', so a 'now'-seeded meal whose time the
-                    // owner corrected was mislabelled 'now' (an owner backfill reading
-                    // as a witnessed-now log to the vet report + correlation engine).
+                    // dropped. Shares the one rule with app/log.tsx and app/edit-event.tsx
+                    // via sourceAfterPointEdit — before B-525 this screen only handled
+                    // 'exif', so a 'now'-seeded meal the owner re-timed was stored as
+                    // witnessed-live provenance ('now') rather than the manual edit it
+                    // was — the case occurred_at_source exists to distinguish. (The column
+                    // is written + synced but not yet read by the report/engine, so this
+                    // is a stored-correctness + forward-safety fix, not a live one.)
                     setMealOccurredAtSource(
                       sourceAfterPointEdit(mealOccurredAtSource, date.getTime() !== mealOccurredAt.getTime()),
                     );
