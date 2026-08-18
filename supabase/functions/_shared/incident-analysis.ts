@@ -113,6 +113,33 @@ export function applyEscalationFloor(params: {
   return 'monitor'
 }
 
+// ── Partial-read honesty (B-203 / CUL-298 — a companion to the floor) ─────────
+// A multi-photo event can end up read on only SOME of its photos: an oversized or
+// undecodable frame the server-side downscale couldn't bring under Claude's cap, or
+// attachments beyond MAX_PHOTOS_PER_ANALYSIS. `usable` is what actually reached the
+// model; `total` is every photo on the event. When the model saw a NON-EMPTY PROPER
+// SUBSET (0 < usable < total) AND what it saw did not escalate, the pipeline refuses
+// to stand behind the benign result: an unseen frame could hold the red flag the
+// readable ones lack, so a 'monitor' verdict — and its structured observations, e.g.
+// "Blood: none visible" from a partial view — would be a reassurance-on-absence
+// (clinical-guardrails Pattern 1). The caller then collapses to the fully-unread
+// shape (not_enough_to_say + null structured fields). Any escalation already reached
+// (worth_a_call — from a visual flag the photos surfaced, the model's own call, or a
+// contextual flag computed from the record) is NEVER collapsed: presence always
+// escalates (Pattern 2). The caller relies on the floor running FIRST, so every such
+// escalation is already `worth_a_call` before this guard inspects the verdict.
+// usable === 0 is the fully-unreadable case (photoUnreadable), handled separately,
+// not here. Pure + exported so this count boundary is unit-tested rather than
+// asserted inline in the un-tested pipeline.
+export function shouldCollapsePartialRead(params: {
+  usableCount: number
+  totalCount: number
+  recommendation: Recommendation
+}): boolean {
+  const partial = params.usableCount > 0 && params.usableCount < params.totalCount
+  return partial && params.recommendation !== 'worth_a_call'
+}
+
 // ── Read-text selection (B-060 — the mechanism, framework-owned) ──────────────
 // The per-type templates are the descriptor's; the selection ORDER — above all
 // the guarantee that the model's free text reaches the owner ONLY on the
@@ -165,6 +192,35 @@ export function selectReadText<TFlag extends string>(
   if (recommendation === 'monitor') return copy.monitor(petName)
   // 5. not_enough_to_say — unclear photo, not the subject, or no photo.
   return copy.noFlag(petName, hasPhoto)
+}
+
+// ── Description selection (CUL-152 / B-179 — the SECOND owner-facing free-text field) ──
+// The model emits two free-text strings: read_text (selected above) and `description`.
+// read_text is gated TWICE — the descriptor's parse nulls it unless the model itself
+// self-escalated, and selectReadText above only surfaces it on a non-contextual, readable
+// FINAL worth_a_call. `description` is a structured column written straight from the parse,
+// so it bypasses selectReadText and needs its own POST-FLOOR gate to get the same guarantee.
+// This is that gate: the model's description surfaces ONLY under the same condition
+// selectReadText surfaces read_text (a non-contextual, readable, final worth_a_call), else
+// null. The caller passes the PARSE-gated description (already null unless the model itself
+// self-escalated), so the combined guarantee matches read_text exactly: description surfaces
+// iff (the model self-escalated) AND (the final read is a non-contextual, readable
+// worth_a_call). Pure + exported so the never-reassure guarantee on description is
+// unit-tested, not asserted by a comment. Without this second gate a model that returns
+// worth_a_call on a photo it also says is not the subject (floor DOWNGRADES to
+// not_enough_to_say) would surface a reassuring description on a "Not enough to say" card —
+// reassurance-on-a-non-escalation, the exact Pattern-1 miss (adversarial review, this PR).
+export function selectDescription(params: {
+  modelDescription: string | null
+  recommendation: Recommendation
+  contextualFlags: string[]
+  photoUnreadable: boolean
+}): string | null {
+  const maySurface =
+    params.contextualFlags.length === 0 &&
+    !params.photoUnreadable &&
+    params.recommendation === 'worth_a_call'
+  return maySurface ? params.modelDescription : null
 }
 
 // ── Write-back decision (Pattern 7 — the never-clobber guard, B-028) ──────────
@@ -446,6 +502,9 @@ export interface IncidentAnalysisBase {
   visual_flags: string[]
   recommendation: Recommendation
   read_text: string | null
+  // The model's OTHER owner-facing free-text field. The pipeline post-floor-gates it
+  // (selectDescription) exactly as read_text is gated, so both live in the base (CUL-152).
+  description: string | null
 }
 
 export interface IncidentDescriptor<TAnalysis extends IncidentAnalysisBase, TFlag extends string> {
@@ -491,8 +550,10 @@ export interface IncidentDescriptor<TAnalysis extends IncidentAnalysisBase, TFla
   // their own reassurance-word regex test (Pattern 8) — not inherited.
   copy: IncidentCopy<TFlag>
   // Per-type structured column values for the full-upsert write path (incl.
-  // ai_raw_payload + ai_confidence). Called with null when no model ran — all
-  // per-type columns must then be null (nothing to preserve on a fresh row).
+  // ai_raw_payload + ai_confidence). Called with null when no model result stands —
+  // either no model ran (no photo / fully-unreadable) OR a real result was discarded
+  // by the B-203 partial-read collapse — in which case all per-type columns must be
+  // null (nothing to preserve, and nothing partial-view to carry onto the report).
   buildStructuredValues(analysis: TAnalysis | null): Record<string, unknown>
 }
 
@@ -759,6 +820,9 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
     //    the model; an oversized/undecodable photo degrades to photoUnreadable.
     let analysis: TAnalysis | null = null
     let photoUnreadable = false
+    // Photos actually sent to the model this run (≤ the event's attachment count).
+    // Compared against photoPaths.length in step 7b to detect a PARTIAL read (B-203).
+    let usableReadCount = 0
     if (hasPhoto) {
       // Fetch each photo at a size Claude can accept. An already-small object is
       // used as-is; an oversized one is re-fetched via server-side downscaling
@@ -773,6 +837,7 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
         ),
       )
       const usableBlobs = fetched.filter((b): b is Blob => b !== null)
+      usableReadCount = usableBlobs.length
       if (usableBlobs.length === 0) {
         photoUnreadable = true // no photo we could get within Claude's size limit
       } else {
@@ -798,14 +863,32 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
     }
 
     // 7. Escalation floor (contextual flags from step 3 + the model's visual flags).
-    const visualFlags = analysis?.visual_flags ?? []
-    const recommendation = applyEscalationFloor({
+    let visualFlags = analysis?.visual_flags ?? []
+    let recommendation = applyEscalationFloor({
       modelRecommendation: analysis?.recommendation ?? 'not_enough_to_say',
       appearsToShowSubject: analysis ? descriptor.appearsToShowSubject(analysis) : false,
       hasPhoto,
       visualFlags,
       contextualFlags,
     })
+
+    // 7b. Partial-read honesty (B-203 / CUL-298). If we could not read EVERY photo on
+    //     the event and the photos we DID read did not escalate, we refuse to stand
+    //     behind the benign result: an unseen frame could hold the red flag the
+    //     readable ones lack, so a 'monitor' here would be a reassurance-on-absence,
+    //     and its structured fields ("Blood: none visible", from a partial view) would
+    //     carry that onto the card and the vet report. Collapse to the fully-unread
+    //     shape — drop the analysis so the structured observations vanish (step 9's
+    //     buildStructuredValues(null)) and the verdict + read become the honest
+    //     not_enough_to_say. Any escalation already reached (worth_a_call — a visual
+    //     flag the photos surfaced, the model's own call, or a contextual flag
+    //     computed from the record) is always kept: the floor at step 7 runs FIRST, so
+    //     presence has already escalated before this guard inspects the verdict.
+    if (shouldCollapsePartialRead({ usableCount: usableReadCount, totalCount: photoPaths.length, recommendation })) {
+      analysis = null
+      visualFlags = []
+      recommendation = 'not_enough_to_say'
+    }
 
     // 8. Read text — the load-bearing never-reassure selection (B-060), pure + tested.
     // The model's free text reaches the owner ONLY on the worth_a_call (visual-flag)
@@ -821,6 +904,22 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
       photoUnreadable,
       hasPhoto,
     })
+
+    // 8b. Post-floor gate on the model's free-text `description` (CUL-152 / B-179 — see
+    // selectDescription). read_text is re-gated post-floor by selectReadText above;
+    // `description` is a structured column written straight from the parse, so it needs
+    // this second gate to inherit the same never-reassure guarantee. Mutating analysis
+    // nulls BOTH the description column AND ai_raw_payload (= analysis) together, so the
+    // owner-edit diff baseline (extract*EditableFromPayload) stays consistent (Pattern 7).
+    // Closes the model-self-escalated-but-floor-downgraded leak the parse gate alone missed.
+    if (analysis) {
+      analysis.description = selectDescription({
+        modelDescription: analysis.description,
+        recommendation,
+        contextualFlags,
+        photoUnreadable,
+      })
+    }
 
     const status = recommendation === 'not_enough_to_say' ? 'uncertain' : 'completed'
 

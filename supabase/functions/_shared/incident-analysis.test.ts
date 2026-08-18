@@ -15,6 +15,7 @@
 import { assertEquals, assertStrictEquals } from 'https://deno.land/std@0.224.0/assert/mod.ts'
 import {
   applyEscalationFloor,
+  shouldCollapsePartialRead,
   selectReadText,
   buildAnalysisWriteBack,
   fetchUsableImageBlob,
@@ -125,6 +126,46 @@ Deno.test('floor — not-the-subject / no-photo collapse to not_enough_to_say', 
     }),
     'not_enough_to_say',
   )
+})
+
+// ── shouldCollapsePartialRead — the B-203 / CUL-298 partial-read guard ────────
+// A benign read on only SOME of an event's photos must NOT stand: an unseen frame
+// could hold the red flag, so a would-be monitor collapses to not_enough_to_say
+// (dropping the analysis, so its "Blood: none visible" observations vanish too). An
+// escalation the readable photos DID surface always survives — presence escalates.
+
+Deno.test('shouldCollapsePartialRead — a benign partial read (some photos dropped) collapses', () => {
+  // The exact bug: 2 photos, 1 readable + benign; the dropped one could have shown blood.
+  assertStrictEquals(shouldCollapsePartialRead({ usableCount: 1, totalCount: 2, recommendation: 'monitor' }), true)
+})
+
+Deno.test('shouldCollapsePartialRead — a worth_a_call from the readable subset is NEVER collapsed', () => {
+  // Presence escalates: a visual/model/contextual escalation survives a partial read.
+  assertStrictEquals(shouldCollapsePartialRead({ usableCount: 1, totalCount: 2, recommendation: 'worth_a_call' }), false)
+})
+
+Deno.test('shouldCollapsePartialRead — a complete read (every photo seen) never collapses', () => {
+  assertStrictEquals(shouldCollapsePartialRead({ usableCount: 2, totalCount: 2, recommendation: 'monitor' }), false)
+  assertStrictEquals(shouldCollapsePartialRead({ usableCount: 1, totalCount: 1, recommendation: 'monitor' }), false)
+})
+
+Deno.test('shouldCollapsePartialRead — fully-unreadable (zero usable) is NOT this guard (photoUnreadable handles it)', () => {
+  assertStrictEquals(shouldCollapsePartialRead({ usableCount: 0, totalCount: 2, recommendation: 'monitor' }), false)
+  assertStrictEquals(shouldCollapsePartialRead({ usableCount: 0, totalCount: 0, recommendation: 'not_enough_to_say' }), false)
+})
+
+Deno.test('shouldCollapsePartialRead — the MAX_PHOTOS overflow (>3 photos, 3 read) is a partial read too', () => {
+  // 5 attachments, only 3 ever sent to the model; a benign 3 can't clear the other 2.
+  assertStrictEquals(shouldCollapsePartialRead({ usableCount: 3, totalCount: 5, recommendation: 'monitor' }), true)
+  // ...but an escalation among the 3 still stands.
+  assertStrictEquals(shouldCollapsePartialRead({ usableCount: 3, totalCount: 5, recommendation: 'worth_a_call' }), false)
+})
+
+Deno.test('shouldCollapsePartialRead — a partial read already at not_enough_to_say still collapses (drops its structured fields)', () => {
+  // e.g. the readable subset didn't appear to show the subject. The verdict is
+  // already the target, but the collapse still nulls the analysis so no partial-view
+  // observation is written.
+  assertStrictEquals(shouldCollapsePartialRead({ usableCount: 1, totalCount: 2, recommendation: 'not_enough_to_say' }), true)
 })
 
 // ── selectReadText — the B-060 selection order, pinned with a sentinel copy ───

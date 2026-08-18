@@ -18,6 +18,7 @@ import {
   applyEscalationFloor,
   buildContextualReadText,
   selectReadText,
+  selectDescription,
   buildAnalysisWriteBack,
   STRUCTURED_FIELD_KEYS,
   detectImageMediaType,
@@ -298,6 +299,113 @@ Deno.test('parseAnalysisToolResult — no double-count when the model sets both 
     appears_to_show_stool: true, blood_present: 'yes', visual_flags: ['blood'], recommendation: 'worth_a_call',
   }))!
   assertEquals(r.visual_flags, ['blood']) // union, not append — exactly one entry
+})
+
+// ── CUL-152 / B-179: the free-text `description` gets the SAME model-self-escalated
+// gate read_text already has — it is owner-facing (detail / ask / Step 9 report) and
+// the same n=1 reassurance-on-absence vector, one field over. ──
+
+Deno.test('parseAnalysisToolResult — monitor: model description is suppressed at parse (CUL-152)', () => {
+  const r = parseAnalysisToolResult(makeToolUse({
+    appears_to_show_stool: true,
+    consistency: 'type_4_smooth_soft',
+    colour: 'brown',
+    blood_present: 'no',
+    mucus_present: 'no',
+    foreign_material_present: 'no',
+    description: 'A normal, healthy-looking stool — nothing concerning here.', // the leak vector
+    recommendation: 'monitor',
+    read_text: 'Cooper looks fine.',
+  }))!
+  assertStrictEquals(r.recommendation, 'monitor')
+  assertStrictEquals(r.description, null) // prose suppressed on a benign read
+  assertStrictEquals(r.read_text, null)
+  // structured clinical facts still land — they, not the prose, carry the record
+  assertStrictEquals(r.consistency, 'type_4_smooth_soft')
+  assertStrictEquals(r.colour, 'brown')
+})
+
+Deno.test("parseAnalysisToolResult — worth_a_call: the model's OWN description is preserved (surfaces on escalation)", () => {
+  const r = parseAnalysisToolResult(makeToolUse({
+    appears_to_show_stool: true,
+    blood_present: 'yes',
+    blood_type: 'fresh_red',
+    visual_flags: ['blood'],
+    description: 'There are visible streaks of fresh red blood on the surface.',
+    recommendation: 'worth_a_call',
+    read_text: 'I can see what looks like blood. That is worth a call to your vet.',
+  }))!
+  assertStrictEquals(r.description, 'There are visible streaks of fresh red blood on the surface.')
+  assertStrictEquals(r.read_text, 'I can see what looks like blood. That is worth a call to your vet.')
+})
+
+Deno.test('parseAnalysisToolResult — derived escalation (model omits flag, says monitor): description suppressed too (CUL-152)', () => {
+  // Companion to the read_text derivation test above: when the model records blood but
+  // omits the visual flag AND under-calls to monitor, the floor escalates on the derived
+  // flag — but the model's monitor-era description must NOT surface on that escalation.
+  const r = parseAnalysisToolResult(makeToolUse({
+    appears_to_show_stool: true,
+    blood_present: 'yes',
+    blood_type: 'fresh_red',
+    visual_flags: [],
+    recommendation: 'monitor',
+    description: 'A soft stool with a little colour, looks unremarkable.', // must NOT surface
+    read_text: 'Nothing concerning here.',
+  }))!
+  assertEquals(r.visual_flags, ['blood']) // derived → floor will escalate
+  assertStrictEquals(r.description, null)  // model's non-escalation prose suppressed
+  assertStrictEquals(r.read_text, null)
+})
+
+// ── selectDescription: the POST-FLOOR gate that gives `description` the same
+// guarantee read_text gets from selectReadText (CUL-152 / B-179). ──
+
+Deno.test('selectDescription — surfaces the model description on a non-contextual, readable worth_a_call', () => {
+  assertStrictEquals(
+    selectDescription({ modelDescription: 'Visible streaks of fresh red blood.', recommendation: 'worth_a_call', contextualFlags: [], photoUnreadable: false }),
+    'Visible streaks of fresh red blood.',
+  )
+})
+
+Deno.test('selectDescription — null on monitor / not_enough_to_say (the reassurance-on-absence paths)', () => {
+  const d = 'A normal, healthy-looking stool — nothing concerning here.'
+  assertStrictEquals(selectDescription({ modelDescription: d, recommendation: 'monitor', contextualFlags: [], photoUnreadable: false }), null)
+  assertStrictEquals(selectDescription({ modelDescription: d, recommendation: 'not_enough_to_say', contextualFlags: [], photoUnreadable: false }), null)
+})
+
+Deno.test('selectDescription — null when a contextual flag drove the escalation (model prose is not the reason) or the photo was unreadable', () => {
+  assertStrictEquals(selectDescription({ modelDescription: 'looks unremarkable', recommendation: 'worth_a_call', contextualFlags: ['repeated_loose_stool'], photoUnreadable: false }), null)
+  assertStrictEquals(selectDescription({ modelDescription: 'anything', recommendation: 'worth_a_call', contextualFlags: [], photoUnreadable: true }), null)
+})
+
+Deno.test('CUL-152 pipeline gate — model self-escalates but the floor DOWNGRADES: description nulled (the adversarial break, closed)', () => {
+  // Model returns worth_a_call on a photo it ALSO says is not stool, with a reassuring
+  // description. Parse preserves the description (the model self-escalated) — so the parse
+  // gate alone is NOT enough — but the floor downgrades to not_enough_to_say (appears=false,
+  // no flags), so the post-floor selectDescription must null it.
+  const r = parseAnalysisToolResult(makeToolUse({
+    appears_to_show_stool: false,
+    recommendation: 'worth_a_call',
+    visual_flags: [],
+    description: 'A perfectly normal, healthy stool — nothing at all to worry about.',
+    read_text: 'Nothing at all to worry about.',
+  }))!
+  assertStrictEquals(r.description, 'A perfectly normal, healthy stool — nothing at all to worry about.') // parse kept it
+  const rec = applyEscalationFloor({
+    modelRecommendation: r.recommendation,
+    appearsToShowStool: r.appears_to_show_stool,
+    hasPhoto: true,
+    visualFlags: r.visual_flags,
+    contextualFlags: [],
+  })
+  assertStrictEquals(rec, 'not_enough_to_say') // the floor downgraded it
+  assertStrictEquals(
+    selectDescription({ modelDescription: r.description, recommendation: rec, contextualFlags: [], photoUnreadable: false }),
+    null, // the post-floor gate nulls the reassuring description
+  )
+  // read_text is separately safe on this path — selectReadText re-gates on the post-floor rec.
+  const read = selectReadText({ petName: 'Cooper', recommendation: rec, contextualFlags: [], visualFlags: [], modelReadText: r.read_text, photoUnreadable: false, hasPhoto: true })
+  assertEquals(read.includes('not much I can read'), true)
 })
 
 // ── computeContextualFlags ────────────────────────────────────────────────────
