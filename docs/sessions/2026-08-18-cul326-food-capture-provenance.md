@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-18
 
-**Shipped via #673** (draft). Closes CUL-326. Follow-up filed: CUL-536.
+**Shipped via #673** (draft). Closes CUL-326. Follow-up filed: CUL-537.
 
 ## TL;DR
 
@@ -42,9 +42,9 @@ The PM approved Option A.
 
   DoD line (reviewer's own words): *tried a 'now'-seeded food-capture meal whose time the owner edits → correctly stores 'manual' (safe direction) ✓; peek that changes nothing on 'now' and 'exif' → source preserved, EXIF badge not dropped ✓; scroll-away-and-back and sub-minute-truncation edges → flip 'manual' (safe, under-claiming; the `changed` compare is unchanged from the old rule) ✓; verified the delta is exactly ('now',changed)→'manual' ✓.*
 
-## Residual → CUL-536
+## Residual → CUL-537
 
-The sibling column `occurred_at_confidence` has a build-time source-scan guard against exactly this kind of drift (`lib/occurredAtConfidence.guard.test.ts`, B-448) — but **`occurred_at_source` has none**, which is why this straggler rotted silently after B-525. Filed **CUL-536** (Low, Legacy Backlog) to add the sibling guard, with a design note not to naively copy the confidence guard (target the provenance-mutation anti-pattern, allowlist the completion cards). Not folded into this PR — new scope gets its own issue.
+The sibling column `occurred_at_confidence` has a build-time source-scan guard against exactly this kind of drift (`lib/occurredAtConfidence.guard.test.ts`, B-448) — but **`occurred_at_source` has none**, which is why this straggler rotted silently after B-525. Filed **CUL-537** (Low, Legacy Backlog) to add the sibling guard, with a design note not to naively copy the confidence guard (target the provenance-mutation anti-pattern, allowlist the completion cards). Not folded into this PR — new scope gets its own issue.
 
 ## Persona lenses
 
