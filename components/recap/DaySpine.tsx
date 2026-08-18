@@ -3,9 +3,9 @@
 // The screen's centrepiece: the day rendered as a vertical thread of category-tinted
 // nodes, earliest-first, each node a doorway into its own event (`/event/[id]`). It
 // is presentational only — every row it draws is a `DaySummaryRow` the pure builder
-// already shaped (title/detail via the shared `describeDayEvent` mapper, the optional
-// fact-only sub-line, the category that picks the node tint). It computes nothing and
-// judges nothing.
+// already shaped (title/detail + the B-568 wet/dry format tag via the shared
+// `describeDayEvent` mapper, the optional fact-only sub-line, the category that picks
+// the node tint). It computes nothing and judges nothing.
 //
 // NIGHT-ONLY. The recap is always-night (R-1), so the spine reads the night tokens
 // directly; DR-2's horizontal lane is its own component and shares only the tint
