@@ -72,6 +72,12 @@ const FUNCTIONS_DIR = path.join(REPO_ROOT, 'supabase', 'functions');
 const MANIFEST_PATH = path.join(FUNCTIONS_DIR, 'deploy-manifest.json');
 const MANIFEST_REL = path.relative(REPO_ROOT, MANIFEST_PATH);
 
+// Relpaths are normalized to forward slashes so a checkout on a different OS
+// fingerprints identically — the path-separator sibling of readNormalized's
+// CRLF fix (content, not host encoding, is what we hash). Only the hash
+// pre-image and the closure listing use it; content is always read from abs.
+const toRel = (root: string, abs: string) => path.relative(root, abs).split(path.sep).join('/');
+
 // ── fingerprint primitives ─────────────────────────────────────────────────────
 
 const sha256 = (buf: string) => 'sha256:' + crypto.createHash('sha256').update(buf, 'utf8').digest('hex');
@@ -84,12 +90,19 @@ const readNormalized = (abs: string): string => fs.readFileSync(abs, 'utf8').rep
 // Every relative (`./` / `../`) module specifier a source file imports or
 // re-exports. Uses the TS parser (robust to multiline imports, comments, and
 // string literals inside comments) rather than a regex. Handles static
-// `import`/`export … from`, `import x = require('…')`, and dynamic `import('…')`
-// with a string-literal argument. Bare/`https:`/`npm:`/`node:`/`jsr:` specifiers
-// are external — Deno resolves them at runtime, esbuild leaves them alone — so
-// they are deliberately skipped.
+// `import`/`export … from`, `import x = require('…')`, dynamic `import('…')`
+// with a string-literal argument, and the inline import-type query
+// `import('…').Type` (a real form here — generate-report/render.ts uses it for
+// a `report.ts` type; missing it would let that dependency go untraced, which
+// is exactly the silent-drift this guard exists to stop). Bare / `https:` /
+// `npm:` / `node:` / `jsr:` specifiers are external — Deno resolves them at
+// runtime, esbuild leaves them alone — so they are deliberately skipped.
 function relativeSpecifiers(absFile: string, src: string): string[] {
-  const sf = ts.createSourceFile(absFile, src, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  // Parse plain `.ts` as TS, not TSX: every file in a function's closure is a
+  // Deno `.ts` with no JSX, and TSX mode misparses a bare generic arrow
+  // (`<T>(x: T) => x`). Fixtures may be `.tsx`, so pick by extension.
+  const kind = absFile.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS;
+  const sf = ts.createSourceFile(absFile, src, ts.ScriptTarget.Latest, true, kind);
   const out: string[] = [];
   const push = (spec: string | undefined) => {
     if (spec && (spec.startsWith('./') || spec.startsWith('../'))) out.push(spec);
@@ -106,6 +119,9 @@ function relativeSpecifiers(absFile: string, src: string): string[] {
     } else if (ts.isCallExpression(n) && n.expression.kind === ts.SyntaxKind.ImportKeyword) {
       const arg = n.arguments[0];
       if (arg && ts.isStringLiteral(arg)) push(arg.text);
+    } else if (ts.isImportTypeNode(n) && ts.isLiteralTypeNode(n.argument) && ts.isStringLiteral(n.argument.literal)) {
+      // `import('./report.ts').ProteinTimeline` — the type-position query.
+      push(n.argument.literal.text);
     }
     n.forEachChild(visit);
   };
@@ -121,7 +137,14 @@ function resolveSpec(fromFile: string, spec: string): string | null {
   const base = path.resolve(path.dirname(fromFile), spec);
   const candidates = /\.(ts|tsx|json)$/.test(spec)
     ? [base]
-    : [base + '.ts', base + '.tsx', base + '.json', path.join(base, 'index.ts'), path.join(base, 'index.tsx')];
+    : [
+        base + '.ts',
+        base + '.tsx',
+        base + '.json',
+        path.join(base, 'index.ts'),
+        path.join(base, 'index.tsx'),
+        path.join(base, 'index.json'),
+      ];
   for (const c of candidates) {
     try {
       if (fs.statSync(c).isFile()) return c;
@@ -157,18 +180,18 @@ function computeClosure(entryAbs: string): Closure {
 
 type Fingerprint = { fingerprint: string; closure: string[]; unresolved: { from: string; spec: string }[] };
 
-// Fingerprint = sha256 over the sorted `relpath\0sha256(content)` lines of the
-// closure. Both path and content matter, so a rename or a content edit anywhere
-// in the closure moves the fingerprint. `root` only sets the relpaths (kept
-// stable/portable); pass REPO_ROOT for real functions, the temp root in tests.
+// Fingerprint = sha256 over the sorted `<relpath> <sha256(content)>` lines of
+// the closure. Both path and content matter, so a rename or a content edit
+// anywhere in the closure moves the fingerprint. `root` only sets the relpaths
+// (kept stable/portable); pass REPO_ROOT for real functions, temp root in tests.
 function fingerprintEntry(entryAbs: string, root: string): Fingerprint {
   const { files, unresolved } = computeClosure(entryAbs);
-  const rels = files.map((f) => path.relative(root, f)).sort();
-  const serialized = rels.map((rel) => `${rel} ${sha256(readNormalized(path.join(root, rel)))}`).join('\n');
+  const rels = files.map((f) => toRel(root, f)).sort();
+  const serialized = rels.map((rel) => `${rel} ${sha256(readNormalized(path.join(root, rel)))}`).join('\n');
   return {
     fingerprint: sha256(serialized),
     closure: rels,
-    unresolved: unresolved.map((u) => ({ from: path.relative(root, u.from), spec: u.spec })),
+    unresolved: unresolved.map((u) => ({ from: toRel(root, u.from), spec: u.spec })),
   };
 }
 
@@ -342,6 +365,19 @@ describe('the fingerprint walker itself', () => {
     ]);
   });
 
+  it('follows an inline import-type query `import("./x").T` (the real render.ts/report.ts shape)', () => {
+    // generate-report/render.ts references a report.ts type only via
+    // `import('./report.ts').ProteinTimeline` in a parameter position. If the
+    // walker missed ImportTypeNode, report.ts could fall out of the closure with
+    // no UNRESOLVED — a real dependency untraced, the exact silent miss this
+    // guard forbids. It must land in the closure.
+    w('supabase/functions/fn/report.ts', 'export type T = { n: number };\n');
+    w('supabase/functions/fn/index.ts', `export function f(x: import('./report.ts').T) { return x.n; }`);
+    const { closure, unresolved } = fp('supabase/functions/fn/index.ts');
+    expect(unresolved).toEqual([]);
+    expect(closure).toContain('supabase/functions/fn/report.ts');
+  });
+
   it('resolves an extensionless specifier to file.ts and to dir/index.ts', () => {
     w('fn/util.ts', 'export const u = 1;\n');
     w('fn/sub/index.ts', 'export const s = 2;\n');
@@ -377,6 +413,31 @@ describe('the fingerprint walker itself', () => {
     w('fn/index.ts', `import { a } from './a.ts'\nexport const x = a;`);
     const { closure } = fp('fn/index.ts');
     expect(closure.sort()).toEqual(['fn/a.ts', 'fn/b.ts', 'fn/index.ts']);
+  });
+});
+
+// Characterization of the walker's documented limits — NOT aspirational. Records
+// what the static scan deliberately does not chase, so a future reader knows the
+// boundary is known, not accidental (mirrors ownerFacingCopy.test.ts's own block).
+describe("the walker's documented limits (characterization, not a guarantee)", () => {
+  let root = '';
+  beforeEach(() => {
+    root = fs.mkdtempSync(path.join(os.tmpdir(), 'edgefp-lim-'));
+  });
+  afterEach(() => {
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  it('does NOT trace a dynamic import with a non-literal (computed) specifier', () => {
+    // `import(someVar)` cannot be resolved statically; none exist in the edge
+    // functions today. If one is ever added its target is not fingerprinted —
+    // and it is deliberately NOT reported as unresolved (there is no literal to
+    // resolve). Documented so the boundary reads as known, not a bug.
+    const abs = path.join(root, 'index.ts');
+    fs.writeFileSync(abs, `const p = './x.ts'; export const f = () => import(p);`);
+    const { closure, unresolved } = fingerprintEntry(abs, root);
+    expect(unresolved).toEqual([]);
+    expect(closure).toEqual(['index.ts']); // the computed target is not traced
   });
 });
 

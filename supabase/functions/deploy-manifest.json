@@ -1,59 +1,59 @@
 {
-  "_README": "Edge-Function deploy ledger (B-178 / CUL-135). One entry per deployable function. `fingerprint` = the sha256 of the function's shipping import-closure (index.ts + every local .ts it inlines) last acknowledged for deploy — computed by guards/edgeFunctionDeploy.test.ts, which FAILS THE BUILD when a function drifts from its recorded fingerprint without a reasoned acknowledgment. Statuses: `deployed` (fingerprint confirmed live), `pending` (a deploy is owed), `hold` (deliberately not deployed — e.g. B-494). `pending`/`hold` require a `reason`. After deploying a function, set its `fingerprint` to the current value (the guard's failure message prints it) with status `deployed`. This ledger records intent; it does NOT prove a deploy happened — see docs/edge-deploy-runbook.md § Deploy ledger.",
-  "_seed": "Seeded 2026-08-19 (CUL-135). Fingerprints are the current main closures at ledger creation. Live-vs-main was NOT verified per-function (the live artifact is a bundle, not a source closure, and this guard is token-free by design), so no function is seeded `deployed`: generate-report is the one confirmed `hold` (B-494); every other function is `pending` (baseline). Each converts to `deployed` on its next verified deploy-from-main, or via the live reconciliation follow-on.",
+  "_README": "Edge-Function deploy ledger (B-178 / CUL-135). One entry per deployable function. `fingerprint` = the sha256 of the function's shipping import-closure (index.ts + every local .ts it inlines) last acknowledged for deploy — computed by guards/edgeFunctionDeploy.test.ts, which FAILS THE BUILD when a function drifts from its recorded fingerprint without a reasoned acknowledgment. Statuses: `deployed` (fingerprint confirmed live), `pending` (a deploy is owed OR the live state is unverified — see the entry's `reason`), `hold` (deliberately not deployed — e.g. B-494). `pending`/`hold` require a `reason`. After deploying a function, set its `fingerprint` to the current value (the guard's failure message prints it) with status `deployed`. This ledger records intent; it does NOT prove a deploy happened — see docs/edge-deploy-runbook.md § Deploy ledger.",
+  "_seed": "Seeded 2026-08-19 (CUL-135). Fingerprints are the current main closures at ledger creation. Live-vs-main was NOT verified per-function (the live artifact is a bundle, not a source closure, and this guard is token-free by design), so no function is seeded `deployed`: generate-report is the one confirmed `hold` (B-494); every other function is `pending` (baseline). Each converts to `deployed` on its next verified deploy-from-main, or via the live reconciliation follow-on (CUL-541).",
   "functions": {
     "analyze-stool": {
       "status": "pending",
-      "fingerprint": "sha256:4a9e55c59916adad1b78220b3ffc2adc9a443f58f3c22c6de21e48bad8ec533b",
+      "fingerprint": "sha256:879962e5a77babe10977ac3358c45a3469b39ff80c27d9bbeb9e12edb81067f5",
       "reason": "Baseline at ledger creation (CUL-135); live-vs-main not verified. Known undeployed work: A8 transform_only redeploy and CUL-258 Anthropic fetch timeouts (via _shared/http.ts).",
       "ref": "CUL-135",
       "updated": "2026-08-19"
     },
     "analyze-vomit": {
       "status": "pending",
-      "fingerprint": "sha256:b44781d96fda2e2538e4aefaafd1fd342a36f5daac05caf50c6b055d21d362af",
+      "fingerprint": "sha256:430b6950b8345590ed5683bb46b27ec83312fe26c39f49e3d917edcad0cbd5c5",
       "reason": "Baseline at ledger creation (CUL-135); live-vs-main not verified. Known undeployed work: A8 transform_only redeploy, CUL-152/B-179 free-text `description` gate (#671, 'one post-merge deploy'), and CUL-258 fetch timeouts.",
       "ref": "CUL-135",
       "updated": "2026-08-19"
     },
     "ask": {
       "status": "pending",
-      "fingerprint": "sha256:aedc5d2132f78ec0679f66a4a74707b252c284f2dfeb01e61af301747cc3b049",
+      "fingerprint": "sha256:6b808227a6906e76d54acb3d441e1f9552185f21e29f8ecb7cd8105fe97c6795",
       "reason": "Baseline at ledger creation (CUL-135); live-vs-main not verified. Known undeployed work: A8 (deploy AFTER analyze-vomit/analyze-stool per the ordering gate) and CUL-258 fetch timeouts.",
       "ref": "CUL-135",
       "updated": "2026-08-19"
     },
     "delete-account": {
       "status": "pending",
-      "fingerprint": "sha256:b2a54410071150dae62d5eb667ca64ad65b3882d42957b5e0d49f51b3321672d",
-      "reason": "Baseline at ledger creation (CUL-135); live-vs-main not verified. Last deployed #558 (2026-08-02); no known pending change, but not confirmed in-sync at seeding — resolves to `deployed` on the next verified deploy or the live reconciliation.",
+      "fingerprint": "sha256:495f392b0af1864e267e28106e5c72ba590f7eb2045105811eb88ea47971ffea",
+      "reason": "Baseline at ledger creation (CUL-135); live-vs-main not verified (unverified baseline, not a known-owed deploy). Last deployed #558 (2026-08-02); no known pending change — resolves to `deployed` on the next verified deploy or the live reconciliation (CUL-541).",
       "ref": "CUL-135",
       "updated": "2026-08-19"
     },
     "extract-food-from-photo": {
       "status": "pending",
-      "fingerprint": "sha256:3fa5555eb158d589c310b6dae03fbed35e57d86a162e1b247fb5a29918a3a67a",
+      "fingerprint": "sha256:772c6f590f8a2c6de1dff8f2f16739da7fa654d87e9c5782b746dc4286b90854",
       "reason": "Baseline at ledger creation (CUL-135); live-vs-main not verified. Known undeployed work: CUL-258 Anthropic fetch timeouts (via _shared/http.ts).",
       "ref": "CUL-135",
       "updated": "2026-08-19"
     },
     "extract-medication-from-photo": {
       "status": "pending",
-      "fingerprint": "sha256:4767da14c9dfd0a7f719540992b584844c709cc62939133a29b0325f884658cc",
+      "fingerprint": "sha256:b91616f9c0e685a6f40a0208a57cb353ce2691dc54afeac05a45dbb956170ddc",
       "reason": "Baseline at ledger creation (CUL-135); live-vs-main not verified. Known undeployed work: CUL-258 Anthropic fetch timeouts (via _shared/http.ts).",
       "ref": "CUL-135",
       "updated": "2026-08-19"
     },
     "generate-report": {
       "status": "hold",
-      "fingerprint": "sha256:e67896b64549dbc8c3212093bf623f5d199fa7e3b2865b508f030b5f3b5e6b4a",
+      "fingerprint": "sha256:fbeb79c3146f0fe1f0837675e8dea3c43cf4070e6ebaec6a9342d75a6eaf2dc1",
       "reason": "B-494 HOLD: the report deliberately runs the pre-PR-7 off-diet heuristic until the refusal safety lane ships; the generate-report redeploy is gated on B-494 (see STATUS.md / Open Questions). Do NOT set `deployed` until B-494 clears.",
       "ref": "B-494",
       "updated": "2026-08-19"
     },
     "generate-signal": {
       "status": "pending",
-      "fingerprint": "sha256:c2b32262880fe6db5a8e580165779907e8d2650c9e730317a9e3f66f64f0e33d",
+      "fingerprint": "sha256:df8a0ddb38d19e57a8142cdf22e516df0b3f941dd3b1a3e6c8e80851a67777ca",
       "reason": "Baseline at ledger creation (CUL-135); live-vs-main not verified. Known undeployed work: Signals-v2 redeploy gated (B-755 / #662) and CUL-258 fetch timeouts. Redeploy is gated — see STATUS.md before deploying.",
       "ref": "CUL-135",
       "updated": "2026-08-19"
