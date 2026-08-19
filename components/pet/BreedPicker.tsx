@@ -46,7 +46,7 @@ export function BreedPicker({ breeds, value, onSelect, onSelectOther }: BreedPic
         accessibilityLabel="Search breeds"
       />
 
-      <View style={styles.list} accessibilityRole="radiogroup">
+      <View style={styles.list}>
         {/* Escape hatch pinned to the TOP so a rescue/mixed-breed owner reaches
             free text without scrolling past a long (up to ~290-entry) list —
             B-261/CUL-137. Always reachable, even with zero search matches: no
@@ -66,23 +66,30 @@ export function BreedPicker({ breeds, value, onSelect, onSelectOther }: BreedPic
           <Text style={styles.otherHint}>type it in</Text>
         </TouchableOpacity>
 
-        {visible.map((b) => {
-          const selected = value === b;
-          return (
-            <TouchableOpacity
-              key={b}
-              style={[styles.item, selected && styles.itemSelected]}
-              onPress={() => onSelect(b)}
-              activeOpacity={0.7}
-              accessibilityRole="radio"
-              accessibilityLabel={b}
-              accessibilityState={{ selected }}
-            >
-              <Text style={[styles.itemText, selected && styles.itemTextSelected]}>{b}</Text>
-              {selected && <Text style={styles.itemCheck}>✓</Text>}
-            </TouchableOpacity>
-          );
-        })}
+        {/* The radiogroup scopes ONLY the breed radios. The "Other" escape hatch
+            above is a button, not a radio, so it lives outside the group — a
+            radiogroup's children should all be radios, and keeping the button out
+            avoids it becoming the first thing a screen reader announces on
+            entering the group now that it's pinned to the top. */}
+        <View accessibilityRole="radiogroup">
+          {visible.map((b) => {
+            const selected = value === b;
+            return (
+              <TouchableOpacity
+                key={b}
+                style={[styles.item, selected && styles.itemSelected]}
+                onPress={() => onSelect(b)}
+                activeOpacity={0.7}
+                accessibilityRole="radio"
+                accessibilityLabel={b}
+                accessibilityState={{ selected }}
+              >
+                <Text style={[styles.itemText, selected && styles.itemTextSelected]}>{b}</Text>
+                {selected && <Text style={styles.itemCheck}>✓</Text>}
+              </TouchableOpacity>
+            );
+          })}
+        </View>
 
         {matches.length === 0 && (
           <View style={styles.item}>

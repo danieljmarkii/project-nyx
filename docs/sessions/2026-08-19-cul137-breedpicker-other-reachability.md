@@ -47,7 +47,13 @@ draft; a footer remains a clean follow-up if they'd rather keep the catch-alls s
 - `guards/ownerFacingCopy.test.ts` 17/17 (change is in `components/`, so the copy guard was in
   scope — the new copy has no `!`, no error-string extraction, no clinical term).
 - Full pre-push suite green: 239 suites / 5314 tests.
-- `code-reviewer` subagent run on the diff (fresh un-anchored pass).
+- `code-reviewer` subagent run on the diff (fresh un-anchored pass): **ship-ready on code-correctness
+  and house rules** (no bugs, tokens-only styling, 44pt tap-target + a11y hold, copy in voice, tests
+  real). Its two nits were fixed in a follow-up commit — (a) a test now pins the "above to type it in"
+  empty-state wording so a lone copy revert can't slip past the ordering test, and (b) the `radiogroup`
+  role was scoped to just the breed radios so the "Other" button (which its top-pin had made the first
+  element a screen reader announces on entering the group) no longer sits inside the group. Its one
+  non-code item — "Other" above the catch-alls — is the Persona Conflict below, teed up for PM/Designer.
 
 ## DoD / notes
 
@@ -58,7 +64,11 @@ draft; a footer remains a clean follow-up if they'd rather keep the catch-alls s
   scrolling.
 - **Persona sign-off:** Designer ✓ (Principle 1 — no decision at moment of event; Jordan's 10-second
   reachability restored) — Engineer ✓ (shared component, theme tokens only, 44pt tap-target preserved,
-  no scroll restructuring) — Data N/A — Dr. Chen N/A.
+  no scroll restructuring) — **Data: open concern, not N/A** (catalog integrity — the pinned catch-alls
+  exist to be the default-correct tap and now sit one row *below* the free-text hatch; free text
+  fragments the breed field the vet report's disease-risk read depends on) — Dr. Chen N/A. The
+  Designer/Engineer ↔ Data tension is a genuine Persona Conflict, surfaced for the PM/Designer on
+  CUL-137 per the protocol — not resolved in-session.
 - **STATUS.md untouched.** A Legacy-Backlog onboarding/profile polish changes no working-state field
   (Current Phase / Parallel Track / Blocking OQs / PM Action Items / Runtime), so the minimal — and
   correct — STATUS.md diff is none.

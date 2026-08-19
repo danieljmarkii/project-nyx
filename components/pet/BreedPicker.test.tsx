@@ -47,6 +47,10 @@ describe('BreedPicker', () => {
     );
     fireEvent.changeText(getByLabelText('Search breeds'), 'zzz');
     expect(getByText(/No breeds match/)).toBeTruthy();
+    // Pin the corrected "above to type it in" wording (was "below to add it") so a
+    // lone copy revert — flipping the word without moving the row back — can't slip
+    // past the row-ordering test. B-261/CUL-137.
+    expect(getByText(/above to type it in/)).toBeTruthy();
     // "Other" stays reachable, and tapping it hands back the typed term so the
     // owner doesn't have to retype it into the free-text field.
     fireEvent.press(getByText('Other / not listed'));
