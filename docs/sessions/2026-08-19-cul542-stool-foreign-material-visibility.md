@@ -1,7 +1,7 @@
 # CUL-542 — `analyze-stool` `unsure` foreign-material visibility (CUL-240 sibling parity)
 
 **Date:** 2026-08-19
-**Shipped via #<PR>** (draft) · branch `claude/cul-542-stool-analysis-vomit-ljtpe6`
+**Shipped via #682** (draft) · branch `claude/cul-542-stool-analysis-vomit-ljtpe6`
 
 ## The issue
 
@@ -31,12 +31,12 @@ None needed. CUL-240 already corrected the stale write-side comment on `analyze-
 
 ## Tests
 
-Five render branches in `StoolAnalysisSection.test.tsx` (mirroring the vomit suite): `unsure`+fragment surfaces the deterministic label (and the **raw note never appears**), still `monitor` · a **diagnostic/reassuring `unsure` note never reaches the card** (the Pattern-10 counterexample, pinned) · bare `unsure` hidden · `no`+note excluded · `yes` unchanged (shows the model note on its `worth_a_call` card). 16/16 in the file; `tsc --noEmit` clean. (Deno suites unaffected — no Edge Function change.)
+Five render branches in `StoolAnalysisSection.test.tsx` (mirroring the vomit suite): `unsure`+fragment surfaces the deterministic label (and the **raw note never appears**), still `monitor` · a **diagnostic/reassuring `unsure` note never reaches the card** (the Pattern-10 counterexample, pinned) · bare `unsure` hidden · `no`+note excluded · `yes` unchanged (shows the model note on its `worth_a_call` card). Plus a **whitespace-only-note** branch (a `+1` hardening over strict vomit parity — the code-reviewer NIT — pinning that `.trim()` gates on real content, not mere presence). 17/17 in the file; full suite 5324/5324; `tsc --noEmit` clean. (Deno suites unaffected — no Edge Function change.)
 
 ## Persona / review sign-off
 
 - **Dr. Chen / Data Scientist (`clinical-guardrails` self-review):** Pattern 1 (absence renders nothing, never a "no foreign material" claim) ✓ · Pattern 2 (floor untouched, server-side) ✓ · Pattern 9 (derives from the owner-editable enum, not the cached `visual_flags`/read; present-only) ✓ · Pattern 10 (raw note content never on the `monitor` card; presence-triggered deterministic label) ✓. Falsification tried: an `unsure` note reading *"looks like a piece of bone… usually passes on its own"* — held; the deterministic label renders and `bone`/`raw diet`/`usually passes on its own` are asserted absent. Started from the round-2-corrected vomit design, so no round-1-class leak was ever present.
-- **code-reviewer:** _<pending — updated below on return>_
+- **code-reviewer:** **ship-ready** — no BUG or ANTI-PATTERN findings. Independently verified all five invariants and re-derived the Pattern-10 guarantee *structurally* at the source (traced `analyze-stool/index.ts:279-283` → `_shared/incident-analysis.ts` `applyEscalationFloor` `visualFlags.length > 0` check runs before the photo/appears checks → `foreign_material_present === 'yes'` reaching the client is guaranteed `worth_a_call`; also checked `shouldCollapsePartialRead` can't null it). Confirmed the comment's "stool derives, vomit doesn't (CUL-534)" claim does not overclaim. Two non-blocking items, both handled: **(NIT)** whitespace-only-note test gap → added this session (17/17); **(CLEANUP)** the branch is now near-duplicated across the two sibling components → filed **CUL-544** (shared-`lib/` extraction, `lib/vomitContents.ts`/CUL-226 precedent).
 - **Designer / nyx-voice:** `Possible — not identified` — plain, present-direction, no `!`, honest about uncertainty; identical to the shipped vomit label for cross-surface consistency.
 
 ## Notes

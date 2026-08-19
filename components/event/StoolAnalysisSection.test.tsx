@@ -241,6 +241,23 @@ describe('StoolAnalysisSection — foreign-material visibility (CUL-542, sibling
     expect(queryByText('Foreign material')).toBeNull();      // but no foreign-material row
   });
 
+  it('unsure + a whitespace-only note: stays hidden — .trim() gates on real content, not mere presence', async () => {
+    // Hardening beyond strict CUL-240 parity (the vomit suite lacks this — code-reviewer NIT):
+    // a model note of only whitespace must NOT surface a foreign-material row on the 'unsure'
+    // path. foreignNote is trimmed, so '   ' is falsy and the row is suppressed exactly like a
+    // null note — pinning the Pattern-10 presence gate against a plausible model output.
+    mockRow = row({
+      status: 'completed',
+      recommendation: 'monitor',
+      foreign_material_present: 'unsure',
+      foreign_material_note: '   ',
+      stool_blood_present: 'no', // gives the observations block a row to render
+    });
+    const { findByText, queryByText } = render(<StoolAnalysisSection eventId="s-f5" petName="Rex" hasPhoto />);
+    expect(await findByText('Blood')).toBeTruthy();
+    expect(queryByText('Foreign material')).toBeNull();
+  });
+
   it("'no' + a note never surfaces a foreign-material row (present-only; a 'no' note is not a finding)", async () => {
     // The analyze-stool parser leaves foreign_material_note populated on 'no'/'unsure' too, so
     // the 'unsure' path must key off presence==='unsure' — a 'no' note must never leak in as a
