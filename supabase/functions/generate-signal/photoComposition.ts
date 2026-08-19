@@ -41,10 +41,12 @@
 //
 // ── PURE AND DEPENDENCY-LIGHT ─────────────────────────────────────────────────
 //
-// Same rule as detection.ts / medContext.ts: plain data in, plain data out. The only
-// imports are TYPES from detection.ts (the finding + the L3 payload shapes, defined there
-// because the Finding types reference them) and the shared episode-gap constant from
-// lib/mealTiming.ts (so "same bout" means the same thing here as in the timing engine).
+// Same rule as detection.ts / medContext.ts: plain data in, plain data out. The imports are
+// TYPES from detection.ts (the finding + the L3 payload shapes, defined there because the
+// Finding types reference them), the shared episode-gap constant from lib/mealTiming.ts (so
+// "same bout" means the same thing here as in the timing engine), and the shared food/hair/bile
+// presence leaves from lib/vomitContents.ts (the SAME atoms the vet report reads — CUL-226). All
+// three are pure, import-free lib primitives.
 
 import type {
   Finding,
@@ -52,6 +54,11 @@ import type {
   PhotoCompositionField,
 } from './detection.ts'
 import { DEFAULT_MEAL_TIMING_CONFIG } from '../../../lib/mealTiming.ts'
+// The SHARED vomit-contents presence leaves (CUL-226): the SAME food/hair/bile atoms the vet report's
+// classifyVomitContents reads, so the two can't drift on a future token edit. L3's aggregation (the
+// present-wins episode fold + the answered-denominator discipline below) stays here — only the leaves
+// are shared.
+import { hasBile, hasFood, hasHair } from '../../../lib/vomitContents.ts'
 
 const MS_PER_HOUR = 3_600_000
 const MS_PER_DAY = 86_400_000
@@ -120,11 +127,11 @@ function readFlags(a: PhotoAnalysisInput): ReadFlags {
   const contentsLegible =
     contents != null && contents.length > 0 && !contents.includes('unsure')
 
-  const foodPresent =
-    contents != null &&
-    (contents.includes('undigested_food') || contents.includes('partially_digested_food'))
-  const hairPresent = contents != null && contents.includes('hair')
-  const bilePresent = a.bilePresent === 'yes' || (contents != null && contents.includes('bile'))
+  // Presence leaves via the shared predicate (CUL-226). `contentsLegible` above stays local — it is
+  // L3's tristate-legibility concept (does an absence answer "no"?), not a shared marker check.
+  const foodPresent = hasFood(contents)
+  const hairPresent = hasHair(contents)
+  const bilePresent = hasBile(contents, a.bilePresent)
 
   return {
     foodPresent,

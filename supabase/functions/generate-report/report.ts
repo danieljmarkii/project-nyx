@@ -97,6 +97,11 @@ import {
 // dependency-free precisely so both runtimes share one copy; a second map here is the
 // B-103 drift class, where a new enum value reaches one surface and not the other).
 import { foodFormatWord } from '../../../lib/foodFormat.ts'
+// CUL-226 — the SHARED vomit-contents presence leaves: the SAME food/hair/bile atoms L3's
+// photoComposition reads (same dependency-free, both-runtimes rationale as foodFormat above), so
+// the report's contents descriptor and the Signal card can't drift on a future token edit. Only the
+// LEAVES are shared — classifyVomitContents keeps its own mutually-exclusive priority aggregation.
+import { hasBile, hasFood, hasHair } from '../../../lib/vomitContents.ts'
 // B-140 PR 5 — the ONE shared medication-course derivation, read (never re-derived) by
 // the report's lifetime "Medication history" table (§4.4). `lib/medicationHistory.ts` is
 // React-Native-free by construction precisely so `generate-report` imports it directly,
@@ -2119,15 +2124,22 @@ function computeAge(dob: string | null, nowMs: number): { years: number | null; 
   return { years: Math.floor(months / 12), months: months % 12 }
 }
 
-/** Map a raw event_ai_analysis into its single PRIMARY vomit-contents category (mutually exclusive). */
+/**
+ * Map a raw event_ai_analysis into its single PRIMARY vomit-contents category (mutually exclusive).
+ *
+ * The food / hair / bile leaves come from the SHARED predicate (lib/vomitContents.ts, CUL-226) — the
+ * SAME atoms L3's readFlags reads, so this descriptor and the Signal card can't drift on a token edit.
+ * The AGGREGATION is this function's own and stays here: a priority ladder collapsing to ONE category,
+ * a deliberately different shape from L3's three independent present-only rates. Priority order is
+ * load-bearing — "bilious" means bile AND no food (empty-stomach bilious vomiting), enforced by food
+ * returning first. foam/liquid + grass are report-only categories (no Signal-card equivalent), so
+ * their single-caller leaves stay local rather than joining the shared vocabulary.
+ */
 function classifyVomitContents(a: ReportAiAnalysisInput): VomitContentCategory {
+  if (hasHair(a.contents)) return 'hairball' // most distinctive marker → highest priority
+  if (hasFood(a.contents)) return 'food'
+  if (hasBile(a.contents, a.bilePresent)) return 'bile' // bile, and no food/hair above ⇒ empty-stomach bilious
   const contents = new Set(a.contents ?? [])
-  // Hairball is the most distinctive marker → highest priority.
-  if (contents.has('hair')) return 'hairball'
-  const hasFood = contents.has('undigested_food') || contents.has('partially_digested_food')
-  if (hasFood) return 'food'
-  // Bilious = bile present and NO food (empty-stomach bilious vomiting).
-  if (contents.has('bile') || a.bilePresent === 'yes') return 'bile'
   if (contents.has('foam') || contents.has('liquid_only')) return 'foam_liquid'
   if (contents.has('grass_or_plant')) return 'grass'
   return 'unsure'
