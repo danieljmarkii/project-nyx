@@ -433,11 +433,36 @@ function buildObservations(row: AnalysisRow): Observation[] {
   // observation feeding the report, distinct from the n=1 read's reassurance ban).
   const blood = labelFor(BLOOD_OPTIONS, row.blood_present);
   if (blood) out.push({ field: 'blood_present', label: 'Blood', value: blood });
+  // Foreign material. The 'yes' path shows the model's own note, UNCHANGED by this change:
+  // the model is prompted to set the suspected_foreign_material visual flag on 'yes', so a
+  // 'yes' note normally rides a worth_a_call card (Pattern-10-compliant). That coupling is
+  // not structurally enforced at the floor (which trusts the model's visual_flags array,
+  // not a flag derived from the enum — CUL-534), but closing it is out of scope here. On
+  // 'unsure' the card is
+  // 'monitor', and CUL-240 (B-042) surfaces the previously-hidden finding there — but the
+  // note is model-authored FREE TEXT with no schema constraint, no parse gate, and no
+  // post-floor gate, so the RAW note must NOT reach a non-worth_a_call card
+  // (clinical-guardrails Pattern 10 / B-060 / CUL-152: an 'unsure' note can carry a
+  // diagnosis or a reassurance, e.g. "looks like bone, usually passes on its own", which
+  // an '(unclear)' suffix would not neutralise). So the note's PRESENCE is the trigger — a
+  // deterministic signal the model saw a describable non-food fragment — while its CONTENT
+  // is never rendered here: the 'unsure' row shows a DETERMINISTIC label. That delivers the
+  // whole visibility win (the owner learns a possible, unidentified non-food fragment was
+  // flagged) present-direction, never reassuring, with zero free-text leak, and works on
+  // the existing rows with no Edge Function change. A bare 'unsure' with no note stays
+  // hidden — nothing specific to surface.
+  const foreignNote = row.foreign_material_note?.trim();
   if (row.foreign_material_present === 'yes') {
     out.push({
       field: 'foreign_material_present',
       label: 'Foreign material',
-      value: row.foreign_material_note?.trim() || 'Possible',
+      value: foreignNote || 'Possible',
+    });
+  } else if (row.foreign_material_present === 'unsure' && foreignNote) {
+    out.push({
+      field: 'foreign_material_present',
+      label: 'Foreign material',
+      value: 'Possible — not identified',
     });
   }
   return out;
