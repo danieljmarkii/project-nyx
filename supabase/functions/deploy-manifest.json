@@ -4,15 +4,15 @@
   "functions": {
     "analyze-stool": {
       "status": "pending",
-      "fingerprint": "sha256:879962e5a77babe10977ac3358c45a3469b39ff80c27d9bbeb9e12edb81067f5",
-      "reason": "Baseline at ledger creation (CUL-135); live-vs-main not verified. Known undeployed work: A8 transform_only redeploy and CUL-258 Anthropic fetch timeouts (via _shared/http.ts).",
+      "fingerprint": "sha256:0ccdcdeaebfe137e8a7e0579966583dc61c71040312845e138c429de5a814e70",
+      "reason": "Baseline at ledger creation (CUL-135); live-vs-main not verified. Known undeployed work: A8 transform_only redeploy, CUL-258 Anthropic fetch timeouts (via _shared/http.ts), and CUL-542 (#682, foreign-material fragments on the stool read).",
       "ref": "CUL-135",
       "updated": "2026-08-19"
     },
     "analyze-vomit": {
       "status": "pending",
-      "fingerprint": "sha256:430b6950b8345590ed5683bb46b27ec83312fe26c39f49e3d917edcad0cbd5c5",
-      "reason": "Baseline at ledger creation (CUL-135); live-vs-main not verified. Known undeployed work: A8 transform_only redeploy, CUL-152/B-179 free-text `description` gate (#671, 'one post-merge deploy'), and CUL-258 fetch timeouts.",
+      "fingerprint": "sha256:e0415ea99f90ed968db2f283fa837601f20090e642467f9ad1dc096765c6dacc",
+      "reason": "Baseline at ledger creation (CUL-135); live-vs-main not verified. Known undeployed work: A8 transform_only redeploy, CUL-152/B-179 free-text `description` gate (#671, 'one post-merge deploy'), CUL-258 fetch timeouts, and CUL-240 (#681, foreign-material fragments on the vomit read).",
       "ref": "CUL-135",
       "updated": "2026-08-19"
     },
