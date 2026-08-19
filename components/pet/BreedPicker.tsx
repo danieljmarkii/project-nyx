@@ -47,6 +47,25 @@ export function BreedPicker({ breeds, value, onSelect, onSelectOther }: BreedPic
       />
 
       <View style={styles.list} accessibilityRole="radiogroup">
+        {/* Escape hatch pinned to the TOP so a rescue/mixed-breed owner reaches
+            free text without scrolling past a long (up to ~290-entry) list —
+            B-261/CUL-137. Always reachable, even with zero search matches: no
+            owner is ever blocked by a breed we didn't list. The muted "type it
+            in" hint (restored from onboarding mockup 08) frames it as the
+            self-describe option, so it reads as an escape hatch rather than a
+            first breed — and the pinned catch-alls ("Mixed breed" /
+            "Domestic Shorthair") sit on the very next rows, still no scroll. */}
+        <TouchableOpacity
+          style={styles.item}
+          onPress={() => onSelectOther(query.trim())}
+          activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityLabel="Other / not listed, type it in"
+        >
+          <Text style={styles.otherText}>Other / not listed</Text>
+          <Text style={styles.otherHint}>type it in</Text>
+        </TouchableOpacity>
+
         {visible.map((b) => {
           const selected = value === b;
           return (
@@ -68,7 +87,7 @@ export function BreedPicker({ breeds, value, onSelect, onSelectOther }: BreedPic
         {matches.length === 0 && (
           <View style={styles.item}>
             <Text style={styles.emptyText}>
-              No breeds match “{query.trim()}”. Tap “Other / not listed” below to add it.
+              No breeds match “{query.trim()}”. Tap “Other / not listed” above to type it in.
             </Text>
           </View>
         )}
@@ -78,17 +97,6 @@ export function BreedPicker({ breeds, value, onSelect, onSelectOther }: BreedPic
             <Text style={styles.hintText}>Keep typing to see {overflow} more…</Text>
           </View>
         )}
-
-        {/* Always reachable, even with no search matches — no owner is ever
-            blocked by a breed we didn't list. */}
-        <TouchableOpacity
-          style={styles.item}
-          onPress={() => onSelectOther(query.trim())}
-          activeOpacity={0.7}
-          accessibilityRole="button"
-        >
-          <Text style={styles.itemText}>Other / not listed</Text>
-        </TouchableOpacity>
       </View>
     </View>
   );
@@ -135,6 +143,18 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: theme.textMD,
     color: theme.colorTextPrimary,
+  },
+  // The "Other" label deliberately drops the flex:1 the breed rows use — it must
+  // sit hard-left so its "type it in" hint follows inline (mockup 08), not get
+  // pushed to the far edge like the breed rows' selected ✓.
+  otherText: {
+    fontSize: theme.textMD,
+    color: theme.colorTextPrimary,
+  },
+  otherHint: {
+    marginLeft: theme.space1,
+    fontSize: theme.textSM,
+    color: theme.colorTextSecondary,
   },
   itemTextSelected: {
     color: theme.colorTextOnDark,
