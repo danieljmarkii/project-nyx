@@ -4,9 +4,35 @@
 // account.test.ts). saveVomitFieldEdits is thin I/O over buildVomitEditWrite —
 // the write SHAPE is tested via buildVomitEditWrite below; the round-trip is
 // exercised by the Manual QA Script.
-jest.mock('./supabase', () => ({
-  supabase: { from: jest.fn(), functions: { invoke: jest.fn() } },
-}));
+jest.mock('./supabase', () => {
+  // Controllable realtime channel mock (CUL-171): each .channel() records its
+  // postgres-changes handler + subscribe callback so a test can drive an event
+  // or a SUBSCRIBED status by hand. Created channels are exposed on __channels
+  // for filter assertions + teardown checks. Defined inside the factory to stay
+  // clear of jest's hoisting.
+  const channels: Array<Record<string, unknown>> = [];
+  return {
+    supabase: {
+      from: jest.fn(),
+      functions: { invoke: jest.fn() },
+      channel: jest.fn((name: string) => {
+        const ch: Record<string, unknown> = { name, pgHandler: null, subCb: null };
+        ch.on = jest.fn((_event: string, _filter: unknown, cb: (p: unknown) => void) => {
+          ch.pgHandler = cb;
+          return ch;
+        });
+        ch.subscribe = jest.fn((cb: (status: string) => void) => {
+          ch.subCb = cb;
+          return ch;
+        });
+        channels.push(ch);
+        return ch;
+      }),
+      removeChannel: jest.fn(),
+      __channels: channels,
+    },
+  };
+});
 jest.mock('./sync', () => ({
   syncPendingEvents: jest.fn().mockResolvedValue(undefined),
   ensureEventAttachmentsSynced: jest.fn().mockResolvedValue(undefined),
@@ -26,6 +52,8 @@ import {
   buildVomitEditWrite,
   buildStoolEditWrite,
   triggerStoolAnalysis,
+  watchAnalysisRow,
+  ANALYSIS_WATCH_FALLBACK_DELAYS_MS,
 } from './analysis';
 import { supabase } from './supabase';
 
@@ -433,6 +461,93 @@ describe('buildStoolEditWrite — client-side never-clobber guarantee', () => {
       'dismissed_at',
     ]) {
       expect(w).not.toHaveProperty(forbidden);
+    }
+  });
+});
+
+// ── watchAnalysisRow: realtime watch over event_ai_analysis (CUL-171) ──────────
+// The per-incident sections wait for the analyze-* Edge Function to write the
+// row. This replaces a 3s×12 poll with a filtered realtime subscription plus a
+// bounded fallback. These pin the plumbing the components mock out.
+describe('watchAnalysisRow — realtime watch (CUL-171)', () => {
+  type Chan = {
+    name: string;
+    pgHandler: ((p: unknown) => void) | null;
+    subCb: ((status: string) => void) | null;
+    on: jest.Mock;
+    subscribe: jest.Mock;
+  };
+  const chans = () =>
+    (supabase as unknown as { __channels: Chan[] }).__channels;
+  const flush = () => new Promise((r) => setTimeout(r, 0));
+
+  beforeEach(() => {
+    chans().length = 0;
+    (supabase.channel as jest.Mock).mockClear();
+    (supabase.removeChannel as jest.Mock).mockClear();
+  });
+
+  it('subscribes filtered to this event row and reconciles once SUBSCRIBED', async () => {
+    const check = jest.fn().mockResolvedValue(false);
+    const teardown = watchAnalysisRow('ev-1', check, jest.fn());
+    const ch = chans().at(-1)!;
+
+    expect(supabase.channel).toHaveBeenCalledWith('event_ai_analysis:ev-1');
+    expect(ch.on).toHaveBeenCalledWith(
+      'postgres_changes',
+      expect.objectContaining({ table: 'event_ai_analysis', filter: 'event_id=eq.ev-1' }),
+      expect.any(Function),
+    );
+    // Nothing is read until the socket is confirmed live — realtime only carries
+    // changes after SUBSCRIBED, so the reconcile is what closes the race.
+    expect(check).not.toHaveBeenCalled();
+
+    ch.subCb!('SUBSCRIBED');
+    await flush();
+    expect(check).toHaveBeenCalledTimes(1);
+    teardown();
+  });
+
+  it('resolves and removes the channel when a change moves the row off pending', async () => {
+    const check = jest.fn().mockResolvedValue(true); // resolved on re-read
+    const onGiveUp = jest.fn();
+    watchAnalysisRow('ev-2', check, onGiveUp);
+    const ch = chans().at(-1)!;
+
+    ch.pgHandler!({ new: { status: 'completed' } });
+    await flush();
+
+    expect(check).toHaveBeenCalledTimes(1);
+    expect(supabase.removeChannel).toHaveBeenCalledWith(ch);
+    expect(onGiveUp).not.toHaveBeenCalled();
+  });
+
+  it('teardown removes the channel and is safe to call twice', () => {
+    const teardown = watchAnalysisRow('ev-3', jest.fn().mockResolvedValue(false), jest.fn());
+    const ch = chans().at(-1)!;
+    teardown();
+    teardown(); // idempotent — no throw, no double remove
+    expect(supabase.removeChannel).toHaveBeenCalledTimes(1);
+    expect(supabase.removeChannel).toHaveBeenCalledWith(ch);
+  });
+
+  it('gives up exactly once after the fallback schedule if realtime never delivers', async () => {
+    jest.useFakeTimers();
+    try {
+      const check = jest.fn().mockResolvedValue(false); // never resolves
+      const onGiveUp = jest.fn();
+      watchAnalysisRow('ev-4', check, onGiveUp);
+      const ch = chans().at(-1)!;
+
+      await jest.advanceTimersByTimeAsync(ANALYSIS_WATCH_FALLBACK_DELAYS_MS.at(-1)!);
+
+      // one re-read per fallback delay, then a single give-up + teardown — the
+      // same "give up → manual retry" floor the old 36s poll had.
+      expect(check).toHaveBeenCalledTimes(ANALYSIS_WATCH_FALLBACK_DELAYS_MS.length);
+      expect(onGiveUp).toHaveBeenCalledTimes(1);
+      expect(supabase.removeChannel).toHaveBeenCalledWith(ch);
+    } finally {
+      jest.useRealTimers();
     }
   });
 });

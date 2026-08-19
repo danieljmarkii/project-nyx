@@ -21,6 +21,7 @@ import { WhorlSpinner } from '../brand/WhorlSpinner';
 import { supabase } from '../../lib/supabase';
 import {
   triggerVomitAnalysis,
+  watchAnalysisRow,
   saveVomitFieldEdits,
   deriveEditedFields,
   extractEditableFromPayload,
@@ -70,9 +71,6 @@ const SELECT_COLS =
   'blood_present, bile_present, foreign_material_present, foreign_material_note, ' +
   'ai_raw_payload, edited_at, dismissed_at, error';
 
-const POLL_INTERVAL_MS = 3000;
-const MAX_POLLS = 12; // ~36s — covers a slow vision call without spinning forever
-
 const REC_LABEL: Record<Recommendation, string> = {
   worth_a_call: 'Worth a call',
   monitor: 'Keep an eye out',
@@ -83,11 +81,12 @@ export function VomitAnalysisSection(
   { eventId, petName, hasPhoto }: { eventId: string; petName?: string | null; hasPhoto: boolean },
 ) {
   const [row, setRow] = useState<AnalysisRow | null | undefined>(undefined); // undefined = first load
-  const [working, setWorking] = useState(false); // analysis in flight (triggered or polling)
+  const [working, setWorking] = useState(false); // analysis in flight (triggered or awaiting realtime)
   const [retrying, setRetrying] = useState(false);
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const cancelled = useRef(false);
+  const watchTeardown = useRef<(() => void) | null>(null);
 
   const fetchRow = useCallback(async (): Promise<AnalysisRow | null> => {
     const { data } = await supabase
@@ -98,21 +97,29 @@ export function VomitAnalysisSection(
     return (data as AnalysisRow | null) ?? null;
   }, [eventId]);
 
-  const pollUntilResolved = useCallback(async () => {
-    for (let i = 0; i < MAX_POLLS; i++) {
-      await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
-      if (cancelled.current) return;
-      const next = await fetchRow();
-      if (cancelled.current) return;
-      if (next && next.status !== 'pending') {
-        setRow(next);
-        setWorking(false);
-        return;
-      }
+  // Re-read the row and resolve if the analysis has moved off 'pending'. Returns
+  // true once resolved — the realtime watch tears down on true. Guards its state
+  // writes against an unmount mid-read via `cancelled`.
+  const checkResolved = useCallback(async (): Promise<boolean> => {
+    const next = await fetchRow();
+    if (cancelled.current) return true; // unmounted — stop the watch
+    if (next && next.status !== 'pending') {
+      setRow(next);
+      setWorking(false);
+      return true;
     }
-    // Gave up waiting — leave the working state; a manual retry is available.
-    if (!cancelled.current) setWorking(false);
+    return false;
   }, [fetchRow]);
+
+  // Watch the row over realtime (with a bounded fallback) until it resolves.
+  // Replaces the old 3s×12 poll: instant on the common path, no 36s cliff, and a
+  // dropped socket still degrades to the same manual-retry floor (CUL-171).
+  const beginWatch = useCallback(() => {
+    watchTeardown.current?.();
+    watchTeardown.current = watchAnalysisRow(eventId, checkResolved, () => {
+      if (!cancelled.current) setWorking(false);
+    });
+  }, [eventId, checkResolved]);
 
   const start = useCallback(async () => {
     cancelled.current = false;
@@ -123,18 +130,22 @@ export function VomitAnalysisSection(
       setRow(first);
       return;
     }
-    // No row yet, or a stale 'pending' — (re)trigger and poll.
+    // No row yet, or a stale 'pending' — (re)trigger and watch.
     setRow(first ?? null);
     setWorking(true);
     const { error } = await triggerVomitAnalysis(eventId);
     if (cancelled.current) return;
     if (error) console.warn('[vomit-analysis] trigger error:', error);
-    await pollUntilResolved();
-  }, [eventId, fetchRow, pollUntilResolved]);
+    beginWatch();
+  }, [eventId, fetchRow, beginWatch]);
 
   useEffect(() => {
     start();
-    return () => { cancelled.current = true; };
+    return () => {
+      cancelled.current = true;
+      watchTeardown.current?.();
+      watchTeardown.current = null;
+    };
   }, [start]);
 
   async function handleRetry() {
@@ -151,7 +162,7 @@ export function VomitAnalysisSection(
       return;
     }
     setWorking(true);
-    pollUntilResolved();
+    beginWatch();
   }
 
   async function setDismissed(dismiss: boolean) {
