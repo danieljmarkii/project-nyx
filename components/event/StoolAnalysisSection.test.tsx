@@ -177,3 +177,118 @@ describe('StoolAnalysisSection — Bristol-as-secondary framing (§3.4)', () => 
     expect(await findByText('None visible')).toBeTruthy();
   });
 });
+
+describe('StoolAnalysisSection — foreign-material visibility (CUL-542, sibling of CUL-240 / B-042)', () => {
+  afterEach(() => { mockRow = null; });
+
+  it("unsure + a described fragment: surfaces a DETERMINISTIC finding, still 'Keep an eye out', never the raw note", async () => {
+    // The CUL-240 (B-042) gap, mirrored on the stool sibling: the model marked foreign material
+    // 'unsure' AND described a non-food fragment, but the row rendered only on 'yes' — so the
+    // owner saw nothing while the record held a described piece. It now surfaces as a VISIBILITY
+    // fix that does NOT touch the escalation floor. The note is model FREE TEXT
+    // (clinical-guardrails Pattern 10): its PRESENCE is the trigger, but its CONTENT must never
+    // reach this monitor card.
+    mockRow = row({
+      status: 'completed',
+      recommendation: 'monitor',
+      foreign_material_present: 'unsure',
+      foreign_material_note: 'a small pale fragment near the edge',
+    });
+    const { findByText, queryByText } = render(<StoolAnalysisSection eventId="s-f1" petName="Rex" hasPhoto />);
+
+    // Surfaces as a deterministic label — NOT the model's free text.
+    expect(await findByText('Foreign material')).toBeTruthy();
+    expect(await findByText('Possible — not identified')).toBeTruthy();
+    expect(queryByText(/a small pale fragment/)).toBeNull();   // the raw note never appears
+    // The floor is untouched: still a monitor card ('Keep an eye out'), not an escalation.
+    expect(await findByText('Keep an eye out')).toBeTruthy();
+    expect(queryByText('Worth a call')).toBeNull();
+    // Present-direction: naming a possible finding, never reassuring on absence.
+    expect(queryByText(REASSURANCE)).toBeNull();
+  });
+
+  it('unsure + a note carrying a diagnosis/reassurance: the raw note never reaches the monitor card (Pattern 10)', async () => {
+    // The adversarial counterexample: foreign_material_note is the least-guarded model free-text
+    // field — no schema constraint, no parse/post-floor gate (analyze-stool leaves it ungated at
+    // parse and warns consumers off it). Such a note must NOT render on a non-worth_a_call card;
+    // only the deterministic label does.
+    mockRow = row({
+      status: 'completed',
+      recommendation: 'monitor',
+      foreign_material_present: 'unsure',
+      foreign_material_note: 'looks like a piece of bone, probably from a raw diet and usually passes on its own',
+    });
+    const { findByText, queryByText } = render(<StoolAnalysisSection eventId="s-f1b" petName="Rex" hasPhoto />);
+
+    expect(await findByText('Possible — not identified')).toBeTruthy();  // the safe label
+    expect(queryByText(/bone/)).toBeNull();                              // no diagnosis leaks
+    expect(queryByText(/usually passes on its own/)).toBeNull();         // no reassurance leaks
+    expect(queryByText(/raw diet/)).toBeNull();
+    expect(await findByText('Keep an eye out')).toBeTruthy();            // still monitor
+    expect(queryByText(REASSURANCE)).toBeNull();
+  });
+
+  it('unsure with NO described fragment: stays hidden — a bare "maybe" is noise, not a finding', async () => {
+    mockRow = row({
+      status: 'completed',
+      recommendation: 'monitor',
+      foreign_material_present: 'unsure',
+      foreign_material_note: null,
+      stool_blood_present: 'no', // gives the observations block a row to render
+    });
+    const { findByText, queryByText } = render(<StoolAnalysisSection eventId="s-f2" petName="Rex" hasPhoto />);
+    expect(await findByText('Blood')).toBeTruthy();          // the block did render
+    expect(queryByText('Foreign material')).toBeNull();      // but no foreign-material row
+  });
+
+  it('unsure + a whitespace-only note: stays hidden — .trim() gates on real content, not mere presence', async () => {
+    // Hardening beyond strict CUL-240 parity (the vomit suite lacks this — code-reviewer NIT):
+    // a model note of only whitespace must NOT surface a foreign-material row on the 'unsure'
+    // path. foreignNote is trimmed, so '   ' is falsy and the row is suppressed exactly like a
+    // null note — pinning the Pattern-10 presence gate against a plausible model output.
+    mockRow = row({
+      status: 'completed',
+      recommendation: 'monitor',
+      foreign_material_present: 'unsure',
+      foreign_material_note: '   ',
+      stool_blood_present: 'no', // gives the observations block a row to render
+    });
+    const { findByText, queryByText } = render(<StoolAnalysisSection eventId="s-f5" petName="Rex" hasPhoto />);
+    expect(await findByText('Blood')).toBeTruthy();
+    expect(queryByText('Foreign material')).toBeNull();
+  });
+
+  it("'no' + a note never surfaces a foreign-material row (present-only; a 'no' note is not a finding)", async () => {
+    // The analyze-stool parser leaves foreign_material_note populated on 'no'/'unsure' too, so
+    // the 'unsure' path must key off presence==='unsure' — a 'no' note must never leak in as a
+    // foreign observation.
+    mockRow = row({
+      status: 'completed',
+      recommendation: 'monitor',
+      foreign_material_present: 'no',
+      foreign_material_note: 'nothing that looks non-food',
+      stool_blood_present: 'no',
+    });
+    const { findByText, queryByText } = render(<StoolAnalysisSection eventId="s-f3" petName="Rex" hasPhoto />);
+    expect(await findByText('Blood')).toBeTruthy();
+    expect(queryByText('Foreign material')).toBeNull();
+    expect(queryByText(/nothing that looks non-food/)).toBeNull();
+  });
+
+  it("'yes' + a note is unchanged — a definite finding shows the model's description on its worth_a_call card", async () => {
+    // 'yes' forces the suspected_foreign_material visual flag at the stool floor (B-340), so the
+    // model's own note rides an ESCALATED card — Pattern-10-compliant, and the shipped behaviour.
+    mockRow = row({
+      status: 'completed',
+      recommendation: 'worth_a_call',
+      read_text: 'I can see something that does not look like food in this stool photo. That is worth a call to your vet.',
+      foreign_material_present: 'yes',
+      foreign_material_note: 'a piece of green plastic',
+    });
+    const { findByText, queryByText } = render(<StoolAnalysisSection eventId="s-f4" petName="Rex" hasPhoto />);
+    expect(await findByText('Foreign material')).toBeTruthy();
+    expect(await findByText('a piece of green plastic')).toBeTruthy();
+    // The 'yes' path shows the actual description, not the 'unsure' deterministic label.
+    expect(queryByText('Possible — not identified')).toBeNull();
+  });
+});

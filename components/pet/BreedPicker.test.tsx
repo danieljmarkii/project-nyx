@@ -6,12 +6,27 @@ import { BreedPicker } from './BreedPicker';
 const BREEDS = ['Abyssinian', 'Bengal', 'Maine Coon', 'Ragdoll', 'Siamese'];
 
 describe('BreedPicker', () => {
-  it('renders the breeds plus the always-present "Other" escape hatch', () => {
+  it('renders the breeds plus the always-present "Other" escape hatch with its hint', () => {
     const { getByText } = render(
       <BreedPicker breeds={BREEDS} value="" onSelect={() => {}} onSelectOther={() => {}} />,
     );
     BREEDS.forEach((b) => expect(getByText(b)).toBeTruthy());
     expect(getByText('Other / not listed')).toBeTruthy();
+    // The "type it in" hint (mockup 08) regressed away once and is what B-261
+    // restores — guard it so it can't silently drop again.
+    expect(getByText('type it in')).toBeTruthy();
+  });
+
+  it('pins "Other / not listed" above the breed list so it needs no scrolling to reach', () => {
+    const { toJSON } = render(
+      <BreedPicker breeds={BREEDS} value="" onSelect={() => {}} onSelectOther={() => {}} />,
+    );
+    // Serialized render order is document order, so an earlier index paints
+    // higher on the (unscrolled) screen. The escape hatch must come before the
+    // first breed row — the whole point of B-261/CUL-137.
+    const tree = JSON.stringify(toJSON());
+    expect(tree.indexOf('Other / not listed')).toBeGreaterThanOrEqual(0);
+    expect(tree.indexOf('Other / not listed')).toBeLessThan(tree.indexOf(BREEDS[0]));
   });
 
   it('filters the list as the owner types, case-insensitively', () => {
@@ -32,6 +47,10 @@ describe('BreedPicker', () => {
     );
     fireEvent.changeText(getByLabelText('Search breeds'), 'zzz');
     expect(getByText(/No breeds match/)).toBeTruthy();
+    // Pin the corrected "above to type it in" wording (was "below to add it") so a
+    // lone copy revert — flipping the word without moving the row back — can't slip
+    // past the row-ordering test. B-261/CUL-137.
+    expect(getByText(/above to type it in/)).toBeTruthy();
     // "Other" stays reachable, and tapping it hands back the typed term so the
     // owner doesn't have to retype it into the free-text field.
     fireEvent.press(getByText('Other / not listed'));
@@ -73,5 +92,9 @@ describe('BreedPicker', () => {
     expect(getByText('Keep typing to see 40 more…')).toBeTruthy();
     expect(getByText('Breed 000')).toBeTruthy();
     expect(queryByText('Breed 119')).toBeNull();
+    // Reachability must survive the long list: "Other" (and its hint) stay pinned
+    // at the top regardless of how many rows are capped below — B-261/CUL-137.
+    expect(getByText('Other / not listed')).toBeTruthy();
+    expect(getByText('type it in')).toBeTruthy();
   });
 });
