@@ -21,6 +21,7 @@ the cloud session, not the PM's device. Codifies B-082.
 | Apply a schema migration | agent calls MCP `apply_migration` with the migration SQL → `get_advisors` → verify |
 | Check what's live | MCP `list_edge_functions` / `list_migrations` / `list_tables` |
 | Debug a deploy | MCP `get_logs` + `get_advisors` before changing anything |
+| Record a deploy | Update `supabase/functions/deploy-manifest.json` (§ The deploy ledger). The `guards/edgeFunctionDeploy` CI check enforces it — a merged function change that drifts from the ledger fails the build |
 
 **The dashboard SQL-Editor-paste and dashboard-function-paste workflows are
 superseded by the MCP path.** They remain a manual fallback only if the MCP is
@@ -159,6 +160,9 @@ deploy_edge_function(
 
 4. If anything looks off, **`get_logs(service: "edge-function")`** before
    re-deploying.
+5. **Record it in the deploy ledger** — set this function's entry in
+   `supabase/functions/deploy-manifest.json` to the current fingerprint with
+   status `deployed`. See § The deploy ledger below; the CI guard enforces it.
 
 ### Deploy ordering vs. merge
 
@@ -166,6 +170,59 @@ Per house precedent, a function may be deployed from the work branch *ahead of*
 merge when the deployed bytes are provably the branch source (read-back + tests)
 and the change is inert without its trigger — then re-deployed authoritatively
 from merged `main`. State which you did in the session summary.
+
+### The deploy ledger (B-178 / CUL-135) — record every deploy
+
+Merging a function change does **not** deploy it, and for a long time nothing
+noticed when a merged fix sat un-live: `analyze-vomit`'s B-028 (#220) merged
+2026-06-22 and ran a month-old bundle in production until a June-24 audit caught
+it. The **deploy ledger** closes that gap. `supabase/functions/deploy-manifest.json`
+records, per function, a **fingerprint** of the exact source last acknowledged
+for deploy, and `guards/edgeFunctionDeploy.test.ts` (a jest guard riding the
+required `App (typecheck + jest)` CI check) **fails the build** when a function's
+shipping code drifts from its recorded fingerprint without a reasoned
+acknowledgment. It is token-free and never contacts Supabase — so it catches
+*silent* drift, but it does **not** prove a deploy actually reached production
+(the live artifact is a bundle, not a source tree; confirming live-vs-main is the
+separate reconciliation noted below).
+
+**The fingerprint** is a sha256 over the function's shipping import-closure —
+`index.ts` plus every local `.ts` it transitively inlines (`../../../lib/*`,
+`../_shared/*`, a sibling function). So a change to a shared file drifts **every**
+function that inlines it — e.g. a `_shared/http.ts` edit (CUL-258's fetch
+timeouts) drifts all six Anthropic-calling functions, each of which then owes a
+redeploy. That fan-out is the point, not noise.
+
+**When you deploy a function (the one new step):** after Step 3 verifies the
+deploy, update its ledger entry —
+
+1. Get the current fingerprint: run `npx jest guards/edgeFunctionDeploy.test.ts`.
+   When the entry is stale the failure prints `current : sha256:…` for that
+   function — copy it.
+2. In `deploy-manifest.json`, set the function's `fingerprint` to that value,
+   `status` to `deployed`, remove the now-moot `reason`, and bump `updated` (and
+   `deployedVersion` from `list_edge_functions`, optionally).
+3. Re-run the guard — green means the ledger matches `main`.
+
+Commit that in the **same PR** when you deploy-from-branch; otherwise in the
+follow-up that records the post-merge deploy.
+
+**Intentional holds** — a merged change you are deliberately *not* deploying yet
+(the `generate-report`/B-494 case): set `status: "hold"`, `fingerprint` equal to
+the current source, and a `reason` naming the gate. The guard stays green (the
+drift is *acknowledged*) without ever claiming the function is live. Use
+`pending` the same way for "a deploy is owed but not done."
+
+**A new function** must be added to the ledger in the PR that introduces it — the
+guard fails an untracked function, so a new Edge Function cannot ship without
+recording its deploy intent.
+
+**Live reconciliation (the follow-on this guard can't do):** because the guard is
+token-free, it trusts the ledger's self-reported `deployed` fingerprints. A
+periodic in-session check — bundle each function from `main` (`scripts/deploy-edge.sh`),
+read the live source (`get_edge_function`), and compare — is the only way to
+*prove* live-vs-main. That is tracked separately; this guard's promise is "no
+silent drift," not "everything on `main` is live."
 
 ---
 

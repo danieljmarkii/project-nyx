@@ -306,6 +306,9 @@ Nearest live PM gates, none of which block code already in flight:
 
 ## Open PM Action Items
 
+**Edge-Function deploy ledger (CUL-135 / B-178, draft PR #679) — new: every edge deploy now updates a manifest**
+- [ ] **Review + merge draft PR #679.** Adds `supabase/functions/deploy-manifest.json` + a token-free CI guard (`guards/edgeFunctionDeploy.test.ts`) that fails the build when a merged function's shipping code drifts from the ledger unacknowledged — closing the merged-but-undeployed gap (B-178) without auto-deploying (which would bypass the B-494/Signals-v2 holds). **Every DEPLOY-GATED item below now has a ledger home:** when you run any of those deploys, also set that function's `fingerprint` to the current value with status `deployed` (the guard prints it; `docs/edge-deploy-runbook.md` § Deploy ledger). Seeded honestly — every function `pending`/`hold`, none falsely `deployed`. Live reconciliation (prove `deployed == main`) → **CUL-541**.
+
 **Per-incident AI `description` gate (CUL-152 / B-179, PR #671) — one post-merge deploy**
 - [ ] **After #671 merges, redeploy `analyze-vomit` + `analyze-stool`** (cloud session, Supabase MCP `deploy_edge_function` per `docs/edge-deploy-runbook.md`; both bundles are within the MCP-inline ceiling). The fix — gate the vision model's free-text `description` (and vomit's `read_text`, for parity with stool) to a self-escalated `worth_a_call`, so a benign read can't carry a reassuring "looks like a totally normal hairball" — is **code-only and inert until deployed**. **NOT** under the B-494 `generate-report` hold. `adversarial-reviewer` FAIL→fix→PASS this session. Follow-ups filed: **CUL-534** (vomit `visual_flags` derivation parity) · **CUL-535** (backfill pre-gate `description` rows before Step 9 wires `description` into the report).
 
