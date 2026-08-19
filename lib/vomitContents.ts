@@ -55,26 +55,38 @@
 // contents matrix by migration 013 so the two can't drift — `hasBile` fuses both
 // sources exactly as both callers already did.
 
+// The three leaves guard with `Array.isArray(contents)`, not the callers' original `contents != null`.
+// For the declared `string[] | null` type the two are identical (a non-null value IS the array); the
+// difference is only for an OUT-OF-CONTRACT value, and there `Array.isArray` is strictly safer. A bare
+// string would make `contents != null` true and then `String.prototype.includes` SUBSTRING-match —
+// `'hair'.includes('hair')` is true, so a mistyped `contents = 'hair'` would read as a hairball. The
+// `vomit_content[]` column can't produce that (PostgREST deserializes it to an array or null, and both
+// I/O shells pass it through uncoerced), so it is unreachable today — but this file is the single home
+// these predicates are meant to be imported into, and a future caller reading a raw `jsonb` text field
+// or hand-building a fixture is exactly the drift a shared primitive should be immune to, not merely
+// far from. `Array.isArray` makes the divergence structurally impossible rather than incidentally
+// unreachable (CUL-226 adversarial review). numerator ⊆ nothing here — these are plain presence bools.
+
 /** The `vomit_content[]` tokens for retained food — undigested OR partially-digested. Both denote
- *  food that failed to digest; either present ⇒ food. `null` contents (illegible read) ⇒ false. */
+ *  food that failed to digest; either present ⇒ food. A null or non-array read ⇒ false. */
 export function hasFood(contents: readonly string[] | null): boolean {
   return (
-    contents != null &&
+    Array.isArray(contents) &&
     (contents.includes('undigested_food') || contents.includes('partially_digested_food'))
   );
 }
 
-/** The `vomit_content[]` hair token (the hairball marker). `null` contents ⇒ false. */
+/** The `vomit_content[]` hair token (the hairball marker). A null or non-array read ⇒ false. */
 export function hasHair(contents: readonly string[] | null): boolean {
-  return contents != null && contents.includes('hair');
+  return Array.isArray(contents) && contents.includes('hair');
 }
 
 /**
  * Bile present — the AUTHORITATIVE `bile_present` tristate is `'yes'`, OR a `bile` token appears in
  * `contents`. Either source counts (present-wins across the two fields). Only `'yes'` on the tristate
  * asserts presence here; `'no'`/`'unsure'`/`null` do not (a NON-bile read is answered elsewhere, never
- * inferred as "no bile" from this leaf). `null` contents with a non-`'yes'` tristate ⇒ false.
+ * inferred as "no bile" from this leaf). A null or non-array `contents` with a non-`'yes'` tristate ⇒ false.
  */
 export function hasBile(contents: readonly string[] | null, bilePresent: string | null): boolean {
-  return bilePresent === 'yes' || (contents != null && contents.includes('bile'));
+  return bilePresent === 'yes' || (Array.isArray(contents) && contents.includes('bile'));
 }

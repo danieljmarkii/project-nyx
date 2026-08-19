@@ -89,3 +89,19 @@ describe('leaf independence — no token leaks across predicates', () => {
     expect(hasBile(unknown, null)).toBe(false);
   });
 });
+
+describe('out-of-contract robustness — the Array.isArray guard (CUL-226 adversarial boundary)', () => {
+  it('treats a non-array contents as absence, not a substring match', () => {
+    // The `vomit_content[]` column can only ever deserialize to an array or null, so this is
+    // unreachable through the data path — but the guard makes it structurally impossible rather
+    // than incidentally unreachable. Without it, a bare string would substring-match:
+    // 'hair'.includes('hair') === true would read as a hairball. `as unknown as string[]` models a
+    // future caller feeding a raw jsonb text field or a mistyped fixture.
+    const bareString = 'hair' as unknown as string[];
+    expect(hasHair(bareString)).toBe(false);
+    expect(hasFood('undigested_food' as unknown as string[])).toBe(false);
+    expect(hasBile('bile' as unknown as string[], null)).toBe(false);
+    // The authoritative bile tristate still wins regardless of a junk contents value.
+    expect(hasBile('bile' as unknown as string[], 'yes')).toBe(true);
+  });
+});

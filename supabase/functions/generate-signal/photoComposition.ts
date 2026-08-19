@@ -41,10 +41,12 @@
 //
 // ── PURE AND DEPENDENCY-LIGHT ─────────────────────────────────────────────────
 //
-// Same rule as detection.ts / medContext.ts: plain data in, plain data out. The only
-// imports are TYPES from detection.ts (the finding + the L3 payload shapes, defined there
-// because the Finding types reference them) and the shared episode-gap constant from
-// lib/mealTiming.ts (so "same bout" means the same thing here as in the timing engine).
+// Same rule as detection.ts / medContext.ts: plain data in, plain data out. The imports are
+// TYPES from detection.ts (the finding + the L3 payload shapes, defined there because the
+// Finding types reference them), the shared episode-gap constant from lib/mealTiming.ts (so
+// "same bout" means the same thing here as in the timing engine), and the shared food/hair/bile
+// presence leaves from lib/vomitContents.ts (the SAME atoms the vet report reads — CUL-226). All
+// three are pure, import-free lib primitives.
 
 import type {
   Finding,
