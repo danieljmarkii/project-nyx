@@ -37,7 +37,7 @@ Five render branches in `VomitAnalysisSection.test.tsx`: `unsure`+fragment surfa
 
 ## Persona / review sign-off
 
-- **Data Scientist / Dr. Chen (adversarial-reviewer):** round-1 FAIL (raw note on a monitor card, Pattern 10) → deterministic-label fix → round-2 re-verify. Counterexample: the "bone / usually passes on its own" `unsure` note → no longer reaches the card (only the literal does).
+- **Data Scientist / Dr. Chen (adversarial-reviewer):** round-1 FAIL (raw note on a monitor card, Pattern 10) → deterministic-label fix → **round-2 PASS**. The round-1 counterexample (the "bone / usually passes on its own" `unsure` note) no longer reaches the card — the note content is never interpolated; only the literal renders. Round-2 also flagged a **pre-existing, out-of-scope residual**: the write-path floor (`incident-analysis.ts:867`) trusts the model's `visual_flags` array, not a flag derived from `foreign_material_present === 'yes'`, so a self-contradictory `yes`+`monitor` model row could leak the note on the *unchanged* `yes` path (one branch over). Doesn't block this merge; closed structurally by **CUL-534** (derive visual_flags from the structured field). My first-draft comment over-claimed the `yes ⇒ worth_a_call` coupling as a floor guarantee — corrected to name it as prompt-driven-not-enforced and point at CUL-534.
 - **code-reviewer:** ship-ready; independently flagged the same free-text-on-non-worth_a_call concern (as a NIT) and the stale comment (CLEANUP) — both addressed.
 - **Designer / nyx-voice:** `Possible — not identified` — plain, present-direction, no `!`, honest about uncertainty (Pattern 6). Copy micro-choice; `Possible — unclear` is an alternative for strict vocab consistency with the app's `unsure → "Unclear"` label.
 
