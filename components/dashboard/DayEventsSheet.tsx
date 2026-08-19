@@ -105,7 +105,11 @@ export function DayEventsSheet({
                 <ScrollView style={styles.rows} showsVerticalScrollIndicator={false}>
                   {items.map((it, i) => (
                     <View key={i} style={styles.row} accessible accessibilityLabel={
-                      `${it.title}${it.formatTag ? `, ${it.formatTag.toLowerCase()}` : ''}${it.detail ? `, ${it.detail}` : ''}, ${it.time}`
+                      // Screen-reader order mirrors the visual layout — title · detail in the
+                      // one Text node, then the format-tag sibling, then the time (B-782 /
+                      // DaySpine parity). The tag is lowercased so it is spoken as a word
+                      // ("dry") rather than spelled out.
+                      `${it.title}${it.detail ? `, ${it.detail}` : ''}${it.formatTag ? `, ${it.formatTag.toLowerCase()}` : ''}, ${it.time}`
                     }>
                       <View style={styles.rowIcon}>
                         <EventIcon

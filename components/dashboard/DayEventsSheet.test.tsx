@@ -60,6 +60,32 @@ describe('DayEventsSheet (B-284 N5b drill-in)', () => {
     expect(onOpen).toHaveBeenCalledWith('2026-06-24');
   });
 
+  it('reads the a11y label in visual order — title, detail, format tag, time (CUL-540)', () => {
+    // The row shows "Whitefish · all eaten" in one Text node, then a "DRY" tag sibling,
+    // so the screen reader must speak "Whitefish, all eaten, dry, …" — mirroring DaySpine,
+    // not the pre-fix "Whitefish, dry, all eaten". The time is left unpinned (it is
+    // local-clock, timezone-dependent per B-514); the leading order is what this guards.
+    const { getByLabelText } = render(
+      <DayEventsSheet
+        visible
+        dayKey="2026-06-24"
+        symptomLabel="Vomiting"
+        symptomCount={0}
+        rows={[row({
+          event_type: 'meal',
+          food_brand: 'Whitefish',
+          intake_rating: 'all',
+          food_format: 'dry_kibble',
+          occurred_at: '2026-06-24T07:30:00.000Z',
+        })]}
+        onClose={jest.fn()}
+        onOpenInHistory={jest.fn()}
+      />,
+    );
+    // title, detail, tag (lowercased so it speaks as a word), then time.
+    expect(getByLabelText(/^Whitefish, all eaten, dry,/)).toBeTruthy();
+  });
+
   it('shows a loading state (no subtitle/rows) while rows are null', () => {
     const { getByText, queryByText } = render(
       <DayEventsSheet
