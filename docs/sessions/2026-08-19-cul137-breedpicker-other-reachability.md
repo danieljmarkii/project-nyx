@@ -1,7 +1,7 @@
 # BreedPicker "Other / not listed" reachability + restored "type it in" hint (CUL-137 / B-261)
 
 **Date:** 2026-08-19
-**Shipped via:** #680 (draft)
+**Shipped via:** #680
 
 ## What shipped
 
@@ -38,6 +38,11 @@ no scroll) — for a mixed-breed dog owner, `Mixed breed` is a better-than-free-
 is right there. Flagged in the PR + on CUL-137 as the one item for Designer/PM ratification on the
 draft; a footer remains a clean follow-up if they'd rather keep the catch-alls strictly first.
 
+**PM ruling (2026-08-19): option A — ship the top-pin as-is.** The PM chose to merge #680 without
+changes, accepting the top-pin over the footer (B) and the pin-below-catch-alls middle ground (C).
+The Data-Scientist catalog-integrity concern is noted, not overridden silently — if free-text
+fragmentation shows up in the breed field later, (C) is the pre-scoped follow-up on this same surface.
+
 ## Verification
 
 - **Tests teeth-checked.** Temporarily reverted to the pre-B-261 layout (`Other` at the bottom, no
@@ -68,12 +73,12 @@ draft; a footer remains a clean follow-up if they'd rather keep the catch-alls s
   exist to be the default-correct tap and now sit one row *below* the free-text hatch; free text
   fragments the breed field the vet report's disease-risk read depends on) — Dr. Chen N/A. The
   Designer/Engineer ↔ Data tension is a genuine Persona Conflict, surfaced for the PM/Designer on
-  CUL-137 per the protocol — not resolved in-session.
+  CUL-137 per the protocol — **PM ruled option A (ship the top-pin as-is) and merged #680.**
 - **STATUS.md untouched.** A Legacy-Backlog onboarding/profile polish changes no working-state field
   (Current Phase / Parallel Track / Blocking OQs / PM Action Items / Runtime), so the minimal — and
   correct — STATUS.md diff is none.
 - **Linear:** the PR body's `CUL-137` reference auto-linked #680 and moved the issue Todo → In
-  Progress natively; left it In Progress (draft pending review — Done comes on merge).
+  Progress natively; the squash-merge moves it to Done (verified at wrap).
 
 ## Residuals
 
