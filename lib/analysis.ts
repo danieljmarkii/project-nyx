@@ -107,8 +107,11 @@ export function watchAnalysisRow(
     let resolved = false;
     try {
       resolved = await check();
-    } catch {
-      // A transient read failure is not a give-up — the next tick retries.
+    } catch (e) {
+      // A transient read failure is not a give-up — the next tick (realtime or
+      // the next fallback) retries. But don't fail silently: log it, matching
+      // the components' `[vomit-analysis]`/`[stool-analysis]` console tags.
+      console.warn('[analysis-watch] check failed:', e);
       resolved = false;
     }
     if (done) return; // torn down mid-read

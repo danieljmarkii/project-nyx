@@ -153,6 +153,9 @@ export function VomitAnalysisSection(
     cancelled.current = false;
     setRow((r) => (r ? { ...r, status: 'pending', error: null } : r));
     const { error } = await triggerVomitAnalysis(eventId);
+    // Navigated away mid-trigger — don't setState or open a watch on an
+    // unmounted instance (mirrors start()'s guard after the same await).
+    if (cancelled.current) return;
     setRetrying(false);
     if (error) {
       // `error` is the raw functions.invoke message (lib/analysis.ts) — a

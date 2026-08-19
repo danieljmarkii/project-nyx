@@ -257,4 +257,20 @@ describe('VomitAnalysisSection — realtime resolution (CUL-171)', () => {
 
     expect(await findByText('Worth a call')).toBeTruthy();
   });
+
+  it('falls back to the retry affordance when the watch gives up (fidelity with the old poll floor)', async () => {
+    // No row is ever written; the watch exhausts its bounded fallback schedule.
+    mockRow = null;
+    const { findByText } = render(
+      <VomitAnalysisSection eventId="rt2" petName="Rex" hasPhoto />,
+    );
+    await waitFor(() => expect(watchAnalysisRow as jest.Mock).toHaveBeenCalledTimes(1));
+    // Invoke the watch's give-up callback (3rd arg) → the section drops the
+    // spinner and offers the manual retry, exactly as the old ~36s poll did.
+    const onGiveUp = (watchAnalysisRow as jest.Mock).mock.calls.at(-1)![2] as () => void;
+    await act(async () => { onGiveUp(); });
+
+    expect(await findByText(/Not enough to say about this one yet/i)).toBeTruthy();
+    expect(await findByText(/Try analysis/i)).toBeTruthy();
+  });
 });

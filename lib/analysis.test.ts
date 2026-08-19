@@ -531,6 +531,28 @@ describe('watchAnalysisRow — realtime watch (CUL-171)', () => {
     expect(supabase.removeChannel).toHaveBeenCalledWith(ch);
   });
 
+  it('a failing check() is logged, not fatal — keeps watching, no give-up', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const check = jest.fn().mockRejectedValue(new Error('transient read failure'));
+      const onGiveUp = jest.fn();
+      const teardown = watchAnalysisRow('ev-5', check, onGiveUp);
+      const ch = chans().at(-1)!;
+
+      ch.subCb!('SUBSCRIBED'); // reconcile tick → check rejects
+      await flush();
+
+      expect(check).toHaveBeenCalledTimes(1);
+      expect(warn).toHaveBeenCalledWith('[analysis-watch] check failed:', expect.any(Error));
+      // A transient failure is neither a resolution nor a give-up — still watching.
+      expect(onGiveUp).not.toHaveBeenCalled();
+      expect(supabase.removeChannel).not.toHaveBeenCalled();
+      teardown();
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
   it('gives up exactly once after the fallback schedule if realtime never delivers', async () => {
     jest.useFakeTimers();
     try {
