@@ -24,6 +24,9 @@ jest.mock('../../lib/supabase', () => ({
 // real-ish shapes the render path expects.
 jest.mock('../../lib/analysis', () => ({
   triggerStoolAnalysis: jest.fn(() => Promise.resolve({ error: null })),
+  // The realtime watch (CUL-171) is exercised on its own in lib/analysis.test.ts;
+  // here it's a jest.fn so a test can grab the re-read callback it was handed.
+  watchAnalysisRow: jest.fn(() => () => {}),
   saveStoolFieldEdits: jest.fn(() => Promise.resolve({ error: null })),
   deriveEditedStoolFields: jest.fn(() => []),
   extractStoolEditableFromPayload: jest.fn(() => null),
@@ -32,8 +35,9 @@ jest.mock('../../lib/analysis', () => ({
 jest.mock('./StoolFieldsEditor', () => ({ StoolFieldsEditor: () => null }));
 jest.mock('../brand/WhorlSpinner', () => ({ WhorlSpinner: () => null }));
 
-import { render, waitFor } from '@testing-library/react-native';
+import { render, waitFor, act } from '@testing-library/react-native';
 import { StoolAnalysisSection } from './StoolAnalysisSection';
+import { watchAnalysisRow } from '../../lib/analysis';
 
 const REASSURANCE = /\b(fine|okay|ok|healthy|all clear|no worries|nothing to worry|probably fine)\b/i;
 
@@ -290,5 +294,48 @@ describe('StoolAnalysisSection — foreign-material visibility (CUL-542, sibling
     expect(await findByText('a piece of green plastic')).toBeTruthy();
     // The 'yes' path shows the actual description, not the 'unsure' deterministic label.
     expect(queryByText('Possible — not identified')).toBeNull();
+  });
+});
+
+describe('StoolAnalysisSection — realtime resolution (CUL-171)', () => {
+  afterEach(() => { mockRow = null; (watchAnalysisRow as jest.Mock).mockClear(); });
+
+  it('opens a realtime watch on a pending read and resolves when it fires', async () => {
+    // Pending on mount (WITH a photo) → the working state, not an escalation yet.
+    mockRow = row({ status: 'pending', recommendation: null });
+    const { findByText, queryByText } = render(
+      <StoolAnalysisSection eventId="s-rt1" petName="Rex" hasPhoto />,
+    );
+    // The section opened a realtime watch instead of polling.
+    await waitFor(() => expect(watchAnalysisRow as jest.Mock).toHaveBeenCalledTimes(1));
+    expect(queryByText('Worth a call')).toBeNull();
+
+    // The Edge Function writes the escalation; realtime fires → the section's
+    // re-read (the watch's 2nd arg) resolves the pending state to the read.
+    mockRow = row({
+      status: 'completed',
+      recommendation: 'worth_a_call',
+      read_text: 'Worth a call to your vet.',
+    });
+    const check = (watchAnalysisRow as jest.Mock).mock.calls.at(-1)![1] as () => Promise<boolean>;
+    await act(async () => { await check(); });
+
+    expect(await findByText('Worth a call')).toBeTruthy();
+  });
+
+  it('falls back to the retry affordance when the watch gives up (fidelity with the old poll floor)', async () => {
+    // No row is ever written; the watch exhausts its bounded fallback schedule.
+    mockRow = null;
+    const { findByText } = render(
+      <StoolAnalysisSection eventId="s-rt2" petName="Rex" hasPhoto />,
+    );
+    await waitFor(() => expect(watchAnalysisRow as jest.Mock).toHaveBeenCalledTimes(1));
+    // Invoke the watch's give-up callback (3rd arg) → the section drops the
+    // spinner and offers the manual retry, exactly as the old ~36s poll did.
+    const onGiveUp = (watchAnalysisRow as jest.Mock).mock.calls.at(-1)![2] as () => void;
+    await act(async () => { onGiveUp(); });
+
+    expect(await findByText(/Not enough to say about this one yet/i)).toBeTruthy();
+    expect(await findByText(/Try analysis/i)).toBeTruthy();
   });
 });

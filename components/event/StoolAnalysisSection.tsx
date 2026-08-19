@@ -28,6 +28,7 @@ import { WhorlSpinner } from '../brand/WhorlSpinner';
 import { supabase } from '../../lib/supabase';
 import {
   triggerStoolAnalysis,
+  watchAnalysisRow,
   saveStoolFieldEdits,
   deriveEditedStoolFields,
   extractStoolEditableFromPayload,
@@ -79,9 +80,6 @@ const SELECT_COLS =
   'stool_content, stool_blood_present, stool_blood_type, stool_mucus_present, ' +
   'foreign_material_present, foreign_material_note, ai_raw_payload, edited_at, dismissed_at, error';
 
-const POLL_INTERVAL_MS = 3000;
-const MAX_POLLS = 12; // ~36s — covers a slow vision call without spinning forever
-
 const REC_LABEL: Record<Recommendation, string> = {
   worth_a_call: 'Worth a call',
   monitor: 'Keep an eye out',
@@ -92,11 +90,12 @@ export function StoolAnalysisSection(
   { eventId, petName, hasPhoto }: { eventId: string; petName?: string | null; hasPhoto: boolean },
 ) {
   const [row, setRow] = useState<AnalysisRow | null | undefined>(undefined); // undefined = first load
-  const [working, setWorking] = useState(false); // analysis in flight (triggered or polling)
+  const [working, setWorking] = useState(false); // analysis in flight (triggered or awaiting realtime)
   const [retrying, setRetrying] = useState(false);
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const cancelled = useRef(false);
+  const watchTeardown = useRef<(() => void) | null>(null);
 
   const fetchRow = useCallback(async (): Promise<AnalysisRow | null> => {
     const { data } = await supabase
@@ -107,21 +106,29 @@ export function StoolAnalysisSection(
     return (data as AnalysisRow | null) ?? null;
   }, [eventId]);
 
-  const pollUntilResolved = useCallback(async () => {
-    for (let i = 0; i < MAX_POLLS; i++) {
-      await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
-      if (cancelled.current) return;
-      const next = await fetchRow();
-      if (cancelled.current) return;
-      if (next && next.status !== 'pending') {
-        setRow(next);
-        setWorking(false);
-        return;
-      }
+  // Re-read the row and resolve if the analysis has moved off 'pending'. Returns
+  // true once resolved — the realtime watch tears down on true. Guards its state
+  // writes against an unmount mid-read via `cancelled`.
+  const checkResolved = useCallback(async (): Promise<boolean> => {
+    const next = await fetchRow();
+    if (cancelled.current) return true; // unmounted — stop the watch
+    if (next && next.status !== 'pending') {
+      setRow(next);
+      setWorking(false);
+      return true;
     }
-    // Gave up waiting — leave the working state; a manual retry is available.
-    if (!cancelled.current) setWorking(false);
+    return false;
   }, [fetchRow]);
+
+  // Watch the row over realtime (with a bounded fallback) until it resolves.
+  // Replaces the old 3s×12 poll: instant on the common path, no 36s cliff, and a
+  // dropped socket still degrades to the same manual-retry floor (CUL-171).
+  const beginWatch = useCallback(() => {
+    watchTeardown.current?.();
+    watchTeardown.current = watchAnalysisRow(eventId, checkResolved, () => {
+      if (!cancelled.current) setWorking(false);
+    });
+  }, [eventId, checkResolved]);
 
   const start = useCallback(async () => {
     cancelled.current = false;
@@ -132,18 +139,22 @@ export function StoolAnalysisSection(
       setRow(first);
       return;
     }
-    // No row yet, or a stale 'pending' — (re)trigger and poll.
+    // No row yet, or a stale 'pending' — (re)trigger and watch.
     setRow(first ?? null);
     setWorking(true);
     const { error } = await triggerStoolAnalysis(eventId);
     if (cancelled.current) return;
     if (error) console.warn('[stool-analysis] trigger error:', error);
-    await pollUntilResolved();
-  }, [eventId, fetchRow, pollUntilResolved]);
+    beginWatch();
+  }, [eventId, fetchRow, beginWatch]);
 
   useEffect(() => {
     start();
-    return () => { cancelled.current = true; };
+    return () => {
+      cancelled.current = true;
+      watchTeardown.current?.();
+      watchTeardown.current = null;
+    };
   }, [start]);
 
   async function handleRetry() {
@@ -151,6 +162,9 @@ export function StoolAnalysisSection(
     cancelled.current = false;
     setRow((r) => (r ? { ...r, status: 'pending', error: null } : r));
     const { error } = await triggerStoolAnalysis(eventId);
+    // Navigated away mid-trigger — don't setState or open a watch on an
+    // unmounted instance (mirrors start()'s guard after the same await).
+    if (cancelled.current) return;
     setRetrying(false);
     if (error) {
       // `error` is the raw functions.invoke message (lib/analysis.ts) — a
@@ -160,7 +174,7 @@ export function StoolAnalysisSection(
       return;
     }
     setWorking(true);
-    pollUntilResolved();
+    beginWatch();
   }
 
   async function setDismissed(dismiss: boolean) {

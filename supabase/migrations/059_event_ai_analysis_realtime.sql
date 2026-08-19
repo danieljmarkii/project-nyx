@@ -1,0 +1,36 @@
+-- ============================================================
+-- event_ai_analysis → supabase_realtime publication (CUL-171 / B-030)
+-- ============================================================
+-- The per-incident AI sections (VomitAnalysisSection / StoolAnalysisSection)
+-- previously learned that the analyze-* Edge Function had written its row by
+-- POLLING event_ai_analysis every 3s, up to 12 times (~36s), then giving up to
+-- a manual retry. Adding the table to the supabase_realtime publication lets the
+-- detail screen subscribe to postgres_changes and render the read the instant
+-- the function writes it — no poll loop, and no 36s give-up cliff (a slow vision
+-- call that finishes past 36s still resolves instantly).
+--
+-- This is the first table Nyx adds to realtime; the publication existed but held
+-- zero tables.
+--
+-- Security (why this grants no new access): event_ai_analysis already has RLS
+-- ENABLED, owner-scoped by pet_id (migration 013). Realtime postgres_changes
+-- enforces that same policy per subscriber and FAILS CLOSED — a client only ever
+-- receives changes to rows it could already SELECT over REST, so this adds a
+-- real-time READ channel filtered to the owner exactly as the existing reads are.
+-- The analyze-* Edge Functions keep writing with the service role (bypass RLS),
+-- unchanged.
+--
+-- Replica identity is deliberately left at the default (primary key).
+-- postgres_changes always delivers the full NEW row on INSERT/UPDATE regardless;
+-- replica identity only governs the OLD-row payload, which the client never
+-- reads. So there is no reason to widen it to FULL (which would only add
+-- old-row overhead to every write).
+--
+-- Migration Safety Pre-flight:
+--   Destructive:  n  (publication membership only — no table, column, or data
+--                 is created, altered, or dropped)
+--   Rollback:     ALTER PUBLICATION supabase_realtime DROP TABLE event_ai_analysis;
+--   Backfill:     N/A
+-- ============================================================
+
+ALTER PUBLICATION supabase_realtime ADD TABLE event_ai_analysis;

@@ -50,6 +50,106 @@ export async function triggerStoolAnalysis(eventId: string): Promise<{ error: st
   }
 }
 
+// ── Realtime watch for a per-incident analysis row (CUL-171 / B-030) ──────────
+//
+// The detail-screen sections (VomitAnalysisSection / StoolAnalysisSection) show
+// the analyze-* Edge Function's result the moment it lands. The function writes
+// asynchronously, so the client must wait for the row to move off 'pending'.
+// This replaces a fixed 3s×12 (~36s) poll.
+//
+// Primary mechanism: a Supabase realtime postgres_changes subscription filtered
+// to THIS event's row. It delivers the instant the function writes — no poll
+// loop, and no fixed give-up cliff (a vision call that finishes at 45s still
+// resolves instantly). event_ai_analysis is RLS-scoped by pet_id (migration
+// 013) and realtime enforces that policy per subscriber and fails closed, so the
+// stream carries only the owner's own rows (migration 059 adds the table to the
+// supabase_realtime publication).
+//
+// Two robustness details realtime alone doesn't cover:
+//   1. postgres_changes only carries changes that happen AFTER the socket is
+//      live, so a row the function writes during the mount→subscribe gap would
+//      be missed. We reconcile with one authoritative re-read the moment the
+//      channel reports SUBSCRIBED (and on every change thereafter).
+//   2. Realtime on mobile is best-effort (backgrounding, dropped sockets, an
+//      RLS check that fails closed). A SMALL, widening schedule of fallback
+//      re-reads sits behind it — NOT a tight poll — so a missed push still
+//      resolves, and an unreachable socket degrades to the same "give up →
+//      manual retry" floor the old poll had (last fallback ~40s ≈ old ~36s).
+//
+// `check` performs the caller's typed re-read and returns true once the row has
+// resolved (moved off 'pending'); returning true tears the watch down.
+// `onGiveUp` fires once if the fallback schedule is exhausted still unresolved.
+// Returns a teardown to call on unmount / before re-triggering. Idempotent:
+// calling the teardown more than once is safe.
+export const ANALYSIS_WATCH_FALLBACK_DELAYS_MS = [8000, 20000, 40000];
+
+export function watchAnalysisRow(
+  eventId: string,
+  check: () => Promise<boolean>,
+  onGiveUp: () => void,
+): () => void {
+  let done = false;
+  const timers: ReturnType<typeof setTimeout>[] = [];
+  let channel: ReturnType<typeof supabase.channel> | undefined;
+
+  const finish = () => {
+    if (done) return;
+    done = true;
+    timers.forEach(clearTimeout);
+    if (channel) supabase.removeChannel(channel);
+  };
+
+  // A single reconcile attempt: re-read, and resolve or (on the last fallback)
+  // give up. `isLast` marks the final scheduled fallback so the give-up fires
+  // exactly once, only when realtime never delivered.
+  const tick = async (isLast: boolean) => {
+    if (done) return;
+    let resolved = false;
+    try {
+      resolved = await check();
+    } catch (e) {
+      // A transient read failure is not a give-up — the next tick (realtime or
+      // the next fallback) retries. But don't fail silently: log it, matching
+      // the components' `[vomit-analysis]`/`[stool-analysis]` console tags.
+      console.warn('[analysis-watch] check failed:', e);
+      resolved = false;
+    }
+    if (done) return; // torn down mid-read
+    if (resolved) {
+      finish();
+    } else if (isLast) {
+      finish();
+      onGiveUp();
+    }
+  };
+
+  channel = supabase
+    .channel(`event_ai_analysis:${eventId}`)
+    .on(
+      'postgres_changes',
+      {
+        event: '*',
+        schema: 'public',
+        table: 'event_ai_analysis',
+        filter: `event_id=eq.${eventId}`,
+      },
+      () => {
+        void tick(false);
+      },
+    )
+    .subscribe((status) => {
+      // Reconcile once the socket is live — closes the mount→subscribe race.
+      if (status === 'SUBSCRIBED') void tick(false);
+    });
+
+  const lastIdx = ANALYSIS_WATCH_FALLBACK_DELAYS_MS.length - 1;
+  ANALYSIS_WATCH_FALLBACK_DELAYS_MS.forEach((delay, i) => {
+    timers.push(setTimeout(() => void tick(i === lastIdx), delay));
+  });
+
+  return finish;
+}
+
 // The owner-editable structured fields for a stool read (B-247, mirrors
 // EDITABLE_VOMIT_FIELDS). These are the descriptive/clinical columns on
 // event_ai_analysis that feed the vet report — an owner edit is human-reviewed
