@@ -136,26 +136,48 @@ describe('VomitAnalysisSection — photoless suppression (B-363)', () => {
 describe('VomitAnalysisSection — foreign-material visibility (CUL-240 / B-042)', () => {
   afterEach(() => { mockRow = null; });
 
-  it("unsure + a described fragment: surfaces the previously-hidden observation, still 'Keep an eye out', never reassures", async () => {
+  it("unsure + a described fragment: surfaces a DETERMINISTIC finding, still 'Keep an eye out', never the raw note", async () => {
     // The B-042 gap: the model marked foreign material 'unsure' AND described a non-food
-    // fragment, but the observation row rendered only on 'yes' — so the owner saw nothing
-    // while the record held a described piece. It must now surface, as a VISIBILITY fix
-    // that does NOT touch the escalation floor.
+    // fragment, but the row rendered only on 'yes' — so the owner saw nothing while the
+    // record held a described piece. It now surfaces as a VISIBILITY fix that does NOT
+    // touch the escalation floor. The note is model FREE TEXT (clinical-guardrails Pattern
+    // 10): its PRESENCE is the trigger, but its CONTENT must never reach this monitor card.
     mockRow = row({
       status: 'completed',
       recommendation: 'monitor',
       foreign_material_present: 'unsure',
-      foreign_material_note: 'a small pale fragment',
+      foreign_material_note: 'a small pale fragment near the top',
     });
     const { findByText, queryByText } = render(<VomitAnalysisSection eventId="f1" petName="Rex" hasPhoto />);
 
-    // The observation now surfaces, marked as uncertain with the app-wide 'unclear' word.
+    // Surfaces as a deterministic label — NOT the model's free text.
     expect(await findByText('Foreign material')).toBeTruthy();
-    expect(await findByText('a small pale fragment (unclear)')).toBeTruthy();
+    expect(await findByText('Possible — not identified')).toBeTruthy();
+    expect(queryByText(/a small pale fragment/)).toBeNull();   // the raw note never appears
     // The floor is untouched: still a monitor card ('Keep an eye out'), not an escalation.
     expect(await findByText('Keep an eye out')).toBeTruthy();
     expect(queryByText('Worth a call')).toBeNull();
     // Present-direction: naming a possible finding, never reassuring on absence.
+    expect(queryByText(REASSURANCE)).toBeNull();
+  });
+
+  it('unsure + a note carrying a diagnosis/reassurance: the raw note never reaches the monitor card (Pattern 10)', async () => {
+    // The adversarial counterexample (CUL-240 review): foreign_material_note is the
+    // least-guarded model free-text field — no schema constraint, no parse/post-floor gate.
+    // Such a note must NOT render on a non-worth_a_call card; only the deterministic label does.
+    mockRow = row({
+      status: 'completed',
+      recommendation: 'monitor',
+      foreign_material_present: 'unsure',
+      foreign_material_note: 'looks like a piece of bone, probably from a raw diet and usually passes on its own',
+    });
+    const { findByText, queryByText } = render(<VomitAnalysisSection eventId="f1b" petName="Rex" hasPhoto />);
+
+    expect(await findByText('Possible — not identified')).toBeTruthy();  // the safe label
+    expect(queryByText(/bone/)).toBeNull();                              // no diagnosis leaks
+    expect(queryByText(/usually passes on its own/)).toBeNull();         // no reassurance leaks
+    expect(queryByText(/raw diet/)).toBeNull();
+    expect(await findByText('Keep an eye out')).toBeTruthy();            // still monitor
     expect(queryByText(REASSURANCE)).toBeNull();
   });
 
@@ -188,7 +210,9 @@ describe('VomitAnalysisSection — foreign-material visibility (CUL-240 / B-042)
     expect(queryByText(/nothing that looks non-food/)).toBeNull();
   });
 
-  it("'yes' + a note is unchanged — a definite finding shows WITHOUT the '(unclear)' qualifier", async () => {
+  it("'yes' + a note is unchanged — a definite finding shows the model's description on its worth_a_call card", async () => {
+    // 'yes' forces worth_a_call (the suspected_foreign_material visual flag), so the model's
+    // own note rides an ESCALATED card — Pattern-10-compliant, and the shipped behaviour.
     mockRow = row({
       status: 'completed',
       recommendation: 'worth_a_call',
@@ -199,7 +223,7 @@ describe('VomitAnalysisSection — foreign-material visibility (CUL-240 / B-042)
     const { findByText, queryByText } = render(<VomitAnalysisSection eventId="f4" petName="Rex" hasPhoto />);
     expect(await findByText('Foreign material')).toBeTruthy();
     expect(await findByText('a piece of green plastic')).toBeTruthy();
-    // A definite finding is not hedged with '(unclear)' — that qualifier is the unsure path only.
-    expect(queryByText('a piece of green plastic (unclear)')).toBeNull();
+    // The 'yes' path shows the actual description, not the 'unsure' deterministic label.
+    expect(queryByText('Possible — not identified')).toBeNull();
   });
 });

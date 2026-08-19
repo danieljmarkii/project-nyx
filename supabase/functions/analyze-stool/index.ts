@@ -311,8 +311,15 @@ export function parseAnalysisToolResult(response: ClaudeResponse): StoolAnalysis
     blood_type: bloodPresent === 'yes' ? sanitizeEnum(input.blood_type, BLOOD_TYPES) : null,
     mucus_present: sanitizeEnum(input.mucus_present, TRISTATE),
     foreign_material_present: foreignPresent,
-    // foreign_material_note is NOT gated: it is populated only when foreign material
-    // is present (an escalating finding), so it names a present concern, never absence.
+    // foreign_material_note is model-authored free text, left ungated at parse: it is a
+    // short factual fragment description consumed by the structured-fields path (the owner
+    // editor and the 'yes'-tier detail/report render), not an n=1 "read". It is NOT true
+    // that the model writes it only on 'yes' — CUL-240 (B-042, on the vomit sibling) found
+    // it populated on 'unsure' too. So a consumer must NOT infer foreign_material_present
+    // === 'yes' from a non-null note (gate on the enum, never the note), and must NOT
+    // surface the RAW note on a non-worth_a_call card (clinical-guardrails Pattern 10 —
+    // model free text rides only the self-escalated path). Stool's 'unsure' detail render
+    // is CUL-542.
     foreign_material_note: typeof input.foreign_material_note === 'string' ? input.foreign_material_note : null,
     description,
     visual_flags: visualFlags,

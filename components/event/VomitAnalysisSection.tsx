@@ -433,16 +433,21 @@ function buildObservations(row: AnalysisRow): Observation[] {
   // observation feeding the report, distinct from the n=1 read's reassurance ban).
   const blood = labelFor(BLOOD_OPTIONS, row.blood_present);
   if (blood) out.push({ field: 'blood_present', label: 'Blood', value: blood });
-  // Foreign material: show on a definite 'yes', and ALSO on 'unsure' when the model
-  // described a specific fragment (a non-empty note). An 'unsure' + described piece was
-  // previously hidden entirely (CUL-240 / B-042) — the owner saw nothing while the model
-  // had recorded a non-food fragment it couldn't identify. Surfacing it is a VISIBILITY
-  // fix, not an escalation one: it shows the observation the owner should see; the
-  // escalation floor is untouched (this stays 'monitor'), and the '(unclear)' qualifier —
-  // the app-wide owner word for an 'unsure' field — keeps it honest about uncertainty:
-  // present-direction, never reassuring, never overstated (clinical-guardrails Pattern 1 /
-  // nyx-voice Pattern 6). A bare 'unsure' with no described fragment stays hidden — there
-  // is nothing specific to surface, and a bare "maybe foreign material" would be noise.
+  // Foreign material. On a definite 'yes' the escalation floor forces worth_a_call (the
+  // suspected_foreign_material visual flag fires on 'yes' only), so the model's own note
+  // rides an ESCALATED card — the shipped behaviour, kept as-is. On 'unsure' the card is
+  // 'monitor', and CUL-240 (B-042) surfaces the previously-hidden finding there — but the
+  // note is model-authored FREE TEXT with no schema constraint, no parse gate, and no
+  // post-floor gate, so the RAW note must NOT reach a non-worth_a_call card
+  // (clinical-guardrails Pattern 10 / B-060 / CUL-152: an 'unsure' note can carry a
+  // diagnosis or a reassurance, e.g. "looks like bone, usually passes on its own", which
+  // an '(unclear)' suffix would not neutralise). So the note's PRESENCE is the trigger — a
+  // deterministic signal the model saw a describable non-food fragment — while its CONTENT
+  // is never rendered here: the 'unsure' row shows a DETERMINISTIC label. That delivers the
+  // whole visibility win (the owner learns a possible, unidentified non-food fragment was
+  // flagged) present-direction, never reassuring, with zero free-text leak, and works on
+  // the existing rows with no Edge Function change. A bare 'unsure' with no note stays
+  // hidden — nothing specific to surface.
   const foreignNote = row.foreign_material_note?.trim();
   if (row.foreign_material_present === 'yes') {
     out.push({
@@ -454,7 +459,7 @@ function buildObservations(row: AnalysisRow): Observation[] {
     out.push({
       field: 'foreign_material_present',
       label: 'Foreign material',
-      value: `${foreignNote} (unclear)`,
+      value: 'Possible — not identified',
     });
   }
   return out;
