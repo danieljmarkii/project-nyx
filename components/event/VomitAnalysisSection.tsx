@@ -433,11 +433,28 @@ function buildObservations(row: AnalysisRow): Observation[] {
   // observation feeding the report, distinct from the n=1 read's reassurance ban).
   const blood = labelFor(BLOOD_OPTIONS, row.blood_present);
   if (blood) out.push({ field: 'blood_present', label: 'Blood', value: blood });
+  // Foreign material: show on a definite 'yes', and ALSO on 'unsure' when the model
+  // described a specific fragment (a non-empty note). An 'unsure' + described piece was
+  // previously hidden entirely (CUL-240 / B-042) — the owner saw nothing while the model
+  // had recorded a non-food fragment it couldn't identify. Surfacing it is a VISIBILITY
+  // fix, not an escalation one: it shows the observation the owner should see; the
+  // escalation floor is untouched (this stays 'monitor'), and the '(unclear)' qualifier —
+  // the app-wide owner word for an 'unsure' field — keeps it honest about uncertainty:
+  // present-direction, never reassuring, never overstated (clinical-guardrails Pattern 1 /
+  // nyx-voice Pattern 6). A bare 'unsure' with no described fragment stays hidden — there
+  // is nothing specific to surface, and a bare "maybe foreign material" would be noise.
+  const foreignNote = row.foreign_material_note?.trim();
   if (row.foreign_material_present === 'yes') {
     out.push({
       field: 'foreign_material_present',
       label: 'Foreign material',
-      value: row.foreign_material_note?.trim() || 'Possible',
+      value: foreignNote || 'Possible',
+    });
+  } else if (row.foreign_material_present === 'unsure' && foreignNote) {
+    out.push({
+      field: 'foreign_material_present',
+      label: 'Foreign material',
+      value: `${foreignNote} (unclear)`,
     });
   }
   return out;

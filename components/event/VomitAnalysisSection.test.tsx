@@ -132,3 +132,74 @@ describe('VomitAnalysisSection — photoless suppression (B-363)', () => {
     expect(await findByText(/Try analysis/i)).toBeTruthy();
   });
 });
+
+describe('VomitAnalysisSection — foreign-material visibility (CUL-240 / B-042)', () => {
+  afterEach(() => { mockRow = null; });
+
+  it("unsure + a described fragment: surfaces the previously-hidden observation, still 'Keep an eye out', never reassures", async () => {
+    // The B-042 gap: the model marked foreign material 'unsure' AND described a non-food
+    // fragment, but the observation row rendered only on 'yes' — so the owner saw nothing
+    // while the record held a described piece. It must now surface, as a VISIBILITY fix
+    // that does NOT touch the escalation floor.
+    mockRow = row({
+      status: 'completed',
+      recommendation: 'monitor',
+      foreign_material_present: 'unsure',
+      foreign_material_note: 'a small pale fragment',
+    });
+    const { findByText, queryByText } = render(<VomitAnalysisSection eventId="f1" petName="Rex" hasPhoto />);
+
+    // The observation now surfaces, marked as uncertain with the app-wide 'unclear' word.
+    expect(await findByText('Foreign material')).toBeTruthy();
+    expect(await findByText('a small pale fragment (unclear)')).toBeTruthy();
+    // The floor is untouched: still a monitor card ('Keep an eye out'), not an escalation.
+    expect(await findByText('Keep an eye out')).toBeTruthy();
+    expect(queryByText('Worth a call')).toBeNull();
+    // Present-direction: naming a possible finding, never reassuring on absence.
+    expect(queryByText(REASSURANCE)).toBeNull();
+  });
+
+  it('unsure with NO described fragment: stays hidden — a bare "maybe" is noise, not a finding', async () => {
+    mockRow = row({
+      status: 'completed',
+      recommendation: 'monitor',
+      foreign_material_present: 'unsure',
+      foreign_material_note: null,
+      blood_present: 'none_visible', // gives the observations block a row to render
+    });
+    const { findByText, queryByText } = render(<VomitAnalysisSection eventId="f2" petName="Rex" hasPhoto />);
+    expect(await findByText('Blood')).toBeTruthy();          // the block did render
+    expect(queryByText('Foreign material')).toBeNull();      // but no foreign-material row
+  });
+
+  it("'no' + a note never surfaces a foreign-material row (present-only; a 'no' note is not a finding)", async () => {
+    // Production holds 'no'+note rows (the model narrating absence). The 'unsure' path must
+    // key off presence==='unsure', so those must never leak in as a foreign observation.
+    mockRow = row({
+      status: 'completed',
+      recommendation: 'monitor',
+      foreign_material_present: 'no',
+      foreign_material_note: 'nothing that looks non-food',
+      blood_present: 'none_visible',
+    });
+    const { findByText, queryByText } = render(<VomitAnalysisSection eventId="f3" petName="Rex" hasPhoto />);
+    expect(await findByText('Blood')).toBeTruthy();
+    expect(queryByText('Foreign material')).toBeNull();
+    expect(queryByText(/nothing that looks non-food/)).toBeNull();
+  });
+
+  it("'yes' + a note is unchanged — a definite finding shows WITHOUT the '(unclear)' qualifier", async () => {
+    mockRow = row({
+      status: 'completed',
+      recommendation: 'worth_a_call',
+      read_text: 'I can see something that does not look like food. That is worth a call to your vet.',
+      foreign_material_present: 'yes',
+      foreign_material_note: 'a piece of green plastic',
+    });
+    const { findByText, queryByText } = render(<VomitAnalysisSection eventId="f4" petName="Rex" hasPhoto />);
+    expect(await findByText('Foreign material')).toBeTruthy();
+    expect(await findByText('a piece of green plastic')).toBeTruthy();
+    // A definite finding is not hedged with '(unclear)' — that qualifier is the unsure path only.
+    expect(queryByText('a piece of green plastic (unclear)')).toBeNull();
+  });
+});
