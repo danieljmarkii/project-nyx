@@ -37,7 +37,7 @@ interface SignalZoneProps {
   // B-721 SR-5 (§3.4) — whether a diet trial is running for the active pet (`isTrialRunning`,
   // computed by Home from the useDietTrial load it already does, so this zone adds no second
   // read). Threaded to the falling reflection's expanded state for the mid-trial adjacency
-  // line; default false, so every non-Home caller and the flag-off path are unaffected.
+  // line; default false, so every non-Home caller is unaffected.
   trialRunning?: boolean;
   // B-789 (§5.2) — drop the event-driven trial_response card when the active pet's record
   // carries a NOT-EATING concern (a live intake decline or a diet refusal). The card fires
@@ -46,8 +46,7 @@ interface SignalZoneProps {
   // and no safety card leads, yet a reassuring "0 vomiting · was 20" would render over a
   // starving cat (the B-494 anorexic-cat case). Home computes this from the SAME `trialInput`
   // the strip withholds its vomit line on (`isAnimalNotEating`), so the card and the strip
-  // can never disagree. Default false: every non-Home caller and the flag-off path are
-  // unaffected.
+  // can never disagree. Default false: every non-Home caller is unaffected.
   suppressTrialResponse?: boolean;
 }
 
@@ -177,7 +176,7 @@ export function SignalZone({
           Scoped to the live register: the empty states carry their own "getting to know you"
           reassurance (E1), so an "updating…" line there would just double it. Clears when the
           regen settles (useSignal reads the lifecycle flag) or the safety ceiling fires —
-          fail-quiet, never an error surface. Flag-off never renders it. */}
+          fail-quiet, never an error surface. */}
       {showAck ? <AckLine petName={petName} /> : null}
 
       {state === 'live' ? (
@@ -233,7 +232,7 @@ export function SignalZone({
 // SR-3 acknowledgment line (§5.3 / §9) — a small teal dot + the nyx-voice-locked
 // "Noted — updating {pet}'s picture…". A polite live region so VoiceOver announces it
 // when it appears and clears; the dot is decorative (a View, no label). Renders only
-// behind the flag while a regen is in flight (gated at the call site).
+// while a regen is in flight (gated at the call site).
 function AckLine({ petName }: { petName: string }) {
   return (
     <View style={styles.ackLine} accessibilityLiveRegion="polite">
@@ -786,8 +785,8 @@ const styles = StyleSheet.create({
 
   // ── CUL-14 watching block (§4.4) — the sub, the real-count rows, the floor line ──
   // The intro above the rows: what we're watching, secondary weight (it orients; the
-  // rows carry the facts). Matches the v2Sub tier so the block reads as one register in
-  // the design_v2 frame and calm-but-present in the shipped one.
+  // rows carry the facts). Matches the v2Sub tier so the block reads as one register
+  // within the empty-state frame.
   watchingSub: {
     fontSize: theme.textSM,
     color: theme.colorTextSecondary,

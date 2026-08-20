@@ -58,10 +58,9 @@ function presentationFor(key: AllowlistFlagKey): { Icon: IconComponent; onHint?:
           'It’s on. If it isn’t on your home screen yet, touch and hold an empty area, tap +, then find Culprit and add it.',
       };
     case 'log_picker_v2':
-      // No on-state hint: like the Signal redesign, the new log picker takes effect
-      // the moment it's on — the owner reaches it by tapping the FAB, nothing to
-      // place or do. A distinct "log an entry" glyph helps it read apart from the
-      // widget (grid) and Signal (sparkles) cards on the shelf.
+      // No on-state hint: the new log picker takes effect the moment it's on — the owner
+      // reaches it by tapping the FAB, nothing to place or do (unlike the widget). A
+      // distinct "log an entry" glyph helps it read apart from the widget (grid) card.
       return { Icon: SquarePen };
     default:
       return { Icon: FlaskConical };
