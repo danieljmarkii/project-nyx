@@ -29,9 +29,14 @@ jest.mock('expo-router', () => ({
   useFocusEffect: (cb: () => void | (() => void)) => require('react').useEffect(cb, [cb]),
 }));
 
+// Per-pet local rows so the B-734 localCtx-reset test can give pet A a mature record
+// and pet B a fresh one. Defaults to the empty record every pre-existing test assumed.
+let mockLocalRowsByPet: Record<string, { total: number; recent: number; earliest: string | null }> = {};
 jest.mock('../lib/db', () => ({
   getDb: () => ({
-    getAllSync: jest.fn().mockReturnValue([{ total: 0, recent: 0, earliest: null }]),
+    getAllSync: (_sql: string, params: unknown[]) => [
+      mockLocalRowsByPet[String(params[1])] ?? { total: 0, recent: 0, earliest: null },
+    ],
   }),
 }));
 
@@ -66,6 +71,7 @@ const PET_B = { id: 'pet-b', name: 'Mochi' } as any;
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockLocalRowsByPet = {};
   mockedIsStale.mockReturnValue(false);
   mockedRegenerate.mockResolvedValue({ error: null });
   usePetStore.setState({ pets: [PET_A, PET_B], activePet: PET_A });
@@ -96,6 +102,43 @@ describe('useSignal — pet-switch multi-pet safety', () => {
 
     // Let pet B's in-flight (resolves-to-null) fetch settle before the test ends.
     await waitFor(() => expect(result.current.isLoading).toBe(false));
+  });
+
+  it("a pet switch never commits a frame pairing the new pet's name with the previous pet's counts (B-734)", async () => {
+    // CUL-72's second seam: the reset cleared findings but not localCtx, so the E1
+    // headline could briefly read "We're getting to know Mochi. Day 34 — 212 events so
+    // far." with pet A's numbers. localCtx now resets in the same render-body block.
+    mockLocalRowsByPet[PET_A.id] = {
+      total: 212,
+      recent: 1,
+      earliest: new Date(Date.now() - 33 * 86400000).toISOString(),
+    };
+    mockLocalRowsByPet[PET_B.id] = { total: 0, recent: 0, earliest: null };
+    mockedReadCache.mockResolvedValue(null);
+
+    // Record every COMMITTED frame (an effect with no deps runs once per commit, with
+    // that commit's values in closure) — discarded adjust-while-rendering passes and the
+    // in-flight state are invisible here, which is the point: what the owner can SEE.
+    const frames: Array<{ petName: string; eventCount: number }> = [];
+    const { result } = renderHook(() => {
+      const s = useSignal();
+      require('react').useEffect(() => {
+        frames.push({ petName: s.petName, eventCount: s.eventCount });
+      });
+      return s;
+    });
+    await waitFor(() => expect(result.current.eventCount).toBe(212));
+
+    act(() => {
+      usePetStore.setState({ activePet: PET_B });
+    });
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    // No committed frame ever paired pet B's name with pet A's counts.
+    expect(frames.some((f) => f.petName === PET_B.name && f.eventCount === 212)).toBe(false);
+    // And pet B settles on its own (fresh) local context.
+    expect(result.current.eventCount).toBe(0);
+    expect(result.current.dayNumber).toBe(1);
   });
 
   it('markSeen() called on a switch-render never writes the outgoing pet\'s signature under the new pet\'s key', async () => {

@@ -273,6 +273,19 @@ export function buildingDayNumber(firstEventIso: string | null, nowMs: number): 
 // then" — safety findings don't wait for the week (clinical-guardrails / §6).
 export const BUILDING_SUB =
   "Patterns usually start appearing within the first week. Here's what we're watching for:";
+// B-735 (GA Phase 0, PM-ruled D5a): a sparse logger (Sam's grazing cat) can cross day 7
+// with fewer than the substantial-history events and stay in E1 — where "Day 24" sits
+// directly above "within the first week" and reads as "am I doing this wrong, or is the
+// app stuck?". Once the day count outruns the week, the sub swaps to the events-not-days
+// framing: no time promise the count already broke, no quantity promise either (the floor
+// is the engine's, not a pledge), and never a nag — a neutral fact about the mechanism.
+export const BUILDING_SUB_SPARSE =
+  "Patterns build from logged events more than from time passing. Here's what we're watching for:";
+/** The E1 sub, keyed on whether the day count has outrun BUILDING_SUB's own first-week
+ *  promise. The threshold IS the promise's boundary (7 days) — not a tuned number. */
+export function buildingSub(dayNumber: number): string {
+  return dayNumber > 7 ? BUILDING_SUB_SPARSE : BUILDING_SUB;
+}
 export const BUILDING_WATCHING_FOR = [
   'Timing — do symptoms follow meals, and how closely',
   'Food connections — what tends to come before a reaction',
@@ -308,13 +321,18 @@ export const NO_PATTERN_SUB =
  *  pattern still needs" is a fact about the computation, not a request to log more. */
 export const WATCHING_SUB = "Here's what we're watching, and what each pattern still needs:";
 
-/** Timing lane — "N of the M timed episodes a pattern needs." A fact about the math:
- *  how many meal-timeable episodes the timing lanes (⑤/L1) require before a pattern can
- *  be read. Never a promise a card is coming (G8) — it names what the computation needs,
- *  not what the pet will turn out to have. `need` is the shared minEligibleEpisodes floor
- *  (§2 L1), passed in so the copy names the same number the gate uses. */
+/** Timing lane — "N of the M episodes a pattern needs, timed against meals you've
+ *  logged." A fact about the math: how many meal-timeable episodes the timing lanes
+ *  (⑤/L1) require before a pattern can be read. Never a promise a card is coming (G8) —
+ *  it names what the computation needs, not what the pet will turn out to have. `need`
+ *  is the shared minEligibleEpisodes floor (§2 L1), passed in so the copy names the same
+ *  number the gate uses. B-768 (GA Phase 0, PM-ruled D2a): "timed episodes" was engine
+ *  jargon (`eligibleCount` — the owner never times anything); the trailing clause makes
+ *  the mechanism self-carrying — an episode counts when a logged meal lets us place it.
+ *  Descriptive, not an imperative (G8): it names where the timing comes from, it does
+ *  not ask for anything. */
 export function watchingTimingRow(have: number, need: number): string {
-  return `Timing — ${have} of the ${need} timed episodes a pattern needs.`;
+  return `Timing — ${have} of the ${need} episodes a pattern needs, timed against meals you've logged.`;
 }
 
 /** Change lane — the week-over-week comparison needs two full weeks of span to run.
@@ -329,9 +347,14 @@ export function watchingChangeRow(currentWeek: number, weeksNeeded: number): str
  *  plainly ("6 days, then 3, then 2"). A TRUE fact about the record: a descriptive count
  *  in time order, never a verdict (G1), never a cause (G3), never a mechanism. The row
  *  renders only on a SHORTENING run, so no reassuring "settling"/"improving" is ever
- *  reachable (a lengthening or steady sequence renders nothing — absence ≠ wellness). */
+ *  reachable (a lengthening or steady sequence renders nothing — absence ≠ wellness).
+ *  B-769 (GA Phase 0, PM-ruled D4): the row LEADS with "are getting shorter" so the one
+ *  escalation row is legible AS one — the raw sequence alone made the owner do the
+ *  direction math. Still descriptive change, count-anchored and time-ordered (Change
+ *  Contract v1.1): the detector only ever hands this a strictly-decreasing run, so the
+ *  clause states the run's own defining fact, never a verdict about the pet. */
 export function watchingGapRow(symptomLabel: string, gapSequence: string): string {
-  return `Gaps between ${symptomLabel} episodes — ${gapSequence}.`;
+  return `Gaps between ${symptomLabel} episodes are getting shorter — ${gapSequence}.`;
 }
 
 // "6 days, then 3, then 2" (unit stated once when uniform) or "3 days, then 18 hours,
@@ -537,13 +560,12 @@ export function isNewWorsening(finding: SignalFinding): finding is SymptomWorsen
 // carry the novelty). priorCount === 0 ⇒ priorDays === 0 ⇒ the trigger is more_episodes
 // (a flat-count more_days arm needs priorCount ≥ the episode floor), but we branch on
 // the axis defensively so an unexpected shape can never print the "0 last week" this
-// exists to drop. NOTE (SR-4): two OTHER surfaces still say "after none" for this finding
-// — the SERVER card sentence, and the client `evidenceText` worsening branch below (this
-// file). SR-4's template audit retires that phrasing in BOTH together: retiring only the
-// expanded evidence now would split it from the still-"after none" card sentence, and
-// `evidenceText` is shared flag-off/on so an ungated edit would break FR-FLAG-2. The
-// redundancy is dark behind the flag until then; when SR-4 lands, the card a11y label
-// must also carry the `New` fact the chip holds (B-727).
+// exists to drop. B-727 (CUL-239, GA Phase 0): the client `evidenceText` worsening branch
+// below now leads its zero-prior arms with the same New fact ("New this week: …"), and the
+// card a11y label carries the chip's fact (InsightCard). The ONE remaining "after none"
+// surface is the SERVER card sentence, which retires with the GA-3 `generate-signal`
+// redeploy — until then the sentence and the evidence phrase the same fact differently,
+// never contradict.
 export function worseningNewSampleLine(finding: SymptomWorseningFinding): string {
   return finding.trigger === 'more_days'
     ? `${count(finding.currentDays, 'day', 'days')} this week`
@@ -701,10 +723,16 @@ export function evidenceText(finding: SignalFinding, petName: string): string {
   }
   if (finding.type === 'symptom_worsening') {
     const symptom = SYMPTOM_LABEL[finding.symptomType];
-    const priorPhrase =
-      finding.priorCount === 0
-        ? 'after none the week before'
-        : `up from ${count(finding.priorCount, 'episode', 'episodes')} the week before`;
+    // B-727 (CUL-239 client half, GA Phase 0): a zero-prior worsening is a FIRST
+    // APPEARANCE, not a trend — the retired "after none the week before" dressed 0 → N
+    // as a comparison (fake trend precision, the same reason the §3.2 New chip replaced
+    // the "0 last week" pair). The zero-prior arms now lead with the New fact instead.
+    // priorCount === 0 ⇒ the trigger is more_episodes (see worseningNewSampleLine), so
+    // only the two priorPhrase arms need it; the server card sentence retires its own
+    // "after none" with the GA-3 `generate-signal` redeploy — until then the two phrase
+    // the same fact differently, never contradict.
+    const isNew = finding.priorCount === 0;
+    const priorPhrase = `up from ${count(finding.priorCount, 'episode', 'episodes')} the week before`;
     // Firm tier — symptoms on most days. Phrase the rise on the axis that actually rose
     // (the trigger). For more_days the episode count is flat-or-falling, so compare on
     // days, not episodes (adversarial review — avoids the "4 episodes, up from 6" miscount).
@@ -714,6 +742,13 @@ export function evidenceText(finding: SignalFinding, petName: string): string {
           `We've logged ${symptom} for ${petName} on ${count(finding.currentDays, 'day', 'days')} this week, up ` +
           `from ${count(finding.priorDays, 'day', 'days')} the week before. Symptoms on most days is a pattern ` +
           `worth a vet visit soon — a read of your logs, not a diagnosis.`
+        );
+      }
+      if (isNew) {
+        return (
+          `New this week: ${count(finding.currentCount, 'episode', 'episodes')} of ${symptom} logged for ${petName} ` +
+          `on ${count(finding.currentDays, 'day', 'days')}. Symptoms on most days is a pattern worth a vet visit ` +
+          `soon — a read of your logs, not a diagnosis.`
         );
       }
       return (
@@ -728,6 +763,14 @@ export function evidenceText(finding: SignalFinding, petName: string): string {
         `We've logged ${symptom} for ${petName} on ${count(finding.currentDays, 'day', 'days')} this week, up from ` +
         `${count(finding.priorDays, 'day', 'days')} the week before. It's a pattern in your logs, not a diagnosis — ` +
         `worth keeping an eye on, and a word with your vet if it carries on.`
+      );
+    }
+    if (isNew) {
+      // Standard, first appearance — the New fact leads; no zero-count pair.
+      return (
+        `New this week: ${count(finding.currentCount, 'episode', 'episodes')} of ${symptom} logged for ${petName}. ` +
+        `It's a pattern in your logs, not a diagnosis — worth a word with your vet, and keeping an eye on whether ` +
+        `it carries on.`
       );
     }
     // Standard — an episode-count rise, not dense.

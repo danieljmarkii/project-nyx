@@ -17,7 +17,9 @@ import {
   buildWatchingRows,
   windowedTimedEligibleCount,
   detectWatchingGapShortening,
+  daysSinceLastVomitEpisode,
   WATCHING_TIMING_NEED,
+  WATCHING_TIMING_QUIET_DAYS,
   type WatchingRow,
   type WatchingFacts,
 } from './signalWatching';
@@ -56,18 +58,25 @@ describe('watching copy — verbatim mock §05 strings (the R2-7 Designer round)
   it('the sub line is verbatim', () => {
     expect(WATCHING_SUB).toBe("Here's what we're watching, and what each pattern still needs:");
   });
-  it('the timing row is verbatim, count-anchored (both numbers printed — §9 denominator rule)', () => {
-    expect(watchingTimingRow(4, 6)).toBe('Timing — 4 of the 6 timed episodes a pattern needs.');
+  it('the timing row is verbatim, count-anchored, jargon-free (B-768 D2a — the mechanism clause replaces "timed episodes")', () => {
+    expect(watchingTimingRow(4, 6)).toBe(
+      "Timing — 4 of the 6 episodes a pattern needs, timed against meals you've logged.",
+    );
   });
   it('the change row is verbatim, naming the current week', () => {
     expect(watchingChangeRow(2, 2)).toBe(
       'Change, week to week — needs 2 full weeks of logging to compare. This is week 2.',
     );
   });
-  it('the gap row is verbatim, the symptom + the plain time-ordered sequence', () => {
+  it('the gap row leads with the direction cue (B-769 D4), then the plain time-ordered sequence', () => {
     expect(watchingGapRow('vomiting', '6 days, then 3, then 2')).toBe(
-      'Gaps between vomiting episodes — 6 days, then 3, then 2.',
+      'Gaps between vomiting episodes are getting shorter — 6 days, then 3, then 2.',
     );
+  });
+  it('the gap row cue is descriptive change, never a verdict (Change Contract v1.1)', () => {
+    const s = watchingGapRow('vomiting', '6 days, then 3, then 2');
+    expect(s).not.toMatch(/worse|worsening|serious|urgent|escalat/i); // no verdict words
+    expect(s).not.toMatch(/[↑↓%]/); // no arrows, no percentages
   });
   it('the safety-floor line is the verbatim, unconditional BUILDING_FLOOR', () => {
     expect(BUILDING_FLOOR).toBe("If something needs attention sooner, it won't wait for the week.");
@@ -113,7 +122,14 @@ describe('formatWatchingGapSequence — mirrors the server phrasing.ts formatter
 });
 
 describe('buildWatchingRows — the per-lane gates + the mock order', () => {
-  const base: WatchingFacts = { timedEligibleCount: 0, dayNumber: 30, gapSequenceHours: null };
+  // daysSinceLastEpisode 2 — a LIVE record, so the quiet gate (D1a) is inert in the
+  // pre-existing cases; the quiet gate has its own describe below.
+  const base: WatchingFacts = {
+    timedEligibleCount: 0,
+    dayNumber: 30,
+    gapSequenceHours: null,
+    daysSinceLastEpisode: 2,
+  };
   const rowKeys = (rows: WatchingRow[]) => rows.map((r) => r.key);
 
   describe('timing lane', () => {
@@ -124,12 +140,48 @@ describe('buildWatchingRows — the per-lane gates + the mock order', () => {
       for (const n of [1, 3, 5]) {
         const rows = buildWatchingRows({ ...base, timedEligibleCount: n });
         expect(rows).toHaveLength(1);
-        expect(rows[0]).toEqual({ key: 'timing', text: `Timing — ${n} of the 6 timed episodes a pattern needs.` });
+        expect(rows[0]).toEqual({
+          key: 'timing',
+          text: `Timing — ${n} of the 6 episodes a pattern needs, timed against meals you've logged.`,
+        });
       }
     });
     it('no row once the floor is met (≥6 — the lane can run, nothing "still needed")', () => {
       expect(buildWatchingRows({ ...base, timedEligibleCount: WATCHING_TIMING_NEED })).toEqual([]);
       expect(buildWatchingRows({ ...base, timedEligibleCount: 9 })).toEqual([]);
+    });
+  });
+
+  // B-768, PM-ruled D1a (GA Phase 0): the counter only moves on new episodes, so over a
+  // quiet pet it reads as an owed debt — it withdraws at 14 quiet days. Suppression only:
+  // no "quieted"/"settled" reframe is ever rendered (no reassurance-on-absence).
+  describe('timing lane — the quiet gate (D1a)', () => {
+    it('suppresses the timing row once the last episode is ≥ 14 days back', () => {
+      for (const quiet of [WATCHING_TIMING_QUIET_DAYS, 21, 59]) {
+        expect(
+          buildWatchingRows({ ...base, timedEligibleCount: 4, daysSinceLastEpisode: quiet }),
+        ).toEqual([]);
+      }
+    });
+    it('keeps the timing row while the record is live (last episode < 14 days back)', () => {
+      for (const live of [0, 5, 13.9]) {
+        const rows = buildWatchingRows({ ...base, timedEligibleCount: 4, daysSinceLastEpisode: live });
+        expect(rowKeys(rows)).toEqual(['timing']);
+      }
+    });
+    it('a null recency fails toward suppression (defensive — cannot occur with a positive count)', () => {
+      expect(buildWatchingRows({ ...base, timedEligibleCount: 4, daysSinceLastEpisode: null })).toEqual([]);
+    });
+    it('the quiet gate touches ONLY the timing row — change and gap rows are unaffected', () => {
+      const rows = buildWatchingRows({
+        timedEligibleCount: 4,
+        dayNumber: 12,
+        gapSequenceHours: [6 * 24, 3 * 24, 2 * 24],
+        daysSinceLastEpisode: 30,
+      });
+      // The gap row surviving here is theoretical (its own recency guard would normally
+      // null the run first) — the point is the quiet gate itself never reaches past timing.
+      expect(rowKeys(rows)).toEqual(['change', 'gap']);
     });
   });
 
@@ -153,25 +205,49 @@ describe('buildWatchingRows — the per-lane gates + the mock order', () => {
     it('no row when the detector returned null (no shortening / stale / too few)', () => {
       expect(buildWatchingRows({ ...base, gapSequenceHours: null })).toEqual([]);
     });
-    it('renders the plain sequence when a shortening run is supplied', () => {
+    it('renders the cue-led sequence when a shortening run is supplied', () => {
       const rows = buildWatchingRows({ ...base, gapSequenceHours: [6 * 24, 3 * 24, 2 * 24] });
-      expect(rows).toEqual([{ key: 'gap', text: 'Gaps between vomiting episodes — 6 days, then 3, then 2.' }]);
+      expect(rows).toEqual([
+        { key: 'gap', text: 'Gaps between vomiting episodes are getting shorter — 6 days, then 3, then 2.' },
+      ]);
     });
   });
 
-  it('orders the rows timing → change → gap (the mock §05 order)', () => {
-    const rows = buildWatchingRows({ timedEligibleCount: 4, dayNumber: 12, gapSequenceHours: [6 * 24, 3 * 24, 2 * 24] });
+  it('orders the rows timing → change → gap (the render layer splits gap out — B-769 D3a)', () => {
+    const rows = buildWatchingRows({
+      timedEligibleCount: 4,
+      dayNumber: 12,
+      gapSequenceHours: [6 * 24, 3 * 24, 2 * 24],
+      daysSinceLastEpisode: 2,
+    });
     expect(rowKeys(rows)).toEqual(['timing', 'change', 'gap']);
-    // The exact mock frame, reproduced from real-shaped facts.
+    // The exact frame, reproduced from real-shaped facts.
     expect(rows.map((r) => r.text)).toEqual([
-      'Timing — 4 of the 6 timed episodes a pattern needs.',
+      "Timing — 4 of the 6 episodes a pattern needs, timed against meals you've logged.",
       'Change, week to week — needs 2 full weeks of logging to compare. This is week 2.',
-      'Gaps between vomiting episodes — 6 days, then 3, then 2.',
+      'Gaps between vomiting episodes are getting shorter — 6 days, then 3, then 2.',
     ]);
   });
 
   it('returns [] when nothing qualifies (a mature, well-covered record with no shortening)', () => {
-    expect(buildWatchingRows({ timedEligibleCount: 9, dayNumber: 60, gapSequenceHours: null })).toEqual([]);
+    expect(
+      buildWatchingRows({ timedEligibleCount: 9, dayNumber: 60, gapSequenceHours: null, daysSinceLastEpisode: 2 }),
+    ).toEqual([]);
+  });
+});
+
+// ── daysSinceLastVomitEpisode — the quiet gate's recency input (D1a) ───────────────
+describe('daysSinceLastVomitEpisode', () => {
+  const w = (ms: number) => ({ ms, confidence: 'witnessed' as OnsetConfidence });
+  it('returns days since the most recent event, on RAW events (uncollapsed — the honest, later timestamp)', () => {
+    expect(daysSinceLastVomitEpisode([w(NOW - 5 * DAY), w(NOW - 2 * DAY)], NOW)).toBeCloseTo(2);
+  });
+  it('null for an empty record', () => {
+    expect(daysSinceLastVomitEpisode([], NOW)).toBeNull();
+  });
+  it('ignores non-finite and future-dated entries', () => {
+    expect(daysSinceLastVomitEpisode([w(NaN), w(NOW + DAY), w(NOW - 3 * DAY)], NOW)).toBeCloseTo(3);
+    expect(daysSinceLastVomitEpisode([w(NaN), w(NOW + DAY)], NOW)).toBeNull();
   });
 });
 

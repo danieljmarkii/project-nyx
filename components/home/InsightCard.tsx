@@ -547,6 +547,14 @@ export function InsightCard({
   }
   let accessibilityLabel = receiptA11y ? `${cached.text}. ${receiptA11y}` : cached.text;
   if (faceMedLine) accessibilityLabel = `${accessibilityLabel}. ${faceMedLine}`;
+  // B-727 (CUL-239 client half, GA Phase 0): the `New` chip is visual-only, and this
+  // card is ONE accessible button — children never reach VoiceOver — so the chip's fact
+  // must ride the label. Load-bearing for GA-3: when the server sentence retires its
+  // "after none the week before" clause, this clause is what keeps the novelty audible.
+  // Same gate as the chip itself (designV2), so label and chip appear together.
+  if (designV2 && isNewWorsening(cached.finding)) {
+    accessibilityLabel = `${accessibilityLabel}. New this week.`;
+  }
 
   function toggle() {
     LayoutAnimation.configureNext(LayoutAnimation.create(theme.durationMedium, 'easeInEaseOut', 'opacity'));

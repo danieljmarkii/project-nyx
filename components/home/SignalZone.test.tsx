@@ -46,6 +46,7 @@ import {
   noPatternIntro,
   buildingHeadline,
   BUILDING_SUB,
+  BUILDING_SUB_SPARSE,
   BUILDING_WATCHING_FOR,
   BUILDING_FLOOR,
   NO_PATTERN_HEADLINE,
@@ -322,6 +323,102 @@ describe('SignalZone — CUL-14 watching system (signals_v2)', () => {
     mockUseSignal.mockReturnValue(signalState({ displayState: 'live', findings: [liveFinding] }));
     render(<SignalZone />);
     expect(mockUseWatchingRows.mock.calls.at(-1)?.[0]).toBe(false);
+  });
+
+  // ── B-769 (CUL-29, PM-ruled D3a/D4 — GA Phase 0): the gap row's own register ────
+  describe('the gap row leaves the "still needs" umbrella (D3a)', () => {
+    it('a lone gap row renders WITHOUT the WATCHING_SUB umbrella (an escalation is not an unmet need)', () => {
+      enableSignalsV2(true);
+      mockUseWatchingRows.mockReturnValue([gapRow]);
+      mockUseSignal.mockReturnValue(signalState({ displayState: 'no_pattern', coverage: [rateMeals] }));
+      const { getByText, queryByText } = render(<SignalZone />);
+      expect(getByText(gapRow.text)).toBeTruthy();
+      expect(queryByText(WATCHING_SUB)).toBeNull(); // the umbrella never renders for gap alone
+      expect(getByText(BUILDING_FLOOR)).toBeTruthy(); // the safety floor still travels
+    });
+
+    it('the gap row renders ABOVE the coverage nag on no_pattern (Principle 3 — the escalation leads)', () => {
+      enableSignalsV2(true);
+      mockUseWatchingRows.mockReturnValue(allRows);
+      mockUseSignal.mockReturnValue(signalState({ displayState: 'no_pattern', coverage: [rateMeals] }));
+      const tree = JSON.stringify(render(<SignalZone />).toJSON());
+      const gapAt = tree.indexOf('are getting shorter');
+      const coverageAt = tree.indexOf("meals aren't rated often enough");
+      const needsAt = tree.indexOf(WATCHING_SUB);
+      expect(gapAt).toBeGreaterThan(-1);
+      expect(coverageAt).toBeGreaterThan(-1);
+      expect(needsAt).toBeGreaterThan(-1);
+      expect(gapAt).toBeLessThan(coverageAt); // escalation above the data-quality nag
+      expect(coverageAt).toBeLessThan(needsAt); // needs rows keep their place below
+    });
+
+    it('the gap row leads the watching area in the E1 frames too', () => {
+      enableSignalsV2(true);
+      mockUseWatchingRows.mockReturnValue(allRows);
+      mockUseSignal.mockReturnValue(signalState({ displayState: 'building', dayNumber: 12, eventCount: 31 }));
+      const tree = JSON.stringify(render(<SignalZone />).toJSON());
+      expect(tree.indexOf('are getting shorter')).toBeLessThan(tree.indexOf(WATCHING_SUB));
+    });
+  });
+});
+
+// ── GA Phase 0 — B-734 (CUL-72) the load window, B-735 (CUL-430) the sparse sub ───
+describe('SignalZone — B-734 first-load window (flag-on skeleton, never the heavy E1)', () => {
+  it('flag ON: loading renders the content-shaped skeleton, none of the E1 copy', () => {
+    mockUseAllowlistFlag.mockImplementation((key: string) => key === 'signal_design_v2');
+    // The pet-switch reset state: findings cleared, localCtx at the sentinel, read in flight.
+    mockUseSignal.mockReturnValue(
+      signalState({ displayState: 'stale', isLoading: true, findings: [], dayNumber: 1, eventCount: 0 }),
+    );
+    const { getByTestId, queryByText } = render(<SignalZone />);
+    expect(getByTestId('signal-loading-skeleton')).toBeTruthy();
+    expect(queryByText(/getting to know/)).toBeNull(); // no E1 headline flash
+    expect(queryByText(BUILDING_SUB)).toBeNull();
+    expect(queryByText(BUILDING_FLOOR)).toBeNull();
+  });
+
+  it('flag OFF: the loading window keeps the shipped soft building intro (FR-FLAG-2)', () => {
+    mockUseSignal.mockReturnValue(signalState({ displayState: 'stale', isLoading: true, findings: [] }));
+    const { getByText, queryByTestId } = render(<SignalZone />);
+    expect(getByText(buildingIntro('Nyx'))).toBeTruthy();
+    expect(queryByTestId('signal-loading-skeleton')).toBeNull();
+  });
+
+  it('the watching hook is disabled while loading (no read keyed on the sentinel day count)', () => {
+    mockUseAllowlistFlag.mockReturnValue(true); // both flags on
+    mockUseSignal.mockReturnValue(
+      signalState({ displayState: 'stale', isLoading: true, findings: [], dayNumber: 1, eventCount: 0 }),
+    );
+    render(<SignalZone />);
+    expect(mockUseWatchingRows.mock.calls.at(-1)?.[0]).toBe(false);
+  });
+
+  it('once the read lands (isLoading false), the real state renders — no lingering skeleton', () => {
+    mockUseAllowlistFlag.mockImplementation((key: string) => key === 'signal_design_v2');
+    mockUseSignal.mockReturnValue(
+      signalState({ displayState: 'building', isLoading: false, dayNumber: 3, eventCount: 11 }),
+    );
+    const { queryByTestId, getByLabelText } = render(<SignalZone />);
+    expect(queryByTestId('signal-loading-skeleton')).toBeNull();
+    expect(getByLabelText(buildingHeadline('Nyx', 3, 11))).toBeTruthy();
+  });
+});
+
+describe('SignalZone — B-735 sparse-logger E1 sub (D5a)', () => {
+  it('day ≤ 7 keeps the first-week sub; day > 7 swaps to the events-not-days framing', () => {
+    mockUseAllowlistFlag.mockImplementation((key: string) => key === 'signal_design_v2');
+    mockUseSignal.mockReturnValue(signalState({ displayState: 'building', dayNumber: 3, eventCount: 11 }));
+    const early = render(<SignalZone />);
+    expect(early.getByText(BUILDING_SUB)).toBeTruthy();
+    expect(early.queryByText(BUILDING_SUB_SPARSE)).toBeNull();
+
+    // Sam's grazing cat: day 24, 6 events — "Day 24" must never sit above "within the
+    // first week" (the B-735 dissonance).
+    mockUseSignal.mockReturnValue(signalState({ displayState: 'building', dayNumber: 24, eventCount: 6 }));
+    const sparse = render(<SignalZone />);
+    expect(sparse.getByLabelText(buildingHeadline('Nyx', 24, 6))).toBeTruthy();
+    expect(sparse.getByText(BUILDING_SUB_SPARSE)).toBeTruthy();
+    expect(sparse.queryByText(BUILDING_SUB)).toBeNull();
   });
 });
 
