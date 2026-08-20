@@ -59,8 +59,8 @@ export function TrialStrip({ model, onPress }: Props) {
         {model.line !== null && <Text style={styles.line}>{model.line}</Text>}
 
         {/* Signals v2 (CUL-13, §4.2) — the standing vomit-count line, a second line below the
-            coverage line. Null unless `signals_v2` is on (the loader gates the compute), so the
-            flag-off strip renders byte-identical. A DESCRIPTION of the record, not a control — the
+            coverage line. GA'd (CUL-548): null only when the loader's own gate says so (no trial
+            running, or an unreadable record). A DESCRIPTION of the record, not a control — the
             whole Pressable still opens the Pet tab; nothing here opens a form (§4.2 second-door rule). */}
         {model.trialResponseLine !== null && (
           <Text style={styles.trialResponseLine}>{model.trialResponseLine}</Text>

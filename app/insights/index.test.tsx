@@ -20,15 +20,20 @@ jest.mock('react-native-safe-area-context', () => {
 });
 jest.mock('../../lib/db', () => ({ getDb: () => ({}) }));
 jest.mock('../../lib/feedingArrangements', () => ({ getActiveArrangementsForPet: jest.fn() }));
-// The Signals v2 panels (B-755 PR 9) gate on useAllowlistFlag('signals_v2'). Mocked OFF
-// here — which is the byte-identical-off assertion: with the flag off, this whole suite's
-// existing expectations must be unchanged and neither v2 panel renders. useAppConfig also
-// drags lib/supabase's fail-fast env check into the import graph, so this stub keeps the
-// suite off that edge. The flag-ON render + navigation is covered in signalsV2Panels.test.tsx.
-jest.mock('../../hooks/useAppConfig', () => ({ useAllowlistFlag: () => false }));
-// The v2 panels resolve `eligible && optedIn`; useBetaOptIn (lib/betaFeatures) also pulls
-// lib/appConfig → lib/supabase's env check. Stub it OFF — the second half of the flag-off proof.
-jest.mock('../../lib/betaFeatures', () => ({ useBetaOptIn: () => false }));
+// The Signals v2 panels (B-755 PR 9) GA'd (CUL-548): they now load whenever there's an
+// active pet and render when their model has data — no flag gate. This screen-wiring smoke
+// test keeps them OUT of the frame by stubbing both panel loaders to null (no model → no
+// panel), so the suite's existing expectations are unchanged. Keep the panels' real copy/
+// geometry via requireActual; the panels' own render + navigation is covered in
+// signalsV2Panels.test.tsx.
+jest.mock('../../lib/patternsTiming', () => {
+  const actual = jest.requireActual('../../lib/patternsTiming');
+  return { ...actual, getTimingPanel: jest.fn().mockResolvedValue(null) };
+});
+jest.mock('../../lib/patternsTrial', () => {
+  const actual = jest.requireActual('../../lib/patternsTrial');
+  return { ...actual, getTrialPanel: jest.fn().mockResolvedValue(null) };
+});
 // The AI summary (PR 4) is cache-only network I/O via useSummary → lib/summary → supabase.
 // Mock the hook so this screen-wiring test stays on the local-SQLite card path (the summary's
 // own logic is tested in lib/summaryCopy.test.ts + supabase/functions/.../summary.test.ts).
@@ -161,7 +166,8 @@ describe('PatternsScreen', () => {
     // B-310 rebrand — and names the symptom in its summary line instead of its header).
     expect(getAllByText('Vomit').length).toBeGreaterThanOrEqual(1);
     expect(getByText('Calendar')).toBeTruthy();
-    // Byte-identical off (B-755 §5): with `signals_v2` off, neither v2 panel renders.
+    // With both panel loaders stubbed to null, neither v2 panel renders (CUL-548 GA — the
+    // panels now key on model presence, not a flag); the flag-on render is in signalsV2Panels.test.
     expect(queryByText('The trial so far')).toBeNull();
     expect(queryByText('Vomiting, timed from meals')).toBeNull();
     // The health-trajectory weight card is wired into the ready branch — with no readings

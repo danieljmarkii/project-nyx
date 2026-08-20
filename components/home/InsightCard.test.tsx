@@ -1,13 +1,9 @@
-// InsightCard — the joint-candidate linked pair (B-351 slice 6, D5).
-//
-// The card frame, rail and expand behaviour predate this file and are exercised
-// indirectly by the Home tests; what is asserted here is the one rendering decision
-// slice 6 introduced, and it is a CLINICAL decision wearing a layout's clothes: when the
-// engine cannot separate two proteins, every one of them has to reach the owner's eyes.
-// A linked pair that silently drops a member — by truncating, by scrolling it off-screen,
-// by rendering only `protein[0]` — would exonerate that protein by omission on the
-// flagship wedge surface, which is exactly the false attribution the joint candidate
-// exists to prevent.
+// InsightCard — the Signal insight card after the GA of the design uplift (SR-1..SR-6)
+// and the Signals-v2 lanes (CUL-547 + CUL-548). The uplift receipts + the v2 story/trial
+// renderers are now the ONLY path (no flag props), so these tests exercise the rendered
+// surface directly. What survives from the flag era is the G10 contract: an unknown
+// finding type with no registered renderer renders null (a future lane merged ahead of its
+// client renderer must skip its card, never crash the surface).
 
 import { type ReactElement } from 'react';
 import { fireEvent, render } from '@testing-library/react-native';
@@ -93,13 +89,11 @@ describe('InsightCard — joint candidate linked pair', () => {
   });
 });
 
-// ── SR-1 (B-721) — the design-uplift receipts, dark behind signal_design_v2 ──────
-// The load-bearing invariant is FR-FLAG-2: flag-OFF is BYTE-IDENTICAL to the shipped
-// card. So designV2={false} renders exactly the default, and correlation/reflection
-// are unchanged even flag-ON (they carry no card-face strip — S10 / sentence-only).
-// Flag-ON adds the timing dot lane (degrading to the compare at large n) and, in the
-// expand, the safety phone-call script + the two-sided timing control side. These are
-// the render-side checks; the pure geometry/copy is covered in lib/signalCopy.test.ts.
+// ── SR-1 (B-721) — the design-uplift receipts (GA'd, the only path) ──────────────
+// A timing finding gains its card-face dot lane (degrading to the compare at large n);
+// every other type stays sentence-only (S1 safety faces stay plain; S10 correlation/
+// intake/reflection are already carried by their sample line). The pure geometry/copy is
+// covered in lib/signalCopy.test.ts; these are the render-side checks.
 
 const postprandial = (over: Partial<PostprandialTimingFinding> = {}): PostprandialTimingFinding => ({
   type: 'postprandial_timing',
@@ -214,88 +208,57 @@ const anyCached = (finding: CachedFinding['finding'], text = 'A sentence.'): Cac
 
 // The rendered tree as a stable structural string. JSON.stringify drops the Pressable's
 // event-handler function props (new closures every render — never identity-equal), so
-// two renders of the same structure compare equal; the a11y/style/text structure is
-// exactly what FR-FLAG-2 "byte-identical" means.
+// two renders of the same structure compare equal.
 const structureOf = (node: ReactElement) => JSON.stringify(render(node).toJSON());
 
-describe('InsightCard — SR-1 flag gating (signal_design_v2)', () => {
-  it('flag-OFF is byte-identical to the shipped default, and snapshot-pinned (FR-FLAG-2)', () => {
-    const cases: CachedFinding[] = [
-      anyCached(correlation()),
-      anyCached(postprandial()),
-      anyCached(worsening()),
-      anyCached(reflection()),
-    ];
-    for (const c of cases) {
-      // Passing designV2={false} renders exactly the shipped default (no prop).
-      expect(structureOf(<InsightCard cached={c} petName="Nyx" designV2={false} />)).toBe(
-        structureOf(<InsightCard cached={c} petName="Nyx" />),
-      );
-      // Pin the shipped surface so a future flag-off drift fails CI (snapshot per type).
-      expect(render(<InsightCard cached={c} petName="Nyx" designV2={false} />).toJSON()).toMatchSnapshot(
-        `flag-off ${c.finding.type}`,
-      );
-    }
-  });
+// The collapsed card's own accessibilityLabel (the whole row is one button).
+const a11yLabelOf = (node: ReactElement) => render(node).getByRole('button').props.accessibilityLabel;
 
-  it("a timing card folds its dot-lane sentence into the card's own a11y label only when the flag is on", () => {
+describe('InsightCard — SR-1 card-face receipts', () => {
+  it("a timing card folds its dot-lane sentence into the card's own a11y label", () => {
     // The strip Views are decorative (swallowed by the outer Pressable); the receipt's
     // sentence must reach VoiceOver via the card button's OWN label. {exact:false} = the
     // sentence is CONTAINED in the composite `${cached.text}. ${receipt}` label.
     const c = anyCached(postprandial());
     const label = dotLaneA11yLabel(postprandial());
-    expect(render(<InsightCard cached={c} petName="Nyx" designV2={false} />).queryByLabelText(label, { exact: false })).toBeNull();
-    expect(render(<InsightCard cached={c} petName="Nyx" designV2 />).queryByLabelText(label, { exact: false })).toBeTruthy();
+    expect(render(<InsightCard cached={c} petName="Nyx" />).queryByLabelText(label, { exact: false })).toBeTruthy();
   });
 
   it('a large-n timing card degrades to the compare (no dot lane) on the card face', () => {
     const finding = postprandial({ eligibleCount: 20, totalEpisodes: 24, rapidCount: 12 });
-    const view = render(<InsightCard cached={anyCached(finding)} petName="Nyx" designV2 />);
+    const view = render(<InsightCard cached={anyCached(finding)} petName="Nyx" />);
     // Degraded → the card-face + label carry the COMPARE sentence, not the dot-lane one.
     expect(view.queryByLabelText(dotLaneA11yLabel(finding), { exact: false })).toBeNull();
     expect(view.queryByText('Within 30 min of eating')).toBeTruthy();
     expect(view.queryByText('Timed, but later')).toBeTruthy();
   });
 
-  it('correlation stays sentence-only even flag-ON (S10 — the sample line carries it)', () => {
+  it('correlation stays sentence-only — no card-face receipt in its a11y label (S10)', () => {
     const c = anyCached(correlation());
-    expect(structureOf(<InsightCard cached={c} petName="Nyx" designV2 />)).toBe(
-      structureOf(<InsightCard cached={c} petName="Nyx" designV2={false} />),
-    );
+    expect(a11yLabelOf(<InsightCard cached={c} petName="Nyx" />)).toBe(c.text);
   });
 
-  it('reflection card FACE stays sentence-only flag-ON (density treatment is expand-only, SR-5)', () => {
-    // A reflection with no density payload renders byte-identically flag-on: the SR-5
-    // density disclosure/withheld + trial adjacency live only in the EXPAND (S1/S10), and
-    // the sample-line gating fires only on density.comparable === false (absent here).
+  it('a reflection with no density payload stays sentence-only on its face (SR-5 is expand-only)', () => {
     const c = anyCached(reflection());
-    expect(structureOf(<InsightCard cached={c} petName="Nyx" designV2 />)).toBe(
-      structureOf(<InsightCard cached={c} petName="Nyx" designV2={false} />),
-    );
+    expect(a11yLabelOf(<InsightCard cached={c} petName="Nyx" />)).toBe(c.text);
   });
 
   it('a SAFETY card carries no strip on its face (S1 — plainness is the severity signal)', () => {
-    // Collapsed, the only flag-ON change lives inside the expand — the face is unchanged.
-    const c = anyCached(worsening());
-    expect(structureOf(<InsightCard cached={c} petName="Nyx" designV2 />)).toBe(
-      structureOf(<InsightCard cached={c} petName="Nyx" designV2={false} />),
-    );
+    // A real-prior worsening (no New clause) → the collapsed label is exactly the sentence.
+    const c = anyCached(worsening({ priorCount: 2 }));
+    expect(a11yLabelOf(<InsightCard cached={c} petName="Nyx" />)).toBe(c.text);
   });
 
-  it('the safety expand renders the phone-call script only when the flag is on', () => {
+  it('the safety expand renders the phone-call script', () => {
     const c = anyCached(worsening());
-    const offView = render(<InsightCard cached={c} petName="Nyx" designV2={false} />);
-    fireEvent.press(offView.getByRole('button'));
-    expect(offView.queryByText('If you call your clinic, the facts to have ready')).toBeNull();
-
-    const onView = render(<InsightCard cached={c} petName="Nyx" designV2 />);
-    fireEvent.press(onView.getByRole('button'));
-    expect(onView.queryByText('If you call your clinic, the facts to have ready')).toBeTruthy();
+    const view = render(<InsightCard cached={c} petName="Nyx" />);
+    fireEvent.press(view.getByRole('button'));
+    expect(view.queryByText('If you call your clinic, the facts to have ready')).toBeTruthy();
   });
 
   it('the timing expand draws the control side + the honest un-timeable remainder', () => {
     const c = anyCached(postprandial({ eligibleCount: 8, totalEpisodes: 10, rapidCount: 4 }));
-    const view = render(<InsightCard cached={c} petName="Nyx" designV2 />);
+    const view = render(<InsightCard cached={c} petName="Nyx" />);
     fireEvent.press(view.getByRole('button'));
     expect(view.queryByText('The other side of the picture')).toBeTruthy();
     expect(view.queryByText("2 episodes weren't near any logged meal")).toBeTruthy();
@@ -304,63 +267,47 @@ describe('InsightCard — SR-1 flag gating (signal_design_v2)', () => {
 
 // ── SR-3 (B-721) — the register: `New`-for-worsening + secondary compression ──────
 describe('InsightCard — SR-3 New-for-worsening chip (§3.2)', () => {
-  it('renders the New chip for a zero-prior worsening only when the flag is on', () => {
+  it('renders the New chip for a zero-prior worsening', () => {
     const c = anyCached(worsening({ priorCount: 0, currentCount: 4, trigger: 'more_episodes' }));
-    expect(render(<InsightCard cached={c} petName="Nyx" designV2={false} />).queryByText('New')).toBeNull();
-    expect(render(<InsightCard cached={c} petName="Nyx" designV2 />).queryByText('New')).toBeTruthy();
+    expect(render(<InsightCard cached={c} petName="Nyx" />).queryByText('New')).toBeTruthy();
   });
 
   it('shows no New chip for a worsening with a real prior week (a trend, not a first appearance)', () => {
     const c = anyCached(worsening({ priorCount: 2 }));
-    expect(render(<InsightCard cached={c} petName="Nyx" designV2 />).queryByText('New')).toBeNull();
+    expect(render(<InsightCard cached={c} petName="Nyx" />).queryByText('New')).toBeNull();
   });
 
   it('drops the "0 last week" pair from the sample line when the chip carries the novelty (S10)', () => {
     const c = anyCached(worsening({ priorCount: 0, currentCount: 4, trigger: 'more_episodes' }));
-    const on = render(<InsightCard cached={c} petName="Nyx" designV2 />);
-    expect(on.queryByText('4 episodes this week')).toBeTruthy();
-    expect(on.queryByText(/0 last week/)).toBeNull();
-    // Flag-off keeps the shipped pair line (and shows no chip) — byte-identical surface.
-    const off = render(<InsightCard cached={c} petName="Nyx" designV2={false} />);
-    expect(off.queryByText('4 episodes this week, 0 last week')).toBeTruthy();
+    const view = render(<InsightCard cached={c} petName="Nyx" />);
+    expect(view.queryByText('4 episodes this week')).toBeTruthy();
+    expect(view.queryByText(/0 last week/)).toBeNull();
   });
 
-  it('flag-OFF is byte-identical for a zero-prior worsening too (FR-FLAG-2)', () => {
-    const c = anyCached(worsening({ priorCount: 0 }));
-    expect(structureOf(<InsightCard cached={c} petName="Nyx" designV2={false} />)).toBe(
-      structureOf(<InsightCard cached={c} petName="Nyx" />),
-    );
-  });
-
-  // B-727 (CUL-239 client half, GA Phase 0): the chip is visual-only and the card is one
-  // accessible button, so the label must carry the chip's fact. Load-bearing for GA-3:
-  // when the server sentence retires "after none", this clause keeps the novelty audible.
+  // B-727 (CUL-239 client half): the chip is visual-only and the card is one accessible
+  // button, so the label must carry the chip's fact. Load-bearing for GA-3: when the server
+  // sentence retires "after none", this clause keeps the novelty audible.
   it('the card a11y label carries the New fact when the chip shows (B-727)', () => {
     const c = anyCached(worsening({ priorCount: 0, currentCount: 4, trigger: 'more_episodes' }));
-    const on = render(<InsightCard cached={c} petName="Nyx" designV2 />);
-    expect(on.getByRole('button').props.accessibilityLabel).toBe(`${c.text}. New this week.`);
-    // Flag-off (no chip) → the shipped label, untouched (FR-FLAG-2).
-    const off = render(<InsightCard cached={c} petName="Nyx" designV2={false} />);
-    expect(off.getByRole('button').props.accessibilityLabel).toBe(c.text);
+    expect(a11yLabelOf(<InsightCard cached={c} petName="Nyx" />)).toBe(`${c.text}. New this week.`);
   });
 
   it('a worsening with a real prior week gains no New clause in its label', () => {
     const c = anyCached(worsening({ priorCount: 2 }));
-    const on = render(<InsightCard cached={c} petName="Nyx" designV2 />);
-    expect(on.getByRole('button').props.accessibilityLabel).toBe(c.text);
+    expect(a11yLabelOf(<InsightCard cached={c} petName="Nyx" />)).toBe(c.text);
   });
 });
 
 describe('InsightCard — SR-3 secondary compression (§5.1)', () => {
-  it('compact tightens the row; default/flag-off renders the shipped rhythm byte-identical', () => {
+  it('compact tightens the row; the default (lead) row keeps the fuller rhythm', () => {
     const c = anyCached(worsening());
-    // compact defaults false → identical to no prop (the flag-off / lead path).
-    expect(structureOf(<InsightCard cached={c} petName="Nyx" designV2 compact={false} />)).toBe(
-      structureOf(<InsightCard cached={c} petName="Nyx" designV2 />),
+    // compact defaults false → identical to no prop.
+    expect(structureOf(<InsightCard cached={c} petName="Nyx" compact={false} />)).toBe(
+      structureOf(<InsightCard cached={c} petName="Nyx" />),
     );
     // compact true → a DIFFERENT (tighter) structure — the register's secondary rhythm.
-    expect(structureOf(<InsightCard cached={c} petName="Nyx" designV2 compact />)).not.toBe(
-      structureOf(<InsightCard cached={c} petName="Nyx" designV2 />),
+    expect(structureOf(<InsightCard cached={c} petName="Nyx" compact />)).not.toBe(
+      structureOf(<InsightCard cached={c} petName="Nyx" />),
     );
   });
 });
@@ -370,17 +317,19 @@ describe('InsightCard — SR-5 med-on-board line (§5.4)', () => {
   const withMed = (over: Partial<CorrelationFinding> = {}) =>
     correlation({ medContext: { drugLabel: 'Apoquel', doseCount: 3 }, ...over });
 
-  it('renders the med line on a correlation carrying medContext, only when the flag is on', () => {
+  it('renders the med line on a correlation carrying medContext', () => {
     const c = anyCached(withMed());
-    const line = 'During an active Apoquel course — 3 doses logged.';
-    expect(render(<InsightCard cached={c} petName="Nyx" designV2={false} />).queryByText(line)).toBeNull();
-    expect(render(<InsightCard cached={c} petName="Nyx" designV2 />).queryByText(line)).toBeTruthy();
+    expect(
+      render(<InsightCard cached={c} petName="Nyx" />).queryByText(
+        'During an active Apoquel course — 3 doses logged.',
+      ),
+    ).toBeTruthy();
   });
 
   it('renders on a timing card too (§5.4)', () => {
     const c = anyCached(postprandial({ medContext: { drugLabel: 'Metronidazole', doseCount: 4 } }));
     expect(
-      render(<InsightCard cached={c} petName="Nyx" designV2 />).queryByText(
+      render(<InsightCard cached={c} petName="Nyx" />).queryByText(
         'During an active Metronidazole course — 4 doses logged.',
       ),
     ).toBeTruthy();
@@ -389,7 +338,7 @@ describe('InsightCard — SR-5 med-on-board line (§5.4)', () => {
   it('pluralises a single dose (B-733 — doseCount can be 1)', () => {
     const c = anyCached(correlation({ medContext: { drugLabel: 'Apoquel', doseCount: 1 } }));
     expect(
-      render(<InsightCard cached={c} petName="Nyx" designV2 />).queryByText(
+      render(<InsightCard cached={c} petName="Nyx" />).queryByText(
         'During an active Apoquel course — 1 dose logged.',
       ),
     ).toBeTruthy();
@@ -397,39 +346,27 @@ describe('InsightCard — SR-5 med-on-board line (§5.4)', () => {
 
   it('drops the line entirely when a "%" in the drug name trips the guardrail (B-733)', () => {
     const c = anyCached(correlation({ medContext: { drugLabel: 'Baytril 2.5%', doseCount: 2 } }));
-    const on = render(<InsightCard cached={c} petName="Nyx" designV2 />);
+    const view = render(<InsightCard cached={c} petName="Nyx" />);
     // Fail-quiet: no partial line, no "%", no bare drug name — the whole line is dropped.
-    expect(on.queryByText(/Baytril/)).toBeNull();
-    expect(on.queryByText(/active .* course/)).toBeNull();
+    expect(view.queryByText(/Baytril/)).toBeNull();
+    expect(view.queryByText(/active .* course/)).toBeNull();
   });
 
-  it('folds the med line into the card a11y label (flag-on) so VoiceOver hears it', () => {
+  it('folds the med line into the card a11y label so VoiceOver hears it', () => {
     const c = anyCached(withMed(), 'Chicken tends to precede vomiting.');
     expect(
-      render(<InsightCard cached={c} petName="Nyx" designV2 />).queryByLabelText(
+      render(<InsightCard cached={c} petName="Nyx" />).queryByLabelText(
         /During an active Apoquel course — 3 doses logged\./,
         { exact: false },
       ),
     ).toBeTruthy();
-    expect(
-      render(<InsightCard cached={c} petName="Nyx" designV2={false} />).queryByLabelText(/Apoquel/, {
-        exact: false,
-      }),
-    ).toBeNull();
   });
 
   it('shows no med line on a reflection or a safety card (only correlation + timing carry it)', () => {
     const refl = anyCached(reflection());
     const safety = anyCached(worsening());
-    expect(render(<InsightCard cached={refl} petName="Nyx" designV2 />).queryByText(/active .* course/)).toBeNull();
-    expect(render(<InsightCard cached={safety} petName="Nyx" designV2 />).queryByText(/active .* course/)).toBeNull();
-  });
-
-  it('flag-OFF is byte-identical for a correlation carrying medContext (FR-FLAG-2)', () => {
-    const c = anyCached(withMed());
-    expect(structureOf(<InsightCard cached={c} petName="Nyx" designV2={false} />)).toBe(
-      structureOf(<InsightCard cached={c} petName="Nyx" />),
-    );
+    expect(render(<InsightCard cached={refl} petName="Nyx" />).queryByText(/active .* course/)).toBeNull();
+    expect(render(<InsightCard cached={safety} petName="Nyx" />).queryByText(/active .* course/)).toBeNull();
   });
 });
 
@@ -440,14 +377,14 @@ describe('InsightCard — SR-5 reflection density + trial adjacency (§3.3 / §3
     reflection({ direction: 'improving', currentCount: 2, priorCount: 5, ...over });
 
   it('the expand shows the disclosure line for a COMPARABLE falling reflection', () => {
-    const view = render(<InsightCard cached={anyCached(falling({ density: comparable }))} petName="Nyx" designV2 />);
+    const view = render(<InsightCard cached={anyCached(falling({ density: comparable }))} petName="Nyx" />);
     fireEvent.press(view.getByRole('button'));
     expect(view.queryByText('Counted honestly')).toBeTruthy();
     expect(view.queryByText('Counted from days you logged: 6 this week, 5 last.')).toBeTruthy();
   });
 
   it('the expand shows the WITHHELD line for a NOT-comparable falling reflection, and the FACE drops the pair', () => {
-    const view = render(<InsightCard cached={anyCached(falling({ density: incomparable }))} petName="Nyx" designV2 />);
+    const view = render(<InsightCard cached={anyCached(falling({ density: incomparable }))} petName="Nyx" />);
     // Card FACE: the sample line withholds the incomparable "5 last week" (§3.3 coherence).
     expect(view.queryByText('2 episodes this week')).toBeTruthy();
     expect(view.queryByText(/5 last week/)).toBeNull();
@@ -456,25 +393,17 @@ describe('InsightCard — SR-5 reflection density + trial adjacency (§3.3 / §3
     expect(view.queryByText(/fewer logged days can look like fewer episodes/)).toBeTruthy();
   });
 
-  it('flag-OFF keeps the shipped sample-line pair for the same not-comparable reflection (FR-FLAG-2)', () => {
-    const view = render(<InsightCard cached={anyCached(falling({ density: incomparable }))} petName="Nyx" designV2={false} />);
-    expect(view.queryByText('2 episodes this week, 5 last week')).toBeTruthy();
-  });
-
   it('appends the trial adjacency in the expand when a trial is running (falling)', () => {
     const view = render(
-      <InsightCard cached={anyCached(falling({ density: comparable }))} petName="Nyx" designV2 trialRunning />,
+      <InsightCard cached={anyCached(falling({ density: comparable }))} petName="Nyx" trialRunning />,
     );
     fireEvent.press(view.getByRole('button'));
     expect(view.queryByText(/isn't the trial's verdict — the full run is what makes it readable/)).toBeTruthy();
   });
 
   it('renders BOTH the withheld line and the trial adjacency in one box when density fell during a trial', () => {
-    // The real combined case (falling reflection + fallen density + active trial): one
-    // "Counted honestly" box carries the withheld density line AND the mid-trial adjacency,
-    // while the card face still withholds the incomparable pair.
     const view = render(
-      <InsightCard cached={anyCached(falling({ density: incomparable }))} petName="Nyx" designV2 trialRunning />,
+      <InsightCard cached={anyCached(falling({ density: incomparable }))} petName="Nyx" trialRunning />,
     );
     fireEvent.press(view.getByRole('button'));
     expect(view.queryByText('Counted honestly')).toBeTruthy();
@@ -486,48 +415,26 @@ describe('InsightCard — SR-5 reflection density + trial adjacency (§3.3 / §3
 
   it('shows NO adjacency for a FLAT reflection even with a trial running', () => {
     const flat = anyCached(reflection({ direction: 'flat', currentCount: 4, priorCount: 4, density: comparable }));
-    const view = render(<InsightCard cached={flat} petName="Nyx" designV2 trialRunning />);
+    const view = render(<InsightCard cached={flat} petName="Nyx" trialRunning />);
     fireEvent.press(view.getByRole('button'));
     expect(view.queryByText(/isn't the trial's verdict/)).toBeNull();
     expect(view.queryByText('Counted honestly')).toBeNull();
   });
 
   it('an old cached falling reflection (no density) still gets the adjacency when a trial runs', () => {
-    const view = render(<InsightCard cached={anyCached(falling())} petName="Nyx" designV2 trialRunning />);
+    const view = render(<InsightCard cached={anyCached(falling())} petName="Nyx" trialRunning />);
     fireEvent.press(view.getByRole('button'));
     expect(view.queryByText(/isn't the trial's verdict/)).toBeTruthy();
     // …but no density line (nothing to disclose).
     expect(view.queryByText(/Counted from days you logged/)).toBeNull();
   });
-
-  it('flag-OFF is byte-identical for a reflection carrying density (FR-FLAG-2)', () => {
-    const c = anyCached(falling({ density: incomparable }));
-    expect(structureOf(<InsightCard cached={c} petName="Nyx" designV2={false} />)).toBe(
-      structureOf(<InsightCard cached={c} petName="Nyx" />),
-    );
-  });
 });
 
-// ── CUL-12 (Signals v2) — the A2 timing card, dark behind signals_v2 ─────────────
-// The A2 card rides its OWN flag (signals_v2, not signal_design_v2 — spec §0 D6). The
-// load-bearing invariant is the same FR-FLAG-2 / G10 one: with the flag OFF, a
-// timing_story / empty_stomach_timing cache row renders NOTHING (byte-identical to before
-// the type had a renderer — the server computes these uniformly, so a non-eligible cache
-// DOES carry them). Flag-ON draws the three-band face + the A2 expand.
-describe('InsightCard — CUL-12 A2 timing card flag gating (signals_v2)', () => {
-  it('renders NOTHING for a story type when the flag is off — both types, and even with designV2 on', () => {
-    for (const finding of [timingStory(), emptyStomach()]) {
-      const c = anyCached(finding, 'Her vomiting keeps two kinds of time.');
-      // signals_v2 defaults false → null (the whole card, no stray rail/divider).
-      expect(render(<InsightCard cached={c} petName="Nyx" />).toJSON()).toBeNull();
-      // designV2 is a DIFFERENT flag — it does not turn the A2 card on.
-      expect(render(<InsightCard cached={c} petName="Nyx" designV2 />).toJSON()).toBeNull();
-    }
-  });
-
-  it('draws the three-band face (each count printed — S2), badge + sample, when the flag is on', () => {
+// ── CUL-12 (Signals v2) — the A2 timing card (GA'd, renders on payload presence) ──
+describe('InsightCard — CUL-12 A2 timing card', () => {
+  it('draws the three-band face (each count printed — S2), badge + sample', () => {
     const c = anyCached(timingStory(), 'Her vomiting keeps two kinds of time.');
-    const view = render(<InsightCard cached={c} petName="Nyx" signalsV2 />);
+    const view = render(<InsightCard cached={c} petName="Nyx" />);
     expect(view.queryByText('Her vomiting keeps two kinds of time.')).toBeTruthy();
     // The three time-ordered bands, each label anchored to its boundary.
     expect(view.queryByText('Within 30 min of eating')).toBeTruthy();
@@ -538,20 +445,11 @@ describe('InsightCard — CUL-12 A2 timing card flag gating (signals_v2)', () =>
     expect(view.queryByText('20 timed of 26 episodes · 60 days')).toBeTruthy();
   });
 
-  it('renders the A2 card on signals_v2 ALONE — it does not require signal_design_v2', () => {
-    const c = anyCached(timingStory());
-    // designV2 omitted (false), signalsV2 on → the card still fully renders.
-    expect(render(<InsightCard cached={c} petName="Nyx" signalsV2 />).queryByText('Timing pattern')).toBeTruthy();
-  });
-
   it("folds the three-band compare into the card's OWN a11y label (the strip Views are decorative)", () => {
     const finding = timingStory();
     const c = anyCached(finding, 'Her vomiting keeps two kinds of time.');
     const label = stackedCompareA11yLabel(timingStoryBandRows(finding));
-    // Off → the label is just the sentence (no card at all, in fact).
-    expect(render(<InsightCard cached={c} petName="Nyx" />).queryByLabelText(label, { exact: false })).toBeNull();
-    // On → the compare sentence is contained in the composite card label.
-    expect(render(<InsightCard cached={c} petName="Nyx" signalsV2 />).queryByLabelText(label, { exact: false })).toBeTruthy();
+    expect(render(<InsightCard cached={c} petName="Nyx" />).queryByLabelText(label, { exact: false })).toBeTruthy();
   });
 
   it('the expand draws the lanes, the control side, and the for-your-vet relay', () => {
@@ -564,7 +462,7 @@ describe('InsightCard — CUL-12 A2 timing card flag gating (signals_v2)', () =>
         long: { count: 3, medianHoursSinceFeeding: 9, lastTwoEligible: false, feedingFormsInEvidence: [], clockBand: { startLocalHour: 2, windowHours: 6 }, clockCount: 2 },
       }),
     );
-    const view = render(<InsightCard cached={c} petName="Nyx" signalsV2 />);
+    const view = render(<InsightCard cached={c} petName="Nyx" />);
     fireEvent.press(view.getByRole('button'));
     // The two per-phenotype lanes.
     expect(view.queryByText('When they happen')).toBeTruthy();
@@ -584,7 +482,7 @@ describe('InsightCard — CUL-12 A2 timing card flag gating (signals_v2)', () =>
         photoComposition: { retainedFood: { count: 3, denominator: 5 }, hair: { count: 2, denominator: 6 } },
       }),
     );
-    const view = render(<InsightCard cached={c} petName="Nyx" signalsV2 />);
+    const view = render(<InsightCard cached={c} petName="Nyx" />);
     fireEvent.press(view.getByRole('button'));
     expect(view.queryByText('During an active Metronidazole course — 4 doses logged.')).toBeTruthy();
     expect(view.queryByText('What the photos showed')).toBeTruthy();
@@ -594,7 +492,7 @@ describe('InsightCard — CUL-12 A2 timing card flag gating (signals_v2)', () =>
 
   it('a lone empty-stomach card renders its own face + expand (no rapid phenotype)', () => {
     const c = anyCached(emptyStomach(), '7 of the 12 episodes we could time came 6 or more hours after eating.');
-    const view = render(<InsightCard cached={c} petName="Nyx" signalsV2 />);
+    const view = render(<InsightCard cached={c} petName="Nyx" />);
     expect(view.queryByText('Timing pattern')).toBeTruthy();
     expect(view.queryByText('12 timed of 15 episodes · 60 days')).toBeTruthy();
     fireEvent.press(view.getByRole('button'));
@@ -603,7 +501,7 @@ describe('InsightCard — CUL-12 A2 timing card flag gating (signals_v2)', () =>
 
   it('a story card with no clock band draws the meal lane but no clock lane', () => {
     const noClock = emptyStomach({ clockBand: undefined, clockCount: undefined });
-    const view = render(<InsightCard cached={anyCached(noClock)} petName="Nyx" signalsV2 />);
+    const view = render(<InsightCard cached={anyCached(noClock)} petName="Nyx" />);
     fireEvent.press(view.getByRole('button'));
     expect(view.queryByText('After eating')).toBeTruthy();
     expect(view.queryByText('By clock')).toBeNull();
@@ -618,7 +516,7 @@ describe('InsightCard — CUL-12 A2 timing card flag gating (signals_v2)', () =>
       totalEpisodes: 44,
       long: { count: 7, medianHoursSinceFeeding: 9, lastTwoEligible: false, feedingFormsInEvidence: [], clockBand: { startLocalHour: 2, windowHours: 6 }, clockCount: 6 },
     });
-    const view = render(<InsightCard cached={anyCached(dense)} petName="Nyx" signalsV2 />);
+    const view = render(<InsightCard cached={anyCached(dense)} petName="Nyx" />);
     // Face still shows the compare (each band still legible as a proportional bar).
     expect(view.queryByText('Within 30 min of eating')).toBeTruthy();
     fireEvent.press(view.getByRole('button'));
@@ -629,15 +527,13 @@ describe('InsightCard — CUL-12 A2 timing card flag gating (signals_v2)', () =>
   });
 
   it('drops the "When they happen" box entirely when BOTH lanes exceed the cap', () => {
-    // Both eligibleCount and longCount over the cap → no lanes → no box; the rest of the expand
-    // (control, for-your-vet) still renders, so the tap-through is never empty.
     const veryDense = timingStory({
       bandCounts: { rapid: 20, mid: 10, long: 20 },
       eligibleCount: 50,
       totalEpisodes: 52,
       long: { count: 20, medianHoursSinceFeeding: 9, lastTwoEligible: false, feedingFormsInEvidence: [], clockBand: { startLocalHour: 2, windowHours: 6 }, clockCount: 15 },
     });
-    const view = render(<InsightCard cached={anyCached(veryDense)} petName="Nyx" signalsV2 />);
+    const view = render(<InsightCard cached={anyCached(veryDense)} petName="Nyx" />);
     fireEvent.press(view.getByRole('button'));
     expect(view.queryByText('When they happen')).toBeNull();
     expect(view.queryByText('After eating')).toBeNull();
@@ -647,30 +543,16 @@ describe('InsightCard — CUL-12 A2 timing card flag gating (signals_v2)', () =>
   });
 });
 
-// The trial card (CUL-13) rides the SAME `signals_v2` flag as the A2 card (D6). Same FR-FLAG-2 / G10
-// invariant: OFF → a trial_response cache row renders NOTHING (byte-identical to before the type had a
-// renderer); ON → the server lead + the two two-sided count rows + the day badge, and an expand with
-// the RTM/confound honesty + adjacency + density + diet-structure.
-describe('InsightCard — CUL-13 trial card flag gating (signals_v2)', () => {
+// The trial card (CUL-13) — GA'd (renders on payload presence): the server lead + the two
+// two-sided count rows + the day badge, and an expand with the RTM/confound honesty +
+// adjacency + density + diet-structure.
+describe('InsightCard — CUL-13 trial card', () => {
   const LEAD =
     "We've logged 4 episodes of vomiting for Nyx in the 20 days since the trial began, compared with 20 across the 7 weeks before it — worth reviewing with your vet.";
 
-  it('renders NOTHING for a trial_response row when the flag is off — even with designV2 on', () => {
+  it('draws the server lead + the two two-sided count rows + the day badge + sample', () => {
     const c = anyCached(trialResponse(), LEAD);
-    expect(render(<InsightCard cached={c} petName="Nyx" />).toJSON()).toBeNull();
-    expect(render(<InsightCard cached={c} petName="Nyx" designV2 />).toJSON()).toBeNull();
-  });
-
-  it('flag-off is byte-identical (snapshot-pinned) — a trial_response row is skipped entirely', () => {
-    const c = anyCached(trialResponse(), LEAD);
-    expect(render(<InsightCard cached={c} petName="Nyx" designV2={false} />).toJSON()).toMatchSnapshot(
-      'flag-off trial_response (null)',
-    );
-  });
-
-  it('draws the server lead + the two two-sided count rows + the day badge + sample when on', () => {
-    const c = anyCached(trialResponse(), LEAD);
-    const view = render(<InsightCard cached={c} petName="Nyx" signalsV2 />);
+    const view = render(<InsightCard cached={c} petName="Nyx" />);
     expect(view.queryByText(LEAD)).toBeTruthy();
     // Time-ordered rows: rapid first, then long. Labels are the mechanism-free band labels (never
     // "empty stomach"), identical to the A2 timing card.
@@ -685,24 +567,18 @@ describe('InsightCard — CUL-13 trial card flag gating (signals_v2)', () => {
     expect(view.queryByText('counted from days you logged')).toBeTruthy();
   });
 
-  it('renders on signals_v2 ALONE (does not require signal_design_v2)', () => {
-    const c = anyCached(trialResponse(), LEAD);
-    expect(render(<InsightCard cached={c} petName="Nyx" signalsV2 />).queryByText('Day 20 of 56')).toBeTruthy();
-  });
-
   it("folds the count rows + day badge into the card's OWN a11y label", () => {
     const finding = trialResponse();
     const c = anyCached(finding, LEAD);
     const rows = stackedCompareA11yLabel(trialResponseCompareRows(finding));
-    expect(render(<InsightCard cached={c} petName="Nyx" />).queryByLabelText(rows, { exact: false })).toBeNull();
-    const on = render(<InsightCard cached={c} petName="Nyx" signalsV2 />);
+    const on = render(<InsightCard cached={c} petName="Nyx" />);
     expect(on.queryByLabelText(rows, { exact: false })).toBeTruthy();
     expect(on.queryByLabelText('Day 20 of 56', { exact: false })).toBeTruthy();
   });
 
   it('the expand draws the RTM/confound honesty, the §3.4 adjacency, and the density + diet-structure', () => {
     const c = anyCached(trialResponse(), LEAD);
-    const view = render(<InsightCard cached={c} petName="Nyx" signalsV2 />);
+    const view = render(<InsightCard cached={c} petName="Nyx" />);
     fireEvent.press(view.getByRole('button'));
     expect(view.queryByText('Reading this stretch honestly')).toBeTruthy();
     expect(view.queryByText(/Three things changed at once when the trial started/)).toBeTruthy();
@@ -720,7 +596,7 @@ describe('InsightCard — CUL-13 trial card flag gating (signals_v2)', () => {
       trialResponse({ comparisonDirection: 'more_during_trial', densityComparable: false, rapid: { trial: 8, baseline: 2 }, long: { trial: 2, baseline: 1 } }),
       'A more sentence.',
     );
-    const view = render(<InsightCard cached={c} petName="Nyx" signalsV2 />);
+    const view = render(<InsightCard cached={c} petName="Nyx" />);
     fireEvent.press(view.getByRole('button'));
     expect(view.queryByText(/read the counts as a rough comparison/)).toBeTruthy();
   });
@@ -732,7 +608,7 @@ describe('InsightCard — CUL-13 trial card flag gating (signals_v2)', () => {
       trialResponse({ comparisonDirection: 'more_during_trial', rapid: { trial: 8, baseline: 2 }, long: { trial: 2, baseline: 1 } }),
       'A more sentence.',
     );
-    const view = render(<InsightCard cached={c} petName="Nyx" signalsV2 />);
+    const view = render(<InsightCard cached={c} petName="Nyx" />);
     fireEvent.press(view.getByRole('button'));
     expect(view.queryByText('Reading this stretch honestly')).toBeNull();
     expect(view.queryByText(/Three things changed at once/)).toBeNull();
@@ -754,22 +630,18 @@ describe('InsightCard — G10: the renderer registry safely ignores an unknown f
   const unknownFinding = {
     // A synthetic type with no registered renderer — deliberately NOT a real lane name. The
     // G10 contract under test is "registry lookup fails → null", not any particular name, so a
-    // sentinel keeps this pinned no matter which real lanes gain client renderers (timing_story
-    // did in CUL-12; gap_shortening is a real server type as of CUL-10 and gets its watching row
-    // later). A real name here would break this test the day that lane starts rendering.
+    // sentinel keeps this pinned no matter which real lanes gain client renderers.
     type: '__unrendered_future_lane__',
     priorityClass: 'insight',
   } as unknown as CachedFinding['finding'];
 
-  it('renders nothing (null) for a finding type with no registered renderer — both branches', () => {
+  it('renders nothing (null) for a finding type with no registered renderer', () => {
     const c: CachedFinding = {
       rank: 0,
       text: 'A future lane this client build cannot yet draw.',
       finding: unknownFinding,
     };
     expect(render(<InsightCard cached={c} petName="Nyx" />).toJSON()).toBeNull();
-    // The design-v2 path returns before its receipt/med helpers too — neither branch throws.
-    expect(render(<InsightCard cached={c} petName="Nyx" designV2 />).toJSON()).toBeNull();
   });
 
   it('POSITIVE CONTROL: a known finding type still renders (the guard is not "null for everything")', () => {

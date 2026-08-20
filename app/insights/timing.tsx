@@ -4,8 +4,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Stack, useFocusEffect } from 'expo-router';
 import { theme, shadows } from '../../constants/theme';
 import { WhorlSpinner } from '../../components/brand/WhorlSpinner';
-import { useAllowlistFlag } from '../../hooks/useAppConfig';
-import { useBetaOptIn } from '../../lib/betaFeatures';
 import { usePetStore } from '../../store/petStore';
 import { TimingDistribution } from '../../components/dashboard/TimingDistribution';
 import {
@@ -24,19 +22,12 @@ import {
 // more room — the dot lane, per-band counts + median timing, and the honest untimed
 // breakdown. A same-stack child of app/insights, so the back button returns to
 // Patterns. Reads only local SQLite through lib/patternsTiming (→ lib/mealTiming, G9);
-// it never computes a timing number itself. Reached only when `signals_v2` is on (the
-// dashboard gates the entry point), so no flag decision lives here.
+// it never computes a timing number itself. GA'd (CUL-548): no flag decision lives here —
+// the route renders on data presence.
 
 export default function TimingDetailRoute() {
   const { activePet } = usePetStore();
   const petName = activePet?.name ?? 'your pet';
-
-  // Expo Router registers every app/ file as a reachable route, so this screen must gate
-  // on the flag itself — the dashboard's gated entry point isn't the only way in (a deep
-  // link / direct push reaches here). Two gates, never conflated (§5), same as the card.
-  const signalsV2Eligible = useAllowlistFlag('signals_v2');
-  const signalsV2OptedIn = useBetaOptIn('signals_v2');
-  const signalsV2 = signalsV2Eligible && signalsV2OptedIn;
 
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [model, setModel] = useState<TimingPanelModel | null>(null);
@@ -62,11 +53,11 @@ export default function TimingDetailRoute() {
 
   useFocusEffect(
     useCallback(() => {
-      if (!activePet || !signalsV2) return;
+      if (!activePet) return;
       const first = loadedRef.current !== activePet.id;
       loadedRef.current = activePet.id;
       load(first);
-    }, [activePet?.id, signalsV2, load]),
+    }, [activePet?.id, load]),
   );
 
   const untimedBreakdown = model ? timingUntimedBreakdown(model) : null;
@@ -75,12 +66,7 @@ export default function TimingDetailRoute() {
     <SafeAreaView style={styles.container} edges={['left', 'right', 'bottom']}>
       <Stack.Screen options={{ headerShown: true, headerTitle: '', headerBackTitle: 'Patterns' }} />
 
-      {!signalsV2 ? (
-        // Flag off (or reached by deep link before the beta ships) — no leak.
-        <View style={styles.centered}>
-          <Text style={styles.stateText}>This isn't available yet.</Text>
-        </View>
-      ) : !activePet ? (
+      {!activePet ? (
         <View style={styles.centered}>
           <Text style={styles.stateText}>No pet selected.</Text>
         </View>

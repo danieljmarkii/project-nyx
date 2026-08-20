@@ -51,9 +51,9 @@ export function isTimingFinding(finding: SignalFinding): finding is TimingFindin
 
 // The two Signals-v2 timing-story types (CUL-12) — the A2 combined card and its lone
 // empty-stomach sibling. Distinct from isTimingFinding above: those (⑤/⑥) render the
-// shipped SR-1 receipt; these render the dedicated A2 face + expand (three-band compare,
-// per-phenotype lanes, L3 composition), gated on `signals_v2`. Kept separate so the
-// SR-1 (signal_design_v2) path is untouched.
+// SR-1 receipt; these render the dedicated A2 face + expand (three-band compare,
+// per-phenotype lanes, L3 composition). Kept as its own predicate so the A2 renderers
+// narrow the union cleanly.
 type TimingStoryLike = TimingStoryFinding | EmptyStomachTimingFinding;
 
 /** True for the A2 timing card and its lone empty-stomach sibling (CUL-12). */
@@ -213,28 +213,19 @@ export function hasUnseenFinding(
 }
 
 // ── Empty-state intros ────────────────────────────────────────────────────────
-export function buildingIntro(petName: string): string {
-  return `We're getting to know ${petName}. Keep logging and the first patterns start to surface in a few days.`;
-}
-
-// Substantial history, nothing cleared a floor (B-051). Honest about detection
-// state, forward-looking, and NOT a wellness claim (clinical-guardrails / §9).
-export function noPatternIntro(petName: string): string {
-  return `No clear patterns in ${petName}'s logs yet — we'll keep looking as you keep logging.`;
-}
-
+// Only the `stale` intro survives: E1 (building) and E2 (no_pattern) GA'd their SR-2
+// restyle (CUL-547), so the pre-uplift `buildingIntro` / `noPatternIntro` copy was deleted
+// with the render path that used it. `stale` has no uplift restyle and keeps its intro.
 export function staleIntro(petName: string): string {
   return `Not enough recent data to show a pattern. Log today and we'll keep building ${petName}'s picture.`;
 }
 
 // ── SR-2 empty states — E1 (building) + E2 (no_pattern) restyle ────────────────
-// B-721 §6 / §9. These are the flag-on (`signal_design_v2`) copy for the two empty
-// states drawn in the round-2.1 mock. Flag-off keeps the shipped intros above
-// byte-identical (FR-FLAG-2), so both sets coexist rather than one replacing the
-// other. Verbatim-governed: every string below is pinned character-for-character to
-// §9 (E1) / the B-284 §9 "Signal — empty" row (E2) by signalCopy.test.ts — a voice
-// edit here is a spec change, not a code change. Absence is never wellness: E1 keeps
-// the safety-floor line, E2 says "isn't an all-clear" in its own words.
+// B-721 §6 / §9. The copy for the two empty states drawn in the round-2.1 mock — GA'd
+// (CUL-547), so this IS the empty-state surface. Verbatim-governed: every string below is
+// pinned character-for-character to §9 (E1) / the B-284 §9 "Signal — empty" row (E2) by
+// signalCopy.test.ts — a voice edit here is a spec change, not a code change. Absence is
+// never wellness: E1 keeps the safety-floor line, E2 says "isn't an all-clear" in its own words.
 
 // E1 headline (§9), in two parts so the day-count clause can carry the E1-c accent
 // ink as its own visual span while the whole sentence stays the a11y label. The day
@@ -435,9 +426,9 @@ export function ackUpdatingCopy(petName: string): string {
 }
 
 // ── Coverage diagnostics (B-053) ──────────────────────────────────────────────
-// On the no_pattern surface, replace the generic noPatternIntro with the TOP
-// coverage diagnostic's one-line WHY there's no signal yet + at most one safe
-// corrective ACTION. Template-only (no LLM, like reflections ③). Hard rules,
+// On the no_pattern surface (E2), lead with the TOP coverage diagnostic's one-line
+// WHY there's no signal yet + at most one safe corrective ACTION (in place of a
+// generic "no patterns yet" line). Template-only (no LLM, like reflections ③). Hard rules,
 // enforced here and asserted in signalCopy.test.ts:
 //   - About DATA COVERAGE, never wellness — "no pattern" never reads as "fine"
 //     (clinical-guardrails / §9). No reassurance vocabulary, ever.
@@ -1514,16 +1505,6 @@ export function timingStoryVetLine(f: TimingStoryLike): string {
 /** True for the trial-response finding — its own renderer + expand (CUL-13). */
 export function isTrialResponse(finding: SignalFinding): finding is TrialResponseFinding {
   return finding.type === 'trial_response';
-}
-
-/** True for EVERY Signals-v2 finding type that renders only behind `signals_v2` — the timing-story
- *  pair (CUL-12) and the trial card (CUL-13). One predicate for the client-render gate, used by both
- *  InsightCard (skip the card when the flag is off) and SignalZone (drop the row so the divider
- *  rhythm + lead indexing stay correct). Flag-off ⇒ the shipped surface is byte-identical (§5 /
- *  FR-FLAG-2 / the G10 unknown-type contract): the server computes these uniformly for everyone, so a
- *  non-eligible cache DOES carry them, and this gate is what keeps them dark. */
-export function isSignalsV2Finding(finding: SignalFinding): boolean {
-  return isTimingStory(finding) || isTrialResponse(finding);
 }
 
 /** The §2 L2 RTM/confound honesty block — VERBATIM from the spec (mock B3). Three things changed at

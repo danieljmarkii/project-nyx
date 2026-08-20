@@ -4,13 +4,13 @@ import { usePetStore } from '../store/petStore';
 import { useSyncStore } from '../store/syncStore';
 import { getWatchingRows, type WatchingRow } from '../lib/signalWatching';
 
-// The Signals v2 watching-rows hook (B-755 / CUL-14, spec §4.4). Reads the active pet's
-// local data and returns the per-lane watching rows for the Signal empty state — but
-// ONLY when `enabled`. `enabled` is the caller's `signals_v2 && empty-state` gate
-// (SignalZone), so when the flag is off, or the surface is `live`/`stale`, this hook does
-// ZERO local reads and returns [] — the flag-off path stays byte-identical and pays no
-// perf cost (the rows never render). The heavy read (vomit onsets + feedings + free-fed
-// spans, through lib/mealTiming G9) is confined to exactly the flag-on empty moment.
+// The Signals v2 watching-rows hook (B-755 / CUL-14, spec §4.4; GA'd CUL-548). Reads the
+// active pet's local data and returns the per-lane watching rows for the Signal empty
+// state — but ONLY when `enabled`. `enabled` is the caller's empty-state gate (SignalZone:
+// `!showSkeleton && (state === 'building' || 'no_pattern')`), so when the surface is
+// `live`/`stale` or the load skeleton shows, this hook does ZERO local reads and returns []
+// (the rows never render, no perf cost). The heavy read (vomit onsets + feedings + free-fed
+// spans, through lib/mealTiming G9) is confined to exactly the empty moment.
 //
 // Rules of Hooks: called unconditionally by SignalZone; the gate is the `enabled`
 // argument, never a conditional call. `dayNumber` comes from useSignal's local-day read

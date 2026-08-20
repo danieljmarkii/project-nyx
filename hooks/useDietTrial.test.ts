@@ -19,14 +19,10 @@ import { useSyncStore } from '../store/syncStore';
 
 // Only the read is stubbed; the two zustand stores are real, because the wiring
 // under test IS the hook's reaction to their state (activePet + hydrationTick).
+// CUL-548 (Signals-v2 GA): the hook no longer reads a beta flag — it always passes
+// `signalsV2: true` (the loader still gates the extra read on `isTrialRunning`), so no
+// flag mocks are needed here any more.
 jest.mock('../lib/dietTrialFacts', () => ({ loadDietTrialFacts: jest.fn() }));
-
-// CUL-13 — the hook now resolves the `signals_v2` two-gate flag to decide whether to compute the
-// strip's standing line. Mock both hooks (default off) so this suite neither pulls in their real
-// module chain (appConfig → supabase, which throws without env) nor changes what it asserts — the
-// existing call-arg checks use objectContaining, so the added `signalsV2` key rides along harmlessly.
-jest.mock('../hooks/useAppConfig', () => ({ useAllowlistFlag: jest.fn(() => false) }));
-jest.mock('../lib/betaFeatures', () => ({ useBetaOptIn: jest.fn(() => false) }));
 
 const mockedLoad = loadDietTrialFacts as jest.Mock;
 
@@ -64,6 +60,9 @@ describe('useDietTrial', () => {
       expect.objectContaining({
         pet: expect.objectContaining({ id: 'pet-1', name: 'Pixel', species: 'cat' }),
         otherPetNames: [],
+        // CUL-548 — the client no longer gates the standing vomit-count line; it always
+        // asks the loader to compute it (the loader still gates on the trial being live).
+        signalsV2: true,
       }),
     );
   });

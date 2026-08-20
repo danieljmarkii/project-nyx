@@ -68,28 +68,6 @@ export const BETA_REGISTRY: BetaFeature[] = [
     serverCost: false,
   },
   {
-    // Signal/Home design uplift (B-721) — joins the shelf per FR-FLAG-4 (the spec's
-    // "beta-shelf before GA" clause): the render gate composes eligibility × this
-    // opt-in in SignalZone (eligible && optedIn), so being in the cohort no longer
-    // turns the redesign on by itself.
-    key: 'signal_design_v2',
-    title: 'Signal redesign',
-    // nyx-voice: concrete about what actually changes (the tap-through evidence and
-    // the week-over-week read), warm, no exclamation, and it doesn't sell that it's
-    // "new" — it names what the owner will notice.
-    blurb:
-      'A clearer Signal on Home — the evidence behind each insight, one tap away, and a plain read of how this week compares with last.',
-    owner: 'Signal/Home uplift (B-721) / Design',
-    addedDate: '2026-08-09',
-    // ~1 quarter out — a forcing date for the graduate/kill/extend call, not a timer.
-    reviewBy: '2026-11-09',
-    // Client-render-only: SR-4's payload is computed uniformly for every account (not
-    // per-cohort), so no server resource is spent per opt-in — no server gate is owed
-    // (spec §7; the B-712 "server-cost betas gate server-side" rule is checked and
-    // does not bite).
-    serverCost: false,
-  },
-  {
     // More-events / log-picker redesign (B-745) — joins the shelf per FL-2 (the
     // spec's "seed + shelf row land before any consumer" clause): PR 0 registers
     // the flag and the shelf card dark; PRs 1..3 render the redesign behind
@@ -111,40 +89,12 @@ export const BETA_REGISTRY: BetaFeature[] = [
     // spent per opt-in and no server gate is owed.
     serverCost: false,
   },
-  {
-    // Signals v2 — "the record, decomposed" (B-755) — joins the shelf per FR-FLAG-4
-    // (spec §5's "beta-shelf before GA" clause): the render gate composes eligibility ×
-    // this opt-in in SignalZone/InsightCard (`eligible && optedIn`, via isSignalsV2Finding),
-    // so being in the cohort no longer surfaces the new lanes by itself. Distinct from
-    // `signal_design_v2` (the visual redesign) — this one changes WHAT the engine detects
-    // (the new timing / trial-response / watching lanes), which is why it carries its own
-    // flag + its own GA call (spec §0 D6, "two beta-shelf rows about the Signal" accepted).
-    key: 'signals_v2',
-    title: 'Deeper signals',
-    // nyx-voice: concrete about what the owner will notice (meal-timing patterns, the
-    // trial's counts, what's still being gathered), warm, no exclamation, count-anchored
-    // and never a verdict ("compare", not "working"/"improving") — matching the copy/safety
-    // contract the lanes themselves ship under (spec §6).
-    blurb:
-      'A closer read of your logs — how symptoms line up with the timing of meals, how a diet trial’s counts compare with before, and what each pattern still needs before it surfaces.',
-    owner: 'Signals v2 (B-755) / Data + Design',
-    addedDate: '2026-08-15',
-    // ~1 quarter out — a forcing date for the graduate/kill/extend call, not a timer.
-    reviewBy: '2026-11-15',
-    // serverCost:false — but the ORIGINAL justification ("the lanes compute UNIFORMLY for every
-    // account, so nothing gates server-side") was FALSIFIED by B-777: composed uniformly, the engine
-    // MUTATES shipped findings (⑤ swallowed into timing_story, ⑥ suppressed via L1's onsets), so the
-    // redeploy was not byte-identical for flag-off accounts. The fix (B-777) now gates the v2 lanes +
-    // composition on `signals_v2` ELIGIBILITY inside generate-signal (index.ts readGateConfig →
-    // resolveAllowlistFlag), so a non-eligible account runs the pre-v2 engine. serverCost stays false
-    // because the lanes add no METERED/scaling resource — no LLM, no extra DB read, no external call,
-    // just deterministic CPU over the events/meals/trial already fetched for the shipped detectors; the
-    // eligibility gate exists for byte-identical OUTPUT, not to meter a resource. Re-characterizing this
-    // as serverCost:true (and thus into B-713's Phase-2 server-cost scope) is a PM call — the B-777
-    // decision brief. Until then it stays false and betaFeatures.test.ts's serverCost⇒server-gate rule
-    // stays vacuous (all four betas false), even though `signals_v2` now DOES appear in an Edge Function.
-    serverCost: false,
-  },
+  // Two Signal betas graduated to GA and were retired from the shelf (CUL-546 Phase 1 /
+  // CUL-547 + CUL-548): `signal_design_v2` (the Signal/Home design uplift, B-721) and
+  // `signals_v2` (the "deeper signals" lanes, B-755). Removing the row removes the shelf
+  // card; a persisted opt-in for either key self-cleans (parseBetaOptIns keeps only known
+  // keys), so no storage migration is owed. `signals_v2`'s SERVER eligibility gate in
+  // generate-signal (B-777) is retired separately at GA-3.
 ];
 
 // ── The opt-in store (Gate 2 / D4) ────────────────────────────────────────────

@@ -51,37 +51,24 @@ export type AppConfigKey = keyof AppConfigValues;
 // separate Phase-2 gate that never lives here (spec §2 — the two gates stay split so
 // the future Premium swap is one line).
 //
-// `signal_design_v2` is the Signal/Home design-uplift rollout flag (B-721,
-// migration 055) — same shape, same fail-closed resolution. Unlike `widget_enabled`
-// it is CLIENT-RENDER-ONLY: it gates only what the client draws (SR-1..SR-6), never
-// server data. The uplift's one server change (SR-4's additive `generate-signal`
-// payload) is computed uniformly for every account and is flag-independent, so there
-// is deliberately no server-side registration of this key (spec §7).
-//
 // `log_picker_v2` is the More-events / log-picker redesign rollout flag (B-745,
-// migration 056) — same shape, same fail-closed resolution. Client-render-only like
-// `signal_design_v2`, and more so: the redesign is presentation/step-structure only
-// (same event writes, same sync paths, zero server component — spec §1/§2), so there
-// is no server-side registration of this key either.
+// migration 056) — same shape, same fail-closed resolution. Client-render-only: the
+// redesign is presentation/step-structure only (same event writes, same sync paths,
+// zero server component — spec §1/§2), so there is no server-side registration of this
+// key.
 //
-// `signals_v2` is the Signals-v2 ("the record, decomposed") rollout flag (B-755,
-// migration 057) — same shape, same fail-closed resolution. It is its OWN flag, NOT
-// riding `signal_design_v2` (spec §0 D6): that flag gates HOW the Signal cards render,
-// this one gates WHAT the engine says (new lanes L1..L4 + an eventual `generate-signal`
-// redeploy) — a separate kill-switch with a separate GA call. But the gating is
-// CLIENT-RENDER-ONLY all the same: the new server lanes are computed uniformly for
-// every account and are flag-independent (an old/flag-off client ignores the additive
-// payload; the deterministic escalation is never gated), so there is no per-cohort
-// server cost and deliberately no server-side registration of this key (spec §5). The
-// engine's redeploy discipline is a separate deploy gate (G10), not something this
-// flag enforces.
+// Two keys that once lived here have GRADUATED to GA and been retired client-side
+// (CUL-546 Phase 1 / CUL-547 + CUL-548): `signal_design_v2` (the Signal/Home design
+// uplift, migration 055) and `signals_v2` (the Signals-v2 lanes, migration 057). The
+// uplift + the v2 lanes now render unconditionally, so the client reads neither key.
+// Their `app_config` rows survive for old builds until GA-4 deletes them, and
+// `signals_v2`'s SERVER eligibility gate in `generate-signal` (B-777) stays until
+// GA-3 — but neither belongs in this client-side union any more.
 export const ALLOWLIST_FLAG_KEYS = [
   'ask_enabled',
   'ask_general_enabled',
   'widget_enabled',
-  'signal_design_v2',
   'log_picker_v2',
-  'signals_v2',
 ] as const;
 export type AllowlistFlagKey = (typeof ALLOWLIST_FLAG_KEYS)[number];
 
@@ -97,9 +84,7 @@ export const ALLOWLIST_FLAGS_UNSET: AllowlistFlagValues = {
   ask_enabled: undefined,
   ask_general_enabled: undefined,
   widget_enabled: undefined,
-  signal_design_v2: undefined,
   log_picker_v2: undefined,
-  signals_v2: undefined,
 };
 
 // The pure primitive. `userId` is the signed-in caller's uid (null when unknown /

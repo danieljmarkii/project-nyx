@@ -46,16 +46,12 @@ describe('BETA_REGISTRY', () => {
     expect(new Set(keys).size).toBe(keys.length);
   });
 
-  it('ships the widget, the Signal redesign, the log-picker redesign + Signals v2 as the v1 betas, all client-only (no server cost)', () => {
+  it('ships the widget + the log-picker redesign as the live betas, both client-only (no server cost)', () => {
+    // The two Signal betas (signal_design_v2 / signals_v2) graduated to GA and were
+    // retired from the shelf (CUL-547 + CUL-548), so the registry is back to two rows.
     const widget = BETA_REGISTRY.find((b) => b.key === 'widget_enabled');
     expect(widget).toBeDefined();
     expect((widget as BetaFeature).serverCost).toBe(false);
-
-    // B-721 joined the shelf (FR-FLAG-4). Client-render-only: SR-4's payload is
-    // computed uniformly for every account (not per-cohort), so no server gate is owed.
-    const signal = BETA_REGISTRY.find((b) => b.key === 'signal_design_v2');
-    expect(signal).toBeDefined();
-    expect((signal as BetaFeature).serverCost).toBe(false);
 
     // B-745 joined the shelf (FL-2). Zero server component — the redesign is
     // presentation/step-structure only (same event writes, same sync paths), so no
@@ -64,17 +60,10 @@ describe('BETA_REGISTRY', () => {
     expect(logPicker).toBeDefined();
     expect((logPicker as BetaFeature).serverCost).toBe(false);
 
-    // B-755 joined the shelf (spec §5, FR-FLAG-4). serverCost stays false, but the "compute
-    // UNIFORMLY / no server gate" premise was retired by B-777: post-fix, generate-signal gates the
-    // v2 lanes + composition on `signals_v2` eligibility server-side (so a non-eligible account's
-    // output is byte-identical). It stays false because the lanes spend no metered resource (no
-    // LLM/DB/external — CPU over already-fetched data); the gate is for byte-identical output, not
-    // metering. serverCost:true (→ B-713 Phase-2 scope) is a PM re-characterization call (B-777).
-    const signalsV2 = BETA_REGISTRY.find((b) => b.key === 'signals_v2');
-    expect(signalsV2).toBeDefined();
-    expect((signalsV2 as BetaFeature).serverCost).toBe(false);
-
-    expect(BETA_REGISTRY).toHaveLength(4);
+    // The two graduated keys (signal_design_v2 / signals_v2) are no longer in the
+    // AllowlistFlagKey union, so a `.key === '…'` check for them won't type-check — the
+    // length assertion + the missing shelf cards are what pin their removal.
+    expect(BETA_REGISTRY).toHaveLength(2);
   });
 });
 

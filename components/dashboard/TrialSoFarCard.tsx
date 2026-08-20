@@ -21,7 +21,7 @@ import {
 // counts through lib/mealTiming (G9), windowed to the trial's evidence bound. Count-
 // anchored, never verdicted — a doorway to the metric-detail view.
 //
-// Dark behind `signals_v2` — the parent renders it only when the flag is on.
+// GA'd (CUL-548) — the parent renders it whenever the trial model has data.
 
 interface Props {
   model: TrialSoFarModel;

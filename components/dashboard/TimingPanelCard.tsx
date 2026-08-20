@@ -17,8 +17,8 @@ import {
 // band counts beneath, the honest "N timed of M" denominator + the untimed count.
 // Descriptive, never a verdict — the whole card is a doorway to the metric-detail view.
 //
-// Dark behind `signals_v2` — the parent (app/insights) only renders it when the flag
-// resolves on, so this component makes no flag decision itself (byte-identical off, G10).
+// GA'd (CUL-548) — the parent (app/insights) renders it whenever the timing model has
+// data, so this component makes no flag decision itself.
 
 interface Props {
   model: TimingPanelModel;
