@@ -125,8 +125,10 @@ export const WATCHING_GAP_RECENCY_GRACE_FACTOR = 2;
  *  (WATCHING_CHANGE_WEEKS_NEEDED × 7 days), i.e. a record quiet for two whole compare
  *  weeks; NOT tuned to any record (G6). Keys on ANY vomit event's recency (not only
  *  meal-timeable ones): an untimeable episode three days ago still means the record is
- *  live and the counter is honest work-in-progress. */
-export const WATCHING_TIMING_QUIET_DAYS = 14;
+ *  live and the counter is honest work-in-progress. Derived from the anchor, not restated
+ *  beside it, so a change to the change lane's span can't silently strand this gate
+ *  (code-review). */
+export const WATCHING_TIMING_QUIET_DAYS = WATCHING_CHANGE_WEEKS_NEEDED * 7;
 
 /** The gap lane's symptom in v1 — vomiting, matching the timing surfaces
  *  (`TIMING_SYMPTOM_TYPE`) and the mock §05. The label is the server's `SYMPTOM_LABEL.vomit`
