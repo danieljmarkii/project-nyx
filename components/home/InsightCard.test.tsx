@@ -331,6 +331,24 @@ describe('InsightCard — SR-3 New-for-worsening chip (§3.2)', () => {
       structureOf(<InsightCard cached={c} petName="Nyx" />),
     );
   });
+
+  // B-727 (CUL-239 client half, GA Phase 0): the chip is visual-only and the card is one
+  // accessible button, so the label must carry the chip's fact. Load-bearing for GA-3:
+  // when the server sentence retires "after none", this clause keeps the novelty audible.
+  it('the card a11y label carries the New fact when the chip shows (B-727)', () => {
+    const c = anyCached(worsening({ priorCount: 0, currentCount: 4, trigger: 'more_episodes' }));
+    const on = render(<InsightCard cached={c} petName="Nyx" designV2 />);
+    expect(on.getByRole('button').props.accessibilityLabel).toBe(`${c.text}. New this week.`);
+    // Flag-off (no chip) → the shipped label, untouched (FR-FLAG-2).
+    const off = render(<InsightCard cached={c} petName="Nyx" designV2={false} />);
+    expect(off.getByRole('button').props.accessibilityLabel).toBe(c.text);
+  });
+
+  it('a worsening with a real prior week gains no New clause in its label', () => {
+    const c = anyCached(worsening({ priorCount: 2 }));
+    const on = render(<InsightCard cached={c} petName="Nyx" designV2 />);
+    expect(on.getByRole('button').props.accessibilityLabel).toBe(c.text);
+  });
 });
 
 describe('InsightCard — SR-3 secondary compression (§5.1)', () => {

@@ -1,4 +1,4 @@
-import { useEffect, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { AccessibilityInfo, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import { theme } from '../../constants/theme';
@@ -10,9 +10,9 @@ import { useSignal } from '../../hooks/useSignal';
 import { useWatchingRows } from '../../hooks/useWatchingRows';
 import { useAllowlistFlag } from '../../hooks/useAppConfig';
 import { useBetaOptIn } from '../../lib/betaFeatures';
+import { Skeleton } from '../ui/Skeleton';
 import {
   BUILDING_FLOOR,
-  BUILDING_SUB,
   BUILDING_WATCHING_FOR,
   NO_PATTERN_HEADLINE,
   NO_PATTERN_SUB,
@@ -22,6 +22,7 @@ import {
   buildingHeadline,
   buildingHeadlineLead,
   buildingIntro,
+  buildingSub,
   coverageCopy,
   isSignalsV2Finding,
   isTrialResponse,
@@ -37,6 +38,12 @@ const PREVIEW_INSIGHTS = [
   'Vomiting dropped 60% in the two weeks after switching proteins — the diet trial appears to be working.',
   'Itching tends to follow meals containing chicken. No reaction logged after salmon.',
 ];
+
+// B-734 (adversarial ④) — the skeleton's time-box. The window it covers is a normally-
+// fast network read, but nothing bounds that read, so the skeleton bounds itself: past
+// this, the zone falls through to the honestly-derived state and re-enables the watching
+// read. Sized to cover a slow-but-alive fetch without ever reading as a hung screen.
+const SIGNAL_LOAD_SKELETON_MS = 1500;
 
 interface SignalZoneProps {
   // B-721 SR-5 (§3.4) — whether a diet trial is running for the active pet (`isTrialRunning`,
@@ -103,8 +110,29 @@ export function SignalZone({
   const signalsV2 = signalsV2Eligible && signalsV2OptedIn;
 
   // While the first cache read is in flight, hold the warm building state rather
-  // than letting the empty findings flash 'stale' for a frame.
-  const state = isLoading && findings.length === 0 ? 'building' : displayState;
+  // than letting the empty findings flash 'stale' for a frame. B-734 (CUL-72, GA
+  // Phase 0): flag-ON does NOT render the heavy E1 during this window — a mature
+  // pet's live findings resolve a beat after mount/pet-switch, and the loud
+  // "getting to know {pet} / Day N" headline flashing over a pet with a live safety
+  // finding is self-contradicting. The flag-on loading frame is a content-shaped
+  // skeleton — and it is TIME-BOXED (adversarial ④): the wait it covers is the
+  // `readSignalCache` network read (Supabase/PostgREST — no timeout of its own), so an
+  // offline/hung read would otherwise hold the skeleton for the platform socket
+  // timeout. Past SIGNAL_LOAD_SKELETON_MS the zone falls through to the derived state
+  // (honest, and it un-suppresses the escalate-only gap row below). Flag-off keeps the
+  // shipped soft building intro for the whole load, byte-identical (FR-FLAG-2).
+  const loading = isLoading && findings.length === 0;
+  const [loadTimedOut, setLoadTimedOut] = useState(false);
+  useEffect(() => {
+    if (!loading) {
+      setLoadTimedOut(false);
+      return;
+    }
+    const t = setTimeout(() => setLoadTimedOut(true), SIGNAL_LOAD_SKELETON_MS);
+    return () => clearTimeout(t);
+  }, [loading]);
+  const showSkeleton = designV2 && loading && !loadTimedOut;
+  const state = loading ? 'building' : displayState;
 
   // Signals v2 (B-755 / CUL-14) — the watching system (§4.4 / D5). Per-lane rows with
   // REAL partial counts, rendered inside whichever empty-state frame is live. Gated on
@@ -113,8 +141,20 @@ export function SignalZone({
   // hook reads local data ONLY when enabled, so flag-off / live / stale do zero extra
   // work and stay byte-identical. `dayNumber` is shared with the E1 headline so the
   // Change row's week count and the "Day N" headline always agree (one day definition).
-  const watchingEnabled = signalsV2 && (state === 'building' || state === 'no_pattern');
+  // Not while the skeleton shows (B-734): the pet-switch reset just cleared localCtx,
+  // so a read keyed on the sentinel dayNumber would only be thrown away — but the gate
+  // is the SKELETON, not `loading`, so a hung read can never suppress the escalate-only
+  // gap row past the time-box (adversarial ④).
+  const watchingEnabled = signalsV2 && !showSkeleton && (state === 'building' || state === 'no_pattern');
   const watching = useWatchingRows(watchingEnabled, dayNumber);
+
+  // B-769 (CUL-29, PM-ruled D3a — GA Phase 0): the escalate-only gap row leaves the
+  // "still needs" umbrella. It is a concerning FACT about the record, not an unmet need,
+  // so it renders in its own register ABOVE the frame's other content (Principle 3 —
+  // concern leads), while the timing/change rows keep the WATCHING_SUB "still needs"
+  // framing. Split once here; the frames place the two pieces.
+  const gapRow = watching.find((r) => r.key === 'gap') ?? null;
+  const needRows = watching.filter((r) => r.key !== 'gap');
 
   // SR-3 receded chrome (§5.2) — the section label drops a tier in the LIVE register
   // only, where the lead's canvas should dominate. The empty states keep the label
@@ -195,20 +235,38 @@ export function SignalZone({
         // CUL-14: the watching rows compose in additively (the gap row can still
         // escalate on a mature record); dark + a no-op when signals_v2 is off.
         designV2 ? (
-          <NoPatternStateV2 petName={petName} coverage={coverage} watching={watching} signalsV2={signalsV2} />
+          <NoPatternStateV2
+            petName={petName}
+            coverage={coverage}
+            gapRow={gapRow}
+            needRows={needRows}
+            signalsV2={signalsV2}
+          />
         ) : (
-          <NoPatternState petName={petName} coverage={coverage} watching={watching} signalsV2={signalsV2} />
+          <NoPatternState
+            petName={petName}
+            coverage={coverage}
+            gapRow={gapRow}
+            needRows={needRows}
+            signalsV2={signalsV2}
+          />
         )
       ) : designV2 ? (
-        <BuildingStateV2
-          petName={petName}
-          dayNumber={dayNumber}
-          eventCount={eventCount}
-          watching={watching}
-          signalsV2={signalsV2}
-        />
+        // B-734: the flag-on loading frame is a time-boxed skeleton, never the heavy E1.
+        showSkeleton ? (
+          <SignalLoadingSkeleton />
+        ) : (
+          <BuildingStateV2
+            petName={petName}
+            dayNumber={dayNumber}
+            eventCount={eventCount}
+            gapRow={gapRow}
+            needRows={needRows}
+            signalsV2={signalsV2}
+          />
+        )
       ) : (
-        <BuildingState petName={petName} watching={watching} signalsV2={signalsV2} />
+        <BuildingState petName={petName} gapRow={gapRow} needRows={needRows} signalsV2={signalsV2} />
       )}
 
       {/* §8 doorway into the Patterns dashboard — a quiet footer affordance, present in
@@ -255,35 +313,45 @@ function AckLine({ petName }: { petName: string }) {
 function NoPatternState({
   petName,
   coverage,
-  watching,
+  gapRow,
+  needRows,
   signalsV2,
 }: {
   petName: string;
   coverage: CoverageDiagnostic[];
-  watching: WatchingRow[];
+  gapRow: WatchingRow | null;
+  needRows: WatchingRow[];
   signalsV2: boolean;
 }) {
   // CUL-14 — the watching rows compose in additively on the mature record (only the
   // escalate-only gap row is likely to qualify here; the count floors are usually met).
   // Flag-off (or no qualifying row) is byte-identical: the no-coverage branch keeps its
-  // bare <Text> via the early return, and the coverage branch adds a null-rendering slot.
-  const showWatching = signalsV2 && watching.length > 0;
+  // bare <Text> via the early return, and the coverage branch adds null-rendering slots.
+  // B-769 (D3a): the gap row LEADS the frame — an escalation renders above the coverage
+  // nag, never below it (Principle 3); the needs rows keep their place after it.
+  const showGap = signalsV2 && gapRow !== null;
+  const showNeeds = signalsV2 && needRows.length > 0;
+  const showWatching = showGap || showNeeds;
   const top = coverage[0];
   if (!top) {
     if (!showWatching) return <Text style={styles.intro}>{noPatternIntro(petName)}</Text>;
     return (
       <View>
+        {showGap && gapRow ? <GapEscalationRow row={gapRow} /> : null}
         <Text style={styles.intro}>{noPatternIntro(petName)}</Text>
-        <WatchingBlock rows={watching} />
+        {showNeeds ? <WatchingNeedsBlock rows={needRows} /> : null}
+        <Text style={styles.watchingFloor}>{BUILDING_FLOOR}</Text>
       </View>
     );
   }
   const { why, action } = coverageCopy(top, petName);
   return (
     <View>
+      {showGap && gapRow ? <GapEscalationRow row={gapRow} /> : null}
       <Text style={styles.intro}>{why}</Text>
       {action ? <Text style={styles.coverageAction}>{action}</Text> : null}
-      {showWatching ? <WatchingBlock rows={watching} /> : null}
+      {showNeeds ? <WatchingNeedsBlock rows={needRows} /> : null}
+      {showWatching ? <Text style={styles.watchingFloor}>{BUILDING_FLOOR}</Text> : null}
     </View>
   );
 }
@@ -374,23 +442,32 @@ function LiveStack({
 
 function BuildingState({
   petName,
-  watching,
+  gapRow,
+  needRows,
   signalsV2,
 }: {
   petName: string;
-  watching: WatchingRow[];
+  gapRow: WatchingRow | null;
+  needRows: WatchingRow[];
   signalsV2: boolean;
 }) {
   // CUL-14 — when signals_v2 is on and a lane has something to report, the real-count
   // watching rows take the place of the ghosted "What the signal looks like" previews
   // (the concrete version of the same "here's what's coming" idea). The lead intro
   // stays. Flag-off (or no qualifying row) renders the shipped previews byte-identical.
-  const showWatching = signalsV2 && watching.length > 0;
+  // B-769 (D3a): the gap row renders in its own register above the needs block.
+  const showGap = signalsV2 && gapRow !== null;
+  const showNeeds = signalsV2 && needRows.length > 0;
+  const showWatching = showGap || showNeeds;
   return (
     <>
       <Text style={styles.intro}>{buildingIntro(petName)}</Text>
       {showWatching ? (
-        <WatchingBlock rows={watching} />
+        <View>
+          {showGap && gapRow ? <GapEscalationRow row={gapRow} /> : null}
+          {showNeeds ? <WatchingNeedsBlock rows={needRows} /> : null}
+          <Text style={styles.watchingFloor}>{BUILDING_FLOOR}</Text>
+        </View>
       ) : (
         <View style={styles.previews}>
           <Text style={styles.previewsHeader}>What the signal looks like:</Text>
@@ -442,21 +519,26 @@ function BuildingStateV2({
   petName,
   dayNumber,
   eventCount,
-  watching,
+  gapRow,
+  needRows,
   signalsV2,
 }: {
   petName: string;
   dayNumber: number;
   eventCount: number;
-  watching: WatchingRow[];
+  gapRow: WatchingRow | null;
+  needRows: WatchingRow[];
   signalsV2: boolean;
 }) {
   // CUL-14 — when signals_v2 is on and a lane qualifies, the real-count watching rows
   // replace the abstract "what we're watching for" ghost list (their concrete form) while
-  // the headline stays. The WatchingBlock carries its OWN sub + safety floor, so the
-  // else-branch (the shipped B-721 E1) still owns BUILDING_SUB / BUILDING_FLOOR — no
+  // the headline stays. The watching area carries its own safety floor, so the
+  // else-branch (the shipped B-721 E1) still owns the sub / BUILDING_FLOOR — no
   // doubling. Flag-off (or no qualifying row) renders the ghost list byte-identical.
-  const showWatching = signalsV2 && watching.length > 0;
+  // B-769 (D3a): gap in its own register above the needs block.
+  const showGap = signalsV2 && gapRow !== null;
+  const showNeeds = signalsV2 && needRows.length > 0;
+  const showWatching = showGap || showNeeds;
   return (
     <View>
       {/* eventCount 0 ⇒ the pre-read sentinel (a real building pet always has ≥1 recent
@@ -479,10 +561,17 @@ function BuildingStateV2({
       </Text>
 
       {showWatching ? (
-        <WatchingBlock rows={watching} />
+        <View>
+          {showGap && gapRow ? <GapEscalationRow row={gapRow} /> : null}
+          {showNeeds ? <WatchingNeedsBlock rows={needRows} /> : null}
+          <Text style={styles.watchingFloor}>{BUILDING_FLOOR}</Text>
+        </View>
       ) : (
         <>
-          <Text style={styles.v2Sub}>{BUILDING_SUB}</Text>
+          {/* B-735 (D5a): once the day count outruns the sub's own first-week promise,
+              the sub swaps to the events-not-days framing — "Day 24" must never sit
+              above "within the first week" (the sparse-logger dissonance). */}
+          <Text style={styles.v2Sub}>{buildingSub(dayNumber)}</Text>
 
           {/* The three things the engine is building toward, in the mock's order
               (timing → food → change), each with a ghost preview of its future receipt.
@@ -591,45 +680,56 @@ function GhostCompare() {
 function NoPatternStateV2({
   petName,
   coverage,
-  watching,
+  gapRow,
+  needRows,
   signalsV2,
 }: {
   petName: string;
   coverage: CoverageDiagnostic[];
-  watching: WatchingRow[];
+  gapRow: WatchingRow | null;
+  needRows: WatchingRow[];
   signalsV2: boolean;
 }) {
-  // CUL-14 — additive watching rows (see NoPatternState). Flag-off renders the slot as
-  // null, so the shipped E2 tree is byte-identical.
-  const showWatching = signalsV2 && watching.length > 0;
+  // CUL-14 — additive watching rows (see NoPatternState). Flag-off renders the slots as
+  // null, so the shipped E2 tree is byte-identical. B-769 (D3a): the gap escalation
+  // renders directly under the "isn't an all-clear" sub — ABOVE the coverage nag, which
+  // is exactly the ordering Principle 3 requires (an escalation never sits below a
+  // data-quality corrective).
+  const showGap = signalsV2 && gapRow !== null;
+  const showNeeds = signalsV2 && needRows.length > 0;
   const top = coverage[0];
   const cov = top ? coverageCopy(top, petName) : null;
   return (
     <View>
       <Text style={styles.v2Headline}>{NO_PATTERN_HEADLINE}</Text>
       <Text style={styles.v2Sub}>{NO_PATTERN_SUB}</Text>
+      {showGap && gapRow ? <GapEscalationRow row={gapRow} /> : null}
       {cov ? (
         <View style={styles.v2Quiet}>
           <Text style={styles.v2QuietText}>{cov.why}</Text>
           {cov.action ? <Text style={styles.v2QuietAction}>{cov.action}</Text> : null}
         </View>
       ) : null}
-      {showWatching ? <WatchingBlock rows={watching} /> : null}
+      {showNeeds ? <WatchingNeedsBlock rows={needRows} /> : null}
+      {showGap || showNeeds ? <Text style={styles.watchingFloor}>{BUILDING_FLOOR}</Text> : null}
     </View>
   );
 }
 
-// ── CUL-14 the watching block (§4.4 / D5 / G8) ────────────────────────────────
-// The per-lane real-count rows, rendered as ONE unit wherever the watching system
-// composes into an empty-state frame (shipped E1/E2 or B-721's). It carries its own sub
-// line and the verbatim safety-floor line, so a frame that shows it hands over its whole
-// "what we're watching" middle to this block. PLAIN count-in-words rows — deliberately NO
-// progress bar / dot-fill visual: R-5 ratified the count form precisely because it
-// carries the "N of 6" progress WITHOUT a fill-the-dots visual's implied "a card is
-// coming" (G8 — the count is the progress; it carries no promise). The rows are already
-// ordered + gated (buildWatchingRows); the floor line is unconditional (absence ≠
-// wellness — the weekly cadence must never read as "nothing urgent surfaces before then").
-function WatchingBlock({ rows }: { rows: WatchingRow[] }) {
+// ── CUL-14 the watching system (§4.4 / D5 / G8), split by register (B-769 D3a) ──
+// The per-lane real-count rows. The NEEDS rows (timing / change) keep the WATCHING_SUB
+// "still needs" framing — they are statements about what a lane's math requires. The GAP
+// row is different in kind: an escalate-only FACT about the record, so it renders
+// through GapEscalationRow in its own register, above the frame's other content, never
+// under the "still needs" umbrella (a lone gap row under that sub mislabeled an
+// escalation as an unmet need). PLAIN count-in-words rows — deliberately NO progress
+// bar / dot-fill visual: R-5 ratified the count form precisely because it carries the
+// "N of 6" progress WITHOUT a fill-the-dots visual's implied "a card is coming" (G8 —
+// the count is the progress; it carries no promise). The rows are already ordered +
+// gated (buildWatchingRows); the frames render the BUILDING_FLOOR line whenever any
+// watching content shows (absence ≠ wellness — the weekly cadence must never read as
+// "nothing urgent surfaces before then").
+function WatchingNeedsBlock({ rows }: { rows: WatchingRow[] }) {
   return (
     <View>
       <Text style={styles.watchingSub}>{WATCHING_SUB}</Text>
@@ -640,7 +740,28 @@ function WatchingBlock({ rows }: { rows: WatchingRow[] }) {
           </Text>
         ))}
       </View>
-      <Text style={styles.watchingFloor}>{BUILDING_FLOOR}</Text>
+    </View>
+  );
+}
+
+// The escalate-only gap row, in its own register (B-769 D3a). Plain primary ink — no
+// alarm color, no icon: plainness is the severity signal (S1), and the sentence now
+// leads with its own direction cue ("are getting shorter" — D4), so placement + phrasing
+// carry the register, not decoration.
+function GapEscalationRow({ row }: { row: WatchingRow }) {
+  return <Text style={styles.gapEscalation}>{row.text}</Text>;
+}
+
+// B-734 (CUL-72): the flag-on loading frame — content-shaped Tier-1 skeleton for the
+// beat while the local cache read resolves. Never the heavy E1 (whose "getting to know
+// {pet} / Day N" headline is wrong over a mature pet whose findings are about to land),
+// never a spinner (sub-1s local wait). Skeleton hides itself from accessibility.
+function SignalLoadingSkeleton() {
+  return (
+    <View style={styles.skeleton} testID="signal-loading-skeleton">
+      <Skeleton width="88%" height={14} />
+      <Skeleton width="64%" height={14} style={styles.skeletonLine} />
+      <Skeleton width="42%" height={11} style={styles.skeletonMeta} />
     </View>
   );
 }
@@ -901,6 +1022,26 @@ const styles = StyleSheet.create({
   // never a fill-the-dots visual that reads as a game / a promise a card is coming).
   watchingRows: {
     gap: theme.spaceMicro,
+  },
+  // B-769 (D3a) — the gap escalation's own register: primary ink like the needs rows
+  // (S1: plainness is the severity signal — no rose, no icon), set apart by position
+  // (above the frame's other content) and its own breathing room, never by decoration.
+  gapEscalation: {
+    fontSize: theme.textSM,
+    color: theme.colorTextPrimary,
+    lineHeight: theme.lineHeightBody,
+    marginBottom: theme.space2,
+  },
+  // B-734 — the flag-on loading frame's content-shaped placeholder rhythm.
+  skeleton: {
+    paddingVertical: theme.space1,
+    marginBottom: theme.space2,
+  },
+  skeletonLine: {
+    marginTop: theme.space1,
+  },
+  skeletonMeta: {
+    marginTop: theme.space2,
   },
   // One row: the primary-ink fact ("Timing — 4 of the 6 …"), body line-height so a
   // wrapped row stays legible. No color/severity coding — every row is the same calm ink.

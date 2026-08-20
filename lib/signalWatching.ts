@@ -50,12 +50,7 @@ import {
   type OnsetConfidence,
 } from './mealTiming';
 import { median, readVomitOnsets, readFeedingRows, readFreeFedSpans } from './patternsTiming';
-import {
-  formatWatchingGapSequence,
-  watchingChangeRow,
-  watchingGapRow,
-  watchingTimingRow,
-} from './signalCopy';
+import { watchingChangeRow, watchingGapRowFromHours, watchingTimingRow } from './signalCopy';
 
 const MS_PER_HOUR = 3_600_000;
 const MS_PER_DAY = 86_400_000;
@@ -114,6 +109,22 @@ export const WATCHING_GAP_WINDOW_DAYS = 180;
  *  mints one, so it cannot manufacture a signal or reassure. */
 export const WATCHING_GAP_RECENCY_GRACE_FACTOR = 2;
 
+/** The timing row's QUIET gate (B-768, PM-ruled D1a — GA Phase 0): suppress the "N of 6"
+ *  counter once the pet has had NO vomit episode for this many days. The persisting
+ *  counter's goal is six vomiting EPISODES — logging doesn't move it, only new episodes
+ *  do — so over a pet that got better it reads as "you still owe data" for up to 60 days
+ *  (the pm-feature-review's wrong-direction goal-frame). SUPPRESSION ONLY, never a
+ *  reframe: a "quieted"/"things have settled" wording would be reassurance-on-absence
+ *  (clinical-guardrails), while silently withdrawing a data-progress row makes no health
+ *  claim at all. Anchor: two calendar weeks — the change lane's own full-compare span
+ *  (WATCHING_CHANGE_WEEKS_NEEDED × 7 days), i.e. a record quiet for two whole compare
+ *  weeks; NOT tuned to any record (G6). Keys on ANY vomit event's recency (not only
+ *  meal-timeable ones): an untimeable episode three days ago still means the record is
+ *  live and the counter is honest work-in-progress. Derived from the anchor, not restated
+ *  beside it, so a change to the change lane's span can't silently strand this gate
+ *  (code-review). */
+export const WATCHING_TIMING_QUIET_DAYS = WATCHING_CHANGE_WEEKS_NEEDED * 7;
+
 /** The gap lane's symptom in v1 — vomiting, matching the timing surfaces
  *  (`TIMING_SYMPTOM_TYPE`) and the mock §05. The label is the server's `SYMPTOM_LABEL.vomit`
  *  ('vomiting'), kept in sync so the row reads identically to the eventual finding. The
@@ -142,6 +153,11 @@ export interface WatchingFacts {
   dayNumber: number;
   /** The recent inter-episode gaps (hours, oldest→newest) of a shortening run, or null. */
   gapSequenceHours: number[] | null;
+  /** Days since the pet's most recent vomit event (any, not only timeable), or null when
+   *  the record holds none. Drives the timing row's quiet gate (D1a) only — the gap row
+   *  carries its own recency guard, and the change row is about logging weeks, not
+   *  episodes. */
+  daysSinceLastEpisode: number | null;
 }
 
 /**
@@ -157,8 +173,18 @@ export function buildWatchingRows(facts: WatchingFacts): WatchingRow[] {
   // Timing — at least one timeable episode to build on, but still short of the floor.
   // A pet with zero timeable episodes gets no timing row (there is no timing question to
   // pose for a pet the lane can't yet see), and a pet already at the floor gets none
-  // (the lane can run — nothing is "still needed").
-  if (facts.timedEligibleCount >= 1 && facts.timedEligibleCount < WATCHING_TIMING_NEED) {
+  // (the lane can run — nothing is "still needed"). QUIET gate (D1a): the row also
+  // withdraws once no episode has occurred for WATCHING_TIMING_QUIET_DAYS — the counter
+  // only moves on new episodes, so over a quiet pet it reads as an owed debt. A null
+  // recency with a positive count can't occur (an eligible episode IS an episode); the
+  // null check is defensive and fails toward suppression — the safe direction for a
+  // progress counter, which makes no health claim in either state.
+  if (
+    facts.timedEligibleCount >= 1 &&
+    facts.timedEligibleCount < WATCHING_TIMING_NEED &&
+    facts.daysSinceLastEpisode !== null &&
+    facts.daysSinceLastEpisode < WATCHING_TIMING_QUIET_DAYS
+  ) {
     rows.push({ key: 'timing', text: watchingTimingRow(facts.timedEligibleCount, WATCHING_TIMING_NEED) });
   }
 
@@ -171,11 +197,13 @@ export function buildWatchingRows(facts: WatchingFacts): WatchingRow[] {
 
   // Gap — escalate-only: renders only when `detectWatchingGapShortening` returned a
   // shortening run (G5). Absence / lengthening / staleness all yield null upstream and
-  // no row here — a widening gap is never reassurance.
+  // no row here — a widening gap is never reassurance. Rendered run-aware
+  // (watchingGapRowFromHours): the D4 direction cue only prints beside numbers that
+  // actually show the decrease (the bimodal day-rounding flatten, adversarial ②).
   if (facts.gapSequenceHours && facts.gapSequenceHours.length > 0) {
     rows.push({
       key: 'gap',
-      text: watchingGapRow(WATCHING_GAP_SYMPTOM_LABEL, formatWatchingGapSequence(facts.gapSequenceHours)),
+      text: watchingGapRowFromHours(WATCHING_GAP_SYMPTOM_LABEL, facts.gapSequenceHours),
     });
   }
 
@@ -216,6 +244,25 @@ export function windowedTimedEligibleCount(
     freeFedSpans,
   );
   return dist.eligibleCount;
+}
+
+/**
+ * PURE: days since the pet's most recent vomit event, or null for an empty record — the
+ * timing row's quiet-gate input (D1a). RAW event recency, deliberately not collapsed:
+ * a collapsed episode's onset is the cluster's FIRST event, so raw recency is never
+ * earlier than collapsed recency — the row stays up at least as long, which is the
+ * honest direction for a progress counter over a still-active record.
+ */
+export function daysSinceLastVomitEpisode(
+  vomitOnsets: readonly OnsetRow[],
+  nowMs: number,
+): number | null {
+  let last = -Infinity;
+  for (const e of vomitOnsets) {
+    if (Number.isFinite(e.ms) && e.ms <= nowMs && e.ms > last) last = e.ms;
+  }
+  if (last === -Infinity) return null;
+  return (nowMs - last) / MS_PER_DAY;
 }
 
 /**
@@ -303,7 +350,8 @@ export async function getWatchingRows(
     ]);
     const timedEligibleCount = windowedTimedEligibleCount(vomitOnsets, feedings, freeFedSpans, nowMs);
     const gapSequenceHours = detectWatchingGapShortening(vomitOnsets, nowMs);
-    return buildWatchingRows({ timedEligibleCount, dayNumber, gapSequenceHours });
+    const daysSinceLastEpisode = daysSinceLastVomitEpisode(vomitOnsets, nowMs);
+    return buildWatchingRows({ timedEligibleCount, dayNumber, gapSequenceHours, daysSinceLastEpisode });
   } catch {
     return [];
   }

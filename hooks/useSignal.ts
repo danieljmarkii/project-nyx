@@ -155,6 +155,12 @@ export function useSignal(): SignalState {
     setFindings([]);
     setCoverage([]);
     setSignalText(null);
+    // B-734 (CUL-72): localCtx resets WITH the findings — it is per-pet data too. Without
+    // this, the switch window pairs the NEW pet's name with the PREVIOUS pet's day/event
+    // counts in the E1 headline ("We're getting to know {new pet}. Day 34 — 212 events so
+    // far." over a day-1 pet). The sentinel's eventCount 0 also holds the day-count clause
+    // back until the new pet's own read lands (BuildingStateV2's existing guard).
+    setLocalCtx(EMPTY_LOCAL_CONTEXT);
     if (petId) setIsLoading(true);
   }
 

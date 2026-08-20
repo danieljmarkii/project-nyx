@@ -6,6 +6,8 @@ import {
   buildingHeadlineLead,
   buildingDayCount,
   BUILDING_SUB,
+  BUILDING_SUB_SPARSE,
+  buildingSub,
   BUILDING_WATCHING_FOR,
   BUILDING_FLOOR,
   WATCHING_SUB,
@@ -404,10 +406,24 @@ describe('E1/E2 empty-state copy (§9 verbatim; absence ≠ wellness)', () => {
     expect(REASSURANCE_RE.test(BUILDING_FLOOR)).toBe(false);
   });
   it('every E1 string is guardrail-clean (no exclamation, no reassurance vocabulary)', () => {
-    for (const s of [BUILDING_SUB, ...BUILDING_WATCHING_FOR, BUILDING_FLOOR]) {
+    for (const s of [BUILDING_SUB, BUILDING_SUB_SPARSE, ...BUILDING_WATCHING_FOR, BUILDING_FLOOR]) {
       expect(s.includes('!')).toBe(false);
       expect(REASSURANCE_RE.test(s)).toBe(false);
     }
+  });
+  // B-735 (PM-ruled D5a, GA Phase 0): once the day count outruns the sub's own first-week
+  // promise, the sub swaps to the events-not-days framing — "Day 24" must never sit above
+  // "within the first week" (the sparse-logger dissonance, Sam's grazing cat).
+  it('buildingSub keeps the first-week promise through day 7, then swaps to the sparse framing', () => {
+    for (const day of [1, 4, 7]) expect(buildingSub(day)).toBe(BUILDING_SUB);
+    for (const day of [8, 24, 90]) expect(buildingSub(day)).toBe(BUILDING_SUB_SPARSE);
+  });
+  it('the sparse sub drops the time promise and never nags', () => {
+    expect(BUILDING_SUB_SPARSE).toBe(
+      "Patterns build from logged events more than from time passing. Here's what we're watching for:",
+    );
+    expect(BUILDING_SUB_SPARSE).not.toMatch(/week|day/i); // no time promise the count can outrun
+    expect(BUILDING_SUB_SPARSE).not.toMatch(/\b(log more|please log|keep logging|you should)\b/i);
   });
   it('E2 is the verbatim shipped B-284 §9 "Signal — empty" copy', () => {
     expect(NO_PATTERN_HEADLINE).toBe(
@@ -428,14 +444,16 @@ describe('E1/E2 empty-state copy (§9 verbatim; absence ≠ wellness)', () => {
 // with the rest of the empty-state copy; the full G8 register sweep + the gate logic are
 // in signalWatching.test.ts (co-located with buildWatchingRows).
 describe('watching-system copy (§4.4 / G8 verbatim; transparency, never solicitation)', () => {
-  it('the sub + the three per-lane rows are the verbatim mock §05 strings', () => {
+  it('the sub + the three per-lane rows are the ratified strings (GA Phase 0: B-768 D2a reword + B-769 D4 cue)', () => {
     expect(WATCHING_SUB).toBe("Here's what we're watching, and what each pattern still needs:");
-    expect(watchingTimingRow(4, 6)).toBe('Timing — 4 of the 6 timed episodes a pattern needs.');
+    expect(watchingTimingRow(4, 6)).toBe(
+      "Timing — 4 of the 6 episodes a pattern needs, timed against meals you've logged.",
+    );
     expect(watchingChangeRow(2, 2)).toBe(
       'Change, week to week — needs 2 full weeks of logging to compare. This is week 2.',
     );
     expect(watchingGapRow('vomiting', '6 days, then 3, then 2')).toBe(
-      'Gaps between vomiting episodes — 6 days, then 3, then 2.',
+      'Gaps between vomiting episodes are getting shorter — 6 days, then 3, then 2.',
     );
   });
   it('every watching string is guardrail-clean (no exclamation, no reassurance vocabulary)', () => {
@@ -1121,10 +1139,34 @@ describe('evidenceText — symptom-worsening (④)', () => {
     expect(CAUSAL_RE.test(s)).toBe(false);
     expect(REASSURANCE_RE.test(s)).toBe(false);
   });
-  it('standard with prior 0 reads "after none the week before", not reassurance', () => {
+  it('standard with prior 0 leads with the SCOPED New fact — no "after none", no unscoped novelty claim (B-727, adversarial ③)', () => {
     const s = evidenceText(worsening({ tier: 'standard', currentCount: 3, priorCount: 0 }), 'Nyx');
-    expect(s).toMatch(/after none the week before/i);
+    expect(s).toMatch(/^New this week: 3 episodes of vomiting logged for Nyx — the first in over a week\./);
+    expect(s).not.toMatch(/after none/i);
+    expect(s).not.toMatch(/0 (episodes|last week)/i); // no zero-count pair either
+    expect(s).toMatch(/not a diagnosis/i);
     expect(REASSURANCE_RE.test(s)).toBe(false);
+  });
+  it('firm with prior 0 leads with the scoped New fact too, keeping the firm-tier vet ask (B-727)', () => {
+    const s = evidenceText(
+      worsening({ tier: 'firm', currentCount: 5, priorCount: 0, currentDays: 4, trigger: 'more_episodes' }),
+      'Nyx',
+    );
+    expect(s).toMatch(/^New this week: 5 episodes of vomiting logged for Nyx on 4 days — the first in over a week\./);
+    expect(s).not.toMatch(/after none/i);
+    expect(s).toMatch(/vet visit soon/i);
+    expect(REASSURANCE_RE.test(s)).toBe(false);
+  });
+  it('a version-skewed more_days + prior-0 shape takes the New arm, never a zero-pair "up from 0 days" (adversarial ③a)', () => {
+    // Unreachable from today's server (priorCount 0 ⇒ more_episodes), but the isNew
+    // branch is ordered FIRST so a skewed cache can never print the retired zero pair
+    // while the New chip also shows (S10: one carrier).
+    const s = evidenceText(
+      worsening({ tier: 'standard', currentCount: 2, priorCount: 0, currentDays: 2, trigger: 'more_days' }),
+      'Nyx',
+    );
+    expect(s).toMatch(/^New this week:/);
+    expect(s).not.toMatch(/up from 0/i);
   });
   it('firm: leads with day density and the firmest calm ask', () => {
     const s = evidenceText(
