@@ -387,7 +387,7 @@ Format:
 ```
 ### Next Session Kickoff
 **Recommended first prompt:**
-> <copy-pasteable prompt, 1–3 sentences, names the build step and concrete first task>
+> <copy-pasteable prompt, 1–3 sentences, names the build step and concrete first task; include a direct link to the Linear issue it advances — the `CUL-NNN` URL>
 
 **Alternate prompts (if priorities shift):**
 - <prompt for a parallel-track item>
@@ -400,7 +400,7 @@ Format:
 
 Rules:
 - The recommended prompt always points at the next item in the **Build Sequence** unless a blocking open question makes that impossible — in which case the prompt is "resolve open question X."
-- Each prompt is self-contained: it names the file, step number, or doc the next session should read first.
+- Each prompt is self-contained: it names the file, step number, or doc the next session should read first, and links the Linear issue it advances (the direct `CUL-NNN` URL) so the PM can open it or Copy-as-prompt it in one click. This applies to the recommended prompt and every alternate.
 - If a PM Action Item from this session is a prerequisite (e.g. "deploy function X first"), say so explicitly in the prompt.
 
 ### Session End — Automatic Summary
