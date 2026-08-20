@@ -513,8 +513,8 @@ describe('InsightCard — CUL-12 A2 timing card flag gating (signals_v2)', () =>
     expect(view.queryByText('Her vomiting keeps two kinds of time.')).toBeTruthy();
     // The three time-ordered bands, each label anchored to its boundary.
     expect(view.queryByText('Within 30 min of eating')).toBeTruthy();
-    expect(view.queryByText('30 min–6h after eating')).toBeTruthy();
-    expect(view.queryByText('6h+ after eating')).toBeTruthy();
+    expect(view.queryByText('30 min to 6h after eating')).toBeTruthy();
+    expect(view.queryByText('6h or more after eating')).toBeTruthy();
     // The meta row: badge + honest-denominator sample.
     expect(view.queryByText('Timing pattern')).toBeTruthy();
     expect(view.queryByText('20 timed of 26 episodes · 60 days')).toBeTruthy();
@@ -570,7 +570,7 @@ describe('InsightCard — CUL-12 A2 timing card flag gating (signals_v2)', () =>
     fireEvent.press(view.getByRole('button'));
     expect(view.queryByText('During an active Metronidazole course — 4 doses logged.')).toBeTruthy();
     expect(view.queryByText('What the photos showed')).toBeTruthy();
-    expect(view.queryByText('Recognizable food 6h+ after eating: 3 of 5 photos we could read.')).toBeTruthy();
+    expect(view.queryByText('Recognizable food 6h or more after eating: 3 of 5 photos we could read.')).toBeTruthy();
     expect(view.queryByText('Hair: 2 of 6 photos we could read.')).toBeTruthy();
   });
 
@@ -657,7 +657,7 @@ describe('InsightCard — CUL-13 trial card flag gating (signals_v2)', () => {
     // Time-ordered rows: rapid first, then long. Labels are the mechanism-free band labels (never
     // "empty stomach"), identical to the A2 timing card.
     expect(view.queryByText('Within 30 min of eating')).toBeTruthy();
-    expect(view.queryByText('6h+ after eating')).toBeTruthy();
+    expect(view.queryByText('6h or more after eating')).toBeTruthy();
     // Two-sided counts ("4 · was 8", "0 · was 7") — G2. The lead + baseline render in one Text node,
     // so match the fragment.
     expect(view.queryByText('was 8', { exact: false })).toBeTruthy();
