@@ -17,6 +17,7 @@ import {
   collectStoragePaths,
   buildDeletionPlan,
   chunk,
+  extractPassword,
   STORAGE_BUCKETS,
   PRESERVED_BUCKETS,
   STORAGE_REMOVE_CHUNK,
@@ -780,4 +781,42 @@ Deno.test('chunk — reassembling the batches reproduces the input (no loss/dupe
 Deno.test('chunk — a non-positive size throws (guards an infinite loop)', () => {
   assertThrows(() => chunk([1, 2], 0))
   assertThrows(() => chunk([1, 2], -1))
+})
+
+// ── extractPassword (B-119 re-auth gate) ─────────────────────────────────────────
+// The security-relevant contract: return the password ONLY for a non-empty string
+// value; fail closed (null → the shell 401s before any delete) on every other
+// shape. These pin the `typeof === 'string'` check a refactor could otherwise
+// silently drop.
+
+Deno.test('extractPassword — returns a non-empty string password', () => {
+  assertEquals(extractPassword({ password: 'hunter2' }), 'hunter2')
+})
+
+Deno.test('extractPassword — never trims (whitespace can be significant)', () => {
+  assertEquals(extractPassword({ password: ' ' }), ' ')
+  assertEquals(extractPassword({ password: '  pw  ' }), '  pw  ')
+})
+
+Deno.test('extractPassword — empty string fails closed', () => {
+  assertEquals(extractPassword({ password: '' }), null)
+})
+
+Deno.test('extractPassword — non-string values fail closed (type confusion)', () => {
+  assertEquals(extractPassword({ password: 5 }), null)
+  assertEquals(extractPassword({ password: true }), null)
+  assertEquals(extractPassword({ password: null }), null)
+  assertEquals(extractPassword({ password: {} }), null)
+  assertEquals(extractPassword({ password: [] }), null)
+  assertEquals(extractPassword({ password: ['pw'] }), null)
+})
+
+Deno.test('extractPassword — missing key / non-object body fails closed', () => {
+  assertEquals(extractPassword({}), null)
+  assertEquals(extractPassword({ other: 'x' }), null)
+  assertEquals(extractPassword(null), null)
+  assertEquals(extractPassword(undefined), null)
+  assertEquals(extractPassword('hunter2'), null) // whole body a bare string
+  assertEquals(extractPassword(5), null)
+  assertEquals(extractPassword(true), null)
 })

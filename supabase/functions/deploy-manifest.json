@@ -24,11 +24,11 @@
       "updated": "2026-08-19"
     },
     "delete-account": {
-      "status": "pending",
-      "fingerprint": "sha256:495f392b0af1864e267e28106e5c72ba590f7eb2045105811eb88ea47971ffea",
-      "reason": "Baseline at ledger creation (CUL-135); live-vs-main not verified (unverified baseline, not a known-owed deploy). Last deployed #558 (2026-08-02); no known pending change — resolves to `deployed` on the next verified deploy or the live reconciliation (CUL-541).",
-      "ref": "CUL-135",
-      "updated": "2026-08-19"
+      "status": "hold",
+      "fingerprint": "sha256:99ac95836a4ce9ae813959e933e6ba5112995e7e987233a827027c2b1b7e2ccf",
+      "reason": "B-119 / CUL-215 re-auth HOLD (client-first deploy ordering): the function now fails closed (reauth_required 401) when a request body carries no password, and the CURRENT shipped client sends none. Deploying this BEFORE a client build carrying the password field is the live/minimum build would 401 every current-client deletion — an Apple 5.1.1(v) erasure regression. Deploy only AFTER that client build is live, then set `deployed`.",
+      "ref": "CUL-215",
+      "updated": "2026-08-20"
     },
     "extract-food-from-photo": {
       "status": "pending",

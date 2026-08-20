@@ -29,31 +29,43 @@ interface DeleteAccountSheetProps {
 const OFFLINE_MSG = "You'll need a connection to delete your account.";
 const FAILED_MSG = "We couldn't finish deleting your account. Check your connection and try again.";
 
-// Destructive type-to-confirm account deletion (B-039 FR-9…FR-12). One surface,
-// no modal-on-modal: type DELETE to arm, a single red action, honest copy, no
-// dark patterns (no pre-checked "deactivate", no guilt copy, no hidden button).
-// Disabled offline (FR-11). On success: sign out locally, which fires the
-// SIGNED_OUT wipe (clearLocalData + active-pet clear + petStore.reset) and routes
-// to auth, where a brief confirmation shows.
+// Destructive type-to-confirm account deletion (B-039 FR-9…FR-12) with re-auth
+// hardening (B-119). One surface, no modal-on-modal: type DELETE and enter the
+// account password to arm, a single red action, honest copy, no dark patterns
+// (no pre-checked "deactivate", no guilt copy, no hidden button). Disabled
+// offline (FR-11). On confirm the password is re-verified server-side by the
+// Edge Function (against the token-holder's own email) BEFORE any delete, so a
+// wrong password returns a 401 and nothing is destroyed — surfaced here as an
+// inline field error. On success: sign out locally, which fires the SIGNED_OUT
+// wipe (clearLocalData + active-pet clear + petStore.reset) and routes to auth,
+// where a brief confirmation shows.
 export function DeleteAccountSheet({ visible, petNames, onClose }: DeleteAccountSheetProps) {
   const insets = useSafeAreaInsets();
   const online = useIsOnline();
   const [typed, setTyped] = useState('');
+  const [password, setPassword] = useState('');
   const [inFlight, setInFlight] = useState(false);
   const [failed, setFailed] = useState(false);
+  // Server-driven "that's not your password" (the function's 401), cleared the
+  // moment the owner edits the field so a stale mismatch never lingers under a
+  // corrected value.
+  const [reauthError, setReauthError] = useState<string | null>(null);
 
-  const canConfirm = canConfirmAccountDeletion({ typed, online, inFlight });
+  const canConfirm = canConfirmAccountDeletion({ typed, password, online, inFlight });
 
   function handleClose() {
     if (inFlight) return; // never dismiss mid-delete
     setTyped('');
+    setPassword('');
     setFailed(false);
+    setReauthError(null);
     onClose();
   }
 
   async function handleDelete() {
     if (!canConfirm) return;
     setFailed(false);
+    setReauthError(null);
 
     // Final connectivity re-check the instant before firing (FR-11): the reactive
     // flag can lag a just-dropped connection. Belt-and-suspenders — the invoke
@@ -63,8 +75,15 @@ export function DeleteAccountSheet({ visible, petNames, onClose }: DeleteAccount
     }
 
     setInFlight(true);
-    const { ok } = await requestAccountDeletion();
-    if (ok) {
+
+    // Re-auth + delete in one call (B-119): the Edge Function re-verifies the
+    // password — against the token-holder's OWN email, never trusting the client —
+    // BEFORE any delete, so a wrong password returns a 401 (reason:'reauth') and
+    // nothing is destroyed. A single SERVER-side sign-in is deliberate: a second
+    // client-side sign-in would double the auth round-trips per deletion and can
+    // 429 a correct password on a tight rate limit (rls-privacy review, B-119).
+    const result = await requestAccountDeletion(password);
+    if (result.ok) {
       // Arm the auth-screen confirmation, then sign out LOCAL-only: the server
       // session is already gone with the account, so a local sign-out is enough
       // to fire the SIGNED_OUT wipe + route to auth without a doomed server
@@ -82,7 +101,14 @@ export function DeleteAccountSheet({ visible, petNames, onClose }: DeleteAccount
       return;
     }
     setInFlight(false);
-    setFailed(true);
+    if (result.reason === 'reauth') {
+      // Wrong password — inline on the field, so the owner can correct and retry.
+      // Nothing was deleted; the function refused before any destructive step.
+      setReauthError('That doesn’t match your password.');
+    } else {
+      // Transport / server failure — the generic retryable banner.
+      setFailed(true);
+    }
   }
 
   return (
@@ -109,6 +135,29 @@ export function DeleteAccountSheet({ visible, petNames, onClose }: DeleteAccount
             editable={!inFlight}
             accessibilityLabel={`Type ${DELETE_CONFIRM_PHRASE} to confirm account deletion`}
           />
+
+          {/* Re-auth (B-119): the password confirms it's really the account
+              owner, not whoever happens to be holding an unlocked phone. */}
+          <Text style={styles.inputLabel}>Enter your password</Text>
+          <TextInput
+            style={styles.input}
+            value={password}
+            onChangeText={(t) => {
+              setPassword(t);
+              if (reauthError) setReauthError(null);
+              if (failed) setFailed(false);
+            }}
+            placeholder="Password"
+            placeholderTextColor={theme.colorTextDisabled}
+            secureTextEntry
+            autoCapitalize="none"
+            autoCorrect={false}
+            autoComplete="current-password"
+            textContentType="password"
+            editable={!inFlight}
+            accessibilityLabel="Enter your password to confirm account deletion"
+          />
+          {reauthError && <Text style={styles.reauthErrorMsg}>{reauthError}</Text>}
 
           {!online && <Text style={styles.offlineMsg}>{OFFLINE_MSG}</Text>}
           {failed && <Text style={styles.failedMsg}>{FAILED_MSG}</Text>}
@@ -206,6 +255,13 @@ const styles = StyleSheet.create({
     color: theme.colorDestructive,
     textAlign: 'center',
     marginTop: theme.space2,
+  },
+  // The re-auth mismatch (B-119) — sits tight under the password field, not with
+  // the sheet-level status messages, so it reads as a field error.
+  reauthErrorMsg: {
+    fontSize: theme.textSM,
+    color: theme.colorDestructive,
+    marginTop: theme.space1,
   },
   deleteBtn: {
     backgroundColor: theme.colorDestructive,

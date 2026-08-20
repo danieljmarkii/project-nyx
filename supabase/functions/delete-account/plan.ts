@@ -444,3 +444,26 @@ export function chunk<T>(items: readonly T[], size: number): T[][] {
   for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size))
   return out
 }
+
+// ── Re-auth gate (B-119) ────────────────────────────────────────────────────────
+//
+// The pure half of the server-side re-auth: pull the password out of a
+// parsed-JSON request body, returning it ONLY when the body carries a non-empty
+// string `password`. Every other shape — missing key, empty string, a
+// number/object/array/boolean/null value, or a non-object body (string/number/
+// null itself) — returns null, and the I/O shell then fails closed with a 401
+// before any read or delete. Presence only, never trimmed: whitespace can be a
+// real password character, and GoTrue is the sole authority on correctness.
+//
+// This is extracted and unit-tested (rather than inlined in index.ts) precisely
+// because it is a security gate on an irreversible action — the rls-privacy and
+// code reviews both flagged that a future refactor could otherwise regress the
+// `typeof === 'string'` check with a green CI. The signInWithPassword call and
+// the reauth-before-collect ordering remain I/O in the shell, QA-verified.
+export function extractPassword(body: unknown): string | null {
+  if (body && typeof body === 'object' && 'password' in body) {
+    const pw = (body as { password: unknown }).password
+    if (typeof pw === 'string' && pw.length > 0) return pw
+  }
+  return null
+}

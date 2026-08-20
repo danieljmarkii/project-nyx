@@ -24,6 +24,21 @@
 // request body (FR-2, confused-deputy guard) — the function reads no id from the
 // body at all, so a caller can only ever delete THEMSELVES.
 //
+// B-119 (re-auth hardening): before ANY delete, re-verify the account PASSWORD.
+// Type-to-confirm DELETE (the client's own gate) defends an accidental tap; it
+// does nothing against an unlocked/stolen phone whose holder already has a valid
+// session — and a client-side check ALONE would be bypassable by anyone who lifts
+// the session token and calls this function directly. So the password is sent
+// with the request and this function re-verifies it server-side against the
+// token-holder's OWN email (from the verified token, never the body) on a fresh
+// anon client; a wrong/absent password returns 401 and nothing is deleted. This
+// is the ONE value read from the body — still never an id, so the confused-deputy
+// guard holds — and it is never logged. Unlike change-password, deletion is our
+// own endpoint with no Supabase "Secure password change" backstop, so this
+// server-side re-verify is the only place the direct-API bypass can be closed.
+// (Apple/passwordless re-confirm is B-120, gated to Apple Sign-In shipping; every
+// account today is email+password, so password IS the factor.)
+//
 // Order is load-bearing (FR-6): collect owned paths → purge Storage (best-effort)
 // → delete the auth user LAST. A failed/partial run leaves the account intact and
 // re-runnable, so health photos are never orphaned with their DB rows already
@@ -31,7 +46,7 @@
 // (unit-tested in plan.test.ts); this file is the I/O shell.
 
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import { buildDeletionPlan, chunk, STORAGE_REMOVE_CHUNK, type OwnedStoragePaths } from './plan.ts'
+import { buildDeletionPlan, chunk, extractPassword, STORAGE_REMOVE_CHUNK, type OwnedStoragePaths } from './plan.ts'
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
@@ -272,9 +287,9 @@ Deno.serve(async (req: Request) => {
 
   // FR-2: identity from the VERIFIED token, never the body. getUser(jwt) performs a
   // server-side verification against the auth server (signature + expiry), not a
-  // local decode; we read no user/pet id from the request body at all, so a caller
-  // can only ever delete THEMSELVES (confused-deputy guard — the
-  // rls-privacy-reviewer's first attack).
+  // local decode; we read no user/pet id from the request body at all (only the
+  // B-119 password, re-verified below), so a caller can only ever delete
+  // THEMSELVES (confused-deputy guard — the rls-privacy-reviewer's first attack).
   const jwt = authHeader.replace(/^Bearer\s+/i, '')
   const { data: { user }, error: authErr } = await userClient.auth.getUser(jwt)
   if (authErr || !user) {
@@ -283,6 +298,46 @@ Deno.serve(async (req: Request) => {
   const userId = user.id
 
   try {
+    // 0. Re-auth (B-119) — BEFORE any delete, so a failed re-auth leaves the
+    //    account fully intact. Read the password (the ONLY thing read from the
+    //    body, and never an id) via the pure, unit-tested extractPassword, which
+    //    fails closed on a missing/empty/non-string value. req.json() itself
+    //    throws on an empty body — caught here to the same closed 401.
+    let password: string | null = null
+    try {
+      password = extractPassword(await req.json())
+    } catch {
+      // No or invalid JSON body → password stays null → 401 below.
+    }
+    if (!password) {
+      return Response.json({ error: 'reauth_required' }, { status: 401, headers: CORS_HEADERS })
+    }
+    // The email comes from the VERIFIED token, never the body. Every Nyx account
+    // today is email+password (social auth is flag-off), so this is the re-auth
+    // factor. A token with no email can't be password-verified — fail closed
+    // (there are no such accounts today) rather than skip the check; the
+    // Apple/passwordless re-confirm path is B-120, gated to Apple Sign-In.
+    if (!user.email) {
+      return Response.json({ error: 'reauth_unavailable' }, { status: 401, headers: CORS_HEADERS })
+    }
+    // Verify on a FRESH anon client (no caller Authorization header) so the
+    // existing session never interacts with the sign-in. A wrong password returns
+    // an auth error → 401, and NOTHING below runs. Brute force is bounded by
+    // GoTrue's existing per-account sign-in rate limits (identical to the login
+    // endpoint), and a caller can only ever target their own account (email from
+    // their own token). The password is never logged.
+    const reauthClient = createClient(supabaseUrl, anonKey)
+    const { error: reauthErr } = await reauthClient.auth.signInWithPassword({
+      email: user.email,
+      password,
+    })
+    if (reauthErr) {
+      // Do not echo the provider string or distinguish wrong-password from other
+      // auth failures in the response; the account is intact and re-runnable.
+      console.warn('delete-account: re-auth failed for user', userId)
+      return Response.json({ error: 'reauth_failed' }, { status: 401, headers: CORS_HEADERS })
+    }
+
     // 1. Collect owned Storage paths BEFORE any delete (FR-3).
     const ownedPaths = await collectOwnedPaths(adminClient, userId)
 
