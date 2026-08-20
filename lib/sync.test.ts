@@ -24,6 +24,7 @@ const mockGetSession = jest.fn();
 const mockFrom = jest.fn();
 const mockRunAsync = jest.fn();
 const mockGetAllAsync = jest.fn();
+const mockGetFirstAsync = jest.fn();
 
 jest.mock('./storage', () => ({
   uploadPhoto: (...args: unknown[]) => mockUploadPhoto(...args),
@@ -39,6 +40,7 @@ jest.mock('./db', () => ({
   getDb: () => ({
     runAsync: (...args: unknown[]) => mockRunAsync(...args),
     getAllAsync: (...args: unknown[]) => mockGetAllAsync(...args),
+    getFirstAsync: (...args: unknown[]) => mockGetFirstAsync(...args),
   }),
   getWatermark: jest.fn(),
   setWatermark: jest.fn(),
@@ -60,6 +62,7 @@ import {
   markSynced,
   prepareAttachmentUpload,
   reapStalePendingFoods,
+  reconcilePetWeightSnapshot,
   refreshFoodCache,
   refreshMedicationCache,
   syncPendingAttachments,
@@ -70,6 +73,7 @@ import {
   syncPendingMeals,
   syncPendingVetDocuments,
   syncPendingVetVisits,
+  syncPendingWeightChecks,
 } from './sync';
 
 // B-125 — the post-push `synced = 1` sweep every writer shares.
@@ -1168,5 +1172,112 @@ describe('reapStalePendingFoods (B-369)', () => {
     selectFinal.mockResolvedValue({ data: null, error: { message: 'boom' } });
     await reapStalePendingFoods();
     expect(mockRunAsync).not.toHaveBeenCalled();
+  });
+});
+
+// CUL-293 — the pets.weight_kg snapshot is a denormalized convenience written inline at
+// log/edit time by a best-effort direct supabase update that is silently skipped
+// offline, so the server snapshot drifts from the reliably-synced weight_checks.
+// reconcilePetWeightSnapshot re-points pets.weight_kg at the pet's latest local reading,
+// and syncPendingWeightChecks calls it for every pet whose weight row actually landed.
+describe('reconcilePetWeightSnapshot (CUL-293)', () => {
+  beforeEach(() => {
+    mockGetFirstAsync.mockReset();
+    mockFrom.mockReset();
+  });
+
+  it("writes the pet's latest local weight to the pets.weight_kg snapshot", async () => {
+    mockGetFirstAsync.mockResolvedValue({ weight_kg: 5.4 });
+    const eq = jest.fn().mockResolvedValue({ error: null });
+    const update = jest.fn().mockReturnValue({ eq });
+    mockFrom.mockReturnValue({ update });
+
+    await reconcilePetWeightSnapshot('pet-A');
+
+    expect(mockFrom).toHaveBeenCalledWith('pets');
+    expect(update).toHaveBeenCalledWith({ weight_kg: 5.4 });
+    expect(eq).toHaveBeenCalledWith('id', 'pet-A');
+  });
+
+  it('writes nothing when the pet has no readings (latest is null)', async () => {
+    mockGetFirstAsync.mockResolvedValue(null);
+    const update = jest.fn();
+    mockFrom.mockReturnValue({ update });
+
+    await reconcilePetWeightSnapshot('pet-A');
+
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it('swallows a snapshot-write failure — best-effort, never throws into the sync loop', async () => {
+    mockGetFirstAsync.mockResolvedValue({ weight_kg: 5.4 });
+    const eq = jest.fn().mockResolvedValue({ error: { message: 'network down' } });
+    mockFrom.mockReturnValue({ update: jest.fn().mockReturnValue({ eq }) });
+
+    await expect(reconcilePetWeightSnapshot('pet-A')).resolves.toBeUndefined();
+  });
+});
+
+describe('syncPendingWeightChecks — snapshot reconcile wiring (CUL-293)', () => {
+  beforeEach(() => {
+    mockGetSession.mockReset().mockResolvedValue({ data: { session: { user: { id: 'u1' } } } });
+    mockGetAllAsync.mockReset();
+    mockGetFirstAsync.mockReset();
+    mockRunAsync.mockReset().mockResolvedValue(undefined);
+    mockFrom.mockReset();
+  });
+
+  it('reconciles pets.weight_kg after a reading lands', async () => {
+    mockGetAllAsync.mockResolvedValue([
+      { id: 'w1', event_id: 'e1', pet_id: 'pet-A', weight_kg: 5.2, notes: null, created_at: 't', updated_at: 't' },
+    ]);
+    // The post-push latest-by-occurred_at read: a newer (back-dated) reading wins.
+    mockGetFirstAsync.mockResolvedValue({ weight_kg: 5.4 });
+
+    const petEq = jest.fn().mockResolvedValue({ error: null });
+    const petUpdate = jest.fn().mockReturnValue({ eq: petEq });
+    const wcSelect = jest.fn().mockResolvedValue({ data: [{ id: 'w1' }], error: null });
+    const wcUpsert = jest.fn().mockReturnValue({ select: wcSelect });
+    mockFrom.mockImplementation((table: string) =>
+      table === 'pets' ? { update: petUpdate } : { upsert: wcUpsert },
+    );
+
+    await syncPendingWeightChecks();
+
+    expect(petUpdate).toHaveBeenCalledWith({ weight_kg: 5.4 });
+    expect(petEq).toHaveBeenCalledWith('id', 'pet-A');
+  });
+
+  it('does NOT reconcile a pet whose weight row failed to land (RLS-blocked / not returned)', async () => {
+    mockGetAllAsync.mockResolvedValue([
+      { id: 'w1', event_id: 'e1', pet_id: 'pet-A', weight_kg: 5.2, notes: null, created_at: 't', updated_at: 't' },
+    ]);
+    const petUpdate = jest.fn();
+    // Success-with-0-rows: pushRows treats a returned-no-id row as RLS-blocked and leaves
+    // it OUT of `landed`, so its pet is never reconciled — the snapshot must not be written
+    // for a reading the server never accepted.
+    const wcSelect = jest.fn().mockResolvedValue({ data: [], error: null });
+    const wcUpsert = jest.fn().mockReturnValue({ select: wcSelect });
+    mockFrom.mockImplementation((table: string) =>
+      table === 'pets' ? { update: petUpdate } : { upsert: wcUpsert },
+    );
+
+    await syncPendingWeightChecks();
+
+    expect(petUpdate).not.toHaveBeenCalled();
+    expect(mockGetFirstAsync).not.toHaveBeenCalled();
+  });
+
+  it('is a no-op with nothing queued — never touches the pets snapshot', async () => {
+    mockGetAllAsync.mockResolvedValue([]);
+    const petUpdate = jest.fn();
+    mockFrom.mockImplementation((table: string) =>
+      table === 'pets' ? { update: petUpdate } : { upsert: jest.fn() },
+    );
+
+    await syncPendingWeightChecks();
+
+    expect(petUpdate).not.toHaveBeenCalled();
+    expect(mockGetFirstAsync).not.toHaveBeenCalled();
   });
 });
