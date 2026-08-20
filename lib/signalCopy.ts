@@ -386,6 +386,45 @@ export function formatWatchingGapSequence(hoursSeq: readonly number[]): string {
   return parts.map((p) => `${p.value} ${p.unit}${p.value === 1 ? '' : 's'}`).join(', then ');
 }
 
+// ── The gap row's honest rendering (GA Phase 0, adversarial finding ②) ─────────
+// Day-rounding can collapse a strictly-decreasing run to equal printed values: a
+// bimodal record (monthly gaps, then 30h → 26h → 25h) passes all three detector gates
+// yet formats as "1 day, then 1, then 1" — and D4's "are getting shorter" cue would
+// then state a direction its own receipt denies (the Change Contract's count-anchor,
+// violated on the one escalate-only row). The fix lives in the RENDER, never the gate
+// (the row must not drop — escalate-only): when the default units flatten any adjacent
+// same-unit pair, re-render the whole run in hours (where the real decrease shows);
+// when even hours flatten (sub-hour differences), the cue degrades to the neutral
+// pre-D4 phrasing — the sequence still renders, it just stops claiming a direction the
+// printed numbers can't show. `formatWatchingGapSequence` itself stays byte-identical
+// to the server mirror; the same run-aware fix is queued for the server's
+// formatGapSequence on the GA-3 redeploy (CUL-550), like B-727's server half.
+function gapPartsFlatten(parts: readonly { value: number; unit: 'day' | 'hour' }[]): boolean {
+  for (let i = 1; i < parts.length; i++) {
+    if (parts[i].unit === parts[i - 1].unit && parts[i].value >= parts[i - 1].value) return true;
+  }
+  return false;
+}
+
+export function watchingGapRowFromHours(symptomLabel: string, hoursSeq: readonly number[]): string {
+  const parts = hoursSeq.map(formatGapUnit);
+  if (!gapPartsFlatten(parts)) {
+    return watchingGapRow(symptomLabel, formatWatchingGapSequence(hoursSeq));
+  }
+  // Default units flatten — drop everything to hours, where a strictly-decreasing run
+  // over a >1h step is visible again ("30 hours, then 26, then 25").
+  const hourValues = hoursSeq.map((h) => Math.max(1, Math.round(h)));
+  const strictlyDecreasingHours = hourValues.every((v, i) => i === 0 || v < hourValues[i - 1]);
+  if (strictlyDecreasingHours) {
+    const [head, ...rest] = hourValues;
+    const sequence = [`${head} ${head === 1 ? 'hour' : 'hours'}`, ...rest.map(String)].join(', then ');
+    return watchingGapRow(symptomLabel, sequence);
+  }
+  // Sub-hour shortening — no unit can print the decrease. Neutral pre-D4 phrasing:
+  // still a true, time-ordered fact; no directional claim the numbers deny.
+  return `Gaps between ${symptomLabel} episodes — ${formatWatchingGapSequence(hoursSeq)}.`;
+}
+
 // The post-log acknowledgment line (B-721 SR-3, §5.3 / §9). Shown ABOVE the still-
 // readable findings between a fresh event log and the debounced regeneration settling —
 // never a spinner, never blanking the findings. nyx-voice: no exclamation, second-person
@@ -726,29 +765,34 @@ export function evidenceText(finding: SignalFinding, petName: string): string {
     // B-727 (CUL-239 client half, GA Phase 0): a zero-prior worsening is a FIRST
     // APPEARANCE, not a trend — the retired "after none the week before" dressed 0 → N
     // as a comparison (fake trend precision, the same reason the §3.2 New chip replaced
-    // the "0 last week" pair). The zero-prior arms now lead with the New fact instead.
-    // priorCount === 0 ⇒ the trigger is more_episodes (see worseningNewSampleLine), so
-    // only the two priorPhrase arms need it; the server card sentence retires its own
-    // "after none" with the GA-3 `generate-signal` redeploy — until then the two phrase
-    // the same fact differently, never contradict.
+    // the "0 last week" pair). The zero-prior arms lead with the New fact — SCOPED:
+    // "the first in over a week", because the payload carries only the two 7-day
+    // windows, so an unscoped "new" would assert lifetime novelty the data can't
+    // support (a 3-weeks-ago relapse with an empty prior week is priorCount 0 —
+    // adversarial ③). The isNew branch comes FIRST in each tier: priorCount === 0
+    // ⇒ trigger is more_episodes today (see worseningNewSampleLine), but a
+    // version-skewed cache must never reach a zero-pair "up from 0 days" arm while
+    // the New chip also shows (S10: one carrier). The server card sentence retires
+    // its own "after none" with the GA-3 redeploy — its replacement must keep a
+    // week-scope cue too (recorded on CUL-550).
     const isNew = finding.priorCount === 0;
     const priorPhrase = `up from ${count(finding.priorCount, 'episode', 'episodes')} the week before`;
     // Firm tier — symptoms on most days. Phrase the rise on the axis that actually rose
     // (the trigger). For more_days the episode count is flat-or-falling, so compare on
     // days, not episodes (adversarial review — avoids the "4 episodes, up from 6" miscount).
     if (finding.tier === 'firm') {
+      if (isNew) {
+        return (
+          `New this week: ${count(finding.currentCount, 'episode', 'episodes')} of ${symptom} logged for ${petName} ` +
+          `on ${count(finding.currentDays, 'day', 'days')} — the first in over a week. Symptoms on most days is a ` +
+          `pattern worth a vet visit soon — a read of your logs, not a diagnosis.`
+        );
+      }
       if (finding.trigger === 'more_days') {
         return (
           `We've logged ${symptom} for ${petName} on ${count(finding.currentDays, 'day', 'days')} this week, up ` +
           `from ${count(finding.priorDays, 'day', 'days')} the week before. Symptoms on most days is a pattern ` +
           `worth a vet visit soon — a read of your logs, not a diagnosis.`
-        );
-      }
-      if (isNew) {
-        return (
-          `New this week: ${count(finding.currentCount, 'episode', 'episodes')} of ${symptom} logged for ${petName} ` +
-          `on ${count(finding.currentDays, 'day', 'days')}. Symptoms on most days is a pattern worth a vet visit ` +
-          `soon — a read of your logs, not a diagnosis.`
         );
       }
       return (
@@ -757,20 +801,20 @@ export function evidenceText(finding: SignalFinding, petName: string): string {
         `worth a vet visit soon — a read of your logs, not a diagnosis.`
       );
     }
+    if (isNew) {
+      // Standard, first appearance — the New fact leads, week-scoped; no zero-count pair.
+      return (
+        `New this week: ${count(finding.currentCount, 'episode', 'episodes')} of ${symptom} logged for ${petName} — ` +
+        `the first in over a week. It's a pattern in your logs, not a diagnosis — worth a word with your vet, and ` +
+        `keeping an eye on whether it carries on.`
+      );
+    }
     // The more_days-only arm (same episode count, more spread): talk in days, gentlest ask.
     if (finding.trigger === 'more_days') {
       return (
         `We've logged ${symptom} for ${petName} on ${count(finding.currentDays, 'day', 'days')} this week, up from ` +
         `${count(finding.priorDays, 'day', 'days')} the week before. It's a pattern in your logs, not a diagnosis — ` +
         `worth keeping an eye on, and a word with your vet if it carries on.`
-      );
-    }
-    if (isNew) {
-      // Standard, first appearance — the New fact leads; no zero-count pair.
-      return (
-        `New this week: ${count(finding.currentCount, 'episode', 'episodes')} of ${symptom} logged for ${petName}. ` +
-        `It's a pattern in your logs, not a diagnosis — worth a word with your vet, and keeping an eye on whether ` +
-        `it carries on.`
       );
     }
     // Standard — an episode-count rise, not dense.

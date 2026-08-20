@@ -763,11 +763,11 @@
   <div class="rq"><span class="rid">§08 · B-727 before/after</span>
     <p><strong>The zero-prior worsening evidence line</strong> (tap-to-expand; the card sentence follows at GA-3's redeploy):</p>
     <p style="color:#8A879E"><s>We've logged 3 episodes of vomiting for Nyx this week, after none the week before. It's a pattern in your logs, not a diagnosis — …</s></p>
-    <p style="color:#1A1A24"><strong>New this week:</strong> 3 episodes of vomiting logged for Nyx. It's a pattern in your logs, not a diagnosis — worth a word with your vet, and keeping an eye on whether it carries on.</p>
-    <p>And the card's accessibility label now ends with "<strong>New this week.</strong>" whenever the New chip shows — VoiceOver hears what the chip says, which is what makes GA-3's server-side "after none" retirement safe.</p>
+    <p style="color:#1A1A24"><strong>New this week:</strong> 3 episodes of vomiting logged for Nyx — the first in over a week. It's a pattern in your logs, not a diagnosis — worth a word with your vet, and keeping an eye on whether it carries on.</p>
+    <p>The "first in over a week" scope is deliberate (adversarial ③): the finding's payload only sees the two 7-day windows, so an unscoped "new" would overclaim over a three-weeks-ago relapse. GA-3's server sentence must keep a week-scope cue too (recorded on CUL-550). And the card's accessibility label now ends with "<strong>New this week.</strong>" whenever the New chip shows — VoiceOver hears what the chip says, which is what makes GA-3's server-side "after none" retirement safe.</p>
   </div>
 
-  <p class="optnote">B-734 (the E1 load-flash) has no copy to draw — the flag-on loading beat is now a content-shaped skeleton, never the heavy "getting to know / Day N" headline; verify on-device (cold start + pet switch on a mature pet). All four frames above are the shipped strings verbatim; veto any wording at PR review and the Designer round folds it in.</p>
+  <p class="optnote">B-734 (the E1 load-flash) has no copy to draw — the flag-on loading beat is a content-shaped skeleton, <strong>time-boxed at 1.5s</strong> (a hung read falls through to the honest state rather than holding the shimmer — adversarial ④); verify on-device (cold start + pet switch on a mature pet). The gap row's render is <strong>run-aware</strong> (adversarial ②): when day-rounding would flatten a shortening run to "1 day, then 1, then 1", it re-renders in hours ("30 hours, then 26, then 25"), and a sub-hour run no unit can print keeps the neutral pre-cue phrasing — the cue never sits beside numbers that deny it, and the row itself never drops. All frames above are the shipped strings verbatim; veto any wording at PR review and the Designer round folds it in.</p>
 </section>
 
 <footer>

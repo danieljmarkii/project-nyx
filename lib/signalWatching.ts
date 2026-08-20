@@ -50,12 +50,7 @@ import {
   type OnsetConfidence,
 } from './mealTiming';
 import { median, readVomitOnsets, readFeedingRows, readFreeFedSpans } from './patternsTiming';
-import {
-  formatWatchingGapSequence,
-  watchingChangeRow,
-  watchingGapRow,
-  watchingTimingRow,
-} from './signalCopy';
+import { watchingChangeRow, watchingGapRowFromHours, watchingTimingRow } from './signalCopy';
 
 const MS_PER_HOUR = 3_600_000;
 const MS_PER_DAY = 86_400_000;
@@ -202,11 +197,13 @@ export function buildWatchingRows(facts: WatchingFacts): WatchingRow[] {
 
   // Gap — escalate-only: renders only when `detectWatchingGapShortening` returned a
   // shortening run (G5). Absence / lengthening / staleness all yield null upstream and
-  // no row here — a widening gap is never reassurance.
+  // no row here — a widening gap is never reassurance. Rendered run-aware
+  // (watchingGapRowFromHours): the D4 direction cue only prints beside numbers that
+  // actually show the decrease (the bimodal day-rounding flatten, adversarial ②).
   if (facts.gapSequenceHours && facts.gapSequenceHours.length > 0) {
     rows.push({
       key: 'gap',
-      text: watchingGapRow(WATCHING_GAP_SYMPTOM_LABEL, formatWatchingGapSequence(facts.gapSequenceHours)),
+      text: watchingGapRowFromHours(WATCHING_GAP_SYMPTOM_LABEL, facts.gapSequenceHours),
     });
   }
 

@@ -1139,23 +1139,34 @@ describe('evidenceText — symptom-worsening (④)', () => {
     expect(CAUSAL_RE.test(s)).toBe(false);
     expect(REASSURANCE_RE.test(s)).toBe(false);
   });
-  it('standard with prior 0 leads with the New fact — the "after none" pseudo-comparison is retired (B-727)', () => {
+  it('standard with prior 0 leads with the SCOPED New fact — no "after none", no unscoped novelty claim (B-727, adversarial ③)', () => {
     const s = evidenceText(worsening({ tier: 'standard', currentCount: 3, priorCount: 0 }), 'Nyx');
-    expect(s).toMatch(/^New this week: 3 episodes of vomiting logged for Nyx\./);
+    expect(s).toMatch(/^New this week: 3 episodes of vomiting logged for Nyx — the first in over a week\./);
     expect(s).not.toMatch(/after none/i);
     expect(s).not.toMatch(/0 (episodes|last week)/i); // no zero-count pair either
     expect(s).toMatch(/not a diagnosis/i);
     expect(REASSURANCE_RE.test(s)).toBe(false);
   });
-  it('firm with prior 0 leads with the New fact too, keeping the firm-tier vet ask (B-727)', () => {
+  it('firm with prior 0 leads with the scoped New fact too, keeping the firm-tier vet ask (B-727)', () => {
     const s = evidenceText(
       worsening({ tier: 'firm', currentCount: 5, priorCount: 0, currentDays: 4, trigger: 'more_episodes' }),
       'Nyx',
     );
-    expect(s).toMatch(/^New this week: 5 episodes of vomiting logged for Nyx on 4 days\./);
+    expect(s).toMatch(/^New this week: 5 episodes of vomiting logged for Nyx on 4 days — the first in over a week\./);
     expect(s).not.toMatch(/after none/i);
     expect(s).toMatch(/vet visit soon/i);
     expect(REASSURANCE_RE.test(s)).toBe(false);
+  });
+  it('a version-skewed more_days + prior-0 shape takes the New arm, never a zero-pair "up from 0 days" (adversarial ③a)', () => {
+    // Unreachable from today's server (priorCount 0 ⇒ more_episodes), but the isNew
+    // branch is ordered FIRST so a skewed cache can never print the retired zero pair
+    // while the New chip also shows (S10: one carrier).
+    const s = evidenceText(
+      worsening({ tier: 'standard', currentCount: 2, priorCount: 0, currentDays: 2, trigger: 'more_days' }),
+      'Nyx',
+    );
+    expect(s).toMatch(/^New this week:/);
+    expect(s).not.toMatch(/up from 0/i);
   });
   it('firm: leads with day density and the firmest calm ask', () => {
     const s = evidenceText(

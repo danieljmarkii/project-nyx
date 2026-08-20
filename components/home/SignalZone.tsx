@@ -1,4 +1,4 @@
-import { useEffect, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { AccessibilityInfo, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import { theme } from '../../constants/theme';
@@ -38,6 +38,12 @@ const PREVIEW_INSIGHTS = [
   'Vomiting dropped 60% in the two weeks after switching proteins — the diet trial appears to be working.',
   'Itching tends to follow meals containing chicken. No reaction logged after salmon.',
 ];
+
+// B-734 (adversarial ④) — the skeleton's time-box. The window it covers is a normally-
+// fast network read, but nothing bounds that read, so the skeleton bounds itself: past
+// this, the zone falls through to the honestly-derived state and re-enables the watching
+// read. Sized to cover a slow-but-alive fetch without ever reading as a hung screen.
+const SIGNAL_LOAD_SKELETON_MS = 1500;
 
 interface SignalZoneProps {
   // B-721 SR-5 (§3.4) — whether a diet trial is running for the active pet (`isTrialRunning`,
@@ -109,9 +115,23 @@ export function SignalZone({
   // pet's live findings resolve a beat after mount/pet-switch, and the loud
   // "getting to know {pet} / Day N" headline flashing over a pet with a live safety
   // finding is self-contradicting. The flag-on loading frame is a content-shaped
-  // skeleton (Tier-1: a local-SQLite wait, well under ~1s); flag-off keeps the
-  // shipped soft building intro, byte-identical (FR-FLAG-2).
+  // skeleton — and it is TIME-BOXED (adversarial ④): the wait it covers is the
+  // `readSignalCache` network read (Supabase/PostgREST — no timeout of its own), so an
+  // offline/hung read would otherwise hold the skeleton for the platform socket
+  // timeout. Past SIGNAL_LOAD_SKELETON_MS the zone falls through to the derived state
+  // (honest, and it un-suppresses the escalate-only gap row below). Flag-off keeps the
+  // shipped soft building intro for the whole load, byte-identical (FR-FLAG-2).
   const loading = isLoading && findings.length === 0;
+  const [loadTimedOut, setLoadTimedOut] = useState(false);
+  useEffect(() => {
+    if (!loading) {
+      setLoadTimedOut(false);
+      return;
+    }
+    const t = setTimeout(() => setLoadTimedOut(true), SIGNAL_LOAD_SKELETON_MS);
+    return () => clearTimeout(t);
+  }, [loading]);
+  const showSkeleton = designV2 && loading && !loadTimedOut;
   const state = loading ? 'building' : displayState;
 
   // Signals v2 (B-755 / CUL-14) — the watching system (§4.4 / D5). Per-lane rows with
@@ -121,9 +141,11 @@ export function SignalZone({
   // hook reads local data ONLY when enabled, so flag-off / live / stale do zero extra
   // work and stay byte-identical. `dayNumber` is shared with the E1 headline so the
   // Change row's week count and the "Day N" headline always agree (one day definition).
-  // Not while `loading` (B-734): the pet-switch reset just cleared localCtx, so a read
-  // keyed on the sentinel dayNumber would only be thrown away when the real one lands.
-  const watchingEnabled = signalsV2 && !loading && (state === 'building' || state === 'no_pattern');
+  // Not while the skeleton shows (B-734): the pet-switch reset just cleared localCtx,
+  // so a read keyed on the sentinel dayNumber would only be thrown away — but the gate
+  // is the SKELETON, not `loading`, so a hung read can never suppress the escalate-only
+  // gap row past the time-box (adversarial ④).
+  const watchingEnabled = signalsV2 && !showSkeleton && (state === 'building' || state === 'no_pattern');
   const watching = useWatchingRows(watchingEnabled, dayNumber);
 
   // B-769 (CUL-29, PM-ruled D3a — GA Phase 0): the escalate-only gap row leaves the
@@ -230,8 +252,8 @@ export function SignalZone({
           />
         )
       ) : designV2 ? (
-        // B-734: the flag-on loading frame is a skeleton, never the heavy E1 (see above).
-        loading ? (
+        // B-734: the flag-on loading frame is a time-boxed skeleton, never the heavy E1.
+        showSkeleton ? (
           <SignalLoadingSkeleton />
         ) : (
           <BuildingStateV2

@@ -10,6 +10,7 @@ import {
   watchingTimingRow,
   watchingChangeRow,
   watchingGapRow,
+  watchingGapRowFromHours,
   formatWatchingGapSequence,
   BUILDING_FLOOR,
 } from './signalCopy';
@@ -77,6 +78,35 @@ describe('watching copy — verbatim mock §05 strings (the R2-7 Designer round)
     const s = watchingGapRow('vomiting', '6 days, then 3, then 2');
     expect(s).not.toMatch(/worse|worsening|serious|urgent|escalat/i); // no verdict words
     expect(s).not.toMatch(/[↑↓%]/); // no arrows, no percentages
+  });
+
+  // Adversarial ② (GA Phase 0): day-rounding can collapse a strictly-decreasing run to
+  // equal printed values — the cue must never sit beside numbers that deny it.
+  describe('watchingGapRowFromHours — the run-aware render', () => {
+    it('a legibly-decreasing run keeps the default units + the cue', () => {
+      expect(watchingGapRowFromHours('vomiting', [6 * 24, 3 * 24, 2 * 24])).toBe(
+        'Gaps between vomiting episodes are getting shorter — 6 days, then 3, then 2.',
+      );
+    });
+    it('the bimodal flatten ("1 day, then 1, then 1") re-renders in hours, where the decrease shows', () => {
+      // 30h → 26h → 25h all round to "1 day"; the counterexample record that passes all
+      // three detector gates against a monthly-gap median.
+      expect(watchingGapRowFromHours('vomiting', [30, 26, 25])).toBe(
+        'Gaps between vomiting episodes are getting shorter — 30 hours, then 26, then 25.',
+      );
+    });
+    it('a sub-hour shortening no unit can print degrades to the neutral phrasing — never a cue the numbers deny, never a dropped row', () => {
+      // 10.4h → 10.2h → 10.1h: strictly decreasing raw, but hours print 10, 10, 10.
+      expect(watchingGapRowFromHours('vomiting', [10.4, 10.2, 10.1])).toBe(
+        'Gaps between vomiting episodes — 10 hours, then 10, then 10.',
+      );
+    });
+    it('a mixed-unit run whose tail flattens even in hours degrades to the neutral phrasing', () => {
+      // Tail 10.4h/10.2h prints 10, 10 in every unit — no cue, default-unit sequence.
+      expect(watchingGapRowFromHours('vomiting', [30, 10.4, 10.2])).toBe(
+        'Gaps between vomiting episodes — 1 day, then 10 hours, then 10 hours.',
+      );
+    });
   });
   it('the safety-floor line is the verbatim, unconditional BUILDING_FLOOR', () => {
     expect(BUILDING_FLOOR).toBe("If something needs attention sooner, it won't wait for the week.");

@@ -34,7 +34,7 @@ jest.mock('../../hooks/useWatchingRows', () => ({
   useWatchingRows: (enabled: boolean, dayNumber: number) => mockUseWatchingRows(enabled, dayNumber),
 }));
 
-import { render } from '@testing-library/react-native';
+import { act, render } from '@testing-library/react-native';
 import { AccessibilityInfo, Platform } from 'react-native';
 import { SignalZone } from './SignalZone';
 import { theme } from '../../constants/theme';
@@ -391,6 +391,28 @@ describe('SignalZone — B-734 first-load window (flag-on skeleton, never the he
     );
     render(<SignalZone />);
     expect(mockUseWatchingRows.mock.calls.at(-1)?.[0]).toBe(false);
+  });
+
+  it('the skeleton is TIME-BOXED — a hung read falls through to the derived state and re-enables the watching read (adversarial ④)', () => {
+    jest.useFakeTimers();
+    try {
+      mockUseAllowlistFlag.mockReturnValue(true); // both flags on
+      mockUseSignal.mockReturnValue(
+        signalState({ displayState: 'building', isLoading: true, findings: [], dayNumber: 1, eventCount: 0 }),
+      );
+      const view = render(<SignalZone />);
+      expect(view.getByTestId('signal-loading-skeleton')).toBeTruthy();
+      expect(mockUseWatchingRows.mock.calls.at(-1)?.[0]).toBe(false); // suppressed only while the skeleton shows
+      act(() => {
+        jest.advanceTimersByTime(1500);
+      });
+      // Past the box: the honestly-derived state renders and the escalate-only watching
+      // read is live again — a hung network read can never silence the gap row for good.
+      expect(view.queryByTestId('signal-loading-skeleton')).toBeNull();
+      expect(mockUseWatchingRows.mock.calls.at(-1)?.[0]).toBe(true);
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   it('once the read lands (isLoading false), the real state renders — no lingering skeleton', () => {
