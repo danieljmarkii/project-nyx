@@ -43,6 +43,7 @@ import {
   type TimingBand,
   type TimingIneligibility,
 } from './mealTiming';
+import { formatTimingBandLabel } from './timingBandLabels';
 
 const MS_PER_DAY = 86_400_000;
 
@@ -420,18 +421,11 @@ export function parseFreeFedSpans(
 // verdict, no reassurance, no "!". Every count renders beside its denominator (§9).
 
 /** The panel's plain-language band label, keyed off the live config so the words and
- *  the geometry can never name different numbers. */
+ *  the geometry can never name different numbers. Delegates to the shared
+ *  `formatTimingBandLabel` (lib/timingBandLabels.ts) so the Patterns panel and the
+ *  Home A2 receipt name the same three bands identically (CUL-98). */
 export function timingBandLabel(band: TimingBand, config: MealTimingConfig): string {
-  const rapid = config.rapidWindowMinutes;
-  const longH = config.longGapHours;
-  switch (band) {
-    case 'rapid':
-      return `Within ${rapid} min of eating`;
-    case 'mid':
-      return `${rapid} min to ${longH}h after eating`;
-    case 'long':
-      return `${longH}h or more after eating`;
-  }
+  return formatTimingBandLabel(band, config.rapidWindowMinutes, config.longGapHours);
 }
 
 /** The panel title — descriptive, timing-only, no verdict. */
