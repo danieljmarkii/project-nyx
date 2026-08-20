@@ -1,7 +1,7 @@
 # 2026-08-20 — Signal GA graduation, Phase 0 (CUL-546): the four pre-flip gates
 
 **Branch:** `claude/signal-ga-graduation-c80dfh` · **Issues:** CUL-546 (driver) · CUL-72 (B-734) · CUL-28 (B-768) · CUL-29 (B-769) · CUL-239 (B-727 client half) · CUL-430 (B-735)
-**Outcome:** Phase 0 of the GA plan built as one PR (shipped via the PR opened off this branch); every ruling the whole GA plan needs was collected up front.
+**Outcome:** Phase 0 of the GA plan shipped via #689; every ruling the whole GA plan needs was collected up front.
 
 ## The decision slate — PM rulings collected 2026-08-20 (chat, this session)
 
