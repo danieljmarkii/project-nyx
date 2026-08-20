@@ -37,6 +37,7 @@ import type {
   TrialResponseFinding,
 } from './signal';
 import { localDayIndex, localDayIndexOf, trialDayCounter } from './utils';
+import { formatTimingBandLabel } from './timingBandLabels';
 
 // A timing finding — the two types whose evidence renders as a receipt (SR-1, §4).
 type TimingFinding = PostprandialTimingFinding | TimeOfDayClusteringFinding;
@@ -1293,9 +1294,9 @@ export function timingStoryBandRows(f: TimingStoryLike): [CompareRow, CompareRow
   const mins = rapidBoundaryMinutes(f);
   const rapidTone: CompareRow['tone'] = f.type === 'timing_story' ? 'concern' : 'muted';
   return [
-    { label: `Within ${mins} min of eating`, count: f.bandCounts.rapid, tone: rapidTone },
-    { label: `${mins} min–${f.longGapHours}h after eating`, count: f.bandCounts.mid, tone: 'muted' },
-    { label: `${f.longGapHours}h+ after eating`, count: f.bandCounts.long, tone: 'concern' },
+    { label: formatTimingBandLabel('rapid', mins, f.longGapHours), count: f.bandCounts.rapid, tone: rapidTone },
+    { label: formatTimingBandLabel('mid', mins, f.longGapHours), count: f.bandCounts.mid, tone: 'muted' },
+    { label: formatTimingBandLabel('long', mins, f.longGapHours), count: f.bandCounts.long, tone: 'concern' },
   ];
 }
 
@@ -1385,7 +1386,7 @@ export function photoCompositionLines(f: TimingStoryLike): string[] {
   // Retained food is the LONG-band marker — food still recognizable long after eating is the
   // notable fact, so the line names the band it belongs to.
   if (rf && rf.count >= 1 && rf.denominator >= rf.count) {
-    lines.push(`Recognizable food ${f.longGapHours}h+ after eating: ${rf.count} of ${reads(rf.denominator)}.`);
+    lines.push(`Recognizable food ${f.longGapHours}h or more after eating: ${rf.count} of ${reads(rf.denominator)}.`);
   }
   if (hr && hr.count >= 1 && hr.denominator >= hr.count) lines.push(`Hair: ${hr.count} of ${reads(hr.denominator)}.`);
   if (bl && bl.count >= 1 && bl.denominator >= bl.count) lines.push(`Bile: ${bl.count} of ${reads(bl.denominator)}.`);
@@ -1401,7 +1402,7 @@ export function timingStoryVetLine(f: TimingStoryLike): string {
   const { band, count: inBand } = clockOf(f);
   const photoTail = f.photoComposition ? ' Photos are attached to some of these.' : '';
   if (band && inBand != null) {
-    return `The early-morning timing is worth flagging to your vet — ${inBand} of the ${count(longCountOf(f), 'episode', 'episodes')} ${f.longGapHours}h+ after eating fell ${localHourBand(band.startLocalHour, band.windowHours)}.${photoTail}`;
+    return `The early-morning timing is worth flagging to your vet — ${inBand} of the ${count(longCountOf(f), 'episode', 'episodes')} ${f.longGapHours}h or more after eating fell ${localHourBand(band.startLocalHour, band.windowHours)}.${photoTail}`;
   }
   return `The timing here — how long after eating these come — is the useful detail to mention to your vet.${photoTail}`;
 }
@@ -1463,13 +1464,13 @@ export const TRIAL_RTM_CONFOUND =
  *  null there too. */
 export function trialResponseCompareRows(f: TrialResponseFinding): CompareRow[] {
   const rapidRow: CompareRow = {
-    label: `Within ${f.rapidWindowMinutes} min of eating`,
+    label: formatTimingBandLabel('rapid', f.rapidWindowMinutes, f.longGapHours),
     count: f.rapid.trial,
     baseline: f.rapid.baseline,
     tone: f.rapid.trial >= 1 ? 'concern' : 'muted',
   };
   const longRow: CompareRow = {
-    label: `${f.longGapHours}h+ after eating`,
+    label: formatTimingBandLabel('long', f.rapidWindowMinutes, f.longGapHours),
     count: f.long.trial,
     baseline: f.long.baseline,
     tone: f.long.trial >= 1 ? 'concern' : 'muted',
@@ -1478,7 +1479,7 @@ export function trialResponseCompareRows(f: TrialResponseFinding): CompareRow[] 
   return [
     rapidRow,
     {
-      label: `${f.rapidWindowMinutes} min–${f.longGapHours}h after eating`,
+      label: formatTimingBandLabel('mid', f.rapidWindowMinutes, f.longGapHours),
       count: f.mid.trial,
       baseline: f.mid.baseline,
       tone: 'muted',

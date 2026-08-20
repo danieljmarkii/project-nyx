@@ -1356,8 +1356,8 @@ describe('A2 timing card — the three-band face (S2, time-ordered)', () => {
     expect(rows).toHaveLength(3);
     expect(rows[0]).toMatchObject({ label: 'Within 30 min of eating', count: 7, tone: 'concern' });
     // The middle band is anchored to its boundaries, never a bare "In between" to infer.
-    expect(rows[1]).toMatchObject({ label: '30 min–6h after eating', count: 6, tone: 'muted' });
-    expect(rows[2]).toMatchObject({ label: '6h+ after eating', count: 7, tone: 'concern' });
+    expect(rows[1]).toMatchObject({ label: '30 min to 6h after eating', count: 6, tone: 'muted' });
+    expect(rows[2]).toMatchObject({ label: '6h or more after eating', count: 7, tone: 'concern' });
   });
 
   it('the combined story tones BOTH phenotype ends concern; a lone empty-stomach card tones ONLY the long band', () => {
@@ -1371,7 +1371,7 @@ describe('A2 timing card — the three-band face (S2, time-ordered)', () => {
   });
 
   it('the long-band label reflects the payload boundary (6h — §0 D10), not a hardcoded 4h', () => {
-    expect(timingStoryBandRows(timingStory({ longGapHours: 6 }))[2].label).toBe('6h+ after eating');
+    expect(timingStoryBandRows(timingStory({ longGapHours: 6 }))[2].label).toBe('6h or more after eating');
   });
 
   it('the sample line is "N timed of M episodes · D days", honest denominator up front', () => {
@@ -1465,7 +1465,7 @@ describe('A2 timing card — the control side + L3 composition (S2, G4)', () => 
       }),
     );
     expect(lines).toHaveLength(3);
-    expect(lines[0]).toBe('Recognizable food 6h+ after eating: 4 of 6 photos we could read.');
+    expect(lines[0]).toBe('Recognizable food 6h or more after eating: 4 of 6 photos we could read.');
     expect(lines[1]).toBe('Hair: 2 of 8 photos we could read.');
     expect(lines[2]).toBe('Bile: 3 of 5 photos we could read.');
   });
@@ -1506,7 +1506,7 @@ describe('A2 timing card — the for-your-vet relay (descriptors, never labels)'
       emptyStomach({ longCount: 7, clockCount: 6, clockBand: { startLocalHour: 2, windowHours: 6 }, photoComposition: { hair: { count: 2, denominator: 5 } } }),
     );
     expect(line).toContain('The early-morning timing is worth flagging to your vet');
-    expect(line).toContain('6 of the 7 episodes 6h+ after eating fell between 2am and 8am');
+    expect(line).toContain('6 of the 7 episodes 6h or more after eating fell between 2am and 8am');
     expect(line).toContain('Photos are attached to some of these.');
   });
 
@@ -2289,8 +2289,8 @@ describe('trialResponseCompareRows (CUL-13 / B-766 — the two-sided count rows)
     // B-766: three bands that partition the timed episodes, same labels as the A2 timing card.
     expect(rows.map((r) => r.label)).toEqual([
       'Within 30 min of eating',
-      '30 min–6h after eating',
-      '6h+ after eating',
+      '30 min to 6h after eating',
+      '6h or more after eating',
     ]);
     // No mechanism word ("empty stomach"/"bilious") on any band.
     for (const r of rows) expect(r.label.toLowerCase()).not.toContain('empty stomach');
@@ -2311,7 +2311,7 @@ describe('trialResponseCompareRows (CUL-13 / B-766 — the two-sided count rows)
 
   it('B-766: an OLD cache (no `mid`) renders the pre-B-766 two-row form — never a crash', () => {
     const rows = trialResponseCompareRows(trialResponse({ mid: undefined }));
-    expect(rows.map((r) => r.label)).toEqual(['Within 30 min of eating', '6h+ after eating']);
+    expect(rows.map((r) => r.label)).toEqual(['Within 30 min of eating', '6h or more after eating']);
   });
 });
 
