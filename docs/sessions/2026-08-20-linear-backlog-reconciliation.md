@@ -1,5 +1,6 @@
-# 2026-08-20 — Scoped Linear backlog reconciliation (team Culprit)
+# Scoped Linear backlog reconciliation (team Culprit)
 
+**Date:** 2026-08-20 · record + STATUS update shipped via #688
 **Session type:** discovery / hygiene (backlog-groomer pass). Deliverable = Linear status fixes + this report. No code PRs.
 **Scope ruled in:** the 40 `In Progress` issues; the 30 Urgent/High `Todo` issues; a keep/archive recommendation pass over the ~398-issue Medium/Low tail. Ruled out: code-verifying the tail.
 **Skipped by instruction:** CUL-98 / CUL-293 (shipped 2026-08-20 via #685/#686) and the five Quick Wins closed that day (CUL-133/151/84/92/446).
