@@ -35,9 +35,10 @@ export type InsightType =
   | 'incident_red_flag'
   // Signals v2 (B-755) — the decomposed timing lanes. `empty_stomach_timing` is L1's lone
   // card (CUL-7); `timing_story` is the merged ⑤+L1 A2 card (CUL-12); `trial_response` is the
-  // event-driven trial card (L2, CUL-8/CUL-13). All render only behind `signals_v2` (client-render
-  // gate); a build with `signals_v2` off renders nothing for them, byte-identical to before this
-  // type existed (the G10 unknown-type contract).
+  // event-driven trial card (L2, CUL-8/CUL-13). GA'd (CUL-548): the client renders these
+  // whenever the payload carries them; the server's B-777 eligibility gate governs whether an
+  // account's payload carries one (until GA-3). The G10 unknown-type contract still protects a
+  // future lane merged ahead of its renderer.
   | 'empty_stomach_timing'
   | 'timing_story'
   | 'trial_response';
@@ -308,8 +309,8 @@ export interface PhotoComposition {
 // SILENCE, never inverted. Mirror of detection.ts EmptyStomachTimingFinding
 // (rendered fields); the server-only `associationalOnly` / `longEpisodeOnsets`
 // markers are omitted (the ⑤/⑥ mirror convention — carry only what renders).
-// Renders only behind `signals_v2` (CUL-12); no confidence tag (it shows its
-// sample size). Ranks with the timing lane.
+// Renders whenever the payload carries it (GA'd, CUL-548); no confidence tag (it
+// shows its sample size). Ranks with the timing lane.
 export interface EmptyStomachTimingFinding {
   type: 'empty_stomach_timing';
   priorityClass: 'insight';
@@ -349,8 +350,8 @@ export interface EmptyStomachTimingFinding {
 // phenotypes rather than two cards saying overlapping things. A lone ⑤ stays
 // `postprandial_timing`; a lone L1 stays `empty_stomach_timing`. Same guardrail
 // class as its parts: timing only, no syndrome name, no food-naming, no advice.
-// Mirror of detection.ts TimingStoryFinding (rendered fields). Renders only behind
-// `signals_v2` (CUL-12).
+// Mirror of detection.ts TimingStoryFinding (rendered fields). Renders whenever the
+// payload carries it (GA'd, CUL-548).
 export interface TimingStoryFinding {
   type: 'timing_story';
   priorityClass: 'insight';
@@ -400,7 +401,8 @@ export interface TimingStoryFinding {
 // confound honesty verbatim + the §3.4 adjacency line + the logged-days density disclosure. NO
 // attribution (G1), NO syndrome name / management advice (G3). The D2 absence-shaped SENTENCE lead
 // is NOT here — it ships only on Dr. Chen's sign-off (open); the count-row form is unconditional.
-// Mirror of detection.ts TrialResponseFinding (rendered fields); renders only behind `signals_v2`.
+// Mirror of detection.ts TrialResponseFinding (rendered fields); renders whenever the payload
+// carries it (GA'd, CUL-548).
 export interface TrialResponseFinding {
   type: 'trial_response';
   priorityClass: 'insight';

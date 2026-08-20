@@ -1,6 +1,5 @@
 import {
   deriveDisplayState,
-  buildingIntro,
   buildingDayNumber,
   buildingHeadline,
   buildingHeadlineLead,
@@ -17,7 +16,6 @@ import {
   formatWatchingGapSequence,
   NO_PATTERN_HEADLINE,
   NO_PATTERN_SUB,
-  noPatternIntro,
   staleIntro,
   ackUpdatingCopy,
   isNewWorsening,
@@ -66,7 +64,6 @@ import {
   timingStoryVetLine,
   DOT_LANE_MAX,
   isTrialResponse,
-  isSignalsV2Finding,
   TRIAL_RTM_CONFOUND,
   trialResponseCompareRows,
   trialResponseTimedReconciliationLine,
@@ -328,17 +325,13 @@ describe('signalFindingsSignature + hasUnseenFinding (B-284 §3 pulse contract)'
 });
 
 describe('empty-state intros', () => {
-  it('thread the pet name and never reassure or shout', () => {
-    for (const s of [buildingIntro('Pixel'), noPatternIntro('Pixel'), staleIntro('Pixel')]) {
-      expect(s).toContain('Pixel');
-      expect(s.includes('!')).toBe(false);
-      expect(REASSURANCE_RE.test(s)).toBe(false);
-    }
-  });
-  it('no_pattern is about the data and forward-looking, not a wellness claim', () => {
-    const s = noPatternIntro('Pixel');
-    expect(s.toLowerCase()).toContain('no clear patterns');
-    expect(s.toLowerCase()).toContain('yet');
+  // Only `stale` keeps a pre-uplift intro (CUL-547 deleted buildingIntro/noPatternIntro
+  // with the pre-uplift render path); the E1/E2 restyle copy is voice-tested below.
+  it('the stale intro threads the pet name and never reassures or shouts', () => {
+    const s = staleIntro('Pixel');
+    expect(s).toContain('Pixel');
+    expect(s.includes('!')).toBe(false);
+    expect(REASSURANCE_RE.test(s)).toBe(false);
   });
 });
 
@@ -2317,11 +2310,9 @@ const trialResponse = (over: Partial<TrialResponseFinding> = {}): TrialResponseF
 });
 
 describe('trial card — type guards (CUL-13)', () => {
-  it('isTrialResponse narrows only the trial finding; isSignalsV2Finding covers it + the timing pair', () => {
+  it('isTrialResponse narrows only the trial finding', () => {
     expect(isTrialResponse(trialResponse())).toBe(true);
     expect(isTrialResponse(correlation())).toBe(false);
-    expect(isSignalsV2Finding(trialResponse())).toBe(true);
-    expect(isSignalsV2Finding(correlation())).toBe(false);
   });
 });
 

@@ -4,8 +4,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Stack, useFocusEffect } from 'expo-router';
 import { theme, shadows } from '../../constants/theme';
 import { WhorlSpinner } from '../../components/brand/WhorlSpinner';
-import { useAllowlistFlag } from '../../hooks/useAppConfig';
-import { useBetaOptIn } from '../../lib/betaFeatures';
 import { usePetStore } from '../../store/petStore';
 import { timingBandMedianLabel } from '../../lib/patternsTiming';
 import {
@@ -27,17 +25,11 @@ import {
 // and the diet-structure rows with more room, and the "shows what, not why" line. A
 // same-stack child of app/insights (back → Patterns). Reads local state through
 // lib/patternsTrial — timing via lib/mealTiming (G9), length via getDietTrialProgress,
-// windowed on the trial's evidence bound. Reached only when `signals_v2` is on.
+// windowed on the trial's evidence bound. GA'd (CUL-548): the route renders on data presence.
 
 export default function TrialDetailRoute() {
   const { activePet } = usePetStore();
   const petName = activePet?.name ?? 'your pet';
-
-  // Gate on the flag itself — a deep link / direct push reaches this route without the
-  // dashboard's gated entry point. Two gates, never conflated (§5), same as the card.
-  const signalsV2Eligible = useAllowlistFlag('signals_v2');
-  const signalsV2OptedIn = useBetaOptIn('signals_v2');
-  const signalsV2 = signalsV2Eligible && signalsV2OptedIn;
 
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [model, setModel] = useState<TrialSoFarModel | null>(null);
@@ -63,11 +55,11 @@ export default function TrialDetailRoute() {
 
   useFocusEffect(
     useCallback(() => {
-      if (!activePet || !signalsV2) return;
+      if (!activePet) return;
       const first = loadedRef.current !== activePet.id;
       loadedRef.current = activePet.id;
       load(first);
-    }, [activePet?.id, signalsV2, load]),
+    }, [activePet?.id, load]),
   );
 
   const phenotypeState = model ? trialPhenotypeState(model.phenotype) : null;
@@ -77,12 +69,7 @@ export default function TrialDetailRoute() {
     <SafeAreaView style={styles.container} edges={['left', 'right', 'bottom']}>
       <Stack.Screen options={{ headerShown: true, headerTitle: '', headerBackTitle: 'Patterns' }} />
 
-      {!signalsV2 ? (
-        // Flag off (or reached by deep link before the beta ships) — no leak.
-        <View style={styles.centered}>
-          <Text style={styles.stateText}>This isn't available yet.</Text>
-        </View>
-      ) : !activePet ? (
+      {!activePet ? (
         <View style={styles.centered}>
           <Text style={styles.stateText}>No pet selected.</Text>
         </View>

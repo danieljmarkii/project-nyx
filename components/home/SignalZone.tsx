@@ -8,8 +8,6 @@ import { SectionLabel } from '../ui/SectionLabel';
 import { InsightCard } from './InsightCard';
 import { useSignal } from '../../hooks/useSignal';
 import { useWatchingRows } from '../../hooks/useWatchingRows';
-import { useAllowlistFlag } from '../../hooks/useAppConfig';
-import { useBetaOptIn } from '../../lib/betaFeatures';
 import { Skeleton } from '../ui/Skeleton';
 import {
   BUILDING_FLOOR,
@@ -21,23 +19,13 @@ import {
   buildingDayCount,
   buildingHeadline,
   buildingHeadlineLead,
-  buildingIntro,
   buildingSub,
   coverageCopy,
-  isSignalsV2Finding,
   isTrialResponse,
-  noPatternIntro,
   staleIntro,
 } from '../../lib/signalCopy';
 import type { CachedFinding, CoverageDiagnostic } from '../../lib/signal';
 import type { WatchingRow } from '../../lib/signalWatching';
-
-// Ghosted "what insights look like" previews — kept in the building state so the
-// empty moment teaches what's coming (Principle 5: empty states are features).
-const PREVIEW_INSIGHTS = [
-  'Vomiting dropped 60% in the two weeks after switching proteins — the diet trial appears to be working.',
-  'Itching tends to follow meals containing chicken. No reaction logged after salmon.',
-];
 
 // B-734 (adversarial ④) — the skeleton's time-box. The window it covers is a normally-
 // fast network read, but nothing bounds that read, so the skeleton bounds itself: past
@@ -79,48 +67,26 @@ export function SignalZone({
     markSeen,
   } = useSignal();
 
-  // Signal/Home design uplift (B-721) — behind `signal_design_v2`, resolved once here
-  // and threaded down so the whole zone reads one flag (fail-closed to the shipped
-  // surface for everyone else). SR-1 gates the live receipts (via LiveStack →
-  // InsightCard); SR-2 gates the empty states (E1 building / E2 no_pattern) below; SR-3
-  // gates the register (receded chrome + secondary compression) and the acknowledgment
-  // line. Flag-off renders the shipped surface byte-identical (FR-FLAG-2); `stale` is
-  // untouched on both paths. `dayNumber` / `eventCount` feed the E1 headline.
-  //
-  // FR-FLAG-4 (the beta-shelf composition): enablement flows through the beta workflow,
-  // never eligibility alone — `eligible && optedIn`, the B-712 two-gate rule (never
-  // conflated). Being in the cohort (the `app_config` allowlist) makes the "Signal
-  // redesign" card VISIBLE on app/settings/beta; the owner's local opt-in (default off,
-  // wiped on sign-out) is what turns it ON. Both hooks are called unconditionally (Rules
-  // of Hooks — no short-circuit), then combined; this mirrors BetaFeatureCard.
-  const eligible = useAllowlistFlag('signal_design_v2');
-  const optedIn = useBetaOptIn('signal_design_v2');
-  const designV2 = eligible && optedIn;
-
-  // Signals v2 (B-755 / CUL-12) — the A2 timing-story cards ride their OWN flag `signals_v2`
-  // (not signal_design_v2 — spec §0 D6: this track changes WHAT the engine says, not just how
-  // cards render, so a separate kill-switch + GA call). Same two-gate resolution (eligible &&
-  // optedIn — never conflated); fail-closed to nothing for everyone else. Both hooks are called
-  // unconditionally (Rules of Hooks — no short-circuit), then combined, mirroring designV2 above.
-  // Threaded to InsightCard, which renders a timing_story / empty_stomach_timing finding only
-  // when it is on (and nothing for those types when off — byte-identical). The beta-shelf opt-in
-  // row is PR 10; until then this is dark for everyone (optedIn is false with no shelf to flip).
-  const signalsV2Eligible = useAllowlistFlag('signals_v2');
-  const signalsV2OptedIn = useBetaOptIn('signals_v2');
-  const signalsV2 = signalsV2Eligible && signalsV2OptedIn;
+  // Signal/Home design uplift (B-721, SR-1..SR-6) — GA'd 2026-08-20 (CUL-546 Phase 1 /
+  // CUL-547): the uplift IS the Signal surface now. SR-1 the live receipts (via LiveStack →
+  // InsightCard), SR-2 the empty states (E1 building / E2 no_pattern), SR-3 the register
+  // (receded chrome + secondary compression) and the acknowledgment line all render
+  // unconditionally. The Signals-v2 lanes (B-755 / CUL-12/13/14 — the timing-story cards,
+  // the trial card, the watching rows) GA'd in the same PR (CUL-548): the client no longer
+  // gates them, so a v2 finding renders whenever the payload carries it (the server's B-777
+  // eligibility gate still governs whether an account's payload carries one, until GA-3).
+  // `dayNumber` / `eventCount` feed the E1 headline.
 
   // While the first cache read is in flight, hold the warm building state rather
   // than letting the empty findings flash 'stale' for a frame. B-734 (CUL-72, GA
-  // Phase 0): flag-ON does NOT render the heavy E1 during this window — a mature
-  // pet's live findings resolve a beat after mount/pet-switch, and the loud
-  // "getting to know {pet} / Day N" headline flashing over a pet with a live safety
-  // finding is self-contradicting. The flag-on loading frame is a content-shaped
-  // skeleton — and it is TIME-BOXED (adversarial ④): the wait it covers is the
-  // `readSignalCache` network read (Supabase/PostgREST — no timeout of its own), so an
-  // offline/hung read would otherwise hold the skeleton for the platform socket
-  // timeout. Past SIGNAL_LOAD_SKELETON_MS the zone falls through to the derived state
-  // (honest, and it un-suppresses the escalate-only gap row below). Flag-off keeps the
-  // shipped soft building intro for the whole load, byte-identical (FR-FLAG-2).
+  // Phase 0): this window does NOT render the heavy E1 — a mature pet's live findings
+  // resolve a beat after mount/pet-switch, and the loud "getting to know {pet} / Day N"
+  // headline flashing over a pet with a live safety finding is self-contradicting. The
+  // loading frame is a content-shaped skeleton — and it is TIME-BOXED (adversarial ④):
+  // the wait it covers is the `readSignalCache` network read (Supabase/PostgREST — no
+  // timeout of its own), so an offline/hung read would otherwise hold the skeleton for
+  // the platform socket timeout. Past SIGNAL_LOAD_SKELETON_MS the zone falls through to
+  // the derived state (honest, and it un-suppresses the escalate-only gap row below).
   const loading = isLoading && findings.length === 0;
   const [loadTimedOut, setLoadTimedOut] = useState(false);
   useEffect(() => {
@@ -131,21 +97,20 @@ export function SignalZone({
     const t = setTimeout(() => setLoadTimedOut(true), SIGNAL_LOAD_SKELETON_MS);
     return () => clearTimeout(t);
   }, [loading]);
-  const showSkeleton = designV2 && loading && !loadTimedOut;
+  const showSkeleton = loading && !loadTimedOut;
   const state = loading ? 'building' : displayState;
 
   // Signals v2 (B-755 / CUL-14) — the watching system (§4.4 / D5). Per-lane rows with
   // REAL partial counts, rendered inside whichever empty-state frame is live. Gated on
-  // signals_v2 AND an empty state (building / no_pattern): in `live` there is a real
-  // finding to show and in `stale` too little to say, so the rows never apply there. The
-  // hook reads local data ONLY when enabled, so flag-off / live / stale do zero extra
-  // work and stay byte-identical. `dayNumber` is shared with the E1 headline so the
-  // Change row's week count and the "Day N" headline always agree (one day definition).
-  // Not while the skeleton shows (B-734): the pet-switch reset just cleared localCtx,
-  // so a read keyed on the sentinel dayNumber would only be thrown away — but the gate
-  // is the SKELETON, not `loading`, so a hung read can never suppress the escalate-only
-  // gap row past the time-box (adversarial ④).
-  const watchingEnabled = signalsV2 && !showSkeleton && (state === 'building' || state === 'no_pattern');
+  // an empty state (building / no_pattern): in `live` there is a real finding to show and
+  // in `stale` too little to say, so the rows never apply there. The hook reads local
+  // data ONLY when enabled, so live / stale do zero extra work. `dayNumber` is shared
+  // with the E1 headline so the Change row's week count and the "Day N" headline always
+  // agree (one day definition). Not while the skeleton shows (B-734): the pet-switch
+  // reset just cleared localCtx, so a read keyed on the sentinel dayNumber would only be
+  // thrown away — but the gate is the SKELETON, not `loading`, so a hung read can never
+  // suppress the escalate-only gap row past the time-box (adversarial ④).
+  const watchingEnabled = !showSkeleton && (state === 'building' || state === 'no_pattern');
   const watching = useWatchingRows(watchingEnabled, dayNumber);
 
   // B-769 (CUL-29, PM-ruled D3a — GA Phase 0): the escalate-only gap row leaves the
@@ -160,13 +125,12 @@ export function SignalZone({
   // only, where the lead's canvas should dominate. The empty states keep the label
   // prominent (it orients the owner while the engine is still learning — the round-2.1
   // mock keeps E1/E2's label at full weight). The footer doorway recedes across every
-  // flag-on state (below). Both are token-only and gated: flag-off renders the shipped
-  // chrome, and the style prop stays a single reference so the snapshot is byte-identical.
-  const labelReceded = designV2 && state === 'live';
+  // state (below).
+  const labelReceded = state === 'live';
 
   // The acknowledgment line shows above the live findings while a fresh log's regen is in
   // flight (§5.3). Computed once — the render and the iOS announce below read the same value.
-  const showAck = designV2 && acknowledging && state === 'live';
+  const showAck = acknowledging && state === 'live';
 
   // `accessibilityLiveRegion` (on AckLine) is Android-only; announce imperatively on iOS
   // (Nyx ships iOS-first) so VoiceOver reads the "updating…" line when it appears — the
@@ -220,8 +184,6 @@ export function SignalZone({
         <LiveStack
           findings={findings}
           petName={petName}
-          designV2={designV2}
-          signalsV2={signalsV2}
           trialRunning={trialRunning}
           suppressTrialResponse={suppressTrialResponse}
         />
@@ -233,40 +195,19 @@ export function SignalZone({
         // the engine knows WHY there's no signal yet, surface the top coverage
         // diagnostic's one-line why + ≤1 safe action instead of the generic line.
         // CUL-14: the watching rows compose in additively (the gap row can still
-        // escalate on a mature record); dark + a no-op when signals_v2 is off.
-        designV2 ? (
-          <NoPatternStateV2
-            petName={petName}
-            coverage={coverage}
-            gapRow={gapRow}
-            needRows={needRows}
-            signalsV2={signalsV2}
-          />
-        ) : (
-          <NoPatternState
-            petName={petName}
-            coverage={coverage}
-            gapRow={gapRow}
-            needRows={needRows}
-            signalsV2={signalsV2}
-          />
-        )
-      ) : designV2 ? (
-        // B-734: the flag-on loading frame is a time-boxed skeleton, never the heavy E1.
-        showSkeleton ? (
-          <SignalLoadingSkeleton />
-        ) : (
-          <BuildingStateV2
-            petName={petName}
-            dayNumber={dayNumber}
-            eventCount={eventCount}
-            gapRow={gapRow}
-            needRows={needRows}
-            signalsV2={signalsV2}
-          />
-        )
+        // escalate on a mature record).
+        <NoPatternStateV2 petName={petName} coverage={coverage} gapRow={gapRow} needRows={needRows} />
+      ) : // B-734: the loading frame is a time-boxed skeleton, never the heavy E1.
+      showSkeleton ? (
+        <SignalLoadingSkeleton />
       ) : (
-        <BuildingState petName={petName} gapRow={gapRow} needRows={needRows} signalsV2={signalsV2} />
+        <BuildingStateV2
+          petName={petName}
+          dayNumber={dayNumber}
+          eventCount={eventCount}
+          gapRow={gapRow}
+          needRows={needRows}
+        />
       )}
 
       {/* §8 doorway into the Patterns dashboard — a quiet footer affordance, present in
@@ -280,13 +221,8 @@ export function SignalZone({
         style={styles.patternsLink}
       >
         {/* SR-3 (§5.2) — the footer doorway recedes (to the label's tertiary tier) across
-            every flag-on state so it never competes with the content. Single style
-            reference when off, so the shipped snapshot holds. */}
-        <Text
-          style={
-            designV2 ? [styles.patternsLinkText, styles.patternsLinkTextReceded] : styles.patternsLinkText
-          }
-        >
+            every state so it never competes with the content. */}
+        <Text style={[styles.patternsLinkText, styles.patternsLinkTextReceded]}>
           See all of {petName}'s patterns →
         </Text>
       </Pressable>
@@ -307,55 +243,6 @@ function AckLine({ petName }: { petName: string }) {
   );
 }
 
-// no_pattern — show the top coverage diagnostic (B-053) if the engine produced one,
-// else the honest generic line. The diagnostic is about DATA COVERAGE, never
-// wellness; the action (if any) is a calm corrective, never a nag.
-function NoPatternState({
-  petName,
-  coverage,
-  gapRow,
-  needRows,
-  signalsV2,
-}: {
-  petName: string;
-  coverage: CoverageDiagnostic[];
-  gapRow: WatchingRow | null;
-  needRows: WatchingRow[];
-  signalsV2: boolean;
-}) {
-  // CUL-14 — the watching rows compose in additively on the mature record (only the
-  // escalate-only gap row is likely to qualify here; the count floors are usually met).
-  // Flag-off (or no qualifying row) is byte-identical: the no-coverage branch keeps its
-  // bare <Text> via the early return, and the coverage branch adds null-rendering slots.
-  // B-769 (D3a): the gap row LEADS the frame — an escalation renders above the coverage
-  // nag, never below it (Principle 3); the needs rows keep their place after it.
-  const showGap = signalsV2 && gapRow !== null;
-  const showNeeds = signalsV2 && needRows.length > 0;
-  const showWatching = showGap || showNeeds;
-  const top = coverage[0];
-  if (!top) {
-    if (!showWatching) return <Text style={styles.intro}>{noPatternIntro(petName)}</Text>;
-    return (
-      <View>
-        {showGap && gapRow ? <GapEscalationRow row={gapRow} /> : null}
-        <Text style={styles.intro}>{noPatternIntro(petName)}</Text>
-        {showNeeds ? <WatchingNeedsBlock rows={needRows} /> : null}
-        <Text style={styles.watchingFloor}>{BUILDING_FLOOR}</Text>
-      </View>
-    );
-  }
-  const { why, action } = coverageCopy(top, petName);
-  return (
-    <View>
-      {showGap && gapRow ? <GapEscalationRow row={gapRow} /> : null}
-      <Text style={styles.intro}>{why}</Text>
-      {action ? <Text style={styles.coverageAction}>{action}</Text> : null}
-      {showNeeds ? <WatchingNeedsBlock rows={needRows} /> : null}
-      {showWatching ? <Text style={styles.watchingFloor}>{BUILDING_FLOOR}</Text> : null}
-    </View>
-  );
-}
-
 // The card stack — findings are already ranked server-side (safety leads, then
 // the pet's context-lead type, then tier — §5/§8); we render in that order and
 // only add the visual rhythm. Hairline dividers between rows keep one container
@@ -363,35 +250,21 @@ function NoPatternState({
 function LiveStack({
   findings,
   petName,
-  designV2,
-  signalsV2,
   trialRunning,
   suppressTrialResponse,
 }: {
   findings: CachedFinding[];
   petName: string;
-  designV2: boolean;
-  signalsV2: boolean;
   trialRunning: boolean;
   suppressTrialResponse: boolean;
 }) {
-  // Drop the Signals-v2 types (the timing-story pair CUL-12 + the trial card CUL-13) when the flag
-  // is off: the server computes them uniformly for every account (spec §5), so a non-eligible cache
-  // DOES carry them, and the client gate is what keeps them dark. Filtering HERE (not just relying on
-  // InsightCard's null) keeps the divider rhythm and the lead/compact indexing correct — a null card
-  // would otherwise leave a stray divider and shift the true first row off `isLead`. A no-op until
-  // the PR-10 redeploy (no cache carries these types before then), so the shipped surface is
-  // byte-identical. NOTE: displayState/hasUnseen upstream still count the full set (a non-eligible
-  // account whose ONLY findings are Signals-v2 types would read 'live' with an empty stack) — an
-  // accepted edge until PR 10's flag-off QA, where the full-surface gate is set.
-  //
-  // B-789 (§5.2) — then drop the trial_response card when the record shows the animal isn't eating
+  // B-789 (§5.2) — drop the trial_response card when the record shows the animal isn't eating
   // (`suppressTrialResponse`, computed by Home from the same `trialInput` the strip withholds its
   // vomit line on). SUPPRESSION, NOT REORDER: §5.2 forbids a reassuring summary next to a refusal
   // even BELOW the safety card, so ranking it down is insufficient — the card must not render at all.
   // The server emits `trial_response` blind to the refusal (the day-1-refusal cat the relative-decline
-  // lane can't see), and the client is already this card's visibility gate (the signals_v2 filter
-  // above), so this is one more condition on the gate that already governs it.
+  // lane can't see), so the client is this card's visibility gate. This is a SAFETY gate, not a beta
+  // gate — it survives the CUL-548 flag retirement untouched.
   //
   // DIRECTION-AWARE (adversarial-reviewer): only the REASSURING `fewer_during_trial` card is the
   // §5.2 hazard. `detectTrialResponse` also emits `more_during_trial` — a vomiting ESCALATION during
@@ -400,12 +273,10 @@ function LiveStack({
   // So gate on the direction, not on `isTrialResponse` alone.
   //
   // Residual (finding 4 → CUL-527): when a suppressed `fewer` card is the SOLE finding, `displayState`
-  // (derived upstream over the full set) still reads 'live' and this stack renders empty — the exact
-  // CUL-12 edge documented above, now reachable for an eligible not-eating pet. Safe direction (no
-  // reassurance), and the escalation case is closed by the direction gate; the displayState fix rides
-  // the shared CUL-12 follow-up (CUL-527). The finding stays in the cache; nothing consumes it but this stack.
+  // (derived upstream over the full set) still reads 'live' and this stack renders empty. Safe
+  // direction (no reassurance), and the escalation case is closed by the direction gate; the
+  // displayState fix rides CUL-527. The finding stays in the cache; nothing consumes it but this stack.
   const ordered = [...findings]
-    .filter((f) => signalsV2 || !isSignalsV2Finding(f.finding))
     .filter(
       (f) =>
         !(
@@ -421,17 +292,13 @@ function LiveStack({
         <View key={`${f.finding.type}-${f.rank}`}>
           {i > 0 && <Divider style={styles.rowDivider} />}
           {/* SR-3 register (§5.1) — the lead (rank 0) keeps the enlarged canvas; secondary
-              rows compress into a tighter rhythm. Gated on the flag: off, `compact` is
-              false and every row renders the shipped padding. SR-5 (§3.4) threads
-              trialRunning for the falling reflection's mid-trial adjacency line. CUL-12
-              threads signalsV2 for the A2 timing-story cards (its own flag — spec §0 D6). */}
+              rows compress into a tighter rhythm. SR-5 (§3.4) threads trialRunning for the
+              falling reflection's mid-trial adjacency line. */}
           <InsightCard
             cached={f}
             petName={petName}
             isLead={i === 0}
-            designV2={designV2}
-            signalsV2={signalsV2}
-            compact={designV2 && i > 0}
+            compact={i > 0}
             trialRunning={trialRunning}
           />
         </View>
@@ -440,53 +307,10 @@ function LiveStack({
   );
 }
 
-function BuildingState({
-  petName,
-  gapRow,
-  needRows,
-  signalsV2,
-}: {
-  petName: string;
-  gapRow: WatchingRow | null;
-  needRows: WatchingRow[];
-  signalsV2: boolean;
-}) {
-  // CUL-14 — when signals_v2 is on and a lane has something to report, the real-count
-  // watching rows take the place of the ghosted "What the signal looks like" previews
-  // (the concrete version of the same "here's what's coming" idea). The lead intro
-  // stays. Flag-off (or no qualifying row) renders the shipped previews byte-identical.
-  // B-769 (D3a): the gap row renders in its own register above the needs block.
-  const showGap = signalsV2 && gapRow !== null;
-  const showNeeds = signalsV2 && needRows.length > 0;
-  const showWatching = showGap || showNeeds;
-  return (
-    <>
-      <Text style={styles.intro}>{buildingIntro(petName)}</Text>
-      {showWatching ? (
-        <View>
-          {showGap && gapRow ? <GapEscalationRow row={gapRow} /> : null}
-          {showNeeds ? <WatchingNeedsBlock rows={needRows} /> : null}
-          <Text style={styles.watchingFloor}>{BUILDING_FLOOR}</Text>
-        </View>
-      ) : (
-        <View style={styles.previews}>
-          <Text style={styles.previewsHeader}>What the signal looks like:</Text>
-          {PREVIEW_INSIGHTS.map((text, i) => (
-            <View key={i} style={styles.previewRow}>
-              <View style={styles.previewAccentBar} />
-              <Text style={styles.previewText}>{text}</Text>
-            </View>
-          ))}
-        </View>
-      )}
-    </>
-  );
-}
-
-// ── SR-2 empty states (B-721 §6) — flag-on E1 (building) + E2 (no_pattern) ──────
-// These render only behind `signal_design_v2`. E1 shows the SHAPE of what's coming:
-// ghosted receipts (a dot lane + a stacked compare), hollow dots, and DASHES where a
-// real receipt would print a count — never a fabricated number (§6). E2 is the mature
+// ── SR-2 empty states (B-721 §6) — E1 (building) + E2 (no_pattern) ─────────────
+// E1 shows the SHAPE of what's coming: ghosted receipts (a dot lane + a stacked
+// compare), hollow dots, and DASHES where a real receipt would print a count — never a
+// fabricated number (§6). E2 is the mature
 // "nothing established" record: the verbatim B-284 §9 copy + the top B-053 coverage
 // diagnostic, restyled into the card rhythm. Neither reads absence as wellness.
 
@@ -521,23 +345,20 @@ function BuildingStateV2({
   eventCount,
   gapRow,
   needRows,
-  signalsV2,
 }: {
   petName: string;
   dayNumber: number;
   eventCount: number;
   gapRow: WatchingRow | null;
   needRows: WatchingRow[];
-  signalsV2: boolean;
 }) {
-  // CUL-14 — when signals_v2 is on and a lane qualifies, the real-count watching rows
-  // replace the abstract "what we're watching for" ghost list (their concrete form) while
-  // the headline stays. The watching area carries its own safety floor, so the
-  // else-branch (the shipped B-721 E1) still owns the sub / BUILDING_FLOOR — no
-  // doubling. Flag-off (or no qualifying row) renders the ghost list byte-identical.
-  // B-769 (D3a): gap in its own register above the needs block.
-  const showGap = signalsV2 && gapRow !== null;
-  const showNeeds = signalsV2 && needRows.length > 0;
+  // CUL-14 — when a lane qualifies, the real-count watching rows replace the abstract
+  // "what we're watching for" ghost list (their concrete form) while the headline stays.
+  // The watching area carries its own safety floor, so the else-branch (the B-721 E1
+  // ghost list) still owns the sub / BUILDING_FLOOR — no doubling. No qualifying row
+  // renders the ghost list. B-769 (D3a): gap in its own register above the needs block.
+  const showGap = gapRow !== null;
+  const showNeeds = needRows.length > 0;
   const showWatching = showGap || showNeeds;
   return (
     <View>
@@ -682,21 +503,18 @@ function NoPatternStateV2({
   coverage,
   gapRow,
   needRows,
-  signalsV2,
 }: {
   petName: string;
   coverage: CoverageDiagnostic[];
   gapRow: WatchingRow | null;
   needRows: WatchingRow[];
-  signalsV2: boolean;
 }) {
-  // CUL-14 — additive watching rows (see NoPatternState). Flag-off renders the slots as
-  // null, so the shipped E2 tree is byte-identical. B-769 (D3a): the gap escalation
-  // renders directly under the "isn't an all-clear" sub — ABOVE the coverage nag, which
-  // is exactly the ordering Principle 3 requires (an escalation never sits below a
-  // data-quality corrective).
-  const showGap = signalsV2 && gapRow !== null;
-  const showNeeds = signalsV2 && needRows.length > 0;
+  // CUL-14 — additive watching rows. No qualifying row renders the slots as null, so the
+  // E2 tree is unchanged. B-769 (D3a): the gap escalation renders directly under the
+  // "isn't an all-clear" sub — ABOVE the coverage nag, which is exactly the ordering
+  // Principle 3 requires (an escalation never sits below a data-quality corrective).
+  const showGap = gapRow !== null;
+  const showNeeds = needRows.length > 0;
   const top = coverage[0];
   const cov = top ? coverageCopy(top, petName) : null;
   return (
@@ -823,53 +641,11 @@ const styles = StyleSheet.create({
     lineHeight: theme.lineHeightBody,
     marginBottom: theme.space2,
   },
-  // The single corrective action under a coverage diagnostic (B-053) — calm and
-  // gently actionable, never a nag. Sits just below the "why" line.
-  coverageAction: {
-    fontSize: theme.textSM,
-    fontWeight: theme.weightMedium,
-    color: theme.colorTextPrimary,
-    lineHeight: theme.lineHeightBody,
-    // Match the single-text states' bottom spacing so the two-line (action) variant
-    // doesn't sit tighter against the card edge (code-review nit).
-    marginBottom: theme.space2,
-  },
   rowDivider: {
     marginHorizontal: -theme.space1,
   },
-  previews: {
-    gap: theme.space1,
-  },
-  previewsHeader: {
-    fontSize: theme.textXS,
-    fontWeight: theme.weightMedium,
-    color: theme.colorTextTertiary,
-    textTransform: 'uppercase',
-    letterSpacing: theme.trackingWide,
-    marginBottom: 4,
-  },
-  previewRow: {
-    flexDirection: 'row',
-    gap: 10,
-    backgroundColor: theme.colorNeutralLight,
-    borderRadius: theme.radiusSmall,
-    padding: theme.space2,
-  },
-  previewAccentBar: {
-    width: 2,
-    borderRadius: 1,
-    backgroundColor: theme.colorAccent,
-    opacity: 0.5,
-  },
-  previewText: {
-    flex: 1,
-    fontSize: theme.textSM,
-    color: theme.colorTextPrimary,
-    lineHeight: theme.lineHeightBody,
-    opacity: 0.65,
-  },
 
-  // ── SR-2 empty states (E1/E2) — flag-on rhythm ──────────────────────────────
+  // ── SR-2 empty states (E1/E2) — the empty-state rhythm ──────────────────────
   v2Headline: {
     fontSize: theme.textMD,
     color: theme.colorTextPrimary,

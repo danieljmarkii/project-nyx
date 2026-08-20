@@ -1,9 +1,9 @@
-// Flag-ON wiring for the Signals v2 Patterns panels (B-755 PR 9, CUL-11). Proves that
-// with `signals_v2` on and each panel's model present, the Timing + "The trial so far"
-// cards render below the seeded dashboard, and tapping each opens its metric-detail
-// route. The models themselves are unit-tested in lib/patternsTiming.test /
-// lib/patternsTrial.test; this is the screen-gating + navigation proof. (Flag OFF is
-// asserted in index.test.tsx.)
+// Render wiring for the Signals v2 Patterns panels (B-755 PR 9, CUL-11; GA'd CUL-548).
+// Proves that with each panel's model present, the Timing + "The trial so far" cards render
+// below the seeded dashboard, and tapping each opens its metric-detail route. The models
+// themselves are unit-tested in lib/patternsTiming.test / lib/patternsTrial.test; this is
+// the screen render + navigation proof. (The model-null case — neither panel — is asserted
+// in index.test.tsx.)
 jest.mock('react-native-gifted-charts', () => ({ LineChart: () => null }));
 jest.mock('react-native-safe-area-context', () => {
   const { View } = require('react-native');
@@ -14,9 +14,6 @@ jest.mock('../../lib/feedingArrangements', () => ({ getActiveArrangementsForPet:
 jest.mock('../../hooks/useSummary', () => ({
   useSummary: () => ({ summary: null, displayState: 'building', petName: 'Nyx', isLoading: false }),
 }));
-// Flag ON for this suite — BOTH gates (eligible via useAllowlistFlag, optedIn via useBetaOptIn).
-jest.mock('../../hooks/useAppConfig', () => ({ useAllowlistFlag: () => true }));
-jest.mock('../../lib/betaFeatures', () => ({ useBetaOptIn: () => true }));
 jest.mock('expo-router', () => {
   const React = require('react');
   return {
@@ -116,8 +113,8 @@ beforeEach(() => {
   (getTrialPanel as jest.Mock).mockResolvedValue(trialModel);
 });
 
-describe('PatternsScreen — Signals v2 panels (flag on)', () => {
-  it('renders both panels below the seeded dashboard when the flag is on and models exist', async () => {
+describe('PatternsScreen — Signals v2 panels (GA)', () => {
+  it('renders both panels below the seeded dashboard when the models exist', async () => {
     const { getByText } = render(<PatternsScreen />);
     await waitFor(() => expect(getByText('Vomiting, timed from meals')).toBeTruthy());
     expect(getByText('The trial so far')).toBeTruthy();

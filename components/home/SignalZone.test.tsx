@@ -1,10 +1,9 @@
-// SignalZone — B-721 SR-2: the E1 (building) + E2 (no_pattern) empty-state restyle,
-// dark behind `signal_design_v2`. These tests pin the two flag invariants the spec
-// makes ACs (§11 / FR-FLAG):
-//   • FR-FLAG-2 — flag-OFF renders the shipped states byte-identical (snapshot-pinned).
-//   • FR-FLAG-1 — flag-ON renders the new E1/E2 and NONE of the shipped copy (no mix).
-// `live` and `stale` are out of SR-2's scope and untouched here (SR-1 owns `live`), so
-// they render identically in both worlds and aren't exercised.
+// SignalZone — the Signal/Home surface after the GA of the design uplift + the Signals-v2
+// lanes (CUL-547 + CUL-548). The uplift E1/E2 empty states, the SR-3 register (receded
+// chrome + acknowledgment line), the CUL-14 watching system, and the v2 story/trial cards
+// all render UNCONDITIONALLY now — the beta flags are gone. What stays gated is the B-789
+// safety suppression (a reassuring trial_response card over a not-eating record), which is
+// a safety gate, not a beta gate.
 
 jest.mock('expo-router', () => ({ router: { push: jest.fn() } }));
 
@@ -13,22 +12,8 @@ jest.mock('../../hooks/useSignal', () => ({
   useSignal: () => mockUseSignal(),
 }));
 
-const mockUseAllowlistFlag = jest.fn();
-jest.mock('../../hooks/useAppConfig', () => ({
-  useAllowlistFlag: (key: string) => mockUseAllowlistFlag(key),
-}));
-
-// FR-FLAG-4 — the render gate is `eligible && optedIn` (the B-712 two-gate rule), so the
-// beta opt-in is mocked too. It defaults ON in beforeEach so the flag-ON tests exercise
-// the uplift; the two-gate test flips it off to prove eligibility alone never enables it.
-const mockUseBetaOptIn = jest.fn();
-jest.mock('../../lib/betaFeatures', () => ({
-  useBetaOptIn: (key: string) => mockUseBetaOptIn(key),
-}));
-
-// CUL-14 — the watching-rows hook is mocked (it does a local SQLite read on focus; here we
-// drive its output directly). Default [] so every pre-existing test renders as before and
-// the watching block is inert unless a test opts into rows AND signals_v2.
+// The watching-rows hook does a local SQLite read on focus; here we drive its output
+// directly. Default [] so the watching block is inert unless a test opts into rows.
 const mockUseWatchingRows = jest.fn();
 jest.mock('../../hooks/useWatchingRows', () => ({
   useWatchingRows: (enabled: boolean, dayNumber: number) => mockUseWatchingRows(enabled, dayNumber),
@@ -42,8 +27,6 @@ import type { SignalState } from '../../hooks/useSignal';
 import type { CachedFinding, CoverageDiagnostic, TrialResponseFinding } from '../../lib/signal';
 import {
   ackUpdatingCopy,
-  buildingIntro,
-  noPatternIntro,
   buildingHeadline,
   BUILDING_SUB,
   BUILDING_SUB_SPARSE,
@@ -103,77 +86,17 @@ const EM_DASH = '—';
 
 beforeEach(() => {
   jest.clearAllMocks();
-  mockUseAllowlistFlag.mockReturnValue(false);
-  // Default opted-in, so the flag-ON describe's `eligible && optedIn` resolves on the
-  // allowlist alone (as it did before FR-FLAG-4). The two-gate test overrides this.
-  mockUseBetaOptIn.mockReturnValue(true);
-  // CUL-14 default: no watching rows, so the watching block never renders unless a test
-  // opts in. Keeps every pre-existing E1/E2 assertion (and its snapshot) unchanged.
+  // Default: no watching rows, so the watching block never renders unless a test opts in.
   mockUseWatchingRows.mockReturnValue([]);
 });
 
-describe('SignalZone — flag OFF (shipped surface byte-identical, FR-FLAG-2)', () => {
-  it('building renders the shipped ghost previews, not the new E1', () => {
-    mockUseSignal.mockReturnValue(signalState({ displayState: 'building' }));
-    const { getByText, queryByText, queryByLabelText, toJSON } = render(<SignalZone />);
-
-    expect(getByText(buildingIntro('Nyx'))).toBeTruthy();
-    expect(getByText('What the signal looks like:')).toBeTruthy();
-    // No part of the new E1 surface leaks when the flag is off.
-    expect(queryByLabelText(buildingHeadline('Nyx', 3, 11))).toBeNull();
-    expect(queryByText(BUILDING_FLOOR)).toBeNull();
-    expect(toJSON()).toMatchSnapshot();
-  });
-
-  it('no_pattern renders the shipped intro, not the new E2', () => {
-    mockUseSignal.mockReturnValue(signalState({ displayState: 'no_pattern' }));
-    const { getByText, queryByText, toJSON } = render(<SignalZone />);
-
-    expect(getByText(noPatternIntro('Nyx'))).toBeTruthy();
-    expect(queryByText(NO_PATTERN_HEADLINE)).toBeNull();
-    expect(queryByText(NO_PATTERN_SUB)).toBeNull();
-    expect(toJSON()).toMatchSnapshot();
-  });
-
-  it('the live register renders the shipped chrome byte-identical — no ack, full-accent footer, prominent label (FR-FLAG-2, SR-3)', () => {
-    // Even mid-regen (acknowledging true), flag-off shows none of SR-3's register: no ack
-    // line, the footer at full accent, the label at its shipped secondary tone.
-    mockUseSignal.mockReturnValue(
-      signalState({ displayState: 'live', findings: [liveFinding], acknowledging: true }),
-    );
-    const { getByText, queryByText, toJSON } = render(<SignalZone />);
-    expect(queryByText(ackUpdatingCopy('Nyx'))).toBeNull();
-    expect(getByText('Signal')).toHaveStyle({ color: theme.colorTextSecondary });
-    expect(getByText(/See all of Nyx's patterns/)).toHaveStyle({ color: theme.colorAccent });
-    expect(toJSON()).toMatchSnapshot();
-  });
-});
-
-describe('SignalZone — flag ON (E1/E2 restyle, FR-FLAG-1 no mix)', () => {
-  beforeEach(() => mockUseAllowlistFlag.mockReturnValue(true));
-
-  it('gates on exactly the signal_design_v2 flag', () => {
-    mockUseSignal.mockReturnValue(signalState({ displayState: 'building' }));
-    render(<SignalZone />);
-    expect(mockUseAllowlistFlag).toHaveBeenCalledWith('signal_design_v2');
-  });
-
-  it('also requires the beta opt-in — eligible but opted-OUT renders the shipped surface (FR-FLAG-4 two-gate)', () => {
-    // Eligible (allowlist true from beforeEach) but the owner hasn't opted in on the
-    // beta shelf → the redesign stays off; Home shows the shipped building surface.
-    mockUseBetaOptIn.mockReturnValue(false);
-    mockUseSignal.mockReturnValue(signalState({ displayState: 'building' }));
-    const { getByText, queryByText } = render(<SignalZone />);
-    expect(mockUseBetaOptIn).toHaveBeenCalledWith('signal_design_v2');
-    expect(getByText(buildingIntro('Nyx'))).toBeTruthy(); // shipped E1, not the restyle
-    expect(queryByText(BUILDING_FLOOR)).toBeNull(); // no leak of the new E1
-  });
-
-  it('E1 building: headline + watching-for rows + safety floor, none of the shipped copy', () => {
+// ── SR-2 empty states (E1 building / E2 no_pattern) — now the only empty surface ──
+describe('SignalZone — SR-2 empty states', () => {
+  it('E1 building: headline + watching-for rows + safety floor', () => {
     mockUseSignal.mockReturnValue(
       signalState({ displayState: 'building', dayNumber: 3, eventCount: 11 }),
     );
-    const { getByText, getByLabelText, getAllByText, queryByText } = render(<SignalZone />);
+    const { getByText, getByLabelText, getAllByText } = render(<SignalZone />);
 
     expect(getByLabelText(buildingHeadline('Nyx', 3, 11))).toBeTruthy();
     expect(getByText(BUILDING_SUB)).toBeTruthy();
@@ -185,23 +108,18 @@ describe('SignalZone — flag ON (E1/E2 restyle, FR-FLAG-1 no mix)', () => {
     expect(getByText('Last week')).toBeTruthy();
     expect(getByText('This week')).toBeTruthy();
     expect(getAllByText(EM_DASH)).toHaveLength(2);
-
-    // The shipped building surface is gone (no mix).
-    expect(queryByText(buildingIntro('Nyx'))).toBeNull();
-    expect(queryByText('What the signal looks like:')).toBeNull();
   });
 
-  it('E2 no_pattern: verbatim §9 copy + the top coverage diagnostic, not the shipped intro', () => {
+  it('E2 no_pattern: verbatim §9 copy + the top coverage diagnostic', () => {
     mockUseSignal.mockReturnValue(
       signalState({ displayState: 'no_pattern', coverage: [rateMeals] }),
     );
-    const { getByText, queryByText } = render(<SignalZone />);
+    const { getByText } = render(<SignalZone />);
 
     expect(getByText(NO_PATTERN_HEADLINE)).toBeTruthy();
     expect(getByText(NO_PATTERN_SUB)).toBeTruthy();
-    // The B-053 diagnostic still renders (restyled) — its why line names the pet.
+    // The B-053 diagnostic renders (restyled) — its why line names the pet.
     expect(getByText(/Nyx's meals aren't rated often enough/)).toBeTruthy();
-    expect(queryByText(noPatternIntro('Nyx'))).toBeNull();
   });
 
   it('E1 building: holds the day-count clause back on the pre-read frame (eventCount 0)', () => {
@@ -226,49 +144,16 @@ describe('SignalZone — flag ON (E1/E2 restyle, FR-FLAG-1 no mix)', () => {
 });
 
 // ── CUL-14 — the watching system (per-lane rows with real counts, §4.4 / D5) ──────
-describe('SignalZone — CUL-14 watching system (signals_v2)', () => {
+describe('SignalZone — CUL-14 watching system', () => {
   // The three mock §05 rows for Nyx-at-12-days (representative). buildWatchingRows +
   // every count/gap predicate is unit-tested in lib/signalWatching.test.ts; here the hook
-  // is mocked so the wiring + composition + flag gates are what's exercised.
+  // is mocked so the wiring + composition are what's exercised.
   const timingRow: WatchingRow = { key: 'timing', text: watchingTimingRow(4, 6) };
   const changeRow: WatchingRow = { key: 'change', text: watchingChangeRow(2, 2) };
   const gapRow: WatchingRow = { key: 'gap', text: watchingGapRow('vomiting', '6 days, then 3, then 2') };
   const allRows = [timingRow, changeRow, gapRow];
 
-  // signals_v2 eligible (+ opted-in by default); the design_v2 frame is chosen per-test.
-  function enableSignalsV2(designV2: boolean) {
-    mockUseAllowlistFlag.mockImplementation(
-      (key: string) => key === 'signals_v2' || (designV2 && key === 'signal_design_v2'),
-    );
-  }
-
-  it('flag OFF (signals_v2 off): the block never renders, even if the hook returns rows (FR-FLAG-2 defense-in-depth)', () => {
-    // allowlist false for everything (default) → signalsV2 false. Even with the hook
-    // returning rows, the component-level `signalsV2 &&` gate suppresses the block.
-    mockUseWatchingRows.mockReturnValue(allRows);
-    mockUseSignal.mockReturnValue(signalState({ displayState: 'building' }));
-    const { queryByText } = render(<SignalZone />);
-    expect(queryByText(WATCHING_SUB)).toBeNull();
-    expect(queryByText(timingRow.text)).toBeNull();
-    expect(queryByText('What the signal looks like:')).toBeTruthy(); // shipped surface intact
-  });
-
-  it('E1 (shipped frame): the real-count rows replace the ghost previews; the lead + floor stay', () => {
-    enableSignalsV2(false); // signals_v2 on, signal_design_v2 OFF → shipped frame
-    mockUseWatchingRows.mockReturnValue([timingRow, changeRow]);
-    mockUseSignal.mockReturnValue(signalState({ displayState: 'building' }));
-    const { getByText, queryByText } = render(<SignalZone />);
-
-    expect(getByText(buildingIntro('Nyx'))).toBeTruthy(); // the shipped lead stays
-    expect(queryByText('What the signal looks like:')).toBeNull(); // ghost previews replaced
-    expect(getByText(WATCHING_SUB)).toBeTruthy();
-    expect(getByText(timingRow.text)).toBeTruthy();
-    expect(getByText(changeRow.text)).toBeTruthy();
-    expect(getByText(BUILDING_FLOOR)).toBeTruthy(); // the verbatim safety floor travels with the block
-  });
-
-  it('E1 (design_v2 frame): the rows replace the ghost watching-for list; the floor renders exactly once', () => {
-    enableSignalsV2(true); // both flags on → B-721 E1 frame
+  it('E1 building: the real-count rows replace the ghost watching-for list; the headline + floor stay', () => {
     mockUseWatchingRows.mockReturnValue(allRows);
     mockUseSignal.mockReturnValue(signalState({ displayState: 'building', dayNumber: 12, eventCount: 31 }));
     const { getByText, getByLabelText, queryByText, getAllByText } = render(<SignalZone />);
@@ -282,14 +167,12 @@ describe('SignalZone — CUL-14 watching system (signals_v2)', () => {
   });
 
   it('the gap row is escalate-only — it renders only when the hook supplies it', () => {
-    enableSignalsV2(false);
     mockUseWatchingRows.mockReturnValue([timingRow, changeRow]); // no gap row
     mockUseSignal.mockReturnValue(signalState({ displayState: 'building' }));
     expect(render(<SignalZone />).queryByText(/Gaps between/)).toBeNull();
   });
 
   it('E2 no_pattern: the watching rows compose in additively beside the §9 copy + coverage', () => {
-    enableSignalsV2(true);
     mockUseWatchingRows.mockReturnValue([gapRow]); // mature record: only the gap lane escalates
     mockUseSignal.mockReturnValue(signalState({ displayState: 'no_pattern', coverage: [rateMeals] }));
     const { getByText } = render(<SignalZone />);
@@ -299,36 +182,23 @@ describe('SignalZone — CUL-14 watching system (signals_v2)', () => {
     expect(getByText(BUILDING_FLOOR)).toBeTruthy();
   });
 
-  it('flags are independent: signals_v2 ON while signal_design_v2 OFF renders rows in the SHIPPED frame', () => {
-    enableSignalsV2(false);
-    mockUseWatchingRows.mockReturnValue([timingRow]);
-    mockUseSignal.mockReturnValue(signalState({ displayState: 'building' }));
-    const { getByText, queryByText } = render(<SignalZone />);
-    expect(getByText(buildingIntro('Nyx'))).toBeTruthy(); // shipped chrome
-    expect(getByText(timingRow.text)).toBeTruthy();
-    expect(queryByText(BUILDING_SUB)).toBeNull(); // no B-721 E1 restyle copy leaks
-  });
-
-  it('no qualifying row (hook returns []): the frame renders its normal content, no empty block', () => {
-    enableSignalsV2(false);
+  it('no qualifying row (hook returns []): the frame renders its normal ghost content, no empty block', () => {
     mockUseWatchingRows.mockReturnValue([]);
     mockUseSignal.mockReturnValue(signalState({ displayState: 'building' }));
     const { getByText, queryByText } = render(<SignalZone />);
     expect(queryByText(WATCHING_SUB)).toBeNull(); // no sub with no rows
-    expect(getByText('What the signal looks like:')).toBeTruthy(); // shipped previews intact
+    for (const row of BUILDING_WATCHING_FOR) expect(getByText(row)).toBeTruthy(); // ghost list intact
   });
 
   it('gates the hook on an empty state — enabled is false in the live register (no watching read)', () => {
-    enableSignalsV2(false);
     mockUseSignal.mockReturnValue(signalState({ displayState: 'live', findings: [liveFinding] }));
     render(<SignalZone />);
     expect(mockUseWatchingRows.mock.calls.at(-1)?.[0]).toBe(false);
   });
 
-  // ── B-769 (CUL-29, PM-ruled D3a/D4 — GA Phase 0): the gap row's own register ────
+  // ── B-769 (CUL-29, PM-ruled D3a/D4): the gap row's own register ─────────────────
   describe('the gap row leaves the "still needs" umbrella (D3a)', () => {
     it('a lone gap row renders WITHOUT the WATCHING_SUB umbrella (an escalation is not an unmet need)', () => {
-      enableSignalsV2(true);
       mockUseWatchingRows.mockReturnValue([gapRow]);
       mockUseSignal.mockReturnValue(signalState({ displayState: 'no_pattern', coverage: [rateMeals] }));
       const { getByText, queryByText } = render(<SignalZone />);
@@ -338,7 +208,6 @@ describe('SignalZone — CUL-14 watching system (signals_v2)', () => {
     });
 
     it('the gap row renders ABOVE the coverage nag on no_pattern (Principle 3 — the escalation leads)', () => {
-      enableSignalsV2(true);
       mockUseWatchingRows.mockReturnValue(allRows);
       mockUseSignal.mockReturnValue(signalState({ displayState: 'no_pattern', coverage: [rateMeals] }));
       const tree = JSON.stringify(render(<SignalZone />).toJSON());
@@ -352,8 +221,7 @@ describe('SignalZone — CUL-14 watching system (signals_v2)', () => {
       expect(coverageAt).toBeLessThan(needsAt); // needs rows keep their place below
     });
 
-    it('the gap row leads the watching area in the E1 frames too', () => {
-      enableSignalsV2(true);
+    it('the gap row leads the watching area in the E1 frame too', () => {
       mockUseWatchingRows.mockReturnValue(allRows);
       mockUseSignal.mockReturnValue(signalState({ displayState: 'building', dayNumber: 12, eventCount: 31 }));
       const tree = JSON.stringify(render(<SignalZone />).toJSON());
@@ -362,10 +230,9 @@ describe('SignalZone — CUL-14 watching system (signals_v2)', () => {
   });
 });
 
-// ── GA Phase 0 — B-734 (CUL-72) the load window, B-735 (CUL-430) the sparse sub ───
-describe('SignalZone — B-734 first-load window (flag-on skeleton, never the heavy E1)', () => {
-  it('flag ON: loading renders the content-shaped skeleton, none of the E1 copy', () => {
-    mockUseAllowlistFlag.mockImplementation((key: string) => key === 'signal_design_v2');
+// ── B-734 (CUL-72) the load window, B-735 (CUL-430) the sparse sub ────────────────
+describe('SignalZone — B-734 first-load window (content-shaped skeleton, never the heavy E1)', () => {
+  it('loading renders the content-shaped skeleton, none of the E1 copy', () => {
     // The pet-switch reset state: findings cleared, localCtx at the sentinel, read in flight.
     mockUseSignal.mockReturnValue(
       signalState({ displayState: 'stale', isLoading: true, findings: [], dayNumber: 1, eventCount: 0 }),
@@ -377,15 +244,7 @@ describe('SignalZone — B-734 first-load window (flag-on skeleton, never the he
     expect(queryByText(BUILDING_FLOOR)).toBeNull();
   });
 
-  it('flag OFF: the loading window keeps the shipped soft building intro (FR-FLAG-2)', () => {
-    mockUseSignal.mockReturnValue(signalState({ displayState: 'stale', isLoading: true, findings: [] }));
-    const { getByText, queryByTestId } = render(<SignalZone />);
-    expect(getByText(buildingIntro('Nyx'))).toBeTruthy();
-    expect(queryByTestId('signal-loading-skeleton')).toBeNull();
-  });
-
   it('the watching hook is disabled while loading (no read keyed on the sentinel day count)', () => {
-    mockUseAllowlistFlag.mockReturnValue(true); // both flags on
     mockUseSignal.mockReturnValue(
       signalState({ displayState: 'stale', isLoading: true, findings: [], dayNumber: 1, eventCount: 0 }),
     );
@@ -396,7 +255,6 @@ describe('SignalZone — B-734 first-load window (flag-on skeleton, never the he
   it('the skeleton is TIME-BOXED — a hung read falls through to the derived state and re-enables the watching read (adversarial ④)', () => {
     jest.useFakeTimers();
     try {
-      mockUseAllowlistFlag.mockReturnValue(true); // both flags on
       mockUseSignal.mockReturnValue(
         signalState({ displayState: 'building', isLoading: true, findings: [], dayNumber: 1, eventCount: 0 }),
       );
@@ -416,7 +274,6 @@ describe('SignalZone — B-734 first-load window (flag-on skeleton, never the he
   });
 
   it('once the read lands (isLoading false), the real state renders — no lingering skeleton', () => {
-    mockUseAllowlistFlag.mockImplementation((key: string) => key === 'signal_design_v2');
     mockUseSignal.mockReturnValue(
       signalState({ displayState: 'building', isLoading: false, dayNumber: 3, eventCount: 11 }),
     );
@@ -428,7 +285,6 @@ describe('SignalZone — B-734 first-load window (flag-on skeleton, never the he
 
 describe('SignalZone — B-735 sparse-logger E1 sub (D5a)', () => {
   it('day ≤ 7 keeps the first-week sub; day > 7 swaps to the events-not-days framing', () => {
-    mockUseAllowlistFlag.mockImplementation((key: string) => key === 'signal_design_v2');
     mockUseSignal.mockReturnValue(signalState({ displayState: 'building', dayNumber: 3, eventCount: 11 }));
     const early = render(<SignalZone />);
     expect(early.getByText(BUILDING_SUB)).toBeTruthy();
@@ -446,9 +302,7 @@ describe('SignalZone — B-735 sparse-logger E1 sub (D5a)', () => {
 
 // ── SR-3 (B-721) — the register: acknowledgment line + receded chrome ─────────────
 describe('SignalZone — SR-3 acknowledgment line (§5.3)', () => {
-  it('shows the "Noted — updating …" line only when the flag is on AND a regen is in flight', () => {
-    // Flag ON + acknowledging → the line renders above the still-readable findings.
-    mockUseAllowlistFlag.mockReturnValue(true);
+  it('shows the "Noted — updating …" line when a regen is in flight in the live register', () => {
     mockUseSignal.mockReturnValue(
       signalState({ displayState: 'live', findings: [liveFinding], acknowledging: true }),
     );
@@ -458,16 +312,7 @@ describe('SignalZone — SR-3 acknowledgment line (§5.3)', () => {
     expect(on.getByText('A live finding sentence.')).toBeTruthy();
   });
 
-  it('never renders the ack line when the flag is off, even mid-regen (FR-FLAG-2)', () => {
-    mockUseAllowlistFlag.mockReturnValue(false);
-    mockUseSignal.mockReturnValue(
-      signalState({ displayState: 'live', findings: [liveFinding], acknowledging: true }),
-    );
-    expect(render(<SignalZone />).queryByText(ackUpdatingCopy('Nyx'))).toBeNull();
-  });
-
-  it('does not render the ack line when nothing is in flight (flag on, not acknowledging)', () => {
-    mockUseAllowlistFlag.mockReturnValue(true);
+  it('does not render the ack line when nothing is in flight (not acknowledging)', () => {
     mockUseSignal.mockReturnValue(
       signalState({ displayState: 'live', findings: [liveFinding], acknowledging: false }),
     );
@@ -475,7 +320,6 @@ describe('SignalZone — SR-3 acknowledgment line (§5.3)', () => {
   });
 
   it('is scoped to the live register — no ack over the E1 building state (E1 owns that reassurance)', () => {
-    mockUseAllowlistFlag.mockReturnValue(true);
     mockUseSignal.mockReturnValue(signalState({ displayState: 'building', acknowledging: true }));
     const view = render(<SignalZone />);
     expect(view.queryByText(ackUpdatingCopy('Nyx'))).toBeNull();
@@ -489,7 +333,6 @@ describe('SignalZone — SR-3 acknowledgment line (§5.3)', () => {
     const announce = jest
       .spyOn(AccessibilityInfo, 'announceForAccessibility')
       .mockImplementation(() => {});
-    mockUseAllowlistFlag.mockReturnValue(true);
     mockUseSignal.mockReturnValue(
       signalState({ displayState: 'live', findings: [liveFinding], acknowledging: true }),
     );
@@ -501,48 +344,31 @@ describe('SignalZone — SR-3 acknowledgment line (§5.3)', () => {
 });
 
 describe('SignalZone — SR-3 receded chrome (§5.2)', () => {
-  it('drops the section label a tier in the live register, flag on', () => {
-    mockUseAllowlistFlag.mockReturnValue(true);
+  it('drops the section label a tier in the live register', () => {
     mockUseSignal.mockReturnValue(signalState({ displayState: 'live', findings: [liveFinding] }));
     expect(render(<SignalZone />).getByText('Signal')).toHaveStyle({ color: theme.colorTextTertiary });
   });
 
-  it('keeps the label prominent flag-off (byte-identical) and in the empty states', () => {
-    // Flag off, live: the shipped secondary tone.
-    mockUseAllowlistFlag.mockReturnValue(false);
-    mockUseSignal.mockReturnValue(signalState({ displayState: 'live', findings: [liveFinding] }));
-    expect(render(<SignalZone />).getByText('Signal')).toHaveStyle({ color: theme.colorTextSecondary });
-    // Flag on, building (E1): the label stays prominent (only the live register recedes it).
-    mockUseAllowlistFlag.mockReturnValue(true);
+  it('keeps the label prominent in the empty states (only the live register recedes it)', () => {
     mockUseSignal.mockReturnValue(signalState({ displayState: 'building' }));
     expect(render(<SignalZone />).getByText('Signal')).toHaveStyle({ color: theme.colorTextSecondary });
   });
 
-  it('recedes the footer doorway to the tertiary tier flag-on, keeps full accent flag-off (AA-safe recede)', () => {
+  it('recedes the footer doorway to the tertiary tier (AA-safe recede)', () => {
     // The mock dims the footer to a lighter teal, but that fails AA on white (~1.6:1) —
-    // so the doorway recedes to the same grey tier as the label (≥4.5:1), never below the
-    // shipped accent footer. Flag-off is unchanged.
-    mockUseAllowlistFlag.mockReturnValue(true);
+    // so the doorway recedes to the same grey tier as the label (≥4.5:1).
     mockUseSignal.mockReturnValue(signalState({ displayState: 'live', findings: [liveFinding] }));
     expect(render(<SignalZone />).getByText(/See all of Nyx's patterns/)).toHaveStyle({
       color: theme.colorTextTertiary,
     });
-    mockUseAllowlistFlag.mockReturnValue(false);
-    mockUseSignal.mockReturnValue(signalState({ displayState: 'live', findings: [liveFinding] }));
-    expect(render(<SignalZone />).getByText(/See all of Nyx's patterns/)).toHaveStyle({
-      color: theme.colorAccent,
-    });
   });
 });
 
-// ── CUL-12 (Signals v2) — the LiveStack signals_v2 filter ─────────────────────
-// SignalZone owns two net-new pieces of logic this PR adds: the `signals_v2` two-gate
-// resolution and the LiveStack filter that drops timing-story findings when the flag is
-// off (the server computes them uniformly, so a non-eligible cache DOES carry them — §5).
-// These pin that the filter keeps the divider/lead rhythm correct, and DOCUMENT the known
-// edge the PR comment names (an only-story cache reads 'live' with an empty stack until
-// PR 10's flag-off QA closes it) so a future redeploy can't ship it silently.
-describe('SignalZone — CUL-12 signals_v2 LiveStack filter', () => {
+// ── CUL-12/13 (Signals v2) — the v2 cards render in the LiveStack (no client gate) ──
+// The client no longer gates the timing-story / trial cards (CUL-548): they render
+// whenever the payload carries them. What SignalZone still owns is the B-789 safety
+// suppression of the reassuring trial_response card over a not-eating record.
+describe('SignalZone — v2 cards in the LiveStack', () => {
   const storyFinding: CachedFinding = {
     rank: 1,
     text: 'Her vomiting keeps two kinds of time.',
@@ -568,20 +394,7 @@ describe('SignalZone — CUL-12 signals_v2 LiveStack filter', () => {
     },
   };
 
-  it('drops story findings from the stack when signals_v2 is OFF, keeps the other findings', () => {
-    mockUseAllowlistFlag.mockReturnValue(false); // signals_v2 (and signal_design_v2) off
-    mockUseSignal.mockReturnValue(
-      signalState({ displayState: 'live', findings: [liveFinding, storyFinding] }),
-    );
-    const view = render(<SignalZone />);
-    // The A2 face (its "Timing pattern" badge) is not rendered…
-    expect(view.queryByText('Timing pattern')).toBeNull();
-    // …but the non-story finding still renders — no stray gap in its place.
-    expect(view.queryByText('A live finding sentence.')).toBeTruthy();
-  });
-
-  it('renders the A2 story card in the stack when signals_v2 is ON', () => {
-    mockUseAllowlistFlag.mockImplementation((key: string) => key === 'signals_v2');
+  it('renders the A2 story card in the stack alongside the other findings', () => {
     mockUseSignal.mockReturnValue(
       signalState({ displayState: 'live', findings: [liveFinding, storyFinding] }),
     );
@@ -590,19 +403,6 @@ describe('SignalZone — CUL-12 signals_v2 LiveStack filter', () => {
     expect(view.queryByText('A live finding sentence.')).toBeTruthy();
   });
 
-  it('KNOWN EDGE (until PR 10): an only-story cache with the flag off reads live but renders no cards', () => {
-    // Documented, not desired: displayState is derived upstream (useSignal) from the FULL set,
-    // so a live state with an empty visible stack is possible. Pinned so PR 10's flag-off QA
-    // closes it deliberately rather than a redeploy shipping the blank card silently.
-    mockUseAllowlistFlag.mockReturnValue(false);
-    mockUseSignal.mockReturnValue(signalState({ displayState: 'live', findings: [storyFinding] }));
-    const view = render(<SignalZone />);
-    expect(view.queryByText('Timing pattern')).toBeNull();
-    // The zone frame is still present (the footer doorway renders in every state).
-    expect(view.queryByText(/See all of Nyx's patterns/)).toBeTruthy();
-  });
-
-  // CUL-13 — the trial card rides the SAME `signals_v2` gate via the shared isSignalsV2Finding filter.
   const trialFinding: CachedFinding = {
     rank: 1,
     text: 'A trial sentence about vomiting counts.',
@@ -628,18 +428,11 @@ describe('SignalZone — CUL-12 signals_v2 LiveStack filter', () => {
     },
   };
 
-  it('drops the trial card flag-off, keeps the other findings; renders it flag-on', () => {
-    mockUseAllowlistFlag.mockReturnValue(false);
+  it('renders the trial card in the stack alongside the other findings', () => {
     mockUseSignal.mockReturnValue(signalState({ displayState: 'live', findings: [liveFinding, trialFinding] }));
-    const off = render(<SignalZone />);
-    expect(off.queryByText('Day 20 of 56')).toBeNull();
-    expect(off.queryByText('A live finding sentence.')).toBeTruthy();
-
-    mockUseAllowlistFlag.mockImplementation((key: string) => key === 'signals_v2');
-    mockUseSignal.mockReturnValue(signalState({ displayState: 'live', findings: [liveFinding, trialFinding] }));
-    const on = render(<SignalZone />);
-    expect(on.queryByText('Day 20 of 56')).toBeTruthy();
-    expect(on.queryByText('A live finding sentence.')).toBeTruthy();
+    const view = render(<SignalZone />);
+    expect(view.queryByText('Day 20 of 56')).toBeTruthy();
+    expect(view.queryByText('A live finding sentence.')).toBeTruthy();
   });
 
   // ── B-789 (§5.2) — the not-eating suppression of the reassuring trial_response card ──
@@ -648,8 +441,7 @@ describe('SignalZone — CUL-12 signals_v2 LiveStack filter', () => {
   // never renders over a day-1 diet-refusal cat the relative-decline lane can't see. This is
   // SUPPRESSION, not reorder: the card must not render at all, even below a safety card.
   describe('B-789 suppression on a not-eating record', () => {
-    it('drops the trial card when suppressTrialResponse is set, even with signals_v2 ON; keeps the other findings', () => {
-      mockUseAllowlistFlag.mockImplementation((key: string) => key === 'signals_v2');
+    it('drops the trial card when suppressTrialResponse is set; keeps the other findings', () => {
       mockUseSignal.mockReturnValue(
         signalState({ displayState: 'live', findings: [liveFinding, trialFinding] }),
       );
@@ -660,8 +452,7 @@ describe('SignalZone — CUL-12 signals_v2 LiveStack filter', () => {
       expect(view.queryByText('A live finding sentence.')).toBeTruthy();
     });
 
-    it('renders the trial card when suppressTrialResponse is false (the eating trial, signals_v2 ON)', () => {
-      mockUseAllowlistFlag.mockImplementation((key: string) => key === 'signals_v2');
+    it('renders the trial card when suppressTrialResponse is false (the eating trial)', () => {
       mockUseSignal.mockReturnValue(
         signalState({ displayState: 'live', findings: [liveFinding, trialFinding] }),
       );
@@ -670,24 +461,11 @@ describe('SignalZone — CUL-12 signals_v2 LiveStack filter', () => {
       expect(view.queryByText('A live finding sentence.')).toBeTruthy();
     });
 
-    it('defaults to not suppressing — a non-Home caller (no prop) renders the card flag-on', () => {
-      mockUseAllowlistFlag.mockImplementation((key: string) => key === 'signals_v2');
+    it('defaults to not suppressing — a non-Home caller (no prop) renders the card', () => {
       mockUseSignal.mockReturnValue(
         signalState({ displayState: 'live', findings: [liveFinding, trialFinding] }),
       );
       expect(render(<SignalZone />).queryByText('Day 20 of 56')).toBeTruthy();
-    });
-
-    it('suppression is scoped to the trial card — a non-trial finding is untouched when set', () => {
-      // The predicate drops ONLY trial_response; the intake_decline safety card (which is
-      // exactly what leads over an eating-decline record) must still render.
-      mockUseAllowlistFlag.mockImplementation((key: string) => key === 'signals_v2');
-      mockUseSignal.mockReturnValue(
-        signalState({ displayState: 'live', findings: [liveFinding, trialFinding] }),
-      );
-      const view = render(<SignalZone suppressTrialResponse />);
-      expect(view.queryByText('A live finding sentence.')).toBeTruthy();
-      expect(view.queryByText('Day 20 of 56')).toBeNull();
     });
 
     // Direction-aware (adversarial-reviewer): only the REASSURING `fewer_during_trial` card is the
@@ -702,12 +480,10 @@ describe('SignalZone — CUL-12 signals_v2 LiveStack filter', () => {
         pooledBaselineCount: 2,
       };
       const moreTrialFinding: CachedFinding = { ...trialFinding, finding: moreFinding };
-      mockUseAllowlistFlag.mockImplementation((key: string) => key === 'signals_v2');
       mockUseSignal.mockReturnValue(
         signalState({ displayState: 'live', findings: [liveFinding, moreTrialFinding] }),
       );
       const view = render(<SignalZone suppressTrialResponse />);
-      // The escalation card renders (its "Day 20 of 56" face is present — no fewer card to confuse it)…
       expect(view.queryByText('Day 20 of 56')).toBeTruthy();
       expect(view.queryByText('A live finding sentence.')).toBeTruthy();
     });

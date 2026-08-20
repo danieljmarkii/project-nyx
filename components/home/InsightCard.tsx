@@ -24,7 +24,6 @@ import {
   isJointCandidate,
   isNewWorsening,
   isReflectionDensityWithheld,
-  isSignalsV2Finding,
   isTimingFinding,
   isTimingStory,
   isTrialResponse,
@@ -82,45 +81,39 @@ interface InsightBodyProps {
   // Subsequent findings stay in the body face so the surface reads as one calm
   // headline + supporting rows, never a column of competing serif headlines.
   isLead: boolean;
-  // The Signal/Home design uplift is dark behind `signal_design_v2` (SR-1, B-721).
-  // When false the body renders EXACTLY the shipped surface (byte-identical, FR-FLAG-2);
-  // when true a timing finding gains its card-face evidence strip (§4).
-  designV2: boolean;
 }
 
-function SentenceBody({ cached, isLead, designV2 }: InsightBodyProps) {
+function SentenceBody({ cached, isLead }: InsightBodyProps) {
   const finding = cached.finding;
   const tag = confidenceTag(finding);
   // Client-derived `New` for a worsening finding whose prior week held zero episodes
   // (§3.2 / Change Contract v1.1): the chip carries the novelty, and the sample line
   // drops the "N this week, 0 last week" pair the chip replaces — one carrier, not two
-  // (S10). Dark behind the flag; the other `New` cases (timing / first-appearance for
-  // other types) are v2, needing generate-signal prior-set memory.
-  const showNew = designV2 && isNewWorsening(finding);
-  // The card-face sample line, with the two flag-on client swaps folded in — each S10
-  // (the face never re-asserts a comparison another element already owns): a `New`
-  // worsening drops its "0 last week" pair (the chip carries it), and a density-withheld
-  // falling reflection drops its incomparable "M last week" (§3.3 — SR-4 withheld it from
-  // the sentence, so the face must not put it back, or the expanded "we're not comparing"
+  // (S10). The other `New` cases (timing / first-appearance for other types) need
+  // generate-signal prior-set memory.
+  const showNew = isNewWorsening(finding);
+  // The card-face sample line, with the two client swaps folded in — each S10 (the face
+  // never re-asserts a comparison another element already owns): a `New` worsening drops
+  // its "0 last week" pair (the chip carries it), and a density-withheld falling
+  // reflection drops its incomparable "M last week" (§3.3 — SR-4 withheld it from the
+  // sentence, so the face must not put it back, or the expanded "we're not comparing"
   // line contradicts the card). The guards are inlined so TS narrows `finding` per branch.
-  // Flag-off → the shipped sample line, byte-identical (FR-FLAG-2).
-  const sample =
-    designV2 && isNewWorsening(finding)
-      ? worseningNewSampleLine(finding)
-      : designV2 && isReflectionDensityWithheld(finding)
-        ? reflectionWithheldSampleLine(finding)
-        : sampleLine(finding);
+  const sample = isNewWorsening(finding)
+    ? worseningNewSampleLine(finding)
+    : isReflectionDensityWithheld(finding)
+      ? reflectionWithheldSampleLine(finding)
+      : sampleLine(finding);
   return (
     <View style={styles.body}>
       <Text style={[styles.sentence, isLead && styles.sentenceLead]}>{cached.text}</Text>
       {finding.type === 'food_symptom_correlation' && isJointCandidate(finding) && (
         <LinkedPair proteins={proteinCluster(finding)} />
       )}
-      <CardFaceReceipt finding={finding} designV2={designV2} />
+      <CardFaceReceipt finding={finding} />
       {/* SR-5 (§5.4) — the medication-on-board context line on correlation + timing cards,
-          when a course is active in the finding window. Flag-gated; returns null off the
-          flag, for other types, and when the composed line trips the guardrail screen. */}
-      {designV2 ? <MedContextLine finding={finding} /> : null}
+          when a course is active in the finding window. Returns null for other types and
+          when the composed line trips the guardrail screen. */}
+      <MedContextLine finding={finding} />
       <View style={styles.metaRow}>
         {showNew && <NewChip />}
         {tag && <Badge label={tag} variant="muted" />}
@@ -133,16 +126,16 @@ function SentenceBody({ cached, isLead, designV2 }: InsightBodyProps) {
 // ── The A2 combined timing card (Signals v2 / B-755 / CUL-12) ─────────────────
 // The timing_story card (both phenotypes) + the lone empty_stomach_timing card. Face:
 // the server-phrased lead sentence (both phenotypes count-anchored), the three-band
-// Shape-C compare (≤30m / in between / 6h+, every count printed — S2), and a meta row
-// (a 'Timing pattern' badge + the "N timed of M episodes · D days" sample line). The med
-// line, the per-phenotype lanes, the L3 lines and the for-your-vet relay live in the
-// expand (TimingStoryExpanded). Reached ONLY when `signals_v2` is on (InsightCard gates
-// before the registry Body runs), so a non-eligible account renders nothing for these
-// types — byte-identical to before the type existed (FR-FLAG-2 / the G10 contract).
+// Shape-C compare (≤30m / in between / 6h+, every count printed — S2), and a meta row.
+// The med line, the per-phenotype lanes, the L3 lines and the for-your-vet relay live in the
+// expand (TimingStoryExpanded). GA'd (CUL-548): the card renders whenever the payload carries
+// a timing_story / empty_stomach_timing finding (the server's B-777 gate governs whether an
+// account's payload carries one, until GA-3). The G10 contract still protects a future,
+// not-yet-rendered lane via the registry `!Body` guard.
 function TimingStoryBody({ cached, isLead }: InsightBodyProps) {
   const finding = cached.finding;
-  // Registry-keyed + gated in InsightCard, so this is always a story type; the guard
-  // narrows the union for the copy helpers (and is a defensive null for an impossible call).
+  // Registry-keyed, so this is always a story type; the guard narrows the union for the
+  // copy helpers (and is a defensive null for an impossible call).
   if (!isTimingStory(finding)) return null;
   return (
     <View style={styles.body}>
@@ -161,14 +154,14 @@ function TimingStoryBody({ cached, isLead }: InsightBodyProps) {
 // pooled count comparison, direction-neutral) + the two per-phenotype count rows (rapid ≤30m / long
 // ≥6h, each two-sided "4 · was 8" — G2) + a meta row (the "Day N of M" badge + the "counted from days
 // you logged" sample line). The RTM/confound honesty, the §3.4 adjacency, the density disclosure and
-// the diet-structure context live in the expand (TrialResponseExpanded). Reached ONLY when
-// `signals_v2` is on (InsightCard gates before the registry Body runs) — byte-identical to before the
-// type existed when off (the G10 contract). The D2 absence-shaped SENTENCE lead is NOT here (open,
-// Dr. Chen gate); the count-row form is the unconditional one.
+// the diet-structure context live in the expand (TrialResponseExpanded). GA'd (CUL-548): the card
+// renders whenever the payload carries a trial_response finding (the server's B-777 gate governs
+// whether an account's payload carries one, until GA-3). The D2 absence-shaped SENTENCE lead is NOT
+// here (open, Dr. Chen gate); the count-row form is the unconditional one.
 function TrialResponseBody({ cached, isLead }: InsightBodyProps) {
   const finding = cached.finding;
-  // Registry-keyed + gated in InsightCard, so this is always a trial_response; the guard narrows the
-  // union for the copy helpers (and is a defensive null for an impossible call).
+  // Registry-keyed, so this is always a trial_response; the guard narrows the union for the copy
+  // helpers (and is a defensive null for an impossible call).
   if (!isTrialResponse(finding)) return null;
   // B-766 — the un-timeable reconciliation line renders BELOW the three band rows and ABOVE the meta
   // row, only when the timed bands don't already sum to the pooled lead (else null). It is what makes
@@ -193,7 +186,7 @@ function TrialResponseBody({ cached, isLead }: InsightBodyProps) {
 // gated on trialRunning), then the "what else changed" box with the diet-structure context in words
 // (no "%", B-733) + the logged-days density disclosure. The §5.4 med-on-board line trails when a
 // course is active. Every string count-anchored / never-verdicted (G1/G3). Rendered only for a
-// trial_response finding behind `signals_v2` (gated at the call site).
+// trial_response finding (gated at the call site by the expanded-receipt fork).
 function TrialResponseExpanded({ finding }: { finding: SignalFinding }) {
   if (!isTrialResponse(finding)) return null;
   const dietStructure = trialResponseDietStructureLine(finding);
@@ -233,6 +226,7 @@ function TrialResponseExpanded({ finding }: { finding: SignalFinding }) {
 // type that carries no context, and — via medContextLine — when the composed line trips
 // the guardrail screen (a "%" in the owner's drug name, B-733); the med context is
 // non-essential decoration on a benign card, so dropping it is fail-quiet, never a gap.
+// (Correlation/timing types only — for other types medContextLine returns null.)
 function MedContextLine({ finding }: { finding: SignalFinding }) {
   const line = medContextLine(finding);
   if (!line) return null;
@@ -242,7 +236,7 @@ function MedContextLine({ finding }: { finding: SignalFinding }) {
 // The `New`-for-worsening chip (§3.2 / SR-3). Accent-ink on the accent wash — a tinted
 // sibling of the confidence Badge, deliberately NOT rose: novelty is not alarm, so a
 // "this is new" cue carries no safety tone. Sized to the meta row's other chips (textXS)
-// so mixed chips read level. Renders only when the flag is on (gated at the call site).
+// so mixed chips read level. Renders only for a zero-prior worsening (gated at the call site).
 function NewChip() {
   return (
     <View style={styles.newChip}>
@@ -256,10 +250,9 @@ function NewChip() {
 // evidence: Shape A (dot lane) at v1 sample sizes, degrading to Shape C (within-window
 // vs outside) above the legibility cap — never bins (SD-4). Every other type stays
 // sentence-only (S1 safety faces stay plain; S10 correlation/intake/reflection are
-// already carried by their sample line). Returns null when the flag is off or the type
-// carries no strip, so the flag-off tree is unchanged (FR-FLAG-2).
-function CardFaceReceipt({ finding, designV2 }: { finding: SignalFinding; designV2: boolean }) {
-  if (!designV2 || !isTimingFinding(finding)) return null;
+// already carried by their sample line). Returns null when the type carries no strip.
+function CardFaceReceipt({ finding }: { finding: SignalFinding }) {
+  if (!isTimingFinding(finding)) return null;
   if (timingReceiptDegrades(finding)) {
     return <StackedCompare rows={timingCompareRows(finding)} />;
   }
@@ -269,9 +262,9 @@ function CardFaceReceipt({ finding, designV2 }: { finding: SignalFinding; design
 // The card-face receipt's evidence phrased as one sentence, for the card's OWN
 // accessibilityLabel — the strip Views are decorative (a self-label on them is
 // swallowed by the outer Pressable and never reaches VoiceOver; see SignalReceipts).
-// Null when the flag is off or the type carries no card-face strip.
-function cardFaceReceiptA11y(finding: SignalFinding, designV2: boolean): string | null {
-  if (!designV2 || !isTimingFinding(finding)) return null;
+// Null when the type carries no card-face strip.
+function cardFaceReceiptA11y(finding: SignalFinding): string | null {
+  if (!isTimingFinding(finding)) return null;
   return timingReceiptDegrades(finding)
     ? stackedCompareA11yLabel(timingCompareRows(finding))
     : dotLaneA11yLabel(finding);
@@ -340,7 +333,7 @@ function ExpandedReceipts({
 // lane + the early-morning clock lane where one exists), the honest un-timeable remainder
 // (S2), the §5.4 med-on-board line, the L3 photographed-content lines (present-only, never
 // reassuring — G4), and a plain for-your-vet relay (descriptors, never labels). Rendered
-// only for a story finding behind `signals_v2` (gated at the call site).
+// only for a story finding (gated at the call site by the expanded-receipt fork).
 function TimingStoryExpanded({ finding }: { finding: SignalFinding }) {
   if (!isTimingStory(finding)) return null;
   // Cap the dot lanes at the shared legibility limit (DOT_LANE_MAX): above it, individual dots
@@ -456,14 +449,14 @@ const INSIGHT_RENDERERS: Record<InsightType, (p: InsightBodyProps) => ReactEleme
   // sentence on the 'insight' rail; no confidence tag (it shows its sample size).
   timeofday_clustering: SentenceBody,
   // Signals v2 (B-755 / CUL-12) — the A2 combined timing card and its lone empty-stomach
-  // sibling. Their own face (three-band compare) + expand; rendered ONLY behind `signals_v2`
-  // (InsightCard returns null for them when the flag is off, so a non-eligible account's
-  // cache row is skipped — byte-identical to before the type existed).
+  // sibling. Their own face (three-band compare) + expand. GA'd (CUL-548): rendered
+  // whenever the payload carries the type; the server's B-777 gate governs whether an
+  // account's payload carries one, until GA-3.
   empty_stomach_timing: TimingStoryBody,
   timing_story: TimingStoryBody,
   // Signals v2 (B-755 / CUL-13) — the event-driven trial card (L2, the wedge). Its own face
-  // (server lead + two two-sided count rows + day badge) + expand; rendered ONLY behind
-  // `signals_v2` (InsightCard returns null for it when the flag is off — byte-identical).
+  // (server lead + two two-sided count rows + day badge) + expand. GA'd (CUL-548): rendered
+  // whenever the payload carries a trial_response finding.
   trial_response: TrialResponseBody,
 };
 
@@ -472,87 +465,72 @@ interface Props {
   petName: string;
   // True for the top-ranked row only — gates the display-face headline.
   isLead?: boolean;
-  // Signal/Home design uplift, dark behind `signal_design_v2` (SR-1, B-721). Default
-  // false so every non-uplift caller (and the flag-off path) renders the shipped card
-  // byte-identical; SignalZone resolves the allowlist flag and passes the real value.
-  designV2?: boolean;
   // B-721 SR-3 (§5.1) — the register compresses secondary (non-lead) findings into a
   // tighter vertical rhythm so the lead's canvas dominates. Set by SignalZone for the
-  // register's secondary rows; default false, so every other caller and the flag-off
-  // path render the shipped padding byte-identical (FR-FLAG-2). minHeight 44 is untouched,
-  // so the tap target is preserved — only the surrounding breathing room tightens.
+  // register's secondary rows; default false, so a lead row (and any other caller) keeps
+  // the full padding. minHeight 44 is untouched, so the tap target is preserved — only the
+  // surrounding breathing room tightens.
   compact?: boolean;
   // B-721 SR-5 (§3.4) — whether a diet trial is running for this pet (`isTrialRunning`,
   // resolved once by SignalZone). Gates ONLY the falling reflection's mid-trial adjacency
-  // line in the expanded state; default false, so every non-Home caller and the flag-off
-  // path are unaffected (the adjacency is also inside the flag-gated ExpandedReceipts).
+  // line in the expanded state; default false, so every non-Home caller is unaffected.
   trialRunning?: boolean;
-  // Signals v2 (B-755 / CUL-12) — the A2 timing-story cards render ONLY behind `signals_v2`
-  // (its OWN flag, not signal_design_v2 — spec §0 D6). Default false so a non-eligible
-  // account (and the flag-off path) renders nothing for a timing_story / empty_stomach_timing
-  // cache row — byte-identical to before the type existed (FR-FLAG-2 / the G10 contract).
-  // Independent of designV2: the A2 card composes with the SR-1 register but does not require it.
-  signalsV2?: boolean;
 }
 
 export function InsightCard({
   cached,
   petName,
   isLead = false,
-  designV2 = false,
   compact = false,
   trialRunning = false,
-  signalsV2 = false,
 }: Props) {
   const [expanded, setExpanded] = useState(false);
 
   const Body = INSIGHT_RENDERERS[cached.finding.type];
   // Unknown future type with no registered renderer: skip the card rather than
-  // crash the whole surface (forward-compatible with new detectors).
+  // crash the whole surface (G10 — forward-compatible with new detectors merged ahead of
+  // their client renderer).
   if (!Body) return null;
 
-  // A Signals-v2 type (timing story CUL-12, or the trial card CUL-13) on an account without the
-  // flag: render nothing (the server computes these uniformly for everyone — §5 — so a non-eligible
-  // cache DOES carry them; the client gate is what keeps them dark). Placed after the registry
-  // lookup so the flag-off tree is byte-identical to when these types had no renderer at all.
   const isStory = isTimingStory(cached.finding);
   const isTrial = isTrialResponse(cached.finding);
-  if (isSignalsV2Finding(cached.finding) && !signalsV2) return null;
 
   const rail = RAIL_COLOR[cached.finding.priorityClass];
 
   // The card is one accessible button (the whole row), so its label must carry the
   // card-face glance evidence too — a self-label on the receipt Views (or the med line)
   // would be swallowed by this container and never reach VoiceOver (code-review / MedStrip
-  // idiom). Flag-off (or a non-timing type) → null → the label stays exactly the shipped
-  // `cached.text`. SR-5: the med-on-board line folds in after the receipt when present, so
-  // VoiceOver hears the same card-face context a sighted owner reads.
+  // idiom). A non-timing type → null → the label stays exactly `cached.text`. SR-5: the
+  // med-on-board line folds in after the receipt when present, so VoiceOver hears the same
+  // card-face context a sighted owner reads.
   //
   // The A2 story card folds its three-band compare into the label instead; its med line is
   // in the EXPAND, not the face, so it is not part of the collapsed label (unlike the ⑤/⑥
   // face med line below).
+  // NB: use the type-guard functions inline here (not the `isStory` / `isTrial` booleans) so
+  // TypeScript narrows `cached.finding` for the copy helpers below; the booleans drive the
+  // expand fork, which passes `SignalFinding` straight through and needs no narrowing.
   let receiptA11y: string | null = null;
   let faceMedLine: string | null = null;
-  if (signalsV2 && isTimingStory(cached.finding)) {
+  if (isTimingStory(cached.finding)) {
     receiptA11y = stackedCompareA11yLabel(timingStoryBandRows(cached.finding));
-  } else if (signalsV2 && isTrialResponse(cached.finding)) {
+  } else if (isTrialResponse(cached.finding)) {
     // The trial card folds its band count rows, the B-766 un-timeable reconciliation (when present),
     // and the day badge into the label; its med line is in the EXPAND, not the face (unlike the ⑤/⑥
     // face med line), so it's not part of the collapsed label. VoiceOver hears the face foot too.
     const recon = trialResponseTimedReconciliationLine(cached.finding);
     receiptA11y = `${stackedCompareA11yLabel(trialResponseCompareRows(cached.finding))}${recon ? ` ${recon}` : ''} ${trialResponseDayBadge(cached.finding)}.`;
   } else {
-    receiptA11y = cardFaceReceiptA11y(cached.finding, designV2);
-    faceMedLine = designV2 ? medContextLine(cached.finding) : null;
+    receiptA11y = cardFaceReceiptA11y(cached.finding);
+    faceMedLine = medContextLine(cached.finding);
   }
   let accessibilityLabel = receiptA11y ? `${cached.text}. ${receiptA11y}` : cached.text;
   if (faceMedLine) accessibilityLabel = `${accessibilityLabel}. ${faceMedLine}`;
-  // B-727 (CUL-239 client half, GA Phase 0): the `New` chip is visual-only, and this
-  // card is ONE accessible button — children never reach VoiceOver — so the chip's fact
-  // must ride the label. Load-bearing for GA-3: when the server sentence retires its
-  // "after none the week before" clause, this clause is what keeps the novelty audible.
-  // Same gate as the chip itself (designV2), so label and chip appear together.
-  if (designV2 && isNewWorsening(cached.finding)) {
+  // B-727 (CUL-239 client half): the `New` chip is visual-only, and this card is ONE
+  // accessible button — children never reach VoiceOver — so the chip's fact must ride the
+  // label. Load-bearing for GA-3: when the server sentence retires its "after none the week
+  // before" clause, this clause is what keeps the novelty audible.
+  if (isNewWorsening(cached.finding)) {
     accessibilityLabel = `${accessibilityLabel}. New this week.`;
   }
 
@@ -570,27 +548,27 @@ export function InsightCard({
       accessibilityState={{ expanded }}
       accessibilityLabel={accessibilityLabel}
       accessibilityHint="Shows the evidence behind this insight"
-      // Single style reference when not compact, so the shipped card stays byte-identical
-      // (an inline [style, false] array drifts the snapshot — FR-FLAG-2).
+      // Single style reference when not compact (an inline [style, false] array would
+      // drift the card's structure for a lead row unnecessarily).
       style={compact ? [styles.row, styles.rowCompact] : styles.row}
     >
       <View style={[styles.rail, { backgroundColor: rail }]} />
       <View style={styles.content}>
-        <Body cached={cached} isLead={isLead} designV2={designV2} />
+        <Body cached={cached} isLead={isLead} />
         {expanded && (
           <>
             <Text style={styles.evidence}>{evidenceText(cached.finding, petName)}</Text>
-            {/* A signals_v2 card → its own expanded receipts: the A2 story card's lanes/control/L3,
-                or the trial card's RTM-confound + density + diet-structure. Otherwise the SR-1
-                (signal_design_v2) receipts. The flags are independent, but a finding is only ever one
-                shape, so this is an either/or chain, never two at once. */}
-            {signalsV2 && isStory ? (
+            {/* Each shape's own expanded receipts: the A2 story card's lanes/control/L3, the trial
+                card's RTM-confound + density + diet-structure, else the SR-1 receipts (timing control
+                side / safety phone script / reflection density). A finding is only ever one shape, so
+                this is an either/or chain, never two at once. */}
+            {isStory ? (
               <TimingStoryExpanded finding={cached.finding} />
-            ) : signalsV2 && isTrial ? (
+            ) : isTrial ? (
               <TrialResponseExpanded finding={cached.finding} />
-            ) : designV2 ? (
+            ) : (
               <ExpandedReceipts finding={cached.finding} petName={petName} trialRunning={trialRunning} />
-            ) : null}
+            )}
           </>
         )}
         <Text style={styles.expandHint}>{expanded ? 'Hide details' : "Why we're showing this"}</Text>

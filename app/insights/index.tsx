@@ -47,8 +47,6 @@ import { WeightCard } from '../../components/dashboard/WeightCard';
 import { AiSummaryCard } from '../../components/dashboard/AiSummaryCard';
 import { DashboardEmptyState } from '../../components/dashboard/DashboardEmptyState';
 import { useSummary } from '../../hooks/useSummary';
-import { useAllowlistFlag } from '../../hooks/useAppConfig';
-import { useBetaOptIn } from '../../lib/betaFeatures';
 import { getTimingPanel, type TimingPanelModel } from '../../lib/patternsTiming';
 import { getTrialPanel, type TrialSoFarModel } from '../../lib/patternsTrial';
 import { TimingPanelCard } from '../../components/dashboard/TimingPanelCard';
@@ -84,16 +82,9 @@ export default function PatternsScreen() {
   const { summary } = useSummary();
 
   // Signals v2 (B-755 PR 9, CUL-11) — the two additive Patterns panels (Timing + The
-  // trial so far), dark behind `signals_v2`. TWO gates, never conflated (§5 / the B-712
-  // beta shape, mirroring SignalZone): server allowlist eligibility AND a local beta
-  // opt-in. Both hooks called unconditionally (Rules of Hooks — no `&&` short-circuit on
-  // the hook calls), then combined. `signals_v2` is not in the beta registry until PR 10
-  // ships its shelf row, so `optedIn` is false for everyone today → dark for everyone,
-  // even an account on the server allowlist. Render-only + fail-closed: flag off ⇒ the
-  // panel effect no-ops, models stay null, nothing new renders (byte-identical / G10).
-  const signalsV2Eligible = useAllowlistFlag('signals_v2');
-  const signalsV2OptedIn = useBetaOptIn('signals_v2');
-  const signalsV2 = signalsV2Eligible && signalsV2OptedIn;
+  // trial so far). GA'd (CUL-548): the client no longer gates them, so they load
+  // whenever there's an active pet and render whenever their model has data (a pet with
+  // no vomiting / no trial simply shows neither).
   const [timingModel, setTimingModel] = useState<TimingPanelModel | null>(null);
   const [trialModel, setTrialModel] = useState<TrialSoFarModel | null>(null);
   const panelLoadIdRef = useRef(0);
@@ -227,8 +218,8 @@ export default function PatternsScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      // Flag off (or no pet): clear any prior models and load nothing — byte-identical off.
-      if (!activePet || !signalsV2) {
+      // No pet: clear any prior models and load nothing.
+      if (!activePet) {
         setTimingModel(null);
         setTrialModel(null);
         panelPetRef.current = null;
@@ -242,7 +233,7 @@ export default function PatternsScreen() {
         panelPetRef.current = activePet.id;
       }
       loadPanels(activePet.id);
-    }, [activePet?.id, signalsV2, loadPanels]),
+    }, [activePet?.id, loadPanels]),
   );
 
   return (
@@ -302,17 +293,17 @@ export default function PatternsScreen() {
                     needed by the frequency calendar (paging + drill-in fetch). */}
                 {cards.map((card) => renderCard(card, activePet.id, activePet.name))}
               </View>
-              {/* Signals v2 panels (dark behind `signals_v2`) — additive, below the
-                  seeded cards. Each renders only when the flag is on AND its model has
-                  data (a pet with no vomiting / no trial simply shows neither). */}
-              {signalsV2 && timingModel != null && (
+              {/* Signals v2 panels (GA'd, CUL-548) — additive, below the seeded cards.
+                  Each renders only when its model has data (a pet with no vomiting / no
+                  trial simply shows neither). */}
+              {timingModel != null && (
                 <TimingPanelCard
                   model={timingModel}
                   petName={activePet.name}
                   onPress={() => router.push('/insights/timing')}
                 />
               )}
-              {signalsV2 && trialModel != null && (
+              {trialModel != null && (
                 <TrialSoFarCard model={trialModel} onPress={() => router.push('/insights/trial')} />
               )}
             </>
