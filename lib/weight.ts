@@ -25,6 +25,7 @@ import { getDb } from './db';
 import { supabase } from './supabase';
 import { syncPendingEvents, syncPendingWeightChecks } from './sync';
 import { uuid } from './utils';
+import { LATEST_WEIGHT_KG_QUERY } from './weightQueries';
 
 // ── Unit conversion ─────────────────────────────────────────────────────────
 // Owners enter and read pounds; kilograms is the canonical storage unit
@@ -168,15 +169,7 @@ export async function insertWeightCheck(
 // reading's snapshot.
 export async function getLatestWeightKg(petId: string): Promise<number | null> {
   const db = getDb();
-  const row = await db.getFirstAsync<{ weight_kg: number }>(
-    `SELECT wc.weight_kg AS weight_kg
-       FROM weight_checks wc
-       JOIN events e ON e.id = wc.event_id
-      WHERE wc.pet_id = ? AND e.deleted_at IS NULL
-      ORDER BY e.occurred_at DESC
-      LIMIT 1`,
-    [petId],
-  );
+  const row = await db.getFirstAsync<{ weight_kg: number }>(LATEST_WEIGHT_KG_QUERY, [petId]);
   return row?.weight_kg ?? null;
 }
 

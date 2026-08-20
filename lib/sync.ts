@@ -1,5 +1,6 @@
 import { supabase } from './supabase';
 import { getDb, getWatermark, setWatermark } from './db';
+import { LATEST_WEIGHT_KG_QUERY } from './weightQueries';
 import { uploadPhoto, compressForUpload } from './storage';
 import {
   reconcileBatch,
@@ -536,7 +537,7 @@ export async function syncPendingWeightChecks(): Promise<void> {
 
   if (unsynced.length === 0) return;
 
-  await pushRows(db, 'weight_checks', unsynced, (w) => ({
+  const landed = await pushRows(db, 'weight_checks', unsynced, (w) => ({
     id: w.id,
     event_id: w.event_id,
     pet_id: w.pet_id,
@@ -549,6 +550,48 @@ export async function syncPendingWeightChecks(): Promise<void> {
     // lands with a usable updated_at for the next device to compare.
     updated_at: w.updated_at,
   }));
+
+  // CUL-293 — reconcile the denormalized pets.weight_kg snapshot for each pet whose
+  // reading just landed. The inline snapshot write at log/edit time (app/log.tsx and
+  // lib/weight.ts updateWeightCheck) is best-effort and is silently SKIPPED offline —
+  // the direct pets update simply fails and is only console.warn'd, so the server
+  // snapshot drifts from the reliably-synced weight_checks and never self-corrects.
+  // This is the retry path: syncPendingWeightChecks runs on foreground + reconnect, so
+  // once a reading syncs, its pet's snapshot is brought current here too. Only pets
+  // whose weight row actually LANDED are reconciled — never one still queued.
+  const landedPetIds = [...new Set(unsynced.filter((w) => landed.has(w.id)).map((w) => w.pet_id))];
+  for (const petId of landedPetIds) {
+    await reconcilePetWeightSnapshot(petId);
+  }
+}
+
+// Re-point the server-side pets.weight_kg snapshot at a pet's LATEST reading (by
+// occurred_at, soft-delete filtered) from the local mirror. The snapshot is a
+// denormalized convenience the profile header + weight pre-fill read; the source of
+// truth is weight_checks (which sync), and no server consumer treats pets.weight_kg as
+// a weigh-in (generate-report reads weight_checks and calls this column "the onboarding
+// snapshot"). Best-effort by contract: a failure is logged and swallowed so a snapshot
+// write can never block or throw into the sync loop, exactly like the inline writes it
+// backstops (CUL-293).
+//
+// The latest-reading read shares lib/weight.ts getLatestWeightKg's SQL via the I/O-free
+// LATEST_WEIGHT_KG_QUERY leaf module — imported by both sides rather than duplicated,
+// which is what lets sync.ts reuse it without the weight → sync import cycle.
+//
+// PRECONDITION: the caller owns the Pattern 4 session-freshness check — the sole caller,
+// syncPendingWeightChecks, calls getSession() and bails on null before the reconcile loop,
+// and this write rides that same authed client. A hypothetical future caller must do the
+// same (a session-less write would RLS-fail to 0 rows anyway). Exported for unit test.
+export async function reconcilePetWeightSnapshot(petId: string): Promise<void> {
+  try {
+    const db = getDb();
+    const latest = await db.getFirstAsync<{ weight_kg: number }>(LATEST_WEIGHT_KG_QUERY, [petId]);
+    if (latest?.weight_kg == null) return;
+    const { error } = await supabase.from('pets').update({ weight_kg: latest.weight_kg }).eq('id', petId);
+    if (error) console.warn('[sync] pets.weight_kg snapshot reconcile failed:', error.message);
+  } catch (e) {
+    console.warn('[sync] pets.weight_kg snapshot reconcile error:', e);
+  }
 }
 
 // Flush unsynced local events to Supabase.
