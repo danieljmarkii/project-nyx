@@ -28,9 +28,13 @@ The session located the live position first (all child issues Todo, no GA PRs, `
 
 **Mock-what-you-change:** `docs/culprit-signals-v2-mockups.html` gained **§08 — GA Phase 0, as shipped** (four frames: re-registered building frame · gap-leads-on-no_pattern · the quieted pet · the sparse-logger E1 · the B-727 before/after), §05 marked superseded; republished over the same artifact URL.
 
-## Verification
+## Verification + reviews
 
-`tsc --noEmit` clean · full jest: 241 suites / 5391 tests green (12 snapshots) · the B-734 regression test fails with the fix reverted · adversarial-reviewer + code-reviewer dispatched on the diff (verdicts recorded in the PR).
+`tsc --noEmit` clean · full jest: 241 suites / **5397** tests green (12 snapshots) · the B-734 regression test fails with the fix reverted.
+
+**code-reviewer:** ship-ready; one cleanup applied (`WATCHING_TIMING_QUIET_DAYS` derived from its `WATCHING_CHANGE_WEEKS_NEEDED × 7` anchor).
+
+**adversarial-reviewer: initial FAIL — three findings, all fixed same session** (full verdict + falsification attempts on PR #689): **(②)** a bimodal gap record (monthly, then 30h/26h/25h) passed all three gates and rendered *"are getting shorter — 1 day, then 1, then 1"* → fixed with the run-aware `watchingGapRowFromHours` (re-render in hours; sub-hour runs degrade to the neutral phrasing; the row never drops); **(③)** "New this week" was an unscoped novelty claim from a 7-day-window payload (a 3-weeks-ago relapse breaks it the day GA-3 retires the server's "after none") → week-scoped ("— the first in over a week") + isNew branches ordered skew-safe; **(④)** the loading skeleton was gated by an unbounded network read and suppressed the escalate-only gap row while stuck → time-boxed at 1.5s, falling through to the derived state. Server-side twins of ② and ③ recorded on CUL-550 for the GA-3 redeploy. Named accepted residual: the quiet gate's logging-gap-as-absence inference is safe only while its sole output is silent withdrawal — the docstring's ban on attaching copy to the quiet state is load-bearing.
 
 ## Where the GA plan stands after this session
 
