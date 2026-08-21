@@ -52,9 +52,9 @@
       "updated": "2026-08-21"
     },
     "generate-signal": {
-      "status": "pending",
+      "status": "deployed",
       "fingerprint": "sha256:29df1af63f029b51e1816a585064e2d29fd8a0b35eae36c30a1b6d0ae36995b3",
-      "reason": "GA-3 (CUL-550): the B-777 signals_v2 eligibility gate was removed from the engine — Signals v2 is now the only path for the Signal surface. Deploy owed from the Codespace (scripts/deploy-edge.sh generate-signal --deploy); set 'deployed' with this fingerprint after. Also carries the still-undeployed CUL-258 fetch-timeout work.",
+      "reason": "GA-3 (CUL-550) deployed 2026-08-21 from the Codespace (scripts/deploy-edge.sh generate-signal --deploy): the B-777 signals_v2 eligibility gate is removed from the engine — Signals v2 is the only path for the Signal surface. Live as generate-signal v32 (ACTIVE); the deployed bundle was verified gate-free (no signals_v2 / SIGNALS_V2_FLAG_KEY / resolveAllowlistFlag) before GA-4 (CUL-551) deleted the two app_config rows. This deploy also shipped the previously-undeployed CUL-258 fetch-timeout work, carried in the same main closure.",
       "ref": "CUL-550",
       "updated": "2026-08-21"
     }

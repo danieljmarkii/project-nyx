@@ -1,0 +1,58 @@
+-- ============================================================
+-- Retire the two Signal beta flags — delete the app_config rows
+-- (GA-4 / CUL-551, closes CUL-546 Phase 3)
+-- See: docs/nyx-signal-home-requirements.md §7 (FR-FLAG-5 retirement record),
+--      docs/nyx-signals-v2-requirements.md §5 (the B-777 amendment + retirement),
+--      docs/nyx-beta-features-requirements.md §4.3.1 (graduate policy — first two
+--      graduations), and CUL-546 (the PM GA ruling + ordering plan).
+-- ============================================================
+-- The PM called GA (2026-08-20) for both Signal betas: "Signal redesign"
+-- (`signal_design_v2` / B-721, seeded in migration 055) and "Deeper signals"
+-- (`signals_v2` / B-755, seeded in migration 057). Both graduate to generally
+-- available. Per FR-FLAG-5 each flag retires ONLY via an explicit PM GA ruling +
+-- a removal PR — never silently — and this is that removal's last step.
+--
+-- ORDERING — WHY THIS ROW DELETION COMES LAST (CUL-546 §"the mechanism"):
+-- The GA executes as 4 PRs + 1 flip in a load-bearing order. Deleting these two
+-- rows is safe ONLY because every reader of them is already gone:
+--   1. Client (GA-1/GA-2, #690) — both flag GATES removed; the client renders the
+--      v2 surfaces unconditionally, so a missing row can no longer hide them.
+--   2. Server (GA-3, #691 + Codespace redeploy) — `generate-signal` no longer
+--      reads `signals_v2` (the B-777 eligibility gate is deleted from the engine).
+--      This was the critical precondition: `resolveAllowlistFlag` FAILS CLOSED on a
+--      missing row, so deleting `signals_v2` while the deployed function still read
+--      it would have reverted the engine to pre-v2 for EVERY account. The deployed
+--      bundle was verified gate-free (generate-signal v32, ACTIVE) before this
+--      migration was applied.
+-- With no client gate and no server gate left, these rows are dead config: nothing
+-- in the product references either key. Deleting them removes the last artifact.
+--
+-- The beta MECHANISM is untouched. `resolveAllowlistFlag` / `useAllowlistFlag`, the
+-- opt-in store, `_shared/flags.ts`, and the `BETA_REGISTRY` all remain — the live
+-- betas `widget_enabled` (054) and `log_picker_v2` (056) still ride them. This
+-- removes exactly two registry rows and two `app_config` keys, never the primitive.
+--
+-- Migration Safety Pre-flight:
+--   Destructive:  y  (deletes two existing config rows from app_config. No column,
+--                     type, table, or policy is dropped/altered; only two data rows
+--                     are removed. Not additive — hence its own schema-isolated
+--                     migration, called out in the PR body.)
+--   Rollback:     re-insert the two rows (post-GA both are enabled-for-everyone):
+--                   INSERT INTO app_config (key, value) VALUES
+--                     ('signal_design_v2', '{"enabled": true}'::jsonb),
+--                     ('signals_v2',       '{"enabled": true}'::jsonb)
+--                   ON CONFLICT (key) DO NOTHING;
+--                 NOTE: a rollback is only meaningful if the client/server GATES are
+--                 also restored — with the GA client + engine live, re-inserting the
+--                 rows changes nothing (nobody reads them). This is documented, not a
+--                 reason to keep the rows.
+--   Backfill:     N/A — deletion only; no existing data is read or rewritten.
+--   Affected table: app_config (DELETE only). Row-count check the PM runs before
+--                 applying:
+--                   SELECT count(*) FROM app_config
+--                     WHERE key IN ('signal_design_v2','signals_v2');
+--                   -- expect: 2 before, 0 after.
+-- ============================================================
+
+DELETE FROM app_config
+  WHERE key IN ('signal_design_v2', 'signals_v2');
