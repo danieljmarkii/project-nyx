@@ -46,7 +46,7 @@
     },
     "generate-report": {
       "status": "hold",
-      "fingerprint": "sha256:c96818dc8937bd90cdf86a99527aa13add9c372ed41b1daa33484df38cbef7d0",
+      "fingerprint": "sha256:2f9f4a14a16ff2092066c87c71bd12d8508943e85db086424850f32cc19537b2",
       "reason": "B-494 HOLD: the report deliberately runs the pre-PR-7 off-diet heuristic until the refusal safety lane ships; the generate-report redeploy is gated on B-494 (see STATUS.md / Open Questions). Do NOT set `deployed` until B-494 clears. Fingerprint bumped for CUL-564: the report now runs the FULL Signals v2 composition (its §3.8 timing line renders timing_story + empty_stomach_timing, and drops L2 trial_response / L4 gap_shortening) — a REAL behavior change to the report, unlike the behavior-neutral GA-3 bump. When B-494 clears, the one redeploy ships BOTH the refusal safety lane and this v2 timing adoption.",
       "ref": "B-494",
       "updated": "2026-08-21"

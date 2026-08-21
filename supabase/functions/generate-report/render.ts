@@ -4152,9 +4152,11 @@ function timingLine(c: CorrelationSummary, snap: ReportSnapshot): string {
         case 'empty_stomach_timing':
           return `${num(t.detail.longCount)} of ${num(t.detail.eligibleCount)} timed ${sym} episodes came ${num(t.detail.longGapHours)} h or more after eating`
         // The merged ⑤+L1 story (Signals v2, CUL-564) — both bands over the one shared denominator.
-        // This is the card the pre-v2 report path dropped, taking the ⑤ with it.
+        // This is the card the pre-v2 report path dropped, taking the ⑤ with it. LEADS with the
+        // denominator (unlike the lone lines) so the two named bands read as subsets of a stated whole
+        // and the un-named middle band renders as "the rest, in between", not a gap (Dr. Chen cold-read).
         case 'timing_story':
-          return `${num(t.detail.rapidCount)} of ${num(t.detail.eligibleCount)} timed ${sym} episodes fell within ~${num(t.detail.rapidWindowMinutes)} min of eating, and ${num(t.detail.longCount)} came ${num(t.detail.longGapHours)} h or more after eating`
+          return `Of ${num(t.detail.eligibleCount)} timed ${sym} episodes, ${num(t.detail.rapidCount)} fell within ~${num(t.detail.rapidWindowMinutes)} min of eating and ${num(t.detail.longCount)} came ${num(t.detail.longGapHours)} h or more after`
         // ⑥ timeofday_clustering is extracted but deliberately not surfaced on the report (see
         // runDetection / the TimingFinding doc) — a clock restatement the vet reads from Appendix A.
         case 'timeofday_clustering':

@@ -1951,9 +1951,10 @@ Deno.test('CUL-564 — the merged ⑤+L1 timing_story renders both bands over th
   )
   const t = text(html)
   // Both bands, one shared denominator (12) — the card the pre-v2 report path dropped with the ⑤.
+  // Leads with the denominator so the two named bands read as subsets of a stated whole (Dr. Chen).
   assert.ok(
-    /3 of 12 timed vomiting episodes fell within ~30 min of eating, and 5 came 6 h or more after eating/.test(t),
-    'both the post-prandial and empty-stomach bands render on one line, over the shared denominator',
+    /Of 12 timed vomiting episodes, 3 fell within ~30 min of eating and 5 came 6 h or more after/.test(t),
+    'both bands render on one line, denominator-led, as subsets of the shared whole',
   )
   assert.ok(/co-occurrence, not cause/.test(t), 'associational framing')
 })
