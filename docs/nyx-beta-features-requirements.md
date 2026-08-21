@@ -1,6 +1,6 @@
 # Nyx — Beta Features Program: Requirements & PR Plan
 
-**Version:** 1.1 — build-ready for **Phase 1 + Phase 2** (§4.3 scoping resolved) | **Last Updated:** 2026-08-09
+**Version:** 1.1 — build-ready for **Phase 1 + Phase 2** (§4.3 scoping resolved) | **Last Updated:** 2026-08-21 (§4.3.1 — first two graduations recorded: the two Signal betas, GA 2026-08-20, CUL-551)
 **Backlog:** B-712 (program), B-713 (pre-mortem guardrails — §4.3 scoping **RESOLVED** 2026-08-08, D7–D9)
 **Status:** PM **phased-GO** 2026-08-06; the **§4.3 Phase-2 scoping pass is resolved** (D7–D9, delegated to the team by the PM 2026-08-08) → **PR 3 unblocked**. Round-1 mocks shipped via #601 → `docs/culprit-beta-features-mockups.html` (artifact 🧪). Session records: `docs/sessions/2026-08-06-beta-features-program-mocks.md` + `docs/sessions/2026-08-08-beta-features-b713-scoping.md`.
 
@@ -102,6 +102,11 @@ The "beta graveyard" forms when a shipped-dark feature has no owner and no forci
   - **Extend** — a deliberate "keep dogfooding" with a fresh `reviewBy`.
 - **Audit venue:** the **periodic process retro** (`docs/personas.md` §Periodic Process Retro) gains a **check #5 — beta-shelf audit:** for every registry entry past `reviewBy`, force graduate / kill / extend. This reuses an existing ritual instead of inventing a standing meeting, matching the state-file-hygiene check #4 pattern. _(Adding check #5 to `personas.md` is a Tier-2 edit — flagged for PM approval in the session summary, not written unilaterally.)_
 - **Grandfather rule (#6 — "taketh away"):** when a beta graduates into a world where the program gates on Premium (D1/D9), a tester who *had* the feature keeps it — never paywall a care feature out from under someone who was using it (Pets > $, Principle 7). Implementation lands with the Track-3 premium gate (filed as its own backlog row so it is not lost at build time).
+
+**FIRST GRADUATIONS EXERCISED — the two Signal betas (GA 2026-08-20, recorded at CUL-551).** The D7 policy above had its first real use: the PM called GA (2026-08-20, CUL-546) for **both** Signal betas at once, each reaching the **graduate** terminal state — the first betas to leave the shelf, and the first `reviewBy` dates **closed early** rather than lapsing to the audit.
+  - **`signal_design_v2`** ("Signal redesign" / B-721) — `reviewBy` 2026-11-08 region, graduated ~11 weeks early. Retired via the "delete the gate + flag + registry row" mechanics: client render-path removed (GA-1, CUL-547, #690), the `BETA_REGISTRY` row removed (#690 — a comment left in `lib/betaFeatures.ts` records the removal), `app_config` flipped `{"enabled": true}` for continuity then the row deleted (CUL-549 / GA-4, CUL-551, migration 060).
+  - **`signals_v2`** ("Deeper signals" / B-755) — `reviewBy` 2026-11-13 region, graduated early. Same mechanics (GA-2, CUL-548, #690 + GA-3 server-gate removal, CUL-550, #691 + row deletion, CUL-551, migration 060).
+  - **What this validated:** the graduate path is a *deliberate PM call that retires the row*, exactly as specced — not an auto-disable, and the mechanism (the allowlist primitive, the opt-in store) survived untouched for the still-live betas (`widget_enabled`, `log_picker_v2`). One wrinkle worth recording for the next graduation: a beta whose engine gates **server-side** (`signals_v2` did, via B-777) adds a step the client-only betas don't have — the server gate must be **removed and redeployed** before the `app_config` row can be deleted, because a fail-closed server read of a missing row silently reverts the feature for everyone (`serverCost: true` betas inherit this ordering; §4.2's D6 rule is why it was caught). The `log_picker_v2` GA (FL-4) is client-only and can reuse the simpler shape.
 
 #### §4.3.2 Measurement + consent plan (D8; resolves OPEN-3)
 
