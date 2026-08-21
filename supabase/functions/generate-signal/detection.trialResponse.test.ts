@@ -102,13 +102,6 @@ const trialInput = (
   ...over,
 })
 
-// B-777 — the Signals v2 lanes + timing-lane composition run ONLY for a `signals_v2`-eligible account;
-// detectSignals gates them behind its third arg, which defaults to false (fail-closed). The tests
-// below that exercise the FLAG-ON path call through this helper (eligible=true); every OTHER bare
-// detectSignals(input(...)) call in this file keeps the default and thereby asserts the flag-OFF,
-// byte-identical output for the shipped detectors (spec §5 "byte-identical off"; B-777).
-const detectSignalsEligible = (i: DetectionInput) => detectSignals(i, DEFAULT_CONFIG, true)
-
 /** Seeded PRNG (mulberry32) — deterministic property sweep, no Math.random. */
 function mulberry32(seed: number): () => number {
   let a = seed >>> 0
@@ -445,7 +438,7 @@ Deno.test('detectTrialResponse — diet-structure deltas (treat share, meals/day
 // ── Ranking + pipeline integration ───────────────────────────────────────────
 
 Deno.test('detectTrialResponse — ranks band 1 (context-lead) for the trial pet, above a band-2 timing card', () => {
-  const ranked = detectSignalsEligible(
+  const ranked = detectSignals(
     trialInput({
       mealEvents: mealsAcross(77, 0),
       symptomEvents: [...spreadVomits(12, 74, 30), vomit(10)],
@@ -461,18 +454,18 @@ Deno.test('detectTrialResponse — ranks band 1 (context-lead) for the trial pet
   )
 })
 
-Deno.test('detectTrialResponse — B-777 flag-off: the wedge card is gated off, and never displaces a shipped card', () => {
-  // The SAME trial fixture as the ranks-band-1 test above. Flag-ON it emits the trial_response wedge
-  // (band 1). Flag-OFF the lane never fires, so a non-eligible account's Signal is byte-identical to
-  // pre-v2: no trial_response to occupy a slot, no v2 type at all (the redeploy displaces nothing).
+Deno.test('detectTrialResponse — pre-v2 (report path): the wedge card is off, and never displaces a shipped card', () => {
+  // The SAME trial fixture as the ranks-band-1 test above. composeV2 emits the trial_response wedge
+  // (band 1). pre-v2 (composeV2:false, the generate-report path) the lane never fires, so the report's
+  // Signal is the pre-v2 shape: no trial_response to occupy a slot, no v2 type at all.
   const args = { mealEvents: mealsAcross(77, 0), symptomEvents: [...spreadVomits(12, 74, 30), vomit(10)] }
-  const on = detectSignalsEligible(trialInput(args))
-  assert.ok(on.some((r) => r.finding.type === 'trial_response'), 'flag-ON emits the trial_response wedge card')
+  const on = detectSignals(trialInput(args))
+  assert.ok(on.some((r) => r.finding.type === 'trial_response'), 'v2 emits the trial_response wedge card')
 
-  const off = detectSignals(trialInput(args)) // eligible defaults false
-  assert.ok(!off.some((r) => r.finding.type === 'trial_response'), 'flag-OFF emits no trial_response')
+  const off = detectSignals(trialInput(args), DEFAULT_CONFIG, false)
+  assert.ok(!off.some((r) => r.finding.type === 'trial_response'), 'pre-v2 emits no trial_response')
   const V2 = new Set(['empty_stomach_timing', 'timing_story', 'trial_response', 'gap_shortening'])
-  assert.ok(!off.some((r) => V2.has(r.finding.type)), 'flag-OFF emits no Signals v2 finding type')
+  assert.ok(!off.some((r) => V2.has(r.finding.type)), 'pre-v2 emits no Signals v2 finding type')
 })
 
 // ── §PROPERTY SWEEP (the REQUIRED adversarial calibration gate) ───────────────

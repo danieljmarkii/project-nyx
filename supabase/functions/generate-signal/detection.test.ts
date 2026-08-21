@@ -170,13 +170,6 @@ const input = (over: Partial<DetectionInput>): DetectionInput => ({
   ...over,
 })
 
-// B-777 — the Signals v2 lanes + timing-lane composition run ONLY for a `signals_v2`-eligible account;
-// detectSignals gates them behind its third arg, which defaults to false (fail-closed). The tests
-// below that exercise the FLAG-ON path call through this helper (eligible=true); every OTHER bare
-// detectSignals(input(...)) call in this file keeps the default and thereby asserts the flag-OFF,
-// byte-identical output for the shipped detectors (spec §5 "byte-identical off"; B-777).
-const detectSignalsEligible = (i: DetectionInput) => detectSignals(i, DEFAULT_CONFIG, true)
-
 // ── fisherExactRightTail ────────────────────────────────────────────────────
 
 Deno.test('fisherExactRightTail — strong enrichment yields a small p', () => {
@@ -2786,7 +2779,7 @@ Deno.test('detectTimeOfDayClustering — §7#4 (Signals v2 / CUL-7): ⑥ SURVIVE
     1,
     '⑥ fires standalone on the clustered pattern',
   )
-  const ranked = detectSignalsEligible(input({ symptomEvents, mealEvents, timezone: NY }))
+  const ranked = detectSignals(input({ symptomEvents, mealEvents, timezone: NY }))
   assert.ok(ranked.some((r) => r.finding.type === 'postprandial_timing'), '⑤ fires')
   assert.ok(
     ranked.some((r) => r.finding.type === 'timeofday_clustering'),
@@ -2811,7 +2804,7 @@ Deno.test('detectTimeOfDayClustering — §7#4b (Signals v2 / CUL-7): ⑥ IS sup
     1,
     '⑥ fires standalone',
   )
-  const ranked = detectSignalsEligible(input({ symptomEvents, mealEvents, timezone: NY }))
+  const ranked = detectSignals(input({ symptomEvents, mealEvents, timezone: NY }))
   assert.ok(ranked.some((r) => r.finding.type === 'postprandial_timing'), '⑤ fires')
   assert.ok(
     !ranked.some((r) => r.finding.type === 'timeofday_clustering'),
@@ -2838,7 +2831,7 @@ Deno.test('detectTimeOfDayClustering — §7#4c (Signals v2 / CUL-7): the RESCUE
     symptomEvents.push(wVomit(day, 22, 0))
     mealEvents.push(feeding(day, 21, 40))
   }
-  const ranked = detectSignalsEligible(input({ symptomEvents, mealEvents, timezone: NY }))
+  const ranked = detectSignals(input({ symptomEvents, mealEvents, timezone: NY }))
   assert.ok(ranked.some((r) => r.finding.type === 'postprandial_timing'), '⑤ fires on the 6pm rapid episodes')
   const tod = ranked.find((r) => r.finding.type === 'timeofday_clustering')
   assert.ok(tod, '⑥ SURVIVES — its 6am cluster is disjoint from ⑤ (0% overlap)')
@@ -3272,7 +3265,7 @@ Deno.test('detectTimeOfDayClustering — §7#4d (Signals v2 / CUL-7, review find
     1,
     '⑥ fires standalone (before composition)',
   )
-  const ranked = detectSignalsEligible(input({ symptomEvents, mealEvents: meals, timezone: NY }))
+  const ranked = detectSignals(input({ symptomEvents, mealEvents: meals, timezone: NY }))
   assert.ok(ranked.some((r) => r.finding.type === 'empty_stomach_timing'), 'L1 survives')
   assert.ok(
     !ranked.some((r) => r.finding.type === 'timeofday_clustering'),
@@ -3300,7 +3293,7 @@ Deno.test('detectSignals — timing_story: same-symptom ⑤ AND L1 both fire →
     wVomit(18, 8, 0), wVomit(19, 8, 0), wVomit(20, 8, 0), wVomit(21, 8, 0), wVomit(22, 8, 0), wVomit(23, 8, 0), // LONG
     wVomit(24, 4, 0), // MID
   ]
-  const ranked = detectSignalsEligible(input({ symptomEvents, mealEvents: meals, timezone: NY }))
+  const ranked = detectSignals(input({ symptomEvents, mealEvents: meals, timezone: NY }))
   const story = ranked.find((r) => r.finding.type === 'timing_story')
   assert.ok(story, 'a merged timing_story surfaces')
   const f = story!.finding as TimingStoryFinding
@@ -3317,28 +3310,27 @@ Deno.test('detectSignals — timing_story: same-symptom ⑤ AND L1 both fire →
 
 Deno.test('detectSignals — a lone ⑤ (no empty-stomach episodes) stays postprandial_timing, never a timing_story', () => {
   const { symptomEvents, mealEvents } = ppGolden() // 4 rapid + 8 mid, 0 long → only ⑤ fires
-  const ranked = detectSignalsEligible(input({ symptomEvents, mealEvents }))
+  const ranked = detectSignals(input({ symptomEvents, mealEvents }))
   assert.ok(ranked.some((r) => r.finding.type === 'postprandial_timing'), '⑤ stays itself')
   assert.ok(!ranked.some((r) => r.finding.type === 'timing_story'), 'no merge without L1')
 })
 
 Deno.test('detectSignals — a lone L1 (no rapid episodes) stays empty_stomach_timing, never a timing_story', () => {
   const symptomEvents = [midVomit(17), longVomit(18), longVomit(19), longVomit(20), longVomit(21), longVomit(22), longVomit(23), longVomit(24)]
-  const ranked = detectSignalsEligible(input({ symptomEvents, mealEvents: twiceDailyMeals(10, 27) }))
+  const ranked = detectSignals(input({ symptomEvents, mealEvents: twiceDailyMeals(10, 27) }))
   assert.ok(ranked.some((r) => r.finding.type === 'empty_stomach_timing'), 'L1 stays itself')
   assert.ok(!ranked.some((r) => r.finding.type === 'timing_story'), 'no merge without ⑤')
 })
 
-// ── B-777 · flag-off byte-identical guarantee (the single-redeploy gate) ──────────
+// ── pre-v2 composition path (composeV2:false — the generate-report path, CUL-564) ──────────
 //
-// The engine runs uniformly for every account, but `signals_v2` gated ONLY the client — so the pending
-// `generate-signal` redeploy would have moved cards for the whole (flag-off) base at deploy time: the
-// composeTimingStory merge swallows ⑤, the episode-set-aware suppression removes a ⑥ a flag-off client
-// can't reconstruct, and a v2 card displaces a shipped one via the visible cap (the CUL-15 adversarial
-// G10/deploy FAIL). detectSignals now gates the whole v2 surface on eligibility; these tests feed the
-// SAME fixtures the flag-ON tests above use and assert the flag-OFF output is the pre-v2 (v27) shape —
-// the "cross-deploy flag-off byte-identical test" the fix owes. Each flips ONLY the eligibility arg, so
-// any divergence is attributable to the gate alone (a bare detectSignals(...) is eligible=false).
+// detectSignals defaults composeV2 to true (v2 — every Signal account since the GA graduation).
+// generate-report passes false: it renders only the pre-v2 finding taxonomy and would silently drop a
+// ⑤ merged into a timing_story. These tests feed the SAME fixtures the v2 tests above use and assert
+// the composeV2:false output is the pre-v2 (v27) shape — composeTimingStory does not run (⑤ survives
+// un-merged), the v2 lanes are not emitted, and the ⑥ suppression reverts to the v27 unconditional
+// rule. Each flips ONLY the composeV2 arg, so any divergence is attributable to the toggle alone (a
+// bare detectSignals(...) is v2).
 const V2_FINDING_TYPES = new Set<string>([
   'empty_stomach_timing', // L1
   'timing_story', // ⑤+L1 composition
@@ -3348,9 +3340,9 @@ const V2_FINDING_TYPES = new Set<string>([
 const hasV2 = (ranked: ReturnType<typeof detectSignals>) =>
   ranked.some((r) => V2_FINDING_TYPES.has(r.finding.type))
 
-Deno.test('B-777 — flag-off: a ⑤+L1 co-fire keeps the shipped ⑤ and emits NO v2 type (composeTimingStory gated)', () => {
+Deno.test('pre-v2 (report path): a ⑤+L1 co-fire keeps the shipped ⑤ and emits NO v2 type (composeTimingStory off)', () => {
   // The exact co-fire fixture the timing_story test above uses (thrice-daily feed; rapid + long + mid
-  // vomits on distinct days). Flag-ON it merges to one timing_story; flag-OFF the merge never runs.
+  // vomits on distinct days). composeV2 merges to one timing_story; pre-v2 the merge never runs.
   const meals: MealEvent[] = []
   for (let d = 5; d <= 27; d++) {
     meals.push(feeding(d, 1, 0)); meals.push(feeding(d, 9, 0)); meals.push(feeding(d, 17, 0))
@@ -3360,58 +3352,58 @@ Deno.test('B-777 — flag-off: a ⑤+L1 co-fire keeps the shipped ⑤ and emits 
     wVomit(18, 8, 0), wVomit(19, 8, 0), wVomit(20, 8, 0), wVomit(21, 8, 0), wVomit(22, 8, 0), wVomit(23, 8, 0), // long
     wVomit(24, 4, 0), // mid
   ]
-  const on = detectSignalsEligible(input({ symptomEvents, mealEvents: meals, timezone: NY }))
-  assert.ok(on.some((r) => r.finding.type === 'timing_story'), 'flag-ON merges to a timing_story')
+  const on = detectSignals(input({ symptomEvents, mealEvents: meals, timezone: NY }))
+  assert.ok(on.some((r) => r.finding.type === 'timing_story'), 'v2 merges to a timing_story')
 
-  const off = detectSignals(input({ symptomEvents, mealEvents: meals, timezone: NY })) // eligible defaults false
-  assert.ok(off.some((r) => r.finding.type === 'postprandial_timing'), 'flag-OFF keeps the shipped ⑤, un-merged')
-  assert.ok(!hasV2(off), 'flag-OFF emits NO Signals v2 finding type (no empty_stomach_timing / timing_story)')
+  const off = detectSignals(input({ symptomEvents, mealEvents: meals, timezone: NY }), DEFAULT_CONFIG, false)
+  assert.ok(off.some((r) => r.finding.type === 'postprandial_timing'), 'pre-v2 keeps the shipped ⑤, un-merged')
+  assert.ok(!hasV2(off), 'pre-v2 emits NO Signals v2 finding type (no empty_stomach_timing / timing_story)')
 })
 
-Deno.test('B-777 — flag-off: the ⑥ suppression reverts to the pre-v2 UNCONDITIONAL rule (the RESCUE case)', () => {
-  // The §7#4c RESCUE fixture: ⑤ fires on 6pm rapid episodes; a DISJOINT 6am cluster fires ⑥. Flag-ON the
-  // episode-set-aware rule keeps ⑥ (0% overlap). Flag-OFF the v27 rule drops any ⑥ whose symptom has a
-  // ⑤ — so ⑥ vanishes, exactly as the deployed engine does today. A ⑥ removed server-side cannot be
-  // reconstructed by a flag-off client, which is why the suppression must revert here, not client-side.
+Deno.test('pre-v2 (report path): the ⑥ suppression reverts to the v27 UNCONDITIONAL rule (the RESCUE case)', () => {
+  // The §7#4c RESCUE fixture: ⑤ fires on 6pm rapid episodes; a DISJOINT 6am cluster fires ⑥. composeV2 the
+  // episode-set-aware rule keeps ⑥ (0% overlap). pre-v2 the v27 rule drops any ⑥ whose symptom has a
+  // ⑤ — so ⑥ vanishes, exactly as the report's frozen detection does. A ⑥ removed in the engine cannot be
+  // reconstructed by the consumer, which is why the suppression reverts here, not in the report.
   const symptomEvents: SymptomEvent[] = []
   const mealEvents: MealEvent[] = []
   for (let i = 0; i < 8; i++) { const day = 15 + i; symptomEvents.push(wVomit(day, 10, 0)); mealEvents.push(feeding(day, 7, 0)) }
   for (let i = 0; i < 3; i++) { const day = 24 + i; symptomEvents.push(wVomit(day, 22, 0)); mealEvents.push(feeding(day, 21, 40)) }
 
-  const on = detectSignalsEligible(input({ symptomEvents, mealEvents, timezone: NY }))
-  assert.ok(on.some((r) => r.finding.type === 'timeofday_clustering'), 'flag-ON keeps the disjoint ⑥ (episode-set-aware)')
+  const on = detectSignals(input({ symptomEvents, mealEvents, timezone: NY }))
+  assert.ok(on.some((r) => r.finding.type === 'timeofday_clustering'), 'v2 keeps the disjoint ⑥ (episode-set-aware)')
 
-  const off = detectSignals(input({ symptomEvents, mealEvents, timezone: NY }))
-  assert.ok(off.some((r) => r.finding.type === 'postprandial_timing'), 'flag-OFF keeps ⑤')
-  assert.ok(!off.some((r) => r.finding.type === 'timeofday_clustering'), 'flag-OFF drops ⑥ (v27 unconditional suppression)')
-  assert.ok(!hasV2(off), 'flag-OFF emits NO v2 type')
+  const off = detectSignals(input({ symptomEvents, mealEvents, timezone: NY }), DEFAULT_CONFIG, false)
+  assert.ok(off.some((r) => r.finding.type === 'postprandial_timing'), 'pre-v2 keeps ⑤')
+  assert.ok(!off.some((r) => r.finding.type === 'timeofday_clustering'), 'pre-v2 drops ⑥ (v27 unconditional suppression)')
+  assert.ok(!hasV2(off), 'pre-v2 emits NO v2 type')
 })
 
-Deno.test('B-777 — flag-off: empty-stomach vomits surface as the shipped ⑥, with no L1 to consume them', () => {
-  // The §7#4d fixture: 12 empty-stomach vomits at one clock. Flag-ON, L1 fires and SUPPRESSES ⑥. Flag-OFF,
+Deno.test('pre-v2 (report path): empty-stomach vomits surface as the shipped ⑥, with no L1 to consume them', () => {
+  // The §7#4d fixture: 12 empty-stomach vomits at one clock. composeV2, L1 fires and SUPPRESSES ⑥. pre-v2,
   // L1 is never emitted and no ⑤ fires, so ⑥ surfaces — the v27 shape for these episodes.
   const meals = scheduleMeals([8])
   const symptomEvents = Array.from({ length: 12 }, (_v, i) => longAtHour(5, i))
 
-  const on = detectSignalsEligible(input({ symptomEvents, mealEvents: meals, timezone: NY }))
-  assert.ok(on.some((r) => r.finding.type === 'empty_stomach_timing'), 'flag-ON: L1 fires')
-  assert.ok(!on.some((r) => r.finding.type === 'timeofday_clustering'), 'flag-ON: ⑥ suppressed by L1')
+  const on = detectSignals(input({ symptomEvents, mealEvents: meals, timezone: NY }))
+  assert.ok(on.some((r) => r.finding.type === 'empty_stomach_timing'), 'v2: L1 fires')
+  assert.ok(!on.some((r) => r.finding.type === 'timeofday_clustering'), 'v2: ⑥ suppressed by L1')
 
-  const off = detectSignals(input({ symptomEvents, mealEvents: meals, timezone: NY }))
-  assert.ok(!hasV2(off), 'flag-OFF: no L1 emitted (no v2 type at all)')
-  assert.ok(off.some((r) => r.finding.type === 'timeofday_clustering'), 'flag-OFF: ⑥ surfaces (the pre-v2 clock finding)')
+  const off = detectSignals(input({ symptomEvents, mealEvents: meals, timezone: NY }), DEFAULT_CONFIG, false)
+  assert.ok(!hasV2(off), 'pre-v2: no L1 emitted (no v2 type at all)')
+  assert.ok(off.some((r) => r.finding.type === 'timeofday_clustering'), 'pre-v2: ⑥ surfaces (the pre-v2 clock finding)')
 })
 
-Deno.test('B-777 — transparency: a Signals-v2-silent input is deep-equal across the gate', () => {
-  // When no v2 lane fires, the gate must change NOTHING — the shipped detectors + legacy composition are
+Deno.test('pre-v2 (report path): a Signals-v2-silent input is deep-equal across the toggle', () => {
+  // When no v2 lane fires, the toggle must change NOTHING — the shipped detectors + legacy composition are
   // identical on both paths. todGolden is an early-morning ⑥ cluster with NO meals (⑤/L1 silent), no
   // trial (L2 silent), no shortening run (L4 silent). The first assertion proves the fixture really is
   // v2-silent (so this is a fair check); the deepEqual is the byte-identical guarantee itself.
   const inp = () => input({ symptomEvents: todGolden(), timezone: NY })
-  const on = detectSignalsEligible(inp())
+  const on = detectSignals(inp())
   assert.ok(!hasV2(on), 'the fixture fires no v2 lane (fair transparency check)')
   assert.ok(on.some((r) => r.finding.type === 'timeofday_clustering'), 'a real shipped finding is present')
-  assert.deepEqual(detectSignals(inp()), on, 'flag-off is byte-identical to flag-on when no v2 lane fires')
+  assert.deepEqual(detectSignals(inp(), DEFAULT_CONFIG, false), on, 'pre-v2 is byte-identical to v2 when no v2 lane fires')
 })
 
 // ── Composition & ranking (§5) ───────────────────────────────────────────────
@@ -4956,7 +4948,7 @@ Deno.test('SR-4 + L3 — detectors never emit the additive payload fields (decor
 // (detectSignals → computePhotoComposition → stripInternalOnsets) that index.ts runs — the unit tests
 // hand-build findings with onsets and so bypassed it.
 Deno.test('L3 seam — retained food renders on the LONE empty_stomach card (onsets survive detectSignals for the join, then strip)', () => {
-  const ranked = detectSignalsEligible(
+  const ranked = detectSignals(
     input({
       symptomEvents: [
         midVomit(17),
