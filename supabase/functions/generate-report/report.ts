@@ -2439,7 +2439,12 @@ function regimenEndIso(endedAt: string | null): string | null {
 }
 
 function runDetection(detInput: DetectionInput): DetectionExtract {
-  const ranked = detectSignals(detInput, DEFAULT_CONFIG)
+  // composeV2: false — the vet report renders only the pre-v2 finding taxonomy (its switch below
+  // handles ⑤/⑥ and drops timing_story / empty_stomach_timing / trial_response / gap_shortening on
+  // `default`). Running the v2 composition here would silently DROP a ⑤ that merged into a
+  // timing_story the report ignores. Signals v2 is GA for the Signal surface (CUL-546); the report
+  // stays pinned to pre-v2 detection until it adopts the v2 types (CUL-564), then this flips to true.
+  const ranked = detectSignals(detInput, DEFAULT_CONFIG, false)
   const established: EstablishedCorrelation[] = []
   const timing: TimingFinding[] = []
   let intakeDecline: IntakeDeclineFinding | null = null

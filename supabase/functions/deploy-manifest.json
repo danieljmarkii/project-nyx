@@ -46,17 +46,17 @@
     },
     "generate-report": {
       "status": "hold",
-      "fingerprint": "sha256:fbeb79c3146f0fe1f0837675e8dea3c43cf4070e6ebaec6a9342d75a6eaf2dc1",
-      "reason": "B-494 HOLD: the report deliberately runs the pre-PR-7 off-diet heuristic until the refusal safety lane ships; the generate-report redeploy is gated on B-494 (see STATUS.md / Open Questions). Do NOT set `deployed` until B-494 clears.",
+      "fingerprint": "sha256:35527e6333370535c3d27cef46c6cd5d24c2494018cb820d704234cb74f97c47",
+      "reason": "B-494 HOLD: the report deliberately runs the pre-PR-7 off-diet heuristic until the refusal safety lane ships; the generate-report redeploy is gated on B-494 (see STATUS.md / Open Questions). Do NOT set `deployed` until B-494 clears. Fingerprint bumped for GA-3 (CUL-550): the shared detection.ts changed and report.ts now passes composeV2:false — BEHAVIOR-NEUTRAL for the report (still pre-v2 detection); v2 adoption is CUL-564.",
       "ref": "B-494",
-      "updated": "2026-08-19"
+      "updated": "2026-08-21"
     },
     "generate-signal": {
       "status": "pending",
-      "fingerprint": "sha256:df8a0ddb38d19e57a8142cdf22e516df0b3f941dd3b1a3e6c8e80851a67777ca",
-      "reason": "Baseline at ledger creation (CUL-135); live-vs-main not verified. Known undeployed work: Signals-v2 redeploy gated (B-755 / #662) and CUL-258 fetch timeouts. Redeploy is gated — see STATUS.md before deploying.",
-      "ref": "CUL-135",
-      "updated": "2026-08-19"
+      "fingerprint": "sha256:29df1af63f029b51e1816a585064e2d29fd8a0b35eae36c30a1b6d0ae36995b3",
+      "reason": "GA-3 (CUL-550): the B-777 signals_v2 eligibility gate was removed from the engine — Signals v2 is now the only path for the Signal surface. Deploy owed from the Codespace (scripts/deploy-edge.sh generate-signal --deploy); set 'deployed' with this fingerprint after. Also carries the still-undeployed CUL-258 fetch-timeout work.",
+      "ref": "CUL-550",
+      "updated": "2026-08-21"
     }
   }
 }

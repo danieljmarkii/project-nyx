@@ -6036,18 +6036,18 @@ function suppressTimeOfDayWhenPostprandial(
 }
 
 /**
- * B-777 — the PRE-v2 (deployed v27) unconditional ⑤→⑥ suppression, restored verbatim as the
- * flag-off byte-identical path. `detectSignals` runs THIS (not the episode-set-aware version above)
- * for any account NOT eligible for `signals_v2`, so the redeploy changes NOTHING a non-eligible
- * account sees: a ⑥ whose symptom already has a ⑤ is dropped unconditionally, exactly as v27 does.
+ * The PRE-v2 (deployed v27) unconditional ⑤→⑥ suppression. `detectSignals` runs THIS (not the
+ * episode-set-aware version above) when `composeV2` is off — the `generate-report` path (report.ts
+ * passes `composeV2: false`), which renders only the pre-v2 finding taxonomy and would silently drop
+ * a ⑤ merged into a `timing_story` (CUL-564). A ⑥ whose symptom already has a ⑤ is dropped
+ * unconditionally, exactly as v27 did.
  *
  * Why a separate function rather than "the episode-set-aware one with no L1 findings present": the
  * two DIFFER even without L1. The aware version keeps a ⑥ whose clock cluster does NOT overlap ⑤'s
- * meal-adjacent episodes (a different, un-surfaced pattern); v27 dropped it regardless. That
- * divergence IS the leak — the whole point of B-777 is that an engine redeploy must not move a
- * flag-off account's cards, and reverting the suppression rule is half of that (the other half is
- * skipping the v2 lanes + composeTimingStory). This is a byte-for-byte copy of the function git
- * shows at 0c0e20d~1, kept nameable so the guarantee is auditable against that commit.
+ * meal-adjacent episodes (a different, un-surfaced pattern); v27 dropped it regardless. Keeping this
+ * as its own named function makes the report's frozen detection auditable and lets the whole pre-v2
+ * path (this + the SIGNALS_V2_DETECTOR_TYPES skip) be deleted in one move once generate-report adopts
+ * the v2 finding types (CUL-564).
  */
 function suppressTimeOfDayWhenPostprandialLegacy(findings: Finding[]): Finding[] {
   const postprandialTypes = new Set(
@@ -6212,12 +6212,12 @@ export function stripInternalOnsets(findings: Finding[]): Finding[] {
 }
 
 /**
- * B-777 — the Signals v2 (B-755) DETECTOR outputs, gated as ONE unit on `signals_v2` eligibility.
- * A non-eligible account never has these emitted, so the composition below has nothing new to merge
- * or suppress on and its output is byte-identical to the pre-track (v27) engine. `timing_story` is
- * NOT here — it is composition-only (composeTimingStory), and it never forms when L1 is absent.
- * The set is the authority on "what is a v2 lane"; adding a future lane means adding it here too
- * (else it leaks to flag-off accounts — the exact regression this gate exists to prevent).
+ * The Signals v2 (B-755) DETECTOR outputs — L1/L2/L4. Emitted only when `composeV2` is on (the
+ * default; every Signal account since the GA graduation). When off — the `generate-report` path
+ * (CUL-564) — these lanes are skipped so the report sees the pre-v2 finding set it renders, with
+ * nothing new for the composition below to merge or suppress on. `timing_story` is NOT here — it is
+ * composition-only (composeTimingStory), and it never forms when L1 is absent. The set is the
+ * authority on "what is a v2 lane"; adding a future lane means adding it here too.
  */
 const SIGNALS_V2_DETECTOR_TYPES: ReadonlySet<InsightType> = new Set<InsightType>([
   'empty_stomach_timing', // L1
@@ -6230,25 +6230,26 @@ const SIGNALS_V2_DETECTOR_TYPES: ReadonlySet<InsightType> = new Set<InsightType>
  * results (§5). An empty array means no finding cleared its floor — the caller
  * renders the building/stale state (§3.3); it is NOT an all-clear (§9).
  *
- * `signalsV2Eligible` (B-777) gates the ENTIRE Signals v2 surface of the engine — the L1/L2/L4 lane
- * emission, the `timing_story` merge, AND the episode-set-aware ⑤/L1→⑥ suppression. It defaults to
- * `false` so the gate FAILS CLOSED: a caller that forgets it (or a future call site) gets the
- * pre-v2, byte-identical output — v2 can only ever leak by an explicit `true`. The production shell
- * (index.ts) resolves it from the `signals_v2` app_config allowlist against the JWT uid (the same
- * primitive the client's Gate 1 uses), so the server and the client agree on who is eligible and the
- * redeploy is a no-op for everyone else (spec §5 "byte-identical off"; the closeout's G10/deploy FAIL).
+ * `composeV2` toggles the Signals v2 surface of the engine — the L1/L2/L4 lane emission, the
+ * `timing_story` merge, AND the episode-set-aware ⑤/L1→⑥ suppression. It defaults to `true`: Signals
+ * v2 graduated to GA (CUL-546), so every account's Signal runs it and the B-777 per-account
+ * `app_config` eligibility gate is gone (index.ts no longer resolves it — it just calls this with the
+ * default). The ONE caller passing `false` is `generate-report` (report.ts): it renders only the
+ * pre-v2 finding taxonomy and would silently drop a ⑤ merged into a `timing_story`, so it stays on
+ * the pre-v2 composition until it adopts the v2 finding types (CUL-564), at which point this toggle
+ * and the legacy path below are deleted.
  */
 export function detectSignals(
   input: DetectionInput,
   config: DetectionConfig = DEFAULT_CONFIG,
-  signalsV2Eligible = false,
+  composeV2 = true,
 ): RankedFinding[] {
   const findings: Finding[] = []
   for (const detector of DETECTOR_REGISTRY) {
-    // Skip the v2 lanes entirely for a non-eligible account — the emission gate (half of B-777; the
-    // other half is the composition branch below). A lane that never fires can never displace a
-    // shipped card via the visible-card cap, and can never reach a flag-off client as a dropped type.
-    if (!signalsV2Eligible && SIGNALS_V2_DETECTOR_TYPES.has(detector.type)) continue
+    // Skip the v2 lanes when composeV2 is off (the generate-report path) — the emission gate, paired
+    // with the composition branch below. A lane that never fires can never displace a pre-v2 card the
+    // report renders, and can never reach it as a dropped type.
+    if (!composeV2 && SIGNALS_V2_DETECTOR_TYPES.has(detector.type)) continue
     findings.push(...detector.detect(input, config))
   }
   // Composition before ranking. ORDER MATTERS for the timing lane (Signals v2 / CUL-7):
@@ -6266,12 +6267,13 @@ export function detectSignals(
   // never reach the phrasing / cache / HTTP layer (finding ②). Keeping the strip inside here would
   // delete the onsets before the shell ever sees them — the exact bug that left retained food dead on
   // the lone empty_stomach card.
-  // B-777 — the timing-lane composition is v2 and gates as one unit. Eligible: the episode-set-aware
-  // ⑤/L1→⑥ suppression then the ⑤+L1→timing_story merge (both read the v2 lanes emitted above).
-  // Non-eligible: the pre-v2 UNCONDITIONAL suppression and NO merge, so ⑤ survives as itself and ⑥
-  // follows the v27 rule — byte-identical to the deployed engine. suppressWorseningWhenChronic is
-  // NOT v2 (⑦ is B-182, a separately deploy-cleared track), so it runs on both paths unchanged.
-  const composed = signalsV2Eligible
+  // The timing-lane composition is v2 and toggles as one unit. composeV2 on (the default, every
+  // Signal account): the episode-set-aware ⑤/L1→⑥ suppression then the ⑤+L1→timing_story merge (both
+  // read the v2 lanes emitted above). Off (generate-report, CUL-564): the pre-v2 UNCONDITIONAL
+  // suppression and NO merge, so ⑤ survives as itself and ⑥ follows the v27 rule — the finding set the
+  // report renders. suppressWorseningWhenChronic is NOT v2 (⑦ is B-182, a separately deploy-cleared
+  // track), so it runs on both paths unchanged.
+  const composed = composeV2
     ? composeTimingStory(suppressTimeOfDayWhenPostprandial(findings, config))
     : suppressTimeOfDayWhenPostprandialLegacy(findings)
   return rankFindings(suppressWorseningWhenChronic(composed), input.pet)
