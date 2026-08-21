@@ -6036,32 +6036,6 @@ function suppressTimeOfDayWhenPostprandial(
 }
 
 /**
- * The PRE-v2 (deployed v27) unconditional ⑤→⑥ suppression. `detectSignals` runs THIS (not the
- * episode-set-aware version above) when `composeV2` is off — the `generate-report` path (report.ts
- * passes `composeV2: false`), which renders only the pre-v2 finding taxonomy and would silently drop
- * a ⑤ merged into a `timing_story` (CUL-564). A ⑥ whose symptom already has a ⑤ is dropped
- * unconditionally, exactly as v27 did.
- *
- * Why a separate function rather than "the episode-set-aware one with no L1 findings present": the
- * two DIFFER even without L1. The aware version keeps a ⑥ whose clock cluster does NOT overlap ⑤'s
- * meal-adjacent episodes (a different, un-surfaced pattern); v27 dropped it regardless. Keeping this
- * as its own named function makes the report's frozen detection auditable and lets the whole pre-v2
- * path (this + the SIGNALS_V2_DETECTOR_TYPES skip) be deleted in one move once generate-report adopts
- * the v2 finding types (CUL-564).
- */
-function suppressTimeOfDayWhenPostprandialLegacy(findings: Finding[]): Finding[] {
-  const postprandialTypes = new Set(
-    findings
-      .filter((f): f is PostprandialTimingFinding => f.type === 'postprandial_timing')
-      .map((f) => f.symptomType),
-  )
-  if (postprandialTypes.size === 0) return findings
-  return findings.filter(
-    (f) => !(f.type === 'timeofday_clustering' && postprandialTypes.has(f.symptomType)),
-  )
-}
-
-/**
  * Signals v2 (B-755 / CUL-7 — D1/A2) — merge a same-symptom ⑤ (postprandial) + L1 (empty-stomach)
  * pair into ONE `timing_story` card. The two phenotypes are two readings of the SAME timing
  * distribution (`scanVomitTiming`), so one card carries both bands rather than two cards saying
@@ -6212,44 +6186,24 @@ export function stripInternalOnsets(findings: Finding[]): Finding[] {
 }
 
 /**
- * The Signals v2 (B-755) DETECTOR outputs — L1/L2/L4. Emitted only when `composeV2` is on (the
- * default; every Signal account since the GA graduation). When off — the `generate-report` path
- * (CUL-564) — these lanes are skipped so the report sees the pre-v2 finding set it renders, with
- * nothing new for the composition below to merge or suppress on. `timing_story` is NOT here — it is
- * composition-only (composeTimingStory), and it never forms when L1 is absent. The set is the
- * authority on "what is a v2 lane"; adding a future lane means adding it here too.
- */
-const SIGNALS_V2_DETECTOR_TYPES: ReadonlySet<InsightType> = new Set<InsightType>([
-  'empty_stomach_timing', // L1
-  'trial_response', // L2
-  'gap_shortening', // L4
-])
-
-/**
  * Top-level entry point. Runs every registered detector, composes and ranks the
  * results (§5). An empty array means no finding cleared its floor — the caller
  * renders the building/stale state (§3.3); it is NOT an all-clear (§9).
  *
- * `composeV2` toggles the Signals v2 surface of the engine — the L1/L2/L4 lane emission, the
- * `timing_story` merge, AND the episode-set-aware ⑤/L1→⑥ suppression. It defaults to `true`: Signals
- * v2 graduated to GA (CUL-546), so every account's Signal runs it and the B-777 per-account
- * `app_config` eligibility gate is gone (index.ts no longer resolves it — it just calls this with the
- * default). The ONE caller passing `false` is `generate-report` (report.ts): it renders only the
- * pre-v2 finding taxonomy and would silently drop a ⑤ merged into a `timing_story`, so it stays on
- * the pre-v2 composition until it adopts the v2 finding types (CUL-564), at which point this toggle
- * and the legacy path below are deleted.
+ * Runs the full Signals v2 composition for every caller: the L1/L2/L4 lanes emit, the ⑤+L1
+ * `timing_story` merge runs, and the ⑤/L1→⑥ suppression is episode-set-aware. Both consumers take
+ * this ONE path — the Signal surface (generate-signal, GA since CUL-546, its former per-account
+ * `signals_v2` gate removed) and the vet report (generate-report, which adopted the v2 finding types
+ * in CUL-564). The report's pre-v2 `composeV2:false` fork — the lane-emission skip and the
+ * unconditional legacy suppression — is gone: `report.ts`'s `runDetection` now renders `timing_story`
+ * + `empty_stomach_timing` and deliberately drops L2/L4, so the composition no longer needs to differ.
  */
 export function detectSignals(
   input: DetectionInput,
   config: DetectionConfig = DEFAULT_CONFIG,
-  composeV2 = true,
 ): RankedFinding[] {
   const findings: Finding[] = []
   for (const detector of DETECTOR_REGISTRY) {
-    // Skip the v2 lanes when composeV2 is off (the generate-report path) — the emission gate, paired
-    // with the composition branch below. A lane that never fires can never displace a pre-v2 card the
-    // report renders, and can never reach it as a dropped type.
-    if (!composeV2 && SIGNALS_V2_DETECTOR_TYPES.has(detector.type)) continue
     findings.push(...detector.detect(input, config))
   }
   // Composition before ranking. ORDER MATTERS for the timing lane (Signals v2 / CUL-7):
@@ -6266,15 +6220,8 @@ export function detectSignals(
   // `stripInternalOnsets` as its final decoration step, once BOTH consumers have run, so they still
   // never reach the phrasing / cache / HTTP layer (finding ②). Keeping the strip inside here would
   // delete the onsets before the shell ever sees them — the exact bug that left retained food dead on
-  // the lone empty_stomach card.
-  // The timing-lane composition is v2 and toggles as one unit. composeV2 on (the default, every
-  // Signal account): the episode-set-aware ⑤/L1→⑥ suppression then the ⑤+L1→timing_story merge (both
-  // read the v2 lanes emitted above). Off (generate-report, CUL-564): the pre-v2 UNCONDITIONAL
-  // suppression and NO merge, so ⑤ survives as itself and ⑥ follows the v27 rule — the finding set the
-  // report renders. suppressWorseningWhenChronic is NOT v2 (⑦ is B-182, a separately deploy-cleared
-  // track), so it runs on both paths unchanged.
-  const composed = composeV2
-    ? composeTimingStory(suppressTimeOfDayWhenPostprandial(findings, config))
-    : suppressTimeOfDayWhenPostprandialLegacy(findings)
+  // the lone empty_stomach card. suppressWorseningWhenChronic (⑦→④, B-182) is a disjoint type pair
+  // from the timing lane, so its position is free.
+  const composed = composeTimingStory(suppressTimeOfDayWhenPostprandial(findings, config))
   return rankFindings(suppressWorseningWhenChronic(composed), input.pet)
 }

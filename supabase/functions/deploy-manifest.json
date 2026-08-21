@@ -46,16 +46,16 @@
     },
     "generate-report": {
       "status": "hold",
-      "fingerprint": "sha256:35527e6333370535c3d27cef46c6cd5d24c2494018cb820d704234cb74f97c47",
-      "reason": "B-494 HOLD: the report deliberately runs the pre-PR-7 off-diet heuristic until the refusal safety lane ships; the generate-report redeploy is gated on B-494 (see STATUS.md / Open Questions). Do NOT set `deployed` until B-494 clears. Fingerprint bumped for GA-3 (CUL-550): the shared detection.ts changed and report.ts now passes composeV2:false — BEHAVIOR-NEUTRAL for the report (still pre-v2 detection); v2 adoption is CUL-564.",
+      "fingerprint": "sha256:2f9f4a14a16ff2092066c87c71bd12d8508943e85db086424850f32cc19537b2",
+      "reason": "B-494 HOLD: the report deliberately runs the pre-PR-7 off-diet heuristic until the refusal safety lane ships; the generate-report redeploy is gated on B-494 (see STATUS.md / Open Questions). Do NOT set `deployed` until B-494 clears. Fingerprint bumped for CUL-564: the report now runs the FULL Signals v2 composition (its §3.8 timing line renders timing_story + empty_stomach_timing, and drops L2 trial_response / L4 gap_shortening) — a REAL behavior change to the report, unlike the behavior-neutral GA-3 bump. When B-494 clears, the one redeploy ships BOTH the refusal safety lane and this v2 timing adoption.",
       "ref": "B-494",
       "updated": "2026-08-21"
     },
     "generate-signal": {
-      "status": "deployed",
-      "fingerprint": "sha256:29df1af63f029b51e1816a585064e2d29fd8a0b35eae36c30a1b6d0ae36995b3",
-      "reason": "GA-3 (CUL-550) deployed 2026-08-21 from the Codespace (scripts/deploy-edge.sh generate-signal --deploy): the B-777 signals_v2 eligibility gate is removed from the engine — Signals v2 is the only path for the Signal surface. Live as generate-signal v32 (ACTIVE); the deployed bundle was verified gate-free (no signals_v2 / SIGNALS_V2_FLAG_KEY / resolveAllowlistFlag) before GA-4 (CUL-551) deleted the two app_config rows. This deploy also shipped the previously-undeployed CUL-258 fetch-timeout work, carried in the same main closure.",
-      "ref": "CUL-550",
+      "status": "pending",
+      "fingerprint": "sha256:d7b80c4bab88f3b245b02266f4f261abfe97f067fde4dccb3fed381ecdfcb543",
+      "reason": "Source drift from CUL-564 — detection.ts (which this function inlines) had its `composeV2` toggle + the legacy pre-v2 composition fork removed (GA-3 cleanup). BEHAVIOR-NEUTRAL for the Signal path: generate-signal always called detectSignals with the default v2 composition, so its output is byte-identical to the live v32. A source-reconciling redeploy is owed (not behavior-urgent) and can ride the next generate-signal deploy. Was `deployed` as v32 (ACTIVE) — GA-3 (CUL-550), 2026-08-21, which also carried the CUL-258 fetch-timeout work.",
+      "ref": "CUL-564",
       "updated": "2026-08-21"
     }
   }
