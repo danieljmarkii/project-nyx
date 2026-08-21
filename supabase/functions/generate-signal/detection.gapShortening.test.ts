@@ -238,17 +238,11 @@ Deno.test('detectGapShortening — flows through detectSignals and ranks BELOW e
   assert.equal(reRanked[0].finding.type, 'gap_shortening')
 })
 
-Deno.test('detectGapShortening — pre-v2 (report path): the lane is off (the report renders no v2 finding)', () => {
-  // The SAME shortening-run fixture. composeV2 emits gap_shortening (escalate-only). pre-v2
-  // (composeV2:false, the generate-report path) the lane is never emitted, so the report's Signal
-  // carries no v2 finding.
-  const events = eventsAt(onsetsFromGapDays([20, 12, 6, 3]))
-  const on = detectSignals(input({ symptomEvents: events }))
-  assert.ok(on.some((r) => r.finding.type === 'gap_shortening'), 'v2 emits gap_shortening')
-
-  const off = detectSignals(input({ symptomEvents: events }), DEFAULT_CONFIG, false)
-  assert.ok(!off.some((r) => r.finding.type === 'gap_shortening'), 'pre-v2 emits no gap_shortening')
-})
+// The pre-v2 report-path assertion (detectSignals' old `composeV2:false` arg) was removed in
+// CUL-564: the vet report adopted the v2 finding types but deliberately DROPS gap_shortening — a
+// sub-floor watching row whose confidence the report's §8.5 Established-only discipline excludes
+// (Dr. Chen 2026-08-21; Appendix A + the §3.5 trend chart already carry the cadence). That drop is
+// covered in generate-report/report.test.ts; the lane's firing is covered by the tests above.
 
 Deno.test('detectGapShortening — the golden fires and phrases GUARDRAIL-CLEAN (template + validatePhrasing)', () => {
   const f = detectGapShortening(input({ symptomEvents: eventsAt(onsetsFromGapDays([20, 12, 6, 3])) }))[0]

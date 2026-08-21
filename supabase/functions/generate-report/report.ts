@@ -70,6 +70,8 @@ import {
   type SymptomWorseningFinding,
   type PostprandialTimingFinding,
   type TimeOfDayClusteringFinding,
+  type EmptyStomachTimingFinding,
+  type TimingStoryFinding,
   type StapleWashoutDiagnostic,
 } from '../generate-signal/detection.ts'
 // The SHARED protein canonicalizer (lib/protein.ts via the generate-signal re-export —
@@ -1562,15 +1564,50 @@ export interface EstablishedCorrelation {
   correlationWindowHours: number
 }
 
-export interface TimingFinding {
-  kind: 'postprandial_timing' | 'timeofday_clustering'
-  symptomType: SymptomType
-  windowDays: number
-  /** postprandial: rapid/eligible/total + median minutes; timeofday: cluster band + counts. */
-  detail:
-    | { rapidCount: number; eligibleCount: number; totalEpisodes: number; rapidWindowMinutes: number; medianMinutesSinceFeeding: number }
-    | { clusterStartLocalHour: number; clusterWindowHours: number; clusterCount: number; eligibleCount: number; totalEpisodes: number; timezone: string }
-}
+/**
+ * The §3.8 associational vomit-timing finding(s), extracted from the shared detection engine. A
+ * discriminated union on `kind` so each variant's `detail` narrows by the tag (the lanes carry
+ * different evidence). ⑤ `postprandial_timing` (≤30 min after eating) and its Signals v2 mirror
+ * `empty_stomach_timing` (L1 — ≥`longGapHours` after eating) both render; a same-symptom ⑤+L1 pair
+ * arrives already merged as `timing_story` (CUL-564 — the merged card the report would otherwise
+ * silently drop). ⑥ `timeofday_clustering` is extracted but NOT rendered (see `timingLine`); L2
+ * `trial_response` + L4 `gap_shortening` are deliberately not surfaced on the report (see
+ * `runDetection`). All four are associational/band-named only — never a syndrome name, never cause.
+ */
+export type TimingFinding =
+  | {
+      kind: 'postprandial_timing'
+      symptomType: SymptomType
+      windowDays: number
+      detail: { rapidCount: number; eligibleCount: number; totalEpisodes: number; rapidWindowMinutes: number; medianMinutesSinceFeeding: number }
+    }
+  | {
+      kind: 'timeofday_clustering'
+      symptomType: SymptomType
+      windowDays: number
+      detail: { clusterStartLocalHour: number; clusterWindowHours: number; clusterCount: number; eligibleCount: number; totalEpisodes: number; timezone: string }
+    }
+  | {
+      kind: 'empty_stomach_timing'
+      symptomType: SymptomType
+      windowDays: number
+      detail: { longCount: number; eligibleCount: number; totalEpisodes: number; longGapHours: number; medianHoursSinceFeeding: number }
+    }
+  | {
+      kind: 'timing_story'
+      symptomType: SymptomType
+      windowDays: number
+      detail: {
+        rapidCount: number
+        longCount: number
+        eligibleCount: number
+        totalEpisodes: number
+        rapidWindowMinutes: number
+        longGapHours: number
+        medianMinutesSinceFeeding: number
+        medianHoursSinceFeeding: number
+      }
+    }
 
 export interface CorrelationSummary {
   /** ONLY `Established`-tier (spec §8.5); `Early` never reaches the report. */
@@ -2439,12 +2476,15 @@ function regimenEndIso(endedAt: string | null): string | null {
 }
 
 function runDetection(detInput: DetectionInput): DetectionExtract {
-  // composeV2: false — the vet report renders only the pre-v2 finding taxonomy (its switch below
-  // handles ⑤/⑥ and drops timing_story / empty_stomach_timing / trial_response / gap_shortening on
-  // `default`). Running the v2 composition here would silently DROP a ⑤ that merged into a
-  // timing_story the report ignores. Signals v2 is GA for the Signal surface (CUL-546); the report
-  // stays pinned to pre-v2 detection until it adopts the v2 types (CUL-564), then this flips to true.
-  const ranked = detectSignals(detInput, DEFAULT_CONFIG, false)
+  // Signals v2 composition (CUL-564). The report renders the v2 timing taxonomy: a lone ⑤
+  // (`postprandial_timing`), its empty-stomach mirror `empty_stomach_timing` (L1), and the merged
+  // ⑤+L1 `timing_story` — which is the point of the adoption, since the pre-v2 path silently dropped
+  // a ⑤ once it merged into a story the report ignored. The two OTHER v2 lanes are deliberately NOT
+  // surfaced here (the switch drops them explicitly, below): L2 `trial_response` (the report's
+  // dedicated diet-trial section answers that at higher fidelity — PM 2026-08-21) and L4
+  // `gap_shortening` (a sub-floor watching row the report's §8.5 Established-only discipline excludes;
+  // Appendix A + the §3.5 trend chart already carry the cadence — Dr. Chen 2026-08-21).
+  const ranked = detectSignals(detInput, DEFAULT_CONFIG)
   const established: EstablishedCorrelation[] = []
   const timing: TimingFinding[] = []
   let intakeDecline: IntakeDeclineFinding | null = null
@@ -2513,6 +2553,57 @@ function runDetection(detInput: DetectionInput): DetectionExtract {
         })
         break
       }
+      case 'empty_stomach_timing': {
+        // L1 (Signals v2, CUL-564) — the ⑤ mirror: vomiting ≥ longGapHours after the last meal (the
+        // empty-stomach / long-fast band). Band-named only — the report states the timing, the vet
+        // makes the bilious/BVS inference.
+        const f = finding as EmptyStomachTimingFinding
+        timing.push({
+          kind: 'empty_stomach_timing',
+          symptomType: f.symptomType,
+          windowDays: f.windowDays,
+          detail: {
+            longCount: f.longCount,
+            eligibleCount: f.eligibleCount,
+            totalEpisodes: f.totalEpisodes,
+            longGapHours: f.longGapHours,
+            medianHoursSinceFeeding: f.medianHoursSinceFeeding,
+          },
+        })
+        break
+      }
+      case 'timing_story': {
+        // The merged ⑤+L1 card (Signals v2, CUL-564). The report renders both bands in one line; the
+        // per-phenotype `rapid`/`long` evidence blocks are always present in a story (the merge fires
+        // only when both lanes did). This is the card the pre-v2 report path silently dropped, taking
+        // the ⑤ with it.
+        const f = finding as TimingStoryFinding
+        timing.push({
+          kind: 'timing_story',
+          symptomType: f.symptomType,
+          windowDays: f.windowDays,
+          detail: {
+            rapidCount: f.rapid.count,
+            longCount: f.long.count,
+            eligibleCount: f.eligibleCount,
+            totalEpisodes: f.totalEpisodes,
+            rapidWindowMinutes: f.rapidWindowMinutes,
+            longGapHours: f.longGapHours,
+            medianMinutesSinceFeeding: f.rapid.medianMinutesSinceFeeding,
+            medianHoursSinceFeeding: f.long.medianHoursSinceFeeding,
+          },
+        })
+        break
+      }
+      // The v2 lanes the report deliberately does NOT surface (CUL-564), made explicit so the
+      // exclusion is an auditable decision, not an accidental `default` drop:
+      //  • trial_response (L2) — the report's dedicated diet-trial section renders this at higher
+      //    fidelity; a second count block would duplicate it and risk a contradicting denominator.
+      //  • gap_shortening (L4) — a sub-floor watching row; §8.5's Established-only discipline keeps
+      //    it off the report, and Appendix A + the §3.5 trend chart already carry the cadence.
+      case 'trial_response':
+      case 'gap_shortening':
+        break
       // 'reflection' is owner-side only — never on the clinical report.
       default:
         break

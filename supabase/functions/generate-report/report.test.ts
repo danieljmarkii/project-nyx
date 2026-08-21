@@ -2906,3 +2906,36 @@ Deno.test('B-532 — two library rows under one label with DIFFERENT sets do not
   assert.ok(rows.some((r) => r.proteinSet.proteins.includes('chicken')))
   assert.ok(rows.some((r) => !r.proteinSet.proteins.includes('chicken')))
 })
+
+// ── CUL-564: Signals v2 timing types reach the report ──────────────────────────
+// The report path runs the full v2 composition now (detectSignals' composeV2 arg was removed).
+// runDetection must EXTRACT the v2 timing types it renders — empty_stomach_timing (L1) and the
+// merged timing_story — instead of dropping them on the switch's `default`, the pre-v2 behaviour.
+// The end-to-end render of those lines is pinned in render.test.ts; this proves the extraction
+// (that flipping the composition actually surfaces the new type through assembleReport).
+
+Deno.test('CUL-564 — assembleReport extracts the empty-stomach timing lane (L1) into correlation.timing', () => {
+  // A run of empty-stomach vomits: a single 8am-ET meal each day, with the vomit at 5am ET (~21h
+  // after the prior day's meal → timed-eligible + long band). 8am ET = 12:00Z, 5am ET = 09:00Z in
+  // June (EDT). L1 fires and suppresses the co-clustered ⑥; pre-v2 the report dropped it entirely.
+  const events: ReportEventInput[] = []
+  for (let d = 12; d <= 27; d++) {
+    const date = `2026-06-${String(d).padStart(2, '0')}`
+    events.push(ratedMealEvent(date, '12:00:00', 'all'))
+    if (d >= 16) events.push(makeEvent({ type: 'vomit', occurredAt: at(date, '09:00:00') }))
+  }
+  const snap = assembleReport(baseInput({ events }))
+
+  const l1 = snap.correlation.timing.find((t) => t.kind === 'empty_stomach_timing')
+  assert.ok(l1, 'L1 (empty_stomach_timing) is extracted into the report timing set, not dropped')
+  assert.equal(l1!.symptomType, 'vomit')
+
+  // The report timing set only ever carries the four kinds it renders/handles — L2 trial_response
+  // and L4 gap_shortening are not TimingFinding kinds and are dropped by runDetection, so they can
+  // never appear here (the CUL-564 exclusion, enforced by the type + the explicit switch cases).
+  const REPORT_TIMING_KINDS = ['postprandial_timing', 'timeofday_clustering', 'empty_stomach_timing', 'timing_story']
+  assert.ok(
+    snap.correlation.timing.every((t) => REPORT_TIMING_KINDS.includes(t.kind)),
+    'only the four report timing kinds appear — no trial_response / gap_shortening leak',
+  )
+})

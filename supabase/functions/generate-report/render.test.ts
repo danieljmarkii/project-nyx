@@ -1887,6 +1887,77 @@ Deno.test('B-499 — the correlation line never dead-ends at appendix C (no corr
   assert.ok(!/Detail in appendix/.test(nullResult), 'the null correlation line has no dead-end appendix-C pointer either')
 })
 
+// ── CUL-564: Signals v2 timing types on the report ─────────────────────────────
+// The report adopted the v2 finding taxonomy (composeV2 removed): a lone empty-stomach lane (L1)
+// and the merged ⑤+L1 timing_story now render on the associational timing line. The story is the
+// card the pre-v2 report path silently dropped, taking the ⑤ with it. Both are band-named /
+// associational only — never a syndrome name. (L2 trial_response + L4 gap_shortening are dropped in
+// runDetection and are not TimingFinding kinds, so they cannot reach this line — see report.test.ts.)
+
+Deno.test('CUL-564 — the empty-stomach timing lane (L1) renders as a band-named associational line', () => {
+  const html = renderReport(
+    base({
+      correlation: {
+        established: [],
+        hasEstablished: false,
+        noThreshold: true,
+        stapleProtein: null,
+        timing: [
+          {
+            kind: 'empty_stomach_timing',
+            symptomType: 'vomit',
+            windowDays: 30,
+            detail: { longCount: 5, eligibleCount: 12, totalEpisodes: 18, longGapHours: 6, medianHoursSinceFeeding: 9 },
+          },
+        ],
+      },
+    }),
+  )
+  const t = text(html)
+  assert.ok(/5 of 12 timed vomiting episodes came 6 h or more after eating/.test(t), 'the L1 band renders with counts + the 6h boundary')
+  assert.ok(/co-occurrence, not cause/.test(t), 'it carries the associational framing')
+  // Band-named only — the report states the timing, the vet makes the bilious/BVS inference; a
+  // syndrome name is banned on this line (§9.1 / clinical-guardrails).
+  assert.ok(!/bilious|empty stomach|BVS/i.test(t), 'no syndrome name — the report names the timing band only')
+})
+
+Deno.test('CUL-564 — the merged ⑤+L1 timing_story renders both bands over the shared denominator', () => {
+  const html = renderReport(
+    base({
+      correlation: {
+        established: [],
+        hasEstablished: false,
+        noThreshold: true,
+        stapleProtein: null,
+        timing: [
+          {
+            kind: 'timing_story',
+            symptomType: 'vomit',
+            windowDays: 30,
+            detail: {
+              rapidCount: 3,
+              longCount: 5,
+              eligibleCount: 12,
+              totalEpisodes: 18,
+              rapidWindowMinutes: 30,
+              longGapHours: 6,
+              medianMinutesSinceFeeding: 15,
+              medianHoursSinceFeeding: 9,
+            },
+          },
+        ],
+      },
+    }),
+  )
+  const t = text(html)
+  // Both bands, one shared denominator (12) — the card the pre-v2 report path dropped with the ⑤.
+  assert.ok(
+    /3 of 12 timed vomiting episodes fell within ~30 min of eating, and 5 came 6 h or more after eating/.test(t),
+    'both the post-prandial and empty-stomach bands render on one line, over the shared denominator',
+  )
+  assert.ok(/co-occurrence, not cause/.test(t), 'associational framing')
+})
+
 Deno.test('B-499 — the diet-history treats line points at appendix C only where appendix C dates the treats', () => {
   // Trial-derived report: appendix C lists OFF-DIET exposures, so a permitted treat has no
   // dated row there — the pointer must not appear (it dead-ended for 64 of 65 on the artifact).

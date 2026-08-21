@@ -3322,89 +3322,11 @@ Deno.test('detectSignals — a lone L1 (no rapid episodes) stays empty_stomach_t
   assert.ok(!ranked.some((r) => r.finding.type === 'timing_story'), 'no merge without ⑤')
 })
 
-// ── pre-v2 composition path (composeV2:false — the generate-report path, CUL-564) ──────────
-//
-// detectSignals defaults composeV2 to true (v2 — every Signal account since the GA graduation).
-// generate-report passes false: it renders only the pre-v2 finding taxonomy and would silently drop a
-// ⑤ merged into a timing_story. These tests feed the SAME fixtures the v2 tests above use and assert
-// the composeV2:false output is the pre-v2 (v27) shape — composeTimingStory does not run (⑤ survives
-// un-merged), the v2 lanes are not emitted, and the ⑥ suppression reverts to the v27 unconditional
-// rule. Each flips ONLY the composeV2 arg, so any divergence is attributable to the toggle alone (a
-// bare detectSignals(...) is v2).
-const V2_FINDING_TYPES = new Set<string>([
-  'empty_stomach_timing', // L1
-  'timing_story', // ⑤+L1 composition
-  'trial_response', // L2
-  'gap_shortening', // L4
-])
-const hasV2 = (ranked: ReturnType<typeof detectSignals>) =>
-  ranked.some((r) => V2_FINDING_TYPES.has(r.finding.type))
-
-Deno.test('pre-v2 (report path): a ⑤+L1 co-fire keeps the shipped ⑤ and emits NO v2 type (composeTimingStory off)', () => {
-  // The exact co-fire fixture the timing_story test above uses (thrice-daily feed; rapid + long + mid
-  // vomits on distinct days). composeV2 merges to one timing_story; pre-v2 the merge never runs.
-  const meals: MealEvent[] = []
-  for (let d = 5; d <= 27; d++) {
-    meals.push(feeding(d, 1, 0)); meals.push(feeding(d, 9, 0)); meals.push(feeding(d, 17, 0))
-  }
-  const symptomEvents = [
-    wVomit(15, 9, 20), wVomit(16, 9, 20), wVomit(17, 9, 20), // rapid
-    wVomit(18, 8, 0), wVomit(19, 8, 0), wVomit(20, 8, 0), wVomit(21, 8, 0), wVomit(22, 8, 0), wVomit(23, 8, 0), // long
-    wVomit(24, 4, 0), // mid
-  ]
-  const on = detectSignals(input({ symptomEvents, mealEvents: meals, timezone: NY }))
-  assert.ok(on.some((r) => r.finding.type === 'timing_story'), 'v2 merges to a timing_story')
-
-  const off = detectSignals(input({ symptomEvents, mealEvents: meals, timezone: NY }), DEFAULT_CONFIG, false)
-  assert.ok(off.some((r) => r.finding.type === 'postprandial_timing'), 'pre-v2 keeps the shipped ⑤, un-merged')
-  assert.ok(!hasV2(off), 'pre-v2 emits NO Signals v2 finding type (no empty_stomach_timing / timing_story)')
-})
-
-Deno.test('pre-v2 (report path): the ⑥ suppression reverts to the v27 UNCONDITIONAL rule (the RESCUE case)', () => {
-  // The §7#4c RESCUE fixture: ⑤ fires on 6pm rapid episodes; a DISJOINT 6am cluster fires ⑥. composeV2 the
-  // episode-set-aware rule keeps ⑥ (0% overlap). pre-v2 the v27 rule drops any ⑥ whose symptom has a
-  // ⑤ — so ⑥ vanishes, exactly as the report's frozen detection does. A ⑥ removed in the engine cannot be
-  // reconstructed by the consumer, which is why the suppression reverts here, not in the report.
-  const symptomEvents: SymptomEvent[] = []
-  const mealEvents: MealEvent[] = []
-  for (let i = 0; i < 8; i++) { const day = 15 + i; symptomEvents.push(wVomit(day, 10, 0)); mealEvents.push(feeding(day, 7, 0)) }
-  for (let i = 0; i < 3; i++) { const day = 24 + i; symptomEvents.push(wVomit(day, 22, 0)); mealEvents.push(feeding(day, 21, 40)) }
-
-  const on = detectSignals(input({ symptomEvents, mealEvents, timezone: NY }))
-  assert.ok(on.some((r) => r.finding.type === 'timeofday_clustering'), 'v2 keeps the disjoint ⑥ (episode-set-aware)')
-
-  const off = detectSignals(input({ symptomEvents, mealEvents, timezone: NY }), DEFAULT_CONFIG, false)
-  assert.ok(off.some((r) => r.finding.type === 'postprandial_timing'), 'pre-v2 keeps ⑤')
-  assert.ok(!off.some((r) => r.finding.type === 'timeofday_clustering'), 'pre-v2 drops ⑥ (v27 unconditional suppression)')
-  assert.ok(!hasV2(off), 'pre-v2 emits NO v2 type')
-})
-
-Deno.test('pre-v2 (report path): empty-stomach vomits surface as the shipped ⑥, with no L1 to consume them', () => {
-  // The §7#4d fixture: 12 empty-stomach vomits at one clock. composeV2, L1 fires and SUPPRESSES ⑥. pre-v2,
-  // L1 is never emitted and no ⑤ fires, so ⑥ surfaces — the v27 shape for these episodes.
-  const meals = scheduleMeals([8])
-  const symptomEvents = Array.from({ length: 12 }, (_v, i) => longAtHour(5, i))
-
-  const on = detectSignals(input({ symptomEvents, mealEvents: meals, timezone: NY }))
-  assert.ok(on.some((r) => r.finding.type === 'empty_stomach_timing'), 'v2: L1 fires')
-  assert.ok(!on.some((r) => r.finding.type === 'timeofday_clustering'), 'v2: ⑥ suppressed by L1')
-
-  const off = detectSignals(input({ symptomEvents, mealEvents: meals, timezone: NY }), DEFAULT_CONFIG, false)
-  assert.ok(!hasV2(off), 'pre-v2: no L1 emitted (no v2 type at all)')
-  assert.ok(off.some((r) => r.finding.type === 'timeofday_clustering'), 'pre-v2: ⑥ surfaces (the pre-v2 clock finding)')
-})
-
-Deno.test('pre-v2 (report path): a Signals-v2-silent input is deep-equal across the toggle', () => {
-  // When no v2 lane fires, the toggle must change NOTHING — the shipped detectors + legacy composition are
-  // identical on both paths. todGolden is an early-morning ⑥ cluster with NO meals (⑤/L1 silent), no
-  // trial (L2 silent), no shortening run (L4 silent). The first assertion proves the fixture really is
-  // v2-silent (so this is a fair check); the deepEqual is the byte-identical guarantee itself.
-  const inp = () => input({ symptomEvents: todGolden(), timezone: NY })
-  const on = detectSignals(inp())
-  assert.ok(!hasV2(on), 'the fixture fires no v2 lane (fair transparency check)')
-  assert.ok(on.some((r) => r.finding.type === 'timeofday_clustering'), 'a real shipped finding is present')
-  assert.deepEqual(detectSignals(inp(), DEFAULT_CONFIG, false), on, 'pre-v2 is byte-identical to v2 when no v2 lane fires')
-})
+// The pre-v2 composition path (detectSignals' old `composeV2:false` arg, the generate-report fork)
+// was removed in CUL-564: the vet report adopted the v2 finding types (renders timing_story +
+// empty_stomach_timing, drops L2/L4), so every caller now takes the one v2 composition. The report's
+// adoption + drop is covered in generate-report/report.test.ts + render.test.ts; the v2 composition
+// behaviour these tests used to compare against is covered by the timing_story / L1 tests above.
 
 // ── Composition & ranking (§5) ───────────────────────────────────────────────
 

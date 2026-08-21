@@ -454,19 +454,11 @@ Deno.test('detectTrialResponse — ranks band 1 (context-lead) for the trial pet
   )
 })
 
-Deno.test('detectTrialResponse — pre-v2 (report path): the wedge card is off, and never displaces a shipped card', () => {
-  // The SAME trial fixture as the ranks-band-1 test above. composeV2 emits the trial_response wedge
-  // (band 1). pre-v2 (composeV2:false, the generate-report path) the lane never fires, so the report's
-  // Signal is the pre-v2 shape: no trial_response to occupy a slot, no v2 type at all.
-  const args = { mealEvents: mealsAcross(77, 0), symptomEvents: [...spreadVomits(12, 74, 30), vomit(10)] }
-  const on = detectSignals(trialInput(args))
-  assert.ok(on.some((r) => r.finding.type === 'trial_response'), 'v2 emits the trial_response wedge card')
-
-  const off = detectSignals(trialInput(args), DEFAULT_CONFIG, false)
-  assert.ok(!off.some((r) => r.finding.type === 'trial_response'), 'pre-v2 emits no trial_response')
-  const V2 = new Set(['empty_stomach_timing', 'timing_story', 'trial_response', 'gap_shortening'])
-  assert.ok(!off.some((r) => V2.has(r.finding.type)), 'pre-v2 emits no Signals v2 finding type')
-})
+// The pre-v2 report-path assertion (detectSignals' old `composeV2:false` arg) was removed in
+// CUL-564: the vet report adopted the v2 finding types but deliberately DROPS trial_response (its
+// dedicated diet-trial section renders that answer at higher fidelity — PM 2026-08-21), so the
+// report never surfaces this lane regardless. That drop is covered in generate-report/report.test.ts;
+// the wedge's ranking + firing is covered by the tests above.
 
 // ── §PROPERTY SWEEP (the REQUIRED adversarial calibration gate) ───────────────
 

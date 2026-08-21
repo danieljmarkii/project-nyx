@@ -4141,13 +4141,25 @@ function timingLine(c: CorrelationSummary, snap: ReportSnapshot): string {
     ? ` — ${h(c.stapleProtein)} is in most of what ${h(snap.signalment.name)} is offered, so it can't be isolated`
     : ''
   const timing = c.timing
-    .map((t) => {
-      if (t.kind === 'postprandial_timing' && 'rapidCount' in t.detail) {
-        return `${num(t.detail.rapidCount)} of ${num(t.detail.eligibleCount)} timed ${h(
-          symptomLabel(t.symptomType).toLowerCase(),
-        )} episodes fell within ~${num(t.detail.rapidWindowMinutes)} min of eating`
+    .map((t): string => {
+      const sym = h(symptomLabel(t.symptomType).toLowerCase())
+      switch (t.kind) {
+        // ⑤ — the shipped post-prandial line (byte-identical to the pre-v2 report).
+        case 'postprandial_timing':
+          return `${num(t.detail.rapidCount)} of ${num(t.detail.eligibleCount)} timed ${sym} episodes fell within ~${num(t.detail.rapidWindowMinutes)} min of eating`
+        // L1 (Signals v2, CUL-564) — the empty-stomach / long-fast band. Band-named only: the report
+        // states the timing, the vet makes the bilious/BVS inference.
+        case 'empty_stomach_timing':
+          return `${num(t.detail.longCount)} of ${num(t.detail.eligibleCount)} timed ${sym} episodes came ${num(t.detail.longGapHours)} h or more after eating`
+        // The merged ⑤+L1 story (Signals v2, CUL-564) — both bands over the one shared denominator.
+        // This is the card the pre-v2 report path dropped, taking the ⑤ with it.
+        case 'timing_story':
+          return `${num(t.detail.rapidCount)} of ${num(t.detail.eligibleCount)} timed ${sym} episodes fell within ~${num(t.detail.rapidWindowMinutes)} min of eating, and ${num(t.detail.longCount)} came ${num(t.detail.longGapHours)} h or more after eating`
+        // ⑥ timeofday_clustering is extracted but deliberately not surfaced on the report (see
+        // runDetection / the TimingFinding doc) — a clock restatement the vet reads from Appendix A.
+        case 'timeofday_clustering':
+          return ''
       }
-      return ''
     })
     .filter(Boolean)
     .join('; ')
