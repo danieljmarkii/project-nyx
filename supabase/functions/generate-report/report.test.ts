@@ -26,6 +26,7 @@ import {
   type ReportMedicationInput,
   type ReportMedicationItemInput,
   type ReportDoseInput,
+  type TimingFinding,
 } from './report.ts'
 import type { FoodFormat } from '../generate-signal/detection.ts'
 // The Class-A key, imported so the parity assertion below compares against the REAL
@@ -2930,12 +2931,57 @@ Deno.test('CUL-564 — assembleReport extracts the empty-stomach timing lane (L1
   assert.ok(l1, 'L1 (empty_stomach_timing) is extracted into the report timing set, not dropped')
   assert.equal(l1!.symptomType, 'vomit')
 
-  // The report timing set only ever carries the four kinds it renders/handles — L2 trial_response
-  // and L4 gap_shortening are not TimingFinding kinds and are dropped by runDetection, so they can
-  // never appear here (the CUL-564 exclusion, enforced by the type + the explicit switch cases).
+  // The report timing set only ever carries the four kinds it renders/handles. L2 trial_response and
+  // L4 gap_shortening are not `TimingFinding` kinds and are dropped by runDetection's explicit cases,
+  // so the TYPE makes it impossible for them to appear here (the CUL-564 exclusion). This asserts the
+  // invariant, not the drop path itself — the drop is a `break` the type already guarantees.
   const REPORT_TIMING_KINDS = ['postprandial_timing', 'timeofday_clustering', 'empty_stomach_timing', 'timing_story']
   assert.ok(
     snap.correlation.timing.every((t) => REPORT_TIMING_KINDS.includes(t.kind)),
     'only the four report timing kinds appear — no trial_response / gap_shortening leak',
+  )
+})
+
+Deno.test('CUL-564 — assembleReport extracts a merged ⑤+L1 timing_story (both bands, one denominator)', () => {
+  // A same-symptom co-fire: rapid vomits (⑤, ≤30 min after a feeding) AND long vomits (L1, ≥6h after)
+  // for vomiting, which compose into ONE timing_story. This exercises runDetection's timing_story
+  // EXTRACTION end-to-end — the `f.rapid.count` / `f.long.count` field mapping the render then reads
+  // (a field-swap there would silently mis-report the merged card, the class of bug CUL-564 fixes).
+  // Feedings at 01/09/17 UTC daily; rapid vomits at 09:20Z (20 min after the 09:00 feeding), long at
+  // 08:00Z (7h after the 01:00 feeding), one mid at 04:00Z. UTC instants — ⑤/L1 read raw gaps.
+  const events: ReportEventInput[] = []
+  for (let d = 5; d <= 27; d++) {
+    const date = `2026-05-${String(d).padStart(2, '0')}`
+    events.push(ratedMealEvent(date, '01:00:00', 'all'))
+    events.push(ratedMealEvent(date, '09:00:00', 'all'))
+    events.push(ratedMealEvent(date, '17:00:00', 'all'))
+  }
+  for (const d of [15, 16, 17]) events.push(makeEvent({ type: 'vomit', occurredAt: at(`2026-05-${d}`, '09:20:00') }))
+  for (const d of [18, 19, 20, 21, 22, 23]) events.push(makeEvent({ type: 'vomit', occurredAt: at(`2026-05-${d}`, '08:00:00') }))
+  events.push(makeEvent({ type: 'vomit', occurredAt: at('2026-05-24', '04:00:00') }))
+
+  const snap = assembleReport(baseInput({ now: '2026-05-30T12:00:00Z', events }))
+
+  const story = snap.correlation.timing.find(
+    (t): t is Extract<TimingFinding, { kind: 'timing_story' }> => t.kind === 'timing_story',
+  )
+  assert.ok(story, 'a merged ⑤+L1 timing_story is extracted (not dropped, not left as two separate cards)')
+  assert.ok(story!.detail.rapidCount >= 1, 'the post-prandial band is populated')
+  assert.ok(story!.detail.longCount >= 1, 'the empty-stomach band is populated')
+  // The cold-read invariant (CUL-564): the two bands are subsets of ONE shared eligible denominator,
+  // which never exceeds the logged episode count — a rendered "N of M" can never claim M > the events.
+  assert.ok(
+    story!.detail.rapidCount + story!.detail.longCount <= story!.detail.eligibleCount,
+    'rapid + long are subsets of the shared eligible denominator',
+  )
+  assert.ok(story!.detail.eligibleCount <= story!.detail.totalEpisodes, 'eligible never exceeds total episodes')
+  const loggedVomits = events.filter((e) => e.type === 'vomit').length
+  assert.ok(story!.detail.totalEpisodes <= loggedVomits, 'total episodes never exceeds the logged vomit count')
+
+  // composeTimingStory consumed both originals — the lone ⑤/L1 cards must NOT also appear for the same
+  // symptom, or timingLine would double-render it.
+  assert.ok(
+    !snap.correlation.timing.some((t) => t.kind === 'postprandial_timing' || t.kind === 'empty_stomach_timing'),
+    'the lone ⑤/L1 cards are consumed by the merge — no double-render',
   )
 })
