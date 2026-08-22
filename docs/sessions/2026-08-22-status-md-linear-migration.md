@@ -1,6 +1,6 @@
 # STATUS.md → a pointer card; the state moved to Linear (CUL-563)
 
-**Date:** 2026-08-22 · shipped via #695
+**Date:** 2026-08-22 · shipped via #698
 **Session type:** process / hygiene. Deliverable = a rewritten `STATUS.md`, 17 new Linear issues, 5 fold-in comments, and the workflow rewiring that keeps the file from regrowing. No app code, no schema, no build-phase change.
 **Lenses:** Product Owner / Backlog Steward (primary) · Dir. of Engineering (the deploy-ordering constraints) · Trust & Safety (the privacy items) · Sr. QA Associate (the device-QA fold-in).
 **Advances:** CUL-563 (scope expanded in-session, per the Backlog Protocol).
