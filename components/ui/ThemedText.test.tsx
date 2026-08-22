@@ -1,5 +1,6 @@
+import { createRef } from 'react';
 import { render } from '@testing-library/react-native';
-import { StyleSheet } from 'react-native';
+import { StyleSheet, Text } from 'react-native';
 import { ThemedText, resolveThemedTextStyle, fontFamilyForWeight } from './ThemedText';
 import { theme } from '../../constants/theme';
 
@@ -78,6 +79,17 @@ describe('ThemedText', () => {
     expect(styleOf(<ThemedText style={styles.label}>Nyx</ThemedText>).fontFamily).toBe(
       theme.fontBodyMedium
     );
+  });
+
+  // React 19 hands `ref` to a function component as an ordinary prop, so the spread
+  // attaches it with no forwardRef. Asserted because the runtime and the TYPES
+  // disagreed here at first — RN's TextProps does not declare `ref`, so the call site
+  // type-errored on a ref that in fact worked. ThemedTextProps widens it; this pins
+  // the behaviour so a later RN/React types bump cannot quietly break the sweeps.
+  it('attaches a ref to the underlying Text — no forwardRef needed on React 19', () => {
+    const ref = createRef<Text>();
+    render(<ThemedText ref={ref}>Nyx</ThemedText>);
+    expect(ref.current).not.toBeNull();
   });
 
   it('passes every other prop through — it is a drop-in for <Text>', () => {

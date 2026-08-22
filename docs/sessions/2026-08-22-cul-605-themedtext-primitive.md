@@ -67,6 +67,38 @@ medium-weight parent — the opposite of raw `<Text>` nesting, where the child i
 sweeps must give a nested emphasis span the weight it should render. `Animated.Text` and
 `TextInput` are not covered and were not in scope.
 
+## The code review's one real catch
+
+`code-reviewer` returned **fix-before-merge** on the docstring's claim that `ref` "passes
+straight through", reasoning that a plain function component silently drops refs and the
+fix is `React.forwardRef`. Half right, and the half that was wrong is the interesting one.
+
+Checked rather than taken at face value: this repo is on React **19.2**, where `ref` is an
+ordinary prop for function components and `forwardRef` is deprecated. A ref test renders
+and attaches fine — the spread already does the work. But `tsc` **rejects** the same call
+site, because `React.ComponentProps<typeof Text>` resolves to RN's `TextProps`, which does
+not declare `ref`.
+
+So the real defect was the opposite shape to the one reported: not a runtime drop with
+types that allow it, but working runtime behaviour with types that forbid it. The fix is
+one word — `ComponentPropsWithRef` — not a `forwardRef` wrapper this React version doesn't
+want. Both halves are now pinned by a test, so an RN or React types bump can't quietly
+break the sweeps.
+
+Two smaller findings taken: the nesting disclosure was understated (the family is injected
+*unconditionally*, so ThemedText-in-ThemedText breaks the native cascade every time, not
+only when the child is unstyled — and a raw nested `<Text>` is the clean way to inherit),
+and the per-render style object was flagged as a possible `useMemo` candidate on the
+list-heavy sweeps. The memo is not taken: it's speculative, and a `StyleSheet.flatten` per
+row is not a measured problem.
+
+One finding was **out of scope and routed rather than folded in**: `ThemedText` has no
+`Animated.Text` variant, and five `Animated.Text` call sites sit inside CUL-609's sweep
+boundary (`CompletionMoment`, `SheetLogBeat`, food/medication capture, vet-visit). A
+`<Text>` → `<ThemedText>` replace leaves them on the system face, and CUL-611's closing
+audit greps for raw `<Text>`, so the miss slips both nets. Filed as a comment on CUL-609
+with the two ways out.
+
 ## Verification
 
 `tsc --noEmit` clean. `jest --ci`: 247 suites / 5440 tests, all green, 11 new. No device

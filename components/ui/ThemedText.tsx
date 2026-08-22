@@ -58,16 +58,25 @@ export function resolveThemedTextStyle(style?: StyleProp<TextStyle>): StyleProp<
   return { ...rest, fontFamily: fontFamilyForWeight(fontWeight) };
 }
 
-export type ThemedTextProps = React.ComponentProps<typeof Text>;
+// ComponentPropsWithRef, not ComponentProps: React 19 passes `ref` to a function
+// component as an ordinary prop (no `forwardRef` — deprecated), so the spread below
+// already attaches it to the underlying Text at runtime. RN's `TextProps` alone does
+// not declare `ref`, though, so the plain ComponentProps form type-errors at any call
+// site that passes one while working perfectly. Verified both halves rather than
+// assumed — a primitive five sweeps build on should not have a docstring its types
+// contradict.
+export type ThemedTextProps = React.ComponentPropsWithRef<typeof Text>;
 
 /**
  * Drop-in replacement for `<Text>`. Every other prop — `numberOfLines`,
  * `accessibilityRole`, `onPress`, `ref` — passes straight through.
  *
- * Known limit, by design: family resolution is per-component, not inherited. A
- * ThemedText nested inside another ThemedText for emphasis resolves its OWN family,
- * so a child with no style renders regular even under a medium-weight parent. Give
- * the nested span the weight it should render — the same rule the sweeps follow.
+ * Known limit, by design: family resolution is per-component, not inherited. Every
+ * ThemedText injects an explicit `fontFamily` — including a bare one with no style at
+ * all — so nesting ThemedText inside ThemedText for inline emphasis breaks RN's native
+ * text-style cascade EVERY time, not just when the child is unstyled. Two ways out,
+ * both fine: give the nested span the weight it should render, or nest a raw `<Text>`,
+ * which inherits the ancestor ThemedText's resolved family through the native cascade.
  */
 export function ThemedText({ style, ...rest }: ThemedTextProps) {
   return <Text {...rest} style={resolveThemedTextStyle(style)} />;
