@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { getDb } from '../lib/db';
+import { summarizeSymptomTrend, trendLookbackStartMs, TREND_SYMPTOM_TYPES } from '../lib/trendSummary';
 import { supabase } from '../lib/supabase';
 import { usePetStore } from '../store/petStore';
 import { useSyncStore } from '../store/syncStore';
@@ -36,7 +37,15 @@ export interface TrendData {
    *  Same key space as `buckets[].date` so the marker lands on the right column. */
   trialStartDayKey: string | null;
   hasEnoughData: boolean; // true when >= 3 days have any events
-  // Direction data for symptom mode
+  // Week-over-week EPISODE counts for symptom mode (B-067/CUL-372 — episodes, not
+  // raw rows; collapsed through `lib/symptomEpisodes`, the predicate the Signal
+  // engine uses).
+  //
+  // `lastWeekSymptomCount` is retained as DATA — CUL-383's Trend redesign needs the
+  // prior window — but the Trend card must not render it as a comparison. A
+  // week-over-week verdict is a gated claim that belongs to the Signal's reflection
+  // layer, which alone carries the worsening / chronicity / density gates; this card
+  // rendering one is the bypass B-067 recorded. See the comment in `SymptomChart`.
   dominantSymptomType: string | null;
   thisWeekSymptomCount: number;
   lastWeekSymptomCount: number;
@@ -45,7 +54,7 @@ export interface TrendData {
   lastWeekMealDays: number;
 }
 
-const SYMPTOM_TYPES = new Set(['vomit', 'diarrhea', 'itch', 'scratch', 'skin_reaction', 'lethargy']);
+const SYMPTOM_TYPES: ReadonlySet<string> = new Set(TREND_SYMPTOM_TYPES);
 
 export function useTrend(): { data: TrendData | null; isLoading: boolean } {
   const { activePet } = usePetStore();
@@ -61,8 +70,13 @@ export function useTrend(): { data: TrendData | null; isLoading: boolean } {
 
     async function load() {
       try {
-        const cutoff = new Date();
-        cutoff.setDate(cutoff.getDate() - 14);
+        // ONE instant for both the SQL bound and the window bounds. These used to be
+        // computed on different bases (calendar `setDate` vs fixed-offset epoch ms),
+        // which agree except across a DST transition — and because the calendar one
+        // was the SQL bound, an event in the diverging sliver was never FETCHED, so it
+        // vanished from the prior window instead of being visibly filtered.
+        const nowMs = Date.now();
+        const cutoff = new Date(trendLookbackStartMs(nowMs));
 
         // Read last 14 days of events from local SQLite (fast, works offline)
         const db = getDb();
@@ -75,28 +89,25 @@ export function useTrend(): { data: TrendData | null; isLoading: boolean } {
 
         const buckets = buildBuckets(rawEvents);
 
-        // Week-over-week direction data
-        const sevenDaysAgo = new Date();
-        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-        const sevenDaysAgoISO = sevenDaysAgo.toISOString();
+        // Week-over-week counts, in EPISODES (B-067/CUL-372), and the symptom the card
+        // names. These used to be raw row counts computed here, which put this card in
+        // direct contradiction with the Signal's reflection card one row above: a cat
+        // that vomited four times inside an hour read as "4 this week" here and
+        // "1 episode this week" there, and the two could disagree on DIRECTION too.
+        //
+        // The arithmetic lives in `lib/trendSummary` so it can be unit-tested — the
+        // first cut of it, inline here, shipped a DST-dependent fetch window and a
+        // tie-break that did not match the engine's, neither reachable by any test
+        // because this hook reads SQLite.
+        const {
+          dominantSymptomType,
+          thisWeekSymptomCount,
+          lastWeekSymptomCount,
+        } = summarizeSymptomTrend(rawEvents, nowMs);
 
-        const symptomTotals: Record<string, number> = {};
-        for (const e of rawEvents) {
-          if (SYMPTOM_TYPES.has(e.event_type)) {
-            symptomTotals[e.event_type] = (symptomTotals[e.event_type] ?? 0) + 1;
-          }
-        }
-        const dominantSymptomType = Object.keys(symptomTotals).length > 0
-          ? Object.entries(symptomTotals).sort((a, b) => b[1] - a[1])[0][0]
-          : null;
-
-        const thisWeekSymptomCount = rawEvents.filter(
-          e => e.event_type === dominantSymptomType && e.occurred_at >= sevenDaysAgoISO,
-        ).length;
-        const lastWeekSymptomCount = rawEvents.filter(
-          e => e.event_type === dominantSymptomType && e.occurred_at < sevenDaysAgoISO,
-        ).length;
-
+        // Meal-day density is a LOGGING measure, not a symptom count, so it stays on
+        // raw events and distinct days — there is no episode to collapse here.
+        const sevenDaysAgoISO = new Date(nowMs - 7 * 24 * 60 * 60 * 1000).toISOString();
         const thisWeekMealDays = new Set(
           rawEvents
             .filter(e => e.event_type === 'meal' && e.occurred_at >= sevenDaysAgoISO)
@@ -142,6 +153,12 @@ export function useTrend(): { data: TrendData | null; isLoading: boolean } {
         // events are the thing this owner is watching, and Principle 3 says
         // concern leads. With nothing at all to plot the feeding chart is still
         // the more useful picture, so the floor is 1 rather than 0.
+        //
+        // Deliberately still RAW EVENTS, not episodes (B-067/CUL-372). The episode
+        // collapse governs what the card COUNTS; this floor governs whether the card
+        // appears at all, and those are different questions. Collapsing here would flip
+        // an acute multi-bout day (five vomits in two hours -> one episode) below the
+        // floor of 3 and hide the symptom chart on exactly the day it matters most.
         const totalSymptoms = rawEvents.filter(e => SYMPTOM_TYPES.has(e.event_type)).length;
         const symptomFloor = hasTrial ? 1 : 3;
         const mode: TrendMode = totalSymptoms >= symptomFloor ? 'symptom' : 'feeding';
@@ -175,21 +192,46 @@ export function useTrend(): { data: TrendData | null; isLoading: boolean } {
   return { data, isLoading };
 }
 
+// The bars count RAW EVENTS, deliberately — they are an INTENSITY plot, not a
+// decomposition of the head's episode count (the head names ONE symptom type; these
+// bars total ALL of them, and always did, so the two were never arithmetically
+// related).
+//
+// An interim version of this fix bucketed episode ONSETS here instead, and adversarial
+// review broke it on two counts. A day whose symptoms merely CONTINUE a chain begun the
+// night before scored 0, which (a) dropped it out of `daysWithAnyEvent`, so six logged
+// vomits rendered as "a few more days of logs and we'll be able to show the pattern",
+// and (b) drew the morning after the worst night of a cat's life as an empty column,
+// pixel-identical to a symptom-free day. That is reassurance-by-absence on the one
+// artifact this card exists to keep, so the bars stay raw.
 function buildBuckets(
   events: Array<{ event_type: string; occurred_at: string }>,
 ): DayBucket[] {
   const buckets: DayBucket[] = [];
 
-  // Build 14 buckets: oldest first
+  // Build 14 buckets: oldest first.
+  //
+  // Stepped in fixed epoch days, NOT calendar `setDate` (B-067/CUL-372). The keys are
+  // UTC (`toISOString`) but `setDate` steps LOCAL calendar days, and on a spring-forward
+  // day that mismatch yields only 13 DISTINCT keys for 14 columns: one UTC day's events
+  // land in no bucket at all, one column is permanently empty, and `daysWithAnyEvent`
+  // drops by one — which on a marginal pet flips the whole card to the "a few more days
+  // of logs" empty state. Swept across DST-observing zones it lands ~13 renders a year.
+  // Same two-bases mistake as the fetch-bound bug, three lines further down the file.
+  //
+  // (This does NOT resolve the deeper B-421 question — these keys are UTC while the app's
+  // day boundary is local midnight, the drift `lib/widgetSnapshotV2.ts` already names in
+  // this file. It makes the 14 keys distinct and contiguous, nothing more.)
+  const todayMs = Date.now();
   for (let i = 13; i >= 0; i--) {
-    const d = new Date();
-    d.setDate(d.getDate() - i);
+    const d = new Date(todayMs - i * 24 * 60 * 60 * 1000);
     buckets.push({ date: d.toISOString().split('T')[0], symptomCount: 0, mealCount: 0 });
   }
 
+  const byDate = new Map(buckets.map(b => [b.date, b]));
+
   for (const event of events) {
-    const dateStr = event.occurred_at.split('T')[0];
-    const bucket = buckets.find(b => b.date === dateStr);
+    const bucket = byDate.get(event.occurred_at.split('T')[0]);
     if (!bucket) continue;
     if (SYMPTOM_TYPES.has(event.event_type)) bucket.symptomCount++;
     if (event.event_type === 'meal') bucket.mealCount++;
