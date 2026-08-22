@@ -505,6 +505,12 @@ describe('the detector itself', () => {
     expect(kinds(`function f(){ useSnackbarStore.getState().show({ message: error.message }); }`, 'leak')).toBe(1);
     expect(kinds(`const C = () => <Text>{error.message}</Text>;`, 'leak')).toBe(1);
     expect(kinds(`const C = () => <Banner message={error.message} />;`, 'leak')).toBe(1);
+    // The Geist rollout (CUL-364) swaps `<Text>` for `<ThemedText>` across ~39 files.
+    // `isTextTag` already matches any `*Text` tag, and this pins that it keeps doing
+    // so — a sweep that silently took the B-399 leak class out of scan would be the
+    // worst kind of regression: invisible, and only in the error path.
+    expect(kinds(`const C = () => <ThemedText>{error.message}</ThemedText>;`, 'leak')).toBe(1);
+    expect(kinds(`const C = () => <ThemedText>Logged!</ThemedText>;`, 'bang')).toBe(1);
   });
 
   it('SPARES the authErrorCopy mapper output and the store-then-map pattern', () => {
