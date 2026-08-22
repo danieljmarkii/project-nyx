@@ -209,10 +209,22 @@ function buildBuckets(
 ): DayBucket[] {
   const buckets: DayBucket[] = [];
 
-  // Build 14 buckets: oldest first
+  // Build 14 buckets: oldest first.
+  //
+  // Stepped in fixed epoch days, NOT calendar `setDate` (B-067/CUL-372). The keys are
+  // UTC (`toISOString`) but `setDate` steps LOCAL calendar days, and on a spring-forward
+  // day that mismatch yields only 13 DISTINCT keys for 14 columns: one UTC day's events
+  // land in no bucket at all, one column is permanently empty, and `daysWithAnyEvent`
+  // drops by one — which on a marginal pet flips the whole card to the "a few more days
+  // of logs" empty state. Swept across DST-observing zones it lands ~13 renders a year.
+  // Same two-bases mistake as the fetch-bound bug, three lines further down the file.
+  //
+  // (This does NOT resolve the deeper B-421 question — these keys are UTC while the app's
+  // day boundary is local midnight, the drift `lib/widgetSnapshotV2.ts` already names in
+  // this file. It makes the 14 keys distinct and contiguous, nothing more.)
+  const todayMs = Date.now();
   for (let i = 13; i >= 0; i--) {
-    const d = new Date();
-    d.setDate(d.getDate() - i);
+    const d = new Date(todayMs - i * 24 * 60 * 60 * 1000);
     buckets.push({ date: d.toISOString().split('T')[0], symptomCount: 0, mealCount: 0 });
   }
 

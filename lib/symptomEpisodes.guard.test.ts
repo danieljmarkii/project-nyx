@@ -35,7 +35,13 @@ function appSources(): string[] {
       }
     }
   };
-  for (const dir of ['lib', 'hooks', 'components', 'app', 'store']) walk(dir);
+  // `supabase/functions` INCLUDED. The re-pass demonstrated the omission: a second
+  // collapse written inside detection.ts passed this guard, and photoComposition.ts's
+  // `collapseComposition` — a live third body feeding owner-facing counts — sat in the
+  // blind spot the whole time.
+  for (const dir of ['lib', 'hooks', 'components', 'app', 'store', 'supabase/functions']) {
+    walk(dir);
+  }
   return out;
 }
 
@@ -74,8 +80,9 @@ const readCode = (p: string) =>
  *  unrelated file is a guard someone eventually deletes. What actually defines this
  *  algorithm is the CHAINING CURSOR: a `prev` that advances to every event, which is
  *  what makes a long drip one episode rather than many. */
-const GAP_THRESHOLD = /\bgapMs\b|\bgapHours\b|EPISODE_GAP_HOURS\s*=/;
-const CHAIN_CURSOR = /\bprev\b\s*=/;
+const GAP_THRESHOLD =
+  /\b(gap|threshold|episodeGap)[A-Za-z]*\s*(=|\))|EPISODE_GAP_HOURS|episodeGapHours/;
+const CHAIN_CURSOR = /\b(prev|last|cursor|previous)[A-Za-z]*\s*=\s*sorted\[/;
 const reimplementsCollapse = (src: string) =>
   GAP_THRESHOLD.test(src) && CHAIN_CURSOR.test(src);
 
@@ -86,7 +93,25 @@ const reimplementsCollapse = (src: string) =>
  *  wrong, and adversarial review caught it: `collapseEpisodes` had been sitting there
  *  the whole time, generic over the event shape. `symptomEpisodes` is now a thin
  *  adapter that delegates, so the claim is true and this list is the proof obligation. */
-const COLLAPSE_OWNERS = ['lib/mealTiming.ts'];
+const COLLAPSE_OWNERS = [
+  'lib/mealTiming.ts',
+  // NAMED EXEMPTION, not an oversight. `collapseComposition` chains the same rule over
+  // photo-composition records rather than bare instants, and feeds the {count,
+  // denominator} pairs on the Signal's timing cards. Re-basing it is a real change to a
+  // deployed engine path and belongs in its own PR — filed as CUL-572. The drift the
+  // re-pass actually worried about (a SECOND hardcoded 3) is closed regardless:
+  // SYMPTOM_EPISODE_GAP_HOURS now resolves to DEFAULT_MEAL_TIMING_CONFIG.episodeGapHours,
+  // which is the constant this file reads, so the two cannot diverge.
+  'supabase/functions/generate-signal/photoComposition.ts',
+];
+
+// KNOWN LIMIT, stated rather than implied (the `guards/ownerFacingCopy.test.ts`
+// convention). This is a syntactic scan: it keys on a gap-threshold assignment plus a
+// chaining cursor indexed off a `sorted` array, which is the shape every implementation
+// in this repo has taken. A determined rewrite — different identifiers, a `reduce`, a
+// while-loop over an iterator — defeats it, as the re-pass demonstrated with two renames
+// against the first draft. It is a tripwire for the accidental second copy, which is how
+// all three real ones arrived; it is not a proof of uniqueness.
 
 describe('the symptom-episode collapse has one implementation (B-067)', () => {
   it('the Home Trend hook delegates and carries no collapse of its own', () => {
@@ -142,7 +167,15 @@ describe('the symptom-episode collapse has one implementation (B-067)', () => {
         if (sorted[i].ms - prev > gapMs) out.push(sorted[i]);
         prev = sorted[i].ms;
       }`)).toBe(true);
-    expect(reimplementsCollapse('export const SYMPTOM_EPISODE_GAP_HOURS = 3;\nprev = x;')).toBe(true);
+    // The rename the re-pass used to defeat the first draft: prev->last, gapMs->threshold.
+    expect(reimplementsCollapse(`
+      const threshold = SYMPTOM_EPISODE_GAP_HOURS * 3_600_000;
+      const sorted = [...events].sort((a, b) => a.ms - b.ms);
+      let last = sorted[0].ms;
+      for (let i = 1; i < sorted.length; i++) {
+        if (sorted[i].ms - last > threshold) out.push(sorted[i]);
+        last = sorted[i].ms;
+      }`)).toBe(true);
   });
 
   it('does NOT fire on innocent gap or duration arithmetic', () => {

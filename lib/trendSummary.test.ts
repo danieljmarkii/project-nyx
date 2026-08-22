@@ -101,12 +101,38 @@ describe('summarizeSymptomTrend', () => {
     expect(summarizeSymptomTrend(events, NOW).dominantSymptomType).toBe('vomit');
   });
 
-  it('breaks an equal-count tie by the larger fall', () => {
+  // THE TIE-BREAK DIRECTION. An earlier version copied detectReflections' "larger fall"
+  // tie-break without its candidate filter (`currentCount <= priorCount`). Inside that
+  // filter the rule only orders already-falling symptoms; outside it, it systematically
+  // prefers the symptom going AWAY over the one that just arrived. Adversarial review
+  // reproduced it three ways. These pin the corrected direction.
+  it('breaks an equal-count tie toward the RISING symptom, not the resolving one', () => {
     const events = [
-      ev('vomit', 1), ev('vomit', 8),                       // 1 this / 1 last
-      ev('itch', 2), ev('itch', 9), ev('itch', 10),         // 1 this / 2 last — bigger fall
+      ev('vomit', 1),                                       // 1 this / 0 last — rising
+      ev('itch', 2), ev('itch', 9), ev('itch', 10),         // 1 this / 2 last — resolving
     ];
-    expect(summarizeSymptomTrend(events, NOW).dominantSymptomType).toBe('itch');
+    expect(summarizeSymptomTrend(events, NOW).dominantSymptomType).toBe('vomit');
+  });
+
+  it('names the acute vomiting bout, not the resolving itch beside it', () => {
+    // Four vomits inside ninety minutes = ONE episode, which ties it with the itch at 1.
+    // The old rule handed the card to the itch and never named the vomiting at all,
+    // over a chart whose tallest column was entirely vomit.
+    const events = [
+      ev('vomit', 1, 0), ev('vomit', 1, 0.5), ev('vomit', 1, 1), ev('vomit', 1, 1.5),
+      ev('itch', 2), ev('itch', 9),
+    ];
+    expect(summarizeSymptomTrend(events, NOW).dominantSymptomType).toBe('vomit');
+  });
+
+  it('names a steady chronic symptom over a falling one at the same count', () => {
+    const events = [
+      ev('vomit', 1), ev('vomit', 3), ev('vomit', 5),                     // 3 this
+      ev('vomit', 8), ev('vomit', 10), ev('vomit', 12),                   // 3 last — flat
+      ev('itch', 2), ev('itch', 4), ev('itch', 6),                        // 3 this
+      ev('itch', 8), ev('itch', 9), ev('itch', 10), ev('itch', 11), ev('itch', 12), // 5 last — falling
+    ];
+    expect(summarizeSymptomTrend(events, NOW).dominantSymptomType).toBe('vomit');
   });
 
   // The absence floor, shared with detectReflections: "0 episodes this week" is

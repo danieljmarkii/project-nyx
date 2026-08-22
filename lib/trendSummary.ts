@@ -86,8 +86,9 @@ export function symptomOnsetsByType(
  * Pick the symptom the card names and count its two windows, in EPISODES.
  *
  * Selection mirrors the Signal reflection layer's *intent* — the symptom most present
- * right now, highest current-window episode count, tie broken by the larger fall, then
- * by `TREND_SYMPTOM_TYPES` order — but deliberately NOT its candidate FILTER. The
+ * right now, highest current-window episode count, tie broken toward the symptom that is
+ * RISING, then by `TREND_SYMPTOM_TYPES` order — but deliberately NOT its candidate
+ * FILTER. The
  * engine only considers symptoms that are flat-or-falling and clear an episode floor,
  * because it is deciding whether to make a comparative CLAIM. This card makes no claim;
  * it draws a chart, and a chart that refused to plot a rising symptom would be worse
@@ -129,8 +130,19 @@ export function summarizeSymptomTrend(
       continue;
     }
     // A symptom active THIS week always outranks one that is only in the prior window
-    // (the absence floor), then higher current count, then the larger fall. Iteration
+    // (the absence floor), then higher current count, then the larger RISE. Iteration
     // order supplies the final tie-break, so nothing here needs to express it.
+    //
+    // THE RISE, NOT THE FALL — and this direction is load-bearing. An earlier version
+    // copied `detectReflections`' "larger fall" tie-break along with its sort. Inside
+    // that detector the tie-break is safe, because its candidate FILTER
+    // (`currentCount <= priorCount`) means it only ever orders symptoms that are already
+    // falling. Lifted out of the filter, the same rule systematically prefers the symptom
+    // that is going AWAY over the one that just arrived: a cat with four vomits in ninety
+    // minutes beside a resolving itch got a card headed "Itch/Scratch", with the vomiting
+    // named nowhere, over a chart whose tallest column was the vomiting. That is an
+    // improvement-lean in the one piece of naming this card still does — in a fix whose
+    // whole purpose is removing that lean — so the comparison is inverted here.
     const bestActive = best.thisWeekSymptomCount > 0;
     const active = current > 0;
     if (active !== bestActive) {
@@ -145,7 +157,7 @@ export function summarizeSymptomTrend(
     }
     if (
       current === best.thisWeekSymptomCount &&
-      prior - current > best.lastWeekSymptomCount - best.thisWeekSymptomCount
+      current - prior > best.thisWeekSymptomCount - best.lastWeekSymptomCount
     ) {
       best = { dominantSymptomType: type, thisWeekSymptomCount: current, lastWeekSymptomCount: prior };
     }

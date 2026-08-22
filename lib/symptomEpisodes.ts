@@ -34,17 +34,21 @@
 // `generate-signal`'s Deno closure via detection.ts, and `deno test` type-checks with
 // explicit-extension resolution. Matches lib/dietTrial.ts and lib/trialResponseCounts.ts,
 // the other dual-consumed lib files. Metro and jest resolve it fine.
-import { collapseEpisodes } from './mealTiming.ts';
+import { collapseEpisodes, DEFAULT_MEAL_TIMING_CONFIG } from './mealTiming.ts';
 
 /**
  * Gap that separates two episodes of the SAME symptom, in hours.
  *
- * 3h is the shipped engine default (`DEFAULT_CONFIG.symptomEpisodeGapHours`),
- * which continues to own the value for the engine's own per-call config; this
- * constant is what a consumer with no config (the client) reads, so the two
- * cannot drift apart silently.
+ * 3h, and SOURCED rather than re-typed. There were three copies of this number:
+ * `DEFAULT_CONFIG.symptomEpisodeGapHours` (the engine's per-call knob),
+ * `DEFAULT_MEAL_TIMING_CONFIG.episodeGapHours` (which `photoComposition`'s
+ * `collapseComposition` reads), and a literal here. Adversarial review pointed out that
+ * two independent 3s let the Signal print "3 of 5 episodes showed hair" beside a
+ * sentence saying 4 episodes — the exact defect class B-067 recorded, one layer down.
+ * They now all resolve to one value; the engine's config field still exists so a caller
+ * can override the gap per-call, which is a different thing from a second default.
  */
-export const SYMPTOM_EPISODE_GAP_HOURS = 3;
+export const SYMPTOM_EPISODE_GAP_HOURS = DEFAULT_MEAL_TIMING_CONFIG.episodeGapHours;
 
 /**
  * Collapse a list of symptom-event instants (epoch ms, one SYMPTOM TYPE only)
