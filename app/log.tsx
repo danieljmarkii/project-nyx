@@ -32,7 +32,7 @@ import { getActiveRegimenForDrug, getMealForEvent, updateDoseAdherence, PickerFo
 import { supabase } from '../lib/supabase';
 import { syncPendingMedicationAdministrations } from '../lib/sync';
 import { insertMeal } from '../lib/meals';
-import { insertMedicationDose } from '../lib/medicationDose';
+import { insertMedicationDose, applyLogTimeDoubleDoseCheck } from '../lib/medicationDose';
 import { insertWeightCheck, getLatestWeightKg, parseWeightLbsToKg, kgToLbs } from '../lib/weight';
 import { inferDoseVehicleFromFoodType, initialComboDoseAdherence, isVehicleNotFinished, drugDisplayName, type DoseAdherence } from '../lib/medications';
 // The simple-event write side-effects (event row + photo + its AI read + sync +
@@ -567,6 +567,8 @@ export default function LogModal() {
       showMedicationMoment(
         {
           eventId: result.eventId,
+          petId: writePetId,
+          medicationItemId: med.id,
           occurredAt: result.occurredAtIso,
           // B-171 — name the drug the way the owner does (brand when present), so the
           // card confirms with the word on the tile they just tapped. generic_name is
@@ -588,6 +590,22 @@ export default function LogModal() {
         },
         { delayMs: 450 },
       );
+      // B-157 (CUL-284) — the log-time double-dose check, fired fire-and-forget for the
+      // same reason the meal path's trial heads-up is (Principle 1: the log stays one
+      // tap, the dose is already saved). It waits for THIS card's deferred reveal before
+      // patching, so it can't race ahead of the 450ms above and drop the note.
+      //
+      // Passing the adherence we just WROTE, not a re-read: a not-finished-vehicle combo
+      // is UNCONFIRMED (null) here, and the detector correctly declines to call an
+      // unconfirmed dose a repeat. If the owner then resolves it to 'given' on the card,
+      // the card's own recompute is what surfaces the note.
+      void applyLogTimeDoubleDoseCheck({
+        eventId: result.eventId,
+        petId: writePetId,
+        medicationItemId: med.id,
+        occurredAt: result.occurredAtIso,
+        adherence,
+      });
     } catch (e) {
       console.error('[log] dose saved, but its post-write presentation failed:', e);
     }
