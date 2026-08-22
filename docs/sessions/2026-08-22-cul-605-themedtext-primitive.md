@@ -106,6 +106,22 @@ pass — nothing renders through the primitive yet, so there is nothing on scree
 at; the first sweep (CUL-607, History) is where a device pass earns its keep, and any
 visible type change on *this* PR would be a bug.
 
+## One thing found at wrap, unrelated to the code
+
+Checking this branch for divergence surfaced that **#697 conflicts with `main` on
+`STATUS.md`** — it branched from `2368c123`, which predates #698, so it still carries the
+490-line pre-pointer-card file against `main`'s 61. A test merge confirms the conflict.
+The hazard is not the conflict, it is the resolution: a hand-merge that keeps both sides
+re-inflates the file and undoes #698 on the day it landed, which is the exact failure mode
+CLAUDE.md documents. Filed as **CUL-615** (`Waiting on PM`) with the instruction to take
+`main`'s side wholesale — nothing is lost, since what #697 wrote there is per-session
+narrative that now belongs in its own session record.
+
+The pointer card's live-tracks table also had no row for **Aug. 2026 Design Polish**, the
+track this PR belongs to — the design session would have added it to a file that no longer
+exists in that shape. Added here as a one-line diff, which is the "a track started"
+condition in `/wrap` step 3b and the only STATUS.md edit this session makes.
+
 ## What this unblocks
 
 CUL-607 (History) ∥ CUL-608 (Foods) — both ready now and mutually parallel-safe.

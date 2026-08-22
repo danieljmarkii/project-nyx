@@ -39,6 +39,7 @@ The **Build Sequence** (`CLAUDE.md`) is done end to end: steps 1–8 complete; *
 | **Signals v2 — the record, decomposed** | Shipped + GA'd 2026-08-20. Both beta flags retired. Report-side adoption (CUL-564) is merged but inert until the deploy below. |
 | **The Daily Recap** | DR-0…DR-7 all shipped. Open: the §5.5 portfolio-slate reaction and the CUL-27 finish-pass briefs. |
 | **Backlog → Linear: operationalize the cutover** | The workflow rewiring. Remaining: CUL-522 (dual-source stragglers), CUL-530, CUL-563. |
+| **Aug. 2026 Design Polish** | New (2026-08-22). Nav identity, the arrival moment, the two-register completion system + haptics, Trend verbiage, Geist app-wide, plus the audit's defect fallout. 18 PRs, one per session; the project description carries the run order. |
 | **Legacy Backlog** | The migrated `B-NNN` rows. Not a track — a holding project. |
 
 ### Two standing holds
