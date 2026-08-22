@@ -154,9 +154,18 @@ describe('MedicationCompletionCard — the log-time double-dose note (B-157)', (
     expect(queryByText('Did Mochi still get it?')).toBeNull();
   });
 
-  it('keeps the dose logged and the card calm when the recheck itself fails', async () => {
+  it('keeps the dose logged and KEEPS the note when the recheck itself fails', async () => {
     // A check failure is a display miss, never data loss: it must not revert the
     // adherence write or alarm the owner.
+    //
+    // It must also not CLEAR the note, and that is a decision rather than an accident.
+    // When the recheck fails the app does not know the truth, so the choice is between
+    // over-flagging (keep a note we already had evidence for) and under-flagging (make
+    // it disappear). The clinical-guardrails asymmetry settles it: escalate on
+    // presence, never reassure on absence. Retiring a standing flag because a read
+    // threw would be manufacturing silence out of ignorance — and the note stays
+    // honest anyway ("worth double-checking"), while the dose detail screen recomputes
+    // it cleanly on the next focus.
     seedDose({ doubleDose: CONFLICT });
     const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
     mockGetDoubleDoseFlag.mockRejectedValue(new Error('sqlite is having a day'));
@@ -165,6 +174,7 @@ describe('MedicationCompletionCard — the log-time double-dose note (B-157)', (
       fireEvent.press(getByText('Partial'));
     });
     expect(mockUpdateDoseAdherence).toHaveBeenCalledWith('m1', 'partial');
+    getByText(NOTE);
     warn.mockRestore();
   });
 });
