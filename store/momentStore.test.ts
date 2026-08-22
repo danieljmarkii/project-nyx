@@ -1,4 +1,7 @@
-import { useMomentStore, whenMealCardVisible } from './momentStore';
+import {
+  useMomentStore, whenMealCardVisible, whenMedicationCardVisible,
+  MEDICATION_FLAGGED_DURATION_MS,
+} from './momentStore';
 import type { MealPayload, MedicationPayload } from './momentStore';
 
 function mealPayload(over: Partial<Omit<MealPayload, 'kind'>> = {}): Omit<MealPayload, 'kind'> {
@@ -17,6 +20,8 @@ function mealPayload(over: Partial<Omit<MealPayload, 'kind'>> = {}): Omit<MealPa
 function medicationPayload(over: Partial<Omit<MedicationPayload, 'kind'>> = {}): Omit<MedicationPayload, 'kind'> {
   return {
     eventId: 'm1',
+    petId: 'p1',
+    medicationItemId: 'drug-1',
     occurredAt: '2026-06-07T14:00:00.000Z',
     drugName: 'Prednisolone',
     adherence: 'given',
@@ -505,5 +510,122 @@ describe('whenMealCardVisible — closing the picker-path warning drop (B-693)',
     const visible = whenMealCardVisible('e-ghost');
     jest.advanceTimersByTime(3000);
     await expect(visible).resolves.toBe(false);
+  });
+  // ── B-157 (CUL-284): the log-time double-dose note ────────────────────────────
+  //
+  // The detector itself is lib/medications.test.ts's job (detectDoubleDose + the
+  // window math); the rendered note is MedicationCompletionCard.test.tsx's. What
+  // ONLY the store can answer, and what these own: a late answer can never decorate
+  // the wrong dose, a dismissed card is never patched, and a note the owner has not
+  // had time to read cannot be dismissed out from under them.
+
+  const CONFLICT = { conflict: true as const, otherEventId: 'm0', gapMinutes: 95 };
+  const NO_CONFLICT = { conflict: false as const, otherEventId: null, gapMinutes: null };
+
+  it('patchDoubleDose lands the flag on the medication card that is showing', () => {
+    useMomentStore.getState().showMedication(medicationPayload());
+    expect(useMomentStore.getState().patchDoubleDose('m1', CONFLICT, 'given')).toBe(true);
+    const { payload } = useMomentStore.getState();
+    if (payload?.kind !== 'medication') throw new Error('expected medication payload');
+    expect(payload.doubleDose).toEqual(CONFLICT);
+  });
+
+  it('a CONFLICT extends the dwell so a safety note cannot flash past', () => {
+    useMomentStore.getState().showMedication(medicationPayload());
+    // Part-way through the normal 5s dwell, the check resolves.
+    jest.advanceTimersByTime(4000);
+    useMomentStore.getState().patchDoubleDose('m1', CONFLICT, 'given');
+    // The old 5s deadline passes without dismissing — the window was re-armed.
+    jest.advanceTimersByTime(1001);
+    expect(useMomentStore.getState().visible).toBe(true);
+    jest.advanceTimersByTime(MEDICATION_FLAGGED_DURATION_MS);
+    expect(useMomentStore.getState().visible).toBe(false);
+  });
+
+  it('a CLEAR (no conflict) leaves the dwell alone — it never buys time to read nothing', () => {
+    useMomentStore.getState().showMedication(medicationPayload());
+    // The owner taps a chip: the card holds open 1.5s to confirm the selection, then
+    // the recompute comes back clean. That must not stretch the card back out to 7s.
+    useMomentStore.getState().rescheduleHide(1500);
+    useMomentStore.getState().patchDoubleDose('m1', NO_CONFLICT, 'given');
+    jest.advanceTimersByTime(1500);
+    expect(useMomentStore.getState().visible).toBe(false);
+  });
+
+  it('CLEARS a note already on the card when the recompute comes back clean', () => {
+    // The B-135 staleness guarantee, at the store layer: downgrading off 'given'
+    // re-runs the check, and the no-conflict result must RETIRE the note rather than
+    // leave it standing over a dose the owner just said was missed.
+    useMomentStore.getState().showMedication(medicationPayload({ doubleDose: CONFLICT }));
+    expect(useMomentStore.getState().patchDoubleDose('m1', NO_CONFLICT, 'given')).toBe(true);
+    const { payload } = useMomentStore.getState();
+    if (payload?.kind !== 'medication') throw new Error('expected medication payload');
+    expect(payload.doubleDose?.conflict).toBe(false);
+  });
+
+  it('refuses a late answer meant for a SUPERSEDED dose (never decorates the wrong one)', () => {
+    useMomentStore.getState().showMedication(medicationPayload({ eventId: 'm1' }));
+    // A second dose is logged before the first check resolves.
+    useMomentStore.getState().showMedication(medicationPayload({ eventId: 'm2' }));
+    expect(useMomentStore.getState().patchDoubleDose('m1', CONFLICT, 'given')).toBe(false);
+    const { payload } = useMomentStore.getState();
+    if (payload?.kind !== 'medication') throw new Error('expected medication payload');
+    expect(payload.eventId).toBe('m2');
+    expect(payload.doubleDose ?? null).toBeNull();
+  });
+
+  it('refuses to patch a DISMISSED card (no safety prose on the way out)', () => {
+    useMomentStore.getState().showMedication(medicationPayload());
+    jest.advanceTimersByTime(5000);
+    expect(useMomentStore.getState().visible).toBe(false);
+    expect(useMomentStore.getState().patchDoubleDose('m1', CONFLICT, 'given')).toBe(false);
+  });
+
+  it('refuses to patch a MEAL card (the two presentations never cross)', () => {
+    useMomentStore.getState().showMeal(mealPayload({ eventId: 'e1' }));
+    expect(useMomentStore.getState().patchDoubleDose('e1', CONFLICT, 'given')).toBe(false);
+  });
+
+  it('whenMedicationCardVisible waits out the picker path\'s deferred reveal', async () => {
+    useMomentStore.getState().showMedication(medicationPayload({ eventId: 'm-defer' }), { delayMs: 450 });
+    const visible = whenMedicationCardVisible('m-defer');
+    // The local SQLite check resolves in single-digit ms — well before the reveal. A
+    // bare patch here would return false and the note would be silently dropped on the
+    // app's main dose-logging path.
+    expect(useMomentStore.getState().patchDoubleDose('m-defer', CONFLICT, 'given')).toBe(false);
+    jest.advanceTimersByTime(450);
+    await expect(visible).resolves.toBe(true);
+    expect(useMomentStore.getState().patchDoubleDose('m-defer', CONFLICT, 'given')).toBe(true);
+  });
+
+  it('whenMedicationCardVisible resolves false when a newer dose supersedes the pending card', async () => {
+    useMomentStore.getState().showMedication(medicationPayload({ eventId: 'm-first' }), { delayMs: 450 });
+    const visible = whenMedicationCardVisible('m-first');
+    useMomentStore.getState().showMedication(medicationPayload({ eventId: 'm-second' }));
+    jest.advanceTimersByTime(3000);
+    await expect(visible).resolves.toBe(false);
+  });
+  it('refuses a result computed against an adherence the card has since moved off', () => {
+    // The out-of-order recheck guard. Two quick chip taps put two independent async
+    // reads in flight with no ordering guarantee; the Given→Missed pair is the unsafe
+    // direction — the 'given' read resolving LAST would leave a conflict note standing
+    // over a dose the owner just marked missed. The precondition drops it.
+    useMomentStore.getState().showMedication(medicationPayload({ adherence: 'given' }));
+    useMomentStore.getState().patchAdherence('missed');
+    expect(useMomentStore.getState().patchDoubleDose('m1', CONFLICT, 'given')).toBe(false);
+    const { payload } = useMomentStore.getState();
+    if (payload?.kind !== 'medication') throw new Error('expected medication payload');
+    expect(payload.doubleDose ?? null).toBeNull();
+    // And the tap's OWN recheck, computed against the adherence now on the card, lands.
+    expect(useMomentStore.getState().patchDoubleDose('m1', NO_CONFLICT, 'missed')).toBe(true);
+  });
+
+  it('refuses a log-time result when the owner downgraded during the deferred reveal', () => {
+    // The same guard on the log-time path: the picker defers the reveal ~450ms, and an
+    // owner who taps Missed the instant the card appears must not then be shown a note
+    // computed against the 'given' the dose was written with.
+    useMomentStore.getState().showMedication(medicationPayload({ adherence: 'given' }));
+    useMomentStore.getState().patchAdherence('refused');
+    expect(useMomentStore.getState().patchDoubleDose('m1', CONFLICT, 'given')).toBe(false);
   });
 });

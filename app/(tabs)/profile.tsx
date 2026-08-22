@@ -26,7 +26,7 @@ import { archiveBlockedCopy } from '../../lib/utils';
 import { formatAge } from '../../lib/age';
 import { usePetStore } from '../../store/petStore';
 import { useMomentStore } from '../../store/momentStore';
-import { insertMedicationDose } from '../../lib/medicationDose';
+import { insertMedicationDose, applyLogTimeDoubleDoseCheck } from '../../lib/medicationDose';
 import { EditPetModal } from '../../components/profile/EditPetModal';
 import { WeightTrendCard } from '../../components/profile/WeightTrendCard';
 import { AddConditionModal, Condition } from '../../components/profile/AddConditionModal';
@@ -735,10 +735,26 @@ export default function ProfileScreen() {
     // partial/missed/refused (the n=1-never-reassures safety path stays reachable).
     showMedicationMoment({
       eventId: result.eventId,
+      petId: activePet.id,
+      medicationItemId: reg.medication_item_id,
       occurredAt: result.occurredAtIso,
       drugName: reg.drug_name,
       adherence: 'given',
       howGiven: null,
+    });
+    // B-157 (CUL-284) — the log-time double-dose check. This path is the likeliest
+    // accidental repeat in the app: the regimen card's "Log a dose" is a bare button an
+    // owner can tap twice, or tap again after already logging the same dose from the
+    // picker. Fire-and-forget; the card above reveals synchronously, so the wait inside
+    // resolves immediately. A FREE-TEXT regimen has a null medication_item_id and the
+    // check declines (no library item to group sibling doses on) — a documented gap of
+    // the detector, not a silent all-clear.
+    void applyLogTimeDoubleDoseCheck({
+      eventId: result.eventId,
+      petId: activePet.id,
+      medicationItemId: reg.medication_item_id,
+      occurredAt: result.occurredAtIso,
+      adherence: 'given',
     });
   }
 

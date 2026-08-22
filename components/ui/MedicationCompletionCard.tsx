@@ -8,11 +8,12 @@ import { theme, shadows } from '../../constants/theme';
 import { useMomentStore } from '../../store/momentStore';
 import { useEventStore } from '../../store/eventStore';
 import { usePetStore } from '../../store/petStore';
-import { updateDoseAdherence, updateDoseHowGiven, updateEvent } from '../../lib/db';
+import { getDoubleDoseFlag, updateDoseAdherence, updateDoseHowGiven, updateEvent } from '../../lib/db';
 import { syncPendingMedicationAdministrations, syncPendingEvents } from '../../lib/sync';
 import { formatTime } from '../../lib/utils';
 import {
-  isComboDoseInDoubt, isGivenAssumed, doseAdherencePrompt, comboInDoubtReason, type DoseVehicle,
+  isComboDoseInDoubt, isGivenAssumed, doseAdherencePrompt, comboInDoubtReason, doubleDoseNote,
+  type DoseVehicle,
 } from '../../lib/medications';
 import { AdherenceChipRow, DoseAdherence } from '../log/AdherenceChipRow';
 import { VehicleChipRow } from '../log/VehicleChipRow';
@@ -45,7 +46,8 @@ const CHIP_CONFIRM_HOLD_MS = 1500;
 // honest correction. A downgrade is persisted + synced like the meal intake edit.
 export function MedicationCompletionCard() {
   const {
-    visible, payload, hide, patchOccurredAt, patchAdherence, patchHowGiven, rescheduleHide,
+    visible, payload, hide, patchOccurredAt, patchAdherence, patchHowGiven, patchDoubleDose,
+    rescheduleHide,
   } = useMomentStore();
   const { patchInToday } = useEventStore();
   const { activePet } = usePetStore();
@@ -136,6 +138,9 @@ export function MedicationCompletionCard() {
     if (!isMedication) return;
     const eventId = payload.eventId;
     const prev = payload.adherence;
+    // Captured up front, before any await: the payload read after the write is the
+    // render-time closure, and these three are immutable for the life of the card.
+    const { petId, medicationItemId, occurredAt } = payload;
     if (next === prev) return; // single-select no-op (tapped the active chip)
     // Optimistic update first so the chip lights immediately; persistence + sync
     // follow, and we revert + surface on failure (the meal-intake pattern).
@@ -149,7 +154,26 @@ export function MedicationCompletionCard() {
       // Revert local state. The next focus on History/detail refetches ground truth.
       patchAdherence(prev);
       Alert.alert('Could not save', "Try again from the dose's detail screen.");
+      return;
     }
+    // B-157 (CUL-284) — the write succeeded, so re-run the §6.4 check INDEPENDENTLY,
+    // exactly as the dose detail screen does on its own adherence edit. This is what
+    // stops the note going stale: the detector fires only on a 'given' focal dose, so
+    // a downgrade to missed/refused/partial must RETIRE a note already on screen (the
+    // no-conflict result clears it), and a combo dose the owner resolves UP to 'given'
+    // can newly surface one. Re-running the shared predicate, rather than reasoning
+    // locally about which way the chip moved, keeps this surface on the one definition
+    // (lib/medications.ts) — a second, screen-local rule is how the two surfaces would
+    // start disagreeing about the same dose.
+    //
+    // A failure here is a display miss, never data loss, so it must not revert a good
+    // adherence write — eat it (the detail screen recomputes on focus either way).
+    // `next` is passed twice on purpose: once as the adherence to compute against, and
+    // once as the precondition the store re-checks before landing the answer — so a
+    // slower recheck from an earlier tap can never overwrite a later tap's verdict.
+    getDoubleDoseFlag({ eventId, petId, medicationItemId, occurredAt, adherence: next })
+      .then((flag) => patchDoubleDose(eventId, flag, next))
+      .catch((e) => console.warn('[medication-card] double-dose recheck failed:', e));
   }
 
   // The descriptive twin of handleAdherenceChange (B-156 Slice B). The vehicle is
@@ -208,6 +232,29 @@ export function MedicationCompletionCard() {
     vehicleIntake: payload.vehicleIntake ?? null,
     adherence: payload.adherence,
   });
+
+  // B-157 (CUL-284) — the §6.4 double-dose note, patched in once getDoubleDoseFlag
+  // resolves (and re-patched, possibly to nothing, after an adherence change). Same
+  // predicate and same copy string as the dose detail screen; the only difference is
+  // the drug name, which here is the display-ready one the owner just tapped
+  // (B-171 brand-preferred) rather than the detail screen's generic.
+  //
+  // Note what has no state: there is deliberately no "checked, no repeat" rendering.
+  // The detector under-fires by design (§6.4's documented sparse-schedule tradeoff),
+  // so a silent card means "nothing to raise", never "nothing happened" — §6.1's
+  // absence-is-never-reassurance rule, which is exactly the rule an owner-facing
+  // all-clear here would break.
+  //
+  // It cannot co-render with the in-doubt reason above: inDoubt requires a null
+  // adherence and the detector requires 'given', so the two are mutually exclusive by
+  // construction. Resolving an in-doubt dose UP to 'given' can surface this note, at
+  // which point the in-doubt line is already gone.
+  const doubleDoseCopy = payload.doubleDose?.conflict
+    ? doubleDoseNote({
+        drugName: payload.drugName,
+        gapMinutes: payload.doubleDose.gapMinutes ?? 0,
+      })
+    : null;
 
   return (
     <>
@@ -275,6 +322,28 @@ export function MedicationCompletionCard() {
             onDark
           />
         </View>
+        {/* B-157 (CUL-284) — the calm double-dose check, at log time. Sits BELOW the
+            adherence chips (the meal card's flag convention): the owner's muscle memory
+            for the chips is untouched and the note is read on the way out, never in
+            place of the thing they came to do. Above the optional vehicle row, though —
+            a safety heads-up outranks a descriptive nicety.
+
+            Non-interactive, and read as one summary node so a screen reader speaks the
+            fact and its "worth double-checking" tail together instead of as an orphan
+            line. Divider-only on the card's dark ground, mirroring the detail screen's
+            deliberate NOT-the-rose-tint ruling: §6.4 is a flag, never an alarm, and the
+            record cannot yet distinguish a mistaken second tap from a real second dose.
+            The correction lives where it can be made properly — the chips here for the
+            adherence, the dose's detail screen for a removal. */}
+        {doubleDoseCopy && (
+          <View
+            style={styles.doubleDoseWrap}
+            accessibilityRole="summary"
+            accessibilityLabel={doubleDoseCopy}
+          >
+            <Text style={styles.doubleDoseText}>{doubleDoseCopy}</Text>
+          </View>
+        )}
         {/* B-156 Slice B — the optional, subordinate vehicle row. Skippable and
             default-null: the owner can ignore it entirely and the card still
             auto-dismisses; it never gates dismiss and reads clean when unset. */}
@@ -419,6 +488,21 @@ const styles = StyleSheet.create({
   inDoubtReason: {
     fontSize: theme.textXS,
     color: theme.colorTextOnDarkFaint,
+    fontWeight: theme.weightRegular,
+  },
+  // B-157 — the double-dose note block. Same top-divider treatment as its siblings so
+  // the card stays one calm stack (the meal card's flagWrap), and the text sits at the
+  // card's readable weight rather than the vehicle row's faint one: it is subordinate
+  // to the adherence question but must not read as fine print.
+  doubleDoseWrap: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: theme.colorDividerOnDark,
+    paddingTop: theme.space1,
+  },
+  doubleDoseText: {
+    fontSize: theme.textSM,
+    lineHeight: theme.textSM * 1.4,
+    color: theme.colorTextOnDarkSubtle,
     fontWeight: theme.weightRegular,
   },
   // Subordinate to the adherence block: a fainter divider + dimmer label so the

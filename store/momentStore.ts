@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import type { IntakeRating } from '../components/log/IntakeChipRow';
 import type { DoseAdherence } from '../components/log/AdherenceChipRow';
-import type { DoseVehicle } from '../lib/medications';
+import type { DoseVehicle, DoubleDoseResult } from '../lib/medications';
 import type { LogTimeTrialFlag } from '../lib/trialContaminant';
 
 // The earned completion surface, played after a successful log on any path so
@@ -84,6 +84,15 @@ export interface MealPayload {
 export interface MedicationPayload {
   kind: 'medication';
   eventId: string;
+  // The pet + drug this dose was written for, captured at log time (immutable) — the
+  // same reason MealPayload carries petId. Both are needed to RE-RUN the §6.4
+  // double-dose check when the owner changes adherence ON the card: the detector is
+  // keyed on (pet, drug, given), so a downgrade off 'given' must be able to CLEAR a
+  // note the card is already showing, rather than leave it standing over a dose the
+  // owner just said was missed. medicationItemId is null for a free-text regimen's
+  // dose (no library item to group siblings on) — the check simply can't fire there.
+  petId: string;
+  medicationItemId: string | null;
   // ISO UTC of the logged dose's occurred_at.
   occurredAt: string;
   // The OWNER-FACING drug name for the card's "Logged · {drug}" line — a one-glance
@@ -119,6 +128,16 @@ export interface MedicationPayload {
   // pre-lights a 'given'. Authoritative vehicle truth is re-read live at the resurface
   // surfaces (History row + detail note); this is the snapshot the card uses.
   vehicleIntake?: string | null;
+  // B-157 (CUL-284) — the §6.4 double-dose check for THIS dose, resolved by
+  // getDoubleDoseFlag AFTER the dose was committed and patched onto the card that is
+  // already showing (the meal card's trialFlag shape). Absent/null means the check
+  // has not resolved, or found nothing — which is NEVER an all-clear: the detector
+  // deliberately UNDER-fires (a wide-gap double on a sparse schedule is not flagged;
+  // see lib/medications.ts), so the card must not — and does not — render any
+  // negative "no repeat" form. Purely informational and non-blocking: the dose is
+  // already saved, the note asks nothing, and its durable home is the dose's detail
+  // screen, which recomputes it on every focus.
+  doubleDose?: DoubleDoseResult | null;
 }
 
 export type MomentPayload = BeatPayload | MealPayload | MedicationPayload;
@@ -161,6 +180,30 @@ interface MomentState {
   // Mutates the in-flight MEDICATION card's vehicle (how_given) after a chip tap.
   // null clears it (optional row). Pair with rescheduleHide(). No-op on other payloads.
   patchHowGiven: (howGiven: DoseVehicle | null) => void;
+  // B-157 (CUL-284) — land the §6.4 double-dose check on a medication card that is
+  // ALREADY showing (the patchTrialFlag shape). Takes the WHOLE result, not just a
+  // conflict, because this is also the CLEAR path: re-running the check after the
+  // owner downgrades adherence off 'given' returns a no-conflict result, and patching
+  // that is what retires a note the card is already showing. Extends the dwell itself
+  // on a conflict — see MEDICATION_FLAGGED_DURATION_MS. Returns whether it landed.
+  //
+  // THREE preconditions, all of them load-bearing:
+  //   • eventId — a late answer for the PREVIOUS dose must never decorate the dose
+  //     that replaced it.
+  //   • visible — a dismissed card is not patched (no safety prose during the fade).
+  //   • computedForAdherence — the adherence the result was computed AGAINST must
+  //     still be the one on the card. Every caller fires an independent async read, so
+  //     two quick chip taps have two rechecks in flight with no ordering guarantee
+  //     between them; without this, a Given→Missed pair whose reads resolve out of
+  //     order leaves the CONFLICT note standing over a dose the owner just marked
+  //     missed — a false claim about the record, and the exact staleness this whole
+  //     recompute path exists to prevent. Rejecting the mismatch is safe because the
+  //     tap that caused it fired its own recheck, and that one carries the truth.
+  patchDoubleDose: (
+    eventId: string,
+    result: DoubleDoseResult,
+    computedForAdherence: DoseAdherence | null,
+  ) => boolean;
   // Reschedules the hide timer to fire `durationMs` from now — used to hold the
   // meal card open ~1.5s after a chip tap so the selection is confirmed visibly.
   rescheduleHide: (durationMs: number) => void;
@@ -185,6 +228,18 @@ export const MEAL_FLAGGED_DURATION_MS = 7000;
 // Medication-card dwell: same rationale as the meal card — interactive (the
 // adherence chip row needs reading + a deliberate tap before auto-dismiss).
 const MEDICATION_DURATION_MS = 5000;
+// Medication-card dwell once the B-157 double-dose note is riding along: the card now
+// carries a line of safety prose the owner has not seen before and cannot get back by
+// tapping (the note is passive by design; its durable home is the dose detail screen).
+// 7s reads it at a calm pace without turning a completion beat into a modal — the same
+// number, for the same reason, as MEAL_FLAGGED_DURATION_MS.
+//
+// Applied INSIDE patchDoubleDose rather than at each call site, deliberately: there are
+// already two card-showing dose paths (the picker and the regimen card) plus the card's
+// own post-downgrade recompute, and a future third could otherwise ship a safety note
+// that flashes past in 5s. Same can't-forget reasoning that puts the meal card's
+// flagged duration in showMeal instead of its callers.
+export const MEDICATION_FLAGGED_DURATION_MS = 7000;
 // How long a fire-and-forget flag evaluation waits for the meal card to actually
 // appear before giving up (see whenMealCardVisible). Sized well above the picker
 // path's ~450ms reveal defer: a card that has not appeared by now was superseded
@@ -280,6 +335,21 @@ export const useMomentStore = create<MomentState>((set) => ({
         ? { payload: { ...state.payload, howGiven } }
         : {}
     ),
+  patchDoubleDose: (eventId, doubleDose, computedForAdherence) => {
+    const state = useMomentStore.getState();
+    if (state.payload?.kind !== 'medication' || state.payload.eventId !== eventId) return false;
+    // A dismissed card must not be patched — landing a note on it would put safety
+    // prose on screen during the fade-out, or nowhere at all.
+    if (!state.visible) return false;
+    // The result must describe the dose as it now stands (see the interface note).
+    if (state.payload.adherence !== computedForAdherence) return false;
+    set({ payload: { ...state.payload, doubleDose } });
+    // Only a CONFLICT buys more time. The clear path (a downgrade off 'given' retiring
+    // the note) must leave the chip-tap's own shorter confirm hold alone — extending
+    // the dwell to read a note that just disappeared would be the opposite of calm.
+    if (doubleDose.conflict) useMomentStore.getState().rescheduleHide(MEDICATION_FLAGGED_DURATION_MS);
+    return true;
+  },
   rescheduleHide: (durationMs) => {
     clearHideTimer();
     hideTimer = setTimeout(() => {
@@ -319,8 +389,35 @@ export function whenMealCardVisible(
   eventId: string,
   timeoutMs = CARD_REVEAL_WAIT_MS,
 ): Promise<boolean> {
+  return whenCardVisible('meal', eventId, timeoutMs);
+}
+
+/**
+ * The MEDICATION twin of whenMealCardVisible, for B-157's log-time double-dose note
+ * (CUL-284). Same contract, same reason: the picker path defers the dose card's reveal
+ * behind `delayMs` to clear the dismissing /log modal on iOS, while getDoubleDoseFlag
+ * is an all-LOCAL SQLite read that resolves in a few milliseconds — so a bare patch
+ * would hit a not-yet-revealed card and the safety note would be silently dropped on
+ * the app's main dose-logging path. The regimen-card path (profile.tsx) reveals
+ * synchronously and resolves immediately.
+ */
+export function whenMedicationCardVisible(
+  eventId: string,
+  timeoutMs = CARD_REVEAL_WAIT_MS,
+): Promise<boolean> {
+  return whenCardVisible('medication', eventId, timeoutMs);
+}
+
+// The shared body of the two waiters above. Kept generic over the payload kind rather
+// than duplicated per card: the subtle parts (arm the timeout BEFORE subscribing,
+// idempotent finish, never reject) are exactly the parts a copy would get wrong.
+function whenCardVisible(
+  kind: 'meal' | 'medication',
+  eventId: string,
+  timeoutMs: number,
+): Promise<boolean> {
   const isUp = (s: MomentState) =>
-    s.visible && s.payload?.kind === 'meal' && s.payload.eventId === eventId;
+    s.visible && s.payload?.kind === kind && s.payload.eventId === eventId;
   if (isUp(useMomentStore.getState())) return Promise.resolve(true);
   // Never rejects, by construction: the executor has no throwing operations and
   // never calls a reject — it only ever resolves true/false. That is the contract
