@@ -92,6 +92,12 @@ import { localDayIndex, localDayIndexOf, trialDayCounter } from '../../../lib/ut
 // discipline (§2 L2). p-values never surface (§3); this returns a boolean gate + direction.
 import { rateContrast } from '../../../lib/rateContrast.ts'
 
+// The ONE symptom-episode collapse, shared with hooks/useTrend.ts (B-067/CUL-372).
+import {
+  collapseToEpisodeOnsets,
+  SYMPTOM_EPISODE_GAP_HOURS,
+} from '../../../lib/symptomEpisodes.ts'
+
 // ── Domain types ──────────────────────────────────────────────────────────────
 
 /** Symptom event types the correlation detector considers (schema reference query [2]). */
@@ -2074,7 +2080,9 @@ export const DEFAULT_CONFIG: DetectionConfig = {
     scratch: 72,
     skin_reaction: 72,
   },
-  symptomEpisodeGapHours: 3,
+  // Sourced from the shared predicate's constant so the engine's default and the
+  // client's config-free path cannot drift apart (B-067/CUL-372). Still 3.
+  symptomEpisodeGapHours: SYMPTOM_EPISODE_GAP_HOURS,
   correlation: {
     earlyMinMatchedPairs: 3,
     earlyMinDiscordantCaseOnly: 2,
@@ -2434,16 +2442,13 @@ const MS_PER_DAY = 86_400_000
  * several independent confirmations.
  */
 function toEpisodeOnsets(symptomMsList: number[], gapHours: number): number[] {
-  if (symptomMsList.length === 0) return []
-  const gapMs = gapHours * MS_PER_HOUR
-  const sorted = [...symptomMsList].sort((a, b) => a - b)
-  const onsets: number[] = [sorted[0]]
-  let prev = sorted[0]
-  for (let i = 1; i < sorted.length; i++) {
-    if (sorted[i] - prev > gapMs) onsets.push(sorted[i])
-    prev = sorted[i]
-  }
-  return onsets
+  // B-067/CUL-372 — re-based onto the ONE shared predicate. The body that used to
+  // live here now lives in `lib/symptomEpisodes.ts` verbatim, because the Home Trend
+  // chart needs the SAME collapse and a second implementation is how two surfaces end
+  // up printing different counts for the same week (the defect B-067 recorded). This
+  // wrapper stays so the engine's per-call `config.symptomEpisodeGapHours` remains the
+  // engine's own knob. Behaviour-preserving: no redeploy is required for correctness.
+  return collapseToEpisodeOnsets(symptomMsList, gapHours)
 }
 
 /** A meal reduced to the fields the correlation/coverage logic needs. */
@@ -4071,15 +4076,23 @@ function toConfidenceEpisodes(
   gapHours: number,
 ): ConfidenceEpisode[] {
   if (events.length === 0) return []
-  const gapMs = gapHours * MS_PER_HOUR
   const sorted = [...events].sort((a, b) => a.ms - b.ms)
-  const episodes: ConfidenceEpisode[] = [{ onsetMs: sorted[0].ms, confidence: sorted[0].confidence }]
-  let prev = sorted[0].ms
-  for (let i = 1; i < sorted.length; i++) {
-    if (sorted[i].ms - prev > gapMs) {
-      episodes.push({ onsetMs: sorted[i].ms, confidence: sorted[i].confidence })
-    }
-    prev = sorted[i].ms
+  // B-067/CUL-372 — re-based onto the ONE shared collapse. This used to re-spell the
+  // chaining loop verbatim so it could carry each episode's confidence through, which
+  // made it a SECOND implementation inside the very file that owns the first. It now
+  // asks the shared predicate for the onset instants and maps each back to its onset
+  // EVENT (§2: "the onset event's confidence is the episode's confidence").
+  //
+  // `Array.prototype.sort` is stable, so the first event at an onset instant is the
+  // same element the old loop selected — behaviour-preserving, including for two
+  // events sharing a millisecond.
+  const onsetMsList = collapseToEpisodeOnsets(sorted.map((e) => e.ms), gapHours)
+  const episodes: ConfidenceEpisode[] = []
+  let cursor = 0
+  for (const onsetMs of onsetMsList) {
+    while (cursor < sorted.length && sorted[cursor].ms !== onsetMs) cursor++
+    if (cursor >= sorted.length) break
+    episodes.push({ onsetMs, confidence: sorted[cursor].confidence })
   }
   return episodes
 }

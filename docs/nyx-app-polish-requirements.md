@@ -128,7 +128,7 @@ iOS system haptic settings are respected automatically; `expo-haptics` (managed-
 
 Project **"Aug. 2026 Design Polish"** (team Culprit). 18 PRs, one PR = one session; defect pairings compress to ~16 sessions. Ordering is enforced by Linear blocking relations.
 
-- **Wave 0 — foundations (run first, parallel-safe):** CUL-604 (`lib/haptics.ts`, §5.6 — unblocks the completion chain + CUL-601's tap) · CUL-605 (`ThemedText`, §7 — unblocks all Geist sweeps).
+- **Wave 0 — foundations (run first, parallel-safe):** CUL-604 (`lib/haptics.ts`, §5.6 — unblocks the completion chain + CUL-601's tap) · CUL-605 (`ThemedText`, §7) — **already shipped via #699** (a sibling session, same day), so the Geist sweeps are unblocked from day one.
 - **Completion chain (parent CUL-603, §5):** CUL-604 → CUL-606 (named card; takeover retires; sentence rule) → then CUL-612 (Undo + discard guard) ∥ CUL-613 (capture paths; closes CUL-368) ∥ CUL-614 (in-place beats + dwell-pause + copy pass, run last).
 - **Chrome (parallel with everything):** CUL-599 (tab bar, §1) · CUL-600 (header H2a, §2).
 - **Arrival:** CUL-601 (§4) — best after CUL-604 for its tap.
