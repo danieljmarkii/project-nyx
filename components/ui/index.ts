@@ -2,6 +2,7 @@ export { Card } from './Card';
 export { EmptyState } from './EmptyState';
 export { Header } from './Header';
 export { SectionLabel } from './SectionLabel';
+export { ThemedText } from './ThemedText';
 export { PrimaryButton } from './PrimaryButton';
 export { TextField } from './TextField';
 export { FilterChip } from './FilterChip';
