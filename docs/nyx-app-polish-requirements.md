@@ -124,9 +124,19 @@ iOS system haptic settings are respected automatically; `expo-haptics` (managed-
 - Reduced-motion static frames + pause-on-blur for any animated element (loading-system convention).
 - No new schema, no Edge Function changes, no flags — this track is client-only and replaces surfaces outright (the B-745 GA-style two-gate ceremony is not needed for chrome/typography; the completion chain's PR 2 is the one judgement call — if the PM wants it dark first, the B-712 shape applies, default is direct).
 
-## §9 The Linear map
+## §9 The Linear map — PR by PR (issues created 2026-08-22; the project description carries the same plan)
 
-Project **"Aug. 2026 Design Polish"** (team Culprit): DP-1 tab bar · DP-2 header · DP-3 arrival · DP-4 completion (parent + 5 ordered sub-issues) · DP-5 trend verbiage · CUL-364 Geist (parent + 6 ordered sub-issues) · defects CUL-574–579 pulled in · CUL-580 (the design record, closed on finalization). Ordering lives as Linear blocking relations; each parent carries its PR plan.
+Project **"Aug. 2026 Design Polish"** (team Culprit). 18 PRs, one PR = one session; defect pairings compress to ~16 sessions. Ordering is enforced by Linear blocking relations.
+
+- **Wave 0 — foundations (run first, parallel-safe):** CUL-604 (`lib/haptics.ts`, §5.6 — unblocks the completion chain + CUL-601's tap) · CUL-605 (`ThemedText`, §7 — unblocks all Geist sweeps).
+- **Completion chain (parent CUL-603, §5):** CUL-604 → CUL-606 (named card; takeover retires; sentence rule) → then CUL-612 (Undo + discard guard) ∥ CUL-613 (capture paths; closes CUL-368) ∥ CUL-614 (in-place beats + dwell-pause + copy pass, run last).
+- **Chrome (parallel with everything):** CUL-599 (tab bar, §1) · CUL-600 (header H2a, §2).
+- **Arrival:** CUL-601 (§4) — best after CUL-604 for its tap.
+- **Trend:** CUL-602 (§6) — Dr. Chen brief in-session; **CUL-578's ink repoints ride this PR** (same file).
+- **Geist chain (parent CUL-364, §7):** CUL-605 → sweeps CUL-607 (History) ∥ CUL-608 (Foods) ∥ CUL-609 (log flow + completion surfaces — sequence after the completion chain, same card files) ∥ CUL-610 (Home zones + profile — sequence after the chrome PRs, same files) → CUL-611 (periphery + closing audit, last).
+- **Defect wave (independent filler):** CUL-574 (wrong-pet captions — early) · CUL-575 (History states) · CUL-576+CUL-577 (one session — both log-capture fixes) · CUL-579 (tap-target batch; the chip half may ride CUL-614). CUL-580 = the closed design record.
+
+**Parallel lanes** (only standing collision: STATUS.md at wrap): **A** completion CUL-604→606→612/613/614 · **B** chrome+moments CUL-599→600→601→602 · **C** type CUL-605→607/608, then 609/610 once lanes A/B clear their files, 611 last · **D** defects as filler.
 
 ## §10 Flagged doc edits (Tier 2 — awaiting PM approval to write)
 
