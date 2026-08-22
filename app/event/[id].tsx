@@ -46,13 +46,14 @@ import {
 } from '../../lib/medications';
 import { VomitAnalysisSection } from '../../components/event/VomitAnalysisSection';
 import { StoolAnalysisSection } from '../../components/event/StoolAnalysisSection';
+import { destructiveConfirm } from '../../lib/haptics';
+import { EmptyState, Header, PhotoViewer } from '../../components/ui';
 
 // The two owner-classified stool event types share the analyze-stool read (D1 keeps
 // the stool_normal/diarrhea split). One predicate so the render + photo-retrigger
 // gates can't drift.
 const isStoolEvent = (t: string | null | undefined): boolean =>
   t === 'stool_normal' || t === 'diarrhea';
-import { EmptyState, Header, PhotoViewer } from '../../components/ui';
 
 const HERO_HEIGHT = 320;
 const SIGNED_URL_TTL_SEC = 60 * 60;
@@ -386,6 +387,10 @@ export default function EventDetailScreen() {
           text: 'Remove',
           style: 'destructive',
           onPress: async () => {
+            // CUL-604 §5.6 — rigid, on the CONFIRM. Never on the button that opens this
+            // alert: a haptic beside a live Cancel would say something was destroyed
+            // while the owner can still back out.
+            destructiveConfirm();
             try {
               await softDeleteEvent(event.id);
               removeFromToday(event.id);
@@ -427,6 +432,7 @@ export default function EventDetailScreen() {
           text: 'Remove',
           style: 'destructive',
           onPress: async () => {
+            destructiveConfirm();
             const att = attachment;
             // Optimistic UI: clear immediately, restore on failure
             setAttachment(null);

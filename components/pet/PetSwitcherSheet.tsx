@@ -9,6 +9,7 @@ import { theme } from '../../constants/theme';
 import { supabase } from '../../lib/supabase';
 import { usePetStore } from '../../store/petStore';
 import { useAuthStore } from '../../store/authStore';
+import { openMenu as openMenuHaptic } from '../../lib/haptics';
 import { petIdentityLine } from '../../lib/utils';
 import { PetAvatar } from './PetAvatar';
 
@@ -58,6 +59,8 @@ export function PetSwitcherSheet({ visible, onClose }: PetSwitcherSheetProps) {
   }, [visible, user]);
 
   function handleSelect(petId: string) {
+    // Light impact, NOT a commit pattern: switching pets writes nothing to the record.
+    openMenuHaptic();
     selectPet(petId);
     onClose();
   }

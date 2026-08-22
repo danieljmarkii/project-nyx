@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { commitRoutine, commitSymptom, selectChip } from '../lib/haptics';
 import type { IntakeRating } from '../components/log/IntakeChipRow';
 import type { DoseAdherence } from '../components/log/AdherenceChipRow';
 import type { DoseVehicle, DoubleDoseResult } from '../lib/medications';
@@ -261,6 +262,23 @@ function clearHideTimer() {
   if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
 }
 
+// The commit haptic for a payload (CUL-604 · §5.6). Derived from the payload rather
+// than passed in by the caller, so a FUTURE log path gets the right haptic by virtue
+// of showing a card at all — the same can't-forget reasoning that puts the meal card's
+// flagged duration in showMeal rather than at its call sites.
+//
+// The tone split is the whole point and is not an implementation detail: a 'calm' beat
+// is what a symptom log renders, and it takes the SINGLE SOFT TAP, never the success
+// double-tap. We acknowledge a 2am vomit log; we never congratulate it (Principle 4 —
+// the same rule that withholds the gold glow from that beat).
+//
+// Meal and dose cards are routine commits by construction — there is no symptom path
+// through them — so they take the success pattern.
+function playCommitHaptic(payload: MomentPayload) {
+  if (payload.kind === 'beat' && payload.tone === 'calm') commitSymptom();
+  else commitRoutine();
+}
+
 // Shared present/dismiss scheduling for both presentations. delayMs lets a
 // caller dismiss its modal first so the root overlay isn't briefly occluded by
 // the still-presented modal on iOS.
@@ -274,6 +292,12 @@ function present(
   const delay = opts?.delayMs ?? 0;
   const duration = opts?.durationMs ?? defaultDuration;
   const reveal = () => {
+    // Fired WITH the reveal, not with the call: on the picker path the reveal is
+    // deferred ~450ms behind the dismissing /log modal, and a buzz half a second
+    // ahead of its own card reads as a stray one. It also means a card superseded
+    // before it ever appeared (a second log during the delay clears showTimer)
+    // plays no haptic at all — one commit, one buzz.
+    playCommitHaptic(payload);
     set({ visible: true, payload });
     hideTimer = setTimeout(() => {
       set({ visible: false });
@@ -308,12 +332,18 @@ export const useMomentStore = create<MomentState>((set) => ({
         ? { payload: { ...state.payload, occurredAt } }
         : {}
     ),
-  patchIntakeRating: (intakeRating) =>
+  patchIntakeRating: (intakeRating) => {
+    // The chip tick fires only when the patch actually lands on a meal card — a no-op
+    // patch (wrong payload kind) must not buzz. Read outside `set` so the updater
+    // stays pure, the way patchTrialFlag/patchDoubleDose already do it.
+    if (useMomentStore.getState().payload?.kind !== 'meal') return;
+    selectChip();
     set((state) =>
       state.payload?.kind === 'meal'
         ? { payload: { ...state.payload, intakeRating } }
         : {}
-    ),
+    );
+  },
   patchTrialFlag: (eventId, trialFlag) => {
     const state = useMomentStore.getState();
     if (state.payload?.kind !== 'meal' || state.payload.eventId !== eventId) return false;
@@ -323,18 +353,24 @@ export const useMomentStore = create<MomentState>((set) => ({
     set({ payload: { ...state.payload, trialFlag } });
     return true;
   },
-  patchAdherence: (adherence) =>
+  patchAdherence: (adherence) => {
+    if (useMomentStore.getState().payload?.kind !== 'medication') return;
+    selectChip();
     set((state) =>
       state.payload?.kind === 'medication'
         ? { payload: { ...state.payload, adherence } }
         : {}
-    ),
-  patchHowGiven: (howGiven) =>
+    );
+  },
+  patchHowGiven: (howGiven) => {
+    if (useMomentStore.getState().payload?.kind !== 'medication') return;
+    selectChip();
     set((state) =>
       state.payload?.kind === 'medication'
         ? { payload: { ...state.payload, howGiven } }
         : {}
-    ),
+    );
+  },
   patchDoubleDose: (eventId, doubleDose, computedForAdherence) => {
     const state = useMomentStore.getState();
     if (state.payload?.kind !== 'medication' || state.payload.eventId !== eventId) return false;
