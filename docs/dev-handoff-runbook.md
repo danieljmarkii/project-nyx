@@ -5,13 +5,34 @@ The exact, copy-pasteable command scripts the PM runs to get the latest code ont
 There are **two runtimes**, and they map to two *different intentions*:
 
 - **Runtime B (Metro + tunnel) is the per-push default** — it's how the PM tests a single pushed PR on-device for a one-off look. Emit this after a normal feature push. **As of PR W2 (2026-07-24, SDK 57) Runtime B runs in a custom dev client, not Expo Go** — see the one-time switch inside the Runtime B section.
-- **Runtime A (TestFlight) is a deliberate, separate "cut a new build" session** — the PM kicks it off **by hand, in its own session**, when changes warrant a new TestFlight version. It is **not** the handoff after every push. It has two sub-paths: a fast **OTA** push (JS-only changes → existing build) and a full **native build + submit** (anything native changed, or you want a fresh binary). It went live 2026-06-07 (Apple enrollment + first TestFlight build done); see `STATUS.md` → Runtime in Use.
+- **Runtime A (TestFlight) is a deliberate, separate "cut a new build" session** — the PM kicks it off **by hand, in its own session**, when changes warrant a new TestFlight version. It is **not** the handoff after every push. It has two sub-paths: a fast **OTA** push (JS-only changes → existing build) and a full **native build + submit** (anything native changed, or you want a fresh binary). It went live 2026-06-07 (Apple enrollment + first TestFlight build done); the installed build and the standing traps are in **§ Current build state** below.
 
 Pick the one that matches the session's intention and emit only that block. **Default to Runtime B** unless the session's explicit goal is shipping to TestFlight.
 
-> ⚠️ **The TestFlight build lives on the `production` channel, built with the `production` profile** (`distribution: store`). This was mis-documented as `preview` until 2026-06-12 and cost a full session — see the two traps in `STATUS.md` → Runtime in Use. `preview` is `distribution: internal` (ad-hoc) and is **not** TestFlight-eligible; OTA to TestFlight is `--branch production`, never `--branch preview`.
+> ⚠️ **The TestFlight build lives on the `production` channel, built with the `production` profile** (`distribution: store`). This was mis-documented as `preview` until 2026-06-12 and cost a full session — see **§ Current build state** below. `preview` is `distribution: internal` (ad-hoc) and is **not** TestFlight-eligible; OTA to TestFlight is `--branch production`, never `--branch preview`.
 
 > ⚠️ **SDK 57 OTA fence (PR W2, 2026-07-24).** The app was upgraded Expo SDK 54 → 57 and `app.json` `version` was bumped **1.0.0 → 1.1.0** specifically so the old runtime never receives a new-runtime bundle (`runtimeVersion.policy: appVersion` → the installed SDK-54 TestFlight build reports runtime `1.0.0`; SDK-57 bundles publish as `1.1.0`). Consequences until the first post-W2 binary is cut: **A-OTA is a no-op against the installed TestFlight build** (the update publishes but no installed build matches it — nothing breaks, nothing updates), and the **first post-W2 TestFlight cut MUST be Runtime A-Native** (`eas build`), never `eas update`. After that fresh binary is installed, A-OTA works normally again. Never "fix" a non-arriving OTA by reverting the version to 1.0.0 — delivering an SDK-57 JS bundle to the SDK-54 binary is a guaranteed crash-on-launch.
+
+---
+
+## Current build state
+
+_Moved here from `STATUS.md` → Runtime in Use (2026-08-22), because it is read whenever a handoff is emitted and nowhere else. Update the installed-build line when a new binary is cut._
+
+**TestFlight (real iOS builds) is the primary on-device target** since 2026-06-07. Runtime B (Metro + tunnel in the **custom dev client** — Expo Go retired at W2/SDK 57) remains the per-push daily driver.
+
+**Installed TestFlight build: 1.1.0 (35), 2026-07-25.** The first binary since SDK 57, the first carrying the widget + App Group, the first iPhone-only, min iOS 16.4. Previous: 1.0.0 (34), 2026-07-18.
+
+**OTA to the installed build:** `eas update --branch production` — the build's channel is `production`, **not** `preview`.
+
+### Traps — each of these cost a session; do not repeat them
+
+- **SDK 57 OTA fence (W2, 2026-07-24).** `version` was bumped 1.0.0 → 1.1.0 so SDK-57 bundles never reach the installed SDK-54 build (`runtimeVersion.policy: appVersion`). Until a fresh binary is cut, `eas update --branch production` is a harmless no-op against that build, and **the first post-W2 TestFlight cut must be a native `eas build`**, never OTA. Never revert the version to "fix" a non-arriving OTA — an SDK-57 bundle on the SDK-54 binary is a crash-on-launch.
+- **Never build TestFlight with the `preview` profile.** It is `distribution: internal` (ad-hoc) and can never be store-submitted. Use `production`.
+- **Never submit with `eas submit --latest`.** It skips internal builds and re-uploads a stale store build — the "build number 8 already used" loop. Use `--auto-submit`, which binds the upload to the binary just built.
+- **"Build number N already used"** = the EAS counter is behind App Store Connect → `eas build:version:set --platform ios`, then rebuild. Build numbers live on EAS (`appVersionSource: remote`, `autoIncrement`).
+- **All three `eas.json` build profiles carry the `EXPO_PUBLIC_SUPABASE_*` `env` block** (#90). EAS cloud builds never see the gitignored `.env.local`; stripping it was the first crash-on-launch.
+- **Keep `app.json` → `ios.infoPlist.ITSAppUsesNonExemptEncryption: false` committed** (#121) — it auto-answers Apple's encryption questionnaire.
 
 ---
 
