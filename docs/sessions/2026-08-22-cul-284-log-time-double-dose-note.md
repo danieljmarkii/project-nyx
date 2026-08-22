@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-22
 
-Shipped via #696 (draft). One PR, no schema, no deploy.
+Shipped via #696. One PR, no schema, no deploy.
 
 ## The problem, stated precisely
 
