@@ -20,6 +20,7 @@ import { useEventStore, NyxEvent } from '../../store/eventStore';
 import { useSyncStore } from '../../store/syncStore';
 import { getTimeline, softDeleteEvent, TimelineRow } from '../../lib/db';
 import { syncPendingEvents, syncNow } from '../../lib/sync';
+import { destructiveConfirm, pullThreshold } from '../../lib/haptics';
 import { formatUtcDayShort } from '../../lib/utils';
 import {
   getActiveArrangementsForPet, getBoundaryMarkers,
@@ -226,6 +227,8 @@ export default function HistoryScreen() {
   // foreground/reload dance, and ships as the gesture real users expect on a
   // health timeline. (The automatic refresh-after-hydrate is the §6-gated UI.)
   const onRefresh = useCallback(async () => {
+    // See the Home surface: onRefresh IS the committed-pull threshold.
+    pullThreshold();
     setRefreshing(true);
     try {
       await syncNow();
@@ -375,6 +378,10 @@ export default function HistoryScreen() {
           text: 'Remove',
           style: 'destructive',
           onPress: async () => {
+            // CUL-604 §5.6 — rigid, on the CONFIRM. Never on the button that opens this
+            // alert: a haptic beside a live Cancel would say something was destroyed
+            // while the owner can still back out.
+            destructiveConfirm();
             setEvents((prev: NyxEvent[]) => prev.filter((e: NyxEvent) => e.id !== event.id));
             setExpandedId(null);
             removeFromToday(event.id);

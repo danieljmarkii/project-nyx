@@ -15,6 +15,7 @@ import { TrialStrip } from '../../components/home/TrialStrip';
 import { MedStrip } from '../../components/home/MedStrip';
 import { TodayZone } from '../../components/home/TodayZone';
 import { TrendZone } from '../../components/home/TrendZone';
+import { pullThreshold } from '../../lib/haptics';
 import { useDietTrial } from '../../hooks/useDietTrial';
 import { resolveTrialStrip, isAnimalNotEating } from '../../lib/dietTrialCard';
 import { isTrialRunning } from '../../lib/dietTrial';
@@ -85,6 +86,9 @@ export default function HomeScreen() {
   // spinner is hidden (transparent). Failures stay quiet (no wrong state), matching
   // the House "no silent-but-wrong" rule: a failed refresh just leaves prior data.
   const onRefresh = useCallback(async () => {
+    // The threshold itself: RN only calls onRefresh once the pull is committed, so an
+    // abandoned half-pull never buzzes.
+    pullThreshold();
     const started = Date.now();
     setRefreshing(true);
     const pet = usePetStore.getState().activePet;

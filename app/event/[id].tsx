@@ -52,6 +52,7 @@ import { StoolAnalysisSection } from '../../components/event/StoolAnalysisSectio
 // gates can't drift.
 const isStoolEvent = (t: string | null | undefined): boolean =>
   t === 'stool_normal' || t === 'diarrhea';
+import { destructiveConfirm } from '../../lib/haptics';
 import { EmptyState, Header, PhotoViewer } from '../../components/ui';
 
 const HERO_HEIGHT = 320;
@@ -386,6 +387,10 @@ export default function EventDetailScreen() {
           text: 'Remove',
           style: 'destructive',
           onPress: async () => {
+            // CUL-604 §5.6 — rigid, on the CONFIRM. Never on the button that opens this
+            // alert: a haptic beside a live Cancel would say something was destroyed
+            // while the owner can still back out.
+            destructiveConfirm();
             try {
               await softDeleteEvent(event.id);
               removeFromToday(event.id);
@@ -427,6 +432,7 @@ export default function EventDetailScreen() {
           text: 'Remove',
           style: 'destructive',
           onPress: async () => {
+            destructiveConfirm();
             const att = attachment;
             // Optimistic UI: clear immediately, restore on failure
             setAttachment(null);

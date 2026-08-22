@@ -52,6 +52,7 @@ import {
   alsoAddedLabel,
   type AlsoAddTarget,
 } from '../../lib/vetDocumentCapture';
+import { destructiveConfirm } from '../../lib/haptics';
 import { pickVetImages } from '../../lib/vetDocumentPickers';
 
 // Vet Files — document detail (B-478 VF-4).
@@ -259,6 +260,7 @@ export default function VetDocumentDetailScreen() {
           style: 'destructive',
           onPress: async () => {
             if (!groupId) return;
+            destructiveConfirm();
             try {
               await softDeleteVetDocument(groupId);
               syncPendingVetDocuments().catch((e) => console.warn('[vet-files] document push failed:', e));

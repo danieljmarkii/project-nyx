@@ -3,6 +3,7 @@ import { StyleSheet, Animated, Easing, View } from 'react-native';
 import Svg, { Circle, Defs, RadialGradient, Stop } from 'react-native-svg';
 import { Check } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
+import { commitRoutine, commitSymptom } from '../../lib/haptics';
 import { useReducedMotion } from '../../hooks/useReducedMotion';
 import type { MomentTone } from '../../store/momentStore';
 
@@ -48,6 +49,13 @@ export function SheetLogBeat({ tone, title = 'Logged', onDone }: Props) {
   doneRef.current = onDone;
 
   useEffect(() => {
+    // CUL-604 §5.6 — this beat is the R2 register and does NOT go through momentStore,
+    // so it plays its own commit haptic, on the same tone split: 'calm' (symptom) takes
+    // the single soft tap, never the success double. Deliberately OUTSIDE the `reduced`
+    // branch — touch is not motion, so the haptic still fires under Reduce Motion (the
+    // §1 rule, applied here too).
+    if (celebrate) commitRoutine();
+    else commitSymptom();
     let anim: Animated.CompositeAnimation | null = null;
     if (!reduced) {
       anim = Animated.parallel([
