@@ -2,7 +2,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <style>
   /* ============================================================
-     Trend zone × Signal reflection — B-067 / CUL-372, mock ROUND 1.
+     Trend zone × Signal reflection — B-067 / CUL-372, mock ROUND 2.
+
+     ROUND 2 (2026-08-22) records the PM's rulings on round 1's two
+     decisions and updates the option-A frame to the copy that was
+     actually built. Round 1's frames are otherwise unchanged — §01
+     and §02 are the reproduction, and the reproduction did not move.
 
      The decision surface for CUL-372. Every frame below renders a
      REAL, reproduced case: the events were replayed through the
@@ -221,7 +226,7 @@
 <div class="wrap">
 
   <header class="masthead">
-    <p class="kicker">CUL-372 · B-067 · Mock round 1</p>
+    <p class="kicker">CUL-372 · B-067 · Mock round 2 — ruled</p>
     <h1>The Trend zone outranks the Signal's safety gates</h1>
     <p class="standfirst">
       B-067 was filed as a redundancy: the reflection card says what the Trend card
@@ -234,7 +239,7 @@
   <div class="meta">
     <span><b>Surface</b> components/home/TrendZone.tsx · hooks/useTrend.ts</span>
     <span><b>Against</b> generate-signal detector ③ / ⑦</span>
-    <span><b>Status</b> Awaiting PM ruling — §04</span>
+    <span><b>Status</b> Ruled 2026-08-22 — built, PR #695</span>
   </div>
 
   <!-- ══ 01 ══════════════════════════════════════════════════ -->
@@ -374,11 +379,14 @@
   <section>
     <div class="sec-head">
       <span class="sec-num">03</span>
-      <h2>The options, on the chronic cat</h2>
+      <h2>The options, on the chronic cat — A ruled</h2>
     </div>
     <p class="sec-sub">
       Same pet as §01, same moment. The Signal card above each frame is unchanged
-      (⑦'s vet-visit card); only the Trend card differs.
+      (⑦'s vet-visit card); only the Trend card differs. <b>The PM ruled A on
+      2026-08-22</b>, and deferred the count question the other way from the team's
+      recommendation — the coherence fix rides in the same PR rather than splitting
+      (§04). B and C are kept below as the record of what was weighed.
     </p>
 
     <div class="stage">
@@ -386,14 +394,14 @@
       <div class="col">
         <div class="col-head">
           <span class="col-title">A · Drop the verdict</span>
-          <span class="tag tag-rec">recommended</span>
+          <span class="tag tag-rec">ruled · built</span>
         </div>
         <div class="device">
           <div class="card">
             <div class="eyebrow"><span>Trend</span><span class="link">All patterns ›</span></div>
             <div class="chart-head">
               <span class="chart-type">Vomit</span>
-              <span class="chart-count">3 this week</span>
+              <span class="chart-count">3 episodes this week</span>
             </div>
             <div class="bars" style="margin-top:10px">
               <div class="bar" style="height:50%"></div><div class="bar empty"></div>
@@ -411,7 +419,8 @@
           The comparison clause and the word <b>improving</b> are deleted. The chart keeps
           the 14-day shape — the one thing the Signal genuinely cannot draw — and the count
           stays as a bare description, mirroring exactly what ③ renders when its own density
-          gate fires.
+          gate fires. <b>As built</b>, the count is also now stated in <em>episodes</em>,
+          the engine's unit, which is the §04 Decision-2 fix landing in the same frame.
         </p>
         <div class="note ok">
           Closes all four rows at once, adds no dependency, and needs no gate logic on the
@@ -499,7 +508,7 @@
   <section>
     <div class="sec-head">
       <span class="sec-num">04</span>
-      <h2>What needs a ruling</h2>
+      <h2>What was ruled</h2>
     </div>
 
     <div class="callout">
@@ -508,12 +517,13 @@
         The label and the <span class="mono">Next</span> priority were set against the
         2026-06-07 framing, when the reflection card had no gates and the overlap really
         was cosmetic. Row A is false reassurance on a chronically ill pet, which
-        <code>clinical-guardrails</code> forbids outright. The re-rate is the PM's call,
-        but the team's read is that the verdict half is <span class="mono">Now</span>.
+        <code>clinical-guardrails</code> forbids outright. <b>Re-rated 2026-08-22</b>: the
+        <span class="mono">Quick Win</span> label is removed and the issue is priority
+        <span class="mono">Urgent</span>.
       </p>
     </div>
 
-    <h3>Decision 1 — which shape</h3>
+    <h3>Decision 1 — which shape · <span style="color:var(--teal-ink)">RULED: A</span></h3>
     <p>
       <b>Options:</b> <b>A</b> drop Trend's comparison line and the "improving" verdict,
       keeping chart + bare count <em>(recommended — closes all four cases with no new
@@ -528,7 +538,7 @@
       client-side. C would ship the bug.
     </p>
 
-    <h3 style="margin-top:28px">Decision 2 — does the count follow in the same PR</h3>
+    <h3 style="margin-top:28px">Decision 2 — does the count follow in the same PR · <span style="color:var(--teal-ink)">RULED: yes, rides along</span></h3>
     <p>
       Rows C and D are a <em>coherence</em> defect, not a safety one: the two surfaces
       count different things (episodes vs. rows) about different symptoms. Fixing it means
@@ -536,14 +546,19 @@
       which would drop <code>lethargy</code> from the chart, a real loss.
     </p>
     <p>
-      <b>Options:</b> ship the verdict fix alone and file the count fix separately
-      <em>(recommended — the safety half lands now, and the count question overlaps
-      CUL-383's Trend redesign, which may rewrite this card anyway)</em> · or do both here.
+      <b>Ruled:</b> both in this PR. As built, that means the Trend card counts
+      <em>episodes</em> through the same <code>lib/symptomEpisodes</code> predicate the
+      engine uses, and picks its subject by current-window episode count rather than a
+      14-day raw total.
     </p>
     <p>
-      <b>Consequence:</b> splitting keeps this PR small and reviewable and leaves the
-      lethargy trade-off to the surface that is already being redesigned. Combining
-      risks this fix waiting on a design question it does not need to answer.
+      <b>One thing changed against the brief.</b> The brief warned this would drop
+      <code>lethargy</code> from the chart. It did not have to: aligning the
+      <em>selection rule</em> rather than the <em>symptom set</em> fixes the contradiction
+      and keeps lethargy chartable — <code>CORRELATION_SYMPTOM_TYPES</code> scopes
+      food→symptom correlation, not what belongs on a symptom chart. The residual, taken
+      knowingly: when lethargy is dominant the two cards name different symptoms — two
+      true facts, no longer a contradiction now that neither renders a verdict.
     </p>
   </section>
 

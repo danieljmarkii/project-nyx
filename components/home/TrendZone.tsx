@@ -63,33 +63,39 @@ function SymptomChart({ data }: { data: TrendData }) {
   const today = data.buckets[data.buckets.length - 1];
   const fourteenDaysAgo = data.buckets[0];
 
-  const { dominantSymptomType, thisWeekSymptomCount, lastWeekSymptomCount } = data;
+  const { dominantSymptomType, thisWeekSymptomCount } = data;
   const symptomLabel = dominantSymptomType && dominantSymptomType in EVENT_TYPES
     ? EVENT_TYPES[dominantSymptomType as EventTypeKey].label
     : 'Symptom';
+  const episodeNoun = thisWeekSymptomCount === 1 ? 'episode' : 'episodes';
 
-  const delta = thisWeekSymptomCount - lastWeekSymptomCount;
-  const directionLine = (() => {
-    if (thisWeekSymptomCount === 0 && lastWeekSymptomCount === 0) {
-      return 'None this week or last';
-    }
-    if (delta < 0) return `↓ from ${lastWeekSymptomCount} last week — improving`;
-    if (delta > 0) return `↑ from ${lastWeekSymptomCount} last week`;
-    return `Same as last week (${lastWeekSymptomCount})`;
-  })();
-
+  // B-067/CUL-372 — the week-over-week VERDICT is deliberately gone from this card.
+  //
+  // It used to render "↓ from 4 last week — improving" in the accent teal. That
+  // sentence is a comparative claim about a symptom, and the Signal's reflection
+  // layer (③) is the only surface that carries the gates such a claim needs: the
+  // global worsening gate (④), the global chronicity gate (⑦), and the SR-4
+  // density-comparability gate. This card had none of them, so it kept saying
+  // "improving" on precisely the pets ③ had gone silent over — a cat vomiting for
+  // six weeks, or a week that only LOOKS quieter because it was logged less. An
+  // ungated duplicate of a gated claim is not a duplicate; it is a bypass.
+  //
+  // What is left is the half the Signal genuinely cannot draw: the 14-day SHAPE,
+  // and a bare current count in the same unit ③ uses. A bare count asserts nothing
+  // about direction, which is exactly what `templateReflection` falls back to when
+  // its own density gate fires — the same rule, now applied on both surfaces.
+  //
+  // The comparison is NOT re-homed here in a softer form. Anything that reads as a
+  // direction re-opens the bypass; the sentence belongs to the gated card above.
   return (
     <View>
       <View style={styles.chartHeadRow}>
         <Text style={styles.chartHeadType}>{symptomLabel}</Text>
         <Text style={styles.chartHeadCount}>
-          {thisWeekSymptomCount} this week
+          {thisWeekSymptomCount} {episodeNoun} this week
         </Text>
       </View>
-      <Text style={[styles.chartSubLabel, delta < 0 && styles.chartSubLabelImproving]}>
-        {directionLine}
-      </Text>
-      <View style={styles.barsContainer}>
+      <View style={[styles.barsContainer, styles.barsContainerTopGap]}>
         {data.buckets.map((bucket, i) => {
           const barH = bucket.symptomCount > 0
             ? Math.max(4, Math.round((bucket.symptomCount / maxCount) * MAX_BAR_HEIGHT))
@@ -247,6 +253,11 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
     height: MAX_BAR_HEIGHT,
     gap: 2,
+  },
+  // Replaces the space the removed direction line used to occupy (B-067/CUL-372),
+  // so dropping the verdict doesn't collapse the head onto the bars.
+  barsContainerTopGap: {
+    marginTop: theme.space2,
   },
   barColumn: {
     flex: 1,

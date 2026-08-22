@@ -1,5 +1,5 @@
 {
-  "_README": "Edge-Function deploy ledger (B-178 / CUL-135). One entry per deployable function. `fingerprint` = the sha256 of the function's shipping import-closure (index.ts + every local .ts it inlines) last acknowledged for deploy — computed by guards/edgeFunctionDeploy.test.ts, which FAILS THE BUILD when a function drifts from its recorded fingerprint without a reasoned acknowledgment. Statuses: `deployed` (fingerprint confirmed live), `pending` (a deploy is owed OR the live state is unverified — see the entry's `reason`), `hold` (deliberately not deployed — e.g. B-494). `pending`/`hold` require a `reason`. After deploying a function, set its `fingerprint` to the current value (the guard's failure message prints it) with status `deployed`. This ledger records intent; it does NOT prove a deploy happened — see docs/edge-deploy-runbook.md § Deploy ledger.",
+  "_README": "Edge-Function deploy ledger (B-178 / CUL-135). One entry per deployable function. `fingerprint` = the sha256 of the function's shipping import-closure (index.ts + every local .ts it inlines) last acknowledged for deploy \u2014 computed by guards/edgeFunctionDeploy.test.ts, which FAILS THE BUILD when a function drifts from its recorded fingerprint without a reasoned acknowledgment. Statuses: `deployed` (fingerprint confirmed live), `pending` (a deploy is owed OR the live state is unverified \u2014 see the entry's `reason`), `hold` (deliberately not deployed \u2014 e.g. B-494). `pending`/`hold` require a `reason`. After deploying a function, set its `fingerprint` to the current value (the guard's failure message prints it) with status `deployed`. This ledger records intent; it does NOT prove a deploy happened \u2014 see docs/edge-deploy-runbook.md \u00a7 Deploy ledger.",
   "_seed": "Seeded 2026-08-19 (CUL-135). Fingerprints are the current main closures at ledger creation. Live-vs-main was NOT verified per-function (the live artifact is a bundle, not a source closure, and this guard is token-free by design), so no function is seeded `deployed`: generate-report is the one confirmed `hold` (B-494); every other function is `pending` (baseline). Each converts to `deployed` on its next verified deploy-from-main, or via the live reconciliation follow-on (CUL-541).",
   "functions": {
     "analyze-stool": {
@@ -26,7 +26,7 @@
     "delete-account": {
       "status": "hold",
       "fingerprint": "sha256:99ac95836a4ce9ae813959e933e6ba5112995e7e987233a827027c2b1b7e2ccf",
-      "reason": "B-119 / CUL-215 re-auth HOLD (client-first deploy ordering): the function now fails closed (reauth_required 401) when a request body carries no password, and the CURRENT shipped client sends none. Deploying this BEFORE a client build carrying the password field is the live/minimum build would 401 every current-client deletion — an Apple 5.1.1(v) erasure regression. Deploy only AFTER that client build is live, then set `deployed`.",
+      "reason": "B-119 / CUL-215 re-auth HOLD (client-first deploy ordering): the function now fails closed (reauth_required 401) when a request body carries no password, and the CURRENT shipped client sends none. Deploying this BEFORE a client build carrying the password field is the live/minimum build would 401 every current-client deletion \u2014 an Apple 5.1.1(v) erasure regression. Deploy only AFTER that client build is live, then set `deployed`.",
       "ref": "CUL-215",
       "updated": "2026-08-20"
     },
@@ -46,17 +46,17 @@
     },
     "generate-report": {
       "status": "hold",
-      "fingerprint": "sha256:2f9f4a14a16ff2092066c87c71bd12d8508943e85db086424850f32cc19537b2",
-      "reason": "B-494 HOLD: the report deliberately runs the pre-PR-7 off-diet heuristic until the refusal safety lane ships; the generate-report redeploy is gated on B-494 (see STATUS.md / Open Questions). Do NOT set `deployed` until B-494 clears. Fingerprint bumped for CUL-564: the report now runs the FULL Signals v2 composition (its §3.8 timing line renders timing_story + empty_stomach_timing, and drops L2 trial_response / L4 gap_shortening) — a REAL behavior change to the report, unlike the behavior-neutral GA-3 bump. When B-494 clears, the one redeploy ships BOTH the refusal safety lane and this v2 timing adoption.",
+      "fingerprint": "sha256:7953bbc9cbbd82c0db836403393e020da39b6ff45cd4b1f88731b3d1399b9be1",
+      "reason": "B-494 HOLD: the report deliberately runs the pre-PR-7 off-diet heuristic until the refusal safety lane ships; the generate-report redeploy is gated on B-494 (see STATUS.md / Open Questions). Do NOT set `deployed` until B-494 clears. Carries CUL-564's REAL behavior change (the report's \u00a73.8 timing line renders timing_story + empty_stomach_timing and drops L2 trial_response / L4 gap_shortening). Fingerprint re-bumped for CUL-372: report.ts inlines generate-signal/detection.ts, whose episode collapse was re-based onto the shared lib/symptomEpisodes predicate \u2014 BEHAVIOR-NEUTRAL (verified: a 60,000-case differential fuzz of the old vs new toEpisodeOnsets/toConfidenceEpisodes, ~30k of them carrying duplicate instants, is byte-identical; 1369 deno tests green). Adds nothing to what this hold owes.",
       "ref": "B-494",
-      "updated": "2026-08-21"
+      "updated": "2026-08-22"
     },
     "generate-signal": {
       "status": "pending",
-      "fingerprint": "sha256:d7b80c4bab88f3b245b02266f4f261abfe97f067fde4dccb3fed381ecdfcb543",
-      "reason": "Source drift from CUL-564 — detection.ts (which this function inlines) had its `composeV2` toggle + the legacy pre-v2 composition fork removed (GA-3 cleanup). BEHAVIOR-NEUTRAL for the Signal path: generate-signal always called detectSignals with the default v2 composition, so its output is byte-identical to the live v32. A source-reconciling redeploy is owed (not behavior-urgent) and can ride the next generate-signal deploy. Was `deployed` as v32 (ACTIVE) — GA-3 (CUL-550), 2026-08-21, which also carried the CUL-258 fetch-timeout work.",
-      "ref": "CUL-564",
-      "updated": "2026-08-21"
+      "fingerprint": "sha256:b9b69d2b2ef893e24c5e849e1a881e1f9231c3d657961c73dc2e1aec1aecd40f",
+      "reason": "Source drift, BEHAVIOR-NEUTRAL on both counts, so no redeploy is owed for correctness. (1) CUL-564 removed detection.ts's `composeV2` toggle + the legacy pre-v2 composition fork (GA-3 cleanup); generate-signal always called detectSignals with the default v2 composition, so its output matches live v32. (2) CUL-372 re-based detection.ts's episode collapse onto the shared lib/symptomEpisodes predicate, so the Home Trend card and the Signal engine can no longer count the same events in different units \u2014 verified byte-identical by a 60,000-case differential fuzz of the old vs new toEpisodeOnsets/toConfidenceEpisodes (~30k inputs carrying duplicate instants, the edge the stable-sort argument rests on), plus 1369 deno tests. A source-reconciling redeploy is owed but not behavior-urgent, and can ride the next generate-signal deploy. Was `deployed` as v32 (ACTIVE) \u2014 GA-3 (CUL-550), 2026-08-21, which also carried the CUL-258 fetch-timeout work.",
+      "ref": "CUL-372",
+      "updated": "2026-08-22"
     }
   }
 }
