@@ -15,10 +15,12 @@
 // recompute an identical signal and falsely imply med→signal wiring already exists.
 // When PR 9 lands, add triggerSignalRegenDebounced(petId) here.
 
-import { getDb } from './db';
+import { getDb, getDoubleDoseFlag } from './db';
 import { syncPendingEvents, syncPendingMedicationAdministrations } from './sync';
 import { uuid } from './utils';
 import type { DoseVehicle } from './medications';
+import { useMomentStore, whenMedicationCardVisible } from '../store/momentStore';
+import type { DoseAdherence } from '../components/log/AdherenceChipRow';
 
 export interface InsertMedicationDoseParams {
   petId: string;
@@ -137,4 +139,56 @@ export async function insertMedicationDose(
     .catch((e) => console.error('[insertMedicationDose] sync push failed:', e));
 
   return { eventId, administrationId, occurredAtIso, now };
+}
+
+
+// ── B-157 (CUL-284): the log-time double-dose note ──────────────────────────────
+// The §6.4 check (B-135) shipped correct but reachable from ONE place — the second
+// dose's own detail screen. An owner who taps twice and then scans History never sees
+// it, which is a discoverability hole in a safety flag, not a detector bug. This puts
+// the SAME note (same predicate, same copy) on the medication completion card at the
+// moment the second dose is logged.
+//
+// Deliberately NOT folded into insertMedicationDose, even though that module owns the
+// dose write: two of the four dose-write paths (MedStrip's Home one-tap and
+// medication-capture's first-dose) show no completion card at all, so a check fired
+// from the write would have nowhere to land. It lives here, next to the write, so the
+// pairing is greppable — and so a future card-showing path finds it.
+//
+// Fire-and-forget by design (Principle 1): the dose is already on disk and the card is
+// already up before this runs. Every failure mode degrades to SILENCE, which is safe
+// here only because silence is not an all-clear on any Nyx surface — the detector
+// already under-fires by construction, and the dose detail screen recomputes the check
+// on every focus, so a note dropped at log time is never a note lost from the record.
+export async function applyLogTimeDoubleDoseCheck(params: {
+  eventId: string;
+  petId: string;
+  medicationItemId: string | null;
+  occurredAt: string;
+  // Narrower than getDoubleDoseFlag's own `string | null` on purpose: this value is
+  // also the store-side precondition (see the patchDoubleDose call below), so it has to
+  // be comparable to the card's adherence rather than any stored TEXT.
+  adherence: DoseAdherence | null;
+}): Promise<void> {
+  let flag;
+  try {
+    flag = await getDoubleDoseFlag(params);
+  } catch (e) {
+    // A check failure must never surface as a log failure — the dose is saved and the
+    // card is showing. Warn and leave the note off; the detail screen still has it.
+    console.warn('[medication-dose] log-time double-dose check failed:', e);
+    return;
+  }
+  // No conflict → nothing to say. Note what is NOT done here: there is no "no repeat
+  // found" state to render (§6.1 — absence of a flag is never reassurance).
+  if (!flag.conflict) return;
+  // Wait for the card to actually be on screen before patching. The picker path defers
+  // its reveal by ~450ms while this local read resolves in single-digit ms, so a bare
+  // patch would land on a not-yet-revealed card and drop the note. `false` means a
+  // newer dose superseded this card — skip, rather than decorate the wrong dose.
+  if (!(await whenMedicationCardVisible(params.eventId))) return;
+  // The third argument is the precondition: this result was computed against the
+  // adherence the dose was WRITTEN with, and the store drops it if the owner has since
+  // changed it on the card. That tap fired its own recheck, which carries the truth.
+  useMomentStore.getState().patchDoubleDose(params.eventId, flag, params.adherence);
 }
