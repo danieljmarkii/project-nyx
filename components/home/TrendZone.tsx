@@ -91,9 +91,15 @@ function SymptomChart({ data }: { data: TrendData }) {
     <View>
       <View style={styles.chartHeadRow}>
         <Text style={styles.chartHeadType}>{symptomLabel}</Text>
-        <Text style={styles.chartHeadCount}>
-          {thisWeekSymptomCount} {episodeNoun} this week
-        </Text>
+        {/* No count line at zero. "0 episodes this week" is reassurance-by-absence —
+            the same claim the Signal's ③ refuses to make, with the word "improving"
+            removed — so when nothing was logged this week the empty right-hand half of
+            the chart is left to be the only statement. */}
+        {thisWeekSymptomCount > 0 && (
+          <Text style={styles.chartHeadCount}>
+            {thisWeekSymptomCount} {episodeNoun} this week
+          </Text>
+        )}
       </View>
       <View style={[styles.barsContainer, styles.barsContainerTopGap]}>
         {data.buckets.map((bucket, i) => {

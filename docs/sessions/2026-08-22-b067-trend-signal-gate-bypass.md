@@ -69,3 +69,59 @@ debounced regen on write, so a hard skew is not demonstrable and asserting one w
 2. **Does the count fix follow in the same PR** (rows C/D — coherence, not safety), or split,
    given CUL-383 may rewrite this card anyway. Recommended: split.
 3. **Re-rate.** `Quick Win` no longer fits; the verdict half reads as `Now`.
+
+---
+
+## PM rulings (2026-08-22)
+
+- **D1 — shape:** deferred to the product team → **Option A** (drop the Trend card's comparison line and the "improving" verdict; keep chart + bare count).
+- **D2 — count fix:** **rides along** in the same PR, overriding the team's split recommendation.
+- **D3 — re-rate:** applied under the Product Owner lens — `Quick Win` removed, priority **Urgent**.
+
+## What was built
+
+**Safety half.** `TrendZone.SymptomChart` renders no week-over-week verdict — no comparison clause, no arrow, no accent. Chart + bare count remain. Same fallback `templateReflection` already uses when its own density gate fires.
+
+**Coherence half.** Episode counting moved onto one predicate and out of the hook:
+- `lib/symptomEpisodes.ts` — ms-only adapter, and `detection.ts`'s `toEpisodeOnsets` + `toConfidenceEpisodes` re-based onto it.
+- `lib/trendSummary.ts` — the card's window/subject arithmetic, extracted so it is unit-testable.
+- `lib/symptomEpisodes.guard.test.ts` — fails the build on a second implementation or on the verdict copy returning.
+
+**Kept `lethargy` on the chart**, against the brief's warning: aligning the selection *rule* rather than the symptom *set* closes the contradiction, and `CORRELATION_SYMPTOM_TYPES` scopes food→symptom correlation, not what belongs on a symptom chart.
+
+## What the reviews broke — and the corrections
+
+Both mandated reviews ran and **both returned negative verdicts on the first cut**. Recorded in full because the corrections are the substance of this session.
+
+**`adversarial-reviewer` — FAIL.** Two of its findings were regressions I had introduced, both from the same decision (bucketing the bars by episode *onset*):
+1. **`hasEnoughData` reads those buckets.** A day whose symptoms merely *continue* a chain begun the night before scored 0, so six logged vomits on a pet with no meals logged rendered as *"A few more days of logs and we'll be able to show Nyx's pattern."* Before the change it rendered the chart.
+2. **The worst days went blank.** The morning after a chained overnight bout drew an empty column, pixel-identical to a symptom-free day — reassurance-by-absence on the one artifact the fix keeps *because* the Signal cannot draw it.
+
+**Fix: the bars are back to raw events.** They are an intensity plot, not a decomposition of the head's episode count — the head names one symptom type while the bars total all of them, so the two were never arithmetically related. The interim comment claiming otherwise was wrong and is gone.
+
+It also found the module's central claim was false: **`lib/mealTiming.ts` already carried `collapseEpisodes`**, the same chaining rule generic over the event shape. `lib/symptomEpisodes.ts` now *delegates* to it rather than copying it, so "one implementation" is true rather than aspirational.
+
+**`code-reviewer` — fix-before-merge.** Three concrete defects, all in code with no test coverage:
+1. **DST boundary bug (mine).** The SQL fetch bound used calendar arithmetic while the window bounds used fixed-offset epoch arithmetic. They agree except across a DST transition, where an event in the diverging sliver was never *fetched* — vanishing from the prior window rather than being visibly filtered. Both now derive from `trendLookbackStartMs`.
+2. **Tie-break order.** Selection iterated alphabetically; the engine iterates `CORRELATION_SYMPTOM_TYPES` in declared order. On a genuine tie the two cards named different symptoms — while a comment claimed parity. `TREND_SYMPTOM_TYPES` now carries the engine's order.
+3. **No absence floor.** A symptom silent this week could still be selected, rendering *"0 episodes this week"* — reassurance-by-absence with the word "improving" removed. The floor is now shared with `detectReflections`, and the card renders no count line at zero.
+
+**Both reviewers, independently:** the behaviour-neutrality claim rested on a one-off fuzz recorded only in prose. It is now `lib/symptomEpisodes.differential.test.ts` — 40,000 fuzzed inputs against the pre-refactor bodies transcribed verbatim, asserting the fuzz actually reaches duplicate instants and multi-episode splits, plus the overnight-bout case and the one documented divergence (non-finite instants, unreachable — all seven engine call sites pre-filter).
+
+**The guard test needed three rounds of its own.** Its first draft fired on `MS_PER_DAY = 24 * 60 * 60 * 1000`; broadened to a directory scan it fired on `lib/medications.ts`'s double-dose proximity check. It now keys on the algorithm's *shape* — a gap threshold **and** a chaining cursor — and carries tests for its own true and false positives. A guard that cries wolf is one someone eventually deletes.
+
+## A claim I made that was wrong
+
+The original brief dropped Signal-cache staleness as a source of contradiction, reasoning that `useSignal` regenerates on write. **That reasoning is wrong** — the drift is between the last regen's `input.now` and the client's `Date.now()` at render, bounded only by the 24h TTL, and needs no write at all. Filed as **CUL-570**. Aligning the unit removed the larger cause but made the residual sharper, since both cards now print the word *episodes*.
+
+## Verification
+
+- `tsc --noEmit` clean; **245 suites / 5407 jest tests** green, including the non-UTC timezone legs.
+- **1369 deno tests** green, run locally on the CI-pinned Deno 2.9.4 (installed for this purpose rather than deferring to CI). Caught a real failure CI would otherwise have found: the intra-`lib` import needed an explicit `.ts` extension, matching `lib/dietTrial.ts` / `lib/trialResponseCounts.ts`.
+- Deploy ledger records both drifted closures as behaviour-neutral, now citing the committed test. **`generate-report`'s B-494 hold is unchanged and no redeploy is owed.**
+
+## Filed, not folded in
+
+- **CUL-568** (High) — the *feeding* chart still renders "Every day this week" in the good-news accent over meal-**logging** days. A cat refusing every bowl reads as a green week, and detector ② is structurally silent on a diet refused from day 1. Raised from Medium on the adversarial reviewer's argument that this lands on *intake is not preference*.
+- **CUL-570** (Medium) — the cache-vs-live window drift above.
+- **CUL-571** (High) — `lib/metricDetail.ts`'s Week tab still states an ungated week-over-week symptom direction, two taps from the card just fixed.

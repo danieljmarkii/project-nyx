@@ -15,13 +15,26 @@
  *
  * `lib/symptomEpisodes.guard.test.ts` fails the build if either re-spells it.
  * This is the diet-trial §5.3 lesson ("there is ONE off-diet predicate") applied
- * to episode counting, and it is a re-based extraction rather than a new rule:
- * the body below is the engine's shipped `toEpisodeOnsets`, moved verbatim, so
- * the deployed function's behaviour is unchanged and no redeploy is required for
+ * to episode counting.
+ *
+ * IT DELEGATES RATHER THAN IMPLEMENTING. The first draft of this module copied the
+ * engine's `toEpisodeOnsets` body here and its docstring claimed the collapse now
+ * "lived here, once" — which was false the moment it was written: `lib/mealTiming.ts`
+ * already carried `collapseEpisodes`, the same chaining rule generic over the event
+ * shape, feeding `trialResponseCounts` / `patternsTiming` / `signalWatching`. Adversarial
+ * review caught it. So this module is a thin ms-only ADAPTER over that generic
+ * implementation, and there is genuinely one body of the algorithm in the app.
+ *
+ * Behaviour is unchanged for the engine (`lib/symptomEpisodes.differential.test.ts`
+ * fuzzes this against the pre-refactor bodies), so no redeploy is required for
  * correctness.
  */
 
-const MS_PER_HOUR = 60 * 60 * 1000;
+// `.ts` extension is REQUIRED here, not a style choice: this module is inlined into
+// `generate-signal`'s Deno closure via detection.ts, and `deno test` type-checks with
+// explicit-extension resolution. Matches lib/dietTrial.ts and lib/trialResponseCounts.ts,
+// the other dual-consumed lib files. Metro and jest resolve it fine.
+import { collapseEpisodes } from './mealTiming.ts';
 
 /**
  * Gap that separates two episodes of the SAME symptom, in hours.
@@ -64,17 +77,15 @@ export function collapseToEpisodeOnsets(
   symptomMsList: readonly number[],
   gapHours: number = SYMPTOM_EPISODE_GAP_HOURS,
 ): number[] {
+  // The finite filter is this adapter's own contribution — `collapseEpisodes` does
+  // not do it, and a NaN instant poisons the chain's `prev`, swallowing every later
+  // event into one episode. Every engine call site already pre-filtered, so this is
+  // belt-and-braces there and load-bearing on the client path.
   const finite = symptomMsList.filter((ms) => Number.isFinite(ms));
-  if (finite.length === 0) return [];
-  const gapMs = gapHours * MS_PER_HOUR;
-  const sorted = [...finite].sort((a, b) => a - b);
-  const onsets: number[] = [sorted[0]];
-  let prev = sorted[0];
-  for (let i = 1; i < sorted.length; i++) {
-    if (sorted[i] - prev > gapMs) onsets.push(sorted[i]);
-    prev = sorted[i];
-  }
-  return onsets;
+  return collapseEpisodes<{ ms: number }>(
+    finite.map((ms) => ({ ms })),
+    gapHours,
+  ).map((e: { ms: number }) => e.ms);
 }
 
 /**
