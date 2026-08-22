@@ -102,3 +102,27 @@ CLAUDE.md's Runtime A quick-reference told the PM to run **`eas update --branch 
 - **CUL-522** (dual-source bleed) gains two confirmed instances; it is still open and still the right place for a systematic sweep.
 - **CUL-584** collects the five holds the archive pass deliberately left unruled.
 - `docs/backlog.md` is untouched — frozen, and read only to recover a ported row's history (which is exactly how B-080 and B-128 were recovered here).
+
+---
+
+## Postscript: the convention got tested twice before it merged
+
+While this PR was open, two sibling PRs landed on `main` that were authored against the *old* `/wrap` — and both wrote their session state into `STATUS.md`. Each collided with this branch, which is the behaviour this PR exists to end.
+
+- **#696 (CUL-284, log-time double-dose note)** added a PM-action block naming CUL-573 / CUL-572 / CUL-569.
+- **#695 (CUL-372, Trend card × Signal gates)** added a shipped-track section plus a note on the `generate-signal` deploy row.
+
+Both were resolved to the pointer card. Nothing was discarded on the strength of "it's duplicated" — each claim was checked first:
+
+| What the block held | Where it already lived | What was done |
+|---|---|---|
+| #696's CUL-573 decision | CUL-573, with a fuller decision brief than the STATUS.md copy | Applied the **`Waiting on PM`** label — the only thing the block actually provided was PM visibility |
+| #696's CUL-572 / CUL-569 | Both open issues | Nothing needed |
+| #695's shipped-track section | CUL-372 `Done`, PR #695 attached; residuals CUL-568/570/571 all filed | Nothing needed |
+| #695's `generate-signal` drift note | The deploy ledger (`deploy-manifest.json`) | Also posted to CUL-557, which owns that deploy |
+
+**The first resolution had a second-order effect worth recording.** The conflict had left the PR `mergeable_state: dirty`, and a conflicted PR has no mergeable commit for GitHub to build — so **CI had never run at all**. The `pending` status sitting on the PR for ninety minutes was not a slow queue; it was the conflict, and it would not have resolved on its own. Generalisable: on a PR that reports `pending` with **zero** check runs, check mergeability before waiting.
+
+Both merges were validated before pushing (`tsc --noEmit` clean; full jest suite green), and all three CI jobs passed on the result.
+
+The postscript is the argument for the change, made twice by accident: two sessions, two collisions, one shared file — and in both cases the colliding content was already in Linear.
