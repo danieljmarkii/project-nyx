@@ -628,4 +628,31 @@ describe('whenMealCardVisible — closing the picker-path warning drop (B-693)',
     useMomentStore.getState().patchAdherence('refused');
     expect(useMomentStore.getState().patchDoubleDose('m1', CONFLICT, 'given')).toBe(false);
   });
+  it('an optional vehicle tap cannot truncate the dwell while the note is up (adversarial F2)', () => {
+    // The adversarial pass broke the first cut here: patchDoubleDose armed 7s, then a
+    // tap on the OPTIONAL "How was it given?" row called rescheduleHide(1500) with no
+    // knowledge of the note and dismissed the card ~2s after it appeared — with no
+    // History indicator to recover it. A confirm hold may only ever LENGTHEN the window.
+    useMomentStore.getState().showMedication(medicationPayload());
+    useMomentStore.getState().patchDoubleDose('m1', CONFLICT, 'given');
+    useMomentStore.getState().rescheduleHide(1500); // the vehicle chip's own hold
+    jest.advanceTimersByTime(1500);
+    expect(useMomentStore.getState().visible).toBe(true);
+    jest.advanceTimersByTime(MEDICATION_FLAGGED_DURATION_MS - 1500);
+    expect(useMomentStore.getState().visible).toBe(false);
+  });
+
+  it('the floor applies only while a CONFLICT is on screen, never to an ordinary card', () => {
+    // The meal card and a clean dose card keep their 1.5s confirm hold — the floor is
+    // scoped to the thing it protects, not a blanket slowdown of every chip tap.
+    useMomentStore.getState().showMedication(medicationPayload({ doubleDose: NO_CONFLICT }));
+    useMomentStore.getState().rescheduleHide(1500);
+    jest.advanceTimersByTime(1500);
+    expect(useMomentStore.getState().visible).toBe(false);
+
+    useMomentStore.getState().showMeal(mealPayload());
+    useMomentStore.getState().rescheduleHide(1500);
+    jest.advanceTimersByTime(1500);
+    expect(useMomentStore.getState().visible).toBe(false);
+  });
 });

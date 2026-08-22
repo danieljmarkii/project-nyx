@@ -352,10 +352,30 @@ export const useMomentStore = create<MomentState>((set) => ({
   },
   rescheduleHide: (durationMs) => {
     clearHideTimer();
+    // B-157 (CUL-284) — a card carrying an unread safety note has a FLOOR on its dwell,
+    // and it is enforced here rather than at the call sites.
+    //
+    // The adversarial pass broke the first cut on exactly this: patchDoubleDose armed
+    // the 7s flagged window, and then a tap on the OPTIONAL "How was it given?" row —
+    // a purely descriptive control with no knowledge of the note — called
+    // rescheduleHide(1500) unconditionally and dismissed the card ~2s after the note
+    // appeared. The note is ~18 words, History carries no double-dose indicator, and
+    // the owner has no cue to visit the dose detail screen, so for that owner the flag
+    // was simply gone. Putting the 7s inside patchDoubleDose was supposed to stop a
+    // safety note flashing past; it did not, because a later, shorter reschedule wins.
+    //
+    // So the rule is a floor, not a set: a confirm hold may only ever LENGTHEN the
+    // window while a conflict is on screen. Bounded — it re-arms from the last tap, and
+    // the owner doing the tapping is engaged with the card.
+    const state = useMomentStore.getState();
+    const floorMs =
+      state.payload?.kind === 'medication' && state.payload.doubleDose?.conflict
+        ? MEDICATION_FLAGGED_DURATION_MS
+        : 0;
     hideTimer = setTimeout(() => {
       set({ visible: false });
       hideTimer = null;
-    }, durationMs);
+    }, Math.max(durationMs, floorMs));
   },
 }));
 

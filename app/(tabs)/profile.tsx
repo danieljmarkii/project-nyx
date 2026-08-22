@@ -742,13 +742,26 @@ export default function ProfileScreen() {
       adherence: 'given',
       howGiven: null,
     });
-    // B-157 (CUL-284) — the log-time double-dose check. This path is the likeliest
-    // accidental repeat in the app: the regimen card's "Log a dose" is a bare button an
-    // owner can tap twice, or tap again after already logging the same dose from the
-    // picker. Fire-and-forget; the card above reveals synchronously, so the wait inside
-    // resolves immediately. A FREE-TEXT regimen has a null medication_item_id and the
-    // check declines (no library item to group sibling doses on) — a documented gap of
-    // the detector, not a silent all-clear.
+    // B-157 (CUL-284) — the log-time double-dose check. Fire-and-forget; the card above
+    // reveals synchronously, so the wait inside resolves immediately.
+    //
+    // KNOWN GAP, named honestly because it bites hardest exactly here. This path is the
+    // likeliest accidental repeat in the app — "Log a dose" is a bare button an owner
+    // can tap twice, or tap again after already logging that dose from the picker — and
+    // it is also the path where the check most often CANNOT fire: the detector groups on
+    // medication_item_id, and a FREE-TEXT regimen has none. That is not an exotic case,
+    // it is the DEFAULT regimen shape (AddMedicationModal's onChangeDrugName clears the
+    // library link whenever the name is typed, and the name-shortcut chips route through
+    // the same handler), so an owner who never ran the photo-capture flow gets silence
+    // here. Silence is the safe direction — §6.1, it is never an all-clear — but it is
+    // not the coverage this button deserves.
+    //
+    // The fix is not a wider window: `medicationId` on the very next line is a reliable
+    // same-REGIMEN grouping key, and B-135's reason for keying on the drug ("one-tap
+    // doses are ad-hoc, so same-drug is the only reliable group") was overtaken by
+    // B-154, which links doses to their regimen. Changing the detector's key is a
+    // clinical call with its own adversarial pass, so it is filed rather than smuggled
+    // in here: CUL-572.
     void applyLogTimeDoubleDoseCheck({
       eventId: result.eventId,
       petId: activePet.id,
