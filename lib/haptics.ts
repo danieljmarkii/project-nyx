@@ -94,11 +94,16 @@ export function selectChip(): void {
 }
 
 /**
- * A surface that offers choices opened — the FAB menu, the pet switcher.
+ * A menu-class interaction — opening the FAB, or picking a pet in the switcher.
  *
- * Light impact: it marks the affordance opening, not a commitment. Same verb for both
+ * Light impact: it marks a navigational move, not a commitment. Same verb for both
  * because they are the same gesture class, and a pet switch is emphatically NOT a
  * commit (nothing is written).
+ *
+ * Note the two call sites sit at different points on purpose: the FAB fires on OPEN
+ * (the menu appearing is the event), while the switcher fires on SELECT rather than on
+ * the sheet appearing — the switch is the thing worth marking there, and the sheet
+ * already announces itself by sliding up.
  */
 export function openMenu(): void {
   play(() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light));
@@ -123,6 +128,13 @@ export function pullThreshold(): void {
  * the CONFIRM, never on the button that opens the confirm — a haptic on "Remove…"
  * would say something was destroyed while the owner still has a Cancel in front of
  * them. Undo is destructive in this sense too: it soft-deletes a just-written row.
+ *
+ * It marks the GESTURE, not the write's outcome: it fires as the owner confirms, so a
+ * delete that then fails has already buzzed. Deliberate — the alternative is a
+ * confirmed tap that feels like nothing for as long as the write takes, which reads as
+ * a dropped tap and invites a second one. The failure path is owned by its own alert
+ * copy, which is where an owner learns the row is still there. Revisit only if Design
+ * decides the haptic should follow the outcome.
  */
 export function destructiveConfirm(): void {
   play(() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Rigid));
