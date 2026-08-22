@@ -1,0 +1,550 @@
+<title>Culprit Polish Round 2</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400..600&family=Geist:wght@400..600&display=swap">
+<style>
+  /* ── Page tokens — Culprit day register, light-first; dark = the brand night ── */
+  :root{
+    --ground:#FAFAFA; --card:#FFFFFF; --card-subtle:#F5F5F5;
+    --ink:#0A0A0A; --ink-2:#525252; --ink-3:#737373;
+    --border:#EAEAEA; --border-strong:#D4D4D4;
+    --accent:#00C2A8; --accent-ink:#0B7B6C; --accent-light:#E0FBF7;
+    --rose:#F43F5E; --rose-light:#FFE4E6;
+    --gold:#FBBF24;
+    --eyebrow:#0B7B6C;
+    --frame-edge:rgba(10,10,10,.14); --frame-shadow:0 10px 28px rgba(10,10,10,.10);
+    --rec:#0B7B6C; --rec-bg:#E0FBF7;
+    --ruled:#0B7B6C; --ruled-bg:#E0FBF7;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --ground:#13112E; --card:#1A1640; --card-subtle:#221C56;
+      --ink:#ECEAF6; --ink-2:#A6A2CE; --ink-3:#706BA6;
+      --border:rgba(196,190,255,.16); --border-strong:rgba(196,190,255,.28);
+      --accent:#00C2A8; --accent-ink:#4FD8C4; --accent-light:rgba(0,194,168,.12);
+      --rose:#FB7185; --rose-light:rgba(251,113,133,.14);
+      --eyebrow:#4FD8C4;
+      --frame-edge:rgba(196,190,255,.22); --frame-shadow:0 12px 32px rgba(0,0,0,.45);
+      --rec:#4FD8C4; --rec-bg:rgba(0,194,168,.12);
+      --ruled:#4FD8C4; --ruled-bg:rgba(0,194,168,.12);
+    }
+  }
+  :root[data-theme="dark"]{
+    --ground:#13112E; --card:#1A1640; --card-subtle:#221C56;
+    --ink:#ECEAF6; --ink-2:#A6A2CE; --ink-3:#706BA6;
+    --border:rgba(196,190,255,.16); --border-strong:rgba(196,190,255,.28);
+    --accent:#00C2A8; --accent-ink:#4FD8C4; --accent-light:rgba(0,194,168,.12);
+    --rose:#FB7185; --rose-light:rgba(251,113,133,.14);
+    --eyebrow:#4FD8C4;
+    --frame-edge:rgba(196,190,255,.22); --frame-shadow:0 12px 32px rgba(0,0,0,.45);
+    --rec:#4FD8C4; --rec-bg:rgba(0,194,168,.12);
+    --ruled:#4FD8C4; --ruled-bg:rgba(0,194,168,.12);
+  }
+
+  body{background:var(--ground);color:var(--ink);font-family:'Geist',system-ui,-apple-system,sans-serif;
+       font-size:15px;line-height:1.55;margin:0;-webkit-font-smoothing:antialiased;}
+  .wrap{max-width:1100px;margin:0 auto;padding:40px 20px 80px;}
+  a{color:var(--accent-ink);text-decoration:none;}
+  a:hover{text-decoration:underline;}
+  a:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:4px;}
+
+  .mast{display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap;}
+  .mast svg{color:#211E4E;}
+  :root[data-theme="dark"] .mast svg{color:#F2EEE4;}
+  @media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .mast svg{color:#F2EEE4;}}
+  .mast .wordmark{font-family:'Newsreader',Georgia,serif;font-size:17px;color:var(--ink-3);letter-spacing:-.3px;}
+  .roundtag{margin-left:auto;font-size:11px;letter-spacing:.8px;text-transform:uppercase;color:var(--eyebrow);
+            border:1px solid var(--border-strong);border-radius:999px;padding:4px 10px;}
+  h1{font-family:'Newsreader',Georgia,serif;font-weight:500;font-size:clamp(30px,5vw,42px);line-height:1.12;
+     letter-spacing:-.5px;margin:6px 0 14px;text-wrap:balance;}
+  .lede{color:var(--ink-2);max-width:64ch;margin:0 0 6px;}
+  .lede b{color:var(--ink);font-weight:600;}
+  .meta{font-size:13px;color:var(--ink-3);margin:10px 0 0;}
+
+  .sec{margin-top:64px;}
+  .eyebrow{font-size:11px;letter-spacing:1px;text-transform:uppercase;color:var(--eyebrow);font-weight:600;margin:0 0 6px;}
+  h2{font-family:'Newsreader',Georgia,serif;font-weight:500;font-size:27px;letter-spacing:-.3px;margin:0 0 10px;text-wrap:balance;}
+  h3{font-size:15px;font-weight:600;margin:26px 0 6px;}
+  .sec>p{color:var(--ink-2);max-width:68ch;margin:0 0 8px;}
+  .sec>p b{color:var(--ink);font-weight:600;}
+  .row{display:flex;flex-wrap:wrap;gap:26px;margin-top:22px;align-items:flex-start;}
+
+  .fig{width:322px;max-width:100%;}
+  .fig.narrow{width:270px;}
+  .fig.wide{width:480px;}
+  .opt{display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap;}
+  .opt .k{font-weight:600;font-size:13px;letter-spacing:.4px;}
+  .tag{font-size:10px;letter-spacing:.7px;text-transform:uppercase;border-radius:999px;padding:3px 8px;font-weight:600;}
+  .tag.rec{color:var(--rec);background:var(--rec-bg);}
+  .tag.risk{color:var(--ink-3);border:1px solid var(--border-strong);}
+  .tag.ruled{color:var(--ruled);background:var(--ruled-bg);}
+  .tag.gate{color:#6B4A0E;background:#FDF3DC;}
+  .tag.no{color:var(--ink-3);border:1px solid var(--border-strong);text-decoration:line-through;}
+  :root[data-theme="dark"] .tag.gate{color:#F2DFB3;background:rgba(251,191,36,.14);}
+  @media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .tag.gate{color:#F2DFB3;background:rgba(251,191,36,.14);}}
+  .frame{background:#FAFAFA;border:1px solid var(--frame-edge);border-radius:22px;box-shadow:var(--frame-shadow);
+         overflow:hidden;font-size:13px;color:#0A0A0A;}
+  .frame *{box-sizing:border-box;}
+  .cap{font-size:13px;color:var(--ink-2);margin-top:10px;line-height:1.5;}
+  .cap b{color:var(--ink);font-weight:600;}
+  .capnote{font-size:12px;color:var(--ink-3);margin-top:6px;}
+  .haptic{display:inline-flex;align-items:center;gap:5px;font-size:10px;letter-spacing:.5px;text-transform:uppercase;
+          color:var(--ink-3);border:1px dashed var(--border-strong);border-radius:999px;padding:2px 8px;margin-top:8px;}
+  .haptic i{font-style:normal;color:var(--accent-ink);}
+
+  /* in-frame primitives (literal day colors on purpose — frames depict the app) */
+  .f-card{background:#FFFFFF;border-radius:16px;margin:12px;padding:14px;box-shadow:0 1px 4px rgba(0,0,0,.06);}
+  .f-label{font-size:10px;letter-spacing:.8px;text-transform:uppercase;color:#737373;font-weight:600;}
+  .f-serif{font-family:'Newsreader',Georgia,serif;}
+
+  /* tab bars */
+  .tbar{display:flex;border-top:1px solid #EAEAEA;background:#FFFFFF;padding:10px 0 14px;}
+  .tbar .t{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;color:#737373;min-width:0;}
+  .tbar .t svg{display:block;flex:0 0 auto;}
+  .tbar .t .lbl{font-size:11px;letter-spacing:.4px;font-weight:500;max-width:100%;overflow:hidden;white-space:nowrap;}
+  .tbar .t .lbl.sm{font-size:10px;}
+  .tbar .t.on{color:#0A0A0A;}
+  .tbar .t .dot{width:4px;height:4px;border-radius:2px;background:transparent;}
+  .tbar .t.on .dot{background:#00C2A8;}
+  .avatarchip{width:23px;height:23px;border-radius:12px;background:#E0FBF7;color:#0B7B6C;font-size:11px;font-weight:600;
+              display:flex;align-items:center;justify-content:center;flex:0 0 auto;}
+  .t.on .avatarchip{box-shadow:0 0 0 2px #00C2A8;}
+  .tabwrap{position:relative;padding-top:8px;background:#FAFAFA;}
+  .xnote{font-size:11px;color:#9F1239;background:#FFE4E6;border-radius:8px;margin:10px 12px 0;padding:6px 10px;}
+  .oknote{font-size:11px;color:#0B7B6C;background:#E0FBF7;border-radius:8px;margin:10px 12px 0;padding:6px 10px;}
+
+  /* header frames */
+  .hframe{background:#FFFFFF;border-bottom:1px solid #EAEAEA;padding:12px 14px 12px;}
+  .hrow{display:flex;align-items:center;gap:10px;}
+  .hmark{color:#211E4E;flex:0 0 auto;display:flex;align-items:center;}
+  .hword{font-family:'Newsreader',Georgia,serif;font-size:14px;color:#737373;letter-spacing:-.3px;}
+  .askpill{display:inline-flex;align-items:center;gap:5px;border:1px solid #D4D4D4;border-radius:999px;padding:4px 9px;
+           font-size:12px;font-weight:600;color:#0A0A0A;background:#fff;}
+  .askdot{width:5px;height:5px;border-radius:3px;background:#00C2A8;}
+  .ownerav{width:26px;height:26px;border-radius:13px;background:#F5F5F5;border:1px solid #EAEAEA;color:#525252;
+           font-size:10px;font-weight:600;display:flex;align-items:center;justify-content:center;}
+  .petav{width:30px;height:30px;border-radius:15px;background:#E0FBF7;color:#0B7B6C;font-size:12px;font-weight:600;
+         display:flex;align-items:center;justify-content:center;flex:0 0 auto;}
+  .livedot{width:6px;height:6px;border-radius:3px;background:#00C2A8;flex:0 0 auto;}
+  .sigpeek{background:#FFFFFF;border-radius:16px;margin:10px 12px 12px;padding:12px 14px;box-shadow:0 1px 4px rgba(0,0,0,.06);}
+  .sigpeek .h{font-family:'Newsreader',Georgia,serif;font-size:16px;color:#0A0A0A;line-height:1.3;}
+
+  /* §03 path map */
+  .pmap{border:1px solid var(--border);border-radius:16px;overflow:hidden;margin-top:18px;}
+  .prow{display:flex;gap:14px;padding:14px 16px;border-top:1px solid var(--border);flex-wrap:wrap;align-items:center;background:var(--card);}
+  .prow:first-child{border-top:0;}
+  .prow .pn{flex:0 0 26px;font-variant-numeric:tabular-nums;font-weight:600;color:var(--ink-3);font-size:13px;}
+  .prow .pd{flex:1 1 240px;min-width:200px;}
+  .prow .pd b{color:var(--ink);font-weight:600;}
+  .prow .pd{color:var(--ink-2);font-size:13.5px;line-height:1.5;}
+  .prow .pv{flex:0 0 170px;}
+  .swatchbig{border-radius:10px;padding:9px 10px;font-size:11px;line-height:1.4;}
+
+  /* completion frames */
+  .darkcard{background:#171717;border-radius:16px;margin:12px;padding:14px;color:#FFFFFF;box-shadow:0 4px 14px rgba(0,0,0,.3);}
+  .darkcard .sub{color:rgba(255,255,255,.7);font-size:12px;}
+  .chip{display:inline-block;border:1px solid rgba(255,255,255,.3);border-radius:999px;padding:5px 11px;font-size:12px;
+        color:rgba(255,255,255,.92);margin:6px 6px 0 0;}
+  .undo{display:inline-block;border:1px solid rgba(255,255,255,.3);border-radius:999px;padding:5px 11px;font-size:12px;color:#FFFFFF;}
+  .ring{width:56px;height:56px;border-radius:28px;border:2px solid #00C2A8;display:flex;align-items:center;justify-content:center;margin:0 auto;background:#FFFFFF;}
+  .scrimframe{background:rgba(10,10,10,.62);padding:30px 16px;}
+
+  /* trend */
+  .bars{display:flex;align-items:flex-end;gap:3px;height:56px;margin-top:10px;}
+  .bars i{flex:1;background:#F0F0F0;border-radius:2px 2px 1px 1px;display:block;position:relative;}
+  .bars i.s{background:#F43F5E;}
+  .bars i.today{outline:1.5px solid #0A0A0A;outline-offset:1px;}
+  .axis{display:flex;justify-content:space-between;font-size:10px;color:#737373;margin-top:5px;}
+  .wkpair{display:flex;gap:18px;align-items:flex-end;margin-top:10px;}
+  .wkcol{flex:1;}
+  .wkcol .wl{font-size:10px;color:#737373;text-align:center;margin-top:4px;}
+
+  /* ruled strip + plan */
+  .ruledrow{display:flex;gap:10px;align-items:baseline;padding:10px 0;border-top:1px solid var(--border);flex-wrap:wrap;}
+  .ruledrow:first-of-type{border-top:0;}
+  .ruledrow .rn{font-weight:600;color:var(--ink);font-size:14px;}
+  .ruledrow .rd{color:var(--ink-2);font-size:13.5px;flex:1 1 300px;}
+  .spec{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px 18px;margin-top:16px;}
+  .spec h4{margin:0 0 8px;font-size:13px;letter-spacing:.7px;text-transform:uppercase;color:var(--ink-3);}
+  .spec ul{margin:0;padding-left:18px;color:var(--ink-2);font-size:13.5px;line-height:1.6;}
+  .spec li b{color:var(--ink);}
+  .brief{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px 18px;margin-top:14px;}
+  .brief .bh{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;}
+  .brief .bid{font-weight:600;color:var(--accent-ink);font-size:13px;letter-spacing:.3px;white-space:nowrap;}
+  .brief .bt{font-weight:600;color:var(--ink);}
+  .brief p{margin:7px 0 0;color:var(--ink-2);font-size:13.5px;line-height:1.55;}
+  .brief p b{color:var(--ink);}
+  .plan{margin:14px 0 0;padding:0;list-style:none;}
+  .plan li{padding:9px 0;border-top:1px solid var(--border);font-size:13.5px;color:var(--ink-2);}
+  .plan li:first-child{border-top:0;}
+  .plan b{color:var(--ink);font-weight:600;}
+  .plan .cul{font-size:12px;color:var(--ink-3);font-variant-numeric:tabular-nums;}
+
+  footer{margin-top:72px;border-top:1px solid var(--border);padding-top:18px;font-size:12.5px;color:var(--ink-3);max-width:70ch;line-height:1.6;}
+</style>
+
+<div class="wrap">
+  <div class="mast">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9z"/></svg>
+    <span class="wordmark">Culprit</span>
+    <span class="roundtag">Round 2 · superseded</span>
+  </div>
+  <div style="border:1px solid var(--border-strong);border-left:3px solid var(--accent);border-radius:12px;padding:12px 16px;margin:6px 0 18px;font-size:13.5px;color:var(--ink-2);">
+    <b style="color:var(--ink);">This page is the round-2 deliberation record.</b> The PM reacted 2026-08-22; the current proposal is
+    <a href="https://claude.ai/code/artifact/81e54698-ad6c-4862-a6d2-7a8eb99f4d77">Round 3 →</a>.
+    Rulings from this round: R2-1 fallback ladder RATIFIED · R2-2 = H2 one-row, refined in round 3 (teal dot deleted; crescent-vs-bubble clash + busyness addressed there) · arrival spec LOCKED ("perfect") · R2-3 completion ADOPTED WHOLE · R2-4 Trend graphic reopened — three deliberate variants in round 3. Where round 3 differs, round 3 wins.
+  </div>
+  <h1>App polish — round 2, converging</h1>
+  <p class="lede">Round 1's reactions, folded in. <b>Locked:</b> the arrival moment (specced below), Geist app-wide, and the haptics vocabulary. <b>Converged, one ratify each:</b> the tab bar (B+C hybrid — this round shows the long-name mitigation you asked for) and Trend v2 (plus the "what else for this card" exploration). <b>Reopened:</b> the Home header — five fresh options, and no pulsing anywhere (your instinct matches the design principles' own line: <i>"no looping animations"</i> — a static cue, with motion reserved for the arrival itself). <b>Re-explained:</b> §03, from the ground up.</p>
+  <p class="meta">Tracked as CUL-580 · round 1 is preserved as the deliberation record · frames use the demo pet Biscuit</p>
+
+  <!-- ══════════════════ 01 · TAB BAR, CONVERGED ══════════════════ -->
+  <div class="sec">
+    <p class="eyebrow">§01 · The bar, converged</p>
+    <h2>The pet is the tab — with the fit risk closed</h2>
+    <p><b>Your ruling:</b> glyphs + labels, and the Pet tab becomes the pet (avatar + name). The risk you named — long names, small phones — is closed with a <b>fallback ladder</b>, not a truncation: the label tries the full name at 11pt; if it doesn't fit the tab's width it tries 10pt; if it still doesn't, it falls back to the word <b>Pet</b>. A name is never cut mid-word — the avatar carries the identity in every state, and VoiceOver always speaks the full name. At the narrowest supported width a tab fits ~12 characters, so the fallback is the rare case, not the norm.</p>
+    <div class="row">
+      <div class="fig">
+        <div class="opt"><span class="k">The ruled bar</span><span class="tag ruled">Direction ruled</span></div>
+        <div class="frame">
+          <div class="tabwrap">
+          <div class="tbar">
+            <div class="t on">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 11 12 4l8 7v9h-5v-5h-6v5H4z"/></svg>
+              <span class="lbl" style="font-weight:600">Home</span><span class="dot"></span>
+            </div>
+            <div class="t">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l2.5 2"/></svg>
+              <span class="lbl">History</span><span class="dot"></span>
+            </div>
+            <div class="t">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 11h16a8 8 0 0 1-16 0z" transform="translate(0 2)"/><path d="M9 20h6"/></svg>
+              <span class="lbl">Foods</span><span class="dot"></span>
+            </div>
+            <div class="t">
+              <span class="avatarchip">B</span>
+              <span class="lbl">Biscuit</span><span class="dot"></span>
+            </div>
+          </div></div>
+        </div>
+        <p class="cap">Three house-line glyphs + the pet. Active = ink + teal tick. In a two-pet household the tab names whoever the whole app is currently about — Sam's "whose data" answered in the chrome.</p>
+      </div>
+      <div class="fig narrow">
+        <div class="opt"><span class="k">Stress test — 16-char name, narrowest width</span></div>
+        <div class="frame">
+          <div class="xnote">Without the ladder: "Schrodingers Cat" clips or squeezes the row</div>
+          <div class="tabwrap">
+          <div class="tbar">
+            <div class="t"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 11 12 4l8 7v9h-5v-5h-6v5H4z"/></svg><span class="lbl">Home</span><span class="dot"></span></div>
+            <div class="t"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l2.5 2"/></svg><span class="lbl">History</span><span class="dot"></span></div>
+            <div class="t"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 11h16a8 8 0 0 1-16 0z" transform="translate(0 2)"/><path d="M9 20h6"/></svg><span class="lbl">Foods</span><span class="dot"></span></div>
+            <div class="t on"><span class="avatarchip">S</span><span class="lbl" style="font-weight:600;overflow:visible;">Schrodinger…</span><span class="dot"></span></div>
+          </div></div>
+          <div class="oknote">With the ladder: the name doesn't fit at 11 or 10pt → the label falls back to "Pet" — whole, calm, never chopped</div>
+          <div class="tabwrap">
+          <div class="tbar">
+            <div class="t"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 11 12 4l8 7v9h-5v-5h-6v5H4z"/></svg><span class="lbl">Home</span><span class="dot"></span></div>
+            <div class="t"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l2.5 2"/></svg><span class="lbl">History</span><span class="dot"></span></div>
+            <div class="t"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 11h16a8 8 0 0 1-16 0z" transform="translate(0 2)"/><path d="M9 20h6"/></svg><span class="lbl">Foods</span><span class="dot"></span></div>
+            <div class="t on"><span class="avatarchip">S</span><span class="lbl" style="font-weight:600;">Pet</span><span class="dot"></span></div>
+          </div></div>
+        </div>
+        <p class="cap">The failure mode and the ladder's answer, on a 320pt-class frame. "Bartholomew" (11ch) still renders at 10pt; "Schrodingers Cat" (16ch) falls back.</p>
+      </div>
+      <div class="fig narrow">
+        <div class="opt"><span class="k">Mid-rung + type behavior</span></div>
+        <div class="frame">
+          <div class="oknote">"Bartholomew" — one rung down (10pt), still the real name</div>
+          <div class="tabwrap">
+          <div class="tbar">
+            <div class="t"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 11 12 4l8 7v9h-5v-5h-6v5H4z"/></svg><span class="lbl">Home</span><span class="dot"></span></div>
+            <div class="t"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l2.5 2"/></svg><span class="lbl">History</span><span class="dot"></span></div>
+            <div class="t"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 11h16a8 8 0 0 1-16 0z" transform="translate(0 2)"/><path d="M9 20h6"/></svg><span class="lbl">Foods</span><span class="dot"></span></div>
+            <div class="t on"><span class="avatarchip">B</span><span class="lbl sm" style="font-weight:600;">Bartholomew</span><span class="dot"></span></div>
+          </div></div>
+        </div>
+        <p class="cap"><b>The rules, deterministic:</b> measure once per name × device width (cached); 11pt → 10pt → "Pet"; no ellipsis rung. Tab labels stay fixed-size under Dynamic Type (platform tab-bar convention); the full name always rides the a11y label, so VoiceOver never says "Pet" when the pet is Schrodingers Cat.</p>
+      </div>
+    </div>
+    <div class="brief"><div class="bh"><span class="bid">R2-1</span><span class="bt">Ratify the fallback ladder</span></div>
+      <p><b>Deciding:</b> the long-name/small-device behavior for the pet tab. <b>Options:</b> <b>the ladder as shown (team rec — full name → 10pt → "Pet", never a cut name)</b> · always "Pet" + avatar (simplest, loses the charm for everyone) · first word of the name before falling back (rescues "Sir Pounce", but "Sir" alone reads wrong — not recommended). <b>Consequence:</b> ratified, the bar is build-ready with the glyphs.</p></div>
+  </div>
+
+  <!-- ══════════════════ 02 · HEADER STUDIO ══════════════════ -->
+  <div class="sec">
+    <p class="eyebrow">§02 · The header, reopened</p>
+    <h2>Five headers, none of them pulsing</h2>
+    <p>Standing rule for every option here: <b>no looping animation in the chrome, ever</b> — your startup-pulse history and the design principles agree (<i>"restrained and purposeful… no looping animations"</i>). The "something new" cue is a <b>static</b> teal dot; the only motion the Signal gets is the arrival moment itself (§03 of round 1, now specced below). Today's header is two rows (~110pt): a chrome row (wordmark · Ask · your avatar) over an identity row (pet avatar · name · breed-age line). The options trade those rows against the Signal's altitude — Principle 3 says the Signal leads.</p>
+    <div class="row">
+      <div class="fig">
+        <div class="opt"><span class="k">H1 · As-is, de-pulsed</span></div>
+        <div class="frame">
+          <div class="hframe">
+            <div class="hrow" style="justify-content:space-between;">
+              <span style="display:inline-flex;align-items:center;gap:6px;">
+                <span class="hmark"><svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9z"/></svg></span>
+                <span class="hword">Culprit</span><span class="livedot"></span>
+              </span>
+              <span style="display:inline-flex;align-items:center;gap:8px;"><span class="askpill"><span class="askdot"></span>Ask</span><span class="ownerav">D</span></span>
+            </div>
+            <div class="hrow" style="margin-top:9px;">
+              <span class="petav" style="width:36px;height:36px;border-radius:18px;">B</span>
+              <span><span style="font-weight:600;font-size:19px;">Biscuit</span><br><span style="font-size:13px;color:#737373;">4 yrs · Mixed breed</span></span>
+            </div>
+          </div>
+          <div class="sigpeek"><div class="f-label" style="color:#0B7B6C;">Signal</div><div class="h">Vomiting tends to follow within 3 hours of chicken meals</div></div>
+        </div>
+        <p class="cap">Today's structure, pulse deleted: the live cue is a plain dot beside the wordmark. Zero-risk baseline; still the tallest option.</p>
+      </div>
+      <div class="fig">
+        <div class="opt"><span class="k">H2 · One row</span><span class="tag rec">Team rec</span></div>
+        <div class="frame">
+          <div class="hframe">
+            <div class="hrow" style="justify-content:space-between;">
+              <span style="display:inline-flex;align-items:center;gap:9px;min-width:0;">
+                <span class="hmark"><svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9z"/></svg></span>
+                <span class="petav">B</span>
+                <span style="font-weight:600;font-size:16px;white-space:nowrap;">Biscuit <span style="color:#737373;font-weight:400;">▾</span></span>
+                <span class="livedot"></span>
+              </span>
+              <span style="display:inline-flex;align-items:center;gap:8px;"><span class="askpill"><span class="askdot"></span>Ask</span><span class="ownerav">D</span></span>
+            </div>
+          </div>
+          <div class="sigpeek"><div class="f-label" style="color:#0B7B6C;">Signal</div><div class="h">Vomiting tends to follow within 3 hours of chicken meals</div><div style="font-size:12px;color:#525252;margin-top:4px;">Seen after 4 of 6 chicken meals · tap for the evidence</div></div>
+        </div>
+        <p class="cap">Chrome and identity fuse into one 52pt row — crescent · pet · switcher · Ask · you. The Signal rises ~44pt and a full receipt line comes above the fold. The breed-age line moves home to the Pet tab (it was orientation, not information).</p>
+      </div>
+      <div class="fig">
+        <div class="opt"><span class="k">H3 · The pet leads</span><span class="tag risk">Bolder</span></div>
+        <div class="frame">
+          <div class="hframe">
+            <div class="hrow" style="justify-content:space-between;align-items:flex-start;">
+              <span style="min-width:0;">
+                <span class="f-serif" style="font-size:24px;letter-spacing:-.4px;display:inline-flex;align-items:center;gap:8px;">Biscuit <span style="color:#737373;font-size:14px;">▾</span><span class="livedot"></span></span>
+              </span>
+              <span style="display:inline-flex;align-items:center;gap:8px;padding-top:3px;"><span class="askpill"><span class="askdot"></span>Ask</span><span class="ownerav">D</span></span>
+            </div>
+          </div>
+          <div class="sigpeek"><div class="f-label" style="color:#0B7B6C;">Signal</div><div class="h">Vomiting tends to follow within 3 hours of chicken meals</div></div>
+        </div>
+        <p class="cap">Home becomes the pet's page: their name is the title, set in the display face. The wordmark leaves Home entirely (brand keeps the Landing, loading, and night surfaces). <b>Named risk:</b> two serif voices stack — the name over the Signal headline — and the brand's §3 mark-on-Home contract would need a Tier-2 edit.</p>
+      </div>
+      <div class="fig">
+        <div class="opt"><span class="k">H4 · Chrome-free</span><span class="tag risk">Most radical</span></div>
+        <div class="frame">
+          <div style="background:#FAFAFA;padding-top:10px;">
+            <div class="f-card" style="margin-bottom:0;display:flex;align-items:center;gap:10px;padding:10px 14px;">
+              <span class="petav">B</span>
+              <span style="font-weight:600;">Biscuit <span style="color:#737373;font-weight:400;">▾</span></span>
+              <span class="livedot"></span>
+              <span style="margin-left:auto;display:inline-flex;align-items:center;gap:8px;"><span class="askpill"><span class="askdot"></span>Ask</span><span class="ownerav">D</span></span>
+            </div>
+            <div class="sigpeek"><div class="f-label" style="color:#0B7B6C;">Signal</div><div class="h">Vomiting tends to follow within 3 hours of chicken meals</div><div style="font-size:12px;color:#525252;margin-top:4px;">Seen after 4 of 6 chicken meals · tap for the evidence</div></div>
+          </div>
+        </div>
+        <p class="cap">No pinned header at all — identity is a capsule <b>inside the scroll</b>, and everything scrolls away in service of the record. Maximum Signal altitude. <b>Named risks:</b> the pet-switcher leaves reach once you scroll; the status bar sits over content; the "scroll to Signal" mark-tap loses its anchor. Would want a slide-back mini-bar on scroll-up, which is real motion work.</p>
+      </div>
+      <div class="fig">
+        <div class="opt"><span class="k">H5 · The day line</span></div>
+        <div class="frame">
+          <div class="hframe">
+            <div class="hrow" style="justify-content:space-between;">
+              <span style="display:inline-flex;align-items:center;gap:6px;">
+                <span class="hmark"><svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9z"/></svg></span>
+                <span class="hword">Culprit</span>
+              </span>
+              <span style="display:inline-flex;align-items:center;gap:8px;"><span class="askpill"><span class="askdot"></span>Ask</span><span class="ownerav">D</span></span>
+            </div>
+            <div class="hrow" style="margin-top:9px;justify-content:space-between;">
+              <span style="display:inline-flex;align-items:center;gap:10px;">
+                <span class="petav" style="width:34px;height:34px;border-radius:17px;">B</span>
+                <span><span style="font-weight:600;font-size:17px;">Biscuit</span><br><span class="f-serif" style="font-size:13px;color:#737373;">Friday · day 41 of the trial</span></span>
+              </span>
+              <span class="livedot"></span>
+            </div>
+          </div>
+          <div class="sigpeek"><div class="f-label" style="color:#0B7B6C;">Signal</div><div class="h">Vomiting tends to follow within 3 hours of chicken meals</div></div>
+        </div>
+        <p class="cap">Keeps two rows but makes row 2 <b>earn it</b>: the static breed-age line becomes a factual day line — the date, and the one standing fact that matters right now (trial day when a trial runs; nothing invented when nothing stands). <b>Designer dissent, recorded:</b> it borrows the trial strip's job and adds a copy surface to maintain; specific-over-generic holds only if the line never pads.</p>
+      </div>
+    </div>
+    <div class="brief"><div class="bh"><span class="bid">R2-2</span><span class="bt">Pick the header direction</span></div>
+      <p><b>Deciding:</b> Home's permanent chrome. <b>Options:</b> H1 de-pulsed baseline · <b>H2 one row (team rec — Signal gains ~44pt, nothing of substance lost, smallest real change with visible payoff)</b> · H3 pet-leads (bolder; needs the serif-stack answer + a Tier-2 brand edit) · H4 chrome-free (most Signal, most motion work) · H5 day line (warmth with a maintenance cost). <b>Consequence:</b> any option retires the pulse for good and closes the standing ring-train Open Question (Tier-2 §3 edit gets written); H2/H3 also relocate the breed-age line to the Pet tab.</p></div>
+  </div>
+
+  <!-- ══════════════════ 03 · ARRIVAL SPEC ══════════════════ -->
+  <div class="sec">
+    <p class="eyebrow">§03 · Ruled — now specced</p>
+    <h2>The arrival moment, written down</h2>
+    <p>Your call: delightful, spec it. The dawn sweep (round 1, §02 option 2a) is the treatment. The spec, ready to lift into the build issue:</p>
+    <div class="spec">
+      <h4>Behavior</h4>
+      <ul>
+        <li><b>Trigger:</b> the Signal cache transitions building → live with ≥1 finding, and the per-pet arrival marker is unset.</li>
+        <li><b>Sequence (~1.2s total):</b> 0ms the rail turns live → 250ms the wash begins (teal into a breath of moment-gold, left-to-right, 900ms, ease-out) → the building rows dissolve as the first headline crossfades in (400–900ms) → sub-line fades at 1200ms. One soft success tap at 900ms.</li>
+        <li><b>Once per pet, ever:</b> a per-pet played marker (AsyncStorage), registered in <b>wipeLocalSession</b> per the B-402 rule — a shared device never replays another account's moment. Device-local, so a reinstall may replay once; accepted, harmless.</li>
+        <li><b>Never for a safety finding:</b> if the first-ever finding leads the safety band, the card appears plainly and instantly (S1 — plainness is the severity signal) and the marker is set; the sweep never decorates concern.</li>
+        <li><b>Reduced motion:</b> plain crossfade, no sweep; the haptic still fires (touch is not motion).</li>
+      </ul>
+      <h4>Build shape</h4>
+      <ul>
+        <li>SignalZone-local <b>Animated</b> values — no new dependencies, no new component; the E1 building card and live card are both already in place.</li>
+        <li>Tests: marker-once semantics, safety bypass, wipe-path inclusion; the animation itself gets the reduced-motion static-frame check the loading system already models.</li>
+      </ul>
+    </div>
+    <p class="capnote">Goes into the project as its own small issue; no decisions left open here.</p>
+  </div>
+
+  <!-- ══════════════════ 04 · COMPLETION, EXPLAINED ══════════════════ -->
+  <div class="sec">
+    <p class="eyebrow">§04 · Completion registers — the background you asked for</p>
+    <h2>What happens after you tap "log"</h2>
+    <p>Every log ends with the app saying <i>saved</i>. The finding: the app currently says it <b>six different ways</b>, decided by which door you walked through — and you've probably only ever seen two or three of them, because two fire on paths you rarely use and one is behind the picker beta. Here is the full map:</p>
+    <div class="pmap">
+      <div class="prow"><span class="pn">1</span><div class="pd"><b>You tap a recent food on the FAB.</b> A warm dark card slides up: "Logged Hill's z/d" + the did-they-finish chips + Change time. <b>This is the good one</b> — it's why meal logging feels great.</div><div class="pv"><div class="swatchbig" style="background:#171717;color:#fff;">Logged Hill's z/d<br><span style="opacity:.7">Refused · Some · All …</span></div></div></div>
+      <div class="prow"><span class="pn">2</span><div class="pd"><b>You log a dose from the picker.</b> The same dark card — but asking nine chips' worth of questions (4 adherence + 5 how-given) inside a 5-second window.</div><div class="pv"><div class="swatchbig" style="background:#171717;color:#fff;">Logged Gabapentin<br><span style="opacity:.7">9 chips · 5s to answer</span></div></div></div>
+      <div class="prow"><span class="pn">3</span><div class="pd"><b>You tap "Log dose" on the Home med card.</b> The best interaction in the app (one tap, correct write) gets the flattest feedback: a line of text turns teal for 1.5 seconds. No mark, no motion, no name.</div><div class="pv"><div class="swatchbig" style="background:#fff;border:1px solid #EAEAEA;color:#0B7B6C;">Dose logged just now</div></div></div>
+      <div class="prow"><span class="pn">4</span><div class="pd"><b>You log a vomit at 2am (or a weight, or anything from the full-screen flow).</b> The entire screen flashes <b>solid white</b> with a check ring, blocking input for 1.4 seconds. In a dark bedroom this is a camera flash. The weight version never even echoes the number you typed.</div><div class="pv"><div class="swatchbig" style="background:#fff;border:2px solid #D4D4D4;color:#737373;text-align:center;">■ full-screen white<br>"Logged"</div></div></div>
+      <div class="prow"><span class="pn">5</span><div class="pd"><b>You log a symptom in the new picker sheet (beta).</b> A mint check appears in the sheet, Home stays visible behind it. Nice — but it says "Logged", throwing away the sentence the sheet's own save pill just composed ("Vomit · found by 5:33 PM").</div><div class="pv"><div class="swatchbig" style="background:#F5F5F5;color:#0B7B6C;text-align:center;">✓<br>"Logged"</div></div></div>
+      <div class="prow"><span class="pn">6</span><div class="pd"><b>You add a new food by photo and "Save &amp; log".</b> A hand-drawn text checkmark for 0.9s — and this path <b>skips the did-they-finish question entirely</b>. A meal logged this way never gets intake data.</div><div class="pv"><div class="swatchbig" style="background:#F5F5F5;color:#737373;text-align:center;">"✓" text glyph<br>no intake ask</div></div></div>
+    </div>
+    <p style="margin-top:18px;">Three costs, concretely: <b>(1)</b> the white flash is the single worst moment in Jordan's literal brief — one-handed, in the dark; <b>(2)</b> there is <b>no Undo anywhere</b> — a wrong-food tap in the dark is fixed by History → detail → Remove, five taps; <b>(3)</b> paths 3, 5 and 6 waste the confirmation — the app knows exactly what it just saved ("Vomit · found by 5:33 PM", "Weight · 12.4 lb") and says "Logged" instead, or nearly nothing.</p>
+    <h3>The proposal: two registers, both already loved</h3>
+    <div class="row">
+      <div class="fig">
+        <div class="opt"><span class="k">R1 · The named card — every full-screen commit</span></div>
+        <div class="frame">
+          <div class="scrimframe">
+            <div class="darkcard" style="margin:0;">
+              <div style="display:flex;align-items:center;gap:8px;">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#00C2A8" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>
+                <span style="font-weight:600;">Vomit · found by 5:33 PM</span>
+              </div>
+              <div class="sub" style="margin-top:4px;">Saved to Biscuit's record</div>
+              <div style="margin-top:8px;"><span class="undo">Undo</span><span class="chip">Change time</span></div>
+            </div>
+          </div>
+        </div>
+        <p class="cap">Path 1's warm card becomes the answer for paths 4 and 6 too: Home dims behind it (never flashes white), it <b>names what was saved</b>, and it carries <b>Undo</b> — which quietly soft-deletes the event, the reversal the record already supports. Symptom tone stays calm: no gold, one soft tap.</p>
+      </div>
+      <div class="fig">
+        <div class="opt"><span class="k">R2 · The in-place beat — every in-context commit</span></div>
+        <div class="frame">
+          <div style="background:#F5F5F5;padding:20px 14px;">
+            <div class="ring">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#00C2A8" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>
+            </div>
+            <div style="text-align:center;margin-top:9px;font-weight:600;">Gabapentin · 7:15 AM</div>
+            <div style="text-align:center;font-size:12px;color:#525252;margin-top:2px;">Saved to Biscuit's record</div>
+          </div>
+        </div>
+        <p class="cap">Path 5's mint check, kept for commits that happen inside a surface (the sheet, the Home med card) — upgraded to speak the sentence. Path 3's teal-line flicker inherits this mark and its haptic.</p>
+      </div>
+    </div>
+    <p class="capnote" style="margin-top:6px;">Riding along: paths 2's nine-chips-in-5-seconds gets its own small look in the build issue (likely: chips stay, window relaxes while touched) · path 6 routes through the real card so intake stops vanishing · a backdrop tap during a half-filled confirm asks before discarding. The haptics vocabulary (locked) lands on these beats — that's why they ship together.</p>
+    <div class="brief"><div class="bh"><span class="bid">R2-3</span><span class="bt">Completion convergence — now with the background</span></div>
+      <p><b>Deciding:</b> adopt the two-register system. <b>Options:</b> <b>adopt whole (team rec)</b> · adopt minus Undo (if you want undo semantics specced separately first) · keep the white takeover for weight only (not recommended — it's the same flash). <b>Consequence:</b> one visual language for "saved," the 2am flash dies, Undo exists, and two capture paths stop dropping their follow-up questions.</p></div>
+  </div>
+
+  <!-- ══════════════════ 05 · TREND CARD ══════════════════ -->
+  <div class="sec">
+    <p class="eyebrow">§05 · Trend, adopted + explored</p>
+    <h2>The Trend card — and what else it deserves</h2>
+    <p><b>Your ruling:</b> the count-anchored register is worthwhile (Dr. Chen ratifies the wording with CUL-568/571; the AA fixes ship regardless). You asked what <i>else</i> this card should get, design-wise. Three things, shown on the recommended card: <b>today gets a mark</b> (the last bar is the one you're living in — it earns an outline), <b>the whole card becomes a door</b> (today only the small "All patterns ›" text navigates — the dead-end-tap cluster's most-filed complaint), and <b>digits get typographic care</b> (tabular figures, bold-digit grammar shared with Home's count line). Plus one alternative shape for the week question:</p>
+    <div class="row">
+      <div class="fig">
+        <div class="opt"><span class="k">v2.1 — the recommended card</span><span class="tag rec">Team rec</span></div>
+        <div class="frame">
+          <div class="f-card">
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+              <span class="f-label">Trend</span><span class="doorlink" style="color:#0B7B6C;font-size:12px;font-weight:500;">All patterns ›</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;align-items:baseline;margin-top:10px;">
+              <span style="font-weight:500;">Vomit</span>
+              <span style="font-size:12px;color:#525252;font-variant-numeric:tabular-nums;"><b style="color:#0A0A0A;">3</b> this week · <b style="color:#0A0A0A;">4</b> last week</span>
+            </div>
+            <div class="bars">
+              <i style="height:30%"></i><i class="s" style="height:55%"></i><i style="height:30%"></i><i class="s" style="height:35%"></i>
+              <i style="height:30%;position:relative;"><span style="position:absolute;left:50%;top:-6px;bottom:-6px;width:1px;background:#00C2A8;opacity:.6;"></span></i>
+              <i class="s" style="height:80%"></i><i style="height:30%"></i><i style="height:30%"></i><i class="s" style="height:45%"></i><i style="height:30%"></i><i class="s" style="height:35%"></i><i style="height:30%"></i><i class="s" style="height:35%"></i><i class="today" style="height:30%"></i></div>
+            <div class="axis"><span>Aug 8</span><span>Today</span></div>
+            <div style="font-size:10px;color:#0B7B6C;margin-top:3px;">│ Trial diet started Aug 12</div>
+          </div>
+        </div>
+        <p class="cap">Count-anchored sentence · today's bar outlined · labeled trial rule · accent-ink door · the whole card taps into the vomit metric detail (the door text stays as the affordance).</p>
+      </div>
+      <div class="fig">
+        <div class="opt"><span class="k">Variant — the week pair</span></div>
+        <div class="frame">
+          <div class="f-card">
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+              <span class="f-label">Trend</span><span class="doorlink" style="color:#0B7B6C;font-size:12px;font-weight:500;">All patterns ›</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;align-items:baseline;margin-top:10px;">
+              <span style="font-weight:500;">Vomit</span>
+              <span style="font-size:12px;color:#525252;font-variant-numeric:tabular-nums;"><b style="color:#0A0A0A;">3</b> this week · <b style="color:#0A0A0A;">4</b> last week</span>
+            </div>
+            <div class="wkpair">
+              <div class="wkcol">
+                <div class="bars" style="margin-top:0;height:44px;"><i style="height:30%"></i><i class="s" style="height:55%"></i><i style="height:30%"></i><i class="s" style="height:35%"></i><i style="height:30%"></i><i class="s" style="height:80%"></i><i style="height:30%"></i></div>
+                <div class="wl">Last week · 4</div>
+              </div>
+              <div class="wkcol">
+                <div class="bars" style="margin-top:0;height:44px;"><i style="height:30%"></i><i class="s" style="height:45%"></i><i style="height:30%"></i><i class="s" style="height:35%"></i><i style="height:30%"></i><i class="s" style="height:35%"></i><i class="today" style="height:30%"></i></div>
+                <div class="wl">This week · 3</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <p class="cap">The same 14 days split into two labeled clusters — the week-vs-week question answered by <i>shape</i>, not only by sentence (CUL-383's original ask). Costs the continuous timeline and the trial rule's clean placement.</p>
+      </div>
+      <div class="fig">
+        <div class="opt"><span class="k">Deliberately not doing</span></div>
+        <div class="frame"><div class="f-card">
+          <div style="font-size:13px;color:#525252;line-height:1.6;">
+            <div style="padding:6px 0;border-bottom:1px solid #EAEAEA;"><b style="color:#0A0A0A;">A metric switcher.</b> Zone 3 is one chart — the most clinically relevant metric, chosen for you. A lens here rebuilds the dashboard on Home.</div>
+            <div style="padding:6px 0;border-bottom:1px solid #EAEAEA;"><b style="color:#0A0A0A;">Verdict color.</b> A green "good week" bar is the reassurance the guardrails forbid; rose stays the category color, not a grade.</div>
+            <div style="padding:6px 0;"><b style="color:#0A0A0A;">Percent deltas.</b> "−25%" from a 4→3 week is noise wearing precision; counts stay counts.</div>
+          </div>
+        </div></div>
+        <p class="cap">Named so the card's restraint reads as a decision, not an omission.</p>
+      </div>
+    </div>
+    <div class="brief"><div class="bh"><span class="bid">R2-4</span><span class="bt">Trend card shape</span></div>
+      <p><b>Deciding:</b> the card's v2 form. <b>Options:</b> <b>v2.1 continuous + today-mark + tappable body (team rec — keeps the timeline and the trial rule)</b> · the week-pair variant (stronger at the week question, weaker as a timeline). <b>Consequence:</b> either ships with the AA fixes now and the sentence pending Dr. Chen; the feeding-dots mode gets the same treatment (its "Every day this week" line is already factual and survives).</p></div>
+  </div>
+
+  <!-- ══════════════════ 06 · RULED ══════════════════ -->
+  <div class="sec">
+    <p class="eyebrow">§06 · Locked this round</p>
+    <h2>Ruled and standing</h2>
+    <div class="spec" style="margin-top:14px;">
+      <div class="ruledrow"><span class="tag ruled">Ruled</span><span class="rn">The arrival moment</span><span class="rd">Dawn sweep adopted; spec in §03 above. Ships as its own small issue.</span></div>
+      <div class="ruledrow"><span class="tag ruled">Ruled</span><span class="rn">Geist, app-wide</span><span class="rd">Standardize on the design system's own face. Approach stands as recommended — a ThemedText wrapper swept tab-by-tab (no default-Text magic), each sweep a small on-device-verifiable PR. Closes the B-061 Open Question; CUL-364 becomes the umbrella.</span></div>
+      <div class="ruledrow"><span class="tag ruled">Ruled</span><span class="rn">Haptics vocabulary</span><span class="rd">The seven-verb, tone-aware vocabulary as specced in round 1 — one lib/haptics.ts, consumed at the moment stores, silence on safety by rule. Ships with the completion work so beats and taps land together.</span></div>
+      <div class="ruledrow"><span class="tag ruled">Ruled</span><span class="rn">Bar direction</span><span class="rd">B+C hybrid — glyphs + labels, the pet as the Pet tab. Build-ready once R2-1's ladder is ratified.</span></div>
+      <div class="ruledrow"><span class="tag ruled">Ruled</span><span class="rn">No looping chrome motion</span><span class="rd">The pulse is retired in every option; the standing ring-train Open Question closes with the header pick (R2-2), and the Tier-2 pulse-contract edit gets written then.</span></div>
+    </div>
+  </div>
+
+  <!-- ══════════════════ 07 · BUILD SHAPE ══════════════════ -->
+  <div class="sec">
+    <p class="eyebrow">§07 · After you converge</p>
+    <h2>The project this becomes</h2>
+    <p>Preview of the Linear shape — created only after your pass on R2-1 … R2-4, so issues are born ruled, not speculative. Proposed project: <b>App Polish</b> (team Culprit), the round pages linked as Resources, repo files canonical.</p>
+    <ul class="plan">
+      <li><b>AP-1 · The bar</b> — glyphs + pet tab + fallback ladder + active ticks. <span class="cul">rides CUL-493's glyph family</span></li>
+      <li><b>AP-2 · The header</b> — whichever of H1–H5 you pick, pulse retired, Tier-2 §3 edit. <span class="cul">closes the ring-train Open Question</span></li>
+      <li><b>AP-3 · The arrival moment</b> — §03's spec, verbatim. <span class="cul">adjacent: CUL-440</span></li>
+      <li><b>AP-4 · Completion registers</b> — R1 + R2, white takeover retired, Undo, sentence-beats, capture paths routed through the cards. <span class="cul">closes CUL-368's class</span></li>
+      <li><b>AP-5 · Haptics</b> — lib + wiring, ships inside AP-4's PR chain. <span class="cul">new dep: expo-haptics</span></li>
+      <li><b>AP-6 · Trend v2</b> — AA now; register + shape after Dr. Chen. <span class="cul">CUL-383, CUL-568/571, CUL-578</span></li>
+      <li><b>AP-7…11 · Geist sweeps</b> — ThemedText + one PR per tab family (History · Foods · log flow · Home zones · profile). <span class="cul">CUL-364</span></li>
+      <li><b>Related, already filed</b> — the defect batch rides independently. <span class="cul">CUL-574 … CUL-579</span></li>
+    </ul>
+    <p class="capnote">Not in this project (held for their own selection): the capture-convergence endgame, Sam's household, The First Week arc, the detail-screen shell — all still live in round 1's appendix.</p>
+  </div>
+
+  <footer>
+    <b>Culprit · App polish — round 2</b> · 2026-08-22 · tracked as CUL-580 · PR #697.<br>
+    Round 1 remains the deliberation record (its page now says so). This page is the current proposal: frames replace in place on revision; git is the history. Source of truth: <span style="font-variant-numeric:tabular-nums;">docs/culprit-app-polish-round2-mockups.html</span>.
+  </footer>
+</div>
