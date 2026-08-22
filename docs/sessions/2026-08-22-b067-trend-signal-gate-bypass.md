@@ -1,7 +1,13 @@
-# 2026-08-22 — B-067 / CUL-372: the Trend zone outranks the Signal's safety gates
+# The Trend zone outranks the Signal's safety gates — B-067 / CUL-372
 
-**Mode:** BUILD, held at the decision gate. Deliverable this session is the reproduction +
-the decision brief + mock round 1. No app code changed.
+**Date:** 2026-08-22
+
+**Shipped via #695.**
+
+**Mode:** BUILD. Ran in two halves: an investigation that reframed the issue and stopped at
+the PM decision gate with a mock round, then — once ruled — the build itself. The sections
+below are in that order, so the first half's "no app code changed" is a snapshot of the
+gate, not the session's outcome.
 
 **Issue:** CUL-372 (B-067) — "AI Signal reflection (③) duplicates the Trend zone for symptom counts".
 Filed 2026-06-07, labelled `Quick Win` / `Area: Correctness`, priority High. No comments on the
