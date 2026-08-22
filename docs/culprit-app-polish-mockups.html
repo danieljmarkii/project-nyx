@@ -1,0 +1,580 @@
+<title>Culprit App Polish</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400..600&family=Geist:wght@400..600&display=swap">
+<style>
+  /* ── Page tokens — Culprit day register, light-first; dark = the brand night ── */
+  :root{
+    --ground:#FAFAFA; --card:#FFFFFF; --card-subtle:#F5F5F5;
+    --ink:#0A0A0A; --ink-2:#525252; --ink-3:#737373;
+    --border:#EAEAEA; --border-strong:#D4D4D4;
+    --accent:#00C2A8; --accent-ink:#0B7B6C; --accent-light:#E0FBF7;
+    --rose:#F43F5E; --rose-light:#FFE4E6; --rose-ink:#9F1239;
+    --med:#5B7A9E; --med-light:#EAF0F7;
+    --gold:#FBBF24; --gold-wash:rgba(251,191,36,.14);
+    --eyebrow:#0B7B6C;
+    --frame-edge:rgba(10,10,10,.14); --frame-shadow:0 10px 28px rgba(10,10,10,.10);
+    --rec:#0B7B6C; --rec-bg:#E0FBF7;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --ground:#13112E; --card:#1A1640; --card-subtle:#221C56;
+      --ink:#ECEAF6; --ink-2:#A6A2CE; --ink-3:#706BA6;
+      --border:rgba(196,190,255,.16); --border-strong:rgba(196,190,255,.28);
+      --accent:#00C2A8; --accent-ink:#4FD8C4; --accent-light:rgba(0,194,168,.12);
+      --rose:#FB7185; --rose-light:rgba(251,113,133,.14); --rose-ink:#FB7185;
+      --med:#93ADCB; --med-light:rgba(147,173,203,.14);
+      --eyebrow:#4FD8C4;
+      --frame-edge:rgba(196,190,255,.22); --frame-shadow:0 12px 32px rgba(0,0,0,.45);
+      --rec:#4FD8C4; --rec-bg:rgba(0,194,168,.12);
+    }
+  }
+  :root[data-theme="dark"]{
+    --ground:#13112E; --card:#1A1640; --card-subtle:#221C56;
+    --ink:#ECEAF6; --ink-2:#A6A2CE; --ink-3:#706BA6;
+    --border:rgba(196,190,255,.16); --border-strong:rgba(196,190,255,.28);
+    --accent:#00C2A8; --accent-ink:#4FD8C4; --accent-light:rgba(0,194,168,.12);
+    --rose:#FB7185; --rose-light:rgba(251,113,133,.14); --rose-ink:#FB7185;
+    --med:#93ADCB; --med-light:rgba(147,173,203,.14);
+    --eyebrow:#4FD8C4;
+    --frame-edge:rgba(196,190,255,.22); --frame-shadow:0 12px 32px rgba(0,0,0,.45);
+    --rec:#4FD8C4; --rec-bg:rgba(0,194,168,.12);
+  }
+
+  body{background:var(--ground);color:var(--ink);font-family:'Geist',system-ui,-apple-system,sans-serif;
+       font-size:15px;line-height:1.55;margin:0;-webkit-font-smoothing:antialiased;}
+  .wrap{max-width:1100px;margin:0 auto;padding:40px 20px 80px;}
+  a{color:var(--accent-ink);text-decoration:none;}
+  a:hover{text-decoration:underline;}
+  a:focus-visible,summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:4px;}
+
+  /* ── Masthead ── */
+  .mast{display:flex;align-items:center;gap:10px;margin-bottom:10px;}
+  .mast svg{color:#211E4E;}
+  :root[data-theme="dark"] .mast svg{color:#F2EEE4;}
+  @media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .mast svg{color:#F2EEE4;}}
+  .mast .wordmark{font-family:'Newsreader',Georgia,serif;font-size:17px;color:var(--ink-3);letter-spacing:-.3px;}
+  .roundtag{margin-left:auto;font-size:11px;letter-spacing:.8px;text-transform:uppercase;color:var(--eyebrow);
+            border:1px solid var(--border-strong);border-radius:999px;padding:4px 10px;}
+  h1{font-family:'Newsreader',Georgia,serif;font-weight:500;font-size:clamp(30px,5vw,42px);line-height:1.12;
+     letter-spacing:-.5px;margin:6px 0 14px;text-wrap:balance;}
+  .lede{color:var(--ink-2);max-width:64ch;margin:0 0 6px;}
+  .lede b{color:var(--ink);font-weight:600;}
+  .meta{font-size:13px;color:var(--ink-3);margin:10px 0 0;}
+
+  /* ── Sections ── */
+  .sec{margin-top:64px;}
+  .eyebrow{font-size:11px;letter-spacing:1px;text-transform:uppercase;color:var(--eyebrow);font-weight:600;margin:0 0 6px;}
+  h2{font-family:'Newsreader',Georgia,serif;font-weight:500;font-size:27px;letter-spacing:-.3px;margin:0 0 10px;text-wrap:balance;}
+  .sec>p{color:var(--ink-2);max-width:68ch;margin:0 0 8px;}
+  .sec>p b{color:var(--ink);font-weight:600;}
+  .row{display:flex;flex-wrap:wrap;gap:26px;margin-top:22px;align-items:flex-start;}
+
+  /* ── Figures & frames — frames depict the app's DAY register and keep literal app colors ── */
+  .fig{width:322px;max-width:100%;}
+  .fig.wide{width:480px;}
+  .opt{display:flex;align-items:center;gap:8px;margin-bottom:8px;}
+  .opt .k{font-weight:600;font-size:13px;letter-spacing:.4px;}
+  .tag{font-size:10px;letter-spacing:.7px;text-transform:uppercase;border-radius:999px;padding:3px 8px;font-weight:600;}
+  .tag.rec{color:var(--rec);background:var(--rec-bg);}
+  .tag.risk{color:var(--ink-3);border:1px solid var(--border-strong);}
+  .tag.gate{color:#6B4A0E;background:#FDF3DC;}
+  :root[data-theme="dark"] .tag.gate{color:#F2DFB3;background:rgba(251,191,36,.14);}
+  @media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .tag.gate{color:#F2DFB3;background:rgba(251,191,36,.14);}}
+  .frame{background:#FAFAFA;border:1px solid var(--frame-edge);border-radius:22px;box-shadow:var(--frame-shadow);
+         overflow:hidden;font-size:13px;color:#0A0A0A;}
+  .frame *{box-sizing:border-box;}
+  .cap{font-size:13px;color:var(--ink-2);margin-top:10px;line-height:1.5;}
+  .cap b{color:var(--ink);font-weight:600;}
+  .capnote{font-size:12px;color:var(--ink-3);margin-top:6px;}
+
+  /* in-frame primitives (literal day colors on purpose) */
+  .f-card{background:#FFFFFF;border-radius:16px;margin:12px;padding:14px;box-shadow:0 1px 4px rgba(0,0,0,.06);}
+  .f-label{font-size:10px;letter-spacing:.8px;text-transform:uppercase;color:#737373;font-weight:600;}
+  .f-serif{font-family:'Newsreader',Georgia,serif;}
+  .f-dim{color:#525252;} .f-faint{color:#737373;}
+  .f-ink{color:#0A0A0A;}
+  .haptic{display:inline-flex;align-items:center;gap:5px;font-size:10px;letter-spacing:.5px;text-transform:uppercase;
+          color:var(--ink-3);border:1px dashed var(--border-strong);border-radius:999px;padding:2px 8px;margin-top:8px;}
+  .haptic i{font-style:normal;color:var(--accent-ink);}
+
+  /* tab bars */
+  .tbar{display:flex;border-top:1px solid #EAEAEA;background:#FFFFFF;padding:10px 0 16px;}
+  .tbar .t{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;color:#737373;}
+  .tbar .t svg{display:block;}
+  .tbar .t .lbl{font-size:11px;letter-spacing:.4px;font-weight:500;}
+  .tbar .t.on{color:#0A0A0A;}
+  .tbar .t .dot{width:4px;height:4px;border-radius:2px;background:transparent;}
+  .tbar .t.on .dot{background:#00C2A8;}
+  .avatarchip{width:23px;height:23px;border-radius:12px;background:#E0FBF7;color:#0B7B6C;font-size:11px;font-weight:600;
+              display:flex;align-items:center;justify-content:center;}
+  .t.on .avatarchip{box-shadow:0 0 0 2px #00C2A8;}
+  .fabmini{position:absolute;right:14px;top:-24px;width:44px;height:44px;border-radius:22px;background:#0A0A0A;
+           color:#fff;display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:300;
+           box-shadow:0 2px 6px rgba(0,0,0,.25);}
+  .tabwrap{position:relative;padding-top:26px;background:#FAFAFA;}
+
+  /* signal cards */
+  .sigcard{background:#FFFFFF;border-radius:16px;margin:12px;padding:16px 14px;box-shadow:0 1px 4px rgba(0,0,0,.06);position:relative;overflow:hidden;}
+  .rail{position:absolute;left:0;top:0;bottom:0;width:3px;background:#D4D4D4;}
+  .rail.live{background:#00C2A8;}
+  .sighead{font-family:'Newsreader',Georgia,serif;font-size:19px;line-height:1.3;color:#0A0A0A;margin:2px 0 6px;}
+  .sigsub{font-size:12px;color:#525252;line-height:1.5;}
+  .buildrow{display:flex;align-items:center;gap:8px;font-size:12px;color:#525252;margin-top:7px;}
+  .buildrow .bdot{width:5px;height:5px;border-radius:3px;background:#C9C9C9;}
+
+  /* completion overlays */
+  .darkcard{background:#171717;border-radius:16px;margin:12px;padding:14px;color:#FFFFFF;box-shadow:0 4px 14px rgba(0,0,0,.3);}
+  .darkcard .sub{color:rgba(255,255,255,.7);font-size:12px;}
+  .chip{display:inline-block;border:1px solid rgba(255,255,255,.3);border-radius:999px;padding:5px 11px;font-size:12px;
+        color:rgba(255,255,255,.92);margin:6px 6px 0 0;}
+  .chip.sel{background:#FFFFFF;color:#0A0A0A;border-color:#FFFFFF;}
+  .undo{display:inline-block;border:1px solid rgba(255,255,255,.3);border-radius:999px;padding:5px 11px;font-size:12px;color:#FFFFFF;}
+  .ring{width:64px;height:64px;border-radius:32px;border:2px solid #00C2A8;display:flex;align-items:center;justify-content:center;margin:0 auto;background:#FFFFFF;}
+  .scrimframe{background:rgba(10,10,10,.62);padding:36px 16px;}
+  .minitile{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:10px;width:150px;}
+  .minitile .mt{font-size:11px;font-weight:600;color:var(--ink);margin-bottom:6px;}
+  .minitile .md{font-size:11px;color:var(--ink-3);line-height:1.45;}
+  .minitile .swatch{height:44px;border-radius:8px;margin-bottom:8px;display:flex;align-items:center;justify-content:center;font-size:10px;}
+
+  /* trend */
+  .bars{display:flex;align-items:flex-end;gap:3px;height:56px;margin-top:10px;}
+  .bars i{flex:1;background:#F0F0F0;border-radius:2px;display:block;}
+  .bars i.s{background:#F43F5E;}
+  .axis{display:flex;justify-content:space-between;font-size:10px;color:#737373;margin-top:5px;}
+  .doorlink{font-size:12px;font-weight:500;}
+
+  /* specimen */
+  .spec{display:flex;flex-wrap:wrap;gap:0;border:1px solid var(--border);border-radius:16px;overflow:hidden;margin-top:20px;}
+  .spec>div{flex:1 1 300px;padding:20px;background:var(--card);}
+  .spec>div+div{border-left:1px solid var(--border);}
+  .spec .sys{font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;}
+  .spec .gst{font-family:'Geist',system-ui,sans-serif;}
+  .spec .h{font-size:11px;letter-spacing:.8px;text-transform:uppercase;color:var(--ink-3);font-weight:600;margin-bottom:14px;}
+  .srow{display:flex;align-items:center;gap:10px;padding:10px 0;border-top:1px solid var(--border);}
+  .srow:first-of-type{border-top:0;}
+  .scircle{width:30px;height:30px;border-radius:15px;flex:0 0 30px;display:flex;align-items:center;justify-content:center;font-size:12px;}
+  .srow .nm{font-weight:500;color:var(--ink);font-size:14px;}
+  .srow .sb{font-size:12px;color:var(--ink-2);}
+  .srow .tm{margin-left:auto;font-size:12px;color:var(--ink-2);font-variant-numeric:tabular-nums;}
+
+  /* feel track table */
+  .feel{width:100%;border-collapse:collapse;margin-top:18px;font-size:13.5px;}
+  .feel th{font-size:11px;letter-spacing:.8px;text-transform:uppercase;color:var(--ink-3);text-align:left;
+           padding:8px 12px;border-bottom:1px solid var(--border-strong);font-weight:600;}
+  .feel td{padding:9px 12px;border-bottom:1px solid var(--border);vertical-align:top;color:var(--ink-2);}
+  .feel td:first-child{color:var(--ink);font-weight:500;white-space:nowrap;}
+  .feel .hx{color:var(--accent-ink);font-weight:500;white-space:nowrap;}
+  .tablewrap{overflow-x:auto;}
+
+  /* briefs + appendix */
+  .brief{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px 18px;margin-top:14px;}
+  .brief .bh{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;}
+  .brief .bid{font-weight:600;color:var(--accent-ink);font-size:13px;letter-spacing:.3px;white-space:nowrap;}
+  .brief .bt{font-weight:600;color:var(--ink);}
+  .brief p{margin:7px 0 0;color:var(--ink-2);font-size:13.5px;line-height:1.55;}
+  .brief p b{color:var(--ink);}
+  .applist{margin:14px 0 0;padding:0;list-style:none;}
+  .applist li{padding:9px 0;border-top:1px solid var(--border);font-size:13.5px;color:var(--ink-2);}
+  .applist li:first-child{border-top:0;}
+  .applist b{color:var(--ink);font-weight:600;}
+  .applist .cul{font-size:12px;color:var(--ink-3);font-variant-numeric:tabular-nums;}
+  .cols{display:flex;flex-wrap:wrap;gap:32px;margin-top:8px;}
+  .cols>div{flex:1 1 320px;min-width:0;}
+  .colh{font-size:12px;letter-spacing:.8px;text-transform:uppercase;color:var(--ink-3);font-weight:600;margin:18px 0 2px;}
+
+  footer{margin-top:72px;border-top:1px solid var(--border);padding-top:18px;font-size:12.5px;color:var(--ink-3);max-width:70ch;line-height:1.6;}
+</style>
+
+<div class="wrap">
+  <div class="mast">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9z"/></svg>
+    <span class="wordmark">Culprit</span>
+    <span class="roundtag">Round 1 · superseded</span>
+  </div>
+  <div style="border:1px solid var(--border-strong);border-left:3px solid var(--accent);border-radius:12px;padding:12px 16px;margin:6px 0 18px;font-size:13.5px;color:var(--ink-2);">
+    <b style="color:var(--ink);">This page is the round-1 deliberation record.</b> The PM reacted 2026-08-22; the current proposal is
+    <a href="https://claude.ai/code/artifact/80902d0c-b5b9-4d0a-bd78-84db46690406">Round 2 →</a>.
+    Rulings from this round: bar = B+C hybrid (fallback ladder in round 2) · header reopened (5 new options, no pulsing) · arrival adopted (specced in round 2) · §03 re-explained in round 2 · Trend adopted + explored further · Geist and haptics locked. Frames here stay for context; where round 2 differs, round 2 wins.
+  </div>
+  <h1>App polish — the first mock round</h1>
+  <p class="lede">Out of the 2026-08-22 design session: four lenses walked every screen — <b>Jordan</b> (capture, the 10-second test), <b>Sam</b> (two cats, multi-med), the <b>Designer</b> (periphery + consistency), and the <b>Product Owner</b> (what's already filed in Linear). The verdict: the foundations are genuinely strong — the token system, the night register, the one-tap meal path, the honest empty states on new surfaces. The gaps are <b>felt</b> gaps: chrome that never got an identity pass, one moment the principles promised and we never built, six different ways of saying "logged," and an app that mostly doesn't render in its own typeface.</p>
+  <p class="lede">This round mocks the six opportunities the PM greenlit. Frames are day-register depictions with real copy; motion and touch are annotated where they can't be drawn. React prompts are at the end (R-1 … R-7).</p>
+  <p class="meta">Tracked as CUL-580 · defect fallout filed as CUL-574–579 · frames use the demo pet Biscuit</p>
+
+  <!-- ══════════════════ 01 · TAB BAR ══════════════════ -->
+  <div class="sec">
+    <p class="eyebrow">§01 · Navigation identity</p>
+    <h2>The tab bar earns a face</h2>
+    <p>Today the most-seen chrome in the app is four grey words — text-as-icon chosen (per its own comment) to dodge a clipping issue, with a color swap as the only active state. Three options, same information architecture, no new tabs. All glyphs are drawn on the house line (the splat/swirl family's stroke weight), so this pairs with the CUL-493 icon commission rather than pre-empting it.</p>
+    <div class="row">
+      <div class="fig">
+        <div class="opt"><span class="k">A · Wordmarks, refined</span></div>
+        <div class="frame">
+          <div class="tabwrap"><div class="fabmini">+</div>
+          <div class="tbar">
+            <div class="t on"><span class="lbl" style="font-weight:600">Home</span><span class="dot"></span></div>
+            <div class="t"><span class="lbl">History</span><span class="dot"></span></div>
+            <div class="t"><span class="lbl">Foods</span><span class="dot"></span></div>
+            <div class="t"><span class="lbl">Pet</span><span class="dot"></span></div>
+          </div></div>
+        </div>
+        <p class="cap">Keep text-only as a <b>deliberate</b> minimalism: Geist Medium, active gets full ink plus a 4pt teal tick. The smallest change that makes the bar look chosen instead of unfinished.</p>
+      </div>
+      <div class="fig">
+        <div class="opt"><span class="k">B · Glyphs + labels</span><span class="tag rec">Team rec</span></div>
+        <div class="frame">
+          <div class="tabwrap"><div class="fabmini">+</div>
+          <div class="tbar">
+            <div class="t on">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 11 12 4l8 7v9h-5v-5h-6v5H4z"/></svg>
+              <span class="lbl" style="font-weight:600">Home</span><span class="dot"></span>
+            </div>
+            <div class="t">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l2.5 2"/></svg>
+              <span class="lbl">History</span><span class="dot"></span>
+            </div>
+            <div class="t">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 11h16a8 8 0 0 1-16 0z" transform="translate(0 2)"/><path d="M9 20h6"/></svg>
+              <span class="lbl">Foods</span><span class="dot"></span>
+            </div>
+            <div class="t">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 10V4.5L10 8h4l4-3.5V10a6 6 0 0 1-12 0z" transform="translate(0 3)"/></svg>
+              <span class="lbl">Pet</span><span class="dot"></span>
+            </div>
+          </div></div>
+        </div>
+        <p class="cap">Four stroke glyphs on the house line, 11pt labels kept (no metaphor left to guess), active = ink + teal tick. The bar joins the same icon language the event glyphs are moving to.</p>
+      </div>
+      <div class="fig">
+        <div class="opt"><span class="k">C · The pet is the tab</span><span class="tag risk">Bolder</span></div>
+        <div class="frame">
+          <div class="tabwrap"><div class="fabmini">+</div>
+          <div class="tbar">
+            <div class="t">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 11 12 4l8 7v9h-5v-5h-6v5H4z"/></svg>
+              <span class="lbl">Home</span><span class="dot"></span>
+            </div>
+            <div class="t">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l2.5 2"/></svg>
+              <span class="lbl">History</span><span class="dot"></span>
+            </div>
+            <div class="t">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 11h16a8 8 0 0 1-16 0z" transform="translate(0 2)"/><path d="M9 20h6"/></svg>
+              <span class="lbl">Foods</span><span class="dot"></span>
+            </div>
+            <div class="t on">
+              <span class="avatarchip">B</span>
+              <span class="lbl" style="font-weight:600">Biscuit</span><span class="dot"></span>
+            </div>
+          </div></div>
+        </div>
+        <p class="cap">Option B, but the Pet tab <b>is</b> the pet — their avatar, their name as the label. Charming and wedge-true (they downloaded the app for Biscuit), and in a two-pet household the tab shows who the whole app is currently about — a free answer to Sam's "whose data am I looking at."</p>
+        <p class="capnote">Engineer: needs the photo-less fallback (initial chip, shown) and a re-render on pet switch — both exist in PetAvatar today.</p>
+      </div>
+    </div>
+    <div class="row">
+      <div class="fig wide">
+        <div class="opt"><span class="k">§01b · The header mark's pulse</span></div>
+        <div class="frame" style="padding:16px 14px;">
+          <div style="display:flex;gap:22px;align-items:center;">
+            <div style="flex:1;display:flex;align-items:center;gap:10px;">
+              <span style="position:relative;display:inline-flex;width:34px;height:34px;align-items:center;justify-content:center;">
+                <span style="position:absolute;inset:0;border:1px solid rgba(0,194,168,.5);border-radius:17px;"></span>
+                <span style="position:absolute;inset:5px;border:1px solid rgba(0,194,168,.3);border-radius:12px;"></span>
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="#211E4E" aria-hidden="true"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9z"/></svg>
+              </span>
+              <span style="font-size:12px;color:#525252;">Today: ring-train — staggered loop restarts, the shape that stutters</span>
+            </div>
+            <div style="flex:1;display:flex;align-items:center;gap:10px;">
+              <span style="position:relative;display:inline-flex;width:34px;height:34px;align-items:center;justify-content:center;">
+                <span style="position:absolute;width:22px;height:22px;border-radius:11px;background:rgba(0,194,168,.18);"></span>
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="#211E4E" aria-hidden="true"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9z"/></svg>
+                <span style="position:absolute;right:1px;top:1px;width:7px;height:7px;border-radius:4px;background:#00C2A8;"></span>
+              </span>
+              <span style="font-size:12px;color:#525252;">Proposed: dot-breathe only — one continuous soft halo + the live dot</span>
+            </div>
+          </div>
+        </div>
+        <p class="cap">The open question from 2026-07-26, resolved alongside the bar: the Landing already retired the ring-train; dropping the header mark to <b>dot-breathe</b> makes the brand's live cue one continuous motion everywhere (a CulpritMark change, one call site). Needs the §3 pulse-contract Tier-2 edit if ratified.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════ 02 · ARRIVAL ══════════════════ -->
+  <div class="sec">
+    <p class="eyebrow">§02 · The first-insight arrival</p>
+    <h2>The day the Signal wakes up</h2>
+    <p>The design principles name exactly one moment worth a considered animation: <i>"the transition from 'building your picture' to a real insight should feel like something arrived."</i> Today the card swaps on a re-render. This is the wedge's day-5-to-7 retention moment — the first time the app proves it was listening. Fires <b>once per pet, ever</b>; reduced-motion gets a plain crossfade; never plays for a safety finding (a concern arrives plainly, per the S1 register rule).</p>
+    <div class="row">
+      <div class="fig">
+        <div class="opt"><span class="k">1 · Before — the building card</span></div>
+        <div class="frame">
+          <div class="sigcard"><span class="rail"></span>
+            <div class="f-label">Signal</div>
+            <div class="sighead f-serif">Getting to know Biscuit</div>
+            <div class="sigsub">Day 6 · 14 events so far</div>
+            <div class="buildrow"><span class="bdot"></span>Food &amp; symptom timing</div>
+            <div class="buildrow"><span class="bdot"></span>Week-over-week change</div>
+            <div class="buildrow"><span class="bdot"></span>Anything worth a vet call</div>
+          </div>
+        </div>
+        <p class="cap">The shipped SR-2 building state, unchanged. The arrival plays <b>from</b> this card, in place — no new surface.</p>
+      </div>
+      <div class="fig">
+        <div class="opt"><span class="k">2a · The arrival — dawn sweep</span><span class="tag rec">Team rec</span></div>
+        <div class="frame">
+          <div class="sigcard" style="background:linear-gradient(112deg,#FFFFFF 30%,#E0FBF7 58%,#FDF6E3 78%,#FFFFFF 96%);"><span class="rail live"></span>
+            <div class="f-label" style="color:#0B7B6C;">Signal</div>
+            <div class="sighead f-serif" style="opacity:.92;">Biscuit's first pattern is ready</div>
+            <div class="sigsub" style="opacity:.55;">Day 6 · 14 events so far</div>
+          </div>
+        </div>
+        <p class="cap">A single soft wash — teal into a breath of the moment-gold — sweeps the card left-to-right (~900ms) as the rail turns live and the building rows dissolve into the headline. Quiet, no new anatomy, reads as light moving across paper.</p>
+        <div class="haptic"><i>◦</i> one soft success tap at the sweep's end</div>
+      </div>
+      <div class="fig">
+        <div class="opt"><span class="k">2b · The arrival — drawn by the whorl</span></div>
+        <div class="frame">
+          <div class="sigcard" style="text-align:center;"><span class="rail live"></span>
+            <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#00C2A8" stroke-width="1.75" stroke-linecap="round" aria-hidden="true" style="margin:6px auto 2px;display:block;">
+              <path d="M12 12m0-7a7 7 0 1 1-7 7"/><path d="M12 12m0-3.5a3.5 3.5 0 1 1-3.5 3.5" stroke="#A6A2CE"/>
+            </svg>
+            <div class="sighead f-serif" style="font-size:16px;">Biscuit's first pattern is ready</div>
+          </div>
+        </div>
+        <p class="cap">The brand's whorl draws itself at the card's center (~600ms), then hands off — the spiral tightens and the headline expands from it. More branded, more theatrical; borrows the loading system's anatomy for a non-loading moment.</p>
+      </div>
+      <div class="fig">
+        <div class="opt"><span class="k">3 · After — settled, first insight live</span></div>
+        <div class="frame">
+          <div class="sigcard"><span class="rail live"></span>
+            <div class="f-label" style="color:#0B7B6C;">Signal</div>
+            <div class="sighead f-serif">Vomiting tends to follow within 3 hours of chicken meals</div>
+            <div class="sigsub">Seen after 4 of 6 chicken meals · tap for the evidence</div>
+          </div>
+          <div style="display:flex;justify-content:flex-end;padding:0 14px 10px;">
+            <span style="font-size:10px;color:#737373;">header mark's live dot lights ·</span>
+          </div>
+        </div>
+        <p class="cap">The first real card, standard live anatomy from here on. The arrival never replays — from day 7 the Signal behaves exactly as shipped.</p>
+      </div>
+    </div>
+    <p class="capnote" style="margin-top:14px;">Timeline: 0ms rail turns live → 250ms sweep/draw begins → ~900ms headline settled → 1200ms sub-line fades in. Adjacent, not included: CUL-440's building-state acknowledgment beat.</p>
+  </div>
+
+  <!-- ══════════════════ 03 · COMPLETION ══════════════════ -->
+  <div class="sec">
+    <p class="eyebrow">§03 · Completion registers</p>
+    <h2>One way to say "logged"</h2>
+    <p>The audit found <b>six</b> confirmation registers for the same act — and the one a 2am vomit log gets is a full-screen <b>white flash</b>. The proposal: converge on <b>two registers</b>, both already shipped and loved, and give every beat the sentence the log just wrote (the summary pill already composes it — today the beat throws it away and says "Logged").</p>
+    <div class="row">
+      <div style="flex:1 1 340px;min-width:280px;">
+        <div class="opt"><span class="k">Today — six registers</span></div>
+        <div class="row" style="gap:10px;margin-top:8px;">
+          <div class="minitile"><div class="swatch" style="background:#171717;color:#fff;">named card</div><div class="mt">Meal card</div><div class="md">warm, named, carries intake</div></div>
+          <div class="minitile"><div class="swatch" style="background:#171717;color:#fff;">9 chips · 5s</div><div class="mt">Dose card</div><div class="md">same card, densest ask</div></div>
+          <div class="minitile"><div class="swatch" style="background:#FFF;border:1px solid #EAEAEA;color:#0B7B6C;">text turns teal</div><div class="mt">MedStrip line</div><div class="md">most-used, flattest</div></div>
+          <div class="minitile"><div class="swatch" style="background:#FFF;border:1px solid #EAEAEA;color:#737373;">■ white takeover</div><div class="mt">Symptom / weight</div><div class="md">full-screen flash, blocks input</div></div>
+          <div class="minitile"><div class="swatch" style="background:#F5F5F5;color:#0B7B6C;">✓ in sheet</div><div class="mt">Sheet beat</div><div class="md">flag-on confirm, in place</div></div>
+          <div class="minitile"><div class="swatch" style="background:#F5F5F5;color:#737373;">"✓" text glyph</div><div class="mt">Capture screens</div><div class="md">hand-rolled, skips the cards</div></div>
+        </div>
+        <p class="cap" style="margin-top:12px;">Six answers to one question. The capture screens also <b>skip intake and adherence entirely</b> — a food added at log time never gets the follow-up (CUL-368's class).</p>
+      </div>
+      <div style="flex:1 1 560px;min-width:300px;">
+        <div class="opt"><span class="k">Proposed — two registers</span><span class="tag rec">Team rec</span></div>
+        <div class="row" style="margin-top:8px;">
+          <div class="fig" style="width:300px;">
+            <div class="frame">
+              <div class="scrimframe">
+                <div class="darkcard" style="margin:0;">
+                  <div style="display:flex;align-items:center;gap:8px;">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#00C2A8" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>
+                    <span style="font-weight:600;">Vomit · found by 5:33 PM</span>
+                  </div>
+                  <div class="sub" style="margin-top:4px;">Saved to Biscuit's record</div>
+                  <div style="margin-top:8px;"><span class="undo">Undo</span><span class="chip">Change time</span></div>
+                </div>
+              </div>
+            </div>
+            <p class="cap"><b>R1 · The named card.</b> The meal card's warm bottom-card anatomy, extended to every full-screen commit — symptom, weight ("Weight · 12.4 lb"), capture paths. It says the <b>pill's sentence</b>, and it finally carries <b>Undo</b> (the Snackbar exists; no log path arms it today). Symptom tone stays calm: no gold, one soft tap.</p>
+            <div class="haptic"><i>◦</i> soft tap · symptom register — never the success pattern</div>
+          </div>
+          <div class="fig" style="width:300px;">
+            <div class="frame">
+              <div style="background:#F5F5F5;padding:22px 14px;">
+                <div class="ring">
+                  <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#00C2A8" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>
+                </div>
+                <div style="text-align:center;margin-top:10px;font-weight:600;">Loose stool · around 7:00 AM</div>
+                <div style="text-align:center;font-size:12px;color:#525252;margin-top:2px;">Saved to Biscuit's record</div>
+              </div>
+            </div>
+            <p class="cap"><b>R2 · The in-place beat.</b> The sheet's mint check, kept for in-context commits — but it inherits the sentence too. The full-screen <b>white takeover is retired</b>: nothing ever flashes #FFFFFF at a dark bedroom.</p>
+            <div class="haptic"><i>◦◦</i> success tap · routine logs only</div>
+          </div>
+        </div>
+        <p class="cap" style="margin-top:4px;">Rules that ride along: capture screens route through the real cards (intake/adherence stop vanishing on those paths) · the MedStrip's one-tap keeps its in-card confirm but gains the mark + a tap (it's the best interaction in the app wearing the flattest feedback) · backdrop-dismiss during a half-filled confirm asks before discarding.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════ 04 · TREND ══════════════════ -->
+  <div class="sec">
+    <p class="eyebrow">§04 · The Trend zone</p>
+    <h2>Trend, in the house voice</h2>
+    <p>Home's third zone still speaks the pre-contract language — <b>"↓ from 4 last week — improving"</b> — arrows and a verdict word, one card below the Signal that was carefully purged of both. And its "All patterns ›" door is the same sub-AA teal the CUL-27 pass fixed on the card above it. The AA repoints ship regardless (CUL-578); the register change is <b>Dr. Chen-gated</b> (it's CUL-568's question — a falling symptom count is exactly where "improving" must be earned, not asserted).</p>
+    <div class="row">
+      <div class="fig">
+        <div class="opt"><span class="k">Today</span></div>
+        <div class="frame">
+          <div class="f-card">
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+              <span class="f-label">Trend</span><span class="doorlink" style="color:#00C2A8;">All patterns ›</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;align-items:baseline;margin-top:10px;">
+              <span style="font-weight:500;">Vomit</span><span style="font-size:12px;font-weight:500;">3 this week</span>
+            </div>
+            <div style="font-size:12px;color:#00C2A8;margin-top:2px;">↓ from 4 last week — improving</div>
+            <div class="bars"><i style="height:30%"></i><i class="s" style="height:55%"></i><i style="height:30%"></i><i class="s" style="height:35%"></i><i style="height:30%"></i><i class="s" style="height:80%"></i><i style="height:30%"></i><i style="height:30%"></i><i class="s" style="height:45%"></i><i style="height:30%"></i><i class="s" style="height:35%"></i><i style="height:30%"></i><i class="s" style="height:35%"></i><i style="height:30%"></i></div>
+            <div class="axis"><span>Aug 8</span><span>Today</span></div>
+          </div>
+        </div>
+        <p class="cap">Verdict word in accent teal (double-coded as "good"), sub-AA door and sublabel, unlabeled trial rule.</p>
+      </div>
+      <div class="fig">
+        <div class="opt"><span class="k">v2 — count-anchored</span><span class="tag gate">Register: Dr. Chen gate</span></div>
+        <div class="frame">
+          <div class="f-card">
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+              <span class="f-label">Trend</span><span class="doorlink" style="color:#0B7B6C;">All patterns ›</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;align-items:baseline;margin-top:10px;">
+              <span style="font-weight:500;">Vomit</span>
+              <span style="font-size:12px;color:#525252;"><b style="color:#0A0A0A;">3</b> this week · <b style="color:#0A0A0A;">4</b> last week</span>
+            </div>
+            <div class="bars" style="position:relative;">
+              <i style="height:30%"></i><i class="s" style="height:55%"></i><i style="height:30%"></i><i class="s" style="height:35%"></i>
+              <i style="height:30%;position:relative;"><span style="position:absolute;left:50%;top:-6px;bottom:-6px;width:1px;background:#00C2A8;opacity:.6;"></span></i>
+              <i class="s" style="height:80%"></i><i style="height:30%"></i><i style="height:30%"></i><i class="s" style="height:45%"></i><i style="height:30%"></i><i class="s" style="height:35%"></i><i style="height:30%"></i><i class="s" style="height:35%"></i><i style="height:30%"></i></div>
+            <div class="axis"><span>Aug 8</span><span>Today</span></div>
+            <div style="font-size:10px;color:#0B7B6C;margin-top:3px;">│ Trial diet started Aug 12</div>
+          </div>
+        </div>
+        <p class="cap">The Home count-line's grammar (bold digits, neutral ink, " · " join) — the same week-pair fact, stated not judged. Door and trial label drop to accent-ink. The bars stay; the sentence is the compare CUL-383 asked for.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════ 05 · TYPEFACE ══════════════════ -->
+  <div class="sec">
+    <p class="eyebrow">§05 · The typeface</p>
+    <h2>The app, in its own hand</h2>
+    <p>Geist is loaded, tokenized, and used on exactly the newest surfaces — Ask, the report, Settings, the night screens. History, Foods, the log flow, Home's zones, and the whole profile still render the system font. Two body faces, split down the middle of the app, is the seam a user feels without being able to name (CUL-364 calls it the bland lever). This specimen is live — the right column is real Geist.</p>
+    <div class="spec">
+      <div class="sys">
+        <div class="h">Today — system font</div>
+        <div class="srow"><span class="scircle" style="background:#FFE4E6;color:#F43F5E;">✕</span><div><div class="nm">Vomit</div><div class="sb">Found by 5:33 PM</div></div><span class="tm">5:33 PM</span></div>
+        <div class="srow"><span class="scircle" style="background:#E0FBF7;color:#0B7B6C;">●</span><div><div class="nm">Meal</div><div class="sb">Hill's z/d Original · WET</div></div><span class="tm">7:12 AM</span></div>
+        <div class="srow"><span class="scircle" style="background:#EAF0F7;color:#3D5875;">◍</span><div><div class="nm">Medication</div><div class="sb">Gabapentin 50mg</div></div><span class="tm">7:15 AM</span></div>
+      </div>
+      <div class="gst">
+        <div class="h">Proposed — Geist everywhere</div>
+        <div class="srow"><span class="scircle" style="background:#FFE4E6;color:#F43F5E;">✕</span><div><div class="nm">Vomit</div><div class="sb">Found by 5:33 PM</div></div><span class="tm">5:33 PM</span></div>
+        <div class="srow"><span class="scircle" style="background:#E0FBF7;color:#0B7B6C;">●</span><div><div class="nm">Meal</div><div class="sb">Hill's z/d Original · WET</div></div><span class="tm">7:12 AM</span></div>
+        <div class="srow"><span class="scircle" style="background:#EAF0F7;color:#3D5875;">◍</span><div><div class="nm">Medication</div><div class="sb">Gabapentin 50mg</div></div><span class="tm">7:15 AM</span></div>
+      </div>
+    </div>
+    <p class="cap" style="margin-top:12px;">Subtle on one row, unmistakable across an app: tighter caps, evener rhythm, and — with Newsreader for the Signal — an actual pairing instead of a coincidence. The B-061 approach decision is R-5 below.</p>
+  </div>
+
+  <!-- ══════════════════ 06 · FEEL TRACK ══════════════════ -->
+  <div class="sec">
+    <p class="eyebrow">§06 · The feel track</p>
+    <h2>A sense of touch</h2>
+    <p>There is not a single haptic in the product — <code style="font-family:inherit;">expo-haptics</code> isn't installed. For a one-handed, in-the-dark, glance-free app, touch is the cheapest premium signal we're not sending. The vocabulary below is <b>tone-aware by rule</b>: it follows the existing celebrate/calm split, and it is deliberately silent where the record is worrying — a haptic must never make bad news feel like a reward.</p>
+    <div class="tablewrap"><table class="feel">
+      <tr><th>Moment</th><th>Haptic</th><th>Why</th></tr>
+      <tr><td>Meal / dose / routine log commits</td><td class="hx">success (soft double)</td><td>the earned beat — pairs with the gold moment</td></tr>
+      <tr><td>Symptom log commits</td><td class="hx">single soft tap</td><td>confirmation without celebration — the calm tone's twin</td></tr>
+      <tr><td>Chip select, intake / adherence</td><td class="hx">selection tick</td><td>chips are the app's hands; they should click</td></tr>
+      <tr><td>FAB open · pet switch</td><td class="hx">light impact</td><td>mode changes you should feel, not watch</td></tr>
+      <tr><td>Pull-to-refresh threshold</td><td class="hx">light impact</td><td>the night band gets a physical edge</td></tr>
+      <tr><td>Destructive confirm (Remove, End trial)</td><td class="hx">rigid</td><td>weight where weight is due</td></tr>
+      <tr><td>Safety card arrival · red-flag reads</td><td class="hx">none — deliberate</td><td>plainness is the severity signal (S1); silence is part of it</td></tr>
+    </table></div>
+    <p class="cap" style="margin-top:12px;">One <b>lib/haptics.ts</b> with these seven verbs, consumed at the moment stores — so a new log path inherits its haptic the same way it inherits its card. iOS system haptic settings are respected automatically; Engineer sizes this S.</p>
+  </div>
+
+  <!-- ══════════════════ REACT ══════════════════ -->
+  <div class="sec">
+    <p class="eyebrow">React</p>
+    <h2>Calls to make on this round</h2>
+
+    <div class="brief"><div class="bh"><span class="bid">R-1</span><span class="bt">Tab bar shape</span></div>
+      <p><b>Deciding:</b> the bar's permanent identity. <b>Options:</b> A refined wordmarks · <b>B glyphs + labels (team rec — discoverability plus one icon language)</b> · C = B with the pet-avatar Pet tab (Designer's favorite; slightly louder chrome). <b>Consequence:</b> B or C commissions the four glyphs into CUL-493's family; C also answers Sam's whose-app-is-this at zero cost.</p></div>
+
+    <div class="brief"><div class="bh"><span class="bid">R-2</span><span class="bt">Arrival treatment</span></div>
+      <p><b>Deciding:</b> how the first insight arrives. <b>Options:</b> <b>2a dawn sweep (team rec — quiet, no new anatomy)</b> · 2b whorl-drawn (more branded, borrows loading anatomy for a non-loading moment). <b>Consequence:</b> either ships with the once-ever + reduced-motion + never-for-safety rules; 2b adds a dependency on the whorl's draw path.</p></div>
+
+    <div class="brief"><div class="bh"><span class="bid">R-3</span><span class="bt">Completion convergence</span></div>
+      <p><b>Deciding:</b> adopt the two-register system (named card + in-place beat), retire the white takeover, beat carries the sentence, Undo armed, capture screens route through the real cards. <b>Options:</b> adopt whole (team rec) · adopt minus Undo (if undo semantics need their own pass) · keep takeover for weight only. <b>Consequence:</b> closes CUL-368's class and the D1 register sprawl; Undo touches soft-delete flows so it gets its own small spec inside the PR.</p></div>
+
+    <div class="brief"><div class="bh"><span class="bid">R-4</span><span class="bt">Trend v2 register</span></div>
+      <p><b>Deciding:</b> whether the Trend sublabel drops arrows/verdicts for the count-anchored pair. <b>Options:</b> <b>adopt, routed through Dr. Chen with CUL-568/571 (team rec)</b> · AA-fixes only for now. <b>Consequence:</b> AA repoints (CUL-578) ship either way; the register half completes the Change-Contract voice on Home.</p></div>
+
+    <div class="brief"><div class="bh"><span class="bid">R-5</span><span class="bt">Typeface rollout approach (B-061)</span></div>
+      <p><b>Deciding:</b> how Geist reaches the other ~70% of the app. <b>Options:</b> <b>ThemedText wrapper, swept tab-by-tab (team rec — no magic, honors the house convention; churn is the accepted cost)</b> · default-Text weight shim (one file, but exactly the "magic" the conventions ban). <b>Consequence:</b> unblocks CUL-364; each tab's sweep is a small, verifiable PR with on-device before/after.</p></div>
+
+    <div class="brief"><div class="bh"><span class="bid">R-6</span><span class="bt">Haptics vocabulary</span></div>
+      <p><b>Deciding:</b> greenlight the seven-verb vocabulary as specced. <b>Options:</b> <b>yes, shipped inside the R-3 PR so beats and taps land together (team rec)</b> · trim to log-commits only first. <b>Consequence:</b> adds expo-haptics (managed-workflow safe); the silence-for-safety rule becomes a written invariant beside S1.</p></div>
+
+    <div class="brief"><div class="bh"><span class="bid">R-7</span><span class="bt">Header pulse</span></div>
+      <p><b>Deciding:</b> the standing Open Question — ring-train vs dot-breathe on the header mark. <b>Options:</b> <b>dot-breathe only (team rec — matches the Landing's retirement of rings; kills the stutter shape)</b> · keep rings. <b>Consequence:</b> one CulpritMark change; ratifying means the §3 pulse-contract Tier-2 edit gets written.</p></div>
+  </div>
+
+  <!-- ══════════════════ APPENDIX ══════════════════ -->
+  <div class="sec">
+    <p class="eyebrow">Appendix</p>
+    <h2>The rest of the slate</h2>
+    <p>What the audit found beyond this round — so round 2 is a selection, not a rediscovery.</p>
+    <div class="cols">
+      <div>
+        <div class="colh">Defects — filed this session, no mock needed</div>
+        <ul class="applist">
+          <li><b>Wrong-pet AI captions</b> on event detail + meal card <span class="cul">CUL-574 · High</span></li>
+          <li><b>History: silent load failure</b> reads as "nothing logged"; no skeleton; silent delete failure <span class="cul">CUL-575 · High</span></li>
+          <li><b>Symptom time stamped at screen-open</b>, not save <span class="cul">CUL-576 · High</span></li>
+          <li><b>Camera gated behind library permission</b> + Alert-as-chooser <span class="cul">CUL-577</span></li>
+          <li><b>Accent-on-light AA fails</b> — Badge, TrendZone door <span class="cul">CUL-578</span></li>
+          <li><b>Sub-44pt hot-path taps</b> — FAB rows, adherence chips, time rows <span class="cul">CUL-579 · High</span></li>
+        </ul>
+        <div class="colh">Quick-win batches, ready without mocks</div>
+        <ul class="applist">
+          <li><b>Tabs-that-load pass</b> — History/Foods skeletons + error states, insights' four hand-rolled empties onto EmptyState, "No pet selected" dead ends</li>
+          <li><b>vet-visit.tsx port</b> — the last pre-design-system screen (emoji icon, text glyphs, bespoke everything)</li>
+          <li><b>Apostrophe sweep</b> — four quote styles in shipping copy, mixed within files</li>
+          <li><b>Onboarding "Skip the rest"</b> — one tap instead of three on the optional steps</li>
+        </ul>
+      </div>
+      <div>
+        <div class="colh">Bigger swings — awaiting selection for round 2</div>
+        <ul class="applist">
+          <li><b>Capture convergence endgame</b> — GA the picker (FL-4 call), route every door into the sheet confirm (quick taps, Today nudge, day-summary, Ask still land on the old full-screen step), one time-model. <span class="cul">w/ CUL-503/504, CUL-322</span></li>
+          <li><b>Sam's household</b> — pet-context chrome on History/Foods/report, "or was it {other}?" on found-events, activate the built-but-dark shared-bowl attribution, household-labelled grazing strip</li>
+          <li><b>The First Week</b> — day 0–7 as one designed arc (this round's §02 is its centerpiece)</li>
+          <li><b>Detail-screen shell</b> — four detail screens, three edit paradigms, modal-vs-push split, close-vs-back; one shell <span class="cul">w/ CUL-441/399</span></li>
+          <li><b>Multi-med Home</b> — grouped strip at 3+ meds + batch confirm. <b>Amends the B-614 D3 ruling</b> (one card per med) — flagged as a PM decision, not proposed as fact</li>
+        </ul>
+        <div class="colh">Protect — genuinely at benchmark today</div>
+        <ul class="applist">
+          <li>Two-tap recent-meal log · the found-it time model · summary-pill-is-the-save · never-false-given · write-time pet identity</li>
+          <li>The token system with its contrast receipts · the night register (audit: zero drift) · Ask's six honest states · the report's loading choreography · day-summary · Settings' a11y</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    <b>Culprit · App polish — mock round 1</b> · 2026-08-22 · tracked as CUL-580.<br>
+    Frames are day-register depictions with demo data (Biscuit); motion and touch are annotated where they can't be drawn. Later rounds republish to this same artifact URL — if a frame here is superseded, the newer round says so in place. Source of truth: <span style="font-variant-numeric:tabular-nums;">docs/culprit-app-polish-mockups.html</span>.
+  </footer>
+</div>
