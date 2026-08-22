@@ -117,7 +117,8 @@ Two smaller calls worth recording:
 
 ## Verification
 
-`tsc --noEmit` clean. `jest --ci`: **248 suites / 5454 tests green**.
+`tsc --noEmit` clean. `jest --ci`: **249 suites / 5466 tests green** on the tree with
+`main` merged in (248/5454 before the base merge brought CUL-605's suite along).
 
 The falsification worth naming, because a fixture passing its own detector proves
 little: the guard was pointed at a **real** regression — a `commitRoutine` import
@@ -144,18 +145,33 @@ The symptom-≠-success rule is asserted as **two different expo-haptics APIs**,
   Same documented class of limit as `ownerFacingCopy.test.ts`. Widen it if a real miss
   appears.
 
-## One flag for the PM
+## The spec-not-on-main flag, raised and resolved mid-session
 
-**The spec is not on `main`.** `docs/nyx-app-polish-requirements.md` — the build
-contract for this whole track, §5.6 included — exists only on
-`claude/design-ux-opportunities-raxh71` (commit `ebf377c0`), alongside the mock rounds
-and the CLAUDE.md Read-These row. This session read it from that branch and built
-against it.
+For most of this session `docs/nyx-app-polish-requirements.md` — the build contract
+for this whole track, §5.6 included — existed **only** on
+`claude/design-ux-opportunities-raxh71` (`ebf377c0`). This session read §5.6 from that
+branch and built against it, and raised it as a PM action: a reviewer on `main` could
+not open the document any assertion here cites, and every remaining PR in the track
+had the same problem.
 
-Nothing about this PR depends on that file landing, but a reviewer on `main` cannot
-find the spec any assertion here cites, and **every remaining PR in the Aug. 2026
-Design Polish track has the same problem**. Landing the CUL-580 design-record PR is
-the cheap fix, and it should probably happen before the next one of these.
+It resolved itself while the work was in flight. **#697 landed the CUL-580 design
+record**, so the spec is on `main` and the flag is closed. Verified rather than
+assumed: the landed §5.6 is **byte-identical** to the text built against — the file's
+only difference is a §9 status line about a sibling PR. No rework.
+
+Worth keeping as a process note rather than deleting: building against a spec on an
+unmerged branch worked here *because the spec was finished and frozen*, and it was
+checked at merge rather than trusted. A spec still being edited would have been a
+genuine hazard.
+
+## Parallel session, same wave
+
+**CUL-605 (`ThemedText`) shipped the same day via #699**, in a separate session. The
+two Wave-0 foundations were genuinely independent — disjoint files, no dependency
+either direction — and both landed clean. The only contact point was CLAUDE.md, where
+each appended a Code Conventions entry; the two sit side by side at §Code Conventions
+with **no conflict**. Wave 0 is now closed, so the completion chain (CUL-606 next) and
+the Geist sweeps are both unblocked.
 
 ## Scope held
 
