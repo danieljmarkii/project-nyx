@@ -24,6 +24,6 @@ Emit **only** the Dev Handoff: the runtime command sequence + the Manual QA scri
 
 - Always `git checkout <the handoff branch>` **before** pulling — the one non-negotiable git rule (CLAUDE.md). If the PM hits a git snag, point them at `docs/git-first-aid.md`.
 - Emit only the one runtime that matches the session — do not dump both.
-- This command deliberately does **not** run the DoD, update STATUS.md, or emit the Session Summary. That's `/wrap`'s job.
+- This command deliberately does **not** run the DoD, write the session record, reconcile Linear, or emit the Session Summary. That's `/wrap`'s job.
 
 $ARGUMENTS
