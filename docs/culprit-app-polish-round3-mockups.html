@@ -1,0 +1,331 @@
+<title>Culprit Polish Round 3</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400..600&family=Geist:wght@400..600&display=swap">
+<style>
+  :root{
+    --ground:#FAFAFA; --card:#FFFFFF; --card-subtle:#F5F5F5;
+    --ink:#0A0A0A; --ink-2:#525252; --ink-3:#737373;
+    --border:#EAEAEA; --border-strong:#D4D4D4;
+    --accent:#00C2A8; --accent-ink:#0B7B6C; --accent-light:#E0FBF7;
+    --rose:#F43F5E; --rose-light:#FFE4E6;
+    --eyebrow:#0B7B6C;
+    --frame-edge:rgba(10,10,10,.14); --frame-shadow:0 10px 28px rgba(10,10,10,.10);
+    --rec:#0B7B6C; --rec-bg:#E0FBF7;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --ground:#13112E; --card:#1A1640; --card-subtle:#221C56;
+      --ink:#ECEAF6; --ink-2:#A6A2CE; --ink-3:#706BA6;
+      --border:rgba(196,190,255,.16); --border-strong:rgba(196,190,255,.28);
+      --accent:#00C2A8; --accent-ink:#4FD8C4; --accent-light:rgba(0,194,168,.12);
+      --rose:#FB7185; --rose-light:rgba(251,113,133,.14);
+      --eyebrow:#4FD8C4;
+      --frame-edge:rgba(196,190,255,.22); --frame-shadow:0 12px 32px rgba(0,0,0,.45);
+      --rec:#4FD8C4; --rec-bg:rgba(0,194,168,.12);
+    }
+  }
+  :root[data-theme="dark"]{
+    --ground:#13112E; --card:#1A1640; --card-subtle:#221C56;
+    --ink:#ECEAF6; --ink-2:#A6A2CE; --ink-3:#706BA6;
+    --border:rgba(196,190,255,.16); --border-strong:rgba(196,190,255,.28);
+    --accent:#00C2A8; --accent-ink:#4FD8C4; --accent-light:rgba(0,194,168,.12);
+    --rose:#FB7185; --rose-light:rgba(251,113,133,.14);
+    --eyebrow:#4FD8C4;
+    --frame-edge:rgba(196,190,255,.22); --frame-shadow:0 12px 32px rgba(0,0,0,.45);
+    --rec:#4FD8C4; --rec-bg:rgba(0,194,168,.12);
+  }
+
+  body{background:var(--ground);color:var(--ink);font-family:'Geist',system-ui,-apple-system,sans-serif;
+       font-size:15px;line-height:1.55;margin:0;-webkit-font-smoothing:antialiased;}
+  .wrap{max-width:1100px;margin:0 auto;padding:40px 20px 80px;}
+  a{color:var(--accent-ink);text-decoration:none;}
+  a:hover{text-decoration:underline;}
+  a:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:4px;}
+
+  .mast{display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap;}
+  .mast svg{color:#211E4E;}
+  :root[data-theme="dark"] .mast svg{color:#F2EEE4;}
+  @media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .mast svg{color:#F2EEE4;}}
+  .mast .wordmark{font-family:'Newsreader',Georgia,serif;font-size:17px;color:var(--ink-3);letter-spacing:-.3px;}
+  .roundtag{margin-left:auto;font-size:11px;letter-spacing:.8px;text-transform:uppercase;color:var(--eyebrow);
+            border:1px solid var(--border-strong);border-radius:999px;padding:4px 10px;}
+  h1{font-family:'Newsreader',Georgia,serif;font-weight:500;font-size:clamp(30px,5vw,42px);line-height:1.12;
+     letter-spacing:-.5px;margin:6px 0 14px;text-wrap:balance;}
+  .lede{color:var(--ink-2);max-width:64ch;margin:0 0 6px;}
+  .lede b{color:var(--ink);font-weight:600;}
+  .meta{font-size:13px;color:var(--ink-3);margin:10px 0 0;}
+
+  .sec{margin-top:60px;}
+  .eyebrow{font-size:11px;letter-spacing:1px;text-transform:uppercase;color:var(--eyebrow);font-weight:600;margin:0 0 6px;}
+  h2{font-family:'Newsreader',Georgia,serif;font-weight:500;font-size:27px;letter-spacing:-.3px;margin:0 0 10px;text-wrap:balance;}
+  .sec>p{color:var(--ink-2);max-width:68ch;margin:0 0 8px;}
+  .sec>p b{color:var(--ink);font-weight:600;}
+  .row{display:flex;flex-wrap:wrap;gap:26px;margin-top:22px;align-items:flex-start;}
+
+  .fig{width:322px;max-width:100%;}
+  .opt{display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap;}
+  .opt .k{font-weight:600;font-size:13px;letter-spacing:.4px;}
+  .tag{font-size:10px;letter-spacing:.7px;text-transform:uppercase;border-radius:999px;padding:3px 8px;font-weight:600;}
+  .tag.rec{color:var(--rec);background:var(--rec-bg);}
+  .tag.risk{color:var(--ink-3);border:1px solid var(--border-strong);}
+  .tag.ruled{color:var(--rec);background:var(--rec-bg);}
+  .frame{background:#FAFAFA;border:1px solid var(--frame-edge);border-radius:22px;box-shadow:var(--frame-shadow);
+         overflow:hidden;font-size:13px;color:#0A0A0A;}
+  .frame *{box-sizing:border-box;}
+  .cap{font-size:13px;color:var(--ink-2);margin-top:10px;line-height:1.5;}
+  .cap b{color:var(--ink);font-weight:600;}
+  .capnote{font-size:12px;color:var(--ink-3);margin-top:6px;}
+
+  /* in-frame primitives (literal day colors — frames depict the app) */
+  .f-card{background:#FFFFFF;border-radius:16px;margin:12px;padding:14px;box-shadow:0 1px 4px rgba(0,0,0,.06);}
+  .f-label{font-size:10px;letter-spacing:.8px;text-transform:uppercase;color:#737373;font-weight:600;}
+  .f-serif{font-family:'Newsreader',Georgia,serif;}
+
+  .hframe{background:#FFFFFF;border-bottom:1px solid #EAEAEA;padding:12px 14px;}
+  .hrow{display:flex;align-items:center;gap:10px;}
+  .hmark{color:#211E4E;flex:0 0 auto;display:flex;align-items:center;}
+  .askpill{display:inline-flex;align-items:center;gap:5px;border:1px solid #D4D4D4;border-radius:999px;padding:4px 9px;
+           font-size:12px;font-weight:600;color:#0A0A0A;background:#fff;}
+  .askdot{width:5px;height:5px;border-radius:3px;background:#00C2A8;}
+  .ownerav{width:26px;height:26px;border-radius:13px;background:#F5F5F5;border:1px solid #EAEAEA;color:#525252;
+           font-size:10px;font-weight:600;display:flex;align-items:center;justify-content:center;}
+  .petav{width:30px;height:30px;border-radius:15px;background:#E0FBF7;color:#0B7B6C;font-size:12px;font-weight:600;
+         display:flex;align-items:center;justify-content:center;flex:0 0 auto;}
+  .sigpeek{background:#FFFFFF;border-radius:16px;margin:10px 12px 12px;padding:12px 14px;box-shadow:0 1px 4px rgba(0,0,0,.06);position:relative;overflow:hidden;}
+  .sigpeek .rail{position:absolute;left:0;top:0;bottom:0;width:3px;background:#00C2A8;}
+  .sigpeek .h{font-family:'Newsreader',Georgia,serif;font-size:16px;color:#0A0A0A;line-height:1.3;}
+
+  /* trend graphics */
+  .daygrid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-top:10px;}
+  .dg-h{font-size:9px;letter-spacing:.5px;color:#A3A3A3;text-align:center;font-weight:600;}
+  .cell{aspect-ratio:1;border-radius:7px;background:#F5F5F5;display:flex;align-items:center;justify-content:center;gap:2.5px;position:relative;}
+  .cell .d{width:6px;height:6px;border-radius:3px;background:#F43F5E;}
+  .cell.today{outline:1.5px solid #0A0A0A;outline-offset:1.5px;}
+  .cell.trial::after{content:"";position:absolute;left:0;top:2px;bottom:2px;width:2.5px;border-radius:2px;background:#00C2A8;opacity:.75;}
+  .ribbon{display:flex;gap:4px;flex:1;}
+  .slot{flex:1;height:16px;border-radius:5px;background:#F5F5F5;position:relative;}
+  .slot.on{background:#F43F5E;}
+  .slot.on.two::after{content:"";position:absolute;inset:3px auto 3px 3px;width:4px;border-radius:2px;background:rgba(255,255,255,.55);}
+  .slot.today{outline:1.5px solid #0A0A0A;outline-offset:1.5px;}
+  .rrow{display:flex;align-items:center;gap:10px;margin-top:8px;}
+  .rlab{flex:0 0 74px;font-size:11px;color:#737373;}
+  .rnum{flex:0 0 14px;font-size:12px;font-weight:600;color:#0A0A0A;text-align:right;font-variant-numeric:tabular-nums;}
+  .mbars{display:flex;align-items:flex-end;gap:2px;height:34px;width:120px;}
+  .mbars i{flex:1;background:#F0F0F0;border-radius:1.5px;display:block;}
+  .mbars i.s{background:#F43F5E;}
+  .mbars i.today{outline:1.2px solid #0A0A0A;outline-offset:1px;}
+
+  .brief{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px 18px;margin-top:14px;}
+  .brief .bh{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;}
+  .brief .bid{font-weight:600;color:var(--accent-ink);font-size:13px;letter-spacing:.3px;white-space:nowrap;}
+  .brief .bt{font-weight:600;color:var(--ink);}
+  .brief p{margin:7px 0 0;color:var(--ink-2);font-size:13.5px;line-height:1.55;}
+  .brief p b{color:var(--ink);}
+  .ledger{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:6px 18px;margin-top:16px;}
+  .ledger .lr{display:flex;gap:10px;align-items:baseline;padding:9px 0;border-top:1px solid var(--border);flex-wrap:wrap;font-size:13.5px;}
+  .ledger .lr:first-child{border-top:0;}
+  .ledger .ln{font-weight:600;color:var(--ink);}
+  .ledger .ld{color:var(--ink-2);flex:1 1 300px;}
+  footer{margin-top:72px;border-top:1px solid var(--border);padding-top:18px;font-size:12.5px;color:var(--ink-3);max-width:70ch;line-height:1.6;}
+</style>
+
+<div class="wrap">
+  <div class="mast">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9z"/></svg>
+    <span class="wordmark">Culprit</span>
+    <span class="roundtag">Round 3 · final</span>
+  </div>
+  <div style="border:1px solid var(--border-strong);border-left:3px solid var(--accent);border-radius:12px;padding:12px 16px;margin:6px 0 18px;font-size:13.5px;color:var(--ink-2);">
+    <b style="color:var(--ink);">Converged — this round closed the track (2026-08-22).</b>
+    Final rulings: <b style="color:var(--ink);">R3-1 = H2a, the pet alone</b> — the pet's photo anchors the header (the crescent leaves Home; a name-overflow rule of 17pt → 16pt → ellipsis, full name in the switcher + a11y) · <b style="color:var(--ink);">R3-2 = exploration killed</b> — the charts stay; Trend gets the verbiage update only (Dr. Chen-gated).
+    The build contract is <span style="font-variant-numeric:tabular-nums;">docs/nyx-app-polish-requirements.md</span> v1.0, and the work lives in the Linear project <b style="color:var(--ink);">Aug. 2026 Design Polish</b>.
+  </div>
+  <h1>App polish — round 3, the last two calls</h1>
+  <p class="lede">Nearly converged. This round carries only what's still open: <b>the one-row header, refined</b> against your three notes (the teal dot you didn't understand is <b>deleted</b> — a cue that needs explaining has failed, and the Signal's own live rail plus the arrival moment now carry "something new"; the logo-vs-pet-bubble clash and the busyness get three treatments), and <b>the Trend graphic, done deliberately</b> — including the option that makes Home speak one chart language. Everything else is locked; the running ledger is at the bottom.</p>
+  <p class="meta">Tracked as CUL-580 · rounds 1–2 are the deliberation records · after this round: requirements + the App Polish project in Linear</p>
+
+  <!-- ══════════════════ 01 · HEADER, REFINED ══════════════════ -->
+  <div class="sec">
+    <p class="eyebrow">§01 · The one-row header, de-busied</p>
+    <h2>One row, one circle</h2>
+    <p>Your three notes, taken as constraints: <b>no teal dot</b> (gone from every variant — the mark keeps its tap-to-Signal behavior, but "new" is announced by the Signal card itself, which the one-row layout lifts nearly to the top of the screen); <b>the crescent and the pet bubble shouldn't sit as two competing circles</b>; and <b>fewer elements overall</b>. Each variant resolves the clash a different way. One background fact that changes the math: with the ruled tab bar (AP-1), <b>Biscuit's avatar is now always on screen in the bar</b> — so the header repeating it is a choice, not a necessity.</p>
+    <div class="row">
+      <div class="fig">
+        <div class="opt"><span class="k">H2b · The mark, not the bubble</span><span class="tag rec">Team rec</span></div>
+        <div class="frame">
+          <div class="hframe">
+            <div class="hrow" style="justify-content:space-between;">
+              <span style="display:inline-flex;align-items:center;gap:9px;min-width:0;">
+                <span class="hmark"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9z"/></svg></span>
+                <span style="font-weight:600;font-size:17px;white-space:nowrap;">Biscuit <span style="color:#737373;font-weight:400;">▾</span></span>
+              </span>
+              <span style="display:inline-flex;align-items:center;gap:8px;"><span class="askpill"><span class="askdot"></span>Ask</span><span class="ownerav">D</span></span>
+            </div>
+          </div>
+          <div class="sigpeek"><span class="rail"></span><div class="f-label" style="color:#0B7B6C;">Signal</div><div class="h">Vomiting tends to follow within 3 hours of chicken meals</div><div style="font-size:12px;color:#525252;margin-top:4px;">Seen after 4 of 6 chicken meals · tap for the evidence</div></div>
+        </div>
+        <p class="cap">The pet bubble leaves the header — the crescent is the row's only circle-shaped mark, and Biscuit's face lives in the tab bar, where AP-1 just put it. Four elements: mark · name-switcher · Ask · you. The clash is gone because there's nothing left to clash with.</p>
+        <p class="capnote">The name + chevron stays the full-width 44pt switcher target; the mark keeps its "jump to the Signal" tap.</p>
+      </div>
+      <div class="fig">
+        <div class="opt"><span class="k">H2a · The pet alone</span></div>
+        <div class="frame">
+          <div class="hframe">
+            <div class="hrow" style="justify-content:space-between;">
+              <span style="display:inline-flex;align-items:center;gap:9px;min-width:0;">
+                <span class="petav">B</span>
+                <span style="font-weight:600;font-size:17px;white-space:nowrap;">Biscuit <span style="color:#737373;font-weight:400;">▾</span></span>
+              </span>
+              <span style="display:inline-flex;align-items:center;gap:8px;"><span class="askpill"><span class="askdot"></span>Ask</span><span class="ownerav">D</span></span>
+            </div>
+          </div>
+          <div class="sigpeek"><span class="rail"></span><div class="f-label" style="color:#0B7B6C;">Signal</div><div class="h">Vomiting tends to follow within 3 hours of chicken meals</div><div style="font-size:12px;color:#525252;margin-top:4px;">Seen after 4 of 6 chicken meals · tap for the evidence</div></div>
+        </div>
+        <p class="cap">The crescent leaves Home instead — the brand keeps the Landing, loading, and night surfaces, and Home belongs entirely to the pet. Warmest option; the pet's face anchors the page.</p>
+        <p class="capnote">Costs the B-284 "mark on Home" contract a Tier-2 edit, and the tab bar then shows a second, smaller Biscuit below.</p>
+      </div>
+      <div class="fig">
+        <div class="opt"><span class="k">H2c · The mark finds a job</span><span class="tag risk">Clever, but gated</span></div>
+        <div class="frame">
+          <div class="hframe">
+            <div class="hrow" style="justify-content:space-between;">
+              <span style="display:inline-flex;align-items:center;gap:9px;min-width:0;">
+                <span class="petav">B</span>
+                <span style="font-weight:600;font-size:17px;white-space:nowrap;">Biscuit <span style="color:#737373;font-weight:400;">▾</span></span>
+              </span>
+              <span style="display:inline-flex;align-items:center;gap:8px;">
+                <span class="askpill"><svg width="11" height="11" viewBox="0 0 24 24" fill="#211E4E" aria-hidden="true"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9z"/></svg>Ask</span>
+                <span class="ownerav">D</span>
+              </span>
+            </div>
+          </div>
+          <div class="sigpeek"><span class="rail"></span><div class="f-label" style="color:#0B7B6C;">Signal</div><div class="h">Vomiting tends to follow within 3 hours of chicken meals</div><div style="font-size:12px;color:#525252;margin-top:4px;">Seen after 4 of 6 chicken meals · tap for the evidence</div></div>
+        </div>
+        <p class="cap">The crescent moves <b>into the Ask pill</b>, replacing its dot — the brand mark literally marks the intelligence door, which is what the crescent has always meant. Pet leads the row; one circle each side.</p>
+        <p class="capnote">Named flaw: Ask is allowlist-gated, so accounts without Ask would have no mark on Home at all — the brand's presence shouldn't depend on a feature flag.</p>
+      </div>
+    </div>
+    <div class="brief"><div class="bh"><span class="bid">R3-1</span><span class="bt">Header, final form</span></div>
+      <p><b>Deciding:</b> which one-row header ships (and, inside it, where the crescent lives). <b>Options:</b> <b>H2b mark-not-bubble (team rec — resolves the clash by subtraction, keeps the brand, and the tab bar already carries Biscuit's face)</b> · H2a pet-alone (warmest; brand leaves Home, Tier-2 edit) · H2c mark-in-Ask (most meaningful placement, but flag-gated presence). <b>Consequence:</b> all three delete the dot and the pulse for good — ratifying any of them closes the standing ring-train Open Question, writes the Tier-2 §3 pulse edit, and moves the breed-age line to the Pet tab.</p></div>
+  </div>
+
+  <!-- ══════════════════ 02 · TREND GRAPHICS ══════════════════ -->
+  <div class="sec">
+    <p class="eyebrow">§02 · The Trend graphic, deliberately</p>
+    <h2>Three ways to draw fourteen days</h2>
+    <p>Fair call — the grey-and-rose bar strip is the least designed pixel on Home. The strongest move available: the Signal's evidence receipts (B-721) already established a house chart grammar — the <b>dot lane</b> and the <b>stacked compare</b>. Drawing the Trend zone in that same grammar makes Home speak <b>one</b> data language from top to bottom, instead of a receipt language on the Signal and a bar language two cards down. All three variants keep the ruled v2.1 furniture: the count-anchored sentence, today marked, the trial rule, accent-ink door, whole-card tap-through, tabular digits.</p>
+    <div class="row">
+      <div class="fig">
+        <div class="opt"><span class="k">T-A · Fourteen days, as days</span><span class="tag rec">Team rec</span></div>
+        <div class="frame">
+          <div class="f-card">
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+              <span class="f-label">Trend</span><span style="color:#0B7B6C;font-size:12px;font-weight:500;">All patterns ›</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;align-items:baseline;margin-top:10px;">
+              <span style="font-weight:500;">Vomit</span>
+              <span style="font-size:12px;color:#525252;font-variant-numeric:tabular-nums;"><b style="color:#0A0A0A;">3</b> this week · <b style="color:#0A0A0A;">4</b> last week</span>
+            </div>
+            <div class="daygrid" style="margin-top:12px;">
+              <span class="dg-h">M</span><span class="dg-h">T</span><span class="dg-h">W</span><span class="dg-h">T</span><span class="dg-h">F</span><span class="dg-h">S</span><span class="dg-h">S</span>
+              <span class="cell"></span>
+              <span class="cell"><span class="d"></span></span>
+              <span class="cell"></span>
+              <span class="cell"><span class="d"></span></span>
+              <span class="cell trial"></span>
+              <span class="cell"><span class="d"></span><span class="d"></span></span>
+              <span class="cell"></span>
+              <span class="cell"></span>
+              <span class="cell"><span class="d"></span></span>
+              <span class="cell"></span>
+              <span class="cell"><span class="d"></span></span>
+              <span class="cell"></span>
+              <span class="cell"><span class="d"></span></span>
+              <span class="cell today"></span>
+            </div>
+            <div style="display:flex;justify-content:space-between;font-size:10px;color:#737373;margin-top:6px;">
+              <span style="color:#0B7B6C;">│ Trial diet started Fri</span><span>Today</span>
+            </div>
+          </div>
+        </div>
+        <p class="cap">Two calendar weeks of day cells; an episode is a <b>rose dot</b>, a two-episode day is two dots — the receipts' dot-lane grammar, laid on a calendar. Days read as days, a bad day reads as a cluster (not a tall abstract bar), and the empty cells state the quiet honestly. The feeding mode uses the same grid with teal-filled days — <b>one graphic system for both Trend modes</b>, and a small kinship with the Patterns calendar.</p>
+      </div>
+      <div class="fig">
+        <div class="opt"><span class="k">T-B · Two weeks, stacked</span></div>
+        <div class="frame">
+          <div class="f-card">
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+              <span class="f-label">Trend</span><span style="color:#0B7B6C;font-size:12px;font-weight:500;">All patterns ›</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;align-items:baseline;margin-top:10px;">
+              <span style="font-weight:500;">Vomit</span>
+              <span style="font-size:12px;color:#525252;font-variant-numeric:tabular-nums;">episodes by day</span>
+            </div>
+            <div class="rrow">
+              <span class="rlab">Last week</span>
+              <span class="ribbon">
+                <span class="slot"></span><span class="slot on"></span><span class="slot"></span><span class="slot on"></span><span class="slot"></span><span class="slot on two"></span><span class="slot"></span>
+              </span>
+              <span class="rnum">4</span>
+            </div>
+            <div class="rrow">
+              <span class="rlab">This week</span>
+              <span class="ribbon">
+                <span class="slot"></span><span class="slot on"></span><span class="slot"></span><span class="slot on"></span><span class="slot"></span><span class="slot on"></span><span class="slot today"></span>
+              </span>
+              <span class="rnum">3</span>
+            </div>
+            <div style="font-size:10px;color:#0B7B6C;margin-top:8px;">│ Trial diet started Fri last week</div>
+          </div>
+        </div>
+        <p class="cap">The receipts' <b>stacked-compare</b> grammar (Shape C): two labeled week ribbons, episode days filled, the week totals in tabular digits at the rail. The week-vs-week question answered by pure shape — the two rows are the sentence, drawn.</p>
+        <p class="capnote">A two-episode day carries an inner tick (shown Sat last week) so fill stays honest without dots.</p>
+      </div>
+      <div class="fig">
+        <div class="opt"><span class="k">T-C · The number leads</span></div>
+        <div class="frame">
+          <div class="f-card">
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+              <span class="f-label">Trend</span><span style="color:#0B7B6C;font-size:12px;font-weight:500;">All patterns ›</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-top:10px;gap:12px;">
+              <span>
+                <span style="font-size:34px;font-weight:600;color:#0A0A0A;font-variant-numeric:tabular-nums;line-height:1;">3</span>
+                <span style="display:block;font-size:12px;color:#525252;margin-top:3px;">vomit episodes this week</span>
+                <span style="display:block;font-size:12px;color:#525252;font-variant-numeric:tabular-nums;"><b style="color:#0A0A0A;">4</b> last week</span>
+              </span>
+              <span class="mbars">
+                <i style="height:30%"></i><i class="s" style="height:55%"></i><i style="height:30%"></i><i class="s" style="height:40%"></i><i style="height:30%"></i><i class="s" style="height:100%"></i><i style="height:30%"></i><i style="height:30%"></i><i class="s" style="height:55%"></i><i style="height:30%"></i><i class="s" style="height:40%"></i><i style="height:30%"></i><i class="s" style="height:40%"></i><i class="today" style="height:30%"></i>
+              </span>
+            </div>
+            <div style="font-size:10px;color:#0B7B6C;margin-top:8px;">│ Trial diet started Aug 12</div>
+          </div>
+        </div>
+        <p class="cap">The Oura-style stat tile: the number is the graphic, with a quiet 14-day micro-chart as its witness. Fastest possible read; the chart recedes to texture.</p>
+        <p class="capnote">Data Scientist note: the micro-chart stays bars, never a line — a line would interpolate between discrete daily counts. Biggest register risk of the three: a large lone number can read as a score.</p>
+      </div>
+    </div>
+    <div class="brief"><div class="bh"><span class="bid">R3-2</span><span class="bt">Trend graphic, final form</span></div>
+      <p><b>Deciding:</b> the Trend zone's chart language. <b>Options:</b> <b>T-A day-dot calendar (team rec — the receipts' grammar on real days, one system for both symptom and feeding modes, kinship with Patterns)</b> · T-B stacked week ribbons (strongest at the week question; weakest as a timeline) · T-C stat-first (fastest read; score-adjacent risk). <b>Consequence:</b> the pick becomes AP-6's build target; the count-anchored sentence still rides Dr. Chen (CUL-568/571) on every variant, and the AA fixes (CUL-578) ship regardless.</p></div>
+  </div>
+
+  <!-- ══════════════════ 03 · LEDGER ══════════════════ -->
+  <div class="sec">
+    <p class="eyebrow">§03 · The running ledger</p>
+    <h2>Everything ruled so far</h2>
+    <div class="ledger">
+      <div class="lr"><span class="tag ruled">Ruled</span><span class="ln">Tab bar</span><span class="ld">B+C hybrid — glyphs + labels, the pet as the Pet tab, <b>fallback ladder ratified (R2-1)</b>. Build-ready.</span></div>
+      <div class="lr"><span class="tag ruled">Ruled</span><span class="ln">Header shape</span><span class="ld">One row (H2). This round picks its final form — R3-1. The teal dot and all looping motion are gone in every variant.</span></div>
+      <div class="lr"><span class="tag ruled">Ruled</span><span class="ln">Arrival moment</span><span class="ld">Dawn sweep, spec locked as written in round 2 §03 ("perfect").</span></div>
+      <div class="lr"><span class="tag ruled">Ruled</span><span class="ln">Completion registers</span><span class="ld"><b>Adopted whole (R2-3)</b> — two registers, white takeover retired, sentence beats, Undo, capture paths through the real cards.</span></div>
+      <div class="lr"><span class="tag ruled">Ruled</span><span class="ln">Trend furniture</span><span class="ld">Count-anchored sentence (Dr. Chen ratifies wording) · today mark · tap-through · AA inks. Graphic = R3-2, this round.</span></div>
+      <div class="lr"><span class="tag ruled">Ruled</span><span class="ln">Geist, app-wide</span><span class="ld">ThemedText wrapper, swept tab-by-tab. CUL-364 is the umbrella.</span></div>
+      <div class="lr"><span class="tag ruled">Ruled</span><span class="ln">Haptics</span><span class="ld">Seven-verb tone-aware vocabulary, silence on safety; ships with the completion work.</span></div>
+    </div>
+    <p style="margin-top:16px;">After R3-1 and R3-2: <b>requirements doc</b> (docs/nyx-app-polish-requirements.md — the rulings, the specs, the guardrails, the AP-1…AP-11 plan) and the <b>App Polish project in Linear</b>, issues born ruled.</p>
+  </div>
+
+  <footer>
+    <b>Culprit · App polish — round 3</b> · 2026-08-22 · tracked as CUL-580 · PR #697.<br>
+    Rounds 1–2 are the deliberation records (each page says so). This page is the current proposal: frames replace in place on revision; git is the history. Source of truth: <span style="font-variant-numeric:tabular-nums;">docs/culprit-app-polish-round3-mockups.html</span>.
+  </footer>
+</div>
