@@ -45,6 +45,12 @@ The `code-reviewer` returned **ship-ready** and did two things worth recording, 
 
 That is the sweeps' parallelism working as intended, and worth noting for PRs 4–6: they are disjoint in *code* but they all write the same convention line, so the base merge is where a rule gets reconciled. Take the landed rule over your own when they cover the same ground.
 
+**Then PR 4 landed too, and the second merge was not a docs conflict — it was the same file.** CUL-609 (#712) swept `app/food-capture.tsx` as part of its "completion surfaces" scope, so the plan's claim that the six sweeps are disjoint is **wrong for this pair**: a capture screen belongs to its tab by filename and to the completion chain by behaviour, and CUL-613 had already routed it through the real completion cards.
+
+The conflict itself was a **race, not a disagreement**: PR 4 ran in parallel and merged before the glyph carve-out existed, so its author had no way to know. Resolved on the evidence, hunk by hunk — the glyph nodes kept this PR's raw `<Text>` (Geist has no `✓`/`✕`, and this PR lands the convention that says why), the nested-span comment took `main`'s (better sourced — it points at `app/log.tsx`), and the `fontFamily` took `main`'s `fontFamilyForWeight(theme.weightMedium)` over my literal `theme.fontBodyMedium`, because deriving it from the weight token cannot drift out of step with the mapping. Taking the better half of each side is the point; picking a winner per file would have lost something either way.
+
+**The residual is app-wide and is not this PR's to fix.** PR 4's sweep put **7 glyph nodes on `ThemedText` across `app/edit-event.tsx`, `app/medication-capture.tsx` and `app/vet-visit.tsx`** — every one of them a `✓` or `✕`, i.e. exactly the codepoints Geist does not carry. `main` now runs both conventions at once. Fixing three files this PR does not own, inside a PR titled "Foods", is the thing the scope rules exist to prevent — so it is filed (**CUL-653**) rather than folded in.
+
 ## Decisions
 
 - **Glyph carve-out, stated as "is it copy?" rather than as a coverage table** (above). The cmap finding motivated it; the rule that survives it is simpler than it.

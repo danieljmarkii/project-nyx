@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import {
-  Alert, Modal, Pressable, ScrollView, StyleSheet, Text, TouchableOpacity, View,
+  Alert, Modal, Pressable, ScrollView, StyleSheet, TouchableOpacity, View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { ChevronDown } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
+import { ThemedText } from '../ui/ThemedText';
 import { usePetStore } from '../../store/petStore';
 import { EVENT_TYPES, EventTypeKey, SYMPTOM_TYPES } from '../../constants/eventTypes';
 import type { MomentTone } from '../../store/momentStore';
@@ -172,9 +173,9 @@ export function EventTypeSheet({ visible, onClose }: Props) {
                   accessibilityRole={multiPet ? 'button' : undefined}
                   accessibilityLabel={multiPet ? `Log for ${petName} — switch pet` : undefined}
                 >
-                  <Text style={styles.title} numberOfLines={1}>
+                  <ThemedText style={styles.title} numberOfLines={1}>
                     Log for {petName}
-                  </Text>
+                  </ThemedText>
                   {multiPet && (
                     <ChevronDown size={18} color={theme.colorTextSecondary} strokeWidth={1.75} />
                   )}

@@ -3,6 +3,7 @@ import { StyleSheet, Animated, Easing, View } from 'react-native';
 import Svg, { Circle, Defs, RadialGradient, Stop } from 'react-native-svg';
 import { Check } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
+import { fontFamilyForWeight } from '../ui/ThemedText';
 import { commitRoutine, commitSymptom } from '../../lib/haptics';
 import { useReducedMotion } from '../../hooks/useReducedMotion';
 import type { MomentTone } from '../../store/momentStore';
@@ -167,9 +168,14 @@ const styles = StyleSheet.create({
     shadowRadius: 22,
     elevation: 6,
   },
+  // ThemedText wraps RN's `Text` and has no Animated variant (§7 scoped that out of
+  // PR 1), so the two beats below can't inherit the sweep — a bare `fontWeight` here
+  // would silently keep rendering the system face while everything around it moved to
+  // Geist. Calling the primitive's own mapper keeps ONE fact (the weight token) and one
+  // resolution path; the weight is dropped because the family now expresses it.
   title: {
     fontSize: theme.textXL,
-    fontWeight: theme.weightMedium,
+    fontFamily: fontFamilyForWeight(theme.weightMedium),
     color: theme.colorNeutralDark,
     textAlign: 'center',
     // The sentence can reach two lines on a narrow device ("Loose stool · between
@@ -180,6 +186,7 @@ const styles = StyleSheet.create({
   // the headline, where it landed is the reassurance underneath it.
   subLabel: {
     fontSize: theme.textSM,
+    fontFamily: fontFamilyForWeight(theme.weightRegular),
     color: theme.colorTextSecondary,
     textAlign: 'center',
     paddingHorizontal: theme.space3,

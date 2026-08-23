@@ -1,5 +1,6 @@
-import { View, Text, StyleSheet } from 'react-native';
+import { View, StyleSheet } from 'react-native';
 import { theme } from '../../constants/theme';
+import { ThemedText } from '../ui/ThemedText';
 import { FilterChip } from '../ui/FilterChip';
 import { MEDICATION_VEHICLE_OPTIONS, type DoseVehicle } from '../../lib/medications';
 
@@ -62,12 +63,12 @@ export function VehicleChipRow({
   return (
     <View style={size === 'compact' ? styles.compactWrap : styles.wrap}>
       {showLabel && (
-        <Text style={[
+        <ThemedText style={[
           size === 'compact' ? styles.labelCompact : styles.label,
           onDark && styles.labelOnDark,
         ]}>
           {label}
-        </Text>
+        </ThemedText>
       )}
       <View style={styles.row}>
         {MEDICATION_VEHICLE_OPTIONS.map((opt) => {

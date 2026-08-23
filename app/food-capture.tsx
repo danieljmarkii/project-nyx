@@ -18,6 +18,7 @@ import * as ImagePicker from 'expo-image-picker';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Camera, Images } from 'lucide-react-native';
 import { theme } from '../constants/theme';
+import { ThemedText, fontFamilyForWeight } from '../components/ui/ThemedText';
 import { SectionLabel } from '../components/ui/SectionLabel';
 import { FilterChip } from '../components/ui/FilterChip';
 import { ChipGroup } from '../components/ui/ChipGroup';
@@ -51,7 +52,6 @@ import {
 import { useAppConfig } from '../hooks/useAppConfig';
 import { parseGateResponse } from '../lib/appConfig';
 import { EARLY_ACCESS_LABEL, foodCapCopy, careFirstLine } from '../constants/monetizationCopy';
-import { ThemedText } from '../components/ui/ThemedText';
 
 type CaptureStep =
   | 'intro'
@@ -998,11 +998,10 @@ export default function FoodCaptureScreen() {
               >
                 <ThemedText style={styles.mealTimeText}>
                   {mealOccurredAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                  {/* Deliberately a raw <Text>, not a nested ThemedText (CUL-607). Every
-                      ThemedText injects an explicit fontFamily, which breaks RN's native
-                      text-style cascade — so a nested one would need its own family
-                      spelled out. This span differs from its parent only in SIZE and
-                      COLOUR, so inheriting the parent's resolved Geist face is right. */}
+                  {/* Deliberately a raw <Text>, not a nested ThemedText (CUL-609; the CLAUDE.md
+                      nested-span convention). A nested ThemedText's explicit fontFamily breaks RN's
+                      native text-style cascade; this EXIF span differs from its parent only in size and
+                      colour, so it inherits the parent's resolved Geist regular. See app/log.tsx. */}
                   {mealOccurredAtSource === 'exif' ? (
                     <Text style={styles.mealTimeAttribution}>
                       {'  ·  '}{formatExifAttribution(mealOccurredAt.toISOString())}
@@ -1591,16 +1590,16 @@ const styles = StyleSheet.create({
     fontSize: 36,
     color: theme.colorTextOnDark,
   },
+  // `Animated.Text` can't be a ThemedText (no Animated variant — §7), so this one
+  // resolves its face through the primitive's mapper instead of the wrapper. Same one
+  // fact, same path; see components/log/SheetLogBeat.tsx for the full note.
   loggedText: {
     fontSize: 20,
-    // Named family rather than a weight token, because this one renders through
-    // `Animated.Text` — the sweep's `ThemedText` is not an animated component, and
-    // wrapping it would buy nothing the primitive's own escape hatch doesn't: an
-    // explicit `fontFamily` passes straight through ThemedText too (CUL-605), so
-    // this is the sanctioned way to be Geist without the wrapper. The weight is
-    // dropped for the same reason ThemedText drops it — the family carries it, and
-    // a numeric weight on top invites an Android faux-bold.
-    fontFamily: theme.fontBodyMedium,
+    // Named here rather than via ThemedText: this line renders through
+    // `Animated.Text`, which the wrapper cannot be. An explicit family is the
+    // primitive's own passthrough, and deriving it from the weight token keeps
+    // this from drifting out of step with the mapping.
+    fontFamily: fontFamilyForWeight(theme.weightMedium),
     color: theme.colorNeutralDark,
   },
 });

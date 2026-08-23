@@ -1,10 +1,11 @@
 import { useCallback, useMemo, useState } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity,
+  View, StyleSheet, ScrollView, TextInput, TouchableOpacity,
 } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import { Camera } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
+import { ThemedText } from '../ui/ThemedText';
 import { SectionLabel } from '../ui/SectionLabel';
 import { getRecentMedications, getLibraryMedications, PickerMedication } from '../../lib/db';
 
@@ -102,8 +103,8 @@ export function MedicationPicker({ petId, onPickMedication, onAddNew, onOpenDeta
               <Camera size={20} color={theme.colorAccent} strokeWidth={2} />
             </View>
             <View style={styles.addCtaText}>
-              <Text style={styles.addCtaTitle}>Add a medication</Text>
-              <Text style={styles.addCtaHint}>Snap the label, or enter it by hand</Text>
+              <ThemedText style={styles.addCtaTitle}>Add a medication</ThemedText>
+              <ThemedText style={styles.addCtaHint}>Snap the label, or enter it by hand</ThemedText>
             </View>
           </TouchableOpacity>
         </View>
@@ -140,11 +141,11 @@ export function MedicationPicker({ petId, onPickMedication, onAddNew, onOpenDeta
             />
           )}
           {filteredLibrary.length === 0 ? (
-            <Text style={styles.empty}>
+            <ThemedText style={styles.empty}>
               {library.length === 0
                 ? "No medications yet. Add one above and we'll keep it handy for next time."
                 : 'No matches.'}
-            </Text>
+            </ThemedText>
           ) : (
             <MedGrid
               meds={filteredLibrary}
@@ -224,9 +225,9 @@ function MedTile({
       accessibilityHint={onLongPress ? 'Logs a dose. Long-press to edit.' : 'Logs a dose'}
     >
       {metaLine ? (
-        <Text style={styles.tileMeta} numberOfLines={1}>{metaLine}</Text>
+        <ThemedText style={styles.tileMeta} numberOfLines={1}>{metaLine}</ThemedText>
       ) : null}
-      <Text style={styles.tileName} numberOfLines={2}>{med.generic_name}</Text>
+      <ThemedText style={styles.tileName} numberOfLines={2}>{med.generic_name}</ThemedText>
     </TouchableOpacity>
   );
 }
