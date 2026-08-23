@@ -2,9 +2,9 @@
 
 **Date:** 2026-08-23
 
-PR 2 of 5 in the completion-system chain (CUL-603). No schema, no deploy, no flag.
-Spec: `docs/nyx-app-polish-requirements.md` §5; design authority the round-2 mock's
-§04 R1 frame.
+Shipped via #703. PR 2 of 5 in the completion-system chain (CUL-603). No schema, no
+deploy, no flag. Spec: `docs/nyx-app-polish-requirements.md` §5; design authority the
+round-2 mock's §04 R1 frame.
 
 ## What was wrong
 

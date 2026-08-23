@@ -1,5 +1,5 @@
 # Project Nyx — Claude Code Session Guide
-**Version:** 1.28 | Last Updated: 2026-08-22
+**Version:** 1.28 | Last Updated: 2026-08-23
 
 ---
 
