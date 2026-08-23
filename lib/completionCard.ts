@@ -11,16 +11,19 @@
 //
 // The enforcement is the SHAPE, not the discipline: `LoggedRecord` carries the
 // record's structured fields, never a pre-composed display string, so no caller
-// can hand THIS card a literal "Logged" — there is no parameter to put it in.
-// (Scoped claim, deliberately: `components/log/SheetLogBeat.tsx` still defaults
-// its `title` to 'Logged', so a beta account on `log_picker_v2` confirms the same
-// insertSimpleEvent write with the old register. That is CUL-614's half of the
-// convergence, not an oversight here — but the rule is not app-wide yet.) The
+// can hand THIS card a literal "Logged" — there is no parameter to put it in. The
 // composition happens once, here, through lib/logCopy, which itself derives the
 // window wording from describeOccurredAt: the same function the History row and
 // the vet report use. So the card's sentence and the row the owner will find in
 // History tomorrow cannot drift, and the card cannot claim more certainty than
 // the stored confidence carries.
+//
+// THE CLAIM IS NOW APP-WIDE (CUL-614 closed the scope note that stood here). Both
+// registers speak the record: R1 through this module's `summarizeLoggedRecord`, and
+// R2 — `components/log/SheetLogBeat.tsx` — through the same function, because its
+// `title` lost its 'Logged' default and became REQUIRED. Same enforcement in a
+// different shape: a card that cannot be handed a display string, and a beat that
+// cannot be left without one. Neither has a fallback that says nothing.
 //
 // Same reasoning as the commit haptic living inside momentStore's present()
 // (CUL-604) rather than at its call sites: a future log path should inherit the

@@ -236,7 +236,16 @@ interface MomentState {
   ) => boolean;
   // Reschedules the hide timer to fire `durationMs` from now — used to hold the
   // meal card open ~1.5s after a chip tap so the selection is confirmed visibly.
+  // While the dwell is PAUSED this banks the duration instead of arming a timer
+  // (see pauseDwell), so a chip's confirm hold cannot restart the clock under the
+  // owner's own finger.
   rescheduleHide: (durationMs: number) => void;
+  // CUL-614 / §5 "Dwell" — the auto-dismiss stops while the owner is touching the
+  // card, and any interaction resets it. Called from the card's root touch handlers,
+  // never from a press handler: the point is to cover the whole gesture, including
+  // the reading pause between two chip taps.
+  pauseDwell: () => void;
+  resumeDwell: () => void;
 }
 
 // Named-card dwell. The retired white takeover held 1.4s — right for a terminal,
@@ -282,18 +291,81 @@ export const MEDICATION_FLAGGED_DURATION_MS = 7000;
 // with it, rule 3's ledger spend — rather than hang.
 const CARD_REVEAL_WAIT_MS = 3000;
 
-// Module-scoped so a rapid second log cleanly cancels the prior timers rather
-// than racing two hides.
+// ── The dwell clock (CUL-614 · §5 "Dwell") ──────────────────────────────────
+// The auto-dismiss PAUSES while the owner is touching the card, and any interaction
+// resets it. The problem it solves is the dose card's: nine chips (four adherence,
+// four vehicle, plus the time affordance) inside a 5s window, where each tap re-armed
+// only CHIP_CONFIRM_HOLD_MS — so an owner reading the labels before their second tap
+// watched the card leave under their finger, and an unanswered adherence row lands
+// `unconfirmed` (B-156 G1). That fail-safe is exactly right and is NOT what this
+// changes: this buys the owner the time to answer, it does not change what silence
+// means.
+//
+// It lives HERE rather than in each card for the reason the commit haptic does
+// (CUL-604): the timer is the store's, so a card that grows a new control inherits
+// the pause with it instead of re-deriving a rule about its own dismissal.
+//
+// Module-scoped, like the timers themselves — none of it is rendered, so putting it
+// in the store's state would re-render three cards on every finger-down.
 let hideTimer: ReturnType<typeof setTimeout> | null = null;
 let showTimer: ReturnType<typeof setTimeout> | null = null;
+// The watchdog that force-resumes a pause whose touch-end never arrived (see below).
+let pauseCeilingTimer: ReturnType<typeof setTimeout> | null = null;
+// Wall-clock deadline of the armed hide, so a pause can bank what was LEFT rather
+// than restart from a fixed number. null whenever no hide is armed.
+let hideDeadlineAt: number | null = null;
+let dwellPaused = false;
+// What resumeDwell will arm: the remaining window at pause time, raised by any
+// rescheduleHide that arrived while paused (a chip's confirm hold).
+let bankedDurationMs = 0;
+
+// What an interaction RESETS the dwell to. All three cards share the same 5s
+// interactive dwell, so this is one number rather than a per-kind lookup; a card
+// carrying a longer window (the flagged 7s) keeps it, because resumeDwell takes the
+// MAX of this and what was banked — the reset is a floor, never a truncation.
+const TOUCH_RESET_DWELL_MS = 5000;
+
+// The longest a pause may hold the card open with no touch-end. A touch that begins
+// on the card and ends somewhere the card never hears about — a DateTimePicker Modal
+// mounting over it mid-gesture, a JS-thread stall that swallows the responder's end
+// event — would otherwise strand the card on screen forever, because the hide timer
+// is cleared and only resumeDwell re-arms it. Generous enough that no real reading
+// pause trips it, short enough that the failure is a card that lingers rather than
+// one that never leaves. The pause is a convenience; the dismissal is the contract.
+const PAUSE_CEILING_MS = 20000;
+
+function clearPauseCeiling() {
+  if (pauseCeilingTimer) { clearTimeout(pauseCeilingTimer); pauseCeilingTimer = null; }
+}
 
 function clearTimers() {
   if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
   if (showTimer) { clearTimeout(showTimer); showTimer = null; }
+  clearPauseCeiling();
+  // A new card (or an explicit hide) starts from a clean clock. Without this, a card
+  // presented while the previous one was paused would inherit `dwellPaused` and never
+  // arm a hide of its own — a finger on a dismissed card silently stranding its
+  // successor.
+  hideDeadlineAt = null;
+  dwellPaused = false;
+  bankedDurationMs = 0;
 }
 
 function clearHideTimer() {
   if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
+  hideDeadlineAt = null;
+}
+
+// Arm the hide, recording the deadline so a pause can bank the remainder. The single
+// place a hide timer is created, so `hideDeadlineAt` cannot drift from `hideTimer`.
+function armHide(set: (partial: Partial<MomentState>) => void, durationMs: number) {
+  clearHideTimer();
+  hideDeadlineAt = Date.now() + durationMs;
+  hideTimer = setTimeout(() => {
+    set({ visible: false });
+    hideTimer = null;
+    hideDeadlineAt = null;
+  }, durationMs);
 }
 
 // The commit haptic for a payload (CUL-604 · §5.6). Derived from the payload rather
@@ -333,10 +405,7 @@ function present(
     // plays no haptic at all — one commit, one buzz.
     playCommitHaptic(payload);
     set({ visible: true, payload });
-    hideTimer = setTimeout(() => {
-      set({ visible: false });
-      hideTimer = null;
-    }, duration);
+    armHide(set, duration);
   };
   if (delay > 0) showTimer = setTimeout(reveal, delay);
   else reveal();
@@ -452,10 +521,53 @@ export const useMomentStore = create<MomentState>((set) => ({
       state.payload?.kind === 'medication' && state.payload.doubleDose?.conflict
         ? MEDICATION_FLAGGED_DURATION_MS
         : 0;
-    hideTimer = setTimeout(() => {
-      set({ visible: false });
-      hideTimer = null;
-    }, Math.max(durationMs, floorMs));
+    const next = Math.max(durationMs, floorMs);
+    // CUL-614 — while the dwell is PAUSED, bank the request instead of arming it.
+    // Every chip handler calls rescheduleHide(CHIP_CONFIRM_HOLD_MS) from its onPress,
+    // which fires between the card's touch-start and touch-end; arming there would
+    // restart a 1.5s clock underneath the owner's own finger, i.e. re-create the exact
+    // bug the pause exists to fix. Banking the MAX keeps a conflict floor (or a longer
+    // hold) that arrived mid-gesture from being lost at resume.
+    if (dwellPaused) {
+      bankedDurationMs = Math.max(bankedDurationMs, next);
+      return;
+    }
+    armHide(set, next);
+  },
+  // ── §5 "Dwell": the timer stops while the owner is touching the card ──────────
+  //
+  // Called from the card root's onTouchStart / onTouchEnd+onTouchCancel, deliberately
+  // NOT from press handlers: touch events fire for the WHOLE gesture and bubble from
+  // every child, so the pause covers the reading pause between two chip taps — which
+  // is where the window was actually being lost — and needs no per-control wiring.
+  pauseDwell: () => {
+    if (dwellPaused) return; // a second finger down mid-gesture must not re-bank
+    // Nothing to pause once the card is dismissing: `visible` is already false while
+    // the payload lingers for the fade, and a touch landing then must not revive it.
+    if (!useMomentStore.getState().visible) return;
+    bankedDurationMs = Math.max(
+      bankedDurationMs,
+      hideDeadlineAt !== null ? Math.max(hideDeadlineAt - Date.now(), 0) : 0,
+    );
+    clearHideTimer();
+    dwellPaused = true;
+    // See PAUSE_CEILING_MS: a touch-end that never arrives must not strand the card.
+    pauseCeilingTimer = setTimeout(() => {
+      pauseCeilingTimer = null;
+      useMomentStore.getState().resumeDwell();
+    }, PAUSE_CEILING_MS);
+  },
+  resumeDwell: () => {
+    if (!dwellPaused) return;
+    dwellPaused = false;
+    clearPauseCeiling();
+    const banked = bankedDurationMs;
+    bankedDurationMs = 0;
+    // "Any interaction resets it" — the owner gets a full interactive window back from
+    // the moment they lift, not the scraps of the one their gesture interrupted. MAX,
+    // not assignment, so a flagged 7s window or a banked confirm hold survives; and it
+    // routes through rescheduleHide so the double-dose conflict floor still applies.
+    useMomentStore.getState().rescheduleHide(Math.max(banked, TOUCH_RESET_DWELL_MS));
   },
 }));
 

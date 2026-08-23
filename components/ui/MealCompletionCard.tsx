@@ -105,7 +105,10 @@ interface AddTarget {
 // render only when evaluateMealLogTimeFlag returned a flag; the absence of either
 // is never an all-clear, and there is deliberately no "no conflict" state.
 export function MealCompletionCard() {
-  const { visible, payload, hide, patchOccurredAt, patchIntakeRating, rescheduleHide } = useMomentStore();
+  const {
+    visible, payload, hide, patchOccurredAt, patchIntakeRating, rescheduleHide,
+    pauseDwell, resumeDwell,
+  } = useMomentStore();
   const { patchInToday } = useEventStore();
   const { activePet, pets } = usePetStore();
 
@@ -368,7 +371,19 @@ export function MealCompletionCard() {
         pointerEvents={shown ? 'box-none' : 'none'}
         style={[styles.wrapper, { opacity, transform: [{ translateY }] }]}
       >
-        <View style={styles.card}>
+        {/* CUL-614 / §5 "Dwell" — the auto-dismiss stops while a finger is on the card
+            and any interaction resets it. Wired at the ROOT because touch events bubble
+            from every child, so the pause covers the whole gesture including the reading
+            pause between two chip taps; a per-control version would only ever cover the
+            taps themselves, which were never the part being lost. onTouchCancel matters
+            as much as onTouchEnd: a gesture the responder system takes away (a scroll
+            claiming it, a Modal mounting over it) ends there and nowhere else. */}
+        <View
+          style={styles.card}
+          onTouchStart={pauseDwell}
+          onTouchEnd={resumeDwell}
+          onTouchCancel={resumeDwell}
+        >
           <View style={styles.headerRow}>
             {/* Gold beat: mint check + warm-gold halo, carrying the moment's
                 warmth into the non-blocking card. */}
@@ -376,8 +391,15 @@ export function MealCompletionCard() {
               <Check size={18} color={theme.colorMomentConfirm} strokeWidth={3} />
             </Animated.View>
             <View style={styles.labelCol}>
+              {/* CUL-614 — the nameless-food fallback says "Food logged", never a bare
+                  "Logged": §5's sentence rule is that a beat names the record, and a
+                  card that has lost the food's name still knows it wrote food.
+                  Deliberately NOT "Meal logged" / "Treat logged" — that rule already
+                  has two implementations (EventRow, lib/dayEvents) and this is not the
+                  place to mint a third; "Food" is true for all four foodType values,
+                  including the 'other' and null ones neither of those covers. */}
               <Text style={styles.title} numberOfLines={1}>
-                {foodName ? `Logged · ${foodName}` : 'Logged'}
+                {foodName ? `Logged · ${foodName}` : 'Food logged'}
               </Text>
               <Text style={styles.subLabel}>{formatTime(occurredDate)}</Text>
             </View>

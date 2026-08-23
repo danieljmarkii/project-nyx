@@ -50,7 +50,7 @@ const CHIP_CONFIRM_HOLD_MS = 1500;
 export function MedicationCompletionCard() {
   const {
     visible, payload, hide, patchOccurredAt, patchAdherence, patchHowGiven, patchDoubleDose,
-    rescheduleHide,
+    rescheduleHide, pauseDwell, resumeDwell,
   } = useMomentStore();
   const { patchInToday } = useEventStore();
   const { activePet } = usePetStore();
@@ -212,9 +212,16 @@ export function MedicationCompletionCard() {
   // "Logged" (never "Gave") either way: the title must not contradict a downgrade to
   // Missed/Refused on the chips below.
   const isCombo = !!payload.pairedFoodName;
+  // CUL-614 — the nameless fallback says "Dose logged", never a bare "Logged". §5's
+  // sentence rule is that a beat names the record, and a dose card that has lost its
+  // drug name still knows it wrote a DOSE — dropping to the same word every other
+  // register just retired is the one thing it must not do. Reachable only through
+  // app/log.tsx's `drugDisplayName(...) ?? med.generic_name`, where a regimen with a
+  // blank generic name yields '' (the profile path's `drug_name` is required by
+  // canSaveRegimen), so this is the honest floor rather than dead code.
   const title = isCombo
     ? 'Logged together'
-    : (payload.drugName ? `Logged · ${payload.drugName}` : 'Logged');
+    : (payload.drugName ? `Logged · ${payload.drugName}` : 'Dose logged');
   const subLabel = isCombo
     ? `${payload.drugName} · with ${payload.pairedFoodName}`
     : formatTime(occurredDate);
@@ -265,7 +272,19 @@ export function MedicationCompletionCard() {
       pointerEvents={shown ? 'box-none' : 'none'}
       style={[styles.wrapper, { opacity, transform: [{ translateY }] }]}
     >
-      <View style={styles.card}>
+      {/* CUL-614 / §5 "Dwell" — the auto-dismiss stops while a finger is on the card
+          and any interaction resets it. Wired at the ROOT because touch events bubble
+          from every child, so the pause covers the whole gesture including the reading
+          pause between two chip taps; a per-control version would only ever cover the
+          taps themselves, which were never the part being lost. onTouchCancel matters
+          as much as onTouchEnd: a gesture the responder system takes away (a scroll
+          claiming it, a Modal mounting over it) ends there and nowhere else. */}
+      <View
+        style={styles.card}
+        onTouchStart={pauseDwell}
+        onTouchEnd={resumeDwell}
+        onTouchCancel={resumeDwell}
+      >
         <View style={styles.headerRow}>
           <Animated.View style={[styles.checkBadge, { transform: [{ scale: checkScale }] }]}>
             <Check size={18} color={theme.colorMomentConfirm} strokeWidth={3} />

@@ -86,11 +86,17 @@ describe('AC-FOUND — witnessed / open-ended / bounded', () => {
     await waitFor(() => expect(mockInsert).toHaveBeenCalled());
     const arg = mockInsert.mock.calls[0][0];
     expect(arg).toMatchObject({ eventType: 'vomit', petId: 'p1', confidence: 'witnessed', earliest: null, latest: null });
-    expect(onLogged).toHaveBeenCalledWith({ eventId: 'e1', occurredAtIso: '2026-08-13T17:33:00.000Z' });
+    // CUL-614 — the result carries the RECORD as written, so the host's beat derives
+    // its sentence from the same buildTimeFields output the pill and the write used.
+    expect(onLogged).toHaveBeenCalledWith({
+      eventId: 'e1',
+      occurredAtIso: '2026-08-13T17:33:00.000Z',
+      record: { kind: 'event', typeLabel: 'Vomit', confidence: 'witnessed', earliest: null, latest: null },
+    });
   });
 
   it('Found it → open-ended window: pill reads "found by …", writes window w/ latest only', async () => {
-    const { getByText } = renderConfirm('vomit');
+    const { getByText, onLogged } = renderConfirm('vomit');
     fireEvent.press(getByText('Found it'));
     // Pill + row shift to the History-parity open-ended wording — NOT "since this morning".
     expect(getByText(/^Vomit · found by /)).toBeTruthy();
@@ -102,6 +108,15 @@ describe('AC-FOUND — witnessed / open-ended / bounded', () => {
     expect(arg.confidence).toBe('window');
     expect(arg.earliest).toBeNull();          // open-ended: no fabricated lower bound
     expect(arg.latest).toBeInstanceOf(Date);
+
+    // CUL-614 — the record handed to the host mirrors what was WRITTEN, bounds and
+    // all. This is the case the sentence rule exists for: the beat must be able to say
+    // "found by 5:33 PM" rather than "Logged", and it can only do that honestly if the
+    // window travels with the result. A record that flattened to `witnessed` here would
+    // let the beat assert the owner saw it happen (the B-448 over-claim direction).
+    const passed = onLogged.mock.calls[0][0].record;
+    expect(passed).toMatchObject({ kind: 'event', typeLabel: 'Vomit', confidence: 'window', earliest: null });
+    expect(passed.latest).toBe(arg.latest.toISOString());
   });
 
   it('Found it → Adjust window → Between: pill reads "between … and …", writes both edges', async () => {

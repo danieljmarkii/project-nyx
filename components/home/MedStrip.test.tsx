@@ -8,7 +8,7 @@
 // renders in the concern colour (not a cheery coverage line). The M3 (write)
 // assertions are the one-tap confirm (§5 + §9 state 10): the "Log dose" button
 // renders iff the resolver supplied a confirm payload, tapping it confirms exactly one
-// dose WITHOUT navigating (AC #9), it shows the optimistic "Dose logged just now" line
+// dose WITHOUT navigating (AC #9), it shows the optimistic "{drug} · logged just now" line
 // and then settles. The placement rule (§8/D9 — below TrialStrip, above TodayZone) is
 // a property of the Home screen, so it is asserted over the source at the bottom, the
 // way `TrialStrip.test.tsx` does.
@@ -35,6 +35,12 @@ import {
 // below lets `performWrite` call this mock and asserts the payload it builds.
 import { insertMedicationDose } from '../../lib/medicationDose';
 jest.mock('../../lib/medicationDose', () => ({ insertMedicationDose: jest.fn() }));
+
+// CUL-614 — the confirm now plays the §5.6 commit haptic. Mocked at the VERB, matching
+// momentStore.test's convention: this suite asserts WHICH moment fires (and, more
+// importantly, when it must not), while lib/haptics.test owns verb→pattern.
+import { commitRoutine } from '../../lib/haptics';
+jest.mock('../../lib/haptics', () => ({ commitRoutine: jest.fn() }));
 
 // Mirror `medStrip.test.ts`: a fixed instant + explicit zone so day math is
 // deterministic. NOW = 2026-07-31 18:00 UTC; a regimen started 2026-07-27 is day 5.
@@ -155,6 +161,13 @@ describe('MedStrip — context card', () => {
     expect(tree.queryByText(/logged today/)).toBeNull();
   });
 
+  // CUL-614 — the confirmed line now NAMES the record (§5's sentence rule) instead of
+  // a drug-agnostic "Dose logged just now". Derived from the model here rather than
+  // written as a literal, so the assertions state the RULE ("it names this card's
+  // drug") and a fixture rename cannot leave them quietly asserting the wrong card's
+  // name — which is precisely the multi-med confusion the copy change exists to fix.
+  const confirmed = (m: { drugName: string }) => `${m.drugName} · logged just now`;
+
   it('the coverage line is NOT the concern colour', () => {
     const m = model({ regimens: [regimen()] });
     const line = render(<MedStrip model={m} />).getByText(m.line!);
@@ -201,7 +214,7 @@ describe('MedStrip — context card', () => {
 
     expect(onConfirm).toHaveBeenCalledTimes(1);
     expect(onPress).not.toHaveBeenCalled(); // tapping the button never opens the Pet tab
-    expect(tree.getByText('Dose logged just now')).toBeTruthy(); // §9 state 10
+    expect(tree.getByText(confirmed(m))).toBeTruthy(); // §9 state 10
     // While confirmed the button stands down — no button beside the "just logged" line.
     expect(tree.queryByTestId('med-strip-confirm')).toBeNull();
   });
@@ -234,12 +247,12 @@ describe('MedStrip — context card', () => {
       await act(async () => {
         fireEvent.press(tree.getByTestId('med-strip-confirm'));
       });
-      expect(tree.getByText('Dose logged just now')).toBeTruthy();
+      expect(tree.getByText(confirmed(m))).toBeTruthy();
 
       act(() => {
         jest.advanceTimersByTime(1500);
       });
-      expect(tree.queryByText('Dose logged just now')).toBeNull();
+      expect(tree.queryByText(confirmed(m))).toBeNull();
       // The static model still carries a confirm payload (no reload in a unit test), so
       // the card returns to its live state and the button comes back.
       expect(tree.getByTestId('med-strip-confirm')).toBeTruthy();
@@ -278,11 +291,11 @@ describe('MedStrip — context card', () => {
         doseAmount: '250 mg',
       }),
     );
-    expect(tree.getByText('Dose logged just now')).toBeTruthy();
+    expect(tree.getByText(confirmed(m))).toBeTruthy();
   });
 
   it('resets to the live button and shows no optimistic line when the write fails', async () => {
-    // A LOCAL write failure must never leave "Dose logged just now" on screen (that
+    // A LOCAL write failure must never leave the confirmed line on screen (that
     // would claim a dose that was not recorded) and must return the button so the
     // owner can retry. The catch also alerts; console.error is silenced to keep the
     // run clean.
@@ -296,11 +309,72 @@ describe('MedStrip — context card', () => {
         fireEvent.press(tree.getByTestId('med-strip-confirm'));
       });
 
-      expect(tree.queryByText('Dose logged just now')).toBeNull();
+      expect(tree.queryByText(confirmed(m))).toBeNull();
       expect(tree.getByTestId('med-strip-confirm')).toBeTruthy();
     } finally {
       errSpy.mockRestore();
     }
+  });
+
+  // ── CUL-614: the confirm joins the R2 register (sentence + mark + haptic) ──────
+  it('plays the ROUTINE commit haptic once the write lands (§5.6)', async () => {
+    (commitRoutine as jest.Mock).mockClear();
+    const onConfirm = jest.fn().mockResolvedValue(undefined);
+    const m = model({ regimens: [regimen()] });
+    const tree = render(<MedStrip model={m} onConfirm={onConfirm} />);
+
+    await act(async () => {
+      fireEvent.press(tree.getByTestId('med-strip-confirm'));
+    });
+    expect(commitRoutine).toHaveBeenCalledTimes(1);
+  });
+
+  it('stays SILENT when the write fails — a buzz would claim a dose that did not land', async () => {
+    // The haptic fires after the write resolves, not on the tap: the failure path
+    // returns before reaching it. The alternative — buzzing on press — would tell the
+    // owner in the most physical way available that a dose was recorded, at the exact
+    // moment it was not.
+    const errSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    (commitRoutine as jest.Mock).mockClear();
+    try {
+      const onConfirm = jest.fn().mockRejectedValue(new Error('local write failed'));
+      const m = model({ regimens: [regimen()] });
+      const tree = render(<MedStrip model={m} onConfirm={onConfirm} />);
+      await act(async () => {
+        fireEvent.press(tree.getByTestId('med-strip-confirm'));
+      });
+      expect(commitRoutine).not.toHaveBeenCalled();
+    } finally {
+      errSpy.mockRestore();
+    }
+  });
+
+  it('no haptic is reachable from a withholding card, because no button renders there', () => {
+    // D7's silence-on-safety, held STRUCTURALLY rather than by a rule in the component:
+    // `resolveMedStrips` mints no confirm payload for a withholding record (§6), so the
+    // only control that can play a haptic does not exist on a card carrying a refusal
+    // fact. This is what lets MedStrip import lib/haptics at all — asserted here so a
+    // future change that let the button render over a withholding card fails loudly
+    // instead of quietly buzzing over bad news.
+    const withholding = model({ regimens: [regimen()], doses: [dose({ adherence: 'refused' })] });
+    expect(withholding.confirm).toBeNull();
+    const tree = render(<MedStrip model={withholding} />);
+    expect(tree.queryByTestId('med-strip-confirm')).toBeNull();
+  });
+
+  it('shows the confirmation MARK only while the confirmed line is up', async () => {
+    const onConfirm = jest.fn().mockResolvedValue(undefined);
+    const m = model({ regimens: [regimen()] });
+    const tree = render(<MedStrip model={m} onConfirm={onConfirm} />);
+    // The mark is decorative (the line carries the meaning), so it is found by its
+    // absence/presence in the tree rather than by an a11y label it deliberately lacks.
+    const marks = () => tree.UNSAFE_root.findAllByProps({ accessibilityElementsHidden: true });
+    expect(marks().length).toBe(0);
+    await act(async () => {
+      fireEvent.press(tree.getByTestId('med-strip-confirm'));
+    });
+    expect(tree.getByText(confirmed(m))).toBeTruthy();
+    expect(marks().length).toBeGreaterThan(0);
   });
 
   it('opens the Pet tab when tapped, and labels itself for a screen reader', () => {
