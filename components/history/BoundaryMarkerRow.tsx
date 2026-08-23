@@ -1,4 +1,5 @@
-import { View, Text, StyleSheet } from 'react-native';
+import { View, StyleSheet } from 'react-native';
+import { ThemedText } from '../ui/ThemedText';
 import { theme } from '../../constants/theme';
 import { BoundaryMarker, formatCalendarDate } from '../../lib/feedingArrangements';
 
@@ -11,7 +12,7 @@ export function BoundaryMarkerRow({ marker }: { marker: BoundaryMarker }) {
   return (
     <View style={styles.row}>
       <View style={styles.dot} />
-      <Text style={styles.text}>{describe(marker)}</Text>
+      <ThemedText style={styles.text}>{describe(marker)}</ThemedText>
     </View>
   );
 }
