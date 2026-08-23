@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert } from 'react-native';
+import { View, StyleSheet, ScrollView, TouchableOpacity, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, router } from 'expo-router';
 import { Plus, ChevronDown, ChevronRight } from 'lucide-react-native';
@@ -26,6 +26,7 @@ import { useTrialAllowedSet } from '../../hooks/useTrialAllowedSet';
 import { usePetStore } from '../../store/petStore';
 import { useFoodLibraryStore } from '../../store/foodLibraryStore';
 import { useSnackbarStore } from '../../store/snackbarStore';
+import { ThemedText } from '../../components/ui/ThemedText';
 
 /** Decode the cache's raw ai_extraction_confidence JSON text. Anything malformed
  *  reads as null, which the D10 gate treats as "panel unread" — the safe
@@ -360,11 +361,11 @@ export default function FoodsScreen() {
             account too, and a subtitle that appeared only with a second pet would
             make the header's context flicker as the household grows. */}
         <View style={styles.titleBlock}>
-          <Text style={styles.title}>Foods</Text>
+          <ThemedText style={styles.title}>Foods</ThemedText>
           {activePetName ? (
-            <Text style={styles.subtitle} numberOfLines={1}>
+            <ThemedText style={styles.subtitle} numberOfLines={1}>
               {`${activePetName}’s library`}
-            </Text>
+            </ThemedText>
           ) : null}
         </View>
         {/* Add-food entry point (B-110). The FAB → Meal → "Snap a new food"
@@ -381,7 +382,7 @@ export default function FoodsScreen() {
           hitSlop={{ top: 14, bottom: 14, left: 12, right: 12 }}
         >
           <Plus size={18} color={theme.colorAccent} strokeWidth={2} />
-          <Text style={styles.addBtnText}>Add food</Text>
+          <ThemedText style={styles.addBtnText}>Add food</ThemedText>
         </TouchableOpacity>
       </View>
 
@@ -494,10 +495,10 @@ function FavoritesShelf({
   return (
     <View style={styles.group}>
       <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>Reliable favorites</Text>
-        <Text style={styles.groupHint}>
+        <ThemedText style={styles.sectionTitle}>Reliable favorites</ThemedText>
+        <ThemedText style={styles.groupHint}>
           {petName ? `Foods ${petName} finishes most of the time.` : 'Foods your pet finishes most of the time.'}
-        </Text>
+        </ThemedText>
       </View>
       <View style={styles.card}>
         {rows.map(({ fav, food }, i) => (
@@ -555,8 +556,8 @@ function FoodGroup({
   return (
     <View style={styles.group}>
       <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>{label}</Text>
-        {hint ? <Text style={styles.groupHint}>{hint}</Text> : null}
+        <ThemedText style={styles.sectionTitle}>{label}</ThemedText>
+        {hint ? <ThemedText style={styles.groupHint}>{hint}</ThemedText> : null}
       </View>
       <View style={styles.brandGroups}>
         {brandGroups.map((bg) => (
@@ -564,9 +565,9 @@ function FoodGroup({
             {/* A brand can be blank in the catalog (rare); skip the header
                 rather than render an empty label, but still show the card. */}
             {bg.brand.trim() ? (
-              <Text style={styles.brandLabel} numberOfLines={1} accessibilityRole="header">
+              <ThemedText style={styles.brandLabel} numberOfLines={1} accessibilityRole="header">
                 {bg.brand}
-              </Text>
+              </ThemedText>
             ) : null}
             <View style={styles.card}>
               {bg.foods.map((f, i) => (
@@ -621,15 +622,15 @@ function ArchivedSection({
         hitSlop={{ top: 8, bottom: 8, left: 0, right: 0 }}
       >
         <Chevron size={18} color={theme.colorTextTertiary} strokeWidth={2} />
-        <Text style={styles.sectionTitle}>Archived</Text>
-        <Text style={styles.archivedCount}>{`· ${foods.length}`}</Text>
+        <ThemedText style={styles.sectionTitle}>Archived</ThemedText>
+        <ThemedText style={styles.archivedCount}>{`· ${foods.length}`}</ThemedText>
       </TouchableOpacity>
       {expanded ? (
         <>
-          <Text style={styles.groupHint}>
+          <ThemedText style={styles.groupHint}>
             Foods you've removed from your library. Your logged meals and reports still show them —
             restore one anytime to log it again.
-          </Text>
+          </ThemedText>
           <View style={styles.card}>
             {foods.map((f, i) => (
               <View key={f.id} style={i > 0 ? styles.rowDivider : undefined}>

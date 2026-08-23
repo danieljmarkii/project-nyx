@@ -826,7 +826,11 @@ export default function FoodCaptureScreen() {
     return (
       <View style={styles.completeContainer}>
         <Animated.View style={[styles.checkCircle, { transform: [{ scale: checkScale }], opacity: checkOpacity }]}>
-          <ThemedText style={styles.checkMark}>✓</ThemedText>
+          {/* Icon glyph, not copy — stays a raw <Text> so it keeps the system face.
+              These stand in for vector glyphs (the B-745 GlyphSvg migration owns them),
+              and Geist's cmap carries no ✓ / ✕ / ＋ at all, so forcing the body family
+              here buys nothing and hands the render to OS fallback. CUL-364 §7 sweep. */}
+          <Text style={styles.checkMark}>✓</Text>
         </Animated.View>
         <Animated.Text style={[styles.loggedText, { opacity: checkOpacity }]}>
           {/* This saves to the food LIBRARY — it does not log a meal, and (on the
@@ -1196,7 +1200,8 @@ function Header({ title, onClose, onBack }: { title: string; onClose?: () => voi
     <View style={styles.header}>
       {onBack ? (
         <TouchableOpacity onPress={onBack} style={styles.headerSide} hitSlop={10}>
-          <ThemedText style={styles.headerBack}>←</ThemedText>
+          {/* Icon glyph, not copy — stays raw so it keeps the system face (CUL-364 §7). */}
+          <Text style={styles.headerBack}>←</Text>
         </TouchableOpacity>
       ) : (
         <View style={styles.headerSide} />
@@ -1204,7 +1209,8 @@ function Header({ title, onClose, onBack }: { title: string; onClose?: () => voi
       <ThemedText style={styles.headerTitle}>{title}</ThemedText>
       {onClose ? (
         <TouchableOpacity onPress={onClose} style={styles.headerSide} hitSlop={10}>
-          <ThemedText style={styles.headerClose}>✕</ThemedText>
+          {/* Icon glyph, not copy — stays raw so it keeps the system face (CUL-364 §7). */}
+          <Text style={styles.headerClose}>✕</Text>
         </TouchableOpacity>
       ) : (
         <View style={styles.headerSide} />
@@ -1251,7 +1257,8 @@ function ChecklistTile({
         <Image source={{ uri: photo.localUri }} style={styles.checklistThumb} resizeMode="cover" />
       ) : (
         <View style={[styles.checklistThumb, styles.checklistThumbEmpty]}>
-          <ThemedText style={styles.checklistEmptyIcon}>+</ThemedText>
+          {/* Icon glyph, not copy — stays raw so it keeps the system face (CUL-364 §7). */}
+          <Text style={styles.checklistEmptyIcon}>+</Text>
         </View>
       )}
       <ThemedText style={styles.checklistLabel}>{label}</ThemedText>
@@ -1588,6 +1595,10 @@ const styles = StyleSheet.create({
   // fact, same path; see components/log/SheetLogBeat.tsx for the full note.
   loggedText: {
     fontSize: 20,
+    // Named here rather than via ThemedText: this line renders through
+    // `Animated.Text`, which the wrapper cannot be. An explicit family is the
+    // primitive's own passthrough, and deriving it from the weight token keeps
+    // this from drifting out of step with the mapping.
     fontFamily: fontFamilyForWeight(theme.weightMedium),
     color: theme.colorNeutralDark,
   },

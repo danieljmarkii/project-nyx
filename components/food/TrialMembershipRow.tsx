@@ -24,9 +24,10 @@
 // as one verdict ("conflicts, therefore don't add"), which is exactly the merge C2
 // forbids. So this block sits at the top of the screen with the food's identity,
 // and the note stays down in its protein context where it already lives.
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { StyleSheet, TouchableOpacity, View } from 'react-native';
 import { theme } from '../../constants/theme';
 import { SectionLabel } from '../ui/SectionLabel';
+import { ThemedText } from '../ui/ThemedText';
 
 interface Props {
   /** `trialMembershipLine(...)` — non-null only for a food ON the list. */
@@ -45,9 +46,9 @@ export function TrialMembershipRow({ line, addLabel, onAdd }: Props) {
     <View style={styles.block} testID="food-trial-membership">
       <SectionLabel label="Trial" header />
       {line !== null ? (
-        <Text style={styles.fact} testID="food-trial-membership-fact">
+        <ThemedText style={styles.fact} testID="food-trial-membership-fact">
           {line}
-        </Text>
+        </ThemedText>
       ) : (
         <TouchableOpacity
           style={styles.action}
@@ -57,7 +58,7 @@ export function TrialMembershipRow({ line, addLabel, onAdd }: Props) {
           accessibilityLabel={addLabel}
           testID="food-trial-add"
         >
-          <Text style={styles.actionText}>{addLabel}</Text>
+          <ThemedText style={styles.actionText}>{addLabel}</ThemedText>
         </TouchableOpacity>
       )}
     </View>

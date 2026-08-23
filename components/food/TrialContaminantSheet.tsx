@@ -23,8 +23,9 @@
 // food is fine; a food with nothing flagged simply never opens it. Register is
 // the app's existing firm-but-calm safety tone — no danger state, no icon
 // carrying meaning colour-only.
-import { Modal, View, Text, StyleSheet, Pressable, TouchableOpacity } from 'react-native';
+import { Modal, View, StyleSheet, Pressable, TouchableOpacity } from 'react-native';
 import { theme, shadows } from '../../constants/theme';
+import { ThemedText } from '../ui/ThemedText';
 
 interface Props {
   visible: boolean;
@@ -55,9 +56,9 @@ export function TrialContaminantSheet({
           through to the absolute-positioned backdrop and dismiss it mid-read. */}
       <Pressable style={styles.sheet} onPress={() => {}}>
         <View style={styles.grabber} />
-        <Text style={styles.title}>{title}</Text>
-        <Text style={styles.body}>{body}</Text>
-        {trialLine ? <Text style={styles.trialLine}>{trialLine}</Text> : null}
+        <ThemedText style={styles.title}>{title}</ThemedText>
+        <ThemedText style={styles.body}>{body}</ThemedText>
+        {trialLine ? <ThemedText style={styles.trialLine}>{trialLine}</ThemedText> : null}
         <View style={styles.actions}>
           <TouchableOpacity
             style={styles.secondaryBtn}
@@ -66,7 +67,7 @@ export function TrialContaminantSheet({
             accessibilityRole="button"
             accessibilityLabel="Not now — don't add this food"
           >
-            <Text style={styles.secondaryText}>Not now</Text>
+            <ThemedText style={styles.secondaryText}>Not now</ThemedText>
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.primaryBtn}
@@ -75,7 +76,7 @@ export function TrialContaminantSheet({
             accessibilityRole="button"
             accessibilityLabel="Add this food anyway"
           >
-            <Text style={styles.primaryText}>Add anyway</Text>
+            <ThemedText style={styles.primaryText}>Add anyway</ThemedText>
           </TouchableOpacity>
         </View>
       </Pressable>

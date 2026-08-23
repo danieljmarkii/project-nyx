@@ -26,9 +26,10 @@
 // compact library-row form, where nothing else shows the set at all. Neither is
 // rendered on the quick-log picker grid: that is the moment of event, and a
 // protein line there buys education at the cost of the 10-second test.
-import { Text, StyleSheet } from 'react-native';
+import { StyleSheet } from 'react-native';
 import { theme } from '../../constants/theme';
 import { mayClaimCompleteProteinSet } from '../../lib/protein';
+import { ThemedText } from '../ui/ThemedText';
 
 /** The three stored facts every disclosure decision needs. */
 export interface ProteinDisclosureInput {
@@ -95,7 +96,7 @@ export function proteinSummaryLine(input: ProteinDisclosureInput): string | null
 
 /** The provenance line, rendered. Pair it with the D8 picker on an edit surface. */
 export function ProteinDisclosure({ input }: { input: ProteinDisclosureInput }) {
-  return <Text style={styles.line}>{proteinProvenanceLine(input)}</Text>;
+  return <ThemedText style={styles.line}>{proteinProvenanceLine(input)}</ThemedText>;
 }
 
 const styles = StyleSheet.create({
