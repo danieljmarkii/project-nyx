@@ -54,7 +54,10 @@ function pathData(tree: any): string[] {
 
 const HOUSE_PATH = 'M4 11 12 4l8 7v9h-5v-5h-6v5H4z';
 const CLOCK_HAND_PATH = 'M12 8v4l2.5 2';
-const BOWL_PATH = 'M4 13h16a8 8 0 0 1-16 0z';
+// The corrected bowl (see navGlyphs.tsx): the mock's own base line sat inside the
+// bowl's interior at render size, so the shape is re-centred and the line moved clear.
+const BOWL_PATH = 'M4 7.5h16a8 8 0 0 1-16 0Z';
+const BOWL_BASE_PATH = 'M8.5 17.5h7';
 
 const ROUTES = [
   { key: 'index-1', name: 'index' },
@@ -115,6 +118,9 @@ describe('the three house-line glyphs', () => {
     expect(drawn).toContain(HOUSE_PATH);
     expect(drawn).toContain(CLOCK_HAND_PATH);
     expect(drawn).toContain(BOWL_PATH);
+    // The base line must clear the bowl's body (which descends to y=15.5), or it
+    // renders as a fill level rather than a base — the mock's own drawing bug.
+    expect(drawn).toContain(BOWL_BASE_PATH);
     // The clock's face is a circle, not a path — asserted separately so a swap to
     // a path-drawn ring is a visible test change rather than a silent redraw.
     expect(collect(toJSON(), 'RNSVGCircle').length).toBe(1);

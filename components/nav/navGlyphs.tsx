@@ -33,15 +33,25 @@ export function HistoryGlyph(props: GlyphProps) {
   );
 }
 
-// Foods — the bowl. A shallow dish on a base; the mock's `transform` is baked into
-// the coordinates instead (a transform attribute on <Path> is honoured by
-// react-native-svg, but inlining it keeps the family's paths readable as plain
-// geometry, the way every event glyph already is).
+// Foods — the bowl. The mock's SHAPE holds (a straight rim over a half-round body);
+// its second path did not, and this is the one place the verbatim rule above is
+// knowingly set aside — because the defect is in the drawing's geometry, not its
+// intent. The mock put the base line at y=20 against a bowl whose bottom reaches
+// y=21: the rim spans 16pt, so `a8 8` is a semicircle and the body descends a full
+// 8pt. At the bar's 22pt that line therefore crosses the bowl's INTERIOR and reads
+// as a fill level rather than the base it is meant to be.
+//
+// Re-centred instead: rim 7.5, body bottom 15.5, line clear of it at 17.5, where it
+// reads as the mat the bowl stands on. Found by the parallel CUL-599 session
+// (PR #701) and ported here verbatim — it is the same correction, and two glyph
+// families diverging on the same mark is exactly what the shared wrapper prevents.
+// A build draft the Designer confirms at 22pt on device, the standing the
+// loose-stool ripple already ships under (B-745).
 export function FoodsGlyph(props: GlyphProps) {
   return (
     <GlyphSvg {...props}>
-      <Path d="M4 13h16a8 8 0 0 1-16 0z" />
-      <Path d="M9 20h6" />
+      <Path d="M4 7.5h16a8 8 0 0 1-16 0Z" />
+      <Path d="M8.5 17.5h7" />
     </GlyphSvg>
   );
 }
