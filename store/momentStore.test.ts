@@ -1,3 +1,14 @@
+// CUL-604 — the store now plays the §5.6 commit/selection haptics, so the module is
+// mocked at the verb level. Asserting on the VERB (commitSymptom vs commitRoutine)
+// rather than the expo-haptics pattern keeps this suite about the store's tone
+// routing; lib/haptics.test.ts owns verb→pattern.
+jest.mock('../lib/haptics', () => ({
+  commitRoutine: jest.fn(),
+  commitSymptom: jest.fn(),
+  selectChip: jest.fn(),
+}));
+
+import { commitRoutine, commitSymptom, selectChip } from '../lib/haptics';
 import {
   useMomentStore, whenMealCardVisible, whenMedicationCardVisible,
   MEDICATION_FLAGGED_DURATION_MS,
@@ -654,5 +665,92 @@ describe('whenMealCardVisible — closing the picker-path warning drop (B-693)',
     useMomentStore.getState().rescheduleHide(1500);
     jest.advanceTimersByTime(1500);
     expect(useMomentStore.getState().visible).toBe(false);
+  });
+});
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CUL-604 §5.6 — the commit haptic rides the CARD, not the call.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('the commit haptic (CUL-604 §5.6)', () => {
+  beforeEach(() => {
+    jest.useFakeTimers();
+    (commitRoutine as jest.Mock).mockClear();
+    (commitSymptom as jest.Mock).mockClear();
+    (selectChip as jest.Mock).mockClear();
+    useMomentStore.getState().hide();
+  });
+  afterEach(() => {
+    useMomentStore.getState().hide();
+    jest.useRealTimers();
+  });
+
+  it('a CALM beat (symptom) takes the soft tap, never the success pattern', () => {
+    useMomentStore.getState().show({ tone: 'calm' });
+    expect(commitSymptom).toHaveBeenCalledTimes(1);
+    expect(commitRoutine).not.toHaveBeenCalled();
+  });
+
+  it('a CELEBRATE beat takes the success pattern', () => {
+    useMomentStore.getState().show({ tone: 'celebrate' });
+    expect(commitRoutine).toHaveBeenCalledTimes(1);
+    expect(commitSymptom).not.toHaveBeenCalled();
+  });
+
+  it('meal and dose cards are routine commits', () => {
+    useMomentStore.getState().showMeal(mealPayload());
+    useMomentStore.getState().showMedication(medicationPayload());
+    expect(commitRoutine).toHaveBeenCalledTimes(2);
+    expect(commitSymptom).not.toHaveBeenCalled();
+  });
+
+  it('fires with the REVEAL, not the call, on a deferred card', () => {
+    // The picker path defers the reveal ~450ms behind the dismissing /log modal. A
+    // buzz half a second ahead of its own card reads as a stray one.
+    useMomentStore.getState().showMeal(mealPayload(), { delayMs: 450 });
+    expect(commitRoutine).not.toHaveBeenCalled();
+    jest.advanceTimersByTime(450);
+    expect(commitRoutine).toHaveBeenCalledTimes(1);
+  });
+
+  it('a card superseded before it ever appeared plays no haptic — one commit, one buzz', () => {
+    useMomentStore.getState().showMeal(mealPayload({ eventId: 'first' }), { delayMs: 450 });
+    // A second log during the delay clears the pending reveal.
+    useMomentStore.getState().showMeal(mealPayload({ eventId: 'second' }));
+    jest.advanceTimersByTime(1000);
+    expect(commitRoutine).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('the chip-select tick (CUL-604 §5.6)', () => {
+  beforeEach(() => {
+    jest.useFakeTimers();
+    (selectChip as jest.Mock).mockClear();
+    useMomentStore.getState().hide();
+  });
+  afterEach(() => {
+    useMomentStore.getState().hide();
+    jest.useRealTimers();
+  });
+
+  it('ticks on an intake chip landing on a meal card', () => {
+    useMomentStore.getState().showMeal(mealPayload());
+    useMomentStore.getState().patchIntakeRating('all');
+    expect(selectChip).toHaveBeenCalledTimes(1);
+  });
+
+  it('ticks on adherence and vehicle chips landing on a dose card', () => {
+    useMomentStore.getState().showMedication(medicationPayload());
+    useMomentStore.getState().patchAdherence('partial');
+    useMomentStore.getState().patchHowGiven('in_food');
+    expect(selectChip).toHaveBeenCalledTimes(2);
+  });
+
+  it('stays silent when the patch is a NO-OP against the wrong payload kind', () => {
+    // A tick with no state change would be the phone answering a tap that did nothing.
+    useMomentStore.getState().showMeal(mealPayload());
+    useMomentStore.getState().patchAdherence('given');
+    useMomentStore.getState().patchHowGiven('in_food');
+    expect(selectChip).not.toHaveBeenCalled();
   });
 });

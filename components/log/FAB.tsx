@@ -13,6 +13,7 @@ import { PetSwitcherSheet } from '../pet/PetSwitcherSheet';
 import { EventTypeSheet } from './EventTypeSheet';
 import { useAllowlistFlag } from '../../hooks/useAppConfig';
 import { useBetaOptIn } from '../../lib/betaFeatures';
+import { openMenu as openMenuHaptic } from '../../lib/haptics';
 import { useEventStore } from '../../store/eventStore';
 import { usePetStore } from '../../store/petStore';
 import { useMomentStore, MEAL_FLAGGED_DURATION_MS, whenMealCardVisible } from '../../store/momentStore';
@@ -44,6 +45,8 @@ export function FAB() {
   const pickerV2 = pickerEligible && pickerOptedIn;
 
   const openMenu = useCallback(() => {
+    // Light impact on OPEN only — closing the menu commits to nothing and stays silent.
+    openMenuHaptic();
     setOpen(true);
     Animated.spring(fabAnim, {
       toValue: 1, useNativeDriver: true, tension: 65, friction: 8,

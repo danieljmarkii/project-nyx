@@ -41,6 +41,7 @@ import {
   type TrialOutcome, type TrialOutcomeFacts, type TrialOutcomeSheetModel,
   type TrialStopReason,
 } from '../../lib/dietTrialCompletion';
+import { destructiveConfirm } from '../../lib/haptics';
 import { loadTrialOutcomeFacts } from '../../lib/dietTrialOutcomeFacts';
 import { endActiveTrial, type TrialIndication } from '../../lib/dietTrialSetup';
 
@@ -141,6 +142,10 @@ export function TrialCompletionSheet({
   const endTrial = useCallback(
     async (params: { reason: string; outcome?: TrialOutcome | null; notes?: string }) => {
       if (!trialId || saving) return;
+      // CUL-604 §5.6 — ending a trial is the destructive verb. Both paths (completed
+      // and stopped-early) end it, and both are already the owner's confirmed tap on
+      // this sheet, so there is no second Cancel this could pre-empt.
+      destructiveConfirm();
       setSaving(true);
       try {
         await endActiveTrial({
