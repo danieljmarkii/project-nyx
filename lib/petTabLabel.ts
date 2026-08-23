@@ -1,4 +1,5 @@
 import { theme } from '../constants/theme';
+import { ESTIMATE_HEADROOM, estimateTextWidth } from './textWidth';
 
 /**
  * The Pet tab's fallback ladder (CUL-599; app-polish spec §1 DP-1, ruling D2 /
@@ -35,8 +36,8 @@ import { theme } from '../constants/theme';
  *
  * ── The limit of that guarantee, stated rather than implied ───────────────────
  *
- * "Never a cut" holds for every script this module models: Latin (a class table),
- * the full-width scripts and astral code points (named below), and the label's own
+ * "Never a cut" holds for every script the shared estimator models (`lib/textWidth.ts`):
+ * Latin (a class table), the full-width scripts and astral code points, and the label's own
  * letter spacing. It is not a claim about scripts nobody has modelled — an estimate
  * cannot promise what it has not measured. A script that renders wider than Latin
  * and is not named in `isFullWidth` would be under-charged, and the label's
@@ -56,105 +57,32 @@ export const PET_TAB_FALLBACK_LABEL = 'Pet';
 export const TAB_LABEL_SIDE_PADDING = 6;
 
 /**
- * Required headroom on the width estimate, as a fraction of the budget.
+ * Required headroom on the width estimate, re-exported from `lib/textWidth.ts` where
+ * it lives with the table whose error it absorbs.
  *
- * 4%. The character table below is a good approximation of Geist's advances, not a
- * measurement of them, and the asymmetry above means the residual error must be
- * spent on the safe side. Calibrated so the ladder reproduces the mock's own stated
- * figure — "at the narrowest supported width a tab fits ~12 characters" — and the
- * three names the acceptance criteria name land on their ruled rungs at 320pt.
+ * Kept as a named export here because it is part of THIS module's contract — the
+ * ladder's fit test is `estimate <= budget * ESTIMATE_HEADROOM`, and a reader of the
+ * ladder should not have to open another file to see the number the rungs turn on.
+ * Its value is checked against the mock's own stated figure ("at the narrowest
+ * supported width a tab fits ~12 characters") in this module's tests.
  */
-export const ESTIMATE_HEADROOM = 0.96;
+export { ESTIMATE_HEADROOM } from './textWidth';
 
 /**
- * Character advance widths in em (multiply by font size for points).
+ * Estimated rendered width of a TAB LABEL at `fontSize`, in points.
  *
- * Geist is a fairly even grotesque, so a small class table tracks it far better
- * than one average would: an average alone makes "Willow" and "Lili" the same
- * width, and those differ by more than a whole rung.
- */
-const ADVANCE_NARROW = 0.26; // i l I j . , ' ! : ; | and the space
-const ADVANCE_SEMI_NARROW = 0.4; // f r t and bracket/punctuation strokes
-const ADVANCE_DEFAULT = 0.52; // lowercase and digits — the bulk of any name
-const ADVANCE_UPPER = 0.68; // capitals (a name is nearly always capitalised)
-const ADVANCE_SEMI_WIDE = 0.78; // w
-const ADVANCE_WIDE = 0.87; // m M W
-const ADVANCE_FULL_WIDTH = 1.0; // CJK, kana, hangul, full-width forms — one em by design
-const ADVANCE_ASTRAL = 1.2; // emoji and other astral-plane code points, which render wider
-
-const NARROW_CHARS = "iljI.,'!:;| ";
-const SEMI_NARROW_CHARS = 'frt()[]{}/\\-"';
-const WIDE_CHARS = 'mMW';
-
-/**
- * Whether a code point belongs to a script whose glyphs are drawn on a full-width
- * em square (CJK ideographs, kana, hangul, the full-width Latin forms).
- *
- * Without this every such character was charged the Latin default of 0.52em —
- * roughly HALF its true advance — so a six-character Japanese name passed the fit
- * test and was then tail-cut by the label's `numberOfLines={1}`. That is a mid-word
- * cut, which is the one thing D2 forbids outright: the ladder would itself have
- * caused the failure it exists to prevent. Charging a full em is the safe direction.
- */
-function isFullWidth(codePoint: number): boolean {
-  return (
-    (codePoint >= 0x1100 && codePoint <= 0x11ff) || // Hangul Jamo
-    (codePoint >= 0x2e80 && codePoint <= 0xa4cf) || // CJK radicals … Yi (incl. kana)
-    (codePoint >= 0xac00 && codePoint <= 0xd7a3) || // Hangul syllables
-    (codePoint >= 0xf900 && codePoint <= 0xfaff) || // CJK compatibility ideographs
-    (codePoint >= 0xfe30 && codePoint <= 0xfe4f) || // CJK compatibility forms
-    (codePoint >= 0xff00 && codePoint <= 0xff60) || // full-width forms
-    (codePoint >= 0xffe0 && codePoint <= 0xffe6) // full-width signs
-  );
-}
-
-function advanceEm(char: string): number {
-  // Order matters: `I` is narrow despite being a capital, and `M`/`W` are wide
-  // despite the same. The specific classes are checked before the general one.
-  if (NARROW_CHARS.includes(char)) return ADVANCE_NARROW;
-  if (SEMI_NARROW_CHARS.includes(char)) return ADVANCE_SEMI_NARROW;
-  if (WIDE_CHARS.includes(char)) return ADVANCE_WIDE;
-  if (char === 'w') return ADVANCE_SEMI_WIDE;
-
-  // Beyond ASCII the class strings stop covering anything, so the cases that are
-  // reliably WIDER than the default are named rather than silently under-charged.
-  const codePoint = char.codePointAt(0) ?? 0;
-  if (codePoint > 0xffff) return ADVANCE_ASTRAL;
-  if (isFullWidth(codePoint)) return ADVANCE_FULL_WIDTH;
-
-  // Capitals, tested by case rather than by an A–Z range: `Ü`, `É`, `Ñ` and `Ø` are
-  // as wide as `U`, and an ASCII-only range charged every one of them the lowercase
-  // default. European names are the common non-ASCII case, so this is the branch
-  // that matters most in practice.
-  if (char !== char.toLowerCase() && char === char.toUpperCase()) return ADVANCE_UPPER;
-
-  return ADVANCE_DEFAULT;
-}
-
-/**
- * Estimated rendered width of `text` at `fontSize`, in points.
- *
- * Includes the label's letter spacing, which is NOT a rounding detail: the tab
- * renders at `theme.trackingWide`, and 0.4pt across a twelve-character name is
- * 4.8pt — larger than the headroom that is supposed to absorb the whole estimate's
- * error, and in the one direction this module may not err. Charged per code point
- * including the last (RN's iOS text layout adds trailing spacing), which is the
- * conservative reading.
+ * The tab's own binding of the shared estimator (`lib/textWidth.ts`): it fixes the
+ * letter spacing to `theme.trackingWide`, which is what the label actually renders
+ * at. That is not a default worth hiding inside the estimator — 0.4pt across a
+ * twelve-character name is 4.8pt, larger than ESTIMATE_HEADROOM is meant to absorb,
+ * and in the one direction this module may not err. Binding it here means the ladder
+ * and the label can only ever disagree by being edited apart, not by omission.
  *
  * Exported for the tests, which assert the calibration directly rather than only
- * through the rungs it produces — a table that drifts should fail loudly at the
- * character it drifted on, not silently at some future pet's name.
+ * through the rungs it produces.
  */
 export function estimateLabelWidth(text: string, fontSize: number): number {
-  let em = 0;
-  let count = 0;
-  // Iterating the string yields whole code points, so an astral character (an emoji
-  // in a pet's name) is measured once rather than as two half-width halves.
-  for (const char of text) {
-    em += advanceEm(char);
-    count += 1;
-  }
-  return em * fontSize + count * theme.trackingWide;
+  return estimateTextWidth(text, fontSize, theme.trackingWide);
 }
 
 /**

@@ -187,30 +187,13 @@ export function deriveDisplayState(
   return hasSubstantialHistory ? 'no_pattern' : 'building';
 }
 
-// ── CulpritMark pulse contract (B-284 PR N2 §3) ──────────────────────────────
-// "A fresh finding set exists" is defined structurally, not by a timestamp: the
-// ranked TYPES change (a finding appears, resolves, or is reordered by rank).
-// Two reads that happen to land the exact same ranked set are the SAME signature
-// — re-reading unchanged findings on every focus must not re-arm the pulse.
-export function signalFindingsSignature(findings: CachedFinding[]): string {
-  return [...findings]
-    .sort((a, b) => a.rank - b.rank)
-    .map((f) => `${f.rank}:${f.finding.type}`)
-    .join('|');
-}
-
-// The pulse is live only while there IS a live finding set the owner hasn't
-// seen yet — building/stale/no_pattern never pulse (there is nothing fresh to
-// flag), and an empty live signature ('' — findings.length === 0) never counts
-// as "seen" the moment it appears, since seenSignature also starts unset.
-export function hasUnseenFinding(
-  displayState: DisplayState,
-  findings: CachedFinding[],
-  seenSignature: string | undefined,
-): boolean {
-  if (displayState !== 'live' || findings.length === 0) return false;
-  return signalFindingsSignature(findings) !== seenSignature;
-}
+// The CulpritMark pulse contract (B-284 PR N2 §3) used to live here —
+// `signalFindingsSignature` + `hasUnseenFinding`, which together decided whether the
+// Home header's mark pulsed for an unseen finding set. CUL-600 (app-polish D4)
+// deleted that cue: no looping animation in app chrome, ever. Both helpers had
+// exactly that one reader, so they went with it rather than staying as a plausible-
+// looking "what's new" mechanism that feeds nothing. Git holds them if a future
+// surface ever needs a structural "is this finding set the one they saw" test.
 
 // ── Empty-state intros ────────────────────────────────────────────────────────
 // Only the `stale` intro survives: E1 (building) and E2 (no_pattern) GA'd their SR-2

@@ -2,7 +2,6 @@ import { act, renderHook, waitFor } from '@testing-library/react-native';
 import { useSignal, useCrossPetSafetyBanner } from './useSignal';
 import { usePetStore } from '../store/petStore';
 import { useSyncStore } from '../store/syncStore';
-import { useSignalMarkStore } from '../store/signalMarkStore';
 import {
   readSignalCache,
   isSignalCacheStale,
@@ -75,7 +74,6 @@ beforeEach(() => {
   mockedIsStale.mockReturnValue(false);
   mockedRegenerate.mockResolvedValue({ error: null });
   usePetStore.setState({ pets: [PET_A, PET_B], activePet: PET_A });
-  useSignalMarkStore.setState({ seenSignatures: {} });
 });
 
 describe('useSignal — pet-switch multi-pet safety', () => {
@@ -98,7 +96,7 @@ describe('useSignal — pet-switch multi-pet safety', () => {
     // Synchronous, in the same act() — no `await` — pet A's findings must
     // already be gone, not lingering alongside pet B's new id.
     expect(result.current.findings).toEqual([]);
-    expect(result.current.hasUnseenSignal).toBe(false);
+    expect(result.current.displayState).not.toBe('live');
 
     // Let pet B's in-flight (resolves-to-null) fetch settle before the test ends.
     await waitFor(() => expect(result.current.isLoading).toBe(false));
@@ -139,53 +137,6 @@ describe('useSignal — pet-switch multi-pet safety', () => {
     // And pet B settles on its own (fresh) local context.
     expect(result.current.eventCount).toBe(0);
     expect(result.current.dayNumber).toBe(1);
-  });
-
-  it('markSeen() called on a switch-render never writes the outgoing pet\'s signature under the new pet\'s key', async () => {
-    mockedReadCache.mockImplementation(async (petId: string) =>
-      petId === PET_A.id
-        ? { signalText: null, isBuilding: false, findings: [finding], coverage: [], expiresAt: '2999-01-01' }
-        : null,
-    );
-
-    const { result } = renderHook(() => useSignal());
-    await waitFor(() => expect(result.current.findings).toEqual([finding]));
-
-    act(() => {
-      usePetStore.setState({ activePet: PET_B });
-    });
-    // Even if a stale render's markSeen fired here, findings are already []
-    // for pet B at this point (previous assertion) — calling it is a safe no-op,
-    // never a cross-pet write of pet A's signature.
-    act(() => {
-      result.current.markSeen();
-    });
-
-    expect(useSignalMarkStore.getState().seenSignatures['pet-b']).toBeUndefined();
-    expect(useSignalMarkStore.getState().seenSignatures['pet-a']).toBeUndefined();
-
-    // Let pet B's in-flight (resolves-to-null) fetch settle before the test ends.
-    await waitFor(() => expect(result.current.isLoading).toBe(false));
-  });
-
-  it('markSeen() records the CURRENT pet\'s own signature once its live findings land', async () => {
-    mockedReadCache.mockResolvedValue({
-      signalText: null,
-      isBuilding: false,
-      findings: [finding],
-      coverage: [],
-      expiresAt: '2999-01-01',
-    });
-
-    const { result } = renderHook(() => useSignal());
-    await waitFor(() => expect(result.current.displayState).toBe('live'));
-
-    act(() => {
-      result.current.markSeen();
-    });
-
-    expect(useSignalMarkStore.getState().seenSignatures['pet-a']).toBe('0:intake_decline');
-    expect(result.current.hasUnseenSignal).toBe(false);
   });
 });
 

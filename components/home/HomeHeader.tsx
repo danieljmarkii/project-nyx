@@ -1,29 +1,74 @@
 import { useState } from 'react';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { StyleSheet, TouchableOpacity, View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { ChevronDown } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
 import { usePetStore } from '../../store/petStore';
 import { useAuthStore } from '../../store/authStore';
-import { petIdentityLine } from '../../lib/utils';
+import { ThemedText } from '../ui/ThemedText';
 import { PetAvatar } from '../pet/PetAvatar';
 import { OwnerAvatar } from '../settings/OwnerAvatar';
 import { PetSwitcherSheet } from '../pet/PetSwitcherSheet';
-import { CulpritMark } from '../brand/CulpritMark';
-import { useSignal } from '../../hooks/useSignal';
 import { useAllowlistFlag } from '../../hooks/useAppConfig';
+import {
+  HEADER_AVATAR_GAP,
+  HEADER_AVATAR_SIZE,
+  HEADER_CHEVRON_GAP,
+  HEADER_CHEVRON_SIZE,
+  HEADER_OWNER_AVATAR_SIZE,
+  HEADER_PADDING_X,
+  HEADER_RIGHT_GAP,
+  headerNameBudget,
+  headerSwitcherLabel,
+  resolveHeaderName,
+} from '../../lib/headerName';
 
-// Home identity strip (B-076) — a thin orienting band above the Signal: a quiet
-// "Culprit" wordmark + the active pet's avatar, name, and one slim line.
-// Deliberately NOT a profile card (Principle 3): the AI Signal must keep leading
-// and the full profile (sex/weight/conditions/diet trial) stays the Pet tab's
-// job. The identity row is the switcher tap-target (multi-pet spec §3.1):
-// tapping opens the switcher sheet. The chevron AFFORDANCE renders only when
-// pets.length > 1 — single-pet households see no multi-pet chrome (Jordan's
-// condition) — but the row stays tappable for everyone because the sheet is
-// also the only "Add a pet" entry point (an owner's path to pet #2).
-export function HomeHeader({ onPressMark }: { onPressMark?: () => void }) {
+// The Home header (CUL-600; app-polish spec §2 DP-2, rulings D3 + D4).
+//
+// H2a: ONE row, and the pet's photo leads it —
+//
+//     [photo] [Name ▾]                              [Ask] [you]
+//
+// What left, and why it is not coming back:
+//
+//   · the wordmark and the CulpritMark — D3. The brand keeps Landing, the loading
+//     system and the night surfaces; Home belongs to the pet. The PM's own reason is
+//     the whole argument: "when my wife saw Nyx's photo she was delighted."
+//   · the mark's `live` PULSE and the teal "new signal" dot — D4. A cue that needs
+//     explaining has failed ("not understanding it"), and the cross-cutting rule it
+//     settled is absolute: NO LOOPING ANIMATION IN APP CHROME, EVER. "Something new"
+//     is announced by CONTENT — the Signal card's live rail and the arrival moment —
+//     never by chrome. Do not reintroduce a badge, dot, pulse or shimmer here.
+//   · the breed · age identity line, and the second row it sat on. The identity line
+//     lives on the Pet tab; deleting the row is what lifts the Signal ~50pt up the
+//     page, which is the point of the whole change (Principle 3 — the Signal leads).
+//   · the mark's jump-to-Signal tap, which retired with the mark. The standard
+//     affordance replaces it: re-tapping the Home tab scrolls to top, wired in
+//     app/(tabs)/index.tsx (spec §2 SHOULD).
+//
+// What stayed: the left cluster is the pet-switcher target at the 44pt floor (the
+// sheet is also the only "Add a pet" door, so it stays tappable for one-pet
+// households — they just see no chevron, and therefore no multi-pet chrome at all).
+// The Ask pill and the owner-avatar doorway are unchanged (B-228 D5 placement).
+
+/** Vertical padding, per side. The row is deliberately tight — it is chrome. */
+const HEADER_PADDING_Y = 6;
+/** The switcher's tap floor. Larger than the 30pt photo, which is why it is stated. */
+const HEADER_ROW_MIN_HEIGHT = 44;
+
+/**
+ * The header's height BELOW the safe-area inset, derived from its parts rather than
+ * stated as a literal — a stated total is a number that goes stale the first time a
+ * part moves (the CUL-599 tab-bar lesson, which cost three files holding a copy of a
+ * height that had changed).
+ *
+ * Exported so the shrink the ruling promises is asserted rather than eyeballed: the
+ * two-row header this replaced measured 106pt by the same arithmetic.
+ */
+export const HOME_HEADER_CONTENT_HEIGHT = HEADER_ROW_MIN_HEIGHT + HEADER_PADDING_Y * 2;
+
+export function HomeHeader() {
   const { pets, activePet } = usePetStore();
   // The owner email seeds the account-avatar monogram (§D10). Home renders only
   // behind a live session, so it's populated whenever this strip is on screen.
@@ -31,15 +76,15 @@ export function HomeHeader({ onPressMark }: { onPressMark?: () => void }) {
   // Own the top safe-area inset so the white surface bleeds up behind the
   // status bar — otherwise the screen's grey bg shows above the strip.
   const insets = useSafeAreaInsets();
-  // The CulpritMark pulse (B-284 §3) — same cache read SignalZone/CrossPetSafetyBanner
-  // already each own independently; a fresh, unseen finding lights the header mark.
-  const { hasUnseenSignal } = useSignal();
   // The Ask entry (B-228 D5) — header chrome, not a card (Principle 3). Visible iff the
   // experimental flag resolves on for this caller (fail-closed; allowlist-gated until
   // Track-3). It NEVER changes/badges/disables when capped — Home carries no monetization
   // state; the capped experience lives inside the surface (D5). Render-only; the server
   // re-checks the flag authoritatively on every ask call.
   const askEnabled = useAllowlistFlag('ask_enabled');
+  // The name's rung is a function of the ROW's width, so it re-resolves on rotation
+  // and on a foldable rather than baking in the width the app happened to launch at.
+  const { width } = useWindowDimensions();
 
   const [switcherVisible, setSwitcherVisible] = useState(false);
 
@@ -47,38 +92,54 @@ export function HomeHeader({ onPressMark }: { onPressMark?: () => void }) {
   // otherwise), but guard anyway so a transient null never throws.
   if (!activePet) return null;
 
-  const line = petIdentityLine(activePet);
   const multiPet = pets.length > 1;
+  // 17pt → 16pt → tail-ellipsis (spec §2). Deliberately NOT the Pet tab's ladder —
+  // both are written down in the spec so neither is re-derived from the other, and
+  // lib/headerName.ts carries the reason they differ.
+  const name = resolveHeaderName(activePet.name, headerNameBudget({ windowWidth: width, multiPet, askEnabled }));
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top + 10 }]}>
-      {/* Top chrome row: the quiet wordmark, and — top-right — the owner avatar
-          doorway into the "You" screen (§4.1). A doorway in the header chrome,
-          not a Signal card, so Principle 3's "no settings shortcut on Home"
-          holds. Sits opposite the wordmark, aligned with it. */}
-      <View style={styles.topRow}>
+    <View style={[styles.container, { paddingTop: insets.top + HEADER_PADDING_Y }]}>
+      <View style={styles.row}>
         <TouchableOpacity
-          onPress={onPressMark}
-          disabled={!onPressMark}
-          hitSlop={{ top: 14, bottom: 14, left: 14, right: 14 }}
-          accessibilityRole={onPressMark ? 'button' : undefined}
-          accessibilityLabel={onPressMark ? 'Culprit — jump to your Signal' : undefined}
+          style={styles.identityCluster}
+          onPress={() => setSwitcherVisible(true)}
+          activeOpacity={0.7}
+          accessibilityRole="button"
+          // ALWAYS the pet's full name, at every rung — the half of the ladder that
+          // makes an ellipsis floor acceptable: the name is never lost, only
+          // unrendered.
+          accessibilityLabel={headerSwitcherLabel(activePet.name, multiPet)}
         >
-          <CulpritMark
-            size={16}
-            ground="light"
-            live={hasUnseenSignal}
-            withWordmark
-            wordmarkStyle={styles.wordmark}
-            // The wrapping TouchableOpacity already carries the accessible
-            // label/role whenever it's a real button (onPressMark set) — the
-            // mark must stay a silent child then, or a screen reader hits two
-            // "Culprit" nodes for one control (code-reviewed regression).
-            // Falls back to self-labelling only in the unwired/disabled case.
-            accessible={!onPressMark}
+          <PetAvatar
+            name={activePet.name}
+            photoPath={activePet.photo_path}
+            size={HEADER_AVATAR_SIZE}
           />
+          <ThemedText
+            style={[styles.name, { fontSize: name.fontSize }]}
+            numberOfLines={1}
+            ellipsizeMode="tail"
+            // Deliberately NOT the tab bar's `allowFontScaling={false}`. The ladder
+            // there fits a name at a known size into a box that CANNOT grow, so a
+            // scaled label would overflow the tab the ladder had just fitted it to.
+            // Here the row grows and the ladder's floor is already a tail, so a
+            // scaled name degrades exactly the way the ruling says it should. The
+            // name is the one thing on this row an owner may need larger.
+          >
+            {activePet.name}
+          </ThemedText>
+          {multiPet && (
+            <ChevronDown
+              size={HEADER_CHEVRON_SIZE}
+              color={theme.colorTextSecondary}
+              strokeWidth={1.75}
+              style={styles.chevron}
+            />
+          )}
         </TouchableOpacity>
-        <View style={styles.topRight}>
+
+        <View style={styles.rightCluster}>
           {askEnabled ? (
             <TouchableOpacity
               onPress={() => router.push('/ask')}
@@ -88,7 +149,7 @@ export function HomeHeader({ onPressMark }: { onPressMark?: () => void }) {
               accessibilityLabel={`Ask about ${activePet.name}`}
             >
               <View style={styles.askDot} />
-              <Text style={styles.askLabel}>Ask</Text>
+              <ThemedText style={styles.askLabel}>Ask</ThemedText>
             </TouchableOpacity>
           ) : null}
           <TouchableOpacity
@@ -97,37 +158,12 @@ export function HomeHeader({ onPressMark }: { onPressMark?: () => void }) {
             accessibilityRole="button"
             accessibilityLabel="You — account and settings"
           >
-            <OwnerAvatar email={email} size={32} />
+            <OwnerAvatar email={email} size={HEADER_OWNER_AVATAR_SIZE} />
           </TouchableOpacity>
         </View>
       </View>
-      <TouchableOpacity
-        style={styles.identityRow}
-        onPress={() => setSwitcherVisible(true)}
-        activeOpacity={0.7}
-        accessibilityRole="button"
-        accessibilityLabel={multiPet ? `Switch pet — ${activePet.name} active` : 'Your pets'}
-      >
-        <PetAvatar name={activePet.name} photoPath={activePet.photo_path} size={38} />
-        <View style={styles.textColumn}>
-          <Text style={styles.name} numberOfLines={1}>
-            {activePet.name}
-          </Text>
-          {line ? (
-            <Text style={styles.line} numberOfLines={1}>
-              {line}
-            </Text>
-          ) : null}
-        </View>
-        {multiPet && (
-          <ChevronDown size={18} color={theme.colorTextSecondary} strokeWidth={1.75} />
-        )}
-      </TouchableOpacity>
 
-      <PetSwitcherSheet
-        visible={switcherVisible}
-        onClose={() => setSwitcherVisible(false)}
-      />
+      <PetSwitcherSheet visible={switcherVisible} onClose={() => setSwitcherVisible(false)} />
     </View>
   );
 }
@@ -137,22 +173,48 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colorSurface,
     borderBottomWidth: 1,
     borderBottomColor: theme.colorBorder,
-    paddingHorizontal: theme.space2,
-    // paddingTop is applied inline as insets.top + 10 so the white surface
-    // fills the status-bar inset (no grey strip above the header).
-    paddingBottom: 12,
+    // The geometry tokens come from lib/headerName.ts, which is also what the name's
+    // width budget subtracts — the budget and the rendered row are the same fact, and
+    // splitting them is how a name starts fitting the arithmetic instead of the row.
+    paddingHorizontal: HEADER_PADDING_X,
+    // paddingTop is applied inline as insets.top + HEADER_PADDING_Y so the white
+    // surface fills the status-bar inset (no grey strip above the header).
+    paddingBottom: HEADER_PADDING_Y,
   },
-  topRow: {
+  row: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    minHeight: HEADER_ROW_MIN_HEIGHT,
   },
-  // The right cluster: the Ask pill sits beside the owner avatar (D5 — "beside the
-  // avatar"), so the mark stays alone on the left and space-between still holds.
-  topRight: {
+  // Photo + name + chevron: one tap target, the 44pt floor from the row above it.
+  // `flexShrink` + `minWidth: 0` are what let the NAME absorb a narrow frame (and
+  // tail) instead of pushing the Ask pill off the row.
+  identityCluster: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    flexShrink: 1,
+    minWidth: 0,
+    minHeight: HEADER_ROW_MIN_HEIGHT,
+  },
+  // Explicit margins rather than a container `gap`: the photo→name and name→chevron
+  // gaps are different numbers, and they are the same numbers the budget subtracts.
+  name: {
+    fontWeight: theme.weightSemibold,
+    color: theme.colorTextPrimary,
+    marginLeft: HEADER_AVATAR_GAP,
+    flexShrink: 1,
+  },
+  chevron: {
+    marginLeft: HEADER_CHEVRON_GAP,
+  },
+  // The right cluster: the Ask pill sits beside the owner avatar (D5 — "beside the
+  // avatar"). It never shrinks; the name absorbs a narrow frame instead.
+  rightCluster: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: HEADER_RIGHT_GAP,
+    flexShrink: 0,
   },
   // The Ask pill (mock §1 option A): the word + a quiet Signal-teal dot in a bordered
   // pill. Chrome, never a card. Teal here is the interactive accent (a tappable entry),
@@ -175,46 +237,8 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colorAccent,
   },
   askLabel: {
-    fontFamily: theme.fontBodySemibold,
+    fontWeight: theme.weightSemibold,
     fontSize: theme.textSM,
     color: theme.colorTextPrimary,
-  },
-  // Quiet brand mark in the display face — identity, not a banner. "Culprit"
-  // (the decided product name) reads at a glance without competing with the Signal.
-  wordmark: {
-    fontFamily: theme.fontDisplay,
-    fontSize: theme.textMD,
-    color: theme.colorTextTertiary,
-    letterSpacing: theme.trackingTight,
-  },
-  identityRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 11,
-    marginTop: theme.space1,
-    // The whole row is the switcher tap zone — spec §3.1 mandates the 44pt
-    // floor (the 38pt avatar alone would undershoot it).
-    minHeight: 44,
-  },
-  textColumn: {
-    flex: 1,
-    minWidth: 0,
-  },
-  // Geist faces here (not bare fontWeight): RN doesn't synthesize weights for
-  // custom fonts, so the weight lives in the family name (see lib/fonts.ts).
-  // Header-scoped only — the app-wide Geist body rollout stays B-061.
-  name: {
-    fontFamily: theme.fontBodySemibold,
-    // textXL, up from textLG: the mock-faithful 17 read small on-device (PM
-    // QA, 2026-06-12). The Signal headline (textSignal 26) still leads the
-    // page (Principle 3); the wordmark stays quiet on purpose.
-    fontSize: theme.textXL,
-    color: theme.colorTextPrimary,
-  },
-  line: {
-    fontFamily: theme.fontBody,
-    fontSize: theme.textMD,
-    color: theme.colorTextTertiary,
-    marginTop: 2,
   },
 });
