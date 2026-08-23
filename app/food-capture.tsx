@@ -998,15 +998,15 @@ export default function FoodCaptureScreen() {
               >
                 <ThemedText style={styles.mealTimeText}>
                   {mealOccurredAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  {/* Deliberately a raw <Text>, not a nested ThemedText (CUL-607). Every
+                      ThemedText injects an explicit fontFamily, which breaks RN's native
+                      text-style cascade — so a nested one would need its own family
+                      spelled out. This span differs from its parent only in SIZE and
+                      COLOUR, so inheriting the parent's resolved Geist face is right. */}
                   {mealOccurredAtSource === 'exif' ? (
-                    // Nested ThemedText: the child does NOT inherit the parent's face
-                    // (every ThemedText injects an explicit family, which breaks RN's
-                    // native cascade — the primitive's own known limit). Harmless while
-                    // both styles are weightless and resolve to the same regular face;
-                    // give `mealTimeAttribution` a weight and it must say so itself.
-                    <ThemedText style={styles.mealTimeAttribution}>
+                    <Text style={styles.mealTimeAttribution}>
                       {'  ·  '}{formatExifAttribution(mealOccurredAt.toISOString())}
-                    </ThemedText>
+                    </Text>
                   ) : null}
                 </ThemedText>
                 <ThemedText style={styles.mealTimeChange}>Change</ThemedText>
