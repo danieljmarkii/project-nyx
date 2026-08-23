@@ -31,10 +31,19 @@ import { formatTime } from '../../lib/utils';
 function renderConfirm(type: any = 'vomit') {
   const onBack = jest.fn();
   const onLogged = jest.fn();
+  const onDraftChange = jest.fn();
   const utils = render(
-    <SimpleEventConfirm type={type} petId="p1" petName="Nyx" onBack={onBack} onLogged={onLogged} />,
+    <SimpleEventConfirm
+      type={type} petId="p1" petName="Nyx"
+      onBack={onBack} onLogged={onLogged} onDraftChange={onDraftChange}
+    />,
   );
-  return { ...utils, onBack, onLogged };
+  return { ...utils, onBack, onLogged, onDraftChange };
+}
+
+/** The most recent draft the confirm reported up (CUL-612). */
+function latestDraft(onDraftChange: jest.Mock) {
+  return onDraftChange.mock.calls[onDraftChange.mock.calls.length - 1][0];
 }
 
 beforeEach(() => { jest.clearAllMocks(); });
@@ -152,5 +161,69 @@ describe('SimpleEventConfirm — double-submit guard', () => {
     fireEvent.press(pill);
     await waitFor(() => expect(mockInsert).toHaveBeenCalled());
     expect(mockInsert).toHaveBeenCalledTimes(1);
+  });
+});
+
+
+// ── What the discard guard is told (CUL-612 · §5) ────────────────────────────
+//
+// The guard itself is EventTypeSheet's; the predicate and copy are
+// lib/discardGuard.test.ts's. This block owns the DERIVATION — and the derivation
+// is the half a hand-set flag would get wrong. `timeTouched` is computed against
+// the values the sheet opened with rather than set at each of the six sites that
+// can move the time, so the cases below are what that buys.
+describe('SimpleEventConfirm — the draft it reports up', () => {
+  it('opens CLEAN — the defaults are the app\u2019s claim, not the owner\u2019s work', () => {
+    const { onDraftChange } = renderConfirm();
+    expect(latestDraft(onDraftChange)).toEqual({
+      hasPhoto: false, timeTouched: false, hasNote: false,
+    });
+  });
+
+  it('a typed note is work; whitespace is not', () => {
+    const { getByPlaceholderText, onDraftChange } = renderConfirm();
+    const input = getByPlaceholderText('Add a note (optional)');
+    fireEvent.changeText(input, '   ');
+    expect(latestDraft(onDraftChange).hasNote).toBe(false);
+    fireEvent.changeText(input, 'threw up on the rug');
+    expect(latestDraft(onDraftChange).hasNote).toBe(true);
+  });
+
+  it('switching to "Found it" counts — it changes the confidence that gets written', () => {
+    const { getByText, onDraftChange } = renderConfirm();
+    fireEvent.press(getByText('Found it'));
+    expect(latestDraft(onDraftChange).timeTouched).toBe(true);
+  });
+
+  it('adjusting the window to two bounds counts', () => {
+    const { getByText, onDraftChange } = renderConfirm('diarrhea');
+    fireEvent.press(getByText('Found it'));
+    fireEvent.press(getByText('Adjust window'));
+    fireEvent.press(getByText('Between two times'));
+    expect(latestDraft(onDraftChange).timeTouched).toBe(true);
+  });
+
+  it('merely OPENING the window editor does NOT count — looking is not editing', () => {
+    // A guard here would put a dialog in front of an owner who expanded a
+    // disclosure and changed nothing.
+    const { getByText, onDraftChange } = renderConfirm();
+    fireEvent.press(getByText('Found it'));
+    const beforeOpen = latestDraft(onDraftChange).timeTouched;
+    fireEvent.press(getByText('Adjust window'));
+    // "Found it" already made it dirty; what this pins is that opening the editor
+    // adds nothing of its own on the witnessed path.
+    expect(beforeOpen).toBe(true);
+
+    const fresh = renderConfirm();
+    fireEvent.press(fresh.getByTestId('confirm-time-main')); // opens the point picker
+    expect(latestDraft(fresh.onDraftChange).timeTouched).toBe(false);
+  });
+
+  it('returning to the opening state clears it — re-confirming a default is not work', () => {
+    const { getByText, onDraftChange } = renderConfirm();
+    fireEvent.press(getByText('Found it'));
+    expect(latestDraft(onDraftChange).timeTouched).toBe(true);
+    fireEvent.press(getByText('Saw it'));
+    expect(latestDraft(onDraftChange).timeTouched).toBe(false);
   });
 });

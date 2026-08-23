@@ -207,3 +207,34 @@ export function applyNamedTimeEdit(record: LoggedRecord, edit: NamedTimeEdit): L
     latest: edit.confidence.latest,
   };
 }
+
+// ── THE REMOVAL LINE (CUL-612) ──────────────────────────────────────────────
+// What the card says once Undo has landed. Composed here rather than inline in
+// three components for the same reason the sentence is: one place to hold the
+// wording to, and one place a test can read it from.
+//
+// It is a deliberate MIRROR of "Saved to {pet}'s record" — the same grammar,
+// reversed — so the owner reads the undo as the exact inverse of the thing they
+// just saw, not as a new kind of message.
+//
+// TWO THINGS IT DOES NOT SAY, both load-bearing:
+//
+//   · It never claims nothing was written. A dose logged through the meal card's
+//     combo line keeps its own row when the meal is undone (see lib/undoLog.ts),
+//     so "nothing was saved" would be false on the one path where it matters
+//     most — a medication.
+//   · It never congratulates or reassures. Removing a symptom log is not good
+//     news; it is a correction. The line states the outcome and stops
+//     (nyx-voice Patterns 4 and 6).
+export interface RemovedNotice {
+  title: string;
+  detail: string;
+  /** One announcement for a screen reader, not two orphan lines. */
+  a11yLabel: string;
+}
+
+export function removedNoticeCopy(petName: string): RemovedNotice {
+  const title = 'Removed';
+  const detail = `Taken out of ${petName}’s record`;
+  return { title, detail, a11yLabel: `${title}. ${detail}` };
+}

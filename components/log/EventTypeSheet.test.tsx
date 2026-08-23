@@ -18,11 +18,23 @@ jest.mock('../../lib/storage', () => ({ getPublicUrl: () => null }));
 jest.mock('./SimpleEventConfirm', () => {
   const { Text } = require('react-native');
   return {
-    SimpleEventConfirm: ({ type, petName, onBack, onLogged }: any) => (
+    SimpleEventConfirm: ({ type, petName, onBack, onLogged, onDraftChange }: any) => (
       <>
         <Text>{`confirm:${type}:${petName}`}</Text>
         <Text onPress={onBack}>stub-back</Text>
         <Text onPress={onLogged}>stub-logged</Text>
+        {/* CUL-612 — stand-ins for the three things the real confirm reports up.
+            The DERIVATION of those booleans is SimpleEventConfirm.test's subject;
+            what the sheet owes is the guard it puts in front of them. */}
+        <Text onPress={() => onDraftChange?.({ hasPhoto: true, timeTouched: false, hasNote: false })}>
+          stub-add-photo
+        </Text>
+        <Text onPress={() => onDraftChange?.({ hasPhoto: false, timeTouched: false, hasNote: true })}>
+          stub-type-note
+        </Text>
+        <Text onPress={() => onDraftChange?.({ hasPhoto: false, timeTouched: false, hasNote: false })}>
+          stub-clear
+        </Text>
       </>
     ),
   };
@@ -40,6 +52,7 @@ jest.mock('./SheetLogBeat', () => {
 });
 
 import { render, fireEvent } from '@testing-library/react-native';
+import { Alert } from 'react-native';
 import { router } from 'expo-router';
 import { EventTypeSheet } from './EventTypeSheet';
 import { usePetStore } from '../../store/petStore';
@@ -136,5 +149,107 @@ describe('EventTypeSheet', () => {
     seedPets(2);
     const multi = render(<EventTypeSheet visible onClose={jest.fn()} />);
     expect(multi.getByLabelText('Log for Nyx — switch pet')).toBeTruthy();
+  });
+});
+
+
+// ── The discard guard (CUL-612 · §5) ─────────────────────────────────────────
+//
+// The predicate and its copy are lib/discardGuard.test.ts's. What only the sheet
+// can answer: WHICH dismissals it guards, and — just as important — which it
+// leaves alone. A guard that fired on a clean sheet would put a dialog between
+// the FAB and closing it.
+describe('EventTypeSheet — the discard guard', () => {
+  let alert: jest.SpyInstance;
+
+  beforeEach(() => {
+    seedPets(1);
+    alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+  });
+  afterEach(() => alert.mockRestore());
+
+  /** Open the sheet on the confirm stage. */
+  function openConfirm(onClose = jest.fn()) {
+    const view = render(<EventTypeSheet visible onClose={onClose} />);
+    fireEvent.press(view.getByLabelText('Log vomit'));
+    return { view, onClose };
+  }
+
+  it('asks before discarding a confirm with a photo attached', () => {
+    const { view, onClose } = openConfirm();
+    fireEvent.press(view.getByText('stub-add-photo'));
+    fireEvent.press(view.getByLabelText('Close'));
+    expect(onClose).not.toHaveBeenCalled();
+    expect(alert).toHaveBeenCalledTimes(1);
+    expect(alert.mock.calls[0][0]).toBe('Discard this log?');
+    expect(alert.mock.calls[0][1]).toBe('The photo won’t be saved.');
+  });
+
+  it('asks before discarding a typed note', () => {
+    const { view, onClose } = openConfirm();
+    fireEvent.press(view.getByText('stub-type-note'));
+    fireEvent.press(view.getByLabelText('Close'));
+    expect(onClose).not.toHaveBeenCalled();
+    expect(alert.mock.calls[0][1]).toBe('The note won’t be saved.');
+  });
+
+  it('offers Keep editing first, and only Discard actually closes', () => {
+    // The accidental backdrop tap is the common case, so the cancel-weighted
+    // answer is the one that loses nothing.
+    const { view, onClose } = openConfirm();
+    fireEvent.press(view.getByText('stub-add-photo'));
+    fireEvent.press(view.getByLabelText('Close'));
+    const buttons = alert.mock.calls[0][2];
+    expect(buttons[0]).toMatchObject({ text: 'Keep editing', style: 'cancel' });
+    expect(buttons[1]).toMatchObject({ text: 'Discard', style: 'destructive' });
+    buttons[1].onPress();
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it('does NOT ask on an untouched confirm — re-confirming a default is not work', () => {
+    const { view, onClose } = openConfirm();
+    fireEvent.press(view.getByLabelText('Close'));
+    expect(alert).not.toHaveBeenCalled();
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it('does NOT ask from the grid — nothing between the FAB and closing it', () => {
+    const onClose = jest.fn();
+    const view = render(<EventTypeSheet visible onClose={onClose} />);
+    fireEvent.press(view.getByLabelText('Close'));
+    expect(alert).not.toHaveBeenCalled();
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it('stops asking once the confirm is emptied again', () => {
+    const { view, onClose } = openConfirm();
+    fireEvent.press(view.getByText('stub-add-photo'));
+    fireEvent.press(view.getByText('stub-clear'));
+    fireEvent.press(view.getByLabelText('Close'));
+    expect(alert).not.toHaveBeenCalled();
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it('does NOT ask once the write has LANDED — there is nothing left to lose', () => {
+    const { view, onClose } = openConfirm();
+    fireEvent.press(view.getByText('stub-add-photo'));
+    fireEvent.press(view.getByText('stub-logged'));
+    fireEvent.press(view.getByLabelText('Close'));
+    expect(alert).not.toHaveBeenCalled();
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it('leaves the BACK CHEVRON unguarded — a labelled in-flow choice, not a slip', () => {
+    // "Wrong type, take me back to the grid" is the owner deliberately leaving;
+    // the guard is for the gestures that are easy to hit by accident.
+    const { view, onClose } = openConfirm();
+    fireEvent.press(view.getByText('stub-add-photo'));
+    fireEvent.press(view.getByText('stub-back'));
+    expect(alert).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+    // …and the draft it abandoned does not follow the owner to the next confirm.
+    fireEvent.press(view.getByLabelText('Log vomit'));
+    fireEvent.press(view.getByLabelText('Close'));
+    expect(alert).not.toHaveBeenCalled();
   });
 });

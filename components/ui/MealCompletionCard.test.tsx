@@ -20,6 +20,7 @@
 // output is covered by lib/trialFoodsScreen.test.ts + AddTrialFoodSheet.test.tsx).
 jest.mock('../../lib/supabase', () => ({ supabase: {} }));
 jest.mock('../../lib/db', () => ({ updateEvent: jest.fn(), updateMealIntake: jest.fn() }));
+jest.mock('../../lib/undoLog', () => ({ reverseLoggedEvent: jest.fn().mockResolvedValue(undefined) }));
 jest.mock('../../lib/sync', () => ({
   syncPendingEvents: jest.fn().mockResolvedValue(undefined),
   syncPendingMeals: jest.fn().mockResolvedValue(undefined),
@@ -55,11 +56,13 @@ jest.mock('../../lib/trialFoodsScreen', () => ({
   }),
 }));
 
+import { Alert } from 'react-native';
 import { act, fireEvent, render } from '@testing-library/react-native';
 import { MealCompletionCard } from './MealCompletionCard';
 import { useMomentStore } from '../../store/momentStore';
 import { usePetStore } from '../../store/petStore';
 import type { LogTimeTrialFlag } from '../../lib/trialContaminant';
+import { reverseLoggedEvent } from '../../lib/undoLog';
 
 const MEMBERSHIP_FLAG: LogTimeTrialFlag = {
   kind: 'off_trial_list',
@@ -105,7 +108,8 @@ beforeEach(() => {
   jest.useFakeTimers();
   jest.clearAllMocks();
   useMomentStore.getState().hide();
-  useMomentStore.setState({ payload: null });
+  useMomentStore.setState({ payload: null, removed: false });
+  (reverseLoggedEvent as jest.Mock).mockResolvedValue(undefined);
 });
 
 afterEach(() => {
@@ -190,5 +194,75 @@ describe('MealCompletionCard — the two trial-flag registers (B-693)', () => {
     expect(queryByTestId('add-trial-food-sheet')).not.toBeNull();
     getByTestId('add-trial-food-error');
     errSpy.mockRestore();
+  });
+});
+
+
+// ── Undo (CUL-612 · §5) ──────────────────────────────────────────────────────
+//
+// The reversal's mechanics are momentStore.test.ts's. What only this card can
+// answer: that the removal line takes the WHOLE body with it. The meal card is
+// the densest of the three — intake chips, both trial registers, the combo line —
+// and every one of those is an offer to add something to a meal that, after Undo,
+// is no longer in the record.
+describe('MealCompletionCard — Undo', () => {
+  async function pressUndo(view: ReturnType<typeof render>) {
+    await act(async () => { fireEvent.press(view.getByLabelText('Undo — remove this log')); });
+  }
+
+  it('removes the meal and swaps the card to its removal line', async () => {
+    seedMeal();
+    const view = render(<MealCompletionCard />);
+    await pressUndo(view);
+    expect(reverseLoggedEvent).toHaveBeenCalledWith('e1');
+    view.getByText('Removed');
+    view.getByText('Taken out of Biscuit’s record');
+  });
+
+  it('takes the intake question with it — nothing asks how much of a removed meal was eaten', async () => {
+    seedMeal({ foodType: 'meal' });
+    const view = render(<MealCompletionCard />);
+    view.getByText('How much did Biscuit eat?');
+    await pressUndo(view);
+    expect(view.queryByText('How much did Biscuit eat?')).toBeNull();
+  });
+
+  it('takes the trial heads-up and its add hatch with it', async () => {
+    // The amber panel is a claim about a meal ("this one isn't on the trial
+    // list"). Left standing over a removed meal it would be a claim about a row
+    // that is gone — and the hatch would offer to add a food on its account.
+    seedMeal({ trialFlag: MEMBERSHIP_FLAG });
+    const view = render(<MealCompletionCard />);
+    view.getByText('+ Add to the trial list');
+    await pressUndo(view);
+    expect(view.queryByText('Off the trial list')).toBeNull();
+    expect(view.queryByText('+ Add to the trial list')).toBeNull();
+  });
+
+  it('takes the combo line with it — no adding a dose against a removed meal', async () => {
+    seedMeal({ foodType: 'meal' });
+    const view = render(<MealCompletionCard />);
+    view.getByText('+ Add a med given with this');
+    await pressUndo(view);
+    expect(view.queryByText('+ Add a med given with this')).toBeNull();
+  });
+
+  it('names the MEAL’s pet, not a since-switched active one', async () => {
+    seedMeal({}, 'p2');
+    const view = render(<MealCompletionCard />);
+    await pressUndo(view);
+    view.getByText('Taken out of Biscuit’s record');
+  });
+
+  it('on a FAILED write, keeps the card intact rather than claiming a reversal', async () => {
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    (reverseLoggedEvent as jest.Mock).mockRejectedValueOnce(new Error('disk full'));
+    seedMeal({ foodType: 'meal' });
+    const view = render(<MealCompletionCard />);
+    await pressUndo(view);
+    expect(view.queryByText('Removed')).toBeNull();
+    view.getByText('How much did Biscuit eat?');
+    expect(alert.mock.calls[0][0]).toBe('Could not remove that log');
+    alert.mockRestore();
   });
 });

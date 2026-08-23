@@ -12,6 +12,7 @@
 //   • it never co-renders with the in-doubt prompt, and there is no all-clear state.
 
 jest.mock('../../lib/supabase', () => ({ supabase: {} }));
+jest.mock('../../lib/undoLog', () => ({ reverseLoggedEvent: jest.fn().mockResolvedValue(undefined) }));
 jest.mock('../../lib/sync', () => ({
   syncPendingEvents: jest.fn().mockResolvedValue(undefined),
   syncPendingMedicationAdministrations: jest.fn().mockResolvedValue(undefined),
@@ -36,7 +37,9 @@ jest.mock('../../lib/db', () => ({
 }));
 
 import { act, fireEvent, render } from '@testing-library/react-native';
+import { Alert } from 'react-native';
 import { MedicationCompletionCard } from './MedicationCompletionCard';
+import { reverseLoggedEvent } from '../../lib/undoLog';
 import { useMomentStore } from '../../store/momentStore';
 import { usePetStore } from '../../store/petStore';
 
@@ -74,7 +77,8 @@ beforeEach(() => {
   jest.clearAllMocks();
   mockGetDoubleDoseFlag.mockResolvedValue(NO_CONFLICT);
   useMomentStore.getState().hide();
-  useMomentStore.setState({ payload: null });
+  useMomentStore.setState({ payload: null, removed: false });
+  (reverseLoggedEvent as jest.Mock).mockResolvedValue(undefined);
 });
 
 afterEach(() => {
@@ -176,5 +180,71 @@ describe('MedicationCompletionCard — the log-time double-dose note (B-157)', (
     expect(mockUpdateDoseAdherence).toHaveBeenCalledWith('m1', 'partial');
     getByText(NOTE);
     warn.mockRestore();
+  });
+});
+
+
+// ── Undo (CUL-612 · §5) ──────────────────────────────────────────────────────
+//
+// The reversal's mechanics are momentStore.test.ts's. What only this card can
+// answer is the safety half: the adherence chips are the B-156 G1 fail-safe
+// surface, so they must not survive the removal of the dose they describe — and
+// Undo must stay a reversal, never a second route to an affirmative.
+describe('MedicationCompletionCard — Undo', () => {
+  async function pressUndo(view: ReturnType<typeof render>) {
+    await act(async () => { fireEvent.press(view.getByLabelText('Undo — remove this dose')); });
+  }
+
+  it('removes the dose and swaps the card to its removal line', async () => {
+    seedDose();
+    const view = render(<MedicationCompletionCard />);
+    await pressUndo(view);
+    expect(reverseLoggedEvent).toHaveBeenCalledWith('m1');
+    view.getByText('Removed');
+    view.getByText('Taken out of Mochi’s record');
+  });
+
+  it('takes the adherence chips with it — no adherence write against a removed dose', async () => {
+    seedDose();
+    const view = render(<MedicationCompletionCard />);
+    await pressUndo(view);
+    expect(view.queryByText('Given')).toBeNull();
+    expect(view.queryByText('Refused')).toBeNull();
+    expect(view.queryByText('How was it given? (optional)')).toBeNull();
+    // Belt-and-braces on the invariant itself: nothing wrote an adherence.
+    expect(mockUpdateDoseAdherence).not.toHaveBeenCalled();
+  });
+
+  it('takes a standing double-dose note with it', async () => {
+    // Removing the dose IS the correct response to a double — so the note has
+    // nothing left to warn about, and leaving it up would describe a row that is
+    // no longer in the record.
+    seedDose({ doubleDose: CONFLICT });
+    const view = render(<MedicationCompletionCard />);
+    view.getByText(/another Prednisolone dose/);
+    await pressUndo(view);
+    expect(view.queryByText(/another Prednisolone dose/)).toBeNull();
+  });
+
+  it('renders on a COMBO dose, where Change time deliberately does not', () => {
+    // The combo is the densest, most error-prone path onto this card — logged from
+    // another card, against a meal — so it is exactly where a reversal is most
+    // likely needed, and it is the one place the time picker withholds itself.
+    seedDose({ pairedFoodName: 'Delectables', howGiven: 'in_treat' });
+    const view = render(<MedicationCompletionCard />);
+    view.getByLabelText('Undo — remove this dose');
+    expect(view.queryByLabelText('Change time of this dose')).toBeNull();
+  });
+
+  it('on a FAILED write, keeps the card and its chips intact', async () => {
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    (reverseLoggedEvent as jest.Mock).mockRejectedValueOnce(new Error('disk full'));
+    seedDose();
+    const view = render(<MedicationCompletionCard />);
+    await pressUndo(view);
+    expect(view.queryByText('Removed')).toBeNull();
+    view.getByLabelText('Undo — remove this dose');
+    expect(alert.mock.calls[0][0]).toBe('Could not remove that dose');
+    alert.mockRestore();
   });
 });
