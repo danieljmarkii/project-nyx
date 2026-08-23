@@ -999,6 +999,11 @@ export default function FoodCaptureScreen() {
                 <ThemedText style={styles.mealTimeText}>
                   {mealOccurredAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                   {mealOccurredAtSource === 'exif' ? (
+                    // Nested ThemedText: the child does NOT inherit the parent's face
+                    // (every ThemedText injects an explicit family, which breaks RN's
+                    // native cascade — the primitive's own known limit). Harmless while
+                    // both styles are weightless and resolve to the same regular face;
+                    // give `mealTimeAttribution` a weight and it must say so itself.
                     <ThemedText style={styles.mealTimeAttribution}>
                       {'  ·  '}{formatExifAttribution(mealOccurredAt.toISOString())}
                     </ThemedText>
