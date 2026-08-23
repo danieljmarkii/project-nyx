@@ -93,6 +93,59 @@ describe('the sign-out wipe (B-402)', () => {
   });
 });
 
+describe('a wipe landing mid-write cannot resurrect the map', () => {
+  it('abandons a write whose read straddled clearSignalArrival()', async () => {
+    // The rls-privacy-reviewer's attack, kept as a test. `markArrivalPlayed` is fired
+    // un-awaited from SignalZone, and the blob shape makes it a read-modify-write — so
+    // without the clear epoch, a sign-out landing between the read and the write puts
+    // the WHOLE previous account's marker map back after wipeLocalSession() has already
+    // returned clean. The review could not reach it through the app's navigation; that
+    // is a property of today's routing, not of this module.
+    await markArrivalPlayed('pet-a');
+    await markArrivalPlayed('pet-b');
+
+    // Hold the NEXT read open, then wipe underneath it. Swapped by hand rather than with
+    // jest.spyOn: restoring a spy over AsyncStorage's own jest mock leaves the mock's
+    // storage behaving inconsistently for later cases in this file.
+    const realGet = AsyncStorage.getItem.bind(AsyncStorage);
+    let release: () => void = () => {};
+    const held = new Promise<void>((r) => {
+      release = r;
+    });
+    let gatedOnce = false;
+    (AsyncStorage as unknown as { getItem: (k: string) => Promise<string | null> }).getItem =
+      async (k: string) => {
+        if (gatedOnce) return realGet(k);
+        gatedOnce = true;
+        const v = await realGet(k);
+        await held;
+        return v;
+      };
+
+    const inFlight = markArrivalPlayed('pet-c');
+    await clearSignalArrival();
+
+    release();
+    await inFlight;
+    (AsyncStorage as unknown as { getItem: typeof realGet }).getItem = realGet;
+
+    // Still wiped. Without the epoch, all three markers are back.
+    expect(await hasPlayedArrival('pet-a')).toBe(false);
+    expect(await hasPlayedArrival('pet-b')).toBe(false);
+    expect(await hasPlayedArrival('pet-c')).toBe(false);
+  });
+
+  it('a write that starts AFTER the clear is a normal write, not a casualty', async () => {
+    // The guard must gate on the interleaving, not simply refuse everything post-wipe —
+    // the next account's pets still get their moments recorded.
+    await markArrivalPlayed('pet-a');
+    await clearSignalArrival();
+    await markArrivalPlayed('pet-new');
+    expect(await hasPlayedArrival('pet-new')).toBe(true);
+    expect(await hasPlayedArrival('pet-a')).toBe(false);
+  });
+});
+
 describe('never fatal', () => {
   it('a write failure is swallowed — a decoration’s bookkeeping cannot break a session', async () => {
     const spy = jest.spyOn(AsyncStorage, 'setItem').mockRejectedValueOnce(new Error('disk full'));

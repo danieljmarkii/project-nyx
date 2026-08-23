@@ -159,10 +159,15 @@ function useArrivalMoment({
     timer: ReturnType<typeof setTimeout> | null;
   }>({ seq: null, timer: null });
 
-  // The pet whose moment has already been spent in this mount. A ref, not state: it
-  // must be readable and writable in the same tick the decision is made, and it must
-  // not re-enter the effect that sets it.
-  const spentFor = useRef<string | null>(null);
+  // The pets whose moment has already been handled in this mount. A ref, not state: it
+  // must be readable and writable in the same tick the decision is made, and it must not
+  // re-enter the effect that sets it. A SET rather than one slot (code-reviewer): with a
+  // single slot, two pets' in-flight marker reads claim the same latch, so a fast
+  // A → B → A switch could let a second check start for a pet already being handled.
+  // The `activePet` guard below stops that from ever writing the wrong pet's marker, so
+  // the single slot was never a correctness hole — a set just makes the dedupe say what
+  // it means, for the cost of one allocation.
+  const spentFor = useRef<Set<string>>(new Set());
 
   // Read at the instant an arrival starts rather than closed over per render, so these
   // stay out of the transition effect's dependency list.
@@ -207,8 +212,8 @@ function useArrivalMoment({
     if (settledState !== null) prevSettled.current = { petId, state: settledState };
     if (!petId || prev.petId !== petId) return;
     if (prev.state !== 'building' || settledState !== 'live' || findingCount === 0) return;
-    if (spentFor.current === petId) return;
-    spentFor.current = petId;
+    if (spentFor.current.has(petId)) return;
+    spentFor.current.add(petId);
 
     (async () => {
       // A read FAILURE resolves to "played". lib/signalArrival answers the storage
@@ -226,7 +231,7 @@ function useArrivalMoment({
       // to a card that is no longer on screen. Release the latch so the pet can still
       // have its moment later.
       if (activePet.current !== petId) {
-        spentFor.current = null;
+        spentFor.current.delete(petId);
         return;
       }
       if (alreadyPlayed) return;
@@ -357,6 +362,59 @@ function ArrivalWash({ sweep }: { sweep: Animated.Value }) {
             end={{ x: 1, y: 0.35 }}
             style={StyleSheet.absoluteFill}
           />
+        </Animated.View>
+      ) : null}
+    </View>
+  );
+}
+
+/**
+ * The crossfade stage — mounted only for the moment's 1.2s.
+ *
+ * The outgoing building frame is held over the live stack and dissolved out of it (§4:
+ * "the building rows dissolve as the first headline crossfades in"). The two share ONE
+ * `crossfade` value read from opposite ends, so they cannot drift apart into a gap or an
+ * overlap the way two timings that must agree eventually do.
+ *
+ * `overflow: hidden` sizes the stage to the LIVE content and clips the outgoing frame,
+ * which is usually the taller of the two (E1 carries a headline, a sub, three watching
+ * rows and a floor line). Clipping is the lesser evil: unclipped, that frame would fade
+ * out across the Trial strip and the Today zone below the card.
+ */
+function ArrivalStage({
+  moment,
+  outgoingFrame,
+  stack,
+}: {
+  moment: ArrivalMoment | null;
+  outgoingFrame: ReactNode;
+  stack: ReactNode;
+}) {
+  return (
+    <View
+      style={styles.arrivalStage}
+      // The lead sits at opacity 0 for the crossfade's first 400ms, beneath a still-
+      // opaque outgoing frame — so without this, a tap on what LOOKS like a ghost
+      // watching row lands on the invisible InsightCard underneath and expands it. The
+      // card is inert for the moment; a tap that does nothing beats a tap that does
+      // something the owner cannot see they asked for.
+      pointerEvents="none"
+    >
+      {stack}
+      {outgoingFrame ? (
+        <Animated.View
+          accessibilityElementsHidden
+          importantForAccessibility="no-hide-descendants"
+          style={[
+            StyleSheet.absoluteFill,
+            {
+              opacity: moment
+                ? moment.crossfade.interpolate({ inputRange: [0, 1], outputRange: [1, 0] })
+                : 0,
+            },
+          ]}
+        >
+          {outgoingFrame}
         </Animated.View>
       ) : null}
     </View>
@@ -504,10 +562,18 @@ export function SignalZone({
   // the direction a severity rule is allowed to be wrong in.
   const hasSafetyFinding = findings.some((f) => f.finding.priorityClass === 'safety');
 
+  // COUNT WHAT RENDERS, not what the cache holds. `displayState` is derived upstream over
+  // the full set, so a pet whose only finding is dropped by the B-789 suppression still
+  // reads 'live' with an EMPTY stack (the CUL-527 residual). Counting `findings.length`
+  // there would sweep a blank card and spend the marker — on the not-eating cat, the one
+  // record where a celebration is least defensible. The safety gate above deliberately
+  // keeps reading the FULL set: suppression must never be able to unhide the moment.
+  const renderableCount = visibleFindings(findings, suppressTrialResponse).length;
+
   const { playing: arriving, moment } = useArrivalMoment({
     petId,
     settledState,
-    findingCount: findings.length,
+    findingCount: renderableCount,
     hasSafetyFinding,
   });
 
@@ -565,37 +631,32 @@ export function SignalZone({
       {showAck ? <AckLine petName={petName} /> : null}
 
       {state === 'live' ? (
-        // The crossfade stage. While the moment plays, the outgoing building frame is
-        // held over the live stack and dissolved out of it (§4: "the building rows
-        // dissolve as the first headline crossfades in") — the two are one animation
-        // read from opposite ends, so they share `crossfade` rather than risking a gap
-        // or an overlap between two timings that must agree.
-        <View style={arriving ? styles.arrivalStage : undefined}>
+        // The stage exists ONLY while the moment plays. On every ordinary render the
+        // stack is returned bare, exactly as it shipped — no wrapper node, no clip, no
+        // opacity node (the same byte-identical-when-inert rule the section label's
+        // single style reference follows above).
+        arriving ? (
+          <ArrivalStage
+            moment={moment}
+            outgoingFrame={outgoingFrame}
+            stack={
+              <LiveStack
+                findings={findings}
+                petName={petName}
+                trialRunning={trialRunning}
+                suppressTrialResponse={suppressTrialResponse}
+                arrival={moment}
+              />
+            }
+          />
+        ) : (
           <LiveStack
             findings={findings}
             petName={petName}
             trialRunning={trialRunning}
             suppressTrialResponse={suppressTrialResponse}
-            arrival={moment}
           />
-          {outgoingFrame ? (
-            <Animated.View
-              pointerEvents="none"
-              accessibilityElementsHidden
-              importantForAccessibility="no-hide-descendants"
-              style={[
-                StyleSheet.absoluteFill,
-                {
-                  opacity: moment
-                    ? moment.crossfade.interpolate({ inputRange: [0, 1], outputRange: [1, 0] })
-                    : 0,
-                },
-              ]}
-            >
-              {outgoingFrame}
-            </Animated.View>
-          ) : null}
-        </View>
+        )
       ) : state === 'stale' ? (
         <Text style={styles.intro}>{staleIntro(petName)}</Text>
       ) : state === 'no_pattern' ? (
@@ -652,6 +713,37 @@ function AckLine({ petName }: { petName: string }) {
   );
 }
 
+/**
+ * The findings that will actually RENDER, in render order — the B-789 safety suppression
+ * plus the server's rank.
+ *
+ * Extracted (CUL-601) because the arrival needs the same answer the stack does. It used
+ * to live inside `LiveStack`, and the arrival's first cut counted `findings.length`
+ * instead: on a not-eating cat whose ONLY finding is a suppressed `fewer_during_trial`
+ * (the known CUL-527 residual), `displayState` still reads 'live' and the stack renders
+ * EMPTY — so the moment played a gold wash and a success tap over a blank card, and
+ * spent that pet's once-ever marker doing it. The one owner it fired for would have been
+ * the one whose cat is refusing food.
+ *
+ * One predicate, two callers — never a second copy of this rule (the diet-trial §5.3
+ * lesson). The suppression's own reasoning stays at the call site below.
+ */
+function visibleFindings(
+  findings: CachedFinding[],
+  suppressTrialResponse: boolean,
+): CachedFinding[] {
+  return [...findings]
+    .filter(
+      (f) =>
+        !(
+          suppressTrialResponse &&
+          isTrialResponse(f.finding) &&
+          f.finding.comparisonDirection === 'fewer_during_trial'
+        ),
+    )
+    .sort((a, b) => a.rank - b.rank);
+}
+
 // The card stack — findings are already ranked server-side (safety leads, then
 // the pet's context-lead type, then tier — §5/§8); we render in that order and
 // only add the visual rhythm. Hairline dividers between rows keep one container
@@ -690,16 +782,9 @@ function LiveStack({
   // (derived upstream over the full set) still reads 'live' and this stack renders empty. Safe
   // direction (no reassurance), and the escalation case is closed by the direction gate; the
   // displayState fix rides CUL-527. The finding stays in the cache; nothing consumes it but this stack.
-  const ordered = [...findings]
-    .filter(
-      (f) =>
-        !(
-          suppressTrialResponse &&
-          isTrialResponse(f.finding) &&
-          f.finding.comparisonDirection === 'fewer_during_trial'
-        ),
-    )
-    .sort((a, b) => a.rank - b.rank);
+  // CUL-601: the arrival moment reads `visibleFindings` too, so that empty frame no longer
+  // gets a celebration drawn over it — but the empty frame itself is still CUL-527's.
+  const ordered = visibleFindings(findings, suppressTrialResponse);
   return (
     <View>
       {ordered.map((f, i) => {

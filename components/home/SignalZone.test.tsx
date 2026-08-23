@@ -548,6 +548,33 @@ describe('SignalZone — the arrival moment', () => {
     },
   };
 
+  // A reassuring trial_response the B-789 gate drops on a not-eating record. Insight-
+  // class, so the safety gate does not see it — which is the whole point of the case.
+  const trialResponseFinding: CachedFinding = {
+    rank: 1,
+    text: 'A trial sentence about vomiting counts.',
+    finding: {
+      type: 'trial_response',
+      priorityClass: 'insight',
+      trialDayNumber: 20,
+      targetDurationDays: 56,
+      trialLoggedDays: 18,
+      baselineLoggedDays: 40,
+      baselineWindowDays: 49,
+      pooledTrialCount: 4,
+      pooledBaselineCount: 20,
+      rapid: { trial: 4, baseline: 8 },
+      long: { trial: 0, baseline: 7 },
+      rapidWindowMinutes: 30,
+      longGapHours: 6,
+      treatShare: { trial: 0.1, baseline: 0.8 },
+      mealsPerDay: { trial: 4, baseline: 2 },
+      comparisonDirection: 'fewer_during_trial',
+      densityComparable: true,
+      trialWindowDays: 20,
+    },
+  };
+
   const HAPTIC_AT_MS = 900;
   const WHOLE_MOMENT_MS = 1400;
 
@@ -575,13 +602,13 @@ describe('SignalZone — the arrival moment', () => {
    * Mount in a settled BUILDING state, then transition to live — the arrival's actual
    * trigger. Returns the render result so a test can inspect the card mid-moment.
    */
-  async function arrive(findings: CachedFinding[], petId = 'pet-1') {
+  async function arrive(findings: CachedFinding[], petId = 'pet-1', suppress = false) {
     mockUseSignal.mockReturnValue(signalState({ petId, displayState: 'building' }));
-    const view = render(<SignalZone />);
+    const view = render(<SignalZone suppressTrialResponse={suppress} />);
     await flush();
     mockUseSignal.mockReturnValue(signalState({ petId, displayState: 'live', findings }));
     await act(async () => {
-      view.rerender(<SignalZone />);
+      view.rerender(<SignalZone suppressTrialResponse={suppress} />);
     });
     await flush();
     return view;
@@ -777,6 +804,34 @@ describe('SignalZone — the arrival moment', () => {
     });
     await flush();
     expect(view.queryByTestId('signal-arrival-wash')).toBeNull();
+  });
+
+  it('does NOT celebrate a live state whose only card is suppressed — the not-eating cat', async () => {
+    // The CUL-527 residual, and the sharpest case in this feature. A `fewer_during_trial`
+    // trial_response is dropped by the B-789 safety suppression, but `displayState` is
+    // derived upstream over the FULL set — so the state reads 'live' with an EMPTY stack.
+    // Counting `findings.length` would sweep a blank card with a gold wash and a success
+    // tap, and burn the marker doing it, for the one owner whose cat is refusing food.
+    // The finding is insight-class, so the safety gate does not catch this; counting what
+    // RENDERS is what catches it.
+    const suppressedSole: CachedFinding = {
+      ...trialResponseFinding,
+      rank: 0,
+    };
+    const view = await arrive([suppressedSole], 'pet-1', true);
+    expect(view.queryByTestId('signal-arrival-wash')).toBeNull();
+    act(() => {
+      jest.advanceTimersByTime(WHOLE_MOMENT_MS);
+    });
+    expect(mockInsightArrival).not.toHaveBeenCalled();
+    // And the marker is NOT spent — this pet's real first insight still gets its moment.
+    expect(mockMarkArrivalPlayed).not.toHaveBeenCalled();
+  });
+
+  it('still celebrates when the suppressed card is not the only one', async () => {
+    // The gate must count what renders, not simply bail whenever suppression is on.
+    const view = await arrive([benignFinding, trialResponseFinding], 'pet-1', true);
+    expect(view.queryByTestId('signal-arrival-wash')).toBeTruthy();
   });
 
   it('an empty live set is not an arrival — there is nothing to celebrate', async () => {

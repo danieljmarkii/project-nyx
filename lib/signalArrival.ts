@@ -18,6 +18,11 @@
 // and it is the shape every sibling marker already uses (the Daily Recap offer, the
 // beta opt-ins, the trial heads-up ledger). Owner-visible behavior is identical.
 //
+// The shape is chosen DESPITE a cost, not in ignorance of one: a blob makes the write a
+// read-modify-write, so a stale write can resurrect N markers where a per-key write
+// could only resurrect one. That cost is paid off by the clear epoch below rather than
+// by reverting the shape.
+//
 // DEVICE-LOCAL, DELIBERATELY. The marker is not synced. A reinstall — or the same
 // account on a second phone — may replay the moment once. Accepted in §4 as harmless:
 // the cost of getting it wrong in this direction is one extra second of pleasant
@@ -33,6 +38,25 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export const SIGNAL_ARRIVAL_STORAGE_KEY = 'nyx.signalArrival';
+
+// The clear epoch — this module's local copy of `lib/sync`'s FR-9 sign-out gate, and
+// the price of the one-key shape above (rls-privacy-reviewer, CUL-601).
+//
+// Storing the markers as a blob makes a write a READ-MODIFY-WRITE, and `SignalZone`
+// fires that write un-awaited. So a `clearSignalArrival()` landing between the read and
+// the write would let the stale write put the WHOLE previous account's map back after
+// `wipeLocalSession()` had already returned clean — a bigger blast radius than the
+// per-key shape, whose stale write could only resurrect one entry. The review could not
+// construct a reachable trigger (a deliberate sign-out blurs Home, and an involuntary
+// one kills the JWT the regen's cache read needs), but "no reachable path today" is a
+// property of the current navigation, not of this module.
+//
+// So the shape is kept AND the write side is closed, with the idiom `lib/sync.ts`
+// already ships for the identical failure: capture the epoch on entry, re-check it
+// before writing, and abandon the write if a wipe has landed in between. Module-local
+// rather than imported from `lib/sync`, because `clearSignalArrival` IS this key's only
+// wipe — a wider epoch would add a heavy import to buy nothing.
+let clearEpoch = 0;
 
 /**
  * The persisted marker set: `{ [petId]: true }`. Absence is the default — a pet with
@@ -93,8 +117,13 @@ export async function hasPlayedArrival(petId: string): Promise<boolean> {
  * than the failure it reports.
  */
 export async function markArrivalPlayed(petId: string): Promise<void> {
+  const epoch = clearEpoch;
   try {
     const markers = await readMarkers();
+    // A wipe landed while we were reading. Writing now would restore the map the
+    // sign-out just destroyed — see the epoch's note above. Losing this one marker is
+    // the correct outcome: the account it belonged to is gone.
+    if (clearEpoch !== epoch) return;
     if (markers[petId] === true) return;
     markers[petId] = true;
     await AsyncStorage.setItem(SIGNAL_ARRIVAL_STORAGE_KEY, JSON.stringify(markers));
@@ -108,6 +137,9 @@ export async function markArrivalPlayed(petId: string): Promise<void> {
  * Best-effort and idempotent, like every other clear on that path.
  */
 export async function clearSignalArrival(): Promise<void> {
+  // Bumped BEFORE the removal, so a write whose read straddles this clear is caught by
+  // the re-check rather than racing the removal itself.
+  clearEpoch++;
   try {
     await AsyncStorage.removeItem(SIGNAL_ARRIVAL_STORAGE_KEY);
   } catch (e) {
