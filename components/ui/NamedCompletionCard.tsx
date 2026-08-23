@@ -1,0 +1,342 @@
+import { useEffect, useRef, useState } from 'react';
+import { View, StyleSheet, TouchableOpacity, Animated, Platform, Alert } from 'react-native';
+import { Check } from 'lucide-react-native';
+import { theme, shadows } from '../../constants/theme';
+import { useMomentStore } from '../../store/momentStore';
+import { useEventStore } from '../../store/eventStore';
+import { usePetStore } from '../../store/petStore';
+import { useReducedMotion } from '../../hooks/useReducedMotion';
+import { updateEvent, getEventSource } from '../../lib/db';
+import { syncPendingEvents } from '../../lib/sync';
+import {
+  summarizeLoggedRecord, canChangeTime, resolveNamedTimeEdit, applyNamedTimeEdit,
+  timeEditPrompt,
+} from '../../lib/completionCard';
+import { sourceAfterPointEdit } from '../../lib/eventTimeEdit';
+import { ThemedText } from './ThemedText';
+import { TimeEditSheet } from './TimeEditSheet';
+
+// Tab bar height from app/(tabs)/_layout.tsx — the card must clear it so it isn't
+// occluded when the owner lands back on a tabs screen after a log.
+const TAB_BAR_HEIGHT = Platform.OS === 'ios' ? 80 : 60;
+
+// Root-mounted NAMED COMPLETION CARD — register R1 of the two-register completion
+// system (CUL-606; docs/nyx-app-polish-requirements.md §5).
+//
+// ── WHAT THIS REPLACED ──────────────────────────────────────────────────────
+// <CompletionMoment/>: a full-screen, solid-WHITE takeover with a check ring that
+// blocked input for 1.4s after every symptom log and every weight check. Three
+// things were wrong with it, and this card is shaped by all three:
+//
+//   1. It was a camera flash. The canonical capture moment in Jordan's brief is
+//      one-handed, in a dark bedroom, at 2am. So the ground here DIMS instead —
+//      and the dim is the whole visual event, which is why there is no white
+//      surface anywhere in this component.
+//   2. It said "Logged". The app knew exactly what it had just written and threw
+//      that away. This card speaks the record's own sentence (see below).
+//   3. It offered nothing. No Change time, no way back. A mis-tapped time was
+//      fixed through History → detail → edit. The card carries Change time, and
+//      Undo lands in CUL-612 beside it.
+//
+// ── THE SCRIM IS VISUAL, NOT MODAL ──────────────────────────────────────────
+// pointerEvents="none" on the scrim, "box-none" on the wrapper: Home recedes but
+// stays live, and only the card's own controls take touches. This is the trade
+// that lets the dwell be 5s instead of the takeover's 1.4s — a longer window is
+// only affordable because it costs the owner nothing to ignore. A 5s BLOCKING
+// scrim would be a worse surface than the flash it replaced, not a better one.
+//
+// ── THE SENTENCE ────────────────────────────────────────────────────────────
+// Derived from the payload's structured record through lib/completionCard →
+// lib/logCopy → describeOccurredAt — the same path History and the vet report
+// use. The card cannot be handed a display string, so it cannot over-claim and
+// cannot drift from the row the owner finds tomorrow. That module's header
+// carries the full rule.
+export function NamedCompletionCard() {
+  const { visible, payload, hide, patchOccurredAt, patchRecord } = useMomentStore();
+  const { patchInToday } = useEventStore();
+  const { pets, activePet } = usePetStore();
+  const reduced = useReducedMotion();
+
+  const translateY = useRef(new Animated.Value(80)).current;
+  const opacity = useRef(new Animated.Value(0)).current;
+  const scrimOpacity = useRef(new Animated.Value(0)).current;
+  // The mark's spring. Held at rest under Reduce Motion — the static frame.
+  const checkScale = useRef(new Animated.Value(reduced ? 1 : 0.6)).current;
+
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  const isNamed = payload?.kind === 'named';
+  const shown = visible && isNamed;
+
+  useEffect(() => {
+    if (reduced) {
+      // Static frame: the card and its ground appear and leave at full value, and
+      // the mark never springs. Deliberately still a state CHANGE, not a freeze —
+      // an owner with Reduce Motion on must still see the confirmation arrive;
+      // the setting asks for less movement, not less information. (The commit
+      // haptic is unaffected — it fires in the store, and touch is not motion.)
+      translateY.setValue(0);
+      opacity.setValue(shown ? 1 : 0);
+      scrimOpacity.setValue(shown ? 1 : 0);
+      checkScale.setValue(1);
+      return;
+    }
+    const anim = Animated.parallel([
+      Animated.spring(translateY, {
+        toValue: shown ? 0 : 80, useNativeDriver: true, tension: 80, friction: 11,
+      }),
+      Animated.timing(opacity, {
+        toValue: shown ? 1 : 0, duration: shown ? 180 : 140, useNativeDriver: true,
+      }),
+      Animated.timing(scrimOpacity, {
+        toValue: shown ? 1 : 0, duration: shown ? 180 : 140, useNativeDriver: true,
+      }),
+      Animated.spring(checkScale, {
+        toValue: shown ? 1 : 0.6, useNativeDriver: true, tension: 60, friction: 7,
+      }),
+    ]);
+    anim.start();
+    return () => anim.stop();
+  }, [shown, reduced, translateY, opacity, scrimOpacity, checkScale]);
+
+  async function handleSaveTime(next: Date) {
+    if (!isNamed) return;
+    const edit = resolveNamedTimeEdit(payload.record, next);
+    // Belt-and-braces: the affordance is not rendered when the record can't take a
+    // single-point edit, so this is unreachable — but a null here must never
+    // become a write that guesses.
+    if (!edit) { setPickerOpen(false); return; }
+    setSaving(true);
+    try {
+      // Provenance is PRESERVED on a peek-and-save. Save is live even when the
+      // owner scrubbed nothing, and stamping 'manual' unconditionally would drop
+      // the 'exif' attribution off a symptom logged from a photo — a restatement
+      // of a field the caller was not told about, which is the same rule this
+      // card applies to `confidence` and to notes. sourceAfterPointEdit is the
+      // shared predicate (B-448's "re-selecting the current value is not a new
+      // claim", applied to the point).
+      const changed = edit.occurredAtIso !== payload.occurredAt;
+      const source = sourceAfterPointEdit(await getEventSource(payload.eventId), changed);
+      await updateEvent(payload.eventId, {
+        occurred_at: edit.occurredAtIso,
+        // `severity` and `notes` deliberately OMITTED. The /log flow writes an
+        // owner-typed note on both of this card's paths, and this edit is about
+        // the time and nothing else — restating a field you were not told about
+        // is how B-448's leak happened, in the other direction. updateEvent takes
+        // both optional-by-omission for exactly this caller.
+        occurred_at_source: source,
+        // Spread, not a literal: OMITTING the key is what leaves the three B-010
+        // columns exactly as stored (B-448). resolveNamedTimeEdit only supplies a
+        // confidence when the edit legitimately restates them — a "found by" whose
+        // discovery bound moves with the point. Everything else keeps its stored
+        // claim, so a time correction can never promote a row to "seen".
+        ...(edit.confidence ? { confidence: edit.confidence } : {}),
+      });
+      patchInToday(payload.eventId, {
+        occurred_at: edit.occurredAtIso,
+        ...(edit.confidence
+          ? {
+              occurred_at_confidence: edit.confidence.value,
+              occurred_at_earliest: edit.confidence.earliest,
+              occurred_at_latest: edit.confidence.latest,
+            }
+          : {}),
+      });
+      patchOccurredAt(edit.occurredAtIso);
+      patchRecord(applyNamedTimeEdit(payload.record, edit));
+      setPickerOpen(false);
+      // Dismiss on save — the affirmative action is its own confirmation, the same
+      // call the meal card makes.
+      hide();
+      syncPendingEvents().catch(console.error);
+    } catch (e) {
+      console.error('[named-card] failed to update event time:', e);
+      Alert.alert('Could not update time', 'Try again or edit from History.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  // Keep rendering through the dismiss fade (hide() preserves the payload), but
+  // never mount for another card's payload.
+  if (!payload || payload.kind !== 'named') return null;
+
+  const celebrate = payload.tone === 'celebrate';
+  const sentence = summarizeLoggedRecord(payload.record, payload.occurredAt);
+  // Name the RECORD's pet, not the active one. The write already landed on the
+  // right animal, but a queue-then-switch would otherwise print another pet's name
+  // on a card about this one — the multi-pet guard the meal card carries, for the
+  // same reason.
+  const petName = pets.find((p) => p.id === payload.petId)?.name ?? activePet?.name ?? 'your pet';
+  const showChangeTime = canChangeTime(payload.record);
+  const prompt = timeEditPrompt(payload.record);
+
+  return (
+    <>
+      {/* The dimmed ground. Purely visual — it never takes a touch, so Home stays
+          usable underneath for the whole dwell. */}
+      <Animated.View pointerEvents="none" style={[styles.scrim, { opacity: scrimOpacity }]} />
+
+      <Animated.View
+        pointerEvents={shown ? 'box-none' : 'none'}
+        style={[styles.wrapper, { opacity, transform: [{ translateY }] }]}
+      >
+        <View style={styles.card}>
+          <View style={styles.headerRow}>
+            {/* The mark. The warm-gold halo is the CELEBRATE tone only: a symptom
+                log and a weight check get the same mint check with no gold, which
+                is the shipped tone call (Principle 4 — we acknowledge a 2am vomit,
+                we never congratulate it) and the visual half of the same rule the
+                haptic layer enforces with its single soft tap. */}
+            <Animated.View
+              style={[
+                styles.checkBadge,
+                celebrate && styles.checkBadgeCelebrate,
+                { transform: [{ scale: checkScale }] },
+              ]}
+            >
+              <Check size={18} color={theme.colorMomentConfirm} strokeWidth={3} />
+            </Animated.View>
+            {/* One summary node: a screen reader speaks what was saved and where it
+                went as a single announcement, not two orphan lines. */}
+            <View
+              style={styles.labelCol}
+              accessibilityRole="summary"
+              accessibilityLiveRegion="polite"
+              accessibilityLabel={`${sentence}. Saved to ${petName}’s record`}
+            >
+              <ThemedText style={styles.title}>{sentence}</ThemedText>
+              <ThemedText style={styles.subLabel}>{`Saved to ${petName}’s record`}</ThemedText>
+            </View>
+          </View>
+
+          {/* The action row. Undo lands here in CUL-612, to the LEFT of Change time
+              (round-2 mock) — the row exists now so adding it is not a re-layout.
+              Absent rather than disabled: a dead control on a 5s card teaches the
+              owner the app is broken, and there is nothing to explain yet. */}
+          {showChangeTime && (
+            <View style={styles.actionRow}>
+              <TouchableOpacity
+                onPress={() => setPickerOpen(true)}
+                hitSlop={8}
+                style={styles.actionBtn}
+                accessibilityRole="button"
+                accessibilityLabel="Change time of this log"
+              >
+                <ThemedText style={styles.actionText}>Change time</ThemedText>
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
+      </Animated.View>
+
+      {/* The prompt comes from the RECORD, not from this call site: on a "found
+          by" row the value written is the discovery bound, so the sheet asks
+          "When did you find it?" instead of inviting an answer about occurrence.
+          Non-null whenever the button rendered — both read canChangeTime. */}
+      {pickerOpen && prompt && (
+        <TimeEditSheet
+          value={new Date(payload.occurredAt)}
+          title={prompt}
+          saving={saving}
+          onCancel={() => setPickerOpen(false)}
+          onSave={handleSaveTime}
+        />
+      )}
+    </>
+  );
+}
+
+const styles = StyleSheet.create({
+  // The dim. One step darker than a bottom-sheet scrim would be overkill here —
+  // this is a recede, not a modal — so it takes the standard overlay token.
+  scrim: {
+    ...StyleSheet.absoluteFill,
+    backgroundColor: theme.colorScrim,
+    zIndex: 49,
+  },
+  // Same berth as the meal card: above the tab bar and clear of the FAB, so the
+  // two registers land in the same place and "saved" always appears where the
+  // owner's eye already is.
+  wrapper: {
+    position: 'absolute',
+    bottom: TAB_BAR_HEIGHT + 64,
+    left: theme.space2,
+    right: theme.space2,
+    zIndex: 50,
+    elevation: 12,
+  },
+  card: {
+    backgroundColor: theme.colorNeutralDark,
+    paddingHorizontal: theme.space2,
+    paddingVertical: 12,
+    borderRadius: theme.radiusLarge,
+    gap: theme.space1,
+    ...shadows.md,
+  },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.space2,
+  },
+  checkBadge: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: theme.colorFillOnDark,
+    borderWidth: 1.5,
+    borderColor: theme.colorMomentConfirm,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  // Celebrate-only warmth. The calm tone deliberately has no shadow at all.
+  checkBadgeCelebrate: {
+    shadowColor: theme.colorMomentGlow,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.5,
+    shadowRadius: 10,
+    elevation: 6,
+  },
+  labelCol: {
+    flexGrow: 1,
+    flexShrink: 1,
+    gap: 1,
+  },
+  // No numberOfLines: "Loose stool · between 2:00 PM and 5:33 PM" is a legitimate
+  // sentence and truncating it would put the card back in the business of saying
+  // less than the record holds.
+  title: {
+    fontSize: theme.textMD,
+    color: theme.colorTextOnDark,
+    fontWeight: theme.weightMedium,
+  },
+  subLabel: {
+    fontSize: theme.textSM,
+    color: theme.colorTextOnDarkSubtle,
+    fontWeight: theme.weightRegular,
+  },
+  actionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.space1,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: theme.colorDividerOnDark,
+    paddingTop: theme.space1,
+  },
+  // Pill, per the round-2 mock — and a 44pt floor, which the visual height alone
+  // does not reach (CUL-579's class).
+  actionBtn: {
+    minHeight: 44,
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+    borderRadius: 999,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: theme.colorDividerOnDark,
+  },
+  actionText: {
+    fontSize: theme.textSM,
+    color: theme.colorTextOnDark,
+    fontWeight: theme.weightMedium,
+  },
+});

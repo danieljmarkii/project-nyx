@@ -539,8 +539,20 @@ export async function updateEvent(
   eventId: string,
   fields: {
     occurred_at: string;
-    severity: number | null;
-    notes: string | null;
+    // OPTIONAL-BY-OMISSION, for the same reason `confidence` below is (CUL-606).
+    // These were required, and always written — so a caller that only wanted to
+    // move a timestamp had no way to say so and silently wiped the row's note.
+    // That is not hypothetical: app/log.tsx writes owner-typed notes on the
+    // simple-event and weight paths, and the named completion card's "Change
+    // time" is exactly a caller that knows the new time and nothing else. It
+    // would have deleted what the owner typed thirty seconds earlier, with no
+    // error and nothing on screen to notice.
+    //
+    // Presence is tested with `in`, not truthiness, so an explicit `null` still
+    // clears the column — the four existing callers pass both keys and are
+    // unaffected.
+    severity?: number | null;
+    notes?: string | null;
     occurred_at_source?: 'manual' | 'exif' | 'now';
     // B-010 — re-classifying confidence on edit. OMIT this key to leave the
     // three confidence columns exactly as stored (B-448).
@@ -562,13 +574,24 @@ export async function updateEvent(
   database: Pick<SQLite.SQLiteDatabase, 'runAsync'> = getDb(),
 ): Promise<void> {
   const now = new Date().toISOString();
-  const sets = [
-    'occurred_at = ?', 'severity = ?', 'notes = ?', 'occurred_at_source = ?',
-  ];
+  const sets = ['occurred_at = ?', 'occurred_at_source = ?'];
   const params: (string | number | null)[] = [
-    fields.occurred_at, fields.severity ?? null, fields.notes,
-    fields.occurred_at_source ?? 'manual',
+    fields.occurred_at, fields.occurred_at_source ?? 'manual',
   ];
+  // `!== undefined`, NOT `in`. With exactOptionalPropertyTypes off (it is),
+  // `{ notes: undefined }` type-checks against `notes?: string | null` — so an
+  // `in` test would treat a caller writing `notes: draft.notes` (where draft.notes
+  // is optional) as "clear the note", silently deleting exactly what this change
+  // was made to protect, in a shape the compiler used to reject. An EXPLICIT null
+  // still clears, which is the documented behaviour the edit screen relies on.
+  if (fields.severity !== undefined) {
+    sets.push('severity = ?');
+    params.push(fields.severity);
+  }
+  if (fields.notes !== undefined) {
+    sets.push('notes = ?');
+    params.push(fields.notes);
+  }
   if (fields.confidence) {
     sets.push('occurred_at_confidence = ?', 'occurred_at_earliest = ?', 'occurred_at_latest = ?');
     params.push(fields.confidence.value, fields.confidence.earliest, fields.confidence.latest);

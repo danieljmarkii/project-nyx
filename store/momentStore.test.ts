@@ -13,7 +13,18 @@ import {
   useMomentStore, whenMealCardVisible, whenMedicationCardVisible,
   MEDICATION_FLAGGED_DURATION_MS,
 } from './momentStore';
-import type { MealPayload, MedicationPayload } from './momentStore';
+import type { MealPayload, MedicationPayload, NamedPayload } from './momentStore';
+
+function namedPayload(over: Partial<Omit<NamedPayload, 'kind'>> = {}): Omit<NamedPayload, 'kind'> {
+  return {
+    tone: 'celebrate',
+    eventId: 'n1',
+    petId: 'p1',
+    occurredAt: '2026-06-07T14:00:00.000Z',
+    record: { kind: 'event', typeLabel: 'Vomit', confidence: 'witnessed', earliest: null, latest: null },
+    ...over,
+  };
+}
 
 function mealPayload(over: Partial<Omit<MealPayload, 'kind'>> = {}): Omit<MealPayload, 'kind'> {
   return {
@@ -61,37 +72,51 @@ describe('momentStore', () => {
     expect(s.payload).toBeNull();
   });
 
-  // ── Beat presentation (full-screen, non-meal logs) ─────────────────────────
+  // ── Named card (R1 — symptom + weight commits, CUL-606) ────────────────────
 
-  it('show() reveals a beat immediately and defaults the title to "Logged"', () => {
-    useMomentStore.getState().show({ tone: 'celebrate' });
+  it('showNamed() reveals the named card immediately with the structured record', () => {
+    useMomentStore.getState().showNamed(namedPayload());
     const s = useMomentStore.getState();
     expect(s.visible).toBe(true);
-    expect(s.payload?.kind).toBe('beat');
-    if (s.payload?.kind !== 'beat') throw new Error('expected beat payload');
+    if (s.payload?.kind !== 'named') throw new Error('expected named payload');
     expect(s.payload.tone).toBe('celebrate');
-    expect(s.payload.title).toBe('Logged');
+    expect(s.payload.eventId).toBe('n1');
+    expect(s.payload.record).toEqual({
+      kind: 'event', typeLabel: 'Vomit', confidence: 'witnessed', earliest: null, latest: null,
+    });
   });
 
-  it('carries the calm tone and an explicit title override', () => {
-    useMomentStore.getState().show({ tone: 'calm', title: 'Saved' });
+  // The sentence rule's structural half: the payload has nowhere to put a display
+  // string, so a call site cannot pass "Logged". This asserts the SHAPE, which is
+  // what the retired beat payload got wrong (it took a free-text `title`).
+  it('carries no pre-composed display string — only the record', () => {
+    useMomentStore.getState().showNamed(namedPayload({ tone: 'calm' }));
     const { payload } = useMomentStore.getState();
-    if (payload?.kind !== 'beat') throw new Error('expected beat payload');
+    if (payload?.kind !== 'named') throw new Error('expected named payload');
+    expect(payload).not.toHaveProperty('title');
     expect(payload.tone).toBe('calm');
-    expect(payload.title).toBe('Saved');
   });
 
-  it('a beat auto-dismisses after the default 1.4s dwell (under the 2s cap)', () => {
-    useMomentStore.getState().show({ tone: 'celebrate' });
-    expect(useMomentStore.getState().visible).toBe(true);
-    jest.advanceTimersByTime(1399);
+  it('carries a weight record', () => {
+    useMomentStore.getState().showNamed(namedPayload({ record: { kind: 'weight', weightKg: 5.62 } }));
+    const { payload } = useMomentStore.getState();
+    if (payload?.kind !== 'named') throw new Error('expected named payload');
+    expect(payload.record).toEqual({ kind: 'weight', weightKg: 5.62 });
+  });
+
+  // The dwell moved 1.4s -> 5s when the takeover became a non-blocking card: the
+  // old number was sized for a surface that OWNED the screen, this one is sized
+  // for a sentence to read and a Change time to reach.
+  it('the named card auto-dismisses after the 5s interactive dwell', () => {
+    useMomentStore.getState().showNamed(namedPayload());
+    jest.advanceTimersByTime(4999);
     expect(useMomentStore.getState().visible).toBe(true);
     jest.advanceTimersByTime(1);
     expect(useMomentStore.getState().visible).toBe(false);
   });
 
-  it('defers a beat reveal by delayMs (used to clear the dismissing /log modal)', () => {
-    useMomentStore.getState().show({ tone: 'calm' }, { delayMs: 300 });
+  it('defers the reveal by delayMs (used to clear the dismissing /log modal)', () => {
+    useMomentStore.getState().showNamed(namedPayload(), { delayMs: 300 });
     expect(useMomentStore.getState().visible).toBe(false);
     jest.advanceTimersByTime(299);
     expect(useMomentStore.getState().visible).toBe(false);
@@ -99,37 +124,61 @@ describe('momentStore', () => {
     expect(useMomentStore.getState().visible).toBe(true);
   });
 
-  it('honors a custom durationMs on a beat', () => {
-    useMomentStore.getState().show({ tone: 'celebrate' }, { durationMs: 800 });
+  it('honors a custom durationMs', () => {
+    useMomentStore.getState().showNamed(namedPayload(), { durationMs: 800 });
     jest.advanceTimersByTime(799);
     expect(useMomentStore.getState().visible).toBe(true);
     jest.advanceTimersByTime(1);
     expect(useMomentStore.getState().visible).toBe(false);
   });
 
-  it('replaces an in-flight moment with the new payload and resets its timer', () => {
-    useMomentStore.getState().show({ tone: 'celebrate' });
-    jest.advanceTimersByTime(1000);
-    useMomentStore.getState().show({ tone: 'calm' });
+  it('replaces an in-flight card with the new payload and resets its timer', () => {
+    useMomentStore.getState().showNamed(namedPayload());
+    jest.advanceTimersByTime(3000);
+    useMomentStore.getState().showNamed(namedPayload({ tone: 'calm', eventId: 'n2' }));
     const { payload } = useMomentStore.getState();
-    if (payload?.kind !== 'beat') throw new Error('expected beat payload');
+    if (payload?.kind !== 'named') throw new Error('expected named payload');
     expect(payload.tone).toBe('calm');
-    // Old timer should have been cancelled — the first one would have expired
-    // 400ms after the second show; the moment must still be visible then.
-    jest.advanceTimersByTime(401);
+    // The first card's timer would have expired 2s after the second show; the
+    // replacement must still be up then, on its own full window.
+    jest.advanceTimersByTime(2001);
     expect(useMomentStore.getState().visible).toBe(true);
-    // ...and the replacement's own 1400ms timer fires on schedule from show #2.
-    jest.advanceTimersByTime(998);
+    jest.advanceTimersByTime(2998);
     expect(useMomentStore.getState().visible).toBe(true);
     jest.advanceTimersByTime(1);
     expect(useMomentStore.getState().visible).toBe(false);
   });
 
   it('hide() cancels both the pending reveal and the dismiss timer', () => {
-    useMomentStore.getState().show({ tone: 'celebrate' }, { delayMs: 300 });
+    useMomentStore.getState().showNamed(namedPayload(), { delayMs: 300 });
     useMomentStore.getState().hide();
     jest.advanceTimersByTime(10000);
     expect(useMomentStore.getState().visible).toBe(false);
+  });
+
+  // patchOccurredAt now spans all three payloads (the named card has its own
+  // Change time), and patchRecord re-states the confidence columns a "found by"
+  // edit legitimately moved — so the card's sentence tracks the write.
+  it('patchOccurredAt + patchRecord update the named card', () => {
+    useMomentStore.getState().showNamed(namedPayload({
+      record: { kind: 'event', typeLabel: 'Vomit', confidence: 'window', earliest: null, latest: '2026-06-07T14:00:00.000Z' },
+    }));
+    useMomentStore.getState().patchOccurredAt('2026-06-07T13:30:00.000Z');
+    useMomentStore.getState().patchRecord({
+      kind: 'event', typeLabel: 'Vomit', confidence: 'window', earliest: null, latest: '2026-06-07T13:30:00.000Z',
+    });
+    const { payload } = useMomentStore.getState();
+    if (payload?.kind !== 'named') throw new Error('expected named payload');
+    expect(payload.occurredAt).toBe('2026-06-07T13:30:00.000Z');
+    expect(payload.record).toMatchObject({ latest: '2026-06-07T13:30:00.000Z' });
+  });
+
+  it('patchRecord is a no-op on a meal card', () => {
+    useMomentStore.getState().showMeal(mealPayload());
+    useMomentStore.getState().patchRecord({ kind: 'weight', weightKg: 9 });
+    const { payload } = useMomentStore.getState();
+    expect(payload?.kind).toBe('meal');
+    expect(payload).not.toHaveProperty('record');
   });
 
   // ── Meal presentation (warmed bottom card, B-064) ──────────────────────────
@@ -289,15 +338,12 @@ describe('momentStore', () => {
     expect(useMomentStore.getState().payload).toBeNull();
   });
 
-  it('patch* never mutate a beat payload (meal-only affordances)', () => {
-    useMomentStore.getState().show({ tone: 'celebrate' });
+  it('patchIntakeRating never mutates a named payload (meal-only affordance)', () => {
+    useMomentStore.getState().showNamed(namedPayload());
     useMomentStore.getState().patchIntakeRating('all');
-    useMomentStore.getState().patchOccurredAt('2026-06-07T13:30:00.000Z');
     const { payload } = useMomentStore.getState();
-    expect(payload?.kind).toBe('beat');
-    // A beat carries no intake/occurredAt fields; the patch must leave it intact.
+    expect(payload?.kind).toBe('named');
     expect(payload).not.toHaveProperty('intakeRating');
-    expect(payload).not.toHaveProperty('occurredAt');
   });
 
   it('rescheduleHide holds the meal card open for the new window after a chip tap', () => {
@@ -324,8 +370,8 @@ describe('momentStore', () => {
     expect(useMomentStore.getState().visible).toBe(false);
   });
 
-  it('a meal card replaces an in-flight beat (and vice versa)', () => {
-    useMomentStore.getState().show({ tone: 'celebrate' });
+  it('a meal card replaces an in-flight named card (and vice versa)', () => {
+    useMomentStore.getState().showNamed(namedPayload());
     useMomentStore.getState().showMeal(mealPayload({ eventId: 'e2' }));
     const { payload } = useMomentStore.getState();
     expect(payload?.kind).toBe('meal');
@@ -685,16 +731,26 @@ describe('the commit haptic (CUL-604 §5.6)', () => {
     jest.useRealTimers();
   });
 
-  it('a CALM beat (symptom) takes the soft tap, never the success pattern', () => {
-    useMomentStore.getState().show({ tone: 'calm' });
+  it('a CALM named card (symptom) takes the soft tap, never the success pattern', () => {
+    useMomentStore.getState().showNamed(namedPayload({ tone: 'calm' }));
     expect(commitSymptom).toHaveBeenCalledTimes(1);
     expect(commitRoutine).not.toHaveBeenCalled();
   });
 
-  it('a CELEBRATE beat takes the success pattern', () => {
-    useMomentStore.getState().show({ tone: 'celebrate' });
+  it('a CELEBRATE named card takes the success pattern', () => {
+    useMomentStore.getState().showNamed(namedPayload({ tone: 'celebrate' }));
     expect(commitRoutine).toHaveBeenCalledTimes(1);
     expect(commitSymptom).not.toHaveBeenCalled();
+  });
+
+  // A weight check is 'calm' (the shipped tone call — never a celebration of the
+  // number), so it inherits the soft tap. Asserted explicitly because the tone is
+  // the ONLY thing routing it, and a future "weight is routine, give it the
+  // success pattern" tidy-up should have to delete a test that says why not.
+  it('a weight check rides the calm tone into the soft tap', () => {
+    useMomentStore.getState().showNamed(namedPayload({ tone: 'calm', record: { kind: 'weight', weightKg: 5.62 } }));
+    expect(commitSymptom).toHaveBeenCalledTimes(1);
+    expect(commitRoutine).not.toHaveBeenCalled();
   });
 
   it('meal and dose cards are routine commits', () => {

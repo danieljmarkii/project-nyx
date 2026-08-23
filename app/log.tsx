@@ -75,7 +75,7 @@ export default function LogModal() {
   const pickerEligible = useAllowlistFlag('log_picker_v2');
   const pickerOptedIn = useBetaOptIn('log_picker_v2');
   const pickerV2 = pickerEligible && pickerOptedIn;
-  const showMoment = useMomentStore((s) => s.show);
+  const showNamedMoment = useMomentStore((s) => s.showNamed);
   const showMealMoment = useMomentStore((s) => s.showMeal);
   const patchTrialFlag = useMomentStore((s) => s.patchTrialFlag);
   const rescheduleMoment = useMomentStore((s) => s.rescheduleHide);
@@ -716,13 +716,27 @@ export default function LogModal() {
       console.warn('[log] weight snapshot refresh failed:', e);
     }
 
-    // Dismiss the modal, then play a calm completion beat at the root layer. A
-    // weight check is neutral clinical data, never a celebration of the number —
-    // and the never-reassure guardrail forbids any "looking good" verdict — so it
-    // gets the calm tone, not the festive gold beat. delayMs clears the dismissing
-    // modal so the overlay isn't briefly occluded on iOS.
+    // Dismiss the modal, then land the named card at the root layer. A weight
+    // check is neutral clinical data, never a celebration of the number — and the
+    // never-reassure guardrail forbids any "looking good" verdict — so it gets the
+    // calm tone, no gold. delayMs clears the dismissing modal so the card isn't
+    // briefly occluded on iOS.
+    //
+    // CUL-606: the card names the VALUE ("Weight · 12.4 lbs"). The retired
+    // white takeover never echoed the number back at all — the one path where the
+    // owner had typed something and the confirmation showed no trace of it, which
+    // is the one place a fat-fingered entry could have been caught.
     router.back();
-    showMoment({ tone: 'calm' }, { delayMs: 300 });
+    showNamedMoment(
+      {
+        tone: 'calm',
+        eventId: result.eventId,
+        petId: pet.id,
+        occurredAt: result.occurredAtIso,
+        record: { kind: 'weight', weightKg },
+      },
+      { delayMs: 300 },
+    );
   }
 
   async function handleConfirm(override?: {
@@ -826,23 +840,42 @@ export default function LogModal() {
     // insertSimpleEvent (non-meal path). Meals never carry a photo — the food step
     // has no attach affordance — so nothing photo-related belongs on the meal path.
 
-    // Dismiss the modal, then play the earned completion moment at the root
-    // layer. Meals are the exception: their confirmation is the meal completion
-    // card (handlePickFood) — the warmed bottom-card presentation that carries
-    // the intake follow-up. The full-screen beat here is terminal/non-interactive,
-    // so firing both would double the surface (B-064 unifies meals into a single
-    // warm surface).
+    // Dismiss the modal, then land the earned completion card at the root layer.
+    // Meals are the exception: their confirmation is the meal completion card
+    // (handlePickFood) — the warmed bottom-card presentation that carries the
+    // intake follow-up. Firing both would double the surface (B-064 unifies meals
+    // into a single warm surface).
     router.back();
-    // Non-meal events play the terminal beat here; the sync push + Signal regen
+    // Non-meal events land the named card here; the sync push + Signal regen
     // that used to live here now belong to insertSimpleEvent (so the in-sheet
     // confirm gets them too), and insertMeal already owns both for the meal branch.
     if (!isMeal) {
       // Tone-aware: symptom logs get a calm confirm (never a festive gold beat
       // over a worrying event); routine logs get the warm-gold celebrate moment.
       const tone = selectedType !== null && SYMPTOM_TYPES.has(selectedType) ? 'calm' : 'celebrate';
-      // delayMs clears the dismissing modal so the root overlay isn't briefly
-      // occluded on iOS (same reason the meal toast is deferred).
-      showMoment({ tone }, { delayMs: 300 });
+      // CUL-606 — the card is handed the RECORD, not a sentence, and derives what
+      // it says from the SAME confidence fields the row was just written with
+      // (tf.*, above). So a "found it" vomit's card reads "found by 5:33 PM",
+      // exactly as its History row will: the card can neither invent a lower
+      // bound nor flatten the window to a point it never held.
+      // delayMs clears the dismissing modal so the card isn't briefly occluded
+      // on iOS (same reason the meal card's reveal is deferred).
+      showNamedMoment(
+        {
+          tone,
+          eventId,
+          petId: pet.id,
+          occurredAt: effectiveOccurredAt.toISOString(),
+          record: {
+            kind: 'event',
+            typeLabel: EVENT_TYPES[selectedType!].label,
+            confidence: tf.confidence,
+            earliest: tf.earliest ? tf.earliest.toISOString() : null,
+            latest: tf.latest ? tf.latest.toISOString() : null,
+          },
+        },
+        { delayMs: 300 },
+      );
     }
     // petId is the pet the event was actually written for (read at write time) —
     // the meal card carries it so its "+ gave a med with this" combo can bind the
