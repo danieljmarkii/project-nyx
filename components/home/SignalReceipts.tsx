@@ -14,7 +14,8 @@
 // card rail's `width: 3` in InsightCard — component-internal dimensions, not tokens.
 
 import { type ReactNode } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
+import { ThemedText } from '../ui/ThemedText';
 import { theme } from '../../constants/theme';
 import type { CompareRow, DotLaneModel, PhoneScriptFact } from '../../lib/signalCopy';
 
@@ -62,9 +63,9 @@ export function DotLane({ model }: { model: DotLaneModel }) {
       </View>
       <View style={styles.axis}>
         {model.axis.map((word, i) => (
-          <Text key={`ax-${i}`} style={styles.axisWord}>
+          <ThemedText key={`ax-${i}`} style={styles.axisWord}>
             {word}
-          </Text>
+          </ThemedText>
         ))}
       </View>
     </View>
@@ -89,9 +90,9 @@ export function StackedCompare({ rows }: { rows: CompareRow[] }) {
     <View style={styles.compare} accessible={false}>
       {rows.map((r, i) => (
         <View key={`cmp-${i}`} style={styles.cmpRow}>
-          <Text style={styles.cmpLabel} numberOfLines={1}>
+          <ThemedText style={styles.cmpLabel} numberOfLines={1}>
             {r.label}
-          </Text>
+          </ThemedText>
           <View style={styles.cmpTrack}>
             <View style={[styles.cmpFill, { backgroundColor: TONE_FILL[r.tone], width: `${(r.count / max) * 100}%` }]} />
           </View>
@@ -99,12 +100,12 @@ export function StackedCompare({ rows }: { rows: CompareRow[] }) {
             // Two-sided "N · was M" (G2 — the unconditional safe form; a zero is "0 · was 7", never
             // an inverted absence claim). The trial count leads (emphasised); "· was M" is the
             // quieter baseline. Wider cell than the single-count form, so both numbers fit.
-            <Text style={styles.cmpCountTwoSided}>
-              <Text style={styles.cmpCountLead}>{r.count}</Text>
+            <ThemedText style={styles.cmpCountTwoSided}>
+              <ThemedText style={styles.cmpCountLead}>{r.count}</ThemedText>
               {` · was ${r.baseline}`}
-            </Text>
+            </ThemedText>
           ) : (
-            <Text style={styles.cmpCount}>{r.count}</Text>
+            <ThemedText style={styles.cmpCount}>{r.count}</ThemedText>
           )}
         </View>
       ))}
@@ -118,7 +119,7 @@ export function StackedCompare({ rows }: { rows: CompareRow[] }) {
 export function EvidenceBox({ title, children }: { title: string; children: ReactNode }) {
   return (
     <View style={styles.evid}>
-      <Text style={styles.evidTitle}>{title}</Text>
+      <ThemedText style={styles.evidTitle}>{title}</ThemedText>
       {children}
     </View>
   );
@@ -131,10 +132,10 @@ export function PhoneScript({ facts }: { facts: PhoneScriptFact[] }) {
   return (
     <View style={styles.script}>
       {facts.map((f, i) => (
-        <Text key={`fact-${i}`} style={styles.scriptItem}>
-          <Text style={styles.scriptLabel}>{f.label}: </Text>
+        <ThemedText key={`fact-${i}`} style={styles.scriptItem}>
+          <ThemedText style={styles.scriptLabel}>{f.label}: </ThemedText>
           {f.value}
-        </Text>
+        </ThemedText>
       ))}
     </View>
   );

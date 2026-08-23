@@ -4,12 +4,12 @@ import {
   Platform,
   Pressable,
   StyleSheet,
-  Text,
   UIManager,
   View,
 } from 'react-native';
 import { theme } from '../../constants/theme';
 import { Badge } from '../ui/Badge';
+import { ThemedText } from '../ui/ThemedText';
 import {
   DENSITY_BOX_TITLE,
   DOT_LANE_MAX,
@@ -105,7 +105,7 @@ function SentenceBody({ cached, isLead }: InsightBodyProps) {
       : sampleLine(finding);
   return (
     <View style={styles.body}>
-      <Text style={[styles.sentence, isLead && styles.sentenceLead]}>{cached.text}</Text>
+      <ThemedText style={[styles.sentence, isLead && styles.sentenceLead]}>{cached.text}</ThemedText>
       {finding.type === 'food_symptom_correlation' && isJointCandidate(finding) && (
         <LinkedPair proteins={proteinCluster(finding)} />
       )}
@@ -117,7 +117,7 @@ function SentenceBody({ cached, isLead }: InsightBodyProps) {
       <View style={styles.metaRow}>
         {showNew && <NewChip />}
         {tag && <Badge label={tag} variant="muted" />}
-        <Text style={styles.sample}>{sample}</Text>
+        <ThemedText style={styles.sample}>{sample}</ThemedText>
       </View>
     </View>
   );
@@ -139,11 +139,11 @@ function TimingStoryBody({ cached, isLead }: InsightBodyProps) {
   if (!isTimingStory(finding)) return null;
   return (
     <View style={styles.body}>
-      <Text style={[styles.sentence, isLead && styles.sentenceLead]}>{cached.text}</Text>
+      <ThemedText style={[styles.sentence, isLead && styles.sentenceLead]}>{cached.text}</ThemedText>
       <StackedCompare rows={timingStoryBandRows(finding)} />
       <View style={styles.metaRow}>
         <Badge label={TIMING_STORY_BADGE} variant="muted" />
-        <Text style={styles.sample}>{timingStorySampleLine(finding)}</Text>
+        <ThemedText style={styles.sample}>{timingStorySampleLine(finding)}</ThemedText>
       </View>
     </View>
   );
@@ -169,12 +169,12 @@ function TrialResponseBody({ cached, isLead }: InsightBodyProps) {
   const reconciliation = trialResponseTimedReconciliationLine(finding);
   return (
     <View style={styles.body}>
-      <Text style={[styles.sentence, isLead && styles.sentenceLead]}>{cached.text}</Text>
+      <ThemedText style={[styles.sentence, isLead && styles.sentenceLead]}>{cached.text}</ThemedText>
       <StackedCompare rows={trialResponseCompareRows(finding)} />
-      {reconciliation ? <Text style={styles.sample}>{reconciliation}</Text> : null}
+      {reconciliation ? <ThemedText style={styles.sample}>{reconciliation}</ThemedText> : null}
       <View style={styles.metaRow}>
         <Badge label={trialResponseDayBadge(finding)} variant="muted" />
-        <Text style={styles.sample}>{trialResponseSampleLine(finding)}</Text>
+        <ThemedText style={styles.sample}>{trialResponseSampleLine(finding)}</ThemedText>
       </View>
     </View>
   );
@@ -203,19 +203,19 @@ function TrialResponseExpanded({ finding }: { finding: SignalFinding }) {
     <>
       {showRtm ? (
         <EvidenceBox title="Reading this stretch honestly">
-          <Text style={styles.disclosure}>{TRIAL_RTM_CONFOUND}</Text>
-          <Text style={[styles.trialAdjacency, styles.disclosureSpaced]}>{TRIAL_ADJACENCY}</Text>
+          <ThemedText style={styles.disclosure}>{TRIAL_RTM_CONFOUND}</ThemedText>
+          <ThemedText style={[styles.trialAdjacency, styles.disclosureSpaced]}>{TRIAL_ADJACENCY}</ThemedText>
         </EvidenceBox>
       ) : null}
       <EvidenceBox title="What else changed">
-        {dietStructure ? <Text style={styles.disclosure}>{dietStructure}</Text> : null}
-        <Text style={[styles.disclosure, dietStructure ? styles.disclosureSpaced : null]}>
+        {dietStructure ? <ThemedText style={styles.disclosure}>{dietStructure}</ThemedText> : null}
+        <ThemedText style={[styles.disclosure, dietStructure ? styles.disclosureSpaced : null]}>
           {trialResponseDensityLine(finding)}
-        </Text>
+        </ThemedText>
       </EvidenceBox>
       {/* §5.4 med-on-board context — a bare fact line, never a verdict; dropped fail-quiet when the
           composed line trips the guardrail screen (a "%" in the drug name — B-733). */}
-      {medLine ? <Text style={styles.medContext}>{medLine}</Text> : null}
+      {medLine ? <ThemedText style={styles.medContext}>{medLine}</ThemedText> : null}
     </>
   );
 }
@@ -230,7 +230,7 @@ function TrialResponseExpanded({ finding }: { finding: SignalFinding }) {
 function MedContextLine({ finding }: { finding: SignalFinding }) {
   const line = medContextLine(finding);
   if (!line) return null;
-  return <Text style={styles.medContext}>{line}</Text>;
+  return <ThemedText style={styles.medContext}>{line}</ThemedText>;
 }
 
 // The `New`-for-worsening chip (§3.2 / SR-3). Accent-ink on the accent wash — a tinted
@@ -240,7 +240,7 @@ function MedContextLine({ finding }: { finding: SignalFinding }) {
 function NewChip() {
   return (
     <View style={styles.newChip}>
-      <Text style={styles.newChipText}>New</Text>
+      <ThemedText style={styles.newChipText}>New</ThemedText>
     </View>
   );
 }
@@ -294,7 +294,7 @@ function ExpandedReceipts({
       <EvidenceBox title="The other side of the picture">
         {rows && <StackedCompare rows={rows} />}
         {disclosure ? (
-          <Text style={[styles.disclosure, rows ? styles.disclosureSpaced : null]}>{disclosure}</Text>
+          <ThemedText style={[styles.disclosure, rows ? styles.disclosureSpaced : null]}>{disclosure}</ThemedText>
         ) : null}
       </EvidenceBox>
     );
@@ -308,11 +308,11 @@ function ExpandedReceipts({
     if (!densityLine && !trialAdjacency) return null;
     return (
       <EvidenceBox title={DENSITY_BOX_TITLE}>
-        {densityLine ? <Text style={styles.disclosure}>{densityLine}</Text> : null}
+        {densityLine ? <ThemedText style={styles.disclosure}>{densityLine}</ThemedText> : null}
         {trialAdjacency ? (
-          <Text style={[styles.trialAdjacency, densityLine ? styles.disclosureSpaced : null]}>
+          <ThemedText style={[styles.trialAdjacency, densityLine ? styles.disclosureSpaced : null]}>
             {trialAdjacency}
-          </Text>
+          </ThemedText>
         ) : null}
       </EvidenceBox>
     );
@@ -355,13 +355,13 @@ function TimingStoryExpanded({ finding }: { finding: SignalFinding }) {
         <EvidenceBox title="When they happen">
           {showMeal ? (
             <>
-              <Text style={styles.laneCaption}>After eating</Text>
+              <ThemedText style={styles.laneCaption}>After eating</ThemedText>
               <DotLane model={mealModel} />
             </>
           ) : null}
           {showClock && clockModel ? (
             <>
-              <Text style={[styles.laneCaption, showMeal ? styles.laneCaptionSpaced : null]}>By clock</Text>
+              <ThemedText style={[styles.laneCaption, showMeal ? styles.laneCaptionSpaced : null]}>By clock</ThemedText>
               <DotLane model={clockModel} />
             </>
           ) : null}
@@ -374,23 +374,23 @@ function TimingStoryExpanded({ finding }: { finding: SignalFinding }) {
           so the honest title here is the episodes we couldn't place. */}
       {control ? (
         <EvidenceBox title="What we couldn't time">
-          <Text style={styles.disclosure}>{control}</Text>
+          <ThemedText style={styles.disclosure}>{control}</ThemedText>
         </EvidenceBox>
       ) : null}
       {/* §5.4 med-on-board context — a bare fact line, never a verdict; dropped fail-quiet
           when the composed line trips the guardrail screen (a "%" in the drug name — B-733). */}
-      {medLine ? <Text style={styles.medContext}>{medLine}</Text> : null}
+      {medLine ? <ThemedText style={styles.medContext}>{medLine}</ThemedText> : null}
       {photoLines.length > 0 ? (
         <EvidenceBox title="What the photos showed">
           {photoLines.map((line, i) => (
-            <Text key={i} style={[styles.disclosure, i > 0 ? styles.disclosureSpaced : null]}>
+            <ThemedText key={i} style={[styles.disclosure, i > 0 ? styles.disclosureSpaced : null]}>
               {line}
-            </Text>
+            </ThemedText>
           ))}
         </EvidenceBox>
       ) : null}
       <EvidenceBox title="For your vet">
-        <Text style={styles.disclosure}>{timingStoryVetLine(finding)}</Text>
+        <ThemedText style={styles.disclosure}>{timingStoryVetLine(finding)}</ThemedText>
       </EvidenceBox>
     </>
   );
@@ -414,13 +414,13 @@ function LinkedPair({ proteins }: { proteins: string[] }) {
     >
       {proteins.map((protein, i) => (
         <View key={protein} style={styles.pairItem}>
-          {i > 0 && <Text style={styles.pairLink}>+</Text>}
+          {i > 0 && <ThemedText style={styles.pairLink}>+</ThemedText>}
           <View style={styles.pairChip}>
-            <Text style={styles.pairChipText}>{displayProteinName(protein)}</Text>
+            <ThemedText style={styles.pairChipText}>{displayProteinName(protein)}</ThemedText>
           </View>
         </View>
       ))}
-      <Text style={styles.pairNote}>always fed together</Text>
+      <ThemedText style={styles.pairNote}>always fed together</ThemedText>
     </View>
   );
 }
@@ -557,7 +557,7 @@ export function InsightCard({
         <Body cached={cached} isLead={isLead} />
         {expanded && (
           <>
-            <Text style={styles.evidence}>{evidenceText(cached.finding, petName)}</Text>
+            <ThemedText style={styles.evidence}>{evidenceText(cached.finding, petName)}</ThemedText>
             {/* Each shape's own expanded receipts: the A2 story card's lanes/control/L3, the trial
                 card's RTM-confound + density + diet-structure, else the SR-1 receipts (timing control
                 side / safety phone script / reflection density). A finding is only ever one shape, so
@@ -571,7 +571,7 @@ export function InsightCard({
             )}
           </>
         )}
-        <Text style={styles.expandHint}>{expanded ? 'Hide details' : "Why we're showing this"}</Text>
+        <ThemedText style={styles.expandHint}>{expanded ? 'Hide details' : "Why we're showing this"}</ThemedText>
       </View>
     </Pressable>
   );

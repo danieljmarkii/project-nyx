@@ -12,10 +12,11 @@
 //
 // The Pet tab is not a surface the wedge owner visits daily; the trial is the
 // thing they live with for eight weeks. That gap is the whole reason this exists.
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 import { router } from 'expo-router';
 import { theme } from '../../constants/theme';
 import { Card } from '../ui/Card';
+import { ThemedText } from '../ui/ThemedText';
 import type { TrialStripModel } from '../../lib/dietTrialCard';
 
 interface Props {
@@ -43,8 +44,8 @@ export function TrialStrip({ model, onPress }: Props) {
     >
       <Card>
         <View style={styles.headerRow}>
-          <Text style={styles.header}>{model.header}</Text>
-          <Text style={styles.chevron}>›</Text>
+          <ThemedText style={styles.header}>{model.header}</ThemedText>
+          <ThemedText style={styles.chevron}>›</ThemedText>
         </View>
 
         <View style={styles.progressTrack} testID="trial-strip-track">
@@ -56,14 +57,14 @@ export function TrialStrip({ model, onPress }: Props) {
           />
         </View>
 
-        {model.line !== null && <Text style={styles.line}>{model.line}</Text>}
+        {model.line !== null && <ThemedText style={styles.line}>{model.line}</ThemedText>}
 
         {/* Signals v2 (CUL-13, §4.2) — the standing vomit-count line, a second line below the
             coverage line. GA'd (CUL-548): null only when the loader's own gate says so (no trial
             running, or an unreadable record). A DESCRIPTION of the record, not a control — the
             whole Pressable still opens the Pet tab; nothing here opens a form (§4.2 second-door rule). */}
         {model.trialResponseLine !== null && (
-          <Text style={styles.trialResponseLine}>{model.trialResponseLine}</Text>
+          <ThemedText style={styles.trialResponseLine}>{model.trialResponseLine}</ThemedText>
         )}
       </Card>
     </Pressable>

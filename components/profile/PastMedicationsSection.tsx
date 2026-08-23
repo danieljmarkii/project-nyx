@@ -19,11 +19,12 @@
 //     the rows stay calm reference rows and PR 3 lights up the tap with a real destination.
 
 import { useState } from 'react';
-import { StyleSheet, Text, TouchableOpacity, View, ViewStyle } from 'react-native';
+import { StyleSheet, TouchableOpacity, View, ViewStyle } from 'react-native';
 import { ChevronDown, ChevronUp } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
 import { Card } from '../ui/Card';
 import { Divider } from '../ui/Divider';
+import { ThemedText } from '../ui/ThemedText';
 import type { PastCourseRow, PastCoursePillTone } from '../../lib/pastMedications';
 
 interface Props {
@@ -45,7 +46,7 @@ function PastCoursePill({ label, tone }: { label: string; tone: PastCoursePillTo
   const s = PILL_STYLE[tone];
   return (
     <View style={[styles.pill, s.pill]}>
-      <Text style={[styles.pillText, s.text]} numberOfLines={1}>{label}</Text>
+      <ThemedText style={[styles.pillText, s.text]} numberOfLines={1}>{label}</ThemedText>
     </View>
   );
 }
@@ -57,8 +58,8 @@ function PastRow({ row }: { row: PastCourseRow }) {
   return (
     <View style={styles.row} accessible accessibilityLabel={`${row.name}. ${row.pill.label}. ${row.meta}`}>
       <View style={styles.rowLeft}>
-        <Text style={styles.name} numberOfLines={1}>{row.name}</Text>
-        <Text style={styles.meta}>{row.meta}</Text>
+        <ThemedText style={styles.name} numberOfLines={1}>{row.name}</ThemedText>
+        <ThemedText style={styles.meta}>{row.meta}</ThemedText>
       </View>
       <PastCoursePill label={row.pill.label} tone={row.pill.tone} />
     </View>
@@ -84,9 +85,9 @@ export function PastMedicationsSection({ rows, style }: Props) {
         accessibilityState={{ expanded }}
         accessibilityLabel={`Past medications, ${rows.length} ${rows.length === 1 ? 'course' : 'courses'}`}
       >
-        <Text style={styles.title}>Past medications</Text>
+        <ThemedText style={styles.title}>Past medications</ThemedText>
         <View style={styles.headerRight}>
-          <Text style={styles.count}>{rows.length}</Text>
+          <ThemedText style={styles.count}>{rows.length}</ThemedText>
           {expanded
             ? <ChevronUp size={18} color={theme.colorTextTertiary} strokeWidth={2} />
             : <ChevronDown size={18} color={theme.colorTextTertiary} strokeWidth={2} />}

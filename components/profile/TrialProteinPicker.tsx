@@ -18,7 +18,8 @@
 // entry here and no way for a raw label to reach the column (TG-4) — the picker is a
 // closed set by construction, which is also why the B-705 typed-"Other" sanitisation
 // concern does not arise: there is no typed "Other".
-import { Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Modal, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { ThemedText } from '../ui/ThemedText';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { theme } from '../../constants/theme';
 import { canonicalizeProtein } from '../../lib/protein';
@@ -80,18 +81,18 @@ export function TrialProteinPicker({
       <SafeAreaView style={styles.container}>
         <View style={styles.header}>
           <TouchableOpacity onPress={onClose} hitSlop={8}>
-            <Text style={styles.backText}>Back</Text>
+            <ThemedText style={styles.backText}>Back</ThemedText>
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Trial protein</Text>
+          <ThemedText style={styles.headerTitle}>Trial protein</ThemedText>
           <View style={styles.headerSpacer} />
         </View>
 
         <ScrollView contentContainerStyle={styles.body}>
-          <Text style={styles.intro}>{TRIAL_PROTEIN_PICKER_INTRO}</Text>
+          <ThemedText style={styles.intro}>{TRIAL_PROTEIN_PICKER_INTRO}</ThemedText>
 
           {derivedOptions.length > 0 && (
             <>
-              <Text style={styles.groupHeader}>{derivedGroupHeader(petName)}</Text>
+              <ThemedText style={styles.groupHeader}>{derivedGroupHeader(petName)}</ThemedText>
               {derivedOptions.map((opt) => (
                 <OptionRow
                   key={opt.key}
@@ -103,7 +104,7 @@ export function TrialProteinPicker({
             </>
           )}
 
-          <Text style={styles.groupHeader}>{OTHER_PROTEINS_GROUP_HEADER}</Text>
+          <ThemedText style={styles.groupHeader}>{OTHER_PROTEINS_GROUP_HEADER}</ThemedText>
           {commonOptions.map((opt) => (
             <OptionRow
               key={opt.key}
@@ -113,7 +114,7 @@ export function TrialProteinPicker({
             />
           ))}
 
-          <Text style={styles.groupHeader}>{ESCAPE_GROUP_HEADER}</Text>
+          <ThemedText style={styles.groupHeader}>{ESCAPE_GROUP_HEADER}</ThemedText>
           <OptionRow
             option={{ key: '__hydrolyzed__', label: HYDROLYZED_OPTION.label, subLabel: HYDROLYZED_OPTION.subLabel }}
             selected={choice.kind === 'hydrolyzed'}
@@ -148,8 +149,8 @@ function OptionRow({
     >
       <View style={[styles.radio, selected && styles.radioOn]} />
       <View style={styles.optionText}>
-        <Text style={styles.optionLabel}>{option.label}</Text>
-        {option.subLabel ? <Text style={styles.optionSub}>{option.subLabel}</Text> : null}
+        <ThemedText style={styles.optionLabel}>{option.label}</ThemedText>
+        {option.subLabel ? <ThemedText style={styles.optionSub}>{option.subLabel}</ThemedText> : null}
       </View>
     </TouchableOpacity>
   );

@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import {
-  Modal, Pressable, ScrollView, StyleSheet, Text, TouchableOpacity, View,
+  Modal, Pressable, ScrollView, StyleSheet, TouchableOpacity, View,
 } from 'react-native';
+import { ThemedText } from '../ui/ThemedText';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { Check, Plus } from 'lucide-react-native';
@@ -81,7 +82,7 @@ export function PetSwitcherSheet({ visible, onClose }: PetSwitcherSheetProps) {
         <Pressable style={styles.scrim} onPress={onClose} accessibilityLabel="Close" />
         <View style={[styles.sheet, { paddingBottom: insets.bottom + theme.space2 }]}>
           <View style={styles.grabber} />
-          <Text style={styles.header}>Your pets</Text>
+          <ThemedText style={styles.header}>Your pets</ThemedText>
 
           <ScrollView style={styles.list} bounces={false}>
             {pets.map((pet) => {
@@ -99,9 +100,9 @@ export function PetSwitcherSheet({ visible, onClose }: PetSwitcherSheetProps) {
                 >
                   <PetAvatar name={pet.name} photoPath={pet.photo_path} size={ROW_AVATAR} />
                   <View style={styles.petText}>
-                    <Text style={styles.petName} numberOfLines={1}>{pet.name}</Text>
+                    <ThemedText style={styles.petName} numberOfLines={1}>{pet.name}</ThemedText>
                     {line ? (
-                      <Text style={styles.petLine} numberOfLines={1}>{line}</Text>
+                      <ThemedText style={styles.petLine} numberOfLines={1}>{line}</ThemedText>
                     ) : null}
                   </View>
                   {selected && (
@@ -121,7 +122,7 @@ export function PetSwitcherSheet({ visible, onClose }: PetSwitcherSheetProps) {
             <View style={styles.addDisc}>
               <Plus size={16} color={theme.colorTextTertiary} strokeWidth={1.75} />
             </View>
-            <Text style={styles.addLabel}>Add a pet</Text>
+            <ThemedText style={styles.addLabel}>Add a pet</ThemedText>
           </TouchableOpacity>
 
           {hasArchived && (
@@ -133,7 +134,7 @@ export function PetSwitcherSheet({ visible, onClose }: PetSwitcherSheetProps) {
               // tap target at the 44pt floor anyway.
               style={styles.archivedLinkWrap}
             >
-              <Text style={styles.archivedLink}>Archived pets</Text>
+              <ThemedText style={styles.archivedLink}>Archived pets</ThemedText>
             </TouchableOpacity>
           )}
         </View>

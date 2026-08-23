@@ -23,7 +23,7 @@
 // withholding fact (§6) in the concern colour, never a cheery coverage line over a
 // refusal (N3).
 import { useEffect, useState } from 'react';
-import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Alert, Pressable, StyleSheet, View } from 'react-native';
 import { router } from 'expo-router';
 import { Check } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
@@ -32,6 +32,7 @@ import { theme } from '../../constants/theme';
 // any concern state. See the CONFIRMED_LINE note below.
 import { commitRoutine } from '../../lib/haptics';
 import { Card } from '../ui/Card';
+import { ThemedText } from '../ui/ThemedText';
 import { insertMedicationDose } from '../../lib/medicationDose';
 import { useSyncStore } from '../../store/syncStore';
 import type { MedStripModel } from '../../lib/medStrip';
@@ -195,8 +196,8 @@ export function MedStrip({ model, onPress, onConfirm }: Props) {
         testID="med-strip"
       >
         <View style={styles.headerRow}>
-          <Text style={styles.header}>{model.header}</Text>
-          <Text style={styles.chevron}>›</Text>
+          <ThemedText style={styles.header}>{model.header}</ThemedText>
+          <ThemedText style={styles.chevron}>›</ThemedText>
         </View>
 
         {/* N2 — day progress and nothing else, and only when there is an honest
@@ -234,7 +235,7 @@ export function MedStrip({ model, onPress, onConfirm }: Props) {
                 importantForAccessibility="no"
               />
             )}
-            <Text
+            <ThemedText
               style={[
                 styles.line,
                 styles.lineText,
@@ -242,7 +243,7 @@ export function MedStrip({ model, onPress, onConfirm }: Props) {
               ]}
             >
               {displayedLine}
-            </Text>
+            </ThemedText>
           </View>
         )}
       </Pressable>
@@ -261,7 +262,7 @@ export function MedStrip({ model, onPress, onConfirm }: Props) {
           testID="med-strip-confirm"
           style={styles.confirm}
         >
-          <Text style={styles.confirmLabel}>Log dose</Text>
+          <ThemedText style={styles.confirmLabel}>Log dose</ThemedText>
         </Pressable>
       )}
     </Card>

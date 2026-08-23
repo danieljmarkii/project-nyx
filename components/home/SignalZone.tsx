@@ -6,7 +6,6 @@ import {
   Platform,
   Pressable,
   StyleSheet,
-  Text,
   View,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -32,6 +31,7 @@ import { hasPlayedArrival, markArrivalPlayed } from '../../lib/signalArrival';
 // haptics-guard-ok: arrival tap, gated off whenever any finding is safety-class
 import { insightArrival } from '../../lib/haptics';
 import { Skeleton } from '../ui/Skeleton';
+import { ThemedText } from '../ui/ThemedText';
 import {
   BUILDING_FLOOR,
   BUILDING_WATCHING_FOR,
@@ -648,7 +648,7 @@ export function SignalZone({
           />
         )
       ) : state === 'stale' ? (
-        <Text style={styles.intro}>{staleIntro(petName)}</Text>
+        <ThemedText style={styles.intro}>{staleIntro(petName)}</ThemedText>
       ) : state === 'no_pattern' ? (
         // Substantial history, nothing cleared a floor (B-051) — honest, no ghosted
         // previews (the owner has logged enough to know the surface). B-053: when
@@ -682,9 +682,9 @@ export function SignalZone({
       >
         {/* SR-3 (§5.2) — the footer doorway recedes (to the label's tertiary tier) across
             every state so it never competes with the content. */}
-        <Text style={[styles.patternsLinkText, styles.patternsLinkTextReceded]}>
+        <ThemedText style={[styles.patternsLinkText, styles.patternsLinkTextReceded]}>
           See all of {petName}'s patterns →
-        </Text>
+        </ThemedText>
       </Pressable>
     </Card>
   );
@@ -698,7 +698,7 @@ function AckLine({ petName }: { petName: string }) {
   return (
     <View style={styles.ackLine} accessibilityLiveRegion="polite">
       <View style={styles.ackDot} />
-      <Text style={styles.ackText}>{ackUpdatingCopy(petName)}</Text>
+      <ThemedText style={styles.ackText}>{ackUpdatingCopy(petName)}</ThemedText>
     </View>
   );
 }
@@ -864,7 +864,7 @@ function BuildingStateV2({
           event — deriveDisplayState requires hasRecentActivity), so hold the day-count
           clause back for that one load frame rather than flash a fabricated
           "Day 1 — 0 events so far". Once the local read lands it renders in full. */}
-      <Text
+      <ThemedText
         style={styles.v2Headline}
         accessibilityLabel={
           eventCount > 0 ? buildingHeadline(petName, dayNumber, eventCount) : buildingHeadlineLead(petName)
@@ -872,25 +872,25 @@ function BuildingStateV2({
       >
         {buildingHeadlineLead(petName)}
         {eventCount > 0 ? (
-          <Text style={[styles.v2DayCount, { color: GHOST.dayCountColor, fontWeight: GHOST.dayCountWeight }]}>
+          <ThemedText style={[styles.v2DayCount, { color: GHOST.dayCountColor, fontWeight: GHOST.dayCountWeight }]}>
             {' '}
             {buildingDayCount(dayNumber, eventCount)}
-          </Text>
+          </ThemedText>
         ) : null}
-      </Text>
+      </ThemedText>
 
       {showWatching ? (
         <View>
           {showGap && gapRow ? <GapEscalationRow row={gapRow} /> : null}
           {showNeeds ? <WatchingNeedsBlock rows={needRows} /> : null}
-          <Text style={styles.watchingFloor}>{BUILDING_FLOOR}</Text>
+          <ThemedText style={styles.watchingFloor}>{BUILDING_FLOOR}</ThemedText>
         </View>
       ) : (
         <>
           {/* B-735 (D5a): once the day count outruns the sub's own first-week promise,
               the sub swaps to the events-not-days framing — "Day 24" must never sit
               above "within the first week" (the sparse-logger dissonance). */}
-          <Text style={styles.v2Sub}>{buildingSub(dayNumber)}</Text>
+          <ThemedText style={styles.v2Sub}>{buildingSub(dayNumber)}</ThemedText>
 
           {/* The three things the engine is building toward, in the mock's order
               (timing → food → change), each with a ghost preview of its future receipt.
@@ -906,7 +906,7 @@ function BuildingStateV2({
 
           {/* The safety floor — the weekly-pattern framing must never read as "nothing
               urgent surfaces before then". Absence is never wellness (§6). */}
-          <Text style={styles.v2Floor}>{BUILDING_FLOOR}</Text>
+          <ThemedText style={styles.v2Floor}>{BUILDING_FLOOR}</ThemedText>
         </>
       )}
     </View>
@@ -926,7 +926,7 @@ function WatchingForRow({
     <View style={styles.watchRow}>
       <View style={[styles.ghostRail, { backgroundColor: railColor, opacity: GHOST.railOpacity }]} />
       <View style={styles.watchBody}>
-        <Text style={styles.watchText}>{text}</Text>
+        <ThemedText style={styles.watchText}>{text}</ThemedText>
         {children}
       </View>
     </View>
@@ -976,7 +976,7 @@ function GhostCompare() {
     <View style={styles.estrip}>
       {GHOST_COMPARE_ROWS.map((r) => (
         <View key={r.label} style={styles.cmpRow}>
-          <Text style={styles.cmpLabel}>{r.label}</Text>
+          <ThemedText style={styles.cmpLabel}>{r.label}</ThemedText>
           <View style={styles.cmpTrack}>
             <View
               style={[
@@ -985,7 +985,7 @@ function GhostCompare() {
               ]}
             />
           </View>
-          <Text style={styles.cmpDash}>—</Text>
+          <ThemedText style={styles.cmpDash}>—</ThemedText>
         </View>
       ))}
     </View>
@@ -1017,17 +1017,17 @@ function NoPatternStateV2({
   const cov = top ? coverageCopy(top, petName) : null;
   return (
     <View>
-      <Text style={styles.v2Headline}>{NO_PATTERN_HEADLINE}</Text>
-      <Text style={styles.v2Sub}>{NO_PATTERN_SUB}</Text>
+      <ThemedText style={styles.v2Headline}>{NO_PATTERN_HEADLINE}</ThemedText>
+      <ThemedText style={styles.v2Sub}>{NO_PATTERN_SUB}</ThemedText>
       {showGap && gapRow ? <GapEscalationRow row={gapRow} /> : null}
       {cov ? (
         <View style={styles.v2Quiet}>
-          <Text style={styles.v2QuietText}>{cov.why}</Text>
-          {cov.action ? <Text style={styles.v2QuietAction}>{cov.action}</Text> : null}
+          <ThemedText style={styles.v2QuietText}>{cov.why}</ThemedText>
+          {cov.action ? <ThemedText style={styles.v2QuietAction}>{cov.action}</ThemedText> : null}
         </View>
       ) : null}
       {showNeeds ? <WatchingNeedsBlock rows={needRows} /> : null}
-      {showGap || showNeeds ? <Text style={styles.watchingFloor}>{BUILDING_FLOOR}</Text> : null}
+      {showGap || showNeeds ? <ThemedText style={styles.watchingFloor}>{BUILDING_FLOOR}</ThemedText> : null}
     </View>
   );
 }
@@ -1048,12 +1048,12 @@ function NoPatternStateV2({
 function WatchingNeedsBlock({ rows }: { rows: WatchingRow[] }) {
   return (
     <View>
-      <Text style={styles.watchingSub}>{WATCHING_SUB}</Text>
+      <ThemedText style={styles.watchingSub}>{WATCHING_SUB}</ThemedText>
       <View style={styles.watchingRows}>
         {rows.map((r) => (
-          <Text key={r.key} style={styles.watchingRow}>
+          <ThemedText key={r.key} style={styles.watchingRow}>
             {r.text}
-          </Text>
+          </ThemedText>
         ))}
       </View>
     </View>
@@ -1065,7 +1065,7 @@ function WatchingNeedsBlock({ rows }: { rows: WatchingRow[] }) {
 // leads with its own direction cue ("are getting shorter" — D4), so placement + phrasing
 // carry the register, not decoration.
 function GapEscalationRow({ row }: { row: WatchingRow }) {
-  return <Text style={styles.gapEscalation}>{row.text}</Text>;
+  return <ThemedText style={styles.gapEscalation}>{row.text}</ThemedText>;
 }
 
 // B-734 (CUL-72): the flag-on loading frame — content-shaped Tier-1 skeleton for the
