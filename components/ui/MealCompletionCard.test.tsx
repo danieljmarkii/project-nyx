@@ -192,3 +192,44 @@ describe('MealCompletionCard — the two trial-flag registers (B-693)', () => {
     errSpy.mockRestore();
   });
 });
+
+// ── CUL-614 · §5 "Dwell" — the WIRING ────────────────────────────────────────
+// See the twin block in MedicationCompletionCard.test.tsx for the full reasoning. In
+// short: store/momentStore.test.ts proves the state machine, and cannot see this
+// file's two lines of JSX — so a swapped or dropped touch handler would leave every
+// store test green while the card dismissed under the owner's finger.
+//
+// The meal card is here for its own sake, not for symmetry: the WSAVA intake row is
+// five chips answered from a single reading pause, and it re-armed the same 1500ms
+// hold the dose row did.
+describe('MealCompletionCard — the dwell pause is actually wired (CUL-614)', () => {
+  it('a finger on the card holds it open past its dwell', () => {
+    seedMeal();
+    const { getByTestId } = render(<MealCompletionCard />);
+    fireEvent(getByTestId('meal-card-surface'), 'touchStart');
+    act(() => { jest.advanceTimersByTime(15_000); });
+    expect(useMomentStore.getState().visible).toBe(true);
+  });
+
+  it('lifting the finger restores a window, so the card still dismisses', () => {
+    seedMeal();
+    const { getByTestId } = render(<MealCompletionCard />);
+    const card = getByTestId('meal-card-surface');
+    fireEvent(card, 'touchStart');
+    fireEvent(card, 'touchEnd');
+    act(() => { jest.advanceTimersByTime(4999); });
+    expect(useMomentStore.getState().visible).toBe(true);
+    act(() => { jest.advanceTimersByTime(2); });
+    expect(useMomentStore.getState().visible).toBe(false);
+  });
+
+  it('a CANCELLED gesture resumes too — the responder can end a touch elsewhere', () => {
+    seedMeal();
+    const { getByTestId } = render(<MealCompletionCard />);
+    const card = getByTestId('meal-card-surface');
+    fireEvent(card, 'touchStart');
+    fireEvent(card, 'touchCancel');
+    act(() => { jest.advanceTimersByTime(5001); });
+    expect(useMomentStore.getState().visible).toBe(false);
+  });
+});

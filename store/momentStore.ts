@@ -540,6 +540,15 @@ export const useMomentStore = create<MomentState>((set) => ({
   // NOT from press handlers: touch events fire for the WHOLE gesture and bubble from
   // every child, so the pause covers the reading pause between two chip taps — which
   // is where the window was actually being lost — and needs no per-control wiring.
+  //
+  // ONE FLAG, NOT A TOUCH COUNT — a deliberate choice, not an oversight. With two
+  // fingers on the card, the first `onTouchEnd` resumes while the second is still down,
+  // so the clock restarts under a resting finger. A counter would model that literally,
+  // and would buy a worse failure: a single missed touch-end (the Modal case below)
+  // leaks the count permanently, and every later gesture then pauses a card that can
+  // never resume — the strand this design is built to avoid, made routine. The flag's
+  // error is bounded and points the safe way: the owner still gets a full fresh window
+  // from the release, exactly as a one-finger gesture would.
   pauseDwell: () => {
     if (dwellPaused) return; // a second finger down mid-gesture must not re-bank
     // Nothing to pause once the card is dismissing: `visible` is already false while

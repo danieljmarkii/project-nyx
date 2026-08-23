@@ -380,6 +380,7 @@ export function MealCompletionCard() {
             claiming it, a Modal mounting over it) ends there and nowhere else. */}
         <View
           style={styles.card}
+          testID="meal-card-surface"
           onTouchStart={pauseDwell}
           onTouchEnd={resumeDwell}
           onTouchCancel={resumeDwell}

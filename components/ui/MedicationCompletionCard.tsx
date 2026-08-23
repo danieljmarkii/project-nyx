@@ -281,6 +281,7 @@ export function MedicationCompletionCard() {
           claiming it, a Modal mounting over it) ends there and nowhere else. */}
       <View
         style={styles.card}
+        testID="medication-card-surface"
         onTouchStart={pauseDwell}
         onTouchEnd={resumeDwell}
         onTouchCancel={resumeDwell}

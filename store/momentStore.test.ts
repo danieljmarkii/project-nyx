@@ -876,7 +876,7 @@ describe('the dwell pause (CUL-614 §5)', () => {
     // resumeDwell takes the MAX, and rescheduleHide re-applies the floor on top.
     const s = useMomentStore.getState();
     s.showMedication(medicationPayload({ adherence: 'given' }));
-    s.patchDoubleDose('m1', { conflict: true, gapMinutes: 30 } as never, 'given');
+    s.patchDoubleDose('m1', { conflict: true, otherEventId: 'm0', gapMinutes: 30 }, 'given');
     s.pauseDwell();
     s.resumeDwell();
     jest.advanceTimersByTime(MEDICATION_FLAGGED_DURATION_MS - 1);

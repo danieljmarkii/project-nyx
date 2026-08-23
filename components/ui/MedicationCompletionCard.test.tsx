@@ -178,3 +178,47 @@ describe('MedicationCompletionCard — the log-time double-dose note (B-157)', (
     warn.mockRestore();
   });
 });
+
+// ── CUL-614 · §5 "Dwell" — the WIRING ────────────────────────────────────────
+// The state machine itself is proven in store/momentStore.test.ts. What that suite
+// cannot see is this file's two lines of JSX: an edit that swapped onTouchStart for
+// onTouchEnd, or dropped onTouchCancel, would leave every store test green while the
+// card either dismissed under the owner's finger or never dismissed at all. So these
+// assert the end-to-end path — a touch on the rendered card reaching the store — and
+// exercise it through the real store rather than a spy, which is what makes them a
+// statement about behaviour instead of about the props object.
+describe('MedicationCompletionCard — the dwell pause is actually wired (CUL-614)', () => {
+  it('a finger on the card holds it open past its dwell', () => {
+    seedDose();
+    const { getByTestId } = render(<MedicationCompletionCard />);
+    fireEvent(getByTestId('medication-card-surface'), 'touchStart');
+    act(() => { jest.advanceTimersByTime(15_000); });
+    expect(useMomentStore.getState().visible).toBe(true);
+  });
+
+  it('lifting the finger restores a window, so the card still dismisses', () => {
+    // The other half, and the one a swapped-handler edit would break: a pause with no
+    // working resume is a card that never leaves.
+    seedDose();
+    const { getByTestId } = render(<MedicationCompletionCard />);
+    const card = getByTestId('medication-card-surface');
+    fireEvent(card, 'touchStart');
+    fireEvent(card, 'touchEnd');
+    act(() => { jest.advanceTimersByTime(4999); });
+    expect(useMomentStore.getState().visible).toBe(true);
+    act(() => { jest.advanceTimersByTime(2); });
+    expect(useMomentStore.getState().visible).toBe(false);
+  });
+
+  it('a CANCELLED gesture resumes too — the responder can end a touch elsewhere', () => {
+    // onTouchCancel is not belt-and-braces: a scroll claiming the responder, or a Modal
+    // mounting over the card, ends the gesture there and no touchEnd ever fires.
+    seedDose();
+    const { getByTestId } = render(<MedicationCompletionCard />);
+    const card = getByTestId('medication-card-surface');
+    fireEvent(card, 'touchStart');
+    fireEvent(card, 'touchCancel');
+    act(() => { jest.advanceTimersByTime(5001); });
+    expect(useMomentStore.getState().visible).toBe(false);
+  });
+});
