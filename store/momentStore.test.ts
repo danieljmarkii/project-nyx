@@ -1143,3 +1143,159 @@ describe('momentStore — undo, the adversarial cases', () => {
     expect(await useMomentStore.getState().undo('b')).toBe('removed');
   });
 });
+
+// ── CUL-614 · §5 "Dwell" ─────────────────────────────────────────────────────
+// The auto-dismiss stops while the owner is touching the card, and any interaction
+// resets it. The bug this closes is concrete: a dose card carries nine chips inside a
+// 5s window, and each chip tap re-armed only CHIP_CONFIRM_HOLD_MS (1500ms) — so an
+// owner who tapped an adherence chip and then paused to read the four vehicle labels
+// watched the card leave under their finger. What that COSTS is the point: an
+// unanswered adherence row lands `unconfirmed` by B-156 G1's fail-safe, which is
+// correct behaviour over a card the owner never saw and simply wrong over one they
+// were actively answering.
+describe('the dwell pause (CUL-614 §5)', () => {
+  beforeEach(() => {
+    jest.useFakeTimers();
+    useMomentStore.getState().hide();
+    useMomentStore.setState({ payload: null });
+  });
+  afterEach(() => {
+    useMomentStore.getState().hide();
+    jest.useRealTimers();
+  });
+
+  it('holds the card open past its dwell while a finger is down', () => {
+    const s = useMomentStore.getState();
+    s.showMedication(medicationPayload());
+    jest.advanceTimersByTime(1000);
+    s.pauseDwell();
+    // Well past the 5s dwell (and short of the 20s pause ceiling, which has its own
+    // test below) — with the timer paused, none of it counts.
+    jest.advanceTimersByTime(15_000);
+    expect(useMomentStore.getState().visible).toBe(true);
+  });
+
+  it('gives a FULL window back on release, not the scraps of the interrupted one', () => {
+    const s = useMomentStore.getState();
+    s.showMedication(medicationPayload());
+    jest.advanceTimersByTime(4900); // 100ms left of the 5s dwell
+    s.pauseDwell();
+    s.resumeDwell();
+    jest.advanceTimersByTime(4999);
+    expect(useMomentStore.getState().visible).toBe(true); // the reset, not the 100ms
+    jest.advanceTimersByTime(2);
+    expect(useMomentStore.getState().visible).toBe(false);
+  });
+
+  it("a chip's confirm hold cannot restart the clock mid-gesture", () => {
+    // THE ORDERING BUG THE BANKING EXISTS FOR. Touch events and press events interleave
+    // as touchStart → onPress → touchEnd, so a chip handler's rescheduleHide(1500) fires
+    // WHILE the finger is still down. Arming there would re-create the exact 1.5s window
+    // the pause is meant to suspend — the card leaving under the owner's hand.
+    const s = useMomentStore.getState();
+    s.showMedication(medicationPayload());
+    s.pauseDwell();
+    s.rescheduleHide(1500);
+    jest.advanceTimersByTime(15_000);          // paused: the hold never armed
+    expect(useMomentStore.getState().visible).toBe(true);
+    s.resumeDwell();
+    jest.advanceTimersByTime(4999);
+    expect(useMomentStore.getState().visible).toBe(true);
+  });
+
+  it('never shortens a double-dose conflict window (the safety floor still wins)', () => {
+    // patchDoubleDose arms MEDICATION_FLAGGED_DURATION_MS so ~18 words of safety prose
+    // can be read. A pause/resume must not quietly trade that down to the 5s reset —
+    // resumeDwell takes the MAX, and rescheduleHide re-applies the floor on top.
+    const s = useMomentStore.getState();
+    s.showMedication(medicationPayload({ adherence: 'given' }));
+    s.patchDoubleDose('m1', { conflict: true, otherEventId: 'm0', gapMinutes: 30 }, 'given');
+    s.pauseDwell();
+    s.resumeDwell();
+    jest.advanceTimersByTime(MEDICATION_FLAGGED_DURATION_MS - 1);
+    expect(useMomentStore.getState().visible).toBe(true);
+    jest.advanceTimersByTime(2);
+    expect(useMomentStore.getState().visible).toBe(false);
+  });
+
+  it('force-resumes if the touch-end never arrives, so a card cannot be stranded', () => {
+    // A DateTimePicker Modal mounting over the card mid-gesture can swallow the end of
+    // the touch. The pause is a convenience; the dismissal is the contract, so a lost
+    // release degrades to a card that lingers, never one that never leaves.
+    const s = useMomentStore.getState();
+    s.showMedication(medicationPayload());
+    s.pauseDwell();
+    jest.advanceTimersByTime(20_000);   // the ceiling fires and resumes
+    jest.advanceTimersByTime(5001);     // the restored window then elapses
+    expect(useMomentStore.getState().visible).toBe(false);
+  });
+
+  it('does not revive a card that is already dismissing', () => {
+    // `visible` goes false while the payload lingers for the fade-out. A stray touch
+    // landing in that gap must not pull the card back onto the screen.
+    const s = useMomentStore.getState();
+    s.showMeal(mealPayload());
+    jest.advanceTimersByTime(5001);
+    expect(useMomentStore.getState().visible).toBe(false);
+    s.pauseDwell();
+    s.resumeDwell();
+    jest.advanceTimersByTime(10_000);
+    expect(useMomentStore.getState().visible).toBe(false);
+  });
+
+  it('a new card is never stranded by a pause left over from the last one', () => {
+    // The leak this guards: hide()/present() clear the paused flag. Without that, a
+    // finger still down on a dismissed card would leave `dwellPaused` true, and the
+    // NEXT card would arm no hide timer at all and sit on Home forever.
+    const s = useMomentStore.getState();
+    s.showMeal(mealPayload({ eventId: 'first' }));
+    s.pauseDwell();
+    s.showMedication(medicationPayload({ eventId: 'second' }));
+    jest.advanceTimersByTime(5001);
+    expect(useMomentStore.getState().visible).toBe(false);
+  });
+});
+
+// The seam neither CUL-612 nor CUL-614 could test on its own: Undo is a TAP, so the
+// dwell pause fires on its touch-start, and the removal line then unmounts the handler
+// that would have resumed it. Undo arms the removal dwell directly rather than through
+// rescheduleHide, so the pause would otherwise outlive the card that set it.
+describe('undo × the dwell pause (the CUL-612 / CUL-614 seam)', () => {
+  const reverse = reverseLoggedEvent as jest.Mock;
+
+  beforeEach(() => {
+    jest.useFakeTimers();
+    reverse.mockClear();
+    reverse.mockImplementation(async () => {});
+    useMomentStore.getState().hide();
+    useMomentStore.setState({ payload: null, removed: false });
+  });
+  afterEach(() => {
+    useMomentStore.getState().hide();
+    jest.useRealTimers();
+  });
+
+  it('the removal line still dismisses on its own dwell, even undone mid-touch', async () => {
+    const s = useMomentStore.getState();
+    s.showMedication(medicationPayload());
+    s.pauseDwell();                       // the finger that is about to tap Undo
+    await s.undo('m1');
+    jest.advanceTimersByTime(REMOVED_DURATION_MS + 1);
+    expect(useMomentStore.getState().visible).toBe(false);
+  });
+
+  it('leaves no pause behind to strand or resurrect a later card', () => {
+    // The failure this pins is quiet: a `dwellPaused` that outlives its card leaves a
+    // ~20s watchdog armed against nothing, and the NEXT card inherits a store that
+    // believes a finger is down. Arming a hide clears it, so a fresh card behaves.
+    const s = useMomentStore.getState();
+    s.showMedication(medicationPayload({ eventId: 'first' }));
+    s.pauseDwell();
+    s.rescheduleHide(1500);               // banked, not armed — the pause holds
+    s.showMeal(mealPayload({ eventId: 'second' }));
+    jest.advanceTimersByTime(5001);
+    expect(useMomentStore.getState().visible).toBe(false);
+    jest.advanceTimersByTime(60_000);     // no stale watchdog re-arms anything
+    expect(useMomentStore.getState().visible).toBe(false);
+  });
+});

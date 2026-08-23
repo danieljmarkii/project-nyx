@@ -22,7 +22,27 @@ jest.mock('./SimpleEventConfirm', () => {
       <>
         <Text>{`confirm:${type}:${petName}`}</Text>
         <Text onPress={onBack}>stub-back</Text>
-        <Text onPress={onLogged}>stub-logged</Text>
+        {/* CUL-614 — the real confirm hands back the RECORD it wrote, and the sheet
+            composes the beat's sentence from it. The stub supplies a witnessed vomit
+            so the beat under test has something to say; the found-it shapes are
+            covered where they are derived (lib/completionCard, SimpleEventConfirm). */}
+        <Text
+          onPress={() =>
+            onLogged({
+              eventId: 'e1',
+              occurredAtIso: '2026-08-13T17:33:00.000Z',
+              record: {
+                kind: 'event',
+                typeLabel: 'Vomit',
+                confidence: 'witnessed',
+                earliest: null,
+                latest: null,
+              },
+            })
+          }
+        >
+          stub-logged
+        </Text>
         {/* CUL-612 — stand-ins for the three things the real confirm reports up.
             The DERIVATION of those booleans is SimpleEventConfirm.test's subject;
             what the sheet owes is the guard it puts in front of them. */}
@@ -42,9 +62,11 @@ jest.mock('./SimpleEventConfirm', () => {
 jest.mock('./SheetLogBeat', () => {
   const { Text } = require('react-native');
   return {
-    SheetLogBeat: ({ tone, onDone }: any) => (
+    SheetLogBeat: ({ tone, title, petName, onDone }: any) => (
       <>
         <Text>{`beat:${tone}`}</Text>
+        <Text>{`beat-title:${title}`}</Text>
+        <Text>{`beat-pet:${petName}`}</Text>
         <Text onPress={onDone}>stub-done</Text>
       </>
     ),
@@ -132,6 +154,31 @@ describe('EventTypeSheet', () => {
     expect(getByText('beat:calm')).toBeTruthy();     // symptom → calm, never celebrate
     fireEvent.press(getByText('stub-done'));
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  // CUL-614 / §5's sentence rule — the R2 beat names the record. Before this, the
+  // sheet confirmed every simple event with the word "Logged": the app held the type
+  // and the window it had just written and said neither. The assertion is on the
+  // composed string, not on "not 'Logged'", so a future refactor that reintroduced a
+  // generic word would fail here rather than pass a negative check.
+  it('the beat speaks the record, never a bare "Logged"', () => {
+    const { getByText, queryByText } = render(<EventTypeSheet visible onClose={jest.fn()} />);
+    fireEvent.press(getByText('Vomit'));
+    fireEvent.press(getByText('stub-logged'));
+    expect(getByText(/^beat-title:Vomit · /)).toBeTruthy();
+    expect(queryByText('beat-title:Logged')).toBeNull();
+  });
+
+  // nyx-voice Pattern 1 + the multi-pet wrong-pet class. The beat REPLACES the confirm
+  // stage, and the confirm's header was the only thing naming the pet — so without
+  // this, the one screen that says "it's written" stopped saying whose record it was
+  // written to, on a surface whose pet was fixed several taps earlier. The name comes
+  // from the pet captured at grid→confirm, never a re-read active pet.
+  it('the beat names the pet whose record it landed on', () => {
+    const { getByText } = render(<EventTypeSheet visible onClose={jest.fn()} />);
+    fireEvent.press(getByText('Vomit'));
+    fireEvent.press(getByText('stub-logged'));
+    expect(getByText('beat-pet:Nyx')).toBeTruthy();
   });
 
   it('logging Other plays the celebrate beat (not a symptom)', () => {

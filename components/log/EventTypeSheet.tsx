@@ -11,6 +11,7 @@ import { EVENT_TYPES, EventTypeKey, SYMPTOM_TYPES } from '../../constants/eventT
 import type { MomentTone } from '../../store/momentStore';
 import { GroupedEventGrid } from './EventTypePicker';
 import { SimpleEventConfirm } from './SimpleEventConfirm';
+import { summarizeLoggedRecord, type LoggedRecord } from '../../lib/completionCard';
 import { SheetLogBeat } from './SheetLogBeat';
 import { PetSwitcherSheet } from '../pet/PetSwitcherSheet';
 import { discardGuardCopy, type ConfirmDraft } from '../../lib/discardGuard';
@@ -58,6 +59,12 @@ export function EventTypeSheet({ visible, onClose }: Props) {
   // The event being confirmed + the pet it writes to, captured at grid→confirm.
   const [confirm, setConfirm] = useState<{ type: EventTypeKey; petId: string; petName: string } | null>(null);
   const [beatTone, setBeatTone] = useState<MomentTone>('calm');
+  // CUL-614 — what the beat SAYS, composed once from the record the confirm just
+  // wrote. Held in state rather than recomputed on render so the sentence is fixed at
+  // commit time: summarizeLoggedRecord resolves "today"/"yesterday" against a live
+  // clock, and a beat that re-derived mid-dwell could change its own words at local
+  // midnight. Null only before the first commit of a given open.
+  const [beatSentence, setBeatSentence] = useState<string | null>(null);
   // CUL-612 — what the confirm currently holds, reported up by SimpleEventConfirm.
   // It lives HERE because the gestures that destroy it are this component's: a
   // backdrop tap and the Android back button both unmount the confirm, so the
@@ -75,7 +82,7 @@ export function EventTypeSheet({ visible, onClose }: Props) {
   // a stale confirm/beat.
   useEffect(() => {
     visibleRef.current = visible;
-    if (!visible) { setStage('grid'); setConfirm(null); setDraft(null); }
+    if (!visible) { setStage('grid'); setConfirm(null); setBeatSentence(null); setDraft(null); }
   }, [visible]);
 
   // ── THE DISCARD GUARD (CUL-612, §5) ───────────────────────────────────────
@@ -124,7 +131,7 @@ export function EventTypeSheet({ visible, onClose }: Props) {
     setStage('confirm');
   }
 
-  function handleLogged() {
+  function handleLogged(result: { eventId: string; occurredAtIso: string; record: LoggedRecord }) {
     // If the sheet was dismissed while the write was in flight, don't resurface — the
     // event is written and will appear on Home; showing a beat on a hidden/reopened
     // sheet would be a stale flash (the reset effect already returned it to the grid).
@@ -133,6 +140,12 @@ export function EventTypeSheet({ visible, onClose }: Props) {
     // the four symptom types get 'calm'; stool_normal and Other get 'celebrate'.
     const tone: MomentTone = confirm && SYMPTOM_TYPES.has(confirm.type) ? 'calm' : 'celebrate';
     setBeatTone(tone);
+    // CUL-614 / §5's sentence rule — the R2 beat now speaks the record the same way
+    // the R1 named card does, through the one composer (lib/completionCard →
+    // lib/logCopy → describeOccurredAt). Until this, the sheet confirmed a "Found it"
+    // vomit with the word "Logged": the app held the window it had just written and
+    // said nothing about it, on the surface where the owner is least able to check.
+    setBeatSentence(summarizeLoggedRecord(result.record, result.occurredAtIso));
     setStage('done');
   }
 
@@ -183,8 +196,21 @@ export function EventTypeSheet({ visible, onClose }: Props) {
               />
             )}
 
-            {stage === 'done' && (
-              <SheetLogBeat tone={beatTone} onDone={onClose} />
+            {/* `beatSentence` is set in the same handler that sets this stage, so the
+                pair cannot separate; gating on it keeps the beat's required title
+                honest without a fallback string that would re-open the bare-"Logged"
+                door this PR closes. */}
+            {stage === 'done' && beatSentence && confirm && (
+              <SheetLogBeat
+                tone={beatTone}
+                title={beatSentence}
+                // The pet captured at grid→confirm, NOT a re-read active pet: this
+                // names the pet the row was actually written for, and the store's
+                // active pet can have moved on by now (the multi-pet queue-then-switch
+                // guard the completion payloads carry for the same reason).
+                petName={confirm.petName}
+                onDone={onClose}
+              />
             )}
           </View>
         </View>

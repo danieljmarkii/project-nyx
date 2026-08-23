@@ -61,7 +61,7 @@ const CHIP_CONFIRM_HOLD_MS = 1500;
 export function MedicationCompletionCard() {
   const {
     visible, payload, removed, hide, undo, patchOccurredAt, patchAdherence, patchHowGiven,
-    patchDoubleDose, rescheduleHide,
+    patchDoubleDose, rescheduleHide, pauseDwell, resumeDwell,
   } = useMomentStore();
   const { patchInToday } = useEventStore();
   const { activePet, pets } = usePetStore();
@@ -232,9 +232,16 @@ export function MedicationCompletionCard() {
   // "Logged" (never "Gave") either way: the title must not contradict a downgrade to
   // Missed/Refused on the chips below.
   const isCombo = !!payload.pairedFoodName;
+  // CUL-614 — the nameless fallback says "Dose logged", never a bare "Logged". §5's
+  // sentence rule is that a beat names the record, and a dose card that has lost its
+  // drug name still knows it wrote a DOSE — dropping to the same word every other
+  // register just retired is the one thing it must not do. Reachable only through
+  // app/log.tsx's `drugDisplayName(...) ?? med.generic_name`, where a regimen with a
+  // blank generic name yields '' (the profile path's `drug_name` is required by
+  // canSaveRegimen), so this is the honest floor rather than dead code.
   const title = isCombo
     ? 'Logged together'
-    : (payload.drugName ? `Logged · ${payload.drugName}` : 'Logged');
+    : (payload.drugName ? `Logged · ${payload.drugName}` : 'Dose logged');
   const subLabel = isCombo
     ? `${payload.drugName} · with ${payload.pairedFoodName}`
     : formatTime(occurredDate);
@@ -292,7 +299,26 @@ export function MedicationCompletionCard() {
       pointerEvents={shown ? 'box-none' : 'none'}
       style={[styles.wrapper, { opacity, transform: [{ translateY }] }]}
     >
-      <View style={styles.card}>
+      {/* CUL-614 / §5 "Dwell" — the auto-dismiss stops while a finger is on the card
+          and any interaction resets it. Wired at the ROOT because touch events bubble
+          from every child, so the pause covers the whole gesture including the reading
+          pause between two chip taps; a per-control version would only ever cover the
+          taps themselves, which were never the part being lost. onTouchCancel matters
+          as much as onTouchEnd: a gesture the responder system takes away (a scroll
+          claiming it, a Modal mounting over it) ends there and nowhere else.
+
+          NOT wired over the CUL-612 removal line, deliberately. That state has nothing
+          to read, tap or answer — it is the one card state the pause is not for — and
+          resuming arms a full interactive window, which would let a stray touch stretch
+          a 2.4s "Removed" past the dwell chosen so a reversal does not outstay the log
+          it reversed. */}
+      <View
+        style={styles.card}
+        testID="medication-card-surface"
+        onTouchStart={notice ? undefined : pauseDwell}
+        onTouchEnd={notice ? undefined : resumeDwell}
+        onTouchCancel={notice ? undefined : resumeDwell}
+      >
         {notice ? (
           /* The removal line — no mark, no chips, no note. The adherence row in
              particular must go: it is a question about a dose that is no longer in

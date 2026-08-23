@@ -122,6 +122,7 @@ interface AddTarget {
 export function MealCompletionCard() {
   const {
     visible, payload, removed, hide, undo, patchOccurredAt, patchIntakeRating, rescheduleHide,
+    pauseDwell, resumeDwell,
   } = useMomentStore();
   const { patchInToday } = useEventStore();
   const { activePet, pets } = usePetStore();
@@ -396,7 +397,26 @@ export function MealCompletionCard() {
         pointerEvents={shown ? 'box-none' : 'none'}
         style={[styles.wrapper, { opacity, transform: [{ translateY }] }]}
       >
-        <View style={styles.card}>
+        {/* CUL-614 / §5 "Dwell" — the auto-dismiss stops while a finger is on the card
+            and any interaction resets it. Wired at the ROOT because touch events bubble
+            from every child, so the pause covers the whole gesture including the reading
+            pause between two chip taps; a per-control version would only ever cover the
+            taps themselves, which were never the part being lost. onTouchCancel matters
+            as much as onTouchEnd: a gesture the responder system takes away (a scroll
+            claiming it, a Modal mounting over it) ends there and nowhere else.
+
+            NOT wired over the CUL-612 removal line, deliberately — see the twin note in
+            MedicationCompletionCard: that state has nothing to read, tap or answer, and
+            resuming arms a full interactive window, which would let a stray touch
+            stretch a 2.4s "Removed" past the dwell chosen so a reversal does not outstay
+            the log it reversed. */}
+        <View
+          style={styles.card}
+          testID="meal-card-surface"
+          onTouchStart={notice ? undefined : pauseDwell}
+          onTouchEnd={notice ? undefined : resumeDwell}
+          onTouchCancel={notice ? undefined : resumeDwell}
+        >
           {notice ? (
             /* The removal line — no mark, no controls, no follow-ups. A gold check
                over the word "Removed" would be two contradictory signals, and an
@@ -421,8 +441,15 @@ export function MealCompletionCard() {
               <Check size={18} color={theme.colorMomentConfirm} strokeWidth={3} />
             </Animated.View>
             <View style={styles.labelCol}>
+              {/* CUL-614 — the nameless-food fallback says "Food logged", never a bare
+                  "Logged": §5's sentence rule is that a beat names the record, and a
+                  card that has lost the food's name still knows it wrote food.
+                  Deliberately NOT "Meal logged" / "Treat logged" — that rule already
+                  has two implementations (EventRow, lib/dayEvents) and this is not the
+                  place to mint a third; "Food" is true for all four foodType values,
+                  including the 'other' and null ones neither of those covers. */}
               <Text style={styles.title} numberOfLines={1}>
-                {foodName ? `Logged · ${foodName}` : 'Logged'}
+                {foodName ? `Logged · ${foodName}` : 'Food logged'}
               </Text>
               <Text style={styles.subLabel}>{formatTime(occurredDate)}</Text>
             </View>

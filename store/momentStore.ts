@@ -269,7 +269,16 @@ interface MomentState {
   ) => boolean;
   // Reschedules the hide timer to fire `durationMs` from now — used to hold the
   // meal card open ~1.5s after a chip tap so the selection is confirmed visibly.
+  // While the dwell is PAUSED this banks the duration instead of arming a timer
+  // (see pauseDwell), so a chip's confirm hold cannot restart the clock under the
+  // owner's own finger.
   rescheduleHide: (durationMs: number) => void;
+  // CUL-614 / §5 "Dwell" — the auto-dismiss stops while the owner is touching the
+  // card, and any interaction resets it. Called from the card's root touch handlers,
+  // never from a press handler: the point is to cover the whole gesture, including
+  // the reading pause between two chip taps.
+  pauseDwell: () => void;
+  resumeDwell: () => void;
 }
 
 // Named-card dwell. The retired white takeover held 1.4s — right for a terminal,
@@ -322,23 +331,74 @@ const CARD_REVEAL_WAIT_MS = 3000;
 // does not outstay the log it reversed.
 export const REMOVED_DURATION_MS = 2400;
 
-// Module-scoped so a rapid second log cleanly cancels the prior timers rather
-// than racing two hides.
+// ── The dwell clock (CUL-614 · §5 "Dwell") ──────────────────────────────────
+// The auto-dismiss PAUSES while the owner is touching the card, and any interaction
+// resets it. The problem it solves is the dose card's: nine chips (four adherence,
+// four vehicle, plus the time affordance) inside a 5s window, where each tap re-armed
+// only CHIP_CONFIRM_HOLD_MS — so an owner reading the labels before their second tap
+// watched the card leave under their finger, and an unanswered adherence row lands
+// `unconfirmed` (B-156 G1). That fail-safe is exactly right and is NOT what this
+// changes: this buys the owner the time to answer, it does not change what silence
+// means.
+//
+// It lives HERE rather than in each card for the reason the commit haptic does
+// (CUL-604): the timer is the store's, so a card that grows a new control inherits
+// the pause with it instead of re-deriving a rule about its own dismissal.
+//
+// Module-scoped, like the timers themselves — none of it is rendered, so putting it
+// in the store's state would re-render three cards on every finger-down.
 let hideTimer: ReturnType<typeof setTimeout> | null = null;
 let showTimer: ReturnType<typeof setTimeout> | null = null;
-// Undo's synchronous re-entry latch. `removed` cannot do this job on its own: it
-// is only set AFTER the soft-delete resolves (a reversal must never be shown
-// before it has happened), which leaves an await-shaped window in which a second
-// tap would issue a second delete. This latches on the first tap instead.
+// The watchdog that force-resumes a pause whose touch-end never arrived (see below).
+let pauseCeilingTimer: ReturnType<typeof setTimeout> | null = null;
+// Wall-clock deadline of the armed hide, so a pause can bank what was LEFT rather
+// than restart from a fixed number. null whenever no hide is armed.
+let hideDeadlineAt: number | null = null;
+let dwellPaused = false;
+// What resumeDwell will arm: the remaining window at pause time, raised by any
+// rescheduleHide that arrived while paused (a chip's confirm hold).
+let bankedDurationMs = 0;
+
+// What an interaction RESETS the dwell to. All three cards share the same 5s
+// interactive dwell, so this is one number rather than a per-kind lookup; a card
+// carrying a longer window (the flagged 7s) keeps it, because resumeDwell takes the
+// MAX of this and what was banked — the reset is a floor, never a truncation.
+const TOUCH_RESET_DWELL_MS = 5000;
+
+// The longest a pause may hold the card open with no touch-end. A touch that begins
+// on the card and ends somewhere the card never hears about — a DateTimePicker Modal
+// mounting over it mid-gesture, a JS-thread stall that swallows the responder's end
+// event — would otherwise strand the card on screen forever, because the hide timer
+// is cleared and only resumeDwell re-arms it. Generous enough that no real reading
+// pause trips it, short enough that the failure is a card that lingers rather than
+// one that never leaves. The pause is a convenience; the dismissal is the contract.
+const PAUSE_CEILING_MS = 20000;
+
+function clearPauseCeiling() {
+  if (pauseCeilingTimer) { clearTimeout(pauseCeilingTimer); pauseCeilingTimer = null; }
+}
+// Undo's synchronous re-entry latch (CUL-612). `removed` cannot do this job on its
+// own: it is only set AFTER the soft-delete resolves (a reversal must never be shown
+// before it has happened), which leaves an await-shaped window in which a second tap
+// would issue a second delete. This latches on the first tap instead.
 let undoInFlight = false;
 
 function clearTimers() {
   if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
   if (showTimer) { clearTimeout(showTimer); showTimer = null; }
+  clearPauseCeiling();
+  // A new card (or an explicit hide) starts from a clean clock. Without this, a card
+  // presented while the previous one was paused would inherit `dwellPaused` and never
+  // arm a hide of its own — a finger on a dismissed card silently stranding its
+  // successor.
+  hideDeadlineAt = null;
+  dwellPaused = false;
+  bankedDurationMs = 0;
 }
 
 function clearHideTimer() {
   if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
+  hideDeadlineAt = null;
 }
 
 /**
@@ -361,12 +421,38 @@ function clearHideTimer() {
  *
  * Both fixes are structural rather than a patch at the call site, so a future
  * scheduling path cannot reintroduce either half.
+ *
+ * It also records `hideDeadlineAt` (CUL-614), which is what lets `pauseDwell` bank the
+ * REMAINING window instead of restarting from a constant. Two PRs extracted this helper
+ * independently and each solved a different half; the merged version keeps both, because
+ * the CUL-614 half needs a deadline and the CUL-612 half needs the guarded null.
  */
 function armHide(set: (partial: Partial<MomentState>) => void, durationMs: number) {
   clearHideTimer();
+  // An explicit arm SUPERSEDES a pause, and saying so here is what keeps the invariant
+  // "a hide is armed ⇒ the dwell is not paused" true by construction rather than by
+  // coincidence. It is a no-op on every path but one: `rescheduleHide` banks and
+  // returns while paused so it never reaches here, and `present()` has already cleared
+  // through `clearTimers()`. The exception is `undo()`, which arms the removal dwell
+  // directly — and Undo is a TAP, so `pauseDwell` has already fired on its touch-start
+  // and the removal line then unmounts the handler that would have resumed it. Without
+  // this, that pause outlives its card, leaving a watchdog to fire ~20s later against a
+  // card that is already gone.
+  clearPauseCeiling();
+  dwellPaused = false;
+  bankedDurationMs = 0;
+  // CUL-614 — the wall-clock deadline, so `pauseDwell` can bank what was LEFT rather
+  // than restart from a fixed number. Set here, in the single place a hide is armed,
+  // so it cannot drift from `hideTimer`.
+  hideDeadlineAt = Date.now() + durationMs;
   const mine: ReturnType<typeof setTimeout> = setTimeout(() => {
     set({ visible: false });
-    if (hideTimer === mine) hideTimer = null;
+    // The same is-it-still-ours guard as the handle below, for the same reason: a
+    // stale timer that nulled the deadline would leave the LIVE hide with no recorded
+    // end, and a pause during it would bank 0. That errs toward a longer window (the
+    // reset floor still applies), but it is the same class of bug as (2) above and is
+    // cheaper to close than to reason about.
+    if (hideTimer === mine) { hideTimer = null; hideDeadlineAt = null; }
   }, durationMs);
   hideTimer = mine;
 }
@@ -604,7 +690,62 @@ export const useMomentStore = create<MomentState>((set) => ({
       state.payload?.kind === 'medication' && state.payload.doubleDose?.conflict
         ? MEDICATION_FLAGGED_DURATION_MS
         : 0;
-    armHide(set, Math.max(durationMs, floorMs));
+    const next = Math.max(durationMs, floorMs);
+    // CUL-614 — while the dwell is PAUSED, bank the request instead of arming it.
+    // Every chip handler calls rescheduleHide(CHIP_CONFIRM_HOLD_MS) from its onPress,
+    // which fires between the card's touch-start and touch-end; arming there would
+    // restart a 1.5s clock underneath the owner's own finger, i.e. re-create the exact
+    // bug the pause exists to fix. Banking the MAX keeps a conflict floor (or a longer
+    // hold) that arrived mid-gesture from being lost at resume.
+    if (dwellPaused) {
+      bankedDurationMs = Math.max(bankedDurationMs, next);
+      return;
+    }
+    armHide(set, next);
+  },
+  // ── §5 "Dwell": the timer stops while the owner is touching the card ──────────
+  //
+  // Called from the card root's onTouchStart / onTouchEnd+onTouchCancel, deliberately
+  // NOT from press handlers: touch events fire for the WHOLE gesture and bubble from
+  // every child, so the pause covers the reading pause between two chip taps — which
+  // is where the window was actually being lost — and needs no per-control wiring.
+  //
+  // ONE FLAG, NOT A TOUCH COUNT — a deliberate choice, not an oversight. With two
+  // fingers on the card, the first `onTouchEnd` resumes while the second is still down,
+  // so the clock restarts under a resting finger. A counter would model that literally,
+  // and would buy a worse failure: a single missed touch-end (the Modal case below)
+  // leaks the count permanently, and every later gesture then pauses a card that can
+  // never resume — the strand this design is built to avoid, made routine. The flag's
+  // error is bounded and points the safe way: the owner still gets a full fresh window
+  // from the release, exactly as a one-finger gesture would.
+  pauseDwell: () => {
+    if (dwellPaused) return; // a second finger down mid-gesture must not re-bank
+    // Nothing to pause once the card is dismissing: `visible` is already false while
+    // the payload lingers for the fade, and a touch landing then must not revive it.
+    if (!useMomentStore.getState().visible) return;
+    bankedDurationMs = Math.max(
+      bankedDurationMs,
+      hideDeadlineAt !== null ? Math.max(hideDeadlineAt - Date.now(), 0) : 0,
+    );
+    clearHideTimer();
+    dwellPaused = true;
+    // See PAUSE_CEILING_MS: a touch-end that never arrives must not strand the card.
+    pauseCeilingTimer = setTimeout(() => {
+      pauseCeilingTimer = null;
+      useMomentStore.getState().resumeDwell();
+    }, PAUSE_CEILING_MS);
+  },
+  resumeDwell: () => {
+    if (!dwellPaused) return;
+    dwellPaused = false;
+    clearPauseCeiling();
+    const banked = bankedDurationMs;
+    bankedDurationMs = 0;
+    // "Any interaction resets it" — the owner gets a full interactive window back from
+    // the moment they lift, not the scraps of the one their gesture interrupted. MAX,
+    // not assignment, so a flagged 7s window or a banked confirm hold survives; and it
+    // routes through rescheduleHide so the double-dose conflict floor still applies.
+    useMomentStore.getState().rescheduleHide(Math.max(banked, TOUCH_RESET_DWELL_MS));
   },
 }));
 

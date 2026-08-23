@@ -15,6 +15,7 @@ import {
 } from '../../lib/eventTimeEdit';
 import type { TimeMode, FoundMode } from './TimeConfidenceField';
 import { summarizeSimpleEvent, confirmTimeRowLabel } from '../../lib/logCopy';
+import type { LoggedRecord } from '../../lib/completionCard';
 import { insertSimpleEvent } from '../../lib/simpleEvent';
 import { useSubmitGuard } from '../../hooks/useSubmitGuard';
 import { useEventStore } from '../../store/eventStore';
@@ -43,7 +44,12 @@ interface Props {
   petId: string;
   petName: string;
   onBack: () => void;
-  onLogged: (result: { eventId: string; occurredAtIso: string }) => void;
+  // CUL-614 — the result carries the RECORD, not a display string, so the host's
+  // completion beat derives its sentence through lib/completionCard exactly as the
+  // named card does (§5's sentence rule). Structured on purpose: there is nowhere
+  // here to put a pre-composed "Logged", which is what makes the rule hold by shape
+  // rather than by review (the CUL-606 argument, applied to the R2 register).
+  onLogged: (result: { eventId: string; occurredAtIso: string; record: LoggedRecord }) => void;
   /** CUL-612 — what the owner has put into this confirm so far, so the HOST can
    *  guard its own dismissal paths (a backdrop tap destroys this component, and a
    *  component cannot guard the gesture that unmounts it). Reported on change
@@ -273,7 +279,22 @@ export function SimpleEventConfirm({ type, petId, petName, onBack, onLogged, onD
         created_at: res.now,
         updated_at: res.now,
       });
-      onLogged({ eventId: res.eventId, occurredAtIso: res.occurredAtIso });
+      onLogged({
+        eventId: res.eventId,
+        occurredAtIso: res.occurredAtIso,
+        // Built from `tf` — the SAME buildTimeFields derivation the summary pill reads
+        // and the write above used, so the beat cannot say something the row does not
+        // hold. Passing the pill's own string instead would have been shorter and
+        // wrong: the pill is composed against a live clock, and by the time the beat
+        // renders, "today at 11:59 PM" can already be yesterday.
+        record: {
+          kind: 'event',
+          typeLabel,
+          confidence: tf.confidence,
+          earliest: tf.earliest ? tf.earliest.toISOString() : null,
+          latest: tf.latest ? tf.latest.toISOString() : null,
+        },
+      });
       return true;
     } catch (e) {
       console.error('[SimpleEventConfirm] log failed:', e);
