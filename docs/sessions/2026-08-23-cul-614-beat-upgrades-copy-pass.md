@@ -59,3 +59,11 @@ The `code-reviewer` then found the mirror of the same problem in the new work: t
 - **On-device verification is outstanding** and needs a dev-client build — Expo Go plays no haptics. **CUL-616** already owns that standing pass for the chain; this PR adds the dwell and the MedStrip beat to what it should cover.
 - **The time-picker Modal does not itself hold the card open** (pre-existing: `openPicker` never touches the dwell). Unchanged by this PR, and incidentally improved — the touch that opens it pauses the dwell, and the watchdog covers a lost touch-end — so it was left alone rather than widened into scope.
 - **CUL-625** — the meal/treat display-label rule's two implementations.
+
+## Base merge — CUL-613 landed mid-session
+
+`main` moved to `8d0dab25` (#706 CUL-613, #705) while this PR was open, and #707 went un-mergeable. Worth recording because of *where* it conflicted: **only `CLAUDE.md`**. No code conflict at all, which is the parallel-safety scoping paying off — staying off `NamedCompletionCard.tsx` and the capture screens meant two sessions edited the same subsystem on the same day and never touched the same code line.
+
+Both sessions had amended the same completion-convention bullet. Resolved **on meaning, not by keeping both sides**: this session's amended CUL-606+614 line replaces main's unamended copy of that same rule, and CUL-613's genuinely *new* bullet ("every commit path routes through its completion card") is kept alongside it. One copy of each rule. The failure mode being avoided is the 2026-07-24 overnight's, where a resolution kept both sides and shipped two contradictory lines to `main`.
+
+CUL-613 also shipped a **new guard this session's diff is a subject of** — `guards/completionCard.test.ts`, which fails the build when an `insertMeal(` / `insertMedicationDose(` call site does not reach for its completion card. It passes, and the *why* was checked rather than the green trusted, on that guard's own stated lesson: `components/home/MedStrip.tsx` is spared by an **allowlist entry keyed on the file path** (line 74, reasoned as "R2, not R1"), not by an inline `completion-card-ok` comment — so the file is genuinely in the scan set and deliberately exempt, not silently skipped. Post-merge: 256 suites / 5626 tests green, `tsc` clean, all four guards pass.
