@@ -18,9 +18,12 @@ import {
 import { AdherenceChipRow, DoseAdherence } from '../log/AdherenceChipRow';
 import { VehicleChipRow } from '../log/VehicleChipRow';
 
-// Tab bar height from app/(tabs)/_layout.tsx — the card must clear it so it isn't
-// occluded when the user lands back on a tabs screen after a log.
-const TAB_BAR_HEIGHT = Platform.OS === 'ios' ? 80 : 60;
+// The bar's real height, imported rather than re-derived: this file used to carry
+// its own `Platform.OS === 'ios' ? 80 : 60` sourced by comment from
+// app/(tabs)/_layout.tsx, which stopped defining it (CUL-599) — and the bar has
+// since grown. The card must clear the bar so it is not occluded when the owner
+// lands back on a tabs screen after a log.
+import { TAB_HEIGHT } from '../nav/NyxTabBar';
 
 // Hold the card open this long after a chip tap (adherence OR vehicle) so the
 // selection is visibly confirmed before dismiss (same rationale as the meal card's
@@ -411,7 +414,7 @@ const styles = StyleSheet.create({
   // it — same placement as the meal card.
   wrapper: {
     position: 'absolute',
-    bottom: TAB_BAR_HEIGHT + 64,
+    bottom: TAB_HEIGHT + 64,
     left: theme.space2,
     right: theme.space2,
     zIndex: 50,

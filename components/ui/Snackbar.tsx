@@ -1,11 +1,15 @@
 import { useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Animated, Platform } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Animated } from 'react-native';
 import { theme, shadows } from '../../constants/theme';
 import { useSnackbarStore } from '../../store/snackbarStore';
 import { useReducedMotion } from '../../hooks/useReducedMotion';
 
-// Tab bar height from app/(tabs)/_layout.tsx — same reference the meal card uses.
-const TAB_BAR_HEIGHT = Platform.OS === 'ios' ? 80 : 60;
+// The bar's real height, imported rather than re-derived: this file used to carry
+// its own `Platform.OS === 'ios' ? 80 : 60` sourced by comment from
+// app/(tabs)/_layout.tsx, which stopped defining it (CUL-599) — and the bar has
+// since grown. The card must clear the bar so it is not occluded when the owner
+// lands back on a tabs screen after a log.
+import { TAB_HEIGHT } from '../nav/NyxTabBar';
 
 // Root-mounted snackbar overlay (B-005 PR 2). Store-driven (snackbarStore) so it
 // survives the dismissal of whatever modal armed it — the food-detail "Remove
@@ -81,7 +85,7 @@ const styles = StyleSheet.create({
   // action never sits under the floating button.
   wrapper: {
     position: 'absolute',
-    bottom: TAB_BAR_HEIGHT + 64,
+    bottom: TAB_HEIGHT + 64,
     left: theme.space2,
     right: theme.space2,
     zIndex: 50,

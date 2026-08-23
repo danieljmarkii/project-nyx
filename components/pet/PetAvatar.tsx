@@ -27,9 +27,16 @@ export function PetAvatar({ name, photoPath, size }: PetAvatarProps) {
     <View style={[styles.placeholder, round]}>
       {/* Initial scales with the disc (0.4 ratio ≈ textMD at the header's
           38pt) rather than a fixed token, so smaller switcher-row discs don't
-          render an oversized letter. */}
+          render an oversized letter.
+
+          Indexed by CODE POINT, not by `charAt(0)`: a name beginning with an emoji
+          or an astral character (🐈 Mochi) has a surrogate pair as its first two
+          code units, and taking one of them alone renders the replacement glyph —
+          a broken-looking disc where the pet's identity should be. Newly
+          load-bearing now that this disc is the Pet tab's anchor on every screen
+          (CUL-599). */}
       <Text style={[styles.initial, { fontSize: Math.round(size * 0.4) }]}>
-        {name.charAt(0).toUpperCase()}
+        {[...name][0]?.toUpperCase() ?? ''}
       </Text>
     </View>
   );
