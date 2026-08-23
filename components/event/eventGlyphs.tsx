@@ -1,6 +1,5 @@
-import { ComponentType, ReactNode } from 'react';
-import Svg, { Path } from 'react-native-svg';
-import { theme } from '../../constants/theme';
+import { Path } from 'react-native-svg';
+import { GlyphSvg, type Glyph, type GlyphProps } from '../ui/GlyphSvg';
 
 // The first three glyphs of the Culprit event-icon family (B-745 PR 1). These
 // replace the weakest Lucide literal matches — Droplet (vomit), Circle (formed
@@ -12,52 +11,18 @@ import { theme } from '../../constants/theme';
 // are registered in EVENT_TYPES exactly like a Lucide icon — the map stays the
 // single point of change.
 //
-// House line style (design principles §Iconography, matched to the round-4 mock):
-// a 24×24 viewBox, no fill, 1.75px stroke, round caps + joins — single-sourced in
-// GlyphSvg below so every family glyph (these three and B-746's six) is drawn the
-// same way. Drawn at the 24px master; EventIcon renders them at 16/20/24. Per B-410
-// the home-screen widget does NOT adopt these — it runs its own inlined abstract
-// geometry in a bare JSC context with no imports, so a react-native-svg component
-// could never reach it anyway.
+// The house line style itself (24×24 viewBox, no fill, 1.75px stroke, round caps +
+// joins) lives in the shared `GlyphSvg` wrapper, which moved to components/ui when
+// the tab bar's nav glyphs joined the same line (CUL-599). Drawn at the 24px master;
+// EventIcon renders them at 16/20/24. Per B-410 the home-screen widget does NOT adopt
+// these — it runs its own inlined abstract geometry in a bare JSC context with no
+// imports, so a react-native-svg component could never reach it anyway.
 
-export type EventGlyphProps = {
-  size?: number;
-  color?: string;
-  strokeWidth?: number;
-};
-
-// The shared glyph interface: any component that takes the icon-kit's three props.
-// Both a Lucide icon and the customs below satisfy it, so EVENT_TYPES.icon can hold
-// either and iconForType/EventIcon stay type-safe without an `as` cast (CLAUDE.md
-// "no magic"): the map is still the single point of change.
-export type EventGlyph = ComponentType<EventGlyphProps>;
-
-// The house wrapper: the 24×24 viewBox + no-fill + 1.75-stroke + round-cap/join line
-// style, in exactly one place. Every family glyph is `<GlyphSvg {...props}>` around
-// its paths, so the line rule can't drift glyph-to-glyph. Defaults live here (color =
-// the icon rule's secondary tint, EventIcon's own default) so a bare render is sane;
-// every in-app call goes through EventIcon, which always passes an explicit trio.
-function GlyphSvg({
-  size = 24,
-  color = theme.colorTextSecondary,
-  strokeWidth = 1.75,
-  children,
-}: EventGlyphProps & { children: ReactNode }) {
-  return (
-    <Svg
-      width={size}
-      height={size}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke={color}
-      strokeWidth={strokeWidth}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      {children}
-    </Svg>
-  );
-}
+// The event-family spelling of the shared glyph contract. Re-exported (rather than
+// replaced) so EventIcon / constants/eventTypes.ts keep their existing names.
+export type EventGlyphProps = GlyphProps;
+export type EventGlyph = Glyph;
+export { GlyphSvg };
 
 // The formed-stool pile, verbatim from the round-4 mock. Shared by both stool
 // glyphs so the loose sibling's body is EXACTLY the formed one (the "same language"
