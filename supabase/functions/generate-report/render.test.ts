@@ -353,13 +353,17 @@ Deno.test('chronicity flag → safety band leads, mono-prominent, escalates on p
     symptomDays: 8,
     daysSinceLastEpisode: 2,
     firstOnsetIso: '2026-05-20T14:00:00Z',
+    lastOnsetDayKey: '2026-06-28',
     tier: 'standard',
     windowDays: 56,
   }
   const html = renderReport(base({ safetyFlags: [flag] }))
   assert.ok(html.includes('class="safetyband"'), 'safety band present')
-  assert.ok(/ongoing/i.test(html), 'chronicity reads as ongoing')
-  assert.ok(html.includes('Vomiting has been ongoing'))
+  // B-612 / CUL-319: the row states its two ANCHORS instead of a derived "ongoing N days"
+  // the reader cannot check. Chronicity still has to read as sustained, from the dates.
+  assert.ok(/logged from May 20 to Jun 28/.test(html), 'chronicity states its span as dates')
+  assert.ok(!/ongoing \d+ day/i.test(html), 'no underivable duration')
+  assert.ok(html.includes('Vomiting has been logged from'), 'the flag still names its symptom')
 })
 
 Deno.test('present_blood flag → "Possible blood" leads the safety band', () => {
@@ -1514,6 +1518,7 @@ Deno.test('chronicity flag copy — no engine "across N weeks"; episodes-on-days
     symptomDays: 19,
     daysSinceLastEpisode: 4,
     firstOnsetIso: '2026-05-14T14:00:00Z',
+    lastOnsetDayKey: '2026-06-29',
     tier: 'standard',
     windowDays: 56,
   }
@@ -3527,6 +3532,7 @@ Deno.test('B-532 — a chronicity span that starts at the window edge is stated 
             symptomDays: 16,
             daysSinceLastEpisode: 7,
             firstOnsetIso: '2026-04-06T14:00:00Z', // 3 days into a window opening Apr 3
+            lastOnsetDayKey: '2026-05-11',
             tier: 'standard',
             windowDays: 91,
           },
@@ -3534,9 +3540,17 @@ Deno.test('B-532 — a chronicity span that starts at the window edge is stated 
       }),
     ),
   )
-  assert.ok(/first logged Apr 6/.test(censored), 'the date is stated as a LOG event, not as an onset')
+  // B-612 / CUL-319 rephrased this row to its two anchors, but B-532's three intents are
+  // unchanged and still asserted: the date attributes to LOGGING (not to the animal's onset),
+  // never reads as "first noted", and the left-censor disclosure still fires when the first
+  // episode sits at the window's edge. Only the underivable "35 days" is gone.
+  assert.ok(/logged from Apr 6/.test(censored), 'the date is stated as a LOG event, not as an onset')
   assert.ok(!/first noted/.test(censored), 'and never as "first noted", which is a claim about the animal')
-  assert.ok(/35 days is a floor/.test(censored), 'the span is a floor when the window truncates it')
+  assert.ok(
+    /cannot show how long the sign predates it/.test(censored),
+    'the window-edge truncation is still disclosed',
+  )
+  assert.ok(!/\d+ days is a floor/.test(censored), 'the floor is no longer stated as an underivable count')
 
   const observed = plain(
     renderReport(
@@ -3551,6 +3565,7 @@ Deno.test('B-532 — a chronicity span that starts at the window edge is stated 
             symptomDays: 16,
             daysSinceLastEpisode: 7,
             firstOnsetIso: '2026-05-20T14:00:00Z', // seven weeks into the window — genuinely observed
+            lastOnsetDayKey: '2026-06-24',
             tier: 'standard',
             windowDays: 91,
           },

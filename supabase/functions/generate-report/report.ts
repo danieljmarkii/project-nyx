@@ -1100,6 +1100,15 @@ export type SafetyFlag =
       symptomDays: number
       daysSinceLastEpisode: number
       firstOnsetIso: string
+      /**
+       * The LAST episode's local day key — the render's closing anchor (B-612 / CUL-319).
+       * Null when the report window does not cover the detector's full episode set, exactly
+       * like the `symptomDays` / `daysSinceLastEpisode` recount above: an anchor derived from
+       * a partial set would date the pattern's end earlier than the record does, and on a
+       * chronicity flag that is the reassuring direction. Null ⇒ the render states the opening
+       * anchor only and asserts no closing one.
+       */
+      lastOnsetDayKey: string | null
       tier: SymptomChronicityFinding['tier']
       windowDays: number
     }
@@ -3473,6 +3482,9 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
       symptomDays: localSymptomDays,
       daysSinceLastEpisode: localDaysSince,
       firstOnsetIso: f.firstOnsetIso,
+      // Reuses `lastLocalDay` from the recount above — no second traversal, and therefore no
+      // second notion of "the last episode" that could drift from `daysSinceLastEpisode`.
+      lastOnsetDayKey: episodeSetMatches && lastLocalDay !== null ? dayKeyFromNumber(lastLocalDay) : null,
       tier: f.tier,
       windowDays: f.windowDays,
     })

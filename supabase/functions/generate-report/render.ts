@@ -1406,13 +1406,30 @@ function safetyFlagRow(f: SafetyFlag, snap: ReportSnapshot): string {
       const onsetDay = fmtLocalDay(f.firstOnsetIso, tz)
       const leftCensored = daysBetweenDayKeys(snap.scope.startDate, localDayKeyOf(f.firstOnsetIso, tz)) <= CHRONICITY_LEFT_CENSOR_DAYS
       const censorBit = leftCensored
-        ? ` This window opens ${h(fmtDay(snap.scope.startDate))}, so ${num(f.spanDays)} days is a floor &mdash; the record cannot show how long the sign predates it.`
+        ? ` This window opens ${h(fmtDay(snap.scope.startDate))}, so the record begins at its own edge &mdash; it cannot show how long the sign predates it.`
         : ''
+      // ANCHORS, NOT A DERIVED DURATION (B-612 / CUL-319, cold-read blocker; PM ruled option B).
+      // This printed "has been ongoing 25 days (first logged Jun 5)" on a page also stamped
+      // "Generated Jul 2" and beside a tile reading "28 d" — three figures for one quantity, and
+      // the reader can derive two of them. The 25 came from `spanDays`, a FLOORED INSTANT DELTA
+      // (`Math.floor((last - first) / MS_PER_DAY)` in detection.ts), so it is clock-dependent
+      // rather than calendar-dependent: moving the last episode one hour later takes it to 26
+      // with no change to any date on the page. It also understates, inside a safety flag.
+      //
+      // The fix is to stop printing a number nothing on the page can check and print the two
+      // dates it is derived from instead — chronicity still reads at a glance from the span of
+      // dates, and every figure now traces to appendix A, which is this report's whole doctrine.
+      // `spanDays` is deliberately LEFT ALONE in detection.ts: it gates `minSpanDays` /
+      // `firmSpanDays`, so changing it would move when this safety lane fires and at what tier,
+      // across the rolling Signal too — a threshold change, not a rendering fix, and it needs its
+      // own adversarial pass. Nothing here re-derives a rival span; the number simply stops being
+      // rendered, so no second definition is created.
+      const spanPhrase = f.lastOnsetDayKey
+        ? `logged from ${h(onsetDay)} to ${h(fmtDay(f.lastOnsetDayKey))}`
+        : `logged since ${h(onsetDay)}`
       return flagRow(
         'Chronicity',
-        `<b>${h(symptomLabel(f.symptomType))} has been ongoing ${num(f.spanDays)} day${
-          f.spanDays === 1 ? '' : 's'
-        }</b> (first logged ${h(onsetDay)}): ${num(f.episodeCount)} episode${
+        `<b>${h(symptomLabel(f.symptomType))} has been ${spanPhrase}</b>: ${num(f.episodeCount)} episode${
           f.episodeCount === 1 ? '' : 's'
         } on ${num(f.symptomDays)} day${f.symptomDays === 1 ? '' : 's'}; most recent ${num(
           f.daysSinceLastEpisode,
