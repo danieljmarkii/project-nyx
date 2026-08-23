@@ -188,6 +188,12 @@ function statusLabel(status: string): string {
 export default function ProfileScreen() {
   const { pets, activePet, updatePet } = usePetStore();
   const showMedicationMoment = useMomentStore((s) => s.showMedication);
+  // CUL-612 — the completion card's Undo soft-deletes the dose this screen just
+  // counted optimistically below. Watched here rather than pushed from the store:
+  // the tally is local React state and momentStore cannot reach it, the way
+  // removeFromToday reaches the Today feed.
+  const momentRemoved = useMomentStore((s) => s.removed);
+  const momentEventId = useMomentStore((s) => s.payload?.eventId ?? null);
   // B-407 — which "Pet N" slot this pet holds in the Home Screen widget picker
   // (null off-iOS / before the widget index is published), so the profile names
   // the slot instead of leaving the owner to bind by trial and error.
@@ -204,6 +210,10 @@ export default function ProfileScreen() {
   const [conditionsLoading, setConditionsLoading] = useState(true);
 
   const [medications, setMedications] = useState<RegimenDisplay[]>([]);
+  // Which dose the optimistic tally below is currently counting, so Undo can take
+  // it back off. Null once reconciled (by the rollback or by a focus refetch).
+  const countedDose = useRef<{ eventId: string; regimenId: string } | null>(null);
+
   const [medicationsLoading, setMedicationsLoading] = useState(true);
   const [medicationModalVisible, setMedicationModalVisible] = useState(false);
   const [editingRegimen, setEditingRegimen] = useState<Regimen | undefined>(undefined);
@@ -553,6 +563,29 @@ export default function ProfileScreen() {
     }, [loadMedications, loadPastMedications, reloadTrial, loadVetFiles]),
   );
 
+  // CUL-612 — take the optimistic dose back when the completion card's Undo removes
+  // it. The focus refetch above is this screen's usual reconciler, but Undo happens
+  // ON this screen: the owner taps "Log a dose", the card slides up over the same
+  // profile, and they tap Undo without ever blurring the tab. So no focus fires, and
+  // offline nothing reconciles at all — the compliance line would go on counting a
+  // dose the record no longer holds. Guarded on the eventId so a different card's
+  // removal can't decrement this regimen (the store's own staleness discipline).
+  useEffect(() => {
+    const counted = countedDose.current;
+    if (!momentRemoved || !counted || momentEventId !== counted.eventId) return;
+    countedDose.current = null;
+    setMedications((prev) =>
+      prev.map((m) =>
+        m.id === counted.regimenId
+          // Clamped at zero: a focus refetch may already have landed the true tally
+          // between the log and the Undo, and a compliance count must never render
+          // negative even for the frame before the next reconcile.
+          ? buildRegimenDisplay(m, { ...m.tally, given: Math.max(0, m.tally.given - 1) })
+          : m,
+      ),
+    );
+  }, [momentRemoved, momentEventId]);
+
   async function handlePickPhoto() {
     Alert.alert('Profile photo', 'Choose a source', [
       {
@@ -723,6 +756,14 @@ export default function ProfileScreen() {
     // loadMedications (the useFocusEffect above) the next time this tab is focused —
     // not silently left stale. (A downgrade while the owner never leaves the profile
     // is the one residual window; reconciled on the next focus.)
+    //
+    // A REMOVAL is different, and CUL-612 is what made it reachable: Undo on the
+    // card below deletes this dose outright, and the owner never leaves this tab,
+    // so no focus refetch fires — the compliance line would keep claiming a dose
+    // the record no longer holds, indefinitely while offline. That direction is
+    // reassuring, which is the one direction this app may not drift in. The effect
+    // above takes it back; this records which dose to take back.
+    countedDose.current = { eventId: result.eventId, regimenId: reg.id };
     setMedications((prev) =>
       prev.map((m) =>
         m.id === reg.id

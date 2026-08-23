@@ -12,7 +12,8 @@ jest.mock('./sync', () => ({
 
 import {
   summarizeLoggedRecord, canChangeTime, resolveNamedTimeEdit, applyNamedTimeEdit,
-  timeEditPrompt, type LoggedRecord,
+  timeEditPrompt, removedNoticeCopy,
+  HITSLOP_ACTION_LEFT, HITSLOP_ACTION_RIGHT, type LoggedRecord,
 } from './completionCard';
 import { formatTime, describeOccurredAt } from './utils';
 
@@ -313,5 +314,82 @@ describe('timeEditPrompt — the question must name the field being written', ()
       // The write moves a discovery bound exactly when the question asked about one.
       expect(Boolean(edit.confidence)).toBe(prompt === 'When did you find it?');
     }
+  });
+});
+
+// ── The removal line (CUL-612) ──────────────────────────────────────────────
+describe('removedNoticeCopy', () => {
+  it('mirrors "Saved to {pet}’s record" — the same grammar, reversed', () => {
+    const n = removedNoticeCopy('Biscuit');
+    expect(n.title).toBe('Removed');
+    expect(n.detail).toBe('Taken out of Biscuit’s record');
+  });
+
+  it('speaks as ONE announcement for a screen reader, not two orphan lines', () => {
+    expect(removedNoticeCopy('Mochi').a11yLabel).toBe('Removed. Taken out of Mochi’s record');
+  });
+
+  it('never claims nothing was written', () => {
+    // A dose logged through the meal card's combo line KEEPS its own row when the
+    // meal is undone (lib/undoLog.ts), so "nothing was saved" would be false on the
+    // one path where it matters most — a medication.
+    const n = removedNoticeCopy('Biscuit');
+    expect(`${n.title} ${n.detail}`).not.toMatch(/nothing|wasn.t saved|not saved/i);
+  });
+
+  it('holds to the voice: no exclamation, no reassurance (nyx-voice 4 + 6)', () => {
+    // Removing a symptom log is a correction, not good news.
+    const n = removedNoticeCopy('Biscuit');
+    const all = `${n.title} ${n.detail}`;
+    expect(all).not.toContain('!');
+    expect(all).not.toMatch(/all clear|no worries|looks fine|great|done for now/i);
+  });
+
+  it('carries the pet through, including the generic fallback', () => {
+    expect(removedNoticeCopy('your pet').detail).toBe('Taken out of your pet’s record');
+  });
+});
+
+// ── The removal line (CUL-612) ──────────────────────────────────────────────
+describe('removedNoticeCopy', () => {
+  it('mirrors "Saved to {pet}’s record" — the same grammar, reversed', () => {
+    const n = removedNoticeCopy('Biscuit');
+    expect(n.title).toBe('Removed');
+    expect(n.detail).toBe('Taken out of Biscuit’s record');
+  });
+
+  it('speaks as ONE announcement for a screen reader, not two orphan lines', () => {
+    expect(removedNoticeCopy('Mochi').a11yLabel).toBe('Removed. Taken out of Mochi’s record');
+  });
+
+  it('never claims nothing was written', () => {
+    // A dose logged through the meal card's combo line KEEPS its own row when the
+    // meal is undone (lib/undoLog.ts), so "nothing was saved" would be false on the
+    // one path where it matters most — a medication.
+    const n = removedNoticeCopy('Biscuit');
+    expect(`${n.title} ${n.detail}`).not.toMatch(/nothing|wasn.t saved|not saved/i);
+  });
+
+  it('holds to the voice: no exclamation, no reassurance (nyx-voice 4 + 6)', () => {
+    // Removing a symptom log is a correction, not good news.
+    const n = removedNoticeCopy('Biscuit');
+    const all = `${n.title} ${n.detail}`;
+    expect(all).not.toContain('!');
+    expect(all).not.toMatch(/all clear|no worries|looks fine|great|done for now/i);
+  });
+
+  it('carries the pet through, including the generic fallback', () => {
+    expect(removedNoticeCopy('your pet').detail).toBe('Taken out of your pet’s record');
+  });
+});
+
+// The action pair's touch targets are asserted where they are rendered
+// (NamedCompletionCard.test.tsx); here we only pin that the two constants are
+// complements — a symmetric pair would silently re-open the overlap.
+describe('HITSLOP_ACTION_LEFT / _RIGHT', () => {
+  it('yield opposing edges, and only the facing one', () => {
+    expect(HITSLOP_ACTION_LEFT.right).toBeLessThan(HITSLOP_ACTION_LEFT.left);
+    expect(HITSLOP_ACTION_RIGHT.left).toBeLessThan(HITSLOP_ACTION_RIGHT.right);
+    expect(HITSLOP_ACTION_LEFT.right + HITSLOP_ACTION_RIGHT.left).toBeLessThanOrEqual(8);
   });
 });

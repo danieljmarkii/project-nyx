@@ -15,6 +15,7 @@
 //   • the card names the RECORD's pet, not a since-switched active one.
 
 jest.mock('../../lib/supabase', () => ({ supabase: {} }));
+jest.mock('../../lib/undoLog', () => ({ reverseLoggedEvent: jest.fn().mockResolvedValue(undefined) }));
 jest.mock('../../lib/db', () => ({
   updateEvent: jest.fn().mockResolvedValue(undefined),
   // Default 'exif' so the provenance-preservation assertions below are meaningful:
@@ -28,6 +29,7 @@ jest.mock('../../lib/sync', () => ({
 jest.mock('@react-native-community/datetimepicker', () => 'DateTimePicker');
 jest.mock('../../lib/haptics', () => ({
   commitRoutine: jest.fn(), commitSymptom: jest.fn(), selectChip: jest.fn(),
+  destructiveConfirm: jest.fn(),
 }));
 
 import { act, fireEvent, render } from '@testing-library/react-native';
@@ -38,6 +40,8 @@ import { usePetStore } from '../../store/petStore';
 import { theme } from '../../constants/theme';
 import { formatTime } from '../../lib/utils';
 import { updateEvent, getEventSource } from '../../lib/db';
+import { reverseLoggedEvent } from '../../lib/undoLog';
+import { Alert } from 'react-native';
 
 // Minimal structural stand-in for react-test-renderer's ReactTestInstance:
 // @types/react-test-renderer is not a dependency here, and three style predicates
@@ -77,7 +81,8 @@ beforeEach(() => {
   jest.setSystemTime(new Date(2026, 5, 7, 18, 0));
   jest.clearAllMocks();
   useMomentStore.getState().hide();
-  useMomentStore.setState({ payload: null });
+  useMomentStore.setState({ payload: null, removed: false });
+  (reverseLoggedEvent as jest.Mock).mockResolvedValue(undefined);
 });
 
 afterEach(() => {
@@ -344,5 +349,131 @@ describe('NamedCompletionCard — Change time', () => {
     expect(fields.confidence).toEqual({
       value: 'window', earliest: null, latest: fields.occurred_at,
     });
+  });
+});
+
+
+// ── Undo (CUL-612 · §5) ──────────────────────────────────────────────────────
+//
+// momentStore.test.ts owns the reversal's mechanics. What only a rendered card
+// can answer, and what this block owns: that the control is REACHABLE on every
+// record, that the removal line replaces the card rather than sitting beside a
+// live control, and that a failure never shows a reversal that did not happen.
+describe('NamedCompletionCard — Undo', () => {
+  async function pressUndo(view: ReturnType<typeof render>) {
+    await act(async () => { fireEvent.press(view.getByLabelText('Undo — remove this log')); });
+  }
+
+  it('removes the just-written event and swaps the card to its removal line', async () => {
+    const view = render(<NamedCompletionCard />);
+    seed();
+    await pressUndo(view);
+    expect(reverseLoggedEvent).toHaveBeenCalledWith('e1');
+    view.getByText('Removed');
+    view.getByText('Taken out of Biscuit’s record');
+  });
+
+  // The important half of the layout rule. Change time is WITHHELD on a weight and
+  // on a two-sided window (one datetime control cannot express two bounds), and
+  // those are precisely the records with no other in-place way back. An affordance
+  // that disappears on the records that need it most is not a safety net.
+  it('renders on a weight check, where Change time deliberately does not', () => {
+    const view = render(<NamedCompletionCard />);
+    seed({ record: { kind: 'weight', weightKg: 5.6 } });
+    view.getByLabelText('Undo — remove this log');
+    expect(view.queryByLabelText('Change time of this log')).toBeNull();
+  });
+
+  it('renders on a two-sided window, where Change time deliberately does not', () => {
+    const view = render(<NamedCompletionCard />);
+    seed({
+      record: {
+        kind: 'event', typeLabel: 'Loose stool', confidence: 'window',
+        earliest: new Date(2026, 5, 7, 14, 0).toISOString(),
+        latest: OCCURRED.toISOString(),
+      },
+    });
+    view.getByLabelText('Undo — remove this log');
+    expect(view.queryByLabelText('Change time of this log')).toBeNull();
+  });
+
+  it('the removal line REPLACES the card — no mark, no controls left over', async () => {
+    const view = render(<NamedCompletionCard />);
+    seed();
+    await pressUndo(view);
+    // A "Change time" beside the word "Removed" would offer to edit a row that is
+    // no longer in the record; an Undo would offer to remove it twice.
+    expect(view.queryByLabelText('Change time of this log')).toBeNull();
+    expect(view.queryByLabelText('Undo — remove this log')).toBeNull();
+    // And the sentence is gone with them — the card is now about the reversal.
+    expect(view.queryByText(`Vomit · today at ${formatTime(OCCURRED)}`)).toBeNull();
+    expect(view.queryByText('Saved to Biscuit’s record')).toBeNull();
+  });
+
+  it('names the RECORD’s pet, not a since-switched active one', async () => {
+    const view = render(<NamedCompletionCard />);
+    seed({}, 'p2'); // logged for Biscuit (p1) while Mochi (p2) is active
+    await pressUndo(view);
+    view.getByText('Taken out of Biscuit’s record');
+  });
+
+  it('announces the reversal politely — its only confirmation for a screen reader', async () => {
+    const view = render(<NamedCompletionCard />);
+    seed();
+    await pressUndo(view);
+    const node = view.getByLabelText('Removed. Taken out of Biscuit’s record');
+    expect(node.props.accessibilityLiveRegion).toBe('polite');
+  });
+
+  it('on a FAILED write, keeps the card intact and says so', async () => {
+    // The one unrecoverable lie this surface could tell: the word "Removed" over a
+    // row that is still in the record.
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    (reverseLoggedEvent as jest.Mock).mockRejectedValueOnce(new Error('disk full'));
+    const view = render(<NamedCompletionCard />);
+    seed();
+    await pressUndo(view);
+    expect(view.queryByText('Removed')).toBeNull();
+    view.getByText(`Vomit · today at ${formatTime(OCCURRED)}`);
+    // And the message names the other way in — the row is still there to remove.
+    expect(alert.mock.calls[0][0]).toBe('Could not remove that log');
+    expect(alert.mock.calls[0][1]).toContain('History');
+    alert.mockRestore();
+  });
+
+  it('stays SILENT on a no-op tap — an error for a tap that did nothing wrong teaches distrust', async () => {
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    const view = render(<NamedCompletionCard />);
+    seed();
+    await pressUndo(view);
+    // Second press lands on the removal line, where the control is already gone —
+    // drive the store directly to prove the 'ignored' path never alerts.
+    await act(async () => { await useMomentStore.getState().undo('e1'); });
+    expect(alert).not.toHaveBeenCalled();
+    alert.mockRestore();
+  });
+});
+
+
+// The touch-target rule (CUL-612). Undo has no confirming dialog — the tap IS the
+// destructive confirm — so a mistouch aimed at Change time must not be able to
+// resolve to it. Found by code review: symmetric hitSlop wide enough to be
+// comfortable reached across the 8pt gap from both sides, and the winner was
+// z-order. Asserted structurally rather than left to a device pass, because an
+// overlap is invisible in a screenshot.
+describe('NamedCompletionCard — the action pair cannot overlap', () => {
+  it('each control yields the edge that faces its neighbour', () => {
+    const view = render(<NamedCompletionCard />);
+    seed();
+    const undo = view.getByLabelText('Undo — remove this log').props.hitSlop;
+    const change = view.getByLabelText('Change time of this log').props.hitSlop;
+    // Half the 8pt gap each: they meet at the midpoint and never cross.
+    expect(undo.right + change.left).toBeLessThanOrEqual(theme.space1);
+    // …while keeping the outward and vertical reach that carries the 44pt floor
+    // alongside minHeight.
+    expect(undo.left).toBeGreaterThanOrEqual(12);
+    expect(change.right).toBeGreaterThanOrEqual(12);
+    expect(undo.top).toBeGreaterThanOrEqual(12);
+    expect(change.bottom).toBeGreaterThanOrEqual(12);
   });
 });
