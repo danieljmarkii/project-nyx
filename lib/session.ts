@@ -9,6 +9,7 @@ import { clearTrialContextCache, clearTrialHeadsUpLedger } from './trialContamin
 import { clearCachedAppConfig } from './appConfig';
 import { clearBetaOptIns } from './betaFeatures';
 import { clearDailyRecapOffer } from './dailyRecapOffer';
+import { clearSignalArrival } from './signalArrival';
 import { cancelAllScheduledNotifications, clearNotificationInteractions } from './notifications';
 
 /**
@@ -186,4 +187,12 @@ export async function wipeLocalSession(): Promise<void> {
   // 30 days" must not carry to the next person on a shared device, or a fresh account
   // never sees the banner it should. Same FR-9 parity rule as the clears above.
   await clearDailyRecapOffer();
+  // CUL-601 (§4) — the per-pet first-insight arrival markers, AsyncStorage-resident
+  // like the clears above. Not health data, but leaving them behind breaks the feature
+  // in the direction that cannot be noticed: the next account's pet reaches its first
+  // real insight and the moment is silently skipped, because a marker written for a
+  // pet id this device no longer knows says it already played. (Pet ids are uuids, so
+  // a literal collision is not the risk — an inherited "already played" map is.) Same
+  // FR-9 parity rule as the rest of this list.
+  await clearSignalArrival();
 }

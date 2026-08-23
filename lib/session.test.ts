@@ -42,6 +42,7 @@ import { armRecoveryGate, useAuthStore } from '../store/authStore';
 import { persistAppConfig, loadCachedAppConfig, APP_CONFIG_DEFAULTS } from './appConfig';
 import { useBetaOptInStore, BETA_OPT_IN_STORAGE_KEY } from './betaFeatures';
 import { quietDailyRecapOffer, readOfferState } from './dailyRecapOffer';
+import { hasPlayedArrival, markArrivalPlayed } from './signalArrival';
 
 const GATE_KEY = 'nyx.recoveryInProgress';
 const t0 = 1_700_000_000_000;
@@ -145,6 +146,17 @@ describe('wipeLocalSession — the shipped SIGNED_OUT teardown', () => {
     expect((await readOfferState()).quietUntilMs).toBeDefined();
     await wipeLocalSession();
     expect(await readOfferState()).toEqual({});
+  });
+
+  // CUL-601 (§4). The per-pet first-insight arrival markers, AsyncStorage-resident like
+  // the offer markers above. This one breaks in the direction nobody reports: an
+  // inherited "already played" map means the NEXT account's pet reaches its first real
+  // insight and the moment is silently skipped — a feature that fails by not happening.
+  it('clears the first-insight arrival markers — a shared device never eats the next owner’s moment', async () => {
+    await markArrivalPlayed('pet-a');
+    expect(await hasPlayedArrival('pet-a')).toBe(true);
+    await wipeLocalSession();
+    expect(await hasPlayedArrival('pet-a')).toBe(false);
   });
 
   it('never throws when a wipe step fails — teardown always completes', async () => {

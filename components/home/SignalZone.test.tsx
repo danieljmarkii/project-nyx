@@ -19,6 +19,25 @@ jest.mock('../../hooks/useWatchingRows', () => ({
   useWatchingRows: (enabled: boolean, dayNumber: number) => mockUseWatchingRows(enabled, dayNumber),
 }));
 
+// CUL-601 (§4) — the arrival moment's collaborators. Motion + foreground are pinned so
+// the sweep's presence is a decision of the code under test rather than of the runner's
+// accessibility state; the marker store and the haptic are the two observable outputs.
+const mockUseReducedMotion = jest.fn(() => false);
+jest.mock('../../hooks/useReducedMotion', () => ({
+  useReducedMotion: () => mockUseReducedMotion(),
+}));
+jest.mock('../../hooks/useAppActive', () => ({ useAppActive: () => true }));
+
+const mockHasPlayedArrival = jest.fn(async (_petId: string) => false);
+const mockMarkArrivalPlayed = jest.fn(async (_petId: string) => {});
+jest.mock('../../lib/signalArrival', () => ({
+  hasPlayedArrival: (petId: string) => mockHasPlayedArrival(petId),
+  markArrivalPlayed: (petId: string) => mockMarkArrivalPlayed(petId),
+}));
+
+const mockInsightArrival = jest.fn();
+jest.mock('../../lib/haptics', () => ({ insightArrival: () => mockInsightArrival() }));
+
 import { act, render } from '@testing-library/react-native';
 import { AccessibilityInfo, Platform } from 'react-native';
 import { SignalZone } from './SignalZone';
@@ -58,6 +77,7 @@ const liveFinding: CachedFinding = {
 
 function signalState(over: Partial<SignalState> = {}): SignalState {
   return {
+    petId: 'pet-1',
     findings: [],
     coverage: [],
     displayState: 'building',
@@ -86,6 +106,9 @@ beforeEach(() => {
   jest.clearAllMocks();
   // Default: no watching rows, so the watching block never renders unless a test opts in.
   mockUseWatchingRows.mockReturnValue([]);
+  mockUseReducedMotion.mockReturnValue(false);
+  mockHasPlayedArrival.mockResolvedValue(false);
+  mockMarkArrivalPlayed.mockResolvedValue(undefined);
 });
 
 // ── SR-2 empty states (E1 building / E2 no_pattern) — now the only empty surface ──
@@ -485,5 +508,350 @@ describe('SignalZone — v2 cards in the LiveStack', () => {
       expect(view.queryByText('Day 20 of 56')).toBeTruthy();
       expect(view.queryByText('A live finding sentence.')).toBeTruthy();
     });
+  });
+});
+
+// ── CUL-601 (§4, DP-3) — the first-insight arrival moment ────────────────────────
+//
+// Four ACs, and every one of them is about the moment NOT happening: it plays once per
+// pet ever, never over a safety finding, never on a mere load, and never as movement
+// when the owner has asked the OS for less of it. The moment itself is 1.2s of opacity;
+// the rules are the feature.
+describe('SignalZone — the arrival moment', () => {
+  // A non-safety lead. The file's default `liveFinding` is deliberately an
+  // intake_decline (priorityClass 'safety'), which is the bypass case below — so a
+  // benign finding has to be built for the cases where the sweep is SUPPOSED to run.
+  const benignFinding: CachedFinding = {
+    rank: 0,
+    text: 'She tends to eat within an hour of waking.',
+    finding: {
+      type: 'timing_story',
+      priorityClass: 'insight',
+      symptomType: 'vomit',
+      bandCounts: { rapid: 7, mid: 6, long: 7 },
+      eligibleCount: 20,
+      totalEpisodes: 26,
+      rapidWindowMinutes: 30,
+      longGapHours: 6,
+      windowDays: 60,
+      rapid: { count: 7, medianMinutesSinceFeeding: 12, lastTwoEligible: true, feedingFormsInEvidence: [] },
+      long: {
+        count: 7,
+        medianHoursSinceFeeding: 9,
+        lastTwoEligible: false,
+        feedingFormsInEvidence: [],
+        clockBand: { startLocalHour: 2, windowHours: 6 },
+        clockCount: 6,
+      },
+    },
+  };
+
+  // A reassuring trial_response the B-789 gate drops on a not-eating record. Insight-
+  // class, so the safety gate does not see it — which is the whole point of the case.
+  const trialResponseFinding: CachedFinding = {
+    rank: 1,
+    text: 'A trial sentence about vomiting counts.',
+    finding: {
+      type: 'trial_response',
+      priorityClass: 'insight',
+      trialDayNumber: 20,
+      targetDurationDays: 56,
+      trialLoggedDays: 18,
+      baselineLoggedDays: 40,
+      baselineWindowDays: 49,
+      pooledTrialCount: 4,
+      pooledBaselineCount: 20,
+      rapid: { trial: 4, baseline: 8 },
+      long: { trial: 0, baseline: 7 },
+      rapidWindowMinutes: 30,
+      longGapHours: 6,
+      treatShare: { trial: 0.1, baseline: 0.8 },
+      mealsPerDay: { trial: 4, baseline: 2 },
+      comparisonDirection: 'fewer_during_trial',
+      densityComparable: true,
+      trialWindowDays: 20,
+    },
+  };
+
+  const HAPTIC_AT_MS = 900;
+  const WHOLE_MOMENT_MS = 1400;
+
+  beforeEach(() => {
+    jest.useFakeTimers();
+  });
+  afterEach(() => {
+    // Inside act(): draining the queue lands the animation's completion callback, which
+    // sets state on a still-mounted zone.
+    act(() => {
+      jest.runOnlyPendingTimers();
+    });
+    jest.useRealTimers();
+  });
+
+  /** Settle the marker read (a real promise) while fake timers are installed. */
+  async function flush() {
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+  }
+
+  /**
+   * Mount in a settled BUILDING state, then transition to live — the arrival's actual
+   * trigger. Returns the render result so a test can inspect the card mid-moment.
+   */
+  async function arrive(findings: CachedFinding[], petId = 'pet-1', suppress = false) {
+    mockUseSignal.mockReturnValue(signalState({ petId, displayState: 'building' }));
+    const view = render(<SignalZone suppressTrialResponse={suppress} />);
+    await flush();
+    mockUseSignal.mockReturnValue(signalState({ petId, displayState: 'live', findings }));
+    await act(async () => {
+      view.rerender(<SignalZone suppressTrialResponse={suppress} />);
+    });
+    await flush();
+    return view;
+  }
+
+  it('plays on a building → live transition with a real finding', async () => {
+    const view = await arrive([benignFinding]);
+    expect(view.queryByTestId('signal-arrival-wash')).toBeTruthy();
+    act(() => {
+      jest.advanceTimersByTime(HAPTIC_AT_MS);
+    });
+    expect(mockInsightArrival).toHaveBeenCalledTimes(1);
+  });
+
+  it('spends the marker — once per pet, EVER', async () => {
+    await arrive([benignFinding]);
+    expect(mockMarkArrivalPlayed).toHaveBeenCalledWith('pet-1');
+    expect(mockMarkArrivalPlayed).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not play again for a pet whose marker is already set', async () => {
+    // The next launch, the next insight, the next year: the marker is the whole
+    // "once, ever" promise, and a spent one means silence.
+    mockHasPlayedArrival.mockResolvedValue(true);
+    const view = await arrive([benignFinding]);
+    expect(view.queryByTestId('signal-arrival-wash')).toBeNull();
+    act(() => {
+      jest.advanceTimersByTime(WHOLE_MOMENT_MS);
+    });
+    expect(mockInsightArrival).not.toHaveBeenCalled();
+    // And it is not re-marked — nothing was spent, because nothing played.
+    expect(mockMarkArrivalPlayed).not.toHaveBeenCalled();
+  });
+
+  it('a second transition in the same session does not replay it', async () => {
+    // The marker read answers from storage, which the first play has not yet changed in
+    // this mock — so this is really asserting the in-memory latch, i.e. that the zone
+    // does not lean on a round-trip it has no reason to trust mid-session.
+    const view = await arrive([benignFinding]);
+    act(() => {
+      jest.advanceTimersByTime(WHOLE_MOMENT_MS);
+    });
+    expect(mockInsightArrival).toHaveBeenCalledTimes(1);
+
+    mockUseSignal.mockReturnValue(signalState({ petId: 'pet-1', displayState: 'building' }));
+    await act(async () => {
+      view.rerender(<SignalZone />);
+    });
+    mockUseSignal.mockReturnValue(
+      signalState({ petId: 'pet-1', displayState: 'live', findings: [benignFinding] }),
+    );
+    await act(async () => {
+      view.rerender(<SignalZone />);
+    });
+    await flush();
+    act(() => {
+      jest.advanceTimersByTime(WHOLE_MOMENT_MS);
+    });
+    expect(mockInsightArrival).toHaveBeenCalledTimes(1);
+    expect(mockMarkArrivalPlayed).toHaveBeenCalledTimes(1);
+  });
+
+  // ── The safety bypass (§4 / S1) ────────────────────────────────────────────────
+  it('NEVER sweeps for a safety finding — the card appears plainly, and the marker is spent anyway', async () => {
+    // `liveFinding` is an intake_decline: priorityClass 'safety'. Plainness is the
+    // severity signal, so the concern arrives with no wash and no tap — and the pet has
+    // still spent its moment, because the alternative is saving the celebration for the
+    // one owner whose record opened badly.
+    const view = await arrive([liveFinding]);
+    expect(view.queryByTestId('signal-arrival-wash')).toBeNull();
+    act(() => {
+      jest.advanceTimersByTime(WHOLE_MOMENT_MS);
+    });
+    expect(mockInsightArrival).not.toHaveBeenCalled();
+    expect(mockMarkArrivalPlayed).toHaveBeenCalledWith('pet-1');
+  });
+
+  it('a safety-led first arrival plays NO haptic — the D7 exemption’s whole justification', async () => {
+    // This is the test the `haptics-guard-ok` comment in SignalZone.tsx points at. The
+    // import of a haptic verb into a safety surface is only defensible while this holds.
+    await arrive([liveFinding, benignFinding]);
+    act(() => {
+      jest.advanceTimersByTime(WHOLE_MOMENT_MS);
+    });
+    expect(mockInsightArrival).not.toHaveBeenCalled();
+  });
+
+  it('withholds the sweep when a safety finding sits BELOW the lead, not only at rank 0', async () => {
+    // §4 says "leads the safety band"; the gate is any safety-class finding in the set.
+    // Ranking is decided server-side, and a sweep over a card that carries a concern
+    // anywhere is still decoration over concern. This reading can only withhold.
+    const benignLead: CachedFinding = { ...benignFinding, rank: 0 };
+    const safetyBelow: CachedFinding = { ...liveFinding, rank: 1 };
+    const view = await arrive([benignLead, safetyBelow]);
+    expect(view.queryByTestId('signal-arrival-wash')).toBeNull();
+    act(() => {
+      jest.advanceTimersByTime(WHOLE_MOMENT_MS);
+    });
+    expect(mockInsightArrival).not.toHaveBeenCalled();
+  });
+
+  // ── Reduced motion (§4) ────────────────────────────────────────────────────────
+  it('reduced motion: no sweep, but the tap still fires — touch is not motion', async () => {
+    mockUseReducedMotion.mockReturnValue(true);
+    const view = await arrive([benignFinding]);
+    expect(view.queryByTestId('signal-arrival-wash')).toBeNull();
+    act(() => {
+      jest.advanceTimersByTime(HAPTIC_AT_MS);
+    });
+    expect(mockInsightArrival).toHaveBeenCalledTimes(1);
+    // The moment is still spent: the owner got the arrival, in the register they asked for.
+    expect(mockMarkArrivalPlayed).toHaveBeenCalledWith('pet-1');
+  });
+
+  it('reduced motion: the card still renders its live content (the static frame is the card)', async () => {
+    mockUseReducedMotion.mockReturnValue(true);
+    const view = await arrive([benignFinding]);
+    expect(view.queryByText('Timing pattern')).toBeTruthy();
+  });
+
+  // ── What is NOT an arrival ─────────────────────────────────────────────────────
+  it('a cold mount that is ALREADY live is not an arrival — nothing arrived', async () => {
+    mockUseSignal.mockReturnValue(
+      signalState({ petId: 'pet-1', displayState: 'live', findings: [benignFinding] }),
+    );
+    const view = render(<SignalZone />);
+    await flush();
+    expect(view.queryByTestId('signal-arrival-wash')).toBeNull();
+    act(() => {
+      jest.advanceTimersByTime(WHOLE_MOMENT_MS);
+    });
+    expect(mockInsightArrival).not.toHaveBeenCalled();
+    expect(mockMarkArrivalPlayed).not.toHaveBeenCalled();
+  });
+
+  it('a slow first read is not an arrival — latency must never mint the moment', async () => {
+    // isLoading true holds the state UNSETTLED even as the zone renders a building
+    // frame (the B-734 skeleton can time out into one). Without that, an offline or
+    // slow cold read would fire the app's one sanctioned animation on network weather.
+    mockUseSignal.mockReturnValue(
+      signalState({ petId: 'pet-1', displayState: 'building', isLoading: true }),
+    );
+    const view = render(<SignalZone />);
+    await flush();
+    mockUseSignal.mockReturnValue(
+      signalState({ petId: 'pet-1', displayState: 'live', findings: [benignFinding] }),
+    );
+    await act(async () => {
+      view.rerender(<SignalZone />);
+    });
+    await flush();
+    expect(view.queryByTestId('signal-arrival-wash')).toBeNull();
+    act(() => {
+      jest.advanceTimersByTime(WHOLE_MOMENT_MS);
+    });
+    expect(mockInsightArrival).not.toHaveBeenCalled();
+  });
+
+  it('a pet SWITCH is not a transition — pet A building then pet B live plays nothing', async () => {
+    // The multi-pet leak this pairing exists to stop: leaving one pet mid-build and
+    // landing on another whose insight is already cached is two pets' states, not an
+    // arrival — and it would spend pet B's once-ever moment on a screen change.
+    mockUseSignal.mockReturnValue(signalState({ petId: 'pet-A', displayState: 'building' }));
+    const view = render(<SignalZone />);
+    await flush();
+    mockUseSignal.mockReturnValue(
+      signalState({ petId: 'pet-B', displayState: 'live', findings: [benignFinding] }),
+    );
+    await act(async () => {
+      view.rerender(<SignalZone />);
+    });
+    await flush();
+    expect(view.queryByTestId('signal-arrival-wash')).toBeNull();
+    act(() => {
+      jest.advanceTimersByTime(WHOLE_MOMENT_MS);
+    });
+    expect(mockInsightArrival).not.toHaveBeenCalled();
+    expect(mockMarkArrivalPlayed).not.toHaveBeenCalled();
+  });
+
+  it('a pet switch MID-ARRIVAL clears the wash — no frozen band parked on the next card', async () => {
+    // Halting the animation is not enough on its own: leaving the moment "playing"
+    // keeps the band mounted at whatever value the sweep had reached, and the owner
+    // lands on the next pet's card to find a stripe of light stuck across it.
+    const view = await arrive([benignFinding], 'pet-1');
+    expect(view.queryByTestId('signal-arrival-wash')).toBeTruthy();
+
+    mockUseSignal.mockReturnValue(
+      signalState({ petId: 'pet-2', displayState: 'live', findings: [benignFinding] }),
+    );
+    await act(async () => {
+      view.rerender(<SignalZone />);
+    });
+    await flush();
+    expect(view.queryByTestId('signal-arrival-wash')).toBeNull();
+  });
+
+  it('does NOT celebrate a live state whose only card is suppressed — the not-eating cat', async () => {
+    // The CUL-527 residual, and the sharpest case in this feature. A `fewer_during_trial`
+    // trial_response is dropped by the B-789 safety suppression, but `displayState` is
+    // derived upstream over the FULL set — so the state reads 'live' with an EMPTY stack.
+    // Counting `findings.length` would sweep a blank card with a gold wash and a success
+    // tap, and burn the marker doing it, for the one owner whose cat is refusing food.
+    // The finding is insight-class, so the safety gate does not catch this; counting what
+    // RENDERS is what catches it.
+    const suppressedSole: CachedFinding = {
+      ...trialResponseFinding,
+      rank: 0,
+    };
+    const view = await arrive([suppressedSole], 'pet-1', true);
+    expect(view.queryByTestId('signal-arrival-wash')).toBeNull();
+    act(() => {
+      jest.advanceTimersByTime(WHOLE_MOMENT_MS);
+    });
+    expect(mockInsightArrival).not.toHaveBeenCalled();
+    // And the marker is NOT spent — this pet's real first insight still gets its moment.
+    expect(mockMarkArrivalPlayed).not.toHaveBeenCalled();
+  });
+
+  it('still celebrates when the suppressed card is not the only one', async () => {
+    // The gate must count what renders, not simply bail whenever suppression is on.
+    const view = await arrive([benignFinding, trialResponseFinding], 'pet-1', true);
+    expect(view.queryByTestId('signal-arrival-wash')).toBeTruthy();
+  });
+
+  it('an empty live set is not an arrival — there is nothing to celebrate', async () => {
+    const view = await arrive([]);
+    expect(view.queryByTestId('signal-arrival-wash')).toBeNull();
+    act(() => {
+      jest.advanceTimersByTime(WHOLE_MOMENT_MS);
+    });
+    expect(mockInsightArrival).not.toHaveBeenCalled();
+    expect(mockMarkArrivalPlayed).not.toHaveBeenCalled();
+  });
+
+  it('an unreadable marker fails toward silence, never toward a loop', async () => {
+    // A device whose AsyncStorage is broken answers "never played" forever. Treating
+    // that as unplayed would replay the sweep on every transition — looping chrome,
+    // which §3 bans outright. One missed moment is the cheaper failure.
+    mockHasPlayedArrival.mockRejectedValue(new Error('storage unavailable'));
+    const view = await arrive([benignFinding]);
+    expect(view.queryByTestId('signal-arrival-wash')).toBeNull();
+    act(() => {
+      jest.advanceTimersByTime(WHOLE_MOMENT_MS);
+    });
+    expect(mockInsightArrival).not.toHaveBeenCalled();
   });
 });
