@@ -1,5 +1,6 @@
 import { render, fireEvent } from '@testing-library/react-native';
 import { FoodRow } from './FoodRow';
+import { theme } from '../../constants/theme';
 
 describe('FoodRow', () => {
   // The full-width Foods-tab row renders the same BRAND · FORMAT meta line as the
@@ -203,5 +204,36 @@ describe('FoodRow', () => {
         trialChip="Trial diet" intakeNote="Last logged today" onPress={() => {}} />,
     );
     expect(getByLabelText('Zignature Kangaroo Formula, Trial diet, Last logged today')).toBeTruthy();
+  });
+  // ── The Geist sweep (CUL-608 · app-polish §7) ──
+  //
+  // Both halves are asserted, because the sweep's failure modes point in opposite
+  // directions and neither is visible in a diff. A MISSED swap renders the system
+  // face at the right weight — it looks fine, just not Geist. An OVER-EAGER swap
+  // takes a glyph `<Text>` with it, which forces a family whose cmap may not carry
+  // the character and hands it to OS fallback at a size tuned for a different face.
+  // Weight tokens are deliberately not asserted alongside the family: ThemedText
+  // DROPS the weight once the family carries it (RN synthesizes nothing for custom
+  // fonts), so a test expecting both would be pinning a contradiction.
+  it('renders owner-facing row copy in the Geist face the weight token names', () => {
+    const { getByText } = render(
+      <FoodRow brand="Zignature" productName="Kangaroo Formula" format="dry_kibble"
+        trialChip="Trial diet" onPress={() => {}} />,
+    );
+    expect(getByText('Kangaroo Formula')).toHaveStyle({ fontFamily: theme.fontBodyMedium });
+    expect(getByText('ZIGNATURE · DRY')).toHaveStyle({ fontFamily: theme.fontBodyMedium });
+    expect(getByText('Trial diet')).toHaveStyle({ fontFamily: theme.fontBodySemibold });
+  });
+
+  // The chevron is an icon standing in for a vector glyph, not copy. It keeps the
+  // system face on purpose; a sweep or a later audit that "finishes the job" here
+  // is the regression this pins.
+  it('leaves the chevron glyph on the system face — it is an icon, not copy', () => {
+    const { getByText } = render(
+      <FoodRow brand="Zignature" productName="Kangaroo Formula" format="dry_kibble" onPress={() => {}} />,
+    );
+    expect(getByText('\u203a').props.style).not.toEqual(
+      expect.objectContaining({ fontFamily: expect.anything() }),
+    );
   });
 });

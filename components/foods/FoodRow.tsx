@@ -3,6 +3,7 @@ import { View, Text, Image, StyleSheet, TouchableOpacity } from 'react-native';
 import { ImageOff } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
 import { FORMAT_LABEL } from '../../lib/food';
+import { ThemedText } from '../ui/ThemedText';
 
 interface Props {
   brand: string;
@@ -121,35 +122,38 @@ export function FoodRow({
         {trialChip ? (
           <View style={styles.trialChip} testID="food-row-trial-chip">
             <View style={styles.trialChipDot} />
-            <Text style={styles.trialChipText} numberOfLines={1}>
+            <ThemedText style={styles.trialChipText} numberOfLines={1}>
               {trialChip}
-            </Text>
+            </ThemedText>
           </View>
         ) : null}
         {metaLine ? (
-          <Text style={styles.meta} numberOfLines={1}>
+          <ThemedText style={styles.meta} numberOfLines={1}>
             {metaLine}
-          </Text>
+          </ThemedText>
         ) : null}
-        <Text style={styles.product} numberOfLines={2}>
+        <ThemedText style={styles.product} numberOfLines={2}>
           {productName}
-        </Text>
+        </ThemedText>
         {proteinNote ? (
-          <Text style={styles.protein} numberOfLines={1}>
+          <ThemedText style={styles.protein} numberOfLines={1}>
             {proteinNote}
-          </Text>
+          </ThemedText>
         ) : null}
         {favoriteNote ? (
-          <Text style={styles.favorite} numberOfLines={1}>
+          <ThemedText style={styles.favorite} numberOfLines={1}>
             {favoriteNote}
-          </Text>
+          </ThemedText>
         ) : null}
         {intakeNote ? (
-          <Text style={styles.intake} numberOfLines={1}>
+          <ThemedText style={styles.intake} numberOfLines={1}>
             {intakeNote}
-          </Text>
+          </ThemedText>
         ) : null}
       </View>
+      {/* Icon glyph, not copy — stays a raw <Text>. These stand in for vector glyphs
+          (the B-745 GlyphSvg migration owns them), so they keep the system face rather
+          than taking the body family a sweep would give them. CUL-364 §7. */}
       <Text style={styles.chevron}>›</Text>
     </TouchableOpacity>
   );

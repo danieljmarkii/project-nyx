@@ -9,8 +9,9 @@
 // leaves an unexplained `Bison` sitting in the field; what we actually mean is a
 // STANDING property of the value in that control, so it belongs next to it and
 // stays for as long as the value does.
-import { Text, StyleSheet } from 'react-native';
+import { StyleSheet } from 'react-native';
 import { theme } from '../../constants/theme';
+import { ThemedText } from '../ui/ThemedText';
 
 /** What the owner typed, and the canonical key it was saved as. */
 export interface ProteinRewrite {
@@ -64,7 +65,7 @@ export function proteinNoteText({ typed, saved }: ProteinRewrite): string {
 }
 
 export function NormalizedProteinNote({ rewrite }: { rewrite: ProteinRewrite }) {
-  return <Text style={styles.note}>{proteinNoteText(rewrite)}</Text>;
+  return <ThemedText style={styles.note}>{proteinNoteText(rewrite)}</ThemedText>;
 }
 
 const styles = StyleSheet.create({

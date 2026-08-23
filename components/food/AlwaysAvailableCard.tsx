@@ -10,7 +10,7 @@
 // row is an independent feeding_arrangements row — toggling pet A never
 // touches pet B's arrangement (spec §7.7).
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, StyleSheet, Switch, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, StyleSheet, Switch, TouchableOpacity, View } from 'react-native';
 import { theme } from '../../constants/theme';
 import {
   startFreeChoice, endFreeChoice, getArrangementMetasForFood, confirmArrangementFresh,
@@ -19,6 +19,7 @@ import {
 } from '../../lib/feedingArrangements';
 import { usePetStore, orderPetsActiveFirst, Pet } from '../../store/petStore';
 import { PetAvatar } from '../pet/PetAvatar';
+import { ThemedText } from '../ui/ThemedText';
 
 const ROW_AVATAR = 28;
 
@@ -144,13 +145,13 @@ export function AlwaysAvailableCard({ foodItemId }: Props) {
       <View style={styles.freeChoiceCard}>
         <View style={styles.freeChoiceRow}>
           <View style={styles.freeChoiceText}>
-            <Text style={styles.freeChoiceLabel}>
+            <ThemedText style={styles.freeChoiceLabel}>
               Always available for {pet.name}?
-            </Text>
-            <Text style={styles.freeChoiceHelper}>
+            </ThemedText>
+            <ThemedText style={styles.freeChoiceHelper}>
               {pet.name} can graze this throughout the day — we'll note it
               as free-choice on the vet report.
-            </Text>
+            </ThemedText>
           </View>
           <Switch
             value={freeChoice}
@@ -166,14 +167,14 @@ export function AlwaysAvailableCard({ foodItemId }: Props) {
         {freeChoice && meta && (
           <>
             <View style={styles.freshnessRow}>
-              <Text style={styles.freshnessText}>
+              <ThemedText style={styles.freshnessText}>
                 Last confirmed {confirmedLabel(meta.updated_at)}
-              </Text>
+              </ThemedText>
               {/* The re-attest is a nudge that shows only once stale; a fresh
                   arrangement just shows the date. Tapping it opens a two-way
                   answer (below) rather than silently auto-confirming. */}
               {flashPetId === pet.id ? (
-                <Text style={styles.freshnessConfirmed}>Confirmed ✓</Text>
+                <ThemedText style={styles.freshnessConfirmed}>Confirmed ✓</ThemedText>
               ) : isArrangementStale(meta.updated_at) && choosingPetId !== pet.id ? (
                 <TouchableOpacity
                   onPress={() => setChoosingPetId(pet.id)}
@@ -181,7 +182,7 @@ export function AlwaysAvailableCard({ foodItemId }: Props) {
                   activeOpacity={0.7}
                   style={styles.freshnessActionBtn}
                 >
-                  <Text style={styles.freshnessAction}>Still accurate?</Text>
+                  <ThemedText style={styles.freshnessAction}>Still accurate?</ThemedText>
                 </TouchableOpacity>
               ) : null}
             </View>
@@ -199,7 +200,7 @@ export function AlwaysAvailableCard({ foodItemId }: Props) {
 
   return (
     <View style={styles.freeChoiceCard}>
-      <Text style={styles.cardHeader}>Always available</Text>
+      <ThemedText style={styles.cardHeader}>Always available</ThemedText>
       {orderedPets.map((pet) => {
         const on = !!onByPet[pet.id];
         const meta = metaByPet[pet.id];
@@ -210,12 +211,12 @@ export function AlwaysAvailableCard({ foodItemId }: Props) {
             <View style={styles.petRow}>
               <PetAvatar name={pet.name} photoPath={pet.photo_path} size={ROW_AVATAR} />
               <View style={styles.petRowText}>
-                <Text style={styles.petRowName} numberOfLines={1}>{pet.name}</Text>
+                <ThemedText style={styles.petRowName} numberOfLines={1}>{pet.name}</ThemedText>
                 {on && (
                   flashPetId === pet.id ? (
-                    <Text style={styles.petRowMeta}>Confirmed ✓</Text>
+                    <ThemedText style={styles.petRowMeta}>Confirmed ✓</ThemedText>
                   ) : since ? (
-                    <Text style={styles.petRowMeta}>since {since}</Text>
+                    <ThemedText style={styles.petRowMeta}>since {since}</ThemedText>
                   ) : null
                 )}
               </View>
@@ -226,7 +227,7 @@ export function AlwaysAvailableCard({ foodItemId }: Props) {
                   activeOpacity={0.7}
                   style={styles.freshnessActionBtn}
                 >
-                  <Text style={styles.freshnessAction}>Still accurate?</Text>
+                  <ThemedText style={styles.freshnessAction}>Still accurate?</ThemedText>
                 </TouchableOpacity>
               )}
               <Switch
@@ -245,7 +246,7 @@ export function AlwaysAvailableCard({ foodItemId }: Props) {
       {hint && (
         <View style={styles.sharedHintRow}>
           <View style={styles.sharedDot} />
-          <Text style={styles.sharedHintText}>{hint}</Text>
+          <ThemedText style={styles.sharedHintText}>{hint}</ThemedText>
         </View>
       )}
     </View>
@@ -254,9 +255,9 @@ export function AlwaysAvailableCard({ foodItemId }: Props) {
   function renderFreshnessChoices(pet: Pet) {
     return (
       <View style={styles.freshnessChoices}>
-        <Text style={styles.freshnessPrompt}>
+        <ThemedText style={styles.freshnessPrompt}>
           Still always out for {pet.name}?
-        </Text>
+        </ThemedText>
         <View style={styles.freshnessChoiceBtns}>
           <TouchableOpacity
             onPress={() => handleConfirmFresh(pet)}
@@ -265,9 +266,9 @@ export function AlwaysAvailableCard({ foodItemId }: Props) {
             activeOpacity={0.7}
             style={styles.freshnessChoiceBtn}
           >
-            <Text style={styles.choiceYes}>
+            <ThemedText style={styles.choiceYes}>
               {confirmingPetId === pet.id ? 'Confirming…' : 'Yes, still out'}
-            </Text>
+            </ThemedText>
           </TouchableOpacity>
           <TouchableOpacity
             onPress={() => handleStopFresh(pet)}
@@ -278,7 +279,7 @@ export function AlwaysAvailableCard({ foodItemId }: Props) {
             activeOpacity={0.7}
             style={styles.freshnessChoiceBtn}
           >
-            <Text style={styles.choiceNo}>No, it's stopped</Text>
+            <ThemedText style={styles.choiceNo}>No, it's stopped</ThemedText>
           </TouchableOpacity>
         </View>
       </View>
