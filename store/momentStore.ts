@@ -1,5 +1,8 @@
 import { create } from 'zustand';
-import { commitRoutine, commitSymptom, selectChip } from '../lib/haptics';
+import { commitRoutine, commitSymptom, destructiveConfirm, selectChip } from '../lib/haptics';
+import { reverseLoggedEvent } from '../lib/undoLog';
+import { forgetFlaggedFoodInTrial } from '../lib/trialContaminant';
+import { useEventStore } from './eventStore';
 import type { IntakeRating } from '../components/log/IntakeChipRow';
 import type { DoseAdherence } from '../components/log/AdherenceChipRow';
 import type { DoseVehicle, DoubleDoseResult } from '../lib/medications';
@@ -172,9 +175,23 @@ interface ShowOpts {
   durationMs?: number;
 }
 
+/**
+ * What `undo()` did, so a card can tell a real failure from a no-op.
+ *
+ * 'removed'  — the event is soft-deleted; the card is showing its removal line.
+ * 'failed'   — the local write threw. The card is unchanged and the caller owes
+ *              the owner a word (a silent no-op here would read as "removed").
+ * 'ignored'  — nothing to undo (no card, already removed, a second tap racing
+ *              the first). NOT a failure, and must never surface an error.
+ */
+export type UndoResult = 'removed' | 'failed' | 'ignored';
+
 interface MomentState {
   visible: boolean;
   payload: MomentPayload | null;
+  // CUL-612 — the card has been undone and is showing its removal line instead of
+  // its confirmation. Reset by present(), so it describes THIS card only.
+  removed: boolean;
   // The R1 named card (CUL-606) — symptom logs + weight checks. Takes the
   // RECORD, not a sentence: the card derives what it says (§5's sentence rule).
   showNamed: (payload: Omit<NamedPayload, 'kind'>, opts?: ShowOpts) => void;
@@ -183,6 +200,22 @@ interface MomentState {
   // Warmed bottom card carrying the adherence chip row (dose logs, B-117 PR 3).
   showMedication: (payload: Omit<MedicationPayload, 'kind'>, opts?: ShowOpts) => void;
   hide: () => void;
+  // CUL-612 — reverse the log this card is announcing: soft-delete the event, drop
+  // it from Today, and swap the card to its removal line for a short read.
+  //
+  // It lives HERE rather than in the three cards for the same reason the commit
+  // haptic lives in present(): a future log path should inherit Undo by virtue of
+  // showing a card at all, and the invariants below should be stated once.
+  //
+  // TAKES THE EVENT ID THE CARD RENDERED, and refuses if it is no longer the one
+  // on screen — the same contract patchTrialFlag and patchDoubleDose carry, for
+  // the same reason, and this is the action that most needs it. `present()` swaps
+  // the payload IN PLACE, so a second log completing between the paint the owner
+  // is looking at and the touch-up that fires would otherwise delete the row that
+  // replaced it: an irreversible action against a record the owner never saw.
+  // Found by the access-control red-team, which noted this was the only unguarded
+  // action in a store that guards every patch.
+  undo: (eventId: string) => Promise<UndoResult>;
   // Mutates the in-flight card's occurredAt after a "Change time" edit so the
   // card reflects the new time before dismissing. All three cards carry a
   // "Change time" backfill affordance (the dose card gained it to match the meal
@@ -291,6 +324,13 @@ export const MEDICATION_FLAGGED_DURATION_MS = 7000;
 // with it, rule 3's ledger spend — rather than hang.
 const CARD_REVEAL_WAIT_MS = 3000;
 
+// How long the removal line holds after Undo (CUL-612). Deliberately SHORTER than
+// any confirmation dwell: the card is now saying two words about a thing that is
+// already gone, and there is nothing left on it to read, tap or answer. Long
+// enough to register that the tap took effect, short enough that the reversal
+// does not outstay the log it reversed.
+export const REMOVED_DURATION_MS = 2400;
+
 // ── The dwell clock (CUL-614 · §5 "Dwell") ──────────────────────────────────
 // The auto-dismiss PAUSES while the owner is touching the card, and any interaction
 // resets it. The problem it solves is the dose card's: nine chips (four adherence,
@@ -337,6 +377,11 @@ const PAUSE_CEILING_MS = 20000;
 function clearPauseCeiling() {
   if (pauseCeilingTimer) { clearTimeout(pauseCeilingTimer); pauseCeilingTimer = null; }
 }
+// Undo's synchronous re-entry latch (CUL-612). `removed` cannot do this job on its
+// own: it is only set AFTER the soft-delete resolves (a reversal must never be shown
+// before it has happened), which leaves an await-shaped window in which a second tap
+// would issue a second delete. This latches on the first tap instead.
+let undoInFlight = false;
 
 function clearTimers() {
   if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
@@ -356,16 +401,60 @@ function clearHideTimer() {
   hideDeadlineAt = null;
 }
 
-// Arm the hide, recording the deadline so a pause can bank the remainder. The single
-// place a hide timer is created, so `hideDeadlineAt` cannot drift from `hideTimer`.
+/**
+ * Arm the dismiss timer — the ONLY way this module schedules a hide.
+ *
+ * Two things it does that a bare `hideTimer = setTimeout(...)` did not, both
+ * found by the adversarial pass on CUL-612:
+ *
+ *   1. CLEARS FIRST. `undo()` armed the removal dwell after awaiting the write,
+ *      and a chip tap landing DURING that await had already armed its own 1.5s
+ *      confirm hold — so two timers ran at once. Every other caller happened to
+ *      clear first; the invariant was real but unenforced, and the one path that
+ *      broke it was the new one.
+ *   2. Nulls the handle ONLY IF IT IS STILL OURS. This is what made (1) escalate
+ *      from a redundant timer into a card being killed: the earlier timer fired,
+ *      ran `hideTimer = null`, and thereby dropped the module's only reference to
+ *      the LATER one. `present()`'s `clearTimers()` then found null and could not
+ *      cancel it, so a stray hide from the previous card landed on a brand-new
+ *      one ~1s after the owner logged it — the card simply vanished.
+ *
+ * Both fixes are structural rather than a patch at the call site, so a future
+ * scheduling path cannot reintroduce either half.
+ *
+ * It also records `hideDeadlineAt` (CUL-614), which is what lets `pauseDwell` bank the
+ * REMAINING window instead of restarting from a constant. Two PRs extracted this helper
+ * independently and each solved a different half; the merged version keeps both, because
+ * the CUL-614 half needs a deadline and the CUL-612 half needs the guarded null.
+ */
 function armHide(set: (partial: Partial<MomentState>) => void, durationMs: number) {
   clearHideTimer();
+  // An explicit arm SUPERSEDES a pause, and saying so here is what keeps the invariant
+  // "a hide is armed ⇒ the dwell is not paused" true by construction rather than by
+  // coincidence. It is a no-op on every path but one: `rescheduleHide` banks and
+  // returns while paused so it never reaches here, and `present()` has already cleared
+  // through `clearTimers()`. The exception is `undo()`, which arms the removal dwell
+  // directly — and Undo is a TAP, so `pauseDwell` has already fired on its touch-start
+  // and the removal line then unmounts the handler that would have resumed it. Without
+  // this, that pause outlives its card, leaving a watchdog to fire ~20s later against a
+  // card that is already gone.
+  clearPauseCeiling();
+  dwellPaused = false;
+  bankedDurationMs = 0;
+  // CUL-614 — the wall-clock deadline, so `pauseDwell` can bank what was LEFT rather
+  // than restart from a fixed number. Set here, in the single place a hide is armed,
+  // so it cannot drift from `hideTimer`.
   hideDeadlineAt = Date.now() + durationMs;
-  hideTimer = setTimeout(() => {
+  const mine: ReturnType<typeof setTimeout> = setTimeout(() => {
     set({ visible: false });
-    hideTimer = null;
-    hideDeadlineAt = null;
+    // The same is-it-still-ours guard as the handle below, for the same reason: a
+    // stale timer that nulled the deadline would leave the LIVE hide with no recorded
+    // end, and a pause during it would bank 0. That errs toward a longer window (the
+    // reset floor still applies), but it is the same class of bug as (2) above and is
+    // cheaper to close than to reason about.
+    if (hideTimer === mine) { hideTimer = null; hideDeadlineAt = null; }
   }, durationMs);
+  hideTimer = mine;
 }
 
 // The commit haptic for a payload (CUL-604 · §5.6). Derived from the payload rather
@@ -404,7 +493,15 @@ function present(
     // before it ever appeared (a second log during the delay clears showTimer)
     // plays no haptic at all — one commit, one buzz.
     playCommitHaptic(payload);
-    set({ visible: true, payload });
+    // `removed: false` is not housekeeping — it is what stops a superseded card's
+    // removal line leaking onto the next log. A card that was undone keeps its
+    // payload through the fade, so a second log arriving during that fade would
+    // otherwise render its own confirmation under the word "Removed".
+    set({ visible: true, payload, removed: false });
+    // A new card is a new undo target, so the previous card's in-flight latch must
+    // not gate it. (It also keeps the latch from leaking between tests, which a
+    // bare module-level flag otherwise does.)
+    undoInFlight = false;
     armHide(set, duration);
   };
   if (delay > 0) showTimer = setTimeout(reveal, delay);
@@ -414,6 +511,7 @@ function present(
 export const useMomentStore = create<MomentState>((set) => ({
   visible: false,
   payload: null,
+  removed: false,
   showNamed: (payload, opts) =>
     present(set, { kind: 'named', ...payload }, opts, NAMED_DURATION_MS),
   showMeal: (payload, opts) =>
@@ -429,9 +527,74 @@ export const useMomentStore = create<MomentState>((set) => ({
     clearTimers();
     set({ visible: false });
   },
+  undo: async (eventId) => {
+    const before = useMomentStore.getState();
+    const payload = before.payload;
+    // Nothing to reverse, a stale target, or a second tap racing the first.
+    // 'ignored', never 'failed' — a card that shows an error for a tap that did
+    // nothing wrong teaches the owner that Undo is unreliable.
+    if (!payload || !before.visible || before.removed || undoInFlight) return 'ignored';
+    // The card that rendered this control must still be the card on screen.
+    if (payload.eventId !== eventId) return 'ignored';
+    undoInFlight = true;
+    // Rigid, on the tap — because on this surface the tap IS the destructive
+    // confirm (§5.6). The History/detail Remove withholds it until the alert's
+    // confirm for the opposite reason: there, a live Cancel is still on screen.
+    destructiveConfirm();
+    // Hold the card open across the write. Without this, a reversal issued in the
+    // last few hundred ms of the dwell could land on a card that has already
+    // faded, and the owner would never see it take.
+    clearHideTimer();
+    try {
+      await reverseLoggedEvent(payload.eventId);
+    } catch (e) {
+      console.error('[moment] undo failed:', e);
+      undoInFlight = false;
+      // Leave the card exactly as it was — including its controls — and give the
+      // owner a fresh window to read the alert and try again. Showing the removal
+      // line here would be the one unrecoverable lie this surface can tell: the
+      // row is still in the record, and the owner has been told it isn't.
+      useMomentStore.getState().rescheduleHide(NAMED_DURATION_MS);
+      return 'failed';
+    }
+    undoInFlight = false;
+    // ── GIVE THE TRIAL HEADS-UP BACK ────────────────────────────────────────
+    // Rule 3 spends a food's one-per-trial budget when the panel RENDERS, and on
+    // this card the panel is what prompts the Undo — the owner reads "Off the
+    // trial list", realises they tapped the wrong tile, and reverses it. Leaving
+    // the budget spent would mean the food is silently spoken-for on a feeding
+    // that never happened, and the real feeding weeks later gets no heads-up.
+    // Fire-and-forget in the same direction as the write it reverses.
+    if (payload.kind === 'meal' && payload.trialFlag) {
+      const { trialId, foodId } = payload.trialFlag;
+      forgetFlaggedFoodInTrial(trialId, foodId).catch(console.error);
+    }
+    // The reversal itself is unconditional — the event is gone and should be.
+    // Everything BELOW is about the card, so it only applies if this is still the
+    // card that asked. A second log during the write replaced the payload, and
+    // stamping 'Removed' on it would describe the wrong row (the same staleness
+    // discipline patchDoubleDose applies to its own late answer).
+    const after = useMomentStore.getState();
+    useEventStore.getState().removeFromToday(payload.eventId);
+    if (after.payload?.eventId !== payload.eventId || !after.visible) return 'removed';
+    set({ removed: true });
+    // armHide, not a bare setTimeout: a chip tap landing during the await above
+    // may have armed its own confirm hold, and two live timers here is what the
+    // adversarial pass turned into a vanished card (see armHide).
+    armHide(set, REMOVED_DURATION_MS);
+    return 'removed';
+  },
+  // ── NO PATCH LANDS ON A REMOVED CARD (CUL-612) ────────────────────────────
+  // Stated once, applied to every patch below. Two of them (patchTrialFlag,
+  // patchDoubleDose) arrive on their own from an async read and CANNOT be stopped
+  // by unmounting a control — a trial heads-up resolving a beat after Undo would
+  // decorate a meal that no longer exists, and burn that food's one-per-trial
+  // ledger budget on a card nobody can act on. The rest are only reachable from
+  // controls the removal line unmounts, and are guarded anyway: an invariant with
+  // exceptions is one nobody can check.
   patchOccurredAt: (occurredAt) =>
     set((state) =>
-      state.payload
+      state.payload && !state.removed
         ? { payload: { ...state.payload, occurredAt } }
         : {}
     ),
@@ -441,7 +604,7 @@ export const useMomentStore = create<MomentState>((set) => ({
   // window or it would keep speaking the old one for the rest of its dwell.
   patchRecord: (record) =>
     set((state) =>
-      state.payload?.kind === 'named'
+      state.payload?.kind === 'named' && !state.removed
         ? { payload: { ...state.payload, record } }
         : {}
     ),
@@ -449,7 +612,8 @@ export const useMomentStore = create<MomentState>((set) => ({
     // The chip tick fires only when the patch actually lands on a meal card — a no-op
     // patch (wrong payload kind) must not buzz. Read outside `set` so the updater
     // stays pure, the way patchTrialFlag/patchDoubleDose already do it.
-    if (useMomentStore.getState().payload?.kind !== 'meal') return;
+    const s = useMomentStore.getState();
+    if (s.payload?.kind !== 'meal' || s.removed) return;
     selectChip();
     set((state) =>
       state.payload?.kind === 'meal'
@@ -461,13 +625,15 @@ export const useMomentStore = create<MomentState>((set) => ({
     const state = useMomentStore.getState();
     if (state.payload?.kind !== 'meal' || state.payload.eventId !== eventId) return false;
     // Also require the card to still be visible — patching a dismissed card would
-    // burn the food's one heads-up on something nobody saw.
-    if (!state.visible) return false;
+    // burn the food's one heads-up on something nobody saw. Same for an UNDONE one
+    // (CUL-612): the meal it would describe is soft-deleted.
+    if (!state.visible || state.removed) return false;
     set({ payload: { ...state.payload, trialFlag } });
     return true;
   },
   patchAdherence: (adherence) => {
-    if (useMomentStore.getState().payload?.kind !== 'medication') return;
+    const s = useMomentStore.getState();
+    if (s.payload?.kind !== 'medication' || s.removed) return;
     selectChip();
     set((state) =>
       state.payload?.kind === 'medication'
@@ -476,7 +642,8 @@ export const useMomentStore = create<MomentState>((set) => ({
     );
   },
   patchHowGiven: (howGiven) => {
-    if (useMomentStore.getState().payload?.kind !== 'medication') return;
+    const s = useMomentStore.getState();
+    if (s.payload?.kind !== 'medication' || s.removed) return;
     selectChip();
     set((state) =>
       state.payload?.kind === 'medication'
@@ -488,8 +655,11 @@ export const useMomentStore = create<MomentState>((set) => ({
     const state = useMomentStore.getState();
     if (state.payload?.kind !== 'medication' || state.payload.eventId !== eventId) return false;
     // A dismissed card must not be patched — landing a note on it would put safety
-    // prose on screen during the fade-out, or nowhere at all.
-    if (!state.visible) return false;
+    // prose on screen during the fade-out, or nowhere at all. Nor an UNDONE one
+    // (CUL-612): a double-dose note over a dose the owner just removed is a claim
+    // about a row that is no longer in the record — and the removal is itself the
+    // correct response to a double, so the note has nothing left to warn about.
+    if (!state.visible || state.removed) return false;
     // The result must describe the dose as it now stands (see the interface note).
     if (state.payload.adherence !== computedForAdherence) return false;
     set({ payload: { ...state.payload, doubleDose } });
@@ -500,7 +670,6 @@ export const useMomentStore = create<MomentState>((set) => ({
     return true;
   },
   rescheduleHide: (durationMs) => {
-    clearHideTimer();
     // B-157 (CUL-284) — a card carrying an unread safety note has a FLOOR on its dwell,
     // and it is enforced here rather than at the call sites.
     //

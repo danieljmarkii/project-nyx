@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useNavigation } from 'expo-router';
 import { useEvents } from '../../hooks/useEvents';
 import { useSyncStore } from '../../store/syncStore';
 import { usePetStore } from '../../store/petStore';
@@ -22,6 +23,16 @@ import { isTrialRunning } from '../../lib/dietTrial';
 import { useMedStrips } from '../../hooks/useMedStrips';
 import { resolveMedStrips } from '../../lib/medStrip';
 
+/**
+ * The slice of the tab navigator this screen needs to hear a Home-tab re-tap.
+ * `addListener` returns its own unsubscribe, which is what the effect below cleans
+ * up with.
+ */
+type TabPressNavigation = {
+  isFocused: () => boolean;
+  addListener: (event: 'tabPress', callback: () => void) => () => void;
+};
+
 // Keep the "Checking for anything new…" band up long enough to read, even if the
 // sync + regen return almost instantly (the band would otherwise flash).
 const MIN_REFRESH_MS = 700;
@@ -31,11 +42,36 @@ export default function HomeScreen() {
   // B-054 §6 — reactive refresh-after-hydrate: re-read Today whenever a sync
   // cycle finishes, so rows another device pushed appear without a reload.
   const hydrationTick = useSyncStore((s) => s.hydrationTick);
-  // CulpritMark tap-to-view (B-284 §3): the Signal zone is the FIRST thing in the
-  // scroll body (right under the banner), so "scroll to the Signal zone" is just
-  // scrolling to top — no measured y-offset/onLayout tracking needed.
+  // Scroll-to-top on a Home-tab re-tap (CUL-600, spec §2 SHOULD). The header's
+  // CulpritMark used to own this jump; D4 retired the mark, so the standard platform
+  // affordance replaces it rather than the behaviour being lost. The Signal zone is
+  // the FIRST thing in the scroll body (right under the banner), so "scroll to the
+  // Signal" is just scrolling to top — no measured y-offset/onLayout tracking needed.
   const scrollRef = useRef<ScrollView>(null);
   const [refreshing, setRefreshing] = useState(false);
+
+  // Re-tapping the Home tab scrolls the feed back to the Signal (spec §2 SHOULD).
+  // NyxTabBar already emits `tabPress` on every press, addressed to the tapped
+  // route's key, so this listener only ever hears Home's own taps. The focus check is
+  // what makes it a RE-tap: arriving at Home from another tab leaves the scroll
+  // position where the owner left it, which is what every platform does.
+  //
+  // `useNavigation()` is typed as the generic navigator prop, whose `addListener`
+  // union has no `tabPress` — that event belongs to the tab navigator specifically,
+  // and react-navigation is a transitive dependency of expo-router rather than one we
+  // declare. So the two members this screen actually uses are named structurally and
+  // the cast happens once, at the boundary, instead of an `as never` per argument
+  // (the same call NyxTabBar's local `TabBarProps` makes for the same reason).
+  const navigation = useNavigation() as unknown as TabPressNavigation;
+  useEffect(
+    () =>
+      navigation.addListener('tabPress', () => {
+        if (navigation.isFocused()) {
+          scrollRef.current?.scrollTo({ y: 0, animated: true });
+        }
+      }),
+    [navigation],
+  );
   // Same loader as the Pet-tab card, so the two surfaces cannot disagree about
   // the same trial (B-417 PR 4). `inputIsForActivePet` fails closed for B-789 below.
   const { input: trialInput, inputIsForActivePet: trialFactsFresh } = useDietTrial();
@@ -120,7 +156,7 @@ export default function HomeScreen() {
     <SafeAreaView style={styles.container} edges={['left', 'right']}>
       {/* Pinned identity strip (B-076) — stays put while the zones scroll, so
           the AI Signal still leads the scrollable intelligence surface. */}
-      <HomeHeader onPressMark={() => scrollRef.current?.scrollTo({ y: 0, animated: true })} />
+      <HomeHeader />
       {/* Relative wrapper so the pull-to-refresh night band overlays the top of the
           feed (below the pinned header, so it's already clear of the safe-area inset). */}
       <View style={styles.body}>

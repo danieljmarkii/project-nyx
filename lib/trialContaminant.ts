@@ -1133,6 +1133,44 @@ export async function recordFlaggedFoodInTrial(trialId: string, foodId: string):
   }
 }
 
+/**
+ * Give a food its heads-up back, because the feeding that spent it was UNDONE
+ * (CUL-612).
+ *
+ * Rule 3 gives each food exactly one heads-up per trial, and the write is
+ * deliberately at RENDER time (see `noteTrialFlagShown`) so a suppressed panel
+ * cannot consume a budget it never spent. Undo opens the mirror-image hole, and
+ * it is not an edge case — it is the EXPECTED interaction: the amber "Off the
+ * trial list" panel is itself the cue that tells the owner they tapped the wrong
+ * tile, so the panel appearing is what prompts the Undo. Without this, the food
+ * is marked spoken-for on a feeding that never happened, and the real feeding on
+ * day 20 of a 56-day elimination trial is met with silence.
+ *
+ * Found by the `adversarial-reviewer` on CUL-612, which noted the commit had
+ * guarded the flag arriving AFTER Undo while leaving the far more common
+ * before-Undo case spent.
+ *
+ * Best-effort in the same direction as the write it reverses: if this fails the
+ * food simply stays spoken-for, which is the quiet direction rather than the
+ * alarming one — but it never throws into a reversal that has already happened.
+ */
+export async function forgetFlaggedFoodInTrial(trialId: string, foodId: string): Promise<void> {
+  try {
+    const ledger = await readHeadsUpLedger();
+    const existing = Array.isArray(ledger[trialId]) ? ledger[trialId] : [];
+    if (!existing.includes(foodId)) return;
+    const remaining = existing.filter((id) => id !== foodId);
+    // Drop the trial's key entirely once its last entry goes, rather than leaving
+    // an empty array to occupy one of the MAX_LEDGER_TRIALS slots.
+    headsUpLedger = { ...ledger };
+    if (remaining.length > 0) headsUpLedger[trialId] = remaining;
+    else delete headsUpLedger[trialId];
+    await AsyncStorage.setItem(HEADS_UP_KEY, JSON.stringify(headsUpLedger));
+  } catch (e) {
+    console.warn('[trialContaminant] heads-up ledger un-spend failed:', e);
+  }
+}
+
 /** Wipe the ledger. Called from the sign-out teardown alongside the context
  *  cache — it is per-account bookkeeping and must not leak across a switch. */
 export async function clearTrialHeadsUpLedger(): Promise<void> {

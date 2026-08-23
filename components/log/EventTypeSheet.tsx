@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import {
-  Modal, Pressable, ScrollView, StyleSheet, Text, TouchableOpacity, View,
+  Alert, Modal, Pressable, ScrollView, StyleSheet, Text, TouchableOpacity, View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
@@ -14,6 +14,7 @@ import { SimpleEventConfirm } from './SimpleEventConfirm';
 import { summarizeLoggedRecord, type LoggedRecord } from '../../lib/completionCard';
 import { SheetLogBeat } from './SheetLogBeat';
 import { PetSwitcherSheet } from '../pet/PetSwitcherSheet';
+import { discardGuardCopy, type ConfirmDraft } from '../../lib/discardGuard';
 
 // The "More events" destination as a bottom sheet over the current tab (B-745). The
 // FAB opens this instead of pushing the full-screen /log picker when log_picker_v2
@@ -64,6 +65,11 @@ export function EventTypeSheet({ visible, onClose }: Props) {
   // clock, and a beat that re-derived mid-dwell could change its own words at local
   // midnight. Null only before the first commit of a given open.
   const [beatSentence, setBeatSentence] = useState<string | null>(null);
+  // CUL-612 — what the confirm currently holds, reported up by SimpleEventConfirm.
+  // It lives HERE because the gestures that destroy it are this component's: a
+  // backdrop tap and the Android back button both unmount the confirm, so the
+  // child cannot intercept them on its own.
+  const [draft, setDraft] = useState<ConfirmDraft | null>(null);
 
   // Liveness: SimpleEventConfirm's write is async, so the owner can dismiss the sheet
   // (backdrop / Android back) while it's in flight. This ref lets handleLogged no-op
@@ -76,8 +82,35 @@ export function EventTypeSheet({ visible, onClose }: Props) {
   // a stale confirm/beat.
   useEffect(() => {
     visibleRef.current = visible;
-    if (!visible) { setStage('grid'); setConfirm(null); setBeatSentence(null); }
+    if (!visible) { setStage('grid'); setConfirm(null); setBeatSentence(null); setDraft(null); }
   }, [visible]);
+
+  // ── THE DISCARD GUARD (CUL-612, §5) ───────────────────────────────────────
+  // Every dismissal that would throw away a half-filled confirm goes through
+  // here. Two paths do: the backdrop tap and the Android back button. Both are
+  // one gesture away from an attached photo the owner took of the thing itself,
+  // and today both destroy it without a word.
+  //
+  // The BACK CHEVRON deliberately does not route through this. It is a labelled,
+  // in-flow control whose whole purpose is "wrong type, take me back to the
+  // grid" — the owner is choosing to leave, and a dialog on a deliberate choice
+  // is friction, not a safety net. The guard is for the gestures that are easy
+  // to hit by accident.
+  //
+  // Nothing to guard once the write has landed ('done'), and nothing to guard on
+  // the grid — the tests pin both, because a guard that fires on a clean sheet
+  // would put a dialog between the FAB and closing it.
+  function requestClose() {
+    const copy = stage === 'confirm' && draft ? discardGuardCopy(draft) : null;
+    if (!copy) { onClose(); return; }
+    Alert.alert(copy.title, copy.body, [
+      // "Keep editing" first and non-destructive: the accidental tap is the
+      // common case, so the default-weighted answer is the one that loses
+      // nothing.
+      { text: 'Keep editing', style: 'cancel' },
+      { text: 'Discard', style: 'destructive', onPress: onClose },
+    ]);
+  }
 
   const petName = activePet?.name ?? 'your pet';
   const multiPet = pets.length > 1;
@@ -118,13 +151,13 @@ export function EventTypeSheet({ visible, onClose }: Props) {
 
   return (
     <>
-      <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <Modal visible={visible} transparent animationType="slide" onRequestClose={requestClose}>
         <View style={styles.backdrop}>
           {/* Drop the scrim while the nested switcher is up (Android bleed-through
               guard, matching the FAB). During the completion beat the scrim stays but
               the beat auto-closes; an early dismiss tap is harmless (already written). */}
           {!switcherVisible && (
-            <Pressable style={styles.scrim} onPress={onClose} accessibilityLabel="Close" />
+            <Pressable style={styles.scrim} onPress={requestClose} accessibilityLabel="Close" />
           )}
           <View style={[styles.sheet, { paddingBottom: insets.bottom + theme.space2 }]}>
             <View style={styles.grabber} />
@@ -157,8 +190,9 @@ export function EventTypeSheet({ visible, onClose }: Props) {
                 type={confirm.type}
                 petId={confirm.petId}
                 petName={confirm.petName}
-                onBack={() => { setStage('grid'); setConfirm(null); }}
+                onBack={() => { setStage('grid'); setConfirm(null); setDraft(null); }}
                 onLogged={handleLogged}
+                onDraftChange={setDraft}
               />
             )}
 

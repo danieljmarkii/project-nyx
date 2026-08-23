@@ -10,7 +10,7 @@ import { updateEvent, getEventSource } from '../../lib/db';
 import { syncPendingEvents } from '../../lib/sync';
 import {
   summarizeLoggedRecord, canChangeTime, resolveNamedTimeEdit, applyNamedTimeEdit,
-  timeEditPrompt,
+  timeEditPrompt, removedNoticeCopy, HITSLOP_ACTION_LEFT, HITSLOP_ACTION_RIGHT,
 } from '../../lib/completionCard';
 import { sourceAfterPointEdit } from '../../lib/eventTimeEdit';
 import { ThemedText } from './ThemedText';
@@ -35,8 +35,21 @@ const TAB_BAR_HEIGHT = Platform.OS === 'ios' ? 80 : 60;
 //   2. It said "Logged". The app knew exactly what it had just written and threw
 //      that away. This card speaks the record's own sentence (see below).
 //   3. It offered nothing. No Change time, no way back. A mis-tapped time was
-//      fixed through History → detail → edit. The card carries Change time, and
-//      Undo lands in CUL-612 beside it.
+//      fixed through History → detail → edit — five taps. The card carries
+//      Change time, and CUL-612 put Undo beside it.
+//
+// ── UNDO ────────────────────────────────────────────────────────────────────
+// The reversal itself lives in momentStore.undo() (soft-delete + drop from
+// Today), so every card inherits it and the invariants are stated once. What is
+// this component's job:
+//
+//   · Undo renders UNCONDITIONALLY, unlike Change time. A weight check and a
+//     two-sided window both withhold the time picker (see canChangeTime), and
+//     those are exactly the records with no other in-place way back. An affordance
+//     that disappears on the records that need it most is not a safety net.
+//   · Once removed, the card collapses to the removal line and nothing else. Not
+//     disabled controls — ABSENT ones: a "Change time" beside the word "Removed"
+//     offers to edit a row that is no longer in the record.
 //
 // ── THE SCRIM IS VISUAL, NOT MODAL ──────────────────────────────────────────
 // pointerEvents="none" on the scrim, "box-none" on the wrapper: Home recedes but
@@ -52,7 +65,7 @@ const TAB_BAR_HEIGHT = Platform.OS === 'ios' ? 80 : 60;
 // cannot drift from the row the owner finds tomorrow. That module's header
 // carries the full rule.
 export function NamedCompletionCard() {
-  const { visible, payload, hide, patchOccurredAt, patchRecord } = useMomentStore();
+  const { visible, payload, removed, hide, undo, patchOccurredAt, patchRecord } = useMomentStore();
   const { patchInToday } = useEventStore();
   const { pets, activePet } = usePetStore();
   const reduced = useReducedMotion();
@@ -158,6 +171,16 @@ export function NamedCompletionCard() {
     }
   }
 
+  async function handleUndo() {
+    // 'ignored' is a no-op the owner never hears about (a second tap, a card that
+    // has already gone). Only a real failure gets a word — and it names the other
+    // way in, because the row is still there to remove.
+    if (!payload) return;
+    if ((await undo(payload.eventId)) === 'failed') {
+      Alert.alert('Could not remove that log', 'Try again, or remove it from History.');
+    }
+  }
+
   // Keep rendering through the dismiss fade (hide() preserves the payload), but
   // never mount for another card's payload.
   if (!payload || payload.kind !== 'named') return null;
@@ -171,6 +194,7 @@ export function NamedCompletionCard() {
   const petName = pets.find((p) => p.id === payload.petId)?.name ?? activePet?.name ?? 'your pet';
   const showChangeTime = canChangeTime(payload.record);
   const prompt = timeEditPrompt(payload.record);
+  const notice = removed ? removedNoticeCopy(petName) : null;
 
   return (
     <>
@@ -183,6 +207,22 @@ export function NamedCompletionCard() {
         style={[styles.wrapper, { opacity, transform: [{ translateY }] }]}
       >
         <View style={styles.card}>
+          {notice ? (
+            /* The removal line. No mark — a check over the word "Removed" would be
+               two contradictory signals, and the quiet is the point. Announced
+               politely so a screen-reader owner hears the reversal land, which is
+               the only confirmation this state gets. */
+            <View
+              style={styles.labelCol}
+              accessibilityRole="summary"
+              accessibilityLiveRegion="polite"
+              accessibilityLabel={notice.a11yLabel}
+            >
+              <ThemedText style={styles.title}>{notice.title}</ThemedText>
+              <ThemedText style={styles.subLabel}>{notice.detail}</ThemedText>
+            </View>
+          ) : (
+          <>
           <View style={styles.headerRow}>
             {/* The mark. The warm-gold halo is the CELEBRATE tone only: a symptom
                 log and a weight check get the same mint check with no gold, which
@@ -211,22 +251,33 @@ export function NamedCompletionCard() {
             </View>
           </View>
 
-          {/* The action row. Undo lands here in CUL-612, to the LEFT of Change time
-              (round-2 mock) — the row exists now so adding it is not a re-layout.
-              Absent rather than disabled: a dead control on a 5s card teaches the
-              owner the app is broken, and there is nothing to explain yet. */}
-          {showChangeTime && (
-            <View style={styles.actionRow}>
+          {/* The action row — Undo left of Change time (round-2 mock). The ROW is
+              unconditional now because Undo is; only Change time is gated, and it
+              is absent rather than disabled (a dead control on a 5s card teaches
+              the owner the app is broken). */}
+          <View style={styles.actionRow}>
+            <TouchableOpacity
+              onPress={handleUndo}
+              hitSlop={HITSLOP_ACTION_LEFT}
+              style={styles.actionBtn}
+              accessibilityRole="button"
+              accessibilityLabel="Undo — remove this log"
+            >
+              <ThemedText style={styles.actionText}>Undo</ThemedText>
+            </TouchableOpacity>
+            {showChangeTime && (
               <TouchableOpacity
                 onPress={() => setPickerOpen(true)}
-                hitSlop={8}
+                hitSlop={HITSLOP_ACTION_RIGHT}
                 style={styles.actionBtn}
                 accessibilityRole="button"
                 accessibilityLabel="Change time of this log"
               >
                 <ThemedText style={styles.actionText}>Change time</ThemedText>
               </TouchableOpacity>
-            </View>
+            )}
+          </View>
+          </>
           )}
         </View>
       </Animated.View>
