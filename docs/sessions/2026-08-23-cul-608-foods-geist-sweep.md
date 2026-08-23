@@ -39,6 +39,8 @@ No detection engine, no clinical or statistical logic, no RLS/Storage/deletion/e
 
 The tests deliberately assert the family **without** the weight beside it: `ThemedText` drops the weight once the family carries it, so a test expecting both would pin a contradiction.
 
+The `code-reviewer` returned **ship-ready** and did two things worth recording, because it did not take either on trust: it re-derived the cmap check with `fontTools` across all three loaded weights (same result) and it re-ran the mutation on both new tests itself. Its one actionable note was the nested `ThemedText` at `food-capture`'s `mealTimeText` / `mealTimeAttribution` — inert today, since both styles are weightless and resolve to the same regular face, but it is the exact case the primitive's docstring warns about, and the trap is a *future* edit that gives the child a weight and expects the cascade to carry it. Now named at the site rather than in a docstring the editor would have to already suspect.
+
 ## Decisions
 
 - **Glyph carve-out, stated as "is it copy?" rather than as a coverage table** (above). The cmap finding motivated it; the rule that survives it is simpler than it.
