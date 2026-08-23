@@ -107,6 +107,71 @@ paths are now separate effects, because they want different things: the switch c
 flag (a card is still on screen and must stop showing the moment), the unmount does not
 (nothing is left to render, and setting state there is a warning waiting to happen).
 
+## What three reviews found
+
+`code-reviewer` · `rls-privacy-reviewer` (the wipe path) · `pm-feature-review`. Everything
+actionable that was not a judgement call is in the PR; four decisions went to the PM on
+the issue.
+
+**code-reviewer — ship-ready, two nits, both taken.** The stage no longer leaves a wrapper
+node on the shipped non-arrival path, and `spentFor` is a `Set` rather than one slot so
+two pets' in-flight marker reads cannot claim the same latch. It also independently
+reproduced the pet-switch freeze already fixed above, and named the mechanism better than
+that commit did: **a delayed `Animated.timing` never fires its `onEnd` on `.stop()`**,
+because the underlying `Animation` object was never created — which is exactly why
+`playing` could stick.
+
+**rls-privacy-reviewer — PASS, one residual, closed in-PR.** It traced all three
+`wipeLocalSession` callers (the `SIGNED_OUT` handler, the post-deletion fallback, the
+recovery deep link), tried an account swap without `SIGNED_OUT`, and used a recovered pet
+UUID against `pets`/`events`/`ai_signals` with a second account's JWT — all held; the
+UUIDs are inert against RLS. Its one finding is the cost of the one-key shape, and it is
+a good one: a blob makes the write a **read-modify-write**, and SignalZone fires it
+un-awaited, so a wipe landing between the read and the write could restore the *whole*
+previous account's map after `wipeLocalSession()` had returned clean — N markers where the
+per-key shape's stale write could resurrect one. It could not construct a reachable
+trigger, but that is a property of today's navigation, not of the module. Closed with the
+idiom `lib/sync.ts` already ships for the identical failure (`signOutEpoch` / `stale()`),
+kept module-local. The header's shape argument now says the key is chosen *despite* that
+cost rather than in ignorance of it, and the test fails if the guard is removed.
+
+**pm-feature-review — the one with real teeth.** `findingCount` was the *unfiltered*
+`findings.length`, but `LiveStack` drops a `fewer_during_trial` trial_response on a
+not-eating record (B-789). When that suppressed card is the **sole** finding — the known
+CUL-527 residual — `displayState` still reads `live` and the stack renders **empty**. So
+the moment swept a gold wash and played a success tap over a blank card, and burned that
+pet's once-ever marker doing it. It is insight-class, so the safety gate never saw it.
+**The one owner it would have fired for is the one whose cat is refusing food.** Fixed by
+counting what *renders*: the suppression predicate moved out of `LiveStack` into
+`visibleFindings`, shared by both callers — one predicate, never a second copy (the
+diet-trial §5.3 lesson). The safety gate deliberately keeps reading the **full** set, so
+suppression can never *unhide* the moment.
+
+It also caught a 400ms window where the lead sits at opacity 0 under a still-opaque
+outgoing frame, so a tap on what looked like a ghost watching row landed on the invisible
+`InsightCard` and expanded it. The stage is now inert for the moment's 1.2s.
+
+## The four decisions with the PM (posted on CUL-601)
+
+**D1 is the one that matters, and it is a spec-level miss the build surfaced.** §4's
+trigger is `building → live`, written against the mock's two-state model. The shipped app
+has **three** empty states, and `deriveDisplayState` drops a pet out of `building` into
+`no_pattern` at **≥8 events AND ≥7 days of span** — so the trigger window closes around
+day 7, while the engine's own advertised floors are 6 timeable episodes and **2 full
+weeks** (`watchingChangeRow`). The window in which the moment can fire closes about a week
+before the window in which a first finding opens. The sharpest evidence that this is an
+oversight rather than an intent: `NO_PATTERN_SUB` reads *"That isn't an all-clear — keep
+logging, and the moment something clears it, it'll be here"* — the arrival's own pitch,
+living on the one state that can never fire it. Recommended fix is one condition: trigger
+on any settled **empty → live**, which (since `deriveDisplayState` returns `live` whenever
+`findings.length > 0`) is exactly *0 findings → first finding*.
+
+The other three: the Success tap firing over insight-class bad news (`more_during_trial`
+is a vomiting escalation); the active-pet-only safety gate letting a celebration render
+under another pet's `CrossPetSafetyBanner`; and the marker recording that the animation
+*ran* rather than that anyone *saw* it (the regen is debounced 5s after a log, by which
+time the owner is plausibly scrolled away or backgrounded).
+
 ## Known limit, left for the device pass
 
 The Card's **height** still jumps at the transition (building frame → live card) before the
@@ -128,7 +193,7 @@ fold into this PR.
 
 ## Verification
 
-`tsc --noEmit` clean · full jest suite green (254 suites / 5606 tests) ·
+`tsc --noEmit` clean · full jest suite green (254 suites / 5610 tests) ·
 `guards/haptics.test.ts` green with the one reasoned exemption. The four ACs §4 names —
 marker-once, safety bypass, wipe-path inclusion, reduced-motion static frame — each have
 tests, plus the five things that are *not* arrivals (cold mount, slow read, pet switch,
