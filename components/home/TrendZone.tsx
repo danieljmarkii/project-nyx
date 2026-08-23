@@ -1,8 +1,9 @@
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 import { router } from 'expo-router';
 import { theme } from '../../constants/theme';
 import { Card } from '../ui/Card';
 import { SectionLabel } from '../ui/SectionLabel';
+import { ThemedText } from '../ui/ThemedText';
 import { useTrend, TrendData } from '../../hooks/useTrend';
 import { usePetStore } from '../../store/petStore';
 import { EVENT_TYPES, EventTypeKey } from '../../constants/eventTypes';
@@ -25,7 +26,7 @@ export function TrendZone() {
           accessibilityRole="button"
           accessibilityLabel="See all patterns"
         >
-          <Text style={styles.allPatternsText}>All patterns ›</Text>
+          <ThemedText style={styles.allPatternsText}>All patterns ›</ThemedText>
         </Pressable>
       </View>
       {isLoading || data === null ? (
@@ -51,9 +52,9 @@ function LoadingState() {
 
 function EmptyState({ petName }: { petName: string }) {
   return (
-    <Text style={styles.emptyText}>
+    <ThemedText style={styles.emptyText}>
       A few more days of logs and we'll be able to show {petName}'s pattern.
-    </Text>
+    </ThemedText>
   );
 }
 
@@ -90,15 +91,15 @@ function SymptomChart({ data }: { data: TrendData }) {
   return (
     <View>
       <View style={styles.chartHeadRow}>
-        <Text style={styles.chartHeadType}>{symptomLabel}</Text>
+        <ThemedText style={styles.chartHeadType}>{symptomLabel}</ThemedText>
         {/* No count line at zero. "0 episodes this week" is reassurance-by-absence —
             the same claim the Signal's ③ refuses to make, with the word "improving"
             removed — so when nothing was logged this week the empty right-hand half of
             the chart is left to be the only statement. */}
         {thisWeekSymptomCount > 0 && (
-          <Text style={styles.chartHeadCount}>
+          <ThemedText style={styles.chartHeadCount}>
             {thisWeekSymptomCount} {episodeNoun} this week
-          </Text>
+          </ThemedText>
         )}
       </View>
       <View style={[styles.barsContainer, styles.barsContainerTopGap]}>
@@ -129,15 +130,15 @@ function SymptomChart({ data }: { data: TrendData }) {
         })}
       </View>
       <View style={styles.axisRow}>
-        <Text style={styles.axisLabel}>{formatShortDate(fourteenDaysAgo.date)}</Text>
-        <Text style={styles.axisLabel}>Today</Text>
+        <ThemedText style={styles.axisLabel}>{formatShortDate(fourteenDaysAgo.date)}</ThemedText>
+        <ThemedText style={styles.axisLabel}>Today</ThemedText>
       </View>
       {data.trialStartDayKey !== null && (
         // Named in words as well as drawn — the marker is a thin rule, so on its
         // own it carries meaning by position and colour only.
-        <Text style={styles.trialMarkerLabel}>
+        <ThemedText style={styles.trialMarkerLabel}>
           Trial diet started {formatShortDate(data.trialStartDayKey)}
-        </Text>
+        </ThemedText>
       )}
     </View>
   );
@@ -162,14 +163,14 @@ function FeedingChart({ data, petName }: { data: TrendData; petName: string }) {
   return (
     <View>
       <View style={styles.chartHeadRow}>
-        <Text style={styles.chartHeadType}>Food</Text>
-        <Text style={styles.chartHeadCount}>
+        <ThemedText style={styles.chartHeadType}>Food</ThemedText>
+        <ThemedText style={styles.chartHeadCount}>
           {thisWeekMealDays} of 7 days
-        </Text>
+        </ThemedText>
       </View>
-      <Text style={[styles.chartSubLabel, thisWeekMealDays === 7 && styles.chartSubLabelImproving]}>
+      <ThemedText style={[styles.chartSubLabel, thisWeekMealDays === 7 && styles.chartSubLabelImproving]}>
         {directionLine}
-      </Text>
+      </ThemedText>
       <View style={styles.dotsRow}>
         {last7.map((bucket, i) => (
           <View
@@ -184,8 +185,8 @@ function FeedingChart({ data, petName }: { data: TrendData; petName: string }) {
         ))}
       </View>
       <View style={styles.axisRow}>
-        <Text style={styles.axisLabel}>{formatShortDate(last7[0].date)}</Text>
-        <Text style={styles.axisLabel}>Today</Text>
+        <ThemedText style={styles.axisLabel}>{formatShortDate(last7[0].date)}</ThemedText>
+        <ThemedText style={styles.axisLabel}>Today</ThemedText>
       </View>
     </View>
   );

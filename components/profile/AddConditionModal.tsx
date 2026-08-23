@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 import {
   Alert, KeyboardAvoidingView, Modal, Platform,
-  ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View,
+  ScrollView, StyleSheet, TextInput, TouchableOpacity, View,
 } from 'react-native';
+import { ThemedText } from '../ui/ThemedText';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { theme } from '../../constants/theme';
@@ -117,15 +118,15 @@ export function AddConditionModal({
       <SafeAreaView style={styles.container}>
         <View style={styles.header}>
           <TouchableOpacity onPress={handleClose} hitSlop={8}>
-            <Text style={styles.cancelText}>Cancel</Text>
+            <ThemedText style={styles.cancelText}>Cancel</ThemedText>
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>{isEditing ? 'Edit condition' : 'Add condition'}</Text>
+          <ThemedText style={styles.headerTitle}>{isEditing ? 'Edit condition' : 'Add condition'}</ThemedText>
           <TouchableOpacity onPress={handleSave} disabled={saving || !canSave} hitSlop={8}>
             {saving
               ? <WhorlSpinner size="sm" ground="day" />
-              : <Text style={[styles.saveText, !canSave && styles.saveTextDisabled]}>
+              : <ThemedText style={[styles.saveText, !canSave && styles.saveTextDisabled]}>
                   {isEditing ? 'Save' : 'Add'}
-                </Text>
+                </ThemedText>
             }
           </TouchableOpacity>
         </View>
@@ -133,7 +134,7 @@ export function AddConditionModal({
         <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <ScrollView contentContainerStyle={styles.form} keyboardShouldPersistTaps="handled">
 
-            <Text style={styles.label}>Condition name</Text>
+            <ThemedText style={styles.label}>Condition name</ThemedText>
             <TextInput
               style={styles.input}
               value={conditionName}
@@ -145,7 +146,7 @@ export function AddConditionModal({
               autoFocus={!isEditing}
             />
 
-            <Text style={styles.label}>Status</Text>
+            <ThemedText style={styles.label}>Status</ThemedText>
             <View style={styles.chipRow}>
               {STATUS_OPTIONS.map((opt) => (
                 <TouchableOpacity
@@ -153,32 +154,32 @@ export function AddConditionModal({
                   style={[styles.chip, status === opt.value && styles.chipActive]}
                   onPress={() => setStatus(opt.value)}
                 >
-                  <Text style={[styles.chipText, status === opt.value && styles.chipTextActive]}>
+                  <ThemedText style={[styles.chipText, status === opt.value && styles.chipTextActive]}>
                     {opt.label}
-                  </Text>
-                  <Text style={[styles.chipDesc, status === opt.value && styles.chipDescActive]}>
+                  </ThemedText>
+                  <ThemedText style={[styles.chipDesc, status === opt.value && styles.chipDescActive]}>
                     {opt.description}
-                  </Text>
+                  </ThemedText>
                 </TouchableOpacity>
               ))}
             </View>
 
-            <Text style={styles.label}>Diagnosed (optional)</Text>
+            <ThemedText style={styles.label}>Diagnosed (optional)</ThemedText>
             <TouchableOpacity
               style={styles.fieldBtn}
               onPress={() => setShowDatePicker(!showDatePicker)}
               activeOpacity={0.7}
             >
-              <Text style={diagnosedAt ? styles.fieldBtnText : styles.fieldBtnPlaceholder}>
+              <ThemedText style={diagnosedAt ? styles.fieldBtnText : styles.fieldBtnPlaceholder}>
                 {diagnosedAt
                   ? diagnosedAt.toLocaleDateString([], { year: 'numeric', month: 'long', day: 'numeric' })
                   : 'Not known'}
-              </Text>
-              <Text style={styles.changeLabel}>{showDatePicker ? 'Done' : 'Set date'}</Text>
+              </ThemedText>
+              <ThemedText style={styles.changeLabel}>{showDatePicker ? 'Done' : 'Set date'}</ThemedText>
             </TouchableOpacity>
             {diagnosedAt && !showDatePicker && (
               <TouchableOpacity onPress={() => setDiagnosedAt(null)} style={styles.clearBtn} hitSlop={8}>
-                <Text style={styles.clearBtnText}>Clear date</Text>
+                <ThemedText style={styles.clearBtnText}>Clear date</ThemedText>
               </TouchableOpacity>
             )}
             {showDatePicker && (
@@ -252,6 +253,7 @@ const styles = StyleSheet.create({
     borderRadius: theme.radiusSmall,
     paddingHorizontal: theme.space2,
     paddingVertical: 12,
+    fontFamily: theme.fontBody,
     fontSize: 16,
     color: theme.colorTextPrimary,
     backgroundColor: theme.colorNeutralLight,

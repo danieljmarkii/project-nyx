@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { Animated, StyleSheet, Text } from 'react-native';
+import { Animated, StyleSheet } from 'react-native';
+import { ThemedText } from '../ui/ThemedText';
 import { theme } from '../../constants/theme';
 import { useReducedMotion } from '../../hooks/useReducedMotion';
 import { WhorlSpinner } from '../brand/WhorlSpinner';
@@ -66,7 +67,7 @@ export function PullToRefreshSky({ active }: { active: boolean }) {
       importantForAccessibility="no-hide-descendants"
     >
       <WhorlSpinner size="sm" ground="day" />
-      {!ZERO_TEXT && <Text style={styles.msg}>Checking for anything new…</Text>}
+      {!ZERO_TEXT && <ThemedText style={styles.msg}>Checking for anything new…</ThemedText>}
     </Animated.View>
   );
 }

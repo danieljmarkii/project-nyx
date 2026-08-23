@@ -17,7 +17,8 @@
 // follows. And there is NO negative form: a caller with nothing to flag renders
 // nothing, and the absence of this note is never evidence a food is on-target
 // (TG-2 / `clinical-guardrails`).
-import { View, Text, StyleSheet } from 'react-native';
+import { View, StyleSheet } from 'react-native';
+import { ThemedText } from '../ui/ThemedText';
 import { theme } from '../../constants/theme';
 
 interface Props {
@@ -36,8 +37,8 @@ export function TrialProteinMismatchNote({ fact, advice }: Props) {
       accessibilityRole="summary"
       accessibilityLabel={`${fact} ${advice}`}
     >
-      <Text style={styles.fact}>{fact}</Text>
-      <Text style={styles.advice}>{advice}</Text>
+      <ThemedText style={styles.fact}>{fact}</ThemedText>
+      <ThemedText style={styles.advice}>{advice}</ThemedText>
     </View>
   );
 }

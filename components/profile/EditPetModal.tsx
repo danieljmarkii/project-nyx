@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import {
   Alert, KeyboardAvoidingView, Modal, Platform,
-  ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View,
+  ScrollView, StyleSheet, TextInput, TouchableOpacity, View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import DateTimePicker from '@react-native-community/datetimepicker';
@@ -10,6 +10,7 @@ import { WhorlSpinner } from '../brand/WhorlSpinner';
 import { breedsForSpecies, resolveBreedFieldState } from '../../constants/breeds';
 import { SectionLabel } from '../ui/SectionLabel';
 import { FilterChip } from '../ui/FilterChip';
+import { ThemedText } from '../ui/ThemedText';
 import { BreedPicker } from '../pet/BreedPicker';
 import { supabase } from '../../lib/supabase';
 import { kgToLbs, lbsToKg } from '../../lib/weight';
@@ -183,13 +184,13 @@ export function EditPetModal({ visible, onClose }: Props) {
       <SafeAreaView style={styles.container}>
         <View style={styles.header}>
           <TouchableOpacity onPress={onClose} hitSlop={8}>
-            <Text style={styles.cancelText}>Cancel</Text>
+            <ThemedText style={styles.cancelText}>Cancel</ThemedText>
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Edit profile</Text>
+          <ThemedText style={styles.headerTitle}>Edit profile</ThemedText>
           <TouchableOpacity onPress={handleSave} disabled={saving || !canSave} hitSlop={8}>
             {saving
               ? <WhorlSpinner size="sm" ground="day" />
-              : <Text style={[styles.saveText, !canSave && styles.saveTextDisabled]}>Save</Text>
+              : <ThemedText style={[styles.saveText, !canSave && styles.saveTextDisabled]}>Save</ThemedText>
             }
           </TouchableOpacity>
         </View>
@@ -232,10 +233,10 @@ export function EditPetModal({ visible, onClose }: Props) {
                   onPress={() => setShowBreedPicker(!showBreedPicker)}
                   activeOpacity={0.7}
                 >
-                  <Text style={breedDisplayValue ? styles.fieldBtnText : styles.fieldBtnPlaceholder}>
+                  <ThemedText style={breedDisplayValue ? styles.fieldBtnText : styles.fieldBtnPlaceholder}>
                     {breedDisplayValue ?? 'Select breed'}
-                  </Text>
-                  <Text style={styles.changeLabel}>{showBreedPicker ? 'Done' : 'Change'}</Text>
+                  </ThemedText>
+                  <ThemedText style={styles.changeLabel}>{showBreedPicker ? 'Done' : 'Change'}</ThemedText>
                 </TouchableOpacity>
                 {showBreedPicker && (
                   <BreedPicker
@@ -265,7 +266,7 @@ export function EditPetModal({ visible, onClose }: Props) {
                     style={styles.clearBtn}
                     hitSlop={8}
                   >
-                    <Text style={styles.clearBtnText}>Back to breed list</Text>
+                    <ThemedText style={styles.clearBtnText}>Back to breed list</ThemedText>
                   </TouchableOpacity>
                 )}
               </>
@@ -293,19 +294,19 @@ export function EditPetModal({ visible, onClose }: Props) {
               onPress={() => setShowDatePicker(!showDatePicker)}
               activeOpacity={0.7}
             >
-              <Text style={dobLabel ? styles.fieldBtnText : styles.fieldBtnPlaceholder}>
+              <ThemedText style={dobLabel ? styles.fieldBtnText : styles.fieldBtnPlaceholder}>
                 {dobLabel ?? 'Not set'}
-              </Text>
-              <Text style={styles.changeLabel}>{showDatePicker ? 'Done' : 'Change'}</Text>
+              </ThemedText>
+              <ThemedText style={styles.changeLabel}>{showDatePicker ? 'Done' : 'Change'}</ThemedText>
             </TouchableOpacity>
             {dobIsEstimated && !showDatePicker && (
               // Explain why an approximate DOB shows as a month/year, not a day —
               // and that picking a date makes it a real birthday (honesty, PR 9).
-              <Text style={styles.dobEstimateNote}>Estimated from age — pick a date to set an exact birthday.</Text>
+              <ThemedText style={styles.dobEstimateNote}>Estimated from age — pick a date to set an exact birthday.</ThemedText>
             )}
             {dob && !showDatePicker && (
               <TouchableOpacity onPress={() => setDob(null)} style={styles.clearBtn} hitSlop={8}>
-                <Text style={styles.clearBtnText}>Clear date</Text>
+                <ThemedText style={styles.clearBtnText}>Clear date</ThemedText>
               </TouchableOpacity>
             )}
             {showDatePicker && (
@@ -387,6 +388,7 @@ const styles = StyleSheet.create({
     borderRadius: theme.radiusSmall,
     paddingHorizontal: theme.space2,
     paddingVertical: 12,
+    fontFamily: theme.fontBody,
     fontSize: 16,
     color: theme.colorTextPrimary,
     backgroundColor: theme.colorNeutralLight,
