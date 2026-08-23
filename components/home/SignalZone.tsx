@@ -452,7 +452,6 @@ export function SignalZone({
     dayNumber,
     eventCount,
     acknowledging,
-    markSeen,
   } = useSignal();
 
   // Signal/Home design uplift (B-721, SR-1..SR-6) — GA'd 2026-08-20 (CUL-546 Phase 1 /
@@ -531,21 +530,12 @@ export function SignalZone({
     }
   }, [showAck, petName]);
 
-  // The CulpritMark pulse contract (B-284 §3): "flips false when the Signal zone
-  // is viewed (screen focus with the zone on-screen)". This card is always on-
-  // screen whenever Home is focused (it isn't behind a scroll gate), so marking
-  // seen here — once findings have actually landed — satisfies that trigger. The
-  // "See all patterns" footer tap-through is the spec's second trigger; it
-  // navigates away, which itself re-focuses Home (and re-marks seen) on return.
-  // `markSeen` comes straight off THIS `useSignal()` call, not a separately-read
-  // pet id — it always closes over the SAME petId+findings pair this hook just
-  // derived `state` from, so a pet switch can never pair the wrong pet's id with
-  // stale findings (a code-reviewed multi-pet-safety regression this PR fixed).
-  useEffect(() => {
-    if (state === 'live') {
-      markSeen();
-    }
-  }, [state, markSeen]);
+  // No "mark the Signal seen" write happens here any more. It existed for exactly one
+  // reader — the CulpritMark's `live` pulse in the Home header — and D4 deleted that
+  // cue outright ("no looping animation in app chrome, ever"). "Something new" is now
+  // announced by this card's own content: the live rail, and the once-ever arrival
+  // moment. Nothing else read the seen-signature store, so it went with the pulse
+  // rather than being left writing to a reader that no longer exists.
 
   // ── CUL-601 (§4) — the arrival ────────────────────────────────────────────────
   // The SETTLED state: null while the cache read is in flight, so latency can never be

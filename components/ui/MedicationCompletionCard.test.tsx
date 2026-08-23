@@ -12,6 +12,7 @@
 //   • it never co-renders with the in-doubt prompt, and there is no all-clear state.
 
 jest.mock('../../lib/supabase', () => ({ supabase: {} }));
+jest.mock('../../lib/undoLog', () => ({ reverseLoggedEvent: jest.fn().mockResolvedValue(undefined) }));
 jest.mock('../../lib/sync', () => ({
   syncPendingEvents: jest.fn().mockResolvedValue(undefined),
   syncPendingMedicationAdministrations: jest.fn().mockResolvedValue(undefined),
@@ -36,7 +37,9 @@ jest.mock('../../lib/db', () => ({
 }));
 
 import { act, fireEvent, render } from '@testing-library/react-native';
+import { Alert } from 'react-native';
 import { MedicationCompletionCard } from './MedicationCompletionCard';
+import { reverseLoggedEvent } from '../../lib/undoLog';
 import { useMomentStore } from '../../store/momentStore';
 import { usePetStore } from '../../store/petStore';
 
@@ -74,7 +77,8 @@ beforeEach(() => {
   jest.clearAllMocks();
   mockGetDoubleDoseFlag.mockResolvedValue(NO_CONFLICT);
   useMomentStore.getState().hide();
-  useMomentStore.setState({ payload: null });
+  useMomentStore.setState({ payload: null, removed: false });
+  (reverseLoggedEvent as jest.Mock).mockResolvedValue(undefined);
 });
 
 afterEach(() => {
@@ -176,5 +180,115 @@ describe('MedicationCompletionCard — the log-time double-dose note (B-157)', (
     expect(mockUpdateDoseAdherence).toHaveBeenCalledWith('m1', 'partial');
     getByText(NOTE);
     warn.mockRestore();
+  });
+});
+
+
+// ── Undo (CUL-612 · §5) ──────────────────────────────────────────────────────
+//
+// The reversal's mechanics are momentStore.test.ts's. What only this card can
+// answer is the safety half: the adherence chips are the B-156 G1 fail-safe
+// surface, so they must not survive the removal of the dose they describe — and
+// Undo must stay a reversal, never a second route to an affirmative.
+describe('MedicationCompletionCard — Undo', () => {
+  async function pressUndo(view: ReturnType<typeof render>) {
+    await act(async () => { fireEvent.press(view.getByLabelText('Undo — remove this dose')); });
+  }
+
+  it('removes the dose and swaps the card to its removal line', async () => {
+    seedDose();
+    const view = render(<MedicationCompletionCard />);
+    await pressUndo(view);
+    expect(reverseLoggedEvent).toHaveBeenCalledWith('m1');
+    view.getByText('Removed');
+    view.getByText('Taken out of Mochi’s record');
+  });
+
+  it('takes the adherence chips with it — no adherence write against a removed dose', async () => {
+    seedDose();
+    const view = render(<MedicationCompletionCard />);
+    await pressUndo(view);
+    expect(view.queryByText('Given')).toBeNull();
+    expect(view.queryByText('Refused')).toBeNull();
+    expect(view.queryByText('How was it given? (optional)')).toBeNull();
+    // Belt-and-braces on the invariant itself: nothing wrote an adherence.
+    expect(mockUpdateDoseAdherence).not.toHaveBeenCalled();
+  });
+
+  it('takes a standing double-dose note with it', async () => {
+    // Removing the dose IS the correct response to a double — so the note has
+    // nothing left to warn about, and leaving it up would describe a row that is
+    // no longer in the record.
+    seedDose({ doubleDose: CONFLICT });
+    const view = render(<MedicationCompletionCard />);
+    view.getByText(/another Prednisolone dose/);
+    await pressUndo(view);
+    expect(view.queryByText(/another Prednisolone dose/)).toBeNull();
+  });
+
+  it('renders on a COMBO dose, where Change time deliberately does not', () => {
+    // The combo is the densest, most error-prone path onto this card — logged from
+    // another card, against a meal — so it is exactly where a reversal is most
+    // likely needed, and it is the one place the time picker withholds itself.
+    seedDose({ pairedFoodName: 'Delectables', howGiven: 'in_treat' });
+    const view = render(<MedicationCompletionCard />);
+    view.getByLabelText('Undo — remove this dose');
+    expect(view.queryByLabelText('Change time of this dose')).toBeNull();
+  });
+
+  it('on a FAILED write, keeps the card and its chips intact', async () => {
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    (reverseLoggedEvent as jest.Mock).mockRejectedValueOnce(new Error('disk full'));
+    seedDose();
+    const view = render(<MedicationCompletionCard />);
+    await pressUndo(view);
+    expect(view.queryByText('Removed')).toBeNull();
+    view.getByLabelText('Undo — remove this dose');
+    expect(alert.mock.calls[0][0]).toBe('Could not remove that dose');
+    alert.mockRestore();
+  });
+});
+
+// ── CUL-614 · §5 "Dwell" — the WIRING ────────────────────────────────────────
+// The state machine itself is proven in store/momentStore.test.ts. What that suite
+// cannot see is this file's two lines of JSX: an edit that swapped onTouchStart for
+// onTouchEnd, or dropped onTouchCancel, would leave every store test green while the
+// card either dismissed under the owner's finger or never dismissed at all. So these
+// assert the end-to-end path — a touch on the rendered card reaching the store — and
+// exercise it through the real store rather than a spy, which is what makes them a
+// statement about behaviour instead of about the props object.
+describe('MedicationCompletionCard — the dwell pause is actually wired (CUL-614)', () => {
+  it('a finger on the card holds it open past its dwell', () => {
+    seedDose();
+    const { getByTestId } = render(<MedicationCompletionCard />);
+    fireEvent(getByTestId('medication-card-surface'), 'touchStart');
+    act(() => { jest.advanceTimersByTime(15_000); });
+    expect(useMomentStore.getState().visible).toBe(true);
+  });
+
+  it('lifting the finger restores a window, so the card still dismisses', () => {
+    // The other half, and the one a swapped-handler edit would break: a pause with no
+    // working resume is a card that never leaves.
+    seedDose();
+    const { getByTestId } = render(<MedicationCompletionCard />);
+    const card = getByTestId('medication-card-surface');
+    fireEvent(card, 'touchStart');
+    fireEvent(card, 'touchEnd');
+    act(() => { jest.advanceTimersByTime(4999); });
+    expect(useMomentStore.getState().visible).toBe(true);
+    act(() => { jest.advanceTimersByTime(2); });
+    expect(useMomentStore.getState().visible).toBe(false);
+  });
+
+  it('a CANCELLED gesture resumes too — the responder can end a touch elsewhere', () => {
+    // onTouchCancel is not belt-and-braces: a scroll claiming the responder, or a Modal
+    // mounting over the card, ends the gesture there and no touchEnd ever fires.
+    seedDose();
+    const { getByTestId } = render(<MedicationCompletionCard />);
+    const card = getByTestId('medication-card-surface');
+    fireEvent(card, 'touchStart');
+    fireEvent(card, 'touchCancel');
+    act(() => { jest.advanceTimersByTime(5001); });
+    expect(useMomentStore.getState().visible).toBe(false);
   });
 });

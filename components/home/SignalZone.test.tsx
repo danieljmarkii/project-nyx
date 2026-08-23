@@ -84,11 +84,9 @@ function signalState(over: Partial<SignalState> = {}): SignalState {
     signalText: null,
     petName: 'Nyx',
     isLoading: false,
-    hasUnseenSignal: false,
     dayNumber: 3,
     eventCount: 11,
     acknowledging: false,
-    markSeen: jest.fn(),
     ...over,
   };
 }

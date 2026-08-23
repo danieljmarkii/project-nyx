@@ -31,10 +31,19 @@ import { formatTime } from '../../lib/utils';
 function renderConfirm(type: any = 'vomit') {
   const onBack = jest.fn();
   const onLogged = jest.fn();
+  const onDraftChange = jest.fn();
   const utils = render(
-    <SimpleEventConfirm type={type} petId="p1" petName="Nyx" onBack={onBack} onLogged={onLogged} />,
+    <SimpleEventConfirm
+      type={type} petId="p1" petName="Nyx"
+      onBack={onBack} onLogged={onLogged} onDraftChange={onDraftChange}
+    />,
   );
-  return { ...utils, onBack, onLogged };
+  return { ...utils, onBack, onLogged, onDraftChange };
+}
+
+/** The most recent draft the confirm reported up (CUL-612). */
+function latestDraft(onDraftChange: jest.Mock) {
+  return onDraftChange.mock.calls[onDraftChange.mock.calls.length - 1][0];
 }
 
 beforeEach(() => { jest.clearAllMocks(); });
@@ -86,11 +95,17 @@ describe('AC-FOUND — witnessed / open-ended / bounded', () => {
     await waitFor(() => expect(mockInsert).toHaveBeenCalled());
     const arg = mockInsert.mock.calls[0][0];
     expect(arg).toMatchObject({ eventType: 'vomit', petId: 'p1', confidence: 'witnessed', earliest: null, latest: null });
-    expect(onLogged).toHaveBeenCalledWith({ eventId: 'e1', occurredAtIso: '2026-08-13T17:33:00.000Z' });
+    // CUL-614 — the result carries the RECORD as written, so the host's beat derives
+    // its sentence from the same buildTimeFields output the pill and the write used.
+    expect(onLogged).toHaveBeenCalledWith({
+      eventId: 'e1',
+      occurredAtIso: '2026-08-13T17:33:00.000Z',
+      record: { kind: 'event', typeLabel: 'Vomit', confidence: 'witnessed', earliest: null, latest: null },
+    });
   });
 
   it('Found it → open-ended window: pill reads "found by …", writes window w/ latest only', async () => {
-    const { getByText } = renderConfirm('vomit');
+    const { getByText, onLogged } = renderConfirm('vomit');
     fireEvent.press(getByText('Found it'));
     // Pill + row shift to the History-parity open-ended wording — NOT "since this morning".
     expect(getByText(/^Vomit · found by /)).toBeTruthy();
@@ -102,6 +117,15 @@ describe('AC-FOUND — witnessed / open-ended / bounded', () => {
     expect(arg.confidence).toBe('window');
     expect(arg.earliest).toBeNull();          // open-ended: no fabricated lower bound
     expect(arg.latest).toBeInstanceOf(Date);
+
+    // CUL-614 — the record handed to the host mirrors what was WRITTEN, bounds and
+    // all. This is the case the sentence rule exists for: the beat must be able to say
+    // "found by 5:33 PM" rather than "Logged", and it can only do that honestly if the
+    // window travels with the result. A record that flattened to `witnessed` here would
+    // let the beat assert the owner saw it happen (the B-448 over-claim direction).
+    const passed = onLogged.mock.calls[0][0].record;
+    expect(passed).toMatchObject({ kind: 'event', typeLabel: 'Vomit', confidence: 'window', earliest: null });
+    expect(passed.latest).toBe(arg.latest.toISOString());
   });
 
   it('Found it → Adjust window → Between: pill reads "between … and …", writes both edges', async () => {
@@ -152,5 +176,69 @@ describe('SimpleEventConfirm — double-submit guard', () => {
     fireEvent.press(pill);
     await waitFor(() => expect(mockInsert).toHaveBeenCalled());
     expect(mockInsert).toHaveBeenCalledTimes(1);
+  });
+});
+
+
+// ── What the discard guard is told (CUL-612 · §5) ────────────────────────────
+//
+// The guard itself is EventTypeSheet's; the predicate and copy are
+// lib/discardGuard.test.ts's. This block owns the DERIVATION — and the derivation
+// is the half a hand-set flag would get wrong. `timeTouched` is computed against
+// the values the sheet opened with rather than set at each of the six sites that
+// can move the time, so the cases below are what that buys.
+describe('SimpleEventConfirm — the draft it reports up', () => {
+  it('opens CLEAN — the defaults are the app\u2019s claim, not the owner\u2019s work', () => {
+    const { onDraftChange } = renderConfirm();
+    expect(latestDraft(onDraftChange)).toEqual({
+      hasPhoto: false, timeTouched: false, hasNote: false,
+    });
+  });
+
+  it('a typed note is work; whitespace is not', () => {
+    const { getByPlaceholderText, onDraftChange } = renderConfirm();
+    const input = getByPlaceholderText('Add a note (optional)');
+    fireEvent.changeText(input, '   ');
+    expect(latestDraft(onDraftChange).hasNote).toBe(false);
+    fireEvent.changeText(input, 'threw up on the rug');
+    expect(latestDraft(onDraftChange).hasNote).toBe(true);
+  });
+
+  it('switching to "Found it" counts — it changes the confidence that gets written', () => {
+    const { getByText, onDraftChange } = renderConfirm();
+    fireEvent.press(getByText('Found it'));
+    expect(latestDraft(onDraftChange).timeTouched).toBe(true);
+  });
+
+  it('adjusting the window to two bounds counts', () => {
+    const { getByText, onDraftChange } = renderConfirm('diarrhea');
+    fireEvent.press(getByText('Found it'));
+    fireEvent.press(getByText('Adjust window'));
+    fireEvent.press(getByText('Between two times'));
+    expect(latestDraft(onDraftChange).timeTouched).toBe(true);
+  });
+
+  it('merely OPENING the window editor does NOT count — looking is not editing', () => {
+    // A guard here would put a dialog in front of an owner who expanded a
+    // disclosure and changed nothing.
+    const { getByText, onDraftChange } = renderConfirm();
+    fireEvent.press(getByText('Found it'));
+    const beforeOpen = latestDraft(onDraftChange).timeTouched;
+    fireEvent.press(getByText('Adjust window'));
+    // "Found it" already made it dirty; what this pins is that opening the editor
+    // adds nothing of its own on the witnessed path.
+    expect(beforeOpen).toBe(true);
+
+    const fresh = renderConfirm();
+    fireEvent.press(fresh.getByTestId('confirm-time-main')); // opens the point picker
+    expect(latestDraft(fresh.onDraftChange).timeTouched).toBe(false);
+  });
+
+  it('returning to the opening state clears it — re-confirming a default is not work', () => {
+    const { getByText, onDraftChange } = renderConfirm();
+    fireEvent.press(getByText('Found it'));
+    expect(latestDraft(onDraftChange).timeTouched).toBe(true);
+    fireEvent.press(getByText('Saw it'));
+    expect(latestDraft(onDraftChange).timeTouched).toBe(false);
   });
 });

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, TextInput, Image, Alert, Platform, ScrollView,
 } from 'react-native';
@@ -15,9 +15,11 @@ import {
 } from '../../lib/eventTimeEdit';
 import type { TimeMode, FoundMode } from './TimeConfidenceField';
 import { summarizeSimpleEvent, confirmTimeRowLabel } from '../../lib/logCopy';
+import type { LoggedRecord } from '../../lib/completionCard';
 import { insertSimpleEvent } from '../../lib/simpleEvent';
 import { useSubmitGuard } from '../../hooks/useSubmitGuard';
 import { useEventStore } from '../../store/eventStore';
+import type { ConfirmDraft } from '../../lib/discardGuard';
 import { formatTime, exifDateToISO, trustedPastExifIso, formatExifAttribution } from '../../lib/utils';
 
 // The one-surface confirm (B-745 PR 3, round-4 mock frames 2–3). A simple event
@@ -42,7 +44,18 @@ interface Props {
   petId: string;
   petName: string;
   onBack: () => void;
-  onLogged: (result: { eventId: string; occurredAtIso: string }) => void;
+  // CUL-614 — the result carries the RECORD, not a display string, so the host's
+  // completion beat derives its sentence through lib/completionCard exactly as the
+  // named card does (§5's sentence rule). Structured on purpose: there is nowhere
+  // here to put a pre-composed "Logged", which is what makes the rule hold by shape
+  // rather than by review (the CUL-606 argument, applied to the R2 register).
+  onLogged: (result: { eventId: string; occurredAtIso: string; record: LoggedRecord }) => void;
+  /** CUL-612 — what the owner has put into this confirm so far, so the HOST can
+   *  guard its own dismissal paths (a backdrop tap destroys this component, and a
+   *  component cannot guard the gesture that unmounts it). Reported on change
+   *  rather than pulled through a ref: the host renders the alert, so the host
+   *  needs the draft in render scope, not at call time. */
+  onDraftChange?: (draft: ConfirmDraft) => void;
 }
 
 type OpenPicker = 'point' | 'latest' | 'earliest' | null;
@@ -61,7 +74,7 @@ const ROSE_FAMILY: ReadonlySet<EventTypeKey> = new Set([
 // (clinical-guardrails: never assert a capability the record won't deliver).
 const PHOTO_READ_TYPES: ReadonlySet<EventTypeKey> = new Set(['vomit', 'diarrhea', 'stool_normal']);
 
-export function SimpleEventConfirm({ type, petId, petName, onBack, onLogged }: Props) {
+export function SimpleEventConfirm({ type, petId, petName, onBack, onLogged, onDraftChange }: Props) {
   const prependEvent = useEventStore((s) => s.prependEvent);
   // The summary pill IS the write, so it needs the SAME hardened ref-latch guard the
   // picker tiles use (B-336) — a `useState` flag only disables after React commits,
@@ -106,6 +119,39 @@ export function SimpleEventConfirm({ type, petId, petName, onBack, onLogged }: P
   const pillText = summarizeSimpleEvent({
     typeLabel, confidence: tf.confidence, occurredAt: tf.occurredAt, earliest: tf.earliest, latest: tf.latest,
   });
+
+  // ── THE DISCARD GUARD'S INPUT (CUL-612) ───────────────────────────────────
+  // `timeTouched` asks one question: WOULD THIS WRITE A DIFFERENT ROW than it
+  // would have when the sheet opened? So it compares `tf` — the single derivation
+  // that feeds both the pill and the insert — against the same derivation captured
+  // at mount, rather than being set by hand at each of the six sites that can move
+  // the time.
+  //
+  // Two reasons, and the second is the one that found a bug. (1) Six setters is six
+  // chances to miss one, and the seventh picker someone adds next year would ship
+  // un-guarded and silently discard the window it edits; comparing the OUTPUT covers
+  // any future control for free. (2) Comparing raw inputs over-fires: switching to
+  // "Found it" and back to "Saw it" seeds `foundLatest` on the way through, so the
+  // inputs no longer match even though the row is byte-identical — the owner would
+  // get a discard dialog for changing their mind and changing it back.
+  //
+  // The baseline is the OPENING state, captured once (useRef keeps the first
+  // render's value), so an unattended sheet does not become dirty as the clock
+  // moves. `windowOpen` is deliberately not consulted: opening a disclosure is not
+  // an edit.
+  const timeShape = `${tf.confidence}|${tf.occurredAt.getTime()}|${tf.earliest?.getTime() ?? ''}|${tf.latest?.getTime() ?? ''}`;
+  const baseline = useRef(timeShape);
+  const draft: ConfirmDraft = {
+    hasPhoto: photo !== null,
+    timeTouched: timeShape !== baseline.current,
+    hasNote: notes.trim().length > 0,
+  };
+  const { hasPhoto, timeTouched, hasNote } = draft;
+  useEffect(() => {
+    onDraftChange?.({ hasPhoto, timeTouched, hasNote });
+    // Depends on the three BOOLEANS, not the object — `draft` is rebuilt every
+    // render, so an object dependency would re-fire this on every keystroke.
+  }, [hasPhoto, timeTouched, hasNote, onDraftChange]);
 
   const pickerDisplay = Platform.OS === 'ios' ? 'inline' : 'default';
 
@@ -233,7 +279,22 @@ export function SimpleEventConfirm({ type, petId, petName, onBack, onLogged }: P
         created_at: res.now,
         updated_at: res.now,
       });
-      onLogged({ eventId: res.eventId, occurredAtIso: res.occurredAtIso });
+      onLogged({
+        eventId: res.eventId,
+        occurredAtIso: res.occurredAtIso,
+        // Built from `tf` — the SAME buildTimeFields derivation the summary pill reads
+        // and the write above used, so the beat cannot say something the row does not
+        // hold. Passing the pill's own string instead would have been shorter and
+        // wrong: the pill is composed against a live clock, and by the time the beat
+        // renders, "today at 11:59 PM" can already be yesterday.
+        record: {
+          kind: 'event',
+          typeLabel,
+          confidence: tf.confidence,
+          earliest: tf.earliest ? tf.earliest.toISOString() : null,
+          latest: tf.latest ? tf.latest.toISOString() : null,
+        },
+      });
       return true;
     } catch (e) {
       console.error('[SimpleEventConfirm] log failed:', e);

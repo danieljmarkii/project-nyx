@@ -20,7 +20,10 @@ export const theme = {
                  // not a general scale step — nothing else in the app renders at 10.
   textSM: 13,    // captions, secondary detail
   textMD: 15,    // body, list items, buttons
-  textLG: 17,    // modal headers, subheadings
+  textLG: 17,    // modal headers, subheadings — and the Home header's pet name (CUL-600)
+  textHeaderNameTight: 16, // the Home header name's SECOND ladder rung ONLY (CUL-600 /
+                 // app-polish spec §2 DP-2: name @textLG → @this → tail-ellipsis).
+                 // Deliberately not a general scale step, like textTabLabelTight above.
   textXL: 22,    // page headings (in-screen section headers)
   textPageTitle: 24, // tab page titles (History, Foods) — sits between textXL/text2XL
   text2XL: 28,   // display (pet name, hero number)
