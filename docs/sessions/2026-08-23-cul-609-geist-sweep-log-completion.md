@@ -42,3 +42,17 @@ Two things its closing audit needs, both cheap if known up front and annoying if
 - No new Open Questions, no new decisions, no PM action items beyond the on-device pass.
 - `EventTypePicker`'s two snapshots regenerate to `fontFamily: "Geist-Medium"` in place of `fontWeight: "500"` — the primitive doing exactly what it exists for. The whole snapshot diff is that swap, asserted rather than eyeballed.
 - Nothing in this diff is clinically or statistically load-bearing, so the DoD's adversarial pass is genuinely N/A rather than skipped.
+
+## Late addition — CUL-607 converged on the nested-span rule independently
+
+While this session was wrapping, **CUL-607 (the History sweep, #711) landed on `main`** having hit the *same* nested-span problem from the other side — and promoted it to a **CLAUDE.md convention**, with `components/history/FreeFeedingStrip.tsx` as the shipped precedent.
+
+Two sessions reaching the same conclusion without coordinating is the useful part of the record: it means the rule is a property of `ThemedText`, not a quirk of one screen. Any sweep that mechanically swaps a nested span ships a **face change mid-sentence — which no test catches and no diff shows**, which is precisely why it needed to become a convention rather than four local comments.
+
+The convention asks the exemption comment to **name its issue**, so CUL-611's closing grep-audit meets a rationale instead of a bare violation. This session's four comments explained the reasoning but predated that requirement and didn't cite `CUL-609`, so they were rewritten to match — `main` merged in, comments aligned, `tsc` clean, 261 suites / 5789 tests green again on the merged tree.
+
+Worth noting for the remaining sweeps (CUL-608, CUL-610): **the convention now exists before you start**, which neither this session nor CUL-607 had. Read it first and the nested spans are a known case rather than a discovery.
+
+## Merge
+
+Merged to `main` at the PM's explicit request this session, with all three CI checks green and the branch up to date with `main`. The **on-device pass remained unchecked at merge** — CI cannot verify a typeface, and the PM merged knowing that. It is the one residual, and it is recorded on CUL-609 rather than left as prose here.

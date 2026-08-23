@@ -987,10 +987,13 @@ export default function LogModal() {
           {occurredAt.toLocaleDateString([], { month: 'short', day: 'numeric' })}
           {' · '}
           {formatTime(occurredAt)}
-          {/* Raw <Text> on purpose: a ThemedText nested in a ThemedText injects its own
-              fontFamily and breaks RN's native text cascade. This span carries no weight of its
-              own, so inheriting the parent's resolved Geist regular is exactly right
-              (ThemedText's documented nesting limit). */}
+          {/* Deliberately a raw <Text>, not a nested ThemedText (CUL-609; the same rule
+              CUL-607 hit in FreeFeedingStrip, now a CLAUDE.md convention). Every ThemedText
+              injects an explicit fontFamily, and an explicit family on a child is exactly what
+              breaks RN's native text-style cascade. This EXIF span differs from its parent only
+              in size and colour, so inheriting the parent's resolved Geist regular is the
+              intended render. Swapping it mechanically ships a face change mid-sentence — which
+              no test catches and no diff shows. */}
           {occurredAtSource === 'exif' && (
             <Text style={styles.exifAttribution}>
               {'  ·  '}{formatExifAttribution(occurredAt.toISOString())}
