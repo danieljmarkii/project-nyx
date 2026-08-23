@@ -42,7 +42,12 @@
 //
 // This is not an edge case: it is the SECOND report, the one an owner sends at or
 // after a recheck, and it is truncated by construction.
-import { assembleReport, type ReportEventInput, type ReportInput } from '../supabase/functions/generate-report/report.ts'
+import {
+  assembleReport,
+  type ReportEventInput,
+  type ReportInput,
+  type ReportSnapshot,
+} from '../supabase/functions/generate-report/report.ts'
 import { renderReport } from '../supabase/functions/generate-report/render.ts'
 
 const NOW = '2026-07-02T18:00:00Z'
@@ -712,15 +717,377 @@ function pastWindowCase(): ReportInput {
   }
 }
 
+// ── Case 6: the paths nothing had ever RENDERED (B-612 / CUL-319) ────────────
+//
+// Cases 1–5 are all diet-trial reports in which every event is `seen` with an exact
+// time, nothing is photographed, and the latest weigh-in is inside the window or after
+// it. That left a set of branches whose only appearance in five artifacts was the
+// LEGEND explaining them — which is not a render, and `vet-report-cold-read` said so
+// in three consecutive rounds: "I can't cold-read a string I've only seen in code, and
+// that is the whole point of this review." The two blockers round 11 found were both in
+// branches being rendered for the first time.
+//
+// This case is deliberately a MONITORING report — no diet trial. Every gap it closes is
+// trial-independent, and a sixth trial artifact would only re-render pages the cold read
+// has already graded five times. The narrative that makes all of them co-occur without
+// contrivance is the cat whose owner FINDS things: a cat vomits overnight, on a rug, and
+// the owner meets the evidence in the morning and photographs it.
+//
+//   trial-report-monitoring.html — Pepper, a 9-year-old spayed DSH under workup for
+//                              chronic intermittent vomiting, reported through the
+//                              31-day `since_visit` window her recheck opened.
+//
+// What renders here and nowhere else:
+//   · every occurred-time confidence — `est`, a two-sided `range`, BOTH one-sided forms
+//     ("before"/"after"), and a null-confidence legacy row as `unspecified`
+//   · the `N logs` duplicate tag (a sync retry 40s apart), with the photo on the member
+//     that got DROPPED — so the union-across-members path is exercised, not just the tag
+//   · the whole photo-analysis path: completed reads, the safety-band thumbnail lead on
+//     both a blood flag and a foreign-material flag, a non-completed read, a photo whose
+//     server-side fetch failed, and an incident analysed whose photo the owner has since
+//     removed (the Appendix E/F disclosure)
+//   · the stool AI read (Bristol + colour + mucus)
+//   · `(before this window)` on the weight block — the side the B-600 fix left untested,
+//     because `past-window` is the one basis that can close in the past and renders
+//     "after this window" instead
+//
+// ONE FIXTURE DECISION WORTH ITS COMMENT: incident 3's window straddles local midnight
+// (earliest 23:00 the previous evening, latest 07:20 the next morning). That is what an
+// overnight find actually looks like, and the occurred cell renders TIMES ONLY — so the
+// artifact puts the question "23:00 of which day?" in front of the cold read rather than
+// leaving it to a unit test that would have to assert the ambiguity to notice it.
+
+// A deterministic, dependency-free PNG, so the photo path renders real bytes rather than
+// a broken-image box. index.ts populates `dataUri` AFTER pure assembly (report.ts stays
+// pure and never touches image bytes), so a script that renders the pure snapshot has to
+// do the same thing or no thumbnail can ever appear. These are obviously not photographs;
+// they are the right SHAPE — a `data:image/png;base64,…` of a plausible size in the
+// layout box — which is what the layout, the print CSS and the appendix pagination are
+// actually being graded on.
+function crc32(bytes: Uint8Array): number {
+  let c = ~0
+  for (let i = 0; i < bytes.length; i++) {
+    c ^= bytes[i]
+    for (let k = 0; k < 8; k++) c = (c >>> 1) ^ (0xed_b8_83_20 & -(c & 1))
+  }
+  return ~c >>> 0
+}
+
+function adler32(bytes: Uint8Array): number {
+  let a = 1
+  let b = 0
+  for (let i = 0; i < bytes.length; i++) {
+    a = (a + bytes[i]) % 65521
+    b = (b + a) % 65521
+  }
+  return ((b << 16) | a) >>> 0
+}
+
+function be32(n: number): Uint8Array {
+  return new Uint8Array([(n >>> 24) & 255, (n >>> 16) & 255, (n >>> 8) & 255, n & 255])
+}
+
+function pngChunk(type: string, data: Uint8Array): Uint8Array {
+  const tag = new TextEncoder().encode(type)
+  const body = new Uint8Array(tag.length + data.length)
+  body.set(tag)
+  body.set(data, tag.length)
+  const out = new Uint8Array(4 + body.length + 4)
+  out.set(be32(data.length), 0)
+  out.set(body, 4)
+  out.set(be32(crc32(body)), 4 + body.length)
+  return out
+}
+
+/**
+ * zlib stream built from STORED (uncompressed) deflate blocks — a valid zlib stream with
+ * no compressor, which is why this file needs no dependency. Bigger than a real PNG and
+ * entirely fine at this size.
+ */
+function zlibStored(raw: Uint8Array): Uint8Array {
+  const parts: Uint8Array[] = []
+  let off = 0
+  do {
+    const len = Math.min(65535, raw.length - off)
+    const head = new Uint8Array(5)
+    head[0] = off + len >= raw.length ? 1 : 0 // BFINAL, BTYPE=00 (stored)
+    head[1] = len & 255
+    head[2] = (len >> 8) & 255
+    head[3] = ~len & 255
+    head[4] = (~len >> 8) & 255
+    parts.push(head, raw.subarray(off, off + len))
+    off += len
+  } while (off < raw.length)
+  const total = parts.reduce((n, p) => n + p.length, 0)
+  const out = new Uint8Array(2 + total + 4)
+  out[0] = 0x78
+  out[1] = 0x01
+  let p = 2
+  for (const part of parts) {
+    out.set(part, p)
+    p += part.length
+  }
+  out.set(be32(adler32(raw)), p)
+  return out
+}
+
+function toBase64(bytes: Uint8Array): string {
+  let s = ''
+  for (let i = 0; i < bytes.length; i += 0x8000) {
+    s += String.fromCharCode(...bytes.subarray(i, i + 0x8000))
+  }
+  return btoa(s)
+}
+
+/** A seeded mottled blob on a floor-ish ground — same seed, same bytes, every run. */
+function pngDataUri(seed: number, size = 132): string {
+  const ground: [number, number, number] = [176, 168, 156]
+  const blobs: Array<[number, number, number]> = [
+    [206, 178, 96], // bile yellow
+    [188, 96, 96], // pink/red
+    [222, 214, 200], // clear/foam
+    [150, 122, 84], // tan hairball
+    [140, 104, 72], // brown stool
+  ]
+  const fg = blobs[seed % blobs.length]
+  const raw = new Uint8Array(size * (1 + size * 3))
+  const c = size / 2
+  let p = 0
+  for (let y = 0; y < size; y++) {
+    raw[p++] = 0 // filter type 0 (none)
+    for (let x = 0; x < size; x++) {
+      let hsh = (x * 374_761_393 + y * 668_265_263 + seed * 1_274_126_177) >>> 0
+      hsh = (hsh ^ (hsh >>> 13)) >>> 0
+      hsh = Math.imul(hsh, 1_274_126_177) >>> 0
+      const noise = (hsh >>> 24) / 255
+      const dx = (x - c) / c
+      const dy = (y - c) / c
+      // A soft off-centre blob, wobbled by the noise so the edge is ragged, not a disc.
+      const d = Math.sqrt(dx * dx * 1.35 + dy * dy) + (noise - 0.5) * 0.22
+      const t = Math.max(0, Math.min(1, 1.15 - d * 1.6))
+      for (let ch = 0; ch < 3; ch++) {
+        const v = ground[ch] + (fg[ch] - ground[ch]) * t + (noise - 0.5) * 26
+        raw[p++] = Math.max(0, Math.min(255, Math.round(v)))
+      }
+    }
+  }
+  const ihdr = new Uint8Array(13)
+  ihdr.set(be32(size), 0)
+  ihdr.set(be32(size), 4)
+  ihdr[8] = 8 // bit depth
+  ihdr[9] = 2 // colour type 2 = truecolour RGB
+  const sig = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10])
+  const chunks = [sig, pngChunk('IHDR', ihdr), pngChunk('IDAT', zlibStored(raw)), pngChunk('IEND', new Uint8Array(0))]
+  const total = chunks.reduce((n, ch) => n + ch.length, 0)
+  const png = new Uint8Array(total)
+  let q = 0
+  for (const ch of chunks) {
+    png.set(ch, q)
+    q += ch.length
+  }
+  return `data:image/png;base64,${toBase64(png)}`
+}
+
+/**
+ * The post-assembly embed step, mirroring index.ts: every incident photo gets bytes EXCEPT
+ * the one whose storage path is marked unfetchable, which keeps `dataUri: null` and must
+ * render as the disclosed "could not be embedded" placeholder rather than vanishing.
+ */
+function embedPhotos(snap: ReportSnapshot): void {
+  snap.incidentPhotos.forEach((p, i) => {
+    if (p.storagePath.includes('unfetchable')) return
+    p.dataUri = pngDataUri(i + 1)
+  })
+}
+
+/** A symptom event with full control over the occurred-time account (B-010's four shapes). */
+function obs(o: {
+  type: string
+  id: string
+  occurredAt: string
+  confidence: 'witnessed' | 'estimated' | 'window' | null
+  earliest?: string | null
+  latest?: string | null
+  loggedAt?: string
+  notes?: string | null
+}): ReportEventInput {
+  return {
+    id: o.id,
+    type: o.type,
+    occurredAt: o.occurredAt,
+    occurredAtConfidence: o.confidence,
+    occurredAtEarliest: o.earliest ?? null,
+    occurredAtLatest: o.latest ?? null,
+    severity: null,
+    notes: o.notes ?? null,
+    loggedAt: o.loggedAt ?? o.occurredAt,
+    meal: null,
+  }
+}
+
+const WET = {
+  brand: 'Weruva',
+  product: 'Paw Lickin’ Chicken',
+  foodItemId: 'f-weruva',
+  proteins: ['chicken'],
+  ingredientsNotes: 'Chicken, chicken broth, sunflower seed oil, xanthan gum',
+}
+const DRY = {
+  brand: 'Hill’s',
+  product: 'Science Diet Adult Indoor',
+  foodItemId: 'f-hills',
+  proteins: ['chicken'],
+  ingredientsNotes: 'Chicken, whole grain wheat, corn gluten meal, chicken fat',
+}
+
+function monitoringCase(): ReportInput {
+  const events: ReportEventInput[] = []
+
+  // Twice-daily wet, plus a dry bowl she grazes. Five days go unlogged, deliberately —
+  // a 31-of-31 record is not what a real month looks like and makes the coverage tile
+  // untestable.
+  const unlogged = new Set(['2026-06-13', '2026-06-14', '2026-06-24', '2026-06-25', '2026-07-01'])
+  for (const d of days('2026-06-02', '2026-07-02')) {
+    if (unlogged.has(d)) continue
+    events.push(meal({ date: d, time: '11:15:00', brand: WET.brand, product: WET.product, foodItemId: WET.foodItemId, proteins: WET.proteins, ingredientsNotes: WET.ingredientsNotes, intakeRating: 'all', format: 'wet' }))
+    events.push(meal({ date: d, time: '22:30:00', brand: WET.brand, product: WET.product, foodItemId: WET.foodItemId, proteins: WET.proteins, ingredientsNotes: WET.ingredientsNotes, intakeRating: d === '2026-06-18' || d === '2026-06-26' ? 'some' : 'all', format: 'wet' }))
+  }
+
+  // ── The six occurred-time shapes ───────────────────────────────────────────
+  // 1 · witnessed — she watched it happen.
+  events.push(obs({ type: 'vomit', id: 'v-hair', occurredAt: '2026-06-05T23:10:00Z', confidence: 'witnessed', notes: 'brought up a hairball on the stairs' }))
+  // 2 · estimated — heard it from the next room, guessed the time.
+  events.push(obs({ type: 'vomit', id: 'v-est', occurredAt: '2026-06-09T13:30:00Z', confidence: 'estimated', loggedAt: '2026-06-09T14:05:00Z', notes: 'heard her in the laundry room, not sure exactly when' }))
+  // 3 · two-sided window, STRADDLING local midnight (23:00 → 07:20 next morning).
+  events.push(obs({ type: 'vomit', id: 'v-range', occurredAt: '2026-06-14T07:10:00Z', confidence: 'window', earliest: '2026-06-14T03:00:00Z', latest: '2026-06-14T11:20:00Z', loggedAt: '2026-06-14T11:35:00Z', notes: 'found it by the radiator; she was fine when we went up to bed' }))
+  // 4 · one-sided, LATEST only — "sometime before I got up".
+  events.push(obs({ type: 'vomit', id: 'v-before', occurredAt: '2026-06-18T10:45:00Z', confidence: 'window', latest: '2026-06-18T10:45:00Z', loggedAt: '2026-06-18T10:52:00Z', notes: 'on the hall rug, pink streaks through it' }))
+  // 5 · one-sided, EARLIEST only — "after she went up for the night".
+  events.push(obs({ type: 'vomit', id: 'v-after', occurredAt: '2026-06-23T03:30:00Z', confidence: 'window', earliest: '2026-06-23T03:30:00Z', loggedAt: '2026-06-23T12:10:00Z', notes: 'behind the sofa, found it the next morning' }))
+  // 6 · null confidence — a row logged before the time-confidence capture existed.
+  events.push(obs({ type: 'vomit', id: 'v-unspec', occurredAt: '2026-06-29T16:20:00Z', confidence: null }))
+
+  // ── The duplicate pair (§5.11): one bout, logged twice 40s apart on a sync retry.
+  // The PHOTO hangs off the member that loses the representative election, so the
+  // union-across-members path is what puts the read on the page — not the tag alone.
+  events.push(obs({ type: 'vomit', id: 'v-dup-a', occurredAt: '2026-06-26T23:55:00Z', confidence: 'witnessed', notes: 'long white thread in it — she has been at the quilt again' }))
+  events.push(obs({ type: 'vomit', id: 'v-dup-b', occurredAt: '2026-06-26T23:55:40Z', confidence: 'witnessed' }))
+
+  // Photographed but the fetch fails server-side → the disclosed placeholder.
+  events.push(obs({ type: 'vomit', id: 'v-nofetch', occurredAt: '2026-06-11T12:50:00Z', confidence: 'witnessed', notes: 'white foam, first thing' }))
+  // Photographed + read, photo since removed by the owner → the Appendix disclosure.
+  events.push(obs({ type: 'vomit', id: 'v-removed', occurredAt: '2026-07-01T22:40:00Z', confidence: 'witnessed', notes: 'looked like her dinner came straight back' }))
+
+  // ── Stool ─────────────────────────────────────────────────────────────────
+  events.push(obs({ type: 'diarrhea', id: 's-mucus', occurredAt: '2026-06-07T14:10:00Z', confidence: 'witnessed', notes: 'loose, some jelly-looking stuff on it' }))
+  events.push(obs({ type: 'diarrhea', id: 's-before', occurredAt: '2026-06-19T11:00:00Z', confidence: 'window', latest: '2026-06-19T11:00:00Z', loggedAt: '2026-06-19T11:06:00Z', notes: 'in the box before work' }))
+  events.push(obs({ type: 'diarrhea', id: 's-late', occurredAt: '2026-06-30T21:15:00Z', confidence: 'witnessed' }))
+  for (const d of ['2026-06-03', '2026-06-04', '2026-06-06', '2026-06-08', '2026-06-10', '2026-06-12', '2026-06-15', '2026-06-17', '2026-06-20', '2026-06-22', '2026-06-27', '2026-06-28', '2026-07-02']) {
+    events.push(obs({ type: 'stool_normal', id: eid('sn'), occurredAt: `${d}T13:40:00Z`, confidence: 'witnessed' }))
+  }
+
+  return {
+    now: NOW,
+    timezone: TZ,
+    pet: {
+      id: 'pet-pepper',
+      name: 'Pepper',
+      species: 'cat',
+      breed: 'Domestic Shorthair',
+      sex: 'female',
+      dateOfBirth: '2017-04-19',
+      neuterStatus: 'neutered',
+      weightKg: 4.5,
+    },
+    ownerName: 'Sam Rivera',
+    events,
+    aiAnalyses: [
+      // A hairball — the ordinary card, no flag. This is the control: without it the
+      // appendix is nothing but red flags and the reader learns nothing about the
+      // section's baseline register.
+      { eventId: 'v-hair', status: 'completed', colour: 'tan', contents: ['hair'], consistency: 'chunky', bloodPresent: 'none_visible', bilePresent: 'no', foreignMaterialPresent: 'no', foreignMaterialNote: null, stoolConsistency: null, stoolColour: null, stoolBloodPresent: null, stoolBloodType: null, stoolMucusPresent: null, editedAt: null },
+      // Empty-stomach bile, found overnight.
+      { eventId: 'v-range', status: 'completed', colour: 'yellow', contents: ['bile'], consistency: 'watery', bloodPresent: 'none_visible', bilePresent: 'yes', foreignMaterialPresent: 'no', foreignMaterialNote: null, stoolConsistency: null, stoolColour: null, stoolBloodPresent: null, stoolBloodType: null, stoolMucusPresent: null, editedAt: null },
+      // FRESH RED BLOOD → leads the safety band, with the thumbnail.
+      { eventId: 'v-before', status: 'completed', colour: 'pink_red', contents: ['liquid_only'], consistency: 'mucoid_slimy', bloodPresent: 'fresh_red', bilePresent: 'no', foreignMaterialPresent: 'no', foreignMaterialNote: null, stoolConsistency: null, stoolColour: null, stoolBloodPresent: null, stoolBloodType: null, stoolMucusPresent: null, editedAt: null },
+      // A read the model could not commit to → "read uncertain", never a positive "no".
+      { eventId: 'v-after', status: 'uncertain', colour: null, contents: null, consistency: null, bloodPresent: null, bilePresent: null, foreignMaterialPresent: null, foreignMaterialNote: null, stoolConsistency: null, stoolColour: null, stoolBloodPresent: null, stoolBloodType: null, stoolMucusPresent: null, editedAt: null },
+      // FOREIGN MATERIAL, on the DROPPED duplicate → leads the band via the member union.
+      { eventId: 'v-dup-b', status: 'completed', colour: 'clear', contents: ['foam'], consistency: 'mucoid_slimy', bloodPresent: 'none_visible', bilePresent: 'no', foreignMaterialPresent: 'yes', foreignMaterialNote: 'thread-like strands', stoolConsistency: null, stoolColour: null, stoolBloodPresent: null, stoolBloodType: null, stoolMucusPresent: null, editedAt: null },
+      { eventId: 'v-nofetch', status: 'completed', colour: 'white', contents: ['foam'], consistency: 'foamy', bloodPresent: 'none_visible', bilePresent: 'no', foreignMaterialPresent: 'no', foreignMaterialNote: null, stoolConsistency: null, stoolColour: null, stoolBloodPresent: null, stoolBloodType: null, stoolMucusPresent: null, editedAt: null },
+      // Read retained, photo deleted by the owner — the divergence Appendix E/F discloses.
+      { eventId: 'v-removed', status: 'completed', colour: 'brown', contents: ['partially_digested_food'], consistency: 'chunky', bloodPresent: 'none_visible', bilePresent: 'no', foreignMaterialPresent: 'no', foreignMaterialNote: null, stoolConsistency: null, stoolColour: null, stoolBloodPresent: null, stoolBloodType: null, stoolMucusPresent: null, editedAt: '2026-07-01T23:10:00Z' },
+      // The stool read: Bristol + colour + mucus (monitor tier — surfaced, never a lead).
+      { eventId: 's-mucus', status: 'completed', colour: null, contents: null, consistency: null, bloodPresent: null, bilePresent: null, foreignMaterialPresent: null, foreignMaterialNote: null, stoolConsistency: 'type_6_mushy', stoolColour: 'brown', stoolBloodPresent: 'no', stoolBloodType: null, stoolMucusPresent: 'yes', editedAt: null },
+    ],
+    // THE ONLY WEIGH-IN, and it predates the window: she was weighed at home the week
+    // before the appointment that opens this report, and not since. This is the
+    // "(before this window)" side — `past-window` renders the "after" side, because a
+    // hand-picked window is the one basis that can close in the past.
+    weightChecks: [{ eventId: 'pw1', weightKg: 4.5, occurredAt: '2026-05-24T15:30:00Z' }],
+    doses: [
+      { eventId: 'md1', occurredAt: '2026-06-02T13:00:00Z', medicationId: 'rx-cerenia', medicationItemId: 'mi-maropitant', adherence: 'given', doseAmount: '16 mg', pairedEventId: null },
+      { eventId: 'md2', occurredAt: '2026-06-03T13:10:00Z', medicationId: 'rx-cerenia', medicationItemId: 'mi-maropitant', adherence: 'given', doseAmount: '16 mg', pairedEventId: null },
+      { eventId: 'md3', occurredAt: '2026-06-04T13:05:00Z', medicationId: 'rx-cerenia', medicationItemId: 'mi-maropitant', adherence: 'refused', doseAmount: '16 mg', pairedEventId: null },
+      { eventId: 'md4', occurredAt: '2026-06-05T12:55:00Z', medicationId: 'rx-cerenia', medicationItemId: 'mi-maropitant', adherence: 'given', doseAmount: '16 mg', pairedEventId: null },
+      { eventId: 'md5', occurredAt: '2026-06-06T13:20:00Z', medicationId: 'rx-cerenia', medicationItemId: 'mi-maropitant', adherence: 'given', doseAmount: '16 mg', pairedEventId: null },
+    ],
+    medications: [
+      {
+        id: 'rx-cerenia',
+        medicationItemId: 'mi-maropitant',
+        drugName: 'Maropitant (Cerenia)',
+        doseAmount: '16 mg',
+        route: 'oral',
+        dosesPerDay: 1,
+        scheduleNotes: 'once daily with food',
+        indication: 'vomiting',
+        prescribedBy: 'Dr. A. Chen',
+        startedAt: '2026-06-02',
+        targetDurationDays: 5,
+        status: 'completed',
+        endedAt: '2026-06-06',
+      },
+    ],
+    medicationItems: [
+      { id: 'mi-maropitant', genericName: 'maropitant citrate', brandName: 'Cerenia', strength: '16 mg', route: 'oral', isPrescription: true, form: 'tablet' },
+    ],
+    dietTrials: [],
+    vetVisits: [{ visitedAt: '2026-06-02', clinicName: 'Riverside Veterinary', vetName: 'Dr. A. Chen', reason: 'chronic intermittent vomiting — begin workup' }],
+    feedingArrangements: [
+      { id: 'fa-dry', foodItemId: DRY.foodItemId, method: 'free_choice', activeFrom: '2025-11-01', activeUntil: null, isShared: false, primaryProtein: 'chicken', foodLabel: `${DRY.brand} ${DRY.product}`, proteins: DRY.proteins, ingredientsNotes: DRY.ingredientsNotes, extractionConfidence: { proteins: 0.91 } },
+    ],
+    conditions: [{ conditionName: 'Chronic intermittent vomiting', status: 'monitoring', diagnosedAt: '2026-03-10' }],
+    attachments: [
+      { eventId: 'v-hair', storagePath: 'pepper/v-hair-1.jpg', mimeType: 'image/jpeg', sortOrder: 0 },
+      { eventId: 'v-range', storagePath: 'pepper/v-range-1.jpg', mimeType: 'image/jpeg', sortOrder: 0 },
+      { eventId: 'v-before', storagePath: 'pepper/v-before-1.jpg', mimeType: 'image/jpeg', sortOrder: 0 },
+      { eventId: 'v-after', storagePath: 'pepper/v-after-1.jpg', mimeType: 'image/jpeg', sortOrder: 0 },
+      // On the DROPPED duplicate, not the survivor.
+      { eventId: 'v-dup-b', storagePath: 'pepper/v-dup-1.jpg', mimeType: 'image/jpeg', sortOrder: 0 },
+      // The transform fetch fails → dataUri stays null → disclosed placeholder.
+      { eventId: 'v-nofetch', storagePath: 'pepper/v-nofetch-unfetchable.jpg', mimeType: 'image/jpeg', sortOrder: 0 },
+      { eventId: 's-mucus', storagePath: 'pepper/s-mucus-1.jpg', mimeType: 'image/jpeg', sortOrder: 0 },
+    ],
+  }
+}
+
 const outDir = Deno.args[0] ?? '.'
-for (const [name, input] of [
+// The third slot is the post-assembly hook: index.ts embeds photo bytes AFTER pure
+// assembly, so a case that renders photos has to do the same or `dataUri` is null on
+// every one of them and the thumbnails silently never appear.
+const CASES: Array<[string, ReportInput, ((snap: ReportSnapshot) => void)?]> = [
   ['trial-report-clean.html', cleanCase()],
   ['trial-report-refused.html', refusedCase()],
   ['trial-report-completed.html', completedCase()],
   ['trial-report-truncated.html', truncatedCase()],
   ['trial-report-past-window.html', pastWindowCase()],
-] as const) {
-  const html = renderReport(assembleReport(input))
+  ['trial-report-monitoring.html', monitoringCase(), embedPhotos],
+]
+for (const [name, input, post] of CASES) {
+  const snap = assembleReport(input)
+  post?.(snap)
+  const html = renderReport(snap)
   await Deno.writeTextFile(`${outDir}/${name}`, html)
   console.log(`${name}: ${html.length} bytes`)
 }
