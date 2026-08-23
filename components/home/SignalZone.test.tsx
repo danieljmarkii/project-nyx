@@ -762,6 +762,23 @@ describe('SignalZone — the arrival moment', () => {
     expect(mockMarkArrivalPlayed).not.toHaveBeenCalled();
   });
 
+  it('a pet switch MID-ARRIVAL clears the wash — no frozen band parked on the next card', async () => {
+    // Halting the animation is not enough on its own: leaving the moment "playing"
+    // keeps the band mounted at whatever value the sweep had reached, and the owner
+    // lands on the next pet's card to find a stripe of light stuck across it.
+    const view = await arrive([benignFinding], 'pet-1');
+    expect(view.queryByTestId('signal-arrival-wash')).toBeTruthy();
+
+    mockUseSignal.mockReturnValue(
+      signalState({ petId: 'pet-2', displayState: 'live', findings: [benignFinding] }),
+    );
+    await act(async () => {
+      view.rerender(<SignalZone />);
+    });
+    await flush();
+    expect(view.queryByTestId('signal-arrival-wash')).toBeNull();
+  });
+
   it('an empty live set is not an arrival — there is nothing to celebrate', async () => {
     const view = await arrive([]);
     expect(view.queryByTestId('signal-arrival-wash')).toBeNull();

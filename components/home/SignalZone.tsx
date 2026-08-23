@@ -301,11 +301,23 @@ function useArrivalMoment({
     }
   }, [playing, appActive, halt]);
 
-  // A pet switch, or the zone unmounting, ends the moment: it belonged to the card that
-  // is going away. No `setPlaying` here — the cleanup can run on unmount.
+  // A pet switch ends the moment: it belonged to the card that just went away. Halting
+  // alone is NOT enough — leaving `playing` true would keep the wash mounted at whatever
+  // value the sweep had reached, so the owner arrives on the new pet's card to find a
+  // frozen band of light parked across it with nothing to finish it. Clear the flag too.
+  const lastPet = useRef(petId);
+  useEffect(() => {
+    if (lastPet.current === petId) return;
+    lastPet.current = petId;
+    halt(false);
+    setPlaying(false);
+  }, [petId, halt]);
+
+  // Unmount only — `halt` is stable, so this cleanup does not re-run on a pet change
+  // (which the effect above owns). No `setPlaying` here: there is nothing left to render.
   useEffect(() => {
     return () => halt(false);
-  }, [petId, halt]);
+  }, [halt]);
 
   return {
     playing,
