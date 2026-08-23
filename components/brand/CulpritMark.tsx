@@ -69,14 +69,26 @@ export interface CulpritMarkProps {
   /** Rendered size in px (square). */
   size: number;
   ground: 'light' | 'night';
-  /** The pulse — true while a fresh, unseen finding exists in the signal cache. */
+  /**
+   * The pulse — true while a fresh, unseen finding exists in the signal cache.
+   *
+   * NO CALLER PASSES THIS TODAY. Its one placement was the Home header's mark, and
+   * CUL-600 (app-polish D4) deleted that mark along with the cue itself: "no looping
+   * animation in app chrome, ever" is now a cross-cutting rule, and the seen-signature
+   * machinery that fed this prop went with it. The prop is deliberately left standing
+   * rather than removed in that PR, because WHERE the mark may appear and whether it
+   * may pulse is the brand spec's contract (`culprit-in-app-brand-requirements.md` §3),
+   * and the edit retiring the Home `live` state is Tier-2 — flagged for the PM, not
+   * written. Delete this prop when that edit lands; do not re-wire it before then.
+   */
   live?: boolean;
   /** Adds "Culprit" in the display face beside the glyph. */
   withWordmark?: boolean;
   /** Overrides the wordmark's size/weight — every placement wants a different
-   * scale relative to the glyph (HomeHeader's is quiet and smaller than the
-   * glyph; the auth/Landing lockups run larger), so this stays a caller choice
-   * rather than a ratio baked into the component. */
+   * scale relative to the glyph (the auth/Landing lockups run large; the Home
+   * header's used to run quiet and smaller than the glyph, until CUL-600 removed
+   * it), so this stays a caller choice rather than a ratio baked into the
+   * component. */
   wordmarkStyle?: StyleProp<TextStyle>;
   /** Whether this instance should carry its own accessibility node/label.
    * Defaults to `withWordmark` (a standalone full lockup self-labels "Culprit").
