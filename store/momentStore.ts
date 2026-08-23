@@ -4,19 +4,32 @@ import type { IntakeRating } from '../components/log/IntakeChipRow';
 import type { DoseAdherence } from '../components/log/AdherenceChipRow';
 import type { DoseVehicle, DoubleDoseResult } from '../lib/medications';
 import type { LogTimeTrialFlag } from '../lib/trialContaminant';
+import type { LoggedRecord } from '../lib/completionCard';
 
 // The earned completion surface, played after a successful log on any path so
 // the fastest taps get the same closure as the full flow (B-063). One store
 // drives two presentations (B-064):
 //
-//   - 'beat' — a brief, root-mounted, full-screen, terminal/non-interactive
-//     confirmation beat. Tone-aware per the Designer decision (2026-06-07):
-//       · 'celebrate' — warm-gold radial glow + spring mint check. For routine /
-//         non-symptom logs, where confirming the act of tracking is a small reward.
-//       · 'calm' — the same spring check WITHOUT the festive gold, for symptom
-//         logs (vomit, diarrhea, lethargy, itch): we acknowledge the log quietly
-//         and never celebrate a worrying event (Principle 4; the Calm/Oura bar).
-//     Rendered by <CompletionMoment/>.
+//   - 'named' — the R1 NAMED CARD (CUL-606): the warmed bottom card, over a
+//     dimmed Home, for every full-screen commit that isn't a meal or a dose —
+//     symptom logs and weight checks. It speaks the record's own sentence
+//     ("Vomit · found by 5:33 PM", "Weight · 12.4 lbs") derived through
+//     lib/completionCard, plus "Saved to {pet}'s record", and carries Change
+//     time. Tone-aware per the Designer decision (2026-06-07):
+//       · 'celebrate' — the warm-gold beat. For routine / non-symptom logs,
+//         where confirming the act of tracking is a small reward.
+//       · 'calm' — the same mark WITHOUT the festive gold, for symptom logs
+//         (vomit, diarrhea, lethargy, itch) and weight checks: we acknowledge
+//         the log quietly and never celebrate a worrying event, and a weight is
+//         never a number to congratulate (Principle 4; the Calm/Oura bar).
+//     Rendered by <NamedCompletionCard/>.
+//
+//     THIS REPLACED THE FULL-SCREEN WHITE TAKEOVER (the old 'beat' payload +
+//     <CompletionMoment/>, retired 2026-08-23). That surface flashed the entire
+//     screen solid white for 1.4s and blocked input — a camera flash for the
+//     owner logging a 2am vomit one-handed in a dark bedroom, and the single
+//     worst moment in Jordan's capture brief. It also threw away the sentence:
+//     the app knew exactly what it had saved and said "Logged".
 //
 //   - 'meal' — a NON-BLOCKING warmed bottom card that carries the same gold
 //     warmth PLUS the meal follow-ups: the optional WSAVA intake chip row and a
@@ -29,18 +42,29 @@ import type { LogTimeTrialFlag } from '../lib/trialContaminant';
 //     refused) as the confirm-over-entry follow-up to a one-tap dose log.
 //     Rendered by <MedicationCompletionCard/>.
 //
-// The meal/medication cards are the interactive presentations; the beat is terminal.
+// All three presentations are interactive bottom cards; none of them takes the screen.
 // "Intake is not preference" is preserved end to end — intake stays optional,
 // default-null, never pre-stamped, captured at peak recall. B-064 changed the
 // carrier surface, NOT the capture; B-014's three Designer conditions carry over
 // unchanged (skippable, default-null, visually subordinate to the logged act).
 export type MomentTone = 'celebrate' | 'calm';
 
-interface BeatPayload {
-  kind: 'beat';
+export interface NamedPayload {
+  kind: 'named';
   tone: MomentTone;
-  // Confirmation line. Defaults to 'Logged'.
-  title: string;
+  eventId: string;
+  // The pet this record was written for, captured at log time (immutable) — the
+  // same reason MealPayload carries it. The card names THIS pet in "Saved to
+  // {pet}'s record", never a re-read active pet: a queue-then-switch would
+  // otherwise print another animal's name on a card about this one.
+  petId: string;
+  // ISO UTC of the logged event's occurred_at.
+  occurredAt: string;
+  // What was written — structured, never a pre-composed display string, so no
+  // log path can hand this card a bare "Logged". The sentence is derived from it
+  // through lib/completionCard → lib/logCopy → describeOccurredAt (§5's sentence
+  // rule; see that module's header for why the shape is the enforcement).
+  record: LoggedRecord;
 }
 
 export interface MealPayload {
@@ -141,7 +165,7 @@ export interface MedicationPayload {
   doubleDose?: DoubleDoseResult | null;
 }
 
-export type MomentPayload = BeatPayload | MealPayload | MedicationPayload;
+export type MomentPayload = NamedPayload | MealPayload | MedicationPayload;
 
 interface ShowOpts {
   delayMs?: number;
@@ -151,18 +175,23 @@ interface ShowOpts {
 interface MomentState {
   visible: boolean;
   payload: MomentPayload | null;
-  // Full-screen terminal beat (non-meal logs).
-  show: (payload: { tone: MomentTone; title?: string }, opts?: ShowOpts) => void;
+  // The R1 named card (CUL-606) — symptom logs + weight checks. Takes the
+  // RECORD, not a sentence: the card derives what it says (§5's sentence rule).
+  showNamed: (payload: Omit<NamedPayload, 'kind'>, opts?: ShowOpts) => void;
   // Warmed bottom card carrying intake + "Change time" (meal / treat logs, B-064).
   showMeal: (payload: Omit<MealPayload, 'kind'>, opts?: ShowOpts) => void;
   // Warmed bottom card carrying the adherence chip row (dose logs, B-117 PR 3).
   showMedication: (payload: Omit<MedicationPayload, 'kind'>, opts?: ShowOpts) => void;
   hide: () => void;
-  // Mutates the in-flight MEAL or MEDICATION card's occurredAt after a "Change
-  // time" edit so the card reflects the new time before dismissing. Both cards
-  // carry the same witnessed-point "Change time" backfill affordance (the dose
-  // card gained it to match the meal card). No-op on a beat payload.
+  // Mutates the in-flight card's occurredAt after a "Change time" edit so the
+  // card reflects the new time before dismissing. All three cards carry a
+  // "Change time" backfill affordance (the dose card gained it to match the meal
+  // card; the named card gained it when it replaced the takeover, which offered
+  // none at all).
   patchOccurredAt: (occurredAt: string) => void;
+  // Re-states the NAMED card's record after a time edit that legitimately moved
+  // the B-010 columns. No-op on the other payloads.
+  patchRecord: (record: LoggedRecord) => void;
   // Mutates the in-flight MEAL card's intakeRating after a chip tap. Pair with
   // rescheduleHide() for a visible confirmation window. No-op on a beat payload.
   patchIntakeRating: (rating: IntakeRating | null) => void;
@@ -210,10 +239,15 @@ interface MomentState {
   rescheduleHide: (durationMs: number) => void;
 }
 
-// Beat dwell: well under the 2s earned-moment cap; the gold glow blooms and
-// settles inside this window so the warm color never lingers on a resting
-// surface.
-const BEAT_DURATION_MS = 1400;
+// Named-card dwell. The retired white takeover held 1.4s — right for a terminal,
+// non-interactive flash, wrong for this card: it carries a sentence to read and a
+// "Change time" affordance to reach, so it takes the meal card's interactive
+// window. The two numbers are the same for the same reason, and neither is a
+// "moment" cap any more — the 2s earned-moment ceiling governed a surface that
+// OWNED the screen. This one doesn't (see NamedCompletionCard: the scrim is
+// pointerEvents="none", Home stays live underneath), so the dwell is sized by
+// what there is to do, not by how long the app may hold the owner hostage.
+const NAMED_DURATION_MS = 5000;
 // Meal-card dwell: longer because it's interactive — the owner needs time to
 // read the five WSAVA labels and tap deliberately before it auto-dismisses
 // (mirrors the retired toast's 5s window).
@@ -275,7 +309,7 @@ function clearHideTimer() {
 // Meal and dose cards are routine commits by construction — there is no symptom path
 // through them — so they take the success pattern.
 function playCommitHaptic(payload: MomentPayload) {
-  if (payload.kind === 'beat' && payload.tone === 'calm') commitSymptom();
+  if (payload.kind === 'named' && payload.tone === 'calm') commitSymptom();
   else commitRoutine();
 }
 
@@ -311,8 +345,8 @@ function present(
 export const useMomentStore = create<MomentState>((set) => ({
   visible: false,
   payload: null,
-  show: (payload, opts) =>
-    present(set, { kind: 'beat', tone: payload.tone, title: payload.title ?? 'Logged' }, opts, BEAT_DURATION_MS),
+  showNamed: (payload, opts) =>
+    present(set, { kind: 'named', ...payload }, opts, NAMED_DURATION_MS),
   showMeal: (payload, opts) =>
     present(
       set,
@@ -328,8 +362,18 @@ export const useMomentStore = create<MomentState>((set) => ({
   },
   patchOccurredAt: (occurredAt) =>
     set((state) =>
-      state.payload?.kind === 'meal' || state.payload?.kind === 'medication'
+      state.payload
         ? { payload: { ...state.payload, occurredAt } }
+        : {}
+    ),
+  // The named card's twin of patchOccurredAt for the confidence columns: a
+  // "found by" edit moves the discovery bound WITH the point (see
+  // resolveNamedTimeEdit), so the card's sentence has to re-derive off the new
+  // window or it would keep speaking the old one for the rest of its dwell.
+  patchRecord: (record) =>
+    set((state) =>
+      state.payload?.kind === 'named'
+        ? { payload: { ...state.payload, record } }
         : {}
     ),
   patchIntakeRating: (intakeRating) => {

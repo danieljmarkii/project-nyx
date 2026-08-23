@@ -215,3 +215,56 @@ describe('updateEvent — occurred_at_confidence is written only when asserted (
     });
   });
 });
+
+// CUL-606 — `severity` and `notes` became optional-by-omission, for the same
+// reason `confidence` already was, and the same failure mode in the other
+// direction: a caller that knows only the new time was forced to send values for
+// two columns it had never been told about, and `notes: null` is not "leave it
+// alone" — it is "delete what the owner wrote".
+//
+// The named completion card's "Change time" is exactly that caller, and both of
+// its paths (the /log simple-event step and the weight step) write an
+// owner-typed note. So the tap that corrected a timestamp would have silently
+// erased the note typed thirty seconds earlier, with no error and nothing on
+// screen to notice — the worst shape a data-loss bug can take.
+describe('updateEvent — severity and notes are written only when named (CUL-606)', () => {
+  const TIME_ONLY = {
+    occurred_at: '2026-07-01T09:30:00.000Z',
+    occurred_at_source: 'manual' as const,
+  };
+
+  it('preserves a stored note when the edit does not mention notes', async () => {
+    const db = freshDb();
+    seed(db, 'witnessed');
+
+    await updateEvent('e1', TIME_ONLY, adapter(db));
+
+    const row = read(db);
+    expect(row.notes).toBe('original note');
+    // ...and the field the edit IS about still lands.
+    expect(row.occurred_at).toBe('2026-07-01T09:30:00.000Z');
+    expect(row.synced).toBe(0);
+  });
+
+  // Presence is tested with `in`, not truthiness, so clearing a note stays
+  // possible — the edit screen relies on it.
+  it('still clears a note when null is passed EXPLICITLY', async () => {
+    const db = freshDb();
+    seed(db, 'witnessed');
+
+    await updateEvent('e1', { ...TIME_ONLY, notes: null }, adapter(db));
+
+    expect(read(db).notes).toBeNull();
+  });
+
+  it('leaves the confidence columns alone on a time-only edit too', async () => {
+    const db = freshDb();
+    seed(db, 'window', null, '2026-07-01T04:00:00.000Z');
+
+    await updateEvent('e1', TIME_ONLY, adapter(db));
+
+    const row = read(db);
+    expect(row.occurred_at_confidence).toBe('window');
+    expect(row.occurred_at_latest).toBe('2026-07-01T04:00:00.000Z');
+  });
+});

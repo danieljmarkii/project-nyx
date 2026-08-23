@@ -33,7 +33,7 @@ import { initAppConfig, refreshAppConfig } from '../hooks/useAppConfig';
 import { hydrateBetaOptIns } from '../lib/betaFeatures';
 import { MealCompletionCard } from '../components/ui/MealCompletionCard';
 import { MedicationCompletionCard } from '../components/ui/MedicationCompletionCard';
-import { CompletionMoment } from '../components/ui/CompletionMoment';
+import { NamedCompletionCard } from '../components/ui/NamedCompletionCard';
 import { Snackbar } from '../components/ui/Snackbar';
 import { ColdStartOverlay } from '../components/ColdStartOverlay';
 
@@ -309,7 +309,7 @@ export default function RootLayout() {
       </Stack>
       <MealCompletionCard />
       <MedicationCompletionCard />
-      <CompletionMoment />
+      <NamedCompletionCard />
       <Snackbar />
       <ColdStartOverlay />
     </>
