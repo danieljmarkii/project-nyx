@@ -109,4 +109,8 @@ And one **design decision routed to the PM** rather than taken: **CUL-645** — 
 
 The Profile tally rollback is the one piece of new logic without a test: `app/(tabs)/profile.tsx` has no suite, and standing one up for a screen that pulls supabase, storage and five stores is out of proportion to ten lines of wiring. The store-side signal it reads (`removed` + `payload.eventId`) is fully covered. `tests: N/A — screen wiring; the store signal it reads is tested` (Engineer exemption).
 
+Merged `origin/main` before shipping — three sibling sessions landed while this ran (CUL-599 glyph guards, **CUL-613 capture paths**, CUL-600 Home header). No file overlap, but CUL-613 is PR 4 of this same chain and added `guards/completionCard.test.ts` over the surface this PR rewrote; it passes against these changes. Post-merge: 259 suites / 5728 tests green.
+
+**One rule was promoted to CLAUDE.md** (Tier 1, § Code Conventions) because it generalises past this surface: *adjacent controls must not share hit area.* The 44pt floor and `hitSlop` solve reachability; neither solves ambiguity, and an overlap is invisible in a screenshot — so it is asserted in a test, and where the gap is tight the fix is asymmetric `hitSlop` rather than a wider row.
+
 One coupling cost worth recording: `momentStore` now reaches `lib/sync` → `lib/supabase` transitively, which throws at import time without env. Only `store/momentStore.test.ts` was affected (the three card suites already mock `lib/sync`); it mocks `lib/undoLog` at the module boundary, which is also what makes the reversal assertable.
