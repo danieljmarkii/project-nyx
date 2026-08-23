@@ -30,6 +30,7 @@ import { WhorlSpinner } from '../components/brand/WhorlSpinner';
 import { usePetStore } from '../store/petStore';
 import { useAuthStore } from '../store/authStore';
 import { useEventStore } from '../store/eventStore';
+import { useMomentStore, whenMealCardVisible } from '../store/momentStore';
 import { getDb } from '../lib/db';
 import { supabase } from '../lib/supabase';
 import { insertMeal } from '../lib/meals';
@@ -44,7 +45,6 @@ import {
   loadTrialProteinContext,
   foodContaminantFlag,
   addFlagCopy,
-  mealFlagCopy,
   noteTrialFlagShown,
   type TrialProteinContext,
 } from '../lib/trialContaminant';
@@ -117,6 +117,9 @@ export default function FoodCaptureScreen() {
   const { activePet } = usePetStore();
   const { user } = useAuthStore();
   const { prependEvent } = useEventStore();
+  // The meal completion card (CUL-613). Selected, not destructured off getState(),
+  // so this screen uses the same store handle every other meal-entry path does.
+  const showMealMoment = useMomentStore((st) => st.showMeal);
   const { fromLog, returnTo } = useLocalSearchParams<{ fromLog?: string; returnTo?: string }>();
   const cameFromMealLog = fromLog === '1';
   // B-625 — a return-aware exit. The default exit unwinds the whole stack to Home
@@ -157,10 +160,6 @@ export default function FoodCaptureScreen() {
   // Set once the owner taps "Add anyway", so a later re-tap of Save (or a bounce
   // between the confirm and edit steps) doesn't re-ask a question they answered.
   const trialAcknowledged = useRef(false);
-  // The heads-up the completion step reports, on the meal-log path only. Set at
-  // commit, rendered non-blockingly — never a gate (see attemptCommit).
-  const [loggedTrialFlag, setLoggedTrialFlag] =
-    useState<{ headline: string; detail: string } | null>(null);
 
   const [frontPhoto, setFrontPhoto] = useState<CapturedPhoto | null>(null);
   const [ingredientsPhoto, setIngredientsPhoto] = useState<CapturedPhoto | null>(null);
@@ -212,27 +211,32 @@ export default function FoodCaptureScreen() {
   // writing two events for the same meal.
   const submitting = useRef(false);
 
+  // How this screen leaves. Default: dismissAll() unwinds both the food-capture modal
+  // and the underlying meal-log picker so the owner lands on Home, not on a stale
+  // picker. When a screen pushed capture as a step of its own flow (returnToPusher,
+  // B-625), pop back to it instead so it isn't dismissed along with the capture —
+  // guarded by canGoBack so a lost history fails safe to dismissAll rather than a
+  // no-op. Shared by the add-only beat below and the meal path's card hand-off, so
+  // the two exits cannot drift.
+  function exitCapture() {
+    if (returnToPusher && router.canGoBack()) router.back();
+    else router.dismissAll();
+  }
+
+  // The add-only library-save beat. The MEAL path no longer reaches this — it hands
+  // off to the real completion card at commit (CUL-613) — so there is no trial
+  // heads-up to hold the beat open for any more, and the dwell is back to the plain
+  // 900ms confirmation it was sized for.
   useEffect(() => {
     if (step !== 'complete') return;
     Animated.parallel([
       Animated.spring(checkScale, { toValue: 1, useNativeDriver: true, tension: 60, friction: 7 }),
       Animated.timing(checkOpacity, { toValue: 1, duration: 150, useNativeDriver: true }),
     ]).start();
-    // Default exit: dismissAll() unwinds both the food-capture modal and the underlying
-    // meal-log picker so the user lands on Home, not on a stale picker. When a screen pushed
-    // capture as a step of its own flow (returnToPusher, B-625), pop back to it instead so it
-    // isn't dismissed along with the capture — guarded by canGoBack so a lost history still
-    // fails safe to dismissAll rather than a no-op.
-    // 900ms is the plain confirmation beat. A trial heads-up adds two lines of
-    // prose the owner has never seen and cannot get back by tapping (it is
-    // passive by design), so the beat holds long enough to read it — the same
-    // reasoning that extends the meal completion card's dwell when flagged.
-    const t = setTimeout(() => {
-      if (returnToPusher && router.canGoBack()) router.back();
-      else router.dismissAll();
-    }, loggedTrialFlag ? 3800 : 900);
+    const t = setTimeout(exitCapture, 900);
     return () => clearTimeout(t);
-  }, [step, loggedTrialFlag, returnToPusher]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step, returnToPusher]);
 
   // §6.1 flag-off: when photo extraction is disabled the flow has no camera path —
   // it opens directly on the manual edit step (no banner, no dead affordance). We
@@ -641,6 +645,9 @@ export default function FoodCaptureScreen() {
     // Write-time pet identity (multi-pet spec §6): read the store at the moment
     // of write, not the render-time closure (the queue-then-switch edge).
     const pet = usePetStore.getState().activePet;
+    // What the completion card needs, captured from the write itself. Stays null on
+    // the add-only path, which writes no meal and so has no record to speak for.
+    let loggedMeal: { eventId: string; occurredAt: string } | null = null;
     if (cameFromMealLog && pet) {
       // mealOccurredAt is seeded from EXIF (or now) on confirm-screen entry,
       // and may have been overridden by the user via the date-time picker —
@@ -653,6 +660,7 @@ export default function FoodCaptureScreen() {
         occurredAt: mealOccurredAt,
         occurredAtSource: mealOccurredAtSource,
       });
+      loggedMeal = { eventId, occurredAt: occurredAtIso };
       prependEvent({
         id: eventId,
         pet_id: pet.id,
@@ -673,9 +681,9 @@ export default function FoodCaptureScreen() {
       });
     }
 
-    // The log-time heads-up for THIS path (see attemptCommit): captured at commit
-    // so the completion step can report it. Only when a meal was actually
-    // written — an add-only commit already had its say in the soft confirm.
+    // The log-time heads-up for THIS path (see attemptCommit): resolved at commit
+    // and handed to the completion card. Only when a meal was actually written —
+    // an add-only commit already had its say in the soft confirm.
     //
     // Two guards this path needs and the picker paths get from
     // evaluateMealLogTimeFlag, which it deliberately does not call (the food is
@@ -693,10 +701,71 @@ export default function FoodCaptureScreen() {
       trialCtx != null &&
       !Number.isNaN(trialCtx.startedAtMs) &&
       mealOccurredAt.getTime() >= trialCtx.startedAtMs;
-    if (cameFromMealLog && pet && trialFlag && inTrialWindow) {
-      setLoggedTrialFlag(mealFlagCopy(trialFlag, pet.name));
-      void noteTrialFlagShown(trialFlag);
+    const cardTrialFlag = trialFlag && inTrialWindow ? trialFlag : null;
+
+    // CUL-613 — the meal-log path ends on the REAL meal completion card, not this
+    // screen's own beat. It used to render a hand-rolled ✓ over the word "Logged"
+    // and then dismiss, which meant a meal logged here silently skipped the two
+    // things every other meal path gets: the WSAVA intake chip row and "Change
+    // time" (CUL-368). Both files carried a comment saying every meal-entry path
+    // must route through showMeal; this path did not, and the comment could not
+    // fail a build. `guards/completionCard.test.ts` now can.
+    //
+    // The card is store-driven from the root layout, so it outlives this screen —
+    // we dismiss FIRST and reveal behind delayMs, exactly as the picker path does
+    // (app/log.tsx), so the card lands at the root layer instead of being occluded
+    // by the still-presented modal on iOS.
+    if (loggedMeal && pet) {
+      // Everything from here down is presentation — the meal is already on disk and
+      // synced. A throw must not reach commitFood's catch, because that releases the
+      // double-submit guard and a second tap would write a SECOND meal for the same
+      // bowl. A broken card is cosmetic; a duplicate meal reaches the vet report
+      // (the B-336 rule, applied to this path).
+      try {
+        exitCapture();
+        showMealMoment(
+          {
+            eventId: loggedMeal.eventId,
+            petId: pet.id,
+            occurredAt: loggedMeal.occurredAt,
+            foodType: type,
+            foodBrand: brand.trim(),
+            foodProductName: product.trim(),
+            foodFormat: format,
+            intakeRating: null,
+            // Passed in the payload rather than patched in afterwards: unlike the
+            // picker path, this screen has already resolved the flag synchronously
+            // by commit time, so there is nothing to wait for and no late-answer
+            // race to guard. showMeal reads it to size the dwell (the 7s flagged
+            // window) on its own.
+            trialFlag: cardTrialFlag,
+          },
+          { delayMs: 450 },
+        );
+        // Rule 3's ledger is spent only once the heads-up is genuinely on screen.
+        // It used to be written unconditionally at commit, so a card that never
+        // revealed still burned the food's one-per-trial budget and the picker path
+        // would then stay silent about it forever — "counted in heads-ups GIVEN"
+        // has to mean given.
+        if (cardTrialFlag) {
+          void whenMealCardVisible(loggedMeal.eventId)
+            .then((shown) => (shown ? noteTrialFlagShown(cardTrialFlag) : undefined))
+            // A failed ledger write costs at most ONE extra heads-up later, never a
+            // suppressed one — the safe direction, and the same one readHeadsUpLedger
+            // already fails in. Never let it surface: the meal is saved and this is
+            // bookkeeping about a note the owner has already read.
+            .catch((e) => console.warn('[food-capture] trial heads-up ledger write failed:', e));
+        }
+      } catch (e) {
+        console.error('[food-capture] meal saved, but its completion card failed:', e);
+      }
+      return;
     }
+
+    // Add-only: no meal was written, so there is no record for a completion card to
+    // speak — no occurred_at to change, no intake to ask about, nothing to undo. The
+    // library-save beat below stays (CUL-613 Option A, PM-ruled); its copy is in
+    // CUL-614's pass.
     setStep('complete');
   }
 
@@ -747,7 +816,11 @@ export default function FoodCaptureScreen() {
     setStep('edit');
   }
 
-  // ── Completion ──
+  // ── Completion (ADD-ONLY) ──
+  // The meal-log path does not reach here: it hands off to the real meal completion
+  // card (CUL-613), which carries the intake row + "Change time" this beat never
+  // could. What is left is the library save, which writes no event — so there is no
+  // record to speak, no occurred_at to change, and nothing to undo.
   if (step === 'complete') {
     return (
       <View style={styles.completeContainer}>
@@ -755,23 +828,12 @@ export default function FoodCaptureScreen() {
           <Text style={styles.checkMark}>✓</Text>
         </Animated.View>
         <Animated.Text style={[styles.loggedText, { opacity: checkOpacity }]}>
-          {/* The add-only path saves to the food LIBRARY — it does not log a meal, and (on the
-              /trial-foods path) it does not put the food on the trial's allowed set. Name the
-              real destination so "Added" can't read as "added to the list" (B-625, pm-review). */}
-          {cameFromMealLog ? 'Logged' : 'Saved to your foods'}
+          {/* This saves to the food LIBRARY — it does not log a meal, and (on the
+              /trial-foods path) it does not put the food on the trial's allowed set.
+              Name the real destination so "Added" can't read as "added to the list"
+              (B-625, pm-review). */}
+          Saved to your foods
         </Animated.Text>
-        {/* The Tier-2 heads-up on the meal-log path — reported, never asked. The
-            meal is already written by the time this renders. */}
-        {loggedTrialFlag && (
-          <Animated.View
-            style={[styles.completeFlag, { opacity: checkOpacity }]}
-            accessibilityRole="summary"
-            accessibilityLabel={`${loggedTrialFlag.headline} ${loggedTrialFlag.detail}`}
-          >
-            <Text style={styles.completeFlagHeadline}>{loggedTrialFlag.headline}</Text>
-            <Text style={styles.completeFlagDetail}>{loggedTrialFlag.detail}</Text>
-          </Animated.View>
-        )}
       </View>
     );
   }
@@ -1520,30 +1582,5 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: theme.weightMedium,
     color: theme.colorNeutralDark,
-  },
-  // The Tier-2 heads-up on the completion beat. Constrained width + centred so it
-  // reads as part of the beat rather than a banner, and the app's existing calm
-  // safety register (tinted accent + accent rail) rather than a new alarm state.
-  completeFlag: {
-    maxWidth: 320,
-    marginTop: theme.space1,
-    marginHorizontal: theme.space3,
-    paddingHorizontal: theme.space2,
-    paddingVertical: theme.space2,
-    borderRadius: theme.radiusMedium,
-    backgroundColor: theme.colorAccentLight,
-    borderColor: theme.colorAccent,
-    borderLeftWidth: 3,
-    gap: 4,
-  },
-  completeFlagHeadline: {
-    fontSize: theme.textMD,
-    fontWeight: theme.weightMedium,
-    color: theme.colorTextPrimary,
-  },
-  completeFlagDetail: {
-    fontSize: theme.textSM,
-    lineHeight: theme.textSM * 1.45,
-    color: theme.colorTextSecondary,
   },
 });
