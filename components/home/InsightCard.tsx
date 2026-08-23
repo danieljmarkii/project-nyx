@@ -4,7 +4,7 @@ import {
   Platform,
   Pressable,
   StyleSheet,
-  UIManager,
+  Text, UIManager,
   View,
 } from 'react-native';
 import { theme } from '../../constants/theme';
@@ -414,7 +414,10 @@ function LinkedPair({ proteins }: { proteins: string[] }) {
     >
       {proteins.map((protein, i) => (
         <View key={protein} style={styles.pairItem}>
-          {i > 0 && <ThemedText style={styles.pairLink}>+</ThemedText>}
+          {/* Icon glyph, not copy — stays a raw <Text>. These stand in for vector glyphs
+              (the B-745 GlyphSvg migration owns them), so they keep the system face rather
+              than taking the body family a sweep would give them. CUL-364 §7. */}
+          {i > 0 && <Text style={styles.pairLink}>+</Text>}
           <View style={styles.pairChip}>
             <ThemedText style={styles.pairChipText}>{displayProteinName(protein)}</ThemedText>
           </View>

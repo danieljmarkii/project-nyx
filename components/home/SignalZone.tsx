@@ -6,7 +6,7 @@ import {
   Platform,
   Pressable,
   StyleSheet,
-  View,
+  Text, View,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
@@ -985,7 +985,10 @@ function GhostCompare() {
               ]}
             />
           </View>
-          <ThemedText style={styles.cmpDash}>—</ThemedText>
+          {/* Icon glyph, not copy — stays a raw <Text>. These stand in for vector glyphs
+              (the B-745 GlyphSvg migration owns them), so they keep the system face rather
+              than taking the body family a sweep would give them. CUL-364 §7. */}
+          <Text style={styles.cmpDash}>—</Text>
         </View>
       ))}
     </View>

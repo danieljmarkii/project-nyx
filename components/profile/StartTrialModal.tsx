@@ -30,7 +30,7 @@
 import { Fragment, useCallback, useEffect, useState } from 'react';
 import {
   Alert, KeyboardAvoidingView, Modal, Platform, ScrollView,
-  StyleSheet, TextInput, TouchableOpacity, View,
+  StyleSheet, Text, TextInput, TouchableOpacity, View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import DateTimePicker from '@react-native-community/datetimepicker';
@@ -852,7 +852,10 @@ function AddRow({ label, onPress }: { label: string; onPress: () => void }) {
       accessibilityRole="button"
       accessibilityLabel={label}
     >
-      <ThemedText style={styles.addRowPlus}>＋</ThemedText>
+      {/* Icon glyph, not copy — stays a raw <Text>. Beyond that rule the cmap forces it:
+          no loaded Geist weight carries U+FF0B, so sweeping this hands the render to OS
+          fallback at a size tuned for a different face. CUL-364 §7. */}
+      <Text style={styles.addRowPlus}>＋</Text>
       <ThemedText style={styles.addRowText}>{label}</ThemedText>
     </TouchableOpacity>
   );

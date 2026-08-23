@@ -12,7 +12,7 @@
 //
 // The Pet tab is not a surface the wedge owner visits daily; the trial is the
 // thing they live with for eight weeks. That gap is the whole reason this exists.
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import { theme } from '../../constants/theme';
 import { Card } from '../ui/Card';
@@ -45,7 +45,10 @@ export function TrialStrip({ model, onPress }: Props) {
       <Card>
         <View style={styles.headerRow}>
           <ThemedText style={styles.header}>{model.header}</ThemedText>
-          <ThemedText style={styles.chevron}>›</ThemedText>
+          {/* Icon glyph, not copy — stays a raw <Text>. These stand in for vector glyphs
+              (the B-745 GlyphSvg migration owns them), so they keep the system face rather
+              than taking the body family a sweep would give them. CUL-364 §7. */}
+          <Text style={styles.chevron}>›</Text>
         </View>
 
         <View style={styles.progressTrack} testID="trial-strip-track">

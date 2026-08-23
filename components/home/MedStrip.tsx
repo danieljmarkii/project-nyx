@@ -23,7 +23,7 @@
 // withholding fact (§6) in the concern colour, never a cheery coverage line over a
 // refusal (N3).
 import { useEffect, useState } from 'react';
-import { Alert, Pressable, StyleSheet, View } from 'react-native';
+import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import { Check } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
@@ -197,7 +197,10 @@ export function MedStrip({ model, onPress, onConfirm }: Props) {
       >
         <View style={styles.headerRow}>
           <ThemedText style={styles.header}>{model.header}</ThemedText>
-          <ThemedText style={styles.chevron}>›</ThemedText>
+          {/* Icon glyph, not copy — stays a raw <Text>. These stand in for vector glyphs
+              (the B-745 GlyphSvg migration owns them), so they keep the system face rather
+              than taking the body family a sweep would give them. CUL-364 §7. */}
+          <Text style={styles.chevron}>›</Text>
         </View>
 
         {/* N2 — day progress and nothing else, and only when there is an honest

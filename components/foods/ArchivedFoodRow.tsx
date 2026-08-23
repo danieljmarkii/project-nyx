@@ -1,7 +1,8 @@
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, StyleSheet, TouchableOpacity } from 'react-native';
 import { theme } from '../../constants/theme';
 import { WhorlSpinner } from '../brand/WhorlSpinner';
 import { FORMAT_LABEL } from '../../lib/food';
+import { ThemedText } from '../ui/ThemedText';
 
 interface Props {
   brand: string;
@@ -44,13 +45,13 @@ export function ArchivedFoodRow({
           // approval badge (same reasoning as FoodRow's own chip comment).
           <View style={styles.trialChip} testID="archived-row-trial-chip">
             <View style={styles.trialChipDot} />
-            <Text style={styles.trialChipText} numberOfLines={1}>{trialChip}</Text>
+            <ThemedText style={styles.trialChipText} numberOfLines={1}>{trialChip}</ThemedText>
           </View>
         ) : null}
         {metaLine ? (
-          <Text style={styles.meta} numberOfLines={1}>{metaLine}</Text>
+          <ThemedText style={styles.meta} numberOfLines={1}>{metaLine}</ThemedText>
         ) : null}
-        <Text style={styles.product} numberOfLines={2}>{productName}</Text>
+        <ThemedText style={styles.product} numberOfLines={2}>{productName}</ThemedText>
       </View>
       <TouchableOpacity
         onPress={onRestore}
@@ -67,7 +68,7 @@ export function ArchivedFoodRow({
       >
         {restoring
           ? <WhorlSpinner size="sm" ground="day" />
-          : <Text style={styles.restoreText}>Restore</Text>}
+          : <ThemedText style={styles.restoreText}>Restore</ThemedText>}
       </TouchableOpacity>
     </View>
   );

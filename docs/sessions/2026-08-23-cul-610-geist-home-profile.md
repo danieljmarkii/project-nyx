@@ -43,3 +43,13 @@ That rule caught one site in this sweep that this session had reasoned past. `Si
 The two rules compose rather than compete, and the resolved CLAUDE.md passage states them as one: an explicit family on a child breaks the cascade, so a colour-only span **inherits** (raw `<Text>`), a styleless key-holder becomes a **`Fragment`**, and only a span that needs a *different* weight spells its own (`ThemedText`). Three arms, one reason.
 
 Merged `origin/main` into the branch; the conflict was resolved on meaning, not by keeping both sides.
+
+## Postscript 2 — CUL-608's glyph carve-out, and a cmap check worth keeping
+
+CUL-609 (#712) and CUL-608 (#713) landed before this branch merged, and CUL-608 had found a carve-out neither this sweep nor CUL-607 had: **a `<Text>` whose entire content is an icon glyph is not copy and stays raw**, keeping the system face. Applied here it reaches ten nodes — `✓` in `BreedPicker`, `＋` in `StartTrialModal`, `+` in `InsightCard`, `›` in `TrialStrip` and `MedStrip`, `→` in `TodayZone`, `—` in `SignalZone`, and three `·` dividers in `profile.tsx`. Mixed strings go the other way and stay swept (`All patterns ›`, `Full day ›`), which is their rule, not an exception to it.
+
+Two of the ten were **real regressions in this diff, not stylistic drift**. Rather than take the sibling's cmap claim on trust, this session parsed the shipped TTFs directly (a ~40-line `cmap` reader over format-4/12 subtables, all three loaded weights). It confirms the claim exactly: each loaded Geist face carries **728 codepoints** and **lacks U+2713 `✓`, U+FF0B `＋`, and U+2715 `✕`**, while `› → — · +` are all present. So sweeping the tick and the fullwidth plus was forcing a family that cannot render the character, handing it to OS fallback at a size tuned for Geist — a regression bought for nothing, since there is no prose on those nodes to gain the face. The two cmap-forced sites say so in their annotation, naming the codepoint; the other eight carry the standard CUL-608 comment.
+
+The generalisable bit: **a font sweep's blast radius is the cmap, not the call sites**, and the check is cheap enough to run rather than assume. The script is worth rebuilding for CUL-611's audit if any new face is ever loaded.
+
+Also of note, and the reason this postscript exists at all: the first attempt at these annotations shipped a scripted edit whose buffer assembly dropped the tail of every file it touched — seven files truncated at the insertion point. It was caught immediately because the change was verified by reading the result rather than trusting the script's own "ok" output, and nothing was committed. Same lesson as the completion-card guard in CLAUDE.md, one layer down: *a script that has only ever reported success has not been tested.*

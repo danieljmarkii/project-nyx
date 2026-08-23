@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, Animated, Platform, Modal, Pressable, Alert,
+  View, StyleSheet, TouchableOpacity, Animated, Platform, Modal, Pressable, Alert,
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { router } from 'expo-router';
 import { Check } from 'lucide-react-native';
 import { theme, shadows } from '../../constants/theme';
+import { ThemedText } from './ThemedText';
 import { useMomentStore } from '../../store/momentStore';
 import {
   removedNoticeCopy, HITSLOP_ACTION_LEFT, HITSLOP_ACTION_RIGHT,
@@ -429,8 +430,8 @@ export function MealCompletionCard() {
               accessibilityLiveRegion="polite"
               accessibilityLabel={notice.a11yLabel}
             >
-              <Text style={styles.title}>{notice.title}</Text>
-              <Text style={styles.subLabel}>{notice.detail}</Text>
+              <ThemedText style={styles.title}>{notice.title}</ThemedText>
+              <ThemedText style={styles.subLabel}>{notice.detail}</ThemedText>
             </View>
           ) : (
           <>
@@ -448,10 +449,10 @@ export function MealCompletionCard() {
                   has two implementations (EventRow, lib/dayEvents) and this is not the
                   place to mint a third; "Food" is true for all four foodType values,
                   including the 'other' and null ones neither of those covers. */}
-              <Text style={styles.title} numberOfLines={1}>
+              <ThemedText style={styles.title} numberOfLines={1}>
                 {foodName ? `Logged · ${foodName}` : 'Food logged'}
-              </Text>
-              <Text style={styles.subLabel}>{formatTime(occurredDate)}</Text>
+              </ThemedText>
+              <ThemedText style={styles.subLabel}>{formatTime(occurredDate)}</ThemedText>
             </View>
             {/* Undo sits LEFT of Change time (round-2 mock's R1 pairing). It is in
                 the header row rather than a footer of its own because everything
@@ -466,7 +467,7 @@ export function MealCompletionCard() {
               accessibilityRole="button"
               accessibilityLabel="Undo — remove this log"
             >
-              <Text style={styles.action}>Undo</Text>
+              <ThemedText style={styles.action}>Undo</ThemedText>
             </TouchableOpacity>
             <TouchableOpacity
               onPress={openPicker}
@@ -475,13 +476,13 @@ export function MealCompletionCard() {
               accessibilityRole="button"
               accessibilityLabel="Change time of this log"
             >
-              <Text style={styles.action}>Change time</Text>
+              <ThemedText style={styles.action}>Change time</ThemedText>
             </TouchableOpacity>
             </View>
           </View>
           {showIntake && (
             <View style={styles.intakeWrap}>
-              <Text style={styles.intakeLabel}>How much did {petName} eat?</Text>
+              <ThemedText style={styles.intakeLabel}>How much did {petName} eat?</ThemedText>
               <IntakeChipRow
                 value={payload.intakeRating ?? null}
                 onChange={handleIntakeChange}
@@ -504,8 +505,8 @@ export function MealCompletionCard() {
               accessibilityRole="summary"
               accessibilityLabel={`${contentsCopy.headline} ${contentsCopy.detail}`}
             >
-              <Text style={styles.flagHeadline}>{contentsCopy.headline}</Text>
-              <Text style={styles.flagDetail}>{contentsCopy.detail}</Text>
+              <ThemedText style={styles.flagHeadline}>{contentsCopy.headline}</ThemedText>
+              <ThemedText style={styles.flagDetail}>{contentsCopy.detail}</ThemedText>
             </View>
           )}
           {/* B-693 — the rung-3 MEMBERSHIP heads-up ("this isn't on the trial
@@ -523,9 +524,9 @@ export function MealCompletionCard() {
                   accessibilityRole="summary"
                   accessibilityLabel={`${membershipCopy.eyebrow}. ${membershipCopy.headline} ${membershipCopy.detail}`}
                 >
-                  <Text style={styles.membershipEyebrow}>{membershipCopy.eyebrow}</Text>
-                  <Text style={styles.flagHeadline}>{membershipCopy.headline}</Text>
-                  <Text style={styles.flagDetail}>{membershipCopy.detail}</Text>
+                  <ThemedText style={styles.membershipEyebrow}>{membershipCopy.eyebrow}</ThemedText>
+                  <ThemedText style={styles.flagHeadline}>{membershipCopy.headline}</ThemedText>
+                  <ThemedText style={styles.flagDetail}>{membershipCopy.detail}</ThemedText>
                 </View>
                 <TouchableOpacity
                   style={styles.membershipAddRow}
@@ -537,7 +538,7 @@ export function MealCompletionCard() {
                   {/* The "+" is chrome rendered at the call site, not baked into the
                       copy string (membershipFlagCopy carries words only) — the same
                       way the combo row hardcodes its own "+ Add …" literal below. */}
-                  <Text style={styles.membershipAddText}>+ {membershipCopy.addLine}</Text>
+                  <ThemedText style={styles.membershipAddText}>+ {membershipCopy.addLine}</ThemedText>
                 </TouchableOpacity>
               </View>
             </View>
@@ -559,7 +560,7 @@ export function MealCompletionCard() {
                   "Gave a med with this?" carried — flagged in investigation §9 + the
                   B2b pm-feature-review). The banner on the next screen echoes it
                   ("…you gave with it"). */}
-              <Text style={styles.comboText}>+ Add a med given with this</Text>
+              <ThemedText style={styles.comboText}>+ Add a med given with this</ThemedText>
             </TouchableOpacity>
           )}
           </>
@@ -580,7 +581,7 @@ export function MealCompletionCard() {
             absolute-positioned backdrop, silently dismissing the picker
             mid-edit. */}
         <Pressable style={styles.sheet} onPress={() => {}}>
-          <Text style={styles.sheetTitle}>When did this happen?</Text>
+          <ThemedText style={styles.sheetTitle}>When did this happen?</ThemedText>
           {draft && (
             <DateTimePicker
               value={draft}
@@ -595,7 +596,7 @@ export function MealCompletionCard() {
           )}
           <View style={styles.sheetActions}>
             <TouchableOpacity onPress={cancelPicker} hitSlop={12} style={styles.sheetBtn}>
-              <Text style={styles.sheetCancel}>Cancel</Text>
+              <ThemedText style={styles.sheetCancel}>Cancel</ThemedText>
             </TouchableOpacity>
             <TouchableOpacity
               onPress={savePicker}
@@ -603,7 +604,7 @@ export function MealCompletionCard() {
               style={styles.sheetBtn}
               disabled={saving}
             >
-              <Text style={[styles.sheetSave, saving && styles.sheetSaveDisabled]}>Save</Text>
+              <ThemedText style={[styles.sheetSave, saving && styles.sheetSaveDisabled]}>Save</ThemedText>
             </TouchableOpacity>
           </View>
         </Pressable>

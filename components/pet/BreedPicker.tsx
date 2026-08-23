@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
+import { StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { ThemedText } from '../ui/ThemedText';
 import { theme } from '../../constants/theme';
 import { filterBreeds } from '../../constants/breeds';
@@ -86,7 +86,10 @@ export function BreedPicker({ breeds, value, onSelect, onSelectOther }: BreedPic
                 accessibilityState={{ selected }}
               >
                 <ThemedText style={[styles.itemText, selected && styles.itemTextSelected]}>{b}</ThemedText>
-                {selected && <ThemedText style={styles.itemCheck}>✓</ThemedText>}
+                {/* Icon glyph, not copy — stays a raw <Text>. Beyond that rule the cmap forces it:
+                    no loaded Geist weight carries U+2713, so sweeping this hands the render to OS
+                    fallback at a size tuned for a different face. CUL-364 §7. */}
+                {selected && <Text style={styles.itemCheck}>✓</Text>}
               </TouchableOpacity>
             );
           })}
