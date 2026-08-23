@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-23
 
-PR 5 of 5, and the end of the completion chain (CUL-603, `docs/nyx-app-polish-requirements.md` §5). Shipped via **#707**. Follows CUL-604 (#700, the haptic vocabulary) and CUL-606 (#703, the named card). CUL-612 (Undo) and CUL-613 (capture paths) were `In Progress` in parallel sessions throughout, which shaped the scope: this PR stayed off `NamedCompletionCard.tsx` and off the capture screens, and touched `momentStore` additively only.
+PR 5 of 5, and the end of the completion chain (CUL-603, `docs/nyx-app-polish-requirements.md` §5). Shipped via **#707**. Follows CUL-604 (#700, the haptic vocabulary) and CUL-606 (#703, the named card). CUL-612 (Undo) and CUL-613 (capture paths) were `In Progress` in parallel sessions when this one started, which shaped the scope: this PR stayed off `NamedCompletionCard.tsx` and off the capture screens, and touched `momentStore` additively only. CUL-613 merged before this session closed — see the base-merge note at the end, which is where that scoping proved itself.
 
 ## What shipped
 
