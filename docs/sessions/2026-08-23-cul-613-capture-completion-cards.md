@@ -2,8 +2,8 @@
 
 **Date:** 2026-08-23
 
-PR 4 of 5 in the completion-system chain (CUL-603). No schema, no deploy, no flag.
-Spec: `docs/nyx-app-polish-requirements.md` §5. Closes CUL-368.
+Shipped via #706. PR 4 of 5 in the completion-system chain (CUL-603). No schema, no
+deploy, no flag. Spec: `docs/nyx-app-polish-requirements.md` §5. Closes CUL-368.
 
 ## What was wrong
 
