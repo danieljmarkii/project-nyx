@@ -1054,6 +1054,11 @@ function monitoringCase(): ReportInput {
     ],
     dietTrials: [],
     vetVisits: [{ visitedAt: '2026-06-02', clinicName: 'Riverside Veterinary', vetName: 'Dr. A. Chen', reason: 'chronic intermittent vomiting — begin workup' }],
+    // `activeFrom` here is deliberately INERT: buildConcurrentChanges passes a null start
+    // for every free_choice arrangement (B-233, PM-confirmed — the column records when the
+    // owner first LOGGED the food, not when the bowl went down), so the report says
+    // "ongoing, start not recorded" no matter what date sits here. Kept realistic rather
+    // than null so the row looks like a real one, but do not read the render as echoing it.
     feedingArrangements: [
       { id: 'fa-dry', foodItemId: DRY.foodItemId, method: 'free_choice', activeFrom: '2025-11-01', activeUntil: null, isShared: false, primaryProtein: 'chicken', foodLabel: `${DRY.brand} ${DRY.product}`, proteins: DRY.proteins, ingredientsNotes: DRY.ingredientsNotes, extractionConfidence: { proteins: 0.91 } },
     ],
