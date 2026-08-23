@@ -37,6 +37,23 @@ import { ESTIMATE_HEADROOM, estimateTextWidth } from './textWidth';
  * the two — but if the shared table ever needs a wider margin, this surface is not
  * the reason.
  *
+ * ── Two boundaries this ladder does NOT cover, stated so they are not inferred ──
+ *
+ * 1. DYNAMIC TYPE. The rungs are resolved against UNSCALED point sizes — nothing here
+ *    reads `fontScale`. The header deliberately lets the name scale (unlike the tab,
+ *    which pins its labels because its box cannot grow), so at accessibility sizes the
+ *    chosen rung is no longer the one that fits and the row falls through to its
+ *    ellipsis floor sooner than the arithmetic says. That degrades the way the ruling
+ *    intends rather than breaking, which is why it is documented and not defended
+ *    against — but a rung is a claim about the default text size only.
+ *
+ * 2. THE OTHER LADDER. This resolves the HEADER's name and knows nothing about the Pet
+ *    tab's (`lib/petTabLabel.ts`). The two were ruled separately and are composed by
+ *    nothing: on a narrow frame a long name can tail here AND fall back to the literal
+ *    word "Pet" there, so the pet's full name renders nowhere on Home at once. That is
+ *    a product question rather than a bug in either module — both are behaving as
+ *    ruled — and it is filed rather than papered over here.
+ *
  * The geometry constants below are exported and consumed by the header's own
  * stylesheet rather than duplicated into it: the budget and the rendered layout are
  * the same fact, and splitting them is how a name starts fitting the arithmetic
@@ -63,11 +80,20 @@ export const HEADER_RIGHT_GAP = 10;
  */
 export const HEADER_CLUSTER_GAP = 12;
 
-/** The Ask pill's fixed furniture: dot + gap + horizontal padding + its 1pt border. */
-const ASK_DOT_SIZE = 6;
-const ASK_DOT_GAP = 5;
-const ASK_PADDING_X = 10;
-const ASK_BORDER = 1;
+/**
+ * The Ask pill's fixed furniture: dot + gap + horizontal padding + its 1pt border.
+ *
+ * Exported, and consumed by the header's stylesheet and its JSX, for the same reason
+ * everything else here is: `askPillWidth()` subtracts these from the name's budget,
+ * so if the pill RENDERS different numbers the name is being sized against a pill
+ * that does not exist. They agreed by coincidence when this shipped as private
+ * constants; they now agree by construction. (CUL-599 shipped a follow-up commit for
+ * precisely this: a budget protected by a 6pt padding the tab never rendered.)
+ */
+export const ASK_DOT_SIZE = 6;
+export const ASK_DOT_GAP = 5;
+export const ASK_PADDING_X = 10;
+export const ASK_BORDER = 1;
 export const ASK_PILL_LABEL = 'Ask';
 
 /**

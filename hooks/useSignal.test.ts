@@ -13,11 +13,16 @@ import type { CachedFinding } from '../lib/signal';
 // Multi-pet safety regression (code-reviewed on B-284 PR N2): a naive "read
 // petId from one store, findings from another hook's state" pairing can, on a
 // pet SWITCH, momentarily pair the NEW pet's id with the PREVIOUS pet's still-
-// cached findings — writing the wrong pet's finding signature into the wrong
-// pet's `seenSignatures` entry. useSignal's render-time reset (a ref-compared
-// setState call in the render body, not an effect) is what closes that window;
-// this pins that `findings` is ALREADY cleared in the very render that observes
-// the new petId, before any async re-fetch has had a chance to run.
+// cached findings. useSignal's render-time reset (a ref-compared setState call in
+// the render body, not an effect) is what closes that window; this pins that
+// `findings` is ALREADY cleared in the very render that observes the new petId,
+// before any async re-fetch has had a chance to run.
+//
+// The concrete leak it was written for — the wrong pet's finding signature landing
+// in the wrong pet's `seenSignatures` entry — is gone with the CulpritMark pulse
+// (CUL-600 / D4), along with that store. What is pinned below is the INVARIANT that
+// outlives it: the id and the findings this hook returns always describe the same
+// pet, by construction rather than by every consumer remembering to check.
 
 // useFocusEffect needs a real navigation context this bare renderHook doesn't
 // provide; mirror its actual contract (run the effect while "focused", re-run

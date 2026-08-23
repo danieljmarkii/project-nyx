@@ -12,6 +12,11 @@ import { OwnerAvatar } from '../settings/OwnerAvatar';
 import { PetSwitcherSheet } from '../pet/PetSwitcherSheet';
 import { useAllowlistFlag } from '../../hooks/useAppConfig';
 import {
+  ASK_BORDER,
+  ASK_DOT_GAP,
+  ASK_DOT_SIZE,
+  ASK_PADDING_X,
+  ASK_PILL_LABEL,
   HEADER_AVATAR_GAP,
   HEADER_AVATAR_SIZE,
   HEADER_CHEVRON_GAP,
@@ -149,7 +154,7 @@ export function HomeHeader() {
               accessibilityLabel={`Ask about ${activePet.name}`}
             >
               <View style={styles.askDot} />
-              <ThemedText style={styles.askLabel}>Ask</ThemedText>
+              <ThemedText style={styles.askLabel}>{ASK_PILL_LABEL}</ThemedText>
             </TouchableOpacity>
           ) : null}
           <TouchableOpacity
@@ -222,18 +227,20 @@ const styles = StyleSheet.create({
   askPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
-    borderWidth: 1,
+    // Every dimension the name's width budget subtracts, rendered from the same
+    // constant it subtracts — see askPillWidth() in lib/headerName.ts.
+    gap: ASK_DOT_GAP,
+    borderWidth: ASK_BORDER,
     borderColor: theme.colorBorderStrong,
     borderRadius: theme.radiusFull,
-    paddingHorizontal: 10,
+    paddingHorizontal: ASK_PADDING_X,
     paddingVertical: 5,
     backgroundColor: theme.colorSurface,
   },
   askDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
+    width: ASK_DOT_SIZE,
+    height: ASK_DOT_SIZE,
+    borderRadius: ASK_DOT_SIZE / 2,
     backgroundColor: theme.colorAccent,
   },
   askLabel: {

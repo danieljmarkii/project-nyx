@@ -3,7 +3,15 @@ import { HomeHeader, HOME_HEADER_CONTENT_HEIGHT } from './HomeHeader';
 import { usePetStore, type Pet } from '../../store/petStore';
 import { useAuthStore } from '../../store/authStore';
 import { theme } from '../../constants/theme';
-import { HEADER_AVATAR_SIZE, HEADER_NAME_RUNGS } from '../../lib/headerName';
+import {
+  ASK_BORDER,
+  ASK_DOT_GAP,
+  ASK_DOT_SIZE,
+  ASK_PADDING_X,
+  ASK_PILL_LABEL,
+  HEADER_AVATAR_SIZE,
+  HEADER_NAME_RUNGS,
+} from '../../lib/headerName';
 
 // The Home header, H2a (CUL-600 / app-polish spec §2 DP-2, rulings D3 + D4).
 //
@@ -280,5 +288,30 @@ describe('the right cluster is unchanged (B-228 D5 placement)', () => {
   it('keeps the owner-avatar doorway into You', () => {
     const { getByLabelText } = render(<HomeHeader />);
     getByLabelText('You — account and settings');
+  });
+
+  it('renders the pill from the very constants its width budget subtracts', () => {
+    // The name is sized against `askPillWidth()`, which is built from these five
+    // values. If the pill RENDERS different numbers, the name is being fitted around
+    // a pill that does not exist — and it would be correct only by coincidence, which
+    // is how CUL-599 ended up with a budget protected by a padding the tab never
+    // drew. This is the assertion that makes it correct by construction.
+    const { getByLabelText, toJSON } = render(<HomeHeader />);
+    const pill = Object.assign(
+      {},
+      ...[getByLabelText('Ask about Biscuit').props.style].flat(2).filter(Boolean),
+    );
+    expect(pill.gap).toBe(ASK_DOT_GAP);
+    expect(pill.borderWidth).toBe(ASK_BORDER);
+    expect(pill.paddingHorizontal).toBe(ASK_PADDING_X);
+
+    const dot = collect(toJSON(), 'View')
+      .map((n) => Object.assign({}, ...[n.props.style].flat(2).filter(Boolean)))
+      .find((st) => st.backgroundColor === theme.colorAccent);
+    expect(dot.width).toBe(ASK_DOT_SIZE);
+    expect(dot.height).toBe(ASK_DOT_SIZE);
+
+    // The label too: its width is estimated from this exact string.
+    expect(allText(toJSON())).toContain(ASK_PILL_LABEL);
   });
 });
