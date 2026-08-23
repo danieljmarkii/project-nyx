@@ -37,11 +37,12 @@ import { WhorlSpinner } from '../components/brand/WhorlSpinner';
 import { usePetStore } from '../store/petStore';
 import { useAuthStore } from '../store/authStore';
 import { useEventStore } from '../store/eventStore';
+import { useMomentStore } from '../store/momentStore';
 import { getDb } from '../lib/db';
 import { supabase } from '../lib/supabase';
 import { insertMedicationDose } from '../lib/medicationDose';
 import {
-  initialStrengthConfirmed, canSaveMedicationCapture,
+  initialStrengthConfirmed, canSaveMedicationCapture, drugDisplayName,
   MEDICATION_FORM_OPTIONS, MEDICATION_ROUTE_OPTIONS,
 } from '../lib/medications';
 import {
@@ -81,6 +82,9 @@ export default function MedicationCaptureScreen() {
   const { activePet } = usePetStore();
   const { user } = useAuthStore();
   const { prependEvent } = useEventStore();
+  // The dose completion card (CUL-613) — the same store handle the picker path
+  // (app/log.tsx) and the regimen card (app/(tabs)/profile.tsx) fire.
+  const showMedicationMoment = useMomentStore((st) => st.showMedication);
   const { fromLog } = useLocalSearchParams<{ fromLog?: string }>();
   // When launched from the log flow the first dose is logged on confirm
   // (add-then-log, exactly like picking an existing drug). Without it, this is a
@@ -391,8 +395,58 @@ export default function MedicationCaptureScreen() {
         created_at: result.now,
         updated_at: result.now,
       });
+
+      // CUL-613 — the first-dose path ends on the REAL dose completion card, not
+      // this screen's hand-rolled ✓. That beat showed the word "Logged" over a dose
+      // written 'given' and then dismissed, so the affirmative was the only thing
+      // this path could ever record: no adherence chips to downgrade it, no vehicle
+      // row, no "Change time". Every other dose path (the picker, the regimen card)
+      // has offered all three since B-117 PR 3.
+      //
+      // Everything below the write is presentation — the dose is on disk and queued
+      // for sync. Contained so a throw cannot reach commitInner's caller and release
+      // the double-submit guard: a released guard means a second tap writes a SECOND
+      // dose for the same pill, which is a real double-dose in the vet report. A
+      // broken card is cosmetic and self-corrects (History and the dose detail read
+      // ground truth).
+      //
+      // NO double-dose check here, deliberately (contrast app/log.tsx, which fires
+      // getDoubleDoseFlag on its dose path). That detector keys on
+      // medication_item_id, and this screen mints a fresh uuid for the catalog row
+      // it is creating — a drug that did not exist a moment ago has no prior doses
+      // to repeat, so the check could only ever return nothing. It becomes live for
+      // this path the day capture can resolve onto an EXISTING library item.
+      try {
+        // dismissAll() unwinds this modal and the underlying medication picker so the
+        // owner lands on Home; the card reveals behind delayMs at the root layer, so
+        // it isn't occluded by the still-presented modal on iOS (the picker path's
+        // shape, app/log.tsx).
+        router.dismissAll();
+        showMedicationMoment(
+          {
+            eventId: result.eventId,
+            petId: pet.id,
+            medicationItemId,
+            occurredAt: result.occurredAtIso,
+            // B-171 — name the drug the way the owner does (brand when present), so
+            // the card confirms with the word they just typed or confirmed on the
+            // label. The generic is the belt-and-braces fallback for a blank one.
+            drugName: drugDisplayName(trimmedGeneric, trimmedBrand) ?? trimmedGeneric,
+            adherence: 'given', // mirrors the write — the owner's affirmative "log dose" tap
+            howGiven: null,     // the capture flow never asks; the card's chips can set it
+          },
+          { delayMs: 450 },
+        );
+      } catch (e) {
+        console.error('[medication-capture] dose saved, but its completion card failed:', e);
+      }
+      return;
     }
 
+    // Add-only: no dose was written, so there is no record for a completion card to
+    // speak — nothing to change the time of, no adherence to state, nothing to undo.
+    // The library-save beat below stays (CUL-613 Option A, PM-ruled); its copy is in
+    // CUL-614's pass.
     setStep('complete');
   }
 
@@ -407,7 +461,10 @@ export default function MedicationCaptureScreen() {
     setStep('edit');
   }
 
-  // ── Completion ──
+  // ── Completion (ADD-ONLY) ──
+  // The first-dose path does not reach here: it hands off to the real dose completion
+  // card (CUL-613), which carries the adherence chips + vehicle row + "Change time"
+  // this beat never could. What is left is the catalog save, which writes no event.
   if (step === 'complete') {
     return (
       <View style={styles.completeContainer}>
@@ -415,7 +472,7 @@ export default function MedicationCaptureScreen() {
           <Text style={styles.checkMark}>✓</Text>
         </Animated.View>
         <Animated.Text style={[styles.loggedText, { opacity: checkOpacity }]}>
-          {logFirstDose ? 'Logged' : 'Added'}
+          Added
         </Animated.Text>
       </View>
     );

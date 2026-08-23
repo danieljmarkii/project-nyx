@@ -3,7 +3,6 @@ import { useFocusEffect } from 'expo-router';
 import { getDb } from '../lib/db';
 import { usePetStore } from '../store/petStore';
 import { useSyncStore } from '../store/syncStore';
-import { useSignalMarkStore } from '../store/signalMarkStore';
 import {
   readSignalCache,
   isSignalCacheStale,
@@ -16,9 +15,7 @@ import {
   bannerCopy,
   buildingDayNumber,
   deriveDisplayState,
-  hasUnseenFinding,
   selectCrossPetSafetyFinding,
-  signalFindingsSignature,
   validateBannerPhrasing,
   type DisplayState,
 } from '../lib/signalCopy';
@@ -31,9 +28,6 @@ export interface SignalState {
   signalText: string | null;
   petName: string;
   isLoading: boolean;
-  /** The CulpritMark pulse contract (B-284 §3) — true while this pet has a live,
-   * unseen finding set. */
-  hasUnseenSignal: boolean;
   /** E1 building-state headline inputs (B-721 SR-2, §6): the B-421 local-day count
    * from the pet's first logged event (day-1-inclusive, min 1) and the total
    * non-deleted event count. Computed from the pet's local events for EVERY state
@@ -48,14 +42,6 @@ export interface SignalState {
    * acknowledgment line above the still-readable findings; read only on the flag-on
    * surface (the flag-off Signal ignores it, so it's invisible there — FR-FLAG-2). */
   acknowledging: boolean;
-  /** Marks THIS pet's current finding set as seen (spec §3 — "flips false when
-   * the Signal zone is viewed"). Bound to this hook instance's own petId +
-   * findings — always a consistent pair by construction, so callers never have
-   * to re-derive "which pet do these findings belong to" from a separate store
-   * (that mismatch is exactly the multi-pet leak this contract must not allow:
-   * one pet's signature must never land under another pet's key). No-op before
-   * a pet is loaded. */
-  markSeen: () => void;
 }
 
 // Window for "recent activity" — distinguishes building/no_pattern (still active)
@@ -141,14 +127,17 @@ export function useSignal(): SignalState {
   // Synchronous reset on a pet SWITCH — React's documented "adjust state while
   // rendering" pattern (a ref-compared setState call in the render body, not an
   // effect). This must happen in the SAME render pass as the petId change, not
-  // a tick later in an effect: `hasUnseenSignal`/`markSeen` below are derived
-  // from `petId` and `findings` together, and if `findings` still held the
-  // PREVIOUS pet's live data while `petId` already pointed at the new pet, a
-  // consumer that reads both in that window (e.g. a sibling's own effect) could
-  // pair pet B's id with pet A's findings — writing pet A's finding signature
-  // into pet B's `seenSignatures` entry (a real cross-pet leak, code-reviewed
-  // regression on this PR). Clearing here closes that window entirely instead
-  // of narrowing it.
+  // a tick later in an effect: if `findings` still held the PREVIOUS pet's live
+  // data while `petId` already pointed at the new pet, any consumer that reads
+  // both in that window (a sibling's own effect, a memo keyed on the pair) is
+  // free to attribute pet A's findings to pet B. Clearing here closes that
+  // window entirely instead of narrowing it.
+  //
+  // The concrete leak this was written for — pet A's finding signature landing
+  // under pet B's key in the CulpritMark pulse's seen-signature store — is gone
+  // with the pulse (CUL-600 / D4). The reset is NOT: it is what makes "the id
+  // and the findings this hook returns always describe the same pet" true by
+  // construction, and every future consumer inherits that for free.
   const resetPetRef = useRef<string | null>(null);
   if (petId !== resetPetRef.current) {
     resetPetRef.current = petId;
@@ -209,26 +198,11 @@ export function useSignal(): SignalState {
     localCtx.hasRecentActivity,
     localCtx.hasSubstantialHistory,
   );
-  const seenSignature = useSignalMarkStore((s) => (petId ? s.seenSignatures[petId] : undefined));
-  const hasUnseenSignal = hasUnseenFinding(displayState, findings, seenSignature);
-
   // B-721 SR-3 (§5.3) — the acknowledgment flag is owned entirely by the regen lifecycle
   // (raised in triggerSignalRegenDebounced, cleared when the LATEST log's regen settles,
   // with a fail-quiet ceiling there for a hung regen), so the hook only READS it. Keyed
   // by the active pet, so a background pet's regen never shows an ack on this pet's zone.
   const acknowledging = useSyncStore((s) => (petId ? s.signalAcknowledging[petId] ?? false : false));
-  // Closes over THIS render's petId + findings — always the pair the render-time
-  // reset above guarantees are consistent, so a caller can never accidentally
-  // re-pair a stale findings array with the wrong pet's id (see the comment above).
-  // Guards on findings.length itself (not just trusting the caller checked
-  // displayState === 'live') — there is nothing to mark seen for an empty set,
-  // and writing an empty-signature entry would be a wasted store write with no
-  // useful meaning.
-  const markSeen = useCallback(() => {
-    if (!petId || findings.length === 0) return;
-    useSignalMarkStore.getState().markSeen(petId, signalFindingsSignature(findings));
-  }, [petId, findings]);
-
   return {
     findings,
     coverage,
@@ -236,11 +210,9 @@ export function useSignal(): SignalState {
     signalText,
     petName,
     isLoading,
-    hasUnseenSignal,
     dayNumber: localCtx.dayNumber,
     eventCount: localCtx.eventCount,
     acknowledging,
-    markSeen,
   };
 }
 
