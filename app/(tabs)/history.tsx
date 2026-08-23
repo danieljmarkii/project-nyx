@@ -1,11 +1,11 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import {
-  View, Text, StyleSheet, FlatList, TouchableOpacity, Alert, RefreshControl,
+  View, StyleSheet, FlatList, TouchableOpacity, Alert, RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, router, useLocalSearchParams } from 'expo-router';
 import { theme } from '../../constants/theme';
-import { EmptyState } from '../../components/ui';
+import { EmptyState, ThemedText } from '../../components/ui';
 import { DateScopeControl } from '../../components/history/DateScopeControl';
 import { TypeScopeControl } from '../../components/history/TypeScopeControl';
 import { DAY_KEY_RE, effectiveRange, coerceDatePreset } from '../../lib/historyDateFilter';
@@ -449,7 +449,7 @@ export default function HistoryScreen() {
           cue, and the Medication filter sat undiscoverable past the fold. */}
       <View style={styles.filterSection}>
         <View style={styles.headerRow}>
-          <Text style={styles.title}>History</Text>
+          <ThemedText style={styles.title}>History</ThemedText>
           <View style={styles.scopeRow}>
             <TypeScopeControl value={typeFilter} onChange={handleTypeFilter} />
             <DateScopeControl
@@ -526,7 +526,7 @@ export default function HistoryScreen() {
           ListFooterComponent={
             hasMore && merged.length > 0 ? (
               <TouchableOpacity style={styles.loadMore} onPress={handleLoadMore} activeOpacity={0.7}>
-                <Text style={styles.loadMoreText}>Load more</Text>
+                <ThemedText style={styles.loadMoreText}>Load more</ThemedText>
               </TouchableOpacity>
             ) : null
           }

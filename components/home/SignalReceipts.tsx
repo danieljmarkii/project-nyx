@@ -14,7 +14,7 @@
 // card rail's `width: 3` in InsightCard — component-internal dimensions, not tokens.
 
 import { type ReactNode } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 import { ThemedText } from '../ui/ThemedText';
 import { theme } from '../../constants/theme';
 import type { CompareRow, DotLaneModel, PhoneScriptFact } from '../../lib/signalCopy';
@@ -133,7 +133,11 @@ export function PhoneScript({ facts }: { facts: PhoneScriptFact[] }) {
     <View style={styles.script}>
       {facts.map((f, i) => (
         <ThemedText key={`fact-${i}`} style={styles.scriptItem}>
-          <ThemedText style={styles.scriptLabel}>{f.label}: </ThemedText>
+          {/* Deliberately a raw Text (CUL-607's rule, CLAUDE.md § ThemedText): the label
+              differs from the sentence only in colour, so it must INHERIT the resolved
+              face. A ThemedText here would inject the regular family and change the face
+              mid-line the moment scriptItem gains a weight. */}
+          <Text style={styles.scriptLabel}>{f.label}: </Text>
           {f.value}
         </ThemedText>
       ))}

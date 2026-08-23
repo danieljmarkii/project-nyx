@@ -33,3 +33,13 @@ The sixth was different. `TodayZone`'s count line wrapped each chip in a **style
 `tsc --noEmit` clean. `jest --ci`: 5789 tests / 261 suites green, including the 256 over the swept components and all four `guards/` suites — `ownerFacingCopy` scans `*Text` tags, so swapping a call site keeps it in copy-scan rather than moving it out.
 
 The one risk no test covers: Geist's metrics differ from the system face, so a label can wrap or a number column can lose its alignment without any assertion noticing. That is the whole content of the manual QA step, and it is the reason the sweeps were scoped one surface-family per PR.
+
+## Postscript — CUL-607 landed mid-wrap and sharpened the nested-span rule
+
+The History sweep (#711) merged while this session was wrapping, and it had reached the *same* hazard from the other side, in the same CLAUDE.md line — so the merge conflict was a real one, not a formatting collision. Their finding: an inner span that differs from its parent **only in colour** must stay a raw `<Text>`, because a `ThemedText` there injects an explicit family and ships a **face change mid-sentence** that no test catches and no diff shows.
+
+That rule caught one site in this sweep that this session had reasoned past. `SignalReceipts :: scriptLabel` is colour-only, and the swap was benign *only because* its parent happens to carry no weight — which is precisely the "renders identically today, breaks in an unrelated diff later" shape flagged one paragraph up for `TodayZone`. Applying the rule to the parent and not to the sibling was inconsistent. It is now a raw `<Text>` with the in-place comment CUL-607's convention prescribes, so CUL-611's grep-audit meets a rationale rather than a bare violation.
+
+The two rules compose rather than compete, and the resolved CLAUDE.md passage states them as one: an explicit family on a child breaks the cascade, so a colour-only span **inherits** (raw `<Text>`), a styleless key-holder becomes a **`Fragment`**, and only a span that needs a *different* weight spells its own (`ThemedText`). Three arms, one reason.
+
+Merged `origin/main` into the branch; the conflict was resolved on meaning, not by keeping both sides.
