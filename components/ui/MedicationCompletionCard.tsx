@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, Animated, Platform, Modal, Pressable, Alert,
+  View, StyleSheet, TouchableOpacity, Animated, Platform, Modal, Pressable, Alert,
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Check } from 'lucide-react-native';
 import { theme, shadows } from '../../constants/theme';
+import { ThemedText } from './ThemedText';
 import {
   removedNoticeCopy, HITSLOP_ACTION_LEFT, HITSLOP_ACTION_RIGHT,
 } from '../../lib/completionCard';
@@ -330,8 +331,8 @@ export function MedicationCompletionCard() {
             accessibilityLiveRegion="polite"
             accessibilityLabel={notice.a11yLabel}
           >
-            <Text style={styles.title}>{notice.title}</Text>
-            <Text style={styles.subLabel}>{notice.detail}</Text>
+            <ThemedText style={styles.title}>{notice.title}</ThemedText>
+            <ThemedText style={styles.subLabel}>{notice.detail}</ThemedText>
           </View>
         ) : (
         <>
@@ -340,8 +341,8 @@ export function MedicationCompletionCard() {
             <Check size={18} color={theme.colorMomentConfirm} strokeWidth={3} />
           </Animated.View>
           <View style={styles.labelCol}>
-            <Text style={styles.title} numberOfLines={1}>{title}</Text>
-            <Text style={styles.subLabel} numberOfLines={1}>{subLabel}</Text>
+            <ThemedText style={styles.title} numberOfLines={1}>{title}</ThemedText>
+            <ThemedText style={styles.subLabel} numberOfLines={1}>{subLabel}</ThemedText>
           </View>
           {/* "Change time" is scoped to a STANDALONE dose — where the subLabel IS the
               logged time, giving the exact 1:1 with the meal card (the button sits next
@@ -362,7 +363,7 @@ export function MedicationCompletionCard() {
               accessibilityRole="button"
               accessibilityLabel="Undo — remove this dose"
             >
-              <Text style={styles.action}>Undo</Text>
+              <ThemedText style={styles.action}>Undo</ThemedText>
             </TouchableOpacity>
             {!isCombo && (
               <TouchableOpacity
@@ -372,7 +373,7 @@ export function MedicationCompletionCard() {
                 accessibilityRole="button"
                 accessibilityLabel="Change time of this dose"
               >
-                <Text style={styles.action}>Change time</Text>
+                <ThemedText style={styles.action}>Change time</ThemedText>
               </TouchableOpacity>
             )}
           </View>
@@ -384,7 +385,7 @@ export function MedicationCompletionCard() {
               whose vehicle is not yet rated (isGivenAssumed — that 'given' is the app's
               default under uncertainty, not the owner's word). Passing the live adherence
               keeps this line in step with the chips through the 1500ms post-tap confirm hold. */}
-          <Text style={styles.adherenceLabel}>
+          <ThemedText style={styles.adherenceLabel}>
             {doseAdherencePrompt({
               petName,
               inDoubt,
@@ -395,12 +396,12 @@ export function MedicationCompletionCard() {
                 adherence: payload.adherence,
               }),
             })}
-          </Text>
+          </ThemedText>
           {/* In-doubt only: the faint reason, so the owner doesn't have to recall they
               marked the food refused on the now-dismissed meal card. Factual, never
               "fussy", never reassuring. */}
           {inDoubt ? (
-            <Text style={styles.inDoubtReason}>{comboInDoubtReason({ petName })}</Text>
+            <ThemedText style={styles.inDoubtReason}>{comboInDoubtReason({ petName })}</ThemedText>
           ) : null}
           <AdherenceChipRow
             value={payload.adherence}
@@ -429,14 +430,14 @@ export function MedicationCompletionCard() {
             accessibilityRole="summary"
             accessibilityLabel={doubleDoseCopy}
           >
-            <Text style={styles.doubleDoseText}>{doubleDoseCopy}</Text>
+            <ThemedText style={styles.doubleDoseText}>{doubleDoseCopy}</ThemedText>
           </View>
         )}
         {/* B-156 Slice B — the optional, subordinate vehicle row. Skippable and
             default-null: the owner can ignore it entirely and the card still
             auto-dismisses; it never gates dismiss and reads clean when unset. */}
         <View style={styles.vehicleWrap}>
-          <Text style={styles.vehicleLabel}>How was it given? (optional)</Text>
+          <ThemedText style={styles.vehicleLabel}>How was it given? (optional)</ThemedText>
           <VehicleChipRow
             value={payload.howGiven}
             onChange={handleVehicleChange}
@@ -464,7 +465,7 @@ export function MedicationCompletionCard() {
           are captured here and don't fall through to the absolute-positioned backdrop,
           silently dismissing the picker mid-edit. */}
       <Pressable style={styles.sheet} onPress={() => {}}>
-        <Text style={styles.sheetTitle}>When was this dose given?</Text>
+        <ThemedText style={styles.sheetTitle}>When was this dose given?</ThemedText>
         {draft && (
           <DateTimePicker
             value={draft}
@@ -479,7 +480,7 @@ export function MedicationCompletionCard() {
         )}
         <View style={styles.sheetActions}>
           <TouchableOpacity onPress={cancelPicker} hitSlop={12} style={styles.sheetBtn}>
-            <Text style={styles.sheetCancel}>Cancel</Text>
+            <ThemedText style={styles.sheetCancel}>Cancel</ThemedText>
           </TouchableOpacity>
           <TouchableOpacity
             onPress={savePicker}
@@ -487,7 +488,7 @@ export function MedicationCompletionCard() {
             style={styles.sheetBtn}
             disabled={saving}
           >
-            <Text style={[styles.sheetSave, saving && styles.sheetSaveDisabled]}>Save</Text>
+            <ThemedText style={[styles.sheetSave, saving && styles.sheetSaveDisabled]}>Save</ThemedText>
           </TouchableOpacity>
         </View>
       </Pressable>

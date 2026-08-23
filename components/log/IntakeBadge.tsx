@@ -1,5 +1,6 @@
-import { View, Text, StyleSheet } from 'react-native';
+import { View, StyleSheet } from 'react-native';
 import { theme } from '../../constants/theme';
+import { ThemedText } from '../ui/ThemedText';
 import { IntakeRating, INTAKE_OPTIONS } from './IntakeChipRow';
 
 // The read-only intake badge (B-035). A meal's logged WSAVA intake rating, rendered as a
@@ -69,9 +70,9 @@ export function IntakeBadge({ rating }: Props) {
       accessible
       accessibilityLabel={`Intake: ${label.toLowerCase()}`}
     >
-      <Text style={[styles.label, tier === 'positive' ? styles.labelPositive : styles.labelDecline]}>
+      <ThemedText style={[styles.label, tier === 'positive' ? styles.labelPositive : styles.labelDecline]}>
         {label}
-      </Text>
+      </ThemedText>
     </View>
   );
 }
