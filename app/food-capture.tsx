@@ -18,6 +18,7 @@ import * as ImagePicker from 'expo-image-picker';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Camera, Images } from 'lucide-react-native';
 import { theme } from '../constants/theme';
+import { ThemedText, fontFamilyForWeight } from '../components/ui/ThemedText';
 import { SectionLabel } from '../components/ui/SectionLabel';
 import { FilterChip } from '../components/ui/FilterChip';
 import { ChipGroup } from '../components/ui/ChipGroup';
@@ -825,7 +826,7 @@ export default function FoodCaptureScreen() {
     return (
       <View style={styles.completeContainer}>
         <Animated.View style={[styles.checkCircle, { transform: [{ scale: checkScale }], opacity: checkOpacity }]}>
-          <Text style={styles.checkMark}>✓</Text>
+          <ThemedText style={styles.checkMark}>✓</ThemedText>
         </Animated.View>
         <Animated.Text style={[styles.loggedText, { opacity: checkOpacity }]}>
           {/* This saves to the food LIBRARY — it does not log a meal, and (on the
@@ -844,27 +845,27 @@ export default function FoodCaptureScreen() {
       <SafeAreaView style={styles.container}>
         <Header title="Add a food" onClose={() => router.back()} />
         <ScrollView contentContainerStyle={styles.introScroll}>
-          <Text style={styles.introHeading}>Add the front of the package</Text>
-          <Text style={styles.introBody}>
+          <ThemedText style={styles.introHeading}>Add the front of the package</ThemedText>
+          <ThemedText style={styles.introBody}>
             A clear shot of the front lets us read the label. The ingredients
             and barcode are optional but make the entry more useful later.
-          </Text>
+          </ThemedText>
           {/* D-M6 early-access label (§7.2) — quiet, small, no badge. Dual-signals
               free-now and may-be-paid-later. Retired in T3-E when the gate flips. */}
-          <Text style={styles.earlyAccessLabel}>{EARLY_ACCESS_LABEL}</Text>
+          <ThemedText style={styles.earlyAccessLabel}>{EARLY_ACCESS_LABEL}</ThemedText>
           {/* B-062 — Lucide Camera/Images (were 📷/🖼 emoji). Both glyphs on the
               screen convert together so the two buttons don't end up one vector +
               one emoji. */}
           <TouchableOpacity style={styles.primaryBtn} onPress={() => handleSnapFront('camera')} activeOpacity={0.85}>
             <Camera size={20} color={theme.colorTextOnDark} strokeWidth={2} />
-            <Text style={styles.primaryBtnText}>Take a photo</Text>
+            <ThemedText style={styles.primaryBtnText}>Take a photo</ThemedText>
           </TouchableOpacity>
           <TouchableOpacity style={styles.outlineBtn} onPress={() => handleSnapFront('library')} activeOpacity={0.85}>
             <Images size={20} color={theme.colorTextPrimary} strokeWidth={2} />
-            <Text style={styles.outlineBtnText}>Choose from library</Text>
+            <ThemedText style={styles.outlineBtnText}>Choose from library</ThemedText>
           </TouchableOpacity>
           <TouchableOpacity style={styles.linkBtn} onPress={handleManualEntry} hitSlop={8}>
-            <Text style={styles.linkBtnText}>Enter manually</Text>
+            <ThemedText style={styles.linkBtnText}>Enter manually</ThemedText>
           </TouchableOpacity>
         </ScrollView>
       </SafeAreaView>
@@ -901,11 +902,11 @@ export default function FoodCaptureScreen() {
             barcode={barcodePhoto}
             onSlotTap={handleSlotTap}
           />
-          <Text style={styles.introHeading}>{heading}</Text>
-          <Text style={styles.introBody}>{body}</Text>
+          <ThemedText style={styles.introHeading}>{heading}</ThemedText>
+          <ThemedText style={styles.introBody}>{body}</ThemedText>
           <TouchableOpacity style={styles.primaryBtn} onPress={ctaAction} activeOpacity={0.85}>
             {nextEncouragedSlot && <Camera size={20} color={theme.colorTextOnDark} strokeWidth={2} />}
-            <Text style={styles.primaryBtnText}>{ctaLabel}</Text>
+            <ThemedText style={styles.primaryBtnText}>{ctaLabel}</ThemedText>
           </TouchableOpacity>
           {nextEncouragedSlot && (
             <TouchableOpacity
@@ -914,7 +915,7 @@ export default function FoodCaptureScreen() {
               hitSlop={8}
               activeOpacity={0.7}
             >
-              <Text style={styles.secondaryBtnText}>Skip</Text>
+              <ThemedText style={styles.secondaryBtnText}>Skip</ThemedText>
             </TouchableOpacity>
           )}
         </ScrollView>
@@ -933,8 +934,8 @@ export default function FoodCaptureScreen() {
           {!extracting && (
             <View style={styles.loadingContainer}>
               <WhorlSpinner size="md" ground="day" />
-              <Text style={styles.loadingText}>Uploading…</Text>
-              <Text style={styles.loadingHint}>This usually takes a few seconds.</Text>
+              <ThemedText style={styles.loadingText}>Uploading…</ThemedText>
+              <ThemedText style={styles.loadingHint}>This usually takes a few seconds.</ThemedText>
             </View>
           )}
           {/* The AI read is the qualifying photo-extraction wait (§6). KEPT MOUNTED and
@@ -956,18 +957,18 @@ export default function FoodCaptureScreen() {
             <View style={styles.confirmHero}>
               <Image source={{ uri: frontPhoto.localUri }} style={styles.confirmPhoto} resizeMode="cover" />
               <View style={styles.confirmOverlay}>
-                <Text style={styles.confirmBrand} numberOfLines={1}>{extractedBrand}</Text>
-                <Text style={styles.confirmProduct} numberOfLines={2}>{extractedProduct}</Text>
+                <ThemedText style={styles.confirmBrand} numberOfLines={1}>{extractedBrand}</ThemedText>
+                <ThemedText style={styles.confirmProduct} numberOfLines={2}>{extractedProduct}</ThemedText>
               </View>
             </View>
           )}
-          <Text style={styles.confirmCaption}>Is this right?</Text>
+          <ThemedText style={styles.confirmCaption}>Is this right?</ThemedText>
           {/* Tier-1 (D7/§8.5) — the confirm step shows no protein picker, so this
               compact line is the whole disclosure here: primary first, secondaries
               after, and "ingredient list not read" instead of an implied-complete
               set when the D10 gate fails. Silent when there is nothing honest to
               say (proteinSummaryLine returns null). */}
-          {summaryLine ? <Text style={styles.proteinSummary}>{summaryLine}</Text> : null}
+          {summaryLine ? <ThemedText style={styles.proteinSummary}>{summaryLine}</ThemedText> : null}
           <SectionLabel label="Type" />
           <View style={styles.foodTypeRow}>
             {FOOD_TYPES.map((t) => (
@@ -991,15 +992,18 @@ export default function FoodCaptureScreen() {
                 activeOpacity={0.7}
                 hitSlop={12}
               >
-                <Text style={styles.mealTimeText}>
+                <ThemedText style={styles.mealTimeText}>
                   {mealOccurredAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  {/* Raw <Text> on purpose — see app/log.tsx: a nested ThemedText injects its own
+                      family and breaks the native cascade; this span has no weight of its own, so it
+                      inherits correctly. */}
                   {mealOccurredAtSource === 'exif' ? (
                     <Text style={styles.mealTimeAttribution}>
                       {'  ·  '}{formatExifAttribution(mealOccurredAt.toISOString())}
                     </Text>
                   ) : null}
-                </Text>
-                <Text style={styles.mealTimeChange}>Change</Text>
+                </ThemedText>
+                <ThemedText style={styles.mealTimeChange}>Change</ThemedText>
               </TouchableOpacity>
               {showMealTimePicker && (
                 <DateTimePicker
@@ -1034,7 +1038,7 @@ export default function FoodCaptureScreen() {
             onPress={() => attemptCommit(extractedBrand, extractedProduct, extractedFormat, foodType)}
             activeOpacity={0.85}
           >
-            <Text style={styles.primaryBtnText}>Looks right</Text>
+            <ThemedText style={styles.primaryBtnText}>Looks right</ThemedText>
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.secondaryBtn}
@@ -1042,7 +1046,7 @@ export default function FoodCaptureScreen() {
             hitSlop={8}
             activeOpacity={0.7}
           >
-            <Text style={styles.secondaryBtnText}>Edit</Text>
+            <ThemedText style={styles.secondaryBtnText}>Edit</ThemedText>
           </TouchableOpacity>
         </ScrollView>
       {/* B-351 slice 4 — the add-time soft confirm. Rendered on both the confirm
@@ -1084,14 +1088,14 @@ export default function FoodCaptureScreen() {
                 failure banner below, which is a genuine fault. */}
             {capReached ? (
               <View style={styles.capBand}>
-                <Text style={styles.capBandText}>{foodCapCopy(capReached.cap)}</Text>
-                <Text style={styles.careLine}>{careFirstLine(activePet?.name)}</Text>
+                <ThemedText style={styles.capBandText}>{foodCapCopy(capReached.cap)}</ThemedText>
+                <ThemedText style={styles.careLine}>{careFirstLine(activePet?.name)}</ThemedText>
               </View>
             ) : extractionFailed ? (
               <View style={styles.failedBanner}>
-                <Text style={styles.failedBannerText}>
+                <ThemedText style={styles.failedBannerText}>
                   Couldn't read the label automatically. You can fill it in below — we'll retry extraction in the background.
-                </Text>
+                </ThemedText>
               </View>
             ) : null}
             <SectionLabel label="Brand" />
@@ -1154,9 +1158,9 @@ export default function FoodCaptureScreen() {
               disabled={!canSave}
               activeOpacity={0.85}
             >
-              <Text style={styles.primaryBtnText}>
+              <ThemedText style={styles.primaryBtnText}>
                 {cameFromMealLog ? 'Save and log food' : 'Save'}
-              </Text>
+              </ThemedText>
             </TouchableOpacity>
           </ScrollView>
         </KeyboardAvoidingView>
@@ -1191,15 +1195,15 @@ function Header({ title, onClose, onBack }: { title: string; onClose?: () => voi
     <View style={styles.header}>
       {onBack ? (
         <TouchableOpacity onPress={onBack} style={styles.headerSide} hitSlop={10}>
-          <Text style={styles.headerBack}>←</Text>
+          <ThemedText style={styles.headerBack}>←</ThemedText>
         </TouchableOpacity>
       ) : (
         <View style={styles.headerSide} />
       )}
-      <Text style={styles.headerTitle}>{title}</Text>
+      <ThemedText style={styles.headerTitle}>{title}</ThemedText>
       {onClose ? (
         <TouchableOpacity onPress={onClose} style={styles.headerSide} hitSlop={10}>
-          <Text style={styles.headerClose}>✕</Text>
+          <ThemedText style={styles.headerClose}>✕</ThemedText>
         </TouchableOpacity>
       ) : (
         <View style={styles.headerSide} />
@@ -1246,10 +1250,10 @@ function ChecklistTile({
         <Image source={{ uri: photo.localUri }} style={styles.checklistThumb} resizeMode="cover" />
       ) : (
         <View style={[styles.checklistThumb, styles.checklistThumbEmpty]}>
-          <Text style={styles.checklistEmptyIcon}>+</Text>
+          <ThemedText style={styles.checklistEmptyIcon}>+</ThemedText>
         </View>
       )}
-      <Text style={styles.checklistLabel}>{label}</Text>
+      <ThemedText style={styles.checklistLabel}>{label}</ThemedText>
     </TouchableOpacity>
   );
 }
@@ -1578,9 +1582,12 @@ const styles = StyleSheet.create({
     fontSize: 36,
     color: theme.colorTextOnDark,
   },
+  // `Animated.Text` can't be a ThemedText (no Animated variant — §7), so this one
+  // resolves its face through the primitive's mapper instead of the wrapper. Same one
+  // fact, same path; see components/log/SheetLogBeat.tsx for the full note.
   loggedText: {
     fontSize: 20,
-    fontWeight: theme.weightMedium,
+    fontFamily: fontFamilyForWeight(theme.weightMedium),
     color: theme.colorNeutralDark,
   },
 });

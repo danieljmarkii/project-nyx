@@ -202,8 +202,8 @@ exports[`EventTypePicker — flag-off (flat grid, byte-identical) renders the sh
         style={
           {
             "color": "#0A0A0A",
+            "fontFamily": "Geist-Medium",
             "fontSize": 15,
-            "fontWeight": "500",
           }
         }
       >
@@ -336,8 +336,8 @@ exports[`EventTypePicker — flag-off (flat grid, byte-identical) renders the sh
         style={
           {
             "color": "#0A0A0A",
+            "fontFamily": "Geist-Medium",
             "fontSize": 15,
-            "fontWeight": "500",
           }
         }
       >
@@ -452,8 +452,8 @@ exports[`EventTypePicker — flag-off (flat grid, byte-identical) renders the sh
         style={
           {
             "color": "#0A0A0A",
+            "fontFamily": "Geist-Medium",
             "fontSize": 15,
-            "fontWeight": "500",
           }
         }
       >
@@ -630,8 +630,8 @@ exports[`EventTypePicker — flag-off (flat grid, byte-identical) renders the sh
         style={
           {
             "color": "#0A0A0A",
+            "fontFamily": "Geist-Medium",
             "fontSize": 15,
-            "fontWeight": "500",
           }
         }
       >
@@ -832,8 +832,8 @@ exports[`EventTypePicker — flag-off (flat grid, byte-identical) renders the sh
         style={
           {
             "color": "#0A0A0A",
+            "fontFamily": "Geist-Medium",
             "fontSize": 15,
-            "fontWeight": "500",
           }
         }
       >
@@ -984,8 +984,8 @@ exports[`EventTypePicker — flag-off (flat grid, byte-identical) renders the sh
         style={
           {
             "color": "#0A0A0A",
+            "fontFamily": "Geist-Medium",
             "fontSize": 15,
-            "fontWeight": "500",
           }
         }
       >
@@ -1202,8 +1202,8 @@ exports[`EventTypePicker — flag-off (flat grid, byte-identical) renders the sh
         style={
           {
             "color": "#0A0A0A",
+            "fontFamily": "Geist-Medium",
             "fontSize": 15,
-            "fontWeight": "500",
           }
         }
       >
@@ -1382,8 +1382,8 @@ exports[`EventTypePicker — flag-off (flat grid, byte-identical) renders the sh
         style={
           {
             "color": "#0A0A0A",
+            "fontFamily": "Geist-Medium",
             "fontSize": 15,
-            "fontWeight": "500",
           }
         }
       >
@@ -1594,8 +1594,8 @@ exports[`EventTypePicker — flag-on (grouped grid) renders the grouped grid 1`]
                 {
                   "color": "#0A0A0A",
                   "flex": 1,
+                  "fontFamily": "Geist-Medium",
                   "fontSize": 15,
-                  "fontWeight": "500",
                 }
               }
             >
@@ -1796,8 +1796,8 @@ exports[`EventTypePicker — flag-on (grouped grid) renders the grouped grid 1`]
                 {
                   "color": "#0A0A0A",
                   "flex": 1,
+                  "fontFamily": "Geist-Medium",
                   "fontSize": 15,
-                  "fontWeight": "500",
                 }
               }
             >
@@ -1911,8 +1911,8 @@ exports[`EventTypePicker — flag-on (grouped grid) renders the grouped grid 1`]
                 {
                   "color": "#0A0A0A",
                   "flex": 1,
+                  "fontFamily": "Geist-Medium",
                   "fontSize": 15,
-                  "fontWeight": "500",
                 }
               }
             >
@@ -1978,8 +1978,8 @@ exports[`EventTypePicker — flag-on (grouped grid) renders the grouped grid 1`]
                   style={
                     {
                       "color": "#0A0A0A",
+                      "fontFamily": "Geist-Medium",
                       "fontSize": 13,
-                      "fontWeight": "500",
                     }
                   }
                 >
@@ -2038,8 +2038,8 @@ exports[`EventTypePicker — flag-on (grouped grid) renders the grouped grid 1`]
                   style={
                     {
                       "color": "#0A0A0A",
+                      "fontFamily": "Geist-Medium",
                       "fontSize": 13,
-                      "fontWeight": "500",
                     }
                   }
                 >
@@ -2266,8 +2266,8 @@ exports[`EventTypePicker — flag-on (grouped grid) renders the grouped grid 1`]
                 {
                   "color": "#0A0A0A",
                   "flex": 1,
+                  "fontFamily": "Geist-Medium",
                   "fontSize": 15,
-                  "fontWeight": "500",
                 }
               }
             >
@@ -2525,8 +2525,8 @@ exports[`EventTypePicker — flag-on (grouped grid) renders the grouped grid 1`]
                 {
                   "color": "#0A0A0A",
                   "flex": 1,
+                  "fontFamily": "Geist-Medium",
                   "fontSize": 15,
-                  "fontWeight": "500",
                 }
               }
             >
@@ -2701,8 +2701,8 @@ exports[`EventTypePicker — flag-on (grouped grid) renders the grouped grid 1`]
                 {
                   "color": "#0A0A0A",
                   "flex": 1,
+                  "fontFamily": "Geist-Medium",
                   "fontSize": 15,
-                  "fontWeight": "500",
                 }
               }
             >
@@ -2982,8 +2982,8 @@ exports[`EventTypePicker — flag-on (grouped grid) renders the grouped grid 1`]
                 {
                   "color": "#0A0A0A",
                   "flex": 1,
+                  "fontFamily": "Geist-Medium",
                   "fontSize": 15,
-                  "fontWeight": "500",
                 }
               }
             >
@@ -3186,8 +3186,8 @@ exports[`EventTypePicker — flag-on (grouped grid) renders the grouped grid 1`]
                 {
                   "color": "#0A0A0A",
                   "flex": 1,
+                  "fontFamily": "Geist-Medium",
                   "fontSize": 15,
-                  "fontWeight": "500",
                 }
               }
             >

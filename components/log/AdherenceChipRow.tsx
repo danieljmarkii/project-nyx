@@ -1,5 +1,6 @@
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, StyleSheet, TouchableOpacity } from 'react-native';
 import { theme } from '../../constants/theme';
+import { ThemedText } from '../ui/ThemedText';
 
 // The dose-adherence scale (migration 020 `dose_adherence` enum) — the medication
 // analog of meals.intake_rating (B-014). Deliberately splits pet-driven states
@@ -72,12 +73,12 @@ export function AdherenceChipRow({
   return (
     <View style={size === 'compact' ? styles.compactWrap : styles.wrap}>
       {showLabel && (
-        <Text style={[
+        <ThemedText style={[
           size === 'compact' ? styles.labelCompact : styles.label,
           onDark && styles.labelOnDark,
         ]}>
           {label}
-        </Text>
+        </ThemedText>
       )}
       <View style={styles.row}>
         {OPTIONS.map((opt) => (
@@ -120,7 +121,7 @@ function Chip({
       accessibilityRole="button"
       accessibilityState={{ selected: active }}
     >
-      <Text
+      <ThemedText
         style={[
           styles.chipLabel,
           onDark ? styles.chipLabelOnDark : styles.chipLabelLight,
@@ -128,7 +129,7 @@ function Chip({
         ]}
       >
         {label}
-      </Text>
+      </ThemedText>
     </TouchableOpacity>
   );
 }

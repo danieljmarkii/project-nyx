@@ -1,5 +1,6 @@
-import { Modal, View, Text, StyleSheet, Pressable, TouchableOpacity } from 'react-native';
+import { Modal, View, StyleSheet, Pressable, TouchableOpacity } from 'react-native';
 import { theme, shadows } from '../../constants/theme';
+import { ThemedText } from '../ui/ThemedText';
 import { AdherenceChipRow, DoseAdherence } from './AdherenceChipRow';
 import { comboConfirmHeadsUp, doseAdherencePrompt } from '../../lib/medications';
 
@@ -45,11 +46,11 @@ export function ComboDoseConfirmSheet({ visible, petName, foodName, onAnswer, on
         <View style={styles.grabber} />
         {/* Heads-up: the fact, naming the specific not-finished food. Never softens the
             refusal, never reassures (clinical-guardrails). */}
-        <Text style={styles.headsUp}>{comboConfirmHeadsUp({ petName, foodName })}</Text>
+        <ThemedText style={styles.headsUp}>{comboConfirmHeadsUp({ petName, foodName })}</ThemedText>
         {/* Always the in-doubt ASK — this sheet only ever opens on a not-finished vehicle,
             and its chips start unselected, so there is no owner assertion to restate
             (B-172's confirm-to-correct framing applies to a pre-lit state, not to this). */}
-        <Text style={styles.question}>{doseAdherencePrompt({ petName, inDoubt: true })}</Text>
+        <ThemedText style={styles.question}>{doseAdherencePrompt({ petName, inDoubt: true })}</ThemedText>
         {/* The real dose-adherence chips (given / partial / missed / refused) — the same
             scale the dose detail screen uses. None pre-lit: a logged combo dose in doubt
             has no assumed state. One tap answers and closes. */}
@@ -63,7 +64,7 @@ export function ComboDoseConfirmSheet({ visible, petName, foodName, onAnswer, on
           accessibilityRole="button"
           accessibilityLabel="Not sure yet — leave this dose unconfirmed"
         >
-          <Text style={styles.notSureText}>Not sure yet</Text>
+          <ThemedText style={styles.notSureText}>Not sure yet</ThemedText>
         </TouchableOpacity>
       </Pressable>
     </Modal>
