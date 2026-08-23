@@ -1419,6 +1419,91 @@ Deno.test('legend defines the "N logs" duplicate tag', () => {
   assert.ok(/counted once/i.test(html))
 })
 
+// ── B-612 / CUL-319 — the three cold-read blockers on the first artifact to render
+// these paths at all. Five earlier artifacts had every event witnessed to the minute
+// and nothing photographed, so none of this could go wrong in front of a reviewer.
+
+Deno.test('B-612 — a window straddling local midnight dates the bound that is not the row’s day', () => {
+  // 23:00 on Jun 13 local → 07:20 on Jun 14 local. The row is dated Jun 14, so a bare
+  // "~23:00–07:20" reads backwards. The overnight find is the commonest windowed event
+  // there is, and this one is a bile vomit — where the overnight timing IS the finding.
+  const overnight = logEntry({
+    type: 'vomit',
+    occurredAt: '2026-06-14T07:10:00Z',
+    occurredAtConfidence: 'window',
+    occurredAtEarliest: '2026-06-14T03:00:00Z',
+    occurredAtLatest: '2026-06-14T11:20:00Z',
+  })
+  const html = renderReport(
+    base({
+      provenance: { ...base().provenance, symptomLog: [overnight], totalSymptomIncidents: 1, estimatedOrWindowCount: 1 },
+    }),
+  )
+  assert.ok(/Jun 13 23:00–07:20/.test(html), 'the earlier bound carries its own day')
+  assert.ok(!/~23:00–07:20/.test(html), 'the dateless form is gone')
+})
+
+Deno.test('B-612 — a window inside one local day gains no redundant date', () => {
+  // The other half of the rule: dating every bound unconditionally would put noise on
+  // every ordinary row, which is how a disclosure stops being read.
+  const sameDay = logEntry({
+    type: 'vomit',
+    occurredAt: '2026-06-14T18:00:00Z',
+    occurredAtConfidence: 'window',
+    occurredAtEarliest: '2026-06-14T16:00:00Z',
+    occurredAtLatest: '2026-06-14T20:00:00Z',
+  })
+  const html = renderReport(
+    base({
+      provenance: { ...base().provenance, symptomLog: [sameDay], totalSymptomIncidents: 1, estimatedOrWindowCount: 1 },
+    }),
+  )
+  assert.ok(/~12:00–16:00/.test(html), 'a within-day window stays bare times')
+  assert.ok(!/Jun 14 12:00/.test(html), 'no redundant day on a within-day bound')
+})
+
+Deno.test('B-612 — a log time on a later local day carries its date, so the row cannot read as logged before it happened', () => {
+  // Occurred 23:30 local Jun 22, logged 08:10 local Jun 23. The Date column is the
+  // OCCURRENCE day, so a bare "08:10" states a log fifteen hours before the event's own
+  // earliest possible time — the occurred-vs-logged pair contradicting itself.
+  const foundNextMorning = logEntry({
+    type: 'vomit',
+    occurredAt: '2026-06-23T03:30:00Z',
+    occurredAtConfidence: 'window',
+    occurredAtEarliest: '2026-06-23T03:30:00Z',
+    loggedAt: '2026-06-23T12:10:00Z',
+  })
+  const html = renderReport(
+    base({
+      provenance: { ...base().provenance, symptomLog: [foundNextMorning], totalSymptomIncidents: 1, estimatedOrWindowCount: 1 },
+    }),
+  )
+  assert.ok(/<span class="daynote">Jun 23<\/span>/.test(html), 'the log time is dated when it is not the row’s day')
+  assert.ok(/after 23:30/.test(html), 'the occurrence bound still renders')
+})
+
+Deno.test('B-612 — a same-day log time stays undated', () => {
+  const sameDay = logEntry({ type: 'vomit', occurredAt: '2026-06-14T18:00:00Z', loggedAt: '2026-06-14T19:00:00Z' })
+  const html = renderReport(
+    base({ provenance: { ...base().provenance, symptomLog: [sameDay], totalSymptomIncidents: 1 } }),
+  )
+  // Match the SPAN, not the bare word: `.daynote` is also a stylesheet rule, which is in
+  // every artifact whether or not any row uses it.
+  assert.ok(!/<span class="daynote">/.test(html), 'no day note when the log lands on the row’s own day')
+})
+
+Deno.test('B-612 — the duplicate tag is not a time-confidence chip and glosses itself in place', () => {
+  // It sat in the Occurred column in the same uppercase bordered `.conf` chip as
+  // seen/est/range, so it read as a fifth confidence value — or as two episodes, which
+  // collides with the page-1 count. Its only definition was on the last page.
+  const dup = logEntry({ type: 'vomit', occurredAt: '2026-06-26T23:55:00Z', dupCount: 2 })
+  const html = renderReport(
+    base({ provenance: { ...base().provenance, symptomLog: [dup], totalSymptomIncidents: 1 } }),
+  )
+  assert.ok(/<span class="dup">2 logs &middot; same incident, counted once<\/span>/.test(html), 'gloss rides the tag')
+  assert.ok(!/<span class="conf">2 logs<\/span>/.test(html), 'no longer a confidence chip')
+})
+
 Deno.test('chronicity flag copy — no engine "across N weeks"; episodes-on-days phrasing traces to appendix A', () => {
   const flag: SafetyFlag = {
     kind: 'chronicity',

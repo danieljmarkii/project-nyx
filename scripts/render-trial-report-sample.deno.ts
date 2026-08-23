@@ -876,6 +876,9 @@ function pngDataUri(seed: number, size = 132): string {
   ihdr.set(be32(size), 4)
   ihdr[8] = 8 // bit depth
   ihdr[9] = 2 // colour type 2 = truecolour RGB
+  // Bytes 10–12 (compression / filter / interlace method) must all be 0, and are, from
+  // Uint8Array's zero-fill. Left implicit deliberately, but said out loud so the next
+  // reader does not have to work out whether three required fields were forgotten.
   const sig = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10])
   const chunks = [sig, pngChunk('IHDR', ihdr), pngChunk('IDAT', zlibStored(raw)), pngChunk('IEND', new Uint8Array(0))]
   const total = chunks.reduce((n, ch) => n + ch.length, 0)
@@ -943,9 +946,12 @@ const DRY = {
 function monitoringCase(): ReportInput {
   const events: ReportEventInput[] = []
 
-  // Twice-daily wet, plus a dry bowl she grazes. Five days go unlogged, deliberately —
+  // Twice-daily wet, plus a dry bowl she grazes. Five days go MEAL-unlogged deliberately —
   // a 31-of-31 record is not what a real month looks like and makes the coverage tile
-  // untestable.
+  // untestable. The tile lands on 28 of 31, not 26: it counts days with ANY logged event,
+  // and two of these five (Jun 14, Jul 1) carry a symptom log, so only three are true gaps.
+  // Left as is — a coverage gap that a symptom log partly backfills is the realistic shape,
+  // and the tile's own denominator is what is under test here, not this list's length.
   const unlogged = new Set(['2026-06-13', '2026-06-14', '2026-06-24', '2026-06-25', '2026-07-01'])
   for (const d of days('2026-06-02', '2026-07-02')) {
     if (unlogged.has(d)) continue
@@ -968,8 +974,15 @@ function monitoringCase(): ReportInput {
   events.push(obs({ type: 'vomit', id: 'v-unspec', occurredAt: '2026-06-29T16:20:00Z', confidence: null }))
 
   // ── The duplicate pair (§5.11): one bout, logged twice 40s apart on a sync retry.
-  // The PHOTO hangs off the member that loses the representative election, so the
-  // union-across-members path is what puts the read on the page — not the tag alone.
+  // WHICH MEMBER SURVIVES IS NOT A FREE CHOICE, and an earlier version of this fixture got
+  // it backwards. `dedupeEvents`' representative rank prefers a member with a completed AI
+  // analysis over an earlier one, so `v-dup-b` (which carries the analysis) always wins and
+  // `v-dup-a` is always the dropped member — verified by calling the real `dedupeEvents`,
+  // not by reading the ranking code. So the ATTACHMENT is put on `v-dup-a`: the analysis
+  // rides the survivor, the photo rides the member that is dropped, and the only way the
+  // photo reaches the page is the union across `memberEventIds`. Put the photo on the
+  // survivor instead and this element silently stops testing anything — an implementation
+  // that read only the representative's own id would pass.
   events.push(obs({ type: 'vomit', id: 'v-dup-a', occurredAt: '2026-06-26T23:55:00Z', confidence: 'witnessed', notes: 'long white thread in it — she has been at the quilt again' }))
   events.push(obs({ type: 'vomit', id: 'v-dup-b', occurredAt: '2026-06-26T23:55:40Z', confidence: 'witnessed' }))
 
@@ -1012,7 +1025,8 @@ function monitoringCase(): ReportInput {
       { eventId: 'v-before', status: 'completed', colour: 'pink_red', contents: ['liquid_only'], consistency: 'mucoid_slimy', bloodPresent: 'fresh_red', bilePresent: 'no', foreignMaterialPresent: 'no', foreignMaterialNote: null, stoolConsistency: null, stoolColour: null, stoolBloodPresent: null, stoolBloodType: null, stoolMucusPresent: null, editedAt: null },
       // A read the model could not commit to → "read uncertain", never a positive "no".
       { eventId: 'v-after', status: 'uncertain', colour: null, contents: null, consistency: null, bloodPresent: null, bilePresent: null, foreignMaterialPresent: null, foreignMaterialNote: null, stoolConsistency: null, stoolColour: null, stoolBloodPresent: null, stoolBloodType: null, stoolMucusPresent: null, editedAt: null },
-      // FOREIGN MATERIAL, on the DROPPED duplicate → leads the band via the member union.
+      // FOREIGN MATERIAL. This rides the SURVIVING member (see the pair's comment above —
+      // carrying the analysis is what makes it the survivor); its photo rides the dropped one.
       { eventId: 'v-dup-b', status: 'completed', colour: 'clear', contents: ['foam'], consistency: 'mucoid_slimy', bloodPresent: 'none_visible', bilePresent: 'no', foreignMaterialPresent: 'yes', foreignMaterialNote: 'thread-like strands', stoolConsistency: null, stoolColour: null, stoolBloodPresent: null, stoolBloodType: null, stoolMucusPresent: null, editedAt: null },
       { eventId: 'v-nofetch', status: 'completed', colour: 'white', contents: ['foam'], consistency: 'foamy', bloodPresent: 'none_visible', bilePresent: 'no', foreignMaterialPresent: 'no', foreignMaterialNote: null, stoolConsistency: null, stoolColour: null, stoolBloodPresent: null, stoolBloodType: null, stoolMucusPresent: null, editedAt: null },
       // Read retained, photo deleted by the owner — the divergence Appendix E/F discloses.
@@ -1068,8 +1082,9 @@ function monitoringCase(): ReportInput {
       { eventId: 'v-range', storagePath: 'pepper/v-range-1.jpg', mimeType: 'image/jpeg', sortOrder: 0 },
       { eventId: 'v-before', storagePath: 'pepper/v-before-1.jpg', mimeType: 'image/jpeg', sortOrder: 0 },
       { eventId: 'v-after', storagePath: 'pepper/v-after-1.jpg', mimeType: 'image/jpeg', sortOrder: 0 },
-      // On the DROPPED duplicate, not the survivor.
-      { eventId: 'v-dup-b', storagePath: 'pepper/v-dup-1.jpg', mimeType: 'image/jpeg', sortOrder: 0 },
+      // On `v-dup-a`, the member `dedupeEvents` DROPS — so this photo can only reach the
+      // safety band and appendix F through the union across the incident's member ids.
+      { eventId: 'v-dup-a', storagePath: 'pepper/v-dup-1.jpg', mimeType: 'image/jpeg', sortOrder: 0 },
       // The transform fetch fails → dataUri stays null → disclosed placeholder.
       { eventId: 'v-nofetch', storagePath: 'pepper/v-nofetch-unfetchable.jpg', mimeType: 'image/jpeg', sortOrder: 0 },
       { eventId: 's-mucus', storagePath: 'pepper/s-mucus-1.jpg', mimeType: 'image/jpeg', sortOrder: 0 },
