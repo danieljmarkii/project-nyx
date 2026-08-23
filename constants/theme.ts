@@ -15,6 +15,9 @@ export const theme = {
   textMicro: 9,  // micro badge/chip text ONLY (uppercase kind chips, the PDF tile badge)
                  // — below textXS, always uppercase + tracked; not for sentences (B-553)
   textXS: 11,    // zone labels, metadata, badge text
+  textTabLabelTight: 10, // the pet tab's SECOND ladder rung ONLY (CUL-599 / app-polish
+                 // spec §1 D2: full name @textXS → @this → the word "Pet"). Deliberately
+                 // not a general scale step — nothing else in the app renders at 10.
   textSM: 13,    // captions, secondary detail
   textMD: 15,    // body, list items, buttons
   textLG: 17,    // modal headers, subheadings
