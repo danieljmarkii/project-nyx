@@ -257,6 +257,22 @@ describe('updateEvent — severity and notes are written only when named (CUL-60
     expect(read(db).notes).toBeNull();
   });
 
+  // The hole the adversarial-reviewer found in the first cut of this change.
+  // `exactOptionalPropertyTypes` is off, so `{ notes: undefined }` type-checks
+  // against `notes?: string | null` — and an `in` test would have read it as
+  // "clear the note". A caller writing `notes: draft.notes` (draft.notes
+  // optional) would then delete the owner's note with no compiler error: the
+  // exact failure this change exists to prevent, resurrected in a shape
+  // TypeScript used to reject outright.
+  it('treats an explicit undefined as "not named", not as "clear"', async () => {
+    const db = freshDb();
+    seed(db, 'witnessed');
+
+    await updateEvent('e1', { ...TIME_ONLY, notes: undefined, severity: undefined }, adapter(db));
+
+    expect(read(db).notes).toBe('original note');
+  });
+
   it('leaves the confidence columns alone on a time-only edit too', async () => {
     const db = freshDb();
     seed(db, 'window', null, '2026-07-01T04:00:00.000Z');

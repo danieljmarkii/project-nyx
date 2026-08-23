@@ -6,11 +6,13 @@ import { useMomentStore } from '../../store/momentStore';
 import { useEventStore } from '../../store/eventStore';
 import { usePetStore } from '../../store/petStore';
 import { useReducedMotion } from '../../hooks/useReducedMotion';
-import { updateEvent } from '../../lib/db';
+import { updateEvent, getEventSource } from '../../lib/db';
 import { syncPendingEvents } from '../../lib/sync';
 import {
   summarizeLoggedRecord, canChangeTime, resolveNamedTimeEdit, applyNamedTimeEdit,
+  timeEditPrompt,
 } from '../../lib/completionCard';
+import { sourceAfterPointEdit } from '../../lib/eventTimeEdit';
 import { ThemedText } from './ThemedText';
 import { TimeEditSheet } from './TimeEditSheet';
 
@@ -107,6 +109,15 @@ export function NamedCompletionCard() {
     if (!edit) { setPickerOpen(false); return; }
     setSaving(true);
     try {
+      // Provenance is PRESERVED on a peek-and-save. Save is live even when the
+      // owner scrubbed nothing, and stamping 'manual' unconditionally would drop
+      // the 'exif' attribution off a symptom logged from a photo — a restatement
+      // of a field the caller was not told about, which is the same rule this
+      // card applies to `confidence` and to notes. sourceAfterPointEdit is the
+      // shared predicate (B-448's "re-selecting the current value is not a new
+      // claim", applied to the point).
+      const changed = edit.occurredAtIso !== payload.occurredAt;
+      const source = sourceAfterPointEdit(await getEventSource(payload.eventId), changed);
       await updateEvent(payload.eventId, {
         occurred_at: edit.occurredAtIso,
         // `severity` and `notes` deliberately OMITTED. The /log flow writes an
@@ -114,7 +125,7 @@ export function NamedCompletionCard() {
         // the time and nothing else — restating a field you were not told about
         // is how B-448's leak happened, in the other direction. updateEvent takes
         // both optional-by-omission for exactly this caller.
-        occurred_at_source: 'manual',
+        occurred_at_source: source,
         // Spread, not a literal: OMITTING the key is what leaves the three B-010
         // columns exactly as stored (B-448). resolveNamedTimeEdit only supplies a
         // confidence when the edit legitimately restates them — a "found by" whose
@@ -159,6 +170,7 @@ export function NamedCompletionCard() {
   // same reason.
   const petName = pets.find((p) => p.id === payload.petId)?.name ?? activePet?.name ?? 'your pet';
   const showChangeTime = canChangeTime(payload.record);
+  const prompt = timeEditPrompt(payload.record);
 
   return (
     <>
@@ -219,9 +231,14 @@ export function NamedCompletionCard() {
         </View>
       </Animated.View>
 
-      {pickerOpen && (
+      {/* The prompt comes from the RECORD, not from this call site: on a "found
+          by" row the value written is the discovery bound, so the sheet asks
+          "When did you find it?" instead of inviting an answer about occurrence.
+          Non-null whenever the button rendered — both read canChangeTime. */}
+      {pickerOpen && prompt && (
         <TimeEditSheet
           value={new Date(payload.occurredAt)}
+          title={prompt}
           saving={saving}
           onCancel={() => setPickerOpen(false)}
           onSave={handleSaveTime}

@@ -11,6 +11,9 @@ import { ThemedText } from './ThemedText';
 // the two incumbents adopt it in a follow-up (filed) — a strangler, not a rewrite:
 // touching the app's best-loved surface is not this PR's job.
 //
+// The `title` prop is REQUIRED, deliberately — see its doc comment. The two
+// incumbents both edit a witnessed point, so they pass the original question.
+//
 // Two details worth keeping when the others migrate. The empty-onPress Pressable
 // around the sheet is load-bearing: without it a tap on the title or the whitespace
 // falls through to the absolute-positioned backdrop and silently dismisses the
@@ -20,12 +23,29 @@ import { ThemedText } from './ThemedText';
 interface Props {
   /** The value the picker opens on. */
   value: Date;
+  /**
+   * The QUESTION being asked, and it is not decoration — it must name the field
+   * the caller is about to write.
+   *
+   * This was hardcoded to "When did this happen?" and the `adversarial-reviewer`
+   * broke it: on a "found by 5:33 PM" record the value written is the DISCOVERY
+   * bound, not the occurrence time. An owner asked when it happened answers
+   * honestly ("I was out from noon, probably around 2"), and the app stores that
+   * as "discovered by 2:00 PM" — false, the discovery time it did hold is gone,
+   * the window silently narrows, and occurred_at (the correlation engine's key)
+   * moves earlier, toward the preceding meal.
+   *
+   * The confidence CLASS never changed, which is why the class-based guards saw
+   * nothing. Required rather than defaulted, so a new caller has to state which
+   * field it is editing instead of inheriting a question that may not match it.
+   */
+  title: string;
   saving?: boolean;
   onCancel: () => void;
   onSave: (next: Date) => void;
 }
 
-export function TimeEditSheet({ value, saving = false, onCancel, onSave }: Props) {
+export function TimeEditSheet({ value, title, saving = false, onCancel, onSave }: Props) {
   // Local draft, separate from the caller's authoritative time, so the picker can
   // be opened, scrubbed and cancelled without mutating anything.
   const [draft, setDraft] = useState<Date>(value);
@@ -35,7 +55,7 @@ export function TimeEditSheet({ value, saving = false, onCancel, onSave }: Props
     <Modal visible transparent animationType="fade" onRequestClose={onCancel} statusBarTranslucent>
       <Pressable style={styles.backdrop} onPress={onCancel} />
       <Pressable style={styles.sheet} onPress={() => {}}>
-        <ThemedText style={styles.sheetTitle}>When did this happen?</ThemedText>
+        <ThemedText style={styles.sheetTitle}>{title}</ThemedText>
         <DateTimePicker
           value={draft}
           mode="datetime"

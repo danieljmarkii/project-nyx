@@ -121,13 +121,93 @@ Pinned in `lib/updateEvent.test.ts` against the suite's real SQLite engine.
   incumbents adopt it in a follow-up. A strangler, not a rewrite — touching the app's
   best-loved surface is not this PR's job.
 
+## The adversarial pass, and the bug it found
+
+The `adversarial-reviewer` returned **FAIL**, and its top finding was real. Recorded
+at length because the *shape* of the miss is the transferable part.
+
+### The blocker: the question did not match the field
+
+`TimeEditSheet` hardcoded **"When did this happen?"**. On the one record shape where
+this card restates the B-010 columns — the open-ended window — the value written is
+the **discovery bound**.
+
+So: an owner finds vomit at 5:33 PM and logs "found it → before now". The card reads
+`Vomit · found by 5:33 PM`. They tap Change time, are asked *when did this happen*,
+and answer honestly — "I was out from noon, probably around 2." Save.
+
+The row now asserts the vomit was **discovered by 2:00 PM**, which is false. The only
+fact it held — found at 5:33 — is gone. The window narrows from `(-∞, 17:33]` to
+`(-∞, 14:00]`. And `occurred_at` moves 3.5 hours *earlier, toward the preceding
+meal* — the correlation engine's independent variable.
+
+**Why every guard here missed it.** This module modelled claim-strength as a CLASS
+ladder (window → estimated → witnessed), and the property test enumerates exactly
+that. The confidence class never changes in this sequence. The corruption is to the
+*interval*, a dimension nothing was watching. The write was right; the **question**
+was wrong, and no amount of care about the write would have caught a defect that
+lived in a string.
+
+The fix is not a longer test list. `timeEditPrompt` now derives the question from the
+record **beside** the resolver that derives the write, `TimeEditSheet.title` is a
+**required** prop so a new caller must state which field it edits, and the property
+test asserts the two agree: *the write moves a discovery bound iff the question asked
+about one.*
+
+There is a lesson in the shape. This PR's whole thesis is "never assert more than the
+record holds", and the violation arrived through the one surface the thesis wasn't
+pointed at — the prompt. A guard that watches the write and not the ask is watching
+half the transaction.
+
+### The rest, and what was done with each
+
+- **`{ notes: undefined }` silently cleared.** `exactOptionalPropertyTypes` is off, so
+  that type-checks against `notes?: string | null`, and `'notes' in fields` reads it
+  as "clear". A caller writing `notes: draft.notes` (optional) would delete the
+  owner's note with no compiler error — *the exact failure this session's fix existed
+  to prevent, resurrected in a shape TypeScript used to reject.* Now `!== undefined`;
+  an explicit `null` still clears. **Fixed + pinned.**
+- **EXIF provenance dropped on a peek-and-save.** Save is live with nothing scrubbed,
+  and the card stamped `occurred_at_source: 'manual'` unconditionally — the card's own
+  rule against restating untold fields, broken by the card. Now routed through the
+  existing `sourceAfterPointEdit`. **Fixed + pinned** (both directions: preserved on a
+  peek, `manual` once the time actually moves).
+- **The NULL→`witnessed` render default.** Unreachable today, and my own test *pinned*
+  the flattened phrasing rather than catching it — a test holding a defect in place.
+  Now routed through `describeOccurredAt`, so an absence renders as an absence
+  (B-527's ruling). The `strength` map's `null: 2` — which encoded "unclassified is as
+  strong as seen", the equivalence migration 012 exists to deny — is now `null: 1`.
+  **Fixed.**
+- **Weight back-dating desynced `pets.weight_kg`.** The card offered Change time on a
+  record whose sentence shows no time, and a back-date left the profile chip and the
+  next pre-fill on a value the trend card no longer showed. Rather than grow a second
+  copy of the edit screen's reconciliation inside a completion card, the picker is
+  **withheld on weight** — net-neutral against the takeover, which offered none.
+  → **CUL-623.**
+- **`markSynced` has no version guard** (`sync.ts:151`). An edit landing inside
+  `insertSimpleEvent`'s in-flight push can be marked synced without ever reaching the
+  server, permanently: the next pull skips it under LWW while the app keeps showing
+  the correction. **Pre-existing** — the meal and dose cards have had this window
+  since they shipped — but this card newly puts it on symptom timestamps. Not folded
+  in; it touches the shared sync path. → **CUL-622.**
+- **Scope honesty.** The module header claimed no log path can hand a card a bare
+  "Logged". True of *this* card; `SheetLogBeat` still defaults `title = 'Logged'`, so
+  a beta account on `log_picker_v2` gets the old register. That is CUL-614's half of
+  the convergence — the comment now says so rather than overclaiming.
+
+**Held under attack:** the class-dimension monotonicity, `occurred_at === latest` after
+a found-by edit, both migration-012 CHECKs, the bounded/lower-edge withholding, the
+mirror-vs-SQLite consistency, and — verified by mutation rather than by reading the
+header — the B-448 literal guard genuinely covering this file.
+
 ## Verification
 
-`tsc --noEmit` clean. `jest --ci`: **251 suites / 5506 tests green**. The three
+`tsc --noEmit` clean. `jest --ci`: **251 suites / 5518 tests green**. The three
 timezone-sensitive new suites also run green at **UTC+14 / UTC+12:45 / UTC−10** (the
 CI matrix), since the sentence's day phrase reads local midnight.
 
-Falsification attempts that the logic survived, rather than a bare ✓:
+Falsification attempts, rather than a bare ✓ — the ones that **held**, after the
+section above records the ones that did not:
 
 - **The over-claim.** Log a found-it vomit, tap Change time. Before the split, the
   copied meal-card write would have made it `witnessed` — the report prints `seen` on
@@ -156,6 +236,8 @@ Falsification attempts that the logic survived, rather than a bare ✓:
   app is broken, and there is nothing to explain yet (CUL-612).
 - **`app/edit-event.tsx` still passes both `notes` and `severity`** and is unaffected
   by the `updateEvent` change; it was not touched.
+- **Weight records get no Change time** (CUL-623), and the beta sheet path still says
+  "Logged" (CUL-614). Both are deliberate, both are filed.
 
 ## Scope held
 

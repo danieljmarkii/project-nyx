@@ -12,9 +12,9 @@ jest.mock('./sync', () => ({
 
 import {
   summarizeLoggedRecord, canChangeTime, resolveNamedTimeEdit, applyNamedTimeEdit,
-  type LoggedRecord,
+  timeEditPrompt, type LoggedRecord,
 } from './completionCard';
-import { formatTime } from './utils';
+import { formatTime, describeOccurredAt } from './utils';
 
 // B-514 — the day boundary is LOCAL midnight, and summarizeLoggedRecord's
 // "today/yesterday" phrasing reads it. A UTC literal for a local-day question is
@@ -94,12 +94,24 @@ describe('summarizeLoggedRecord', () => {
     )).toBe(`Lethargy · around ${formatTime(at(9, 15))}`);
   });
 
-  // migration 012: a NULL confidence is "NOT a claim either way". It renders as a
-  // plain point (there is no window to draw) but the card must not therefore go on
-  // to WRITE 'witnessed' — that separation is asserted in the edit block below.
-  it('an unclassified row renders as a plain point', () => {
-    expect(summarizeLoggedRecord(eventRecord({ confidence: null }), at(17, 33).toISOString(), NOW))
-      .toBe(`Vomit · today at ${formatTime(at(17, 33))}`);
+  // migration 012: a NULL confidence is "NOT a claim either way", so it renders
+  // as History renders it — a BARE POINT, with no day assertion.
+  //
+  // This assertion previously read "today at 5:33 PM", i.e. it PINNED the
+  // witnessed-register phrasing instead of catching it: the module defaulted a
+  // null confidence to 'witnessed' for rendering, which prints the day-asserting
+  // form over a row that makes no such claim (the display flattening B-527 fixed
+  // on the edit screen). The adversarial-reviewer found it and named the shape of
+  // the mistake exactly — a test can hold a defect in place as easily as it can
+  // prevent one.
+  it('an unclassified row renders as a bare point — no day assertion', () => {
+    const sentence = summarizeLoggedRecord(eventRecord({ confidence: null }), at(17, 33).toISOString(), NOW);
+    expect(sentence).toBe(`Vomit · ${formatTime(at(17, 33))}`);
+    expect(sentence).not.toMatch(/today/);
+    // ...and it matches what History will show for the identical row.
+    expect(sentence).toBe(`Vomit · ${describeOccurredAt({
+      confidence: null, occurredAt: at(17, 33).toISOString(), earliest: null, latest: null,
+    }).primary}`);
   });
 
   it('back-dates read "yesterday" and then an explicit date', () => {
@@ -202,17 +214,26 @@ describe('canChangeTime / resolveNamedTimeEdit', () => {
     expect(resolveNamedTimeEdit(record, next)).toBeNull();
   });
 
-  it('a weight check moves its point like any witnessed row', () => {
+  // The card's sentence names the value and no time, so a picker here edits a
+  // field the owner can see neither before nor after — and a back-date desyncs
+  // the pets.weight_kg snapshot that handleConfirmWeight repointed at log time.
+  // Withholding costs nothing against the white takeover, which offered none.
+  it('a weight check offers no picker at all', () => {
     const record: LoggedRecord = { kind: 'weight', weightKg: 5.62 };
-    expect(canChangeTime(record)).toBe(true);
-    expect(resolveNamedTimeEdit(record, next)).toEqual({ occurredAtIso: next.toISOString() });
+    expect(canChangeTime(record)).toBe(false);
+    expect(resolveNamedTimeEdit(record, next)).toBeNull();
+    expect(timeEditPrompt(record)).toBeNull();
   });
 
   // The falsification the confidence split has to survive: for every record the
   // card will ever hold, an edit must never make the row's claim STRONGER than it
   // was. Ranked weakest→strongest; the resolved value may never move up the list.
   it('no edit ever promotes a record toward a stronger claim', () => {
-    const strength = { window: 0, estimated: 1, witnessed: 2, null: 2 } as const;
+    // null sits BELOW witnessed, not level with it. The previous map had
+    // `null: 2`, which encodes "unclassified is as strong as seen" — precisely
+    // the equivalence migration 012 exists to deny, and it would have let a
+    // null -> witnessed promotion pass this property silently.
+    const strength = { window: 0, null: 1, estimated: 1, witnessed: 2 } as const;
     const records = [
       eventRecord({ confidence: null }),
       eventRecord({ confidence: 'estimated' }),
@@ -226,6 +247,71 @@ describe('canChangeTime / resolveNamedTimeEdit', () => {
       if (after.kind !== 'event' || record.kind !== 'event') throw new Error('event records only');
       const before = strength[String(record.confidence) as keyof typeof strength];
       expect(strength[String(after.confidence) as keyof typeof strength]).toBeLessThanOrEqual(before);
+    }
+  });
+});
+
+
+// The adversarial-reviewer's counterexample, and the reason it got through: the
+// module modelled claim-strength as a CLASS ladder, so an edit that narrows the
+// INTERVAL while keeping the class was invisible to every guard here.
+//
+// The sequence: owner finds vomit at 5:33 PM and logs "found it → before now".
+// They tap Change time and are asked "When did this happen?" — so they answer
+// about OCCURRENCE ("I was out from noon, probably around 2") and the app writes
+// it as DISCOVERY. The row then claims it was discovered by 2:00 PM, which is
+// false; the only fact it held (found at 5:33) is gone; the window narrows from
+// (-inf, 17:33] to (-inf, 14:00]; and occurred_at moves 3.5h earlier, toward the
+// preceding meal — the correlation engine's independent variable.
+//
+// The write itself is right. The QUESTION was wrong, so the prompt is now derived
+// from the record alongside the write and pinned here.
+describe('timeEditPrompt — the question must name the field being written', () => {
+  const found = (): LoggedRecord => ({
+    kind: 'event', typeLabel: 'Vomit', confidence: 'window',
+    earliest: null, latest: at(17, 33).toISOString(),
+  });
+
+  it('asks about DISCOVERY on a found-by record, never about occurrence', () => {
+    expect(timeEditPrompt(found())).toBe('When did you find it?');
+    expect(timeEditPrompt(found())).not.toMatch(/happen/);
+  });
+
+  it('asks about occurrence on a witnessed record', () => {
+    expect(timeEditPrompt(eventRecord())).toBe('When did this happen?');
+  });
+
+  it('returns null wherever no picker may be offered — a control always has a question', () => {
+    const shapes: LoggedRecord[] = [
+      { kind: 'weight', weightKg: 5.62 },
+      eventRecord({ confidence: 'window', earliest: at(14, 0).toISOString(), latest: at(17, 33).toISOString() }),
+      eventRecord({ confidence: 'window', earliest: at(14, 0).toISOString(), latest: null }),
+    ];
+    for (const r of shapes) {
+      expect(canChangeTime(r)).toBe(false);
+      expect(timeEditPrompt(r)).toBeNull();
+    }
+  });
+
+  // The invariant behind all of the above, stated once: wherever a picker is
+  // offered there is a question, and wherever there is a question it matches the
+  // field the resolver writes (discovery iff the write moves `latest`).
+  it('the prompt and the write always agree about which field is being edited', () => {
+    const shapes: LoggedRecord[] = [
+      eventRecord(),
+      eventRecord({ confidence: 'estimated' }),
+      eventRecord({ confidence: null }),
+      found(),
+      eventRecord({ confidence: 'window', earliest: at(14, 0).toISOString(), latest: at(17, 33).toISOString() }),
+      { kind: 'weight', weightKg: 5.62 },
+    ];
+    for (const r of shapes) {
+      const prompt = timeEditPrompt(r);
+      const edit = resolveNamedTimeEdit(r, at(16, 5));
+      expect(prompt === null).toBe(edit === null);
+      if (!prompt || !edit) continue;
+      // The write moves a discovery bound exactly when the question asked about one.
+      expect(Boolean(edit.confidence)).toBe(prompt === 'When did you find it?');
     }
   });
 });

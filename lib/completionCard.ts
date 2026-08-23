@@ -10,8 +10,12 @@
 // never over-claim)."
 //
 // The enforcement is the SHAPE, not the discipline: `LoggedRecord` carries the
-// record's structured fields, never a pre-composed display string, so no log path
-// can hand the card a literal "Logged" — there is no parameter to put it in. The
+// record's structured fields, never a pre-composed display string, so no caller
+// can hand THIS card a literal "Logged" — there is no parameter to put it in.
+// (Scoped claim, deliberately: `components/log/SheetLogBeat.tsx` still defaults
+// its `title` to 'Logged', so a beta account on `log_picker_v2` confirms the same
+// insertSimpleEvent write with the old register. That is CUL-614's half of the
+// convergence, not an oversight here — but the rule is not app-wide yet.) The
 // composition happens once, here, through lib/logCopy, which itself derives the
 // window wording from describeOccurredAt: the same function the History row and
 // the vet report use. So the card's sentence and the row the owner will find in
@@ -24,7 +28,7 @@
 
 import { kgToLbs } from './weight';
 import { summarizeSimpleEvent } from './logCopy';
-import type { OccurredConfidence } from './utils';
+import { describeOccurredAt, type OccurredConfidence } from './utils';
 
 // What the just-written record IS. Structured on purpose (see the header).
 //
@@ -63,13 +67,26 @@ export function summarizeLoggedRecord(
 ): string {
   if (record.kind === 'weight') return `Weight · ${kgToLbs(record.weightKg)} lbs`;
   const occurredAt = new Date(occurredAtIso);
+  if (record.confidence === null) {
+    // An unclassified row is "NOT a claim either way" (migration 012), so it
+    // renders as History renders it — a bare point, through describeOccurredAt —
+    // NOT through the witnessed branch. Defaulting to 'witnessed' here would have
+    // printed the day-asserting form ("today at 5:33 PM") over a row that makes
+    // no such claim: the display flattening B-527 fixed on the edit screen, whose
+    // ruling was that an absence must render as an absence. Unreachable from
+    // today's two call sites (buildTimeFields never returns null) — but the type
+    // permits it, so the first caller that supplies one gets the honest form
+    // rather than a silent promotion in the display register.
+    return `${record.typeLabel} · ${describeOccurredAt({
+      confidence: null,
+      occurredAt: occurredAtIso,
+      earliest: record.earliest,
+      latest: record.latest,
+    }).primary}`;
+  }
   return summarizeSimpleEvent({
     typeLabel: record.typeLabel,
-    // An unclassified row (null) has no window to render, so it takes the plain
-    // point path — 'witnessed' here is the RENDERING default, and nothing about
-    // this call writes it back to the row. resolveNamedTimeEdit below is where
-    // that distinction has teeth.
-    confidence: record.confidence ?? 'witnessed',
+    confidence: record.confidence,
     occurredAt,
     earliest: record.earliest ? new Date(record.earliest) : null,
     latest: record.latest ? new Date(record.latest) : null,
@@ -115,8 +132,42 @@ export interface NamedTimeEdit {
   confidence?: { value: OccurredConfidence; earliest: string | null; latest: string | null };
 }
 
+/**
+ * The QUESTION the time picker must ask for this record — it names the field
+ * `resolveNamedTimeEdit` will actually write, and the two must not drift.
+ *
+ * For an open-ended window the stored value is the DISCOVERY bound, so asking
+ * "when did this happen?" invites an answer about occurrence and records it as
+ * discovery: the found-at time is destroyed, the window narrows, and occurred_at
+ * moves earlier — toward the preceding meal, which is the correlation engine's
+ * independent variable. Found by the `adversarial-reviewer`; the confidence class
+ * never changes in that sequence, which is exactly why the class-based guards
+ * could not see it.
+ *
+ * Returns null when no picker may be offered (see canChangeTime), so a caller
+ * cannot render a control without a question.
+ */
+export function timeEditPrompt(record: LoggedRecord): string | null {
+  if (!canChangeTime(record)) return null;
+  if (record.kind === 'event' && record.confidence === 'window') return 'When did you find it?';
+  return 'When did this happen?';
+}
+
 export function canChangeTime(record: LoggedRecord): boolean {
-  if (record.kind === 'weight') return true;
+  // A WEIGHT CHECK gets no picker, for two reasons that compound.
+  //
+  // The card's sentence names the VALUE ("Weight · 12.4 lbs") and no time at all,
+  // so a time control here edits a field the owner can see neither before nor
+  // after — there is nothing on screen to catch a mis-set date against.
+  //
+  // And a back-date desynchronises the record: handleConfirmWeight repoints the
+  // pets.weight_kg snapshot at log time, and moving occurred_at behind an
+  // existing reading leaves the profile chip and the next weigh-in's pre-fill on
+  // a value the trend card no longer shows. app/edit-event.tsx reconciles that on
+  // the same edit; a completion card is not the place to grow a second copy of
+  // that logic. Withholding costs nothing against the surface this replaced —
+  // the white takeover offered no time edit at all.
+  if (record.kind === 'weight') return false;
   if (record.confidence !== 'window') return true;
   return record.earliest === null;
 }

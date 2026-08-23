@@ -578,13 +578,19 @@ export async function updateEvent(
   const params: (string | number | null)[] = [
     fields.occurred_at, fields.occurred_at_source ?? 'manual',
   ];
-  if ('severity' in fields) {
+  // `!== undefined`, NOT `in`. With exactOptionalPropertyTypes off (it is),
+  // `{ notes: undefined }` type-checks against `notes?: string | null` — so an
+  // `in` test would treat a caller writing `notes: draft.notes` (where draft.notes
+  // is optional) as "clear the note", silently deleting exactly what this change
+  // was made to protect, in a shape the compiler used to reject. An EXPLICIT null
+  // still clears, which is the documented behaviour the edit screen relies on.
+  if (fields.severity !== undefined) {
     sets.push('severity = ?');
-    params.push(fields.severity ?? null);
+    params.push(fields.severity);
   }
-  if ('notes' in fields) {
+  if (fields.notes !== undefined) {
     sets.push('notes = ?');
-    params.push(fields.notes ?? null);
+    params.push(fields.notes);
   }
   if (fields.confidence) {
     sets.push('occurred_at_confidence = ?', 'occurred_at_earliest = ?', 'occurred_at_latest = ?');

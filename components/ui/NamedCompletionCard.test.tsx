@@ -15,7 +15,12 @@
 //   • the card names the RECORD's pet, not a since-switched active one.
 
 jest.mock('../../lib/supabase', () => ({ supabase: {} }));
-jest.mock('../../lib/db', () => ({ updateEvent: jest.fn().mockResolvedValue(undefined) }));
+jest.mock('../../lib/db', () => ({
+  updateEvent: jest.fn().mockResolvedValue(undefined),
+  // Default 'exif' so the provenance-preservation assertions below are meaningful:
+  // a stub returning 'manual' would pass whether or not the card preserves it.
+  getEventSource: jest.fn().mockResolvedValue('exif'),
+}));
 jest.mock('../../lib/sync', () => ({
   syncPendingEvents: jest.fn().mockResolvedValue(undefined),
   syncPendingWeightChecks: jest.fn().mockResolvedValue(undefined),
@@ -32,7 +37,7 @@ import { useMomentStore } from '../../store/momentStore';
 import { usePetStore } from '../../store/petStore';
 import { theme } from '../../constants/theme';
 import { formatTime } from '../../lib/utils';
-import { updateEvent } from '../../lib/db';
+import { updateEvent, getEventSource } from '../../lib/db';
 
 // Minimal structural stand-in for react-test-renderer's ReactTestInstance:
 // @types/react-test-renderer is not a dependency here, and three style predicates
@@ -201,6 +206,16 @@ describe('NamedCompletionCard — the ground', () => {
 });
 
 describe('NamedCompletionCard — Change time', () => {
+  // The weight card names the VALUE and no time, so a picker would edit a field
+  // the owner can see neither before nor after — and a back-date desyncs the
+  // pets.weight_kg snapshot. The takeover offered no time edit at all, so this
+  // withholds nothing anyone had.
+  it('withholds Change time on a weight check', () => {
+    const view = render(<NamedCompletionCard />);
+    seed({ record: { kind: 'weight', weightKg: 5.62 } });
+    expect(view.queryByLabelText('Change time of this log')).toBeNull();
+  });
+
   it('offers Change time on a witnessed record', () => {
     const view = render(<NamedCompletionCard />);
     seed();
@@ -232,6 +247,44 @@ describe('NamedCompletionCard — Change time', () => {
     view.getByLabelText('Change time of this log');
   });
 
+  // THE ADVERSARIAL-REVIEWER'S COUNTEREXAMPLE, at the surface the owner touches.
+  // On a "found by" record the value written is the DISCOVERY bound, so a sheet
+  // asking "When did this happen?" invites an answer about occurrence and stores
+  // it as discovery — destroying the found-at time, narrowing the window, and
+  // moving occurred_at earlier toward the preceding meal. The confidence class
+  // never changes, which is why every class-based guard missed it.
+  it('asks about DISCOVERY, not occurrence, on a found-by record', () => {
+    const view = render(<NamedCompletionCard />);
+    seed({
+      record: {
+        kind: 'event', typeLabel: 'Vomit', confidence: 'window',
+        earliest: null, latest: OCCURRED.toISOString(),
+      },
+    });
+    fireEvent.press(view.getByLabelText('Change time of this log'));
+    view.getByText('When did you find it?');
+    expect(view.queryByText('When did this happen?')).toBeNull();
+  });
+
+  it('asks about occurrence on a witnessed record', () => {
+    const view = render(<NamedCompletionCard />);
+    seed();
+    fireEvent.press(view.getByLabelText('Change time of this log'));
+    view.getByText('When did this happen?');
+  });
+
+  // A peek-and-save (Save is live with nothing scrubbed) must not restate the
+  // provenance of a symptom logged from a photo — the card's own rule against
+  // restating fields it was not told about, applied to occurred_at_source.
+  it('preserves EXIF provenance when the time did not change', async () => {
+    const view = render(<NamedCompletionCard />);
+    seed();
+    fireEvent.press(view.getByLabelText('Change time of this log'));
+    await act(async () => { fireEvent.press(view.getByText('Save')); });
+    expect(getEventSource).toHaveBeenCalledWith('e1');
+    expect((updateEvent as jest.Mock).mock.calls[0][1].occurred_at_source).toBe('exif');
+  });
+
   // The over-claim guard, end to end through the component: a witnessed row's
   // time edit must reach updateEvent with NO confidence key, so the three B-010
   // columns keep exactly what is stored (B-448).
@@ -242,6 +295,22 @@ describe('NamedCompletionCard — Change time', () => {
     await act(async () => { fireEvent.press(view.getByText('Save')); });
     const fields = (updateEvent as jest.Mock).mock.calls[0][1];
     expect(fields).not.toHaveProperty('confidence');
+    expect(fields.occurred_at).toBe(OCCURRED.toISOString());
+  });
+
+  // The other half of the provenance rule: an actual correction DOES claim
+  // 'manual', so preserving 'exif' above is a peek rule, not a refusal to update.
+  it('stamps manual once the time actually moves', async () => {
+    const view = render(<NamedCompletionCard />);
+    seed();
+    fireEvent.press(view.getByLabelText('Change time of this log'));
+    const moved = new Date(2026, 5, 7, 16, 5);
+    await act(async () => {
+      fireEvent(view.UNSAFE_getByType('DateTimePicker' as never), 'change', {}, moved);
+    });
+    await act(async () => { fireEvent.press(view.getByText('Save')); });
+    const fields = (updateEvent as jest.Mock).mock.calls[0][1];
+    expect(fields.occurred_at).toBe(moved.toISOString());
     expect(fields.occurred_at_source).toBe('manual');
   });
 
