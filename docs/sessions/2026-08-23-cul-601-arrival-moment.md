@@ -180,6 +180,15 @@ animation at all — and smoothing it means a measured, non-native-driver height
 §4 does not ask for. If it reads badly on device it is a follow-up issue, not a fix to
 fold into this PR.
 
+## Filed out of this session
+
+| Issue | What |
+|---|---|
+| **CUL-636** | The arrival has no VoiceOver announcement — a blind owner gets an unexplained success buzz. The `announceForAccessibility` pattern is already in this file for the ack line. |
+| **CUL-637** | The card's height snaps before the dissolve. Not a regression (today's app snaps with no animation at all); gated on the device pass, since it may read fine. |
+| **CUL-638** | A durable "this is your first insight" trace in copy rather than motion — which would also give CUL-636 something to say, and give the safety-bypass owner *something* instead of nothing. |
+| **CUL-527** *(comment)* | Not closed, but one new consumer is now fenced. Noted that this failure mode has now had to be taught to two consumers independently, which is usually the signal to fix it at the source. |
+
 ## Files
 
 | File | What |
