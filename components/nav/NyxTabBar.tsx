@@ -9,6 +9,7 @@ import {
   petTabAccessibilityLabel,
   resolvePetTabLabel,
   tabLabelBudget,
+  TAB_LABEL_SIDE_PADDING,
 } from '../../lib/petTabLabel';
 
 // The tab bar (CUL-599; app-polish spec §1 DP-1, rulings D1 + D2).
@@ -79,7 +80,7 @@ const AVATAR_SIZE = ICON_SLOT - RING_WIDTH * 2;
 
 // The 4pt teal tick under the active tab. Always laid out, tinted only when
 // focused — the same no-shift reasoning as the ring.
-const TICK_SIZE = 4;
+const TICK_SIZE = theme.space0_5;
 
 // An explicit label leading, not RN's font-derived default. Load-bearing for the
 // ladder: the pet tab's label changes SIZE between rungs, and a size-derived line
@@ -95,9 +96,20 @@ const LABEL_TICK_GAP = 2;
 // the bottom padding is untouched, being the home-indicator allowance, not content.
 const TAB_CONTENT_HEIGHT =
   ICON_SLOT + GLYPH_LABEL_GAP + LABEL_LINE_HEIGHT + LABEL_TICK_GAP + TICK_SIZE;
-const TAB_TOP_PAD = 8;
-const TAB_BOTTOM_PAD = Platform.OS === 'ios' ? 24 : 8;
-const TAB_HEIGHT = TAB_CONTENT_HEIGHT + TAB_TOP_PAD + TAB_BOTTOM_PAD;
+const TAB_TOP_PAD = theme.space1;
+const TAB_BOTTOM_PAD = Platform.OS === 'ios' ? theme.space3 : theme.space1;
+
+/**
+ * The bar's total height, INCLUDING the home-indicator allowance.
+ *
+ * Exported because three surfaces have to clear this bar — the meal and medication
+ * completion cards and the Snackbar — and each of them used to carry its own
+ * `Platform.OS === 'ios' ? 80 : 60`, commented "tab bar height from
+ * app/(tabs)/_layout.tsx". That was already a copy of a copy; changing the bar here
+ * made all three silently wrong at once, which is the same staleness the derivation
+ * above exists to prevent, one file out. One definition, four consumers.
+ */
+export const TAB_HEIGHT = TAB_CONTENT_HEIGHT + TAB_TOP_PAD + TAB_BOTTOM_PAD;
 
 export function NyxTabBar({ state, descriptors, navigation }: TabBarProps) {
   // Subscribed, not read once: switching pets must re-title the tab, and the
@@ -204,6 +216,11 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
+    // The same 6pt the ladder's budget subtracts. It was missing here while the
+    // budget assumed it, which meant the arithmetic was protected by a padding that
+    // did not exist — two errors pointing opposite ways, not a working system. The
+    // touchable still spans the full tab, so the 44pt tap floor is untouched.
+    paddingHorizontal: TAB_LABEL_SIDE_PADDING,
   },
   iconSlot: {
     height: ICON_SLOT,

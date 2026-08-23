@@ -210,14 +210,37 @@ describe('the fallback ladder, as rendered', () => {
     expect(style.fontSize).toBe(theme.textXS);
   });
 
-  it('keeps the same long name whole on a wider phone', () => {
-    // The ladder is width-aware, not a per-name verdict: the name that falls back
-    // on an SE keeps its real name on a modern one.
+  it('keeps a long name whole on a wider phone', () => {
+    // The ladder is width-aware, not a per-name verdict: the name that drops a rung
+    // on an SE renders at the top rung on a modern phone.
     setWindowWidth(393);
-    setActivePet(makePet({ name: 'Schrodingers Cat' }));
+    setActivePet(makePet({ name: 'Bartholomew' }));
+    const { getByText } = render(<NyxTabBar {...makeProps()} />);
+    const style = Array.isArray(getByText('Bartholomew').props.style)
+      ? Object.assign({}, ...getByText('Bartholomew').props.style.filter(Boolean))
+      : getByText('Bartholomew').props.style;
+    expect(style.fontSize).toBe(theme.textXS);
+  });
+
+  it('drops a full-width-script name a rung rather than tail-cutting it', () => {
+    // Before full-width scripts were modelled, this name was charged roughly HALF
+    // its true width, passed the fit test at 11pt, and was then ellipsised by
+    // numberOfLines={1} — a mid-word cut, which D2 forbids. It now takes the rung
+    // it actually fits, with its name intact.
+    setActivePet(makePet({ name: '白い小さな猫' }));
+    const { getByText } = render(<NyxTabBar {...makeProps()} />);
+    const node = getByText('白い小さな猫');
+    const style = Array.isArray(node.props.style)
+      ? Object.assign({}, ...node.props.style.filter(Boolean))
+      : node.props.style;
+    expect(style.fontSize).toBe(theme.textTabLabelTight);
+  });
+
+  it('falls back for a full-width-script name that fits at neither rung', () => {
+    setActivePet(makePet({ name: '白い小さな猫のミケ' }));
     const { getByText, queryByText } = render(<NyxTabBar {...makeProps()} />);
-    expect(getByText('Schrodingers Cat')).toBeTruthy();
-    expect(queryByText('Pet')).toBeNull();
+    expect(getByText('Pet')).toBeTruthy();
+    expect(queryByText('白い小さな猫のミケ')).toBeNull();
   });
 
   it('never renders a truncated name — no ellipsis rung', () => {

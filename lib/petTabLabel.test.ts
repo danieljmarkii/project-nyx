@@ -77,15 +77,19 @@ describe('resolvePetTabLabel — the acceptance criteria', () => {
     });
   });
 
-  it('matches the mock’s stated calibration — ~12 characters at the narrowest width', () => {
+  it('lands near the mock’s stated calibration, and errs on the safe side of it', () => {
     // Mock round 2 §01: "At the narrowest supported width a tab fits ~12 characters,
-    // so the fallback is the rare case, not the norm." This is the sentence the
-    // headroom constant was tuned against; if the advance table is ever retuned,
-    // this is the claim that has to survive it.
+    // so the fallback is the rare case, not the norm." Modelling the label's own
+    // letter spacing — 0.4pt per character, which that eyeballed figure did not
+    // account for — puts the real number at ~10, since tracking alone costs a
+    // twelve-character name 4.8pt. The difference is in the direction this module
+    // is required to err, so the mock's sentence stands as a design intent and this
+    // is the measured version of it. If the advance table is ever retuned, this is
+    // the claim that has to survive it.
     const fits = (n: number) =>
       estimateLabelWidth('a'.repeat(n), RUNG_FULL) <= BUDGET_320 * ESTIMATE_HEADROOM;
-    expect(fits(11)).toBe(true);
-    expect(fits(13)).toBe(false);
+    expect(fits(10)).toBe(true);
+    expect(fits(12)).toBe(false);
   });
 });
 
@@ -104,6 +108,9 @@ describe('resolvePetTabLabel — invariants', () => {
     '  Padded  ',
     'Ünïcödé Påw',
     '🐈 Mochi',
+    '小白',
+    '白い小さな猫',
+    'ハッピー',
   ];
   const WIDTHS = [320, 360, 375, 390, 393, 414, 430, 744, 1024];
 
@@ -161,10 +168,18 @@ describe('resolvePetTabLabel — invariants', () => {
     });
   });
 
-  it('rescues a long name on a wide phone instead of falling back everywhere', () => {
-    // The ladder is width-aware, not a per-name verdict: the 16-char name that
-    // falls back on an SE keeps its real name on a modern phone.
-    expect(resolvePetTabLabel('Schrodingers Cat', tabLabelBudget(393, TAB_COUNT))).toEqual({
+  it('rescues a name on a wider phone instead of falling back everywhere', () => {
+    // The ladder is width-aware, not a per-name verdict. Two rescues, one per rung:
+    // the name that drops to 10pt on an SE keeps its top rung on a modern phone…
+    expect(resolvePetTabLabel('Bartholomew', tabLabelBudget(393, TAB_COUNT))).toEqual({
+      text: 'Bartholomew',
+      fontSize: RUNG_FULL,
+      isFallback: false,
+    });
+    // …and the 16-char name that falls back entirely on an SE keeps its real name
+    // on a Pro Max. (It still falls back at 393 — 16 characters plus tracking is
+    // genuinely too wide for a quarter of that screen.)
+    expect(resolvePetTabLabel('Schrodingers Cat', tabLabelBudget(430, TAB_COUNT))).toEqual({
       text: 'Schrodingers Cat',
       fontSize: RUNG_TIGHT,
       isFallback: false,
@@ -197,8 +212,38 @@ describe('resolvePetTabLabel — invariants', () => {
 });
 
 describe('estimateLabelWidth', () => {
-  it('scales linearly with font size', () => {
-    expect(estimateLabelWidth('Biscuit', 22)).toBeCloseTo(estimateLabelWidth('Biscuit', 11) * 2, 6);
+  it('scales its glyph component with font size, but not its tracking', () => {
+    // Letter spacing is a fixed point value per character — it does not grow with
+    // the type — so the total is deliberately NOT proportional to font size. Pinned
+    // because a "double the size, double the width" assumption is exactly what
+    // would quietly drop the tracking term again.
+    const tracking = 'Biscuit'.length * theme.trackingWide;
+    const glyphsAt11 = estimateLabelWidth('Biscuit', 11) - tracking;
+    const glyphsAt22 = estimateLabelWidth('Biscuit', 22) - tracking;
+    expect(glyphsAt22).toBeCloseTo(glyphsAt11 * 2, 6);
+    expect(estimateLabelWidth('Biscuit', 22)).toBeLessThan(estimateLabelWidth('Biscuit', 11) * 2);
+  });
+
+  it('charges full-width scripts about twice a Latin character', () => {
+    // The gap that let a six-character Japanese name pass the fit test and then be
+    // tail-cut by numberOfLines={1} — the one cut D2 forbids outright.
+    expect(estimateLabelWidth('白', 11)).toBeGreaterThan(estimateLabelWidth('o', 11) * 1.7);
+    expect(estimateLabelWidth('も', 11)).toBeGreaterThan(estimateLabelWidth('o', 11) * 1.7);
+    expect(estimateLabelWidth('한', 11)).toBeGreaterThan(estimateLabelWidth('o', 11) * 1.7);
+  });
+
+  it('charges an emoji more than any Latin character', () => {
+    // Measured once, as one code point — not as two half-width surrogate halves.
+    expect(estimateLabelWidth('🐈', 11)).toBeGreaterThan(estimateLabelWidth('M', 11));
+  });
+
+  it('charges an accented capital as a capital, not as lowercase', () => {
+    // An A–Z range check is ASCII-only, so Ü/É/Ñ used to fall through to the
+    // lowercase default despite rendering as wide as U/E/N.
+    ['Ü', 'É', 'Ñ', 'Ø'].forEach((upper) => {
+      expect(estimateLabelWidth(upper, 11)).toBeCloseTo(estimateLabelWidth('N', 11), 6);
+    });
+    expect(estimateLabelWidth('ü', 11)).toBeLessThan(estimateLabelWidth('Ü', 11));
   });
 
   it('is additive over characters', () => {
