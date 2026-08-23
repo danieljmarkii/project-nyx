@@ -58,8 +58,55 @@ The discard alert names what is at stake rather than saying "your changes" — `
 
 **CUL-626** — `MedicationCompletionCard` resolves `petName` from the *active* pet, not the dose's, unlike its two siblings. Log a dose for one pet, switch before the 5s card dismisses, and the card asks whether the other pet still got it. Same class as CUL-574. The new removal line resolves the payload's pet correctly; the rest was left alone rather than widened into this PR, and the scoping is noted inline on the card so the inconsistency reads as deliberate.
 
+## The review passes, and what they broke
+
+Three isolated reviewers ran against the first commit. **All three returned findings, and five defects were real enough to fix in-session.** The value was concentrated in exactly the place isolation is supposed to help: every one of them was a *second consumer* the build conversation had stopped thinking about.
+
+### 1. An orphaned hide timer killed the *next* card (adversarial)
+
+The worst of the six, and invisible without a probe. `undo()` armed its removal dwell with a bare `setTimeout` and did not clear first — so a chip tap landing during the write left two live timers. The earlier fired, ran `hideTimer = null`, and thereby dropped the module's only handle on the later one; `present()`'s `clearTimers()` then found null and could not cancel it. A stray hide from the dead card killed a **brand-new** card about a second after the owner logged it. And because the orphan was a raw `setTimeout`, it bypassed the `MEDICATION_FLAGGED_DURATION_MS` floor — so the card it killed could be one carrying an unread double-dose note.
+
+Fixed structurally with `armHide()`, now the only way this module schedules a hide: clears first, and nulls the handle only if it is still its own. The file's own comment at the `rescheduleHide` floor was written to close this defect class in a different shape; the new path reopened it.
+
+### 2. The Profile compliance tally kept counting a removed dose (adversarial)
+
+Two taps, one screen, no race. "Log a dose" bumps the tally optimistically, the card opens over the same Profile, Undo removes the dose — and nothing decrements, because `loadMedications` is focus-driven and the owner never blurs the tab. Offline, never. A compliance claim the record no longer supports, in the reassuring direction, which contradicts this PR's own invariant that removing a dose can only reduce what the record claims. True of the record; was false of that surface. `removeFromToday` was the right instinct — the regimen tally was the second consumer nobody told.
+
+### 3. The trial heads-up ledger was spent by a feeding that Undo reversed (adversarial)
+
+Rule 3 gives each food one heads-up per trial, written at render time so a suppressed panel cannot consume a budget it never spent. Undo opened the mirror image — and not as an edge case. **The amber "Off the trial list" panel is itself the cue that prompts the Undo**: the owner reads it, realises they tapped the wrong tile, reverses. The food was then marked spoken-for on a feeding that never happened, and the real feeding on day 20 of a 56-day elimination trial would meet silence. New `forgetFlaggedFoodInTrial` gives it back. The commit had guarded the flag arriving *after* Undo and missed the far more common before case.
+
+### 4. Undo and Change time had overlapping touch targets (code review)
+
+8pt gap, symmetric 12pt `hitSlop` — the expanded rectangles crossed and z-order picked the winner. Tolerable between two corrections; not here, because Undo has no confirming dialog, so a mistouch aimed at Change time silently removed the log. Fixed with **asymmetric** `hitSlop`: each control keeps its vertical and outward reach (which is what carries the 44pt floor alongside `minHeight`) and yields only the edge facing its neighbour. No layout width spent, which matters on the meal card.
+
+### 5. `undo()` deleted the store's *current* payload (access-control red-team)
+
+Not the eventId the card rendered — the only unguarded action in a store where `patchTrialFlag` and `patchDoubleDose` both carry an id for exactly this reason. `present()` swaps the payload in place, so a second log completing between the paint and the touch-up would have deleted the row that replaced it. Narrow window, irreversible action. It now takes the id and refuses a stale one.
+
+### What held, and on what check
+
+The red-team confirmed the boundaries the feature actually rests on: a cross-account upsert is denied because `events_owner`'s `USING` doubles as its `WITH CHECK`; queue-then-switch holds because the reversal targets an id minted at insert; 20+ read paths — including `generate-report`, `analyze-*`, `ask`, the widget snapshot and the direct `/event/[id]` route — all filter the parent's `deleted_at`; an offline undo survives a pull via the `synced = 1` backstop. The adversarial pass confirmed the B-156 G1 fail-safe holds **structurally rather than incidentally** — no adherence write exists anywhere in the reversal — and that both directions of the paired-dose join behave.
+
+### One finding that did not survive checking
+
+Code review suggested pruning `lib/completionCard.test.ts`'s supabase/sync mocks as vestigial. They are not: `completionCard` imports `weight`, which imports `supabase`. Reverted after watching the suite fail — worth recording, because a plausible cleanup that a reviewer asserts is safe is exactly the kind of thing that gets applied without checking.
+
+## Filed rather than folded in
+
+Four more findings were real but out of scope, each with the evidence and a named fix shape:
+
+- **CUL-639** — a retracted health photo still uploads to Storage *after* the removal and is never deleted (`lib/simpleEvent.ts`'s detached IIFE; `syncPendingAttachments` has no parent join). Pre-existing on all three delete paths; Undo makes the window the common case rather than a rarity. Retention, not a leak — the object stays owner-scoped and unrendered, and `delete-account` still purges it.
+- **CUL-640** — a quarantined tombstone leaves the event live server-side, and the SyncBanner tells the owner to recover it "from History", where a soft-deleted row is filtered out.
+- **CUL-641** — undoing a weight leaves `pets.weight_kg` on the deleted reading, so the Profile chip and the next weigh-in's pre-fill keep offering the number the owner just retracted. Same mechanism as History Remove, but Undo is the affordance the spec built to catch a fat-fingered weight. Carries a three-way decision brief; deliberately not fixed per-path.
+- **CUL-642** — no delete path invalidates the Signal cache, and the 5s regen debounce is the same number as the card's dwell, so the two race.
+
+And one **design decision routed to the PM** rather than taken: **CUL-645** — Undo is now the only destructive action in the app without a Cancel, and the same photo the discard guard protects with a dialog thirty seconds earlier can be destroyed by one unconfirmed tap once it is attached to a committed event. The reviewer was explicit that this is a Designer/PM call; the brief carries four options with B (conditional confirm when an attachment is present) recommended.
+
 ## Verification
 
 `tsc --noEmit` clean. 255 suites / 5643 tests green, including all three non-UTC CI timezones (UTC+14, UTC+12:45, UTC−10). No schema, no Edge Function, no flag — client-only, and the track's §8 rule says chrome/typography replaces surfaces outright rather than shipping behind the B-712 two-gate ceremony.
+
+The Profile tally rollback is the one piece of new logic without a test: `app/(tabs)/profile.tsx` has no suite, and standing one up for a screen that pulls supabase, storage and five stores is out of proportion to ten lines of wiring. The store-side signal it reads (`removed` + `payload.eventId`) is fully covered. `tests: N/A — screen wiring; the store signal it reads is tested` (Engineer exemption).
 
 One coupling cost worth recording: `momentStore` now reaches `lib/sync` → `lib/supabase` transitively, which throws at import time without env. Only `store/momentStore.test.ts` was affected (the three card suites already mock `lib/sync`); it mocks `lib/undoLog` at the module boundary, which is also what makes the reversal assertable.
