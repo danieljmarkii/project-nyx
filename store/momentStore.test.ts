@@ -15,6 +15,9 @@ jest.mock('../lib/haptics', () => ({
 // the reversal (the latch, the staleness check, the removal dwell), while
 // lib/undoLog.test.ts owns what the reversal actually writes.
 jest.mock('../lib/undoLog', () => ({ reverseLoggedEvent: jest.fn(async () => {}) }));
+jest.mock('../lib/trialContaminant', () => ({
+  forgetFlaggedFoodInTrial: jest.fn(async () => {}),
+}));
 
 jest.mock('./eventStore', () => ({
   useEventStore: { getState: () => ({ removeFromToday: jest.fn() }) },
@@ -22,6 +25,7 @@ jest.mock('./eventStore', () => ({
 
 import { commitRoutine, commitSymptom, destructiveConfirm, selectChip } from '../lib/haptics';
 import { reverseLoggedEvent } from '../lib/undoLog';
+import { forgetFlaggedFoodInTrial } from '../lib/trialContaminant';
 import {
   useMomentStore, whenMealCardVisible, whenMedicationCardVisible,
   MEDICATION_FLAGGED_DURATION_MS, REMOVED_DURATION_MS,
@@ -848,7 +852,7 @@ describe('momentStore — undo', () => {
 
   it('soft-deletes the just-written event and swaps the card to its removal line', async () => {
     useMomentStore.getState().showNamed(namedPayload({ eventId: 'ev-9' }));
-    const result = await useMomentStore.getState().undo();
+    const result = await useMomentStore.getState().undo('ev-9');
     expect(result).toBe('removed');
     expect(reverse).toHaveBeenCalledWith('ev-9');
     const s = useMomentStore.getState();
@@ -859,7 +863,7 @@ describe('momentStore — undo', () => {
 
   it('works on a meal and on a dose — one reversal for all three registers', async () => {
     useMomentStore.getState().showMeal(mealPayload({ eventId: 'meal-1' }));
-    await useMomentStore.getState().undo();
+    await useMomentStore.getState().undo('meal-1');
     expect(reverse).toHaveBeenLastCalledWith('meal-1');
     expect(useMomentStore.getState().removed).toBe(true);
 
@@ -867,19 +871,19 @@ describe('momentStore — undo', () => {
     // A NEW card is not born removed — present() resets the flag, or the next log
     // would render its confirmation under the word "Removed".
     expect(useMomentStore.getState().removed).toBe(false);
-    await useMomentStore.getState().undo();
+    await useMomentStore.getState().undo('dose-1');
     expect(reverse).toHaveBeenLastCalledWith('dose-1');
   });
 
   it('plays the rigid destructive haptic on the tap — the tap IS the confirm here', async () => {
     useMomentStore.getState().showNamed(namedPayload());
-    await useMomentStore.getState().undo();
+    await useMomentStore.getState().undo('n1');
     expect(destructiveConfirm).toHaveBeenCalledTimes(1);
   });
 
   it('dismisses after the removal dwell', async () => {
     useMomentStore.getState().showNamed(namedPayload());
-    await useMomentStore.getState().undo();
+    await useMomentStore.getState().undo('n1');
     jest.advanceTimersByTime(REMOVED_DURATION_MS - 1);
     expect(useMomentStore.getState().visible).toBe(true);
     jest.advanceTimersByTime(1);
@@ -893,7 +897,7 @@ describe('momentStore — undo', () => {
     useMomentStore.getState().showNamed(namedPayload());
     let release: () => void = () => {};
     reverse.mockImplementation(() => new Promise<void>((r) => { release = () => r(); }));
-    const pending = useMomentStore.getState().undo();
+    const pending = useMomentStore.getState().undo('n1');
     jest.advanceTimersByTime(60_000);
     expect(useMomentStore.getState().visible).toBe(true);
     release();
@@ -905,9 +909,9 @@ describe('momentStore — undo', () => {
     useMomentStore.getState().showNamed(namedPayload({ eventId: 'ev-1' }));
     let release: () => void = () => {};
     reverse.mockImplementation(() => new Promise<void>((r) => { release = () => r(); }));
-    const first = useMomentStore.getState().undo();
+    const first = useMomentStore.getState().undo('ev-1');
     // The second tap lands inside the await window, where `removed` is still false.
-    const second = await useMomentStore.getState().undo();
+    const second = await useMomentStore.getState().undo('ev-1');
     expect(second).toBe('ignored');
     release();
     await first;
@@ -916,13 +920,13 @@ describe('momentStore — undo', () => {
 
   it('IGNORES a tap on an already-removed card', async () => {
     useMomentStore.getState().showNamed(namedPayload());
-    await useMomentStore.getState().undo();
-    expect(await useMomentStore.getState().undo()).toBe('ignored');
+    await useMomentStore.getState().undo('n1');
+    expect(await useMomentStore.getState().undo('n1')).toBe('ignored');
     expect(reverse).toHaveBeenCalledTimes(1);
   });
 
   it('IGNORES a tap with no card up — never reports a failure for a no-op', async () => {
-    expect(await useMomentStore.getState().undo()).toBe('ignored');
+    expect(await useMomentStore.getState().undo('anything')).toBe('ignored');
     expect(reverse).not.toHaveBeenCalled();
   });
 
@@ -931,7 +935,7 @@ describe('momentStore — undo', () => {
     // row that is still in the record.
     useMomentStore.getState().showNamed(namedPayload());
     reverse.mockRejectedValueOnce(new Error('disk full'));
-    expect(await useMomentStore.getState().undo()).toBe('failed');
+    expect(await useMomentStore.getState().undo('n1')).toBe('failed');
     const s = useMomentStore.getState();
     expect(s.removed).toBe(false);
     expect(s.visible).toBe(true);
@@ -940,11 +944,11 @@ describe('momentStore — undo', () => {
   it('re-arms after a failure, so a retry is possible', async () => {
     useMomentStore.getState().showNamed(namedPayload({ eventId: 'ev-2' }));
     reverse.mockRejectedValueOnce(new Error('nope'));
-    expect(await useMomentStore.getState().undo()).toBe('failed');
+    expect(await useMomentStore.getState().undo('ev-2')).toBe('failed');
     // The latch must have been released — otherwise the owner's second tap on the
     // alert's "try again" would be silently swallowed forever.
     reverse.mockImplementation(async () => {});
-    expect(await useMomentStore.getState().undo()).toBe('removed');
+    expect(await useMomentStore.getState().undo('ev-2')).toBe('removed');
     expect(reverse).toHaveBeenLastCalledWith('ev-2');
   });
 
@@ -955,7 +959,7 @@ describe('momentStore — undo', () => {
     useMomentStore.getState().showNamed(namedPayload({ eventId: 'old' }));
     let release: () => void = () => {};
     reverse.mockImplementation(() => new Promise<void>((r) => { release = () => r(); }));
-    const pending = useMomentStore.getState().undo();
+    const pending = useMomentStore.getState().undo('old');
     useMomentStore.getState().showMeal(mealPayload({ eventId: 'new' }));
     release();
     expect(await pending).toBe('removed');
@@ -968,7 +972,7 @@ describe('momentStore — undo', () => {
   // ── No patch lands on a removed card ──────────────────────────────────────
   it('REFUSES a late trial heads-up on an undone meal', async () => {
     useMomentStore.getState().showMeal(mealPayload({ eventId: 'm9' }));
-    await useMomentStore.getState().undo();
+    await useMomentStore.getState().undo('m9');
     const landed = useMomentStore.getState().patchTrialFlag('m9', {
       kind: 'off_trial_list',
     } as never);
@@ -979,7 +983,7 @@ describe('momentStore — undo', () => {
 
   it('REFUSES a late double-dose note on an undone dose', async () => {
     useMomentStore.getState().showMedication(medicationPayload({ eventId: 'd9' }));
-    await useMomentStore.getState().undo();
+    await useMomentStore.getState().undo('d9');
     const landed = useMomentStore.getState().patchDoubleDose(
       'd9',
       { conflict: true, gapMinutes: 20 } as never,
@@ -990,11 +994,152 @@ describe('momentStore — undo', () => {
 
   it('REFUSES chip and time patches on a removed card', async () => {
     useMomentStore.getState().showMeal(mealPayload({ eventId: 'm1' }));
-    await useMomentStore.getState().undo();
+    await useMomentStore.getState().undo('m1');
     useMomentStore.getState().patchIntakeRating('all');
     useMomentStore.getState().patchOccurredAt('2030-01-01T00:00:00.000Z');
     const p = useMomentStore.getState().payload as MealPayload;
     expect(p.intakeRating).toBeNull();
     expect(p.occurredAt).toBe('2026-06-07T14:00:00.000Z');
+  });
+});
+
+
+// ── What the review passes broke, pinned (CUL-612) ──────────────────────────
+//
+// Every case below is a counterexample an isolated reviewer constructed against
+// the first cut. They are here rather than in the prose because a comment does
+// not fail a build.
+describe('momentStore — undo, the adversarial cases', () => {
+  const reverse = reverseLoggedEvent as jest.Mock;
+  const forget = forgetFlaggedFoodInTrial as jest.Mock;
+
+  beforeEach(() => {
+    jest.useFakeTimers();
+    reverse.mockClear().mockImplementation(async () => {});
+    forget.mockClear().mockImplementation(async () => {});
+    useMomentStore.getState().hide();
+    useMomentStore.setState({ payload: null, removed: false });
+  });
+  afterEach(() => {
+    useMomentStore.getState().hide();
+    jest.useRealTimers();
+  });
+
+  /** Hold the reversal open so the await window can be poked at. */
+  function stallReverse(): () => void {
+    let release: () => void = () => {};
+    reverse.mockImplementation(() => new Promise<void>((r) => { release = () => r(); }));
+    return () => release();
+  }
+
+  // ── The orphaned hide timer ───────────────────────────────────────────────
+  // A chip tap landing DURING the undo await armed its own 1.5s confirm hold, so
+  // two timers ran at once. The earlier one fired, nulled the module's handle, and
+  // thereby orphaned the LATER one — which `present()` could then no longer cancel,
+  // so a stray hide from the dead card killed a brand-new one ~1s after the owner
+  // logged it.
+  it('a reschedule during the undo await cannot orphan a timer onto the NEXT card', async () => {
+    useMomentStore.getState().showMeal(mealPayload({ eventId: 'e1' }));
+    const release = stallReverse();
+    const pending = useMomentStore.getState().undo('e1');
+    // The owner's other thumb lands on an intake chip while the write is in flight.
+    useMomentStore.getState().rescheduleHide(1500);
+    release();
+    await pending;
+
+    jest.advanceTimersByTime(1500);          // the chip's hold fires
+    useMomentStore.getState().showMeal(mealPayload({ eventId: 'e2' }));
+    expect(useMomentStore.getState().visible).toBe(true);
+
+    // Long enough for BOTH the orphan and the fresh card's own dwell to have been
+    // due, had the orphan survived.
+    jest.advanceTimersByTime(REMOVED_DURATION_MS);
+    const s = useMomentStore.getState();
+    expect(s.payload?.eventId).toBe('e2');
+    expect(s.visible).toBe(true);            // <- was false before armHide
+  });
+
+  it('a new card cancels the previous card’s pending hide, not the other way round', async () => {
+    // The property armHide's identity guard exists to preserve: exactly one hide
+    // timer is ever live, and it belongs to the card currently on screen. The
+    // orphan case above is what happens when that stops being true, so this is
+    // the invariant rather than the symptom.
+    useMomentStore.getState().showNamed(namedPayload({ eventId: 'n1' }), { durationMs: 1000 });
+    jest.advanceTimersByTime(999);
+    useMomentStore.getState().showNamed(namedPayload({ eventId: 'n2' }), { durationMs: 5000 });
+    jest.advanceTimersByTime(1);             // the FIRST card's timer would have been due
+    expect(useMomentStore.getState().visible).toBe(true);
+    jest.advanceTimersByTime(4998);
+    expect(useMomentStore.getState().visible).toBe(true);
+    jest.advanceTimersByTime(1);
+    expect(useMomentStore.getState().visible).toBe(false);
+  });
+
+  it('a reschedule during the await still cannot shorten a safety dwell', async () => {
+    // The orphan bypassed rescheduleHide's MEDICATION_FLAGGED_DURATION_MS floor,
+    // so the card it killed could be one carrying an unread double-dose note.
+    useMomentStore.getState().showMedication(medicationPayload({ eventId: 'm1' }));
+    useMomentStore.getState().patchDoubleDose(
+      'm1', { conflict: true, gapMinutes: 30 } as never, 'given',
+    );
+    useMomentStore.getState().rescheduleHide(1500);
+    jest.advanceTimersByTime(MEDICATION_FLAGGED_DURATION_MS - 1);
+    expect(useMomentStore.getState().visible).toBe(true);
+  });
+
+  // ── The undo target ───────────────────────────────────────────────────────
+  it('REFUSES to delete a payload that replaced the card the owner tapped', async () => {
+    // `present()` swaps the payload in place, so a second log completing between
+    // the paint and the touch-up would otherwise delete the row that replaced it —
+    // an irreversible action against a record the owner never saw.
+    useMomentStore.getState().showMeal(mealPayload({ eventId: 'old' }));
+    useMomentStore.getState().showMeal(mealPayload({ eventId: 'new' }));
+    expect(await useMomentStore.getState().undo('old')).toBe('ignored');
+    expect(reverse).not.toHaveBeenCalled();
+  });
+
+  // ── The trial heads-up ledger ─────────────────────────────────────────────
+  it('gives a food its one-per-trial heads-up back when the feeding is undone', async () => {
+    // The amber panel is what PROMPTS the Undo, so a spent budget here is the
+    // expected interaction, not an edge — and it would silence the real feeding
+    // weeks later.
+    useMomentStore.getState().showMeal(mealPayload({
+      eventId: 'e1',
+      trialFlag: { kind: 'off_trial_list', trialId: 't1', foodId: 'f9' } as never,
+    }));
+    await useMomentStore.getState().undo('e1');
+    expect(forget).toHaveBeenCalledWith('t1', 'f9');
+  });
+
+  it('does not touch the ledger for an unflagged meal, or for other card kinds', async () => {
+    useMomentStore.getState().showMeal(mealPayload({ eventId: 'e2' }));
+    await useMomentStore.getState().undo('e2');
+    useMomentStore.getState().showNamed(namedPayload({ eventId: 'n5' }));
+    await useMomentStore.getState().undo('n5');
+    expect(forget).not.toHaveBeenCalled();
+  });
+
+  it('still removes the event when the ledger un-spend fails', async () => {
+    // Best-effort in the same direction as the write it reverses: the food stays
+    // spoken-for, which is quiet rather than alarming — but a bookkeeping failure
+    // must never surface as a failed reversal.
+    forget.mockRejectedValueOnce(new Error('storage full'));
+    useMomentStore.getState().showMeal(mealPayload({
+      eventId: 'e3',
+      trialFlag: { kind: 'off_trial_list', trialId: 't1', foodId: 'f9' } as never,
+    }));
+    expect(await useMomentStore.getState().undo('e3')).toBe('removed');
+  });
+
+  it('clears the in-flight latch when a new card presents', async () => {
+    // A leaked latch would make Undo dead for the rest of the session.
+    useMomentStore.getState().showMeal(mealPayload({ eventId: 'a' }));
+    const release = stallReverse();
+    const first = useMomentStore.getState().undo('a');
+    useMomentStore.getState().showMeal(mealPayload({ eventId: 'b' }));
+    release();
+    await first;
+    reverse.mockImplementation(async () => {});
+    expect(await useMomentStore.getState().undo('b')).toBe('removed');
   });
 });

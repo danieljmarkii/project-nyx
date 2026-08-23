@@ -10,7 +10,7 @@ import { updateEvent, getEventSource } from '../../lib/db';
 import { syncPendingEvents } from '../../lib/sync';
 import {
   summarizeLoggedRecord, canChangeTime, resolveNamedTimeEdit, applyNamedTimeEdit,
-  timeEditPrompt, removedNoticeCopy,
+  timeEditPrompt, removedNoticeCopy, HITSLOP_ACTION_LEFT, HITSLOP_ACTION_RIGHT,
 } from '../../lib/completionCard';
 import { sourceAfterPointEdit } from '../../lib/eventTimeEdit';
 import { ThemedText } from './ThemedText';
@@ -175,7 +175,8 @@ export function NamedCompletionCard() {
     // 'ignored' is a no-op the owner never hears about (a second tap, a card that
     // has already gone). Only a real failure gets a word — and it names the other
     // way in, because the row is still there to remove.
-    if ((await undo()) === 'failed') {
+    if (!payload) return;
+    if ((await undo(payload.eventId)) === 'failed') {
       Alert.alert('Could not remove that log', 'Try again, or remove it from History.');
     }
   }
@@ -257,7 +258,7 @@ export function NamedCompletionCard() {
           <View style={styles.actionRow}>
             <TouchableOpacity
               onPress={handleUndo}
-              hitSlop={8}
+              hitSlop={HITSLOP_ACTION_LEFT}
               style={styles.actionBtn}
               accessibilityRole="button"
               accessibilityLabel="Undo — remove this log"
@@ -267,7 +268,7 @@ export function NamedCompletionCard() {
             {showChangeTime && (
               <TouchableOpacity
                 onPress={() => setPickerOpen(true)}
-                hitSlop={8}
+                hitSlop={HITSLOP_ACTION_RIGHT}
                 style={styles.actionBtn}
                 accessibilityRole="button"
                 accessibilityLabel="Change time of this log"

@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { commitRoutine, commitSymptom, destructiveConfirm, selectChip } from '../lib/haptics';
 import { reverseLoggedEvent } from '../lib/undoLog';
+import { forgetFlaggedFoodInTrial } from '../lib/trialContaminant';
 import { useEventStore } from './eventStore';
 import type { IntakeRating } from '../components/log/IntakeChipRow';
 import type { DoseAdherence } from '../components/log/AdherenceChipRow';
@@ -205,7 +206,16 @@ interface MomentState {
   // It lives HERE rather than in the three cards for the same reason the commit
   // haptic lives in present(): a future log path should inherit Undo by virtue of
   // showing a card at all, and the invariants below should be stated once.
-  undo: () => Promise<UndoResult>;
+  //
+  // TAKES THE EVENT ID THE CARD RENDERED, and refuses if it is no longer the one
+  // on screen — the same contract patchTrialFlag and patchDoubleDose carry, for
+  // the same reason, and this is the action that most needs it. `present()` swaps
+  // the payload IN PLACE, so a second log completing between the paint the owner
+  // is looking at and the touch-up that fires would otherwise delete the row that
+  // replaced it: an irreversible action against a record the owner never saw.
+  // Found by the access-control red-team, which noted this was the only unguarded
+  // action in a store that guards every patch.
+  undo: (eventId: string) => Promise<UndoResult>;
   // Mutates the in-flight card's occurredAt after a "Change time" edit so the
   // card reflects the new time before dismissing. All three cards carry a
   // "Change time" backfill affordance (the dose card gained it to match the meal
@@ -331,6 +341,36 @@ function clearHideTimer() {
   if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
 }
 
+/**
+ * Arm the dismiss timer — the ONLY way this module schedules a hide.
+ *
+ * Two things it does that a bare `hideTimer = setTimeout(...)` did not, both
+ * found by the adversarial pass on CUL-612:
+ *
+ *   1. CLEARS FIRST. `undo()` armed the removal dwell after awaiting the write,
+ *      and a chip tap landing DURING that await had already armed its own 1.5s
+ *      confirm hold — so two timers ran at once. Every other caller happened to
+ *      clear first; the invariant was real but unenforced, and the one path that
+ *      broke it was the new one.
+ *   2. Nulls the handle ONLY IF IT IS STILL OURS. This is what made (1) escalate
+ *      from a redundant timer into a card being killed: the earlier timer fired,
+ *      ran `hideTimer = null`, and thereby dropped the module's only reference to
+ *      the LATER one. `present()`'s `clearTimers()` then found null and could not
+ *      cancel it, so a stray hide from the previous card landed on a brand-new
+ *      one ~1s after the owner logged it — the card simply vanished.
+ *
+ * Both fixes are structural rather than a patch at the call site, so a future
+ * scheduling path cannot reintroduce either half.
+ */
+function armHide(set: (partial: Partial<MomentState>) => void, durationMs: number) {
+  clearHideTimer();
+  const mine: ReturnType<typeof setTimeout> = setTimeout(() => {
+    set({ visible: false });
+    if (hideTimer === mine) hideTimer = null;
+  }, durationMs);
+  hideTimer = mine;
+}
+
 // The commit haptic for a payload (CUL-604 · §5.6). Derived from the payload rather
 // than passed in by the caller, so a FUTURE log path gets the right haptic by virtue
 // of showing a card at all — the same can't-forget reasoning that puts the meal card's
@@ -372,10 +412,11 @@ function present(
     // payload through the fade, so a second log arriving during that fade would
     // otherwise render its own confirmation under the word "Removed".
     set({ visible: true, payload, removed: false });
-    hideTimer = setTimeout(() => {
-      set({ visible: false });
-      hideTimer = null;
-    }, duration);
+    // A new card is a new undo target, so the previous card's in-flight latch must
+    // not gate it. (It also keeps the latch from leaking between tests, which a
+    // bare module-level flag otherwise does.)
+    undoInFlight = false;
+    armHide(set, duration);
   };
   if (delay > 0) showTimer = setTimeout(reveal, delay);
   else reveal();
@@ -400,13 +441,15 @@ export const useMomentStore = create<MomentState>((set) => ({
     clearTimers();
     set({ visible: false });
   },
-  undo: async () => {
+  undo: async (eventId) => {
     const before = useMomentStore.getState();
     const payload = before.payload;
-    // Nothing to reverse, or a second tap racing the first. 'ignored', never
-    // 'failed' — a card that shows an error for a tap that did nothing wrong
-    // teaches the owner that Undo is unreliable.
+    // Nothing to reverse, a stale target, or a second tap racing the first.
+    // 'ignored', never 'failed' — a card that shows an error for a tap that did
+    // nothing wrong teaches the owner that Undo is unreliable.
     if (!payload || !before.visible || before.removed || undoInFlight) return 'ignored';
+    // The card that rendered this control must still be the card on screen.
+    if (payload.eventId !== eventId) return 'ignored';
     undoInFlight = true;
     // Rigid, on the tap — because on this surface the tap IS the destructive
     // confirm (§5.6). The History/detail Remove withholds it until the alert's
@@ -429,6 +472,17 @@ export const useMomentStore = create<MomentState>((set) => ({
       return 'failed';
     }
     undoInFlight = false;
+    // ── GIVE THE TRIAL HEADS-UP BACK ────────────────────────────────────────
+    // Rule 3 spends a food's one-per-trial budget when the panel RENDERS, and on
+    // this card the panel is what prompts the Undo — the owner reads "Off the
+    // trial list", realises they tapped the wrong tile, and reverses it. Leaving
+    // the budget spent would mean the food is silently spoken-for on a feeding
+    // that never happened, and the real feeding weeks later gets no heads-up.
+    // Fire-and-forget in the same direction as the write it reverses.
+    if (payload.kind === 'meal' && payload.trialFlag) {
+      const { trialId, foodId } = payload.trialFlag;
+      forgetFlaggedFoodInTrial(trialId, foodId).catch(console.error);
+    }
     // The reversal itself is unconditional — the event is gone and should be.
     // Everything BELOW is about the card, so it only applies if this is still the
     // card that asked. A second log during the write replaced the payload, and
@@ -438,10 +492,10 @@ export const useMomentStore = create<MomentState>((set) => ({
     useEventStore.getState().removeFromToday(payload.eventId);
     if (after.payload?.eventId !== payload.eventId || !after.visible) return 'removed';
     set({ removed: true });
-    hideTimer = setTimeout(() => {
-      set({ visible: false });
-      hideTimer = null;
-    }, REMOVED_DURATION_MS);
+    // armHide, not a bare setTimeout: a chip tap landing during the await above
+    // may have armed its own confirm hold, and two live timers here is what the
+    // adversarial pass turned into a vanished card (see armHide).
+    armHide(set, REMOVED_DURATION_MS);
     return 'removed';
   },
   // ── NO PATCH LANDS ON A REMOVED CARD (CUL-612) ────────────────────────────
@@ -530,7 +584,6 @@ export const useMomentStore = create<MomentState>((set) => ({
     return true;
   },
   rescheduleHide: (durationMs) => {
-    clearHideTimer();
     // B-157 (CUL-284) — a card carrying an unread safety note has a FLOOR on its dwell,
     // and it is enforced here rather than at the call sites.
     //
@@ -551,10 +604,7 @@ export const useMomentStore = create<MomentState>((set) => ({
       state.payload?.kind === 'medication' && state.payload.doubleDose?.conflict
         ? MEDICATION_FLAGGED_DURATION_MS
         : 0;
-    hideTimer = setTimeout(() => {
-      set({ visible: false });
-      hideTimer = null;
-    }, Math.max(durationMs, floorMs));
+    armHide(set, Math.max(durationMs, floorMs));
   },
 }));
 

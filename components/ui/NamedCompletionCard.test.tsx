@@ -448,8 +448,32 @@ describe('NamedCompletionCard — Undo', () => {
     await pressUndo(view);
     // Second press lands on the removal line, where the control is already gone —
     // drive the store directly to prove the 'ignored' path never alerts.
-    await act(async () => { await useMomentStore.getState().undo(); });
+    await act(async () => { await useMomentStore.getState().undo('e1'); });
     expect(alert).not.toHaveBeenCalled();
     alert.mockRestore();
+  });
+});
+
+
+// The touch-target rule (CUL-612). Undo has no confirming dialog — the tap IS the
+// destructive confirm — so a mistouch aimed at Change time must not be able to
+// resolve to it. Found by code review: symmetric hitSlop wide enough to be
+// comfortable reached across the 8pt gap from both sides, and the winner was
+// z-order. Asserted structurally rather than left to a device pass, because an
+// overlap is invisible in a screenshot.
+describe('NamedCompletionCard — the action pair cannot overlap', () => {
+  it('each control yields the edge that faces its neighbour', () => {
+    const view = render(<NamedCompletionCard />);
+    seed();
+    const undo = view.getByLabelText('Undo — remove this log').props.hitSlop;
+    const change = view.getByLabelText('Change time of this log').props.hitSlop;
+    // Half the 8pt gap each: they meet at the midpoint and never cross.
+    expect(undo.right + change.left).toBeLessThanOrEqual(theme.space1);
+    // …while keeping the outward and vertical reach that carries the 44pt floor
+    // alongside minHeight.
+    expect(undo.left).toBeGreaterThanOrEqual(12);
+    expect(change.right).toBeGreaterThanOrEqual(12);
+    expect(undo.top).toBeGreaterThanOrEqual(12);
+    expect(change.bottom).toBeGreaterThanOrEqual(12);
   });
 });

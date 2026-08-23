@@ -238,3 +238,39 @@ export function removedNoticeCopy(petName: string): RemovedNotice {
   const detail = `Taken out of ${petName}’s record`;
   return { title, detail, a11yLabel: `${title}. ${detail}` };
 }
+
+
+// ── THE ACTION PAIR'S TOUCH TARGETS (CUL-612) ───────────────────────────────
+// Undo and Change time sit ~8pt apart on all three cards. A symmetric hitSlop
+// wide enough to make each label comfortable (12pt) reaches 12pt into an 8pt
+// gap from BOTH sides, so the expanded rectangles overlap and a tap near the
+// boundary resolves to whichever view wins — non-deterministically.
+//
+// That is tolerable between two corrections. It is not tolerable here, because
+// Undo has no confirming dialog: the tap IS the destructive confirm (§5.6), so a
+// mistouch aimed at "Change time" silently removes the log instead. Recoverable
+// through History, but an unintended data-affecting action reached by ordinary
+// use is not something to leave to z-order.
+//
+// The fix is ASYMMETRY rather than a wider gap: each control keeps its generous
+// vertical and outward reach — which is what carries the 44pt floor alongside
+// `minHeight` — and gives up only the edge that faces its neighbour. Half the
+// gap each, so they meet at the midpoint and never cross. Costs no layout width,
+// which matters on the meal card where the cluster already competes with the
+// food name.
+//
+// Applied to the OUTER member of the pair even when it renders alone (a combo
+// dose, where Change time is withheld): a control whose hit area changes shape
+// depending on its sibling is a harder thing to keep right than one that does not.
+const PAIR_GAP_HALF = 4;
+const REACH = 12;
+
+/** The LEFT member of the action pair — Undo. Yields its right edge. */
+export const HITSLOP_ACTION_LEFT = {
+  top: REACH, bottom: REACH, left: REACH, right: PAIR_GAP_HALF,
+} as const;
+
+/** The RIGHT member — Change time. Yields its left edge. */
+export const HITSLOP_ACTION_RIGHT = {
+  top: REACH, bottom: REACH, left: PAIR_GAP_HALF, right: REACH,
+} as const;

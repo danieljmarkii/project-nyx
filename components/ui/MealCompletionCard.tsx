@@ -7,7 +7,9 @@ import { router } from 'expo-router';
 import { Check } from 'lucide-react-native';
 import { theme, shadows } from '../../constants/theme';
 import { useMomentStore } from '../../store/momentStore';
-import { removedNoticeCopy } from '../../lib/completionCard';
+import {
+  removedNoticeCopy, HITSLOP_ACTION_LEFT, HITSLOP_ACTION_RIGHT,
+} from '../../lib/completionCard';
 import { useEventStore } from '../../store/eventStore';
 import { usePetStore } from '../../store/petStore';
 import { updateEvent, updateMealIntake } from '../../lib/db';
@@ -269,7 +271,8 @@ export function MealCompletionCard() {
   // CUL-612 — see the module header. 'ignored' is silent (a second tap, or a card
   // already gone); only a real failure gets a word, and it names the other way in.
   async function handleUndo() {
-    if ((await undo()) === 'failed') {
+    if (!payload) return;
+    if ((await undo(payload.eventId)) === 'failed') {
       Alert.alert('Could not remove that log', 'Try again, or remove it from History.');
     }
   }
@@ -431,7 +434,7 @@ export function MealCompletionCard() {
             <View style={styles.actionPair}>
             <TouchableOpacity
               onPress={handleUndo}
-              hitSlop={12}
+              hitSlop={HITSLOP_ACTION_LEFT}
               style={styles.actionBtn}
               accessibilityRole="button"
               accessibilityLabel="Undo — remove this log"
@@ -440,7 +443,7 @@ export function MealCompletionCard() {
             </TouchableOpacity>
             <TouchableOpacity
               onPress={openPicker}
-              hitSlop={12}
+              hitSlop={HITSLOP_ACTION_RIGHT}
               style={styles.actionBtn}
               accessibilityRole="button"
               accessibilityLabel="Change time of this log"

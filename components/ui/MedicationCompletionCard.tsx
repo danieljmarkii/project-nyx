@@ -5,7 +5,9 @@ import {
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Check } from 'lucide-react-native';
 import { theme, shadows } from '../../constants/theme';
-import { removedNoticeCopy } from '../../lib/completionCard';
+import {
+  removedNoticeCopy, HITSLOP_ACTION_LEFT, HITSLOP_ACTION_RIGHT,
+} from '../../lib/completionCard';
 import { useMomentStore } from '../../store/momentStore';
 import { useEventStore } from '../../store/eventStore';
 import { usePetStore } from '../../store/petStore';
@@ -213,7 +215,8 @@ export function MedicationCompletionCard() {
   // 'ignored' is silent (a second tap, or a card already gone); only a real failure
   // gets a word, and it names the other way in.
   async function handleUndo() {
-    if ((await undo()) === 'failed') {
+    if (!payload) return;
+    if ((await undo(payload.eventId)) === 'failed') {
       Alert.alert('Could not remove that dose', 'Try again, or remove it from History.');
     }
   }
@@ -328,7 +331,7 @@ export function MedicationCompletionCard() {
           <View style={styles.actionPair}>
             <TouchableOpacity
               onPress={handleUndo}
-              hitSlop={12}
+              hitSlop={HITSLOP_ACTION_LEFT}
               style={styles.actionBtn}
               accessibilityRole="button"
               accessibilityLabel="Undo — remove this dose"
@@ -338,7 +341,7 @@ export function MedicationCompletionCard() {
             {!isCombo && (
               <TouchableOpacity
                 onPress={openPicker}
-                hitSlop={12}
+                hitSlop={HITSLOP_ACTION_RIGHT}
                 style={styles.actionBtn}
                 accessibilityRole="button"
                 accessibilityLabel="Change time of this dose"
