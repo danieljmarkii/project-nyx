@@ -1554,7 +1554,7 @@ Deno.test('B-612 — the truncation clause points at appendix A only when append
       },
     }),
   )
-  assert.ok(/view opens May 7; the record does not/.test(withEarlier), 'says the flag starts later than the record')
+  assert.ok(/view opens May 7, but this report's record starts earlier/.test(withEarlier), 'says the flag starts later than the record')
   assert.ok(/2<\/span> earlier vomiting entries/.test(withEarlier), 'counts them, so the claim is checkable')
   assert.ok(/appendix/.test(withEarlier), 'sends the reader to them')
 
@@ -1569,7 +1569,7 @@ Deno.test('B-612 — the truncation clause points at appendix A only when append
       },
     }),
   )
-  assert.ok(!/the record does not/.test(noEarlier), 'no pointer when there is nothing earlier to point at')
+  assert.ok(!/starts earlier/.test(noEarlier), 'no pointer when there is nothing earlier to point at')
   assert.ok(!/earlier vomiting entr/.test(noEarlier), 'and no count of rows that do not exist')
 })
 
@@ -1590,7 +1590,7 @@ Deno.test('B-612 — earlier rows of a DIFFERENT symptom are not evidence about 
       },
     }),
   )
-  assert.ok(!/the record does not/.test(html), 'a different symptom does not trigger the pointer')
+  assert.ok(!/starts earlier/.test(html), 'a different symptom does not trigger the pointer')
 })
 
 Deno.test('B-612 — the clause fires on a 60-day recheck window (no dead band)', () => {
@@ -1611,11 +1611,128 @@ Deno.test('B-612 — the clause fires on a 60-day recheck window (no dead band)'
       },
     }),
   )
-  assert.ok(/view opens May 12; the record does not/.test(html), 'the 57–63d dead band is gone')
+  assert.ok(/view opens May 12, but this report's record starts earlier/.test(html), 'the 57–63d dead band is gone')
   assert.ok(/2<\/span> earlier vomiting entries/.test(html))
 })
 
-Deno.test('B-612 — a window-edge truncation keeps its own sentence, and the two never cross-fire', () => {
+Deno.test('B-612 — both truncation facts render when both are true, and the edge keys on the RECORD', () => {
+  // CE-A. A `since_visit` window opening May 4 whose detector lookback opens May 7 retains its
+  // first episode May 8: the onset is 4 days inside the window AND rows exist on May 5–6. An
+  // earlier version rendered these through a ternary and silently dropped the edge sentence —
+  // the stronger of the two claims, since it says appendix A's own first row is a floor.
+  const html = plain(
+    renderReport(
+      base({
+        scope: { ...base().scope, startDate: '2026-05-04' },
+        safetyFlags: [chronFlag({ firstOnsetIso: '2026-05-08T14:00:00Z', episodeCount: 8, symptomDays: 8 })],
+        provenance: {
+          ...base().provenance,
+          symptomLog: [
+            logEntry({ eventId: 'e-1', type: 'vomit', occurredAt: '2026-05-05T18:00:00Z' }),
+            logEntry({ eventId: 'e-2', type: 'vomit', occurredAt: '2026-05-06T18:00:00Z' }),
+            logEntry({ eventId: 'e-3', type: 'vomit', occurredAt: '2026-05-08T14:00:00Z' }),
+          ],
+        },
+      }),
+    ),
+  )
+  assert.ok(/this report's record starts earlier/.test(html), 'the pointer renders')
+  assert.ok(/record begins at its own edge/.test(html), 'AND the window-edge sentence renders')
+})
+
+Deno.test('B-612 — the edge disclosure is reachable on the default 90-day scope', () => {
+  // CE-B / the v1 defect surviving in place. Keyed on the ONSET it was structurally unreachable
+  // here: the 56-day lookback pushes the onset ~34 days inside a 90-day window, so the gap could
+  // never be small. Keyed on the record's earliest row, it fires — which is the whole point,
+  // because that row sitting on the window's opening day makes it a floor, not a start.
+  const html = plain(
+    renderReport(
+      base({
+        scope: { ...base().scope, startDate: '2026-04-03' },
+        safetyFlags: [chronFlag()],
+        provenance: {
+          ...base().provenance,
+          symptomLog: [
+            logEntry({ eventId: 'e-first', type: 'vomit', occurredAt: '2026-04-03T18:00:00Z' }),
+            logEntry({ eventId: 'e-onset', type: 'vomit', occurredAt: '2026-05-07T14:00:00Z' }),
+          ],
+        },
+      }),
+    ),
+  )
+  assert.ok(/record begins at its own edge/.test(html), 'the edge sentence is reachable on the fallback scope')
+})
+
+Deno.test('B-612 — the edge sentence keys on startDate and respects its tolerance', () => {
+  // Pins two mutations that survived an earlier suite: keying the gap off `endDate`, and
+  // widening CHRONICITY_LEFT_CENSOR_DAYS. The record here opens 20 days into the window, so it
+  // is not at the edge and must say nothing.
+  const html = plain(
+    renderReport(
+      base({
+        scope: { ...base().scope, startDate: '2026-04-03' },
+        safetyFlags: [chronFlag({ firstOnsetIso: '2026-05-07T14:00:00Z' })],
+        provenance: {
+          ...base().provenance,
+          symptomLog: [
+            logEntry({ eventId: 'e-first', type: 'vomit', occurredAt: '2026-04-23T18:00:00Z' }),
+            logEntry({ eventId: 'e-onset', type: 'vomit', occurredAt: '2026-05-07T14:00:00Z' }),
+          ],
+        },
+      }),
+    ),
+  )
+  assert.ok(!/record begins at its own edge/.test(html), 'a record starting 20 days in is not at the edge')
+  assert.ok(/this report's record starts earlier/.test(html), 'the pointer still fires on its own merits')
+})
+
+Deno.test('B-612 — the count is appendix-A ROWS, and same-day-earlier is not earlier', () => {
+  // Two more surviving mutations. `symptomLog` is already de-duplicated, so summing `dupCount`
+  // would overstate the count against the very page it points at; and the onset instant is
+  // itself one of these rows, so a time-of-day comparison would make the flag point at its own
+  // day. One earlier row carrying 3 collapsed logs, plus a row earlier IN TIME on the onset's
+  // own local day: the honest answer is "1 earlier entry".
+  const html = plain(
+    renderReport(
+      base({
+        scope: { ...base().scope, startDate: '2026-04-03' },
+        safetyFlags: [chronFlag({ firstOnsetIso: '2026-05-07T14:00:00Z' })],
+        provenance: {
+          ...base().provenance,
+          symptomLog: [
+            logEntry({ eventId: 'e-dup', type: 'vomit', occurredAt: '2026-04-25T18:00:00Z', dupCount: 3 }),
+            logEntry({ eventId: 'e-sameday', type: 'vomit', occurredAt: '2026-05-07T10:00:00Z' }),
+            logEntry({ eventId: 'e-onset', type: 'vomit', occurredAt: '2026-05-07T14:00:00Z' }),
+          ],
+        },
+      }),
+    ),
+  )
+  assert.ok(/1 earlier vomiting entry is listed/.test(html), 'counts rows, not collapsed logs, and not same-day')
+  assert.ok(!/3 earlier/.test(html), 'dupCount is not summed')
+  assert.ok(!/2 earlier/.test(html), 'the same-day-earlier row is not counted')
+})
+
+Deno.test('B-612 — the pointer names appendix A specifically', () => {
+  const html = plain(
+    renderReport(
+      base({
+        scope: { ...base().scope, startDate: '2026-04-03' },
+        safetyFlags: [chronFlag()],
+        provenance: {
+          ...base().provenance,
+          symptomLog: [
+            logEntry({ eventId: 'e-1', type: 'vomit', occurredAt: '2026-04-25T18:00:00Z' }),
+            logEntry({ eventId: 'e-onset', type: 'vomit', occurredAt: '2026-05-07T14:00:00Z' }),
+          ],
+        },
+      }),
+    ),
+  )
+  assert.ok(/listed in appendix A/.test(html), 'names the appendix the rows are actually in')
+})
+
+Deno.test('B-612 — a window-edge truncation with nothing earlier renders the edge sentence alone', () => {
   // Mutually exclusive by construction: an earlier in-window row means the onset is not at the
   // window's edge, and an onset at the edge means anything earlier is outside the window and so
   // is not in this log. Getting it backwards would send a vet to an appendix holding nothing.
@@ -1632,7 +1749,7 @@ Deno.test('B-612 — a window-edge truncation keeps its own sentence, and the tw
     ),
   )
   assert.ok(/record begins at its own edge/.test(html), 'the window-edge sentence stands')
-  assert.ok(!/the record does not/.test(html), 'and the appendix pointer does not also fire')
+  assert.ok(!/starts earlier/.test(html), 'and the pointer does not fire with nothing earlier to point at')
 })
 
 Deno.test('B-612 — the duplicate tag is not a time-confidence chip and glosses itself in place', () => {

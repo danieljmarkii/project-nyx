@@ -1432,26 +1432,52 @@ function safetyFlagRow(f: SafetyFlag, snap: ReportSnapshot): string {
       // are not evidence about this one, and pointing at them would let a vet read an April
       // diarrhoea entry as the start of a vomiting course.
       //
-      // The two branches are mutually exclusive by construction, not by precedence: an earlier
-      // in-window row of this symptom means the onset is NOT at the window's edge, and an onset
-      // at the window's edge means any earlier row falls outside the window and so is not in
-      // this log at all. No ordering to get wrong, and no dead code pretending otherwise.
+      // THE TWO FACTS ARE INDEPENDENT, AND BOTH CAN BE TRUE AT ONCE. An earlier version of
+      // this comment claimed they were mutually exclusive by construction; a third adversarial
+      // pass disproved it in the modal band. A `since_visit` window opening May 4 whose
+      // detector lookback opens May 7 retains its first episode on May 8 — so the onset is 4
+      // days inside the window (edge condition true) AND rows exist on May 5–6 (pointer
+      // condition true). Rendering them through a ternary silently dropped the edge sentence,
+      // which is the STRONGER claim: it says appendix A's own first row sits at the window's
+      // boundary, so that row is a floor rather than a start. So both render, in the order the
+      // reader needs them — where the flag's view begins relative to the record, then where the
+      // record itself begins relative to the window.
+      //
+      // AND THE EDGE CONDITION KEYS ON THE RECORD, NOT THE ONSET. Keying it on the onset was
+      // the v1 defect surviving in place: on the 90-day fallback the detector's 56-day lookback
+      // pushes the onset ~34 days inside the window, so the gap could never be small and the
+      // disclosure was structurally unreachable on the DEFAULT scope. The fact being disclosed
+      // was never about the onset — it is about whether the earliest row a vet can find in
+      // appendix A sits at the window's own edge.
       const onsetDayKey = localDayKeyOf(f.firstOnsetIso, tz)
       const onsetDay = fmtLocalDay(f.firstOnsetIso, tz)
-      const earlierInWindow = snap.provenance.symptomLog.filter(
-        (e) => e.type === f.symptomType && localDayKeyOf(e.occurredAt, tz) < onsetDayKey,
-      )
-      const windowCensored = daysBetweenDayKeys(snap.scope.startDate, onsetDayKey) <= CHRONICITY_LEFT_CENSOR_DAYS
-      const censorBit =
+      const sameSymptomRows = snap.provenance.symptomLog.filter((e) => e.type === f.symptomType)
+      const earlierInWindow = sameSymptomRows.filter((e) => localDayKeyOf(e.occurredAt, tz) < onsetDayKey)
+      // Same LOCAL DAY as the onset is not "earlier": the onset instant is itself one of these
+      // rows, so a time-of-day comparison would make the flag point at its own day.
+      const earliestRowDayKey =
+        sameSymptomRows.reduce<string | null>((min, e) => {
+          const k = localDayKeyOf(e.occurredAt, tz)
+          return min === null || k < min ? k : min
+        }, null) ?? onsetDayKey
+      const recordAtWindowEdge =
+        daysBetweenDayKeys(snap.scope.startDate, earliestRowDayKey) <= CHRONICITY_LEFT_CENSOR_DAYS
+      const label = symptomLabel(f.symptomType).toLowerCase()
+      // COUNTS INCIDENTS, NOT RAW LOGS: `symptomLog` is already de-duplicated, so this is
+      // exactly the number of appendix A ROWS the vet will find, which is what makes the claim
+      // checkable. Summing `dupCount` here would overstate it against the page it points at.
+      const pointerBit =
         earlierInWindow.length > 0
-          ? ` This flag's own view opens ${h(onsetDay)}; the record does not &mdash; ${num(
+          ? ` This flag's own view opens ${h(onsetDay)}, but this report's record starts earlier &mdash; ${num(
               earlierInWindow.length,
-            )} earlier ${h(symptomLabel(f.symptomType).toLowerCase())} entr${
+            )} earlier ${h(label)} entr${
               earlierInWindow.length === 1 ? 'y is' : 'ies are'
             } listed in appendix&nbsp;A.`
-          : windowCensored
-            ? ` This window opens ${h(fmtDay(snap.scope.startDate))}, so the record begins at its own edge &mdash; it cannot show how long the sign predates it.`
-            : ''
+          : ''
+      const edgeBit = recordAtWindowEdge
+        ? ` This window opens ${h(fmtDay(snap.scope.startDate))}, so the record begins at its own edge &mdash; it cannot show how long the sign predates it.`
+        : ''
+      const censorBit = `${pointerBit}${edgeBit}`
       // ANCHORS, NOT A DERIVED DURATION (B-612 / CUL-319, cold-read blocker; PM ruled option B).
       // This printed "has been ongoing 25 days (first logged Jun 5)" on a page also stamped
       // "Generated Jul 2" and beside a tile reading "28 d" — three figures for one quantity, and
