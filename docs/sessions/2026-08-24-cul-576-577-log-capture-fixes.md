@@ -139,9 +139,19 @@ and React bails out of re-rendering a subtree handed a referentially identical e
 assertion was written to fail first. Same family as CUL-613's guard lesson: a test that
 has only ever been green has not been tested.
 
+## Base drift
+
+Five PRs landed on `main` while this was in flight (#715–#719), one of which —
+**CUL-611**, the Geist closing audit — swept *both* of this session's files. `main`
+was merged in and the result verified rather than assumed: the auto-merge was clean
+textually, but a clean text merge over a sweep that rewrites `Text` → `ThemedText` in
+the same functions proves nothing on its own. All eight of this session's files came
+through intact and CUL-611's new `guards/geistRollout.test.ts` passes over them.
+
 ## Verification
 
-`tsc --noEmit` clean. Full suite **262 suites / 5814 tests** green, 20 new
+`tsc --noEmit` clean. Full suite **268 suites / 5884 tests** green post-merge (262 /
+5814 pre-merge), 20 new
 (`lib/eventTimeEdit`, `lib/photoSource`, the confirm). `guards/ownerFacingCopy.test.ts`
 green over the new denial copy (nyx-voice Pattern 8: plain cause, calm, a concrete next
 action). **On-device pass not run** — this is static/unit verification only, and the
