@@ -1,7 +1,6 @@
 import { useRef, useState } from 'react';
 import {
   View,
-  Text,
   ScrollView,
   TouchableOpacity,
   StyleSheet,
@@ -15,6 +14,7 @@ import { ChevronLeft } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
 import { PrimaryButton } from '../../components/ui/PrimaryButton';
 import { ValuePreview, ValuePreviewVariant } from '../../components/onboarding/ValuePreview';
+import { ThemedText } from '../../components/ui/ThemedText';
 
 // "How it works" — the value-preview carousel, reached from the Landing hero's
 // "See how it works" link (B-284 PR N2b). This is the SAME swipeable stack that
@@ -125,7 +125,7 @@ export default function HowItWorksScreen() {
           accessibilityLabel="Log in"
           testID="how-it-works-log-in"
         >
-          <Text style={styles.loginText}>Log in</Text>
+          <ThemedText style={styles.loginText}>Log in</ThemedText>
         </TouchableOpacity>
       </View>
     </SafeAreaView>

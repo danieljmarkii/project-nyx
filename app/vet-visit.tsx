@@ -490,6 +490,9 @@ const styles = StyleSheet.create({
     marginBottom: -theme.space1,
   },
   textInput: {
+    // A TextInput is outside ThemedText's reach (the wrapper wraps Text), so the
+    // field names its face directly — otherwise a swept screen keeps SF inputs.
+    fontFamily: theme.fontBody,
     fontSize: 16,
     color: theme.colorTextPrimary,
     borderWidth: 1,

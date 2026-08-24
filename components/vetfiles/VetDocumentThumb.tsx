@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { Image, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
+import { Image, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 import { FileText } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
+import { ThemedText } from '../ui/ThemedText';
 
 interface Props {
   /** Resolved local file:// path or signed URL. null ⇒ nothing to show yet. */
@@ -44,7 +45,7 @@ export function VetDocumentThumb({ uri, isPdf = false, loading = false, style }:
       ) : isPdf ? (
         <View style={styles.glyphWrap}>
           <FileText size={18} color={theme.colorTextTertiary} strokeWidth={1.75} />
-          <Text style={styles.pdfBadge}>PDF</Text>
+          <ThemedText style={styles.pdfBadge}>PDF</ThemedText>
         </View>
       ) : loading ? (
         // Deliberately empty: the tile's own surface IS the pending state. A

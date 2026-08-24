@@ -612,7 +612,7 @@ export default function EditEventModal() {
                   {occurredAt.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })}
                   {'  '}
                   {formatTime(occurredAt)}
-                  {/* Deliberately a raw <Text>, not a nested ThemedText (CUL-609; the CLAUDE.md
+                  {/* geist-ok: Deliberately a raw <Text>, not a nested ThemedText (CUL-609; the CLAUDE.md
                       nested-span convention). A nested ThemedText's explicit fontFamily breaks RN's
                       native text-style cascade; this EXIF span differs from its parent only in size and
                       colour, so it inherits the parent's resolved Geist regular. See app/log.tsx. */}
@@ -987,6 +987,9 @@ const styles = StyleSheet.create({
     color: theme.colorTextOnDark,
   },
   notesInput: {
+    // A TextInput is outside ThemedText's reach (the wrapper wraps Text), so the
+    // field names its face directly — otherwise a swept screen keeps SF inputs.
+    fontFamily: theme.fontBody,
     fontSize: 15,
     color: theme.colorTextPrimary,
     borderWidth: 1,
@@ -1010,6 +1013,9 @@ const styles = StyleSheet.create({
   },
   weightInput: {
     flex: 1,
+    // A TextInput is outside ThemedText's reach (the wrapper wraps Text), so the
+    // field names its face directly — otherwise a swept screen keeps SF inputs.
+    fontFamily: theme.fontBody,
     fontSize: 15,
     color: theme.colorTextPrimary,
     paddingVertical: theme.space2,

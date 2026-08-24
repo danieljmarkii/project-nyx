@@ -137,6 +137,10 @@ export function PhoneScript({ facts }: { facts: PhoneScriptFact[] }) {
               differs from the sentence only in colour, so it must INHERIT the resolved
               face. A ThemedText here would inject the regular family and change the face
               mid-line the moment scriptItem gains a weight. */}
+          {/* geist-ok: nested span — differs from its parent only in colour, so it must stay a
+              raw <Text> and inherit the parent's resolved Geist face. A ThemedText here injects its
+              own family and breaks RN's native text cascade, shipping a face change mid-sentence
+              (CUL-607). */}
           <Text style={styles.scriptLabel}>{f.label}: </Text>
           {f.value}
         </ThemedText>

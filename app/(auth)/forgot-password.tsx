@@ -23,6 +23,7 @@ import { authErrorCopy, isOffline, AuthErrorLike } from '../../lib/authErrors';
 import { recoveryRedirectUrl, resendSecondsRemaining, resendLabel, shouldOfferSupport } from '../../lib/passwordRecovery';
 import { recordRecoveryRequest } from '../../lib/recoveryMarker';
 import { SUPPORT_EMAIL } from '../../constants/links';
+import { ThemedText } from '../../components/ui/ThemedText';
 
 // The "Reset your password" request screen (B-280 FR-2/3/10/12, spec §5.2/§5.3/§5.6).
 // Three states in one screen, a designed screen for each (Principle 5, FR-9):
@@ -149,11 +150,11 @@ export default function ForgotPasswordScreen() {
           <View style={styles.icon}>
             <Mail size={44} color={theme.colorAccent} strokeWidth={1.5} />
           </View>
-          <Text style={styles.title}>Check your inbox</Text>
-          <Text style={styles.sub}>
+          <ThemedText style={styles.title}>Check your inbox</ThemedText>
+          <ThemedText style={styles.sub}>
             If {cleanEmail} has an account, we've sent a link to set a new password. Open it on
             this phone. It should arrive in a minute or two — check your spam folder if it doesn't.
-          </Text>
+          </ThemedText>
           <View style={styles.grow} />
 
           <View style={styles.cta}>
@@ -173,7 +174,7 @@ export default function ForgotPasswordScreen() {
               accessibilityLabel="Use a different email address"
               testID="forgot-edit-email"
             >
-              <Text style={styles.linkAccent}>Use a different email</Text>
+              <ThemedText style={styles.linkAccent}>Use a different email</ThemedText>
             </TouchableOpacity>
             <TouchableOpacity
               onPress={handleResend}
@@ -184,9 +185,9 @@ export default function ForgotPasswordScreen() {
               accessibilityState={{ disabled: !canTapResend }}
               testID="forgot-resend"
             >
-              <Text style={[styles.linkMuted, !canTapResend && styles.linkDisabled]}>
+              <ThemedText style={[styles.linkMuted, !canTapResend && styles.linkDisabled]}>
                 {resendLabel(secondsRemaining)}
-              </Text>
+              </ThemedText>
             </TouchableOpacity>
             {offerSupport ? (
               <TouchableOpacity
@@ -197,10 +198,10 @@ export default function ForgotPasswordScreen() {
                 accessibilityLabel="Still nothing? Contact support"
                 testID="forgot-support"
               >
-                <Text style={styles.supportText}>
-                  Still nothing? <Text style={styles.linkAccent}>Contact support</Text>
-                </Text>
-                <Text style={styles.supportSub}>We usually reply within a day.</Text>
+                <ThemedText style={styles.supportText}>
+                  Still nothing? <ThemedText style={styles.linkAccent}>Contact support</ThemedText>
+                </ThemedText>
+                <ThemedText style={styles.supportSub}>We usually reply within a day.</ThemedText>
               </TouchableOpacity>
             ) : null}
             {/* B-653 (PM-ruled 2026-08-04): the track's thesis is "every state has
@@ -217,7 +218,7 @@ export default function ForgotPasswordScreen() {
               accessibilityLabel="Back to log in"
               testID="forgot-sent-back"
             >
-              <Text style={styles.linkMuted}>Back to log in</Text>
+              <ThemedText style={styles.linkMuted}>Back to log in</ThemedText>
             </TouchableOpacity>
           </View>
         </View>
@@ -235,12 +236,12 @@ export default function ForgotPasswordScreen() {
           <View style={styles.icon}>
             <WifiOff size={44} color={theme.colorAccent} strokeWidth={1.5} />
           </View>
-          <Text style={styles.title}>Couldn't send that link</Text>
-          <Text style={styles.sub}>
+          <ThemedText style={styles.title}>Couldn't send that link</ThemedText>
+          <ThemedText style={styles.sub}>
             {offline
               ? "You're offline. We'll need a connection to send that link."
               : 'Something went wrong on our end. Try again in a moment.'}
-          </Text>
+          </ThemedText>
           <View style={styles.grow} />
           <View style={styles.cta}>
             <PrimaryButton
@@ -257,7 +258,7 @@ export default function ForgotPasswordScreen() {
               accessibilityLabel="Back to log in"
               testID="forgot-failed-back"
             >
-              <Text style={styles.linkMuted}>Back to log in</Text>
+              <ThemedText style={styles.linkMuted}>Back to log in</ThemedText>
             </TouchableOpacity>
           </View>
         </View>
@@ -291,10 +292,10 @@ export default function ForgotPasswordScreen() {
             <AuthBrandMark />
           </View>
 
-          <Text style={styles.title}>Reset your password</Text>
-          <Text style={styles.subtitle}>
+          <ThemedText style={styles.title}>Reset your password</ThemedText>
+          <ThemedText style={styles.subtitle}>
             Check your email address is right and we'll send you a link to set a new one.
-          </Text>
+          </ThemedText>
 
           <TextField
             label="Email"

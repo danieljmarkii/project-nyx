@@ -1,6 +1,7 @@
-import { Pressable, View, Text, StyleSheet } from 'react-native';
+import { Pressable, View, StyleSheet } from 'react-native';
 import { Info } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
+import { ThemedText } from '../ui/ThemedText';
 
 // MetricInfo — the unobtrusive "what does this metric mean?" affordance for the
 // Patterns dashboard cards (B-100). On-device QA caught the gap: Jordan tapped a
@@ -57,7 +58,7 @@ export function MetricInfoButton({
 export function MetricDefinition({ text }: { text: string }) {
   return (
     <View style={styles.callout} testID="metric-definition">
-      <Text style={styles.text}>{text}</Text>
+      <ThemedText style={styles.text}>{text}</ThemedText>
     </View>
   );
 }

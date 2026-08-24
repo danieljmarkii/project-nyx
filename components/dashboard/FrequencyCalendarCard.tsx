@@ -1,11 +1,12 @@
 import { useState, type ReactNode } from 'react';
-import { Pressable, View, Text, StyleSheet } from 'react-native';
+import { Pressable, View, StyleSheet } from 'react-native';
 import { ChevronLeft, ChevronRight } from 'lucide-react-native';
 import { theme, shadows } from '../../constants/theme';
 import { MetricInfoButton, MetricDefinition } from './MetricInfo';
 import { pluralize } from '../../lib/dashboardCards';
 import { formatUtcDayShort } from '../../lib/utils';
 import type { DayFrequencyBucket } from '../../lib/analytics';
+import { ThemedText } from '../ui/ThemedText';
 
 // FrequencyCalendarCard — a month calendar of an episodic symptom's daily counts
 // (§5 #4 / §6; redesigned for B-284 N5 / B-226, extended for N5b). Each cell is one
@@ -231,7 +232,7 @@ export function FrequencyCalendarCard({
   return (
     <View style={styles.card}>
       <View style={styles.headerRow}>
-        <Text style={styles.title}>{title}</Text>
+        <ThemedText style={styles.title}>{title}</ThemedText>
         {definition != null && (
           <MetricInfoButton
             open={defOpen}
@@ -263,7 +264,7 @@ export function FrequencyCalendarCard({
               color={canGoPrev ? theme.colorTextSecondary : theme.colorTextDisabled}
             />
           </Pressable>
-          <Text style={styles.monthLabel}>{monthLabel}</Text>
+          <ThemedText style={styles.monthLabel}>{monthLabel}</ThemedText>
           <Pressable
             onPress={onNextMonth}
             disabled={!canGoNext}
@@ -282,12 +283,12 @@ export function FrequencyCalendarCard({
       )}
 
       {showEmptyBody ? (
-        <Text style={styles.stateText}>{emptyMessage ?? `No ${copyNoun.toLowerCase()} logged ${range}.`}</Text>
+        <ThemedText style={styles.stateText}>{emptyMessage ?? `No ${copyNoun.toLowerCase()} logged ${range}.`}</ThemedText>
       ) : error ? (
         // A failed month load — NEVER "No {symptom} logged" (a fetch failure is not an
         // observed all-clear; §11 #2). Offer a retry instead of a bare empty grid.
         <View style={styles.stateBox}>
-          <Text style={styles.summary}>Couldn't load {monthNameOf(monthLabel) ?? 'this month'}.</Text>
+          <ThemedText style={styles.summary}>Couldn't load {monthNameOf(monthLabel) ?? 'this month'}.</ThemedText>
           {onRetry != null && (
             <Pressable
               onPress={onRetry}
@@ -296,7 +297,7 @@ export function FrequencyCalendarCard({
               accessibilityLabel="Try again"
               style={styles.retryBtn}
             >
-              <Text style={styles.retryText}>Try again</Text>
+              <ThemedText style={styles.retryText}>Try again</ThemedText>
             </Pressable>
           )}
         </View>
@@ -307,18 +308,18 @@ export function FrequencyCalendarCard({
               loading, an uncached grid is empty, so the summary would flash a false
               "No {symptom} logged in {month}." — an absence-≠-wellness hazard (§11 #2). Gate
               it behind `loading` so a not-yet-loaded month never reads as symptom-free. */}
-          <Text style={styles.summary}>
+          <ThemedText style={styles.summary}>
             {loading
               ? `Loading ${monthNameOf(monthLabel) ?? 'month'}…`
               : summaryLine(copyNoun, grid, unit, monthLabel)}
-          </Text>
+          </ThemedText>
           {/* Weekday header orients the columns; every day carries its numeral (a real
               calendar), symptom days darken + carry pips. `loading` dims a stale month. */}
           <View style={styles.weekdayHeader}>
             {WEEKDAY_LABELS.map((d, i) => (
-              <Text key={i} style={styles.weekdayLabel}>
+              <ThemedText key={i} style={styles.weekdayLabel}>
                 {d}
-              </Text>
+              </ThemedText>
             ))}
           </View>
           <View style={[styles.grid, loading && styles.gridLoading]}>
@@ -333,14 +334,14 @@ export function FrequencyCalendarCard({
                     <>
                       {!cell.blank && (
                         <>
-                          <Text style={[styles.dayNum, hasSymptom && styles.dayNumSymptom]}>{dom}</Text>
+                          <ThemedText style={[styles.dayNum, hasSymptom && styles.dayNumSymptom]}>{dom}</ThemedText>
                           <View style={styles.pips}>
                             {hasSymptom &&
                               cell.count <= MAX_PIPS &&
                               Array.from({ length: cell.count }).map((_, i) => (
                                 <View key={i} testID="symptom-pip" style={styles.pip} />
                               ))}
-                            {cell.count > MAX_PIPS && <Text style={styles.pipMore}>×{cell.count}</Text>}
+                            {cell.count > MAX_PIPS && <ThemedText style={styles.pipMore}>×{cell.count}</ThemedText>}
                           </View>
                         </>
                       )}

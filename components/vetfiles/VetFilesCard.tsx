@@ -1,9 +1,10 @@
-import { StyleSheet, Text, View, type ViewStyle } from 'react-native';
+import { StyleSheet, View, type ViewStyle } from 'react-native';
 import { Card } from '../ui/Card';
 import { PrimaryButton } from '../ui/PrimaryButton';
 import { VetDocumentThumb } from './VetDocumentThumb';
 import { theme } from '../../constants/theme';
 import type { VetFilesCardModel } from '../../lib/vetDocumentLibrary';
+import { ThemedText } from '../ui/ThemedText';
 
 interface Props {
   model: VetFilesCardModel;
@@ -43,10 +44,10 @@ export function VetFilesCard({ model, thumbUris, thumbsLoading, onPress, style }
   return (
     <Card style={style}>
       <View style={styles.head}>
-        <Text style={styles.title}>Vet Files</Text>
-        {model.countLabel ? <Text style={styles.count}>{model.countLabel}</Text> : null}
+        <ThemedText style={styles.title}>Vet Files</ThemedText>
+        {model.countLabel ? <ThemedText style={styles.count}>{model.countLabel}</ThemedText> : null}
       </View>
-      <Text style={styles.blurb}>{model.blurb}</Text>
+      <ThemedText style={styles.blurb}>{model.blurb}</ThemedText>
 
       {preview && (
         // Decorative relative to the button below — which carries the action, and
@@ -61,24 +62,24 @@ export function VetFilesCard({ model, thumbUris, thumbsLoading, onPress, style }
             style={styles.previewThumb}
           />
           <View style={styles.previewMain}>
-            <Text
+            <ThemedText
               style={[styles.previewTitle, preview.untitled && styles.previewTitleMuted]}
               numberOfLines={1}
             >
               {preview.title}
-            </Text>
+            </ThemedText>
             {(preview.kindLabel || subLabel) ? (
               <View style={styles.previewMeta}>
                 {preview.kindLabel ? (
                   <View style={styles.kindChip}>
-                    <Text style={styles.kindText}>{preview.kindLabel}</Text>
+                    <ThemedText style={styles.kindText}>{preview.kindLabel}</ThemedText>
                   </View>
                 ) : null}
-                {subLabel ? <Text style={styles.previewSub}>{subLabel}</Text> : null}
+                {subLabel ? <ThemedText style={styles.previewSub}>{subLabel}</ThemedText> : null}
               </View>
             ) : null}
           </View>
-          {model.moreLabel ? <Text style={styles.moreLabel}>{model.moreLabel}</Text> : null}
+          {model.moreLabel ? <ThemedText style={styles.moreLabel}>{model.moreLabel}</ThemedText> : null}
         </View>
       )}
 

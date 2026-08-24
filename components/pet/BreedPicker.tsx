@@ -86,7 +86,7 @@ export function BreedPicker({ breeds, value, onSelect, onSelectOther }: BreedPic
                 accessibilityState={{ selected }}
               >
                 <ThemedText style={[styles.itemText, selected && styles.itemTextSelected]}>{b}</ThemedText>
-                {/* Icon glyph, not copy — stays a raw <Text>. Beyond that rule the cmap forces it:
+                {/* geist-ok: Icon glyph, not copy — stays a raw <Text>. Beyond that rule the cmap forces it:
                     no loaded Geist weight carries U+2713, so sweeping this hands the render to OS
                     fallback at a size tuned for a different face. CUL-364 §7. */}
                 {selected && <Text style={styles.itemCheck}>✓</Text>}

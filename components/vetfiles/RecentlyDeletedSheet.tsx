@@ -1,8 +1,9 @@
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { theme } from '../../constants/theme';
 import { SheetShell } from './SheetShell';
 import { VetDocumentThumb } from './VetDocumentThumb';
 import { VET_DOCUMENT_RECOVERY_DAYS, type DeletedVetDocumentRow } from '../../lib/vetDocumentLibrary';
+import { ThemedText } from '../ui/ThemedText';
 
 interface Props {
   visible: boolean;
@@ -44,8 +45,8 @@ export function RecentlyDeletedSheet({
           <View key={row.groupId} style={styles.row}>
             <VetDocumentThumb uri={row.localUri || null} isPdf={row.isPdf} />
             <View style={styles.main}>
-              <Text style={styles.title} numberOfLines={1}>{row.title}</Text>
-              <Text style={styles.meta}>{row.deletedLabel}</Text>
+              <ThemedText style={styles.title} numberOfLines={1}>{row.title}</ThemedText>
+              <ThemedText style={styles.meta}>{row.deletedLabel}</ThemedText>
             </View>
             <TouchableOpacity
               style={styles.restore}
@@ -56,9 +57,9 @@ export function RecentlyDeletedSheet({
               accessibilityRole="button"
               accessibilityLabel={`Restore ${row.title}`}
             >
-              <Text style={styles.restoreText}>
+              <ThemedText style={styles.restoreText}>
                 {restoringGroupId === row.groupId ? 'Restoring…' : 'Restore'}
-              </Text>
+              </ThemedText>
             </TouchableOpacity>
           </View>
         ))}

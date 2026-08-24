@@ -10,6 +10,7 @@ import { formatUtcDayShort } from '../../lib/utils';
 import { describeDayEvents, daySheetSubtitle } from '../../lib/dayEvents';
 import type { EventTintCategory } from '../../lib/dayEvents';
 import type { TimelineRow } from '../../lib/db';
+import { ThemedText } from '../ui/ThemedText';
 
 // Category glyph tint (B-311). Each primary event category reads in its own hue so a
 // mixed day is scannable at a glance: symptom rose, meal teal, medication slate. Weight
@@ -72,13 +73,13 @@ export function DayEventsSheet({
         <Pressable style={styles.scrim} onPress={onClose} accessibilityLabel="Close" />
         <View style={[styles.sheet, { paddingBottom: insets.bottom + theme.space2 }]}>
           <View style={styles.grabber} />
-          <Text style={styles.title}>{dayShort}</Text>
+          <ThemedText style={styles.title}>{dayShort}</ThemedText>
 
           {error ? (
             // A failed day fetch — NEVER "Nothing logged this day." (a silent failure that
             // reads as a false all-clear; §11 #2). Offer a retry.
             <View style={styles.stateBox}>
-              <Text style={styles.subtitle}>Couldn't load this day's log.</Text>
+              <ThemedText style={styles.subtitle}>Couldn't load this day's log.</ThemedText>
               {onRetry != null && (
                 <Pressable
                   style={styles.retryBtn}
@@ -87,7 +88,7 @@ export function DayEventsSheet({
                   accessibilityRole="button"
                   accessibilityLabel="Try again"
                 >
-                  <Text style={styles.retryText}>Try again</Text>
+                  <ThemedText style={styles.retryText}>Try again</ThemedText>
                 </Pressable>
               )}
             </View>
@@ -97,9 +98,9 @@ export function DayEventsSheet({
             </View>
           ) : (
             <>
-              <Text style={styles.subtitle}>
+              <ThemedText style={styles.subtitle}>
                 {daySheetSubtitle(symptomLabel, symptomCount, items.length)}
-              </Text>
+              </ThemedText>
 
               {items.length > 0 && (
                 <ScrollView style={styles.rows} showsVerticalScrollIndicator={false}>
@@ -119,17 +120,21 @@ export function DayEventsSheet({
                         />
                       </View>
                       <View style={styles.rowText}>
-                        <Text style={styles.rowTitle} numberOfLines={1}>
+                        <ThemedText style={styles.rowTitle} numberOfLines={1}>
                           {it.title}
+                          {/* geist-ok: nested span — differs from its parent only in colour, so it must stay a
+                              raw <Text> and inherit the parent's resolved Geist face. A ThemedText here injects its
+                              own family and breaks RN's native text cascade, shipping a face change mid-sentence
+                              (CUL-607). */}
                           {it.detail ? <Text style={styles.rowDetail}> · {it.detail}</Text> : null}
-                        </Text>
+                        </ThemedText>
                         {/* B-568 — the wet/dry variant, as a sibling of the truncating
                             title so it survives a long prescription product name. */}
                         {it.formatTag ? (
-                          <Text style={styles.rowFormatTag} numberOfLines={1}>{it.formatTag}</Text>
+                          <ThemedText style={styles.rowFormatTag} numberOfLines={1}>{it.formatTag}</ThemedText>
                         ) : null}
                       </View>
-                      <Text style={styles.rowTime}>{it.time}</Text>
+                      <ThemedText style={styles.rowTime}>{it.time}</ThemedText>
                     </View>
                   ))}
                 </ScrollView>
@@ -145,7 +150,7 @@ export function DayEventsSheet({
                   accessibilityRole="link"
                   accessibilityLabel={`Open ${dayShort} in History`}
                 >
-                  <Text style={styles.linkText}>Open in History · {dayShort}</Text>
+                  <ThemedText style={styles.linkText}>Open in History · {dayShort}</ThemedText>
                   <ChevronRight size={16} color={theme.colorAccent} strokeWidth={2} />
                 </Pressable>
               )}

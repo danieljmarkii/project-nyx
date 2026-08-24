@@ -1,7 +1,12 @@
 import { useEffect, useState } from 'react';
 import {
-  View, Text, StyleSheet, Alert, Platform, Keyboard,
-  KeyboardAvoidingView, TouchableOpacity,
+  View,
+  StyleSheet,
+  Alert,
+  Platform,
+  Keyboard,
+  KeyboardAvoidingView,
+  TouchableOpacity,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
@@ -15,6 +20,7 @@ import { ChipGroup, type ChipGroupOption } from '../../components/ui/ChipGroup';
 import { TextField } from '../../components/ui/TextField';
 import { PrimaryButton } from '../../components/ui/PrimaryButton';
 import { OnboardingHeader } from '../../components/onboarding/OnboardingHeader';
+import { ThemedText } from '../../components/ui/ThemedText';
 
 // Age — the third (and last) SKIPPABLE pet-setup step (B-251 PR 9, spec §3.6,
 // mockup 10). Dual input: an approximate integer age (years/months) OR a witnessed
@@ -168,8 +174,8 @@ export default function PetAgeScreen() {
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
         <View style={styles.body}>
-          <Text style={styles.title}>{`How old is ${activePet.name}?`}</Text>
-          <Text style={styles.subtitle}>An age or a birthday — whichever you know.</Text>
+          <ThemedText style={styles.title}>{`How old is ${activePet.name}?`}</ThemedText>
+          <ThemedText style={styles.subtitle}>An age or a birthday — whichever you know.</ThemedText>
 
           <ChipGroup
             options={MODE_OPTIONS}
@@ -215,12 +221,12 @@ export default function PetAgeScreen() {
                 accessibilityLabel="Choose birthday"
                 testID="pet-age-birthday"
               >
-                <Text style={birthday && birthdayTouched ? styles.dateValue : styles.datePlaceholder}>
+                <ThemedText style={birthday && birthdayTouched ? styles.dateValue : styles.datePlaceholder}>
                   {birthday && birthdayTouched
                     ? birthday.toLocaleDateString([], { year: 'numeric', month: 'long', day: 'numeric' })
                     : 'Choose a date'}
-                </Text>
-                <Text style={styles.changeLabel}>{showPicker ? 'Done' : 'Set'}</Text>
+                </ThemedText>
+                <ThemedText style={styles.changeLabel}>{showPicker ? 'Done' : 'Set'}</ThemedText>
               </TouchableOpacity>
               {showPicker && (
                 <DateTimePicker

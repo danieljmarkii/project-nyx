@@ -22,6 +22,7 @@ import { emailError } from '../../lib/authValidation';
 import { authErrorCopy, isEmailNotConfirmed, isInvalidCredentials } from '../../lib/authErrors';
 import { confirmRedirectUrl } from '../../lib/emailConfirm';
 import { PASSWORD_RECOVERY_ENABLED } from '../../constants/flags';
+import { ThemedText } from '../../components/ui/ThemedText';
 
 // Returning-owner sign-in (B-251). Rebuilt on the same design system as the
 // Landing (index) and account (signup) screens so the unauthenticated entry reads
@@ -187,13 +188,13 @@ export default function LoginScreen() {
             <AuthBrandMark />
           </View>
 
-          <Text style={styles.title}>Welcome back</Text>
+          <ThemedText style={styles.title}>Welcome back</ThemedText>
           {showDeletedConfirmation ? (
             // Post-deletion the banner IS the context line — it stands in for the
             // "pick up where you left off" subtitle, which would contradict having
             // just wiped the account (B-039 banner + the login-rebuild PM review).
             <View style={styles.deletedBanner}>
-              <Text style={styles.deletedBannerText}>{ACCOUNT_DELETED_MSG}</Text>
+              <ThemedText style={styles.deletedBannerText}>{ACCOUNT_DELETED_MSG}</ThemedText>
             </View>
           ) : showEvictedBanner ? (
             // FR-20 §5.6b: the evicted co-resident's landing. "Usually" is load-
@@ -201,14 +202,14 @@ export default function LoginScreen() {
             // non-retryable failure, so the device CANNOT know the cause and must not
             // claim one (§7.2.3). The authoritative "why" arrives by email.
             <View style={styles.deletedBanner} testID="login-evicted-banner">
-              <Text style={styles.evictedTitle}>You were signed out</Text>
-              <Text style={styles.deletedBannerText}>
+              <ThemedText style={styles.evictedTitle}>You were signed out</ThemedText>
+              <ThemedText style={styles.deletedBannerText}>
                 This usually happens when the account password is changed on another device.
                 Sign in again to pick up where you left off.
-              </Text>
+              </ThemedText>
             </View>
           ) : (
-            <Text style={styles.subtitle}>Pick up right where you left off.</Text>
+            <ThemedText style={styles.subtitle}>Pick up right where you left off.</ThemedText>
           )}
 
           <TextField
@@ -252,7 +253,7 @@ export default function LoginScreen() {
               accessibilityLabel="Forgot password?"
               testID="login-forgot"
             >
-              <Text style={styles.forgotText}>Forgot password?</Text>
+              <ThemedText style={styles.forgotText}>Forgot password?</ThemedText>
             </TouchableOpacity>
           ) : null}
 
@@ -272,10 +273,10 @@ export default function LoginScreen() {
             accessibilityLabel="Create a new account"
             testID="login-to-signup"
           >
-            <Text style={styles.signupText}>
+            <ThemedText style={styles.signupText}>
               Don't have an account?{' '}
-              <Text style={styles.signupTextAccent}>Sign up</Text>
-            </Text>
+              <ThemedText style={styles.signupTextAccent}>Sign up</ThemedText>
+            </ThemedText>
           </TouchableOpacity>
         </ScrollView>
       </KeyboardAvoidingView>

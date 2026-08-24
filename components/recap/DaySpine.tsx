@@ -25,6 +25,7 @@ import { ChevronRight } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
 import type { DaySummaryRow } from '../../lib/daySummary';
 import { NODE_TINT_NIGHT, NODE_DOT_SIZE, NODE_DOT_RING } from './nodeTints';
+import { ThemedText } from '../ui/ThemedText';
 
 // Geometry — the rail column that carries the dot + thread, and where the dot's
 // centre sits from the row top (so the thread segments and the title line up). The dot
@@ -99,9 +100,9 @@ function SpineRow({
         pressed && styles.rowPressed,
       ]}
     >
-      <Text style={styles.time} numberOfLines={1}>
+      <ThemedText style={styles.time} numberOfLines={1}>
         {row.time}
-      </Text>
+      </ThemedText>
 
       <View style={styles.rail}>
         {!isFirst && <View style={[styles.line, styles.lineTop]} />}
@@ -111,19 +112,23 @@ function SpineRow({
 
       <View style={styles.body}>
         <View style={styles.titleLine}>
-          <Text style={styles.title} numberOfLines={1}>
+          <ThemedText style={styles.title} numberOfLines={1}>
             {row.title}
+            {/* geist-ok: nested span — differs from its parent only in colour, so it must stay a
+                raw <Text> and inherit the parent's resolved Geist face. A ThemedText here injects its
+                own family and breaks RN's native text cascade, shipping a face change mid-sentence
+                (CUL-607). */}
             {row.detail ? <Text style={styles.detail}> · {row.detail}</Text> : null}
-          </Text>
+          </ThemedText>
           {/* B-568 — the wet/dry variant, a sibling of the truncating title (never
               appended to it) so it survives a long prescription product name. Matches
               the drill-in (DayEventsSheet) / History (EventRow) register: one mapper,
               all surfaces name a food identically. */}
           {row.formatTag ? (
-            <Text style={styles.formatTag} numberOfLines={1}>{row.formatTag}</Text>
+            <ThemedText style={styles.formatTag} numberOfLines={1}>{row.formatTag}</ThemedText>
           ) : null}
         </View>
-        {row.subline ? <Text style={styles.sub}>{row.subline}</Text> : null}
+        {row.subline ? <ThemedText style={styles.sub}>{row.subline}</ThemedText> : null}
       </View>
 
       <ChevronRight size={15} color={theme.colorTextOnNightMuted} strokeWidth={2} />

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, KeyboardAvoidingView, Platform, Alert } from 'react-native';
+import { View, StyleSheet, KeyboardAvoidingView, Platform, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { supabase } from '../../lib/supabase';
@@ -10,6 +10,7 @@ import { theme } from '../../constants/theme';
 import { TextField } from '../../components/ui/TextField';
 import { PrimaryButton } from '../../components/ui/PrimaryButton';
 import { OnboardingHeader } from '../../components/onboarding/OnboardingHeader';
+import { ThemedText } from '../../components/ui/ThemedText';
 
 // Pet name — the second REQUIRED pet-setup step (B-251 PR 7, spec §3, mockup 07).
 // Type + name are the only two walls in onboarding; this screen writes the pet
@@ -100,8 +101,8 @@ export default function PetNameScreen() {
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
         <View style={styles.body}>
-          <Text style={styles.title}>What's your pet's name?</Text>
-          <Text style={styles.subtitle}>The one you actually call them.</Text>
+          <ThemedText style={styles.title}>What's your pet's name?</ThemedText>
+          <ThemedText style={styles.subtitle}>The one you actually call them.</ThemedText>
 
           <TextField
             label="Name"
