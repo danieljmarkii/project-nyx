@@ -276,6 +276,40 @@ describe('MealCompletionCard — Undo', () => {
 // The meal card is here for its own sake, not for symmetry: the WSAVA intake row is
 // five chips answered from a single reading pause, and it re-armed the same 1500ms
 // hold the dose row did.
+describe('MealCompletionCard — one card, one pet (CUL-574)', () => {
+  // The card outlives a pet switch: it is queued against the pet captured at write
+  // time, and the store can move under it. Every name on it must come from the
+  // payload's petId. These two sites read the ACTIVE pet until CUL-574 — so a card
+  // about Biscuit's treat asked how much MOCHI ate, while the removal line and the
+  // trial heads-up on the same card said Biscuit.
+  it('the intake question names the MEAL’s pet, not a since-switched active one', () => {
+    seedMeal({}, 'p2');
+    const view = render(<MealCompletionCard />);
+    view.getByText('How much did Biscuit eat?');
+    expect(view.queryByText('How much did Mochi eat?')).toBeNull();
+  });
+
+  it('the combo row’s screen-reader label names the MEAL’s pet too', () => {
+    seedMeal({}, 'p2');
+    const view = render(<MealCompletionCard />);
+    view.getByLabelText(/given with Biscuit's/);
+    expect(view.queryByLabelText(/given with Mochi's/)).toBeNull();
+  });
+
+  // `pets` holds only non-archived pets, so archiving the meal's pet makes the
+  // lookup miss. It must fall to the anonymous form — the `?? activePet` rung this
+  // line used to carry would have named Mochi here, which is the whole defect.
+  it('falls to the anonymous form when the meal’s pet is gone, never to the active one', () => {
+    seedMeal({}, 'p2');
+    act(() => {
+      usePetStore.setState({ pets: [{ id: 'p2', name: 'Mochi' }] as never });
+    });
+    const view = render(<MealCompletionCard />);
+    view.getByText('How much did your pet eat?');
+    expect(view.queryByText('How much did Mochi eat?')).toBeNull();
+  });
+});
+
 describe('MealCompletionCard — the dwell pause is actually wired (CUL-614)', () => {
   it('a finger on the card holds it open past its dwell', () => {
     seedMeal();
