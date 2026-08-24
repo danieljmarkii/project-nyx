@@ -17,10 +17,11 @@
 // ── NO SECOND DOOR ───────────────────────────────────────────────────────────
 // §4.2: "The card carries no 'Log a meal' action. Logging is the FAB. A second
 // door to the same room is not a feature."
-import { Pressable, StyleSheet, Text, TouchableOpacity, View, type ViewStyle } from 'react-native';
+import { Pressable, StyleSheet, TouchableOpacity, View, type ViewStyle } from 'react-native';
 import { theme } from '../../constants/theme';
 import { Card } from '../ui/Card';
 import { PrimaryButton } from '../ui/PrimaryButton';
+import { ThemedText } from '../ui/ThemedText';
 import { TrialContaminantNote } from '../food/TrialContaminantNote';
 import { trialManageLabel } from '../../lib/dietTrialCard';
 import type {
@@ -70,7 +71,7 @@ export function DietTrialCard({ model, actions, onManage, busyAction, style }: P
   return (
     <Card style={style}>
       <View style={styles.headerRow}>
-        <Text style={styles.kicker}>{model.kicker}</Text>
+        <ThemedText style={styles.kicker}>{model.kicker}</ThemedText>
         {onManage && manageLabel !== null && (
           <TouchableOpacity
             onPress={onManage}
@@ -81,13 +82,13 @@ export function DietTrialCard({ model, actions, onManage, busyAction, style }: P
               manageLabel === 'Replace' ? 'Replace this diet trial' : 'Start a diet trial'
             }
           >
-            <Text style={styles.manageText}>{manageLabel}</Text>
+            <ThemedText style={styles.manageText}>{manageLabel}</ThemedText>
           </TouchableOpacity>
         )}
       </View>
 
       {model.foodLabel !== null && (
-        <Text style={styles.food}>{model.foodLabel}</Text>
+        <ThemedText style={styles.food}>{model.foodLabel}</ThemedText>
       )}
 
       {/* The day line is caption-scale metadata on every ordinary day and a
@@ -95,15 +96,15 @@ export function DietTrialCard({ model, actions, onManage, busyAction, style }: P
           `state`, so §4.3's "never reads as permission to stop" doesn't depend on
           a view remembering which day is the important one. */}
       {model.dayLine !== null && (
-        <Text
+        <ThemedText
           testID="trial-day-line"
           style={model.dayLineRole === 'headline' ? styles.dayHeadline : styles.dayLine}
         >
           {model.dayLine}
-        </Text>
+        </ThemedText>
       )}
       {model.windowLine !== null && (
-        <Text style={styles.windowLine}>{model.windowLine}</Text>
+        <ThemedText style={styles.windowLine}>{model.windowLine}</ThemedText>
       )}
 
       {model.progressFraction !== null && (
@@ -135,7 +136,7 @@ export function DietTrialCard({ model, actions, onManage, busyAction, style }: P
           return (
             <View key={`flag-${gi}`} testID="trial-flag" style={styles.flagBlock}>
               {group.lines.map((line, i) => (
-                <Text
+                <ThemedText
                   key={i}
                   testID="trial-line-flag"
                   // The first flag line is the headline and the rest is its body,
@@ -147,7 +148,7 @@ export function DietTrialCard({ model, actions, onManage, busyAction, style }: P
                   style={[styles.line, i === 0 ? styles.flagHeadline : styles.flagBody]}
                 >
                   {line.text}
-                </Text>
+                </ThemedText>
               ))}
             </View>
           );
@@ -156,15 +157,15 @@ export function DietTrialCard({ model, actions, onManage, busyAction, style }: P
           return (
             <View key={`teach-${gi}`} testID="trial-teach" style={styles.teachBlock}>
               {group.lines.map((line, i) => (
-                <Text key={i} testID="trial-line-teach" style={styles.teachText}>
+                <ThemedText key={i} testID="trial-line-teach" style={styles.teachText}>
                   {line.text}
-                </Text>
+                </ThemedText>
               ))}
             </View>
           );
         }
         return group.lines.map((line, i) => (
-          <Text
+          <ThemedText
             key={`${line.role}-${gi}-${i}`}
             testID={`trial-line-${line.role}`}
             style={[
@@ -175,7 +176,7 @@ export function DietTrialCard({ model, actions, onManage, busyAction, style }: P
             ]}
           >
             {line.text}
-          </Text>
+          </ThemedText>
         ));
       })}
 
@@ -183,7 +184,7 @@ export function DietTrialCard({ model, actions, onManage, busyAction, style }: P
           rests on, rendered where the owner can see it is wrong. Quiet metadata,
           deliberately not a safety card. */}
       {model.standingMeta !== null && (
-        <Text testID="trial-standing-meta" style={styles.meta}>{model.standingMeta}</Text>
+        <ThemedText testID="trial-standing-meta" style={styles.meta}>{model.standingMeta}</ThemedText>
       )}
 
       {/* C2's standing fact, re-sited from slice 4 rather than dropped on the
@@ -218,7 +219,7 @@ export function DietTrialCard({ model, actions, onManage, busyAction, style }: P
               testID={`trial-action-${action.id}`}
               style={styles.secondaryAction}
             >
-              <Text style={styles.secondaryActionText}>{action.label} ›</Text>
+              <ThemedText style={styles.secondaryActionText}>{action.label} ›</ThemedText>
             </Pressable>
           );
         }

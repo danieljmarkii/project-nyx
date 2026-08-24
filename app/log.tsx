@@ -9,6 +9,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import * as ImagePicker from 'expo-image-picker';
 import { Camera } from 'lucide-react-native';
 import { theme } from '../constants/theme';
+import { ThemedText } from '../components/ui/ThemedText';
 import { FoodPicker } from '../components/log/FoodPicker';
 import { parseFoodScope } from '../lib/food';
 import { MedicationPicker } from '../components/log/MedicationPicker';
@@ -910,14 +911,14 @@ export default function LogModal() {
       return (
         <TouchableOpacity style={styles.photoAttachedRow} onPress={handlePickPhoto} activeOpacity={0.8}>
           <Image source={{ uri: attachmentUri }} style={styles.photoThumb} resizeMode="cover" />
-          <Text style={styles.photoAttachedText}>Photo attached · tap to replace</Text>
+          <ThemedText style={styles.photoAttachedText}>Photo attached · tap to replace</ThemedText>
         </TouchableOpacity>
       );
     }
     return (
       <TouchableOpacity style={styles.photoRow} onPress={handlePickPhoto} activeOpacity={0.8}>
         <Camera size={16} color={theme.colorTextSecondary} strokeWidth={1.75} />
-        <Text style={styles.photoRowText}>Attach photo</Text>
+        <ThemedText style={styles.photoRowText}>Attach photo</ThemedText>
       </TouchableOpacity>
     );
   }
@@ -982,18 +983,25 @@ export default function LogModal() {
   function renderTimeRow() {
     return (
       <View style={styles.timeRow}>
-        <Text style={styles.timeLabel}>
+        <ThemedText style={styles.timeLabel}>
           {occurredAt.toLocaleDateString([], { month: 'short', day: 'numeric' })}
           {' · '}
           {formatTime(occurredAt)}
+          {/* Deliberately a raw <Text>, not a nested ThemedText (CUL-609; the same rule
+              CUL-607 hit in FreeFeedingStrip, now a CLAUDE.md convention). Every ThemedText
+              injects an explicit fontFamily, and an explicit family on a child is exactly what
+              breaks RN's native text-style cascade. This EXIF span differs from its parent only
+              in size and colour, so inheriting the parent's resolved Geist regular is the
+              intended render. Swapping it mechanically ships a face change mid-sentence — which
+              no test catches and no diff shows. */}
           {occurredAtSource === 'exif' && (
             <Text style={styles.exifAttribution}>
               {'  ·  '}{formatExifAttribution(occurredAt.toISOString())}
             </Text>
           )}
-        </Text>
+        </ThemedText>
         <TouchableOpacity onPress={() => setShowTimePicker(!showTimePicker)} hitSlop={12}>
-          <Text style={styles.changeTimeBtn}>Change</Text>
+          <ThemedText style={styles.changeTimeBtn}>Change</ThemedText>
         </TouchableOpacity>
       </View>
     );
@@ -1076,9 +1084,9 @@ export default function LogModal() {
         <Header title={`What did ${headerPetName} take?`} leading="back" onLeadingPress={handleBack} />
         {isComboMode && (
           <View style={styles.comboBanner}>
-            <Text style={styles.comboBannerText}>
+            <ThemedText style={styles.comboBannerText}>
               Adding to {comboPetName}'s {comboFoodLabel} — pick the medication you gave with it
-            </Text>
+            </ThemedText>
           </View>
         )}
         {/* Gate on pickerPetId alone, NOT activePet: in combo mode the picker must
@@ -1126,8 +1134,8 @@ export default function LogModal() {
             activeOpacity={0.7}
           >
             <EventIcon type="stool_normal" size={24} />
-            <Text style={styles.stoolChoiceLabel}>Normal</Text>
-            <Text style={styles.stoolChoiceHint}>Formed, typical</Text>
+            <ThemedText style={styles.stoolChoiceLabel}>Normal</ThemedText>
+            <ThemedText style={styles.stoolChoiceHint}>Formed, typical</ThemedText>
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.stoolChoiceBtn, styles.stoolChoiceBtnLoose]}
@@ -1135,8 +1143,8 @@ export default function LogModal() {
             activeOpacity={0.7}
           >
             <EventIcon type="diarrhea" size={24} color={theme.colorEventSymptom} />
-            <Text style={styles.stoolChoiceLabel}>Loose</Text>
-            <Text style={styles.stoolChoiceHint}>Soft, runny, or diarrhea</Text>
+            <ThemedText style={styles.stoolChoiceLabel}>Loose</ThemedText>
+            <ThemedText style={styles.stoolChoiceHint}>Soft, runny, or diarrhea</ThemedText>
           </TouchableOpacity>
         </View>
       </SafeAreaView>
@@ -1168,7 +1176,7 @@ export default function LogModal() {
                 returnKeyType="done"
                 autoFocus
               />
-              <Text style={styles.weightUnit}>lbs</Text>
+              <ThemedText style={styles.weightUnit}>lbs</ThemedText>
             </View>
             {renderNotesInput()}
             {renderTimeRow()}
@@ -1191,7 +1199,7 @@ export default function LogModal() {
               onPress={handleConfirmWeight}
               disabled={!canConfirmWeight}
             >
-              <Text style={styles.confirmBtnText}>Log weight</Text>
+              <ThemedText style={styles.confirmBtnText}>Log weight</ThemedText>
             </TouchableOpacity>
           </View>
         </KeyboardAvoidingView>
@@ -1210,7 +1218,7 @@ export default function LogModal() {
         <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <ScrollView contentContainerStyle={styles.symptomScroll} keyboardShouldPersistTaps="handled">
             {renderPhotoAttachRow()}
-            <Text style={styles.severityHeading}>How severe?</Text>
+            <ThemedText style={styles.severityHeading}>How severe?</ThemedText>
             <View style={styles.severityRow}>
               {SEVERITY_CONFIG.map(({ value, label }) => {
                 const isSelected = severity === value;
@@ -1227,11 +1235,11 @@ export default function LogModal() {
                       { backgroundColor: isSelected ? theme.colorNeutralDark : `rgba(26,26,26,${fillOpacity})` },
                       isSelected && styles.severityCircleSelected,
                     ]}>
-                      <Text style={[styles.severityNum, isSelected && styles.severityNumSelected]}>
+                      <ThemedText style={[styles.severityNum, isSelected && styles.severityNumSelected]}>
                         {value}
-                      </Text>
+                      </ThemedText>
                     </View>
-                    <Text style={styles.severityLabel}>{label}</Text>
+                    <ThemedText style={styles.severityLabel}>{label}</ThemedText>
                   </TouchableOpacity>
                 );
               })}
@@ -1258,7 +1266,7 @@ export default function LogModal() {
               onPress={() => handleConfirm()}
               disabled={!canConfirm}
             >
-              <Text style={styles.confirmBtnText}>Log {eventLabel.toLowerCase()}</Text>
+              <ThemedText style={styles.confirmBtnText}>Log {eventLabel.toLowerCase()}</ThemedText>
             </TouchableOpacity>
           </View>
         </KeyboardAvoidingView>
@@ -1295,9 +1303,9 @@ export default function LogModal() {
           </ScrollView>
           <View style={styles.bottomAction}>
             <TouchableOpacity style={styles.confirmBtn} onPress={() => handleConfirm()}>
-              <Text style={styles.confirmBtnText}>
+              <ThemedText style={styles.confirmBtnText}>
                 {eventLabel === 'Other' ? 'Log event' : `Log ${eventLabel.toLowerCase()}`}
-              </Text>
+              </ThemedText>
             </TouchableOpacity>
           </View>
         </KeyboardAvoidingView>

@@ -286,6 +286,13 @@ export const theme = {
   // PM-ruled amber over a rose "danger" rendering). The bar + eyebrow reuse
   // colorMomentGlow at full strength; only the fill is softened.
   colorMomentGlowFillOnDark: 'rgba(251, 191, 36, 0.12)',
+  // CUL-601 (§4) — the moment-gold's tinted SURFACE, the light-ground sibling of
+  // colorMomentGlow. Used as the warm half of the arrival sweep's gradient (teal into
+  // a breath of gold, across the Signal card's paper). Deliberately not
+  // colorAttentionLight, which is the same family of hue and an entirely different
+  // register: that one is the amber warning wash, and a celebratory sweep borrowing
+  // the attention token is how a future reader learns the wrong thing about both.
+  colorMomentGlowLight: '#FDF6E3',
 
   // ── Spacing — 8pt grid ────────────────────────────────────────────────────
   // Sub-grid micro-gap (2pt): the typographic space between a label and the

@@ -13,6 +13,7 @@ import { EmptyState } from '../../components/ui/EmptyState';
 import { PrimaryButton } from '../../components/ui/PrimaryButton';
 import { Badge } from '../../components/ui/Badge';
 import { Divider } from '../../components/ui/Divider';
+import { ThemedText } from '../../components/ui/ThemedText';
 import { supabase } from '../../lib/supabase';
 import { uploadPhoto, compressForUpload, getPublicUrl, getSignedUrls } from '../../lib/storage';
 import { VetFilesCard } from '../../components/vetfiles/VetFilesCard';
@@ -188,6 +189,12 @@ function statusLabel(status: string): string {
 export default function ProfileScreen() {
   const { pets, activePet, updatePet } = usePetStore();
   const showMedicationMoment = useMomentStore((s) => s.showMedication);
+  // CUL-612 — the completion card's Undo soft-deletes the dose this screen just
+  // counted optimistically below. Watched here rather than pushed from the store:
+  // the tally is local React state and momentStore cannot reach it, the way
+  // removeFromToday reaches the Today feed.
+  const momentRemoved = useMomentStore((s) => s.removed);
+  const momentEventId = useMomentStore((s) => s.payload?.eventId ?? null);
   // B-407 — which "Pet N" slot this pet holds in the Home Screen widget picker
   // (null off-iOS / before the widget index is published), so the profile names
   // the slot instead of leaving the owner to bind by trial and error.
@@ -204,6 +211,10 @@ export default function ProfileScreen() {
   const [conditionsLoading, setConditionsLoading] = useState(true);
 
   const [medications, setMedications] = useState<RegimenDisplay[]>([]);
+  // Which dose the optimistic tally below is currently counting, so Undo can take
+  // it back off. Null once reconciled (by the rollback or by a focus refetch).
+  const countedDose = useRef<{ eventId: string; regimenId: string } | null>(null);
+
   const [medicationsLoading, setMedicationsLoading] = useState(true);
   const [medicationModalVisible, setMedicationModalVisible] = useState(false);
   const [editingRegimen, setEditingRegimen] = useState<Regimen | undefined>(undefined);
@@ -553,6 +564,29 @@ export default function ProfileScreen() {
     }, [loadMedications, loadPastMedications, reloadTrial, loadVetFiles]),
   );
 
+  // CUL-612 — take the optimistic dose back when the completion card's Undo removes
+  // it. The focus refetch above is this screen's usual reconciler, but Undo happens
+  // ON this screen: the owner taps "Log a dose", the card slides up over the same
+  // profile, and they tap Undo without ever blurring the tab. So no focus fires, and
+  // offline nothing reconciles at all — the compliance line would go on counting a
+  // dose the record no longer holds. Guarded on the eventId so a different card's
+  // removal can't decrement this regimen (the store's own staleness discipline).
+  useEffect(() => {
+    const counted = countedDose.current;
+    if (!momentRemoved || !counted || momentEventId !== counted.eventId) return;
+    countedDose.current = null;
+    setMedications((prev) =>
+      prev.map((m) =>
+        m.id === counted.regimenId
+          // Clamped at zero: a focus refetch may already have landed the true tally
+          // between the log and the Undo, and a compliance count must never render
+          // negative even for the frame before the next reconcile.
+          ? buildRegimenDisplay(m, { ...m.tally, given: Math.max(0, m.tally.given - 1) })
+          : m,
+      ),
+    );
+  }, [momentRemoved, momentEventId]);
+
   async function handlePickPhoto() {
     Alert.alert('Profile photo', 'Choose a source', [
       {
@@ -723,6 +757,14 @@ export default function ProfileScreen() {
     // loadMedications (the useFocusEffect above) the next time this tab is focused —
     // not silently left stale. (A downgrade while the owner never leaves the profile
     // is the one residual window; reconciled on the next focus.)
+    //
+    // A REMOVAL is different, and CUL-612 is what made it reachable: Undo on the
+    // card below deletes this dose outright, and the owner never leaves this tab,
+    // so no focus refetch fires — the compliance line would keep claiming a dose
+    // the record no longer holds, indefinitely while offline. That direction is
+    // reassuring, which is the one direction this app may not drift in. The effect
+    // above takes it back; this records which dose to take back.
+    countedDose.current = { eventId: result.eventId, regimenId: reg.id };
     setMedications((prev) =>
       prev.map((m) =>
         m.id === reg.id
@@ -869,7 +911,7 @@ export default function ProfileScreen() {
               <Image source={{ uri: photoUri }} style={styles.photo} resizeMode="cover" />
             ) : (
               <View style={styles.photoPlaceholder}>
-                <Text style={styles.photoInitials}>{initials}</Text>
+                <ThemedText style={styles.photoInitials}>{initials}</ThemedText>
               </View>
             )}
             {photoUploading && (
@@ -880,40 +922,40 @@ export default function ProfileScreen() {
           </TouchableOpacity>
 
           <TouchableOpacity onPress={handlePickPhoto} disabled={photoUploading} hitSlop={8}>
-            <Text style={styles.photoLabel}>
+            <ThemedText style={styles.photoLabel}>
               {photoUri ? 'Change photo' : 'Add photo'}
-            </Text>
+            </ThemedText>
           </TouchableOpacity>
 
-          <Text style={styles.petName}>{activePet.name}</Text>
-          {subtitle ? <Text style={styles.petSubtitle}>{subtitle}</Text> : null}
+          <ThemedText style={styles.petName}>{activePet.name}</ThemedText>
+          {subtitle ? <ThemedText style={styles.petSubtitle}>{subtitle}</ThemedText> : null}
 
           <TouchableOpacity
             style={styles.editBtn}
             onPress={() => setEditModalVisible(true)}
             activeOpacity={0.7}
           >
-            <Text style={styles.editBtnText}>Edit profile</Text>
+            <ThemedText style={styles.editBtnText}>Edit profile</ThemedText>
           </TouchableOpacity>
         </Card>
 
         {/* ── Info chips ── */}
         <Card noPadding style={styles.infoRow}>
           <View style={styles.infoChip}>
-            <Text style={styles.infoChipLabel}>Age</Text>
-            <Text style={styles.infoChipValue}>
+            <ThemedText style={styles.infoChipLabel}>Age</ThemedText>
+            <ThemedText style={styles.infoChipValue}>
               {formatAge(activePet.date_of_birth, activePet.date_of_birth_precision)}
-            </Text>
+            </ThemedText>
           </View>
           <View style={styles.infoChipDivider} />
           <View style={styles.infoChip}>
-            <Text style={styles.infoChipLabel}>Sex</Text>
-            <Text style={styles.infoChipValue}>{formatSex(activePet.sex)}</Text>
+            <ThemedText style={styles.infoChipLabel}>Sex</ThemedText>
+            <ThemedText style={styles.infoChipValue}>{formatSex(activePet.sex)}</ThemedText>
           </View>
           <View style={styles.infoChipDivider} />
           <View style={styles.infoChip}>
-            <Text style={styles.infoChipLabel}>Weight</Text>
-            <Text style={styles.infoChipValue}>{formatWeightLbs(activePet.weight_kg)}</Text>
+            <ThemedText style={styles.infoChipLabel}>Weight</ThemedText>
+            <ThemedText style={styles.infoChipValue}>{formatWeightLbs(activePet.weight_kg)}</ThemedText>
           </View>
         </Card>
 
@@ -923,12 +965,12 @@ export default function ProfileScreen() {
             pet actually holds a published slot (iOS + published index); absent
             otherwise, never a placeholder. ── */}
         {widgetSlotLabel && (
-          <Text
+          <ThemedText
             style={styles.widgetSlotLine}
             accessibilityLabel={`In the Home Screen widget picker, ${activePet.name} is ${widgetSlotLabel}.`}
           >
             Home Screen widget · {widgetSlotLabel}
-          </Text>
+          </ThemedText>
         )}
 
         {/* ── Weight trend (B-186) — descriptive, neutral; expands on the Weight
@@ -943,33 +985,33 @@ export default function ProfileScreen() {
         {/* ── Conditions ── */}
         <Card style={styles.sectionGap}>
           <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Conditions</Text>
+            <ThemedText style={styles.sectionTitle}>Conditions</ThemedText>
             <TouchableOpacity style={styles.cardActionTouch} onPress={openAddCondition} hitSlop={8}>
-              <Text style={styles.sectionAction}>+ Add</Text>
+              <ThemedText style={styles.sectionAction}>+ Add</ThemedText>
             </TouchableOpacity>
           </View>
 
           {conditionsLoading ? (
             <WhorlSpinner size="sm" ground="day" style={styles.sectionLoader} />
           ) : conditions.length === 0 ? (
-            <Text style={styles.emptyConditionsText}>
+            <ThemedText style={styles.emptyConditionsText}>
               No conditions on file yet. Add anything {activePet.name} has been
               diagnosed with, like allergies or a sensitive stomach.
-            </Text>
+            </ThemedText>
           ) : (
             conditions.map((condition) => (
               <View key={condition.id} style={styles.conditionRow}>
                 <Divider style={styles.conditionDivider} />
                 <View style={styles.conditionInner}>
                   <View style={styles.conditionInfo}>
-                    <Text style={styles.conditionName}>{condition.condition_name}</Text>
+                    <ThemedText style={styles.conditionName}>{condition.condition_name}</ThemedText>
                     {condition.diagnosed_at && (
-                      <Text style={styles.conditionDate}>
+                      <ThemedText style={styles.conditionDate}>
                         Diagnosed{' '}
                         {new Date(condition.diagnosed_at).toLocaleDateString([], {
                           year: 'numeric', month: 'short',
                         })}
-                      </Text>
+                      </ThemedText>
                     )}
                   </View>
                   <View style={styles.conditionRight}>
@@ -979,11 +1021,14 @@ export default function ProfileScreen() {
                     />
                     <View style={styles.conditionActions}>
                       <TouchableOpacity style={styles.cardActionTouch} onPress={() => openEditCondition(condition)} hitSlop={8}>
-                        <Text style={styles.conditionActionText}>Edit</Text>
+                        <ThemedText style={styles.conditionActionText}>Edit</ThemedText>
                       </TouchableOpacity>
+                      {/* Icon glyph, not copy — stays a raw <Text>. These stand in for vector glyphs
+                          (the B-745 GlyphSvg migration owns them), so they keep the system face rather
+                          than taking the body family a sweep would give them. CUL-364 §7. */}
                       <Text style={styles.conditionActionDivider}>·</Text>
                       <TouchableOpacity style={styles.cardActionTouch} onPress={() => confirmResolveCondition(condition)} hitSlop={8}>
-                        <Text style={styles.conditionActionText}>Resolve</Text>
+                        <ThemedText style={styles.conditionActionText}>Resolve</ThemedText>
                       </TouchableOpacity>
                     </View>
                   </View>
@@ -996,9 +1041,9 @@ export default function ProfileScreen() {
         {/* ── Current medications ── */}
         <Card style={styles.sectionGap}>
           <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Current medications</Text>
+            <ThemedText style={styles.sectionTitle}>Current medications</ThemedText>
             <TouchableOpacity style={styles.cardActionTouch} onPress={openAddMedication} hitSlop={8}>
-              <Text style={styles.sectionAction}>+ Add</Text>
+              <ThemedText style={styles.sectionAction}>+ Add</ThemedText>
             </TouchableOpacity>
           </View>
 
@@ -1009,11 +1054,11 @@ export default function ProfileScreen() {
             // any" directly over a populated Past list (the between-courses state — a
             // pet just off its antibiotics). Say "right now" and point down; keep the
             // forward-looking first-run copy only when there is genuinely no history.
-            <Text style={styles.emptyConditionsText}>
+            <ThemedText style={styles.emptyConditionsText}>
               {pastRows.length > 0
                 ? `No medications right now — ${activePet.name}'s past courses are just below.`
                 : 'No medications yet. Add a regimen once and logging each dose becomes a single tap.'}
-            </Text>
+            </ThemedText>
           ) : (
             medications.map((reg) => {
               const meta = [reg.dose_amount, routeLabel(reg.route), frequencyLabel(reg.doses_per_day)]
@@ -1022,8 +1067,8 @@ export default function ProfileScreen() {
               return (
                 <View key={reg.id} style={styles.medRow}>
                   <Divider style={styles.conditionDivider} />
-                  <Text style={styles.medName}>{reg.drug_name}</Text>
-                  {meta ? <Text style={styles.medMeta}>{meta}</Text> : null}
+                  <ThemedText style={styles.medName}>{reg.drug_name}</ThemedText>
+                  {meta ? <ThemedText style={styles.medMeta}>{meta}</ThemedText> : null}
                   {reg.doseCourse ? (
                     /* B-618 §6 — a doses course states its progress in DOSES, not
                        days: "Dose {n} of {target}" (or, past target, "28 of 28
@@ -1039,14 +1084,14 @@ export default function ProfileScreen() {
                        and never falls back to "Started …". D7: no completion word is
                        reachable through this line. */
                     <View style={styles.doseCourseGroup}>
-                      <Text style={styles.medDays}>{reg.doseCourse.line}</Text>
+                      <ThemedText style={styles.medDays}>{reg.doseCourse.line}</ThemedText>
                       <View style={styles.progressTrack}>
                         <View style={[styles.progressBar, { width: `${Math.round(reg.doseCourse.barFraction * 100)}%` }]} />
                       </View>
                     </View>
                   ) : (
                     <>
-                      <Text style={styles.medDays}>
+                      <ThemedText style={styles.medDays}>
                         {/* "Day X of Y" only while the course is within its planned
                             window; once it's run past target_duration (still active —
                             owner hasn't ended it) the "of Y" is nonsense ("Day 30 of
@@ -1058,7 +1103,7 @@ export default function ProfileScreen() {
                          && reg.daysElapsed <= reg.target_duration_days
                           ? `Day ${reg.daysElapsed} of ${reg.target_duration_days}`
                           : `Started ${formatRegimenStart(reg.started_at)}`}
-                      </Text>
+                      </ThemedText>
                       {/* Days/ongoing: the bar encodes ADHERENCE %, so it belongs
                           directly above the compliance line (same number) and needs
                           no grouping; shown only once something is logged. */}
@@ -1082,7 +1127,7 @@ export default function ProfileScreen() {
                       tested predicate (lib/medications.courseReachedPlannedEnd). */}
                   {reg.courseEnd.reached && reg.courseEnd.denomination && (
                     <View style={styles.coursePrompt}>
-                      <Text style={styles.coursePromptText}>
+                      <ThemedText style={styles.coursePromptText}>
                         {courseEndPromptLede({
                           denomination: reg.courseEnd.denomination,
                           petName: activePet.name,
@@ -1090,13 +1135,13 @@ export default function ProfileScreen() {
                           targetDays: reg.target_duration_days,
                         })}{' '}
                         {COURSE_END_PROMPT_QUESTION}
-                      </Text>
+                      </ThemedText>
                       {/* B-719 finding ④ — the vet-deferral hedge, restored at B-642's
                           original quiet register. The app cannot tell a taper / "finish
                           till the recheck" course from a simple one, so the prompt keeps
                           a short "your vet's call" beside the question rather than nudging
                           an abrupt stop. Load-bearing, not polish (adversarial-reviewer). */}
-                      <Text style={styles.coursePromptHedge}>{COURSE_END_PROMPT_HEDGE}</Text>
+                      <ThemedText style={styles.coursePromptHedge}>{COURSE_END_PROMPT_HEDGE}</ThemedText>
                       <TouchableOpacity
                         style={styles.coursePromptButton}
                         onPress={() => confirmEndRegimen(reg)}
@@ -1104,7 +1149,7 @@ export default function ProfileScreen() {
                         accessibilityRole="button"
                         accessibilityLabel={`Mark ${reg.drug_name} as finished`}
                       >
-                        <Text style={styles.coursePromptButtonText}>{COURSE_END_PROMPT_ACTION}</Text>
+                        <ThemedText style={styles.coursePromptButtonText}>{COURSE_END_PROMPT_ACTION}</ThemedText>
                       </TouchableOpacity>
                     </View>
                   )}
@@ -1113,15 +1158,15 @@ export default function ProfileScreen() {
                       under it is the same fact twice. Any logged dose (including a
                       refused one, where count stays 0) brings this line back. */}
                   {!(reg.doseCourse && reg.doseCourse.fresh) && (
-                    <Text style={styles.medComplianceLine}>{reg.complianceLine}</Text>
+                    <ThemedText style={styles.medComplianceLine}>{reg.complianceLine}</ThemedText>
                   )}
                   {reg.flagLine && (
                     <View style={styles.medFlag}>
-                      <Text style={styles.medFlagText}>{reg.flagLine}</Text>
+                      <ThemedText style={styles.medFlagText}>{reg.flagLine}</ThemedText>
                     </View>
                   )}
-                  {reg.indication ? <Text style={styles.medContext}>For {reg.indication}</Text> : null}
-                  {reg.prescribed_by ? <Text style={styles.medContext}>Prescribed by {reg.prescribed_by}</Text> : null}
+                  {reg.indication ? <ThemedText style={styles.medContext}>For {reg.indication}</ThemedText> : null}
+                  {reg.prescribed_by ? <ThemedText style={styles.medContext}>Prescribed by {reg.prescribed_by}</ThemedText> : null}
                   <View style={styles.conditionActions}>
                     <TouchableOpacity
                       style={styles.cardActionTouch}
@@ -1130,15 +1175,21 @@ export default function ProfileScreen() {
                       accessibilityRole="button"
                       accessibilityLabel={`Log a dose of ${reg.drug_name}`}
                     >
-                      <Text style={[styles.conditionActionText, styles.logDoseActionText]}>Log a dose</Text>
+                      <ThemedText style={[styles.conditionActionText, styles.logDoseActionText]}>Log a dose</ThemedText>
                     </TouchableOpacity>
+                    {/* Icon glyph, not copy — stays a raw <Text>. These stand in for vector glyphs
+                        (the B-745 GlyphSvg migration owns them), so they keep the system face rather
+                        than taking the body family a sweep would give them. CUL-364 §7. */}
                     <Text style={styles.conditionActionDivider}>·</Text>
                     <TouchableOpacity style={styles.cardActionTouch} onPress={() => openEditRegimen(reg)} hitSlop={8}>
-                      <Text style={styles.conditionActionText}>Edit</Text>
+                      <ThemedText style={styles.conditionActionText}>Edit</ThemedText>
                     </TouchableOpacity>
+                    {/* Icon glyph, not copy — stays a raw <Text>. These stand in for vector glyphs
+                        (the B-745 GlyphSvg migration owns them), so they keep the system face rather
+                        than taking the body family a sweep would give them. CUL-364 §7. */}
                     <Text style={styles.conditionActionDivider}>·</Text>
                     <TouchableOpacity style={styles.cardActionTouch} onPress={() => confirmEndRegimen(reg)} hitSlop={8}>
-                      <Text style={[styles.conditionActionText, styles.medEndActionText]}>End</Text>
+                      <ThemedText style={[styles.conditionActionText, styles.medEndActionText]}>End</ThemedText>
                     </TouchableOpacity>
                   </View>
                 </View>
@@ -1222,11 +1273,11 @@ export default function ProfileScreen() {
 
         {/* ── Vet report (Step 9) ── */}
         <Card style={styles.sectionGap}>
-          <Text style={styles.sectionTitle}>Vet report</Text>
-          <Text style={styles.reportBlurb}>
+          <ThemedText style={styles.sectionTitle}>Vet report</ThemedText>
+          <ThemedText style={styles.reportBlurb}>
             A clinical summary of {activePet.name}’s symptoms, diet, and trends — view it
             here, then send it to your vet as a PDF.
-          </Text>
+          </ThemedText>
           <PrimaryButton
             label="Open vet report"
             onPress={() => router.push('/report')}
@@ -1262,7 +1313,7 @@ export default function ProfileScreen() {
           activeOpacity={0.7}
           accessibilityRole="button"
         >
-          <Text style={styles.archiveBtnText}>Archive {activePet.name}</Text>
+          <ThemedText style={styles.archiveBtnText}>Archive {activePet.name}</ThemedText>
         </TouchableOpacity>
 
         <View style={styles.bottomPad} />

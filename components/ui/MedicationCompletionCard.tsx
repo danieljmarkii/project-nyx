@@ -1,10 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, Animated, Platform, Modal, Pressable, Alert,
+  View, StyleSheet, TouchableOpacity, Animated, Platform, Modal, Pressable, Alert,
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Check } from 'lucide-react-native';
 import { theme, shadows } from '../../constants/theme';
+import { ThemedText } from './ThemedText';
+import {
+  removedNoticeCopy, HITSLOP_ACTION_LEFT, HITSLOP_ACTION_RIGHT,
+} from '../../lib/completionCard';
 import { useMomentStore } from '../../store/momentStore';
 import { useEventStore } from '../../store/eventStore';
 import { usePetStore } from '../../store/petStore';
@@ -47,13 +51,21 @@ const CHIP_CONFIRM_HOLD_MS = 1500;
 // Safety (spec §6): the dose is logged 'given' by the owner's affirmative tap; the
 // chips let them DOWNGRADE (partial / missed / refused) — never an alarm, just an
 // honest correction. A downgrade is persisted + synced like the meal intake edit.
+// CUL-612 — UNDO. The reversal lives in momentStore.undo() so all three R1 cards
+// share one definition of "undone"; local to this card is that the removal line
+// REPLACES the body. That matters more here than anywhere: the adherence chips are
+// the B-156 G1 fail-safe surface, and leaving them live over a removed dose would
+// invite an adherence write against a row that is no longer in the record. Undo
+// stays a REVERSAL and never becomes a second path to an affirmative — removing a
+// dose can only reduce what the record claims, and an unanswered card still lands
+// `unconfirmed`, exactly as before.
 export function MedicationCompletionCard() {
   const {
-    visible, payload, hide, patchOccurredAt, patchAdherence, patchHowGiven, patchDoubleDose,
-    rescheduleHide,
+    visible, payload, removed, hide, undo, patchOccurredAt, patchAdherence, patchHowGiven,
+    patchDoubleDose, rescheduleHide, pauseDwell, resumeDwell,
   } = useMomentStore();
   const { patchInToday } = useEventStore();
-  const { activePet } = usePetStore();
+  const { activePet, pets } = usePetStore();
 
   const translateY = useRef(new Animated.Value(80)).current;
   const opacity = useRef(new Animated.Value(0)).current;
@@ -201,6 +213,15 @@ export function MedicationCompletionCard() {
     }
   }
 
+  // 'ignored' is silent (a second tap, or a card already gone); only a real failure
+  // gets a word, and it names the other way in.
+  async function handleUndo() {
+    if (!payload) return;
+    if ((await undo(payload.eventId)) === 'failed') {
+      Alert.alert('Could not remove that dose', 'Try again, or remove it from History.');
+    }
+  }
+
   // Keep rendering through the dismiss fade (payload preserved by hide()), but
   // never mount for a non-medication payload.
   if (!payload || payload.kind !== 'medication') return null;
@@ -212,13 +233,27 @@ export function MedicationCompletionCard() {
   // "Logged" (never "Gave") either way: the title must not contradict a downgrade to
   // Missed/Refused on the chips below.
   const isCombo = !!payload.pairedFoodName;
+  // CUL-614 — the nameless fallback says "Dose logged", never a bare "Logged". §5's
+  // sentence rule is that a beat names the record, and a dose card that has lost its
+  // drug name still knows it wrote a DOSE — dropping to the same word every other
+  // register just retired is the one thing it must not do. Reachable only through
+  // app/log.tsx's `drugDisplayName(...) ?? med.generic_name`, where a regimen with a
+  // blank generic name yields '' (the profile path's `drug_name` is required by
+  // canSaveRegimen), so this is the honest floor rather than dead code.
   const title = isCombo
     ? 'Logged together'
-    : (payload.drugName ? `Logged · ${payload.drugName}` : 'Logged');
+    : (payload.drugName ? `Logged · ${payload.drugName}` : 'Dose logged');
   const subLabel = isCombo
     ? `${payload.drugName} · with ${payload.pairedFoodName}`
     : formatTime(occurredDate);
   const petName = activePet?.name ?? 'your pet';
+  // The removal line names the DOSE's pet, resolved from the payload — the
+  // queue-then-switch guard the meal and named cards already carry. (The adherence
+  // prompt above still reads the ACTIVE pet; that is a pre-existing gap on this
+  // card, filed separately rather than widened into here.)
+  const notice = removed
+    ? removedNoticeCopy(pets.find((p) => p.id === payload.petId)?.name ?? petName)
+    : null;
 
   // B-156 PR B3 — the intake → adherence safety coupling on the card. A combo dose
   // whose linked vehicle was NOT finished (refused/picked) lands UNCONFIRMED (adherence
@@ -265,14 +300,49 @@ export function MedicationCompletionCard() {
       pointerEvents={shown ? 'box-none' : 'none'}
       style={[styles.wrapper, { opacity, transform: [{ translateY }] }]}
     >
-      <View style={styles.card}>
+      {/* CUL-614 / §5 "Dwell" — the auto-dismiss stops while a finger is on the card
+          and any interaction resets it. Wired at the ROOT because touch events bubble
+          from every child, so the pause covers the whole gesture including the reading
+          pause between two chip taps; a per-control version would only ever cover the
+          taps themselves, which were never the part being lost. onTouchCancel matters
+          as much as onTouchEnd: a gesture the responder system takes away (a scroll
+          claiming it, a Modal mounting over it) ends there and nowhere else.
+
+          NOT wired over the CUL-612 removal line, deliberately. That state has nothing
+          to read, tap or answer — it is the one card state the pause is not for — and
+          resuming arms a full interactive window, which would let a stray touch stretch
+          a 2.4s "Removed" past the dwell chosen so a reversal does not outstay the log
+          it reversed. */}
+      <View
+        style={styles.card}
+        testID="medication-card-surface"
+        onTouchStart={notice ? undefined : pauseDwell}
+        onTouchEnd={notice ? undefined : resumeDwell}
+        onTouchCancel={notice ? undefined : resumeDwell}
+      >
+        {notice ? (
+          /* The removal line — no mark, no chips, no note. The adherence row in
+             particular must go: it is a question about a dose that is no longer in
+             the record. Announced politely; this state has no other confirmation
+             for a screen-reader owner. */
+          <View
+            style={styles.labelCol}
+            accessibilityRole="summary"
+            accessibilityLiveRegion="polite"
+            accessibilityLabel={notice.a11yLabel}
+          >
+            <ThemedText style={styles.title}>{notice.title}</ThemedText>
+            <ThemedText style={styles.subLabel}>{notice.detail}</ThemedText>
+          </View>
+        ) : (
+        <>
         <View style={styles.headerRow}>
           <Animated.View style={[styles.checkBadge, { transform: [{ scale: checkScale }] }]}>
             <Check size={18} color={theme.colorMomentConfirm} strokeWidth={3} />
           </Animated.View>
           <View style={styles.labelCol}>
-            <Text style={styles.title} numberOfLines={1}>{title}</Text>
-            <Text style={styles.subLabel} numberOfLines={1}>{subLabel}</Text>
+            <ThemedText style={styles.title} numberOfLines={1}>{title}</ThemedText>
+            <ThemedText style={styles.subLabel} numberOfLines={1}>{subLabel}</ThemedText>
           </View>
           {/* "Change time" is scoped to a STANDALONE dose — where the subLabel IS the
               logged time, giving the exact 1:1 with the meal card (the button sits next
@@ -280,17 +350,33 @@ export function MedicationCompletionCard() {
               ("{drug} · with {food}"), so a "Change time" there would point at no visible
               time and crowd an already-dense card; that dose's time stays editable on the
               detail screen. */}
-          {!isCombo && (
+          {/* Undo renders for a COMBO dose too, unlike Change time. A combo is the
+              densest, most error-prone path on this card (it was logged from
+              another card, against a meal), so the one place a reversal is most
+              likely needed is the one place the time picker withholds itself.
+              Grouped so the header's wide gap applies once, to the pair. */}
+          <View style={styles.actionPair}>
             <TouchableOpacity
-              onPress={openPicker}
-              hitSlop={12}
+              onPress={handleUndo}
+              hitSlop={HITSLOP_ACTION_LEFT}
               style={styles.actionBtn}
               accessibilityRole="button"
-              accessibilityLabel="Change time of this dose"
+              accessibilityLabel="Undo — remove this dose"
             >
-              <Text style={styles.action}>Change time</Text>
+              <ThemedText style={styles.action}>Undo</ThemedText>
             </TouchableOpacity>
-          )}
+            {!isCombo && (
+              <TouchableOpacity
+                onPress={openPicker}
+                hitSlop={HITSLOP_ACTION_RIGHT}
+                style={styles.actionBtn}
+                accessibilityRole="button"
+                accessibilityLabel="Change time of this dose"
+              >
+                <ThemedText style={styles.action}>Change time</ThemedText>
+              </TouchableOpacity>
+            )}
+          </View>
         </View>
         <View style={styles.adherenceWrap}>
           {/* B-172 — confirm-to-correct. A pre-lit state the OWNER asserted is RESTATED with
@@ -299,7 +385,7 @@ export function MedicationCompletionCard() {
               whose vehicle is not yet rated (isGivenAssumed — that 'given' is the app's
               default under uncertainty, not the owner's word). Passing the live adherence
               keeps this line in step with the chips through the 1500ms post-tap confirm hold. */}
-          <Text style={styles.adherenceLabel}>
+          <ThemedText style={styles.adherenceLabel}>
             {doseAdherencePrompt({
               petName,
               inDoubt,
@@ -310,12 +396,12 @@ export function MedicationCompletionCard() {
                 adherence: payload.adherence,
               }),
             })}
-          </Text>
+          </ThemedText>
           {/* In-doubt only: the faint reason, so the owner doesn't have to recall they
               marked the food refused on the now-dismissed meal card. Factual, never
               "fussy", never reassuring. */}
           {inDoubt ? (
-            <Text style={styles.inDoubtReason}>{comboInDoubtReason({ petName })}</Text>
+            <ThemedText style={styles.inDoubtReason}>{comboInDoubtReason({ petName })}</ThemedText>
           ) : null}
           <AdherenceChipRow
             value={payload.adherence}
@@ -344,14 +430,14 @@ export function MedicationCompletionCard() {
             accessibilityRole="summary"
             accessibilityLabel={doubleDoseCopy}
           >
-            <Text style={styles.doubleDoseText}>{doubleDoseCopy}</Text>
+            <ThemedText style={styles.doubleDoseText}>{doubleDoseCopy}</ThemedText>
           </View>
         )}
         {/* B-156 Slice B — the optional, subordinate vehicle row. Skippable and
             default-null: the owner can ignore it entirely and the card still
             auto-dismisses; it never gates dismiss and reads clean when unset. */}
         <View style={styles.vehicleWrap}>
-          <Text style={styles.vehicleLabel}>How was it given? (optional)</Text>
+          <ThemedText style={styles.vehicleLabel}>How was it given? (optional)</ThemedText>
           <VehicleChipRow
             value={payload.howGiven}
             onChange={handleVehicleChange}
@@ -360,6 +446,8 @@ export function MedicationCompletionCard() {
             onDark
           />
         </View>
+        </>
+        )}
       </View>
     </Animated.View>
 
@@ -377,7 +465,7 @@ export function MedicationCompletionCard() {
           are captured here and don't fall through to the absolute-positioned backdrop,
           silently dismissing the picker mid-edit. */}
       <Pressable style={styles.sheet} onPress={() => {}}>
-        <Text style={styles.sheetTitle}>When was this dose given?</Text>
+        <ThemedText style={styles.sheetTitle}>When was this dose given?</ThemedText>
         {draft && (
           <DateTimePicker
             value={draft}
@@ -392,7 +480,7 @@ export function MedicationCompletionCard() {
         )}
         <View style={styles.sheetActions}>
           <TouchableOpacity onPress={cancelPicker} hitSlop={12} style={styles.sheetBtn}>
-            <Text style={styles.sheetCancel}>Cancel</Text>
+            <ThemedText style={styles.sheetCancel}>Cancel</ThemedText>
           </TouchableOpacity>
           <TouchableOpacity
             onPress={savePicker}
@@ -400,7 +488,7 @@ export function MedicationCompletionCard() {
             style={styles.sheetBtn}
             disabled={saving}
           >
-            <Text style={[styles.sheetSave, saving && styles.sheetSaveDisabled]}>Save</Text>
+            <ThemedText style={[styles.sheetSave, saving && styles.sheetSaveDisabled]}>Save</ThemedText>
           </TouchableOpacity>
         </View>
       </Pressable>
@@ -465,12 +553,19 @@ const styles = StyleSheet.create({
   },
   // 44pt min touch target (the 3am-test rule) — the underlined label alone is
   // ~15pt; hitSlop helps but the container guarantees the floor. Mirrors the meal card.
+  // The reversal/correction cluster (CUL-612) — see the meal card for the sizing
+  // rationale; the two R1 presentations keep the same action scale.
+  actionPair: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.space1,
+  },
   actionBtn: {
     minHeight: 44,
     justifyContent: 'center',
   },
   action: {
-    fontSize: theme.textMD,
+    fontSize: theme.textSM,
     color: theme.colorTextOnDark,
     fontWeight: theme.weightMedium,
     textDecorationLine: 'underline',

@@ -25,17 +25,34 @@
 import { useEffect, useState } from 'react';
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
+import { Check } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
+// haptics-guard-ok: not a safety surface — the confirm button never renders on a
+// withholding card (§6 mints no confirm payload), so this verb is unreachable from
+// any concern state. See the CONFIRMED_LINE note below.
+import { commitRoutine } from '../../lib/haptics';
 import { Card } from '../ui/Card';
+import { ThemedText } from '../ui/ThemedText';
 import { insertMedicationDose } from '../../lib/medicationDose';
 import { useSyncStore } from '../../store/syncStore';
 import type { MedStripModel } from '../../lib/medStrip';
 
 // §9 state 10 — the optimistic confirmation line (locked at M5, `nyx-voice` +
-// `clinical-guardrails`): a calm statement about the RECORD ("dose logged"), never
-// a verdict about the pet, and no exclamation. It is held briefly, then the card
-// settles into its reloaded state (2/3).
-const CONFIRMED_LINE = 'Dose logged just now';
+// `clinical-guardrails`): a calm statement about the RECORD, never a verdict about
+// the pet, and no exclamation. It is held briefly, then the card settles into its
+// reloaded state (2/3).
+//
+// CUL-614 NAMES THE RECORD. M5 shipped a bare "Dose logged just now". Every M5
+// property survives — this is still a statement about the record, still calm, still
+// unpunctuated — but §5's sentence rule asks a beat to say WHAT it wrote, and D3 puts
+// one card per med on Home, so a multi-med owner confirming one of three cards read a
+// line that could have belonged to any of them. The shape is the app's completion
+// register throughout: subject · when ("Vomit · found by 5:33 PM", "Logged · {drug}").
+//
+// The drug name is `model.drugName` — the resolver's display-ready B-171 name, the
+// same field the header is built from — never re-derived here (`lib/medStrip.ts`
+// carries it separately from `header` for exactly this reason).
+const confirmedLine = (drugName: string) => `${drugName} · logged just now`;
 
 // How long "Dose logged just now" dwells before the card settles into its reloaded
 // state (§9 state 10). The confirm writes LOCAL-FIRST, so the hydration-tick reload
@@ -74,7 +91,7 @@ export function MedStrip({ model, onPress, onConfirm }: Props) {
   // What the fact line reads right now: the optimistic confirmation while it dwells,
   // otherwise the resolver's line. Derived once so the rendered line and the
   // screen-reader label can never disagree.
-  const displayedLine = phase === 'confirmed' ? CONFIRMED_LINE : model.line;
+  const displayedLine = phase === 'confirmed' ? confirmedLine(model.drugName) : model.line;
 
   // §9 state 10 — after a successful write, hold the confirmation line briefly, then
   // fall back to the reloaded model (which now counts the dose → state 2/3). The
@@ -136,6 +153,22 @@ export function MedStrip({ model, onPress, onConfirm }: Props) {
       Alert.alert('Couldn’t log that dose', 'Please try again in a moment.');
       return;
     }
+    // CUL-614 / §5.6 — the commit haptic. A dose is a ROUTINE commit (the success
+    // double-tap), never `commitSymptom`: the tone split is about what was written, and
+    // an owner giving a prescribed dose is doing the thing that goes right.
+    //
+    // Fired here, AFTER the write resolved and never on the tap, so the buzz means "it
+    // landed" rather than "you pressed something" — and the failure path above returns
+    // before reaching this line, so a dose that did not save is silent. That is the
+    // opposite convention from `destructiveConfirm`, which marks the gesture on purpose;
+    // the difference is that this button has no confirm step to make the tap feel heard.
+    //
+    // This card is NOT a safety surface for the D7 silence rule, and the reason is
+    // structural rather than a judgement: `resolveMedStrips` mints no `confirm` payload
+    // for a withholding record (§6), so the button does not render on a card carrying a
+    // refusal fact — meaning no path exists from a concern state to this line. A haptic
+    // here can only ever follow the owner's own affirmative tap on a routine card.
+    commitRoutine();
     setPhase('confirmed');
   }
 
@@ -163,7 +196,10 @@ export function MedStrip({ model, onPress, onConfirm }: Props) {
         testID="med-strip"
       >
         <View style={styles.headerRow}>
-          <Text style={styles.header}>{model.header}</Text>
+          <ThemedText style={styles.header}>{model.header}</ThemedText>
+          {/* Icon glyph, not copy — stays a raw <Text>. These stand in for vector glyphs
+              (the B-745 GlyphSvg migration owns them), so they keep the system face rather
+              than taking the body family a sweep would give them. CUL-364 §7. */}
           <Text style={styles.chevron}>›</Text>
         </View>
 
@@ -180,14 +216,38 @@ export function MedStrip({ model, onPress, onConfirm }: Props) {
         )}
 
         {displayedLine !== null && (
-          <Text
-            style={[
-              styles.line,
-              phase === 'confirmed' ? styles.lineConfirmed : isFlag && styles.lineFlag,
-            ]}
-          >
-            {displayedLine}
-          </Text>
+          <View style={styles.lineRow}>
+            {/* CUL-614 — the R2 mark. The in-place beat's check, at line scale, so the
+                strip's confirm reads as the same register as the sheet beat and the
+                cards rather than as a colour change nobody notices.
+
+                `colorAccentInk`, not the mint `colorMomentConfirm` the ring-bearing
+                beats use: this glyph sits bare on the card's white ground, where mint
+                lands around 2.2:1 — under the 3:1 floor for a graphical object. Ink is
+                the same accent (the one-accent rule holds) at ~5.5:1, and it is already
+                the confirmed line's colour, so mark and sentence read as one unit.
+                Static — no motion, so nothing for the reduced-motion rule to govern. */}
+            {phase === 'confirmed' && (
+              <Check
+                size={14}
+                color={theme.colorAccentInk}
+                strokeWidth={2.5}
+                // Decorative: the a11y label below already speaks the whole line, and a
+                // second announcement of the mark would just say "check" over it.
+                accessibilityElementsHidden
+                importantForAccessibility="no"
+              />
+            )}
+            <ThemedText
+              style={[
+                styles.line,
+                styles.lineText,
+                phase === 'confirmed' ? styles.lineConfirmed : isFlag && styles.lineFlag,
+              ]}
+            >
+              {displayedLine}
+            </ThemedText>
+          </View>
         )}
       </Pressable>
 
@@ -205,7 +265,7 @@ export function MedStrip({ model, onPress, onConfirm }: Props) {
           testID="med-strip-confirm"
           style={styles.confirm}
         >
-          <Text style={styles.confirmLabel}>Log dose</Text>
+          <ThemedText style={styles.confirmLabel}>Log dose</ThemedText>
         </Pressable>
       )}
     </Card>
@@ -243,10 +303,23 @@ const styles = StyleSheet.create({
     borderRadius: 2,
     backgroundColor: theme.colorAccent,
   },
+  // The row that carries the fact line plus, once confirmed, the mark to its left.
+  // `marginTop` moves here from `line` so the mark and the text share one baseline
+  // block and the card's spacing is unchanged whether or not the mark is present.
+  lineRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.space0_5,
+    marginTop: theme.space1,
+  },
   line: {
     fontSize: theme.textSM,
     color: theme.colorTextSecondary,
-    marginTop: theme.space1,
+  },
+  // Lets a long "{drug} · logged just now" wrap inside the row instead of pushing the
+  // mark off the card.
+  lineText: {
+    flexShrink: 1,
   },
   // The withholding fact (§6). `colorEventSymptom` is the app's established
   // concern-text token — every other safety/concern line uses it (EventRow,

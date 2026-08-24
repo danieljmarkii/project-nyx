@@ -1,11 +1,12 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import {
   TouchableOpacity, StyleSheet, View, Animated,
-  Text, Pressable,
+  Pressable,
 } from 'react-native';
 import { router } from 'expo-router';
 import { ChevronDown, Plus } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
+import { ThemedText } from '../ui/ThemedText';
 import { WhorlSpinner } from '../brand/WhorlSpinner';
 import { EventIcon } from '../event/EventIcon';
 import { PetAvatar } from '../pet/PetAvatar';
@@ -217,8 +218,8 @@ export function FAB() {
                       common 1–2 word names (incl. "Schrodingers Cat", 16 ch) on
                       a single line; only the genuinely long ones spill to two. */}
                   <View style={styles.logForTextCol}>
-                    <Text style={styles.logForLabel} numberOfLines={1}>Logging for</Text>
-                    <Text style={styles.logForName} numberOfLines={2}>{activePet.name}</Text>
+                    <ThemedText style={styles.logForLabel} numberOfLines={1}>Logging for</ThemedText>
+                    <ThemedText style={styles.logForName} numberOfLines={2}>{activePet.name}</ThemedText>
                   </View>
                   <ChevronDown size={16} color={theme.colorTextSecondary} strokeWidth={1.75} />
                 </TouchableOpacity>
@@ -228,9 +229,9 @@ export function FAB() {
 
             {/* Recent foods — meals AND treats the pet actually ate (the recency
                 query is food_type-agnostic), so "foods" not "meals". */}
-            <Text style={styles.sectionHeader}>Recent foods</Text>
+            <ThemedText style={styles.sectionHeader}>Recent foods</ThemedText>
             {recentFoods.length === 0 ? (
-              <Text style={styles.emptyFoods}>No foods logged yet</Text>
+              <ThemedText style={styles.emptyFoods}>No foods logged yet</ThemedText>
             ) : (
               recentFoods.map((food) => (
                 <TouchableOpacity
@@ -243,9 +244,9 @@ export function FAB() {
                   <View style={styles.menuActionIcon}>
                     <EventIcon type="meal" size={20} />
                   </View>
-                  <Text style={styles.menuActionLabel} numberOfLines={2}>
+                  <ThemedText style={styles.menuActionLabel} numberOfLines={2}>
                     {food.brand} {food.product_name}
-                  </Text>
+                  </ThemedText>
                   {logging === food.id && (
                     <WhorlSpinner size="sm" ground="day" style={styles.spinner} />
                   )}
@@ -260,7 +261,7 @@ export function FAB() {
               <View style={styles.menuActionIcon}>
                 <Plus size={20} color={theme.colorTextSecondary} strokeWidth={1.75} />
               </View>
-              <Text style={[styles.menuActionLabel, styles.newFoodLabel]}>Log food</Text>
+              <ThemedText style={[styles.menuActionLabel, styles.newFoodLabel]}>Log food</ThemedText>
             </TouchableOpacity>
 
             <View style={styles.divider} />
@@ -279,7 +280,7 @@ export function FAB() {
                 activeOpacity={0.7}
               >
                 <EventIcon type="vomit" size={20} color={theme.colorEventSymptom} />
-                <Text style={styles.symptomBtnText}>Vomit</Text>
+                <ThemedText style={styles.symptomBtnText}>Vomit</ThemedText>
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.symptomBtn}
@@ -287,7 +288,7 @@ export function FAB() {
                 activeOpacity={0.7}
               >
                 <EventIcon type="diarrhea" size={20} color={theme.colorEventSymptom} />
-                <Text style={styles.symptomBtnText}>Loose stool</Text>
+                <ThemedText style={styles.symptomBtnText}>Loose stool</ThemedText>
               </TouchableOpacity>
             </View>
 
@@ -312,7 +313,7 @@ export function FAB() {
               <View style={styles.menuActionIcon}>
                 <Plus size={20} color={theme.colorTextSecondary} strokeWidth={1.75} />
               </View>
-              <Text style={styles.menuActionLabel}>More events</Text>
+              <ThemedText style={styles.menuActionLabel}>More events</ThemedText>
             </TouchableOpacity>
           </Animated.View>
         )}

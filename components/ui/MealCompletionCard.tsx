@@ -1,12 +1,16 @@
 import { useEffect, useRef, useState } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, Animated, Platform, Modal, Pressable, Alert,
+  View, StyleSheet, TouchableOpacity, Animated, Platform, Modal, Pressable, Alert,
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { router } from 'expo-router';
 import { Check } from 'lucide-react-native';
 import { theme, shadows } from '../../constants/theme';
+import { ThemedText } from './ThemedText';
 import { useMomentStore } from '../../store/momentStore';
+import {
+  removedNoticeCopy, HITSLOP_ACTION_LEFT, HITSLOP_ACTION_RIGHT,
+} from '../../lib/completionCard';
 import { useEventStore } from '../../store/eventStore';
 import { usePetStore } from '../../store/petStore';
 import { updateEvent, updateMealIntake } from '../../lib/db';
@@ -93,6 +97,18 @@ interface AddTarget {
 // Principle 1 forbids a decision at the moment of event, so this line reports a
 // fact about a meal that is already saved and asks nothing.
 //
+// CUL-612 adds UNDO. It is not the fourth affordance the warning above guards
+// against, and the distinction is the same one B-351 relied on: the warning is
+// about DOORS — controls that hand the owner off to another surface or another
+// decision. Undo opens nothing and asks nothing. It reverses the single act this
+// card exists to announce, on the card that announced it, and it is the answer to
+// the finding that produced this whole track: a wrong-food tap in the dark was
+// five taps to fix (History → detail → Remove). The reversal itself lives in
+// momentStore.undo() so all three cards share one definition of "undone"; what is
+// local here is that the removal line REPLACES the card's body — the intake chips,
+// both trial flags and the combo line all go with it, because every one of them is
+// an offer to add something to a meal that is no longer in the record.
+//
 // B-693 adds the trial MEMBERSHIP heads-up ("this isn't on the trial list") as an
 // amber "attention" inset panel — design-locked to the mock's round-2 amber frame
 // (PM-ruled amber over a rose "danger" rendering: the claim the record can back is
@@ -105,7 +121,10 @@ interface AddTarget {
 // render only when evaluateMealLogTimeFlag returned a flag; the absence of either
 // is never an all-clear, and there is deliberately no "no conflict" state.
 export function MealCompletionCard() {
-  const { visible, payload, hide, patchOccurredAt, patchIntakeRating, rescheduleHide } = useMomentStore();
+  const {
+    visible, payload, removed, hide, undo, patchOccurredAt, patchIntakeRating, rescheduleHide,
+    pauseDwell, resumeDwell,
+  } = useMomentStore();
   const { patchInToday } = useEventStore();
   const { activePet, pets } = usePetStore();
 
@@ -251,6 +270,15 @@ export function MealCompletionCard() {
     });
   }
 
+  // CUL-612 — see the module header. 'ignored' is silent (a second tap, or a card
+  // already gone); only a real failure gets a word, and it names the other way in.
+  async function handleUndo() {
+    if (!payload) return;
+    if ((await undo(payload.eventId)) === 'failed') {
+      Alert.alert('Could not remove that log', 'Try again, or remove it from History.');
+    }
+  }
+
   // Keep rendering through the dismiss fade (payload is preserved by hide()),
   // but never mount for a beat payload.
   if (!payload || payload.kind !== 'meal') return null;
@@ -283,6 +311,8 @@ export function MealCompletionCard() {
   const mealPetName =
     pets.find((p) => p.id === payload.petId)?.name ?? petName;
   const trialFlag = payload.trialFlag ?? null;
+  // The removal line names the MEAL's pet for the same reason the flag copy does.
+  const notice = removed ? removedNoticeCopy(mealPetName) : null;
   // Two registers, one per kind (B-693). CONTENTS (rung 2) → the calm passive
   // prose it has always been; MEMBERSHIP (rung 3) → the amber panel copy + the
   // "+ Add to the trial list" hatch. mealFlagCopy names a protein, so it may only
@@ -368,7 +398,43 @@ export function MealCompletionCard() {
         pointerEvents={shown ? 'box-none' : 'none'}
         style={[styles.wrapper, { opacity, transform: [{ translateY }] }]}
       >
-        <View style={styles.card}>
+        {/* CUL-614 / §5 "Dwell" — the auto-dismiss stops while a finger is on the card
+            and any interaction resets it. Wired at the ROOT because touch events bubble
+            from every child, so the pause covers the whole gesture including the reading
+            pause between two chip taps; a per-control version would only ever cover the
+            taps themselves, which were never the part being lost. onTouchCancel matters
+            as much as onTouchEnd: a gesture the responder system takes away (a scroll
+            claiming it, a Modal mounting over it) ends there and nowhere else.
+
+            NOT wired over the CUL-612 removal line, deliberately — see the twin note in
+            MedicationCompletionCard: that state has nothing to read, tap or answer, and
+            resuming arms a full interactive window, which would let a stray touch
+            stretch a 2.4s "Removed" past the dwell chosen so a reversal does not outstay
+            the log it reversed. */}
+        <View
+          style={styles.card}
+          testID="meal-card-surface"
+          onTouchStart={notice ? undefined : pauseDwell}
+          onTouchEnd={notice ? undefined : resumeDwell}
+          onTouchCancel={notice ? undefined : resumeDwell}
+        >
+          {notice ? (
+            /* The removal line — no mark, no controls, no follow-ups. A gold check
+               over the word "Removed" would be two contradictory signals, and an
+               intake chip row would be asking how much of a meal was eaten that is
+               no longer in the record. Announced politely: this state has no other
+               confirmation for a screen-reader owner. */
+            <View
+              style={styles.labelCol}
+              accessibilityRole="summary"
+              accessibilityLiveRegion="polite"
+              accessibilityLabel={notice.a11yLabel}
+            >
+              <ThemedText style={styles.title}>{notice.title}</ThemedText>
+              <ThemedText style={styles.subLabel}>{notice.detail}</ThemedText>
+            </View>
+          ) : (
+          <>
           <View style={styles.headerRow}>
             {/* Gold beat: mint check + warm-gold halo, carrying the moment's
                 warmth into the non-blocking card. */}
@@ -376,24 +442,47 @@ export function MealCompletionCard() {
               <Check size={18} color={theme.colorMomentConfirm} strokeWidth={3} />
             </Animated.View>
             <View style={styles.labelCol}>
-              <Text style={styles.title} numberOfLines={1}>
-                {foodName ? `Logged · ${foodName}` : 'Logged'}
-              </Text>
-              <Text style={styles.subLabel}>{formatTime(occurredDate)}</Text>
+              {/* CUL-614 — the nameless-food fallback says "Food logged", never a bare
+                  "Logged": §5's sentence rule is that a beat names the record, and a
+                  card that has lost the food's name still knows it wrote food.
+                  Deliberately NOT "Meal logged" / "Treat logged" — that rule already
+                  has two implementations (EventRow, lib/dayEvents) and this is not the
+                  place to mint a third; "Food" is true for all four foodType values,
+                  including the 'other' and null ones neither of those covers. */}
+              <ThemedText style={styles.title} numberOfLines={1}>
+                {foodName ? `Logged · ${foodName}` : 'Food logged'}
+              </ThemedText>
+              <ThemedText style={styles.subLabel}>{formatTime(occurredDate)}</ThemedText>
             </View>
+            {/* Undo sits LEFT of Change time (round-2 mock's R1 pairing). It is in
+                the header row rather than a footer of its own because everything
+                below this line is a follow-up ABOUT the meal — putting a reversal
+                at the end of that stack would read as one more thing to add.
+                Grouped so the header's wide gap applies once, to the pair. */}
+            <View style={styles.actionPair}>
+            <TouchableOpacity
+              onPress={handleUndo}
+              hitSlop={HITSLOP_ACTION_LEFT}
+              style={styles.actionBtn}
+              accessibilityRole="button"
+              accessibilityLabel="Undo — remove this log"
+            >
+              <ThemedText style={styles.action}>Undo</ThemedText>
+            </TouchableOpacity>
             <TouchableOpacity
               onPress={openPicker}
-              hitSlop={12}
+              hitSlop={HITSLOP_ACTION_RIGHT}
               style={styles.actionBtn}
               accessibilityRole="button"
               accessibilityLabel="Change time of this log"
             >
-              <Text style={styles.action}>Change time</Text>
+              <ThemedText style={styles.action}>Change time</ThemedText>
             </TouchableOpacity>
+            </View>
           </View>
           {showIntake && (
             <View style={styles.intakeWrap}>
-              <Text style={styles.intakeLabel}>How much did {petName} eat?</Text>
+              <ThemedText style={styles.intakeLabel}>How much did {petName} eat?</ThemedText>
               <IntakeChipRow
                 value={payload.intakeRating ?? null}
                 onChange={handleIntakeChange}
@@ -416,8 +505,8 @@ export function MealCompletionCard() {
               accessibilityRole="summary"
               accessibilityLabel={`${contentsCopy.headline} ${contentsCopy.detail}`}
             >
-              <Text style={styles.flagHeadline}>{contentsCopy.headline}</Text>
-              <Text style={styles.flagDetail}>{contentsCopy.detail}</Text>
+              <ThemedText style={styles.flagHeadline}>{contentsCopy.headline}</ThemedText>
+              <ThemedText style={styles.flagDetail}>{contentsCopy.detail}</ThemedText>
             </View>
           )}
           {/* B-693 — the rung-3 MEMBERSHIP heads-up ("this isn't on the trial
@@ -435,9 +524,9 @@ export function MealCompletionCard() {
                   accessibilityRole="summary"
                   accessibilityLabel={`${membershipCopy.eyebrow}. ${membershipCopy.headline} ${membershipCopy.detail}`}
                 >
-                  <Text style={styles.membershipEyebrow}>{membershipCopy.eyebrow}</Text>
-                  <Text style={styles.flagHeadline}>{membershipCopy.headline}</Text>
-                  <Text style={styles.flagDetail}>{membershipCopy.detail}</Text>
+                  <ThemedText style={styles.membershipEyebrow}>{membershipCopy.eyebrow}</ThemedText>
+                  <ThemedText style={styles.flagHeadline}>{membershipCopy.headline}</ThemedText>
+                  <ThemedText style={styles.flagDetail}>{membershipCopy.detail}</ThemedText>
                 </View>
                 <TouchableOpacity
                   style={styles.membershipAddRow}
@@ -449,7 +538,7 @@ export function MealCompletionCard() {
                   {/* The "+" is chrome rendered at the call site, not baked into the
                       copy string (membershipFlagCopy carries words only) — the same
                       way the combo row hardcodes its own "+ Add …" literal below. */}
-                  <Text style={styles.membershipAddText}>+ {membershipCopy.addLine}</Text>
+                  <ThemedText style={styles.membershipAddText}>+ {membershipCopy.addLine}</ThemedText>
                 </TouchableOpacity>
               </View>
             </View>
@@ -471,8 +560,10 @@ export function MealCompletionCard() {
                   "Gave a med with this?" carried — flagged in investigation §9 + the
                   B2b pm-feature-review). The banner on the next screen echoes it
                   ("…you gave with it"). */}
-              <Text style={styles.comboText}>+ Add a med given with this</Text>
+              <ThemedText style={styles.comboText}>+ Add a med given with this</ThemedText>
             </TouchableOpacity>
+          )}
+          </>
           )}
         </View>
       </Animated.View>
@@ -490,7 +581,7 @@ export function MealCompletionCard() {
             absolute-positioned backdrop, silently dismissing the picker
             mid-edit. */}
         <Pressable style={styles.sheet} onPress={() => {}}>
-          <Text style={styles.sheetTitle}>When did this happen?</Text>
+          <ThemedText style={styles.sheetTitle}>When did this happen?</ThemedText>
           {draft && (
             <DateTimePicker
               value={draft}
@@ -505,7 +596,7 @@ export function MealCompletionCard() {
           )}
           <View style={styles.sheetActions}>
             <TouchableOpacity onPress={cancelPicker} hitSlop={12} style={styles.sheetBtn}>
-              <Text style={styles.sheetCancel}>Cancel</Text>
+              <ThemedText style={styles.sheetCancel}>Cancel</ThemedText>
             </TouchableOpacity>
             <TouchableOpacity
               onPress={savePicker}
@@ -513,7 +604,7 @@ export function MealCompletionCard() {
               style={styles.sheetBtn}
               disabled={saving}
             >
-              <Text style={[styles.sheetSave, saving && styles.sheetSaveDisabled]}>Save</Text>
+              <ThemedText style={[styles.sheetSave, saving && styles.sheetSaveDisabled]}>Save</ThemedText>
             </TouchableOpacity>
           </View>
         </Pressable>
@@ -592,14 +683,26 @@ const styles = StyleSheet.create({
     color: theme.colorTextOnDarkSubtle,
     fontWeight: theme.weightRegular,
   },
+  // The two reversal/correction controls, grouped (CUL-612). Tight internal gap:
+  // they are one cluster, and the header's space2 belongs between the cluster and
+  // the name it acts on.
+  actionPair: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.space1,
+  },
   // 44pt min touch target (the 3am-test rule) — the underlined label alone is
   // 15pt; hitSlop helps but the container guarantees the floor.
   actionBtn: {
     minHeight: 44,
     justifyContent: 'center',
   },
+  // textSM since CUL-612 put a second control here: at textMD the pair left a
+  // long food name ~110pt to render in, which truncated the one thing the card
+  // exists to name. It also matches the named card's action scale, so the two R1
+  // presentations now agree — the sentence leads, the controls sit under it.
   action: {
-    fontSize: theme.textMD,
+    fontSize: theme.textSM,
     color: theme.colorTextOnDark,
     fontWeight: theme.weightMedium,
     textDecorationLine: 'underline',

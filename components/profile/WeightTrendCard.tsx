@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
 import { router, useFocusEffect } from 'expo-router';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 import { ArrowDown, ArrowUp, Minus } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
 import { Card } from '../ui/Card';
+import { ThemedText } from '../ui/ThemedText';
 import { WhorlSpinner } from '../brand/WhorlSpinner';
 import { Sparkline } from '../dashboard/Sparkline';
 import {
@@ -85,7 +86,7 @@ export function WeightTrendCard({ petId, petName, snapshotKg }: Props) {
 
   return (
     <Card style={styles.card}>
-      <Text style={styles.label}>Weight</Text>
+      <ThemedText style={styles.label}>Weight</ThemedText>
 
       {loading && trend === null ? (
         <WhorlSpinner size="sm" ground="day" style={styles.loader} />
@@ -108,7 +109,7 @@ export function WeightTrendCard({ petId, petName, snapshotKg }: Props) {
         accessibilityRole="button"
         accessibilityLabel={`Log a weigh-in for ${petName}`}
       >
-        <Text style={styles.actionText}>Log a weigh-in</Text>
+        <ThemedText style={styles.actionText}>Log a weigh-in</ThemedText>
       </Pressable>
     </Card>
   );
@@ -124,17 +125,17 @@ function EmptyState({ petName, snapshotKg }: { petName: string; snapshotKg: numb
     return (
       <View style={styles.body}>
         <BigNumber lbs={kgToLbsNum(snapshotKg)} />
-        <Text style={styles.note}>
+        <ThemedText style={styles.note}>
           From {petName}'s profile. Log a weigh-in to start tracking changes over time.
-        </Text>
+        </ThemedText>
       </View>
     );
   }
   return (
-    <Text style={styles.emptyText}>
+    <ThemedText style={styles.emptyText}>
       No weight on file yet. Logging a weigh-in now and then is the simplest way to keep
       an eye on {petName}'s weight over time.
-    </Text>
+    </ThemedText>
   );
 }
 
@@ -146,11 +147,11 @@ function SingleReading({ trend, petName }: { trend: WeightTrend; petName: string
     <View style={styles.body}>
       <BigNumber lbs={trend.latestLbs!} />
       {trend.latestOccurredAt && (
-        <Text style={styles.note}>Last weighed {formatWeightDate(trend.latestOccurredAt)}</Text>
+        <ThemedText style={styles.note}>Last weighed {formatWeightDate(trend.latestOccurredAt)}</ThemedText>
       )}
-      <Text style={styles.note}>
+      <ThemedText style={styles.note}>
         One reading so far. Log another after {petName}'s next weigh-in to see the trend.
-      </Text>
+      </ThemedText>
     </View>
   );
 }
@@ -170,10 +171,10 @@ function TrendBody({ trend }: { trend: WeightTrend }) {
       <DeltaLine trend={trend} />
 
       {trend.latestOccurredAt && (
-        <Text style={styles.note}>
+        <ThemedText style={styles.note}>
           Last weighed {formatWeightDate(trend.latestOccurredAt)}
           {trend.readingCount > 1 ? ` · ${trend.readingCount} readings` : ''}
-        </Text>
+        </ThemedText>
       )}
     </View>
   );
@@ -181,10 +182,10 @@ function TrendBody({ trend }: { trend: WeightTrend }) {
 
 function BigNumber({ lbs }: { lbs: number }) {
   return (
-    <Text style={styles.value}>
+    <ThemedText style={styles.value}>
       {lbs}
-      <Text style={styles.unit}> lbs</Text>
-    </Text>
+      <ThemedText style={styles.unit}> lbs</ThemedText>
+    </ThemedText>
   );
 }
 
@@ -203,7 +204,7 @@ function DeltaLine({ trend }: { trend: WeightTrend }) {
   return (
     <View style={styles.deltaRow}>
       {icon}
-      <Text style={styles.deltaText}>{text}</Text>
+      <ThemedText style={styles.deltaText}>{text}</ThemedText>
     </View>
   );
 }

@@ -1,8 +1,9 @@
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { EventIcon } from '../event/EventIcon';
 import { EVENT_TYPES, EventTypeKey } from '../../constants/eventTypes';
 import { SectionLabel } from '../ui/SectionLabel';
 import { theme } from '../../constants/theme';
+import { ThemedText } from '../ui/ThemedText';
 
 // The log's event-type picker (B-745), extracted out of app/log.tsx so the
 // flag switches presentation at ONE seam.
@@ -92,9 +93,9 @@ function StoolSplitTile({ onSelectType }: { onSelectType: (type: EventTypeKey) =
   return (
     <View style={[styles.groupTile, styles.groupTileFull]}>
       <TileGlyph type="stool_normal" />
-      <Text style={styles.groupTileLabel} numberOfLines={1}>
+      <ThemedText style={styles.groupTileLabel} numberOfLines={1}>
         {pickerLabel('stool_normal')}
-      </Text>
+      </ThemedText>
       <View style={styles.splitSeg}>
         <TouchableOpacity
           style={styles.splitBtn}
@@ -104,7 +105,7 @@ function StoolSplitTile({ onSelectType }: { onSelectType: (type: EventTypeKey) =
           accessibilityRole="button"
           accessibilityLabel="Log normal stool"
         >
-          <Text style={styles.splitBtnText}>Normal</Text>
+          <ThemedText style={styles.splitBtnText}>Normal</ThemedText>
         </TouchableOpacity>
         <TouchableOpacity
           style={styles.splitBtn}
@@ -114,7 +115,7 @@ function StoolSplitTile({ onSelectType }: { onSelectType: (type: EventTypeKey) =
           accessibilityRole="button"
           accessibilityLabel="Log loose stool"
         >
-          <Text style={styles.splitBtnText}>Loose</Text>
+          <ThemedText style={styles.splitBtnText}>Loose</ThemedText>
         </TouchableOpacity>
       </View>
     </View>
@@ -170,9 +171,9 @@ export function GroupedEventGrid({ onSelectType }: { onSelectType: (type: EventT
                     accessibilityLabel={`Log ${pickerLabel(key).toLowerCase()}`}
                   >
                     <TileGlyph type={key} />
-                    <Text style={styles.groupTileLabel} numberOfLines={2}>
+                    <ThemedText style={styles.groupTileLabel} numberOfLines={2}>
                       {pickerLabel(key)}
-                    </Text>
+                    </ThemedText>
                   </TouchableOpacity>
                 );
               })}
@@ -208,7 +209,7 @@ export function EventTypePicker({ grouped, onSelectType }: Props) {
             activeOpacity={0.7}
           >
             <EventIcon type={key} size={24} />
-            <Text style={styles.typeLabel}>{pickerLabel(key)}</Text>
+            <ThemedText style={styles.typeLabel}>{pickerLabel(key)}</ThemedText>
           </TouchableOpacity>
         ))}
     </ScrollView>

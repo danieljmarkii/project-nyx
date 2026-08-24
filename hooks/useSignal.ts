@@ -21,6 +21,12 @@ import {
 } from '../lib/signalCopy';
 
 export interface SignalState {
+  /** The pet these findings belong to, or null before a pet is loaded. Exposed so a
+   *  consumer that persists something PER PET (CUL-601's arrival marker) keys it on the
+   *  same id this render derived `findings`/`displayState` from, rather than re-reading
+   *  the pet store and risking the pairing the render-time reset below exists to
+   *  prevent — one pet's state written under another pet's key. */
+  petId: string | null;
   findings: CachedFinding[];
   /** Ranked "why no signal yet?" diagnostics (B-053); rendered only on no_pattern. */
   coverage: CoverageDiagnostic[];
@@ -204,6 +210,7 @@ export function useSignal(): SignalState {
   // by the active pet, so a background pet's regen never shows an ack on this pet's zone.
   const acknowledging = useSyncStore((s) => (petId ? s.signalAcknowledging[petId] ?? false : false));
   return {
+    petId,
     findings,
     coverage,
     displayState,

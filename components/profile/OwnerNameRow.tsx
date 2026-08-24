@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import {
-  Alert, StyleSheet, Text, TextInput, TouchableOpacity, View,
+  Alert, StyleSheet, TextInput, TouchableOpacity, View,
 } from 'react-native';
+import { ThemedText } from '../ui/ThemedText';
 import { theme } from '../../constants/theme';
 import { WhorlSpinner } from '../brand/WhorlSpinner';
 import { supabase } from '../../lib/supabase';
@@ -68,7 +69,7 @@ export function OwnerNameRow() {
   if (loading) {
     return (
       <View style={styles.row}>
-        <Text style={styles.label}>Your name</Text>
+        <ThemedText style={styles.label}>Your name</ThemedText>
         <WhorlSpinner size="sm" ground="day" />
       </View>
     );
@@ -77,7 +78,7 @@ export function OwnerNameRow() {
   return (
     <View>
       <View style={styles.row}>
-        <Text style={styles.label}>Your name</Text>
+        <ThemedText style={styles.label}>Your name</ThemedText>
         <TextInput
           style={styles.input}
           value={draft}
@@ -95,12 +96,12 @@ export function OwnerNameRow() {
             {saving ? (
               <WhorlSpinner size="sm" ground="day" />
             ) : (
-              <Text style={styles.saveText}>Save</Text>
+              <ThemedText style={styles.saveText}>Save</ThemedText>
             )}
           </TouchableOpacity>
         )}
       </View>
-      <Text style={styles.hint}>Shown as the owner on the vet report.</Text>
+      <ThemedText style={styles.hint}>Shown as the owner on the vet report.</ThemedText>
     </View>
   );
 }

@@ -39,6 +39,7 @@ import { theme } from '../../constants/theme';
 import { Divider } from '../ui/Divider';
 import { ChipGroup } from '../ui/ChipGroup';
 import { PrimaryButton } from '../ui/PrimaryButton';
+import { ThemedText } from '../ui/ThemedText';
 import { WhorlSpinner } from '../brand/WhorlSpinner';
 import { FoodPicker } from '../log/FoodPicker';
 import { TrialProteinPicker } from './TrialProteinPicker';
@@ -378,15 +379,15 @@ export function StartTrialModal({
         <SafeAreaView style={styles.container}>
           <View style={styles.header}>
             <TouchableOpacity onPress={() => setStep('form')} hitSlop={8}>
-              <Text style={styles.cancelText}>Back</Text>
+              <ThemedText style={styles.cancelText}>Back</ThemedText>
             </TouchableOpacity>
-            <Text style={styles.headerTitle}>
+            <ThemedText style={styles.headerTitle}>
               {pickerTarget === 'primary' ? 'Trial diet' : 'Also allowed'}
-            </Text>
+            </ThemedText>
             <TouchableOpacity onPress={() => setStep('form')} hitSlop={8}>
-              <Text style={styles.saveText}>
+              <ThemedText style={styles.saveText}>
                 {selected.length > 0 ? `Done (${selected.length})` : 'Done'}
-              </Text>
+              </ThemedText>
             </TouchableOpacity>
           </View>
           <FoodPicker
@@ -438,24 +439,24 @@ export function StartTrialModal({
         <SafeAreaView style={styles.container}>
           <View style={styles.header}>
             <TouchableOpacity onPress={handleCancel} hitSlop={8}>
-              <Text style={styles.cancelText}>Cancel</Text>
+              <ThemedText style={styles.cancelText}>Cancel</ThemedText>
             </TouchableOpacity>
-            <Text style={styles.headerTitle}>Diet trial</Text>
+            <ThemedText style={styles.headerTitle}>Diet trial</ThemedText>
             <View style={styles.headerSpacer} />
           </View>
           <ScrollView contentContainerStyle={styles.form}>
-            <Text style={styles.sheetTitle}>{petName} already has a trial running</Text>
-            <Text style={styles.sheetSub}>{secondTrialIntro(petName, existing)}</Text>
+            <ThemedText style={styles.sheetTitle}>{petName} already has a trial running</ThemedText>
+            <ThemedText style={styles.sheetSub}>{secondTrialIntro(petName, existing)}</ThemedText>
             <Divider style={styles.blockDivider} />
             {/* The options are DAY-DEPENDENT. At day 23 of 56 the trial cannot
                 have run its course, so "It ran its course" is absent — offering it
                 would write `completed` over an abandoned trial and destroy the
                 `stopped_reason` a vet prescribes differently from. */}
-            <Text style={styles.reasonPrompt}>
+            <ThemedText style={styles.reasonPrompt}>
               {complete
                 ? 'How did this one end?'
                 : `${describeActiveTrial(existing).dayLine}, so this one is ending early. Which was it?`}
-            </Text>
+            </ThemedText>
             {reasons.map((r) => (
               <TouchableOpacity
                 key={r.value}
@@ -467,7 +468,7 @@ export function StartTrialModal({
                 hitSlop={4}
               >
                 <View style={[styles.radio, stopReason === r.value && styles.radioOn]} />
-                <Text style={styles.reasonLabel}>{r.label}</Text>
+                <ThemedText style={styles.reasonLabel}>{r.label}</ThemedText>
               </TouchableOpacity>
             ))}
             {/* ORDERED, not simultaneous (§3.3): the running trial is ended first
@@ -481,7 +482,7 @@ export function StartTrialModal({
               style={styles.primaryAction}
             />
             <TouchableOpacity onPress={handleCancel} style={styles.quietAction} hitSlop={8}>
-              <Text style={styles.quietActionText}>Keep the current trial</Text>
+              <ThemedText style={styles.quietActionText}>Keep the current trial</ThemedText>
             </TouchableOpacity>
           </ScrollView>
         </SafeAreaView>
@@ -497,7 +498,7 @@ export function StartTrialModal({
         <SafeAreaView style={styles.container}>
           <View style={styles.header}>
             <View style={styles.headerSpacer} />
-            <Text style={styles.headerTitle}>Diet trial</Text>
+            <ThemedText style={styles.headerTitle}>Diet trial</ThemedText>
             <View style={styles.headerSpacer} />
           </View>
           <ScrollView contentContainerStyle={styles.form}>
@@ -507,21 +508,21 @@ export function StartTrialModal({
                 "Mochi is on day 1" with the card behind it already reading
                 "Day 11 of 56": the sheet and the card disagreeing inside one tap,
                 on the flow R3 exists to make normal. */}
-            <Text style={styles.sheetTitle}>
+            <ThemedText style={styles.sheetTitle}>
               {petName} is on day {startedSummary?.dayCounter ?? 1}
-            </Text>
-            <Text style={styles.sheetSub}>
+            </ThemedText>
+            <ThemedText style={styles.sheetSub}>
               {startedSummary.food}
               {startedSummary.endDate ? `, through ${startedSummary.endDate}` : ''}. Two things
               worth knowing{(startedSummary?.dayCounter ?? 1) > 1 ? '' : ' before day 1'}.
-            </Text>
+            </ThemedText>
             <Divider style={styles.blockDivider} />
             {/* Both lines are LOCKED in §4.1. Setup, not a log moment — Principle 1
                 (zero decisions at moment of event) is untouched, because none of
                 this is asked while anything is happening to the pet. */}
-            <Text style={styles.teachLine}>{everyoneLine}</Text>
+            <ThemedText style={styles.teachLine}>{everyoneLine}</ThemedText>
             <Divider style={styles.blockDivider} />
-            <Text style={styles.teachLine}>{oralRouteLine}</Text>
+            <ThemedText style={styles.teachLine}>{oralRouteLine}</ThemedText>
             <PrimaryButton label="Got it" onPress={handleDone} style={styles.primaryAction} />
             <TouchableOpacity
               onPress={() => { reset(); onLogFirstMeal(); }}
@@ -530,11 +531,11 @@ export function StartTrialModal({
             >
               {/* "first meal" only holds on a same-day start; R3 made back-dating
                   the encouraged path, so a day-11 trial's first meal was days ago. */}
-              <Text style={styles.quietActionText}>
+              <ThemedText style={styles.quietActionText}>
                 {(startedSummary?.dayCounter ?? 1) > 1
                   ? `Log a meal for ${petName}`
                   : `Log ${petName}’s first meal`}
-              </Text>
+              </ThemedText>
             </TouchableOpacity>
           </ScrollView>
         </SafeAreaView>
@@ -548,9 +549,9 @@ export function StartTrialModal({
       <SafeAreaView style={styles.container}>
         <View style={styles.header}>
           <TouchableOpacity onPress={handleCancel} hitSlop={8}>
-            <Text style={styles.cancelText}>Cancel</Text>
+            <ThemedText style={styles.cancelText}>Cancel</ThemedText>
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Start a diet trial</Text>
+          <ThemedText style={styles.headerTitle}>Start a diet trial</ThemedText>
           <View style={styles.headerSpacer} />
         </View>
 
@@ -559,14 +560,14 @@ export function StartTrialModal({
         ) : (
           <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
             <ScrollView contentContainerStyle={styles.form} keyboardShouldPersistTaps="handled">
-              <Text style={styles.sheetSub}>{startSheetIntro(petName)}</Text>
+              <ThemedText style={styles.sheetSub}>{startSheetIntro(petName)}</ThemedText>
 
               {/* ── Trial diet — MULTIPLE foods (§4.1) ───────────────────────
                   A real trial is often a wet and a dry of the same diet, or two
                   forms the vet named together. N rows at role='primary_diet';
                   the FIRST also lands on the legacy `diet_trials.food_item_id`
                   so the seven shipped readers keep rendering a name. */}
-              <Text style={styles.label}>Trial diet</Text>
+              <ThemedText style={styles.label}>Trial diet</ThemedText>
               {primaryFoods.map((f) => {
                 const mismatch = mismatchByFoodId.get(f.id);
                 // The heads-up renders INLINE, immediately below its own food row
@@ -600,7 +601,7 @@ export function StartTrialModal({
                 label={primaryFoods.length === 0 ? 'Choose the trial diet' : 'Add another trial food'}
                 onPress={() => openPicker('primary')}
               />
-              <Text style={styles.help}>{TRIAL_DIET_HELPER}</Text>
+              <ThemedText style={styles.help}>{TRIAL_DIET_HELPER}</ThemedText>
 
               {/* ── Trial protein — a derived CONFIRMATION, not a question (§7.1) ──
                   Always rendered (TP-1 ruled E1): pre-filled from the picked foods
@@ -620,7 +621,7 @@ export function StartTrialModal({
                   Three short always-visible options on a hot path → visible
                   chips through the wrapping ChipGroup, per the filter-UX pattern
                   language (never a hidden-overflow h-scroll row, B-146). */}
-              <Text style={styles.label}>What’s it for</Text>
+              <ThemedText style={styles.label}>What’s it for</ThemedText>
               <ChipGroup
                 options={INDICATION_OPTIONS}
                 value={indication}
@@ -647,7 +648,7 @@ export function StartTrialModal({
                   Still not a third DECISION: it is prefilled Today, so the
                   default path stays "read it and carry on" and Jordan's
                   under-15-seconds constraint holds. */}
-              <Text style={styles.label}>{START_DATE_LABEL}</Text>
+              <ThemedText style={styles.label}>{START_DATE_LABEL}</ThemedText>
               <TouchableOpacity
                 style={styles.fieldBtn}
                 onPress={() => setShowDatePicker((v) => !v)}
@@ -655,8 +656,8 @@ export function StartTrialModal({
                 accessibilityRole="button"
                 accessibilityLabel={`${START_DATE_LABEL}: ${startDateDisplay}`}
               >
-                <Text style={styles.fieldBtnText}>{startDateDisplay}</Text>
-                <Text style={styles.changeLabel}>{showDatePicker ? 'Done' : 'Change'}</Text>
+                <ThemedText style={styles.fieldBtnText}>{startDateDisplay}</ThemedText>
+                <ThemedText style={styles.changeLabel}>{showDatePicker ? 'Done' : 'Change'}</ThemedText>
               </TouchableOpacity>
               {showDatePicker && (
                 <DateTimePicker
@@ -670,14 +671,14 @@ export function StartTrialModal({
                   }}
                 />
               )}
-              <Text style={styles.help}>{startDateHelper(petName)}</Text>
+              <ThemedText style={styles.help}>{startDateHelper(petName)}</ThemedText>
               {/* Moved here from under the indication chips (B-565): this line
                   names the end date the start date above it determines, so a
                   back-date now changes a sentence the owner can see. */}
               {indication ? (
-                <Text style={styles.help}>
+                <ThemedText style={styles.help}>
                   {durationHelperLine(indication, targetDays, startDayKey, endDayKey)}
-                </Text>
+                </ThemedText>
               ) : null}
 
               {/* ── One disclosure. Three fields, none required. ────────────── */}
@@ -689,7 +690,7 @@ export function StartTrialModal({
                 accessibilityState={{ expanded: moreOpen }}
                 hitSlop={8}
               >
-                <Text style={styles.disclosureText}>More options</Text>
+                <ThemedText style={styles.disclosureText}>More options</ThemedText>
                 {moreOpen
                   ? <ChevronUp size={18} color={theme.colorTextSecondary} />
                   : <ChevronDown size={18} color={theme.colorTextSecondary} />}
@@ -700,7 +701,7 @@ export function StartTrialModal({
                   {/* Copy locked to PROVENANCE. Never "treats you'll still give"
                       — that phrasing turns the field into a self-granted loophole
                       that silently zeroes the exposure count. */}
-                  <Text style={styles.label}>Also allowed</Text>
+                  <ThemedText style={styles.label}>Also allowed</ThemedText>
                   {permittedFoods.map((f) => (
                     <FoodRow
                       key={f.id}
@@ -716,9 +717,9 @@ export function StartTrialModal({
                     label={permittedFoods.length === 0 ? 'Add a permitted food' : 'Add another'}
                     onPress={() => openPicker('permitted')}
                   />
-                  <Text style={styles.help}>{ALLOWED_SET_HELPER}</Text>
+                  <ThemedText style={styles.help}>{ALLOWED_SET_HELPER}</ThemedText>
 
-                  <Text style={styles.label}>How long</Text>
+                  <ThemedText style={styles.label}>How long</ThemedText>
                   <View style={styles.durationRow}>
                     <TextInput
                       style={[styles.input, styles.durationInput]}
@@ -730,19 +731,19 @@ export function StartTrialModal({
                       returnKeyType="done"
                       accessibilityLabel="Trial length in days"
                     />
-                    <Text style={styles.durationUnit}>days</Text>
+                    <ThemedText style={styles.durationUnit}>days</ThemedText>
                   </View>
                   {/* The field renders its resulting END DATE, not just a day
                       count — "56 days" is not a thing an owner can plan around. */}
                   {endDayKey ? (
-                    <Text style={styles.help}>Ends {formatTrialEndDate(endDayKey)}.</Text>
+                    <ThemedText style={styles.help}>Ends {formatTrialEndDate(endDayKey)}.</ThemedText>
                   ) : null}
 
                   {/* The start date used to live here; R3 moved it to the
                       primary screen (mock round 5, screen B's own caption). It is
                       NOT duplicated — one field, one state, one place. */}
 
-                  <Text style={styles.label}>Vet (optional)</Text>
+                  <ThemedText style={styles.label}>Vet (optional)</ThemedText>
                   <TextInput
                     style={styles.input}
                     value={vetName}
@@ -762,7 +763,7 @@ export function StartTrialModal({
                   not on the card afterwards: "they consented by tapping Start" is
                   not consent to a disclosure never shown to them. Same warm
                   register as the rest of the sheet — no legal voice, no checkbox. */}
-              <Text style={styles.consent}>{TRIAL_RECORD_DISCLOSURE}</Text>
+              <ThemedText style={styles.consent}>{TRIAL_RECORD_DISCLOSURE}</ThemedText>
               <PrimaryButton
                 label="Start trial"
                 onPress={handleStart}
@@ -800,9 +801,9 @@ function TrialProteinRow({
       accessibilityLabel={`${TRIAL_PROTEIN_ROW_LABEL}: ${value}. ${sub}`}
     >
       <View style={styles.flex}>
-        <Text style={styles.proteinRowLabel}>{TRIAL_PROTEIN_ROW_LABEL}</Text>
-        <Text style={[styles.proteinRowValue, dim && styles.proteinRowValueDim]}>{value}</Text>
-        <Text style={styles.proteinRowSub}>{sub}</Text>
+        <ThemedText style={styles.proteinRowLabel}>{TRIAL_PROTEIN_ROW_LABEL}</ThemedText>
+        <ThemedText style={[styles.proteinRowValue, dim && styles.proteinRowValueDim]}>{value}</ThemedText>
+        <ThemedText style={styles.proteinRowSub}>{sub}</ThemedText>
       </View>
       <ChevronRight size={18} color={theme.colorTextTertiary} />
     </TouchableOpacity>
@@ -824,8 +825,8 @@ function FoodRow({
     <View style={styles.foodRow}>
       <TouchableOpacity style={styles.foodRowMain} onPress={onPress} activeOpacity={0.7} hitSlop={4}>
         <View style={styles.flex}>
-          <Text style={styles.foodRowTitle} numberOfLines={2}>{title}</Text>
-          {subtitle ? <Text style={styles.foodRowSub}>{subtitle}</Text> : null}
+          <ThemedText style={styles.foodRowTitle} numberOfLines={2}>{title}</ThemedText>
+          {subtitle ? <ThemedText style={styles.foodRowSub}>{subtitle}</ThemedText> : null}
         </View>
         <ChevronRight size={18} color={theme.colorTextTertiary} />
       </TouchableOpacity>
@@ -836,7 +837,7 @@ function FoodRow({
         accessibilityRole="button"
         accessibilityLabel={`Remove ${title}`}
       >
-        <Text style={styles.removeText}>Remove</Text>
+        <ThemedText style={styles.removeText}>Remove</ThemedText>
       </TouchableOpacity>
     </View>
   );
@@ -851,8 +852,11 @@ function AddRow({ label, onPress }: { label: string; onPress: () => void }) {
       accessibilityRole="button"
       accessibilityLabel={label}
     >
+      {/* Icon glyph, not copy — stays a raw <Text>. Beyond that rule the cmap forces it:
+          no loaded Geist weight carries U+FF0B, so sweeping this hands the render to OS
+          fallback at a size tuned for a different face. CUL-364 §7. */}
       <Text style={styles.addRowPlus}>＋</Text>
-      <Text style={styles.addRowText}>{label}</Text>
+      <ThemedText style={styles.addRowText}>{label}</ThemedText>
     </TouchableOpacity>
   );
 }
@@ -930,6 +934,7 @@ const styles = StyleSheet.create({
     borderRadius: theme.radiusSmall,
     paddingHorizontal: theme.space2,
     paddingVertical: 12,
+    fontFamily: theme.fontBody,
     fontSize: theme.textMD,
     color: theme.colorTextPrimary,
     backgroundColor: theme.colorNeutralLight,

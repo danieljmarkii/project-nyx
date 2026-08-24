@@ -1,9 +1,10 @@
-import { useMemo } from 'react';
+import { Fragment, useMemo } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { router } from 'expo-router';
 import { theme } from '../../constants/theme';
 import { Card } from '../ui/Card';
 import { SectionLabel } from '../ui/SectionLabel';
+import { ThemedText } from '../ui/ThemedText';
 import { EVENT_TYPES, EventTypeKey, SYMPTOM_TYPES } from '../../constants/eventTypes';
 import { EventIcon } from '../event/EventIcon';
 import { DayLane } from '../recap/DayLane';
@@ -74,7 +75,7 @@ export function TodayZone() {
           accessibilityRole="button"
           accessibilityLabel="Open the full day"
         >
-          <Text style={styles.door}>Full day ›</Text>
+          <ThemedText style={styles.door}>Full day ›</ThemedText>
         </TouchableOpacity>
       </View>
 
@@ -90,9 +91,12 @@ export function TodayZone() {
           activeOpacity={0.7}
           style={styles.nudgeRow}
         >
-          <Text style={styles.nudge}>
+          <ThemedText style={styles.nudge}>
             Nothing logged yet — how's {petName} doing?
-          </Text>
+          </ThemedText>
+          {/* Icon glyph, not copy — stays a raw <Text>. These stand in for vector glyphs
+              (the B-745 GlyphSvg migration owns them), so they keep the system face rather
+              than taking the body family a sweep would give them. CUL-364 §7. */}
           <Text style={styles.nudgeArrow}>→</Text>
         </TouchableOpacity>
       ) : (
@@ -116,9 +120,9 @@ export function TodayZone() {
               honest thing it carries — how many events sit below the 3-row cap — which the
               count line does not (that reports category totals, not what's hidden). */}
           {remaining > 0 && (
-            <Text style={styles.moreCaption}>
+            <ThemedText style={styles.moreCaption}>
               {remaining} more event{remaining !== 1 ? 's' : ''} today
-            </Text>
+            </ThemedText>
           )}
         </TouchableOpacity>
       )}
@@ -142,22 +146,25 @@ export function TodayZone() {
  *  ratification (CUL-25 pm-review D1); flipping it is a one-line change. */
 function CountLine({ counts }: { counts: DayCountChip[] }) {
   return (
-    <Text testID="today-count-line" style={styles.counts}>
+    <ThemedText testID="today-count-line" style={styles.counts}>
       {counts.map((c, i) => {
         // Split "2 meals" → bold "2" + muted " meals" (the split CountChips uses too).
         const sp = c.label.indexOf(' ');
         const head = sp === -1 ? c.label : c.label.slice(0, sp);
         const tail = sp === -1 ? '' : c.label.slice(sp);
         return (
-          <Text key={c.key}>
+          // A Fragment, not a wrapper span: a styleless ThemedText would inject the
+          // regular Geist face here and silently override whatever weight the line
+          // above it carries. Nothing needed a span — only a key.
+          <Fragment key={c.key}>
             {i > 0 ? ' · ' : ''}
-            <Text style={styles.countNum}>{head}</Text>
+            <ThemedText style={styles.countNum}>{head}</ThemedText>
             {tail}
-          </Text>
+          </Fragment>
         );
       })}
       {' logged'}
-    </Text>
+    </ThemedText>
   );
 }
 
@@ -208,24 +215,24 @@ function EventStripRow({ event, showBorder }: { event: NyxEvent; showBorder: boo
       </View>
 
       <View style={styles.eventMeta}>
-        <Text style={styles.eventLabel}>{rowLabel}</Text>
+        <ThemedText style={styles.eventLabel}>{rowLabel}</ThemedText>
         {isMeal && event.food_product_name ? (
           <View style={styles.eventSubLine}>
-            <Text style={styles.eventSub} numberOfLines={1}>
+            <ThemedText style={styles.eventSub} numberOfLines={1}>
               {event.food_product_name}
-            </Text>
+            </ThemedText>
             {formatTag ? (
-              <Text style={styles.formatTag} numberOfLines={1}>{formatTag}</Text>
+              <ThemedText style={styles.formatTag} numberOfLines={1}>{formatTag}</ThemedText>
             ) : null}
           </View>
         ) : drugLabel ? (
-          <Text style={styles.eventSub} numberOfLines={1}>
+          <ThemedText style={styles.eventSub} numberOfLines={1}>
             {drugLabel}
-          </Text>
+          </ThemedText>
         ) : null}
       </View>
 
-      <Text style={styles.eventTime}>{formatEventTime(event.occurred_at)}</Text>
+      <ThemedText style={styles.eventTime}>{formatEventTime(event.occurred_at)}</ThemedText>
     </View>
   );
 }

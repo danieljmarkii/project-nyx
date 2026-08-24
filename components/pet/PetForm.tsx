@@ -1,12 +1,13 @@
 import { useState } from 'react';
 import {
-  View, Text, TextInput, TouchableOpacity, StyleSheet,
+  View, TextInput, TouchableOpacity, StyleSheet,
   KeyboardAvoidingView, Platform, ScrollView,
 } from 'react-native';
 import { theme } from '../../constants/theme';
 import { WhorlSpinner } from '../brand/WhorlSpinner';
 import { FilterChip } from '../ui/FilterChip';
 import { SectionLabel } from '../ui/SectionLabel';
+import { ThemedText } from '../ui/ThemedText';
 
 export type PetFormSpecies = 'dog' | 'cat' | 'other';
 
@@ -44,8 +45,8 @@ export function PetForm({ title, subtitle, submitLabel, loading, onSubmit }: Pet
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
-        <Text style={styles.title}>{title}</Text>
-        <Text style={styles.subtitle}>{subtitle}</Text>
+        <ThemedText style={styles.title}>{title}</ThemedText>
+        <ThemedText style={styles.subtitle}>{subtitle}</ThemedText>
 
         <SectionLabel label="Name" style={styles.fieldLabel} />
         <TextInput
@@ -80,7 +81,7 @@ export function PetForm({ title, subtitle, submitLabel, loading, onSubmit }: Pet
         >
           {loading
             ? <WhorlSpinner size="sm" tint={theme.colorTextOnDark} />
-            : <Text style={styles.buttonText}>{submitLabel}</Text>
+            : <ThemedText style={styles.buttonText}>{submitLabel}</ThemedText>
           }
         </TouchableOpacity>
       </ScrollView>
@@ -120,6 +121,7 @@ const styles = StyleSheet.create({
     borderRadius: theme.radiusSmall,
     paddingHorizontal: theme.space2,
     paddingVertical: 13,
+    fontFamily: theme.fontBody,
     fontSize: theme.textMD,
     color: theme.colorTextPrimary,
     backgroundColor: theme.colorSurface,

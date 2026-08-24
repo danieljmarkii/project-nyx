@@ -11,16 +11,19 @@
 //
 // The enforcement is the SHAPE, not the discipline: `LoggedRecord` carries the
 // record's structured fields, never a pre-composed display string, so no caller
-// can hand THIS card a literal "Logged" — there is no parameter to put it in.
-// (Scoped claim, deliberately: `components/log/SheetLogBeat.tsx` still defaults
-// its `title` to 'Logged', so a beta account on `log_picker_v2` confirms the same
-// insertSimpleEvent write with the old register. That is CUL-614's half of the
-// convergence, not an oversight here — but the rule is not app-wide yet.) The
+// can hand THIS card a literal "Logged" — there is no parameter to put it in. The
 // composition happens once, here, through lib/logCopy, which itself derives the
 // window wording from describeOccurredAt: the same function the History row and
 // the vet report use. So the card's sentence and the row the owner will find in
 // History tomorrow cannot drift, and the card cannot claim more certainty than
 // the stored confidence carries.
+//
+// THE CLAIM IS NOW APP-WIDE (CUL-614 closed the scope note that stood here). Both
+// registers speak the record: R1 through this module's `summarizeLoggedRecord`, and
+// R2 — `components/log/SheetLogBeat.tsx` — through the same function, because its
+// `title` lost its 'Logged' default and became REQUIRED. Same enforcement in a
+// different shape: a card that cannot be handed a display string, and a beat that
+// cannot be left without one. Neither has a fallback that says nothing.
 //
 // Same reasoning as the commit haptic living inside momentStore's present()
 // (CUL-604) rather than at its call sites: a future log path should inherit the
@@ -207,3 +210,70 @@ export function applyNamedTimeEdit(record: LoggedRecord, edit: NamedTimeEdit): L
     latest: edit.confidence.latest,
   };
 }
+
+// ── THE REMOVAL LINE (CUL-612) ──────────────────────────────────────────────
+// What the card says once Undo has landed. Composed here rather than inline in
+// three components for the same reason the sentence is: one place to hold the
+// wording to, and one place a test can read it from.
+//
+// It is a deliberate MIRROR of "Saved to {pet}'s record" — the same grammar,
+// reversed — so the owner reads the undo as the exact inverse of the thing they
+// just saw, not as a new kind of message.
+//
+// TWO THINGS IT DOES NOT SAY, both load-bearing:
+//
+//   · It never claims nothing was written. A dose logged through the meal card's
+//     combo line keeps its own row when the meal is undone (see lib/undoLog.ts),
+//     so "nothing was saved" would be false on the one path where it matters
+//     most — a medication.
+//   · It never congratulates or reassures. Removing a symptom log is not good
+//     news; it is a correction. The line states the outcome and stops
+//     (nyx-voice Patterns 4 and 6).
+export interface RemovedNotice {
+  title: string;
+  detail: string;
+  /** One announcement for a screen reader, not two orphan lines. */
+  a11yLabel: string;
+}
+
+export function removedNoticeCopy(petName: string): RemovedNotice {
+  const title = 'Removed';
+  const detail = `Taken out of ${petName}’s record`;
+  return { title, detail, a11yLabel: `${title}. ${detail}` };
+}
+
+
+// ── THE ACTION PAIR'S TOUCH TARGETS (CUL-612) ───────────────────────────────
+// Undo and Change time sit ~8pt apart on all three cards. A symmetric hitSlop
+// wide enough to make each label comfortable (12pt) reaches 12pt into an 8pt
+// gap from BOTH sides, so the expanded rectangles overlap and a tap near the
+// boundary resolves to whichever view wins — non-deterministically.
+//
+// That is tolerable between two corrections. It is not tolerable here, because
+// Undo has no confirming dialog: the tap IS the destructive confirm (§5.6), so a
+// mistouch aimed at "Change time" silently removes the log instead. Recoverable
+// through History, but an unintended data-affecting action reached by ordinary
+// use is not something to leave to z-order.
+//
+// The fix is ASYMMETRY rather than a wider gap: each control keeps its generous
+// vertical and outward reach — which is what carries the 44pt floor alongside
+// `minHeight` — and gives up only the edge that faces its neighbour. Half the
+// gap each, so they meet at the midpoint and never cross. Costs no layout width,
+// which matters on the meal card where the cluster already competes with the
+// food name.
+//
+// Applied to the OUTER member of the pair even when it renders alone (a combo
+// dose, where Change time is withheld): a control whose hit area changes shape
+// depending on its sibling is a harder thing to keep right than one that does not.
+const PAIR_GAP_HALF = 4;
+const REACH = 12;
+
+/** The LEFT member of the action pair — Undo. Yields its right edge. */
+export const HITSLOP_ACTION_LEFT = {
+  top: REACH, bottom: REACH, left: REACH, right: PAIR_GAP_HALF,
+} as const;
+
+/** The RIGHT member — Change time. Yields its left edge. */
+export const HITSLOP_ACTION_RIGHT = {
+  top: REACH, bottom: REACH, left: PAIR_GAP_HALF, right: REACH,
+} as const;

@@ -78,17 +78,29 @@ describe('§5.6 — each moment maps to its documented pattern', () => {
     haptics.destructiveConfirm();
     expect(mockImpact).toHaveBeenCalledWith('rigid');
   });
+
+  it('the first-insight arrival plays the soft success tap (§4)', () => {
+    haptics.insightArrival();
+    expect(mockNotification).toHaveBeenCalledWith('success');
+  });
 });
 
 describe('silence on safety (D7) — the absence is the API', () => {
-  it('exports exactly the six verbs, and nothing a safety surface could call', () => {
+  it('exports exactly the seven verbs, and nothing a safety surface could call', () => {
     // There is no `safetyArrival` / `alert` / `warn` verb, deliberately: plainness is
     // the severity signal, and a buzz on bad news is the phone rewarding it. Pinning
     // the export list means adding one is a visible, argued change — not a slip.
+    //
+    // `insightArrival` (CUL-601) is the first such change, and it is worth reading as
+    // the pin working rather than the pin loosening. It is not a safety verb: §4's
+    // arrival never plays when a safety finding is present, so the moment it marks is
+    // one the safety gate has already excluded. A future `safetyArrival` would fail
+    // this test, and should.
     expect(Object.keys(haptics).sort()).toEqual([
       'commitRoutine',
       'commitSymptom',
       'destructiveConfirm',
+      'insightArrival',
       'openMenu',
       'pullThreshold',
       'selectChip',

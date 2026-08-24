@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ThemedText } from '../ui/ThemedText';
 import { theme } from '../../constants/theme';
 import { filterBreeds } from '../../constants/breeds';
 
@@ -62,8 +63,8 @@ export function BreedPicker({ breeds, value, onSelect, onSelectOther }: BreedPic
           accessibilityRole="button"
           accessibilityLabel="Other / not listed, type it in"
         >
-          <Text style={styles.otherText}>Other / not listed</Text>
-          <Text style={styles.otherHint}>type it in</Text>
+          <ThemedText style={styles.otherText}>Other / not listed</ThemedText>
+          <ThemedText style={styles.otherHint}>type it in</ThemedText>
         </TouchableOpacity>
 
         {/* The radiogroup scopes ONLY the breed radios. The "Other" escape hatch
@@ -84,7 +85,10 @@ export function BreedPicker({ breeds, value, onSelect, onSelectOther }: BreedPic
                 accessibilityLabel={b}
                 accessibilityState={{ selected }}
               >
-                <Text style={[styles.itemText, selected && styles.itemTextSelected]}>{b}</Text>
+                <ThemedText style={[styles.itemText, selected && styles.itemTextSelected]}>{b}</ThemedText>
+                {/* Icon glyph, not copy — stays a raw <Text>. Beyond that rule the cmap forces it:
+                    no loaded Geist weight carries U+2713, so sweeping this hands the render to OS
+                    fallback at a size tuned for a different face. CUL-364 §7. */}
                 {selected && <Text style={styles.itemCheck}>✓</Text>}
               </TouchableOpacity>
             );
@@ -93,15 +97,15 @@ export function BreedPicker({ breeds, value, onSelect, onSelectOther }: BreedPic
 
         {matches.length === 0 && (
           <View style={styles.item}>
-            <Text style={styles.emptyText}>
+            <ThemedText style={styles.emptyText}>
               No breeds match “{query.trim()}”. Tap “Other / not listed” above to type it in.
-            </Text>
+            </ThemedText>
           </View>
         )}
 
         {overflow > 0 && (
           <View style={styles.hintRow}>
-            <Text style={styles.hintText}>Keep typing to see {overflow} more…</Text>
+            <ThemedText style={styles.hintText}>Keep typing to see {overflow} more…</ThemedText>
           </View>
         )}
       </View>
@@ -118,6 +122,7 @@ const styles = StyleSheet.create({
     borderRadius: theme.radiusSmall,
     paddingHorizontal: theme.space2,
     paddingVertical: 12,
+    fontFamily: theme.fontBody,
     fontSize: theme.textMD,
     color: theme.colorTextPrimary,
     backgroundColor: theme.colorNeutralLight,

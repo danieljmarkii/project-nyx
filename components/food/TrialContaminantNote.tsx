@@ -23,8 +23,9 @@
 // state, no all-clear. A caller with nothing to flag renders nothing, and the
 // absence of this card is never evidence that a food is on-diet (`clinical-
 // guardrails`; D10's presence-only rule).
-import { View, Text, StyleSheet } from 'react-native';
+import { View, StyleSheet } from 'react-native';
 import { theme } from '../../constants/theme';
+import { ThemedText } from '../ui/ThemedText';
 
 interface Props {
   title: string;
@@ -38,8 +39,8 @@ export function TrialContaminantNote({ title, body }: Props) {
       accessibilityRole="summary"
       accessibilityLabel={`${title}. ${body}`}
     >
-      <Text style={styles.title}>{title}</Text>
-      <Text style={styles.body}>{body}</Text>
+      <ThemedText style={styles.title}>{title}</ThemedText>
+      <ThemedText style={styles.body}>{body}</ThemedText>
     </View>
   );
 }

@@ -11,10 +11,11 @@
 // It states the whole-trial effect before committing — disclosed, not versioned —
 // and its load-bearing second sentence is that the off-diet counts do not move
 // (TG-1/TG-5). No checkbox: the C6/FR-11 disclosure pattern.
-import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Modal, Pressable, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { theme } from '../../constants/theme';
 import { PrimaryButton } from '../ui/PrimaryButton';
+import { ThemedText } from '../ui/ThemedText';
 
 interface Props {
   /** `TRIAL_PROTEIN_CORRECTION_NOTE` — the §8 whole-trial disclosure. */
@@ -49,12 +50,12 @@ export function TrialProteinCorrectionSheet({
       <SafeAreaView edges={['bottom']} style={styles.sheetWrap}>
         <View style={styles.sheet} testID="trial-protein-correction">
           <View style={styles.grabber} />
-          <Text style={styles.note}>{note}</Text>
+          <ThemedText style={styles.note}>{note}</ThemedText>
 
           {error !== null && (
-            <Text testID="trial-protein-error" style={styles.error}>
+            <ThemedText testID="trial-protein-error" style={styles.error}>
               {error}
-            </Text>
+            </ThemedText>
           )}
 
           <PrimaryButton

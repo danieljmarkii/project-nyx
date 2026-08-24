@@ -18,10 +18,11 @@
 // point of dated membership. A "this was fine actually" button on the screen that
 // itemises exposures would let the record be edited to agree with the owner's
 // memory, on the artifact a vet reads.
-import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { theme } from '../../constants/theme';
 import { PrimaryButton } from '../ui/PrimaryButton';
+import { ThemedText } from '../ui/ThemedText';
 import {
   EXPOSURE_REASON_TITLE,
   type TrialExposureRow,
@@ -44,22 +45,22 @@ export function ExposureReasonSheet({ row, onClose }: Props) {
       <SafeAreaView edges={['bottom']} style={styles.sheetWrap}>
         <View style={styles.sheet} testID="exposure-reason-sheet">
           <View style={styles.grabber} />
-          <Text style={styles.title}>{EXPOSURE_REASON_TITLE}</Text>
+          <ThemedText style={styles.title}>{EXPOSURE_REASON_TITLE}</ThemedText>
           {/* The row's own identity, so the sheet can never be read against the
               wrong feeding — the list is chronological and two rows can carry the
               same food on different days. */}
-          <Text style={styles.subject}>
+          <ThemedText style={styles.subject}>
             {row.label} · {row.meta}
-          </Text>
+          </ThemedText>
 
           {row.reason !== null && (
             <ScrollView style={styles.body} contentContainerStyle={styles.bodyContent}>
-              <Text testID="exposure-reason-title" style={styles.reasonTitle}>
+              <ThemedText testID="exposure-reason-title" style={styles.reasonTitle}>
                 {row.reason.title}
-              </Text>
-              <Text testID="exposure-reason-body" style={styles.reasonBody}>
+              </ThemedText>
+              <ThemedText testID="exposure-reason-body" style={styles.reasonBody}>
                 {row.reason.body}
-              </Text>
+              </ThemedText>
             </ScrollView>
           )}
 

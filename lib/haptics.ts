@@ -1,6 +1,6 @@
 // The haptic vocabulary (CUL-604 · `docs/nyx-app-polish-requirements.md` §5.6, D7).
 //
-// One module, seven moments, so a haptic is chosen by WHAT HAPPENED rather than by
+// One module, one verb per moment, so a haptic is chosen by WHAT HAPPENED rather than by
 // whichever `expo-haptics` constant a call site reached for. Call sites name the
 // moment (`commitSymptom`), never the pattern (`impactAsync(Soft)`) — which is what
 // keeps the tone rules below enforceable at review time instead of scattered across
@@ -21,7 +21,12 @@
 //      rewarding the owner for it. This is enforced STRUCTURALLY rather than by
 //      memory: there is no verb here that a safety surface could call, and
 //      `guards/haptics.test.ts` fails the build if one of those surfaces imports
-//      this module at all.
+//      this module at all. `SignalZone.tsx` carries the codebase's one exemption
+//      from that scan (CUL-601), and pays for it with a gate: see `insightArrival`.
+//
+// THE TABLE THIS IMPLEMENTS is §5.6's seven rows (six verbs + the deliberate silence).
+// `insightArrival` is CUL-601's addition — §4's arrival moment needs a tap, and §5.6's
+// own rule forbids a call site reaching past this module for one.
 //
 // COSMETIC, NEVER FATAL. Every verb is fire-and-forget with its rejection swallowed.
 // A haptic is decoration on a health write: if the taptic engine is busy, absent, or
@@ -140,7 +145,38 @@ export function destructiveConfirm(): void {
   play(() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Rigid));
 }
 
-// The seventh moment — a safety card arriving, a red-flag read landing — has NO verb,
+/**
+ * The first insight arrived — the once-ever dawn sweep on the Signal card
+ * (CUL-601 · `docs/nyx-app-polish-requirements.md` §4).
+ *
+ * The system SUCCESS notification, matching §4's "one soft success tap at 900ms",
+ * fired at the sweep's end rather than at its start: the tap punctuates the moment,
+ * it does not announce it.
+ *
+ * WHY THIS IS ITS OWN VERB rather than a reuse of `commitRoutine`. Nothing was
+ * committed here — the owner did not act at all; the engine finished thinking. The
+ * two moments happen to share a pattern today, and a call site reading
+ * `commitRoutine()` on the Signal card would be a small lie that survives every
+ * future retune of either one. The module's whole premise is that a verb names the
+ * MOMENT, so a new moment gets a new verb even when the payload matches.
+ *
+ * THIS DOES NOT BREAK RULE 2 (silence on safety), and the reason is a gate rather
+ * than an intention: the arrival never plays when a safety finding is in the set —
+ * the card appears plainly and instantly instead (§4 "never for a safety finding";
+ * S1 plainness is the severity signal). The caller reaches this line only on the
+ * non-safety path, and `SignalZone.test.tsx` holds that a safety-led first arrival
+ * plays nothing at all. That gate is also why `components/home/SignalZone.tsx`
+ * carries the one `haptics-guard-ok` exemption in the codebase.
+ */
+export function insightArrival(): void {
+  play(() => Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success));
+}
+
+// The moment with NO verb — a safety card arriving, a red-flag read landing — is last
 // on purpose. See rule 2 in the header: the absence is the feature, and adding a
 // `safetyArrival()` here would be the whole mistake. If a future surface needs to mark
 // a safety arrival, the answer is a visual/copy decision, not a haptic.
+//
+// Note that `insightArrival` above is NOT a hole in that rule: it is the arrival of an
+// insight the safety gate has already excluded, not the arrival of a safety card. The
+// two are one line apart in the source and must stay a whole category apart in the head.

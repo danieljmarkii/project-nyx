@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import {
   KeyboardAvoidingView, Modal, Platform, Pressable,
-  StyleSheet, Text, TextInput, TouchableOpacity, View,
+  StyleSheet, TextInput, TouchableOpacity, View,
 } from 'react-native';
+import { ThemedText } from '../ui/ThemedText';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { theme } from '../../constants/theme';
@@ -119,10 +120,10 @@ export function DeleteAccountSheet({ visible, petNames, onClose }: DeleteAccount
       >
         <Pressable style={styles.scrim} onPress={handleClose} />
         <View style={[styles.card, { marginBottom: insets.bottom + 18 }]}>
-          <Text style={styles.title}>Delete your account?</Text>
-          <Text style={styles.body}>{deleteAccountConfirmBody(petNames)}</Text>
+          <ThemedText style={styles.title}>Delete your account?</ThemedText>
+          <ThemedText style={styles.body}>{deleteAccountConfirmBody(petNames)}</ThemedText>
 
-          <Text style={styles.inputLabel}>Type {DELETE_CONFIRM_PHRASE} to confirm</Text>
+          <ThemedText style={styles.inputLabel}>Type {DELETE_CONFIRM_PHRASE} to confirm</ThemedText>
           <TextInput
             style={styles.input}
             value={typed}
@@ -138,7 +139,7 @@ export function DeleteAccountSheet({ visible, petNames, onClose }: DeleteAccount
 
           {/* Re-auth (B-119): the password confirms it's really the account
               owner, not whoever happens to be holding an unlocked phone. */}
-          <Text style={styles.inputLabel}>Enter your password</Text>
+          <ThemedText style={styles.inputLabel}>Enter your password</ThemedText>
           <TextInput
             style={styles.input}
             value={password}
@@ -157,10 +158,10 @@ export function DeleteAccountSheet({ visible, petNames, onClose }: DeleteAccount
             editable={!inFlight}
             accessibilityLabel="Enter your password to confirm account deletion"
           />
-          {reauthError && <Text style={styles.reauthErrorMsg}>{reauthError}</Text>}
+          {reauthError && <ThemedText style={styles.reauthErrorMsg}>{reauthError}</ThemedText>}
 
-          {!online && <Text style={styles.offlineMsg}>{OFFLINE_MSG}</Text>}
-          {failed && <Text style={styles.failedMsg}>{FAILED_MSG}</Text>}
+          {!online && <ThemedText style={styles.offlineMsg}>{OFFLINE_MSG}</ThemedText>}
+          {failed && <ThemedText style={styles.failedMsg}>{FAILED_MSG}</ThemedText>}
 
           <TouchableOpacity
             style={[styles.deleteBtn, !canConfirm && styles.deleteBtnDisabled]}
@@ -172,7 +173,7 @@ export function DeleteAccountSheet({ visible, petNames, onClose }: DeleteAccount
           >
             {inFlight
               ? <WhorlSpinner size="sm" tint={theme.colorSurface} />
-              : <Text style={styles.deleteBtnText}>Delete account</Text>}
+              : <ThemedText style={styles.deleteBtnText}>Delete account</ThemedText>}
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -183,7 +184,7 @@ export function DeleteAccountSheet({ visible, petNames, onClose }: DeleteAccount
             accessibilityRole="button"
             hitSlop={8}
           >
-            <Text style={styles.cancelText}>Cancel</Text>
+            <ThemedText style={styles.cancelText}>Cancel</ThemedText>
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
@@ -239,6 +240,7 @@ const styles = StyleSheet.create({
     borderRadius: theme.radiusSmall,
     paddingHorizontal: theme.space2,
     paddingVertical: 13,
+    fontFamily: theme.fontBody,
     fontSize: theme.textMD,
     color: theme.colorTextPrimary,
     backgroundColor: theme.colorSurface,

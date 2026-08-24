@@ -3,6 +3,7 @@ import { StyleSheet, Animated, Easing, View } from 'react-native';
 import Svg, { Circle, Defs, RadialGradient, Stop } from 'react-native-svg';
 import { Check } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
+import { fontFamilyForWeight } from '../ui/ThemedText';
 import { commitRoutine, commitSymptom } from '../../lib/haptics';
 import { useReducedMotion } from '../../hooks/useReducedMotion';
 import type { MomentTone } from '../../store/momentStore';
@@ -26,16 +27,45 @@ const CHECK_RING_SIZE = 84;
 // SVG's gradient. Deliberately NOT `nyx-…`-prefixed: that prefix is reserved for
 // Storage bucket names (storagePolicies.test scans for it), and this is neither.
 const GLOW_GRADIENT_ID = 'culprit-sheet-beat-glow';
-// Well under the 2s earned-moment cap (matches the root beat's dwell).
-const BEAT_MS = 1400;
+// CUL-614 — 1400ms was sized for the single word "Logged"; the beat now speaks the
+// record's own sentence ("Vomit · found by 5:33 PM"), which is a clause to read rather
+// than a glyph to register. 1800ms reads it at a calm pace and still sits under the 2s
+// earned-moment cap that governs a surface holding the owner's screen — which this one
+// does, unlike the named card (that card leaves Home live underneath and is sized by
+// what there is to DO, per momentStore's NAMED_DURATION_MS note).
+const BEAT_MS = 1800;
 
 interface Props {
   tone: MomentTone;
-  title?: string;
+  /**
+   * The sentence this beat speaks — REQUIRED, and deliberately so (CUL-614 · §5's
+   * sentence rule). It previously defaulted to 'Logged', which meant the R2 register
+   * confirmed a "Found it" vomit with a word that named neither the event nor the
+   * window the app had just written. Removing the default is the enforcement: a caller
+   * has to compose the sentence through `lib/completionCard`, the same path History and
+   * the vet report use, so this beat cannot claim more than the row holds — and cannot
+   * quietly fall back to saying nothing.
+   */
+  title: string;
+  /**
+   * The pet whose record this landed on — rendered as R1's exact subline, "Saved to
+   * {pet}'s record" (CUL-614's copy pass, nyx-voice Pattern 1).
+   *
+   * WHY THE BEAT HAS TO SAY IT. This beat REPLACES the confirm stage inside the sheet,
+   * and the confirm's header ("Vomit — Nyx") is the only thing that named the pet. So
+   * at the one moment the owner is told the write happened, the screen had stopped
+   * saying whose record it happened to — on a surface whose pet was fixed several taps
+   * earlier at grid→confirm and cannot be seen behind the sheet. In Sam's multi-pet
+   * household that is the wrong-pet class, confirmed rather than caught.
+   *
+   * It is the same string the named card renders, deliberately: R1 and R2 are one
+   * register in two shapes, so they should not describe the same act differently.
+   */
+  petName: string;
   onDone: () => void;
 }
 
-export function SheetLogBeat({ tone, title = 'Logged', onDone }: Props) {
+export function SheetLogBeat({ tone, title, petName, onDone }: Props) {
   const reduced = useReducedMotion();
   const celebrate = tone === 'celebrate';
 
@@ -74,8 +104,12 @@ export function SheetLogBeat({ tone, title = 'Logged', onDone }: Props) {
     return () => { anim?.stop(); clearTimeout(timer); };
   }, [reduced, celebrate, surfaceOpacity, checkScale, glowOpacity, glowScale]);
 
+  // One announcement for a screen reader, not two: the label carries the sentence and
+  // the pet together, in the order they are read on screen.
+  const a11yLabel = `${title}. Saved to ${petName}’s record`;
+
   return (
-    <Animated.View style={[styles.wrap, { opacity: surfaceOpacity }]} accessibilityLiveRegion="polite" accessibilityLabel={title}>
+    <Animated.View style={[styles.wrap, { opacity: surfaceOpacity }]} accessibilityLiveRegion="polite" accessibilityLabel={a11yLabel}>
       {celebrate && (
         <Animated.View style={[styles.glow, { opacity: glowOpacity, transform: [{ scale: glowScale }] }]} pointerEvents="none">
           <Svg width={GLOW_SIZE} height={GLOW_SIZE}>
@@ -93,7 +127,11 @@ export function SheetLogBeat({ tone, title = 'Logged', onDone }: Props) {
       <Animated.View style={[styles.ring, celebrate && styles.ringCelebrate, { transform: [{ scale: checkScale }] }]}>
         <Check size={38} color={theme.colorMomentConfirm} strokeWidth={3} />
       </Animated.View>
+      {/* A sentence, not a word: it wraps to two lines and centres, rather than
+          overflowing the sheet's width. No numberOfLines cap — truncating would put
+          the beat back in the business of saying less than the record holds. */}
       <Animated.Text style={styles.title}>{title}</Animated.Text>
+      <Animated.Text style={styles.subLabel}>{`Saved to ${petName}’s record`}</Animated.Text>
     </Animated.View>
   );
 }
@@ -130,9 +168,30 @@ const styles = StyleSheet.create({
     shadowRadius: 22,
     elevation: 6,
   },
+  // ThemedText wraps RN's `Text` and has no Animated variant (§7 scoped that out of
+  // PR 1), so the two beats below can't inherit the sweep — a bare `fontWeight` here
+  // would silently keep rendering the system face while everything around it moved to
+  // Geist. Calling the primitive's own mapper keeps ONE fact (the weight token) and one
+  // resolution path; the weight is dropped because the family now expresses it.
   title: {
     fontSize: theme.textXL,
-    fontWeight: theme.weightMedium,
+    fontFamily: fontFamilyForWeight(theme.weightMedium),
     color: theme.colorNeutralDark,
+    textAlign: 'center',
+    // The sentence can reach two lines on a narrow device ("Loose stool · between
+    // 2:00 PM and 5:33 PM"); keep it off the sheet's edges when it does.
+    paddingHorizontal: theme.space3,
+  },
+  // Visually subordinate to the sentence, exactly as on the named card: the record is
+  // the headline, where it landed is the reassurance underneath it.
+  subLabel: {
+    fontSize: theme.textSM,
+    fontFamily: fontFamilyForWeight(theme.weightRegular),
+    color: theme.colorTextSecondary,
+    textAlign: 'center',
+    paddingHorizontal: theme.space3,
+    // The wrap's `gap` is sized for the ring-to-title step; pull the subline back up
+    // against its own title so the two read as one block.
+    marginTop: -theme.space1,
   },
 });
