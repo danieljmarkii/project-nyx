@@ -44,6 +44,37 @@ function stamp(d: Date): string {
   return `${d.toLocaleDateString([], { month: 'short', day: 'numeric' })} · ${formatTime(d)}`;
 }
 
+// A labelled time row. The WHOLE row is the button (CUL-579). It used to be a
+// View whose value `Text` alone was touchable: the row read 44pt (its own
+// minHeight) but only ~34pt of it responded, and tapping the "Found it by"
+// LABEL — the most obviously tappable-looking half — did nothing at all. The
+// flag-on twin, SimpleEventConfirm's `timeMain`, already makes the row the
+// button; this is that shape, backported.
+//
+// No hitSlop, deliberately: the row is already at the floor, so slop would only
+// reach into the 8pt gap the panel puts between two of these rows ("From"/"To"),
+// making neighbours share hit area and resolve by z-order (CUL-612). Between two
+// bounds of one window, that is a silently wrong bound.
+function FieldRow({ label, value, onPress }: {
+  label: string;
+  value: string;
+  onPress: () => void;
+}) {
+  return (
+    <TouchableOpacity
+      style={styles.field}
+      onPress={onPress}
+      activeOpacity={0.7}
+      accessibilityRole="button"
+      accessibilityLabel={`${label}, ${value}`}
+      accessibilityHint="Opens a picker to change this time"
+    >
+      <ThemedText style={styles.fieldLab}>{label}</ThemedText>
+      <ThemedText style={styles.fieldVal}>{value}</ThemedText>
+    </TouchableOpacity>
+  );
+}
+
 export function TimeConfidenceField({
   mode, onModeChange,
   point, pointSource, onPointChange,
@@ -59,6 +90,7 @@ export function TimeConfidenceField({
     if (open !== which) return null;
     return (
       <DateTimePicker
+        testID={`picker-${which}`}
         value={value}
         mode="datetime"
         display={pickerDisplay}
@@ -130,20 +162,28 @@ export function TimeConfidenceField({
           <ThemedText style={styles.panelHead}>When did it happen?</ThemedText>
 
           {/* All three modes are always reachable — selecting one is reversible
-              (no one-way "Know roughly when?" door). 'before' is the default. */}
-          <TouchableOpacity style={styles.radioRow} onPress={() => onFoundModeChange('before')} hitSlop={8}>
+              (no one-way "Know roughly when?" door). 'before' is the default.
+
+              These rows carry NO hitSlop on purpose (CUL-579). `radioRow` is
+              already minHeight 44, so slop bought no reach — it only pushed 8pt
+              into the 8pt gap the panel puts between them, from both sides, so
+              adjacent radios shared hit area and a tap near the boundary landed
+              by z-order (CUL-612). Here that silently swaps one confidence class
+              for another — an honest window becomes a guessed point — and the
+              vet report prints the difference. Don't add it back. */}
+          <TouchableOpacity style={styles.radioRow} onPress={() => onFoundModeChange('before')}>
             <View style={[styles.radio, foundMode === 'before' && styles.radioOn]}>
               {foundMode === 'before' && <View style={styles.radioDot} />}
             </View>
             <ThemedText style={styles.radioLab}>Sometime before</ThemedText>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.radioRow} onPress={() => onFoundModeChange('around')} hitSlop={8}>
+          <TouchableOpacity style={styles.radioRow} onPress={() => onFoundModeChange('around')}>
             <View style={[styles.radio, foundMode === 'around' && styles.radioOn]}>
               {foundMode === 'around' && <View style={styles.radioDot} />}
             </View>
             <ThemedText style={styles.radioLab}>Around a time</ThemedText>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.radioRow} onPress={() => onFoundModeChange('between')} hitSlop={8}>
+          <TouchableOpacity style={styles.radioRow} onPress={() => onFoundModeChange('between')}>
             <View style={[styles.radio, foundMode === 'between' && styles.radioOn]}>
               {foundMode === 'between' && <View style={styles.radioDot} />}
             </View>
@@ -152,12 +192,11 @@ export function TimeConfidenceField({
 
           {foundMode === 'before' && (
             <>
-              <View style={styles.field}>
-                <ThemedText style={styles.fieldLab}>Found it by</ThemedText>
-                <TouchableOpacity onPress={() => setOpen(open === 'latest' ? null : 'latest')} hitSlop={8}>
-                  <ThemedText style={styles.fieldVal}>{stamp(latest)}</ThemedText>
-                </TouchableOpacity>
-              </View>
+              <FieldRow
+                label="Found it by"
+                value={stamp(latest)}
+                onPress={() => setOpen(open === 'latest' ? null : 'latest')}
+              />
               {renderPicker('latest', latest, onLatestChange, new Date())}
               <ThemedText style={styles.hint}>Recorded as “found by {formatTime(latest)}” — no guessing.</ThemedText>
             </>
@@ -165,12 +204,11 @@ export function TimeConfidenceField({
 
           {foundMode === 'around' && (
             <>
-              <View style={styles.field}>
-                <ThemedText style={styles.fieldLab}>Around</ThemedText>
-                <TouchableOpacity onPress={() => setOpen(open === 'estimated' ? null : 'estimated')} hitSlop={8}>
-                  <ThemedText style={styles.fieldVal}>{stamp(estimatedAt)}</ThemedText>
-                </TouchableOpacity>
-              </View>
+              <FieldRow
+                label="Around"
+                value={stamp(estimatedAt)}
+                onPress={() => setOpen(open === 'estimated' ? null : 'estimated')}
+              />
               {renderPicker('estimated', estimatedAt, onEstimatedChange, new Date())}
               <ThemedText style={styles.hint}>A best guess — logged as an estimate, not a witnessed time.</ThemedText>
             </>
@@ -178,19 +216,17 @@ export function TimeConfidenceField({
 
           {foundMode === 'between' && (
             <>
-              <View style={styles.field}>
-                <ThemedText style={styles.fieldLab}>From</ThemedText>
-                <TouchableOpacity onPress={() => setOpen(open === 'earliest' ? null : 'earliest')} hitSlop={8}>
-                  <ThemedText style={styles.fieldVal}>{earliest ? stamp(earliest) : 'Set time'}</ThemedText>
-                </TouchableOpacity>
-              </View>
+              <FieldRow
+                label="From"
+                value={earliest ? stamp(earliest) : 'Set time'}
+                onPress={() => setOpen(open === 'earliest' ? null : 'earliest')}
+              />
               {renderPicker('earliest', earliest ?? latest, onEarliestChange, latest)}
-              <View style={styles.field}>
-                <ThemedText style={styles.fieldLab}>To</ThemedText>
-                <TouchableOpacity onPress={() => setOpen(open === 'latest' ? null : 'latest')} hitSlop={8}>
-                  <ThemedText style={styles.fieldVal}>{stamp(latest)}</ThemedText>
-                </TouchableOpacity>
-              </View>
+              <FieldRow
+                label="To"
+                value={stamp(latest)}
+                onPress={() => setOpen(open === 'latest' ? null : 'latest')}
+              />
               {renderPicker('latest', latest, onLatestChange, new Date())}
               <ThemedText style={styles.hint}>The full range is kept for your vet.</ThemedText>
             </>

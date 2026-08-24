@@ -449,6 +449,13 @@ const styles = StyleSheet.create({
     gap: theme.space2,
     paddingHorizontal: theme.space2,
     paddingVertical: theme.space1,
+    // The 20pt glyph + 15pt label leave the row ~36pt (CUL-579). The floor is
+    // carried by GROWING the row, not by hitSlop: these rows stack with zero
+    // gap, so any vertical slop would make neighbours share hit area and a tap
+    // near the boundary would resolve by z-order (CUL-612) — which on the recent
+    // -food rows means logging the WRONG food, into a diet trial. Reach without
+    // ambiguity. Same fix, same reason, as `logForChip` below.
+    minHeight: 44,
   },
   logForChip: {
     flexDirection: 'row',
