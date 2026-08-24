@@ -104,3 +104,21 @@ The risk no test covers is unchanged from the earlier sweeps and is now the whol
 ## Residual
 
 The rollout is complete and guarded in source; it is **not** verified in pixels. CUL-655 (and CUL-653 for the merged sweeps) remain the only real verification, and this PR makes that pass more valuable rather than less — with `components/ui/` swept, the app is finally all-Geist at once, which is the honest moment to judge whether the "feels bland" lever moved at all.
+
+## Postscript — the code review found two ways the guard itself could go green
+
+An independent `code-reviewer` pass ran against the committed diff and returned **fix-before-merge**. It found no defect in the 440-site sweep, the ten nested-weight fixes, the 33 input fixes or the two CUL-652 fixes — it verified those clean, including a content-level diff of every JSX text node across all 108 files (zero copy changes) and a manual walk of all 24 nested text pairs. What it broke was the **guard**, which given D9's "no runtime backstop by design" is the part that had to be airtight.
+
+**It probed rather than read, which is exactly why it worked.** Both findings were reproduced here before being fixed:
+
+**1. `declaresWeight` resolved block names out of the attribute *text*** with `/styles\.(\w+)/`, so it only ever saw a style sheet literally named `styles`. `FilterChip.tsx` alone breaks that (`defaultVariant` / `filledVariant` / `onDarkVariant`). The silent version is the bad one: a raw `<Text>` child with an inert weight under a non-`styles` object went **fully green** when it also carried a `geist-ok` marker — because the marker silences assertion 1 and the regex blinded assertion 4. That combination defeated `a geist-ok marker does NOT excuse a lost weight`, the test written for precisely this. Now AST-resolved, symmetric with `hasExplicitFamily`.
+
+**2. `familyBlocks` / `weightBlocks` were flat, unscoped by object**, so one `StyleSheet.create` vouched for another: a file with `dayStyles.label` (family) and `nightStyles.label` (none) reported the second compliant. Two style sheets in one file is the ordinary day/night shape, so this was latent, not hypothetical. Blocks are now keyed by object then key.
+
+Also tightened the marker pairing to **nearest marker, sites in line order**. `sites` arrives in AST traversal order — parent before child, not positional — and the pairing took the *first* marker within reach, so which marker covered which site depended on JSX shape. No wrong answer on this tree, but not checkable by eye either.
+
+**The limit that cannot be closed, now stated in the file:** a marker cannot validate its own reason. An author who writes `geist-ok` above real copy is obeyed, exactly as with `completion-card-ok` and `copy-guard-ok`. The guard makes an exemption a *named decision*; it cannot make the name a good one.
+
+Four fixture tests added (28 total). And the lesson repeats one level up from where this session already applied it: I ran the guard against known-bad trees for the failure modes **I** anticipated, and it passed all four. The two it missed were the modes I hadn't thought of — which is the whole argument for an isolated reviewer that never saw the build conversation, and the reason "I tested it against a bad tree" is a weaker claim than it sounds.
+
+The nit was worth taking too: four `geist-ok` markers on `·` separators and one `—` placeholder had inherited the icon-glyph boilerplate, which claims B-745's `GlyphSvg` migration owns them. It doesn't — there is no vector to replace a middle dot with. The carve-out still applies (neither is copy); the reason now says what is true, which matters more once a marker is machine-read.
