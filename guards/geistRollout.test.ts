@@ -145,13 +145,23 @@ function weightValue(text: string): string | null {
   return null;
 }
 
+/** What one named style block declares. */
+type Block = { family: boolean; weight: boolean };
+
 interface Parsed {
   sf: import('typescript').SourceFile;
   src: string;
-  /** Style-block names whose object literal declares a `fontFamily`. */
-  familyBlocks: Set<string>;
-  /** Style-block names whose object literal declares a `fontWeight`. */
-  weightBlocks: Set<string>;
+  /**
+   * Style blocks, keyed by the OBJECT they belong to and then by key —
+   * `blocks.get('nightStyles')!.get('label')`.
+   *
+   * Scoped by object on purpose. A flat key→block map is what a first version used, and
+   * it let one `StyleSheet.create` vouch for another: a file holding both
+   * `dayStyles.label` (with a family) and `nightStyles.label` (without) reported the
+   * second as compliant, because `label` was in the set. Two style sheets in one file
+   * is the normal shape for a day/night surface, so this was not hypothetical.
+   */
+  blocks: Map<string, Map<string, Block>>;
   /** Every object literal that declares a family AND a weight, for assertion 3. */
   pairs: { line: number; family: string; weight: string }[];
 }
@@ -159,8 +169,7 @@ interface Parsed {
 function parse(rel: string): Parsed {
   const src = fs.readFileSync(path.join(ROOT, rel), 'utf8');
   const sf = ts.createSourceFile(rel, src, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
-  const familyBlocks = new Set<string>();
-  const weightBlocks = new Set<string>();
+  const blocks = new Map<string, Map<string, Block>>();
   const pairs: Parsed['pairs'] = [];
 
   const propNamed = (obj: import('typescript').ObjectLiteralExpression, name: string) =>
@@ -169,24 +178,35 @@ function parse(rel: string): Parsed {
     ) as import('typescript').PropertyAssignment | undefined;
 
   const visit = (n: import('typescript').Node): void => {
-    // Named style blocks: `const styles = StyleSheet.create({ label: { … } })`.
-    if (ts.isCallExpression(n)) {
-      const callee = n.expression;
+    // Named style blocks: `const <obj> = StyleSheet.create({ label: { … } })`. The
+    // object's own name is captured, NOT assumed to be `styles` — `FilterChip.tsx`
+    // alone has three (`defaultVariant` / `filledVariant` / `onDarkVariant`).
+    if (
+      ts.isVariableDeclaration(n) &&
+      ts.isIdentifier(n.name) &&
+      n.initializer &&
+      ts.isCallExpression(n.initializer)
+    ) {
+      const callee = n.initializer.expression;
       if (
         ts.isPropertyAccessExpression(callee) &&
         callee.name.text === 'create' &&
         ts.isIdentifier(callee.expression) &&
         callee.expression.text === 'StyleSheet'
       ) {
-        const arg = n.arguments[0];
+        const arg = n.initializer.arguments[0];
         if (arg && ts.isObjectLiteralExpression(arg)) {
+          const objName = n.name.text;
+          const byKey = blocks.get(objName) ?? new Map<string, Block>();
           for (const p of arg.properties) {
             if (!ts.isPropertyAssignment(p) || !p.name) continue;
             if (!ts.isObjectLiteralExpression(p.initializer)) continue;
-            const name = p.name.getText(sf).replace(/^['"]|['"]$/g, '');
-            if (propNamed(p.initializer, 'fontFamily')) familyBlocks.add(name);
-            if (propNamed(p.initializer, 'fontWeight')) weightBlocks.add(name);
+            byKey.set(p.name.getText(sf).replace(/^['"]|['"]$/g, ''), {
+              family: !!propNamed(p.initializer, 'fontFamily'),
+              weight: !!propNamed(p.initializer, 'fontWeight'),
+            });
           }
+          blocks.set(objName, byKey);
         }
       }
     }
@@ -206,7 +226,20 @@ function parse(rel: string): Parsed {
     ts.forEachChild(n, visit);
   };
   visit(sf);
-  return { sf, src, familyBlocks, weightBlocks, pairs };
+  return { sf, src, blocks, pairs };
+}
+
+/**
+ * Resolves `<obj>.<key>` to the style block it names, or undefined if it is not one we
+ * captured. Scoped by the object identifier, so `nightStyles.label` can never be
+ * answered by `dayStyles.label`.
+ */
+function lookupBlock(
+  expr: import('typescript').PropertyAccessExpression,
+  p: Parsed,
+): Block | undefined {
+  if (!ts.isIdentifier(expr.expression)) return undefined;
+  return p.blocks.get(expr.expression.text)?.get(expr.name.text);
 }
 
 /**
@@ -249,8 +282,8 @@ function hasExplicitFamily(
       );
     }
     if (ts.isPropertyAccessExpression(expr)) {
-      // `styles.label`
-      return p.familyBlocks.has(expr.name.text);
+      // `styles.label` — resolved against THAT object, not any block sharing the key.
+      return !!lookupBlock(expr, p)?.family;
     }
     if (ts.isElementAccessExpression(expr)) {
       // `styles[variant]` — a computed key we cannot follow. Unresolvable ⇒ flagged.
@@ -261,7 +294,18 @@ function hasExplicitFamily(
   return check(init.expression);
 }
 
-/** Does this element's own style declare a `fontWeight` (inline or via a named block)? */
+/**
+ * Does this element's own style declare a `fontWeight`?
+ *
+ * AST-resolved, like `hasExplicitFamily` — and that symmetry is the point. A first
+ * version pulled block names out of the attribute TEXT with `/styles\.(\w+)/`, which
+ * only ever matched a style sheet literally named `styles`. `FilterChip.tsx` alone
+ * breaks that (`defaultVariant`, `filledVariant`, `onDarkVariant`), and the failure was
+ * silent in the worst possible way: assertion 4 went GREEN over a real inert-weight
+ * regression, including one carrying a `geist-ok` marker — defeating the very test
+ * written to prove a marker cannot excuse a lost weight. Found by probing the guard,
+ * not by reading it.
+ */
 function declaresWeight(open: import('typescript').JsxOpeningLikeElement, p: Parsed): boolean {
   const attr = open.attributes.properties.find(
     (a) => ts.isJsxAttribute(a) && a.name.getText(p.sf) === 'style',
@@ -269,12 +313,16 @@ function declaresWeight(open: import('typescript').JsxOpeningLikeElement, p: Par
   if (!attr || !ts.isJsxAttribute(attr) || !attr.initializer) return false;
   const init = attr.initializer;
   if (!ts.isJsxExpression(init) || !init.expression) return false;
-  const names = [...init.expression.getText(p.sf).matchAll(/styles\.(\w+)/g)].map((m) => m[1]);
-  if (names.some((n) => p.weightBlocks.has(n))) return true;
-  // An inline literal is read off the AST, not the text, so a commented-out weight
-  // inside the object cannot count.
+
   let found = false;
   const visit = (n: import('typescript').Node): void => {
+    if (found) return;
+    // A named block reference — `nightStyles.sub`.
+    if (ts.isPropertyAccessExpression(n) && lookupBlock(n, p)?.weight) {
+      found = true;
+      return;
+    }
+    // An inline literal — read off the AST, so a commented-out weight cannot count.
     if (
       ts.isPropertyAssignment(n) &&
       n.name &&
@@ -282,6 +330,7 @@ function declaresWeight(open: import('typescript').JsxOpeningLikeElement, p: Par
       n.name.text === 'fontWeight'
     ) {
       found = true;
+      return;
     }
     ts.forEachChild(n, visit);
   };
@@ -366,14 +415,24 @@ function matchMarkers(rel: string, sites: Finding[]): Finding[] {
     .map((l, i) => (MARKER.test(l) ? i + 1 : -1))
     .filter((i) => i > 0);
   const unused = new Set(markerLines);
-  return sites.filter((s) => {
-    const cover = markerLines.find(
-      (m) => unused.has(m) && m < s.line && s.line - m <= MARKER_REACH_LINES,
-    );
-    if (cover === undefined) return true;
-    unused.delete(cover);
-    return false;
-  });
+  // Sites in LINE order, and each takes the NEAREST unused marker above it.
+  //
+  // Both halves are corrections. `sites` arrives in AST traversal order, which for JSX
+  // is parent-before-child rather than positional — so a marker written for a child
+  // could be consumed by its parent. And taking the FIRST marker within reach rather
+  // than the nearest let a site claim a marker written for something further down.
+  // Neither produced a wrong answer on this tree, but both made the pairing depend on
+  // shape instead of position, which is not something a reader can check by eye.
+  return [...sites]
+    .sort((a, b) => a.line - b.line)
+    .filter((s) => {
+      const cover = markerLines
+        .filter((m) => unused.has(m) && m < s.line && s.line - m <= MARKER_REACH_LINES)
+        .pop(); // nearest = the last one still above this site
+      if (cover === undefined) return true;
+      unused.delete(cover);
+      return false;
+    });
 }
 
 function allFindings() {
@@ -626,6 +685,65 @@ describe('the detector itself', () => {
     const r = scanFile(rel);
     expect(matchMarkers(rel, r.sites)).toEqual([]); // assertion 1 is satisfied…
     expect(r.nested).toHaveLength(1); // …and assertion 4 still fires.
+  });
+
+  it('resolves a style sheet NOT named `styles`', () => {
+    // Found by a code review probing the guard rather than reading it. `declaresWeight`
+    // used to pull block names out of the attribute text with `/styles\.(\w+)/`, so any
+    // other style-sheet identifier — `FilterChip.tsx` has three — made assertion 4 blind.
+    write(
+      `const nightVariant = StyleSheet.create({ big: { fontWeight: theme.weightSemibold }, sub: { fontWeight: theme.weightRegular } });\n` +
+        `export const X = () => <ThemedText style={nightVariant.big}>37% <Text style={nightVariant.sub}>finished</Text></ThemedText>;\n`,
+    );
+    expect(scanFile(rel).nested).toHaveLength(1);
+  });
+
+  it('still FLAGS a lost weight when the site carries a geist-ok marker', () => {
+    // The worst version of the bug above: assertion 1 is silenced by the marker and
+    // assertion 4 was blinded by the identifier, so a real regression went fully green —
+    // defeating the exact test written to prove a marker cannot excuse a lost weight.
+    write(
+      `const nightVariant = StyleSheet.create({ big: { fontWeight: theme.weightSemibold }, sub: { fontWeight: theme.weightRegular } });\n` +
+        `// geist-ok: nested span — colour only\n` +
+        `export const X = () => <ThemedText style={nightVariant.big}>37% <Text style={nightVariant.sub}>finished</Text></ThemedText>;\n`,
+    );
+    const r = scanFile(rel);
+    expect(matchMarkers(rel, r.sites)).toEqual([]);
+    expect(r.nested).toHaveLength(1);
+  });
+
+  it('does NOT let one style sheet vouch for another sharing a key name', () => {
+    // Two `StyleSheet.create`s in one file is the normal shape for a day/night surface.
+    // A flat key→block map reported `nightStyles.label` compliant because `dayStyles`
+    // happened to define a `label` with a family.
+    write(
+      `const dayStyles = StyleSheet.create({ label: { fontFamily: theme.fontBody } });\n` +
+        `const nightStyles = StyleSheet.create({ label: { fontSize: 12 } });\n` +
+        `export const X = () => <Text style={nightStyles.label}>copy</Text>;\n`,
+    );
+    expect(scanFile(rel).sites).toHaveLength(1);
+  });
+
+  it('pairs each site with the NEAREST marker above it, in line order', () => {
+    // `sites` arrives in AST traversal order (parent before child, not positional), and
+    // the pairing used to take the FIRST marker within reach rather than the nearest —
+    // so which marker covered which site depended on JSX shape instead of position.
+    write(
+      `const styles = StyleSheet.create({ a: { fontSize: 12 }, b: { fontSize: 12 } });\n` +
+        `// geist-ok: first\n` +
+        `export const A = () => <Text style={styles.a}>one</Text>;\n` +
+        `// geist-ok: second\n` +
+        `export const B = () => <Text style={styles.b}>two</Text>;\n`,
+    );
+    expect(matchMarkers(rel, scanFile(rel).sites)).toEqual([]);
+    // …and with one marker removed, exactly the uncovered site is reported.
+    write(
+      `const styles = StyleSheet.create({ a: { fontSize: 12 }, b: { fontSize: 12 } });\n` +
+        `export const A = () => <Text style={styles.a}>one</Text>;\n` +
+        `// geist-ok: second\n` +
+        `export const B = () => <Text style={styles.b}>two</Text>;\n`,
+    );
+    expect(fmt(matchMarkers(rel, scanFile(rel).sites))).toEqual([`${rel}:2 — <Text>`]);
   });
 
   it('FLAGS a family and weight that disagree, and spares ones that agree', () => {

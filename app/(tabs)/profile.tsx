@@ -1023,9 +1023,10 @@ export default function ProfileScreen() {
                       <TouchableOpacity style={styles.cardActionTouch} onPress={() => openEditCondition(condition)} hitSlop={8}>
                         <ThemedText style={styles.conditionActionText}>Edit</ThemedText>
                       </TouchableOpacity>
-                      {/* geist-ok: Icon glyph, not copy — stays a raw <Text>. These stand in for vector glyphs
-                          (the B-745 GlyphSvg migration owns them), so they keep the system face rather
-                          than taking the body family a sweep would give them. CUL-364 §7. */}
+                      {/* geist-ok: typographic separator, not copy and not an icon — a standalone node
+                          whose entire content is a divider. It stays raw so it inherits nothing and
+                          asserts nothing; the B-745 GlyphSvg migration does NOT own it (there is no
+                          vector to replace a middle dot with). CUL-364 §7. */}
                       <Text style={styles.conditionActionDivider}>·</Text>
                       <TouchableOpacity style={styles.cardActionTouch} onPress={() => confirmResolveCondition(condition)} hitSlop={8}>
                         <ThemedText style={styles.conditionActionText}>Resolve</ThemedText>
@@ -1177,16 +1178,18 @@ export default function ProfileScreen() {
                     >
                       <ThemedText style={[styles.conditionActionText, styles.logDoseActionText]}>Log a dose</ThemedText>
                     </TouchableOpacity>
-                    {/* geist-ok: Icon glyph, not copy — stays a raw <Text>. These stand in for vector glyphs
-                        (the B-745 GlyphSvg migration owns them), so they keep the system face rather
-                        than taking the body family a sweep would give them. CUL-364 §7. */}
+                    {/* geist-ok: typographic separator, not copy and not an icon — a standalone node
+                        whose entire content is a divider. It stays raw so it inherits nothing and
+                        asserts nothing; the B-745 GlyphSvg migration does NOT own it (there is no
+                        vector to replace a middle dot with). CUL-364 §7. */}
                     <Text style={styles.conditionActionDivider}>·</Text>
                     <TouchableOpacity style={styles.cardActionTouch} onPress={() => openEditRegimen(reg)} hitSlop={8}>
                       <ThemedText style={styles.conditionActionText}>Edit</ThemedText>
                     </TouchableOpacity>
-                    {/* geist-ok: Icon glyph, not copy — stays a raw <Text>. These stand in for vector glyphs
-                        (the B-745 GlyphSvg migration owns them), so they keep the system face rather
-                        than taking the body family a sweep would give them. CUL-364 §7. */}
+                    {/* geist-ok: typographic separator, not copy and not an icon — a standalone node
+                        whose entire content is a divider. It stays raw so it inherits nothing and
+                        asserts nothing; the B-745 GlyphSvg migration does NOT own it (there is no
+                        vector to replace a middle dot with). CUL-364 §7. */}
                     <Text style={styles.conditionActionDivider}>·</Text>
                     <TouchableOpacity style={styles.cardActionTouch} onPress={() => confirmEndRegimen(reg)} hitSlop={8}>
                       <ThemedText style={[styles.conditionActionText, styles.medEndActionText]}>End</ThemedText>
