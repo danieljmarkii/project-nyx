@@ -1,5 +1,5 @@
 # Event-Type Taxonomy Expansion — Requirements (B-756 / CUL-509)
-**Version:** 0.9 — DRAFT for PM ratification | **Date:** 2026-08-24 | **Status:** SCOPING ONLY — no build committed (PM directive D5, 2026-08-23). Deliverables of this track are this spec + a mock round; every build wave below is a proposal awaiting its own greenlight.
+**Version:** 1.0 — RATIFIED (PM, 2026-08-24; see D8/D9) | **Date:** 2026-08-24 | **Status:** SCOPING ONLY — no build committed (D5 stands). Next step: the §14 mock round, its own session; every build wave below remains a proposal awaiting its own greenlight.
 
 The design contract for broadening (new event types) and deepening (per-type structure) Nyx's event capture: a two-level spine — **families as presentation, flat leaves as data** — scored quantitatively for shipping order, with the picker/confirm/detail surfaces, the report and engine handshakes, and the safety-leaf escalation rules specced once so waves can be cut mechanically.
 
@@ -18,6 +18,8 @@ The design contract for broadening (new event types) and deepening (per-type str
 | D5 | **Scoping only.** Requirements + mocks are the deliverables; any build wave is a fresh PM call. | 2026-08-23 |
 | D6 | **The event detail screen joins the track, split three ways:** (a) the per-leaf detail contract (§7) is a mandatory spec section; (b) redesign frames ride the same mock round as the picker/confirm; (c) the redesign build is a separable wave with its own greenlight. Absorbs Legacy B-003. | 2026-08-23 |
 | D7 | **Selection inputs broadened:** the three research sweeps (now frozen in the evidence pack), the PM's real-vet question sheet (§15 — answered async, folds in as a revision input, does not block v1.0), the June vet-council §9 recommendations, and a fresh own-record query at each scoring refresh. | 2026-08-23 |
+| D8 | **v0.9 → v1.0 RATIFIED.** The §4 scoring framework + §5 matrix ratified as the track's standing selection instrument (N1 — "skimmed all the matrix and agree"); the §13 wave plan ratified **as proposed** (N2-A) — Dr. Chen's dissent (the safety trio into wave 1) is thereby resolved to W2, recorded not erased; the §14 mock renders **both** grid densities, near-term and full-spine (N3-A); the §5 labels stand unvetoed per the stated silence rule. The §16 Q4 licensing fence is **provisionally adopted** (team + T&S recommendation, no PM objection at the brief) — flagged for one-line explicit confirmation, no work blocks on it. | 2026-08-24 |
+| D9 | **Implementation shape confirmed:** each greenlit wave decomposes into its own numbered PR chain (§13a — the house pattern: B-745 PRs 0–3, Signals v2 PRs 0–10), one PR per session with kickoff prompts; later waves get their chains written at their own greenlight from the §13 checklist. | 2026-08-24 |
 
 ## §1 Scope and non-goals
 
@@ -151,6 +153,18 @@ Gate 1: `app_config.event_types_v2` allowlist, seeded dark (migration, own PR). 
 | **W4** | Mobility + head: `limp` · `stiffness` · `ear_signs` · `eye_signs` · `lump_found` | PM greenlight |
 | **W5+** | Long tail (`overgrooming`, `hiding`, `seizure`, `mouth_signs`, `wound`, `scooting`, `drinking_change`, `stool_outside_box`, `vocalization_change`) + GI deepen attributes (retch flag, stool consistency/blood/mucus, itch context) — GI attributes may ride any earlier wave | per-wave calls |
 
+### §13a W1's PR chain (the shape every wave follows; later waves get theirs at greenlight)
+
+| PR | Ships | Notes |
+|---|---|---|
+| **W1-PR-0** | `event_types_v2` flag seed migration + client registration + shelf card + the B-747 OR-gate fix | The B-745 PR-0 pattern; applied live via MCP + advisors; nothing consumes the flag yet |
+| **W1-PR-1** | The enum migration: `ALTER TYPE event_type ADD VALUE 'cough'`, `'sneeze'` | Own PR per schema isolation. Migration Safety Pre-flight: additive; destructive = n; backfill = N/A; rollback = none in place (Postgres enum values don't drop — the reason values are added only per shipping wave) |
+| **W1-PR-2** | Capture: `EVENT_TYPES` entries + the Respiratory picker group + confirm copy (`nyx-voice` pass) + the §7 detail-contract rows + the app-wide §8 unknown-type label audit | Flag-gated; flag-off byte-identical, snapshot-pinned; species handling per §3 |
+| **W1-PR-3** | Engine: ⑦ chronicity membership for `cough` + fixtures + the owned floor calibration (Dr. Chen) + `generate-signal` redeploy | `adversarial-reviewer` mandatory (detection change); deploy-manifest discipline; the never-hairball and cough↔vomit adjacency rules from §9 bind the copy |
+| **W1-PR-4** | The §11 swap script + the PM-reviewed id list, run at sync quiescence | Sequenced after PR-3's deploy so the predicted ⑦ firing on the live course lands as designed, not as a surprise |
+
+One PR per session; the chain pauses cleanly between any two PRs.
+
 **The per-leaf checklist (the recipe that makes waves mechanical):**
 1. Enum value (additive migration, own PR; skip for dormant values) · 2. `EVENT_TYPES` entry (label, glyph, family group, `hasFood:false`, `hasPhoto`, species) · 3. `SYMPTOM_TYPES` membership decision · 4. Glyph (Lucide substitute or B-746 commission — the family runs out of honest Lucide matches mid-spine; B-746 becomes load-bearing by W3) · 5. Confirm copy (`lib/logCopy` sentence; nyx-voice; clinical-guardrails if the copy touches escalation) · 6. Detail contract row (§7) · 7. §8 read-surface sweep · 8. Engine membership decisions + fixtures (§9) · 9. Report membership + problem-line decision (§10) · 10. QA script (320pt/max-font labels; species-conditional grid per pet; flag-off byte-identical; multi-pet write-time identity).
 
@@ -177,7 +191,7 @@ Answers fold in as a spec revision + scoring adjustment; they gate nothing in v0
 | Q1 | D4 — safety-leaf escalation register (capture-time vs Signal-only). Both rendered in the mock round. | PM + Dr. Chen + Designer, at the mock |
 | Q2 | Wave greenlights (D5 — each wave is its own call; W1 is the first ask once this spec ratifies). | PM |
 | Q3 | Does B-757 (video attachment for cough/gait) get restored when a cough type ships? Archived 2026-08-20; rung 1 pairs naturally. Restore is a PM call — not assumed here. | PM |
-| Q4 | Instrument licensing posture: derived indices are reported as "computed from logged events using the CIBDAI/CCECAI item definitions," never as the validated instrument; **no licensed instrument wording (CBPI/LOAD/FMPI/VetMetrica) is reproduced in-app** without the license; PVAS's numbers-break-the-scale finding bars any numeric itch scale UI. Ratify as standing rules. | PM + T&S |
+| Q4 | Instrument licensing posture: derived indices are reported as "computed from logged events using the CIBDAI/CCECAI item definitions," never as the validated instrument; **no licensed instrument wording (CBPI/LOAD/FMPI/VetMetrica) is reproduced in-app** without the license; PVAS's numbers-break-the-scale finding bars any numeric itch scale UI. **Provisionally adopted 2026-08-24 (D8)** — governs the mock round and all waves now; PM one-line confirmation outstanding. | PM + T&S (provisional) |
 | Q5 | The `other`-notes demand instrument at cohort scale: aggregating note *text* across real users for taxonomy planning is analytics over health notes — needs its own T&S ruling (aggregate, in-house, no LLM over notes without the AI-boundary ruling) before it ever runs beyond the PM's own account. | T&S + PM, pre-cohort |
 | Q6 | Where does `drinking_change` really live (continuous-class capture — observation leaf now vs. the day-close ritual vs. hardware later)? The 2026-07-10 discovery's §3 taxonomy owns the general question. | Designer + PM, W5 |
 
