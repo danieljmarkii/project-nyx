@@ -1019,6 +1019,8 @@ function letterhead(snap: ReportSnapshot): string {
  * missing one is a vet reading a four-month problem as a five-week one.
  */
 const CHRONICITY_LEFT_CENSOR_DAYS = 7
+/** Local to this file — render.ts deliberately imports no arithmetic from report.ts. */
+const MS_PER_DAY_RENDER = 86_400_000
 
 /** Whole days from `fromKey` to `toKey` (both `YYYY-MM-DD`); negative if `toKey` is earlier. */
 function daysBetweenDayKeys(fromKey: string, toKey: string): number {
@@ -1403,11 +1405,42 @@ function safetyFlagRow(f: SafetyFlag, snap: ReportSnapshot): string {
       // edge — the same vocabulary the exposure counts use, for the same reason. Not
       // suppressed and not softened: the flag still fires, still leads, and still says the
       // pattern is sustained. It simply stops asserting a start date it cannot know.
+      //
+      // TWO different edges can truncate this interval, and they need DIFFERENT sentences
+      // (B-612 / CUL-319, adversarial finding 7). The clause below originally measured only
+      // the gap to the report window's start — which makes it STRUCTURALLY UNREACHABLE on the
+      // 90-day fallback scope, because the detector reads a 56-day lookback and its first
+      // onset therefore sits ~34 days INSIDE a window that opened earlier. Reproduced: 30
+      // vomits logged Apr 4 – Jun 30 rendered "logged from May 7 to Jun 30: 19 episodes"
+      // beside this page's own "(30 logged)" and an appendix A opening Apr 4, with no
+      // disclosure at all — a 12-week course understated as 8 on the lead safety line.
+      //
+      // The distinction is what the reader should DO about it, which is why one sentence
+      // cannot serve both. At the window's edge there is nothing earlier to look at, so the
+      // honest statement is that the record cannot see further back. At the LOOKBACK's edge
+      // the earlier episodes exist and are printed in appendix A — so the sentence must send
+      // the reader there rather than implying the record starts where the flag does.
+      const onsetDayKey = localDayKeyOf(f.firstOnsetIso, tz)
       const onsetDay = fmtLocalDay(f.firstOnsetIso, tz)
-      const leftCensored = daysBetweenDayKeys(snap.scope.startDate, localDayKeyOf(f.firstOnsetIso, tz)) <= CHRONICITY_LEFT_CENSOR_DAYS
-      const censorBit = leftCensored
+      const detNowMs = Date.parse(snap.scope.detectionNowIso)
+      const lookbackEdgeKey = Number.isFinite(detNowMs)
+        ? localDayKeyOf(new Date(detNowMs - f.windowDays * MS_PER_DAY_RENDER).toISOString(), tz)
+        : null
+      const windowCensored = daysBetweenDayKeys(snap.scope.startDate, onsetDayKey) <= CHRONICITY_LEFT_CENSOR_DAYS
+      // Only when the lookback edge falls MEANINGFULLY INSIDE the window — otherwise the
+      // window is the binding constraint and its own sentence is the correct one.
+      const lookbackCensored =
+        !windowCensored &&
+        lookbackEdgeKey !== null &&
+        daysBetweenDayKeys(lookbackEdgeKey, onsetDayKey) <= CHRONICITY_LEFT_CENSOR_DAYS &&
+        daysBetweenDayKeys(snap.scope.startDate, lookbackEdgeKey) > CHRONICITY_LEFT_CENSOR_DAYS
+      const censorBit = windowCensored
         ? ` This window opens ${h(fmtDay(snap.scope.startDate))}, so the record begins at its own edge &mdash; it cannot show how long the sign predates it.`
-        : ''
+        : lookbackCensored
+          ? ` This flag reads the most recent ${num(f.windowDays)} days, so ${h(
+              onsetDay,
+            )} is where that lookback begins, not where the record does &mdash; earlier episodes in this window are listed in appendix&nbsp;A.`
+          : ''
       // ANCHORS, NOT A DERIVED DURATION (B-612 / CUL-319, cold-read blocker; PM ruled option B).
       // This printed "has been ongoing 25 days (first logged Jun 5)" on a page also stamped
       // "Generated Jul 2" and beside a tile reading "28 d" — three figures for one quantity, and

@@ -1496,6 +1496,81 @@ Deno.test('B-612 — a same-day log time stays undated', () => {
   assert.ok(!/<span class="daynote">/.test(html), 'no day note when the log lands on the row’s own day')
 })
 
+Deno.test('B-612 — a null closing anchor degrades to "logged since", never to a fabricated end', () => {
+  // THE MAJORITY PATH FOR REAL CHRONIC VOMITERS, and it had no test — on a branch named
+  // `b612-unexercised-paths`, which is the joke an adversarial pass made at my expense.
+  // `lastOnsetDayKey` is null whenever the engine's 3h bout collapse and the report's 60s
+  // dedupe disagree on the episode count, which one same-day re-vomit is enough to cause.
+  const flag: SafetyFlag = {
+    kind: 'chronicity',
+    symptomType: 'vomit',
+    episodeCount: 14,
+    spanDays: 40,
+    activeWeeks: 5,
+    symptomDays: 14,
+    daysSinceLastEpisode: 2,
+    firstOnsetIso: '2026-05-20T14:00:00Z',
+    lastOnsetDayKey: null,
+    tier: 'standard',
+    windowDays: 56,
+  }
+  const html = renderReport(base({ safetyFlags: [flag] }))
+  assert.ok(/has been logged since May 20/.test(html), 'states the opening anchor only')
+  assert.ok(!/logged from May 20 to/.test(html), 'never invents a closing anchor')
+  assert.ok(/sustained pattern/.test(html), 'still reads as sustained, not as a one-off')
+})
+
+Deno.test('B-612 — a lookback-truncated interval says so and points at appendix A', () => {
+  // Adversarial finding 7: on the 90-day fallback the detector's 56-day lookback, not the
+  // window, is the binding left edge — so the old clause (which measured only the gap to the
+  // window start) was structurally unreachable and a 12-week course rendered as 8 weeks with
+  // no disclosure. base()'s window opens well before the lookback edge.
+  const flag: SafetyFlag = {
+    kind: 'chronicity',
+    symptomType: 'vomit',
+    episodeCount: 19,
+    spanDays: 54,
+    activeWeeks: 8,
+    symptomDays: 19,
+    daysSinceLastEpisode: 2,
+    // base() generates at 2026-07-02; 56 days back is 2026-05-07.
+    firstOnsetIso: '2026-05-07T14:00:00Z',
+    lastOnsetDayKey: '2026-06-30',
+    tier: 'standard',
+    windowDays: 56,
+  }
+  const html = plain(renderReport(base({ scope: { ...base().scope, startDate: '2026-04-04' }, safetyFlags: [flag] })))
+  assert.ok(/reads the most recent 56 days/.test(html), 'names the lookback as the left edge')
+  assert.ok(/not where the record does/.test(html), 'does not let the interval read as the record’s extent')
+  assert.ok(/appendix\s*A/.test(html), 'sends the reader to the earlier episodes')
+  assert.ok(
+    !/record begins at its own edge/.test(html),
+    'the window-edge sentence is NOT used — there is earlier data, and it says so',
+  )
+})
+
+Deno.test('B-612 — a window-edge truncation keeps its own sentence, not the lookback one', () => {
+  // The other side of the split: on a short since_visit window the lookback edge falls before
+  // the window opens, so the window IS the binding constraint and there is nothing earlier to
+  // point at. Getting this backwards would send a vet to an appendix that holds nothing.
+  const flag: SafetyFlag = {
+    kind: 'chronicity',
+    symptomType: 'vomit',
+    episodeCount: 9,
+    spanDays: 26,
+    activeWeeks: 4,
+    symptomDays: 9,
+    daysSinceLastEpisode: 1,
+    firstOnsetIso: '2026-06-05T14:00:00Z',
+    lastOnsetDayKey: '2026-07-01',
+    tier: 'standard',
+    windowDays: 56,
+  }
+  const html = plain(renderReport(base({ scope: { ...base().scope, startDate: '2026-06-02' }, safetyFlags: [flag] })))
+  assert.ok(/record begins at its own edge/.test(html), 'the window-edge sentence stands')
+  assert.ok(!/reads the most recent 56 days/.test(html), 'the lookback sentence does not also fire')
+})
+
 Deno.test('B-612 — the duplicate tag is not a time-confidence chip and glosses itself in place', () => {
   // It sat in the Occurred column in the same uppercase bordered `.conf` chip as
   // seen/est/range, so it read as a fifth confidence value — or as two episodes, which

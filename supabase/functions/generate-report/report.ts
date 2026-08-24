@@ -1102,11 +1102,25 @@ export type SafetyFlag =
       firstOnsetIso: string
       /**
        * The LAST episode's local day key — the render's closing anchor (B-612 / CUL-319).
-       * Null when the report window does not cover the detector's full episode set, exactly
-       * like the `symptomDays` / `daysSinceLastEpisode` recount above: an anchor derived from
-       * a partial set would date the pattern's end earlier than the record does, and on a
-       * chronicity flag that is the reassuring direction. Null ⇒ the render states the opening
-       * anchor only and asserts no closing one.
+       *
+       * WHAT `episodeSetMatches` ACTUALLY GATES, because the first version of this comment got
+       * it wrong and an adversarial pass caught it: it is NOT "the window doesn't cover the
+       * detector's episode set". That is impossible — `buildDetectionInput` builds the
+       * detector's input FROM `windowEvents`, so the detector's onsets are always a subset of
+       * the report's `episodes`. What actually makes the counts differ is that the two layers
+       * collapse at different grains: the engine collapses a 3-HOUR bout to one onset, the
+       * report de-duplicates at 60 SECONDS. So a single same-day re-vomit two hours after
+       * another — anywhere in an eight-week course — makes the counts disagree and nulls this
+       * anchor for the whole course. Measured over simulated chronic vomiters: ~57% of records
+       * null at a 10% bout rate, ~92% at 20%.
+       *
+       * The guard is kept anyway, and deliberately: it is what keeps this anchor and the
+       * `daysSinceLastEpisode` printed in the SAME SENTENCE derived from the same
+       * `lastLocalDay`. Letting the anchor go unconditional while recency stayed guarded would
+       * reopen the flag-vs-tile contradiction the recount block was added to close. Null ⇒ the
+       * render states the opening anchor only ("logged since X") and asserts no closing one,
+       * which is honest but loses the closing date — the cost of that trade is real and is
+       * tracked separately rather than hidden here.
        */
       lastOnsetDayKey: string | null
       tier: SymptomChronicityFinding['tier']
