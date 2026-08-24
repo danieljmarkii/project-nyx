@@ -62,3 +62,15 @@ The PM re-opened the event-taxonomy expansion from the feature-opportunities thr
 - The fact-check pass and the mock round are disjoint sessions and can run concurrently; both precede any W1 greenlight.
 - The PM's §15 vet question sheet is fully async — take it to the next visit; answers fold into v1.x whenever they arrive.
 - No file collisions expected with the App Store / Design Polish tracks (this track is docs-only until a wave is greenlit).
+
+---
+
+## Addendum — ratification rounds (same session, 2026-08-24, pre-merge)
+
+The PM read the deliverables in-thread and the session continued through ratification (this addendum was written before the session's PR merged — the record is still this session's own, single file):
+
+- **The N1–N5 brief set** was put to the PM ("the decisions you need to make now, with context"): N1 the scoring framework · N2 the wave cuts (carrying Dr. Chen's dissent) · N3 mock grid density · N4 the label veto pass · N5 the licensing fence.
+- **Rulings (recorded as D8/D9 in the spec's §0):** N1 ratified ("skimmed all the matrix and agree"); N2-A — waves as proposed, the dissent resolved to W2, recorded not erased; N3-A — both densities; N4 labels stand per the stated silence rule; N5 **provisionally adopted** (no PM objection; explicit one-line confirmation outstanding — conservative in the safe direction, governs the mock + waves now).
+- **The PM's implementation question answered in-spec:** each greenlit wave ships as its own numbered PR chain — **§13a** now carries W1's five PRs (flag seed+B-747 / enum migration / capture / engine+redeploy / swap script), one PR per session; later waves get chains at their own greenlights.
+- **Spec bumped v0.9 → v1.0 RATIFIED**; CLAUDE.md Read-These row updated to match. Scoping phase complete; next step = the §14 mock round, its own session; D4 rules there from frames.
+- Wrap + merge PM-directed same session; `origin/main` merged in cleanly first (five sibling Design Polish PRs #713–#717 had landed; zero conflicts — the per-session-file convention held).
