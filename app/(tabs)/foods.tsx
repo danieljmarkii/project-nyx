@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, router } from 'expo-router';
 import { Plus, ChevronDown, ChevronRight } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
+import { SkeletonRows } from '../../components/ui/Skeleton';
 import { EmptyState } from '../../components/ui';
 import { FoodRow } from '../../components/foods/FoodRow';
 import { ArchivedFoodRow } from '../../components/foods/ArchivedFoodRow';
@@ -339,6 +340,11 @@ export default function FoodsScreen() {
   // so it gets its own warm line AND the Archived section opens by default, so the
   // one thing the owner can do (restore) is right there (pm-feature-review, P5).
   const onlyArchived = loaded && !loadError && library.length === 0 && archived.length > 0;
+  // The first read hasn't answered yet (CUL-575). Every other state on this tab is
+  // gated on `loaded`, which left this one rendering an empty ScrollView: a blank
+  // page, then a reflow as the library lands. Tier-1 loading (§5) — a local read, so
+  // the shape of the rows, not a spinner.
+  const showSkeleton = !loaded && !loadError && library.length === 0;
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
@@ -394,13 +400,24 @@ export default function FoodsScreen() {
           it, so withholding it would be the one state where this feature goes
           missing exactly when it matters. Rendered above the state message rather
           than inside it: the message is about the library, the strip is not. */}
-      {(showError || isEmpty) && trialStrip !== null ? (
+      {!showSkeleton && (showError || isEmpty) && trialStrip !== null ? (
         <View style={styles.stripOnly}>
           <FoodsTrialStrip model={trialStrip} onPress={() => router.push('/trial-foods')} />
         </View>
       ) : null}
 
-      {showError ? (
+      {showSkeleton ? (
+        <View style={styles.skeleton}>
+          <SkeletonRows
+            count={6}
+            leadingSize={44}
+            leadingRadius={theme.radiusSmall}
+            paddingHorizontal={theme.space2}
+            separator={false}
+            testID="foods-skeleton"
+          />
+        </View>
+      ) : showError ? (
         <EmptyState
           title="Couldn't load your foods"
           body="Something went wrong loading your library."
@@ -761,6 +778,10 @@ const styles = StyleSheet.create({
   // tighter in-list spacing, not the top-of-screen inset.
   onlyArchivedNote: {
     paddingHorizontal: theme.space2,
+    paddingTop: theme.space2,
+  },
+  // Sits where the library's first rows will, so the swap-in doesn't jump the page.
+  skeleton: {
     paddingTop: theme.space2,
   },
   groupHint: {

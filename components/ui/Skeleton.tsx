@@ -86,10 +86,102 @@ export function SkeletonCard({ style }: { style?: StyleProp<ViewStyle> }) {
   );
 }
 
+// A list-row placeholder for the two browse tabs (CUL-575): a leading block plus
+// the two stacked text lines every row in this app has (History's icon + label/time,
+// Foods' thumb + name/meta). It is the list sibling of SkeletonCard above, and it
+// exists so the FIRST paint of a tab is the shape of its content rather than a blank
+// screen that reflows — the local SQLite read is a sub-1s wait, which is Tier 1
+// (skeleton, never a Whorl).
+//
+// Deliberately silhouette-accurate rather than pixel-exact: it borrows the real row's
+// padding and leading size so the swap-in doesn't shift the list, and nothing more.
+export interface SkeletonRowProps {
+  /** Edge of the leading block. History's event icon is 36; Foods' photo thumb is 44. */
+  leadingSize?: number;
+  /** Corner radius of that block — omit for a circle (the event icon), pass a token for a thumb. */
+  leadingRadius?: number;
+  /** Matches the real row's horizontal padding so the columns line up. */
+  paddingHorizontal?: number;
+  /** History's rows carry a hairline separator; Foods' rows don't. */
+  separator?: boolean;
+  style?: StyleProp<ViewStyle>;
+}
+
+export function SkeletonRow({
+  leadingSize = 36,
+  leadingRadius,
+  paddingHorizontal = theme.space3,
+  separator = true,
+  style,
+}: SkeletonRowProps) {
+  return (
+    <View
+      style={[
+        styles.row,
+        { paddingHorizontal },
+        separator && styles.rowSeparator,
+        style,
+      ]}
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants"
+    >
+      <Skeleton
+        width={leadingSize}
+        height={leadingSize}
+        radius={leadingRadius ?? leadingSize / 2}
+      />
+      <View style={styles.rowText}>
+        <Skeleton width="46%" height={13} />
+        <Skeleton width="28%" height={11} style={styles.rowSecondLine} />
+      </View>
+    </View>
+  );
+}
+
+/**
+ * `count` rows of the same shape — what a loading list actually renders. Taking the
+ * count here (rather than an .map() at each call site) keeps the two tabs from
+ * drifting apart on how many rows "loading" looks like.
+ */
+export function SkeletonRows({
+  count,
+  testID,
+  ...rowProps
+}: SkeletonRowProps & { count: number; testID?: string }) {
+  return (
+    <View
+      testID={testID}
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants"
+    >
+      {Array.from({ length: count }, (_, i) => (
+        <SkeletonRow key={i} {...rowProps} />
+      ))}
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   base: {
     backgroundColor: theme.colorChartEmpty,
     overflow: 'hidden',
+  },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.space2,
+    paddingVertical: theme.space2,
+    backgroundColor: theme.colorSurface,
+  },
+  rowSeparator: {
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colorBorder,
+  },
+  rowText: {
+    flex: 1,
+  },
+  rowSecondLine: {
+    marginTop: theme.space1,
   },
   card: {
     backgroundColor: theme.colorSurface,
