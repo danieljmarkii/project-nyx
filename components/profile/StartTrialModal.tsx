@@ -852,7 +852,7 @@ function AddRow({ label, onPress }: { label: string; onPress: () => void }) {
       accessibilityRole="button"
       accessibilityLabel={label}
     >
-      {/* Icon glyph, not copy — stays a raw <Text>. Beyond that rule the cmap forces it:
+      {/* geist-ok: Icon glyph, not copy — stays a raw <Text>. Beyond that rule the cmap forces it:
           no loaded Geist weight carries U+FF0B, so sweeping this hands the render to OS
           fallback at a size tuned for a different face. CUL-364 §7. */}
       <Text style={styles.addRowPlus}>＋</Text>

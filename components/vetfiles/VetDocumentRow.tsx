@@ -1,8 +1,9 @@
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { StyleSheet, TouchableOpacity, View } from 'react-native';
 import { ChevronRight } from 'lucide-react-native';
 import { theme, shadows } from '../../constants/theme';
 import { VetDocumentThumb } from './VetDocumentThumb';
 import type { VetLibraryRow } from '../../lib/vetDocumentLibrary';
+import { ThemedText } from '../ui/ThemedText';
 
 interface Props {
   row: VetLibraryRow;
@@ -66,16 +67,16 @@ export function VetDocumentRow({
       <VetDocumentThumb uri={thumbUri} isPdf={row.isPdf} loading={thumbLoading} />
 
       <View style={styles.main}>
-        <Text
+        <ThemedText
           style={[styles.title, row.untitled && styles.titleUntitled]}
           numberOfLines={1}
         >
           {row.title}
-        </Text>
+        </ThemedText>
         <View style={styles.meta}>
           {row.kindLabel ? (
             <View style={styles.kindChip}>
-              <Text style={styles.kindText}>{row.kindLabel}</Text>
+              <ThemedText style={styles.kindText}>{row.kindLabel}</ThemedText>
             </View>
           ) : (
             <TouchableOpacity
@@ -91,11 +92,11 @@ export function VetDocumentRow({
               accessibilityRole="button"
               accessibilityLabel={`Add a type to ${row.title}`}
             >
-              <Text style={[styles.kindText, styles.kindTextEmpty]}>Add type</Text>
+              <ThemedText style={[styles.kindText, styles.kindTextEmpty]}>Add type</ThemedText>
             </TouchableOpacity>
           )}
-          <Text style={styles.date}>{row.dateLabel}</Text>
-          {row.pageLabel ? <Text style={styles.pages}>{row.pageLabel}</Text> : null}
+          <ThemedText style={styles.date}>{row.dateLabel}</ThemedText>
+          {row.pageLabel ? <ThemedText style={styles.pages}>{row.pageLabel}</ThemedText> : null}
         </View>
         {/* B-546 — its own line rather than another item in the meta row above.
             The meta row wraps (flexWrap), so a 40-character filename in it would
@@ -108,9 +109,9 @@ export function VetDocumentRow({
             the part that differs — "CBC-Pixel-2026-07…" and
             "Chem-Pixel-2026-07…" are two rows this line exists to separate. */}
         {row.fileLabel ? (
-          <Text style={styles.file} numberOfLines={1} ellipsizeMode="middle">
+          <ThemedText style={styles.file} numberOfLines={1} ellipsizeMode="middle">
             {row.fileLabel}
-          </Text>
+          </ThemedText>
         ) : null}
       </View>
 
@@ -123,7 +124,7 @@ export function VetDocumentRow({
           accessibilityRole="button"
           accessibilityLabel={`Name this document from ${row.dateLabel}`}
         >
-          <Text style={styles.namePillText}>Name</Text>
+          <ThemedText style={styles.namePillText}>Name</ThemedText>
         </TouchableOpacity>
       ) : (
         <ChevronRight size={18} color={theme.colorTextDisabled} strokeWidth={2} />

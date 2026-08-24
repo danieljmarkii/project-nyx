@@ -1,7 +1,12 @@
 import { useEffect, useState } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  KeyboardAvoidingView, Platform, Alert,
+  View,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
+  KeyboardAvoidingView,
+  Platform,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
@@ -13,6 +18,7 @@ import { BreedPicker } from '../../components/pet/BreedPicker';
 import { TextField } from '../../components/ui/TextField';
 import { PrimaryButton } from '../../components/ui/PrimaryButton';
 import { OnboardingHeader } from '../../components/onboarding/OnboardingHeader';
+import { ThemedText } from '../../components/ui/ThemedText';
 
 // Breed — the first SKIPPABLE pet-setup step (B-251 PR 8, spec §3.4, mockup 08).
 // The pet row already exists (pet-name inserted {user_id, name, species}); this
@@ -104,8 +110,8 @@ export default function PetBreedScreen() {
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
         <View style={styles.body}>
-          <Text style={styles.title}>{`What's ${activePet.name}'s breed?`}</Text>
-          <Text style={styles.subtitle}>Optional — it helps tailor what we watch for.</Text>
+          <ThemedText style={styles.title}>{`What's ${activePet.name}'s breed?`}</ThemedText>
+          <ThemedText style={styles.subtitle}>Optional — it helps tailor what we watch for.</ThemedText>
 
           {isOther ? (
             <View style={styles.flex}>
@@ -126,7 +132,7 @@ export default function PetBreedScreen() {
                 style={styles.listLink}
                 accessibilityRole="button"
               >
-                <Text style={styles.listLinkText}>Choose from the list instead</Text>
+                <ThemedText style={styles.listLinkText}>Choose from the list instead</ThemedText>
               </TouchableOpacity>
             </View>
           ) : (

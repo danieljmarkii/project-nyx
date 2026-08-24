@@ -826,7 +826,7 @@ export default function FoodCaptureScreen() {
     return (
       <View style={styles.completeContainer}>
         <Animated.View style={[styles.checkCircle, { transform: [{ scale: checkScale }], opacity: checkOpacity }]}>
-          {/* Icon glyph, not copy — stays a raw <Text> so it keeps the system face.
+          {/* geist-ok: Icon glyph, not copy — stays a raw <Text> so it keeps the system face.
               These stand in for vector glyphs (the B-745 GlyphSvg migration owns them),
               and Geist's cmap carries no ✓ / ✕ / ＋ at all, so forcing the body family
               here buys nothing and hands the render to OS fallback. CUL-364 §7 sweep. */}
@@ -998,7 +998,7 @@ export default function FoodCaptureScreen() {
               >
                 <ThemedText style={styles.mealTimeText}>
                   {mealOccurredAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                  {/* Deliberately a raw <Text>, not a nested ThemedText (CUL-609; the CLAUDE.md
+                  {/* geist-ok: Deliberately a raw <Text>, not a nested ThemedText (CUL-609; the CLAUDE.md
                       nested-span convention). A nested ThemedText's explicit fontFamily breaks RN's
                       native text-style cascade; this EXIF span differs from its parent only in size and
                       colour, so it inherits the parent's resolved Geist regular. See app/log.tsx. */}
@@ -1200,7 +1200,7 @@ function Header({ title, onClose, onBack }: { title: string; onClose?: () => voi
     <View style={styles.header}>
       {onBack ? (
         <TouchableOpacity onPress={onBack} style={styles.headerSide} hitSlop={10}>
-          {/* Icon glyph, not copy — stays raw so it keeps the system face (CUL-364 §7). */}
+          {/* geist-ok: Icon glyph, not copy — stays raw so it keeps the system face (CUL-364 §7). */}
           <Text style={styles.headerBack}>←</Text>
         </TouchableOpacity>
       ) : (
@@ -1209,7 +1209,7 @@ function Header({ title, onClose, onBack }: { title: string; onClose?: () => voi
       <ThemedText style={styles.headerTitle}>{title}</ThemedText>
       {onClose ? (
         <TouchableOpacity onPress={onClose} style={styles.headerSide} hitSlop={10}>
-          {/* Icon glyph, not copy — stays raw so it keeps the system face (CUL-364 §7). */}
+          {/* geist-ok: Icon glyph, not copy — stays raw so it keeps the system face (CUL-364 §7). */}
           <Text style={styles.headerClose}>✕</Text>
         </TouchableOpacity>
       ) : (
@@ -1257,7 +1257,7 @@ function ChecklistTile({
         <Image source={{ uri: photo.localUri }} style={styles.checklistThumb} resizeMode="cover" />
       ) : (
         <View style={[styles.checklistThumb, styles.checklistThumbEmpty]}>
-          {/* Icon glyph, not copy — stays raw so it keeps the system face (CUL-364 §7). */}
+          {/* geist-ok: Icon glyph, not copy — stays raw so it keeps the system face (CUL-364 §7). */}
           <Text style={styles.checklistEmptyIcon}>+</Text>
         </View>
       )}
@@ -1516,6 +1516,9 @@ const styles = StyleSheet.create({
     gap: theme.space2,
   },
   textInput: {
+    // A TextInput is outside ThemedText's reach (the wrapper wraps Text), so the
+    // field names its face directly — otherwise a swept screen keeps SF inputs.
+    fontFamily: theme.fontBody,
     fontSize: theme.textMD,
     color: theme.colorTextPrimary,
     borderWidth: 1,

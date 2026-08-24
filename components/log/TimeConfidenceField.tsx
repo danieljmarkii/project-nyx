@@ -106,7 +106,7 @@ export function TimeConfidenceField({
           <View style={styles.timeRow}>
             <ThemedText style={styles.timeLabel}>
               {stamp(point)}
-              {/* Deliberately a raw <Text>, not a nested ThemedText (CUL-609; the CLAUDE.md
+              {/* geist-ok: Deliberately a raw <Text>, not a nested ThemedText (CUL-609; the CLAUDE.md
                   nested-span convention). A nested ThemedText's explicit fontFamily breaks RN's
                   native text-style cascade; this EXIF span differs from its parent only in colour,
                   so it inherits the parent's resolved Geist regular. See app/log.tsx. */}

@@ -1,5 +1,6 @@
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { theme } from '../../constants/theme';
+import { ThemedText } from '../ui/ThemedText';
 
 // DashboardEmptyState — the whole-dashboard cold-start state (§10). Shown only when
 // there is genuinely nothing to render this window (no symptoms AND no logged feedings,
@@ -15,11 +16,11 @@ export function DashboardEmptyState({ petName }: Props) {
   const name = petName.trim().length > 0 ? petName : 'your pet';
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>I'm still getting to know {name}.</Text>
-      <Text style={styles.body}>
+      <ThemedText style={styles.title}>I'm still getting to know {name}.</ThemedText>
+      <ThemedText style={styles.body}>
         Log a few foods and anything that seems off, and {name}'s patterns will start to take shape
         here — how often things happen, what {name} eats most, and what tends to go together.
-      </Text>
+      </ThemedText>
     </View>
   );
 }

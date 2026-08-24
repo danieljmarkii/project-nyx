@@ -17,11 +17,12 @@
 // strength, not name) and the modal's unlink-on-edit still clears a stale
 // medication_item_id. It creates no medication_items row and links nothing; the
 // library stays organically built.
-import { View, Text, ScrollView, StyleSheet } from 'react-native';
+import { View, ScrollView, StyleSheet } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { FilterChip } from '../ui/FilterChip';
 import { theme } from '../../constants/theme';
 import { commonMedicationsForSpecies } from '../../lib/medications';
+import { ThemedText } from '../ui/ThemedText';
 
 interface Props {
   // The active pet's species — drives ordering so the species-relevant drugs lead
@@ -34,7 +35,7 @@ export function MedicationNameChips({ species, onPick }: Props) {
   const options = commonMedicationsForSpecies(species);
   return (
     <View>
-      <Text style={styles.helper}>Tap a common one below, or type the name from the label.</Text>
+      <ThemedText style={styles.helper}>Tap a common one below, or type the name from the label.</ThemedText>
       <View style={styles.row}>
         <ScrollView
           horizontal

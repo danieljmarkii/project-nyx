@@ -1,8 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import {
-  Alert, ScrollView, StyleSheet, Text,
-  TouchableOpacity, View,
-} from 'react-native';
+import { Alert, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { theme } from '../constants/theme';
 import { WhorlSpinner } from '../components/brand/WhorlSpinner';
@@ -11,6 +8,7 @@ import { usePetStore, Pet } from '../store/petStore';
 import { useAuthStore } from '../store/authStore';
 import { petIdentityLine } from '../lib/utils';
 import { PetAvatar } from '../components/pet/PetAvatar';
+import { ThemedText } from '../components/ui/ThemedText';
 
 // Archived pets (multi-pet spec §3.5): the way back from archive-only removal.
 // Lists every archived pet with a one-tap un-archive ("Bring back" — the word
@@ -105,19 +103,19 @@ export default function ArchivedPetsScreen() {
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
-        <Text style={styles.title}>Archived pets</Text>
-        <Text style={styles.subtitle}>
+        <ThemedText style={styles.title}>Archived pets</ThemedText>
+        <ThemedText style={styles.subtitle}>
           Their history stays safe. Bring a pet back anytime and everything picks
           up where it left off.
-        </Text>
+        </ThemedText>
 
         {loading ? (
           <WhorlSpinner size="md" ground="day" style={styles.loader} />
         ) : archivedPets.length === 0 ? (
-          <Text style={styles.emptyText}>
+          <ThemedText style={styles.emptyText}>
             No archived pets right now. Any pet you archive from their Pet tab
             will wait here.
-          </Text>
+          </ThemedText>
         ) : (
           archivedPets.map((pet) => {
             const line = petIdentityLine(pet);
@@ -125,9 +123,9 @@ export default function ArchivedPetsScreen() {
               <View key={pet.id} style={styles.petRow}>
                 <PetAvatar name={pet.name} photoPath={pet.photo_path} size={38} />
                 <View style={styles.petText}>
-                  <Text style={styles.petName} numberOfLines={1}>{pet.name}</Text>
+                  <ThemedText style={styles.petName} numberOfLines={1}>{pet.name}</ThemedText>
                   {line ? (
-                    <Text style={styles.petLine} numberOfLines={1}>{line}</Text>
+                    <ThemedText style={styles.petLine} numberOfLines={1}>{line}</ThemedText>
                   ) : null}
                 </View>
                 <TouchableOpacity
@@ -141,7 +139,7 @@ export default function ArchivedPetsScreen() {
                   {restoringId === pet.id ? (
                     <WhorlSpinner size="sm" ground="day" />
                   ) : (
-                    <Text style={styles.restoreBtnText}>Bring back</Text>
+                    <ThemedText style={styles.restoreBtnText}>Bring back</ThemedText>
                   )}
                 </TouchableOpacity>
               </View>

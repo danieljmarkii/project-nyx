@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, Alert } from 'react-native';
+import { View, StyleSheet, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { supabase } from '../../lib/supabase';
@@ -8,6 +8,7 @@ import { theme } from '../../constants/theme';
 import { ChipGroup, type ChipGroupOption } from '../../components/ui/ChipGroup';
 import { PrimaryButton } from '../../components/ui/PrimaryButton';
 import { OnboardingHeader } from '../../components/onboarding/OnboardingHeader';
+import { ThemedText } from '../../components/ui/ThemedText';
 
 // Gender — the second SKIPPABLE pet-setup step (B-251 PR 8, spec §3.5, mockup 09).
 // UPDATEs the created pet's sex, or leaves it 'unknown' (the insert default) on
@@ -84,8 +85,8 @@ export default function PetGenderScreen() {
       <OnboardingHeader step={4} onSkip={handleSkip} skipDisabled={saving} />
 
       <View style={styles.body}>
-        <Text style={styles.title}>{`What's ${activePet.name}'s gender?`}</Text>
-        <Text style={styles.subtitle}>Optional — helps us read the data in context.</Text>
+        <ThemedText style={styles.title}>{`What's ${activePet.name}'s gender?`}</ThemedText>
+        <ThemedText style={styles.subtitle}>Optional — helps us read the data in context.</ThemedText>
 
         <ChipGroup
           options={GENDER_OPTIONS}

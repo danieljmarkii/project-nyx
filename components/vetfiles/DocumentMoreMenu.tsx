@@ -1,7 +1,8 @@
-import { Modal, Pressable, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Modal, Pressable, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { theme } from '../../constants/theme';
 import type { AlsoAddTarget } from '../../lib/vetDocumentCapture';
+import { ThemedText } from '../ui/ThemedText';
 
 interface Props {
   visible: boolean;
@@ -79,7 +80,7 @@ export function DocumentMoreMenu({
           accessibilityState={{ disabled: !!busy }}
           accessibilityLabel="Add another page to this document"
         >
-          <Text style={styles.itemText}>Add another page</Text>
+          <ThemedText style={styles.itemText}>Add another page</ThemedText>
         </TouchableOpacity>
       ),
     });
@@ -100,9 +101,9 @@ export function DocumentMoreMenu({
           accessibilityState={{ disabled: target.done || !!busy }}
           accessibilityLabel={target.label}
         >
-          <Text style={[styles.itemText, target.done && styles.itemDone]} numberOfLines={2}>
+          <ThemedText style={[styles.itemText, target.done && styles.itemDone]} numberOfLines={2}>
             {target.done ? `✓  ${target.label}` : target.label}
-          </Text>
+          </ThemedText>
         </TouchableOpacity>
       ),
     });
@@ -117,7 +118,7 @@ export function DocumentMoreMenu({
         activeOpacity={0.7}
         accessibilityRole="button"
       >
-        <Text style={styles.itemText}>Rename</Text>
+        <ThemedText style={styles.itemText}>Rename</ThemedText>
       </TouchableOpacity>
     ),
   });
@@ -132,8 +133,8 @@ export function DocumentMoreMenu({
         accessibilityRole="button"
         accessibilityLabel="Delete. Kept for 30 days — undo from the library."
       >
-        <Text style={[styles.itemText, styles.destructive]}>Delete</Text>
-        <Text style={styles.itemSub}>Kept for 30 days — undo from the library</Text>
+        <ThemedText style={[styles.itemText, styles.destructive]}>Delete</ThemedText>
+        <ThemedText style={styles.itemSub}>Kept for 30 days — undo from the library</ThemedText>
       </TouchableOpacity>
     ),
   });

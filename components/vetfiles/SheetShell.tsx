@@ -1,8 +1,7 @@
-import {
-  KeyboardAvoidingView, Modal, Platform, Pressable, StyleSheet, Text, View,
-} from 'react-native';
+import { KeyboardAvoidingView, Modal, Platform, Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { theme } from '../../constants/theme';
+import { ThemedText } from '../ui/ThemedText';
 
 interface Props {
   visible: boolean;
@@ -30,8 +29,8 @@ export function SheetShell({ visible, onClose, title, subtitle, children }: Prop
         <Pressable style={styles.scrim} onPress={onClose} accessibilityLabel="Close" />
         <View style={[styles.sheet, { paddingBottom: insets.bottom + theme.space2 }]}>
           <View style={styles.grabber} />
-          <Text style={styles.title}>{title}</Text>
-          {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
+          <ThemedText style={styles.title}>{title}</ThemedText>
+          {subtitle ? <ThemedText style={styles.subtitle}>{subtitle}</ThemedText> : null}
           {children}
         </View>
       </KeyboardAvoidingView>

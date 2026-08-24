@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
   View,
-  Text,
   TextInput,
   TouchableOpacity,
   StyleSheet,
@@ -14,6 +13,7 @@ import {
 import { Eye, EyeOff } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
 import { useAppActive } from '../../hooks/useAppActive';
+import { ThemedText } from './ThemedText';
 
 // The reveal toggle's own hit box. A 20pt glyph propped up by hitSlop met 44pt
 // only by spilling over the input, so keep the number here and let the test
@@ -116,7 +116,7 @@ export function TextField({
 
   return (
     <View style={[styles.container, containerStyle]}>
-      {label ? <Text style={styles.label}>{label}</Text> : null}
+      {label ? <ThemedText style={styles.label}>{label}</ThemedText> : null}
 
       <View
         style={[styles.field, { borderColor }]}
@@ -163,13 +163,13 @@ export function TextField({
       </View>
 
       {hasError ? (
-        <Text
+        <ThemedText
           style={styles.error}
           accessibilityLiveRegion="polite"
           testID={testID ? `${testID}-error` : undefined}
         >
           {error}
-        </Text>
+        </ThemedText>
       ) : null}
     </View>
   );
@@ -198,6 +198,9 @@ const styles = StyleSheet.create({
   },
   input: {
     flex: 1,
+    // A TextInput is outside ThemedText's reach (the wrapper wraps Text), so the
+    // field names its face directly — otherwise a swept screen keeps SF inputs.
+    fontFamily: theme.fontBody,
     fontSize: theme.textMD,
     color: theme.colorTextPrimary,
     // Vertical padding for comfortable touch on Android; the container's

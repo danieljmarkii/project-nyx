@@ -114,7 +114,7 @@ export function PhotoCarousel({ photoPaths, onAddPhoto }: Props) {
               onPress={onAddPhoto}
               activeOpacity={0.7}
             >
-              {/* Icon glyph, not copy — stays raw so it keeps the system face. Geist's
+              {/* geist-ok: Icon glyph, not copy — stays raw so it keeps the system face. Geist's
                   cmap has no U+FF0B at all, so sweeping this one would buy nothing and
                   hand the render to OS fallback (CUL-364 §7). */}
               <Text style={styles.emptyIcon}>＋</Text>

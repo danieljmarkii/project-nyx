@@ -1,5 +1,6 @@
-import { TouchableOpacity, Text, ViewStyle, StyleSheet, ActivityIndicator } from 'react-native';
+import { TouchableOpacity, ViewStyle, StyleSheet, ActivityIndicator } from 'react-native';
 import { theme } from '../../constants/theme';
+import { ThemedText } from './ThemedText';
 
 // 'accent' is the teal marketing/acquisition-hero fill (B-251 PR 5 Landing CTA,
 // PM-ratified over near-black). Distinct from 'primary' (near-black, every in-app
@@ -70,7 +71,7 @@ export function PrimaryButton({
           testID={testID ? `${testID}-spinner` : undefined}
         />
       ) : (
-        <Text
+        <ThemedText
           style={[
             styles.label,
             variant === 'secondary' && styles.labelSecondary,
@@ -80,7 +81,7 @@ export function PrimaryButton({
           ]}
         >
           {label}
-        </Text>
+        </ThemedText>
       )}
     </TouchableOpacity>
   );
