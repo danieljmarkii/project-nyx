@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, TextInput,
   ScrollView, KeyboardAvoidingView, Platform, Image, Alert,
@@ -15,8 +15,9 @@ import { parseFoodScope } from '../lib/food';
 import { MedicationPicker } from '../components/log/MedicationPicker';
 import { ComboDoseConfirmSheet } from '../components/log/ComboDoseConfirmSheet';
 import { TimeConfidenceField, TimeMode, FoundMode } from '../components/log/TimeConfidenceField';
-import { resolveTimeModeChange, resolveFoundModeChange, sourceAfterPointEdit, DEFAULT_WINDOW_SPAN_MS, buildTimeFields as deriveTimeFields } from '../lib/eventTimeEdit';
+import { resolveTimeModeChange, resolveFoundModeChange, sourceAfterPointEdit, refreshedNowPoint, DEFAULT_WINDOW_SPAN_MS, buildTimeFields as deriveTimeFields } from '../lib/eventTimeEdit';
 import { insertSimpleEvent } from '../lib/simpleEvent';
+import { pickPhotoSource, type PhotoSource } from '../lib/photoSource';
 import { EventIcon } from '../components/event/EventIcon';
 import { EventTypePicker } from '../components/log/EventTypePicker';
 import { Header } from '../components/ui/Header';
@@ -24,6 +25,7 @@ import { EVENT_TYPES, EventTypeKey, SYMPTOM_TYPES } from '../constants/eventType
 import { usePetStore } from '../store/petStore';
 import { useWidgetPetLink } from '../hooks/useWidgetPetLink';
 import { useSubmitGuard } from '../hooks/useSubmitGuard';
+import { useAppActive } from '../hooks/useAppActive';
 import { useAuthStore } from '../store/authStore';
 import { useEventStore } from '../store/eventStore';
 import { useAllowlistFlag } from '../hooks/useAppConfig';
@@ -157,6 +159,12 @@ export default function LogModal() {
   // is correct rather than one per picker: only a single picker step is ever
   // mounted, so the two paths can never be in flight at the same time.
   const guardSubmit = useSubmitGuard();
+  const appActive = useAppActive();
+  // A photo trip is both the longest gap on this screen and the one thing that may
+  // legitimately move the time (EXIF). The latch keeps the app-foreground effect
+  // out of that decision: launchPhotoPicker settles the point itself, so the effect
+  // can never race in and overwrite an EXIF stamp with the wall clock.
+  const photoInFlight = useRef(false);
 
   // Symptom state
   const [severity, setSeverity] = useState<number | null>(null);
@@ -173,9 +181,16 @@ export default function LogModal() {
   const [occurredAt, setOccurredAt] = useState(() => new Date());
   // Provenance of `occurredAt`. Flips to 'exif' when a photo with
   // DateTimeOriginal is attached; flips to 'manual' the moment the user
-  // touches the time picker. Default is 'manual' — clock value is `new Date()`
-  // but the user has implicitly accepted that as their chosen time.
-  const [occurredAtSource, setOccurredAtSource] = useState<'manual' | 'exif' | 'now'>('manual');
+  // touches the time picker (sourceAfterPointEdit).
+  //
+  // Default is 'now' (CUL-576). It used to be 'manual' on the reasoning that the
+  // owner implicitly accepts the clock by not changing it — but that reads the
+  // column backwards. `occurred_at_source` exists so the vet report and the
+  // correlation engine can tell a witnessed-now log from an owner-backfilled one
+  // (lib/eventTimeEdit, B-525), and 'manual' is the app asserting that a human
+  // chose this timestamp. Nobody chose it: the app did, at mount. Every symptom
+  // and weight logged on the default clock has been claiming otherwise.
+  const [occurredAtSource, setOccurredAtSource] = useState<'manual' | 'exif' | 'now'>('now');
   const [showTimePicker, setShowTimePicker] = useState(false);
 
   // B-010 confidence state — used on the simple step (discovery-prone events).
@@ -222,6 +237,27 @@ export default function LogModal() {
     }
   }, [typeParam]);
 
+  // CUL-576 — re-derive the clock default when the screen is re-entered.
+  //
+  // The staleness this closes is the long tail of the same defect the photo trip
+  // closes above: a log screen left open, backgrounded, and restored an hour later
+  // still holds the point it mounted with, and that is what the time row shows and
+  // what the write commits. Rising edge only, and 'inactive' counts as leaving
+  // (useAppActive treats the iOS app-switcher / an incoming call as not-active),
+  // which is exactly the transition a restored screen makes.
+  //
+  // Skipped while a photo picker is up: that path owns the point (an EXIF stamp
+  // must win over the wall clock) and settles it on its own way back.
+  const wasAppActive = useRef(appActive);
+  useEffect(() => {
+    const returned = appActive && !wasAppActive.current;
+    // The edge is consumed BEFORE the guard, deliberately: a skip here means the
+    // photo path owns the point on this trip, not that the re-derive is owed later.
+    wasAppActive.current = appActive;
+    if (!returned || photoInFlight.current) return;
+    setOccurredAt((prev) => refreshedNowPoint(prev, occurredAtSource, new Date()));
+  }, [appActive, occurredAtSource]);
+
   function handleTypeSelect(type: EventTypeKey) {
     setSelectedType(type);
     const config = EVENT_TYPES[type];
@@ -244,26 +280,36 @@ export default function LogModal() {
     setWeightLbsStr(lastKg != null ? kgToLbs(lastKg) : '');
   }
 
+  // Chooser first, then only the chosen source's permission (CUL-577, lib/photoSource).
+  // The old order gated everything behind the media-library grant, so a
+  // library-denied owner could never take a camera photo of the thing they were
+  // logging — and here that photo is what fires the vomit/stool AI read.
   async function handlePickPhoto() {
-    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (status !== 'granted') {
-      Alert.alert('Photo access needed', 'Allow photo access in Settings.');
-      return;
+    // Wrapped because this is a floating promise at the call site (onPress cannot
+    // await it), so a rejecting picker would otherwise surface as an unhandled
+    // rejection and a photo row that just does nothing. The log itself is
+    // unaffected — a photo is an enrichment, never the event (lib/simpleEvent draws
+    // the same line), so this reports and returns rather than failing the flow.
+    try {
+      const source = await pickPhotoSource('Attach photo');
+      if (!source) return;
+      await launchPhotoPicker(source);
+    } catch (e) {
+      console.error('[log] photo attach failed:', e);
+      Alert.alert("Couldn't open that", 'Try again in a moment.');
     }
-    Alert.alert('Attach photo', 'Choose a source', [
-      {
-        text: 'Take photo', onPress: async () => {
-          const { status: cs } = await ImagePicker.requestCameraPermissionsAsync();
-          if (cs !== 'granted') { Alert.alert('Camera access needed'); return; }
-          launchPhotoPicker('camera');
-        },
-      },
-      { text: 'Choose from library', onPress: () => launchPhotoPicker('library') },
-      { text: 'Cancel', style: 'cancel' },
-    ]);
   }
 
-  async function launchPhotoPicker(source: 'camera' | 'library') {
+  async function launchPhotoPicker(source: PhotoSource) {
+    photoInFlight.current = true;
+    try {
+      await runPhotoPicker(source);
+    } finally {
+      photoInFlight.current = false;
+    }
+  }
+
+  async function runPhotoPicker(source: PhotoSource) {
     const opts: ImagePicker.ImagePickerOptions = {
       mediaTypes: ['images'],
       allowsEditing: false,
@@ -281,14 +327,19 @@ export default function LogModal() {
 
     const exifRaw = (asset.exif as Record<string, unknown> | undefined);
     const dateRaw = exifRaw?.DateTimeOriginal ?? exifRaw?.DateTime;
-    if (typeof dateRaw === 'string') {
-      const iso = trustedPastExifIso(exifDateToISO(dateRaw));
-      if (iso) {
-        setAttachmentTakenAt(iso);
-        setOccurredAt(new Date(iso));
-        setOccurredAtSource('exif');
-      }
+    const iso = typeof dateRaw === 'string' ? trustedPastExifIso(exifDateToISO(dateRaw)) : null;
+    if (iso) {
+      setAttachmentTakenAt(iso);
+      setOccurredAt(new Date(iso));
+      setOccurredAtSource('exif');
+      return;
     }
+    // No usable stamp, so the clock default still stands — and it has been
+    // standing since mount, through however long the owner spent hunting for the
+    // shot. Re-derive it here rather than at save (CUL-576, refreshedNowPoint):
+    // the value is on screen in the time row, so the row and the write have to
+    // agree. An owner-set or EXIF point returns from refreshedNowPoint untouched.
+    setOccurredAt((prev) => refreshedNowPoint(prev, occurredAtSource, new Date()));
   }
 
   // One-tap log path from the new picker — bypasses state so it works
@@ -926,8 +977,10 @@ export default function LogModal() {
   // Any value change makes the provenance 'manual' (B-525), whatever it was;
   // peeking at the picker without changing the value keeps the stored source, so
   // it never silently drops an EXIF attribution. Shares the rule with
-  // edit-event.tsx via sourceAfterPointEdit. (A fresh symptom log here is 'manual'
-  // or 'exif', never 'now' — so this is defense-in-depth, one rule for both screens.)
+  // edit-event.tsx via sourceAfterPointEdit. (This used to note that a fresh
+  // symptom log is never 'now' and so the 'now' arm was defense-in-depth. Since
+  // CUL-576 it is the DEFAULT arm: an untouched log is 'now', and this handler is
+  // the one thing that turns it into the owner's own claim.)
   function handleTimePickerChange(date?: Date) {
     if (!date) return;
     setOccurredAtSource(sourceAfterPointEdit(occurredAtSource, date.getTime() !== occurredAt.getTime()));

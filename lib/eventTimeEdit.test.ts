@@ -11,6 +11,7 @@ import {
   resolveFoundModeChange,
   reconstructTimeControl,
   sourceAfterPointEdit,
+  refreshedNowPoint,
   buildTimeFields,
   DEFAULT_WINDOW_SPAN_MS,
 } from './eventTimeEdit';
@@ -295,5 +296,47 @@ describe('buildTimeFields', () => {
       estimatedAt, earliest, latest,
     });
     expect(tf).toEqual({ confidence: 'estimated', occurredAt: estimatedAt, earliest: null, latest: null, source: 'manual' });
+  });
+});
+
+// CUL-576 — the clock default is an assumption the app makes, so it is re-derived
+// when the surface is re-entered rather than written stale. The asymmetry IS the
+// rule: an owner's own time and a photo's own stamp both outrank the wall clock.
+describe('refreshedNowPoint (CUL-576)', () => {
+  // Local components, not a UTC literal: the values here are compared as instants
+  // and never crossed with a local-day boundary, but the convention keeps the
+  // fixture readable in the non-UTC CI zones (B-514).
+  const opened = new Date(2026, 7, 24, 17, 33);
+  const reentered = new Date(2026, 7, 24, 17, 35, 30);
+
+  it('re-derives a now-sourced point — the two-minute photo fumble', () => {
+    // The audit's case: the sheet opens at 5:33, the owner goes hunting for a
+    // photo, and comes back at 5:35:30. What gets shown from here on is 5:35:30.
+    expect(refreshedNowPoint(opened, 'now', reentered)).toBe(reentered);
+  });
+
+  it('leaves a manual point alone — the owner already answered this question', () => {
+    expect(refreshedNowPoint(opened, 'manual', reentered)).toBe(opened);
+  });
+
+  it('leaves an exif point alone — moving it would drop the photo attribution', () => {
+    // The B-525 defect pointed the other way: that one let a picker edit keep a
+    // stale provenance; this would let the clock overwrite a real one.
+    expect(refreshedNowPoint(opened, 'exif', reentered)).toBe(opened);
+  });
+
+  it('is convergent — re-entering twice with the same clock is the same point', () => {
+    const once = refreshedNowPoint(opened, 'now', reentered);
+    expect(refreshedNowPoint(once, 'now', reentered)).toBe(once);
+  });
+
+  it('never moves a point backwards for any source', () => {
+    // A re-entry can only ever be later than the open. Nothing in the rule may
+    // produce a point ahead of the clock it was handed.
+    for (const source of ['manual', 'exif', 'now'] as const) {
+      const out = refreshedNowPoint(opened, source, reentered);
+      expect(out.getTime()).toBeGreaterThanOrEqual(opened.getTime());
+      expect(out.getTime()).toBeLessThanOrEqual(reentered.getTime());
+    }
   });
 });

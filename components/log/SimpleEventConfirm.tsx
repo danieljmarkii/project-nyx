@@ -12,13 +12,15 @@ import { WhorlSpinner } from '../brand/WhorlSpinner';
 import { EVENT_TYPES, EventTypeKey } from '../../constants/eventTypes';
 import {
   buildTimeFields, resolveTimeModeChange, resolveFoundModeChange,
-  sourceAfterPointEdit, DEFAULT_WINDOW_SPAN_MS,
+  sourceAfterPointEdit, refreshedNowPoint, DEFAULT_WINDOW_SPAN_MS,
 } from '../../lib/eventTimeEdit';
 import type { TimeMode, FoundMode } from './TimeConfidenceField';
 import { summarizeSimpleEvent, confirmTimeRowLabel } from '../../lib/logCopy';
 import type { LoggedRecord } from '../../lib/completionCard';
 import { insertSimpleEvent } from '../../lib/simpleEvent';
+import { pickPhotoSource, type PhotoSource } from '../../lib/photoSource';
 import { useSubmitGuard } from '../../hooks/useSubmitGuard';
+import { useAppActive } from '../../hooks/useAppActive';
 import { useEventStore } from '../../store/eventStore';
 import type { ConfirmDraft } from '../../lib/discardGuard';
 import { formatTime, exifDateToISO, trustedPastExifIso, formatExifAttribution } from '../../lib/utils';
@@ -82,6 +84,12 @@ export function SimpleEventConfirm({ type, petId, petName, onBack, onLogged, onD
   // so a fast double-tap in the async gap would run the write (and the AI read) twice.
   // The ref latches synchronously on the first tap.
   const guardSubmit = useSubmitGuard();
+  const appActive = useAppActive();
+  // The photo trip is the longest gap on this sheet and the one thing that may
+  // legitimately move the time (EXIF). The latch keeps the foreground effect out of
+  // that decision — runPicker settles the point on its own way back, so the effect
+  // can never race in and overwrite an EXIF stamp with the wall clock.
+  const photoInFlight = useRef(false);
 
   const typeLabel = EVENT_TYPES[type].label;
   const rose = ROSE_FAMILY.has(type);
@@ -92,7 +100,12 @@ export function SimpleEventConfirm({ type, petId, petName, onBack, onLogged, onD
   // ('found' → open-ended or bounded). "Around a time" (estimated) is deliberately
   // not offered here (round-4 mock; AC-FOUND names witnessed/window only).
   const [occurredAt, setOccurredAt] = useState(() => new Date());
-  const [occurredAtSource, setOccurredAtSource] = useState<'manual' | 'exif' | 'now'>('manual');
+  // 'now', not 'manual' (CUL-576) — the sheet's opening time is the app's own
+  // clock assumption, and `occurred_at_source` is what tells the vet report and
+  // the correlation engine apart from an owner-backfilled one. Claiming 'manual'
+  // over a value nobody chose is the B-525 mislabel from the other side. The
+  // full-screen path (app/log.tsx) carries the same default and the same reason.
+  const [occurredAtSource, setOccurredAtSource] = useState<'manual' | 'exif' | 'now'>('now');
   const [timeMode, setTimeMode] = useState<TimeMode>('saw');
   const [foundMode, setFoundMode] = useState<FoundMode>('before');
   const [earliest, setEarliest] = useState<Date | null>(null);
@@ -106,6 +119,25 @@ export function SimpleEventConfirm({ type, petId, petName, onBack, onLogged, onD
   const [notes, setNotes] = useState('');
   const [photo, setPhoto] = useState<{ uri: string; takenAt: string | null; width?: number; height?: number } | null>(null);
   const [submitting, setSubmitting] = useState(false);
+
+  // CUL-576 — re-derive the clock assumption when the sheet is re-entered.
+  //
+  // The photo branch in runPicker covers the common gap; this covers the long tail,
+  // a half-filled confirm left open while the phone is put down and picked back up.
+  // Rising edge only, and 'inactive' counts as leaving (useAppActive reads the iOS
+  // app-switcher and an incoming call as not-active), which is the transition a
+  // restored sheet actually makes. `timeShape` deliberately does not see this move:
+  // the app re-deriving its own assumption is not the owner's work, so the discard
+  // guard stays quiet (see the baseline note below).
+  const wasAppActive = useRef(appActive);
+  useEffect(() => {
+    const returned = appActive && !wasAppActive.current;
+    // The edge is consumed BEFORE the guard, deliberately: a skip here means the
+    // photo path owns the point on this trip, not that the re-derive is owed later.
+    wasAppActive.current = appActive;
+    if (!returned || photoInFlight.current) return;
+    setOccurredAt((prev) => refreshedNowPoint(prev, occurredAtSource, new Date()));
+  }, [appActive, occurredAtSource]);
 
   // The single derivation (shared with the full-screen path via lib/eventTimeEdit):
   // occurred_at + confidence + bounds. The row label and the summary pill both read
@@ -140,7 +172,18 @@ export function SimpleEventConfirm({ type, petId, petName, onBack, onLogged, onD
   // render's value), so an unattended sheet does not become dirty as the clock
   // moves. `windowOpen` is deliberately not consulted: opening a disclosure is not
   // an edit.
-  const timeShape = `${tf.confidence}|${tf.occurredAt.getTime()}|${tf.earliest?.getTime() ?? ''}|${tf.latest?.getTime() ?? ''}`;
+  //
+  // That "as the clock moves" clause used to be free, because the clock DIDN'T
+  // move — the point was frozen at mount. CUL-576 makes it move (the sheet
+  // re-derives its own assumption on re-entry), so the exemption has to be stated
+  // instead of inherited: while the point is still 'now' it is the app's standing
+  // assumption, not the owner's work, so it is not in the draft at all. The moment
+  // the owner touches the picker, sourceAfterPointEdit flips it to 'manual', the
+  // real timestamp enters the shape, and the guard sees the edit. Comparing the
+  // SOURCE rather than diffing timestamps is what keeps "re-derived by the app"
+  // and "chosen by a human" from looking identical here.
+  const pointShape = tf.source === 'now' ? 'now' : String(tf.occurredAt.getTime());
+  const timeShape = `${tf.confidence}|${pointShape}|${tf.earliest?.getTime() ?? ''}|${tf.latest?.getTime() ?? ''}`;
   const baseline = useRef(timeShape);
   const draft: ConfirmDraft = {
     hasPhoto: photo !== null,
@@ -197,27 +240,35 @@ export function SimpleEventConfirm({ type, petId, petName, onBack, onLogged, onD
     }
   }
 
+  // Chooser first, then only the chosen source's permission (CUL-577, lib/photoSource).
+  // The old order gated everything behind the media-library grant, so a
+  // library-denied owner could never take a camera photo — and on a vomit or stool
+  // confirm that photo is the payload the per-incident AI read runs on
+  // (lib/simpleEvent), so the denial cost the clinical half of the log.
   async function pickPhoto() {
-    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (status !== 'granted') {
-      Alert.alert('Photo access needed', 'Allow photo access in Settings.');
-      return;
+    // Wrapped because onPress cannot await this: an unwrapped rejection would be an
+    // unhandled promise and a photo row that silently does nothing. The confirm is
+    // unaffected — the photo is an enrichment, and the event still logs without it.
+    try {
+      const source = await pickPhotoSource('Add a photo');
+      if (!source) return;
+      await launchPicker(source);
+    } catch (e) {
+      console.error('[SimpleEventConfirm] photo attach failed:', e);
+      Alert.alert("Couldn't open that", 'Try again in a moment.');
     }
-    Alert.alert('Add a photo', 'Choose a source', [
-      {
-        text: 'Take photo',
-        onPress: async () => {
-          const { status: cs } = await ImagePicker.requestCameraPermissionsAsync();
-          if (cs !== 'granted') { Alert.alert('Camera access needed'); return; }
-          void launchPicker('camera');
-        },
-      },
-      { text: 'Choose from library', onPress: () => void launchPicker('library') },
-      { text: 'Cancel', style: 'cancel' },
-    ]);
   }
 
-  async function launchPicker(source: 'camera' | 'library') {
+  async function launchPicker(source: PhotoSource) {
+    photoInFlight.current = true;
+    try {
+      await runPicker(source);
+    } finally {
+      photoInFlight.current = false;
+    }
+  }
+
+  async function runPicker(source: PhotoSource) {
     const opts: ImagePicker.ImagePickerOptions = {
       mediaTypes: ['images'], allowsEditing: false, quality: 0.85, exif: true,
     };
@@ -226,18 +277,22 @@ export function SimpleEventConfirm({ type, petId, petName, onBack, onLogged, onD
       : await ImagePicker.launchImageLibraryAsync(opts);
     if (result.canceled || !result.assets[0]) return;
     const asset = result.assets[0];
-    let takenAt: string | null = null;
     const exifRaw = asset.exif as Record<string, unknown> | undefined;
     const dateRaw = exifRaw?.DateTimeOriginal ?? exifRaw?.DateTime;
-    if (typeof dateRaw === 'string') {
-      const iso = trustedPastExifIso(exifDateToISO(dateRaw));
-      if (iso) {
-        takenAt = iso;
-        // A photo of the event is stamped when it happened — seed the time from EXIF
-        // and mark the provenance so Dr. Chen's report keeps the attribution (B-525).
-        setOccurredAt(new Date(iso));
-        setOccurredAtSource('exif');
-      }
+    const takenAt = typeof dateRaw === 'string' ? trustedPastExifIso(exifDateToISO(dateRaw)) : null;
+    if (takenAt) {
+      // A photo of the event is stamped when it happened — seed the time from EXIF
+      // and mark the provenance so Dr. Chen's report keeps the attribution (B-525).
+      setOccurredAt(new Date(takenAt));
+      setOccurredAtSource('exif');
+    } else {
+      // No usable stamp, so the sheet's clock assumption still stands — and it has
+      // been standing since the sheet opened, through however long the trip took.
+      // Re-derive it here rather than at save (CUL-576): the summary pill shows this
+      // value and §0 of the picker spec makes that pill the save, so the pill and
+      // the write have to be the same number. An owner-set or EXIF point is returned
+      // untouched by refreshedNowPoint.
+      setOccurredAt((prev) => refreshedNowPoint(prev, occurredAtSource, new Date()));
     }
     setPhoto({ uri: asset.uri, takenAt, width: asset.width, height: asset.height });
   }

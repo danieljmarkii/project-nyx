@@ -223,3 +223,42 @@ export function sourceAfterPointEdit(
 ): 'manual' | 'exif' | 'now' {
   return changed && current !== 'manual' ? 'manual' : current;
 }
+
+// ── Re-deriving the app's own clock default (CUL-576) ────────────────────────
+//
+// `occurred_at` on a fresh log starts as `new Date()` at mount: a standing
+// ASSUMPTION the app makes on the owner's behalf ("this is happening now"), not
+// a claim the owner made. The assumption goes stale while the surface sits open
+// — the owner fumbles one-handed for a photo in the dark, or the screen is
+// backgrounded and restored an hour later — and a stale one is written verbatim
+// into occurred_at, which is the correlation engine's key and the Timeline's
+// sort key.
+//
+// The fix is to re-derive the assumption when the surface is RE-ENTERED, NOT to
+// re-stamp it at save. Two reasons the save-time re-stamp is wrong on these
+// screens specifically:
+//
+//   1. The time is ON SCREEN here. app/log.tsx renders it in the time row and
+//      the B-745 confirm renders it in the summary pill — and that spec's §0
+//      makes the pill the save ("the summary pill IS the save"). Writing a
+//      different value at save commits a time the owner was never shown.
+//   2. A symptom is logged BECAUSE it just happened: the screen opens AFTER the
+//      event, so every second that passes moves the clock further from it, not
+//      closer. Mount is the better proxy for a 5:33 vomit than save is.
+//
+// The meal path (app/log.tsx handlePickFood) does re-stamp at write, and its own
+// comment says why it may: on that one-tap path "the user never saw the time
+// picker", so there is no displayed value to contradict, and the bowl goes down
+// as the tap lands. Neither condition holds here — which is why the meal path is
+// not the precedent it looks like.
+//
+// Only a 'now' point is re-derived. 'manual' is the owner's own choice and
+// 'exif' is the photo's own stamp; both outrank the wall clock, and silently
+// moving either would be the B-525 defect pointed the other way.
+export function refreshedNowPoint(
+  point: Date,
+  source: 'manual' | 'exif' | 'now',
+  now: Date,
+): Date {
+  return source === 'now' ? now : point;
+}
