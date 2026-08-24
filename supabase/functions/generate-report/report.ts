@@ -3464,9 +3464,10 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     // safety line — vet-report-cold-read, PR 7). The report is the local-day surface, so BOTH
     // symptomDays AND daysSinceLastEpisode are recounted over the SAME episode set (deduped window
     // events of this type from the detector's first onset) in the owner's timezone, so the flag
-    // agrees with the tile it sits beside. If the report window doesn't cover the detector's full
-    // episode set (episode counts differ — the 56d-detector-vs-90d-report gap, B-246), keep the
-    // engine's numbers rather than derive from a partial set. The WORSENING flag's sibling UTC
+    // agrees with the tile it sits beside. When the two counts DISAGREE, keep the engine's
+    // numbers rather than derive from a set the report and the engine are describing differently
+    // (see `lastOnsetDayKey`'s docstring for what actually makes them disagree — it is the 60s-vs-3h
+    // collapse grain, NOT the window coverage this comment used to claim). The WORSENING flag's sibling UTC
     // counts are still NOT patched here — that reconciliation stays the deferred B-219 decision.
     const firstOnsetMs = Date.parse(f.firstOnsetIso)
     const episodes = windowEvents.filter(
@@ -3481,8 +3482,10 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
         if (lastLocalDay === null || dn > lastLocalDay) lastLocalDay = dn
       }
     }
-    // Only trust the local recount when the report window covers the detector's full episode set
-    // (mirrors the symptomDays guard); else the engine's UTC number is the honest fallback.
+    // Only trust the local recount when the report and the engine agree on the episode COUNT;
+    // else the engine's UTC number is the honest fallback. (Not a window-coverage test — the
+    // detector's input is built FROM windowEvents, so its onsets are always a subset. What makes
+    // the counts differ is the collapse grain: 3h in the engine, 60s here.)
     const episodeSetMatches = episodes.length === f.episodeCount
     const localSymptomDays = episodeSetMatches ? localDayNums.size : f.symptomDays
     const localDaysSince =

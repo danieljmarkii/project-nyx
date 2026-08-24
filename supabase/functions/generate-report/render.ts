@@ -1019,8 +1019,6 @@ function letterhead(snap: ReportSnapshot): string {
  * missing one is a vet reading a four-month problem as a five-week one.
  */
 const CHRONICITY_LEFT_CENSOR_DAYS = 7
-/** Local to this file — render.ts deliberately imports no arithmetic from report.ts. */
-const MS_PER_DAY_RENDER = 86_400_000
 
 /** Whole days from `fromKey` to `toKey` (both `YYYY-MM-DD`); negative if `toKey` is earlier. */
 function daysBetweenDayKeys(fromKey: string, toKey: string): number {
@@ -1407,40 +1405,53 @@ function safetyFlagRow(f: SafetyFlag, snap: ReportSnapshot): string {
       // pattern is sustained. It simply stops asserting a start date it cannot know.
       //
       // TWO different edges can truncate this interval, and they need DIFFERENT sentences
-      // (B-612 / CUL-319, adversarial finding 7). The clause below originally measured only
-      // the gap to the report window's start — which makes it STRUCTURALLY UNREACHABLE on the
-      // 90-day fallback scope, because the detector reads a 56-day lookback and its first
-      // onset therefore sits ~34 days INSIDE a window that opened earlier. Reproduced: 30
-      // vomits logged Apr 4 – Jun 30 rendered "logged from May 7 to Jun 30: 19 episodes"
-      // beside this page's own "(30 logged)" and an appendix A opening Apr 4, with no
-      // disclosure at all — a 12-week course understated as 8 on the lead safety line.
+      // (B-612 / CUL-319, adversarial findings 7 then CE-1/CE-4). The clause originally
+      // measured only the gap to the report window's start, which is structurally unreachable
+      // on the 90-day fallback: the detector reads a 56-day lookback, so its first onset sits
+      // ~34 days INSIDE a window that opened earlier. Thirty vomits logged Apr 4 – Jun 30
+      // rendered "logged from May 7 to Jun 30: 19 episodes" beside this page's own
+      // "(30 logged)" and an appendix A opening Apr 4, with no disclosure at all.
       //
-      // The distinction is what the reader should DO about it, which is why one sentence
-      // cannot serve both. At the window's edge there is nothing earlier to look at, so the
-      // honest statement is that the record cannot see further back. At the LOOKBACK's edge
-      // the earlier episodes exist and are printed in appendix A — so the sentence must send
-      // the reader there rather than implying the record starts where the flag does.
+      // THE FIRST FIX FOR THAT WAS ALSO WRONG, and in the more dangerous direction. It asked
+      // "is the onset near the lookback edge?" — arithmetic — and then asserted a fact about
+      // this report's own evidence appendix. On a course that genuinely STARTS a day or two
+      // inside the lookback (the modal shape for the wedge user, whose logging begins when the
+      // problem does) it printed "earlier episodes in this window are listed in appendix A"
+      // over an appendix whose first row IS the onset: ~20% of fired pointers false, inflating
+      // the course's duration on the line a vet scans first. It also left a dead band — windows
+      // of lookback+1..7 days rendered nothing at all — so a 60-day recheck window, the
+      // commonest `since_visit` shape there is, still showed "7 episodes from May 12" beside
+      // "(9 logged)" over an appendix opening May 5.
+      //
+      // So the question is EVIDENTIARY, not arithmetic: does the appendix actually hold an
+      // earlier entry of THIS symptom? `snap.provenance.symptomLog` is the whole window,
+      // uncapped, and is what appendix A renders — so the pointer is checked against the very
+      // rows it points at, and cannot be false. It is also robust to WHY the flag's view starts
+      // late (a lookback, an episode floor, anything later), because it only ever claims what
+      // it has just verified. Filtering by `type` matters: earlier rows of a DIFFERENT symptom
+      // are not evidence about this one, and pointing at them would let a vet read an April
+      // diarrhoea entry as the start of a vomiting course.
+      //
+      // The two branches are mutually exclusive by construction, not by precedence: an earlier
+      // in-window row of this symptom means the onset is NOT at the window's edge, and an onset
+      // at the window's edge means any earlier row falls outside the window and so is not in
+      // this log at all. No ordering to get wrong, and no dead code pretending otherwise.
       const onsetDayKey = localDayKeyOf(f.firstOnsetIso, tz)
       const onsetDay = fmtLocalDay(f.firstOnsetIso, tz)
-      const detNowMs = Date.parse(snap.scope.detectionNowIso)
-      const lookbackEdgeKey = Number.isFinite(detNowMs)
-        ? localDayKeyOf(new Date(detNowMs - f.windowDays * MS_PER_DAY_RENDER).toISOString(), tz)
-        : null
+      const earlierInWindow = snap.provenance.symptomLog.filter(
+        (e) => e.type === f.symptomType && localDayKeyOf(e.occurredAt, tz) < onsetDayKey,
+      )
       const windowCensored = daysBetweenDayKeys(snap.scope.startDate, onsetDayKey) <= CHRONICITY_LEFT_CENSOR_DAYS
-      // Only when the lookback edge falls MEANINGFULLY INSIDE the window — otherwise the
-      // window is the binding constraint and its own sentence is the correct one.
-      const lookbackCensored =
-        !windowCensored &&
-        lookbackEdgeKey !== null &&
-        daysBetweenDayKeys(lookbackEdgeKey, onsetDayKey) <= CHRONICITY_LEFT_CENSOR_DAYS &&
-        daysBetweenDayKeys(snap.scope.startDate, lookbackEdgeKey) > CHRONICITY_LEFT_CENSOR_DAYS
-      const censorBit = windowCensored
-        ? ` This window opens ${h(fmtDay(snap.scope.startDate))}, so the record begins at its own edge &mdash; it cannot show how long the sign predates it.`
-        : lookbackCensored
-          ? ` This flag reads the most recent ${num(f.windowDays)} days, so ${h(
-              onsetDay,
-            )} is where that lookback begins, not where the record does &mdash; earlier episodes in this window are listed in appendix&nbsp;A.`
-          : ''
+      const censorBit =
+        earlierInWindow.length > 0
+          ? ` This flag's own view opens ${h(onsetDay)}; the record does not &mdash; ${num(
+              earlierInWindow.length,
+            )} earlier ${h(symptomLabel(f.symptomType).toLowerCase())} entr${
+              earlierInWindow.length === 1 ? 'y is' : 'ies are'
+            } listed in appendix&nbsp;A.`
+          : windowCensored
+            ? ` This window opens ${h(fmtDay(snap.scope.startDate))}, so the record begins at its own edge &mdash; it cannot show how long the sign predates it.`
+            : ''
       // ANCHORS, NOT A DERIVED DURATION (B-612 / CUL-319, cold-read blocker; PM ruled option B).
       // This printed "has been ongoing 25 days (first logged Jun 5)" on a page also stamped
       // "Generated Jul 2" and beside a tile reading "28 d" — three figures for one quantity, and
